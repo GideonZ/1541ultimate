@@ -51,6 +51,7 @@ from menu_screen_test import Failure, MenuScreenInfo, RestSession, check
 import ftp as ftp_lib
 import machine as machine_lib
 import pacing
+import wait
 from report import best_effort, check_skip, detail, section, suite_fail, suite_ok
 from ui_backend import Browser, TelnetBackend, add_mode_argument, make_browser, strip_frame
 
@@ -87,6 +88,13 @@ MESSAGE = "U64 PRG TEST OK"
 
 # Shared with every suite; see tests/lib/pacing.py.
 MENU_SETTLE_SECONDS = pacing.KEY_SETTLE_SECONDS
+# How many times a command is retyped when the C64 echoed something else. A
+# dropped tap is what this covers, and five attempts at about a second each is
+# still far inside the suite's own budget.
+TYPE_ATTEMPTS = 5
+# RETURN on a typed command starts a load, so the next read has to come after
+# the screen has moved on rather than during the redraw.
+MENU_ACTION_SETTLE_SECONDS = 0.40
 RUN_TIMEOUT_SECONDS = 12.0
 REAL_RUN_TIMEOUT_SECONDS = 40.0
 BOOT_TIMEOUT_SECONDS = 15.0
@@ -381,7 +389,7 @@ class Machine:
         be missed if the KERNAL scan does not see it. Check the echo before
         pressing RETURN rather than sending BASIC a truncated command.
         """
-        for _attempt in range(5):
+        for _attempt in range(TYPE_ATTEMPTS):
             # The menu disables the C64 keyboard matrix while it is up and only
             # re-enables it after the browser task has fully unwound, so wait
             # for it to be gone and give the machine its keyboard back before
@@ -394,16 +402,31 @@ class Machine:
                 self.session.release_all_input()
             except Failure:
                 pass
-            time.sleep(0.5)
+            time.sleep(pacing.C64_KEYBOARD_HANDBACK_SECONDS)
             for character in text:
-                self.tap([character.lower()], 0.20)
-            time.sleep(0.2)
-            if any(row.strip() == text for row in self.c64_screen().splitlines()):
-                self.tap(["return"], 0.40)
+                self.tap([character.lower()], pacing.C64_TYPE_KEY_SECONDS)
+            # Read the echo back rather than sleeping a fixed time for it: the
+            # line either arrived or a tap was dropped, and polling answers
+            # that as soon as it is true instead of always paying the wait.
+            echoed = False
+            try:
+                wait.wait_until(
+                    lambda: any(row.strip() == text
+                                for row in self.c64_screen().splitlines()),
+                    f"the C64 to echo {text!r}",
+                    timeout=pacing.C64_ECHO_TIMEOUT_SECONDS)
+                echoed = True
+            except Failure:
+                pass
+            if echoed:
+                self.tap(["return"], MENU_ACTION_SETTLE_SECONDS)
                 return
-            # Wipe whatever did land and try again.
-            for _ in range(len(text) + 2):
-                self.tap(["inst_del"], 0.06)
+            # Wipe whatever did land and try again. One key, not one per
+            # character: shift+CLR/HOME clears the whole line whatever is on
+            # it, which is what commit aa92dd9b did for the Assembly 64 query
+            # field for the same reason - forty deletions across a cartridge's
+            # host matrix is where characters were left behind.
+            self.tap(["left_shift", "clr_home"], pacing.KEY_SETTLE_SECONDS)
         still_open = not self.session.menu_screen_unavailable()
         raise Failure(
             f"could not type {text!r} on the C64"
@@ -828,10 +851,10 @@ class DiskLocation:
     def open(self, machine: Machine, fixtures: Fixtures) -> None:
         open_disk_prg(machine, fixtures)
 
-    def entry_name(self, fixtures: Fixtures) -> str:
+    def entry_name(self, _fixtures: Fixtures) -> str:
         return CBM_FILE_NAME
 
-    def renamed_to(self, fixtures: Fixtures) -> str:
+    def renamed_to(self, _fixtures: Fixtures) -> str:
         return "RENAMEDPRG"
 
     def listing(self, host: str, password: str, fixtures: Fixtures) -> list[str]:
@@ -854,7 +877,7 @@ def assert_absent(names: list[str], wanted: str, what: str) -> None:
         raise Failure(f"{what}: {wanted!r} is still present in {names}")
 
 
-def action_view(machine: Machine, fixtures: Fixtures, location, host: str, password: str) -> None:
+def action_view(machine: Machine, fixtures: Fixtures, location, _host: str, _password: str) -> None:
     location.open(machine, fixtures)
     listing = machine.rows()
     machine.invoke_context_action("View")
@@ -864,7 +887,7 @@ def action_view(machine: Machine, fixtures: Fixtures, location, host: str, passw
     machine.select_entry(location.entry_name(fixtures))
 
 
-def action_hex_view(machine: Machine, fixtures: Fixtures, location, host: str, password: str) -> None:
+def action_hex_view(machine: Machine, fixtures: Fixtures, location, _host: str, _password: str) -> None:
     location.open(machine, fixtures)
     machine.invoke_context_action("Hex View")
     screen = machine.wait_for_text(HEX_VIEW_FIRST_LINE)
@@ -963,7 +986,7 @@ def action_delete(machine: Machine, fixtures: Fixtures, location, host: str, pas
 
 # --- The scenarios issue #729 reports, checked the way a user would see them ---
 
-def scenario_dma_runnable(machine: Machine, fixtures: Fixtures, location, host, password) -> str:
+def scenario_dma_runnable(machine: Machine, fixtures: Fixtures, location, _host, _password) -> str:
     """DMA has to leave a program in RAM that the user can actually RUN."""
     prepare(machine)
     location.open(machine, fixtures)
@@ -987,7 +1010,7 @@ def scenario_dma_runnable(machine: Machine, fixtures: Fixtures, location, host, 
     return ", ".join(problems)
 
 
-def scenario_real_run(machine: Machine, fixtures: Fixtures, location, host, password) -> str:
+def scenario_real_run(machine: Machine, fixtures: Fixtures, _location, _host, _password) -> str:
     """Real Run has to complete a real 1541 load, with no drive error."""
     prepare(machine)
     open_disk_prg(machine, fixtures)
@@ -1004,7 +1027,7 @@ def scenario_real_run(machine: Machine, fixtures: Fixtures, location, host, pass
     return "load/run never completed"
 
 
-def scenario_long_name_run(machine: Machine, fixtures: Fixtures, location, host, password) -> str:
+def scenario_long_name_run(machine: Machine, fixtures: Fixtures, _location, _host, _password) -> str:
     """Run a PRG whose name is far longer than the boot cart can display.
 
     On firmware without the name-buffer fix this does not merely misbehave: it

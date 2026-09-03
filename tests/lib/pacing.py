@@ -315,6 +315,24 @@ MENU_TOGGLE_TIMEOUT_SECONDS = _seconds("U64_UI_MENU_TOGGLE_TIMEOUT", 6.0)
 RESET_SETTLE_SECONDS = _seconds("U64_UI_RESET_SETTLE", 0.5)
 
 
+# Typing into BASIC through the C64's keyboard matrix. A tap the KERNAL scan
+# misses produces no character, so a suite typing a command reads the echo back
+# rather than assuming it landed; these bound that read.
+#
+# The per-key value is what one tap costs before the next is sent. Measured on
+# an Ultimate 64 Elite: 0.20s a key typed a nine-character command whole on
+# every one of twenty attempts, and the echo of the whole line then appeared
+# within 0.2s. The timeout is generous against that because it is only reached
+# when a key really was dropped, which is the case the retry exists for.
+C64_TYPE_KEY_SECONDS = _seconds("U64_C64_TYPE_KEY", 0.20)
+C64_ECHO_TIMEOUT_SECONDS = _seconds("U64_C64_ECHO_TIMEOUT", 3.0)
+
+# After the menu closes it re-enables the C64 keyboard matrix, and the browser
+# task has to unwind before the machine has its keyboard back. There is nothing
+# on the wire that says so, which is why this is a sleep and not a poll.
+C64_KEYBOARD_HANDBACK_SECONDS = _seconds("U64_C64_KEYBOARD_HANDBACK", 0.5)
+
+
 def summary() -> str:
     """One line naming the pacing a run used, for a log that has to be read later."""
     return (f"ui pacing: poll={POLL_INTERVAL_SECONDS:g}s "
