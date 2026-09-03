@@ -654,11 +654,13 @@ API_CALL(GET, machine, heap_allocations, NULL, ARRAY( {  }))
     char buf[64];
 
     int n = heap_track_report(callers, HEAP_TRACK_REPORT_CALLERS, &totals);
+    JSON_List *caller_list = JSON::List();
+    resp->json->add("caller", caller_list);
     for (int i = 0; i < n; i++) {
         // small_printf has no %lu, so every field is printed as %d or %p.
         sprintf(buf, "%d allocations %d bytes ra %p", (int)callers[i].blocks,
                 (int)callers[i].bytes, callers[i].caller);
-        resp->json->add("caller", buf);
+        caller_list->add(buf);
     }
     resp->json->add("live_allocations", (int)totals.live_blocks);
     resp->json->add("live_bytes", (int)totals.live_bytes);
