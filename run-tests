@@ -192,6 +192,11 @@ SUITES: Sequence[Suite] = (
     # naming an exception its module never imported. First, because a syntax
     # or import fault here would otherwise surface as a device suite failing.
     Suite("e2e", "lint", "tests/lib/lint_test.py", "", profile=profiles.SMOKE),
+    # Needs no device either: it fails when a suite exists that no profile can
+    # select. telnet_sustained_input_test.py sat in the tree unregistered, so
+    # the regression it guards, a held cursor key dropping a Telnet session on
+    # a slow link, had never been checked since the day it was written.
+    Suite("e2e", "registry", "tests/lib/registry_test.py", "", profile=profiles.SMOKE),
     # Needs no device either: it reads the tree and fails if a suite has grown
     # its own HTTP client again. Seven had, each with the retry rule wrong in its own
     # way, and each was found only when a transient timeout failed a whole run.
@@ -362,6 +367,28 @@ SUITES: Sequence[Suite] = (
     # and waits ~75s for the device to reap the sessions.
     Suite("e2e", "telnet-stale-session", "tests/e2e/network/telnet_stale_session_test.py",
           "-H @HOST@", manual=True),
+    # Reproduces the drop a held cursor key caused on a slow link: 680 bytes a
+    # keystroke fills the device's send buffer, SO_SNDTIMEO returns EAGAIN, and
+    # treating that as an error closed the session after about 250 keys.
+    #
+    # manual because the defect needs a link slow enough to fill that buffer.
+    # It was measured on an Ultimate II+L over WiFi; over wired Ethernet the
+    # device drains faster than the suite can send and the check passes without
+    # having exercised anything. It takes -H only: it speaks raw Telnet on port
+    # 23, which carries no password, and it paces itself.
+    Suite("e2e", "telnet-sustained-input", "tests/e2e/network/telnet_sustained_input_test.py",
+          "-H @HOST@", manual=True),
+    # The audio and video streams together: a SID tone ladder has to arrive on
+    # both, and a keypress has to produce a pop the two streams agree on the
+    # timing of. It assembles its own stimulus with tools/64tass and captures
+    # the multicast streams, so it needs the device to be the only one
+    # streaming to that group.
+    #
+    # standard rather than smoke: it is the only suite that reads the streams
+    # at all, and at about a minute it is too slow for the shallow profiles.
+    # -H only, because it addresses the stream source rather than the REST
+    # surface and takes no password or timeout.
+    Suite("e2e", "av-stream", "tests/e2e/av/stream_test.py", "-H @HOST@"),
     # Drives the Assembly 64 UI against the live service, mostly with negative
     # cases. Skips rather than fails when the service is unreachable.
     Suite("e2e", "assembly64", "tests/e2e/io/c64/assembly64_test.py",

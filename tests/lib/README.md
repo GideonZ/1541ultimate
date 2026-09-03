@@ -26,7 +26,7 @@ repository-root `run-tests` all use it.
 | `fixtures/e2e-run.expected.md` | The report generated from a fixture the tests build for themselves; see below |
 | `../ruff.toml` | Which lint rules this tree is held to, and for each one that is off, either the reason or the finding that removes it |
 
-Eight registered suites live here as well, because each checks the test tree
+Nine registered suites live here as well, because each checks the test tree
 or the build rather than the device and so needs no hardware. They run first,
 where a failure lands as a clear message instead of as a confusing one later.
 The runner is handed no device for them, so it skips the health sweep and the
@@ -42,6 +42,7 @@ UI-state gate around each one:
 | `observability_test.py` | The harness that watches a run: the report generator, the console capture and everything else the gate's own verdicts cannot exercise |
 | `navigation_test.py` | Which keys the harness sends at a menu under each Navigation Style |
 | `lint_test.py` | The tree passes the lint rules in `tests/ruff.toml` |
+| `registry_test.py` | Every suite in the tree is registered in `run-tests`, and every registration names a path that exists and arguments the suite accepts |
 
 `observability_test.py` also runs as `make observability_test` and as a step in
 `.github/workflows/build.yml`. One implementation, invoked three ways. It needs
@@ -76,6 +77,21 @@ that is right as it stands, and it carries its reason beside the directive.
 
 The MicroPython under `tests/soak/io/usb/pico/` is excluded: it runs on the
 microcontroller rather than on the host, and keeps its own compact style.
+
+## The registry check
+
+`registry_test.py` holds `run-tests` and the tree to each other. Every
+`*_test.py` under `tests/e2e`, `tests/perf` and `tests/soak` has to appear in
+the `SUITES` table, every registered path has to exist, and every argument in
+a registration has to be one the suite's own parser accepts. The last rule
+reads the parser out of the source rather than importing the suite, because
+several suites open a socket at import time; it resolves the shared
+`add_*_argument` helpers, so a suite that calls `add_mode_argument` counts as
+accepting `--mode`.
+
+A file ending in `_test.py` that is not a suite goes in that file's
+`NOT_SUITES` table with its reason, so that "not registered" always means
+"nobody can run it".
 
 The golden tier of `observability_test.py` builds its own `-j` tree by driving
 the runner against the device double, with stub suites scripted to fail, to be

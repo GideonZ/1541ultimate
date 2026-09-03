@@ -213,6 +213,9 @@ leave it dirty.
 3. Give the runner a stable kebab-case selector and register every executable
    suite in `run-tests`. New suites are automatic unless they need operator
    opt-in; document any `manual` reason next to the runner entry.
+   `tests/lib/registry_test.py` fails the gate when a suite is missing from the
+   registry, when a registered path does not exist, or when a registration
+   names an argument the suite would refuse.
 4. Keep the default scenario deterministic and bounded. Assert externally
    visible outcomes, not private implementation timing. Report through
    `tests/lib/report.py`; see [its rules](../lib/README.md).
