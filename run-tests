@@ -240,6 +240,13 @@ SUITES: Sequence[Suite] = (
     # turns a quick-seek into a walk down the listing and a popup's All button
     # into a cursor move, neither of which reads as a keyboard problem.
     Suite("e2e", "navigation-keys", "tests/lib/navigation_test.py", "", profile=profiles.SMOKE),
+    # Needs no device either: the screen parsers every navigating suite
+    # depends on, against screens built to be read wrongly. Until this existed
+    # only a device exercised them, so every change to a selection rule cost a
+    # device run, and a wrong answer showed up as a suite picking the entry
+    # two places past the one it named.
+    Suite("e2e", "ui-backend-parse", "tests/e2e/lib/ui_backend_parse_test.py",
+          "", profile=profiles.SMOKE),
     # Also needs no device: the Telnet backend decides a redraw is over by
     # watching the stream go quiet, and the three waits that do that cannot be
     # told apart by watching a real device, which never produces them on
