@@ -404,6 +404,21 @@ MONITOR_D_KEY_RESERVED = _fix(
     "it, rather than entering the Debug mode this branch removed",
     (U2,))
 
+# What tests/e2e/network/ident_service_switch_test.py asserts. Firmware without
+# the fix reads each network service switch once, when that listener's task
+# starts, so turning the Ultimate Ident Service off leaves the listener
+# answering until the device restarts; with it, the listener closes its socket
+# when the setting changes and opens one again when it is turned back on.
+# Measured on a C64 Ultimate 1.2.0, which kept answering for the 3 seconds the
+# check waits after the switch was set to Disabled, three attempts out of
+# three.
+SERVICE_SWITCHES_APPLY_LIVE = _fix(
+    "service-switches-apply-live",
+    "a network service switch takes effect while the device runs, so the "
+    "ident listener stops answering when it is disabled and answers again "
+    "when it is re-enabled",
+    (C64U,))
+
 # Every fix at once, for a sweep that asks whether the lagging line has caught
 # up rather than about one behaviour.
 ASSUME_ALL = "all"

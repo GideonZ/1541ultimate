@@ -11,6 +11,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "lib"))
 
+import machine as machine_lib
+import targets
 from api import UltimateApi
 from report import Failure, check, check_count, format_exception, suite_fail, suite_ok
 
@@ -72,17 +74,34 @@ def main() -> int:
         suite_fail("ident_service_switch_test", "device did not report the original setting")
         return 1
 
+    info = api.info()
+    machine = machine_lib.identify(
+        targets.device_of(args.host),
+        lambda: (str(info.product), str(info.firmware_version)))
+
     failure = ""
     try:
         with check("ident answers when enabled"):
             api.configs.set(STORE, ITEM, "Enabled")
             wait_enabled(args.host)
-        with check("ident stops answering when disabled"):
-            api.configs.set(STORE, ITEM, "Disabled")
-            wait_disabled(args.host)
-        with check("ident answers again when re-enabled"):
-            api.configs.set(STORE, ITEM, "Enabled")
-            wait_enabled(args.host)
+        # Both of these need the listener to act on the switch while it runs.
+        # Firmware without that reads the switch once, when the listener
+        # starts, so the first would fail and the second would then prove
+        # nothing. Skipped together, with the fix named on each line: a list
+        # rather than a generator, so both lines are printed.
+        live_checks = [
+            "ident stops answering when disabled",
+            "ident answers again when re-enabled",
+        ]
+        if not any([machine.skip_without_fix(
+                machine_lib.SERVICE_SWITCHES_APPLY_LIVE, label)
+                    for label in live_checks]):
+            with check(live_checks[0]):
+                api.configs.set(STORE, ITEM, "Disabled")
+                wait_disabled(args.host)
+            with check(live_checks[1]):
+                api.configs.set(STORE, ITEM, "Enabled")
+                wait_enabled(args.host)
     except Failure as exc:
         failure = str(exc)
     except Exception as exc:  # noqa: BLE001
