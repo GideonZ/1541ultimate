@@ -2414,8 +2414,16 @@ class Browser:
             if not self.backend.last_key_changed:
                 return
 
-    def select_entry(self, prefix: str, max_steps: int = 30, timeout: float = 3.0) -> None:
+    def select_entry(self, prefix: str, max_steps: int = 30, timeout: float = 3.0,
+                     contains: bool = False) -> None:
         """Put the cursor on the listing entry starting with `prefix`.
+
+        `contains=True` matches anywhere in the row instead, for a listing
+        whose rows carry more than the entry name: the /ftp node draws
+        "Ftp  Remote FTP Servers", so a caller after the server list has a
+        substring and not a prefix. Quick-seek types the string at the
+        firmware, which can only match from the start, so a contains search
+        skips it and walks the rows.
 
         The listing is already on the screen, so the row the entry is on is
         read rather than searched for, and the cursor is moved there with one
@@ -2435,6 +2443,17 @@ class Browser:
         visible = len(self.entry_rows)
         # One screen is scanned per iteration, plus one to land on.
         screens = max(1, -(-max_steps // visible) + 1)
+        if contains:
+            while True:
+                self.go_to_top()
+                for _ in range(screens):
+                    if self._select_visible(prefix, contains=True):
+                        return
+                    self.move_rows(visible)
+                if time.monotonic() >= deadline:
+                    raise Failure(
+                        f"no entry containing {prefix!r} in the first "
+                        f"{max_steps} rows of {self.current_path()!r}")
         # Quick-seek searches the whole listing, so it does not care where the
         # cursor is and needs no rewind first. Rewinding anyway cost more than
         # the seek itself: go_to_top is a 14 key burst for the firmware to
@@ -2520,7 +2539,7 @@ class Browser:
             return False
         return self.selected_text().startswith(prefix)
 
-    def _select_visible(self, prefix: str) -> bool:
+    def _select_visible(self, prefix: str, contains: bool = False) -> bool:
         """Move the cursor onto a matching entry on the current screen.
 
         Returns False when no visible row matches, or when the cursor did not
@@ -2528,15 +2547,18 @@ class Browser:
         jump and the check can cause. The caller retries rather than trusting
         the move, so the result is confirmed by reading the cursor back.
         """
+        def matches(text: str) -> bool:
+            return prefix in text if contains else text.startswith(prefix)
+
         row, rows = self.backend.selection_and_rows(self.entry_rows)
         for index in self.entry_rows:
-            if index < len(rows) and strip_frame(rows[index]).startswith(prefix):
+            if index < len(rows) and matches(strip_frame(rows[index])):
                 # Same listing, so the page keys apply here too, and this
                 # jump is up to a whole window long. The landing is read back
                 # below either way, which is what makes the cheaper spelling
                 # safe to use on a jump the caller depends on.
                 self.move_rows(index - row)
-                return self.selected_text().startswith(prefix)
+                return matches(self.selected_text())
         return False
 
     def enter(self) -> None:

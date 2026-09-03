@@ -61,13 +61,13 @@ import bootstrap  # noqa: E402,F401
 import ftp as ftp_lib  # noqa: E402
 import cli  # noqa: E402
 
-import menu as menu_lib  # noqa: E402  (needs tests/e2e/lib on sys.path first)
 import pacing  # noqa: E402  (needs tests/lib on sys.path first)
 import rest as rest_lib
 import machine as machine_lib  # noqa: E402  (needs tests/lib first)
 import targets  # noqa: E402  (needs tests/lib on sys.path first)
+import ui_backend  # noqa: E402
 from ui_backend import (  # noqa: E402  (needs tests/e2e/lib first)
-    char_to_combo, find_selected_row_rest, measure_cursor_colour)
+    find_selected_row_rest, measure_cursor_colour)
 from api import UltimateApi  # noqa: E402  (needs tests/lib on sys.path first)
 from report import (  assert_or_warn, # noqa: E402  (needs tests/lib on sys.path first)
     Failure, best_effort, check_count, check_fail, check_ok, check_start, check_warn, detail, last_label,
@@ -320,10 +320,28 @@ class MenuScreen:
 # MenuDriver: navigation + form entry through REST keyboard input.
 # ---------------------------------------------------------------------------
 class MenuDriver:
+    """The on-device menu, as this suite drives it.
+
+    The navigation is `ui_backend.Browser` over a `RestBackend`, not a second
+    implementation of it. This class used to carry 330 lines of its own row
+    stepping, popup handling and typing, built on three helpers borrowed from
+    ui_backend, so every navigation fix made to Browser stopped at this suite's
+    edge. What is left here is the part that is about FTP hosts: the New Host
+    form, and the three steps that reach the /ftp node.
+
+    `select_row_text` and the popup navigation are kept as names because the
+    checks below read better with them, but each is now one call into Browser.
+    """
+
     def __init__(self, session, verbose_menu=False):
         self.s = session
         self.verbose_menu = verbose_menu
         self.last_input = ""
+        self.browser = ui_backend.make_browser(
+            "overlay", session.host, session.password or None, session.timeout)
+
+    def close(self):
+        self.browser.close()
 
     @property
     def task_menu_key(self):
@@ -331,9 +349,7 @@ class MenuDriver:
 
         F5 on an Ultimate 64 and an Ultimate II+, F1 on a C64 Ultimate, where
         F5 is Page Down and pressing it over a short listing does nothing at
-        all. A step that pressed F5 there read the browser it was still looking
-        at as a task menu with no Create category, and reported the node as
-        unsupported by the UI rather than failing. See tests/lib/machine.py.
+        all. See tests/lib/machine.py.
         """
         info = self.s.api.info()
         machine = machine_lib.identify(
@@ -359,44 +375,26 @@ class MenuDriver:
     def type_text(self, text):
         """Type a whole string in as few requests as the firmware allows.
 
-        Every form in the menu is a UIStringEdit fed from the same injected-key
-        queue, so there is one right way to type and this uses it: the shared
-        mapping and batching from tests/e2e/lib, the same as every other suite.
-
-        This suite used to send one POST per character, on a comment claiming
-        batching "floods the injected-key queue past its drain rate and
-        silently drops characters". Measured since, against a rename field with
-        a deliberately truncated control needle to prove the reader worked
-        (tests/perf/typing_speed_perf_test.py): batched typing arrived whole
-        every time at 25.7 characters a second, per-key at 4.6. The suite's own
-        checks below are what confirm it for this form, since they type host
-        names, ports and paths into it and then use the host they made.
+        Browser.type_text carries the shared mapping, the batching and the
+        drain wait, including the per-target rate: a cartridge crosses the
+        host's keyboard matrix as well and is five times slower than the
+        device's own rate, which is what used to commit a form field one
+        character short.
         """
-        combos = [char_to_combo(ch) for ch in text]
-        if not combos:
+        if not text:
             return
         self.last_input = f"type {text!r}"
-        self.s.key_events += len(combos)
-        menu_lib.send_taps(self.s.post_input, combos)
-        # The batch is accepted at once and drains through the matrix after, so
-        # the caller must not read the field back, or commit it, until it has
-        # arrived. The rate depends on the target: this charged every target
-        # the device's own rate, and on a cartridge that is five times too
-        # fast, so the RETURN committing a form field was sent while the
-        # field's last character was still on its way and the field was stored
-        # one character short.
-        time.sleep(len(combos) * pacing.key_drain_seconds(self.s.target.split))
+        self.s.key_events += len(text)
+        self.browser.type_text(text)
 
     # -- menu open/close ---------------------------------------------------
     def menu_is_open(self):
         return self.s.get_menu_screen() is not None
 
     def open_menu(self):
-        # menu_button is a toggle. If the device is briefly busy (e.g. settling
-        # a failed FTP connection) it may be slow to render the menu, so wait a
-        # long time after each press before pressing again - re-pressing too
-        # soon would toggle a just-opened menu back closed. Few presses, long
-        # waits.
+        # menu_button is a toggle, and a device settling a failed FTP
+        # connection can be slow to render, so this waits long between few
+        # presses rather than re-pressing a menu that is about to appear.
         for _ in range(3):
             if self.menu_is_open():
                 return
@@ -413,38 +411,25 @@ class MenuDriver:
         # placed on clipboard", an error box), which UIPopup answers only with
         # RETURN, SPACE or its own button hotkey. Without it the teardown would
         # spend every attempt on a popup that neither F8 nor RUN/STOP dismisses.
-        #
-        # The copy this replaced answered "Save changes to Flash?" with LEFT
-        # then RETURN. LEFT clamps at the first button, which is Yes, so that
-        # wrote whatever the suite had changed into the device's flash. The
-        # shared implementation presses the No hotkey instead.
         self.s.api.machine.close_menu_from_anywhere(confirm_key="return")
 
     # -- selection navigation ---------------------------------------------
     def select_row_text(self, text, max_steps=40, require=True):
-        """Move the highlight until the selected row contains `text`."""
-        low = text.lower()
-        for _ in range(max_steps):
-            screen = self.screen()
-            sr = screen.selected_row
-            tr = screen.find_row_containing(text)
-            if tr < 0:
-                if require:
-                    self._dump_on_fail(screen, f"row containing {text!r} not visible")
-                    raise Failure(f"row containing {text!r} not visible")
-                return None
-            if sr >= 0 and low in screen.rows[sr].lower():
-                return screen
-            if sr < 0:
-                self.tap(K_DOWN)
-                continue
-            if tr > sr:
-                self.tap(K_DOWN)
-            else:
-                self.tap(K_UP)
-        if require:
-            raise Failure(f"could not select row containing {text!r} within {max_steps} steps")
-        return None
+        """Move the highlight until the selected row contains `text`.
+
+        contains, not a prefix: the rows this suite selects carry more than the
+        entry name. The /ftp node draws "Ftp  Remote FTP Servers", and a host
+        alias is listed beside its address.
+        """
+        try:
+            self.browser.select_entry(text, max_steps=max_steps, contains=True)
+        except Failure:
+            if require:
+                self._dump_on_fail(self.screen(required=False),
+                                   f"row containing {text!r} not selectable")
+                raise
+            return None
+        return self.screen()
 
     def enter(self):
         self.tap(K_RIGHT, settle=MENU_SETTLE_SECONDS)
@@ -455,38 +440,35 @@ class MenuDriver:
     def open_context_menu(self):
         self.tap(K_RETURN, settle=MENU_SETTLE_SECONDS)
 
-    @staticmethod
-    def _selected_popup_row(screen):
-        """The highlighted item of any open popup: context menu, F5 Tasks menu,
-        New Host form or a nested Create submenu.
+    def select_context_action(self, text, max_steps=20):
+        """With a context popup open, highlight and activate the named action."""
+        self._navigate_popup(text, max_steps, "context")
 
-        All of them are framed windows, so the one shared rule already answers
-        this: find_selected_row_rest restricts its scan to the frontmost
-        frame, which is what separates the popup's own cursor from the browser
-        row highlighted underneath it. This used to carry a second heuristic
-        that took the marked run reaching furthest right, having first dropped
-        any run reaching the last column as the browser's. That works only
-        where the browser's highlight is the wider of the two. On an Ultimate
-        II+L the New Host form's Alias field was 10 marked cells against 30 on
-        the browser row behind it, and the browser row did not reach the last
-        column, so the browser row was returned and the form was never filled
-        in.
-        """
-        return screen.selected_row
+    def select_task_action(self, text, max_steps=24):
+        """With the F5 Tasks popup open, highlight and activate the named entry."""
+        self._navigate_popup(text, max_steps, "task")
 
     def _navigate_popup(self, text, max_steps, kind):
+        """Highlight one item of an open popup and activate it.
+
+        Browser.choose_overlay_item does this from a label list; here the
+        popup is already open and its labels have not been read, so the rows
+        are walked. find_selected_row_rest restricts its scan to the frontmost
+        frame, which is what separates the popup's own cursor from the browser
+        row highlighted underneath it.
+        """
         seen = False
         screen = None
         for _ in range(max_steps):
             screen = self.screen()
-            tr = screen.find_row_containing(text)
-            sr = self._selected_popup_row(screen)
-            if tr >= 0:
+            target_row = screen.find_row_containing(text)
+            selected = screen.selected_row
+            if target_row >= 0:
                 seen = True
-                if sr == tr:
+                if selected == target_row:
                     self.tap(K_RETURN, settle=MENU_SETTLE_SECONDS)
                     return
-                if sr < 0 or tr > sr:
+                if selected < 0 or target_row > selected:
                     self.tap(K_DOWN)
                 else:
                     self.tap(K_UP)
@@ -499,21 +481,16 @@ class MenuDriver:
         self._dump_on_fail(screen, f"{kind} item {text!r} not highlightable")
         raise Failure(f"could not highlight {kind} item {text!r} within {max_steps} steps")
 
-    def select_context_action(self, text, max_steps=20):
-        """With a context popup open, highlight and activate the named action."""
-        self._navigate_popup(text, max_steps, "context")
-
-    def select_task_action(self, text, max_steps=24):
-        """With the F5 Tasks popup open, highlight and activate the named entry."""
-        self._navigate_popup(text, max_steps, "task")
-
     # -- FTP-specific navigation ------------------------------------------
     def goto_top_browser(self, marker="Remote FTP Servers", max_up=8):
-        """Back out to the top-level file browser. The device reopens the menu
-        at its last position, so callers that need a root-level entry must
-        rewind. On cartridge-style firmware the menu button opens the Ultimate
-        main menu instead of the file browser, so descend into 'DISK FILE
-        BROWSER' when we land there (harmless on U64, where it is not present)."""
+        """Back out to the top-level file browser.
+
+        The device reopens the menu where it left it, so a caller that needs a
+        root-level entry must rewind. On cartridge-style firmware the menu
+        button opens the Ultimate main menu instead of the file browser, so
+        descend into "DISK FILE BROWSER" when we land there; that entry is not
+        present on a U64, where this is a no-op.
+        """
         self.open_menu()
         for _ in range(max_up):
             screen = self.screen()
@@ -584,8 +561,6 @@ class MenuDriver:
         back charged that path a rate it does not keep: measured on an Ultimate
         II+L in a C64 Ultimate, a 13-character host name was committed as
         "192.168" every time at the charged 0.06s a key and whole at 0.25s.
-        Waiting for the characters to arrive needs no rate at all, and costs a
-        machine that keeps up nothing.
         """
         deadline = time.monotonic() + self.FIELD_ARRIVAL_TIMEOUT_SECONDS
         while True:
@@ -599,11 +574,9 @@ class MenuDriver:
 
     def _form_fill_current(self, label, value):
         # The form opens on Alias and each committed field advances by one, so
-        # the "current" field matches our fixed order. Clear, edit, type, commit.
-        # A dropped/duplicated keystroke (device httpd churn) can corrupt a
-        # field, so verify against the screen and re-enter the field once. The
-        # cursor has advanced to the next field after commit; step back up to
-        # re-edit the field we just left.
+        # the "current" field matches our fixed order. Clear, edit, type,
+        # commit. A dropped or duplicated keystroke can corrupt a field, so the
+        # screen is read back and the field re-entered once.
         for attempt in range(2):
             if attempt == 0:
                 self.tap(K_HOME)                # clear selected field
@@ -638,7 +611,7 @@ class MenuDriver:
             self.tap(K_RETURN, settle=MENU_SETTLE_SECONDS)
 
     def _dump_on_fail(self, screen, reason):
-        if not self.verbose_menu:
+        if not self.verbose_menu or screen is None:
             return
         section(f"menu dump ({reason})")
         for i, r in enumerate(screen.rows):
@@ -648,9 +621,6 @@ class MenuDriver:
                f"selected_text={screen.selected_text!r}")
 
 
-# ---------------------------------------------------------------------------
-# ControlledFtpServer: pyftpdlib server with command log, fixtures and faults.
-# ---------------------------------------------------------------------------
 def deterministic_bytes(length):
     return bytes((i * 37 + 11) & 0xFF for i in range(length))
 
@@ -2206,6 +2176,9 @@ def main(argv=None):
             session.api.machine.reset(force=True, wait=False)
         fails = print_summary(ctx, crashed)
         server.cleanup()
+        # The Browser holds a backend of its own, so it is closed like every
+        # other session this suite opens.
+        best_effort("close the menu browser", driver.close)
 
     if crashed:
         suite_fail("ftp_client_test", "hard crash; manual recovery needed")
