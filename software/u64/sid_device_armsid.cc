@@ -99,6 +99,7 @@ SidDeviceArmSid :: ArmSidConfig :: ArmSidConfig(SidDeviceArmSid *parent, volatil
     set_change_hook(CFG_ARMSID_6581FILT_BASE, S_cfg_armsid_filt);
     set_change_hook(CFG_ARMSID_8580FILT_MAX,  S_cfg_armsid_filt);
     set_change_hook(CFG_ARMSID_8580FILT_BASE, S_cfg_armsid_filt);
+    set_effectuated();
 }
 
 void SidDeviceArmSid :: ArmSidConfig :: readParams(volatile uint8_t *base)
@@ -185,6 +186,7 @@ void SidDeviceArmSid :: ArmSidConfig :: effectuate()
     volatile uint8_t *base = parent->pre();
     S_effectuate(base, this);
     parent->post();
+    set_effectuated();
 }
 
 void SidDeviceArmSid :: ArmSidConfig :: write()

@@ -33,6 +33,7 @@ SidDevicePdSid::SidDevicePdSid(int socket, volatile uint8_t *base) : SidDevice(s
     // otherwise record 6581 for everyone. ArmSid reads its parameters at this
     // same point for the same reason.
     config->at_open_config();
+    config->set_effectuated();
 }
 
 void SidDevicePdSid :: SetSidType(int type)
@@ -78,6 +79,7 @@ void SidDevicePdSid::PdSidConfig :: effectuate(void)
         // menu enum is 0 = 6581, 1 = 8580; SetSidType takes 1 = 6581, 2 = 8580
         parent->SetSidType(i->getValue() + 1);
     }
+    set_effectuated();
 }
 
 int SidDevicePdSid::PdSidConfig:: S_cfg_pdsid_type(ConfigItem *it)

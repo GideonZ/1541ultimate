@@ -193,7 +193,7 @@ int NetworkInterface :: dhcp_change(ConfigItem *it)
 bool NetworkInterface :: start()
 {
 	memset(&my_net_if, 0, sizeof(my_net_if)); // clear the whole thing
-    effectuate_settings(); // this will set the IP address, netmask and gateway
+    effectuate_registered_settings(); // this will set the IP address, netmask and gateway
     my_net_if.state = this;
     netif_add(&my_net_if, &my_ip, &my_netmask, &my_gateway, this, lwip_init_callback, tcpip_input);
 
