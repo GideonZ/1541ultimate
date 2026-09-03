@@ -3375,6 +3375,20 @@ def main(argv: List[str]) -> int:
             else:
                 report.check_ok(changed or "already set")
 
+            # The computer's own drives answer on the same IEC bus and the
+            # same bus IDs as the cartridge's, and two devices answering as
+            # drive 8 breaks every action that goes through the bus while
+            # leaving every DMA action working.
+            report.step_start("cartridge: the computer's own drives are off")
+            try:
+                silenced = api_lib.ensure_host_drives_off(
+                    target, options.password, float(options.timeout))
+            except DEVICE_ERRORS as exc:
+                report.check_fail(str(exc))
+                return EXIT_SUITE_FAILED
+            else:
+                report.check_ok(silenced or "already off")
+
         results: List[Result] = []
         started = time.monotonic()
         stopped = False

@@ -2329,7 +2329,15 @@ def run_joystick_checks(session: RestInputSession) -> None:
                 {"kind": "joystick", "port": 2, "inputs": ["fire"], "transition": "tap"},
             ]
         )
-        if response["joysticks"][1]["inputs"] != ["up", "fire"]:
+        # A tap is released by the firmware on its own timer, and the response
+        # is built after the batch has been applied, so whether the tap is
+        # still in it depends on how long the request took. Measured on a C64
+        # Ultimate, the same batch came back as ['up'] once in nine runs and as
+        # ['up', 'fire'] the rest of the time. What this check is about is that
+        # the tap does not take the persistent press down with it, and that is
+        # what the reads below assert.
+        immediate = response["joysticks"][1]["inputs"]
+        if immediate not in (["up", "fire"], ["up"]):
             raise Failure(f"Expected immediate persistent/tap state, got {response}")
         time.sleep(0.2)
         assert_joystick_ports(session, 0x1F, 0x1E)

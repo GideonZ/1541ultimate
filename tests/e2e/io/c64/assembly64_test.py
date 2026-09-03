@@ -608,7 +608,8 @@ def select_row(device: Device, target: int, what: str) -> None:
         if current == target:
             return
         device.send_key("DOWN" if current < target else "UP")
-    raise Failure(f"{what}: the cursor never reached row {target}")
+    raise Failure(f"{what}: the cursor never reached row {target}; "
+                  f"screen was:\n{device.text()}")
 
 
 def enter_field(device: Device, label: str) -> None:
@@ -618,6 +619,49 @@ def enter_field(device: Device, label: str) -> None:
         raise Failure(f"the form has no {label!r} field")
     select_row(device, row, f"selecting {label!r}")
     device.send_key("ENTER")
+
+
+# An empty form field is drawn as a run of underscores, so what is read back
+# off the screen for one is not an empty string.
+FIELD_PLACEHOLDER_CHARS = "_ "
+
+
+def field_value(device: Device, label: str) -> str:
+    """What a form field currently shows, with its empty placeholder removed."""
+    row = row_of(device, label)
+    rows = device.rows() or []
+    if row is None or row >= len(rows):
+        return ""
+    text = strip_frame(rows[row]).split(label, 1)[-1]
+    return text.strip().strip(FIELD_PLACEHOLDER_CHARS).strip()
+
+
+def empty_field(device: Device, label: str, taps: int = 40,
+                attempts: int = 3) -> None:
+    """Leave a named form field empty, and confirm that it is.
+
+    KEY_CLEAR empties UIStringEdit's buffer whatever its length, so where the
+    transport can spell it this is one injected key instead of forty. On a
+    cartridge, where every key crosses the host's keyboard matrix, neither
+    spelling is reliable on its own: the field kept the previous check's text,
+    and the query that should have been refused as empty was sent as a real
+    search that took 46s to come back. So the field is read back and the other
+    spelling is tried, rather than a clear being assumed to have worked.
+    """
+    clear = getattr(device.backend, "clear_field_key", None)
+    for attempt in range(attempts):
+        enter_field(device, label)
+        if clear and attempt == 0:
+            device.send_key(clear)
+        else:
+            device.send_key_repeat("DEL", taps)
+        device.send_key("ENTER")
+        if not field_value(device, label):
+            return
+    raise Failure(
+        f"the {label!r} field still holds {field_value(device, label)!r} after "
+        f"{attempts} attempts to empty it"
+    )
 
 
 def submit_query(device: Device) -> None:
@@ -762,13 +806,15 @@ def scenario_overlong_and_empty(device: Device) -> None:
             # rather than leaving the device wedged for every check after.
             check_skip("submitting an empty query wedges the popup it raises; no known recovery over telnet")
         else:
-            enter_field(device, NAME_FIELD)
-            device.send_key_repeat("DEL", 40)
-            device.send_key("ENTER")
+            # Emptying the field is confirmed rather than assumed: a query
+            # that still holds the previous check's text is a real search,
+            # which takes tens of seconds to come back and reports no warning.
+            empty_field(device, NAME_FIELD)
             submit_query(device)
             if not wait_until(lambda: EMPTY_QUERY_MESSAGE in device.text(), QUERY_TIMEOUT):
                 raise Failure(
-                    f"submitting an empty query did not report {EMPTY_QUERY_MESSAGE!r}"
+                    f"submitting an empty query did not report "
+                    f"{EMPTY_QUERY_MESSAGE!r}; screen was:\n{device.text()}"
                 )
     with check("the warning is dismissed and the form is still usable"):
         if device.mode == MODE_TELNET:

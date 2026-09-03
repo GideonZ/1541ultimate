@@ -2540,13 +2540,26 @@ class Browser:
     def enter(self) -> None:
         self.press("RIGHT")
 
+    # Entering a directory is a keypress, and the header only says where the
+    # browser is once the firmware has read the new listing and repainted.
+    # Checking the header straight after the key read the previous directory
+    # on every attempt on an Ultimate II+L driven through a C64 Ultimate,
+    # where the same code passed on an Ultimate 64.
+    DESCEND_TIMEOUT_SECONDS = 5.0
+
     def descend(self, directory: str) -> None:
         for part in [p for p in directory.strip("/").split("/") if p]:
             self.select_entry(part)
             self.enter()
         expected = "/" + directory.strip("/") + "/"
-        if self.current_path() != expected:
-            raise Failure(f"expected {expected!r}, got {self.current_path()!r}")
+        deadline = time.monotonic() + self.DESCEND_TIMEOUT_SECONDS
+        while True:
+            current = self.current_path()
+            if current == expected:
+                return
+            if time.monotonic() >= deadline:
+                raise Failure(f"expected {expected!r}, got {current!r}")
+            time.sleep(0.15)
 
     def go_to_directory(self, directory: str) -> None:
         self.go_to_root()

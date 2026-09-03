@@ -174,6 +174,26 @@ MEASURE_FREES_ITS_BUFFER = _fix(
     "repeating an unsupported call does not exhaust the heap",
     (C64U,))
 
+# Measured with a socket probe against each machine, and the reason
+# browser-filesystem-refresh cannot watch a directory through FTP and Telnet at
+# the same time on a C64 Ultimate. Telnet and FTP are served from one pool, and
+# a passive transfer's data connection counts against it:
+#
+#     telnet 0 + 2 FTP controls + data   ok on c64u and u64
+#     telnet 0 + 3 FTP controls + data   reset on c64u, ok on u64
+#     telnet 1 + 1 FTP control  + data   ok on c64u and u64
+#     telnet 1 + 2 FTP controls + data   reset on c64u, ok on u64
+#
+# So a C64 Ultimate 1.2.0 serves three, an Ultimate 64 at least five. HTTP is a
+# separate pool and does not compete. A suite that holds a Telnet session and
+# reads a directory over FTP is already at three with nothing spare, and the
+# device resets whichever socket asked for the fourth.
+SERVES_FOUR_TELNET_FTP_SOCKETS = _fix(
+    "serves-four-telnet-ftp-sockets",
+    "Telnet and FTP together can hold four concurrent sockets, so a directory "
+    "can be watched over FTP while a Telnet session is open",
+    (C64U,))
+
 # Measured with tests/e2e/io/c64/freeze_menu_test.py, and the reason that
 # suite must not run without the fix: on firmware without it, opening the menu
 # while Interface Type is Freeze stops the device answering REST, ICMP and FTP
@@ -521,6 +541,29 @@ class Machine:
         intro speech (Tel_Jeroen)".
         """
         return 1 if self.kind == C64U else 3
+
+    @property
+    def rest_workers(self) -> int:
+        """How many REST calls this machine can be asked for at once.
+
+        Two machines are asked for one at a time, for different reasons.
+
+        An Ultimate II+ has no wired interface, so every call crosses its
+        wireless link. Measured on an Ultimate II+L in a C64 Ultimate: three
+        concurrent workers through a 77-route sweep took the cartridge off the
+        network entirely for several minutes, with ping getting no answer at
+        all, and it came back by itself as soon as the load stopped.
+
+        A C64 Ultimate 1.2.0 mixes two answers together under three workers.
+        Measured on the bench: a request for `/v1/help` came back with status
+        404 carrying another request's whole 200 response as its body, headers
+        and all. That is a firmware defect and asking for one call at a time
+        does not fix it, it only stops this sweep tripping over it; the checks
+        themselves all still run.
+
+        An Ultimate 64 answers three at a time and is unaffected.
+        """
+        return 1 if self.kind in (U2, C64U) else 3
 
     @property
     def task_menu_key(self) -> str:
