@@ -37,7 +37,6 @@ every check here skips, so the suite is safe to run against any image.
 import argparse
 import subprocess
 import sys
-import time
 from pathlib import Path
 
 # tests/lib holds the shared library; importing bootstrap adds tests/e2e/lib.
@@ -46,12 +45,13 @@ from pathlib import Path
 sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
                             if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
 import bootstrap  # noqa: E402,F401
+import leak  # noqa: E402
 import cli  # noqa: E402
 
 import api as api_lib  # noqa: E402  (needs tests/lib on sys.path first)
 import rest as rest_lib  # noqa: E402  (needs tests/lib on sys.path first)
 from report import (  # noqa: E402
-    Failure, check, check_ok, check_skip, check_start, detail, format_exception,
+    Failure, check_ok, check_skip, check_start, detail, format_exception,
     section, suite_fail, suite_ok)
 
 SUITE = (Path(__file__).resolve().parents[2]
@@ -70,10 +70,6 @@ TOLERANCE_BYTES_PER_OP = 250
 SETTLE_SECONDS = 8.0
 
 
-def heap_free(rest: rest_lib.RestClient) -> int:
-    return int(api_lib.MachineApi(rest).heap()["free"])
-
-
 def run_suite(host: str, password: str, timeout: float) -> None:
     """One full matrix run. A failing run is not a leak verdict, so it stops us."""
     result = subprocess.run(
@@ -88,37 +84,17 @@ def run_suite(host: str, password: str, timeout: float) -> None:
 
 def measure_slope(rest: rest_lib.RestClient, host: str, password: str,
                   timeout: float) -> bool:
-    section("the browser returns the heap it spends tracking file changes")
-
-    with check(f"warm up ({WARMUP} matrix run, one-time costs land here)"):
-        for _ in range(WARMUP):
-            run_suite(host, password, timeout)
-        time.sleep(SETTLE_SECONDS)
-
-    seen = {}
     try:
-        with check(f"free heap is flat across {MEASURED} more matrix runs"):
-            before = heap_free(rest)
-            for _ in range(MEASURED):
-                run_suite(host, password, timeout)
-            time.sleep(SETTLE_SECONDS)
-            after = heap_free(rest)
-            consumed = before - after
-            seen.update(before=before, after=after, consumed=consumed,
-                        per_op=consumed / MEASURED)
-            if seen["per_op"] > TOLERANCE_BYTES_PER_OP:
-                raise Failure(
-                    f"the browser leaks about {seen['per_op']:.0f} bytes per "
-                    f"matrix run ({consumed} bytes over {MEASURED} runs)")
-        ok = True
+        leak.slope(once=lambda: run_suite(host, password, timeout),
+                   heap=api_lib.MachineApi(rest).heap_free,
+                   warmup=WARMUP, iterations=MEASURED,
+                   tolerance_bytes_per_op=TOLERANCE_BYTES_PER_OP,
+                   unit="matrix run", settle_seconds=SETTLE_SECONDS,
+                   title="the browser returns the heap it spends tracking "
+                         "file changes")
+        return True
     except Failure:
-        ok = False
-    if seen:
-        detail(f"free before {seen['before']}, after {seen['after']}")
-        detail(f"consumed {seen['consumed']} bytes over {MEASURED} runs "
-               f"= {seen['per_op']:.0f} bytes/run "
-               f"(tolerance {TOLERANCE_BYTES_PER_OP})")
-    return ok
+        return False
 
 
 def main() -> int:

@@ -420,6 +420,20 @@ class MachineApi:
         return {name: int(payload.get(name, 0))
                 for name in ("free", "min_ever_free", "total")}
 
+    def heap_free(self) -> int:
+        """The free-heap figure the leak suites diff.
+
+        Five soak suites each defined this one-liner over `heap()`. It raises
+        rather than returning None on firmware without the endpoint, because a
+        caller measuring a slope has nothing to measure without it; a caller
+        deciding whether to skip asks `heap()` and reads the None.
+        """
+        reading = self.heap()
+        if reading is None:
+            raise Failure("machine:heap is not served by this firmware, so a "
+                          "heap slope cannot be measured")
+        return reading["free"]
+
     def menu_screen(self, timeout: float | None = None,
                     retries: int | None = None) -> bytes | None:
         """The rendered menu screen, or None when no menu is open (HTTP 404).

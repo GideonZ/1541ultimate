@@ -36,6 +36,7 @@ from pathlib import Path
 sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
                             if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
 import bootstrap  # noqa: E402,F401
+from selftest import expect  # noqa: E402
 import config_snapshot  # noqa: E402
 import profiles  # noqa: E402
 import health  # noqa: E402
@@ -152,11 +153,6 @@ def device(runner, answers, **kwargs):
     made.ensure_healthy = isolating(made.ensure_healthy)
     made.start_suite()
     return made
-
-
-def expect(label, actual, wanted):
-    if actual != wanted:
-        raise Failure(f"{label}: got {actual!r}, expected {wanted!r}")
 
 
 def run_exit_status_checks(runner):
@@ -412,29 +408,36 @@ def run_retry_checks(runner, tmpdir):
         made.ensure_healthy = ensure_healthy
         return made
 
-    with check("the default runs a failing suite exactly three times"):
+    def run(device_answers=None, *, device=None, **option_overrides):
+        """Reset the counter, build a device, and run the fixture suite once.
+
+        The four steps every check below repeats. `device_answers` are what
+        ensure_healthy returns in turn; pass a `device` instead to run against
+        one a check has already adjusted. Returns (result, device) so a check
+        can assert on either.
+        """
         reset()
-        made = device_that([(True, False)] * 5)
-        result = quietly(lambda: runner.run_suite(suite, made, options(), "", "fixture"))
+        made = (device if device is not None
+                else device_that(device_answers or [(True, False)] * 5))
+        result = quietly(
+            lambda: runner.run_suite(suite, made, options(**option_overrides),
+                                     "", "fixture"))
+        return result, made
+
+    with check("the default runs a failing suite exactly three times"):
+        result, made = run()
         expect("executions", executions(), 3)
         expect("attempts on the result", result.attempts, 3)
         expect("verdict", result.verdict, runner.report.FAIL)
 
     with check("--attempts counts executions, so 2 runs it twice"):
-        reset()
-        made = device_that([(True, False)] * 5)
-        result = quietly(lambda: runner.run_suite(suite, made,
-                                                  options(attempts=2), "",
-                                                  "fixture"))
+        result, made = run(attempts=2)
         expect("executions", executions(), 2)
         expect("attempts on the result", result.attempts, 2)
 
     with check("--attempts 1 and --no-retry both run it exactly once"):
         for attempts in (1, 1):
-            reset()
-            made = device_that([(True, False)] * 5)
-            result = quietly(lambda: runner.run_suite(
-                suite, made, options(attempts=attempts), "", "fixture"))
+            result, made = run(attempts=attempts)
             expect("executions", executions(), 1)
             expect("attempts on the result", result.attempts, 1)
 
@@ -442,9 +445,7 @@ def run_retry_checks(runner, tmpdir):
         # The rule this reverses: a suite that failed on a healthy device used
         # to stand as a failure and was never run again. Every failure is now
         # retried, whatever the device looked like.
-        reset()
-        made = device_that([(True, False)] * 5)
-        quietly(lambda: runner.run_suite(suite, made, options(), "", "fixture"))
+        _result, made = run()
         expect("executions", executions(), 3)
         expect("recoveries", made.recoveries, 0)
 
@@ -455,10 +456,7 @@ def run_retry_checks(runner, tmpdir):
         # by a health check and not by a recovery, because recovering for an
         # attempt that will never happen is a device action with no reason
         # behind it.
-        reset()
-        made = device_that([(True, True)] * 5)
-        result = quietly(lambda: runner.run_suite(suite, made, options(), "",
-                                                  "fixture"))
+        result, made = run([(True, True)] * 5)
         expect("executions", executions(), 3)
         expect("recoveries", result.recoveries, 2)
 
@@ -467,16 +465,14 @@ def run_retry_checks(runner, tmpdir):
         # failed from a device that could not be made healthy, which are
         # different exit statuses, and there is no following suite to find it
         # out when the last suite of a run is the one that failed.
-        reset()
-        made = device_that([(True, False)] * 5)
         asked = []
+        made = device_that([(True, False)] * 5)
 
         def health_problem(label, patient=True, extra=None, budget=None):
             asked.append(budget)
             return "gone"
         made.health_problem = health_problem
-        result = quietly(lambda: runner.run_suite(suite, made, options(), "",
-                                                  "fixture"))
+        result, made = run(device=made)
         expect("executions", executions(), 3)
         expect("device unhealthy", result.device_unhealthy, True)
         # A bounded wait rather than either of the usual two. Its answer
@@ -492,9 +488,7 @@ def run_retry_checks(runner, tmpdir):
                 f"recovery budget: {runner.LAST_ATTEMPT_HEALTH_BUDGET_SECONDS}")
 
     with check("a device that cannot be made healthy ends the run"):
-        reset()
-        made = device_that([(False, True)])
-        result = quietly(lambda: runner.run_suite(suite, made, options(), "", "fixture"))
+        result, made = run([(False, True)])
         expect("verdict", result.verdict, runner.report.FAIL)
         expect("device unhealthy", result.device_unhealthy, True)
 

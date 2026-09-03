@@ -764,6 +764,24 @@ def die(message: str) -> None:
     print(f"{colour(FAIL, RED)} {message}", file=sys.stderr, flush=True)
 
 
+def assert_or_warn(assertions_enabled: bool, condition: object,
+                   message: str) -> bool:
+    """Require `condition`, or only warn about it, and say which happened.
+
+    A suite run with assertions off is measuring rather than judging, and a
+    device that behaves differently is then a note beside the numbers. Three
+    suites had this, and the copies disagreed on what they returned: one gave
+    a bool, two gave None, so a caller ported between them lost its result and
+    read every check as passing. It returns the bool.
+    """
+    if condition:
+        return True
+    if assertions_enabled:
+        raise Failure(message)
+    warn(message)
+    return False
+
+
 def best_effort(label: str, action: Callable[[], object]) -> bool:
     """Run a teardown step, report what it could not do, and carry on.
 

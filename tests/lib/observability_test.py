@@ -77,6 +77,7 @@ import targets  # noqa: E402
 from api import UltimateApi  # noqa: E402
 from device_double import DeviceDouble  # noqa: E402
 from report import Failure  # noqa: E402
+from selftest import expect  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 RUNNER_PATH = os.path.join(ROOT, "run-tests")
@@ -152,11 +153,6 @@ def case(tier: int, *requirements: str, label: str = "", exclusive: bool = False
         return function
 
     return register
-
-
-def expect(what: str, actual, wanted) -> None:
-    if actual != wanted:
-        raise Failure(f"{what}: got {actual!r}, expected {wanted!r}")
 
 
 def load_runner():

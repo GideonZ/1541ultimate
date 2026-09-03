@@ -43,9 +43,9 @@ import rest as rest_lib
 import targets  # noqa: E402  (needs tests/lib on sys.path first)
 import wait  # noqa: E402  (needs tests/lib on sys.path first)
 from api import UltimateApi  # noqa: E402  (needs tests/lib on sys.path first)
-from report import (  # noqa: E402  (needs tests/lib on sys.path first)
+from report import (  assert_or_warn, # noqa: E402  (needs tests/lib on sys.path first)
     Failure, check_fail, check_ok, check_start, detail, section,
-    suite_fail, suite_ok, warn)
+    suite_fail, suite_ok)
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 # The two C64 programs this suite runs are committed as assembled PRGs, so the
@@ -151,14 +151,6 @@ def full_page_bitmap_params(emulation, page_height):
     rows = min(rows, 255)
     repeats = EPSON_FULL_WIDTH_REPEATS if emulation == "epson" else CBM_FULL_WIDTH_REPEATS
     return rows, repeats
-
-
-def assert_or_warn(assertions_enabled, condition, message):
-    if condition:
-        return
-    if assertions_enabled:
-        raise Failure(message)
-    warn(message)
 
 
 class U64Client:

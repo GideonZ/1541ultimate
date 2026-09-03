@@ -69,7 +69,7 @@ import targets  # noqa: E402  (needs tests/lib on sys.path first)
 from ui_backend import (  # noqa: E402  (needs tests/e2e/lib first)
     char_to_combo, find_selected_row_rest, measure_cursor_colour)
 from api import UltimateApi  # noqa: E402  (needs tests/lib on sys.path first)
-from report import (  # noqa: E402  (needs tests/lib on sys.path first)
+from report import (  assert_or_warn, # noqa: E402  (needs tests/lib on sys.path first)
     Failure, best_effort, check_count, check_fail, check_ok, check_start, check_warn, detail, last_label,
     section, suite_fail, suite_ok, warn)
 
@@ -107,15 +107,6 @@ K_DEL = ["inst_del"]
 K_F2 = ["left_shift", "f1"]
 
 # Printable char -> matrix key names. Letters/digits map directly (quick-type);
-def assert_or_warn(assertions_enabled, condition, message):
-    if condition:
-        return True
-    if assertions_enabled:
-        raise Failure(message)
-    warn(message)
-    return False
-
-
 # ---------------------------------------------------------------------------
 # RestSession: http.client, Connection: close, X-Password only when supplied.
 # ---------------------------------------------------------------------------

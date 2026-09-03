@@ -25,17 +25,13 @@ from pathlib import Path
 sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
                             if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
 import bootstrap  # noqa: E402,F401
+from selftest import expect  # noqa: E402
 
 import navigation  # noqa: E402
 from report import (  # noqa: E402
     Failure, add_colour_argument, apply_colour, check, detail, suite_fail, suite_ok)
 
 import ui_backend  # noqa: E402
-
-
-def expect(label, actual, wanted):
-    if actual != wanted:
-        raise Failure(f"{label}: got {actual!r}, expected {wanted!r}")
 
 
 class RecordingBackend(ui_backend.Backend):

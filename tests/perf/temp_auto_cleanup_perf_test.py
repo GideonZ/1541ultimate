@@ -32,7 +32,7 @@ import cli  # noqa: E402
 import ftp as ftp_lib
 import rest as rest_lib
 from api import UltimateApi
-from report import detail, progress, progress_done, section, suite_fail, suite_ok, warn
+from report import assert_or_warn, detail, progress, progress_done, section, suite_fail, suite_ok, warn
 
 SUITE = "temp_auto_cleanup_perf_test"
 CONFIG_CATEGORY = "User Interface Settings"
@@ -87,14 +87,6 @@ def managed_upload_dirs(subfolder):
     if subfolder == "Enabled":
         return ("/Temp/cache/upload", "/Temp/upload")
     return ("/Temp", "/Temp/upload")
-
-
-def assert_or_warn(assertions_enabled, condition, message):
-    if condition:
-        return
-    if assertions_enabled:
-        raise RuntimeError(message)
-    warn(message)
 
 
 @dataclass

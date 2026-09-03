@@ -149,6 +149,10 @@ def main() -> int:
     stats = {}
 
     try:
+        # Not tests/lib/leak.py: seed_and_enter opens one FTP session for a
+        # whole range of images, and calling it per image would open twenty
+        # sessions instead of one and measure their cost as well. The method is
+        # the same one leak.slope implements; the batching is what differs.
         section("entering one image after another")
         with check(f"fill the mount cache ({WARMUP} images, the working set is paid for here)"):
             seed_and_enter(args.host, password, warm)

@@ -30,9 +30,10 @@ import bootstrap  # noqa: E402,F401
 import cli  # noqa: E402
 import api as api_lib  # noqa: E402  (needs tests/lib on sys.path first)
 import ftp as ftp_lib  # noqa: E402  (needs tests/lib on sys.path first)
+import leak  # noqa: E402
 import rest as rest_lib  # noqa: E402  (needs tests/lib on sys.path first)
 from report import (  # noqa: E402
-    Failure, best_effort, check, check_ok, check_skip, check_start, detail, format_exception,
+    Failure, best_effort, check_ok, check_skip, check_start, detail, format_exception,
     section, suite_fail, suite_ok)
 
 # A disk image is the cheapest REST call that allocates a large buffer, which
@@ -66,7 +67,7 @@ class Device:
         self.rest = rest_lib.RestClient(host, password, timeout)
 
     def heap_free(self) -> int:
-        return int(api_lib.MachineApi(self.rest).heap()["free"])
+        return api_lib.MachineApi(self.rest).heap_free()
 
     def heap_available(self) -> bool:
         """Whether this firmware has the endpoint at all.
@@ -110,40 +111,22 @@ def cleanup(host: str, password: str | None, directory: str, names) -> int:
 
 def run_create_d64_slope(dev: Device, directory: str) -> bool:
     """Repeat create_d64 and require the heap to come back each time."""
-    section("create_d64 returns the heap it borrows")
     created = []
-    try:
-        with check(f"warm up ({WARMUP} images, one-time costs land here)"):
-            for i in range(WARMUP):
-                name = f"leakw{i}.d64"
-                dev.create_d64(directory, name)
-                created.append(name)
 
-        measured = {}
-        try:
-            with check(f"free heap is flat across {MEASURED} more images"):
-                before = dev.heap_free()
-                for i in range(MEASURED):
-                    name = f"leakm{i}.d64"
-                    dev.create_d64(directory, name)
-                    created.append(name)
-                after = dev.heap_free()
-                consumed = before - after
-                measured.update(before=before, after=after, consumed=consumed,
-                                per_op=consumed / MEASURED)
-                if measured["per_op"] > TOLERANCE_BYTES_PER_OP:
-                    raise Failure(
-                        f"create_d64 leaks about {measured['per_op']:.0f} bytes per "
-                        f"call ({consumed} bytes over {MEASURED} calls)")
-            ok = True
-        except Failure:
-            ok = False
-        if measured:
-            detail(f"free before {measured['before']}, after {measured['after']}")
-            detail(f"consumed {measured['consumed']} bytes over {MEASURED} images "
-                   f"= {measured['per_op']:.0f} bytes/image "
-                   f"(tolerance {TOLERANCE_BYTES_PER_OP})")
-        return ok
+    def once() -> None:
+        name = f"leak{len(created)}.d64"
+        dev.create_d64(directory, name)
+        created.append(name)
+
+    try:
+        leak.slope(once=once, heap=dev.heap_free, warmup=WARMUP,
+                   iterations=MEASURED,
+                   tolerance_bytes_per_op=TOLERANCE_BYTES_PER_OP,
+                   unit="image",
+                   title="create_d64 returns the heap it borrows")
+        return True
+    except Failure:
+        return False
     finally:
         removed = cleanup(dev.host, dev.password, directory, created)
         detail(f"removed {removed} of {len(created)} images created by this suite")

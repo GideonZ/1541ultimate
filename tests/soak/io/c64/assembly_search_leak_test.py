@@ -41,7 +41,6 @@ third-party outage as a firmware defect.
 import argparse
 import os
 import sys
-import time
 from pathlib import Path
 
 # tests/lib holds the shared library; importing bootstrap adds tests/e2e/lib.
@@ -50,13 +49,14 @@ from pathlib import Path
 sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
                             if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
 import bootstrap  # noqa: E402,F401
+import leak  # noqa: E402
 import cli  # noqa: E402
 sys.path.insert(0, bootstrap.directory("e2e", "io", "c64"))
 
 import api as api_lib  # noqa: E402  (needs tests/lib on sys.path first)
 import rest as rest_lib  # noqa: E402  (needs tests/lib on sys.path first)
 from report import (  # noqa: E402
-    Failure, best_effort, check, check_ok, check_skip, check_start, detail, format_exception,
+    Failure, best_effort, check_ok, check_skip, check_start, detail, format_exception,
     section, suite_fail, suite_ok, suite_skip)
 from menu import wait_until  # noqa: E402
 from ui_backend import add_mode_argument, make_backend  # noqa: E402
@@ -82,10 +82,6 @@ QUERY_MEASURED = 5
 QUERY_TOLERANCE_BYTES_PER_OP = 2000
 
 SETTLE_SECONDS = 6.0
-
-
-def heap_free(rest: rest_lib.RestClient) -> int:
-    return int(api_lib.MachineApi(rest).heap()["free"])
 
 
 def open_and_leave(device) -> None:
@@ -129,36 +125,15 @@ def query_and_open_entry(device) -> bool:
 def measure(rest: rest_lib.RestClient, title: str, once, warmup: int,
             measured: int, tolerance: int, unit: str) -> bool:
     """Warm up, then require the free heap to be flat over `measured` runs."""
-    section(title)
-
-    with check(f"warm up ({warmup} {unit}, one-time costs land here)"):
-        for _ in range(warmup):
-            once()
-        time.sleep(SETTLE_SECONDS)
-
-    seen = {}
     try:
-        with check(f"free heap is flat across {measured} more {unit}"):
-            before = heap_free(rest)
-            for _ in range(measured):
-                once()
-            time.sleep(SETTLE_SECONDS)
-            after = heap_free(rest)
-            consumed = before - after
-            seen.update(before=before, after=after, consumed=consumed,
-                        per_op=consumed / measured)
-            if seen["per_op"] > tolerance:
-                raise Failure(
-                    f"{title} leaks about {seen['per_op']:.0f} bytes per "
-                    f"iteration ({consumed} bytes over {measured})")
-        ok = True
+        leak.slope(once=once, heap=api_lib.MachineApi(rest).heap_free,
+                   warmup=warmup, iterations=measured,
+                   tolerance_bytes_per_op=tolerance,
+                   unit=unit.rstrip("s"), units=unit,
+                   settle_seconds=SETTLE_SECONDS, title=title)
+        return True
     except Failure:
-        ok = False
-    if seen:
-        detail(f"free before {seen['before']}, after {seen['after']}")
-        detail(f"consumed {seen['consumed']} bytes over {measured} {unit} "
-               f"= {seen['per_op']:.0f} bytes each (tolerance {tolerance})")
-    return ok
+        return False
 
 
 def main() -> int:

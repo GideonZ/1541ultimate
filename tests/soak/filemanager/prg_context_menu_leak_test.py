@@ -23,7 +23,6 @@ every check here skips, so the suite is safe to run against any image.
 
 import argparse
 import sys
-import time
 from pathlib import Path
 
 # tests/lib holds the shared library; importing bootstrap adds tests/e2e/lib.
@@ -32,6 +31,7 @@ from pathlib import Path
 sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
                             if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
 import bootstrap  # noqa: E402,F401
+import leak  # noqa: E402
 import cli  # noqa: E402
 sys.path.insert(0, bootstrap.directory("e2e", "api"))
 sys.path.insert(0, bootstrap.directory("e2e", "filemanager"))
@@ -59,10 +59,6 @@ SETTLE_SECONDS = 6.0
 TOLERANCE_BYTES_PER_OP = 1500
 
 
-def heap_free(rest: rest_lib.RestClient) -> int:
-    return int(api_lib.MachineApi(rest).heap()["free"])
-
-
 def run_once(machine, fixtures) -> None:
     """One full browser Run: reset, descend to the PRG, pick Run, see it run."""
     ctx.run_action_run(machine, fixtures, ctx.open_plain_prg)
@@ -70,37 +66,16 @@ def run_once(machine, fixtures) -> None:
 
 
 def measure_slope(rest: rest_lib.RestClient, machine, fixtures) -> bool:
-    section("the browser's Run action returns the heap it borrows")
-
-    with check(f"warm up ({WARMUP} runs, one-time costs land here)"):
-        for _ in range(WARMUP):
-            run_once(machine, fixtures)
-        time.sleep(SETTLE_SECONDS)
-
-    measured = {}
     try:
-        with check(f"free heap is flat across {MEASURED} more Run actions"):
-            before = heap_free(rest)
-            for _ in range(MEASURED):
-                run_once(machine, fixtures)
-            time.sleep(SETTLE_SECONDS)
-            after = heap_free(rest)
-            consumed = before - after
-            measured.update(before=before, after=after, consumed=consumed,
-                            per_op=consumed / MEASURED)
-            if measured["per_op"] > TOLERANCE_BYTES_PER_OP:
-                raise Failure(
-                    f"the Run context-menu action leaks about {measured['per_op']:.0f} "
-                    f"bytes per invocation ({consumed} bytes over {MEASURED} runs)")
-        ok = True
+        leak.slope(once=lambda: run_once(machine, fixtures),
+                   heap=api_lib.MachineApi(rest).heap_free,
+                   warmup=WARMUP, iterations=MEASURED,
+                   tolerance_bytes_per_op=TOLERANCE_BYTES_PER_OP,
+                   unit="run", settle_seconds=SETTLE_SECONDS,
+                   title="the browser's Run action returns the heap it borrows")
+        return True
     except Failure:
-        ok = False
-    if measured:
-        detail(f"free before {measured['before']}, after {measured['after']}")
-        detail(f"consumed {measured['consumed']} bytes over {MEASURED} runs "
-               f"= {measured['per_op']:.0f} bytes/run "
-               f"(tolerance {TOLERANCE_BYTES_PER_OP})")
-    return ok
+        return False
 
 
 def main() -> int:

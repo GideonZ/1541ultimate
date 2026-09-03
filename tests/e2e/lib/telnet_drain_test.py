@@ -35,6 +35,8 @@ import bootstrap  # noqa: E402,F401
 
 import band  # noqa: E402  (needs this directory on sys.path first)
 import pacing  # noqa: E402  (needs tests/lib on sys.path first)
+import selftest  # noqa: E402
+from selftest import expect  # noqa: E402
 from report import Failure, check, suite_fail, suite_ok  # noqa: E402
 from ui_backend import TelnetBackend, VT100Screen  # noqa: E402
 
@@ -89,13 +91,8 @@ def drain(bursts, expect_redraw, expect_settle=False, timeout=20.0):
 
 
 def expect_near(label, actual, wanted):
-    if abs(actual - wanted) > TOLERANCE_SECONDS:
-        raise Failure(f"{label}: took {actual:.2f}s, expected about {wanted:.2f}s")
-
-
-def expect(label, actual, wanted):
-    if actual != wanted:
-        raise Failure(f"{label}: got {actual!r}, expected {wanted!r}")
+    """The drain timings, against this module's one tolerance."""
+    selftest.expect_near(label, actual, wanted, TOLERANCE_SECONDS)
 
 
 def astuple_of(layout):
