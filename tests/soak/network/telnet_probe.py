@@ -753,7 +753,12 @@ def incomplete_operations(surface: ProbeSurface) -> tuple[tuple[str, Callable[[R
     )
     if surface == ProbeSurface.READ:
         return operations
-    return (*operations, ("telnet_audio_mixer_abort", lambda settings: abort_after_sequence(settings, TELNET_KEY_F2, TELNET_KEY_DOWN, TELNET_KEY_ENTER)), ("telnet_right_arrow_abort", lambda settings: abort_after_sequence(settings, TELNET_KEY_F2, TELNET_KEY_RIGHT)), ("telnet_f2_abort", lambda settings: abort_after_sequence(settings, TELNET_KEY_F2)))
+    return (
+        *operations,
+        ("telnet_audio_mixer_abort", lambda settings: abort_after_sequence(settings, TELNET_KEY_F2, TELNET_KEY_DOWN, TELNET_KEY_ENTER)),
+        ("telnet_right_arrow_abort", lambda settings: abort_after_sequence(settings, TELNET_KEY_F2, TELNET_KEY_RIGHT)),
+        ("telnet_f2_abort", lambda settings: abort_after_sequence(settings, TELNET_KEY_F2)),
+    )
 
 
 def run_open_surface_operation(
@@ -903,7 +908,11 @@ def surface_operations(
         return (("telnet_smoke_connect", lambda settings, session: session_smoke_connect(session)),)
     if surface == ProbeSurface.READ:
         return read_operations
-    return (*read_operations, ("set_vol_ultisid_1_0_db", lambda settings, session: session_write_audio_mixer_item(settings, session, "0 dB", shared_state=shared_state)), ("set_vol_ultisid_1_plus_1_db", lambda settings, session: session_write_audio_mixer_item(settings, session, "+1 dB", shared_state=shared_state)))
+    return (
+        *read_operations,
+        ("set_vol_ultisid_1_0_db", lambda settings, session: session_write_audio_mixer_item(settings, session, "0 dB", shared_state=shared_state)),
+        ("set_vol_ultisid_1_plus_1_db", lambda settings, session: session_write_audio_mixer_item(settings, session, "+1 dB", shared_state=shared_state)),
+    )
 
 
 def run_probe(

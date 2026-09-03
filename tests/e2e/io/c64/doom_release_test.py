@@ -48,7 +48,6 @@ import time
 import urllib.request
 from pathlib import Path
 
-SCRIPT_DIR = Path(__file__).resolve().parent
 # tests/lib holds the shared library; importing bootstrap adds tests/e2e/lib.
 # The search walks up rather than counting directories, so this is the same in
 # every entry point and a suite that moves needs no edit. See tests/lib/bootstrap.py.

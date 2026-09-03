@@ -20,8 +20,11 @@ the manual suite cannot drift away from the gate suite it shares a fixture
 with.
 
 Each suite keeps its own file names, its own .cfg text, its own assertions and
-its own profile. The names stay per-suite so a run that dies part-way leaves a
-file only its own next run overwrites. This is the fixture, not the test.
+its own profile, so a run that dies part-way leaves a file its own next run
+overwrites rather than one shared across four. The exception is
+cfg_partial_effectuate_test.py, which deliberately reuses
+cfg_single_group_test.py's fixture and names because it asserts a second thing
+about the same load. This is the fixture, not the test.
 """
 
 from __future__ import annotations

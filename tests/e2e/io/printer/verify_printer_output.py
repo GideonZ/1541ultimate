@@ -80,7 +80,12 @@ def verify_one(host, user, password, path, is_ascii):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    cli.add_device_arguments(parser, colour=False)
+    # Only -H: this reads the printer's output over FTP with --ftp-user and
+    # --ftp-password, and takes no REST password or per-call budget.
+    parser.add_argument(
+        "-H", "--host", default=cli.host_default(),
+        help=f"Device, or a cartridge@computer target "
+             f"(default: ${cli.DEFAULT_HOST_ENV}, else {cli.FALLBACK_HOST})")
     parser.add_argument("--ftp-user", default=FTP_USER_DEFAULT)
     parser.add_argument("--ftp-password", default=ftp_lib.FTP_DEFAULT_PASSWORD)
     parser.add_argument("--output-base", help="Printer output file base, e.g. /Usb0/printer/e2e-abc")

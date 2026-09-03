@@ -68,7 +68,6 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
-ROOT = Path(__file__).resolve().parents[4]
 # tests/lib holds the shared library; importing bootstrap adds tests/e2e/lib.
 # The search walks up rather than counting directories, so this is the same in
 # every entry point and a suite that moves needs no edit. See tests/lib/bootstrap.py.

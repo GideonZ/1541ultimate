@@ -95,6 +95,11 @@ def add_device_arguments(parser: argparse.ArgumentParser, *,
 
     `colour` is on by default because every suite here reports through
     `report.py`, and off for a parser that already registered it itself.
+    `timeout=None` registers no `-t` at all, for a suite that does not take a
+    per-call budget: `printer_test.py` already had a `--timeout-seconds` for
+    its page budget, and adding `-t/--timeout` beside it made
+    `--timeout 240` set a value nothing reads while leaving the page budget at
+    its default, because argparse prefers an exact match to a prefix.
     """
     parser.add_argument(
         "-H", "--host", default=host_default(host or FALLBACK_HOST),
@@ -103,13 +108,11 @@ def add_device_arguments(parser: argparse.ArgumentParser, *,
     parser.add_argument(
         "-p", "--password", default=password_default(password),
         help=f"REST and FTP password (default: ${DEFAULT_PASSWORD_ENV}, else none)")
-    parser.add_argument(
-        "-t", "--timeout", type=float,
-        default=timeout_default(FALLBACK_TIMEOUT_SECONDS if timeout is None
-                                else timeout),
-        help=f"Seconds to wait for one device call "
-             f"(default: ${DEFAULT_TIMEOUT_ENV}, else "
-             f"{FALLBACK_TIMEOUT_SECONDS if timeout is None else timeout})")
+    if timeout is not None:
+        parser.add_argument(
+            "-t", "--timeout", type=float, default=timeout_default(timeout),
+            help=f"Seconds to wait for one device call "
+                 f"(default: ${DEFAULT_TIMEOUT_ENV}, else {timeout})")
     if colour:
         import report
 

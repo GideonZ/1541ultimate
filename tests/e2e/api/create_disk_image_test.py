@@ -167,7 +167,7 @@ class SuiteRunner:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    cli.add_device_arguments(parser, password=None, colour=False)
+    cli.add_device_arguments(parser, password=None, colour=False, timeout=None)
     args = parser.parse_args()
 
     runner = SuiteRunner(args)

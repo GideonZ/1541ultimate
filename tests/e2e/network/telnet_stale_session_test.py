@@ -296,7 +296,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description="Red/green E2E for the telnet half-open session leak "
                     "(needs sudo on ip for the vanishing-peer alias).")
-    cli.add_device_arguments(parser, colour=False)
+    cli.add_device_arguments(parser, colour=False, timeout=None)
     parser.add_argument("--iface", default=None,
                         help="LAN interface for the throwaway victim IP "
                              "(default: the interface that routes to the device)")

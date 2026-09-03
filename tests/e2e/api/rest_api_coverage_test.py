@@ -1215,35 +1215,48 @@ class SuiteRunner:
         must not bury the reason the suite failed. report.best_effort keeps that
         property and writes down what it could not put back, so the next suite's
         failure can be traced to this one.
+
+        Every step is attempted whatever the ones before it did. They restore
+        different things - the drive, a category, the scratch directory - and
+        one that cannot be put back is not a reason to leave the others
+        changed. `Skip` is this module's own exception and is not a device
+        fault, so best_effort lets it through; it is caught here rather than
+        being allowed to end the sequence.
         """
-        best_effort("resume the machine", self.api.machine.resume)
-        best_effort("stop the debug stream",
-                    lambda: self.api.rest.request("PUT", "/v1/streams/debug:stop"))
-        best_effort("unlink drive a", lambda: self.api.drives.unlink("a"))
+        def step(label, action):
+            try:
+                best_effort(label, action)
+            except Skip as exc:
+                detail(f"teardown: {label}: {exc}")
+
+        step("resume the machine", self.api.machine.resume)
+        step("stop the debug stream",
+             lambda: self.api.rest.request("PUT", "/v1/streams/debug:stop"))
+        step("unlink drive a", lambda: self.api.drives.unlink("a"))
         if self.restore_drive is not None:
             enabled, mode, image = self.restore_drive
-            best_effort(f"restore drive a mode {mode}",
-                        lambda: self.api.drives.set_mode("a", mode))
-            best_effort(f"restore drive a {'on' if enabled else 'off'}",
-                        lambda: (self.api.drives.on if enabled else self.api.drives.off)("a"))
+            step(f"restore drive a mode {mode}",
+                 lambda: self.api.drives.set_mode("a", mode))
+            step(f"restore drive a {'on' if enabled else 'off'}",
+                 lambda: (self.api.drives.on if enabled else self.api.drives.off)("a"))
             if image:
-                best_effort(f"remount {image} on drive a",
-                            lambda: self.api.drives.mount("a", image))
+                step(f"remount {image} on drive a",
+                     lambda: self.api.drives.mount("a", image))
         if self.restore_config:
-            best_effort(f"restore the {self.restore_config_category} category",
-                        lambda: self.restore_category(
-                            Ctx(self.api, self), self.restore_config_category,
-                            self.restore_config))
+            step(f"restore the {self.restore_config_category} category",
+                 lambda: self.restore_category(
+                     Ctx(self.api, self), self.restore_config_category,
+                     self.restore_config))
         if self._config_target is not None:
             category, item, value = self._config_target
-            best_effort(f"restore {category}/{item}",
-                        lambda: self.api.configs.set(category, item, value))
+            step(f"restore {category}/{item}",
+                 lambda: self.api.configs.set(category, item, value))
         if self._reset_category is not None and self._reset_snapshot:
-            best_effort(f"restore the {self._reset_category} category",
-                        lambda: self.restore_category(
-                            Ctx(self.api, self), self._reset_category,
-                            self._reset_snapshot))
-        best_effort("remove the scratch directory", self._remove_scratch)
+            step(f"restore the {self._reset_category} category",
+                 lambda: self.restore_category(
+                     Ctx(self.api, self), self._reset_category,
+                     self._reset_snapshot))
+        step("remove the scratch directory", self._remove_scratch)
 
     def _remove_scratch(self) -> None:
         with ftp_lib.session(self.args.host, self.args.password) as client:
@@ -1253,7 +1266,7 @@ class SuiteRunner:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    cli.add_device_arguments(parser, password=None, colour=False)
+    cli.add_device_arguments(parser, password=None, colour=False, timeout=None)
     parser.add_argument("-r", "--repeat", type=int, default=DEFAULT_REPEAT,
                         help="how many times each case runs (default: %(default)s)")
     parser.add_argument("--order", choices=("concurrent", "sequential"),

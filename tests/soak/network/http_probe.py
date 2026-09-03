@@ -317,7 +317,13 @@ def surface_operations(
     if surface == ProbeSurface.READ:
         return read_operations
     probe_write_address = _runner_probe_write_address(runner_id)
-    operations = (*read_operations, ("mem_write_probe_a5", lambda settings: memory_write_verify(settings, probe_write_address, "A5")), ("mem_write_probe_5a", lambda settings: memory_write_verify(settings, probe_write_address, "5A")), ("set_vol_ultisid_1_0_db", lambda settings: write_audio_mixer_item(settings, "0 dB", shared_state=shared_state)), ("set_vol_ultisid_1_plus_1_db", lambda settings: write_audio_mixer_item(settings, "+1 dB", shared_state=shared_state)))
+    operations = (
+        *read_operations,
+        ("mem_write_probe_a5", lambda settings: memory_write_verify(settings, probe_write_address, "A5")),
+        ("mem_write_probe_5a", lambda settings: memory_write_verify(settings, probe_write_address, "5A")),
+        ("set_vol_ultisid_1_0_db", lambda settings: write_audio_mixer_item(settings, "0 dB", shared_state=shared_state)),
+        ("set_vol_ultisid_1_plus_1_db", lambda settings: write_audio_mixer_item(settings, "+1 dB", shared_state=shared_state)),
+    )
     return operations
 
 

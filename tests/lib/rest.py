@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import http.client
 import json
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -120,19 +121,38 @@ class _TrackedConnection(http.client.HTTPConnection):
 
 
 class _TrackingHandler(urllib.request.HTTPHandler):
-    """An HTTP handler that hands back the connections it made."""
+    """An HTTP handler that hands back the connections it made.
 
-    def __init__(self, made: list[_TrackedConnection]) -> None:
-        super().__init__()
-        self._made = made
+    The connections are collected per thread rather than per handler, because
+    one opener is shared by the whole process: building one costs about 20ms,
+    almost all of it `ssl.create_default_context()` inside `HTTPSHandler`,
+    which this tree never uses because every device URL is http. Doing that per
+    request made a REST call 25 times more expensive on the host side and would
+    have shown up in the medians tests/perf/rest_latency_perf_test.py reports
+    and the pacing constants derived from them.
+    """
+
+    _connections = threading.local()
+
+    @classmethod
+    def made(cls) -> list[_TrackedConnection]:
+        """The connections this thread has opened since it last cleared them."""
+        if not hasattr(cls._connections, "made"):
+            cls._connections.made = []
+        return cls._connections.made
 
     def http_open(self, req):
         def open_connection(*args, **kwargs) -> _TrackedConnection:
             connection = _TrackedConnection(*args, **kwargs)
-            self._made.append(connection)
+            _TrackingHandler.made().append(connection)
             return connection
 
         return self.do_open(open_connection, req)
+
+
+# One opener for the process: it holds no per-request state, and the tracking
+# it adds is thread-local.
+_OPENER = urllib.request.build_opener(_TrackingHandler())
 
 
 def may_retry(method: str, request_sent: bool, idempotent: bool = False) -> bool:
@@ -529,10 +549,10 @@ class RestClient:
         outbound = message_bytes(f"{method.upper()} {target} HTTP/1.1",
                                  sent_headers, body)
         # The connections this call makes, read after a failure to tell a
-        # refused connection from a body that was part-way out. One opener for
-        # every attempt; the list is emptied before each.
-        made: list[_TrackedConnection] = []
-        opener = urllib.request.build_opener(_TrackingHandler(made))
+        # refused connection from a body that was part-way out. Thread-local
+        # and emptied before each attempt, so a concurrent caller's connections
+        # are never in this list.
+        made = _TrackingHandler.made()
         for attempt in range(allowed):
             made.clear()
             started = time.monotonic()
@@ -540,7 +560,7 @@ class RestClient:
                                       params=as_text(params) if params else None,
                                       sent=outbound, connection="new")
             try:
-                with opener.open(
+                with _OPENER.open(
                         request, timeout=self.timeout if timeout is None else timeout) as response:
                     answer = (response.status, dict(response.headers.items()),
                               response.read())

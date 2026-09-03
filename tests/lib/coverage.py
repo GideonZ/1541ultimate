@@ -127,7 +127,6 @@ def render_static(cover: Coverage, width: int = 30) -> str:
 
 
 def static_payload(cover: Coverage) -> dict:
-    {s.name: s for s in cover.suites}
     return {
         "default_profile": profiles.DEFAULT,
         "order": list(cover.names),

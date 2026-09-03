@@ -48,7 +48,7 @@ from report import Failure, check, detail, suite_fail, suite_ok  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 RUNNER_PATH = os.path.join(ROOT, "run-tests")
-SEARCHED = ("tests/e2e", "tests/perf", "tests/soak")
+SEARCHED = ("tests/lib", "tests/e2e", "tests/perf", "tests/soak")
 
 NAME = "registry_test"
 
@@ -59,12 +59,9 @@ TOKENS = {"@HOST@", "@PASS@", "@TIMEOUT@", "@MODE@", "@SOAKPROFILE@"}
 # Suites the registry deliberately does not carry, each with the reason. A file
 # ending in _test.py that is not a suite belongs here rather than in the
 # registry, so that "not registered" always means "nobody can run it".
-NOT_SUITES = {
-    # Registered under tests/lib rather than under the directories searched
-    # here; they check the tree or the build, not the device.
-    "tests/lib/lint_test.py": "registered from tests/lib",
-    "tests/lib/registry_test.py": "this file",
-}
+# A file ending in _test.py that no profile should select, each with its
+# reason. Everything else under SEARCHED has to be in the registry.
+NOT_SUITES: dict[str, str] = {}
 
 # tests/lib/bootstrap.py is the one place that may compute a path into the
 # tree. Everywhere else, a sys.path line has to be one of these two shapes.
@@ -79,6 +76,9 @@ OWN_DEVICE_ARGUMENTS = {
     "tests/lib/cli.py": "defines them",
     "tests/e2e/api/openapi_contract_test.py": "-H is required, with no default",
     "tests/e2e/lib/ui_state.py": "-H is required, with no default",
+    "tests/e2e/io/printer/verify_printer_output.py":
+        "reads the printer's output over FTP, so it takes --ftp-password "
+        "rather than a REST password, and no per-call budget",
     "tests/e2e/av/stream_test.py":
         "addresses the stream source, so U64_C64_HOST comes first",
     "tests/e2e/u64ctrl/power_cycle_test.py": "defaults to the computer, c64u",
@@ -365,7 +365,7 @@ def main():
                 for line, flag in own_device_arguments(relative):
                     private.append(
                         f"{relative}:{line} registers {flag} itself; use "
-                        "cli.add_device_arguments(parser), or name the file in "
+                        "cli.add_device_arguments(parser, timeout=None), or name the file in "
                         "OWN_DEVICE_ARGUMENTS with the reason")
             if private:
                 report_all(private)

@@ -43,7 +43,12 @@ class Slope:
 
     @property
     def consumed(self) -> int:
-        """Bytes the run did not give back. Negative means the heap grew."""
+        """Bytes of free heap the run did not give back.
+
+        Both readings are free heap, so a negative value means free heap grew:
+        the run gave back more than it took, which a cache being released
+        during the measurement produces.
+        """
         return self.before - self.after
 
     @property

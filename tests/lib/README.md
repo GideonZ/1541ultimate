@@ -6,6 +6,10 @@ repository-root `run-tests` all use it.
 
 | File | Purpose |
 | --- | --- |
+| `bootstrap.py` | Puts `tests/lib` and `tests/e2e/lib` on `sys.path`, in one order, for every entry point |
+| `cli.py` | `-H`, `-p`, `-t` and a duration, defined once |
+| `leak.py` | The steady-state heap slope the soak suites measure |
+| `selftest.py` | The assertions the device-free self-tests share |
 | `report.py` | Console and JSONL reporting for every suite and for the runner |
 | `rest.py` | HTTP transport for the device: password header, JSON encoding, retry policy |
 | `api.py` | The device's REST API as typed calls, built on `rest.py` |
@@ -134,8 +138,12 @@ UltimateApi(target)                                        # a handle works too
 Put this directory on `sys.path` before importing:
 
 ```python
-# tests/lib holds the helpers every suite shares.
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "lib"))
+# tests/lib holds the shared library; importing bootstrap adds tests/e2e/lib.
+# The search walks up rather than counting directories, so this is the same in
+# every entry point and a suite that moves needs no edit.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
 from report import Failure, check, detail, section, suite_fail, suite_ok
 ```
 
@@ -324,6 +332,7 @@ them, `target` and `attempt`. The rest depends on the kind:
 | `suite` | `name`, `verdict`, `note`, `checks`, `seconds`; from `run-tests` also `mode`, `attempt`, `recoveries` |
 | `health` | `label`, `ok`, `checks[]` of `name`, `state`, `ms`, `detail`, and `figures` on a check that measured any |
 | `warning` | `message` |
+| `teardown` | `label`, `ok`, `message`, `error` - one per teardown step that could not put something back; see `report.best_effort` |
 | `gap` | `component`, `started`, `ended` when the gap closed, plus whatever the component names it by: `target`, `machine`, `reason` |
 | `menu` | `cols`, `rows`, `text[]`, `raw` as hex, and `check` when one was running; `screens.jsonl` only |
 | `telnet` | the same, for a Telnet session's screen, which has no colour plane and so no `raw`; `screens.jsonl` only |

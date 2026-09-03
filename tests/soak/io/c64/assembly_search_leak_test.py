@@ -123,13 +123,13 @@ def query_and_open_entry(device) -> bool:
 
 
 def measure(rest: rest_lib.RestClient, title: str, once, warmup: int,
-            measured: int, tolerance: int, unit: str) -> bool:
+            measured: int, tolerance: int, unit: str, units: str) -> bool:
     """Warm up, then require the free heap to be flat over `measured` runs."""
     try:
         leak.slope(once=once, heap=api_lib.MachineApi(rest).heap_free,
                    warmup=warmup, iterations=measured,
                    tolerance_bytes_per_op=tolerance,
-                   unit=unit.rstrip("s"), units=unit,
+                   unit=unit, units=units,
                    settle_seconds=SETTLE_SECONDS, title=title)
         return True
     except Failure:
@@ -175,10 +175,11 @@ def main() -> int:
     try:
         opens_ok = measure(rest, "opening and closing the search browser",
                            lambda: open_and_leave(device), OPEN_WARMUP,
-                           OPEN_MEASURED, OPEN_TOLERANCE_BYTES_PER_OP, "opens")
+                           OPEN_MEASURED, OPEN_TOLERANCE_BYTES_PER_OP,
+                           "open", "opens")
         query_ok = measure(rest, "running a query and opening a result",
                            one_query, QUERY_WARMUP, QUERY_MEASURED,
-                           QUERY_TOLERANCE_BYTES_PER_OP, "queries")
+                           QUERY_TOLERANCE_BYTES_PER_OP, "query", "queries")
 
         section("summary")
         detail(f"open/close slope: {'OK' if opens_ok else 'FAIL'}")

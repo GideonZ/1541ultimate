@@ -801,21 +801,33 @@ def best_effort(label: str, action: Callable[[], object]) -> bool:
     commit history keeps chasing.
 
     So: the same swallow, with the exception written down. Returns True when
-    the action succeeded. `Failure`, `OSError`, `TimeoutError` and the ftplib
-    errors are the ones a device that has gone away raises; anything else is a
-    bug in the teardown itself and propagates, because a `TypeError` here is
-    not something to carry on from.
+    the action succeeded.
+
+    What counts as the device rather than the caller is the set `run-tests`
+    already calls DEVICE_ERRORS, less `TypeError`. A device being taken down
+    mid-teardown does not only refuse connections: it answers with a truncated
+    or mismatched body, which reaches a decoder as a `ValueError`
+    (`json.JSONDecodeError` is one) or as an `http.client.HTTPException` that
+    is not an `OSError`. This firmware's httpd has been seen handing back one
+    request's body under another request's status while several REST workers
+    are active, so those are device faults here too. A `TypeError` stays out,
+    because a teardown that calls something wrongly is a bug to see.
 
         best_effort(f"restore {item}", lambda: api.configs.set(store, item, was))
     """
     import ftplib
+    import http.client
 
     try:
         action()
-    except (Failure, OSError, TimeoutError, *ftplib.all_errors) as exc:
+    except (Failure, OSError, TimeoutError, ValueError,
+            http.client.HTTPException, *ftplib.all_errors) as exc:
         message = format_exception(exc) or type(exc).__name__
         detail(f"teardown: {label}: {message}")
+        # `message` is what the report renders; `label` and `error` are what a
+        # reader of the JSONL wants apart. See tools/e2e_report.py.
         _record(kind="teardown", label=label, ok=False,
+                message=f"teardown: {label}: {message}",
                 error=f"{type(exc).__name__}: {message}")
         return False
     return True

@@ -73,7 +73,6 @@ from report import (  assert_or_warn, # noqa: E402  (needs tests/lib on sys.path
     Failure, best_effort, check_count, check_fail, check_ok, check_start, check_warn, detail, last_label,
     section, suite_fail, suite_ok, warn)
 
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 SCREEN_WIDTH = 40
 SCREEN_HEIGHT = 25

@@ -25,7 +25,6 @@ from temp_settings import (
     AUTO_CLEANUP_ITEM, SUBFOLDERS_ITEM, TempSettingsSuite, add_toggle_arguments)
 from ui_backend import add_mode_argument
 
-SCRIPT_DIR = Path(__file__).resolve().parent
 
 SUITE = "prg_load_path_trim_test"
 
@@ -187,7 +186,7 @@ class SuiteRunner(TempSettingsSuite):
 
 def main():
     parser = argparse.ArgumentParser(description="Validate PRG runner boot-cart path trimming.")
-    cli.add_device_arguments(parser, colour=False)
+    cli.add_device_arguments(parser, colour=False, timeout=None)
     parser.add_argument("--remote-file", default="/Temp/rest-prg-path-trim-target-example.prg")
     parser.add_argument("--upload-name", default="rest-prg-path-trim-upload-example.prg")
     add_toggle_arguments(parser)

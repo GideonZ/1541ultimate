@@ -16,6 +16,7 @@ from collections.abc import Sequence
 sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
                             if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
 import bootstrap  # noqa: E402,F401
+import cli  # noqa: E402
 
 
 from api import UltimateApi
@@ -33,7 +34,6 @@ from av_stream import (
 from report import Failure, check, detail, suite_fail, suite_ok
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-REPO_ROOT = SCRIPT_DIR.parents[2]
 
 
 PAL_AUDIO_RATE = 47982.8869047619
@@ -114,6 +114,9 @@ def assert_tone_ladder(capture: AvStreamCapture) -> None:
         offset = anchor + index * slot_samples + (slot_samples - window) // 2
         window_samples = samples[offset:offset + window]
         if len(window_samples) != window:
+            # find_ladder_start bounds the anchor so every note fits, so this
+            # is unreachable unless that bound is changed; it stays as the
+            # statement of what the loop needs.
             raise Failure("tone ladder capture ended before all notes arrived")
         actual = max(LADDER_FREQUENCIES, key=lambda frequency: goertzel_power(window_samples, frequency))
         detected.append(actual)
@@ -133,10 +136,13 @@ def run_tone_ladder(device: UltimateApi) -> None:
         device.runners.upload("run_prg", program)
         capture.capture(1.5)
         capture.clear()
-        # 4.0s rather than the ladder's own 3.0s: the lead-in ends about 0.5s
-        # into this window and the extra half second is what the anchor search
-        # has to move in.
-        capture.capture(4.0)
+        # 4.5s against the ladder's own 3.0s. tone_ladder.asm waits 100 frames
+        # (2.0s) before its first note and the spool is cleared 1.5s after the
+        # upload, so the ladder starts about half a second into this window;
+        # measured on an Ultimate 64 Elite in PAL, at 0.42s to 0.44s over four
+        # runs. The rest is what find_ladder_start has to move in, and it
+        # covers a program that takes a second longer to start than measured.
+        capture.capture(4.5)
         log_packet_health(capture)
         assert_tone_ladder(capture)
         colors = set()
@@ -173,11 +179,17 @@ def run_key_pop(device: UltimateApi) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("-H", "--host", default=os.environ.get("U64_C64_HOST", os.environ.get("U64_HOST", "u64")),
-                        help="C64U stream source")
+    # -H is the stream source rather than the device under test, so
+    # U64_C64_HOST comes first; the password is the ordinary one.
+    parser.add_argument(
+        "-H", "--host",
+        default=os.environ.get("U64_C64_HOST", cli.host_default()),
+        help="C64U stream source")
+    parser.add_argument("-p", "--password", default=cli.password_default(),
+                        help=f"REST password (default: ${cli.DEFAULT_PASSWORD_ENV})")
     parser.add_argument("--case", choices=("all", "ladder", "pop"), default="all")
     args = parser.parse_args()
-    device = UltimateApi(args.host)
+    device = UltimateApi(args.host, args.password or None)
     try:
         if args.case in ("all", "ladder"):
             with check("tone ladder reaches audio and video streams"):

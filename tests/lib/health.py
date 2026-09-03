@@ -479,7 +479,7 @@ def main() -> int:
     from report import detail, suite_fail, suite_ok  # noqa: PLC0415
 
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    cli.add_device_arguments(parser, colour=False)
+    cli.add_device_arguments(parser, colour=False, timeout=None)
     parser.add_argument("-c", "--check", action="append", default=[],
                         help="Run only this check. Repeatable.")
     args = parser.parse_args()

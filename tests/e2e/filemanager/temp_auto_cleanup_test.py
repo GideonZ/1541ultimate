@@ -26,7 +26,6 @@ from temp_settings import (
     AUTO_CLEANUP_ITEM, SUBFOLDERS_ITEM, TempSettingsSuite, add_toggle_arguments)
 from ui_backend import add_mode_argument
 
-SCRIPT_DIR = Path(__file__).resolve().parent
 
 SUITE = "temp_auto_cleanup_test"
 MANAGED_SIZE = 524288
@@ -300,7 +299,7 @@ class TempCleanup(TempSettingsSuite):
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Validate Temp auto cleanup behavior on a real Ultimate 64.")
-    cli.add_device_arguments(parser, colour=False)
+    cli.add_device_arguments(parser, colour=False, timeout=None)
     parser.add_argument("-l", "--limit", type=int, default=10)
     parser.add_argument("--seed-count", type=int, default=10)
     parser.add_argument("--test-count", type=int, default=12)

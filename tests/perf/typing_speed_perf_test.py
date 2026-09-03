@@ -46,7 +46,6 @@ from pathlib import Path
 
 # tests/lib holds the reporting rules every suite shares; tests/e2e/lib holds
 # the UI backend under measurement.
-SCRIPT_DIR = Path(__file__).resolve().parent
 # tests/lib holds the shared library; importing bootstrap adds tests/e2e/lib.
 # The search walks up rather than counting directories, so this is the same in
 # every entry point and a suite that moves needs no edit. See tests/lib/bootstrap.py.
@@ -164,7 +163,7 @@ def sweep(browser, name: str, strategy, repeats: int, length: int,
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    cli.add_device_arguments(parser, colour=False)
+    cli.add_device_arguments(parser, colour=False, timeout=None)
     parser.add_argument("--repeats", type=int, default=DEFAULT_REPEATS,
                         help=f"measurements per strategy (default: {DEFAULT_REPEATS})")
     parser.add_argument("--length", type=int, default=NEEDLE_LENGTH, metavar="N",

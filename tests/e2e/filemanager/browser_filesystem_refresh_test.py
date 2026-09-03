@@ -1306,6 +1306,12 @@ def close_observers(ctx: Context) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Verify that every browser converges on the committed file system.")
+    # 30s, matching what run-tests passes. It was 5s, which is below
+    # pacing.TELNET_SETTLE_GAP_SECONDS: a committed Telnet prompt is settled by
+    # waiting six seconds of quiet, so every Telnet send_text in this suite
+    # timed out before it could succeed. That made the suite unrunnable by hand
+    # while passing under the runner, which is the worst way for a default to
+    # be wrong.
     cli.add_device_arguments(parser, timeout=30.0, colour=False)
     parser.add_argument("--test-dir", default=default_test_dir())
     parser.add_argument(

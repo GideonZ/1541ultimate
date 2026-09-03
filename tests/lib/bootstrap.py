@@ -54,10 +54,18 @@ def directory(*parts: str) -> str:
 
 
 def _establish() -> None:
-    """tests/e2e/lib after tests/lib, so tests/lib is searched first."""
+    """Put tests/lib ahead of tests/e2e/lib, wherever either already sits.
+
+    The entry point's own stanza has already inserted tests/lib, so simply
+    inserting each at index 0 when missing left tests/e2e/lib in front of it,
+    which is the ordering this module exists to fix. Both are removed and
+    re-inserted instead, so the order is the one stated whatever the caller
+    did first.
+    """
     for directory in (E2E_LIB, LIB):
-        if directory not in sys.path:
-            sys.path.insert(0, directory)
+        while directory in sys.path:
+            sys.path.remove(directory)
+    sys.path[:0] = [LIB, E2E_LIB]
 
 
 _establish()

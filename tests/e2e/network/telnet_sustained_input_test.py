@@ -77,7 +77,7 @@ class Reader(threading.Thread):
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    cli.add_device_arguments(parser, colour=False)
+    cli.add_device_arguments(parser, colour=False, timeout=None)
     parser.add_argument("-P", "--telnet-port", type=int, default=23)
     parser.add_argument("--keys", type=int, default=KEYS)
     args = parser.parse_args()

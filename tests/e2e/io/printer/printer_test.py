@@ -851,7 +851,9 @@ def parse_args():
                "--no-config-change is used. Runs the committed printer_e2e.prg "
                "fixture alongside this script; no assembler is needed.",
     )
-    cli.add_device_arguments(parser, colour=False)
+    # timeout=None: this suite's budget is --timeout-seconds, and a -t
+    # beside it would capture the abbreviation that used to reach it.
+    cli.add_device_arguments(parser, colour=False, timeout=None)
     parser.add_argument("-n", "--no-assertions", action="store_true",
                          help="Warn instead of failing on assertion mismatches")
     parser.add_argument("--seed-count", type=int, default=0, help=argparse.SUPPRESS)

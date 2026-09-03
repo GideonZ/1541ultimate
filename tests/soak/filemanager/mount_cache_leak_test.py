@@ -114,9 +114,10 @@ def cleanup(host: str, password: str, indices) -> int:
         nonlocal removed
         with ftp_lib.session(host, password, timeout=60) as ftp:
             for i in indices:
-                if best_effort(f"delete {image_name(i)}",
-                               lambda i=i: ftp_lib.delete_quietly(
-                                   ftp, TEMP + image_name(i))):
+                # delete_quietly answers whether the entry went away and never
+                # raises, so its result is the count; best_effort would report
+                # True for a refusal.
+                if ftp_lib.delete_quietly(ftp, TEMP + image_name(i)):
                     removed += 1
 
     best_effort("remove the images this run mounted", remove_all)
