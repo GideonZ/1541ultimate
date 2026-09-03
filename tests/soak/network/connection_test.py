@@ -12,7 +12,7 @@ import threading
 import time
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Callable
+from collections.abc import Callable
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -234,7 +234,7 @@ class ExecutionState:
             return 0
         ordered = sorted(samples)
         rank = max(1, math.ceil(percentile / 100.0 * len(ordered)))
-        return int(round(ordered[rank - 1]))
+        return round(ordered[rank - 1])
 
     def next_probe_operation_index(self, protocol: str, runner_id: int, surface: ProbeSurface, pool_size: int) -> int:
         if pool_size < 1:
@@ -267,7 +267,7 @@ class ExecutionState:
             with self.sample_lock:
                 self.failure_count += 1
         self.record_latency(protocol, outcome.elapsed_ms)
-        self.emit_log(protocol, outcome.result, f"{outcome.detail} latency_ms={int(round(outcome.elapsed_ms))}", iteration=iteration, runner_id=runner_id)
+        self.emit_log(protocol, outcome.result, f"{outcome.detail} latency_ms={round(outcome.elapsed_ms)}", iteration=iteration, runner_id=runner_id)
 
     def emit_iteration_summary(self, started_at: float, iteration: int, runner_id: int) -> None:
         if not self.settings.verbose and self.settings.log_every > 1 and iteration % self.settings.log_every != 0:

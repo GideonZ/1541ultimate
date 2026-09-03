@@ -7,7 +7,7 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Iterable, List, Sequence
+from collections.abc import Sequence
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parents[2]
@@ -21,7 +21,6 @@ from av_stream import (
     AUDIO_PACKET_BYTES,
     VIDEO_PACKET_BYTES,
     AvStreamCapture,
-    Packet,
     audio_samples,
     first_bright_frame,
     first_loud_packet,
@@ -55,10 +54,10 @@ def goertzel_power(samples: Sequence[int], frequency: float) -> float:
     return previous2 * previous2 + previous * previous - coefficient * previous * previous2
 
 
-def ladder_audio(capture: AvStreamCapture, start: float) -> List[int]:
+def ladder_audio(capture: AvStreamCapture, start: float) -> list[int]:
     first = first_loud_packet(capture.audio_packets, start)
     index = capture.audio_packets.index(first)
-    samples: List[int] = []
+    samples: list[int] = []
     for packet in capture.audio_packets[index:]:
         samples.extend(audio_samples(packet)[::2])
     return samples

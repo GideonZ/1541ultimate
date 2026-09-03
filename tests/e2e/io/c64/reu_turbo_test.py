@@ -59,7 +59,6 @@ import argparse
 import os
 import sys
 import time
-from typing import Dict, Optional, Tuple
 
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "lib"))
@@ -149,7 +148,7 @@ def fastest_speed(api: UltimateApi) -> str:
     return labels[-1]
 
 
-def apply_settings(api: UltimateApi, previous: Dict[Tuple[str, str], str],
+def apply_settings(api: UltimateApi, previous: dict[tuple[str, str], str],
                    speed: str) -> None:
     """Apply what the stimulus needs, recording each previous value first.
 
@@ -168,7 +167,7 @@ def apply_settings(api: UltimateApi, previous: Dict[Tuple[str, str], str],
             api.configs.set(store, item, value)
 
 
-def restore_settings(api: UltimateApi, previous: Dict[Tuple[str, str], str]) -> None:
+def restore_settings(api: UltimateApi, previous: dict[tuple[str, str], str]) -> None:
     for (store, item), value in previous.items():
         if not value:
             # current() answers "" when the device reported no value, and
@@ -262,7 +261,7 @@ def report(result: Result, speed: str) -> None:
            f"{speed.strip()} MHz in {result.seconds:.2f}s")
 
 
-def run(args) -> Optional[str]:
+def run(args) -> str | None:
     """Run the suite, or answer why this machine could not run it.
 
     A product without an REU or a CPU speed setting is a skip, not a pass: the
@@ -304,7 +303,7 @@ def run(args) -> Optional[str]:
            f"{len(prg)} bytes, load address "
            f"${int.from_bytes(prg[:2], 'little'):04X}")
 
-    previous: Dict[Tuple[str, str], str] = {}
+    previous: dict[tuple[str, str], str] = {}
     try:
         section("1. Set the machine up")
         with check("apply the REU and turbo settings the stimulus needs"):

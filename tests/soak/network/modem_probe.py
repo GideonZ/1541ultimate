@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import socket
 import time
-from typing import Callable
+from collections.abc import Callable
 
 from connection_runtime import (
     ProbeExecutionContext,
@@ -27,7 +27,7 @@ def read_banner(settings: RuntimeSettings) -> str:
         while True:
             try:
                 chunk = sock.recv(4096)
-            except socket.timeout:
+            except TimeoutError:
                 break
             if not chunk:
                 break

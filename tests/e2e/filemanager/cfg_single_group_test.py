@@ -22,7 +22,6 @@ import argparse
 import os
 import sys
 from pathlib import Path
-from typing import List
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
@@ -67,14 +66,12 @@ def load_fixture(browser) -> None:
     browser.fill_edit_field(LOG_NAME)
 
 
-def loading_stores(host: str, password: str) -> List[str]:
+def loading_stores(host: str, password: str) -> list[str]:
     with ftp_lib.session(host, password, timeout=20) as ftp:
         text = ftp_lib.retrieve(ftp, f"/Temp/{LOG_NAME}").decode("ascii", "replace")
     stores = []
     for line in text.splitlines():
-        if line.startswith("Effectuating settings of store '"):
-            stores.append(line.split("'", 2)[1])
-        elif line.startswith("Store '") and line.endswith("is clean after loading."):
+        if line.startswith("Effectuating settings of store '") or (line.startswith("Store '") and line.endswith("is clean after loading.")):
             stores.append(line.split("'", 2)[1])
     return stores
 

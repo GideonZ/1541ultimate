@@ -1380,7 +1380,7 @@ def run_suite_url_routing_checks():
             path = os.path.join(directory, name)
             if path.endswith(URL_BUILDER):
                 continue
-            with open(path, "r", encoding="utf-8", errors="replace") as handle:
+            with open(path, encoding="utf-8", errors="replace") as handle:
                 for number, line in enumerate(handle, 1):
                     for expression in URL_INTERPOLATION.findall(line):
                         if any(mark in expression for mark in URL_ROUTED_BY):

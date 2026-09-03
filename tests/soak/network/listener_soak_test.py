@@ -32,7 +32,6 @@ import sys
 import time
 import urllib.error
 import urllib.request
-from typing import List, Optional
 
 # tests/lib holds the reporting rules every suite shares.
 sys.path.insert(0, os.path.join(
@@ -55,7 +54,7 @@ REST_BUDGET_SECONDS = 5.0
 DEGRADATION_FACTOR = 4.0
 
 
-def rest_latency(host: str, password: Optional[str], timeout: float) -> float:
+def rest_latency(host: str, password: str | None, timeout: float) -> float:
     """How long /v1/version takes on the device under test.
 
     Every surface this suite touches - REST, Telnet, FTP - is served by the
@@ -73,7 +72,7 @@ def rest_latency(host: str, password: Optional[str], timeout: float) -> float:
     return time.monotonic() - start
 
 
-def sample_rest(host: str, password: Optional[str], samples: int, budget: float) -> List[float]:
+def sample_rest(host: str, password: str | None, samples: int, budget: float) -> list[float]:
     out = []
     for _ in range(samples):
         try:

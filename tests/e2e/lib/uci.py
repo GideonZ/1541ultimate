@@ -22,7 +22,6 @@ registers at $DF20 upwards.
 """
 
 import time
-from typing import Dict, List, Optional, Tuple
 
 from report import Failure, detail
 
@@ -119,7 +118,7 @@ class Reply:
 class Transaction:
     """Every observable of one command: its reply blocks and the final state."""
 
-    def __init__(self, command: bytes, blocks: List[Reply], final_status: int,
+    def __init__(self, command: bytes, blocks: list[Reply], final_status: int,
                  elapsed: float) -> None:
         self.command = command
         self.blocks = blocks
@@ -268,11 +267,11 @@ class Uci:
                 raise Failure(f"response queue did not drain within {DRAIN_LIMIT_BYTES} "
                               f"bytes: {bytes(out)[:80]!r}")
 
-    def drain(self) -> Tuple[bytes, bytes]:
+    def drain(self) -> tuple[bytes, bytes]:
         return (self._drain_response(),
                 self._drain(ST_STAT_AV, REG_STATUS, "status"))
 
-    def probe_drain(self, command: bytes, cap: int) -> Tuple[int, bool, bytes]:
+    def probe_drain(self, command: bytes, cap: int) -> tuple[int, bool, bytes]:
         """Push one command and pull bytes until DATA_AV clears or `cap` is hit.
 
         Returns how many bytes the queue handed out, whether DATA_AV cleared,
@@ -301,7 +300,7 @@ class Uci:
         self.release()
         return len(out), cleared, bytes(out[-6:])
 
-    def probe_abort(self, command: bytes) -> Tuple[int, bool]:
+    def probe_abort(self, command: bytes) -> tuple[int, bool]:
         """Push one command, take its first reply block, then abandon it.
 
         Returns how many bytes that first block carried and whether the
@@ -350,7 +349,7 @@ class Uci:
                 f"this reply is sent in one part, so the state has to be Data Last"
             )
 
-        blocks: List[Reply] = []
+        blocks: list[Reply] = []
         while True:
             data = self._drain_response()
             overrun = bytes(self.peek(REG_RESPONSE) for _ in range(overrun_reads)) if not blocks else b""

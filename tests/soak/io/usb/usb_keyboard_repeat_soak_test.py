@@ -65,7 +65,7 @@ import tempfile
 import time
 import urllib.request
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(ROOT / "tests" / "lib"))
@@ -158,7 +158,7 @@ def parse_duration(value: str) -> float:
     return result
 
 
-def marker(body: bytes) -> Tuple[int, str]:
+def marker(body: bytes) -> tuple[int, str]:
     if len(body) != 2000: raise Failure(f"menu screen has {len(body)} bytes, expected 2000")
     chars, colours = body[:SCREEN_CELLS], body[SCREEN_CELLS:]
     candidates = []
@@ -203,7 +203,7 @@ class Pico:
             try: self.sock.close()
             except OSError: pass
         self.sock = None
-    def call(self, command: str, **kwargs) -> Dict[str, Any]:
+    def call(self, command: str, **kwargs) -> dict[str, Any]:
         if not self.sock: self.connect()
         self.request_id += 1; request = {"protocol_version": PROTOCOL_VERSION, "id": self.request_id, "command": command, **kwargs}
         wire = (json.dumps(request, separators=(",", ":")) + "\n").encode()
@@ -232,7 +232,7 @@ def discover_pico(timeout: float = 4.0) -> str:
     try:
         probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM); probe.connect(("8.8.8.8", 80))
         octets = probe.getsockname()[0].split("."); probe.close()
-        if len(octets) == 4: targets.append((".".join(octets[:3] + ["255"]), DISCOVERY_PORT))
+        if len(octets) == 4: targets.append((".".join([*octets[:3], "255"]), DISCOVERY_PORT))
     except OSError: pass
     try:
         while time.monotonic() < deadline:
@@ -241,7 +241,7 @@ def discover_pico(timeout: float = 4.0) -> str:
                 while True:
                     body, address = sock.recvfrom(MAX_LINE); reply = json.loads(body)
                     if reply.get("service") == MAGIC and reply.get("protocol_version") == PROTOCOL_VERSION: found.add(reply.get("ip") or address[0])
-            except socket.timeout: pass
+            except TimeoutError: pass
     finally: sock.close()
     if not found: found = sweep_for_pico()
     if len(found) != 1:
@@ -285,11 +285,11 @@ def sweep_for_pico(port: int = TCP_PORT) -> set:
 
 
 class U64:
-    def __init__(self, host: str, password: Optional[str], timeout: float):
+    def __init__(self, host: str, password: str | None, timeout: float):
         self.host = host
         self.rest = RestClient(host, password, timeout); self.machine = MachineApi(self.rest)
     def rows(self) -> list:
-        status, headers, body = self.rest.request("GET", "/v1/machine:menu_screen")
+        status, _headers, body = self.rest.request("GET", "/v1/machine:menu_screen")
         if status != 200: raise Failure(f"menu_screen failed with HTTP {status}")
         chars = body[:SCREEN_CELLS]
         return [line for line in
@@ -305,12 +305,12 @@ class U64:
         and does not move the on-screen selection.
         """
         self.machine.press(*names); time.sleep(settle)
-    def screen(self) -> Tuple[int, str]:
+    def screen(self) -> tuple[int, str]:
         status, headers, body = self.rest.request("GET", "/v1/machine:menu_screen")
         if status != 200 or "application/octet-stream" not in header_value(headers, "Content-Type"):
             raise Failure(f"menu_screen failed with HTTP {status}: {body[:120]!r}")
         return marker(body)
-    def stable_screen(self, attempts: int = 4) -> Tuple[int, str]:
+    def stable_screen(self, attempts: int = 4) -> tuple[int, str]:
         """Read the menu until two consecutive reads agree.
 
         A read that lands in the middle of a redraw can report the previous
@@ -345,9 +345,9 @@ class U64:
     def close_menu(self): self.machine.close_menu_from_anywhere()
 
 
-def watch_bounded(u64: "U64", anchor_index: int, key: str, allowed_delta: int,
+def watch_bounded(u64: U64, anchor_index: int, key: str, allowed_delta: int,
                    window_s: float = POST_FAULT_MARGIN_MS / 1000.0,
-                   poll_s: float = .03) -> Tuple[int, List[int]]:
+                   poll_s: float = .03) -> tuple[int, list[int]]:
     """Poll the selected row and abort the instant an out-of-bound step appears.
 
     The fixture executes a whole press/fault/release sequence synchronously on
@@ -376,7 +376,7 @@ def watch_bounded(u64: "U64", anchor_index: int, key: str, allowed_delta: int,
     return (last_index - anchor_index) * direction, trail
 
 
-def recentre_if_needed(pico: Pico, u64: "U64", attempts: int = 6):
+def recentre_if_needed(pico: Pico, u64: U64, attempts: int = 6):
     for _ in range(attempts):
         index = u64.stable_position()
         if RECENTRE_LOW <= index <= RECENTRE_HIGH: return
@@ -389,7 +389,7 @@ def recentre_if_needed(pico: Pico, u64: "U64", attempts: int = 6):
         raise Failure(f"could not recentre the selection after {attempts} attempts: now {index}")
 
 
-def measure_genuine_hold(pico: Pico, u64: "U64", hold_ms: int, reps: int) -> int:
+def measure_genuine_hold(pico: Pico, u64: U64, hold_ms: int, reps: int) -> int:
     counts = []
     for _ in range(reps):
         recentre_if_needed(pico, u64)
@@ -401,7 +401,7 @@ def measure_genuine_hold(pico: Pico, u64: "U64", hold_ms: int, reps: int) -> int
     return max(counts)
 
 
-def calibrate_repeat_counts(pico: Pico, u64: "U64") -> Tuple[Dict[int, int], Dict[int, int]]:
+def calibrate_repeat_counts(pico: Pico, u64: U64) -> tuple[dict[int, int], dict[int, int]]:
     """Measure genuine, un-faulted repeat counts for each mid-repeat hold.
 
     Used as this device's own ground truth for the mid-repeat fault scenarios:
@@ -420,8 +420,8 @@ def calibrate_repeat_counts(pico: Pico, u64: "U64") -> Tuple[Dict[int, int], Dic
     comment): `silence_baseline[duration_ms]` is calibrated at that longer,
     effective duration instead of at `duration_ms` itself.
     """
-    hold_baseline: Dict[int, int] = {}
-    silence_baseline: Dict[int, int] = {}
+    hold_baseline: dict[int, int] = {}
+    silence_baseline: dict[int, int] = {}
     for duration_ms in MID_REPEAT_HOLD_DURATIONS_MS:
         hold_baseline[duration_ms] = measure_genuine_hold(pico, u64, duration_ms, CALIBRATION_REPS)
     for duration_ms in MID_REPEAT_HOLD_DURATIONS_MS:
@@ -468,7 +468,7 @@ def remove_deep_list(host: str):
         except Exception: ftp.close()
 
 
-def enter_deep_list(u64: "U64"):
+def enter_deep_list(u64: U64):
     """Navigate the on-screen menu from wherever it is into the deep list.
 
     Return on a directory opens a context menu whose first item is `Enter`, so
@@ -477,7 +477,7 @@ def enter_deep_list(u64: "U64"):
     # Reopening the menu restores whichever directory it was left in, so back
     # out until the root browser is on screen rather than pressing a fixed
     # number of times.
-    for attempt in range(12):
+    for _attempt in range(12):
         if not u64.machine.menu_open():
             u64.machine.menu_button(); time.sleep(.8)
         try: rows = u64.rows()
@@ -499,12 +499,12 @@ def enter_deep_list(u64: "U64"):
     if not text.startswith(DEEP_LIST_DIRECTORY):
         raise Failure(f"expected {DEEP_LIST_DIRECTORY!r} inside the RAM disk, found {text!r}")
     u64.key("return", settle=.5); u64.key("return", settle=.9)
-    row, text = u64.screen()
+    _row, text = u64.screen()
     if not text.startswith("row"):
         raise Failure(f"expected the generated list, found {text!r}")
 
 
-def require_fixture(status: Dict[str, Any]):
+def require_fixture(status: dict[str, Any]):
     if status.get("protocol_version") != PROTOCOL_VERSION or not status.get("hid_open"):
         raise Failure(f"Pico HID not enumerated/open: {status}")
     if status.get("idle_rate") != 25:
@@ -512,11 +512,11 @@ def require_fixture(status: Dict[str, Any]):
     if status.get("currently_held_keys"): raise Failure(f"Pico has keys held: {status}")
 
 
-def navigate(pico: Pico, u64: U64, command: str, key: str, **kwargs) -> Tuple[int, str]:
+def navigate(pico: Pico, u64: U64, command: str, key: str, **kwargs) -> tuple[int, str]:
     pico.call(command, key=key, **kwargs); time.sleep(.18); return u64.stable_screen()
 
 
-def preflight(pico: Pico, u64: U64) -> Tuple[Dict[int, int], Dict[int, int]]:
+def preflight(pico: Pico, u64: U64) -> tuple[dict[int, int], dict[int, int]]:
     with check("Pico HID is enumerated and U64 negotiated SET_IDLE(25)"):
         require_fixture(pico.call("status"))
     with check("open the Ultimate menu on a list deep enough to hold a repeat"):
@@ -524,7 +524,7 @@ def preflight(pico: Pico, u64: U64) -> Tuple[Dict[int, int], Dict[int, int]]:
         entries = build_deep_list(u64.host)
         if entries < DEEP_LIST_ENTRIES:
             raise Failure(f"the RAM disk list holds {entries} entries, expected {DEEP_LIST_ENTRIES}")
-        enter_deep_list(u64); anchor = u64.screen()
+        enter_deep_list(u64); u64.screen()
     with check("normal Down tap moves exactly one step and Up returns"):
         anchor_index = u64.stable_position()
         pico.call("tap", key="down", duration_ms=30)
@@ -569,7 +569,7 @@ def preflight(pico: Pico, u64: U64) -> Tuple[Dict[int, int], Dict[int, int]]:
 
 
 def run_fault_iteration(pico: Pico, u64: U64, randomizer: random.Random, iteration: int,
-                         baselines: Tuple[Dict[int, int], Dict[int, int]]) -> None:
+                         baselines: tuple[dict[int, int], dict[int, int]]) -> None:
     hold_baseline, silence_baseline = baselines
     key = randomizer.choice(("down", "up")); inverse = "up" if key == "down" else "down"
     fault = randomizer.choice(FAULT_KINDS)
@@ -605,7 +605,7 @@ def run_fault_iteration(pico: Pico, u64: U64, randomizer: random.Random, iterati
 
 
 def run_soak(pico: Pico, u64: U64, duration: float, seed: int,
-             baselines: Tuple[Dict[int, int], Dict[int, int]]):
+             baselines: tuple[dict[int, int], dict[int, int]]):
     randomizer = random.Random(seed); deadline = time.monotonic() + duration; iteration = 0
     while time.monotonic() < deadline:
         iteration += 1
@@ -726,7 +726,7 @@ def linux_validation(pico: Pico):
            % status.get("idle_rate"))
 
 
-def setup_pico(ssid_override: Optional[str], pico_host: Optional[str] = None):
+def setup_pico(ssid_override: str | None, pico_host: str | None = None):
     ssid = ssid_override or os.environ.get("PICO_WIFI_SSID"); password = os.environ.get("PICO_WIFI_PASSWORD")
     if not ssid or not password: raise Failure("--setup-pico requires PICO_WIFI_SSID and PICO_WIFI_PASSWORD (password is never printed)")
     if not shutil.which("mpremote"): raise Failure("mpremote is required; run: pip install -r tests/requirements.txt")

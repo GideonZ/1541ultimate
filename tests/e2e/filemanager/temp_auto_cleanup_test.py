@@ -10,7 +10,6 @@ import sys
 import tempfile
 import time
 from pathlib import Path
-from typing import List, Tuple
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 # tests/lib holds the reporting rules every suite shares; tests/e2e/lib
@@ -45,10 +44,10 @@ class TempCleanup(TempSettingsSuite):
         self.mounted_base_8 = ""
         self.mounted_base_9 = ""
 
-    def names(self, directory: str) -> List[str]:
+    def names(self, directory: str) -> list[str]:
         return self.ftp(lambda c: ftp_lib.names(c, directory))
 
-    def listing(self, directory: str) -> List[str]:
+    def listing(self, directory: str) -> list[str]:
         return self.ftp(lambda c: ftp_lib.listing(c, directory))
 
     def exists(self, path: str) -> bool:
@@ -107,7 +106,7 @@ class TempCleanup(TempSettingsSuite):
         names = self.names(self.upload_dir)
         return sum(base in names for base in (self.mounted_base_8, self.mounted_base_9) if base)
 
-    def stats(self) -> Tuple[int, int, int, int, int]:
+    def stats(self) -> tuple[int, int, int, int, int]:
         root = self.listing("/Temp")
         cache = self.listing(self.upload_dir)
         root_size = sum(int(x.split()[4]) for x in root if x.startswith("-"))

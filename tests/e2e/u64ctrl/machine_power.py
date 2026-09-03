@@ -140,7 +140,7 @@ class Mains:
             ask("switch the socket back ON")
 
 
-def recover_if_off(button: "PowerButton | None", api: UltimateApi,
+def recover_if_off(button: PowerButton | None, api: UltimateApi,
                    up_timeout: float) -> None:
     """Get the machine back on, whatever left it off, including a failure.
 

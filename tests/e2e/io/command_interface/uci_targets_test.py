@@ -50,7 +50,6 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from typing import Dict, List, Optional, Tuple
 
 # tests/lib holds the reporting rules every suite shares.
 sys.path.insert(0, os.path.join(
@@ -214,7 +213,7 @@ def as_int32(reply: bytes) -> int:
 
 
 class RestSession:
-    def __init__(self, host: str, password: Optional[str], timeout: float) -> None:
+    def __init__(self, host: str, password: str | None, timeout: float) -> None:
         self.target = targets.parse(host)
         self.host = self.target.device
         # The command interface registers are decoded on the C64 expansion bus,
@@ -229,8 +228,8 @@ class RestSession:
         self.password = password
         self.timeout = timeout
 
-    def request(self, method: str, path: str, params: Optional[Dict[str, object]] = None,
-                repeatable: bool = False, host: Optional[str] = None) -> Tuple[int, bytes]:
+    def request(self, method: str, path: str, params: dict[str, object] | None = None,
+                repeatable: bool = False, host: str | None = None) -> tuple[int, bytes]:
         url = f"http://{host or self.target.host_for(path)}{path}"
         if params:
             url += "?" + urllib.parse.urlencode(params)
@@ -271,7 +270,7 @@ class RestSession:
         if status != 200:
             raise Failure(f"writemem(${address:04X}, ${value:02X}) failed with HTTP {status}: {body[:200]!r}")
 
-    def get_config(self, category: str) -> Dict[str, object]:
+    def get_config(self, category: str) -> dict[str, object]:
         status, body = self.request("GET", f"/v1/configs/{urllib.parse.quote(category)}", repeatable=True)
         if status != 200:
             raise Failure(f"GET config {category!r} failed with HTTP {status}: {body[:200]!r}")
@@ -283,7 +282,7 @@ class RestSession:
         if status != 200:
             raise Failure(f"PUT config {category!r}/{item!r}={value!r} failed with HTTP {status}: {body[:200]!r}")
 
-    def file_info(self, path: str) -> Optional[Dict[str, object]]:
+    def file_info(self, path: str) -> dict[str, object] | None:
         quoted = urllib.parse.quote(path.lstrip("/"))
         status, body = self.request("GET", f"/v1/files/{quoted}:info", repeatable=True)
         if status == 404:
@@ -310,11 +309,11 @@ class RestSession:
 class FtpFixture:
     """Files this suite puts on the device, over FTP because REST cannot delete."""
 
-    def __init__(self, host: str, password: Optional[str], timeout: float) -> None:
+    def __init__(self, host: str, password: str | None, timeout: float) -> None:
         self.host = targets.device_of(host)
         self.password = password or ""
         self.timeout = timeout
-        self.created: List[str] = []
+        self.created: list[str] = []
 
     def _open(self) -> ftplib.FTP:
         return ftp_lib.connect(self.host, self.password, self.timeout)
@@ -435,7 +434,7 @@ class Uci:
                 )
             time.sleep(BUSY_POLL_SECONDS)
 
-    def drain(self) -> Tuple[bytes, bytes]:
+    def drain(self) -> tuple[bytes, bytes]:
         return (bytes(self._drain(ST_DATA_AV, REG_RESPONSE, "response")),
                 bytes(self._drain(ST_STAT_AV, REG_STATUS, "status")))
 
@@ -447,7 +446,7 @@ class Uci:
                 raise Failure(f"{what} queue did not drain within {MAX_QUEUE_BYTES} bytes: {bytes(out)[:80]!r}")
         return out
 
-    def transact(self, command: bytes) -> Tuple[bytes, bytes]:
+    def transact(self, command: bytes) -> tuple[bytes, bytes]:
         """Push one command and return (response data, status text).
 
         Every command this suite sends is answered in one part, so the reply has to
@@ -476,7 +475,7 @@ class Uci:
 
 
 def expect(uci: Uci, label: str, command: bytes, status: bytes,
-           reply: Optional[bytes] = None, reply_prefix: Optional[bytes] = None) -> bytes:
+           reply: bytes | None = None, reply_prefix: bytes | None = None) -> bytes:
     """Run one command and check the documented status and reply."""
     with check(label):
         got_reply, got_status = uci.transact(command)
@@ -872,7 +871,7 @@ def release_interface(uci: Uci) -> bool:
         return False
 
 
-def restore_settings(session: RestSession, original: Dict[str, str], keep_config: bool) -> bool:
+def restore_settings(session: RestSession, original: dict[str, str], keep_config: bool) -> bool:
     """Put every setting the suite wrote back, and prove it took effect."""
     if not original or keep_config:
         return True
@@ -902,7 +901,7 @@ def main() -> int:
     parser.add_argument("-t", "--timeout", type=float, default=float(os.environ.get("U64_TIMEOUT", "30.0")))
     parser.add_argument("-b", "--busy-timeout", type=float, default=BUSY_TIMEOUT_SECONDS,
                         help="How long a single command may stay in Command Busy before it counts as wedged.")
-    parser.add_argument("--test", action="append", choices=["all"] + TESTS)
+    parser.add_argument("--test", action="append", choices=["all", *TESTS])
     parser.add_argument("--no-reset", action="store_true",
                         help="Skip resetting the C64 before the test (use an already-stable machine).")
     parser.add_argument("--keep-config", action="store_true",
@@ -914,8 +913,8 @@ def main() -> int:
     ftp = FtpFixture(args.host, args.password, args.timeout)
     uci = Uci(session, args.busy_timeout)
 
-    original: Dict[str, str] = {}
-    results: Dict[str, bool] = {}
+    original: dict[str, str] = {}
+    results: dict[str, bool] = {}
     cleanup_ok = True
     # $DF1C only belongs to the command interface once the setting is on; before
     # that the address is the REU's, so the suite must not write to it.

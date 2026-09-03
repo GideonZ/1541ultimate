@@ -23,7 +23,8 @@ import fcntl
 import os
 import subprocess
 import tempfile
-from typing import Mapping, Optional, Union
+from typing import Union
+from collections.abc import Mapping
 
 from report import Failure
 
@@ -93,7 +94,7 @@ def ensure_assembler() -> None:
 
 
 def assemble(source: Union[str, "os.PathLike[str]"],
-             defines: Optional[Mapping[str, object]] = None) -> bytes:
+             defines: Mapping[str, object] | None = None) -> bytes:
     """Return the assembled program, with its two-byte load address in front.
 
     `defines` becomes 64tass -D arguments. A source shared with a build that is
@@ -112,7 +113,7 @@ def assemble(source: Union[str, "os.PathLike[str]"],
             for name, value in (defines or {}).items():
                 command += ["-D", f"{name}={value}"]
             result = subprocess.run(
-                command + ["-o", output, source],
+                [*command, "-o", output, source],
                 capture_output=True, text=True, timeout=ASSEMBLE_TIMEOUT_SECONDS)
         except (OSError, subprocess.SubprocessError) as exc:
             raise Failure(f"could not run {ASSEMBLER}: {exc}") from exc

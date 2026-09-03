@@ -28,13 +28,12 @@ import os
 import statistics
 import sys
 import time
-from typing import Callable, List, Optional, Tuple
+from collections.abc import Callable
 
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "lib"))
 
 import health as health_lib  # noqa: E402
-import rest as rest_lib  # noqa: E402
 from api import UltimateApi  # noqa: E402
 from report import (  # noqa: E402
     Failure, add_colour_argument, apply_colour, check_ok, check_start, detail,
@@ -45,9 +44,9 @@ from report import (  # noqa: E402
 SAMPLES = 15
 
 
-def timed(call: Callable[[], object], samples: int) -> Tuple[List[float], object]:
+def timed(call: Callable[[], object], samples: int) -> tuple[list[float], object]:
     """Milliseconds per call, and whatever the last call returned."""
-    timings: List[float] = []
+    timings: list[float] = []
     answer: object = None
     for _ in range(samples):
         started = time.perf_counter()
@@ -56,7 +55,7 @@ def timed(call: Callable[[], object], samples: int) -> Tuple[List[float], object
     return timings, answer
 
 
-def report_route(label: str, timings: List[float], extra: str = "") -> None:
+def report_route(label: str, timings: list[float], extra: str = "") -> None:
     detail(f"{label:<34} median {statistics.median(timings):6.1f}ms  "
            f"min {min(timings):6.1f}  max {max(timings):6.1f}"
            + (f"  {extra}" if extra else ""))
@@ -77,9 +76,9 @@ def main() -> int:
     try:
         section(f"1. One REST call, by route ({args.host})")
         with_menu_closed = [
-            ("GET /v1/info", lambda: api.info()),
+            ("GET /v1/info", api.info),
             ("GET /v1/version", lambda: api.rest.request("GET", "/v1/version")),
-            ("GET /v1/configs", lambda: api.configs.category_names()),
+            ("GET /v1/configs", api.configs.category_names),
             ("GET machine:readmem 1 byte",
              lambda: api.machine.readmem(0x00A2, 1)),
             ("GET machine:readmem 256 bytes",
@@ -116,7 +115,7 @@ def main() -> int:
         # The gate sleeps a fixed settle after every toggle. What that has to
         # cover is the time between the request returning and the screen route
         # answering differently, which is what this measures.
-        delays: List[float] = []
+        delays: list[float] = []
         for _ in range(5):
             for wanted_open in (True, False):
                 api.rest.request("PUT", "/v1/machine:menu_button")

@@ -22,7 +22,7 @@ import os
 import re
 import sys
 import time
-from typing import Sequence
+from collections.abc import Sequence
 
 # tests/lib holds the reporting rules every suite shares; ui_backend sits
 # in this directory.
@@ -474,7 +474,7 @@ def run_overlay_row_checks() -> None:
                    "prgmenu46763.d64            D64  171K",
                    "prgmenu46763.prg            PRG   67"]
         draw_framed_window(chars, colours, top=2, bottom=23, left=0, right=39,
-                           items=["          Select Path"] + listing,
+                           items=["          Select Path", *listing],
                            selected=1, listing_colour=12, selected_colour=1)
         for column in range(1, SCREEN_WIDTH - 1):
             colours[3 * SCREEN_WIDTH + column] = 6

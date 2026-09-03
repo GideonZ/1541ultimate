@@ -29,7 +29,6 @@ from __future__ import annotations
 
 import math
 import os
-from typing import Optional
 
 
 def _seconds(name: str, default: float) -> float:
@@ -239,7 +238,7 @@ KEY_DRAIN_SECONDS = _seconds("U64_UI_KEY_DRAIN", 0.02)
 SPLIT_KEY_DRAIN_SECONDS = _seconds("U64_UI_SPLIT_KEY_DRAIN", 0.06)
 
 
-def key_drain_seconds(split: bool, host: Optional[str] = None) -> float:
+def key_drain_seconds(split: bool, host: str | None = None) -> float:
     """What one key of a batch costs on this target, in seconds.
 
     Named here rather than chosen at each call site, because the two constants
@@ -288,7 +287,7 @@ def remember_key_drain(host: str, seconds: float) -> float:
     return charged
 
 
-def forget_key_drain(host: Optional[str] = None) -> None:
+def forget_key_drain(host: str | None = None) -> None:
     """Drop what was measured, for a test that measures its own."""
     if host is None:
         _measured.clear()

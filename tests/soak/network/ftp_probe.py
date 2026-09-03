@@ -8,7 +8,7 @@ import os
 import re
 import threading
 import time
-from typing import Callable
+from collections.abc import Callable
 
 from connection_runtime import (
     ProbeCorrectness,
@@ -439,7 +439,7 @@ def list_lines(ftp: ftplib.FTP, path: str) -> int:
 
 def seed_self_file(settings: RuntimeSettings, ftp: ftplib.FTP, ordinal: int, *, file_prefix: str = FTP_SELF_FILE_PREFIX) -> str:
     path = next_self_file_path(file_prefix=file_prefix, tag=f"seed_{ordinal}")
-    payload_bytes = f"{file_prefix}{os.getpid()}_{ordinal}\n".encode("utf-8")
+    payload_bytes = f"{file_prefix}{os.getpid()}_{ordinal}\n".encode()
     ftp.storbinary(f"STOR {path}", io.BytesIO(payload_bytes))
     track_self_file(settings, path)
     return path
@@ -738,11 +738,7 @@ def incomplete_operations(
     )
     if surface == ProbeSurface.READ:
         return operations
-    return operations + (
-        ("ftp_partial_stor_temp", lambda settings: partial_stor_temp(settings, file_prefix=file_prefix)),
-        ("ftp_pasv_only_abort", pasv_only_abort),
-        ("ftp_partial_list_root", lambda settings: partial_transfer_abort(settings, "LIST .")),
-    )
+    return (*operations, ("ftp_partial_stor_temp", lambda settings: partial_stor_temp(settings, file_prefix=file_prefix)), ("ftp_pasv_only_abort", pasv_only_abort), ("ftp_partial_list_root", lambda settings: partial_transfer_abort(settings, "LIST .")))
 
 
 def surface_operations(
@@ -763,14 +759,7 @@ def surface_operations(
         return (("ftp_smoke_pwd", lambda settings, ftp: f"pwd={ftp.pwd()}"),)
     if surface == ProbeSurface.READ:
         return read_operations
-    return read_operations + (
-        ("ftp_upload_tiny_self_file", lambda settings, ftp: upload_self_file(settings, ftp, FTP_TINY_FILE_SIZE_BYTES, file_prefix=file_prefix, shared_state=shared_state)),
-        ("ftp_download_tiny_self_file", lambda settings, ftp: download_self_file(settings, ftp, FTP_TINY_FILE_SIZE_BYTES, file_prefix=file_prefix, shared_state=shared_state)),
-        ("ftp_upload_large_self_file", lambda settings, ftp: upload_self_file(settings, ftp, FTP_LARGE_FILE_SIZE_BYTES, file_prefix=file_prefix, shared_state=shared_state)),
-        ("ftp_download_large_self_file", lambda settings, ftp: download_self_file(settings, ftp, FTP_LARGE_FILE_SIZE_BYTES, file_prefix=file_prefix, shared_state=shared_state)),
-        ("ftp_rename_self_file", lambda settings, ftp: rename_self_file(settings, ftp, file_prefix=file_prefix, shared_state=shared_state)),
-        ("ftp_delete_self_file", lambda settings, ftp: delete_self_file(settings, ftp, file_prefix=file_prefix, shared_state=shared_state)),
-    )
+    return (*read_operations, ("ftp_upload_tiny_self_file", lambda settings, ftp: upload_self_file(settings, ftp, FTP_TINY_FILE_SIZE_BYTES, file_prefix=file_prefix, shared_state=shared_state)), ("ftp_download_tiny_self_file", lambda settings, ftp: download_self_file(settings, ftp, FTP_TINY_FILE_SIZE_BYTES, file_prefix=file_prefix, shared_state=shared_state)), ("ftp_upload_large_self_file", lambda settings, ftp: upload_self_file(settings, ftp, FTP_LARGE_FILE_SIZE_BYTES, file_prefix=file_prefix, shared_state=shared_state)), ("ftp_download_large_self_file", lambda settings, ftp: download_self_file(settings, ftp, FTP_LARGE_FILE_SIZE_BYTES, file_prefix=file_prefix, shared_state=shared_state)), ("ftp_rename_self_file", lambda settings, ftp: rename_self_file(settings, ftp, file_prefix=file_prefix, shared_state=shared_state)), ("ftp_delete_self_file", lambda settings, ftp: delete_self_file(settings, ftp, file_prefix=file_prefix, shared_state=shared_state)))
 
 
 def run_probe(

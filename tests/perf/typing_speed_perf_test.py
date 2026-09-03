@@ -44,7 +44,6 @@ import string
 import sys
 import time
 from pathlib import Path
-from typing import List, Tuple
 
 # tests/lib holds the reporting rules every suite shares; tests/e2e/lib holds
 # the UI backend under measurement.
@@ -116,7 +115,7 @@ def type_half(browser, text: str) -> None:
         browser.type_char(ch)
 
 
-def measure(browser, strategy, length: int) -> Tuple[float, bool]:
+def measure(browser, strategy, length: int) -> tuple[float, bool]:
     """Type a needle into the rename field. Returns (seconds, arrived whole)."""
     # The field arrives pre-filled with the current name; the needle is typed
     # after it rather than replacing it, which needs no field-clearing key and
@@ -136,7 +135,7 @@ def measure(browser, strategy, length: int) -> Tuple[float, bool]:
 def sweep(browser, name: str, strategy, repeats: int, length: int,
           expect_incomplete: bool = False) -> None:
     check_start(name)
-    rates: List[float] = []
+    rates: list[float] = []
     lost = 0
     for _ in range(repeats):
         elapsed, arrived = measure(browser, strategy, length)

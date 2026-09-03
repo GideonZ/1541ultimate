@@ -427,7 +427,6 @@ class MenuDriver:
     def select_row_text(self, text, max_steps=40, require=True):
         """Move the highlight until the selected row contains `text`."""
         low = text.lower()
-        last_dir = None
         for _ in range(max_steps):
             screen = self.screen()
             sr = screen.selected_row
@@ -444,10 +443,8 @@ class MenuDriver:
                 continue
             if tr > sr:
                 self.tap(K_DOWN)
-                last_dir = "down"
             else:
                 self.tap(K_UP)
-                last_dir = "up"
         if require:
             raise Failure(f"could not select row containing {text!r} within {max_steps} steps")
         return None
@@ -1518,7 +1515,7 @@ def context_actions_present(ctx, expected):
 
 def stage_edge(ctx):
     section("stage: edge")
-    d, s, server, args = ctx.d, ctx.s, ctx.server, ctx.args
+    d, _s, server, args = ctx.d, ctx.s, ctx.server, ctx.args
 
     # -- multiple simultaneous hosts: with password (IP) + anonymous (no pw) --
     alias_pw = safe_name(args.alias_prefix + "pw")
@@ -1782,7 +1779,7 @@ def stage_negative(ctx):
     try:
         create_host(ctx, alias, path="/RDONLY")
         ctx.ensure_alive("perm-denied create")
-        res = delete_remote_entry(ctx, alias, "LOCKED.TXT")
+        delete_remote_entry(ctx, alias, "LOCKED.TXT")
         still_there = server.exists("RDONLY", "LOCKED.TXT")
         ctx.ensure_alive("perm-denied delete")
         recover_after_negative(ctx, "permission-denied delete")
@@ -1857,7 +1854,7 @@ def soak_read(ctx, n):
 
 
 def soak_edit(ctx, n):
-    changed, reverted = edit_and_revert(ctx, ctx.alias)
+    _changed, reverted = edit_and_revert(ctx, ctx.alias)
     if not reverted:
         raise Failure("soak edit: host Path was not reverted to /")
     return "edit/revert"
@@ -2092,7 +2089,7 @@ def parse_args(argv=None):
     p.add_argument("-n", "--no-assertions", action="store_true",
                    help="Warn instead of failing on assertion mismatches")
     p.add_argument("-t", "--timeout", type=float, default=5.0, help="REST timeout seconds")
-    p.add_argument("--stage", choices=STAGE_ORDER + ["all"], default="smoke")
+    p.add_argument("--stage", choices=[*STAGE_ORDER, "all"], default="smoke")
     p.add_argument("--ftp-bind-host", default="0.0.0.0", help="local FTP bind address")
     p.add_argument("--ftp-advertised-host", default=None,
                    help="address the Ultimate should connect to (required unless inferable)")

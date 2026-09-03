@@ -22,7 +22,6 @@ import tempfile
 import time
 import urllib.parse
 import urllib.request
-from typing import Dict, List
 
 # tests/lib holds the reporting rules every suite shares; tests/e2e/lib
 # holds the shared UI backend.
@@ -63,14 +62,14 @@ TELNET_STATUS_ROW = 23
 TELNET_WIDTH = 60
 TELNET_HEIGHT = 24
 
-def rest_headers(password: str) -> Dict[str, str]:
+def rest_headers(password: str) -> dict[str, str]:
     headers = {}
     if password:
         headers["X-Password"] = password
     return headers
 
 
-def rest_json(host: str, password: str, method: str, path: str) -> Dict[str, object]:
+def rest_json(host: str, password: str, method: str, path: str) -> dict[str, object]:
     request = urllib.request.Request(
         f"http://{targets.host_for(host, path)}{path}",
         data=b"" if method == "PUT" else None,
@@ -93,7 +92,7 @@ def create_seed_d64(host: str, password: str, test_dir: str) -> None:
         raise Failure(f"Seed D64 creation failed: {body}")
 
 
-def fixture_info(host: str, password: str, test_dir: str, name: str) -> Dict[str, object]:
+def fixture_info(host: str, password: str, test_dir: str, name: str) -> dict[str, object]:
     path = f"/v1/files/Temp/{test_dir}/{name}:info"
     body = rest_json(host, password, "GET", path)
     info = body.get("files")
@@ -102,7 +101,7 @@ def fixture_info(host: str, password: str, test_dir: str, name: str) -> Dict[str
     return info
 
 
-def get_drive_a_image(host: str) -> Dict[str, object]:
+def get_drive_a_image(host: str) -> dict[str, object]:
     with rest_lib.retrying_urlopen(
             urllib.request.Request(f"http://{targets.device_of(host)}/v1/drives"), 10.0) as response:
         payload = json.loads(response.read().decode("utf-8"))
@@ -116,9 +115,7 @@ def cleanup_fixture_files(ftp: ftplib.FTP, test_dir: str) -> None:
     directory = f"/Temp/{test_dir}"
     for name in ftp_lib.names(ftp, directory):
         if (
-            name == TEMP_SEED_NAME
-            or name == RENAMED_NAME
-            or name.startswith(FIXTURE_PREFIX)
+            name in (TEMP_SEED_NAME, RENAMED_NAME) or name.startswith(FIXTURE_PREFIX)
         ):
             ftp_lib.delete_quietly(ftp, f"{directory}/{name}")
 
@@ -196,7 +193,7 @@ def open_fixture_directory(browser: Browser, test_dir: str) -> None:
     browser.go_to_directory(f"Temp/{test_dir}")
 
 
-def open_fixture_context_menu(browser: Browser) -> List[str]:
+def open_fixture_context_menu(browser: Browser) -> list[str]:
     browser.select_entry("zz")
     if "D64" not in browser.selected_text():
         raise Failure(f"Expected D64 fixture selected, got {browser.selected_text()!r}")

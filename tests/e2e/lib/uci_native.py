@@ -19,7 +19,6 @@ test can run the same scenario down either route.
 
 import os
 import time
-from typing import List, Optional, Tuple
 
 from assembler import assemble
 from report import Failure, detail
@@ -112,7 +111,7 @@ class NativeUci:
     # -- one command --------------------------------------------------------
 
     def _run(self, command: bytes, overrun_reads: int, cap: int,
-             max_blocks: int = MAX_BLOCKS, abort_first: bool = False) -> Tuple[bytes, bytes]:
+             max_blocks: int = MAX_BLOCKS, abort_first: bool = False) -> tuple[bytes, bytes]:
         """Hand one command to the agent and return (result block, payload)."""
         if len(command) > CMD_QUEUE_BYTES:
             raise Failure(f"a command of {len(command)} bytes does not fit the command queue")
@@ -193,7 +192,7 @@ class NativeUci:
         text = self._at(block, STATBUF, self._byte(block, R_SLEN))
         overrun = self._at(block, R_OVRN, min(overrun_reads, MAX_OVERRUN_READS))
 
-        blocks: List[Reply] = []
+        blocks: list[Reply] = []
         previous = 0
         for index in range(count):
             cumulative = int.from_bytes(self._at(block, R_BLEN + index * 2, 2), "little")
@@ -221,7 +220,7 @@ class NativeUci:
 
     # -- raw drain ----------------------------------------------------------
 
-    def probe_drain(self, command: bytes, cap: int) -> Tuple[int, bool, bytes]:
+    def probe_drain(self, command: bytes, cap: int) -> tuple[int, bool, bytes]:
         """Push one command and pull bytes until DATA_AV clears or `cap` is hit.
 
         Returns how many bytes the queue handed out, whether DATA_AV cleared,
@@ -240,7 +239,7 @@ class NativeUci:
 
     # -- abort --------------------------------------------------------------
 
-    def probe_abort(self, command: bytes) -> Tuple[int, bool]:
+    def probe_abort(self, command: bytes) -> tuple[int, bool]:
         """Push one command, take its first reply block, then abandon it.
 
         The same measurement uci.Uci.probe_abort makes: how many bytes that

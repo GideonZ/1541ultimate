@@ -36,7 +36,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Sequence, Tuple
+from collections.abc import Sequence
 
 # tests/lib holds the reporting library. Finding it here rather than
 # relying on the caller keeps this module importable from a suite that
@@ -125,7 +125,7 @@ SELECTED_ROW_MIN_MARKED_CELLS = 12
 CURSOR_SETTLE_ATTEMPTS = 4
 
 
-def host_menu_open(host: str, password: Optional[str], timeout: float) -> bool:
+def host_menu_open(host: str, password: str | None, timeout: float) -> bool:
     """Whether the on-device menu of one machine, named directly, is open.
 
     Takes a host rather than a target because the caller that needs it is
@@ -147,7 +147,7 @@ def host_menu_open(host: str, password: Optional[str], timeout: float) -> bool:
         raise Failure(f"{MENU_SCREEN_PATH} on {host} failed: {exc}")
 
 
-def close_host_menu(host: str, password: Optional[str], timeout: float) -> None:
+def close_host_menu(host: str, password: str | None, timeout: float) -> None:
     """Shut the on-device menu of one machine, named directly.
 
     A cartridge target injects its keys into the computer, and the firmware
@@ -179,8 +179,8 @@ def close_host_menu(host: str, password: Optional[str], timeout: float) -> None:
         "consumed by that menu instead of reaching the cartridge")
 
 
-def fetch_product(host: str, password: Optional[str],
-                  timeout: float) -> Tuple[str, str]:
+def fetch_product(host: str, password: str | None,
+                  timeout: float) -> tuple[str, str]:
     """The `product` and `firmware_version` of a device, over plain REST.
 
     Free of any backend, because both transports need it and a Telnet session
@@ -200,7 +200,7 @@ def fetch_product(host: str, password: Optional[str],
     return str(payload.get("product", "")), str(payload.get("firmware_version", ""))
 
 
-def fetch_navigation_style(host: str, password: Optional[str],
+def fetch_navigation_style(host: str, password: str | None,
                            timeout: float) -> str:
     """The device's "Navigation Style" setting, over plain REST.
 
@@ -247,8 +247,8 @@ def strip_frame(text: str) -> str:
 class Snapshot:
     """One rendered UI screen, independent of which transport produced it."""
 
-    lines: List[str]
-    reverse_cells: List[Tuple[int, int]]
+    lines: list[str]
+    reverse_cells: list[tuple[int, int]]
     last_command: str
 
     def line(self, index: int) -> str:
@@ -324,7 +324,7 @@ class Backend:
     # The key that empties a string edit field in one keystroke, or None where
     # the transport cannot produce one. Read by Browser.fill_edit_field, which
     # falls back to counted BACKSPACE taps.
-    clear_field_key: Optional[str] = None
+    clear_field_key: str | None = None
 
     def send_key_sequence(self, keys: Sequence[str], label: str) -> Snapshot:
         """Several different keys as one batch, where the transport can.
@@ -387,7 +387,7 @@ class Backend:
                                       self.timeout)
 
     @property
-    def machine_password(self) -> Optional[str]:
+    def machine_password(self) -> str | None:
         return None
 
     def enter_file_browser(self) -> None:
@@ -412,7 +412,7 @@ class Backend:
         """
         pass
 
-    def selected_row(self, entry_rows: Optional[Sequence[int]] = None) -> int:
+    def selected_row(self, entry_rows: Sequence[int] | None = None) -> int:
         """Row index the on-device UI currently marks as selected/highlighted.
 
         The browser marks its cursor row by colour, not by the character
@@ -425,7 +425,7 @@ class Backend:
         """
         raise NotImplementedError
 
-    def selected_text(self, entry_rows: Optional[Sequence[int]] = None) -> str:
+    def selected_text(self, entry_rows: Sequence[int] | None = None) -> str:
         """Text of the selected row, read from a single screen capture.
 
         Both halves have to come from the same capture. Reading the rows and
@@ -439,8 +439,8 @@ class Backend:
         raise NotImplementedError
 
     def selection_and_rows(
-        self, entry_rows: Optional[Sequence[int]] = None
-    ) -> Tuple[int, List[str]]:
+        self, entry_rows: Sequence[int] | None = None
+    ) -> tuple[int, list[str]]:
         """The cursor row and the whole screen, from one capture.
 
         Same rule as selected_text: a caller that wants to find an entry on
@@ -463,7 +463,7 @@ class Backend:
 # (cursor_up_down, cursor_left_right) carry both directions, reversed by
 # shift; PGUP/PGDN reuse the F1/F7 remap every UI context applies
 # (UserInterface::keymapper in software/userinterface/userinterface.cc).
-KEY_ALIASES: Dict[str, List[str]] = {
+KEY_ALIASES: dict[str, list[str]] = {
     "UP": ["left_shift", "cursor_up_down"],
     "DOWN": ["cursor_up_down"],
     "LEFT": ["left_shift", "cursor_left_right"],
@@ -534,19 +534,19 @@ KEY_ALIASES: Dict[str, List[str]] = {
 # shift produces lowercase (software/io/usb/keyboard_usb.cc keymap_normal /
 # keymap_shifted). Punctuation follows the same tables: unshifted symbol keys
 # map directly, the shifted digit row gives the usual '!"#$%&'()'.
-_DIRECT_CHARS: Dict[str, List[str]] = {
+_DIRECT_CHARS: dict[str, list[str]] = {
     " ": ["space"], ":": ["colon"], ",": ["comma"], ".": ["period"],
     "+": ["plus"], "-": ["minus"], "=": ["equals"], "/": ["slash"],
     "@": ["at"], ";": ["semicolon"], "*": ["star"], "\\": ["arrow_up"],
     "\r": ["return"], "\b": ["inst_del"],
 }
-_SHIFTED_DIGIT_CHARS: Dict[str, str] = {
+_SHIFTED_DIGIT_CHARS: dict[str, str] = {
     "!": "1", '"': "2", "#": "3", "$": "4", "%": "5", "&": "6",
     "'": "7", "(": "8", ")": "9",
 }
 # Punctuation the C64 keyboard reaches by shifting a symbol key rather than a
 # digit (software/io/c64/keyboard_c64.cc keymap_shifted).
-_SHIFTED_SYMBOL_CHARS: Dict[str, str] = {"?": "slash", "_": "pound", "^": "arrow_up"}
+_SHIFTED_SYMBOL_CHARS: dict[str, str] = {"?": "slash", "_": "pound", "^": "arrow_up"}
 
 
 # Characters that are safe to type into an overlay to move its cursor.
@@ -557,7 +557,7 @@ _SHIFTED_SYMBOL_CHARS: Dict[str, str] = {"?": "slash", "_": "pound", "^": "arrow
 _SEEKABLE_RE = re.compile(r"[A-Za-z0-9]")
 
 
-def _seek_landing(labels: Sequence[str], prefix: str) -> Optional[int]:
+def _seek_landing(labels: Sequence[str], prefix: str) -> int | None:
     """Where ContextMenu::perform_quick_seek puts the cursor for `prefix`.
 
     It appends '*' and scans from index 0, taking the first label that matches
@@ -572,7 +572,7 @@ def _seek_landing(labels: Sequence[str], prefix: str) -> Optional[int]:
 
 
 def plan_overlay_navigation(labels: Sequence[str], target: str,
-                            start: int = 0) -> Tuple[str, int]:
+                            start: int = 0) -> tuple[str, int]:
     """Fewest keystrokes to move an overlay's cursor from `start` to `target`.
 
     Returns (prefix, delta): type `prefix` one character at a time, then press
@@ -608,7 +608,7 @@ def plan_overlay_navigation(labels: Sequence[str], target: str,
     return best
 
 
-def char_to_combo(ch: str) -> List[str]:
+def char_to_combo(ch: str) -> list[str]:
     if ch in _DIRECT_CHARS:
         return _DIRECT_CHARS[ch]
     if ch in _SHIFTED_DIGIT_CHARS:
@@ -731,7 +731,7 @@ def find_open_window(chars: bytes, rows: Sequence[int]) -> Window:
     return Window(range(interior[0], interior[-1] + 1), left + 1, right)
 
 
-def _find_frames(chars: bytes) -> List[Tuple[int, int, int, int]]:
+def _find_frames(chars: bytes) -> list[tuple[int, int, int, int]]:
     """Every complete window frame on screen, as (top, bottom, left, right).
 
     Found from the bottom rule upward. The bottom corners are the two codes a
@@ -761,7 +761,7 @@ def _find_frames(chars: bytes) -> List[Tuple[int, int, int, int]]:
 
 
 def _frame_top(chars: bytes, bottom_row: int, left: int,
-               right: int) -> Optional[int]:
+               right: int) -> int | None:
     """The row carrying the top rule of the frame closed at `bottom_row`.
 
     The nearest row above whose whole span is frame characters. Walking up
@@ -791,7 +791,7 @@ class RowMark:
     colour_cells: int        # how many cells carry it
 
 
-def row_marks(chars: bytes, colours: bytes, window: Window) -> Dict[int, RowMark]:
+def row_marks(chars: bytes, colours: bytes, window: Window) -> dict[int, RowMark]:
     """The marking of every drawn row of `window`, keyed by row index.
 
     Only the cells inside the window are counted. A context menu shares its
@@ -808,7 +808,7 @@ def row_marks(chars: bytes, colours: bytes, window: Window) -> Dict[int, RowMark
     missed an entry that was plainly present. TelnetBackend._marked_row
     applies the same rule.
     """
-    marks: Dict[int, RowMark] = {}
+    marks: dict[int, RowMark] = {}
     for row in window.rows:
         first = row * SCREEN_WIDTH + window.first_column
         last = row * SCREEN_WIDTH + window.last_column
@@ -816,8 +816,8 @@ def row_marks(chars: bytes, colours: bytes, window: Window) -> Dict[int, RowMark
         row_colours = colours[first:last]
         if all((ch & 0x7F) in (0x00, 0x20) for ch in row_chars):
             continue
-        background_counts: Dict[int, int] = {}
-        foreground_counts: Dict[int, int] = {}
+        background_counts: dict[int, int] = {}
+        foreground_counts: dict[int, int] = {}
         reverse_count = 0
         for ch, colour_code in zip(row_chars, row_colours):
             if ch & 0x80:
@@ -850,7 +850,7 @@ def count_colour(colours: bytes, row: int, colour: int, window: Window) -> int:
 
 
 def find_cursor_colour(chars: bytes, colours: bytes,
-                       window: Window) -> Optional[int]:
+                       window: Window) -> int | None:
     """The foreground colour this screen marks its cursor row with, if it says.
 
     A listing draws every unselected entry in one colour and the selected one
@@ -886,7 +886,7 @@ def find_cursor_colour(chars: bytes, colours: bytes,
     minimum = window.min_marked_cells
     if any(mark.background >= minimum for mark in marks.values()):
         return None
-    tally: Dict[int, int] = {}
+    tally: dict[int, int] = {}
     for mark in marks.values():
         tally[mark.colour] = tally.get(mark.colour, 0) + 1
     odd = [mark for mark in marks.values()
@@ -900,7 +900,7 @@ def find_cursor_colour(chars: bytes, colours: bytes,
 
 
 def measure_cursor_colour(chars: bytes, colours: bytes,
-                          rows: Sequence[int]) -> Optional[int]:
+                          rows: Sequence[int]) -> int | None:
     """The machine's cursor colour, measured on the rows it will be read from.
 
     find_cursor_colour asks which colour exactly one row carries, so it has to
@@ -918,7 +918,7 @@ def measure_cursor_colour(chars: bytes, colours: bytes,
 
 def find_selected_row_rest(chars: bytes, colours: bytes, rows: Sequence[int],
                            strict: bool = False,
-                           cursor_colour: Optional[int] = None) -> int:
+                           cursor_colour: int | None = None) -> int:
     """Locate the cursor row from the raw menu_screen char/colour planes.
 
     The browser marks its cursor row with a distinct background colour
@@ -1054,9 +1054,9 @@ class RestBackend(Backend):
     def __init__(
         self,
         host: str,
-        password: Optional[str] = None,
+        password: str | None = None,
         timeout: float = 5.0,
-        interface_type: Optional[str] = OVERLAY_MODE,
+        interface_type: str | None = OVERLAY_MODE,
     ) -> None:
         self.target = targets.parse(host)
         self.host = self.target.device
@@ -1073,8 +1073,8 @@ class RestBackend(Backend):
         self._key_drain_host = targets.device_of(self.target.input_host)
         # The foreground colour this machine marks the cursor row with, once a
         # screen has shown it unambiguously. See find_cursor_colour.
-        self._cursor_colour: Optional[int] = None
-        self._original_interface_type: Optional[str] = None
+        self._cursor_colour: int | None = None
+        self._original_interface_type: str | None = None
         if interface_type is not None:
             # Asked of the device rather than assumed from its name: a
             # cartridge has one way of drawing its UI and does not offer the
@@ -1114,7 +1114,7 @@ class RestBackend(Backend):
         self._open_menu()
 
     # -- transport --
-    def _url(self, path: str, params: Optional[Dict[str, object]] = None) -> str:
+    def _url(self, path: str, params: dict[str, object] | None = None) -> str:
         # The handle says where the device is, ports included, so one builder
         # answers for every caller here.
         return rest_lib.url_for(self.target, path, params)
@@ -1134,16 +1134,16 @@ class RestBackend(Backend):
         return self.host
 
     @property
-    def machine_password(self) -> Optional[str]:
+    def machine_password(self) -> str | None:
         return self.password
 
     def _request(
         self, method: str, path: str,
-        params: Optional[Dict[str, object]] = None,
-        payload: Optional[Dict[str, object]] = None,
-    ) -> Tuple[int, bytes]:
+        params: dict[str, object] | None = None,
+        payload: dict[str, object] | None = None,
+    ) -> tuple[int, bytes]:
         body = None if payload is None else json.dumps(payload).encode("utf-8")
-        headers: Dict[str, str] = {}
+        headers: dict[str, str] = {}
         if self.password:
             headers["X-Password"] = self.password
         if body is not None:
@@ -1164,7 +1164,7 @@ class RestBackend(Backend):
             raise Failure(f"{method} {self._url(path, params)} failed: {exc}")
 
     # -- config --
-    def get_config_optional(self, store: str, item: str) -> Optional[str]:
+    def get_config_optional(self, store: str, item: str) -> str | None:
         """The setting's value, or None when this device does not have it."""
         status, body = self._request(
             "GET", f"{CONFIGS_PATH}/{urllib.parse.quote(store)}/{urllib.parse.quote(item)}")
@@ -1191,7 +1191,7 @@ class RestBackend(Backend):
             raise Failure(f"setting '{item}' to '{value}' failed with HTTP {status}: {body[:160]!r}")
 
     # -- menu open/close --
-    def _menu_screen_body(self) -> Optional[bytes]:
+    def _menu_screen_body(self) -> bytes | None:
         status, body = self._request("GET", MENU_SCREEN_PATH)
         if status == 404:
             return None
@@ -1304,7 +1304,7 @@ class RestBackend(Backend):
     def _decode(self, body: bytes) -> Snapshot:
         chars = body[:SCREEN_CELLS]
         lines = []
-        reverse_cells: List[Tuple[int, int]] = []
+        reverse_cells: list[tuple[int, int]] = []
         for row in range(SCREEN_HEIGHT):
             cells = []
             for col in range(SCREEN_WIDTH):
@@ -1324,7 +1324,7 @@ class RestBackend(Backend):
         return body
 
     def _learn_cursor_colour(self, body: bytes,
-                             entry_rows: Optional[Sequence[int]]) -> None:
+                             entry_rows: Sequence[int] | None) -> None:
         """Take the machine's cursor colour from this screen, if it teaches one.
 
         Every screen the backend fetches is offered, not just the ones a
@@ -1350,7 +1350,7 @@ class RestBackend(Backend):
         if measured is not None:
             self._cursor_colour = measured
 
-    def _selected_row_from_body(self, body: bytes, entry_rows: Optional[Sequence[int]],
+    def _selected_row_from_body(self, body: bytes, entry_rows: Sequence[int] | None,
                                 strict: bool = False) -> int:
         chars = body[:SCREEN_CELLS]
         colours = body[SCREEN_CELLS:]
@@ -1360,7 +1360,7 @@ class RestBackend(Backend):
         self._learn_cursor_colour(body, entry_rows)
         return find_selected_row_rest(chars, colours, rows, strict, self._cursor_colour)
 
-    def _settled_selection(self, entry_rows: Optional[Sequence[int]]) -> Tuple[bytes, int]:
+    def _settled_selection(self, entry_rows: Sequence[int] | None) -> tuple[bytes, int]:
         """One screen and its cursor row, once a cursor is actually drawn.
 
         A repaint can leave the browser with no cursor marker for a moment.
@@ -1382,28 +1382,28 @@ class RestBackend(Backend):
     def capture(self) -> Snapshot:
         return self._decode(self._body())
 
-    def selected_row(self, entry_rows: Optional[Sequence[int]] = None) -> int:
+    def selected_row(self, entry_rows: Sequence[int] | None = None) -> int:
         return self._settled_selection(entry_rows)[1]
 
-    def selected_text(self, entry_rows: Optional[Sequence[int]] = None) -> str:
+    def selected_text(self, entry_rows: Sequence[int] | None = None) -> str:
         body, index = self._settled_selection(entry_rows)
         return strip_frame(self._decode(body).lines[index].rstrip())
 
     def selection_and_rows(
-        self, entry_rows: Optional[Sequence[int]] = None
-    ) -> Tuple[int, List[str]]:
+        self, entry_rows: Sequence[int] | None = None
+    ) -> tuple[int, list[str]]:
         body, index = self._settled_selection(entry_rows)
         return index, [line.rstrip() for line in self._decode(body).lines]
 
     # -- input --
-    def _post_events(self, events: List[dict]) -> None:
+    def _post_events(self, events: list[dict]) -> None:
         for batch in api_lib.input_batches(events):
             status, body = self._request("POST", INPUT_PATH, payload={"events": batch})
             if status != 200:
                 raise Failure(f"machine:input failed with HTTP {status}: {body[:160]!r}")
 
-    def _settle(self, before: Optional[bytes],
-                change_timeout: Optional[float] = None,
+    def _settle(self, before: bytes | None,
+                change_timeout: float | None = None,
                 min_drain: float = 0.0) -> Snapshot:
         # A batch is accepted by REST immediately but drains through the C64
         # matrix over time (see tests/e2e/lib/menu.py), so the first poll or
@@ -1572,7 +1572,7 @@ ALT_CHARSET_MAP = {
     "t": "+", "u": "+", "v": "+", "w": "+", "n": "+",
 }
 
-TELNET_KEY_BYTES: Dict[str, bytes] = {
+TELNET_KEY_BYTES: dict[str, bytes] = {
     "UP": b"\x1b[A",
     "DOWN": b"\x1b[B",
     "RIGHT": b"\x1b[C",
@@ -1655,12 +1655,12 @@ class VT100Screen:
         self.reverse_mode = False
         self.alt_charset = False
         self._esc = False
-        self._csi: Optional[str] = None
-        self._charset: Optional[str] = None
+        self._csi: str | None = None
+        self._charset: str | None = None
         self._password_seen = False
         self._text_tail = ""
 
-    def rows(self) -> List[str]:
+    def rows(self) -> list[str]:
         return ["".join(row) for row in self.lines]
 
     def feed(self, data: bytes) -> None:
@@ -1788,7 +1788,7 @@ class VT100Screen:
 
 class TelnetBackend(Backend):
     def __init__(
-        self, host: str, port: int, password: Optional[str] = None, timeout: float = 5.0,
+        self, host: str, port: int, password: str | None = None, timeout: float = 5.0,
         width: int = WIDTH, height: int = HEIGHT,
     ) -> None:
         # Kept so this backend can ask the device what it is; see
@@ -1797,7 +1797,7 @@ class TelnetBackend(Backend):
         self.password = password
         # The colour this machine's browser marks its cursor row with, once a
         # listing has shown it unambiguously; see _marked_row.
-        self._selected_sgr: Optional[str] = None
+        self._selected_sgr: str | None = None
         self.sock = self._connect_with_retry(host, port, timeout)
         self.sock.setblocking(False)
         self.timeout = timeout
@@ -1815,13 +1815,13 @@ class TelnetBackend(Backend):
         return self.host
 
     @property
-    def machine_password(self) -> Optional[str]:
+    def machine_password(self) -> str | None:
         return self.password
 
     @staticmethod
     def _connect_with_retry(host: str, port: int, timeout: float) -> socket.socket:
         deadline = time.time() + max(timeout, 15.0)
-        last_error: Optional[BaseException] = None
+        last_error: BaseException | None = None
         attempts = 0
         started = time.monotonic()
         while time.time() < deadline:
@@ -1879,7 +1879,7 @@ class TelnetBackend(Backend):
         return self.screen.snapshot(self.last_command)
 
     @property
-    def selected_sgr(self) -> Optional[str]:
+    def selected_sgr(self) -> str | None:
         """The colour this machine marks a cursor row with, once measured.
 
         None until a listing has shown it. A caller that has to find the
@@ -1889,7 +1889,7 @@ class TelnetBackend(Backend):
         """
         return self._selected_sgr
 
-    def _content_sgr(self, row: int, text: str) -> Optional[str]:
+    def _content_sgr(self, row: int, text: str) -> str | None:
         """The colour the browser drew this row's first content cell in.
 
         The first cell is not always column zero: a C64 Ultimate draws its
@@ -1901,7 +1901,7 @@ class TelnetBackend(Backend):
                 return self.screen.colours[row][column]
         return None
 
-    def _marked_row(self, entry_rows: Sequence[int], rows: List[str]) -> int:
+    def _marked_row(self, entry_rows: Sequence[int], rows: list[str]) -> int:
         """The cursor row, as the one row drawn in a colour of its own.
 
         The same rule the REST reader uses, for the same reason: a listing
@@ -1917,7 +1917,7 @@ class TelnetBackend(Backend):
         drawn = {row: self._content_sgr(row, rows[row]) for row in entry_rows
                  if strip_frame(rows[row])}
         drawn = {row: sgr for row, sgr in drawn.items() if sgr is not None}
-        tally: Dict[str, int] = {}
+        tally: dict[str, int] = {}
         for sgr in drawn.values():
             tally[sgr] = tally.get(sgr, 0) + 1
         odd = [row for row, sgr in drawn.items() if tally[sgr] == 1]
@@ -1933,13 +1933,13 @@ class TelnetBackend(Backend):
             f"found {odd}; screen was:\n{chr(10).join(rows)}"
         )
 
-    def selected_row(self, entry_rows: Optional[Sequence[int]] = None) -> int:
+    def selected_row(self, entry_rows: Sequence[int] | None = None) -> int:
         if entry_rows is None:
             raise Failure("TelnetBackend.selected_row requires entry_rows")
         self._drain_until_idle(timeout=self.timeout)
         return self._marked_row(entry_rows, self.screen.rows())
 
-    def selected_text(self, entry_rows: Optional[Sequence[int]] = None) -> str:
+    def selected_text(self, entry_rows: Sequence[int] | None = None) -> str:
         if entry_rows is None:
             raise Failure("TelnetBackend.selected_text requires entry_rows")
         self._drain_until_idle(timeout=self.timeout)
@@ -1947,8 +1947,8 @@ class TelnetBackend(Backend):
         return strip_frame(rows[self._marked_row(entry_rows, rows)])
 
     def selection_and_rows(
-        self, entry_rows: Optional[Sequence[int]] = None
-    ) -> Tuple[int, List[str]]:
+        self, entry_rows: Sequence[int] | None = None
+    ) -> tuple[int, list[str]]:
         if entry_rows is None:
             raise Failure("TelnetBackend.selection_and_rows requires entry_rows")
         self._drain_until_idle(timeout=self.timeout)
@@ -1967,7 +1967,7 @@ class TelnetBackend(Backend):
         self._send(payload, key)
         return self.capture()
 
-    def send_key_count(self, key: str) -> Tuple[Snapshot, int]:
+    def send_key_count(self, key: str) -> tuple[Snapshot, int]:
         """Send a key and return (snapshot, bytes_received_during_redraw).
 
         Used to measure per-keystroke output volume, so a flood-on-scroll
@@ -2083,7 +2083,7 @@ class TelnetBackend(Backend):
         short quiet check instead. See tests/lib/pacing.py for the measurements
         behind both numbers.
         """
-        received: List[bytes] = []
+        received: list[bytes] = []
         try:
             started = time.time()
             end = started + timeout
@@ -2093,7 +2093,7 @@ class TelnetBackend(Backend):
             self._expect_settle = False
             first_wait = (pacing.TELNET_FIRST_BYTE_TIMEOUT_SECONDS if expecting
                           else pacing.TELNET_QUIET_CHECK_SECONDS)
-            last_data: Optional[float] = None
+            last_data: float | None = None
             drained = 0
             while time.time() < end:
                 wait = min(pacing.TELNET_IDLE_GAP_SECONDS, max(0.0, end - time.time()))
@@ -2180,9 +2180,9 @@ _MODE_INTERFACE_TYPE = {
 def make_backend(
     mode: str,
     host: str,
-    password: Optional[str] = None,
+    password: str | None = None,
     timeout: float = 5.0,
-    telnet_host: Optional[str] = None,
+    telnet_host: str | None = None,
     telnet_port: int = 23,
     telnet_width: int = WIDTH,
     telnet_height: int = HEIGHT,
@@ -2260,7 +2260,7 @@ class Browser:
     def capture(self) -> Snapshot:
         return self.backend.capture()
 
-    def rows(self) -> List[str]:
+    def rows(self) -> list[str]:
         return [line.rstrip() for line in self.backend.capture().lines]
 
     def screen(self) -> str:
@@ -2356,7 +2356,7 @@ class Browser:
         """How many rows one page key moves, for this transport's window."""
         return max(1, len(self.entry_rows) // 2)
 
-    def move_rows(self, rows: int) -> Optional[Snapshot]:
+    def move_rows(self, rows: int) -> Snapshot | None:
         """Move the cursor `rows` rows, down when positive, in one request.
 
         The displacement is exactly `rows` either way: the page keys carry
@@ -2566,7 +2566,7 @@ class Browser:
         self.descend(directory)
 
     # -- overlays (context menu / task menu / popups) --
-    def overlay_items(self, before: List[str]) -> List[str]:
+    def overlay_items(self, before: list[str]) -> list[str]:
         """Labels an overlay added on top of `before`, top to bottom.
 
         Both context and task menus draw straight over the browser, so on
@@ -2604,7 +2604,7 @@ class Browser:
                 labels.append(label)
         return labels
 
-    def wait_for_overlay(self, before: List[str]) -> List[str]:
+    def wait_for_overlay(self, before: list[str]) -> list[str]:
         """Labels of an overlay drawn over `before`, waiting for it to appear.
 
         Reading the screen once after the key that opens the overlay cannot
@@ -2620,7 +2620,7 @@ class Browser:
                 return labels
             time.sleep(pacing.POLL_INTERVAL_SECONDS)
 
-    def open_context_menu(self) -> List[str]:
+    def open_context_menu(self) -> list[str]:
         before = self.rows()
         self.press("ENTER")
         labels = self.wait_for_overlay(before)
@@ -2628,7 +2628,7 @@ class Browser:
             raise Failure(f"no context menu appeared; screen was:\n{self.screen()}")
         return labels
 
-    def choose_overlay_item(self, labels: List[str], label: str) -> None:
+    def choose_overlay_item(self, labels: list[str], label: str) -> None:
         """Select `label` in an open overlay, by the shortest key sequence.
 
         Both the context menu and the task menu are ContextMenu objects, and
@@ -2666,7 +2666,7 @@ class Browser:
         self.backend.enter_file_browser()
         self.press(self.backend.machine.task_menu_key)
 
-    def open_task_menu(self, attempts: int = 2) -> List[str]:
+    def open_task_menu(self, attempts: int = 2) -> list[str]:
         """Open the task menu and return its categories, retrying a lost key.
 
         A keystroke injected into a cartridge target travels through the
@@ -2805,16 +2805,16 @@ class Browser:
 def make_browser(
     mode: str,
     host: str,
-    password: Optional[str] = None,
+    password: str | None = None,
     timeout: float = 5.0,
     entry_rows: Sequence[int] = range(2, 24),
     status_row: int = 24,
-    telnet_host: Optional[str] = None,
+    telnet_host: str | None = None,
     telnet_port: int = 23,
     telnet_width: int = WIDTH,
     telnet_height: int = HEIGHT,
-    telnet_entry_rows: Optional[Sequence[int]] = None,
-    telnet_status_row: Optional[int] = None,
+    telnet_entry_rows: Sequence[int] | None = None,
+    telnet_status_row: int | None = None,
 ) -> Browser:
     """Construct a Browser for `mode`, with REST and Telnet row layouts.
 

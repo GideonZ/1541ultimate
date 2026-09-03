@@ -31,7 +31,8 @@ import sys
 import threading
 import time
 from dataclasses import dataclass
-from typing import Callable, Dict, List, Optional, Sequence, Tuple
+from typing import Optional
+from collections.abc import Callable, Sequence
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(ROOT, "tests", "lib"))
@@ -511,7 +512,7 @@ class Options:
     screens: bool = True
 
 
-def git_answer(*arguments: str) -> Optional[str]:
+def git_answer(*arguments: str) -> str | None:
     """One git query about this checkout, or None when git does not answer.
 
     Run with the repository root as its working directory rather than with
@@ -522,7 +523,7 @@ def git_answer(*arguments: str) -> Optional[str]:
     clean tree, and absent for a directory git will not talk about.
     """
     try:
-        completed = subprocess.run(("git",) + arguments, cwd=ROOT,
+        completed = subprocess.run(("git", *arguments), cwd=ROOT,
                                    capture_output=True, text=True, timeout=10)
     except (OSError, subprocess.TimeoutExpired):
         return None
@@ -531,14 +532,14 @@ def git_answer(*arguments: str) -> Optional[str]:
     return completed.stdout.strip()
 
 
-def run_identity(argv: Sequence[str], started: float) -> Dict[str, object]:
+def run_identity(argv: Sequence[str], started: float) -> dict[str, object]:
     """What this run is a run of, for the `run` record.
 
     A downloaded artifact has to say what produced it without a second file.
     Three git calls, all cheap, all on the host, none reaching the device; a
     checkout where git does not answer loses those fields rather than the run.
     """
-    fields: Dict[str, object] = {
+    fields: dict[str, object] = {
         "host": socket.gethostname(),
         "python": platform.python_version(),
         # report.mask_secret has been told the password, so the record writer
@@ -710,7 +711,7 @@ class ConsoleCapture:
 
 
 # The one console capture a process has, when it was asked for one.
-_CONSOLE: Optional[ConsoleCapture] = None
+_CONSOLE: ConsoleCapture | None = None
 
 
 def start_console_capture(path: str) -> None:
@@ -737,7 +738,7 @@ def console_fd() -> int:
     return _CONSOLE.console_fd if _CONSOLE else 1
 
 
-def run_and_capture(command: List[str], environment: Dict[str, str],
+def run_and_capture(command: list[str], environment: dict[str, str],
                     path: str, truncate: bool, console_fd: int) -> int:
     """Run a suite, sending every line to the console and to `path`.
 
@@ -807,7 +808,7 @@ SYSLOG_PORTS_ENV = "E2E_SYSLOG_PORTS"
 SYSLOG_SETTING_TIMEOUT_SECONDS = 5.0
 
 
-def syslog_ports(machines: Sequence[str], password: str) -> Dict[str, int]:
+def syslog_ports(machines: Sequence[str], password: str) -> dict[str, int]:
     """Which port each machine's own configuration says it logs to.
 
     Read, never written. `Syslog::init` runs once from `ultimate_main`, so the
@@ -822,7 +823,7 @@ def syslog_ports(machines: Sequence[str], password: str) -> Dict[str, int]:
     is left to the run's default port and to source-address attribution, which
     is what every machine had before.
     """
-    found: Dict[str, int] = {}
+    found: dict[str, int] = {}
     for machine in machines:
         try:
             api = UltimateApi(machine, password,
@@ -900,7 +901,7 @@ SYSLOG_READY_SECONDS = 3.0
 
 
 def check_syslog_reachable(collector, machines: Sequence[str],
-                           password: str) -> List[str]:
+                           password: str) -> list[str]:
     """Say at startup which machines the collector cannot hear. Never raises.
 
     A device whose log does not reach the collector produces an empty file and
@@ -923,7 +924,7 @@ def check_syslog_reachable(collector, machines: Sequence[str],
     no target claims, which this reports beside it because it is the one of
     the three the collector itself knows.
     """
-    silent: List[str] = []
+    silent: list[str] = []
     for machine in machines:
         try:
             UltimateApi(machine, password,
@@ -1222,7 +1223,7 @@ def start_recorder(args: argparse.Namespace, target: targets_lib.Target,
 
 
 def recording_identity(target: targets_lib.Target,
-                       device: "Device") -> Dict[str, str]:
+                       device: "Device") -> dict[str, str]:
     """What every frame's stamp and the title card say about this run.
 
     A single frame travels: somebody screenshots a failure into an issue,
@@ -1348,7 +1349,7 @@ class Device:
         """
         return self.api.machine.was_just_reset
 
-    def may_recover(self) -> Tuple[bool, str]:
+    def may_recover(self) -> tuple[bool, str]:
         """Whether another recovery is allowed, and why not when it is not."""
         if not self.recover_command:
             return False, "no --recover-command was given"
@@ -1444,8 +1445,8 @@ class Device:
         return False
 
     def health_problem(self, label: str, patient: bool = True,
-                  extra: Optional[Callable[[], str]] = None,
-                  budget: Optional[float] = None) -> str:
+                  extra: Callable[[], str] | None = None,
+                  budget: float | None = None) -> str:
         """Why the device is not healthy enough to test on, or "" when it is.
 
         Health is the runner's one notion of a usable device, and everything
@@ -1499,7 +1500,7 @@ class Device:
         return "it is degraded: " + ", ".join(sweep.failed)
 
     def ensure_healthy(self, label: str, patient: bool = True,
-                 extra: Optional[Callable[[], str]] = None) -> bool:
+                 extra: Callable[[], str] | None = None) -> bool:
         """Establish that the device is healthy, recovering it once if it is not.
 
         One call runs at most one recovery, so a caller that wants several
@@ -1551,7 +1552,7 @@ class Device:
 
 
 def capture_settings(target: targets_lib.Target, password: str
-                     ) -> List[Tuple[UltimateApi, config_snapshot.Snapshot]]:
+                     ) -> list[tuple[UltimateApi, config_snapshot.Snapshot]]:
     """Read every setting each machine this target occupies is running with.
 
     One entry per machine, so a cartridge target captures the cartridge and
@@ -1565,7 +1566,7 @@ def capture_settings(target: targets_lib.Target, password: str
     and never answers would cost three retries a read, three reads a store and
     twenty-odd stores before the first suite started.
     """
-    captured: List[Tuple[UltimateApi, config_snapshot.Snapshot]] = []
+    captured: list[tuple[UltimateApi, config_snapshot.Snapshot]] = []
     for host in target.resources:
         report.step_start(f"settings: capture {host}")
         api = UltimateApi(host, password, DEVICE_RECOVERY_PROBE_TIMEOUT_SECONDS)
@@ -1582,7 +1583,7 @@ def capture_settings(target: targets_lib.Target, password: str
 
 
 def restore_settings(
-        captured: Sequence[Tuple[UltimateApi, config_snapshot.Snapshot]]) -> None:
+        captured: Sequence[tuple[UltimateApi, config_snapshot.Snapshot]]) -> None:
     """Put back every setting the run changed, on each machine it captured.
 
     Warnings only. The run has produced its verdict by the time this runs, and
@@ -1608,7 +1609,7 @@ def restore_settings(
             report.warn(f"settings: {change}: {reason}")
 
 
-def health_entry(check: "health.Check") -> Dict[str, object]:
+def health_entry(check: "health.Check") -> dict[str, object]:
     """One health check as a record, with its figures when it has any.
 
     The figures are present only on a check that measured any, so a sweep of
@@ -1622,7 +1623,7 @@ def health_entry(check: "health.Check") -> Dict[str, object]:
     two syslog counters, and a key per check would make a consumer know the set
     of checks before it could read one.
     """
-    entry: Dict[str, object] = {"name": check.name, "state": check.state,
+    entry: dict[str, object] = {"name": check.name, "state": check.state,
                                 "ms": round(check.ms, 1), "detail": check.detail}
     if check.figures:
         entry["figures"] = dict(check.figures)
@@ -1645,7 +1646,7 @@ def reset_to_clean_slate(device: Device, phase: str) -> bool:
 
 
 def ui_state_gate(action: str, options: Options, label: str = "",
-                  quiet: bool = False, attempt: Optional[int] = None) -> bool:
+                  quiet: bool = False, attempt: int | None = None) -> bool:
     """Shared UI-state gate. See tests/e2e/lib/ui_state.py for the contract.
 
     The gate drives the device, so its device calls reach the interaction log
@@ -1690,7 +1691,7 @@ def ui_state_ready(options: Options, label: str) -> str:
     return "its UI cannot be brought to the documented state"
 
 
-def build_command(suite: Suite, options: Options, mode: str) -> List[str]:
+def build_command(suite: Suite, options: Options, mode: str) -> list[str]:
     command = [sys.executable, os.path.join(ROOT, suite.path)]
     for token in suite.args.split():
         if token == "@PASS@":
@@ -1784,8 +1785,8 @@ def capture_failure(device: Device, options: Options, mode: str, label: str,
     directory = os.path.join(attempt_directory(options.output_dir, attempt),
                              "capture")
     stem = f"{label}-{suite_name}-{attempt}"
-    state: Dict[str, object] = {"mode": mode, "source": "", "errors": []}
-    screen_text: List[str] = []
+    state: dict[str, object] = {"mode": mode, "source": "", "errors": []}
+    screen_text: list[str] = []
     screen_raw = b""
 
     try:
@@ -1858,7 +1859,7 @@ def capture_failure(device: Device, options: Options, mode: str, label: str,
     write_capture(directory, stem, screen_text, screen_raw, state)
 
 
-def c64_screen_rows(data: bytes) -> List[str]:
+def c64_screen_rows(data: bytes) -> list[str]:
     """The C64 screen matrix as 25 rows of 40 characters.
 
     Screen codes, not the literal ASCII the menu plane carries, and the two
@@ -1880,8 +1881,8 @@ def c64_screen_rows(data: bytes) -> List[str]:
     return [text[row * 40:(row + 1) * 40] for row in range(SCREEN_CELLS // 40)]
 
 
-def write_capture(directory: str, stem: str, text: List[str], raw: bytes,
-                  state: Dict[str, object]) -> None:
+def write_capture(directory: str, stem: str, text: list[str], raw: bytes,
+                  state: dict[str, object]) -> None:
     """The three artefacts, named so the report finds them with no lookup table."""
     try:
         with open(os.path.join(directory, f"{stem}-screen.txt"), "w",
@@ -1901,7 +1902,7 @@ def write_capture(directory: str, stem: str, text: List[str], raw: bytes,
 
 
 def run_one_attempt(suite: Suite, device: Device, options: Options, mode: str,
-                    label: str, attempt: int) -> Tuple[str, float, bool]:
+                    label: str, attempt: int) -> tuple[str, float, bool]:
     """One go at a suite. Returns (verdict, seconds, device_unhealthy).
 
     Everything that has to hold before the suite starts is one question: is the
@@ -2128,7 +2129,7 @@ def run_suite(suite: Suite, device: Device, options: Options, mode: str,
         attempt += 1
 
 
-def chosen_categories(args: argparse.Namespace) -> List[str]:
+def chosen_categories(args: argparse.Namespace) -> list[str]:
     """Which categories this run covers, in the order they run in."""
     if args.suite:
         # Naming suites selects exactly those, whichever category they are in.
@@ -2139,8 +2140,8 @@ def chosen_categories(args: argparse.Namespace) -> List[str]:
     return chosen or ["e2e"]
 
 
-def selected_suites(category: str, names: List[str], manual: bool,
-                    profile: str = profiles.DEFAULT) -> List[Suite]:
+def selected_suites(category: str, names: list[str], manual: bool,
+                    profile: str = profiles.DEFAULT) -> list[Suite]:
     """The suites this run covers, in registry order.
 
     A suite named with -s runs whatever the profile says, because naming one is
@@ -2172,7 +2173,7 @@ PLAN_NOT_SELECTED = "not-selected"
 PLAN_CATEGORY = "category"
 
 
-def plan_reason(suite: Suite, names: List[str], manual: bool,
+def plan_reason(suite: Suite, names: list[str], manual: bool,
                 categories: Sequence[str]) -> str:
     """Why `suite` is not in this run. Only called for one that is not.
 
@@ -2285,7 +2286,7 @@ class ArgumentParser(argparse.ArgumentParser):
     reach `exit` directly and a successful one of those must still be 0.
     """
 
-    def exit(self, status: int = 0, message: Optional[str] = None) -> None:
+    def exit(self, status: int = 0, message: str | None = None) -> None:
         if message:
             self._print_message(message, sys.stderr)
         raise SystemExit(EXIT_USAGE if status else 0)
@@ -2639,7 +2640,7 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def resolve_modes(raw: str, profile: str = profiles.DEFAULT) -> List[str]:
+def resolve_modes(raw: str, profile: str = profiles.DEFAULT) -> list[str]:
     """The transports to sweep: what -m named, or what the profile sweeps."""
     if raw.strip() == "all":
         return list(MODES)
@@ -2711,7 +2712,7 @@ def plural(count: int, noun: str) -> str:
     return f"{count} {noun}" if count == 1 else f"{count} {noun}s"
 
 
-def exit_code_for(results: List[Result], recoveries: int) -> int:
+def exit_code_for(results: list[Result], recoveries: int) -> int:
     """The run's status, worst thing first.
 
     A device that could not be made healthy outranks a failed suite: it says
@@ -2732,11 +2733,11 @@ def exit_code_for(results: List[Result], recoveries: int) -> int:
     return EXIT_OK
 
 
-def summarise(results: List[Result], started: float, recoveries: int,
-              identity: Optional[Dict[str, object]] = None) -> int:
+def summarise(results: list[Result], started: float, recoveries: int,
+              identity: dict[str, object] | None = None) -> int:
     report.banner("Summary")
 
-    groups: Dict[str, List[Result]] = {}
+    groups: dict[str, list[Result]] = {}
     for result in results:
         key = f"{result.category} {result.mode}".strip() if result.category == "e2e" \
             else result.category
@@ -2936,7 +2937,7 @@ CHILD_EXCLUDED_OPTIONS = ("host", "targets", "output_dir", "stop_on_fail", "list
 
 
 def child_command(args: argparse.Namespace, target: targets_lib.Target,
-                  output_dir: str) -> List[str]:
+                  output_dir: str) -> list[str]:
     """The command that runs `target` on its own, with this run's options."""
     command = [sys.executable, os.path.abspath(__file__)]
     for name in CHILD_FORWARDED_FLAGS:
@@ -3014,7 +3015,7 @@ def stop(runs: "Sequence[ChildRun]", first: int) -> None:
 class ChildRun:
     """One target's run: its process, and the half-line left in its pipe."""
 
-    def __init__(self, target: targets_lib.Target, command: List[str],
+    def __init__(self, target: targets_lib.Target, command: list[str],
                  slot: int) -> None:
         self.target = target
         self.slot = slot
@@ -3093,10 +3094,10 @@ def run_targets(args: argparse.Namespace,
                       "take turns")
 
     pending = list(wanted)
-    active: Dict[int, ChildRun] = {}
+    active: dict[int, ChildRun] = {}
     # Keyed by target rather than appended in completion order, so the summary
     # names the right status for each one.
-    codes: Dict[str, int] = {}
+    codes: dict[str, int] = {}
     selector = selectors.DefaultSelector()
 
     def start_ready() -> None:
@@ -3186,7 +3187,7 @@ def run_targets(args: argparse.Namespace,
     return write_parent_record(status)
 
 
-def resolve_targets(args: argparse.Namespace) -> List[targets_lib.Target]:
+def resolve_targets(args: argparse.Namespace) -> list[targets_lib.Target]:
     """Every target this run was asked for, validated before anything starts.
 
     Two tokens that resolve to the same pair of machines are one target. With
@@ -3196,7 +3197,7 @@ def resolve_targets(args: argparse.Namespace) -> List[targets_lib.Target]:
     The first spelling is the one kept, and the run says which one it dropped.
     """
     tokens = list(args.targets) or [args.host]
-    resolved: List[targets_lib.Target] = []
+    resolved: list[targets_lib.Target] = []
     for token in tokens:
         try:
             target = targets_lib.parse(token)
@@ -3215,7 +3216,7 @@ def resolve_targets(args: argparse.Namespace) -> List[targets_lib.Target]:
     return resolved
 
 
-def main(argv: List[str]) -> int:
+def main(argv: list[str]) -> int:
     # Wall clock as well as the monotonic clock the summary measures with:
     # every artefact correlates on time.time() taken on this host, and a
     # monotonic reading names no moment a reader could look up.
@@ -3419,7 +3420,7 @@ def main(argv: List[str]) -> int:
             else:
                 report.check_ok(silenced or "already off")
 
-        results: List[Result] = []
+        results: list[Result] = []
         started = time.monotonic()
         stopped = False
         device_unhealthy = False

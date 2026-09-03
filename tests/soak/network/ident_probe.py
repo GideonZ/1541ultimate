@@ -4,7 +4,7 @@ import json
 import os
 import socket
 import time
-from typing import Callable
+from collections.abc import Callable
 
 from connection_runtime import (
     ProbeExecutionContext,
@@ -49,7 +49,7 @@ def identify_json(settings: RuntimeSettings) -> str:
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
         for _attempt in range(IDENT_RETRY_COUNT):
-            sock.sendto(f"json{nonce}".encode("utf-8"), (settings.host, IDENT_PORT))
+            sock.sendto(f"json{nonce}".encode(), (settings.host, IDENT_PORT))
             deadline = time.monotonic() + IDENT_TIMEOUT_S
             while True:
                 remaining = deadline - time.monotonic()
@@ -58,7 +58,7 @@ def identify_json(settings: RuntimeSettings) -> str:
                 sock.settimeout(remaining)
                 try:
                     candidate_payload, _address = sock.recvfrom(4096)
-                except socket.timeout:
+                except TimeoutError:
                     break
                 try:
                     response = _parse_ident_payload(candidate_payload, nonce)

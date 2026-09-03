@@ -9,7 +9,8 @@ import subprocess
 import threading
 import time
 from dataclasses import dataclass
-from typing import Any, Callable, Protocol
+from typing import Any, Protocol
+from collections.abc import Callable
 
 import http_probe
 from connection_runtime import (
@@ -356,7 +357,7 @@ def read_until_idle(
                 settimeout(timeout_s)
         try:
             chunk = sock.recv(4096)
-        except socket.timeout:
+        except TimeoutError:
             empty_reads += 1
             continue
         if not chunk:
@@ -728,7 +729,7 @@ def initial_read_classify(settings: RuntimeSettings) -> str:
     try:
         try:
             initial_raw = sock.recv(4096)
-        except socket.timeout:
+        except TimeoutError:
             initial_raw = b""
         transcript = collect_visible(sock, initial_raw) if initial_raw else b""
         if contains_any(transcript, TELNET_FAILURE_MARKERS):
@@ -752,17 +753,7 @@ def incomplete_operations(surface: ProbeSurface) -> tuple[tuple[str, Callable[[R
     )
     if surface == ProbeSurface.READ:
         return operations
-    return operations + (
-        (
-            "telnet_audio_mixer_abort",
-            lambda settings: abort_after_sequence(settings, TELNET_KEY_F2, TELNET_KEY_DOWN, TELNET_KEY_ENTER),
-        ),
-        (
-            "telnet_right_arrow_abort",
-            lambda settings: abort_after_sequence(settings, TELNET_KEY_F2, TELNET_KEY_RIGHT),
-        ),
-        ("telnet_f2_abort", lambda settings: abort_after_sequence(settings, TELNET_KEY_F2)),
-    )
+    return (*operations, ("telnet_audio_mixer_abort", lambda settings: abort_after_sequence(settings, TELNET_KEY_F2, TELNET_KEY_DOWN, TELNET_KEY_ENTER)), ("telnet_right_arrow_abort", lambda settings: abort_after_sequence(settings, TELNET_KEY_F2, TELNET_KEY_RIGHT)), ("telnet_f2_abort", lambda settings: abort_after_sequence(settings, TELNET_KEY_F2)))
 
 
 def run_open_surface_operation(
@@ -912,16 +903,7 @@ def surface_operations(
         return (("telnet_smoke_connect", lambda settings, session: session_smoke_connect(session)),)
     if surface == ProbeSurface.READ:
         return read_operations
-    return read_operations + (
-        (
-            "set_vol_ultisid_1_0_db",
-            lambda settings, session: session_write_audio_mixer_item(settings, session, "0 dB", shared_state=shared_state),
-        ),
-        (
-            "set_vol_ultisid_1_plus_1_db",
-            lambda settings, session: session_write_audio_mixer_item(settings, session, "+1 dB", shared_state=shared_state),
-        ),
-    )
+    return (*read_operations, ("set_vol_ultisid_1_0_db", lambda settings, session: session_write_audio_mixer_item(settings, session, "0 dB", shared_state=shared_state)), ("set_vol_ultisid_1_plus_1_db", lambda settings, session: session_write_audio_mixer_item(settings, session, "+1 dB", shared_state=shared_state)))
 
 
 def run_probe(
@@ -989,7 +971,7 @@ def run_probe(
         while True:
             try:
                 chunk = sock.recv(4096)
-            except socket.timeout:
+            except TimeoutError:
                 break
             if not chunk:
                 break
@@ -1073,7 +1055,7 @@ def _vanish_probe_state(host: str, port: int) -> str:
     """
     try:
         sock = _vanish_connect(host, port)
-    except (ConnectionRefusedError, socket.timeout, TimeoutError, socket.gaierror):
+    except (ConnectionRefusedError, TimeoutError, socket.gaierror):
         return _VANISH_UNREACHABLE
     except OSError:
         return _VANISH_UNREACHABLE

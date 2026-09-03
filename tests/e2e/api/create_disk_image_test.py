@@ -13,7 +13,7 @@ import ftplib
 import os
 import sys
 import urllib.error
-from typing import Iterable, List, Optional, Tuple
+from collections.abc import Iterable
 
 # tests/lib holds the reporting rules every suite shares.
 sys.path.insert(0, os.path.join(
@@ -32,7 +32,7 @@ TEST_DIR = "/Temp"
 
 # (label, kind, keyword arguments, expected size in bytes)
 # Sizes are the ones software/api/route_files.cc computes.
-CASES: List[Tuple[str, str, dict, int]] = [
+CASES: list[tuple[str, str, dict, int]] = [
     ("d64-35", "d64", {"tracks": 35}, 683 * 256),
     ("d64-40", "d64", {"tracks": 40}, (17 * 5 + 683) * 256),
     ("d71", "d71", {}, 683 * 2 * 256),
@@ -70,13 +70,13 @@ class SuiteRunner:
             with ftp_lib.session(self.args.host, self.args.password) as client:
                 for path in paths:
                     ftp_lib.delete_quietly(client, path)
-        except ftplib.all_errors + (OSError, Failure):
+        except (*ftplib.all_errors, OSError, Failure):
             pass
 
-    def alive(self) -> Optional[str]:
+    def alive(self) -> str | None:
         return self.api.unreachable_reason(LIVENESS_TIMEOUT_SECONDS)
 
-    def all_paths(self) -> List[str]:
+    def all_paths(self) -> list[str]:
         paths = [self.remote_path(label, kind) for label, kind, _p, _e in CASES]
         label, kind, _p, _e = CASES[0]
         paths.append(self.remote_path(f"{label}-repeat", kind))

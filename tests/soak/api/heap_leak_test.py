@@ -21,7 +21,6 @@ import ftplib
 import os
 import sys
 import urllib.parse
-from typing import Optional
 
 # tests/lib holds the reporting rules and the one shared REST client.
 sys.path.insert(0, os.path.join(
@@ -53,7 +52,7 @@ class Device:
     one retry policy rather than growing another copy of it.
     """
 
-    def __init__(self, host: str, password: Optional[str], timeout: float) -> None:
+    def __init__(self, host: str, password: str | None, timeout: float) -> None:
         self.host = host
         self.rest = rest_lib.RestClient(host, password, timeout)
 

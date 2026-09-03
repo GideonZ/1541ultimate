@@ -245,7 +245,7 @@ class U64Client:
         self.require_ok("PUT", "/v1/machine:menu_button", description="menu_button")
 
     def get_menu_screen(self):
-        status, headers, payload = self.request("GET", "/v1/machine:menu_screen")
+        status, _headers, payload = self.request("GET", "/v1/machine:menu_screen")
         if status == 404:
             return None
         if status != 200:
@@ -1103,7 +1103,7 @@ def main():
     disambiguate = len(combos) > 1
     try:
         for emulation, mode in combos:
-            classification, output_base, status = run_combo(
+            classification, output_base, _status = run_combo(
                 client, inspector, prg_bytes, args, emulation, mode, assertions_enabled, disambiguate,
             )
             results.append((emulation, mode, classification, output_base))

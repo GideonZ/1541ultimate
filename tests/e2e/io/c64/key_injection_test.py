@@ -38,7 +38,6 @@ import argparse
 import os
 import sys
 import time
-from typing import List, Optional, Sequence, Tuple
 
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "lib"))
@@ -100,7 +99,7 @@ class Destination:
 
     keys_per_cycle = BASIC_KEYS_PER_CYCLE
 
-    def __init__(self, target: str, password: Optional[str], timeout: float) -> None:
+    def __init__(self, target: str, password: str | None, timeout: float) -> None:
         self.target = targets.parse(target)
         self.keys = UltimateApi(self.target.input_host, password, timeout=timeout)
         self.memory = UltimateApi(self.target.device, password, timeout=timeout)
@@ -112,7 +111,7 @@ class Destination:
     def restart_cycle(self) -> None:
         raise NotImplementedError
 
-    def arrived(self, typed: str) -> Tuple[int, Optional[int]]:
+    def arrived(self, typed: str) -> tuple[int, int | None]:
         raise NotImplementedError
 
     def close(self) -> None:
@@ -130,7 +129,7 @@ class Destination:
             [{"kind": "keyboard", "inputs": [character], "transition": "tap"}
              for character in characters])
 
-    def _await(self, read, expected: bytes) -> Tuple[int, Optional[int]]:
+    def _await(self, read, expected: bytes) -> tuple[int, int | None]:
         deadline = time.monotonic() + ARRIVAL_TIMEOUT_SECONDS
         while True:
             got = read()
@@ -160,7 +159,7 @@ class BasicDestination(Destination):
         return self.memory.machine.readmem(SCREEN_RAM,
                                            SCREEN_COLUMNS * SCREEN_ROWS)
 
-    def arrived(self, typed: str) -> Tuple[int, Optional[int]]:
+    def arrived(self, typed: str) -> tuple[int, int | None]:
         """How many of `typed` are on screen in order, and the first gap.
 
         The characters land wherever the cursor was, so the run is found
@@ -190,7 +189,7 @@ class MonitorDestination(Destination):
 
     keys_per_cycle = MCM_KEYS_PER_CYCLE
 
-    def __init__(self, target: str, password: Optional[str], timeout: float,
+    def __init__(self, target: str, password: str | None, timeout: float,
                  mode: str) -> None:
         super().__init__(target, password, timeout)
         self.backend = make_backend(mode, target, password, timeout)
@@ -248,7 +247,7 @@ class MonitorDestination(Destination):
     def restart_cycle(self) -> None:
         self.open()
 
-    def arrived(self, typed: str) -> Tuple[int, Optional[int]]:
+    def arrived(self, typed: str) -> tuple[int, int | None]:
         expected = typed.encode("ascii")
         return self._await(
             lambda: self.memory.machine.readmem(EDIT_BASE, len(expected)),
@@ -263,11 +262,11 @@ def warm_up(destination: Destination) -> int:
 
 
 def measure(destination: Destination, total: int, batch: int,
-            pace: float, transition: str = "tap") -> Tuple[int, int, List[str]]:
+            pace: float, transition: str = "tap") -> tuple[int, int, list[str]]:
     """Type `total` keys in runs of `batch`, checking after each run."""
     sent = 0
     arrived = 0
-    notes: List[str] = []
+    notes: list[str] = []
     send = destination.tap_batch
 
     while sent < total:

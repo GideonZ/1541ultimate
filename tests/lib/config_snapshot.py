@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Sequence, Tuple
+from collections.abc import Sequence
 
 from report import Failure
 
@@ -80,13 +80,13 @@ class Snapshot:
     machine: str
     # store -> item -> value, for every store this machine serves and this
     # module does not skip.
-    settings: Dict[str, Dict[str, object]]
+    settings: dict[str, dict[str, object]]
 
     @property
     def item_count(self) -> int:
         return sum(len(items) for items in self.settings.values())
 
-    def changes(self, api) -> List[Change]:
+    def changes(self, api) -> list[Change]:
         """Every captured item whose value differs now, read store by store.
 
         Raises `Unreadable` at the first store the device will not describe.
@@ -94,7 +94,7 @@ class Snapshot:
         that basis would be guessing, and a device that has stopped answering
         will not describe the rest either.
         """
-        found: List[Change] = []
+        found: list[Change] = []
         for store, items in self.settings.items():
             current = _read_store(api, store)
             if current is None:
@@ -105,7 +105,7 @@ class Snapshot:
                     found.append(Change(self.machine, store, item, was, now))
         return found
 
-    def restore(self, api) -> Tuple[List[Change], List[Tuple[Change, str]]]:
+    def restore(self, api) -> tuple[list[Change], list[tuple[Change, str]]]:
         """Put back every item that differs. Answers what was done.
 
         Returns (restored, refused): the changes whose captured value the
@@ -117,8 +117,8 @@ class Snapshot:
         wanted = self.changes(api)
         if not wanted:
             return [], []
-        refused: List[Tuple[Change, str]] = []
-        written: List[Change] = []
+        refused: list[tuple[Change, str]] = []
+        written: list[Change] = []
         for change in wanted:
             try:
                 api.configs.set(change.store, change.item, change.was)
@@ -127,7 +127,7 @@ class Snapshot:
             else:
                 written.append(change)
         # One read per store touched, rather than one per item written.
-        confirmed: List[Change] = []
+        confirmed: list[Change] = []
         for store in sorted({change.store for change in written}):
             current = _read_store(api, store)
             for change in [c for c in written if c.store == store]:
@@ -152,7 +152,7 @@ def capture(machine: str, api, skip: Sequence[str] = VOLATILE_STORES) -> Snapsho
         stores = api.configs.category_names()
     except Failure as exc:
         raise Failure(f"{machine}: the settings could not be listed: {exc}") from exc
-    settings: Dict[str, Dict[str, object]] = {}
+    settings: dict[str, dict[str, object]] = {}
     for store in stores:
         if store in skip:
             continue
@@ -164,7 +164,7 @@ def capture(machine: str, api, skip: Sequence[str] = VOLATILE_STORES) -> Snapsho
     return Snapshot(machine=machine, settings=settings)
 
 
-def _read_store(api, store: str) -> Optional[Dict[str, object]]:
+def _read_store(api, store: str) -> dict[str, object] | None:
     """One store's items and values, or None when it would not answer.
 
     Retried, because the device answers a config read empty while it is busy

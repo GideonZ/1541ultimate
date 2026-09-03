@@ -29,7 +29,6 @@ import pathlib
 import subprocess
 import sys
 import tempfile
-from typing import Optional
 
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
@@ -113,7 +112,7 @@ def generated_client(module_name: str, host: str, password: str):
 def run_generated_client(session: RestClient, args: argparse.Namespace,
                          profile: str, workspace: pathlib.Path) -> None:
     require("openapi_python_client", "openapi-python-client")
-    module_name: Optional[str] = None
+    module_name: str | None = None
 
     with check("a client generates from the %s document" % profile):
         module_name = generate_client(profile, workspace)

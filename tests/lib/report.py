@@ -33,7 +33,7 @@ import os
 import sys
 import time
 from contextlib import contextmanager
-from typing import Iterable, Iterator, List, Optional
+from collections.abc import Iterable, Iterator
 
 # One colour set for the whole tree, so that a suite run on its own and the same
 # suite run under a harness produce the same log, and harness lines and suite
@@ -179,13 +179,13 @@ JSONL_PATH = os.environ.get("E2E_JSONL") or ""
 # carrying index 26 are told apart by this field and by nothing else.
 TARGET_NAME = os.environ.get("E2E_TARGET") or ""
 _raw_attempt = os.environ.get("E2E_ATTEMPT") or ""
-ATTEMPT: Optional[int] = int(_raw_attempt) if _raw_attempt.isdigit() else None
+ATTEMPT: int | None = int(_raw_attempt) if _raw_attempt.isdigit() else None
 
 _count = 0
 _depth = 0
 _last_label = ""
 # Detail lines produced while a check line is still open.
-_pending: List[str] = []
+_pending: list[str] = []
 # Whether those lines are being printed as they come rather than held back.
 # Set when a heading is printed under a check line that never got its verdict;
 # see _release_details.
@@ -198,7 +198,7 @@ _check_started = 0.0
 _line_open = False
 _suite_started = time.monotonic()
 # The open scenario: its title, start time, check count and worst verdict.
-_scenario: Optional[dict] = None
+_scenario: dict | None = None
 
 
 class Failure(RuntimeError):
@@ -215,7 +215,7 @@ class Failure(RuntimeError):
 # because every writer would otherwise need its own copy of the rule and the
 # one that forgot would be the one that leaked.
 SECRET_MASK = "***"
-_secrets: List[str] = []
+_secrets: list[str] = []
 
 
 def mask_secret(value: str) -> None:
@@ -308,7 +308,7 @@ def check_count() -> int:
     return _count
 
 
-def current_check() -> Optional[int]:
+def current_check() -> int | None:
     """The index of the check that is open, or None between two checks.
 
     For a record written by something other than the check itself, so that a
@@ -367,7 +367,7 @@ def step_start(label: str) -> None:
     print(f"{label} ... ", end="", flush=True)
 
 
-def _close(verdict: str, extra: str = "", *, elapsed: Optional[float] = None) -> None:
+def _close(verdict: str, extra: str = "", *, elapsed: float | None = None) -> None:
     global _depth, _line_open, _details_live
     _depth = max(0, _depth - 1)
     if _depth:
@@ -408,19 +408,19 @@ def _close(verdict: str, extra: str = "", *, elapsed: Optional[float] = None) ->
             scenario=_scenario["title"] if _scenario else None)
 
 
-def check_ok(extra: str = "", *, elapsed: Optional[float] = None) -> None:
+def check_ok(extra: str = "", *, elapsed: float | None = None) -> None:
     _close(OK, extra, elapsed=elapsed)
 
 
-def check_fail(reason: str = "", *, elapsed: Optional[float] = None) -> None:
+def check_fail(reason: str = "", *, elapsed: float | None = None) -> None:
     _close(FAIL, reason, elapsed=elapsed)
 
 
-def check_warn(reason: str = "", *, elapsed: Optional[float] = None) -> None:
+def check_warn(reason: str = "", *, elapsed: float | None = None) -> None:
     _close(WARN, reason, elapsed=elapsed)
 
 
-def check_skip(reason: str = "", *, elapsed: Optional[float] = None) -> None:
+def check_skip(reason: str = "", *, elapsed: float | None = None) -> None:
     _close(SKIP, reason, elapsed=elapsed)
 
 
@@ -565,8 +565,8 @@ def warn(message: str) -> None:
     _record(kind="warning", message=message)
 
 
-def _suite_line(name: str, verdict: str, extra: str, seconds: Optional[float],
-                fields: Optional[dict] = None) -> None:
+def _suite_line(name: str, verdict: str, extra: str, seconds: float | None,
+                fields: dict | None = None) -> None:
     _close_scenario()
     # An explicit `seconds` means a harness is timing a suite it ran as a child
     # process, so this process's own check counter describes nothing and is left
@@ -582,7 +582,7 @@ def _suite_line(name: str, verdict: str, extra: str, seconds: Optional[float],
             checks=_count, seconds=round(elapsed, 4), **(fields or {}))
 
 
-def suite_ok(name: str, extra: str = "", seconds: Optional[float] = None,
+def suite_ok(name: str, extra: str = "", seconds: float | None = None,
              **fields) -> None:
     """The closing line of a passing suite.
 
@@ -594,19 +594,19 @@ def suite_ok(name: str, extra: str = "", seconds: Optional[float] = None,
     _suite_line(name, OK, extra, seconds, fields)
 
 
-def suite_fail(name: str, reason: str, seconds: Optional[float] = None,
+def suite_fail(name: str, reason: str, seconds: float | None = None,
                **fields) -> None:
     """The closing line of a failing suite."""
     _suite_line(name, FAIL, reason, seconds, fields)
 
 
-def suite_skip(name: str, reason: str, seconds: Optional[float] = None,
+def suite_skip(name: str, reason: str, seconds: float | None = None,
                **fields) -> None:
     """The closing line of a suite that could not run."""
     _suite_line(name, SKIP, reason, seconds, fields)
 
 
-def suite_warn(name: str, reason: str, seconds: Optional[float] = None,
+def suite_warn(name: str, reason: str, seconds: float | None = None,
                **fields) -> None:
     """A suite that passed but left something behind. Not a failure."""
     _suite_line(name, WARN, reason, seconds, fields)
@@ -665,7 +665,7 @@ def log_result(target: str, path: str, started: float, port: int,
             **fields)
 
 
-def gap_result(component: str, started: float, ended: Optional[float] = None,
+def gap_result(component: str, started: float, ended: float | None = None,
                **fields) -> None:
     """One interval an observability component could not observe anything.
 
@@ -729,11 +729,11 @@ def set_target(token: str) -> None:
     TARGET_NAME = token
 
 
-def run_result(verdict: str, suites: Optional[int] = None,
-               passed: Optional[int] = None, failed: Optional[int] = None,
-               skipped: Optional[int] = None, dirty: Optional[int] = None,
+def run_result(verdict: str, suites: int | None = None,
+               passed: int | None = None, failed: int | None = None,
+               skipped: int | None = None, dirty: int | None = None,
                seconds: float = 0.0, recoveries: int = 0,
-               exit_code: Optional[int] = None, **fields) -> None:
+               exit_code: int | None = None, **fields) -> None:
     """The JSONL record for a whole run, written by a harness rather than a suite.
 
     Record shapes belong to this module, so a harness reports its own result
@@ -777,7 +777,7 @@ def format_exception(exc: BaseException) -> str:
     return str(exc)
 
 
-def reset(count_from: Optional[int] = None) -> None:
+def reset(count_from: int | None = None) -> None:
     """Start numbering again. Only for a harness that runs suites in-process."""
     global _count, _depth, _last_label, _scenario, _suite_started, _details_live
     _count = 0 if count_from is None else count_from

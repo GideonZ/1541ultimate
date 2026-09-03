@@ -23,7 +23,6 @@ import sys
 import time
 import urllib.error
 import urllib.request
-from typing import List, Optional
 
 # tests/lib holds the pacing every suite shares; this directory holds the
 # window parser this gate borrows rather than writing a second one. Both are
@@ -91,7 +90,7 @@ class Device:
     tests/lib/targets.py.
     """
 
-    def __init__(self, host: str, password: Optional[str], timeout: float) -> None:
+    def __init__(self, host: str, password: str | None, timeout: float) -> None:
         self.target = targets.parse(host)
         self.host = self.target.device
         self.input_host = self.target.input_host
@@ -155,7 +154,7 @@ class Device:
                 continue
             self.tap(["return"])
 
-    def selected_row(self) -> Optional[int]:
+    def selected_row(self) -> int | None:
         """Which row the open menu marks as the cursor, or None when unreadable."""
         body = self._request("GET", "/v1/machine:menu_screen")
         if body is None or len(body) != SCREEN_BYTES:
@@ -167,7 +166,7 @@ class Device:
         except Failure:
             return None
 
-    def _request(self, method: str, path: str, payload=None) -> Optional[bytes]:
+    def _request(self, method: str, path: str, payload=None) -> bytes | None:
         headers = {}
         if self.password:
             headers["X-Password"] = self.password
@@ -194,7 +193,7 @@ class Device:
         except (OSError, TimeoutError, urllib.error.URLError) as exc:
             raise Unrecoverable(f"{method} {path} failed: {exc}") from exc
 
-    def screen(self) -> Optional[List[str]]:
+    def screen(self) -> list[str] | None:
         """Menu screen as text rows, or None when the menu is closed."""
         body = self._request("GET", "/v1/machine:menu_screen")
         if body is None:
@@ -240,7 +239,7 @@ class Device:
             # reading the state back, which answers it either way.
             pass
 
-    def tap(self, inputs: List[str]) -> None:
+    def tap(self, inputs: list[str]) -> None:
         try:
             self._request(
                 "POST",
@@ -353,7 +352,7 @@ class Device:
             time.sleep(pacing.POLL_INTERVAL_SECONDS)
         return False
 
-    def wait_screen_change(self, before: List[str]) -> Optional[List[str]]:
+    def wait_screen_change(self, before: list[str]) -> list[str] | None:
         """The screen once it differs from `before`.
 
         Returns None if the menu closed, and `before` unchanged if the screen
@@ -377,7 +376,7 @@ class Device:
         return before
 
 
-def describe_path(rows: List[str]) -> str:
+def describe_path(rows: list[str]) -> str:
     """Why this screen is not the file browser at the root, or "" when it is.
 
     The browser puts the directory it is showing on the status row and nothing
@@ -393,7 +392,7 @@ def describe_path(rows: List[str]) -> str:
     return ""
 
 
-def describe(rows: List[str]) -> str:
+def describe(rows: list[str]) -> str:
     """Why this screen is not the clean root browser, or "" when it is."""
     if EMPTY_MARKER in "\n".join(rows):
         return f"browser listing is {EMPTY_MARKER!r}"
@@ -421,7 +420,7 @@ def try_open_menu(device: Device) -> bool:
     return device.wait_menu(want_open=True)
 
 
-def open_menu(device: Device) -> List[str]:
+def open_menu(device: Device) -> list[str]:
     """Open the menu, unwinding a blocked UI task if the button does nothing.
 
     Tried twice, because the descent into the browser can itself close the
@@ -432,7 +431,7 @@ def open_menu(device: Device) -> List[str]:
     machine that does it twice is not racing, and is handed to repair() as a
     wedge so the reset at the end of the round can have it.
     """
-    for attempt in range(2):
+    for _attempt in range(2):
         if not try_open_menu(device):
             raise UiWedged(
                 "the menu will not open; the UI task is blocked and RUN/STOP "
@@ -672,7 +671,7 @@ def verify(device: Device) -> str:
     return describe_open_menu(device)
 
 
-def diagnose(device: Device) -> List[str]:
+def diagnose(device: Device) -> list[str]:
     """What a reader needs to tell one stuck UI from another.
 
     Written because a real wedge reported only "the menu will not close", and
@@ -687,7 +686,7 @@ def diagnose(device: Device) -> List[str]:
       browser in an awkward place, which keys can fix, from a UI task that has
       stopped reading them, which only a restart can.
     """
-    lines: List[str] = []
+    lines: list[str] = []
     rows = device.screen()
     if rows is None:
         return ["the menu is closed, so there is nothing on screen to show"]

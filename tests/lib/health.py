@@ -56,7 +56,7 @@ import subprocess
 import sys
 import time
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Sequence, Tuple
+from collections.abc import Sequence
 
 import interactions
 import targets
@@ -122,7 +122,7 @@ class Check:
     detail: str = ""
     # The figures a check measured rather than timed. Only the heap check has
     # any; the other eight are latencies.
-    figures: Optional[Dict[str, int]] = None
+    figures: dict[str, int] | None = None
 
     def render(self) -> str:
         if self.state == SKIP:
@@ -141,14 +141,14 @@ class Check:
 
 @dataclass(frozen=True)
 class Health:
-    checks: Tuple[Check, ...]
+    checks: tuple[Check, ...]
 
     @property
     def ok(self) -> bool:
         return not self.failed
 
     @property
-    def failed(self) -> Tuple[str, ...]:
+    def failed(self) -> tuple[str, ...]:
         return tuple(c.name for c in self.checks if c.state == FAIL)
 
     def detail_for(self, name: str) -> str:
@@ -178,7 +178,7 @@ def _timed(name: str, action) -> Check:
     return Check(name, OK, (time.perf_counter() - started) * 1000.0, detail)
 
 
-def ping_command(host: str, platform: str = sys.platform) -> List[str]:
+def ping_command(host: str, platform: str = sys.platform) -> list[str]:
     """The `ping` argument list for one probe of `host` on this platform.
 
     `-W` carries a different unit on each family, and passing the wrong one is
@@ -225,7 +225,7 @@ def _banner(host: str, port: int, expect: bytes = b"") -> str:
         sock.settimeout(SOCKET_TIMEOUT_SECONDS)
         try:
             greeting = sock.recv(128)
-        except (socket.timeout, TimeoutError):
+        except TimeoutError:
             greeting = b""
         interactions.record("socket", f"banner {port}", host=host,
                             ms=round((time.monotonic() - started) * 1000.0, 1),
@@ -381,7 +381,7 @@ def _moves(api: UltimateApi, address: int, means: str,
                        f"{budget:g}s: {means}")
 
 
-def probe(host, password: str = "", api: Optional[UltimateApi] = None,
+def probe(host, password: str = "", api: UltimateApi | None = None,
           include: Sequence[str] = ()) -> Health:
     """Sweep the device once. `include` limits it to the named checks.
 
@@ -402,7 +402,7 @@ def probe(host, password: str = "", api: Optional[UltimateApi] = None,
     def skip(name: str) -> bool:
         return bool(wanted) and name not in wanted
 
-    checks: List[Check] = []
+    checks: list[Check] = []
     if not skip("ping"):
         checks.append(_ping(host))
     if not skip("rest"):

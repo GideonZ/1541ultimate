@@ -87,7 +87,8 @@ from __future__ import annotations
 import os
 import re
 from dataclasses import dataclass
-from typing import Callable, Dict, FrozenSet, Optional, Tuple, Union
+from typing import Union
+from collections.abc import Callable
 
 from report import check_skip, check_start
 
@@ -122,7 +123,7 @@ class Fix:
 
     name: str
     behaviour: str
-    lacking: Tuple[str, ...]
+    lacking: tuple[str, ...]
 
 
 # The one table. Every entry is an outstanding gap, so an unlisted fix is one
@@ -133,10 +134,10 @@ class Fix:
 # that was skipping them, then delete that kind from `lacking`. Delete the
 # whole entry once `lacking` would be empty; the checks tagged with it then
 # run everywhere again and no suite needs editing.
-FIXES: Dict[str, Fix] = {}
+FIXES: dict[str, Fix] = {}
 
 
-def _fix(name: str, behaviour: str, lacking: Tuple[str, ...]) -> str:
+def _fix(name: str, behaviour: str, lacking: tuple[str, ...]) -> str:
     """Add one entry to the table and hand back its tag, for a named constant."""
     FIXES[name] = Fix(name=name, behaviour=behaviour, lacking=lacking)
     return name
@@ -428,7 +429,7 @@ ASSUME_ALL = "all"
 ASSUME_ENV = "E2E_ASSUME_FIX"
 
 
-def parse_assumptions(text: str) -> FrozenSet[str]:
+def parse_assumptions(text: str) -> frozenset[str]:
     """The fix names in a comma or space separated list, checked against the table.
 
     A typo has to be refused rather than ignored. An assumption naming nothing
@@ -447,7 +448,7 @@ def parse_assumptions(text: str) -> FrozenSet[str]:
     return frozenset(names)
 
 
-_assumed: FrozenSet[str] = parse_assumptions(os.environ.get(ASSUME_ENV, ""))
+_assumed: frozenset[str] = parse_assumptions(os.environ.get(ASSUME_ENV, ""))
 
 
 def assume(*names: str) -> None:
@@ -460,7 +461,7 @@ def assume(*names: str) -> None:
     _assumed = _assumed | parse_assumptions(" ".join(names))
 
 
-def assumed() -> FrozenSet[str]:
+def assumed() -> frozenset[str]:
     """The fixes this run has been told to treat as present."""
     return _assumed
 
@@ -484,7 +485,7 @@ class Machine:
     firmware: str = ""
 
     @property
-    def launcher_browser_entry(self) -> Optional[str]:
+    def launcher_browser_entry(self) -> str | None:
         """The launcher entry leading to the file browser, or None.
 
         A C64 Ultimate does not put the file browser behind the menu button.
@@ -625,7 +626,7 @@ class Machine:
         return (ASSUME_ALL in _assumed or name in _assumed
                 or self.kind not in entry.lacking)
 
-    def missing_fix(self, name: str) -> Optional[str]:
+    def missing_fix(self, name: str) -> str | None:
         """Why a check tagged `name` cannot run here, or None when it can."""
         if self.has_fix(name):
             return None
@@ -660,7 +661,7 @@ class Machine:
 
 # What a caller can hand back from `fetch_product`: the product on its own, or
 # the product and the firmware version when it has both.
-Reported = Union[str, Tuple[str, str]]
+Reported = Union[str, tuple[str, str]]
 
 
 def classify(product: str, firmware: str = "") -> Machine:
@@ -673,7 +674,7 @@ def classify(product: str, firmware: str = "") -> Machine:
         f"is aimed at, so it cannot choose the right menu layout")
 
 
-_cache: Dict[str, Machine] = {}
+_cache: dict[str, Machine] = {}
 
 
 def identify(host: str, fetch_product: Callable[[], Reported]) -> Machine:
@@ -697,7 +698,7 @@ def identify(host: str, fetch_product: Callable[[], Reported]) -> Machine:
     return cached
 
 
-def forget(host: Optional[str] = None) -> None:
+def forget(host: str | None = None) -> None:
     """Drop what was learnt, for a test that identifies more than one machine."""
     if host is None:
         _cache.clear()

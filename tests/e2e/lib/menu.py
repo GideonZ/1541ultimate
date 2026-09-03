@@ -19,7 +19,7 @@ adopt this without restructuring its session class.
 import os
 import sys
 import time
-from typing import Callable, List, Optional, Sequence, Tuple
+from collections.abc import Callable, Sequence
 
 # tests/lib holds the pacing every suite shares; see tests/lib/pacing.py for
 # why these are not constants of this module any more.
@@ -37,7 +37,7 @@ def tap_event(keys: Sequence[str]) -> dict:
     return {"kind": "keyboard", "inputs": list(keys), "transition": "tap"}
 
 
-def tap_batches(keys_list: Sequence[Sequence[str]]) -> List[List[dict]]:
+def tap_batches(keys_list: Sequence[Sequence[str]]) -> list[list[dict]]:
     """Split a run of taps into batches the firmware will accept.
 
     Both device limits decide that, the event count and the request body size;
@@ -46,7 +46,7 @@ def tap_batches(keys_list: Sequence[Sequence[str]]) -> List[List[dict]]:
     return api.input_batches([tap_event(k) for k in keys_list])
 
 
-def send_taps(post_events: Callable[[List[dict]], None], keys_list: Sequence[Sequence[str]]) -> None:
+def send_taps(post_events: Callable[[list[dict]], None], keys_list: Sequence[Sequence[str]]) -> None:
     """Send a run of taps in as few requests as possible.
 
     The firmware drains the batch through the same matrix path as separate
@@ -56,12 +56,12 @@ def send_taps(post_events: Callable[[List[dict]], None], keys_list: Sequence[Seq
         post_events(batch)
 
 
-def repeat_key(post_events: Callable[[List[dict]], None], keys: Sequence[str], count: int) -> None:
+def repeat_key(post_events: Callable[[list[dict]], None], keys: Sequence[str], count: int) -> None:
     send_taps(post_events, [keys] * count)
 
 
 def wait_until(predicate: Callable[[], bool], timeout: float,
-               interval: Optional[float] = None) -> bool:
+               interval: float | None = None) -> bool:
     """Poll until predicate holds. Returns False on timeout.
 
     `interval` defaults to the shared pacing value at call time, not at import
@@ -100,10 +100,10 @@ def toggle_menu(press_button: Callable[[], None], menu_is_open: Callable[[], boo
     return wait_menu_state(menu_is_open, want_open, timeout)
 
 
-def wait_screen_settled(screen: Callable[[], Optional[bytes]], timeout: float,
-                        stable_samples: Optional[int] = None,
-                        known: Optional[bytes] = None
-                        ) -> Tuple[bool, Optional[bytes]]:
+def wait_screen_settled(screen: Callable[[], bytes | None], timeout: float,
+                        stable_samples: int | None = None,
+                        known: bytes | None = None
+                        ) -> tuple[bool, bytes | None]:
     """Wait until the menu screen stops changing.
 
     A batch is accepted by REST immediately but drains through the C64 matrix
@@ -138,10 +138,10 @@ def wait_screen_settled(screen: Callable[[], Optional[bytes]], timeout: float,
     return False, last
 
 
-def wait_screen_changes(screen: Callable[[], Optional[bytes]], before: Optional[bytes],
+def wait_screen_changes(screen: Callable[[], bytes | None], before: bytes | None,
                         timeout: float, min_samples: int = 1,
-                        hard_timeout: Optional[float] = None
-                        ) -> Tuple[bool, Optional[bytes]]:
+                        hard_timeout: float | None = None
+                        ) -> tuple[bool, bytes | None]:
     """Wait for the menu screen to differ from 'before'.
 
     Drawing takes longer than a key tap, and acting before it finishes loses the

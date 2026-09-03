@@ -50,7 +50,7 @@ import threading
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Callable, List, Optional, Sequence, Tuple
+from collections.abc import Callable, Sequence
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 # The stream library, the recorder and the screen spool are shared E2E support
@@ -79,8 +79,8 @@ FIXTURES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures")
 # one thing that is checked in, because it is what a reviewer reads to see a
 # rendering change.
 EXPECTED = os.path.join(FIXTURES, "e2e-run.expected.md")
-FIXTURE: Optional[str] = None
-_FIXTURE_PROBLEM: Optional[str] = None
+FIXTURE: str | None = None
+_FIXTURE_PROBLEM: str | None = None
 # Guards building FIXTURE: several golden cases call require_fixture()
 # concurrently, and only the first should pay for the real scripted run that
 # builds it - the rest just wait and then read what it built.
@@ -103,12 +103,12 @@ class Skipped(Exception):
 class Case:
     tier: int
     label: str
-    requirements: Tuple[str, ...]
+    requirements: tuple[str, ...]
     run: Callable[[], object]
     exclusive: bool = False
 
 
-CASES: List[Case] = []
+CASES: list[Case] = []
 
 
 def case(tier: int, *requirements: str, label: str = "", exclusive: bool = False):
@@ -778,7 +778,7 @@ def the_stamped_timecode_is_where_the_frame_is() -> str:
 
     fps = 10
     interval = 1.0 / fps
-    cards = max(1, int(round(recorder_lib.OVERVIEW_SECONDS / interval)))
+    cards = max(1, round(recorder_lib.OVERVIEW_SECONDS / interval))
     lead_in = cards * interval
 
     expect("the first frame of the file",
@@ -802,7 +802,7 @@ def the_stamped_timecode_is_where_the_frame_is() -> str:
     return "the stamp is the file position"
 
 
-def parse_srt(text: str) -> List[Tuple[int, int, str]]:
+def parse_srt(text: str) -> list[tuple[int, int, str]]:
     """One `.srt` as (start, end, caption) with both times in milliseconds.
 
     Parsed from the generated file rather than taken from the numbers that
@@ -810,7 +810,7 @@ def parse_srt(text: str) -> List[Tuple[int, int, str]]:
     pair of floats that a player would round into one millisecond is exactly
     the defect these cases exist to catch.
     """
-    found: List[Tuple[int, int, str]] = []
+    found: list[tuple[int, int, str]] = []
 
     def stamp(field: str) -> int:
         clock, _, millis = field.strip().partition(",")
@@ -1371,7 +1371,7 @@ INHERITED_VARIABLES = {
 }
 
 
-def runner_variables() -> "set":
+def runner_variables() -> set:
     """Every `E2E_` variable name the runner's own source mentions."""
     import re
 
@@ -1383,7 +1383,7 @@ def runner_variables() -> "set":
 # The variables a scripted run may keep, with the reason each is harmless.
 # Anything not here is scrubbed, so a new one is scrubbed by default and a
 # deliberate exception has to be written down.
-KEPT_VARIABLES: "set" = set()
+KEPT_VARIABLES: set = set()
 
 
 @case(1, "OBS-2.20", exclusive=True)
@@ -1408,8 +1408,6 @@ def a_harness_edited_mid_run_is_reported() -> str:
     identical. The edit that caused the incident was to files that were
     already modified.
     """
-    import shutil
-    import tempfile
 
     runner = load_runner()
     # One target per process, three targets at once, one checkout between
@@ -2385,7 +2383,7 @@ def a_frame_is_assembled_from_its_headers() -> str:
 
     made = streams.FrameAssembler()
     packets = video_packets(1, 0, pattern=5)
-    out_of_order = [packets[3]] + packets[:3] + packets[4:]
+    out_of_order = [packets[3], *packets[:3], *packets[4:]]
     frame = None
     for packet in out_of_order:
         frame = made.push(packet) or frame
@@ -2596,8 +2594,7 @@ def audio_loss_is_told_apart_from_the_stream_not_running() -> str:
 
     # 3. Reordering and duplication move nothing.
     packets = audio_packets(0, 6)
-    shuffled = timeline(packets[:3] + [packets[2], packets[4], packets[3],
-                                       packets[5]])
+    shuffled = timeline([*packets[:3], packets[2], packets[4], packets[3], packets[5]])
     counts = shuffled.counts()
     expect("one duplicate", counts["duplicates"], 1)
     expect("one late", counts["late_dropped"], 1)
@@ -3491,7 +3488,7 @@ def a_slot_of_audio_is_the_rate_it_declares() -> str:
     wanted = sum(cursor.wanted() for _ in range(600)) // streams.FRAME_BYTES
     # A minute at 10 slots a second. Rounding each slot down would lose about
     # 175 frames of it, which is drift the file cannot be corrected for.
-    expect("a minute of frames", wanted, int(round(rate * 60)))
+    expect("a minute of frames", wanted, round(rate * 60))
 
     # A slot that is one packet short is jitter, not loss.
     cursor = recorder_lib.AudioCursor(timeline, rate, 10)
@@ -4121,7 +4118,7 @@ def a_menu_is_centred_in_the_pane_and_a_session_is_not() -> str:
     # a 272-line pane. Read in pixels rather than in glyph rows: the menu is
     # centred vertically and is not on the canvas's own 8-pixel row grid.
     harness = plain[:]
-    first, last = occupied_span(harness, geometry.width, 136, chrome)
+    first, _last = occupied_span(harness, geometry.width, 136, chrome)
     if first is None:
         raise Failure("the menu drew nothing")
     # Only the harness pane, since the device pane is on the same scanline.
@@ -4238,10 +4235,10 @@ def the_opening_overview_is_five_seconds_at_any_rate() -> str:
 
     for fps in (5, 10, 20, 25):
         interval = 1.0 / fps
-        slots = max(1, int(round(recorder_lib.OVERVIEW_SECONDS / interval)))
+        slots = max(1, round(recorder_lib.OVERVIEW_SECONDS / interval))
         expect(f"the overview at {fps} fps", slots * interval,
                recorder_lib.OVERVIEW_SECONDS)
-        summary = max(1, int(round(recorder_lib.SUMMARY_SECONDS / interval)))
+        summary = max(1, round(recorder_lib.SUMMARY_SECONDS / interval))
         expect(f"the summary at {fps} fps", summary * interval,
                recorder_lib.SUMMARY_SECONDS)
     if recorder_lib.SUMMARY_SECONDS >= recorder_lib.OVERVIEW_SECONDS:
@@ -4682,7 +4679,7 @@ def a_still_is_the_frame_the_recording_holds_at_that_position() -> str:
         left, top, width, height = recorder_lib.annotation_free_area(geometry)
         height = min(height, recorder_lib.still_height(geometry) - top)
         path = os.path.join(directory, "video.mp4")
-        read: List[Optional[List[str]]] = []
+        read: list[list[str] | None] = []
         for entry in stills:
             expect("the position is the frame at this rate",
                    round(entry["position"], 4),
@@ -4876,7 +4873,7 @@ class ScriptedRun:
     def path(self, *parts: str) -> str:
         return os.path.join(self.directory, *parts)
 
-    def records(self, *parts: str) -> List[dict]:
+    def records(self, *parts: str) -> list[dict]:
         import json
 
         found = []
@@ -4889,7 +4886,7 @@ class ScriptedRun:
                         pass
         return found
 
-    def tree(self) -> List[str]:
+    def tree(self) -> list[str]:
         """Every file under the output directory, by relative path, sorted."""
         found = []
         for base, _dirs, files in os.walk(self.directory):
@@ -4903,7 +4900,7 @@ def scripted_run(double: DeviceDouble, stubs: Sequence[Stub],
                  tokens: Sequence[str] = ("127.0.0.1",),
                  arguments: Sequence[str] = (),
                  workspace: str = "",
-                 extra_environment: Optional[dict] = None) -> ScriptedRun:
+                 extra_environment: dict | None = None) -> ScriptedRun:
     """Drive the real runner over `stubs` against `double`, and return the tree."""
     import json
     import subprocess
@@ -4958,7 +4955,7 @@ def scripted_run(double: DeviceDouble, stubs: Sequence[Stub],
                        completed.stdout + completed.stderr)
 
 
-def records_from_a_stub_suite(environment: dict, body: str = "") -> List[dict]:
+def records_from_a_stub_suite(environment: dict, body: str = "") -> list[dict]:
     """Run one throwaway suite in a child process and read what it recorded.
 
     A child rather than a reload: report.py reads its environment at import,
@@ -5181,8 +5178,8 @@ def the_plan_says_why_a_manual_suite_did_not_run() -> str:
              Stub("a-benchmark", category="perf", args="-H @HOST@ -p @PASS@")]
     with DeviceDouble() as double, tempfile.TemporaryDirectory() as workspace:
         made = scripted_run(double, stubs, workspace=workspace)
-        plan = [r for r in made.records("127.0.0.1", "run.jsonl")
-                if r["kind"] == "plan"][0]
+        plan = next(r for r in made.records("127.0.0.1", "run.jsonl")
+                if r["kind"] == "plan")
         by_name = {entry["name"]: entry for entry in plan["suites"]}
         expect("manual", by_name["operator-only"]["reason"], "manual")
         expect("category", by_name["a-benchmark"]["reason"], "category")
@@ -5197,16 +5194,16 @@ def the_run_records_what_it_assumed() -> str:
 
     with DeviceDouble() as double, tempfile.TemporaryDirectory() as workspace:
         plain = scripted_run(double, [Stub("held")], workspace=workspace)
-        run = [r for r in plain.records("127.0.0.1", "run.jsonl")
-               if r["kind"] == "run"][0]
+        run = next(r for r in plain.records("127.0.0.1", "run.jsonl")
+               if r["kind"] == "run")
         expect("none in force", run["assumptions"], [])
     with DeviceDouble() as double, tempfile.TemporaryDirectory() as workspace:
         assumed = scripted_run(
             double, [Stub("held")],
             arguments=("--assume-fix", "ftp-listing-full-length"),
             workspace=workspace)
-        run = [r for r in assumed.records("127.0.0.1", "run.jsonl")
-               if r["kind"] == "run"][0]
+        run = next(r for r in assumed.records("127.0.0.1", "run.jsonl")
+               if r["kind"] == "run")
         expect("in force", run["assumptions"], ["ftp-listing-full-length"])
     return "one fix assumed"
 
@@ -6343,9 +6340,9 @@ def every_table_is_padded() -> str:
     require_fixture()
     document = generated_document()
     inside_fence = False
-    block: List[str] = []
+    block: list[str] = []
     tables = 0
-    for line in document.splitlines() + [""]:
+    for line in [*document.splitlines(), ""]:
         if line.startswith("```"):
             inside_fence = not inside_fence
             continue
@@ -6689,7 +6686,7 @@ UNTESTED_REQUIREMENTS = {
 }
 
 
-def specified_requirements() -> "dict":
+def specified_requirements() -> dict:
     """Every requirement the specification defines, with its priority."""
     import re
 
@@ -6879,7 +6876,7 @@ def a_recorder_flag_without_record_is_refused() -> str:
                   "--no-record-menu"], "records nothing"),
                 (["--record"], "needs -o DIR")):
             completed = subprocess.run(
-                [sys.executable, RUNNER_PATH] + arguments + ["127.0.0.1"],
+                [sys.executable, RUNNER_PATH, *arguments, "127.0.0.1"],
                 capture_output=True, text=True, cwd=directory, timeout=60)
             # 64 is EX_USAGE. A usage error is not an outcome of a run, so it
             # is off the severity scale the other statuses form; on that scale
@@ -7393,14 +7390,14 @@ def the_run_record_names_the_build_that_produced_it() -> str:
         made = scripted_run(double, [Stub("held")], workspace=workspace,
                             extra_environment={"GITHUB_RUN_ID": "1234567",
                                                "GITHUB_RUN_ATTEMPT": "2"})
-        run = [r for r in made.records("127.0.0.1", "run.jsonl")
-               if r["kind"] == "run"][0]
+        run = next(r for r in made.records("127.0.0.1", "run.jsonl")
+               if r["kind"] == "run")
         expect("run id", run["ci_run_id"], "1234567")
         expect("attempt", run["ci_run_attempt"], "2")
     with DeviceDouble() as double, tempfile.TemporaryDirectory() as workspace:
         made = scripted_run(double, [Stub("held")], workspace=workspace)
-        run = [r for r in made.records("127.0.0.1", "run.jsonl")
-               if r["kind"] == "run"][0]
+        run = next(r for r in made.records("127.0.0.1", "run.jsonl")
+               if r["kind"] == "run")
         if "ci_run_id" in run:
             raise Failure(f"an identifier was invented: {run['ci_run_id']!r}")
     return "1234567 attempt 2, absent outside CI"
@@ -7411,7 +7408,7 @@ def the_run_record_names_the_build_that_produced_it() -> str:
 # ---------------------------------------------------------------------------
 
 
-def selected(tiers: Sequence[int], only: Sequence[str]) -> List[Case]:
+def selected(tiers: Sequence[int], only: Sequence[str]) -> list[Case]:
     chosen = [c for c in CASES if not tiers or c.tier in tiers]
     if only:
         chosen = [c for c in chosen
@@ -7479,7 +7476,7 @@ def _report_outcome(entry: Case, outcome: _Outcome) -> str:
     return outcome.verdict
 
 
-def run_cases(cases: List[Case]) -> List[str]:
+def run_cases(cases: list[Case]) -> list[str]:
     """Run a tier's cases, its non-exclusive ones concurrently, in registration order.
 
     A non-exclusive case runs on a worker thread from a pool, all submitted up
@@ -7502,7 +7499,7 @@ def run_cases(cases: List[Case]) -> List[str]:
                 for entry, future in zip(cases, futures)]
 
 
-def main(argv: List[str]) -> int:
+def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--tier", action="append", type=int, default=[],
                         help="Run only this tier. Repeatable.")
@@ -7518,7 +7515,7 @@ def main(argv: List[str]) -> int:
     if args.record_fixture:
         return record_fixture()
 
-    verdicts: List[str] = []
+    verdicts: list[str] = []
     for tier, title in TIERS:
         cases = [c for c in selected(args.tier, args.only) if c.tier == tier]
         if not cases:

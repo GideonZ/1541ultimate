@@ -8,7 +8,6 @@ a palette-indexed image and the assertions that go with it.
 from collections import Counter
 import os
 import sys
-from typing import List
 
 from PIL import Image
 
@@ -79,7 +78,7 @@ def assert_not_black(image: Image.Image, label: str = "VIC frame") -> None:
         raise Failure(f"{label} is completely black ({image.width}x{image.height})")
 
 
-def assert_frames_differ(images: List[Image.Image], label: str = "VIC frames") -> None:
+def assert_frames_differ(images: list[Image.Image], label: str = "VIC frames") -> None:
     """Require a sequence of captured frames to contain a visible change."""
     if len(images) < 2:
         raise ValueError("assert_frames_differ requires at least two frames")

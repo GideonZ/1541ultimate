@@ -17,7 +17,7 @@ firmware behaviour these expectations rest on was measured on a C64 Ultimate
 
 import os
 import sys
-from typing import List, Optional, Sequence, Tuple
+from collections.abc import Sequence
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
@@ -45,7 +45,7 @@ class RecordingBackend(ui_backend.Backend):
     def __init__(self, style: str, selected: str = "") -> None:
         self._navigation = navigation.classify(style)
         self.selected = selected
-        self.sent: List[str] = []
+        self.sent: list[str] = []
 
     @property
     def navigation(self) -> navigation.Navigation:
@@ -75,7 +75,7 @@ class RecordingBackend(ui_backend.Backend):
         self.send_key(key)
         return self.send_text(text, label)
 
-    def selected_text(self, entry_rows: Optional[Sequence[int]] = None) -> str:
+    def selected_text(self, entry_rows: Sequence[int] | None = None) -> str:
         return self.selected
 
     @property
@@ -83,7 +83,7 @@ class RecordingBackend(ui_backend.Backend):
         return "".join(self.sent)
 
 
-def browser(style: str, selected: str = "") -> Tuple[ui_backend.Browser, RecordingBackend]:
+def browser(style: str, selected: str = "") -> tuple[ui_backend.Browser, RecordingBackend]:
     backend = RecordingBackend(style, selected)
     return ui_backend.Browser(backend, range(2, 24), 24), backend
 

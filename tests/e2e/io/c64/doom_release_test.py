@@ -179,7 +179,7 @@ def apply_settings(api: UltimateApi, previous: dict) -> None:
     holding everything already changed. Returning it instead would abandon the
     machine in PAL with a 16 MB REU and turbo selected.
     """
-    wanted = list(SETTINGS) + [(TURBO_STORE, TURBO_ITEM, turbo_register_value(api))]
+    wanted = [*list(SETTINGS), (TURBO_STORE, TURBO_ITEM, turbo_register_value(api))]
     for store, item, value in wanted:
         current = api.configs.current(store, item)
         previous[(store, item)] = current

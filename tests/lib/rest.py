@@ -32,7 +32,6 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from typing import Dict, Optional, Tuple
 
 import interactions
 import openapi_contract
@@ -67,7 +66,7 @@ def retry_pause(attempt: int) -> float:
 # masked by report.py, which does it once for every record shape.
 ACTION_TEXT_CHARS = 300
 
-Response = Tuple[int, Dict[str, str], bytes]
+Response = tuple[int, dict[str, str], bytes]
 
 
 # How many requests that could have moved the machine have gone out of this
@@ -152,10 +151,10 @@ def as_text(value: object) -> str:
 
 
 def record_action(method: str, path: str, started: float, attempts: int,
-                  status: Optional[int], answer: Optional[bytes],
-                  exc: Optional[BaseException] = None,
-                  params: Optional[Dict[str, object]] = None,
-                  payload: Optional[object] = None,
+                  status: int | None, answer: bytes | None,
+                  exc: BaseException | None = None,
+                  params: dict[str, object] | None = None,
+                  payload: object | None = None,
                   call=None, sent: int = 0, received: int = 0) -> None:
     """Record what a request did to the device, when it is worth keeping.
 
@@ -211,7 +210,7 @@ def record_action(method: str, path: str, started: float, attempts: int,
     answered = status == 200
     if method.upper() == "GET" and answered and not retried:
         return
-    fields: Dict[str, object] = {"ms": elapsed}
+    fields: dict[str, object] = {"ms": elapsed}
     carried = params if params else payload
     if carried:
         fields["params"] = as_text(carried)[:ACTION_TEXT_CHARS]
@@ -232,7 +231,7 @@ def path_of(url: str) -> str:
     return urllib.parse.urlsplit(url).path or url
 
 
-def retrying_urlopen(request: "urllib.request.Request", timeout: float,
+def retrying_urlopen(request: urllib.request.Request, timeout: float,
                      idempotent: bool = False):
     """urlopen under the shared retry policy, for callers not using RestClient.
 
@@ -246,7 +245,7 @@ def retrying_urlopen(request: "urllib.request.Request", timeout: float,
     method = request.get_method()
     path = path_of(request.full_url)
     note_mutation(method)
-    last_exc: Optional[BaseException] = None
+    last_exc: BaseException | None = None
     for attempt in range(TRANSPORT_RETRIES):
         started = time.monotonic()
         try:
@@ -269,9 +268,9 @@ def retrying_urlopen(request: "urllib.request.Request", timeout: float,
     raise last_exc
 
 
-def retrying_http_request(host: "str | targets.Target", method: str, path: str, *,
-                          body: Optional[bytes] = None,
-                          headers: Optional[Dict[str, str]] = None,
+def retrying_http_request(host: str | targets.Target, method: str, path: str, *,
+                          body: bytes | None = None,
+                          headers: dict[str, str] | None = None,
                           timeout: float = DEFAULT_TIMEOUT,
                           idempotent: bool = False) -> Response:
     """One http.client request under the shared retry policy.
@@ -287,7 +286,7 @@ def retrying_http_request(host: "str | targets.Target", method: str, path: str, 
     target = targets.resolve(host)
     host = target.host_for(path)
     note_mutation(method)
-    last_exc: Optional[BaseException] = None
+    last_exc: BaseException | None = None
     for attempt in range(TRANSPORT_RETRIES):
         connection = http.client.HTTPConnection(host, target.rest_port, timeout=timeout)
         sent = False
@@ -313,8 +312,8 @@ def retrying_http_request(host: "str | targets.Target", method: str, path: str, 
     raise last_exc
 
 
-def url_for(host: "str | targets.Target", path: str,
-            params: Optional[Dict[str, object]] = None) -> str:
+def url_for(host: str | targets.Target, path: str,
+            params: dict[str, object] | None = None) -> str:
     """The URL for `path` on `host`, from the handle alone.
 
     One builder, because a caller that assembles its own URL is a caller that
@@ -331,7 +330,7 @@ def url_for(host: "str | targets.Target", path: str,
     return f"http://{authority}{path}{query}"
 
 
-def multipart_body(field: str, filename: str, payload: bytes) -> Tuple[bytes, str]:
+def multipart_body(field: str, filename: str, payload: bytes) -> tuple[bytes, str]:
     """A single-file multipart/form-data body, and the Content-Type for it.
 
     The device's upload endpoints (machine:writemem, the runners, drive images)
@@ -348,7 +347,7 @@ def multipart_body(field: str, filename: str, payload: bytes) -> Tuple[bytes, st
     return body, f"multipart/form-data; boundary={boundary}"
 
 
-def header_value(headers: Dict[str, str], name: str) -> str:
+def header_value(headers: dict[str, str], name: str) -> str:
     """Look a header up without depending on the case the device sent."""
     lowered = name.lower()
     for key, value in headers.items():
@@ -379,7 +378,7 @@ def looks_unreachable(exc: BaseException) -> bool:
     return any(marker in text for marker in UNREACHABLE_MARKERS)
 
 
-def json_object(label: str, body: bytes) -> Dict[str, object]:
+def json_object(label: str, body: bytes) -> dict[str, object]:
     """Decode a response body that has to be a JSON object.
 
     For a suite asserting on the HTTP contract itself, where an unparsable body
@@ -404,7 +403,7 @@ class RestClient:
     all.
     """
 
-    def __init__(self, host: "str | targets.Target", password: Optional[str] = None,
+    def __init__(self, host: str | targets.Target, password: str | None = None,
                  timeout: float = DEFAULT_TIMEOUT) -> None:
         # `host` is a target rather than a bare name: "u2@c64u" resolves to a
         # cartridge under test and the computer it is plugged into. See
@@ -434,21 +433,21 @@ class RestClient:
         self.mutations = 0
         # Set on the first call when ULTIMATE_VALIDATE_OPENAPI is on. See
         # tests/lib/openapi_contract.py.
-        self.contract: "Optional[openapi_contract.Contract]" = None
+        self.contract: openapi_contract.Contract | None = None
         self._contract_resolved = False
 
-    def url(self, path: str, params: Optional[Dict[str, object]] = None) -> str:
+    def url(self, path: str, params: dict[str, object] | None = None) -> str:
         return url_for(self.target, path, params)
 
     def request(self, method: str, path: str,
-                params: Optional[Dict[str, object]] = None,
-                payload: Optional[object] = None,
-                body: Optional[bytes] = None,
-                headers: Optional[Dict[str, str]] = None,
+                params: dict[str, object] | None = None,
+                payload: object | None = None,
+                body: bytes | None = None,
+                headers: dict[str, str] | None = None,
                 use_password: bool = True,
                 idempotent: bool = False,
-                timeout: Optional[float] = None,
-                retries: Optional[int] = None) -> Response:
+                timeout: float | None = None,
+                retries: int | None = None) -> Response:
         """One request, with the transport's retry rule applied.
 
         `retries` is for a caller that must bound how long one call can take
@@ -460,7 +459,7 @@ class RestClient:
         if payload is not None and body is not None:
             raise Failure("request takes payload or body, not both")
 
-        sent_headers: Dict[str, str] = dict(headers or {})
+        sent_headers: dict[str, str] = dict(headers or {})
         if payload is not None:
             body = json.dumps(payload).encode("utf-8")
             sent_headers.setdefault("Content-Type", "application/json")
@@ -480,7 +479,7 @@ class RestClient:
         # window, and rewriting the same bytes is indistinguishable from
         # writing them once.
         # Retryability is decided by may_retry, the one copy of that rule.
-        last_exc: Optional[BaseException] = None
+        last_exc: BaseException | None = None
         allowed = TRANSPORT_RETRIES if retries is None else max(1, retries)
         # What this attempt puts on the wire, which is the request line, the
         # headers and the body. Counted before it goes, so a call that is
@@ -537,7 +536,7 @@ class RestClient:
         if self.contract is not None:
             self.contract.check(method, path, answer[0], answer[1], answer[2])
 
-    def _resolve_contract(self) -> "Optional[openapi_contract.Contract]":
+    def _resolve_contract(self) -> openapi_contract.Contract | None:
         declared = openapi_contract.declared_profile()
         if declared:
             return openapi_contract.Contract.load(declared)

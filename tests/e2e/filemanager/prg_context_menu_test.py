@@ -35,7 +35,6 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "api"))
 # tests/lib holds the reporting rules every suite shares; tests/e2e/lib
@@ -210,7 +209,7 @@ def screencode_to_ascii(code: int) -> str:
     return "."
 
 
-def _at_plain_root(rows: List[str], path: str) -> bool:
+def _at_plain_root(rows: list[str], path: str) -> bool:
     """The unobstructed root listing, with no overlay (menu, popup, viewer)
     drawn over any part of it.
 
@@ -289,7 +288,7 @@ class Machine:
             time.sleep(pacing.POLL_INTERVAL_SECONDS)
         raise Failure(f"C64 did not reach the BASIC prompt:\n{self.c64_screen()}")
 
-    def drive_a(self) -> Dict[str, object]:
+    def drive_a(self) -> dict[str, object]:
         status, _, body = self.session.request("GET", "/v1/drives")
         if status != 200:
             raise Failure(f"drives query failed with HTTP {status}")
@@ -350,7 +349,7 @@ class Machine:
             f"screen was:\n{self.visible_text()}")
 
     # ---- Native C64 keyboard input --------------------------------------
-    def tap(self, inputs: List[str], settle: float = MENU_SETTLE_SECONDS) -> None:
+    def tap(self, inputs: list[str], settle: float = MENU_SETTLE_SECONDS) -> None:
         # The device serves a small number of HTTP connections, so a single
         # request can time out under load. Retry once: losing a keystroke here
         # would be reported as a firmware failure.
@@ -377,7 +376,7 @@ class Machine:
         be missed if the KERNAL scan does not see it. Check the echo before
         pressing RETURN rather than sending BASIC a truncated command.
         """
-        for attempt in range(5):
+        for _attempt in range(5):
             # The menu disables the C64 keyboard matrix while it is up and only
             # re-enables it after the browser task has fully unwound, so wait
             # for it to be gone and give the machine its keyboard back before
@@ -478,7 +477,7 @@ class Machine:
     def enter(self) -> None:
         self.browser.enter()
 
-    def rows(self) -> List[str]:
+    def rows(self) -> list[str]:
         return self.browser.rows()
 
     def current_path(self) -> str:
@@ -493,7 +492,7 @@ class Machine:
         # overlay (View, Hex View) was open, though a fresh cycle in
         # isolation reliably succeeds. Retrying the whole sequence from a
         # clean reopen, not just the inner scan, is what proved reliable.
-        last_exc: Optional[Failure] = None
+        last_exc: Failure | None = None
         for _ in range(3):
             try:
                 self.browser.backend.ensure_ready()
@@ -523,7 +522,7 @@ class Machine:
             if not str(exc).startswith("menu screen unavailable after"):
                 raise
 
-    def context_labels(self) -> List[str]:
+    def context_labels(self) -> list[str]:
         """Open the context menu of the selected entry and close it again."""
         labels = self.browser.open_context_menu()
         self.browser.press("RUNSTOP")
@@ -557,7 +556,7 @@ def default_fixture_token() -> str:
     return f"{int(time.time()) % 100000:05d}"
 
 
-def parse_d64_directory(image: bytes) -> List[str]:
+def parse_d64_directory(image: bytes) -> list[str]:
     """Names of the live files in a D64, read straight from the image."""
     names = []
     track, sector = D64_DIR_TRACK, 1
@@ -630,11 +629,11 @@ class Fixtures:
         with ftp_lib.session(host, password, timeout=30) as ftp:
             self._store(ftp, self.d64, build_d64(DISK_NAME, CBM_FILE_NAME, PRG_BYTES))
 
-    def temp_listing(self, host: str, password: str, directory: str = "") -> List[str]:
+    def temp_listing(self, host: str, password: str, directory: str = "") -> list[str]:
         with ftp_lib.session(host, password, timeout=30) as ftp:
             return ftp_lib.names(ftp, f"{TEMP_PATH}{directory}")
 
-    def disk_listing(self, host: str, password: str) -> List[str]:
+    def disk_listing(self, host: str, password: str) -> list[str]:
         """Read the fixture image back over FTP and decode its directory."""
         with ftp_lib.session(host, password, timeout=30) as ftp:
             image = ftp_lib.retrieve(ftp, f"{TEMP_PATH}{self.d64}")
@@ -782,7 +781,7 @@ def assert_disk_mounted(machine: Machine, fixtures: Fixtures, action: str) -> No
     # after triggering the action, with nothing else to wait on first, and
     # can genuinely race the mount actually registering in /v1/drives.
     deadline = time.monotonic() + 5.0
-    drive_a: Dict[str, object] = {}
+    drive_a: dict[str, object] = {}
     while time.monotonic() < deadline:
         drive_a = machine.drive_a()
         mounted = f"{drive_a.get('image_path', '')}{drive_a.get('image_file', '')}"
@@ -806,13 +805,13 @@ class PlainLocation:
     def renamed_to(self, fixtures: Fixtures) -> str:
         return f"{FIXTURE_PREFIX}{fixtures.token}ren.prg"
 
-    def listing(self, host: str, password: str, fixtures: Fixtures) -> List[str]:
+    def listing(self, host: str, password: str, fixtures: Fixtures) -> list[str]:
         return fixtures.temp_listing(host, password)
 
     def refresh(self, host: str, password: str, fixtures: Fixtures) -> None:
         fixtures.reseed_prg(host, password)
 
-    def forbidden_actions(self) -> Tuple[str, ...]:
+    def forbidden_actions(self) -> tuple[str, ...]:
         return ("Mount & Run", "Real Run")
 
 
@@ -830,22 +829,22 @@ class DiskLocation:
     def renamed_to(self, fixtures: Fixtures) -> str:
         return "RENAMEDPRG"
 
-    def listing(self, host: str, password: str, fixtures: Fixtures) -> List[str]:
+    def listing(self, host: str, password: str, fixtures: Fixtures) -> list[str]:
         return fixtures.disk_listing(host, password)
 
     def refresh(self, host: str, password: str, fixtures: Fixtures) -> None:
         fixtures.new_disk(host, password)
 
-    def forbidden_actions(self) -> Tuple[str, ...]:
+    def forbidden_actions(self) -> tuple[str, ...]:
         return ()
 
 
-def assert_present(names: List[str], wanted: str, what: str) -> None:
+def assert_present(names: list[str], wanted: str, what: str) -> None:
     if not any(name.startswith(wanted) for name in names):
         raise Failure(f"{what}: {wanted!r} is missing from {names}")
 
 
-def assert_absent(names: List[str], wanted: str, what: str) -> None:
+def assert_absent(names: list[str], wanted: str, what: str) -> None:
     if any(name.startswith(wanted) for name in names):
         raise Failure(f"{what}: {wanted!r} is still present in {names}")
 
@@ -881,7 +880,7 @@ def invoke_action_and_pick_directory(
     # fixable by retrying. Callers check the mode themselves and skip before
     # reaching here rather than retry a walk that cannot succeed under Telnet.
     directory = f"{TEMP_PATH}{fixtures.target_dir}"
-    last_exc: Optional[Failure] = None
+    last_exc: Failure | None = None
     for _ in range(attempts):
         try:
             location.open(machine, fixtures)
@@ -1031,7 +1030,7 @@ SCENARIOS = [
 
 
 def run_repeat_mode(machine: Machine, fixtures: Fixtures, host: str, password: str,
-                    repeat: int, selected: List[str]) -> int:
+                    repeat: int, selected: list[str]) -> int:
     """Hammer selected scenarios so an intermittent defect cannot look like a pass."""
     chosen = [entry for entry in SCENARIOS if not selected or entry[0] in selected]
     tally = {label: [] for _, label, _, _ in chosen}
@@ -1098,12 +1097,12 @@ def load_actions(machine: Machine, fixtures: Fixtures, location):
     return actions
 
 
-def offered_actions(machine: Machine, fixtures: Fixtures, location) -> List[str]:
+def offered_actions(machine: Machine, fixtures: Fixtures, location) -> list[str]:
     location.open(machine, fixtures)
     return machine.context_labels()
 
 
-def run_context_menu_inventory(machine: Machine, fixtures: Fixtures, location, offered: List[str]) -> None:
+def run_context_menu_inventory(machine: Machine, fixtures: Fixtures, location, offered: list[str]) -> None:
     for label in location.forbidden_actions():
         if label in offered:
             raise Failure(f"{location.label} should not offer {label!r}: {offered}")
@@ -1174,7 +1173,7 @@ def main() -> int:
 
     locations = [PlainLocation(), DiskLocation()]
 
-    failures: List[Tuple[str, str]] = []
+    failures: list[tuple[str, str]] = []
     total = 0
 
     # Every action is independent, so keep going after a failure: one run then

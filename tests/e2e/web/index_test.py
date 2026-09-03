@@ -94,7 +94,7 @@ RUNNER_ROUTES = {"prg": "/v1/runners:run_prg",
 
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    parser.add_argument("--browser", default="all", choices=("all",) + browser_lib.BROWSERS,
+    parser.add_argument("--browser", default="all", choices=("all", *browser_lib.BROWSERS),
                         help="Which browsers to drive. Default: every one installed.")
     parser.add_argument("-t", "--timeout", type=float, default=READY_TIMEOUT,
                         help="How long a page has to become ready.")
@@ -330,7 +330,7 @@ def check_power_off(page):
 
 def check_uploads(page, directory):
     """Each file type reaches the route that handles it, with what it needs."""
-    for kind in DISK_IMAGES + ("D64",):
+    for kind in (*DISK_IMAGES, "D64"):
         page.device.clear()
         source = image(directory, "disk.%s" % kind)
         with check("a .%s is mounted through POST %s" % (kind, MOUNT_ROUTE)):

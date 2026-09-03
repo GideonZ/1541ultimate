@@ -54,7 +54,6 @@ import struct
 import sys
 import time
 from pathlib import Path
-from typing import List, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "lib"))
 
@@ -98,12 +97,12 @@ def payload() -> bytes:
     return struct.pack(f"<{SIZE // 4}I", *((TAG << 24) | w for w in range(SIZE // 4)))
 
 
-def control_writes(data: bytes) -> List[bytes]:
+def control_writes(data: bytes) -> list[bytes]:
     """Equal writes that never leave a whole sector over."""
     return [data[o:o + CONTROL] for o in range(0, len(data), CONTROL)]
 
 
-def paced_writes(data: bytes) -> List[bytes]:
+def paced_writes(data: bytes) -> list[bytes]:
     """The shape that puts every write after the first two at 2 modulo 512."""
     writes = [data[:HEAD], data[HEAD:HEAD + TAIL]]
     writes += [data[o:o + BODY] for o in range(HEAD + TAIL, len(data), BODY)]
@@ -116,7 +115,7 @@ SHAPES = {
 }
 
 
-def paced_store(client: ftplib.FTP, path: str, writes: List[bytes],
+def paced_store(client: ftplib.FTP, path: str, writes: list[bytes],
                 transfer_timeout: float) -> float:
     """STOR one write at a time, pausing between them.
 
@@ -222,7 +221,7 @@ def round_trip(client: ftplib.FTP, directory: str, data: bytes, shape: str,
         f"at the right size and with no error reported")
 
 
-def first_usb_dir(client: ftplib.FTP) -> Optional[str]:
+def first_usb_dir(client: ftplib.FTP) -> str | None:
     """The USB volume to write to, or None when the machine has no medium in.
 
     Which port the medium is in is not this suite's business; see
@@ -241,7 +240,7 @@ def usable(client: ftplib.FTP, directory: str) -> bool:
 
 
 def scenario_upload_integrity(host: str, password: str, timeout: float,
-                              usb_dir: Optional[str], ram_dir: str,
+                              usb_dir: str | None, ram_dir: str,
                               transfer_timeout: float) -> None:
     section("an upload to USB storage is stored as it was sent")
     data = payload()

@@ -32,7 +32,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Sequence, Tuple
+from collections.abc import Callable, Sequence
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "api"))
 # tests/lib holds the reporting rules every suite shares; tests/e2e/lib
@@ -124,13 +124,13 @@ def size_to_string_bytes(size: int) -> str:
 class Entry:
     """One directory entry as a single observer reports it."""
 
-    def __init__(self, name: str, kind: str, size_text: str, exact_size: Optional[int] = None) -> None:
+    def __init__(self, name: str, kind: str, size_text: str, exact_size: int | None = None) -> None:
         self.name = name
         self.kind = kind  # "dir", "file" or "volume"
         self.size_text = size_text  # the 5-character rendered size, "" for a directory
         self.exact_size = exact_size  # bytes, where the observer reports them
 
-    def key(self) -> Tuple[str, str, str]:
+    def key(self) -> tuple[str, str, str]:
         return (self.name, self.kind, self.size_text)
 
     def __repr__(self) -> str:
@@ -140,10 +140,10 @@ class Entry:
         return f"{self.name}[{self.size_text}]{exact}"
 
 
-Snapshot = Dict[str, Entry]
+Snapshot = dict[str, Entry]
 
 
-def expected_snapshot(entries: Sequence[Tuple[str, Optional[int]]]) -> Snapshot:
+def expected_snapshot(entries: Sequence[tuple[str, int | None]]) -> Snapshot:
     """Canonical state: (name, exact size), or (name, None) for a directory."""
     result: Snapshot = {}
     for name, size in entries:
@@ -154,7 +154,7 @@ def expected_snapshot(entries: Sequence[Tuple[str, Optional[int]]]) -> Snapshot:
     return result
 
 
-def snapshot_keys(snapshot: Snapshot) -> List[Tuple[str, str, str]]:
+def snapshot_keys(snapshot: Snapshot) -> list[tuple[str, str, str]]:
     return sorted(entry.key() for entry in snapshot.values())
 
 
@@ -164,7 +164,7 @@ def format_snapshot(snapshot: Snapshot) -> str:
     return ", ".join(repr(snapshot[name]) for name in sorted(snapshot))
 
 
-def strip_browser_frame(row: str, width: int) -> Tuple[str, int]:
+def strip_browser_frame(row: str, width: int) -> tuple[str, int]:
     """A browser row without the window frame, and the width that leaves.
 
     A C64 Ultimate draws its file browser inside a framed window, so every
@@ -181,7 +181,7 @@ def strip_browser_frame(row: str, width: int) -> Tuple[str, int]:
     return row, width
 
 
-def parse_browser_row(row: str, width: int) -> Optional[Entry]:
+def parse_browser_row(row: str, width: int) -> Entry | None:
     """Split one rendered browser line.
 
     BrowsableDirEntry::getDisplayString (browsable_root.h:200-224) lays the row
@@ -212,7 +212,7 @@ def restrict(snapshot: Snapshot, names: Sequence[str]) -> Snapshot:
 # --------------------------------------------------------------------------
 
 
-def rest_json(host: str, password: str, method: str, path: str, timeout: float = 15.0) -> Dict[str, object]:
+def rest_json(host: str, password: str, method: str, path: str, timeout: float = 15.0) -> dict[str, object]:
     headers = {"X-Password": password} if password else {}
     request = urllib.request.Request(
         # Keyboard injection belongs to the C64-side computer on a cartridge
@@ -236,7 +236,7 @@ class RestOracle:
         self.password = password
         self.directory = directory.strip("/")
 
-    def info(self, name: str) -> Optional[Dict[str, object]]:
+    def info(self, name: str) -> dict[str, object] | None:
         quoted = urllib.parse.quote(f"{self.directory}/{name}")
         try:
             body = rest_json(self.host, self.password, "GET", f"/v1/files/{quoted}:info")
@@ -276,7 +276,7 @@ class FtpObserver:
     def __init__(self, host: str, password: str, directory: str) -> None:
         self.ftp = ftp_connect(host, password)
         self.ftp.cwd(directory)
-        self.last_raw: List[str] = []
+        self.last_raw: list[str] = []
 
     def close(self) -> None:
         ftp_lib.close(self.ftp)
@@ -369,7 +369,7 @@ remove_tree = ftp_lib.remove_tree
 
 class Matrix:
     def __init__(self) -> None:
-        self.cells: List[Tuple[str, str, str, str, str]] = []
+        self.cells: list[tuple[str, str, str, str, str]] = []
 
     def record(self, operation: str, origin: str, observer: str, verdict: str, note: str = "") -> None:
         self.cells.append((operation, origin, observer, verdict, note))
@@ -381,7 +381,7 @@ class Matrix:
             if note:
                 line += f" {note}"
             lines.append(line)
-        counts: Dict[str, int] = {}
+        counts: dict[str, int] = {}
         for _, _, _, verdict, _ in self.cells:
             counts[verdict] = counts.get(verdict, 0) + 1
         lines.append("-" * 78)
@@ -401,10 +401,10 @@ class Context:
         self.matrix = Matrix()
 
         self.session = RestSession(self.host, self.password or None, self.timeout)
-        self.menu: Optional[FilesystemRefreshBrowser] = None
-        self.telnet: Optional[FilesystemRefreshBrowser] = None
-        self.ftp_observer: Optional[FtpObserver] = None
-        self.ftp_driver: Optional[ftplib.FTP] = None
+        self.menu: FilesystemRefreshBrowser | None = None
+        self.telnet: FilesystemRefreshBrowser | None = None
+        self.ftp_observer: FtpObserver | None = None
+        self.ftp_driver: ftplib.FTP | None = None
         self.oracle = RestOracle(self.host, self.password, f"Temp/{self.test_dir}")
 
     @property
@@ -415,7 +415,7 @@ class Context:
             lambda: ui_backend.fetch_product(self.host, self.password or None,
                                              self.timeout))
 
-    def observers(self, exclude: Sequence[str] = ()) -> List[object]:
+    def observers(self, exclude: Sequence[str] = ()) -> list[object]:
         assert self.menu is not None and self.telnet is not None
         every = [BrowserObserver(self.menu), BrowserObserver(self.telnet)]
         if self.ftp_observer is not None:
@@ -435,7 +435,7 @@ class Context:
         observers = self.observers(exclude)
         expected_keys = snapshot_keys(expected)
         start = time.monotonic()
-        latest: Dict[str, Snapshot] = {}
+        latest: dict[str, Snapshot] = {}
         while True:
             latest = {observer.name: observer.snapshot(names) for observer in observers}
             if all(snapshot_keys(snapshot) == expected_keys for snapshot in latest.values()):
@@ -446,7 +446,7 @@ class Context:
         elapsed = time.monotonic() - start
 
         oracle = self.oracle.snapshot(names)
-        failed: List[object] = []
+        failed: list[object] = []
         for observer in observers:
             snapshot = latest[observer.name]
             problem = ""
@@ -511,7 +511,7 @@ class Context:
 # --------------------------------------------------------------------------
 
 
-def seed_files(ctx: Context, entries: Sequence[Tuple[str, int]]) -> None:
+def seed_files(ctx: Context, entries: Sequence[tuple[str, int]]) -> None:
     assert ctx.ftp_driver is not None
     for name, size in entries:
         ftp_store(ctx.ftp_driver, f"{ctx.fixture_path}/{name}", b"U" * size)
@@ -993,7 +993,7 @@ def row_failed_write(ctx: Context, blocking_dir: str) -> None:
 
     try:
         ftp_store(ctx.ftp_driver, f"{ctx.fixture_path}/{blocking_dir}", b"X" * SIZE_S1)
-    except ftplib.all_errors + (Failure,):
+    except (*ftplib.all_errors, Failure):
         # The refusal is the point of this row; ftp.store reports it as Failure.
         pass
     else:
@@ -1072,7 +1072,7 @@ ROWS_NEEDING_FIX = {
 }
 
 
-def build_rows(ctx: "Context") -> List[Tuple[str, Callable[[], None], Sequence[str]]]:
+def build_rows(ctx: "Context") -> list[tuple[str, Callable[[], None], Sequence[str]]]:
     """Every matrix row, in run order. Labels are what -r/--row matches on."""
     return [
         ("rename from the Menu",
@@ -1170,13 +1170,13 @@ def build_rows(ctx: "Context") -> List[Tuple[str, Callable[[], None], Sequence[s
     ]
 
 
-def run_row(ctx: Context, label: str, action: Callable[[], None], fixtures: Sequence[str]) -> Optional[Failure]:
+def run_row(ctx: Context, label: str, action: Callable[[], None], fixtures: Sequence[str]) -> Failure | None:
     """Run one matrix row, then clean up and resync whatever it left behind.
 
     A red cell must not hide the cells after it: the whole matrix is measured
     in one pass and the run only reports FAIL at the end.
     """
-    problem: Optional[Failure] = None
+    problem: Failure | None = None
     try:
         with check(label):
             action()

@@ -66,7 +66,7 @@ class SuiteRunner(TempSettingsSuite):
         try:
             response = self.ftp(lambda client: ftp_lib.store(
                 client, self.args.remote_file, self.local_prg.read_bytes()))
-        except ftplib.all_errors + (Failure,) as exc:
+        except (*ftplib.all_errors, Failure) as exc:
             self.fail(f"Could not upload PUT fixture (FTP {exc})")
             return
         if response.startswith(("226", "200")):

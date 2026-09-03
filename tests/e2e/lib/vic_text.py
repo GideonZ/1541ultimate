@@ -22,7 +22,6 @@ frame undecodable, which is the honest answer.
 
 from __future__ import annotations
 
-from typing import Dict, List, Optional, Tuple
 
 import glyphs
 
@@ -48,14 +47,14 @@ MAX_UNMATCHED = 24
 GRAPHIC = "?"
 
 
-def _reverse_map() -> Tuple[Dict[bytes, str], set]:
+def _reverse_map() -> tuple[dict[bytes, str], set]:
     """Every ROM shape, mapped back to a character where it has one.
 
     Built once, over the whole unshifted set rather than over the characters
     with names: a screen with a logo on it is still a text screen, and a shape
     this can identify but not name has to count as read.
     """
-    named: Dict[bytes, str] = {}
+    named: dict[bytes, str] = {}
     for character in [chr(code) for code in range(0x20, 0x60)]:
         index = glyphs.screen_code_for(character)
         if index == glyphs.NO_GLYPH:
@@ -69,7 +68,7 @@ _SHAPES, _KNOWN = _reverse_map()
 _BLANK = bytes(glyphs.GLYPH_HEIGHT)
 
 
-def picture_origin(width: int, height: int) -> Tuple[int, int]:
+def picture_origin(width: int, height: int) -> tuple[int, int]:
     """Where a 40-column picture area sits in a frame of this size, centred.
 
     The VIC centres it in the border, and the two frame heights the hardware
@@ -104,7 +103,7 @@ def _background(pixels: bytes, width: int, left: int, top: int):
     sample of a text screen is its background and counting all of it costs
     forty times as much.
     """
-    counts: Dict[int, int] = {}
+    counts: dict[int, int] = {}
     for y in range(top, top + TEXT_HEIGHT, 4):
         for value in pixels[y * width + left:y * width + left + TEXT_WIDTH:4]:
             counts[value] = counts.get(value, 0) + 1
@@ -113,7 +112,7 @@ def _background(pixels: bytes, width: int, left: int, top: int):
     return max(counts.items(), key=lambda item: (item[1], -item[0]))[0]
 
 
-def decode(pixels: bytes, width: int, height: int) -> Optional[List[str]]:
+def decode(pixels: bytes, width: int, height: int) -> list[str] | None:
     """The 25 rows of 40 characters this frame is showing, or None.
 
     `pixels` is one colour index per byte, which is what `streams.unpack`
@@ -145,7 +144,7 @@ def decode(pixels: bytes, width: int, height: int) -> Optional[List[str]]:
         # outwards and the nearest candidate that matches everything wins.
         top = found[1]
         window = _window(pixels, width, top)
-    best: Optional[List[str]] = None
+    best: list[str] | None = None
     fewest = MAX_UNMATCHED + 1
     for left in _candidates(centred, width):
         unmatched, text = _at(pixels, width, left, top, window)
@@ -268,7 +267,7 @@ def _at(pixels: bytes, width: int, left: int, top: int, window=None):
     outside_left = 0 if window is None else max(0, window[0] - left)
     outside_right = (0 if window is None
                      else max(0, left + TEXT_WIDTH - 1 - window[1]))
-    lines: List[bytes] = []
+    lines: list[bytes] = []
     for y in range(top, top + TEXT_HEIGHT):
         start = y * width + left
         line = pixels[start:start + TEXT_WIDTH].translate(table)
@@ -278,10 +277,10 @@ def _at(pixels: bytes, width: int, left: int, top: int, window=None):
                     + bytes(outside_right))
         lines.append(line)
 
-    text: List[str] = []
+    text: list[str] = []
     unmatched = 0
     for row in range(ROWS):
-        characters: List[str] = []
+        characters: list[str] = []
         for column in range(COLUMNS):
             left_pixel = column * CELL
             shape = bytearray(glyphs.GLYPH_HEIGHT)

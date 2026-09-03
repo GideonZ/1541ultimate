@@ -43,7 +43,6 @@ import posixpath
 import statistics
 import sys
 import time
-from typing import List
 
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
@@ -102,7 +101,7 @@ class Fixture:
             ftp_lib.remove_tree(client, self.path)
 
 
-def interesting_distances(stride: int) -> List[int]:
+def interesting_distances(stride: int) -> list[int]:
     """The jump lengths whose page-key decomposition can differ from a step.
 
     `move_rows` splits a distance into whole page keys and a remainder. The
@@ -179,7 +178,7 @@ def main() -> int:
     # one row shorter than the 40x25 display's.
     browser = ui_backend.make_browser(args.mode, args.host,
                                       args.password or None, args.timeout)
-    failures: List[str] = []
+    failures: list[str] = []
 
     def failed(label: str, reason: str) -> None:
         failures.append(f"{label}: {reason}")
@@ -209,8 +208,8 @@ def main() -> int:
         # landing somewhere stepping would not, or paging losing more.
         distances = interesting_distances(stride)
         detail(f"distances: {distances}")
-        stepped_ms: List[float] = []
-        paged_ms: List[float] = []
+        stepped_ms: list[float] = []
+        paged_ms: list[float] = []
         stepped_lost = paged_lost = 0
         stepped_keys = paged_keys = 0
         for distance in distances:

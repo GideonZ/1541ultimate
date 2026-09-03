@@ -26,7 +26,6 @@ import argparse
 import os
 import sys
 from pathlib import Path
-from typing import List
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
@@ -88,7 +87,7 @@ def debug_log(host: str, password: str) -> str:
         return ftp_lib.retrieve(ftp, f"/Temp/{LOG_NAME}").decode("ascii", "replace")
 
 
-def require_in_log(log: str, needles: List[str], what: str) -> None:
+def require_in_log(log: str, needles: list[str], what: str) -> None:
     missing = [n for n in needles if n not in log]
     if missing:
         raise Failure(f"{what}: the debug log never mentioned {missing!r}")

@@ -6,7 +6,7 @@
 The benchmark uploads the same small attachment-backed payload via HTTP in two
 timed stages against the same Ultimate 64: first with Temp auto cleanup and
 Temp subfolders enabled, then with both disabled. Each stage starts from an
-empty managed Temp area, records upload latency samples, and asserts 
+empty managed Temp area, records upload latency samples, and asserts
 that the resulting managed uploadcount matches the expected cleanup behavior.
 """
 
@@ -63,7 +63,7 @@ def require_stage_mode(flag, value):
 
 def percentile(values, percent):
     ordered = sorted(values)
-    index = int(math.ceil((percent / 100.0) * len(ordered))) - 1
+    index = math.ceil((percent / 100.0) * len(ordered)) - 1
     return ordered[max(0, min(index, len(ordered) - 1))]
 
 

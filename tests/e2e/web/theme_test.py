@@ -59,7 +59,7 @@ def parse_args():
     parser.add_argument("--base-url", default="",
                         help="Where the pages are served from, e.g. http://ultimate64. "
                              "Default: serve html/ from this tree.")
-    parser.add_argument("--browser", default="all", choices=("all",) + browser_lib.BROWSERS,
+    parser.add_argument("--browser", default="all", choices=("all", *browser_lib.BROWSERS),
                         help="Which browsers to drive. Default: every one installed.")
     parser.add_argument("-t", "--timeout", type=float, default=READY_TIMEOUT,
                         help="How long a page has to become ready.")

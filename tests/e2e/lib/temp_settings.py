@@ -18,7 +18,8 @@ capture/restore pair, and adds its own scenario on top.
 import os
 import sys
 import time
-from typing import Callable, Dict, TypeVar
+from typing import TypeVar
+from collections.abc import Callable
 
 # tests/lib holds the device API and the reporting rules every suite shares.
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
@@ -60,7 +61,7 @@ class TempSettingsSuite:
     def __init__(self, args) -> None:
         self.args = args
         self.device = UltimateApi(args.host, args.password or None, REST_TIMEOUT_SECONDS)
-        self.initial: Dict[str, str] = {}
+        self.initial: dict[str, str] = {}
         self.config_restored = False
 
     # -- FTP ----------------------------------------------------------------

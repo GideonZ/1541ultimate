@@ -55,7 +55,7 @@ import time
 import urllib.error
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Set, Tuple
+from collections.abc import Callable
 
 # tests/lib holds the reporting rules, the typed API and the one REST client;
 # tests/e2e/lib holds the settings fixtures the cfg-* suites share.
@@ -112,18 +112,18 @@ MENU_SETTLE_SECONDS = 5.0
 DEFAULT_WORKERS = 3
 DEFAULT_REPEAT = 3
 
-Key = Tuple[str, str]                       # (METHOD, operation path)
+Key = tuple[str, str]                       # (METHOD, operation path)
 
 # The only operation this suite will not call. Everything else is reachable
 # without leaving the device worse off, given the restore each case does.
-EXCLUDED: Dict[Key, str] = {
+EXCLUDED: dict[Key, str] = {
     ("PUT", "/v1/machine:poweroff"):
         "turns the device off, and no test can turn it back on",
 }
 
 # Operations whose happy path belongs to another suite, named so that "no happy
 # case here" is a decision rather than an omission.
-HAPPY_ELSEWHERE: Dict[Key, str] = {
+HAPPY_ELSEWHERE: dict[Key, str] = {
     ("PUT", "/v1/files/{path}:create_d64"): "create-disk-image",
     ("PUT", "/v1/files/{path}:create_d71"): "create-disk-image",
     ("PUT", "/v1/files/{path}:create_d81"): "create-disk-image",
@@ -137,7 +137,7 @@ HAPPY_ELSEWHERE: Dict[Key, str] = {
 
 # Operations with no happy path anywhere, and why. Printed on every run, so the
 # gaps this suite knows about stay visible instead of passing as covered.
-NEGATIVE_ONLY: Dict[Key, str] = {
+NEGATIVE_ONLY: dict[Key, str] = {
     ("PUT", "/v1/drives/{drive}:load_rom"):
         "a wrong file leaves the drive with a broken ROM until the next reboot, "
         "and the tree has no drive ROM to load a good one from",
@@ -152,7 +152,7 @@ NEGATIVE_ONLY: Dict[Key, str] = {
 
 # Maps an API_CALL handler to the operation path the contract gives it, for the
 # fallback gate. Only the routes that take path parameters need an entry.
-HANDLER_PATHS: Dict[Tuple[str, str, str], List[str]] = {
+HANDLER_PATHS: dict[tuple[str, str, str], list[str]] = {
     ("GET", "files", "info"): ["/v1/files/{path}:info"],
     ("PUT", "files", "create_d64"): ["/v1/files/{path}:create_d64"],
     ("PUT", "files", "create_d71"): ["/v1/files/{path}:create_d71"],
@@ -190,7 +190,7 @@ class Skip(Exception):
 class Case:
     """One thing to call, and what has to be true afterwards."""
 
-    def __init__(self, key: Optional[Key], name: str, kind: str,
+    def __init__(self, key: Key | None, name: str, kind: str,
                  run: Callable[["Ctx"], None], *, exclusive: bool = False) -> None:
         self.key = key                  # None for protocol cases
         self.name = name
@@ -241,7 +241,7 @@ class Ctx:
             raise Skip(reason)
 
     def refuse_status(self, method: str, path: str, *,
-                      params: Optional[Dict[str, object]] = None,
+                      params: dict[str, object] | None = None,
                       allow=(400, 403, 404, 412, 500, 501)) -> None:
         """Assert a refusal for a call the typed API has no method for.
 
@@ -254,8 +254,8 @@ class Ctx:
                           f"of {sorted(allow)}: {body[:160]!r}")
 
 
-def build_cases() -> List[Case]:
-    c: List[Case] = []
+def build_cases() -> list[Case]:
+    c: list[Case] = []
 
     def case(key, name, kind, fn, exclusive=False):
         c.append(Case(key, name, kind, fn, exclusive=exclusive))
@@ -841,14 +841,14 @@ class SuiteRunner:
         self.state_lock = threading.Lock()
         self.dead = threading.Event()
         self._image_ready = False
-        self._image_bytes: Optional[bytes] = None
-        self._config_target: Optional[Tuple[str, str, str]] = None
-        self._reset_category: Optional[str] = None
-        self._local_ip: Optional[str] = None
-        self.restore_drive: Optional[Tuple[bool, str, str]] = None
-        self.restore_config: Optional[Dict[str, str]] = None
+        self._image_bytes: bytes | None = None
+        self._config_target: tuple[str, str, str] | None = None
+        self._reset_category: str | None = None
+        self._local_ip: str | None = None
+        self.restore_drive: tuple[bool, str, str] | None = None
+        self.restore_config: dict[str, str] | None = None
         self.restore_config_category = CONFIG_CATEGORY
-        self._reset_snapshot: Optional[Dict[str, str]] = None
+        self._reset_snapshot: dict[str, str] | None = None
 
     # -- fixtures -----------------------------------------------------------
     def ensure_mount_image(self, ctx: Ctx) -> None:
@@ -871,7 +871,7 @@ class SuiteRunner:
             self._image_bytes = data
         return data
 
-    def config_target(self, ctx: Ctx) -> Tuple[str, str, str]:
+    def config_target(self, ctx: Ctx) -> tuple[str, str, str]:
         """A settings item and its current value, so a write can be a no-op.
 
         The item the cfg-* suites use is preferred, so the report names the same
@@ -898,7 +898,7 @@ class SuiteRunner:
                 return self._config_target
         raise Skip("no readable settings item to write back")
 
-    def remember_reset_snapshot(self, snapshot: Dict[str, str]) -> None:
+    def remember_reset_snapshot(self, snapshot: dict[str, str]) -> None:
         """Kept so cleanup() can put the category back if a case is cut short."""
         with self.state_lock:
             if self._reset_snapshot is None:
@@ -920,9 +920,9 @@ class SuiteRunner:
                 return name
         raise Skip("no category outside the deny list to reset")
 
-    def snapshot_category(self, ctx: Ctx, category: str) -> Dict[str, str]:
+    def snapshot_category(self, ctx: Ctx, category: str) -> dict[str, str]:
         items = ctx.api.configs.category(category)
-        found: Dict[str, str] = {}
+        found: dict[str, str] = {}
         for name in items:
             try:
                 value = ctx.api.configs.current(category, name)
@@ -935,7 +935,7 @@ class SuiteRunner:
         return found
 
     def restore_category(self, ctx: Ctx, category: str,
-                         snapshot: Dict[str, str]) -> None:
+                         snapshot: dict[str, str]) -> None:
         for name, value in snapshot.items():
             try:
                 ctx.api.configs.set(category, name, value)
@@ -990,7 +990,7 @@ class SuiteRunner:
                 return False
             time.sleep(0.2)
 
-    def alive(self) -> Optional[str]:
+    def alive(self) -> str | None:
         return self.api.unreachable_reason(LIVENESS_TIMEOUT_SECONDS)
 
     @property
@@ -1015,7 +1015,7 @@ class SuiteRunner:
                                     lambda: (info.product, info.firmware_version))
 
     # -- coverage -----------------------------------------------------------
-    def contract_operations(self) -> Tuple[Set[Key], str]:
+    def contract_operations(self) -> tuple[set[Key], str]:
         """Every operation the device serves, and where the list came from."""
         specs = sorted(OPENAPI_DIR.glob("rest_api_openapi_*.yaml"))
         if specs:
@@ -1024,7 +1024,7 @@ class SuiteRunner:
             except ImportError:
                 specs = []
         if specs:
-            found: Set[Key] = set()
+            found: set[Key] = set()
             for spec in specs:
                 document = yaml.safe_load(spec.read_text(encoding="utf-8"))
                 for path, item in (document.get("paths") or {}).items():
@@ -1102,7 +1102,7 @@ class SuiteRunner:
         return True
 
     # -- execution ----------------------------------------------------------
-    def run_once(self, case: Case) -> Optional[str]:
+    def run_once(self, case: Case) -> str | None:
         api = self.client()
         try:
             case.run(Ctx(api, self))
@@ -1124,8 +1124,8 @@ class SuiteRunner:
     def run_cases(self) -> bool:
         shared = [c for c in self.cases if not c.exclusive]
         exclusive = [c for c in self.cases if c.exclusive]
-        results: Dict[int, str] = {}
-        attempted: Set[int] = set()
+        results: dict[int, str] = {}
+        attempted: set[int] = set()
         lock = threading.Lock()
 
         def task(case: Case) -> None:

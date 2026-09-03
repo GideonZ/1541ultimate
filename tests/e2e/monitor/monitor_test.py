@@ -13,7 +13,7 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Tuple
+from collections.abc import Callable
 
 # tests/lib holds the reporting rules every suite shares; tests/e2e/lib
 # holds the shared UI backend.
@@ -136,7 +136,7 @@ class MonitorSession:
                  expect_redraw: bool = True) -> Snapshot:
         return self.backend.send_key(key, settle=settle, expect_redraw=expect_redraw)
 
-    def send_key_count(self, key: str) -> Tuple[Snapshot, int]:
+    def send_key_count(self, key: str) -> tuple[Snapshot, int]:
         """Telnet-only: see TelnetBackend.send_key_count."""
         return self.backend.send_key_count(key)
 
@@ -373,7 +373,7 @@ class MonitorSession:
         return snapshot
 
 
-def load_snapshots() -> Dict[str, Dict[str, Dict[str, str]]]:
+def load_snapshots() -> dict[str, dict[str, dict[str, str]]]:
     with SNAPSHOT_FILE.open("r", encoding="utf-8") as handle:
         return json.load(handle)
 
@@ -426,7 +426,7 @@ def assert_status_contains(snapshot: Snapshot, expected: str) -> None:
     assert_contains(snapshot, line_index, expected)
 
 
-def assert_line_contains_all(snapshot: Snapshot, values: Tuple[str, ...]) -> int:
+def assert_line_contains_all(snapshot: Snapshot, values: tuple[str, ...]) -> int:
     for index, line in enumerate(snapshot.lines):
         if all(value in line for value in values):
             return index
@@ -450,7 +450,7 @@ def assert_equal(label: str, expected: str, actual: str, command: str) -> None:
         raise Failure(f"{label} failed after {command}\n{diff}")
 
 
-def assert_highlight(snapshot: Snapshot, expected_cells: List[Tuple[int, int]], command: str) -> None:
+def assert_highlight(snapshot: Snapshot, expected_cells: list[tuple[int, int]], command: str) -> None:
     actual = sorted(snapshot.reverse_cells)
     expected = sorted(expected_cells)
     if actual != expected:
@@ -477,7 +477,7 @@ def assert_ascii_width(snapshot: Snapshot, row: int) -> None:
         raise Failure(f"ASCII width mismatch after {snapshot.last_command}: expected 32, got {len(payload)}")
 
 
-def find_memory_rows(snapshot: Snapshot) -> List[int]:
+def find_memory_rows(snapshot: Snapshot) -> list[int]:
     rows = [index for index, line in enumerate(snapshot.lines) if MEMORY_ROW_RE.match(line[1:] if line.startswith("|") else line)]
     if not rows:
         raise Failure(f"No memory rows found after {snapshot.last_command}\n{snapshot.text()}")
@@ -495,7 +495,7 @@ def read_rest_memory(host: str, address: int, length: int) -> bytes:
         return response.read()
 
 
-_REST_CLIENTS: Dict[str, UltimateApi] = {}
+_REST_CLIENTS: dict[str, UltimateApi] = {}
 
 
 def rest_api(host: str) -> UltimateApi:
@@ -574,7 +574,7 @@ def wait_for_rest_data(host: str, address: int, expected: bytes,
     return actual
 
 
-def close_rest_menu(control: str, password: Optional[str]) -> None:
+def close_rest_menu(control: str, password: str | None) -> None:
     """Shut the on-device menu, whichever machine of `control` owns which half.
 
     The menu belongs to the device under test, and the keys that leave it
@@ -627,7 +627,7 @@ def close_rest_menu(control: str, password: Optional[str]) -> None:
         time.sleep(0.5)
 
 
-def reset_rest_machine(control: str, password: Optional[str]) -> None:
+def reset_rest_machine(control: str, password: str | None) -> None:
     close_rest_menu(control, password)
 
     # Let the reset supersede any program that was still executing. READY can
@@ -657,7 +657,7 @@ def assert_rest_matches_row(snapshot: Snapshot, line_index: int, address: int, r
         )
 
 
-def parse_memory_row(snapshot: Snapshot, address: int, line_index: Optional[int] = None) -> bytes:
+def parse_memory_row(snapshot: Snapshot, address: int, line_index: int | None = None) -> bytes:
     target = f"{address:04X}"
     candidate_indexes = [line_index] if line_index is not None else range(len(snapshot.lines))
 
@@ -680,7 +680,7 @@ def parse_memory_row(snapshot: Snapshot, address: int, line_index: Optional[int]
     )
 
 
-def parse_text_row(snapshot: Snapshot, address: int, line_index: Optional[int] = None) -> str:
+def parse_text_row(snapshot: Snapshot, address: int, line_index: int | None = None) -> str:
     target = f"{address:04X} "
     candidate_indexes = [line_index] if line_index is not None else range(len(snapshot.lines))
 
@@ -921,7 +921,7 @@ def run_character_mapping_test(session: MonitorSession, rest_host: str) -> None:
 
 def goto_and_read_byte(
     session: MonitorSession, address: str, address_int: int,
-    expected: Optional[int] = None, timeout: float = 3.0,
+    expected: int | None = None, timeout: float = 3.0,
 ) -> int:
     """Navigate to `address` once and read its first byte.
 
@@ -1009,7 +1009,7 @@ def device_write_lands(device_host: str, address: int, data: bytes) -> bool:
 # the monitor. Counted for the whole run and reported at the end of it, so a
 # suite that passes while the shared DMA path lost writes says how many rather
 # than only saying that each individual one was not the monitor's fault.
-FIRST_ATTEMPT_LOSSES: List[str] = []
+FIRST_ATTEMPT_LOSSES: list[str] = []
 
 
 def note_first_attempt_loss(address: int, what: str) -> None:
@@ -1028,7 +1028,7 @@ def report_first_attempt_losses() -> None:
 
 def assert_monitor_write_landed(device_host: str, address: int, expected: bytes,
                                 what: str, timeout: float = 5.0,
-                                retry_monitor_write: Optional[Callable[[], None]] = None
+                                retry_monitor_write: Callable[[], None] | None = None
                                 ) -> bool:
     """Require a monitor write to have landed, or the loss to be underneath it.
 
@@ -1184,16 +1184,16 @@ def hex_edit_byte_persists(session: MonitorSession, device_host: str, frozen: bo
         if frozen:
             session.enter_monitor()
         session.goto(f"{address:04X}")
-        screen = ensure_view(session, "HEX ")
+        ensure_view(session, "HEX ")
         # No assert_highlight here: unlike the fixed $1000 case, this address
         # can land at any offset within its 8-byte row, so the highlighted
         # column varies with it. Persistence, not cursor position, is what
         # this sweep proves; run_main_ram_edit_persists_test already proves
         # the highlight for one fixed, known position.
-        screen = session.send_char("e")
+        session.send_char("e")
         digits = f"{replacement[0]:02X}"
-        screen = session.send_char(digits[0], settle=True)
-        screen = session.send_char(digits[1], settle=True)
+        session.send_char(digits[0], settle=True)
+        session.send_char(digits[1], settle=True)
         session.send_key("ESC", settle=True)
 
         if frozen:
@@ -1513,7 +1513,7 @@ def run_hex_edit_reliability_test(session: MonitorSession, device_host: str,
     return wrote
 
 
-def asm_commit_cases(round_index: int) -> Tuple[Tuple[str, bytes], ...]:
+def asm_commit_cases(round_index: int) -> tuple[tuple[str, bytes], ...]:
     """One instruction of each length, with operands that change every round.
 
     Changing the operand every round is what stops a stale read from passing:
@@ -2016,7 +2016,7 @@ ASM_ANCHOR_STEPS = 6
 VIDEO_CAPTURE_TIMEOUT_SECONDS = 8.0
 
 
-def asm_row_for(snapshot: Snapshot, address: int) -> Optional[str]:
+def asm_row_for(snapshot: Snapshot, address: int) -> str | None:
     """The disassembly row for `address`, or None when it is off screen.
 
     Anchored on the row starting with the address rather than merely
@@ -2311,9 +2311,9 @@ def run_asm_entry_round_trip_test(session: MonitorSession, rest_host: str,
     def type_asm(line: str) -> Snapshot:
         if isinstance(session.backend, TelnetBackend):
             return session.send_text(line + "\r", f"ASM {line}")
-        screen = session.send_char(line[0])
+        session.send_char(line[0])
         for char in line[1:]:
-            screen = session.send_char(char)
+            session.send_char(char)
         return session.send_key("ENTER")
 
     write_rest_memory_confirmed(rest_host, address, bytes((0xEA,) * 12))
@@ -2600,7 +2600,7 @@ def wait_for_rest_file(host: str, path: str, timeout: float = 60.0) -> None:
     raise Failure(f"Saved file {path} not found via REST")
 
 
-def monitor_save(session: MonitorSession, mem_range: str, enter_dirs: List[str], filename: str) -> Snapshot:
+def monitor_save(session: MonitorSession, mem_range: str, enter_dirs: list[str], filename: str) -> Snapshot:
     """Save mem_range to filename, navigating from root through enter_dirs.
 
     enter_dirs is a list of quick-seek prefixes to step into (e.g. ["MS"] for a
@@ -2611,9 +2611,9 @@ def monitor_save(session: MonitorSession, mem_range: str, enter_dirs: List[str],
     session.send_text(mem_range + "\r", f"save range {mem_range}")
     picker_to_root(session)
     # Root-entry order differs by target, so seek /Temp by name.
-    snapshot = picker_enter(session, "Temp")
+    picker_enter(session, "Temp")
     for prefix in enter_dirs:
-        snapshot = picker_enter(session, prefix)
+        picker_enter(session, prefix)
     # The cursor defaults to "<< Create New File >>"; RIGHT picks it and the
     # monitor then asks for the file name.
     session.send_key("RIGHT")
@@ -2622,12 +2622,12 @@ def monitor_save(session: MonitorSession, mem_range: str, enter_dirs: List[str],
     # names a file nobody asked for, reported only as the file not found.
     session.retype_until_field_reads("Save as", filename)
     session.send_key("ENTER")
-    snapshot = wait_for_screen_contains(session, "SAVE")
+    wait_for_screen_contains(session, "SAVE")
     # Dismissing this popup has the same two-burst redraw as other settled keys.
     return session.send_key("ENTER", settle=True)  # dismiss the confirmation popup
 
 
-def monitor_load(session: MonitorSession, enter_dirs: List[str], filename: str,
+def monitor_load(session: MonitorSession, enter_dirs: list[str], filename: str,
                  params: str = "PRG,0,AUTO") -> Snapshot:
     """Load filename back, navigating from root through enter_dirs.
 
@@ -2731,7 +2731,7 @@ def prompt_field(snapshot: Snapshot, title: str) -> str:
     return field_line.strip().strip(PROMPT_BORDER).strip()
 
 
-def prompt_field_or_none(snapshot: Snapshot, title: str) -> Optional[str]:
+def prompt_field_or_none(snapshot: Snapshot, title: str) -> str | None:
     """What an open prompt holds, or None while it is not drawn."""
     try:
         return prompt_field(snapshot, title)
@@ -2790,7 +2790,7 @@ def monitor_header(snapshot: Snapshot) -> str:
     return snapshot.line(snapshot.find_line_containing("MONITOR "))
 
 
-def monitor_header_address(snapshot: Snapshot) -> Optional[str]:
+def monitor_header_address(snapshot: Snapshot) -> str | None:
     """The address the monitor header names, or None while it is not drawn."""
     try:
         header = monitor_header(snapshot)
@@ -3282,7 +3282,7 @@ def run_transfer_relocate_outside_copy_test(session: MonitorSession, rest_host: 
 
 def run_back_is_data_in_text_views_test(session: MonitorSession, rest_host: str) -> None:
     """Where the left-arrow key is edit data it stays data; RUN/STOP still backs out."""
-    for view_key, view, address, expected in (("I", "ASC ", 0xC010, 0x60),
+    for _view_key, view, address, expected in (("I", "ASC ", 0xC010, 0x60),
                                               ("V", "SCR ", 0xC011, 0x1F)):
         write_rest_memory_confirmed(rest_host, address, b"\x00")
         ensure_view(session, view)
@@ -4445,7 +4445,7 @@ def run_reset_interface_combination_test(
         ensure_monitor_open(session)
 
 
-def read_interface_type(device_host: str) -> Optional[str]:
+def read_interface_type(device_host: str) -> str | None:
     """The device's `Interface Type` setting, or None where it has none.
 
     Read over REST rather than off the screen, so the same oracle works on
@@ -4460,8 +4460,8 @@ def read_interface_type(device_host: str) -> Optional[str]:
     return current if isinstance(current, str) else None
 
 
-def wait_for_interface_type(device_host: str, unwanted: Optional[str],
-                            timeout: float = 6.0) -> Optional[str]:
+def wait_for_interface_type(device_host: str, unwanted: str | None,
+                            timeout: float = 6.0) -> str | None:
     """Re-read the setting until it is no longer `unwanted`, or the budget ends."""
     deadline = time.time() + timeout
     current = read_interface_type(device_host)

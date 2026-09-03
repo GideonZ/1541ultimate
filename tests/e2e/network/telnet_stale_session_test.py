@@ -181,7 +181,7 @@ class SetupError(RuntimeError):
 
 def query_ip(args: list[str]) -> list:
     """Run a read-only `ip -j` query. These need no root, unlike `ip addr add/del`."""
-    result = subprocess.run(["ip", "-j"] + args, capture_output=True, text=True)
+    result = subprocess.run(["ip", "-j", *args], capture_output=True, text=True)
     if result.returncode != 0:
         raise SetupError(f"`ip -j {' '.join(args)}` failed: {(result.stderr or result.stdout).strip()}")
     try:
@@ -259,13 +259,13 @@ def pick_victim_ip(source: str, prefix_len: int, device_ip: str) -> str:
 
 
 def add_ip_alias(iface: str, victim_ip: str, prefix_len: int) -> None:
-    run_cmd(IP_CMD + ["addr", "add", f"{victim_ip}/{prefix_len}", "dev", iface])
+    run_cmd([*IP_CMD, "addr", "add", f"{victim_ip}/{prefix_len}", "dev", iface])
 
 
 def del_ip_alias(iface: str, victim_ip: str, prefix_len: int) -> bool:
     """Remove the throwaway victim IP; return True on success. Never raises."""
     result = subprocess.run(
-        IP_CMD + ["addr", "del", f"{victim_ip}/{prefix_len}", "dev", iface],
+        [*IP_CMD, "addr", "del", f"{victim_ip}/{prefix_len}", "dev", iface],
         check=False, capture_output=True, text=True,
     )
     if result.returncode != 0:
@@ -313,7 +313,7 @@ def main() -> int:
     args = parser.parse_args()
 
     # Preflight 1: adding and deleting the alias needs passwordless sudo for `ip`.
-    probe = subprocess.run(IP_CMD + ["addr", "show"], capture_output=True, text=True)
+    probe = subprocess.run([*IP_CMD, "addr", "show"], capture_output=True, text=True)
     if probe.returncode != 0:
         suite_fail(SUITE, "cannot run `sudo -n ip` - grant passwordless sudo for `ip` or "
             f"run under sudo. ({(probe.stderr or probe.stdout).strip()})")

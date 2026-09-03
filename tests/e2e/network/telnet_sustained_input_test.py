@@ -62,7 +62,7 @@ class Reader(threading.Thread):
                     return
                 self.total += len(data)
                 self.last = time.monotonic()
-            except socket.timeout:
+            except TimeoutError:
                 continue
             except OSError as exc:
                 self.error = f"{type(exc).__name__}: {exc}"
