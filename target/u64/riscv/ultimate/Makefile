@@ -22,7 +22,7 @@ SRCS_C   =	itu.c \
 			tasks.c \
 			timers.c \
 			port.c \
-			heap_3.c \
+			heap_4.c \
 			ff.c \
 			ffsystem.c \
 			ffunicode.c \
@@ -40,7 +40,7 @@ SRCS_CC	 =  u2p_init.cc \
 			small_printf.cc \
 			stream.cc \
 			stream_uart.cc \
-			memory.cc \
+			memory_wrap.cc \
 			init_function.cc \
 			flash.cc \
 			at45_flash.cc \
@@ -62,6 +62,7 @@ SRCS_CC	 =  u2p_init.cc \
 			c64.cc \
 			c64_crt.cc \
 			u64_machine.cc \
+			u64_memory_backend.cc \
 			c64_subsys.cc \
 			screen.cc \
 			keyboard_c64.cc \
@@ -92,11 +93,18 @@ SRCS_CC	 =  u2p_init.cc \
 			ui_elements.cc \
 			user_file_interaction.cc \
 			editor.cc \
+			hex_editor.cc \
 			tree_browser.cc \
 			tree_browser_state.cc \
 			config_menu.cc \
 			context_menu.cc \
 			task_menu.cc \
+			monitor_init.cc \
+			monitor_file_io.cc \
+			monitor_bookmarks.cc \
+			machine_monitor.cc \
+			disassembler_6502.cc \
+			assembler_6502.cc \
 			filetype_d64.cc \
 			filetype_g64.cc \
 			filetype_t64.cc \
@@ -134,6 +142,7 @@ SRCS_CC	 =  u2p_init.cc \
 			iec.cc \
 			iec_channel.cc \
 			iec_printer.cc \
+			iec_ui.cc \
 			mps_printer.cc \
 			mps_printer_cbm.cc \
 			mps_printer_epson.cc \
@@ -196,7 +205,7 @@ CPPOPT   = $(OPTIONS) -fno-exceptions -fno-rtti -fno-threadsafe-statics -fpermis
 LINK 	 = linker.x
 LIBS    = ../riscv32_unknown_elf_lwip/result/liblwip.a
 #LFLAGS   = --gc-sections -msys-crt0=$(BSP)/obj/HAL/src/crt0.o
-LFLAGS   = --gc-sections
+LFLAGS   = --gc-sections --wrap=malloc --wrap=_malloc_r --wrap=free --wrap=_free_r --wrap=realloc --wrap=_realloc_r --wrap=calloc --wrap=_calloc_r
 LINKMETHOD = ld
 
 include ../../../common/rules.mk

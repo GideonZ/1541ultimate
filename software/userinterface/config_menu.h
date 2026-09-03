@@ -153,9 +153,9 @@ class BrowsableConfigStore: public Browsable
 
     IndexedList<Browsable *> *getSubItems(int &error)
     {
+        store->at_open_config();
         if (children.get_elements() == 0) {
             IndexedList<ConfigItem *> *itemList = store->getItems();
-            store->at_open_config();
             for (int i = 0; i < itemList->get_elements(); i++) {
                 children.append(new BrowsableConfigItem((*itemList)[i]));
             }
@@ -173,6 +173,11 @@ class BrowsableConfigStore: public Browsable
         return store->get_alt_store_name();
     }
 
+    int getSortOrder()
+    {
+        return store->get_sort_order();
+    }
+
     void event(int code)
     {
         switch(code) {
@@ -187,17 +192,6 @@ class BrowsableConfigStore: public Browsable
             break;
         };
     }
-
-    // BrowsableConfigItem *findConfigItem(uint8_t id)
-    // {
-    //     for (int i = 0; i < children.get_elements(); i++) {
-    //         BrowsableConfigItem *bit = ((BrowsableConfigItem *)children[i]);
-    //         if (bit->getItem()->definition->id == id) {
-    //             return bit;
-    //         }
-    //     }
-    //     return NULL;
-    // }
 };
 
 class BrowsableConfigGroup: public Browsable
@@ -234,6 +228,11 @@ class BrowsableConfigGroup: public Browsable
         return group->getName();
     }
 
+    int getSortOrder()
+    {
+        return group->getOrder();
+    }
+
     void event(int code)
     {
         IndexedList<ConfigStore *> *stores;
@@ -264,17 +263,6 @@ class BrowsableConfigGroup: public Browsable
             break;
         };
     }
-
-    // BrowsableConfigItem *findConfigItem(uint8_t id)
-    // {
-    //     for (int i = 0; i < children.get_elements(); i++) {
-    //         BrowsableConfigItem *bit = ((BrowsableConfigItem *)children[i]);
-    //         if (bit->getItem()->definition->id == id) {
-    //             return bit;
-    //         }
-    //     }
-    //     return NULL;
-    // }
 };
 
 
@@ -294,6 +282,21 @@ public:
     IndexedList<Browsable *> *getSubItems(int &error)
     {
         if (children.get_elements() == 0) {
+            children.append(new BrowsableHeader("-- Audio / Video --", SORT_ORDER_HDR_AUVID));
+            children.append(new BrowsableHeader("-- System Setup --", SORT_ORDER_HDR_C64));
+            children.append(new BrowsableHeader("-- User Interface --", SORT_ORDER_HDR_USERIF));
+            children.append(new BrowsableHeader("-- SID Related --", SORT_ORDER_HDR_SID));
+            children.append(new BrowsableHeader("-- Peripherals --", SORT_ORDER_HDR_PERIPH));
+            children.append(new BrowsableHeader("-- Network --", SORT_ORDER_HDR_NETWORK));
+            // children.append(new BrowsableHeader("-- Miscellaneous --", SORT_ORDER_HDR_MISC));
+
+            children.append(new BrowsableHeader("", SORT_ORDER_HDR_C64-1));
+            children.append(new BrowsableHeader("", SORT_ORDER_HDR_USERIF-1));
+            children.append(new BrowsableHeader("", SORT_ORDER_HDR_SID-1));
+            children.append(new BrowsableHeader("", SORT_ORDER_HDR_PERIPH-1));
+            children.append(new BrowsableHeader("", SORT_ORDER_HDR_NETWORK-1));
+            // children.append(new BrowsableHeader("", SORT_ORDER_HDR_MISC-1));
+
             IndexedList<ConfigStore *> *storeList = ConfigManager::getConfigManager()->getStores();
             for (int i = 0; i < storeList->get_elements(); i++) {
                 if (!(*storeList)[i]->isHidden())
@@ -305,8 +308,7 @@ public:
             for (int i = 0; i < groupList->get_elements(); i++) {
                 children.append(new BrowsableConfigGroup((*groupList)[i]));
             }
-
-            children.sort(Browsable::compare_alphabetically);
+            children.sort(Browsable::compare_sortorder);
         }
         return &children;
     }

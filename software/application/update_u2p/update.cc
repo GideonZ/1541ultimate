@@ -25,6 +25,8 @@ extern uint8_t _1581_bin_start;
 extern uint8_t _snds1541_bin_start;
 extern uint8_t _snds1571_bin_start;
 extern uint8_t _snds1581_bin_start;
+extern const char _rest_api_openapi_u2_yaml_start[];
+extern const char _rest_api_openapi_u2_yaml_end[1];
 extern const char _index_html_start[];
 extern const char _index_html_end[1];
 
@@ -67,6 +69,7 @@ void do_update(void)
         write_flash_file("snds1571.bin", &_snds1571_bin_start, 0xC000);
         write_flash_file("snds1581.bin", &_snds1581_bin_start, 0xC000);
         write_html_file("index.html", _index_html_start, (int)_index_html_end - (int)_index_html_start);
+        write_api_files(_rest_api_openapi_u2_yaml_start, _rest_api_openapi_u2_yaml_end);
 
         Flash *flash2 = get_flash();
         flash2->protect_disable();

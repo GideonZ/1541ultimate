@@ -27,6 +27,7 @@ public:
     virtual int read(char *buffer, int length) { return 0; }
     virtual int write(const char *buffer, int length) { return 0; }
     virtual int get_char(void) { return -1; }
+    virtual bool is_alive(void) { return true; }
     virtual void charout(int c) { printf("[SBco%02x]", c); }
 
     virtual int format(const char *fmt, ...)

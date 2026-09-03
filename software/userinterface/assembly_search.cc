@@ -37,7 +37,7 @@
 AssemblySearch :: AssemblySearch(UserInterface *ui, Browsable *root) : TreeBrowser(ui, root)
 {
     setCleanup();
-    state = new AssemblySearchForm(root, this, 0);
+    replace_root_state(new AssemblySearchForm(root, this, 0));
     state->reload();
 }
 
@@ -88,7 +88,7 @@ int AssemblySearch :: handle_key(int c)
 {
     int ret = 0;
     
-    if ((c == KEY_BREAK) || (c == KEY_ESCAPE)) {
+    if ((c == KEY_BREAK) || (c == KEY_ESCAPE) || (c == '`')) {
         return MENU_CLOSE; // independent of level, it closes the search.
         // if we'd have this handled by the tree browser, it would cause a HIDE instead
     }
@@ -134,17 +134,26 @@ int AssemblySearch :: handle_key(int c)
             ((AssemblySearchForm *)state)->clear_entry();
             break;
         case KEY_SPACE: // space = select
+        	state->select_one();
+            break;
         case KEY_RETURN: // CR = select
-            if(state->level!=0)
-                state->into();
-            else
+            switch (state->level) {
+            case 0:
                 state->change();
+                break;
+            case 1:
+                state->into();
+                break;
+            case 2:
+                context(0);
+                break;
+            default:
+                break;
+            }
             break;
         case KEY_RIGHT: // right
             if(state->level!=0)
                 state->into();
-            else
-                state->increase();
             break;
         case '+':
             if(state->level==0)
@@ -181,11 +190,16 @@ int AssemblySearch :: handle_key(int c)
 AssemblySearchForm :: AssemblySearchForm(Browsable *node, TreeBrowser *tb, int level) : TreeBrowserState(node, tb, level)
 {
     //default_color = 7;
+    results = NULL;
 }
 
 AssemblySearchForm :: ~AssemblySearchForm()
 {
-
+    // Runs after ~TreeBrowserState has torn the results view down, because the
+    // view deletes its 'previous' (this form) last.
+    if (results) {
+        delete results;
+    }
 }
 
 
@@ -239,7 +253,13 @@ void AssemblySearchForm :: send_query(void)
     if (response) {
         if (response->type() == eList) {
             printf("Creating results view...\n");
+            // The previous query's results view is already gone by the time the
+            // form can be used again, so its results object is ours to drop.
+            if (results) {
+                delete results;
+            }
             BrowsableQueryResults *rb = new BrowsableQueryResults((JSON_List *)response);
+            results = rb;
             deeper = new AssemblyResultsView(rb, browser, 1);
             deeper->previous = this;
             int error;
@@ -252,17 +272,23 @@ void AssemblySearchForm :: send_query(void)
     } else {
         browser->window->getScreen()->set_status("** Connection FAILED **", 10);
     }
-    t_BufferedBody *body = (t_BufferedBody *)assembly.get_user_context();
-    if (body)
-        delete body;
+}
+
+// The form mixes unselectable spacers in with the query fields, and the cast is
+// only valid for a field. send_query() guards the identical cast this way.
+static BrowsableQueryField *as_query_field(Browsable *under_cursor)
+{
+    if (!under_cursor || !under_cursor->isSelectable()) {
+        return NULL;
+    }
+    return (BrowsableQueryField *)under_cursor;
 }
 
 void AssemblySearchForm :: change(void)
 {
-	if(!under_cursor)
-		return;
-
-    BrowsableQueryField *field = (BrowsableQueryField *)under_cursor;
+    BrowsableQueryField *field = as_query_field(under_cursor);
+    if (!field)
+        return;
 
     char buffer[32];
     if ((field->getName())[0] == '$') {  // The dirtiest trick ever!
@@ -271,10 +297,18 @@ void AssemblySearchForm :: change(void)
         browser->context(0);
         // refresh will take place, because the context menu disappears and refresh flag is set
     } else {
-        strcpy(buffer, field->getStringValue());
+        // The value comes from the server, so its length is not ours to assume.
+        // max_chars must be explicit too: it otherwise defaults to the window
+        // width, which is unrelated to this buffer.
+        const int edit_len = 26;
+        strncpy(buffer, field->getStringValue(), sizeof(buffer) - 1);
+        buffer[sizeof(buffer) - 1] = 0;
         browser->window->set_color(1);
-        browser->user_interface->string_edit(buffer, 26, browser->window, 10, this->cursor_pos);
-        field->setStringValue(buffer);
+        int edited = browser->user_interface->string_edit(buffer, edit_len, browser->window,
+                                                          10, this->cursor_pos, edit_len);
+        if (edited > 0) { // an aborted edit must not overwrite the field
+            field->setStringValue(buffer);
+        }
         // explicit refresh
         refresh = true;
         down(1);
@@ -283,30 +317,27 @@ void AssemblySearchForm :: change(void)
 
 void AssemblySearchForm :: increase(void)
 {
-    if(!under_cursor)
+    BrowsableQueryField *field = as_query_field(under_cursor);
+    if (!field)
         return;
-
-    BrowsableQueryField *field = (BrowsableQueryField *)under_cursor;
     field->updown(1);
     update_selected();
 }
 
 void AssemblySearchForm :: decrease(void)
 {
-    if(!under_cursor)
+    BrowsableQueryField *field = as_query_field(under_cursor);
+    if (!field)
         return;
-
-    BrowsableQueryField *field = (BrowsableQueryField *)under_cursor;
     field->updown(-1);
     update_selected();
 }
 
 void AssemblySearchForm :: clear_entry(void)
 {
-    if(!under_cursor)
+    BrowsableQueryField *field = as_query_field(under_cursor);
+    if (!field)
         return;
-
-    BrowsableQueryField *field = (BrowsableQueryField *)under_cursor;
     field->reset();
     update_selected();
 }
@@ -370,6 +401,11 @@ IndexedList<Browsable *> *BrowsableQueryResult :: getSubItems(int &error)
             }
         } else {
             error = 1;
+        }
+        // Each entry copied what it needs out of the tree, so nothing below
+        // points into it once the loop is done.
+        if (j) {
+            delete j;
         }
     }
     return &children;

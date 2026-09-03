@@ -90,7 +90,7 @@
  * instead of the lwip internal allocator. Can save code size if you
  * already use it.
  */
-#define MEM_LIBC_MALLOC                 0
+#define MEM_LIBC_MALLOC                 1
 
 /**
 * MEMP_MEM_MALLOC==1: Use mem_malloc/mem_free instead of the lwip pool allocator.
@@ -629,7 +629,7 @@
  * Define to 0 if your device is low on memory.
  */
 #define TCP_QUEUE_OOSEQ                 (LWIP_TCP)
-
+#define TCP_OOSEQ_MAX_PBUFS             3
 /**
  * TCP_MSS: TCP Maximum segment size. (default is 128, a *very*
  * conservative default.)
@@ -980,13 +980,25 @@
  * LWIP_TCP_KEEPALIVE==1: Enable TCP_KEEPIDLE, TCP_KEEPINTVL and TCP_KEEPCNT
  * options processing. Note that TCP_KEEPIDLE and TCP_KEEPINTVL have to be set
  * in seconds. (does not require sockets.c, and will affect tcp.c)
+ *
+ * Enabled so socket_gui.cc can arm per-socket keepalive and reap half-open
+ * telnet sessions (a vanished peer sends no FIN/RST and would leak its slot).
  */
-#define LWIP_TCP_KEEPALIVE              0
+#define LWIP_TCP_KEEPALIVE              1
 
 /**
  * LWIP_SO_RCVTIMEO==1: Enable SO_RCVTIMEO processing.
  */
 #define LWIP_SO_RCVTIMEO                1
+
+/**
+ * LWIP_SO_SNDTIMEO==1: Enable SO_SNDTIMEO processing.
+ * Enabled so the SO_SNDTIMEO values already set by the FTP and Telnet servers
+ * actually take effect: without it a non-reading/vanished peer can block a
+ * blocking send() indefinitely, pinning that task and its netconn. The FTP/
+ * Telnet send paths already treat a send timeout/error as a connection close.
+ */
+#define LWIP_SO_SNDTIMEO                1
 
 /**
  * LWIP_SO_RCVBUF==1: Enable SO_RCVBUF processing.

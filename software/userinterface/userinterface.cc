@@ -1,6 +1,10 @@
 #include "userinterface.h"
 #include <stdio.h>
 
+#if !defined(RUNS_ON_PC) && !defined(RECOVERYAPP)
+#include "c64.h"
+#endif
+
 #ifndef NO_FILE_ACCESS
 #include "FreeRTOS.h"
 #include "task.h"
@@ -8,12 +12,48 @@
 #include "tree_browser_state.h"
 #include "path.h"
 #include "keyboard_usb.h"
+#include "filemanager.h"
 #ifndef UPDATER
 #ifndef RECOVERYAPP
 #include "c1541.h"
 #endif // RECOVERYAPP
 #endif // UPDATER
 #endif // NO_FILE_ACCESS
+
+#ifndef portENTER_CRITICAL
+#define portENTER_CRITICAL()
+#define portEXIT_CRITICAL()
+#endif
+
+namespace {
+
+IndexedList<UserInterface *> *get_user_interfaces(void)
+{
+    static IndexedList<UserInterface *> interfaces(4, NULL);
+    return &interfaces;
+}
+
+volatile int active_user_interface_count = 0;
+
+}
+
+int swap_interface_type(UserInterface *ui)
+{
+    if (!ui || !ui->cfg) {
+        return MENU_NOP;
+    }
+
+    ConfigItem *item = ui->cfg->find_item(CFG_USERIF_ITYPE);
+    if (!item) {
+        return MENU_NOP;
+    }
+
+    item->setValue(1 - item->getValue());
+    ui->cfg->write();
+    return MENU_HIDE;
+}
+
+extern "C" void u64_dispatch_usb_hid_status_refresh(void) __attribute__((weak));
 
 /* Help */
 static const char *helptext =
@@ -26,6 +66,11 @@ static const char *helptext =
         "            enter directory or disk\n"
         "RETURN:     Selection context menu\n"
         "RUN/STOP:   Leave menu / Back\n"
+        "\n"
+        "USB Mouse:\n"
+        "  Wheel:    Move selection\n"
+        "  Left:     Activate\n"
+        "  Right:    Leave menu / Back\n"
         "\n"
         "F1:         Page up\n"
         "F3:         Help\n"
@@ -66,7 +111,7 @@ static const char *helptext =
 		"\nRUN/STOP to close this window.";
 
 /* Configuration */
-static const char *colors[] = { "Standard Blue", "Ultimate Black"  };
+static const char *colors[] = { "Standard Blue", "Ultimate Black", "C128 Style"  };
                           
 static const char *filename_overflow_squeeze[] = { "None", "Beginning", "Middle", "End" };
 static const char *itype[]      = { "Freeze", "Overlay on HDMI" };
@@ -78,7 +123,7 @@ struct t_cfg_definition user_if_config[] = {
     { CFG_USERIF_ITYPE,      CFG_TYPE_ENUM,   "Interface Type",       "%s", itype,   0,  1, 0 },
 #endif
     { CFG_USERIF_NAVIGATION, CFG_TYPE_ENUM,   "Navigation Style",     "%s", navstyles, 0,  1, 0 },
-    { CFG_USERIF_COLORSCHEME,CFG_TYPE_ENUM,   "Color Scheme",         "%s", colors,  0,  1, 1 },
+    { CFG_USERIF_COLORSCHEME,CFG_TYPE_ENUM,   "Color Scheme",         "%s", colors,  0,  2, 1 },
 //    { CFG_USERIF_WORDWRAP,   CFG_TYPE_ENUM,   "Wordwrap text viewer", "%s", en_dis,  0,  1, 1 },
 
     { CFG_USERIF_START_HOME, CFG_TYPE_ENUM,   "Enter Home on Startup", "%s", en_dis, 0,  1, 0 },
@@ -87,11 +132,16 @@ struct t_cfg_definition user_if_config[] = {
     { CFG_USERIF_CFG_SAVE,   CFG_TYPE_ENUM,   "Auto Save Config",      "%s", cfg_save, 0, 2, 1 },
     { CFG_USERIF_ULTICOPY_NAME, CFG_TYPE_ENUM, "Ulticopy Uses disk name", "%s", en_dis, 0, 1, 1 },
     { CFG_USERIF_FILENAME_OVERFLOW_SQUEEZE, CFG_TYPE_ENUM, "Filename overflow squeeze", "%s", filename_overflow_squeeze, 0, 3, 0 },
+    { 0xFE, CFG_TYPE_SEP, "", "", NULL, 0, 0, 0 },
+    { 0xFE, CFG_TYPE_SEP, "Temp Folder", "", NULL, 0, 0, 0 },
+    { CFG_USERIF_TEMP_AUTO_CLEANUP, CFG_TYPE_ENUM, "Temp Auto Cleanup", "%s", en_dis, 0, 1, 1 },
+    { CFG_USERIF_TEMP_USE_CACHE_SUBFOLDER, CFG_TYPE_ENUM, "Temp Subfolders", "%s", en_dis, 0, 1, 1 },
     { CFG_TYPE_END,           CFG_TYPE_END,    "", "", NULL, 0, 0, 0 }         
 };
 
 UserInterface :: UserInterface(const char *title, bool use_logo) : title(title)
 {
+    get_user_interfaces()->append(this);
     initialized = false;
     focus = -1;
     host = NULL;
@@ -103,13 +153,16 @@ UserInterface :: UserInterface(const char *title, bool use_logo) : title(title)
     filename_overflow_squeeze = 0;
     menu_response_to_action = MENU_NOP;
     logo = use_logo;
-    register_store(0x47454E2E, "User Interface Settings", user_if_config);
+    register_store(CFG_USERIF_STORE_ID, "User Interface Settings", user_if_config);
+    cfg->set_sort_order(SORT_ORDER_CFG_USERIF);
     effectuate_settings();
 }
 
 UserInterface :: ~UserInterface()
 {
 	printf("Destructing user interface..\n");
+    set_available(false);
+    get_user_interfaces()->remove(this);
     do {
         if (ui_objects[focus]) {
             ui_objects[focus]->deinit();
@@ -118,6 +171,21 @@ UserInterface :: ~UserInterface()
         focus--;
     } while(focus>=0);
     printf(" bye UI!\n");
+}
+
+void UserInterface :: set_available(bool enable)
+{
+    if (available == enable) {
+        return;
+    }
+    available = enable;
+    portENTER_CRITICAL();
+    if (enable) {
+        active_user_interface_count++;
+    } else if (active_user_interface_count > 0) {
+        active_user_interface_count--;
+    }
+    portEXIT_CRITICAL();
 }
 
 typedef struct {
@@ -134,11 +202,13 @@ typedef struct {
 const t_scheme_colors schemes[] = {
     { 14, 6, 14, 1, 6,  0, 12, 12 },
     { 0,  0, 12, 1, 6,  0,  6,  6 },
+    { 13,11, 15,13, 0,  0, 15, 12 },
+    { 0,  0, 15,13, 0,  0, 15, 12 }, // telnet
 };
 
 void UserInterface :: effectuate_settings(void)
 {
-    const t_scheme_colors *scheme = logo ? &schemes[cfg->get_value(CFG_USERIF_COLORSCHEME)] : &schemes[1]; // for telnet always use black
+    const t_scheme_colors *scheme = logo ? &schemes[cfg->get_value(CFG_USERIF_COLORSCHEME)] : &schemes[3]; // for telnet always use something useful
     color_border = scheme->border;
     color_fg     = scheme->foreground;
     color_bg     = scheme->background;
@@ -153,6 +223,14 @@ void UserInterface :: effectuate_settings(void)
     config_save  = cfg->get_value(CFG_USERIF_CFG_SAVE);
     filename_overflow_squeeze = cfg->get_value(CFG_USERIF_FILENAME_OVERFLOW_SQUEEZE);
     navmode      = cfg->get_value(CFG_USERIF_NAVIGATION);
+
+#ifndef NO_FILE_ACCESS
+    FileManager *fm = FileManager::getFileManager();
+    if (fm) {
+        fm->set_temp_auto_cleanup_enabled(cfg->get_value(CFG_USERIF_TEMP_AUTO_CLEANUP) != 0);
+        fm->set_temp_use_cache_subfolder_enabled(cfg->get_value(CFG_USERIF_TEMP_USE_CACHE_SUBFOLDER) != 0);
+    }
+#endif
 
     if(host && host->is_accessible())
         host->set_colors(color_bg, color_border);
@@ -185,14 +263,15 @@ void UserInterface :: run_remote(void)
 {
     host->take_ownership(this);
     appear();
-    available = true;
-    while(1) {
+    set_available(true);
+    while(host->exists()) {
         if (pollFocussed() == MENU_EXIT) {
-            available = false;
+            set_available(false);
             break;
         }
         vTaskDelay(3);
     }
+    set_available(false);
     host->release_ownership();
 }
 
@@ -236,14 +315,14 @@ void UserInterface :: run_once(void)
         appear();
     }
 
-    available = true;
+    set_available(true);
     while(!doBreak) {
         host->checkButton();
         if (!host->exists()) {
             break;
         } else if (host->buttonPush()) {
             if (!host->is_permanent()) {
-                available = false;
+                set_available(false);
                 release_host();
             }
             host->release_ownership();
@@ -257,7 +336,7 @@ void UserInterface :: run_once(void)
                 break;
             case MENU_HIDE:
             case MENU_EXIT:
-                available = false;
+                set_available(false);
                 doBreak = true;
                 if (!host->is_permanent()) {
                     release_host();
@@ -270,6 +349,7 @@ void UserInterface :: run_once(void)
         }
         vTaskDelay(3);
     }
+    set_available(false);
     doBreak = false;
 #endif
 }
@@ -356,6 +436,9 @@ int UserInterface :: pollFocussed(void)
 {
 	int ret = 0;
     do {
+        if (u64_dispatch_usb_hid_status_refresh) {
+            u64_dispatch_usb_hid_status_refresh();
+        }
         ret = ui_objects[focus]->poll(ret); // param pass chain
 
         // Stay in the current window configuration
@@ -392,6 +475,28 @@ int UserInterface :: pollFocussed(void)
     return ret;
 }
 
+// Detect a menu-button push (hardware or REST) while a nested blocking screen
+// (machine monitor / help) owns the loop. The push is re-armed so that the
+// outer run_once() loop also tears the menu down, closing both layers at once
+// instead of leaving the nested screen open over a dismissed menu.
+void UserInterface :: discardPendingMenuButton(void)
+{
+    // A press is latched until read. One made before the modal opened is not
+    // meant for it, and would close it the instant it appeared.
+    host->checkButton();
+    host->buttonPush();
+}
+
+bool UserInterface :: pollMenuButtonPush(void)
+{
+    host->checkButton();
+    if (host->buttonPush()) {
+        host->setButtonPushed();
+        return true;
+    }
+    return false;
+}
+
 void UserInterface :: appear(void)
 {
 	host->set_colors(color_bg, color_border);
@@ -416,6 +521,68 @@ bool UserInterface :: is_available(void)
     return available;
 }
 
+bool UserInterface :: anyMenuActive(void)
+{
+    bool active;
+    portENTER_CRITICAL();
+    active = active_user_interface_count > 0;
+    portEXIT_CRITICAL();
+    return active;
+}
+
+static bool active_screen_read_safe(UserInterface *ui)
+{
+    if (!ui || !ui->screen) {
+        return false;
+    }
+#if !defined(RUNS_ON_PC) && !defined(RECOVERYAPP)
+    C64 *machine = C64::getMachine();
+    if (machine && ui->host == (GenericHost *)machine && !machine->is_accessible()) {
+        return false;
+    }
+#endif
+    return true;
+}
+
+bool UserInterface :: copy_active_screen_matrix(uint8_t *dest, int dest_len)
+{
+    bool copied = false;
+    if (!dest || (dest_len < ACTIVE_SCREEN_MATRIX_BYTES)) {
+        return false;
+    }
+
+    IndexedList<UserInterface *> *interfaces = get_user_interfaces();
+    // Keep the UI pointer stable while walking the shared list and making the
+    // bounded matrix copy; IndexedList mutations use the same critical section.
+    portENTER_CRITICAL();
+    for (int i = 0; i < interfaces->get_elements(); i++) {
+        UserInterface *ui = (*interfaces)[i];
+        if (!ui || !ui->is_available() || !active_screen_read_safe(ui)) {
+            continue;
+        }
+
+        int screen_width = 0;
+        int screen_height = 0;
+        if (!ui->screen->copy_matrix(dest, dest + ACTIVE_SCREEN_MATRIX_CELLS,
+                ACTIVE_SCREEN_MATRIX_CELLS, &screen_width, &screen_height)) {
+            continue;
+        }
+        if ((screen_width != ACTIVE_SCREEN_MATRIX_WIDTH) ||
+                (screen_height != ACTIVE_SCREEN_MATRIX_HEIGHT)) {
+            continue;
+        }
+        copied = true;
+        break;
+    }
+    portEXIT_CRITICAL();
+    return copied;
+}
+
+extern "C" bool userinterface_any_menu_active(void)
+{
+    return UserInterface::anyMenuActive();
+}
+
 int UserInterface :: activate_uiobject(UIObject *obj)
 {
     if(focus < (MAX_UI_OBJECTS-1)) {
@@ -425,6 +592,26 @@ int UserInterface :: activate_uiobject(UIObject *obj)
     }
 
     return -1;
+}
+
+int UserInterface :: uiobject_modal(UIObject *obj)
+{
+    int ret = 0;
+    discardPendingMenuButton();
+    while(!ret && host->exists()) {
+        ret = obj->poll(0);
+        if (!ret && pollMenuButtonPush()) {
+            break;
+        }
+    }
+    if (obj->needCleanup()) {
+        obj->deinit();
+        delete obj;
+    }
+    if (!host->exists()) {
+        ret = MENU_CLOSE;
+    }
+    return ret;
 }
 
 bool UserInterface :: has_focus(UIObject *obj)
@@ -460,11 +647,18 @@ int  UserInterface :: popup(const char *msg, uint8_t flags)
 
     UIPopup *pop = new UIPopup(this, msg, flags, 5, c_button_names, c_button_keys);
     pop->init();
-    int ret;
-    do {
+    int ret = 0;
+    discardPendingMenuButton();
+    while(!ret && host->exists()) {
         ret = pop->poll(0);
-    } while(!ret);
+        if (!ret && pollMenuButtonPush()) {
+            break;
+        }
+    }
     pop->deinit();
+    if ((ret > 0) && keyboard) {
+        keyboard->wait_free();
+    }
     delete pop;
     return ret;
 }
@@ -473,39 +667,75 @@ int  UserInterface :: popup(const char *msg, int count, const char **names, cons
 {
     UIPopup *pop = new UIPopup(this, msg, (1 << (count + 1))-1, count, names, keys);
     pop->init();
-    int ret;
-    do {
+    int ret = 0;
+    discardPendingMenuButton();
+    while(!ret && host->exists()) {
         ret = pop->poll(0);
-    } while(!ret);
+        if (!ret && pollMenuButtonPush()) {
+            break;
+        }
+    }
     pop->deinit();
+    if ((ret > 0) && keyboard) {
+        keyboard->wait_free();
+    }
     delete pop;
     return ret;
 }
 
 int UserInterface :: string_box(const char *msg, char *buffer, int maxlen)
 {
-    UIStringBox *box = new UIStringBox(this, msg, buffer, maxlen);
+    return string_box(msg, buffer, maxlen, false);
+}
+
+int UserInterface :: string_box(const char *msg, char *buffer, int maxlen, bool template_mode)
+{
+    return string_box(msg, buffer, maxlen, template_mode, false);
+}
+
+int UserInterface :: string_box(const char *msg, char *buffer, int maxlen, bool template_mode, bool uppercase)
+{
+    return string_box(msg, buffer, maxlen, template_mode, uppercase, 0);
+}
+
+int UserInterface :: string_box(const char *msg, char *buffer, int maxlen, bool template_mode, bool uppercase,
+                                const UIStringEditPolicy *policy)
+{
+    UIStringBox *box = new UIStringBox(this, msg, buffer, maxlen, template_mode);
+    box->set_uppercase(uppercase);
+    box->set_policy(policy);
     box->init();
     screen->cursor_visible(1);
-    int ret;
-    do {
+    int ret = 0;
+    discardPendingMenuButton();
+    while(!ret && host->exists()) {
         ret = box->poll(0);
-    } while(!ret);
+        if (!ret && pollMenuButtonPush()) {
+            break;
+        }
+    }
     screen->cursor_visible(0);
     box->deinit();
     delete box;
     return ret;
 }
 
-int UserInterface :: string_edit(char *buffer, int maxlen, Window *w, int x, int y)
+int UserInterface :: string_edit(char *buffer, int maxlen, Window *w, int x, int y, int max_chars)
 {
     UIStringEdit *edit = new UIStringEdit(buffer, maxlen);
-    edit->init(w, keyboard, x, y, maxlen); // maybe the max len should be limited by the window!
+    if (max_chars <= 0) {
+        max_chars = w->get_size_x()-x;
+    }
+    edit->init(w, keyboard, x, y, max_chars); 
     screen->cursor_visible(1);
-    int ret;
-    do {
+    int ret = 0;
+    discardPendingMenuButton();
+    while(!ret && host->exists()) {
         ret = edit->poll(0);
-    } while(!ret);
+        if (!ret && pollMenuButtonPush()) {
+            break;
+        }
+    }
     screen->cursor_visible(0);
     delete edit;
     return ret;
@@ -516,12 +746,19 @@ int UserInterface :: choice(const char *msg, const char **choices, int count)
     UIChoiceBox *box = new UIChoiceBox(this, msg, choices, count);
     box->init();
     screen->cursor_visible(0);
-    int ret;
-    do {
+    int ret = 0;
+    discardPendingMenuButton();
+    while(!ret && host->exists()) {
         ret = box->poll(0);
-    } while(!ret);
+        if (!ret && pollMenuButtonPush()) {
+            break;
+        }
+    }
     delete box;
     // Return values are 1 based, unless it's an error
+    if (!ret && !host->exists()) {
+        return MENU_CLOSE;
+    }
     return (ret > 0) ? (ret - 1) : ret;
 }
 
@@ -542,16 +779,29 @@ void UserInterface :: hide_progress(void)
     delete status_box;
 }
 
+void UserInterface :: run_editor(Editor *editor)
+{
+    editor->init(screen, keyboard);
+    int ret = 0;
+    discardPendingMenuButton();
+    while(!ret && host->exists()) {
+        ret = editor->poll(0);
+        if (!ret && pollMenuButtonPush()) {
+            break;
+        }
+    }
+    editor->deinit();
+    delete editor;
+}
+
 void UserInterface :: run_editor(const char *text_buf, int max_len)
 {
-    Editor *edit = new Editor(this, text_buf, max_len);
-    edit->init(screen, keyboard);
-    int ret;
-    do {
-        ret = edit->poll(0);
-    } while(!ret);
-    edit->deinit();
-    delete edit;
+    run_editor(new Editor(this, text_buf, max_len));
+}
+
+void UserInterface :: run_hex_editor(const char *text_buf, int max_len)
+{
+    run_editor(new HexEditor(this, text_buf, max_len));
 }
 
 QueueHandle_t userMessageQueue = 0;
@@ -585,7 +835,7 @@ mstring *UserInterface :: getMessage(void)
 
 int UserInterface :: keymapper(int c, keymap_options_t map)
 {
-    if (navmode == 1) { // WASD cursors enabled
+    if ((navmode == 1) && (map != e_keymap_monitor)) { // WASD cursors enabled
         if (c >= 'A' && c <= 'Z') {
             c |= 0x20; // make uppercase lowercase
         } else {
@@ -607,6 +857,19 @@ int UserInterface :: keymapper(int c, keymap_options_t map)
     case KEY_F6: c = KEY_SEARCH; break;
     }
     return c;
+}
+
+const char *UserInterface :: function_key_for(int action) const
+{
+    static const int keys[] = { KEY_F1, KEY_F2, KEY_F3, KEY_F4, KEY_F5, KEY_F6, KEY_F7, KEY_F8 };
+    static const char *const names[] = { "F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8" };
+
+    for (unsigned int i = 0; i < sizeof(keys) / sizeof(keys[0]); i++) {
+        if (const_cast<UserInterface *>(this)->keymapper(keys[i], e_keymap_default) == action) {
+            return names[i];
+        }
+    }
+    return "";
 }
 
 void UserInterface :: help()

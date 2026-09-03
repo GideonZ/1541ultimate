@@ -109,6 +109,17 @@ SECTIONS
   } > memory
 
 
+  /* Call frame information for the hand-written assembly helpers in libgcc,
+     which carry theirs in .eh_frame rather than in .debug_frame. Without
+     KEEP, --gc-sections drops the section and a debugger cannot unwind a
+     stop taken inside one of those helpers. */
+  .eh_frame :
+  {
+    KEEP (*(.eh_frame))
+    . = ALIGN(4);
+  } > memory
+
+
   /* initialized read/write data, accessed in RAM, placed in ROM, copied during boot */
   .data :
   {

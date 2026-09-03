@@ -78,7 +78,8 @@ SRCS_ASMS = crt0.S port_asm.S
 
 SRCS_6502 = 
 
-SRCS_HTML = index.html
+SRCS_HTML = index.html api.html
+SRCS_YAML = rest_api_openapi_u2.yaml
 
 SRCS_BIN =  ultimate.bin \
 			rv700dd.bin \
@@ -100,6 +101,7 @@ VPATH +=	$(PATH_SW)/../neorv32/sw/lib/include
 VPATH +=	$(PATH_SW)/../neorv32/sw/lib/source
 VPATH   += $(PATH_SW)/application/rv_update_u2
 VPATH   += $(PATH_SW)/../html
+VPATH   += $(PATH_SW)/../doc/api
 VPATH   += ../ultimate/result
 VPATH   += ../boot2/result
 VPATH   += ../../../fpga/rv700dd/rv700dd

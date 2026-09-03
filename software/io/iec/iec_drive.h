@@ -10,11 +10,14 @@
 #include "disk_image.h"
 #include "iec_interface.h"
 
+#define IEC_PARTITION_CONFIG "iec_partitions.ipr"
+
 class IecChannel;
 class IecCommandChannel;
 class IecFileSystem;
 class FileManager;
 class IecDrive;
+class JSON_Object;
 
 class IecDrive : public IecSlave, SubSystem, ObjectWithMenu, ConfigurableObject
 {
@@ -35,7 +38,6 @@ class IecDrive : public IecSlave, SubSystem, ObjectWithMenu, ConfigurableObject
 
     Path *cmd_path;
     IecFileSystem *vfs;
-    const char *rootPath;
  
     static void set_iec_dir(IecSlave *obj, void *path);
 
@@ -44,7 +46,11 @@ class IecDrive : public IecSlave, SubSystem, ObjectWithMenu, ConfigurableObject
         Action *turn_off;
     	Action *reset;
         Action *set_dir;
+        Action *save_part;
+        Action *show_parts;
     } myActions;
+
+    JSON_Object *form_fields;
 public:
     IecDrive();
     virtual ~IecDrive();
@@ -84,9 +90,11 @@ public:
 
     int get_error_string(char *); // writes string into buffer
     IecCommandChannel *get_command_channel();
-    IecCommandChannel *get_data_channel(int chan);
-    const char *get_root_path();
+    IecChannel *get_data_channel(int chan);
+    IecFileSystem *get_file_system(void) { return vfs; }
     const char *get_partition_dir(int p);
+    void add_partition(int p, const char *path, const char *name);
+    void load_partitions(const char *p, const char *f);
 
     friend class IecChannel;
     friend class IecCommandChannel;
@@ -122,13 +130,26 @@ public:
 #define ERR_BAD_COMMAND					75
 #define ERR_UNIMPLEMENTED				76
 #define ERR_PARTITION_ERROR             77
+#define ERR_DENIED                      78
 
 typedef struct {
 	uint8_t nr;
-	char* msg;
+	const char* msg;
 	uint8_t len;
 } IEC_ERROR_MSG;
 
 extern IecDrive *iec_drive;
+
+#include "filetypes.h"
+class FileTypeIPR : public FileType
+{
+public:
+	FileTypeIPR(BrowsableDirEntry *par);
+    ~FileTypeIPR();
+
+    int   fetch_context_items(IndexedList<Action *> &list);
+    static FileType *test_type(BrowsableDirEntry *inf);
+    static SubsysResultCode_e load(SubsysCommand *);
+};
 
 #endif

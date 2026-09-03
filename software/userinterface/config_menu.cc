@@ -8,6 +8,8 @@ extern "C" {
 #include "config.h"
 #include "config_menu.h"
 
+int swap_interface_type(UserInterface *ui) __attribute__ ((weak));
+
 /************************/
 /* ConfigBrowser Object */
 /************************/
@@ -17,7 +19,7 @@ ConfigBrowser :: ConfigBrowser(UserInterface *ui, Browsable *root, int level) : 
     setCleanup();
     has_path = false;
     start_level = level;
-    state = new ConfigBrowserState(root, this, level);
+    replace_root_state(new ConfigBrowserState(root, this, level));
 }
 
 ConfigBrowser :: ~ConfigBrowser()
@@ -85,7 +87,7 @@ void ConfigBrowserState :: level_up(void)
     }
     delete this;
 }
-           
+
 void ConfigBrowserState :: change(void)
 {
     ConfigItem *it = ((BrowsableConfigItem *)under_cursor)->getItem();
@@ -142,7 +144,7 @@ void ConfigBrowserState :: increase(void)
         update_selected();
     }
 }
-    
+
 void ConfigBrowserState :: decrease(void)
 {
     ConfigItem *it = ((BrowsableConfigItem *)under_cursor)->getItem();
@@ -155,7 +157,7 @@ void ConfigBrowserState :: decrease(void)
         update_selected();
     }
 }
-    
+
 void ConfigBrowserState :: on_close(void)
 {
     if (level == 1) {
@@ -231,7 +233,7 @@ static const char *helptext_wasd =
 int ConfigBrowser :: handle_key(int c)
 {
     int ret = 0;
-    
+
     BrowsableConfigRoot *br;
     switch(c) {
         case KEY_F8: // exit
@@ -268,6 +270,9 @@ int ConfigBrowser :: handle_key(int c)
             state->refresh = true;
             user_interface->run_editor(helptext_ult, strlen(helptext_ult));
             break;
+        case KEY_CTRL_I:
+            ret = swap_interface_type(user_interface);
+            break;
         case KEY_SPACE: // space = select
         case KEY_RETURN: // CR = select
             if(state->level==0)
@@ -287,6 +292,7 @@ int ConfigBrowser :: handle_key(int c)
             break;
         case KEY_LEFT: // left
 		case KEY_BACK: // del
+        case '`': // left arrow
             if (state->level == 1) { // going to level 0
                 ((ConfigBrowserState *)state)->on_close();
             }
@@ -303,7 +309,7 @@ int ConfigBrowser :: handle_key(int c)
             break;
         default:
             printf("Unhandled key: %03x\n", c);
-    }    
+    }
     return ret;
 }
 

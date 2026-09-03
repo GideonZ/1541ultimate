@@ -1,6 +1,8 @@
 #ifndef FILEMANAGER_H
 #define FILEMANAGER_H
 
+#include <stdint.h>
+
 #include "path.h"
 #include "file_system.h"
 #include "filesystem_root.h"
@@ -22,12 +24,17 @@ class MountPoint
     Path *path;
     File *file;
 	FileSystemInFile *emb;
+	uint32_t last_used;   // for LRU eviction; larger is more recent
 public:
 	MountPoint(SubPath *p, File *f, FileSystemInFile *e) {
 		path = p->get_new_path();
 	    file = f;
 		emb = e;
+		last_used = 0;
 	}
+
+	void touch(uint32_t seq) { last_used = seq; }
+	uint32_t get_last_used(void) { return last_used; }
 
 	~MountPoint() {
 	    delete path;
@@ -71,6 +78,13 @@ public:
 	~FileManagerEvent() { }
 };
 
+struct ManagedTempEntry
+{
+	mstring path;
+	uint32_t open_count;
+	bool delete_on_last_close;
+};
+
 
 class FileManager
 {
@@ -79,12 +93,16 @@ class FileManager
 #endif
 	IndexedList<MountPoint *>mount_points;
     IndexedList<File *>open_file_list;
+	IndexedList<ManagedTempEntry *>managed_temp_entries;
+	uint32_t next_temp_seq;
+	bool temp_auto_cleanup_enabled;
+	bool temp_use_cache_subfolder_enabled;
 	//IndexedList<Path *>used_paths;
 	IndexedList<ObserverQueue *>observers;
 	CachedTreeNode *root;
 	FileSystem *rootfs;
 
-    FileManager() : mount_points(8, NULL), open_file_list(16, NULL), /*used_paths(8, NULL), */observers(4, NULL) {
+    FileManager() : mount_points(8, NULL), open_file_list(16, NULL), managed_temp_entries(16, NULL), next_temp_seq(0), mount_use_seq(0), temp_auto_cleanup_enabled(true), temp_use_cache_subfolder_enabled(true), /*used_paths(8, NULL), */observers(4, NULL) {
         root = new CachedTreeNode(NULL, "RootNode");
         root->get_file_info()->attrib = AM_DIR;
         rootfs = new FileSystem_Root(root);
@@ -98,13 +116,15 @@ class FileManager
     	vSemaphoreDelete(serializer);
 #endif
         for(int i=0;i<mount_points.get_elements();i++) {
-            fclose(mount_points[i]->get_file());
-            delete mount_points[i];
+            release_mount_point(mount_points[i]);
         }
 
         for(int i=0;i<open_file_list.get_elements();i++) {
         	delete open_file_list[i];
         }
+		for(int i=0;i<managed_temp_entries.get_elements();i++) {
+		    delete managed_temp_entries[i];
+		}
 /*
         for(int i=0;i<used_paths.get_elements();i++) {
         	delete used_paths[i];
@@ -118,6 +138,16 @@ class FileManager
 	FRESULT fopen_impl(PathInfo &pathInfo, uint8_t flags, File **);
 	FRESULT rename_impl(PathInfo &from, PathInfo &to);
 	FRESULT delete_file_impl(PathInfo &pathInfo);
+	void release_mount_point(MountPoint *mp);
+	void get_temp_directory_path(const char *category, mstring &directory_out);
+	FRESULT build_temp_path(const char *category, const char *suggested_name, uint32_t seq, bool unique_name, uint32_t suffix,
+	        bool create_dirs, mstring &canonical_path_out);
+	ManagedTempEntry *find_managed_temp_entry(const char *path);
+	bool is_path_under_managed_root(const char *path);
+	void note_managed_temp_open(File *file);
+	void note_managed_temp_deleted(const char *path);
+	void note_managed_temp_renamed(const char *old_path, const char *new_path);
+	void enforce_temp_limits(void);
 
 //	friend class FileDirEntry;
 
@@ -172,6 +202,14 @@ public:
     MountPoint *add_mount_point(SubPath *path, File *, FileSystemInFile *);
     MountPoint *find_mount_point(SubPath *path, FileInfo *info);
 
+    // Mount points are a cache: entering the same image twice costs nothing.
+    // Without a bound it is also a leak, because nothing releases them until
+    // the media goes away, so browsing a collection of images accumulates one
+    // open file each. Bounded here, least recently used first.
+    uint32_t mount_use_seq;
+    bool is_mount_evictable(MountPoint *mp);
+    void evict_mount_points(void);
+
     // Functions to use / handle path objects:
     Path *get_new_path(const char *owner) {
     	Path *p = new Path();
@@ -184,6 +222,7 @@ public:
     	delete p;
     }
 
+    bool  is_path_valid(const char *p, FileInfo *inf = NULL);
     bool  is_path_valid(Path *p);
     bool  is_path_writable(Path *p);
 
@@ -192,6 +231,7 @@ public:
     FRESULT get_free(Path *path, uint32_t &free, uint32_t &cluster_size);
     FRESULT fs_read_sector(Path *path, uint8_t *buffer, int track, int sector);
     FRESULT fs_write_sector(Path *path, uint8_t *buffer, int track, int sector);
+    FRESULT fs_allocate_sector(Path *path, int track, int sector, bool alloc);
 
     FRESULT fstat(Path *path, const char *filename, FileInfo &info);
     FRESULT fstat(const char *path, const char *name, FileInfo &info);
@@ -199,7 +239,17 @@ public:
 
     FRESULT fopen(Path *path, const char *filename, uint8_t flags, File **);
     FRESULT fopen(const char *path, const char *filename, uint8_t flags, File **);
-    FRESULT fopen(const char *pathname, uint8_t flags, File **);
+	FRESULT fopen(const char *pathname, uint8_t flags, File **);
+
+	FRESULT get_temp_path(const char *category, const char *suggested_name, mstring *canonical_path_out);
+	FRESULT ensure_temp_directory(const char *category, mstring &directory_out);
+	FRESULT create_temp_file(const char *category, const char *suggested_name, uint8_t open_flags, File **file, mstring *canonical_path_out);
+	FRESULT save_temp_file(const char *category, const char *suggested_name, const uint8_t *data, uint32_t len, mstring *canonical_path_out);
+
+	void set_temp_auto_cleanup_enabled(bool enabled) { temp_auto_cleanup_enabled = enabled; }
+	void set_temp_use_cache_subfolder_enabled(bool enabled) { temp_use_cache_subfolder_enabled = enabled; }
+	bool is_temp_auto_cleanup_enabled(void) { return temp_auto_cleanup_enabled; }
+	bool is_temp_use_cache_subfolder_enabled(void) { return temp_use_cache_subfolder_enabled; }
 
     void 	fclose(File *f);
     FRESULT fcopy(const char *path, const char *filename, const char *dest, const char *dest_filename, bool overwrite);
@@ -215,10 +265,11 @@ public:
     FRESULT create_dir(Path *path, const char *name);
     FRESULT create_dir(const char *pathname);
 
+	FRESULT open_directory(const char *path, Directory **dir, FileInfo *info = NULL);
     FRESULT get_directory(Path *p, IndexedList<FileInfo *> &target, const char *matchPattern);
     FRESULT print_directory(const char *path);
     FRESULT load_file(const char *path, const char *filename, uint8_t *mem, uint32_t maxlen, uint32_t *transferred);
-    FRESULT save_file(bool overwrite, const char *path, const char *filename, uint8_t *mem, uint32_t len, uint32_t *transferred);
+    FRESULT save_file(bool overwrite, const char *path, const char *filename, const uint8_t *mem, uint32_t len, uint32_t *transferred);
 
     void registerObserver(ObserverQueue *q) {
     	observers.append(q);

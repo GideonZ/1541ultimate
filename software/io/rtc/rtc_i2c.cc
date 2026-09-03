@@ -78,6 +78,7 @@ void Rtc::init()
     capable = true;
     cfg = new RtcConfigStore("Clock Settings", rtc_config);
     ConfigManager::getConfigManager()->add_custom_store(cfg);
+    cfg->set_sort_order(SORT_ORDER_CFG_CLOCK);
 
     // This is a fix for the case where the I2C is not yet initialized
     // This only works for systems where I2C is operated in PIO mode
@@ -393,6 +394,11 @@ extern "C" uint32_t get_fattime(void) /* 31-25: Year(0-127 org.1980), 24-21: Mon
      23 <<  0 = 0x00000017
      return 0x3A844C97;
      */
+}
+
+extern "C" void get_current_time(int& wd, int& year, int& month, int& day, int& hour, int& min, int& sec)
+{
+    rtc.get_time(year, month, day, wd, hour, min, sec);
 }
 
 #include "init_function.h"

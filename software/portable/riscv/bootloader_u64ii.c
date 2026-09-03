@@ -108,7 +108,7 @@ static void init_ext_pll()
     i2c_regs->data_out = 0x08; // Length
     i2c_spin_busy(i2c_regs);
     for(int i=0; i < 8; i++) {
-        i2c_regs->data_out = init_pal[i];
+        i2c_regs->data_out = init_ntsc[i];
         i2c_spin_busy(i2c_regs);
     }
     i2c_regs->stop = 1;
@@ -122,7 +122,7 @@ static void init_ext_pll()
     i2c_regs->data_out = 0x08; // Length
     i2c_spin_busy(i2c_regs);
     for(int i=0; i < 8; i++) {
-        i2c_regs->data_out = init_hdmi_50[i];
+        i2c_regs->data_out = init_hdmi_60[i];
         i2c_spin_busy(i2c_regs);
     }
     i2c_regs->stop = 1;
@@ -134,14 +134,14 @@ extern uint32_t __warm_boot;
 int main()
 {
     puts("Hello world, U64-II!");
-    if (__warm_boot == 0) {
-        __warm_boot = 1;
-        puts("Reset PHY");
-        wait_ms(2);
-        // either one, we reset; only one will respond
-        mdio_write(0x00, 0x9100, 0);
-        mdio_write(0x00, 0x9100, 3);
-    }
+    // if (__warm_boot == 0) {
+    //     __warm_boot = 1;
+    //     puts("Reset PHY");
+    //     wait_ms(2);
+    //     // either one, we reset; only one will respond
+    //     mdio_write(0x00, 0x9100, 0);
+    //     mdio_write(0x00, 0x9100, 3);
+    // }
 
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS; // drive CSn high
     SPI_FLASH_DATA = 0xFF;
@@ -170,7 +170,10 @@ int main()
         BOOT_MAGIC_LOCATION = 0;
         jump_run(BOOT_MAGIC_JUMPADDR);
     } else if (!(capabilities & CAPAB_BOOT_FPGA)) {
-        uint32_t flash_addr = 0x220000; // 2176K from start. FPGA image is (uncompressed) 2141K
+        uint8_t fpgatype_id = getFpgaType();
+        outbyte('T');
+        hexbyte(fpgatype_id);
+        uint32_t flash_addr = (fpgatype_id == 3) ? 0x3C0000 : 0x220000;
         
         SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
         SPI_FLASH_DATA = W25Q_ContinuousArrayRead_LowFrequency;

@@ -1,7 +1,7 @@
 #include "assembly.h"
 #include <sys/socket.h>
 #include "netdb.h"
-#include "attachment_writer.h"
+#include "pattern.h"
 #include "u64.h"
 
 #define HOSTNAME      "hackerswithstyle.se"
@@ -13,78 +13,8 @@
 
 Assembly assembly;
 
-void url_encode(const char *src, mstring &dest)
-{
-    int len = strlen(src);
-    char pct[4] = {0};
-
-    for(int i=0; i<len; i++) {
-        if(src[i] == '_' || src[i] == '-' || src[i] == '.' || src[i] == '*') {
-            dest += src[i];
-        } else if(src[i] >= 'a' && src[i] <= 'z') {
-            dest += src[i];
-        } else if(src[i] >= 'A' && src[i] <= 'Z') {
-            dest += src[i];
-        } else if(src[i] >= '0' && src[i] <= '9') {
-            dest += src[i];
-        } else {
-            sprintf(pct, "%c%02x", '%', src[i]);
-            dest += pct;
-        }
-    }
-}
-
-void attachment_to_buffer(BodyDataBlock_t *block)
-{
-    HTTPHeaderField *f;
-    t_BufferedBody *body = (t_BufferedBody *)block->context;
-
-    switch(block->type) {
-        case eStart:
-            // printf("--- Start of Body --- (Type: %s)\n", block->data);
-            break;
-        case eDataStart:
-            // printf("--- Raw Data Start ---\n");
-            body->offset = 0;
-            body->size = 0;
-            break;
-        case eSubHeader:
-            // printf("--- SubHeader ---\n");
-            f = (HTTPHeaderField *)block->data;
-            for(int i=0; i < block->length; i++) {
-                printf("%s => '%s'\n", f[i].key, f[i].value);
-            }
-            break;
-        case eDataBlock:
-            // printf("--- Data (%d bytes)\n", block->length);
-            if (block->length < (16384 - body->offset)) {
-                memcpy(body->buffer + body->offset, block->data, block->length);
-                body->offset += block->length;
-                body->size += block->length;
-            } else {
-                printf("-> Ditched, buffer full.\n");
-            }
-            break;
-        case eDataEnd:
-            // printf("--- End of Data ---\n");
-            break;
-        case eTerminate:
-            printf("--- End of Body --- ");
-            printf("Total size: %d\n", body->size);
-            break;
-    }
-}
-
-void collect_in_buffer(HTTPReqMessage *req, HTTPRespMessage *resp)
-{
-    t_BufferedBody *body = new t_BufferedBody;
-    req->userContext = body;
-    body->offset = 0;
-    body->size = 0;
-    setup_multipart(req, &attachment_to_buffer, body);
-}
-
-void write_to_temp(HTTPReqMessage *req, HTTPRespMessage *resp)
+#include "attachment_writer.h"
+void write_to_temp_a64(HTTPReqMessage *req, HTTPRespMessage *resp)
 {
     TempfileWriter *writer = new TempfileWriter(req, resp, NULL, NULL, NULL);
     setup_multipart(req, &TempfileWriter::collect_wrapper, writer);
@@ -98,7 +28,7 @@ int Assembly :: connect_to_server(void)
     struct sockaddr_in serv_addr;
     char buffer[1024];
 
-    this->socket_fd = 0;
+    this->socket_fd = -1;
     InitReqMessage(&this->response);
     this->response.usedAsResponseFromServer = 1;
 
@@ -132,6 +62,7 @@ int Assembly :: connect_to_server(void)
 
     if (connect(sock_fd, (struct sockaddr *)&serv_addr,sizeof(serv_addr)) < 0) {
         printf("Connection failed.\n");
+        close(sock_fd);
         return -1;
     }
     // printf("Connection succeeded.\n");
@@ -141,10 +72,10 @@ int Assembly :: connect_to_server(void)
 
 void Assembly :: close_connection(void)
 {
-    if(socket_fd) {
+    if(socket_fd >= 0) {
         close(socket_fd);
     }
-    socket_fd = 0;
+    socket_fd = -1;
 }
 
 JSON *Assembly :: get_presets(void)
@@ -161,16 +92,30 @@ JSON *Assembly :: get_presets(void)
     if (presets) {
         return presets;
     }
-    if (connect_to_server() > 0) {
+    if (connect_to_server() >= 0) {
         send(this->socket_fd, request, strlen(request), MSG_DONTWAIT);
-        get_response(collect_in_buffer);
+        get_response(this->socket_fd, collect_in_buffer, response);
         close_connection();
 
-        body = (t_BufferedBody *) response.userContext;
-        presets = convert_buffer_to_json(body);
+        presets = take_response_json();
         return presets;
     }
     return NULL;
+}
+
+// The JSON tree copies every key and value out of the response buffer, so the
+// 16 KB body has no owner once the tree is built. Freeing it here keeps that
+// out of every caller; only request_binary() hands its user context onwards.
+JSON *Assembly :: take_response_json(void)
+{
+    t_BufferedBody *body = (t_BufferedBody *) response.userContext;
+    if (!body) {
+        return NULL;
+    }
+    JSON *json = convert_buffer_to_json(body);
+    response.userContext = NULL;
+    delete body;
+    return json;
 }
 
 JSON *Assembly :: send_query(const char *query)
@@ -188,14 +133,12 @@ JSON *Assembly :: send_query(const char *query)
         "Connection: close\r\n"
         "\r\n";
 
-    if (connect_to_server() > 0) {
+    if (connect_to_server() >= 0) {
         send(this->socket_fd, request.c_str(), request.length(), MSG_DONTWAIT);
-        get_response(collect_in_buffer);
+        get_response(socket_fd, collect_in_buffer, response);
         close_connection();
 
-        t_BufferedBody *body = (t_BufferedBody *) response.userContext;
-        JSON *json = convert_buffer_to_json(body);
-        return json;
+        return take_response_json();
     }
     return NULL;
 }
@@ -240,14 +183,12 @@ JSON *Assembly :: request_entries(const char *id, int cat)
         "Connection: close\r\n"
         "\r\n";
 
-    if (connect_to_server() > 0) {
+    if (connect_to_server() >= 0) {
         send(this->socket_fd, request.c_str(), request.length(), MSG_DONTWAIT);
-        get_response(collect_in_buffer);
+        get_response(this->socket_fd, collect_in_buffer, response);
         close_connection();
 
-        t_BufferedBody *body = (t_BufferedBody *) response.userContext;
-        JSON *json = convert_buffer_to_json(body);
-        return json;
+        return take_response_json();
     }
     return NULL;
 }
@@ -289,55 +230,14 @@ void Assembly :: request_binary(const char *path, const char *filename)
         "Connection: close\r\n"
         "\r\n";
 
-    if (connect_to_server() > 0) { // resets userContext to NULL
+    if (connect_to_server() >= 0) { // resets userContext to NULL
         send(this->socket_fd, request.c_str(), request.length(), MSG_DONTWAIT);
-        get_response(write_to_temp);
+        get_response(this->socket_fd, write_to_temp_a64, response);
         close_connection();
     }
  }
 
-int Assembly :: read_socket(void)
-{
-    char *p = (char *)response._buf;
-    p += response._valid;
-    int space = HTTP_BUFFER_SIZE - response._valid;
-    printf(".");
-    int n = space ? recv(this->socket_fd, p, space, 0) : 0;
-    if (n >= 0) {
-        response._valid += n;
-    }
-    return n;
-}
-
-void Assembly :: get_response(HTTPREQ_CALLBACK callback)
-{
-    uint8_t state = WRITING_SOCKET;
-    
-    do {
-        int n = read_socket();
-        if (n) {
-            state = ProcessClientData(&response, NULL, callback);
-        }
-    } while(state < WRITING_SOCKET);
-}
-
-JSON *Assembly :: convert_buffer_to_json(t_BufferedBody *body)
-{
-    body->buffer[body->size] = 0;
-    JSON *json = NULL;
-    int j = convert_text_to_json_objects((char *)body->buffer, body->size, 1000, &json);
-    if (j < 0) {
-        if (json) {
-            delete json;
-            return NULL;
-        }
-    }
-    return json;
-}
-
 #if TEST
-int TempfileWriter::temp_count;
-
 extern "C" {
     void outbyte(int c) { putc(c, stdout); }
 }
@@ -350,29 +250,16 @@ int main(int argc, char **argv)
         delete results;
     }
 
-    t_BufferedBody *body2 = (t_BufferedBody *) assembly.get_user_context();
-    if (body2) {
-        delete body2;
-    }
-
     JSON *json = assembly.request_entries("237033", 0);
     if (json) {
         puts(json->render());
         delete json;
-    }
-    t_BufferedBody *body = (t_BufferedBody *) assembly.get_user_context();
-    if (body) {
-        delete body;
     }
 
     JSON *json3 = assembly.request_entries("145050", 3);
     if (json3) {
         puts(json3->render());
         delete json3;
-    }
-    t_BufferedBody *body3 = (t_BufferedBody *) assembly.get_user_context();
-    if (body3) {
-        delete body3;
     }
 
     assembly.request_binary("237033", 0, 0);

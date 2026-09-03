@@ -167,8 +167,6 @@ int ma_in()
     return 0;
 }
 
-int TempfileWriter::temp_count;
-
 int ma___in()
 {
     FileManager *fm = FileManager :: getFileManager();

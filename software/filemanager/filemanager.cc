@@ -3,7 +3,391 @@
 #include "filemanager.h"
 #include "embedded_fs.h"
 #include "file_device.h"
+#include "pattern.h"
 #include <cctype>
+#include <strings.h>
+
+namespace {
+
+const int kManagedTempMaxFiles = 10;
+
+bool path_starts_with_ci(const char *path, const char *prefix)
+{
+    return strncasecmp(path, prefix, strlen(prefix)) == 0;
+}
+
+void sanitize_temp_name(const char *suggested_name, char *buffer, size_t buffer_size)
+{
+    if (!buffer_size) {
+        return;
+    }
+    buffer[0] = 0;
+    if (!suggested_name) {
+        return;
+    }
+    while ((*suggested_name == '.') || (*suggested_name == '/') || (*suggested_name == '\\')) {
+        suggested_name++;
+    }
+    strncpy(buffer, suggested_name, buffer_size - 1);
+    buffer[buffer_size - 1] = 0;
+    fix_filename(buffer);
+}
+
+void append_temp_name(mstring &buffer, const char *name, uint32_t suffix)
+{
+    if (!suffix) {
+        buffer += name;
+        return;
+    }
+
+    const char *dot = strrchr(name, '.');
+    if (!dot || (dot == name)) {
+        dot = name + strlen(name);
+    }
+    for (const char *p = name; p < dot; p++) {
+        buffer += *p;
+    }
+    buffer += "_";
+    buffer += (int)suffix;
+    buffer += dot;
+}
+
+}
+
+void FileManager::get_temp_directory_path(const char *category, mstring &directory_out)
+{
+    directory_out = "/Temp";
+    if (!temp_use_cache_subfolder_enabled) {
+        return;
+    }
+    directory_out += "/cache";
+    if (category && category[0]) {
+        directory_out += "/";
+        directory_out += category;
+    }
+}
+
+FRESULT FileManager::ensure_temp_directory(const char *category, mstring &directory_out)
+{
+    directory_out = "/Temp";
+    if (!temp_use_cache_subfolder_enabled) {
+        return FR_OK;
+    }
+    directory_out += "/cache";
+    FRESULT fres = create_dir(directory_out.c_str());
+    if ((fres != FR_OK) && (fres != FR_EXIST)) {
+        return fres;
+    }
+    if (category && category[0]) {
+        directory_out += "/";
+        directory_out += category;
+        fres = create_dir(directory_out.c_str());
+        if ((fres != FR_OK) && (fres != FR_EXIST)) {
+            return fres;
+        }
+    }
+    return FR_OK;
+}
+
+FRESULT FileManager::build_temp_path(const char *category, const char *suggested_name, uint32_t seq, bool unique_name,
+        uint32_t suffix, bool create_dirs, mstring &canonical_path_out)
+{
+    mstring directory;
+    FRESULT fres = FR_OK;
+    if (create_dirs) {
+        fres = ensure_temp_directory(category, directory);
+        if (fres != FR_OK) {
+            return fres;
+        }
+    } else {
+        get_temp_directory_path(category, directory);
+    }
+
+    char sanitized[128];
+    sanitize_temp_name(suggested_name, sanitized, sizeof(sanitized));
+
+    canonical_path_out = directory;
+    canonical_path_out += "/";
+    if (unique_name) {
+        if (sanitized[0]) {
+            append_temp_name(canonical_path_out, sanitized, suffix);
+        } else {
+            char seq_buf[16];
+            sprintf(seq_buf, "temp%04x", (unsigned int)seq);
+            canonical_path_out += seq_buf;
+            if (suffix) {
+                canonical_path_out += "_";
+                canonical_path_out += (int)suffix;
+            }
+        }
+    } else if (sanitized[0]) {
+        canonical_path_out += sanitized;
+    } else {
+        char seq_buf[16];
+        sprintf(seq_buf, "temp%04x", (unsigned int)seq);
+        canonical_path_out += seq_buf;
+    }
+    return FR_OK;
+}
+
+ManagedTempEntry *FileManager::find_managed_temp_entry(const char *path)
+{
+    if (!path) {
+        return NULL;
+    }
+    for (int i = 0; i < managed_temp_entries.get_elements(); i++) {
+        ManagedTempEntry *entry = managed_temp_entries[i];
+        if (entry && (strcasecmp(entry->path.c_str(), path) == 0)) {
+            return entry;
+        }
+    }
+    return NULL;
+}
+
+bool FileManager::is_path_under_managed_root(const char *path)
+{
+    if (!path) {
+        return false;
+    }
+    const char *root = temp_use_cache_subfolder_enabled ? "/Temp/cache/" : "/Temp/";
+    return path_starts_with_ci(path, root);
+}
+
+void FileManager::note_managed_temp_open(File *file)
+{
+    if (managed_temp_entries.get_elements() == 0) {
+        return;
+    }
+    const char *path = file ? file->get_path() : NULL;
+    if (!is_path_under_managed_root(path)) {
+        return;
+    }
+    ManagedTempEntry *entry = find_managed_temp_entry(path);
+    if (entry) {
+        entry->open_count++;
+    }
+}
+
+void FileManager::note_managed_temp_deleted(const char *path)
+{
+    ManagedTempEntry *entry = find_managed_temp_entry(path);
+    if (!entry) {
+        return;
+    }
+    managed_temp_entries.remove(entry);
+    delete entry;
+}
+
+void FileManager::note_managed_temp_renamed(const char *old_path, const char *new_path)
+{
+    ManagedTempEntry *entry = find_managed_temp_entry(old_path);
+    if (!entry) {
+        return;
+    }
+
+    if (is_path_under_managed_root(new_path)) {
+        entry->path = new_path;
+        return;
+    }
+    managed_temp_entries.remove(entry);
+    delete entry;
+}
+
+void FileManager::enforce_temp_limits(void)
+{
+    if (!temp_auto_cleanup_enabled) {
+        return;
+    }
+
+    while (1) {
+        IndexedList<ManagedTempEntry *> failed_candidates(4, NULL);
+
+        while (1) {
+        lock();
+        const int total_entries = managed_temp_entries.get_elements();
+        const int excess_entries = total_entries - kManagedTempMaxFiles;
+
+        if (excess_entries <= 0) {
+            unlock();
+            return;
+        }
+
+        ManagedTempEntry *candidate = NULL;
+        int active_index = 0;
+        for (int i = 0; i < total_entries; i++) {
+            ManagedTempEntry *entry = managed_temp_entries[i];
+            if (!entry) {
+                continue;
+            }
+            if ((active_index < excess_entries) && (entry->open_count == 0)) {
+                bool skip_candidate = false;
+                for (int j = 0; j < failed_candidates.get_elements(); j++) {
+                    if (failed_candidates[j] == entry) {
+                        skip_candidate = true;
+                        break;
+                    }
+                }
+                if (skip_candidate) {
+                    active_index++;
+                    continue;
+                }
+                candidate = entry;
+                break;
+            }
+            active_index++;
+        }
+
+        if (candidate) {
+            mstring candidate_path = candidate->path;
+            unlock();
+            FRESULT fres = delete_file(candidate_path.c_str());
+            if (fres == FR_OK) {
+                break;
+            }
+            if (fres == FR_NO_FILE) {
+                lock();
+                note_managed_temp_deleted(candidate_path.c_str());
+                unlock();
+                break;
+            }
+            failed_candidates.append(candidate);
+            if (failed_candidates.get_elements() >= excess_entries) {
+                return;
+            }
+            continue;
+        }
+
+        int remaining_count = excess_entries;
+        bool marked_any = false;
+        active_index = 0;
+
+        for (int i = 0; i < total_entries; i++) {
+            ManagedTempEntry *entry = managed_temp_entries[i];
+            if (!entry) {
+                continue;
+            }
+            if (active_index >= excess_entries) {
+                break;
+            }
+            active_index++;
+            if ((entry->open_count == 0) || entry->delete_on_last_close) {
+                continue;
+            }
+            entry->delete_on_last_close = true;
+            marked_any = true;
+            remaining_count--;
+            if (remaining_count <= 0) {
+                break;
+            }
+        }
+        if (!marked_any) {
+            unlock();
+            return;
+        }
+        unlock();
+        return;
+        }
+    }
+}
+
+void FileManager::release_mount_point(MountPoint *mp)
+{
+    if (!mp) {
+        return;
+    }
+    fclose(mp->get_file());
+    delete mp;
+}
+
+FRESULT FileManager::get_temp_path(const char *category, const char *suggested_name, mstring *canonical_path_out)
+{
+    if (!canonical_path_out) {
+        return FR_INVALID_OBJECT;
+    }
+    return build_temp_path(category, suggested_name, next_temp_seq, false, 0, false, *canonical_path_out);
+}
+
+FRESULT FileManager::create_temp_file(const char *category, const char *suggested_name, uint8_t open_flags, File **file,
+        mstring *canonical_path_out)
+{
+    if (!file) {
+        return FR_INVALID_OBJECT;
+    }
+
+    lock();
+    const uint32_t seq = next_temp_seq++;
+    const bool track_managed_temp = temp_auto_cleanup_enabled;
+    mstring canonical_path;
+    FRESULT fres = FR_OK;
+    uint32_t suffix = 0;
+    bool enforce_limits = false;
+
+    if (open_flags & FA_CREATE_ALWAYS) {
+        open_flags &= ~FA_CREATE_ALWAYS;
+        open_flags |= FA_CREATE_NEW;
+    }
+
+    while (1) {
+        fres = build_temp_path(category, suggested_name, seq, true, suffix, true, canonical_path);
+        if (fres != FR_OK) {
+            *file = NULL;
+            unlock();
+            return fres;
+        }
+
+        fres = fopen(canonical_path.c_str(), open_flags, file);
+        if (fres == FR_EXIST) {
+            suffix++;
+            continue;
+        }
+        if (fres != FR_OK) {
+            unlock();
+            return fres;
+        }
+
+        if (track_managed_temp) {
+            ManagedTempEntry *entry = new ManagedTempEntry;
+            entry->path = canonical_path;
+            entry->open_count = 1;
+            entry->delete_on_last_close = false;
+            managed_temp_entries.append(entry);
+            enforce_limits = managed_temp_entries.get_elements() > kManagedTempMaxFiles;
+        }
+
+        if (canonical_path_out) {
+            *canonical_path_out = canonical_path;
+        }
+        break;
+    }
+
+    unlock();
+    if (enforce_limits) {
+        enforce_temp_limits();
+    }
+    return FR_OK;
+}
+
+FRESULT FileManager::save_temp_file(const char *category, const char *suggested_name, const uint8_t *data, uint32_t len,
+        mstring *canonical_path_out)
+{
+    File *file = NULL;
+    mstring path;
+    FRESULT fres = create_temp_file(category, suggested_name, FA_WRITE | FA_CREATE_ALWAYS, &file, &path);
+    if (fres != FR_OK) {
+        return fres;
+    }
+    uint32_t written = 0;
+    fres = file->write(data, len, &written);
+    fclose(file);
+    if ((fres != FR_OK) || (written != len)) {
+        delete_file(path.c_str());
+        return (fres != FR_OK) ? fres : FR_DISK_ERR;
+    }
+    if (canonical_path_out) {
+        *canonical_path_out = path;
+    }
+    return FR_OK;
+}
 
 void FileManager::invalidate(CachedTreeNode *o)
 {
@@ -28,8 +412,7 @@ void FileManager::invalidate(CachedTreeNode *o)
         printf("%2d. %s\n", i, f->get_path());
         if (strncmp(f->get_path(), pathStringC, len) == 0) {
             printf("Match!\n");
-            f->close();
-            delete m;
+            release_mount_point(m);
             mount_points.mark_for_removal(i);
         }
     }
@@ -86,6 +469,18 @@ bool FileManager::is_path_valid(Path *p)
     return (res == FR_OK);
 }
 
+bool FileManager::is_path_valid(const char *p, FileInfo *inf)
+{
+    PathInfo pathInfo(rootfs);
+    pathInfo.init(p);
+    FRESULT res = find_pathentry(pathInfo, true);
+    if ((res == FR_OK) && (inf != NULL)) {
+        // if success, we can copy the file info to the output to get more info
+        inf->copyfrom(pathInfo.getLastInfo());
+    }
+    return (res == FR_OK);
+}
+
 void FileManager::get_display_string(Path *p, const char *filename, char *buffer, int width)
 {
     CachedTreeNode *n = root;
@@ -99,10 +494,43 @@ void FileManager::get_display_string(Path *p, const char *filename, char *buffer
     }
     n = n->find_child(filename);
     if (!n) {
-        strncpy(buffer, "Invalid entry", width);
+        snprintf(buffer, width, "Invalid entry %s", filename);
         return;
     }
     n->get_display_string(buffer, width);
+}
+
+FRESULT FileManager::open_directory(const char *path, Directory **dir, FileInfo *info)
+{
+    *dir = NULL;
+    lock();
+
+    PathInfo pathInfo(rootfs);
+    pathInfo.init(path);
+    FRESULT res = find_pathentry(pathInfo, true);
+    if (res != FR_OK) {
+        unlock();
+        return res;
+    }
+    if (info) {
+        // if info is given, copy the file info to it
+        info->copyfrom(pathInfo.getLastInfo());
+    }
+    FileSystem *fs = pathInfo.getLastInfo()->fs;
+    res = fs->dir_open(pathInfo.getPathFromLastFS(), dir);
+    unlock();
+    return res;
+}
+
+// get_directory() fills the list with copies it hands to the caller, so the
+// list and its contents have to be freed separately. Deleting only the list
+// strands every FileInfo in it, each one carrying its own name buffer.
+static void delete_directory_list(IndexedList<FileInfo *> *list)
+{
+    for (int i = 0; i < list->get_elements(); i++) {
+        delete (*list)[i];
+    }
+    delete list;
 }
 
 FRESULT FileManager::get_directory(Path *p, IndexedList<FileInfo *> &target, const char *matchPattern)
@@ -312,7 +740,9 @@ FRESULT FileManager::fopen_impl(PathInfo &pathInfo, uint8_t flags, File **file)
     fres = fs->file_open(pathInfo.getPathFromLastFS(), flags, file);
     if (fres == FR_OK) {
         open_file_list.append(*file);
+        (*file)->write_intent = ((flags & FA_WRITE) != 0);
         pathInfo.workPath.getTail(0, (*file)->get_path_reference());
+        note_managed_temp_open(*file);
         if (create) {
             const char *pathstring = pathInfo.getFullPath(workpath, -1);
             sendEventToObservers(eRefreshDirectory, pathstring, "");
@@ -354,6 +784,10 @@ FRESULT FileManager::fs_read_sector(Path *path, uint8_t *buffer, int track, int 
     if (!inf || !(inf->fs)) {
         return FR_NO_FILESYSTEM;
     }
+    fres = inf->fs->sync();
+    if (fres != FR_OK) {
+        return fres;
+    }
     fres = inf->fs->read_sector(buffer, track, sector);
     return fres;
 }
@@ -370,7 +804,30 @@ FRESULT FileManager::fs_write_sector(Path *path, uint8_t *buffer, int track, int
     if (!inf || !(inf->fs)) {
         return FR_NO_FILESYSTEM;
     }
+    fres = inf->fs->sync();
+    if (fres != FR_OK) {
+        return fres;
+    }
     fres = inf->fs->write_sector(buffer, track, sector);
+    return fres;
+}
+
+FRESULT FileManager::fs_allocate_sector(Path *path, int track, int sector, bool alloc)
+{
+    PathInfo pathInfo(rootfs);
+    pathInfo.init(path);
+    FRESULT fres = find_pathentry(pathInfo, true);
+    if (fres != FR_OK) {
+        return fres;
+    }
+    FileInfo *inf = pathInfo.getLastInfo();
+    if (!inf || !(inf->fs)) {
+        return FR_NO_FILESYSTEM;
+    }
+    fres = inf->fs->allocate_sector(track, sector, alloc);
+    if (fres == FR_OK) {
+        fres = inf->fs->sync();
+    }
     return fres;
 }
 
@@ -421,6 +878,12 @@ FRESULT FileManager::fstat(const char *pathname, FileInfo &info)
 
 void FileManager::fclose(File *f)
 {
+    bool delete_on_last_close = false;
+    bool enforce_after_close = false;
+    mstring delete_path;
+    bool publish_dir = false;
+    mstring changed_dir;
+
     lock();
     if (f->get_file_system()) {
         // printf("Closing %s...\n", inf->lfname);
@@ -429,14 +892,44 @@ void FileManager::fclose(File *f)
         printf("ERR: Closing invalidated file.\n");
     }
 //	printf("CLOSE '%s'\n", f->get_path());
-    /*
-     if (f->was_written_to()) {
-     sendEventToObservers(eNodeUpdated, f->get_path(), "*");
-     }
-     */
+    const char *path = f->get_path();
+    if (f->write_intent) {
+        // A file that was created announced itself while it was still empty; its
+        // size only becomes final in the close below. Remember the directory now,
+        // because close() destroys the file object.
+        Path file_path;
+        file_path.cd(path);
+        file_path.getHead(changed_dir);
+        publish_dir = true;
+    }
+    if ((managed_temp_entries.get_elements() > 0) && is_path_under_managed_root(path)) {
+        ManagedTempEntry *entry = find_managed_temp_entry(path);
+        if (entry) {
+            if (entry->open_count > 0) {
+                entry->open_count--;
+            }
+            if (entry->open_count == 0) {
+                if (entry->delete_on_last_close) {
+                    delete_on_last_close = true;
+                    delete_path = entry->path;
+                } else {
+                    enforce_after_close = true;
+                }
+            }
+        }
+    }
     open_file_list.remove(f);
     f->close();
+    if (publish_dir) {
+        sendEventToObservers(eRefreshDirectory, changed_dir.c_str(), "");
+    }
     unlock();
+
+    if (delete_on_last_close) {
+        delete_file(delete_path.c_str());
+    } else if (enforce_after_close) {
+        enforce_temp_limits();
+    }
 }
 
 void FileManager::add_root_entry(CachedTreeNode *obj)
@@ -458,6 +951,80 @@ void FileManager::remove_root_entry(CachedTreeNode *obj)
     unlock();
 }
 
+// How many disk images stay mounted. Entering an image costs about 5 KB -- the
+// FatFs handle on the image file plus the embedded filesystem wrappers -- and
+// nothing releases it, so browsing a collection used to consume that per image
+// without bound. Eight covers any realistic working set; the cache still pays
+// for itself, since re-entering a mounted image allocates nothing.
+#define MOUNT_CACHE_MAX 8
+
+// Whether this mount can be released without pulling the ground from under
+// something that is using it. Two ways it can be in use:
+//
+//  - a File is open inside it, so its filesystem is still being read or
+//    written. Note the browser merely listing a directory does NOT hold a
+//    file open, which is why the recency rule below matters as much as this.
+//  - it hosts another mount: an image inside an image. Releasing the outer
+//    one would take the inner one's backing file with it.
+bool FileManager::is_mount_evictable(MountPoint *mp)
+{
+    FileSystem *fs = mp->get_embedded() ? mp->get_embedded()->getFileSystem() : NULL;
+    if (!fs) {
+        return false;
+    }
+    for (int i = 0; i < open_file_list.get_elements(); i++) {
+        File *f = open_file_list[i];
+        if (f && (f->get_file_system() == fs)) {
+            return false;
+        }
+    }
+    for (int i = 0; i < mount_points.get_elements(); i++) {
+        MountPoint *other = mount_points[i];
+        if (other && (other != mp) && other->get_file() &&
+            (other->get_file()->get_file_system() == fs)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// Release least-recently-used mounts until the cache is back within its bound.
+//
+// The cap is deliberately soft: if nothing is evictable we keep every mount
+// rather than break one that is in use. Exceeding the bound is a bounded waste;
+// freeing a filesystem out from under an open file is corruption.
+//
+// The mount the user is currently inside is the most recently used one, so
+// least-recently-used never selects it. It only becomes a candidate after
+// eight other images have been entered, which means navigating away from it.
+void FileManager::evict_mount_points(void)
+{
+    while (mount_points.get_elements() > MOUNT_CACHE_MAX) {
+        int victim = -1;
+        uint32_t oldest = 0;
+        for (int i = 0; i < mount_points.get_elements(); i++) {
+            MountPoint *mp = mount_points[i];
+            if (!mp || !is_mount_evictable(mp)) {
+                continue;
+            }
+            if ((victim < 0) || (mp->get_last_used() < oldest)) {
+                victim = i;
+                oldest = mp->get_last_used();
+            }
+        }
+        if (victim < 0) {
+            // Everything still in use. Keep them all and try again next time.
+            break;
+        }
+        printf("FileManager: releasing least recently used mount '%s'\n",
+               mount_points[victim]->get_path());
+        release_mount_point(mount_points[victim]);
+        mount_points.mark_for_removal(victim);
+        mount_points.purge_list();
+    }
+}
+
+
 MountPoint *FileManager::add_mount_point(SubPath *path, File *file, FileSystemInFile *emb)
 {
     printf("FileManager :: add_mount_point: (FS=%p, path='%s')\n", file->get_file_system(), path->get_path());
@@ -473,6 +1040,7 @@ MountPoint *FileManager::find_mount_point(SubPath *path, FileInfo *info)
     for (int i = 0; i < mount_points.get_elements(); i++) {
         if (mount_points[i]->match(info->fs, path)) {
             //printf("Found!\n");
+            mount_points[i]->touch(++mount_use_seq);
             unlock();
             return mount_points[i];
         }
@@ -487,15 +1055,23 @@ MountPoint *FileManager::find_mount_point(SubPath *path, FileInfo *info)
     FRESULT fr = info->fs->file_open(path->get_path(), flags, &file);
     if (fr == FR_OK) {
         path->get_root_path(file->get_path_reference());
+        note_managed_temp_open(file);
         emb = FileSystemInFile::getEmbeddedFileSystemFactory()->create(info);
         if (emb) {
             emb->init(file);
             if (emb->getFileSystem()) {
                 mp = add_mount_point(path, file, emb);
+                mp->touch(++mount_use_seq);
+                // Trim after adding, never before: the mount just created is
+                // the most recent, so it is never its own victim.
+                evict_mount_points();
             }
             else {
                 delete emb;
+                fclose(file);
             }
+        } else {
+            fclose(file);
         }
     } else {
         printf("FileManager -> can't open file %s to create mountpoint.%s\n", path->get_path(), FileSystem :: get_error_string(fr));
@@ -515,6 +1091,8 @@ FRESULT FileManager::delete_file_impl(PathInfo &pathInfo)
     fres = fs->file_delete(pathInfo.getPathFromLastFS());
     if (fres == FR_OK) {
         mstring work;
+        mstring full_path;
+        note_managed_temp_deleted(pathInfo.workPath.getTail(0, full_path));
         pathInfo.workPath.getHead(work);
         sendEventToObservers(eNodeRemoved, pathInfo.workPath.getSub(0, pathInfo.index - 1, work),
                 pathInfo.getFileName());
@@ -527,14 +1105,20 @@ FRESULT FileManager::delete_file(const char *pathname)
 {
     PathInfo pathInfo(rootfs);
     pathInfo.init(pathname);
-    return delete_file_impl(pathInfo);
+    lock();
+    FRESULT fres = delete_file_impl(pathInfo);
+    unlock();
+    return fres;
 }
 
 FRESULT FileManager::delete_file(Path *path, const char *name)
 {
     PathInfo pathInfo(rootfs);
     pathInfo.init(path, name);
-    return delete_file_impl(pathInfo);
+    lock();
+    FRESULT fres = delete_file_impl(pathInfo);
+    unlock();
+    return fres;
 }
 
 FRESULT FileManager::delete_recursive(Path *path, const char *name)
@@ -556,7 +1140,7 @@ FRESULT FileManager::delete_recursive(Path *path, const char *name)
             } else {
                 ret = get_dir_result;
             }
-            delete dirlist;
+            delete_directory_list(dirlist);
             path->cd("..");
         }
         // After recursive deletion, the dir should be empty.
@@ -619,9 +1203,11 @@ FRESULT FileManager::rename_impl(PathInfo &from, PathInfo &to)
         }
         fres = from.getLastInfo()->fs->file_rename(from.getPathFromLastFS(), to.getPathFromLastFS());
         if (fres == FR_OK) {
-            mstring work1, work2;
-            const char *from_path = from.getFullPath(work1, -1);
-            const char *to_path = to.getFullPath(work2, -1);
+            mstring from_file_path, to_file_path;
+            mstring from_dir_path, to_dir_path;
+            note_managed_temp_renamed(from.workPath.getTail(0, from_file_path), to.workPath.getTail(0, to_file_path));
+            const char *from_path = from.getFullPath(from_dir_path, -1);
+            const char *to_path = to.getFullPath(to_dir_path, -1);
             sendEventToObservers(eRefreshDirectory, from_path, "");
             if (strcmp(from_path, to_path) != 0) {
                 sendEventToObservers(eRefreshDirectory, to_path, "");
@@ -683,7 +1269,10 @@ FRESULT FileManager::create_dir(Path *path, const char *name)
         FileSystem *fs = pathInfo.getLastInfo()->fs;
         fres = fs->dir_create(pathInfo.getPathFromLastFS());
         if (fres == FR_OK) {
-            sendEventToObservers(eNodeAdded, path->get_path(), name);
+            // 'name' may carry a whole path, so the entry that was just
+            // created is the one to publish, not the caller's arguments.
+            mstring work;
+            sendEventToObservers(eNodeAdded, pathInfo.getFullPath(work, -1), pathInfo.getFileName());
         }
     }
     unlock();
@@ -728,7 +1317,7 @@ FRESULT FileManager::fcopy(const char *path, const char *filename, const char *d
                 else {
                     ret = get_dir_result;
                 }
-                delete dirlist;
+                delete_directory_list(dirlist);
             }
             else {
                 ret = dir_create_result;
@@ -747,15 +1336,18 @@ FRESULT FileManager::fcopy(const char *path, const char *filename, const char *d
                 uint8_t writeflags = (overwrite)? (FA_WRITE|FA_CREATE_ALWAYS) : (FA_WRITE|FA_CREATE_NEW);
                 ret = fopen(dp, dest_name, writeflags, &fo);
                 if (fo) {
-#if OS
-                    vTaskDelay(2); // since this might take long, we should give other tasks chance to poll the USB devices
-#endif
                     uint8_t *buffer = new uint8_t[32768];
                     uint32_t transferred, written;
                     do {
                         FRESULT frd_result = fi->read(buffer, 32768, &transferred);
+#if OS
+                        vTaskDelay(2); // since this might take long, we should give other tasks chance to poll the USB devices
+#endif
                         if (frd_result == FR_OK) {
                             FRESULT fwr_result = fo->write(buffer, transferred, &written);
+#if OS
+                            vTaskDelay(2); // since this might take long, we should give other tasks chance to poll the USB devices
+#endif
                             if (fwr_result != FR_OK) {
                                 ret = fwr_result;
                                 break;
@@ -808,7 +1400,7 @@ FRESULT FileManager :: load_file(const char *path, const char *filename, uint8_t
     return fres;
 }
 
-FRESULT FileManager :: save_file(bool overwrite, const char *path, const char *filename, uint8_t *mem, uint32_t len, uint32_t *transferred)
+FRESULT FileManager :: save_file(bool overwrite, const char *path, const char *filename, const uint8_t *mem, uint32_t len, uint32_t *transferred)
 {
     File *file = 0;
     uint8_t flag = FA_WRITE | (overwrite ? FA_CREATE_ALWAYS : FA_CREATE_NEW);

@@ -33,9 +33,20 @@ struct t_cfg_definition net_config[] = {
     { CFG_NET_STATUS,  CFG_TYPE_INFO,   "Status",                        "%s", NULL,       0, 32, (int)"" },
     { CFG_NET_CUR_IP,  CFG_TYPE_INFO,   "Active IP address",             "%s", NULL,       0, 32, (int)"" },
     { CFG_NET_MAC,     CFG_TYPE_INFO,   "Interface MAC",                 "%s", NULL,       0, 32, (int)"" },
+//     { CFG_NET_PCAP,    CFG_TYPE_FUNC,   "Write PCAP",      "-->", (const char **)NetworkInterface :: write_pcap, 0, 0, 0 },
     { CFG_TYPE_END,    CFG_TYPE_END,    "", "", NULL, 0, 0, 0 }
 };
 
+#include "userinterface.h"
+#include "pcap.h"
+
+void NetworkInterface :: write_pcap(UserInterface *intf, ConfigItem *it)
+{
+    char buffer[32] = { 0 };
+    intf->string_box("Give filename", buffer, 30);
+    extern Pcap pcap;
+    pcap.write_to_file(buffer);
+}
 
 /**
  * Initialization
@@ -164,6 +175,7 @@ NetworkInterface :: ~NetworkInterface()
 void NetworkInterface :: attach_config()
 {
 	register_store(0x4E657477, "Ethernet Settings", net_config);
+    cfg->set_sort_order(SORT_ORDER_CFG_ETH);
     cfg->set_change_hook(CFG_NET_DHCP_EN, dhcp_change);
     dhcp_change(cfg->find_item(CFG_NET_DHCP_EN));
 }
@@ -391,10 +403,19 @@ void NetworkInterface :: effectuate_settings(void)
  */
     if (my_net_if.state) { // is it initialized?
         if (netif_is_link_up(&my_net_if)) {
-            dhcp_stop(&my_net_if);
             if (dhcp_enable) {
-                dhcp_start(&my_net_if);
+                // Only start the client when it is not already running.
+                // dhcp_stop() clears the interface address, and lwIP aborts
+                // every connection bound to it, so stopping and starting a
+                // client that was already running dropped all of them for no
+                // change at all, including the request that asked for this:
+                // applying these settings over REST answered nothing, because
+                // the answer went out on a connection it had just aborted.
+                if (!netif_dhcp_data(&my_net_if)) {
+                    dhcp_start(&my_net_if);
+                }
             } else {
+                dhcp_stop(&my_net_if);
                 netif_set_addr(&my_net_if, &my_ip, &my_netmask, &my_gateway);
                 tcpip_callback((tcpip_callback_fn)set_dns_server_unsafe, &my_dns);
             }

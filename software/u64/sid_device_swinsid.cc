@@ -57,9 +57,10 @@ SidDeviceSwinSid :: SwinSidConfig :: SwinSidConfig(SidDeviceSwinSid *parent)
     this->parent = parent;
     uint32_t id = 0x5357494E + parent->socket; // SWIN
     char name[40];
-    sprintf(name, "SwinSID Ultimate in Socket %d", parent->socket + 1);
+    sprintf(name, "SID Socket %d: SwinSID Ultimate", parent->socket + 1);
 
     register_store(id, name, swin_sid_config);
+    cfg->set_sort_order(SORT_ORDER_CFG_SIDREP + parent->socket);
 
     // Make most settings 'hot' ;)
     cfg->set_change_hook(CFG_SWINSID_TYPE,    S_cfg_swinsid_type);

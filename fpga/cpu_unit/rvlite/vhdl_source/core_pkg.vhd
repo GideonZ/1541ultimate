@@ -23,7 +23,7 @@ package core_pkg is
     type t_alu_operation    is (ALU_ADDSUB, ALU_SH_LEFT, ALU_LESSTHAN, ALU_LESSTHAN_U, ALU_XOR, ALU_SH_RIGHT, ALU_OR, ALU_AND );
     type t_branch_condition is (BEQ, BNE, NOP, BRA, BLT, BGE, BLTU, BGEU);
     type t_src_type_b       is (ALU_SRC_REGB, ALU_SRC_IMM );
-    type t_reg_write_sel    is (WB_MEM, WB_ALU, WB_PC4, WB_CSR, WB_REL );
+    type t_reg_write_sel    is (WB_MEM, WB_ALU, WB_PC4, WB_CSR, WB_REL, WB_MUL_L, WB_MUL_H );
     type t_flow_ctrl        is (FL_NEXT, FL_JUMP, FL_COND);
     type t_flow_target      is (TRGT_REL, TRGT_MEM, TRGT_TRAP, TRGT_MEPC );
     type t_transfer_size    is (BYTE, HALFWORD, WORD, DOUBLE);
@@ -107,6 +107,7 @@ package core_pkg is
         do_jump             : std_logic;
         target_pc           : std_logic_vector(31 downto 0);
         alu_result          : std_logic_vector(31 downto 0);
+        mul_result          : std_logic_vector(63 downto 0);
         mem_transfer_size   : t_transfer_size;
         mem_read_sext       : std_logic;
         mem_offset          : std_logic_vector(1 downto 0);
@@ -124,6 +125,7 @@ package core_pkg is
         do_jump             => '0',
         target_pc           => X"00000000",
         alu_result          => X"00000000",
+        mul_result          => X"0000000000000000",
         mem_transfer_size   => BYTE,
         mem_read_sext       => '0',
         mem_offset          => "00",

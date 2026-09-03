@@ -108,13 +108,16 @@ void NetworkLWIP_WiFi :: getDisplayString(int index, char *buffer, int width)
 
 void NetworkLWIP_WiFi :: getSubItems(Browsable *parent, IndexedList<Browsable *> &list, int &error)
 {
-    wifi.getAccessPointItems(parent, list);
+    if (wifi.getAccessPointItems(parent, list) == 0) {
+        wifi.sendEvent(EVENT_RESCAN);
+    }
     error = 0;
 }
 
 void NetworkLWIP_WiFi :: attach_config()
 {
 	register_store(0x57494649, "WiFi settings", wifi_config);
+    cfg->set_sort_order(SORT_ORDER_CFG_WIFI);
     cfg->set_change_hook(CFG_NET_DHCP_EN, dhcp_change);
     dhcp_change(cfg->find_item(CFG_NET_DHCP_EN));
 }

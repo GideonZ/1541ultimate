@@ -33,6 +33,8 @@ begin
         mem_data           when WB_MEM,
         exec_i.pc_plus4    when WB_PC4,
         exec_i.rel_address when WB_REL,
+        exec_i.mul_result(31 downto 0) when WB_MUL_L,
+        exec_i.mul_result(63 downto 32) when WB_MUL_H,
         X"00000000" when others;
 
     wb_o.reg     <= exec_i.reg_rd;

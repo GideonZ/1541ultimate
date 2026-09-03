@@ -10,7 +10,7 @@ use work.dma_bus_pkg.all;
 
 entity ultimate_logic_32 is
 generic (
-	g_version		: unsigned(7 downto 0) := X"21";
+    g_version		: unsigned(7 downto 0) := X"24";
     g_simulation    : boolean := true;
     g_ultimate2plus : boolean := false;
     g_ultimate_64   : boolean := false;
@@ -34,6 +34,10 @@ generic (
     g_mm_drive      : boolean := true;
     g_hardware_gcr  : boolean := true;
     g_cartridge     : boolean := true;
+    g_ram_base_cart : std_logic_vector(27 downto 0) := X"0EF0000"; -- should be on a 64K boundary
+    g_rom_base_cart : std_logic_vector(27 downto 0) := X"0F00000"; -- should be on a 1M boundary
+    g_kernal_base   : std_logic_vector(27 downto 0) := X"0EA8000"; -- should be on a 32K boundary 
+    g_max_cart_bits : natural := 20; -- 1 MB is standard
     g_register_addr : boolean := false;
     g_eeprom        : boolean := true;
     g_command_intf  : boolean := true;
@@ -259,6 +263,7 @@ port (
     -- Buttons
     bling_irq       : in  std_logic := '0';
     hdmi_irq        : in  std_logic := '0';
+    unlock_irq      : in  std_logic := '0';
     emulated_freeze : in  std_logic := '0';
     emulated_menu   : in  std_logic := '0';
     emulated_reset  : in  std_logic := '0';
@@ -328,8 +333,8 @@ architecture logic of ultimate_logic_32 is
 
     constant c_tag_slot          : std_logic_vector(7 downto 0) := X"09";
     constant c_tag_reu           : std_logic_vector(7 downto 0) := X"0A";
-    constant c_tag_usb2          : std_logic_vector(7 downto 0) := X"0B";
     constant c_tag_rmii          : std_logic_vector(7 downto 0) := X"0E"; -- and 0F
+    constant c_tag_usb2          : std_logic_vector(7 downto 0) := X"14"; -- Needs 4 consecutive tags 
     constant c_tag_wifi_tx       : std_logic_vector(7 downto 0) := X"1E";
     constant c_tag_wifi_rx       : std_logic_vector(7 downto 0) := X"1F";
 
@@ -521,7 +526,7 @@ begin
         irq_high(3) => sys_irq_wifi,
         irq_high(4) => bling_irq,
         irq_high(5) => hdmi_irq,
-        irq_high(6) => '0',
+        irq_high(6) => unlock_irq,
         irq_high(7) => guru_irq,
         irq_in(7)   => c64_reset_in,
         irq_in(6)   => sys_irq_eth_tx,
@@ -842,9 +847,10 @@ begin
             g_tag_slot      => c_tag_slot,
             g_tag_reu       => c_tag_reu,
             g_ram_base_reu  => X"1000000", -- should be on 16M boundary, or should be limited in size
-            g_rom_base_cart => X"0F00000", -- should be on a 1M boundary
-            g_ram_base_cart => X"0EF0000", -- should be on a 64K boundary
-            g_kernal_base   => X"0EA8000", -- should be on a 32K boundary
+            g_rom_base_cart => g_rom_base_cart, -- should be on a 1M boundary
+            g_ram_base_cart => g_ram_base_cart, -- should be on a 64K boundary
+            g_kernal_base   => g_kernal_base, -- should be on a 32K boundary
+            g_max_cart_bits => g_max_cart_bits,
             g_register_addr => g_register_addr,
             g_big_endian    => g_big_endian,
             g_cartreset_init=> g_cartreset_init,

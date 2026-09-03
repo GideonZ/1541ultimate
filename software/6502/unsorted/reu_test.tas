@@ -27,12 +27,77 @@ reu_ctrl_fixc64  = $80
 reu_ctrl_fixreu  = $40
 reu_ctrl_fixboth = $C0
 
+iter    .byte $00
+
+; The hardware E2E suite in tests/e2e/io/c64 assembles this same file with
+; -D E2E=1. With no define the guarded blocks below emit no bytes, so the build
+; for VICE and for the nvc simulation is byte for byte the one that was here
+; before them. What the define adds is the two things a run on real hardware,
+; driven over REST, needs and a simulation must not have:
+;
+;   - a wait for the CPU and REU slowdown the machine applies for the first
+;     seconds after a reset. runners:run_prg resets, loads and starts in one
+;     step, so without the wait the rounds run at 1 MHz, which is the one speed
+;     at which the defect this program tests cannot appear. It has no place in
+;     the simulation build: the slowdown does not exist there, and five seconds
+;     of frames is not worth simulating.
+;   - a result block in RAM. $D7FF is the VICE convention and is a SID register
+;     mirror on real hardware, so a write to it cannot be read back;
+;     machine:readmem reads RAM, not I/O.
+;
+        .weak
+E2E     = 0
+        .endweak
+
+        .if E2E
+STATUS   = $C000                ; 0 running, 1 all rounds matched, 2 mismatch
+READY    = $C001                ; $A5 once the program is running
+ROUND    = $C002                ; the round that failed
+INDEX    = $C003                ; the byte index within it that failed
+EXPECT   = $C004                ; what that byte should have been
+RUNNING  = $C005                ; $A5 once the settle wait is over, so that the
+                                ; host times the rounds and not the wait
+SETTLE_FRAMES = 250             ; 5.0s on PAL, 4.2s on NTSC
+SETTLE_LINE   = $80             ; a raster line both have, reached once a frame
+        .endif
+
 start   sei
 
+        .if E2E
+        lda #$00
+        sta STATUS
+        sta RUNNING
+        lda #$A5
+        sta READY
+        ; Counted in frames, so the wait costs the same wall clock however fast
+        ; the CPU is running. Named labels, so that the anonymous ones the rest
+        ; of the program branches to keep resolving as they did.
+        ldx #SETTLE_FRAMES
+e2e_frame
+        lda #SETTLE_LINE
+e2e_before
+        cmp $d012
+        bne e2e_before
+e2e_during
+        cmp $d012
+        beq e2e_during
+        dex
+        bne e2e_frame
+        lda #$A5
+        sta RUNNING
+        .endif
+
+        lda #$3F
+-       cmp $d012
+        lda #$40
+-       cmp $d012
+        bne -
+
     ; fill screen
-        ldx #$00
+nextiter ldx #$00
 -       txa
-        eor #$ff
+        clc
+        adc iter        
         sta $0400,x
         sta $0500,x
         sta $0600,x
@@ -40,7 +105,7 @@ start   sei
         inx
         bne -
 
-    ; setup reu 
+    ; setup reu for copy to REU
         lda #$00
         sta reu_reubase_l
         sta reu_reubase_m
@@ -50,37 +115,11 @@ start   sei
         lda #$04
         sta reu_translen_h
         sta reu_c64base_h
-
-        lda #$40
--       cmp $d012
-        bne -
 
         lda #reu_ctrl_nofix
         sta reu_control
         lda #reu_mode_toreu
         sta reu_command
-
-
-    ; setup reu for copy back 
-        lda #$00
-        sta reu_reubase_l
-        sta reu_reubase_h
-        sta reu_translen_l
-        sta reu_c64base_l
-        lda #$04
-        sta reu_reubase_m
-        sta reu_translen_h
-        sta reu_c64base_h
-
-        lda #$40
--       cmp $d012
-        bne -
-
-        lda #reu_ctrl_nofix
-        sta reu_control
-        lda #reu_mode_toc64
-        sta reu_command
-
 
     ; setup reu for copy back 
         lda #$00
@@ -103,7 +142,8 @@ start   sei
 
         ldx #$00
 -       txa
-        eor #$ff
+        clc
+        adc iter
         cmp $1400,x
         bne error
         cmp $1500,x
@@ -115,31 +155,32 @@ start   sei
         inx
         bne -
         
+        inc iter
+        beq done
+        jmp nextiter
+
+done    lda #$00
+        sta $d7ff
+        .if E2E
+        lda #$01
+        sta STATUS
+        .endif
         lda #$05
 -       sta $d020
-
-
-    ; setup reu for copy back 
-        lda #$00
-        sta reu_reubase_l
-        sta reu_reubase_m
-        sta reu_reubase_h
-        sta reu_translen_l
-        sta reu_c64base_l
-        lda #$01
-        sta reu_translen_h
-        lda #$d8
-        sta reu_c64base_h
-
-        lda #reu_ctrl_nofix
-        sta reu_control
-        lda #reu_mode_toc64
-        sta reu_command
-
-
         cli
         rts
 
-error   lda #$02
+error
+        .if E2E
+        ; A holds the byte that should have been there and X the index it was
+        ; at; iter is the round. Recorded before the store below clobbers A.
+        stx INDEX
+        sta EXPECT
+        lda iter
+        sta ROUND
+        lda #$02
+        sta STATUS
+        .endif
+        lda #$02
+        sta $d7ff
         bne -
-        

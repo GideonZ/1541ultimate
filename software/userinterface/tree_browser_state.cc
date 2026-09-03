@@ -180,6 +180,10 @@ void TreeBrowserState :: update_selected(void)
 {
     if(!under_cursor)
         return;
+    // release_host() deletes the window while this object lives on, so there may
+    // be nothing to draw on. draw() and do_refresh() guard this the same way.
+    if(!browser->window)
+        return;
 
     char buffer[96];
 
@@ -234,8 +238,9 @@ void TreeBrowserState :: down(int num)
 void TreeBrowserState :: reload(void)
 {
 	cleanup();
-	int error;
+	int error = 0;
 	children = node->getSubItems(error);
+    browser->prepend_headers();
 	printf("State %s reloaded. # of children = %d\n", node->getName(), children->get_elements());
 	needs_reload = false;
 	refresh = true;
@@ -248,7 +253,7 @@ void TreeBrowserState :: into(void)
 
 	deeper = new TreeBrowserState(under_cursor, browser, level+1);
 
-	int error;
+	int error = 0;
 	deeper->children = under_cursor->getSubItems(error);
     if(error < 0) {
     	delete deeper;
@@ -260,6 +265,7 @@ void TreeBrowserState :: into(void)
 	//user_interface->set_path(under_cursor);
     browser->state = deeper;
     deeper->previous = this;
+    browser->prepend_headers();
 }
 
 bool TreeBrowserState :: into2(void)
@@ -270,9 +276,8 @@ bool TreeBrowserState :: into2(void)
 
 	deeper = new TreeBrowserState(under_cursor, browser, level+1);
 
-    int error;
+    int error = 0;
 	deeper->children = under_cursor->getSubItems(error);
-
     if(error < 0) {
     	delete deeper;
     	deeper = NULL;
@@ -283,6 +288,7 @@ bool TreeBrowserState :: into2(void)
 
     browser->state = deeper;
     deeper->previous = this;
+    browser->prepend_headers();
 	return false;
 }
 
@@ -317,6 +323,7 @@ void TreeBrowserState :: into3(const char* name)
     
     browser->state = deeper;
     deeper->previous = this;
+    browser->prepend_headers();
 }
 
 void TreeBrowserState :: level_up(void)
@@ -373,6 +380,10 @@ void TreeBrowserState :: move_to_index(int idx)
 
 //	if((first_item_on_screen + selected_line)==idx) // duh!
 //        return;
+	// No window means no geometry to lay the cursor out against; see draw().
+	if(!browser->window)
+		return;
+
 	int previous_first_item_on_screen = first_item_on_screen;
 	int previous_selected = selected_line;
 

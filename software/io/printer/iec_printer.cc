@@ -354,7 +354,8 @@ IecPrinter::IecPrinter() : SubSystem(SUBSYSID_PRINTER)
 
     /* Create printer settings page in F2 menu */
     register_store(0x4d505300, "Printer Settings", iec_printer_config);
-
+    cfg->set_sort_order(SORT_ORDER_CFG_PRINTER);
+    
     /* Initial values */
     output_filename = NULL;
     f = NULL;

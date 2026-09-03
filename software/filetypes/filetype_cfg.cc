@@ -51,7 +51,7 @@ FileTypeCfg :: ~FileTypeCfg()
 
 int FileTypeCfg :: fetch_context_items(IndexedList<Action *> &list)
 {
-    list.append(new Action("Load Settings", FileTypeCfg :: execute_st, 0, (int)this));
+    list.append(new Action("Load Settings", ConfigIO :: S_load_and_effectuate, 0, 0));
     return 1;
 }
 
@@ -61,49 +61,4 @@ FileType *FileTypeCfg :: test_type(BrowsableDirEntry *obj)
     if(strcmp(inf->extension, "CFG")==0)
         return new FileTypeCfg(obj);
     return NULL;
-}
-
-// static member
-SubsysResultCode_e FileTypeCfg :: execute_st(SubsysCommand *cmd)
-{
-	return ((FileTypeCfg *)cmd->mode)->execute(cmd);
-}
-
-// non-static member
-SubsysResultCode_e FileTypeCfg :: execute(SubsysCommand *cmd)
-{
-	File *file = 0;
-
-    FileManager *fm = FileManager :: getFileManager();
-    FRESULT fres = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ, &file);
-    StreamTextLog log(8192);
-
-    if(file) {
-        bool ok = ConfigIO :: S_read_from_file(file, &log);
-        fm->fclose(file);
-        if (ok) {
-            cmd->user_interface->popup("Loading configuration successful!", BUTTON_OK);
-        } else {
-            cmd->user_interface->popup("There were errors.", BUTTON_OK);
-            cmd->user_interface->run_editor(log.getText(), log.getLength());
-        }
-        ConfigStore *s;
-        ConfigManager *cm = ConfigManager :: getConfigManager();
-        IndexedList<ConfigStore*> *stores = cm->getStores();
-        for(int n = 0; n < stores->get_elements();n++) {
-            s = (*stores)[n];
-            if (s->need_effectuate()) {
-                printf("Effectuating settings of store '%s' after loading.\n", s->get_store_name());
-                s->effectuate();
-                s->set_effectuated();
-            } else {
-                printf("Store '%s' is clean after loading.\n", s->get_store_name());
-            }
-        }
-    } else {
-        printf("Error opening file.\n");
-        cmd->user_interface->popup(FileSystem :: get_error_string(fres), BUTTON_OK);
-        return SSRET_CANNOT_OPEN_FILE;
-    }
-    return SSRET_OK;
 }

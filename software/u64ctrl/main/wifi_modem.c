@@ -29,10 +29,48 @@
 #include "rpc_dispatch.h"
 #include "wifi_modem.h"
 #include "pinout.h"
+#include "power_state.h"
+#include "button_handler.h"
+#include "wol_magic.h"
 
 #define NET_CMD_BUFSIZE 512
 
 static const char *TAG = "raw_bridge";
+
+/* Reconnecting after the link drops.
+ *
+ * WIFI_EVENT_STA_DISCONNECTED only records that we are no longer associated;
+ * nothing here used to act on it, and the connector task below idled in
+ * Disconnected until the Ultimate asked it to do something. An access point
+ * rebooting, or deauthenticating a client it considers idle, therefore took
+ * the machine off the network until it was power cycled. The same applies at
+ * startup: if no known AP answers, StoredAPs falls through to Disconnected and
+ * stays there, so a device booted while its AP is down never connects.
+ *
+ * Retries start soon enough to ride out a brief outage and back off to a
+ * minute so a genuinely absent AP is not hammered. */
+#define WIFI_RETRY_MIN_MS  5000
+#define WIFI_RETRY_MAX_MS 60000
+
+/* Set when the *user* asked to disconnect, so that request is not undone a few
+ * seconds later. esp_wifi_disconnect() produces the same event as a dropped
+ * link, so intent is the only thing that tells the two apart.
+ *
+ * Only an incoming request clears it -- see handle_connect_command() -- and
+ * never the retry ladder, which reaches attempt_connect() through
+ * wifi_connect_to_scanned() and wifi_connect_to_stored(). Clearing it down
+ * there would let a retry that is already under way erase a disconnect the
+ * user asked for a moment later.
+ *
+ * Written by the dispatcher task, read by the connector task, so volatile:
+ * the read below sits in a loop that the compiler would otherwise be free to
+ * hoist it out of. */
+static volatile bool user_disconnected = false;
+
+void wifi_note_user_disconnect(void)
+{
+    user_disconnected = true;
+}
 
 // Allocate some buffers to work with
 command_buf_context_t work_buffers;
@@ -93,6 +131,79 @@ static err_t hacked_tx(struct netif *netif, struct pbuf *pbuf, const struct ip4_
 {
     //pbuf_free(pbuf);
     return ERR_OK;
+}
+
+
+/* Wake on Wi-Fi.
+ *
+ * While the machine is off, the only thing on the network is this module, on
+ * its own lwIP. Frames arrive through netif->input, the slot hacked_recv holds
+ * while the machine is on, so that is where a magic packet is watched for. The
+ * frame is always handed on to the stack that was there, which keeps the
+ * association, the DHCP lease and SNTP alive and answers the ARP a unicast
+ * magic packet needs.
+ *
+ * Only Wi-Fi can do this: the wired PHY sits in the FPGA power domain, which is
+ * down with the machine.
+ *
+ * Written from the button handler's task, read in the frame path, so volatile. */
+static volatile bool wake_armed = false;
+
+/* The last known machine state, so a netif whose input slot was reset can be
+ * watched again without the button handler saying so twice. */
+static volatile int wake_machine_on = 1;
+
+static err_t wake_watch_recv(struct pbuf *p, struct netif *inp)
+{
+    if (wake_armed) {
+        // Static: 256 bytes is too much for the receive task's stack, and
+        // netif->input is called from that one task, so one buffer is enough.
+        static uint8_t frame[WOL_SCAN_BYTES];
+        // pbuf_copy_partial() flattens a chain and clamps to what is there.
+        const uint16_t got = pbuf_copy_partial(p, frame, sizeof(frame), 0);
+        if (wol_is_magic_packet(frame, got, inp->hwaddr)) {
+            ESP_LOGI(TAG, "Magic packet received; switching the machine on.");
+            // Disarmed only once the event is queued: the post does not
+            // block, and wake tools repeat the packet, so a failed post is
+            // exactly when staying armed saves the wake.
+            if (extern_button_event(BUTTON_ON) == pdTRUE) {
+                wake_armed = false;
+            } else {
+                ESP_LOGW(TAG, "Could not post the wake; staying armed for the next packet.");
+            }
+        }
+    }
+    return default_input(p, inp);
+}
+
+/* Called on every power transition and once at startup, with the state the
+ * machine is now in. Reads the setting each time. */
+void wake_on_wifi_update(int machine_on)
+{
+    wake_machine_on = machine_on;
+    if (!my_sta_netif) {
+        return;
+    }
+    struct netif *lw = ((struct esp_netif_obj *)my_sta_netif)->lwip_netif;
+    if (!lw) {
+        return;
+    }
+
+    // No watching before wifi_init() has recorded default_input. The decision
+    // lives in power_state.c, where a host build can reach it.
+    if (power_should_watch_for_wake(machine_on, default_input != NULL)) {
+        wake_armed = true;
+        lw->input = wake_watch_recv;
+        ESP_LOGI(TAG, "Wake on Wi-Fi armed.");
+        return;
+    }
+
+    wake_armed = false;
+    // Only our own watcher is removed: while the machine is on, that slot
+    // belongs to the application's hacked_recv.
+    if (lw->input == wake_watch_recv) {
+        lw->input = default_input;
+    }
 }
 
 
@@ -166,6 +277,14 @@ static void wifi_event_handler(void *esp_netif, esp_event_base_t base, int32_t e
 
     uint8_t evcode = 0;
     switch(event_id) {
+        case WIFI_EVENT_STA_START:
+            // Attaching the lwIP netif resets netif->input, so a machine that
+            // is off is watched again from here. One that is on is left alone:
+            // that slot then belongs to the application's own hook.
+            if (!wake_machine_on) {
+                wake_on_wifi_update(0);
+            }
+            break;
         case WIFI_EVENT_STA_DISCONNECTED:
             evcode = EVENT_DISCONNECTED;
             cev.event_code = evcode;
@@ -684,13 +803,18 @@ int handle_connect_command(ConnectCommand_t *cmd, ConnectState_t *state)
                 my_uart_transmit_packet(UART_NUM_1, buf);
             }
             break;
+        // A request to connect -- from the menu or from the Ultimate at boot --
+        // means the user wants to be on the network, so any earlier explicit
+        // disconnect is spent. Scanning is not such a request and leaves it be.
         case CMD_WIFI_AUTOCONNECT:
+            user_disconnected = false;
             err = enable_wifi_if_needed(*state);
             if (err == ESP_OK) {
                 *state = LastAP;
             }
             return 1;
         case CMD_WIFI_CONNECT:
+            user_disconnected = false;
             err = enable_wifi_if_needed(*state);
             {
                 last_connect = *cmd;
@@ -728,9 +852,30 @@ void connect_thread(void *a)
     ConnectCommand_t connect_command;
     ConnectState_t state = LastAP;
     ConnectState_t prev = LastAP;
+    int retry_delay_ms = WIFI_RETRY_MIN_MS;
     esp_err_t err;
 
     while(1) {
+        // A disconnect the user asked for can arrive while the ladder is
+        // already walking, and the ladder cannot notice: every state below
+        // blocks on connect_events until its current attempt resolves. Testing
+        // the flag only where the retry timer is armed is therefore not
+        // enough -- an attempt that was already in flight goes on to succeed
+        // and puts the link back up seconds after the user asked for it down.
+        //
+        // So check here, between states, which is the one point the ladder
+        // passes through with nothing in flight. An attempt that landed in the
+        // meantime has to be undone rather than prevented; it had already been
+        // accepted by the time the request arrived. Disabled is left alone:
+        // the radio is off, so there is nothing to undo or to retry.
+        if (user_disconnected && (state != Disconnected) && (state != Disabled)) {
+            if (connected_g) {
+                ESP_LOGI(TAG, "Disconnect requested while reconnecting; undoing.");
+                esp_wifi_disconnect();
+            }
+            state = Disconnected;
+        }
+
         switch (state) {
             case LastAP:
                 err = wifi_connect_to_last();
@@ -804,7 +949,27 @@ void connect_thread(void *a)
                 // is set and there is nothing in the queue, because the semaphore was set before and
                 // we didn't take it. However, in this case we simply check two queues and are back in
                 // the waiting state afterwards; no harm done.
-                xSemaphoreTake(connect_semaphore, portMAX_DELAY);
+                //
+                // Connected waits indefinitely, because something else has to
+                // happen first. Disconnected does not: nothing is coming unless
+                // we go and ask, so the wait is bounded and a timeout means it
+                // is time to try again. Disabled has its own case below and is
+                // left alone -- the radio is off, so there is nothing to retry.
+                if (state == Connected) {
+                    retry_delay_ms = WIFI_RETRY_MIN_MS;
+                }
+                if (xSemaphoreTake(connect_semaphore,
+                                   (state == Connected) || user_disconnected
+                                       ? portMAX_DELAY
+                                       : pdMS_TO_TICKS(retry_delay_ms)) == pdFALSE) {
+                    ESP_LOGI(TAG, "Still disconnected after %d ms; trying again.", retry_delay_ms);
+                    retry_delay_ms *= 2;
+                    if (retry_delay_ms > WIFI_RETRY_MAX_MS) {
+                        retry_delay_ms = WIFI_RETRY_MAX_MS;
+                    }
+                    state = LastAP;
+                    break;
+                }
                 if (xQueueReceive(connect_commands, &connect_command, 0) == pdTRUE) {
                     if (handle_connect_command(&connect_command, &state)) {
                         break;
@@ -882,4 +1047,12 @@ void setup_modem()
     ESP_ERROR_CHECK( uart_set_pin(UART_NUM_0, 0, -1, -1, -1));
     ESP_ERROR_CHECK( uart_set_pin(UART_NUM_1, IO_UART_TXD, IO_UART_RXD, IO_UART_RTS, IO_UART_CTS));
     start_dispatch(work_buffers.receivedQueue);
+}
+
+void show_buffer_status()
+{
+    ESP_LOGI(TAG, "Packets in Tx Free queue: %d", uxQueueMessagesWaiting(work_buffers.freeTxQueue));
+    ESP_LOGI(TAG, "Packets in Rx Free queue: %d", uxQueueMessagesWaiting(work_buffers.freeRxQueue));
+    ESP_LOGI(TAG, "Packets in Tx queue: %d", uxQueueMessagesWaiting(work_buffers.transmitQueue));
+    ESP_LOGI(TAG, "Packets in Received queue: %d", uxQueueMessagesWaiting(work_buffers.receivedQueue));
 }

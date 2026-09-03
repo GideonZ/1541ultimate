@@ -13,7 +13,7 @@ static const char hexchar[] = "0123456789ABCDEF";
 static int
 _cvt(int val, char *buf, int radix, const char *digits, int leading_zeros, int width, bool signd)
 {
-    char temp[80];
+    char temp[16];
     char *cp = temp;
     int length = 0;
 
@@ -80,9 +80,9 @@ _bin(int val, char *buf, int len)
 
 
 extern "C" int
-_my_vprintf(void (*putc)(char c, void **param), void **param, const char *fmt, va_list ap)
+_my_vnprintf(void (*putc)(char c, void **param), void **param, size_t maxlen, const char *fmt, va_list ap)
 {
-    char buf[128];
+    char buf[32];
     char c;
     const char *cp=buf;
     long long val = 0;
@@ -93,7 +93,7 @@ _my_vprintf(void (*putc)(char c, void **param), void **param, const char *fmt, v
 #ifdef FP_SUPPORT
     float fval, rem;
 #endif
-    while ((c = *fmt++) != '\0') {
+    while (((c = *fmt++) != '\0') && (res < maxlen)) {
         if (c == '%') {
             c = *fmt++;
             leading_zeros = (c == '0')?1:0;
@@ -163,9 +163,11 @@ _my_vprintf(void (*putc)(char c, void **param), void **param, const char *fmt, v
                     length = width; // truncate
                 break;
             case 'c':
-                c = va_arg(ap, int /*char*/);
-                (*putc)(c, param);
-                res++;
+                if (res < maxlen) {
+                    c = va_arg(ap, int /*char*/);
+                    (*putc)(c, param);
+                    res++;
+                }
                 continue;
             case 'p': // pointer
                 addr = va_arg(ap, int);
@@ -195,30 +197,38 @@ _my_vprintf(void (*putc)(char c, void **param), void **param, const char *fmt, v
                 cp = buf;
                 break;
             default:
-                (*putc)('%', param);
-                (*putc)(c, param);
-                res += 2;
+                if (res < maxlen-1) {
+                    (*putc)('%', param);
+                    (*putc)(c, param);
+                    res += 2;
+                }
                 continue;
             }
-            while (prepad-- > 0) {
+            while ((prepad-- > 0) && (res < maxlen)) {
                 (*putc)(' ', param);
                 res++;
             }    
-            while (length-- > 0) {
+            while ((length-- > 0) && (res < maxlen)) {
                 c = *cp++;
                 (*putc)(c, param);
                 res++;
             }
-            while (postpad-- > 0) {
+            while ((postpad-- > 0) && (res < maxlen)) {
                 (*putc)(' ', param);
                 res++;
             }    
-        } else {
+        } else if (res < maxlen) {
             (*putc)(c, param);
             res++;
         }
     }
     return (res);
+}
+
+extern "C" int
+_my_vprintf(void (*putc)(char c, void **param), void **param, const char *fmt, va_list ap)
+{
+    return _my_vnprintf(putc, param, 9999, fmt, ap);
 }
 
 // Default wrapper function used by diag_printf
@@ -268,6 +278,34 @@ extern "C" int sprintf(char *str, const char *fmt, ...)
     ret = _my_vprintf(_string_write_char, (void **)&pnt, fmt, ap);
     _string_write_char(0, (void **)&pnt);
     va_end(ap);
+    return (ret);
+}
+
+extern "C" int snprintf(char *str, size_t size, const char *fmt, ...)
+{
+    va_list ap;
+    int ret;
+	char *pnt = str;
+	
+    va_start(ap, fmt);
+    /* size==0: write nothing (size-1 would underflow to a huge maxlen and the
+       NUL below would write past a zero-length buffer). */
+    ret = _my_vnprintf(_string_write_char, (void **)&pnt, size ? size - 1 : 0, fmt, ap);
+    if (size) {
+        _string_write_char(0, (void **)&pnt);
+    }
+    va_end(ap);
+    return (ret);
+}
+
+extern "C" int vsnprintf(char *str, size_t size, const char *fmt, va_list ap)
+{
+    char *pnt = str;
+    /* size==0: write nothing (see snprintf above). */
+    int ret = _my_vnprintf(_string_write_char, (void **)&pnt, size ? size - 1 : 0, fmt, ap);
+    if (size) {
+        _string_write_char(0, (void **)&pnt);
+    }
     return (ret);
 }
 

@@ -5,13 +5,15 @@ ARCHITECTURE = riscv
 # CPU architecture and ABI
 MARCH ?= rv32i
 MABI  ?= ilp32
+PRODFAMILY = U64MK2
+#PRODNAME   = Ultimate\ 64-II
 
 include ../../../common/environment.mk
 
 FPGA_PATH ?= $(PATH_SW)/../external
 
 PRJ      =  update
-FINAL    =  $(RESULT)/$(PRJ).app $(RESULT)/$(PRJ).elf $(OUTPUT)/$(PRJ).sim
+FINAL    =  $(RESULT)/$(PRJ).cfw $(RESULT)/$(PRJ).app $(RESULT)/$(PRJ).elf $(OUTPUT)/$(PRJ).sim
 
 SRCS_C   =	itu.c \
 			dump_hex.c \
@@ -101,6 +103,7 @@ VPATH +=	$(PATH_SW)/6502/sidcrt/target
 VPATH +=	$(PATH_SW)/u64
 VPATH +=    $(PATH_SW)/application/update_u2p
 VPATH +=    $(PATH_SW)/../html
+VPATH +=    $(PATH_SW)/../doc/api
 VPATH +=	$(PATH_SW)/u64ctrl/main
 VPATH +=	$(PATH_SW)/u64ctrl/build/bootloader
 VPATH +=	$(PATH_SW)/u64ctrl/build/partition_table
@@ -116,14 +119,16 @@ SRCS_6502 =
 
 SRCS_BIN =  chars.bin 1541.bin 1571.bin 1581.bin snds1541.bin snds1571.bin snds1581.bin bootloader.bin partition-table.bin u64ctrl.bin
 
-SRCS_HTML = index.html
+SRCS_HTML = index.html api.html
+SRCS_YAML = rest_api_openapi_u64.yaml
 
 SRCS_IEC = 
 
 SRCS_NANO = nano_minimal.nan
 
 PATH_INC =  $(addprefix -I, $(VPATH))
-OPTIONS  = -g -ffunction-sections -DRISCV -Os -DOS -DUSB2513 -DRISC=1 -DSAFEMODE=1 -DIOBASE=0x10000000 -DU2P_IO_BASE=0x10100000 -DCLOCK_FREQ=100000000 -DU64=2 -Wno-write-strings -fdata-sections -nostartfiles -mno-fdiv -DRECOVERYAPP=1
+OPTIONS  = -march=$(MARCH) -mabi=$(MABI) -gdwarf-2 -ffunction-sections -DRISCV -Os -DOS -DUSB2513 -DRISC=1 -DSAFEMODE=1 -DIOBASE=0x10000000 -DU2P_IO_BASE=0x10100000
+OPTIONS += -DCLOCK_FREQ=100000000 -DU64=2 -Wno-write-strings -fdata-sections -nostartfiles -mno-fdiv -DRECOVERYAPP=1
 COPTIONS = $(OPTIONS) -std=gnu99
 CPPOPT   = $(OPTIONS) -std=gnu++11 -fno-exceptions -fno-rtti -fno-threadsafe-statics -fpermissive
 LINK 	 = linker.x
@@ -135,12 +140,19 @@ LINKMETHOD = ld
 include ../../../common/rules.mk
 
 
-u64.swp: $(FPGA_PATH)/u64_mk2_artix.bit
+u64e2_50t.swp: $(FPGA_PATH)/u64e2_50t.bit
+	cp $< $(OUTPUT)/$(@F)
+
+u64e2_100t.swp: $(FPGA_PATH)/u64e2_100t.bit
 	cp $< $(OUTPUT)/$(@F)
 
 #$(SWAP) -h $< $(OUTPUT)/u64.swp 220000 
 	 
-u64.chk: u64.swp
+u64e2_50t.chk: u64e2_50t.swp
+	@echo Calculating checksum of $< binary to $(@F)..
+	@$(CHECKSUM) $(OUTPUT)/$(<F) $(OUTPUT)/$(@F)
+
+u64e2_100t.chk: u64e2_100t.swp
 	@echo Calculating checksum of $< binary to $(@F)..
 	@$(CHECKSUM) $(OUTPUT)/$(<F) $(OUTPUT)/$(@F)
 
@@ -148,13 +160,13 @@ ultimate.chk: ../ultimate/result/ultimate.app
 	@echo Calculating checksum of $< binary to $(@F)..
 	@$(CHECKSUM) $< $(OUTPUT)/$(@F)
 
-update_binaries_u64ii.o: u64.swp ../ultimate/result/ultimate.app
+update_binaries_u64ii.o: u64e2_50t.swp u64e2_100t.swp ../ultimate/result/ultimate.app
 
 ../ultimate/result/ultimate.app::
 	make -C ../ultimate
 
-update_u64ii.o: update_u64ii.cc $(INCLUDES) $(CHK_BIN) ultimate.chk u64.chk
+update_u64ii.o: update_u64ii.cc $(INCLUDES) $(CHK_BIN) ultimate.chk u64e2_50t.chk u64e2_100t.chk
 	@echo "Compiling $(notdir $<)"
-	@cat $(addprefix $(OUTPUT)/,$(CHK_BIN)) $(OUTPUT)/ultimate.chk $(OUTPUT)/u64.chk >$(OUTPUT)/checksums.h
+	@cat $(addprefix $(OUTPUT)/,$(CHK_BIN)) $(OUTPUT)/ultimate.chk $(OUTPUT)/u64e2_50t.chk $(OUTPUT)/u64e2_100t.chk >$(OUTPUT)/checksums.h
 	@$(CPP) $(CPPOPT) $(PATH_INC) -B. -c -Wa,-ahlms=$(OUTPUT)/$(@:.o=.lst) -o $(OUTPUT)/$(@F) $<
 

@@ -6,6 +6,7 @@
 #include <string.h>
 
 typedef enum {
+    MENU_DONE = 1,  // Modal window operation is complete and user "OK'ed"
     MENU_NOP = 0,
     MENU_HIDE = -1,
     MENU_EXIT = -2,
@@ -46,7 +47,7 @@ class UserInterface
 public:
     UserInterface(const char *title)
     {
-        printf("Welcome to the User Interface '%s'. This is a dummy!\n", title);
+        // printf("Welcome to the User Interface '%s'. This is a dummy!\n", title);
     };
     virtual ~UserInterface() { }
 
@@ -67,6 +68,16 @@ public:
         printf("%s\n> ", msg);
         fgets(buffer, maxlen, stdin);
         return strlen(buffer);
+    } // blocking
+
+    int  string_box(const char *msg, char *buffer, int maxlen, bool)
+    {
+        return string_box(msg, buffer, maxlen);
+    } // blocking
+
+    int  string_box(const char *msg, char *buffer, int maxlen, bool, bool)
+    {
+        return string_box(msg, buffer, maxlen);
     } // blocking
 
     void show_progress(const char *msg, int steps) {} // not blocking

@@ -14,6 +14,7 @@
 #include "u64.h"
 #include "c1541.h"
 #include "endianness.h"
+#include "monitor_init.h"
 #if U64 == 2
 #include "wifi.h"
 #endif
@@ -29,6 +30,36 @@
 /* other external references */
 extern uint8_t _bootcrt_65_start;
 extern uint8_t _bootcrt_65_end;
+
+static bool contains_path_separator(const char *name)
+{
+    while (*name) {
+        if ((*name == '/') || (*name == '\\')) {
+            return true;
+        }
+        name++;
+    }
+    return false;
+}
+
+// Returns either the name itself, or a trimmed copy in the caller's buffer.
+// Plain names are passed on untouched: CbmFileName cuts them to 16 PETSCII
+// characters itself, and needs the extension that trimming here would remove.
+static const char *format_bootcrt_display_name(const char *name, char *trimmed)
+{
+    const int kDisplayChars = 16;
+    const int kTrimmedTailChars = 13;
+    int length = strlen(name);
+
+    if ((length <= kDisplayChars) || !contains_path_separator(name)) {
+        return name;
+    }
+
+    memcpy(trimmed, "...", 3);
+    memcpy(trimmed + 3, name + length - kTrimmedTailChars, kTrimmedTailChars);
+    trimmed[kDisplayChars] = 0;
+    return trimmed;
+}
 
 cart_def boot_cart; // static => initialized with all zeros.
 
@@ -78,6 +109,9 @@ void C64_Subsys :: create_task_items(void)
     myActions.savemp3c = new Action("Save MP3 Drv C", SUBSYSID_C64, MENU_C64_SAVE_MP3_DRV_C);
     myActions.savemp3d = new Action("Save MP3 Drv D", SUBSYSID_C64, MENU_C64_SAVE_MP3_DRV_D);
     myActions.measure  = new Action("Measure Cart Bus", SUBSYSID_C64, MENU_MEASURE_TIMING);
+#if !U64
+    myActions.monitor  = register_c64_machine_monitor_task ? register_c64_machine_monitor_task(MENU_C64_MONITOR) : NULL;
+#endif
 
     taskCategory->append(myActions.reset);
     taskCategory->append(myActions.reboot);
@@ -524,7 +558,7 @@ int C64_Subsys :: dma_load_raw(File *f)
 int C64_Subsys :: dma_load_raw_buffer(uint16_t offset, uint8_t *buffer, int length, int rw)
 {
     bool i_stopped_it = false;
-    if (c64->client) {
+    if (c64->client && !c64->isFrozen) {
         c64->client->release_host(); // disconnect from user interface
         c64->release_ownership();
     }
@@ -533,12 +567,19 @@ int C64_Subsys :: dma_load_raw_buffer(uint16_t offset, uint8_t *buffer, int leng
         i_stopped_it = true;
     }
 
-    volatile uint8_t *dest = (volatile uint8_t *)(C64_MEMORY_BASE + offset);
-
-    if (rw) {
-        memcpy(buffer, (void *)dest, length);
+    if (c64->isFrozen) {
+        // The freezer menu may have its own mode/cart banked in, so route through
+        // dma_transfer_frozen, which restores the frozen C64 mode for ROM/cart
+        // ranges instead of blindly bypassing to raw RAM.
+        c64->dma_transfer_frozen(offset, buffer, length, rw);
     } else {
-        memcpy((void *)dest, buffer, length);
+        volatile uint8_t *dest = (volatile uint8_t *)(C64_MEMORY_BASE + offset);
+
+        if (rw) {
+            memcpy(buffer, (void *)dest, length);
+        } else {
+            memcpy((void *)dest, buffer, length);
+        }
     }
 
     if (i_stopped_it) {
@@ -563,8 +604,11 @@ int C64_Subsys :: dma_load(File *f, const uint8_t *buffer, const int bufferSize,
 
     C64_POKE(C64_BOOTCRT_DOSYNC, (c64->cfg->get_value(CFG_C64_DO_SYNC) == 1) ? 1 : 0);
 
+    char trimmed_name[17];
+    const char *display_name = format_bootcrt_display_name(name, trimmed_name);
+
     CbmFileName cbm;
-    cbm.init(name);
+    cbm.init(display_name);
     const char *p = cbm.getName();
     for(int i=0; i<16; i++) {
         C64_POKE(C64_BOOTCRT_NAME+i, p[i]);
@@ -606,7 +650,9 @@ int C64_Subsys :: dma_load(File *f, const uint8_t *buffer, const int bufferSize,
             if (run_code & RUNCODE_JUMP_BIT) {
             	C64_POKE(C64_BOOTCRT_JUMPADDR, buffer[0]);
             	C64_POKE(C64_BOOTCRT_JUMPADDR+1, buffer[1]);
-            	load_buffer_dma(buffer+2, bufferSize-2, 0);
+                if (bufferSize > 2) {
+                    load_buffer_dma(buffer+2, bufferSize-2, 0);
+                }
             } else {
             	load_buffer_dma(buffer, bufferSize, 0);
             }
@@ -694,6 +740,9 @@ int C64_Subsys :: load_file_dma(File *f, uint16_t reloc)
 
 int C64_Subsys :: load_buffer_dma(const uint8_t *buffer, const int bufferSize, uint16_t reloc)
 {
+    if (!buffer || bufferSize < 2) {
+        return 0;
+    }
     uint16_t load_address = 0;
 
     load_address = (uint16_t)buffer[0] | ((uint16_t)buffer[1]) << 8;

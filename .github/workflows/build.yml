@@ -4,16 +4,61 @@ on: [push, pull_request]
 
 jobs:
   build:
+    # A same-repo branch's push already builds via the push event above; only run the
+    # pull_request event when the PR head is a fork, whose pushes never reach this repo
+    # and so would otherwise never build at all. This is what avoids building the same
+    # commit twice, without restricting which branches build on push.
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: self-hosted
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           submodules: recursive
           fetch-depth: 0
 
       - name: Generate Version String
         run: echo "GIT_VERSION=$(git describe --tags --always)" >>$GITHUB_ENV
+
+      # The harness that watches an E2E gate run, checked on every push. It
+      # needs no device and no network beyond loopback, and it runs before the
+      # firmware builds because it costs seconds and a broken report generator
+      # is better reported now than after an hour of building.
+      - name: Check Observability Harness
+        run: |
+          docker run --rm \
+          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make observability_test"
+
+      # Also the gate that catches an endpoint whose documentation was not
+      # updated with it. Runs before the firmware builds because it costs seconds.
+      - name: Check OpenAPI Specification
+        run: |
+          docker run --rm \
+          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make openapi_test && make openapi_check"
+
+      # The step above proves the documents are what the sources say. This one
+      # proves they are valid OpenAPI 3.1, by running openapi-spec-validator, so
+      # a generator change cannot produce a fresh document that no standard tool
+      # will read.
+      #
+      # It runs in a stock Python image rather than the build image, because the
+      # build image has neither pip nor ensurepip and so cannot install a host
+      # package at all. The image is small, it is pulled once and cached on the
+      # runner, and nothing else in the build depends on this step, so a package
+      # index that is unreachable is reported as that rather than as a broken
+      # document.
+      #
+      # The documents to check come from `generate.py paths`, the same list
+      # `make openapi_validate` uses, so this cannot drift to a different set of
+      # files. tools/openapi/test_ci.py holds the two invocations to each other.
+      - name: Validate OpenAPI Specification
+        run: |
+          docker run --rm -v $GITHUB_WORKSPACE:/mnt/project:rw --workdir /mnt/project \
+          --user $(id -u):$(id -g) -e HOME=/tmp python:3.12-slim /bin/sh -c \
+          "pip install --quiet --disable-pip-version-check --root-user-action=ignore \
+             --target /tmp/openapi-packages -r tools/openapi/requirements.txt && \
+           PYTHONPATH=/tmp/openapi-packages python -m openapi_spec_validator \
+             --validation-errors all \$(python tools/openapi/generate.py paths)"
 
       - name: Determine FPGA & ESP32 dependencies
         run: |
@@ -23,7 +68,7 @@ jobs:
 
       - name: Cache U2 FPGA
         id: cache-u2
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
             path: |
                 target/fpga/rv700dd/rv700dd/rv700dd.bit
@@ -34,7 +79,7 @@ jobs:
 
       - name: Cache U2+ FPGA
         id: cache-u2p
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
             path: |
                 target/fpga/u2plus_recovery/output_files/ultimate_recovery.rbf
@@ -46,7 +91,7 @@ jobs:
 
       - name: Cache U2+L FPGA
         id: cache-u2pl
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
             path: |
                 target/fpga/u2plus_ecp5/impl1/u2p_ecp5_impl1.bit
@@ -57,7 +102,7 @@ jobs:
 
       - name: Cache ESP32 Targets
         id: cache-esp32
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
             path: |
                 software/u64ctrl/build/u64ctrl.bin
@@ -83,59 +128,67 @@ jobs:
       - if: steps.cache-u2.outputs.cache-hit != 'true'
         name: Build U2 including FPGAs
         run: |
-          docker run --rm --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
+          docker run --rm -e GITHUB_ACTIONS --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
           -v /opt/build-tools:/mnt/build-tools:ro \
           -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make u2_rv && mv update.u2r update_${{ env.GIT_VERSION }}.u2r"
 
       - if: steps.cache-u2.outputs.cache-hit == 'true'
         name: Build U2 using cached FPGAs
         run: |
-          docker run --rm --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
+          docker run --rm -e GITHUB_ACTIONS --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
           -v /opt/build-tools:/mnt/build-tools:ro \
           -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make u2_rv_swonly && mv update.u2r update_${{ env.GIT_VERSION }}.u2r"
 
       - if: steps.cache-u2p.outputs.cache-hit != 'true'
         name: Build U2+ including FPGAs
         run: |
-          docker run --rm --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
+          docker run --rm -e GITHUB_ACTIONS --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
           -v /opt/build-tools:/mnt/build-tools:ro \
           -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make u2plus && mv update.u2p update_${{ env.GIT_VERSION }}.u2p"
 
       - if: steps.cache-u2p.outputs.cache-hit == 'true'
         name: Build U2+ using cached FPGAs
         run: |
-          docker run --rm --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
+          docker run --rm -e GITHUB_ACTIONS --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
           -v /opt/build-tools:/mnt/build-tools:ro \
           -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make u2plus_swonly && mv update.u2p update_${{ env.GIT_VERSION }}.u2p"
 
       - if: steps.cache-u2pl.outputs.cache-hit != 'true'
         name: Build U2+L including FPGA
         run: |
-          docker run --rm --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
+          docker run --rm -e GITHUB_ACTIONS --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
           -v /opt/build-tools:/mnt/build-tools:ro \
-          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make u2pl && mv update.u2l update_${{ env.GIT_VERSION }}.u2l"
+          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make u2pl_no_esp && mv update.u2l update_${{ env.GIT_VERSION }}.u2l"
 
       - if: steps.cache-u2pl.outputs.cache-hit == 'true'
         name: Build U2+L using cached FPGAs
         run: |
-          docker run --rm --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
+          docker run --rm -e GITHUB_ACTIONS --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
           -v /opt/build-tools:/mnt/build-tools:ro \
           -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make u2pl_swonly && mv update.u2l update_${{ env.GIT_VERSION }}.u2l"
 
       - name: Build U64 Software
         run: |
-          docker run --rm --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
+          docker run --rm -e GITHUB_ACTIONS --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
           -v /opt/build-tools:/mnt/build-tools:ro \
-          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make u64 && mv update.u64 update_${{ env.GIT_VERSION }}.u64"
+          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make u64_no_esp && mv update.u64 update_${{ env.GIT_VERSION }}.u64"
 
       - name: Build U64-II Software
         run: |
-          docker run --rm --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
+          docker run --rm -e GITHUB_ACTIONS --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
           -v /opt/build-tools:/mnt/build-tools:ro \
-          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make u64ii && mv update.ue2 update_${{ env.GIT_VERSION }}.ue2"
+          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make u64ii_no_esp && mv update.ue2 update_${{ env.GIT_VERSION }}.ue2 && mv update.cfw update_${{ env.GIT_VERSION }}.cfw"
+
+      - name: Check Firmware Application Space
+        if: always()
+        run: |
+          docker run --rm -e GITHUB_ACTIONS -e GITHUB_STEP_SUMMARY \
+          -v /opt/build-tools:/mnt/build-tools:ro \
+          -v $GITHUB_STEP_SUMMARY:$GITHUB_STEP_SUMMARY:rw \
+          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make app_space"
 
       - name: Upload User Artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: update_package_${{ env.GIT_VERSION }}
           path: |
@@ -144,9 +197,18 @@ jobs:
             update_${{ env.GIT_VERSION }}.u2l
             update_${{ env.GIT_VERSION }}.u64
             update_${{ env.GIT_VERSION }}.ue2
+            update_${{ env.GIT_VERSION }}.cfw
+
+      - name: Upload OpenAPI Specification
+        uses: actions/upload-artifact@v7
+        with:
+          name: openapi_${{ env.GIT_VERSION }}
+          path: |
+            doc/api/rest_api_openapi_u2.yaml
+            doc/api/rest_api_openapi_u64.yaml
 
       - name: Upload Factory Artifacts U2+L
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: factory_package_u2pl_${{ env.GIT_VERSION }}
           path: |
@@ -157,7 +219,7 @@ jobs:
             target/fpga/u2plus_ecp5/impl1/u2p_ecp5_impl1.bit
 
       - name: Upload Factory Artifacts U64II
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: factory_package_U64e2_${{ env.GIT_VERSION }}
           path: |

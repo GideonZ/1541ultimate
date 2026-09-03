@@ -29,6 +29,7 @@
 #include "filemanager.h"
 #include "c1541.h"
 #include "c64.h"
+#include "configio.h"
 #include <ctype.h>
 
 /* Drives to mount on */
@@ -129,8 +130,7 @@ bool FileTypePRG :: check_header(File *f, bool has_header)
 SubsysResultCode_e FileTypePRG :: execute_st(SubsysCommand *cmd)
 {
 	printf("PRG Select: %4x\n", cmd->functionID);
-	File *file = 0, *d64;
-	FileInfo *inf;
+	File *file = 0;
 	SubsysCommand *drive_command;
 	SubsysCommand *c64_command;
 	
@@ -163,7 +163,14 @@ SubsysResultCode_e FileTypePRG :: execute_st(SubsysCommand *cmd)
     FileManager *fm = FileManager :: getFileManager();
     FRESULT fres = fm->fopen(cmd->path.c_str(), name, FA_READ, &file);
     if (file) {
-        if (check_header(file, (cmd->mode == 1))) {
+        // The file is opened here only to validate the P00 header; the C64 subsystem
+        // opens it again itself to perform the DMA load. Closing it here keeps the
+        // handle from leaking on every Run/Load/DMA action.
+        bool header_ok = check_header(file, (cmd->mode == 1));
+        fm->fclose(file);
+        file = NULL;
+
+        if (header_ok) {
 
             if (run_code & RUNCODE_MOUNT_BIT) {
                 printf("Runcode mount bit set. trying to find mount point '%s' resulted: ", cmd->path.c_str());
@@ -176,6 +183,10 @@ SubsysResultCode_e FileTypePRG :: execute_st(SubsysCommand *cmd)
                 drive_command->execute();
                 c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64, C64_DMA_LOAD_MNT, run_code, cmd->path.c_str(), cmd->filename.c_str());
             } else if (run_code) {
+                SubsysResultCode_e ret = ConfigIO :: S_load_associated_config(cmd);
+                if (ret == SSRET_CANNOT_OPEN_FILE) {
+                    ret = ConfigIO :: S_load_associated_config_usr(cmd);
+                };
                 c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64, C64_DMA_LOAD, run_code, cmd->path.c_str(), cmd->filename.c_str());
             } else {
                 c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64, C64_DMA_LOAD_RAW, run_code, cmd->path.c_str(), cmd->filename.c_str());
@@ -186,7 +197,6 @@ SubsysResultCode_e FileTypePRG :: execute_st(SubsysCommand *cmd)
             }
         } else {
             printf("Header of P00 file not correct.\n");
-            fm->fclose(file);
         }
     } else {
         printf("Error opening file. %s\n", FileSystem::get_error_string(fres));
@@ -199,5 +209,8 @@ SubsysResultCode_t FileTypePRG :: start_prg(const char *filename, bool run)
 {
     int func = run ? RUNCODE_DMALOAD_RUN : RUNCODE_DMALOAD;
     SubsysCommand *c64_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_DMA_LOAD, func, "", filename);
+    if (ConfigIO :: S_load_associated_config(c64_command) == SSRET_CANNOT_OPEN_FILE) {
+        ConfigIO :: S_load_associated_config_usr(c64_command);
+    };
     return c64_command->execute(); 
 }

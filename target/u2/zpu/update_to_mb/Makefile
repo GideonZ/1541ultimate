@@ -34,6 +34,7 @@ SRCS_CC	 =  memory.cc \
 			size_str.cc \
 			rtc.cc \
 			editor.cc \
+			hex_editor.cc \
 			userinterface.cc \
 			ui_elements.cc \
 			stream.cc \

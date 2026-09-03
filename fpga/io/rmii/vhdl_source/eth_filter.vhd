@@ -257,15 +257,10 @@ begin
                 mac_idx <= 0;
                 toggle <= '0';
                 for_me <= '1';
-                if rx_enable = '0' then
-                    address_valid <= '0';
-                end if;
                 
                 if rd_valid = '1' then -- packet data available!
                     if rd_dout(17 downto 16) = "00" then
-                        if rx_enable = '0' then
-                            state <= drop;
-                        elsif address_valid = '1' then
+                        if address_valid = '1' then
                             mem_addr <= start_addr;
                             state <= copy;
                         else                            
@@ -292,15 +287,12 @@ begin
                 end if;
             
             when drop =>
-                if (rd_valid = '1' and rd_dout(17 downto 16) /= "00") or (rx_enable = '0') then
+                if rd_valid = '1' and rd_dout(17 downto 16) /= "00" then
                     state <= idle;
                 end if;
 
             when copy =>
-                if rx_enable = '0' then
-                    state <= idle;
-                    
-                elsif rd_valid = '1' then
+                if rd_valid = '1' then
                     if mac_idx /= 3 then
                         if rd_dout(15 downto 0) /= X"FFFF" and rd_dout(15 downto 0) /= my_mac_16(mac_idx) then
                             for_me <= '0';
@@ -371,7 +363,7 @@ begin
                 
             end case;
 
-            if reset = '1' then
+            if reset = '1' or rx_enable = '0' then
                 alloc_req <= '0';
                 used_req <= c_used_req_init;
                 state <= idle;

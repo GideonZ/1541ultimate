@@ -27,6 +27,7 @@ class U64Config : public ConfigurableObject, ObjectWithMenu, SubSystem
 {
     struct {
         Action *poke;
+        Action *monitor;
         Action *saveedid;
         Action *siddetect;
         Action *esp32off;
@@ -130,10 +131,14 @@ public:
     static U64Config *getConfigurator() { return u64_configurator; }
 
     void ResetHandler();
+    // Reprogram the audio mixer from the stored settings; see
+    // u64_unmute_sids().
+    void restoreMixer(void) { mixercfg.effectuate_settings(); }
     void create_task_items(void);
     void update_task_items(bool writablePath);
     SubsysResultCode_e executeCommand(SubsysCommand *cmd);
     void effectuate_settings();
+    void on_edit();
 
     static int setPllOffset(ConfigItem *it);
     static int setMixer(ConfigItem *it);
@@ -142,6 +147,12 @@ public:
     static int setFilter(ConfigItem *it);
     static int setSidEmuParams(ConfigItem *it);
     static int setLedSelector(ConfigItem *it);
+#if U64 == 2
+    static int setPowerOnMode(ConfigItem *it);
+    static void pushPowerOnMode(void);
+    static int setWakeOnWifi(ConfigItem *it);
+    static void pushWakeOnWifi(void);
+#endif
     static int setCpuSpeed(ConfigItem *it);
 
     static void SetResampleFilter(t_video_mode mode);

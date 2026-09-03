@@ -8,7 +8,13 @@
 **/*.u2p
 **/*.u2r
 **/*.u2l
+**/*.ue2
+**/*.cfw
 **/*.pyc
+**/*.vcd
+**/v*.str
+**/v*.jou
+**/*.log
 **/*.xrpt
 **/_xmsgs
 **/output
@@ -49,6 +55,15 @@ fpga/sid_old
 /old_flash_images
 /releases
 roms/JiffyDOS_1541_6.00_(rebadged_5.0).bin
+runs
+software/api/tests/inputApiValidationTest
+software/api/tests/inputApiStateTest
+software/io/usb/tests/keyboardC64ClearTest
+software/io/usb/tests/usbHidKeyboardTest
+software/io/usb/tests/usbHidMouseTest
+software/io/usb/tests/usbHidSelectionTest
+software/io/usb/tests/usbKeyboardQueueTest
+software/io/usb/tests/vt100EscapeTest
 software/Debug
 software/Lean
 software/PathTest
@@ -271,6 +286,7 @@ tools/makeappl
 tools/promgen
 tools/svf_dump
 tools/swap
+tools/c64/*.prg
 software/6502/sidcrt/target
 *.d
 tools/dump_bus_trace
@@ -281,4 +297,4 @@ tools/64tass/*.o
 python/grab*
 fpga/cpu_unit/rvlite/vhdl_source/bootrom_pkg_u2.vhd
 fpga/cpu_unit/rvlite/vhdl_source/bootrom_pkg_u2_loader.vhd
-
+.gstack/

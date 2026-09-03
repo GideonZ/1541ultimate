@@ -98,9 +98,10 @@ TESTBENCHES						:= $(TESTBENCHES) $(TESTBENCH)
 $(TESTBENCH)_SRC				:= 
 $(TESTBENCH)_ENTITY				:= 
 $(TESTBENCH)_TIME				:= 
-$(TESTBENCH)_DO_GUI_BEFORE		:= mem load -infile ../../../../target/software/riscv32_hello/result/hello_world.hex -format hex /tb_core/memory
 $(TESTBENCH)_DO_GUI_AFTER		:= 
 $(TESTBENCH)_DO_GUI_OVERRIDE	:= 
+$(TESTBENCH)_DO_GUI_BEFORE		:= mem load -infile ../test/multest.hex -format hex /tb_core/memory
+#$(TESTBENCH)_DO_GUI_BEFORE		:= mem load -infile ../../../../target/software/riscv32_hello/result/hello_world.hex -format hex /tb_core/memory
 
 TESTBENCH 						:= tb_wrapper
 TESTBENCHES						:= $(TESTBENCHES) $(TESTBENCH)

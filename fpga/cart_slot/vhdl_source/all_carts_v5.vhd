@@ -10,6 +10,7 @@ entity all_carts_v5 is
 generic (
     g_register_addr : boolean := false;
     g_eeprom        : boolean := true;
+    g_max_cart_bits : natural := 20;
     g_kernal_base   : std_logic_vector(27 downto 0) := X"0EC8000"; -- multiple of 32K
     g_rom_base      : std_logic_vector(27 downto 0) := X"0F00000"; -- multiple of 1M
     g_georam_base   : std_logic_vector(27 downto 0) := X"1000000"; -- Shared with reu
@@ -68,7 +69,7 @@ architecture gideon of all_carts_v5 is
     signal reset_in     : std_logic;
 
     signal rom_mode     : std_logic_vector(14 downto 13) := "11";
-    signal bank_bits    : std_logic_vector(19 downto 13);
+    signal bank_bits    : std_logic_vector(21 downto 13); -- Max 4 MB
     signal ram_bank     : std_logic_vector(15 downto 13) := "000";
     signal mode_bits    : std_logic_vector(2 downto 0);
     signal ef_write     : std_logic := '0';
@@ -108,6 +109,7 @@ architecture gideon of all_carts_v5 is
     constant c_blackbox_v8  : std_logic_vector(4 downto 0) := "01100";
     constant c_zaxxon       : std_logic_vector(4 downto 0) := "01101";
     constant c_blackbox_v9  : std_logic_vector(4 downto 0) := "01110";
+    constant c_megabyter    : std_logic_vector(4 downto 0) := "01111"; -- new
 
     -- Simple bankers with RAM
     constant c_pagefox      : std_logic_vector(4 downto 0) := "10000";
@@ -232,7 +234,7 @@ begin
                 rom_mode  <= "11"; -- Banking here is 32K!
                 if variant(2)='1' then
                     if io_write='1' and io_addr(8 downto 0)="101111111" then -- DF7F
-                        bank_bits(19 downto 15) <= io_wdata(4 downto 0);
+                        bank_bits(21 downto 15) <= io_wdata(6 downto 0);
                     end if;
                     if io_write='1' and io_addr(8 downto 0)="101111110" then -- DF7E
                         ram_bank <= io_wdata(2 downto 0);
@@ -313,7 +315,7 @@ begin
                 -- variant 1: can be disabled by setting bit 7 to 1 (domark)
                 -- variant 2: can be disabled by setting bit 6 to 1 (gmod2)
                 if io_write='1' and io_addr(8)='0' then -- DE00 range
-                    bank_bits(19 downto 14) <= io_wdata(5 downto 0); -- 64 banks of 8K
+                    bank_bits(21 downto 14) <= "00" & io_wdata(5 downto 0); -- 64 banks of 8K
                     case variant is
                     when "000"|"100" =>
                         null;                        -- Always enabled
@@ -338,8 +340,7 @@ begin
             
             when c_ocean_16K =>
                 if io_write='1' and io_addr(8)='0' then -- DE00 range
-                    -- variant sets max number of banks, 000 = 4, 001 = 8, 011 = 16, 111 = 32
-                    bank_bits(18 downto 14) <= io_wdata(4 downto 0) and (variant & "11"); -- max 32 banks of 16K
+                    bank_bits(21 downto 14) <= io_wdata;
                 end if;
                 game_n    <= '0';
                 exrom_n   <= '0';
@@ -348,7 +349,7 @@ begin
 
             when c_system3 => -- 16K, only 8K used?
                 if (io_write='1' or io_read='1') and io_addr(8)='0' then -- DE00 range
-                    bank_bits(19 downto 14) <= io_addr(5 downto 0); -- max 64 banks of 8K
+                    bank_bits(21 downto 14) <= io_wdata;
                     -- turn on
                     mode_bits(0) <= '0';
                 -- elsif io_read='1' and io_addr(8)='0' then
@@ -359,6 +360,28 @@ begin
                 exrom_n   <= mode_bits(0);
                 serve_rom <= '1';
                 rom_mode  <= "00"; -- 8K banks 
+
+            when c_megabyter => -- Max 256 banks of 8K = 2 MB
+                -- Variant 0 -- Max 256 banks of 8K = 2 MB
+                -- Variant 1 -- Max 256 banks of 16K = 4 MB
+                if io_write='1' and io_addr(8)='0' then -- DE00 range
+                    if io_addr(1) = '0' then 
+                        bank_bits(21 downto 14) <= io_wdata;
+                    else
+                        mode_bits(1 downto 0) <= io_wdata(1 downto 0);
+                        -- bit 7 is LED => ignored
+                    end if;
+                end if;
+                serve_rom <= '1';
+                if variant(0) = '0' then
+                    game_n    <= not mode_bits(0);
+                    exrom_n   <= mode_bits(1);
+                    rom_mode  <= "00"; -- 8K banks 
+                else
+                    game_n    <= mode_bits(0);
+                    exrom_n   <= mode_bits(1);
+                    rom_mode  <= "01"; -- 16K banks
+                end if;
 
             when c_supergames =>
                 if io_write='1' and io_addr(8)='1' and mode_bits(1) = '0' then -- DF00-DFFF
@@ -434,7 +457,7 @@ begin
                     v_addr4 := io_addr(3 downto 0);
                     case v_addr4 is
                     when X"0" =>
-                        bank_bits(19 downto 14) <= io_wdata(5 downto 0); -- max 64 banks of 16K
+                        bank_bits(21 downto 14) <= io_wdata(7 downto 0); -- max 256 banks of 16K
                     when X"2" =>
                         mode_bits <= io_wdata(2 downto 0); -- LED not implemented
                     when X"9" =>
@@ -643,7 +666,7 @@ begin
     begin
         rom_addr <= g_rom_base;
         rom_addr(12 downto 0) <= slot_addr(12 downto 0);
-        rom_addr(19 downto 13) <= bank_bits;
+        rom_addr(g_max_cart_bits-1 downto 13) <= bank_bits(g_max_cart_bits-1 downto 13);
         if rom_mode(13)='1' then
             rom_addr(13) <= slot_addr(13);
         end if;
@@ -653,7 +676,7 @@ begin
     end process;
 
     -- Determine if RAM is mapped, and its address (max 64K)
-    process(cart_logic_d, variant, mode_bits, ram_bank, slot_addr, do_io2, allow_bank, ef_write)
+    process(cart_logic_d, variant, mode_bits, ram_bank, slot_addr, do_io2, ef_write)
     begin
         -- Default
         ram_addr <= g_ram_base;

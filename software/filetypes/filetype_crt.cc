@@ -26,6 +26,7 @@
 #include "filemanager.h"
 #include "c64_crt.h"
 #include "userinterface.h"
+#include "configio.h"
 
 // tester instance
 FactoryRegistrator<BrowsableDirEntry *, FileType *> tester_crt(FileType :: getFileTypeFactory(), FileTypeCRT :: test_type);
@@ -68,6 +69,8 @@ SubsysResultCode_e FileTypeCRT::execute_st(SubsysCommand *cmd)
     SubsysResultCode_e retval = C64_CRT :: load_crt(cmd->path.c_str(), cmd->filename.c_str(), &def, C64 :: get_cartridge_rom_addr());
 
     if (retval == SSRET_OK) {
+        ConfigIO :: S_load_associated_config(cmd);
+
         SubsysCommand *c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64, C64_START_CART, (int)&def, "", "");
         SubsysResultCode_t start_result = c64_command->execute();
         retval = start_result.status;

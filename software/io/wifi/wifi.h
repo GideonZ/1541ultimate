@@ -72,7 +72,7 @@ public:
     void sendEvent(uint8_t code);
     void sendConnectEvent(const char *ssid, const char *pass, uint8_t auth);
     void freeBuffer(command_buf_t *buf);
-    void getAccessPointItems(Browsable *parent, IndexedList<Browsable *> &list);
+    int  getAccessPointItems(Browsable *parent, IndexedList<Browsable *> &list);
 
     // Debug
     void PrintUartStatus() { uart->PrintStatus(); }

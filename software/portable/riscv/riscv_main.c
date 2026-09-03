@@ -9,14 +9,19 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <signal.h>
+#include <errno.h>
 #include "mdio.h"
 #include "dump_hex.h"
-#include "FreeRTOS.h"
-#include "task.h"
 #include "iomap.h"
 #include "itu.h"
 #include "profiler.h"
 #include "usb_nano.h"
+
+#if OS
+#include "FreeRTOS.h"
+#include "task.h"
+#endif
 
 void print_tasks(void);
 
@@ -72,7 +77,8 @@ void ResetInterruptHandlerU64()
 }
 
 extern void *freertos_risc_v_trap_handler;
-//void ituIrqHandler(void *context)
+
+#if OS
 void freertos_risc_v_application_interrupt_handler(void)
 {
 	static uint8_t pending;
@@ -126,8 +132,12 @@ void freertos_risc_v_application_interrupt_handler(void)
 		vTaskSwitchContext();
 	}
 }
+#endif
+
 void ultimate_main(void *context);
 void custom_hardware_init() __attribute__ ((weak));
+int  main(int argc, char *argv[]) __attribute__ ((weak));
+
 void custom_hardware_init()
 {
     printf("\nNo custom hardware init\n");
@@ -144,6 +154,7 @@ int main(int argc, char *argv[])
     puts("-- Custom Hardware Init --");
     custom_hardware_init();
 
+#if OS
     puts("-- Start Scheduler --");
     xTaskCreate(ultimate_main, "U-II Main", configMINIMAL_STACK_SIZE, NULL, PRIO_MAIN, NULL);
 
@@ -152,6 +163,7 @@ int main(int argc, char *argv[])
 
     // Should not get here as the processor is now under control of the
     // scheduler!
+#endif
 }
 
 void vPortSetupTimerInterrupt( void )
@@ -222,3 +234,86 @@ int _isatty(int fd)
 {
     return isatty(fd);
 }
+/*
+//
+// kill() is used by newlib in order to send signals to processes. Since there
+// is only a single process in the HAL, the only valid values for pid are
+// either the current process id, or the broadcast values, i.e. pid must be
+// less than or equal to zero.
+//
+
+int _kill(int pid, int sig)
+{
+    int status = 0;
+
+    if (pid <= 0) {
+        switch (sig) {
+        case 0:
+
+            // The null signal is used to check that a pid is valid.
+
+            break;
+
+        case SIGABRT:
+        case SIGALRM:
+        case SIGFPE:
+        case SIGILL:
+        case SIGKILL:
+        case SIGPIPE:
+        case SIGQUIT:
+        case SIGSEGV:
+        case SIGTERM:
+        case SIGUSR1:
+        case SIGUSR2:
+        case SIGBUS:
+        case SIGPOLL:
+        case SIGPROF:
+        case SIGSYS:
+        case SIGTRAP:
+        case SIGVTALRM:
+        case SIGXCPU:
+        case SIGXFSZ:
+
+            //
+            // The Posix standard defines the default behaviour for all these signals
+            // as being eqivalent to a call to _exit(). No mechanism is provided to
+            // change this behaviour.
+            //
+
+            _exit(0);
+        case SIGCHLD:
+        case SIGURG:
+
+            //
+            // The Posix standard defines these signals to be ignored by default. No
+            // mechanism is provided to change this behaviour.
+            //
+
+            break;
+        default:
+
+            // Tried to send an unsupported signal
+
+            status = EINVAL;
+        }
+    }
+
+    else if (pid > 0) {
+        // Attempted to signal a non-existant process 
+
+        status = ESRCH;
+    }
+
+    if (status) {
+        errno = status;
+        return -1;
+    }
+
+    return 0;
+}
+
+int _getpid(void)
+{
+  return 0;
+}
+*/

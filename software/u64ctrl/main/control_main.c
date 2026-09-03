@@ -22,6 +22,7 @@
 #include "button_handler.h"
 #include "jtag.h"
 #include "sntp.h"
+#include "power_state.h"
 
 static const char *TAG = "u64ctrl";
 
@@ -161,7 +162,7 @@ esp_err_t read_adc_channels(uint16_t *adc_data)
 
 
 void setup_modem();
-
+void show_buffer_status();
 
 int check_fpga(void)
 {
@@ -182,19 +183,24 @@ int check_fpga(void)
 
 void app_main(void)
 {
-    // Check whether the application FPGA was already loaded.
-    int initial_state = check_fpga();
+    // Check whether the application FPGA was already loaded. If it was, only the
+    // ESP32 restarted, and the machine should simply stay on.
+    int fpga_running = check_fpga();
 
     // Configure IOs
     jtag_disable_io();
     configure_led();
     configure_adc();
-    setup_modem();
+    setup_modem(); // also initializes the NVS, which power_initial_state() reads
+
+    // On a cold start, the configured power on behavior decides.
+    int initial_state = power_initial_state(fpga_running);
     start_button_handler(initial_state);
 
     while (1) {
         read_adc_channels(adc_data_local);
         ESP_LOGI(TAG, "App Main Alive; 5V_GOOD: %d (Initial: %d). VBus = %d mV", gpio_get_level(IO_5V_GOOD), initial_state, adc_data_local[0]);
+        // show_buffer_status();
         if (adc_data_local[0] < 8000) {
             gpio_set_level(IO_ESP_LED_RED, 0);
         } else {

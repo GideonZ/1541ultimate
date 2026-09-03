@@ -23,7 +23,7 @@ static File *_fm_file_mapping[MAX_FILES]; // initialized with zero due to bss
 static int find_slot()
 {
     // reserve 0, 1 and 2 for stdin, stdout and stderr
-    for (int i=3;i++;i<MAX_FILES) {
+    for (int i=3;i<MAX_FILES;i++) {
         if (! _fm_file_mapping[i]) {
             return i;
         }

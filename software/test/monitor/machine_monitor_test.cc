@@ -1,0 +1,9848 @@
+#include <stdio.h>
+#include <string.h>
+
+#include "assembler_6502.h"
+#include "disassembler_6502.h"
+#include "monitor_init.h"
+#include "machine_monitor_test_support.h"
+#include "menu.h"
+#include "task_menu.h"
+#include "tasks_collection.h"
+
+#define TEST_SORT_ORDER_DEVELOPER 999
+#define TEST_SUBSYSID_C64 1
+#define TEST_SUBSYSID_U64 9
+
+namespace monitor_io {
+void jump_to(uint16_t address);
+}
+
+// The help overlay, compared against the production table rather than a copy of
+// it, so the two cannot drift apart. The one line carrying a conversion is
+// filled with the same key the monitor asks the application key mapper for.
+static int expect_help_visible(CaptureScreen &screen, TestUserInterface &ui, const char *message)
+{
+    char formatted[64];
+    char line[40];
+
+    for (int i = 0; monitor_help_lines[i]; i++) {
+        const char *text = monitor_help_lines[i];
+        if (strchr(text, '%')) {
+            sprintf(formatted, text, ui.function_key_for(KEY_HELP));
+            text = formatted;
+        }
+        screen.get_slice(1, 4 + i, 38, line);
+        if (expect(strncmp(line, text, strlen(text)) == 0, message)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+void UserInterface :: run_machine_monitor(MemoryBackend *backend)
+{
+    MachineMonitor *monitor = new MachineMonitor(this, backend);
+    uint16_t go_address = 0;
+    monitor->init(screen, keyboard);
+    int ret = 0;
+    while (!ret && (!host || host->exists())) {
+        ret = monitor->poll(0);
+    }
+    bool do_go = monitor->consume_pending_go(&go_address);
+    monitor->deinit();
+    delete monitor;
+    if (do_go) {
+#if defined(U64) && (U64) && !defined(RUNS_ON_PC)
+        C64 *machine = C64::getMachine();
+        if (machine && machine->is_accessible()) {
+            release_host();
+            machine->release_ownership();
+        }
+#endif
+        monitor_io::jump_to(go_address);
+    }
+}
+
+namespace monitor_io {
+struct FakeMonitorIOState {
+    bool pick_file_result;
+    char pick_path[256];
+    char pick_name[64];
+    int pick_file_calls;
+    bool last_pick_save_mode;
+    bool load_called;
+    char load_path[256];
+    char load_name[64];
+    uint16_t load_start_addr;
+    bool load_use_prg;
+    uint32_t load_offset;
+    bool load_length_auto;
+    uint32_t load_length;
+    const char *load_error;
+    uint8_t load_data[131072];
+    uint32_t load_size;
+
+    bool save_called;
+    char save_path[256];
+    char save_name[64];
+    uint16_t save_start;
+    uint16_t save_end;
+    const char *save_error;
+    uint8_t saved_data[131072];
+    uint32_t saved_size;
+
+    bool jump_called;
+    uint16_t jump_address;
+};
+
+} // namespace monitor_io
+
+static SubsysResultCode_e test_monitor_action_callback(SubsysCommand *)
+{
+    return SSRET_OK;
+}
+
+static Action *g_test_machine_monitor_actions[256];
+
+Action *register_machine_monitor_task(int subsys_id, actionFunction_t callback, int function_id)
+{
+    Action *monitor = new Action("Machine Code Monitor", callback, function_id);
+    TaskCategory *dev = TasksCollection::getCategory("Developer", TEST_SORT_ORDER_DEVELOPER);
+    dev->prepend(monitor);
+    if ((subsys_id >= 0) && (subsys_id < 256)) {
+        g_test_machine_monitor_actions[subsys_id] = monitor;
+    }
+    return monitor;
+}
+
+Action *get_machine_monitor_task(int subsys_id)
+{
+    if ((subsys_id < 0) || (subsys_id >= 256)) {
+        return NULL;
+    }
+    return g_test_machine_monitor_actions[subsys_id];
+}
+
+namespace monitor_io {
+
+static FakeMonitorIOState g_monitor_io;
+
+static void reset_fake_monitor_io(void)
+{
+    memset(&g_monitor_io, 0, sizeof(g_monitor_io));
+}
+
+bool pick_file(UserInterface *, const char *, char *path_out, int path_max, char *name_out, int name_max, bool save_mode)
+{
+    g_monitor_io.pick_file_calls++;
+    g_monitor_io.last_pick_save_mode = save_mode;
+    if (!g_monitor_io.pick_file_result) {
+        return false;
+    }
+    if (path_out && path_max > 0) {
+        strncpy(path_out, g_monitor_io.pick_path, path_max - 1);
+        path_out[path_max - 1] = 0;
+    }
+    if (name_out && name_max > 0) {
+        strncpy(name_out, g_monitor_io.pick_name, name_max - 1);
+        name_out[name_max - 1] = 0;
+    }
+    return true;
+}
+
+const char *load_into_memory(const char *path, const char *name, MemoryBackend *backend,
+                             uint16_t start_addr, bool use_prg_addr, uint32_t offset, bool length_auto, uint32_t length,
+                             uint16_t *out_start_addr, uint32_t *out_bytes)
+{
+    g_monitor_io.load_called = true;
+    strncpy(g_monitor_io.load_path, path ? path : "", sizeof(g_monitor_io.load_path) - 1);
+    g_monitor_io.load_path[sizeof(g_monitor_io.load_path) - 1] = 0;
+    strncpy(g_monitor_io.load_name, name ? name : "", sizeof(g_monitor_io.load_name) - 1);
+    g_monitor_io.load_name[sizeof(g_monitor_io.load_name) - 1] = 0;
+    g_monitor_io.load_start_addr = start_addr;
+    g_monitor_io.load_use_prg = use_prg_addr;
+    g_monitor_io.load_offset = offset;
+    g_monitor_io.load_length_auto = length_auto;
+    g_monitor_io.load_length = length;
+    if (g_monitor_io.load_error) {
+        return g_monitor_io.load_error;
+    }
+
+    uint32_t header_skip = 0;
+    uint32_t size = g_monitor_io.load_size;
+    if (use_prg_addr) {
+        if (size < 2) {
+            return "NOT A PRG";
+        }
+        start_addr = (uint16_t)(g_monitor_io.load_data[0] | (g_monitor_io.load_data[1] << 8));
+        header_skip = 2;
+        size -= 2;
+    }
+
+    uint32_t effective = 0;
+    MonitorError err = monitor_validate_load_size(size, offset, length_auto, length, &effective);
+    if (err != MONITOR_OK) {
+        return monitor_error_text(err);
+    }
+
+    backend->begin_session();
+    for (uint32_t i = 0; i < effective; i++) {
+        backend->write((uint16_t)(start_addr + i), g_monitor_io.load_data[header_skip + offset + i]);
+    }
+    backend->end_session();
+
+    if (out_start_addr) {
+        *out_start_addr = start_addr;
+    }
+    if (out_bytes) {
+        *out_bytes = effective;
+    }
+    return NULL;
+}
+
+const char *save_from_memory(UserInterface *, const char *path, const char *name, MemoryBackend *backend,
+                             uint16_t start, uint16_t end)
+{
+    g_monitor_io.save_called = true;
+    strncpy(g_monitor_io.save_path, path ? path : "", sizeof(g_monitor_io.save_path) - 1);
+    g_monitor_io.save_path[sizeof(g_monitor_io.save_path) - 1] = 0;
+    strncpy(g_monitor_io.save_name, name ? name : "", sizeof(g_monitor_io.save_name) - 1);
+    g_monitor_io.save_name[sizeof(g_monitor_io.save_name) - 1] = 0;
+    g_monitor_io.save_start = start;
+    g_monitor_io.save_end = end;
+    if (g_monitor_io.save_error) {
+        return g_monitor_io.save_error;
+    }
+
+    uint32_t total = (uint32_t)end - (uint32_t)start + 1;
+    g_monitor_io.saved_data[0] = (uint8_t)(start & 0xFF);
+    g_monitor_io.saved_data[1] = (uint8_t)((start >> 8) & 0xFF);
+    backend->begin_session();
+    for (uint32_t i = 0; i < total; i++) {
+        g_monitor_io.saved_data[2 + i] = backend->read((uint16_t)(start + i));
+    }
+    backend->end_session();
+    g_monitor_io.saved_size = total + 2;
+    return NULL;
+}
+
+void jump_to(uint16_t address)
+{
+    g_monitor_io.jump_called = true;
+    g_monitor_io.jump_address = address;
+}
+} // namespace monitor_io
+
+class TaskActionProvider : public ObjectWithMenu
+{
+public:
+    Action *monitor_action;
+    bool update_called;
+    bool last_writable;
+
+    TaskActionProvider() : monitor_action(NULL), update_called(false), last_writable(false)
+    {
+    }
+
+    void create_task_items(void)
+    {
+        monitor_action = register_machine_monitor_task(TEST_SUBSYSID_U64, test_monitor_action_callback, 12);
+        g_test_machine_monitor_actions[TEST_SUBSYSID_C64] = monitor_action;
+    }
+
+    void update_task_items(bool writablePath)
+    {
+        update_called = true;
+        last_writable = writablePath;
+    }
+};
+
+static int test_disassembler(void)
+{
+    Disassembled6502 decoded;
+
+    const uint8_t lda_imm[] = { 0xA9, 0x01, 0x00 };
+    disassemble_6502(0xC000, lda_imm, false, &decoded);
+    if (expect(decoded.length == 2 && strcmp(decoded.text, "LDA #$01") == 0, "LDA immediate disassembly failed.")) return 1;
+
+    const uint8_t jsr_abs[] = { 0x20, 0x0F, 0xBC };
+    disassemble_6502(0xC000, jsr_abs, false, &decoded);
+    if (expect(decoded.length == 3 && strcmp(decoded.text, "JSR $BC0F") == 0, "JSR absolute disassembly failed.")) return 1;
+
+    const uint8_t bne_rel[] = { 0xD0, 0x05, 0x00 };
+    disassemble_6502(0x1000, bne_rel, false, &decoded);
+    if (expect(decoded.length == 2 && strcmp(decoded.text, "BNE $1007") == 0, "BNE branch target disassembly failed.")) return 1;
+
+    const uint8_t brk[] = { 0x00, 0x00, 0x00 };
+    disassemble_6502(0x2000, brk, false, &decoded);
+    if (expect(decoded.length == 1 && strcmp(decoded.text, "BRK") == 0, "BRK disassembly failed.")) return 1;
+
+    const uint8_t illegal[] = { 0x07, 0x44, 0x00 };
+    disassemble_6502(0x3000, illegal, false, &decoded);
+    if (expect(strcmp(decoded.text, "???") == 0, "Illegal opcode disable failed.")) return 1;
+    disassemble_6502(0x3000, illegal, true, &decoded);
+    if (expect(strcmp(decoded.text, "SLO $44") == 0, "Illegal opcode enable failed.")) return 1;
+
+    const uint8_t lda_absy[] = { 0xB9, 0x99, 0xFF };
+    disassemble_6502(0x9010, lda_absy, false, &decoded);
+    if (expect(decoded.valid && decoded.length == 3 && decoded.operand_bytes == 2 && strcmp(decoded.text, "LDA $FF99,Y") == 0,
+               "Absolute indexed disassembly must expose a 2-byte operand.")) return 1;
+
+    const uint8_t asl_acc[] = { 0x0A, 0xEA, 0x00 };
+    disassemble_6502(0x4000, asl_acc, false, &decoded);
+    if (expect(decoded.valid && decoded.length == 1 && decoded.operand_bytes == 0 && strcmp(decoded.text, "ASL A") == 0,
+               "Accumulator disassembly must remain a 1-byte no-operand instruction.")) return 1;
+
+    const uint8_t illegal_zpx[] = { 0x54, 0x44, 0x00 };
+    disassemble_6502(0x3000, illegal_zpx, true, &decoded);
+    if (expect(strcmp(decoded.text, "NOP $44,X") == 0, "Illegal zeropage,X disassembly failed.")) return 1;
+
+    const uint8_t bit_zp[] = { 0x24, 0x66, 0x00 };
+    disassemble_6502(0xBCA2, bit_zp, false, &decoded);
+    if (expect(decoded.length == 2 && strcmp(decoded.text, "BIT $66") == 0,
+               "BIT zeropage disassembly failed.")) return 1;
+
+    const uint8_t bcc_rel[] = { 0x90, 0x05, 0x00 };
+    disassemble_6502(0x1000, bcc_rel, false, &decoded);
+    if (expect(decoded.length == 2 && strcmp(decoded.text, "BCC $1007") == 0,
+               "BCC branch target disassembly failed.")) return 1;
+
+    const uint8_t bcs_rel[] = { 0xB0, 0x05, 0x00 };
+    disassemble_6502(0x1000, bcs_rel, false, &decoded);
+    if (expect(decoded.length == 2 && strcmp(decoded.text, "BCS $1007") == 0,
+               "BCS branch target disassembly failed.")) return 1;
+
+    const uint8_t beq_rel[] = { 0xF0, 0x05, 0x00 };
+    disassemble_6502(0x1000, beq_rel, false, &decoded);
+    if (expect(decoded.length == 2 && strcmp(decoded.text, "BEQ $1007") == 0,
+               "BEQ branch target disassembly failed.")) return 1;
+
+    // Exercise the remaining relative branches too, so a missing or wrong
+    // `rel` operand spec in the opcode template table is caught here.
+    const struct { uint8_t opcode; const char *text; } rel_branches[] = {
+        { 0x10, "BPL $1007" }, { 0x30, "BMI $1007" },
+        { 0x50, "BVC $1007" }, { 0x70, "BVS $1007" },
+        { 0xD0, "BNE $1007" },
+    };
+    for (unsigned i = 0; i < sizeof(rel_branches) / sizeof(rel_branches[0]); i++) {
+        const uint8_t branch_rel[] = { rel_branches[i].opcode, 0x05, 0x00 };
+        disassemble_6502(0x1000, branch_rel, false, &decoded);
+        if (expect(decoded.length == 2 && strcmp(decoded.text, rel_branches[i].text) == 0,
+                   "Relative branch target disassembly failed.")) return 1;
+    }
+
+    const uint8_t ane_imm[] = { 0x8B, 0x44, 0x00 };
+    disassemble_6502(0x3000, ane_imm, true, &decoded);
+    if (expect(decoded.length == 2 && strcmp(decoded.text, "ANE #$44") == 0,
+               "ANE immediate disassembly failed.")) return 1;
+
+    const uint8_t sbx_imm[] = { 0xCB, 0x44, 0x00 };
+    disassemble_6502(0x3000, sbx_imm, true, &decoded);
+    if (expect(decoded.length == 2 && strcmp(decoded.text, "SBX #$44") == 0,
+               "SBX immediate disassembly failed.")) return 1;
+
+    const uint8_t nop_f4_zpx[] = { 0xF4, 0x44, 0x00 };
+    disassemble_6502(0x3000, nop_f4_zpx, true, &decoded);
+    if (expect(decoded.length == 2 && strcmp(decoded.text, "NOP $44,X") == 0,
+               "F4 zeropage,X disassembly failed.")) return 1;
+
+    return 0;
+}
+
+static uint8_t test_template_operand_length(const char *templ)
+{
+    const char *spec = operand_spec(templ);
+
+    if (*spec == 0 || !strncmp(spec, "A", 1)) return 0;
+    if (!strncmp(spec, "rel", 3)) return 1;
+    if (!strncmp(spec, "($nnnn,X)", 9) || !strncmp(spec, "($nnnn)", 7) ||
+        !strncmp(spec, "(ABS,X)", 7) || !strncmp(spec, "$nnnn,Y", 7) ||
+        !strncmp(spec, "$nnnn,X", 7) || !strncmp(spec, "$nnnn", 5)) {
+        return 2;
+    }
+    if (!strncmp(spec, "($nn,X)", 7) || !strncmp(spec, "($nn),Y", 7) ||
+        !strncmp(spec, "$nn,Y", 5) || !strncmp(spec, "$nn,X", 5) ||
+        !strncmp(spec, "$nn,S", 5) || !strncmp(spec, "$nn", 3) ||
+        !strncmp(spec, "#", 1)) {
+        return 1;
+    }
+    return 0;
+}
+
+static bool is_ambiguous_roundtrip_opcode(uint8_t opcode)
+{
+    switch (opcode) {
+        case 0x02: return false;
+        case 0x12: case 0x22: case 0x32: case 0x42: case 0x52:
+        case 0x62: case 0x72: case 0x92: case 0xB2: case 0xD2:
+        case 0xF2:
+        case 0x04: case 0x0C: case 0x14: case 0x1A: case 0x1C:
+        case 0x34: case 0x3A: case 0x3C: case 0x44: case 0x54:
+        case 0x5A: case 0x5C: case 0x64: case 0x74: case 0x7A:
+        case 0x7C: case 0x80: case 0x82: case 0x89: case 0xC2:
+        case 0xD4: case 0xDA: case 0xDC: case 0xE2: case 0xF4:
+        case 0xFA: case 0xFC:
+        case 0x2B:
+        case 0xEB:
+            return true;
+        default:
+            return false;
+    }
+}
+
+static int expect_disassembly(uint8_t opcode, uint8_t b1, uint8_t b2,
+                              const char *expected, uint8_t expected_length)
+{
+    Disassembled6502 decoded;
+    const uint8_t bytes[] = { opcode, b1, b2 };
+
+    disassemble_6502(0xC000, bytes, true, &decoded);
+    if (expect(decoded.valid, "Opcode must disassemble with illegal opcodes enabled.")) return 1;
+    if (expect(decoded.length == expected_length, "Disassembly length mismatch.")) return 1;
+    if (expect(decoded.operand_bytes == expected_length - 1, "Disassembly operand length mismatch.")) return 1;
+    if (expect(strcmp(decoded.text, expected) == 0, "Disassembly text mismatch.")) return 1;
+    return 0;
+}
+
+static int expect_assembly(const char *line, const uint8_t *bytes, uint8_t length, bool illegal)
+{
+    AsmInsn insn;
+    MonitorError err = MONITOR_OK;
+
+    if (expect(monitor_assemble_line(line, illegal, 0xC000, &insn, &err), "Assembly input must encode.")) return 1;
+    if (expect(insn.length == length, "Assembly length mismatch.")) return 1;
+    for (uint8_t i = 0; i < length; i++) {
+        if (expect(insn.bytes[i] == bytes[i], "Assembly byte mismatch.")) return 1;
+    }
+    return 0;
+}
+
+static int test_illegal_opcode_normalization(void)
+{
+    static const struct {
+        uint8_t opcode;
+        uint8_t b1;
+        uint8_t b2;
+        uint8_t length;
+        const char *text;
+    } disasm_cases[] = {
+        { 0x02, 0x12, 0x34, 1, "JAM" }, { 0x12, 0x12, 0x34, 1, "JAM" },
+        { 0x22, 0x12, 0x34, 1, "JAM" }, { 0x32, 0x12, 0x34, 1, "JAM" },
+        { 0x42, 0x12, 0x34, 1, "JAM" }, { 0x52, 0x12, 0x34, 1, "JAM" },
+        { 0x62, 0x12, 0x34, 1, "JAM" }, { 0x72, 0x12, 0x34, 1, "JAM" },
+        { 0x92, 0x12, 0x34, 1, "JAM" }, { 0xB2, 0x12, 0x34, 1, "JAM" },
+        { 0xD2, 0x12, 0x34, 1, "JAM" }, { 0xF2, 0x12, 0x34, 1, "JAM" },
+
+        { 0x03, 0x12, 0x34, 2, "SLO ($12,X)" }, { 0x07, 0x12, 0x34, 2, "SLO $12" },
+        { 0x0F, 0x34, 0x12, 3, "SLO $1234" }, { 0x13, 0x12, 0x34, 2, "SLO ($12),Y" },
+        { 0x17, 0x12, 0x34, 2, "SLO $12,X" }, { 0x1B, 0x34, 0x12, 3, "SLO $1234,Y" },
+        { 0x1F, 0x34, 0x12, 3, "SLO $1234,X" },
+
+        { 0x43, 0x12, 0x34, 2, "SRE ($12,X)" }, { 0x47, 0x12, 0x34, 2, "SRE $12" },
+        { 0x4F, 0x34, 0x12, 3, "SRE $1234" }, { 0x53, 0x12, 0x34, 2, "SRE ($12),Y" },
+        { 0x57, 0x12, 0x34, 2, "SRE $12,X" }, { 0x5B, 0x34, 0x12, 3, "SRE $1234,Y" },
+        { 0x5F, 0x34, 0x12, 3, "SRE $1234,X" },
+
+        { 0xC3, 0x12, 0x34, 2, "DCP ($12,X)" }, { 0xC7, 0x12, 0x34, 2, "DCP $12" },
+        { 0xCF, 0x34, 0x12, 3, "DCP $1234" }, { 0xD3, 0x12, 0x34, 2, "DCP ($12),Y" },
+        { 0xD7, 0x12, 0x34, 2, "DCP $12,X" }, { 0xDB, 0x34, 0x12, 3, "DCP $1234,Y" },
+        { 0xDF, 0x34, 0x12, 3, "DCP $1234,X" },
+
+        { 0xE3, 0x12, 0x34, 2, "ISC ($12,X)" }, { 0xE7, 0x12, 0x34, 2, "ISC $12" },
+        { 0xEF, 0x34, 0x12, 3, "ISC $1234" }, { 0xF3, 0x12, 0x34, 2, "ISC ($12),Y" },
+        { 0xF7, 0x12, 0x34, 2, "ISC $12,X" }, { 0xFB, 0x34, 0x12, 3, "ISC $1234,Y" },
+        { 0xFF, 0x34, 0x12, 3, "ISC $1234,X" },
+
+        { 0x8B, 0x12, 0x34, 2, "ANE #$12" },
+        { 0x93, 0x12, 0x34, 2, "SHA ($12),Y" },
+        { 0x9F, 0x34, 0x12, 3, "SHA $1234,Y" },
+        { 0xCB, 0x12, 0x34, 2, "SBX #$12" },
+        { 0x54, 0x12, 0x34, 2, "NOP $12,X" },
+        { 0x74, 0x12, 0x34, 2, "NOP $12,X" },
+
+        { 0x1A, 0x12, 0x34, 1, "NOP" }, { 0x3A, 0x12, 0x34, 1, "NOP" },
+        { 0x5A, 0x12, 0x34, 1, "NOP" }, { 0x7A, 0x12, 0x34, 1, "NOP" },
+        { 0xDA, 0x12, 0x34, 1, "NOP" }, { 0xFA, 0x12, 0x34, 1, "NOP" },
+        { 0x04, 0x12, 0x34, 2, "NOP $12" }, { 0x44, 0x12, 0x34, 2, "NOP $12" },
+        { 0x64, 0x12, 0x34, 2, "NOP $12" },
+        { 0x14, 0x12, 0x34, 2, "NOP $12,X" }, { 0x34, 0x12, 0x34, 2, "NOP $12,X" },
+        { 0xD4, 0x12, 0x34, 2, "NOP $12,X" }, { 0xF4, 0x12, 0x34, 2, "NOP $12,X" },
+        { 0x0C, 0x34, 0x12, 3, "NOP $1234" },
+        { 0x1C, 0x34, 0x12, 3, "NOP $1234,X" }, { 0x3C, 0x34, 0x12, 3, "NOP $1234,X" },
+        { 0x5C, 0x34, 0x12, 3, "NOP $1234,X" }, { 0x7C, 0x34, 0x12, 3, "NOP $1234,X" },
+        { 0xDC, 0x34, 0x12, 3, "NOP $1234,X" }, { 0xFC, 0x34, 0x12, 3, "NOP $1234,X" },
+        { 0x80, 0x12, 0x34, 2, "NOP #$12" }, { 0x82, 0x12, 0x34, 2, "NOP #$12" },
+        { 0x89, 0x12, 0x34, 2, "NOP #$12" }, { 0xC2, 0x12, 0x34, 2, "NOP #$12" },
+        { 0xE2, 0x12, 0x34, 2, "NOP #$12" },
+
+        { 0xA3, 0x12, 0x34, 2, "LAX ($12,X)" }, { 0xB3, 0x12, 0x34, 2, "LAX ($12),Y" },
+        { 0xB7, 0x12, 0x34, 2, "LAX $12,Y" }, { 0xBF, 0x34, 0x12, 3, "LAX $1234,Y" },
+        { 0x83, 0x12, 0x34, 2, "SAX ($12,X)" }, { 0x87, 0x12, 0x34, 2, "SAX $12" },
+        { 0x8F, 0x34, 0x12, 3, "SAX $1234" }, { 0x97, 0x12, 0x34, 2, "SAX $12,Y" },
+        { 0x9B, 0x34, 0x12, 3, "TAS $1234,Y" }, { 0x9C, 0x34, 0x12, 3, "SHY $1234,X" },
+        { 0x9E, 0x34, 0x12, 3, "SHX $1234,Y" }, { 0xBB, 0x34, 0x12, 3, "LAS $1234,Y" },
+        { 0xEB, 0x12, 0x34, 2, "SBC #$12" },
+    };
+
+    for (unsigned i = 0; i < sizeof(disasm_cases) / sizeof(disasm_cases[0]); i++) {
+        if (expect_disassembly(disasm_cases[i].opcode, disasm_cases[i].b1, disasm_cases[i].b2,
+                               disasm_cases[i].text, disasm_cases[i].length)) return 1;
+    }
+
+    if (expect(strncmp(disassembler_6502_template(0x54), "NOP*", 4) == 0,
+               "Opcode $54 must retain the illegal NOP marker in the template.")) return 1;
+    if (expect(strncmp(disassembler_6502_template(0x74), "NOP*", 4) == 0,
+               "Opcode $74 must retain the illegal NOP marker in the template.")) return 1;
+
+    return 0;
+}
+
+static int test_opcode_metadata_consistency(void)
+{
+    for (int op = 0; op < 256; op++) {
+        const char *templ = disassembler_6502_template((uint8_t)op);
+        if (expect(templ != NULL && strlen(templ) >= 3, "Every opcode must have one template.")) return 1;
+
+        uint8_t expected_length = (uint8_t)(1 + test_template_operand_length(templ));
+        if (expect(expected_length >= 1 && expected_length <= 3, "Opcode template length must be 1..3.")) return 1;
+
+        const uint8_t bytes[] = { (uint8_t)op, 0x12, 0x34 };
+        Disassembled6502 decoded;
+        disassemble_6502(0xC000, bytes, true, &decoded);
+        if (expect(decoded.valid, "All opcodes must disassemble with illegal opcodes enabled.")) return 1;
+        if (expect(decoded.length == expected_length, "Template-derived length must match disassembly length.")) return 1;
+        if (expect(decoded.operand_bytes == expected_length - 1, "Template-derived operand length must match disassembly.")) return 1;
+
+        if (is_ambiguous_roundtrip_opcode((uint8_t)op)) {
+            continue;
+        }
+
+        AsmInsn insn;
+        MonitorError err = MONITOR_OK;
+        if (expect(monitor_assemble_line(decoded.text, true, 0xC000, &insn, &err),
+                   "Disassembled instruction must assemble again.")) return 1;
+        if (expect(insn.length == decoded.length, "Round-trip length mismatch.")) return 1;
+        if (expect(insn.bytes[0] == (uint8_t)op, "Round-trip opcode mismatch.")) return 1;
+        for (uint8_t i = 1; i < insn.length; i++) {
+            if (expect(insn.bytes[i] == bytes[i], "Round-trip operand byte mismatch.")) return 1;
+        }
+    }
+
+    return 0;
+}
+
+// A backend that records how the relocation reached memory, so an operand
+// written as two separate bytes can be told from one written as a block.
+struct RelocRecordingBackend : public FakeMemoryBackend
+{
+    int block_writes;
+    int single_writes;
+    uint16_t last_block_length;
+
+    RelocRecordingBackend() : block_writes(0), single_writes(0), last_block_length(0) { }
+
+    virtual void write(uint16_t address, uint8_t value)
+    {
+        single_writes++;
+        FakeMemoryBackend::write(address, value);
+    }
+
+    virtual void write_block(uint16_t address, const uint8_t *src, uint16_t len)
+    {
+        block_writes++;
+        last_block_length = len;
+        for (uint16_t i = 0; i < len; i++) {
+            memory[(uint16_t)(address + i)] = src[i];
+        }
+    }
+};
+
+static void reloc_poke(FakeMemoryBackend &backend, uint16_t address,
+                       const uint8_t *bytes, int count)
+{
+    for (int i = 0; i < count; i++) {
+        backend.write((uint16_t)(address + i), bytes[i]);
+    }
+}
+
+static int test_transfer_relocate_parses_its_optional_range(void)
+{
+    uint16_t start = 0, end = 0, dest = 0, code_start = 0, code_end = 0;
+    bool relocate = true;
+
+    // Three arguments: exactly monitor_parse_transfer, and no relocation.
+    if (expect(monitor_parse_transfer_relocate("C000-C010,C100", &start, &end, &dest,
+                                               &relocate, &code_start, &code_end) == MONITOR_OK,
+               "Transfer relocate parser must accept the three-argument form.")) return 1;
+    if (expect(!relocate && start == 0xC000 && end == 0xC010 && dest == 0xC100,
+               "The three-argument form must parse as a plain transfer.")) return 1;
+
+    // The three-argument parser must not have learned the fourth field, so the
+    // plain command is unchanged by this feature existing.
+    if (expect(monitor_parse_transfer("C000-C0FF,C100,C000-C00F", &start, &end, &dest) == MONITOR_SYNTAX,
+               "The plain Transfer parser must still refuse a fourth field.")) return 1;
+
+    if (expect(monitor_parse_transfer_relocate("C000-C0FF,C100,C000-C00F", &start, &end, &dest,
+                                               &relocate, &code_start, &code_end) == MONITOR_OK,
+               "Transfer relocate parser must accept the four-argument form.")) return 1;
+    if (expect(relocate && start == 0xC000 && end == 0xC0FF && dest == 0xC100 &&
+               code_start == 0xC000 && code_end == 0xC00F,
+               "Transfer relocate parser values failed.")) return 1;
+
+    // A one-byte code range is a range, as everywhere else in the monitor.
+    if (expect(monitor_parse_transfer_relocate("C000-C0FF,C100,C005-C005", &start, &end, &dest,
+                                               &relocate, &code_start, &code_end) == MONITOR_OK &&
+               code_start == 0xC005 && code_end == 0xC005,
+               "Transfer relocate parser must accept a one-byte code range.")) return 1;
+
+    if (expect(monitor_parse_transfer_relocate("C000-C0FF,C100,C00F-C000", &start, &end, &dest,
+                                               &relocate, &code_start, &code_end) == MONITOR_RANGE,
+               "A code range ending below its start must be refused.")) return 1;
+    // The code range says where the pointers are, not which part of the copy is
+    // code, so it is free of the source range and may lie on either side of it
+    // or across it.
+    if (expect(monitor_parse_transfer_relocate("C000-C0FF,C100,BFF0-C00F", &start, &end, &dest,
+                                               &relocate, &code_start, &code_end) == MONITOR_OK &&
+               code_start == 0xBFF0 && code_end == 0xC00F,
+               "A code range starting below the source must be accepted.")) return 1;
+    if (expect(monitor_parse_transfer_relocate("C000-C0FF,C100,C0F0-C100", &start, &end, &dest,
+                                               &relocate, &code_start, &code_end) == MONITOR_OK &&
+               code_start == 0xC0F0 && code_end == 0xC100,
+               "A code range ending above the source must be accepted.")) return 1;
+    if (expect(monitor_parse_transfer_relocate("C000-C005,C010,C000-C008", &start, &end, &dest,
+                                               &relocate, &code_start, &code_end) == MONITOR_OK &&
+               start == 0xC000 && end == 0xC005 && dest == 0xC010 &&
+               code_start == 0xC000 && code_end == 0xC008,
+               "A code range longer than the copy must be accepted.")) return 1;
+    if (expect(monitor_parse_transfer_relocate("C000-C0FF,C100,D000-D00F", &start, &end, &dest,
+                                               &relocate, &code_start, &code_end) == MONITOR_OK &&
+               code_start == 0xD000 && code_end == 0xD00F,
+               "A code range wholly outside the source must be accepted.")) return 1;
+    if (expect(monitor_parse_transfer_relocate("C000-C0FF,C100,C000-C00F,", &start, &end, &dest,
+                                               &relocate, &code_start, &code_end) == MONITOR_SYNTAX,
+               "Trailing text after the code range must be refused.")) return 1;
+
+    // The prompt must let every prefix of the relocating form be typed, and
+    // must still refuse what no Transfer could contain.
+    {
+        const char *full = "0800-0FFF,2000,0800-0FFF";
+        char prefix[32];
+        for (unsigned int i = 0; i <= strlen(full); i++) {
+            memcpy(prefix, full, i);
+            prefix[i] = 0;
+            if (expect(monitor_input_transfer.accepts(prefix),
+                       "Every prefix of a relocating Transfer must be typeable.")) {
+                printf("  refused %s\n", prefix);
+                return 1;
+            }
+        }
+        if (expect(!monitor_input_transfer.accepts("0800-0FFF,2000,0800-0FFF,"),
+                   "Transfer must refuse a fifth field.")) return 1;
+        // Fill and Compare keep three arguments, so they must not have
+        // acquired the tail along with Transfer.
+        if (expect(!monitor_input_fill.accepts("0800-0FFF,20,"),
+                   "Fill must still refuse a fourth field.")) return 1;
+        if (expect(!monitor_input_compare.accepts("0800-0FFF,2000,"),
+                   "Compare must still refuse a fourth field.")) return 1;
+    }
+    return 0;
+}
+
+static int test_transfer_relocate_moves_absolute_operands(void)
+{
+    RelocRecordingBackend backend;
+    // $C000-$C0FF copied to $C100, with $C000-$C010 named as code.
+    //   C000  AD 08 C0    LDA $C008        absolute, inside the source
+    //   C003  BD 40 C0    LDA $C040,X      absolute indexed, inside
+    //   C006  6C 80 C0    JMP ($C080)      indirect, inside
+    //   C009  AD 00 D0    LDA $D000        absolute, outside the source
+    //   C00C  A5 10       LDA $10          zero page
+    //   C00E  C0 C0       CPY #$C0         immediate
+    //   C010  D0 20       BNE $C032        relative
+    //   C012  C0 EA       CPY #$EA         immediate
+    //   C014  EA          NOP
+    //
+    // The zero-page and relative instructions are deliberately followed by a
+    // $C0 byte, so that reading two operand bytes where there is only one
+    // would produce $C010 and $C020, both inside the source range. Only the
+    // three-byte-with-a-two-byte-operand condition keeps them out.
+    static const uint8_t code[] = {
+        0xAD, 0x08, 0xC0,
+        0xBD, 0x40, 0xC0,
+        0x6C, 0x80, 0xC0,
+        0xAD, 0x00, 0xD0,
+        0xA5, 0x10,
+        0xC0, 0xC0,
+        0xD0, 0x20,
+        0xC0, 0xEA,
+        0xEA,
+    };
+    reloc_poke(backend, 0xC000, code, sizeof(code));
+    int seeded_single_writes = backend.single_writes;
+
+    int moved = monitor_transfer_memory_relocate(&backend, 0xC000, 0xC0FF, 0xC100,
+                                                 0xC000, 0xC014, false);
+    if (expect(moved == 3, "Three absolute operands point into the source range.")) {
+        printf("  reported %d\n", moved);
+        return 1;
+    }
+    if (expect(backend.read(0xC100) == 0xAD && backend.read(0xC101) == 0x08 &&
+               backend.read(0xC102) == 0xC1,
+               "An absolute operand must move with the block.")) return 1;
+    if (expect(backend.read(0xC103) == 0xBD && backend.read(0xC104) == 0x40 &&
+               backend.read(0xC105) == 0xC1,
+               "An absolute indexed operand must move with the block.")) return 1;
+    if (expect(backend.read(0xC106) == 0x6C && backend.read(0xC107) == 0x80 &&
+               backend.read(0xC108) == 0xC1,
+               "An indirect operand must move with the block.")) return 1;
+    if (expect(backend.read(0xC109) == 0xAD && backend.read(0xC10A) == 0x00 &&
+               backend.read(0xC10B) == 0xD0,
+               "An operand outside the source range must be left alone.")) return 1;
+    if (expect(backend.read(0xC10C) == 0xA5 && backend.read(0xC10D) == 0x10,
+               "A zero-page operand must be left alone.")) return 1;
+    if (expect(backend.read(0xC10E) == 0xC0 && backend.read(0xC10F) == 0xC0,
+               "An immediate operand must be left alone.")) return 1;
+    if (expect(backend.read(0xC110) == 0xD0 && backend.read(0xC111) == 0x20,
+               "A relative operand must be left alone.")) return 1;
+    // The source itself is untouched by a non-overlapping copy.
+    if (expect(backend.read(0xC000) == 0xAD && backend.read(0xC001) == 0x08 &&
+               backend.read(0xC002) == 0xC0,
+               "A non-overlapping relocate must not rewrite the original.")) return 1;
+    // No operand half reached memory on its own. The relocate holds the copied
+    // range in one buffer and writes it back as blocks, so an operand's low and
+    // high bytes cannot land apart, and nothing at all goes out a byte at a
+    // time. reloc_poke seeds through write(), so the count is measured from
+    // after the seeding.
+    if (expect(backend.single_writes == seeded_single_writes,
+               "A relocate must not write single bytes.")) {
+        printf("  %d single writes, %d before the relocate\n",
+               backend.single_writes, seeded_single_writes);
+        return 1;
+    }
+    if (expect(backend.block_writes > 0,
+               "The copy and its patches must reach memory as blocks.")) return 1;
+    return 0;
+}
+
+static int test_transfer_relocate_keeps_the_inclusive_range(void)
+{
+    // A range includes both of its ends everywhere in this monitor, so an
+    // operand pointing at the very last byte of the source is inside it. The
+    // exclusive-range form of this rule would leave that operand behind.
+    FakeMemoryBackend backend;
+    static const uint8_t code[] = { 0xAD, 0x0F, 0xC0 };  // LDA $C00F
+    reloc_poke(backend, 0xC000, code, sizeof(code));
+    backend.write(0xC00F, 0x5A);
+
+    int moved = monitor_transfer_memory_relocate(&backend, 0xC000, 0xC00F, 0xC100,
+                                                 0xC000, 0xC002, false);
+    if (expect(moved == 1,
+               "An operand pointing at the last byte of the source is inside the range.")) return 1;
+    if (expect(backend.read(0xC101) == 0x0F && backend.read(0xC102) == 0xC1,
+               "That operand must be moved to the last byte of the destination.")) return 1;
+    // And the byte it points at was itself copied, which is the same rule.
+    if (expect(backend.read(0xC10F) == 0x5A,
+               "The last byte of the source must be copied too.")) return 1;
+    return 0;
+}
+
+static int test_transfer_relocate_patches_pointers_outside_the_copy(void)
+{
+    // Reported from the bench: three instructions at $C000, the first two
+    // copied to $C010, and the code range naming all three.
+    //
+    //   C000  EE 21 D0    INC $D021        outside the source, left alone
+    //   C003  4C 00 C0    JMP $C000        inside the copy, moves with it
+    //   C006  4C 00 C0    JMP $C000        outside the copy, patched in place
+    //
+    // "T C000-C005,C010,C000-C008" used to be refused with ?RANGE, because the
+    // code range ran past the end of the copy. The third instruction is the
+    // whole point of naming a longer range: it is a pointer at the block that
+    // stays where it is and has to follow the block.
+    FakeMemoryBackend backend;
+    static const uint8_t code[] = {
+        0xEE, 0x21, 0xD0,
+        0x4C, 0x00, 0xC0,
+        0x4C, 0x00, 0xC0,
+    };
+    reloc_poke(backend, 0xC000, code, sizeof(code));
+
+    int moved = monitor_transfer_memory_relocate(&backend, 0xC000, 0xC005, 0xC010,
+                                                 0xC000, 0xC008, false);
+    if (expect(moved == 2,
+               "Both pointers into the copy must be moved, inside it and outside it.")) {
+        printf("  reported %d\n", moved);
+        return 1;
+    }
+    // The copy: INC $D021 keeps its operand, JMP $C000 now names the copy.
+    if (expect(backend.read(0xC010) == 0xEE && backend.read(0xC011) == 0x21 &&
+               backend.read(0xC012) == 0xD0,
+               "An operand outside the source must be left alone in the copy.")) return 1;
+    if (expect(backend.read(0xC013) == 0x4C && backend.read(0xC014) == 0x10 &&
+               backend.read(0xC015) == 0xC0,
+               "A pointer inside the copy must name the destination.")) return 1;
+    // The instruction that did not move is patched where it stands.
+    if (expect(backend.read(0xC006) == 0x4C && backend.read(0xC007) == 0x10 &&
+               backend.read(0xC008) == 0xC0,
+               "A pointer outside the copy must be patched in place.")) return 1;
+    // The original of the copied block is not rewritten by a non-overlapping
+    // copy, so the first JMP still names $C000.
+    if (expect(backend.read(0xC003) == 0x4C && backend.read(0xC004) == 0x00 &&
+               backend.read(0xC005) == 0xC0,
+               "The original of a non-overlapping copy must be left alone.")) return 1;
+    return 0;
+}
+
+static int test_transfer_relocate_leaves_an_instruction_across_the_edge(void)
+{
+    // An instruction whose three bytes straddle the end of the copy is neither
+    // moved nor stationary: writing its operand would put one byte in the copy
+    // and one in the original. It is left alone.
+    FakeMemoryBackend backend;
+    static const uint8_t code[] = {
+        0xEA,                    // C000  NOP
+        0x4C, 0x00, 0xC0,        // C001  JMP $C000, ends at C003
+    };
+    reloc_poke(backend, 0xC000, code, sizeof(code));
+
+    // The copy ends at $C002, so the JMP starts inside it and ends outside.
+    int moved = monitor_transfer_memory_relocate(&backend, 0xC000, 0xC002, 0xC100,
+                                                 0xC000, 0xC003, false);
+    if (expect(moved == 0,
+               "An instruction straddling the end of the copy must be left alone.")) {
+        printf("  reported %d\n", moved);
+        return 1;
+    }
+    if (expect(backend.read(0xC002) == 0x00 && backend.read(0xC003) == 0xC0,
+               "Its operand must be untouched where it stands.")) return 1;
+    if (expect(backend.read(0xC102) == 0x00,
+               "And untouched in the copy.")) return 1;
+    return 0;
+}
+
+static int test_transfer_relocate_reads_the_copy_when_ranges_overlap(void)
+{
+    {
+        // Destination above the source, so the copy runs backwards and the
+        // original is partly overwritten. The walk must read the copy.
+        FakeMemoryBackend backend;
+        static const uint8_t code[] = { 0xAD, 0x04, 0xC0 };  // LDA $C004
+        reloc_poke(backend, 0xC000, code, sizeof(code));
+
+        int moved = monitor_transfer_memory_relocate(&backend, 0xC000, 0xC00F, 0xC008,
+                                                     0xC000, 0xC002, false);
+        if (expect(moved == 1, "An overlapping relocate upwards moves its operand.")) return 1;
+        if (expect(backend.read(0xC008) == 0xAD && backend.read(0xC009) == 0x0C &&
+                   backend.read(0xC00A) == 0xC0,
+                   "An overlapping relocate upwards must patch the copy.")) return 1;
+    }
+    {
+        // Destination below the source, so the copy runs forwards.
+        FakeMemoryBackend backend;
+        static const uint8_t code[] = { 0xAD, 0x14, 0xC0 };  // LDA $C014
+        reloc_poke(backend, 0xC010, code, sizeof(code));
+
+        int moved = monitor_transfer_memory_relocate(&backend, 0xC010, 0xC01F, 0xC008,
+                                                     0xC010, 0xC012, false);
+        if (expect(moved == 1, "An overlapping relocate downwards moves its operand.")) return 1;
+        if (expect(backend.read(0xC008) == 0xAD && backend.read(0xC009) == 0x0C &&
+                   backend.read(0xC00A) == 0xC0,
+                   "An overlapping relocate downwards must patch the copy.")) return 1;
+    }
+    return 0;
+}
+
+static int test_transfer_relocate_handles_range_edges_and_data(void)
+{
+    {
+        // An instruction that starts inside the code range is relocated whole,
+        // even though it reaches past the end of that range.
+        FakeMemoryBackend backend;
+        static const uint8_t code[] = { 0xAD, 0x08, 0xC0 };
+        reloc_poke(backend, 0xC000, code, sizeof(code));
+
+        int moved = monitor_transfer_memory_relocate(&backend, 0xC000, 0xC0FF, 0xC100,
+                                                     0xC000, 0xC001, false);
+        if (expect(moved == 1, "An instruction straddling the end of the code range is relocated.")) return 1;
+        if (expect(backend.read(0xC102) == 0xC1,
+                   "That instruction's operand must still be moved.")) return 1;
+    }
+    {
+        // An instruction reaching past the end of the SOURCE range is not
+        // relocated: the copy does not own the bytes its operand would go in.
+        FakeMemoryBackend backend;
+        static const uint8_t code[] = { 0xAD, 0x00, 0xC0 };
+        reloc_poke(backend, 0xC000, code, sizeof(code));
+
+        int moved = monitor_transfer_memory_relocate(&backend, 0xC000, 0xC001, 0xC100,
+                                                     0xC000, 0xC001, false);
+        if (expect(moved == 0, "An instruction reaching past the source range is not relocated.")) return 1;
+        if (expect(backend.read(0xC100) == 0xAD && backend.read(0xC101) == 0x00,
+                   "The two bytes that were copied must be exactly the source bytes.")) return 1;
+    }
+    {
+        // A byte that does not decode advances the walk by one, and what
+        // follows it is still relocated.
+        FakeMemoryBackend backend;
+        //   C000  02          an illegal opcode, undecodable here
+        //   C001  AD 08 C0    LDA $C008
+        static const uint8_t code[] = { 0x02, 0xAD, 0x08, 0xC0 };
+        reloc_poke(backend, 0xC000, code, sizeof(code));
+
+        int moved = monitor_transfer_memory_relocate(&backend, 0xC000, 0xC0FF, 0xC100,
+                                                     0xC000, 0xC004, false);
+        if (expect(moved == 1, "An undecodable byte must not stop the walk.")) return 1;
+        if (expect(backend.read(0xC100) == 0x02, "The undecodable byte is copied unchanged.")) return 1;
+        if (expect(backend.read(0xC101) == 0xAD && backend.read(0xC102) == 0x08 &&
+                   backend.read(0xC103) == 0xC1,
+                   "The instruction after an undecodable byte must be relocated.")) return 1;
+    }
+    return 0;
+}
+
+static int test_transfer_without_a_code_range_is_unchanged(void)
+{
+    // The three-argument command copies and changes nothing else, whichever
+    // entry point runs it.
+    FakeMemoryBackend plain;
+    FakeMemoryBackend relocating;
+    static const uint8_t code[] = { 0xAD, 0x08, 0xC0, 0xBD, 0x40, 0xC0 };
+    uint32_t index;
+
+    reloc_poke(plain, 0xC000, code, sizeof(code));
+    reloc_poke(relocating, 0xC000, code, sizeof(code));
+
+    monitor_transfer_memory(&plain, 0xC000, 0xC0FF, 0xC100);
+    // The relocating mover with a code range of nothing to scan must agree
+    // byte for byte with the plain one over the whole copy.
+    monitor_transfer_memory_relocate(&relocating, 0xC000, 0xC0FF, 0xC100,
+                                     0xC000, 0xC000, false);
+    if (expect(relocating.read(0xC100) == 0xAD && relocating.read(0xC101) == 0x08 &&
+               relocating.read(0xC102) == 0xC1,
+               "A one-byte code range still relocates the instruction that starts in it.")) return 1;
+    for (index = 0x0003; index <= 0x00FF; index++) {
+        if (expect(plain.read((uint16_t)(0xC100 + index)) ==
+                   relocating.read((uint16_t)(0xC100 + index)),
+                   "Outside the code range the two movers must agree byte for byte.")) return 1;
+    }
+    return 0;
+}
+
+// A backend on a machine that can be reset. The reset itself is performed by
+// whoever owns the machine, so what the monitor does is ask for one and leave;
+// see run_machine_monitor.cc.
+struct FakeResettableBackend : public FakeMemoryBackend
+{
+    virtual bool supports_reset(void) const { return true; }
+};
+
+static int run_monitor_keys(TestUserInterface &ui, CaptureScreen &screen,
+                            MemoryBackend &backend, const int *keys, int count,
+                            int *last_result, bool *asked_for_reset = 0,
+                            bool *asked_for_interface_swap = 0)
+{
+    FakeKeyboard kb(keys, count);
+    ui.screen = &screen;
+    ui.keyboard = &kb;
+    monitor_reset_saved_state();
+
+    BackendMachineMonitor mon(&ui, &backend);
+    mon.init(&screen, &kb);
+    int result = 0;
+    for (int i = 0; i < count && result == 0; i++) {
+        result = mon.poll(0);
+    }
+    if (asked_for_reset) {
+        *asked_for_reset = mon.consume_pending_reset();
+    }
+    if (asked_for_interface_swap) {
+        *asked_for_interface_swap = mon.consume_pending_interface_swap();
+    }
+    mon.deinit();
+    if (last_result) {
+        *last_result = result;
+    }
+    return 0;
+}
+
+static int test_reset_shortcut_resets_and_leaves(void)
+{
+    {
+        // From a memory view: the machine is reset once and the monitor exits.
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeResettableBackend backend;
+        const int keys[] = { KEY_CTRL_R };
+        int result = 0;
+        bool asked = false;
+        run_monitor_keys(ui, screen, backend, keys, 1, &result, &asked);
+        if (expect(asked, "C=+R must ask for a machine reset.")) return 1;
+        if (expect(result == 1, "C=+R must leave the monitor.")) return 1;
+    }
+    {
+        // From edit mode: edit mode is left and the reset still happens.
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeResettableBackend backend;
+        const int keys[] = { 'e', KEY_CTRL_R };
+        int result = 0;
+        bool asked = false;
+        run_monitor_keys(ui, screen, backend, keys, 2, &result, &asked);
+        if (expect(asked, "C=+R must ask for a reset from edit mode too.")) return 1;
+        if (expect(result == 1, "C=+R must leave the monitor from edit mode.")) return 1;
+    }
+    {
+        // A backend that cannot reset says so and stays in the monitor.
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;   // supports_reset() is false
+        const int keys[] = { KEY_CTRL_R, KEY_BREAK };
+        int result = 0;
+        run_monitor_keys(ui, screen, backend, keys, 2, &result);
+        if (expect(strstr(ui.last_popup, "RESET UNAVAILABLE") != 0,
+                   "A backend that cannot reset must say so.")) {
+            printf("  popup was %s\n", ui.last_popup);
+            return 1;
+        }
+    }
+    {
+        // A reset that cannot happen disturbs nothing, so edit mode is still
+        // open behind the message. Read straight after the shortcut, because
+        // any further key would leave edit mode for its own reasons.
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;   // supports_reset() is false
+        char header[39];
+        const int keys[] = { 'e', KEY_CTRL_R, KEY_BREAK };
+        FakeKeyboard kb(keys, 3);
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Reset shortcut test: entering edit mode failed.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "EDIT") != 0,
+                   "Reset shortcut test: edit mode did not start.")) {
+            printf("  header was %s\n", header);
+            return 1;
+        }
+        if (expect(mon.poll(0) == 0, "A reset that cannot happen must stay in the monitor.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "EDIT") != 0,
+                   "A reset that cannot happen must leave edit mode alone.")) {
+            printf("  header was %s\n", header);
+            return 1;
+        }
+        mon.deinit();
+    }
+    return 0;
+}
+
+// C=+R cannot use the ASCII control code for R. That code, 0x12, is KEY_DOWN,
+// so the reset shortcut and the cursor-down key would be the same integer by
+// the time handle_key sees them, and handle_key dispatches the reset shortcut
+// hundreds of lines above its `case KEY_DOWN`. KEY_CTRL_R is therefore 0xBA,
+// outside the ASCII range.
+//
+// This is the check that fails if KEY_CTRL_R is ever given the ASCII code:
+// cursor-down would reset the machine and close the monitor. The third
+// assertion, that the cursor moved, is what stops it passing on a monitor
+// where cursor-down does nothing at all rather than only where it does not
+// reset.
+static int test_cursor_down_is_not_the_reset_shortcut(void)
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeResettableBackend backend;
+    char header[39];
+    const int keys[] = { KEY_DOWN };
+    FakeKeyboard kb(keys, 1);
+
+    ui.screen = &screen;
+    ui.keyboard = &kb;
+    monitor_reset_saved_state();
+
+    BackendMachineMonitor mon(&ui, &backend);
+    mon.init(&screen, &kb);
+    screen.get_slice(1, 3, 38, header);
+    if (expect(strstr(header, "MONITOR HEX $0000") == header,
+               "Cursor-down test: the monitor did not open on $0000.")) {
+        printf("  header was %s\n", header);
+        return 1;
+    }
+    if (expect(mon.poll(0) == 0,
+               "Cursor-down must not leave the monitor.")) return 1;
+    if (expect(!mon.consume_pending_reset(),
+               "Cursor-down must not ask for a machine reset.")) return 1;
+    screen.get_slice(1, 3, 38, header);
+    if (expect(strstr(header, "MONITOR HEX $0008") == header,
+               "Cursor-down must move the cursor one row on.")) {
+        printf("  header was %s\n", header);
+        return 1;
+    }
+    mon.deinit();
+    return 0;
+}
+
+// The shortcut used to be C=+X, whose code is 0x18. Nothing is bound to that
+// code now, so it must not reset the machine and must not close the monitor.
+static int test_old_reset_shortcut_code_does_nothing(void)
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeResettableBackend backend;
+    // 0x18 as a literal: KEY_CTRL_X no longer exists, and the point of this
+    // check is the raw code the C64 and USB keymaps still produce for C=+X.
+    const int keys[] = { 0x18 };
+    int result = 0;
+    bool asked = false;
+
+    run_monitor_keys(ui, screen, backend, keys, 1, &result, &asked);
+    if (expect(!asked, "C=+X must no longer ask for a machine reset.")) return 1;
+    if (expect(result == 0, "C=+X must no longer leave the monitor.")) return 1;
+    return 0;
+}
+
+static int test_reset_and_interface_shortcuts_never_reach_a_popup_layer(void)
+{
+    // The bookmark popup, the opcode picker and the number popup each own the
+    // keyboard while they are up. A destructive shortcut must not act from
+    // under one of them.
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeResettableBackend backend;
+        // C=+B opens the bookmark popup, then C=+R and C=+I are pressed into it.
+        const int keys[] = { KEY_CTRL_B, KEY_CTRL_R, KEY_CTRL_I, KEY_BREAK, KEY_BREAK };
+        int result = 0;
+        bool asked = false;
+        g_swap_interface_type_calls = 0;
+        g_swap_interface_type_result = MENU_HIDE;
+        run_monitor_keys(ui, screen, backend, keys, 5, &result, &asked);
+        if (expect(!asked,
+                   "The bookmark popup must keep C=+R from asking for a reset.")) return 1;
+        if (expect(g_swap_interface_type_calls == 0,
+                   "The bookmark popup must keep C=+I from swapping the interface.")) return 1;
+    }
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeResettableBackend backend;
+        // N opens the number popup, then the two shortcuts are pressed into it.
+        const int keys[] = { 'N', KEY_CTRL_R, KEY_CTRL_I, KEY_BREAK, KEY_BREAK };
+        int result = 0;
+        bool asked = false;
+        g_swap_interface_type_calls = 0;
+        g_swap_interface_type_result = MENU_HIDE;
+        run_monitor_keys(ui, screen, backend, keys, 5, &result, &asked);
+        if (expect(!asked,
+                   "The number popup must keep C=+R from asking for a reset.")) return 1;
+        if (expect(g_swap_interface_type_calls == 0,
+                   "The number popup must keep C=+I from swapping the interface.")) return 1;
+    }
+    return 0;
+}
+
+static int test_interface_shortcut_swaps_and_leaves(void)
+{
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        const int keys[] = { KEY_CTRL_I };
+        int result = 0;
+        bool swapped = false;
+        g_swap_interface_type_calls = 0;
+        g_swap_interface_type_result = MENU_HIDE;
+        run_monitor_keys(ui, screen, backend, keys, 1, &result, 0, &swapped);
+        if (expect(g_swap_interface_type_calls == 1,
+                   "C=+I must ask for the interface swap once.")) {
+            printf("  swap calls %d\n", g_swap_interface_type_calls);
+            return 1;
+        }
+        if (expect(result == 1,
+                   "C=+I must leave the monitor so the new mode takes effect.")) return 1;
+        // Leaving the monitor is not enough on its own. The swapped setting
+        // only takes effect the next time the menu opens, so the file browser
+        // underneath has to close too, or the user is left sitting in the
+        // interface they just swapped away from. run_machine_monitor turns
+        // this into MENU_HIDE, which is the answer the file browser already
+        // gives for the same key.
+        if (expect(swapped,
+                   "C=+I must ask for the whole user interface to close, not "
+                   "just the monitor.")) return 1;
+    }
+    {
+        // From edit mode as well.
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        const int keys[] = { 'e', KEY_CTRL_I };
+        int result = 0;
+        bool swapped = false;
+        g_swap_interface_type_calls = 0;
+        g_swap_interface_type_result = MENU_HIDE;
+        run_monitor_keys(ui, screen, backend, keys, 2, &result, 0, &swapped);
+        if (expect(g_swap_interface_type_calls == 1,
+                   "C=+I must swap from edit mode too.")) return 1;
+        if (expect(result == 1, "C=+I must leave the monitor from edit mode.")) return 1;
+        if (expect(swapped,
+                   "C=+I must close the whole user interface from edit mode "
+                   "too.")) return 1;
+    }
+    {
+        // A machine with no Interface Type setting to swap, which is every
+        // cartridge: nothing changed, so the monitor says so and stays, with
+        // edit mode untouched.
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char header[39];
+        const int keys[] = { 'e', KEY_CTRL_I, KEY_BREAK };
+        FakeKeyboard kb(keys, 3);
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        monitor_reset_saved_state();
+        g_swap_interface_type_calls = 0;
+        g_swap_interface_type_result = MENU_NOP;
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Interface shortcut test: entering edit mode failed.")) return 1;
+        if (expect(mon.poll(0) == 0,
+                   "A swap that changed nothing must stay in the monitor.")) return 1;
+        if (expect(strstr(ui.last_popup, "INTERFACE SWAP UNAVAILABLE") != 0,
+                   "A machine with no interface to swap must say so.")) {
+            printf("  popup was %s\n", ui.last_popup);
+            return 1;
+        }
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "EDIT") != 0,
+                   "A swap that changed nothing must leave edit mode alone.")) return 1;
+        // Nothing was swapped, so nothing needs closing. A monitor that asked
+        // for the interface to close here would take the file browser down
+        // with it over a swap that never happened.
+        if (expect(!mon.consume_pending_interface_swap(),
+                   "A swap that changed nothing must not ask the user "
+                   "interface to close.")) return 1;
+        mon.deinit();
+        g_swap_interface_type_result = MENU_HIDE;
+    }
+    return 0;
+}
+
+static int test_x_is_not_an_exit(void)
+{
+    // The monitor is left with C=+O, RUN/STOP and Escape. A bare X is not an
+    // exit: it is a letter in a keymap where J, E, F, T, C, H, U, O, L and S
+    // are all commands, so a mistyped command letter must not discard the
+    // view.
+    {
+        // Move off the opening address first, so a view that was thrown away
+        // and rebuilt would read differently from the view that was there.
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        const int keys[] = { KEY_DOWN, KEY_DOWN, 'X', 'x', KEY_BREAK };
+        FakeKeyboard kb(keys, 5);
+        char before[6][39], after[6][39];
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "X test: moving down failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "X test: moving down failed.")) return 1;
+        for (int row = 0; row < 6; row++) {
+            screen.get_slice(1, row + 3, 38, before[row]);
+        }
+        if (expect(mon.poll(0) == 0, "X must not leave the monitor.")) return 1;
+        if (expect(mon.poll(0) == 0, "x must not leave the monitor.")) return 1;
+        for (int row = 0; row < 6; row++) {
+            screen.get_slice(1, row + 3, 38, after[row]);
+        }
+        for (int row = 0; row < 6; row++) {
+            if (expect(strcmp(before[row], after[row]) == 0,
+                       "X must leave the view exactly as it was.")) {
+                printf("  row %d was %s, now %s\n", row, before[row], after[row]);
+                return 1;
+            }
+        }
+        if (expect(mon.poll(0) == 1, "RUN/STOP must still leave the monitor.")) return 1;
+        mon.deinit();
+    }
+    {
+        // The three remaining exits, each from the same starting state.
+        const int exits[] = { KEY_CTRL_O, KEY_BREAK, KEY_ESCAPE };
+        for (int i = 0; i < 3; i++) {
+            TestUserInterface ui;
+            CaptureScreen screen;
+            FakeMemoryBackend backend;
+            const int keys[] = { exits[i] };
+            int result = 0;
+            run_monitor_keys(ui, screen, backend, keys, 1, &result);
+            if (expect(result == 1, "C=+O, RUN/STOP and Escape must all still exit.")) {
+                printf("  exit key index %d returned %d\n", i, result);
+                return 1;
+            }
+        }
+    }
+    {
+        // ASCII edit mode: X is edit data there and is written to memory.
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        const int keys[] = { 'i', 'e', 'X' };
+        int result = 0;
+        run_monitor_keys(ui, screen, backend, keys, 3, &result);
+        if (expect(result == 0, "X must stay ASCII edit data.")) return 1;
+        if (expect(backend.memory[0x0000] == 'X',
+                   "X in ASCII edit mode must write X to memory.")) {
+            printf("  memory was %02X\n", backend.memory[0x0000]);
+            return 1;
+        }
+    }
+    {
+        // Hex edit mode: X is not a hex digit, so it is ignored and edit mode
+        // survives it.
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char header[39];
+        const int keys[] = { 'e', 'X', KEY_BREAK };
+        FakeKeyboard kb(keys, 3);
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "X test: entering hex edit mode failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "X must not leave the monitor from hex edit mode.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "EDIT") != 0,
+                   "X must leave hex edit mode running.")) {
+            printf("  header was %s\n", header);
+            return 1;
+        }
+        if (expect(backend.memory[0x0000] == 0x00,
+                   "X must not write anything in hex edit mode.")) return 1;
+        mon.deinit();
+    }
+    {
+        // ASM edit mode: a letter opens the opcode picker, and X still does.
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        const int keys[] = { 'a', 'e', 'X' };
+        int result = 0;
+        run_monitor_keys(ui, screen, backend, keys, 3, &result);
+        if (expect(result == 0, "X must not leave the monitor from ASM edit mode.")) return 1;
+    }
+    return 0;
+}
+
+static int test_d_is_reserved_and_a_opens_assembly(void)
+{
+    // `A` opens the Assembly view. `D` does not open it or anything else: the
+    // key is reserved for a future Debug mode, and a reservation that only
+    // exists as an intention is one refactor away from being spent. An older
+    // copy of the E2E suite did press `D` for this view, so the binding has
+    // already drifted once.
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char header[39];
+        const int keys[] = { 'a', KEY_BREAK };
+        FakeKeyboard kb(keys, 2);
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "A must not leave the monitor.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "ASM") != 0, "A must open the Assembly view.")) {
+            printf("  header was %s\n", header);
+            return 1;
+        }
+        mon.deinit();
+    }
+    {
+        // From the opening view, D changes nothing at all: not the view, not
+        // the screen, and it does not leave the monitor.
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char before[6][39], after[6][39];
+        const int keys[] = { 'D', 'd', KEY_BREAK };
+        FakeKeyboard kb(keys, 3);
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        for (int r = 0; r < 6; r++) screen.get_slice(1, r + 3, 38, before[r]);
+        if (expect(mon.poll(0) == 0, "D must not leave the monitor.")) return 1;
+        if (expect(mon.poll(0) == 0, "d must not leave the monitor.")) return 1;
+        for (int r = 0; r < 6; r++) screen.get_slice(1, r + 3, 38, after[r]);
+        for (int r = 0; r < 6; r++) {
+            if (expect(strcmp(before[r], after[r]) == 0,
+                       "D is reserved for Debug mode and must change nothing.")) {
+                printf("  row %d was %s, now %s\n", r, before[r], after[r]);
+                return 1;
+            }
+        }
+        mon.deinit();
+    }
+    return 0;
+}
+
+static int test_view_names_are_stable_log_tokens(void)
+{
+    // The names the monitor's trace lines use for each view. They are read by
+    // a person or by a log grep rather than parsed by the firmware, so they
+    // are pinned here: a renamed view would otherwise silently change what a
+    // device log says without anything failing.
+    struct { MachineMonitorView view; const char *name; } expected[] = {
+        { MONITOR_VIEW_HEX,    "HEX"    },
+        { MONITOR_VIEW_ASM,    "ASM"    },
+        { MONITOR_VIEW_ASCII,  "ASCII"  },
+        { MONITOR_VIEW_SCREEN, "SCREEN" },
+        { MONITOR_VIEW_BINARY, "BINARY" },
+    };
+
+    for (size_t i = 0; i < sizeof(expected) / sizeof(expected[0]); i++) {
+        const char *actual = monitor_view_name(expected[i].view);
+        if (expect(actual != 0 && strcmp(actual, expected[i].name) == 0,
+                   "A view's log name is not the expected token.")) {
+            printf("  view %d is %s, expected %s\n", (int)expected[i].view,
+                   actual ? actual : "(null)", expected[i].name);
+            return 1;
+        }
+    }
+    // A value outside the enum still produces a printable token rather than a
+    // null that a trace line would print as "(null)" or crash on.
+    if (expect(monitor_view_name((MachineMonitorView)99) != 0,
+               "An unknown view must still have a printable name.")) return 1;
+    return 0;
+}
+
+static int test_a_popup_owns_the_rows_it_covers(void)
+{
+    // The status row is the window's last row and is padded to the full window
+    // width. A popup that reaches that row must still be readable there, so
+    // the popups are drawn after the status row rather than before it.
+    //
+    // On a 25-row screen no popup reaches that row, so the screen here is 18
+    // rows: the Bookmarks popup is 16 rows tall and is only clamped at the
+    // top, which puts its tenth bookmark slot exactly on the status row.
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeMemoryBackend backend;
+    const int keys[] = { KEY_CTRL_B };
+    FakeKeyboard kb(keys, 1);
+    char row[41];
+
+    screen.set_height(18);
+    ui.screen = &screen;
+    ui.keyboard = &kb;
+    monitor_reset_saved_state();
+
+    BackendMachineMonitor mon(&ui, &backend);
+    mon.init(&screen, &kb);
+    if (expect(mon.poll(0) == 0, "Popup draw order test: opening Bookmarks failed.")) return 1;
+
+    // The window starts at screen row 2 and is 15 rows tall, so the status
+    // row is screen row 15. The popup's tenth bookmark slot is on that row.
+    screen.get_slice(0, 15, 40, row);
+    if (expect(strstr(row, "9 KERNAL $E000") != 0,
+               "The status row must not paint over the row a popup covers.")) {
+        printf("  screen row 15 was |%s|\n", row);
+        return 1;
+    }
+    // The popup is still whole above that row, so this is not a case of the
+    // popup having been drawn somewhere else entirely.
+    screen.get_slice(0, 14, 40, row);
+    if (expect(strstr(row, "8 CIA2   $DD00") != 0,
+               "Popup draw order test: the Bookmarks popup is not where the test expects it.")) {
+        printf("  screen row 14 was |%s|\n", row);
+        return 1;
+    }
+    mon.deinit();
+    return 0;
+}
+
+static int test_memory_helpers(void)
+{
+    FakeMemoryBackend backend;
+    BackendMachineMonitor monitor(NULL, &backend);
+    char output[512];
+    uint16_t value;
+    uint8_t needle[32];
+
+    monitor_fill_memory(&backend, 0xC000, 0xC00F, 0xAA);
+    if (expect(backend.read(0xC000) == 0xAA && backend.read(0xC00F) == 0xAA && backend.read(0xC010) == 0x00,
+               "Fill command memory range failed.")) return 1;
+
+    for (value = 0; value < 17; value++) {
+        backend.write((uint16_t)(0xC100 + value), (uint8_t)value);
+    }
+    monitor_transfer_memory(&backend, 0xC100, 0xC110, 0xC101);
+    // 17 bytes, not 16: the byte at the end of the range is copied too, and
+    // the overlap makes the copy run backwards.
+    for (value = 0; value < 17; value++) {
+        if (expect(backend.read((uint16_t)(0xC101 + value)) == (uint8_t)value, "Transfer overlap-safe copy failed.")) return 1;
+    }
+    // A one-byte range copies that byte and no other.
+    backend.write(0xC150, 0x5A);
+    backend.write(0xC160, 0x00);
+    backend.write(0xC161, 0x00);
+    monitor_transfer_memory(&backend, 0xC150, 0xC150, 0xC160);
+    if (expect(backend.read(0xC160) == 0x5A && backend.read(0xC161) == 0x00,
+               "Transfer of a one-byte range failed.")) return 1;
+
+    backend.write(0xC200, 0x01);
+    backend.write(0xC201, 0x02);
+    backend.write(0xC202, 0x03);
+    backend.write(0xC300, 0x01);
+    backend.write(0xC301, 0x09);
+    backend.write(0xC302, 0x07);
+    monitor_compare_memory(&backend, 0xC200, 0xC202, 0xC300, output, sizeof(output));
+    // $C202 is the end of the range and differs, so it is reported: Compare
+    // reads both ends like every other range command.
+    if (expect(strstr(output, "$C201") != NULL && strstr(output, "$C202") != NULL &&
+               strstr(output, "$C200") == NULL, "Compare differences output failed.")) return 1;
+
+    backend.write(0xC400, 0xDE);
+    backend.write(0xC401, 0xAD);
+    backend.write(0xC410, 'T');
+    backend.write(0xC411, 'E');
+    backend.write(0xC412, 'S');
+    backend.write(0xC413, 'T');
+    needle[0] = 0xDE;
+    needle[1] = 0xAD;
+    monitor_hunt_memory(&backend, 0xC400, 0xC420, needle, 2, output, sizeof(output));
+    if (expect(strstr(output, "$C400") != NULL, "Hunt byte sequence failed.")) return 1;
+    monitor_hunt_memory(&backend, 0xC400, 0xC420, (const uint8_t *)"TEST", 4, output, sizeof(output));
+    if (expect(strstr(output, "$C410") != NULL, "Hunt string failed.")) return 1;
+
+    return 0;
+}
+
+static int test_parsers_and_formatters(void)
+{
+    FakeMemoryBackend backend;
+    char output[512];
+    char row[MONITOR_HEX_ROW_CHARS + 1];
+    char text_row[MONITOR_TEXT_ROW_CHARS + 1];
+    char status_line[40];
+    uint16_t value;
+    uint16_t start;
+    uint16_t end;
+    uint16_t dest;
+    uint8_t byte;
+    uint8_t needle[32];
+    int needle_len;
+    MachineMonitorState state;
+    uint8_t ascii_bytes[MONITOR_TEXT_BYTES_PER_ROW];
+
+    if (expect(monitor_parse_expression("$1234", &value) == MONITOR_OK && value == 0x1234, "Hex expression parse failed.")) return 1;
+    if (expect(monitor_parse_expression("0x1234", &value) == MONITOR_SYNTAX, "0x-prefixed expressions must be rejected.")) return 1;
+    if (expect(monitor_parse_expression("4660", &value) == MONITOR_OK && value == 0x1234, "Decimal expression parse failed.")) return 1;
+    if (expect(monitor_parse_expression("%0001001000110100", &value) == MONITOR_OK && value == 0x1234, "Binary expression parse failed.")) return 1;
+
+    state.view = MONITOR_VIEW_HEX;
+    state.current_addr = 0;
+    state.base_addr = 0;
+    state.disasm_offset = 2;
+    state.illegal_enabled = false;
+    state.screen_charset = MONITOR_SCREEN_CHARSET_UPPER_GRAPHICS;
+    monitor_apply_go(&state, 0x1235);
+    if (expect(state.current_addr == 0x1235 && state.base_addr == 0x1230 && state.disasm_offset == 0, "Goto state alignment failed.")) return 1;
+
+    if (expect(monitor_parse_address("XYZ", &value) == MONITOR_ADDR, "Address validator failure.")) return 1;
+    if (expect(monitor_parse_fill("C100-C000,00", &start, &end, &byte) == MONITOR_RANGE, "Range validator failure.")) return 1;
+    if (expect(monitor_parse_hunt("C100-C200, ", &start, &end, needle, &needle_len) == MONITOR_SYNTAX, "Hunt validator failure.")) return 1;
+    if (expect(monitor_parse_hunt("C100-C200,\"Hello\"", &start, &end, needle, &needle_len) == MONITOR_OK &&
+               needle_len == 5 && memcmp(needle, "Hello", 5) == 0,
+               "Hunt quoted ASCII must preserve mixed-case bytes.")) return 1;
+    if (expect(monitor_parse_transfer("C000-C010,C100", &start, &end, &dest) == MONITOR_OK, "Transfer parser failed.")) return 1;
+    if (expect(start == 0xC000 && end == 0xC010 && dest == 0xC100, "Transfer parser values failed.")) return 1;
+    // A range includes both of its ends everywhere in the monitor, so
+    // start == end is one byte rather than none.
+    if (expect(monitor_parse_transfer("C000-C000,C100", &start, &end, &dest) == MONITOR_OK &&
+               start == 0xC000 && end == 0xC000,
+               "Transfer parser should accept a one-byte range.")) return 1;
+    if (expect(monitor_parse_compare("C000-C000,C100", &start, &end, &dest) == MONITOR_OK,
+               "Compare parser should accept a one-byte range.")) return 1;
+    if (expect(monitor_parse_transfer("C010-C000,C100", &start, &end, &dest) == MONITOR_RANGE,
+               "Transfer parser should reject an end below the start.")) return 1;
+    if (expect(monitor_parse_compare("C010-C000,C100", &start, &end, &dest) == MONITOR_RANGE,
+               "Compare parser should reject an end below the start.")) return 1;
+
+    if (expect(monitor_format_evaluate("$00ff", output, sizeof(output)) == MONITOR_OK && output[0] == '$',
+               "Evaluate formatter failed.")) return 1;
+
+    {
+        const uint8_t hex_bytes[MONITOR_HEX_BYTES_PER_ROW] = { 0x41, 0x00, 0x7A, 0x1F, 0x20, 0x30, 0x31, 0x32 };
+        monitor_format_hex_row(0x0000, hex_bytes, row);
+        if (expect(strcmp(row, "0000 41 00 7A 1F 20 30 31 32 A.z. 012") == 0, "Hex row format mismatch.")) return 1;
+    }
+
+    {
+        for (int i = 0; i < MONITOR_TEXT_BYTES_PER_ROW; i++) {
+            ascii_bytes[i] = (uint8_t)('A' + (i % 26));
+        }
+        monitor_format_text_row(0x1000, ascii_bytes, MONITOR_TEXT_BYTES_PER_ROW, false, text_row);
+        if (expect(strcmp(text_row, "1000 ABCDEFGHIJKLMNOPQRSTUVWXYZABCDEF") == 0, "ASCII row format mismatch.")) return 1;
+        monitor_format_text_row(0x1000, ascii_bytes, MONITOR_TEXT_BYTES_PER_ROW, true, text_row);
+        if (expect((int)strlen(text_row) == MONITOR_TEXT_ROW_CHARS, "Screen-code row width mismatch.")) return 1;
+    }
+
+    {
+        const uint8_t printable_ascii[MONITOR_TEXT_BYTES_PER_ROW] = {
+            0x41, 0x61, 0x20, 0x7E, 0x1F, 0x80
+        };
+        monitor_format_text_row(0x1100, printable_ascii, 6, false, text_row);
+        if (expect(strncmp(text_row, "1100 Aa ~..", 11) == 0,
+                   "ASCII row formatter must preserve case and dot non-printables.")) return 1;
+    }
+
+    {
+        const uint8_t screen_bytes[MONITOR_TEXT_BYTES_PER_ROW] = {
+            0x00, 0x01, 0x1A, 0x1B, 0x1C, 0x1D, 0x1E, 0x1F,
+            0x20, 0x21, 0x2A, 0x2B, 0x30, 0x3A, 0x3F, 0x40,
+            0x49, 0x4A, 0x4B, 0x55, 0x5A, 0x5B, 0x5D, 0x60,
+            0x7F, 0x80, 0x81, 0x9A, 0x9B, 0x9C, 0x9D, 0x9E
+        };
+        monitor_format_text_row(0x2000, screen_bytes, MONITOR_TEXT_BYTES_PER_ROW, true, text_row);
+        if (expect(strncmp(text_row, "2000 ", 5) == 0, "Screen-code row prefix mismatch.")) return 1;
+        if (expect(text_row[5] == '@', "Screen code $00 should map to '@'.")) return 1;
+        if (expect(text_row[6] == 'A', "Screen code $01 should map to 'A'.")) return 1;
+        if (expect(text_row[7] == 'Z', "Screen code $1A should map to 'Z'.")) return 1;
+        if (expect(text_row[8] == '[', "Screen code $1B should map to '['.")) return 1;
+        if (expect(text_row[9] == '#', "Screen code $1C should map to the pound-sign fallback.")) return 1;
+        if (expect(text_row[10] == ']', "Screen code $1D should map to ']'.")) return 1;
+        if (expect(text_row[11] == '^', "Screen code $1E should map to the up-arrow fallback.")) return 1;
+        if (expect(text_row[12] == '<', "Screen code $1F should map to the left-arrow fallback.")) return 1;
+        if (expect(text_row[13] == ' ' && text_row[14] == '!' && text_row[15] == '*' && text_row[16] == '+',
+                   "Printable screen-code punctuation mapping is incorrect.")) return 1;
+        if (expect(text_row[17] == '0' && text_row[18] == ':' && text_row[19] == '?',
+                   "Screen-code digit/punctuation positions are incorrect.")) return 1;
+        if (expect((unsigned char)text_row[20] == CHR_HORIZONTAL_LINE, "Screen code $40 should map to the horizontal-line glyph.")) return 1;
+        if (expect((unsigned char)text_row[21] == CHR_ROUNDED_UPPER_RIGHT, "Screen code $49 should map to the upper-right rounded corner glyph.")) return 1;
+        if (expect((unsigned char)text_row[22] == CHR_ROUNDED_LOWER_LEFT, "Screen code $4A should map to the lower-left rounded corner glyph.")) return 1;
+        if (expect((unsigned char)text_row[23] == CHR_ROUNDED_LOWER_RIGHT, "Screen code $4B should map to the lower-right rounded corner glyph.")) return 1;
+        if (expect((unsigned char)text_row[24] == CHR_ROUNDED_UPPER_LEFT, "Screen code $55 should map to the upper-left rounded corner glyph.")) return 1;
+        if (expect((unsigned char)text_row[25] == CHR_DIAMOND, "Screen code $5A should map to the diamond glyph.")) return 1;
+        if (expect(text_row[26] == '+' && (unsigned char)text_row[27] == CHR_VERTICAL_LINE,
+                   "Screen-code cross/vertical-line mapping is incorrect.")) return 1;
+        if (expect(text_row[28] == '.' && text_row[29] == '.',
+               "Non-space screen-code range $60-$7F should render as visible placeholders.")) return 1;
+        if (expect(text_row[30] == '@' && text_row[31] == 'A' && text_row[32] == 'Z' && text_row[33] == '[',
+                   "Reverse screen codes should map to the same visible glyph positions as their base codes.")) return 1;
+        if (expect(text_row[34] == '#' && text_row[35] == ']' && text_row[36] == '^',
+                   "Reverse punctuation/arrow screen-code mapping is incorrect.")) return 1;
+    }
+
+    {
+        static const struct {
+            uint8_t port01;
+            const char *expected_cpu;
+        } cpu_cases[] = {
+            { 0x00, "CPU0 $A:RAM $D:RAM $E:RAM" },
+            { 0x01, "CPU1 $A:RAM $D:CHR $E:RAM" },
+            { 0x02, "CPU2 $A:RAM $D:CHR $E:KRN" },
+            { 0x03, "CPU3 $A:BAS $D:CHR $E:KRN" },
+            { 0x04, "CPU4 $A:RAM $D:RAM $E:RAM" },
+            { 0x05, "CPU5 $A:RAM $D:I/O $E:RAM" },
+            { 0x06, "CPU6 $A:RAM $D:I/O $E:KRN" },
+            { 0x07, "CPU7 $A:BAS $D:I/O $E:KRN" },
+        };
+
+        for (unsigned int i = 0; i < sizeof(cpu_cases) / sizeof(cpu_cases[0]); i++) {
+            monitor_format_status_line(status_line, cpu_cases[i].port01, 0);
+            if (expect(strncmp(status_line, cpu_cases[i].expected_cpu, strlen(cpu_cases[i].expected_cpu)) == 0,
+                       "CPU status formatter mapping mismatch.")) return 1;
+        }
+    }
+
+    {
+        static const struct {
+            uint8_t vic_bank;
+            const char *expected_vic;
+        } vic_cases[] = {
+            { 0, "VIC0 $0000" },
+            { 1, "VIC1 $4000" },
+            { 2, "VIC2 $8000" },
+            { 3, "VIC3 $C000" },
+        };
+
+        for (unsigned int i = 0; i < sizeof(vic_cases) / sizeof(vic_cases[0]); i++) {
+            const char *vic_text;
+
+            monitor_format_status_line(status_line, 0x07, vic_cases[i].vic_bank);
+            vic_text = strstr(status_line, "VIC");
+            if (expect(vic_text != NULL && strcmp(vic_text, vic_cases[i].expected_vic) == 0,
+                       "VIC status formatter mapping mismatch.")) return 1;
+        }
+    }
+
+    {
+        static const struct {
+            uint8_t port01;
+            uint8_t vic_bank;
+            const char *expected;
+        } combined_cases[] = {
+            { 0x07, 0, "CPU7 $A:BAS $D:I/O $E:KRN VIC0 $0000" },
+            { 0x00, 3, "CPU0 $A:RAM $D:RAM $E:RAM VIC3 $C000" },
+            { 0x01, 1, "CPU1 $A:RAM $D:CHR $E:RAM VIC1 $4000" },
+            { 0x06, 2, "CPU6 $A:RAM $D:I/O $E:KRN VIC2 $8000" },
+            { 0x05, 0, "CPU5 $A:RAM $D:I/O $E:RAM VIC0 $0000" },
+        };
+
+        for (unsigned int i = 0; i < sizeof(combined_cases) / sizeof(combined_cases[0]); i++) {
+            monitor_format_status_line(status_line, combined_cases[i].port01, combined_cases[i].vic_bank);
+            if (expect(strcmp(status_line, combined_cases[i].expected) == 0,
+                       "Combined CPU/VIC status formatter mismatch.")) return 1;
+        }
+    }
+
+    {
+        char bank_28[40];
+        char bank_30[40];
+        char bank_29[40];
+        char bank_31[40];
+        char bank_27[40];
+        char bank_37[40];
+
+        monitor_format_status_line(bank_28, 0x28, 0);
+        monitor_format_status_line(bank_30, 0x30, 0);
+        if (expect(strcmp(bank_28, "CPU0 $A:RAM $D:RAM $E:RAM VIC0 $0000") == 0,
+                   "Port $28 should map to effective CPU bank 0.")) return 1;
+        if (expect(strcmp(bank_28, bank_30) == 0,
+                   "High-bit differences must not change the displayed CPU0 map.")) return 1;
+
+        monitor_format_status_line(bank_29, 0x29, 0);
+        monitor_format_status_line(bank_31, 0x31, 0);
+        if (expect(strcmp(bank_29, "CPU1 $A:RAM $D:CHR $E:RAM VIC0 $0000") == 0,
+                   "Port $29 should map to effective CPU bank 1.")) return 1;
+        if (expect(strcmp(bank_29, bank_31) == 0,
+                   "High-bit differences must not change the displayed CPU1 map.")) return 1;
+
+        monitor_format_status_line(bank_27, 0x27, 0);
+        monitor_format_status_line(bank_37, 0x37, 0);
+        if (expect(strcmp(bank_27, "CPU7 $A:BAS $D:I/O $E:KRN VIC0 $0000") == 0,
+                   "Port $27 should map to effective CPU bank 7.")) return 1;
+        if (expect(strcmp(bank_27, bank_37) == 0,
+                   "High-bit differences must not change the displayed CPU7 map.")) return 1;
+    }
+
+    for (uint8_t cpu_bank = 0; cpu_bank < 8; cpu_bank++) {
+        for (uint8_t vic_bank = 0; vic_bank < 4; vic_bank++) {
+            monitor_format_status_line(status_line, cpu_bank, vic_bank);
+            if (expect(strlen(status_line) <= 38, "Status line width exceeded 38 characters.")) return 1;
+            if (expect(strchr(status_line, '|') == NULL, "Status line must not contain a pipe separator.")) return 1;
+        }
+    }
+
+    return 0;
+}
+
+static int test_banked_backend(void)
+{
+    FakeBankedMemoryBackend backend;
+
+    backend.ram[0xA000] = 0xA1;
+    backend.ram[0xD000] = 0xD1;
+    backend.ram[0xE000] = 0xE1;
+    backend.basic[0] = 0xBA;
+    backend.charrom[0] = 0xC3;
+    backend.kernal[0] = 0x4E;
+    backend.io[0] = 0x10;
+
+    backend.set_monitor_cpu_port(0x07);
+    if (expect(backend.read(0xA000) == 0xBA, "BASIC ROM read mapping failed.")) return 1;
+    if (expect(backend.read(0xD000) == 0x10, "I/O read mapping failed.")) return 1;
+    if (expect(backend.read(0xE000) == 0x4E, "KERNAL ROM read mapping failed.")) return 1;
+
+    backend.set_monitor_cpu_port(0x03);
+    if (expect(backend.read(0xD000) == 0xC3, "CHAR ROM read mapping failed.")) return 1;
+
+    backend.set_monitor_cpu_port(0x00);
+    if (expect(backend.read(0xA000) == 0xA1 && backend.read(0xD000) == 0xD1 && backend.read(0xE000) == 0xE1,
+               "RAM read mapping failed.")) return 1;
+
+    backend.set_monitor_cpu_port(0x07);
+    backend.write(0xA000, 0x55);
+    backend.write(0xE000, 0x66);
+    if (expect(backend.ram[0xA000] == 0x55 && backend.basic[0] == 0xBA, "Write-under-BASIC semantics failed.")) return 1;
+    if (expect(backend.ram[0xE000] == 0x66 && backend.kernal[0] == 0x4E, "Write-under-KERNAL semantics failed.")) return 1;
+
+    backend.set_monitor_cpu_port(0x03);
+    backend.write(0xD000, 0x77);
+    if (expect(backend.ram[0xD000] == 0x77 && backend.charrom[0] == 0xC3, "Write-under-CHAR semantics failed.")) return 1;
+
+    backend.set_monitor_cpu_port(0x07);
+    backend.write(0xD000, 0x88);
+    if (expect(backend.io[0] == 0x88 && backend.ram[0xD000] == 0x77, "I/O write semantics failed.")) return 1;
+    if (expect(backend.get_live_vic_bank() == 2, "Live VIC bank calculation failed.")) return 1;
+    backend.live_dd00 = 0xA9;
+    backend.set_monitor_cpu_port(0x00);
+    backend.set_live_vic_bank(1);
+    if (expect(backend.live_dd00 == 0xAA, "set_live_vic_bank must preserve unrelated CIA-2 bits while updating VIC bank bits.")) return 1;
+    if (expect(backend.get_monitor_cpu_port() == 0x00, "set_live_vic_bank must restore the selected monitor CPU bank after touching DD00.")) return 1;
+    backend.set_monitor_cpu_port(0x07);
+    if (expect(strcmp(backend.source_name(0xA000), "BASIC") == 0, "BASIC source name failed.")) return 1;
+    if (expect(strcmp(backend.source_name(0xD000), "IO") == 0, "I/O source name failed.")) return 1;
+    if (expect(strcmp(backend.source_name(0xE000), "KERNAL") == 0, "KERNAL source name failed.")) return 1;
+
+    backend.set_monitor_cpu_port(0x00);
+    if (expect(strcmp(backend.source_name(0xA000), "RAM") == 0, "A000 RAM source name failed.")) return 1;
+    if (expect(strcmp(backend.source_name(0xD000), "RAM") == 0, "D000 RAM source name failed.")) return 1;
+    if (expect(strcmp(backend.source_name(0xE000), "RAM") == 0, "E000 RAM source name failed.")) return 1;
+
+    return 0;
+}
+
+static int test_frozen_banked_backend(void)
+{
+    // Mirrors the freeze-mode invariants from
+    // doc/research/machine-monitor/freeze-support/plan.md §Tests:
+    // monitor_cpu_port is authoritative; ROM overlays and write-under-ROM
+    // behave correctly; $0400-$0FFF reads from the freezer backup region;
+    // reads are stable across redraws; IO remains reachable when the bank
+    // exposes it.
+    FakeBankedMemoryBackend backend;
+
+    backend.frozen = true;
+    backend.live_cpu_port = 0x00; // Live latch is unobservable while frozen — must not influence routing.
+    backend.live_cpu_ddr = 0x00;
+
+    backend.basic[0] = 0xBA;
+    backend.kernal[0] = 0x4E;
+    backend.kernal[1] = 0x22;
+    backend.charrom[0] = 0xC3;
+    backend.io[0xD020 - 0xD000] = 0x00;
+    backend.ram[0xA000] = 0xAA;
+    backend.ram[0xE000] = 0x11;
+    backend.ram[0xE001] = 0x22;
+    backend.screen_backup[0x20] = 0x42; // $0420 sentinel — proves backup redirect is used.
+    backend.ram[0x0420] = 0xFF;         // Underlying DRAM differs to guarantee the redirect fired.
+
+    // (1) KERNAL visible at $E000 when (monitor_cpu_port & 0x02).
+    backend.set_monitor_cpu_port(0x07);
+    if (expect(backend.read(0xE000) == 0x4E, "Frozen: KERNAL must be visible at $E000 with port=$07.")) return 1;
+
+    // (1b) RAM otherwise.
+    backend.set_monitor_cpu_port(0x05); // & 0x02 == 0 -> KERNAL hidden.
+    if (expect(backend.read(0xE000) == 0x11, "Frozen: $E000 must read RAM when KERNAL is hidden.")) return 1;
+
+    // (2) BASIC visible at $A000 when (port & 0x03) == 0x03.
+    backend.set_monitor_cpu_port(0x07);
+    if (expect(backend.read(0xA000) == 0xBA, "Frozen: BASIC must be visible at $A000 with port=$07.")) return 1;
+    backend.set_monitor_cpu_port(0x06); // & 0x03 != 0x03 -> BASIC hidden.
+    if (expect(backend.read(0xA000) == 0xAA, "Frozen: $A000 must read RAM when BASIC is hidden.")) return 1;
+
+    // (3) $0400-$0FFF returns the screen_backup byte, not live DRAM.
+    if (expect(backend.read(0x0420) == 0x42, "Frozen: $0420 must come from the screen_backup region.")) return 1;
+
+    // (4) Two consecutive reads at $E000 return the same byte.
+    backend.set_monitor_cpu_port(0x07);
+    uint8_t first_read = backend.read(0xE000);
+    uint8_t second_read = backend.read(0xE000);
+    if (expect(first_read == second_read, "Frozen: two consecutive $E000 reads must agree (no scroll drift).")) return 1;
+
+    // (5) Write at $E000 while KERNAL is visible, switch to RAM-only bank,
+    //     read $E000 returns the written byte.
+    backend.set_monitor_cpu_port(0x07);
+    backend.write(0xE000, 0x99);
+    if (expect(backend.kernal[0] == 0x4E, "Frozen: write under KERNAL must not modify ROM.")) return 1;
+    backend.set_monitor_cpu_port(0x05); // KERNAL hidden.
+    if (expect(backend.read(0xE000) == 0x99, "Frozen: write-under-ROM must persist as RAM and survive bank switch.")) return 1;
+
+    // (6) Frozen + IO-selected bank: source_name reports IO and IO is reachable.
+    backend.set_monitor_cpu_port(0x07);
+    if (expect(strcmp(backend.source_name(0xD020), "IO") == 0,
+               "Frozen: source_name($D020) must remain IO with IO bank selected.")) return 1;
+    backend.write(0xD020, 0x05);
+    if (expect(backend.io[0xD020 - 0xD000] == 0x05, "Frozen: IO write must reach the IO region.")) return 1;
+    if (expect(backend.read(0xD020) == 0x05, "Frozen: IO read must return the freshly written byte.")) return 1;
+
+    return 0;
+}
+
+static int test_kernal_disassembly_mapping(void)
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeBankedMemoryBackend backend;
+    char line[39];
+    monitor_reset_saved_state();
+
+    const uint8_t kernal_bytes[] = {
+        0x85, 0x56, 0x20, 0x0F, 0xBC, 0xA5, 0x61, 0xC9,
+        0x88, 0x90, 0x03, 0x20, 0xD4, 0xBA, 0x20, 0xCC,
+        0xBC, 0xA5, 0x07
+    };
+    const uint8_t ram_bytes[] = {
+        0x00, 0xFF, 0xFF, 0x00, 0x00, 0xFF, 0x00, 0xFF,
+        0x18, 0x00, 0x00
+    };
+    const int keys[] = { 'J', 'A', 'o', KEY_BREAK };
+    FakeKeyboard keyboard(keys, 4);
+    int kernal_tag_pos = -1;
+    int ram_tag_pos = -1;
+
+    memset(backend.ram + 0xE000, 0x00, 0x40);
+    memcpy(backend.kernal, kernal_bytes, sizeof(kernal_bytes));
+    memcpy(backend.ram + 0xE000, ram_bytes, sizeof(ram_bytes));
+
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+    ui.set_prompt("E000", 1);
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+
+    if (expect(monitor.poll(0) == 0, "Goto to E000 failed.")) return 1;
+    if (expect(monitor.poll(0) == 0, "Disassembly view switch failed.")) return 1;
+
+    screen.get_slice(1, 4, 38, line);
+    if (expect(strstr(line, "E000 85 56") == line, "Visible KERNAL bytes at E000 are incorrect.")) return 1;
+    if (expect(strstr(line, "STA $56") != NULL, "Visible KERNAL disassembly at E000 is incorrect.")) return 1;
+    if (expect(strstr(line, "[KRN]") != NULL, "Visible KERNAL source annotation missing.")) return 1;
+    if (expect(screen.reverse_chars[4][1], "Disassembly view did not highlight the selected instruction.")) return 1;
+    // Where the source column starts, so the RAM row below can be compared
+    // with it. Every source tag is three characters, so the column does not
+    // move when the cursor crosses a bank boundary.
+    kernal_tag_pos = (int)(strchr(line, '[') - line);
+
+    screen.get_slice(1, 5, 38, line);
+    if (expect(strstr(line, "E002 20 0F BC") == line, "Visible KERNAL bytes at E002 are incorrect.")) return 1;
+    if (expect(strstr(line, "JSR $BC0F") != NULL, "Visible KERNAL disassembly at E002 is incorrect.")) return 1;
+    if (expect(strstr(line, "[KRN]") != NULL, "E002 KERNAL source annotation missing.")) return 1;
+
+    screen.get_slice(1, 6, 38, line);
+    if (expect(strstr(line, "E005 A5 61") == line, "Visible KERNAL bytes at E005 are incorrect.")) return 1;
+    if (expect(strstr(line, "LDA $61") != NULL, "Visible KERNAL disassembly at E005 is incorrect.")) return 1;
+
+    screen.get_slice(1, 7, 38, line);
+    if (expect(strstr(line, "E007 C9 88") == line, "Visible KERNAL bytes at E007 are incorrect.")) return 1;
+    if (expect(strstr(line, "CMP #$88") != NULL, "Visible KERNAL disassembly at E007 is incorrect.")) return 1;
+
+    screen.get_slice(1, 8, 38, line);
+    if (expect(strstr(line, "E009 90 03") == line, "Visible KERNAL bytes at E009 are incorrect.")) return 1;
+    if (expect(strstr(line, "BCC $E00E") != NULL, "Visible KERNAL disassembly at E009 is incorrect.")) return 1;
+
+    screen.get_slice(1, 9, 38, line);
+    if (expect(strstr(line, "E00B 20 D4 BA") == line, "Visible KERNAL bytes at E00B are incorrect.")) return 1;
+    if (expect(strstr(line, "JSR $BAD4") != NULL, "Visible KERNAL disassembly at E00B is incorrect.")) return 1;
+
+    screen.get_slice(1, 10, 38, line);
+    if (expect(strstr(line, "E00E 20 CC BC") == line, "Visible KERNAL bytes at E00E are incorrect.")) return 1;
+    if (expect(strstr(line, "JSR $BCCC") != NULL, "Visible KERNAL disassembly at E00E is incorrect.")) return 1;
+
+    screen.get_slice(1, 11, 38, line);
+    if (expect(strstr(line, "E011 A5 07") == line, "Visible KERNAL bytes at E011 are incorrect.")) return 1;
+    if (expect(strstr(line, "LDA $07") != NULL, "Visible KERNAL disassembly at E011 is incorrect.")) return 1;
+
+    if (expect(monitor.poll(0) == 0, "CPU bank cycle to CPU0 failed.")) return 1;
+    screen.get_slice(1, 4, 38, line);
+    if (expect(strstr(line, "E000 00") == line, "RAM-under-ROM bytes at E000 are incorrect.")) return 1;
+    if (expect(strstr(line, "BRK") != NULL, "RAM-under-ROM disassembly at E000 is incorrect.")) return 1;
+    if (expect(strstr(line, "[RAM]") != NULL, "RAM-under-ROM source annotation missing.")) return 1;
+    ram_tag_pos = (int)(strchr(line, '[') - line);
+    if (expect(ram_tag_pos == kernal_tag_pos,
+               "The source column must not move when the bank changes.")) {
+        printf("  KERNAL tag at column %d, RAM tag at column %d\n",
+               kernal_tag_pos, ram_tag_pos);
+        return 1;
+    }
+
+    if (expect(monitor.poll(0) == 1, "RUN/STOP exit failed after KERNAL mapping test.")) return 1;
+    monitor.deinit();
+    return 0;
+}
+
+static int test_disassembly_instruction_stepping(void)
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeBankedMemoryBackend backend;
+    char line[39];
+    monitor_reset_saved_state();
+
+    const uint8_t kernal_bytes[] = {
+        0x85, 0x56, 0x20, 0x0F, 0xBC, 0xA5, 0x61, 0xC9,
+        0x88, 0x90, 0x03, 0x20, 0xD4, 0xBA, 0x20, 0xCC,
+        0xBC, 0xA5, 0x07
+    };
+    const int keys[] = { 'J', 'A', KEY_DOWN, KEY_DOWN, KEY_UP, KEY_UP, KEY_BREAK };
+    FakeKeyboard keyboard(keys, 7);
+
+    memcpy(backend.kernal, kernal_bytes, sizeof(kernal_bytes));
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+    ui.set_prompt("E000", 1);
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+
+    if (expect(monitor.poll(0) == 0, "Goto to E000 failed for disassembly stepping test.")) return 1;
+    if (expect(monitor.poll(0) == 0, "Disassembly view switch failed for stepping test.")) return 1;
+
+    screen.get_slice(1, 3, 38, line);
+    if (expect(strstr(line, "MONITOR ASM $E000") == line, "Disassembly view must start at the goto address.")) return 1;
+    screen.get_slice(1, 4, 38, line);
+    if (expect(strstr(line, "E000 85 56") == line, "Initial disassembly row mismatch at E000.")) return 1;
+
+    if (expect(monitor.poll(0) == 0, "First disassembly down-step failed.")) return 1;
+    screen.get_slice(1, 3, 38, line);
+    if (expect(strstr(line, "MONITOR ASM $E002") == line, "Disassembly header must follow the active cursor after one down-step.")) return 1;
+    screen.get_slice(1, 4, 38, line);
+    if (expect(strstr(line, "E000 85 56") == line, "First disassembly down-step must keep the previous row visible.")) return 1;
+    screen.get_slice(1, 5, 38, line);
+    if (expect(strstr(line, "E002 20 0F BC") == line, "First disassembly down-step landed on the wrong instruction.")) return 1;
+
+    if (expect(monitor.poll(0) == 0, "Second disassembly down-step failed.")) return 1;
+    screen.get_slice(1, 3, 38, line);
+    if (expect(strstr(line, "MONITOR ASM $E005") == line, "Disassembly header must follow the active cursor after two down-steps.")) return 1;
+    screen.get_slice(1, 6, 38, line);
+    if (expect(strstr(line, "E005 A5 61") == line, "Second disassembly down-step landed on the wrong instruction.")) return 1;
+
+    if (expect(monitor.poll(0) == 0, "First disassembly up-step failed.")) return 1;
+    screen.get_slice(1, 5, 38, line);
+    if (expect(strstr(line, "E002 20 0F BC") == line, "First disassembly up-step landed on the wrong instruction.")) return 1;
+
+    if (expect(monitor.poll(0) == 0, "Second disassembly up-step failed.")) return 1;
+    screen.get_slice(1, 4, 38, line);
+    if (expect(strstr(line, "E000 85 56") == line, "Second disassembly up-step landed on the wrong instruction.")) return 1;
+
+    if (expect(monitor.poll(0) == 1, "RUN/STOP exit failed after disassembly stepping test.")) return 1;
+    monitor.deinit();
+    return 0;
+}
+
+static int test_disassembly_boundary_cutover(void)
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeMemoryBackend backend;
+    char header[39];
+    char line[39];
+    int keys[32];
+    int key_count = 0;
+    int row_before_wrap = -1;
+    int row_after_wrap = -1;
+    int row_before_up = -1;
+    int row_after_up = -1;
+
+    keys[key_count++] = 'J';
+    keys[key_count++] = 'A';
+    for (int i = 0; i < 17; i++) {
+        keys[key_count++] = KEY_DOWN;
+    }
+    keys[key_count++] = KEY_DOWN;
+    keys[key_count++] = KEY_UP;
+    keys[key_count++] = KEY_BREAK;
+    FakeKeyboard keyboard(keys, key_count);
+
+    monitor_reset_saved_state();
+    memset(backend.memory, 0xEA, sizeof(backend.memory));
+    for (uint32_t address = 0xFFEE; address <= 0xFFFF; address++) {
+        backend.write((uint16_t)address, 0xEA);
+    }
+    backend.write(0xFFFE, 0x48);
+    backend.write(0xFFFF, 0x4C);
+    backend.write(0x0000, 0xEA);
+    backend.write(0x0001, 0xEA);
+
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+    ui.set_prompt("FFEE", 1);
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+
+    if (expect(monitor.poll(0) == 0, "Disassembly boundary test: goto failed.")) return 1;
+    if (expect(monitor.poll(0) == 0, "Disassembly boundary test: ASM view switch failed.")) return 1;
+
+    for (int i = 0; i < 17; i++) {
+        if (expect(monitor.poll(0) == 0, "Disassembly boundary test: step toward $FFFF failed.")) return 1;
+    }
+    screen.get_slice(1, 3, 38, header);
+    if (expect(strstr(header, "MONITOR ASM $FFFF") == header,
+               "Scrolling down near the boundary must land on $FFFF before cutover.")) return 1;
+    if (expect(find_highlighted_cell(screen, NULL, &row_before_wrap),
+               "Disassembly boundary test: highlighted row not found at $FFFF.")) return 1;
+    if (expect(row_before_wrap == 21,
+               "The $FFFF line must appear on the bottom visible row before cutover.")) return 1;
+    screen.get_slice(1, row_before_wrap, 38, line);
+    if (expect(strstr(line, "FFFF 4C") == line,
+               "The $FFFF row must render only the local tail byte before cutover.")) return 1;
+    if (expect(strstr(line, "???") != NULL,
+               "The $FFFF row must not decode across the $FFFF/$0000 boundary.")) return 1;
+
+    if (expect(monitor.poll(0) == 0, "Disassembly boundary test: forward cutover failed.")) return 1;
+    screen.get_slice(1, 3, 38, header);
+    if (expect(strstr(header, "MONITOR ASM $0000") == header,
+               "Stepping past $FFFF must cut over to $0000.")) return 1;
+    if (expect(find_highlighted_cell(screen, NULL, &row_after_wrap),
+               "Disassembly boundary test: highlighted row not found after forward cutover.")) return 1;
+    if (expect(row_after_wrap == 4,
+               "Forward cutover must redraw with $0000 on the first visible row.")) return 1;
+    screen.get_slice(1, 4, 38, line);
+    if (expect(strstr(line, "0000 EA") == line,
+               "The first visible row after forward cutover must start at $0000.")) return 1;
+
+    if (expect(find_highlighted_cell(screen, NULL, &row_before_up),
+               "Disassembly boundary test: highlighted row not found before reverse cutover.")) return 1;
+    if (expect(row_before_up == 4,
+               "Reverse cutover must start from the first visible row at $0000.")) return 1;
+
+    if (expect(monitor.poll(0) == 0, "Disassembly boundary test: reverse cutover failed.")) return 1;
+    screen.get_slice(1, 3, 38, header);
+    if (expect(strstr(header, "MONITOR ASM $FFFF") == header,
+               "Stepping up from $0000 must cut over to $FFFF.")) return 1;
+    if (expect(find_highlighted_cell(screen, NULL, &row_after_up),
+               "Disassembly boundary test: highlighted row not found after reverse cutover.")) return 1;
+    if (expect(row_after_up == 21,
+               "Reverse cutover must redraw with $FFFF on the bottom visible row.")) return 1;
+    screen.get_slice(1, row_after_up, 38, line);
+    if (expect(strstr(line, "FFFF 4C") == line,
+               "Reverse cutover must restore the $FFFF tail row at the bottom.")) return 1;
+
+    if (expect(monitor.poll(0) == 1, "RUN/STOP exit failed after disassembly boundary test.")) return 1;
+    monitor.deinit();
+
+    return 0;
+}
+
+static int test_disassembly_reverse_cutover_keeps_ffff_at_bottom(void)
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeMemoryBackend backend;
+    char header[39];
+    char line[39];
+    int row = -1;
+    const int keys[] = { 'A', 'J', KEY_UP, KEY_BREAK };
+    FakeKeyboard keyboard(keys, sizeof(keys) / sizeof(keys[0]));
+
+    monitor_reset_saved_state();
+    memset(backend.memory, 0xEA, sizeof(backend.memory));
+    for (uint16_t address = 0xFFEE; address <= 0xFFFC; address = (uint16_t)(address + 3)) {
+        backend.write(address, 0x20);
+        backend.write((uint16_t)(address + 1), 0x00);
+        backend.write((uint16_t)(address + 2), 0x00);
+    }
+    backend.write(0xFFFD, 0xEA);
+    backend.write(0xFFFE, 0x48);
+    backend.write(0xFFFF, 0x4C);
+    backend.write(0x0000, 0xEA);
+    backend.write(0x0001, 0xEA);
+
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+    ui.set_prompt("0000", 1);
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+
+    if (expect(monitor.poll(0) == 0, "Disassembly reverse boundary test: ASM view switch failed.")) return 1;
+    if (expect(monitor.poll(0) == 0, "Disassembly reverse boundary test: goto failed.")) return 1;
+    if (expect(monitor.poll(0) == 0, "Disassembly reverse boundary test: step up failed.")) return 1;
+
+    screen.get_slice(1, 3, 38, header);
+    if (expect(strstr(header, "MONITOR ASM $FFFF") == header,
+               "Reverse cutover from $0000 must land on $FFFF in ASM view.")) return 1;
+    if (expect(find_highlighted_cell(screen, NULL, &row),
+               "Disassembly reverse boundary test: highlighted row not found after wrap.")) return 1;
+    if (expect(row == 21,
+               "ASM reverse cutover must keep $FFFF on the bottom visible row even when earlier rows are multi-byte instructions.")) return 1;
+
+    screen.get_slice(1, 19, 38, line);
+    if (expect(strstr(line, "FFFD EA") == line,
+               "ASM reverse cutover must keep the tail byte rows directly above $FFFF.")) return 1;
+    screen.get_slice(1, 20, 38, line);
+    if (expect(strstr(line, "FFFE 48") == line,
+               "ASM reverse cutover must show $FFFE immediately above $FFFF.")) return 1;
+    screen.get_slice(1, 21, 38, line);
+    if (expect(strstr(line, "FFFF 4C") == line,
+               "ASM reverse cutover must leave $FFFF on the bottom row without drawing wrapped rows below it.")) return 1;
+
+    if (expect(monitor.poll(0) == 1, "Disassembly reverse boundary test: exit failed.")) return 1;
+    monitor.deinit();
+    return 0;
+}
+
+static int test_hex_reverse_wrap_keeps_tail_row_at_bottom(void)
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeMemoryBackend backend;
+    char header[39];
+    char line[39];
+    int row = -1;
+    const int keys[] = { 'J', KEY_LEFT, KEY_BREAK };
+    FakeKeyboard keyboard(keys, sizeof(keys) / sizeof(keys[0]));
+
+    monitor_reset_saved_state();
+    memset(backend.memory, 0xEA, sizeof(backend.memory));
+    backend.write(0xFFFF, 0x4C);
+
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+    ui.set_prompt("0000", 1);
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+
+    if (expect(monitor.poll(0) == 0, "HEX reverse wrap test: goto failed.")) return 1;
+    if (expect(monitor.poll(0) == 0, "HEX reverse wrap test: left wrap failed.")) return 1;
+
+    screen.get_slice(1, 3, 38, header);
+    if (expect(strstr(header, "MONITOR HEX $FFFF") == header,
+               "HEX reverse wrap must land on $FFFF.")) return 1;
+    if (expect(find_highlighted_cell(screen, NULL, &row),
+               "HEX reverse wrap test: highlighted cell not found after wrap.")) return 1;
+    if (expect(row == 21,
+               "HEX reverse wrap must keep the tail memory row on the bottom of the screen.")) return 1;
+    screen.get_slice(1, 21, MONITOR_HEX_ROW_CHARS, line);
+    if (expect(strstr(line, "FFF8") == line,
+               "HEX reverse wrap must show the final memory row at the bottom after wrapping to $FFFF.")) return 1;
+
+    if (expect(monitor.poll(0) == 1, "HEX reverse wrap test: exit failed.")) return 1;
+    monitor.deinit();
+    return 0;
+}
+
+static int test_last_address_row_highlight(void)
+{
+    struct ViewHighlightCase {
+        const char *name;
+        const char *expected_header;
+        const int *keys;
+        int key_count;
+    };
+
+    static const int hex_keys[] = { 'J', KEY_BREAK };
+    static const int ascii_keys[] = { 'I', 'J', KEY_BREAK };
+    static const int screen_keys[] = { 'V', 'J', KEY_BREAK };
+    static const int binary_keys[] = { 'B', 'J', KEY_BREAK };
+    static const int asm_keys[] = { 'A', 'J', KEY_BREAK };
+    static const ViewHighlightCase cases[] = {
+        { "HEX", "MONITOR HEX $FFFF", hex_keys, (int)(sizeof(hex_keys) / sizeof(hex_keys[0])) },
+        { "ASC", "MONITOR ASC $FFFF", ascii_keys, (int)(sizeof(ascii_keys) / sizeof(ascii_keys[0])) },
+        { "SCR", "MONITOR SCR U/G $FFFF", screen_keys, (int)(sizeof(screen_keys) / sizeof(screen_keys[0])) },
+        { "BIN", "MONITOR BIN $FFFF/7", binary_keys, (int)(sizeof(binary_keys) / sizeof(binary_keys[0])) },
+        { "ASM", "MONITOR ASM $FFFF", asm_keys, (int)(sizeof(asm_keys) / sizeof(asm_keys[0])) },
+    };
+
+    char message[128];
+    char header[39];
+
+    for (unsigned i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        FakeKeyboard keyboard(cases[i].keys, cases[i].key_count);
+        int row = 0;
+
+        ui.screen = &screen;
+        ui.keyboard = &keyboard;
+        ui.set_prompt("FFFF", 1);
+
+        monitor_reset_saved_state();
+        backend.write(0xFFFF, 0x4C);
+        backend.write(0x0000, 0xEA);
+        backend.write(0x0001, 0xEA);
+
+        BackendMachineMonitor monitor(&ui, &backend);
+        monitor.init(&screen, &keyboard);
+
+        for (int step = 0; step < cases[i].key_count - 1; step++) {
+            sprintf(message, "%s $FFFF highlight test: command step %d failed.", cases[i].name, step + 1);
+            if (expect(monitor.poll(0) == 0, message)) return 1;
+        }
+
+        screen.get_slice(1, 3, 38, header);
+        sprintf(message, "%s $FFFF highlight test: header must stay on the active address.", cases[i].name);
+        if (expect(strstr(header, cases[i].expected_header) == header, message)) return 1;
+        sprintf(message, "%s $FFFF highlight test: highlighted cell not found.", cases[i].name);
+        if (expect(find_highlighted_cell(screen, NULL, &row), message)) return 1;
+        sprintf(message, "%s $FFFF highlight test: highlight must remain on the first visible row after goto.", cases[i].name);
+        if (expect(row == 4, message)) return 1;
+
+        sprintf(message, "%s $FFFF highlight test: exit failed.", cases[i].name);
+        if (expect(monitor.poll(0) == 1, message)) return 1;
+        monitor.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        const int keys[] = { 'J', 'e', KEY_BREAK, KEY_BREAK };
+        FakeKeyboard keyboard(keys, sizeof(keys) / sizeof(keys[0]));
+        int row = 0;
+
+        ui.screen = &screen;
+        ui.keyboard = &keyboard;
+        ui.set_prompt("FFFF", 1);
+
+        monitor_reset_saved_state();
+        backend.write(0xFFFF, 0x4C);
+        backend.write(0x0000, 0xEA);
+        backend.write(0x0001, 0xEA);
+
+        BackendMachineMonitor monitor(&ui, &backend);
+        monitor.init(&screen, &keyboard);
+        if (expect(monitor.poll(0) == 0, "HEX edit $FFFF cursor test: goto failed.")) return 1;
+        if (expect(monitor.poll(0) == 0, "HEX edit $FFFF cursor test: edit mode entry failed.")) return 1;
+        if (expect(find_highlighted_cell(screen, NULL, &row),
+                   "HEX edit $FFFF cursor test: highlighted cell not found.")) return 1;
+        if (expect(row == 4,
+                   "HEX edit $FFFF cursor test: highlighted byte must remain visible on the first row.")) return 1;
+        if (expect(screen.reverse_chars[4][27] && screen.reverse_chars[4][28],
+                   "HEX edit $FFFF cursor test: both digits of the active byte must stay highlighted.")) return 1;
+        if (expect(monitor.poll(0) == 0, "HEX edit $FFFF cursor test: first RUN/STOP should leave edit mode.")) return 1;
+        if (expect(monitor.poll(0) == 1, "HEX edit $FFFF cursor test: second RUN/STOP should exit the monitor.")) return 1;
+        monitor.deinit();
+    }
+
+    return 0;
+}
+
+static int test_template_cursor(void)
+{
+    char template_buffer[8] = "AAAA";
+    const int keys[] = { 'E', KEY_RETURN };
+    FakeKeyboard keyboard(keys, 2);
+    CaptureScreen screen;
+    CaptureWindow window(&screen, 8);
+    UIStringEdit edit(template_buffer, 7, true);
+
+    edit.init(&window, &keyboard, 0, 0, 8);
+    if (expect(window.last_x == 0 && window.last_y == 0, "Template cursor did not start at first editable character.")) return 1;
+    if (expect(edit.poll(0) == 0, "Template edit returned early.")) return 1;
+    if (expect(strcmp(template_buffer, "E") == 0, "Template input did not replace placeholder immediately.")) return 1;
+    if (expect(edit.poll(0) == 1, "Template edit did not accept return.")) return 1;
+    return 0;
+}
+
+static int test_task_action_lookup(void)
+{
+    TaskActionProvider provider;
+
+    TaskMenu::ensure_task_actions_created(true);
+    if (expect(provider.update_called && provider.last_writable, "Task action update hook was not called.")) return 1;
+    if (expect(provider.monitor_action != NULL, "Task action provider did not create the monitor action.")) return 1;
+    if (expect(provider.monitor_action->isPersistent(), "Task action should be made persistent.")) return 1;
+    if (expect(get_machine_monitor_task(TEST_SUBSYSID_U64) == provider.monitor_action,
+               "U64 task action lookup failed.")) return 1;
+    if (expect(get_machine_monitor_task(TEST_SUBSYSID_C64) == provider.monitor_action,
+               "C64 task action lookup failed.")) return 1;
+    return 0;
+}
+
+static int test_monitor_renders_window_border(void)
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeMemoryBackend backend;
+    const int keys[] = { KEY_BREAK };
+    FakeKeyboard keyboard(keys, 1);
+    monitor_reset_saved_state();
+
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+    if (expect(backend.session_begin_count == 1, "Monitor must begin a backend session when it opens.")) return 1;
+    if (expect((unsigned char)screen.chars[2][0] == BORD_LOWER_RIGHT_CORNER, "Monitor must draw the same shared upper-left border corner as the hex editor.")) return 1;
+    if (expect((unsigned char)screen.chars[2][39] == BORD_LOWER_LEFT_CORNER, "Monitor must draw the same shared upper-right border corner as the hex editor.")) return 1;
+    if (expect((unsigned char)screen.chars[23][0] == BORD_UPPER_RIGHT_CORNER, "Monitor must draw the shared lower-left border corner.")) return 1;
+    if (expect((unsigned char)screen.chars[23][39] == BORD_UPPER_LEFT_CORNER, "Monitor must draw the shared lower-right border corner.")) return 1;
+    for (int y = 3; y < 23; y++) {
+        if (expect((unsigned char)screen.chars[y][0] == CHR_VERTICAL_LINE, "Monitor left border must be drawn for every row inside the frame.")) return 1;
+        if (expect((unsigned char)screen.chars[y][39] == CHR_VERTICAL_LINE, "Monitor right border must be drawn for every row inside the frame.")) return 1;
+    }
+    if (expect(monitor.poll(0) == 1, "Monitor must close on RUN/STOP after border verification.")) return 1;
+    monitor.deinit();
+    if (expect(backend.session_end_count == 1, "Monitor must end the backend session when it closes.")) return 1;
+    return 0;
+}
+
+static int test_monitor_byte_to_address_invariant(void)
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeMemoryBackend backend;
+    monitor_reset_saved_state();
+
+    for (uint32_t addr = 0; addr < 0x10000; addr++) {
+        backend.write((uint16_t)addr, (uint8_t)((addr >> 3) & 0xFF));
+    }
+
+    const int keys[] = { KEY_PAGEDOWN, KEY_PAGEDOWN, KEY_PAGEDOWN, KEY_BREAK };
+    FakeKeyboard keyboard(keys, 4);
+
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+
+    for (int step = 0; step < 3; step++) {
+        if (expect(monitor.poll(0) == 0, "Page-down failed during byte-to-address invariant scan.")) return 1;
+        for (int row = 0; row < 16; row++) {
+            char line[MONITOR_HEX_ROW_CHARS + 1];
+            screen.get_slice(1, 4 + row, MONITOR_HEX_ROW_CHARS, line);
+            uint16_t row_addr = 0;
+            for (int n = 0; n < 4; n++) {
+                char c = line[n];
+                uint16_t digit = 0;
+                if (c >= '0' && c <= '9') digit = (uint16_t)(c - '0');
+                else if (c >= 'a' && c <= 'f') digit = (uint16_t)(c - 'a' + 10);
+                else if (c >= 'A' && c <= 'F') digit = (uint16_t)(c - 'A' + 10);
+                row_addr = (uint16_t)((row_addr << 4) | digit);
+            }
+            for (int b = 0; b < MONITOR_HEX_BYTES_PER_ROW; b++) {
+                int hi_pos = 5 + (3 * b);
+                int lo_pos = hi_pos + 1;
+                char hi = line[hi_pos];
+                char lo = line[lo_pos];
+                uint8_t parsed = 0;
+                uint8_t hi_v = (hi >= '0' && hi <= '9') ? (hi - '0') : ((hi >= 'a' && hi <= 'f') ? (hi - 'a' + 10) : (hi - 'A' + 10));
+                uint8_t lo_v = (lo >= '0' && lo <= '9') ? (lo - '0') : ((lo >= 'a' && lo <= 'f') ? (lo - 'a' + 10) : (lo - 'A' + 10));
+                parsed = (uint8_t)((hi_v << 4) | lo_v);
+                uint16_t cell_addr = (uint16_t)(row_addr + b);
+                uint8_t expected = backend.read(cell_addr);
+                if (expect(parsed == expected, "DISPLAY(addr) must equal CANONICAL_READ(addr) for every visible cell.")) return 1;
+            }
+        }
+    }
+    if (expect(monitor.poll(0) == 1, "Monitor must close on RUN/STOP after byte invariant scan.")) return 1;
+    monitor.deinit();
+    return 0;
+}
+
+static int test_monitor_cursor_header_and_scroll(void)
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeMemoryBackend backend;
+    enum { visible_rows = 18 };
+    char before_rows[visible_rows][MONITOR_HEX_ROW_CHARS + 1];
+    char after_rows[visible_rows][MONITOR_HEX_ROW_CHARS + 1];
+    char header[39];
+    int keys[visible_rows + 1];
+    monitor_reset_saved_state();
+
+    for (uint32_t addr = 0; addr < 0x10000; addr++) {
+        backend.write((uint16_t)addr, (uint8_t)((addr >> 3) & 0xFF));
+    }
+    for (int i = 0; i < visible_rows; i++) {
+        keys[i] = KEY_DOWN;
+    }
+    keys[visible_rows] = KEY_BREAK;
+
+    FakeKeyboard keyboard(keys, visible_rows + 1);
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+
+    screen.get_slice(1, 3, 38, header);
+    if (expect(strstr(header, "MONITOR HEX $0000") == header, "Header must report the active cursor address.")) return 1;
+
+    for (int i = 0; i < visible_rows - 1; i++) {
+        if (expect(monitor.poll(0) == 0, "Down navigation failed before viewport scroll.")) return 1;
+    }
+    screen.get_slice(1, 3, 38, header);
+    if (expect(strstr(header, "MONITOR HEX $0088") == header, "Header must follow the cursor before the viewport scrolls.")) return 1;
+    for (int row = 0; row < visible_rows; row++) {
+        screen.get_slice(1, 4 + row, MONITOR_HEX_ROW_CHARS, before_rows[row]);
+    }
+    if (expect(strstr(before_rows[visible_rows - 1], "0088 ") == before_rows[visible_rows - 1] ||
+               strstr(before_rows[visible_rows - 1], "0088") == before_rows[visible_rows - 1],
+               "Hex view should use the reclaimed row above the CPU/VIC status line.")) return 1;
+
+    if (expect(monitor.poll(0) == 0, "Down navigation failed at the viewport boundary.")) return 1;
+    screen.get_slice(1, 3, 38, header);
+    if (expect(strstr(header, "MONITOR HEX $0090") == header, "Header must follow the cursor when the viewport scrolls.")) return 1;
+    for (int row = 0; row < visible_rows; row++) {
+        screen.get_slice(1, 4 + row, MONITOR_HEX_ROW_CHARS, after_rows[row]);
+    }
+    for (int row = 1; row < visible_rows; row++) {
+        if (expect(strcmp(after_rows[row - 1], before_rows[row]) == 0,
+                   "Scrolling down must shift each rendered row up by exactly one row span.")) return 1;
+    }
+    if (expect(monitor.poll(0) == 1, "Monitor must close on RUN/STOP after viewport scroll verification.")) return 1;
+    monitor.deinit();
+    return 0;
+}
+
+static int test_monitor_interaction(void)
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeMemoryBackend backend;
+    FakeBankedMemoryBackend banked_backend;
+    char line[MONITOR_DISASM_ROW_CHARS + 1];
+    char status[39];
+    monitor_reset_saved_state();
+
+    for (int i = 0; i < MONITOR_TEXT_BYTES_PER_ROW * 18; i++) {
+        backend.write((uint16_t)i, (uint8_t)('A' + ((i / MONITOR_TEXT_BYTES_PER_ROW) % 26)));
+    }
+
+    banked_backend.basic[0] = 0xBA;
+    banked_backend.ram[0xA000] = 0xAA;
+    banked_backend.io[0xD000 - 0xD000] = 0x10;
+    banked_backend.kernal[0] = 0x4C;
+
+    const int help_keys[] = { 'J', 'o', 'o', KEY_F3, KEY_F3, KEY_BREAK };
+    FakeKeyboard help_keyboard(help_keys, 6);
+    ui.screen = &screen;
+    ui.keyboard = &help_keyboard;
+    ui.set_prompt("A000", 1);
+
+    BackendMachineMonitor help_monitor(&ui, &banked_backend);
+    help_monitor.init(&screen, &help_keyboard);
+    screen.get_slice(1, 3, 38, line);
+    if (expect(strstr(line, "MONITOR HEX $0000") == line && strstr(line, "CPU MAP") == NULL,
+               "Header must show only the view type and cursor address.")) return 1;
+    if (expect(screen.reverse_chars[4][6] && screen.reverse_chars[4][7], "Hex view did not highlight the selected byte.")) return 1;
+    if (expect(help_monitor.poll(0) == 0, "Goto to A000 failed.")) return 1;
+    screen.get_slice(1, 3, 38, line);
+    if (expect(strstr(line, "MONITOR HEX $A000") == line && strstr(line, "CPU MAP") == NULL,
+               "Goto must update the header to the cursor address without CPU map text.")) return 1;
+    screen.get_slice(1, 4, 8, line);
+    if (expect(strncmp(line, "a000 ba", 7) == 0 || strncmp(line, "A000 BA", 7) == 0, "CPU banked BASIC view mismatch.")) return 1;
+    screen.get_slice(1, 22, 38, status);
+    if (expect(strstr(status, "CPU7 $A:BAS $D:I/O $E:KRN VIC2 $8000") == status,
+               "Initial CPU/VIC status line mismatch.")) return 1;
+
+    if (expect(help_monitor.poll(0) == 0, "CPU bank cycle to CPU0 failed.")) return 1;
+    screen.get_slice(1, 4, 8, line);
+    if (expect(strncmp(line, "a000 aa", 7) == 0 || strncmp(line, "A000 AA", 7) == 0, "CPU0 should expose RAM at A000.")) return 1;
+    screen.get_slice(1, 22, 38, status);
+    if (expect(strstr(status, "CPU0 $A:RAM $D:RAM $E:RAM VIC2 $8000") == status,
+               "CPU0 status did not update after O.")) return 1;
+
+    if (expect(help_monitor.poll(0) == 0, "CPU bank cycle to CPU1 failed.")) return 1;
+    screen.get_slice(1, 4, 8, line);
+    if (expect(strncmp(line, "a000 aa", 7) == 0 || strncmp(line, "A000 AA", 7) == 0, "CPU1 should keep A000 in RAM.")) return 1;
+    screen.get_slice(1, 22, 38, status);
+    if (expect(strstr(status, "CPU1 $A:RAM $D:CHR $E:RAM VIC2 $8000") == status,
+               "CPU1 status did not update after O.")) return 1;
+
+    if (expect(help_monitor.poll(0) == 0, "F3 help open failed.")) return 1;
+    screen.get_slice(1, 3, 38, status);
+    if (expect(strstr(status, "HELP") == status, "Help header should replace the normal view header.")) return 1;
+    screen.get_slice(1, 22, 38, status);
+    if (expect(strstr(status, "F1/SH+SP   Page up  F7/SP   Page down") == status,
+               "Help view should show the paging shortcuts on the footer row.")) return 1;
+    // Every character of the help reads in one colour, keys included. The
+    // footer row is drawn on the status row rather than from the help table,
+    // so it is the row that would drift first. get_slice(1, ...) starts one
+    // column in from the border, and screen.colors is indexed by the absolute
+    // column, so status[i] is screen.colors[22][i + 1]. Column 1 is the first
+    // character of "F1/SH+SP" and column 21 the first of "F7/SP"; 9 and 20 are
+    // the spaces around "Page up".
+    {
+        int body = screen.colors[22][9];
+        for (int col = 1; col <= 36; col++) {
+            if (expect(screen.colors[22][col] == body,
+                       "The help footer row must be drawn in one colour.")) {
+                printf("  column %d: colour %d, body colour %d\n", col,
+                       screen.colors[22][col], body);
+                return 1;
+            }
+        }
+    }
+    if (expect_help_visible(screen, ui, "Help view text did not match the help table.")) return 1;
+    // The help body is one colour too, checked on the row naming the view keys.
+    {
+        int body = screen.colors[4][1];
+        for (int col = 1; col <= 36; col++) {
+            if (expect(screen.colors[4][col] == body,
+                       "A help line must be drawn in one colour.")) {
+                printf("  column %d: colour %d, body colour %d\n", col,
+                       screen.colors[4][col], body);
+                return 1;
+            }
+        }
+    }
+
+    if (expect(help_monitor.poll(0) == 0, "F3 help close failed.")) return 1;
+    screen.get_slice(1, 3, 38, status);
+    if (expect(strstr(status, "MONITOR HEX $A000") == status, "Closing help should restore the normal header.")) return 1;
+    screen.get_slice(1, 4, 8, line);
+    if (expect(strncmp(line, "a000 aa", 7) == 0 || strncmp(line, "A000 AA", 7) == 0, "Help toggle did not restore the monitor view.")) return 1;
+
+    {
+        const int esc_help_keys[] = { KEY_F3, KEY_ESCAPE, KEY_ESCAPE };
+        FakeKeyboard esc_help_keyboard(esc_help_keys, 3);
+        ui.keyboard = &esc_help_keyboard;
+        screen.clear();
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor esc_help_monitor(&ui, &backend);
+        esc_help_monitor.init(&screen, &esc_help_keyboard);
+        if (expect(esc_help_monitor.poll(0) == 0, "F3 should open help before ESC handling is tested.")) return 1;
+        screen.get_slice(1, 22, 38, status);
+        if (expect(strstr(status, "F1/SH+SP   Page up  F7/SP   Page down") == status,
+                    "Help must show the paging shortcuts before ESC closes it.")) return 1;
+        if (expect_help_visible(screen, ui, "Help must be visible before ESC closes it.")) return 1;
+        if (expect(esc_help_monitor.poll(0) == 0, "ESC should close help without exiting the monitor.")) return 1;
+        screen.get_slice(1, 3, 38, line);
+        if (expect(strstr(line, "MONITOR HEX $0000") == line, "ESC should restore the normal monitor header after closing help.")) return 1;
+        if (expect(esc_help_monitor.poll(0) == 1, "ESC should exit the monitor only after help is already closed.")) return 1;
+        esc_help_monitor.deinit();
+    }
+
+    ui.set_prompt("E013", 1);
+    const int goto_disasm_keys[] = { 'J', 'A', KEY_BREAK };
+    FakeKeyboard goto_disasm_keyboard(goto_disasm_keys, 3);
+    ui.keyboard = &goto_disasm_keyboard;
+    screen.clear();
+    monitor_reset_saved_state();
+
+    BackendMachineMonitor goto_disasm_monitor(&ui, &banked_backend);
+    goto_disasm_monitor.init(&screen, &goto_disasm_keyboard);
+    if (expect(goto_disasm_monitor.poll(0) == 0, "Goto to E013 failed for disassembly anchoring test.")) return 1;
+    if (expect(goto_disasm_monitor.poll(0) == 0, "Disassembly view switch failed for E013 anchoring test.")) return 1;
+    screen.get_slice(1, 4, 38, line);
+    if (expect(strstr(line, "E013 18") != line, "Disassembly view should anchor the top row at the goto address.")) return 1;
+    if (expect(goto_disasm_monitor.poll(0) == 1, "RUN/STOP exit failed after disassembly anchoring test.")) return 1;
+    goto_disasm_monitor.deinit();
+
+    if (expect(help_monitor.poll(0) == 1, "RUN/STOP exit failed.")) return 1;
+    help_monitor.deinit();
+
+    {
+        FakeKeyboard idle_keyboard(NULL, 0);
+        ui.keyboard = &idle_keyboard;
+        screen.clear();
+        banked_backend.live_cpu_port = 0x00;
+        banked_backend.live_cpu_ddr = 0x07;
+        banked_backend.live_dd00 = 0x01;
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor vic_monitor(&ui, &banked_backend);
+        vic_monitor.init(&screen, &idle_keyboard);
+        screen.get_slice(1, 22, 38, status);
+        if (expect(strstr(status, "CPU7 $A:BAS $D:I/O $E:KRN VIC2 $8000") == status,
+                   "Idle VIC refresh test should preserve the selected default CPU7 bank.")) return 1;
+        banked_backend.live_dd00 = 0x00;
+        if (expect(vic_monitor.poll(0) == 0, "VIC idle refresh poll failed.")) return 1;
+        screen.get_slice(1, 22, 38, status);
+        if (expect(strstr(status, "CPU7 $A:BAS $D:I/O $E:KRN VIC3 $C000") == status,
+                   "VIC status did not refresh after DD00 change.")) return 1;
+        vic_monitor.deinit();
+    }
+
+    {
+        const int live_bank_keys[] = { 'J' };
+        FakeKeyboard live_bank_keyboard(live_bank_keys, 1);
+        ui.keyboard = &live_bank_keyboard;
+        ui.set_prompt("A000", 1);
+        screen.clear();
+        banked_backend.live_cpu_port = 0x01;
+        banked_backend.live_cpu_ddr = 0x00;
+        banked_backend.live_dd00 = 0x01;
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor live_bank_monitor(&ui, &banked_backend);
+        live_bank_monitor.init(&screen, &live_bank_keyboard);
+        screen.get_slice(1, 22, 38, status);
+        if (expect(strstr(status, "CPU7 $A:BAS $D:I/O $E:KRN VIC2 $8000") == status,
+                   "Fresh monitor sessions should still default to CPU7 even when the live machine is banked differently.")) return 1;
+        if (expect(live_bank_monitor.poll(0) == 0, "Goto to A000 failed for default CPU7 test.")) return 1;
+        screen.get_slice(1, 4, 8, line);
+        if (expect(strncmp(line, "a000 ba", 7) == 0 || strncmp(line, "A000 BA", 7) == 0,
+                   "Default CPU7 should keep BASIC visible at A000.")) return 1;
+        live_bank_monitor.deinit();
+    }
+
+    const int blink_keys[] = { 'I', 'e' };
+    FakeKeyboard blink_keyboard(blink_keys, 2);
+    ui.keyboard = &blink_keyboard;
+    screen.clear();
+    monitor_reset_saved_state();
+
+    BackendMachineMonitor blink_monitor(&ui, &backend);
+    blink_monitor.init(&screen, &blink_keyboard);
+    if (expect(blink_monitor.poll(0) == 0, "ASCII view command failed for blink test.")) return 1;
+    if (expect(blink_monitor.poll(0) == 0, "ASCII edit mode entry via 'e' failed.")) return 1;
+    if (expect(screen.reverse_chars[4][6], "ASCII edit did not initially show the active cursor.")) return 1;
+    if (expect(blink_monitor.poll(0) == 0 && blink_monitor.poll(0) == 0 && blink_monitor.poll(0) == 0,
+               "Idle highlight polling failed.")) return 1;
+    if (expect(screen.reverse_chars[4][6], "ASCII edit highlight should stay deterministic during idle redraws.")) return 1;
+    blink_monitor.deinit();
+
+    const int view_keys[] = { 'I', KEY_DOWN, KEY_UP, 'e', 'Z', KEY_LEFT, 'Y', KEY_BREAK, KEY_BREAK };
+    FakeKeyboard view_keyboard(view_keys, 9);
+    ui.keyboard = &view_keyboard;
+    ui.popup_count = 0;
+    ui.navmode = 1;
+    screen.clear();
+    monitor_reset_saved_state();
+
+    BackendMachineMonitor view_monitor(&ui, &backend);
+    view_monitor.init(&screen, &view_keyboard);
+
+    if (expect(view_monitor.poll(0) == 0, "ASCII view command failed.")) return 1;
+    screen.get_slice(1, 3, 38, line);
+    if (expect(strstr(line, "MONITOR ASC $0000") == line, "ASCII header must start at the cursor address.")) return 1;
+    screen.get_slice(1, 4, MONITOR_TEXT_ROW_CHARS, line);
+    if (expect(strcmp(line, "0000 AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA") == 0, "ASCII first-row rendering mismatch.")) return 1;
+    screen.get_slice(1, 12, MONITOR_TEXT_ROW_CHARS, line);
+    if (expect(strcmp(line, "0100 IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII") == 0, "ASCII later-row rendering mismatch.")) return 1;
+    screen.get_slice(1, 21, MONITOR_TEXT_ROW_CHARS, line);
+    if (expect(strcmp(line, "0220 RRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRR") == 0, "ASCII bottom-row rendering should use the reclaimed rows.")) return 1;
+    if (expect((unsigned char)screen.chars[4][39] == CHR_VERTICAL_LINE, "ASCII view overwrote the right border.")) return 1;
+
+    if (expect(view_monitor.poll(0) == 0, "ASCII down navigation failed.")) return 1;
+    screen.get_slice(1, 3, 38, line);
+    if (expect(strstr(line, "MONITOR ASC $0020") == line, "ASCII header must follow the cursor within the viewport.")) return 1;
+    if (expect(screen.reverse_chars[5][6], "ASCII down should move the cursor one 32-byte row without scrolling.")) return 1;
+    if (expect(view_monitor.poll(0) == 0, "ASCII up navigation failed.")) return 1;
+    if (expect(screen.reverse_chars[4][6], "ASCII up should move the cursor back one 32-byte row without scrolling.")) return 1;
+
+    if (expect(view_monitor.poll(0) == 0, "ASCII edit mode entry via 'e' failed.")) return 1;
+    if (expect(screen.reverse_chars[4][6], "ASCII edit did not highlight the active character.")) return 1;
+
+    if (expect(view_monitor.poll(0) == 0, "ASCII edit write failed.")) return 1;
+    if (expect(backend.read(0x0000) == 'Z', "ASCII edit did not write memory.")) return 1;
+    if (expect(screen.reverse_chars[4][7], "ASCII edit did not advance the highlighted cursor.")) return 1;
+
+    if (expect(view_monitor.poll(0) == 0, "ASCII left-arrow should navigate without leaving edit mode.")) return 1;
+    if (expect(backend.read(0x0001) == 'A', "ASCII left-arrow should not be written as data.")) return 1;
+    if (expect(screen.reverse_chars[4][6], "ASCII left-arrow must move the edit cursor to the previous byte.")) return 1;
+    if (expect(view_monitor.poll(0) == 0, "ASCII edit must remain active after left-arrow navigation.")) return 1;
+    if (expect(backend.read(0x0000) == 'Y', "ASCII edit should keep writing after moving left in edit mode.")) return 1;
+    if (expect(screen.reverse_chars[4][7], "ASCII edit should continue to advance after writing post-left-arrow.")) return 1;
+    if (expect(view_monitor.poll(0) == 0, "RUN/STOP should leave ASCII edit mode before closing the monitor.")) return 1;
+    if (expect(view_monitor.poll(0) == 1, "RUN/STOP monitor exit failed after ASCII edit navigation.")) return 1;
+    view_monitor.deinit();
+
+    {
+        const int arrow_keys[] = { 'I', 'e', '`', KEY_BREAK, KEY_BREAK };
+        FakeKeyboard arrow_keyboard(arrow_keys, 5);
+        ui.keyboard = &arrow_keyboard;
+        screen.clear();
+        backend.write(0x0000, 0x00);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor arrow_monitor(&ui, &backend);
+        arrow_monitor.init(&screen, &arrow_keyboard);
+        if (expect(arrow_monitor.poll(0) == 0, "ASCII view switch failed.")) return 1;
+        if (expect(arrow_monitor.poll(0) == 0, "ASCII edit entry failed.")) return 1;
+        if (expect(arrow_monitor.poll(0) == 0, "ASCII top-left arrow input failed.")) return 1;
+        if (expect(backend.read(0x0000) == '`',
+                   "ASCII edit must retain the top-left arrow character.")) return 1;
+        if (expect(arrow_monitor.poll(0) == 0, "ASCII edit exit failed.")) return 1;
+        if (expect(arrow_monitor.poll(0) == 1, "ASCII monitor exit failed.")) return 1;
+        arrow_monitor.deinit();
+    }
+
+    {
+        // Ctrl+E leaves edit mode on its own, separately from the shared Back
+        // action, so that edit mode can be left without also unwinding
+        // whatever other layer the monitor is in. The ASCII view is the case
+        // that matters: left-arrow is edit data there, so Ctrl+E and RUN/STOP
+        // are the two keys that have to end edit mode.
+        char edit_header[39];
+        const int ctrl_e_keys[] = { 'I', 'e', KEY_CTRL_E, KEY_BREAK };
+        FakeKeyboard ctrl_e_keyboard(ctrl_e_keys, 4);
+        ui.keyboard = &ctrl_e_keyboard;
+        screen.clear();
+        backend.write(0x0000, 0x00);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor ctrl_e_monitor(&ui, &backend);
+        ctrl_e_monitor.init(&screen, &ctrl_e_keyboard);
+        if (expect(ctrl_e_monitor.poll(0) == 0, "Ctrl+E test: ASCII view switch failed.")) return 1;
+        if (expect(ctrl_e_monitor.poll(0) == 0, "Ctrl+E test: ASCII edit entry failed.")) return 1;
+        screen.get_slice(1, 3, 38, edit_header);
+        if (expect(strstr(edit_header, "EDIT") != NULL,
+                   "Ctrl+E test: edit mode should be active before Ctrl+E.")) return 1;
+        if (expect(ctrl_e_monitor.poll(0) == 0, "Ctrl+E test: Ctrl+E poll failed.")) return 1;
+        screen.get_slice(1, 3, 38, edit_header);
+        if (expect(strstr(edit_header, "EDIT") == NULL,
+                   "Ctrl+E must leave ASCII edit mode, where left-arrow is edit data.")) return 1;
+        // Edit mode is gone rather than merely hidden: Back now closes the
+        // monitor instead of spending a press on the edit layer.
+        if (expect(ctrl_e_monitor.poll(0) == 1,
+                   "After Ctrl+E, RUN/STOP must close the monitor, not leave edit mode again.")) return 1;
+        ctrl_e_monitor.deinit();
+    }
+
+    const int hex_keys[] = { 'e', 'A', 'B', '`', '`' };
+    FakeKeyboard hex_keyboard(hex_keys, 5);
+    ui.keyboard = &hex_keyboard;
+    screen.clear();
+    backend.write(0x0000, 0x00);
+    monitor_reset_saved_state();
+
+    BackendMachineMonitor hex_monitor(&ui, &backend);
+    hex_monitor.init(&screen, &hex_keyboard);
+    if (expect(hex_monitor.poll(0) == 0, "Hex edit mode entry via 'e' failed.")) return 1;
+    if (expect(screen.reverse_chars[4][6] && screen.reverse_chars[4][7], "Hex edit did not highlight both byte digits.")) return 1;
+    if (expect(hex_monitor.poll(0) == 0, "First hex nibble failed.")) return 1;
+    screen.get_slice(1, 4, MONITOR_HEX_ROW_CHARS, line);
+    if (expect(strstr(line, "0000 a0") == line || strstr(line, "0000 A0") == line,
+               "First hex nibble did not update the visible byte immediately.")) return 1;
+    if (expect(backend.read(0x0000) == 0x00, "First hex nibble should not commit memory yet.")) return 1;
+    if (expect(hex_monitor.poll(0) == 0, "Second hex nibble failed.")) return 1;
+    if (expect(backend.read(0x0000) == 0xAB, "Hex edit did not write the byte.")) return 1;
+    screen.get_slice(1, 4, MONITOR_HEX_ROW_CHARS, line);
+    if (expect(strstr(line, "0000 ab") == line || strstr(line, "0000 AB") == line,
+               "Hex edit did not redraw the changed byte immediately.")) return 1;
+    if (expect(screen.reverse_chars[4][9] && screen.reverse_chars[4][10], "Hex edit did not advance to the next byte.")) return 1;
+    if (expect(hex_monitor.poll(0) == 0, "Top-left arrow should leave hex edit mode.")) return 1;
+    if (expect(hex_monitor.poll(0) == 1, "Second top-left arrow should close the monitor.")) return 1;
+    hex_monitor.deinit();
+
+    {
+        const int rom_write_keys[] = { 'J', 'e', '5', '5', KEY_BREAK, KEY_BREAK };
+        FakeKeyboard rom_write_keyboard(rom_write_keys, 6);
+        ui.keyboard = &rom_write_keyboard;
+        ui.set_prompt("A000", 1);
+        screen.clear();
+        banked_backend.basic[0] = 0xBA;
+        banked_backend.ram[0xA000] = 0xAA;
+        banked_backend.set_monitor_cpu_port(0x07);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor rom_write_monitor(&ui, &banked_backend);
+        rom_write_monitor.init(&screen, &rom_write_keyboard);
+        if (expect(rom_write_monitor.poll(0) == 0, "Goto to A000 failed for ROM-visible write test.")) return 1;
+        if (expect(rom_write_monitor.poll(0) == 0, "ROM-visible edit mode entry failed.")) return 1;
+        if (expect(rom_write_monitor.poll(0) == 0, "ROM-visible first nibble failed.")) return 1;
+        if (expect(rom_write_monitor.poll(0) == 0, "ROM-visible second nibble failed.")) return 1;
+        if (expect(banked_backend.ram[0xA000] == 0x55, "ROM-visible write must update the underlying RAM just like the canonical backend path.")) return 1;
+        if (expect(banked_backend.basic[0] == 0xBA, "ROM-visible write must not overwrite BASIC ROM content.")) return 1;
+        if (expect(rom_write_monitor.poll(0) == 0, "RUN/STOP should leave edit mode after ROM-visible write.")) return 1;
+        if (expect(rom_write_monitor.poll(0) == 1, "RUN/STOP exit failed after ROM-visible write test.")) return 1;
+        rom_write_monitor.deinit();
+    }
+
+    {
+        const int exit_keys[] = { 'e', KEY_F3, KEY_F3, 'A', 'B', KEY_BREAK, KEY_BREAK };
+        FakeKeyboard exit_keyboard(exit_keys, 7);
+        ui.keyboard = &exit_keyboard;
+        screen.clear();
+        backend.write(0x0000, 0x00);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor exit_monitor(&ui, &backend);
+        exit_monitor.init(&screen, &exit_keyboard);
+        if (expect(exit_monitor.poll(0) == 0, "F3 edit-help setup via 'e' failed.")) return 1;
+        if (expect(exit_monitor.poll(0) == 0, "F3 should toggle help while keeping edit mode.")) return 1;
+        if (expect_help_visible(screen, ui, "F3 did not open help while editing.")) return 1;
+        if (expect(exit_monitor.poll(0) == 0, "F3 should close help while keeping edit mode.")) return 1;
+        if (expect(exit_monitor.poll(0) == 0, "F3-preserved edit mode first nibble failed.")) return 1;
+        if (expect(exit_monitor.poll(0) == 0, "F3-preserved edit mode second nibble failed.")) return 1;
+        if (expect(backend.read(0x0000) == 0xAB, "F3 terminated edit mode instead of preserving it.")) return 1;
+        if (expect(exit_monitor.poll(0) == 0, "RUN/STOP should exit edit mode before monitor.")) return 1;
+        if (expect(exit_monitor.poll(0) == 1, "RUN/STOP monitor exit failed after edit-exit checks.")) return 1;
+        exit_monitor.deinit();
+    }
+
+    {
+        const int nav_keys[] = {
+            KEY_LEFT, KEY_RIGHT, KEY_UP, KEY_DOWN,
+            KEY_PAGEUP, KEY_PAGEDOWN, KEY_F2,
+            KEY_F3, KEY_LEFT, KEY_PAGEUP, KEY_PAGEDOWN,
+            KEY_BREAK
+        };
+        FakeKeyboard nav_keyboard(nav_keys, 12);
+        ui.keyboard = &nav_keyboard;
+        screen.clear();
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor nav_monitor(&ui, &backend);
+        nav_monitor.init(&screen, &nav_keyboard);
+        for (int i = 0; i < 11; i++) {
+            if (expect(nav_monitor.poll(0) == 0, "Global navigation key exited the monitor.")) return 1;
+        }
+        if (expect(nav_monitor.poll(0) == 1, "RUN/STOP exit failed after global navigation checks.")) return 1;
+        nav_monitor.deinit();
+    }
+
+    {
+        const int number_left_keys[] = { 'N', '+', '`', '`', '`' };
+        FakeKeyboard number_left_keyboard(number_left_keys, 5);
+        ui.keyboard = &number_left_keyboard;
+        screen.clear();
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor number_left_monitor(&ui, &backend);
+        number_left_monitor.init(&screen, &number_left_keyboard);
+        if (expect(number_left_monitor.poll(0) == 0, "Number popup open failed.")) return 1;
+        if (expect(number_left_monitor.poll(0) == 0, "Calculator open failed.")) return 1;
+        if (expect(number_left_monitor.poll(0) == 0, "Top-left arrow should leave the calculator.")) return 1;
+        if (expect(number_left_monitor.poll(0) == 0, "Top-left arrow should close the Number popup.")) return 1;
+        if (expect(number_left_monitor.poll(0) == 1, "Top-left arrow should close the monitor after popups.")) return 1;
+        number_left_monitor.deinit();
+    }
+
+    {
+        const int left_keys[] = { '`' };
+        FakeKeyboard left_keyboard(left_keys, 1);
+        ui.keyboard = &left_keyboard;
+        screen.clear();
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor left_monitor(&ui, &backend);
+        left_monitor.init(&screen, &left_keyboard);
+        if (expect(left_monitor.poll(0) == 1, "Top-left arrow should close the monitor.")) return 1;
+        left_monitor.deinit();
+    }
+
+    {
+        const int toggle_keys[] = { KEY_CTRL_O };
+        FakeKeyboard toggle_keyboard(toggle_keys, 1);
+        ui.keyboard = &toggle_keyboard;
+        screen.clear();
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor toggle_monitor(&ui, &backend);
+        toggle_monitor.init(&screen, &toggle_keyboard);
+        if (expect(toggle_monitor.poll(0) == 1, "CBM+O should close the monitor directly.")) return 1;
+        toggle_monitor.deinit();
+    }
+
+    const int ignored_keys[] = { 'A', '.', 'R', ':', 'Q', 'P', KEY_BREAK };
+    FakeKeyboard ignored_keyboard(ignored_keys, 7);
+    ui.keyboard = &ignored_keyboard;
+    screen.clear();
+    ui.popup_count = 0;
+    backend.write(0x0000, 0x00);
+    monitor_reset_saved_state();
+
+    BackendMachineMonitor ignored_monitor(&ui, &backend);
+    ignored_monitor.init(&screen, &ignored_keyboard);
+    if (expect(ignored_monitor.poll(0) == 0, "Disassembly view command failed before ignored-key checks.")) return 1;
+    screen.get_slice(1, 3, 38, line);
+    if (expect(strstr(line, "MONITOR ASM $0000") == line, "Disassembly header setup failed before ignored-key checks.")) return 1;
+    if (expect(ignored_monitor.poll(0) == 0, "'.' should be ignored now that left/right already handle byte stepping.")) return 1;
+    screen.get_slice(1, 3, 38, status);
+    if (expect(strstr(status, "MONITOR ASM $0000") == status, "'.' should not change the disassembly viewport.")) return 1;
+    if (expect(ignored_monitor.poll(0) == 0, "'R' should be ignored now that register editing is unsupported.")) return 1;
+    if (expect(ignored_monitor.poll(0) == 0, "':' should be ignored after 'E' takes over edit entry.")) return 1;
+    if (expect(ignored_monitor.poll(0) == 0, "Q should be ignored while not editing.")) return 1;
+    if (expect(ignored_monitor.poll(0) == 0, "P should be ignored, not handled as a command.")) return 1;
+    if (expect(ui.popup_count == 0, "Removed peek/poke commands should not show popups.")) return 1;
+    if (expect(backend.read(0x0000) == 0x00, "Removed edit commands should not write memory.")) return 1;
+    if (expect(ignored_monitor.poll(0) == 1, "RUN/STOP exit failed on ignored-command monitor.")) return 1;
+    ignored_monitor.deinit();
+
+    for (int y = 3; y < 23; y++) {
+        if (expect((unsigned char)screen.chars[y][39] == CHR_VERTICAL_LINE, "Monitor output overwrote the right border.")) return 1;
+    }
+
+    return 0;
+}
+
+static int test_monitor_default_cpu_bank_and_vic_shortcuts(void)
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeBankedMemoryBackend backend;
+    char line[MONITOR_HEX_ROW_CHARS + 1];
+    char status[39];
+    const int keys[] = {
+        'J',
+        'o', '.',
+        'o', 'o', 'o', 'o', 'o', 'o', 'o', 'o',
+        'O', 'O', 'O', 'O',
+        KEY_BREAK
+    };
+    FakeKeyboard keyboard(keys, sizeof(keys) / sizeof(keys[0]));
+    static const char *cpu_cycle_status[] = {
+        "CPU1 $A:RAM $D:CHR $E:RAM VIC2 $8000",
+        "CPU2 $A:RAM $D:CHR $E:KRN VIC2 $8000",
+        "CPU3 $A:BAS $D:CHR $E:KRN VIC2 $8000",
+        "CPU4 $A:RAM $D:RAM $E:RAM VIC2 $8000",
+        "CPU5 $A:RAM $D:I/O $E:RAM VIC2 $8000",
+        "CPU6 $A:RAM $D:I/O $E:KRN VIC2 $8000",
+        "CPU7 $A:BAS $D:I/O $E:KRN VIC2 $8000",
+        "CPU0 $A:RAM $D:RAM $E:RAM VIC2 $8000",
+    };
+    static const char *vic_cycle_status[] = {
+        "CPU0 $A:RAM $D:RAM $E:RAM VIC3 $C000",
+        "CPU0 $A:RAM $D:RAM $E:RAM VIC0 $0000",
+        "CPU0 $A:RAM $D:RAM $E:RAM VIC1 $4000",
+        "CPU0 $A:RAM $D:RAM $E:RAM VIC2 $8000",
+    };
+    static const uint8_t vic_cycle_dd00[] = {
+        0xA8, 0xAB, 0xAA, 0xA9,
+    };
+
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+    ui.set_prompt("A000", 1);
+    monitor_io::reset_fake_monitor_io();
+    monitor_reset_saved_state();
+    monitor_invalidate_saved_state();
+
+    backend.live_cpu_port = 0x00;
+    backend.live_cpu_ddr = 0x07;
+    backend.live_dd00 = 0xA9;
+    backend.basic[0] = 0xBA;
+    backend.ram[0xA000] = 0xAA;
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+
+    screen.get_slice(1, 22, 38, status);
+    if (expect(strstr(status, "CPU7 $A:BAS $D:I/O $E:KRN VIC2 $8000") == status,
+               "Fresh monitor sessions must default to CPU7 regardless of the live machine bank.")) return 1;
+
+    if (expect(monitor.poll(0) == 0, "Jump command failed for CPU/VIC shortcut test.")) return 1;
+    if (expect(!monitor_io::g_monitor_io.jump_called, "J must change the monitor address without executing code.")) return 1;
+    screen.get_slice(1, 4, 8, line);
+    if (expect(strncmp(line, "a000 ba", 7) == 0 || strncmp(line, "A000 BA", 7) == 0,
+               "Default CPU7 must show BASIC at A000.")) return 1;
+
+    ui.popup_count = 0;
+    if (expect(monitor.poll(0) == 0, "CPU bank cycle from CPU7 to CPU0 failed.")) return 1;
+    screen.get_slice(1, 22, 38, status);
+    if (expect(strstr(status, "CPU0 $A:RAM $D:RAM $E:RAM VIC2 $8000") == status,
+               "Plain O must cycle from CPU7 to CPU0.")) return 1;
+    screen.get_slice(1, 4, 8, line);
+    if (expect(strncmp(line, "a000 aa", 7) == 0 || strncmp(line, "A000 AA", 7) == 0,
+               "CPU0 must expose RAM at A000.")) return 1;
+    if (expect(ui.popup_count == 0, "Plain O must not open a popup.")) return 1;
+
+    if (expect(monitor.poll(0) == 0, "Unmapped key should be ignored after plain O.")) return 1;
+    screen.get_slice(1, 22, 38, status);
+    if (expect(strstr(status, "CPU0 $A:RAM $D:RAM $E:RAM VIC2 $8000") == status,
+               "Unmapped keys must not be captured for CPU bank selection.")) return 1;
+    if (expect(ui.popup_count == 0, "Unmapped keys must not trigger CPU bank popups.")) return 1;
+
+    for (unsigned int i = 0; i < sizeof(cpu_cycle_status) / sizeof(cpu_cycle_status[0]); i++) {
+        if (expect(monitor.poll(0) == 0, "Ascending CPU bank cycle failed.")) return 1;
+        screen.get_slice(1, 22, 38, status);
+        if (expect(strstr(status, cpu_cycle_status[i]) == status, "CPU bank cycle order must be CPU0..CPU7 in ascending order.")) return 1;
+    }
+
+    screen.get_slice(1, 4, 8, line);
+    if (expect(strncmp(line, "a000 aa", 7) == 0 || strncmp(line, "A000 AA", 7) == 0,
+               "CPU0 must remain distinct and re-reachable after a full cycle.")) return 1;
+
+    for (unsigned int i = 0; i < sizeof(vic_cycle_status) / sizeof(vic_cycle_status[0]); i++) {
+        if (expect(monitor.poll(0) == 0, "Shift+O VIC bank cycle failed.")) return 1;
+        screen.get_slice(1, 22, 38, status);
+        if (expect(strstr(status, vic_cycle_status[i]) == status, "Shift+O must cycle VIC0..VIC3 in ascending order.")) return 1;
+        if (expect(backend.live_dd00 == vic_cycle_dd00[i], "Shift+O must write the actual DD00 VIC bank bits without clobbering unrelated CIA-2 state.")) return 1;
+    }
+
+    if (expect(monitor.poll(0) == 1, "RUN/STOP exit failed after CPU/VIC shortcut test.")) return 1;
+    monitor.deinit();
+    monitor_reset_saved_state();
+    return 0;
+}
+
+static int test_monitor_freeze_mode_vic_shortcut_override(void)
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeFrozenVicBackend backend;
+    char status[39];
+    const int keys[] = { 'O', 'O', 'O', 'O', KEY_BREAK };
+    FakeKeyboard keyboard(keys, sizeof(keys) / sizeof(keys[0]));
+    static const char *vic_cycle_status[] = {
+        "CPU7 $A:BAS $D:I/O $E:KRN VIC1 $4000",
+        "CPU7 $A:BAS $D:I/O $E:KRN VIC2 $8000",
+        "CPU7 $A:BAS $D:I/O $E:KRN VIC3 $C000",
+        "CPU7 $A:BAS $D:I/O $E:KRN VIC0 $0000",
+    };
+    static const uint8_t requested_vic_bank[] = { 1, 2, 3, 0 };
+
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+    monitor_reset_saved_state();
+    monitor_invalidate_saved_state();
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+
+    screen.get_slice(1, 22, 38, status);
+    if (expect(strstr(status, "CPU7 $A:BAS $D:I/O $E:KRN VIC0 $0000") == status,
+               "Freeze-mode VIC shortcut test must start from the freezer's VIC0 bank.")) return 1;
+
+    for (unsigned int i = 0; i < sizeof(vic_cycle_status) / sizeof(vic_cycle_status[0]); i++) {
+        if (expect(monitor.poll(0) == 0, "Freeze-mode Shift+O VIC bank cycle failed.")) return 1;
+        screen.get_slice(1, 22, 38, status);
+        if (expect(strstr(status, vic_cycle_status[i]) == status,
+                   "Freeze-mode Shift+O must keep rotating through the requested VIC banks even when live readback stays pinned.")) return 1;
+        if (expect(backend.requested_vic_bank == requested_vic_bank[i],
+                   "Freeze-mode Shift+O must still request the next VIC bank from the backend.")) return 1;
+        if (expect(backend.set_live_vic_bank_calls == (int)i + 1,
+                   "Freeze-mode Shift+O must invoke set_live_vic_bank on every keypress.")) return 1;
+        if (expect(backend.get_live_vic_bank() == 0,
+                   "Freeze-mode VIC override test assumes the backend readback remains pinned to VIC0.")) return 1;
+    }
+
+    if (expect(monitor.poll(0) == 1, "RUN/STOP exit failed after freeze-mode VIC shortcut test.")) return 1;
+    monitor.deinit();
+    monitor_reset_saved_state();
+    return 0;
+}
+
+static int test_monitor_reopen_restores_state(void)
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeMemoryBackend backend;
+    char line[MONITOR_DISASM_ROW_CHARS + 1];
+    char status[39];
+
+    monitor_reset_saved_state();
+
+    backend.write(0xC123, 0x07);
+    backend.write(0xC124, 0x44);
+    backend.write(0xC125, 0x00);
+
+    {
+        const int first_keys[] = { 'J', 'A', 'U', 'o', KEY_BREAK };
+        FakeKeyboard first_keyboard(first_keys, 5);
+        ui.screen = &screen;
+        ui.keyboard = &first_keyboard;
+        ui.set_prompt("C123", 1);
+
+        BackendMachineMonitor first_monitor(&ui, &backend);
+        first_monitor.init(&screen, &first_keyboard);
+        if (expect(first_monitor.poll(0) == 0, "First monitor goto failed for reopen-state test.")) return 1;
+        if (expect(first_monitor.poll(0) == 0, "First monitor view switch failed for reopen-state test.")) return 1;
+        if (expect(first_monitor.poll(0) == 0, "First monitor undocumented-op toggle failed for reopen-state test.")) return 1;
+        if (expect(first_monitor.poll(0) == 0, "First monitor CPU-bank cycle failed for reopen-state test.")) return 1;
+        if (expect(first_monitor.poll(0) == 1, "First monitor exit failed for reopen-state test.")) return 1;
+        first_monitor.deinit();
+    }
+
+    screen.clear();
+
+    {
+        const int second_keys[] = { KEY_BREAK };
+        FakeKeyboard second_keyboard(second_keys, 1);
+        ui.keyboard = &second_keyboard;
+
+        BackendMachineMonitor second_monitor(&ui, &backend);
+        second_monitor.init(&screen, &second_keyboard);
+        screen.get_slice(1, 3, 38, line);
+        if (expect(strstr(line, "MONITOR ASM $C123") == line, "Reopened monitor did not restore the disassembly view and address.")) return 1;
+        screen.get_slice(1, 4, 38, line);
+        if (expect(strstr(line, "C123 07 44") == line, "Reopened monitor did not restore the saved current address.")) return 1;
+        if (expect(strstr(line, "SLO $44") != NULL, "Reopened monitor did not restore the illegal-opcodes setting.")) return 1;
+        screen.get_slice(1, 22, 38, status);
+        if (expect(strstr(status, "CPU0 ") == status, "Reopened monitor did not restore the selected CPU bank.")) return 1;
+        if (expect(second_monitor.poll(0) == 1, "Second monitor exit failed for reopen-state test.")) return 1;
+        second_monitor.deinit();
+    }
+
+    monitor_reset_saved_state();
+    return 0;
+}
+
+static int test_monitor_kernal_bank_switch_and_ram_interaction(void)
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeBankedMemoryBackend backend;
+    char line[MONITOR_HEX_ROW_CHARS + 1];
+    char status[39];
+
+    monitor_reset_saved_state();
+
+    backend.kernal[0] = 0x4E;
+    backend.kernal[1] = 0x22;
+    backend.ram[0xE000] = 0xAA;
+    backend.ram[0xE001] = 0xBB;
+
+    const int keys[] = {
+        'J', 'e', '5', '5', KEY_BREAK,
+        'o', 'o', 'o', 'o', 'o', 'o',
+        'e', '6', '6', KEY_BREAK,
+        'o', 'o',
+        KEY_BREAK
+    };
+    FakeKeyboard keyboard(keys, 18);
+
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+    ui.set_prompt("E000", 1);
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+
+    if (expect(monitor.poll(0) == 0, "Goto to E000 failed for KERNAL banking test.")) return 1;
+    screen.get_slice(1, 4, MONITOR_HEX_ROW_CHARS, line);
+    if (expect(strstr(line, "e000 4e 22") == line || strstr(line, "E000 4E 22") == line,
+               "Initial KERNAL-visible bytes at E000 are incorrect.")) return 1;
+
+    if (expect(monitor.poll(0) == 0, "Edit mode entry failed for KERNAL-visible RAM write test.")) return 1;
+    if (expect(monitor.poll(0) == 0, "First KERNAL-visible nibble failed.")) return 1;
+    if (expect(monitor.poll(0) == 0, "Second KERNAL-visible nibble failed.")) return 1;
+    if (expect(backend.ram[0xE000] == 0x55, "KERNAL-visible write did not update underlying RAM at E000.")) return 1;
+    if (expect(backend.kernal[0] == 0x4E, "KERNAL-visible write incorrectly modified KERNAL ROM content.")) return 1;
+    screen.get_slice(1, 4, MONITOR_HEX_ROW_CHARS, line);
+    if (expect(strstr(line, "e000 4e 22") == line || strstr(line, "E000 4E 22") == line,
+               "KERNAL-visible monitor view should still show ROM after write-under-ROM.")) return 1;
+    if (expect(monitor.poll(0) == 0, "RUN/STOP should leave edit mode after KERNAL-visible write.")) return 1;
+
+    if (expect(monitor.poll(0) == 0, "CPU bank cycle to CPU0 failed for KERNAL banking test.")) return 1;
+    if (expect(monitor.poll(0) == 0, "CPU bank cycle to CPU1 failed for KERNAL banking test.")) return 1;
+    if (expect(monitor.poll(0) == 0, "CPU bank cycle to CPU2 failed for KERNAL banking test.")) return 1;
+    if (expect(monitor.poll(0) == 0, "CPU bank cycle to CPU3 failed for KERNAL banking test.")) return 1;
+    if (expect(monitor.poll(0) == 0, "CPU bank cycle to CPU4 failed for KERNAL banking test.")) return 1;
+    if (expect(monitor.poll(0) == 0, "CPU bank cycle to CPU5 failed for KERNAL banking test.")) return 1;
+    screen.get_slice(1, 22, 38, status);
+    if (expect(strstr(status, "CPU5 $A:RAM $D:I/O $E:RAM VIC2 $8000") == status,
+               "CPU5 status did not expose RAM at E000.")) return 1;
+    screen.get_slice(1, 4, MONITOR_HEX_ROW_CHARS, line);
+    if (expect(strstr(line, "e000 55 bb") == line || strstr(line, "E000 55 BB") == line,
+               "Bank switching to RAM did not reveal the underlying bytes at E000.")) return 1;
+
+    if (expect(monitor.poll(0) == 0, "Edit mode entry failed for RAM-visible write test.")) return 1;
+    if (expect(monitor.poll(0) == 0, "First RAM-visible nibble failed.")) return 1;
+    if (expect(monitor.poll(0) == 0, "Second RAM-visible nibble failed.")) return 1;
+    if (expect(backend.ram[0xE001] == 0x66, "RAM-visible write did not update underlying RAM at E001.")) return 1;
+    screen.get_slice(1, 4, MONITOR_HEX_ROW_CHARS, line);
+    if (expect(strstr(line, "e000 55 66") == line || strstr(line, "E000 55 66") == line,
+               "RAM-visible monitor view did not redraw the edited underlying RAM byte.")) return 1;
+    if (expect(monitor.poll(0) == 0, "RUN/STOP should leave edit mode after RAM-visible write.")) return 1;
+
+    if (expect(monitor.poll(0) == 0, "CPU bank cycle to CPU6 failed for KERNAL restore test.")) return 1;
+    if (expect(monitor.poll(0) == 0, "CPU bank cycle to CPU7 failed for KERNAL restore test.")) return 1;
+    screen.get_slice(1, 22, 38, status);
+    if (expect(strstr(status, "CPU7 $A:BAS $D:I/O $E:KRN VIC2 $8000") == status,
+               "CPU7 status did not restore KERNAL visibility.")) return 1;
+    screen.get_slice(1, 4, MONITOR_HEX_ROW_CHARS, line);
+    if (expect(strstr(line, "e000 4e 22") == line || strstr(line, "E000 4E 22") == line,
+               "Switching back to KERNAL did not restore the ROM-visible bytes at E000.")) return 1;
+    if (expect(monitor.poll(0) == 1, "RUN/STOP exit failed after KERNAL banking interaction test.")) return 1;
+    monitor.deinit();
+
+    return 0;
+}
+
+static int test_assembler_encoding(void)
+{
+    AsmInsn insn;
+    MonitorError err = MONITOR_OK;
+
+    if (expect(monitor_assemble_line("LDA #$12", false, 0xC000, &insn, &err), "LDA #$12 must encode")) return 1;
+    if (expect(insn.length == 2 && insn.bytes[0] == 0xA9 && insn.bytes[1] == 0x12, "LDA #$12 -> A9 12")) return 1;
+
+    if (expect(monitor_assemble_line("JMP $C000", false, 0xC000, &insn, &err), "JMP $C000 must encode")) return 1;
+    if (expect(insn.length == 3 && insn.bytes[0] == 0x4C && insn.bytes[1] == 0x00 && insn.bytes[2] == 0xC0, "JMP $C000 -> 4C 00 C0")) return 1;
+
+    if (expect(monitor_assemble_line("BNE $C005", false, 0xC000, &insn, &err), "BNE $C005 must encode")) return 1;
+    if (expect(insn.length == 2 && insn.bytes[0] == 0xD0 && insn.bytes[1] == 0x03, "BNE $C005 from $C000 -> D0 03")) return 1;
+
+    if (expect(monitor_assemble_line("NOP", false, 0xC000, &insn, &err), "NOP must encode")) return 1;
+    if (expect(insn.length == 1 && insn.bytes[0] == 0xEA, "NOP -> EA")) return 1;
+
+    if (expect(monitor_assemble_line("STA $0400,X", false, 0xC000, &insn, &err), "STA $0400,X must encode")) return 1;
+    if (expect(insn.length == 3 && insn.bytes[0] == 0x9D && insn.bytes[1] == 0x00 && insn.bytes[2] == 0x04, "STA $0400,X -> 9D 00 04")) return 1;
+
+    // Illegal opcode rejected when toggle off.
+    if (expect(!monitor_assemble_line("SLO $12", false, 0xC000, &insn, &err), "SLO must be rejected when illegal=OFF")) return 1;
+    // ...accepted when on.
+    if (expect(monitor_assemble_line("SLO $12", true, 0xC000, &insn, &err), "SLO $12 must encode when illegal=ON")) return 1;
+    if (expect(insn.length == 2 && insn.bytes[0] == 0x07 && insn.bytes[1] == 0x12, "SLO $12 -> 07 12")) return 1;
+
+    static const struct {
+        const char *line;
+        uint8_t length;
+        uint8_t bytes[3];
+    } canonical_cases[] = {
+        { "JAM", 1, { 0x02, 0x00, 0x00 } },
+        { "SLO ($12,X)", 2, { 0x03, 0x12, 0x00 } },
+        { "SLO $12", 2, { 0x07, 0x12, 0x00 } },
+        { "SLO $1234", 3, { 0x0F, 0x34, 0x12 } },
+        { "SLO ($12),Y", 2, { 0x13, 0x12, 0x00 } },
+        { "SLO $12,X", 2, { 0x17, 0x12, 0x00 } },
+        { "SLO $1234,Y", 3, { 0x1B, 0x34, 0x12 } },
+        { "SLO $1234,X", 3, { 0x1F, 0x34, 0x12 } },
+        { "SRE ($12,X)", 2, { 0x43, 0x12, 0x00 } },
+        { "SRE $12", 2, { 0x47, 0x12, 0x00 } },
+        { "SRE $1234", 3, { 0x4F, 0x34, 0x12 } },
+        { "SRE ($12),Y", 2, { 0x53, 0x12, 0x00 } },
+        { "SRE $12,X", 2, { 0x57, 0x12, 0x00 } },
+        { "SRE $1234,Y", 3, { 0x5B, 0x34, 0x12 } },
+        { "SRE $1234,X", 3, { 0x5F, 0x34, 0x12 } },
+        { "DCP ($12,X)", 2, { 0xC3, 0x12, 0x00 } },
+        { "DCP $12", 2, { 0xC7, 0x12, 0x00 } },
+        { "DCP $1234", 3, { 0xCF, 0x34, 0x12 } },
+        { "DCP ($12),Y", 2, { 0xD3, 0x12, 0x00 } },
+        { "DCP $12,X", 2, { 0xD7, 0x12, 0x00 } },
+        { "DCP $1234,Y", 3, { 0xDB, 0x34, 0x12 } },
+        { "DCP $1234,X", 3, { 0xDF, 0x34, 0x12 } },
+        { "ISC ($12,X)", 2, { 0xE3, 0x12, 0x00 } },
+        { "ISC $12", 2, { 0xE7, 0x12, 0x00 } },
+        { "ISC $1234", 3, { 0xEF, 0x34, 0x12 } },
+        { "ISC ($12),Y", 2, { 0xF3, 0x12, 0x00 } },
+        { "ISC $12,X", 2, { 0xF7, 0x12, 0x00 } },
+        { "ISC $1234,Y", 3, { 0xFB, 0x34, 0x12 } },
+        { "ISC $1234,X", 3, { 0xFF, 0x34, 0x12 } },
+        { "ANE #$12", 2, { 0x8B, 0x12, 0x00 } },
+        { "SHA ($12),Y", 2, { 0x93, 0x12, 0x00 } },
+        { "SHA $1234,Y", 3, { 0x9F, 0x34, 0x12 } },
+        { "SBX #$12", 2, { 0xCB, 0x12, 0x00 } },
+        { "SAX $12", 2, { 0x87, 0x12, 0x00 } },
+        { "SAX $1234", 3, { 0x8F, 0x34, 0x12 } },
+        { "SAX ($12,X)", 2, { 0x83, 0x12, 0x00 } },
+        { "SAX $12,Y", 2, { 0x97, 0x12, 0x00 } },
+    };
+
+    for (unsigned i = 0; i < sizeof(canonical_cases) / sizeof(canonical_cases[0]); i++) {
+        if (expect_assembly(canonical_cases[i].line, canonical_cases[i].bytes,
+                            canonical_cases[i].length, true)) return 1;
+    }
+
+    static const struct {
+        const char *alias;
+        uint8_t length;
+        uint8_t bytes[3];
+    } alias_cases[] = {
+        { "HLT", 1, { 0x02, 0x00, 0x00 } },
+        { "KIL", 1, { 0x02, 0x00, 0x00 } },
+        { "ASO $12", 2, { 0x07, 0x12, 0x00 } },
+        { "LSE $12", 2, { 0x47, 0x12, 0x00 } },
+        { "DCM $12", 2, { 0xC7, 0x12, 0x00 } },
+        { "INS $12", 2, { 0xE7, 0x12, 0x00 } },
+        { "ISB $12", 2, { 0xE7, 0x12, 0x00 } },
+        { "XAA #$12", 2, { 0x8B, 0x12, 0x00 } },
+        { "AHX ($12),Y", 2, { 0x93, 0x12, 0x00 } },
+        { "AHX $1234,Y", 3, { 0x9F, 0x34, 0x12 } },
+        { "AXS #$12", 2, { 0xCB, 0x12, 0x00 } },
+        { "ASR #$12", 2, { 0x4B, 0x12, 0x00 } },
+        { "LXA #$12", 2, { 0xAB, 0x12, 0x00 } },
+        { "SHS $1234,Y", 3, { 0x9B, 0x34, 0x12 } },
+        { "LAE $1234,Y", 3, { 0xBB, 0x34, 0x12 } },
+        { "LDS $1234,Y", 3, { 0xBB, 0x34, 0x12 } },
+    };
+
+    for (unsigned i = 0; i < sizeof(alias_cases) / sizeof(alias_cases[0]); i++) {
+        if (expect_assembly(alias_cases[i].alias, alias_cases[i].bytes,
+                            alias_cases[i].length, true)) return 1;
+    }
+
+    if (expect(!monitor_assemble_line("SAX #$12", true, 0xC000, &insn, &err),
+               "SAX immediate must not assemble to SBX.")) return 1;
+
+    return 0;
+}
+
+static int test_screen_code_reverse(void)
+{
+    if (expect(monitor_screen_code_for_char('A') == 0x01, "screen-code 'A' must be 0x01")) return 1;
+    if (expect(monitor_screen_code_for_char('Z') == 0x1A, "screen-code 'Z' must be 0x1A")) return 1;
+    if (expect(monitor_screen_code_for_char('@') == 0x00, "screen-code '@' must be 0x00")) return 1;
+    if (expect(monitor_screen_code_for_char(' ') == 0x20, "screen-code ' ' must be 0x20")) return 1;
+    if (expect(monitor_screen_code_for_char('1') == 0x31, "screen-code '1' must be 0x31")) return 1;
+    if (expect(monitor_screen_code_for_char('a') == 0x01, "lowercase 'a' must map to uppercase 'A' screen code")) return 1;
+    if (expect(monitor_screen_code_for_char('A', MONITOR_SCREEN_CHARSET_LOWER_UPPER) == 0x41,
+               "L/U screen-code 'A' must be 0x41")) return 1;
+    if (expect(monitor_screen_code_for_char('Z', MONITOR_SCREEN_CHARSET_LOWER_UPPER) == 0x5A,
+               "L/U screen-code 'Z' must be 0x5A")) return 1;
+    if (expect(monitor_screen_code_for_char('#', MONITOR_SCREEN_CHARSET_LOWER_UPPER) == 0x23,
+               "Screen-code '#' must remain literal in L/U mode")) return 1;
+    if (expect(monitor_screen_code_for_char('<', MONITOR_SCREEN_CHARSET_LOWER_UPPER) == 0x3C,
+               "Screen-code '<' must remain literal in L/U mode")) return 1;
+    if (expect(monitor_screen_code_for_char('[', MONITOR_SCREEN_CHARSET_UPPER_GRAPHICS) == 0xFF,
+               "Display aliases must not be accepted as screen-code input.")) return 1;
+    return 0;
+}
+
+static int test_logical_delete_per_view(void)
+{
+    // HEX: DEL on a non-zero byte must clear it to 0x00 and step cursor RIGHT.
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        backend.write(0x0400, 0xAB);
+        backend.write(0x0401, 0xCD);
+        const int keys[] = { 'J', 'E', KEY_DELETE, KEY_DELETE, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys)/sizeof(keys[0]));
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("0400", 1);
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        for (int i = 0; i < (int)(sizeof(keys)/sizeof(keys[0])) - 1; i++) {
+            (void)mon.poll(0);
+        }
+        // First DEL clears 0400 and moves to 0401; second DEL clears 0401.
+        if (expect(backend.read(0x0400) == 0x00 && backend.read(0x0401) == 0x00,
+                   "HEX DEL must clear current byte to 0x00 and advance cursor RIGHT")) return 1;
+    }
+
+    // ASC: DEL on byte must set to 0x20 and step cursor LEFT.
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        backend.write(0x03FF, 0xAA);
+        backend.write(0x0400, 0xBB);
+        const int keys[] = { 'J', 'I', 'E', KEY_DELETE, KEY_DELETE, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys)/sizeof(keys[0]));
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("0400", 1);
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        for (int i = 0; i < (int)(sizeof(keys)/sizeof(keys[0])) - 1; i++) {
+            (void)mon.poll(0);
+        }
+        // First DEL clears 0400 and moves to 03FF; second DEL clears 03FF.
+        if (expect(backend.read(0x0400) == 0x20 && backend.read(0x03FF) == 0x20,
+                   "ASC DEL must clear byte to 0x20 and advance cursor LEFT")) return 1;
+    }
+
+    // SCR: DEL on byte must set to screen-code space (0x20) and step cursor LEFT.
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        backend.write(0x03FF, 0x11);
+        backend.write(0x0400, 0x55);
+        const int keys[] = { 'J', 'V', 'E', KEY_DELETE, KEY_DELETE, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys)/sizeof(keys[0]));
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("0400", 1);
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        for (int i = 0; i < (int)(sizeof(keys)/sizeof(keys[0])) - 1; i++) {
+            (void)mon.poll(0);
+        }
+        if (expect(backend.read(0x0400) == 0x20 && backend.read(0x03FF) == 0x20,
+                   "SCR DEL must clear byte to screen-code space and advance cursor LEFT")) return 1;
+    }
+
+    // ASM: DEL on $C000 = A9 12 (LDA #$12, 2 bytes) must fill EA EA.
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        backend.write(0xC000, 0xA9);
+        backend.write(0xC001, 0x12);
+        const int keys[] = { 'J', 'A', 'E', KEY_DELETE, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys)/sizeof(keys[0]));
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("C000", 1);
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        for (int i = 0; i < (int)(sizeof(keys)/sizeof(keys[0])) - 1; i++) {
+            (void)mon.poll(0);
+        }
+        if (expect(backend.read(0xC000) == 0xEA && backend.read(0xC001) == 0xEA,
+                   "ASM DEL must replace LDA #$12 (2 bytes) with EA EA")) return 1;
+    }
+
+    // DEL must also work in non-edit mode for HEX/ASC/SCR/ASM.
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        backend.write(0x0400, 0xAB);
+        const int keys[] = { 'J', KEY_DELETE, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys)/sizeof(keys[0]));
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("0400", 1);
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        for (int i = 0; i < (int)(sizeof(keys)/sizeof(keys[0])) - 1; i++) {
+            (void)mon.poll(0);
+        }
+        if (expect(backend.read(0x0400) == 0x00,
+                   "HEX DEL must work outside edit mode too")) return 1;
+    }
+    return 0;
+}
+
+static int test_scr_edit_writes_screen_code(void)
+{
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        monitor_reset_saved_state();
+        backend.write(0x0400, 0x00);
+        const int keys[] = { 'J', 'V', 'E', 'A', KEY_BREAK };
+        FakeKeyboard kb(keys, 5);
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("0400", 1);
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        for (int i = 0; i < 5; i++) {
+            (void)mon.poll(0);
+        }
+        if (expect(backend.read(0x0400) == 0x01, "SCR edit: typing 'A' must write screen code 0x01 in U/G")) return 1;
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        monitor_reset_saved_state();
+        backend.write(0x0400, 0x00);
+        const int keys[] = { 'J', 'V', 'U', 'E', 'A', KEY_BREAK };
+        FakeKeyboard kb(keys, 6);
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("0400", 1);
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        for (int i = 0; i < 6; i++) {
+            (void)mon.poll(0);
+        }
+        if (expect(backend.read(0x0400) == 0x41, "SCR edit: typing 'A' must write screen code 0x41 in L/U")) return 1;
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        monitor_reset_saved_state();
+        backend.write(0x0400, 0x00);
+        backend.write(0x0401, 0x00);
+        backend.write(0x0402, 0x00);
+        backend.write(0x0403, 0x00);
+        const int keys[] = { 'J', 'V', 'E', 'a', 'A', '#', '<', KEY_BREAK };
+        FakeKeyboard kb(keys, 8);
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("0400", 1);
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        for (int i = 0; i < 8; i++) {
+            (void)mon.poll(0);
+        }
+        if (expect(backend.read(0x0400) == 0x01, "SCR edit: typing 'a' must write screen code 0x01")) return 1;
+        if (expect(backend.read(0x0401) == 0x01, "SCR edit: typing 'A' must write screen code 0x01 in U/G")) return 1;
+        if (expect(backend.read(0x0402) == 0x23, "SCR edit: typing '#' must write literal screen code 0x23")) return 1;
+        if (expect(backend.read(0x0403) == 0x3C, "SCR edit: typing '<' must write literal screen code 0x3C")) return 1;
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        const int keys[] = { 'J', 'V', 'E', '`', KEY_BREAK, KEY_BREAK };
+        FakeKeyboard kb(keys, 6);
+
+        monitor_reset_saved_state();
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("0400", 1);
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        for (int i = 0; i < 4; i++) {
+            if (expect(mon.poll(0) == 0, "SCR edit top-left arrow input failed.")) return 1;
+        }
+        if (expect(backend.read(0x0400) == 0x1F,
+                   "SCR edit must retain the top-left arrow character.")) return 1;
+        if (expect(mon.poll(0) == 0, "SCR edit exit failed.")) return 1;
+        if (expect(mon.poll(0) == 1, "SCR monitor exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    return 0;
+}
+
+static int test_screen_charset_toggle_and_header(void)
+{
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char header[39];
+        const int keys[] = { 'V', 'U', KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Screen charset header test: Screen view switch failed.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "MONITOR SCR U/G $0000") == header,
+                   "Screen view header must show U/G by default.")) return 1;
+        if (expect(mon.poll(0) == 0, "Screen charset header test: toggle failed.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "MONITOR SCR L/U $0000") == header,
+                   "Screen view header must show L/U after toggle.")) return 1;
+        if (expect(mon.poll(0) == 1, "Screen charset header test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char header[39];
+        const int keys[] = { 'A', 'U', KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        backend.write(0x0000, 0x07);
+        backend.write(0x0001, 0x44);
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "ASM U test: ASM view switch failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM U test: undocumented toggle failed.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "Undoc") != NULL,
+                   "ASM U must keep toggling undocumented opcodes.")) return 1;
+        if (expect(mon.poll(0) == 1, "ASM U test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        const int keys[] = { 'M', 'U', KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.popup_count = 0;
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Memory U test: Memory view switch failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Memory U test: popup branch failed.")) return 1;
+        if (expect(ui.popup_count == 1 && strcmp(ui.last_popup, "UNDOC IN ASM, CASE IN SCR") == 0,
+                   "U outside ASM/SCR must show the refined invalid-context popup.")) return 1;
+        if (expect(mon.poll(0) == 1, "Memory U test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    return 0;
+}
+
+static int test_screen_charset_display_and_memory_ascii_pane(void)
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeMemoryBackend backend;
+    char line[MONITOR_TEXT_ROW_CHARS + 1];
+    char row[MONITOR_HEX_ROW_CHARS + 1];
+    const int keys[] = { 'V', 'U', 'M', KEY_BREAK };
+    FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+    backend.write(0x0000, 0x01);
+    backend.write(0x0001, 0x1A);
+    backend.write(0x0002, 0x41);
+    backend.write(0x0003, 0x5A);
+    backend.write(0x0004, 0x20);
+    backend.write(0x0005, 0x61);
+    backend.write(0x0006, 0x80);
+
+    ui.screen = &screen;
+    ui.keyboard = &kb;
+    monitor_reset_saved_state();
+
+    BackendMachineMonitor mon(&ui, &backend);
+    mon.init(&screen, &kb);
+
+    if (expect(mon.poll(0) == 0, "Screen display test: Screen view switch failed.")) return 1;
+    if (expect(mon.poll(0) == 0, "Screen display test: charset toggle failed.")) return 1;
+    screen.get_slice(1, 4, MONITOR_TEXT_ROW_CHARS, line);
+    if (expect(strncmp(line, "0000 azAZ .@", 12) == 0,
+               "L/U Screen view must show lowercase for $01-$1A, uppercase for $41-$5A, visible placeholders for non-space unmapped codes, and base-glyph rendering for high-bit values.")) return 1;
+
+    if (expect(mon.poll(0) == 0, "Screen display test: Memory view switch failed.")) return 1;
+    screen.get_slice(1, 4, MONITOR_HEX_ROW_CHARS, row);
+    if (expect(strcmp(row, "0000 01 1A 41 5A 20 61 80 00 ..AZ a..") == 0,
+               "Memory view ASCII pane must stay literal ASCII and ignore Screen charset mode.")) return 1;
+    if (expect(mon.poll(0) == 1, "Screen display test: exit failed.")) return 1;
+    mon.deinit();
+    return 0;
+}
+
+static int test_number_shortcut_routing(void)
+{
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char line[19];
+        const int keys[] = { 'A', 'E', 'N', KEY_BREAK, KEY_BREAK, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "ASM N-routing test: ASM view switch failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM N-routing test: edit mode entry failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM N-routing test: typing N failed.")) return 1;
+        if (expect(!find_popup_rect(screen, NULL, NULL, NULL, NULL),
+                   "ASM edit N must not open the framed Number popup.")) return 1;
+        screen.get_slice(16, 4, 18, line);
+        if (expect(strstr(line, " N_") == line,
+                   "ASM edit N must be routed into mnemonic entry instead of Number.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM N-routing test: RUN/STOP should close the opcode picker first.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM N-routing test: RUN/STOP should leave edit mode next.")) return 1;
+        if (expect(mon.poll(0) == 1, "ASM N-routing test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char line[32];
+        const int keys[] = { 'J', 'A', 'E', KEY_RIGHT, 'N', KEY_BREAK, KEY_BREAK, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        backend.write(0xC000, 0xA9);
+        backend.write(0xC001, 0x12);
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("C000", 1);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "ASM operand N test: goto failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM operand N test: ASM view switch failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM operand N test: edit mode entry failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM operand N test: moving to operand failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM operand N test: Number popup open failed.")) return 1;
+        get_popup_line(screen, 0, line, sizeof(line));
+        if (expect(strstr(line, "MONITOR NUM $C001 BYTE") == line,
+                   "ASM operand context must open Number on the operand byte without leaving edit mode.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM operand N test: popup close failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM operand N test: exit edit mode failed.")) return 1;
+        if (expect(mon.poll(0) == 1, "ASM operand N test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char line[19];
+        // "IN" is a valid mnemonic prefix (INC/INX/INY); the point of this test
+        // is that N routes into the opcode picker rather than opening the Number
+        // popup while the picker is active.
+        const int keys[] = { 'J', 'A', 'E', 'I', 'N', KEY_BREAK, KEY_BREAK, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("C100", 1);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "ASM popup N-routing test: goto failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM popup N-routing test: ASM view switch failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM popup N-routing test: edit mode entry failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM popup N-routing test: first mnemonic letter failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM popup N-routing test: second mnemonic letter failed.")) return 1;
+        if (expect(!find_popup_rect(screen, NULL, NULL, NULL, NULL),
+                   "Opcode completion popup must keep N as mnemonic input instead of opening Number.")) return 1;
+        screen.get_slice(16, 4, 18, line);
+        if (expect(strstr(line, " IN_") == line,
+                   "While the opcode picker is active, N must continue editing the mnemonic prefix.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM popup N-routing test: RUN/STOP should close the picker first.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM popup N-routing test: RUN/STOP should leave edit mode next.")) return 1;
+        if (expect(mon.poll(0) == 1, "ASM popup N-routing test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char line[32];
+        const int keys[] = { 'J', 'A', 'E', 'L', 'D', 'A', KEY_RETURN, 'N', KEY_BREAK, KEY_BREAK, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("C200", 1);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        for (int i = 0; i < 7; i++) {
+            if (expect(mon.poll(0) == 0, "ASM post-opcode N test: mnemonic commit failed.")) return 1;
+        }
+        if (expect(mon.poll(0) == 0, "ASM post-opcode N test: Number popup open failed.")) return 1;
+        get_popup_line(screen, 0, line, sizeof(line));
+        if (expect(strstr(line, "MONITOR NUM $C201 BYTE") == line,
+                   "After opcode entry advances to operand context, N must open Number without leaving edit mode.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM post-opcode N test: popup close failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM post-opcode N test: exit edit mode failed.")) return 1;
+        if (expect(mon.poll(0) == 1, "ASM post-opcode N test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        const int keys[] = { 'I', 'E', 'N', KEY_BREAK, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "ASCII N-routing test: ASCII view switch failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASCII N-routing test: edit mode entry failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASCII N-routing test: typing N failed.")) return 1;
+        if (expect(backend.read(0x0000) == 'N',
+                   "ASCII edit N must write the typed character instead of opening Number.")) return 1;
+        if (expect(!find_popup_rect(screen, NULL, NULL, NULL, NULL),
+                   "ASCII edit N must not open the framed Number popup.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASCII N-routing test: RUN/STOP should leave edit mode first.")) return 1;
+        if (expect(mon.poll(0) == 1, "ASCII N-routing test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        const int keys[] = { 'V', 'E', 'N', KEY_BREAK, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Screen N-routing test: Screen view switch failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Screen N-routing test: edit mode entry failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Screen N-routing test: typing N failed.")) return 1;
+        if (expect(backend.read(0x0000) == monitor_screen_code_for_char('N'),
+                   "Screen edit N must write the typed screen code instead of opening Number.")) return 1;
+        if (expect(!find_popup_rect(screen, NULL, NULL, NULL, NULL),
+                   "Screen edit N must not open the framed Number popup.")) return 1;
+        if (expect(mon.poll(0) == 0, "Screen N-routing test: RUN/STOP should leave edit mode first.")) return 1;
+        if (expect(mon.poll(0) == 1, "Screen N-routing test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        const int keys[] = { 'A', 'N', KEY_BREAK, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "ASM non-edit N test: ASM view switch failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM non-edit N test: Number popup open failed.")) return 1;
+        if (expect(find_popup_rect(screen, NULL, NULL, NULL, NULL),
+                   "ASM non-edit N must still open the framed Number popup.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM non-edit N test: popup close failed.")) return 1;
+        if (expect(mon.poll(0) == 1, "ASM non-edit N test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        const int keys[] = { 'E', 'N', KEY_BREAK, KEY_BREAK, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "HEX edit N test: edit mode entry failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "HEX edit N test: Number popup open failed.")) return 1;
+        if (expect(find_popup_rect(screen, NULL, NULL, NULL, NULL),
+                   "HEX edit N must keep opening the framed Number popup.")) return 1;
+        if (expect(mon.poll(0) == 0, "HEX edit N test: popup close failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "HEX edit N test: RUN/STOP should leave edit mode first.")) return 1;
+        if (expect(mon.poll(0) == 1, "HEX edit N test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    return 0;
+}
+
+static int test_range_shortcut_routing(void)
+{
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char header[39];
+        const int keys[] = { 'I', 'E', 'R', KEY_BREAK, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "ASCII R-routing test: ASCII view switch failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASCII R-routing test: edit mode entry failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASCII R-routing test: typing R failed.")) return 1;
+        if (expect(backend.read(0x0000) == 'R',
+                   "ASCII edit R must write the typed character instead of toggling Range.")) return 1;
+        screen.get_slice(1, 22, 38, header);
+        if (expect(strstr(header, "Range") == NULL,
+                   "ASCII edit R must not enable range mode.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASCII R-routing test: RUN/STOP should leave edit mode first.")) return 1;
+        if (expect(mon.poll(0) == 1, "ASCII R-routing test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char header[39];
+        const int keys[] = { 'V', 'E', 'R', KEY_BREAK, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Screen R-routing test: Screen view switch failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Screen R-routing test: edit mode entry failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Screen R-routing test: typing R failed.")) return 1;
+        if (expect(backend.read(0x0000) == monitor_screen_code_for_char('R'),
+                   "Screen edit R must write the typed screen code instead of toggling Range.")) return 1;
+        screen.get_slice(1, 22, 38, header);
+        if (expect(strstr(header, "Range") == NULL,
+                   "Screen edit R must not enable range mode.")) return 1;
+        if (expect(mon.poll(0) == 0, "Screen R-routing test: RUN/STOP should leave edit mode first.")) return 1;
+        if (expect(mon.poll(0) == 1, "Screen R-routing test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char line[19];
+        char header[39];
+        const int keys[] = { 'A', 'E', 'R', KEY_BREAK, KEY_BREAK, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "ASM R-routing test: ASM view switch failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM R-routing test: edit mode entry failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM R-routing test: typing R failed.")) return 1;
+        if (expect(!find_popup_rect(screen, NULL, NULL, NULL, NULL),
+                   "ASM edit R must not open a framed popup.")) return 1;
+        screen.get_slice(16, 4, 18, line);
+        if (expect(strstr(line, " R_") == line,
+                   "ASM edit R must be routed into mnemonic entry instead of Range.")) return 1;
+        screen.get_slice(1, 22, 38, header);
+        if (expect(strstr(header, "Range") == NULL,
+                   "ASM mnemonic edit R must not enable range mode.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM R-routing test: RUN/STOP should close the picker first.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM R-routing test: RUN/STOP should leave edit mode next.")) return 1;
+        if (expect(mon.poll(0) == 1, "ASM R-routing test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    return 0;
+}
+
+static int test_asm_number_popup_targets_operands(void)
+{
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char line[32];
+        const int keys[] = { 'J', 'A', 'N', '1', '2', '3', '4', KEY_RETURN, KEY_BREAK, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        backend.write(0x9010, 0xB9);
+        backend.write(0x9011, 0x99);
+        backend.write(0x9012, 0xFF);
+        backend.write(0x9013, 0xEA);
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("9010", 1);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "ASM word Number test: goto failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM word Number test: ASM view switch failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM word Number test: Number popup open failed.")) return 1;
+        get_popup_line(screen, 0, line, sizeof(line));
+        if (expect(strstr(line, "MONITOR NUM $9011 WORD") == line,
+                   "ASM Number popup must target the two-byte operand, not the opcode byte.")) return 1;
+        get_popup_line(screen, 1, line, sizeof(line));
+        if (expect(strstr(line, "Hex      $FF99") == line,
+                   "ASM Number popup must preload the operand word value.")) return 1;
+        get_popup_line(screen, 6, line, sizeof(line));
+        if (expect(strncmp(line, "Calc with +-*/ $Hex Dec %Bin", 28) == 0,
+                   "ASM Number popup must show the compact calculator legend after removing redundant rows.")) return 1;
+        for (int i = 0; i < 5; i++) {
+            if (expect(mon.poll(0) == 0, "ASM word Number test: editing/commit failed.")) return 1;
+        }
+        if (expect(backend.read(0x9010) == 0xB9,
+                   "ASM word Number commit must leave the opcode byte unchanged.")) return 1;
+        if (expect(backend.read(0x9011) == 0x34 && backend.read(0x9012) == 0x12,
+                   "ASM word Number commit must rewrite only the operand bytes in little-endian order.")) return 1;
+        if (expect(backend.read(0x9013) == 0xEA,
+                   "ASM word Number commit must not overrun beyond the operand bytes.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM word Number test: popup close failed.")) return 1;
+        if (expect(mon.poll(0) == 1, "ASM word Number test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char line[32];
+        const int keys[] = { 'J', 'A', 'N', '3', '4', KEY_RETURN, KEY_BREAK, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        backend.write(0xC000, 0xA9);
+        backend.write(0xC001, 0x12);
+        backend.write(0xC002, 0xEA);
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("C000", 1);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "ASM byte Number test: goto failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM byte Number test: ASM view switch failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM byte Number test: Number popup open failed.")) return 1;
+        get_popup_line(screen, 0, line, sizeof(line));
+        if (expect(strstr(line, "MONITOR NUM $C001 BYTE") == line,
+                   "ASM Number popup must target the one-byte operand address.")) return 1;
+        get_popup_line(screen, 1, line, sizeof(line));
+        if (expect(strstr(line, "Hex      $12") == line,
+                   "ASM Number popup must preload the one-byte operand value.")) return 1;
+        for (int i = 0; i < 3; i++) {
+            if (expect(mon.poll(0) == 0, "ASM byte Number test: editing/commit failed.")) return 1;
+        }
+        if (expect(backend.read(0xC000) == 0xA9,
+                   "ASM byte Number commit must leave the opcode byte unchanged.")) return 1;
+        if (expect(backend.read(0xC001) == 0x34,
+                   "ASM byte Number commit must rewrite the one-byte operand.")) return 1;
+        if (expect(backend.read(0xC002) == 0xEA,
+                   "ASM byte Number commit must not touch the following byte.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM byte Number test: popup close failed.")) return 1;
+        if (expect(mon.poll(0) == 1, "ASM byte Number test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char line[32];
+        const int keys[] = { 'J', 'A', 'N', '4', '2', KEY_RETURN, KEY_BREAK, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        backend.write(0xC100, 0x60);
+        backend.write(0xC101, 0xEA);
+        backend.write(0xC102, 0x99);
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("C100", 1);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "ASM no-operand Number test: goto failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM no-operand Number test: ASM view switch failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM no-operand Number test: Number popup open failed.")) return 1;
+        get_popup_line(screen, 0, line, sizeof(line));
+        if (expect(strstr(line, "MONITOR NUM $C101 BYTE") == line,
+                   "No-operand ASM Number popup must fall back to the byte after the instruction.")) return 1;
+        for (int i = 0; i < 3; i++) {
+            if (expect(mon.poll(0) == 0, "ASM no-operand Number test: editing/commit failed.")) return 1;
+        }
+        if (expect(backend.read(0xC100) == 0x60,
+                   "No-operand ASM Number popup must not overwrite the opcode.")) return 1;
+        if (expect(backend.read(0xC101) == 0x42,
+                   "No-operand ASM Number popup must write to the deterministic fallback address.")) return 1;
+        if (expect(backend.read(0xC102) == 0x99,
+                   "No-operand ASM Number popup must not overrun past the fallback byte.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM no-operand Number test: popup close failed.")) return 1;
+        if (expect(mon.poll(0) == 1, "ASM no-operand Number test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    return 0;
+}
+
+static int test_asm_number_popup_illegal_and_invalid_rows(void)
+{
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char line[32];
+        const int keys[] = { 'J', 'A', 'N', KEY_BREAK, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        backend.write(0xC300, 0x07);
+        backend.write(0xC301, 0x44);
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("C300", 1);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "ASM invalid-row Number test: goto failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM invalid-row Number test: ASM view switch failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM invalid-row Number test: Number popup open failed.")) return 1;
+        get_popup_line(screen, 0, line, sizeof(line));
+        if (expect(strstr(line, "MONITOR NUM $C300 BYTE") == line,
+                   "Disabled undocumented opcodes must fall back to the safe current-byte Number target.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM invalid-row Number test: popup close failed.")) return 1;
+        if (expect(mon.poll(0) == 1, "ASM invalid-row Number test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char line[32];
+        const int keys[] = { 'J', 'A', 'U', 'N', KEY_BREAK, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        backend.write(0xC320, 0x07);
+        backend.write(0xC321, 0x44);
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("C320", 1);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "ASM undocumented Number test: goto failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM undocumented Number test: ASM view switch failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM undocumented Number test: undocumented toggle failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM undocumented Number test: Number popup open failed.")) return 1;
+        get_popup_line(screen, 0, line, sizeof(line));
+        if (expect(strstr(line, "MONITOR NUM $C321 BYTE") == line,
+                   "Enabled undocumented opcodes must still target the decoded operand byte.")) return 1;
+        get_popup_line(screen, 1, line, sizeof(line));
+        if (expect(strstr(line, "Hex      $44") == line,
+                   "Enabled undocumented-opcode Number popup must preload the decoded operand value.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM undocumented Number test: popup close failed.")) return 1;
+        if (expect(mon.poll(0) == 1, "ASM undocumented Number test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    return 0;
+}
+
+static int test_asm_edit_assemble_at_cursor(void)
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeMemoryBackend backend;
+    // ASM edit no longer goes through string_box. Pressing a letter on the
+    // mnemonic part opens the in-monitor opcode picker; further letters
+    // filter, UP/DOWN navigate, ENTER selects. After selection the cursor
+    // moves to the operand byte and hex digits write it directly.
+    //
+    //   J / "C000" / enter           -- jump to $C000
+    //   A                            -- switch to ASM
+    //   E                            -- enter edit mode
+    //   L D A                        -- open picker, narrow to LDA variants
+    //   ENTER                        -- deterministic ordering now places the
+    //                                   simplest LDA form first
+    //   4 2                          -- type the operand byte at $C001
+    const int keys[] = {
+        'J', 'A', 'E', 'L', 'D', 'A', KEY_RETURN, '4', '2', KEY_BREAK
+    };
+    FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+    ui.screen = &screen;
+    ui.keyboard = &kb;
+    ui.set_prompt("C000", 1);
+    BackendMachineMonitor mon(&ui, &backend);
+    mon.init(&screen, &kb);
+    for (int i = 0; i < (int)(sizeof(keys) / sizeof(keys[0])) - 1; i++) {
+        (void)mon.poll(0);
+    }
+    if (expect(backend.read(0xC000) == 0xA9 && backend.read(0xC001) == 0x42,
+               "ASM edit must write A9 42 for LDA # via opcode picker")) return 1;
+    return 0;
+}
+
+static int test_asm_edit_direct_typing(void)
+{
+    // Power-user direct-typing path: type the full instruction without
+    // navigating the picker. "LDA $1000" -> AD 00 10 (absolute).
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeMemoryBackend backend;
+    //   J / "C000" / enter           -- jump to $C000
+    //   A                            -- switch to ASM
+    //   E                            -- enter edit mode
+    //   L D A SPACE 1 0 0 0 ENTER    -- type the whole instruction
+    const int keys[] = {
+        'J', 'A', 'E', 'L', 'D', 'A', KEY_SPACE, '1', '0', '0', '0', KEY_RETURN, KEY_BREAK
+    };
+    FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+    ui.screen = &screen;
+    ui.keyboard = &kb;
+    ui.set_prompt("C000", 1);
+    BackendMachineMonitor mon(&ui, &backend);
+    mon.init(&screen, &kb);
+    for (int i = 0; i < (int)(sizeof(keys) / sizeof(keys[0])) - 1; i++) {
+        (void)mon.poll(0);
+    }
+    if (expect(backend.read(0xC000) == 0xAD && backend.read(0xC001) == 0x00 && backend.read(0xC002) == 0x10,
+               "ASM direct typing 'LDA 1000' must encode AD 00 10")) return 1;
+    return 0;
+}
+
+// Records how the monitor reached memory, so an instruction committed as one
+// block can be told from one committed as separate byte writes.
+struct WriteRecordingBackend : public FakeMemoryBackend
+{
+    int single_writes;
+    int block_writes;
+    uint16_t last_block_address;
+    uint16_t last_block_length;
+
+    WriteRecordingBackend()
+        : single_writes(0), block_writes(0), last_block_address(0),
+          last_block_length(0) { }
+
+    virtual void write(uint16_t address, uint8_t value)
+    {
+        single_writes++;
+        FakeMemoryBackend::write(address, value);
+    }
+
+    virtual void write_block(uint16_t address, const uint8_t *src, uint16_t len)
+    {
+        block_writes++;
+        last_block_address = address;
+        last_block_length = len;
+        for (uint16_t i = 0; i < len; i++) {
+            memory[(uint16_t)(address + i)] = src[i];
+        }
+    }
+};
+
+static int test_asm_commit_writes_the_instruction_as_one_block(void)
+{
+    // A backend that has to stop the machine to reach memory pays that cost
+    // once per call, so an instruction written byte by byte can be interrupted
+    // between its opcode and its operand and leave a prefix behind. Committing
+    // it as one block is what makes that impossible, and this is the check
+    // that says the monitor does.
+    TestUserInterface ui;
+    CaptureScreen screen;
+    WriteRecordingBackend backend;
+    //   J / "C000" / enter           -- jump to $C000
+    //   A                            -- switch to ASM
+    //   E                            -- enter edit mode
+    //   L D A SPACE 1 0 0 0 ENTER    -- "LDA $1000" -> AD 00 10, three bytes
+    const int keys[] = {
+        'J', 'A', 'E', 'L', 'D', 'A', KEY_SPACE, '1', '0', '0', '0', KEY_RETURN, KEY_BREAK
+    };
+    FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+    ui.screen = &screen;
+    ui.keyboard = &kb;
+    ui.set_prompt("C000", 1);
+    BackendMachineMonitor mon(&ui, &backend);
+    mon.init(&screen, &kb);
+    for (int i = 0; i < (int)(sizeof(keys) / sizeof(keys[0])) - 1; i++) {
+        (void)mon.poll(0);
+    }
+    if (expect(backend.block_writes == 1,
+               "an assembled instruction must reach memory as exactly one block")) return 1;
+    if (expect(backend.last_block_address == 0xC000 && backend.last_block_length == 3,
+               "the block must be the whole instruction at the cursor address")) return 1;
+    if (expect(backend.single_writes == 0,
+               "no byte of an assembled instruction may be written on its own")) return 1;
+    if (expect(backend.read(0xC000) == 0xAD && backend.read(0xC001) == 0x00 &&
+               backend.read(0xC002) == 0x10,
+               "the block must carry the assembled encoding AD 00 10")) return 1;
+    return 0;
+}
+
+static int test_space_edit_behavior_preserved(void)
+{
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        CaptureScreen snapshot;
+        FakeMemoryBackend backend;
+        const int keys[] = { 'E', KEY_SPACE };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        backend.write(0x0000, 0xAB);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "HEX edit Space test: edit-mode entry failed.")) return 1;
+        snapshot = screen;
+        if (expect(mon.poll(0) == 0, "HEX edit Space test: space handling failed.")) return 1;
+        if (expect_screens_equal(snapshot, screen,
+                                 "HEX edit Space must remain a non-paging no-op.")) return 1;
+        if (expect(backend.read(0x0000) == 0xAB,
+                   "HEX edit Space must not modify the current byte.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        const int keys[] = { 'I', 'E', KEY_SPACE };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        backend.write(0x0000, 'A');
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "ASCII edit Space test: view switch failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASCII edit Space test: edit-mode entry failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASCII edit Space test: typing space failed.")) return 1;
+        if (expect(backend.read(0x0000) == ' ',
+                   "ASCII edit Space must keep writing a literal space.")) return 1;
+        if (expect(screen.reverse_chars[4][7],
+                   "ASCII edit Space must advance to the next character instead of paging.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        const int keys[] = { 'V', 'E', KEY_SPACE };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        backend.write(0x0000, 0x01);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Screen edit Space test: view switch failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Screen edit Space test: edit-mode entry failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Screen edit Space test: typing space failed.")) return 1;
+        if (expect(backend.read(0x0000) == monitor_screen_code_for_char(' ', MONITOR_SCREEN_CHARSET_UPPER_GRAPHICS),
+                   "Screen edit Space must keep writing a screen-code space.")) return 1;
+        if (expect(screen.reverse_chars[4][7],
+                   "Screen edit Space must advance to the next character instead of paging.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char header[39];
+        const int keys[] = { 'J', 'B', 'E', KEY_SPACE };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("0400", 1);
+        backend.write(0x0400, 0xAA);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Binary edit Space test: goto failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Binary edit Space test: view switch failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Binary edit Space test: edit-mode entry failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Binary edit Space test: typing space failed.")) return 1;
+        if (expect(backend.read(0x0400) == 0x2A,
+                   "Binary edit Space must keep clearing the selected bit.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "MONITOR BIN $0400/6") == header,
+                   "Binary edit Space must advance exactly one bit instead of paging.")) return 1;
+        mon.deinit();
+    }
+
+    return 0;
+}
+
+static int test_shift_space_does_not_page_in_edit_mode(void)
+{
+    static const struct {
+        int view_key;
+        const char *message;
+    } cases[] = {
+        { 0,   "Shift+Space must not page up in Memory edit mode." },
+        { 'I', "Shift+Space must not page up in ASCII edit mode." },
+        { 'V', "Shift+Space must not page up in Screen edit mode." },
+        { 'B', "Shift+Space must not page up in Binary edit mode." },
+        { 'A', "Shift+Space must not page up in Assembly edit mode." },
+    };
+
+    for (unsigned int i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        CaptureScreen snapshot;
+        FakeMemoryBackend backend;
+        int keys[4];
+        int key_count = 0;
+
+        for (uint32_t addr = 0; addr < 0x10000UL; addr++) {
+            backend.write((uint16_t)addr, (uint8_t)(addr & 0xFF));
+        }
+
+        keys[key_count++] = 'J';
+        if (cases[i].view_key) {
+            keys[key_count++] = cases[i].view_key;
+        }
+        keys[key_count++] = 'E';
+        keys[key_count++] = KEY_SHIFT_SP;
+        FakeKeyboard kb(keys, key_count);
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("4000", 1);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        for (int step = 0; step < key_count - 1; step++) {
+            if (expect(mon.poll(0) == 0, "Shift+Space edit test setup failed.")) return 1;
+        }
+        snapshot = screen;
+        if (expect(mon.poll(0) == 0, "Shift+Space edit test key handling failed.")) return 1;
+        if (expect_screens_equal(snapshot, screen, cases[i].message)) return 1;
+        mon.deinit();
+    }
+
+    return 0;
+}
+
+static int test_asm_edit_direct_typing_immediate(void)
+{
+    // Direct typing with immediate addressing: "LDA #FF" -> A9 FF.
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeMemoryBackend backend;
+    const int keys[] = {
+        'J', 'A', 'E', 'L', 'D', 'A', '#', 'F', 'F', KEY_RETURN, KEY_BREAK
+    };
+    FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+    ui.screen = &screen;
+    ui.keyboard = &kb;
+    ui.set_prompt("C000", 1);
+    BackendMachineMonitor mon(&ui, &backend);
+    mon.init(&screen, &kb);
+    for (int i = 0; i < (int)(sizeof(keys) / sizeof(keys[0])) - 1; i++) {
+        (void)mon.poll(0);
+    }
+    if (expect(backend.read(0xC000) == 0xA9 && backend.read(0xC001) == 0xFF,
+               "ASM direct typing 'LDA #FF' must encode A9 FF")) return 1;
+    return 0;
+}
+
+static int test_asm_edit_branch_two_parts(void)
+{
+    // Branch instructions encode opcode + 1-byte signed offset but render
+    // opcode + 4-hex absolute target. The asm-edit cursor must expose both
+    // halves of the displayed target as separately editable parts and
+    // translate the typed value back into a relative offset.
+    //
+    //   Memory at $C000: F0 10  ->  BEQ $C012
+    //   J / "C000" / enter           -- jump to $C000
+    //   A                            -- switch to ASM
+    //   E                            -- enter edit mode
+    //   RIGHT                        -- move cursor to high byte ($C0)
+    //   C 0                          -- type $C0 (no change to high byte)
+    //   RIGHT(implicit)              -- after 2nd nibble, advances to low
+    //   2 0                          -- type $20  -> target $C020
+    //   BREAK
+    // Expected: rel offset = $C020 - ($C000 + 2) = $1E -> memory F0 1E.
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeMemoryBackend backend;
+    backend.write(0xC000, 0xF0);
+    backend.write(0xC001, 0x10);
+    const int keys[] = {
+        'J', 'A', 'E', KEY_RIGHT, 'C', '0', '2', '0', KEY_BREAK
+    };
+    FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+    ui.screen = &screen;
+    ui.keyboard = &kb;
+    ui.set_prompt("C000", 1);
+    BackendMachineMonitor mon(&ui, &backend);
+    mon.init(&screen, &kb);
+    for (int i = 0; i < (int)(sizeof(keys) / sizeof(keys[0])) - 1; i++) {
+        (void)mon.poll(0);
+    }
+    if (expect(backend.read(0xC000) == 0xF0 && backend.read(0xC001) == 0x1E,
+               "ASM branch edit must rewrite rel offset to land on typed target")) return 1;
+    return 0;
+}
+
+static int test_asm_edit_bit_operand_not_branch(void)
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeMemoryBackend backend;
+    backend.write(0xC000, 0x24);
+    backend.write(0xC001, 0x44);
+    const int keys[] = {
+        'J', 'A', 'E', KEY_RIGHT, '6', '6', KEY_BREAK
+    };
+    FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+    ui.screen = &screen;
+    ui.keyboard = &kb;
+    ui.set_prompt("C000", 1);
+    BackendMachineMonitor mon(&ui, &backend);
+    mon.init(&screen, &kb);
+    for (int i = 0; i < (int)(sizeof(keys) / sizeof(keys[0])) - 1; i++) {
+        (void)mon.poll(0);
+    }
+    if (expect(backend.read(0xC000) == 0x24 && backend.read(0xC001) == 0x66,
+               "ASM BIT zeropage edit must treat operand as a byte, not a branch target")) return 1;
+    return 0;
+}
+
+static int test_asm_cpu_bank_cycle_preserves_screen_row(void)
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeBankedMemoryBackend backend;
+    char header[39];
+    char status[39];
+    int row_before = -1;
+    int row_after = -1;
+    const int keys[] = { 'J', 'A', KEY_DOWN, KEY_DOWN, 'o', KEY_BREAK };
+    FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+    backend.basic[0] = 0x20;
+    backend.basic[1] = 0x34;
+    backend.basic[2] = 0x12;
+    backend.basic[3] = 0x20;
+    backend.basic[4] = 0x78;
+    backend.basic[5] = 0x56;
+    backend.basic[6] = 0xEA;
+    backend.basic[7] = 0xEA;
+    for (uint16_t addr = 0xA000; addr < 0xA010; addr++) {
+        backend.ram[addr] = 0xEA;
+    }
+
+    ui.screen = &screen;
+    ui.keyboard = &kb;
+    ui.set_prompt("A000", 1);
+    monitor_reset_saved_state();
+
+    BackendMachineMonitor mon(&ui, &backend);
+    mon.init(&screen, &kb);
+    if (expect(mon.poll(0) == 0, "ASM bank-anchor test: goto failed.")) return 1;
+    if (expect(mon.poll(0) == 0, "ASM bank-anchor test: ASM view switch failed.")) return 1;
+    if (expect(mon.poll(0) == 0, "ASM bank-anchor test: first down failed.")) return 1;
+    if (expect(mon.poll(0) == 0, "ASM bank-anchor test: second down failed.")) return 1;
+    if (expect(find_highlighted_cell(screen, NULL, &row_before),
+               "ASM bank-anchor test: highlighted row not found before CPU bank cycle.")) return 1;
+    screen.get_slice(1, 3, 38, header);
+    if (expect(strstr(header, "MONITOR ASM $A006") == header,
+               "ASM bank-anchor test must land on the third visible instruction before cycling banks.")) return 1;
+
+    if (expect(mon.poll(0) == 0, "ASM bank-anchor test: CPU bank cycle failed.")) return 1;
+    if (expect(find_highlighted_cell(screen, NULL, &row_after),
+               "ASM bank-anchor test: highlighted row not found after CPU bank cycle.")) return 1;
+    if (expect(row_after == row_before,
+               "CPU bank cycling in ASM view must preserve the visible cursor row.")) return 1;
+    screen.get_slice(1, 3, 38, header);
+    if (expect(strstr(header, "MONITOR ASM $A006") == header,
+               "CPU bank cycling in ASM view must preserve the logical cursor address when possible.")) return 1;
+    screen.get_slice(1, 22, 38, status);
+    if (expect(strstr(status, "CPU0 ") == status,
+               "CPU bank cycling test must actually advance the visible CPU bank status.")) return 1;
+    if (expect(mon.poll(0) == 1, "ASM bank-anchor test: exit failed.")) return 1;
+    mon.deinit();
+    return 0;
+}
+
+static int test_asm_page_up_keeps_screen_row(void)
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeMemoryBackend backend;
+    int keys[16];
+    int key_count = 0;
+    int row_before = -1;
+    int row_after = -1;
+    uint16_t addr = 0xC000;
+
+    for (int i = 0; i < 96; i++) {
+        if ((i % 3) == 0) {
+            backend.write(addr++, 0x20);
+            backend.write(addr++, 0x00);
+            backend.write(addr++, 0x10);
+        } else if ((i % 3) == 1) {
+            backend.write(addr++, 0xA9);
+            backend.write(addr++, 0x01);
+        } else {
+            backend.write(addr++, 0xEA);
+        }
+    }
+
+    keys[key_count++] = 'J';
+    keys[key_count++] = 'A';
+    for (int i = 0; i < 5; i++) keys[key_count++] = KEY_DOWN;
+    keys[key_count++] = KEY_PAGEDOWN;
+    keys[key_count++] = KEY_PAGEUP;
+    keys[key_count++] = KEY_BREAK;
+    FakeKeyboard kb(keys, key_count);
+
+    ui.screen = &screen;
+    ui.keyboard = &kb;
+    ui.set_prompt("C000", 1);
+    monitor_reset_saved_state();
+
+    BackendMachineMonitor mon(&ui, &backend);
+    mon.init(&screen, &kb);
+    if (expect(mon.poll(0) == 0, "ASM page-up test: goto failed.")) return 1;
+    if (expect(mon.poll(0) == 0, "ASM page-up test: ASM view switch failed.")) return 1;
+    for (int i = 0; i < 5; i++) {
+        if (expect(mon.poll(0) == 0, "ASM page-up test: initial down navigation failed.")) return 1;
+    }
+    if (expect(mon.poll(0) == 0, "ASM page-up test: page-down failed.")) return 1;
+    if (expect(find_highlighted_cell(screen, NULL, &row_before),
+               "ASM page-up test: highlighted row not found before page-up.")) return 1;
+    if (expect(mon.poll(0) == 0, "ASM page-up test: page-up failed.")) return 1;
+    if (expect(find_highlighted_cell(screen, NULL, &row_after),
+               "ASM page-up test: highlighted row not found after page-up.")) return 1;
+    if (expect(row_after == row_before,
+               "ASM page-up must preserve the visible cursor row like page-down.")) return 1;
+    if (expect(mon.poll(0) == 1, "ASM page-up test: exit failed.")) return 1;
+    mon.deinit();
+    return 0;
+}
+
+// Paging up and back down has to retrace the boundaries it came from, whatever
+// the bytes above the cursor happen to decode as. The fill is deliberately not
+// a program: an arbitrary byte stream is where reading backwards one guess at a
+// time picks a boundary the forward walk never uses, and the view then lands
+// somewhere other than where it started.
+static int test_asm_paging_returns_to_the_same_address(void)
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeMemoryBackend backend;
+    int keys[32];
+    int key_count = 0;
+    char header[40];
+    uint32_t noise = 0x1234;
+
+    for (uint32_t addr = 0xC000; addr <= 0xCFFF; addr++) {
+        noise = (noise * 1103515245u) + 12345u;
+        backend.write((uint16_t)addr, (uint8_t)(noise >> 16));
+    }
+
+    keys[key_count++] = 'J';
+    keys[key_count++] = 'A';
+    for (int i = 0; i < 6; i++) keys[key_count++] = KEY_PAGEUP;
+    for (int i = 0; i < 6; i++) keys[key_count++] = KEY_PAGEDOWN;
+    keys[key_count++] = KEY_BREAK;
+    FakeKeyboard kb(keys, key_count);
+
+    ui.screen = &screen;
+    ui.keyboard = &kb;
+    ui.set_prompt("C800", 1);
+    monitor_reset_saved_state();
+
+    BackendMachineMonitor mon(&ui, &backend);
+    mon.init(&screen, &kb);
+    if (expect(mon.poll(0) == 0, "ASM paging test: goto failed.")) return 1;
+    if (expect(mon.poll(0) == 0, "ASM paging test: ASM view switch failed.")) return 1;
+    for (int i = 0; i < 12; i++) {
+        if (expect(mon.poll(0) == 0, "ASM paging test: paging failed.")) return 1;
+    }
+    screen.get_slice(1, 3, 20, header);
+    if (expect(strstr(header, "MONITOR ASM $C800") == header,
+               "Paging up and back down must leave the cursor where it started.")) {
+        printf("  header after paging: '%s'\n", header);
+        return 1;
+    }
+    if (expect(mon.poll(0) == 1, "ASM paging test: exit failed.")) return 1;
+    mon.deinit();
+    return 0;
+}
+
+// Stepping up from an address the view was jumped to, and back down, has to
+// return to it. The bytes in front of it here decode as a three-byte
+// instruction that reaches across it, which is what would otherwise swallow the
+// jumped-to row and shift every row below it by two.
+static int test_asm_stepping_returns_to_the_jump_target(void)
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeMemoryBackend backend;
+    int keys[32];
+    int key_count = 0;
+    char header[40];
+
+    for (uint16_t addr = 0xC780; addr < 0xC7FF; addr++) {
+        backend.write(addr, 0xEA);            // NOP, so the walk up is clean
+    }
+    backend.write(0xC7FF, 0x2C);              // BIT $E394, covering $C7FF-$C801
+    backend.write(0xC800, 0x94);
+    backend.write(0xC801, 0xE3);
+    for (uint16_t addr = 0xC802; addr < 0xC880; addr++) {
+        backend.write(addr, 0xEA);
+    }
+
+    keys[key_count++] = 'J';
+    keys[key_count++] = 'A';
+    for (int i = 0; i < 6; i++) keys[key_count++] = KEY_UP;
+    for (int i = 0; i < 6; i++) keys[key_count++] = KEY_DOWN;
+    keys[key_count++] = KEY_BREAK;
+    FakeKeyboard kb(keys, key_count);
+
+    ui.screen = &screen;
+    ui.keyboard = &kb;
+    ui.set_prompt("C800", 1);
+    monitor_reset_saved_state();
+
+    BackendMachineMonitor mon(&ui, &backend);
+    mon.init(&screen, &kb);
+    if (expect(mon.poll(0) == 0, "ASM stepping test: goto failed.")) return 1;
+    if (expect(mon.poll(0) == 0, "ASM stepping test: ASM view switch failed.")) return 1;
+    for (int i = 0; i < 12; i++) {
+        if (expect(mon.poll(0) == 0, "ASM stepping test: stepping failed.")) return 1;
+    }
+    screen.get_slice(1, 3, 20, header);
+    if (expect(strstr(header, "MONITOR ASM $C800") == header,
+               "Stepping up from a jump target and back down must return to it.")) {
+        printf("  header after stepping: '%s'\n", header);
+        return 1;
+    }
+    // Only the bytes that cannot start an instruction ending at the baseline
+    // are data. Everything else above it disassembles normally: turning the
+    // whole area above a jump target into .BYTE would be a far worse answer
+    // than the misalignment this rule exists to prevent.
+    {
+        char line[40];
+        int data_rows = 0;
+        int code_rows = 0;
+
+        for (int row = 4; row < 20; row++) {
+            screen.get_slice(1, row, 38, line);
+            if (strncmp(line, "C7", 2) != 0) {
+                continue;               // at or past the baseline, or blank
+            }
+            if (strstr(line, ".BYTE")) {
+                data_rows++;
+                if (expect(strncmp(line, "C7FF", 4) == 0,
+                           "Only the row that reaches across the baseline is data.")) {
+                    printf("  unexpected data row: '%s'\n", line);
+                    return 1;
+                }
+            } else if (strstr(line, "NOP")) {
+                code_rows++;
+            }
+        }
+        if (expect(data_rows == 1, "The straddling row above the baseline must be data.")) {
+            printf("  %d data row(s) above $C800\n", data_rows);
+            return 1;
+        }
+        if (expect(code_rows >= 4, "The rows above the baseline must still disassemble.")) {
+            printf("  %d disassembled row(s) above $C800\n", code_rows);
+            return 1;
+        }
+    }
+    if (expect(mon.poll(0) == 1, "ASM stepping test: exit failed.")) return 1;
+    mon.deinit();
+    return 0;
+}
+
+// A row shown as data because it reaches across the baseline is still a row the
+// assembler can write. Typing an instruction there says an instruction starts
+// there, so the line typed is the line shown afterwards.
+static int test_asm_entry_over_a_data_row_shows_the_instruction(void)
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeMemoryBackend backend;
+    int keys[32];
+    int key_count = 0;
+    char line[40];
+
+    for (uint16_t addr = 0xC780; addr < 0xC7FF; addr++) {
+        backend.write(addr, 0xEA);
+    }
+    backend.write(0xC7FF, 0x2C);              // BIT $E394, covering $C7FF-$C801
+    backend.write(0xC800, 0x94);
+    backend.write(0xC801, 0xE3);
+    for (uint16_t addr = 0xC802; addr < 0xC880; addr++) {
+        backend.write(addr, 0xEA);
+    }
+
+    keys[key_count++] = 'J';                  // to $C800, setting the baseline
+    keys[key_count++] = 'A';
+    keys[key_count++] = KEY_UP;               // onto the data row at $C7FF
+    keys[key_count++] = 'E';                  // assembly edit
+    keys[key_count++] = 'L'; keys[key_count++] = 'D'; keys[key_count++] = 'A';
+    keys[key_count++] = '#'; keys[key_count++] = '1'; keys[key_count++] = '2';
+    keys[key_count++] = KEY_RETURN;           // commit LDA #$12
+    keys[key_count++] = KEY_ESCAPE;
+    keys[key_count++] = KEY_BREAK;
+    FakeKeyboard kb(keys, key_count);
+
+    ui.screen = &screen;
+    ui.keyboard = &kb;
+    ui.set_prompt("C800", 1);
+    monitor_reset_saved_state();
+
+    BackendMachineMonitor mon(&ui, &backend);
+    mon.init(&screen, &kb);
+    for (int i = 0; i < key_count - 1; i++) {
+        if (expect(mon.poll(0) == 0, "ASM entry over data row: a key was refused.")) return 1;
+    }
+    if (expect(backend.read(0xC7FF) == 0xA9 && backend.read(0xC800) == 0x12,
+               "Assembling over a data row must write the instruction.")) {
+        printf("  $C7FF=%02X $C800=%02X\n", backend.read(0xC7FF), backend.read(0xC800));
+        return 1;
+    }
+    {
+        bool shown = false;
+        for (int row = 4; row < 20; row++) {
+            screen.get_slice(1, row, 38, line);
+            if (strncmp(line, "C7FF", 4) == 0 && strstr(line, "LDA #$12")) {
+                shown = true;
+            }
+        }
+        if (expect(shown, "The assembled line must be shown as the instruction typed.")) {
+            for (int row = 4; row < 12; row++) {
+                screen.get_slice(1, row, 38, line);
+                printf("  %s\n", line);
+            }
+            return 1;
+        }
+    }
+    if (expect(mon.poll(0) == 1, "ASM entry over data row: exit failed.")) return 1;
+    mon.deinit();
+    return 0;
+}
+
+static int test_space_shortcuts_match_existing_paging(void)
+{
+    static const struct {
+        int view_key;
+        const char *page_down_message;
+        const char *page_up_message;
+    } cases[] = {
+        { 0,   "Space must match F7 page-down behavior in Memory view.",
+               "Shift+Space must match F1 page-up behavior in Memory view." },
+        { 'I', "Space must match F7 page-down behavior in ASCII view.",
+               "Shift+Space must match F1 page-up behavior in ASCII view." },
+        { 'V', "Space must match F7 page-down behavior in Screen view.",
+               "Shift+Space must match F1 page-up behavior in Screen view." },
+        { 'B', "Space must match F7 page-down behavior in Binary view.",
+               "Shift+Space must match F1 page-up behavior in Binary view." },
+        { 'A', "Space must match F7 page-down behavior in Assembly view.",
+               "Shift+Space must match F1 page-up behavior in Assembly view." },
+    };
+
+    for (unsigned int i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        for (int direction = 0; direction < 2; direction++) {
+            TestUserInterface ui_a;
+            TestUserInterface ui_b;
+            CaptureScreen screen_a;
+            CaptureScreen screen_b;
+            FakeMemoryBackend backend_a;
+            FakeMemoryBackend backend_b;
+            int keys_a[4];
+            int keys_b[4];
+            int key_count = 0;
+            const int page_key = direction ? KEY_F1 : KEY_F7;
+            const int shortcut_key = direction ? KEY_SHIFT_SP : KEY_SPACE;
+            const char *message = direction ? cases[i].page_up_message : cases[i].page_down_message;
+
+            for (uint32_t addr = 0; addr < 0x10000UL; addr++) {
+                uint8_t value = (uint8_t)((addr >> 8) ^ addr);
+                backend_a.write((uint16_t)addr, value);
+                backend_b.write((uint16_t)addr, value);
+            }
+
+            keys_a[key_count] = 'J';
+            keys_b[key_count++] = 'J';
+            if (cases[i].view_key) {
+                keys_a[key_count] = cases[i].view_key;
+                keys_b[key_count++] = cases[i].view_key;
+            }
+            keys_a[key_count] = page_key;
+            keys_b[key_count++] = shortcut_key;
+
+            FakeKeyboard kb_a(keys_a, key_count);
+            FakeKeyboard kb_b(keys_b, key_count);
+            ui_a.screen = &screen_a;
+            ui_a.keyboard = &kb_a;
+            ui_a.set_prompt("4000", 1);
+            ui_b.screen = &screen_b;
+            ui_b.keyboard = &kb_b;
+            ui_b.set_prompt("4000", 1);
+
+            monitor_reset_saved_state();
+            BackendMachineMonitor mon_a(&ui_a, &backend_a);
+            mon_a.init(&screen_a, &kb_a);
+            for (int step = 0; step < key_count; step++) {
+                if (expect(mon_a.poll(0) == 0, "Paging parity test setup A failed.")) return 1;
+            }
+
+            monitor_reset_saved_state();
+            BackendMachineMonitor mon_b(&ui_b, &backend_b);
+            mon_b.init(&screen_b, &kb_b);
+            for (int step = 0; step < key_count; step++) {
+                if (expect(mon_b.poll(0) == 0, "Paging parity test setup B failed.")) return 1;
+            }
+
+            if (expect_screens_equal(screen_a, screen_b, message)) return 1;
+            mon_a.deinit();
+            mon_b.deinit();
+        }
+    }
+
+    return 0;
+}
+
+// Regression for the telnet opcode-dropdown scroll flood: on a full-refresh
+// screen (telnet/VT100), scrolling the opcode dropdown used to repaint the WHOLE
+// screen on every cursor keystroke. Under cursor-key autorepeat that flood
+// wedged/aborted the telnet monitor connection. A scroll keystroke must repaint
+// only the dropdown overlay (the same incremental path Freeze/Overlay use), not
+// the header, disassembly or status rows underneath it.
+static int test_opcode_picker_scroll_redraws_overlay_only(void)
+{
+    struct FullRefreshCaptureScreen : public CaptureScreen {
+        virtual bool prefers_full_refresh(void) { return true; }
+    };
+
+    TestUserInterface ui;
+    FullRefreshCaptureScreen screen;
+    FakeMemoryBackend backend;
+    // J(goto) A(asm view) E(edit) L(open big dropdown), then DOWN to scroll.
+    const int keys[] = { 'J', 'A', 'E', 'L', KEY_DOWN, KEY_BREAK, KEY_BREAK, KEY_BREAK };
+    FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+    ui.screen = &screen;
+    ui.keyboard = &kb;
+    ui.set_prompt("C000", 1);
+    monitor_reset_saved_state();
+
+    BackendMachineMonitor mon(&ui, &backend);
+    mon.init(&screen, &kb);
+    for (int i = 0; i < 4; i++) {
+        if (expect(mon.poll(0) == 0, "Dropdown scroll redraw test: setup (J/A/E/L) failed.")) return 1;
+    }
+    // The dropdown box is anchored to the current_addr disassembly row and spans
+    // screen columns 16..33 (window col MONITOR_DISASM_TEXT_COL=15 plus the 1-col
+    // window border). Verify the dropdown is actually showing candidates first.
+    char row[39];
+    screen.get_slice(1, 5, 38, row);
+    if (expect(strstr(row, "LD") != NULL,
+               "Dropdown scroll redraw test: expected LD* candidates for prefix L.")) return 1;
+
+    // A single scroll keystroke must touch ONLY the dropdown box columns.
+    screen.reset_write_counts();
+    if (expect(mon.poll(0) == 0, "Dropdown scroll redraw test: DOWN scroll failed.")) return 1;
+
+    int outside_box = screen.count_writes_outside_rect(16, 0, 33, 24);
+    int total = screen.count_writes_outside_rect(1000, 1000, 1000, 1000); // impossible rect => all writes
+    if (expect(total > 0,
+               "Dropdown scroll redraw test: scrolling must repaint the dropdown overlay.")) return 1;
+    if (expect(outside_box == 0,
+               "Dropdown scroll on a full-refresh (telnet) screen must repaint only the dropdown "
+               "overlay, not the whole screen (header/disassembly/status).")) return 1;
+
+    if (expect(mon.poll(0) == 0, "Dropdown scroll redraw test: RUN/STOP should close the picker first.")) return 1;
+    if (expect(mon.poll(0) == 0, "Dropdown scroll redraw test: RUN/STOP should leave edit mode next.")) return 1;
+    if (expect(mon.poll(0) == 1, "Dropdown scroll redraw test: exit failed.")) return 1;
+    mon.deinit();
+    return 0;
+}
+
+static int test_opcode_picker_refilters_live(void)
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeMemoryBackend backend;
+    char line[39];
+    const int keys[] = { 'A', 'E', 'J', 'S', KEY_DELETE, KEY_BREAK, KEY_BREAK, KEY_BREAK };
+    FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+    ui.screen = &screen;
+    ui.keyboard = &kb;
+    monitor_reset_saved_state();
+
+    BackendMachineMonitor mon(&ui, &backend);
+    mon.init(&screen, &kb);
+    if (expect(mon.poll(0) == 0, "Opcode picker refilter test: ASM view switch failed.")) return 1;
+    if (expect(mon.poll(0) == 0, "Opcode picker refilter test: edit mode entry failed.")) return 1;
+    if (expect(mon.poll(0) == 0, "Opcode picker refilter test: first letter failed.")) return 1;
+    screen.get_slice(1, 6, 38, line);
+    if (expect(strstr(line, "JMP") != NULL || strstr(line, "JSR") != NULL || strstr(line, "JAM") != NULL,
+               "Opcode picker refilter test must start with multiple visible suggestions for prefix J.")) return 1;
+
+    if (expect(mon.poll(0) == 0, "Opcode picker refilter test: second letter failed.")) return 1;
+    screen.get_slice(1, 5, 38, line);
+    if (expect(strstr(line, "JSR") != NULL,
+               "Opcode picker must immediately shrink to the matching mnemonic list as the prefix narrows.")) return 1;
+    screen.get_slice(1, 6, 38, line);
+    if (expect(strstr(line, "JSR") == NULL && strstr(line, "JMP") == NULL && strstr(line, "JAM") == NULL,
+               "Opcode picker must clear stale suggestion rows when the candidate list shrinks.")) return 1;
+
+    if (expect(mon.poll(0) == 0, "Opcode picker refilter test: delete failed.")) return 1;
+    screen.get_slice(1, 6, 38, line);
+    if (expect(strstr(line, "JSR") != NULL || strstr(line, "JMP") != NULL || strstr(line, "JAM") != NULL,
+               "Opcode picker must expand the suggestion list again when the prefix is deleted.")) return 1;
+
+    if (expect(mon.poll(0) == 0, "Opcode picker refilter test: RUN/STOP should close the picker first.")) return 1;
+    if (expect(mon.poll(0) == 0, "Opcode picker refilter test: RUN/STOP should leave edit mode next.")) return 1;
+    if (expect(mon.poll(0) == 1, "Opcode picker refilter test: exit failed.")) return 1;
+    mon.deinit();
+    return 0;
+}
+
+static int test_opcode_picker_filters_orders_and_commits_on_enter(void)
+{
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char first_row[39];
+        char second_row[39];
+        const int keys[] = { 'J', 'A', 'E', 'N', 'O', 'P', KEY_RETURN };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("C000", 1);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        for (int i = 0; i < 6; i++) {
+            if (expect(mon.poll(0) == 0, "Opcode picker NOP test: command sequence failed before ENTER.")) return 1;
+        }
+        screen.get_slice(1, 5, 38, first_row);
+        screen.get_slice(1, 6, 38, second_row);
+        if (expect(strstr(first_row, "NOP") != NULL,
+                   "Documented-only NOP completion must offer the documented NOP variant.")) return 1;
+        if (expect(strstr(second_row, "NOP") == NULL,
+                   "Documented-only NOP completion must not show undocumented NOP variants.")) return 1;
+        if (expect(backend.read(0xC000) == 0x00,
+                   "Typing a mnemonic in the opcode picker must not write memory before ENTER.")) return 1;
+        if (expect(mon.poll(0) == 0, "Opcode picker NOP test: ENTER commit failed.")) return 1;
+        if (expect(backend.read(0xC000) == 0xEA,
+                   "ENTER on documented-only NOP completion must encode the documented $EA NOP.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char first_row[39];
+        char second_row[39];
+        const int keys[] = { 'J', 'A', 'U', 'E', 'N', 'O', 'P', KEY_RETURN };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("C100", 1);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        for (int i = 0; i < 7; i++) {
+            if (expect(mon.poll(0) == 0, "Opcode picker illegal NOP test: command sequence failed before ENTER.")) return 1;
+        }
+        screen.get_slice(1, 5, 38, first_row);
+        screen.get_slice(1, 6, 38, second_row);
+        if (expect(strstr(first_row, "NOP") != NULL && strstr(first_row, "$") == NULL && strstr(first_row, "#") == NULL,
+                   "Undocumented-enabled NOP completion must place the no-operand NOP first.")) return 1;
+        if (expect(strstr(second_row, "NOP") != NULL,
+                   "Undocumented-enabled NOP completion must still expose additional NOP variants.")) return 1;
+        if (expect(backend.read(0xC100) == 0x00,
+                   "Undocumented-enabled picker typing must still wait for ENTER before writing memory.")) return 1;
+        if (expect(mon.poll(0) == 0, "Opcode picker illegal NOP test: ENTER commit failed.")) return 1;
+        if (expect(backend.read(0xC100) == 0xEA,
+                   "ENTER must default to the first no-operand NOP variant when undocumented opcodes are enabled.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char first_row[39];
+        const int keys[] = { 'J', 'A', 'E', 'L', 'S', 'R', KEY_RETURN };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("C200", 1);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        for (int i = 0; i < 6; i++) {
+            if (expect(mon.poll(0) == 0, "Opcode picker LSR test: command sequence failed before ENTER.")) return 1;
+        }
+        screen.get_slice(1, 5, 38, first_row);
+        if (expect(strstr(first_row, "LSR A") != NULL,
+                   "Mnemonic variants with an addressing-free form must list that simplest variant first.")) return 1;
+        if (expect(backend.read(0xC200) == 0x00,
+                   "Typing LSR in the picker must not write memory before ENTER.")) return 1;
+        if (expect(mon.poll(0) == 0, "Opcode picker LSR test: ENTER commit failed.")) return 1;
+        if (expect(backend.read(0xC200) == 0x4A,
+                   "ENTER must commit the first accumulator/implied variant when it is the simplest form.")) return 1;
+        mon.deinit();
+    }
+
+    return 0;
+}
+
+static int test_opcode_picker_browsing_does_not_mutate_frozen_charset_backup(void)
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeBankedMemoryBackend backend;
+    const int keys[] = { 'J', 'A', 'E', 'C', 'L', 'D', KEY_DELETE, KEY_BREAK, KEY_BREAK };
+    FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+    const uint8_t sentinel[] = { 0x54, 0x18, 0xEA, 0x18, 0x18, 0x58, 0x00, 0x00 };
+
+    backend.set_frozen(true);
+    for (int i = 0; i < (int)sizeof(sentinel); i++) {
+        backend.ram_backup[0x10 + i] = sentinel[i];
+    }
+
+    ui.screen = &screen;
+    ui.keyboard = &kb;
+    ui.set_prompt("0810", 1);
+    monitor_reset_saved_state();
+
+    BackendMachineMonitor mon(&ui, &backend);
+    mon.init(&screen, &kb);
+    for (int i = 0; i < (int)(sizeof(keys) / sizeof(keys[0])); i++) {
+        if (expect(mon.poll(0) == 0 || i == (int)(sizeof(keys) / sizeof(keys[0])) - 1,
+                   "Freeze charset safety test: command sequence failed.")) return 1;
+    }
+    for (int i = 0; i < (int)sizeof(sentinel); i++) {
+        if (expect(backend.ram_backup[0x10 + i] == sentinel[i],
+                   "Browsing and filtering opcode suggestions in freeze mode must not mutate the active charset backup bytes.")) return 1;
+    }
+    mon.deinit();
+    return 0;
+}
+
+static int test_opcode_picker_near_bottom_refresh_stays_inside_content(void)
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeMemoryBackend backend;
+    int keys[32];
+    int n = 0;
+
+    for (uint16_t addr = 0x0801; addr < 0x0820; addr++) {
+        backend.write(addr, 0xEA);
+    }
+
+    keys[n++] = 'A';
+    keys[n++] = 'E';
+    for (int i = 0; i < 16; i++) keys[n++] = KEY_DOWN;
+    keys[n++] = 'L';
+    keys[n++] = 'D';
+    keys[n++] = KEY_BREAK;
+    keys[n++] = KEY_BREAK;
+
+    FakeKeyboard kb(keys, n);
+    ui.screen = &screen;
+    ui.keyboard = &kb;
+    monitor_reset_saved_state();
+
+    BackendMachineMonitor mon(&ui, &backend);
+    mon.init(&screen, &kb);
+    if (expect(mon.poll(0) == 0, "Lower-border popup bounds test: ASM view switch failed.")) return 1;
+    if (expect(mon.poll(0) == 0, "Lower-border popup bounds test: edit mode entry failed.")) return 1;
+    for (int i = 0; i < 16; i++) {
+        if (expect(mon.poll(0) == 0, "Lower-border popup bounds test: cursor movement failed.")) return 1;
+    }
+    if (expect(mon.poll(0) == 0, "Lower-border popup bounds test: popup open failed.")) return 1;
+
+    screen.reset_write_counts();
+    if (expect(mon.poll(0) == 0, "Lower-border popup bounds test: popup refilter failed.")) return 1;
+    if (expect(screen.count_writes_outside_rect(1, 4, 38, 21) == 0,
+               "Lower-border opcode popup refresh must stay inside the monitor content area.")) return 1;
+
+    if (expect(mon.poll(0) == 0, "Lower-border popup bounds test: RUN/STOP should close the picker first.")) return 1;
+    if (expect(mon.poll(0) == 0, "Lower-border popup bounds test: RUN/STOP should leave edit mode next.")) return 1;
+    mon.deinit();
+    return 0;
+}
+
+static int test_opcode_picker_selection_near_bottom_preserves_live_charset_page(void)
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeBankedMemoryBackend backend;
+    char header[39];
+    const char *addr_text = NULL;
+    unsigned int current_addr = 0;
+    int keys[48];
+    int n = 0;
+
+    backend.set_frozen(true);
+    for (uint16_t addr = 0x0801; addr < 0x0820; addr++) {
+        backend.ram_backup[addr - 0x0800] = 0xEA;
+        backend.ram[addr] = 0x40;
+    }
+
+    keys[n++] = 'J';
+    keys[n++] = 'A';
+    keys[n++] = 'E';
+    for (int i = 0; i < 15; i++) keys[n++] = KEY_DOWN;
+    keys[n++] = 'J';
+    keys[n++] = 'S';
+    keys[n++] = 'R';
+    keys[n++] = KEY_RETURN;
+    keys[n++] = KEY_BREAK;
+
+    FakeKeyboard kb(keys, n);
+    ui.screen = &screen;
+    ui.keyboard = &kb;
+    ui.set_prompt("0801", 1);
+    monitor_reset_saved_state();
+
+    BackendMachineMonitor mon(&ui, &backend);
+    mon.init(&screen, &kb);
+    if (expect(mon.poll(0) == 0, "Lower-border freeze write test: goto failed.")) return 1;
+    if (expect(mon.poll(0) == 0, "Lower-border freeze write test: ASM view switch failed.")) return 1;
+    if (expect(mon.poll(0) == 0, "Lower-border freeze write test: edit mode entry failed.")) return 1;
+    for (int i = 0; i < 15; i++) {
+        if (expect(mon.poll(0) == 0, "Lower-border freeze write test: cursor movement failed.")) return 1;
+    }
+    screen.get_slice(1, 3, 38, header);
+    addr_text = strchr(header, '$');
+    if (expect(addr_text != NULL && sscanf(addr_text + 1, "%x", &current_addr) == 1,
+               "Lower-border freeze write test must expose the current ASM address in the header.")) return 1;
+    if (expect(current_addr >= 0x0801 && current_addr < 0x0820,
+               "Lower-border freeze write test must stay inside the frozen $0800 page.")) return 1;
+    for (int i = 0; i < 3; i++) {
+        if (expect(mon.poll(0) == 0, "Lower-border freeze write test: popup interaction failed before commit.")) return 1;
+    }
+    if (expect(mon.poll(0) == 0, "Lower-border freeze write test: opcode commit failed.")) return 1;
+
+    if (expect(backend.read((uint16_t)current_addr) == 0x20,
+               "Lower-border popup selection must still commit the selected opcode to the intended frozen RAM address.")) return 1;
+    if (expect(backend.ram_backup[current_addr - 0x0800] == 0x20,
+               "Frozen opcode selection must update the saved RAM buffer for the selected address.")) return 1;
+    if (expect(backend.ram[current_addr] == 0x40,
+               "Frozen opcode selection near the lower border must not overwrite the live $0800 charset page.")) return 1;
+
+    if (expect(mon.poll(0) == 0, "Lower-border freeze write test: exit edit mode failed.")) return 1;
+    mon.deinit();
+    return 0;
+}
+
+static int test_opcode_picker_pauses_poll_mode(void)
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    CaptureScreen snapshot;
+    FakeMemoryBackend backend;
+    char line[19];
+    int total_writes = 0;
+    const int keys[] = { 'A', 'P', 'E', 'N' };
+    FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+    ui.screen = &screen;
+    ui.keyboard = &kb;
+    monitor_reset_saved_state();
+    set_fake_ms_timer(0);
+
+    BackendMachineMonitor mon(&ui, &backend);
+    mon.init(&screen, &kb);
+    if (expect(mon.poll(0) == 0, "Opcode picker poll test: ASM view switch failed.")) return 1;
+    if (expect(mon.poll(0) == 0, "Opcode picker poll test: poll mode enable failed.")) return 1;
+    if (expect(mon.poll(0) == 0, "Opcode picker poll test: edit mode entry failed.")) return 1;
+    if (expect(mon.poll(0) == 0, "Opcode picker poll test: picker open failed.")) return 1;
+    screen.get_slice(16, 4, 18, line);
+    if (expect(strstr(line, " N_") == line,
+               "Opcode picker poll test must open the mnemonic overlay before idle polling.")) return 1;
+
+    snapshot = screen;
+    screen.reset_write_counts();
+    set_fake_ms_timer(20);
+    if (expect(mon.poll(0) == 0, "Opcode picker poll test: idle poll failed.")) return 1;
+    for (int y = 0; y < 25; y++) {
+        for (int x = 0; x < 40; x++) {
+            total_writes += screen.write_counts[y][x];
+        }
+    }
+    if (expect(total_writes == 0,
+               "Poll mode must not redraw the opcode picker overlay while it is open.")) return 1;
+    if (expect_screens_equal(snapshot, screen,
+                             "Idle poll must leave the opcode picker overlay screen unchanged.")) return 1;
+
+    mon.deinit();
+    return 0;
+}
+
+static int test_cross_view_sync(void)
+{
+    // Edit in HEX, view memory unchanged; Edit in SCR via 'A' key should be visible
+    // through a direct memory read (which represents what every other view renders).
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeMemoryBackend backend;
+    const int keys[] = { 'J', 'V', 'E', 'B', KEY_BREAK };
+    FakeKeyboard kb(keys, 5);
+    ui.screen = &screen;
+    ui.keyboard = &kb;
+    ui.set_prompt("0400", 1);
+    BackendMachineMonitor mon(&ui, &backend);
+    mon.init(&screen, &kb);
+    for (int i = 0; i < 5; i++) (void)mon.poll(0);
+    // Now switch to HEX and verify the same byte reads back.
+    if (expect(backend.read(0x0400) == 0x02, "Cross-view: SCR 'B' edit must store 0x02 visible to all views")) return 1;
+    return 0;
+}
+
+static int test_binary_bit_navigation_and_width(void)
+{
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char header[39];
+        char row[38];
+        const int keys[] = {
+            'J', 'B',
+            KEY_RIGHT, KEY_RIGHT, KEY_RIGHT, KEY_RIGHT,
+            KEY_RIGHT, KEY_RIGHT, KEY_RIGHT, KEY_RIGHT,
+            KEY_BREAK
+        };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("0400", 1);
+        backend.write(0x0400, 0x80);
+        backend.write(0x0401, 0x01);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Binary bit test: goto failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Binary bit test: view switch failed.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "MONITOR BIN $0400/7") == header,
+                   "Binary header must show cursor address and MSB bit index.")) return 1;
+        screen.get_slice(1, 4, 13, row);
+        if (expect(strcmp(row, "0400 *.......") == 0,
+                   "Binary width=1 must render exactly 8 bits per row.")) return 1;
+        if (expect(screen.reverse_chars[4][6] && !screen.reverse_chars[4][7],
+                   "Binary cursor must select exactly one bit at MSB.")) return 1;
+
+        for (int i = 0; i < 7; i++) {
+            if (expect(mon.poll(0) == 0, "Binary bit test: right navigation failed before byte boundary.")) return 1;
+        }
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "MONITOR BIN $0400/0") == header,
+                   "Binary cursor must reach LSB as bit index 0.")) return 1;
+        if (expect(screen.reverse_chars[4][13] && !screen.reverse_chars[4][12],
+                   "Binary cursor must select exactly one bit at LSB.")) return 1;
+
+        if (expect(mon.poll(0) == 0, "Binary bit test: right navigation across byte boundary failed.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "MONITOR BIN $0401/7") == header,
+                   "Binary cursor must cross to next byte at MSB.")) return 1;
+        if (expect(screen.reverse_chars[5][6],
+                   "Binary cursor must move to the next row's MSB after crossing byte boundary.")) return 1;
+        if (expect(mon.poll(0) == 1, "Binary bit test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char header[39];
+        char row[40];
+         const int keys[] = { 'B', 'W', 'W', 'W', 'W', KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        backend.write(0x0000, 0x80);
+        backend.write(0x0001, 0x01);
+        backend.write(0x0002, 0xFF);
+         backend.write(0x0003, 0x55);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Binary width test: view switch failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Binary width test: cycle to width 2 failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Binary width test: cycle to width 3 failed.")) return 1;
+         if (expect(mon.poll(0) == 0, "Binary width test: cycle to width 3S failed.")) return 1;
+         if (expect(mon.poll(0) == 0, "Binary width test: cycle to width 4 failed.")) return 1;
+         screen.get_slice(1, 4, 37, row);
+         if (expect(strcmp(row, "0000 *..............*********.*.*.*.*") == 0,
+             "Binary width cycling must reach width 4 without a hex preview.")) return 1;
+         if (expect(strstr(row, "80") == NULL && strstr(row, "01") == NULL &&
+                 strstr(row, "FF") == NULL && strstr(row, "55") == NULL,
+                 "Binary width 4 must omit the trailing hex bytes.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "W=") == NULL && strstr(header, "bits") == NULL,
+                   "Binary width must not be displayed in the header.")) return 1;
+        if (expect(mon.poll(0) == 1, "Binary width test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    return 0;
+}
+
+static int test_binary_row_formats(void)
+{
+    static const struct {
+        int width_presses;
+        const char *expected_row;
+        int expected_len;
+    } cases[] = {
+        { 0, "0000 ...*..*. 12", 16 },
+        { 1, "0000 ...*..*. ..**.*.. 12 34", 28 },
+        { 2, "0000 ...*..*. ..**.*.. .*.*.**. 123456", 38 },
+        { 3, "0000 ...*..*...**.*...*.*.**. 12 34 56", 38 },
+        { 4, "0000 ...*..*...**.*...*.*.**..****...", 37 },
+    };
+
+    for (unsigned int i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char row[40];
+        int keys[6];
+        int key_count = 0;
+
+        backend.write(0x0000, 0x12);
+        backend.write(0x0001, 0x34);
+        backend.write(0x0002, 0x56);
+        backend.write(0x0003, 0x78);
+        monitor_reset_saved_state();
+
+        keys[key_count++] = 'B';
+        for (int press = 0; press < cases[i].width_presses; press++) {
+            keys[key_count++] = 'W';
+        }
+        keys[key_count++] = KEY_BREAK;
+        FakeKeyboard kb(keys, key_count);
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Binary row format test: binary view switch failed.")) return 1;
+        for (int press = 0; press < cases[i].width_presses; press++) {
+            if (expect(mon.poll(0) == 0, "Binary row format test: width cycling failed.")) return 1;
+        }
+        screen.get_slice(1, 4, cases[i].expected_len, row);
+        if (expect(strcmp(row, cases[i].expected_row) == 0,
+                   "Binary row format test: rendered row mismatch.")) return 1;
+        if (expect((int)strlen(row) == cases[i].expected_len,
+                   "Binary row format test: rendered row length mismatch.")) return 1;
+        if (expect(cases[i].expected_len <= 38,
+                   "Binary row format test: row must fit within 38 columns.")) return 1;
+        if (expect(mon.poll(0) == 1, "Binary row format test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    return 0;
+}
+
+static int test_memory_row_width_cycle(void)
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeMemoryBackend backend;
+    char row8[38];
+    char row16[39];
+    const int keys[] = { 'W', 'I', 'M', 'W', KEY_BREAK };
+    FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+    for (int i = 0; i < 16; i++) {
+        backend.write((uint16_t)i, (uint8_t)i);
+    }
+    ui.screen = &screen;
+    ui.keyboard = &kb;
+    monitor_reset_saved_state();
+
+    BackendMachineMonitor mon(&ui, &backend);
+    mon.init(&screen, &kb);
+
+    screen.get_slice(1, 4, 37, row8);
+    if (expect(strcmp(row8, "0000 00 01 02 03 04 05 06 07 ........") == 0,
+               "Memory view must default to width 8 with ASCII on the right.")) return 1;
+
+    if (expect(mon.poll(0) == 0, "Memory width test: cycle to width 16 failed.")) return 1;
+    screen.get_slice(1, 4, 38, row16);
+    if (expect(strcmp(row16, "0000 0001020304050607 08090A0B0C0D0E0F") == 0,
+               "Memory width cycling must render the packed 16-byte row.")) return 1;
+
+    if (expect(mon.poll(0) == 0, "Memory width test: ASCII view switch failed.")) return 1;
+    if (expect(mon.poll(0) == 0, "Memory width test: return to memory view failed.")) return 1;
+    screen.get_slice(1, 4, 38, row16);
+    if (expect(strcmp(row16, "0000 0001020304050607 08090A0B0C0D0E0F") == 0,
+               "Memory view must remember the chosen width when re-entering the view.")) return 1;
+
+    if (expect(mon.poll(0) == 0, "Memory width test: cycle back to width 8 failed.")) return 1;
+    screen.get_slice(1, 4, 37, row8);
+    if (expect(strcmp(row8, "0000 00 01 02 03 04 05 06 07 ........") == 0,
+               "Memory width cycling must wrap back to width 8.")) return 1;
+
+    if (expect(mon.poll(0) == 1, "Memory width test: exit failed.")) return 1;
+    mon.deinit();
+    return 0;
+}
+
+static int test_binary_delete_behavior(void)
+{
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char header[39];
+        char row[14];
+        const int keys[] = { 'J', 'B', KEY_DELETE, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("0400", 1);
+        backend.write(0x0400, 0xAA);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Binary DEL set-bit test: goto failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Binary DEL set-bit test: view switch failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Binary DEL set-bit test: delete failed.")) return 1;
+        if (expect(backend.read(0x0400) == 0x2A,
+                   "Binary DEL must clear only the selected set bit.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "MONITOR BIN $0400/6") == header,
+                   "Binary DEL must advance the cursor by exactly one bit.")) return 1;
+        screen.get_slice(1, 4, 13, row);
+        if (expect(strcmp(row, "0400 ..*.*.*.") == 0,
+                   "Binary DEL must render the cleared bit as '.' without changing the other bits.")) return 1;
+        if (expect(screen.reverse_chars[4][7] && !screen.reverse_chars[4][6],
+                   "Binary DEL must leave the highlight on the next bit, not the original one.")) return 1;
+        if (expect(mon.poll(0) == 1, "Binary DEL set-bit test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char header[39];
+        char row[14];
+        const int keys[] = { 'J', 'B', 'E', KEY_DELETE, KEY_BREAK, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("0400", 1);
+        backend.write(0x0400, 0x2A);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Binary DEL clear-bit test: goto failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Binary DEL clear-bit test: view switch failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Binary DEL clear-bit test: edit entry failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Binary DEL clear-bit test: delete failed.")) return 1;
+        if (expect(backend.read(0x0400) == 0x2A,
+                   "Binary DEL on an already-clear bit must leave the byte unchanged.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "MONITOR BIN $0400/6") == header,
+                   "Binary DEL must still advance one bit while in edit mode.")) return 1;
+        screen.get_slice(1, 4, 13, row);
+        if (expect(strcmp(row, "0400 ..*.*.*.") == 0,
+                   "Binary DEL on a clear bit must preserve the rendered binary row.")) return 1;
+        if (expect(mon.poll(0) == 0, "Binary DEL clear-bit test: leave edit mode failed.")) return 1;
+        if (expect(mon.poll(0) == 1, "Binary DEL clear-bit test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char header[39];
+        const int keys[] = { 'J', 'B', KEY_RIGHT, KEY_RIGHT, KEY_RIGHT, KEY_RIGHT,
+                             KEY_RIGHT, KEY_RIGHT, KEY_RIGHT, KEY_DELETE, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("0400", 1);
+        backend.write(0x0400, 0x01);
+        backend.write(0x0401, 0x80);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Binary DEL boundary test: goto failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Binary DEL boundary test: view switch failed.")) return 1;
+        for (int i = 0; i < 7; i++) {
+            if (expect(mon.poll(0) == 0, "Binary DEL boundary test: cursor advance to bit 0 failed.")) return 1;
+        }
+        if (expect(mon.poll(0) == 0, "Binary DEL boundary test: delete failed.")) return 1;
+        if (expect(backend.read(0x0400) == 0x00,
+                   "Binary DEL must clear the final bit in the byte without touching the next byte.")) return 1;
+        if (expect(backend.read(0x0401) == 0x80,
+                   "Binary DEL byte-boundary advance must not modify the next byte.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "MONITOR BIN $0401/7") == header,
+                   "Binary DEL must advance to the next byte's MSB after bit 0.")) return 1;
+        if (expect(screen.reverse_chars[5][6],
+                   "Binary DEL across a byte boundary must highlight the next row's first bit.")) return 1;
+        if (expect(mon.poll(0) == 1, "Binary DEL boundary test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char header[39];
+        char row[14];
+        const int keys[] = { 'J', 'B', KEY_RIGHT, KEY_RIGHT, KEY_RIGHT, KEY_RIGHT,
+                             KEY_RIGHT, KEY_RIGHT, KEY_RIGHT, KEY_DELETE, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("FFFF", 1);
+        backend.write(0xFFFF, 0x01);
+        backend.write(0x0000, 0x80);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Binary DEL wrap test: goto failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Binary DEL wrap test: view switch failed.")) return 1;
+        for (int i = 0; i < 7; i++) {
+            if (expect(mon.poll(0) == 0, "Binary DEL wrap test: cursor advance to bit 0 failed.")) return 1;
+        }
+        if (expect(mon.poll(0) == 0, "Binary DEL wrap test: delete failed.")) return 1;
+        if (expect(backend.read(0xFFFF) == 0x00,
+                   "Binary DEL must clear the selected bit at $FFFF before wrapping.")) return 1;
+        if (expect(backend.read(0x0000) == 0x80,
+                   "Binary DEL wraparound must not modify the wrapped-to byte.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "MONITOR BIN $0000/7") == header,
+                   "Binary DEL at $FFFF bit 0 must wrap to $0000 bit 7.")) return 1;
+        screen.get_slice(1, 4, 13, row);
+        if (expect(strcmp(row, "0000 *.......") == 0,
+                   "Binary DEL wraparound must render the wrapped-to byte using the existing binary row layout.")) return 1;
+        if (expect(mon.poll(0) == 1, "Binary DEL wrap test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    return 0;
+}
+
+static int test_clipboard_number_and_range(void)
+{
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        int left = 0;
+        int top = 0;
+        int right = 0;
+        int bottom = 0;
+        int keys[16];
+        int n = 0;
+        keys[n++] = 'N';
+        keys[n++] = KEY_DOWN;   // Decimal representation.
+        keys[n++] = KEY_CTRL_C;
+        keys[n++] = 'B';
+        for (int i = 0; i < 8; i++) keys[n++] = KEY_RIGHT;
+        keys[n++] = KEY_CTRL_V;
+        keys[n++] = KEY_BREAK;
+        FakeKeyboard kb(keys, n);
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        backend.write(0x0000, 65);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Number inspector did not open.")) return 1;
+        if (expect(mon.poll(0) == 0, "Number inspector decimal navigation failed.")) return 1;
+         if (expect(find_popup_rect(screen, &left, &top, &right, &bottom),
+               "Number inspector must open as a framed popup inside the monitor content area.")) return 1;
+        if (expect(screen.reverse_chars[top + 3][left + 1],
+               "Number inspector must allow navigating to the decimal representation.")) return 1;
+        if (expect(mon.poll(0) == 0, "Number inspector CBM-C copy failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Binary view switch after number copy failed.")) return 1;
+        for (int i = 0; i < 8; i++) {
+            if (expect(mon.poll(0) == 0, "Binary cursor move before paste failed.")) return 1;
+        }
+        if (expect(mon.poll(0) == 0, "CBM-V paste into binary mode failed.")) return 1;
+        if (expect(backend.read(0x0001) == 65,
+                   "Number clipboard paste must write canonical byte value in binary mode.")) return 1;
+        if (expect(mon.poll(0) == 1, "Number clipboard test exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char header[39];
+        const int keys[] = {
+            'R', KEY_RIGHT, KEY_RIGHT, KEY_RIGHT,
+            KEY_CTRL_C, KEY_RIGHT, KEY_CTRL_V, KEY_CTRL_V, KEY_BREAK
+        };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        for (int i = 0; i < 4; i++) {
+            backend.write((uint16_t)i, (uint8_t)(0xA0 + i));
+        }
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Range mode entry failed.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "Range") != NULL,
+                   "Header must show Range while range mode is active.")) return 1;
+        if (expect(mon.poll(0) == 0 && mon.poll(0) == 0 && mon.poll(0) == 0,
+                   "Range cursor movement failed.")) return 1;
+        if (expect(screen.reverse_chars[4][6] && screen.reverse_chars[4][9] &&
+                   screen.reverse_chars[4][12] && screen.reverse_chars[4][15],
+                   "Range selection must visibly invert every selected byte.")) return 1;
+        if (expect(mon.poll(0) == 0, "Range CBM-C copy failed.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "Range") == NULL,
+                   "CBM-C must exit range mode after copying.")) return 1;
+        if (expect(mon.poll(0) == 0, "Range paste target movement failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Range paste failed.")) return 1;
+        for (int i = 0; i < 4; i++) {
+            if (expect(backend.read((uint16_t)(4 + i)) == (uint8_t)(0xA0 + i),
+                       "Range paste must reproduce copied bytes sequentially.")) return 1;
+        }
+        if (expect(mon.poll(0) == 0, "Repeat range paste failed.")) return 1;
+        for (int i = 0; i < 4; i++) {
+            if (expect(backend.read((uint16_t)(8 + i)) == (uint8_t)(0xA0 + i),
+                       "Repeated CBM-V must duplicate the last copied content.")) return 1;
+        }
+        if (expect(mon.poll(0) == 1, "Range clipboard test exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    return 0;
+}
+
+static int test_asm_range_copy_paste(void)
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeMemoryBackend backend;
+    const int keys[] = { 'J', 'A', 'R', KEY_DOWN, KEY_CTRL_C, 'J', KEY_CTRL_V, KEY_BREAK };
+    FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+    const uint8_t expected[] = { 0xA9, 0x12, 0x8D, 0x00, 0x04 };
+
+    backend.write(0xC000, 0xA9);
+    backend.write(0xC001, 0x12);
+    backend.write(0xC002, 0x8D);
+    backend.write(0xC003, 0x00);
+    backend.write(0xC004, 0x04);
+
+    ui.screen = &screen;
+    ui.keyboard = &kb;
+    ui.set_prompt("C000", 1);
+    ui.push_prompt("C100", 1);
+    monitor_reset_saved_state();
+
+    BackendMachineMonitor mon(&ui, &backend);
+    mon.init(&screen, &kb);
+    for (int i = 0; i < (int)(sizeof(keys) / sizeof(keys[0])) - 1; i++) {
+        if (expect(mon.poll(0) == 0, "ASM range test command failed.")) return 1;
+    }
+
+    for (int i = 0; i < (int)sizeof(expected); i++) {
+        if (expect(backend.read((uint16_t)(0xC100 + i)) == expected[i],
+                   "ASM range copy/paste must include every byte of the final selected instruction.")) return 1;
+    }
+    if (expect(backend.read(0xC105) == 0x00,
+               "ASM range copy/paste must not overrun past the selected instructions.")) return 1;
+    if (expect(mon.poll(0) == 1, "ASM range test exit failed.")) return 1;
+    mon.deinit();
+    return 0;
+}
+
+static int test_asm_paste_keeps_viewport_position(void)
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeMemoryBackend backend;
+    char line[39];
+    int keys[32];
+    int n = 0;
+    const uint8_t expected[] = { 0xA9, 0x12, 0x8D, 0x00, 0x04 };
+
+    keys[n++] = 'J';
+    keys[n++] = 'A';
+    keys[n++] = 'R';
+    keys[n++] = KEY_DOWN;
+    keys[n++] = KEY_CTRL_C;
+    keys[n++] = 'J';
+    for (int i = 0; i < 8; i++) {
+        keys[n++] = KEY_DOWN;
+    }
+    keys[n++] = KEY_CTRL_V;
+    keys[n++] = KEY_BREAK;
+
+    backend.write(0xC000, 0xA9);
+    backend.write(0xC001, 0x12);
+    backend.write(0xC002, 0x8D);
+    backend.write(0xC003, 0x00);
+    backend.write(0xC004, 0x04);
+    for (uint16_t addr = 0xC100; addr < 0xC120; addr++) {
+        backend.write(addr, 0xEA);
+    }
+
+    FakeKeyboard kb(keys, n);
+    ui.screen = &screen;
+    ui.keyboard = &kb;
+    ui.set_prompt("C000", 1);
+    ui.push_prompt("C100", 1);
+    monitor_reset_saved_state();
+
+    BackendMachineMonitor mon(&ui, &backend);
+    mon.init(&screen, &kb);
+    if (expect(mon.poll(0) == 0, "ASM paste viewport test: goto source failed.")) return 1;
+    if (expect(mon.poll(0) == 0, "ASM paste viewport test: ASM view switch failed.")) return 1;
+    if (expect(mon.poll(0) == 0, "ASM paste viewport test: range mode failed.")) return 1;
+    if (expect(mon.poll(0) == 0, "ASM paste viewport test: range extension failed.")) return 1;
+    if (expect(mon.poll(0) == 0, "ASM paste viewport test: copy failed.")) return 1;
+    if (expect(mon.poll(0) == 0, "ASM paste viewport test: goto target failed.")) return 1;
+    for (int i = 0; i < 8; i++) {
+        if (expect(mon.poll(0) == 0, "ASM paste viewport test: target navigation failed.")) return 1;
+    }
+
+    screen.get_slice(1, 4, 38, line);
+    if (expect(strstr(line, "C100 EA") == line,
+               "ASM paste viewport test must start with the original top row still visible.")) return 1;
+
+    if (expect(mon.poll(0) == 0, "ASM paste viewport test: paste failed.")) return 1;
+    screen.get_slice(1, 3, 38, line);
+    if (expect(strstr(line, "MONITOR ASM $C10D") == line,
+               "ASM paste must leave the cursor on the byte immediately after the pasted region.")) return 1;
+    screen.get_slice(1, 4, 38, line);
+    if (expect(strstr(line, "C100 EA") == line,
+               "ASM paste must keep the current viewport anchored instead of snapping the pasted region to the top.")) return 1;
+    for (int i = 0; i < (int)sizeof(expected); i++) {
+        if (expect(backend.read((uint16_t)(0xC108 + i)) == expected[i],
+                   "ASM paste viewport test must write the copied bytes at the current cursor position.")) return 1;
+    }
+
+    if (expect(mon.poll(0) == 1, "ASM paste viewport test: exit failed.")) return 1;
+    mon.deinit();
+    return 0;
+}
+
+static int test_illegal_mode_header_label(void)
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeMemoryBackend backend;
+    char line[39];
+    const int keys[] = { 'A', '*', 'U', KEY_BREAK };
+    FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+    ui.screen = &screen;
+    ui.keyboard = &kb;
+    monitor_reset_saved_state();
+
+    BackendMachineMonitor mon(&ui, &backend);
+    mon.init(&screen, &kb);
+    if (expect(mon.poll(0) == 0, "Illegal mode label test: ASM view switch failed.")) return 1;
+    if (expect(mon.poll(0) == 0, "Illegal mode label test: '*' should now be ignored.")) return 1;
+    screen.get_slice(1, 3, 38, line);
+    if (expect(strstr(line, "UndocOp") == NULL,
+               "Disabled undocumented-opcode mode must not show the UndocOp label.")) return 1;
+    if (expect(strstr(line, "IllOp") == NULL,
+               "Visible monitor UI must no longer show the old IllOp label.")) return 1;
+    if (expect(mon.poll(0) == 0, "Illegal mode label test: U toggle failed.")) return 1;
+    screen.get_slice(1, 3, 38, line);
+    if (expect(strstr(line, "Undoc") != NULL,
+               "Enabled undocumented-opcode mode must show the compact Undoc label in the header.")) return 1;
+    if (expect(strstr(line, "Illegal:ON") == NULL,
+               "Illegal opcode mode must no longer show the old long header text.")) return 1;
+    if (expect(mon.poll(0) == 1, "Illegal mode label test: exit failed.")) return 1;
+    mon.deinit();
+    return 0;
+}
+
+static int test_hunt_and_compare_picker_navigation(void)
+{
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char header[39];
+        char row[38];
+        const int keys[] = { 'H', 'D', 'E', KEY_RETURN, KEY_PAGEDOWN, KEY_RETURN, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        for (uint16_t addr = 0xC000; addr <= 0xC013; addr++) {
+            backend.write(addr, 0xDE);
+        }
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Hunt picker test: hunt command failed.")) return 1;
+        screen.get_slice(1, 4, 37, row);
+        if (expect(strstr(row, "C000 DE") == row, "Hunt picker must show the first match at the top initially.")) return 1;
+        if (expect(mon.poll(0) == 0, "Hunt picker test: page-down failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Hunt picker test: RETURN jump failed.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "MONITOR HEX $C012") == header,
+                   "Hunt picker RETURN must jump to the paged selection.")) return 1;
+        if (expect(mon.poll(0) == 1, "Hunt picker test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char header[39];
+        char row[38];
+        const int keys[] = { 'C', KEY_DOWN, KEY_RETURN, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        backend.write(0xC100, 0x10);
+        backend.write(0xC101, 0x11);
+        backend.write(0xC102, 0x12);
+        backend.write(0xC103, 0x13);
+        backend.write(0xC200, 0x10);
+        backend.write(0xC201, 0x91);
+        backend.write(0xC202, 0x92);
+        backend.write(0xC203, 0x13);
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("C100-C103,C200", 1);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Compare picker test: compare command failed.")) return 1;
+        screen.get_slice(1, 4, 37, row);
+        if (expect(strstr(row, "C101 11") == row, "Compare picker must list the first differing address first.")) return 1;
+        if (expect(mon.poll(0) == 0, "Compare picker test: DOWN failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Compare picker test: RETURN jump failed.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "MONITOR HEX $C102") == header,
+                   "Compare picker RETURN must jump to the selected difference.")) return 1;
+        if (expect(mon.poll(0) == 1, "Compare picker test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    return 0;
+}
+
+static int test_hunt_prompt_typed_input(void)
+{
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char header[39];
+        const int keys[] = { 'H', 'd', 'e', KEY_RETURN, KEY_RETURN, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        backend.write(0xC004, 0xDE);
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+
+        if (expect(mon.poll(0) == 0, "Typed Hunt test: lowercase hex prompt failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Typed Hunt test: lowercase hex RETURN failed.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "MONITOR HEX $C004") == header,
+                   "Typed Hunt must accept lowercase hex input in the Hunt popup.")) return 1;
+        if (expect(mon.poll(0) == 1, "Typed Hunt test: lowercase hex exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char header[39];
+        const int keys[] = { 'H', '"', 'H', 'e', 'l', 'l', 'o', '"', KEY_RETURN, KEY_RETURN, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        const char hello[] = "Hello";
+        const char upper_hello[] = "HELLO";
+
+        for (unsigned int i = 0; i < sizeof(hello) - 1; i++) {
+            backend.write((uint16_t)(0xC000 + i), (uint8_t)hello[i]);
+            backend.write((uint16_t)(0xC008 + i), (uint8_t)upper_hello[i]);
+        }
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+
+        if (expect(mon.poll(0) == 0, "Typed Hunt test: quoted ASCII prompt failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Typed Hunt test: quoted ASCII RETURN failed.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "MONITOR HEX $C000") == header,
+                   "Typed Hunt must preserve quoted mixed-case ASCII bytes.")) return 1;
+        if (expect(mon.poll(0) == 1, "Typed Hunt test: quoted ASCII exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    return 0;
+}
+
+static int test_number_popup_edit_and_commit(void)
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeMemoryBackend backend;
+    char line[32];
+    const int keys[] = { 'N', 'F', 'A', 'E', '1', KEY_DELETE, KEY_DELETE, KEY_RETURN, KEY_BREAK, KEY_BREAK };
+    FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+    ui.screen = &screen;
+    ui.keyboard = &kb;
+    monitor_reset_saved_state();
+
+    BackendMachineMonitor mon(&ui, &backend);
+    mon.init(&screen, &kb);
+
+    if (expect(mon.poll(0) == 0, "Number popup test: open failed.")) return 1;
+    get_popup_line(screen, 0, line, sizeof(line));
+    if (expect(strstr(line, "MONITOR NUM $0000 BYTE") == line,
+               "Number popup must open in BYTE mode with the current address in the framed header.")) return 1;
+
+    if (expect(mon.poll(0) == 0, "Number popup test: typing first hex digit failed.")) return 1;
+    get_popup_line(screen, 1, line, sizeof(line));
+    if (expect(strstr(line, "Hex      $0F") == line,
+               "Number popup must zero-pad one-digit hex input as a BYTE preview.")) return 1;
+
+    if (expect(mon.poll(0) == 0, "Number popup test: typing second hex digit failed.")) return 1;
+    get_popup_line(screen, 1, line, sizeof(line));
+    if (expect(strstr(line, "Hex      $FA") == line,
+               "Number popup must keep two-digit hex input in BYTE mode.")) return 1;
+
+    if (expect(mon.poll(0) == 0, "Number popup test: typing third hex digit failed.")) return 1;
+    get_popup_line(screen, 0, line, sizeof(line));
+    if (expect(strstr(line, "MONITOR NUM $0000 WORD") == line,
+               "Number popup must switch to WORD mode on the third hex digit.")) return 1;
+    get_popup_line(screen, 1, line, sizeof(line));
+    if (expect(strstr(line, "Hex      $0FAE") == line,
+               "Number popup must preserve leading zeroes when hex input grows to WORD width.")) return 1;
+    get_popup_line(screen, 3, line, sizeof(line));
+    if (expect(strstr(line, "Binary   %0000111110101110") == line,
+               "Number popup WORD binary preview must show all 16 bits with the percent prefix.")) return 1;
+
+    if (expect(mon.poll(0) == 0, "Number popup test: typing fourth hex digit failed.")) return 1;
+    get_popup_line(screen, 1, line, sizeof(line));
+    if (expect(strstr(line, "Hex      $FAE1") == line,
+               "Number popup must show the full four-digit hex WORD preview.")) return 1;
+    get_popup_line(screen, 3, line, sizeof(line));
+    if (expect(strstr(line, "Binary   %1111101011100001") == line,
+               "Number popup must show the full 16-bit WORD binary preview for $FAE1.")) return 1;
+
+    if (expect(mon.poll(0) == 0, "Number popup test: first delete failed.")) return 1;
+    get_popup_line(screen, 0, line, sizeof(line));
+    if (expect(strstr(line, "MONITOR NUM $0000 WORD") == line,
+               "Deleting from four to three hex digits must keep the Number popup in WORD mode.")) return 1;
+    get_popup_line(screen, 1, line, sizeof(line));
+    if (expect(strstr(line, "Hex      $0FAE") == line,
+               "Deleting one hex digit must keep the remaining WORD preview intact.")) return 1;
+
+    if (expect(mon.poll(0) == 0, "Number popup test: second delete failed.")) return 1;
+    get_popup_line(screen, 0, line, sizeof(line));
+    if (expect(strstr(line, "MONITOR NUM $0000 BYTE") == line,
+               "Deleting from three to two hex digits must fall back to BYTE mode.")) return 1;
+    get_popup_line(screen, 1, line, sizeof(line));
+    if (expect(strstr(line, "Hex      $FA") == line,
+               "Deleting back to two hex digits must preserve the BYTE preview value.")) return 1;
+    get_popup_line(screen, 3, line, sizeof(line));
+    if (expect(strstr(line, "Binary   %11111010") == line && line[18] == ' ',
+               "Number popup BYTE binary preview must remain 8 bits wide with the percent prefix.")) return 1;
+
+    if (expect(mon.poll(0) == 0, "Number popup test: Enter commit failed.")) return 1;
+    if (expect(backend.read(0x0000) == 0xFA && backend.read(0x0001) == 0x00,
+               "Number popup Enter must commit the current BYTE preview without touching the next byte.")) return 1;
+
+    if (expect(mon.poll(0) == 0, "Number popup test: popup close failed.")) return 1;
+    if (expect(mon.poll(0) == 1, "Number popup test: exit failed.")) return 1;
+    mon.deinit();
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char line[32];
+        const int keys[] = { 'N', '+', 'a', 'f', KEY_BREAK, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor expr_mon(&ui, &backend);
+        expr_mon.init(&screen, &kb);
+
+        int r = expr_mon.poll(0);
+        if (expect(r == 0, "Expression Number popup test: open failed.")) return 1;
+        r = expr_mon.poll(0);
+        if (expect(r == 0, "Expression Number popup test: open-expression failed.")) return 1;
+        r = expr_mon.poll(0);
+        if (expect(r == 0, "Expression Number popup test: first lowercase hex digit failed.")) return 1;
+        get_popup_line(screen, 6, line, sizeof(line));
+        if (expect(strstr(line, "Expr=$00+A") == line,
+                   "Expression Number popup must uppercase lowercase hex digits as they are typed.")) return 1;
+        r = expr_mon.poll(0);
+        if (expect(r == 0, "Expression Number popup test: second lowercase hex digit failed.")) return 1;
+        get_popup_line(screen, 6, line, sizeof(line));
+        if (expect(strstr(line, "Expr=$00+AF") == line,
+                   "Expression Number popup must keep uppercasing subsequent lowercase hex digits.")) return 1;
+        r = expr_mon.poll(0);
+        if (expect(r == 0, "Expression Number popup test: expression close failed.")) return 1;
+        expr_mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char line[32];
+        static const int invalid_keys[] = { 'x', 'g', '!' };
+        const int keys[] = { 'N', '+', '0', 'x', 'g', '!', '1', KEY_BREAK, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor expr_mon(&ui, &backend);
+        expr_mon.init(&screen, &kb);
+
+        int r = expr_mon.poll(0);
+        if (expect(r == 0, "Expression Number popup invalid-char test: open failed.")) return 1;
+        r = expr_mon.poll(0);
+        if (expect(r == 0, "Expression Number popup invalid-char test: open-expression failed.")) return 1;
+        r = expr_mon.poll(0);
+        if (expect(r == 0, "Expression Number popup invalid-char test: zero digit failed.")) return 1;
+        get_popup_line(screen, 6, line, sizeof(line));
+        if (expect(strstr(line, "Expr=$00+0") == line,
+                   "Expression Number popup must accept the leading zero digit.")) return 1;
+        for (unsigned int i = 0; i < sizeof(invalid_keys) / sizeof(invalid_keys[0]); i++) {
+            r = expr_mon.poll(0);
+            if (expect(r == 0, "Expression Number popup invalid-char test: invalid key handling failed.")) return 1;
+            get_popup_line(screen, 6, line, sizeof(line));
+            if (expect(strstr(line, "Expr=$00+0") == line,
+                       "Expression Number popup must ignore disallowed printable characters.")) return 1;
+        }
+        r = expr_mon.poll(0);
+        if (expect(r == 0, "Expression Number popup invalid-char test: trailing digit failed.")) return 1;
+        get_popup_line(screen, 6, line, sizeof(line));
+        if (expect(strstr(line, "Expr=$00+01") == line,
+                   "Expression Number popup must keep parsing with valid digits after rejecting disallowed characters.")) return 1;
+        r = expr_mon.poll(0);
+        if (expect(r == 0, "Expression Number popup invalid-char test: expression close failed.")) return 1;
+        expr_mon.deinit();
+    }
+
+    return 0;
+}
+
+static int test_number_popup_word_commit_and_sticky_row(void)
+{
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char line[32];
+        int left = 0;
+        int top = 0;
+        int right = 0;
+        int bottom = 0;
+        const int keys[] = {
+            'N', KEY_DOWN, KEY_DOWN, KEY_DOWN, 'A', 'B', KEY_RETURN,
+            KEY_ESCAPE, KEY_RIGHT, 'N', 'C', KEY_RETURN, KEY_BREAK, KEY_BREAK
+        };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+
+        if (expect(mon.poll(0) == 0, "ASCII Number popup test: open failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASCII Number popup test: first row navigation failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASCII Number popup test: second row navigation failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASCII Number popup test: third row navigation failed.")) return 1;
+        if (expect(find_popup_rect(screen, &left, &top, &right, &bottom),
+               "Number popup ASCII-row test must keep the popup framed.")) return 1;
+        if (expect(screen.reverse_chars[top + 5][left + 1],
+                   "Number popup must allow selecting the ASCII row.")) return 1;
+
+        if (expect(mon.poll(0) == 0, "ASCII Number popup test: first character failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASCII Number popup test: second character failed.")) return 1;
+        get_popup_line(screen, 0, line, sizeof(line));
+        if (expect(strstr(line, "MONITOR NUM $0000 WORD") == line,
+                   "Two ASCII characters must switch the Number popup into WORD mode.")) return 1;
+        get_popup_line(screen, 4, line, sizeof(line));
+        if (expect(strstr(line, "ASCII    AB") == line,
+                   "ASCII Number popup preview must show both typed characters without extra annotations.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASCII Number popup test: Enter commit failed.")) return 1;
+        if (expect(backend.read(0x0000) == 0x42 && backend.read(0x0001) == 0x41,
+                   "ASCII WORD commit must write low/high bytes in little-endian order.")) return 1;
+
+        if (expect(mon.poll(0) == 0, "ASCII Number popup test: close after commit failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASCII Number popup test: move to next address failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASCII Number popup test: reopen failed.")) return 1;
+        get_popup_line(screen, 0, line, sizeof(line));
+        if (expect(strstr(line, "MONITOR NUM $0001 BYTE") == line,
+                   "Reopening the Number popup must use the current address and a fresh BYTE preview.")) return 1;
+        if (expect(find_popup_rect(screen, &left, &top, &right, &bottom),
+               "Number popup reopen test must keep the popup framed.")) return 1;
+        if (expect(screen.reverse_chars[top + 5][left + 1],
+                   "The Number popup must remember the selected row across close and reopen in one monitor session.")) return 1;
+
+        if (expect(mon.poll(0) == 0, "ASCII Number popup test: repeated-entry character failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASCII Number popup test: repeated-entry Enter failed.")) return 1;
+        if (expect(backend.read(0x0001) == 0x43 && backend.read(0x0002) == 0x00,
+                   "Reopened Number popup must start with a fresh ASCII edit buffer at the new address.")) return 1;
+
+        if (expect(mon.poll(0) == 0, "ASCII Number popup test: popup close failed.")) return 1;
+        if (expect(mon.poll(0) == 1, "ASCII Number popup test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char line[32];
+        const int keys[] = { 'N', KEY_DOWN, KEY_DOWN, KEY_DOWN, KEY_DOWN, 'A', 'B', KEY_RETURN, KEY_BREAK, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+
+        if (expect(mon.poll(0) == 0, "Screen Number popup test: open failed.")) return 1;
+        for (int i = 0; i < 4; i++) {
+            if (expect(mon.poll(0) == 0, "Screen Number popup test: row navigation failed.")) return 1;
+        }
+        if (expect(mon.poll(0) == 0, "Screen Number popup test: first character failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Screen Number popup test: second character failed.")) return 1;
+        get_popup_line(screen, 5, line, sizeof(line));
+        if (expect(strstr(line, "Screen   AB") == line,
+                   "Screen Number popup preview must show screen characters without redundant hex suffixes.")) return 1;
+        if (expect(strchr(line, '(') == NULL,
+                   "Screen Number popup must not append per-byte hex annotations.")) return 1;
+        if (expect(mon.poll(0) == 0, "Screen Number popup test: Enter commit failed.")) return 1;
+        if (expect(backend.read(0x0000) == 0x02 && backend.read(0x0001) == 0x01,
+                   "Screen WORD commit must use screen-code values written in little-endian order.")) return 1;
+
+        if (expect(mon.poll(0) == 0, "Screen Number popup test: popup close failed.")) return 1;
+        if (expect(mon.poll(0) == 1, "Screen Number popup test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char line[32];
+        const int keys[] = { 'V', 'U', 'N', KEY_DOWN, KEY_DOWN, KEY_DOWN, KEY_DOWN, 'A', KEY_RETURN, KEY_BREAK, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+
+        if (expect(mon.poll(0) == 0, "L/U Screen Number popup test: Screen view switch failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "L/U Screen Number popup test: charset toggle failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "L/U Screen Number popup test: popup open failed.")) return 1;
+        for (int i = 0; i < 4; i++) {
+            if (expect(mon.poll(0) == 0, "L/U Screen Number popup test: row navigation failed.")) return 1;
+        }
+        if (expect(mon.poll(0) == 0, "L/U Screen Number popup test: character entry failed.")) return 1;
+        get_popup_line(screen, 5, line, sizeof(line));
+        if (expect(strstr(line, "Screen   A") == line,
+                   "Screen Number popup preview must use the active Screen charset display.")) return 1;
+        if (expect(mon.poll(0) == 0, "L/U Screen Number popup test: commit failed.")) return 1;
+        if (expect(backend.read(0x0000) == 0x41,
+                   "Screen Number popup input must use the active Screen charset input mapping.")) return 1;
+        if (expect(mon.poll(0) == 0, "L/U Screen Number popup test: popup close failed.")) return 1;
+        if (expect(mon.poll(0) == 1, "L/U Screen Number popup test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    return 0;
+}
+
+static int test_number_popup_placement_and_overlay_redraw(void)
+{
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        int cursor_x = 0;
+        int cursor_y = 0;
+        int left = 0;
+        int top = 0;
+        int right = 0;
+        int bottom = 0;
+        const int keys[] = { 'N', '1', KEY_DOWN, KEY_DELETE, KEY_BREAK, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+
+        if (expect(find_highlighted_cell(screen, &cursor_x, &cursor_y),
+                   "Placement test: initial cursor highlight not found.")) return 1;
+        if (expect(mon.poll(0) == 0, "Placement test: open failed.")) return 1;
+        if (expect(find_popup_rect(screen, &left, &top, &right, &bottom),
+                   "Placement test: framed popup not found.")) return 1;
+        if (expect(left == cursor_x + 1 && top == cursor_y + 1,
+                   "Top-left Number popup must be diagonally down-right from the invoking cursor when space allows.")) return 1;
+        if (expect(!(cursor_x >= left && cursor_x <= right && cursor_y >= top && cursor_y <= bottom),
+                   "Number popup must not cover the invoking cursor cell.")) return 1;
+        if (expect(screen.reverse_chars[cursor_y][cursor_x],
+                   "The invoking cursor cell must remain visible after opening the Number popup.")) return 1;
+
+        screen.reset_write_counts();
+        if (expect(mon.poll(0) == 0, "Placement test: typing should keep popup open.")) return 1;
+        if (expect(screen.count_writes_outside_rect(left, top, right, bottom) == 0,
+                   "Typing inside the Number popup must not redraw uncovered monitor cells.")) return 1;
+        screen.reset_write_counts();
+        if (expect(mon.poll(0) == 0, "Placement test: row navigation should keep popup open.")) return 1;
+        if (expect(screen.count_writes_outside_rect(left, top, right, bottom) == 0,
+                   "Popup row navigation must not redraw uncovered monitor cells.")) return 1;
+        screen.reset_write_counts();
+        if (expect(mon.poll(0) == 0, "Placement test: delete should keep popup open.")) return 1;
+        if (expect(screen.count_writes_outside_rect(left, top, right, bottom) == 0,
+                   "Deleting inside the Number popup must not redraw uncovered monitor cells.")) return 1;
+
+        if (expect(mon.poll(0) == 0, "Placement test: popup close failed.")) return 1;
+        if (expect(mon.poll(0) == 1, "Placement test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        int cursor_x = 0;
+        int cursor_y = 0;
+        int left = 0;
+        int top = 0;
+        int right = 0;
+        int bottom = 0;
+        int keys[32];
+        int n = 0;
+        keys[n++] = 'I';
+        for (int i = 0; i < 22; i++) keys[n++] = KEY_RIGHT;
+        keys[n++] = 'N';
+        keys[n++] = KEY_BREAK;
+        keys[n++] = KEY_BREAK;
+        FakeKeyboard kb(keys, n);
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Top-right placement test: ASCII view switch failed.")) return 1;
+        for (int i = 0; i < 22; i++) {
+            if (expect(mon.poll(0) == 0, "Top-right placement test: cursor movement failed.")) return 1;
+        }
+        if (expect(find_highlighted_cell(screen, &cursor_x, &cursor_y),
+                   "Top-right placement test: cursor highlight not found.")) return 1;
+        if (expect(mon.poll(0) == 0, "Top-right placement test: open failed.")) return 1;
+        if (expect(find_popup_rect(screen, &left, &top, &right, &bottom),
+                   "Top-right placement test: framed popup not found.")) return 1;
+        if (expect(top == cursor_y + 1,
+                   "Top-right Number popup must stay below the invoking cursor when space allows.")) return 1;
+        if (expect(!(cursor_x >= left && cursor_x <= right && cursor_y >= top && cursor_y <= bottom),
+                   "Top-right Number popup must not cover the invoking cursor cell.")) return 1;
+        if (expect(mon.poll(0) == 0, "Top-right placement test: popup close failed.")) return 1;
+        if (expect(mon.poll(0) == 1, "Top-right placement test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        int cursor_x = 0;
+        int cursor_y = 0;
+        int left = 0;
+        int top = 0;
+        int right = 0;
+        int bottom = 0;
+        int keys[32];
+        int n = 0;
+        for (int i = 0; i < 17; i++) keys[n++] = KEY_DOWN;
+        keys[n++] = 'N';
+        keys[n++] = KEY_BREAK;
+        keys[n++] = KEY_BREAK;
+        FakeKeyboard kb(keys, n);
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        for (int i = 0; i < 17; i++) {
+            if (expect(mon.poll(0) == 0, "Bottom-left placement test: cursor movement failed.")) return 1;
+        }
+        if (expect(find_highlighted_cell(screen, &cursor_x, &cursor_y),
+                   "Bottom-left placement test: cursor highlight not found.")) return 1;
+        if (expect(mon.poll(0) == 0, "Bottom-left placement test: open failed.")) return 1;
+        if (expect(find_popup_rect(screen, &left, &top, &right, &bottom),
+                   "Bottom-left placement test: framed popup not found.")) return 1;
+        if (expect(left == cursor_x + 1 && bottom == cursor_y - 1,
+                   "Bottom-left Number popup must be diagonally up-right from the invoking cursor when space allows.")) return 1;
+        if (expect(mon.poll(0) == 0, "Bottom-left placement test: popup close failed.")) return 1;
+        if (expect(mon.poll(0) == 1, "Bottom-left placement test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        int cursor_x = 0;
+        int cursor_y = 0;
+        int left = 0;
+        int top = 0;
+        int right = 0;
+        int bottom = 0;
+        int keys[64];
+        int n = 0;
+        keys[n++] = 'I';
+        for (int i = 0; i < 17; i++) keys[n++] = KEY_DOWN;
+        for (int i = 0; i < 22; i++) keys[n++] = KEY_RIGHT;
+        keys[n++] = 'N';
+        keys[n++] = KEY_BREAK;
+        keys[n++] = KEY_BREAK;
+        FakeKeyboard kb(keys, n);
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Bottom-right placement test: ASCII view switch failed.")) return 1;
+        for (int i = 0; i < 39; i++) {
+            if (expect(mon.poll(0) == 0, "Bottom-right placement test: cursor movement failed.")) return 1;
+        }
+        if (expect(find_highlighted_cell(screen, &cursor_x, &cursor_y),
+                   "Bottom-right placement test: cursor highlight not found.")) return 1;
+        if (expect(mon.poll(0) == 0, "Bottom-right placement test: open failed.")) return 1;
+        if (expect(find_popup_rect(screen, &left, &top, &right, &bottom),
+                   "Bottom-right placement test: framed popup not found.")) return 1;
+        if (expect(bottom == cursor_y - 1,
+                   "Bottom-right Number popup must stay above the invoking cursor when space allows.")) return 1;
+        if (expect(!(cursor_x >= left && cursor_x <= right && cursor_y >= top && cursor_y <= bottom),
+                   "Bottom-right Number popup must not cover the invoking cursor cell.")) return 1;
+        if (expect(mon.poll(0) == 0, "Bottom-right placement test: popup close failed.")) return 1;
+        if (expect(mon.poll(0) == 1, "Bottom-right placement test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        int cursor_x = 0;
+        int cursor_y = 0;
+        int left = 0;
+        int top = 0;
+        int right = 0;
+        int bottom = 0;
+        int keys[40];
+        int n = 0;
+        keys[n++] = 'I';
+        for (int i = 0; i < 8; i++) keys[n++] = KEY_DOWN;
+        for (int i = 0; i < 22; i++) keys[n++] = KEY_RIGHT;
+        keys[n++] = 'N';
+        keys[n++] = KEY_BREAK;
+        keys[n++] = KEY_BREAK;
+        FakeKeyboard kb(keys, n);
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Center placement test: ASCII view switch failed.")) return 1;
+        for (int i = 0; i < 30; i++) {
+            if (expect(mon.poll(0) == 0, "Center placement test: cursor movement failed.")) return 1;
+        }
+        if (expect(find_highlighted_cell(screen, &cursor_x, &cursor_y),
+                   "Center placement test: cursor highlight not found.")) return 1;
+        if (expect(mon.poll(0) == 0, "Center placement test: open failed.")) return 1;
+        if (expect(find_popup_rect(screen, &left, &top, &right, &bottom),
+                   "Center placement test: framed popup not found.")) return 1;
+        if (expect(!(cursor_x >= left && cursor_x <= right && cursor_y >= top && cursor_y <= bottom),
+                   "Mid-row Number popup placement must keep the invoking cursor visible.")) return 1;
+        if (expect(left > 0 && top > 2 && right < 39 && bottom < 22,
+                   "Mid-row Number popup placement must stay inside the monitor content bounds.")) return 1;
+        if (expect(mon.poll(0) == 0, "Center placement test: popup close failed.")) return 1;
+        if (expect(mon.poll(0) == 1, "Center placement test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    return 0;
+}
+
+static int test_disassembly_up_keeps_screen_row(void)
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeMemoryBackend backend;
+    int row_before = -1;
+    int row_after = -1;
+    const int keys[] = { 'A', 'J', KEY_DOWN, KEY_DOWN, KEY_UP, KEY_BREAK };
+    FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+    backend.write(0x0000, 0x4C);
+    backend.write(0x0001, 0x00);
+    backend.write(0x0002, 0xEA);
+    backend.write(0x0003, 0xEA);
+    backend.write(0x0004, 0xEA);
+
+    ui.screen = &screen;
+    ui.keyboard = &kb;
+    ui.set_prompt("0001", 1);
+    monitor_reset_saved_state();
+
+    BackendMachineMonitor mon(&ui, &backend);
+    mon.init(&screen, &kb);
+
+    if (expect(mon.poll(0) == 0, "Disassembly row test: ASM view switch failed.")) return 1;
+    if (expect(mon.poll(0) == 0, "Disassembly row test: goto failed.")) return 1;
+    if (expect(mon.poll(0) == 0, "Disassembly row test: first step down failed.")) return 1;
+    if (expect(mon.poll(0) == 0, "Disassembly row test: second step down failed.")) return 1;
+    if (expect(find_highlighted_cell(screen, NULL, &row_before),
+               "Disassembly row test: highlighted current line not found before stepping up.")) return 1;
+    if (expect(row_before > 4,
+               "Disassembly row test must place the cursor away from the top row before stepping up.")) return 1;
+    if (expect(mon.poll(0) == 0, "Disassembly row test: step up failed.")) return 1;
+    if (expect(find_highlighted_cell(screen, NULL, &row_after),
+               "Disassembly row test: highlighted current line not found after stepping up.")) return 1;
+    if (expect(row_after == row_before - 1,
+               "Stepping upward in Assembly view must move the highlighted line up by one row without snapping it to the top.")) return 1;
+    if (expect(mon.poll(0) == 1, "Disassembly row test: exit failed.")) return 1;
+    mon.deinit();
+    return 0;
+}
+
+static int test_prompt_cancel_and_empty_clipboard(void)
+{
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        const int keys[] = { 'F', KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("", 0);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Prompt cancel test: fill command should stay in the monitor.")) return 1;
+        if (expect(backend.read(0x0000) == 0x00 && ui.popup_count == 0,
+                   "Canceled prompt must not mutate memory or raise an error popup.")) return 1;
+        if (expect(mon.poll(0) == 1, "Prompt cancel test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        const int keys[] = { KEY_CTRL_V, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Empty clipboard test: paste should not exit.")) return 1;
+        if (expect(ui.popup_count == 1 && strcmp(ui.last_popup, "?CLIP") == 0,
+                   "Pasting with an empty clipboard must raise ?CLIP.")) return 1;
+        if (expect(mon.poll(0) == 1, "Empty clipboard test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    return 0;
+}
+
+static int test_load_save_and_goto_command_flow(void)
+{
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        const int keys[] = { 'L', KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("PRG,0001,2", 1);
+        monitor_reset_saved_state();
+        monitor_io::reset_fake_monitor_io();
+        monitor_io::g_monitor_io.pick_file_result = true;
+        strcpy(monitor_io::g_monitor_io.pick_path, "/tmp");
+        strcpy(monitor_io::g_monitor_io.pick_name, "demo.prg");
+        monitor_io::g_monitor_io.load_data[0] = 0x01;
+        monitor_io::g_monitor_io.load_data[1] = 0x08;
+        monitor_io::g_monitor_io.load_data[2] = 0xAA;
+        monitor_io::g_monitor_io.load_data[3] = 0xBB;
+        monitor_io::g_monitor_io.load_data[4] = 0xCC;
+        monitor_io::g_monitor_io.load_size = 5;
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "LOAD command flow test failed.")) return 1;
+        if (expect(monitor_io::g_monitor_io.load_called && monitor_io::g_monitor_io.pick_file_calls == 1 &&
+                   strcmp(monitor_io::g_monitor_io.load_path, "/tmp") == 0 &&
+                   strcmp(monitor_io::g_monitor_io.load_name, "demo.prg") == 0,
+                   "LOAD command must invoke the monitor I/O shim with the picked file.")) return 1;
+        if (expect(backend.read(0x0801) == 0xBB && backend.read(0x0802) == 0xCC,
+                   "LOAD command must honour PRG header, file offset, and length.")) return 1;
+        if (expect(ui.popup_count == 1 && strcmp(ui.last_popup, "LOAD demo.prg\n$0801-$0802 (2 bytes)") == 0,
+                   "LOAD command must show a two-line confirmation popup with the effective byte range.")) return 1;
+        if (expect(mon.poll(0) == 1, "LOAD command flow test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        const int keys[] = { 'S', KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        backend.write(0x0801, 0xA9);
+        backend.write(0x0802, 0x42);
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("0801-0802", 1);
+        monitor_reset_saved_state();
+        monitor_io::reset_fake_monitor_io();
+        monitor_io::g_monitor_io.pick_file_result = true;
+        strcpy(monitor_io::g_monitor_io.pick_path, "/tmp");
+        strcpy(monitor_io::g_monitor_io.pick_name, "save.prg");
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "SAVE command flow test failed.")) return 1;
+        if (expect(monitor_io::g_monitor_io.save_called && monitor_io::g_monitor_io.last_pick_save_mode,
+                   "SAVE command must invoke the monitor save shim in save-pick mode.")) return 1;
+        if (expect(monitor_io::g_monitor_io.saved_size == 4 &&
+                   monitor_io::g_monitor_io.saved_data[0] == 0x01 &&
+                   monitor_io::g_monitor_io.saved_data[1] == 0x08 &&
+                   monitor_io::g_monitor_io.saved_data[2] == 0xA9 &&
+                   monitor_io::g_monitor_io.saved_data[3] == 0x42,
+                   "SAVE command must emit a PRG header followed by the selected bytes.")) return 1;
+        if (expect(ui.popup_count == 1 && strcmp(ui.last_popup, "SAVE save.prg\n$0801-$0802 (2 bytes)") == 0,
+                   "SAVE command must show a two-line confirmation popup with the saved range.")) return 1;
+        if (expect(mon.poll(0) == 1, "SAVE command flow test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        const int keys[] = { 'S', KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        backend.write(0x0801, 0xA9);
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("0801-0801", 1);
+        monitor_reset_saved_state();
+        monitor_io::reset_fake_monitor_io();
+        monitor_io::g_monitor_io.pick_file_result = true;
+        strcpy(monitor_io::g_monitor_io.pick_path, "/tmp");
+        strcpy(monitor_io::g_monitor_io.pick_name, "THIS-IS-A-VERY-LONG-FILENAME-FOR-CONFIRMATION-TESTING.PRG");
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Long confirmation filename test failed.")) return 1;
+        if (expect(ui.popup_count == 1,
+                   "Long confirmation filename test must produce one confirmation popup.")) return 1;
+        if (expect(popup_longest_line(ui.last_popup) <= 38,
+                   "Every line in the LOAD/SAVE confirmation popup must stay within 38 characters.")) return 1;
+        if (expect(strstr(ui.last_popup, "SAVE ") == ui.last_popup,
+                   "Long confirmation filename test must still label the operation on the first line.")) return 1;
+        if (expect(strstr(ui.last_popup, "\n$0801-$0801 (1 bytes)") != NULL,
+                   "Long confirmation filename test must keep the effective range on the second line.")) return 1;
+        if (expect(mon.poll(0) == 1, "Long confirmation filename test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        const int keys[] = { 'G' };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("C123", 1);
+        monitor_reset_saved_state();
+        monitor_io::reset_fake_monitor_io();
+
+        BackendMachineMonitor monitor(&ui, &backend);
+        ui.run_machine_monitor(&backend);
+        if (expect(monitor_io::g_monitor_io.jump_called && monitor_io::g_monitor_io.jump_address == 0xC123,
+                   "Go command must dispatch the requested jump address.")) return 1;
+    }
+
+    return 0;
+}
+
+static int test_hex_single_nibble_commits_on_navigation(void)
+{
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        const int keys[] = { 'E', 'E', KEY_RIGHT, KEY_BREAK, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        monitor_reset_saved_state();
+        backend.write(0x0000, 0xFF);
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Hex nibble cursor-right test: enter edit mode failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Hex nibble cursor-right test: typing nibble failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Hex nibble cursor-right test: moving right failed.")) return 1;
+        if (expect(backend.read(0x0000) == 0x0E,
+                   "Leaving a half-typed hex nibble with cursor-right must commit it as 0x0N.")) return 1;
+        if (expect(mon.poll(0) == 0, "Hex nibble cursor-right test: edit-mode exit failed.")) return 1;
+        if (expect(mon.poll(0) == 1, "Hex nibble cursor-right test: monitor exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        const int keys[] = { 'E', 'E', KEY_PAGEDOWN, KEY_BREAK, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        monitor_reset_saved_state();
+        backend.write(0x0000, 0xFF);
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Hex nibble page-move test: enter edit mode failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Hex nibble page-move test: typing nibble failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Hex nibble page-move test: page down failed.")) return 1;
+        if (expect(backend.read(0x0000) == 0x0E,
+                   "Leaving a half-typed hex nibble with page movement must commit it as 0x0N.")) return 1;
+        if (expect(mon.poll(0) == 0, "Hex nibble page-move test: edit-mode exit failed.")) return 1;
+        if (expect(mon.poll(0) == 1, "Hex nibble page-move test: monitor exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    return 0;
+}
+
+static int test_header_invariants_and_parity(void)
+{
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeBankedMemoryBackend backend;
+        char header[39];
+        const int keys[] = { 'E', 'R', 'Z', KEY_BREAK, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Header test: edit mode entry failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Header test: range mode entry failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Header test: freeze toggle failed.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "Edit Mode") == NULL,
+                   "Header must show Edit, not Edit Mode.")) return 1;
+        if (expect(strncmp(header + 34, "EDIT", 4) == 0,
+                   "Edit indicator must be fixed at top-right and uppercase.")) return 1;
+        if (expect(screen.colors[3][35] == 1 && screen.colors[3][36] == 1 &&
+                   screen.colors[3][37] == 1 && screen.colors[3][38] == 1,
+                   "EDIT must use the shared UI accent colour used for the help/title text.")) return 1;
+        if (expect(strncmp(header + 19, "Range", 5) == 0,
+                   "Range indicator must use its fixed slot.")) return 1;
+        if (expect(strncmp(header + 25, "Frz", 3) == 0,
+                   "Freeze indicator must use its compact fixed slot.")) return 1;
+        if (expect(strstr(header, "W=") == NULL,
+                   "Header must not display binary width.")) return 1;
+        if (expect(mon.poll(0) == 0, "Header test: RUN/STOP should leave edit mode first.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "EDIT") == NULL,
+                   "Leaving edit mode must clear the far-right EDIT indicator area.")) return 1;
+        if (expect(mon.poll(0) == 1, "Header test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui_a;
+        TestUserInterface ui_b;
+        CaptureScreen screen_a;
+        CaptureScreen screen_b;
+        FakeMemoryBackend backend_a;
+        FakeMemoryBackend backend_b;
+        const int keys_a[] = { 'B', KEY_RIGHT, KEY_RIGHT, 'E', '1' };
+        const int keys_b[] = { 'B', KEY_RIGHT, KEY_RIGHT, 'E', '1' };
+        FakeKeyboard kb_a(keys_a, sizeof(keys_a) / sizeof(keys_a[0]));
+        FakeKeyboard kb_b(keys_b, sizeof(keys_b) / sizeof(keys_b[0]));
+        for (int i = 0; i < 16; i++) {
+            backend_a.write((uint16_t)i, (uint8_t)(0x10 + i));
+            backend_b.write((uint16_t)i, (uint8_t)(0x10 + i));
+        }
+
+        ui_a.screen = &screen_a;
+        ui_a.keyboard = &kb_a;
+        ui_b.screen = &screen_b;
+        ui_b.keyboard = &kb_b;
+        monitor_reset_saved_state();
+        BackendMachineMonitor mon_a(&ui_a, &backend_a);
+        mon_a.init(&screen_a, &kb_a);
+        for (int i = 0; i < (int)(sizeof(keys_a) / sizeof(keys_a[0])); i++) {
+            if (expect(mon_a.poll(0) == 0, "Parity render A command failed.")) return 1;
+        }
+
+        monitor_reset_saved_state();
+        BackendMachineMonitor mon_b(&ui_b, &backend_b);
+        mon_b.init(&screen_b, &kb_b);
+        for (int i = 0; i < (int)(sizeof(keys_b) / sizeof(keys_b[0])); i++) {
+            if (expect(mon_b.poll(0) == 0, "Parity render B command failed.")) return 1;
+        }
+        if (expect_screens_equal(screen_a, screen_b,
+                                 "Two monitor frontends using the shared renderer must produce byte-identical screens.")) return 1;
+        mon_a.deinit();
+        mon_b.deinit();
+    }
+
+    return 0;
+}
+
+static int test_poll_mode_refreshes_visible_ram(void)
+{
+    struct FakeNtscMemoryBackend : public FakeMemoryBackend {
+        virtual uint8_t monitor_poll_hz(void) const { return 60; }
+    };
+
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeMemoryBackend backend;
+    char header[39];
+    char line[9];
+    const int keys[] = { 'P' };
+    FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+    ui.screen = &screen;
+    ui.keyboard = &kb;
+    monitor_reset_saved_state();
+    set_fake_ms_timer(0);
+    backend.write(0x0000, 0x11);
+
+    BackendMachineMonitor mon(&ui, &backend);
+    mon.init(&screen, &kb);
+    if (expect(mon.poll(0) == 0, "Poll mode test: P toggle failed.")) return 1;
+
+    screen.get_slice(1, 3, 38, header);
+    if (expect(strncmp(header + 29, "Poll", 4) == 0,
+               "Poll indicator must appear in the top-right flag area.")) return 1;
+
+    screen.get_slice(1, 4, 8, line);
+    if (expect(strncmp(line, "0000 11", 7) == 0,
+               "Poll mode test setup must render the original byte.")) return 1;
+
+    backend.write(0x0000, 0x22);
+    set_fake_ms_timer(19);
+    if (expect(mon.poll(0) == 0, "Poll mode test: early idle poll failed.")) return 1;
+    screen.get_slice(1, 4, 8, line);
+    if (expect(strncmp(line, "0000 11", 7) == 0,
+               "Poll mode must not refresh before the PAL frame interval elapses.")) return 1;
+
+    advance_fake_ms_timer(1);
+    if (expect(mon.poll(0) == 0, "Poll mode test: timed idle poll failed.")) return 1;
+    screen.get_slice(1, 4, 8, line);
+    if (expect(strncmp(line, "0000 22", 7) == 0,
+               "Poll mode must refresh the displayed RAM at PAL frame rate.")) return 1;
+
+    mon.deinit();
+
+    {
+        TestUserInterface ntsc_ui;
+        CaptureScreen ntsc_screen;
+        FakeNtscMemoryBackend ntsc_backend;
+        const int ntsc_keys[] = { 'P' };
+        FakeKeyboard ntsc_kb(ntsc_keys, sizeof(ntsc_keys) / sizeof(ntsc_keys[0]));
+
+        ntsc_ui.screen = &ntsc_screen;
+        ntsc_ui.keyboard = &ntsc_kb;
+        monitor_reset_saved_state();
+        set_fake_ms_timer(0);
+        ntsc_backend.write(0x0000, 0x11);
+
+        BackendMachineMonitor ntsc_mon(&ntsc_ui, &ntsc_backend);
+        ntsc_mon.init(&ntsc_screen, &ntsc_kb);
+        if (expect(ntsc_mon.poll(0) == 0, "NTSC poll mode test: P toggle failed.")) return 1;
+
+        ntsc_backend.write(0x0000, 0x22);
+        set_fake_ms_timer(15);
+        if (expect(ntsc_mon.poll(0) == 0, "NTSC poll mode test: early first poll failed.")) return 1;
+        ntsc_screen.get_slice(1, 4, 8, line);
+        if (expect(strncmp(line, "0000 11", 7) == 0,
+                   "NTSC poll mode must not refresh before the first 16 ms frame slice.")) return 1;
+
+        advance_fake_ms_timer(1);
+        if (expect(ntsc_mon.poll(0) == 0, "NTSC poll mode test: first frame poll failed.")) return 1;
+        ntsc_screen.get_slice(1, 4, 8, line);
+        if (expect(strncmp(line, "0000 22", 7) == 0,
+                   "NTSC poll mode must refresh on the first 16 ms frame slice.")) return 1;
+
+        ntsc_backend.write(0x0000, 0x33);
+        set_fake_ms_timer(32);
+        if (expect(ntsc_mon.poll(0) == 0, "NTSC poll mode test: early second poll failed.")) return 1;
+        ntsc_screen.get_slice(1, 4, 8, line);
+        if (expect(strncmp(line, "0000 22", 7) == 0,
+                   "NTSC poll mode must carry the 60 Hz fractional frame interval.")) return 1;
+
+        advance_fake_ms_timer(1);
+        if (expect(ntsc_mon.poll(0) == 0, "NTSC poll mode test: second frame poll failed.")) return 1;
+        ntsc_screen.get_slice(1, 4, 8, line);
+        if (expect(strncmp(line, "0000 33", 7) == 0,
+                   "NTSC poll mode must average to 60 Hz with 16/17 ms frame slices.")) return 1;
+        ntsc_mon.deinit();
+    }
+    return 0;
+}
+
+static int test_edit_indicator_layout_across_views(void)
+{
+    static const int hex_keys[] = { 'E' };
+    static const int asm_keys[] = { 'A', 'E' };
+    static const int asc_keys[] = { 'I', 'E' };
+    static const int scr_keys[] = { 'V', 'E' };
+    static const int bin_keys[] = { 'B', 'E' };
+    struct ViewCase {
+        const int *keys;
+        int key_count;
+    } cases[] = {
+        { hex_keys, 1 },
+        { asm_keys, 2 },
+        { asc_keys, 2 },
+        { scr_keys, 2 },
+        { bin_keys, 2 },
+    };
+
+    for (unsigned int i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char header[39];
+        FakeKeyboard kb(cases[i].keys, cases[i].key_count);
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        for (int step = 0; step < cases[i].key_count; step++) {
+            if (expect(mon.poll(0) == 0, "Edit indicator cross-view test: command sequence failed.")) return 1;
+        }
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strncmp(header + 34, "EDIT", 4) == 0,
+                   "EDIT must remain far-right aligned in every edit-capable view.")) return 1;
+        if (expect(screen.colors[3][35] == 1 && screen.colors[3][36] == 1 &&
+                   screen.colors[3][37] == 1 && screen.colors[3][38] == 1,
+                   "EDIT must keep the shared UI accent colour in every edit-capable view.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeBankedMemoryBackend backend;
+        char header[39];
+        const int keys[] = { 'A', 'U', 'Z', 'P', 'E' };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        for (int step = 0; step < (int)(sizeof(keys) / sizeof(keys[0])); step++) {
+            if (expect(mon.poll(0) == 0, "Edit indicator layout test: ASM/freeze sequence failed.")) return 1;
+        }
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strncmp(header + 19, "Undoc", 5) == 0,
+                   "Undoc must remain visible to the left of Poll and EDIT.")) return 1;
+        if (expect(strncmp(header + 25, "Frz", 3) == 0,
+                   "Frz must remain visible to the left of Poll and EDIT.")) return 1;
+        if (expect(strncmp(header + 29, "Poll", 4) == 0,
+                   "Poll must appear immediately to the left of EDIT.")) return 1;
+        if (expect(strncmp(header + 34, "EDIT", 4) == 0,
+                   "EDIT must remain fixed at the far right when Undoc, Freeze, and Poll are active.")) return 1;
+        mon.deinit();
+    }
+
+    return 0;
+}
+
+static int test_poll_mode_disabled_on_full_refresh_screen(void)
+{
+    struct FullRefreshCaptureScreen : public CaptureScreen {
+        virtual bool prefers_full_refresh(void) { return true; }
+    };
+
+    TestUserInterface ui;
+    FullRefreshCaptureScreen screen;
+    FakeMemoryBackend backend;
+    char header[39];
+    const int keys[] = { 'P', KEY_BREAK };
+    FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+    ui.screen = &screen;
+    ui.keyboard = &kb;
+    monitor_reset_saved_state();
+
+    BackendMachineMonitor mon(&ui, &backend);
+    mon.init(&screen, &kb);
+    if (expect(mon.poll(0) == 0, "Telnet poll-mode guard: P command failed.")) return 1;
+    if (expect(ui.popup_count == 1,
+               "Poll mode on full-refresh screens must raise one warning popup.")) return 1;
+    if (expect(strstr(ui.last_popup, "TELNET") != NULL,
+               "Poll mode warning must mention the telnet restriction.")) return 1;
+    screen.get_slice(1, 3, 38, header);
+    if (expect(strncmp(header + 29, "Poll", 4) != 0,
+               "Poll indicator must stay disabled on full-refresh screens.")) return 1;
+    if (expect(mon.poll(0) == 1, "Telnet poll-mode guard: exit failed.")) return 1;
+    mon.deinit();
+    return 0;
+}
+
+
+static int test_load_save_param_parsers(void)
+{
+    bool use_prg = false;
+    uint16_t start = 0, off16 = 0, end = 0;
+    bool len_auto = false;
+    uint32_t length = 0;
+    uint32_t effective = 0;
+
+    // LOAD: standard "RETURN, RETURN" path: PRG keyword + AUTO length.
+    if (expect(monitor_parse_load_params("PRG,0000,AUTO", &use_prg, &start, &off16, &len_auto, &length) == MONITOR_OK,
+               "LOAD parser failed for PRG,0000,AUTO.")) return 1;
+    if (expect(use_prg && off16 == 0 && len_auto, "LOAD PRG defaults parsed wrong.")) return 1;
+
+    // LOAD: explicit start address & explicit length.
+    if (expect(monitor_parse_load_params("0801,0002,1FFE", &use_prg, &start, &off16, &len_auto, &length) == MONITOR_OK,
+               "LOAD parser failed for explicit form.")) return 1;
+    if (expect(!use_prg && start == 0x0801 && off16 == 0x0002 && !len_auto && length == 0x1FFE,
+               "LOAD explicit parser values wrong.")) return 1;
+
+    // LOAD: 5-digit length up to 0x10000 inclusive is permitted.
+    if (expect(monitor_parse_load_params("C000,0000,10000", &use_prg, &start, &off16, &len_auto, &length) == MONITOR_OK,
+               "LOAD parser must accept 64K length.")) return 1;
+    if (expect(length == 0x10000, "LOAD 64K length parsed wrong.")) return 1;
+
+    // LOAD: zero length must be rejected.
+    if (expect(monitor_parse_load_params("0801,0000,0", &use_prg, &start, &off16, &len_auto, &length) == MONITOR_VALUE,
+               "LOAD parser must reject zero length.")) return 1;
+
+    // LOAD: garbage in fields must be rejected.
+    if (expect(monitor_parse_load_params("XYZ,00,AUTO", &use_prg, &start, &off16, &len_auto, &length) != MONITOR_OK,
+               "LOAD parser must reject garbage.")) return 1;
+
+    // LOAD: empty input -> all defaults (PRG, offset 0, AUTO length).
+    use_prg = false; start = 0xDEAD; off16 = 0xDEAD; len_auto = false; length = 0xDEADBEEF;
+    if (expect(monitor_parse_load_params("", &use_prg, &start, &off16, &len_auto, &length) == MONITOR_OK,
+               "LOAD parser must accept empty input.")) return 1;
+    if (expect(use_prg && off16 == 0 && len_auto, "LOAD empty defaults wrong.")) return 1;
+
+    // LOAD: PRG only -> defaults for offset and length.
+    if (expect(monitor_parse_load_params("PRG", &use_prg, &start, &off16, &len_auto, &length) == MONITOR_OK,
+               "LOAD parser must accept 'PRG' alone.")) return 1;
+    if (expect(use_prg && off16 == 0 && len_auto, "LOAD PRG-only defaults wrong.")) return 1;
+
+    // LOAD: address only -> offset 0, length AUTO.
+    if (expect(monitor_parse_load_params("0801", &use_prg, &start, &off16, &len_auto, &length) == MONITOR_OK,
+               "LOAD parser must accept address alone.")) return 1;
+    if (expect(!use_prg && start == 0x0801 && off16 == 0 && len_auto, "LOAD addr-only defaults wrong.")) return 1;
+
+    // LOAD: address + offset, length defaults to AUTO.
+    if (expect(monitor_parse_load_params("0801,1000", &use_prg, &start, &off16, &len_auto, &length) == MONITOR_OK,
+               "LOAD parser must accept addr,off form.")) return 1;
+    if (expect(!use_prg && start == 0x0801 && off16 == 0x1000 && len_auto, "LOAD addr,off defaults wrong.")) return 1;
+
+    // LOAD: empty fields between commas -> defaults take over.
+    if (expect(monitor_parse_load_params(",,0010", &use_prg, &start, &off16, &len_auto, &length) == MONITOR_OK,
+               "LOAD parser must accept ,,len form.")) return 1;
+    if (expect(use_prg && off16 == 0 && !len_auto && length == 0x10, "LOAD ,,len defaults wrong.")) return 1;
+
+    // SAVE: canonical form.
+    if (expect(monitor_parse_save_params("0800-9FFF", &start, &end) == MONITOR_OK,
+               "SAVE parser failed for 0800-9FFF.")) return 1;
+    if (expect(start == 0x0800 && end == 0x9FFF, "SAVE parser values wrong.")) return 1;
+
+    // SAVE: inverted range must be rejected.
+    if (expect(monitor_parse_save_params("9FFF-0800", &start, &end) == MONITOR_RANGE,
+               "SAVE parser must reject inverted range.")) return 1;
+
+    // Validate load size: AUTO, file fits.
+    if (expect(monitor_validate_load_size(100, 0, true, 0, &effective) == MONITOR_OK && effective == 100,
+               "Validate AUTO small file failed.")) return 1;
+
+    // Validate load size: AUTO, >64K.
+    if (expect(monitor_validate_load_size(0x20000, 0, true, 0, &effective) == MONITOR_RANGE,
+               "Validate must reject AUTO over 64K.")) return 1;
+
+    // Validate load size: AUTO, partial window keeps within 64K.
+    if (expect(monitor_validate_load_size(0x20000, 0x10000, true, 0, &effective) == MONITOR_OK && effective == 0x10000,
+               "Validate AUTO partial window failed.")) return 1;
+
+    // Validate load size: explicit length over 64K rejected.
+    if (expect(monitor_validate_load_size(0x30000, 0, false, 0x10001, &effective) == MONITOR_RANGE,
+               "Validate must reject explicit length over 64K.")) return 1;
+
+    // Validate load size: offset past end rejected.
+    if (expect(monitor_validate_load_size(100, 100, true, 0, &effective) == MONITOR_RANGE,
+               "Validate must reject offset==filesize.")) return 1;
+
+    // Validate load size: requested length larger than what's left in the file.
+    if (expect(monitor_validate_load_size(100, 50, false, 100, &effective) == MONITOR_RANGE,
+               "Validate must reject length beyond EOF.")) return 1;
+
+    return 0;
+}
+
+extern int g_set_screen_title_call_count;
+
+// Regression: pressing 'W' in fixed-width views, 'Z' when freeze is unavailable,
+// and 'U' outside ASM view must show a bounded warning popup, but the
+// post-popup redraw must NOT call UserInterface::set_screen_title(). That
+// helper repaints the screen chrome (including a horizontal-line glyph row
+// just below the monitor) and would clobber the application info row,
+// producing the reported "row of horizontal lines" symptom.
+static int test_warning_popups_preserve_status_row(void)
+{
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        const int keys[] = { 'I', 'W', KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.popup_count = 0;
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        g_set_screen_title_call_count = 0;
+        if (expect(mon.poll(0) == 0, "ASCII view switch before W warning test failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "W in ASCII view should not exit the monitor.")) return 1;
+        if (expect(ui.popup_count == 1, "W outside Memory/Binary view must raise exactly one warning popup.")) return 1;
+        if (expect(strstr(ui.last_popup, "MEMORY") != NULL && strstr(ui.last_popup, "BINARY") != NULL,
+               "W warning must mention the MEMORY/BINARY view requirement.")) return 1;
+        if (expect(g_set_screen_title_call_count == 0,
+                   "W warning popup must not trigger set_screen_title (would erase the row below the monitor with horizontal lines).")) return 1;
+        mon.poll(0);
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeFreezeControlBackend backend(false);
+        const int keys[] = { 'Z', KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.popup_count = 0;
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        g_set_screen_title_call_count = 0;
+        if (expect(mon.poll(0) == 0, "Z outside overlay mode should not exit.")) return 1;
+        if (expect(ui.popup_count == 1, "Z outside overlay mode must raise exactly one warning popup.")) return 1;
+        if (expect(strstr(ui.last_popup, "FREEZE") != NULL && strstr(ui.last_popup, "OVERLAY") != NULL,
+                   "Z warning must explain that freeze is only available in overlay mode.")) return 1;
+        if (expect(backend.set_frozen_calls == 0 && !backend.frozen,
+                   "Invalid-context Z must not change freeze state or call set_frozen.")) return 1;
+        if (expect(g_set_screen_title_call_count == 0,
+                   "Z warning popup must not trigger set_screen_title.")) return 1;
+        mon.poll(0);
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeFreezeControlBackend backend(true);
+        const int keys[] = { 'Z', KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.popup_count = 0;
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Z in overlay mode should not exit.")) return 1;
+        if (expect(ui.popup_count == 0, "Z in overlay mode must not raise a warning popup.")) return 1;
+        if (expect(backend.set_frozen_calls == 1 && backend.frozen,
+                   "Z in overlay mode must still perform the freeze toggle.")) return 1;
+        mon.poll(0);
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        const int keys[] = { 'U', KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.popup_count = 0;
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        g_set_screen_title_call_count = 0;
+        if (expect(mon.poll(0) == 0, "U outside ASM view should not exit.")) return 1;
+        if (expect(ui.popup_count == 1, "U outside ASM view must raise exactly one warning popup.")) return 1;
+        if (expect(strcmp(ui.last_popup, "UNDOC IN ASM, CASE IN SCR") == 0,
+               "U warning must explain the Assembly undocumented-op toggle and the Screen case toggle.")) return 1;
+        if (expect(g_set_screen_title_call_count == 0,
+                   "U warning popup must not trigger set_screen_title.")) return 1;
+        mon.poll(0);
+        mon.deinit();
+    }
+
+    // Sanity: U in ASM view still toggles silently (no warning popup).
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        const int keys[] = { 'A', 'U', KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.popup_count = 0;
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "ASM view switch failed in U-in-ASM sanity test.")) return 1;
+        if (expect(mon.poll(0) == 0, "U in ASM view should toggle silently.")) return 1;
+        if (expect(ui.popup_count == 0, "U inside ASM view must not raise a warning popup.")) return 1;
+        mon.poll(0);
+        mon.deinit();
+    }
+
+    return 0;
+}
+
+static int test_asm_follow_and_return_navigation(void)
+{
+    // Memory layout:
+    //   $C000: JMP $C100   4C 00 C1
+    //   $C100: JSR $C204   20 04 C2
+    //   $C200: BNE $C204   D0 02
+    //   $C202: NOP         EA
+    //   $C204: RTS         60
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeMemoryBackend backend;
+    char header[40];
+    char status[39];
+
+    backend.write(0xC000, 0x4C); backend.write(0xC001, 0x00); backend.write(0xC002, 0xC1);
+    backend.write(0xC100, 0x20); backend.write(0xC101, 0x04); backend.write(0xC102, 0xC2);
+    backend.write(0xC200, 0xD0); backend.write(0xC201, 0x02);
+    backend.write(0xC202, 0xEA);
+    backend.write(0xC204, 0x60);
+
+    // Test 1: RETURN follows JMP.
+    {
+        const int keys[] = { 'J', 'A', KEY_RETURN };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("C000", 1);
+        monitor_reset_saved_state();
+        set_fake_ms_timer(0);
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Follow JMP: J goto failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Follow JMP: A view switch failed.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "MONITOR ASM $C000") == header,
+                   "Follow JMP: must start at $C000.")) return 1;
+        if (expect(mon.poll(0) == 0, "Follow JMP: RETURN follow failed.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "MONITOR ASM $C100") == header,
+                     "Follow JMP: RETURN must follow JMP to $C100.")) return 1;
+        screen.get_slice(1, 22, 38, status);
+        if (expect(strstr(status, "F0 JMP $C100") == status,
+                   "Follow JMP: first follow must show F0 with the target address.")) return 1;
+        if (expect(strchr(status, ':') == NULL,
+                   "Follow JMP: follow-stack status must not contain a colon.")) return 1;
+        set_fake_ms_timer(1999);
+        if (expect(mon.poll(0) == 0, "Follow JMP: status hold poll failed.")) return 1;
+        screen.get_slice(1, 22, 38, status);
+        if (expect(strstr(status, "F0 JMP $C100") == status,
+                   "Follow JMP: follow-stack status must stay visible before 2 seconds.")) return 1;
+        advance_fake_ms_timer(1);
+        if (expect(mon.poll(0) == 0, "Follow JMP: status expiry poll failed.")) return 1;
+        screen.get_slice(1, 22, 38, status);
+        if (expect(strstr(status, "CPU") == status,
+                   "Follow JMP: follow-stack status must clear after its timeout.")) return 1;
+        mon.deinit();
+    }
+
+    // Test 2: RETURN follows JSR; RETURN at the non-followable target returns.
+    {
+        const int keys[] = { 'J', 'A', KEY_RETURN, KEY_RETURN, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("C100", 1);
+        monitor_reset_saved_state();
+        set_fake_ms_timer(0);
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Follow JSR: J goto failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Follow JSR: A view switch failed.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "MONITOR ASM $C100") == header,
+                    "Follow JSR: must start at $C100.")) return 1;
+        if (expect(mon.poll(0) == 0, "Follow JSR: RETURN follow failed.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "MONITOR ASM $C204") == header,
+                     "Follow JSR: RETURN must follow JSR to $C204.")) return 1;
+        screen.get_slice(1, 22, 38, status);
+        if (expect(strstr(status, "F0 JMP $C204") == status,
+                   "Follow JSR: follow status must show F0 and the jumped-to target.")) return 1;
+        if (expect(mon.poll(0) == 0, "Follow JSR: RETURN back failed.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "MONITOR ASM $C100") == header,
+                     "Follow JSR: RETURN at RTS must return to $C100.")) return 1;
+        screen.get_slice(1, 22, 38, status);
+        if (expect(strstr(status, "F0 RET $C100") == status,
+                   "Follow JSR: return status must show F0 and the restored address.")) return 1;
+        mon.deinit();
+    }
+
+    // Test 3: RETURN at a non-followable instruction (RTS) returns to origin.
+    {
+        const int keys[] = { 'J', 'A', KEY_RETURN, KEY_RETURN, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("C200", 1);
+        monitor_reset_saved_state();
+        set_fake_ms_timer(0);
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Follow/Back: J goto failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Follow/Back: A view switch failed.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "MONITOR ASM $C200") == header,
+                    "Follow/Back: must start at $C200.")) return 1;
+        if (expect(mon.poll(0) == 0, "Follow/Back: RETURN follow BNE failed.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "MONITOR ASM $C204") == header,
+                     "Follow/Back: RETURN must follow BNE to $C204.")) return 1;
+        screen.get_slice(1, 22, 38, status);
+        if (expect(strstr(status, "F0 JMP $C204") == status,
+                   "Follow/Back: branch follow must use the follow-stack status format.")) return 1;
+        if (expect(mon.poll(0) == 0, "Follow/Back: RETURN back at RTS failed.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "MONITOR ASM $C200") == header,
+                     "Follow/Back: RETURN must return to $C200 from non-followable RTS.")) return 1;
+        screen.get_slice(1, 22, 38, status);
+        if (expect(strstr(status, "F0 RET $C200") == status,
+                   "Follow/Back: return status must use the restored address.")) return 1;
+        mon.deinit();
+    }
+
+    // Test 4: RETURN at stack bottom on a non-followable line is a no-op.
+    {
+        const int keys[] = { 'J', 'A', KEY_RETURN, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("C204", 1);
+        monitor_reset_saved_state();
+        set_fake_ms_timer(0);
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Empty stack: J goto failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Empty stack: A view switch failed.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "MONITOR ASM $C204") == header,
+                    "Empty stack: must start at $C204.")) return 1;
+        if (expect(mon.poll(0) == 0, "Empty stack: RETURN at RTS failed.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "MONITOR ASM $C204") == header,
+                    "Empty stack: RETURN at RTS with an empty stack must be a no-op.")) return 1;
+        if (expect(mon.poll(0) == 1, "Empty stack: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    // Test 5: RETURN outside ASM view does not consume the follow stack.
+    {
+        const int keys[] = { 'J', 'A', KEY_RETURN, 'M', KEY_RETURN, 'A', KEY_RETURN, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("C200", 1);
+        monitor_reset_saved_state();
+        set_fake_ms_timer(0);
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "HEX no-op: J goto failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "HEX no-op: A view switch failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "HEX no-op: RETURN follow failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "HEX no-op: switch to HEX failed.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "MONITOR HEX $C204") == header,
+                    "HEX no-op: must switch to HEX at the followed target.")) return 1;
+        if (expect(mon.poll(0) == 0, "HEX no-op: RETURN in HEX failed.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "MONITOR HEX") == header,
+                    "HEX no-op: RETURN outside ASM must not change view.")) return 1;
+        if (expect(mon.poll(0) == 0, "HEX no-op: switch back to ASM failed.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "MONITOR ASM $C204") == header,
+                    "HEX no-op: switching back to ASM must keep the followed target selected.")) return 1;
+        if (expect(mon.poll(0) == 0, "HEX no-op: RETURN back in ASM failed.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "MONITOR ASM $C200") == header,
+                     "HEX no-op: RETURN in ASM must still return after the HEX no-op.")) return 1;
+        screen.get_slice(1, 22, 38, status);
+        if (expect(strstr(status, "F0 RET $C200") == status,
+                   "HEX no-op: returning back in ASM must still show follow-stack status.")) return 1;
+        mon.deinit();
+    }
+
+    // Test 6: the follow stack keeps only the newest 10 entries. The chain of
+    // jumps lives at $C800 because it is code: the Assembly view reads
+    // $D000-$DFFF as live I/O registers rather than as instructions.
+    {
+        int keys[32];
+        int n = 0;
+
+        for (int i = 0; i < 11; i++) {
+            uint16_t src = (uint16_t)(0xC800 + i * 4);
+            uint16_t dst = (uint16_t)(src + 4);
+            backend.write(src, 0x4C);
+            backend.write((uint16_t)(src + 1), (uint8_t)(dst & 0xFF));
+            backend.write((uint16_t)(src + 2), (uint8_t)(dst >> 8));
+            backend.write((uint16_t)(src + 3), 0xEA);
+        }
+        backend.write(0xC82C, 0xEA);
+
+        keys[n++] = 'J';
+        keys[n++] = 'A';
+        for (int i = 0; i < 11; i++) {
+            keys[n++] = KEY_RETURN;
+        }
+        keys[n++] = KEY_RETURN;
+        for (int i = 0; i < 9; i++) {
+            keys[n++] = KEY_DOWN;
+            keys[n++] = KEY_RETURN;
+        }
+
+        FakeKeyboard kb(keys, n);
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("C800", 1);
+        monitor_reset_saved_state();
+        set_fake_ms_timer(0);
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Follow stack limit: J goto failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Follow stack limit: A view switch failed.")) return 1;
+        for (int i = 0; i < 11; i++) {
+            if (expect(mon.poll(0) == 0, "Follow stack limit: RETURN follow failed.")) return 1;
+        }
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "MONITOR ASM $C82C") == header,
+                   "Follow stack limit: the chained follows must reach the final target.")) return 1;
+        screen.get_slice(1, 22, 38, status);
+        if (expect(strstr(status, "F9 JMP $C82C") == status,
+                   "Follow stack limit: the eleventh follow must report slot F9 after discarding the oldest entry.")) return 1;
+        if (expect(mon.poll(0) == 0, "Follow stack limit: first RETURN failed.")) return 1;
+        screen.get_slice(1, 22, 38, status);
+        if (expect(strstr(status, "F9 RET $C828") == status,
+                   "Follow stack limit: the newest return entry must pop from slot F9.")) return 1;
+        for (int i = 0; i < 9; i++) {
+            if (expect(mon.poll(0) == 0, "Follow stack limit: move to non-jumpable row failed.")) return 1;
+            if (expect(mon.poll(0) == 0, "Follow stack limit: draining RETURN failed.")) return 1;
+        }
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "MONITOR ASM $C804") == header,
+                   "Follow stack limit: after ten returns the oldest discarded origin must not reappear.")) return 1;
+        screen.get_slice(1, 22, 38, status);
+        if (expect(strstr(status, "F0 RET $C804") == status,
+                   "Follow stack limit: the oldest retained entry must return from slot F0.")) return 1;
+        mon.deinit();
+    }
+
+    return 0;
+}
+
+static int test_restricted_backend_guards_platform_features(void)
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeRestrictedMemoryBackend backend;
+    const int keys[] = { 'o', 'O', 'Z', 'G', KEY_BREAK };
+    FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+    char status[39];
+    uint16_t go_addr = 0;
+
+    ui.screen = &screen;
+    ui.keyboard = &kb;
+    ui.set_prompt("C123", 1);
+    monitor_reset_saved_state();
+    monitor_io::reset_fake_monitor_io();
+
+    BackendMachineMonitor mon(&ui, &backend);
+    mon.init(&screen, &kb);
+
+    screen.get_slice(1, 22, 38, status);
+    if (expect(strstr(status, "CPU VIEW") == status && strstr(status, "CPU BANK N/A") != NULL && strstr(status, "VIC N/A") != NULL,
+               "Restricted backend status must describe the current CPU-visible map.")) return 1;
+    if (expect(backend.set_monitor_cpu_port_calls == 0,
+               "Restricted backend init must not receive a fake CPU-bank selection.")) return 1;
+
+    ui.popup_count = 0;
+    if (expect(mon.poll(0) == 0, "Restricted CPU-bank shortcut should not exit.")) return 1;
+    if (expect(ui.popup_count == 1 && strcmp(ui.last_popup, "CPU BANK UNAVAILABLE") == 0,
+               "Restricted CPU-bank shortcut must warn clearly.")) return 1;
+    if (expect(backend.set_monitor_cpu_port_calls == 0,
+               "Restricted CPU-bank shortcut must leave backend bank state unchanged.")) return 1;
+
+    if (expect(mon.poll(0) == 0, "Restricted VIC-bank shortcut should not exit.")) return 1;
+    if (expect(ui.popup_count == 2 && strcmp(ui.last_popup, "VIC BANK UNAVAILABLE") == 0,
+               "Restricted VIC-bank shortcut must warn clearly.")) return 1;
+    if (expect(backend.set_live_vic_bank_calls == 0,
+               "Restricted VIC-bank shortcut must not write DD00.")) return 1;
+
+    if (expect(mon.poll(0) == 0, "Restricted freeze shortcut should not exit.")) return 1;
+    if (expect(ui.popup_count == 3 && strcmp(ui.last_popup, "FREEZE UNAVAILABLE") == 0,
+               "Restricted freeze shortcut must warn clearly.")) return 1;
+
+    if (expect(mon.poll(0) == 1, "Restricted GO command should exit after queueing a jump.")) return 1;
+    if (expect(ui.popup_count == 3,
+               "Restricted GO command must not warn when a backend exposes CPU-view execution.")) return 1;
+    if (expect(mon.consume_pending_go(&go_addr) && go_addr == 0xC123,
+               "Restricted GO command must queue the requested jump address.")) return 1;
+    mon.deinit();
+    monitor_reset_saved_state();
+    return 0;
+}
+
+// Bug 1: invalid mnemonic text must be rejected before it mutates the opcode
+// picker's edit state. Valid prefixes/mnemonics are accepted; anything that is
+// not a prefix of (or an exact) supported mnemonic is refused without touching
+// the buffer, cursor, operand, candidate list, or memory.
+static int test_asm_edit_rejects_invalid_mnemonic(void)
+{
+    // Block A: "AD" is a valid prefix (ADC); appending "D" (-> "ADD") is not a
+    // supported mnemonic prefix and must be rejected without any visible or
+    // memory change.
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        CaptureScreen snapshot;
+        FakeMemoryBackend backend;
+        char header[19];
+        char candidate[39];
+        const int keys[] = { 'J', 'A', 'E', 'A', 'D', 'D', KEY_BREAK, KEY_BREAK, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("C000", 1);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Invalid mnemonic test: goto failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Invalid mnemonic test: ASM view switch failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Invalid mnemonic test: edit mode entry failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Invalid mnemonic test: 'A' must open the picker.")) return 1;
+        if (expect(mon.poll(0) == 0, "Invalid mnemonic test: 'D' must extend prefix to AD.")) return 1;
+        screen.get_slice(16, 4, 18, header);
+        if (expect(strstr(header, " AD_") == header,
+                   "Valid prefix AD must be accepted into the mnemonic field.")) return 1;
+        screen.get_slice(1, 5, 38, candidate);
+        if (expect(strstr(candidate, "ADC") != NULL,
+                   "Valid prefix AD must show the ADC completion candidate.")) return 1;
+
+        // Snapshot the accepted "AD" state, then feed the invalid third letter.
+        snapshot = screen;
+        if (expect(mon.poll(0) == 0, "Invalid mnemonic test: invalid 'D' must be consumed as a no-op.")) return 1;
+        if (expect_screens_equal(snapshot, screen,
+                                 "Invalid mnemonic ADD must not change the rendered edit state.")) return 1;
+        screen.get_slice(16, 4, 18, header);
+        if (expect(strstr(header, " AD_") == header,
+                   "Rejected ADD must leave the mnemonic field at AD.")) return 1;
+        if (expect(backend.read(0xC000) == 0x00,
+                   "Rejected ADD must not write memory.")) return 1;
+        mon.deinit();
+    }
+
+    // Block B: repeating "A" (-> "AA") is not a valid prefix and is rejected.
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        CaptureScreen snapshot;
+        FakeMemoryBackend backend;
+        char header[19];
+        const int keys[] = { 'J', 'A', 'E', 'A', 'A', KEY_BREAK, KEY_BREAK, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("C000", 1);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        for (int i = 0; i < 4; i++) {
+            if (expect(mon.poll(0) == 0, "AA-reject test: setup key sequence failed.")) return 1;
+        }
+        screen.get_slice(16, 4, 18, header);
+        if (expect(strstr(header, " A_") == header,
+                   "AA-reject test: first 'A' must be accepted as the prefix.")) return 1;
+        snapshot = screen;
+        if (expect(mon.poll(0) == 0, "AA-reject test: second 'A' must be consumed as a no-op.")) return 1;
+        if (expect_screens_equal(snapshot, screen,
+                                 "Repeated A (AA) must not change the rendered edit state.")) return 1;
+        screen.get_slice(16, 4, 18, header);
+        if (expect(strstr(header, " A_") == header,
+                   "Rejected AA must leave the mnemonic field at A.")) return 1;
+        mon.deinit();
+    }
+
+    // Block C: a first letter that begins no supported mnemonic (G) is rejected
+    // and never opens the picker; a following valid letter (L) still works.
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        CaptureScreen snapshot;
+        FakeMemoryBackend backend;
+        char header[19];
+        const int keys[] = { 'J', 'A', 'E', 'G', 'L', KEY_BREAK, KEY_BREAK, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("C000", 1);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Invalid first-letter test: goto failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Invalid first-letter test: ASM view switch failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Invalid first-letter test: edit mode entry failed.")) return 1;
+        snapshot = screen;
+        if (expect(mon.poll(0) == 0, "Invalid first-letter test: 'G' must be a no-op.")) return 1;
+        if (expect_screens_equal(snapshot, screen,
+                                 "Invalid first letter G must not open the picker or change the screen.")) return 1;
+        if (expect(backend.read(0xC000) == 0x00,
+                   "Invalid first letter G must not write memory.")) return 1;
+        if (expect(mon.poll(0) == 0, "Invalid first-letter test: 'L' must open the picker.")) return 1;
+        screen.get_slice(16, 4, 18, header);
+        if (expect(strstr(header, " L_") == header,
+                   "A valid first letter after a rejected one must still open the mnemonic field.")) return 1;
+        mon.deinit();
+    }
+
+    // Block D: backspace/delete still recovers after partial valid input.
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char header[19];
+        const int keys[] = { 'J', 'A', 'E', 'L', 'D', KEY_DELETE, KEY_BREAK, KEY_BREAK, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("C000", 1);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        for (int i = 0; i < 5; i++) {
+            if (expect(mon.poll(0) == 0, "Backspace recovery test: setup key sequence failed.")) return 1;
+        }
+        screen.get_slice(16, 4, 18, header);
+        if (expect(strstr(header, " LD_") == header,
+                   "Backspace recovery test: prefix must read LD before delete.")) return 1;
+        if (expect(mon.poll(0) == 0, "Backspace recovery test: delete must be accepted.")) return 1;
+        screen.get_slice(16, 4, 18, header);
+        if (expect(strstr(header, " L_") == header,
+                   "Backspace must reduce the mnemonic prefix back to L.")) return 1;
+        mon.deinit();
+    }
+
+    return 0;
+}
+
+// Bug 2: RETURN in ASM edit mode commits the current line and advances to the
+// next logical disassembly line (length-correct for 1/2/3-byte instructions),
+// and never advances on rejected/invalid input.
+static int test_asm_edit_return_advances(void)
+{
+    struct Case {
+        const char *prompt;
+        uint16_t addr;
+        uint8_t bytes[3];
+        int len;
+        const char *expect_header;
+    } cases[] = {
+        { "C000", 0xC000, { 0xEA, 0x00, 0x00 }, 1, "MONITOR ASM $C001" }, // NOP
+        { "C100", 0xC100, { 0xA9, 0x42, 0x00 }, 2, "MONITOR ASM $C102" }, // LDA #$42
+        { "C200", 0xC200, { 0xAD, 0x00, 0x10 }, 3, "MONITOR ASM $C203" }, // LDA $1000
+    };
+
+    for (int c = 0; c < (int)(sizeof(cases) / sizeof(cases[0])); c++) {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char header[39];
+        const int keys[] = { 'J', 'A', 'E', KEY_RETURN, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt(cases[c].prompt, 1);
+        for (int i = 0; i < cases[c].len; i++) {
+            backend.write((uint16_t)(cases[c].addr + i), cases[c].bytes[i]);
+        }
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Return-advance test: goto failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Return-advance test: ASM view switch failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Return-advance test: edit mode entry failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Return-advance test: RETURN must advance, not exit.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, cases[c].expect_header) == header,
+                   "RETURN in ASM edit mode must advance to the next logical instruction line.")) return 1;
+        mon.deinit();
+    }
+
+    // Invalid mnemonic input must not advance or commit: after a rejected third
+    // letter the cursor stays on the original line and memory is untouched.
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char header[39];
+        const int keys[] = { 'J', 'A', 'E', 'A', 'D', 'D', KEY_BREAK, KEY_BREAK, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("C000", 1);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        for (int i = 0; i < 6; i++) {
+            if (expect(mon.poll(0) == 0, "Return no-advance test: setup key sequence failed.")) return 1;
+        }
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "MONITOR ASM $C000") == header,
+                   "Rejected invalid mnemonic input must not advance the edit cursor.")) return 1;
+        if (expect(backend.read(0xC000) == 0x00,
+                   "Rejected invalid mnemonic input must not commit bytes.")) return 1;
+        mon.deinit();
+    }
+
+    // A typed operand that fails to assemble must not commit bytes or advance;
+    // the picker stays open so the user can correct it (LDA #999 is out of range
+    // for an immediate byte).
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char header[39];
+        const int keys[] = {
+            'J', 'A', 'E', 'L', 'D', 'A', '#', '9', '9', '9', KEY_RETURN, KEY_BREAK, KEY_BREAK, KEY_BREAK
+        };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("C000", 1);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        for (int i = 0; i < 11; i++) {
+            if (expect(mon.poll(0) == 0, "Return invalid-operand test: setup key sequence failed.")) return 1;
+        }
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "MONITOR ASM $C000") == header,
+                   "RETURN on an unassemblable typed operand must not advance the edit cursor.")) return 1;
+        if (expect(backend.read(0xC000) == 0x00,
+                   "RETURN on an unassemblable typed operand must not commit bytes.")) return 1;
+        mon.deinit();
+    }
+
+    return 0;
+}
+
+// ---------------------------------------------------------------------------
+// Back semantics: the top-left left-arrow key is the general alternative to
+// RUN/STOP, and both remove exactly one interaction layer.
+// ---------------------------------------------------------------------------
+
+static const int KEY_ARROW_LEFT = monitor_key_arrow_left;
+
+// The monitor window on the physical 40-column screen, inside its border.
+static const int MONITOR_CONTENT_WIDTH = 38;
+
+// Rows the monitor has for help on the shortest screen it runs on: the 24-row
+// telnet terminal, less the seven rows MachineMonitor::init takes for the
+// screen title, the window border, the header and the status line.
+static const int MONITOR_HELP_LINES_ON_SHORTEST_SCREEN = 24 - 7;
+
+// The three-column grid the help's command lines are laid out on: three
+// columns of 13 in the 38 usable columns, leaving the last two for the widest
+// entry to spill into. Every primary-grid row starts with a single-letter
+// key, which is what tells one of these rows apart from a BOOKMARKS/CONTROL
+// KEYS row below: those start with a key too, but a longer one.
+static const int MONITOR_HELP_COLUMN_WIDTH = 13;
+
+// BOOKMARKS and CONTROL KEYS share one grid below the primary one: a left key
+// and action, then a right key and action.
+static const int MONITOR_HELP_LOWER_KEY_COLUMN = 0;
+static const int MONITOR_HELP_LOWER_ACTION_COLUMN = 11;
+static const int MONITOR_HELP_LOWER_KEY2_COLUMN = 20;
+static const int MONITOR_HELP_LOWER_ACTION2_COLUMN = 28;
+
+// A help line that lays keys out on one of the two grids, as opposed to a
+// heading or the blank line between sections. A grid line separates its cells
+// with a run of spaces; "BOOKMARKS" and "CONTROL KEYS" have none.
+static bool monitor_help_is_grid_line(const char *text)
+{
+    return text[0] != 0 && text[0] != ' ' && strstr(text, "  ") != NULL;
+}
+
+static int expect_help_hidden(CaptureScreen &screen, const char *message)
+{
+    char line[40];
+
+    screen.get_slice(1, 3, MONITOR_CONTENT_WIDTH, line);
+    return expect(strstr(line, "HELP") != line, message);
+}
+
+// One Back key, driven through the whole monitor: help opens, the key closes
+// help and nothing else, and the monitor is still there afterwards to be left
+// with RUN/STOP.
+static int check_back_key_closes_help_only(int open_key, int back_key, const char *message)
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeMemoryBackend backend;
+    char line[40];
+    const int keys[] = { open_key, back_key, KEY_BREAK };
+    FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+    ui.screen = &screen;
+    ui.keyboard = &kb;
+    monitor_reset_saved_state();
+
+    BackendMachineMonitor mon(&ui, &backend);
+    mon.init(&screen, &kb);
+    if (expect(mon.poll(0) == 0, message)) return 1;
+    screen.get_slice(1, 3, MONITOR_CONTENT_WIDTH, line);
+    if (expect(strstr(line, "HELP") == line, message)) return 1;
+    if (expect(mon.poll(0) == 0, message)) return 1;
+    if (expect_help_hidden(screen, message)) return 1;
+    if (expect(mon.poll(0) == 1, message)) return 1;
+    mon.deinit();
+    return 0;
+}
+
+static int test_back_closes_help_without_leaving_the_monitor(void)
+{
+    // Every documented way in and out of help. '?' is both, and each of the
+    // Back keys closes help without also leaving the monitor.
+    if (check_back_key_closes_help_only('?', '?',
+            "'?' must open help and '?' must close it without leaving the monitor.")) return 1;
+    if (check_back_key_closes_help_only('?', KEY_BREAK,
+            "RUN/STOP must close help without leaving the monitor.")) return 1;
+    if (check_back_key_closes_help_only('?', KEY_ARROW_LEFT,
+            "The left-arrow key must close help without leaving the monitor.")) return 1;
+    if (check_back_key_closes_help_only(KEY_HELP, KEY_BREAK,
+            "The mapped help key must open help, which RUN/STOP then closes.")) return 1;
+    if (check_back_key_closes_help_only(KEY_HELP, '?',
+            "'?' must close help opened with the mapped help key.")) return 1;
+
+    // A command key still dismisses help and executes, which is the existing
+    // behaviour this must not disturb.
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char line[40];
+        const int keys[] = { '?', 'I', KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Help open before the command-key check failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "A command key from help must not leave the monitor.")) return 1;
+        screen.get_slice(1, 3, MONITOR_CONTENT_WIDTH, line);
+        if (expect(strstr(line, "MONITOR ASC") == line,
+                   "A command key pressed in help must dismiss help and run that command.")) return 1;
+        if (expect(mon.poll(0) == 1, "RUN/STOP must leave the monitor once help is closed.")) return 1;
+        mon.deinit();
+    }
+    return 0;
+}
+
+static int test_back_leaves_one_layer_at_a_time(void)
+{
+    // Nothing active: Back leaves the monitor.
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        const int keys[] = { KEY_ARROW_LEFT };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 1,
+                   "The left-arrow key must leave the monitor when nothing else is active.")) return 1;
+        mon.deinit();
+    }
+
+    // Hex edit mode: Back leaves edit mode, and only the next one leaves the
+    // monitor.
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char line[40];
+        const int keys[] = { 'E', KEY_ARROW_LEFT, KEY_ARROW_LEFT };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Hex edit mode did not start.")) return 1;
+        screen.get_slice(1, 3, MONITOR_CONTENT_WIDTH, line);
+        if (expect(strncmp(line + 34, "EDIT", 4) == 0, "Hex edit mode did not report EDIT.")) return 1;
+        if (expect(mon.poll(0) == 0,
+                   "The left-arrow key must leave hex edit mode without leaving the monitor.")) return 1;
+        screen.get_slice(1, 3, MONITOR_CONTENT_WIDTH, line);
+        if (expect(strncmp(line + 34, "EDIT", 4) != 0, "Hex edit mode did not end.")) return 1;
+        if (expect(mon.poll(0) == 1,
+                   "The left-arrow key must leave the monitor once edit mode has ended.")) return 1;
+        mon.deinit();
+    }
+
+    // Bookmark popup, opcode picker and hunt-result picker each close on Back
+    // and leave the monitor open.
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char line[40];
+        const int keys[] = { KEY_CTRL_B, KEY_ARROW_LEFT, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Bookmark popup did not open.")) return 1;
+        get_popup_line(screen, 0, line, sizeof(line));
+        if (expect(strstr(line, "BOOKMARKS") == line, "Bookmark popup header missing.")) return 1;
+        if (expect(mon.poll(0) == 0,
+                   "The left-arrow key must close the bookmark popup without leaving the monitor.")) return 1;
+        screen.get_slice(1, 3, MONITOR_CONTENT_WIDTH, line);
+        if (expect(strstr(line, "MONITOR HEX") == line,
+                   "Closing the bookmark popup must restore the monitor view.")) return 1;
+        if (expect(mon.poll(0) == 1, "RUN/STOP must leave the monitor after the popup closed.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char line[40];
+        const int keys[] = { 'A', 'e', 'L', KEY_ARROW_LEFT, KEY_ARROW_LEFT, KEY_ARROW_LEFT };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Assembly view did not open.")) return 1;
+        if (expect(mon.poll(0) == 0, "Assembly edit mode did not start.")) return 1;
+        if (expect(mon.poll(0) == 0, "Opcode picker did not open.")) return 1;
+        if (expect(mon.poll(0) == 0,
+                   "The left-arrow key must close the opcode picker without leaving the monitor.")) return 1;
+        if (expect(mon.poll(0) == 0,
+                   "The left-arrow key must then leave assembly edit mode.")) return 1;
+        screen.get_slice(1, 3, MONITOR_CONTENT_WIDTH, line);
+        if (expect(strncmp(line + 34, "EDIT", 4) != 0, "Assembly edit mode did not end.")) return 1;
+        if (expect(mon.poll(0) == 1, "The left-arrow key must finally leave the monitor.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char line[40];
+        const int keys[] = { 'C', KEY_ARROW_LEFT, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        backend.write(0xC100, 0x10);
+        backend.write(0xC200, 0x11);
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("C100-C103,C200", 1);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Compare result picker did not open.")) return 1;
+        if (expect(mon.poll(0) == 0,
+                   "The left-arrow key must close the result picker without leaving the monitor.")) return 1;
+        screen.get_slice(1, 3, MONITOR_CONTENT_WIDTH, line);
+        if (expect(strstr(line, "MONITOR HEX") == line,
+                   "Closing the result picker must restore the monitor view.")) return 1;
+        if (expect(mon.poll(0) == 1, "RUN/STOP must leave the monitor after the picker closed.")) return 1;
+        mon.deinit();
+    }
+    return 0;
+}
+
+static int test_back_in_number_popup_and_expression(void)
+{
+    // The expression is a layer above the popup: Back returns to the popup
+    // rather than closing both.
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char line[40];
+        const int keys[] = { 'N', '+', KEY_ARROW_LEFT, KEY_ARROW_LEFT, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Number popup did not open.")) return 1;
+        if (expect(mon.poll(0) == 0, "Number expression did not open.")) return 1;
+        get_popup_line(screen, 6, line, sizeof(line));
+        if (expect(strstr(line, "Expr=") == line, "Number expression row missing.")) return 1;
+        if (expect(mon.poll(0) == 0,
+                   "The left-arrow key must leave the expression, not the popup.")) return 1;
+        get_popup_line(screen, 6, line, sizeof(line));
+        if (expect(strstr(line, "Calc with") == line,
+                   "Leaving the expression must return to the conversion popup.")) return 1;
+        if (expect(mon.poll(0) == 0,
+                   "The left-arrow key must then close the number popup.")) return 1;
+        screen.get_slice(1, 3, MONITOR_CONTENT_WIDTH, line);
+        if (expect(strstr(line, "MONITOR HEX") == line,
+                   "Closing the number popup must restore the monitor view.")) return 1;
+        if (expect(mon.poll(0) == 1, "RUN/STOP must leave the monitor after the popup closed.")) return 1;
+        mon.deinit();
+    }
+
+    // On the ASCII and Screen rows the same key is data, exactly as it is in
+    // the ASCII and Screen views. RUN/STOP still closes the popup there.
+    {
+        struct RowCase {
+            int down_presses;
+            const char *preview;
+            const char *message;
+        } cases[] = {
+            { 3, "Hex      $60",
+              "The left-arrow key must type its character on the number ASCII row." },
+            { 4, "Hex      $1F",
+              "The left-arrow key must type its screen code on the number Screen row." },
+        };
+
+        for (unsigned int i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+            TestUserInterface ui;
+            CaptureScreen screen;
+            FakeMemoryBackend backend;
+            char line[40];
+            int keys[8];
+            int count = 0;
+
+            keys[count++] = 'N';
+            for (int step = 0; step < cases[i].down_presses; step++) {
+                keys[count++] = KEY_DOWN;
+            }
+            keys[count++] = KEY_ARROW_LEFT;
+            keys[count++] = KEY_BREAK;
+            keys[count++] = KEY_BREAK;
+            FakeKeyboard kb(keys, count);
+
+            ui.screen = &screen;
+            ui.keyboard = &kb;
+            monitor_reset_saved_state();
+
+            BackendMachineMonitor mon(&ui, &backend);
+            mon.init(&screen, &kb);
+            for (int step = 0; step < count - 2; step++) {
+                if (expect(mon.poll(0) == 0, cases[i].message)) return 1;
+            }
+            get_popup_line(screen, 1, line, sizeof(line));
+            if (expect(strstr(line, cases[i].preview) == line, cases[i].message)) return 1;
+            if (expect(mon.poll(0) == 0,
+                       "RUN/STOP must still close the number popup from a text row.")) return 1;
+            if (expect(mon.poll(0) == 1, "RUN/STOP must leave the monitor afterwards.")) return 1;
+            mon.deinit();
+        }
+    }
+    return 0;
+}
+
+static int test_back_is_data_in_ascii_and_screen_edit(void)
+{
+    struct EditCase {
+        int view_key;
+        uint8_t expected;
+        const char *message;
+    } cases[] = {
+        { 'I', 0x60, "The left-arrow key must write its ASCII byte in ASCII edit mode." },
+        { 'V', 0x1F, "The left-arrow key must write its screen code in Screen edit mode." },
+    };
+
+    for (unsigned int i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char line[40];
+        const int keys[] = { cases[i].view_key, 'E', KEY_ARROW_LEFT, KEY_BREAK, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, cases[i].message)) return 1;
+        if (expect(mon.poll(0) == 0, cases[i].message)) return 1;
+        if (expect(mon.poll(0) == 0, cases[i].message)) return 1;
+        if (expect(backend.read(0x0000) == cases[i].expected, cases[i].message)) return 1;
+        screen.get_slice(1, 3, MONITOR_CONTENT_WIDTH, line);
+        if (expect(strncmp(line + 34, "EDIT", 4) == 0,
+                   "Typing data must not leave edit mode.")) return 1;
+        if (expect(mon.poll(0) == 0, "RUN/STOP must leave edit mode.")) return 1;
+        if (expect(mon.poll(0) == 1, "RUN/STOP must then leave the monitor.")) return 1;
+        mon.deinit();
+    }
+    return 0;
+}
+
+// ---------------------------------------------------------------------------
+// Command input: an impossible character is refused before it can change the
+// field, and the descriptors stay in step with the parsers.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// A keyboard a test can hand one key to at a time, so a field can be driven
+// key by key and inspected in between.
+class SingleKeyKeyboard : public Keyboard
+{
+    int pending;
+public:
+    SingleKeyKeyboard() : pending(-1) { }
+    void push(int key) { pending = key; }
+    int getch(void) { int key = pending; pending = -1; return key; }
+};
+
+// One command prompt, built exactly as the monitor builds it: the real
+// UIStringEdit, the real policy, and the descriptor's own presentation.
+class PromptField
+{
+public:
+    CaptureScreen screen;
+    CaptureWindow window;
+    SingleKeyKeyboard keyboard;
+    UIStringEditPolicy policy;
+    char buffer[64];
+    UIStringEdit edit;
+
+    PromptField(const MonitorCommandInput &input, const char *initial)
+        : window(&screen, MONITOR_CONTENT_WIDTH),
+          edit(buffer, (int)sizeof(buffer) - 1, input.template_mode)
+    {
+        strcpy(buffer, initial);
+        policy.accepts = input.accepts;
+        policy.transform = input.transform;
+        policy.cancel_key = monitor_key_arrow_left;
+        edit.set_uppercase(input.uppercase);
+        edit.set_policy(&policy);
+        edit.init(&window, &keyboard, 0, 2, MONITOR_CONTENT_WIDTH - 2);
+        window.reset_counts();
+    }
+
+    int press(int key)
+    {
+        keyboard.push(key);
+        return edit.poll(0);
+    }
+
+    bool untouched(void) const
+    {
+        return window.move_cursor_calls == 0 && window.output_calls == 0 &&
+               window.repeat_calls == 0;
+    }
+};
+
+}
+
+static int test_command_input_rejects_impossible_characters(void)
+{
+    struct RejectCase {
+        const MonitorCommandInput *input;
+        const char *initial;   // what the prompt is opened with
+        int rejected;          // a character this command can never take
+        int accepted;          // one it can, typed straight after
+        const char *after;     // what the field holds once that one is typed
+    } cases[] = {
+        { &monitor_input_jump, "AAAA", 'Z', '8', "8" },
+        { &monitor_input_go, "AAAA", 'Q', 'C', "C" },
+        { &monitor_input_fill, "AAAA-BBBB,DD", 'G', '0', "0" },
+        { &monitor_input_transfer, "AAAA-BBBB,CCCC", '/', '1', "1" },
+        { &monitor_input_compare, "AAAA-BBBB,CCCC", '*', '2', "2" },
+        { &monitor_input_save, "0800-9FFF", 'X', '3', "3" },
+        { &monitor_input_load, "PRG,0000,AUTO", 'Z', 'P', "P" },
+        { &monitor_input_hunt, "0000-FFFF, ", 'Z', '4', "0000-FFFF, 4" },
+    };
+
+    for (unsigned int i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        PromptField field(*cases[i].input, cases[i].initial);
+
+        if (expect(field.press(cases[i].rejected) == 0,
+                   "A rejected character must leave the prompt open.")) return 1;
+        if (expect(strcmp(field.buffer, cases[i].initial) == 0,
+                   "A rejected character must not change what the field holds.")) return 1;
+        if (expect(field.untouched(),
+                   "A rejected character must not move the cursor or redraw the field.")) return 1;
+
+        if (expect(field.press(cases[i].accepted) == 0,
+                   "An accepted character must leave the prompt open.")) return 1;
+        if (expect(strcmp(field.buffer, cases[i].after) == 0,
+                   "An accepted character must reach the field.")) return 1;
+        if (expect(!field.untouched(),
+                   "An accepted character must redraw the field.")) return 1;
+    }
+
+    // The left-arrow key leaves the prompt, and does so without altering it.
+    {
+        PromptField field(monitor_input_fill, "AAAA-BBBB,DD");
+        if (expect(field.press(monitor_key_arrow_left) == -1,
+                   "The left-arrow key must cancel a command prompt.")) return 1;
+        if (expect(strcmp(field.buffer, "AAAA-BBBB,DD") == 0,
+                   "Cancelling must leave the template alone.")) return 1;
+    }
+
+    // Free-form prompts take any printable character, and still cancel on Back.
+    {
+        MonitorCommandInput free_form = { "Save as", "", 0, 0, false, false };
+        PromptField field(free_form, "");
+        if (expect(field.press('Z') == 0, "A free-form prompt must accept a letter.")) return 1;
+        if (expect(field.press('_') == 0, "A free-form prompt must accept punctuation.")) return 1;
+        if (expect(strcmp(field.buffer, "Z_") == 0,
+                   "A free-form prompt must not filter what is typed into it.")) return 1;
+    }
+    return 0;
+}
+
+static int test_command_input_accepts_partial_commands(void)
+{
+    // Everything a user must be able to be part-way through typing.
+    struct PrefixCase {
+        const MonitorCommandInput *input;
+        const char *text;
+    } accepted[] = {
+        { &monitor_input_fill, "0800-" },
+        { &monitor_input_fill, "0800-0" },
+        { &monitor_input_fill, "0800-0FFF," },
+        { &monitor_input_fill, "$0800-$0FFF,$A" },
+        { &monitor_input_fill, " 0800 - 0FFF , AA " },
+        { &monitor_input_load, "P" },
+        { &monitor_input_load, "PR" },
+        { &monitor_input_load, "PRG" },
+        { &monitor_input_load, "PRG," },
+        { &monitor_input_load, "PRG,0000," },
+        { &monitor_input_load, "PRG,0000,AUTO" },
+        { &monitor_input_load, "PRG,0000,A" },
+        { &monitor_input_load, "PRG,0000,AB" },
+        { &monitor_input_load, ",," },
+        { &monitor_input_load, ",,0010" },
+        { &monitor_input_load, "0801,0002,0010" },
+        { &monitor_input_hunt, "0000-FFFF, \"unfinished text" },
+        { &monitor_input_hunt, "0000-FFFF, \"done\"" },
+        { &monitor_input_hunt, "0000-FFFF, 41 42 43" },
+        { &monitor_input_hunt, "0000-FFFF, $41$42" },
+        { &monitor_input_jump, "$" },
+        { &monitor_input_jump, "$C000" },
+        { &monitor_input_save, "0800-9FFF" },
+    };
+
+    for (unsigned int i = 0; i < sizeof(accepted) / sizeof(accepted[0]); i++) {
+        if (expect(accepted[i].input->accepts(accepted[i].text),
+                   "A partially typed command must stay typeable.")) {
+            printf("  rejected %s: %s\n", accepted[i].input->title, accepted[i].text);
+            return 1;
+        }
+    }
+
+    struct RejectCase {
+        const MonitorCommandInput *input;
+        const char *text;
+    } rejected[] = {
+        { &monitor_input_jump, "12345" },        // a fifth hex digit
+        { &monitor_input_jump, "0800-" },        // no range in a jump
+        { &monitor_input_fill, "-" },            // the start address is required
+        { &monitor_input_fill, "0800--" },       // one separator only
+        { &monitor_input_fill, "0800-0FFF,,"},   // one value, not a list
+        { &monitor_input_fill, "0800,0FFF" },    // the range separator is '-'
+        { &monitor_input_load, "PRGX" },         // PRG is a whole keyword
+        { &monitor_input_load, "PRG,0000,AUX" }, // so is AUTO
+        { &monitor_input_load, "PRG,0000,123456" },
+        { &monitor_input_hunt, "0000-FFFF, 4Z" },
+        { &monitor_input_hunt, "0000-FFFF, \"text\" more" },
+        { &monitor_input_hunt, "0000-FFFF, 41\"" },
+        { &monitor_input_save, "0800-9FFF," },
+    };
+
+    for (unsigned int i = 0; i < sizeof(rejected) / sizeof(rejected[0]); i++) {
+        if (expect(!rejected[i].input->accepts(rejected[i].text),
+                   "An impossible command must not be typeable.")) {
+            printf("  accepted %s: %s\n", rejected[i].input->title, rejected[i].text);
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int test_command_input_agrees_with_the_parsers(void)
+{
+    // Whatever a parser accepts has to have been typeable one character at a
+    // time, or the field would have refused a key the command needs. This is
+    // the property that keeps the descriptors and the parsers in step.
+    struct ParserCase {
+        const MonitorCommandInput *input;
+        const char *text;
+    } cases[] = {
+        { &monitor_input_jump, "C000" },
+        { &monitor_input_jump, "$C000" },
+        { &monitor_input_jump, "8" },
+        { &monitor_input_fill, "0800-0FFF,AA" },
+        { &monitor_input_fill, "$0800-$0FFF,$AA" },
+        { &monitor_input_fill, "0800 - 0FFF , AA" },
+        { &monitor_input_transfer, "0800-0FFF,2000" },
+        { &monitor_input_compare, "0800-0FFF,2000" },
+        { &monitor_input_save, "0800-9FFF" },
+        { &monitor_input_load, "" },
+        { &monitor_input_load, "PRG" },
+        { &monitor_input_load, "0801" },
+        { &monitor_input_load, "PRG,1000" },
+        { &monitor_input_load, "0801,0002,0010" },
+        { &monitor_input_load, ",,0010" },
+        { &monitor_input_load, "PRG,0000,AUTO" },
+        { &monitor_input_load, "PRG,0000,10000" },
+        { &monitor_input_hunt, "0000-FFFF,41" },
+        { &monitor_input_hunt, "0000-FFFF, 41 42" },
+        { &monitor_input_hunt, "0000-FFFF, \"Hello\"" },
+        { &monitor_input_hunt, "C000-C0FF,DEAD" },
+    };
+    char prefix[64];
+
+    for (unsigned int i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        const char *text = cases[i].text;
+        // Confirm the parser really does accept it, so a typo in this table
+        // cannot make the property vacuous.
+        uint16_t start = 0, end = 0, dest = 0;
+        uint8_t value = 0;
+        uint8_t needle[MONITOR_HUNT_NEEDLE_MAX];
+        int needle_len = 0;
+        bool use_prg = false, length_auto = false;
+        uint16_t offset = 0;
+        uint32_t length = 0;
+        MonitorError error = MONITOR_SYNTAX;
+
+        if (cases[i].input == &monitor_input_jump || cases[i].input == &monitor_input_go) {
+            error = monitor_parse_address(text, &start);
+        } else if (cases[i].input == &monitor_input_fill) {
+            error = monitor_parse_fill(text, &start, &end, &value);
+        } else if (cases[i].input == &monitor_input_transfer) {
+            error = monitor_parse_transfer(text, &start, &end, &dest);
+        } else if (cases[i].input == &monitor_input_compare) {
+            error = monitor_parse_compare(text, &start, &end, &dest);
+        } else if (cases[i].input == &monitor_input_save) {
+            error = monitor_parse_save_params(text, &start, &end);
+        } else if (cases[i].input == &monitor_input_load) {
+            error = monitor_parse_load_params(text, &use_prg, &start, &offset,
+                                              &length_auto, &length);
+        } else {
+            error = monitor_parse_hunt(text, &start, &end, needle, &needle_len);
+        }
+        if (expect(error == MONITOR_OK, "A command in the agreement table must parse.")) {
+            printf("  %s did not parse: %s\n", cases[i].input->title, text);
+            return 1;
+        }
+
+        for (size_t length_typed = 0; length_typed <= strlen(text); length_typed++) {
+            memcpy(prefix, text, length_typed);
+            prefix[length_typed] = 0;
+            if (expect(cases[i].input->accepts(prefix),
+                       "Every prefix of a valid command must be typeable.")) {
+                printf("  %s rejected the prefix %s of %s\n",
+                       cases[i].input->title, prefix, text);
+                return 1;
+            }
+        }
+    }
+    return 0;
+}
+
+static int test_monitor_interaction_text_is_a_contract(void)
+{
+    TestUserInterface ui;
+    char formatted[64];
+
+    // Help has to fit the monitor window on the physical 40-column screen.
+    // Clipped help would be worse than none.
+    int line_count = 0;
+    for (int i = 0; monitor_help_lines[i]; i++) {
+        line_count++;
+    }
+    // draw_help stops at content_height, which the monitor derives as the
+    // screen height less seven rows. The shortest screen it runs on is the
+    // 24-row telnet terminal, not the 25-row C64, so a table sized for the C64
+    // loses its last line over telnet with nothing to say it did.
+    if (expect(line_count <= MONITOR_HELP_LINES_ON_SHORTEST_SCREEN,
+               "The help table is longer than the shortest screen can draw.")) {
+        printf("  %d lines, %d drawn\n", line_count,
+               MONITOR_HELP_LINES_ON_SHORTEST_SCREEN);
+        return 1;
+    }
+    for (int i = 0; monitor_help_lines[i]; i++) {
+        const char *text = monitor_help_lines[i];
+        if (strchr(text, '%')) {
+            sprintf(formatted, text, ui.function_key_for(KEY_HELP));
+            text = formatted;
+        }
+        int visible = (int)strlen(text);
+        if (expect(visible <= MONITOR_CONTENT_WIDTH,
+                   "A help line does not fit the monitor window.")) {
+            printf("  %d characters: %s\n", visible, text);
+            return 1;
+        }
+    }
+
+    // The command lines are a three-column grid whose cells start at columns 0,
+    // 13 and 26. A line that begins with a single-letter key is one of those
+    // lines; a BOOKMARKS/CONTROL KEYS row begins with a longer key (C=+B, ?/F3,
+    // ...), and a heading ("BOOKMARKS") or blank separator matches neither and
+    // is skipped. A cell that starts one column off reads as a ragged edge down
+    // the page: "B Binary   U" would put Undoc at column 25 instead of 26.
+    for (int i = 0; monitor_help_lines[i]; i++) {
+        const char *text = monitor_help_lines[i];
+        if (!monitor_help_is_grid_line(text) || text[1] != ' ') {
+            continue;
+        }
+        int len = (int)strlen(text);
+        for (int column = MONITOR_HELP_COLUMN_WIDTH; column < len;
+             column += MONITOR_HELP_COLUMN_WIDTH) {
+            if (expect(text[column] != ' ' && text[column - 1] == ' ',
+                       "A primary-grid help key does not start on its column.")) {
+                printf("  column %d: %s\n", column, text);
+                return 1;
+            }
+        }
+    }
+
+    // BOOKMARKS and CONTROL KEYS put their two keys and two actions on four
+    // fixed columns, which is what makes each of the four read as one straight
+    // line down the screen.
+    for (int i = 0; monitor_help_lines[i]; i++) {
+        const char *text = monitor_help_lines[i];
+        if (!monitor_help_is_grid_line(text) || text[1] == ' ') {
+            continue;
+        }
+        char formatted_line[64];
+        if (strchr(text, '%')) {
+            sprintf(formatted_line, text, ui.function_key_for(KEY_HELP));
+            text = formatted_line;
+        }
+        static const int columns[4] = {
+            MONITOR_HELP_LOWER_KEY_COLUMN, MONITOR_HELP_LOWER_ACTION_COLUMN,
+            MONITOR_HELP_LOWER_KEY2_COLUMN, MONITOR_HELP_LOWER_ACTION2_COLUMN,
+        };
+        int len = (int)strlen(text);
+        for (unsigned int c = 0; c < sizeof(columns) / sizeof(columns[0]); c++) {
+            int column = columns[c];
+            if (column >= len) {
+                continue;
+            }
+            if (expect(text[column] != ' ' &&
+                       (column == 0 || text[column - 1] == ' '),
+                       "A BOOKMARKS/CONTROL KEYS cell does not start on its "
+                       "column.")) {
+                printf("  column %d: %s\n", column, text);
+                return 1;
+            }
+        }
+    }
+
+    // Help has to name both ways in and the Back key, because those are what
+    // section 1 of the interaction contract promises.
+    {
+        char all[1024];
+        all[0] = 0;
+        for (int i = 0; monitor_help_lines[i]; i++) {
+            const char *text = monitor_help_lines[i];
+            if (strchr(text, '%')) {
+                sprintf(formatted, text, ui.function_key_for(KEY_HELP));
+                text = formatted;
+            }
+            strcat(all, text);
+            strcat(all, "\n");
+        }
+        if (expect(strstr(all, "?/") != NULL,
+                   "Help must name '?' as a way to open it.")) return 1;
+        if (expect(strstr(all, ui.function_key_for(KEY_HELP)) != NULL,
+                   "Help must name the mapped help key.")) return 1;
+        if (expect(strstr(all, "RUNSTOP/<-") != NULL,
+                   "Help must describe Back as RUNSTOP/<-.")) return 1;
+    }
+
+    // A prompt title has to fit the box the prompt draws on the same screen.
+    // UIStringBox sizes the window from the wider of the title and the field.
+    {
+        const MonitorCommandInput *inputs[] = {
+            &monitor_input_jump, &monitor_input_go, &monitor_input_fill,
+            &monitor_input_transfer, &monitor_input_compare, &monitor_input_hunt,
+            &monitor_input_load, &monitor_input_save,
+        };
+        for (unsigned int i = 0; i < sizeof(inputs) / sizeof(inputs[0]); i++) {
+            if (expect((int)strlen(inputs[i]->title) <= MONITOR_CONTENT_WIDTH,
+                       "A command prompt title does not fit the screen.")) {
+                printf("  %s\n", inputs[i]->title);
+                return 1;
+            }
+        }
+    }
+    return 0;
+}
+
+static int test_structured_prompts_carry_their_descriptor(void)
+{
+    struct PromptCase {
+        int key;
+        const MonitorCommandInput *input;
+        int maxlen;
+    } cases[] = {
+        { 'J', &monitor_input_jump, 5 },
+        { 'F', &monitor_input_fill, 13 },
+        // 24 characters: AAAA-BBBB,CCCC,DDDD-EEEE, the relocating form.
+        { 'T', &monitor_input_transfer, 24 },
+        { 'C', &monitor_input_compare, 15 },
+        { 'H', &monitor_input_hunt, 35 },
+        { 'S', &monitor_input_save, 15 },
+        { 'G', &monitor_input_go, 7 },
+    };
+
+    for (unsigned int i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        int keys[] = { cases[i].key, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("", 0);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Structured prompt test: command key failed.")) return 1;
+        if (expect(strcmp(ui.last_prompt_message, cases[i].input->title) == 0,
+                   "A command must open its prompt with the descriptor's title.")) {
+            printf("  %s opened %s\n", cases[i].input->title, ui.last_prompt_message);
+            return 1;
+        }
+        if (expect(ui.last_prompt_maxlen == cases[i].maxlen,
+                   "A command prompt must keep its bounded field width.")) return 1;
+        if (expect(ui.last_prompt_had_policy,
+                   "A structured prompt must carry an input policy.")) return 1;
+        if (expect(ui.last_prompt_policy.accepts == cases[i].input->accepts,
+                   "A structured prompt must carry its own descriptor's filter.")) return 1;
+        if (expect(ui.last_prompt_policy.cancel_key == monitor_key_arrow_left,
+                   "A monitor prompt must take the left-arrow key as Back.")) return 1;
+        if (expect(mon.poll(0) == 1, "Structured prompt test: exit failed.")) return 1;
+        mon.deinit();
+    }
+    return 0;
+}
+
+// A backend whose I/O reads never answer the same way twice, which is what a
+// live register does. Everything else behaves like FakeBankedMemoryBackend.
+struct FakeChangingIoBackend : public FakeBankedMemoryBackend
+{
+    uint8_t counter;
+
+    FakeChangingIoBackend() : counter(0) { }
+
+    virtual uint8_t read(uint16_t address)
+    {
+        if (reads_live_io(address)) {
+            return (uint8_t)(counter++ * 7 + 1);
+        }
+        return FakeBankedMemoryBackend::read(address);
+    }
+};
+
+// What the user gets after enabling RAM everywhere: no address reads anything
+// but RAM, so no address in the map is a region boundary any more.
+struct AllRamBackend : public FakeMemoryBackend
+{
+    virtual const char *source_name(uint16_t) const { return "RAM"; }
+};
+
+// A data region whose length is not a whole number of rows, so the last row of
+// it is short. $D000-$DFFF divides exactly by two and cannot show this.
+struct OddDataRegionBackend : public FakeMemoryBackend
+{
+    // Data at $2000-$2004: five bytes, so two rows of two and one of one.
+    virtual const char *source_name(uint16_t address) const
+    {
+        if (address >= 0x2000 && address <= 0x2004) {
+            return "IO";
+        }
+        return "RAM";
+    }
+};
+
+static int test_assembly_data_rows_group_and_edit(void)
+{
+    // Rendering and grouping. Two bytes a row, counted from the start of the
+    // region, and the bytes appear both in the byte columns and after DATA.
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeBankedMemoryBackend backend;
+        char line[40];
+        const int keys[] = { 'J', 'A', KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        backend.io[0x000] = 0x01;
+        backend.io[0x001] = 0x02;
+        backend.io[0x002] = 0x03;
+        backend.io[0x003] = 0x04;
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("D000", 1);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "DATA rows: jump to $D000 failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "DATA rows: switching to ASM failed.")) return 1;
+
+        screen.get_slice(1, 4, 38, line);
+        if (expect(strstr(line, "D000 01 02") != NULL,
+                   "A DATA row must show its bytes in the byte columns.")) {
+            printf("  %s\n", line);
+            return 1;
+        }
+        if (expect(strstr(line, "DATA 01 02") != NULL,
+                   "A DATA row must show its bytes after DATA.")) {
+            printf("  %s\n", line);
+            return 1;
+        }
+        if (expect(strstr(line, "[I/O]") != NULL,
+                   "A DATA row must still name its source.")) return 1;
+
+        screen.get_slice(1, 5, 38, line);
+        if (expect(strstr(line, "D002 03 04") != NULL,
+                   "The next DATA row must start two bytes on.")) {
+            printf("  %s\n", line);
+            return 1;
+        }
+        if (expect(mon.poll(0) == 1, "DATA rows: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    // The end of a region. Five data bytes are two rows of two and one of one,
+    // and the row after the region is decoded again.
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        OddDataRegionBackend backend;
+        char line[40];
+        const int keys[] = { 'J', 'A', KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        for (uint16_t i = 0; i < 5; i++) {
+            backend.write((uint16_t)(0x2000 + i), (uint8_t)(0x11 * (i + 1)));
+        }
+        backend.write(0x2005, 0xEA);   // NOP, decoded normally
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("2000", 1);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "DATA end: jump to $2000 failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "DATA end: switching to ASM failed.")) return 1;
+
+        screen.get_slice(1, 4, 38, line);
+        if (expect(strstr(line, "2000 11 22") != NULL, "First row of the region.")) {
+            printf("  %s\n", line);
+            return 1;
+        }
+        screen.get_slice(1, 5, 38, line);
+        if (expect(strstr(line, "2002 33 44") != NULL, "Second row of the region.")) {
+            printf("  %s\n", line);
+            return 1;
+        }
+        screen.get_slice(1, 6, 38, line);
+        if (expect(strstr(line, "2004 55") != NULL && strstr(line, "DATA 55") != NULL,
+                   "The last row of a region must stop at its end.")) {
+            printf("  %s\n", line);
+            return 1;
+        }
+        // The second byte column is where a full row would put its other byte.
+        if (expect(line[8] == ' ' && line[9] == ' ',
+                   "The short last row must not show a byte from beyond the region.")) {
+            printf("  %s\n", line);
+            return 1;
+        }
+        screen.get_slice(1, 7, 38, line);
+        if (expect(strstr(line, "2005 EA") != NULL && strstr(line, "NOP") != NULL,
+                   "RAM after the region must be disassembled as before.")) {
+            printf("  %s\n", line);
+            return 1;
+        }
+        if (expect(mon.poll(0) == 1, "DATA end: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    // Editing. Each byte of a DATA row is its own edit part, typed as two hex
+    // digits, and RIGHT walks the bytes across the row boundary.
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeBankedMemoryBackend backend;
+        // Two hex digits complete a byte and move on to the next one by
+        // themselves, including on to the first byte of the row below.
+        const int keys[] = { 'J', 'A', 'E', '7', 'F', 'A', '5', '1', '2',
+                             KEY_BREAK, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("D000", 1);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        for (int i = 0; i < (int)(sizeof(keys) / sizeof(keys[0])) - 1; i++) {
+            if (expect(mon.poll(0) == 0, "DATA edit: command failed.")) return 1;
+        }
+
+        // The first two edits are the two bytes of the row at $D000, and the
+        // third is the first byte of the row below it.
+        if (expect(backend.io[0x000] == 0x7F, "DATA edit must write the first byte.")) {
+            printf("  $D000 is $%02X\n", backend.io[0x000]);
+            return 1;
+        }
+        if (expect(backend.io[0x001] == 0xA5, "DATA edit must write the second byte.")) {
+            printf("  $D001 is $%02X\n", backend.io[0x001]);
+            return 1;
+        }
+        if (expect(backend.io[0x002] == 0x12,
+                   "Completing the last byte of a DATA row must reach the next row.")) {
+            printf("  $D002 is $%02X\n", backend.io[0x002]);
+            return 1;
+        }
+        if (expect(mon.poll(0) == 1, "DATA edit: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    // RIGHT walks the bytes one at a time and carries on into the row below,
+    // so every displayed byte is reachable without leaving edit mode.
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeBankedMemoryBackend backend;
+        const int keys[] = { 'J', 'A', 'E', KEY_RIGHT, KEY_RIGHT, '3', 'C',
+                             KEY_BREAK, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("D000", 1);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        for (int i = 0; i < (int)(sizeof(keys) / sizeof(keys[0])) - 1; i++) {
+            if (expect(mon.poll(0) == 0, "DATA navigation: command failed.")) return 1;
+        }
+        if (expect(backend.io[0x002] == 0x3C,
+                   "Two RIGHTs from the first byte must land on the row below.")) {
+            printf("  $D002 is $%02X, $D000 is $%02X, $D001 is $%02X\n",
+                   backend.io[0x002], backend.io[0x000], backend.io[0x001]);
+            return 1;
+        }
+        if (expect(mon.poll(0) == 1, "DATA navigation: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    // A letter on a DATA row is a no-op: there is no mnemonic to pick, and the
+    // opcode picker must not open over a region that is not code.
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeBankedMemoryBackend backend;
+        char line[40];
+        const int keys[] = { 'J', 'A', 'E', 'L', KEY_BREAK, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        backend.io[0x000] = 0x33;
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("D000", 1);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        for (int i = 0; i < 5; i++) {
+            if (expect(mon.poll(0) == 0, "DATA picker: command failed.")) return 1;
+        }
+        screen.get_slice(1, 4, 38, line);
+        if (expect(strstr(line, "DATA 33") != NULL,
+                   "A letter on a DATA row must leave it a DATA row.")) {
+            printf("  %s\n", line);
+            return 1;
+        }
+        if (expect(backend.io[0x000] == 0x33,
+                   "A letter on a DATA row must not write anything.")) return 1;
+        if (expect(mon.poll(0) == 1, "DATA picker: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    // Character ROM stays read-only: it is shown as data for the same reason
+    // I/O is, but an edit typed into it does not change what it reads.
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeBankedMemoryBackend backend;
+        // 'A' then 'A' selects CHAR at $D000; see the CHAR disassembly test.
+        const int keys[] = { 'J', 'A', 'O', 'O', 'O', 'O', 'E', '9', '9',
+                             KEY_BREAK, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        uint8_t before;
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("D000", 1);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        before = backend.charrom[0];
+        for (int i = 0; i < (int)(sizeof(keys) / sizeof(keys[0])) - 1; i++) {
+            if (expect(mon.poll(0) == 0, "CHAR edit: command failed.")) return 1;
+        }
+        if (expect(backend.charrom[0] == before,
+                   "A DATA edit must not change character ROM.")) {
+            printf("  $D000 reads $%02X, was $%02X\n", backend.charrom[0], before);
+            return 1;
+        }
+        if (expect(mon.poll(0) == 1, "CHAR edit: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    return 0;
+}
+
+static int test_assembly_data_delete_clears_bytes(void)
+{
+    // DEL replaces an instruction with NOPs, which is what leaves the code
+    // around it runnable. A data row is not code, so NOP would be a value the
+    // user did not ask for; its bytes are cleared instead. Both the edit-mode
+    // DEL and the one outside edit mode go through the same delete, so both
+    // are checked.
+    const char *labels[2] = { "outside edit mode", "in edit mode" };
+    for (int in_edit = 0; in_edit < 2; in_edit++) {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeBankedMemoryBackend backend;
+        int keys[8];
+        int n = 0;
+
+        keys[n++] = 'J';
+        keys[n++] = 'A';
+        if (in_edit) {
+            keys[n++] = 'E';
+        }
+        keys[n++] = KEY_DELETE;
+        keys[n++] = KEY_BREAK;
+        keys[n++] = KEY_BREAK;
+        FakeKeyboard kb(keys, n);
+
+        backend.io[0x000] = 0x12;
+        backend.io[0x001] = 0x34;
+        backend.io[0x002] = 0x56;
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("D000", 1);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        for (int i = 0; i < (in_edit ? 4 : 3); i++) {
+            if (expect(mon.poll(0) == 0, "DATA delete: command failed.")) return 1;
+        }
+        if (expect(backend.io[0x000] == 0x00 && backend.io[0x001] == 0x00,
+                   "DEL on a DATA row must clear its bytes, not fill them with NOP.")) {
+            printf("  %s: $D000 is $%02X, $D001 is $%02X\n", labels[in_edit],
+                   backend.io[0x000], backend.io[0x001]);
+            return 1;
+        }
+        if (expect(backend.io[0x002] == 0x56,
+                   "DEL on a DATA row must not reach the row below it.")) {
+            printf("  %s: $D002 is $%02X\n", labels[in_edit], backend.io[0x002]);
+            return 1;
+        }
+        mon.deinit();
+    }
+
+    // An instruction still becomes NOPs: the rule is about data rows, not
+    // about the delete key.
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        const int keys[] = { 'J', 'A', KEY_DELETE, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        backend.write(0xC000, 0xA9);   // LDA #$12
+        backend.write(0xC001, 0x12);
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("C000", 1);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        for (int i = 0; i < 3; i++) {
+            if (expect(mon.poll(0) == 0, "CODE delete: command failed.")) return 1;
+        }
+        if (expect(backend.read(0xC000) == 0xEA && backend.read(0xC001) == 0xEA,
+                   "DEL on an instruction must still replace it with NOPs.")) return 1;
+        if (expect(mon.poll(0) == 1, "CODE delete: exit failed.")) return 1;
+        mon.deinit();
+    }
+    return 0;
+}
+
+static int test_assembly_data_range_is_byte_addressable(void)
+{
+    // A range anchored inside a DATA row takes the bytes it covers, not the
+    // row it started in: the two-byte row is how the bytes are shown, not what
+    // a range is made of.
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeBankedMemoryBackend backend;
+        const int keys[] = { 'J', 'A', KEY_RIGHT, 'R', KEY_RIGHT, KEY_CTRL_C,
+                             'J', KEY_CTRL_V, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        for (uint16_t i = 0; i < 8; i++) {
+            backend.io[i] = (uint8_t)(0xA0 + i);
+        }
+        backend.write(0xC100, 0x00);
+        backend.write(0xC101, 0x00);
+        backend.write(0xC102, 0x00);
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("D000", 1);
+        ui.push_prompt("C100", 1);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        for (int i = 0; i < (int)(sizeof(keys) / sizeof(keys[0])) - 1; i++) {
+            if (expect(mon.poll(0) == 0, "DATA range: command failed.")) return 1;
+        }
+
+        // Anchored on $D001 and moved to $D002: two bytes, not the whole row
+        // either end.
+        if (expect(backend.read(0xC100) == 0xA1 && backend.read(0xC101) == 0xA2,
+                   "A range across two DATA rows must copy exactly its bytes.")) {
+            printf("  copied $%02X $%02X\n", backend.read(0xC100), backend.read(0xC101));
+            return 1;
+        }
+        if (expect(backend.read(0xC102) == 0x00,
+                   "A DATA range must not copy the rest of the row it ended in.")) {
+            printf("  third byte $%02X\n", backend.read(0xC102));
+            return 1;
+        }
+        if (expect(mon.poll(0) == 1, "DATA range: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    // A range that starts in code and ends in data covers both, with the code
+    // end still taken as a whole instruction.
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        OddDataRegionBackend backend;
+        const int keys[] = { 'J', 'A', 'R', KEY_DOWN, KEY_CTRL_C,
+                             'J', KEY_CTRL_V, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        // $1FFD: LDA #$42, three bytes short of the region, then the region.
+        backend.write(0x1FFD, 0xA9);
+        backend.write(0x1FFE, 0x42);
+        backend.write(0x2000, 0x11);
+        backend.write(0x2001, 0x22);
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("1FFD", 1);
+        ui.push_prompt("3000", 1);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        for (int i = 0; i < (int)(sizeof(keys) / sizeof(keys[0])) - 1; i++) {
+            if (expect(mon.poll(0) == 0, "CODE/DATA range: command failed.")) return 1;
+        }
+
+        // The instruction at $1FFD is two bytes, so the row below it starts at
+        // $1FFF and the range ends where that row does.
+        if (expect(backend.read(0x3000) == 0xA9 && backend.read(0x3001) == 0x42,
+                   "A range starting in code must copy the whole instruction.")) {
+            printf("  copied $%02X $%02X\n", backend.read(0x3000), backend.read(0x3001));
+            return 1;
+        }
+        if (expect(mon.poll(0) == 1, "CODE/DATA range: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    return 0;
+}
+
+static int test_io_region_is_data_not_code(void)
+{
+    // With I/O banked in, $D000-$DFFF answers with whatever the registers hold
+    // at that instant. Decoding those bytes as opcodes gives an instruction
+    // length that changes between redraws, and every row below it moves with
+    // it; the view re-aligns while the user is only scrolling. Each I/O
+    // address is one row, whatever it reads.
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeChangingIoBackend backend;
+        char rows[6][40];
+        const int keys[] = { 'J', 'A', KEY_DOWN, KEY_DOWN, KEY_UP, KEY_UP, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("D000", 1);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "I/O disassembly: jump to $D000 failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "I/O disassembly: switching to ASM failed.")) return 1;
+
+        // Every row is three addresses on from the one above it, counted from
+        // the start of the region, no matter what the registers answered while
+        // the screen was being drawn.
+        for (int row = 0; row < 6; row++) {
+            char expected[8];
+            screen.get_slice(1, 4 + row, 38, rows[row]);
+            sprintf(expected, "D0%02X ", row * MONITOR_DATA_ROW_BYTES);
+            if (expect(strncmp(rows[row], expected, 5) == 0,
+                       "Each live I/O row must start where the grouping puts it.")) {
+                printf("  row %d: %s\n", row, rows[row]);
+                return 1;
+            }
+            if (expect(strstr(rows[row], "DATA ") != NULL,
+                       "A live I/O row must read as data, not as an instruction.")) {
+                printf("  row %d: %s\n", row, rows[row]);
+                return 1;
+            }
+        }
+
+        // Scrolling has to leave the row addresses where they were, which is
+        // the whole point: the register values behind them keep changing.
+        for (int step = 0; step < 4; step++) {
+            char line[40];
+            if (expect(mon.poll(0) == 0, "I/O disassembly: cursor step failed.")) return 1;
+            screen.get_slice(1, 4, 38, line);
+            if (expect(strncmp(line, "D0", 2) == 0,
+                       "Scrolling live I/O must not leave the region.")) return 1;
+        }
+        if (expect(mon.poll(0) == 1, "I/O disassembly: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    // reads_live_io answers what the address reads, and only I/O reads as I/O.
+    // Character ROM is not I/O and this must keep saying so: the Assembly view
+    // shows both as data, but it asks shows_as_data for that, not this.
+    {
+        FakeBankedMemoryBackend backend;
+
+        backend.live_cpu_port = 0x07;
+        backend.set_monitor_cpu_port(0x07);
+        if (expect(backend.reads_live_io(0xD020), "$D020 must read as I/O with I/O banked in.")) return 1;
+        if (expect(!backend.reads_live_io(0xC000), "$C000 is never I/O.")) return 1;
+        if (expect(!backend.reads_live_io(0xE000), "$E000 is never I/O.")) return 1;
+        backend.set_monitor_cpu_port(0x03);   // CHAR ROM at $D000
+        if (expect(!backend.reads_live_io(0xD020), "$D020 is not I/O with CHAR banked in.")) return 1;
+        backend.set_monitor_cpu_port(0x00);   // RAM at $D000
+        if (expect(!backend.reads_live_io(0xD020), "$D020 is not I/O with RAM banked in.")) return 1;
+    }
+
+    // shows_as_data answers a different question: how the Assembly view should
+    // draw the address. I/O and CHAR both qualify, for the two reasons on the
+    // predicate itself, and RAM at the same addresses does not.
+    {
+        FakeBankedMemoryBackend backend;
+
+        backend.live_cpu_port = 0x07;
+        backend.set_monitor_cpu_port(0x07);
+        if (expect(backend.shows_as_data(0xD020),
+                   "$D020 must show as data with I/O banked in.")) return 1;
+        backend.set_monitor_cpu_port(0x03);   // CHAR ROM at $D000
+        if (expect(backend.shows_as_data(0xD020),
+                   "$D020 must show as data with CHAR banked in: it is bitmap "
+                   "data, not code.")) return 1;
+        backend.set_monitor_cpu_port(0x00);   // RAM at $D000
+        if (expect(!backend.shows_as_data(0xD020),
+                   "$D020 must be decoded with RAM banked in.")) return 1;
+
+        // Outside $D000-$DFFF nothing is affected, whatever is banked.
+        backend.set_monitor_cpu_port(0x07);
+        if (expect(!backend.shows_as_data(0xC000), "$C000 is always decoded.")) return 1;
+        if (expect(!backend.shows_as_data(0xE000),
+                   "$E000 is KERNAL ROM, which is code and is decoded.")) return 1;
+        if (expect(!backend.shows_as_data(0xA000),
+                   "$A000 is BASIC ROM, which is code and is decoded.")) return 1;
+    }
+
+    // Character ROM is bitmap data, so the Assembly view shows it one byte per
+    // row even though it is perfectly stable and could be decoded without the
+    // re-alignment problem I/O has. The bytes planted below are a valid three
+    // byte instruction, so a view that decoded CHAR would draw "LDA $C0A9"
+    // here; that is what makes this fail if shows_as_data stops covering CHAR.
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeBankedMemoryBackend backend;
+        char rows[4][40];
+        const int keys[] = { 'J', 'A', 'o', 'o', KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        backend.charrom[0] = 0xAD;      // LDA absolute
+        backend.charrom[1] = 0xA9;
+        backend.charrom[2] = 0xC0;
+        backend.charrom[3] = 0xEA;      // NOP
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("D000", 1);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "CHAR disassembly: jump to $D000 failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "CHAR disassembly: switching to ASM failed.")) return 1;
+        // The monitor owns its own CPU bank and starts at $07, so the bank is
+        // reached through the key that changes it rather than by poking the
+        // backend, which the monitor would overwrite. next_cpu_mode counts up
+        // from $07, so two presses is $01: RAM at $A000, CHAR at $D000.
+        if (expect(mon.poll(0) == 0, "CHAR disassembly: first CPU bank step failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "CHAR disassembly: second CPU bank step failed.")) return 1;
+
+        for (int row = 0; row < 4; row++) {
+            char expected[8];
+            screen.get_slice(1, 4 + row, 38, rows[row]);
+            sprintf(expected, "D0%02X ", row * MONITOR_DATA_ROW_BYTES);
+            if (expect(strncmp(rows[row], expected, 5) == 0,
+                       "Each CHAR ROM row must start where the grouping puts it.")) {
+                printf("  row %d: %s\n", row, rows[row]);
+                return 1;
+            }
+            // The source column is asserted FIRST, before anything is claimed
+            // about the row. Without that this check passes on a monitor still
+            // banked to I/O, which also draws .BYTE, and proves nothing about
+            // CHAR. Any view test added here should assert its bank before its
+            // contents for the same reason.
+            //
+            // The bank is also reached by pressing the key that changes it,
+            // not by calling set_monitor_cpu_port on the backend: the monitor
+            // owns its own CPU bank, starts at $07, and pushes that to the
+            // backend at init, overwriting anything set beforehand.
+            if (expect(strstr(rows[row], "[CHR]") != NULL,
+                       "CHAR disassembly: the rows must be CHAR ROM, not I/O.")) {
+                printf("  row %d: %s\n", row, rows[row]);
+                return 1;
+            }
+            if (expect(strstr(rows[row], "DATA ") != NULL,
+                       "A CHAR ROM row must read as data: it is bitmap data, "
+                       "not code.")) {
+                printf("  row %d: %s\n", row, rows[row]);
+                return 1;
+            }
+        }
+        if (expect(strstr(rows[0], "LDA") == NULL,
+                   "CHAR ROM must not be decoded as an instruction.")) {
+            printf("  row 0: %s\n", rows[0]);
+            return 1;
+        }
+        if (expect(mon.poll(0) == 1, "CHAR disassembly: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    // The same addresses with RAM banked in are decoded, which is the other
+    // half of the rule: it follows the banked source, not the address range.
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeBankedMemoryBackend backend;
+        char line[40];
+        const int keys[] = { 'J', 'A', 'o', KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        backend.ram[0xD000] = 0xAD;     // LDA absolute
+        backend.ram[0xD001] = 0xA9;
+        backend.ram[0xD002] = 0xC0;
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("D000", 1);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "RAM-at-$D000 disassembly: jump failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "RAM-at-$D000 disassembly: ASM switch failed.")) return 1;
+        // One step from the monitor's own starting $07 is $00: RAM everywhere.
+        if (expect(mon.poll(0) == 0, "RAM-at-$D000 disassembly: CPU bank step failed.")) return 1;
+        screen.get_slice(1, 4, 38, line);
+        if (expect(strstr(line, "[RAM]") != NULL,
+                   "RAM-at-$D000: the row must be RAM, not I/O or CHAR.")) {
+            printf("  row 0: %s\n", line);
+            return 1;
+        }
+        if (expect(strstr(line, "LDA $C0A9") != NULL,
+                   "RAM banked at $D000 must still be decoded as code.")) {
+            printf("  row 0: %s\n", line);
+            return 1;
+        }
+        if (expect(mon.poll(0) == 1, "RAM-at-$D000 disassembly: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    // With RAM banked in everywhere there are no regions at all, so the whole
+    // 64K is one contiguous area to disassemble: $D000-$DFFF reads as code, and
+    // an instruction is free to start in one former region and finish in the
+    // next. Nothing but the top of memory ends a row early.
+    {
+        struct Straddle {
+            uint16_t at;            // where the instruction starts
+            const char *text;       // how it must read
+            uint16_t next;          // the row after it
+        } cases[] = {
+            { 0xBFFF, "LDA $C0A9", 0xC002 },   // across the BASIC edge
+            { 0xDFFF, "LDA $E1E0", 0xE002 },   // across the I/O and KERNAL edge
+        };
+
+        for (unsigned int i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+            TestUserInterface ui;
+            CaptureScreen screen;
+            AllRamBackend backend;
+            char line[40];
+            char prompt[8];
+            char expected[8];
+            const int keys[] = { 'J', 'A', KEY_BREAK };
+            FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+            backend.write(cases[i].at, 0xAD);                       // LDA absolute
+            backend.write((uint16_t)(cases[i].at + 1),
+                          (uint8_t)(cases[i].at == 0xBFFF ? 0xA9 : 0xE0));
+            backend.write((uint16_t)(cases[i].at + 2),
+                          (uint8_t)(cases[i].at == 0xBFFF ? 0xC0 : 0xE1));
+
+            ui.screen = &screen;
+            ui.keyboard = &kb;
+            sprintf(prompt, "%04X", cases[i].at);
+            ui.set_prompt(prompt, 1);
+            monitor_reset_saved_state();
+
+            BackendMachineMonitor mon(&ui, &backend);
+            mon.init(&screen, &kb);
+            if (expect(mon.poll(0) == 0, "All-RAM disassembly: jump failed.")) return 1;
+            if (expect(mon.poll(0) == 0, "All-RAM disassembly: ASM switch failed.")) return 1;
+
+            // Found by address rather than by row: the jump is made in Memory
+            // view, which aligns its top row, so the instruction is not
+            // necessarily the first row after the switch to Assembly.
+            int found = -1;
+            sprintf(expected, "%04X", cases[i].at);
+            for (int row = 4; row < 20 && found < 0; row++) {
+                screen.get_slice(1, row, 38, line);
+                if (strstr(line, expected) == line) {
+                    found = row;
+                }
+            }
+            if (expect(found >= 0, "The jumped-to address must be on screen.")) {
+                printf("  at $%04X: not found\n", cases[i].at);
+                return 1;
+            }
+            screen.get_slice(1, found, 38, line);
+            if (expect(strstr(line, cases[i].text) != NULL,
+                       "An instruction may straddle what is otherwise a bank boundary.")) {
+                printf("  at $%04X: %s\n", cases[i].at, line);
+                return 1;
+            }
+            if (expect(strstr(line, ".BYTE") == NULL,
+                       "RAM is code wherever it is, including $D000-$DFFF.")) {
+                printf("  at $%04X: %s\n", cases[i].at, line);
+                return 1;
+            }
+            // The following row starts past the last operand byte, which is
+            // only true if the row above took all three of its bytes.
+            sprintf(expected, "%04X", cases[i].next);
+            screen.get_slice(1, found + 1, 38, line);
+            if (expect(strstr(line, expected) == line,
+                       "The row after a straddling instruction starts past its last byte.")) {
+                printf("  at $%04X: next row %s\n", cases[i].at, line);
+                return 1;
+            }
+            if (expect(mon.poll(0) == 1, "All-RAM disassembly: exit failed.")) return 1;
+            mon.deinit();
+        }
+    }
+    return 0;
+}
+
+static int test_hunt_prompt_uppercases_outside_quotes_only(void)
+{
+    // The Hunt prompt is the one command whose data half is text, so the case
+    // of a typed letter depends on where it lands: a hex digit outside quotes
+    // is normalised, and quoted text is left exactly as typed.
+    struct TransformCase {
+        const char *buffer;
+        int cursor;
+        int typed;
+        int expected;
+    } cases[] = {
+        { "0000-FFFF,", 10, 'd', 'D' },          // hex, outside quotes
+        { "0000-FFFF,\"", 11, 'd', 'd' },        // inside quotes
+        { "0000-FFFF,\"ab", 13, 'C', 'C' },      // still inside
+        { "0000-FFFF,\"ab\"", 14, 'e', 'E' },    // after the closing quote
+    };
+
+    for (unsigned int i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        int actual = monitor_input_hunt.transform(cases[i].buffer, cases[i].cursor,
+                                                  cases[i].typed);
+        if (expect(actual == cases[i].expected,
+                   "Hunt must uppercase outside quotes and leave quoted text alone.")) {
+            printf("  %s | cursor %d | typed %c -> %c, expected %c\n",
+                   cases[i].buffer, cases[i].cursor, (char)cases[i].typed,
+                   (char)actual, (char)cases[i].expected);
+            return 1;
+        }
+    }
+    if (expect(monitor_input_hunt.transform != 0,
+               "The Hunt descriptor must carry its case transform.")) return 1;
+    for (unsigned int i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        // Every other prompt normalises case for the whole field instead.
+        if (expect(monitor_input_fill.transform == 0,
+                   "Only Hunt decides case per position.")) return 1;
+    }
+    return 0;
+}
+
+static int test_ui_range_commands_read_in_blocks(void)
+{
+    // The C and H keys reach Compare and Hunt through the _collect entry points,
+    // not the _memory ones, so those are what has to read in blocks.
+    FakeMemoryBackend backend;
+    uint16_t addrs[8];
+    const uint8_t needle[2] = { 0xAB, 0xCD };
+    int index;
+
+    for (index = 0; index < 0x100; index++) {
+        backend.memory[0xC800 + index] = (uint8_t)index;
+        backend.memory[0xCA00 + index] = (uint8_t)index;
+    }
+
+    backend.single_read_count = 0;
+    backend.block_read_count = 0;
+    monitor_compare_collect(&backend, 0xC800, 0xC8FF, 0xCA00, addrs, 8);
+    if (expect(backend.single_read_count == 0,
+               "Compare read memory a byte at a time, so a backend that stops "
+               "the machine per access stops it once per byte.")) {
+        printf("  %d single reads, %d block reads\n",
+               backend.single_read_count, backend.block_read_count);
+        return 1;
+    }
+    if (expect(backend.block_read_count > 0 && backend.block_read_count <= 8,
+               "Compare did not read its 256 bytes in a handful of blocks.")) {
+        printf("  %d block reads\n", backend.block_read_count);
+        return 1;
+    }
+
+    backend.single_read_count = 0;
+    backend.block_read_count = 0;
+    monitor_hunt_collect(&backend, 0xC800, 0xC8FF, needle, 2, addrs, 8);
+    if (expect(backend.single_read_count == 0,
+               "Hunt read memory a byte at a time, so a backend that stops the "
+               "machine per access stops it once per byte.")) {
+        printf("  %d single reads, %d block reads\n",
+               backend.single_read_count, backend.block_read_count);
+        return 1;
+    }
+    if (expect(backend.block_read_count > 0 && backend.block_read_count <= 8,
+               "Hunt did not read its 256 bytes in a handful of blocks.")) {
+        printf("  %d block reads\n", backend.block_read_count);
+        return 1;
+    }
+    return 0;
+}
+
+static int test_compare_serves_a_range_that_wraps_past_ffff(void)
+{
+    // `C FF00-FFFF,FF80` is accepted, so the second range wraps past $FFFF. The
+    // block reader must not clamp its window to `first` there, or a read below
+    // `first` indexes before the start of its buffer.
+    FakeMemoryBackend backend;
+    uint16_t addrs[8];
+    int index;
+    int expected = 0;
+    int got;
+
+    for (index = 0; index < 0x10000; index++) {
+        backend.memory[index] = (uint8_t)(index * 7);
+    }
+    // One byte differs in the wrapped half, so the walk must read past $FFFF.
+    backend.memory[0x0040] = (uint8_t)(backend.memory[0x0040] ^ 0xFF);
+
+    for (index = 0; index < 0x100; index++) {
+        uint16_t left = (uint16_t)(0xFF00 + index);
+        uint16_t right = (uint16_t)(0xFF80 + index);
+        if (backend.memory[left] != backend.memory[right]) {
+            expected++;
+        }
+    }
+
+    got = monitor_compare_collect(&backend, 0xFF00, 0xFFFF, 0xFF80, addrs, 8);
+    if (expect(got == expected,
+               "Compare over a range that wraps past $FFFF did not report the "
+               "differences a byte-by-byte walk of the same two ranges finds.")) {
+        printf("  reported %d, a byte-by-byte walk finds %d\n", got, expected);
+        return 1;
+    }
+    return 0;
+}
+
+static int test_paging_reads_inside_a_bracket(void)
+{
+    // Paging is not a redraw: page_disassembly scans the view an instruction at
+    // a time via disasm_visible_row, so it needs a bracket of its own.
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeMemoryBackend backend;
+    const int keys[] = { 'a', KEY_PAGEDOWN, KEY_PAGEUP, KEY_BREAK };
+    FakeKeyboard keyboard(keys, 4);
+    monitor_reset_saved_state();
+
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+    // The bracketing under test is on the key handlers, not the opening redraw.
+    backend.block_reads_inside_redraw = 0;
+    backend.block_reads_outside_redraw = 0;
+    backend.redraw_begin_count = 0;
+    backend.redraw_end_count = 0;
+    for (int i = 0; i < 4; i++) {
+        if (monitor.poll(0) != 0) {
+            break;
+        }
+    }
+
+    if (expect(backend.block_reads_outside_redraw == 0,
+               "Paging read memory outside a bracket, so a backend that stops "
+               "the host machine per access pays one stop per row scanned.")) {
+        printf("  inside=%d outside=%d\n", backend.block_reads_inside_redraw,
+               backend.block_reads_outside_redraw);
+        return 1;
+    }
+    if (expect(backend.redraw_depth == 0,
+               "A paging bracket was left open.")) return 1;
+    if (expect(backend.redraw_begin_count == backend.redraw_end_count,
+               "A paging bracket was not balanced.")) {
+        printf("  begin=%d end=%d\n", backend.redraw_begin_count,
+               backend.redraw_end_count);
+        return 1;
+    }
+    return 0;
+}
+
+static int test_a_redraw_takes_one_bracket_around_all_of_its_reads(void)
+{
+    // Unbracketed, a backend that stops per access pays one stop per displayed
+    // row. A host test can hold only the shape: one balanced bracket around
+    // every read.
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeMemoryBackend backend;
+    const int keys[] = { KEY_BREAK };
+    FakeKeyboard keyboard(keys, 1);
+    monitor_reset_saved_state();
+
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+
+    if (expect(backend.redraw_begin_count >= 1,
+               "Drawing the monitor opened no redraw bracket.")) return 1;
+    if (expect(backend.redraw_begin_count == backend.redraw_end_count,
+               "The redraw bracket was not balanced, so a backend that stops "
+               "the machine would leave it stopped.")) {
+        printf("  begin=%d end=%d\n", backend.redraw_begin_count,
+               backend.redraw_end_count);
+        return 1;
+    }
+    if (expect(backend.redraw_depth == 0,
+               "The redraw bracket was left open.")) return 1;
+    if (expect(backend.block_reads_outside_redraw == 0,
+               "A redraw read memory outside its bracket, which is a stop the "
+               "backend then pays on its own.")) {
+        printf("  inside=%d outside=%d\n", backend.block_reads_inside_redraw,
+               backend.block_reads_outside_redraw);
+        return 1;
+    }
+    // The point of the bracket: many row reads share one, not one bracket each.
+    if (expect(backend.block_reads_inside_redraw >= backend.redraw_begin_count * 4,
+               "Each redraw bracket covered fewer than four row reads, so the "
+               "reads are not being batched under one bracket.")) {
+        printf("  %d block reads across %d brackets\n",
+               backend.block_reads_inside_redraw, backend.redraw_begin_count);
+        return 1;
+    }
+    // Close the monitor, leaving no more state behind than the tests above.
+    monitor.poll(0);
+    return 0;
+}
+
+int main()
+{
+    if (test_disassembler()) return 1;
+    if (test_illegal_opcode_normalization()) return 1;
+    if (test_opcode_metadata_consistency()) return 1;
+    if (test_memory_helpers()) return 1;
+    if (test_reset_shortcut_resets_and_leaves()) return 1;
+    if (test_cursor_down_is_not_the_reset_shortcut()) return 1;
+    if (test_old_reset_shortcut_code_does_nothing()) return 1;
+    if (test_reset_and_interface_shortcuts_never_reach_a_popup_layer()) return 1;
+    if (test_interface_shortcut_swaps_and_leaves()) return 1;
+    if (test_x_is_not_an_exit()) return 1;
+    if (test_a_popup_owns_the_rows_it_covers()) return 1;
+    if (test_view_names_are_stable_log_tokens()) return 1;
+    if (test_d_is_reserved_and_a_opens_assembly()) return 1;
+    if (test_transfer_relocate_parses_its_optional_range()) return 1;
+    if (test_transfer_relocate_moves_absolute_operands()) return 1;
+    if (test_transfer_relocate_keeps_the_inclusive_range()) return 1;
+    if (test_transfer_relocate_patches_pointers_outside_the_copy()) return 1;
+    if (test_transfer_relocate_leaves_an_instruction_across_the_edge()) return 1;
+    if (test_transfer_relocate_reads_the_copy_when_ranges_overlap()) return 1;
+    if (test_transfer_relocate_handles_range_edges_and_data()) return 1;
+    if (test_transfer_without_a_code_range_is_unchanged()) return 1;
+    if (test_parsers_and_formatters()) return 1;
+    if (test_hunt_prompt_typed_input()) return 1;
+    if (test_load_save_param_parsers()) return 1;
+    if (test_banked_backend()) return 1;
+    if (test_frozen_banked_backend()) return 1;
+    if (test_kernal_disassembly_mapping()) return 1;
+    if (test_disassembly_instruction_stepping()) return 1;
+    if (test_disassembly_boundary_cutover()) return 1;
+    if (test_disassembly_reverse_cutover_keeps_ffff_at_bottom()) return 1;
+    if (test_hex_reverse_wrap_keeps_tail_row_at_bottom()) return 1;
+    if (test_last_address_row_highlight()) return 1;
+    if (test_template_cursor()) return 1;
+    if (test_task_action_lookup()) return 1;
+    if (test_monitor_renders_window_border()) return 1;
+    if (test_monitor_byte_to_address_invariant()) return 1;
+    if (test_monitor_cursor_header_and_scroll()) return 1;
+    if (test_monitor_interaction()) return 1;
+    if (test_monitor_default_cpu_bank_and_vic_shortcuts()) return 1;
+    if (test_monitor_freeze_mode_vic_shortcut_override()) return 1;
+    if (test_monitor_reopen_restores_state()) return 1;
+    if (test_monitor_kernal_bank_switch_and_ram_interaction()) return 1;
+    if (test_assembler_encoding()) return 1;
+    if (test_screen_code_reverse()) return 1;
+    if (test_screen_charset_toggle_and_header()) return 1;
+    if (test_screen_charset_display_and_memory_ascii_pane()) return 1;
+    if (test_logical_delete_per_view()) return 1;
+    if (test_scr_edit_writes_screen_code()) return 1;
+    if (test_number_shortcut_routing()) return 1;
+    if (test_range_shortcut_routing()) return 1;
+    if (test_asm_number_popup_targets_operands()) return 1;
+    if (test_asm_number_popup_illegal_and_invalid_rows()) return 1;
+    if (test_asm_edit_assemble_at_cursor()) return 1;
+    if (test_asm_edit_rejects_invalid_mnemonic()) return 1;
+    if (test_asm_edit_return_advances()) return 1;
+    if (test_asm_edit_direct_typing()) return 1;
+    if (test_asm_commit_writes_the_instruction_as_one_block()) return 1;
+    if (test_asm_edit_direct_typing_immediate()) return 1;
+    if (test_asm_edit_branch_two_parts()) return 1;
+    if (test_asm_edit_bit_operand_not_branch()) return 1;
+    if (test_asm_cpu_bank_cycle_preserves_screen_row()) return 1;
+    if (test_asm_page_up_keeps_screen_row()) return 1;
+    if (test_asm_paging_returns_to_the_same_address()) return 1;
+    if (test_asm_stepping_returns_to_the_jump_target()) return 1;
+    if (test_asm_entry_over_a_data_row_shows_the_instruction()) return 1;
+    if (test_space_shortcuts_match_existing_paging()) return 1;
+    if (test_opcode_picker_scroll_redraws_overlay_only()) return 1;
+    if (test_opcode_picker_refilters_live()) return 1;
+    if (test_opcode_picker_filters_orders_and_commits_on_enter()) return 1;
+    if (test_opcode_picker_browsing_does_not_mutate_frozen_charset_backup()) return 1;
+    if (test_opcode_picker_near_bottom_refresh_stays_inside_content()) return 1;
+    if (test_opcode_picker_selection_near_bottom_preserves_live_charset_page()) return 1;
+    if (test_opcode_picker_pauses_poll_mode()) return 1;
+    if (test_cross_view_sync()) return 1;
+    if (test_space_edit_behavior_preserved()) return 1;
+    if (test_shift_space_does_not_page_in_edit_mode()) return 1;
+    if (test_binary_row_formats()) return 1;
+    if (test_binary_bit_navigation_and_width()) return 1;
+    if (test_memory_row_width_cycle()) return 1;
+    if (test_binary_delete_behavior()) return 1;
+    if (test_clipboard_number_and_range()) return 1;
+    if (test_number_popup_edit_and_commit()) return 1;
+    if (test_number_popup_word_commit_and_sticky_row()) return 1;
+    if (test_number_popup_placement_and_overlay_redraw()) return 1;
+    if (test_structured_prompts_carry_their_descriptor()) return 1;
+    if (test_asm_range_copy_paste()) return 1;
+    if (test_asm_paste_keeps_viewport_position()) return 1;
+    if (test_disassembly_up_keeps_screen_row()) return 1;
+    if (test_illegal_mode_header_label()) return 1;
+    if (test_hunt_and_compare_picker_navigation()) return 1;
+    if (test_prompt_cancel_and_empty_clipboard()) return 1;
+    if (test_load_save_and_goto_command_flow()) return 1;
+    if (test_hex_single_nibble_commits_on_navigation()) return 1;
+    if (test_header_invariants_and_parity()) return 1;
+    if (test_poll_mode_refreshes_visible_ram()) return 1;
+    if (test_poll_mode_disabled_on_full_refresh_screen()) return 1;
+    if (test_edit_indicator_layout_across_views()) return 1;
+    if (test_warning_popups_preserve_status_row()) return 1;
+    if (test_asm_follow_and_return_navigation()) return 1;
+    if (test_restricted_backend_guards_platform_features()) return 1;
+    if (test_back_closes_help_without_leaving_the_monitor()) return 1;
+    if (test_back_leaves_one_layer_at_a_time()) return 1;
+    if (test_back_in_number_popup_and_expression()) return 1;
+    if (test_back_is_data_in_ascii_and_screen_edit()) return 1;
+    if (test_command_input_rejects_impossible_characters()) return 1;
+    if (test_command_input_accepts_partial_commands()) return 1;
+    if (test_command_input_agrees_with_the_parsers()) return 1;
+    if (test_monitor_interaction_text_is_a_contract()) return 1;
+    if (test_io_region_is_data_not_code()) return 1;
+    if (test_assembly_data_rows_group_and_edit()) return 1;
+    if (test_assembly_data_range_is_byte_addressable()) return 1;
+    if (test_assembly_data_delete_clears_bytes()) return 1;
+    if (test_hunt_prompt_uppercases_outside_quotes_only()) return 1;
+    if (test_ui_range_commands_read_in_blocks()) return 1;
+    if (test_compare_serves_a_range_that_wraps_past_ffff()) return 1;
+    if (test_a_redraw_takes_one_bracket_around_all_of_its_reads()) return 1;
+    if (test_paging_reads_inside_a_bracket()) return 1;
+
+    puts("machine_monitor_test: OK");
+    return 0;
+}

@@ -39,6 +39,7 @@ DataStreamer :: DataStreamer()
 		memset(streams, 0, 4*sizeof(stream_config_t));
 
 		cfg = ConfigManager :: getConfigManager()->register_store(0x44617461, "Data Streams", stream_cfg, NULL);
+        cfg->set_sort_order(SORT_ORDER_CFG_STREAMS);
 
 		for (int i=0; i < 4; i++) {
 			timers[i] = xTimerCreate("StreamTimer", 100, pdFALSE, (void *)i, DataStreamer :: S_timer);
@@ -117,7 +118,7 @@ SubsysResultCode_e DataStreamer :: startStream(SubsysCommand *cmd)
             my_mac[0], my_mac[1], my_mac[2], my_mac[3], my_mac[4], my_mac[5]);
 */
 
-    char dest_host[40];
+    char dest_host[40] = {0};
 
     if ((cmd->path.length() > 0) && (cmd->user_interface == NULL)) { // we were not called from the menu, and a destination name is given in the path.
         strncpy(dest_host, cmd->path.c_str(), 36);

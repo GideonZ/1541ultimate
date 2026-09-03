@@ -13,8 +13,10 @@
 #include "usb_base.h"
 #include "rpc_dispatch.h"
 
-extern uint32_t _u64_rbf_start;
-extern uint32_t _u64_rbf_end;
+extern uint32_t _u64e2_50t_swp_start;
+extern uint32_t _u64e2_50t_swp_end;
+extern uint32_t _u64e2_100t_swp_start;
+extern uint32_t _u64e2_100t_swp_end;
 
 extern uint32_t _ultimate_app_start;
 extern uint32_t _ultimate_app_end;
@@ -32,6 +34,8 @@ extern uint8_t _1541_bin_start;
 extern uint8_t _snds1541_bin_start;
 extern uint8_t _snds1571_bin_start;
 extern uint8_t _snds1581_bin_start;
+extern const char _rest_api_openapi_u64_yaml_start[];
+extern const char _rest_api_openapi_u64_yaml_end[1];
 extern const char _index_html_start[];
 extern const char _index_html_end[1];
 
@@ -101,7 +105,9 @@ void do_update(void)
     Flash *flash2 = get_flash();
     console_print(screen, "\033\024Detected Flash: %s\n", flash2->get_type_string());
 
-    const char *fpgaType = (getFpgaCapabilities() & CAPAB_FPGA_TYPE) ? "5CEBA4" : "5CEBA2";
+    uint8_t fpgatype_id = getFpgaType();
+    const char *fpga_types[] = { "5CEBA2", "5CEBA4", "XC7A50T", "XC7A100T" };
+    const char *fpgaType = fpga_types[fpgatype_id];
     console_print(screen, "Detected FPGA Type: %s.\nBoard Revision: %s\n\033\037\n", fpgaType, getBoardRevision());
 
     /* Extra check on the loaded images */
@@ -111,11 +117,26 @@ void do_update(void)
     console_print(screen, "\033\027Checking checksums of loaded images..\n");
 
     console_print(screen, "\033\037Checksum of FPGA image:   ");
-    if(calc_checksum((uint8_t *)&_u64_rbf_start, (uint8_t *)&_u64_rbf_end) == CHK_u64_swp) {
-        console_print(screen, check_ok);
-    } else {
-        console_print(screen, check_error);
-        while(1);
+    switch(fpgatype_id) {
+    case 2:
+        if(calc_checksum((uint8_t *)&_u64e2_50t_swp_start, (uint8_t *)&_u64e2_50t_swp_end) == CHK_u64e2_50t_swp) {
+            console_print(screen, check_ok);
+        } else {
+            console_print(screen, check_error);
+            while(1);
+        }
+        break;
+    case 3:
+        if(calc_checksum((uint8_t *)&_u64e2_100t_swp_start, (uint8_t *)&_u64e2_100t_swp_end) == CHK_u64e2_100t_swp) {
+            console_print(screen, check_ok);
+        } else {
+            console_print(screen, check_error);
+            while(1);
+        }
+        break;
+    default:
+        user_interface->popup("FPGA Type not supported.", BUTTON_OK);
+        goto off;
     }
     console_print(screen, "\033\037Checksum of Application:  ");
     if(calc_checksum((uint8_t *)&_ultimate_app_start, (uint8_t *)&_ultimate_app_end) == CHK_ultimate_app) {
@@ -145,13 +166,24 @@ void do_update(void)
         write_flash_file("snds1581.bin", &_snds1581_bin_start, 0xC000);
 
         write_html_file("index.html", _index_html_start, (int)_index_html_end - (int)_index_html_start);
+        write_api_files(_rest_api_openapi_u64_yaml_start, _rest_api_openapi_u64_yaml_end);
 
         flash2->protect_disable();
-        flash_buffer_at(flash2, screen, 0x000000, false, &_u64_rbf_start, &_u64_rbf_end,   "V1.0", "Runtime FPGA");
-        flash_buffer_at(flash2, screen, 0x220000, false, &_ultimate_app_start,  &_ultimate_app_end,  "V1.0", "Ultimate Application");
-
-        write_protect(flash2, 4096);
-
+        switch(fpgatype_id) {
+        case 2:
+            flash_buffer_at(flash2, screen, 0x000000, false, &_u64e2_50t_swp_start, &_u64e2_50t_swp_end,   "V1.0", "Runtime FPGA");
+            flash_buffer_at(flash2, screen, 0x220000, false, &_ultimate_app_start,  &_ultimate_app_end,  "V1.0", "Ultimate Application");
+            write_protect(flash2, 4096);
+            break;
+        case 3:
+            flash_buffer_at(flash2, screen, 0x000000, false, &_u64e2_100t_swp_start, &_u64e2_100t_swp_end,   "V1.0", "Runtime FPGA");
+            flash_buffer_at(flash2, screen, 0x3C0000, false, &_ultimate_app_start,  &_ultimate_app_end,  "V1.0", "Ultimate Application");
+            write_protect(flash2, 4096); // cannot protect just 5.5 MB... :-(
+            break;
+        default:
+            user_interface->popup("FPGA Type not supported.", BUTTON_OK);
+            goto off;
+        }
 #ifndef NO_ESP
         update_esp32();
 #endif
@@ -159,7 +191,9 @@ void do_update(void)
 
     reset_config(flash2);
 
+off:
     esp32.EnableRunMode();
+    vTaskDelay(200);
     wifi_command_init();
     turn_off();
 }
@@ -167,7 +201,7 @@ void do_update(void)
 extern "C" int ultimate_main(int argc, char *argv[])
 {
     i2c->enable_scan(true, false);
-	do_update();
+    do_update();
     return 0;
 }
 

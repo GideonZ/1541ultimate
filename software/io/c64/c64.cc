@@ -64,8 +64,8 @@ static const char *timing1[] = { "20ns", "40ns", "60ns", "80ns", "100ns", "120ns
 static const char *timing2[] = { "16ns", "32ns", "48ns", "64ns",  "80ns",  "96ns", "112ns", "128ns", "144ns", "160ns", "176ns", "192ns", "208ns", "224ns", "240ns", "256ns" };
 static const char *timing3[] = { "15ns", "30ns", "45ns", "60ns", "75ns", "90ns", "105ns", "120ns" };
 static const char *cartmodes[] = { "Auto", "Internal", "External", "Manual" };
-static const char *bus_modes[] = { "Quiet", "Writes", "Dynamic", "Dyn. & Writes" };
-static const uint8_t bus_mode_values[] = { 0x00, 0x01, 0x02, 0x03, 0x04 };
+static const char *bus_modes[] = { "Quiet", "Writes", "Dynamic", "Dyn. & Writes", "Compatibility" };
+static const uint8_t bus_mode_values[] = { 0x00, 0x01, 0x02, 0x03, 0x05 }; // Compatibility has write also enabled
 static const char *bus_sharing[] = { "Internal", "External", "Both" };
 static const char *en_dis_geo[] = { "Disabled", "Enabled", "GeoRAM Mode" };
 
@@ -73,7 +73,7 @@ struct t_cfg_definition c64_config[] = {
     { CFG_C64_CART_CRT,    CFG_TYPE_STRFUNC,"Cartridge",                  "%s", (const char **)C64 :: list_crts,  0, 30, (int)"" },
 #if U64
     { CFG_C64_CART_PREF,   CFG_TYPE_ENUM, "Cartridge Preference",         "%s", cartmodes,  0,  3, 0 },
-    { CFG_BUS_MODE,        CFG_TYPE_ENUM, "Bus Operation Mode",           "%s", bus_modes,    0,  3, 0 },
+    { CFG_BUS_MODE,        CFG_TYPE_ENUM, "Bus Operation Mode",           "%s", bus_modes,    0,  4, 0 },
     { CFG_BUS_SHARING_ROM, CFG_TYPE_ENUM, "Bus Sharing - ROMs",           "%s", bus_sharing,  0,  2, 2 },
     { CFG_BUS_SHARING_IO1, CFG_TYPE_ENUM, "Bus Sharing - I/O1",           "%s", bus_sharing,  0,  2, 2 },
     { CFG_BUS_SHARING_IO2, CFG_TYPE_ENUM, "Bus Sharing - I/O2",           "%s", bus_sharing,  0,  2, 2 },
@@ -131,10 +131,11 @@ C64::C64()
 
     register_store(0x43363420, "C64 and Cartridge Settings", c64_config);
     cfg->set_alt_name("Cartridge and ROM Settings");
+    cfg->set_sort_order(SORT_ORDER_CFG_MEM);
 
 #ifdef U64
     cfg->set_change_hook(CFG_C64_CART_PREF, C64::setCartPref);
-    setCartPref(cfg->find_item(CFG_C64_CART_PREF));
+    setCartPrefUI(cfg->find_item(CFG_C64_CART_PREF));
 #endif
 
     setup_config_menu();
@@ -146,7 +147,9 @@ C64::C64()
     C64_STOP_MODE = STOP_COND_FORCE;
     C64_MODE = MODE_NORMAL;
     isFrozen = false;
+    frozen_mode = MODE_NORMAL;
     backupIsValid = false;
+    frozen_cia2_porta_changed = false;
     buttonPushSeen = false;
     client = 0;
     available = false;
@@ -166,7 +169,16 @@ C64::C64()
 #endif
 }
 
-int C64 :: setCartPref(ConfigItem *item)
+int C64 :: setCartPref(ConfigItem *item) // also set store update
+{
+    if (!item) {
+        return 0;
+    }
+    item->store->set_need_effectuate();
+    return setCartPrefUI(item);
+}
+
+int C64 :: setCartPrefUI(ConfigItem *item)
 {
     if (!item) {
         return 0;
@@ -455,7 +467,10 @@ void C64::stop(bool do_raster)
 
         ioWrite8(ITU_TIMER, 200); // 1 ms
 
-        for (w = 0; w < 100;) { // was 1500
+        // A running 6510 writes every few cycles, so a safe R/Wn sequence
+        // arrives in microseconds or not at all; running out the budget only
+        // happens where the STOP_COND_FORCE below produces the same stop anyway.
+        for (w = 0; w < 10;) { // was 1500
             if (C64_STOP & C64_HAS_STOPPED) {
                 stop_mode = 2;
                 break;
@@ -581,6 +596,22 @@ void C64::resume(void)
     }
 }
 
+bool C64::begin_stopped_session(void)
+{
+    bool wasStopped = is_stopped();
+    if (!wasStopped) {
+        stop(false);
+    }
+    return !wasStopped;
+}
+
+void C64::end_stopped_session(bool stopped_it)
+{
+    if (stopped_it) {
+        resume();
+    }
+}
+
 void C64::reset(void)
 {
     C64_MODE = MODE_NORMAL;
@@ -594,6 +625,246 @@ void C64::reset(void)
 bool C64::is_in_reset(void)
 {
     return (C64_MODE & C64_MODE_RESET);
+}
+
+uint8_t C64::peek(uint16_t address)
+{
+    bool stopped_it = false;
+    volatile uint8_t *ram = (volatile uint8_t *)C64_MEMORY_BASE;
+    uint8_t saved_mode = 0;
+    bool restore_mode = false;
+    uint8_t value;
+
+    if (!is_stopped()) {
+        stop(false);
+        stopped_it = true;
+    }
+
+    if (isFrozen && address >= 0x0400 && address < 0x0800) {
+        value = ((uint8_t *)screen_backup)[address - 0x0400];
+    } else if (isFrozen && address >= 0x0800 && address < 0x1000) {
+        value = ((uint8_t *)ram_backup)[address - 0x0800];
+    } else if (isFrozen && address >= 0xD800 && address < 0xDC00) {
+        value = ((uint8_t *)color_backup)[address - 0xD800];
+    } else {
+        // The freezer's own Ultimax cart, banked in to give it bus access while
+        // frozen, decodes only $0000-$0FFF, the I/O space and its own ROM
+        // windows: $1000-$7FFF and $A000-$CFFF have no device on the bus under
+        // it, same as $8000-$9FFF and $E000-$FFFF. Reaching any of them needs
+        // the C64 mode put back to the one it was frozen in first.
+        if (isFrozen && address >= 0x1000 && (address < 0xD000 || address >= 0xE000)) {
+            saved_mode = C64_MODE;
+            if ((saved_mode & C64_MODE_ULTIMAX) && (saved_mode != frozen_mode)) {
+                C64_MODE = frozen_mode;
+                restore_mode = true;
+                // The mode write has to reach the machine before the read it
+                // was made for, and reading the register back does not achieve
+                // it: that read never becomes a C64 bus cycle. One discarded
+                // read through the aperture is that cycle, as
+                // dma_transfer_frozen takes for the same reason. This range
+                // never contains I/O, so it has no side effect.
+                (void)ram[address];
+            }
+        }
+        value = ram[address];
+        if (restore_mode) {
+            C64_MODE = saved_mode;
+        }
+    }
+
+    if (stopped_it) {
+        resume();
+    }
+    return value;
+}
+
+void C64::poke(uint16_t address, uint8_t value)
+{
+    bool stopped_it = false;
+    volatile uint8_t *ram = (volatile uint8_t *)C64_MEMORY_BASE;
+    uint8_t saved_mode = 0;
+    bool restore_mode = false;
+
+    if (!is_stopped()) {
+        stop(false);
+        stopped_it = true;
+    }
+
+    if (isFrozen && address >= 0x0400 && address < 0x0800) {
+        ((uint8_t *)screen_backup)[address - 0x0400] = value;
+    } else if (isFrozen && address >= 0x0800 && address < 0x1000) {
+        ((uint8_t *)ram_backup)[address - 0x0800] = value;
+    } else if (isFrozen && address >= 0xD800 && address < 0xDC00) {
+        ((uint8_t *)color_backup)[address - 0xD800] = value;
+    } else {
+        // See the matching branch in peek().
+        if (isFrozen && address >= 0x1000 && (address < 0xD000 || address >= 0xE000)) {
+            saved_mode = C64_MODE;
+            if ((saved_mode & C64_MODE_ULTIMAX) && (saved_mode != frozen_mode)) {
+                C64_MODE = frozen_mode;
+                restore_mode = true;
+                (void)ram[address];
+            }
+        }
+        ram[address] = value;
+        if (restore_mode) {
+            // A write does not stall for its bus cycle the way a read does, so
+            // it can still be on its way out when the mode goes back to
+            // Ultimax and nothing decodes this range any more. One discarded
+            // read holds the mode until the write has been taken.
+            (void)ram[address];
+            C64_MODE = saved_mode;
+        }
+    }
+
+    if (stopped_it) {
+        resume();
+    }
+}
+
+void C64::dma_transfer_frozen(uint16_t offset, uint8_t *buffer, int length, int rw)
+{
+    volatile uint8_t *ram = (volatile uint8_t *)C64_MEMORY_BASE;
+    uint8_t saved_memonly = C64_DMA_MEMONLY;
+    C64_DMA_MEMONLY = 1;
+
+    int pos = 0;
+    while (pos < length) {
+        int addr = offset + pos;
+        int remaining = length - pos;
+        int chunk = remaining;
+
+        if ((addr >= 0x1000) && ((addr < 0xD000) || (addr >= 0xE000))) {
+            // The freezer's own Ultimax cart, banked in to give it bus access
+            // while frozen, decodes only $0000-$0FFF, the I/O space and its own
+            // ROM windows: $1000-$7FFF and $A000-$CFFF have no device on the bus
+            // under it, same as $8000-$9FFF and $E000-$FFFF. Reaching any of
+            // them needs the C64 mode temporarily put back to the one it was
+            // frozen in.
+            int region_end = (addr < 0xD000) ? 0xD000 : 0x10000;
+            if ((region_end - addr) < chunk) {
+                chunk = region_end - addr;
+            }
+            uint8_t saved_mode = C64_MODE;
+            bool restore_mode = (saved_mode & C64_MODE_ULTIMAX) && (saved_mode != frozen_mode);
+            if (restore_mode) {
+                C64_MODE = frozen_mode;
+            }
+            C64_DMA_MEMONLY = 0;
+            // Both registers above re-decode the C64 bus, and that has to
+            // reach the machine before the transfer is issued. Reading the
+            // registers back does not achieve it: they are on this side and
+            // the read never becomes a C64 bus cycle. One discarded read
+            // through the C64 memory aperture is that cycle. resume() takes
+            // the same kind of dummy cycle after its own C64_MODE write. This
+            // range never contains I/O, so the read has no side effect.
+            (void)ram[addr];
+            if (rw) {
+                memcpy(buffer + pos, (const void *)(ram + addr), chunk);
+            } else {
+                memcpy((void *)(ram + addr), buffer + pos, chunk);
+                // And one after, for the same reason in the other direction. A
+                // read through the aperture stalls until the C64 bus cycle
+                // answers, so the loop cannot outrun it; a write does not, so
+                // the last bytes can still be on their way out when the mode
+                // below is put back to Ultimax, where nothing decodes this
+                // range, and they are lost. One discarded read holds the mode
+                // until the write has been taken. Measured on an Ultimate II+L
+                // in a C64 Ultimate: without it, a monitor Transfer of any
+                // length landed its first two bytes and nothing after them.
+                (void)ram[addr];
+            }
+            C64_DMA_MEMONLY = 1;
+            if (restore_mode) {
+                C64_MODE = saved_mode;
+            }
+        } else if ((addr >= 0x0800) && (addr < 0x1000)) {
+            // The freezer menu uses this 2KB as its own scratch RAM, so serve
+            // reads/writes from the backup taken at freeze time instead: it is
+            // restored to real RAM on unfreeze, unlike the live (bypassed) range.
+            if ((0x1000 - addr) < chunk) {
+                chunk = 0x1000 - addr;
+            }
+            uint8_t *backup = ((uint8_t *)ram_backup) + (addr - 0x0800);
+            if (rw) {
+                memcpy(buffer + pos, backup, chunk);
+            } else {
+                memcpy(backup, buffer + pos, chunk);
+            }
+        } else if ((addr >= 0xD800) && (addr < 0xDC00)) {
+            // Same reasoning as the ram_backup range above, but for color RAM.
+            if ((0xDC00 - addr) < chunk) {
+                chunk = 0xDC00 - addr;
+            }
+            uint8_t *backup = ((uint8_t *)color_backup) + (addr - 0xD800);
+            if (rw) {
+                memcpy(buffer + pos, backup, chunk);
+            } else {
+                memcpy(backup, buffer + pos, chunk);
+            }
+        } else {
+            int next_boundary;
+            if (addr < 0x0800) {
+                next_boundary = 0x0800;
+            } else if (addr < 0x8000) {
+                next_boundary = 0x8000;
+            } else if (addr < 0xD800) {
+                next_boundary = 0xD800;
+            } else {
+                next_boundary = 0xE000;
+            }
+            if ((next_boundary - addr) < chunk) {
+                chunk = next_boundary - addr;
+            }
+            if (rw) {
+                memcpy(buffer + pos, (const void *)(ram + addr), chunk);
+            } else {
+                memcpy((void *)(ram + addr), buffer + pos, chunk);
+            }
+        }
+        pos += chunk;
+    }
+
+    C64_DMA_MEMONLY = saved_memonly;
+}
+
+#if U64 == 1
+// Defined in u64_config.cc, which owns the FPGA audio mixer and the settings
+// it is programmed from. Weak because the updater application links this file
+// without that one; there the SID writes below stand on their own.
+extern void u64_mute_sids(void) __attribute__((weak));
+extern void u64_unmute_sids(void) __attribute__((weak));
+#endif
+
+// Silence the SIDs while the freezer owns the machine. The SID master volume
+// is what does it, on every target. Where an FPGA mixer is available it is
+// closed around those writes, so the click they make is not heard; see
+// u64_mute_sids().
+static void freezer_mute_sids(void)
+{
+#if U64 == 1
+    if (u64_mute_sids) {
+        u64_mute_sids();
+        return;
+    }
+#endif
+    SID_VOLUME = 0;
+    SID2_VOLUME = 0;
+    SID3_VOLUME = 0;
+}
+
+static void freezer_unmute_sids(void)
+{
+#if U64 == 1
+    if (u64_unmute_sids) {
+        u64_unmute_sids();
+        return;
+    }
+#endif
+    // turn on volume. Unfortunately we could not know what it was set to.
+    SID_VOLUME = 15;
+    SID2_VOLUME = 15;
+    SID3_VOLUME = 15;
 }
 
 /*
@@ -624,9 +895,7 @@ void C64::backup_io(void)
     VIC_CTRL = 0;
     BORDER = 0; // black
     BACKGROUND = 0; // black for later
-    SID_VOLUME = 0;
-    SID2_VOLUME = 0;
-    SID3_VOLUME = 0;
+    freezer_mute_sids();
 
     // have a look at the timers.
     // These printfs introduce some delay.. if you remove this, some programs won't resume well. Why?!
@@ -658,6 +927,7 @@ void C64::backup_io(void)
     // backup CIA registers
     cia_backup[0] = CIA2_DDRA;
     cia_backup[1] = CIA2_DPA;
+    frozen_cia2_porta_changed = false;
     cia_backup[2] = CIA1_DDRA;
     cia_backup[3] = CIA1_DDRB;
     CIA1_DDRA = 0x00;
@@ -718,6 +988,19 @@ void C64::freeze(void)
     if (!phi2_present())
         return;
 
+    if (backupIsValid) {
+        // Already frozen. backup_io() asserts on this, and a failed
+        // configASSERT spins with interrupts off, so the whole device
+        // stops answering and needs a power cycle. Two menu_button
+        // presses in quick succession reach here, which is one REST call
+        // issued twice. Declining the second freeze keeps the backup that
+        // is already held, which is the one restore_io() has to put back.
+        printf("C64::freeze: already frozen, ignoring\n");
+        isFrozen = true;   // the two have to agree, see unfreeze()
+        return;
+    }
+
+    frozen_mode = C64_MODE;
     stop(true);
     backup_io();
     init_io();
@@ -762,6 +1045,9 @@ void C64::restore_io(void)
     }
 
     // restore the cia registers
+    if (frozen_cia2_porta_changed) {
+        CIA2_DPA = cia_backup[1];
+    }
     CIA2_DDRA = cia_backup[0];
 //    CIA2_DPA  = cia_backup[1]; // don't touch!
     CIA1_DDRA = cia_backup[2];
@@ -781,9 +1067,7 @@ void C64::restore_io(void)
 
 //    restore_cia();  // Restores the interrupt generation
 
-    SID_VOLUME = 15;  // turn on volume. Unfortunately we could not know what it was set to.
-    SID2_VOLUME = 15;  // turn on volume. Unfortunately we could not know what it was set to.
-    SID3_VOLUME = 15;  // turn on volume. Unfortunately we could not know what it was set to.
+    freezer_unmute_sids();
     SID_DUMMY = 0;   // clear internal charge on databus!
     SID2_DUMMY = 0;   // clear internal charge on databus!
     SID3_DUMMY = 0;   // clear internal charge on databus!
@@ -836,6 +1120,19 @@ void C64::unfreeze()
 {
     if (!isFrozen)
         return;
+
+    if (!backupIsValid) {
+        // Nothing left to put back: something else already restored it
+        // while isFrozen stayed set. A reset issued with the menu open
+        // takes that path, because closing the menu restores the
+        // registers before MENU_C64_RESET calls this. restore_io()
+        // asserts on it, and a failed configASSERT spins with
+        // interrupts off, so the device stops answering and needs a
+        // power cycle. Clear the flag and let the caller carry on.
+        printf("C64::unfreeze: no backup held, nothing to restore\n");
+        isFrozen = false;
+        return;
+    }
 
     if (!phi2_present())
         return;

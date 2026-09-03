@@ -387,17 +387,63 @@ const char *get_filename(const char *path)
     return path;
 }
 
+static const char *reserved_names[] = {
+    "CON", "PRN", "AUX", "NUL",
+    "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
+    "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+    NULL
+};
+
 void petscii_to_fat(const char *pet, char *fat, int maxlen)
 {
+    int match = 0, i;
+    for (i = 0; reserved_names[i] != NULL; i++) {
+        match = 1;
+        unsigned char *a = (unsigned char *)pet;
+        unsigned char *b = (unsigned char *)reserved_names[i];
+
+        while (match) {
+            unsigned char aa = *a;
+            unsigned char bb = *b;
+            if (!bb && aa == '.')
+                aa = 0;
+            if (aa != bb)
+                match = 0;
+            if (!aa)
+                break;
+            if (!bb)
+                break;
+            a++;
+            b++;
+        }
+
+        if (match)
+            break;
+    }
+    if (match) {
+        fat[0] = '{';
+        fat[1] = '}';
+        i = 2;
+    } else {
+        i = 0;
+    }
+
     // clear output string
     const char *hex = "0123456789ABCDEF";
+    bool first = true;
     bool escape = false;
-    int i = 0;
-    while(*pet) {
+
+    while (*pet) {
         char p = *(pet++);
-        if ((p < 32) || (p >= 96) || (p == ':') || (p == '/') ||
-                (p == '\\') || (p == '*') || (p == '\x22') ||
-                (p == '<') || (p == '>') || (p == '?')) {  // '|' > 96 ;)
+        if (p == 160) {
+            const char *q = pet;
+            while (*(q++) == 160)
+                ;
+            if (!*q)
+                break;
+        }
+        if ((p < 32) || (p >= 96) || (p == ':') || (p == '/') || (p == '\\') || (p == '\x22') ||
+            (p == '<') || (p == '>') || (first && p == '.')) { // '|' > 96 ;)
 
             if ((i + 4) >= maxlen) {
                 break;
@@ -416,14 +462,22 @@ void petscii_to_fat(const char *pet, char *fat, int maxlen)
                 fat[i++] = '}';
                 escape = false;
             }
-            fat[i++] = tolower(p);
+            fat[i++] = p;
         }
+        first = false;
     }
     if (escape) {
         fat[i++] = '}';
         escape = false;
     }
     fat[i] = 0;
+
+    if (strlen(fat) > 3) {
+        char *ext = fat + strlen(fat) - 4;
+        if (!strcasecmp(ext, ".prg") || !strcasecmp(ext, ".seq") || !strcasecmp(ext, ".usr") || !strcasecmp(ext, ".rel")) {
+            strcat(fat, "{}");
+        }
+    }
 }
 
 void fat_to_petscii(const char *fat, bool cutExt, char *pet, int len, bool term)
@@ -473,5 +527,48 @@ void fat_to_petscii(const char *fat, bool cutExt, char *pet, int len, bool term)
     }
     if (term) {
         pet[i] = 0;
+    }
+}
+
+int read_line(const char *buffer, int index, char *out, int outlen)
+{
+    int i = 0;
+    // trim leading spaces and tabs
+    while ((buffer[index] == 0x20) || (buffer[index] == 0x09)) {
+        index ++;
+    }
+    while ((buffer[index] != 0x0A) && (buffer[index] != 0x00)) {
+        if (buffer[index] != 0x0D) {
+            if (i < (outlen-1)) {
+                out[i++] = buffer[index];
+            }
+        }
+        index++;
+    }
+    if ((buffer[index] == 0x0A) || (buffer[index] == 0x00)) {
+        index++;
+    }
+    out[i] = 0;
+    return index;
+}
+
+void url_encode(const char *src, mstring &dest)
+{
+    int len = strlen(src);
+    char pct[4] = {0};
+
+    for(int i=0; i<len; i++) {
+        if(src[i] == '_' || src[i] == '-' || src[i] == '.' || src[i] == '*') {
+            dest += src[i];
+        } else if(src[i] >= 'a' && src[i] <= 'z') {
+            dest += src[i];
+        } else if(src[i] >= 'A' && src[i] <= 'Z') {
+            dest += src[i];
+        } else if(src[i] >= '0' && src[i] <= '9') {
+            dest += src[i];
+        } else {
+            sprintf(pct, "%c%02x", '%', src[i]);
+            dest += pct;
+        }
     }
 }

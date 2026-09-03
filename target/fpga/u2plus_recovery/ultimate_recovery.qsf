@@ -561,17 +561,6 @@ set_global_assignment -name VHDL_FILE ../../../fpga/6502n/vhdl_source/proc_core.
 set_global_assignment -name VHDL_FILE ../../../fpga/6502n/vhdl_source/proc_registers.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/6502n/vhdl_source/data_oper.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/6502n/vhdl_source/implied.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/vhdl_source/dmem_arbiter.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/vhdl_source/mem16k.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/vhdl_source/dm_cache_custom.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/vhdl_source/mem4k.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/vhdl_source/mblite_wrapper.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/vhdl_source/dm_with_invalidate.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/vhdl_source/config_pkg.vhd -library mblite
-set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/vhdl_source/mem32k.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/vhdl_source/dmem_splitter.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/vhdl_source/cached_mblite.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/vhdl_source/dm_simple.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/usb_debug.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/rxtx_to_buf.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/usb_host_nano.vhd

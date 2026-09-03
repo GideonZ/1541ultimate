@@ -593,6 +593,9 @@
         <Source name="../../../fpga/cpu_unit/rvlite/vhdl_source/dsram.vhd" type="VHDL" type_short="VHDL">
             <Options/>
         </Source>
+        <Source name="../../../fpga/cpu_unit/rvlite/vhdl_source/multiply.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
         <Source name="../../../fpga/cpu_unit/rvlite/vhdl_source/execute.vhd" type="VHDL" type_short="VHDL">
             <Options/>
         </Source>

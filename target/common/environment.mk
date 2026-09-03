@@ -18,6 +18,8 @@ SVFDUMP = $(TOOLS)/svf_dump
 CROSS        ?= mb-
 ELFTYPE      ?= elf32-microblaze
 ARCHITECTURE ?= MicroBlaze
+PRODFAMILY   ?= .
+PRODNAME     ?= .
 
 #BOOT = ../2nd_boot
 #LWIPLIB = ../$(subst -,_,$(CROSS))lwip/result/liblwip.a
@@ -49,6 +51,7 @@ VPATH     = $(PATH_SW)/application \
 			$(PATH_SW)/components \
 			$(PATH_SW)/network \
 			$(PATH_SW)/userinterface \
+			$(PATH_SW)/monitor \
 			$(PATH_SW)/io/stream \
 			$(PATH_SW)/io/c64 \
 			$(PATH_SW)/io/rtc \
@@ -104,4 +107,3 @@ OBJCOPY	  = $(CROSS)objcopy
 SIZE	  = $(CROSS)size
 
 .SUFFIXES:
-

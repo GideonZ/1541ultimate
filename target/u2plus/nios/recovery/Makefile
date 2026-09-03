@@ -52,6 +52,7 @@ SRCS_CC	 =  u2p_init.cc \
 			screen.cc \
 			keyboard_c64.cc \
 			editor.cc \
+			hex_editor.cc \
 			mystring.cc \
 			path.cc \
 			pattern.cc \

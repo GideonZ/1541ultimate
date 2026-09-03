@@ -252,23 +252,23 @@ PROVIDE( __stack_limit   = __stack_base );
 /* User defines
  * for REU and RAMDISK, Cartridge ROM, RAM, etc
  */
-PROVIDE( __kernal_area   = 0x0EA8000 );
-PROVIDE( __drive_b_sound = 0x0EB0000 );
-PROVIDE( __drive_a_sound = 0x0EC0000 );
-PROVIDE( __drive_b_area  = 0x0ED0000 );
-PROVIDE( __drive_a_area  = 0x0EE0000 );
+PROVIDE( __kernal_area   = 0x00EA8000 );
+PROVIDE( __drive_b_sound = 0x00EB0000 );
+PROVIDE( __drive_a_sound = 0x00EC0000 );
+PROVIDE( __drive_b_area  = 0x00ED0000 );
+PROVIDE( __drive_a_area  = 0x00EE0000 );
 
-PROVIDE( __cart_ram_start = 0x0EF0000 );
-PROVIDE( __cart_ram_limit = 0x0F00000 );
+PROVIDE( __cart_ram_start = 0x00EF0000 );
+PROVIDE( __cart_ram_limit = 0x00F00000 );
 
-PROVIDE( __cart_rom_start = 0x0F00000 );
-PROVIDE( __cart_rom_limit = 0x1000000 );
+PROVIDE( __reu_ram_start = 0x01000000 );
+PROVIDE( __reu_ram_limit = 0x02000000 );
 
-PROVIDE( __reu_ram_start = 0x1000000 );
-PROVIDE( __reu_ram_limit = 0x2000000 );
+PROVIDE( __ram_disk_start = 0x02000000 );
+PROVIDE( __ram_disk_limit = 0x03000000 );
 
-PROVIDE( __ram_disk_start = 0x2000000 );
-PROVIDE( __ram_disk_limit = 0x3000000 );
+PROVIDE( __updater_start = 0x03000000 );
+PROVIDE( __updater_limit = 0x03C00000 );
 
-PROVIDE( __updater_start = 0x3000000 );
-PROVIDE( __updater_limit = 0x4000000 );
+PROVIDE( __cart_rom_start = 0x03C00000 );
+PROVIDE( __cart_rom_limit = 0x04000000 );

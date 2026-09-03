@@ -15,6 +15,7 @@
 
                         // Values > 0 are valid choices from the user and need to be passed to the
                         // underlying object.
+#define MENU_DONE    1  // Modal window operation is complete and user "OK'ed"
 #define MENU_NOP     0  // Stay in current window
 #define MENU_CLOSE  -1  // Window operation is complete and can be closed
 #define MENU_HIDE   -2  // The selected action requests the menu to hide. (No effect for remote connection)
@@ -23,6 +24,8 @@
                         // For the remote connection it means close connection
 
 #define MAX_UI_OBJECTS  8
+
+#define CFG_USERIF_STORE_ID 0x47454E2E // GEN.
 
 //#define CFG_USERIF_BACKGROUND  0x01
 //#define CFG_USERIF_BORDER      0x02
@@ -39,12 +42,21 @@
 #define CFG_USERIF_FILENAME_OVERFLOW_SQUEEZE 0x0C
 #define CFG_USERIF_NAVIGATION  0x0D
 #define CFG_USERIF_COLORSCHEME 0x0E
+#define CFG_USERIF_TEMP_AUTO_CLEANUP 0x0F
+#define CFG_USERIF_TEMP_USE_CACHE_SUBFOLDER 0x10
 
 typedef enum {
     e_keymap_default,
+    e_keymap_monitor,
 } keymap_options_t;
 
 
+#define BYTES_PER_HEX_ROW 8
+#define CHARS_PER_HEX_ROW 37
+
+class Editor;
+class HexEditor;
+class MemoryBackend;
 class UserInterface : public ConfigurableObject, public HostClient
 {
 private:
@@ -59,9 +71,13 @@ private:
     UIStatusBox *status_box;
     
     void set_screen_title(void);
+    void set_available(bool enable);
     int  pollFocussed(void);
+    bool pollMenuButtonPush(void);
+    void discardPendingMenuButton(void);
     void peel_off(void);
     bool buttonDownFor(uint32_t ms);
+    void run_editor(Editor *);
 public:
     int color_border, color_bg, color_fg, color_sel, color_sel_bg, reverse_sel;
     int color_status, color_inactive;
@@ -89,7 +105,13 @@ public:
     virtual int  popup(const char *msg, int count, const char **names, const char *keys); // blocking, custom
     virtual int  choice(const char *msg, const char **choices, int count);
     virtual int  string_box(const char *msg, char *buffer, int maxlen); // blocking
-    virtual int  string_edit(char *buffer, int maxlen, Window *w, int x, int y);
+    virtual int  string_edit(char *buffer, int maxlen, Window *w, int x, int y, int max_chars=0);
+    virtual int  string_box(const char *msg, char *buffer, int maxlen, bool template_mode); // blocking
+    virtual int  string_box(const char *msg, char *buffer, int maxlen, bool template_mode, bool uppercase); // blocking
+    // The same blocking string box, with an opt-in input policy: see
+    // UIStringEditPolicy. A NULL policy is the ordinary field above.
+    virtual int  string_box(const char *msg, char *buffer, int maxlen, bool template_mode, bool uppercase,
+                            const UIStringEditPolicy *policy); // blocking
     virtual void show_progress(const char *msg, int steps); // not blocking
     virtual void update_progress(const char *msg, int steps); // not blocking
     virtual void hide_progress(void); // not blocking (of course)
@@ -101,14 +123,27 @@ public:
     Keyboard *get_keyboard() { return keyboard; }
 
     int keymapper(int c, keymap_options_t map);
+    const char *function_key_for(int action) const;
 
     int  activate_uiobject(UIObject *obj);
+    int  uiobject_modal(UIObject *obj);
     bool has_focus(UIObject *obj);
     int  getPreferredType(void);
     void help();
     void run_editor(const char *, int);
+    void run_hex_editor(const char *, int);
+    void run_machine_monitor(MemoryBackend *backend);
     void swapDisk(void);
     void send_keystroke(int key);
+    static bool anyMenuActive(void);
+    enum {
+        ACTIVE_SCREEN_MATRIX_WIDTH = 40,
+        ACTIVE_SCREEN_MATRIX_HEIGHT = 25,
+        ACTIVE_SCREEN_MATRIX_CELLS = ACTIVE_SCREEN_MATRIX_WIDTH * ACTIVE_SCREEN_MATRIX_HEIGHT,
+        ACTIVE_SCREEN_MATRIX_PLANES = 2,
+        ACTIVE_SCREEN_MATRIX_BYTES = ACTIVE_SCREEN_MATRIX_CELLS * ACTIVE_SCREEN_MATRIX_PLANES
+    };
+    static bool copy_active_screen_matrix(uint8_t *dest, int dest_len);
 
     UIObject *get_root_object(void) { return ui_objects[0]; }
 

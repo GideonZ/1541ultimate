@@ -98,10 +98,24 @@ public:
         LEAVE_SAFE_SECTION
 //		printf("ed. El=%d. Size=%d\n", elements, size);
 	}
+
+	void prepend(T el) {
+		ENTER_SAFE_SECTION
+		if(elements == size)
+			expand();
+		for(int i=elements; i>0; i--) {
+			element_array[i] = element_array[i-1];
+			removal[i] = removal[i-1];
+		}
+		element_array[0] = el;
+		removal[0] = 0;
+		elements++;
+		LEAVE_SAFE_SECTION
+	}
 	
 	int remove(T el) {
 		ENTER_SAFE_SECTION
-		int res = 0;
+		int res = -1;
 		for(int i=0;i<elements;i++) {
 			if(element_array[i] == el) {
 				elements--;
@@ -109,7 +123,7 @@ public:
 					element_array[j] = element_array[j+1];
 					removal[j] = removal[j+1];
 				}
-				res = 1;
+				res = i;
 				break;
 			}
 		}

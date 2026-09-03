@@ -19,7 +19,7 @@ entity usb_host_nano is
     generic (
         g_big_endian   : boolean := false;
         g_incl_debug   : boolean := false;
-        g_tag          : std_logic_vector(7 downto 0) := X"05";
+        g_tag          : std_logic_vector(7 downto 0) := X"04";
         g_simulation   : boolean := false );
 	port  (
         clock       : in  std_logic;
@@ -104,6 +104,9 @@ architecture arch of usb_host_nano is
     signal sof_tick        : std_logic;
     signal interrupt       : std_logic;
 begin
+    assert g_tag(1 downto 0) = "00"
+        report "Tag should be a multiple of 4, and not " & integer'image(to_integer(unsigned(g_tag)))
+        severity failure;
 
     i_intf: entity work.usb_host_interface
     generic map (

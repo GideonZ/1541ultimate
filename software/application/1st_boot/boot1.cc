@@ -87,7 +87,7 @@ int main(int argc, char **argv)
     int flash_type = 0;
     if(manuf == 0x1F) { // Atmel
         read_boot2 = 0x030A2800;
-        read_appl  = 0x03200000;
+        read_appl  = 0x030BE000;
 
         // protect flash the Atmel way
         SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low

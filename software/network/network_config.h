@@ -18,7 +18,6 @@
 #define CFG_NETWORK_NTP_SRV2               0x33
 #define CFG_NETWORK_NTP_SRV3               0x34
 
-
 class NetworkConfig : ConfigurableObject {
 public:
     NetworkConfig();

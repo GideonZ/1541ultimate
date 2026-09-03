@@ -5,18 +5,11 @@
 #include <stdlib.h>
 #include "indexed_list.h"
 #include "pattern.h"
+#include "filemanager.h"
 
 extern "C" {
     #include "multipart.h"
 }
-
-#ifndef TEMP_FILE_PATH
-#define TEMP_FILE_PATH "/Temp/"
-#endif
-
-#ifdef USE_FILEMANAGER
-#include "filemanager.h"
-#endif
 
 class TempfileWriter;
 
@@ -27,18 +20,14 @@ class TempfileWriter
     IndexedList<const char *> filenames;
     IndexedList<size_t> filesizes;
     IndexedList<uint8_t *>filebuffers;
-    static int temp_count;
-#ifdef USE_FILEMANAGER
     File *fo;
-#else
-    FILE *fo;
-#endif
     size_t file_size;    
     HTTPReqMessage *req;
     HTTPRespMessage *resp;
     WriterCallback_t callback;
     const void *context1;
     void *context2;
+    bool aborted;
 public:
     TempfileWriter(HTTPReqMessage *req, HTTPRespMessage *resp, WriterCallback_t cb, const void *c1, void *c2)
         : filenames(4, NULL), filesizes(4, 0), filebuffers(4, NULL) {
@@ -48,7 +37,10 @@ public:
         callback = cb;
         context1 = c1;
         context2 = c2;
+        aborted = false;
     }
+
+    bool is_aborted() const { return aborted; }
 
     ~TempfileWriter()
     {
@@ -90,17 +82,21 @@ public:
                 fo = NULL;
                 break;
             case eDataStart:
-                sprintf(filename, TEMP_FILE_PATH "temp%04x", temp_count++);
-                filenames.append(strdup(filename));
-#ifdef USE_FILEMANAGER
-                FileManager::getFileManager()->fopen(filename, FA_WRITE | FA_CREATE_ALWAYS, &fo);
-#else
-                fo = fopen(filename, "wb");
-#endif
+            {
+                mstring canonical_path;
+                FRESULT fres = FileManager::getFileManager()->create_temp_file("upload", NULL,
+                        FA_WRITE | FA_CREATE_ALWAYS, &fo, &canonical_path);
+                if (fres == FR_OK) {
+                    filenames.append(strdup(canonical_path.c_str()));
+                } else {
+                    filenames.append(strdup(""));
+                    fo = NULL;
+                }
+            }
                 file_size = 0;
                 break;
             case eSubHeader:
-                sprintf(filename, TEMP_FILE_PATH "temp%04x", temp_count++);
+                filename[0] = 0;
                 f = (HTTPHeaderField *)block->data;
                 for(int i=0; i < block->length; i++) {
                     if (strcasecmp(f[i].key, "Content-Disposition") == 0) {
@@ -117,47 +113,40 @@ public:
                                 sub++;
                             }
                             fix_filename(sub);
-                            strncpy(filename + strlen(TEMP_FILE_PATH), sub, 127-strlen(TEMP_FILE_PATH) );
+                            strncpy(filename, sub, sizeof(filename) - 1);
                             filename[127] = 0;
                         }
                     }
                 }
-                filenames.append(strdup(filename));
-#ifdef USE_FILEMANAGER
-                FileManager::getFileManager()->fopen(filename, FA_WRITE | FA_CREATE_ALWAYS, &fo);
-#else
-                fo = fopen(filename, "wb");
-#endif
+            {
+                mstring canonical_path;
+                FRESULT fres = FileManager::getFileManager()->create_temp_file("upload",
+                        filename[0] ? filename : NULL, FA_WRITE | FA_CREATE_ALWAYS, &fo, &canonical_path);
+                if (fres == FR_OK) {
+                    filenames.append(strdup(canonical_path.c_str()));
+                } else {
+                    filenames.append(strdup(""));
+                    fo = NULL;
+                }
+            }
                 file_size = 0;
                 break;
             case eDataBlock:
                 if (fo) {
-#ifdef USE_FILEMANAGER
                     fo->write(block->data, block->length, &dummy);
-#else
-                    fwrite(block->data, 1, block->length, fo);
-#endif
                     file_size += block->length;
                 }
                 break;
             case eDataEnd:
+                filesizes.append(fo ? file_size : 0);
                 if (fo) {
-                    filesizes.append(file_size);
-#ifdef USE_FILEMANAGER
                     FileManager::getFileManager()->fclose(fo);
-#else
-                    fclose(fo);
-#endif
                     fo = NULL;
                 }
                 break;
             case eTerminate:
                 if (fo) {
-#ifdef USE_FILEMANAGER
                     FileManager::getFileManager()->fclose(fo);
-#else
-                    fclose(fo);
-#endif
                     fo = NULL;
                 }
                 printf("Uploaded files:\n");
@@ -171,12 +160,28 @@ public:
                     callback(this, context1, context2);
                 }
                 break;
+            case eAbort:
+                // Connection torn down before the upload finished: close any open
+                // temp file, then reuse writer_complete (via the callback) to free
+                // the request args and this writer. The aborted flag makes
+                // writer_complete skip the (incomplete) API call. Deletion is done
+                // there because ArgsURI is not visible in this header.
+                if (fo) {
+                    FileManager::getFileManager()->fclose(fo);
+                    fo = NULL;
+                }
+                aborted = true;
+                if (callback) {
+                    callback(this, context1, context2);
+                }
+                break;
         }
     }
 
     const char *get_filename(int index)
     {
-        return filenames[index];
+        const char *filename = filenames[index];
+        return filename ? filename : "";
     }
     size_t get_filesize(int index)
     {
@@ -190,19 +195,25 @@ public:
     int buffer_file(int index, size_t max_size)
     {
         size_t size = filesizes[index];
-        if (size == 0) {
+        const char *filename = get_filename(index);
+        if ((size == 0) || !filename[0]) {
             return -1; // no data
         }
         if (size > max_size) {
             return -2; // too large
         }
 
-        uint8_t *buffer = (uint8_t *)malloc(size);
+        // Allocate one extra byte: the JSON parser writes a NUL terminator at
+        // text[token->end], and the outermost token's end can equal 'size' when
+        // the body fills the buffer exactly (e.g. ends in '}' with no trailing
+        // newline). Without the spare byte that is a one-byte heap overflow.
+        uint8_t *buffer = (uint8_t *)malloc(size + 1);
         if (buffer) {
-            FILE *f = fopen(get_filename(index), "rb");
+            FILE *f = fopen(filename, "rb");
             if (f) {
                 fread(buffer, size, 1, f);
                 fclose(f);
+                buffer[size] = 0;
                 filebuffers.append(buffer);
                 return 0; // success
             }

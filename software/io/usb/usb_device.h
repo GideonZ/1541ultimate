@@ -7,6 +7,8 @@
 #include "factory.h"
 #include <string.h>
 
+#define USB_NUM_INTERFACES 6
+
 #define DESCR_DEVICE            0x01
 #define DESCR_CONFIGURATION     0x02
 #define DESCR_STRING            0x03
@@ -46,7 +48,7 @@ struct t_device_descriptor
 // 07 05 81 02 00 02 00 -- bulk in      512
 // 07 05 02 02 00 02 00 -- bulk out     512
 // 07 05 83 03 08 00 01 -- interrupt in 8
- 
+
 struct t_device_configuration
 {
     uint8_t length;
@@ -161,6 +163,7 @@ public:
     	}
     }
 
+    uint8_t getNumber(void) { return interface_number; }
 
     void addAlternative(UsbInterface *intf) {
     	alternative = intf;
@@ -262,10 +265,11 @@ public:
     //struct t_device_configuration   device_config;
     struct t_device_descriptor      device_descr;
     int num_interfaces;
-    UsbInterface *interfaces[4]; // we support composite devices with up to 4 interfaces
+    UsbInterface *interfaces[USB_NUM_INTERFACES]; // we support composite devices with up to 6 interfaces
 
     uint16_t vendorID;
     uint16_t productID;
+    uint8_t active_configuration;
 
     char manufacturer[32];
     char product[32];
@@ -347,7 +351,7 @@ public:
     	}
     }
 
-};    
+};
 
 char *unicode_to_ascii(uint8_t *in, char *out);
 

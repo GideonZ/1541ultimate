@@ -171,6 +171,7 @@ ALL_ULTIMATE_LOGIC := \
 				vhdl,work,$(ULTIMATE_FPGA)/cpu_unit/rvlite/vhdl_source/gprf.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/cpu_unit/rvlite/vhdl_source/alu_logical.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/cpu_unit/rvlite/vhdl_source/alu_branch.vhd \
+				vhdl,work,$(ULTIMATE_FPGA)/cpu_unit/rvlite/vhdl_source/multiply.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/cpu_unit/rvlite/vhdl_source/execute.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/cpu_unit/rvlite/vhdl_source/csr.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/cpu_unit/rvlite/vhdl_source/writeback.vhd \

@@ -79,7 +79,7 @@ static struct t_cfg_definition arm_sid_config[] = {
 SidDeviceArmSid::SidDeviceArmSid(int socket, volatile uint8_t *base) : SidDevice(socket)
 {
     char name[40]; // it is OK to be on the stack, because ConfigStore uses an mstring, which allocates memory for the string.
-    sprintf(name, "ARMSID in Socket %d", socket + 1);
+    sprintf(name, "SID Socket %d: ARMSID", socket + 1);
 
     config = new SidDeviceArmSid :: ArmSidConfig(this, base, name);
 }
@@ -89,6 +89,8 @@ SidDeviceArmSid :: ArmSidConfig :: ArmSidConfig(SidDeviceArmSid *parent, volatil
 {
     this->parent = parent;
     ConfigManager::getConfigManager()->add_custom_store(this);
+    set_sort_order(SORT_ORDER_CFG_SIDREP + parent->socket);
+
     readParams(base);
 
     // Make most settings 'hot' ;)

@@ -63,7 +63,8 @@ void vfs_close(vfs_file_t *file)
 {
     FileManager :: getFileManager() -> fclose((File *)file->file);
     dbg_printf("File closed. clearing open file link.\n");
-    file->parent_fs->open_file = NULL;    
+    file->parent_fs->open_file = NULL;
+    delete file;
 }
 
 int  vfs_read(void *buffer, int chunks, int chunk_len, vfs_file_t *file)
@@ -154,6 +155,7 @@ void vfs_closedir(vfs_dir_t *dir)
         	}
         	delete listOfEntries;
         }
+        delete dir->entry;
         delete dir;
     }
 }
@@ -247,9 +249,10 @@ static int vfs_stat_impl(FileInfo *inf, vfs_stat_t *st)
     if (st->hr > 23)
         st->hr = 23;
 
-    inf->generate_fat_name(st->name, 64);
-
-    // > 31 is not possible
+    char buffer[VFS_NAME_MAX];
+    char *unified = inf->generate_fat_name(buffer, sizeof(buffer));
+    strncpy(st->name, unified, sizeof(st->name) - 1);
+    st->name[sizeof(st->name) - 1] = 0; // ensure NUL-termination (strncpy may not)
     return 0;
 }
 
@@ -262,7 +265,9 @@ int  vfs_stat_dirent(vfs_dirent_t *ent, vfs_stat_t *st)
 int  vfs_stat(vfs_t *fs, const char *name, vfs_stat_t *st)
 {
     dbg_printf("STAT: VFS=%p. %s -> %p\n", fs, name, st);
-    FileInfo localInfo(32);
+    // Sized like the listing path, so SIZE and MDTM report the same name a
+    // listing does.
+    FileInfo localInfo(VFS_NAME_MAX);
     if ((FileManager :: getFileManager() -> fstat((Path *)fs->path, name, localInfo)) == FR_OK) {
         return vfs_stat_impl(&localInfo, st);
     }
@@ -299,6 +304,8 @@ char *vfs_getcwd(vfs_t *fs, void *args, int dummy)
     const char *full_path = p->get_path();
     // now copy the string to output
     char *retval = (char *)malloc(strlen(full_path)+1);
+    if (!retval)
+        return NULL; // callers null-check the result
     strcpy(retval, full_path);
     int n = strlen(retval);
     // snoop off the last slash

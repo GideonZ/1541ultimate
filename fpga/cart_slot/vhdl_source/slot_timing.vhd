@@ -66,7 +66,9 @@ architecture gideon of slot_timing is
     --constant c_sample_vic  : integer := 9; -- 200 ns after PHI2 (!)
     signal reqs_inhibit_i : std_logic;
 begin
-    vic_cycle      <= '1' when (ba_hist = "0000") else '0';
+    -- vic_cycle      <= '1' when (ba_hist = "0000") else '0'; -- 3 cycles into BA
+    vic_cycle      <= '1' when (ba_hist(2 downto 0) = "000") else '0'; -- Patch: 2 cycles only
+
     phi2_recovered <= phi2_rec_i;
     phi2_tick      <= phi2_tick_i;
     phi2_fall      <= phi2_d and not PHI2;

@@ -156,7 +156,9 @@ int try_flash(void)
     printf("Application length = %08x, version %s\n", length, (char *)version+4);
     if(length != 0xFFFFFFFF) {
         flash->read_dev_addr(image_addr.device_addr+16, length, (void *)APPLICATION_RUN_ADDRESS); // we should use flash->read_image here
-
+        uint8_t *app = (uint8_t *)APPLICATION_RUN_ADDRESS;
+        dump_hex(app, 32);
+        dump_hex(app+length-32, 32);
         jump_run(APPLICATION_RUN_ADDRESS);
         return 1;
     }

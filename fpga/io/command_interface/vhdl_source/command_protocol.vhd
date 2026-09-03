@@ -67,6 +67,8 @@ architecture gideon of command_protocol is
     signal do_write         : std_logic;
     signal trigger          : std_logic;
     signal freeze_i         : std_logic;
+    signal cmd_irq_en       : std_logic;
+    signal irq_n            : std_logic;
 
     signal irq_mask         : std_logic_vector(2 downto 0);
     signal command_pointer  : unsigned(10 downto 0);
@@ -75,8 +77,6 @@ architecture gideon of command_protocol is
     signal command_length   : unsigned(10 downto 0);
     signal response_length  : unsigned(10 downto 0);
     signal status_length    : unsigned(10 downto 0);
---    signal response_valid   : std_logic;
---    signal status_valid     : std_logic;
     signal rdata_resp       : std_logic_vector(7 downto 0);
     signal rdata_stat       : std_logic_vector(7 downto 0);
     
@@ -95,19 +95,20 @@ begin
     command_length <= command_pointer - c_cmd_if_command_buffer_addr;
 
     with slot_req.bus_address(2 downto 0) select slot_resp.data <=
-        slot_status when c_cif_slot_control,
-        X"C9"       when c_cif_slot_command,
-        rdata_resp  when c_cif_slot_response, 
-        rdata_stat  when c_cif_slot_status,
-        bus_id      when c_cif_bus_id,
-        X"FF"       when others;   
+        slot_status       when c_cif_slot_control,
+        irq_n & "1001001" when c_cif_slot_command, -- C9, and 49 when IRQ is active
+        rdata_resp        when c_cif_slot_response, 
+        rdata_stat        when c_cif_slot_status,
+        bus_id            when c_cif_bus_id,
+        X"FF"             when others;   
         
     rdata_resp <= rdata when response_valid='1' else X"00";
     rdata_stat <= rdata when status_valid='1' else X"00";
 
     slot_resp.reg_output <= enabled when slot_req.bus_address(8 downto 3) = slot_base else '0';
-    slot_resp.irq <= '0';
+    slot_resp.irq <= state(1) and cmd_irq_en;
     slot_resp.nmi <= '0';
+    irq_n <= not (state(1) and cmd_irq_en);
 
     -- signals to RAM
     en <= enabled;
@@ -157,10 +158,12 @@ begin
                             else
                                 error_busy <= '1';
                             end if;
+                            cmd_irq_en <= slot_req.data(5);
                         end if;
                         if slot_req.data(1)='1' and state(1) = '1' then -- data accept
                             handshake_in(1) <= state(0); -- data accepted, only ultimate can clear it, only data more
                             state(1) <= '0'; -- either goes to idle, or back to wait for software
+                            cmd_irq_en <= '0'; -- turn off IRQ as soon as data has been accepted
                         end if;
                         if slot_req.data(2)='1' then
                             handshake_in(2) <= '1'; -- abort, only ultimate can clear it.
@@ -171,10 +174,12 @@ begin
                 elsif slot_req.io_read='1' then
                     case slot_req.io_address(2 downto 0) is
                     when c_cif_slot_response =>
+                        cmd_irq_en <= '0'; -- turn off IRQ as soon as C64 reads the response
                         if response_pointer /= c_cmd_if_response_buffer_end then
                             response_pointer <= response_pointer + 1;
                         end if;
                     when c_cif_slot_status =>
+                        cmd_irq_en <= '0'; -- turn off IRQ as soon as C64 reads the status
                         if status_pointer /= c_cmd_if_status_buffer_end then
                             status_pointer <= status_pointer + 1;
                         end if;
@@ -297,6 +302,7 @@ begin
                 slot_base        <= (others => '0');
                 freeze_i         <= '0';
                 trigger          <= '0';
+                cmd_irq_en       <= '0';
             end if;
         end if;
     end process;

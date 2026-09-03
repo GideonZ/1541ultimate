@@ -8,6 +8,7 @@
 
 class JSON_Object;
 class JSON_List;
+void url_encode(const char *src, mstring &dest);
 
 typedef enum {
     eBase = 0,
@@ -21,9 +22,13 @@ typedef enum {
 class JSON
 {
   public:
-    JSON() {}
+    JSON *parent;
+    JSON() : parent(NULL) { }
     virtual const char *render() { return "base?"; }
+    virtual const char *render_compact() { return render(); }
     virtual void render(StreamRamFile *s) { s->format("base?"); }
+    virtual const char *url() { return render_compact(); }
+    virtual void url(StreamRamFile *s) { render(s); }
     virtual ~JSON() {}
     virtual JsonType_t type() { return eBase; }
     static JSON_List *List();
@@ -40,11 +45,15 @@ public:
     }
     JsonType_t type() { return eString; }
     const char *get_string() { return str.c_str(); }
+    void set_string(const char *val) { str = val; }
     const char *render() {
         renderspace = "\"";
         renderspace += str;
         renderspace += "\"";
         return renderspace.c_str();
+    }
+    const char *render_compact() {
+        return str.c_str();
     }
     void render(StreamRamFile *s) { s->format("\"%s\"", str.c_str()); }
 };
@@ -62,13 +71,14 @@ public:
     }
     void render(StreamRamFile *s) { s->format("%d", value); }
     int get_value() { return value; }
+    void set_value(int val) { value = val; }
 };
 
 class JSON_Bool : public JSON
 {
     bool value;
 public:
-    JSON_Bool(int v) : value(v) {}
+    JSON_Bool(bool v) : value(v) {}
     JsonType_t type() { return eBool; }
     const char *render() {
         return value ? "true" : "false";
@@ -76,6 +86,8 @@ public:
     void render(StreamRamFile *s) {
         s->format(value ? "true" : "false");
     }
+    bool get_value() { return value; }
+    void set_value(bool val) { value = val; }
 };
 
 class JSON_Object : public JSON
@@ -83,19 +95,45 @@ class JSON_Object : public JSON
     IndexedList<const char *>keys;
     IndexedList<JSON *>values;
     mstring renderspace;
+    bool own_keys;
 public:
-    JSON_Object() : keys(4, NULL), values(4, NULL) { }
+    JSON_Object() : keys(4, NULL), values(4, NULL), own_keys(false) { }
+    JSON_Object(bool owned) : keys(4, NULL), values(4, NULL), own_keys(owned) { }
     JsonType_t type() { return eObject; }
 
     ~JSON_Object() {
         for (int i=0;i<values.get_elements();i++) {
             delete values[i];
         }
+        if (own_keys) {
+            for (int i=0;i<keys.get_elements();i++) {
+                delete[] keys[i];
+            }
+        }
+    }
+
+    void remove(JSON *el) {
+        int idx = values.remove(el);
+        if (idx >= 0) {
+            if (own_keys) {
+                delete[] keys[idx];
+            }
+            keys.remove_idx(idx);
+        }
     }
 
     JSON_Object *add(const char *key, JSON *value) {
-        keys.append(key);
+        if (own_keys) {
+            // not using strdup, because we use delete[] above
+            int len = strlen(key);
+            char *newstr = new char[1+len];
+            strcpy(newstr, key);
+            keys.append(newstr);
+        } else {
+            keys.append(key);
+        }
         values.append(value);
+        value->parent = this;
         return this;
     }
 
@@ -109,6 +147,39 @@ public:
 
     JSON_Object *add(const char *key, const bool val) {
         return add(key, new JSON_Bool(val));
+    }
+
+    JSON_Object *set(const char *key, int val) {
+        for (int i=0;i<keys.get_elements();i++) {
+            if (strcasecmp(keys[i], key) == 0) { // key exists!
+                delete values[i];
+                values.replace_idx(i, new JSON_Integer(val));
+                return this;
+            }
+        }
+        return add(key, val);
+    }
+
+    JSON_Object *set(const char *key, bool b) {
+        for (int i=0;i<keys.get_elements();i++) {
+            if (strcasecmp(keys[i], key) == 0) { // key exists!
+                delete values[i];
+                values.replace_idx(i, new JSON_Bool(b));
+                return this;
+            }
+        }
+        return add(key, b);
+    }
+
+    JSON_Object *set(const char *key, const char *str) {
+        for (int i=0;i<keys.get_elements();i++) {
+            if (strcasecmp(keys[i], key) == 0) { // key exists!
+                delete values[i];
+                values.replace_idx(i, new JSON_String(str));
+                return this;
+            }
+        }
+        return add(key, str);
     }
 
     const char *render() {
@@ -127,6 +198,20 @@ public:
         return renderspace.c_str();
     }
 
+    const char *render_compact() {
+        renderspace = "{";
+        for (int i=0;i<keys.get_elements();i++) {
+            renderspace += keys[i];
+            renderspace += ":";
+            renderspace += values[i]->render_compact();
+            if (i != keys.get_elements()-1) {
+                renderspace += ",";
+            }
+        }
+        renderspace += "}";
+        return renderspace.c_str();
+    }
+
     void render(StreamRamFile *s) {
         s->format("{ \n");
         for (int i=0;i<keys.get_elements();i++) {
@@ -140,6 +225,35 @@ public:
         s->charout('}');
     }
 
+
+    const char *url() {
+        renderspace = "";
+        for (int i=0;i<keys.get_elements();i++) {
+            renderspace += keys[i];
+            renderspace += "=";
+            const char *val = values[i]->render_compact();
+            url_encode(val, renderspace); // this will add!
+            if (i != keys.get_elements()-1) {
+                renderspace += "&";
+            }
+        }
+        return renderspace.c_str();
+    }
+
+    void url(StreamRamFile *s) {
+        for (int i=0;i<keys.get_elements();i++) {
+            s->format("%s", keys[i]);
+            s->charout('=');
+            const char *val = values[i]->render_compact();
+            renderspace = "";
+            url_encode(val, renderspace);
+            s->format("%s", renderspace.c_str());
+            if (i != keys.get_elements()-1) {
+                s->charout('&');
+            }
+        }
+    }
+
     JSON * get(const char *key) {
         for (int i=0;i<keys.get_elements();i++) {
             if (strcasecmp(key, keys[i]) == 0) {
@@ -147,6 +261,22 @@ public:
             }
         }
         return NULL;
+    }
+
+    const char *string_or(const char *key, const char *alt) {
+        JSON *val = get(key);
+        if (!val || val->type() != eString) {
+            return alt;
+        }
+        return ((JSON_String *)val)->get_string();
+    }
+
+    int int_or(const char *key, const int alt) {
+        JSON *val = get(key);
+        if (!val || val->type() != eInteger) {
+            return alt;
+        }
+        return ((JSON_Integer *)val)->get_value();
     }
 
     IndexedList<const char *> *get_keys() {
@@ -179,23 +309,28 @@ public:
         return members[i];
     }
 
+    void remove(JSON *el) {
+        members.remove(el);
+    }
+
     JSON_List *add(JSON *value) {
         members.append(value);
+        value->parent = this;
         return this;
     }
 
     JSON_List *add(const char *str) {
-        members.append(new JSON_String(str));
+        add(new JSON_String(str));
         return this;
     }
 
     JSON_List *add(int val) {
-        members.append(new JSON_Integer(val));
+        add(new JSON_Integer(val));
         return this;
     }
 
     JSON_List *add(const bool val) {
-        members.append(new JSON_Bool(val));
+        add(new JSON_Bool(val));
         return this;
     }
 
@@ -211,6 +346,18 @@ public:
         return renderspace.c_str();
     }
 
+    const char *render_compact() {
+        renderspace = "[";
+        for (int i=0;i<members.get_elements();i++) {
+            renderspace += members[i]->render_compact();
+            if (i != members.get_elements()-1) {
+                renderspace += ",";
+            }
+        }
+        renderspace += "]";
+        return renderspace.c_str();
+    }
+
     void render(StreamRamFile *s) {
         s->format("[ ");
         for (int i=0;i<members.get_elements();i++) {
@@ -221,7 +368,6 @@ public:
         }
         s->format(" ]");
     }
-
 };
 
 int convert_text_to_json_objects(char *text, size_t text_size, size_t max_tokens, JSON **out);

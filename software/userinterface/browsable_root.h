@@ -109,6 +109,11 @@ public:
 		return this->info;
 	}
 
+    FileInfo *getFileInfo()
+    {
+        return info;
+    }
+
 	Path *getPath(void) {
 		return parent_path;
 	}
@@ -153,20 +158,19 @@ public:
 		return &children;
 	}
 
-	virtual const char *getName() {
-		if (fatname) {
-		    return fatname;
-		}
-	    if (!info) {
-		    return "No info!";
-		}
-		if (info->name_format & NAME_FORMAT_CBM) {
-		    fatname = new char[48];
-		    info->generate_fat_name(fatname, 48);
-		    return fatname;
-		}
-	    return info->lfname;
-	}
+    virtual const char *getName() {
+        if (!info) {
+            return "No info!";
+        }
+        if (!(info->name_format & NAME_FORMAT_CBM)) {
+            return info->lfname;
+        }
+        if (!fatname) {
+            fatname = new char[info->lfsize + 4];
+            info->generate_fat_name(fatname, info->lfsize + 4);
+        }
+        return fatname;
+    }
 
 	int squeezeToDisplayString(char *string_to_squeeze, char *squeezed_string, int max_width, int squeeze_quarter = 0) {
 		int len = strlen(string_to_squeeze);
@@ -234,6 +238,24 @@ public:
 	}
 };
 
+class WithBrowsableRootEntry
+{
+public:
+	static IndexedList<WithBrowsableRootEntry*>* getObjects() {
+    	static IndexedList<WithBrowsableRootEntry*> objects(8, NULL);
+    	return &objects;
+    }
+
+	WithBrowsableRootEntry() {
+		getObjects() -> append(this);
+	}
+	virtual ~WithBrowsableRootEntry() {
+		getObjects() -> remove(this);
+	}
+
+	virtual Browsable *create_browsable(Browsable *parent) { return NULL; }
+};
+
 class BrowsableRoot : public Browsable
 {
 	Path *root;
@@ -248,8 +270,7 @@ public:
 		fm -> release_path(root);
 	}
 
-	// get parent function not implemented; there is no parent, see base class
-
+public:
 	virtual IndexedList<Browsable *> *getSubItems(int &error) {
 		if (children.get_elements() == 0) {
 			IndexedList<FileInfo *> *infos = new IndexedList<FileInfo *>(8, NULL);
@@ -261,9 +282,18 @@ public:
 			}
 			delete infos; // deletes the indexed list, but not the FileInfos
 
-			// for(int i=0; i < NetworkInterface :: getNumberOfInterfaces(); i++) {
-			// 	children.append(new BrowsableNetwork(this, i));
-			// }
+            // non-file root entries
+            IndexedList<WithBrowsableRootEntry*> *objects_with_root_entry = WithBrowsableRootEntry::getObjects();
+            for(int i=0; i < objects_with_root_entry->get_elements(); i++) {
+                Browsable *b = (*objects_with_root_entry)[i]->create_browsable(this);
+                if (b) {
+                    children.append(b);
+                }
+            }
+            // Also list network interfaces. Todo: Make these part of the objects_with_root_entry
+            for(int i=0; i < NetworkInterface :: getNumberOfInterfaces(); i++) {
+                children.append(new BrowsableNetwork(this, i));
+            }
 		}
 		error = 0;
 		return &children;

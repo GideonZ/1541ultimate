@@ -82,6 +82,7 @@ void Path :: cleanupElements() {
 		}
 	}
 	depth = 0;
+    full_path = "/";
 }
 
 int Path :: up(mstring *stripped)

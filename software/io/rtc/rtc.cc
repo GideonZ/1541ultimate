@@ -103,6 +103,7 @@ void Rtc::init()
         capable = true;
         cfg = new RtcConfigStore("Clock Settings", rtc_config);
         ConfigManager::getConfigManager()->add_custom_store(cfg);
+        cfg->set_sort_order(SORT_ORDER_CFG_CLOCK);
         get_time_from_chip();
 
         // Check and correct clock out setting
@@ -412,6 +413,11 @@ extern "C" uint32_t get_fattime(void) /* 31-25: Year(0-127 org.1980), 24-21: Mon
 /* 15-11: Hour(0-23), 10-5: Minute(0-59), 4-0: Second(0-29 *2) */
 {
     return rtc.get_fat_time();
+}
+
+extern "C" void get_current_time(int& wd, int& year, int& month, int& day, int& hour, int& min, int& sec)
+{
+    rtc.get_time(year, month, day, wd, hour, min, sec);
 }
 
 #include "init_function.h"

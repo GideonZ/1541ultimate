@@ -42,7 +42,6 @@ class RmiiInterface
 	uint8_t addr;
 	uint8_t local_mac[6];
 	QueueHandle_t queue;
-
 	static void startRmiiTask(void *);
     void rmiiTask(void);
     void initRx(void);

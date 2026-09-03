@@ -29,13 +29,21 @@ extern "C" {
 //#include "sys/alt_irq.h"
 #include "c64.h"
 #include "esp32.h"
+#if U64 == 2
+#include "wifi_cmd.h"
+#endif
 #include "sid_editor.h"
 #include "sid_device_fpgasid.h"
 #include "sid_device_swinsid.h"
 #include "sid_device_armsid.h"
+#include "sid_device_pdsid.h"
+#include "sid_device_sidkick.h"
 #include "init_function.h"
 #include "color_timings.h"
 #include "hdmi_scan.h"
+#include "usb_hid.h"
+#include "usb_hid_config.h"
+#include "monitor_init.h"
 
 const uint8_t default_colors[16][3] = {
     { 0x00, 0x00, 0x00 },
@@ -57,11 +65,25 @@ const uint8_t default_colors[16][3] = {
 
 // static pointer
 U64Config *u64_configurator = NULL;
+static volatile uint32_t u64_usb_hid_status_generation = 0;
+static volatile uint32_t u64_usb_hid_status_handled_generation = 0;
+
+extern "C" int u64_get_usb_hid_config_value(int key, int default_value)
+{
+    if ((!u64_configurator) || (!u64_configurator->cfg)) {
+        return default_value;
+    }
+    int value = u64_configurator->cfg->get_value(key);
+    return (value < 0) ? default_value : value;
+}
+
 static void init(void *_a, void *_b)
 {
     u64_configurator = new U64Config();
 }
 InitFunction u64_init_func("U64 Config", init, NULL, NULL, 1);
+
+static void u64_update_usb_hid_info_items(ConfigStore *cfg);
 
 // Semaphore set by interrupt
 static SemaphoreHandle_t resetSemaphore;
@@ -107,6 +129,7 @@ static SemaphoreHandle_t resetSemaphore;
 #define CFG_MIXER7_VOL        0x27
 #define CFG_MIXER8_VOL        0x28
 #define CFG_MIXER9_VOL        0x29
+#define CFG_MIXER_MASTER_VOL  0x2A
 
 #define CFG_MIXER0_PAN        0x30
 #define CFG_MIXER1_PAN        0x31
@@ -140,6 +163,12 @@ static SemaphoreHandle_t resetSemaphore;
 #define CFG_SPEED_PREF        0x52
 #define CFG_BADLINES_EN       0x53
 #define CFG_SUPERCPU_DET      0x54
+// 0x55..0x5E are items of this store too, declared in io/usb/usb_hid_config.h.
+// 0x56..0x63 belong to the audio store; unpack() matches ids across stores on
+// the same page, so they are kept clear here.
+#define CFG_POWERON_MODE      0x5F
+// The first id clear of both ranges above.
+#define CFG_WAKE_ON_WIFI      0x64
 
 #define CFG_SCAN_MODE_TEST    0xA8
 #define CFG_VIC_TEST          0xA9
@@ -173,6 +202,9 @@ uint8_t C64_SID2_EN_BAK;
 #define SID_TYPE_ARM2SID 6
 #define SID_TYPE_SIDFX   7
 #define SID_TYPE_FPGASID_DUKESTAH 8
+#define SID_TYPE_PDSID   9
+#define SID_TYPE_SIDKICK 10
+#define SID_TYPE_SIDKICK_PICO 11
 
 const char *u64_sid_base[] = { "Unmapped",
                                "$D400", "$D420", "$D440", "$D460", "$D480", "$D4A0", "$D4C0", "$D4E0",
@@ -232,8 +264,11 @@ static const char *yes_no[] = { "No", "Yes" };
 static const char *dvi_hdmi[] = { "Auto", "HDMI", "DVI" };
 static const char *video_sel[] = { "CVBS + SVideo", "RGB" };
 static const char *color_sel[] = { "PAL", "NTSC", "PAL-60", "NTSC-50", "PAL-60/L", "NTSC-50/L" };
+static const char *mouse_acceleration_modes[] = { "Off", "Adaptive" };
+static const char *mouse_modes[] = { "Cursor", "Mouse", "Mouse + Cursor", "Mouse + Wheel" };
+static const char *wheel_directions[] = { "Normal", "Reversed" };
 
-static const char *sid_types[] = { "None", "6581", "8580", "FPGASID", "SwinSID Ultimate", "ARMSID", "ARM2SID", "SidFx", "FPGASID Dukestah" };
+static const char *sid_types[] = { "None", "6581", "8580", "FPGASID", "SwinSID Ultimate", "ARMSID", "ARM2SID", "SidFx", "FPGASID Dukestah", "PDsid", "SIDKick (Teensy)", "SIDKick Pico" };
 static const char *sid_shunt[] = { "Off", "On" };
 static const char *sid_caps[] = { "470 pF", "22 nF" };
 static const char *filter_sel[] = { "8580 Lo", "8580 Hi", "6581", "6581 Alt", "U2 Low", "U2 Mid", "U2 High" };
@@ -253,10 +288,22 @@ static const char *volumes[] = { "OFF", "-42 dB", "-36 dB", "-30 dB", "-27 dB", 
 static const char *pannings[] = { "Left 5", "Left 4", "Left 3", "Left 2", "Left 1", "Center",
                                   "Right 1", "Right 2", "Right 3", "Right 4", "Right 5" }; // 11 settings
 
-static const uint8_t volume_ctrl[] = { 
+static const uint8_t volume_ctrl[] = {
     0x00, 0x01, 0x02, 0x04, 0x06, 0x08, 0x10, 0x12, 0x14, 0x17, 0x1a, 0x1d, 0x20, 0x24, 0x28, 0x2d,
     0x33, 0x39, 0x40, 0x48, 0x51, 0x5b, 0x66, 0x72, 0x80, 0x90, 0xa1, 0xb5, 0xcb, 0xe4, 0xff
 };
+
+static uint8_t combine_mixer_gain(uint8_t source_raw, uint8_t master_raw)
+{
+    if (!source_raw || !master_raw) {
+        return 0;
+    }
+    uint16_t combined = ((uint16_t)source_raw * (uint16_t)master_raw + 0x40) >> 7;
+    if (combined > 0xFF) {
+        combined = 0xFF;
+    }
+    return (uint8_t)combined;
+}
 
 static const uint16_t pan_ctrl[] = { 0, 40, 79, 116, 150, 181, 207, 228, 243, 253, 256 };
 
@@ -264,6 +311,8 @@ static const uint8_t stereo_bits[] = { 0x00, 0x02, 0x04, 0x08, 0x10, 0x20 };
 static const uint8_t split_bits[] = { 0x00, 0x02, 0x04, 0x08, 0x10, 0x06, 0x12, 0x18 };
 static const char *speeds_u64[]   = { " 1", " 2", " 3", " 4", " 5", " 6", " 8", "10", "12", "14", "16", "20", "24", "32", "40", "48" };
 static const char *speeds_u64ii[] = { " 1", " 2", " 3", " 4", " 6", " 8", "10", "12", "14", "16", "20", "24", "32", "40", "48", "64" };
+// The order of these must match the POWERON_MODE_* defines of the control module
+static const char *poweron_modes[] = { "Off", "On", "Last State" };
 static const char *speed_regs[] = { "Off", "Manual", "U64 Turbo Registers", "TurboEnable Bit", "a", "b" };
 static const uint8_t speedregs_regvalues[] = { 0x00, 0x00, 0x01, 0x05, 0x00, 0x00 }; // removed 3 and 7
 
@@ -294,6 +343,16 @@ struct t_cfg_definition u64_cfg[] = {
 #else
     { CFG_JOYSWAP,              CFG_TYPE_ENUM, "Joystick Swapper",             "%s", joyswaps,     0,  1, 0 },
 #endif
+    { CFG_MOUSE_MODE,           CFG_TYPE_ENUM, "Mouse Mode",                   "%s", mouse_modes,       0,  3, 1 },
+    { CFG_MOUSE_SENSITIVITY,    CFG_TYPE_VALUE, "Mouse Sensitivity",           "%d", NULL,              1, 16, 8 },
+    { CFG_MOUSE_ACCELERATION,   CFG_TYPE_ENUM, "Mouse Acceleration",           "%s", mouse_acceleration_modes, 0,  1, 0 },
+    { CFG_SCROLL_FACTOR,        CFG_TYPE_VALUE, "Mouse Wheel Sensitivity",     "%d", NULL,              1, 16, 8 },
+    { CFG_WHEEL_DIRECTION,      CFG_TYPE_ENUM,  "Mouse Wheel Direction",       "%s", wheel_directions, 0,  1, 0 },
+    { CFG_MENU_MOUSE_NAV,       CFG_TYPE_ENUM,  "Menu Mouse Navigation",       "%s", en_dis,          0,  1, 1 },
+    { CFG_USB_MOUSE_NAME,       CFG_TYPE_INFO,  "USB Mouse",                   "%s", NULL,            0, 32, (int)"" },
+    { CFG_USB_MOUSE_MODE,       CFG_TYPE_INFO,  "USB Mouse HID Mode",          "%s", NULL,            0, 16, (int)"" },
+    { CFG_USB_KEYBOARD_NAME,    CFG_TYPE_INFO,  "USB Keyboard",                "%s", NULL,            0, 32, (int)"" },
+    { CFG_USB_KEYBOARD_MODE,    CFG_TYPE_INFO,  "USB Keyboard HID Mode",       "%s", NULL,            0, 16, (int)"" },
     { CFG_USERPORT_EN,          CFG_TYPE_ENUM, "UserPort Power Enable",        "%s", en_dis,       0,  1, 1 },
 //    { CFG_CART_PREFERENCE,      CFG_TYPE_ENUM, "Cartridge Preference",         "%s", cartmodes,    0,  2, 0 }, // moved to C64 for user consistency
     { CFG_PALETTE,              CFG_TYPE_STRFUNC, "Palette Definition",        "%s", (const char **)U64Config :: list_palettes, 0, 30, (int)"" },
@@ -308,6 +367,7 @@ struct t_cfg_definition u64_cfg[] = {
     { CFG_LED_SELECT_0,         CFG_TYPE_ENUM, "LED Select Top",               "%s", ledselects,   0, 15, 0 },
     { CFG_LED_SELECT_1,         CFG_TYPE_ENUM, "LED Select Bot",               "%s", ledselects,   0, 15, 4 },
 #if U64 != 2
+    { CFG_SPEAKER_EN,           CFG_TYPE_ENUM, "Speaker Enable",               "%s", en_dis,       0,  1, 1 },
     { CFG_SPEAKER_VOL,          CFG_TYPE_ENUM, "Speaker Volume (SpkDat)",      "%s", speaker_vol,  0, 10, 5 },
 #endif
     { CFG_PLAYER_AUTOCONFIG,    CFG_TYPE_ENUM, "SID Player Autoconfig",        "%s", en_dis,       0,  1, 1 },
@@ -323,13 +383,17 @@ struct t_cfg_definition u64_cfg[] = {
 #endif
     { CFG_BADLINES_EN,          CFG_TYPE_ENUM, "Badline Timing",               "%s", en_dis,       0,  1, 1 },
     { CFG_SUPERCPU_DET,         CFG_TYPE_ENUM, "SuperCPU Detect (D0BC)",       "%s", en_dis,       0,  1, 0 },
+#if U64 == 2
+    { CFG_POWERON_MODE,         CFG_TYPE_ENUM, "Power On After Power Loss",    "%s", poweron_modes, 0, 2, 0 },
+    { CFG_WAKE_ON_WIFI,         CFG_TYPE_ENUM, "Wake On Wi-Fi",                "%s", en_dis,       0,  1, 0 },
+#endif
     { CFG_TYPE_END,             CFG_TYPE_END,  "",                             "",   NULL,         0,  0, 0 } };
 
 struct t_cfg_definition u64_sid_detection_cfg[] = {
     { CFG_SOCKET1_ENABLE,       CFG_TYPE_ENUM, "SID Socket 1",                 "%s", en_dis,       0,  1, 0 },
     { CFG_SOCKET2_ENABLE,       CFG_TYPE_ENUM, "SID Socket 2",                 "%s", en_dis,       0,  1, 0 },
-    { CFG_SID1_TYPE,			CFG_TYPE_ENUM, "SID Detected Socket 1",        "%s", sid_types,    0,  8, 0 },
-    { CFG_SID2_TYPE,			CFG_TYPE_ENUM, "SID Detected Socket 2",        "%s", sid_types,    0,  8, 0 },
+    { CFG_SID1_TYPE,			CFG_TYPE_ENUM, "SID Detected Socket 1",        "%s", sid_types,    0, 11, 0 },
+    { CFG_SID2_TYPE,			CFG_TYPE_ENUM, "SID Detected Socket 2",        "%s", sid_types,    0, 11, 0 },
     { CFG_SID1_SHUNT,           CFG_TYPE_ENUM, "SID Socket 1 1K Ohm Resistor", "%s", sid_shunt,    0,  1, 0 },
     { CFG_SID2_SHUNT,           CFG_TYPE_ENUM, "SID Socket 2 1K Ohm Resistor", "%s", sid_shunt,    0,  1, 0 },
     { CFG_SID1_CAPS,            CFG_TYPE_ENUM, "SID Socket 1 Capacitors",      "%s", sid_caps,     0,  1, 0 },
@@ -360,6 +424,7 @@ struct t_cfg_definition u64_ultisid_cfg[] = {
     { CFG_TYPE_END,             CFG_TYPE_END,  "",                             "",   NULL,         0,  0, 0 } };
 
 struct t_cfg_definition u64_mixer_cfg[] = {
+    { CFG_MIXER_MASTER_VOL,     CFG_TYPE_ENUM, "Vol Master",                   "%s", volumes,      0, 30, 24 },
     { CFG_MIXER0_VOL,           CFG_TYPE_ENUM, "Vol UltiSid 1",                "%s", volumes,      0, 30, 24 },
     { CFG_MIXER1_VOL,           CFG_TYPE_ENUM, "Vol UltiSid 2",                "%s", volumes,      0, 30, 24 },
     { CFG_MIXER2_VOL,           CFG_TYPE_ENUM, "Vol Socket 1",                 "%s", volumes,      0, 30, 24 },
@@ -404,7 +469,10 @@ extern Overlay *overlay;
 U64Config :: U64Mixer :: U64Mixer()
 {
     register_store(STORE_PAGE_ID, "Audio Mixer", u64_mixer_cfg);
+    cfg->set_sort_order(SORT_ORDER_CFG_MIXER);
+
     // enable "hot" updates for mixer
+    cfg->set_change_hook(CFG_MIXER_MASTER_VOL, U64Config::setMixer);
     for (uint8_t b = CFG_MIXER0_VOL; b <= CFG_MIXER9_VOL; b++) {
         cfg->set_change_hook(b, U64Config::setMixer);
     }
@@ -423,6 +491,7 @@ void U64Config :: U64Mixer :: effectuate_settings()
 U64Config :: U64SpeakerMixer :: U64SpeakerMixer()
 {
     register_store(STORE_PAGE_ID+1, "Speaker Mixer", u64_speaker_mixer_cfg);
+    cfg->set_sort_order(SORT_ORDER_CFG_SPEAKER);
     for (uint8_t b = CFG_MIXER0_VOL; b <= CFG_MIXER9_VOL; b++) {
         cfg->set_change_hook(b, U64Config::setSpeakerMixer);
     }
@@ -435,7 +504,7 @@ void U64Config :: U64SpeakerMixer :: effectuate_settings()
     setSpeakerMixer(cfg->items[0]);
 }
 
-#endif    
+#endif
 
 
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -443,7 +512,7 @@ void U64Config :: U64SpeakerMixer :: effectuate_settings()
 U64Config :: U64SidSockets :: U64SidSockets()
 {
     register_store(STORE_PAGE_ID, "SID Sockets Configuration", u64_sid_detection_cfg);
-
+    cfg->set_sort_order(SORT_ORDER_CFG_SIDSKT);
     // This field shows what was detected and cannot be changed
     cfg->disable(CFG_SID1_TYPE);
     cfg->disable(CFG_SID2_TYPE);
@@ -462,7 +531,7 @@ int U64Config :: detectDukestahAdapter()
     volatile uint8_t *base2 = (volatile uint8_t *)(C64_MEMORY_BASE + 0xD500); // D500
 
     C64 :: hard_stop();
-    
+
     base1[25] = 0x81; // Enter config mode
     base1[26] = 0x65;
     base1[30] = 4;   // Set FPGASID to stereo
@@ -476,7 +545,7 @@ int U64Config :: detectDukestahAdapter()
 
     base1[28] = 5;
     base2[28] = 13;
-    
+
     base1[25] = 0x82;   // Swap mode
     base1[26] = 0x65;
     uint8_t tmp1 = base1[28] & 15;   // Read SID2 register 28
@@ -487,7 +556,7 @@ int U64Config :: detectDukestahAdapter()
     ((SidDeviceFpgaSid*)(sidDevice[0]))->effectuate_settings();
 
     if (tmp1 == 13) return SID_TYPE_FPGASID_DUKESTAH;
-    
+
     return SID_TYPE_FPGASID;
 }
 
@@ -556,6 +625,19 @@ int U64Config :: detectRemakes(int socket)
             return SID_TYPE_ARM2SID; // ARM2SID
         }
         return SID_TYPE_ARMSID; // ARMSID
+    }
+
+    if (SidDevicePdSid :: detect(base)) {
+        sidDevice[socket] = new SidDevicePdSid(socket, base);
+        return SID_TYPE_PDSID;
+    }
+    switch(SidDeviceSidKick :: detect(base)) {
+    case 1:
+        sidDevice[socket] = new SidDeviceSidKick(socket, base, 1);
+        return SID_TYPE_SIDKICK_PICO;
+    case 2:
+        sidDevice[socket] = new SidDeviceSidKick(socket, base, 0);
+        return SID_TYPE_SIDKICK;
     }
 
     return 0;
@@ -731,7 +813,7 @@ void U64Config :: U64SidSockets :: effectuate_settings()
 U64Config :: U64UltiSids :: U64UltiSids()
 {
     register_store(STORE_PAGE_ID, "UltiSID Configuration", u64_ultisid_cfg);
-
+    cfg->set_sort_order(SORT_ORDER_CFG_ULTISID);
     cfg->set_change_hook(CFG_EMUSID1_FILTER, U64Config::setFilter);
     cfg->set_change_hook(CFG_EMUSID2_FILTER, U64Config::setFilter);
     cfg->set_change_hook(CFG_EMUSID1_RESONANCE, U64Config::setSidEmuParams);
@@ -760,6 +842,7 @@ void U64Config :: U64UltiSids :: effectuate_settings()
 U64Config :: U64SidAddressing :: U64SidAddressing()
 {
     register_store(STORE_PAGE_ID, "SID Addressing", u64_sid_addressing_cfg);
+    cfg->set_sort_order(SORT_ORDER_CFG_SIDADDR);
 }
 
 void U64Config :: U64SidAddressing :: effectuate_settings()
@@ -801,7 +884,7 @@ U64Config :: U64Config() : SubSystem(SUBSYSID_U64)
 {
     systemMode = e_NOT_SET;
     hdmiMode = e_480p_576p;
-    
+
     U64_ETHSTREAM_ENA = 0;
 	skipReset = false;
 
@@ -812,6 +895,7 @@ U64Config :: U64Config() : SubSystem(SUBSYSID_U64)
     if (getFpgaCapabilities() & CAPAB_ULTIMATE64) {
         struct t_cfg_definition *def = u64_cfg;
         register_store(STORE_PAGE_ID, "U64 Specific Settings", def);
+
 		// Tweak: This has to be done first in order to make sure that the correct cart is started
 		// at cold boot.
         C64 *machine = C64 :: getMachine();
@@ -831,6 +915,10 @@ U64Config :: U64Config() : SubSystem(SUBSYSID_U64)
         cfg->set_change_hook(CFG_SPEED_PREF, U64Config::setCpuSpeed);
         cfg->set_change_hook(CFG_BADLINES_EN, U64Config::setCpuSpeed);
         cfg->set_change_hook(CFG_SUPERCPU_DET, U64Config::setCpuSpeed);
+#if U64 == 2
+        cfg->set_change_hook(CFG_POWERON_MODE, U64Config::setPowerOnMode);
+        cfg->set_change_hook(CFG_WAKE_ON_WIFI, U64Config::setWakeOnWifi);
+#endif
 
         if (!isEliteBoard()) {
             cfg->disable(CFG_JOYSWAP);
@@ -845,6 +933,7 @@ U64Config :: U64Config() : SubSystem(SUBSYSID_U64)
 
         cfg->set_alt_name("C64U Specific Settings");
         setup_config_menu(); // Create different config groups
+        u64_update_usb_hid_info_items(cfg);
         cfg->hide();
 
         // Boot hotkey
@@ -954,7 +1043,7 @@ void U64Config :: effectuate_settings()
     uint8_t swap = cfg->get_value(CFG_JOYSWAP);
     U64II_KEYB_JOY     = swap & 1;
     static const uint8_t wasd_settings[] = { 0x00, 0x00, 0x01, 0x01, 0x03, 0x03 };
-    MATRIX_WASD_TO_JOY = wasd_to_joy = wasd_settings[swap]; 
+    MATRIX_WASD_TO_JOY = wasd_to_joy = wasd_settings[swap];
 #else
     C64_PLD_JOYCTRL  = cfg->get_value(CFG_JOYSWAP) ^ 1;
 #endif
@@ -963,16 +1052,19 @@ void U64Config :: effectuate_settings()
     U64_USERPORT_EN  = en;
     U64_PWM_DUTY = (en) ? 0xD8 : 0x00;
     printf("USERPORT_EN = %d\n", U64_USERPORT_EN);
-    
+
     //C64_TURBOREGS_EN = 0;
     //C64_SPEED_PREFER = 0;
 
     setCpuSpeed(cfg->find_item(CFG_SPEED_REGS));
 
     //printf("U64Config :: effectuate_settings()\n");
-    uint8_t sp_vol = cfg->get_value(CFG_SPEAKER_VOL);
-
-    U2PIO_SPEAKER_EN = sp_vol ? (sp_vol << 1) | 0x01 : 0;
+    if (cfg->get_value(CFG_SPEAKER_EN)) {
+        uint8_t sp_vol = cfg->get_value(CFG_SPEAKER_VOL);
+        U2PIO_SPEAKER_EN = sp_vol ? (sp_vol << 1) | 0x01 : 0;
+    } else {
+        U2PIO_SPEAKER_EN = 0;
+    }
     C64_SCANLINES    = cfg->get_value(CFG_SCANLINES);
     hdmiSetting = cfg->get_value(CFG_HDMI_ENABLE);
 
@@ -1049,6 +1141,73 @@ void U64Config :: effectuate_settings()
 
 }
 
+static void u64_update_usb_hid_info_items(ConfigStore *cfg)
+{
+    if (!cfg) {
+        return;
+    }
+
+    t_usb_hid_status_snapshot snapshot;
+    usb_hid_get_status_snapshot(snapshot);
+
+    struct {
+        uint8_t name_id;
+        uint8_t mode_id;
+        const char *name_value;
+        const char *mode_value;
+    } hid_items[] = {
+        { CFG_USB_MOUSE_NAME, CFG_USB_MOUSE_MODE, snapshot.mouse_name, snapshot.mouse_mode },
+        { CFG_USB_KEYBOARD_NAME, CFG_USB_KEYBOARD_MODE, snapshot.keyboard_name, snapshot.keyboard_mode },
+    };
+
+    for (unsigned int i = 0; i < (sizeof(hid_items) / sizeof(hid_items[0])); i++) {
+        ConfigItem *name_item = cfg->find_item(hid_items[i].name_id);
+        ConfigItem *mode_item = cfg->find_item(hid_items[i].mode_id);
+        if (name_item) {
+            name_item->setEnabled(false);
+            name_item->setString(hid_items[i].name_value);
+        }
+        if (mode_item) {
+            mode_item->setEnabled(false);
+            mode_item->setString(hid_items[i].mode_value);
+        }
+    }
+}
+
+extern "C" void u64_refresh_usb_hid_status(void)
+{
+    portENTER_CRITICAL();
+    u64_usb_hid_status_generation++;
+    portEXIT_CRITICAL();
+}
+
+extern "C" void u64_dispatch_usb_hid_status_refresh(void)
+{
+    bool refresh_needed = false;
+
+    portENTER_CRITICAL();
+    if (u64_usb_hid_status_generation != u64_usb_hid_status_handled_generation) {
+        u64_usb_hid_status_handled_generation = u64_usb_hid_status_generation;
+        refresh_needed = true;
+    }
+    portEXIT_CRITICAL();
+
+    if (refresh_needed) {
+        if (u64_configurator && u64_configurator->cfg) {
+            u64_update_usb_hid_info_items(u64_configurator->cfg);
+        }
+        FileManager :: getFileManager() -> sendEventToObservers(eRefreshDirectory, "/", "");
+    }
+}
+
+void U64Config :: on_edit()
+{
+    portENTER_CRITICAL();
+    u64_usb_hid_status_handled_generation = u64_usb_hid_status_generation;
+    portEXIT_CRITICAL();
+    u64_update_usb_hid_info_items(cfg);
+}
+
 void U64Config :: get_sid_addresses(ConfigStore *cfg, uint8_t *base, uint8_t *mask, uint8_t *split)
 {
     base[0] = u64_sid_offsets[cfg->get_value(CFG_SID1_ADDRESS)];
@@ -1120,14 +1279,49 @@ int U64Config :: setFilter(ConfigItem *it)
     return 0;
 }
 
+// The freezer silences the SIDs while it owns the machine, by writing the SID
+// master volume ($D418). That register also sets the DC offset of the SID
+// output, so the write steps the offset and is heard as a low click every time
+// the machine is taken and handed back. Measured on an Ultimate 64 over the
+// device's own audio stream: peak sample 19000 against a silent-machine floor
+// of 19.
+//
+// The FPGA audio mixer sits after the point where that offset is removed, so
+// closing it is itself silent, and while it is closed nothing the SID does can
+// be heard. The freezer therefore closes the mixer around its own SID writes
+// rather than instead of them: the $D418 mute stays, and stays portable, and
+// on this hardware it happens where it cannot be heard.
+//
+// The first eight bytes are the SID channels: UltiSID 1 and 2, socket 1 and 2,
+// right and left. SetMixerAutoSid zeroes the same eight to mute the SIDs while
+// it remaps them.
+void u64_mute_sids(void)
+{
+    volatile uint8_t *mixer = (volatile uint8_t *)U64_AUDIO_MIXER;
+
+    for (int i = 0; i < 8; i++) {
+        mixer[i] = 0;
+    }
+}
+
+// From the stored settings, not from what was there before the mute: the mixer
+// registers are write-only and read back as zero.
+void u64_unmute_sids(void)
+{
+    if (u64_configurator) {
+        u64_configurator->restoreMixer();
+    }
+}
+
 int U64Config :: setMixer(ConfigItem *it)
 {
     // Now, configure the mixer
     volatile uint8_t *mixer = (volatile uint8_t *)U64_AUDIO_MIXER;
     ConfigStore *cfg = it->store;
+    uint8_t master = volume_ctrl[cfg->get_value(CFG_MIXER_MASTER_VOL)];
 
     for(int i=0; i<10; i++) {
-        uint8_t vol = volume_ctrl[cfg->get_value(CFG_MIXER0_VOL + i)];
+        uint8_t vol = combine_mixer_gain(volume_ctrl[cfg->get_value(CFG_MIXER0_VOL + i)], master);
         uint8_t pan = cfg->get_value(CFG_MIXER0_PAN + i);
         uint16_t panL = pan_ctrl[pan];
         uint16_t panR = pan_ctrl[10 - pan];
@@ -1136,6 +1330,11 @@ int U64Config :: setMixer(ConfigItem *it)
         *(mixer++) = vol_right;
         *(mixer++) = vol_left;
     }
+#if U64 == 2
+    if (u64_configurator && u64_configurator->mixercfg.cfg == cfg && u64_configurator->speakercfg.cfg) {
+        setSpeakerMixer(u64_configurator->speakercfg.cfg->items[0]);
+    }
+#endif
     return 0;
 }
 
@@ -1195,6 +1394,185 @@ int U64Config :: setLedSelector(ConfigItem *it)
     }
     return 0;
 }
+
+#if U64 == 2
+// A starved TX buffer makes BUFARGS answer 0, which is also what success
+// returns, so what the module holds is the only evidence a call arrived. A
+// second attempt separates a busy buffer from a module without the command.
+#define MODULE_ATTEMPTS 2
+
+// False when no answer carrying a known mode arrived, whatever the reason.
+static bool readPowerOnMode(uint8_t &mode, uint8_t &last_state)
+{
+    for (int attempt = 0; attempt < MODULE_ATTEMPTS; attempt++) {
+        mode = 0xFF;
+        last_state = 0xFF;
+        if ((wifi_get_power_mode(&mode, &last_state) == 0) && (mode <= 2)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Reads back, because the write cannot report a starved buffer either.
+static bool writePowerOnMode(uint8_t mode)
+{
+    for (int attempt = 0; attempt < MODULE_ATTEMPTS; attempt++) {
+        int retval = wifi_set_power_mode(mode);
+        if (retval) {
+            printf("Setting the power on behavior failed with error %d.\n", retval);
+            // An error is the module's own answer, not a call that went missing.
+            return false;
+        }
+        uint8_t stored = 0xFF;
+        uint8_t last_state = 0xFF;
+        if ((wifi_get_power_mode(&stored, &last_state) == 0) && (stored == mode)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// The control module (ESP32) is the only part powered when the input power
+// returns, so the setting lives in its NVS. Here it is only shown to the user
+// and pushed down on every change.
+int U64Config :: setPowerOnMode(ConfigItem *it)
+{
+    if (!it || writePowerOnMode((uint8_t)it->getValue())) {
+        return 0;
+    }
+    // An item left at a refused value would tell the menu and the REST API that
+    // the machine will come up when it will not, so it follows the module.
+    // setValueQuietly(), or this hook runs again. Flash keeps what the user
+    // asked for, so the next boot pushes it down to a module that was busy.
+    uint8_t mode;
+    uint8_t last_state;
+    if (readPowerOnMode(mode, last_state)) {
+        it->setValueQuietly((int)mode);
+        printf("The control module did not take the power on behavior; it is still %d.\n", mode);
+        UserInterface :: postMessage("Power on behavior not stored.");
+    } else {
+        printf("The control module did not take the power on behavior and does not answer; "
+               "disabling the setting.\n");
+        UserInterface :: postMessage("Control module does not answer.");
+        if (u64_configurator && u64_configurator->cfg) {
+            u64_configurator->cfg->disable(CFG_POWERON_MODE);
+        }
+    }
+    return 0;
+}
+
+// Called when the control module reports in; it may have been updated or
+// replaced since the setting was last changed, so bring the two in sync.
+void U64Config :: pushPowerOnMode(void)
+{
+    if (!u64_configurator || !u64_configurator->cfg) {
+        return;
+    }
+    ConfigItem *it = u64_configurator->cfg->find_item(CFG_POWERON_MODE);
+    if (!it) {
+        return;
+    }
+    uint8_t mode;
+    uint8_t last_state;
+    if (!readPowerOnMode(mode, last_state)) {
+        // A module that predates these commands cannot store the setting, and
+        // one that cannot be reached looks the same from here. A choice that
+        // quietly does nothing is worse than no choice at all.
+        printf("No usable answer about the power on behavior from the control module; "
+               "disabling the setting.\n");
+        u64_configurator->cfg->disable(CFG_POWERON_MODE);
+        return;
+    }
+    printf("Power on behavior of the control module: %d (machine was %s at the last transition)\n",
+           mode, last_state ? "on" : "off");
+    u64_configurator->cfg->enable(CFG_POWERON_MODE);
+    if (mode == (uint8_t)it->getValue()) {
+        return; // already in sync
+    }
+    setPowerOnMode(it);
+}
+
+// Read and written like the power on behavior above, and for the same reason.
+static bool readWakeOnWifi(uint8_t &enabled)
+{
+    for (int attempt = 0; attempt < MODULE_ATTEMPTS; attempt++) {
+        enabled = 0xFF;
+        if ((wifi_get_wake_on_wifi(&enabled) == 0) && (enabled <= 1)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool writeWakeOnWifi(uint8_t enabled)
+{
+    for (int attempt = 0; attempt < MODULE_ATTEMPTS; attempt++) {
+        int retval = wifi_set_wake_on_wifi(enabled);
+        if (retval) {
+            printf("Setting wake on Wi-Fi failed with error %d.\n", retval);
+            // An error is the module's own answer, not a call that went missing.
+            return false;
+        }
+        uint8_t stored = 0xFF;
+        if ((wifi_get_wake_on_wifi(&stored) == 0) && (stored == enabled)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// The control module is the only part still listening while the machine is off,
+// so this setting lives in its NVS as well.
+int U64Config :: setWakeOnWifi(ConfigItem *it)
+{
+    if (!it || writeWakeOnWifi((uint8_t)it->getValue())) {
+        return 0;
+    }
+    // As above: the item follows the module, so "Enabled" means a machine that
+    // will wake; flash keeps what was asked for and the next boot tries again.
+    uint8_t enabled;
+    if (readWakeOnWifi(enabled)) {
+        it->setValueQuietly((int)enabled);
+        printf("The control module did not take wake on Wi-Fi; it is still %d.\n", enabled);
+        UserInterface :: postMessage("Wake on Wi-Fi not stored.");
+    } else {
+        printf("The control module did not take wake on Wi-Fi and does not answer; "
+               "disabling the setting.\n");
+        UserInterface :: postMessage("Control module does not answer.");
+        if (u64_configurator && u64_configurator->cfg) {
+            u64_configurator->cfg->disable(CFG_WAKE_ON_WIFI);
+        }
+    }
+    return 0;
+}
+
+// The module may have been updated or replaced since the setting was last
+// changed, so bring the two in sync when it reports in.
+void U64Config :: pushWakeOnWifi(void)
+{
+    if (!u64_configurator || !u64_configurator->cfg) {
+        return;
+    }
+    ConfigItem *it = u64_configurator->cfg->find_item(CFG_WAKE_ON_WIFI);
+    if (!it) {
+        return;
+    }
+    uint8_t enabled;
+    if (!readWakeOnWifi(enabled)) {
+        printf("No usable answer about wake on Wi-Fi from the control module; "
+               "disabling the setting.\n");
+        u64_configurator->cfg->disable(CFG_WAKE_ON_WIFI);
+        return;
+    }
+    printf("Wake on Wi-Fi of the control module: %d\n", enabled);
+    u64_configurator->cfg->enable(CFG_WAKE_ON_WIFI);
+    if (enabled == (uint8_t)it->getValue()) {
+        return; // already in sync
+    }
+    setWakeOnWifi(it);
+}
+#endif
 
 int U64Config :: setCpuSpeed(ConfigItem *it)
 {
@@ -1269,11 +1647,13 @@ int U64Config :: setSidEmuParams(ConfigItem *it)
 #define MENU_U64_POKE 8
 #define MENU_U64_WIFI_ECHO 9
 #define MENU_U64_UART_ECHO 10
+#define MENU_U64_MONITOR 12
 
 void U64Config :: create_task_items(void)
 {
     TaskCategory *dev = TasksCollection :: getCategory("Developer", SORT_ORDER_DEVELOPER);
     myActions.poke      = new Action("Poke", SUBSYSID_U64, MENU_U64_POKE);
+    myActions.monitor   = register_u64_machine_monitor_task ? register_u64_machine_monitor_task(MENU_U64_MONITOR) : NULL;
     myActions.saveedid  = new Action("Save EDID to file", SUBSYSID_U64, MENU_U64_SAVEEDID);
     myActions.siddetect = new Action("Detect SIDs", SUBSYSID_U64, MENU_U64_DETECT_SIDS);
     myActions.esp32off  = new Action("Disable ESP32", SUBSYSID_U64, MENU_U64_WIFI_DISABLE);
@@ -1281,6 +1661,7 @@ void U64Config :: create_task_items(void)
     myActions.esp32boot = new Action("Enable ESP32 Boot", SUBSYSID_U64, MENU_U64_WIFI_BOOT);
 
     dev->append(myActions.saveedid );
+
 #if DEVELOPER > 0
     dev->append(myActions.poke      );
     dev->append(myActions.siddetect );
@@ -1373,11 +1754,11 @@ SubsysResultCode_e U64Config :: executeCommand(SubsysCommand *cmd)
     case MENU_U64_WIFI_DISABLE:
         esp32.Quit();
         break;
-        
+
     case MENU_U64_WIFI_DOWNLOAD:
         esp32.Boot();
         break;
-    
+
     case MENU_U64_WIFI_ENABLE:
         esp32.EnableRunMode();
         break;
@@ -1388,7 +1769,7 @@ SubsysResultCode_e U64Config :: executeCommand(SubsysCommand *cmd)
         break;
 
     default:
-    	printf("U64 does not know this command\n");
+       printf("U64 does not know this command\n");
         return SSRET_NOT_IMPLEMENTED;
     }
     return SSRET_OK;
@@ -1578,12 +1959,18 @@ void U64Config :: SetMixerAutoSid(uint8_t *slots, int count)
 {
     static const uint8_t channelMap[4] = { 4, 6, 0, 2 };
 
+    uint8_t selectedSettings[4];
     uint8_t selectedVolumes[4];
     ConfigStore *cs = this->mixercfg.cfg;
-    selectedVolumes[0] = volume_ctrl[cs->get_value(CFG_MIXER2_VOL)];
-    selectedVolumes[1] = volume_ctrl[cs->get_value(CFG_MIXER3_VOL)];
-    selectedVolumes[2] = volume_ctrl[cs->get_value(CFG_MIXER0_VOL)];
-    selectedVolumes[3] = volume_ctrl[cs->get_value(CFG_MIXER1_VOL)];
+    uint8_t master = volume_ctrl[cs->get_value(CFG_MIXER_MASTER_VOL)];
+    selectedSettings[0] = cs->get_value(CFG_MIXER2_VOL);
+    selectedSettings[1] = cs->get_value(CFG_MIXER3_VOL);
+    selectedSettings[2] = cs->get_value(CFG_MIXER0_VOL);
+    selectedSettings[3] = cs->get_value(CFG_MIXER1_VOL);
+    selectedVolumes[0] = combine_mixer_gain(volume_ctrl[selectedSettings[0]], master);
+    selectedVolumes[1] = combine_mixer_gain(volume_ctrl[selectedSettings[1]], master);
+    selectedVolumes[2] = combine_mixer_gain(volume_ctrl[selectedSettings[2]], master);
+    selectedVolumes[3] = combine_mixer_gain(volume_ctrl[selectedSettings[3]], master);
 
     // first mute the SIDs
     volatile uint8_t *mixer = (volatile uint8_t *)U64_AUDIO_MIXER;
@@ -1600,14 +1987,16 @@ void U64Config :: SetMixerAutoSid(uint8_t *slots, int count)
     //                                      -  -  -  -|CNT -  -  - |L2 R2 -  - |CN L3 R3 - |L2 R2 L4 R4
 
     for (int i=0;i<count;i++) {
-        uint8_t volume = selectedVolumes[slots[i]];
-        if (!volume) { // setting was OFF => default to 0 dB
+        uint8_t slot = slots[i];
+        uint8_t mixerSlot = slot & 3;
+        uint8_t volume = selectedVolumes[mixerSlot];
+        if (!volume && master && !selectedSettings[mixerSlot]) {
             volume = 0x80;
         }
         int pan = channelPanning[4*count + i];
-        printf("Sid %d was mapped to slot %d, which has volume setting %02x. Setting pan to %s.\n", i, slots[i], volume, pannings[pan]);
-        mixer[0 + channelMap[slots[i]]] = (pan_ctrl[10-pan] * volume) >> 8;
-        mixer[1 + channelMap[slots[i]]] = (pan_ctrl[pan] * volume) >> 8;
+        printf("Sid %d was mapped to slot %d, which uses mixer channel %d with volume setting %02x. Setting pan to %s.\n", i, slot, mixerSlot, volume, pannings[pan]);
+        mixer[0 + channelMap[mixerSlot]] = (pan_ctrl[10-pan] * volume) >> 8;
+        mixer[1 + channelMap[mixerSlot]] = (pan_ctrl[pan] * volume) >> 8;
     }
 }
 
@@ -2267,16 +2656,11 @@ void U64Config :: configure_hdmi_output(void)
         U64_HDMI_ENABLE = (hdmiSetting == 1) ? 1 : 0; // 1 = HDMI, 2 = DVI
     }
 
-//#if U64 == 2    
+#if U64 == 2
     volatile t_video_timing_regs *regs = (volatile t_video_timing_regs *)U64II_HDMI_REGS;
 
-
-
-
-
-
     regs->resync = 2;
-//#endif
+#endif
 }
 
 void U64Config :: list_palettes(ConfigItem *it, IndexedList<char *>& strings)
@@ -2433,7 +2817,7 @@ void U64Config :: late_init_palette(void *obj, void *param)
 
 void U64Config :: setup_config_menu(void)
 {
-    ConfigGroup *grp = ConfigGroupCollection :: getGroup("Video Configuration", SORT_ORDER_CFG_U64);
+    ConfigGroup *grp = ConfigGroupCollection :: getGroup("Video Configuration", SORT_ORDER_CFG_VIDEO);
     grp->append(cfg->find_item(CFG_SYSTEM_MODE));
 #if U64 == 2
     grp->append(cfg->find_item(CFG_HDMI_RESOLUTION));
@@ -2456,12 +2840,31 @@ void U64Config :: setup_config_menu(void)
     grp = ConfigGroupCollection :: getGroup("Joystick Settings", SORT_ORDER_CFG_JOYSTICK);
     grp->append(cfg->find_item(CFG_JOYSWAP)->set_item_altname("Joystick Input"));
     grp->append(sidaddressing.cfg->find_item(CFG_PADDLE_EN));
+    grp->append(ConfigItem :: separator());
+    grp->append(cfg->find_item(CFG_MOUSE_MODE));
+    grp->append(cfg->find_item(CFG_MOUSE_SENSITIVITY));
+    grp->append(cfg->find_item(CFG_MOUSE_ACCELERATION));
+    grp->append(cfg->find_item(CFG_MENU_MOUSE_NAV));
+    grp->append(ConfigItem :: separator());
+    grp->append(cfg->find_item(CFG_SCROLL_FACTOR));
+    grp->append(cfg->find_item(CFG_WHEEL_DIRECTION));
+    grp->append(ConfigItem :: separator());
+    grp->append(cfg->find_item(CFG_USB_MOUSE_NAME));
+    grp->append(cfg->find_item(CFG_USB_MOUSE_MODE));
+    grp->append(cfg->find_item(CFG_USB_KEYBOARD_NAME));
+    grp->append(cfg->find_item(CFG_USB_KEYBOARD_MODE));
 
 #if U64==2
     grp->append(ConfigItem :: separator());
     grp->append(ConfigItem :: heading("Note: When WASD Joystick emulation"));
     grp->append(ConfigItem :: heading("is enabled, hold [CTRL] to type the"));
     grp->append(ConfigItem :: heading("W, A, S, D and RETURN characters."));
+#endif
+
+#if U64==1
+    grp = ConfigGroupCollection :: getGroup("Speaker Settings", SORT_ORDER_CFG_SPEAKER);
+    grp->append(cfg->find_item(CFG_SPEAKER_EN));
+    grp->append(cfg->find_item(CFG_SPEAKER_VOL));
 #endif
 
     grp = ConfigGroupCollection :: getGroup("Turbo Settings", SORT_ORDER_CFG_TURBO);
@@ -2476,9 +2879,20 @@ void U64Config :: setup_config_menu(void)
     grp->append(cfg->find_item(CFG_IEC_BUS_MODE));
     //grp->append(cfg->find_item(CFG_HDMI_TX_SWING));
 
-    // grp = ConfigGroupCollection :: getGroup("Drive A Settings", SORT_ORDER_CFG_DRVA);
+#if U64 == 2
+    grp = ConfigGroupCollection :: getGroup("Power Settings", SORT_ORDER_CFG_POWER);
+    grp->append(cfg->find_item(CFG_POWERON_MODE));
+    grp->append(cfg->find_item(CFG_WAKE_ON_WIFI));
+    grp->append(ConfigItem :: separator());
+    grp->append(ConfigItem :: heading("'Last State' powers the machine up if"));
+    grp->append(ConfigItem :: heading("it was on when the power was lost."));
+    grp->append(ConfigItem :: separator());
+    grp->append(ConfigItem :: heading("'Wake On Wi-Fi' switches it on when a"));
+    grp->append(ConfigItem :: heading("magic packet arrives. Only Wi-Fi can:"));
+    grp->append(ConfigItem :: heading("the wired jack is off with the machine."));
+#endif
 
-    grp = ConfigGroupCollection :: getGroup("SID Player Behavior", SORT_ORDER_SIDPLAY);
+    grp = ConfigGroupCollection :: getGroup("SID Player Behavior", SORT_ORDER_CFG_SIDPLAY);
     grp->append(cfg->find_item(CFG_PLAYER_AUTOCONFIG));
     grp->append(cfg->find_item(CFG_ALLOW_EMUSID));
 }

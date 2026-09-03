@@ -33,6 +33,7 @@
 #define MENU_MEASURE_TIMING_API 0x6413
 #define MENU_C64_POWERCYCLE     0x6414
 #define MENU_C64_CLEARMEM       0x6415
+#define MENU_C64_MONITOR        0x6416
 
 #define C64_DMA_LOAD		0x6464
 #define C64_DRIVE_LOAD	    0x6465
@@ -137,6 +138,7 @@
 #define CART_TYPE_BLACKBOX_V8 0x0C
 #define CART_TYPE_ZAXXON      0x0D
 #define CART_TYPE_BLACKBOX_V9 0x0E
+#define CART_TYPE_MEGABYTER   0x0F
 
 #define CART_TYPE_PAGEFOX     0x10
 #define CART_TYPE_EASY_FLASH  0x11 // ?
@@ -292,7 +294,9 @@ class C64 : public GenericHost, ConfigurableObject
     uint8_t vic_irq;
     uint8_t vic_d011;
     uint8_t vic_d012;
+    uint8_t frozen_mode;
     bool backupIsValid;
+    bool frozen_cia2_porta_changed;
 
     volatile bool buttonPushSeen;
     volatile bool available;
@@ -330,7 +334,7 @@ class C64 : public GenericHost, ConfigurableObject
     }
     static void init_poll_task(void *a);
     static int setCartPref(ConfigItem *item);
-
+    static int setCartPrefUI(ConfigItem *item);
 #if U64
     bool ConfigureU64SystemBus(void);
     void EnableWriteMirroring(void);
@@ -367,6 +371,13 @@ public:
     bool exists(void);
     bool is_accessible(void);
     bool is_stopped(void);
+    bool begin_stopped_session(void);
+    void end_stopped_session(bool stopped_it);
+    uint8_t get_frozen_cia2_porta(void) const { return cia_backup[1]; }
+    void set_frozen_cia2_porta(uint8_t value) {
+        cia_backup[1] = value;
+        frozen_cia2_porta_changed = true;
+    }
     
     void set_colors(int background, int border);
     Screen *getScreen(void);
@@ -377,7 +388,13 @@ public:
        if (!cfg) return 0;
        return cfg->get_value(id);	
     }
-    
+
+    const char *get_cfg_string(uint8_t id)
+    {
+       if (!cfg) return "";
+       return cfg->get_string(id);
+    }
+
     /* C64 specifics */
     void resetConfigInFlash(int page);
     void unfreeze(void);
@@ -388,6 +405,9 @@ public:
     void reset(void);
     void start(void);
     bool is_in_reset(void);
+    virtual uint8_t peek(uint16_t address);
+    virtual void poke(uint16_t address, uint8_t value);
+    void dma_transfer_frozen(uint16_t offset, uint8_t *buffer, int length, int rw);
 
     static void clear_cart_definition(cart_def *def) {
         def->custom_addr = 0;
@@ -407,6 +427,11 @@ public:
     static uint8_t *get_cartridge_rom_addr(void) {
         extern uint8_t __cart_rom_start[1024*1024];
         return __cart_rom_start;
+    }
+
+    static uint32_t get_cartridge_max_rom(void) {
+        extern uint8_t __cart_rom_limit;
+        return ((uint32_t)&__cart_rom_limit) - (uint32_t)get_cartridge_rom_addr();
     }
 
     static uint8_t *get_cartridge_ram_addr(void) {

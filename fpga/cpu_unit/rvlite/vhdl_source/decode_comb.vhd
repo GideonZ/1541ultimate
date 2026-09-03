@@ -23,6 +23,7 @@ use work.core_pkg.all;
 
 entity decode_comb is
 generic (
+    g_mult          : boolean := true;
     g_trap_illegal  : boolean := true
 );
 port (
@@ -144,6 +145,14 @@ begin
             decoded.reg_rs2_read <= '1';
             decoded.alu_func <= inst_func7(5); -- 0x20 => sub / right instead of add / left
             decoded.reg_write <= '1';
+            decoded.reg_write_sel <= WB_ALU;
+            if inst_func7(0) = '1' and g_mult then
+                if inst_func3(1 downto 0) = "00" then
+                    decoded.reg_write_sel <= WB_MUL_L;
+                else
+                    decoded.reg_write_sel <= WB_MUL_H;
+                end if;
+            end if;
 
         when 13 => -- Load Upper Immediate (LUI)
             inst_type <= Utype;

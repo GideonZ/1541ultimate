@@ -17,11 +17,18 @@
 #include "home_directory.h"
 #include "system_info.h"
 #include "assembly_search.h"
+#include "monitor_init.h"
+#include "subsys.h"
+#include "c64.h"        // MENU_C64_RESET, for the C=+R reset shortcut
 
 #include "stream_textlog.h"
 extern StreamTextLog textLog; // the global log
+ClipBoard clipboard; // only one, and it's global and static
 
 int swap_joystick() __attribute__ ((weak));
+int swap_interface_type(UserInterface *ui) __attribute__ ((weak));
+
+static const char c_help_footer_label[] = "F3=HELP";
 
 /***********************/
 /* Tree Browser Object */
@@ -30,11 +37,13 @@ TreeBrowser :: TreeBrowser(UserInterface *ui, Browsable *root) : UIObject(ui)
 {
 	// initialize state
     allow_exit = false;
+    allow_tasks = true;
     has_path = true;
 	user_interface = ui; // copy!
 	screen = NULL;
 	window = NULL;
     keyb = NULL;
+    title = NULL;
     contextMenu = NULL;
     quick_seek_length = 0;
     quick_seek_string[0] = '\0';
@@ -46,11 +55,23 @@ TreeBrowser :: TreeBrowser(UserInterface *ui, Browsable *root) : UIObject(ui)
     observerQueue = new ObserverQueue("TreeBrowser");
     fm->registerObserver(observerQueue);
     has_border = false;
+    use_ui_focus_stack = true;
+    pick_mode = PICK_NONE;
+    picked = false;
 
     if(!state) {
         state = new TreeBrowserState(root, this, 0);
         state_root = state;
     }
+}
+
+void TreeBrowser :: replace_root_state(TreeBrowserState *s)
+{
+    if (state) {
+        delete state;
+    }
+    state = s;
+    state_root = s;
 }
 
 TreeBrowser :: ~TreeBrowser()
@@ -69,7 +90,7 @@ void TreeBrowser :: init() // call on root!
 	this->screen = user_interface->get_screen();
     this->keyb   = user_interface->get_keyboard();
 
-    screen->move_cursor(screen->get_size_x()-8, screen->get_size_y()-1);
+    screen->move_cursor(screen->get_size_x() - (int)strlen(c_help_footer_label) - 1, screen->get_size_y() - 1);
     screen->output("\eAF3=HELP\eO");
 
 	window = new Window(screen, 0, 2, screen->get_size_x(), screen->get_size_y()-3);
@@ -102,8 +123,10 @@ void TreeBrowser :: context(int initial)
     //printf("Creating context menu for %s\n", state->under_cursor->getName());
     contextMenu = new ContextMenu(user_interface, state, initial, state->selected_line);
     contextMenu->init(window, keyb);
-    user_interface->activate_uiobject(contextMenu);
-    // from this moment on, we loose focus.. polls will go directly to context menu!
+    if (use_ui_focus_stack) {
+        user_interface->activate_uiobject(contextMenu);
+        // from this moment on, we loose focus.. polls will go directly to context menu!
+    }
 }
 
 void TreeBrowser :: task_menu(void)
@@ -113,8 +136,10 @@ void TreeBrowser :: task_menu(void)
     //printf("Creating task menu for %s\n", state->node->getName());
     contextMenu = new TaskMenu(user_interface, state, path);
     contextMenu->init(window, keyb);
-    user_interface->activate_uiobject(contextMenu);
-    // from this moment on, we loose focus.. polls will go directly to menu!
+    if (use_ui_focus_stack) {
+        user_interface->activate_uiobject(contextMenu);
+        // from this moment on, we loose focus.. polls will go directly to menu!
+    }
 }
 
 void TreeBrowser :: test_editor(void)
@@ -145,8 +170,17 @@ int TreeBrowser :: poll(int sub_returned)
     int ret = 0;
 
     if(contextMenu) {
+        if (!use_ui_focus_stack) {
+            sub_returned = contextMenu->poll(0);
+            if (!sub_returned) {
+                return 0;
+            }
+        }
         if(sub_returned < 0) {
-        	delete contextMenu;
+            if (!use_ui_focus_stack) {
+                contextMenu->deinit();
+            }
+            delete contextMenu;
             contextMenu = NULL;
             state->draw();
         } else if(sub_returned > 0) {
@@ -157,14 +191,20 @@ int TreeBrowser :: poll(int sub_returned)
             // with that immediately.
             state->draw();
             ret = contextMenu->executeSelected(state->browser->getPath());
+            if (!use_ui_focus_stack) {
+                contextMenu->deinit();
+            }
             delete contextMenu;
             contextMenu = NULL;
             if (user_interface->has_focus(this)) {
                 state->draw();
-            } else {
-                // we lost focus, apparently a new UI element is active
-                state->refresh = true; // refresh as soon as we come back
             }
+            // No events are drained while a context menu is up, because this
+            // branch returns before checkFileManagerEvent(). The queue is short,
+            // so the notification for what the action just did may have been
+            // dropped; re-read the directory instead of trusting the cache.
+            state->refresh = true;
+            state->needs_reload = true;
         }
         return ret;
     }
@@ -189,7 +229,7 @@ int TreeBrowser :: poll(int sub_returned)
     }
     if(c >= 0) {
     	ret = handle_key(c);
-    	if(ret < 0) {
+		if(ret < 0) {
             keyb->wait_free();
         }
     }
@@ -245,7 +285,6 @@ void TreeBrowser :: checkFileManagerEvent(void)
         }
 
         // printf("DIR %sMATCHED, ENTRY %sMATCHED, st = %s, %p, %p, %d\n", match_dir?"":"NOT ", match_entry?"":"NOT ", st->node->getName(), st, this->state, match_exact_path);
-        Browsable *b;
 
         switch (event->eventType) {
         case eNodeAdded:
@@ -271,11 +310,19 @@ void TreeBrowser :: checkFileManagerEvent(void)
                 state->refresh = true;
             }
             if (match_dir) {
-                b = st->node->findChild(event->newName.c_str());
-                if (b) {
-                    printf("Removing %s\n", b->getName());
-                    st->node->children.remove(b);
-                }
+                // Reload rather than unlinking the entry. IndexedList::remove()
+                // only drops the pointer, and a BrowsableDirEntry owns a
+                // FileInfo, a FileType, its generated FAT name and a
+                // FileManager path reference, so unlinking stranded all of it --
+                // about 300 bytes and one path handle for every file that
+                // disappeared under an open browser. Deleting it here instead
+                // is not safe either: this state's under_cursor, and on some
+                // paths a deeper state's node, still point at it. reload()
+                // already frees the children through killChildren() and
+                // rebuilds the list from the filesystem, and do_refresh() runs
+                // it before anything reads under_cursor again. It is also what
+                // eNodeAdded above does with the same list.
+                st->needs_reload = true;
             }
             break;
 
@@ -335,9 +382,51 @@ void TreeBrowser :: seek_char(int c)
 int TreeBrowser :: handle_key(int c)
 {           
     int ret = 0;
-    
+
+    if (pick_mode != PICK_NONE) {
+        switch (c) {
+            case KEY_RETURN:
+                reset_quick_seek();
+                if (!state || !state->under_cursor) {
+                    return 0;
+                }
+                if (state->under_cursor->getSortOrder() == ET_PICKER) {
+                    return pick_current();
+                }
+                context(0);
+                return 0;
+            case KEY_RIGHT:
+                reset_quick_seek();
+                if (!state || !state->under_cursor) {
+                    return 0;
+                }
+                if (state->under_cursor->getSortOrder() == ET_PICKER) {
+                    return pick_current();
+                }
+                state->into2();
+                return 0;
+            case KEY_LEFT:
+                if (!state->previous && allow_exit) {
+                    return MENU_CLOSE;
+                }
+                state->level_up();
+                return 0;
+            case KEY_BREAK:
+            case KEY_F8:
+            case KEY_ESCAPE:
+            case KEY_F10:
+            case KEY_SCRLOCK:
+            case KEY_MENU:
+                picked = false;
+                return MENU_CLOSE;
+            default:
+                break;
+        }
+    }
+
     switch(c) {
         case KEY_BREAK: // runstop
+        case '`': // left arrow
             ret = (allow_exit) ? MENU_CLOSE : MENU_HIDE;
             break;
         case KEY_MENU:
@@ -363,13 +452,60 @@ int TreeBrowser :: handle_key(int c)
             state->down(window->get_size_y()/2);
             break;
         case KEY_TASKS:
-            reset_quick_seek();
-            task_menu();
+            if (allow_tasks) {
+                reset_quick_seek();
+                task_menu();
+            }
             break;
         case KEY_HELP:
             reset_quick_seek();
             state->refresh = true;
             user_interface->help();
+            break;
+        case KEY_CTRL_I:
+            reset_quick_seek();
+            ret = swap_interface_type(user_interface);
+            break;
+        case KEY_CTRL_R: {
+            // C=+R resets the C64 from the browser, the same key the machine
+            // code monitor uses for it. This is a keyboard route to an action
+            // the browser already offers: C64_Subsys registers it as the task
+            // menu's "Reset C64", and the REST route issues the same command.
+            //
+            // No ownership handling belongs here. MENU_C64_RESET releases the
+            // user interface's hold on the machine, unfreezes it and resets
+            // it, in that order, inside C64_Subsys::executeCommand. The
+            // machine code monitor open-codes that same order only because it
+            // has to return an exit code and delete itself before the reset
+            // can happen, which the browser has no equivalent of.
+            //
+            // There is no confirmation, for the same reason C=+I has none: the
+            // task menu's own Reset C64 is on this screen and unconfirmed, so
+            // guarding the keyboard route more heavily than the menu route to
+            // the identical action would be inconsistent.
+            reset_quick_seek();
+            SubsysCommand *cmd = new SubsysCommand(user_interface, SUBSYSID_C64,
+                                                   MENU_C64_RESET, 0);
+            cmd->execute();   // deletes itself; see SubsysCommand::execute
+            ret = (int)(user_interface->menu_response_to_action);
+            break;
+        }
+        case KEY_CTRL_O:
+            reset_quick_seek();
+            state->refresh = true;
+            if (get_machine_monitor_task) {
+                TaskMenu::ensure_task_actions_created(path ? FileManager :: getFileManager()->is_path_writable(path) : false);
+                Action *monitorAction = get_machine_monitor_task(SUBSYSID_U64);
+                if (!monitorAction) {
+                    monitorAction = get_machine_monitor_task(SUBSYSID_C64);
+                }
+                if (monitorAction) {
+                    const char *currentPath = path ? path->get_path() : "";
+                    SubsysCommand *cmd = new SubsysCommand(user_interface, monitorAction, currentPath, "");
+                    cmd->execute();
+                    ret = (int)(user_interface->menu_response_to_action);
+                }
+            }
             break;
         case KEY_CONFIG: // F2 -> config
             config();
@@ -478,7 +614,7 @@ bool TreeBrowser :: perform_quick_seek(void)
     int num_el = state->children->get_elements();
     for(int i=0;i<num_el;i++) {
     	Browsable *t = (*state->children)[i];
-		if(pattern_match(quick_seek_string, t->getName(), false)) {
+        if(t && pattern_match(quick_seek_string, t->getName(), false)) {
 			state->move_to_index(i);
 			return true;
 		}
@@ -504,7 +640,7 @@ void TreeBrowser :: copy_selection(void)
 	}
 	if (clipboard.getNumberOfFiles() == 0) {
 	    Browsable *t = state->under_cursor;
-	    if (t) {
+        if (t) {
 	        clipboard.addFile(t->getName());
 	    }
 	}
@@ -594,6 +730,64 @@ void TreeBrowser :: cd(const char *dst)
     observerQueue->putEvent(new FileManagerEvent(eChangeDirectory, dst));
 }
 
+void TreeBrowser :: prepend_headers()
+{
+    switch(pick_mode) {
+    case PICK_SAVE:
+        if (fm->is_path_writable(path)) {
+            state->children->prepend(new BrowsablePicker("<< Create New File >>", ET_PICKER));
+        }
+        break;
+    case PICK_PATH:
+        if (fm->is_path_writable(path)) {
+            state->children->prepend(new BrowsablePicker("<< Select Current Dir >>", ET_PICKER));
+        }
+        break;
+    default:
+        break;
+    }
+    if (title) {
+        state->children->prepend(new BrowsableStatic(title));
+    }
+}
+
+void TreeBrowser :: pick_result(const char *path, const char *name, bool dir_only)
+{
+    (void)dir_only;
+    picked = true;
+    picked_path = path ? path : "";
+    picked_name = name ? name : "";
+}
+
+bool TreeBrowser :: can_pick(Browsable *entry)
+{
+    if (!entry || pick_mode == PICK_NONE) {
+        return false;
+    }
+    if (entry->getSortOrder() == ET_PICKER) {
+        return true;
+    }
+    if (!entry->isSelectable()) {
+        return false;
+    }
+    // TODO: Is this always allowed?
+    FileInfo *info = ((BrowsableDirEntry *)entry)->getFileInfo();
+    return info && !(info->attrib & (AM_DIR | AM_VOL));
+}
+
+int TreeBrowser :: pick_current(void)
+{
+    if (!state || !state->under_cursor || !can_pick(state->under_cursor)) {
+        return 0;
+    }
+    if (state->under_cursor->getSortOrder() == ET_PICKER) {
+        pick_result(getPath(), "", true);
+        return MENU_CLOSE;
+    }
+    pick_result(getPath(), state->under_cursor->getName(), false);
+    return MENU_CLOSE;
+}
+
 // private
 void TreeBrowser :: cd_impl(const char *dst)
 {
@@ -626,4 +820,36 @@ const char *TreeBrowser :: getPath() {
 int swap_joystick()
 {
     return 0;
+}
+
+int pick_path(UserInterface *ui, mstring& path_out)
+{
+    if (!ui) {
+        return false;
+    }
+
+    Browsable *root = new BrowsableRoot();
+    TreeBrowser *browser = new TreeBrowser(ui, root);
+    browser->allow_exit = true;
+    browser->has_border = true;
+    browser->use_ui_focus_stack = false;
+    browser->title = "Select Path";
+    browser->pick_mode = TreeBrowser::PICK_PATH;
+    browser->init();
+
+    int ret = 0;
+    GenericHost *h = ui->host;
+    while (!ret && (!h || h->exists())) {
+        ret = browser->poll(0);
+    }
+
+    bool picked = browser->picked;
+    if (picked) {
+        path_out = browser->picked_path.c_str();
+    }
+
+    browser->deinit();
+    delete browser;
+    delete root;
+    return picked;
 }

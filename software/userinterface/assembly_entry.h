@@ -54,6 +54,11 @@ public:
         delete wrappedEntry;
     }
 
+    void setSelection(bool s)    { wrappedEntry->setSelection(s); }
+    void allowSelectable(bool b) { wrappedEntry->allowSelectable(b); }
+    bool getSelection()          { return wrappedEntry->getSelection(); }
+    bool isSelectable()          { return wrappedEntry->isSelectable(); }
+
     const char *getName() {
         return filename.c_str();
     }
@@ -68,6 +73,7 @@ public:
 		if (filetype) {
 			filetype->fetch_context_items(items);
 		}
+		UserFileInteraction :: getUserFileInteractionObject() -> fetch_context_items(wrappedEntry, items);
 	}
 
     IndexedList<Browsable *> *getSubItems(int &error) {

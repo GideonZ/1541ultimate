@@ -31,9 +31,9 @@ public:
 		}
 	}
 
-    bool exists(void) { return true; }
-    bool is_accessible(void) { return true; }
-    
+	bool exists(void) { return stream && stream->is_alive(); }
+	bool is_accessible(void) { return stream && stream->is_alive(); }
+
     Screen   *getScreen(void);
     Keyboard *getKeyboard(void);
 

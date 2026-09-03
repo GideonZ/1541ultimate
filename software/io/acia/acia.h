@@ -17,7 +17,6 @@ typedef struct _acia_t {
     uint8_t handsh;
     uint8_t irq_source;
     uint8_t slot_base;
-    uint8_t rx_rate;
 } acia_t;
 
 #define ACIA_TX_RAM_OFFSET 0x800
@@ -29,6 +28,7 @@ typedef struct _acia_t {
 #define ACIA_HANDSH_DTR    0x08 // Read Only
 #define ACIA_HANDSH_DCD    0x10
 #define ACIA_HANDSH_RTSDIS 0x20 // when set, RTS is not used in Rx path
+#define ACIA_HANDSH_RXPB   0x40
 
 #define ACIA_IRQ_RX     0x02
 #define ACIA_IRQ_TX     0x04
@@ -162,9 +162,9 @@ public:
     void SetDCD(uint8_t value);
     void SetDSR(uint8_t value);
     void SetCTS(uint8_t value);
-    void SetRxRate(uint8_t value);
     void EnableRTSInRx(uint8_t value);
-
+    void SetRxPushback(uint8_t value);
+    
     // efficient transfers
     int      GetRxSpace(void);
     volatile uint8_t *GetRxPointer(void);

@@ -72,7 +72,7 @@ architecture gideon of free_queue is
     signal table_we         : std_logic;
 
     signal sw_insert        : std_logic;
-    signal sw_done          : std_logic;
+    signal sw_ins_done      : std_logic;
     signal sw_addr          : std_logic_vector(25 downto 0) := (others => '0');
     signal sw_id            : std_logic_vector(7 downto 0) := (others => '0');
     signal sw_pop           : std_logic;
@@ -91,9 +91,8 @@ begin
         if rising_edge(clock) then
             io_resp <= c_io_resp_init;
 
-            if sw_done = '1' then
+            if sw_ins_done = '1' or soft_reset = '1' then
                 sw_insert <= '0';
-                sw_pop <= '0';
             end if;
             
             -- fall through logic
@@ -128,7 +127,10 @@ begin
                     sw_id <= io_req.data;
                     sw_insert <= '1';
                 when X"F" =>
-                    used_valid <= '0';
+                    if used_valid = '1' then
+                        used_valid <= '0';
+                        sw_pop_id  <= X"FF";
+                    end if;
                 when X"E" =>
                     soft_reset <= '1';
                 when others =>
@@ -218,7 +220,7 @@ begin
         used_head_next <= used_head;
         used_tail_next <= used_tail;
         used_resp <= '0';
-        sw_done <= '0';
+        sw_ins_done <= '0';
         sw_pop_valid <= '0';
         alloc_resp_c.done <= '0';
         offset_c <= offset_r;
@@ -244,7 +246,7 @@ begin
                     table_en <= '1';
                     free_head_next <= free_head + 1;
                 end if;
-                sw_done <= '1';
+                sw_ins_done <= '1';
             elsif used_req.request = '1' then
                 -- Push into Used Area
                 table_addr  <= '1' & used_head;
