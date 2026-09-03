@@ -234,6 +234,12 @@ SUITES: Sequence[Suite] = (
     # Manual because it drives an installed Chrome and Firefox through Selenium,
     # which no other suite needs and CI does not provide.
     Suite("e2e", "web-theme", "tests/e2e/web/theme_test.py", "", manual=True),
+    # Also needs no device: index.html is the only client of several REST calls
+    # and most of what it decides is invisible in the page. It talks to a stub
+    # device that records what it sent, so a wrong route or a mis-parsed monitor
+    # address fails here rather than on somebody's desk. Manual for the same
+    # reason web-theme is.
+    Suite("e2e", "web-index", "tests/e2e/web/index_test.py", "", manual=True),
     # Validates tests/e2e/lib/ui_backend.py itself (Telnet, REST/Freeze,
     # REST/Overlay) before any suite built on it runs, so a broken shared
     # facade fails here with a clear cause instead of as confusing failures

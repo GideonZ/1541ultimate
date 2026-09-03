@@ -34,36 +34,20 @@ CDN that page loads jQuery from. Whatever is missing is reported as a skip.
 """
 
 import argparse
-import contextlib
-import functools
-import http.server
 import os
 import pathlib
 import sys
-import threading
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
+
+import browser as browser_lib  # noqa: E402
 from report import (Failure, check, check_skip, detail,  # noqa: E402
                     section, suite_fail, suite_ok)
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 PAGES = REPO_ROOT / "html"
-
-# Ubuntu and Debian ship Firefox as a Snap whose /usr/bin/firefox is a wrapper
-# script, and geckodriver rejects a wrapper with "binary is not a Firefox
-# executable". These are where the real binary sits when that happens.
-FIREFOX_FALLBACKS = (
-    "/snap/firefox/current/usr/lib/firefox/firefox",
-    "/usr/lib/firefox/firefox",
-    "/usr/lib64/firefox/firefox",
-    "/Applications/Firefox.app/Contents/MacOS/firefox",
-)
-
-# The content setting each browser calls "block site data", which is what makes
-# sessionStorage throw. Chrome numbers its content settings, 2 being block.
-CHROME_BLOCK_SITE_DATA = {"profile.default_content_setting_values.cookies": 2}
-FIREFOX_BLOCK_SITE_DATA = {"network.cookie.cookieBehavior": 2}
 
 # How long a page has to finish applying its theme. index.html does it inside a
 # jQuery ready handler, after fetching jQuery.
@@ -75,38 +59,11 @@ def parse_args():
     parser.add_argument("--base-url", default="",
                         help="Where the pages are served from, e.g. http://ultimate64. "
                              "Default: serve html/ from this tree.")
-    parser.add_argument("--browser", default="all", choices=("all", "chrome", "firefox"),
+    parser.add_argument("--browser", default="all", choices=("all",) + browser_lib.BROWSERS,
                         help="Which browsers to drive. Default: every one installed.")
     parser.add_argument("-t", "--timeout", type=float, default=READY_TIMEOUT,
                         help="How long a page has to become ready.")
     return parser.parse_args()
-
-
-def require_selenium():
-    try:
-        import selenium  # noqa: F401
-        from selenium import webdriver
-        return webdriver
-    except ImportError as exc:
-        raise Failure("selenium is needed for this suite: "
-                      "pip install -r tests/requirements.txt") from exc
-
-
-@contextlib.contextmanager
-def serving(directory):
-    """Serve `directory` over HTTP for the length of the run."""
-    handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(directory))
-    handler.func.log_message = lambda *args, **kwargs: None
-
-    class Server(http.server.ThreadingHTTPServer):
-        daemon_threads = True
-
-    server = Server(("127.0.0.1", 0), handler)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
-    try:
-        yield "http://127.0.0.1:%d" % server.server_address[1]
-    finally:
-        server.shutdown()
 
 
 class Session:
@@ -117,28 +74,8 @@ class Session:
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
         self.page = ""
-        if browser == "chrome":
-            options = webdriver.ChromeOptions()
-            options.add_argument("--headless=new")
-            if block_site_data:
-                options.add_experimental_option("prefs", dict(CHROME_BLOCK_SITE_DATA))
-            self.driver = webdriver.Chrome(options=options)
-            # Chrome has no preference for the colour scheme, so it is set the
-            # way its own developer tools set it.
-            self.driver.execute_cdp_cmd(
-                "Emulation.setEmulatedMedia",
-                {"features": [{"name": "prefers-color-scheme",
-                               "value": "dark" if dark else "light"}]})
-        else:
-            options = webdriver.FirefoxOptions()
-            options.add_argument("-headless")
-            options.set_preference("ui.systemUsesDarkTheme", 1 if dark else 0)
-            for name, value in (FIREFOX_BLOCK_SITE_DATA.items() if block_site_data else ()):
-                options.set_preference(name, value)
-            binary = firefox_binary()
-            if binary:
-                options.binary_location = binary
-            self.driver = webdriver.Firefox(options=options)
+        self.driver = browser_lib.make_driver(webdriver, browser, dark=dark,
+                                              block_site_data=block_site_data)
 
     def close(self):
         self.driver.quit()
@@ -179,27 +116,6 @@ class Session:
     def stored(self):
         return self.script("(() => { try { return sessionStorage.getItem('theme'); }"
                            " catch (e) { return 'REFUSED'; } })()")
-
-
-def firefox_binary():
-    """The Firefox to drive: the one named in the environment, or a packaged one."""
-    named = os.environ.get("FIREFOX_BINARY", "")
-    if named:
-        return named
-    for candidate in FIREFOX_FALLBACKS:
-        if pathlib.Path(candidate).exists():
-            return candidate
-    return ""
-
-
-def available(webdriver, browser):
-    """Whether this browser and its driver are here, without asserting anything."""
-    try:
-        session = Session(webdriver, browser, "http://127.0.0.1", 1.0)
-    except Exception as exc:
-        return False, str(exc).strip().split("\n")[0]
-    session.close()
-    return True, ""
 
 
 def jquery_reached(session):
@@ -335,11 +251,11 @@ def run_browser(webdriver, browser, base_url, timeout):
 
 
 def run(args, base_url):
-    webdriver = require_selenium()
-    wanted = ("chrome", "firefox") if args.browser == "all" else (args.browser,)
+    webdriver = browser_lib.require_selenium()
+    wanted = browser_lib.BROWSERS if args.browser == "all" else (args.browser,)
     drove_one = False
     for browser in wanted:
-        here, why = available(webdriver, browser)
+        here, why = browser_lib.available(webdriver, browser)
         if not here:
             section(browser)
             with check("%s and its WebDriver are installed" % browser):
@@ -359,9 +275,9 @@ def main():
         else:
             if not (PAGES / "index.html").exists():
                 raise Failure("%s is missing" % PAGES)
-            with serving(PAGES) as base_url:
+            with browser_lib.serving(PAGES) as base_url:
                 run(args, base_url)
-    except Failure as exc:
+    except (Failure, browser_lib.Unavailable) as exc:
         suite_fail("web_theme", str(exc))
         return 1
     suite_ok("web_theme")
