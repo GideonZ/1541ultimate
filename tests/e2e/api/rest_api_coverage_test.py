@@ -254,7 +254,8 @@ class Ctx:
                           f"of {sorted(allow)}: {body[:160]!r}")
 
 
-def build_cases() -> list[Case]:
+def _identity_and_help_cases() -> list[Case]:
+    """The # ---- identity and help routes."""
     c: list[Case] = []
 
     def case(key, name, kind, fn, exclusive=False):
@@ -310,6 +311,16 @@ def build_cases() -> list[Case]:
         ctx.refuse_status("GET", "/v1/help")
     case(("GET", "/v1/help"), "refuses a missing command", "negative", _help_bad)
 
+    return c
+
+
+def _configuration_reads_cases() -> list[Case]:
+    """The # ---- configuration reads routes."""
+    c: list[Case] = []
+
+    def case(key, name, kind, fn, exclusive=False):
+        c.append(Case(key, name, kind, fn, exclusive=exclusive))
+
     # ---- configuration reads --------------------------------------------
     def _configs(ctx: Ctx) -> None:
         if not ctx.api.configs.category_names():
@@ -334,6 +345,16 @@ def build_cases() -> list[Case]:
         ctx.refuse_status("GET", "/v1/configs/No%20Such%20Category", allow=(404,))
     case(("GET", "/v1/configs/{category}"), "refuses an unknown category",
          "negative", _config_unknown)
+
+    return c
+
+
+def _configuration_writes_cases() -> list[Case]:
+    """The # ---- configuration writes routes."""
+    c: list[Case] = []
+
+    def case(key, name, kind, fn, exclusive=False):
+        c.append(Case(key, name, kind, fn, exclusive=exclusive))
 
     # ---- configuration writes -------------------------------------------
     def _config_write(ctx: Ctx) -> None:
@@ -378,6 +399,16 @@ def build_cases() -> list[Case]:
                     lambda: ctx.api.configs.apply({"No Such Category": {"x": "1"}}))
     case(("POST", "/v1/configs"), "refuses an unknown category", "negative",
          _config_apply_bad)
+
+    return c
+
+
+def _flash_backed_settings_cases() -> list[Case]:
+    """The # ---- flash-backed settings routes."""
+    c: list[Case] = []
+
+    def case(key, name, kind, fn, exclusive=False):
+        c.append(Case(key, name, kind, fn, exclusive=exclusive))
 
     # ---- flash-backed settings ------------------------------------------
     # Saving writes what is already in force, because no case changes a setting
@@ -442,6 +473,16 @@ def build_cases() -> list[Case]:
          "resets everything, needs --allow-global-reset", "happy",
          lambda ctx: ctx.suite.global_reset(ctx), exclusive=True)
 
+    return c
+
+
+def _files_cases() -> list[Case]:
+    """The # ---- files routes."""
+    c: list[Case] = []
+
+    def case(key, name, kind, fn, exclusive=False):
+        c.append(Case(key, name, kind, fn, exclusive=exclusive))
+
     # ---- files -----------------------------------------------------------
     def _files_info(ctx: Ctx) -> None:
         if ctx.api.files.info(SCRATCH) is None:
@@ -467,6 +508,16 @@ def build_cases() -> list[Case]:
                         lambda: create(f"{MISSING}.{kind}", **extra))
         case(("PUT", f"/v1/files/{{path}}:create_{kind}"),
              "refuses an unwritable path", "negative", _create)
+
+    return c
+
+
+def _machine_reads_cases() -> list[Case]:
+    """The # ---- machine reads routes."""
+    c: list[Case] = []
+
+    def case(key, name, kind, fn, exclusive=False):
+        c.append(Case(key, name, kind, fn, exclusive=exclusive))
 
     # ---- machine reads ---------------------------------------------------
     def _readmem(ctx: Ctx) -> None:
@@ -534,6 +585,16 @@ def build_cases() -> list[Case]:
     case(("GET", "/v1/machine:menu_screen"), "answers 404 with no menu open",
          "happy", _menu_screen)
 
+    return c
+
+
+def _machine_writes_cases() -> list[Case]:
+    """The # ---- machine writes routes."""
+    c: list[Case] = []
+
+    def case(key, name, kind, fn, exclusive=False):
+        c.append(Case(key, name, kind, fn, exclusive=exclusive))
+
     # ---- machine writes --------------------------------------------------
     def _writemem_put(ctx: Ctx) -> None:
         before = ctx.api.machine.readmem(SCRATCH_ADDRESS, 1)
@@ -573,6 +634,16 @@ def build_cases() -> list[Case]:
         ctx.refuse_status("POST", "/v1/machine:input")
     case(("POST", "/v1/machine:input"), "refuses an empty event list", "negative",
          _input_post_bad)
+
+    return c
+
+
+def _machine_control_cases() -> list[Case]:
+    """The # ---- machine control routes."""
+    c: list[Case] = []
+
+    def case(key, name, kind, fn, exclusive=False):
+        c.append(Case(key, name, kind, fn, exclusive=exclusive))
 
     # ---- machine control -------------------------------------------------
     def _pause_resume(ctx: Ctx) -> None:
@@ -615,6 +686,16 @@ def build_cases() -> list[Case]:
             raise Failure("the C64 did not reach the BASIC prompt after a reboot")
     case(("PUT", "/v1/machine:reboot"), "the C64 comes back to READY", "happy",
          _reboot, exclusive=True)
+
+    return c
+
+
+def _drives_cases() -> list[Case]:
+    """The # ---- drives routes."""
+    c: list[Case] = []
+
+    def case(key, name, kind, fn, exclusive=False):
+        c.append(Case(key, name, kind, fn, exclusive=exclusive))
 
     # ---- drives ----------------------------------------------------------
     def _drives_list(ctx: Ctx) -> None:
@@ -747,6 +828,16 @@ def build_cases() -> list[Case]:
         case(("PUT", f"/v1/drives/{{drive}}:{action}"),
              "refuses an unknown drive letter", "negative", _unknown_drive)
 
+    return c
+
+
+def _runners_cases() -> list[Case]:
+    """The # ---- runners routes."""
+    c: list[Case] = []
+
+    def case(key, name, kind, fn, exclusive=False):
+        c.append(Case(key, name, kind, fn, exclusive=exclusive))
+
     # ---- runners ---------------------------------------------------------
     for action in ("sidplay", "modplay", "load_prg", "run_prg", "run_crt"):
         def _runner_missing(ctx: Ctx, action=action) -> None:
@@ -760,6 +851,16 @@ def build_cases() -> list[Case]:
             ctx.refuse_status("POST", f"/v1/runners:{action}")
         case(("POST", f"/v1/runners:{action}"), "refuses a request with no body",
              "negative", _runner_no_body)
+
+    return c
+
+
+def _streams_cases() -> list[Case]:
+    """The # ---- streams routes."""
+    c: list[Case] = []
+
+    def case(key, name, kind, fn, exclusive=False):
+        c.append(Case(key, name, kind, fn, exclusive=exclusive))
 
     # ---- streams ---------------------------------------------------------
     def _stream_roundtrip(ctx: Ctx) -> None:
@@ -806,6 +907,16 @@ def build_cases() -> list[Case]:
     case(("PUT", "/v1/streams/{stream}:stop"), "refuses an unknown stream",
          "negative", _stream_stop_unknown)
 
+    return c
+
+
+def _protocol_cases() -> list[Case]:
+    """The # ---- protocol routes."""
+    c: list[Case] = []
+
+    def case(key, name, kind, fn, exclusive=False):
+        c.append(Case(key, name, kind, fn, exclusive=exclusive))
+
     # ---- protocol --------------------------------------------------------
     def _unknown_route(ctx: Ctx) -> None:
         code, _, _b = ctx.api.rest.request("GET", "/v1/no_such_group:no_such_command")
@@ -829,6 +940,34 @@ def build_cases() -> list[Case]:
     case(None, "an unauthenticated read is refused", "protocol", _no_password)
 
     return c
+
+
+# Every family of routes, in the order a reader of the API document
+# meets them. build_cases was one 548-line function holding all of
+# them, which is the longest in the tree and the only place a new
+# route could be added.
+CASE_FAMILIES = (
+    _identity_and_help_cases,
+    _configuration_reads_cases,
+    _configuration_writes_cases,
+    _flash_backed_settings_cases,
+    _files_cases,
+    _machine_reads_cases,
+    _machine_writes_cases,
+    _machine_control_cases,
+    _drives_cases,
+    _runners_cases,
+    _streams_cases,
+    _protocol_cases,
+)
+
+
+def build_cases() -> list[Case]:
+    """Every case, family by family."""
+    cases: list[Case] = []
+    for family in CASE_FAMILIES:
+        cases.extend(family())
+    return cases
 
 
 class SuiteRunner:
