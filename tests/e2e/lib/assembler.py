@@ -33,16 +33,33 @@ ASSEMBLER = os.path.join(REPO_ROOT, "tools", "64tass", "64tass")
 ASSEMBLER_SOURCE_DIR = os.path.dirname(ASSEMBLER)
 ASSEMBLE_TIMEOUT_SECONDS = 120.0
 BUILD_TIMEOUT_SECONDS = 600.0
+VERSION_TIMEOUT_SECONDS = 30.0
+
+
+def assembler_runs() -> bool:
+    """Whether the binary at ASSEMBLER is one this machine can actually run.
+
+    Its presence is not enough. A firmware build under docker on a bind-mounted
+    tree leaves a Linux binary at that path, which the host then cannot execute,
+    and the failure surfaces from assemble() as `Exec format error` rather than
+    as anything about the build.
+    """
+    try:
+        return subprocess.run(
+            [ASSEMBLER, "--version"], capture_output=True,
+            timeout=VERSION_TIMEOUT_SECONDS).returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
 
 
 def ensure_assembler() -> None:
-    """Build `tools/64tass/64tass` from the source beside it when it is absent.
+    """Build `tools/64tass/64tass` when it is absent, or cannot run here.
 
     The same make that a firmware build runs, so the binary is the one the
     repository would have produced anyway, and a fresh checkout does not fail
     every assembling suite for want of a build step nobody was told about.
     """
-    if os.path.exists(ASSEMBLER):
+    if assembler_runs():
         return
     # A run naming several targets starts one process per target, and on a
     # fresh checkout two of them can reach an assembling suite together. The
@@ -50,17 +67,28 @@ def ensure_assembler() -> None:
     # over the same object files; it then finds the binary and returns.
     with open(os.path.join(ASSEMBLER_SOURCE_DIR, ".build-lock"), "w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
-        if os.path.exists(ASSEMBLER):
+        if assembler_runs():
             return
+        # Anything already here was built for another platform, so it can be
+        # neither run nor linked against. `make` alone would keep the objects
+        # and relink them, failing with "unknown file type", so clear both
+        # first. On a fresh checkout there is nothing to clear and this costs
+        # one no-op make.
+        subprocess.run(["make", "-C", ASSEMBLER_SOURCE_DIR, "clean"],
+                       capture_output=True, timeout=BUILD_TIMEOUT_SECONDS)
+        try:
+            os.remove(ASSEMBLER)
+        except OSError:
+            pass
         try:
             result = subprocess.run(
                 ["make", "-C", ASSEMBLER_SOURCE_DIR],
                 capture_output=True, text=True, timeout=BUILD_TIMEOUT_SECONDS)
         except (OSError, subprocess.SubprocessError) as exc:
             raise Failure(f"could not build {ASSEMBLER}: {exc}") from exc
-        if result.returncode or not os.path.exists(ASSEMBLER):
-            raise Failure(f"{ASSEMBLER} is missing and `make -C tools/64tass` did "
-                          f"not produce it: "
+        if result.returncode or not assembler_runs():
+            raise Failure(f"{ASSEMBLER} is missing, or not runnable here, and "
+                          f"`make -C tools/64tass` did not produce one: "
                           f"{(result.stderr or result.stdout).strip()[:400]}")
 
 
