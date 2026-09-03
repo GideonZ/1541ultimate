@@ -44,18 +44,22 @@ import sys
 import tempfile
 import threading
 import time
+from pathlib import Path
 
 try:
     import ftplib
 except ImportError:  # pragma: no cover
     ftplib = None
 
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# tests/lib holds the reporting rules every suite shares; tests/e2e/lib holds
-# the shared character-to-key mapping and the batching helper.
-sys.path.insert(0, os.path.join(SCRIPT_DIR, "..", "..", "lib"))
-sys.path.insert(0, os.path.join(SCRIPT_DIR, "..", "lib"))
+# tests/lib holds the shared library; importing bootstrap adds tests/e2e/lib.
+# The search walks up rather than counting directories, so this is the same in
+# every entry point and a suite that moves needs no edit. See tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
+import cli  # noqa: E402
+
 import menu as menu_lib  # noqa: E402  (needs tests/e2e/lib on sys.path first)
 import pacing  # noqa: E402  (needs tests/lib on sys.path first)
 import rest as rest_lib
@@ -67,6 +71,8 @@ from api import UltimateApi  # noqa: E402  (needs tests/lib on sys.path first)
 from report import (  # noqa: E402  (needs tests/lib on sys.path first)
     Failure, best_effort, check_count, check_fail, check_ok, check_start, check_warn, detail, last_label,
     section, suite_fail, suite_ok, warn)
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 SCREEN_WIDTH = 40
 SCREEN_HEIGHT = 25
@@ -2060,18 +2066,6 @@ def parse_ports(text):
     return range(lo, hi + 1)
 
 
-def parse_duration(text):
-    t = text.strip().lower()
-    mult = 1.0
-    if t.endswith("ms"):
-        mult, t = 0.001, t[:-2]
-    elif t.endswith("s"):
-        t = t[:-1]
-    elif t.endswith("m"):
-        mult, t = 60.0, t[:-1]
-    return float(t) * mult
-
-
 def parse_args(argv=None):
     p = argparse.ArgumentParser(
         description="End-to-end test harness for the FTP remote filesystem on a real Ultimate 64/64e.",
@@ -2115,7 +2109,7 @@ def parse_args(argv=None):
     p.add_argument("--verbose-menu", action="store_true", help="print decoded menu screens on failure")
     p.add_argument("--run-prg", action="store_true", help="run the opt-in remote-PRG RAM-marker check")
     args = p.parse_args(argv)
-    args.soak_duration = parse_duration(args.soak_duration)
+    args.soak_duration = cli.parse_duration(args.soak_duration)
     args.ftp_passive_ports = parse_ports(args.ftp_passive_ports)
     return args
 

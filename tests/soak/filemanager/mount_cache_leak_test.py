@@ -25,15 +25,18 @@ every check here skips, so the suite is safe to run against any image.
 """
 
 import argparse
-import os
 import sys
 import time
 from pathlib import Path
 
-# tests/lib holds the reporting rules and the shared REST client; the D64
-# builder lives with the suite that already needed one.
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "lib"))
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "e2e" / "filemanager"))
+# tests/lib holds the shared library; importing bootstrap adds tests/e2e/lib.
+# The search walks up rather than counting directories, so this is the same in
+# every entry point and a suite that moves needs no edit. See tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
+import cli  # noqa: E402
+sys.path.insert(0, bootstrap.directory("e2e", "filemanager"))
 
 import api as api_lib  # noqa: E402  (needs tests/lib on sys.path first)
 import ftp as ftp_lib  # noqa: E402
@@ -124,10 +127,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description="Assert that browsing many disk images does not consume heap. "
                     "Skips if the firmware has no machine:heap endpoint.")
-    parser.add_argument("-H", "--host", default=os.environ.get("U64_HOST", "u64"))
-    parser.add_argument("-p", "--password", default=os.environ.get("U64_PASS"))
-    parser.add_argument("-t", "--timeout", type=float,
-                        default=float(os.environ.get("U64_TIMEOUT", "30.0")))
+    cli.add_device_arguments(parser, password=None, timeout=30.0, colour=False)
     args = parser.parse_args()
 
     rest = rest_lib.RestClient(args.host, args.password or None, args.timeout)

@@ -10,10 +10,15 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from typing import Optional
+from pathlib import Path
 
-# tests/lib holds the reporting rules every suite shares.
-sys.path.insert(0, os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
+# tests/lib holds the shared library; importing bootstrap adds tests/e2e/lib.
+# The search walks up rather than counting directories, so this is the same in
+# every entry point and a suite that moves needs no edit. See tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
+import cli  # noqa: E402
 import machine as machine_lib  # noqa: E402  (needs tests/lib on sys.path first)
 import pacing  # noqa: E402  (needs tests/lib on sys.path first)
 import profiles  # noqa: E402  (needs tests/lib on sys.path first)
@@ -718,19 +723,8 @@ def main() -> int:
         description="Validate REST readmem/writemem correctness within, and consistency across, "
                     "the Freeze and Overlay-on-HDMI interface modes on real firmware."
     )
-    parser.add_argument("-H", "--host", default=os.environ.get("U64_HOST", "u64"))
+    cli.add_device_arguments(parser, password=None, timeout=30.0, colour=False)
     parser.add_argument("-r", "--rest-host", default=os.environ.get("U64_REST_HOST"))
-    parser.add_argument(
-        "-p",
-        "--password",
-        default=os.environ.get("U64_PASS"),
-    )
-    parser.add_argument(
-        "-t",
-        "--timeout",
-        type=float,
-        default=float(os.environ.get("U64_TIMEOUT", "30.0")),
-    )
     parser.add_argument(
         "--test",
         action="append",

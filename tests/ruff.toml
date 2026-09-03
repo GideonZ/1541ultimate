@@ -63,15 +63,3 @@ ignore = [
     "PERF403",
     "PLW2901",
 ]
-
-[lint.per-file-ignores]
-# E402 permits a sys.path mutation before an import, so most of the tree's
-# bootstraps pass. These five compute the path into a named variable first
-# ("SCRIPT_DIR = ...", "REPO_ROOT = ..."), and a plain assignment is not
-# permitted, so their imports are flagged. XC-1 replaces the bootstrap;
-# delete this table with it.
-"tests/e2e/api/prg_load_path_trim_test.py" = ["E402"]
-"tests/e2e/av/stream_test.py" = ["E402"]
-"tests/e2e/filemanager/temp_auto_cleanup_test.py" = ["E402"]
-"tests/e2e/filesystem/ftp_client_test.py" = ["E402"]
-"tests/e2e/io/printer/printer_test.py" = ["E402"]

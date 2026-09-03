@@ -10,14 +10,18 @@
 
 import argparse
 import ftplib
-import os
 import sys
 import urllib.error
 from collections.abc import Iterable
+from pathlib import Path
 
-# tests/lib holds the reporting rules every suite shares.
-sys.path.insert(0, os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
+# tests/lib holds the shared library; importing bootstrap adds tests/e2e/lib.
+# The search walks up rather than counting directories, so this is the same in
+# every entry point and a suite that moves needs no edit. See tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
+import cli  # noqa: E402
 import ftp as ftp_lib  # noqa: E402  (needs tests/lib on sys.path first)
 import machine as machine_lib  # noqa: E402  (needs tests/lib first)
 import rest as rest_lib  # noqa: E402  (needs tests/lib on sys.path first)
@@ -163,10 +167,7 @@ class SuiteRunner:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("-H", "--host", default=os.environ.get("U64_HOST", "u64"))
-    parser.add_argument("-p", "--password", default=os.environ.get("U64_PASS"))
-    parser.add_argument("-t", "--timeout", type=float,
-                        default=float(os.environ.get("U64_TIMEOUT", "10.0")))
+    cli.add_device_arguments(parser, password=None, colour=False)
     args = parser.parse_args()
 
     runner = SuiteRunner(args)

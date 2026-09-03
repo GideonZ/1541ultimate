@@ -9,11 +9,14 @@ import time
 from pathlib import Path
 from collections.abc import Sequence
 
-SCRIPT_DIR = Path(__file__).resolve().parent
-REPO_ROOT = SCRIPT_DIR.parents[2]
 
-sys.path.insert(0, str(REPO_ROOT / "tests" / "lib"))
-sys.path.insert(0, str(REPO_ROOT / "tests" / "e2e" / "lib"))
+# tests/lib holds the shared library; importing bootstrap adds tests/e2e/lib.
+# The search walks up rather than counting directories, so this is the same in
+# every entry point and a suite that moves needs no edit. See tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
+
 
 from api import UltimateApi
 from assembler import assemble
@@ -28,6 +31,9 @@ from av_stream import (
     video_frames,
 )
 from report import Failure, check, detail, suite_fail, suite_ok
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+REPO_ROOT = SCRIPT_DIR.parents[2]
 
 
 PAL_AUDIO_RATE = 47982.8869047619

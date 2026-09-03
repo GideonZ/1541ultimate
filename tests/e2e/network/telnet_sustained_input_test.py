@@ -22,10 +22,16 @@ import socket
 import sys
 import threading
 import time
+from pathlib import Path
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(HERE, "..", "lib"))
-sys.path.insert(0, os.path.join(HERE, "..", "..", "lib"))
+# tests/lib holds the shared library; importing bootstrap adds tests/e2e/lib.
+# The search walks up rather than counting directories, so this is the same in
+# every entry point and a suite that moves needs no edit. See tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
+import cli  # noqa: E402
 
 import targets  # noqa: E402
 from report import Failure, check, check_ok, detail, suite_ok  # noqa: E402
@@ -71,7 +77,7 @@ class Reader(threading.Thread):
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("-H", "--host", default=os.environ.get("U64_HOST", "u64"))
+    cli.add_device_arguments(parser, colour=False)
     parser.add_argument("-P", "--telnet-port", type=int, default=23)
     parser.add_argument("--keys", type=int, default=KEYS)
     args = parser.parse_args()

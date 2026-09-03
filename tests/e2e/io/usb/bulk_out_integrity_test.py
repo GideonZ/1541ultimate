@@ -55,7 +55,13 @@ import sys
 import time
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "lib"))
+# tests/lib holds the shared library; importing bootstrap adds tests/e2e/lib.
+# The search walks up rather than counting directories, so this is the same in
+# every entry point and a suite that moves needs no edit. See tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
+import cli  # noqa: E402
 
 import ftp as ftp_lib
 from report import (
@@ -290,10 +296,7 @@ def scenario_upload_integrity(host: str, password: str, timeout: float,
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(
         description="Verify FTP uploads to USB storage are stored unaltered.")
-    parser.add_argument("-H", "--host", default=os.environ.get("U64_HOST", "u64"))
-    parser.add_argument("-p", "--password", default=os.environ.get("U64_PASS", ""))
-    parser.add_argument("-t", "--timeout", type=float,
-                        default=float(os.environ.get("U64_TIMEOUT", "10.0")))
+    cli.add_device_arguments(parser, colour=False)
     parser.add_argument("--usb-dir", default=os.environ.get("U64_USB_DIR") or None,
                         help="USB medium to write to (default: the first USB "
                              "volume the device serves).")

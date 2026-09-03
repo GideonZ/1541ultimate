@@ -23,12 +23,15 @@ import re
 import sys
 import time
 from collections.abc import Sequence
+from pathlib import Path
 
-# tests/lib holds the reporting rules every suite shares; ui_backend sits
-# in this directory.
-sys.path.insert(0, os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# tests/lib holds the shared library; importing bootstrap adds tests/e2e/lib.
+# The search walks up rather than counting directories, so this is the same in
+# every entry point and a suite that moves needs no edit. See tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
+import cli  # noqa: E402
 import machine
 import pacing
 import profiles  # noqa: E402
@@ -970,10 +973,8 @@ def run_rest_smoke(host: str, password: str, timeout: float, interface_type: str
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Validate the shared ui_backend.py facade over Telnet, REST/Freeze and REST/Overlay")
-    parser.add_argument("-H", "--host", default=os.environ.get("U64_HOST", "u64"))
+    cli.add_device_arguments(parser, timeout=5.0, colour=False)
     parser.add_argument("--telnet-port", type=int, default=int(os.environ.get("U64_TELNET_PORT", "23")))
-    parser.add_argument("-p", "--password", default=os.environ.get("U64_PASS", ""))
-    parser.add_argument("-t", "--timeout", type=float, default=float(os.environ.get("U64_TIMEOUT", "5.0")))
     args = parser.parse_args()
 
     try:

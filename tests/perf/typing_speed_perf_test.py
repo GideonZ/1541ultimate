@@ -37,7 +37,6 @@ dialog on every path.
 """
 
 import argparse
-import os
 import random
 import statistics
 import string
@@ -48,8 +47,13 @@ from pathlib import Path
 # tests/lib holds the reporting rules every suite shares; tests/e2e/lib holds
 # the UI backend under measurement.
 SCRIPT_DIR = Path(__file__).resolve().parent
-sys.path.insert(0, str(SCRIPT_DIR.parent / "lib"))
-sys.path.insert(0, str(SCRIPT_DIR.parent / "e2e" / "lib"))
+# tests/lib holds the shared library; importing bootstrap adds tests/e2e/lib.
+# The search walks up rather than counting directories, so this is the same in
+# every entry point and a suite that moves needs no edit. See tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
+import cli  # noqa: E402
 
 import ftp as ftp_lib  # noqa: E402  (needs tests/lib on sys.path first)
 from api import UltimateApi  # noqa: E402
@@ -160,8 +164,7 @@ def sweep(browser, name: str, strategy, repeats: int, length: int,
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("-H", "--host", default=os.environ.get("U64_HOST", "u64"))
-    parser.add_argument("-p", "--password", default=os.environ.get("U64_PASS", ""))
+    cli.add_device_arguments(parser, colour=False)
     parser.add_argument("--repeats", type=int, default=DEFAULT_REPEATS,
                         help=f"measurements per strategy (default: {DEFAULT_REPEATS})")
     parser.add_argument("--length", type=int, default=NEEDLE_LENGTH, metavar="N",

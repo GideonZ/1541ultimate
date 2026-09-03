@@ -44,12 +44,14 @@ import sys
 import time
 from pathlib import Path
 
-# tests/lib holds the reporting rules and the shared REST client; tests/e2e
-# holds the UI backend and this fixture's own e2e suite, which already knows
-# how to open the form, fill a field and submit a query.
-sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "lib"))
-sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "e2e" / "lib"))
-sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "e2e" / "io" / "c64"))
+# tests/lib holds the shared library; importing bootstrap adds tests/e2e/lib.
+# The search walks up rather than counting directories, so this is the same in
+# every entry point and a suite that moves needs no edit. See tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
+import cli  # noqa: E402
+sys.path.insert(0, bootstrap.directory("e2e", "io", "c64"))
 
 import api as api_lib  # noqa: E402  (needs tests/lib on sys.path first)
 import rest as rest_lib  # noqa: E402  (needs tests/lib on sys.path first)
@@ -164,10 +166,7 @@ def main() -> int:
         description="Assert that repeated Assembly 64 searches do not consume "
                     "heap. Skips if the firmware has no machine:heap endpoint, "
                     "or if the Assembly 64 service is unreachable.")
-    parser.add_argument("-H", "--host", default=os.environ.get("U64_HOST", "u64"))
-    parser.add_argument("-p", "--password", default=os.environ.get("U64_PASS"))
-    parser.add_argument("-t", "--timeout", type=float,
-                        default=float(os.environ.get("U64_TIMEOUT", "30.0")))
+    cli.add_device_arguments(parser, password=None, timeout=30.0, colour=False)
     parser.add_argument("--telnet-port", type=int,
                         default=int(os.environ.get("U64_TELNET_PORT", "23")))
     add_mode_argument(parser, default=os.environ.get("U64_MODE", "overlay"))

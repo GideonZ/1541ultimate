@@ -18,19 +18,18 @@ Exit codes: 0 clean, 1 could not be cleaned (ensure), 2 dirty (verify).
 """
 import argparse
 import json
-import os
 import sys
 import time
 import urllib.error
 import urllib.request
+from pathlib import Path
 
-# tests/lib holds the pacing every suite shares; this directory holds the
-# window parser this gate borrows rather than writing a second one. Both are
-# added here because this module is imported from elsewhere in the tree as
-# well as run directly.
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                "..", "..", "lib"))
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# tests/lib holds the shared library; importing bootstrap adds tests/e2e/lib.
+# The search walks up rather than counting directories, so this is the same in
+# every entry point and a suite that moves needs no edit. See tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
 import machine as machine_lib  # noqa: E402  (needs tests/lib on sys.path first)
 from report import Failure  # noqa: E402  (needs tests/lib on sys.path first)
 import ui_backend  # noqa: E402  (needs this directory on sys.path first)

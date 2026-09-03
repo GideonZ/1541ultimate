@@ -16,15 +16,17 @@ So: batch taps into as few requests as the firmware allows, and wait on observed
 state instead of a fixed delay. Callers pass their own transport, so a suite can
 adopt this without restructuring its session class.
 """
-import os
 import sys
 import time
 from collections.abc import Callable, Sequence
+from pathlib import Path
 
-# tests/lib holds the pacing every suite shares; see tests/lib/pacing.py for
-# why these are not constants of this module any more.
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                "..", "..", "lib"))
+# tests/lib holds the shared library; importing bootstrap adds tests/e2e/lib.
+# The search walks up rather than counting directories, so this is the same in
+# every entry point and a suite that moves needs no edit. See tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
 import api  # noqa: E402  (needs tests/lib on sys.path first)
 import interactions  # noqa: E402
 import pacing  # noqa: E402

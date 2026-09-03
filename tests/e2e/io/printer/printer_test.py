@@ -23,19 +23,19 @@ import json
 import os
 import sys
 import time
+from pathlib import Path
 
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-# The two C64 programs this suite runs are committed as assembled PRGs, so the
-# suite needs no assembler and no BASIC tokenizer to run. Their sources sit
-# beside them and the Makefile in this directory regenerates them; see the
-# README for when that is needed.
-WORKLOAD_PRG_PATH = os.path.join(SCRIPT_DIR, "printer_e2e.prg")
-ISSUE_717_PRG_PATH = os.path.join(SCRIPT_DIR, "issue_717_basic.prg")
-sys.path.insert(0, SCRIPT_DIR)
+# tests/lib holds the shared library; importing bootstrap adds tests/e2e/lib.
+# The search walks up rather than counting directories, so this is the same in
+# every entry point and a suite that moves needs no edit. See tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
+import cli  # noqa: E402
+
 import png_lite  # noqa: E402  (local module, needs SCRIPT_DIR on sys.path first)
 
 # tests/lib holds the reporting rules every suite shares.
-sys.path.insert(0, os.path.join(SCRIPT_DIR, "..", "..", "..", "lib"))
 import ftp as ftp_lib  # noqa: E402  (needs tests/lib on sys.path first)
 import machine as machine_lib  # noqa: E402  (needs tests/lib on sys.path first)
 import pacing  # noqa: E402  (needs tests/lib on sys.path first)
@@ -46,6 +46,15 @@ from api import UltimateApi  # noqa: E402  (needs tests/lib on sys.path first)
 from report import (  # noqa: E402  (needs tests/lib on sys.path first)
     Failure, check_fail, check_ok, check_start, detail, section,
     suite_fail, suite_ok, warn)
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+# The two C64 programs this suite runs are committed as assembled PRGs, so the
+# suite needs no assembler and no BASIC tokenizer to run. Their sources sit
+# beside them and the Makefile in this directory regenerates them; see the
+# README for when that is needed.
+WORKLOAD_PRG_PATH = os.path.join(SCRIPT_DIR, "printer_e2e.prg")
+ISSUE_717_PRG_PATH = os.path.join(SCRIPT_DIR, "issue_717_basic.prg")
+sys.path.insert(0, bootstrap.directory("e2e", "io", "printer"))
 
 try:
     from PIL import Image, ImageOps
@@ -850,10 +859,7 @@ def parse_args():
                "--no-config-change is used. Runs the committed printer_e2e.prg "
                "fixture alongside this script; no assembler is needed.",
     )
-    parser.add_argument("-H", "--host", default=os.environ.get("U64_HOST", "u64"),
-                        help="IP or hostname of the U64 (default: $U64_HOST or u64)")
-    parser.add_argument("-p", "--password", default=os.environ.get("U64_PASS", ""),
-                        help="U64 REST password (default: $U64_PASS, empty)")
+    cli.add_device_arguments(parser, colour=False)
     parser.add_argument("-n", "--no-assertions", action="store_true",
                          help="Warn instead of failing on assertion mismatches")
     parser.add_argument("--seed-count", type=int, default=0, help=argparse.SUPPRESS)

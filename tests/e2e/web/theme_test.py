@@ -34,13 +34,17 @@ CDN that page loads jQuery from. Whatever is missing is reported as a skip.
 """
 
 import argparse
-import os
 import pathlib
 import sys
+from pathlib import Path
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
+# tests/lib holds the shared library; importing bootstrap adds tests/e2e/lib.
+# The search walks up rather than counting directories, so this is the same in
+# every entry point and a suite that moves needs no edit. See tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
+sys.path.insert(0, bootstrap.directory("e2e", "web"))
 
 import browser as browser_lib  # noqa: E402
 from report import (Failure, check, check_skip, detail,  # noqa: E402

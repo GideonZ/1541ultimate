@@ -11,17 +11,22 @@ import tempfile
 import time
 from pathlib import Path
 
-SCRIPT_DIR = Path(__file__).resolve().parent
-# tests/lib holds the reporting rules every suite shares; tests/e2e/lib
-# holds the shared UI backend and the managed-/Temp settings base.
-sys.path.insert(0, str(SCRIPT_DIR.parents[1] / "lib"))
-sys.path.insert(0, str(SCRIPT_DIR.parent / "lib"))
+# tests/lib holds the shared library; importing bootstrap adds tests/e2e/lib.
+# The search walks up rather than counting directories, so this is the same in
+# every entry point and a suite that moves needs no edit. See tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
+import cli  # noqa: E402
+
 
 import ftp as ftp_lib
 from report import Failure, check_ok, check_start, detail, section, suite_ok, warn
 from temp_settings import (
     AUTO_CLEANUP_ITEM, SUBFOLDERS_ITEM, TempSettingsSuite, add_toggle_arguments)
 from ui_backend import add_mode_argument
+
+SCRIPT_DIR = Path(__file__).resolve().parent
 
 SUITE = "temp_auto_cleanup_test"
 MANAGED_SIZE = 524288
@@ -295,8 +300,7 @@ class TempCleanup(TempSettingsSuite):
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Validate Temp auto cleanup behavior on a real Ultimate 64.")
-    parser.add_argument("-H", "--host", default=os.environ.get("U64_HOST", "u64"))
-    parser.add_argument("-p", "--password", default=os.environ.get("U64_PASS", ""))
+    cli.add_device_arguments(parser, colour=False)
     parser.add_argument("-l", "--limit", type=int, default=10)
     parser.add_argument("--seed-count", type=int, default=10)
     parser.add_argument("--test-count", type=int, default=12)

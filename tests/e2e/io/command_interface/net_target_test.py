@@ -45,16 +45,18 @@ enables the "Command Interface" setting and restores it on exit.
 """
 
 import argparse
-import os
 import socket
 import sys
 import time
+from pathlib import Path
 
-# tests/lib holds the reporting rules and the transport every suite shares.
-sys.path.insert(0, os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "lib"))
-sys.path.insert(0, os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
+# tests/lib holds the shared library; importing bootstrap adds tests/e2e/lib.
+# The search walks up rather than counting directories, so this is the same in
+# every entry point and a suite that moves needs no edit. See tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
+import cli  # noqa: E402
 import targets  # noqa: E402
 from api import UltimateApi  # noqa: E402
 from report import (  # noqa: E402
@@ -1174,10 +1176,7 @@ def main() -> int:
         description="Verify how the UCI network target's READ_SOCKET handles the requested "
                     "length and datagrams larger than it (GideonZ/1541ultimate#802)."
     )
-    parser.add_argument("-H", "--host", default=os.environ.get("U64_HOST", "u64"))
-    parser.add_argument("-p", "--password", default=os.environ.get("U64_PASS"))
-    parser.add_argument("-t", "--timeout", type=float,
-                        default=float(os.environ.get("U64_TIMEOUT", "30.0")))
+    cli.add_device_arguments(parser, password=None, timeout=30.0, colour=False)
     parser.add_argument("-b", "--busy-timeout", type=float, default=15.0,
                         help="How long one command may stay in Command Busy before it "
                              "counts as wedged.")

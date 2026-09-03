@@ -7,10 +7,15 @@ import os
 import sys
 import time
 from typing import ClassVar
+from pathlib import Path
 
-# tests/lib holds the reporting rules every suite shares.
-sys.path.insert(0, os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
+# tests/lib holds the shared library; importing bootstrap adds tests/e2e/lib.
+# The search walks up rather than counting directories, so this is the same in
+# every entry point and a suite that moves needs no edit. See tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
+import cli  # noqa: E402
 import pacing  # noqa: E402  (needs tests/lib on sys.path first)
 from api import MachineApi
 from report import (Failure, check, check_skip, check_start, detail, format_exception,
@@ -253,30 +258,8 @@ def run_auth(session: RestSession) -> None:
         require_error("menu_screen auth", body, FORBIDDEN)
 
 
-def parse_duration(value: str) -> float:
-    text = value.strip().lower()
-    multiplier = 1.0
-    if text.endswith("ms"):
-        multiplier = 0.001
-        text = text[:-2]
-    elif text.endswith("s"):
-        text = text[:-1]
-    elif text.endswith("m"):
-        multiplier = 60.0
-        text = text[:-1]
-
-    try:
-        duration = float(text) * multiplier
-    except ValueError as exc:
-        raise argparse.ArgumentTypeError(f"invalid duration: {value!r}") from exc
-
-    if duration <= 0.0:
-        raise argparse.ArgumentTypeError("duration must be greater than zero")
-    return duration
-
-
 def parse_soak_stages(value: str) -> list[float]:
-    stages = [parse_duration(part) for part in value.split(",") if part.strip()]
+    stages = [cli.parse_duration(part) for part in value.split(",") if part.strip()]
     if not stages:
         raise argparse.ArgumentTypeError("at least one soak stage is required")
     return stages
@@ -513,19 +496,8 @@ def expand_tests(selected: list[str] | None) -> list[str]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Validate /v1/machine:menu_screen on real firmware.")
-    parser.add_argument("-H", "--host", default=os.environ.get("U64_HOST", "u64"))
+    cli.add_device_arguments(parser, password=None, timeout=5.0, colour=False)
     parser.add_argument("-r", "--rest-host", default=os.environ.get("U64_REST_HOST"))
-    parser.add_argument(
-        "-p",
-        "--password",
-        default=os.environ.get("U64_PASS"),
-    )
-    parser.add_argument(
-        "-t",
-        "--timeout",
-        type=float,
-        default=float(os.environ.get("U64_TIMEOUT", "5.0")),
-    )
     parser.add_argument(
         "--test",
         action="append",
@@ -545,7 +517,7 @@ def main() -> int:
     )
     parser.add_argument(
         "--soak-key-interval",
-        type=parse_duration,
+        type=cli.parse_duration,
         default=SOAK_NAVIGATION_INTERVAL_SECONDS,
         metavar="DURATION",
         help="Minimum interval between REST keyboard navigation taps during soak.",

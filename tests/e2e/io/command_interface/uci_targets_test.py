@@ -44,16 +44,20 @@ them on exit.
 import argparse
 import ftplib
 import json
-import os
 import sys
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from pathlib import Path
 
-# tests/lib holds the reporting rules every suite shares.
-sys.path.insert(0, os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "lib"))
+# tests/lib holds the shared library; importing bootstrap adds tests/e2e/lib.
+# The search walks up rather than counting directories, so this is the same in
+# every entry point and a suite that moves needs no edit. See tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
+import cli  # noqa: E402
 import ftp as ftp_lib
 import rest as rest_lib
 import targets
@@ -896,9 +900,7 @@ def main() -> int:
                     "CTRL_CMD_SAVE_REU complete and leave the interface usable (issue #740), "
                     "and that SoftIEC replies are framed as single-part."
     )
-    parser.add_argument("-H", "--host", default=os.environ.get("U64_HOST", "u64"))
-    parser.add_argument("-p", "--password", default=os.environ.get("U64_PASS"))
-    parser.add_argument("-t", "--timeout", type=float, default=float(os.environ.get("U64_TIMEOUT", "30.0")))
+    cli.add_device_arguments(parser, password=None, timeout=30.0, colour=False)
     parser.add_argument("-b", "--busy-timeout", type=float, default=BUSY_TIMEOUT_SECONDS,
                         help="How long a single command may stay in Command Busy before it counts as wedged.")
     parser.add_argument("--test", action="append", choices=["all", *TESTS])

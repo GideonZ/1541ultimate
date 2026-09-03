@@ -20,11 +20,17 @@ import sys
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-sys.path.insert(0, str(SCRIPT_DIR))
+# tests/lib holds the shared library; importing bootstrap adds tests/e2e/lib.
+# The search walks up rather than counting directories, so this is the same in
+# every entry point and a suite that moves needs no edit. See tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
+import cli  # noqa: E402
+sys.path.insert(0, bootstrap.directory("e2e", "io", "printer"))
 import png_lite  # noqa: E402  (local module, needs SCRIPT_DIR on sys.path first)
 
 # tests/lib holds the shared FTP and reporting helpers.
-sys.path.insert(0, str(SCRIPT_DIR.parents[2] / "lib"))
 import ftp as ftp_lib  # noqa: E402  (needs tests/lib on sys.path first)
 from report import (  # noqa: E402  (needs tests/lib on sys.path first)
     Failure, check_fail, check_ok, check_start, section, suite_fail, suite_ok)
@@ -75,7 +81,7 @@ def verify_one(host, user, password, path, is_ascii):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("-H", "--host", default=os.environ.get("U64_HOST", "u64"))
+    cli.add_device_arguments(parser, colour=False)
     parser.add_argument("--ftp-user", default=FTP_USER_DEFAULT)
     parser.add_argument("--ftp-password", default=FTP_PASSWORD_DEFAULT)
     parser.add_argument("--output-base", help="Printer output file base, e.g. /Usb0/printer/e2e-abc")

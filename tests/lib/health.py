@@ -471,11 +471,11 @@ def main() -> int:
     import sys
 
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import cli  # noqa: PLC0415
     from report import detail, suite_fail, suite_ok  # noqa: PLC0415
 
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("-H", "--host", default=os.environ.get("U64_HOST", "u64"))
-    parser.add_argument("-p", "--password", default=os.environ.get("U64_PASS", ""))
+    cli.add_device_arguments(parser, colour=False)
     parser.add_argument("-c", "--check", action="append", default=[],
                         help="Run only this check. Repeatable.")
     args = parser.parse_args()

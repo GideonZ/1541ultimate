@@ -22,18 +22,19 @@ every check here skips, so the suite is safe to run against any image.
 """
 
 import argparse
-import os
 import sys
 import time
 from pathlib import Path
 
-# tests/lib holds the reporting rules and the shared REST client; tests/e2e
-# holds the browser backend and this fixture's own menu-driving suite, which
-# already knows how to seed a PRG and invoke a context-menu action on it.
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "lib"))
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "e2e" / "lib"))
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "e2e" / "api"))
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "e2e" / "filemanager"))
+# tests/lib holds the shared library; importing bootstrap adds tests/e2e/lib.
+# The search walks up rather than counting directories, so this is the same in
+# every entry point and a suite that moves needs no edit. See tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
+import cli  # noqa: E402
+sys.path.insert(0, bootstrap.directory("e2e", "api"))
+sys.path.insert(0, bootstrap.directory("e2e", "filemanager"))
 
 import api as api_lib  # noqa: E402  (needs tests/lib on sys.path first)
 import rest as rest_lib  # noqa: E402  (needs tests/lib on sys.path first)
@@ -106,12 +107,9 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description="Assert that repeated PRG context-menu actions do not consume "
                     "heap. Skips if the firmware has no machine:heap endpoint.")
-    parser.add_argument("-H", "--host", default=os.environ.get("U64_HOST", "u64"))
+    cli.add_device_arguments(parser, password=None, timeout=30.0, colour=False)
     parser.add_argument("-P", "--port", type=int, default=23,
                         help="Telnet port, for --mode telnet.")
-    parser.add_argument("-p", "--password", default=os.environ.get("U64_PASS"))
-    parser.add_argument("-t", "--timeout", type=float,
-                        default=float(os.environ.get("U64_TIMEOUT", "30.0")))
     parser.add_argument("--rest-host", default=None,
                         help="Override the REST host when it differs from --host.")
     parser.add_argument("--fixture-token", default=ctx.default_fixture_token(),

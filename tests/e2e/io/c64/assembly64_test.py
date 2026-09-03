@@ -30,13 +30,14 @@ import time
 import urllib.error
 import urllib.request
 from collections.abc import Sequence
+from pathlib import Path
 
-# tests/lib holds the reporting rules every suite shares; tests/e2e/lib
-# holds the shared UI backend.
-sys.path.insert(0, os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "lib"))
-sys.path.insert(0, os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
+# tests/lib holds the shared library; importing bootstrap adds tests/e2e/lib.
+# The search walks up rather than counting directories, so this is the same in
+# every entry point and a suite that moves needs no edit. See tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
 import machine as machine_lib
 import rest as rest_lib
 import targets

@@ -68,7 +68,13 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[4]
-sys.path.insert(0, str(ROOT / "tests" / "lib"))
+# tests/lib holds the shared library; importing bootstrap adds tests/e2e/lib.
+# The search walks up rather than counting directories, so this is the same in
+# every entry point and a suite that moves needs no edit. See tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
+import cli  # noqa: E402
 from api import MachineApi  # noqa: E402
 from report import Failure, check, detail, format_exception, suite_fail, suite_ok  # noqa: E402
 from rest import RestClient, header_value  # noqa: E402
@@ -144,26 +150,6 @@ CALIBRATION_REPS = 3
 # clamp is never mistaken for the repeat bound failing to move the selection.
 RECENTRE_LOW = 30
 RECENTRE_HIGH = DEEP_LIST_ENTRIES - 30
-
-
-def parse_duration(value: str) -> float:
-    value = value.strip().lower()
-    multiplier = 1.0
-    if value.endswith("ms"):
-        multiplier, value = .001, value[:-2]
-    elif value.endswith("s"):
-        value = value[:-1]
-    elif value.endswith("m"):
-        multiplier, value = 60.0, value[:-1]
-    elif value.endswith("h"):
-        multiplier, value = 3600.0, value[:-1]
-    try:
-        result = float(value) * multiplier
-    except ValueError as exc:
-        raise argparse.ArgumentTypeError("duration must be e.g. 30s or 2m") from exc
-    if result <= 0:
-        raise argparse.ArgumentTypeError("duration must be positive")
-    return result
 
 
 def marker(body: bytes) -> tuple[int, str]:
@@ -938,13 +924,11 @@ def setup_pico(ssid_override: str | None, pico_host: str | None = None):
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("-H", "--host", default=os.environ.get("U64_HOST", "u64"))
-    parser.add_argument("-p", "--password", default=os.environ.get("U64_PASS"))
-    parser.add_argument("-t", "--timeout", type=float, default=float(os.environ.get("U64_TIMEOUT", "10")))
+    cli.add_device_arguments(parser, password=None, colour=False)
     parser.add_argument("--pico-host", help="fixture IP address; required on networks that do not "
                         "forward broadcast between the wired test host and the Wi-Fi client")
     parser.add_argument("--profile", choices=DEFAULT_DURATION, default="stress")
-    parser.add_argument("--duration", type=parse_duration)
+    parser.add_argument("--duration", type=cli.parse_duration)
     parser.add_argument("--seed", type=int, default=797)
     parser.add_argument("--setup-pico", action="store_true")
     parser.add_argument("--wifi-ssid")

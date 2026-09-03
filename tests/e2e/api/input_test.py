@@ -18,11 +18,13 @@ from typing import Any
 
 from PIL import Image
 
-# tests/lib holds the reporting rules every suite shares.
-sys.path.insert(0, os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
-sys.path.insert(0, os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", "lib"))
+# tests/lib holds the shared library; importing bootstrap adds tests/e2e/lib.
+# The search walks up rather than counting directories, so this is the same in
+# every entry point and a suite that moves needs no edit. See tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
+import cli  # noqa: E402
 import ftp as ftp_lib
 import machine as machine_lib
 import pacing
@@ -1016,16 +1018,6 @@ def first_mask_position(frame: FrameText, ocr: C64FrameOCR, row: int, start_col:
         if frame_cell_mask(frame, ocr, row, col) == expected_mask:
             return col
     raise Failure("Expected glyph mask not found in decoded frame.")
-
-
-def parse_duration_seconds(text: str) -> float:
-    match = re.fullmatch(r"\s*(\d+(?:\.\d+)?)\s*([smhSMH]?)\s*", text)
-    if not match:
-        raise Failure(f"Unsupported duration {text!r}; use values like 30, 45s, 5m, or 1.5h")
-    value = float(match.group(1))
-    unit = match.group(2).lower()
-    scale = {"": 1.0, "s": 1.0, "m": 60.0, "h": 3600.0}[unit]
-    return value * scale
 
 
 def append_screen_tail(screen_tail: str, text: str, limit: int = 200) -> str:
@@ -2406,10 +2398,8 @@ def main() -> int:
         description="Validate U64 keyboard and joystick REST input injection",
         epilog="Use --soak to continue with expanded long-run REST input coverage after the standard checks.",
     )
-    parser.add_argument("-H", "--host", default=os.environ.get("U64_HOST", "u64"))
+    cli.add_device_arguments(parser, password=None, timeout=5.0, colour=False)
     parser.add_argument("-r", "--rest-host", default=os.environ.get("U64_REST_HOST"))
-    parser.add_argument("-p", "--password", default=os.environ.get("U64_PASS"))
-    parser.add_argument("-t", "--timeout", type=float, default=float(os.environ.get("U64_TIMEOUT", "5.0")))
     parser.add_argument("-s", "--soak", action="store_true", help="run the expanded soak suite after the standard checks")
     parser.add_argument(
         "--test",
@@ -2428,7 +2418,7 @@ def main() -> int:
     rest_host = args.rest_host or args.host
     session = RestInputSession(rest_host, args.password, args.timeout)
     selected_tests = None if not args.test else args.test
-    soak_duration_seconds = parse_duration_seconds(args.soak_duration) if args.soak else None
+    soak_duration_seconds = cli.parse_duration(args.soak_duration) if args.soak else None
     if args.soak and selected_tests is not None:
         suite_fail("input_test", "--test cannot be combined with --soak")
         return 2

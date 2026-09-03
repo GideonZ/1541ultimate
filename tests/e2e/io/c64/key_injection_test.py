@@ -35,14 +35,17 @@ many arrived and where the first gap was.
 from __future__ import annotations
 
 import argparse
-import os
 import sys
 import time
+from pathlib import Path
 
-sys.path.insert(0, os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "lib"))
-sys.path.insert(0, os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
+# tests/lib holds the shared library; importing bootstrap adds tests/e2e/lib.
+# The search walks up rather than counting directories, so this is the same in
+# every entry point and a suite that moves needs no edit. See tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
+import cli  # noqa: E402
 
 import pacing
 import targets
@@ -295,10 +298,7 @@ def measure(destination: Destination, total: int, batch: int,
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Measure whether injected keys reach the machine")
-    parser.add_argument("-H", "--host", default=os.environ.get("U64_HOST", "u64"))
-    parser.add_argument("-p", "--password", default=os.environ.get("U64_PASS"))
-    parser.add_argument("-t", "--timeout", type=float,
-                        default=float(os.environ.get("U64_TIMEOUT", "15.0")))
+    cli.add_device_arguments(parser, password=None, timeout=15.0, colour=False)
     parser.add_argument("--where", choices=("basic", "mcm"), default="basic")
     parser.add_argument("--mode", default="overlay",
                         help="UI transport for --where mcm")

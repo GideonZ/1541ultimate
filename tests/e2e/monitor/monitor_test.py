@@ -15,12 +15,13 @@ import urllib.request
 from pathlib import Path
 from collections.abc import Callable
 
-# tests/lib holds the reporting rules every suite shares; tests/e2e/lib
-# holds the shared UI backend.
-sys.path.insert(0, os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
-sys.path.insert(0, os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", "lib"))
+# tests/lib holds the shared library; importing bootstrap adds tests/e2e/lib.
+# The search walks up rather than counting directories, so this is the same in
+# every entry point and a suite that moves needs no edit. See tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
+import cli  # noqa: E402
 import pacing
 import rest as rest_lib
 import machine as machine_lib
@@ -4827,17 +4828,12 @@ def run_machine_reset_shortcut_test(session: MonitorSession, rest_host: str,
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Validate the machine monitor over REST, Freeze, or Telnet")
-    parser.add_argument("-H", "--host", default=os.environ.get("U64_HOST", "u64"),
-                        help="Target: a host, or cartridge@computer for a cartridge "
-                             "under test (see tests/lib/targets.py).")
+    cli.add_device_arguments(parser, password=None, timeout=5.0, colour=False)
     parser.add_argument("-P", "--telnet-port", "--port", dest="port", type=int,
                         default=int(os.environ.get("U64_TELNET_PORT", "23")))
     parser.add_argument("-r", "--rest-host", default=os.environ.get("U64_REST_HOST"),
                         help="REST address of the device under test, when it differs "
                              "from its name in the target.")
-    parser.add_argument("-p", "--password", default=os.environ.get("U64_PASS"))
-    parser.add_argument("-t", "--timeout", type=float,
-                        default=float(os.environ.get("U64_TIMEOUT", "5.0")))
     add_mode_argument(parser, default=os.environ.get("U64_MODE", "overlay"))
     args = parser.parse_args()
 

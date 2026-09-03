@@ -31,11 +31,17 @@ import sys
 import threading
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Optional
 from collections.abc import Callable, Sequence
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(ROOT, "tests", "lib"))
+# tests/lib holds the shared library; importing bootstrap adds tests/e2e/lib.
+# The search walks up rather than counting directories, so this is the same in
+# every entry point and a suite that moves needs no edit. See tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
 
 import coverage  # noqa: E402  (needs tests/lib on sys.path first)
 import health  # noqa: E402  (needs tests/lib on sys.path first)
@@ -60,7 +66,6 @@ from report import Failure  # noqa: E402
 DEVICE_ERRORS = (Failure, OSError, TimeoutError, ValueError, TypeError,
                  http.client.HTTPException)
 
-sys.path.insert(0, os.path.join(ROOT, "tests", "e2e", "lib"))
 import recorder as recorder_lib  # noqa: E402
 import screens  # noqa: E402  (needs tests/e2e/lib on sys.path first)
 import syslog_collector  # noqa: E402
