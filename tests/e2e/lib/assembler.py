@@ -48,7 +48,7 @@ def assembler_runs() -> bool:
     try:
         return subprocess.run(
             [ASSEMBLER, "--version"], capture_output=True,
-            timeout=VERSION_TIMEOUT_SECONDS).returncode == 0
+            timeout=VERSION_TIMEOUT_SECONDS, check=False).returncode == 0
     except (OSError, subprocess.SubprocessError):
         return False
 
@@ -76,7 +76,7 @@ def ensure_assembler() -> None:
         # first. On a fresh checkout there is nothing to clear and this costs
         # one no-op make.
         subprocess.run(["make", "-C", ASSEMBLER_SOURCE_DIR, "clean"],
-                       capture_output=True, timeout=BUILD_TIMEOUT_SECONDS)
+                       capture_output=True, timeout=BUILD_TIMEOUT_SECONDS, check=False)
         try:
             os.remove(ASSEMBLER)
         except OSError:
