@@ -4,6 +4,9 @@ ELFTYPE      = elf32-littleriscv
 ARCHITECTURE = riscv
 # CPU architecture and ABI
 MARCH ?= rv32i
+# The rvlite core on this product does not decode FENCE; reject any image
+# that contains one (see target/common/rules.mk).
+FORBID_FENCE = 1
 MABI  ?= ilp32
 
 include ../../../common/environment.mk
