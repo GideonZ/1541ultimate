@@ -41,7 +41,16 @@ While the monitor is open, `C=+R` resets / breaks the machine. In Debug mode thi
 To close the monitor:
 
 - Press `C=+O` again.
-- Press `RUN/STOP`, `ESC`, or the C64's top-left `←` key when no edit mode, Debug mode, or popup is active. In Debug mode, `RUN/STOP` leaves Debug first; in Edit mode it leaves Edit first.
+- Press `RUN/STOP`, `ESC`, or the C64's top-left `←` key when no edit mode, Debug mode, or popup is active.
+
+`RUN/STOP`, `ESC` and `←` are one Back action. Each press closes one active layer - help, a number expression, a popup, a command prompt, edit mode, Debug mode - and closes the monitor only once nothing is left. In Debug mode, `RUN/STOP` leaves Debug first; in Edit mode it leaves Edit first. Where `←` is data, in ASCII and Screen editing and in the ASCII and Screen rows of the Number popup, use `RUN/STOP` or `ESC` instead.
+
+Two shortcuts act on the machine rather than the view, and both work from a memory view and from edit mode:
+
+| Key | Action |
+| --- | ------ |
+| `C=+R` | Reset the C64. This is the same action as the task menu's `Reset C64`, so the on-device menu closes with the machine's screen where the interface is drawn there. |
+| `C=+I` | Swap the interface between the freeze menu and the HDMI overlay, and close the menu. The setting takes effect the next time the menu opens. |
 
 ## Access Modes
 
@@ -58,12 +67,6 @@ display. The monitor reads and writes those three ranges, `$0400-$07FF`, `$0800-
 taken at freeze time, which is put back when the machine unfreezes. So what you see and edit there is the frozen
 program's memory, not the menu that is on the screen in front of you, and an edit lands in the program when it
 resumes.
-
-### Switching between UI Freeze and UI Overlay Modes
-
-Press `C=+I` to toggle between UI Freeze and UI Overlay mode.
-
-Toggling automatically closes the menu. The next time you open the menu, it uses the newly selected mode.
 
 ## Screen Layout
 
@@ -151,28 +154,36 @@ Example:
 
 ```text
 +--------------------------------------+
-|MONITOR HEX $0168                     |
+|MONITOR HEX $00E0                     |
 |00E0 85 85 85 85 85 85 86 86 ........ |
 |00E8 86 86 86 86 86 87 87 87 ........ |
-|00F0 87 87 87 F0 DB 00 00 00 ........ |
+|00F0 87 87 87 F0 D8 00 00 00 ........ |
 |00F8 00 00 00 00 00 00 00 20 .......  |
 |0100 33 38 39 31 31 00 30 30 38911.00 |
-|0108 30 30 00 00 10 10 35 02 00....5. |
-|0110 00 00 10 10 35 02 00 00 ....5... |
-|0118 1C 10 35 02 00 00 22 10 ..5...". |
-|0120 35 02 00 00 28 10 35 02 5...(.5. |
-|0128 00 10 35 02 00 00 32 10 ..5...2. |
-|0130 35 02 00 00 38 10 35 02 5...8.5. |
-|0138 00 00 3E 10 35 02 00 00 ..>.5... |
-|0140 44 10 35 02 00 00 44 10 D.5...D. |
-|0148 35 02 00 00 50 10 35 02 5...P.5. |
-|0150 00 00 56 10 35 02 00 00 ..V.5... |
-|0158 5C 10 35 02 00 00 62 10 \.5...b. |
-|0160 35 02 00 00 68 10 35 02 5...h.5. |
-|0168 00 00 6E 10 35 02 00 00 ..n.5... |
-|CPU1 $A:RAM $D:CHR $E:RAM VIC0 $0000  |
+|0108 30 30 0E 00 36 05 00 85 00..6... |
+|0110 14 00 36 05 00 85 1A 00 ..6..... |
+|0118 36 05 00 85 20 10 34 05 6... .4. |
+|0120 00 85 26 00 36 05 00 85 ..&.6... |
+|0128 2C 00 36 05 00 85 32 00 ,.6...2. |
+|0130 36 05 00 85 38 00 36 05 6...8.6. |
+|0138 00 85 3E 00 37 05 00 85 ..>.7... |
+|0140 44 00 36 05 00 85 4A 00 D.6...J. |
+|0148 36 05 00 85 50 00 36 05 6...P.6. |
+|0150 00 85 56 10 34 05 00 85 ..V.4... |
+|0158 5C 00 36 05 00 85 62 00 \.6...b. |
+|0160 36 05 00 85 68 00 36 05 6...h.6. |
+|0168 00 85 6E 00 36 05 00 85 ..n.6... |
+|CPU7 $A:BAS $D:I/O $E:KRN VIC0 $0000  |
 +--------------------------------------+
 ```
+
+Each row shows the row address, then the bytes of the row in hexadecimal, then
+the same bytes as printable characters. A byte that has no printable character
+is shown as `.`.
+
+The row holds eight bytes by default. `W` switches the row to sixteen bytes,
+which uses the width the character preview occupies, so only the hexadecimal
+bytes are shown in that mode.
 
 ### Assembly View
 
@@ -186,7 +197,7 @@ On the U2+ cartridge the monitor reads through the CPU-visible aperture, so it c
 
 `$D000-$DFFF` is shown as `DATA` rows of two bytes each while I/O or character ROM is banked in. An I/O read returns a live register, so a decoded instruction length there would change on every redraw, and character ROM holds bitmaps that never were code. With RAM banked in, the same addresses are disassembled normally, so the rule follows the banked source rather than the address range. `DATA` rows are grouped from the start of the region, so where a row begins does not depend on how the view arrived there.
 
-A `DATA` row is edited like any other row. `E` enters edit mode with the cursor on the first byte, each displayed byte is its own edit position, two hex digits complete one byte, and `Left` / `Right` step from byte to byte and on into the row above or below. There is no mnemonic to pick on a `DATA` row, so a letter key does nothing there. `[I/O]` is writable; `[CHR]` is ROM and refuses the write. `DEL` clears a `DATA` row's bytes to `$00`, where on a decoded instruction it writes `NOP`.
+A `DATA` row is edited like any other row. `E` enters edit mode with the cursor on the first byte, each displayed byte is its own edit position, two hex digits complete one byte, and `Left` / `Right` step from byte to byte and on into the row above or below. There is no mnemonic to pick on a `DATA` row, so a letter key does nothing there. `[I/O]` is writable; `[CHR]` is ROM and refuses the write. The same bytes can also be edited in Memory view with `M`. `DEL` clears a `DATA` row's bytes to `$00`, where on a decoded instruction it writes `NOP`.
 
 The two-byte row is how the bytes are shown, not what a range is made of. A range anchored with `R` on a `DATA` byte covers the bytes between its ends: anchoring on `$D001`, moving right to `$D002` and pressing `R` copies those two bytes and nothing else. A range that starts on a decoded instruction still takes that instruction whole, so a range may cross between code and data without either end losing bytes.
 
@@ -194,11 +205,11 @@ Assembly view also allows you to assemble instructions inline (in `E`dit mode) a
 
 See the **Edit Mode** and **Debug Mode** chapters below for more information.
 
-Example:
+Example, spanning the boundary between banked-in I/O and KERNAL ROM:
 
 ```text
 +--------------------------------------+
-|MONITOR ASM $E011                     |
+|MONITOR ASM $DFF6                     |
 |DFF6 00 8D     DATA 00 8D        [I/O]|
 |DFF8 02 92     DATA 02 92        [I/O]|
 |DFFA C6 F7     DATA C6 F7        [I/O]|
@@ -272,21 +283,21 @@ Example:
 ```text
 +--------------------------------------+
 |MONITOR ASC $A000                     |
-|A000 .{.CBMBASIC0.A...................|
-|A020 P........:..J.,.g.U.d...#....... |
-|A040 U...j..}.....:Z.A.g.U.X...}...g. |
-|A060 ....d.k......|.e..............g  |
-|A080 yi.yR.{*.{...z.p..F..}...Z..d.EN |
-|A0A0 .FO.NEX.DATA.INPUT.DIM.REA.LE    |
+|A000 ..{.CBMBASIC0.A................. |
+|A020 p.'.......:...J.,.g.U.d...#..... |
+|A040 V...]...).....z.A.9...X...}...q. |
+|A060 ......d.k.......|.e.........,.7. |
+|A080 yi.yR.{*.{...z.P..F..}..Z..d..EN |
+|A0A0 .FO.NEX.DAT.INPUT.INPU.DI.REA.LE |
 |A0C0 .GOT.RU.I.RESTOR.GOSU.RETUR.RE.S |
-|A0E0 TO.O.WAI.LOA.SAVU.VERIF.DE.POK.PR|
-|A100 INT.PRIN.CON.LIS.CLR.CM.SY.OPE.CL|
+|A0E0 TO.O.WAI.LOA.SAV.VERIF.DE.POK.PR |
+|A100 INT.PRIN.CON.LIS.CL.CM.SY.OPE.CL |
 |A120 OS.GE.NE.TAB.T.F.SPC.THE.NO.STE. |
 |A140 .....AN.O....SG.IN.AB.US.FR.PO.S |
 |A160 Q.RN.LO.EX.CO.SI.TA.AT.PEE.LE.ST |
 |A180 R.VA.AS.CHR.LEFT.RIGHT.MID.G..TO |
-|A1A0 D.MANY FILE.FILE OPEN.FILE NOT OP|
-|A1C0 E.FILE NOT FOUND.DEVICE NOT PRESE|
+|A1A0 O MANY FILE.FILE OPE.FILE NOT OP |
+|A1C0 E.FILE NOT FOUN.DEVICE NOT PRESE |
 |A1E0 N.NOT INPUT FIL.NOT OUTPUT FIL.M |
 |A200 ISSING FILE NAM.ILLEGAL DEVICE N |
 |A220 UMBE.NEXT WITHOUT FO.SYNTA.RETUR |
@@ -324,14 +335,14 @@ Example:
 
 ```text
 +--------------------------------------+
-|MONITOR SCR U/G $0400                 |
-|0400 █                                |
-|0420           ***** COMMODORE 64 BA  |
-|0440 SIC V3 *****                     |
-|0460                         64K RAM  |
-|0480  SYSTEM 38911 BASIC BYTES FREE   |
+|MONITOR SCR L/U $0400                 |
+|0400                                  |
+|0420             **** commodore 64 ba |
+|0440 sic v2 ****                      |
+|0460                          64k ram |
+|0480  system  38911 basic bytes free  |
 |04A0                                  |
-|04C0             READY.               |
+|04C0         ready.                   |
 |04E0                                  |
 |0500                                  |
 |0520                                  |
@@ -510,7 +521,7 @@ Typing a letter in the mnemonic field opens the opcode picker. A branch operand 
 | Memory       | Writes `$00` and advances                       |
 | ASCII/Screen | Writes a space                                  |
 | Binary       | Clears the selected bit                         |
-| Assembly     | Replaces the current instruction with `NOP` bytes |
+| Assembly     | Replaces the current instruction with `NOP` bytes; clears a `DATA` row to `$00` |
 
 In Memory view, `DEL` first rolls back a half-typed nibble. In Assembly view, `DEL` first undoes the characters typed on the current instruction.
 
@@ -597,25 +608,27 @@ The monitor includes direct bulk memory commands:
 | Key | Command  | Syntax                                   | Result                                                                |
 | --- | -------- | ---------------------------------------- | --------------------------------------------------------------------- |
 | `F` | Fill     | `start-end,value`                        | Fill an inclusive range with one byte                                 |
-| `T` | Transfer | `start-end,dest[,program-start-program-end]` | Copy a range; the optional program range amends absolute operands that point into the moved range |
+| `T` | Transfer | `start-end,dest[,code-start-code-end]`   | Copy a range to a destination, optionally relocating operands         |
 | `C` | Compare  | `start-end,dest`                         | Compare a range against another location and list differing addresses |
 | `H` | Hunt     | `start-end,bytes` or `start-end,"text"` | Search for a byte sequence or quoted ASCII string                     |
 
-`Transfer` normally copies bytes only. When the optional program range is supplied, the monitor treats that range as 6502 code and amends every 16-bit absolute operand whose value points into the moved source range so it points at the destination copy. This applies to all absolute operands, not just `JMP` and `JSR`.
+`Fill`, `Transfer`, `Compare`, `Hunt` and `Save` all treat `start-end` as inclusive of both ends, including the full `0000-FFFF` range.
+
+`Transfer` takes an optional fourth field naming the range to scan for pointers into the block being copied:
 
 ```text
 T C000-C0FF,C100,C000-C07F
 ```
 
-Absolute, absolute-indexed and indirect operands pointing inside the copied source range are adjusted to the corresponding destination address. Relative branches, zero-page operands, references outside the copied range and incomplete instructions are left unchanged.
+Absolute, absolute-indexed and indirect operands pointing inside the copied source range are then adjusted to the corresponding destination address. Relative branches, zero-page operands, references outside the copied range and incomplete instructions are left unchanged. Without the fourth field, `Transfer` copies the bytes and changes nothing.
 
-The program range is independent of the range being copied. It may be shorter than the copy, longer than it, or somewhere else entirely, which is what lets a pointer that is not itself moving be brought with the block:
+The scan range is independent of the range being copied. It may be shorter than the copy, longer than it, or somewhere else entirely, which is what lets a pointer that is not itself moving be brought with the block:
 
 ```text
 T C000-C005,C010,C000-C008
 ```
 
-Here the first two instructions are copied to `$C010` while the program range covers a third instruction that stays where it is. An instruction wholly inside the copy is rewritten in the copy, because that is the version being relocated. An instruction wholly outside it is rewritten where it stands, which keeps a jump table correct. An instruction whose three bytes straddle the end of the copy is left alone, since writing its operand would put one byte in the copy and the other in the original.
+Here the first two instructions are copied to `$C010` while the scan covers a third instruction that stays where it is. An instruction wholly inside the copy is rewritten in the copy, because that is the version being relocated. An instruction wholly outside it is rewritten where it stands. An instruction whose three bytes straddle the end of the copy is left alone, since writing its operand would put one byte in the copy and the other in the original.
 
 `Hunt` and `Compare` open a result picker with these controls:
 
@@ -627,6 +640,8 @@ Here the first two instructions are copied to `$C010` while the program range co
 | `RUN/STOP`                | Close the picker          |
 
 Both pickers list at most 256 matches. A search with no result shows `No matches` or `No differences`.
+
+A command prompt accepts only characters that can occur in the command being entered; other keys are ignored. Parsing and validation still happen on `Return`.
 
 ## File I/O
 
