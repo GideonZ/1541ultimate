@@ -46,7 +46,7 @@ from menu_screen_test import Failure, MenuScreenInfo, RestSession, check
 import ftp as ftp_lib
 import machine as machine_lib
 import pacing
-from report import check_skip, detail, section, suite_fail, suite_ok
+from report import best_effort, check_skip, detail, section, suite_fail, suite_ok
 from ui_backend import Browser, TelnetBackend, add_mode_argument, make_browser, strip_frame
 
 
@@ -1241,24 +1241,14 @@ def main() -> int:
         suite_ok("prg_context_menu_test", f"{total} actions")
         return 0
     finally:
-        try:
-            machine.close_menu()
-        except Exception:
-            pass
-        try:
-            machine.remove_drive_a()
-        except Exception:
-            pass
+        best_effort("close the menu", machine.close_menu)
+        best_effort("remove drive a", machine.remove_drive_a)
         if not args.keep_fixtures:
             fixtures.remove(rest_host, args.password)
-            try:
-                remove_leftovers_via_browser(machine, rest_host, args.password)
-            except Exception:
-                pass
-        try:
-            machine.close()
-        except Exception:
-            pass
+            best_effort("remove the leftovers the browser can see",
+                        lambda: remove_leftovers_via_browser(
+                            machine, rest_host, args.password))
+        best_effort("close the session", machine.close)
 
 
 if __name__ == "__main__":

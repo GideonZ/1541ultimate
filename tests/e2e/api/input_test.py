@@ -29,7 +29,7 @@ import pacing
 import rest as rest_lib
 import targets
 from api import UltimateApi
-from report import (Failure, check, check_count, detail, format_exception,
+from report import (Failure, best_effort, check, check_count, detail, format_exception,
                     suite_fail, suite_ok, warn)
 from vic_video import MULTICAST_GROUP, VIDEO_PORT, VicStreamCapture
 
@@ -305,11 +305,8 @@ class RestInputSession:
         except http.client.HTTPException as exc:
             raise Failure(f"HTTP client failure: {exc}") from exc
         finally:
-            try:
-                if connection is not None:
-                    connection.close()
-            except Exception:
-                pass
+            if connection is not None:
+                best_effort("close the HTTP connection", connection.close)
 
     def put(self, command: str) -> None:
         self.request("PUT", f"/v1/machine:{command}")
@@ -920,10 +917,8 @@ def run_keyboard_echo_stress_case(session: RestInputSession, text: str, hz: floa
         assert_state_empty(session)
         return offset + len(text)
     finally:
-        try:
-            session.post_events([{"kind": "release_all"}])
-        except Exception:
-            pass
+        best_effort("release every held key",
+                    lambda: session.post_events([{"kind": "release_all"}]))
 
 
 def keyboard_tap_events_for_menu_text(text: str) -> list[dict[str, Any]]:
@@ -2185,10 +2180,8 @@ def run_menu_keyboard_tests(session: RestInputSession, selected: list[str] | Non
             except Failure:
                 pass
         session.close_menu_from_anywhere()
-        try:
-            remove_rename_fixture(session.host)
-        except Exception:  # noqa: BLE001 - the verdict is already decided
-            pass
+        best_effort("remove the rename fixture",
+                    lambda: remove_rename_fixture(session.host))
         session.post_events([{"kind": "release_all"}])
         assert_state_empty(session)
 

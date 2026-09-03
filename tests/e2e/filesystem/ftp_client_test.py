@@ -65,7 +65,7 @@ from ui_backend import (  # noqa: E402  (needs tests/e2e/lib first)
     char_to_combo, find_selected_row_rest, measure_cursor_colour)
 from api import UltimateApi  # noqa: E402  (needs tests/lib on sys.path first)
 from report import (  # noqa: E402  (needs tests/lib on sys.path first)
-    Failure, check_count, check_fail, check_ok, check_start, check_warn, detail, last_label,
+    Failure, best_effort, check_count, check_fail, check_ok, check_start, check_warn, detail, last_label,
     section, suite_fail, suite_ok, warn)
 
 SCREEN_WIDTH = 40
@@ -1677,10 +1677,8 @@ def stage_edge(ctx):
             check_warn(f"device could not resolve hostname {hostname} (no LAN DNS); IP path already covered")
             ctx.record("edge", "hostname", "WARN", "", hostname, "no device DNS")
     finally:
-        try:
-            d.remove_ftp_host(alias_hn)
-        except Exception:
-            pass
+        best_effort(f"remove the FTP host {alias_hn}",
+                    lambda: d.remove_ftp_host(alias_hn))
         ctx.ensure_alive("edge hostname cleanup")
 
 
@@ -1758,10 +1756,8 @@ def negative_case(ctx, label, alias_suffix, host=None, port=None, password=None,
         ctx.record("negative", label, "OK", "", alias, "no crash, menu recovered")
     finally:
         # remove the throwaway host if it still exists
-        try:
-            d.remove_ftp_host(alias)
-        except Exception:
-            pass
+        best_effort(f"remove the FTP host {alias}",
+                    lambda: d.remove_ftp_host(alias))
 
 
 def stage_negative(ctx):
@@ -1790,10 +1786,8 @@ def stage_negative(ctx):
             check_warn("file was removed despite read-only area")
             ctx.record("negative", "perm-denied delete", "WARN", "DELE", "RDONLY/LOCKED.TXT")
     finally:
-        try:
-            ctx.d.remove_ftp_host(alias)
-        except Exception:
-            pass
+        best_effort(f"remove the FTP host {alias}",
+                    lambda: ctx.d.remove_ftp_host(alias))
 
     # server stopped while a host is configured, then restarted.
     alias = safe_name(args.alias_prefix + "stop")
@@ -1820,10 +1814,8 @@ def stage_negative(ctx):
             check_warn("no LIST after restart")
             ctx.record("negative", "server stop/restart", "WARN", "", alias)
     finally:
-        try:
-            ctx.d.remove_ftp_host(alias)
-        except Exception:
-            pass
+        best_effort(f"remove the FTP host {alias}",
+                    lambda: ctx.d.remove_ftp_host(alias))
 
 
 def animate_bad_port(args):
@@ -1997,10 +1989,8 @@ def cleanup(ctx, crashed):
             warn(f"UI cleanup: {exc}")
     # Remove any files staged on the device's local FS.
     for path in ctx.host_staged:
-        try:
-            ctx.inspector.delete(path)
-        except Exception:
-            pass
+        best_effort(f"delete the staged file {path}",
+                    lambda path=path: ctx.inspector.delete(path))
     preserved = []
     if ctx.args.preserve_ftp_host and ctx.alias:
         preserved.append(f"FTP host '{ctx.alias}'")

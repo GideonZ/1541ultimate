@@ -244,6 +244,66 @@ def rest_url_names_the_port_only_when_it_moved() -> str:
     return "80 stays implicit"
 
 
+@case(1, exclusive=True)
+def a_failed_teardown_is_recorded_and_does_not_raise() -> str:
+    """report.best_effort keeps the verdict and stops losing the evidence.
+
+    The suites used to end with `try: ... except Exception: pass`, so a settings
+    restore that failed left the device changed with nothing anywhere saying so,
+    and the next suite failed for a reason its report could not explain. This
+    pins the three parts of the replacement: the caller carries on, the console
+    gets a line, and the JSONL gets a record naming the step and the exception.
+    """
+    import ftplib
+
+    report_module = sys.modules["report"]
+    previous = report_module.JSONL_PATH
+    with tempfile.TemporaryDirectory() as workspace:
+        path = os.path.join(workspace, "run.jsonl")
+        report_module.set_jsonl_path(path)
+        try:
+            expect("a step that works reports success",
+                   report_module.best_effort("restore Drive A", lambda: None), True)
+
+            def refuse():
+                raise OSError("device did not answer")
+
+            expect("a step that fails reports failure, rather than raising",
+                   report_module.best_effort("restore Drive A", refuse), False)
+
+            def refuse_ftp():
+                raise ftplib.error_perm("550 no such file")
+
+            expect("an ftplib error is a device fault too",
+                   report_module.best_effort("delete the fixture", refuse_ftp),
+                   False)
+
+            # A bug in the teardown itself is not something to carry on from:
+            # a TypeError here means the caller is wrong, not the device.
+            raised = False
+            try:
+                report_module.best_effort("bad call", lambda: "x" + 1)
+            except TypeError:
+                raised = True
+            expect("a caller bug still propagates", raised, True)
+            with open(path, encoding="utf-8") as handle:
+                records = [json.loads(line) for line in handle if line.strip()]
+        finally:
+            report_module.set_jsonl_path(previous)
+
+    teardowns = [r for r in records if r["kind"] == "teardown"]
+    expect("one record per failed step, and none for the ones that worked",
+           len(teardowns), 2)
+    expect("the record names the step", teardowns[0]["label"], "restore Drive A")
+    expect("and says it did not happen", teardowns[0]["ok"], False)
+    expect("and carries the exception",
+           teardowns[0]["error"], "OSError: device did not answer")
+    expect("the ftplib one too", teardowns[1]["label"], "delete the fixture")
+    if "550 no such file" not in teardowns[1]["error"]:
+        raise Failure(f"the ftplib reason was lost: {teardowns[1]['error']!r}")
+    return "2 teardown records, 1 caller bug re-raised"
+
+
 @case(1, "OBS-14.2")
 def ping_uses_each_platform_own_unit() -> str:
     """`ping -W` is seconds on Linux and milliseconds on the BSD stack.

@@ -68,7 +68,7 @@ import machine as machine_lib  # noqa: E402  (needs tests/lib on sys.path first)
 import rest as rest_lib  # noqa: E402  (needs tests/lib on sys.path first)
 from api import UltimateApi  # noqa: E402  (needs tests/lib on sys.path first)
 from report import (  # noqa: E402  (needs tests/lib on sys.path first)
-    Failure, check_count, check_fail, check_ok, check_skip, check_start, detail,
+    Failure, best_effort, check_count, check_fail, check_ok, check_skip, check_start, detail,
     format_exception, section, suite_fail, suite_ok, warn)
 from temp_settings import AUTO_CLEANUP_ITEM, CONFIG_CATEGORY  # noqa: E402
 
@@ -1211,35 +1211,39 @@ class SuiteRunner:
     def cleanup(self) -> None:
         """Put back everything a case could have changed, however the run ended.
 
-        Quiet and best effort: a cleanup failure on a device that has already
-        gone down would bury the reason the suite failed.
+        Best effort: a cleanup failure on a device that has already gone down
+        must not bury the reason the suite failed. report.best_effort keeps that
+        property and writes down what it could not put back, so the next suite's
+        failure can be traced to this one.
         """
-        def quietly(action) -> None:
-            try:
-                action()
-            except Exception:                            # noqa: BLE001
-                pass
-
-        quietly(self.api.machine.resume)
-        quietly(lambda: self.api.rest.request("PUT", "/v1/streams/debug:stop"))
-        quietly(lambda: self.api.drives.unlink("a"))
+        best_effort("resume the machine", self.api.machine.resume)
+        best_effort("stop the debug stream",
+                    lambda: self.api.rest.request("PUT", "/v1/streams/debug:stop"))
+        best_effort("unlink drive a", lambda: self.api.drives.unlink("a"))
         if self.restore_drive is not None:
             enabled, mode, image = self.restore_drive
-            quietly(lambda: self.api.drives.set_mode("a", mode))
-            quietly(lambda: (self.api.drives.on if enabled else self.api.drives.off)("a"))
+            best_effort(f"restore drive a mode {mode}",
+                        lambda: self.api.drives.set_mode("a", mode))
+            best_effort(f"restore drive a {'on' if enabled else 'off'}",
+                        lambda: (self.api.drives.on if enabled else self.api.drives.off)("a"))
             if image:
-                quietly(lambda: self.api.drives.mount("a", image))
+                best_effort(f"remount {image} on drive a",
+                            lambda: self.api.drives.mount("a", image))
         if self.restore_config:
-            quietly(lambda: self.restore_category(
-                Ctx(self.api, self), self.restore_config_category,
-                self.restore_config))
+            best_effort(f"restore the {self.restore_config_category} category",
+                        lambda: self.restore_category(
+                            Ctx(self.api, self), self.restore_config_category,
+                            self.restore_config))
         if self._config_target is not None:
             category, item, value = self._config_target
-            quietly(lambda: self.api.configs.set(category, item, value))
+            best_effort(f"restore {category}/{item}",
+                        lambda: self.api.configs.set(category, item, value))
         if self._reset_category is not None and self._reset_snapshot:
-            quietly(lambda: self.restore_category(
-                Ctx(self.api, self), self._reset_category, self._reset_snapshot))
-        quietly(self._remove_scratch)
+            best_effort(f"restore the {self._reset_category} category",
+                        lambda: self.restore_category(
+                            Ctx(self.api, self), self._reset_category,
+                            self._reset_snapshot))
+        best_effort("remove the scratch directory", self._remove_scratch)
 
     def _remove_scratch(self) -> None:
         with ftp_lib.session(self.args.host, self.args.password) as client:

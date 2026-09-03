@@ -69,7 +69,7 @@ import machine as machine_lib                                      # noqa: E402
 import targets                                                     # noqa: E402
 from api import UltimateApi                                        # noqa: E402
 from assembler import assemble                                     # noqa: E402
-from report import (Failure, check, check_ok, check_skip,          # noqa: E402
+from report import (Failure, best_effort, check, check_ok, check_skip,          # noqa: E402
                     check_start, detail, format_exception, section,
                     suite_fail, suite_ok, suite_skip)
 
@@ -350,10 +350,7 @@ def run(args) -> str | None:
         return None
     finally:
         restore_settings(api, previous)
-        try:
-            api.machine.reset(force=True)
-        except Exception:               # noqa: BLE001 - best effort teardown
-            pass
+        best_effort("reset the machine", lambda: api.machine.reset(force=True))
 
 
 def main() -> int:

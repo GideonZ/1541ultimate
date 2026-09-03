@@ -39,7 +39,7 @@ import api as api_lib  # noqa: E402  (needs tests/lib on sys.path first)
 import ftp as ftp_lib  # noqa: E402
 import rest as rest_lib  # noqa: E402
 from report import (  # noqa: E402
-    Failure, check, check_ok, check_skip, check_start, detail, format_exception,
+    Failure, best_effort, check, check_ok, check_skip, check_start, detail, format_exception,
     section, suite_fail, suite_ok)
 from prg_context_menu_test import build_d64, default_fixture_token, PRG_BYTES  # noqa: E402
 
@@ -106,16 +106,17 @@ def re_enter(host: str, password: str, indices, times: int) -> None:
 
 def cleanup(host: str, password: str, indices) -> int:
     removed = 0
-    try:
+
+    def remove_all() -> None:
+        nonlocal removed
         with ftp_lib.session(host, password, timeout=60) as ftp:
             for i in indices:
-                try:
-                    ftp_lib.delete_quietly(ftp, TEMP + image_name(i))
+                if best_effort(f"delete {image_name(i)}",
+                               lambda i=i: ftp_lib.delete_quietly(
+                                   ftp, TEMP + image_name(i))):
                     removed += 1
-                except Exception:
-                    pass
-    except Exception:
-        pass
+
+    best_effort("remove the images this run mounted", remove_all)
     return removed
 
 

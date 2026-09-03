@@ -33,7 +33,7 @@ import os
 import sys
 import time
 from contextlib import contextmanager
-from collections.abc import Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 
 # One colour set for the whole tree, so that a suite run on its own and the same
 # suite run under a harness produce the same log, and harness lines and suite
@@ -762,6 +762,45 @@ def run_result(verdict: str, suites: int | None = None,
 def die(message: str) -> None:
     """Report a setup problem that stops the suite before any check runs."""
     print(f"{colour(FAIL, RED)} {message}", file=sys.stderr, flush=True)
+
+
+def best_effort(label: str, action: Callable[[], object]) -> bool:
+    """Run a teardown step, report what it could not do, and carry on.
+
+    Teardown must not mask a verdict: a settings restore that fails after a
+    check has already failed should not replace the real reason with its own.
+    Every suite therefore ended with blocks of this shape:
+
+        try:
+            api.configs.set(store, item, original)
+        except Exception:
+            pass
+
+    which is right about the verdict and wrong about the evidence. The device
+    is left changed, nothing on the console or in the JSONL says so, and the
+    next suite fails for a reason its report cannot connect to the cause. That
+    is the mechanism behind the "unrelated failure after X" entries this tree's
+    commit history keeps chasing.
+
+    So: the same swallow, with the exception written down. Returns True when
+    the action succeeded. `Failure`, `OSError`, `TimeoutError` and the ftplib
+    errors are the ones a device that has gone away raises; anything else is a
+    bug in the teardown itself and propagates, because a `TypeError` here is
+    not something to carry on from.
+
+        best_effort(f"restore {item}", lambda: api.configs.set(store, item, was))
+    """
+    import ftplib
+
+    try:
+        action()
+    except (Failure, OSError, TimeoutError, *ftplib.all_errors) as exc:
+        message = format_exception(exc) or type(exc).__name__
+        detail(f"teardown: {label}: {message}")
+        _record(kind="teardown", label=label, ok=False,
+                error=f"{type(exc).__name__}: {message}")
+        return False
+    return True
 
 
 def format_exception(exc: BaseException) -> str:

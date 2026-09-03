@@ -39,7 +39,7 @@ from api import UltimateApi
 import machine as machine_lib
 import targets
 import ftp as ftp_lib
-from report import (Failure, check, check_skip, check_start, detail,
+from report import (Failure, best_effort, check, check_skip, check_start, detail,
                     format_exception, section, suite_fail, suite_ok)
 from ui_backend import add_mode_argument, make_browser
 
@@ -85,11 +85,11 @@ def load_cfg(browser) -> None:
 
 
 def cleanup(host: str, password: str) -> None:
-    try:
+    def remove() -> None:
         with ftp_lib.session(host, password, timeout=20) as ftp:
             ftp_lib.delete_quietly(ftp, f"/Temp/{CFG_NAME}")
-    except Exception:
-        pass
+
+    best_effort("remove the fixtures this run uploaded", remove)
 
 
 def main() -> int:
@@ -162,14 +162,9 @@ def main() -> int:
         suite_fail("cfg_whitespace_test", format_exception(exc))
         return 1
     finally:
-        try:
-            api.configs.set(store, item, original)
-        except Exception:
-            pass
-        try:
-            browser.close()
-        except Exception:
-            pass
+        best_effort(f"restore {store}/{item}",
+                    lambda: api.configs.set(store, item, original))
+        best_effort("close the browser session", browser.close)
         cleanup(args.host, args.password)
 
 

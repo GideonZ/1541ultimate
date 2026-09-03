@@ -32,7 +32,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from api import UltimateApi
-from report import (Failure, check, check_skip, check_start, format_exception,
+from report import (Failure, best_effort, check, check_skip, check_start, format_exception,
                     suite_fail, suite_ok)
 from ui_backend import add_mode_argument, make_browser
 
@@ -86,14 +86,9 @@ def main() -> int:
         suite_fail(SUITE, format_exception(exc))
         return 1
     finally:
-        try:
-            api.configs.set(store, item, original)
-        except Exception:
-            pass
-        try:
-            browser.close()
-        except Exception:
-            pass
+        best_effort(f"restore {store}/{item}",
+                    lambda: api.configs.set(store, item, original))
+        best_effort("close the browser session", browser.close)
         cleanup(args.host, args.password)
 
 

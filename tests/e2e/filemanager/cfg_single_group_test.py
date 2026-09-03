@@ -28,7 +28,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
 
 from api import UltimateApi
 import ftp as ftp_lib
-from report import (Failure, check, check_skip, check_start, format_exception,
+from report import (Failure, best_effort, check, check_skip, check_start, format_exception,
                     suite_fail, suite_ok)
 from ui_backend import add_mode_argument, make_browser
 
@@ -77,12 +77,12 @@ def loading_stores(host: str, password: str) -> list[str]:
 
 
 def cleanup(host: str, password: str) -> None:
-    try:
+    def remove() -> None:
         with ftp_lib.session(host, password, timeout=20) as ftp:
             ftp_lib.delete_quietly(ftp, f"/Temp/{CFG_NAME}")
             ftp_lib.delete_quietly(ftp, f"/Temp/{LOG_NAME}")
-    except Exception:
-        pass
+
+    best_effort("remove the fixtures this run uploaded", remove)
 
 
 def main() -> int:
@@ -123,14 +123,9 @@ def main() -> int:
         suite_fail("cfg_single_group_test", format_exception(exc))
         return 1
     finally:
-        try:
-            api.configs.set(store, item, original)
-        except Exception:
-            pass
-        try:
-            browser.close()
-        except Exception:
-            pass
+        best_effort(f"restore {store}/{item}",
+                    lambda: api.configs.set(store, item, original))
+        best_effort("close the browser session", browser.close)
         cleanup(args.host, args.password)
 
 

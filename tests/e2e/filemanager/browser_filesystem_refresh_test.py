@@ -44,7 +44,7 @@ import ftp as ftp_lib
 import machine as machine_lib
 import rest as rest_lib
 import targets
-from report import detail, suite_fail, suite_ok
+from report import best_effort, detail, suite_fail, suite_ok
 
 from menu_screen_test import (
     SCREEN_WIDTH,
@@ -1184,10 +1184,8 @@ def run_row(ctx: Context, label: str, action: Callable[[], None], fixtures: Sequ
         problem = exc
         print(f"     {exc}")
     finally:
-        try:
-            drop_names(ctx, fixtures)
-        except Exception:
-            pass
+        best_effort("remove the fixtures this scenario created",
+                    lambda: drop_names(ctx, fixtures))
     if problem is not None:
         resync_browsers(ctx)
     return problem

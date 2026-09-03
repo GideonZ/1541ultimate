@@ -31,7 +31,7 @@ import ftp as ftp_lib
 import rest as rest_lib
 from api import UltimateApi
 import targets
-from report import Failure, check, format_exception, suite_fail, suite_ok
+from report import Failure, best_effort, check, format_exception, suite_fail, suite_ok
 from ui_backend import Browser, add_mode_argument, make_browser, strip_frame
 
 FTP_USER = "user"
@@ -121,10 +121,8 @@ def cleanup_fixture_files(ftp: ftplib.FTP, test_dir: str) -> None:
 
 
 def cleanup_remote_state(host: str, password: str, test_dir: str) -> None:
-    try:
-        rest_json(host, password, "PUT", "/v1/drives/a:remove")
-    except Exception:
-        pass
+    best_effort("remove drive a", lambda: rest_json(
+        host, password, "PUT", "/v1/drives/a:remove"))
 
     ftp = ftp_lib.connect(host, password, timeout=20)
     try:
@@ -352,10 +350,7 @@ def main() -> int:
         suite_fail("browser_long_filename_test", format_exception(exc))
         return 1
     finally:
-        try:
-            browser.close()
-        except Exception:
-            pass
+        best_effort("close the browser session", browser.close)
         cleanup_remote_state(args.host, args.password, args.test_dir)
 
 

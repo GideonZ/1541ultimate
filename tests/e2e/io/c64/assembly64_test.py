@@ -41,7 +41,7 @@ import machine as machine_lib
 import rest as rest_lib
 import targets
 from report import (
-    Failure,
+    best_effort, Failure,
     check,
     check_skip,
     detail,
@@ -942,17 +942,15 @@ def main() -> int:
             SCENARIOS[name](device)
     except Skip as exc:
         suite_skip("assembly64_test", str(exc))
-        try:
-            recover(device, "skipping")
-        except Exception:
-            pass
+        best_effort("put the UI back after skipping",
+                    lambda: recover(device, "skipping"))
         return 0
     finally:
-        try:
+        def leave_any_open_form() -> None:
             if device.menu_is_open():
                 leave_form(device)
-        except Exception:
-            pass
+
+        best_effort("leave the query form", leave_any_open_form)
         backend.close()
 
     suite_ok("assembly64_test")
