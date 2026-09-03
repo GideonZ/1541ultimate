@@ -54,22 +54,58 @@ def goertzel_power(samples: Sequence[int], frequency: float) -> float:
     return previous2 * previous2 + previous * previous - coefficient * previous * previous2
 
 
-def ladder_audio(capture: AvStreamCapture, start: float) -> list[int]:
-    first = first_loud_packet(capture.audio_packets, start)
-    index = capture.audio_packets.index(first)
+def ladder_audio(capture: AvStreamCapture) -> list[int]:
+    """One channel of every audio sample the capture holds, in order.
+
+    The whole capture rather than a slice from the first loud packet: where the
+    ladder starts inside it is decided by find_ladder_start, which matches the
+    signal rather than its amplitude.
+    """
     samples: list[int] = []
-    for packet in capture.audio_packets[index:]:
+    for packet in capture.audio_packets:
         samples.extend(audio_samples(packet)[::2])
     return samples
 
 
-def assert_tone_ladder(capture: AvStreamCapture, start: float) -> None:
-    samples = ladder_audio(capture, start)
+def find_ladder_start(samples: Sequence[int], slot: int, window: int) -> int:
+    """The sample offset at which the ladder's first note begins.
+
+    tone_ladder.asm waits 100 frames before its first note and then plays the
+    fifteen once, so the capture holds a lead-in of roughly two seconds and
+    then three seconds of ladder. Anchoring on the first packet above an RMS
+    threshold put the start inside that lead-in: measured on an Ultimate 64
+    Elite in PAL, every note came back two slots late, so the suite read
+    164.8Hz where it expected 130.8Hz and the fifteen detected frequencies were
+    the expected fifteen shifted by two places.
+
+    Amplitude cannot separate the lead-in from the ladder, so the first note's
+    own frequency does it instead: the offset taken is the one whose first slot
+    carries the most 130.8Hz. Only the anchor is chosen this way. Every note
+    including the first is then checked at that offset, so a device that played
+    a different ladder still fails.
+    """
+    latest = len(samples) - len(LADDER_FREQUENCIES) * slot
+    if latest < 0:
+        raise Failure("tone ladder capture is shorter than the ladder itself")
+    step = max(1, window // 16)
+    centre = (slot - window) // 2
+
+    def power_at(offset: int) -> float:
+        return goertzel_power(samples[offset + centre:offset + centre + window],
+                              LADDER_FREQUENCIES[0])
+
+    return max(range(0, latest + 1, step), key=power_at)
+
+
+def assert_tone_ladder(capture: AvStreamCapture) -> None:
+    samples = ladder_audio(capture)
     slot_samples = round(PAL_AUDIO_RATE * LADDER_FRAMES_PER_NOTE / 50.0)
     window = round(PAL_AUDIO_RATE * 0.10)
+    anchor = find_ladder_start(samples, slot_samples, window)
+    detail(f"ladder starts {anchor / PAL_AUDIO_RATE:.2f}s into the capture")
     detected = []
     for index, expected in enumerate(LADDER_FREQUENCIES):
-        offset = index * slot_samples + (slot_samples - window) // 2
+        offset = anchor + index * slot_samples + (slot_samples - window) // 2
         window_samples = samples[offset:offset + window]
         if len(window_samples) != window:
             raise Failure("tone ladder capture ended before all notes arrived")
@@ -88,13 +124,15 @@ def run_tone_ladder(device: UltimateApi) -> None:
     # only the handle knows which machine that is.
     with AvStreamCapture(device.target) as capture:
         capture.capture(0.15)
-        started = time.monotonic()
         device.runners.upload("run_prg", program)
         capture.capture(1.5)
         capture.clear()
-        capture.capture(3.5)
+        # 4.0s rather than the ladder's own 3.0s: the lead-in ends about 0.5s
+        # into this window and the extra half second is what the anchor search
+        # has to move in.
+        capture.capture(4.0)
         log_packet_health(capture)
-        assert_tone_ladder(capture, started)
+        assert_tone_ladder(capture)
         colors = set()
         for frame in video_frames(capture.video_packets):
             colors.add(frame.colors().most_common(1)[0][0])
