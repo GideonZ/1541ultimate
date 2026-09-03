@@ -17,7 +17,6 @@ is the per-operation leak alone.
 """
 
 import argparse
-import ftplib
 import os
 import sys
 import urllib.parse
@@ -26,10 +25,10 @@ import urllib.parse
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
 import api as api_lib  # noqa: E402  (needs tests/lib on sys.path first)
+import ftp as ftp_lib  # noqa: E402  (needs tests/lib on sys.path first)
 import rest as rest_lib  # noqa: E402  (needs tests/lib on sys.path first)
-import targets  # noqa: E402
 from report import (  # noqa: E402
-    Failure, check, check_ok, check_skip, check_start, detail, format_exception,
+    Failure, best_effort, check, check_ok, check_skip, check_start, detail, format_exception,
     section, suite_fail, suite_ok)
 
 # A disk image is the cheapest REST call that allocates a large buffer, which
@@ -44,6 +43,11 @@ MEASURED = 12
 # a real leak in this path is thousands of bytes per call.
 TOLERANCE_BYTES_PER_OP = 512
 
+# The cleanup runs after a soak, when the device is most likely to have
+# stopped answering. A bounded wait is what lets the runner's recovery
+# budget end the suite; a blocking socket would keep it here for ever.
+FTP_TIMEOUT_SECONDS = 20.0
+
 
 class Device:
     """The device under measurement, over the shared REST client.
@@ -54,6 +58,7 @@ class Device:
 
     def __init__(self, host: str, password: str | None, timeout: float) -> None:
         self.host = host
+        self.password = password
         self.rest = rest_lib.RestClient(host, password, timeout)
 
     def heap_free(self) -> int:
@@ -76,26 +81,26 @@ class Device:
         self.rest.expect("PUT", path, params={"diskname": "LEAK"})
 
 
-def cleanup(host: str, directory: str, names) -> int:
+def cleanup(host: str, password: str | None, directory: str, names) -> int:
     """Remove what the measurement created. FTP, because the REST surface has
-    no delete verb for files."""
+    no delete verb for files.
+
+    Through tests/lib/ftp.py rather than a private ftplib.FTP: that is where
+    the login, the passive-mode choice and the timeout live, and where the
+    interaction log is written from. `session` resolves the target itself, so
+    a cartridge target reaches the cartridge's own server.
+    """
     removed = 0
-    try:
-        ftp = ftplib.FTP()
-        # The device's own FTP server, so a cartridge target means the
-        # cartridge; see tests/lib/targets.py.
-        ftp.connect(targets.device_of(host), 21, timeout=20)
-        ftp.login()
-        ftp.cwd(f"/{directory}")
-        for n in names:
-            try:
-                ftp.delete(n)
-                removed += 1
-            except ftplib.all_errors:
-                pass
-        ftp.quit()
-    except ftplib.all_errors:
-        pass
+
+    def remove_all() -> None:
+        nonlocal removed
+        with ftp_lib.session(host, password, timeout=FTP_TIMEOUT_SECONDS,
+                             directory=f"/{directory}") as client:
+            for name in names:
+                if ftp_lib.delete_quietly(client, name):
+                    removed += 1
+
+    best_effort(f"remove the images this run left in /{directory}", remove_all)
     return removed
 
 
@@ -136,7 +141,7 @@ def run_create_d64_slope(dev: Device, directory: str) -> bool:
                    f"(tolerance {TOLERANCE_BYTES_PER_OP})")
         return ok
     finally:
-        removed = cleanup(dev.host, directory, created)
+        removed = cleanup(dev.host, dev.password, directory, created)
         detail(f"removed {removed} of {len(created)} images created by this suite")
 
 
