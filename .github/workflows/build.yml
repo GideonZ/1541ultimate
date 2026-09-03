@@ -66,6 +66,12 @@ jobs:
           -v /opt/build-tools:/mnt/build-tools:ro \
           -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make fpga_depends && make esp_depends"
 
+      - name: Test G64 track bounds
+        run: |
+          docker run --rm \
+          -v /opt/build-tools:/mnt/build-tools:ro \
+          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make -C software/drive/tests"
+
       - name: Test UCI Palette Commands
         run: |
           docker run --rm \

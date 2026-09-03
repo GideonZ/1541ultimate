@@ -16,6 +16,11 @@
 
 #include <stdint.h>
 
+/* The low half of a parameter word is the last valid offset in the track, so
+ * this is a 257-byte empty track. init() and remove_disk() already program it
+ * for a drive with nothing in it. */
+#define GCR_EMPTY_TRACK_PARAM   0x100
+
 /* A track table entry points at a two-byte length word followed by the track
  * data. Reading that word is itself an access into the image buffer, so it has
  * to lie inside the part of the buffer the file actually filled. Offset zero
@@ -55,6 +60,31 @@ static inline int gcr_validated_track_length(uint16_t declared, uint32_t offset,
         return 0;
     }
     return length;
+}
+
+/* Builds one entry of the drive's track parameter RAM: the address the engine
+ * works at, and a word carrying the last valid offset in the low half and the
+ * bit time in the high half.
+ *
+ * A track that is not in the image gets the dummy track together with the same
+ * short, safe length init() and remove_disk() use -- not whatever length the
+ * previous track happened to leave in a local.
+ */
+static inline void gcr_track_parameters(uint32_t track_address, int track_length,
+                                        uint32_t dummy_address, int dummy_length,
+                                        uint32_t rotation_speed,
+                                        uint32_t *out_address, uint32_t *out_param)
+{
+    if (track_address != 0 && track_length > 0) {
+        uint32_t bit_time = rotation_speed / (uint32_t)track_length;
+        *out_address = track_address;
+        *out_param   = (uint32_t)(track_length - 1) | (bit_time << 16);
+        return;
+    }
+
+    uint32_t bit_time = (dummy_length > 0) ? (rotation_speed / (uint32_t)dummy_length) : 0;
+    *out_address = dummy_address;
+    *out_param   = GCR_EMPTY_TRACK_PARAM | (bit_time << 16);
 }
 
 #endif /* DRIVE_GCR_TRACK_BOUNDS_H */
