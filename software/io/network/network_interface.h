@@ -113,6 +113,9 @@ public:
 
     virtual void attach_config();
     virtual const char *identify() { return "Wired Network"; }
+    // Whether this interface is a radio. Only a radio stays up while the
+    // machine is off, which is what makes it the one that can be woken.
+    virtual bool is_wireless() { return false; }
 
 	bool start();
     void stop();
