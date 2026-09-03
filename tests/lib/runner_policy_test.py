@@ -540,7 +540,8 @@ def run_jsonl_contract_checks(runner, tmpdir):
         report_module.run_result(verdict="OK", suites=1, passed=1, failed=0,
                                  skipped=0, dirty=0, seconds=1.5, recoveries=1,
                                  exit_code=runner.EXIT_RECOVERED)
-        records = [json.loads(line) for line in open(path, encoding="utf-8")]
+        with open(path, encoding="utf-8") as handle:
+            records = [json.loads(line) for line in handle]
     finally:
         report_module.set_jsonl_path(previous)
 
@@ -668,7 +669,9 @@ def run_reset_guard_checks():
 
     with check("consecutive resets collapse into one"):
         rest, m = machine()
-        m.reset(wait=False); m.reset(wait=False); m.reset(wait=False)
+        m.reset(wait=False)
+        m.reset(wait=False)
+        m.reset(wait=False)
         expect("resets sent", sum(1 for _, p in rest.sent if p.endswith("reset")), 1)
 
     with check("a read between two resets does not warrant the second"):
@@ -709,7 +712,8 @@ def run_reset_guard_checks():
 
     with check("force resets even when nothing has changed"):
         rest, m = machine()
-        m.reset(wait=False); m.reset(force=True, wait=False)
+        m.reset(wait=False)
+        m.reset(force=True, wait=False)
         expect("resets sent", sum(1 for _, p in rest.sent if p.endswith("reset")), 2)
 
     with check("a suite told the device was just reset does not reset again"):
@@ -989,8 +993,6 @@ def run_move_rows_checks():
 
     class _Stub:
         """A Browser with a known stride and a backend that records keys."""
-
-        sent = []
 
         def __init__(self, stride):
             self.entry_rows = range(0, stride * 2)
@@ -1565,13 +1567,6 @@ class StubMenuDevice:
     def clear_computer_menu(self):
         self.order.append("computer-menu")
         self.computer_menu = False
-
-    def press_menu_button(self):
-        if self.wedged:
-            return
-        if self.open and self.deaf:
-            return
-        self.open = not self.open
 
     def _request(self, method, path, payload=None):
         if path.endswith(":reset"):

@@ -181,7 +181,7 @@ class SetupError(RuntimeError):
 
 def query_ip(args: list[str]) -> list:
     """Run a read-only `ip -j` query. These need no root, unlike `ip addr add/del`."""
-    result = subprocess.run(["ip", "-j", *args], capture_output=True, text=True)
+    result = subprocess.run(["ip", "-j", *args], capture_output=True, text=True, check=False)
     if result.returncode != 0:
         raise SetupError(f"`ip -j {' '.join(args)}` failed: {(result.stderr or result.stdout).strip()}")
     try:
@@ -233,7 +233,7 @@ def detect_lan_path(device_ip: str) -> tuple[str, str, int]:
 def answers_ping(address: str) -> bool:
     result = subprocess.run(
         ["ping", "-c", "1", "-W", "1", address], capture_output=True, text=True
-    )
+, check=False)
     return result.returncode == 0
 
 
@@ -313,7 +313,7 @@ def main() -> int:
     args = parser.parse_args()
 
     # Preflight 1: adding and deleting the alias needs passwordless sudo for `ip`.
-    probe = subprocess.run([*IP_CMD, "addr", "show"], capture_output=True, text=True)
+    probe = subprocess.run([*IP_CMD, "addr", "show"], capture_output=True, text=True, check=False)
     if probe.returncode != 0:
         suite_fail(SUITE, "cannot run `sudo -n ip` - grant passwordless sudo for `ip` or "
             f"run under sudo. ({(probe.stderr or probe.stdout).strip()})")

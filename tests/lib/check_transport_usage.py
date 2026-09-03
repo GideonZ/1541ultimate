@@ -125,9 +125,15 @@ def reset_offenders(path, tree):
     return found
 
 
+def read_source(path):
+    """The file's text, with the handle closed before it is parsed."""
+    with open(path, encoding="utf-8") as handle:
+        return handle.read()
+
+
 def offenders(path):
     try:
-        tree = ast.parse(open(path, encoding="utf-8").read(), filename=path)
+        tree = ast.parse(read_source(path), filename=path)
     except SyntaxError as exc:
         return [(getattr(exc, "lineno", 0), f"could not be parsed: {exc}")]
     found = []
@@ -167,7 +173,7 @@ def uses_policy(path):
     NameError instead of deciding whether to retry. A grep cannot tell a call
     from a name that happens to be spelled the same.
     """
-    source = open(path, encoding="utf-8").read()
+    source = read_source(path)
     if "may_retry" not in source:
         return False, "no reference to rest.may_retry"
     try:
@@ -217,7 +223,7 @@ def main():
                 continue
             path = os.path.join(base, name)
             try:
-                tree = ast.parse(open(path, encoding="utf-8").read(), filename=path)
+                tree = ast.parse(read_source(path), filename=path)
             except SyntaxError:
                 continue
             for line, what in reset_offenders(path, tree):

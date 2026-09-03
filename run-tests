@@ -524,7 +524,7 @@ def git_answer(*arguments: str) -> str | None:
     """
     try:
         completed = subprocess.run(("git", *arguments), cwd=ROOT,
-                                   capture_output=True, text=True, timeout=10)
+                                   capture_output=True, text=True, timeout=10, check=False)
     except (OSError, subprocess.TimeoutExpired):
         return None
     if completed.returncode != 0:
@@ -669,7 +669,8 @@ class ConsoleCapture:
 
     def __init__(self, path: str) -> None:
         self.console_fd = os.dup(1)
-        self.handle = open(path, "wb")
+        # Closed by stop(); the capture outlives this scope by design.
+        self.handle = open(path, "wb")  # noqa: SIM115
         read_fd, write_fd = os.pipe()
         sys.stdout.flush()
         os.dup2(write_fd, 1)
@@ -1426,7 +1427,7 @@ class Device:
         self.suite_recoveries += 1
         try:
             completed = subprocess.run(self.recover_command, shell=True,
-                                       timeout=self.recover_timeout)
+                                       timeout=self.recover_timeout, check=False)
         except subprocess.TimeoutExpired:
             report.check_fail(f"no answer within {self.recover_timeout:g}s")
             return False
@@ -1671,7 +1672,7 @@ def ui_state_gate(action: str, options: Options, label: str = "",
         # would read as a record the suite wrote. See OBS-2.3.
         environment.pop("E2E_ATTEMPT", None)
     result = subprocess.run(command, env=environment,
-                            stdout=subprocess.DEVNULL if quiet else None)
+                            stdout=subprocess.DEVNULL if quiet else None, check=False)
     return result.returncode == 0
 
 
@@ -1981,7 +1982,7 @@ def run_one_attempt(suite: Suite, device: Device, options: Options, mode: str,
             os.path.join(where, f"{label}-{suite.name}.log"),
             truncate=True, console_fd=console_fd())
     else:
-        returncode = subprocess.run(command, env=environment).returncode
+        returncode = subprocess.run(command, env=environment, check=False).returncode
     elapsed = time.monotonic() - started
 
     fields = {"mode": mode, "attempt": attempt,

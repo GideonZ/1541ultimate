@@ -517,7 +517,8 @@ class Collector:
                 return
             try:
                 os.makedirs(os.path.dirname(path), exist_ok=True)
-                self._handles[path] = open(path, "a", encoding="utf-8")
+                # A handle table the collector owns and closes in stop().
+                self._handles[path] = open(path, "a", encoding="utf-8")  # noqa: SIM115
             except OSError as exc:
                 self.problems.append(f"{path} could not be written: {exc}")
                 self._handles[path] = _Discard()

@@ -231,11 +231,12 @@ def _read_target(path: str) -> dict[str, Measured]:
 
 
 def _records(path: str) -> Iterable[dict]:
-    for line in open(path, errors="replace"):
-        try:
-            yield json.loads(line)
-        except ValueError:
-            continue
+    with open(path, errors="replace") as handle:
+        for line in handle:
+            try:
+                yield json.loads(line)
+            except ValueError:
+                continue
 
 
 def _targets_of(data: dict[str, dict[str, Measured]]) -> list[str]:

@@ -1842,8 +1842,14 @@ SOAK_READ_FILES = ["README.TXT", "SMALL.BIN", "BYTES256.BIN", "EXACT4096.BIN",
 def soak_browse(ctx, n):
     d = ctx.d
     enter_host_root(ctx, ctx.alias)
-    d.select_row_text("DIRA"); d.enter(); d.screen(required=False); d.back()
-    d.select_row_text("DIR WITH SPACE"); d.enter(); d.screen(required=False); d.back()
+    d.select_row_text("DIRA")
+    d.enter()
+    d.screen(required=False)
+    d.back()
+    d.select_row_text("DIR WITH SPACE")
+    d.enter()
+    d.screen(required=False)
+    d.back()
     return "browse"
 
 

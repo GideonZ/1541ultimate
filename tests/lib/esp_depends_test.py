@@ -57,7 +57,7 @@ def cached_projects():
 def hashed_projects():
     """The projects esp_depends.py actually contributes files for."""
     result = subprocess.run([sys.executable, DEPENDS_SCRIPT], cwd=SOFTWARE_DIR,
-                            capture_output=True, text=True)
+                            capture_output=True, text=True, check=False)
     if result.returncode != 0:
         raise Failure(f"esp_depends.py failed: {result.stderr.strip() or result.returncode}")
 
@@ -101,7 +101,7 @@ def run_missing_directory_check():
                 handle.write(original.replace("wifi/raw_u64/main",
                                               "wifi/raw_does_not_exist/main"))
             result = subprocess.run([sys.executable, broken_path], cwd=SOFTWARE_DIR,
-                                    capture_output=True, text=True)
+                                    capture_output=True, text=True, check=False)
         finally:
             if os.path.exists(broken_path):
                 os.remove(broken_path)

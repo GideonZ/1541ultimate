@@ -87,7 +87,6 @@ from __future__ import annotations
 import os
 import re
 from dataclasses import dataclass
-from typing import Union
 from collections.abc import Callable
 
 from report import check_skip, check_start
@@ -661,7 +660,7 @@ class Machine:
 
 # What a caller can hand back from `fetch_product`: the product on its own, or
 # the product and the firmware version when it has both.
-Reported = Union[str, tuple[str, str]]
+Reported = str | tuple[str, str]
 
 
 def classify(product: str, firmware: str = "") -> Machine:

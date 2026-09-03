@@ -615,12 +615,12 @@ def a_policy_fixture_never_writes_into_the_run_it_runs_inside() -> str:
                             "E2E_TARGET": "127.0.0.1", "E2E_ATTEMPT": "1",
                             "NO_COLOR": "1"})
         completed = subprocess.run([sys.executable, policy], env=environment,
-                                   capture_output=True, text=True, timeout=300)
+                                   capture_output=True, text=True, timeout=300, check=False)
         if completed.returncode != 0:
             raise Failure("the policy suite did not pass: "
                           + completed.stdout.strip().splitlines()[-1])
-        records = [json.loads(line) for line in open(path, encoding="utf-8")
-                   if line.strip()]
+        with open(path, encoding="utf-8") as handle:
+            records = [json.loads(line) for line in handle if line.strip()]
     named = [r.get("name") for r in records if r.get("kind") == "suite"]
     expect("the only suite record is the suite's own", named,
            ["runner_policy_test"])
@@ -657,7 +657,8 @@ def every_registered_suite_reports_a_closing_line() -> str:
         path = os.path.join(ROOT, suite.path)
         if not os.path.exists(path):
             continue
-        text = open(path, encoding="utf-8").read()
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
         if not any(call in text for call in closing):
             silent.append(suite.name)
     if silent:
@@ -1229,8 +1230,8 @@ def the_sequence_number_names_one_record_in_the_file() -> str:
                    for _ in range(4)]
         for one in running:
             one.wait(timeout=60)
-        records = [json.loads(line) for line in open(path, encoding="utf-8")
-                   if line.strip()]
+        with open(path, encoding="utf-8") as handle:
+            records = [json.loads(line) for line in handle if line.strip()]
         if len(records) < 4:
             raise Failure(f"only {len(records)} records were written")
         numbers = [record["seq"] for record in records]
@@ -1240,9 +1241,10 @@ def the_sequence_number_names_one_record_in_the_file() -> str:
                           f"a sequence number: {repeated[:6]}")
         # And the transcript carries the same numbers, in the same order, so a
         # reader who found a line has the record and the other way round.
-        lines = [line.split()[0] for line in
-                 open(os.path.join(directory, "transcript.txt"),
-                      encoding="utf-8").read().splitlines() if line.strip()]
+        with open(os.path.join(directory, "transcript.txt"),
+                  encoding="utf-8") as handle:
+            lines = [line.split()[0] for line in handle.read().splitlines()
+                     if line.strip()]
         expect("one transcript line per record", len(lines), len(records))
         if lines != [str(number) for number in numbers]:
             raise Failure("the transcript and the log disagree about the order")
@@ -2094,7 +2096,8 @@ def a_frame_the_decoder_cannot_read_is_counted_rather_than_dropped() -> str:
         expect("a second refusal counts again", made.screens_unreadable, 2)
 
         path = os.path.join(directory, "screen-text.jsonl")
-        written = [json.loads(line) for line in open(path, encoding="utf-8")]
+        with open(path, encoding="utf-8") as handle:
+            written = [json.loads(line) for line in handle]
         expect("one record, for the one frame that could be read",
                len(written), 1)
         expect("and it is the screen that was there", written[0]["text"][0],
@@ -4450,7 +4453,7 @@ def a_lossless_encode_gives_the_frames_back_unchanged() -> str:
         decoded = subprocess.run(
             ["ffmpeg", "-hide_banner", "-loglevel", "error", "-i", path,
              "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
-            capture_output=True).stdout
+            capture_output=True, check=False).stdout
     size = geometry.width * geometry.height * 3
     back = [decoded[n * size:(n + 1) * size] for n in range(len(written))]
     expect("every frame", len(back), 5)
@@ -4564,7 +4567,7 @@ def the_recorder_writes_what_it_says_it_wrote() -> str:
             ["ffprobe", "-v", "error", "-show_entries",
              "format=duration:stream=codec_type,width,height", "-of",
              "default=nw=1", os.path.join(directory, "video.mp4")],
-            capture_output=True, text=True).stdout
+            capture_output=True, text=True, check=False).stdout
         geometry = recorder_lib.geometry_for(True, True, "combined")["combined"]
         for wanted in (f"width={geometry.width}", f"height={geometry.height}",
                        "codec_type=video", "codec_type=audio"):
@@ -4691,7 +4694,7 @@ def a_still_is_the_frame_the_recording_holds_at_that_position() -> str:
                 ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
                  "-i", path, "-vf", f"select=eq(n\\,{entry['frame']})",
                  "-vsync", "0", "-frames:v", "1", extracted],
-                capture_output=True, text=True, timeout=120)
+                capture_output=True, text=True, timeout=120, check=False)
             if completed.returncode != 0 or not os.path.exists(extracted):
                 raise Failure(f"frame {entry['frame']} could not be extracted: "
                               f"{completed.stderr.strip()[:200]}")
@@ -4950,7 +4953,7 @@ def scripted_run(double: DeviceDouble, stubs: Sequence[Stub],
         environment.pop(inherited, None)
     completed = subprocess.run(
         [sys.executable, wrapper, "-o", output, *arguments, *tokens],
-        env=environment, capture_output=True, text=True)
+        env=environment, capture_output=True, text=True, check=False)
     return ScriptedRun(output, completed.returncode,
                        completed.stdout + completed.stderr)
 
@@ -4980,7 +4983,7 @@ def records_from_a_stub_suite(environment: dict, body: str = "") -> list[dict]:
         child.pop("E2E_SUITE", None)
         child.update(environment)
         completed = subprocess.run([sys.executable, "-c", script], env=child,
-                                   capture_output=True, text=True)
+                                   capture_output=True, text=True, check=False)
         if completed.returncode != 0:
             raise Failure(f"the stub suite exited {completed.returncode}: "
                           f"{completed.stderr.strip()[:200]}")
@@ -5768,7 +5771,7 @@ def the_documented_command_line_writes_the_document() -> str:
         shutil.copytree(FIXTURE, tree)
         finished = subprocess.run(
             [sys.executable, REPORT_TOOL, tree],
-            capture_output=True, text=True, timeout=120)
+            capture_output=True, text=True, timeout=120, check=False)
     if finished.returncode != 0:
         raise Failure(f"exit {finished.returncode}: "
                       f"{finished.stderr.strip().splitlines()[-1:]}")
@@ -6877,7 +6880,7 @@ def a_recorder_flag_without_record_is_refused() -> str:
                 (["--record"], "needs -o DIR")):
             completed = subprocess.run(
                 [sys.executable, RUNNER_PATH, *arguments, "127.0.0.1"],
-                capture_output=True, text=True, cwd=directory, timeout=60)
+                capture_output=True, text=True, cwd=directory, timeout=60, check=False)
             # 64 is EX_USAGE. A usage error is not an outcome of a run, so it
             # is off the severity scale the other statuses form; on that scale
             # 2 now means "every suite passed, but a device needed
@@ -6893,11 +6896,11 @@ def a_recorder_flag_without_record_is_refused() -> str:
     with tempfile.TemporaryDirectory() as directory:
         completed = subprocess.run(
             [sys.executable, RUNNER_PATH, "--no-such-option"],
-            capture_output=True, text=True, cwd=directory, timeout=60)
+            capture_output=True, text=True, cwd=directory, timeout=60, check=False)
         expect("an option argparse rejects", completed.returncode, 64)
         completed = subprocess.run(
             [sys.executable, RUNNER_PATH, "--help"],
-            capture_output=True, text=True, cwd=directory, timeout=60)
+            capture_output=True, text=True, cwd=directory, timeout=60, check=False)
         expect("--help", completed.returncode, 0)
     return "6 usage errors"
 
@@ -7026,7 +7029,7 @@ def the_recording_can_be_navigated_three_ways() -> str:
         raise Failure("a cue does not carry the identity key")
     probe = subprocess.run(
         ["ffprobe", "-v", "error", "-show_chapters", "-of", "default=nw=1",
-         video], capture_output=True, text=True)
+         video], capture_output=True, text=True, check=False)
     if probe.returncode != 0:
         raise Skipped("ffprobe is not installed")
     if "overlay/broken" not in probe.stdout:

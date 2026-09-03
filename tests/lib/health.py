@@ -206,7 +206,7 @@ def _ping(host: str) -> Check:
         completed = subprocess.run(
             ping_command(host),
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            timeout=PING_TIMEOUT_SECONDS + 2)
+            timeout=PING_TIMEOUT_SECONDS + 2, check=False)
     except FileNotFoundError:
         # No ping binary. Not knowing is not the same as a bad answer.
         return Check("ping", SKIP, 0.0, "no ping command")

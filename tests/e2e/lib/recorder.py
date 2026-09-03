@@ -1290,7 +1290,7 @@ def encoder_available(binary: str = "ffmpeg") -> str:
         return f"{binary} is not on PATH"
     try:
         completed = subprocess.run([binary, "-hide_banner", "-encoders"],
-                                   capture_output=True, text=True, timeout=20)
+                                   capture_output=True, text=True, timeout=20, check=False)
     except (OSError, subprocess.TimeoutExpired) as exc:
         return f"{binary} could not be run: {exc}"
     if "libx264rgb" not in completed.stdout:
@@ -2800,7 +2800,7 @@ def finish_file(path: str, metadata: str, audio: str = "",
         with open(meta_path, "w", encoding="utf-8") as handle:
             handle.write(metadata)
         completed = subprocess.run(command, capture_output=True, text=True,
-                                   timeout=300)
+                                   timeout=300, check=False)
     except (OSError, subprocess.TimeoutExpired) as exc:
         return f"the audio and the chapters could not be added: {exc}"
     finally:

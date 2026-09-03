@@ -115,7 +115,7 @@ def discover_mac(host: str) -> bytes:
     tried = []
     for argv in (["ip", "neigh", "show", address], ["arp", "-n", address]):
         try:
-            result = subprocess.run(argv, capture_output=True, text=True)
+            result = subprocess.run(argv, capture_output=True, text=True, check=False)
         except OSError as exc:
             tried.append(f"{argv[0]}: {exc.strerror or exc}")
             continue

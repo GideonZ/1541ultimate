@@ -6,6 +6,7 @@ import hashlib
 import os
 import sys
 import time
+from typing import ClassVar
 
 # tests/lib holds the reporting rules every suite shares.
 sys.path.insert(0, os.path.join(
@@ -350,9 +351,10 @@ class MenuScreenInfo:
 
 
 class MenuSoakNavigator:
-    UP = ["left_shift", "cursor_up_down"]
-    DOWN = ["cursor_up_down"]
-    F2 = ["left_shift", "f1"]
+    # Key sequences, read and never mutated, so one list per class is right.
+    UP: ClassVar[list[str]] = ["left_shift", "cursor_up_down"]
+    DOWN: ClassVar[list[str]] = ["cursor_up_down"]
+    F2: ClassVar[list[str]] = ["left_shift", "f1"]
 
     def __init__(self) -> None:
         self.reset()

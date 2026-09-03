@@ -74,7 +74,7 @@ def run_suite(host: str, password: str, timeout: float) -> None:
     """One full matrix run. A failing run is not a leak verdict, so it stops us."""
     result = subprocess.run(
         [sys.executable, str(SUITE), "-H", host, "-p", password or "", "-t", str(timeout)],
-        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, check=False)
     if result.returncode != 0:
         tail = "\n".join(result.stdout.splitlines()[-15:])
         raise Failure(

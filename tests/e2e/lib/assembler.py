@@ -84,7 +84,7 @@ def ensure_assembler() -> None:
         try:
             result = subprocess.run(
                 ["make", "-C", ASSEMBLER_SOURCE_DIR],
-                capture_output=True, text=True, timeout=BUILD_TIMEOUT_SECONDS)
+                capture_output=True, text=True, timeout=BUILD_TIMEOUT_SECONDS, check=False)
         except (OSError, subprocess.SubprocessError) as exc:
             raise Failure(f"could not build {ASSEMBLER}: {exc}") from exc
         if result.returncode or not assembler_runs():
@@ -114,7 +114,7 @@ def assemble(source: Union[str, "os.PathLike[str]"],
                 command += ["-D", f"{name}={value}"]
             result = subprocess.run(
                 [*command, "-o", output, source],
-                capture_output=True, text=True, timeout=ASSEMBLE_TIMEOUT_SECONDS)
+                capture_output=True, text=True, timeout=ASSEMBLE_TIMEOUT_SECONDS, check=False)
         except (OSError, subprocess.SubprocessError) as exc:
             raise Failure(f"could not run {ASSEMBLER}: {exc}") from exc
         if result.returncode:

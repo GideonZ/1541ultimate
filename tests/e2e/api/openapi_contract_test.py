@@ -91,7 +91,7 @@ def generate_client(profile: str, into: pathlib.Path) -> str:
         [sys.executable, "-m", "openapi_python_client", "generate",
          "--path", str(openapi_contract.document_path(profile)),
          "--config", str(config), "--meta", "none", "--overwrite"],
-        cwd=str(into), capture_output=True, text=True)
+        cwd=str(into), capture_output=True, text=True, check=False)
     if result.returncode != 0:
         raise Failure("openapi-python-client failed: %s"
                       % (result.stderr.strip() or result.stdout.strip())[:600])
