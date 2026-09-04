@@ -4011,6 +4011,18 @@ def run_tests(context: MonitorContext) -> None:
         if not cycles_bank:
             check_skip("this monitor cannot change the CPU bank: 'o' answers "
                        f"{CPU_BANK_UNAVAILABLE!r}")
+        elif not frozen:
+            # banked_ram_edit_via_view verifies the edit through the monitor's
+            # own view, because that is the only view that can show RAM an
+            # address has ROM banked over it. That only holds while the machine
+            # is stopped: running, the view shows the live ROM, so the byte it
+            # reads first is the ROM's, the edit goes to the RAM underneath,
+            # and the re-read returns the ROM byte again. Measured over Telnet:
+            # "$A000 reads 94 in the redrawn view after the edit, expected 6B",
+            # where 94 is the first byte of the BASIC ROM and 6B is 94 xor FF.
+            check_skip("this user interface leaves the C64 running, so ROM is "
+                       "banked in over the RAM these edits target and the "
+                       "monitor's view cannot show what was written")
         else:
             run_cpu_banked_ram_edit_test(session, rest_host, frozen)
 
