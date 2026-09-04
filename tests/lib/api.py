@@ -1105,6 +1105,49 @@ DRIVE_ENABLE_ITEM = "Drive"
 DRIVE_DISABLED = "Disabled"
 
 
+# Every machine in this tree carries "Fast Reset" in the C64 store: the item is
+# outside the `#if U64` guard in software/io/c64/c64.cc. It defaults to
+# Disabled, which makes each reset run the KERNAL's full RAM test. A run resets
+# the machine before most suites, so that test is paid for over and over.
+FAST_RESET_ITEM = "Fast Reset"
+FAST_RESET_ENABLED = "Enabled"
+
+
+def ensure_fast_reset(target, password: str | None = None,
+                      timeout: float = DEFAULT_TIMEOUT) -> str | None:
+    """Make every machine this target occupies skip the RAM test on reset.
+
+    Answers what it changed, or None when there was nothing to change. A
+    machine that does not serve the item is passed over rather than reported,
+    for the same reason a computer without drives has nothing to silence.
+
+    Both halves of a cartridge target are set, because either half can reset
+    the C64 and the setting belongs to whichever one does.
+
+    Like the cartridge preference, the change is not saved to flash, and the
+    caller captures the settings before calling this, so what the run found is
+    what it puts back.
+    """
+    handle = targets.resolve(target)
+    changed = []
+    for host in handle.resources:
+        machine = UltimateApi(host, password, timeout)
+        try:
+            current = machine.configs.current(CARTRIDGE_STORE, FAST_RESET_ITEM)
+        except Failure:
+            continue
+        if current == FAST_RESET_ENABLED:
+            continue
+        machine.configs.set(CARTRIDGE_STORE, FAST_RESET_ITEM, FAST_RESET_ENABLED)
+        now = machine.configs.current(CARTRIDGE_STORE, FAST_RESET_ITEM)
+        if now != FAST_RESET_ENABLED:
+            raise Failure(
+                f"{host} kept {CARTRIDGE_STORE}/{FAST_RESET_ITEM} at {now!r} "
+                f"after it was set to {FAST_RESET_ENABLED!r}")
+        changed.append(f"{host}: {current!r} -> {FAST_RESET_ENABLED!r}")
+    return ", ".join(changed) if changed else None
+
+
 def ensure_host_drives_off(target, password: str | None = None,
                            timeout: float = DEFAULT_TIMEOUT) -> str | None:
     """Silence the computer's own drives, so the cartridge owns the IEC bus.

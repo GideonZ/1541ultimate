@@ -1064,7 +1064,7 @@ Reaching one of these from a build page is a download and an unzip: GitHub serve
 
 ## Timeline
 
-210 line(s), order not compared here
+211 line(s), order not compared here
 
 ## Checks
 
@@ -1075,6 +1075,7 @@ Checks the runner reported outside any suite, which is its teardown after the la
 | # | Check | Verdict | Duration | Opened at | Closed at | Reported |
 | --- | --- | --- | --- | --- | --- | --- |
 | 0 | settings: capture 127.0.0.1 | OK | 0.000s | 0000-00-00 00:00:00 | 0000-00-00 00:00:00 | 2 settings in 2 stores |
+| 0 | machine: resets skip the RAM test | OK | 0.000s | 0000-00-00 00:00:00 | 0000-00-00 00:00:00 | already set |
 | 0 | recovery: rm -f /FIXTURE/unhealthy | OK | 0.000s | 0000-00-00 00:00:00 | 0000-00-00 00:00:00 | - |
 | 0 | recovery: device answers again | OK | 0.000s | 0000-00-00 00:00:00 | 0000-00-00 00:00:00 | - |
 | 0 | TEARDOWN (overlay): release input | OK | 0.000s | 0000-00-00 00:00:00 | 0000-00-00 00:00:00 | - |
@@ -1091,6 +1092,7 @@ Checks the runner reported outside any suite, which is its teardown after the la
 | --- | --- | --- | --- | --- | --- | --- |
 | 0 | settings: capture 127.0.0.1 | OK | 0.000s | 0000-00-00 00:00:00 | 0000-00-00 00:00:00 | 2 settings in 2 stores |
 | 0 | settings: capture localhost | OK | 0.000s | 0000-00-00 00:00:00 | 0000-00-00 00:00:00 | 2 settings in 2 stores |
+| 0 | machine: resets skip the RAM test | OK | 0.000s | 0000-00-00 00:00:00 | 0000-00-00 00:00:00 | already set |
 | 0 | cartridge: the computer prefers its external cartridge | WARN | 0.000s | 0000-00-00 00:00:00 | 0000-00-00 00:00:00 | localhost did not answer for 'Cartridge Preference': GET its config API returned HTTP 404: b'{"errors": ["no such category"]}' |
 | 0 | cartridge: the computer's own drives are off | OK | 0.000s | 0000-00-00 00:00:00 | 0000-00-00 00:00:00 | already off |
 | 0 | recovery: rm -f /FIXTURE/unhealthy | OK | 0.000s | 0000-00-00 00:00:00 | 0000-00-00 00:00:00 | - |

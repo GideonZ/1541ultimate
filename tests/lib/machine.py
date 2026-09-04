@@ -398,27 +398,26 @@ IDENT_SWITCHES_LIVE = _fix(
     "firmware restart",
     (U2,))
 
-# What tests/e2e/uci/uci_targets_test.py's issue-740 matrix drives. A command
-# naming an absent REU image leaves the command interface in Command Busy and
-# it never returns to idle: every later command on every target is refused with
-# $11/$15 until the firmware restarts. The suite names the issue itself, and a
-# suite that wedges the interface it is testing cannot then test it.
-UCI_SURVIVES_A_MISSING_IMAGE = _fix(
-    "uci-survives-a-missing-image",
-    "the command interface returns to idle after a command that names a file "
-    "the device does not have, rather than wedging until a restart",
-    (U2,))
-
-# What tests/e2e/io/command_interface/uci_targets_test.py's
-# save-reu-offset-past-end scenario drives. Measured on u2@c64u, 2026-09-04:
-# SAVE_REU with the preload offset at the end of a 128 KB REU never leaves
-# Command Busy, and the interface stays wedged for every target afterwards.
-# The same wedge as the entry above, reached through a different command, so
-# it is named separately: an Ultimate II+ that gains one need not gain both.
-UCI_REPORTS_AN_OVERSIZE_REU_OFFSET = _fix(
-    "uci-reports-an-oversize-reu-offset",
-    "SAVE_REU answers with the offset and saves nothing when the preload "
-    "offset is at the end of the REU, rather than wedging until a restart",
+# What the REU scenarios of tests/e2e/io/command_interface/uci_targets_test.py
+# drive. On an Ultimate II+L 3.15, LOAD_REU and SAVE_REU never leave Command
+# Busy once a filename is given, and the interface then refuses every later
+# command on every target with $11/$15 until the firmware restarts. This is
+# issue #740, and it is not confined to the missing image that issue names.
+# Measured on u2@c64u, 2026-09-04, one wedge per run:
+#
+#   04 08 <name>   the image is absent          wedged
+#   04 08 <name>   the REU is switched off      wedged
+#   04 09 <name>   preload offset past the end  wedged
+#
+# The same commands with no filename are refused with 81,INVALID PARAMS and do
+# not wedge, so the fix is about completing a command that does work, not about
+# validating its arguments. One entry rather than one per scenario: there is
+# one behaviour missing, and a suite that wedges the interface it is testing
+# cannot test anything after it.
+UCI_COMPLETES_AN_REU_COMMAND = _fix(
+    "uci-completes-an-reu-command",
+    "the command interface returns to idle after a LOAD_REU or SAVE_REU that "
+    "names a file, whatever the answer, rather than wedging until a restart",
     (U2,))
 
 # The heap reading the health sweep already reports as absent on this machine:

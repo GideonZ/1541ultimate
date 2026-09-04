@@ -3428,6 +3428,22 @@ def main(argv: list[str]) -> int:
                 if args.restore_settings else [])
 
     try:
+        # After the capture above, so the value the run found is the value it
+        # puts back, and before any suite, because most of them reset the
+        # machine and a reset that runs the KERNAL's RAM test costs the whole
+        # run. Under --no-restore-settings there is no capture and this stays
+        # on afterwards, which is what that flag asks for. Not fatal: a machine
+        # that will not take the setting runs its suites more slowly, and that
+        # is not a reason to stop.
+        report.step_start("machine: resets skip the RAM test")
+        try:
+            faster = api_lib.ensure_fast_reset(
+                target, options.password, float(options.timeout))
+        except DEVICE_ERRORS as exc:
+            report.check_warn(str(exc))
+        else:
+            report.check_ok(faster or "already set")
+
         # Before any suite, because a cartridge whose computer has not handed
         # its bus over fails later in ways that name neither the setting nor
         # the computer. A no-op on a target that is its own computer.
