@@ -323,24 +323,11 @@ MENU_BUTTON_CLOSES_STRING_EDIT = _fix(
 # Measured with tests/e2e/api/create_disk_image_test.py against a C64 Ultimate
 # 1.2.0: the first PUT /v1/files/{path}:create_d64 timed out, and the device
 # then answered nothing at all, ICMP included, until it was power cycled. The
-# fix is c90d834a (squash-merged as 6b5ffc21, "Fix eight firmware defects
-# found by covering the whole REST API (#805)") in software/api/routes.h:
-# `ArgsURI::ClearAll` released the disk name that `enforce_diskname` had
-# duplicated with strdup using delete, which reaches heap_4 with an address
-# that is not a block start. The rest-api-coverage cases that only ask for a
-# refusal take the device down the same way, because the name is duplicated
-# before the path is checked.
-#
-# U2 added 2026-09-04, and it is not simply "U2 has not been backported
-# yet": PUT /v1/files/Temp/<name>.d64:create_d64?tracks=35 took the bench
-# U2+L off the network identically (ICMP included, power cycle needed),
-# reproduced twice, on firmware built from this very commit --
-# `git merge-base --is-ancestor 6b5ffc21 HEAD` is true for the tree that
-# built it. The fix is in a shared file, so either it does not cover
-# whatever U2+L's route takes to reach ArgsURI::ClearAll, or this is a
-# second bug with the identical signature. Not diagnosed further here --
-# no firmware access, and reproducing it costs the bench a power cycle each
-# time.
+# fix is c90d834a in software/api/routes.h: `ArgsURI::ClearAll` released the
+# disk name that `enforce_diskname` had duplicated with strdup using delete,
+# which reaches heap_4 with an address that is not a block start. The
+# rest-api-coverage cases that only ask for a refusal take the device down the
+# same way, because the name is duplicated before the path is checked.
 #
 # A run that reaches one of these on a machine without the fix loses the device
 # and every suite after it, so the whole of create-disk-image is tagged rather
@@ -349,7 +336,7 @@ FILES_CREATE_IMAGE_SURVIVES = _fix(
     "files-create-image-survives",
     "PUT /v1/files/{path}:create_* answers, rather than taking the device off "
     "the network until it is power cycled",
-    (C64U, U2))
+    (C64U,))
 
 # Measured with tests/e2e/api/rest_api_coverage_test.py: GET
 # /v1/configs/No%20Such%20Category answers HTTP 404 on firmware with the fix,
