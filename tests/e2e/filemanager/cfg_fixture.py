@@ -30,11 +30,34 @@ about the same load. This is the fixture, not the test.
 from __future__ import annotations
 
 import ftp as ftp_lib
+import ui_backend
 from report import teardown_step
 
 # The transfer is a few hundred bytes; a device that cannot finish it in twenty
 # seconds has a problem the suite should report rather than wait out.
 FTP_TIMEOUT_SECONDS = 20.0
+
+
+# The browser geometry all four suites drive the .cfg loader through. They had
+# a copy each, with the same four values and the same six keyword arguments.
+ENTRY_ROWS = range(2, 24)
+STATUS_ROW = 24
+TELNET_ENTRY_ROWS = range(2, 23)
+TELNET_STATUS_ROW = 23
+
+
+def browser_for(args) -> object:
+    """The Browser these suites load a .cfg through, built the one way.
+
+    `args` is the suite's parsed command line: the four rows are the fixture's,
+    the rest is the caller's target and transport.
+    """
+    return ui_backend.make_browser(
+        args.mode, args.host, args.password or None, args.timeout,
+        entry_rows=ENTRY_ROWS, status_row=STATUS_ROW,
+        telnet_port=args.telnet_port,
+        telnet_entry_rows=TELNET_ENTRY_ROWS, telnet_status_row=TELNET_STATUS_ROW,
+    )
 
 
 def upload(host: str, password: str, name: str, body: str) -> None:

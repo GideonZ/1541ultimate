@@ -46,9 +46,7 @@ from pathlib import Path
 
 # tests/lib holds the reporting rules every suite shares; tests/e2e/lib holds
 # the UI backend under measurement.
-# tests/lib holds the shared library; importing bootstrap adds tests/e2e/lib.
-# The search walks up rather than counting directories, so this is the same in
-# every entry point and a suite that moves needs no edit. See tests/lib/bootstrap.py.
+# The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
 sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
                             if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
 import bootstrap  # noqa: E402,F401

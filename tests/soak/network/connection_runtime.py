@@ -8,7 +8,7 @@ import socket
 import time
 from dataclasses import dataclass
 from typing import Any, Protocol
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 
 
 class ProbeCorrectness(enum.StrEnum):
@@ -203,6 +203,32 @@ def run_surface_operation(
                 raise
             time.sleep(SURFACE_OPERATION_RETRY_DELAYS_S[attempt])
     raise RuntimeError(f"{protocol} surface operation failed without error") from last_error
+
+
+def run_selected_surface_operation(
+    protocol: str,
+    context: ProbeExecutionContext,
+    settings: RuntimeSettings,
+    operations: Sequence[tuple[str, Operation]],
+) -> ProbeOutcome:
+    """Run the operation this iteration selected, timed, as one outcome.
+
+    Four probes - dma, http, ident and modem - carried this nine-line block
+    each, differing only in the protocol name passed through it. It belongs
+    beside run_incomplete_surface_operation below, which is the same shape with
+    one extra case for a deliberate abort.
+    """
+    op_name, operation = operations[select_operation_index(context, len(operations))]
+    started_at = time.perf_counter_ns()
+    try:
+        detail = run_surface_operation(protocol, operation, settings)
+        elapsed_ms = (time.perf_counter_ns() - started_at) / 1_000_000.0
+        return ProbeOutcome("OK", surface_detail(context.surface, op_name, detail),
+                            elapsed_ms)
+    except Exception as error:
+        elapsed_ms = (time.perf_counter_ns() - started_at) / 1_000_000.0
+        return ProbeOutcome("FAIL", surface_detail(context.surface, op_name, str(error)),
+                            elapsed_ms)
 
 
 def run_incomplete_surface_operation(

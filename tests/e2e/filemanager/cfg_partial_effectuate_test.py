@@ -27,9 +27,7 @@ import os
 import sys
 from pathlib import Path
 
-# tests/lib holds the shared library; importing bootstrap adds tests/e2e/lib.
-# The search walks up rather than counting directories, so this is the same in
-# every entry point and a suite that moves needs no edit. See tests/lib/bootstrap.py.
+# The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
 sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
                             if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
 import bootstrap  # noqa: E402,F401
@@ -39,11 +37,11 @@ sys.path.insert(0, bootstrap.directory("e2e", "filemanager"))
 from api import UltimateApi
 from report import (Failure, teardown_step, check, check_skip, check_start, format_exception,
                     suite_fail, suite_ok)
-from ui_backend import add_mode_argument, make_browser
+from ui_backend import add_mode_argument
 
-from cfg_single_group_test import (ENTRY_ROWS, STATUS_ROW, TELNET_ENTRY_ROWS,
-                                   TELNET_STATUS_ROW, alternate_value, cleanup,
-                                   load_fixture, loading_stores, upload_fixture)
+import cfg_fixture  # noqa: E402
+from cfg_single_group_test import (alternate_value, cleanup, load_fixture,
+                                   loading_stores, upload_fixture)
 
 SUITE = "cfg_partial_effectuate_test"
 
@@ -65,11 +63,7 @@ def main() -> int:
         return 0
     store, item = chosen
     original = api.configs.current(store, item)
-    browser = make_browser(
-        args.mode, args.host, args.password or None, args.timeout,
-        entry_rows=ENTRY_ROWS, status_row=STATUS_ROW, telnet_port=args.telnet_port,
-        telnet_entry_rows=TELNET_ENTRY_ROWS, telnet_status_row=TELNET_STATUS_ROW,
-    )
+    browser = cfg_fixture.browser_for(args)
     try:
         with check("only the CFG group is considered after loading"):
             upload_fixture(args.host, args.password, store, item,

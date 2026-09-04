@@ -83,6 +83,24 @@ def parse_duration(value: str) -> float:
     return seconds
 
 
+def device_free_arguments(doc: str | None,
+                          argv: list[str] | None = None) -> argparse.Namespace:
+    """Parse the command line of a suite that drives no device, and set colour.
+
+    Four suites read the tree rather than a device - the lint, the registry, the
+    transport guard and the screen parsers - and each had built the same three
+    lines by hand. They take no `-H`, `-p` or `-t`, so `add_device_arguments` is
+    not what they want; what they share is a description taken from the module
+    docstring and `--color`.
+    """
+    parser = argparse.ArgumentParser(
+        description=doc.splitlines()[0] if doc else "")
+    report.add_colour_argument(parser)
+    arguments = parser.parse_args(argv)
+    report.apply_colour(arguments.color)
+    return arguments
+
+
 def add_device_arguments(parser: argparse.ArgumentParser, *,
                          host: str | None = None,
                          password: str | None = "",

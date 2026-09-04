@@ -56,9 +56,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from collections.abc import Callable
 
-# tests/lib holds the shared library; importing bootstrap adds tests/e2e/lib.
-# The search walks up rather than counting directories, so this is the same in
-# every entry point and a suite that moves needs no edit. See tests/lib/bootstrap.py.
+# The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
 sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
                             if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
 import bootstrap  # noqa: E402,F401
@@ -274,6 +272,7 @@ def _identity_and_help_cases() -> list[Case]:
     case(("GET", "/v1/info"), "names product and firmware", "happy", _info)
 
     def _info_macs(ctx: Ctx) -> None:
+        ctx.require_fix(machine_lib.INFO_REPORTS_INTERFACES)
         info = ctx.api.info()
         found = {k: v for k, v in info.extra.items()
                  if k in ("ethernet_mac", "wifi_mac")}
@@ -288,6 +287,7 @@ def _identity_and_help_cases() -> list[Case]:
          _info_macs)
 
     def _info_git(ctx: Ctx) -> None:
+        ctx.require_fix(machine_lib.INFO_NAMES_ITS_COMMIT)
         info = ctx.api.info()
         commit = info.extra.get("git_commit_hash")
         if commit is None:

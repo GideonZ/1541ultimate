@@ -28,7 +28,8 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from report import Failure, check, detail, section
+from report import (Failure, check, check_ok, check_skip, check_start, detail,
+                    section, suite_ok)
 
 
 @dataclass(frozen=True)
@@ -59,6 +60,29 @@ class Slope:
         return (f"consumed {self.consumed} bytes over {self.iterations} "
                 f"{self.units} = {self.per_op:.0f} bytes each "
                 f"(tolerance {tolerance:.0f})")
+
+
+def heap_is_served(heap: Callable[[], object], suite: str) -> bool:
+    """Whether this firmware answers the heap reading these suites measure.
+
+    All five leak suites open with the same check, and reported it five times
+    in five files. A firmware without GET /v1/machine:heap has nothing for them
+    to measure, so each skipped and passed, which is the right verdict and was
+    the wrong amount of code.
+
+    Reports the check itself, and on a firmware that does not serve it also the
+    summary the caller would otherwise have to write. Returns False when the
+    caller should stop.
+    """
+    check_start("device exposes GET /v1/machine:heap")
+    if heap() is not None:
+        check_ok()
+        return True
+    check_skip("firmware predates GET /v1/machine:heap, nothing to measure")
+    section("summary")
+    detail("skipped: device firmware has no machine:heap endpoint")
+    suite_ok(suite)
+    return False
 
 
 def slope(once: Callable[[], None], heap: Callable[[], int], *,

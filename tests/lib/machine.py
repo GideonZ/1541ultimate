@@ -370,6 +370,24 @@ CONFIGS_FLASH_ROUNDTRIP = _fix(
     "can be read back",
     (C64U,))
 
+# Two fields GET /v1/info carries on the 3.15 line and not on a C64 Ultimate
+# 1.2.0. Measured on the bench: u64 and u2 both report `git_commit_hash`,
+# `ethernet_mac` and `wifi_mac`; c64u reports product, firmware_version,
+# fpga_version, core_version, hostname and unique_id and none of the three.
+# They are separate entries because they are separate additions to the route
+# and can be backported one at a time.
+INFO_REPORTS_INTERFACES = _fix(
+    "info-reports-interfaces",
+    "GET /v1/info reports each network interface's MAC address, so a run can "
+    "say which machine it was talking to from the answer alone",
+    (C64U,))
+
+INFO_NAMES_ITS_COMMIT = _fix(
+    "info-names-its-commit",
+    "GET /v1/info reports git_commit_hash, so what is running can be tied to "
+    "a commit rather than to a version string two release lines share",
+    (C64U,))
+
 # The heap reading the health sweep already reports as absent on this machine:
 # GET /v1/machine:heap is not served by a C64 Ultimate 1.2.0, so nothing can
 # assert a plausible figure from it.

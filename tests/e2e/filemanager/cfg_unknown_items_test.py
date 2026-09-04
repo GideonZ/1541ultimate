@@ -27,9 +27,7 @@ import os
 import sys
 from pathlib import Path
 
-# tests/lib holds the shared library; importing bootstrap adds tests/e2e/lib.
-# The search walks up rather than counting directories, so this is the same in
-# every entry point and a suite that moves needs no edit. See tests/lib/bootstrap.py.
+# The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
 sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
                             if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
 import bootstrap  # noqa: E402,F401
@@ -46,7 +44,7 @@ import targets
 import ftp as ftp_lib
 from report import (Failure, teardown_step, check, check_skip, check_start, detail,
                     format_exception, section, suite_fail, suite_ok)
-from ui_backend import add_mode_argument, make_browser
+from ui_backend import add_mode_argument
 
 # Named so a leftover from a failed run is obvious in /Temp.
 CFG_NAME = "cfg-unk.cfg"
@@ -56,10 +54,6 @@ UNKNOWN_ITEM = "No Such Item"
 UNKNOWN_ITEM_VALUE = "12345"
 UNKNOWN_STORE = "No Such Store"
 
-ENTRY_ROWS = range(2, 24)
-STATUS_ROW = 24
-TELNET_ENTRY_ROWS = range(2, 23)
-TELNET_STATUS_ROW = 23
 
 
 def alternate_value(api: UltimateApi, store: str, item: str, current: str) -> str:
@@ -124,11 +118,7 @@ def main() -> int:
         return 0
     store, item = chosen
     original = api.configs.current(store, item)
-    browser = make_browser(
-        args.mode, args.host, args.password or None, args.timeout,
-        entry_rows=ENTRY_ROWS, status_row=STATUS_ROW, telnet_port=args.telnet_port,
-        telnet_entry_rows=TELNET_ENTRY_ROWS, telnet_status_row=TELNET_STATUS_ROW,
-    )
+    browser = cfg_fixture.browser_for(args)
 
     try:
         section("an item this firmware does not have")

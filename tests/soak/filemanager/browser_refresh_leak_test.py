@@ -39,9 +39,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-# tests/lib holds the shared library; importing bootstrap adds tests/e2e/lib.
-# The search walks up rather than counting directories, so this is the same in
-# every entry point and a suite that moves needs no edit. See tests/lib/bootstrap.py.
+# The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
 sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
                             if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
 import bootstrap  # noqa: E402,F401
@@ -51,7 +49,7 @@ import cli  # noqa: E402
 import api as api_lib  # noqa: E402  (needs tests/lib on sys.path first)
 import rest as rest_lib  # noqa: E402  (needs tests/lib on sys.path first)
 from report import (  # noqa: E402
-    Failure, check_ok, check_skip, check_start, detail, format_exception,
+    Failure, check_ok, detail, format_exception,
     section, suite_fail, suite_ok)
 
 SUITE = (Path(__file__).resolve().parents[2]
@@ -106,12 +104,7 @@ def main() -> int:
 
     rest = rest_lib.RestClient(args.host, args.password or None, args.timeout)
 
-    check_start("device exposes GET /v1/machine:heap")
-    if api_lib.MachineApi(rest).heap() is None:
-        check_skip("firmware predates GET /v1/machine:heap, nothing to measure")
-        section("summary")
-        detail("skipped: device firmware has no machine:heap endpoint")
-        suite_ok("browser_refresh_leak_test")
+    if not leak.heap_is_served(api_lib.MachineApi(rest).heap, "browser_refresh_leak_test"):
         return 0
     check_ok()
 

@@ -52,9 +52,7 @@ except ImportError:  # pragma: no cover
     ftplib = None
 
 
-# tests/lib holds the shared library; importing bootstrap adds tests/e2e/lib.
-# The search walks up rather than counting directories, so this is the same in
-# every entry point and a suite that moves needs no edit. See tests/lib/bootstrap.py.
+# The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
 sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
                             if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
 import bootstrap  # noqa: E402,F401
@@ -338,8 +336,14 @@ class MenuDriver:
         self.s = session
         self.verbose_menu = verbose_menu
         self.last_input = ""
+        # The target token, not session.host. session.host is target.device,
+        # which on a cartridge target is the cartridge, and a cartridge answers
+        # machine:input with HTTP 501: keys have to go to the computer it is
+        # plugged into. Browser re-parses whatever it is given, so handing it
+        # the bare device name loses the routing the token carries.
         self.browser = ui_backend.make_browser(
-            "overlay", session.host, session.password or None, session.timeout)
+            "overlay", session.target.token, session.password or None,
+            session.timeout)
 
     def close(self):
         self.browser.close()

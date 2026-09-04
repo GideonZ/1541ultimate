@@ -18,9 +18,7 @@ from connection_runtime import (
     RuntimeSettings,
     has_multiple_runners,
     is_expected_incomplete_disconnect,
-    run_surface_operation,
-    select_operation_index,
-    surface_detail,
+    run_selected_surface_operation,
 )
 
 
@@ -387,16 +385,7 @@ def run_probe(settings: RuntimeSettings, correctness, *, context: ProbeExecution
             concurrent_multi_runner=has_multiple_runners(context),
             shared_state=context.state,
         )
-        index = select_operation_index(context, len(operations))
-        op_name, operation = operations[index]
-        started_at = time.perf_counter_ns()
-        try:
-            detail = run_surface_operation("http", operation, settings)
-            elapsed_ms = (time.perf_counter_ns() - started_at) / 1_000_000.0
-            return ProbeOutcome("OK", surface_detail(context.surface, op_name, detail), elapsed_ms)
-        except Exception as error:
-            elapsed_ms = (time.perf_counter_ns() - started_at) / 1_000_000.0
-            return ProbeOutcome("FAIL", surface_detail(context.surface, op_name, str(error)), elapsed_ms)
+        return run_selected_surface_operation("http", context, settings, operations)
 
     del correctness
     conn = http.client.HTTPConnection(settings.host, settings.http_port, timeout=8)

@@ -21,9 +21,7 @@ import sys
 import urllib.parse
 from pathlib import Path
 
-# tests/lib holds the shared library; importing bootstrap adds tests/e2e/lib.
-# The search walks up rather than counting directories, so this is the same in
-# every entry point and a suite that moves needs no edit. See tests/lib/bootstrap.py.
+# The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
 sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
                             if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
 import bootstrap  # noqa: E402,F401
@@ -33,7 +31,7 @@ import ftp as ftp_lib  # noqa: E402  (needs tests/lib on sys.path first)
 import leak  # noqa: E402
 import rest as rest_lib  # noqa: E402  (needs tests/lib on sys.path first)
 from report import (  # noqa: E402
-    Failure, teardown_step, check_ok, check_skip, check_start, detail, format_exception,
+    Failure, teardown_step, check_ok, detail, format_exception,
     section, suite_fail, suite_ok)
 
 # A disk image is the cheapest REST call that allocates a large buffer, which
@@ -143,12 +141,10 @@ def main() -> int:
 
     dev = Device(args.host, args.password, args.timeout)
 
-    check_start("device exposes GET /v1/machine:heap")
-    if not dev.heap_available():
-        check_skip("firmware predates GET /v1/machine:heap, nothing to measure")
-        section("summary")
-        detail("skipped: device firmware has no machine:heap endpoint")
-        suite_ok("heap_leak_test")
+    # heap_available() answers True or False; heap_is_served wants the reading
+    # itself, so None is what "not served" looks like to it.
+    if not leak.heap_is_served(lambda: dev.heap_available() or None,
+                               "heap_leak_test"):
         return 0
     check_ok()
 

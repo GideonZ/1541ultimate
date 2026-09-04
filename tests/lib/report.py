@@ -522,12 +522,22 @@ def check(label: str) -> Iterator[None]:
 
     The verdict is printed even when the block raises, so the failing check is
     the last thing on screen before the traceback.
+
+    The verdict carries the reason. `check_fail()` with no argument printed
+    "FAIL (19.2s)" and recorded `extra: ""`, so a check that failed said
+    nothing about why on the console or in the JSONL, and a reader had to find
+    the suite's own summary, if it had one. A message that spans lines puts its
+    first line on the verdict and the rest underneath, because the verdict line
+    is one line by construction.
     """
     check_start(label)
     try:
         yield
-    except BaseException:
-        check_fail()
+    except BaseException as exc:
+        first, _, rest = format_exception(exc).partition("\n")
+        if rest:
+            detail(rest)
+        check_fail(first)
         raise
     check_ok()
 
