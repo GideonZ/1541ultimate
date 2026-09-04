@@ -232,6 +232,13 @@ class Reporter:
     # call must then do nothing rather than print a second line and write a
     # second record.
     line_open: bool = False
+    # Set by note_assumed_fix() when a check is about to run only because
+    # --assume-fix told machine.Machine.has_fix() to say a gap this machine
+    # genuinely has is not there. Consumed by the next outermost check's
+    # record and cleared, so a run with --assume-fix=all can be scanned
+    # afterwards for which assumptions the checks that ran under them
+    # actually confirmed. See tools/stale_gates.py.
+    pending_fix: tuple[str, str] | None = None
     suite_started: float = field(default_factory=time.monotonic)
     # The open scenario: its title, start time, check count and worst verdict.
     scenario: dict | None = None
@@ -495,9 +502,14 @@ def _close(verdict: str, extra: str = "", *, elapsed: float | None = None) -> No
             _default.scenario["checks"] += 1
             if _SEVERITY.index(verdict) < _SEVERITY.index(_default.scenario["verdict"]):
                 _default.scenario["verdict"] = verdict
-        _record(kind="check", index=_default.count, label=_default.last_label, verdict=verdict,
-                extra=extra, seconds=round(elapsed, 4),
-                scenario=_default.scenario["title"] if _default.scenario else None)
+        assumed = _default.pending_fix
+        _default.pending_fix = None
+        fields = dict(kind="check", index=_default.count, label=_default.last_label,
+                     verdict=verdict, extra=extra, seconds=round(elapsed, 4),
+                     scenario=_default.scenario["title"] if _default.scenario else None)
+        if assumed is not None:
+            fields["fix"], fields["machine"] = assumed
+        _record(**fields)
 
 
 def check_ok(extra: str = "", *, elapsed: float | None = None) -> None:
@@ -835,6 +847,18 @@ def set_target(token: str) -> None:
     _default.target_name = token
 
 
+def note_assumed_fix(fix: str, machine: str) -> None:
+    """Say that the next check runs only because `fix` was assumed present.
+
+    Called by machine.Machine.skip_without_fix() in place of the skip it
+    would otherwise report, so the check it guards is tagged in the JSONL
+    with the entry and the machine it stood in for. `tools/stale_gates.py`
+    reads that tag back: a tagged check that passes says the assumption was
+    right and the gap has closed; one that fails says it has not.
+    """
+    _default.pending_fix = (fix, machine)
+
+
 def run_result(verdict: str, suites: int | None = None,
                passed: int | None = None, failed: int | None = None,
                skipped: int | None = None, dirty: int | None = None,
@@ -975,3 +999,4 @@ def reset(count_from: int | None = None) -> None:
         _default.scenario = None
         _default.suite_started = time.monotonic()
         _default.pending.clear()
+        _default.pending_fix = None

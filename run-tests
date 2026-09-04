@@ -39,6 +39,7 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
                             if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
 import bootstrap  # noqa: E402,F401
+sys.path.insert(0, os.path.join(ROOT, "tools"))
 
 import coverage  # noqa: E402  (needs tests/lib on sys.path first)
 import health  # noqa: E402  (needs tests/lib on sys.path first)
@@ -51,6 +52,7 @@ import report  # noqa: E402
 import targets as targets_lib  # noqa: E402
 import api as api_lib  # noqa: E402
 import config_snapshot  # noqa: E402
+import stale_gates  # noqa: E402  (needs tools/ on sys.path first)
 from api import UltimateApi  # noqa: E402
 from report import Failure  # noqa: E402
 
@@ -220,6 +222,13 @@ SUITES: Sequence[Suite] = (
     # run exits with. Both only show themselves on a run that has already gone
     # badly, which is the worst time to find out one of them is wrong.
     Suite("e2e", "runner-policy", "tests/lib/runner_policy_test.py", "", profile=profiles.QUICK),
+    # Also needs no device: a machine.FIXES entry a check is still gated on
+    # once the firmware has closed the gap is silent, and reads exactly like
+    # a gap that is still open. Drives a real Machine and skip_without_fix
+    # against a temporary JSONL file and checks tools/stale_gates.py reads
+    # the tag back correctly, both when the assumption was right and when it
+    # was not.
+    Suite("e2e", "stale-gates", "tests/lib/stale_gates_test.py", "", profile=profiles.QUICK),
     # Also needs no device: --validate-openapi puts this validator in the path
     # of every REST call the gate makes, where a wrong verdict looks exactly
     # like a firmware defect. Its decisions are pinned against the committed
@@ -2786,6 +2795,34 @@ def exit_code_for(results: list[Result], recoveries: int) -> int:
     return EXIT_OK
 
 
+def report_stale_gates() -> None:
+    """After a run under `--assume-fix`, say which entries it found stale.
+
+    Reads this run's own JSONL back rather than tracking anything separately:
+    `machine.Machine.skip_without_fix` tags the check it lets through with
+    the entry and the machine (`report.note_assumed_fix`), and every suite
+    this process started appends to the same file. See `tools/stale_gates.py`.
+
+    Read from the environment rather than from a flag, for the reason
+    `run_identity` above already gives: a child run and a run started with
+    the variable already exported both have assumptions and neither has the
+    flag.
+    """
+    assumed = machine_lib.parse_assumptions(os.environ.get(machine_lib.ASSUME_ENV, ""))
+    if not assumed:
+        return
+    path = report.JSONL_PATH
+    if not path or not os.path.exists(path):
+        report.detail("stale gates: not checked, no JSONL was recorded (-j)")
+        return
+    stale = stale_gates.find_stale(stale_gates.load_records(path))
+    if not stale:
+        report.detail("stale gates: none")
+        return
+    for line in stale_gates.render(stale):
+        report.detail(line)
+
+
 def summarise(results: list[Result], started: float, recoveries: int,
               identity: dict[str, object] | None = None) -> int:
     report.banner("Summary")
@@ -2854,6 +2891,7 @@ def summarise(results: list[Result], started: float, recoveries: int,
         report.detail(f"the device was recovered {plural(recoveries, 'time')} "
                       "during the run")
     report.detail(f"{report.format_duration(total)} total")
+    report_stale_gates()
 
     failed = [r for r in results if r.verdict == report.FAIL]
     # The harness this run finished with, against the one it started with. A

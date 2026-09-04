@@ -76,10 +76,10 @@ To find out whether a backport has arrived, run with the fix assumed present:
 `run-tests --assume-fix NAME` sets that variable for the suites it starts. The
 tagged checks then run on the machine that was skipping them and either pass,
 which says the fix has landed and the entry can be amended, or fail, which
-says it has not. Running them as expected failures, so that a landed backport
-is reported without anyone having to ask, is the natural next step; it is not
-built, because it needs a verdict the report library does not have and a
-runner that counts an expected failure as a pass.
+says it has not. `skip_without_fix` tags the check it lets through with the
+entry and the machine (`report.note_assumed_fix`), so `tools/stale_gates.py`
+can read a run's JSONL afterwards and say which entries a landed backport
+made stale without anyone having to comb the log for them.
 """
 
 from __future__ import annotations
@@ -89,7 +89,7 @@ import re
 from dataclasses import dataclass
 from collections.abc import Callable
 
-from report import check_skip, check_start
+from report import check_skip, check_start, note_assumed_fix
 
 # The three machines, by the name used in messages and in this module's API.
 U64 = "Ultimate 64"
@@ -681,6 +681,17 @@ class Machine:
             return None
         return f"needs the {name} fix, which {self.described} does not have"
 
+    def assumed_fix(self, name: str) -> bool:
+        """Whether `name` answers has_fix() True here only because it was
+        assumed, rather than because this machine has it or never lacked it.
+
+        The one case skip_without_fix runs the check instead of skipping it
+        without the firmware having actually changed; see note_assumed_fix.
+        """
+        entry = FIXES.get(name)
+        return (entry is not None and self.kind in entry.lacking
+                and (ASSUME_ALL in _assumed or name in _assumed))
+
     def skip_without_fix(self, name: str, label: str) -> bool:
         """Report `label` as skipped, and answer True, when the fix is absent.
 
@@ -699,6 +710,8 @@ class Machine:
         """
         reason = self.missing_fix(name)
         if reason is None:
+            if self.assumed_fix(name):
+                note_assumed_fix(name, self.kind)
             return False
         check_start(label)
         check_skip(reason)
