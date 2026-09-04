@@ -38,6 +38,7 @@ class RmiiInterface
 	NetworkInterface *netstack;
 	uint8_t *ram_buffer;
 	uint8_t *ram_base;
+	uint8_t *tx_pad_buffer;
 	bool link_up;
 	uint8_t addr;
 	uint8_t local_mac[6];
