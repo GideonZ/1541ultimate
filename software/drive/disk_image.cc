@@ -20,6 +20,7 @@ extern "C" {
 #include "user_file_interaction.h"
 #include "blockdev_file.h"
 #include "endianness.h"
+#include "gcr_track_bounds.h"
 
 #define HARDWARE_ENCODING 1
 
@@ -709,23 +710,32 @@ bool GcrImage :: load(File *f)
     // track offsets start at 0x000c
     for(int i=0;i<max_tracks;i++) {
     	offset = le_to_cpu_32(pul[i+3]);
-    	if(offset > GCRIMAGE_MAXSIZE) {
+    	if(offset >= GCRIMAGE_MAXSIZE) {
     		printf("Error. Track pointer outside GCR memory range.\n");
     		return false;
     	}
+    	// Offset zero means the track is absent. A non-zero one still has to
+    	// point at two bytes the file actually delivered, since reading the
+    	// length word is itself an access into the image buffer.
+    	if(!gcr_track_header_is_readable(offset, bytes_read)) {
+    		continue;
+    	}
     	tr = gcr_data + offset;
-    	if(offset) {
-    		w = tr[0] | (uint16_t(tr[1]) << 8);
-	    	tracks[i].track_address = tr + 2;
-    		tracks[i].track_length = (int)(w & 0x3FFF);
-    		tracks[i].track_used = true;
-    		tracks[i].in_image_file = true;
-    		tracks[i].track_is_mfm = (w & 0x8000);
-//            printf("Set track %d.%d to 0x%6x / 0x%4x.\n", (i>>1)+1, (i&1)?5:0, tracks[i].track_address, w);
-            if (i >= GCRIMAGE_FIRSTTRACKSIDE1) {
-                double_sided = true;
-            }
-        }
+    	w = tr[0] | (uint16_t(tr[1]) << 8);
+    	int length = gcr_validated_track_length(w, offset, GCRIMAGE_MAXSIZE, GCRIMAGE_MAXTRACKLEN);
+    	if(!length) {
+    		printf("Track %d: declared length %d does not fit the image. Track skipped.\n",
+    		       i, (int)(w & 0x3FFF));
+    		continue; // invalidate() left this entry unused; leave it that way
+    	}
+    	tracks[i].track_address = tr + 2;
+    	tracks[i].track_length = length;
+    	tracks[i].track_used = true;
+    	tracks[i].in_image_file = true;
+    	tracks[i].track_is_mfm = (w & 0x8000);
+    	if (i >= GCRIMAGE_FIRSTTRACKSIDE1) {
+    		double_sided = true;
+    	}
     }
     // Track speed zone info starts after the track offsets
     uint8_t reported_tracks = gcr_data[9];
