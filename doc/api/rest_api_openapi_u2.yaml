@@ -1814,7 +1814,7 @@ paths:
 
         `git_commit_hash` is the abbreviated hash of the commit the firmware was built from, the same one the System Information screen shows. It tells two builds that carry the same version number apart.
 
-        `ethernet_mac` and `wifi_mac` are the addresses of the wired and the wireless interface. Each is left out when the device has no such interface, or when that interface has not started and its address is therefore not known yet. They are what a caller sends a Wake-on-LAN magic packet to, which carries a MAC and not an IP address.
+        `ethernet_mac` and `wifi_mac` are the addresses of the wired and the wireless interface. Each is left out when the device has no such interface, or when that interface has not started and its address is therefore not known yet, and only the first interface of each kind is reported. A caller that wants to wake the device sends its magic packet to `wifi_mac`, which carries a MAC and not an IP address; the wired interface does not wake the device.
 
         The same information is also available without HTTP, from the Ultimate Ident Service on UDP port 64, which answers a broadcast and so can be used to find a device whose address is not known.
       operationId: getInfo

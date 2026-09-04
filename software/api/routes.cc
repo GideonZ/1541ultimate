@@ -180,9 +180,10 @@ API_DOC(GET, info, none,
                 "\n"
                 "`ethernet_mac` and `wifi_mac` are the addresses of the wired and the wireless "
                 "interface. Each is left out when the device has no such interface, or when that "
-                "interface has not started and its address is therefore not known yet. They are "
-                "what a caller sends a Wake-on-LAN magic packet to, which carries a MAC and not "
-                "an IP address.\n"
+                "interface has not started and its address is therefore not known yet, and only "
+                "the first interface of each kind is reported. A caller that wants to wake the "
+                "device sends its magic packet to `wifi_mac`, which carries a MAC and not an IP "
+                "address; the wired interface does not wake the device.\n"
                 "\n"
                 "The same information is also available without HTTP, from the Ultimate Ident "
                 "Service on UDP port 64, which answers a broadcast and so can be used to find a "
@@ -220,8 +221,10 @@ API_CALL(GET, info, none, NULL, ARRAY( { }))
     }
 
     // The hardware addresses, one per kind of interface. A caller that wants to
-    // wake the device needs them: a magic packet carries a MAC, not an IP. Only
-    // the first interface of a kind is reported, and one that has not learned
+    // wake the device needs wifi_mac: a magic packet carries a MAC, not an IP,
+    // and waking is Wi-Fi only. The matcher is wol_magic.c on the ESP32, reached
+    // from the Wi-Fi path alone, and there is no counterpart on the wired side.
+    // Only the first interface of a kind is reported, and one that has not learned
     // its address yet, because it never started, is left out entirely.
     static const char *const mac_keys[2] = { "ethernet_mac", "wifi_mac" };
     bool reported[2] = { false, false };
