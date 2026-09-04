@@ -971,6 +971,8 @@ U64Config :: U64Config() : SubSystem(SUBSYSID_U64)
         install_high_irq(ITU_IRQHIGH_HDMI, U64Config::hpd_monitor_irq, u64_configurator);
         xSemaphoreGive(hpd_monitor_sem);
 
+        install_high_irq(ITU_IRQHIGH_UNLOCK, U64Config :: unlock_irq, u64_configurator);
+
 //        u64_configurator->hdmiMonitor = u64_configurator->IsMonitorHDMI(); // requires I2C
         u64_configurator->sockets.effectuate_registered_settings();
         u64_configurator->mixercfg.effectuate_registered_settings();
