@@ -1125,11 +1125,16 @@ def ensure_fast_reset(target, password: str | None = None,
     the C64 and the setting belongs to whichever one does.
 
     The caller captures the settings before calling this, so what the run found
-    is what it puts back. That capture is the only thing this relies on: the
-    C64 Ultimate on this bench has 'Auto Save Config' set to Yes, and settings
-    a run left behind on 2026-09-04 were still there after a mains power cycle,
-    so a REST write to this store can reach flash and a run that is killed
-    between here and the restore leaves the machine enabled.
+    is what it puts back, and that capture is the only thing this relies on.
+
+    Do not read "a REST write does not reach flash" into that. The write marks
+    the store flash-stale, and `ConfigBrowser::on_exit` in
+    software/userinterface/config_menu.cc writes every stale store to flash
+    when the config browser is left, unless 'Auto Save Config' is No. Several
+    suites in a run open and leave that browser, and the C64 Ultimate on this
+    bench has the setting on Yes, so a value this helper changes can be in
+    flash by the time the run ends. A run killed between here and the restore
+    can therefore leave the machine with Fast Reset enabled for good.
     """
     handle = targets.resolve(target)
     changed = []
