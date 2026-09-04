@@ -398,15 +398,15 @@ IDENT_SWITCHES_LIVE = _fix(
     "firmware restart",
     (U2,))
 
-# UCI_COMPLETES_AN_REU_COMMAND (issue #740: LOAD_REU/SAVE_REU never leaving
-# Command Busy) closed. Confirmed on the bench's U2+L after reflashing from
-# test-merge ff01a651, 2026-09-04: `-s uci-targets --assume-fix
-# uci-completes-an-reu-command u2@c64u` runs all four previously-gated REU
-# scenarios (issue-740-matrix, save/load-reu-disabled,
-# save-reu-offset-past-end) clean, reported stale by name by the runner's
-# own stale-gates check. See doc/research/e2e-onboard-review-fixes/plan.md
-# item 3b for the run and tests/e2e/io/command_interface/uci_targets_test.py
-# for the scenarios themselves, which no longer need a gate.
+# UCI_COMPLETES_AN_REU_COMMAND (issue #740: LOAD_REU and SAVE_REU never
+# leaving Command Busy once a filename is given) is closed and its entry is
+# gone. Measured on an Ultimate II+L running test-merge c8b7551a, 2026-09-04:
+# `-s uci-targets --assume-fix uci-completes-an-reu-command u2@c64u` ran all
+# four scenarios the entry gated (issue-740-matrix, save-reu-offset-past-end,
+# load-reu-disabled, save-reu-disabled) and passed them, and the runner's own
+# stale-gates check named the entry. Confirmed again with the entry deleted:
+# tests/e2e/io/command_interface/uci_targets_test.py runs all 37 checks
+# unconditionally and passes, with no gate and no --assume-fix.
 
 # The heap reading the health sweep already reports as absent on this machine:
 # GET /v1/machine:heap is not served by a C64 Ultimate 1.2.0, so nothing can
