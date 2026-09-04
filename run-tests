@@ -1631,6 +1631,17 @@ def restore_settings(
     Warnings only. The run has produced its verdict by the time this runs, and
     a device that will not take a value back is a thing for the operator to
     see rather than a reason to change what the suites decided.
+
+    This restores the running configuration, not the flash the machine boots
+    from, and the two can end a run holding different values. A REST write
+    only marks a store flash-stale; `ConfigBrowser::on_exit` in
+    software/userinterface/config_menu.cc writes every stale store to flash
+    when the config browser is left, and several suites open and leave it. So
+    a value a suite set mid-run can reach flash, while the value put back here
+    cannot: nothing opens the config browser after this point, so the restore
+    is left stale and unwritten. The machine then reads the suite's value back
+    on its next power cycle. Settings seen on this bench surviving a power
+    cycle after a run that restored them are this, not a failed restore.
     """
     for api, snapshot in captured:
         report.step_start(f"settings: restore {snapshot.machine}")
