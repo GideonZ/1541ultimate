@@ -420,7 +420,18 @@ def unwind_to_root(device: Device, what: str) -> None:
         if device.screen() is None:
             device.ensure_ready()
             return
-        if device.mode == MODE_TELNET and device.cursor_row() is None:
+        # `cursor_row() is None` has two meanings over Telnet, which
+        # no_cursor_reason already separates: the menu closed, or the colour
+        # that marks a selection has never been measured. Only the first is a
+        # reason to stop. Treating the second as one is circular -- the
+        # measurement happens at the root browser this loop is walking
+        # towards, so bailing out here means it never happens, and every later
+        # cursor_row() answers None for the same reason. Measured on u2@c64u
+        # over Telnet: the suite reached its third check and failed with
+        # "the colour that marks a selection was never measured".
+        if (device.mode == MODE_TELNET
+                and device.backend.selected_sgr is not None
+                and device.cursor_row() is None):
             return
         if wait_until(lambda: device.screen_changed(before), UNWIND_STEP_TIMEOUT):
             continue
@@ -459,7 +470,15 @@ def at_root_browser(device: Device) -> bool:
     # every scenario then walked until the menu closed instead of stopping at
     # the browser. What identifies an overlay is a box drawn inside the
     # listing, which survives the strip.
-    text = "\n".join(strip_frame(row) for row in rows)
+    # The listing rows only. The title row carries the product name, and an
+    # Ultimate II+ or II+L puts a "+" in it, which this read as an overlay
+    # border: measured on u2@c64u over Telnet, the row that made every screen
+    # answer False was "*** Ultimate II+L 3.15 (125) *** Remote ***", with the
+    # root listing plainly underneath it. An Ultimate 64 has no "+" in its
+    # name, which is why only the cartridge saw it. Overlays this suite drives
+    # are drawn over the listing, and entry_rows is what names those rows.
+    text = "\n".join(strip_frame(rows[index]) for index in device.entry_rows
+                     if index < len(rows))
     if "+" in text or "|" in text:
         return False
     return "Temp" in text
