@@ -17,8 +17,8 @@ import cli  # noqa: E402
 import machine as machine_lib
 import targets
 from api import UltimateApi
-from report import (Failure, check, check_count, format_exception, suite_fail,
-                    suite_ok, suite_skip)
+from report import (Failure, check, check_count, format_exception,
+                    note_assumed_fix, suite_fail, suite_ok, suite_skip)
 
 STORE = "Network Settings"
 ITEM = "Ultimate Ident Service"
@@ -87,6 +87,13 @@ def main() -> int:
     if absent:
         suite_skip("ident_service_switch_test", absent)
         return 0
+    # This gates the whole suite rather than one check, so it cannot call
+    # Machine.skip_without_fix (one check per gate). Tags the first check
+    # below instead, the same signal a single-check gate would leave, so
+    # tools/stale_gates.py can tell a run under --assume-fix that this
+    # suite ran clean from one where it was skipped outright.
+    if machine.assumed_fix(machine_lib.IDENT_SWITCHES_LIVE):
+        note_assumed_fix(machine_lib.IDENT_SWITCHES_LIVE, machine.kind)
 
     failure = ""
     try:
