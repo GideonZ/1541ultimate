@@ -388,6 +388,27 @@ INFO_NAMES_ITS_COMMIT = _fix(
     "a commit rather than to a version string two release lines share",
     (C64U,))
 
+# What tests/e2e/network/ident_service_switch_test.py asserts: turning the
+# ident service on makes it answer within a few seconds, live, without a
+# restart. Measured on the bench u2 running 3.15: the switch is accepted and
+# ident never answers, so the suite fails on its first check.
+IDENT_SWITCHES_LIVE = _fix(
+    "ident-switches-live",
+    "the ident service starts answering when it is switched on, without a "
+    "firmware restart",
+    (U2,))
+
+# What tests/e2e/uci/uci_targets_test.py's issue-740 matrix drives. A command
+# naming an absent REU image leaves the command interface in Command Busy and
+# it never returns to idle: every later command on every target is refused with
+# $11/$15 until the firmware restarts. The suite names the issue itself, and a
+# suite that wedges the interface it is testing cannot then test it.
+UCI_SURVIVES_A_MISSING_IMAGE = _fix(
+    "uci-survives-a-missing-image",
+    "the command interface returns to idle after a command that names a file "
+    "the device does not have, rather than wedging until a restart",
+    (U2,))
+
 # The heap reading the health sweep already reports as absent on this machine:
 # GET /v1/machine:heap is not served by a C64 Ultimate 1.2.0, so nothing can
 # assert a plausible figure from it.

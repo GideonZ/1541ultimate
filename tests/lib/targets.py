@@ -313,6 +313,18 @@ def host_for(token: str | Target, path: str) -> str:
     return resolve(token).host_for(path)
 
 
+def is_cartridge(host: str) -> bool:
+    """Whether `host` names a cartridge inside a computer, as `u2@c64u` does.
+
+    For a suite that is known not to work in that arrangement and skips itself
+    with a reason rather than failing. The property is the target's, not the
+    machine's: the same cartridge on its own is a different proposition, and
+    tests/lib/machine.py's fix table, which keys on the product, cannot say
+    this.
+    """
+    return parse(host).split
+
+
 def device_of(token: str | Target) -> str:
     """The bare host name in a target token, for a caller that needs one.
 

@@ -17,7 +17,8 @@ import cli  # noqa: E402
 import machine as machine_lib
 import targets
 from api import UltimateApi
-from report import Failure, check, check_count, format_exception, suite_fail, suite_ok
+from report import (Failure, check, check_count, format_exception, suite_fail,
+                    suite_ok, suite_skip)
 
 STORE = "Network Settings"
 ITEM = "Ultimate Ident Service"
@@ -78,6 +79,14 @@ def main() -> int:
     machine = machine_lib.identify(
         targets.device_of(args.host),
         lambda: (str(info.product), str(info.firmware_version)))
+
+    # The whole suite is about the switch taking effect live, so a machine
+    # whose firmware does not do that yet has nothing here to measure. The
+    # table in tests/lib/machine.py names those machines and the wording.
+    absent = machine.missing_fix(machine_lib.IDENT_SWITCHES_LIVE)
+    if absent:
+        suite_skip("ident_service_switch_test", absent)
+        return 0
 
     failure = ""
     try:

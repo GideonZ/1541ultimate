@@ -1467,6 +1467,22 @@ class StubMenuDevice:
     root browser screen, and a RUN/STOP that closes the menu once it is open.
     """
 
+    class _Api:
+        """Just the one call try_open_menu makes on a blocked UI.
+
+        The escalation lives in api.MachineApi.close_menu_from_anywhere and is
+        exercised against a real device; what the policy needs to see is that
+        the repair attempts it before it gives up, and that a device which
+        refuses is still driven on to the reset.
+        """
+
+        def __init__(self, owner):
+            self._owner = owner
+            self.machine = self
+
+        def close_menu_from_anywhere(self, confirm_key=None):
+            self._owner.order.append(f"close_menu_from_anywhere({confirm_key})")
+
     class _Machine:
         def __init__(self, launcher_entry):
             self.launcher_browser_entry = launcher_entry
@@ -1488,6 +1504,7 @@ class StubMenuDevice:
         # one rather than a second copy of it written here.
         self._ui_state = ui_state
         self.launcher_entry = launcher_entry
+        self.api = StubMenuDevice._Api(self)
         # Where the launcher's cursor is, for the machine that has one. The
         # browser entry is the first, so this starts away from it.
         self.cursor = 5

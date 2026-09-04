@@ -28,8 +28,9 @@ from pathlib import Path
 sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
                             if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
 import bootstrap  # noqa: E402,F401
+import api as api_lib  # noqa: E402  (needs tests/lib on sys.path first)
 import machine as machine_lib  # noqa: E402  (needs tests/lib on sys.path first)
-from report import Failure  # noqa: E402  (needs tests/lib on sys.path first)
+from report import Failure, teardown_step  # noqa: E402  (needs tests/lib first)
 import ui_backend  # noqa: E402  (needs this directory on sys.path first)
 import pacing  # noqa: E402  (needs tests/lib on sys.path first)
 import rest as rest_lib  # noqa: E402  (needs tests/lib on sys.path first)
@@ -94,6 +95,10 @@ class Device:
         self.input_host = self.target.input_host
         self.password = password
         self.timeout = timeout
+        # Built from the token rather than from self.host, so machine:input
+        # goes to the computer on a cartridge target while the menu is read
+        # from the cartridge. See tests/lib/targets.py.
+        self.api = api_lib.UltimateApi(self.target.token, password, timeout)
 
     @property
     def machine(self) -> machine_lib.Machine:
@@ -408,8 +413,24 @@ def try_open_menu(device: Device) -> bool:
     device.press_menu_button()
     if device.wait_menu(want_open=True):
         return True
-    # The button is ignored while the UI task sits in a modal. Back out
-    # of it; a 404 from menu_screen does not prove the UI is idle.
+    # The button is ignored while the UI task sits in a modal, and a 404 from
+    # menu_screen does not prove the UI is idle. RUN/STOP alone cannot clear
+    # one: UIPopup::poll answers RETURN, SPACE and its own button hotkeys and
+    # nothing else, so a run that ended on an OK popup left the whole target
+    # abandoned as "the UI cannot be brought to the documented state".
+    #
+    # api.close_menu_from_anywhere is the escalation that knows all of this:
+    # it releases held input, answers "Save changes to Flash?" with its own 'n'
+    # hotkey rather than blindly writing flash, sends F8 to destroy nested
+    # objects, falls back to RUN/STOP, and presses `confirm_key` on alternate
+    # attempts for the popups the other keys do not reach. It leaves the menu
+    # closed, which is what the press below then reopens.
+    teardown_step("clear whatever is blocking the UI",
+                  lambda: device.api.machine.close_menu_from_anywhere(
+                      confirm_key="return"))
+    device.press_menu_button()
+    if device.wait_menu(want_open=True):
+        return True
     for _ in range(UNWIND_PRESSES):
         device.tap(["run_stop"])
         if device.menu_is_open():
