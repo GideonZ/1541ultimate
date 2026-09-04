@@ -15,14 +15,16 @@ A suite subclasses `TempSettingsSuite`, which owns the device handles and the
 capture/restore pair, and adds its own scenario on top.
 """
 
-import os
 import sys
 import time
-from typing import Callable, Dict, TypeVar
+from typing import TypeVar
+from collections.abc import Callable
+from pathlib import Path
 
-# tests/lib holds the device API and the reporting rules every suite shares.
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                "..", "..", "lib"))
+# The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
 import ftp as ftp_lib  # noqa: E402  (needs tests/lib on sys.path first)
 from api import UltimateApi  # noqa: E402  (needs tests/lib on sys.path first)
 from report import (  # noqa: E402  (needs tests/lib on sys.path first)
@@ -60,7 +62,7 @@ class TempSettingsSuite:
     def __init__(self, args) -> None:
         self.args = args
         self.device = UltimateApi(args.host, args.password or None, REST_TIMEOUT_SECONDS)
-        self.initial: Dict[str, str] = {}
+        self.initial: dict[str, str] = {}
         self.config_restored = False
 
     # -- FTP ----------------------------------------------------------------

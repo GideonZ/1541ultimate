@@ -28,8 +28,13 @@ import os
 import re
 import sys
 import tempfile
+from pathlib import Path
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
+from selftest import expect  # noqa: E402
 import config_snapshot  # noqa: E402
 import profiles  # noqa: E402
 import health  # noqa: E402
@@ -146,11 +151,6 @@ def device(runner, answers, **kwargs):
     made.ensure_healthy = isolating(made.ensure_healthy)
     made.start_suite()
     return made
-
-
-def expect(label, actual, wanted):
-    if actual != wanted:
-        raise Failure(f"{label}: got {actual!r}, expected {wanted!r}")
 
 
 def run_exit_status_checks(runner):
@@ -406,29 +406,36 @@ def run_retry_checks(runner, tmpdir):
         made.ensure_healthy = ensure_healthy
         return made
 
-    with check("the default runs a failing suite exactly three times"):
+    def run(device_answers=None, *, device=None, **option_overrides):
+        """Reset the counter, build a device, and run the fixture suite once.
+
+        The four steps every check below repeats. `device_answers` are what
+        ensure_healthy returns in turn; pass a `device` instead to run against
+        one a check has already adjusted. Returns (result, device) so a check
+        can assert on either.
+        """
         reset()
-        made = device_that([(True, False)] * 5)
-        result = quietly(lambda: runner.run_suite(suite, made, options(), "", "fixture"))
+        made = (device if device is not None
+                else device_that(device_answers or [(True, False)] * 5))
+        result = quietly(
+            lambda: runner.run_suite(suite, made, options(**option_overrides),
+                                     "", "fixture"))
+        return result, made
+
+    with check("the default runs a failing suite exactly three times"):
+        result, made = run()
         expect("executions", executions(), 3)
         expect("attempts on the result", result.attempts, 3)
         expect("verdict", result.verdict, runner.report.FAIL)
 
     with check("--attempts counts executions, so 2 runs it twice"):
-        reset()
-        made = device_that([(True, False)] * 5)
-        result = quietly(lambda: runner.run_suite(suite, made,
-                                                  options(attempts=2), "",
-                                                  "fixture"))
+        result, made = run(attempts=2)
         expect("executions", executions(), 2)
         expect("attempts on the result", result.attempts, 2)
 
     with check("--attempts 1 and --no-retry both run it exactly once"):
         for attempts in (1, 1):
-            reset()
-            made = device_that([(True, False)] * 5)
-            result = quietly(lambda: runner.run_suite(
-                suite, made, options(attempts=attempts), "", "fixture"))
+            result, made = run(attempts=attempts)
             expect("executions", executions(), 1)
             expect("attempts on the result", result.attempts, 1)
 
@@ -436,9 +443,7 @@ def run_retry_checks(runner, tmpdir):
         # The rule this reverses: a suite that failed on a healthy device used
         # to stand as a failure and was never run again. Every failure is now
         # retried, whatever the device looked like.
-        reset()
-        made = device_that([(True, False)] * 5)
-        quietly(lambda: runner.run_suite(suite, made, options(), "", "fixture"))
+        _result, made = run()
         expect("executions", executions(), 3)
         expect("recoveries", made.recoveries, 0)
 
@@ -449,10 +454,7 @@ def run_retry_checks(runner, tmpdir):
         # by a health check and not by a recovery, because recovering for an
         # attempt that will never happen is a device action with no reason
         # behind it.
-        reset()
-        made = device_that([(True, True)] * 5)
-        result = quietly(lambda: runner.run_suite(suite, made, options(), "",
-                                                  "fixture"))
+        result, made = run([(True, True)] * 5)
         expect("executions", executions(), 3)
         expect("recoveries", result.recoveries, 2)
 
@@ -461,16 +463,14 @@ def run_retry_checks(runner, tmpdir):
         # failed from a device that could not be made healthy, which are
         # different exit statuses, and there is no following suite to find it
         # out when the last suite of a run is the one that failed.
-        reset()
-        made = device_that([(True, False)] * 5)
         asked = []
+        made = device_that([(True, False)] * 5)
 
         def health_problem(label, patient=True, extra=None, budget=None):
             asked.append(budget)
             return "gone"
         made.health_problem = health_problem
-        result = quietly(lambda: runner.run_suite(suite, made, options(), "",
-                                                  "fixture"))
+        result, made = run(device=made)
         expect("executions", executions(), 3)
         expect("device unhealthy", result.device_unhealthy, True)
         # A bounded wait rather than either of the usual two. Its answer
@@ -486,9 +486,7 @@ def run_retry_checks(runner, tmpdir):
                 f"recovery budget: {runner.LAST_ATTEMPT_HEALTH_BUDGET_SECONDS}")
 
     with check("a device that cannot be made healthy ends the run"):
-        reset()
-        made = device_that([(False, True)])
-        result = quietly(lambda: runner.run_suite(suite, made, options(), "", "fixture"))
+        result, made = run([(False, True)])
         expect("verdict", result.verdict, runner.report.FAIL)
         expect("device unhealthy", result.device_unhealthy, True)
 
@@ -540,7 +538,8 @@ def run_jsonl_contract_checks(runner, tmpdir):
         report_module.run_result(verdict="OK", suites=1, passed=1, failed=0,
                                  skipped=0, dirty=0, seconds=1.5, recoveries=1,
                                  exit_code=runner.EXIT_RECOVERED)
-        records = [json.loads(line) for line in open(path, encoding="utf-8")]
+        with open(path, encoding="utf-8") as handle:
+            records = [json.loads(line) for line in handle]
     finally:
         report_module.set_jsonl_path(previous)
 
@@ -668,7 +667,9 @@ def run_reset_guard_checks():
 
     with check("consecutive resets collapse into one"):
         rest, m = machine()
-        m.reset(wait=False); m.reset(wait=False); m.reset(wait=False)
+        m.reset(wait=False)
+        m.reset(wait=False)
+        m.reset(wait=False)
         expect("resets sent", sum(1 for _, p in rest.sent if p.endswith("reset")), 1)
 
     with check("a read between two resets does not warrant the second"):
@@ -709,7 +710,8 @@ def run_reset_guard_checks():
 
     with check("force resets even when nothing has changed"):
         rest, m = machine()
-        m.reset(wait=False); m.reset(force=True, wait=False)
+        m.reset(wait=False)
+        m.reset(force=True, wait=False)
         expect("resets sent", sum(1 for _, p in rest.sent if p.endswith("reset")), 2)
 
     with check("a suite told the device was just reset does not reset again"):
@@ -989,8 +991,6 @@ def run_move_rows_checks():
 
     class _Stub:
         """A Browser with a known stride and a backend that records keys."""
-
-        sent = []
 
         def __init__(self, stride):
             self.entry_rows = range(0, stride * 2)
@@ -1380,7 +1380,7 @@ def run_suite_url_routing_checks():
             path = os.path.join(directory, name)
             if path.endswith(URL_BUILDER):
                 continue
-            with open(path, "r", encoding="utf-8", errors="replace") as handle:
+            with open(path, encoding="utf-8", errors="replace") as handle:
                 for number, line in enumerate(handle, 1):
                     for expression in URL_INTERPOLATION.findall(line):
                         if any(mark in expression for mark in URL_ROUTED_BY):
@@ -1467,6 +1467,22 @@ class StubMenuDevice:
     root browser screen, and a RUN/STOP that closes the menu once it is open.
     """
 
+    class _Api:
+        """Just the one call try_open_menu makes on a blocked UI.
+
+        The escalation lives in api.MachineApi.close_menu_from_anywhere and is
+        exercised against a real device; what the policy needs to see is that
+        the repair attempts it before it gives up, and that a device which
+        refuses is still driven on to the reset.
+        """
+
+        def __init__(self, owner):
+            self._owner = owner
+            self.machine = self
+
+        def close_menu_from_anywhere(self, confirm_key=None):
+            self._owner.order.append(f"close_menu_from_anywhere({confirm_key})")
+
     class _Machine:
         def __init__(self, launcher_entry):
             self.launcher_browser_entry = launcher_entry
@@ -1488,6 +1504,7 @@ class StubMenuDevice:
         # one rather than a second copy of it written here.
         self._ui_state = ui_state
         self.launcher_entry = launcher_entry
+        self.api = StubMenuDevice._Api(self)
         # Where the launcher's cursor is, for the machine that has one. The
         # browser entry is the first, so this starts away from it.
         self.cursor = 5
@@ -1565,13 +1582,6 @@ class StubMenuDevice:
     def clear_computer_menu(self):
         self.order.append("computer-menu")
         self.computer_menu = False
-
-    def press_menu_button(self):
-        if self.wedged:
-            return
-        if self.open and self.deaf:
-            return
-        self.open = not self.open
 
     def _request(self, method, path, payload=None):
         if path.endswith(":reset"):

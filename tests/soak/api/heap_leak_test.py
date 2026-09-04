@@ -17,20 +17,21 @@ is the per-operation leak alone.
 """
 
 import argparse
-import ftplib
-import os
 import sys
 import urllib.parse
-from typing import Optional
+from pathlib import Path
 
-# tests/lib holds the reporting rules and the one shared REST client.
-sys.path.insert(0, os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
+# The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
+import cli  # noqa: E402
 import api as api_lib  # noqa: E402  (needs tests/lib on sys.path first)
+import ftp as ftp_lib  # noqa: E402  (needs tests/lib on sys.path first)
+import leak  # noqa: E402
 import rest as rest_lib  # noqa: E402  (needs tests/lib on sys.path first)
-import targets  # noqa: E402
 from report import (  # noqa: E402
-    Failure, check, check_ok, check_skip, check_start, detail, format_exception,
+    Failure, teardown_step, check_ok, detail, format_exception,
     section, suite_fail, suite_ok)
 
 # A disk image is the cheapest REST call that allocates a large buffer, which
@@ -45,6 +46,11 @@ MEASURED = 12
 # a real leak in this path is thousands of bytes per call.
 TOLERANCE_BYTES_PER_OP = 512
 
+# The cleanup runs after a soak, when the device is most likely to have
+# stopped answering. A bounded wait is what lets the runner's recovery
+# budget end the suite; a blocking socket would keep it here for ever.
+FTP_TIMEOUT_SECONDS = 20.0
+
 
 class Device:
     """The device under measurement, over the shared REST client.
@@ -53,12 +59,13 @@ class Device:
     one retry policy rather than growing another copy of it.
     """
 
-    def __init__(self, host: str, password: Optional[str], timeout: float) -> None:
+    def __init__(self, host: str, password: str | None, timeout: float) -> None:
         self.host = host
+        self.password = password
         self.rest = rest_lib.RestClient(host, password, timeout)
 
     def heap_free(self) -> int:
-        return int(api_lib.MachineApi(self.rest).heap()["free"])
+        return api_lib.MachineApi(self.rest).heap_free()
 
     def heap_available(self) -> bool:
         """Whether this firmware has the endpoint at all.
@@ -77,67 +84,49 @@ class Device:
         self.rest.expect("PUT", path, params={"diskname": "LEAK"})
 
 
-def cleanup(host: str, directory: str, names) -> int:
+def cleanup(host: str, password: str | None, directory: str, names) -> int:
     """Remove what the measurement created. FTP, because the REST surface has
-    no delete verb for files."""
+    no delete verb for files.
+
+    Through tests/lib/ftp.py rather than a private ftplib.FTP: that is where
+    the login, the passive-mode choice and the timeout live, and where the
+    interaction log is written from. `session` resolves the target itself, so
+    a cartridge target reaches the cartridge's own server.
+    """
     removed = 0
-    try:
-        ftp = ftplib.FTP()
-        # The device's own FTP server, so a cartridge target means the
-        # cartridge; see tests/lib/targets.py.
-        ftp.connect(targets.device_of(host), 21, timeout=20)
-        ftp.login()
-        ftp.cwd(f"/{directory}")
-        for n in names:
-            try:
-                ftp.delete(n)
-                removed += 1
-            except ftplib.all_errors:
-                pass
-        ftp.quit()
-    except ftplib.all_errors:
-        pass
+
+    def remove_all() -> None:
+        nonlocal removed
+        with ftp_lib.session(host, password, timeout=FTP_TIMEOUT_SECONDS,
+                             directory=f"/{directory}") as client:
+            for name in names:
+                if ftp_lib.delete_quietly(client, name):
+                    removed += 1
+
+    teardown_step(f"remove the images this run left in /{directory}", remove_all)
     return removed
 
 
 def run_create_d64_slope(dev: Device, directory: str) -> bool:
     """Repeat create_d64 and require the heap to come back each time."""
-    section("create_d64 returns the heap it borrows")
     created = []
-    try:
-        with check(f"warm up ({WARMUP} images, one-time costs land here)"):
-            for i in range(WARMUP):
-                name = f"leakw{i}.d64"
-                dev.create_d64(directory, name)
-                created.append(name)
 
-        measured = {}
-        try:
-            with check(f"free heap is flat across {MEASURED} more images"):
-                before = dev.heap_free()
-                for i in range(MEASURED):
-                    name = f"leakm{i}.d64"
-                    dev.create_d64(directory, name)
-                    created.append(name)
-                after = dev.heap_free()
-                consumed = before - after
-                measured.update(before=before, after=after, consumed=consumed,
-                                per_op=consumed / MEASURED)
-                if measured["per_op"] > TOLERANCE_BYTES_PER_OP:
-                    raise Failure(
-                        f"create_d64 leaks about {measured['per_op']:.0f} bytes per "
-                        f"call ({consumed} bytes over {MEASURED} calls)")
-            ok = True
-        except Failure:
-            ok = False
-        if measured:
-            detail(f"free before {measured['before']}, after {measured['after']}")
-            detail(f"consumed {measured['consumed']} bytes over {MEASURED} images "
-                   f"= {measured['per_op']:.0f} bytes/image "
-                   f"(tolerance {TOLERANCE_BYTES_PER_OP})")
-        return ok
+    def once() -> None:
+        name = f"leak{len(created)}.d64"
+        dev.create_d64(directory, name)
+        created.append(name)
+
+    try:
+        leak.slope(once=once, heap=dev.heap_free, warmup=WARMUP,
+                   iterations=MEASURED,
+                   tolerance_bytes_per_op=TOLERANCE_BYTES_PER_OP,
+                   unit="image",
+                   title="create_d64 returns the heap it borrows")
+        return True
+    except Failure:
+        return False
     finally:
-        removed = cleanup(dev.host, directory, created)
+        removed = cleanup(dev.host, dev.password, directory, created)
         detail(f"removed {removed} of {len(created)} images created by this suite")
 
 
@@ -145,22 +134,17 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description="Assert that repeated REST operations do not consume heap. "
                     "Skips if the firmware has no machine:heap endpoint.")
-    parser.add_argument("-H", "--host", default=os.environ.get("U64_HOST", "u64"))
-    parser.add_argument("-p", "--password", default=os.environ.get("U64_PASS"))
-    parser.add_argument("-t", "--timeout", type=float,
-                        default=float(os.environ.get("U64_TIMEOUT", "30.0")))
+    cli.add_device_arguments(parser, password=None, timeout=30.0, colour=False)
     parser.add_argument("-d", "--directory", default="Temp",
                         help="Writable device directory to create images in.")
     args = parser.parse_args()
 
     dev = Device(args.host, args.password, args.timeout)
 
-    check_start("device exposes GET /v1/machine:heap")
-    if not dev.heap_available():
-        check_skip("firmware predates GET /v1/machine:heap, nothing to measure")
-        section("summary")
-        detail("skipped: device firmware has no machine:heap endpoint")
-        suite_ok("heap_leak_test")
+    # heap_available() answers True or False; heap_is_served wants the reading
+    # itself, so None is what "not served" looks like to it.
+    if not leak.heap_is_served(lambda: dev.heap_available() or None,
+                               "heap_leak_test"):
         return 0
     check_ok()
 

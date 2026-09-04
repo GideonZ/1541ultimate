@@ -44,6 +44,10 @@ clear_sid:
         sta $d011
         lda #1
         sta $d019
+; The suite waits for this before it taps Space: a tap sent while the program
+; is still loading is not scanned by anything and the pop never happens.
+        lda #$a5
+        sta $c000
         cli
 loop:
         jmp loop

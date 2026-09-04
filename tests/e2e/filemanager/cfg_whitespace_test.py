@@ -32,23 +32,26 @@ import os
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "lib"))
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
+# The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
+
+# cfg_fixture is beside this file, which is on the path when this runs as
+# a script but not when another suite imports it.
+sys.path.insert(0, bootstrap.directory("e2e", "filemanager"))
+import cfg_fixture  # noqa: E402
+import cli  # noqa: E402
 
 from api import UltimateApi
 import machine as machine_lib
 import targets
-import ftp as ftp_lib
-from report import (Failure, check, check_skip, check_start, detail,
+from report import (Failure, teardown_step, check, check_skip, check_start, detail,
                     format_exception, section, suite_fail, suite_ok)
-from ui_backend import add_mode_argument, make_browser
+from ui_backend import add_mode_argument
 
 CFG_NAME = "cfg-sp.cfg"
 
-ENTRY_ROWS = range(2, 24)
-STATUS_ROW = 24
-TELNET_ENTRY_ROWS = range(2, 23)
-TELNET_STATUS_ROW = 23
 
 
 def padded_value(api: UltimateApi, store: str, item: str) -> str:
@@ -72,32 +75,20 @@ def plain_value(api: UltimateApi, store: str, item: str, avoid: str) -> str:
 
 
 def upload(host: str, password: str, body: str) -> None:
-    with ftp_lib.session(host, password, timeout=20) as ftp:
-        ftp_lib.store(ftp, f"/Temp/{CFG_NAME}", body.encode("ascii"))
+    cfg_fixture.upload(host, password, CFG_NAME, body)
 
 
 def load_cfg(browser) -> None:
-    browser.go_to_directory("Temp")
-    browser.select_entry(CFG_NAME)
-    browser.invoke_context_action("Load Settings")
-    browser.wait_for_text("Loading configuration successful!")
-    browser.press_popup_button("o")
+    cfg_fixture.load(browser, CFG_NAME)
 
 
 def cleanup(host: str, password: str) -> None:
-    try:
-        with ftp_lib.session(host, password, timeout=20) as ftp:
-            ftp_lib.delete_quietly(ftp, f"/Temp/{CFG_NAME}")
-    except Exception:
-        pass
+    cfg_fixture.cleanup(host, password, CFG_NAME)
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("-H", "--host", default=os.environ.get("U64_HOST", "u64"))
-    parser.add_argument("-p", "--password", default=os.environ.get("U64_PASS", ""))
-    parser.add_argument("-t", "--timeout", type=float,
-                        default=float(os.environ.get("U64_TIMEOUT", "5.0")))
+    cli.add_device_arguments(parser, timeout=5.0, colour=False)
     parser.add_argument("--telnet-port", type=int,
                         default=int(os.environ.get("U64_TELNET_PORT", "23")))
     add_mode_argument(parser)
@@ -120,11 +111,7 @@ def main() -> int:
         return 0
     store, item = chosen
     original = api.configs.current(store, item)
-    browser = make_browser(
-        args.mode, args.host, args.password or None, args.timeout,
-        entry_rows=ENTRY_ROWS, status_row=STATUS_ROW, telnet_port=args.telnet_port,
-        telnet_entry_rows=TELNET_ENTRY_ROWS, telnet_status_row=TELNET_STATUS_ROW,
-    )
+    browser = cfg_fixture.browser_for(args)
 
     try:
         section("an unpadded value matches its padded label")
@@ -155,21 +142,13 @@ def main() -> int:
 
         suite_ok("cfg_whitespace_test")
         return 0
-    except Failure as exc:
-        suite_fail("cfg_whitespace_test", str(exc))
-        return 1
     except Exception as exc:  # noqa: BLE001
         suite_fail("cfg_whitespace_test", format_exception(exc))
         return 1
     finally:
-        try:
-            api.configs.set(store, item, original)
-        except Exception:
-            pass
-        try:
-            browser.close()
-        except Exception:
-            pass
+        teardown_step(f"restore {store}/{item}",
+                    lambda: api.configs.set(store, item, original))
+        teardown_step("close the browser session", browser.close)
         cleanup(args.host, args.password)
 
 

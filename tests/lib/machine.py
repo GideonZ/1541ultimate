@@ -76,10 +76,10 @@ To find out whether a backport has arrived, run with the fix assumed present:
 `run-tests --assume-fix NAME` sets that variable for the suites it starts. The
 tagged checks then run on the machine that was skipping them and either pass,
 which says the fix has landed and the entry can be amended, or fail, which
-says it has not. Running them as expected failures, so that a landed backport
-is reported without anyone having to ask, is the natural next step; it is not
-built, because it needs a verdict the report library does not have and a
-runner that counts an expected failure as a pass.
+says it has not. `skip_without_fix` tags the check it lets through with the
+entry and the machine (`report.note_assumed_fix`), so `tools/stale_gates.py`
+can read a run's JSONL afterwards and say which entries a landed backport
+made stale without anyone having to comb the log for them.
 """
 
 from __future__ import annotations
@@ -87,9 +87,9 @@ from __future__ import annotations
 import os
 import re
 from dataclasses import dataclass
-from typing import Callable, Dict, FrozenSet, Optional, Tuple, Union
+from collections.abc import Callable
 
-from report import check_skip, check_start
+from report import check_skip, check_start, note_assumed_fix
 
 # The three machines, by the name used in messages and in this module's API.
 U64 = "Ultimate 64"
@@ -122,7 +122,7 @@ class Fix:
 
     name: str
     behaviour: str
-    lacking: Tuple[str, ...]
+    lacking: tuple[str, ...]
 
 
 # The one table. Every entry is an outstanding gap, so an unlisted fix is one
@@ -133,10 +133,10 @@ class Fix:
 # that was skipping them, then delete that kind from `lacking`. Delete the
 # whole entry once `lacking` would be empty; the checks tagged with it then
 # run everywhere again and no suite needs editing.
-FIXES: Dict[str, Fix] = {}
+FIXES: dict[str, Fix] = {}
 
 
-def _fix(name: str, behaviour: str, lacking: Tuple[str, ...]) -> str:
+def _fix(name: str, behaviour: str, lacking: tuple[str, ...]) -> str:
     """Add one entry to the table and hand back its tag, for a named constant."""
     FIXES[name] = Fix(name=name, behaviour=behaviour, lacking=lacking)
     return name
@@ -370,6 +370,56 @@ CONFIGS_FLASH_ROUNDTRIP = _fix(
     "can be read back",
     (C64U,))
 
+# Two fields GET /v1/info carries on the 3.15 line and not on a C64 Ultimate
+# 1.2.0. Measured on the bench: u64 and u2 both report `git_commit_hash`,
+# `ethernet_mac` and `wifi_mac`; c64u reports product, firmware_version,
+# fpga_version, core_version, hostname and unique_id and none of the three.
+# They are separate entries because they are separate additions to the route
+# and can be backported one at a time.
+INFO_REPORTS_INTERFACES = _fix(
+    "info-reports-interfaces",
+    "GET /v1/info reports each network interface's MAC address, so a run can "
+    "say which machine it was talking to from the answer alone",
+    (C64U,))
+
+INFO_NAMES_ITS_COMMIT = _fix(
+    "info-names-its-commit",
+    "GET /v1/info reports git_commit_hash, so what is running can be tied to "
+    "a commit rather than to a version string two release lines share",
+    (C64U,))
+
+# What tests/e2e/network/ident_service_switch_test.py asserts: turning the
+# ident service on makes it answer within a few seconds, live, without a
+# restart. Measured on the bench u2 running 3.15: the switch is accepted and
+# ident never answers, so the suite fails on its first check.
+IDENT_SWITCHES_LIVE = _fix(
+    "ident-switches-live",
+    "the ident service starts answering when it is switched on, without a "
+    "firmware restart",
+    (U2,))
+
+# What the REU scenarios of tests/e2e/io/command_interface/uci_targets_test.py
+# drive. On an Ultimate II+L 3.15, LOAD_REU and SAVE_REU never leave Command
+# Busy once a filename is given, and the interface then refuses every later
+# command on every target with $11/$15 until the firmware restarts. This is
+# issue #740, and it is not confined to the missing image that issue names.
+# Measured on u2@c64u, 2026-09-04, one wedge per run:
+#
+#   04 08 <name>   the image is absent          wedged
+#   04 08 <name>   the REU is switched off      wedged
+#   04 09 <name>   preload offset past the end  wedged
+#
+# The same commands with no filename are refused with 81,INVALID PARAMS and do
+# not wedge, so the fix is about completing a command that does work, not about
+# validating its arguments. One entry rather than one per scenario: there is
+# one behaviour missing, and a suite that wedges the interface it is testing
+# cannot test anything after it.
+UCI_COMPLETES_AN_REU_COMMAND = _fix(
+    "uci-completes-an-reu-command",
+    "the command interface returns to idle after a LOAD_REU or SAVE_REU that "
+    "names a file, whatever the answer, rather than wedging until a restart",
+    (U2,))
+
 # The heap reading the health sweep already reports as absent on this machine:
 # GET /v1/machine:heap is not served by a C64 Ultimate 1.2.0, so nothing can
 # assert a plausible figure from it.
@@ -428,7 +478,7 @@ ASSUME_ALL = "all"
 ASSUME_ENV = "E2E_ASSUME_FIX"
 
 
-def parse_assumptions(text: str) -> FrozenSet[str]:
+def parse_assumptions(text: str) -> frozenset[str]:
     """The fix names in a comma or space separated list, checked against the table.
 
     A typo has to be refused rather than ignored. An assumption naming nothing
@@ -447,7 +497,7 @@ def parse_assumptions(text: str) -> FrozenSet[str]:
     return frozenset(names)
 
 
-_assumed: FrozenSet[str] = parse_assumptions(os.environ.get(ASSUME_ENV, ""))
+_assumed: frozenset[str] = parse_assumptions(os.environ.get(ASSUME_ENV, ""))
 
 
 def assume(*names: str) -> None:
@@ -460,7 +510,7 @@ def assume(*names: str) -> None:
     _assumed = _assumed | parse_assumptions(" ".join(names))
 
 
-def assumed() -> FrozenSet[str]:
+def assumed() -> frozenset[str]:
     """The fixes this run has been told to treat as present."""
     return _assumed
 
@@ -484,7 +534,7 @@ class Machine:
     firmware: str = ""
 
     @property
-    def launcher_browser_entry(self) -> Optional[str]:
+    def launcher_browser_entry(self) -> str | None:
         """The launcher entry leading to the file browser, or None.
 
         A C64 Ultimate does not put the file browser behind the menu button.
@@ -625,11 +675,22 @@ class Machine:
         return (ASSUME_ALL in _assumed or name in _assumed
                 or self.kind not in entry.lacking)
 
-    def missing_fix(self, name: str) -> Optional[str]:
+    def missing_fix(self, name: str) -> str | None:
         """Why a check tagged `name` cannot run here, or None when it can."""
         if self.has_fix(name):
             return None
         return f"needs the {name} fix, which {self.described} does not have"
+
+    def assumed_fix(self, name: str) -> bool:
+        """Whether `name` answers has_fix() True here only because it was
+        assumed, rather than because this machine has it or never lacked it.
+
+        The one case skip_without_fix runs the check instead of skipping it
+        without the firmware having actually changed; see note_assumed_fix.
+        """
+        entry = FIXES.get(name)
+        return (entry is not None and self.kind in entry.lacking
+                and (ASSUME_ALL in _assumed or name in _assumed))
 
     def skip_without_fix(self, name: str, label: str) -> bool:
         """Report `label` as skipped, and answer True, when the fix is absent.
@@ -649,6 +710,8 @@ class Machine:
         """
         reason = self.missing_fix(name)
         if reason is None:
+            if self.assumed_fix(name):
+                note_assumed_fix(name, self.kind)
             return False
         check_start(label)
         check_skip(reason)
@@ -660,7 +723,7 @@ class Machine:
 
 # What a caller can hand back from `fetch_product`: the product on its own, or
 # the product and the firmware version when it has both.
-Reported = Union[str, Tuple[str, str]]
+Reported = str | tuple[str, str]
 
 
 def classify(product: str, firmware: str = "") -> Machine:
@@ -673,7 +736,7 @@ def classify(product: str, firmware: str = "") -> Machine:
         f"is aimed at, so it cannot choose the right menu layout")
 
 
-_cache: Dict[str, Machine] = {}
+_cache: dict[str, Machine] = {}
 
 
 def identify(host: str, fetch_product: Callable[[], Reported]) -> Machine:
@@ -697,7 +760,7 @@ def identify(host: str, fetch_product: Callable[[], Reported]) -> Machine:
     return cached
 
 
-def forget(host: Optional[str] = None) -> None:
+def forget(host: str | None = None) -> None:
     """Drop what was learnt, for a test that identifies more than one machine."""
     if host is None:
         _cache.clear()

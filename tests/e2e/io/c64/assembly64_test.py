@@ -29,19 +29,18 @@ import sys
 import time
 import urllib.error
 import urllib.request
-from typing import Dict, List, Optional, Sequence, Tuple
+from collections.abc import Sequence
+from pathlib import Path
 
-# tests/lib holds the reporting rules every suite shares; tests/e2e/lib
-# holds the shared UI backend.
-sys.path.insert(0, os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "lib"))
-sys.path.insert(0, os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
+# The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
 import machine as machine_lib
 import rest as rest_lib
 import targets
 from report import (
-    Failure,
+    teardown_step, Failure,
     check,
     check_skip,
     detail,
@@ -105,7 +104,7 @@ class Device:
         backend: Backend,
         mode: str,
         host: str,
-        password: Optional[str],
+        password: str | None,
         timeout: float,
     ) -> None:
         self.backend = backend
@@ -146,7 +145,7 @@ class Device:
     def status_row(self) -> int:
         return TELNET_STATUS_ROW if self.mode == MODE_TELNET else STATUS_ROW
 
-    def screen(self) -> Optional[Snapshot]:
+    def screen(self) -> Snapshot | None:
         try:
             return self.backend.capture()
         except Failure as exc:
@@ -163,13 +162,13 @@ class Device:
     def menu_is_open(self) -> bool:
         return self.screen() is not None
 
-    def rows(self) -> Optional[List[str]]:
+    def rows(self) -> list[str] | None:
         snapshot = self.screen()
         if snapshot is None:
             return None
         return snapshot.lines
 
-    def cursor_row(self) -> Optional[int]:
+    def cursor_row(self) -> int | None:
         """Row the selection sits on, or None when the menu is closed."""
         if self.mode == MODE_TELNET:
             return telnet_field_row(self, self.entry_rows)
@@ -189,7 +188,7 @@ class Device:
     def type_text(self, text: str) -> None:
         self.backend.send_text(text, f"type {text}")
 
-    def send_key(self, key: str) -> Optional[Snapshot]:
+    def send_key(self, key: str) -> Snapshot | None:
         # RUN/STOP legitimately closes the menu when it pops the last level
         # off the object stack (unwind_to_root's whole point). Backend.send_key
         # settles by re-capturing the screen, which raises "menu screen
@@ -202,7 +201,7 @@ class Device:
                 return None
             raise
 
-    def send_key_repeat(self, key: str, count: int) -> Optional[Snapshot]:
+    def send_key_repeat(self, key: str, count: int) -> Snapshot | None:
         try:
             return self.backend.send_key_repeat(key, count)
         except Failure as exc:
@@ -227,8 +226,8 @@ class Device:
         )
 
 
-def device_is_alive(host: str, password: Optional[str], timeout: float) -> bool:
-    headers: Dict[str, str] = {}
+def device_is_alive(host: str, password: str | None, timeout: float) -> bool:
+    headers: dict[str, str] = {}
     if password:
         headers["X-Password"] = password
     request = urllib.request.Request(f"http://{targets.device_of(host)}/v1/version", headers=headers)
@@ -241,7 +240,7 @@ def device_is_alive(host: str, password: Optional[str], timeout: float) -> bool:
 
 def press_menu_button(device: Device) -> None:
     """Use the REST-only menu-button API that this scenario specifically tests."""
-    headers: Dict[str, str] = {}
+    headers: dict[str, str] = {}
     if device.password:
         headers["X-Password"] = device.password
     request = urllib.request.Request(
@@ -309,7 +308,7 @@ def open_search_entry_in_task_menu(device: Device) -> None:
     device.send_key("ENTER")
 
 
-def launcher_entry_row(device: Device) -> Optional[Tuple[int, int]]:
+def launcher_entry_row(device: Device) -> tuple[int, int] | None:
     """(row of the search entry, row of the cursor), or None when either is gone.
 
     Both come from one screen, because a repaint between two reads would make
@@ -480,7 +479,7 @@ def recover(device: Device, what: str) -> None:
         raise Failure(f"{what}: the browser came back empty")
 
 
-def row_of(device: Device, label: str) -> Optional[int]:
+def row_of(device: Device, label: str) -> int | None:
     # `in`, not `.startswith()`: on Telnet's one-row-shorter screen the task
     # menu box renders a row higher than on REST, so a row can carry both the
     # overlay's own label and, to its left, leftover text from whatever the
@@ -495,7 +494,7 @@ def row_of(device: Device, label: str) -> Optional[int]:
     return None
 
 
-def _box_interior_bounds(text: str) -> Optional[Tuple[int, int]]:
+def _box_interior_bounds(text: str) -> tuple[int, int] | None:
     """Column span strictly between a row's own left/right box border.
 
     Finding the marker anywhere on the row is not enough: the box's own
@@ -543,7 +542,7 @@ def prime_selection_marker(device: Device) -> None:
         pass
 
 
-def telnet_field_row(device: Device, entry_rows: Sequence[int]) -> Optional[int]:
+def telnet_field_row(device: Device, entry_rows: Sequence[int]) -> int | None:
     """Telnet equivalent of Backend.selected_row(), scoped to this form.
 
     TelnetBackend.selected_row() only checks a row's first two columns for
@@ -942,17 +941,15 @@ def main() -> int:
             SCENARIOS[name](device)
     except Skip as exc:
         suite_skip("assembly64_test", str(exc))
-        try:
-            recover(device, "skipping")
-        except Exception:
-            pass
+        teardown_step("put the UI back after skipping",
+                    lambda: recover(device, "skipping"))
         return 0
     finally:
-        try:
+        def leave_any_open_form() -> None:
             if device.menu_is_open():
                 leave_form(device)
-        except Exception:
-            pass
+
+        teardown_step("leave the query form", leave_any_open_form)
         backend.close()
 
     suite_ok("assembly64_test")

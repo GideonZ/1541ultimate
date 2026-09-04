@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+from collections.abc import Iterable, Sequence
 
 import profiles
 
@@ -54,7 +54,7 @@ class Coverage:
         # {profile: {suite name}}, by the same rule the runner selects with:
         # a suite runs from its own profile up, and the manual ones only where
         # the profile includes them.
-        self.included: Dict[str, List[str]] = {}
+        self.included: dict[str, list[str]] = {}
         for profile in self.names:
             chosen = []
             for suite in self.suites:
@@ -68,7 +68,7 @@ class Coverage:
     def transports(self, profile: str) -> Sequence[str]:
         return profiles.modes_for(profile)
 
-    def in_category(self, profile: str, category: str) -> List[str]:
+    def in_category(self, profile: str, category: str) -> list[str]:
         by_name = {s.name: s for s in self.suites}
         return [n for n in self.included[profile]
                 if by_name[n].category == category]
@@ -84,7 +84,7 @@ class Coverage:
 
 
 def build(suites: Sequence[object], categories: Sequence[str],
-          names: Optional[Sequence[str]] = None) -> Coverage:
+          names: Sequence[str] | None = None) -> Coverage:
     return Coverage(suites, names or profiles.ORDER, categories)
 
 
@@ -127,7 +127,6 @@ def render_static(cover: Coverage, width: int = 30) -> str:
 
 
 def static_payload(cover: Coverage) -> dict:
-    by_name = {s.name: s for s in cover.suites}
     return {
         "default_profile": profiles.DEFAULT,
         "order": list(cover.names),
@@ -158,7 +157,7 @@ def static_payload(cover: Coverage) -> dict:
 class Measured:
     """What one suite did on one machine, from a recorded run."""
 
-    __slots__ = ("scenarios", "checks", "seconds", "verdict", "attempts")
+    __slots__ = ("attempts", "checks", "scenarios", "seconds", "verdict")
 
     def __init__(self, scenarios: int, checks: int, seconds: float,
                  verdict: str, attempts: int) -> None:
@@ -169,9 +168,9 @@ class Measured:
         self.attempts = attempts
 
 
-def read_run(directory: str) -> Dict[str, Dict[str, Measured]]:
+def read_run(directory: str) -> dict[str, dict[str, Measured]]:
     """{target: {suite: Measured}} for one `run-tests -o` directory."""
-    out: Dict[str, Dict[str, Measured]] = {}
+    out: dict[str, dict[str, Measured]] = {}
     for entry in sorted(os.listdir(directory)):
         path = os.path.join(directory, entry)
         if not os.path.isdir(path):
@@ -180,12 +179,12 @@ def read_run(directory: str) -> Dict[str, Dict[str, Measured]]:
     return out
 
 
-def _read_target(path: str) -> Dict[str, Measured]:
+def _read_target(path: str) -> dict[str, Measured]:
     # run.jsonl is the runner's own view: wall seconds per suite run, the
     # verdict, and which attempt. The per-suite files carry the scenario and
     # check counts, which the runner cannot see because each suite is its own
     # process.
-    runs: Dict[str, Tuple[float, str, int]] = {}
+    runs: dict[str, tuple[float, str, int]] = {}
     run_path = os.path.join(path, "run.jsonl")
     if os.path.exists(run_path):
         for record in _records(run_path):
@@ -201,13 +200,13 @@ def _read_target(path: str) -> Dict[str, Measured]:
                 max(previous, int(record.get("attempt") or 1)),
             )
 
-    counts: Dict[str, Tuple[int, int]] = {}
+    counts: dict[str, tuple[int, int]] = {}
     for name in sorted(os.listdir(path)):
         if not name.endswith(".jsonl") or name in ("run.jsonl", "interactions.jsonl"):
             continue
-        suite_name: Optional[str] = None
+        suite_name: str | None = None
         running = 0
-        final: Tuple[int, int] = (0, 0)
+        final: tuple[int, int] = (0, 0)
         for record in _records(os.path.join(path, name)):
             kind = record.get("kind")
             if kind == "scenario":
@@ -231,19 +230,20 @@ def _read_target(path: str) -> Dict[str, Measured]:
 
 
 def _records(path: str) -> Iterable[dict]:
-    for line in open(path, errors="replace"):
-        try:
-            yield json.loads(line)
-        except ValueError:
-            continue
+    with open(path, errors="replace") as handle:
+        for line in handle:
+            try:
+                yield json.loads(line)
+            except ValueError:
+                continue
 
 
-def _targets_of(data: Dict[str, Dict[str, Measured]]) -> List[str]:
+def _targets_of(data: dict[str, dict[str, Measured]]) -> list[str]:
     ordered = [t for t in TARGET_ORDER if t in data]
     return ordered + [t for t in sorted(data) if t not in ordered]
 
 
-def _cell(entry: Optional[Measured]) -> str:
+def _cell(entry: Measured | None) -> str:
     if entry is None:
         return "-"
     mark = {"OK": "", "SKIP": " skip", "WARN": " warn"}.get(entry.verdict, " FAIL")
@@ -251,10 +251,10 @@ def _cell(entry: Optional[Measured]) -> str:
     return f"{entry.checks} ({entry.seconds:.0f}s){mark}{retried}"
 
 
-def render_measured(runs: Sequence[Tuple[str, Dict[str, Dict[str, Measured]]]],
+def render_measured(runs: Sequence[tuple[str, dict[str, dict[str, Measured]]]],
                     markdown: bool = True) -> str:
     """One table per profile: a row per suite, a column per target."""
-    out: List[str] = []
+    out: list[str] = []
     for profile, data in runs:
         targets = _targets_of(data)
         names = sorted({n for target in targets for n in data[target]})
@@ -292,7 +292,7 @@ def render_measured(runs: Sequence[Tuple[str, Dict[str, Dict[str, Measured]]]],
 
 
 def measured_payload(
-        runs: Sequence[Tuple[str, Dict[str, Dict[str, Measured]]]]) -> dict:
+        runs: Sequence[tuple[str, dict[str, dict[str, Measured]]]]) -> dict:
     return {
         profile: {
             target: {

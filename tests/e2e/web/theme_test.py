@@ -34,13 +34,15 @@ CDN that page loads jQuery from. Whatever is missing is reported as a skip.
 """
 
 import argparse
-import os
 import pathlib
 import sys
+from pathlib import Path
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
+# The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
+sys.path.insert(0, bootstrap.directory("e2e", "web"))
 
 import browser as browser_lib  # noqa: E402
 from report import (Failure, check, check_skip, detail,  # noqa: E402
@@ -59,7 +61,7 @@ def parse_args():
     parser.add_argument("--base-url", default="",
                         help="Where the pages are served from, e.g. http://ultimate64. "
                              "Default: serve html/ from this tree.")
-    parser.add_argument("--browser", default="all", choices=("all",) + browser_lib.BROWSERS,
+    parser.add_argument("--browser", default="all", choices=("all", *browser_lib.BROWSERS),
                         help="Which browsers to drive. Default: every one installed.")
     parser.add_argument("-t", "--timeout", type=float, default=READY_TIMEOUT,
                         help="How long a page has to become ready.")

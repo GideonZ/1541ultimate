@@ -62,17 +62,16 @@ enables the "Command Interface" setting and restores it on exit.
 """
 
 import argparse
-import os
 import socket
 import sys
 import time
-from typing import Dict, List, Optional, Tuple
+from pathlib import Path
 
-# tests/lib holds the reporting rules and the transport every suite shares.
-sys.path.insert(0, os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "lib"))
-sys.path.insert(0, os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
+# The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
+import cli  # noqa: E402
 import targets  # noqa: E402
 from api import UltimateApi  # noqa: E402
 from report import (  # noqa: E402
@@ -250,7 +249,7 @@ def pattern(size: int, seed: int = 0) -> bytes:
     return bytes((i + seed) % 251 for i in range(size))
 
 
-def run_offset(chunk: bytes, seed: int = 0) -> Optional[int]:
+def run_offset(chunk: bytes, seed: int = 0) -> int | None:
     """Where this run started inside pattern(), or None if it is not a run of it."""
     if not chunk:
         return None
@@ -285,7 +284,7 @@ class ReadResult:
         self.payload = self.reply[2:]
 
     @property
-    def observable(self) -> Tuple:
+    def observable(self) -> tuple:
         """Everything a client could branch on, as one comparable value.
 
         Two reads that differ in what was actually delivered but agree here are
@@ -323,7 +322,7 @@ def describe_mismatch(actual: bytes, expected: bytes) -> str:
     return "identical"
 
 
-def describe_datagrams(arrived: List[bytes], expected: bytes) -> str:
+def describe_datagrams(arrived: list[bytes], expected: bytes) -> str:
     """What reached the peer, against the one datagram that should have.
 
     A payload that left as several datagrams is the defect a chunked write
@@ -341,7 +340,7 @@ def describe_datagrams(arrived: List[bytes], expected: bytes) -> str:
                else f"concatenated: {describe_mismatch(joined, expected)}"))
 
 
-def send_count(transaction) -> Optional[int]:
+def send_count(transaction) -> int | None:
     """How many bytes a write reported sending, from its two-byte reply.
 
     None when the reply is not two bytes, which is a finding of its own: a
@@ -366,7 +365,7 @@ def require_implemented(transaction, what: str) -> None:
                       f"a payload larger than one command still leaves as several datagrams")
 
 
-def require_nothing_sent(after: List[bytes], what: str) -> None:
+def require_nothing_sent(after: list[bytes], what: str) -> None:
     """Nothing reached the wire, which is the other half of every refusal here.
 
     A status of 81 with a datagram behind it is worse than no status at all, so
@@ -378,7 +377,7 @@ def require_nothing_sent(after: List[bytes], what: str) -> None:
                       f"that reached the wire are a message the client never wrote")
 
 
-def require_payload_open(started, premature: List[bytes], taken: int, total: int) -> None:
+def require_payload_open(started, premature: list[bytes], taken: int, total: int) -> None:
     """The accumulation a case needs is in progress and nothing has been sent.
 
     Every case that disturbs a payload part way through needs one part way
@@ -406,7 +405,7 @@ class Net:
     def identify(self):
         return self.uci.transact(bytes([TARGET_NETWORK, NET_CMD_IDENTIFY]))
 
-    def ip_address(self) -> Optional[str]:
+    def ip_address(self) -> str | None:
         reply = self.uci.transact(bytes([TARGET_NETWORK, NET_CMD_GET_IPADDR, 0])).data
         return ".".join(str(b) for b in reply[:4]) if len(reply) >= 4 else None
 
@@ -462,11 +461,11 @@ class Net:
                                             single_part=single_part,
                                             overrun_reads=overrun_reads))
 
-    def probe_read(self, handle: int, maxlen: int) -> Tuple[int, bool, bytes]:
+    def probe_read(self, handle: int, maxlen: int) -> tuple[int, bool, bytes]:
         """One read, its first block drained to a cap rather than to DATA_AV."""
         return self.uci.probe_drain(self.read_command(handle, maxlen), OVERRUN_LIMIT)
 
-    def abort_read(self, handle: int, maxlen: int) -> Tuple[int, bool]:
+    def abort_read(self, handle: int, maxlen: int) -> tuple[int, bool]:
         """One read whose reply is abandoned after its first block."""
         return self.uci.probe_abort(self.read_command(handle, maxlen))
 
@@ -533,15 +532,15 @@ class Peer:
         self.udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.udp.bind((bind_ip, 0))
         self.udp_port = self.udp.getsockname()[1]
-        self.udp_peer: Optional[Tuple[str, int]] = None
+        self.udp_peer: tuple[str, int] | None = None
         self.tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.tcp.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.tcp.bind((bind_ip, 0))
         self.tcp.listen(2)
         self.tcp_port = self.tcp.getsockname()[1]
-        self.tcp_conn: Optional[socket.socket] = None
+        self.tcp_conn: socket.socket | None = None
 
-    def learn_udp_peer(self, net: Net, handle: int) -> Tuple[str, int]:
+    def learn_udp_peer(self, net: Net, handle: int) -> tuple[str, int]:
         """The device's ephemeral source address, from a datagram it sends.
 
         The device connects its UDP socket, so it only accepts datagrams from
@@ -569,7 +568,7 @@ class Peer:
             self.udp.settimeout(PEER_TIMEOUT_SECONDS)
             try:
                 _, address = self.udp.recvfrom(2048)
-            except socket.timeout:
+            except TimeoutError:
                 detail(f"probe datagram {attempt + 1} of {PROBE_ATTEMPTS} did not arrive "
                        f"within {PEER_TIMEOUT_SECONDS:.0f}s")
                 continue
@@ -583,7 +582,7 @@ class Peer:
             raise Failure("the device's UDP source address is not known yet")
         self.udp.sendto(payload, self.udp_peer)
 
-    def collect_udp(self, settle: float = DELIVERY_SETTLE_SECONDS) -> List[bytes]:
+    def collect_udp(self, settle: float = DELIVERY_SETTLE_SECONDS) -> list[bytes]:
         """Every datagram the device sent here, over one settle window.
 
         The only method in this class that watches the device emitting rather
@@ -600,7 +599,7 @@ class Peer:
         """
         if self.udp_peer is None:
             raise Failure("the device's UDP source address is not known yet")
-        datagrams: List[bytes] = []
+        datagrams: list[bytes] = []
         deadline = time.time() + settle
         while True:
             remaining = deadline - time.time()
@@ -612,7 +611,7 @@ class Peer:
                 # datagram of an unexpected length is reported at its length
                 # rather than silently cut to the expected one.
                 datagrams.append(self.udp.recv(2048))
-            except socket.timeout:
+            except TimeoutError:
                 return datagrams
 
     def accept_tcp(self) -> socket.socket:
@@ -875,7 +874,7 @@ def run_datagram_size_ceiling(net: Net, peer: Peer) -> bool:
     handle = net.open_udp(peer.ip, peer.udp_port)
     try:
         peer.learn_udp_peer(net, handle)
-        arrivals: Dict[int, int] = {}
+        arrivals: dict[int, int] = {}
         for size in (SMALL_READ, BIG_DATAGRAM, UNFRAGMENTED_MAX, UNFRAGMENTED_MAX + 1, 1500):
             net.drain_socket(handle)
             peer.send_udp(pattern(size))
@@ -1157,7 +1156,7 @@ def run_tcp_lossless(net: Net, peer: Peer) -> bool:
         conn = peer.accept_tcp()
         conn.sendall(pattern(BIG_DATAGRAM))
         time.sleep(DELIVERY_SETTLE_SECONDS)
-        chunks: List[ReadResult] = []
+        chunks: list[ReadResult] = []
         recovered = bytearray()
         for _ in range(8):
             result = net.read(handle, SMALL_READ)
@@ -1185,7 +1184,7 @@ def run_tcp_lossless(net: Net, peer: Peer) -> bool:
 
         conn.sendall(pattern(SPANNING_DATAGRAM, seed=3))
         time.sleep(DELIVERY_SETTLE_SECONDS)
-        wide: List[ReadResult] = []
+        wide: list[ReadResult] = []
         stream = bytearray()
         for _ in range(8):
             result = net.read(handle, MAX_READ, single_part=False)
@@ -1839,8 +1838,8 @@ def run_chunked_write_refuses_bad_chunks(net: Net, peer: Peer) -> bool:
             wrong_handle = net.write_chunk(other, half, SMALL_WRITE,
                                            pattern(SMALL_WRITE, 3)[half:])
             after_handle = peer.collect_udp()
-            with check(f"a chunk naming another open socket while a payload is in progress "
-                       f"is refused, and sends nothing"):
+            with check("a chunk naming another open socket while a payload is in progress "
+                       "is refused, and sends nothing"):
                 detail(f"payload opened on socket {handle}, continued on socket {other}: "
                        f"status {wrong_handle.status_text!r}, reply {wrong_handle.data!r}, "
                        f"datagrams {[len(d) for d in after_handle]}")
@@ -2012,8 +2011,8 @@ def run_chunked_write_refuses_offset_ahead(net: Net, peer: Peer) -> bool:
         opened_early = peer.collect_udp()
         completing = net.write_chunk(handle, half, SMALL_WRITE, fresh[half:])
         arrived = peer.collect_udp()
-        with check(f"a chunk at exactly the offset the accumulation reached completes the "
-                   f"payload, and it arrives as one datagram"):
+        with check("a chunk at exactly the offset the accumulation reached completes the "
+                   "payload, and it arrives as one datagram"):
             detail(f"status {completing.status_text!r}, reply {completing.data!r}, datagrams "
                    f"{[len(d) for d in arrived]}")
             require_payload_open(opened, opened_early, half, SMALL_WRITE)
@@ -2334,7 +2333,8 @@ def run_chunked_write_discarded_by_reset(net: Net, peer: Peer, reset) -> bool:
         net.close(handle)
     return True
 
-def close_quietly(net: Net, handles: List[int]) -> None:
+
+def close_quietly(net: Net, handles: list[int]) -> None:
     """Close every handle a scenario opened; an error means it was already gone."""
     for handle in handles:
         try:
@@ -2343,8 +2343,8 @@ def close_quietly(net: Net, handles: List[int]) -> None:
             pass
 
 
-def open_abandoned(net: Net, peer: Peer, count: int, handles: List[int],
-                   ports: List[int]) -> None:
+def open_abandoned(net: Net, peer: Peer, count: int, handles: list[int],
+                   ports: list[int]) -> None:
     """OPEN_UDP `count` times without a CLOSE_SOCKET, recording each socket.
 
     Each announces itself with a datagram, so this host learns the source port
@@ -2366,8 +2366,8 @@ def run_reset_closes_uci_sockets(net: Net, peer: Peer, reset, device) -> bool:
     resets the C64 and returns a Net that reaches the target afterwards.
     """
     section("reset-closes-uci-sockets")
-    handles: List[int] = []
-    ports: List[int] = []
+    handles: list[int] = []
+    ports: list[int] = []
     heap_before = free_heap(device)
     try:
         for cycle in range(RESET_CYCLES):
@@ -2399,7 +2399,7 @@ def run_reset_closes_uci_sockets(net: Net, peer: Peer, reset, device) -> bool:
     return True
 
 
-def free_heap(device) -> Optional[int]:
+def free_heap(device) -> int | None:
     """Free FreeRTOS heap, for the record; lwip's pools are static and do not show here."""
     try:
         heap = device.machine.heap()
@@ -2408,7 +2408,7 @@ def free_heap(device) -> Optional[int]:
     return heap["free"] if heap else None
 
 
-def restore_settings(device, original: Dict[str, str], keep: bool) -> bool:
+def restore_settings(device, original: dict[str, str], keep: bool) -> bool:
     if keep or not original:
         return True
     ok = True
@@ -2434,15 +2434,12 @@ def main() -> int:
                     "how WRITE_SOCKET_CHUNK sends a payload larger than one command as a "
                     "single datagram (GideonZ/1541ultimate#807)."
     )
-    parser.add_argument("-H", "--host", default=os.environ.get("U64_HOST", "u64"))
-    parser.add_argument("-p", "--password", default=os.environ.get("U64_PASS"))
-    parser.add_argument("-t", "--timeout", type=float,
-                        default=float(os.environ.get("U64_TIMEOUT", "30.0")))
+    cli.add_device_arguments(parser, password=None, timeout=30.0, colour=False)
     parser.add_argument("-b", "--busy-timeout", type=float, default=15.0,
                         help="How long one command may stay in Command Busy before it "
                              "counts as wedged.")
-    parser.add_argument("--test", action="append", choices=["all"] + TESTS)
-    parser.add_argument("--route", action="append", choices=["all"] + ROUTES,
+    parser.add_argument("--test", action="append", choices=["all", *TESTS])
+    parser.add_argument("--route", action="append", choices=["all", *ROUTES],
                         help="How to reach $DF1C-$DF1F: 'rest' for DMA cycles the "
                              "Ultimate issues, 'native' for 6502 code running on the "
                              "C64. Both by default.")
@@ -2467,9 +2464,9 @@ def main() -> int:
     # owns the CPU while it runs.
     rest_uci = Uci(computer.machine, args.busy_timeout)
 
-    original: Dict[str, str] = {}
-    results: Dict[str, Optional[bool]] = {}
-    peer: Optional[Peer] = None
+    original: dict[str, str] = {}
+    results: dict[str, bool | None] = {}
+    peer: Peer | None = None
     interface_enabled = False
     native_started = False
     cleanup_ok = True
@@ -2531,7 +2528,7 @@ def main() -> int:
                 finally:
                     probe.close(handle)
                 check_ok(f"{peer.ip} UDP {peer.udp_port}, TCP {peer.tcp_port}")
-            except (Failure, OSError, socket.timeout) as exc:
+            except (TimeoutError, Failure, OSError) as exc:
                 check_skip(f"the device could not reach this host: {format_exception(exc)}")
                 if peer is not None:
                     peer.close()

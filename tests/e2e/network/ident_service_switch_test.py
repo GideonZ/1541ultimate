@@ -3,18 +3,22 @@
 
 import argparse
 import json
-import os
 import socket
 import sys
 import time
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "lib"))
+# The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
+import cli  # noqa: E402
 
 import machine as machine_lib
 import targets
 from api import UltimateApi
-from report import Failure, check, check_count, format_exception, suite_fail, suite_ok
+from report import (Failure, check, check_count, format_exception, suite_fail,
+                    suite_ok, suite_skip)
 
 STORE = "Network Settings"
 ITEM = "Ultimate Ident Service"
@@ -62,10 +66,7 @@ def wait_disabled(host: str) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("-H", "--host", default=os.environ.get("U64_HOST", "u64"))
-    parser.add_argument("-p", "--password", default=os.environ.get("U64_PASS", ""))
-    parser.add_argument("-t", "--timeout", type=float,
-                        default=float(os.environ.get("U64_TIMEOUT", "5.0")))
+    cli.add_device_arguments(parser, timeout=5.0, colour=False)
     args = parser.parse_args()
 
     api = UltimateApi(args.host, args.password or None, args.timeout)
@@ -78,6 +79,14 @@ def main() -> int:
     machine = machine_lib.identify(
         targets.device_of(args.host),
         lambda: (str(info.product), str(info.firmware_version)))
+
+    # The whole suite is about the switch taking effect live, so a machine
+    # whose firmware does not do that yet has nothing here to measure. The
+    # table in tests/lib/machine.py names those machines and the wording.
+    absent = machine.missing_fix(machine_lib.IDENT_SWITCHES_LIVE)
+    if absent:
+        suite_skip("ident_service_switch_test", absent)
+        return 0
 
     failure = ""
     try:
