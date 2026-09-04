@@ -398,27 +398,15 @@ IDENT_SWITCHES_LIVE = _fix(
     "firmware restart",
     (U2,))
 
-# What the REU scenarios of tests/e2e/io/command_interface/uci_targets_test.py
-# drive. On an Ultimate II+L 3.15, LOAD_REU and SAVE_REU never leave Command
-# Busy once a filename is given, and the interface then refuses every later
-# command on every target with $11/$15 until the firmware restarts. This is
-# issue #740, and it is not confined to the missing image that issue names.
-# Measured on u2@c64u, 2026-09-04, one wedge per run:
-#
-#   04 08 <name>   the image is absent          wedged
-#   04 08 <name>   the REU is switched off      wedged
-#   04 09 <name>   preload offset past the end  wedged
-#
-# The same commands with no filename are refused with 81,INVALID PARAMS and do
-# not wedge, so the fix is about completing a command that does work, not about
-# validating its arguments. One entry rather than one per scenario: there is
-# one behaviour missing, and a suite that wedges the interface it is testing
-# cannot test anything after it.
-UCI_COMPLETES_AN_REU_COMMAND = _fix(
-    "uci-completes-an-reu-command",
-    "the command interface returns to idle after a LOAD_REU or SAVE_REU that "
-    "names a file, whatever the answer, rather than wedging until a restart",
-    (U2,))
+# UCI_COMPLETES_AN_REU_COMMAND (issue #740: LOAD_REU/SAVE_REU never leaving
+# Command Busy) closed. Confirmed on the bench's U2+L after reflashing from
+# test-merge ff01a651, 2026-09-04: `-s uci-targets --assume-fix
+# uci-completes-an-reu-command u2@c64u` runs all four previously-gated REU
+# scenarios (issue-740-matrix, save/load-reu-disabled,
+# save-reu-offset-past-end) clean, reported stale by name by the runner's
+# own stale-gates check. See doc/research/e2e-onboard-review-fixes/plan.md
+# item 3b for the run and tests/e2e/io/command_interface/uci_targets_test.py
+# for the scenarios themselves, which no longer need a gate.
 
 # The heap reading the health sweep already reports as absent on this machine:
 # GET /v1/machine:heap is not served by a C64 Ultimate 1.2.0, so nothing can
