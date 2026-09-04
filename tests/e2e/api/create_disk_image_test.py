@@ -10,21 +10,23 @@
 
 import argparse
 import ftplib
-import os
 import sys
 import urllib.error
-from typing import Iterable, List, Optional, Tuple
+from collections.abc import Iterable
+from pathlib import Path
 
-# tests/lib holds the reporting rules every suite shares.
-sys.path.insert(0, os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
+# The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
+import cli  # noqa: E402
 import ftp as ftp_lib  # noqa: E402  (needs tests/lib on sys.path first)
 import machine as machine_lib  # noqa: E402  (needs tests/lib first)
 import rest as rest_lib  # noqa: E402  (needs tests/lib on sys.path first)
 import targets  # noqa: E402  (needs tests/lib on sys.path first)
 from api import UltimateApi  # noqa: E402  (needs tests/lib on sys.path first)
 from report import (  # noqa: E402  (needs tests/lib on sys.path first)
-    Failure, check_count, check_fail, check_ok, check_start, detail,
+    Failure, teardown_step, check_count, check_fail, check_ok, check_start, detail,
     format_exception, section, suite_fail, suite_ok)
 
 SUITE = "create_disk_image_test"
@@ -32,7 +34,7 @@ TEST_DIR = "/Temp"
 
 # (label, kind, keyword arguments, expected size in bytes)
 # Sizes are the ones software/api/route_files.cc computes.
-CASES: List[Tuple[str, str, dict, int]] = [
+CASES: list[tuple[str, str, dict, int]] = [
     ("d64-35", "d64", {"tracks": 35}, 683 * 256),
     ("d64-40", "d64", {"tracks": 40}, (17 * 5 + 683) * 256),
     ("d71", "d71", {}, 683 * 2 * 256),
@@ -70,13 +72,13 @@ class SuiteRunner:
             with ftp_lib.session(self.args.host, self.args.password) as client:
                 for path in paths:
                     ftp_lib.delete_quietly(client, path)
-        except ftplib.all_errors + (OSError, Failure):
+        except (*ftplib.all_errors, OSError, Failure):
             pass
 
-    def alive(self) -> Optional[str]:
+    def alive(self) -> str | None:
         return self.api.unreachable_reason(LIVENESS_TIMEOUT_SECONDS)
 
-    def all_paths(self) -> List[str]:
+    def all_paths(self) -> list[str]:
         paths = [self.remote_path(label, kind) for label, kind, _p, _e in CASES]
         label, kind, _p, _e = CASES[0]
         paths.append(self.remote_path(f"{label}-repeat", kind))
@@ -163,10 +165,7 @@ class SuiteRunner:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("-H", "--host", default=os.environ.get("U64_HOST", "u64"))
-    parser.add_argument("-p", "--password", default=os.environ.get("U64_PASS"))
-    parser.add_argument("-t", "--timeout", type=float,
-                        default=float(os.environ.get("U64_TIMEOUT", "10.0")))
+    cli.add_device_arguments(parser, password=None, colour=False)
     args = parser.parse_args()
 
     runner = SuiteRunner(args)
@@ -192,10 +191,7 @@ def main() -> int:
             suite_fail(SUITE, f"REST failure: {format_exception(exc)}")
         return 1
     finally:
-        try:
-            runner.cleanup()
-        except Exception:
-            pass
+        teardown_step("remove the images this run created", runner.cleanup)
 
     if passed:
         suite_ok(SUITE, f"{check_count()} checks")

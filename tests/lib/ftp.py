@@ -16,7 +16,7 @@ import io
 import re
 import time
 from contextlib import contextmanager
-from typing import Callable, Iterable, Iterator, List, Optional
+from collections.abc import Callable, Iterable, Iterator
 
 import interactions
 import targets
@@ -181,7 +181,7 @@ class _CountedData:
 class _CountedFile:
     """The file `ftplib` reads a listing through, counting what passes."""
 
-    def __init__(self, handle, owner: "_CountedData") -> None:
+    def __init__(self, handle, owner: _CountedData) -> None:
         self._handle = handle
         self._owner = owner
 
@@ -221,9 +221,9 @@ class _CountedFile:
         return self._handle.__exit__(*exception)
 
 
-def connect(host: str, password: Optional[str] = None,
+def connect(host: str, password: str | None = None,
             timeout: float = DEFAULT_TIMEOUT,
-            directory: Optional[str] = None,
+            directory: str | None = None,
             user: str = FTP_USER) -> ftplib.FTP:
     """Open and log in an FTP session, optionally changing directory.
 
@@ -256,9 +256,9 @@ def connect(host: str, password: Optional[str] = None,
 
 
 @contextmanager
-def session(host: str, password: Optional[str] = None,
+def session(host: str, password: str | None = None,
             timeout: float = DEFAULT_TIMEOUT,
-            directory: Optional[str] = None,
+            directory: str | None = None,
             passive: bool = True,
             user: str = FTP_USER) -> Iterator[ftplib.FTP]:
     """A logged-in session that is always closed, however the body ends."""
@@ -281,7 +281,7 @@ def retrieve(client: ftplib.FTP, path: str) -> bytes:
     return buffer.getvalue()
 
 
-def listing(client: ftplib.FTP, directory: Optional[str] = None) -> List[str]:
+def listing(client: ftplib.FTP, directory: str | None = None) -> list[str]:
     """Raw LIST lines, for a caller that needs the size or date columns.
 
     Changes to `directory` first, like `names`, so every name this module
@@ -298,7 +298,7 @@ def listing(client: ftplib.FTP, directory: Optional[str] = None) -> List[str]:
         if str(exc).startswith("550"):
             return []
         raise Failure(f"FTP cd to {directory} failed: {exc}") from exc
-    lines: List[str] = []
+    lines: list[str] = []
     try:
         client.retrlines("LIST", lines.append)
     except ftplib.error_perm as exc:
@@ -317,8 +317,8 @@ def make_dir(client: ftplib.FTP, path: str) -> bool:
         return path.rsplit("/", 1)[-1] in names(client, path.rsplit("/", 1)[0] or "/")
 
 
-def names(client: ftplib.FTP, directory: Optional[str] = None,
-          prefix: str = "") -> List[str]:
+def names(client: ftplib.FTP, directory: str | None = None,
+          prefix: str = "") -> list[str]:
     """Entry names in `directory`, or an empty list when it does not exist."""
     try:
         if directory:
@@ -394,13 +394,13 @@ def close(client: ftplib.FTP) -> None:
             pass
 
 
-def file_names(client: ftplib.FTP, directory: Optional[str] = None) -> List[str]:
+def file_names(client: ftplib.FTP, directory: str | None = None) -> list[str]:
     """Names of the files in `directory`, excluding subdirectories.
 
     Parsed from LIST rather than NLST, because only LIST distinguishes a file
     from a directory.
     """
-    found: List[str] = []
+    found: list[str] = []
     for line in listing(client, directory):
         parts = line.split(maxsplit=8)
         if len(parts) < 9 or parts[0].startswith("d"):
@@ -429,7 +429,7 @@ def purge_directory(client: ftplib.FTP, directory: str,
         raise Failure(f"FTP purge of {directory} failed: {exc}") from exc
 
     removed = 0
-    refused: List[str] = []
+    refused: list[str] = []
     for name in file_names(client):
         if name in kept:
             continue
@@ -443,7 +443,7 @@ def purge_directory(client: ftplib.FTP, directory: str,
     return removed
 
 
-def usb_volumes(client: ftplib.FTP) -> List[str]:
+def usb_volumes(client: ftplib.FTP) -> list[str]:
     """The physical USB volumes the device serves, as paths, lowest port first.
 
     The device names a volume after the USB port its medium is in, so the stick

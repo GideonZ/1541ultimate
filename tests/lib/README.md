@@ -6,7 +6,11 @@ repository-root `run-tests` all use it.
 
 | File | Purpose |
 | --- | --- |
-| `report.py` | Console and JSONL reporting for every suite and for the runner |
+| `bootstrap.py` | Puts `tests/lib` and `tests/e2e/lib` on `sys.path`, in one order, for every entry point |
+| `cli.py` | `-H`, `-p`, `-t` and a duration, defined once |
+| `leak.py` | The steady-state heap slope the soak suites measure |
+| `selftest.py` | The assertions the device-free self-tests share |
+| `report.py` | Console and JSONL reporting for every suite and for the runner, held in one `Reporter` |
 | `rest.py` | HTTP transport for the device: password header, JSON encoding, retry policy |
 | `api.py` | The device's REST API as typed calls, built on `rest.py` |
 | `ftp.py` | FTP sessions, listings, transfers, deletion and purging |
@@ -24,8 +28,9 @@ repository-root `run-tests` all use it.
 | `device_double.py` | One fake Ultimate on loopback, for the observability tests and, handed `html/`, for the browser suites |
 | `syslog_collector.py` | The devices' own log, collected off the network while a run happens |
 | `fixtures/e2e-run.expected.md` | The report generated from a fixture the tests build for themselves; see below |
+| `../ruff.toml` | Which lint rules this tree is held to, and for each one that is off, either the reason or the finding that removes it |
 
-Seven registered suites live here as well, because each checks the test tree
+Nine registered suites live here as well, because each checks the test tree
 or the build rather than the device and so needs no hardware. They run first,
 where a failure lands as a clear message instead of as a confusing one later.
 The runner is handed no device for them, so it skips the health sweep and the
@@ -38,12 +43,73 @@ UI-state gate around each one:
 | `input_batching_test.py` | A `machine:input` request never exceeds either of the device's two limits, the event count and the body size |
 | `runner_policy_test.py` | When `run-tests` may run the recovery command, and what it exits with |
 | `openapi_contract_test.py` | The response validator agrees with the committed documents in `doc/api` |
-| `observability_test.py` | The harness that watches a run: the report generator, the console capture and everything else the gate's own verdicts cannot exercise |
+| `observability_test.py` | The harness that watches a run: the report generator, the console capture and everything else the gate's own verdicts cannot exercise. The cases live in `observability/`, one module per tier, with `support.py` holding what they share |
 | `navigation_test.py` | Which keys the harness sends at a menu under each Navigation Style |
+| `lint_test.py` | The tree passes the lint rules in `tests/ruff.toml` |
+| `registry_test.py` | Every suite in the tree is registered in `run-tests`, and every registration names a path that exists and arguments the suite accepts |
 
 `observability_test.py` also runs as `make observability_test` and as a step in
 `.github/workflows/build.yml`. One implementation, invoked three ways. It needs
-no device and no network beyond loopback.
+no device and no network beyond loopback. `lint_test.py` is wired the same way,
+as `make lint_test` and as the `Check Tests Lint` step.
+
+## The lint
+
+`tests/ruff.toml` selects the `F`, `E`, `W`, `B`, `UP`, `SIM`, `RUF`, `PLW` and
+`PERF` rule families over `tests/` and `run-tests`, and `lint_test.py` runs
+exactly that command and reports the findings through `report.py`. Run it
+directly while working:
+
+```sh
+ruff check --config tests/ruff.toml tests run-tests
+ruff check --config tests/ruff.toml --fix tests run-tests   # the safe fixes
+```
+
+The version is pinned in `tests/requirements-lint.txt` so that a ruff release
+adding a rule to one of those families turns the build red when somebody moves
+the pin, rather than on an unrelated morning. A host without ruff makes the
+suite skip rather than fail, because a bench can still drive every device
+suite without it; the CI step installs the pinned version, so the check cannot
+be skipped there.
+
+Two things belong in the configuration rather than in a `# noqa` comment: a
+rule the tree does not want at all, and a rule a later change removes the need
+for. Both need the reason written next to them, as the entries there do; the
+second kind also names the finding in the tests review that closes it, so the
+entry can be deleted with the fix. A `# noqa` comment is for a single site
+that is right as it stands, and it carries its reason beside the directive.
+
+The MicroPython under `tests/soak/io/usb/pico/` is excluded: it runs on the
+microcontroller rather than on the host, and keeps its own compact style.
+
+## Reporting from more than one thread
+
+`report.py`'s state is one `Reporter`, and the free functions delegate to a
+module-level `_default`. A check is opened, detailed and closed on one thread:
+`depth` counts nesting, not concurrency, so a second thread's `check_start`
+would return without printing and its `check_ok` would close the first
+thread's line. A write from another thread while a line is open is refused
+with a message naming the rule, rather than landing under the wrong check.
+
+A harness that runs cases concurrently reports each one from the thread that
+collects it; `observability_test.py`'s `run_cases` does that. A caller that
+genuinely needs its own numbering swaps in a `Reporter()` of its own, which is
+what the case covering this does.
+
+## The registry check
+
+`registry_test.py` holds `run-tests` and the tree to each other. Every
+`*_test.py` under `tests/e2e`, `tests/perf` and `tests/soak` has to appear in
+the `SUITES` table, every registered path has to exist, and every argument in
+a registration has to be one the suite's own parser accepts. The last rule
+reads the parser out of the source rather than importing the suite, because
+several suites open a socket at import time; it resolves the shared
+`add_*_argument` helpers, so a suite that calls `add_mode_argument` counts as
+accepting `--mode`.
+
+A file ending in `_test.py` that is not a suite goes in that file's
+`NOT_SUITES` table with its reason, so that "not registered" always means
+"nobody can run it".
 
 The golden tier of `observability_test.py` builds its own `-j` tree by driving
 the runner against the device double, with stub suites scripted to fail, to be
@@ -86,8 +152,12 @@ UltimateApi(target)                                        # a handle works too
 Put this directory on `sys.path` before importing:
 
 ```python
-# tests/lib holds the helpers every suite shares.
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "lib"))
+# tests/lib holds the shared library; importing bootstrap adds tests/e2e/lib.
+# The search walks up rather than counting directories, so this is the same in
+# every entry point and a suite that moves needs no edit.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
 from report import Failure, check, detail, section, suite_fail, suite_ok
 ```
 
@@ -276,6 +346,7 @@ them, `target` and `attempt`. The rest depends on the kind:
 | `suite` | `name`, `verdict`, `note`, `checks`, `seconds`; from `run-tests` also `mode`, `attempt`, `recoveries` |
 | `health` | `label`, `ok`, `checks[]` of `name`, `state`, `ms`, `detail`, and `figures` on a check that measured any |
 | `warning` | `message` |
+| `teardown` | `label`, `ok`, `message`, `error` - one per teardown step that could not put something back; see `report.teardown_step` |
 | `gap` | `component`, `started`, `ended` when the gap closed, plus whatever the component names it by: `target`, `machine`, `reason` |
 | `menu` | `cols`, `rows`, `text[]`, `raw` as hex, and `check` when one was running; `screens.jsonl` only |
 | `telnet` | the same, for a Telnet session's screen, which has no colour plane and so no `raw`; `screens.jsonl` only |

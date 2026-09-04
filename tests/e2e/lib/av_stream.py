@@ -13,7 +13,7 @@ import struct
 import time
 from collections import Counter, defaultdict
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Optional, Tuple
+from collections.abc import Iterable
 
 from api import UltimateApi
 from report import Failure
@@ -58,7 +58,7 @@ class PacketSequence:
 class AvStreamCapture:
     """Receive short, simultaneous audio and video captures from one C64U."""
 
-    def __init__(self, host, password: Optional[str] = None) -> None:
+    def __init__(self, host, password: str | None = None) -> None:
         """`host` is a target token or a resolved handle; see targets.py."""
         self.device = UltimateApi(host, password)
         self.source_addresses = streams.source_addresses(host)
@@ -70,8 +70,8 @@ class AvStreamCapture:
         # arm and stop so a reader can attribute a gap in a recording to the
         # suite that took the stream.
         self.arming = streams.Arming(self.device, host)
-        self.video_packets: List[Packet] = []
-        self.audio_packets: List[Packet] = []
+        self.video_packets: list[Packet] = []
+        self.audio_packets: list[Packet] = []
         # Packets on the group that were not this device's: an empty capture
         # with none of these is no stream at all, with some a wrong address.
         self.foreign_packets = 0
@@ -134,7 +134,7 @@ class AvStreamCapture:
         self.video_socket.close()
         self.audio_socket.close()
 
-    def __enter__(self) -> "AvStreamCapture":
+    def __enter__(self) -> AvStreamCapture:
         self.start()
         return self
 
@@ -150,7 +150,7 @@ def _sequence(packet: Packet, kind: str, size: int) -> int:
 
 def packet_sequence(packets: Iterable[Packet], kind: str, size: int) -> PacketSequence:
     """Validate packet shape and report 16-bit UDP sequence gaps and reordering."""
-    expected: Optional[int] = None
+    expected: int | None = None
     count = 0
     missing = 0
     reordered = 0
@@ -176,7 +176,7 @@ def assert_no_packet_loss(packets: Iterable[Packet], kind: str, size: int) -> No
         raise Failure(f"{kind} packet sequence missing={sequence.missing} reordered={sequence.reordered}")
 
 
-def audio_samples(packet: Packet) -> Tuple[int, ...]:
+def audio_samples(packet: Packet) -> tuple[int, ...]:
     _sequence(packet, "audio", AUDIO_PACKET_BYTES)
     return struct.unpack("<384h", packet.data[2:])
 
@@ -196,14 +196,14 @@ def first_loud_packet(packets: Iterable[Packet], after: float,
     raise Failure(f"no audio packet reached RMS {threshold:.3f}")
 
 
-def video_frames(packets: Iterable[Packet]) -> List[VideoFrame]:
+def video_frames(packets: Iterable[Packet]) -> list[VideoFrame]:
     """Decode complete 4-bit VIC frames from ordered stream packets."""
-    grouped: Dict[int, List[Packet]] = defaultdict(list)
+    grouped: dict[int, list[Packet]] = defaultdict(list)
     for packet in packets:
         _sequence(packet, "video", VIDEO_PACKET_BYTES)
         grouped[struct.unpack_from("<H", packet.data, 2)[0]].append(packet)
 
-    frames: List[VideoFrame] = []
+    frames: list[VideoFrame] = []
     for number, frame_packets in grouped.items():
         first = frame_packets[0].data
         width = struct.unpack_from("<H", first, 6)[0]
@@ -212,8 +212,8 @@ def video_frames(packets: Iterable[Packet]) -> List[VideoFrame]:
         encoding = struct.unpack_from("<H", first, 10)[0]
         if width != 384 or lines_per_packet != 4 or bits_per_pixel != 4 or encoding != 0:
             raise Failure("unexpected VIC video packet header")
-        rows: Dict[int, bytes] = {}
-        terminal_line: Optional[int] = None
+        rows: dict[int, bytes] = {}
+        terminal_line: int | None = None
         received_at = 0.0
         for packet in frame_packets:
             _, packet_number, line_field = struct.unpack_from("<HHH", packet.data)

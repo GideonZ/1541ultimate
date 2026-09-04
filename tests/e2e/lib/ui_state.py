@@ -18,21 +18,19 @@ Exit codes: 0 clean, 1 could not be cleaned (ensure), 2 dirty (verify).
 """
 import argparse
 import json
-import os
 import sys
 import time
 import urllib.error
 import urllib.request
-from typing import List, Optional
+from pathlib import Path
 
-# tests/lib holds the pacing every suite shares; this directory holds the
-# window parser this gate borrows rather than writing a second one. Both are
-# added here because this module is imported from elsewhere in the tree as
-# well as run directly.
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                "..", "..", "lib"))
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
+import api as api_lib  # noqa: E402  (needs tests/lib on sys.path first)
 import machine as machine_lib  # noqa: E402  (needs tests/lib on sys.path first)
+from report import Failure, teardown_step  # noqa: E402  (needs tests/lib first)
 import ui_backend  # noqa: E402  (needs this directory on sys.path first)
 import pacing  # noqa: E402  (needs tests/lib on sys.path first)
 import rest as rest_lib  # noqa: E402  (needs tests/lib on sys.path first)
@@ -91,12 +89,16 @@ class Device:
     tests/lib/targets.py.
     """
 
-    def __init__(self, host: str, password: Optional[str], timeout: float) -> None:
+    def __init__(self, host: str, password: str | None, timeout: float) -> None:
         self.target = targets.parse(host)
         self.host = self.target.device
         self.input_host = self.target.input_host
         self.password = password
         self.timeout = timeout
+        # Built from the token rather than from self.host, so machine:input
+        # goes to the computer on a cartridge target while the menu is read
+        # from the cartridge. See tests/lib/targets.py.
+        self.api = api_lib.UltimateApi(self.target.token, password, timeout)
 
     @property
     def machine(self) -> machine_lib.Machine:
@@ -155,7 +157,7 @@ class Device:
                 continue
             self.tap(["return"])
 
-    def selected_row(self) -> Optional[int]:
+    def selected_row(self) -> int | None:
         """Which row the open menu marks as the cursor, or None when unreadable."""
         body = self._request("GET", "/v1/machine:menu_screen")
         if body is None or len(body) != SCREEN_BYTES:
@@ -167,7 +169,7 @@ class Device:
         except Failure:
             return None
 
-    def _request(self, method: str, path: str, payload=None) -> Optional[bytes]:
+    def _request(self, method: str, path: str, payload=None) -> bytes | None:
         headers = {}
         if self.password:
             headers["X-Password"] = self.password
@@ -194,7 +196,7 @@ class Device:
         except (OSError, TimeoutError, urllib.error.URLError) as exc:
             raise Unrecoverable(f"{method} {path} failed: {exc}") from exc
 
-    def screen(self) -> Optional[List[str]]:
+    def screen(self) -> list[str] | None:
         """Menu screen as text rows, or None when the menu is closed."""
         body = self._request("GET", "/v1/machine:menu_screen")
         if body is None:
@@ -240,7 +242,7 @@ class Device:
             # reading the state back, which answers it either way.
             pass
 
-    def tap(self, inputs: List[str]) -> None:
+    def tap(self, inputs: list[str]) -> None:
         try:
             self._request(
                 "POST",
@@ -353,7 +355,7 @@ class Device:
             time.sleep(pacing.POLL_INTERVAL_SECONDS)
         return False
 
-    def wait_screen_change(self, before: List[str]) -> Optional[List[str]]:
+    def wait_screen_change(self, before: list[str]) -> list[str] | None:
         """The screen once it differs from `before`.
 
         Returns None if the menu closed, and `before` unchanged if the screen
@@ -377,7 +379,7 @@ class Device:
         return before
 
 
-def describe_path(rows: List[str]) -> str:
+def describe_path(rows: list[str]) -> str:
     """Why this screen is not the file browser at the root, or "" when it is.
 
     The browser puts the directory it is showing on the status row and nothing
@@ -393,7 +395,7 @@ def describe_path(rows: List[str]) -> str:
     return ""
 
 
-def describe(rows: List[str]) -> str:
+def describe(rows: list[str]) -> str:
     """Why this screen is not the clean root browser, or "" when it is."""
     if EMPTY_MARKER in "\n".join(rows):
         return f"browser listing is {EMPTY_MARKER!r}"
@@ -411,8 +413,24 @@ def try_open_menu(device: Device) -> bool:
     device.press_menu_button()
     if device.wait_menu(want_open=True):
         return True
-    # The button is ignored while the UI task sits in a modal. Back out
-    # of it; a 404 from menu_screen does not prove the UI is idle.
+    # The button is ignored while the UI task sits in a modal, and a 404 from
+    # menu_screen does not prove the UI is idle. RUN/STOP alone cannot clear
+    # one: UIPopup::poll answers RETURN, SPACE and its own button hotkeys and
+    # nothing else, so a run that ended on an OK popup left the whole target
+    # abandoned as "the UI cannot be brought to the documented state".
+    #
+    # api.close_menu_from_anywhere is the escalation that knows all of this:
+    # it releases held input, answers "Save changes to Flash?" with its own 'n'
+    # hotkey rather than blindly writing flash, sends F8 to destroy nested
+    # objects, falls back to RUN/STOP, and presses `confirm_key` on alternate
+    # attempts for the popups the other keys do not reach. It leaves the menu
+    # closed, which is what the press below then reopens.
+    teardown_step("clear whatever is blocking the UI",
+                  lambda: device.api.machine.close_menu_from_anywhere(
+                      confirm_key="return"))
+    device.press_menu_button()
+    if device.wait_menu(want_open=True):
+        return True
     for _ in range(UNWIND_PRESSES):
         device.tap(["run_stop"])
         if device.menu_is_open():
@@ -421,7 +439,7 @@ def try_open_menu(device: Device) -> bool:
     return device.wait_menu(want_open=True)
 
 
-def open_menu(device: Device) -> List[str]:
+def open_menu(device: Device) -> list[str]:
     """Open the menu, unwinding a blocked UI task if the button does nothing.
 
     Tried twice, because the descent into the browser can itself close the
@@ -432,7 +450,7 @@ def open_menu(device: Device) -> List[str]:
     machine that does it twice is not racing, and is handed to repair() as a
     wedge so the reset at the end of the round can have it.
     """
-    for attempt in range(2):
+    for _attempt in range(2):
         if not try_open_menu(device):
             raise UiWedged(
                 "the menu will not open; the UI task is blocked and RUN/STOP "
@@ -672,7 +690,7 @@ def verify(device: Device) -> str:
     return describe_open_menu(device)
 
 
-def diagnose(device: Device) -> List[str]:
+def diagnose(device: Device) -> list[str]:
     """What a reader needs to tell one stuck UI from another.
 
     Written because a real wedge reported only "the menu will not close", and
@@ -687,7 +705,7 @@ def diagnose(device: Device) -> List[str]:
       browser in an awkward place, which keys can fix, from a UI task that has
       stopped reading them, which only a restart can.
     """
-    lines: List[str] = []
+    lines: list[str] = []
     rows = device.screen()
     if rows is None:
         return ["the menu is closed, so there is nothing on screen to show"]

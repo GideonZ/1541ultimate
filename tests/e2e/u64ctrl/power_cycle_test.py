@@ -52,8 +52,11 @@ import os
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "lib"))
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+# The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
+sys.path.insert(0, bootstrap.directory("e2e", "u64ctrl"))
 
 from api import UltimateApi
 from machine_power import (DEFAULT_OFF_SECONDS, DEFAULT_SILENCE_SECONDS,
@@ -201,9 +204,6 @@ def main() -> int:
 
         suite_ok(SUITE)
         return 0
-    except Failure as exc:
-        suite_fail(SUITE, str(exc))
-        return 1
     except Exception as exc:  # noqa: BLE001
         suite_fail(SUITE, format_exception(exc))
         return 1

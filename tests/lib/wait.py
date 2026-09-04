@@ -22,7 +22,8 @@ from __future__ import annotations
 
 import os
 import time
-from typing import Callable, Optional, Sequence, TypeVar
+from typing import TypeVar
+from collections.abc import Callable, Sequence
 
 from report import Failure
 
@@ -56,7 +57,7 @@ DEFAULT_TIMEOUT_SECONDS = _seconds("U64_WAIT_TIMEOUT", 10.0)
 def wait_until(predicate: Callable[[], bool], description: str,
                timeout: float = DEFAULT_TIMEOUT_SECONDS,
                interval: float = DEFAULT_INTERVAL_SECONDS,
-               detail: Optional[Callable[[], str]] = None) -> float:
+               detail: Callable[[], str] | None = None) -> float:
     """Poll until `predicate` holds, returning how long that took.
 
     `detail` is called only on failure, so a caller can attach an expensive
@@ -76,7 +77,7 @@ def wait_until(predicate: Callable[[], bool], description: str,
         time.sleep(interval)
 
 
-def wait_for(produce: Callable[[], Optional[T]], description: str,
+def wait_for[T](produce: Callable[[], T | None], description: str,
              timeout: float = DEFAULT_TIMEOUT_SECONDS,
              interval: float = DEFAULT_INTERVAL_SECONDS) -> T:
     """Poll until `produce` returns something other than None, and return it."""
@@ -90,7 +91,7 @@ def wait_for(produce: Callable[[], Optional[T]], description: str,
         time.sleep(interval)
 
 
-def retry(operation: Callable[[], T], description: str, attempts: int = 3,
+def retry[T](operation: Callable[[], T], description: str, attempts: int = 3,
           pause: float = 0.5,
           on: Sequence[type] = (Exception,)) -> T:
     """Call `operation` until it stops raising, re-raising the last failure.
@@ -102,7 +103,7 @@ def retry(operation: Callable[[], T], description: str, attempts: int = 3,
     """
     if attempts < 1:
         raise Failure(f"retry({description}) needs at least one attempt")
-    last: Optional[BaseException] = None
+    last: BaseException | None = None
     for attempt in range(attempts):
         try:
             return operation()

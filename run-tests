@@ -31,10 +31,15 @@ import sys
 import threading
 import time
 from dataclasses import dataclass
-from typing import Callable, Dict, List, Optional, Sequence, Tuple
+from pathlib import Path
+from collections.abc import Callable, Sequence
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(ROOT, "tests", "lib"))
+# The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
+sys.path.insert(0, os.path.join(ROOT, "tools"))
 
 import coverage  # noqa: E402  (needs tests/lib on sys.path first)
 import health  # noqa: E402  (needs tests/lib on sys.path first)
@@ -47,6 +52,7 @@ import report  # noqa: E402
 import targets as targets_lib  # noqa: E402
 import api as api_lib  # noqa: E402
 import config_snapshot  # noqa: E402
+import stale_gates  # noqa: E402  (needs tools/ on sys.path first)
 from api import UltimateApi  # noqa: E402
 from report import Failure  # noqa: E402
 
@@ -59,7 +65,6 @@ from report import Failure  # noqa: E402
 DEVICE_ERRORS = (Failure, OSError, TimeoutError, ValueError, TypeError,
                  http.client.HTTPException)
 
-sys.path.insert(0, os.path.join(ROOT, "tests", "e2e", "lib"))
 import recorder as recorder_lib  # noqa: E402
 import screens  # noqa: E402  (needs tests/e2e/lib on sys.path first)
 import syslog_collector  # noqa: E402
@@ -185,8 +190,19 @@ class Suite:
 #   find tests -name '*_test.py' -not -path '*/__pycache__/*'
 SUITES: Sequence[Suite] = (
     # ---------------------------------------------------------------- e2e --
-    # Needs no device: it reads the tree and fails if a suite has grown its own
-    # HTTP client again. Seven had, each with the retry rule wrong in its own
+    # Needs no device: it runs ruff over tests/ and this file with the
+    # configuration in tests/ruff.toml. The tree had no lint configuration and
+    # had accumulated 2,804 findings, one of which was an "except Failure:"
+    # naming an exception its module never imported. First, because a syntax
+    # or import fault here would otherwise surface as a device suite failing.
+    Suite("e2e", "lint", "tests/lib/lint_test.py", "", profile=profiles.SMOKE),
+    # Needs no device either: it fails when a suite exists that no profile can
+    # select. telnet_sustained_input_test.py sat in the tree unregistered, so
+    # the regression it guards, a held cursor key dropping a Telnet session on
+    # a slow link, had never been checked since the day it was written.
+    Suite("e2e", "registry", "tests/lib/registry_test.py", "", profile=profiles.SMOKE),
+    # Needs no device either: it reads the tree and fails if a suite has grown
+    # its own HTTP client again. Seven had, each with the retry rule wrong in its own
     # way, and each was found only when a transient timeout failed a whole run.
     # First, so that lands as a clear message rather than as a flaky suite.
     Suite("e2e", "transport-usage", "tests/lib/check_transport_usage.py", "", profile=profiles.SMOKE),
@@ -206,6 +222,13 @@ SUITES: Sequence[Suite] = (
     # run exits with. Both only show themselves on a run that has already gone
     # badly, which is the worst time to find out one of them is wrong.
     Suite("e2e", "runner-policy", "tests/lib/runner_policy_test.py", "", profile=profiles.QUICK),
+    # Also needs no device: a machine.FIXES entry a check is still gated on
+    # once the firmware has closed the gap is silent, and reads exactly like
+    # a gap that is still open. Drives a real Machine and skip_without_fix
+    # against a temporary JSONL file and checks tools/stale_gates.py reads
+    # the tag back correctly, both when the assumption was right and when it
+    # was not.
+    Suite("e2e", "stale-gates", "tests/lib/stale_gates_test.py", "", profile=profiles.QUICK),
     # Also needs no device: --validate-openapi puts this validator in the path
     # of every REST call the gate makes, where a wrong verdict looks exactly
     # like a firmware defect. Its decisions are pinned against the committed
@@ -223,6 +246,13 @@ SUITES: Sequence[Suite] = (
     # turns a quick-seek into a walk down the listing and a popup's All button
     # into a cursor move, neither of which reads as a keyboard problem.
     Suite("e2e", "navigation-keys", "tests/lib/navigation_test.py", "", profile=profiles.SMOKE),
+    # Needs no device either: the screen parsers every navigating suite
+    # depends on, against screens built to be read wrongly. Until this existed
+    # only a device exercised them, so every change to a selection rule cost a
+    # device run, and a wrong answer showed up as a suite picking the entry
+    # two places past the one it named.
+    Suite("e2e", "ui-backend-parse", "tests/e2e/lib/ui_backend_parse_test.py",
+          "", profile=profiles.SMOKE),
     # Also needs no device: the Telnet backend decides a redraw is over by
     # watching the stream go quiet, and the three waits that do that cannot be
     # told apart by watching a real device, which never produces them on
@@ -355,6 +385,28 @@ SUITES: Sequence[Suite] = (
     # and waits ~75s for the device to reap the sessions.
     Suite("e2e", "telnet-stale-session", "tests/e2e/network/telnet_stale_session_test.py",
           "-H @HOST@", manual=True),
+    # Reproduces the drop a held cursor key caused on a slow link: 680 bytes a
+    # keystroke fills the device's send buffer, SO_SNDTIMEO returns EAGAIN, and
+    # treating that as an error closed the session after about 250 keys.
+    #
+    # manual because the defect needs a link slow enough to fill that buffer.
+    # It was measured on an Ultimate II+L over WiFi; over wired Ethernet the
+    # device drains faster than the suite can send and the check passes without
+    # having exercised anything. It takes -H only: it speaks raw Telnet on port
+    # 23, which carries no password, and it paces itself.
+    Suite("e2e", "telnet-sustained-input", "tests/e2e/network/telnet_sustained_input_test.py",
+          "-H @HOST@", manual=True),
+    # The audio and video streams together: a SID tone ladder has to arrive on
+    # both, and a keypress has to produce a pop the two streams agree on the
+    # timing of. It assembles its own stimulus with tools/64tass and captures
+    # the multicast streams, so it needs the device to be the only one
+    # streaming to that group.
+    #
+    # standard rather than smoke: it is the only suite that reads the streams
+    # at all, and at about a minute it is too slow for the shallow profiles.
+    # -H only, because it addresses the stream source rather than the REST
+    # surface and takes no password or timeout.
+    Suite("e2e", "av-stream", "tests/e2e/av/stream_test.py", "-H @HOST@"),
     # Drives the Assembly 64 UI against the live service, mostly with negative
     # cases. Skips rather than fails when the service is unreachable.
     Suite("e2e", "assembly64", "tests/e2e/io/c64/assembly64_test.py",
@@ -511,7 +563,7 @@ class Options:
     screens: bool = True
 
 
-def git_answer(*arguments: str) -> Optional[str]:
+def git_answer(*arguments: str) -> str | None:
     """One git query about this checkout, or None when git does not answer.
 
     Run with the repository root as its working directory rather than with
@@ -522,8 +574,8 @@ def git_answer(*arguments: str) -> Optional[str]:
     clean tree, and absent for a directory git will not talk about.
     """
     try:
-        completed = subprocess.run(("git",) + arguments, cwd=ROOT,
-                                   capture_output=True, text=True, timeout=10)
+        completed = subprocess.run(("git", *arguments), cwd=ROOT,
+                                   capture_output=True, text=True, timeout=10, check=False)
     except (OSError, subprocess.TimeoutExpired):
         return None
     if completed.returncode != 0:
@@ -531,14 +583,14 @@ def git_answer(*arguments: str) -> Optional[str]:
     return completed.stdout.strip()
 
 
-def run_identity(argv: Sequence[str], started: float) -> Dict[str, object]:
+def run_identity(argv: Sequence[str], started: float) -> dict[str, object]:
     """What this run is a run of, for the `run` record.
 
     A downloaded artifact has to say what produced it without a second file.
     Three git calls, all cheap, all on the host, none reaching the device; a
     checkout where git does not answer loses those fields rather than the run.
     """
-    fields: Dict[str, object] = {
+    fields: dict[str, object] = {
         "host": socket.gethostname(),
         "python": platform.python_version(),
         # report.mask_secret has been told the password, so the record writer
@@ -668,7 +720,8 @@ class ConsoleCapture:
 
     def __init__(self, path: str) -> None:
         self.console_fd = os.dup(1)
-        self.handle = open(path, "wb")
+        # Closed by stop(); the capture outlives this scope by design.
+        self.handle = open(path, "wb")  # noqa: SIM115
         read_fd, write_fd = os.pipe()
         sys.stdout.flush()
         os.dup2(write_fd, 1)
@@ -710,7 +763,7 @@ class ConsoleCapture:
 
 
 # The one console capture a process has, when it was asked for one.
-_CONSOLE: Optional[ConsoleCapture] = None
+_CONSOLE: ConsoleCapture | None = None
 
 
 def start_console_capture(path: str) -> None:
@@ -737,7 +790,7 @@ def console_fd() -> int:
     return _CONSOLE.console_fd if _CONSOLE else 1
 
 
-def run_and_capture(command: List[str], environment: Dict[str, str],
+def run_and_capture(command: list[str], environment: dict[str, str],
                     path: str, truncate: bool, console_fd: int) -> int:
     """Run a suite, sending every line to the console and to `path`.
 
@@ -807,7 +860,7 @@ SYSLOG_PORTS_ENV = "E2E_SYSLOG_PORTS"
 SYSLOG_SETTING_TIMEOUT_SECONDS = 5.0
 
 
-def syslog_ports(machines: Sequence[str], password: str) -> Dict[str, int]:
+def syslog_ports(machines: Sequence[str], password: str) -> dict[str, int]:
     """Which port each machine's own configuration says it logs to.
 
     Read, never written. `Syslog::init` runs once from `ultimate_main`, so the
@@ -822,7 +875,7 @@ def syslog_ports(machines: Sequence[str], password: str) -> Dict[str, int]:
     is left to the run's default port and to source-address attribution, which
     is what every machine had before.
     """
-    found: Dict[str, int] = {}
+    found: dict[str, int] = {}
     for machine in machines:
         try:
             api = UltimateApi(machine, password,
@@ -842,8 +895,7 @@ def syslog_ports(machines: Sequence[str], password: str) -> Dict[str, int]:
 
 def start_syslog(args: argparse.Namespace,
                  wanted: Sequence[targets_lib.Target],
-                 directory: str = "") -> Optional[
-                     "syslog_collector.Collector"]:
+                 directory: str = "") -> "syslog_collector.Collector | None":
     """Open the device log collector for this run, or say why it did not open.
 
     Started in the process that owns the whole run, because it binds one port
@@ -900,7 +952,7 @@ SYSLOG_READY_SECONDS = 3.0
 
 
 def check_syslog_reachable(collector, machines: Sequence[str],
-                           password: str) -> List[str]:
+                           password: str) -> list[str]:
     """Say at startup which machines the collector cannot hear. Never raises.
 
     A device whose log does not reach the collector produces an empty file and
@@ -923,7 +975,7 @@ def check_syslog_reachable(collector, machines: Sequence[str],
     no target claims, which this reports beside it because it is the one of
     the three the collector itself knows.
     """
-    silent: List[str] = []
+    silent: list[str] = []
     for machine in machines:
         try:
             UltimateApi(machine, password,
@@ -1190,7 +1242,7 @@ def check_recording_options(args: argparse.Namespace) -> None:
 
 
 def start_recorder(args: argparse.Namespace, target: targets_lib.Target,
-                   device: "Device") -> Optional["recorder_lib.Recorder"]:
+                   device: "Device") -> "recorder_lib.Recorder | None":
     """Open this target's recording, or say why it did not open.
 
     In the process that owns one target: the output is per target, multicast
@@ -1222,7 +1274,7 @@ def start_recorder(args: argparse.Namespace, target: targets_lib.Target,
 
 
 def recording_identity(target: targets_lib.Target,
-                       device: "Device") -> Dict[str, str]:
+                       device: "Device") -> dict[str, str]:
     """What every frame's stamp and the title card say about this run.
 
     A single frame travels: somebody screenshots a failure into an issue,
@@ -1262,7 +1314,7 @@ def recording_identity(target: targets_lib.Target,
     return {name: value for name, value in found.items() if value}
 
 
-def stop_recorder(made: Optional["recorder_lib.Recorder"],
+def stop_recorder(made: "recorder_lib.Recorder | None",
                   directory: str, token: str) -> None:
     """End the recording, write its sidecars and record its own health."""
     if made is None:
@@ -1348,7 +1400,7 @@ class Device:
         """
         return self.api.machine.was_just_reset
 
-    def may_recover(self) -> Tuple[bool, str]:
+    def may_recover(self) -> tuple[bool, str]:
         """Whether another recovery is allowed, and why not when it is not."""
         if not self.recover_command:
             return False, "no --recover-command was given"
@@ -1425,7 +1477,7 @@ class Device:
         self.suite_recoveries += 1
         try:
             completed = subprocess.run(self.recover_command, shell=True,
-                                       timeout=self.recover_timeout)
+                                       timeout=self.recover_timeout, check=False)
         except subprocess.TimeoutExpired:
             report.check_fail(f"no answer within {self.recover_timeout:g}s")
             return False
@@ -1444,8 +1496,8 @@ class Device:
         return False
 
     def health_problem(self, label: str, patient: bool = True,
-                  extra: Optional[Callable[[], str]] = None,
-                  budget: Optional[float] = None) -> str:
+                  extra: Callable[[], str] | None = None,
+                  budget: float | None = None) -> str:
         """Why the device is not healthy enough to test on, or "" when it is.
 
         Health is the runner's one notion of a usable device, and everything
@@ -1499,7 +1551,7 @@ class Device:
         return "it is degraded: " + ", ".join(sweep.failed)
 
     def ensure_healthy(self, label: str, patient: bool = True,
-                 extra: Optional[Callable[[], str]] = None) -> bool:
+                 extra: Callable[[], str] | None = None) -> bool:
         """Establish that the device is healthy, recovering it once if it is not.
 
         One call runs at most one recovery, so a caller that wants several
@@ -1551,7 +1603,7 @@ class Device:
 
 
 def capture_settings(target: targets_lib.Target, password: str
-                     ) -> List[Tuple[UltimateApi, config_snapshot.Snapshot]]:
+                     ) -> list[tuple[UltimateApi, config_snapshot.Snapshot]]:
     """Read every setting each machine this target occupies is running with.
 
     One entry per machine, so a cartridge target captures the cartridge and
@@ -1565,7 +1617,7 @@ def capture_settings(target: targets_lib.Target, password: str
     and never answers would cost three retries a read, three reads a store and
     twenty-odd stores before the first suite started.
     """
-    captured: List[Tuple[UltimateApi, config_snapshot.Snapshot]] = []
+    captured: list[tuple[UltimateApi, config_snapshot.Snapshot]] = []
     for host in target.resources:
         report.step_start(f"settings: capture {host}")
         api = UltimateApi(host, password, DEVICE_RECOVERY_PROBE_TIMEOUT_SECONDS)
@@ -1582,12 +1634,23 @@ def capture_settings(target: targets_lib.Target, password: str
 
 
 def restore_settings(
-        captured: Sequence[Tuple[UltimateApi, config_snapshot.Snapshot]]) -> None:
+        captured: Sequence[tuple[UltimateApi, config_snapshot.Snapshot]]) -> None:
     """Put back every setting the run changed, on each machine it captured.
 
     Warnings only. The run has produced its verdict by the time this runs, and
     a device that will not take a value back is a thing for the operator to
     see rather than a reason to change what the suites decided.
+
+    This restores the running configuration, not the flash the machine boots
+    from, and the two can end a run holding different values. A REST write
+    only marks a store flash-stale; `ConfigBrowser::on_exit` in
+    software/userinterface/config_menu.cc writes every stale store to flash
+    when the config browser is left, and several suites open and leave it. So
+    a value a suite set mid-run can reach flash, while the value put back here
+    cannot: nothing opens the config browser after this point, so the restore
+    is left stale and unwritten. The machine then reads the suite's value back
+    on its next power cycle. Settings seen on this bench surviving a power
+    cycle after a run that restored them are this, not a failed restore.
     """
     for api, snapshot in captured:
         report.step_start(f"settings: restore {snapshot.machine}")
@@ -1608,7 +1671,7 @@ def restore_settings(
             report.warn(f"settings: {change}: {reason}")
 
 
-def health_entry(check: "health.Check") -> Dict[str, object]:
+def health_entry(check: "health.Check") -> dict[str, object]:
     """One health check as a record, with its figures when it has any.
 
     The figures are present only on a check that measured any, so a sweep of
@@ -1622,7 +1685,7 @@ def health_entry(check: "health.Check") -> Dict[str, object]:
     two syslog counters, and a key per check would make a consumer know the set
     of checks before it could read one.
     """
-    entry: Dict[str, object] = {"name": check.name, "state": check.state,
+    entry: dict[str, object] = {"name": check.name, "state": check.state,
                                 "ms": round(check.ms, 1), "detail": check.detail}
     if check.figures:
         entry["figures"] = dict(check.figures)
@@ -1645,7 +1708,7 @@ def reset_to_clean_slate(device: Device, phase: str) -> bool:
 
 
 def ui_state_gate(action: str, options: Options, label: str = "",
-                  quiet: bool = False, attempt: Optional[int] = None) -> bool:
+                  quiet: bool = False, attempt: int | None = None) -> bool:
     """Shared UI-state gate. See tests/e2e/lib/ui_state.py for the contract.
 
     The gate drives the device, so its device calls reach the interaction log
@@ -1670,7 +1733,7 @@ def ui_state_gate(action: str, options: Options, label: str = "",
         # would read as a record the suite wrote. See OBS-2.3.
         environment.pop("E2E_ATTEMPT", None)
     result = subprocess.run(command, env=environment,
-                            stdout=subprocess.DEVNULL if quiet else None)
+                            stdout=subprocess.DEVNULL if quiet else None, check=False)
     return result.returncode == 0
 
 
@@ -1690,7 +1753,7 @@ def ui_state_ready(options: Options, label: str) -> str:
     return "its UI cannot be brought to the documented state"
 
 
-def build_command(suite: Suite, options: Options, mode: str) -> List[str]:
+def build_command(suite: Suite, options: Options, mode: str) -> list[str]:
     command = [sys.executable, os.path.join(ROOT, suite.path)]
     for token in suite.args.split():
         if token == "@PASS@":
@@ -1784,8 +1847,8 @@ def capture_failure(device: Device, options: Options, mode: str, label: str,
     directory = os.path.join(attempt_directory(options.output_dir, attempt),
                              "capture")
     stem = f"{label}-{suite_name}-{attempt}"
-    state: Dict[str, object] = {"mode": mode, "source": "", "errors": []}
-    screen_text: List[str] = []
+    state: dict[str, object] = {"mode": mode, "source": "", "errors": []}
+    screen_text: list[str] = []
     screen_raw = b""
 
     try:
@@ -1858,7 +1921,7 @@ def capture_failure(device: Device, options: Options, mode: str, label: str,
     write_capture(directory, stem, screen_text, screen_raw, state)
 
 
-def c64_screen_rows(data: bytes) -> List[str]:
+def c64_screen_rows(data: bytes) -> list[str]:
     """The C64 screen matrix as 25 rows of 40 characters.
 
     Screen codes, not the literal ASCII the menu plane carries, and the two
@@ -1880,8 +1943,8 @@ def c64_screen_rows(data: bytes) -> List[str]:
     return [text[row * 40:(row + 1) * 40] for row in range(SCREEN_CELLS // 40)]
 
 
-def write_capture(directory: str, stem: str, text: List[str], raw: bytes,
-                  state: Dict[str, object]) -> None:
+def write_capture(directory: str, stem: str, text: list[str], raw: bytes,
+                  state: dict[str, object]) -> None:
     """The three artefacts, named so the report finds them with no lookup table."""
     try:
         with open(os.path.join(directory, f"{stem}-screen.txt"), "w",
@@ -1901,7 +1964,7 @@ def write_capture(directory: str, stem: str, text: List[str], raw: bytes,
 
 
 def run_one_attempt(suite: Suite, device: Device, options: Options, mode: str,
-                    label: str, attempt: int) -> Tuple[str, float, bool]:
+                    label: str, attempt: int) -> tuple[str, float, bool]:
     """One go at a suite. Returns (verdict, seconds, device_unhealthy).
 
     Everything that has to hold before the suite starts is one question: is the
@@ -1980,7 +2043,7 @@ def run_one_attempt(suite: Suite, device: Device, options: Options, mode: str,
             os.path.join(where, f"{label}-{suite.name}.log"),
             truncate=True, console_fd=console_fd())
     else:
-        returncode = subprocess.run(command, env=environment).returncode
+        returncode = subprocess.run(command, env=environment, check=False).returncode
     elapsed = time.monotonic() - started
 
     fields = {"mode": mode, "attempt": attempt,
@@ -2128,7 +2191,7 @@ def run_suite(suite: Suite, device: Device, options: Options, mode: str,
         attempt += 1
 
 
-def chosen_categories(args: argparse.Namespace) -> List[str]:
+def chosen_categories(args: argparse.Namespace) -> list[str]:
     """Which categories this run covers, in the order they run in."""
     if args.suite:
         # Naming suites selects exactly those, whichever category they are in.
@@ -2139,8 +2202,8 @@ def chosen_categories(args: argparse.Namespace) -> List[str]:
     return chosen or ["e2e"]
 
 
-def selected_suites(category: str, names: List[str], manual: bool,
-                    profile: str = profiles.DEFAULT) -> List[Suite]:
+def selected_suites(category: str, names: list[str], manual: bool,
+                    profile: str = profiles.DEFAULT) -> list[Suite]:
     """The suites this run covers, in registry order.
 
     A suite named with -s runs whatever the profile says, because naming one is
@@ -2172,7 +2235,7 @@ PLAN_NOT_SELECTED = "not-selected"
 PLAN_CATEGORY = "category"
 
 
-def plan_reason(suite: Suite, names: List[str], manual: bool,
+def plan_reason(suite: Suite, names: list[str], manual: bool,
                 categories: Sequence[str]) -> str:
     """Why `suite` is not in this run. Only called for one that is not.
 
@@ -2285,7 +2348,7 @@ class ArgumentParser(argparse.ArgumentParser):
     reach `exit` directly and a successful one of those must still be 0.
     """
 
-    def exit(self, status: int = 0, message: Optional[str] = None) -> None:
+    def exit(self, status: int = 0, message: str | None = None) -> None:
         if message:
             self._print_message(message, sys.stderr)
         raise SystemExit(EXIT_USAGE if status else 0)
@@ -2639,7 +2702,7 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def resolve_modes(raw: str, profile: str = profiles.DEFAULT) -> List[str]:
+def resolve_modes(raw: str, profile: str = profiles.DEFAULT) -> list[str]:
     """The transports to sweep: what -m named, or what the profile sweeps."""
     if raw.strip() == "all":
         return list(MODES)
@@ -2711,7 +2774,7 @@ def plural(count: int, noun: str) -> str:
     return f"{count} {noun}" if count == 1 else f"{count} {noun}s"
 
 
-def exit_code_for(results: List[Result], recoveries: int) -> int:
+def exit_code_for(results: list[Result], recoveries: int) -> int:
     """The run's status, worst thing first.
 
     A device that could not be made healthy outranks a failed suite: it says
@@ -2732,11 +2795,39 @@ def exit_code_for(results: List[Result], recoveries: int) -> int:
     return EXIT_OK
 
 
-def summarise(results: List[Result], started: float, recoveries: int,
-              identity: Optional[Dict[str, object]] = None) -> int:
+def report_stale_gates() -> None:
+    """After a run under `--assume-fix`, say which entries it found stale.
+
+    Reads this run's own JSONL back rather than tracking anything separately:
+    `machine.Machine.skip_without_fix` tags the check it lets through with
+    the entry and the machine (`report.note_assumed_fix`), and every suite
+    this process started appends to the same file. See `tools/stale_gates.py`.
+
+    Read from the environment rather than from a flag, for the reason
+    `run_identity` above already gives: a child run and a run started with
+    the variable already exported both have assumptions and neither has the
+    flag.
+    """
+    assumed = machine_lib.parse_assumptions(os.environ.get(machine_lib.ASSUME_ENV, ""))
+    if not assumed:
+        return
+    path = report.JSONL_PATH
+    if not path or not os.path.exists(path):
+        report.detail("stale gates: not checked, no JSONL was recorded (-j)")
+        return
+    stale = stale_gates.find_stale(stale_gates.load_records(path))
+    if not stale:
+        report.detail("stale gates: none")
+        return
+    for line in stale_gates.render(stale):
+        report.detail(line)
+
+
+def summarise(results: list[Result], started: float, recoveries: int,
+              identity: dict[str, object] | None = None) -> int:
     report.banner("Summary")
 
-    groups: Dict[str, List[Result]] = {}
+    groups: dict[str, list[Result]] = {}
     for result in results:
         key = f"{result.category} {result.mode}".strip() if result.category == "e2e" \
             else result.category
@@ -2800,6 +2891,7 @@ def summarise(results: List[Result], started: float, recoveries: int,
         report.detail(f"the device was recovered {plural(recoveries, 'time')} "
                       "during the run")
     report.detail(f"{report.format_duration(total)} total")
+    report_stale_gates()
 
     failed = [r for r in results if r.verdict == report.FAIL]
     # The harness this run finished with, against the one it started with. A
@@ -2936,7 +3028,7 @@ CHILD_EXCLUDED_OPTIONS = ("host", "targets", "output_dir", "stop_on_fail", "list
 
 
 def child_command(args: argparse.Namespace, target: targets_lib.Target,
-                  output_dir: str) -> List[str]:
+                  output_dir: str) -> list[str]:
     """The command that runs `target` on its own, with this run's options."""
     command = [sys.executable, os.path.abspath(__file__)]
     for name in CHILD_FORWARDED_FLAGS:
@@ -3014,7 +3106,7 @@ def stop(runs: "Sequence[ChildRun]", first: int) -> None:
 class ChildRun:
     """One target's run: its process, and the half-line left in its pipe."""
 
-    def __init__(self, target: targets_lib.Target, command: List[str],
+    def __init__(self, target: targets_lib.Target, command: list[str],
                  slot: int) -> None:
         self.target = target
         self.slot = slot
@@ -3093,10 +3185,10 @@ def run_targets(args: argparse.Namespace,
                       "take turns")
 
     pending = list(wanted)
-    active: Dict[int, ChildRun] = {}
+    active: dict[int, ChildRun] = {}
     # Keyed by target rather than appended in completion order, so the summary
     # names the right status for each one.
-    codes: Dict[str, int] = {}
+    codes: dict[str, int] = {}
     selector = selectors.DefaultSelector()
 
     def start_ready() -> None:
@@ -3186,7 +3278,7 @@ def run_targets(args: argparse.Namespace,
     return write_parent_record(status)
 
 
-def resolve_targets(args: argparse.Namespace) -> List[targets_lib.Target]:
+def resolve_targets(args: argparse.Namespace) -> list[targets_lib.Target]:
     """Every target this run was asked for, validated before anything starts.
 
     Two tokens that resolve to the same pair of machines are one target. With
@@ -3196,7 +3288,7 @@ def resolve_targets(args: argparse.Namespace) -> List[targets_lib.Target]:
     The first spelling is the one kept, and the run says which one it dropped.
     """
     tokens = list(args.targets) or [args.host]
-    resolved: List[targets_lib.Target] = []
+    resolved: list[targets_lib.Target] = []
     for token in tokens:
         try:
             target = targets_lib.parse(token)
@@ -3215,7 +3307,7 @@ def resolve_targets(args: argparse.Namespace) -> List[targets_lib.Target]:
     return resolved
 
 
-def main(argv: List[str]) -> int:
+def main(argv: list[str]) -> int:
     # Wall clock as well as the monotonic clock the summary measures with:
     # every artefact correlates on time.time() taken on this host, and a
     # monotonic reading names no moment a reader could look up.
@@ -3385,6 +3477,22 @@ def main(argv: List[str]) -> int:
                 if args.restore_settings else [])
 
     try:
+        # After the capture above, so the value the run found is the value it
+        # puts back, and before any suite, because most of them reset the
+        # machine and a reset that runs the KERNAL's RAM test costs the whole
+        # run. Under --no-restore-settings there is no capture and this stays
+        # on afterwards, which is what that flag asks for. Not fatal: a machine
+        # that will not take the setting runs its suites more slowly, and that
+        # is not a reason to stop.
+        report.step_start("machine: resets skip the RAM test")
+        try:
+            faster = api_lib.ensure_fast_reset(
+                target, options.password, float(options.timeout))
+        except DEVICE_ERRORS as exc:
+            report.check_warn(str(exc))
+        else:
+            report.check_ok(faster or "already set")
+
         # Before any suite, because a cartridge whose computer has not handed
         # its bus over fails later in ways that name neither the setting nor
         # the computer. A no-op on a target that is its own computer.
@@ -3419,7 +3527,7 @@ def main(argv: List[str]) -> int:
             else:
                 report.check_ok(silenced or "already off")
 
-        results: List[Result] = []
+        results: list[Result] = []
         started = time.monotonic()
         stopped = False
         device_unhealthy = False

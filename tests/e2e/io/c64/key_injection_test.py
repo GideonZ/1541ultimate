@@ -35,15 +35,15 @@ many arrived and where the first gap was.
 from __future__ import annotations
 
 import argparse
-import os
 import sys
 import time
-from typing import List, Optional, Sequence, Tuple
+from pathlib import Path
 
-sys.path.insert(0, os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "lib"))
-sys.path.insert(0, os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
+# The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
+import cli  # noqa: E402
 
 import pacing
 import targets
@@ -88,6 +88,12 @@ def alphabet_at(index: int) -> str:
     return ALPHABET[index % len(ALPHABET)]
 
 
+# BASIC's own prompt in screen memory. Spelled out rather than built with
+# screen_code(), which maps the lowercase letters and digits this suite types
+# and not the uppercase letters the prompt is drawn in.
+READY_SCREEN_CODES = bytes((0x12, 0x05, 0x01, 0x04, 0x19, 0x2E))
+
+
 def screen_code(character: str) -> int:
     """What BASIC leaves in screen memory for one typed character."""
     if character.isdigit():
@@ -100,7 +106,7 @@ class Destination:
 
     keys_per_cycle = BASIC_KEYS_PER_CYCLE
 
-    def __init__(self, target: str, password: Optional[str], timeout: float) -> None:
+    def __init__(self, target: str, password: str | None, timeout: float) -> None:
         self.target = targets.parse(target)
         self.keys = UltimateApi(self.target.input_host, password, timeout=timeout)
         self.memory = UltimateApi(self.target.device, password, timeout=timeout)
@@ -112,7 +118,7 @@ class Destination:
     def restart_cycle(self) -> None:
         raise NotImplementedError
 
-    def arrived(self, typed: str) -> Tuple[int, Optional[int]]:
+    def arrived(self, typed: str) -> tuple[int, int | None]:
         raise NotImplementedError
 
     def close(self) -> None:
@@ -130,7 +136,7 @@ class Destination:
             [{"kind": "keyboard", "inputs": [character], "transition": "tap"}
              for character in characters])
 
-    def _await(self, read, expected: bytes) -> Tuple[int, Optional[int]]:
+    def _await(self, read, expected: bytes) -> tuple[int, int | None]:
         deadline = time.monotonic() + ARRIVAL_TIMEOUT_SECONDS
         while True:
             got = read()
@@ -149,8 +155,32 @@ class BasicDestination(Destination):
 
     def open(self) -> None:
         self.keys.machine.release_all()
+        # An open menu on the machine that receives the keys swallows every
+        # one of them and still answers HTTP 200, so it has to be down before
+        # anything is typed. A suite that ran before this one and left its UI
+        # open cost the whole first batch, reported as 64 of 64 keys lost.
+        self.keys.machine.close_menu_from_anywhere()
         self.memory.machine.reset(force=True)
+        self.wait_for_ready()
         self.restart_cycle()
+
+    def wait_for_ready(self, timeout: float = 15.0) -> None:
+        """Wait for BASIC's own prompt before anything is typed into it.
+
+        The check that calls open() is named for the destination being ready,
+        and performing the reset is not the same as observing that the reset
+        finished. A machine still booting takes the keys of the first batch
+        and reports every one of them as lost.
+        """
+        wanted = READY_SCREEN_CODES
+        deadline = time.monotonic() + timeout
+        while True:
+            if wanted in self.screen():
+                return
+            if time.monotonic() >= deadline:
+                raise Failure("BASIC did not reach its READY prompt within "
+                              f"{timeout:.0f}s of a reset")
+            time.sleep(pacing.POLL_INTERVAL_SECONDS)
 
     def restart_cycle(self) -> None:
         self.keys.machine.press("left_shift", "clr_home")
@@ -160,7 +190,7 @@ class BasicDestination(Destination):
         return self.memory.machine.readmem(SCREEN_RAM,
                                            SCREEN_COLUMNS * SCREEN_ROWS)
 
-    def arrived(self, typed: str) -> Tuple[int, Optional[int]]:
+    def arrived(self, typed: str) -> tuple[int, int | None]:
         """How many of `typed` are on screen in order, and the first gap.
 
         The characters land wherever the cursor was, so the run is found
@@ -190,7 +220,7 @@ class MonitorDestination(Destination):
 
     keys_per_cycle = MCM_KEYS_PER_CYCLE
 
-    def __init__(self, target: str, password: Optional[str], timeout: float,
+    def __init__(self, target: str, password: str | None, timeout: float,
                  mode: str) -> None:
         super().__init__(target, password, timeout)
         self.backend = make_backend(mode, target, password, timeout)
@@ -248,7 +278,7 @@ class MonitorDestination(Destination):
     def restart_cycle(self) -> None:
         self.open()
 
-    def arrived(self, typed: str) -> Tuple[int, Optional[int]]:
+    def arrived(self, typed: str) -> tuple[int, int | None]:
         expected = typed.encode("ascii")
         return self._await(
             lambda: self.memory.machine.readmem(EDIT_BASE, len(expected)),
@@ -263,11 +293,11 @@ def warm_up(destination: Destination) -> int:
 
 
 def measure(destination: Destination, total: int, batch: int,
-            pace: float, transition: str = "tap") -> Tuple[int, int, List[str]]:
+            pace: float, transition: str = "tap") -> tuple[int, int, list[str]]:
     """Type `total` keys in runs of `batch`, checking after each run."""
     sent = 0
     arrived = 0
-    notes: List[str] = []
+    notes: list[str] = []
     send = destination.tap_batch
 
     while sent < total:
@@ -296,10 +326,7 @@ def measure(destination: Destination, total: int, batch: int,
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Measure whether injected keys reach the machine")
-    parser.add_argument("-H", "--host", default=os.environ.get("U64_HOST", "u64"))
-    parser.add_argument("-p", "--password", default=os.environ.get("U64_PASS"))
-    parser.add_argument("-t", "--timeout", type=float,
-                        default=float(os.environ.get("U64_TIMEOUT", "15.0")))
+    cli.add_device_arguments(parser, password=None, timeout=15.0, colour=False)
     parser.add_argument("--where", choices=("basic", "mcm"), default="basic")
     parser.add_argument("--mode", default="overlay",
                         help="UI transport for --where mcm")
