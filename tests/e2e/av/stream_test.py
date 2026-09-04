@@ -35,6 +35,11 @@ from report import (Failure, check, detail, suite_fail, suite_ok,
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 
+# av_pop_key.asm stores this the moment its raster IRQ is armed.
+RUNNING_ADDRESS = 0xC000
+RUNNING_SIGNATURE = 0xA5
+KEY_POP_TAPS = 3
+
 
 PAL_AUDIO_RATE = 47982.8869047619
 LADDER_FRAMES_PER_NOTE = 10
@@ -152,23 +157,71 @@ def run_tone_ladder(device: UltimateApi) -> None:
             raise Failure(f"tone ladder video showed only {len(colors)} background colours")
 
 
+def wait_until_scanning(device: UltimateApi, capture: AvStreamCapture,
+                        timeout: float = 6.0) -> None:
+    """Block until av_pop_key.asm has armed its raster IRQ and is reading the keyboard.
+
+    The program scans $DC01 itself, so a Space tap sent before it starts is
+    read by nothing and produces no pop. Waiting for the program's own
+    signature rather than for a fixed interval: a run competing with another
+    target for the bench took longer to load than the interval allowed, and
+    the tap was lost.
+
+    Capturing rather than sleeping between polls, because the stream sockets
+    have to keep draining. A poll loop that left them alone would overflow the
+    receive buffer and lose packets from the window this is waiting to measure.
+    """
+    device.machine.writemem(RUNNING_ADDRESS, bytes(1))
+    deadline = time.monotonic() + timeout
+    while True:
+        capture.capture(0.20)
+        if device.machine.readmem(RUNNING_ADDRESS, 1)[0] == RUNNING_SIGNATURE:
+            return
+        if time.monotonic() >= deadline:
+            raise Failure(
+                f"the A/V marker program never started scanning the keyboard "
+                f"(no ${RUNNING_SIGNATURE:02X} at ${RUNNING_ADDRESS:04X} "
+                f"after {timeout:.1f}s)")
+
+
+def measure_key_pop(device: UltimateApi, capture: AvStreamCapture) -> tuple[float, float]:
+    """Tap Space and return the key-to-video and key-to-audio latencies.
+
+    The tap is retried because a single injected keystroke is occasionally not
+    delivered on this bench, which is a property of the injection path and not
+    of the A/V alignment this measures. Each attempt starts from a cleared
+    spool and its own press timestamp, so a retry measures its own tap and
+    never an earlier one. The program flashes on the released-to-pressed
+    transition, so a repeated tap flashes again.
+    """
+    last: Failure | None = None
+    for attempt in range(1, KEY_POP_TAPS + 1):
+        capture.clear()
+        pressed = time.monotonic()
+        device.machine.press("space")
+        capture.capture(0.60)
+        try:
+            bright = first_bright_frame(video_frames(capture.video_packets), pressed)
+            loud = first_loud_packet(capture.audio_packets, pressed)
+        except Failure as exc:
+            last = exc
+            continue
+        if attempt > 1:
+            detail(f"the pop was measured on tap {attempt} of {KEY_POP_TAPS}")
+        log_packet_health(capture)
+        return bright.received_at - pressed, loud.received_at - pressed
+    log_packet_health(capture)
+    raise Failure(f"no pop followed {KEY_POP_TAPS} Space taps: {last}")
+
+
 def run_key_pop(device: UltimateApi) -> None:
     device.machine.reset(force=True)
     program = assemble(SCRIPT_DIR / "av_pop_key.asm")
     with AvStreamCapture(device.target) as capture:
         capture.capture(0.15)
         device.runners.upload("run_prg", program)
-        capture.capture(1.5)
-        capture.clear()
-        pressed = time.monotonic()
-        device.machine.press("space")
-        capture.capture(0.60)
-        log_packet_health(capture)
-        frames = video_frames(capture.video_packets)
-        bright = first_bright_frame(frames, pressed)
-        loud = first_loud_packet(capture.audio_packets, pressed)
-        video_latency = bright.received_at - pressed
-        audio_latency = loud.received_at - pressed
+        wait_until_scanning(device, capture)
+        video_latency, audio_latency = measure_key_pop(device, capture)
         offset = audio_latency - video_latency
         detail(f"key-to-video={video_latency * 1000:.1f}ms key-to-audio={audio_latency * 1000:.1f}ms A/V={offset * 1000:.1f}ms")
         if video_latency < 0 or audio_latency < 0 or max(video_latency, audio_latency) > 1.5:

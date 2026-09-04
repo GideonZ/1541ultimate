@@ -954,6 +954,15 @@ def prepare_keyboard_echo_program(session: RestInputSession) -> int:
 
 
 def run_keyboard_echo_stress_case(session: RestInputSession, text: str, hz: float, offset: int) -> int:
+    # Blank the cells this case will read before a key is sent. The wait below
+    # treats a non-blank byte that is not the expected one as a character that
+    # was delivered wrongly and fails on the first poll, which is only sound
+    # if the cells start blank. The echo program writes over whatever the
+    # screen already holds and does not clear it, so on a machine still
+    # showing the boot banner the banner decided the verdict: the third case
+    # reads $042F, which holds a '*' of "**** COMMODORE 64 BASIC V2 ****"
+    # until the echo program gets there.
+    session.write_memory(0x0400 + offset, b"\x20" * len(text))
     try:
         post_keyboard_text_at_rate(session, text, hz)
         wait_for_keyboard_echo_sequence(session, text, offset, timeout=max(6.0, len(text) * 0.25))

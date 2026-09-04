@@ -149,8 +149,32 @@ class BasicDestination(Destination):
 
     def open(self) -> None:
         self.keys.machine.release_all()
+        # An open menu on the machine that receives the keys swallows every
+        # one of them and still answers HTTP 200, so it has to be down before
+        # anything is typed. A suite that ran before this one and left its UI
+        # open cost the whole first batch, reported as 64 of 64 keys lost.
+        self.keys.machine.close_menu_from_anywhere()
         self.memory.machine.reset(force=True)
+        self.await_ready()
         self.restart_cycle()
+
+    def await_ready(self, timeout: float = 15.0) -> None:
+        """Wait for BASIC's own prompt before anything is typed into it.
+
+        The check that calls open() is named for the destination being ready,
+        and performing the reset is not the same as observing that the reset
+        finished. A machine still booting takes the keys of the first batch
+        and reports every one of them as lost.
+        """
+        wanted = bytes(screen_code(character) for character in "READY.")
+        deadline = time.monotonic() + timeout
+        while True:
+            if wanted in self.screen():
+                return
+            if time.monotonic() >= deadline:
+                raise Failure("BASIC did not reach its READY prompt within "
+                              f"{timeout:.0f}s of a reset")
+            time.sleep(pacing.POLL_INTERVAL_SECONDS)
 
     def restart_cycle(self) -> None:
         self.keys.machine.press("left_shift", "clr_home")

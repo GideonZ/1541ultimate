@@ -95,6 +95,9 @@ TYPE_ATTEMPTS = 5
 # the screen has moved on rather than during the redraw.
 MENU_ACTION_SETTLE_SECONDS = 0.40
 RUN_TIMEOUT_SECONDS = 12.0
+# Only the gap between the signature store and the printed line, which is
+# a few frames; the long wait is already spent on the signature itself.
+MESSAGE_TIMEOUT_SECONDS = 5.0
 REAL_RUN_TIMEOUT_SECONDS = 40.0
 BOOT_TIMEOUT_SECONDS = 15.0
 SCREEN_TIMEOUT_SECONDS = 6.0
@@ -348,6 +351,23 @@ class Machine:
         raise Failure(
             f"program never ran (no {SIGNATURE!r} at ${SIGNATURE_ADDRESS:04X}); "
             f"screen was:\n{self.visible_text()}")
+
+    def wait_for_message(self, timeout: float, what: str) -> None:
+        """Wait for the program's printed line, having already seen its signature.
+
+        The two are not simultaneous. The machine code stores the signature
+        first and prints afterwards through JSR $FFD2, so a screen read taken
+        the moment the signature appears can find the line not yet printed.
+        Read once and the check reports a blank screen for a program that ran.
+        """
+        deadline = time.monotonic() + timeout
+        while True:
+            screen = self.c64_screen()
+            if MESSAGE in screen:
+                return
+            if time.monotonic() >= deadline:
+                raise Failure(f"{what}:\n{screen}")
+            time.sleep(0.25)
 
     def wait_for_load_image(self, timeout: float) -> None:
         expected = PRG_BYTES[2:]
@@ -758,8 +778,8 @@ def run_action_run(machine: Machine, fixtures: Fixtures, open_entry) -> None:
     open_entry(machine, fixtures)
     machine.invoke_context_action("Run")
     machine.wait_for_signature(RUN_TIMEOUT_SECONDS)
-    if MESSAGE not in machine.c64_screen():
-        raise Failure(f"program output missing from the screen:\n{machine.c64_screen()}")
+    machine.wait_for_message(MESSAGE_TIMEOUT_SECONDS,
+                             "program output missing from the screen")
 
 
 def run_action_load(machine: Machine, fixtures: Fixtures, open_entry) -> None:
@@ -780,8 +800,8 @@ def run_action_dma(machine: Machine, fixtures: Fixtures, open_entry) -> None:
     assert_signature_absent(machine)
     machine.type_basic_line("RUN")
     machine.wait_for_signature(RUN_TIMEOUT_SECONDS)
-    if MESSAGE not in machine.c64_screen():
-        raise Failure(f"DMA-loaded program did not run:\n{machine.c64_screen()}")
+    machine.wait_for_message(MESSAGE_TIMEOUT_SECONDS,
+                             "DMA-loaded program did not run")
 
 
 def run_action_mount_and_run(machine: Machine, fixtures: Fixtures) -> None:
