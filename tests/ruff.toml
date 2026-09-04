@@ -1,0 +1,82 @@
+# Lint configuration for the Python under tests/ and the run-tests entry point.
+#
+# Run it as:
+#
+#     ruff check --config tests/ruff.toml tests run-tests
+#
+# tests/lib/lint_test.py runs exactly that and reports through report.py, so
+# the check belongs to the device-free group and to the build workflow.
+
+target-version = "py312"
+
+# The tree wraps by meaning rather than by column, and 100 is where it already
+# sits (the 99th percentile of the current line lengths). E501 stays off, so
+# this only sets the width `ruff format` would use.
+line-length = 100
+
+# The Pico firmware is MicroPython running on the microcontroller, not host
+# Python, and keeps its own compact style.
+exclude = ["tests/soak/io/usb/pico"]
+
+# run-tests has no .py suffix; without this ruff skips it even when it is
+# named on the command line.
+extend-include = ["run-tests"]
+
+[lint]
+select = ["F", "E", "W", "B", "UP", "SIM", "RUF", "PLW", "PERF"]
+
+ignore = [
+    # Style the tree has settled on.
+    "E501",    # line length: see line-length above
+    "E741",    # "l" as a name: a line variable in a few of the parsers
+    # RUF100: ruff's E402 already permits a sys.path mutation before an
+    # import, so the tree's 178 "# noqa: E402" comments read as unused to it.
+    # They are not noise: pycodestyle does flag those imports, and the text
+    # beside the directive is what tells a reader why the import is late.
+    # XC-1 removes the bootstrap and these comments together.
+    "RUF100",
+
+    # Each of these is removed by a named finding in
+    # doc/research/tests-review/tests-review.md. Drop the entry with the fix.
+    "SIM105",  # contextlib.suppress: 15 of these become teardown_step (SUITE-1)
+    "B905",    # zip strict: set where the row counts must match (E2ELIB-2)
+
+    # Read and deliberately not enforced.
+    #
+    # B023: all ten closures consume the loop variable inside the same
+    # iteration, so late binding cannot bite them (SA-1).
+    "B023",
+    # UP031: "%d" truncates a float where "{:d}" raises, so converting the 60
+    # sites is a behaviour change, not a reformat.
+    "UP031",
+    # B904: "raise ... from" would improve 51 tracebacks and changes no
+    # verdict; not attempted in the pass that added this file.
+    "B904",
+    # SIM102, SIM117, PERF401, PERF403, PLW2901: each rewrites the shape of a
+    # loop or a with-block. Two of the SIM102 sites carry the comment that
+    # explains the inner condition between the two `if`s, which a collapsed
+    # condition would misplace.
+    "SIM102",
+    "SIM117",
+    "PERF401",
+    "PERF403",
+    "PLW2901",
+]
+
+# PLW0603 (`global`) is enforced everywhere except the nine modules that had one
+# when this file was written, listed so a `global` added anywhere else is still
+# reported. report.py's dozen module variables are a Reporter object now
+# (LIB-2), leaving one `global` there for the colour flag. What the rest are is
+# a single well-scoped variable each - a log path, two memo caches, a counter,
+# four cleanup-registration flags - where a holder object would be churn rather
+# than a clarification.
+[lint.per-file-ignores]
+"run-tests" = ["PLW0603"]
+"tests/lib/interactions.py" = ["PLW0603"]
+"tests/lib/machine.py" = ["PLW0603"]
+"tests/lib/observability/support.py" = ["PLW0603"]
+"tests/lib/report.py" = ["PLW0603"]
+"tests/lib/rest.py" = ["PLW0603"]
+"tests/lib/runner_policy_test.py" = ["PLW0603"]
+"tests/soak/network/ftp_probe.py" = ["PLW0603"]
+"tests/soak/network/telnet_probe.py" = ["PLW0603"]

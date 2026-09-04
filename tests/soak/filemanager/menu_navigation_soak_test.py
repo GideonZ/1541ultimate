@@ -43,18 +43,18 @@ import posixpath
 import statistics
 import sys
 import time
-from typing import List
+from pathlib import Path
 
-sys.path.insert(0, os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
-sys.path.insert(0, os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", "..", "e2e", "lib"))
+# The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
 
 import ftp as ftp_lib  # noqa: E402
 import pacing  # noqa: E402
 import targets  # noqa: E402
 from report import (  # noqa: E402
-    Failure, add_colour_argument, apply_colour, check, check_fail, check_ok,
+    Failure, teardown_step, add_colour_argument, apply_colour, check, check_fail, check_ok,
     check_start, check_warn, detail, section, suite_fail, suite_ok, warn)
 
 import ui_backend  # noqa: E402
@@ -102,7 +102,7 @@ class Fixture:
             ftp_lib.remove_tree(client, self.path)
 
 
-def interesting_distances(stride: int) -> List[int]:
+def interesting_distances(stride: int) -> list[int]:
     """The jump lengths whose page-key decomposition can differ from a step.
 
     `move_rows` splits a distance into whole page keys and a remainder. The
@@ -179,7 +179,7 @@ def main() -> int:
     # one row shorter than the 40x25 display's.
     browser = ui_backend.make_browser(args.mode, args.host,
                                       args.password or None, args.timeout)
-    failures: List[str] = []
+    failures: list[str] = []
 
     def failed(label: str, reason: str) -> None:
         failures.append(f"{label}: {reason}")
@@ -209,8 +209,8 @@ def main() -> int:
         # landing somewhere stepping would not, or paging losing more.
         distances = interesting_distances(stride)
         detail(f"distances: {distances}")
-        stepped_ms: List[float] = []
-        paged_ms: List[float] = []
+        stepped_ms: list[float] = []
+        paged_ms: list[float] = []
         stepped_lost = paged_lost = 0
         stepped_keys = paged_keys = 0
         for distance in distances:
@@ -337,14 +337,8 @@ def main() -> int:
         suite_fail(SUITE, str(exc))
         return 1
     finally:
-        try:
-            browser.close()
-        except Exception:  # noqa: BLE001
-            pass
-        try:
-            browser.backend.close()
-        except Exception:  # noqa: BLE001
-            pass
+        teardown_step("close the browser", browser.close)
+        teardown_step("close the backend", browser.backend.close)
         try:
             fixture.remove()
         except Exception as exc:  # noqa: BLE001

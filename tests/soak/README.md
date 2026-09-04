@@ -152,3 +152,8 @@ constraints and never run it concurrently.
   limited to documented transient protocol behaviour.
 - Document destructive behaviour, privileges, target state and cleanup
   limitations here; keep flag-by-flag detail in `--help`.
+- Keep the host-side code passing
+  `ruff check --config tests/ruff.toml tests run-tests`. The MicroPython under
+  `io/usb/pico/` is excluded from that lint, because it runs on the
+  microcontroller rather than on the host and keeps its own compact style;
+  everything else here is held to the same rules as the rest of the tree.

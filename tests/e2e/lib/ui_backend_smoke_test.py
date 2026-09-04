@@ -22,13 +22,14 @@ import os
 import re
 import sys
 import time
-from typing import Sequence
+from collections.abc import Sequence
+from pathlib import Path
 
-# tests/lib holds the reporting rules every suite shares; ui_backend sits
-# in this directory.
-sys.path.insert(0, os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
+import cli  # noqa: E402
 import machine
 import pacing
 import profiles  # noqa: E402
@@ -474,7 +475,7 @@ def run_overlay_row_checks() -> None:
                    "prgmenu46763.d64            D64  171K",
                    "prgmenu46763.prg            PRG   67"]
         draw_framed_window(chars, colours, top=2, bottom=23, left=0, right=39,
-                           items=["          Select Path"] + listing,
+                           items=["          Select Path", *listing],
                            selected=1, listing_colour=12, selected_colour=1)
         for column in range(1, SCREEN_WIDTH - 1):
             colours[3 * SCREEN_WIDTH + column] = 6
@@ -970,10 +971,8 @@ def run_rest_smoke(host: str, password: str, timeout: float, interface_type: str
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Validate the shared ui_backend.py facade over Telnet, REST/Freeze and REST/Overlay")
-    parser.add_argument("-H", "--host", default=os.environ.get("U64_HOST", "u64"))
+    cli.add_device_arguments(parser, timeout=5.0, colour=False)
     parser.add_argument("--telnet-port", type=int, default=int(os.environ.get("U64_TELNET_PORT", "23")))
-    parser.add_argument("-p", "--password", default=os.environ.get("U64_PASS", ""))
-    parser.add_argument("-t", "--timeout", type=float, default=float(os.environ.get("U64_TIMEOUT", "5.0")))
     args = parser.parse_args()
 
     try:

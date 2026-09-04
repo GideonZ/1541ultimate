@@ -57,10 +57,13 @@ import pathlib
 import sys
 import tempfile
 import time
+from pathlib import Path
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
+# The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
+sys.path.insert(0, bootstrap.directory("e2e", "web"))
 
 import browser as browser_lib  # noqa: E402
 from device_double import DeviceDouble  # noqa: E402
@@ -94,7 +97,7 @@ RUNNER_ROUTES = {"prg": "/v1/runners:run_prg",
 
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    parser.add_argument("--browser", default="all", choices=("all",) + browser_lib.BROWSERS,
+    parser.add_argument("--browser", default="all", choices=("all", *browser_lib.BROWSERS),
                         help="Which browsers to drive. Default: every one installed.")
     parser.add_argument("-t", "--timeout", type=float, default=READY_TIMEOUT,
                         help="How long a page has to become ready.")
@@ -330,7 +333,7 @@ def check_power_off(page):
 
 def check_uploads(page, directory):
     """Each file type reaches the route that handles it, with what it needs."""
-    for kind in DISK_IMAGES + ("D64",):
+    for kind in (*DISK_IMAGES, "D64"):
         page.device.clear()
         source = image(directory, "disk.%s" % kind)
         with check("a .%s is mounted through POST %s" % (kind, MOUNT_ROUTE)):

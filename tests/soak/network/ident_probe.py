@@ -4,16 +4,14 @@ import json
 import os
 import socket
 import time
-from typing import Callable
+from collections.abc import Callable
 
 from connection_runtime import (
     ProbeExecutionContext,
     ProbeOutcome,
     ProbeSurface,
     RuntimeSettings,
-    run_surface_operation,
-    select_operation_index,
-    surface_detail,
+    run_selected_surface_operation,
 )
 
 
@@ -49,7 +47,7 @@ def identify_json(settings: RuntimeSettings) -> str:
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
         for _attempt in range(IDENT_RETRY_COUNT):
-            sock.sendto(f"json{nonce}".encode("utf-8"), (settings.host, IDENT_PORT))
+            sock.sendto(f"json{nonce}".encode(), (settings.host, IDENT_PORT))
             deadline = time.monotonic() + IDENT_TIMEOUT_S
             while True:
                 remaining = deadline - time.monotonic()
@@ -58,7 +56,7 @@ def identify_json(settings: RuntimeSettings) -> str:
                 sock.settimeout(remaining)
                 try:
                     candidate_payload, _address = sock.recvfrom(4096)
-                except socket.timeout:
+                except TimeoutError:
                     break
                 try:
                     response = _parse_ident_payload(candidate_payload, nonce)
@@ -85,17 +83,8 @@ def surface_operations(surface: ProbeSurface) -> tuple[tuple[str, Callable[[Runt
 def run_probe(settings: RuntimeSettings, correctness, *, context: ProbeExecutionContext | None = None) -> ProbeOutcome:
     del correctness
     if context is not None:
-        operations = surface_operations(context.surface)
-        index = select_operation_index(context, len(operations))
-        op_name, operation = operations[index]
-        started_at = time.perf_counter_ns()
-        try:
-            detail = run_surface_operation("ident", operation, settings)
-            elapsed_ms = (time.perf_counter_ns() - started_at) / 1_000_000.0
-            return ProbeOutcome("OK", surface_detail(context.surface, op_name, detail), elapsed_ms)
-        except Exception as error:
-            elapsed_ms = (time.perf_counter_ns() - started_at) / 1_000_000.0
-            return ProbeOutcome("FAIL", surface_detail(context.surface, op_name, str(error)), elapsed_ms)
+        return run_selected_surface_operation(
+            "ident", context, settings, surface_operations(context.surface))
 
     started_at = time.perf_counter_ns()
     try:

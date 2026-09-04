@@ -29,10 +29,12 @@ import pathlib
 import subprocess
 import sys
 import tempfile
-from typing import Optional
+from pathlib import Path
 
-sys.path.insert(0, os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
+# The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
 import machine as machine_lib  # noqa: E402  (needs tests/lib first)
 import openapi_contract  # noqa: E402  (needs tests/lib on sys.path first)
 import targets  # noqa: E402  (needs tests/lib on sys.path first)
@@ -92,7 +94,7 @@ def generate_client(profile: str, into: pathlib.Path) -> str:
         [sys.executable, "-m", "openapi_python_client", "generate",
          "--path", str(openapi_contract.document_path(profile)),
          "--config", str(config), "--meta", "none", "--overwrite"],
-        cwd=str(into), capture_output=True, text=True)
+        cwd=str(into), capture_output=True, text=True, check=False)
     if result.returncode != 0:
         raise Failure("openapi-python-client failed: %s"
                       % (result.stderr.strip() or result.stdout.strip())[:600])
@@ -113,7 +115,7 @@ def generated_client(module_name: str, host: str, password: str):
 def run_generated_client(session: RestClient, args: argparse.Namespace,
                          profile: str, workspace: pathlib.Path) -> None:
     require("openapi_python_client", "openapi-python-client")
-    module_name: Optional[str] = None
+    module_name: str | None = None
 
     with check("a client generates from the %s document" % profile):
         module_name = generate_client(profile, workspace)

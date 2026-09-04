@@ -6,14 +6,15 @@ a palette-indexed image and the assertions that go with it.
 """
 
 from collections import Counter
-import os
 import sys
-from typing import List
 
 from PIL import Image
+from pathlib import Path
 
-sys.path.insert(0, os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
+# The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
 from report import Failure
 
 import streams
@@ -79,7 +80,7 @@ def assert_not_black(image: Image.Image, label: str = "VIC frame") -> None:
         raise Failure(f"{label} is completely black ({image.width}x{image.height})")
 
 
-def assert_frames_differ(images: List[Image.Image], label: str = "VIC frames") -> None:
+def assert_frames_differ(images: list[Image.Image], label: str = "VIC frames") -> None:
     """Require a sequence of captured frames to contain a visible change."""
     if len(images) < 2:
         raise ValueError("assert_frames_differ requires at least two frames")

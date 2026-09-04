@@ -29,6 +29,22 @@ jobs:
           docker run --rm \
           -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make observability_test"
 
+      # The lint the tests tree ships its own configuration for. Like the step
+      # above it needs no device and costs seconds, so it runs before the
+      # firmware builds.
+      #
+      # In a stock Python image rather than the build image, for the reason the
+      # OpenAPI validation step below gives: the build image has neither pip nor
+      # ensurepip, so it cannot install a host package. The ruff version is
+      # pinned in tests/requirements-lint.txt.
+      - name: Check Tests Lint
+        run: |
+          docker run --rm -v $GITHUB_WORKSPACE:/mnt/project:rw --workdir /mnt/project \
+          --user $(id -u):$(id -g) -e HOME=/tmp python:3.12-slim /bin/sh -c \
+          "pip install --quiet --disable-pip-version-check --root-user-action=ignore \
+             --target /tmp/lint-packages -r tests/requirements-lint.txt && \
+           PYTHONPATH=/tmp/lint-packages python3 tests/lib/lint_test.py"
+
       # Also the gate that catches an endpoint whose documentation was not
       # updated with it. Runs before the firmware builds because it costs seconds.
       - name: Check OpenAPI Specification

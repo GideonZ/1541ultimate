@@ -29,7 +29,6 @@ from __future__ import annotations
 
 import math
 import os
-from typing import Optional
 
 
 def _seconds(name: str, default: float) -> float:
@@ -239,7 +238,7 @@ KEY_DRAIN_SECONDS = _seconds("U64_UI_KEY_DRAIN", 0.02)
 SPLIT_KEY_DRAIN_SECONDS = _seconds("U64_UI_SPLIT_KEY_DRAIN", 0.06)
 
 
-def key_drain_seconds(split: bool, host: Optional[str] = None) -> float:
+def key_drain_seconds(split: bool, host: str | None = None) -> float:
     """What one key of a batch costs on this target, in seconds.
 
     Named here rather than chosen at each call site, because the two constants
@@ -288,7 +287,7 @@ def remember_key_drain(host: str, seconds: float) -> float:
     return charged
 
 
-def forget_key_drain(host: Optional[str] = None) -> None:
+def forget_key_drain(host: str | None = None) -> None:
     """Drop what was measured, for a test that measures its own."""
     if host is None:
         _measured.clear()
@@ -314,6 +313,28 @@ MENU_TOGGLE_TIMEOUT_SECONDS = _seconds("U64_UI_MENU_TOGGLE_TIMEOUT", 6.0)
 # this to near zero, which is the reason the value is here rather than being a
 # constant in the runner.
 RESET_SETTLE_SECONDS = _seconds("U64_UI_RESET_SETTLE", 0.5)
+
+
+# Typing into BASIC through the C64's keyboard matrix. A tap the KERNAL scan
+# misses produces no character, so a suite typing a command reads the echo back
+# rather than assuming it landed; these bound that read.
+#
+# The per-key value is what one tap costs before the next is sent. Measured on
+# an Ultimate 64 Elite: 0.20s a key typed a nine-character command whole on
+# every one of twenty attempts, and the echo of the whole line then appeared
+# within 0.2s. The timeout is generous against that because it is only reached
+# when a key really was dropped, which is the case the retry exists for.
+C64_TYPE_KEY_SECONDS = _seconds("U64_C64_TYPE_KEY", 0.20)
+C64_ECHO_TIMEOUT_SECONDS = _seconds("U64_C64_ECHO_TIMEOUT", 3.0)
+# Wiping a half-typed line is INST/DEL per character, and a delete needs less
+# settling than a character that has to be echoed: the retry that follows reads
+# the line back, so a delete that was dropped is caught there.
+C64_DELETE_KEY_SECONDS = _seconds("U64_C64_DELETE_KEY", 0.06)
+
+# After the menu closes it re-enables the C64 keyboard matrix, and the browser
+# task has to unwind before the machine has its keyboard back. There is nothing
+# on the wire that says so, which is why this is a sleep and not a poll.
+C64_KEYBOARD_HANDBACK_SECONDS = _seconds("U64_C64_KEYBOARD_HANDBACK", 0.5)
 
 
 def summary() -> str:
