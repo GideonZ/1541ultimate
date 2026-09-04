@@ -1124,9 +1124,12 @@ def ensure_fast_reset(target, password: str | None = None,
     Both halves of a cartridge target are set, because either half can reset
     the C64 and the setting belongs to whichever one does.
 
-    Like the cartridge preference, the change is not saved to flash, and the
-    caller captures the settings before calling this, so what the run found is
-    what it puts back.
+    The caller captures the settings before calling this, so what the run found
+    is what it puts back. That capture is the only thing this relies on: the
+    C64 Ultimate on this bench has 'Auto Save Config' set to Yes, and settings
+    a run left behind on 2026-09-04 were still there after a mains power cycle,
+    so a REST write to this store can reach flash and a run that is killed
+    between here and the restore leaves the machine enabled.
     """
     handle = targets.resolve(target)
     changed = []
