@@ -930,7 +930,10 @@ def main() -> int:
     # A scenario whose behaviour this machine's firmware does not have yet.
     # tests/lib/machine.py owns the table and the wording; the entry names the
     # machines that lack it, so this is one deletion there when it is fixed.
-    GATED = {"issue-740-matrix": machine_lib.UCI_SURVIVES_A_MISSING_IMAGE}
+    GATED = {
+        "issue-740-matrix": machine_lib.UCI_SURVIVES_A_MISSING_IMAGE,
+        "save-reu-offset-past-end": machine_lib.UCI_REPORTS_AN_OVERSIZE_REU_OFFSET,
+    }
 
     def run(name: str, fn, *fn_args) -> None:
         if name not in selected:

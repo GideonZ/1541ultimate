@@ -409,6 +409,18 @@ UCI_SURVIVES_A_MISSING_IMAGE = _fix(
     "the device does not have, rather than wedging until a restart",
     (U2,))
 
+# What tests/e2e/io/command_interface/uci_targets_test.py's
+# save-reu-offset-past-end scenario drives. Measured on u2@c64u, 2026-09-04:
+# SAVE_REU with the preload offset at the end of a 128 KB REU never leaves
+# Command Busy, and the interface stays wedged for every target afterwards.
+# The same wedge as the entry above, reached through a different command, so
+# it is named separately: an Ultimate II+ that gains one need not gain both.
+UCI_REPORTS_AN_OVERSIZE_REU_OFFSET = _fix(
+    "uci-reports-an-oversize-reu-offset",
+    "SAVE_REU answers with the offset and saves nothing when the preload "
+    "offset is at the end of the REU, rather than wedging until a restart",
+    (U2,))
+
 # The heap reading the health sweep already reports as absent on this machine:
 # GET /v1/machine:heap is not served by a C64 Ultimate 1.2.0, so nothing can
 # assert a plausible figure from it.
