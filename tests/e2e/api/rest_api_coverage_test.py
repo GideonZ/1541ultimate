@@ -68,7 +68,7 @@ import machine as machine_lib  # noqa: E402  (needs tests/lib on sys.path first)
 import rest as rest_lib  # noqa: E402  (needs tests/lib on sys.path first)
 from api import UltimateApi  # noqa: E402  (needs tests/lib on sys.path first)
 from report import (  # noqa: E402  (needs tests/lib on sys.path first)
-    Failure, best_effort, check_count, check_fail, check_ok, check_skip, check_start, detail,
+    Failure, teardown_step, check_count, check_fail, check_ok, check_skip, check_start, detail,
     format_exception, section, suite_fail, suite_ok, warn)
 from temp_settings import AUTO_CLEANUP_ITEM, CONFIG_CATEGORY  # noqa: E402
 
@@ -1351,7 +1351,7 @@ class SuiteRunner:
         """Put back everything a case could have changed, however the run ended.
 
         Best effort: a cleanup failure on a device that has already gone down
-        must not bury the reason the suite failed. report.best_effort keeps that
+        must not bury the reason the suite failed. report.teardown_step keeps that
         property and writes down what it could not put back, so the next suite's
         failure can be traced to this one.
 
@@ -1359,12 +1359,12 @@ class SuiteRunner:
         different things - the drive, a category, the scratch directory - and
         one that cannot be put back is not a reason to leave the others
         changed. `Skip` is this module's own exception and is not a device
-        fault, so best_effort lets it through; it is caught here rather than
+        fault, so teardown_step lets it through; it is caught here rather than
         being allowed to end the sequence.
         """
         def step(label, action):
             try:
-                best_effort(label, action)
+                teardown_step(label, action)
             except Skip as exc:
                 detail(f"teardown: {label}: {exc}")
 

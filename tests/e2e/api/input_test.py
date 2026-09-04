@@ -33,7 +33,7 @@ import wait
 import rest as rest_lib
 import targets
 from api import UltimateApi
-from report import (Failure, best_effort, check, check_count, detail, format_exception,
+from report import (Failure, teardown_step, check, check_count, detail, format_exception,
                     suite_fail, suite_ok, warn)
 from vic_video import MULTICAST_GROUP, VIDEO_PORT, VicStreamCapture
 
@@ -310,7 +310,7 @@ class RestInputSession:
             raise Failure(f"HTTP client failure: {exc}") from exc
         finally:
             if connection is not None:
-                best_effort("close the HTTP connection", connection.close)
+                teardown_step("close the HTTP connection", connection.close)
 
     def put(self, command: str) -> None:
         self.request("PUT", f"/v1/machine:{command}")
@@ -963,7 +963,7 @@ def run_keyboard_echo_stress_case(session: RestInputSession, text: str, hz: floa
         assert_state_empty(session)
         return offset + len(text)
     finally:
-        best_effort("release every held key",
+        teardown_step("release every held key",
                     lambda: session.post_events([{"kind": "release_all"}]))
 
 
@@ -2217,7 +2217,7 @@ def run_menu_keyboard_tests(session: RestInputSession, selected: list[str] | Non
             except Failure:
                 pass
         session.close_menu_from_anywhere()
-        best_effort("remove the rename fixture",
+        teardown_step("remove the rename fixture",
                     lambda: remove_rename_fixture(session.host))
         session.post_events([{"kind": "release_all"}])
         assert_state_empty(session)

@@ -30,7 +30,7 @@ about the same load. This is the fixture, not the test.
 from __future__ import annotations
 
 import ftp as ftp_lib
-from report import best_effort
+from report import teardown_step
 
 # The transfer is a few hundred bytes; a device that cannot finish it in twenty
 # seconds has a problem the suite should report rather than wait out.
@@ -76,4 +76,4 @@ def cleanup(host: str, password: str, *names: str) -> None:
                 if name:
                     ftp_lib.delete_quietly(ftp, f"/Temp/{name}")
 
-    best_effort("remove the fixtures this run uploaded", remove)
+    teardown_step("remove the fixtures this run uploaded", remove)

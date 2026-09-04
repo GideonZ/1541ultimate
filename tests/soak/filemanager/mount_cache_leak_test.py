@@ -42,7 +42,7 @@ import api as api_lib  # noqa: E402  (needs tests/lib on sys.path first)
 import ftp as ftp_lib  # noqa: E402
 import rest as rest_lib  # noqa: E402
 from report import (  # noqa: E402
-    Failure, best_effort, check, check_ok, check_skip, check_start, detail, format_exception,
+    Failure, teardown_step, check, check_ok, check_skip, check_start, detail, format_exception,
     section, suite_fail, suite_ok)
 from prg_context_menu_test import build_d64, default_fixture_token, PRG_BYTES  # noqa: E402
 
@@ -115,12 +115,12 @@ def cleanup(host: str, password: str, indices) -> int:
         with ftp_lib.session(host, password, timeout=60) as ftp:
             for i in indices:
                 # delete_quietly answers whether the entry went away and never
-                # raises, so its result is the count; best_effort would report
+                # raises, so its result is the count; teardown_step would report
                 # True for a refusal.
                 if ftp_lib.delete_quietly(ftp, TEMP + image_name(i)):
                     removed += 1
 
-    best_effort("remove the images this run mounted", remove_all)
+    teardown_step("remove the images this run mounted", remove_all)
     return removed
 
 

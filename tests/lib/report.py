@@ -875,7 +875,7 @@ def assert_or_warn(assertions_enabled: bool, condition: object,
     return False
 
 
-def best_effort(label: str, action: Callable[[], object]) -> bool:
+def teardown_step(label: str, action: Callable[[], object]) -> bool:
     """Run a teardown step, report what it could not do, and carry on.
 
     Teardown must not mask a verdict: a settings restore that fails after a
@@ -906,7 +906,7 @@ def best_effort(label: str, action: Callable[[], object]) -> bool:
     are active, so those are device faults here too. A `TypeError` stays out,
     because a teardown that calls something wrongly is a bug to see.
 
-        best_effort(f"restore {item}", lambda: api.configs.set(store, item, was))
+        teardown_step(f"restore {item}", lambda: api.configs.set(store, item, was))
     """
     import ftplib
     import http.client

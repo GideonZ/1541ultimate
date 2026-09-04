@@ -56,7 +56,7 @@ sys.path.insert(0, bootstrap.directory("e2e", "io", "c64"))
 import api as api_lib  # noqa: E402  (needs tests/lib on sys.path first)
 import rest as rest_lib  # noqa: E402  (needs tests/lib on sys.path first)
 from report import (  # noqa: E402
-    Failure, best_effort, check_ok, check_skip, check_start, detail, format_exception,
+    Failure, teardown_step, check_ok, check_skip, check_start, detail, format_exception,
     section, suite_fail, suite_ok, suite_skip)
 from menu import wait_until  # noqa: E402
 from ui_backend import add_mode_argument, make_backend  # noqa: E402
@@ -198,7 +198,7 @@ def main() -> int:
         suite_skip("assembly_search_leak_test", str(exc))
         return 0
     finally:
-        best_effort("put the Assembly 64 UI back",
+        teardown_step("put the Assembly 64 UI back",
                     lambda: a64.recover(device, "tearing down"))
         backend.close()
 

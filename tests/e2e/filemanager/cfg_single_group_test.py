@@ -38,7 +38,7 @@ import cli  # noqa: E402
 
 from api import UltimateApi
 import ftp as ftp_lib
-from report import (Failure, best_effort, check, check_skip, check_start, format_exception,
+from report import (Failure, teardown_step, check, check_skip, check_start, format_exception,
                     suite_fail, suite_ok)
 from ui_backend import add_mode_argument, make_browser
 
@@ -120,9 +120,9 @@ def main() -> int:
         suite_fail("cfg_single_group_test", format_exception(exc))
         return 1
     finally:
-        best_effort(f"restore {store}/{item}",
+        teardown_step(f"restore {store}/{item}",
                     lambda: api.configs.set(store, item, original))
-        best_effort("close the browser session", browser.close)
+        teardown_step("close the browser session", browser.close)
         cleanup(args.host, args.password)
 
 

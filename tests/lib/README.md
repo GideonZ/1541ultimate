@@ -346,7 +346,7 @@ them, `target` and `attempt`. The rest depends on the kind:
 | `suite` | `name`, `verdict`, `note`, `checks`, `seconds`; from `run-tests` also `mode`, `attempt`, `recoveries` |
 | `health` | `label`, `ok`, `checks[]` of `name`, `state`, `ms`, `detail`, and `figures` on a check that measured any |
 | `warning` | `message` |
-| `teardown` | `label`, `ok`, `message`, `error` - one per teardown step that could not put something back; see `report.best_effort` |
+| `teardown` | `label`, `ok`, `message`, `error` - one per teardown step that could not put something back; see `report.teardown_step` |
 | `gap` | `component`, `started`, `ended` when the gap closed, plus whatever the component names it by: `target`, `machine`, `reason` |
 | `menu` | `cols`, `rows`, `text[]`, `raw` as hex, and `check` when one was running; `screens.jsonl` only |
 | `telnet` | the same, for a Telnet session's screen, which has no colour plane and so no `raw`; `screens.jsonl` only |

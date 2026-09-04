@@ -59,7 +59,7 @@ from api import UltimateApi                                        # noqa: E402
 from rest import retrying_urlopen                                  # noqa: E402
 import streams                                                     # noqa: E402
 import targets                                                     # noqa: E402
-from report import (Failure, best_effort, check, check_ok, check_skip, check_start,   # noqa: E402
+from report import (Failure, teardown_step, check, check_ok, check_skip, check_start,   # noqa: E402
                     detail, format_exception, suite_fail, suite_ok, suite_skip)
 
 SUITE = "doom_release_test"
@@ -398,7 +398,7 @@ def run(args):
         return None
     finally:
         restore_settings(api, previous)
-        best_effort("reset the machine", api.machine.reset)
+        teardown_step("reset the machine", api.machine.reset)
 
 
 def main() -> int:

@@ -33,7 +33,7 @@ import ftp as ftp_lib  # noqa: E402  (needs tests/lib on sys.path first)
 import leak  # noqa: E402
 import rest as rest_lib  # noqa: E402  (needs tests/lib on sys.path first)
 from report import (  # noqa: E402
-    Failure, best_effort, check_ok, check_skip, check_start, detail, format_exception,
+    Failure, teardown_step, check_ok, check_skip, check_start, detail, format_exception,
     section, suite_fail, suite_ok)
 
 # A disk image is the cheapest REST call that allocates a large buffer, which
@@ -105,7 +105,7 @@ def cleanup(host: str, password: str | None, directory: str, names) -> int:
                 if ftp_lib.delete_quietly(client, name):
                     removed += 1
 
-    best_effort(f"remove the images this run left in /{directory}", remove_all)
+    teardown_step(f"remove the images this run left in /{directory}", remove_all)
     return removed
 
 

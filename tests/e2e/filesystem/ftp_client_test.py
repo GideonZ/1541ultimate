@@ -71,7 +71,7 @@ from ui_backend import (  # noqa: E402  (needs tests/e2e/lib first)
     find_selected_row_rest, measure_cursor_colour)
 from api import UltimateApi  # noqa: E402  (needs tests/lib on sys.path first)
 from report import (  assert_or_warn, # noqa: E402  (needs tests/lib on sys.path first)
-    Failure, best_effort, check_count, check_fail, check_ok, check_start, check_warn, detail, last_label,
+    Failure, teardown_step, check_count, check_fail, check_ok, check_start, check_warn, detail, last_label,
     section, suite_fail, suite_ok, warn)
 
 
@@ -1642,7 +1642,7 @@ def stage_edge(ctx):
             check_warn(f"device could not resolve hostname {hostname} (no LAN DNS); IP path already covered")
             ctx.record("edge", "hostname", "WARN", "", hostname, "no device DNS")
     finally:
-        best_effort(f"remove the FTP host {alias_hn}",
+        teardown_step(f"remove the FTP host {alias_hn}",
                     lambda: d.remove_ftp_host(alias_hn))
         ctx.ensure_alive("edge hostname cleanup")
 
@@ -1721,7 +1721,7 @@ def negative_case(ctx, label, alias_suffix, host=None, port=None, password=None,
         ctx.record("negative", label, "OK", "", alias, "no crash, menu recovered")
     finally:
         # remove the throwaway host if it still exists
-        best_effort(f"remove the FTP host {alias}",
+        teardown_step(f"remove the FTP host {alias}",
                     lambda: d.remove_ftp_host(alias))
 
 
@@ -1751,7 +1751,7 @@ def stage_negative(ctx):
             check_warn("file was removed despite read-only area")
             ctx.record("negative", "perm-denied delete", "WARN", "DELE", "RDONLY/LOCKED.TXT")
     finally:
-        best_effort(f"remove the FTP host {alias}",
+        teardown_step(f"remove the FTP host {alias}",
                     lambda: ctx.d.remove_ftp_host(alias))
 
     # server stopped while a host is configured, then restarted.
@@ -1779,7 +1779,7 @@ def stage_negative(ctx):
             check_warn("no LIST after restart")
             ctx.record("negative", "server stop/restart", "WARN", "", alias)
     finally:
-        best_effort(f"remove the FTP host {alias}",
+        teardown_step(f"remove the FTP host {alias}",
                     lambda: ctx.d.remove_ftp_host(alias))
 
 
@@ -1954,7 +1954,7 @@ def cleanup(ctx, crashed):
             warn(f"UI cleanup: {exc}")
     # Remove any files staged on the device's local FS.
     for path in ctx.host_staged:
-        best_effort(f"delete the staged file {path}",
+        teardown_step(f"delete the staged file {path}",
                     lambda path=path: ctx.inspector.delete(path))
     preserved = []
     if ctx.args.preserve_ftp_host and ctx.alias:
@@ -2191,7 +2191,7 @@ def main(argv=None):
         # than at the end of the run covers the paths that leave early:
         # a server that will not start used to return with the setting
         # still changed and the menu still open.
-        best_effort("close the menu browser", driver.close)
+        teardown_step("close the menu browser", driver.close)
 
 
 if __name__ == "__main__":

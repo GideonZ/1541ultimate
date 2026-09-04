@@ -56,7 +56,7 @@ import ftp as ftp_lib  # noqa: E402
 import pacing  # noqa: E402
 import targets  # noqa: E402
 from report import (  # noqa: E402
-    Failure, best_effort, add_colour_argument, apply_colour, check, check_fail, check_ok,
+    Failure, teardown_step, add_colour_argument, apply_colour, check, check_fail, check_ok,
     check_start, check_warn, detail, section, suite_fail, suite_ok, warn)
 
 import ui_backend  # noqa: E402
@@ -339,8 +339,8 @@ def main() -> int:
         suite_fail(SUITE, str(exc))
         return 1
     finally:
-        best_effort("close the browser", browser.close)
-        best_effort("close the backend", browser.backend.close)
+        teardown_step("close the browser", browser.close)
+        teardown_step("close the backend", browser.backend.close)
         try:
             fixture.remove()
         except Exception as exc:  # noqa: BLE001

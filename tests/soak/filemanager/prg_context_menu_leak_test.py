@@ -39,7 +39,7 @@ sys.path.insert(0, bootstrap.directory("e2e", "filemanager"))
 import api as api_lib  # noqa: E402  (needs tests/lib on sys.path first)
 import rest as rest_lib  # noqa: E402  (needs tests/lib on sys.path first)
 from report import (  # noqa: E402
-    Failure, best_effort, check, check_ok, check_skip, check_start, detail, format_exception,
+    Failure, teardown_step, check, check_ok, check_skip, check_start, detail, format_exception,
     section, suite_fail, suite_ok)
 from ui_backend import add_mode_argument, make_browser  # noqa: E402
 from menu_screen_test import RestSession  # noqa: E402
@@ -132,11 +132,11 @@ def main() -> int:
         suite_fail("prg_context_menu_leak_test", "see the summary above")
         return 1
     finally:
-        best_effort("close the menu", machine.close_menu)
-        best_effort("remove drive a", machine.remove_drive_a)
+        teardown_step("close the menu", machine.close_menu)
+        teardown_step("remove drive a", machine.remove_drive_a)
         if not args.keep_fixtures:
             fixtures.remove(rest_host, args.password)
-        best_effort("close the session", machine.close)
+        teardown_step("close the session", machine.close)
 
 
 if __name__ == "__main__":

@@ -111,7 +111,7 @@ def rest_url_names_the_port_only_when_it_moved() -> str:
 
 @case(1, exclusive=True)
 def a_failed_teardown_is_recorded_and_does_not_raise() -> str:
-    """report.best_effort keeps the verdict and stops losing the evidence.
+    """report.teardown_step keeps the verdict and stops losing the evidence.
 
     The suites used to end with `try: ... except Exception: pass`, so a settings
     restore that failed left the device changed with nothing anywhere saying so,
@@ -127,26 +127,26 @@ def a_failed_teardown_is_recorded_and_does_not_raise() -> str:
         report_module.set_jsonl_path(path)
         try:
             expect("a step that works reports success",
-                   report_module.best_effort("restore Drive A", lambda: None), True)
+                   report_module.teardown_step("restore Drive A", lambda: None), True)
 
             def refuse():
                 raise OSError("device did not answer")
 
             expect("a step that fails reports failure, rather than raising",
-                   report_module.best_effort("restore Drive A", refuse), False)
+                   report_module.teardown_step("restore Drive A", refuse), False)
 
             def refuse_ftp():
                 raise ftplib.error_perm("550 no such file")
 
             expect("an ftplib error is a device fault too",
-                   report_module.best_effort("delete the fixture", refuse_ftp),
+                   report_module.teardown_step("delete the fixture", refuse_ftp),
                    False)
 
             # A bug in the teardown itself is not something to carry on from:
             # a TypeError here means the caller is wrong, not the device.
             raised = False
             try:
-                report_module.best_effort("bad call", lambda: "x" + 1)
+                report_module.teardown_step("bad call", lambda: "x" + 1)
             except TypeError:
                 raised = True
             expect("a caller bug still propagates", raised, True)

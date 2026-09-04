@@ -28,7 +28,7 @@ import rest as rest_lib  # noqa: E402  (needs tests/lib on sys.path first)
 import targets  # noqa: E402  (needs tests/lib on sys.path first)
 from api import UltimateApi  # noqa: E402  (needs tests/lib on sys.path first)
 from report import (  # noqa: E402  (needs tests/lib on sys.path first)
-    Failure, best_effort, check_count, check_fail, check_ok, check_start, detail,
+    Failure, teardown_step, check_count, check_fail, check_ok, check_start, detail,
     format_exception, section, suite_fail, suite_ok)
 
 SUITE = "create_disk_image_test"
@@ -193,7 +193,7 @@ def main() -> int:
             suite_fail(SUITE, f"REST failure: {format_exception(exc)}")
         return 1
     finally:
-        best_effort("remove the images this run created", runner.cleanup)
+        teardown_step("remove the images this run created", runner.cleanup)
 
     if passed:
         suite_ok(SUITE, f"{check_count()} checks")
