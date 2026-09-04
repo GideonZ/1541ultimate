@@ -63,7 +63,7 @@ import rest as rest_lib
 import targets
 from report import (
     FAIL, Failure, OK, SKIP, check, check_skip, check_start, detail,
-    format_exception, section, suite_fail, suite_ok, warn)
+    format_exception, note_assumed_fix, section, suite_fail, suite_ok, warn)
 
 
 READMEM_PATH = "/v1/machine:readmem"
@@ -951,6 +951,15 @@ def main() -> int:
             check_skip(reason)
             results[name] = True
             return
+        # This mirrors Machine.skip_without_fix's own tagging rather than
+        # calling it directly: one gate here covers four scenario names, not
+        # one check, and skip_without_fix's contract is one gate per check.
+        # Skipping this tag would make tools/stale_gates.py blind to
+        # UCI_COMPLETES_AN_REU_COMMAND: --assume-fix runs these scenarios
+        # (not skip's job), but nothing would say a passing run means the
+        # entry is stale.
+        if gate and machine.assumed_fix(gate):
+            note_assumed_fix(gate, machine.kind)
         results[name] = False  # so an aborted scenario reports FAIL, not "not reached"
         results[name] = fn(*fn_args)
 

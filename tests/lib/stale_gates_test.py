@@ -131,6 +131,29 @@ def main() -> int:
         finally:
             machine.forget_assumptions()
 
+    with check("a tag in a per-suite file is found; run.jsonl alone would miss it"):
+        # The layout a real run-tests output directory actually has: this
+        # process's own run.jsonl sits beside one <mode>-<suite>.jsonl per
+        # suite per mode, and a tagged check lands in whichever file the
+        # suite that ran it was writing to -- never in run.jsonl. Found
+        # running uci_targets_test.py for real: report_stale_gates() read
+        # only report.JSONL_PATH (run.jsonl) and reported "none" every time,
+        # even with a confirmed tag on disk in the suite's own file.
+        machine.assume(FIX)
+        try:
+            with tempfile.TemporaryDirectory() as d:
+                with synthetic_run(os.path.join(d, "run.jsonl")):
+                    with check("an orchestrator-level check, unrelated to any fix"):
+                        pass
+                with synthetic_run(os.path.join(d, "overlay-some-suite.jsonl")):
+                    ran = gated_check(FIX, FIX_MACHINE, LABEL, passes=True)
+                expect("the check ran rather than skipped", ran, True)
+                stale = stale_gates.find_stale(stale_gates.load_run_directory(d))
+                expect("one entry reported stale", len(stale), 1)
+                expect("names the entry", stale[0].fix, FIX)
+        finally:
+            machine.forget_assumptions()
+
     with check("a check that still fails under the assumption is not stale"):
         machine.assume(FIX)
         try:
