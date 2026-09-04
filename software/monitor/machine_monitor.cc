@@ -1,4 +1,5 @@
 #include "machine_monitor.h"
+#include "monitor_init.h"
 
 // Provided by the application's user interface. Weak, because the monitor's
 // host test binary links without it and must not require it: a build with no
@@ -7,6 +8,8 @@ int swap_interface_type(UserInterface *ui) __attribute__ ((weak));
 
 #include "assembler_6502.h"
 #include "disassembler_6502.h"
+#include "monitor_debug_predictor.h"
+#include "monitor_debug_session.h"
 #include "editor.h"
 #include "userinterface.h"
 #include "monitor_file_io.h"
@@ -23,47 +26,35 @@ extern "C" {
 #include <string.h>
 #include <stdlib.h>
 
-// Rendered by draw_help, one line per row. The line naming the key that opens
-// help carries the only "%s" here: that key comes from the application key
-// mapper rather than from this table, so the help cannot claim a mapping the
-// firmware does not have. Every line has to fit the 38 usable columns of the
-// monitor window on the physical 40-column screen, and the table as a whole has
-// to fit the shortest screen the monitor runs on, which is the 24-row telnet
-// terminal rather than the 25-row C64. A host test enforces both.
-// The primary grid's cells start at columns 1, 14 and 27 (1-based, excluding
-// the popup border); BOOKMARKS and CONTROL KEYS share a four-anchor grid at
-// 1, 12, 21 and 29. Every character is drawn in the body colour, so a line is
-// laid out exactly as it is written here. No leading blank row: "HELP", drawn
-// as the window title by draw_header rather than from this table, is this
-// page's own heading, and a heading is not followed by a blank row any more
-// than BOOKMARKS or CONTROL KEYS are below.
+// Rendered verbatim by draw_help, one line per row; must fit the 38 usable
+// columns and the 24-row telnet terminal (host-test enforced). The "%s" key
+// name comes from the application key mapper, not this table, so help can't
+// claim a mapping the firmware lacks.
 const char *const monitor_help_lines[] = {
+    // Three blocks, separated by one blank row: the views and what modifies
+    // them, the commands that act on memory, and every key that needs C= or a
+    // named key. The blocks carry no headings; the blank row is what separates
+    // them, which is one row cheaper than a heading and says the same thing.
+    // The Debug help (MonitorDebug::format_help_lines) is laid out the same
+    // way, so the two screens read as one page in two modes.
     "M Memory     I ASCII      V Screen",
     "A Assembly   B Binary     U Undoc/Case",
-    "J Jump       G Go",
-    // No blank row between the two halves of this grid: the page is one row
-    // from the shortest screen's budget, and a blank inside a single
-    // three-column grid is worth less than the machine row at the bottom.
+    "W Width      O CPU Bank   SH+O VIC",
+    "",
     "E Edit       F Fill       T Transfer",
     "C Compare    H Hunt       N Number",
-    "W Width      R Range      P Poll",
-    "Z Freeze     O CPU Bank   SH+O VIC",
-    "L Load       S Save",
+    "R Range      Z Freeze     P Poll",
+    "L Load       S Save       J Jump",
+    "G Go         D Debug",
     "",
-    "BOOKMARKS",
-    "C=+B       List     C=+0-9  Jump",
-    "",
-    "CONTROL KEYS",
-    // Interface row: the two major auxiliary interfaces.
-    "?/%s       Help     C=+O    Monitor",
-    // Editing row.
-    "C=+E       Edit off C=+C/V  Copy/Paste",
-    // Structural navigation row: back out, or follow/return within the level
-    // already open.
-    "RUNSTOP/<- Back     RETURN  Follow/Ret",
-    // Machine row: the two keys that act on the machine rather than the view,
-    // and both of which leave the monitor.
-    "C=+R       Reset    C=+I    Interface",
+    // Lower grid: key at column 0, action at 10, second key at 19, second
+    // action at 28. draw_status puts the paging row on the same columns, so
+    // all four read as straight lines down the page.
+    "C=+B      Bkmrks   C=+0-9   Bkmrk Jmp",
+    "?/%s      Help     C=+O     Monitor",
+    "C=+E      Edit off C=+C/V   Copy/Paste",
+    "RSTOP/<-  Back     RETURN   Follow/Ret",
+    "C=+R      Reset    C=+I     Interface",
     NULL
     // Page Up/Down remains the window's own last row, drawn by draw_status:
     // MONITOR_HELP_LINES_ON_SHORTEST_SCREEN counts only this table.
@@ -103,6 +94,12 @@ static MachineMonitorState monitor_saved_state = {
     0x07
 };
 
+static bool monitor_reset_reopen_state_valid = false;
+static MachineMonitorState monitor_reset_reopen_state;
+static bool monitor_reset_reopen_debug_active = false;
+static bool monitor_sync_view_to_live_on_open = false;
+static MonitorBreakpoints monitor_saved_breakpoints;
+
 // Persistent LOAD/SAVE/GO state (across monitor invocations within a single
 // firmware run). Defaults match the spec: a "press L, RETURN, RETURN" sequence
 // loads a PRG to its embedded address, "press S, RETURN, RETURN" saves the
@@ -127,13 +124,10 @@ static uint16_t monitor_last_go_addr = 0;
 static uint8_t monitor_memory_bytes_per_row = MONITOR_HEX_BYTES_PER_ROW;
 static uint8_t monitor_binary_bytes_per_row = 1;
 
-// Trace lines for the monitor's non-debugger actions. They go to the same
-// console the device log collector reads, so the prefix is fixed at "MCM " and
-// every line is one action: an E2E run can tell from the log alone which view
-// was selected, where the cursor went, and what each range command was asked
-// to do. Volume is one line per action, which on the bank keys means one line
-// per keypress, and that is the point: a bank key that produced no line did
-// not reach the monitor.
+// Trace lines for the monitor's non-debugger actions, fixed-prefix "MCM " so
+// an E2E run can tell from the log alone which view/cursor/range action ran.
+// One line per keypress on the bank keys is deliberate: a bank key that
+// produced no line did not reach the monitor.
 static void monitor_log(const char *action)
 {
     printf("MCM %s\n", action);
@@ -159,12 +153,10 @@ static void monitor_log_range(const char *action, uint16_t start, uint16_t end)
     printf("MCM %s $%04x-$%04x\n", action, start, end);
 }
 
-// The three-character tag the Assembly view puts at the end of each row. The
-// source column is right-aligned, so a variable-width tag moves the column's
-// left edge whenever the cursor crosses a bank boundary and the rows below
-// appear to shift. Every name a backend can return maps to three characters,
-// so the column stays where it is. A name no backend currently returns is
-// passed through rather than hidden, and it is the caller that caps the width.
+// Three-character source tag for the Assembly view's right-aligned column.
+// Fixed width keeps the column from shifting when the cursor crosses a bank
+// boundary; an unrecognized backend name is passed through rather than
+// hidden, with width capping left to the caller.
 static const char *monitor_source_indicator(const char *source)
 {
     if (!source) {
@@ -917,6 +909,77 @@ static void draw_with_mask(Window *window, int y, const char *text, int len, con
     window->repeat(' ', width - len);
 }
 
+static void draw_with_style_mask(Window *window, int y, const char *text, int len,
+                                 const bool *reverse_mask, const bool *accent_mask,
+                                 int normal_color, int accent_color)
+{
+    int width = window->get_size_x();
+    bool reverse = false;
+    int color = normal_color;
+
+    if (len > width) len = width;
+    if (len < 0) len = 0;
+
+    window->move_cursor(0, y);
+    window->set_color(normal_color);
+    window->reverse_mode(0);
+    for (int i = 0; i < len; i++) {
+        bool want_reverse = reverse_mask && reverse_mask[i];
+        int want_color = (accent_mask && accent_mask[i]) ? accent_color : normal_color;
+        if (want_reverse != reverse) {
+            reverse = want_reverse;
+            window->reverse_mode(reverse ? 1 : 0);
+        }
+        if (want_color != color) {
+            color = want_color;
+            window->set_color(color);
+        }
+        window->output_length(text + i, 1);
+    }
+    if (reverse) window->reverse_mode(0);
+    window->set_color(normal_color);
+    window->repeat(' ', width - len);
+}
+
+static bool monitor_debug_branch_taken(uint8_t opcode, uint8_t sr)
+{
+    switch (opcode) {
+        case 0x10: return (sr & 0x80) == 0;
+        case 0x30: return (sr & 0x80) != 0;
+        case 0x50: return (sr & 0x40) == 0;
+        case 0x70: return (sr & 0x40) != 0;
+        case 0x90: return (sr & 0x01) == 0;
+        case 0xB0: return (sr & 0x01) != 0;
+        case 0xD0: return (sr & 0x02) == 0;
+        case 0xF0: return (sr & 0x02) != 0;
+    }
+    return false;
+}
+
+static bool monitor_find_target_span(const char *text, int text_len,
+                                     int *span_start, int *span_len)
+{
+    if (!text || text_len <= 0 || !span_start || !span_len) return false;
+    for (int i = 0; i < text_len; i++) {
+        if (text[i] != '$') continue;
+        int hex_count = 0;
+        while (i + 1 + hex_count < text_len) {
+            char c = text[i + 1 + hex_count];
+            bool digit = (c >= '0' && c <= '9') ||
+                         (c >= 'A' && c <= 'F') ||
+                         (c >= 'a' && c <= 'f');
+            if (!digit) break;
+            hex_count++;
+        }
+        if (hex_count >= 4) {
+            *span_start = i;
+            *span_len = hex_count + 1;
+            return true;
+        }
+    }
+    return false;
+}
+
 struct MonitorCpuStatusFields {
     const char *a000;
     const char *d000;
@@ -1023,6 +1086,25 @@ void monitor_format_status_line(char *line, uint8_t port01, uint8_t vic_bank)
     format_status_line_impl(line, port01, vic_bank);
 }
 
+void monitor_format_status_line_banks(char *line, uint8_t view_cpu_port,
+                                      uint8_t live_cpu_port, uint8_t vic_bank)
+{
+    uint8_t monitor_bank = view_cpu_port & 0x07;
+    uint8_t cpu_bank = live_cpu_port & 0x07;
+
+    // The regions named in the row are what the monitor's own view maps, so
+    // they follow the view bank. Only the leading field distinguishes the two:
+    // "CPUn" where the view and the live execution bank agree, "CxOy" where
+    // they differ, with x the live bank and y the view bank selected with O.
+    format_status_line_impl(line, monitor_bank, vic_bank);
+    if (cpu_bank != monitor_bank) {
+        line[0] = 'C';
+        line[1] = (char)('0' + cpu_bank);
+        line[2] = 'O';
+        line[3] = (char)('0' + monitor_bank);
+    }
+}
+
 const char *monitor_error_text(MonitorError error)
 {
     switch (error) {
@@ -1063,11 +1145,31 @@ void monitor_reset_saved_state(void)
 
     monitor_memory_bytes_per_row = MONITOR_HEX_BYTES_PER_ROW;
     monitor_binary_bytes_per_row = 1;
+    monitor_saved_breakpoints.clear_all();
 }
 
 void monitor_invalidate_saved_state(void)
 {
     monitor_saved_state_valid = false;
+}
+
+void monitor_reset_saved_cpu_view(void)
+{
+    monitor_saved_state.cpu_port = 0x07;
+    if (monitor_reset_reopen_state_valid) {
+        monitor_reset_reopen_state.cpu_port = 0x07;
+    }
+    monitor_sync_view_to_live_on_open = true;
+}
+
+void monitor_format_breakpoint_mismatch(char *out, int out_len,
+                                        MonitorBackingStore target,
+                                        MonitorBackingStore current)
+{
+    if (!out || out_len <= 0) return;
+    sprintf(out, "BRK %s, CPU %s; not mapped now",
+            monitor_backing_store_tag(target), monitor_backing_store_tag(current));
+    out[out_len - 1] = 0;
 }
 
 void monitor_apply_go(MachineMonitorState *state, uint16_t address)
@@ -1235,11 +1337,9 @@ MonitorError monitor_parse_transfer(const char *text, uint16_t *start, uint16_t 
     return *cursor ? MONITOR_SYNTAX : MONITOR_OK;
 }
 
-// `AAAA-BBBB,CCCC` copies, and the optional `,DDDD-EEEE` additionally names the
-// part of the source that is code, in source addresses, so absolute operands
-// pointing into the copied range can be moved with it. Without the fourth
-// field this is exactly monitor_parse_transfer and `relocate` comes back false,
-// which is what keeps the three-argument command unchanged.
+// `AAAA-BBBB,CCCC` copies; the optional `,DDDD-EEEE` names the code sub-range
+// (source addresses) so absolute operands pointing into it can be relocated.
+// Without it, this is monitor_parse_transfer and `relocate` comes back false.
 MonitorError monitor_parse_transfer_relocate(const char *text, uint16_t *start, uint16_t *end,
                                              uint16_t *dest, bool *relocate,
                                              uint16_t *code_start, uint16_t *code_end)
@@ -1424,17 +1524,10 @@ void monitor_transfer_memory(MemoryBackend *backend, uint16_t start, uint16_t en
     uint8_t *buffer = (uint8_t *)malloc(TRANSFER_BLOCK);
     uint32_t done = 0;
 
-    // A chunk at a time, whole-chunk read then whole-chunk write. Each one is
-    // a single access as far as the backend is concerned, which is what an
-    // Ultimate II+L needs: reading and writing a byte at a time flips the
-    // frozen C64's bank around every access, and the copy then loses
-    // everything after its first couple of bytes.
-    //
-    // The buffer is one chunk rather than the whole range, so copying
-    // $0000-$FFFF asks for 4KB rather than 64KB and the allocation does not
-    // fail on a machine with little left. A chunk is read in full before any
-    // of it is written, so an overlap inside one chunk is safe; overlap across
-    // chunks is what the direction rule below handles.
+    // Whole-chunk read then whole-chunk write, one access per chunk: an
+    // Ultimate II+L flips the frozen C64's bank on every byte-at-a-time
+    // access, losing the copy past the first couple of bytes. A fixed chunk
+    // (not the whole range) keeps $0000-$FFFF's allocation to 4KB.
     if (buffer) {
         if (dest > start && dest <= end) {
             // Destination inside the source and above its start: the last
@@ -1495,27 +1588,10 @@ static uint8_t transfer_read_code(MemoryBackend *backend, uint16_t address,
     return backend->read(transfer_mapped_address(address, start, end, dest));
 }
 
-// Copy, then walk the code range and move absolute operands that point into
-// the copied source range. Returns how many operands were rewritten.
-//
-// Only a three-byte instruction with a two-byte operand qualifies, which is
-// absolute, absolute-indexed and indirect. Zero page cannot express a page
-// move, and a relative branch inside a block that moves as a unit is already
-// correct, so both are left alone by that condition rather than by a special
-// case. An operand pointing outside the source range is left alone too: it
-// names something this copy did not move.
-//
-// The code range is where the pointers are, and it is independent of the range
-// being copied. An instruction wholly inside the copy is read and rewritten in
-// the copy, because that is the version being relocated. An instruction wholly
-// outside it is read and rewritten where it stands, which is how a jump table
-// that has to keep pointing at the block is brought with it. An instruction
-// straddling the boundary is neither, and is left alone rather than half
-// written into the copy and half into the original.
-//
-// The scan is linear and steps by one byte over anything that does not decode,
-// which is what the fourth field exists to keep short: the user names where
-// the pointers are.
+// Copy, then walk the code range and relocate absolute operands (3-byte
+// instructions only) pointing into the copied source range: rewritten in the
+// copy if wholly inside it, in place if wholly outside (keeps a jump table
+// correct), left alone if straddling the boundary or pointing elsewhere.
 int monitor_transfer_memory_relocate(MemoryBackend *backend, uint16_t start, uint16_t end,
                                      uint16_t dest, uint16_t code_start, uint16_t code_end,
                                      bool illegal_enabled)
@@ -1524,10 +1600,8 @@ int monitor_transfer_memory_relocate(MemoryBackend *backend, uint16_t start, uin
     uint32_t code_length = (uint32_t)(uint16_t)(code_end - code_start) + 1;
     uint32_t index = 0;
     int rewritten = 0;
-    // The copied range, held here for the whole scan. Every byte the scan
-    // needs from inside the copy comes out of this rather than off the
-    // machine, so a scan of a large range is one read and one write rather
-    // than three accesses per instruction. Patches to instructions inside the
+    // Copied range held here for the whole scan: one read/write for a large
+    // range rather than three accesses per instruction. Patches inside the
     // copy are made here and written back once at the end.
     uint8_t *image = (uint8_t *)malloc(source_length);
     bool image_changed = false;
@@ -2207,10 +2281,18 @@ MonitorError monitor_validate_load_size(uint32_t file_size, uint32_t offset, boo
 MachineMonitor :: MachineMonitor(UserInterface *ui, MemoryBackend *mem_backend) : UIObject(ui)
 {
     backend = mem_backend;
+    restore_debug_after_reset = false;
     data_region_start = 0;
     data_region_end = 0;
     data_region_valid = false;
-    if (monitor_saved_state_valid) {
+    if (monitor_reset_reopen_state_valid) {
+        state = monitor_reset_reopen_state;
+        restore_debug_after_reset = monitor_reset_reopen_debug_active;
+        monitor_saved_state = state;
+        monitor_saved_state_valid = true;
+        monitor_reset_reopen_state_valid = false;
+        monitor_reset_reopen_debug_active = false;
+    } else if (monitor_saved_state_valid) {
         state = monitor_saved_state;
     } else {
         state.view = MONITOR_VIEW_HEX;
@@ -2237,6 +2319,8 @@ MachineMonitor :: MachineMonitor(UserInterface *ui, MemoryBackend *mem_backend) 
     reset_pending = false;
     interface_swap_pending = false;
     go_pending_addr = 0;
+    go_pending_has_context = false;
+    debug_context_reset(&go_pending_context);
     memory_bytes_per_row = monitor_memory_bytes_per_row;
     binary_bytes_per_row = monitor_binary_bytes_per_row;
     clipboard.data = NULL;
@@ -2295,10 +2379,29 @@ MachineMonitor :: MachineMonitor(UserInterface *ui, MemoryBackend *mem_backend) 
     last_live_vic_bank = 0;
     vic_bank_override = false;
     bookmarks = new MonitorBookmarks();
+    debug_session = NULL;
+    debug_cursor_override = false;
+    debug_entry_context_valid = false;
+    debug_context_reset(&debug_entry_context);
+    debug_entry_addr = state.current_addr;
+    debug_run_window_refreeze_enabled = false;
+    reset_exits_monitor = false;
+    reset_exit_pending = false;
+    release_host_after_exit = false;
+    reopen_after_reset = false;
+    reopen_on_debug_reset = true;
+    deferred_debug_go_pending = false;
+    debug_context_reset(&deferred_debug_go_context);
+    breakpoints = monitor_saved_breakpoints;
+    breakpoint_popup_active = false;
+    breakpoint_selected = 0;
+    debug_status_text[0] = 0;
+    debug_status_visible = false;
     bookmark_popup_active = false;
     bookmark_selected = 0;
     bookmark_status_text[0] = 0;
 	    bookmark_status_visible = false;
+	    bookmark_status_pending = false;
 	    bookmark_status_emphasis = false;
 	    bookmark_status_deadline = 0;
 	    return_stack_count = 0;
@@ -2337,6 +2440,9 @@ int MachineMonitor :: memory_hex_column(int byte_offset) const
 void MachineMonitor :: apply_go_local(uint16_t address)
 {
     uint16_t span = row_span();
+    if (address != state.current_addr) {
+        debug_cursor_override = true;
+    }
     state.current_addr = address;
     // Every way of being sent to an address goes through here, so this is where
     // the Assembly view learns which boundary it disassembles from. See
@@ -2547,9 +2653,12 @@ bool MachineMonitor :: clipboard_copy_range(void)
     if (!data) {
         return false;
     }
-    for (uint32_t i = 0; i < length; i++) {
-        data[i] = canonical_read((uint16_t)(start + i));
-    }
+    // Read the span as blocks, for the reason the paste writes as blocks: a
+    // backend that has to stop the C64 to reach memory stops it once per call,
+    // so a byte at a time is both slow and a longer sequence of stop and resume
+    // cycles. The span cannot wrap here, because start and end were ordered
+    // above, so one range covers it.
+    transfer_read_range(backend, start, length, data);
     if (clipboard.data) {
         free(clipboard.data);
     }
@@ -2563,8 +2672,25 @@ bool MachineMonitor :: clipboard_paste(void)
     if (!clipboard.data || clipboard.length == 0) {
         return false;
     }
-    for (size_t i = 0; i < clipboard.length; i++) {
-        canonical_write((uint16_t)(state.current_addr + i), clipboard.data[i]);
+    // One block rather than one write per byte, for the reason
+    // canonical_write_instruction() gives: a backend that has to stop the C64
+    // to reach memory stops it once for a block and once per byte otherwise,
+    // and each of those stop and resume cycles is a chance to lose the write.
+    // Measured on an Ultimate II+L in a C64 Ultimate: a four byte paste landed
+    // as EA EA 00 EA in one run out of two, losing a byte in the middle rather
+    // than at either end. The same clipboard pasted as a block lands whole.
+    // Addresses wrap at $FFFF here, which write_block cannot express, so a
+    // clipboard that would run past the top of memory is split at the wrap.
+    {
+        uint32_t length = (uint32_t)clipboard.length;
+        uint32_t first = length;
+        if ((uint32_t)state.current_addr + length > 0x10000UL) {
+            first = 0x10000UL - (uint32_t)state.current_addr;
+        }
+        transfer_write_range(backend, state.current_addr, first, clipboard.data);
+        if (first < length) {
+            transfer_write_range(backend, 0, length - first, clipboard.data + first);
+        }
     }
     state.current_addr = (uint16_t)(state.current_addr + clipboard.length);
     binary_bit_index = 7;
@@ -3170,7 +3296,11 @@ void MachineMonitor :: set_view(MachineMonitorView view)
     }
     state.view = view;
     if (view == MONITOR_VIEW_ASM) {
-        ensure_disasm_visible();
+        if (debug.is_active() && debug.has_context()) {
+            debug_sync_cursor_to_context();
+        } else {
+            ensure_disasm_visible();
+        }
     } else {
         ensure_current_visible();
     }
@@ -3303,6 +3433,14 @@ bool MachineMonitor :: update_bookmark_status(void)
     if (!bookmark_status_visible) {
         return false;
     }
+    if (bookmark_status_pending) {
+        // The note has not been on screen yet, so it has not had its two
+        // seconds. Work done between setting it and drawing it does not count
+        // against them: a bookmark jump on a cartridge stops the machine to
+        // read memory, which took longer than the whole window, so the note was
+        // set, expired, and was never drawn at all.
+        return false;
+    }
     if (!monitor_deadline_reached(bookmark_status_deadline, getMsTimer())) {
         return false;
     }
@@ -3318,7 +3456,7 @@ void MachineMonitor :: show_bookmark_status(uint8_t slot, const MonitorBookmarkS
                                    slot, bookmark, status);
     bookmark_status_visible = true;
     bookmark_status_emphasis = monitor_bookmark_status_uses_emphasis(status, bookmark);
-    bookmark_status_deadline = (uint16_t)(getMsTimer() + 2000);
+    bookmark_status_pending = true;
 }
 
 void MachineMonitor :: show_navigation_status(uint8_t index, const char *kind, uint16_t address)
@@ -3327,7 +3465,7 @@ void MachineMonitor :: show_navigation_status(uint8_t index, const char *kind, u
             (unsigned)index, kind ? kind : "", (unsigned)address);
     bookmark_status_visible = true;
     bookmark_status_emphasis = false;
-    bookmark_status_deadline = (uint16_t)(getMsTimer() + 2000);
+    bookmark_status_pending = true;
 }
 
 void MachineMonitor :: clear_bookmark_transient_state(void)
@@ -3831,20 +3969,10 @@ void MachineMonitor :: decode_row(uint16_t address, uint8_t *row_bytes,
     disassemble_6502(address, row_bytes, state.illegal_enabled, decoded);
     monitor_disasm_tail_cutover(address, decoded);
 
-    // Two sources are shown as data rather than decoded, for two different
-    // reasons. A live I/O register does not read the same twice, so decoding
-    // one gives an instruction length that changes between redraws, and with
-    // it the address of every row below, so the whole view re-aligns while the
-    // user is only scrolling. Character ROM is perfectly stable and has none
-    // of that problem; it is shown as data because it is character bitmaps and
-    // never was code, so any instruction decoded from it is meaningless.
-    //
-    // One byte per row serves both: the rows stay where they are, an I/O row
-    // shows what its register holds now, and a CHAR row shows the bitmap byte
-    // instead of inventing an opcode for it. RAM banked at the same addresses
-    // is still decoded, so the rule follows the banked source rather than the
-    // address range. The source column, [I/O], [CHR] or [RAM], says which case
-    // a row is in, so the view is not hiding the distinction.
+    // I/O and CHAR ROM are shown as data, not decoded: a live I/O register's
+    // changing read would shift every row's length and address on redraw,
+    // and CHAR ROM is bitmaps, never code. RAM banked at the same addresses
+    // is still decoded, so the rule follows the banked source, not the range.
     if (address_is_data(address)) {
         uint8_t length = data_group_length(address);
         int pos;
@@ -3866,11 +3994,9 @@ void MachineMonitor :: decode_row(uint16_t address, uint8_t *row_bytes,
         return;
     }
 
-    // The address the view was last sent to is a known instruction boundary,
-    // so nothing above it may reach across it: an instruction read from the
-    // bytes in front of it would otherwise swallow it, and every row below
-    // would shift with it. The bytes that do not fit are shown as data, which
-    // is what they are in the stream the jump established.
+    // asm_baseline is a known instruction boundary; an instruction reaching
+    // across it from above would swallow it and shift every row below, so
+    // bytes that don't fit are shown as data instead.
     if ((address < asm_baseline) &&
         ((uint16_t)(address + decoded->length) > asm_baseline)) {
         decoded->valid = false;
@@ -3910,12 +4036,10 @@ bool MachineMonitor :: asm_is_branch(uint16_t address)
     return strncmp(operand_spec(templ), "rel", 3) == 0;
 }
 
-// Number of editable parts presented in the ASM edit cursor for the
-// instruction at `address`. Branch instructions are encoded as opcode +
-// 1-byte signed offset but are *displayed* as opcode + absolute 16-bit
-// target, so we expose three editable parts (mnemonic, target high, target
-// low) for branches and let the byte-edit path translate the typed target
-// back into a relative offset.
+// Editable-part count for the ASM edit cursor at `address`. Branches are
+// encoded as opcode + signed offset but displayed as opcode + absolute
+// target, so they get three parts (mnemonic, target high, target low); the
+// byte-edit path translates the typed target back into a relative offset.
 uint8_t MachineMonitor :: asm_edit_part_count(uint16_t address)
 {
     uint8_t len = disasm_length(address);
@@ -4155,7 +4279,7 @@ void MachineMonitor :: draw_header()
     }
 
     if (help_visible) {
-        strcpy(line, "HELP");
+        strcpy(line, debug.is_active() ? "HELP ASM DEBUG" : "HELP");
     } else if (hunt_picker_active) {
         sprintf(line, "%s  %d/%d", hunt_picker_label ? hunt_picker_label : "RESULTS",
                 hunt_count ? (hunt_selected + 1) : 0, hunt_count);
@@ -4205,15 +4329,18 @@ void MachineMonitor :: draw_header()
         int flag_slot = width - 19;
         int freeze_slot = width - 13;
         int poll_slot = width - 9;
+        int debug_slot = width - 8;
         int edit_slot = width - 4;
         bool show_undoc = state.illegal_enabled && state.view == MONITOR_VIEW_ASM;
         if (flag_slot < 0) flag_slot = width;
         if (freeze_slot < 0) freeze_slot = width;
         if (poll_slot < 0) poll_slot = width;
+        if (debug_slot < 0) debug_slot = width;
         if (edit_slot < 0) edit_slot = width;
         if ((range_mode || show_undoc) && flag_slot < first_slot) first_slot = flag_slot;
         if (backend && backend->supports_freeze() && backend->is_frozen() && freeze_slot < first_slot) first_slot = freeze_slot;
         if (poll_mode && poll_slot < first_slot) first_slot = poll_slot;
+        if (debug.is_active() && debug_slot < first_slot) first_slot = debug_slot;
         if (edit_mode && edit_slot < first_slot) first_slot = edit_slot;
 
         memset(fixed, ' ', width);
@@ -4237,9 +4364,20 @@ void MachineMonitor :: draw_header()
         if (poll_mode && poll_slot + 4 <= width) {
             memcpy(fixed + poll_slot, "Poll", 4);
         }
+        if (debug.is_active() && debug_slot + 3 <= width) {
+            memcpy(fixed + debug_slot, "Dbg", 3);
+        }
         memcpy(line, fixed, width + 1);
     }
     draw_padded(window, 0, line, strlen(line));
+    if (!help_visible && !hunt_picker_active && debug.is_active()) {
+        int debug_slot = width - 8;
+        if (debug_slot < 0) debug_slot = 0;
+        window->move_cursor(debug_slot, 0);
+        window->set_color(MONITOR_UI_ACCENT_COLOR);
+        window->output_length("Dbg", 3);
+        window->set_color(get_ui()->color_fg);
+    }
     if (!help_visible && !hunt_picker_active && edit_mode) {
         int edit_slot = width - 4;
         if (edit_slot < 0) {
@@ -4258,18 +4396,40 @@ void MachineMonitor :: draw_status()
 
     if (help_visible) {
         char paging_line[64];
-        const char *page_up = get_ui()->function_key_for(KEY_PAGEUP);
-        const char *page_down = get_ui()->function_key_for(KEY_PAGEDOWN);
-        // Same grid as BOOKMARKS and CONTROL KEYS above it: left key at
-        // column 1, left action at 12, right key at 21, right action at 29.
-        sprintf(paging_line, "%s/SH+SP   Page up  %s/SP   Page down",
-                page_up, page_down);
+        char up_key[16];
+        char down_key[16];
+        // The same row on both help screens, on the same columns as the block
+        // of C= keys above it: key at 0, action at 10, second key at 19,
+        // second action at 28.
+        sprintf(up_key, "%s/SH+SPC", get_ui()->function_key_for(KEY_PAGEUP));
+        sprintf(down_key, "%s/SPACE", get_ui()->function_key_for(KEY_PAGEDOWN));
+        sprintf(paging_line, "%-10s%-9s%-9s%s", up_key, "Page Up",
+                down_key, "Page Down");
         draw_padded(window, window->get_size_y() - 1, paging_line,
                     (int)strlen(paging_line));
         return;
     }
 
+    // The one-line Debug alert (a refused step, and what to do instead) takes
+    // the bottom row while Debug is active, ahead of the banking detail and
+    // ahead of a bookmark note. debug_show_status() sets it and the next debug
+    // command clears it, so it stays on screen until it has been read.
+    if (debug.is_active() && debug_status_visible) {
+        window->set_color(MONITOR_UI_ACCENT_COLOR);
+        draw_padded(window, window->get_size_y() - 1, debug_status_text,
+                    (int)strlen(debug_status_text));
+        window->set_color(get_ui()->color_fg);
+        return;
+    }
+
+    // No debug gate here: a bookmark note raised while Debug is active is still
+    // that row's content once the alert above has been cleared, which is what
+    // the bookmark suite's set/jump notes assert.
     if (bookmark_status_visible) {
+        if (bookmark_status_pending) {
+            bookmark_status_pending = false;
+            bookmark_status_deadline = (uint16_t)(getMsTimer() + 2000);
+        }
         window->set_color(bookmark_status_emphasis ? MONITOR_UI_ACCENT_COLOR : get_ui()->color_fg);
         draw_padded(window, window->get_size_y() - 1, bookmark_status_text,
                     (int)strlen(bookmark_status_text));
@@ -4280,12 +4440,46 @@ void MachineMonitor :: draw_status()
     if (backend && !backend->supports_cpu_banking() && !backend->supports_vic_bank()) {
         strcpy(line, "CPU VIEW  CPU BANK N/A  VIC N/A");
     } else if (backend && !backend->supports_cpu_banking()) {
-        sprintf(line, "CPU VIEW  VIC%d $%04X", current_vic_bank & 0x03,
-                monitor_vic_bank_bases[current_vic_bank & 0x03]);
+        if (backend->live_cpu_port_known()) {
+            monitor_format_status_line(line, backend->get_live_cpu_port(), current_vic_bank);
+        } else {
+            sprintf(line, "CPU VIEW  VIC%d $%04X", current_vic_bank & 0x03,
+                    monitor_vic_bank_bases[current_vic_bank & 0x03]);
+        }
     } else if (backend && !backend->supports_vic_bank()) {
-        sprintf(line, "CPU%d  VIC N/A", state.cpu_port & 0x07);
+        uint8_t live_cpu_port = backend->get_live_cpu_port();
+        if ((state.cpu_port & 0x07) == (live_cpu_port & 0x07)) {
+            sprintf(line, "CPU%d  VIC N/A", state.cpu_port & 0x07);
+        } else {
+            bool accent_mask[40];
+            sprintf(line, "C%dO%d  VIC N/A", live_cpu_port & 0x07,
+                    state.cpu_port & 0x07);
+            memset(accent_mask, 0, sizeof(accent_mask));
+            accent_mask[1] = true;
+            accent_mask[3] = true;
+            draw_with_style_mask(window, window->get_size_y() - 1, line,
+                                 (int)strlen(line), NULL, accent_mask,
+                                 get_ui()->color_fg, MONITOR_UI_ACCENT_COLOR);
+            return;
+        }
     } else {
-        monitor_format_status_line(line, state.cpu_port, current_vic_bank);
+        uint8_t live_cpu_port = backend ? backend->get_live_cpu_port()
+                                        : state.cpu_port;
+        monitor_format_status_line_banks(line, state.cpu_port, live_cpu_port,
+                                         current_vic_bank);
+        if ((state.cpu_port & 0x07) != (live_cpu_port & 0x07)) {
+            // Both bank digits are accented, so a row that is reporting two
+            // different banks says so at a glance rather than only in its
+            // spelling.
+            bool accent_mask[40];
+            memset(accent_mask, 0, sizeof(accent_mask));
+            accent_mask[1] = true;
+            accent_mask[3] = true;
+            draw_with_style_mask(window, window->get_size_y() - 1, line,
+                                 (int)strlen(line), NULL, accent_mask,
+                                 get_ui()->color_fg, MONITOR_UI_ACCENT_COLOR);
+            return;
+        }
     }
     draw_padded(window, window->get_size_y() - 1, line, strlen(line));
 }
@@ -4293,6 +4487,23 @@ void MachineMonitor :: draw_status()
 void MachineMonitor :: draw_help()
 {
     char formatted[64];
+
+    if (debug.is_active()) {
+        const char *lines[20];
+        int count = MonitorDebug::format_help_lines(lines, 20);
+        int help_height = window->get_size_y() - 2;
+        for (int line_idx = 0; line_idx < help_height; line_idx++) {
+            const char *text = line_idx < count ? lines[line_idx] : "";
+            // Same substitution the main table gets: the key that opens help
+            // is the application key mapper's answer, not the table's.
+            if (strchr(text, '%')) {
+                sprintf(formatted, text, get_ui()->function_key_for(KEY_HELP));
+                text = formatted;
+            }
+            draw_padded(window, line_idx + 1, text, (int)strlen(text));
+        }
+        return;
+    }
 
     for (int line_idx = 0; line_idx < content_height; line_idx++) {
         const char *text = monitor_help_lines[line_idx];
@@ -4506,6 +4717,21 @@ void MachineMonitor :: refresh_opcode_overlay()
         return;
     }
     draw_opcode_picker();
+    screen->sync();
+}
+
+void MachineMonitor :: refresh_breakpoint_popup_overlay()
+{
+    // Same fix as refresh_opcode_overlay(): selecting a row or clearing a slot
+    // changes only the popup box, so repaint that instead of falling back to a
+    // full draw() on a full-refresh (telnet/VT100) screen.
+    if (!window || !screen) {
+        return;
+    }
+    if (!breakpoint_popup_active) {
+        return;
+    }
+    debug_render_breakpoint_popup();
     screen->sync();
 }
 
@@ -4773,8 +4999,43 @@ void MachineMonitor :: draw_disassembly()
         const char *source;
         int source_len;
         int source_pos;
+        int bp_slot;
+        int bp_len = 0;
+        int brk_pos = -1;
+        int indicator_start;
+        const char *bp_label = NULL;
+        bool bp_enabled = false;
+        bool reverse_mask[MONITOR_DISASM_ROW_CHARS];
+        bool accent_mask[MONITOR_DISASM_ROW_CHARS];
+        bool debug_pc_row = debug.is_active() && debug.has_context() &&
+            debug.context().pc == addr;
+        bool live_debug_pc = debug_pc_row && debug_session &&
+            debug_session->read_step_bytes(addr, row_bytes, 3);
 
-        decode_row(addr, row_bytes, &decoded);
+        if (live_debug_pc) {
+            disassemble_6502(addr, row_bytes, state.illegal_enabled, &decoded);
+            monitor_disasm_tail_cutover(addr, &decoded);
+        } else {
+            decode_row(addr, row_bytes, &decoded);
+        }
+
+        int rts_target_col = -1;
+        if (debug_pc_row && decoded.valid && row_bytes[0] == 0x60 &&
+                decoded.length == 1 && strcmp(decoded.text, "RTS") == 0) {
+            uint8_t sp = debug.context().sp;
+            char target[8];
+            if (sp == 0xFF) {
+                strcpy(target, "$????");
+            } else {
+                uint16_t lo = (uint16_t)(0x0100 + ((sp + 1) & 0xFF));
+                uint16_t hi = (uint16_t)(0x0100 + ((sp + 2) & 0xFF));
+                uint16_t ret = (uint16_t)(backend->read(lo) | (backend->read(hi) << 8));
+                sprintf(target, "$%04x", (uint16_t)(ret + 1));
+            }
+            rts_target_col = 4;
+            sprintf(decoded.text, "RTS %s", target);
+        }
+
         memset(line, ' ', sizeof(line));
         line[MONITOR_DISASM_ROW_CHARS] = 0;
         dump_hex_word(line, 0, addr);
@@ -4789,19 +5050,69 @@ void MachineMonitor :: draw_disassembly()
         line[13] = ' ';
         line[14] = ' ';
 
-        text_limit = MONITOR_DISASM_SOURCE_COL - 1 - MONITOR_DISASM_TEXT_COL;
-        text_len = (int)strlen(decoded.text);
-        if (text_len > text_limit) {
-            text_len = text_limit;
+        if (debug_pc_row && debug.context().live_cpu_port_valid) {
+            source = monitor_backing_store_tag(backend->backing_store_for_cpu_port(
+                addr, debug.context().live_cpu_port));
+        } else {
+            source = monitor_source_indicator(backend->source_name(addr));
         }
+        source_len = (int)strlen(source);
+        if (source_len > 3) source_len = 3;
+        source_pos = MONITOR_DISASM_ROW_CHARS - source_len - 2;
+
+        MonitorBackingStore row_target = debug_pc_row &&
+                debug.context().live_cpu_port_valid ?
+            backend->backing_store_for_cpu_port(addr, debug.context().live_cpu_port) :
+            breakpoint_target_for_view(addr);
+        bp_slot = breakpoints.find_at(addr, row_target);
+        if (bp_slot >= 0) {
+            const MonitorBreakpointSlot *bp = breakpoints.get(bp_slot);
+            bp_enabled = bp && bp->enabled;
+            if (bp && bp->label[0]) {
+                bp_label = bp->label;
+                bp_len = (int)strlen(bp_label);
+                if (bp_len > MONITOR_BREAKPOINT_LABEL_MAX) {
+                    bp_len = MONITOR_BREAKPOINT_LABEL_MAX;
+                }
+            } else {
+                bp_len = 4;
+            }
+            brk_pos = source_pos - bp_len - 2;
+            if (brk_pos < MONITOR_DISASM_TEXT_COL) {
+                brk_pos = MONITOR_DISASM_TEXT_COL;
+            }
+            indicator_start = brk_pos;
+        } else {
+            indicator_start = source_pos;
+        }
+
+        text_limit = indicator_start - 1 - MONITOR_DISASM_TEXT_COL;
+        if (text_limit < 0) text_limit = 0;
+        text_len = (int)strlen(decoded.text);
+        if (text_len > text_limit) text_len = text_limit;
         memcpy(line + MONITOR_DISASM_TEXT_COL, decoded.text, text_len);
 
-        source = monitor_source_indicator(backend->source_name(addr));
-        source_len = (int)strlen(source);
-        if (source_len > MONITOR_DISASM_ROW_CHARS - MONITOR_DISASM_SOURCE_COL - 2) {
-            source_len = MONITOR_DISASM_ROW_CHARS - MONITOR_DISASM_SOURCE_COL - 2;
+        if (debug_pc_row) {
+            if (MONITOR_DISASM_TEXT_COL >= 1 &&
+                    line[MONITOR_DISASM_TEXT_COL - 1] == ' ') {
+                line[MONITOR_DISASM_TEXT_COL - 1] = '>';
+            }
+            int close_col = MONITOR_DISASM_TEXT_COL + text_len;
+            if (close_col < MONITOR_DISASM_ROW_CHARS && line[close_col] == ' ') {
+                line[close_col] = '<';
+            }
         }
-        source_pos = MONITOR_DISASM_ROW_CHARS - source_len - 2;
+
+        if (bp_slot >= 0) {
+            line[brk_pos] = '[';
+            if (bp_label && bp_len > 0) {
+                memcpy(line + brk_pos + 1, bp_label, bp_len);
+            } else {
+                memcpy(line + brk_pos + 1, "BRK", 3);
+                line[brk_pos + 4] = (char)('0' + bp_slot);
+            }
+            line[brk_pos + 1 + bp_len] = ']';
+        }
         line[source_pos] = '[';
         memcpy(line + source_pos + 1, source, source_len);
         line[source_pos + 1 + source_len] = ']';
@@ -4820,6 +5131,8 @@ void MachineMonitor :: draw_disassembly()
         }
         int hl_x = 0;
         int hl_len = MONITOR_DISASM_ROW_CHARS;
+        memset(reverse_mask, 0, sizeof(reverse_mask));
+        memset(accent_mask, 0, sizeof(accent_mask));
         if (highlight == 0 && edit_mode && state.view == MONITOR_VIEW_ASM) {
             uint8_t part = asm_edit_part;
             uint8_t part_count = asm_edit_part_count(addr);
@@ -4873,7 +5186,63 @@ void MachineMonitor :: draw_disassembly()
                 }
             }
         }
-        draw_with_highlight(window, line_idx + 1, line, MONITOR_DISASM_ROW_CHARS, highlight < 0 ? -1 : hl_x, hl_len);
+
+        if (highlight >= 0 && hl_len > 0) {
+            int reverse_start = hl_x < 0 ? 0 : hl_x;
+            int reverse_end = hl_x + hl_len;
+            if (reverse_end > MONITOR_DISASM_ROW_CHARS) {
+                reverse_end = MONITOR_DISASM_ROW_CHARS;
+            }
+            for (int i = reverse_start; i < reverse_end; i++) {
+                reverse_mask[i] = true;
+            }
+        }
+
+        if (debug_pc_row) {
+            int target_start = -1;
+            int target_len = 0;
+            if (rts_target_col >= 0) {
+                target_start = rts_target_col;
+                target_len = 5;
+            } else {
+                DebugPredictResult pred;
+                debug_predict(addr, row_bytes, state.illegal_enabled, &pred);
+                bool highlight_target =
+                    ((pred.kind == DBG_PREDICT_JSR || pred.kind == DBG_PREDICT_JMP_ABS) &&
+                     pred.has_target) ||
+                    (pred.kind == DBG_PREDICT_BRANCH && pred.has_target &&
+                     monitor_debug_branch_taken(row_bytes[0], debug.context().sr));
+                if (highlight_target) {
+                    monitor_find_target_span(decoded.text, text_len, &target_start, &target_len);
+                }
+            }
+            if (target_start >= 0 && target_len > 0 && target_start < text_len) {
+                if (target_start + target_len > text_len) {
+                    target_len = text_len - target_start;
+                }
+                int accent_start = MONITOR_DISASM_TEXT_COL + target_start;
+                int accent_end = accent_start + target_len;
+                if (accent_end > MONITOR_DISASM_ROW_CHARS) {
+                    accent_end = MONITOR_DISASM_ROW_CHARS;
+                }
+                for (int i = accent_start; i < accent_end; i++) {
+                    accent_mask[i] = true;
+                }
+            }
+        }
+
+        if (bp_slot >= 0 && bp_enabled && debug.is_active()) {
+            int accent_end = brk_pos + bp_len + 2;
+            if (accent_end > MONITOR_DISASM_ROW_CHARS) {
+                accent_end = MONITOR_DISASM_ROW_CHARS;
+            }
+            for (int i = brk_pos; i < accent_end; i++) {
+                accent_mask[i] = true;
+            }
+        }
+        draw_with_style_mask(window, line_idx + 1, line, MONITOR_DISASM_ROW_CHARS,
+                             reverse_mask, accent_mask,
+                             get_ui()->color_fg, MONITOR_UI_ACCENT_COLOR);
         addr = (uint16_t)(addr + decoded.length);
     }
 }
@@ -5119,6 +5488,9 @@ void MachineMonitor :: draw()
                 break;
         }
     }
+    if (debug.is_active() && !help_visible) {
+        draw_debug_footer();
+    }
     draw_status();
     // After the status row, not before it. draw_status pads the window's last
     // row to the full window width, so a popup that reaches that row would
@@ -5149,6 +5521,9 @@ void MachineMonitor :: draw_popup_overlays()
     }
     if (bookmark_popup_active) {
         draw_bookmark_popup();
+    }
+    if (breakpoint_popup_active) {
+        debug_render_breakpoint_popup();
     }
 }
 
@@ -5189,11 +5564,9 @@ void MachineMonitor :: binary_apply_bit(uint8_t bit_value)
     reset_edit_blink();
 }
 
-// Unified DEL behaviour shared by edit and non-edit mode. ASC/SCR clear
-// the current cell to a space and step the cursor LEFT; HEX clears the
-// current byte to 0x00 and steps RIGHT; BINARY clears only the selected
-// bit to 0 and steps RIGHT by one bit; ASM replaces the current
-// instruction with NOP(s) and steps to the next disassembled line.
+// Unified DEL, shared by edit and non-edit mode: ASC/SCR clear+step LEFT,
+// HEX clears the byte+steps RIGHT, BINARY clears one bit+steps RIGHT, ASM
+// replaces the instruction with NOP(s)+steps to the next line.
 void MachineMonitor :: apply_logical_delete()
 {
     switch (state.view) {
@@ -5602,13 +5975,10 @@ int MachineMonitor :: handle_interface_shortcut(void)
         redraw_full();
         return 0;
     }
-    // Closing the monitor is not enough. The swapped Interface Type only takes
-    // effect when the menu is next opened, so leaving the file browser on
-    // screen would leave the user in the interface they just swapped away
-    // from, and the swap would appear not to have worked until they closed the
-    // browser by hand. The whole user interface has to go, which is what the
-    // file browser already does for this key by answering MENU_HIDE.
-    // run_machine_monitor consumes this and gives the same answer.
+    // The swap only takes effect on the next menu open, so the whole UI must
+    // go, not just the monitor, or the user stays in the old interface until
+    // they close the browser by hand. MENU_HIDE is the file browser's own
+    // answer for this key; run_machine_monitor gives the same one.
     interface_swap_pending = true;
     return 1;   // the monitor's own exit, the same value Back returns
 }
@@ -5657,6 +6027,13 @@ void MachineMonitor :: init(Screen *scr, Keyboard *keyb)
     window->set_color(get_ui()->color_fg);
     content_height = window->get_size_y() - 2;
     backend->begin_session();
+    if (monitor_sync_view_to_live_on_open) {
+        monitor_sync_view_to_live_on_open = false;
+        if (!restore_debug_after_reset && backend->supports_cpu_banking()) {
+            backend->invalidate_live_cpu_port_cache();
+            state.cpu_port = (uint8_t)(backend->get_live_cpu_port() & 0x07);
+        }
+    }
     state.cpu_port = normalize_cpu_mode(state.cpu_port);
     if (backend->supports_cpu_banking()) {
         backend->set_monitor_cpu_port(state.cpu_port);
@@ -5671,6 +6048,8 @@ void MachineMonitor :: init(Screen *scr, Keyboard *keyb)
     last_live_vic_bank = current_vic_bank;
     vic_bank_override = false;
     apply_go_local(state.current_addr);
+    debug_cursor_override = false;
+    restore_debug_mode_after_reset();
     draw();
 }
 
@@ -5697,6 +6076,7 @@ void MachineMonitor :: deinit(void)
     monitor_last_go_addr = last_go_addr;
     monitor_memory_bytes_per_row = memory_bytes_per_row;
     monitor_binary_bytes_per_row = binary_bytes_per_row;
+    monitor_saved_breakpoints = breakpoints;
     backend->end_session();
     if (clipboard.data) {
         free(clipboard.data);
@@ -5720,6 +6100,13 @@ int MachineMonitor :: handle_key(int key)
     int needle_len;
     MonitorError error;
 
+    // The debug reset-and-reopen escape hatch is checked here, ahead of every
+    // picker and popup, so it can blow through any of them: reset_machine_
+    // and_reopen() clears them itself. Outside Debug, C=+R falls through to
+    // the ordinary handle_reset_shortcut() below instead.
+    if (key == KEY_CTRL_R && debug.is_active()) {
+        return reset_machine_and_reopen();
+    }
     if (hunt_picker_active) {
         return hunt_picker_handle_key(key);
     }
@@ -5731,6 +6118,9 @@ int MachineMonitor :: handle_key(int key)
     }
     if (number_picker_active) {
         return number_picker_handle_key(key);
+    }
+    if (breakpoint_popup_active) {
+        return debug_breakpoint_popup_handle_key(key);
     }
 
     dismiss_bookmark_status();
@@ -5754,6 +6144,26 @@ int MachineMonitor :: handle_key(int key)
             draw();
             return 0;
         }
+    }
+
+    if (debug.is_active() && !edit_mode) {
+        int result = debug_handle_key(key);
+        if (result != -1) {
+            return result;
+        }
+    } else if (!edit_mode && (key == 'd' || key == 'D')) {
+        if (state.view != MONITOR_VIEW_ASM) {
+            set_view(MONITOR_VIEW_ASM);
+        }
+        if (debug_enter()) {
+            draw();
+        }
+        return 0;
+    }
+    if (!edit_mode && key == KEY_CTRL_P && debug_has_breakpoint()) {
+        debug_open_breakpoint_popup();
+        draw();
+        return 0;
     }
 
     // Two shortcuts that act on the machine rather than on the view. They are
@@ -5841,6 +6251,17 @@ int MachineMonitor :: handle_key(int key)
     if (edit_mode) {
         if (key == KEY_CTRL_O) {
             return 1;
+        }
+        if (debug.is_active() && key == KEY_CTRL_D) {
+            debug_leave();
+            exit_edit_mode();
+            draw();
+            return 0;
+        }
+        if (debug.is_active() && (key == KEY_BREAK || key == KEY_ESCAPE)) {
+            exit_edit_mode();
+            draw();
+            return 0;
         }
         if (key == monitor_key_arrow_left && state.view != MONITOR_VIEW_ASCII &&
             state.view != MONITOR_VIEW_SCREEN) {
@@ -6425,6 +6846,12 @@ int MachineMonitor :: poll(int)
     int key;
     bool status_changed = false;
 
+    if (reopen_after_reset && reset_exits_monitor) {
+        return MENU_EXIT;
+    }
+    if (reset_exit_pending && reset_exits_monitor) {
+        return MENU_EXIT;
+    }
     if (!keyboard) {
         return MENU_CLOSE;
     }
@@ -6433,6 +6860,9 @@ int MachineMonitor :: poll(int)
     if (key == -1) {
         if (bookmark_popup_active || opcode_picker_active) {
             return 0;
+        }
+        if (debug.is_active() && debug_session) {
+            debug_session->refresh_debug_ownership();
         }
         uint16_t now = getMsTimer();
         bool redraw = false;
@@ -6659,7 +7089,8 @@ void MachineMonitor::handle_width_command()
     draw();
 }
 
-bool MachineMonitor :: consume_pending_go(uint16_t *address)
+bool MachineMonitor :: consume_pending_go(uint16_t *address, DebugContext *context,
+                                          bool *has_context)
 {
     if (!go_pending) {
         return false;
@@ -6667,7 +7098,13 @@ bool MachineMonitor :: consume_pending_go(uint16_t *address)
     if (address) {
         *address = go_pending_addr;
     }
-    go_pending = false;
+    if (context) {
+        *context = go_pending_context;
+    }
+    if (has_context) {
+        *has_context = go_pending_has_context;
+    }
+    clear_pending_go();
     return true;
 }
 
@@ -6699,3 +7136,5 @@ bool MachineMonitor::handle_go_command()
     go_pending_addr = address;
     return true;
 }
+
+#include "machine_monitor_debug_impl.inc"

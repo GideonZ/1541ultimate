@@ -155,6 +155,13 @@ class Suite:
     on-device UI through Telnet as well as REST/Freeze/Overlay, or only works
     one way, is a per-suite call documented next to its entry below.
 
+    @DEVICE@ and @COMPUTER@ are for a suite whose own CLI does not accept the
+    composite `device@computer` token @HOST@ carries and instead wants the two
+    machines as separate flags. @DEVICE@ is always the bare device host;
+    @COMPUTER@ is the bare computer host on a split target and an empty string
+    otherwise, so a flag templated as `--c64-host @COMPUTER@` can be included
+    unconditionally and still read as "not split" to the suite it configures.
+
     `manual` marks a suite that needs an operator decision, extra privileges, a
     long wall-clock wait, or a device setting it changes, so it runs only from
     the deep profile up, or when named with -s.
@@ -258,6 +265,11 @@ SUITES: Sequence[Suite] = (
     # told apart by watching a real device, which never produces them on
     # demand. Scripted bursts can.
     Suite("e2e", "telnet-drain", "tests/e2e/lib/telnet_drain_test.py", "", profile=profiles.QUICK),
+    # The debugger matrix has a substantial host-side contract as well as its
+    # device scenarios. Keep those deterministic checks before the hardware
+    # suites, so a bad vector or stale fixture names itself immediately.
+    Suite("e2e", "machine-code-monitor-harness",
+          "tests/e2e/monitor/monitor_harness_test.py", ""),
     # Also needs no device: the two pages the device serves decide their theme
     # in the browser, and both read sessionStorage above the code that installs
     # their handlers, so a browser set to block site data cost the whole page.
@@ -369,6 +381,43 @@ SUITES: Sequence[Suite] = (
     # under --mode telnet.
     Suite("e2e", "machine-code-monitor", "tests/e2e/monitor/monitor_test.py",
           "--host @HOST@ --password @PASS@ --timeout @TIMEOUT@ --mode @MODE@", profile=profiles.DEEP),
+    Suite("e2e", "machine-code-monitor-debug",
+          "tests/e2e/monitor/monitor_debug_test.py",
+          "--host @HOST@ --password @PASS@ --timeout @TIMEOUT@ --mode telnet",
+          # Manual because of what it costs, not because of what it finds: 95
+          # checks and about 40 minutes on an Ultimate 64, most of it spent
+          # running programs on the 6510 and waiting for them to stop.
+          manual=True),
+    # The debugger gate. It runs the places the firmware genuinely takes a
+    # different code path per UI transport, so one lane's result says nothing
+    # about another, plus the intersections that have actually failed before. It drives them through the two suites above
+    # rather than owning any test logic of its own. tests/e2e/doc/machine-code-monitor-regression.md records
+    # which lanes those are and the evidence for each; `--list-plan` prints the
+    # same thing without touching a device.
+    #
+    # Manual for the same reason machine-code-monitor-debug is: about an hour
+    # on an Ultimate 64. It is the suite to name before a merge, and it takes
+    # the two hosts as separate flags for the reason described on the matrix
+    # entry below.
+    Suite("e2e", "machine-code-monitor-regression",
+          "tests/e2e/monitor/monitor_debug_regression_test.py",
+          "--host @DEVICE@ --rest-host @DEVICE@ --c64-host @COMPUTER@ "
+          "--password @PASS@ --timeout @TIMEOUT@", manual=True),
+    # The exhaustive debugger matrix repeats every memory/UI lane and writes a
+    # diagnostic ledger. It is deliberately opt-in rather than a release-gate
+    # default, but it still shares the runner's host/password conventions.
+    #
+    # Unlike its sibling monitor suites, this script does not parse a
+    # composite `device@computer` token out of --host: it takes the two
+    # machines as separate flags, so @DEVICE@/@COMPUTER@ carry them rather
+    # than @HOST@. --timeout matters here beyond the per-request budget: its
+    # default (5s) is also the preflight's telnet-quiet-window timeout, too
+    # short for the 1.7KB screen a Step Out redraw sends, which made the
+    # preflight fail before any matrix cell ran.
+    Suite("e2e", "machine-code-monitor-matrix",
+          "tests/e2e/monitor/monitor_debug_matrix_test.py",
+          "--host @DEVICE@ --rest-host @DEVICE@ --c64-host @COMPUTER@ "
+          "--password @PASS@ --timeout @TIMEOUT@", manual=True),
     # Reproduces #783: service settings used to start listeners live but could
     # not stop them again until reboot. Ident is the smallest protocol probe.
     Suite("e2e", "ident-service-switch", "tests/e2e/network/ident_service_switch_test.py",
@@ -1755,11 +1804,15 @@ def ui_state_ready(options: Options, label: str) -> str:
 
 def build_command(suite: Suite, options: Options, mode: str) -> list[str]:
     command = [sys.executable, os.path.join(ROOT, suite.path)]
+    target = targets_lib.resolve(options.host)
+    computer = target.computer if target.split else ""
     for token in suite.args.split():
         if token == "@PASS@":
             command.append(options.password)
             continue
         token = token.replace("@HOST@", options.host)
+        token = token.replace("@DEVICE@", target.device)
+        token = token.replace("@COMPUTER@", computer)
         token = token.replace("@TIMEOUT@", options.timeout)
         token = token.replace("@MODE@", mode)
         token = token.replace("@SOAKPROFILE@", options.soak_profile)

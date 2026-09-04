@@ -329,21 +329,75 @@ window is what the earlier calibration sweep found breaks first.
 It explains a lost key in any batch of exactly 64, which no suite in the tree
 sent before the gate suite was changed to send one.
 
-It does **not** explain the `u2@c64u` monitor failures that prompted the
-measurement. On that target, injection was lossless in every configuration
-tried: 140 keys at 100 ms/key, 24 isolated keys at 1000 ms/key, 15 separate
-runs of 10 keys at settle delays of 0 to 2 s after a reset, and batches of 16,
-32 and 64 at both destinations. One burst of 9 lost keys was seen once,
-immediately after the first reset following a mains power cycle of the host,
-and never reproduced in 300+ keys of deliberate attempts to provoke it.
+It does not explain the `u2@c64u` monitor failures on its own. On that target,
+injection measured lossless in every configuration tried here: 140 keys at
+100 ms/key, 24 isolated keys at 1000 ms/key, 15 separate runs of 10 keys at
+settle delays of 0 to 2 s after a reset, and batches of 16, 32 and 64 at both
+destinations. Every one of those runs walks an alphabet, so no two keys in a
+row are the same character. That is the blind spot, and the next section is
+what it was hiding.
 
-The honest conclusion is that those failures are not a function of injection
-rate. They are consistent with the host wedging under sustained load, which
-this bench has shown repeatedly and which clears only on mains power: three
-consecutive attempts at one suite failed three different ways - `HTTP 423` on
-the subsystem lock, `No route to host` with the machine off the network, and a
-navigation timeout at 815 s where the same suite had taken 317 s - with health
-checks passing throughout.
+Some `u2@c64u` failures do belong to the host wedging under sustained load,
+which this bench has shown repeatedly and which clears only on mains power:
+three consecutive attempts at one suite failed three different ways - `HTTP
+423` on the subsystem lock, `No route to host` with the machine off the
+network, and a navigation timeout at 815 s where the same suite had taken
+317 s - with health checks passing throughout.
+
+## The same key twice in a row, on a cartridge
+
+A cartridge does not receive injected keys. They are queued as taps on the
+keyboard matrix of the computer it is plugged into, and the cartridge reads
+that matrix by scanning it in `Keyboard_C64::scan()`, once per call to
+`Keyboard_C64::getch()`. That call comes round again only after the menu has
+finished with the previous key, so the interval between two scans is however
+long the last redraw took.
+
+Between two taps of one key the matrix is empty for `REST_TAP_GAP_TICKS`, a
+single 20 ms tick. A scan that does not land inside that gap sees the same
+matrix position on both sides of it, reads one key held down, and
+`keyboard_c64.cc:288` suppresses the second tap as auto-repeat for
+`first_delay` scans. Two different keys are never confused this way, because
+the matrix position changes.
+
+Measured on `u2@c64u`, typing into the monitor's ASCII edit page at `$C000` and
+reading the bytes back with `machine:readmem`, 16 keys a run:
+
+| Text | How it was sent | Arrived |
+| --- | --- | --- |
+| `abcdefgh...` | one request | 96 of 96 |
+| `aabbccdd...` | one request | 43 of 96 |
+| `aabbccdd...` | split at each repeat, no wait | 49 of 64 |
+| `aabbccdd...` | split at each repeat, 150 ms wait | 58 of 64 |
+| `aabbccdd...` | one request per key, 200 ms apart | 36 of 36 |
+| `aabbccdd...` | one request per key, 300/450/600 ms apart | 36 of 36 each |
+
+What arrives is `aabbcddee` for `aabbccddee`: exactly one of each repeated pair.
+
+Two controls place the loss on the cartridge's scan rather than on the monitor
+or on the injection:
+
+- The same text into the C64 Ultimate's own monitor, where an injected key goes
+  into the firmware's key queue and never touches a matrix, lost 0 of 36.
+- The same text into BASIC on the same C64 Ultimate, where the matrix is
+  scanned by the KERNAL rather than by a cartridge, lost 0 of 96.
+
+A person cannot produce the shape that fails. It needs a 40 ms hold followed by
+a 20 ms release, repeated; injecting a pair by hand as an explicit press and
+release delivered both presses at every released time from 20 ms to 300 ms.
+
+### What the harness does about it
+
+`RestBackend._post_events` splits a batch wherever an event repeats the one
+before it, and waits for the queue the previous run leaves behind to drain plus
+`pacing.SPLIT_REPEATED_KEY_GAP_SECONDS` before posting the next. A device
+target has no matrix in the path and still sends one request.
+
+With the split, the same instrument through `RestBackend.send_text` reads 64 of
+64 doubled characters; without it, 38 of 64. The monitor suite's `every
+character of a command argument reaches the monitor` check types `C003`,
+`1100`, `2200`, `0000`, `5555` and `A0A0` among others, and it is the check
+that used to fail about one argument in thirty on this target.
 
 ## Threats to validity
 

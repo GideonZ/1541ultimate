@@ -432,15 +432,19 @@ KEY_ALIASES: dict[str, list[str]] = {
     "SELECT_ALL": ["ctrl", "a"],
     "SHIFT_DEL": ["left_shift", "inst_del"],
     "CTRL_B": ["ctrl", "b"],
+    "CTRL_D": ["ctrl", "d"],
     "CTRL_E": ["ctrl", "e"],
     "CTRL_O": ["ctrl", "o"],
+    "CTRL_P": ["ctrl", "p"],
+    "CTRL_R": ["ctrl", "r"],
+    "CTRL_X": ["ctrl", "x"],
     "CBM_B": ["commodore", "b"],
     "CBM_1": ["commodore", "1"],
     "CBM_9": ["commodore", "9"],
     # The monitor's reset shortcut, and the code the shortcut used to have.
     # Both resolve through Keyboard_C64's keymap_control
     # (software/io/c64/keyboard_c64.cc), which the REST menu route reads with
-    # matrixToKeyCode: C=+R gives KEY_CTRL_R and C=+X gives $18, which is now
+    # matrixToKeyCode: C=+R gives KEY_CTRL_R and C=+X gives $18, which is
     # bound to nothing.
     "CBM_R": ["commodore", "r"],
     "CBM_X": ["commodore", "x"],
@@ -459,7 +463,9 @@ _DIRECT_CHARS: dict[str, list[str]] = {
     " ": ["space"], ":": ["colon"], ",": ["comma"], ".": ["period"],
     "+": ["plus"], "-": ["minus"], "=": ["equals"], "/": ["slash"],
     "@": ["at"], ";": ["semicolon"], "*": ["star"], "\\": ["arrow_up"],
-    "\r": ["return"], "\b": ["inst_del"],
+    # The C64 has a single RETURN key, so both newline conventions map to it.
+    # Callers write whichever their surrounding string style uses.
+    "\r": ["return"], "\n": ["return"], "\b": ["inst_del"],
 }
 
 

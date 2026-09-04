@@ -72,6 +72,7 @@
 #define C64_MODE_UNRESET   0x08
 #define C64_MODE_NMI       0x10
 
+
 #define SERVE_WHILE_STOPPED 0x01
 
 #define STOP_COND_BADLINE  0x00
@@ -303,6 +304,22 @@ class C64 : public GenericHost, ConfigurableObject
 
     void setup_config_menu();
     bool isFrozen;
+    // When set, resume() leaves the cartridge NMI asserted (C64_MODE_NMI) as it
+    // un-stops the CPU instead of clearing C64_MODE, so a debug launch NMI raised
+    // while the CPU was stopped survives the un-stop and is taken by the 6510.
+    bool nmi_on_resume;
+    // 6510 port as the running program had it, read by an NMI stub before
+    // the freeze halts the CPU. The FPGA 6510 does not write its port
+    // through to RAM, so a DMA read of $0001 cannot supply this.
+    bool cpu_port_captured;
+    uint8_t captured_cpu_port;
+    uint8_t captured_cpu_ddr;
+    // Set once the host has proved it does not deliver the cartridge NMI, after
+    // enough consecutive misses that a single interrupt-masked program cannot
+    // account for them.
+    bool cpu_port_capture_unavailable;
+    uint8_t cpu_port_capture_failures;
+    static const uint8_t CPU_PORT_CAPTURE_MAX_FAILURES = 3;
     void determine_d012(void);
     void goUltimax(void);
     void backup_io(void);
@@ -356,6 +373,19 @@ public:
     	this->client = client;
     	freeze();
     }
+    // Runs a short stub on the live 6510 through the NMI vector to read
+    // $00/$01, then restores everything it touched. Returns false when the
+    // stub did not run, which is the case on a host that does not deliver
+    // the cartridge NMI.
+    bool capture_cpu_port_via_nmi(void);
+    // Drop the sample when the program is about to run: it can rewrite $01.
+    void invalidate_captured_cpu_port(void) { cpu_port_captured = false; }
+    bool get_captured_cpu_port(uint8_t *port, uint8_t *ddr) const {
+        if (!cpu_port_captured) return false;
+        if (port) *port = captured_cpu_port;
+        if (ddr) *ddr = captured_cpu_ddr;
+        return true;
+    }
     void release_ownership(void) {
     	unfreeze();
     	this->client = 0;
@@ -371,8 +401,15 @@ public:
     bool exists(void);
     bool is_accessible(void);
     bool is_stopped(void);
-    bool begin_stopped_session(void);
-    void end_stopped_session(bool stopped_it);
+
+    // The freezer menu is up, so the machine is held and its I/O has been
+    // reconfigured for the cartridge's own use.
+    bool is_frozen(void) const { return isFrozen; }
+
+    // CIA2 port A as the frozen program left it; its bottom two bits select the
+    // VIC bank. Taken from the backup, not a live $DD00 read: init_io() turns
+    // those pins into inputs (CIA2_DDRA &= 0xFC), after which a read returns the
+    // floating state, measured as bank 0 whatever the program selected.
     uint8_t get_frozen_cia2_porta(void) const { return cia_backup[1]; }
     void set_frozen_cia2_porta(uint8_t value) {
         cia_backup[1] = value;
@@ -398,6 +435,7 @@ public:
     /* C64 specifics */
     void resetConfigInFlash(int page);
     void unfreeze(void);
+    void refreeze(void);
     void start_cartridge(void *def);
     void enable_kernal(uint8_t *rom);
     void set_rom_config(uint8_t idx, const char *fname);
@@ -406,8 +444,25 @@ public:
     void start(void);
     bool is_in_reset(void);
     virtual uint8_t peek(uint16_t address);
+    // Reads one DMA-visible byte without stopping the 6510, so the value is
+    // only meaningful for a single byte another actor owns and writes once.
+    uint8_t peek_while_running(uint16_t address) const;
     virtual void poke(uint16_t address, uint8_t value);
     void dma_transfer_frozen(uint16_t offset, uint8_t *buffer, int length, int rw);
+
+    // Atomic stopped-region helpers. Used by the machine code monitor to
+    // bracket multi-byte vector / trampoline installs so the live C64 sees a
+    // single consistent transition. Default forwards to stop()/resume().
+    virtual bool begin_stopped_session(void);
+    // raster=true uses a raster-synced stop/resume (the freeze path's), which the
+    // debugger needs so a freshly armed BRK is reliably observed on release.
+    virtual bool begin_stopped_session(bool raster);
+    virtual void end_stopped_session(bool stopped_it);
+    // Like end_stopped_session(), but un-stops the CPU with the cartridge NMI
+    // asserted so a redirect NMI raised while stopped is actually taken by the
+    // 6510 (plain resume() clears C64_MODE before un-stopping, losing it). Used
+    // by the U2 debug launch; no-op when stopped_it is false.
+    virtual void end_stopped_session_nmi(bool stopped_it);
 
     static void clear_cart_definition(cart_def *def) {
         def->custom_addr = 0;

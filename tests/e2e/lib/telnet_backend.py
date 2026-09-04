@@ -75,8 +75,12 @@ TELNET_KEY_BYTES: dict[str, bytes] = {
     # keyboard_vt100.cc getch(), e_esc_idle case).
     "ARROW_LEFT": b"`",
     "CTRL_B": b"\x02",
+    "CTRL_D": b"\x04",
     "CTRL_E": b"\x05",
     "CTRL_O": b"\x0f",
+    "CTRL_P": b"\x10",
+    "CTRL_R": b"\x12",
+    "CTRL_X": b"\x18",
     "CBM_B": b"\x1bb",
     "CBM_1": b"\x1b1",
     "CBM_9": b"\x1b9",
@@ -268,10 +272,20 @@ class VT100Screen:
             self.x = self.width - 1
 
 
+# How long the stream must stay quiet before an ordinary keystroke's redraw is
+# taken as finished. A cartridge redraws after its echo has already gone quiet,
+# so the gap that fits a whole machine ends the wait too early there and the
+# caller reads the screen as it was before the key. Measured on a U2+L in a C64
+# Ultimate: a second nibble typed into a hex byte landed in memory and on the
+# device's own screen, while the suite read the row from before the keypress.
+CARTRIDGE_TELNET_IDLE_GAP_SECONDS = pacing._seconds(
+    "U64_UI_TELNET_IDLE_GAP_CARTRIDGE", 0.6)
+
+
 class TelnetBackend(Backend):
     def __init__(
         self, host: str, port: int, password: str | None = None, timeout: float = 5.0,
-        width: int = WIDTH, height: int = HEIGHT,
+        width: int = WIDTH, height: int = HEIGHT, cartridge: bool = False,
     ) -> None:
         # Kept so this backend can ask the device what it is; see
         # Backend.machine. The identity is the device's, not the transport's.
@@ -286,6 +300,10 @@ class TelnetBackend(Backend):
         self.screen = VT100Screen(width=width, height=height)
         self.last_command = "<connect>"
         self._last_drain_bytes = 0
+        # A cartridge redraws after its echo has gone quiet, so it needs the
+        # longer quiet window; see CARTRIDGE_TELNET_IDLE_GAP_SECONDS.
+        self._idle_gap_seconds = (CARTRIDGE_TELNET_IDLE_GAP_SECONDS if cartridge
+                                  else pacing.TELNET_IDLE_GAP_SECONDS)
         self._drain_until_idle(timeout=timeout)
         if self.screen.saw_password_prompt():
             if password is None:
@@ -591,7 +609,7 @@ class TelnetBackend(Backend):
                     # vary with screen content. For settled commands, wait for a
                     # longer quiet period, bounded by the caller's timeout.
                     idle_needed = (pacing.TELNET_SETTLE_GAP_SECONDS if expecting_settle
-                                   else pacing.TELNET_IDLE_GAP_SECONDS)
+                                   else self._idle_gap_seconds)
                     if now - last_data >= idle_needed:
                         self._last_drain_bytes = drained
                         return

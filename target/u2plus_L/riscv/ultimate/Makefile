@@ -107,10 +107,15 @@ SRCS_CC	 =  u2pl_init.cc \
 			monitor_init.cc \
 			monitor_file_io.cc \
 			monitor_bookmarks.cc \
+			monitor_breakpoints.cc \
+			monitor_debug.cc \
+			monitor_debug_brk_session.cc \
+			monitor_debug_predictor.cc \
 			machine_monitor.cc \
 			disassembler_6502.cc \
 			assembler_6502.cc \
 			u2_memory_backend.cc \
+			monitor_debug_u2.cc \
 			audio_select.cc \
 			filetype_d64.cc \
 			filetype_g64.cc \
@@ -225,7 +230,7 @@ SRCS_NANO = nano_minimal.nan
 
 PATH_INC =  $(addprefix -I, $(VPATH))
 OPTIONS  = -march=$(MARCH) -mabi=$(MABI) $(EFFORT) -ffunction-sections -fdata-sections -nostartfiles -mno-div
-OPTIONS += -gdwarf-2 -Os -DU2P=2 -DRISCV -DUSB2503 -DOS -DIOBASE=0x10000000 -DU2P_IO_BASE=0x10100000 -DCLOCK_FREQ=50000000 -Wno-write-strings
+OPTIONS += -gdwarf-2 -Os -DU2P=2 -DRISCV -DUSB2503 -DOS -DIOBASE=0x10000000 -DU2P_IO_BASE=0x10100000 -DCLOCK_FREQ=50000000 -Wno-write-strings -DMACHINE_MONITOR=1
 COPTIONS = $(OPTIONS) -std=gnu99
 CPPOPT   = $(OPTIONS) -std=gnu++11 -fno-exceptions -fno-rtti -fno-threadsafe-statics -fpermissive
 LINK 	 = linker.x

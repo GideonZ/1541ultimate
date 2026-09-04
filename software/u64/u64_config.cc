@@ -1282,18 +1282,10 @@ int U64Config :: setFilter(ConfigItem *it)
     return 0;
 }
 
-// The freezer silences the SIDs while it owns the machine, by writing the SID
-// master volume ($D418). That register also sets the DC offset of the SID
-// output, so the write steps the offset and is heard as a low click every time
-// the machine is taken and handed back. Measured on an Ultimate 64 over the
-// device's own audio stream: peak sample 19000 against a silent-machine floor
-// of 19.
-//
-// The FPGA audio mixer sits after the point where that offset is removed, so
-// closing it is itself silent, and while it is closed nothing the SID does can
-// be heard. The freezer therefore closes the mixer around its own SID writes
-// rather than instead of them: the $D418 mute stays, and stays portable, and
-// on this hardware it happens where it cannot be heard.
+// The freezer silences SIDs by writing $D418 (master volume), which also
+// steps the DC offset, heard as a click on take/hand-back (measured: peak
+// sample 19000 vs. silent-machine floor 19). The FPGA mixer sits after that
+// offset is removed, so closing it around the $D418 write is itself silent.
 //
 // The first eight bytes are the SID channels: UltiSID 1 and 2, socket 1 and 2,
 // right and left. SetMixerAutoSid zeroes the same eight to mute the SIDs while
@@ -2207,12 +2199,17 @@ void U64Config :: SetResampleFilter(t_video_mode m)
 #pragma GCC push_options
 #pragma GCC optimize ("O1")
 
-void U64Config :: DetectSidImpl(uint8_t *buffer)
+bool U64Config :: DetectSidImpl(uint8_t *buffer)
 {
     uint8_t result1, result2, result3, result4;
 
-    while (C64_PEEK(0xD012) != 0xFF)
-        ;
+    uint32_t timeout = 1000000;
+    while (C64_PEEK(0xD012) != 0xFF) {
+        if (!timeout--) {
+            memset(buffer, 0, 64);
+            return false;
+        }
+    }
 
     for(int x = 0; x < 16; x++) {
 
@@ -2271,6 +2268,7 @@ void U64Config :: DetectSidImpl(uint8_t *buffer)
 */
 
 
+    return true;
 }
 
 #pragma GCC pop_options
@@ -2322,8 +2320,13 @@ int U64Config :: S_SidDetector(int &sid1, int &sid2)
         // Prepare the machine to execute the detection code
 
     	portENTER_CRITICAL();
-        DetectSidImpl(buffer);
+        bool detected = DetectSidImpl(buffer);
         portEXIT_CRITICAL();
+
+        if (!detected) {
+            printf("SID detector timeout waiting for VIC raster\n");
+            break;
+        }
 
         // Now analyze the data
         if ((buffer[17] == 2) && (buffer[1] == 0))  {

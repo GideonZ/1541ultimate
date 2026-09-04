@@ -300,4 +300,7 @@ tools/64tass/.build-lock
 python/grab*
 fpga/cpu_unit/rvlite/vhdl_source/bootrom_pkg_u2.vhd
 fpga/cpu_unit/rvlite/vhdl_source/bootrom_pkg_u2_loader.vhd
+
+# Python bytecode cache
+__pycache__/
 .gstack/

@@ -103,10 +103,15 @@ SRCS_CC	 =  u2p_init.cc \
 			monitor_init.cc \
 			monitor_file_io.cc \
 			monitor_bookmarks.cc \
+			monitor_breakpoints.cc \
+			monitor_debug.cc \
+			monitor_debug_brk_session.cc \
+			monitor_debug_predictor.cc \
 			machine_monitor.cc \
 			disassembler_6502.cc \
 			assembler_6502.cc \
 			u2_memory_backend.cc \
+			monitor_debug_u2.cc \
 			audio_select.cc \
 			filetype_d64.cc \
 			filetype_g64.cc \
@@ -217,7 +222,7 @@ SRCS_IEC = iec_code.iec
 SRCS_NANO = nano_minimal.nan
 
 PATH_INC =  $(addprefix -I, $(VPATH))
-OPTIONS  = -g -ffunction-sections -Os -DOS -DU2P=1 -DNIOS=1 -DCLOCK_FREQ=62500000 -Wno-write-strings -mno-hw-div -mno-hw-mul -mno-hw-mulx
+OPTIONS  = -g -ffunction-sections -Os -DOS -DU2P=1 -DNIOS=1 -DCLOCK_FREQ=62500000 -Wno-write-strings -mno-hw-div -mno-hw-mul -mno-hw-mulx -DMACHINE_MONITOR=1
 # OPTIONS  = -g -ffunction-sections -O0 -DOS -DNIOS=1 -DCLOCK_FREQ=62500000 -Wno-write-strings -mno-hw-div -mno-hw-mul -mno-hw-mulx
 COPTIONS = $(OPTIONS) -std=gnu99
 CPPOPT   = $(OPTIONS) -std=gnu++11 -fno-exceptions -fno-rtti -fno-threadsafe-statics -fpermissive

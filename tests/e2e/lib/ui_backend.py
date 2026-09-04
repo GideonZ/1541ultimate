@@ -41,6 +41,7 @@ sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
                             if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
 from report import Failure
 from collections.abc import Sequence
+import api as api_lib
 import targets
 from backend import (BOX_BOTTOM_LEFT, BOX_BOTTOM_RIGHT, BOX_HORIZONTAL,
     BOX_TOP_LEFT, BOX_TOP_RIGHT, BOX_VERTICAL, Backend, CONFIGS_PATH,
@@ -59,8 +60,9 @@ from backend import (BOX_BOTTOM_LEFT, BOX_BOTTOM_RIGHT, BOX_HORIZONTAL,
 from rest_backend import (CURSOR_SETTLE_ATTEMPTS, INPUT_PATH,
     MENU_BUTTON_PATH, MENU_SCREEN_PATH, OVERLAY_MODE, RestBackend, UI_ITEM,
     UI_STORE, close_host_menu, host_menu_open)
-from telnet_backend import (ALT_CHARSET_MAP, HEIGHT, TELNET_ENTRY_ROWS,
-    TELNET_KEY_BYTES, TELNET_STATUS_ROW, TelnetBackend, VT100Screen, WIDTH)
+from telnet_backend import (ALT_CHARSET_MAP, CARTRIDGE_TELNET_IDLE_GAP_SECONDS,
+    HEIGHT, TELNET_ENTRY_ROWS, TELNET_KEY_BYTES, TELNET_STATUS_ROW,
+    TelnetBackend, VT100Screen, WIDTH)
 from browser import (SIZE_COLUMN_RE, Browser)
 
 # The re-exported surface. __all__ rather than a noqa on each name: it is
@@ -74,6 +76,7 @@ __all__ = [
     "BOX_TOP_LEFT",
     "BOX_TOP_RIGHT",
     "BOX_VERTICAL",
+    "CARTRIDGE_TELNET_IDLE_GAP_SECONDS",
     "CONFIGS_PATH",
     "CURSOR_SETTLE_ATTEMPTS",
     "DEFAULT_MODE",
@@ -164,6 +167,41 @@ _MODE_INTERFACE_TYPE = {
 }
 
 
+# Computers already configured in this process; see _ensure_cartridge_host.
+_CARTRIDGE_HOSTS_READY: set = set()
+
+
+def _ensure_cartridge_host(host: str, telnet_host: str | None,
+                           password: str | None, timeout: float) -> None:
+    """Give a cartridge's computer the setting the cartridge needs to be driven.
+
+    Applied once per process: the value does not change under a run, and a suite
+    that opens several sessions should not ask its computer again each time.
+    """
+    for candidate in (host, telnet_host):
+        if not candidate:
+            continue
+        try:
+            handle = targets.resolve(candidate)
+        except Exception:                                     # noqa: BLE001
+            continue
+        if not handle.split or handle.computer in _CARTRIDGE_HOSTS_READY:
+            continue
+        _CARTRIDGE_HOSTS_READY.add(handle.computer)
+        try:
+            changed = api_lib.ensure_cartridge_preference(
+                handle, password, max(5.0, timeout))
+        except Exception as exc:                              # noqa: BLE001
+            # A computer that cannot be asked is not one that can be fixed
+            # here. The suite reports what it actually sees, which is a better
+            # failure than one invented by this preflight.
+            print(f"[info] could not confirm the cartridge preference on "
+                  f"{handle.computer}: {exc}", flush=True)
+            continue
+        if changed:
+            print(f"[info] {changed}", flush=True)
+
+
 def make_backend(
     mode: str,
     host: str,
@@ -184,13 +222,30 @@ def make_backend(
     passes telnet_width/telnet_height to render wider than REST/Overlay.
 
     Either host may be a target such as "u2@c64u"; see tests/lib/targets.py.
+
+    A cartridge target's computer is configured here before any transport is
+    built. `run-tests` does the same thing before its first suite, but a suite
+    started on its own does not go through it, and the failure that follows is
+    silent rather than loud: with the computer set to prefer its own cartridge
+    port, a Debug step leaves the program counter where it was and the monitor
+    reports no error at all. Doing it here means both routes reach a machine
+    that can be driven, and a bench that is already set up is left alone.
     """
+    _ensure_cartridge_host(host, telnet_host, password, timeout)
     if mode == MODE_TELNET:
         # Telnet is a session on the device itself, so a cartridge target
         # connects to the cartridge; only keyboard injection over REST needs
         # the companion computer.
+        # The connection is to the cartridge itself, so the target name that
+        # says it is one has to be read here, before device_of() drops it.
+        is_cartridge = False
+        try:
+            is_cartridge = targets.resolve(telnet_host or host).split
+        except Exception:                                     # noqa: BLE001
+            pass
         return TelnetBackend(targets.device_of(telnet_host or host), telnet_port,
-                             password, timeout, width=telnet_width, height=telnet_height)
+                             password, timeout, width=telnet_width, height=telnet_height,
+                             cartridge=is_cartridge)
     if mode in _MODE_INTERFACE_TYPE:
         return RestBackend(host, password, timeout, interface_type=_MODE_INTERFACE_TYPE[mode])
     raise Failure(f"Unknown mode {mode!r}; expected one of {MODES}")

@@ -284,10 +284,9 @@ BROWSER_REFRESH_FROM_MENU_WRITER = _fix(
 # Measured on u2@c64u: one ARROW_LEFT from the hex view put the file browser on
 # screen, and the check that retypes a command argument uses that key, so the
 # checks behind it ran against a browser and failed on a monitor that was
-# working. It also still answers D with the Debug mode this tree removed; see
-# MONITOR_D_KEY_RESERVED. Reflashing that machine from this tree closes both,
-# and 17 checks of the suite pass there in the meantime, so this entry costs
-# real coverage and should go as soon as it can.
+# working. Reflashing that machine from this tree closes it, and 17 checks of
+# the suite pass there in the meantime, so this entry costs real coverage and
+# should go as soon as it can.
 MONITOR_EXIT_AND_BACK_KEYS = _fix(
     "monitor-exit-and-back-keys",
     "the machine code monitor offers the Back action and the layer model that "
@@ -440,19 +439,6 @@ REU_TURBO_STOPS_CPU_IN_CYCLE = _fix(
     "a write to $DF01 stops the CPU in its own cycle, so an REU transfer "
     "started at full speed returns what it was given",
     (C64U,))
-
-# The one entry where the machine is behind the tree rather than beside it.
-# This branch's monitor has no Debug mode: "Dbg" appears nowhere in
-# software/monitor/, and the key is reserved so that pressing D changes
-# nothing. The Ultimate II+L on this bench runs a flashed 3.15 that still has
-# it, and answers D by putting "Dbg" in the monitor header. Both report
-# firmware 3.15, so the version cannot tell them apart; only the behaviour can.
-# Reflashing that machine from this tree closes the gap and the entry goes.
-MONITOR_D_KEY_RESERVED = _fix(
-    "monitor-d-key-reserved",
-    "the monitor reserves D for a future Debug mode and opens nothing with "
-    "it, rather than entering the Debug mode this branch removed",
-    (U2,))
 
 # What tests/e2e/network/ident_service_switch_test.py asserts. Firmware without
 # the fix reads each network service switch once, when that listener's task

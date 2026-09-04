@@ -466,11 +466,50 @@ class RestBackend(Backend):
         return index, [line.rstrip() for line in self._decode(body).lines]
 
     # -- input --
-    def _post_events(self, events: list[dict]) -> None:
-        for batch in api_lib.input_batches(events):
-            status, body = self._request("POST", INPUT_PATH, payload={"events": batch})
-            if status != 200:
-                raise Failure(f"machine:input failed with HTTP {status}: {body[:160]!r}")
+    @staticmethod
+    def _runs_without_a_repeat(events: list[dict]) -> list[list[dict]]:
+        """Split so no run holds the same key twice in a row.
+
+        Only the key matters, not the position: a run ends wherever an event
+        repeats the one before it.
+        """
+        runs: list[list[dict]] = []
+        current: list[dict] = []
+        for event in events:
+            if current and event == current[-1]:
+                runs.append(current)
+                current = [event]
+            else:
+                current.append(event)
+        if current:
+            runs.append(current)
+        return runs
+
+    def _post_events(self, events: list[dict]) -> int:
+        # A cartridge reads its keys off the computer's keyboard matrix, and
+        # cannot tell one key tapped twice from one key held down unless it
+        # scans the matrix while it is empty between the two taps. In one
+        # request that gap is a single 20ms tick and the second tap is usually
+        # lost; see pacing.SPLIT_REPEATED_KEY_GAP_SECONDS for the measurement.
+        # So a repeat goes in the next request, after the queue this one leaves
+        # behind has drained and the matrix has been idle long enough to be
+        # scanned. A device target has no matrix in the path and sends the
+        # events as one run.
+        runs = (self._runs_without_a_repeat(events) if self.target.split
+                else [events])
+        for index, run in enumerate(runs):
+            if index:
+                time.sleep(len(runs[index - 1]) * self.key_drain_seconds
+                           + pacing.SPLIT_REPEATED_KEY_GAP_SECONDS)
+            for batch in api_lib.input_batches(run):
+                status, body = self._request("POST", INPUT_PATH, payload={"events": batch})
+                if status != 200:
+                    raise Failure(f"machine:input failed with HTTP {status}: {body[:160]!r}")
+        # Only the last run is still draining when this returns; every earlier
+        # one was waited out above. The caller charges the settle for this
+        # much rather than for the whole text, or a split batch pays its drain
+        # twice.
+        return len(runs[-1]) if runs else 0
 
     def _settle(self, before: bytes | None,
                 change_timeout: float | None = None,
@@ -547,8 +586,8 @@ class RestBackend(Backend):
         self.last_command = label
         before = self._menu_screen_body()
         events = [{"kind": "keyboard", "inputs": char_to_combo(ch), "transition": "tap"} for ch in text]
-        self._post_events(events)
-        return self._settle(before, min_drain=len(events) * self.key_drain_seconds)
+        draining = self._post_events(events)
+        return self._settle(before, min_drain=draining * self.key_drain_seconds)
 
     def send_key_repeat(self, key: str, count: int) -> Snapshot:
         combo = KEY_ALIASES.get(key)
@@ -557,8 +596,8 @@ class RestBackend(Backend):
         self.last_command = f"{key} x{count}"
         before = self._menu_screen_body()
         events = [{"kind": "keyboard", "inputs": list(combo), "transition": "tap"} for _ in range(count)]
-        self._post_events(events)
-        return self._settle(before, min_drain=count * self.key_drain_seconds)
+        draining = self._post_events(events)
+        return self._settle(before, min_drain=draining * self.key_drain_seconds)
 
     clear_field_key = "CLEAR"
 
@@ -574,8 +613,8 @@ class RestBackend(Backend):
                            "transition": "tap"})
         self.last_command = label
         before = self._menu_screen_body()
-        self._post_events(events)
-        return self._settle(before, min_drain=len(events) * self.key_drain_seconds)
+        draining = self._post_events(events)
+        return self._settle(before, min_drain=draining * self.key_drain_seconds)
 
     def send_key_then_text(self, key: str, text: str, label: str) -> Snapshot:
         combo = KEY_ALIASES.get(key)
@@ -586,13 +625,13 @@ class RestBackend(Backend):
         events = [{"kind": "keyboard", "inputs": list(combo), "transition": "tap"}]
         events += [{"kind": "keyboard", "inputs": char_to_combo(ch), "transition": "tap"}
                    for ch in text]
-        self._post_events(events)
+        draining = self._post_events(events)
         # The seek's own short budget: its caller confirms the result by
         # reading the cursor back, so an early "nothing changed" here is free,
         # and a seek onto the entry already under the cursor changes nothing at
         # all. See pacing.SEEK_CHANGE_TIMEOUT_SECONDS.
         return self._settle(before, change_timeout=pacing.SEEK_CHANGE_TIMEOUT_SECONDS,
-                            min_drain=len(events) * self.key_drain_seconds)
+                            min_drain=draining * self.key_drain_seconds)
 
     def close(self) -> None:
         # Same rule on the way out as on the way in: the menu is closed before

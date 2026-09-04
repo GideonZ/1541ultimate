@@ -698,6 +698,7 @@ Reproduce: `./run-tests -H 127.0.0.1@localhost -s browse --mode overlay`
 Last N line(s) of `127.0.0.1-at-localhost/overlay-browse.log`, which is attempt 1 of 3:
 
 ```
+[info] could not confirm the cartridge preference on localhost: localhost did not answer for 'Cartridge Preference': GET its config API returned HTTP 404: b'{"errors": ["no such category"]}'
 Traceback (most recent call last):
   File "/FIXTURE/suites/browse.py", line 20, in <module>
     backend = ui_backend.make_backend('overlay', ARGS.host,
@@ -751,6 +752,7 @@ Reproduce: `./run-tests -H 127.0.0.1@localhost -s browse --mode overlay`
 Last N line(s) of `127.0.0.1-at-localhost/attempt-2/overlay-browse.log`, which is attempt 2 of 3:
 
 ```
+[info] could not confirm the cartridge preference on localhost: localhost did not answer for 'Cartridge Preference': GET its config API returned HTTP 404: b'{"errors": ["no such category"]}'
 Traceback (most recent call last):
   File "/FIXTURE/suites/browse.py", line 20, in <module>
     backend = ui_backend.make_backend('overlay', ARGS.host,
@@ -804,6 +806,7 @@ Reproduce: `./run-tests -H 127.0.0.1@localhost -s browse --mode overlay`
 Last N line(s) of `127.0.0.1-at-localhost/attempt-3/overlay-browse.log`, which is attempt 3 of 3:
 
 ```
+[info] could not confirm the cartridge preference on localhost: localhost did not answer for 'Cartridge Preference': GET its config API returned HTTP 404: b'{"errors": ["no such category"]}'
 Traceback (most recent call last):
   File "/FIXTURE/suites/browse.py", line 20, in <module>
     backend = ui_backend.make_backend('overlay', ARGS.host,
@@ -1064,7 +1067,7 @@ Reaching one of these from a build page is a download and an unzip: GitHub serve
 
 ## Timeline
 
-211 line(s), order not compared here
+214 line(s), order not compared here
 
 ## Checks
 

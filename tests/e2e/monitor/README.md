@@ -1,8 +1,15 @@
 # Monitor Validation
 
 The real-device validation harness for the machine-code monitor
-(`software/monitor/`). One suite, `machine-code-monitor`, driven through the
-shared UI facade in [`tests/e2e/lib/ui_backend.py`](../lib/ui_backend.py).
+(`software/monitor/`), driven through the shared UI facade in
+[`tests/e2e/lib/ui_backend.py`](../lib/ui_backend.py).
+
+`machine-code-monitor` checks the monitor itself, and is what the rest of this
+file describes. `machine-code-monitor-debug`, `machine-code-monitor-matrix` and
+`machine-code-monitor-regression` check Debug mode; see
+[Debugger suites](#debugger-suites). `machine-code-monitor-harness`
+(`monitor_harness_test.py`) checks the debugger suites' own host-side contract,
+with no device, and runs before them.
 
 ## How the monitor is reached
 
@@ -63,6 +70,12 @@ to the computer and reach the cartridge over the expansion port. It also has
 no `Interface Type` setting, so `--mode overlay` and `--mode freeze` drive the
 same firmware path there and differ only in where memory is read from.
 
+Keys that reach a cartridge that way arrive as taps on the computer's keyboard
+matrix, which the cartridge polls. Two taps of the same key in a row can be read
+as one key held down, so `RestBackend` splits a batch at every repeated event.
+[tests/e2e/doc/key-injection-rate.md](../doc/key-injection-rate.md) measures the
+loss and describes the split.
+
 ## What it checks
 
 Monitor behaviour:
@@ -101,8 +114,8 @@ Interaction contract:
   bare `X` does not
 - the Assembly view's source tag is three characters at one fixed column, so
   the column does not move when the bank changes
-- `A` opens the Assembly view and `D` changes nothing, because `D` is reserved
-  for a future Debug mode
+- `A` opens the Assembly view, and `D` on top of it opens Debug mode with the
+  `Dbg` header flag set
 - the monitor can be left by each of its three exits and reopened at the same
   view and address
 - `Z` stops the C64 and releases it, with the KERNAL jiffy clock at `$00A2` as
@@ -213,3 +226,116 @@ quietly:
 The runner verifies the documented UI state after this suite like any other,
 which for a cartridge target means backing out through the computer's keyboard
 and reading the result from the cartridge.
+
+## Debugger suites
+
+Debug mode has its own suites, because it drives the real 6510 rather than only
+reading memory. All three are registered `manual` for what they cost in hardware
+time, so name them explicitly.
+
+```bash
+./run-tests u64 --manual -s machine-code-monitor-regression
+./run-tests u2@c64u --manual -s machine-code-monitor-regression
+```
+
+### `machine-code-monitor-debug`
+
+21 semantic groups, about 95 checks, over Telnet. Its liveness checks read the
+C64's own screen and jiffy clock while the machine is meant to be running, so an
+Overlay or Freeze UI holding the machine would invalidate them. It is `manual`
+because of what it costs, about 40 minutes on an Ultimate 64, most of it spent
+running programs on the 6510 and waiting for them to stop.
+
+### `machine-code-monitor-matrix`
+
+One cell per combination of memory mode and UI transport, repeated `--reps`
+times. `--memory` and `--ui` narrow that to a rectangle; `--cells` replaces it
+with a named set of intersections:
+
+```bash
+--cells "rom:telnet,rom:freeze:2,ram-under-rom:freeze:2"
+```
+
+Each term is `MEMORY:UI` or `MEMORY:UI:REPETITIONS`. A term naming an unknown
+mode or UI is a usage error before the device is touched. The cell set is
+recorded in the run ledger, so a selected run is not mistaken for a full one.
+
+The axes are:
+
+- **UI**: `telnet`, `freeze`, `overlay`
+- **Memory**: `ram`, `ram-under-rom`, `rom`, plus the boundary-traversal modes
+  `ram-rom-ram` and `ram-rur-rom-ram`
+- **Flow, per cell**: Step Over, Step Into, Step Out, Continue To Cursor,
+  Continue To Breakpoint, Continue, Reset
+
+Two call shapes run inside each cell, because they fail differently:
+
+- **Nesting**: a chain of `--required-step-into-depth` subroutines, each calling
+  the next. 32 by default, 8 for a split U2+L/C64U session. Every Step Into
+  pushes another frame, and the return address on the stack is checked at each
+  level.
+- **Straight calls**: a block of 32 consecutive `JSR` instructions to the same
+  helper, stepped with Step Over. The stack pointer returns to the same value
+  after every step, so this arms, parks, resumes and disarms from an identical
+  state each time. Expected PC, SP and A are exact at every position, so a
+  leaked breakpoint slot or a park and resume that drifts the stack fails here.
+  Evidence lands in each cell's `straight-call-evidence.json`.
+
+Steps are cross-checked against two independent oracles: the in-tree 6502
+interpreter (`mcm6502.py`) and, where installed, VICE over its binary monitor.
+
+### `machine-code-monitor-regression`
+
+The suite to run before a merge. It owns no test logic: it selects lanes out of
+the two suites above and drives them through their own runners. The selection is
+14 cell runs against the matrix's 45, and 11 of the debug suite's 21 groups. All
+five memory modes are run; what the selection cuts is how many transports a mode
+is repeated on. About 60 minutes on a U64, against a little over two hours for
+all three suites.
+
+Every selected lane carries the reason it is there. Print the plan, with what
+the gate does not cover, without touching a device:
+
+```bash
+python3 tests/e2e/monitor/monitor_debug_regression_test.py \
+    --host u64 --rest-host u64 --list-plan
+```
+
+`--skip-cells` and `--skip-groups` run one half of the gate on its own, for
+iterating on a single failure. A split `u2@c64u` session gets a smaller plan:
+one memory mode, one UI, the groups whose checks are reachable, and the two
+`--focus` scopes that only exist for a split session. A U2+L refuses
+visible-ROM breakpoints and has one local UI rather than two.
+
+The gate adds one check of its own. It reads the KERNAL and BASIC ROM heads
+before it touches the debugger and again when it has finished, so a run that
+leaves a displaced byte in the volatile ROM image is named by the run that
+caused it rather than by the next suite to notice.
+
+[tests/e2e/doc/machine-code-monitor-regression.md](../doc/machine-code-monitor-regression.md)
+derives the selection: which firmware paths branch on the transport, which cells
+the recorded matrix runs have seen fail, what each lane costs, and the harness
+confounds that have been misread as debugger defects.
+
+## Run history
+
+Each matrix and gate run appends to a cross-run ledger, so progress is visible
+without opening individual artifact directories:
+
+```
+<root>/HISTORY.md          every run as a table, newest first, plus the
+                           failures seen across runs
+<root>/history.jsonl       one JSON record per run
+<root>/<run_id>/run.md     one run in prose
+<root>/<run_id>/run.json   the same record, machine readable
+```
+
+`run_id` is `<UTC start>-<short commit>[-dirty]`, so the folder name identifies
+when a run happened and what tree it ran against. Each record carries the git
+commit, branch and uncommitted files, start and end time, duration, per-status
+cell counts, the opcode-gate result, the depths reached, and one row per failing
+cell with its classification and failing operation.
+
+The root defaults to `$MCM_RUN_LEDGER`, else
+`doc/research/machine-code-monitor/matrix-runs`. Use `--run-ledger DIR` to point
+it elsewhere, or `--no-run-ledger` to skip recording.
