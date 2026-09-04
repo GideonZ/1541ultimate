@@ -75,9 +75,6 @@ def main() -> int:
 
         suite_ok(SUITE)
         return 0
-    except Failure as exc:
-        suite_fail(SUITE, str(exc))
-        return 1
     except Exception as exc:  # noqa: BLE001
         suite_fail(SUITE, format_exception(exc))
         return 1

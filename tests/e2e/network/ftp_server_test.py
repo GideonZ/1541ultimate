@@ -155,9 +155,6 @@ def main() -> int:
     server = Server(args.host, args.password, args.timeout)
     try:
         scenario_names_round_trip(server)
-    except Failure as exc:
-        suite_fail(SUITE, str(exc))
-        return 1
     except Exception as exc:  # noqa: BLE001  (a lost device must not print a traceback alone)
         suite_fail(SUITE, format_exception(exc))
         return 1

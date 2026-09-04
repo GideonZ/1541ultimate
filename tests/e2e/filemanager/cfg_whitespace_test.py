@@ -142,9 +142,6 @@ def main() -> int:
 
         suite_ok("cfg_whitespace_test")
         return 0
-    except Failure as exc:
-        suite_fail("cfg_whitespace_test", str(exc))
-        return 1
     except Exception as exc:  # noqa: BLE001
         suite_fail("cfg_whitespace_test", format_exception(exc))
         return 1

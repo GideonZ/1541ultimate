@@ -313,9 +313,6 @@ def main() -> int:
         scenario_upload_integrity(args.host, args.password, args.timeout,
                                   args.usb_dir, args.ram_dir,
                                   args.transfer_timeout)
-    except Failure as exc:
-        suite_fail(SUITE, str(exc))
-        return 1
     except Exception as exc:  # noqa: BLE001  (a lost device must not print a traceback alone)
         suite_fail(SUITE, format_exception(exc))
         return 1

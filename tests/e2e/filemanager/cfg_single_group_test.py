@@ -103,9 +103,6 @@ def main() -> int:
 
         suite_ok("cfg_single_group_test")
         return 0
-    except Failure as exc:
-        suite_fail("cfg_single_group_test", str(exc))
-        return 1
     except Exception as exc:  # noqa: BLE001
         suite_fail("cfg_single_group_test", format_exception(exc))
         return 1
