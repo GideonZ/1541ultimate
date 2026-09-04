@@ -436,4 +436,4 @@ PROHIBIT PRIMARY NET "i_riscv/i_core/ena_o" ;
 PROHIBIT PRIMARY NET "i_riscv/i_core/i_decode/N_726_i" ;
 PROHIBIT PRIMARY NET "i_double_freq_bridge/busy" ;
 PROHIBIT PRIMARY NET "i_riscv/i_core/N_268_i" ;
-
+PROHIBIT PRIMARY NET "i_riscv/i_core/N_268" ;
