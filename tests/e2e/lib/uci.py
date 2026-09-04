@@ -225,8 +225,11 @@ class Uci:
                 raise Wedged(
                     f"command {command.hex(' ') or '<empty>'} never left Command Busy after "
                     f"{self.busy_timeout:.0f}s: {describe_status(status)}. The command "
-                    f"interface is now wedged for every target (issue #740) and only a "
-                    f"firmware restart or power cycle releases it."
+                    f"interface is now wedged for every target (issue #740). "
+                    f"Measured on u2@c64u, 2026-09-04: machine:reset, machine:reboot "
+                    f"and injected keys do not release it, a power cycle always does, "
+                    f"and it came back once after a runners:run_prg on the same "
+                    f"machine. Try run_prg first, it is much cheaper."
                 )
             time.sleep(BUSY_POLL_SECONDS)
 
