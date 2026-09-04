@@ -88,6 +88,12 @@ def alphabet_at(index: int) -> str:
     return ALPHABET[index % len(ALPHABET)]
 
 
+# BASIC's own prompt in screen memory. Spelled out rather than built with
+# screen_code(), which maps the lowercase letters and digits this suite types
+# and not the uppercase letters the prompt is drawn in.
+READY_SCREEN_CODES = bytes((0x12, 0x05, 0x01, 0x04, 0x19, 0x2E))
+
+
 def screen_code(character: str) -> int:
     """What BASIC leaves in screen memory for one typed character."""
     if character.isdigit():
@@ -155,10 +161,10 @@ class BasicDestination(Destination):
         # open cost the whole first batch, reported as 64 of 64 keys lost.
         self.keys.machine.close_menu_from_anywhere()
         self.memory.machine.reset(force=True)
-        self.await_ready()
+        self.wait_for_ready()
         self.restart_cycle()
 
-    def await_ready(self, timeout: float = 15.0) -> None:
+    def wait_for_ready(self, timeout: float = 15.0) -> None:
         """Wait for BASIC's own prompt before anything is typed into it.
 
         The check that calls open() is named for the destination being ready,
@@ -166,7 +172,7 @@ class BasicDestination(Destination):
         finished. A machine still booting takes the keys of the first batch
         and reports every one of them as lost.
         """
-        wanted = bytes(screen_code(character) for character in "READY.")
+        wanted = READY_SCREEN_CODES
         deadline = time.monotonic() + timeout
         while True:
             if wanted in self.screen():
