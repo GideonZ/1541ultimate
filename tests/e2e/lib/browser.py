@@ -20,9 +20,18 @@ from report import Failure
 from collections.abc import Sequence
 from report import detail
 import pacing
+import re
 import time
-from backend import (Backend, FRAME_CHARS, SIZE_COLUMN_RE, Snapshot,
+from backend import (Backend, FRAME_CHARS, Snapshot,
     char_to_combo, plan_overlay_navigation, strip_frame)
+
+
+# A browser row's rendered size, as size_str.cc writes it: up to four digits
+# and an optional K or M. Never a menu item, so a label that looks like this
+# came from the listing an overlay was drawn over. Here rather than in
+# backend.py because this is the only reader: it describes a listing row, and
+# only a Browser reads listing rows.
+SIZE_COLUMN_RE = re.compile(r"\d{1,4}[KM]?")
 
 
 class Browser:

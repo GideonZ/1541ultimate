@@ -46,24 +46,24 @@ from collections.abc import Sequence
 import targets
 from backend import (BOX_BOTTOM_LEFT, BOX_BOTTOM_RIGHT, BOX_HORIZONTAL,
     BOX_TOP_LEFT, BOX_TOP_RIGHT, BOX_VERTICAL, Backend, CONFIGS_PATH,
-    CURSOR_SETTLE_ATTEMPTS, DEFAULT_MODE, FRAME_CHARS, INFO_PATH, INPUT_PATH,
-    KEY_ALIASES, LAUNCHER_DESCENT_STEPS, LAUNCHER_ENTRY_ROWS,
-    MENU_BUTTON_PATH, MENU_GLYPHS, MENU_SCREEN_PATH, MODES, MODE_FREEZE,
-    MODE_OVERLAY, MODE_TELNET, NoCursorDrawn, OVERLAY_MODE,
+    DEFAULT_MODE, FRAME_CHARS, INFO_PATH, KEY_ALIASES, LAUNCHER_DESCENT_STEPS,
+    LAUNCHER_ENTRY_ROWS, MENU_GLYPHS, MODES, MODE_FREEZE, MODE_OVERLAY,
+    MODE_TELNET, NoCursorDrawn,
     POLL_INTERVAL_SECONDS, RowMark, SCREEN_BYTES, SCREEN_CELLS,
     SCREEN_HEIGHT, SCREEN_WIDTH, SELECTED_ROW_MIN_MARKED_CELLS,
-    SETTLE_TIMEOUT_SECONDS, SIZE_COLUMN_RE, Snapshot, TRANSPORT_RETRIES,
-    TRANSPORT_RETRY_PAUSE_SECONDS, UI_ITEM, UI_STORE, Window, _DIRECT_CHARS,
+    SETTLE_TIMEOUT_SECONDS, Snapshot, TRANSPORT_RETRIES,
+    TRANSPORT_RETRY_PAUSE_SECONDS, Window, _DIRECT_CHARS,
     _SEEKABLE_RE, _SHIFTED_DIGIT_CHARS, _SHIFTED_SYMBOL_CHARS, _find_frames,
-    _frame_top, _seek_landing, char_to_combo, close_host_menu, count_colour,
+    _frame_top, _seek_landing, char_to_combo, count_colour,
     fetch_navigation_style, fetch_product, find_cursor_colour,
-    find_open_window, find_selected_row_rest, host_menu_open,
-    measure_cursor_colour, plan_overlay_navigation, row_marks, strip_frame,
-    whole_screen)
-from rest_backend import (RestBackend)
+    find_open_window, find_selected_row_rest, measure_cursor_colour,
+    plan_overlay_navigation, row_marks, strip_frame, whole_screen)
+from rest_backend import (CURSOR_SETTLE_ATTEMPTS, INPUT_PATH,
+    MENU_BUTTON_PATH, MENU_SCREEN_PATH, OVERLAY_MODE, RestBackend, UI_ITEM,
+    UI_STORE, close_host_menu, host_menu_open)
 from telnet_backend import (ALT_CHARSET_MAP, HEIGHT, TELNET_ENTRY_ROWS,
     TELNET_KEY_BYTES, TELNET_STATUS_ROW, TelnetBackend, VT100Screen, WIDTH)
-from browser import (Browser)
+from browser import (SIZE_COLUMN_RE, Browser)
 
 # The re-exported surface. __all__ rather than a noqa on each name: it is
 # what `from ui_backend import *` would take, and it is what stops the lint

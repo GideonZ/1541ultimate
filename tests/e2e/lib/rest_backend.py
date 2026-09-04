@@ -25,16 +25,88 @@ import rest as rest_lib
 import screens as screen_spool
 import targets
 import time
+import urllib.parse
 import urllib.request
 from menu import wait_screen_changes
 from menu import wait_screen_settled
-from backend import (Backend, CONFIGS_PATH, CURSOR_SETTLE_ATTEMPTS,
-    INPUT_PATH, KEY_ALIASES, LAUNCHER_DESCENT_STEPS, LAUNCHER_ENTRY_ROWS,
-    MENU_BUTTON_PATH, MENU_GLYPHS, MENU_SCREEN_PATH, NoCursorDrawn,
-    OVERLAY_MODE, POLL_INTERVAL_SECONDS, SCREEN_BYTES, SCREEN_CELLS,
-    SCREEN_HEIGHT, SCREEN_WIDTH, SETTLE_TIMEOUT_SECONDS, Snapshot, UI_ITEM,
-    UI_STORE, char_to_combo, close_host_menu, find_selected_row_rest,
+from backend import (Backend, CONFIGS_PATH, KEY_ALIASES, LAUNCHER_DESCENT_STEPS,
+    LAUNCHER_ENTRY_ROWS, MENU_GLYPHS, NoCursorDrawn, POLL_INTERVAL_SECONDS,
+    SCREEN_BYTES, SCREEN_CELLS, SCREEN_HEIGHT, SCREEN_WIDTH,
+    SETTLE_TIMEOUT_SECONDS, Snapshot, char_to_combo, find_selected_row_rest,
     measure_cursor_colour, strip_frame)
+
+
+# The routes this transport drives the UI through, and the settings it reads.
+# Here rather than in backend.py because they belong to REST and not to the
+# UI: a Telnet session drives the same menu and asks for none of them.
+MENU_SCREEN_PATH = "/v1/machine:menu_screen"
+
+MENU_BUTTON_PATH = "/v1/machine:menu_button"
+
+INPUT_PATH = "/v1/machine:input"
+
+UI_STORE = "User Interface Settings"
+
+UI_ITEM = "Interface Type"
+
+OVERLAY_MODE = "Overlay on HDMI"
+
+# How many times to re-read the screen while no cursor marker is drawn at all.
+CURSOR_SETTLE_ATTEMPTS = 4
+
+
+def host_menu_open(host: str, password: str | None, timeout: float) -> bool:
+    """Whether the on-device menu of one machine, named directly, is open.
+
+    Takes a host rather than a target because the caller that needs it is
+    asking about the *computer* half of a cartridge target, which the target's
+    own routing would never send it to. A closed menu answers 404.
+    """
+    headers = {"X-Password": password} if password else {}
+    request = urllib.request.Request(
+        rest_lib.url_for(host, MENU_SCREEN_PATH), headers=headers)
+    try:
+        with rest_lib.retrying_urlopen(request, timeout) as response:
+            response.read()
+        return True
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            return False
+        raise Failure(f"{MENU_SCREEN_PATH} on {host} failed: {exc}")
+    except (OSError, urllib.error.URLError) as exc:
+        raise Failure(f"{MENU_SCREEN_PATH} on {host} failed: {exc}")
+
+
+def close_host_menu(host: str, password: str | None, timeout: float) -> None:
+    """Shut the on-device menu of one machine, named directly.
+
+    A cartridge target injects its keys into the computer, and the firmware
+    decides what such an event means from whether the keyboard matrix is
+    enabled (software/api/route_input.cc, isMatrixEnabled). While the
+    computer's own menu is up the matrix is disabled, so the keys are pushed
+    into that menu's queue instead of onto the matrix the cartridge taps. Every
+    request still answers HTTP 200 and the cartridge never sees a keystroke, so
+    this has to be checked rather than hoped for.
+    """
+    if not host_menu_open(host, password, timeout):
+        return
+    headers = {"X-Password": password} if password else {}
+    request = urllib.request.Request(
+        rest_lib.url_for(host, MENU_BUTTON_PATH), headers=headers,
+        method="PUT")
+    try:
+        with rest_lib.retrying_urlopen(request, timeout) as response:
+            response.read()
+    except (OSError, urllib.error.URLError) as exc:
+        raise Failure(f"{MENU_BUTTON_PATH} on {host} failed: {exc}")
+    deadline = time.monotonic() + SETTLE_TIMEOUT_SECONDS
+    while time.monotonic() < deadline:
+        if not host_menu_open(host, password, timeout):
+            return
+        time.sleep(POLL_INTERVAL_SECONDS)
+    raise Failure(
+        f"the menu on {host} would not close, so keys sent to it would be "
+        "consumed by that menu instead of reaching the cartridge")
 
 
 class RestBackend(Backend):
