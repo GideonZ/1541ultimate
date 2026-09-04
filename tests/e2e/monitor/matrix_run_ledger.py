@@ -46,7 +46,7 @@ _NOT_APPLICABLE_STATUS = "SKIPPED_UNSUPPORTED"
 def _git(repo_root: Path, *args: str) -> str:
     try:
         out = subprocess.run(("git", *args), cwd=repo_root, capture_output=True,
-                             text=True, timeout=30)
+                             text=True, timeout=30, check=False)
         return out.stdout.strip() if out.returncode == 0 else ""
     except Exception:  # noqa: BLE001 - a missing/failing git must not fail a run
         return ""

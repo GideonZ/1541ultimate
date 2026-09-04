@@ -13,7 +13,6 @@ with a network-liveness probe after each iteration. Uses only shipped REST
 endpoints; no temporary E2E hooks.
 """
 import argparse
-import os
 import re
 import socket
 import subprocess
@@ -21,8 +20,14 @@ import sys
 import time
 import urllib.error
 import urllib.parse
+from pathlib import Path
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
+sys.path.insert(0, bootstrap.directory("e2e", "monitor"))
+
 from mcm_rest import Rest, wait_for, Failure  # noqa: E402
 
 READY_SCREEN_TOKEN = bytes([0x12, 0x05, 0x01, 0x04, 0x19])
@@ -459,7 +464,8 @@ def reenter_and_step(r: Rest, scenario: str, label: str):
         r.send_text("t")
         wait_pc(r, 0xBC0F, f"{label}: re-entered trace to BC0F")
     check_liveness(r, f"{label}: liveness after re-entry")
-    r.release_all(); time.sleep(0.3)
+    r.release_all()
+    time.sleep(0.3)
 
 
 def run_scenario(r: Rest, mode: str, scenario: str, iters: int):
@@ -480,8 +486,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("host", nargs="?", default="u64")
     parser.add_argument("iters", nargs="?", type=int, default=6)
-    parser.add_argument("--mode", choices=MODES + ("all",), default="Overlay on HDMI")
-    parser.add_argument("--scenario", choices=SCENARIOS + ("all",), default="ram")
+    parser.add_argument("--mode", choices=(*MODES, "all"), default="Overlay on HDMI")
+    parser.add_argument("--scenario", choices=(*SCENARIOS, "all"), default="ram")
     args = parser.parse_args()
 
     r = Rest(args.host, 12)

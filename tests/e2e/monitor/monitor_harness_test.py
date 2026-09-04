@@ -31,11 +31,14 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from typing import ClassVar
 from unittest import mock
 
-HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE))
-sys.path.insert(0, str(HERE.parents[1] / "lib"))
+# The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
+sys.path.insert(0, bootstrap.directory("e2e", "monitor"))
 
 from report import suite_fail, suite_ok  # noqa: E402
 
@@ -46,6 +49,8 @@ import monitor_debug_stress as stress  # noqa: E402
 import monitor_debug_matrix_test as gate  # noqa: E402
 import monitor_debug_regression_test as regression  # noqa: E402
 import monitor_test as monitor  # noqa: E402
+
+HERE = Path(__file__).resolve().parent
 
 # Gate harnesses whose green result must never depend on a hidden reset-retry.
 GATE_FILES = ("monitor_debug_test.py", "monitor_debug_matrix_test.py")
@@ -229,7 +234,7 @@ class ModalDetectionTest(unittest.TestCase):
     monitor's own frame, without depending on the alert's wording. Both samples
     are real captures taken from the debug suite."""
 
-    ALERT_SCREEN = [
+    ALERT_SCREEN: ClassVar[list[str]] = [
         "+----------------------------------------------------------+",
         "|MONITOR ASM $C700                                 Dbg     |",
         "|C700 A9 5A     LDA #$5A          [RAM]                    |",
@@ -238,7 +243,7 @@ class ModalDetectionTest(unittest.TestCase):
         "|C70F FF    |                 Ok                 |         |",
         "|C710 FF    +------------------------------------+         |",
     ]
-    PLAIN_SCREEN = [
+    PLAIN_SCREEN: ClassVar[list[str]] = [
         "+----------------------------------------------------------+",
         "|MONITOR ASM $C5F0                                 Dbg     |",
         "|C5F0 A9 2F     LDA #$2F          [RAM]                    |",
@@ -268,7 +273,7 @@ class BoundaryTraversalFixtureTest(unittest.TestCase):
 
     def test_ram_rom_ram_crosses_into_basic_and_back(self) -> None:
         fixture = gate.build_fixture("ram-rom-ram", 32)
-        trace, regions, mem = _run_fixture(fixture)
+        _trace, regions, mem = _run_fixture(fixture)
         self.assertEqual(regions, ["RAM", "BASIC", "RAM"])
         self.assertEqual(mem[fixture.sentinel], 0x77)
         self.assertGreaterEqual(mem[fixture.progress], 3,
@@ -276,7 +281,7 @@ class BoundaryTraversalFixtureTest(unittest.TestCase):
 
     def test_ram_rur_rom_ram_crosses_every_region(self) -> None:
         fixture = gate.build_fixture("ram-rur-rom-ram", 32)
-        trace, regions, mem = _run_fixture(fixture)
+        _trace, regions, mem = _run_fixture(fixture)
         # A bank switch cannot execute from the window it switches, so the walk
         # returns to RAM between the RAM-under-ROM and visible-ROM legs.
         self.assertEqual(regions,
@@ -426,7 +431,7 @@ class AlertScopeContractTest(unittest.TestCase):
 
     def test_alerts_use_no_corporate_or_dbx_terms(self) -> None:
         problems = gate.validate_debug_alerts(
-            gate.DEBUG_ALERTS + ("This is production mode", "Use DbX here"))
+            (*gate.DEBUG_ALERTS, "This is production mode", "Use DbX here"))
         self.assertTrue(any("production" in p for p in problems))
         self.assertTrue(any("DbX" in p for p in problems))
 
@@ -471,7 +476,8 @@ class SplitHostToolFlagTest(unittest.TestCase):
 
     def _help(self, *argv: str) -> str:
         proc = subprocess.run([sys.executable, *argv, "--help"], cwd=str(HERE),
-                              capture_output=True, text=True, timeout=60)
+                              capture_output=True, text=True, timeout=60,
+                              check=False)
         self.assertEqual(proc.returncode, 0, proc.stderr)
         return proc.stdout
 
@@ -740,8 +746,9 @@ class DeviceIdentityStampTest(unittest.TestCase):
     was reflashed three times during one campaign and nothing noticed, so the
     identity is stamped at both ends of a run and compared."""
 
-    STAMP = {"product": "Ultimate II+L", "firmware_version": "3.15",
-             "unique_id": "F13E69"}
+    STAMP: ClassVar[dict[str, str]] = {
+        "product": "Ultimate II+L", "firmware_version": "3.15",
+        "unique_id": "F13E69"}
 
     @staticmethod
     def _fixture(machine_info, overlay_info=None):
@@ -872,7 +879,7 @@ class BreakpointTableClearTest(unittest.TestCase):
         session.rest = mock.Mock()
         self.reads = mock.Mock(side_effect=list(reads))
         self.cleared: list = []
-        session.clear_breakpoint = lambda addr: self.cleared.append(addr)
+        session.clear_breakpoint = self.cleared.append
         return session
 
     def test_an_empty_table_is_read_once(self) -> None:

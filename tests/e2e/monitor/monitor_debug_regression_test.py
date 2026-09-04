@@ -54,15 +54,18 @@ from pathlib import Path
 from typing import Any
 from collections.abc import Sequence
 
-MCM_DIR = Path(__file__).resolve().parent
-REPO_ROOT = MCM_DIR.parents[2]
-sys.path.insert(0, str(MCM_DIR))
+# The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
+sys.path.insert(0, bootstrap.directory("e2e", "monitor"))
 
 import monitor_debug_matrix_test as matrix  # noqa: E402
 import mcm_localui as L  # noqa: E402
-
-sys.path.insert(0, str(REPO_ROOT / "tests" / "lib"))
 import report as R  # noqa: E402
+
+MCM_DIR = Path(__file__).resolve().parent
+REPO_ROOT = MCM_DIR.parents[2]
 
 SUITE = "machine-code-monitor-regression"
 

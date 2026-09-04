@@ -29,8 +29,14 @@ import random
 import sys
 import time
 from dataclasses import dataclass
+from pathlib import Path
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
+sys.path.insert(0, bootstrap.directory("e2e", "monitor"))
+
 import mcm_rest as R          # noqa: E402
 import mcm_split_rest as SR   # noqa: E402
 import mcm_localui as L       # noqa: E402
@@ -312,7 +318,8 @@ class RestSession:
     def recover(self):
         if self.split:
             self.release_cartridge_hold()   # keys are dead until the C64 runs
-        self.rest.tap(["commodore", "x"]); time.sleep(0.5)
+        self.rest.tap(["commodore", "x"])
+        time.sleep(0.5)
         L.ensure_menu_open(self.rest)
 
     def clean_baseline(self):
@@ -325,9 +332,12 @@ class RestSession:
         if self.split:
             self.release_cartridge_hold()   # keys are dead until the C64 runs
             self.assert_overlay_draws()     # and a blank overlay never opens a monitor
-        self.rest.tap(["commodore", "d"]); time.sleep(0.2)   # leave Debug if active
-        self.rest.tap(["run_stop"]); time.sleep(0.2)          # close monitor if open
-        self.rest.tap(["commodore", "x"]); time.sleep(0.4)    # break/reset from any monitor mode
+        self.rest.tap(["commodore", "d"])   # leave Debug if active
+        time.sleep(0.2)
+        self.rest.tap(["run_stop"])          # close monitor if open
+        time.sleep(0.2)
+        self.rest.tap(["commodore", "x"])    # break/reset from any monitor mode
+        time.sleep(0.4)
         self.rest.reset()
         overlay_lifecycle.wait_ready(self.rest, timeout=12.0)
         L.ensure_menu_closed(self.rest)
@@ -360,7 +370,8 @@ class RestSession:
         overlay_lifecycle.goto_addr(self.rest, addr, f"stress goto ${addr:04X}")
 
     def asm_view(self):
-        self.rest.tap(["a"]); time.sleep(0.15)
+        self.rest.tap(["a"])
+        time.sleep(0.15)
 
     def set_cpu_bank7(self):
         """Cycle O until the footer shows CPU7 (view==exec bank 7)."""
@@ -370,7 +381,8 @@ class RestSession:
             ls = self.lines() or []
             if any(ln.strip().startswith("CPU7") or " CPU7" in ln for ln in ls):
                 return
-            self.rest.tap(["o"]); time.sleep(0.15)
+            self.rest.tap(["o"])
+            time.sleep(0.15)
         # not fatal; bank view doesn't affect execution stream
 
     def enter_debug(self, timeout=6.0):
@@ -440,16 +452,21 @@ class RestSession:
         if self.split:
             self.clear_table_by_row_toggle()
             return
-        self.rest.tap(["commodore", "p"]); time.sleep(0.3)
+        self.rest.tap(["commodore", "p"])
+        time.sleep(0.3)
         ls = self.lines() or []
         if not any("BRK" in ln.upper() or "BREAK" in ln.upper() for ln in ls):
             # popup not detected; bail without leaving stray keys
-            self.rest.tap(["run_stop"]); time.sleep(0.2)
+            self.rest.tap(["run_stop"])
+            time.sleep(0.2)
             return
         for _ in range(10):
-            self.rest.tap(["inst_del"]); time.sleep(0.1)
-            self.rest.tap(["cursor_up_down"]); time.sleep(0.08)
-        self.rest.tap(["run_stop"]); time.sleep(0.2)
+            self.rest.tap(["inst_del"])
+            time.sleep(0.1)
+            self.rest.tap(["cursor_up_down"])
+            time.sleep(0.08)
+        self.rest.tap(["run_stop"])
+        time.sleep(0.2)
 
 
 # ----------------------------------------------------------------------------
@@ -495,32 +512,40 @@ def gen_program(rng, length, allow_stack=True):
         choice = rng.random()
         if choice < 0.34:
             mnem, op = rng.choice(IMPLIED)
-            out.append(Instr(addr, bytes([op]), mnem, "impl")); addr += 1
+            out.append(Instr(addr, bytes([op]), mnem, "impl"))
+            addr += 1
         elif choice < 0.60:
             mnem, op = rng.choice(IMM)
-            out.append(Instr(addr, bytes([op, rng.randint(0, 255)]), mnem, "imm")); addr += 2
+            out.append(Instr(addr, bytes([op, rng.randint(0, 255)]), mnem, "imm"))
+            addr += 2
         elif choice < 0.82:
             mnem, op = rng.choice(ABS_RW)
             tgt = rng.randint(SCRATCH_LO, SCRATCH_HI - 1)
-            out.append(Instr(addr, bytes([op, tgt & 0xFF, tgt >> 8]), mnem, "abs")); addr += 3
+            out.append(Instr(addr, bytes([op, tgt & 0xFF, tgt >> 8]), mnem, "abs"))
+            addr += 3
         elif choice < 0.94:
             mnem, op = rng.choice(ABS_ST)
             tgt = rng.randint(SCRATCH_LO, SCRATCH_HI - 1)
-            out.append(Instr(addr, bytes([op, tgt & 0xFF, tgt >> 8]), mnem, "abs")); addr += 3
+            out.append(Instr(addr, bytes([op, tgt & 0xFF, tgt >> 8]), mnem, "abs"))
+            addr += 3
         else:
             if allow_stack and rng.random() < 0.5:
                 mnem, op = rng.choice([("PHA", 0x48), ("PHP", 0x08)])
-                out.append(Instr(addr, bytes([op]), mnem, "impl")); addr += 1
+                out.append(Instr(addr, bytes([op]), mnem, "impl"))
+                addr += 1
                 pending_push += 1
             elif allow_stack and pending_push > 0:
                 mnem, op = rng.choice([("PLA", 0x68), ("PLP", 0x28)])
-                out.append(Instr(addr, bytes([op]), mnem, "impl")); addr += 1
+                out.append(Instr(addr, bytes([op]), mnem, "impl"))
+                addr += 1
                 pending_push -= 1
             else:
-                out.append(Instr(addr, bytes([0xEA]), "NOP", "impl")); addr += 1
+                out.append(Instr(addr, bytes([0xEA]), "NOP", "impl"))
+                addr += 1
     # balance any outstanding pushes with pulls so SP returns clean
     while pending_push > 0:
-        out.append(Instr(addr, bytes([0x68]), "PLA", "impl")); addr += 1
+        out.append(Instr(addr, bytes([0x68]), "PLA", "impl"))
+        addr += 1
         pending_push -= 1
     return out, addr
 
@@ -547,11 +572,14 @@ def gen_jsr_nest(depth, rng):
     ]
     for i in range(depth):
         a = layout[i]
-        instrs.append(Instr(a, bytes([0xA9, (i * 7 + 1) & 0xFF]), "LDA", "imm")); a += 2
+        instrs.append(Instr(a, bytes([0xA9, (i * 7 + 1) & 0xFF]), "LDA", "imm"))
+        a += 2
         if i < depth - 1:
             tgt = layout[i + 1]
-            instrs.append(Instr(a, bytes([0x20, tgt & 0xFF, tgt >> 8]), "JSR", "abs")); a += 3
-        instrs.append(Instr(a, bytes([0x60]), "RTS", "impl")); a += 1
+            instrs.append(Instr(a, bytes([0x20, tgt & 0xFF, tgt >> 8]), "JSR", "abs"))
+            a += 3
+        instrs.append(Instr(a, bytes([0x60]), "RTS", "impl"))
+        a += 1
     return instrs, entry, return_point
 
 
@@ -684,7 +712,8 @@ def enter_at(sess: RestSession, cpu, target, seed):
     sess.clear_all_breakpoints()
     sess.set_breakpoint(target)
     sess.goto(BOOTSTRAP_ADDR)
-    sess.key("g"); time.sleep(0.2)
+    sess.key("g")
+    time.sleep(0.2)
     f = sess.wait_footer_pc(target, timeout=10.0, ctx="enter_at Go->target")
     # remove all breakpoints so single-stepping is clean
     sess.clear_breakpoint(target)
@@ -712,7 +741,8 @@ def choose_key_and_advance(cpu, instrs_by_addr):
             writes += [(w.addr, w.value) for w in res.writes]
             guard = 0
             while not (cpu.sp == sp_before and cpu.pc == ret):
-                res = cpu.step(); guard += 1
+                res = cpu.step()
+                guard += 1
                 writes += [(w.addr, w.value) for w in res.writes]
                 if guard > 10000:
                     raise StressError("step-over JSR did not return in oracle")
@@ -739,7 +769,6 @@ def run_program_session(sess, rng, instrs, seed, max_steps, jsonl, stats,
     instrs_by_addr = {ins.addr: ins for ins in instrs}
     entry = instrs[0].addr
     enter_at(sess, cpu, entry, seed)
-    sp_entry = cpu.sp
     steps = 0
     while steps < max_steps:
         plan = choose_key_and_advance(cpu, instrs_by_addr)
@@ -887,99 +916,100 @@ def main():
     artdir = a.artifact_dir or "."
     os.makedirs(artdir, exist_ok=True)
     jsonl_path = os.path.join(artdir, f"stress_{a.ui}_{a.focus}_{a.seed}.jsonl")
-    jsonl = open(jsonl_path, "w", buffering=1)
-    stats = {"steps": 0, "jsr_steps": 0, "jsr_cycles": 0, "liveness_ok": 0,
-             "liveness_fail": 0, "iterations": 0, "errors": 0,
-             "ops": {}, "keys": {}, "ui": a.ui}
+    with open(jsonl_path, "w", buffering=1) as jsonl:
+        stats = {"steps": 0, "jsr_steps": 0, "jsr_cycles": 0, "liveness_ok": 0,
+                 "liveness_fail": 0, "iterations": 0, "errors": 0,
+                 "ops": {}, "keys": {}, "ui": a.ui}
 
-    sess = RestSession(a.host, ui=a.ui, c64_host=a.c64_host)
-    if not sess.alive():
-        print("DEVICE NOT ALIVE"); return 2
+        sess = RestSession(a.host, ui=a.ui, c64_host=a.c64_host)
+        if not sess.alive():
+            print("DEVICE NOT ALIVE")
+            return 2
 
-    def log(m):
-        print(f"{time.strftime('%H:%M:%S')} {m}", flush=True)
+        def log(m):
+            print(f"{time.strftime('%H:%M:%S')} {m}", flush=True)
 
-    log(f"STRESS start ui={a.ui} focus={a.focus} iters={a.iterations} seed={a.seed}")
-    identity_at_start = SR.device_identity(sess.rest)
-    log(f"device identity at start: {identity_at_start}")
-    sess.recover()
-    try:
-        sess.set_ui_mode()      # leaves a clean closed-menu baseline; do NOT close()
-    except Exception as e:       # (run_stop/C=+D into a running C64 corrupts its state)
-        log(f"set_ui_mode warn: {e}")
+        log(f"STRESS start ui={a.ui} focus={a.focus} iters={a.iterations} seed={a.seed}")
+        identity_at_start = SR.device_identity(sess.rest)
+        log(f"device identity at start: {identity_at_start}")
         sess.recover()
-
-    jsr_depths = [int(x) for x in a.jsr_depths.split(",") if x]
-    rc = 0
-    for it in range(a.iterations):
-        stats["iterations"] = it + 1
         try:
-            if a.focus in ("all", "steps"):
-                instrs, _ = gen_program(rng, a.prog_len)
-                n = run_program_session(sess, rng, instrs, a.seed + it, a.max_steps,
-                                        jsonl, stats, a.sp_coherence_check,
-                                        active_write_readback=a.active_write_readback,
-                                        defer_write_validation=not a.no_defer_write_validation)
-                log(f"iter {it+1}/{a.iterations} steps+={n} total_steps={stats['steps']}")
-            if a.focus in ("all", "jsr"):
-                depth = jsr_depths[it % len(jsr_depths)]
-                run_jsr_session(sess, rng, depth, a.seed + 1000 + it, jsonl, stats)
-                log(f"iter {it+1} jsr depth={depth} cycles={stats['jsr_cycles']}")
-            if a.focus in ("all", "liveness") or (it % a.liveness_every == 0):
-                ok = liveness_check(sess)
-                stats["liveness_ok" if ok else "liveness_fail"] += 1
-                if not ok:
-                    # A liveness failure on a split session is usually the
-                    # machine being left DMA-held by the monitor exit, not a
-                    # stepping result. Name which one it is where it is logged.
-                    log(f"iter {it+1} LIVENESS FAIL{sess.hold_note()}")
+            sess.set_ui_mode()      # leaves a clean closed-menu baseline; do NOT close()
+        except Exception as e:       # (run_stop/C=+D into a running C64 corrupts its state)
+            log(f"set_ui_mode warn: {e}")
+            sess.recover()
+
+        jsr_depths = [int(x) for x in a.jsr_depths.split(",") if x]
+        rc = 0
+        for it in range(a.iterations):
+            stats["iterations"] = it + 1
+            try:
+                if a.focus in ("all", "steps"):
+                    instrs, _ = gen_program(rng, a.prog_len)
+                    n = run_program_session(sess, rng, instrs, a.seed + it, a.max_steps,
+                                            jsonl, stats, a.sp_coherence_check,
+                                            active_write_readback=a.active_write_readback,
+                                            defer_write_validation=not a.no_defer_write_validation)
+                    log(f"iter {it+1}/{a.iterations} steps+={n} total_steps={stats['steps']}")
+                if a.focus in ("all", "jsr"):
+                    depth = jsr_depths[it % len(jsr_depths)]
+                    run_jsr_session(sess, rng, depth, a.seed + 1000 + it, jsonl, stats)
+                    log(f"iter {it+1} jsr depth={depth} cycles={stats['jsr_cycles']}")
+                if a.focus in ("all", "liveness") or (it % a.liveness_every == 0):
+                    ok = liveness_check(sess)
+                    stats["liveness_ok" if ok else "liveness_fail"] += 1
+                    if not ok:
+                        # A liveness failure on a split session is usually the
+                        # machine being left DMA-held by the monitor exit, not a
+                        # stepping result. Name which one it is where it is logged.
+                        log(f"iter {it+1} LIVENESS FAIL{sess.hold_note()}")
+                    sess.recover()
+            except StressError as e:
+                stats["errors"] += 1
+                rc = 3
+                log(f"iter {it+1} STRESS-ERROR: {e}")
+                if jsonl:
+                    jsonl.write(json.dumps({"t": "error", "iter": it + 1, "msg": str(e)}) + "\n")
+                if not sess.alive():
+                    log(f"iter {it+1} *** DEVICE WEDGE (REST dead) ***")
+                    jsonl.write(json.dumps({"t": "wedge", "iter": it + 1}) + "\n")
+                    rc = 2
+                    break
+                if a.fail_fast:
+                    break
                 sess.recover()
-        except StressError as e:
-            stats["errors"] += 1
-            rc = 3
-            log(f"iter {it+1} STRESS-ERROR: {e}")
-            if jsonl:
-                jsonl.write(json.dumps({"t": "error", "iter": it + 1, "msg": str(e)}) + "\n")
-            if not sess.alive():
-                log(f"iter {it+1} *** DEVICE WEDGE (REST dead) ***")
-                jsonl.write(json.dumps({"t": "wedge", "iter": it + 1}) + "\n")
-                rc = 2
-                break
-            if a.fail_fast:
-                break
-            sess.recover()
-        except Exception as e:  # noqa: BLE001
-            stats["errors"] += 1
-            rc = 3
-            log(f"iter {it+1} EXC {type(e).__name__}: {e}")
-            if not sess.alive():
-                rc = 2; break
-            if a.fail_fast:
-                break
-            sess.recover()
+            except Exception as e:  # noqa: BLE001
+                stats["errors"] += 1
+                rc = 3
+                log(f"iter {it+1} EXC {type(e).__name__}: {e}")
+                if not sess.alive():
+                    rc = 2
+                    break
+                if a.fail_fast:
+                    break
+                sess.recover()
 
-    # A device that was reflashed or swapped part-way through was not one image
-    # under test, whatever the counts say, so this outranks the run's own result.
-    identity_at_end = SR.device_identity(sess.rest)
-    identity_changed = SR.identity_changes(identity_at_start, identity_at_end)
-    if identity_changed:
-        log(f"*** DEVICE IDENTITY CHANGED DURING THE RUN: {identity_changed} - "
-            f"this run is not a measurement of one image and its numbers are "
-            f"not evidence ***")
-        rc = 4
+        # A device that was reflashed or swapped part-way through was not one image
+        # under test, whatever the counts say, so this outranks the run's own result.
+        identity_at_end = SR.device_identity(sess.rest)
+        identity_changed = SR.identity_changes(identity_at_start, identity_at_end)
+        if identity_changed:
+            log(f"*** DEVICE IDENTITY CHANGED DURING THE RUN: {identity_changed} - "
+                f"this run is not a measurement of one image and its numbers are "
+                f"not evidence ***")
+            rc = 4
 
-    summary = {"t": "summary", **stats, "rc": rc,
-               "step_resends": sess.step_resends,
-               "final_alive": sess.alive(),
-               "device_identity_start": identity_at_start,
-               "device_identity_end": identity_at_end,
-               "device_identity_changed": identity_changed}
-    jsonl.write(json.dumps(summary) + "\n")
-    jsonl.close()
-    with open(os.path.join(artdir, f"stress_{a.ui}_{a.focus}_{a.seed}.summary.json"), "w") as f:
-        json.dump(summary, f, indent=2)
-    log(f"STRESS end {summary}")
-    return rc
+        summary = {"t": "summary", **stats, "rc": rc,
+                   "step_resends": sess.step_resends,
+                   "final_alive": sess.alive(),
+                   "device_identity_start": identity_at_start,
+                   "device_identity_end": identity_at_end,
+                   "device_identity_changed": identity_changed}
+        jsonl.write(json.dumps(summary) + "\n")
+        with open(os.path.join(artdir, f"stress_{a.ui}_{a.focus}_{a.seed}.summary.json"), "w") as f:
+            json.dump(summary, f, indent=2)
+        log(f"STRESS end {summary}")
+        return rc
 
 
 if __name__ == "__main__":

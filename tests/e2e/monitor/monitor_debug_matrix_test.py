@@ -27,9 +27,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-MCM_DIR = Path(__file__).resolve().parent
-REPO_ROOT = MCM_DIR.parents[2]
-sys.path.insert(0, str(MCM_DIR))
+# The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
+sys.path.insert(0, bootstrap.directory("e2e", "monitor"))
 
 import mcm_split_rest as SR  # noqa: E402
 import mcm_localui as L  # noqa: E402
@@ -43,8 +45,10 @@ import monitor_debug_test as dbg  # noqa: E402
 import mcm_monitor_compat as mt  # noqa: E402
 import matrix_run_ledger as RUNLEDGER  # noqa: E402
 import overlay_lifecycle  # noqa: E402
-sys.path.insert(0, str(REPO_ROOT / "tests" / "lib"))
 from report import suite_fail, suite_ok  # noqa: E402
+
+MCM_DIR = Path(__file__).resolve().parent
+REPO_ROOT = MCM_DIR.parents[2]
 
 
 def machine_host(args: argparse.Namespace) -> str:
@@ -334,6 +338,7 @@ def run_cmd(cmd: list[str], cwd: Path, log_path: Path, timeout: float | None = N
                 stdout=log,
                 stderr=subprocess.STDOUT,
                 timeout=timeout,
+                check=False,
             )
         except subprocess.TimeoutExpired:
             # A caller-visible failure, not a crash: an uncaught TimeoutExpired
@@ -2134,7 +2139,7 @@ def _slot_ports_free(slot: int) -> bool:
 
 
 def _claim_vice_slot() -> int:
-    global _VICE_SLOT
+    global _VICE_SLOT  # noqa: PLW0603 - the claimed slot is a per-process singleton: the lock file is taken once and every later caller must get the same slot
     if _VICE_SLOT is not None:
         return _VICE_SLOT
     preferred = int(os.environ.get("E2E_PORT_SLOT", "0"))
@@ -3114,7 +3119,7 @@ def run_cell(args: argparse.Namespace, row: dict[str, Any], ledger: Ledger) -> N
                 ledger.save()
 
                 log_line(f"{cid}: ROM 100-opcode trace from current live ROM path")
-                rom_state, rom_steps = run_rom_opcode_trace_dual(
+                _rom_state, rom_steps = run_rom_opcode_trace_dual(
                     driver, row, cell_dir, oracles, minimum_opcodes=100)
                 row["opcode_count"] = rom_steps + 3
                 row["oracle_validated"] = True
@@ -3532,11 +3537,13 @@ def preflight_commands(args: argparse.Namespace,
             "--timeout", str(args.timeout),
             "--test", "step-out-target,nested-out",
             "--keep-going",
-        ] + debug_target),
+            *debug_target,
+        ]),
         ("freeze-reentry", [
             "python3", str(MCM_DIR / "freeze_reentry_guard.py"),
             args.rest_host, "3",
-        ] + split_host),
+            *split_host,
+        ]),
         ("localui-soak", [
             "python3", str(MCM_DIR / "mcm_localui.py"),
             "soak", args.rest_host,
@@ -3544,7 +3551,8 @@ def preflight_commands(args: argparse.Namespace,
             "--cycles", "2",
             "--ui", "both",
             "--log", str(log_dir / "mcm_localui_soak.log"),
-        ] + split_host),
+            *split_host,
+        ]),
     ]
 
 
@@ -3621,7 +3629,8 @@ def opcode_volume_command(args: argparse.Namespace, op_dir: Path) -> list[str]:
         "--jsr-depths", str(max(32, args.required_step_into_depth)),
         "--seed", "9001",
         "--artifact-dir", str(op_dir),
-    ] + split_host
+        *split_host,
+    ]
 
 
 def run_opcode_volume(args: argparse.Namespace, artifact_dir: Path) -> dict[str, Any]:
@@ -3885,8 +3894,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                              "cartridge). --host telnet also stays on the cartridge.")
     parser.add_argument("--port", type=int, default=23)
     parser.add_argument("--password")
-    parser.add_argument("--memory", choices=MEMORY_MODES + ("all",), default="all")
-    parser.add_argument("--ui", choices=INTERFACES + ("all",), default="all")
+    parser.add_argument("--memory", choices=(*MEMORY_MODES, "all"), default="all")
+    parser.add_argument("--ui", choices=(*INTERFACES, "all"), default="all")
     parser.add_argument("--cells", default="",
                         help="Run a named set of cells instead of the "
                              "--memory x --ui product: a comma-separated list "
@@ -3991,10 +4000,10 @@ def _banking_row_bytes(row: str, address: int) -> bytes:
         raise GateError(
             f"could not parse displayed instruction bytes at ${address:04X}: {row!r}")
     raw = []
-    for field in fields[1:4]:
-        if re.fullmatch(r"[0-9A-Fa-f]{2}", field) is None:
+    for token in fields[1:4]:
+        if re.fullmatch(r"[0-9A-Fa-f]{2}", token) is None:
             break
-        raw.append(int(field, 16))
+        raw.append(int(token, 16))
     if not raw:
         raise GateError(
             f"could not parse displayed instruction bytes at ${address:04X}: {row!r}")

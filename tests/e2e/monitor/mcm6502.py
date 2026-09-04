@@ -418,11 +418,14 @@ class CPU6502:
 
     # ---- per-op handlers ----------------------------------------------
     def _op_lda(self, addr, pc):
-        self.a = self._read(addr); self._set_zn(self.a)
+        self.a = self._read(addr)
+        self._set_zn(self.a)
     def _op_ldx(self, addr, pc):
-        self.x = self._read(addr); self._set_zn(self.x)
+        self.x = self._read(addr)
+        self._set_zn(self.x)
     def _op_ldy(self, addr, pc):
-        self.y = self._read(addr); self._set_zn(self.y)
+        self.y = self._read(addr)
+        self._set_zn(self.y)
     def _op_sta(self, addr, pc):
         self._write(addr, self.a)
     def _op_stx(self, addr, pc):
@@ -434,11 +437,14 @@ class CPU6502:
     def _op_sbc(self, addr, pc):
         self._sbc(self._read(addr))
     def _op_and(self, addr, pc):
-        self.a &= self._read(addr); self._set_zn(self.a)
+        self.a &= self._read(addr)
+        self._set_zn(self.a)
     def _op_ora(self, addr, pc):
-        self.a |= self._read(addr); self._set_zn(self.a)
+        self.a |= self._read(addr)
+        self._set_zn(self.a)
     def _op_eor(self, addr, pc):
-        self.a ^= self._read(addr); self._set_zn(self.a)
+        self.a ^= self._read(addr)
+        self._set_zn(self.a)
     def _op_cmp(self, addr, pc):
         self._cmp_reg(self.a, self._read(addr))
     def _op_cpx(self, addr, pc):
@@ -471,21 +477,45 @@ class CPU6502:
     def _op_rol_mem(self, addr, pc): self._write(addr, self._shift_common(self._read(addr), True, True))
     def _op_ror_mem(self, addr, pc): self._write(addr, self._shift_common(self._read(addr), False, True))
     def _op_inc(self, addr, pc):
-        val = (self._read(addr) + 1) & 0xFF; self._write(addr, val); self._set_zn(val)
+        val = (self._read(addr) + 1) & 0xFF
+        self._write(addr, val)
+        self._set_zn(val)
     def _op_dec(self, addr, pc):
-        val = (self._read(addr) - 1) & 0xFF; self._write(addr, val); self._set_zn(val)
-    def _op_inx(self, a, p): self.x = (self.x + 1) & 0xFF; self._set_zn(self.x)
-    def _op_iny(self, a, p): self.y = (self.y + 1) & 0xFF; self._set_zn(self.y)
-    def _op_dex(self, a, p): self.x = (self.x - 1) & 0xFF; self._set_zn(self.x)
-    def _op_dey(self, a, p): self.y = (self.y - 1) & 0xFF; self._set_zn(self.y)
-    def _op_tax(self, a, p): self.x = self.a; self._set_zn(self.x)
-    def _op_txa(self, a, p): self.a = self.x; self._set_zn(self.a)
-    def _op_tay(self, a, p): self.y = self.a; self._set_zn(self.y)
-    def _op_tya(self, a, p): self.a = self.y; self._set_zn(self.a)
-    def _op_tsx(self, a, p): self.x = self.sp; self._set_zn(self.x)
+        val = (self._read(addr) - 1) & 0xFF
+        self._write(addr, val)
+        self._set_zn(val)
+    def _op_inx(self, a, p):
+        self.x = (self.x + 1) & 0xFF
+        self._set_zn(self.x)
+    def _op_iny(self, a, p):
+        self.y = (self.y + 1) & 0xFF
+        self._set_zn(self.y)
+    def _op_dex(self, a, p):
+        self.x = (self.x - 1) & 0xFF
+        self._set_zn(self.x)
+    def _op_dey(self, a, p):
+        self.y = (self.y - 1) & 0xFF
+        self._set_zn(self.y)
+    def _op_tax(self, a, p):
+        self.x = self.a
+        self._set_zn(self.x)
+    def _op_txa(self, a, p):
+        self.a = self.x
+        self._set_zn(self.a)
+    def _op_tay(self, a, p):
+        self.y = self.a
+        self._set_zn(self.y)
+    def _op_tya(self, a, p):
+        self.a = self.y
+        self._set_zn(self.a)
+    def _op_tsx(self, a, p):
+        self.x = self.sp
+        self._set_zn(self.x)
     def _op_txs(self, a, p): self.sp = self.x  # TXS affects no flags
     def _op_pha(self, a, p): self._push(self.a)
-    def _op_pla(self, a, p): self.a = self._pull(); self._set_zn(self.a)
+    def _op_pla(self, a, p):
+        self.a = self._pull()
+        self._set_zn(self.a)
     def _op_php(self, a, p): self._push(self.p | B | U)  # B,bit5 set in pushed copy
     def _op_plp(self, a, p):
         self.p = (self._pull() | U) & ~B & 0xFF | (self.p & 0)  # B not retained in live reg
@@ -505,12 +535,14 @@ class CPU6502:
         self._push(ret & 0xFF)
         self.pc = target
     def _op_rts(self, a, p):
-        lo = self._pull(); hi = self._pull()
+        lo = self._pull()
+        hi = self._pull()
         self.pc = ((hi << 8) | lo) + 1 & 0xFFFF
     def _op_rti(self, a, p):
         self.p = (self._pull() | U) & ~B & 0xFF
         self.p |= U
-        lo = self._pull(); hi = self._pull()
+        lo = self._pull()
+        hi = self._pull()
         self.pc = (hi << 8) | lo
     def _op_brk(self, a, p):
         # BRK is a 2-byte instruction: the pushed PC skips the padding byte.
@@ -640,7 +672,8 @@ def _selftest() -> int:
     check("rts-sp", cpu.sp == 0xFF, f"sp={cpu.sp:02X}")
 
     # 8. PHP/PLP: pushed copy has B and bit5 set; PLP restores without B.
-    cpu = CPU6502(); cpu.set_state(0, 0, 0, 0xFF, 0x1000, U | C | N)
+    cpu = CPU6502()
+    cpu.set_state(0, 0, 0, 0xFF, 0x1000, U | C | N)
     cpu.mem[0x1000] = 0x08  # PHP
     cpu.step()
     pushed = cpu.mem[0x01FF]
@@ -651,9 +684,11 @@ def _selftest() -> int:
     check("plp-no-b", not (cpu.p & B) and (cpu.p & U), cpu.status_str())
 
     # 9. BRK: pushes PC+2, P with B set, sets I, jumps to ($FFFE).
-    cpu = CPU6502(); cpu.set_state(0, 0, 0, 0xFF, 0x1000, U)
+    cpu = CPU6502()
+    cpu.set_state(0, 0, 0, 0xFF, 0x1000, U)
     cpu.mem[0x1000] = 0x00
-    cpu.mem[0xFFFE] = 0x00; cpu.mem[0xFFFF] = 0xE0
+    cpu.mem[0xFFFE] = 0x00
+    cpu.mem[0xFFFF] = 0xE0
     cpu.step()
     check("brk-pc", cpu.pc == 0xE000, f"pc={cpu.pc:04X}")
     check("brk-push", cpu.mem[0x01FF] == 0x10 and cpu.mem[0x01FE] == 0x02,
@@ -662,7 +697,8 @@ def _selftest() -> int:
     check("brk-pushed-b", (cpu.mem[0x01FD] & B) != 0, f"{cpu.mem[0x01FD]:02X}")
 
     # 10. RTI restores P (no B) and PC.
-    cpu = CPU6502(); cpu.set_state(0, 0, 0, 0xFC, 0x1000, U)
+    cpu = CPU6502()
+    cpu.set_state(0, 0, 0, 0xFC, 0x1000, U)
     cpu.mem[0x1000] = 0x40
     cpu.mem[0x01FD] = U | C  # pulled P
     cpu.mem[0x01FE] = 0x34   # pcl
@@ -673,71 +709,94 @@ def _selftest() -> int:
     check("rti-sp", cpu.sp == 0xFF, f"sp={cpu.sp:02X}")
 
     # 11. Branch taken with page cross adds cycles + crosses.
-    cpu = CPU6502(); cpu.set_state(0, 0, 0, 0xFF, 0x10F0, U)
-    cpu.mem[0x10F0] = 0xD0; cpu.mem[0x10F1] = 0x40  # BNE +0x40 -> 0x1132 (cross)
+    cpu = CPU6502()
+    cpu.set_state(0, 0, 0, 0xFF, 0x10F0, U)
+    cpu.mem[0x10F0] = 0xD0  # BNE +0x40 -> 0x1132 (cross)
+    cpu.mem[0x10F1] = 0x40
     res = cpu.step()
     check("bne-cross", cpu.pc == 0x1132 and res.page_crossed and res.cycles == 4,
           f"pc={cpu.pc:04X} cyc={res.cycles} cross={res.page_crossed}")
     # not taken
-    cpu = CPU6502(); cpu.set_state(0, 0, 0, 0xFF, 0x1000, U | Z)
-    cpu.mem[0x1000] = 0xD0; cpu.mem[0x1001] = 0x40
+    cpu = CPU6502()
+    cpu.set_state(0, 0, 0, 0xFF, 0x1000, U | Z)
+    cpu.mem[0x1000] = 0xD0
+    cpu.mem[0x1001] = 0x40
     res = cpu.step()
     check("bne-not-taken", cpu.pc == 0x1002 and res.cycles == 2, f"pc={cpu.pc:04X}")
 
     # 12. LDA abs,X page cross adds a cycle.
-    cpu = CPU6502(); cpu.set_state(0, 0xFF, 0, 0xFF, 0x1000, U)
-    cpu.mem[0x1000] = 0xBD; cpu.mem[0x1001] = 0x10; cpu.mem[0x1002] = 0x20  # $2010,X
+    cpu = CPU6502()
+    cpu.set_state(0, 0xFF, 0, 0xFF, 0x1000, U)
+    cpu.mem[0x1000] = 0xBD  # $2010,X
+    cpu.mem[0x1001] = 0x10
+    cpu.mem[0x1002] = 0x20
     cpu.mem[0x210F] = 0xAB
     res = cpu.step()
     check("ldax-cross", cpu.a == 0xAB and res.page_crossed and res.cycles == 5,
           f"a={cpu.a:02X} cyc={res.cycles}")
 
     # 13. Indexed indirect / indirect indexed.
-    cpu = CPU6502(); cpu.set_state(0, 0x04, 0, 0xFF, 0x1000, U)
-    cpu.mem[0x1000] = 0xA1; cpu.mem[0x1001] = 0x20  # LDA ($20,X), X=4 -> ($24)
-    cpu.mem[0x24] = 0x00; cpu.mem[0x25] = 0x40
+    cpu = CPU6502()
+    cpu.set_state(0, 0x04, 0, 0xFF, 0x1000, U)
+    cpu.mem[0x1000] = 0xA1  # LDA ($20,X), X=4 -> ($24)
+    cpu.mem[0x1001] = 0x20
+    cpu.mem[0x24] = 0x00
+    cpu.mem[0x25] = 0x40
     cpu.mem[0x4000] = 0x77
     cpu.step()
     check("indx", cpu.a == 0x77, f"a={cpu.a:02X}")
-    cpu = CPU6502(); cpu.set_state(0, 0, 0x10, 0xFF, 0x1000, U)
-    cpu.mem[0x1000] = 0xB1; cpu.mem[0x1001] = 0x20  # LDA ($20),Y
-    cpu.mem[0x20] = 0xF8; cpu.mem[0x21] = 0x40      # base $40F8 + Y(0x10)=$4108 cross
+    cpu = CPU6502()
+    cpu.set_state(0, 0, 0x10, 0xFF, 0x1000, U)
+    cpu.mem[0x1000] = 0xB1  # LDA ($20),Y
+    cpu.mem[0x1001] = 0x20
+    cpu.mem[0x20] = 0xF8      # base $40F8 + Y(0x10)=$4108 cross
+    cpu.mem[0x21] = 0x40
     cpu.mem[0x4108] = 0x99
     res = cpu.step()
     check("indy-cross", cpu.a == 0x99 and res.page_crossed and res.cycles == 6,
           f"a={cpu.a:02X} cyc={res.cycles}")
 
     # 14. zero-page indirect wrap: ($FF) reads lo $FF, hi $00.
-    cpu = CPU6502(); cpu.set_state(0, 0, 0, 0xFF, 0x1000, U)
-    cpu.mem[0x1000] = 0xB1; cpu.mem[0x1001] = 0xFF
-    cpu.mem[0xFF] = 0x34; cpu.mem[0x00] = 0x12  # ptr -> $1234
+    cpu = CPU6502()
+    cpu.set_state(0, 0, 0, 0xFF, 0x1000, U)
+    cpu.mem[0x1000] = 0xB1
+    cpu.mem[0x1001] = 0xFF
+    cpu.mem[0xFF] = 0x34  # ptr -> $1234
+    cpu.mem[0x00] = 0x12
     cpu.mem[0x1234] = 0x55
     cpu.step()
     check("zp-wrap", cpu.a == 0x55, f"a={cpu.a:02X}")
 
     # 15. ROR memory through carry.
-    cpu = CPU6502(); cpu.set_state(0, 0, 0, 0xFF, 0x1000, U | C)
-    cpu.mem[0x1000] = 0x66; cpu.mem[0x1001] = 0x40
+    cpu = CPU6502()
+    cpu.set_state(0, 0, 0, 0xFF, 0x1000, U | C)
+    cpu.mem[0x1000] = 0x66
+    cpu.mem[0x1001] = 0x40
     cpu.mem[0x40] = 0x01
     cpu.step()
     check("ror-mem", cpu.mem[0x40] == 0x80 and (cpu.p & C),
           f"m={cpu.mem[0x40]:02X} {cpu.status_str()}")
 
     # 16. CMP sets C/Z/N.
-    cpu = CPU6502(); cpu.set_state(0x40, 0, 0, 0xFF, 0x1000, U)
-    cpu.mem[0x1000] = 0xC9; cpu.mem[0x1001] = 0x40
+    cpu = CPU6502()
+    cpu.set_state(0x40, 0, 0, 0xFF, 0x1000, U)
+    cpu.mem[0x1000] = 0xC9
+    cpu.mem[0x1001] = 0x40
     cpu.step()
     check("cmp-eq", (cpu.p & C) and (cpu.p & Z) and not (cpu.p & N), cpu.status_str())
 
     # 17. BIT copies bit7->N, bit6->V, A&M->Z.
-    cpu = CPU6502(); cpu.set_state(0x01, 0, 0, 0xFF, 0x1000, U)
-    cpu.mem[0x1000] = 0x24; cpu.mem[0x1001] = 0x40
+    cpu = CPU6502()
+    cpu.set_state(0x01, 0, 0, 0xFF, 0x1000, U)
+    cpu.mem[0x1000] = 0x24
+    cpu.mem[0x1001] = 0x40
     cpu.mem[0x40] = 0xC0
     cpu.step()
     check("bit", (cpu.p & N) and (cpu.p & V) and (cpu.p & Z), cpu.status_str())
 
     # 18. Undocumented opcode refusal leaves a clean pre-state.
-    cpu = CPU6502(); cpu.set_state(0, 0, 0, 0xFF, 0x1000, U)
+    cpu = CPU6502()
+    cpu.set_state(0, 0, 0, 0xFF, 0x1000, U)
     cpu.mem[0x1000] = 0x02  # JAM/undocumented
     try:
         cpu.step()
@@ -746,8 +805,11 @@ def _selftest() -> int:
         check("undoc-refuse", e.opcode == 0x02 and cpu.pc == 0x1000, f"pc={cpu.pc:04X}")
 
     # 19. Memory write recorded for STA.
-    cpu = CPU6502(); cpu.set_state(0xAA, 0, 0, 0xFF, 0x1000, U)
-    cpu.mem[0x1000] = 0x8D; cpu.mem[0x1001] = 0x00; cpu.mem[0x1002] = 0xC0
+    cpu = CPU6502()
+    cpu.set_state(0xAA, 0, 0, 0xFF, 0x1000, U)
+    cpu.mem[0x1000] = 0x8D
+    cpu.mem[0x1001] = 0x00
+    cpu.mem[0x1002] = 0xC0
     res = cpu.step()
     check("sta-write", any(w.addr == 0xC000 and w.value == 0xAA for w in res.writes))
 

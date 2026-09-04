@@ -13,11 +13,17 @@ Discipline contract (Section 2 of the gate handover):
 
 This module is the foundation for both the wedge repro/soak and monitor_debug_stress.py.
 """
-import os
+import contextlib
 import sys
 import time
+from pathlib import Path
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
+sys.path.insert(0, bootstrap.directory("e2e", "monitor"))
+
 import mcm_rest as R  # noqa: E402
 import mcm_split_rest as SR  # noqa: E402
 
@@ -96,27 +102,33 @@ def open_monitor(rest, timeout=8.0):
 
 def to_assembly_debug(rest):
     """From an open monitor, switch to Assembly view (A) and enter Debug (D)."""
-    rest.tap(["a"]); settle(rest)
+    rest.tap(["a"])
+    settle(rest)
     t = wait_text(rest, "ASM", timeout=4.0)
-    rest.tap(["d"]); settle(rest)  # first D enters Debug (no execution)
+    rest.tap(["d"])  # first D enters Debug (no execution)
+    settle(rest)
     t = wait_text(rest, "Dbg", timeout=4.0)
     return t
 
 
 def close_monitor(rest):
     """Close the monitor cleanly (RUN/STOP), then ensure the menu is closed."""
-    rest.tap(["run_stop"]); settle(rest, 0.4)
+    rest.tap(["run_stop"])
+    settle(rest, 0.4)
     # If still in monitor (e.g. debug mode swallowed it), exit debug then run_stop again.
     t = screen_or_none(rest)
     if t and "MONITOR" in t.upper():
-        rest.tap(["commodore", "d"]); settle(rest, 0.3)  # exit debug
-        rest.tap(["run_stop"]); settle(rest, 0.4)
+        rest.tap(["commodore", "d"])  # exit debug
+        settle(rest, 0.3)
+        rest.tap(["run_stop"])
+        settle(rest, 0.4)
     ensure_menu_closed(rest)
 
 
 def toggle_ui_mode(rest):
     """C=+I toggles Freeze<->Overlay (auto-closes the menu)."""
-    rest.tap(["commodore", "i"]); settle(rest, 0.3)
+    rest.tap(["commodore", "i"])
+    settle(rest, 0.3)
 
 
 # ---- probe ----------------------------------------------------------------
@@ -156,7 +168,8 @@ def probe(host):
 def recover_baseline(rest):
     """Universal recovery: C=+X breaks out of any monitor/debug state, then
     leave the firmware menu open as the cycle baseline. Always REST-safe."""
-    rest.tap(["commodore", "x"]); settle(rest, 0.4)
+    rest.tap(["commodore", "x"])
+    settle(rest, 0.4)
     time.sleep(0.4)
     # Land on a known firmware-menu baseline (menu open is fine; we reopen from it).
     ensure_menu_open(rest)
@@ -172,21 +185,29 @@ def disciplined_cycle(rest):
     # Cycle through every view (heavy input + redraw churn).
     for key, tag in (("m", "HEX"), ("a", "ASM"), ("b", "BIN"),
                      ("i", "ASC"), ("v", "SCR"), ("m", "HEX")):
-        rest.tap([key]); settle(rest, 0.15)
+        rest.tap([key])
+        settle(rest, 0.15)
         wait_text(rest, tag, timeout=3.0)
     # Jump to a couple of addresses (J <hex> RETURN).
     for addr in ("e000", "0400", "0801"):
-        rest.tap(["j"]); settle(rest, 0.1)
+        rest.tap(["j"])
+        settle(rest, 0.1)
         rest.send_text(addr, settle=0.06)
-        rest.tap(["return"]); settle(rest, 0.15)
+        rest.tap(["return"])
+        settle(rest, 0.15)
     # Enter ASM + Debug then leave debug (no execution of BRK bytes).
-    rest.tap(["a"]); settle(rest, 0.15); wait_text(rest, "ASM", timeout=3.0)
-    rest.tap(["d"]); settle(rest, 0.15)
+    rest.tap(["a"])
+    settle(rest, 0.15)
+    wait_text(rest, "ASM", timeout=3.0)
+    rest.tap(["d"])
+    settle(rest, 0.15)
     if not wait_text(rest, "Dbg", timeout=3.0):
         raise R.Failure("debug mode not entered")
-    rest.tap(["commodore", "d"]); settle(rest, 0.2)  # exit debug
+    rest.tap(["commodore", "d"])  # exit debug
+    settle(rest, 0.2)
     # Close cleanly.
-    rest.tap(["run_stop"]); settle(rest, 0.4)
+    rest.tap(["run_stop"])
+    settle(rest, 0.4)
     t2 = screen_or_none(rest)
     if t2 and "MONITOR" in t2.upper():
         raise R.Failure("monitor did not close on run_stop")
@@ -219,65 +240,65 @@ def aggressive_burst(rest):
 def soak(host, mode, cycles, ui, logpath, c64_host=None):
     rest = SR.make_rest(host, c64_host)
     import datetime
-    f = open(logpath, "a", buffering=1) if logpath else None
+    with contextlib.ExitStack() as stack:
+        f = stack.enter_context(open(logpath, "a", buffering=1)) if logpath else None
 
-    def log(msg):
-        line = f"{datetime.datetime.now().strftime('%H:%M:%S')} {msg}"
-        print(line, flush=True)
-        if f:
-            f.write(line + "\n")
+        def log(msg):
+            line = f"{datetime.datetime.now().strftime('%H:%M:%S')} {msg}"
+            print(line, flush=True)
+            if f:
+                f.write(line + "\n")
 
-    log(f"SOAK start mode={mode} cycles={cycles} ui={ui} host={host} alive={rest.alive()}")
-    if not rest.alive():
-        log("DEVICE NOT ALIVE AT START"); return 2
-    recover_baseline(rest)
+        log(f"SOAK start mode={mode} cycles={cycles} ui={ui} host={host} alive={rest.alive()}")
+        if not rest.alive():
+            log("DEVICE NOT ALIVE AT START")
+            return 2
+        recover_baseline(rest)
 
-    ui_modes = {"freeze": ["freeze"], "overlay": ["overlay"],
-                "both": ["freeze", "overlay"]}[ui]
-    # Establish a known UI mode at start; default is freeze. We toggle to reach overlay.
-    current = "freeze"
+        ui_modes = {"freeze": ["freeze"], "overlay": ["overlay"],
+                    "both": ["freeze", "overlay"]}[ui]
+        # Establish a known UI mode at start; default is freeze. We toggle to reach overlay.
+        current = "freeze"
 
-    wedges = 0
-    errors = 0
-    for i in range(1, cycles + 1):
-        want = ui_modes[(i - 1) % len(ui_modes)]
-        if want != current:
-            ensure_menu_closed(rest)
-            toggle_ui_mode(rest)
-            current = want
-            time.sleep(0.3)
-        try:
-            if mode == "disciplined":
-                disciplined_cycle(rest)
-            else:
-                aggressive_burst(rest)
-        except R.Failure as e:
-            errors += 1
-            log(f"cycle {i} [{current}] STATE-ERROR: {e}")
-            if rest.alive():
-                recover_baseline(rest)
-        except Exception as e:  # noqa: BLE001
-            errors += 1
-            log(f"cycle {i} [{current}] EXC: {type(e).__name__}: {e}")
-            if rest.alive():
-                recover_baseline(rest)
-        # liveness gate
-        alive = rest.alive()
-        if not alive:
-            # confirm with a couple retries (transient socket vs real wedge)
-            time.sleep(2.0)
+        wedges = 0
+        errors = 0
+        for i in range(1, cycles + 1):
+            want = ui_modes[(i - 1) % len(ui_modes)]
+            if want != current:
+                ensure_menu_closed(rest)
+                toggle_ui_mode(rest)
+                current = want
+                time.sleep(0.3)
+            try:
+                if mode == "disciplined":
+                    disciplined_cycle(rest)
+                else:
+                    aggressive_burst(rest)
+            except R.Failure as e:
+                errors += 1
+                log(f"cycle {i} [{current}] STATE-ERROR: {e}")
+                if rest.alive():
+                    recover_baseline(rest)
+            except Exception as e:  # noqa: BLE001
+                errors += 1
+                log(f"cycle {i} [{current}] EXC: {type(e).__name__}: {e}")
+                if rest.alive():
+                    recover_baseline(rest)
+            # liveness gate
             alive = rest.alive()
-        if not alive:
-            wedges += 1
-            log(f"cycle {i} [{current}] *** WEDGE: REST dead -> stopping for post-mortem ***")
-            log(f"  endpoints: {SR.endpoint_liveness(rest)}")
-            break
-        if i % 10 == 0 or mode == "aggressive":
-            log(f"cycle {i}/{cycles} [{current}] ok (errors={errors})")
-    log(f"SOAK end wedges={wedges} errors={errors} final_alive={rest.alive()}")
-    if f:
-        f.close()
-    return 2 if wedges else 0
+            if not alive:
+                # confirm with a couple retries (transient socket vs real wedge)
+                time.sleep(2.0)
+                alive = rest.alive()
+            if not alive:
+                wedges += 1
+                log(f"cycle {i} [{current}] *** WEDGE: REST dead -> stopping for post-mortem ***")
+                log(f"  endpoints: {SR.endpoint_liveness(rest)}")
+                break
+            if i % 10 == 0 or mode == "aggressive":
+                log(f"cycle {i}/{cycles} [{current}] ok (errors={errors})")
+        log(f"SOAK end wedges={wedges} errors={errors} final_alive={rest.alive()}")
+        return 2 if wedges else 0
 
 
 if __name__ == "__main__":

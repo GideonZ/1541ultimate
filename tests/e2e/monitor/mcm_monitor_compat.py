@@ -9,21 +9,25 @@ policy back into ``monitor_test.py``.
 
 from __future__ import annotations
 
-import os
 import re
 import sys
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from collections.abc import Iterator
+from pathlib import Path
+from typing import ClassVar
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(HERE, "..", "..", "lib"))
-sys.path.insert(0, os.path.join(HERE, "..", "lib"))
+# The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
+sys.path.insert(0, bootstrap.directory("e2e", "monitor"))
 
-import monitor_test as core
-from api import UltimateApi
-from report import Failure, check_fail, check_ok, check_skip, check_start, detail
-from ui_backend import MODE_TELNET, make_backend
+import monitor_test as core  # noqa: E402  (needs tests/e2e/monitor on sys.path first)
+from api import UltimateApi  # noqa: E402  (needs tests/lib on sys.path first)
+from report import (  # noqa: E402
+    Failure, check_fail, check_ok, check_skip, check_start, detail)
+from ui_backend import MODE_TELNET, make_backend  # noqa: E402
 
 # The Debug scenarios inspect the debugger footer, whose original Telnet
 # fixture is a 24-row session.  The suite is intentionally Telnet-only: its
@@ -82,7 +86,7 @@ _pending_skip: str | None = None
 
 def skip_unsupported() -> None:
     """First statement of a check body that carries u2=False."""
-    global _pending_skip
+    global _pending_skip  # noqa: PLW0603 - the parked reason is module state the check() context manager sets and this helper consumes; see the comment above _pending_skip
     reason = _pending_skip
     _pending_skip = None
     if reason:
@@ -92,7 +96,7 @@ def skip_unsupported() -> None:
 @contextmanager
 def check(label: str, *, u2: bool = True, u2_reason: str = "") -> Iterator[None]:
     """Report legacy scenario checks through the shared report fixture."""
-    global CHECK_COUNT, _pending_skip
+    global CHECK_COUNT, _pending_skip  # noqa: PLW0603 - the suite-wide check counter and the parked skip reason are module state by design; a holder object would have to be threaded through every scenario
     CHECK_COUNT += 1
     number = CHECK_COUNT
     check_start(label)
@@ -150,7 +154,7 @@ class MonitorSession(core.MonitorSession):
 class _LegacySocket:
     """Translate the old suite's handful of raw control keys to Backend keys."""
 
-    _KEYS = {
+    _KEYS: ClassVar[dict[bytes, str]] = {
         b"\x04": "CTRL_D",
         b"\x10": "CTRL_P",
         b"\x12": "CTRL_R",

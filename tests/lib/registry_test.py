@@ -107,6 +107,10 @@ OWN_DEVICE_ARGUMENTS = {
     # -t is how long the page has to become ready, not a device call budget.
     "tests/e2e/web/index_test.py": "-t is READY_TIMEOUT, a page load",
     "tests/e2e/web/theme_test.py": "-t is READY_TIMEOUT, a page load",
+    # -t names a test group here, and the per-call budget is --timeout.
+    "tests/e2e/monitor/monitor_debug_test.py":
+        "-t is --test, the repeatable test-group selector; the per-call budget "
+        "is --timeout, and -P/--telnet-port sits beside -H",
 }
 
 

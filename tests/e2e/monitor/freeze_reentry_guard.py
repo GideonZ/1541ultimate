@@ -22,10 +22,16 @@ Usage: freeze_reentry_guard.py [host] [cycles] [--c64-host HOST]
 Exit 0 = no wedge; 2 = WEDGE (REST dead).
 """
 import argparse
-import os
 import sys
 import time
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from pathlib import Path
+
+# The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
+sys.path.insert(0, bootstrap.directory("e2e", "monitor"))
+
 import mcm_split_rest as SR
 import mcm_localui as L
 
@@ -61,36 +67,53 @@ def main(argv=None):
     rest = SR.make_rest(host, a.c64_host)
     print(f"FREEZE-THRASH host={host} cycles={cycles} alive={alive(rest)}", flush=True)
     if not alive(rest):
-        print("DEVICE NOT ALIVE AT START"); return 2
+        print("DEVICE NOT ALIVE AT START")
+        return 2
 
     # Establish a known baseline.
-    rest.tap(["commodore", "x"]); time.sleep(0.5)
+    rest.tap(["commodore", "x"])
+    time.sleep(0.5)
     L.ensure_menu_closed(rest)
 
     for i in range(1, cycles + 1):
         # Pattern A: open (freeze) -> C=+I mode toggle (closes menu) -> reopen (re-freeze attempt)
-        L.ensure_menu_open(rest); time.sleep(0.15)
-        rest.tap(["commodore", "o"]); time.sleep(0.25)            # open monitor (freeze)
-        if not check(rest, f"cycle {i} open"): return 2
-        rest.tap(["commodore", "i"]); time.sleep(0.3)             # toggle Freeze<->Overlay (auto-close)
-        if not check(rest, f"cycle {i} C=+I"): return 2
         L.ensure_menu_open(rest)
-        rest.tap(["commodore", "o"]); time.sleep(0.25)            # reopen monitor (re-freeze)
-        if not check(rest, f"cycle {i} reopen"): return 2
+        time.sleep(0.15)
+        rest.tap(["commodore", "o"])            # open monitor (freeze)
+        time.sleep(0.25)
+        if not check(rest, f"cycle {i} open"):
+            return 2
+        rest.tap(["commodore", "i"])             # toggle Freeze<->Overlay (auto-close)
+        time.sleep(0.3)
+        if not check(rest, f"cycle {i} C=+I"):
+            return 2
+        L.ensure_menu_open(rest)
+        rest.tap(["commodore", "o"])            # reopen monitor (re-freeze)
+        time.sleep(0.25)
+        if not check(rest, f"cycle {i} reopen"):
+            return 2
         # Pattern B: rapid menu_button toggling (open/close) which re-enters run_once
         for _ in range(3):
-            rest.menu_button(); time.sleep(0.12)
-        if not check(rest, f"cycle {i} menu_button"): return 2
+            rest.menu_button()
+            time.sleep(0.12)
+        if not check(rest, f"cycle {i} menu_button"):
+            return 2
         # Pattern C: C=+X recover (reset) then immediate reopen+freeze
-        rest.tap(["commodore", "x"]); time.sleep(0.4)
+        rest.tap(["commodore", "x"])
+        time.sleep(0.4)
         L.ensure_menu_open(rest)
-        rest.tap(["commodore", "o"]); time.sleep(0.25)
-        if not check(rest, f"cycle {i} recover+reopen"): return 2
+        rest.tap(["commodore", "o"])
+        time.sleep(0.25)
+        if not check(rest, f"cycle {i} recover+reopen"):
+            return 2
         # toggle back to freeze mode if we left it in overlay (keep parity)
-        rest.tap(["commodore", "i"]); time.sleep(0.25)
-        rest.tap(["commodore", "x"]); time.sleep(0.3)
+        rest.tap(["commodore", "i"])
+        time.sleep(0.25)
+        rest.tap(["commodore", "x"])
+        time.sleep(0.3)
         L.ensure_menu_closed(rest)
-        if not check(rest, f"cycle {i} end"): return 2
+        if not check(rest, f"cycle {i} end"):
+            return 2
         if i % 5 == 0:
             print(f"  cycle {i}/{cycles} ok, alive", flush=True)
 

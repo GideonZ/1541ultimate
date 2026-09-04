@@ -469,7 +469,7 @@ def view_bank_status_forms(expected: str) -> tuple[str, ...]:
         return (expected,)
     view_bank = expected[3]
     rest = expected[4:]
-    return (expected,) + tuple(f"C{live}O{view_bank}{rest}" for live in "01234567")
+    return (expected, *(f"C{live}O{view_bank}{rest}" for live in "01234567"))
 
 
 def assert_view_bank_status(snapshot: Snapshot, expected: str) -> None:

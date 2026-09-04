@@ -8,18 +8,18 @@ decoding.  New monitor checks should use the libraries directly when their
 needs fit their public API.
 """
 
-import os
 import sys
 import time
 from collections.abc import Iterable
+from pathlib import Path
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(HERE, "..", "..", "lib"))
-sys.path.insert(0, os.path.join(HERE, "..", "lib"))
-
-from api import UltimateApi
-from report import Failure
-from ui_backend import SCREEN_CELLS, char_to_combo
+# The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
+from api import UltimateApi  # noqa: E402  (needs tests/lib on sys.path first)
+from report import Failure  # noqa: E402  (needs tests/lib on sys.path first)
+from ui_backend import SCREEN_CELLS, char_to_combo  # noqa: E402
 
 SCREEN_W, SCREEN_H = 40, 25
 

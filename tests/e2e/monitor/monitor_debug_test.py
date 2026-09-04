@@ -21,8 +21,13 @@ import sys
 import time
 from pathlib import Path
 
+# The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
 # Reuse the existing telnet session helpers so both suites stay in lockstep.
-sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, bootstrap.directory("e2e", "monitor"))
+
 import mcm_monitor_compat as mt  # noqa: E402
 import targets  # noqa: E402
 from report import suite_fail, suite_ok  # noqa: E402
@@ -475,7 +480,7 @@ def _assert_step_alert(session: mt.MonitorSession, key: str, alert: str,
 
 def _bootstrap_hit_rom_breakpoint(rest_host: str, session: mt.MonitorSession,
                                   address: int, context: str,
-                                  jump_to: Optional[int] = None) -> dict:
+                                  jump_to: int | None = None) -> dict:
     """Arm a breakpoint at a ROM `address` and hit it via a RAM-spin bootstrap.
 
     The bootstrap (`LDX #$40 / DEX / BNE / JMP entry`) releases the CPU in RAM and
@@ -566,7 +571,7 @@ def _step_and_assert_pc(session: mt.MonitorSession, key: str,
 def _contextless_visible_jsr_step_over(rest_host: str, session: mt.MonitorSession,
                                        enter_addr: int, marker: str, source: str,
                                        context: str,
-                                       canonical: Optional[tuple[str, str]] = None) -> None:
+                                       canonical: tuple[str, str] | None = None) -> None:
     """Contextless visible-ROM Step Over of a JSR. ONE attempt, NO reset-retry.
 
     A contextless Step Over of a JSR installs a BRK at the fall-through in visible
@@ -3172,7 +3177,7 @@ def _write_ram_under_kernal(rest_host: str, address: int, payload: bytes) -> Non
     the KERNAL and finds this program. The bytes are kept so the suite can put
     them back; see _restore_ram_under_kernal().
     """
-    global _KERNAL_E000_ORIGINAL
+    global _KERNAL_E000_ORIGINAL  # noqa: PLW0603 - the displaced $E000 bytes are suite-wide state: whichever fixture displaces them first records them, and the teardown puts them back
     if address == 0xE000 and _KERNAL_E000_ORIGINAL is None:
         _KERNAL_E000_ORIGINAL = mt.read_rest_memory(rest_host, 0xE000, 32)
     mt.write_rest_memory(rest_host, address, payload)
@@ -3180,7 +3185,7 @@ def _write_ram_under_kernal(rest_host: str, address: int, payload: bytes) -> Non
 
 def _restore_ram_under_kernal(rest_host: str) -> None:
     """Put back what the RAM-under-KERNAL fixtures displaced at $E000."""
-    global _KERNAL_E000_ORIGINAL
+    global _KERNAL_E000_ORIGINAL  # noqa: PLW0603 - clears the suite-wide record set by _load_ram_under_kernal_fixture once the bytes are restored
     if _KERNAL_E000_ORIGINAL is None:
         return
     mt.write_rest_memory(rest_host, 0xE000, _KERNAL_E000_ORIGINAL)
@@ -3401,7 +3406,7 @@ def run_banked_continue_no_breakpoints_tests(rest_host: str,
                 raise mt.Failure(f"$01=$00 RAM breakpoint was not armed: {row!r}")
         session.goto(f"{bootstrap:04X}")
         session.send_char("G")
-        parsed = _wait_for_go_pc(session, "E000")
+        _wait_for_go_pc(session, "E000")
         _assert_no_debug_modal(session, "$01=$00 $E000 breakpoint hit")
         snap = session.capture()
         status = snap.line(mt.find_status_line(snap))
@@ -3915,7 +3920,9 @@ def run_exit_liveness_reentry_tests(rest_host: str, session: mt.MonitorSession) 
         _reset_c64_core(rest_host)
         _reopen_monitor(session)
         mt.write_rest_memory(rest_host, 0xC000, bytes.fromhex("EE20D04C00C0"))  # INC $D020;JMP
-        session.goto("C000"); session.send_char("A"); session.send_char("D")
+        session.goto("C000")
+        session.send_char("A")
+        session.send_char("D")
         _step_and_assert_pc(session, "D", 0xC003, "exit-liveness RAM step")
         prove_monitor_exit_basic_liveness_and_reentry(
             rest_host, session, "ordinary RAM step exit",
@@ -3925,7 +3932,9 @@ def run_exit_liveness_reentry_tests(rest_host: str, session: mt.MonitorSession) 
         _reset_c64_core(rest_host)
         _reopen_monitor(session)
         mt.write_rest_memory(rest_host, 0xC100, bytes.fromhex("EE21D04C00C1"))  # INC $D021;JMP
-        session.goto("C100"); session.send_char("A"); session.send_char("D")
+        session.goto("C100")
+        session.send_char("A")
+        session.send_char("D")
         _clear_all_breakpoints(session, "exit-liveness continue-from-bp clear")
         session.goto("C100")
         _ensure_breakpoint_at(session, 0xC100, "exit-liveness continue-from-bp set")
@@ -3973,7 +3982,9 @@ def run_exit_liveness_reentry_tests(rest_host: str, session: mt.MonitorSession) 
                 "session, so this check could not run")
         _reopen_monitor(session)
         mt.write_rest_memory(rest_host, 0xC300, bytes([0xEA, 0xEA, 0xEA, 0x60]))
-        session.goto("C300"); session.send_char("A"); session.send_char("D")
+        session.goto("C300")
+        session.send_char("A")
+        session.send_char("D")
         _step_and_assert_pc(session, "D", 0xC301, "low-RAM hygiene step")
         _ensure_no_debug(session)
         session.send_key("CTRL_O")          # natural exit, no reset
@@ -3994,7 +4005,9 @@ def run_exit_liveness_reentry_tests(rest_host: str, session: mt.MonitorSession) 
         # JSR target that would mutate $D020 if executed; RETURN must only FOLLOW.
         mt.write_rest_memory(rest_host, 0xC200, bytes([0x20, 0x10, 0xC2, 0xEA]))
         mt.write_rest_memory(rest_host, 0xC210, bytes([0xEE, 0x20, 0xD0, 0x60]))
-        session.goto("C200"); session.send_char("A"); session.send_char("D")
+        session.goto("C200")
+        session.send_char("A")
+        session.send_char("D")
         session.send_key("ENTER")        # RETURN follows, does NOT execute
         # No step executed: closing the monitor must still leave BASIC alive
         # (the idle loop the C64 was running is undisturbed).
@@ -4007,16 +4020,18 @@ def run_exit_liveness_reentry_tests(rest_host: str, session: mt.MonitorSession) 
         mt.skip_unsupported()
         bootstrap_addr = 0xC880
         ready_addr = 0xC8F0
-        payload = 0xE000
         program = _banked_kernal_out_program(bootstrap_addr, ready_addr)
         _reset_c64_core(rest_host)
         _reopen_monitor(session)
-        session.send_char("A"); session.send_char("D")     # Debug active for popup
+        session.send_char("A")
+        session.send_char("D")     # Debug active for popup
         _clear_all_breakpoints(session, "exit-liveness banked clear")
         _ensure_no_debug(session)
         mt.write_rest_memory(rest_host, ready_addr, bytes([0x00]))
         mt.write_rest_memory(rest_host, bootstrap_addr, program)
-        session.goto(f"{bootstrap_addr:04X}"); session.send_char("A"); session.send_char("D")
+        session.goto(f"{bootstrap_addr:04X}")
+        session.send_char("A")
+        session.send_char("D")
         session.send_char("G")
         mt.wait_for_rest_byte(rest_host, ready_addr, 0xA5, timeout=6.0)
         mt.write_rest_memory(rest_host, 0xD020, bytes([0x00]))
@@ -4032,7 +4047,8 @@ def run_exit_liveness_reentry_tests(rest_host: str, session: mt.MonitorSession) 
         _restore_safe_banking_display_hygiene(rest_host, session, "exit-liveness banked cleanup")
         # Re-entry proof in the restored (KERNAL-mapped) banking.
         mt.write_rest_memory(rest_host, 0xC7A0, bytes([0xEA, 0xEA]))
-        session.goto("C7A0"); session.send_char("A")
+        session.goto("C7A0")
+        session.send_char("A")
         if "Dbg" not in _header_line(session):
             session.send_char("D")
         _step_and_assert_pc(session, "D", 0xC7A1, "RAM-under-KERNAL exit re-entry step")
@@ -4252,7 +4268,7 @@ def main() -> int:
     mt.TestConfig.skipped = []
 
     rest_host = args.rest_host or args.host
-    global SIGNATURE_REST_HOST
+    global SIGNATURE_REST_HOST  # noqa: PLW0603 - the REST host is read by module-level signature helpers that the check bodies call without an argument
     SIGNATURE_REST_HOST = rest_host
     if args.target == "u2":
         if not mt.rest_available(rest_host):
