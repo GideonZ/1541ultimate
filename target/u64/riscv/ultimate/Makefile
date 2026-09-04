@@ -12,6 +12,7 @@ PRJ      =  ultimate
 FINAL    =  $(RESULT)/$(PRJ).app $(RESULT)/$(PRJ).elf $(OUTPUT)/$(PRJ).sim
 
 SRCS_C   =	itu.c \
+			heap_track.c \
 			dump_hex.c \
 			assert.c \
 			profiler.c \
@@ -198,7 +199,7 @@ SRCS_IEC = iec_code_pr.iec iec_code_dr_pr.iec iec_code_dr.iec
 SRCS_NANO = nano_minimal.nan
 
 PATH_INC =  $(addprefix -I, $(VPATH))
-OPTIONS  = -march=$(MARCH) -mabi=$(MABI) $(EFFORT) -ffunction-sections -fdata-sections -nostartfiles -mno-fdiv
+OPTIONS  = -march=$(MARCH) -mabi=$(MABI) $(EFFORT) -ffunction-sections -fdata-sections -nostartfiles -mno-fdiv $(EXTRA_DEFINES)
 OPTIONS += -gdwarf-2 -O0 -DRISCV -DOS -DIOBASE=0x10000000 -DU2P_IO_BASE=0x10100000 -DCLOCK_FREQ=66666667 -DU64=1 -Wno-write-strings
 COPTIONS = $(OPTIONS) -std=gnu99
 CPPOPT   = $(OPTIONS) -fno-exceptions -fno-rtti -fno-threadsafe-statics -fpermissive

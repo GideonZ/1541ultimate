@@ -84,6 +84,7 @@ task.h is included from an application file. */
 
 #include "FreeRTOS.h"
 #include "task.h"
+#include "heap_track.h"
 
 #undef MPU_WRAPPERS_INCLUDED_FROM_API_FILE
 
@@ -294,6 +295,7 @@ void *pvReturn = NULL;
 	#endif
 
 	configASSERT( ( ( ( uint32_t ) pvReturn ) & portBYTE_ALIGNMENT_MASK ) == 0 );
+	heap_track_record( pvReturn, xWantedSize, __builtin_return_address( 0 ) );
 	return pvReturn;
 }
 /*-----------------------------------------------------------*/
@@ -305,6 +307,8 @@ BlockLink_t *pxLink;
 
 	if( pv != NULL )
 	{
+		heap_track_forget( pv );
+
 		/* The memory being freed will have an BlockLink_t structure immediately
 		before it. */
 		puc -= xHeapStructSize;
