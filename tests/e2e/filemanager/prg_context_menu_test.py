@@ -225,11 +225,7 @@ def screencode_to_ascii(code: int) -> str:
 
 
 def _has_overlay(rows: list[str]) -> bool:
-    """Whether a menu, popup or viewer is drawn over the listing.
-
-    Every overlay this suite drives is boxed in "+"/"|" border characters the
-    plain listing never uses on its own.
-    """
+    """Whether an overlay is drawn over the listing, by its "+"/"|" border."""
     text = "\n".join(rows)
     return "+" in text or "|" in text
 
@@ -491,14 +487,8 @@ class Machine:
                 self.browser.press_popup_button("o")
             elif (telnet and not _has_overlay(rows)
                     and path.startswith("/") and path != "/"):
-                # A plain listing, but inside a directory this suite descended
-                # into. RUNSTOP peels one interaction layer at a time and never
-                # leaves a directory, so pressing it on a listing with nothing
-                # over it changes nothing at all: measured on u64, all 20 turns
-                # of this loop went to the same /Temp screen, 24s, and the
-                # close then failed. LEFT is the browser's own way back out of
-                # a directory, and ui_backend_smoke_test drives exactly that
-                # round trip (RIGHT into /Temp, LEFT back to "/") over Telnet.
+                # RUNSTOP peels an interaction layer and never leaves a
+                # directory; LEFT is the way out of one.
                 self.browser.press("LEFT")
             elif telnet and _at_plain_root(rows, path):
                 # Nothing left to close over Telnet: its remote session never

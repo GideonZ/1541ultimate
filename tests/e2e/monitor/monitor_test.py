@@ -3914,18 +3914,8 @@ def run_tests(context: MonitorContext) -> None:
             check_skip("this monitor cannot change the CPU bank: 'o' answers "
                        f"{CPU_BANK_UNAVAILABLE!r}")
         elif not frozen:
-            # The monitor's CPU bank says what a *stopped* 6510 would see. A
-            # running one keeps BASIC mapped at $A000, and the ROM shadows the
-            # RAM this check fills, so the read back finds ROM and the write
-            # looks lost. Measured on u64, same firmware and the same
-            # "CPU6 $A:RAM" footer in both: through the overlay, which stops
-            # the machine, $A000 reads "AA 9D C7 92"; over Telnet, which does
-            # not, the same sequence reads "94 E3 7B E3 43 42 4D 42", the
-            # BASIC ROM's own "CBMBASIC" signature. GET machine:readmem agrees
-            # with the running machine in both cases, so nothing is lost:
-            # there is simply no way to see under the ROM while it is banked
-            # in. Whether an edit reaches RAM at all is covered by the checks
-            # that take `frozen` and pick their addresses accordingly.
+            # The bank is what a stopped 6510 would see; a running one keeps
+            # BASIC at $A000, so the ROM shadows the RAM this fills.
             check_skip("this user interface leaves the C64 running, so BASIC "
                        "ROM is banked in over the RAM at $A000 and a fill "
                        "there cannot be read back")
@@ -4012,14 +4002,8 @@ def run_tests(context: MonitorContext) -> None:
             check_skip("this monitor cannot change the CPU bank: 'o' answers "
                        f"{CPU_BANK_UNAVAILABLE!r}")
         elif not frozen:
-            # banked_ram_edit_via_view verifies the edit through the monitor's
-            # own view, because that is the only view that can show RAM an
-            # address has ROM banked over it. That only holds while the machine
-            # is stopped: running, the view shows the live ROM, so the byte it
-            # reads first is the ROM's, the edit goes to the RAM underneath,
-            # and the re-read returns the ROM byte again. Measured over Telnet:
-            # "$A000 reads 94 in the redrawn view after the edit, expected 6B",
-            # where 94 is the first byte of the BASIC ROM and 6B is 94 xor FF.
+            # Verified through the monitor's own view, which can only show RAM
+            # under a ROM while the machine is stopped.
             check_skip("this user interface leaves the C64 running, so ROM is "
                        "banked in over the RAM these edits target and the "
                        "monitor's view cannot show what was written")

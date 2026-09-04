@@ -132,13 +132,8 @@ def main() -> int:
             machine.forget_assumptions()
 
     with check("a tag in a per-suite file is found; run.jsonl alone would miss it"):
-        # The layout a real run-tests output directory actually has: this
-        # process's own run.jsonl sits beside one <mode>-<suite>.jsonl per
-        # suite per mode, and a tagged check lands in whichever file the
-        # suite that ran it was writing to -- never in run.jsonl. Found
-        # running uci_targets_test.py for real: report_stale_gates() read
-        # only report.JSONL_PATH (run.jsonl) and reported "none" every time,
-        # even with a confirmed tag on disk in the suite's own file.
+        # The real output-dir layout: run.jsonl beside the per-suite files,
+        # with the tag in the suite's own file.
         machine.assume(FIX)
         try:
             with tempfile.TemporaryDirectory() as d:

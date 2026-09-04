@@ -87,11 +87,8 @@ def main() -> int:
     if absent:
         suite_skip("ident_service_switch_test", absent)
         return 0
-    # This gates the whole suite rather than one check, so it cannot call
-    # Machine.skip_without_fix (one check per gate). Tags the first check
-    # below instead, the same signal a single-check gate would leave, so
-    # tools/stale_gates.py can tell a run under --assume-fix that this
-    # suite ran clean from one where it was skipped outright.
+    # A whole-suite gate, so skip_without_fix (one check per gate) cannot be
+    # used; tag the first check below instead.
     if machine.assumed_fix(machine_lib.IDENT_SWITCHES_LIVE):
         note_assumed_fix(machine_lib.IDENT_SWITCHES_LIVE, machine.kind)
 

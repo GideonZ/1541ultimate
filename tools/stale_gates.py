@@ -17,11 +17,8 @@ stale; failing even once says the gap is still real. A tagged check that
 never ran (skipped for an unrelated reason, or the process died first) is
 neither and is left out, because absence is not evidence.
 
-The argument is a run's whole `-o`/`--output-dir` directory, not one file: a
-tagged check's record lands in whichever suite process wrote it -
-`<mode>-<suite>.jsonl`, one per suite per mode per attempt - never in the
-orchestrator's own `run.jsonl` beside them, so a single-file reading would
-silently find nothing.
+The argument is a run's whole output directory: a tag lands in the suite's own
+`<mode>-<suite>.jsonl`, never in the orchestrator's `run.jsonl` beside it.
 
 Standard library only, so a CI step or an agent can run this over a
 downloaded run directory with nothing else installed.
@@ -105,17 +102,10 @@ def load_records(path: str):
 
 
 def load_run_directory(directory: str):
-    """Every check record from every `*.jsonl` file directly under `directory`.
+    """Every record from every `*.jsonl` directly under `directory`.
 
-    A run's tagged checks do not land in the orchestrator's own `run.jsonl`:
-    each suite is a separate process, writing to its own
-    `<mode>-<suite>.jsonl` beside it (`run-tests`' `E2E_JSONL`, one file per
-    suite per mode per attempt), and a tag `Machine.skip_without_fix` or a
-    suite's own equivalent applies rides on whichever file the suite that
-    ran the check was writing to. Reading every file in the directory is
-    what finds them regardless of which suite produced them; `run.jsonl`,
-    `screens.jsonl` and `interactions.jsonl` cost nothing extra to include
-    since none of their records carry `kind == "check"` with a `fix` field.
+    One file per suite per mode per attempt, and the tag is in whichever one
+    ran the check. Other files cost nothing: they carry no `fix` field.
     """
     records = []
     for path in sorted(glob.glob(os.path.join(directory, "*.jsonl"))):

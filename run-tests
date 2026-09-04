@@ -2798,13 +2798,8 @@ def exit_code_for(results: list[Result], recoveries: int) -> int:
 def report_stale_gates() -> None:
     """After a run under `--assume-fix`, say which entries it found stale.
 
-    Reads this run's own output directory back rather than tracking anything
-    separately: `machine.Machine.skip_without_fix` (or a suite's own
-    equivalent) tags the check it lets through with the entry and the
-    machine (`report.note_assumed_fix`), and that tag rides on whichever
-    per-suite JSONL file the suite that ran the check was writing to - not
-    on this process's own `run.jsonl`, so the whole directory has to be
-    read. See `tools/stale_gates.py`.
+    The tags ride on the per-suite JSONL files, not on this process's own
+    `run.jsonl`, so the whole output directory is read. See tools/stale_gates.py.
 
     Read from the environment rather than from a flag, for the reason
     `run_identity` above already gives: a child run and a run started with
