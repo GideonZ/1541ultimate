@@ -213,7 +213,13 @@ def measure_key_pop(device: UltimateApi, capture: AvStreamCapture) -> tuple[floa
             detail(f"the pop was measured on tap {attempt} of {KEY_POP_TAPS}")
         log_packet_health(capture)
         return bright.received_at - pressed, loud.received_at - pressed
-    log_packet_health(capture)
+    # The last window's packet health is the evidence for why no pop was seen,
+    # and an empty window raises from the same call that reports a full one.
+    # Reported as a detail either way, so the verdict stays the tap count.
+    try:
+        log_packet_health(capture)
+    except Failure as exc:
+        detail(str(exc))
     raise Failure(f"no pop followed {KEY_POP_TAPS} Space taps: {last}")
 
 
