@@ -98,7 +98,7 @@ def switch_machine_off(api: UltimateApi, up_timeout: float) -> None:
 
 def run_command(cmd: str, what: str) -> None:
     """Run one of the caller's shell commands, failing the check if it does."""
-    result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+    result = subprocess.run(cmd, shell=True, capture_output=True, text=True, check=False)
     if result.returncode != 0:
         raise Failure(f"{what} command failed with {result.returncode}: "
                       f"{(result.stderr or result.stdout).strip()[:200]}")
@@ -140,7 +140,7 @@ class Mains:
             ask("switch the socket back ON")
 
 
-def recover_if_off(button: "PowerButton | None", api: UltimateApi,
+def recover_if_off(button: PowerButton | None, api: UltimateApi,
                    up_timeout: float) -> None:
     """Get the machine back on, whatever left it off, including a failure.
 

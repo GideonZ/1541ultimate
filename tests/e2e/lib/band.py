@@ -36,9 +36,10 @@ a red band and the band is not a verdict.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Sequence, Tuple
+from collections.abc import Sequence
 
 import glyphs
+from report import Failure
 
 ROWS = 7
 ACTIVITY_ROW = 0
@@ -72,17 +73,17 @@ class Layout:
     """Where every field of a ticker line sits, for one band width."""
 
     columns: int
-    time: Tuple[int, int]
-    type: Tuple[int, int]
-    interaction: Tuple[int, int]
-    status: Tuple[int, int]
-    duration: Tuple[int, int]
-    sent: Tuple[int, int]
-    received: Tuple[int, int]
-    body: Tuple[int, int]
-    reference: Tuple[int, int]
+    time: tuple[int, int]
+    type: tuple[int, int]
+    interaction: tuple[int, int]
+    status: tuple[int, int]
+    duration: tuple[int, int]
+    sent: tuple[int, int]
+    received: tuple[int, int]
+    body: tuple[int, int]
+    reference: tuple[int, int]
 
-    def fields(self) -> List[Tuple[int, int]]:
+    def fields(self) -> list[tuple[int, int]]:
         return [self.time, self.type, self.interaction, self.status,
                 self.duration, self.sent, self.received, self.body,
                 self.reference]
@@ -113,11 +114,21 @@ def layout_for(width: int) -> Layout:
 
 
 def header(layout: Layout) -> str:
-    """The fixed row of column names, padded to the band's own width."""
+    """The fixed row of column names, padded to the band's own width.
+
+    A layout with a different number of fields than there are names would
+    otherwise render a header whose columns do not line up with the rows
+    under it, and nothing would say so, so the two lists are required to be
+    the same length.
+    """
     names = ("time", "type", "interaction", "stat", "dur", "sent", "rcvd",
              "body", "ref")
+    fields = layout.fields()
+    if len(fields) != len(names):
+        raise Failure(f"the band layout has {len(fields)} fields and "
+                      f"{len(names)} column names")
     line = [" "] * layout.columns
-    for (start, size), name in zip(layout.fields(), names):
+    for (start, size), name in zip(fields, names, strict=True):
         for offset, character in enumerate(name[:size]):
             if start + offset < layout.columns:
                 line[start + offset] = character
@@ -137,7 +148,7 @@ def count_of(value: object) -> int:
     return int(value)
 
 
-def size_of(count: Optional[int]) -> str:
+def size_of(count: int | None) -> str:
     """A byte count in binary units, three significant digits, five wide.
 
     Powers of 1024 with one letter, because the band is measuring what went
@@ -160,7 +171,7 @@ def size_of(count: Optional[int]) -> str:
     return ""
 
 
-def duration_of(seconds: Optional[float]) -> str:
+def duration_of(seconds: float | None) -> str:
     """How long an interaction has taken, in the width the column allows."""
     if seconds is None:
         return ""
@@ -242,9 +253,9 @@ class Line:
     tag: str
     subject: str
     status: str
-    seconds: Optional[float]
-    sent: Optional[int]
-    received: Optional[int]
+    seconds: float | None
+    sent: int | None
+    received: int | None
     body: str
     reference: str
     failed: bool = False
@@ -273,8 +284,8 @@ class Ticker:
 
     def __init__(self, rows: int = TICKER_ROWS) -> None:
         self.rows = rows
-        self.lines: List[Line] = []
-        self.counts: Dict[str, int] = {}
+        self.lines: list[Line] = []
+        self.counts: dict[str, int] = {}
         self.sent = 0
         self.received = 0
         self.stream = 0
@@ -384,8 +395,8 @@ def _extend(first: str, second: str) -> str:
     return head if head == tail else f"{head}-{tail.lstrip('#')}"
 
 
-def draw(canvas, x: int, y: int, width: int, ticker: "Ticker", layout: Layout,
-         activity: str, state: str, colours: Dict[str, int],
+def draw(canvas, x: int, y: int, width: int, ticker: Ticker, layout: Layout,
+         activity: str, state: str, colours: dict[str, int],
          now: float) -> None:
     """Draw the whole band at (x, y). Colour is an accent and never a field.
 
@@ -424,8 +435,8 @@ def draw(canvas, x: int, y: int, width: int, ticker: "Ticker", layout: Layout,
                      ticker.counters(layout), colours["secondary"], background)
 
 
-def _draw_line(canvas, x: int, y: int, line: "Line", layout: Layout,
-               colours: Dict[str, int], background: int, now: float) -> None:
+def _draw_line(canvas, x: int, y: int, line: Line, layout: Layout,
+               colours: dict[str, int], background: int, now: float) -> None:
     # The rule: two pixels of colour, the only place a line carries any, and
     # never red for a failure because a red line reads as a red band.
     canvas.fill(x, y, RULE_PIXELS, glyphs.GLYPH_HEIGHT,

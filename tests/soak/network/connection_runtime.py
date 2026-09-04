@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import enum
+import importlib
 import ftplib
 import http.client
 import socket
 import time
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any, Protocol
+from collections.abc import Callable, Sequence
 
 
 class ProbeCorrectness(enum.StrEnum):
@@ -69,6 +71,49 @@ class ProbeExecutionContext:
 
 Operation = Callable[[RuntimeSettings], str]
 SURFACE_OPERATION_RETRY_DELAYS_S = (0.10, 0.25, 0.50, 1.00)
+
+
+class RunProbe(Protocol):
+    """The call signature of a probe module's `run_probe`."""
+
+    def __call__(self, settings: RuntimeSettings, correctness: ProbeCorrectness,
+                 *, context: ProbeExecutionContext | None = ...) -> ProbeOutcome:
+        """Drive one iteration against the device and say what happened."""
+
+
+class Probe(Protocol):
+    """What every probe module in this directory provides.
+
+    Seven modules implement the same entry point by hand - dma, ftp, http,
+    ident, modem, ping and telnet - and the shape was a convention rather than
+    anything a reader or a checker could see. It is stated here instead, and
+    `probe(name)` below is where connection_test.py finds one rather than
+    naming each module and building a dictionary of their functions.
+
+    `run_probe` is declared as an attribute rather than as a method, because
+    what satisfies this is a module and not an instance: a module's
+    `run_probe` is a plain function, so a declaration with a leading `self`
+    would describe a signature nothing here has.
+
+    `surface_operations` is not part of it: a probe that has one uses it
+    internally to choose what to send, and ping has none at all.
+    """
+
+    run_probe: RunProbe
+
+
+# The probes this directory provides, by the name connection_test takes on its
+# command line. Imported on demand: a probe module opens sockets and reads the
+# environment at import, so a run naming two probes does not pay for the other
+# five.
+PROBE_NAMES = ("ping", "ident", "dma", "telnet", "ftp", "http", "modem")
+
+
+def probe(name: str) -> Probe:
+    """The probe module `name`, imported the first time it is asked for."""
+    if name not in PROBE_NAMES:
+        raise KeyError(f"no probe named {name!r}; have {', '.join(PROBE_NAMES)}")
+    return importlib.import_module(f"{name}_probe")
 
 
 def first_non_empty_line(text: str, fallback: str) -> str:
@@ -158,6 +203,32 @@ def run_surface_operation(
                 raise
             time.sleep(SURFACE_OPERATION_RETRY_DELAYS_S[attempt])
     raise RuntimeError(f"{protocol} surface operation failed without error") from last_error
+
+
+def run_selected_surface_operation(
+    protocol: str,
+    context: ProbeExecutionContext,
+    settings: RuntimeSettings,
+    operations: Sequence[tuple[str, Operation]],
+) -> ProbeOutcome:
+    """Run the operation this iteration selected, timed, as one outcome.
+
+    Four probes - dma, http, ident and modem - carried this nine-line block
+    each, differing only in the protocol name passed through it. It belongs
+    beside run_incomplete_surface_operation below, which is the same shape with
+    one extra case for a deliberate abort.
+    """
+    op_name, operation = operations[select_operation_index(context, len(operations))]
+    started_at = time.perf_counter_ns()
+    try:
+        detail = run_surface_operation(protocol, operation, settings)
+        elapsed_ms = (time.perf_counter_ns() - started_at) / 1_000_000.0
+        return ProbeOutcome("OK", surface_detail(context.surface, op_name, detail),
+                            elapsed_ms)
+    except Exception as error:
+        elapsed_ms = (time.perf_counter_ns() - started_at) / 1_000_000.0
+        return ProbeOutcome("FAIL", surface_detail(context.surface, op_name, str(error)),
+                            elapsed_ms)
 
 
 def run_incomplete_surface_operation(

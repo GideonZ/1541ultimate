@@ -4,8 +4,10 @@
 #include "stream_uart.h"
 #include "dump_hex.h"
 #include "network_config.h"
+#include "network_interface.h"
 #include "product.h"
 #include "versions.h"
+#include "gitinfo.h"
 #include "u64.h"
 #include <string.h>
 #include <strings.h>
@@ -168,17 +170,28 @@ API_DOC(GET, info, none,
     TAG("About")
     SUMMARY("Product and version information")
     DESCRIPTION("Identifies the device: product name, firmware version, FPGA build number, host "
-                "name and unique id. `core_version` is the version of the C64 core and is present "
-                "on Ultimate 64 hardware only. `unique_id` is left out when the device has none "
-                "configured.\n"
+                "name, unique id and hardware addresses. `core_version` is the version of the C64 "
+                "core and is present on Ultimate 64 hardware only. `unique_id` is left out when "
+                "the device has none configured.\n"
+                "\n"
+                "`git_commit_hash` is the abbreviated hash of the commit the firmware was built "
+                "from, the same one the System Information screen shows. It tells two builds that "
+                "carry the same version number apart.\n"
+                "\n"
+                "`ethernet_mac` and `wifi_mac` are the addresses of the wired and the wireless "
+                "interface. Each is left out when the device has no such interface, or when that "
+                "interface has not started and its address is therefore not known yet, and only "
+                "the first interface of each kind is reported. A caller that wants to wake the "
+                "device sends its magic packet to `wifi_mac`, which carries a MAC and not an IP "
+                "address; the wired interface does not wake the device.\n"
                 "\n"
                 "The same information is also available without HTTP, from the Ultimate Ident "
                 "Service on UDP port 64, which answers a broadcast and so can be used to find a "
                 "device whose address is not known.")
     PATH("/v1/info", "getInfo", "")
     RESPONSE("200", "application/json", "InfoResponse", "What the device is and what it is running.", "")
-    RESPONSE_EXAMPLE("200", "Ultimate 64 Elite", "{\n  \"product\" : \"Ultimate 64 Elite (V1.49) 3.14d\",\n  \"firmware_version\" : \"3.14d\",\n  \"fpga_version\" : \"122\",\n  \"core_version\" : \"1.49\",\n  \"hostname\" : \"Ultimate-64-Elite-C89085\",\n  \"unique_id\" : \"D09B96\",\n  \"errors\" : []\n}", "")
-    RESPONSE_EXAMPLE("200", "Ultimate II+", "{\n  \"product\" : \"1541 Ultimate II+ 3.14d\",\n  \"firmware_version\" : \"3.14d\",\n  \"fpga_version\" : \"11f\",\n  \"hostname\" : \"Ultimate-II-Plus\",\n  \"errors\" : []\n}", "")
+    RESPONSE_EXAMPLE("200", "Ultimate 64 Elite", "{\n  \"product\" : \"Ultimate 64 Elite (V1.49) 3.14d\",\n  \"firmware_version\" : \"3.14d\",\n  \"git_commit_hash\" : \"5ee21b65\",\n  \"fpga_version\" : \"122\",\n  \"core_version\" : \"1.49\",\n  \"hostname\" : \"Ultimate-64-Elite-C89085\",\n  \"unique_id\" : \"D09B96\",\n  \"ethernet_mac\" : \"02:15:41:C8:90:85\",\n  \"wifi_mac\" : \"24:0A:C4:1A:2B:3C\",\n  \"errors\" : []\n}", "")
+    RESPONSE_EXAMPLE("200", "Ultimate II+", "{\n  \"product\" : \"1541 Ultimate II+ 3.14d\",\n  \"firmware_version\" : \"3.14d\",\n  \"git_commit_hash\" : \"5ee21b65\",\n  \"fpga_version\" : \"11f\",\n  \"hostname\" : \"Ultimate-II-Plus\",\n  \"ethernet_mac\" : \"02:15:41:AA:BB:CC\",\n  \"errors\" : []\n}", "")
 )
 API_CALL(GET, info, none, NULL, ARRAY( { }))
 {
@@ -192,6 +205,7 @@ API_CALL(GET, info, none, NULL, ARRAY( { }))
 
     resp->json->add("product", getProductString())
         ->add("firmware_version", APPL_VERSION_ASCII)
+        ->add("git_commit_hash", APP_VERSION_HASH)
         ->add("fpga_version", fpga_version)
 #ifdef U64
         ->add("core_version", core_version)
@@ -204,6 +218,35 @@ API_CALL(GET, info, none, NULL, ARRAY( { }))
             unique_id = getProductUniqueId();
         }
         resp->json->add("unique_id", unique_id);
+    }
+
+    // The hardware addresses, one per kind of interface. A caller that wants to
+    // wake the device needs wifi_mac: a magic packet carries a MAC, not an IP,
+    // and waking is Wi-Fi only. The matcher is wol_magic.c on the ESP32, reached
+    // from the Wi-Fi path alone, and there is no counterpart on the wired side.
+    // Only the first interface of a kind is reported, and one that has not learned
+    // its address yet, because it never started, is left out entirely.
+    static const char *const mac_keys[2] = { "ethernet_mac", "wifi_mac" };
+    bool reported[2] = { false, false };
+    int interfaces = NetworkInterface::getNumberOfInterfaces();
+    for (int i = 0; i < interfaces; i++) {
+        NetworkInterface *intf = NetworkInterface::getInterface(i);
+        if (!intf) {
+            continue;
+        }
+        const int kind = intf->is_wireless() ? 1 : 0;
+        if (reported[kind]) {
+            continue;
+        }
+        uint8_t mac[6];
+        intf->getMacAddr(mac);
+        if (!(mac[0] | mac[1] | mac[2] | mac[3] | mac[4] | mac[5])) {
+            continue;
+        }
+        char mac_str[18];
+        sprintf(mac_str, "%b:%b:%b:%b:%b:%b", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+        resp->json->add(mac_keys[kind], mac_str);
+        reported[kind] = true;
     }
 
     resp->json_response(HTTP_OK);

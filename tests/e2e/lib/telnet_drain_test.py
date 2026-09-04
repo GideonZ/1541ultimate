@@ -20,17 +20,21 @@ cannot produce these cases on demand, so the bursts here are scripted and the
 rules are what is under test.
 """
 
-import os
 import socket
 import sys
 import threading
 import time
+from pathlib import Path
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                "..", "..", "lib"))
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
 
+import band  # noqa: E402  (needs this directory on sys.path first)
 import pacing  # noqa: E402  (needs tests/lib on sys.path first)
+import selftest  # noqa: E402
+from selftest import expect  # noqa: E402
 from report import Failure, check, suite_fail, suite_ok  # noqa: E402
 from ui_backend import TelnetBackend, VT100Screen  # noqa: E402
 
@@ -88,13 +92,15 @@ def drain(bursts, expect_redraw, expect_settle=False, timeout=20.0):
 
 
 def expect_near(label, actual, wanted):
-    if abs(actual - wanted) > TOLERANCE_SECONDS:
-        raise Failure(f"{label}: took {actual:.2f}s, expected about {wanted:.2f}s")
+    """The drain timings, against this module's one tolerance."""
+    selftest.expect_near(label, actual, wanted, TOLERANCE_SECONDS)
 
 
-def expect(label, actual, wanted):
-    if actual != wanted:
-        raise Failure(f"{label}: got {actual!r}, expected {wanted!r}")
+def astuple_of(layout):
+    """A Layout's constructor arguments, for building a variant of it."""
+    return (layout.columns, layout.time, layout.type, layout.interaction,
+            layout.status, layout.duration, layout.sent, layout.received,
+            layout.body, layout.reference)
 
 
 def run_checks():
@@ -152,6 +158,28 @@ def run_checks():
                   (pacing.TELNET_IDLE_GAP_SECONDS / 3, b"three")]
         elapsed, drained = drain(pieces, expect_redraw=True)
         expect("bytes", drained, len(b"onetwothree"))
+
+    with check("a band header refuses a layout it cannot label"):
+        # band.header zips nine hard-coded column names against the layout's
+        # fields. Silently, a layout with a different field count rendered a
+        # header whose columns did not line up with the rows under it, which
+        # is a recording that misreports what it recorded.
+        line = band.header(band.layout_for(1000))
+        expect("nine names still fit the real layout", line.split()[:3],
+               ["time", "type", "interaction"])
+
+        class EightFields(band.Layout):
+            def fields(self):
+                return super().fields()[:8]
+
+        short = EightFields(*astuple_of(band.layout_for(1000)))
+        try:
+            band.header(short)
+        except Failure as exc:
+            expect("the message names both lengths",
+                   "8 fields and 9 column names" in str(exc), True)
+        else:
+            raise Failure("a layout with eight fields rendered a nine-name header")
 
 
 def main():

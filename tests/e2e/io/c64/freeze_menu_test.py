@@ -18,11 +18,13 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from typing import Dict, Optional, Tuple
+from pathlib import Path
 
-# tests/lib holds the reporting rules every suite shares.
-sys.path.insert(0, os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "lib"))
+# The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
+import cli  # noqa: E402
 import machine as machine_lib  # noqa: E402  (needs tests/lib on sys.path first)
 import pacing  # noqa: E402  (needs tests/lib on sys.path first)
 import rest as rest_lib  # noqa: E402  (needs tests/lib on sys.path first)
@@ -68,7 +70,7 @@ WEDGE_HINT = (
 
 
 class RestSession:
-    def __init__(self, host: str, password: Optional[str], timeout: float) -> None:
+    def __init__(self, host: str, password: str | None, timeout: float) -> None:
         self.target = targets.parse(host)
         self.host = self.target.device
         self.password = password
@@ -84,7 +86,7 @@ class RestSession:
         return machine_lib.identify(self.host, lambda: (info.product,
                                                         info.firmware_version))
 
-    def url(self, path: str, params: Optional[Dict[str, object]] = None) -> str:
+    def url(self, path: str, params: dict[str, object] | None = None) -> str:
         query = ""
         if params:
             query = "?" + urllib.parse.urlencode(params)
@@ -96,10 +98,10 @@ class RestSession:
         self,
         method: str,
         path: str,
-        params: Optional[Dict[str, object]] = None,
-        payload: Optional[Dict[str, object]] = None,
-    ) -> Tuple[int, Dict[str, str], bytes]:
-        headers: Dict[str, str] = {}
+        params: dict[str, object] | None = None,
+        payload: dict[str, object] | None = None,
+    ) -> tuple[int, dict[str, str], bytes]:
+        headers: dict[str, str] = {}
         if self.password:
             headers["X-Password"] = self.password
         body = None
@@ -218,7 +220,7 @@ class RestSession:
             time.sleep(MENU_TOGGLE_SETTLE_SECONDS)
         return False
 
-    def menu_screen_bytes(self) -> Optional[bytes]:
+    def menu_screen_bytes(self) -> bytes | None:
         status, _, body = self.request("GET", MENU_SCREEN_PATH)
         if status == 404:
             return None
@@ -226,7 +228,7 @@ class RestSession:
             raise Failure(f"menu_screen failed with HTTP {status}: {body[:160]!r}")
         return body
 
-    def wait_screen_changes(self, before: Optional[bytes], timeout: float) -> bool:
+    def wait_screen_changes(self, before: bytes | None, timeout: float) -> bool:
         """Wait until the menu screen differs from 'before'.
 
         Drawing the context menu takes longer than the fixed settle used between
@@ -406,7 +408,7 @@ def run_context_reopen(session: RestSession) -> None:
             raise Failure("the menu closed when the context menu was opened")
     close_menu(session)
     with check("reopen the menu with the context menu still on the object stack"):
-        wedge_aware(session, "reopening the freezer menu", lambda: session.menu_button())
+        wedge_aware(session, "reopening the freezer menu", session.menu_button)
         if not session.wait_menu_state(want_open=True):
             raise Failure("the menu did not reopen")
     require_alive(session, "reopening the menu over a deinitialised context menu")
@@ -477,7 +479,7 @@ def run_menu_button_in_form(session: RestSession) -> None:
         if not session.menu_is_open():
             raise Failure("the menu closed when the edit field was entered")
     with check("the menu button closes the menu from inside the edit field"):
-        wedge_aware(session, "pressing the menu button", lambda: session.menu_button())
+        wedge_aware(session, "pressing the menu button", session.menu_button)
         if not session.wait_menu_state(want_open=False):
             raise Failure(
                 "the menu button did nothing while the edit field had focus, so the "
@@ -485,7 +487,7 @@ def run_menu_button_in_form(session: RestSession) -> None:
             )
     require_alive(session, "closing the menu from inside the query form")
     with check("the menu opens again afterwards"):
-        wedge_aware(session, "reopening the menu", lambda: session.menu_button())
+        wedge_aware(session, "reopening the menu", session.menu_button)
         if not session.wait_menu_state(want_open=True):
             raise Failure("the menu did not open again")
     # Leave the form behind, so a later suite does not inherit it. RUN/STOP backs
@@ -519,19 +521,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description="Validate the freezer menu against SID mappings without auto address mirroring."
     )
-    parser.add_argument("-H", "--host", default=os.environ.get("U64_HOST", "u64"))
+    cli.add_device_arguments(parser, password=None, timeout=5.0, colour=False)
     parser.add_argument("-r", "--rest-host", default=os.environ.get("U64_REST_HOST"))
-    parser.add_argument(
-        "-p",
-        "--password",
-        default=os.environ.get("U64_PASS"),
-    )
-    parser.add_argument(
-        "-t",
-        "--timeout",
-        type=float,
-        default=float(os.environ.get("U64_TIMEOUT", "5.0")),
-    )
     parser.add_argument(
         "--test",
         action="append",

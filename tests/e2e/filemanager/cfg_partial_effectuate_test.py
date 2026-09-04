@@ -27,28 +27,28 @@ import os
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "lib"))
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+# The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
+import cli  # noqa: E402
+sys.path.insert(0, bootstrap.directory("e2e", "filemanager"))
 
 from api import UltimateApi
-from report import (Failure, check, check_skip, check_start, format_exception,
+from report import (Failure, teardown_step, check, check_skip, check_start, format_exception,
                     suite_fail, suite_ok)
-from ui_backend import add_mode_argument, make_browser
+from ui_backend import add_mode_argument
 
-from cfg_single_group_test import (ENTRY_ROWS, STATUS_ROW, TELNET_ENTRY_ROWS,
-                                   TELNET_STATUS_ROW, alternate_value, cleanup,
-                                   load_fixture, loading_stores, upload_fixture)
+import cfg_fixture  # noqa: E402
+from cfg_single_group_test import (alternate_value, cleanup, load_fixture,
+                                   loading_stores, upload_fixture)
 
 SUITE = "cfg_partial_effectuate_test"
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("-H", "--host", default=os.environ.get("U64_HOST", "u64"))
-    parser.add_argument("-p", "--password", default=os.environ.get("U64_PASS", ""))
-    parser.add_argument("-t", "--timeout", type=float,
-                        default=float(os.environ.get("U64_TIMEOUT", "5.0")))
+    cli.add_device_arguments(parser, timeout=5.0, colour=False)
     parser.add_argument("--telnet-port", type=int,
                         default=int(os.environ.get("U64_TELNET_PORT", "23")))
     add_mode_argument(parser)
@@ -63,11 +63,7 @@ def main() -> int:
         return 0
     store, item = chosen
     original = api.configs.current(store, item)
-    browser = make_browser(
-        args.mode, args.host, args.password or None, args.timeout,
-        entry_rows=ENTRY_ROWS, status_row=STATUS_ROW, telnet_port=args.telnet_port,
-        telnet_entry_rows=TELNET_ENTRY_ROWS, telnet_status_row=TELNET_STATUS_ROW,
-    )
+    browser = cfg_fixture.browser_for(args)
     try:
         with check("only the CFG group is considered after loading"):
             upload_fixture(args.host, args.password, store, item,
@@ -79,21 +75,13 @@ def main() -> int:
 
         suite_ok(SUITE)
         return 0
-    except Failure as exc:
-        suite_fail(SUITE, str(exc))
-        return 1
     except Exception as exc:  # noqa: BLE001
         suite_fail(SUITE, format_exception(exc))
         return 1
     finally:
-        try:
-            api.configs.set(store, item, original)
-        except Exception:
-            pass
-        try:
-            browser.close()
-        except Exception:
-            pass
+        teardown_step(f"restore {store}/{item}",
+                    lambda: api.configs.set(store, item, original))
+        teardown_step("close the browser session", browser.close)
         cleanup(args.host, args.password)
 
 

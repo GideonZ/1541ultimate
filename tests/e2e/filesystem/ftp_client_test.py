@@ -44,29 +44,34 @@ import sys
 import tempfile
 import threading
 import time
+from pathlib import Path
 
 try:
     import ftplib
 except ImportError:  # pragma: no cover
     ftplib = None
 
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# tests/lib holds the reporting rules every suite shares; tests/e2e/lib holds
-# the shared character-to-key mapping and the batching helper.
-sys.path.insert(0, os.path.join(SCRIPT_DIR, "..", "..", "lib"))
-sys.path.insert(0, os.path.join(SCRIPT_DIR, "..", "lib"))
-import menu as menu_lib  # noqa: E402  (needs tests/e2e/lib on sys.path first)
+# The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
+import menu as menu_lib  # noqa: E402
+import ftp as ftp_lib  # noqa: E402
+import cli  # noqa: E402
+
 import pacing  # noqa: E402  (needs tests/lib on sys.path first)
 import rest as rest_lib
 import machine as machine_lib  # noqa: E402  (needs tests/lib first)
 import targets  # noqa: E402  (needs tests/lib on sys.path first)
+import ui_backend  # noqa: E402
 from ui_backend import (  # noqa: E402  (needs tests/e2e/lib first)
-    char_to_combo, find_selected_row_rest, measure_cursor_colour)
+    find_selected_row_rest, measure_cursor_colour)
 from api import UltimateApi  # noqa: E402  (needs tests/lib on sys.path first)
-from report import (  # noqa: E402  (needs tests/lib on sys.path first)
-    Failure, check_count, check_fail, check_ok, check_start, check_warn, detail, last_label,
+from report import (  assert_or_warn, # noqa: E402  (needs tests/lib on sys.path first)
+    Failure, teardown_step, check_count, check_fail, check_ok, check_start, check_warn, detail, last_label,
     section, suite_fail, suite_ok, warn)
+
 
 SCREEN_WIDTH = 40
 SCREEN_HEIGHT = 25
@@ -100,15 +105,6 @@ K_DEL = ["inst_del"]
 K_F2 = ["left_shift", "f1"]
 
 # Printable char -> matrix key names. Letters/digits map directly (quick-type);
-def assert_or_warn(assertions_enabled, condition, message):
-    if condition:
-        return True
-    if assertions_enabled:
-        raise Failure(message)
-    warn(message)
-    return False
-
-
 # ---------------------------------------------------------------------------
 # RestSession: http.client, Connection: close, X-Password only when supplied.
 # ---------------------------------------------------------------------------
@@ -323,10 +319,34 @@ class MenuScreen:
 # MenuDriver: navigation + form entry through REST keyboard input.
 # ---------------------------------------------------------------------------
 class MenuDriver:
+    """The on-device menu, as this suite drives it.
+
+    The navigation is `ui_backend.Browser` over a `RestBackend`, not a second
+    implementation of it. This class used to carry 330 lines of its own row
+    stepping, popup handling and typing, built on three helpers borrowed from
+    ui_backend, so every navigation fix made to Browser stopped at this suite's
+    edge. What is left here is the part that is about FTP hosts: the New Host
+    form, and the three steps that reach the /ftp node.
+
+    `select_row_text` and the popup navigation are kept as names because the
+    checks below read better with them, but each is now one call into Browser.
+    """
+
     def __init__(self, session, verbose_menu=False):
         self.s = session
         self.verbose_menu = verbose_menu
         self.last_input = ""
+        # The target token, not session.host. session.host is target.device,
+        # which on a cartridge target is the cartridge, and a cartridge answers
+        # machine:input with HTTP 501: keys have to go to the computer it is
+        # plugged into. Browser re-parses whatever it is given, so handing it
+        # the bare device name loses the routing the token carries.
+        self.browser = ui_backend.make_browser(
+            "overlay", session.target.token, session.password or None,
+            session.timeout)
+
+    def close(self):
+        self.browser.close()
 
     @property
     def task_menu_key(self):
@@ -334,9 +354,7 @@ class MenuDriver:
 
         F5 on an Ultimate 64 and an Ultimate II+, F1 on a C64 Ultimate, where
         F5 is Page Down and pressing it over a short listing does nothing at
-        all. A step that pressed F5 there read the browser it was still looking
-        at as a task menu with no Create category, and reported the node as
-        unsupported by the UI rather than failing. See tests/lib/machine.py.
+        all. See tests/lib/machine.py.
         """
         info = self.s.api.info()
         machine = machine_lib.identify(
@@ -362,53 +380,34 @@ class MenuDriver:
     def type_text(self, text):
         """Type a whole string in as few requests as the firmware allows.
 
-        Every form in the menu is a UIStringEdit fed from the same injected-key
-        queue, so there is one right way to type and this uses it: the shared
-        mapping and batching from tests/e2e/lib, the same as every other suite.
-
-        This suite used to send one POST per character, on a comment claiming
-        batching "floods the injected-key queue past its drain rate and
-        silently drops characters". Measured since, against a rename field with
-        a deliberately truncated control needle to prove the reader worked
-        (tests/perf/typing_speed_perf_test.py): batched typing arrived whole
-        every time at 25.7 characters a second, per-key at 4.6. The suite's own
-        checks below are what confirm it for this form, since they type host
-        names, ports and paths into it and then use the host they made.
+        Browser.type_text carries the shared mapping, the batching and the
+        drain wait, including the per-target rate: a cartridge crosses the
+        host's keyboard matrix as well and is five times slower than the
+        device's own rate, which is what used to commit a form field one
+        character short.
         """
-        combos = [char_to_combo(ch) for ch in text]
-        if not combos:
+        if not text:
             return
         self.last_input = f"type {text!r}"
-        self.s.key_events += len(combos)
-        menu_lib.send_taps(self.s.post_input, combos)
-        # The batch is accepted at once and drains through the matrix after, so
-        # the caller must not read the field back, or commit it, until it has
-        # arrived. The rate depends on the target: this charged every target
-        # the device's own rate, and on a cartridge that is five times too
-        # fast, so the RETURN committing a form field was sent while the
-        # field's last character was still on its way and the field was stored
-        # one character short.
-        time.sleep(len(combos) * pacing.key_drain_seconds(self.s.target.split))
+        self.s.key_events += len(text)
+        self.browser.type_text(text)
 
     # -- menu open/close ---------------------------------------------------
     def menu_is_open(self):
         return self.s.get_menu_screen() is not None
 
+    # A device settling a failed FTP connection can be slow to render the
+    # menu, and menu_button is a toggle, so a re-press that came too soon
+    # would close the menu it was waiting for. Long waits, few presses.
+    MENU_OPEN_TIMEOUT_SECONDS = 6.0
+    MENU_OPEN_ATTEMPTS = 3
+
     def open_menu(self):
-        # menu_button is a toggle. If the device is briefly busy (e.g. settling
-        # a failed FTP connection) it may be slow to render the menu, so wait a
-        # long time after each press before pressing again - re-pressing too
-        # soon would toggle a just-opened menu back closed. Few presses, long
-        # waits.
-        for _ in range(3):
-            if self.menu_is_open():
+        for _ in range(self.MENU_OPEN_ATTEMPTS):
+            if menu_lib.toggle_menu(self.s.menu_button, self.menu_is_open,
+                                    want_open=True,
+                                    timeout=self.MENU_OPEN_TIMEOUT_SECONDS):
                 return
-            self.s.menu_button()
-            deadline = time.monotonic() + 6.0
-            while time.monotonic() < deadline:
-                if self.menu_is_open():
-                    return
-                time.sleep(MENU_SETTLE_SECONDS)
         raise Failure("menu did not open after repeated menu_button")
 
     def close_menu_from_anywhere(self):
@@ -416,41 +415,23 @@ class MenuDriver:
         # placed on clipboard", an error box), which UIPopup answers only with
         # RETURN, SPACE or its own button hotkey. Without it the teardown would
         # spend every attempt on a popup that neither F8 nor RUN/STOP dismisses.
-        #
-        # The copy this replaced answered "Save changes to Flash?" with LEFT
-        # then RETURN. LEFT clamps at the first button, which is Yes, so that
-        # wrote whatever the suite had changed into the device's flash. The
-        # shared implementation presses the No hotkey instead.
         self.s.api.machine.close_menu_from_anywhere(confirm_key="return")
 
     # -- selection navigation ---------------------------------------------
-    def select_row_text(self, text, max_steps=40, require=True):
-        """Move the highlight until the selected row contains `text`."""
-        low = text.lower()
-        last_dir = None
-        for _ in range(max_steps):
-            screen = self.screen()
-            sr = screen.selected_row
-            tr = screen.find_row_containing(text)
-            if tr < 0:
-                if require:
-                    self._dump_on_fail(screen, f"row containing {text!r} not visible")
-                    raise Failure(f"row containing {text!r} not visible")
-                return None
-            if sr >= 0 and low in screen.rows[sr].lower():
-                return screen
-            if sr < 0:
-                self.tap(K_DOWN)
-                continue
-            if tr > sr:
-                self.tap(K_DOWN)
-                last_dir = "down"
-            else:
-                self.tap(K_UP)
-                last_dir = "up"
-        if require:
-            raise Failure(f"could not select row containing {text!r} within {max_steps} steps")
-        return None
+    def select_row_text(self, text, max_steps=40):
+        """Move the highlight until the selected row contains `text`.
+
+        contains, not a prefix: the rows this suite selects carry more than the
+        entry name. The /ftp node draws "Ftp  Remote FTP Servers", and a host
+        alias is listed beside its address.
+        """
+        try:
+            self.browser.select_entry(text, max_steps=max_steps, contains=True)
+        except Failure:
+            self._dump_on_fail(self.screen(required=False),
+                               f"row containing {text!r} not selectable")
+            raise
+        return self.screen()
 
     def enter(self):
         self.tap(K_RIGHT, settle=MENU_SETTLE_SECONDS)
@@ -461,38 +442,35 @@ class MenuDriver:
     def open_context_menu(self):
         self.tap(K_RETURN, settle=MENU_SETTLE_SECONDS)
 
-    @staticmethod
-    def _selected_popup_row(screen):
-        """The highlighted item of any open popup: context menu, F5 Tasks menu,
-        New Host form or a nested Create submenu.
+    def select_context_action(self, text, max_steps=20):
+        """With a context popup open, highlight and activate the named action."""
+        self._navigate_popup(text, max_steps, "context")
 
-        All of them are framed windows, so the one shared rule already answers
-        this: find_selected_row_rest restricts its scan to the frontmost
-        frame, which is what separates the popup's own cursor from the browser
-        row highlighted underneath it. This used to carry a second heuristic
-        that took the marked run reaching furthest right, having first dropped
-        any run reaching the last column as the browser's. That works only
-        where the browser's highlight is the wider of the two. On an Ultimate
-        II+L the New Host form's Alias field was 10 marked cells against 30 on
-        the browser row behind it, and the browser row did not reach the last
-        column, so the browser row was returned and the form was never filled
-        in.
-        """
-        return screen.selected_row
+    def select_task_action(self, text, max_steps=24):
+        """With the F5 Tasks popup open, highlight and activate the named entry."""
+        self._navigate_popup(text, max_steps, "task")
 
     def _navigate_popup(self, text, max_steps, kind):
+        """Highlight one item of an open popup and activate it.
+
+        Browser.choose_overlay_item does this from a label list; here the
+        popup is already open and its labels have not been read, so the rows
+        are walked. find_selected_row_rest restricts its scan to the frontmost
+        frame, which is what separates the popup's own cursor from the browser
+        row highlighted underneath it.
+        """
         seen = False
         screen = None
         for _ in range(max_steps):
             screen = self.screen()
-            tr = screen.find_row_containing(text)
-            sr = self._selected_popup_row(screen)
-            if tr >= 0:
+            target_row = screen.find_row_containing(text)
+            selected = screen.selected_row
+            if target_row >= 0:
                 seen = True
-                if sr == tr:
+                if selected == target_row:
                     self.tap(K_RETURN, settle=MENU_SETTLE_SECONDS)
                     return
-                if sr < 0 or tr > sr:
+                if selected < 0 or target_row > selected:
                     self.tap(K_DOWN)
                 else:
                     self.tap(K_UP)
@@ -505,21 +483,16 @@ class MenuDriver:
         self._dump_on_fail(screen, f"{kind} item {text!r} not highlightable")
         raise Failure(f"could not highlight {kind} item {text!r} within {max_steps} steps")
 
-    def select_context_action(self, text, max_steps=20):
-        """With a context popup open, highlight and activate the named action."""
-        self._navigate_popup(text, max_steps, "context")
-
-    def select_task_action(self, text, max_steps=24):
-        """With the F5 Tasks popup open, highlight and activate the named entry."""
-        self._navigate_popup(text, max_steps, "task")
-
     # -- FTP-specific navigation ------------------------------------------
     def goto_top_browser(self, marker="Remote FTP Servers", max_up=8):
-        """Back out to the top-level file browser. The device reopens the menu
-        at its last position, so callers that need a root-level entry must
-        rewind. On cartridge-style firmware the menu button opens the Ultimate
-        main menu instead of the file browser, so descend into 'DISK FILE
-        BROWSER' when we land there (harmless on U64, where it is not present)."""
+        """Back out to the top-level file browser.
+
+        The device reopens the menu where it left it, so a caller that needs a
+        root-level entry must rewind. On cartridge-style firmware the menu
+        button opens the Ultimate main menu instead of the file browser, so
+        descend into "DISK FILE BROWSER" when we land there; that entry is not
+        present on a U64, where this is a no-op.
+        """
         self.open_menu()
         for _ in range(max_up):
             screen = self.screen()
@@ -590,8 +563,6 @@ class MenuDriver:
         back charged that path a rate it does not keep: measured on an Ultimate
         II+L in a C64 Ultimate, a 13-character host name was committed as
         "192.168" every time at the charged 0.06s a key and whole at 0.25s.
-        Waiting for the characters to arrive needs no rate at all, and costs a
-        machine that keeps up nothing.
         """
         deadline = time.monotonic() + self.FIELD_ARRIVAL_TIMEOUT_SECONDS
         while True:
@@ -605,11 +576,9 @@ class MenuDriver:
 
     def _form_fill_current(self, label, value):
         # The form opens on Alias and each committed field advances by one, so
-        # the "current" field matches our fixed order. Clear, edit, type, commit.
-        # A dropped/duplicated keystroke (device httpd churn) can corrupt a
-        # field, so verify against the screen and re-enter the field once. The
-        # cursor has advanced to the next field after commit; step back up to
-        # re-edit the field we just left.
+        # the "current" field matches our fixed order. Clear, edit, type,
+        # commit. A dropped or duplicated keystroke can corrupt a field, so the
+        # screen is read back and the field re-entered once.
         for attempt in range(2):
             if attempt == 0:
                 self.tap(K_HOME)                # clear selected field
@@ -644,7 +613,7 @@ class MenuDriver:
             self.tap(K_RETURN, settle=MENU_SETTLE_SECONDS)
 
     def _dump_on_fail(self, screen, reason):
-        if not self.verbose_menu:
+        if not self.verbose_menu or screen is None:
             return
         section(f"menu dump ({reason})")
         for i, r in enumerate(screen.rows):
@@ -654,9 +623,6 @@ class MenuDriver:
                f"selected_text={screen.selected_text!r}")
 
 
-# ---------------------------------------------------------------------------
-# ControlledFtpServer: pyftpdlib server with command log, fixtures and faults.
-# ---------------------------------------------------------------------------
 def deterministic_bytes(length):
     return bytes((i * 37 + 11) & 0xFF for i in range(length))
 
@@ -877,10 +843,12 @@ class ControlledFtpServer:
 # verification only (never touches unrelated user files).
 # ---------------------------------------------------------------------------
 class DeviceFtpInspector:
-    def __init__(self, host, user="user", password="password", timeout=15):
-        # The device's own FTP server, so a cartridge target means the
-        # cartridge; see tests/lib/targets.py.
-        self.host = targets.device_of(host)
+    def __init__(self, host, user=ftp_lib.FTP_USER,
+                 password=ftp_lib.FTP_DEFAULT_PASSWORD, timeout=15):
+        # ftp_lib.connect resolves the target itself, and the device's own FTP
+        # server means the cartridge for a cartridge target; see
+        # tests/lib/targets.py.
+        self.host = host
         self.user = user
         self.password = password
         self.timeout = timeout
@@ -895,10 +863,8 @@ class DeviceFtpInspector:
             return False
 
     def _open(self):
-        ftp = ftplib.FTP()
-        ftp.connect(self.host, 21, timeout=self.timeout)
-        ftp.login(self.user, self.password)
-        return ftp
+        return ftp_lib.connect(self.host, self.password, timeout=self.timeout,
+                               user=self.user)
 
     def upload_bytes(self, path, data):
         ftp = self._open()
@@ -1518,7 +1484,7 @@ def context_actions_present(ctx, expected):
 
 def stage_edge(ctx):
     section("stage: edge")
-    d, s, server, args = ctx.d, ctx.s, ctx.server, ctx.args
+    d, _s, server, args = ctx.d, ctx.s, ctx.server, ctx.args
 
     # -- multiple simultaneous hosts: with password (IP) + anonymous (no pw) --
     alias_pw = safe_name(args.alias_prefix + "pw")
@@ -1680,10 +1646,8 @@ def stage_edge(ctx):
             check_warn(f"device could not resolve hostname {hostname} (no LAN DNS); IP path already covered")
             ctx.record("edge", "hostname", "WARN", "", hostname, "no device DNS")
     finally:
-        try:
-            d.remove_ftp_host(alias_hn)
-        except Exception:
-            pass
+        teardown_step(f"remove the FTP host {alias_hn}",
+                    lambda: d.remove_ftp_host(alias_hn))
         ctx.ensure_alive("edge hostname cleanup")
 
 
@@ -1761,10 +1725,8 @@ def negative_case(ctx, label, alias_suffix, host=None, port=None, password=None,
         ctx.record("negative", label, "OK", "", alias, "no crash, menu recovered")
     finally:
         # remove the throwaway host if it still exists
-        try:
-            d.remove_ftp_host(alias)
-        except Exception:
-            pass
+        teardown_step(f"remove the FTP host {alias}",
+                    lambda: d.remove_ftp_host(alias))
 
 
 def stage_negative(ctx):
@@ -1782,7 +1744,7 @@ def stage_negative(ctx):
     try:
         create_host(ctx, alias, path="/RDONLY")
         ctx.ensure_alive("perm-denied create")
-        res = delete_remote_entry(ctx, alias, "LOCKED.TXT")
+        delete_remote_entry(ctx, alias, "LOCKED.TXT")
         still_there = server.exists("RDONLY", "LOCKED.TXT")
         ctx.ensure_alive("perm-denied delete")
         recover_after_negative(ctx, "permission-denied delete")
@@ -1793,10 +1755,8 @@ def stage_negative(ctx):
             check_warn("file was removed despite read-only area")
             ctx.record("negative", "perm-denied delete", "WARN", "DELE", "RDONLY/LOCKED.TXT")
     finally:
-        try:
-            ctx.d.remove_ftp_host(alias)
-        except Exception:
-            pass
+        teardown_step(f"remove the FTP host {alias}",
+                    lambda: ctx.d.remove_ftp_host(alias))
 
     # server stopped while a host is configured, then restarted.
     alias = safe_name(args.alias_prefix + "stop")
@@ -1823,10 +1783,8 @@ def stage_negative(ctx):
             check_warn("no LIST after restart")
             ctx.record("negative", "server stop/restart", "WARN", "", alias)
     finally:
-        try:
-            ctx.d.remove_ftp_host(alias)
-        except Exception:
-            pass
+        teardown_step(f"remove the FTP host {alias}",
+                    lambda: ctx.d.remove_ftp_host(alias))
 
 
 def animate_bad_port(args):
@@ -1845,8 +1803,14 @@ SOAK_READ_FILES = ["README.TXT", "SMALL.BIN", "BYTES256.BIN", "EXACT4096.BIN",
 def soak_browse(ctx, n):
     d = ctx.d
     enter_host_root(ctx, ctx.alias)
-    d.select_row_text("DIRA"); d.enter(); d.screen(required=False); d.back()
-    d.select_row_text("DIR WITH SPACE"); d.enter(); d.screen(required=False); d.back()
+    d.select_row_text("DIRA")
+    d.enter()
+    d.screen(required=False)
+    d.back()
+    d.select_row_text("DIR WITH SPACE")
+    d.enter()
+    d.screen(required=False)
+    d.back()
     return "browse"
 
 
@@ -1857,7 +1821,7 @@ def soak_read(ctx, n):
 
 
 def soak_edit(ctx, n):
-    changed, reverted = edit_and_revert(ctx, ctx.alias)
+    _changed, reverted = edit_and_revert(ctx, ctx.alias)
     if not reverted:
         raise Failure("soak edit: host Path was not reverted to /")
     return "edit/revert"
@@ -1994,10 +1958,8 @@ def cleanup(ctx, crashed):
             warn(f"UI cleanup: {exc}")
     # Remove any files staged on the device's local FS.
     for path in ctx.host_staged:
-        try:
-            ctx.inspector.delete(path)
-        except Exception:
-            pass
+        teardown_step(f"delete the staged file {path}",
+                    lambda path=path: ctx.inspector.delete(path))
     preserved = []
     if ctx.args.preserve_ftp_host and ctx.alias:
         preserved.append(f"FTP host '{ctx.alias}'")
@@ -2067,18 +2029,6 @@ def parse_ports(text):
     return range(lo, hi + 1)
 
 
-def parse_duration(text):
-    t = text.strip().lower()
-    mult = 1.0
-    if t.endswith("ms"):
-        mult, t = 0.001, t[:-2]
-    elif t.endswith("s"):
-        t = t[:-1]
-    elif t.endswith("m"):
-        mult, t = 60.0, t[:-1]
-    return float(t) * mult
-
-
 def parse_args(argv=None):
     p = argparse.ArgumentParser(
         description="End-to-end test harness for the FTP remote filesystem on a real Ultimate 64/64e.",
@@ -2092,7 +2042,7 @@ def parse_args(argv=None):
     p.add_argument("-n", "--no-assertions", action="store_true",
                    help="Warn instead of failing on assertion mismatches")
     p.add_argument("-t", "--timeout", type=float, default=5.0, help="REST timeout seconds")
-    p.add_argument("--stage", choices=STAGE_ORDER + ["all"], default="smoke")
+    p.add_argument("--stage", choices=[*STAGE_ORDER, "all"], default="smoke")
     p.add_argument("--ftp-bind-host", default="0.0.0.0", help="local FTP bind address")
     p.add_argument("--ftp-advertised-host", default=None,
                    help="address the Ultimate should connect to (required unless inferable)")
@@ -2122,7 +2072,7 @@ def parse_args(argv=None):
     p.add_argument("--verbose-menu", action="store_true", help="print decoded menu screens on failure")
     p.add_argument("--run-prg", action="store_true", help="run the opt-in remote-PRG RAM-marker check")
     args = p.parse_args(argv)
-    args.soak_duration = parse_duration(args.soak_duration)
+    args.soak_duration = cli.parse_duration(args.soak_duration)
     args.ftp_passive_ports = parse_ports(args.ftp_passive_ports)
     return args
 
@@ -2174,70 +2124,78 @@ def main(argv=None):
 
     session = RestSession(args.host, args.password, args.timeout)
     driver = MenuDriver(session, verbose_menu=args.verbose_menu)
-    inspector = DeviceFtpInspector(args.host)
-
-    driver.close_menu_from_anywhere()
-    session.release_all()
-    session.api.machine.reset(force=True)
-
-    detail(f"controlled FTP server on {args.ftp_bind_host}:{args.ftp_port} "
-           f"(advertised {args.ftp_advertised_host})")
     try:
-        server = ControlledFtpServer(
-            args.ftp_bind_host, args.ftp_advertised_host, args.ftp_port,
-            args.ftp_passive_ports, args.ftp_user, args.ftp_password,
-            root=args.remote_root, keep_root=args.keep_remote_root)
-    except Failure as exc:
-        suite_fail("ftp_client_test", str(exc))
-        return 2
-    server.start()
-    detail(f"server root: {server.root} (marker {server.marker})")
+        inspector = DeviceFtpInspector(args.host)
 
-    ctx = Context(args, session, driver, server, inspector, assertions_enabled)
-    ctx.alias = safe_name(args.alias_prefix)
-    crashed = False
-    failed = False
+        driver.close_menu_from_anywhere()
+        session.release_all()
+        session.api.machine.reset(force=True)
 
-    try:
-        endpoint_checks(ctx)
-        check_start("remove any stale hosts left by a prior run")
-        stale = cleanup_stale_hosts(ctx)
-        check_ok(f"{stale} removed")
-        run = stages_for(args)
-        for stage in run:
-            {"smoke": stage_smoke, "core": stage_core, "edge": stage_edge,
-             "matrix": stage_matrix, "negative": stage_negative,
-             "soak": stage_soak}[stage](ctx)
-        if args.run_prg:
-            stage_prg(ctx)
-    except HardCrash as exc:
-        crashed = True
-        print_failure_diagnostics(ctx, f"HARD CRASH: {exc}")
-    except Failure as exc:
-        failed = True
-        print_failure_diagnostics(ctx, exc)
-    except KeyboardInterrupt:
-        warn("interrupted")
-    finally:
+        detail(f"controlled FTP server on {args.ftp_bind_host}:{args.ftp_port} "
+               f"(advertised {args.ftp_advertised_host})")
         try:
-            cleanup(ctx, crashed)
-        except Exception as exc:
-            warn(f"cleanup error: {exc}")
-        if args.reset_after_run and not crashed and session.is_alive(timeout=5.0):
-            # force: this suite drives FTP throughout, which REST cannot see.
-            session.api.machine.reset(force=True, wait=False)
-        fails = print_summary(ctx, crashed)
-        server.cleanup()
+            server = ControlledFtpServer(
+                args.ftp_bind_host, args.ftp_advertised_host, args.ftp_port,
+                args.ftp_passive_ports, args.ftp_user, args.ftp_password,
+                root=args.remote_root, keep_root=args.keep_remote_root)
+        except Failure as exc:
+            suite_fail("ftp_client_test", str(exc))
+            return 2
+        server.start()
+        detail(f"server root: {server.root} (marker {server.marker})")
 
-    if crashed:
-        suite_fail("ftp_client_test", "hard crash; manual recovery needed")
-        return 3
-    if failed or fails:
-        suite_fail("ftp_client_test",
-                   f"{len(fails)} operation(s) failed" if fails else "failed")
-        return 1
-    suite_ok("ftp_client_test", f"{len(ctx.results)} operation(s)")
-    return 0
+        ctx = Context(args, session, driver, server, inspector, assertions_enabled)
+        ctx.alias = safe_name(args.alias_prefix)
+        crashed = False
+        failed = False
+
+        try:
+            endpoint_checks(ctx)
+            check_start("remove any stale hosts left by a prior run")
+            stale = cleanup_stale_hosts(ctx)
+            check_ok(f"{stale} removed")
+            run = stages_for(args)
+            for stage in run:
+                {"smoke": stage_smoke, "core": stage_core, "edge": stage_edge,
+                 "matrix": stage_matrix, "negative": stage_negative,
+                 "soak": stage_soak}[stage](ctx)
+            if args.run_prg:
+                stage_prg(ctx)
+        except HardCrash as exc:
+            crashed = True
+            print_failure_diagnostics(ctx, f"HARD CRASH: {exc}")
+        except Failure as exc:
+            failed = True
+            print_failure_diagnostics(ctx, exc)
+        except KeyboardInterrupt:
+            warn("interrupted")
+        finally:
+            try:
+                cleanup(ctx, crashed)
+            except Exception as exc:
+                warn(f"cleanup error: {exc}")
+            if args.reset_after_run and not crashed and session.is_alive(timeout=5.0):
+                # force: this suite drives FTP throughout, which REST cannot see.
+                session.api.machine.reset(force=True, wait=False)
+            fails = print_summary(ctx, crashed)
+            server.cleanup()
+
+        if crashed:
+            suite_fail("ftp_client_test", "hard crash; manual recovery needed")
+            return 3
+        if failed or fails:
+            suite_fail("ftp_client_test",
+                       f"{len(fails)} operation(s) failed" if fails else "failed")
+            return 1
+        suite_ok("ftp_client_test", f"{len(ctx.results)} operation(s)")
+        return 0
+    finally:
+        # The Browser holds a backend of its own, and constructing it
+        # switched the device's Interface Type. Closing it here rather
+        # than at the end of the run covers the paths that leave early:
+        # a server that will not start used to return with the setting
+        # still changed and the menu still open.
+        teardown_step("close the menu browser", driver.close)
 
 
 if __name__ == "__main__":
