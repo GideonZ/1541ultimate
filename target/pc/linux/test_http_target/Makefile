@@ -56,3 +56,10 @@ $(RESULT)/$(PRJ): $(OBJS_C) $(OBJS_CC) $(OBJS_ASM) $(OBJS_6502) $(OBJS_BIN) $(OB
 	@echo Linking...
 	$(CPP) $(ALL_OBJS) $(LLIB) -o $(RESULT)/$(PRJ) $(LIBS)
 
+# Run the removal regression independently of the external JSON fixture.
+.PHONY: test-body-removal
+test-body-removal:
+	@$(MAKE) OUTPUT=output/body-removal RESULT=result/body-removal \
+	    CC="$(CC) -fsanitize=address,undefined -fno-sanitize-recover=all" \
+	    CPP="$(CPP) -fsanitize=address,undefined -fno-sanitize-recover=all" all
+	@result/body-removal/$(PRJ) --body-removal
