@@ -12,20 +12,22 @@ implements had never run since the day it was written.
 
 A written regression guard that never runs is the cheapest kind of defect to
 prevent and the most expensive to notice, so it is checked here rather than
-left to whoever next reads the registry. Three rules:
+left to whoever next reads the registry. Five rules:
 
-- every `*_test.py` under tests/e2e, tests/perf and tests/soak appears in the
-  registry, and every registered path exists;
-- a registered suite's argument template only spells tokens the runner
-  substitutes;
-- every argument in the template is one its own parser accepts, so a
-  registration cannot name `-p` for a suite that has no password argument;
-- every `sys.path` adjustment is the shared bootstrap, not a private one;
-- `-H`, `-p` and `-t` come from `tests/lib/cli.py`, not from a fourth copy.
+1. every `*_test.py` under tests/lib, tests/e2e, tests/perf and tests/soak
+   appears in the registry, unless NOT_SUITES gives a reason;
+2. every registered path exists;
+3. a registered suite's argument template only spells tokens the runner
+   substitutes;
+4. every argument in the template is one the suite's own parser accepts, so a
+   registration cannot pass `-p` to a suite that has no password argument;
+5. every module-level `sys.path` adjustment is the shared bootstrap rather
+   than a private one, and `-H`, `-p` and `-t` come from `tests/lib/cli.py`
+   rather than a fourth copy.
 
-The third rule reads the suite's parser rather than running it, because
-importing 60 suites would cost more than the check is worth and several of them
-open sockets at import time.
+Rule 4 reads each suite's parser rather than running it: importing 60 suites
+would cost more than the check is worth, and several of them open sockets at
+import time.
 
 Needs no device.
 """
@@ -56,11 +58,10 @@ NAME = "registry_test"
 # it. A token outside this set would reach the suite as a literal.
 TOKENS = {"@HOST@", "@PASS@", "@TIMEOUT@", "@MODE@", "@SOAKPROFILE@"}
 
-# Suites the registry deliberately does not carry, each with the reason. A file
-# ending in _test.py that is not a suite belongs here rather than in the
-# registry, so that "not registered" always means "nobody can run it".
-# A file ending in _test.py that no profile should select, each with its
-# reason. Everything else under SEARCHED has to be in the registry.
+# Files ending in _test.py that no profile should select, each with its reason.
+# A file that is not a suite belongs here rather than in the registry, so that
+# "not registered" always means "nobody can run it". Everything else under
+# SEARCHED has to be in the registry.
 NOT_SUITES: dict[str, str] = {
     # The four tiers of the observability suite. Importing one registers its
     # cases in support.CASES; tests/lib/observability_test.py imports all four

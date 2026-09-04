@@ -28,11 +28,14 @@ Three properties are built in rather than left to each caller:
 
 from __future__ import annotations
 
+import ftplib
+import http.client
 import json
 import os
 import sys
 import time
 import threading
+import urllib.error
 from contextlib import contextmanager
 from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass, field
@@ -875,46 +878,55 @@ def assert_or_warn(assertions_enabled: bool, condition: object,
     return False
 
 
-def teardown_step(label: str, action: Callable[[], object]) -> bool:
-    """Run a teardown step, report what it could not do, and carry on.
+# The exceptions that mean "the device", as opposed to "this code called
+# something wrongly". A device going down does not only refuse connections: it
+# also answers with a truncated or mismatched body, which reaches a decoder as
+# a `ValueError` (`json.JSONDecodeError` is one) or as an
+# `http.client.HTTPException` that is not an `OSError`. This firmware's httpd
+# has been seen returning one request's body under another request's status
+# while several REST workers are active, so those count here too.
+#
+# `TypeError` is deliberately absent. Calling something with the wrong
+# signature is a defect in the harness, and swallowing it once turned a changed
+# signature into "the menu did not open", which sent the runner's recovery
+# policy at a healthy device.
+#
+# `run-tests` keeps a wider `DEVICE_ERRORS` that does include `TypeError`,
+# because there the question is different: nothing the runner does while
+# capturing state around a suite may end the whole run.
+# Deduplicated because ftplib.all_errors already contains OSError, and an
+# except clause naming it twice reads as an oversight.
+DEVICE_FAULTS: tuple[type[BaseException], ...] = tuple(dict.fromkeys(
+    (Failure, OSError, TimeoutError, ValueError, http.client.HTTPException,
+     *ftplib.all_errors)))
 
-    Teardown must not mask a verdict: a settings restore that fails after a
-    check has already failed should not replace the real reason with its own.
-    Every suite therefore ended with blocks of this shape:
+
+def teardown_step(label: str, action: Callable[[], object]) -> bool:
+    """Run one teardown action, record what it could not put back, and carry on.
+
+    Returns True when the action succeeded.
+
+        teardown_step(f"restore {item}", lambda: api.configs.set(store, item, was))
+
+    A teardown failure must not replace the suite's verdict: a settings restore
+    that fails after a check has already failed would otherwise report itself
+    instead of the real reason. Suites used to get that right by writing
 
         try:
             api.configs.set(store, item, original)
         except Exception:
             pass
 
-    which is right about the verdict and wrong about the evidence. The device
-    is left changed, nothing on the console or in the JSONL says so, and the
-    next suite fails for a reason its report cannot connect to the cause. That
-    is the mechanism behind the "unrelated failure after X" entries this tree's
-    commit history keeps chasing.
+    which keeps the verdict and loses the evidence. The device stays changed,
+    neither the console nor the JSONL says so, and the next suite fails for a
+    reason its report cannot connect to the cause.
 
-    So: the same swallow, with the exception written down. Returns True when
-    the action succeeded.
-
-    What counts as the device rather than the caller is the set `run-tests`
-    already calls DEVICE_ERRORS, less `TypeError`. A device being taken down
-    mid-teardown does not only refuse connections: it answers with a truncated
-    or mismatched body, which reaches a decoder as a `ValueError`
-    (`json.JSONDecodeError` is one) or as an `http.client.HTTPException` that
-    is not an `OSError`. This firmware's httpd has been seen handing back one
-    request's body under another request's status while several REST workers
-    are active, so those are device faults here too. A `TypeError` stays out,
-    because a teardown that calls something wrongly is a bug to see.
-
-        teardown_step(f"restore {item}", lambda: api.configs.set(store, item, was))
+    Only DEVICE_FAULTS are swallowed, so a teardown that calls something
+    wrongly still raises and is seen.
     """
-    import ftplib
-    import http.client
-
     try:
         action()
-    except (Failure, OSError, TimeoutError, ValueError,
-            http.client.HTTPException, *ftplib.all_errors) as exc:
+    except DEVICE_FAULTS as exc:
         message = format_exception(exc) or type(exc).__name__
         detail(f"teardown: {label}: {message}")
         # `message` is what the report renders; `label` and `error` are what a
@@ -932,8 +944,6 @@ def format_exception(exc: BaseException) -> str:
     urllib raises errors whose `str` omits the reason, which is the only part
     that says whether the device refused the connection or never answered.
     """
-    import urllib.error
-
     if isinstance(exc, urllib.error.URLError) and getattr(exc, "reason", None) is not None:
         return f"{exc} ({exc.reason})"
     return str(exc)

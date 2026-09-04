@@ -32,7 +32,6 @@ import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 from collections.abc import Callable, Sequence
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -889,8 +888,7 @@ def syslog_ports(machines: Sequence[str], password: str) -> dict[str, int]:
 
 def start_syslog(args: argparse.Namespace,
                  wanted: Sequence[targets_lib.Target],
-                 directory: str = "") -> Optional[
-                     "syslog_collector.Collector"]:
+                 directory: str = "") -> "syslog_collector.Collector | None":
     """Open the device log collector for this run, or say why it did not open.
 
     Started in the process that owns the whole run, because it binds one port
@@ -1237,7 +1235,7 @@ def check_recording_options(args: argparse.Namespace) -> None:
 
 
 def start_recorder(args: argparse.Namespace, target: targets_lib.Target,
-                   device: "Device") -> Optional["recorder_lib.Recorder"]:
+                   device: "Device") -> "recorder_lib.Recorder | None":
     """Open this target's recording, or say why it did not open.
 
     In the process that owns one target: the output is per target, multicast
@@ -1309,7 +1307,7 @@ def recording_identity(target: targets_lib.Target,
     return {name: value for name, value in found.items() if value}
 
 
-def stop_recorder(made: Optional["recorder_lib.Recorder"],
+def stop_recorder(made: "recorder_lib.Recorder | None",
                   directory: str, token: str) -> None:
     """End the recording, write its sidecars and record its own health."""
     if made is None:

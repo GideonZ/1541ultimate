@@ -11,11 +11,10 @@ and by how deep in the tree the file sat: `parents[1]`, `parents[2]`,
 suite one directory changed which index was right, and a wrong one failed at
 import with a `ModuleNotFoundError` naming a module that plainly exists.
 
-Every entry point now carries the same four lines, whatever its depth:
+Every entry point now carries the same three lines, whatever its depth:
 
-    sys.path[:0] = [str(p / "tests" / "lib")
-                    for p in Path(__file__).resolve().parents
-                    if (p / "tests" / "lib").is_dir()][:1]
+    sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                                if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
     import bootstrap  # noqa: E402,F401
 
 The search walks up from the file rather than counting directories, so a suite
@@ -62,9 +61,9 @@ def _establish() -> None:
     re-inserted instead, so the order is the one stated whatever the caller
     did first.
     """
-    for directory in (E2E_LIB, LIB):
-        while directory in sys.path:
-            sys.path.remove(directory)
+    for entry in (E2E_LIB, LIB):
+        while entry in sys.path:
+            sys.path.remove(entry)
     sys.path[:0] = [LIB, E2E_LIB]
 
 

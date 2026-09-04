@@ -19,6 +19,8 @@ no `h`; and `ftp_client_test.py`'s had no error handling at all, so
 import argparse
 import os
 
+import report
+
 DEFAULT_HOST_ENV = "U64_HOST"
 DEFAULT_PASSWORD_ENV = "U64_PASS"
 DEFAULT_TIMEOUT_ENV = "U64_TIMEOUT"
@@ -28,8 +30,9 @@ DEFAULT_TIMEOUT_ENV = "U64_TIMEOUT"
 FALLBACK_HOST = "u64"
 FALLBACK_TIMEOUT_SECONDS = 10.0
 
-# What the environment says now. Read per call rather than at import, because
-# the self-tests set these variables around a case.
+# The three defaults below read the environment per call rather than at import,
+# because the self-tests set these variables around a case and a value captured
+# at import would not see that.
 
 
 def host_default(fallback: str = FALLBACK_HOST) -> str:
@@ -114,6 +117,4 @@ def add_device_arguments(parser: argparse.ArgumentParser, *,
             help=f"Seconds to wait for one device call "
                  f"(default: ${DEFAULT_TIMEOUT_ENV}, else {timeout})")
     if colour:
-        import report
-
         report.add_colour_argument(parser)

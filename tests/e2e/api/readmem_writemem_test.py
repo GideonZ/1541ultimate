@@ -9,7 +9,6 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from typing import Optional
 from pathlib import Path
 
 # tests/lib holds the shared library; importing bootstrap adds tests/e2e/lib.
@@ -320,7 +319,7 @@ def compare(
     noise_addrs: set[int],
     skip_rom: bool = False,
     unreachable_addrs: set[int] = frozenset(),
-    session: Optional["RestSession"] = None,
+    session: "RestSession | None" = None,
 ) -> bool:
     ram_mismatches: list[int] = []
     color_mismatches: list[int] = []

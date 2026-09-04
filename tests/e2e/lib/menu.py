@@ -30,7 +30,7 @@ import bootstrap  # noqa: E402,F401
 import api  # noqa: E402  (needs tests/lib on sys.path first)
 import interactions  # noqa: E402
 import pacing  # noqa: E402
-from report import Failure  # noqa: E402
+import report  # noqa: E402
 
 # Kept as names so callers read the same way; the values live in tests/lib/pacing.py.
 KEY_SETTLE_SECONDS = pacing.KEY_SETTLE_SECONDS
@@ -99,15 +99,16 @@ def toggle_menu(press_button: Callable[[], None], menu_is_open: Callable[[], boo
     from a changed signature, or a KeyError from a changed response shape, used
     to be swallowed here and then surfaced as "the menu did not open" once the
     poll timed out, so a harness bug was reported as a device fault and the
-    runner ran its recovery policy against a healthy device. Only the
-    exceptions a device that has gone away raises are caught, and the one that
-    was is written into the interaction log rather than lost.
+    runner ran its recovery policy against a healthy device. Only
+    report.DEVICE_FAULTS is caught, which is the same set teardown_step
+    swallows and excludes TypeError by construction, and the exception that
+    was caught is written into the interaction log rather than lost.
     """
     if menu_is_open() == want_open:
         return True
     try:
         press_button()
-    except (Failure, OSError, TimeoutError) as exc:
+    except report.DEVICE_FAULTS as exc:
         interactions.record("rest", "menu_button",
                             error=f"{type(exc).__name__}: {exc}",
                             note="swallowed: the press is a toggle, so the "
