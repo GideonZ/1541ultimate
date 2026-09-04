@@ -283,8 +283,6 @@ int ConfigBrowser :: handle_key(int c)
         case KEY_RIGHT: // right
             if(state->level==0)
                 state->into();
-            else
-                state->increase();
             break;
         case '+':
             if(state->level!=0)

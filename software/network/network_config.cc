@@ -81,3 +81,4 @@ void NetworkConfig :: effectuate_settings(void)
 #include "init_function.h"
 NetworkConfig networkConfig;
 InitFunction init_netcfg("Network Config", [](void *_obj, void *_param) { networkConfig.init(); }, NULL, NULL, 20);
+

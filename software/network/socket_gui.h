@@ -10,12 +10,11 @@
 
 #include "FreeRTOS.h"
 #include "task.h"
-#include <atomic>
 #include "config.h"
 
 class SocketGui : public ConfigurableObject
 {
-	std::atomic<bool> enabled;
+	volatile bool enabled;
 public:
 	TaskHandle_t listenTaskHandle;
 

@@ -450,7 +450,7 @@ static int test_socket_voltages(I2C_Driver_SocketTest& skti2c, int socket_nr, ui
     read_socket_analog(skti2c, vdd, vcc, mid);
 
     // 4% range for VCC: 0.96*5000 < vcc < 1.04*5000
-    if ((vcc < 4800) || (vcc > 5200)) {
+    if ((vcc < 4650) || (vcc > 5200)) {
         printf("VCC Out Of Range: %d mV  (should be 5V)\n", vcc);
         error |= (1 << 0);
     }

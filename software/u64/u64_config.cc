@@ -45,6 +45,12 @@ extern "C" {
 #include "usb_hid_config.h"
 #include "monitor_init.h"
 
+// TODO: This doesn't belong here.
+#ifndef CMD_IF_SLOT_BASE
+#define CMD_IF_SLOT_BASE       *((volatile uint8_t *)(CMD_IF_BASE + 0x0))
+#define CMD_IF_SLOT_ENABLE     *((volatile uint8_t *)(CMD_IF_BASE + 0x1))
+#endif
+
 const uint8_t default_colors[16][3] = {
     { 0x00, 0x00, 0x00 },
     { 0xF7, 0xF7, 0xF7 },
@@ -1001,6 +1007,15 @@ void U64Config :: hpd_monitor_task(void *_a)
     }
 }
 
+uint8_t U64Config :: unlock_irq(void *a)
+{
+    C64_POKE(0xD038, 0); // disable the IRQ once again
+//    C64_POKE(0xD020, 0); // testing only
+    C64_BUS_INTERNAL |= 0x02; // Enable DF00-DFFF internal mapping to reach UCI
+    CMD_IF_SLOT_ENABLE = 1;
+    CMD_IF_SLOT_BASE = 0x47; // $$DF1C
+    return 1;
+}
 
 void U64Config :: ResetHandler()
 {
@@ -2661,7 +2676,6 @@ void U64Config :: configure_hdmi_output(void)
 
 #if U64 == 2
     volatile t_video_timing_regs *regs = (volatile t_video_timing_regs *)U64II_HDMI_REGS;
-
     regs->resync = 2;
 #endif
 }
