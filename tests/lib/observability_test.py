@@ -87,24 +87,43 @@ def run_case(entry: Case) -> str:
 def run_cases(cases: list[Case]) -> list[str]:
     """Run a tier's cases, its non-exclusive ones concurrently, in registration order.
 
-    A non-exclusive case runs on a worker thread from a pool, all submitted up
-    front so they run concurrently; its result is reported here on the main
-    thread once its future resolves. An exclusive case runs the plain
-    sequential way instead, through `run_case`, right here in its normal place
-    in the order: check_start before its body runs and its verdict after,
-    exactly as when every case ran one at a time. That is what a case mutating
-    shared state (os.environ, a module-level path) needs to never overlap
-    another case touching the same state, and what the one case that calls
+    A non-exclusive case runs on a worker thread from a pool; its result is
+    reported here on the main thread once its future resolves. An exclusive
+    case runs the plain sequential way instead, through `run_case`, right here
+    in its normal place in the order: check_start before its body runs and its
+    verdict after, exactly as when every case ran one at a time.
+
+    The cases are therefore submitted in runs rather than all at once. Every
+    worker started before an exclusive case has resolved before that case
+    begins, and no worker is submitted until it has finished. Submitting the
+    whole tier up front instead left workers running alongside the exclusive
+    case, which is what "exclusive" is meant to rule out: a case that mutates
+    os.environ, swaps report._default or redirects stdout does all three
+    process-wide, so a worker overlapping it reads the substitute state.
+
+    That is what a case mutating shared state needs to never overlap another
+    case touching the same state, and what the one case that calls
     report.detail() itself needs for that call to queue under its own check
     rather than print out of place - report.detail() only holds a line back
     for the check it belongs to if that check's line is already open.
     """
+    verdicts: list[str] = []
     with concurrent.futures.ThreadPoolExecutor() as pool:
-        futures = [None if entry.exclusive else pool.submit(_execute_case, entry)
-                  for entry in cases]
-        return [run_case(entry) if future is None
-                else _report_outcome(entry, future.result())
-                for entry, future in zip(cases, futures)]
+        pending: list[tuple[Case, concurrent.futures.Future]] = []
+
+        def drain() -> None:
+            for entry, future in pending:
+                verdicts.append(_report_outcome(entry, future.result()))
+            pending.clear()
+
+        for entry in cases:
+            if entry.exclusive:
+                drain()
+                verdicts.append(run_case(entry))
+            else:
+                pending.append((entry, pool.submit(_execute_case, entry)))
+        drain()
+    return verdicts
 
 
 def main(argv: list[str]) -> int:

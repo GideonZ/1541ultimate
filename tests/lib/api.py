@@ -729,8 +729,13 @@ class ConfigsApi:
         return value if isinstance(value, str) else ""
 
     def set(self, category: str, item: str, value: object) -> None:
+        # idempotent: the call names both the item and the value it is to hold,
+        # so a resend after a transport failure writes the same value again.
+        # Without it a config write is not retried once the request has left
+        # the client, which the suites that restore a captured setting rely on.
         path = f"/v1/configs/{_quote(category)}/{_quote(item)}"
-        code, _, body = self._rest.request("PUT", path, params={"value": value})
+        code, _, body = self._rest.request("PUT", path, params={"value": value},
+                                           idempotent=True)
         if code != 200:
             raise Failure(f"{path}={value!r} returned HTTP {code}: {body[:160]!r}")
 
@@ -744,7 +749,7 @@ class ConfigsApi:
         """
         path = (f"/v1/configs/{_quote(category)}/{_quote(item)}"
                 f"/{_quote(str(value))}")
-        code, _, body = self._rest.request("PUT", path)
+        code, _, body = self._rest.request("PUT", path, idempotent=True)
         if code != 200:
             raise Failure(f"{path} returned HTTP {code}: {body[:160]!r}")
 

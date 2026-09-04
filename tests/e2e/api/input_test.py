@@ -605,10 +605,14 @@ def wait_state_empty(session: RestInputSession, what: str) -> None:
     taps and 6.0s for sixty, paid in full on every run whatever the device did.
     """
     def drained() -> bool:
+        # Paced, because every state_is_empty() is a REST GET and the device
+        # serves four connection slots: an unpaced loop would issue a couple of
+        # hundred requests per quiet window and starve the rest of the run.
         quiet_until = time.monotonic() + BATCH_DRAIN_QUIET_SECONDS
         while time.monotonic() < quiet_until:
             if not state_is_empty(session):
                 return False
+            time.sleep(pacing.POLL_INTERVAL_SECONDS)
         return True
 
     wait.wait_until(drained, what, timeout=BATCH_DRAIN_TIMEOUT_SECONDS)

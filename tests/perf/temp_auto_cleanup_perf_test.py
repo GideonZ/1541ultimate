@@ -145,7 +145,20 @@ class U64Client:
                                        extra_headers=extra_headers)
         if status == 200:
             return payload
-        warn(f"{description or path} failed with HTTP {status}")
+        # The body, not just the status: this is the --no-assertions path,
+        # where the warning is the only record of what went wrong. The route
+        # reports why in an "errors" field, and a body that is not JSON is
+        # shown raw rather than dropped.
+        message = f"{description or path} failed with HTTP {status}"
+        if payload:
+            try:
+                errors = json.loads(payload.decode("utf-8")).get("errors")
+            except (ValueError, UnicodeDecodeError, AttributeError):
+                message += f": {payload[:160]!r}"
+            else:
+                if errors:
+                    message += f": {errors}"
+        warn(message)
         return None
 
     def close_menu_from_anywhere(self):

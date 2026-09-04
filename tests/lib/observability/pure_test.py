@@ -319,7 +319,10 @@ def the_reporter_refuses_a_second_thread_writing_to_a_line() -> str:
     # line of its own. That the state can be swapped like this is the point of
     # it being one object.
     outer = report_module._default
-    report_module._default = report_module.Reporter()
+    # jsonl_path="": a fresh Reporter would otherwise take the path from
+    # E2E_JSONL and write this case's throwaway check into the run's own
+    # records file, where it would be read back as a check that never ran.
+    report_module._default = report_module.Reporter(jsonl_path="")
     try:
         with contextlib.redirect_stdout(captured):
             report_module.check_start("a check owned by this thread")

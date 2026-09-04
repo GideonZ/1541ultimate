@@ -73,6 +73,14 @@ Operation = Callable[[RuntimeSettings], str]
 SURFACE_OPERATION_RETRY_DELAYS_S = (0.10, 0.25, 0.50, 1.00)
 
 
+class RunProbe(Protocol):
+    """The call signature of a probe module's `run_probe`."""
+
+    def __call__(self, settings: RuntimeSettings, correctness: ProbeCorrectness,
+                 *, context: ProbeExecutionContext | None = ...) -> ProbeOutcome:
+        """Drive one iteration against the device and say what happened."""
+
+
 class Probe(Protocol):
     """What every probe module in this directory provides.
 
@@ -80,15 +88,18 @@ class Probe(Protocol):
     ident, modem, ping and telnet - and the shape was a convention rather than
     anything a reader or a checker could see. It is stated here instead, and
     `probe(name)` below is where connection_test.py finds one rather than
-    importing all seven by name and building a dictionary of their functions.
+    naming each module and building a dictionary of their functions.
+
+    `run_probe` is declared as an attribute rather than as a method, because
+    what satisfies this is a module and not an instance: a module's
+    `run_probe` is a plain function, so a declaration with a leading `self`
+    would describe a signature nothing here has.
 
     `surface_operations` is not part of it: a probe that has one uses it
     internally to choose what to send, and ping has none at all.
     """
 
-    def run_probe(self, settings: RuntimeSettings, correctness: ProbeCorrectness,
-                  *, context: ProbeExecutionContext | None = ...) -> ProbeOutcome:
-        """Drive one iteration against the device and say what happened."""
+    run_probe: RunProbe
 
 
 # The probes this directory provides, by the name connection_test takes on its

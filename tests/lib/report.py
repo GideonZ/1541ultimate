@@ -194,7 +194,7 @@ class Reporter:
 
     The state is here instead, the free functions below delegate to `_default`,
     and `reset()` replaces that instance rather than reassigning a dozen names.
-    `_lock` guards the console-line state, so two threads cannot interleave a
+    `lock` guards the console-line state, so two threads cannot interleave a
     check line and its verdict.
     """
 
@@ -232,8 +232,10 @@ class Reporter:
     suite_started: float = field(default_factory=time.monotonic)
     # The open scenario: its title, start time, check count and worst verdict.
     scenario: dict | None = None
-    # Guards the console-line state above. Held only across the few statements
-    # that open or close a line, never across a caller's own work.
+    # Guards every field above that the console line is made of: count, depth,
+    # last_label, pending, details_live, check_started, line_open and scenario.
+    # Held only across the few statements that open, extend or close a line,
+    # never across a caller's own work.
     lock: threading.RLock = field(default_factory=threading.RLock)
     # Which thread opened the line that is currently open. One line is one
     # check, and `depth` counts nesting rather than concurrency, so two threads
@@ -595,31 +597,34 @@ def _release_details() -> None:
     report its own verdict. See runner_policy_test, which runs `run_targets`
     inside a `check` block.
     """
-    if not _default.line_open:
-        return
-    _default.details_live = True
-    print(flush=True)              # end the check line the verdict never closed
-    if _default.pending:
-        _emit_detail(_default.pending)
-        _default.pending.clear()
+    with _default.lock:
+        if not _default.line_open:
+            return
+        _default.details_live = True
+        print(flush=True)          # end the check line the verdict never closed
+        if _default.pending:
+            _emit_detail(_default.pending)
+            _default.pending.clear()
 
 
 def _close_scenario() -> None:
     """Print the open scenario's own verdict, so a group can be read at a glance."""
-    _release_details()
-    if _default.scenario is None:
-        return
-    scenario, _default.scenario = _default.scenario, None
-    if not scenario["checks"]:
-        # A heading that grouped no checks is a heading, not a scenario, and a
-        # verdict on nothing is noise.
-        return
-    elapsed = time.monotonic() - scenario["started"]
-    verdict = scenario["verdict"]
-    summary = f"{scenario['checks']} checks, {format_duration(elapsed)}"
-    print(f"{colour('--- ' + verdict, _VERDICT_COLOUR[verdict])} ({summary})", flush=True)
-    _record(kind="scenario", title=scenario["title"], verdict=verdict,
-            checks=scenario["checks"], seconds=round(elapsed, 4))
+    with _default.lock:
+        _release_details()
+        if _default.scenario is None:
+            return
+        scenario, _default.scenario = _default.scenario, None
+        if not scenario["checks"]:
+            # A heading that grouped no checks is a heading, not a scenario, and
+            # a verdict on nothing is noise.
+            return
+        elapsed = time.monotonic() - scenario["started"]
+        verdict = scenario["verdict"]
+        summary = f"{scenario['checks']} checks, {format_duration(elapsed)}"
+        print(f"{colour('--- ' + verdict, _VERDICT_COLOUR[verdict])} ({summary})",
+              flush=True)
+        _record(kind="scenario", title=scenario["title"], verdict=verdict,
+                checks=scenario["checks"], seconds=round(elapsed, 4))
 
 
 def section(title: str) -> None:
@@ -629,9 +634,11 @@ def section(title: str) -> None:
     directly under its checks and a reader can see where one scenario ends and
     the next begins without counting lines.
     """
-    _close_scenario()
-    print(f"\n{colour('--- ' + title, BLUE)}", flush=True)
-    _default.scenario = {"title": title, "started": time.monotonic(), "checks": 0, "verdict": OK}
+    with _default.lock:
+        _close_scenario()
+        print(f"\n{colour('--- ' + title, BLUE)}", flush=True)
+        _default.scenario = {"title": title, "started": time.monotonic(),
+                             "checks": 0, "verdict": OK}
 
 
 def banner(title: str) -> None:
@@ -640,9 +647,11 @@ def banner(title: str) -> None:
     For a harness's suite headings and its summary. Heavier than a scenario
     heading on purpose: this is where a reader looks to see a new suite start.
     """
-    _close_scenario()
-    rule = "=" * RULE_WIDTH
-    print(f"\n{colour(rule, BLUE)}\n{colour(title, BLUE)}\n{colour(rule, BLUE)}", flush=True)
+    with _default.lock:
+        _close_scenario()
+        rule = "=" * RULE_WIDTH
+        print(f"\n{colour(rule, BLUE)}\n{colour(title, BLUE)}\n{colour(rule, BLUE)}",
+              flush=True)
 
 
 def warn(message: str) -> None:
@@ -932,15 +941,17 @@ def format_exception(exc: BaseException) -> str:
 
 def reset(count_from: int | None = None) -> None:
     """Start numbering again. Only for a harness that runs suites in-process."""
-    _default.count = 0 if count_from is None else count_from
-    _default.depth = 0
-    _default.owner = None
-    _default.details_live = False
-    _default.last_label = ""
-    _default.scenario = None
-    _default.suite_started = time.monotonic()
-    _default.pending.clear()
-
-# written by a test, removed immediately
-
-# written by a test, removed immediately
+    with _default.lock:
+        _default.count = 0 if count_from is None else count_from
+        _default.depth = 0
+        _default.owner = None
+        _default.details_live = False
+        _default.last_label = ""
+        # Cleared with the owner, not left behind: an open line whose owner has
+        # been dropped would let a bare check_ok() past _require_owner and print
+        # a verdict for a check that was never started.
+        _default.line_open = False
+        _default.check_started = 0.0
+        _default.scenario = None
+        _default.suite_started = time.monotonic()
+        _default.pending.clear()

@@ -141,9 +141,11 @@ HISTORICAL_CORRECTNESS_EVIDENCE = {
 def probe_runner(name: str):
     """The entry point of one probe, from the registry in connection_runtime.
 
-    This was a dictionary of seven functions, which meant importing all seven
+    This was a dictionary of seven functions, which meant naming all seven
     modules whatever the run asked for. Each of them opens sockets and reads
-    the environment at import.
+    the environment at import. Five are deferred by this: ftp_probe and
+    http_probe are still imported at the top of this module, which reads
+    constants off them.
     """
     return connection_runtime.probe(name).run_probe
 

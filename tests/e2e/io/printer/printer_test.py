@@ -186,7 +186,12 @@ class U64Client:
             return False
 
     def get_config(self, category, item):
-        return self.api.configs.get(category, item)
+        # item(), not get(): item() reads the per-item endpoint and raises
+        # Failure when the machine does not serve that setting. get() reads the
+        # category listing and answers None instead, which capture_settings
+        # would store and restore_settings would then write back as the string
+        # "None".
+        return self.api.configs.item(category, item)["current"]
 
     def set_config(self, category, item, value):
         self.api.configs.set(category, item, value)

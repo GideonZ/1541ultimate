@@ -231,10 +231,15 @@ class Collector:
         already cost 15 to 30 minutes. A collector that cannot start leaves the
         run exactly as it was.
         """
-        for step in (self._choose_addresses, self._open_socket,
-                     self._prepare_outputs):
-            if not step(wanted, ports):
-                return False
+        # Named one at a time rather than driven from a list: only the first
+        # step takes the run's targets, and giving the other two parameters
+        # they never read to make one loop work is the wrong trade.
+        if not self._choose_addresses(wanted, ports):
+            return False
+        if not self._open_socket():
+            return False
+        if not self._prepare_outputs():
+            return False
         return self._start()
 
     def _choose_addresses(self, wanted: Sequence[targets_lib.Target],
@@ -299,6 +304,10 @@ class Collector:
                     f"{ADDRESS_ENV} names {name!r}, which is not a machine of "
                     f"any target in this run: {sorted(machines)}")
 
+        return True
+
+    def _open_socket(self) -> bool:
+        """Bind the run's ports. False when the main one could not be opened."""
         # 0.0.0.0 rather than a chosen interface: the runner host may have more
         # than one, and a datagram's source address is what identifies a
         # device, so binding the wildcard costs nothing and removes an operator
@@ -319,11 +328,6 @@ class Collector:
         # it, so a device that was never provisioned, or one whose setting
         # could not be read, is collected exactly as it was before ports were
         # read at all.
-        return True
-
-    def _open_socket(self, wanted: Sequence[targets_lib.Target],
-                     ports: Mapping[str, int] | None) -> bool:
-        """Bind the run's ports. False when the main one could not be opened."""
         opened = self._listen(self.port)
         if opened is None:
             return False
@@ -338,17 +342,15 @@ class Collector:
                 # One port refusing to open costs that machine's attribution
                 # and nothing else, so the run keeps the collector it has.
                 self.machine_ports[machine] = self.port
+        return True
 
+    def _prepare_outputs(self) -> bool:
+        """Which file each machine's lines go to, and what cannot be attributed."""
         # A port exactly one machine sends to identifies that machine, whatever
         # address its datagrams carry. A port two of them send to identifies
         # nothing, so it has no owner and its datagrams are attributed by
         # source address as before. Decided after the ports are bound, because
         # a port that could not be opened is not one anything arrives on.
-        return True
-
-    def _prepare_outputs(self, wanted: Sequence[targets_lib.Target],
-                         ports: Mapping[str, int] | None) -> bool:
-        """Which file each machine's lines go to, and what cannot be attributed."""
         users: dict[int, set[str]] = {}
         for machine, port in self.machine_ports.items():
             users.setdefault(port, set()).add(machine)

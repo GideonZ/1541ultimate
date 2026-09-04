@@ -3798,8 +3798,8 @@ class MonitorContext:
     """Where each surface of the machine under test is, and what it is.
 
     These were ten positional parameters on run_tests, five of them host names
-    that differ only for a cartridge target: on a u2@c64u the monitor is the
-    cartridge's, the video and the files are the computer's, and which host
+    that differ only for a cartridge target: on a u2@c64u the monitor and the
+    files are the cartridge's, the video is the computer's, and which host
     answers a memory read depends on whether the machine is frozen. Passing
     them positionally meant a call site had to get five host names in the right
     order with nothing to catch a swap.

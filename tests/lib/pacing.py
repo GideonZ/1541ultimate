@@ -326,6 +326,10 @@ RESET_SETTLE_SECONDS = _seconds("U64_UI_RESET_SETTLE", 0.5)
 # when a key really was dropped, which is the case the retry exists for.
 C64_TYPE_KEY_SECONDS = _seconds("U64_C64_TYPE_KEY", 0.20)
 C64_ECHO_TIMEOUT_SECONDS = _seconds("U64_C64_ECHO_TIMEOUT", 3.0)
+# Wiping a half-typed line is INST/DEL per character, and a delete needs less
+# settling than a character that has to be echoed: the retry that follows reads
+# the line back, so a delete that was dropped is caught there.
+C64_DELETE_KEY_SECONDS = _seconds("U64_C64_DELETE_KEY", 0.06)
 
 # After the menu closes it re-enables the C64 keyboard matrix, and the browser
 # task has to unwind before the machine has its keyboard back. There is nothing

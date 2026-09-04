@@ -263,11 +263,19 @@ class Browser:
                 for _ in range(screens):
                     if self._select_visible(prefix, contains=True):
                         return
-                    self.move_rows(visible)
+                    # The same stride and the same end-of-listing test as the
+                    # prefix path below: one row of overlap so a move cannot
+                    # step over a row, and a move that changed nothing means
+                    # the listing has been walked to its end. Without that
+                    # test a short listing was rescanned until the timeout
+                    # rather than answered as soon as it ran out.
+                    self.move_rows(visible - 1)
+                    if not self.backend.last_key_changed:
+                        break
                 if time.monotonic() >= deadline:
                     raise Failure(
-                        f"no entry containing {prefix!r} in the first "
-                        f"{max_steps} rows of {self.current_path()!r}")
+                        f"no entry containing {prefix!r} in {self.current_path()!r}; "
+                        f"screen was:\n{self.screen()}")
         # Quick-seek searches the whole listing, so it does not care where the
         # cursor is and needs no rewind first. Rewinding anyway cost more than
         # the seek itself: go_to_top is a 14 key burst for the firmware to

@@ -414,7 +414,7 @@ class MenuDriver:
         self.s.api.machine.close_menu_from_anywhere(confirm_key="return")
 
     # -- selection navigation ---------------------------------------------
-    def select_row_text(self, text, max_steps=40, require=True):
+    def select_row_text(self, text, max_steps=40):
         """Move the highlight until the selected row contains `text`.
 
         contains, not a prefix: the rows this suite selects carry more than the
@@ -424,11 +424,9 @@ class MenuDriver:
         try:
             self.browser.select_entry(text, max_steps=max_steps, contains=True)
         except Failure:
-            if require:
-                self._dump_on_fail(self.screen(required=False),
-                                   f"row containing {text!r} not selectable")
-                raise
-            return None
+            self._dump_on_fail(self.screen(required=False),
+                               f"row containing {text!r} not selectable")
+            raise
         return self.screen()
 
     def enter(self):
@@ -2122,73 +2120,78 @@ def main(argv=None):
 
     session = RestSession(args.host, args.password, args.timeout)
     driver = MenuDriver(session, verbose_menu=args.verbose_menu)
-    inspector = DeviceFtpInspector(args.host)
-
-    driver.close_menu_from_anywhere()
-    session.release_all()
-    session.api.machine.reset(force=True)
-
-    detail(f"controlled FTP server on {args.ftp_bind_host}:{args.ftp_port} "
-           f"(advertised {args.ftp_advertised_host})")
     try:
-        server = ControlledFtpServer(
-            args.ftp_bind_host, args.ftp_advertised_host, args.ftp_port,
-            args.ftp_passive_ports, args.ftp_user, args.ftp_password,
-            root=args.remote_root, keep_root=args.keep_remote_root)
-    except Failure as exc:
-        suite_fail("ftp_client_test", str(exc))
-        return 2
-    server.start()
-    detail(f"server root: {server.root} (marker {server.marker})")
+        inspector = DeviceFtpInspector(args.host)
 
-    ctx = Context(args, session, driver, server, inspector, assertions_enabled)
-    ctx.alias = safe_name(args.alias_prefix)
-    crashed = False
-    failed = False
+        driver.close_menu_from_anywhere()
+        session.release_all()
+        session.api.machine.reset(force=True)
 
-    try:
-        endpoint_checks(ctx)
-        check_start("remove any stale hosts left by a prior run")
-        stale = cleanup_stale_hosts(ctx)
-        check_ok(f"{stale} removed")
-        run = stages_for(args)
-        for stage in run:
-            {"smoke": stage_smoke, "core": stage_core, "edge": stage_edge,
-             "matrix": stage_matrix, "negative": stage_negative,
-             "soak": stage_soak}[stage](ctx)
-        if args.run_prg:
-            stage_prg(ctx)
-    except HardCrash as exc:
-        crashed = True
-        print_failure_diagnostics(ctx, f"HARD CRASH: {exc}")
-    except Failure as exc:
-        failed = True
-        print_failure_diagnostics(ctx, exc)
-    except KeyboardInterrupt:
-        warn("interrupted")
-    finally:
+        detail(f"controlled FTP server on {args.ftp_bind_host}:{args.ftp_port} "
+               f"(advertised {args.ftp_advertised_host})")
         try:
-            cleanup(ctx, crashed)
-        except Exception as exc:
-            warn(f"cleanup error: {exc}")
-        if args.reset_after_run and not crashed and session.is_alive(timeout=5.0):
-            # force: this suite drives FTP throughout, which REST cannot see.
-            session.api.machine.reset(force=True, wait=False)
-        fails = print_summary(ctx, crashed)
-        server.cleanup()
-        # The Browser holds a backend of its own, so it is closed like every
-        # other session this suite opens.
-        best_effort("close the menu browser", driver.close)
+            server = ControlledFtpServer(
+                args.ftp_bind_host, args.ftp_advertised_host, args.ftp_port,
+                args.ftp_passive_ports, args.ftp_user, args.ftp_password,
+                root=args.remote_root, keep_root=args.keep_remote_root)
+        except Failure as exc:
+            suite_fail("ftp_client_test", str(exc))
+            return 2
+        server.start()
+        detail(f"server root: {server.root} (marker {server.marker})")
 
-    if crashed:
-        suite_fail("ftp_client_test", "hard crash; manual recovery needed")
-        return 3
-    if failed or fails:
-        suite_fail("ftp_client_test",
-                   f"{len(fails)} operation(s) failed" if fails else "failed")
-        return 1
-    suite_ok("ftp_client_test", f"{len(ctx.results)} operation(s)")
-    return 0
+        ctx = Context(args, session, driver, server, inspector, assertions_enabled)
+        ctx.alias = safe_name(args.alias_prefix)
+        crashed = False
+        failed = False
+
+        try:
+            endpoint_checks(ctx)
+            check_start("remove any stale hosts left by a prior run")
+            stale = cleanup_stale_hosts(ctx)
+            check_ok(f"{stale} removed")
+            run = stages_for(args)
+            for stage in run:
+                {"smoke": stage_smoke, "core": stage_core, "edge": stage_edge,
+                 "matrix": stage_matrix, "negative": stage_negative,
+                 "soak": stage_soak}[stage](ctx)
+            if args.run_prg:
+                stage_prg(ctx)
+        except HardCrash as exc:
+            crashed = True
+            print_failure_diagnostics(ctx, f"HARD CRASH: {exc}")
+        except Failure as exc:
+            failed = True
+            print_failure_diagnostics(ctx, exc)
+        except KeyboardInterrupt:
+            warn("interrupted")
+        finally:
+            try:
+                cleanup(ctx, crashed)
+            except Exception as exc:
+                warn(f"cleanup error: {exc}")
+            if args.reset_after_run and not crashed and session.is_alive(timeout=5.0):
+                # force: this suite drives FTP throughout, which REST cannot see.
+                session.api.machine.reset(force=True, wait=False)
+            fails = print_summary(ctx, crashed)
+            server.cleanup()
+
+        if crashed:
+            suite_fail("ftp_client_test", "hard crash; manual recovery needed")
+            return 3
+        if failed or fails:
+            suite_fail("ftp_client_test",
+                       f"{len(fails)} operation(s) failed" if fails else "failed")
+            return 1
+        suite_ok("ftp_client_test", f"{len(ctx.results)} operation(s)")
+        return 0
+    finally:
+        # The Browser holds a backend of its own, and constructing it
+        # switched the device's Interface Type. Closing it here rather
+        # than at the end of the run covers the paths that leave early:
+        # a server that will not start used to return with the setting
+        # still changed and the menu still open.
+        best_effort("close the menu browser", driver.close)
 
 
 if __name__ == "__main__":

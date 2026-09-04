@@ -268,21 +268,26 @@ def _harness_hash_edit(runner) -> str:
     import shutil
     import tempfile
 
-    before = runner.harness_hash()
-    if not before:
-        raise Skipped("git does not answer in this checkout")
-    expect("the same tree hashes the same twice", runner.harness_hash(), before)
-
     # Edit a tracked file the runner reads, and put it back. Appending a
     # comment is enough: what the field detects is a change in content, not a
     # change in which files are modified.
     victim = os.path.join(ROOT, "tests", "lib", "report.py")
+    # A run killed between the append and the restore leaves the marker
+    # behind, and two of them were committed that way. Taken out here, before
+    # the first hash, so the case starts from the tree git has rather than
+    # from one a dead run left.
+    removed = _remove_edit_marker(victim)
+
+    before = runner.harness_hash()
+    if not before:
+        raise Skipped("git does not answer in this checkout")
+    expect("the same tree hashes the same twice", runner.harness_hash(), before)
     with tempfile.TemporaryDirectory() as scratch:
         keep = os.path.join(scratch, "report.py")
         shutil.copy2(victim, keep)
         try:
             with open(victim, "a", encoding="utf-8") as handle:
-                handle.write("\n# written by a test, removed immediately\n")
+                handle.write(_EDIT_MARKER)
             after = runner.harness_hash()
             if after == before:
                 raise Failure("an edited harness file hashed the same, so a "
@@ -297,7 +302,22 @@ def _harness_hash_edit(runner) -> str:
             shutil.copy2(keep, victim)
     expect("and the restored tree hashes as it did", runner.harness_hash(),
            before)
-    return f"{before} changed and came back"
+    left = f", {removed} stale marker(s) cleaned first" if removed else ""
+    return f"{before} changed and came back{left}"
+
+
+_EDIT_MARKER = "\n# written by a test, removed immediately\n"
+
+
+def _remove_edit_marker(path: str) -> int:
+    """Strip any marker a killed run left in `path`. How many it took out."""
+    with open(path, encoding="utf-8") as handle:
+        text = handle.read()
+    count = text.count(_EDIT_MARKER)
+    if count:
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(text.replace(_EDIT_MARKER, ""))
+    return count
 
 
 @contextmanager
@@ -1020,10 +1040,18 @@ def record_fixture() -> int:
     reviewer reads to see a rendering change, so regenerating it has to be
     something somebody chose to do. Only the document is written; the tree it
     was rendered from is scratch space and is not kept.
+
+    Written canonical, through the same substitutions the comparison applies.
+    The raw document carries the durations, timestamps, scratch directory,
+    branch and commit of the machine and moment that built it, so re-recording
+    it after a rendering change produced a diff of several hundred lines with
+    the handful of changed lines somewhere inside. Canonical, the diff of a
+    re-record is the rendering change and nothing else, which is what this
+    tier is for.
     """
     require_fixture()
     with open(EXPECTED, "w", encoding="utf-8") as handle:
-        handle.write(generated_document())
+        handle.write(canonicalize_document(generated_document()))
     report.detail(f"recorded {EXPECTED} from a fixture built at {FIXTURE}")
     return 0
 
@@ -1174,8 +1202,20 @@ def canonicalize_document(text: str) -> str:
     return text
 
 
+_REDUCED_SECTION_RE = re.compile(
+    r"\n\n\d+ line\(s\), order not compared here\n?\Z")
+
+
 def _section_length(section: str, heading: str) -> str:
-    """`heading`, followed by how many lines it held rather than which."""
+    """`heading`, followed by how many lines it held rather than which.
+
+    A section that has already been reduced is returned unchanged, which is
+    what makes canonicalize_document idempotent: the checked-in document is
+    stored canonical and is then put through the same substitutions again
+    before it is compared, so a second pass has to be a no-op.
+    """
+    if _REDUCED_SECTION_RE.search(section):
+        return section if section.endswith("\n") else section + "\n"
     return f"{heading}\n\n{len(section.splitlines()) - 1} line(s), order not " \
            f"compared here\n"
 

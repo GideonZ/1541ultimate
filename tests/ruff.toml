@@ -36,14 +36,6 @@ ignore = [
     # XC-1 removes the bootstrap and these comments together.
     "RUF100",
 
-    # PLW0603: report.py's dozen module variables are a Reporter object now
-    # (LIB-2), so the nine `global` statements there are one, for the colour
-    # flag. What is left across the tree is eighteen single well-scoped
-    # variables - a log path, two memo caches, a counter, four cleanup-
-    # registration flags - where a holder object would be churn rather than a
-    # clarification.
-    "PLW0603",
-
     # Each of these is removed by a named finding in
     # doc/research/tests-review/tests-review.md. Drop the entry with the fix.
     "SIM105",  # contextlib.suppress: 15 of these become best_effort (SUITE-1)
@@ -70,3 +62,21 @@ ignore = [
     "PERF403",
     "PLW2901",
 ]
+
+# PLW0603 (`global`) is enforced everywhere except the nine modules that had one
+# when this file was written, listed so a `global` added anywhere else is still
+# reported. report.py's dozen module variables are a Reporter object now
+# (LIB-2), leaving one `global` there for the colour flag. What the rest are is
+# a single well-scoped variable each - a log path, two memo caches, a counter,
+# four cleanup-registration flags - where a holder object would be churn rather
+# than a clarification.
+[lint.per-file-ignores]
+"run-tests" = ["PLW0603"]
+"tests/lib/interactions.py" = ["PLW0603"]
+"tests/lib/machine.py" = ["PLW0603"]
+"tests/lib/observability/support.py" = ["PLW0603"]
+"tests/lib/report.py" = ["PLW0603"]
+"tests/lib/rest.py" = ["PLW0603"]
+"tests/lib/runner_policy_test.py" = ["PLW0603"]
+"tests/soak/network/ftp_probe.py" = ["PLW0603"]
+"tests/soak/network/telnet_probe.py" = ["PLW0603"]

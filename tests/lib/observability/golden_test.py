@@ -531,21 +531,25 @@ def the_timeline_is_the_whole_run_in_order() -> str:
                    "was recovered", "GET /v1/machine:menu_screen"):
         if wanted not in section:
             raise Failure(f"{wanted!r} is not on the timeline")
-    offsets = [line.split()[0] for line in section.splitlines()
-               if line.startswith("+")]
+    # A timeline line is "HH:MM:SS +MM:SS  text": the offset is the second
+    # field, not the first. Read as the first field it matched nothing, so
+    # both guards below ran over an empty list and neither could fail.
+    events = [line for line in section.splitlines()
+              if len(line.split()) > 1 and line.split()[1].startswith("+")]
+    if not events:
+        raise Failure("the timeline has no events at all")
+    offsets = [line.split()[1] for line in events]
     if offsets != sorted(offsets):
         raise Failure("the timeline is not in wall-clock order")
     # One request the harness makes once per sweep would otherwise sit between
     # every pair of events for the length of the run.
-
     requests = collections.Counter(
-        line.split("  ", 1)[1] for line in section.splitlines()
-        if line.startswith("+") and " GET " in line)
+        line.split("  ", 1)[1] for line in events if " GET " in line)
     worst = requests.most_common(1)
     if worst and worst[0][1] > 4:
         raise Failure(f"one request fills {worst[0][1]} timeline lines: "
                       f"{worst[0][0][:60]}")
-    return f"{len(offsets)} events"
+    return f"{len(events)} events"
 
 
 @case(4, "OBS-3.29")

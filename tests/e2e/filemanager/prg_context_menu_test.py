@@ -51,7 +51,6 @@ from menu_screen_test import Failure, MenuScreenInfo, RestSession, check
 import ftp as ftp_lib
 import machine as machine_lib
 import pacing
-import wait
 from report import best_effort, check_skip, detail, section, suite_fail, suite_ok
 from ui_backend import Browser, TelnetBackend, add_mode_argument, make_browser, strip_frame
 
@@ -408,30 +407,35 @@ class Machine:
             # Read the echo back rather than sleeping a fixed time for it: the
             # line either arrived or a tap was dropped, and polling answers
             # that as soon as it is true instead of always paying the wait.
-            echoed = False
-            try:
-                wait.wait_until(
-                    lambda: any(row.strip() == text
-                                for row in self.c64_screen().splitlines()),
-                    f"the C64 to echo {text!r}",
-                    timeout=pacing.C64_ECHO_TIMEOUT_SECONDS)
-                echoed = True
-            except Failure:
-                pass
-            if echoed:
+            if self.wait_for_echo(text):
                 self.tap(["return"], MENU_ACTION_SETTLE_SECONDS)
                 return
-            # Wipe whatever did land and try again. One key, not one per
-            # character: shift+CLR/HOME clears the whole line whatever is on
-            # it, which is what commit aa92dd9b did for the Assembly 64 query
-            # field for the same reason - forty deletions across a cartridge's
-            # host matrix is where characters were left behind.
-            self.tap(["left_shift", "clr_home"], pacing.KEY_SETTLE_SECONDS)
+            # Wipe whatever did land and try again.
+            for _ in range(len(text) + 2):
+                self.tap(["inst_del"], pacing.C64_DELETE_KEY_SECONDS)
         still_open = not self.session.menu_screen_unavailable()
         raise Failure(
             f"could not type {text!r} on the C64"
             f"{' (the menu never closed, so the keyboard stayed disabled)' if still_open else ''}:"
             f"\n{self.c64_screen()}")
+
+    def wait_for_echo(self, text: str) -> bool:
+        """Whether the C64 has echoed `text` on a line of its own.
+
+        Polls rather than sleeping, and returns False only for "the line never
+        appeared". A Failure raised by the screen read itself is a transport
+        fault, so it is left to propagate: a device that stopped answering is
+        reported as that, not retried as a dropped key. That is why this is not
+        wait.wait_until with the Failure caught, which cannot tell the two
+        apart.
+        """
+        deadline = time.monotonic() + pacing.C64_ECHO_TIMEOUT_SECONDS
+        while True:
+            if any(row.strip() == text for row in self.c64_screen().splitlines()):
+                return True
+            if time.monotonic() >= deadline:
+                return False
+            time.sleep(pacing.POLL_INTERVAL_SECONDS)
 
     # ---- Browser navigation ---------------------------------------------
     def close_menu(self) -> None:
