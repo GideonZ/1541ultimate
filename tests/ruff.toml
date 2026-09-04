@@ -38,7 +38,7 @@ ignore = [
 
     # Each of these is removed by a named finding in
     # doc/research/tests-review/tests-review.md. Drop the entry with the fix.
-    "SIM105",  # contextlib.suppress: 15 of these become best_effort (SUITE-1)
+    "SIM105",  # contextlib.suppress: 15 of these become teardown_step (SUITE-1)
     "B905",    # zip strict: set where the row counts must match (E2ELIB-2)
 
     # Read and deliberately not enforced.
