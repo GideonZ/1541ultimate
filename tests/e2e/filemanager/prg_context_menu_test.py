@@ -1172,6 +1172,25 @@ def main() -> int:
     add_mode_argument(parser)
     args = parser.parse_args()
 
+    if targets.is_cartridge(args.host):
+        # Measured on u2@c64u, 2026-09-04: every action that hands the C64 a
+        # program through its own load path - Run, Load, Mount & Run, Real Run -
+        # leaves the machine at a clean BASIC prompt with nothing at $C000,
+        # while DMA, which checks the same signature, passes.
+        #
+        # It is not the device. The same Run driven by hand against the same
+        # target starts the program, and so does this suite's own --repeat mode.
+        # It is therefore something this suite does in matrix order, not yet
+        # found. Skipped rather than left failing so the gate says what is not
+        # covered on this target instead of reporting a device fault.
+        suite_skip(
+            "prg_context_menu_test",
+            "the load and run actions do not start a program when this suite "
+            "drives a cartridge inside a computer, though the same actions "
+            "work by hand and under --repeat on the same target; the cause is "
+            "in this suite and is not yet found")
+        return 0
+
     rest_host = args.rest_host or args.host
     session = RestSession(rest_host, args.password or None, args.timeout)
     browser = make_browser(
@@ -1196,25 +1215,6 @@ def main() -> int:
     )
     machine = Machine(session, browser)
     fixtures = Fixtures(args.fixture_token)
-
-    if targets.is_cartridge(args.host):
-        # Measured on u2@c64u, 2026-09-04: every action that hands the C64 a
-        # program through its own load path - Run, Load, Mount & Run, Real Run -
-        # leaves the machine at a clean BASIC prompt with nothing at $C000,
-        # while DMA, which checks the same signature, passes.
-        #
-        # It is not the device. The same Run driven by hand against the same
-        # target starts the program, and so does this suite's own --repeat mode.
-        # It is therefore something this suite does in matrix order, not yet
-        # found. Skipped rather than left failing so the gate says what is not
-        # covered on this target instead of reporting a device fault.
-        suite_skip(
-            "prg_context_menu_test",
-            "the load and run actions do not start a program when this suite "
-            "drives a cartridge inside a computer, though the same actions "
-            "work by hand and under --repeat on the same target; the cause is "
-            "in this suite and is not yet found")
-        return 0
 
     locations = [PlainLocation(), DiskLocation()]
 
