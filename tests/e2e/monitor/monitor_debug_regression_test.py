@@ -51,7 +51,8 @@ import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional, Sequence
+from typing import Any
+from collections.abc import Sequence
 
 MCM_DIR = Path(__file__).resolve().parent
 REPO_ROOT = MCM_DIR.parents[2]
@@ -730,7 +731,7 @@ def run_focus_scopes(args: argparse.Namespace, artifact_dir: Path) -> bool:
 
 # ---------------------------------------------------------------------------
 
-def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Run the Machine Code Monitor debugger regression gate")
     parser.add_argument("--host", required=True,
@@ -788,7 +789,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     return args
 
 
-def main(argv: Optional[list[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     split = bool(args.c64_host)
 

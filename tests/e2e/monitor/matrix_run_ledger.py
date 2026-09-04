@@ -24,7 +24,7 @@ import os
 import subprocess
 import time
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 HISTORY_JSONL = "history.jsonl"
 HISTORY_MD = "HISTORY.md"
@@ -127,7 +127,7 @@ def _failures(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return out
 
 
-def _first_failed_op(row: dict[str, Any]) -> Optional[str]:
+def _first_failed_op(row: dict[str, Any]) -> str | None:
     """The first flow operation this cell did not complete.
 
     A cell that never ran leaves every operation PENDING, which is not a failing
@@ -260,7 +260,7 @@ def _run_markdown(record: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def _md_cell(text: Optional[str]) -> str:
+def _md_cell(text: str | None) -> str:
     return (text or "").replace("|", "\\|").replace("\n", " ")
 
 

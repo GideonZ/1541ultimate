@@ -272,7 +272,7 @@ def line_for_address(r: Rest, addr: int):
 def goto_addr(r: Rest, addr: int, label: str):
     r.send_text(f"j{addr:04X}\n")
     time.sleep(0.3)
-    wait_for(r, [f"MONITOR", f"${addr:04X}"], f"{label}: goto ${addr:04X}")
+    wait_for(r, ["MONITOR", f"${addr:04X}"], f"{label}: goto ${addr:04X}")
 
 
 def enter_debug_at(r: Rest, addr: int, bank: int, source: str, label: str):

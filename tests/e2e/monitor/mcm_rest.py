@@ -11,7 +11,7 @@ needs fit their public API.
 import os
 import sys
 import time
-from typing import Iterable, Optional
+from collections.abc import Iterable
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "..", "lib"))
@@ -28,7 +28,7 @@ class Rest:
     """Monitor-specific spelling of the shared :class:`UltimateApi` fixture."""
 
     def __init__(self, host: str = "u64", timeout: float = 10.0,
-                 password: Optional[str] = None) -> None:
+                 password: str | None = None) -> None:
         self.host = host
         self.timeout = timeout
         self.api = UltimateApi(host, password, timeout)

@@ -14,7 +14,7 @@ import re
 import sys
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import Iterator, Optional
+from collections.abc import Iterator
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "..", "lib"))
@@ -23,7 +23,7 @@ sys.path.insert(0, os.path.join(HERE, "..", "lib"))
 import monitor_test as core
 from api import UltimateApi
 from report import Failure, check_fail, check_ok, check_skip, check_start, detail
-from ui_backend import MODE_TELNET, Snapshot, add_mode_argument, make_backend
+from ui_backend import MODE_TELNET, make_backend
 
 # The Debug scenarios inspect the debugger footer, whose original Telnet
 # fixture is a 24-row session.  The suite is intentionally Telnet-only: its
@@ -55,7 +55,7 @@ class _Config:
     keep_going: bool = False
     failures: list[tuple[int, str, str]] = field(default_factory=list)
     skipped: list[tuple[int, str, str]] = field(default_factory=list)
-    session: Optional["MonitorSession"] = None
+    session: MonitorSession | None = None
 
 
 TestConfig = _Config()
@@ -77,7 +77,7 @@ def set_target(target: str) -> None:
 # U2+L - the suite aborted instead of skipping. The body has to opt out itself,
 # so the reason is parked here and the body's first line raises SkipCheck, which
 # check() already reports as a SKIP.
-_pending_skip: Optional[str] = None
+_pending_skip: str | None = None
 
 
 def skip_unsupported() -> None:
@@ -139,7 +139,7 @@ def check(label: str, *, u2: bool = True, u2_reason: str = "") -> Iterator[None]
 class MonitorSession(core.MonitorSession):
     """The current monitor session with the Debug suite's old constructor."""
 
-    def __init__(self, host: str, port: int, password: Optional[str], timeout: float,
+    def __init__(self, host: str, port: int, password: str | None, timeout: float,
                  mode: str = MODE_TELNET) -> None:
         backend = make_backend(mode, host, password, timeout,
                                telnet_host=host, telnet_port=port)
@@ -176,12 +176,12 @@ def rest_available(host: str, timeout: float = 1.0) -> bool:
         return False
 
 
-def rest_api(host: str, password: Optional[str] = None,
+def rest_api(host: str, password: str | None = None,
              timeout: float = 5.0) -> UltimateApi:
     """Create the shared API fixture for a Debug scenario helper."""
     return UltimateApi(host, password, timeout)
 
 
-def wait_for_monitor_ready(host: str, port: int, password: Optional[str], timeout: float) -> None:
+def wait_for_monitor_ready(host: str, port: int, password: str | None, timeout: float) -> None:
     """Check the shared device API before a session opens the monitor UI."""
     UltimateApi(host, password, timeout).machine.readmem(0x00A2, 1)

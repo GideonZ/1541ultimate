@@ -28,8 +28,7 @@ import os
 import random
 import sys
 import time
-from dataclasses import dataclass, field
-from typing import Optional
+from dataclasses import dataclass
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import mcm_rest as R          # noqa: E402
@@ -70,7 +69,7 @@ class Footer:
     sr: int
 
 
-def parse_footer(lines) -> Optional[Footer]:
+def parse_footer(lines) -> Footer | None:
     """Locate the 'PC AC XR YR SP NV-BDIZC' header and parse the value row below it.
     Returns None if the debug footer is absent or its values are blank."""
     for y in range(len(lines)):

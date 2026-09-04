@@ -25,7 +25,7 @@ import time
 import traceback
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 MCM_DIR = Path(__file__).resolve().parent
 REPO_ROOT = MCM_DIR.parents[2]
@@ -321,7 +321,7 @@ def now_stamp() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%S%z")
 
 
-def run_cmd(cmd: list[str], cwd: Path, log_path: Path, timeout: Optional[float] = None) -> int:
+def run_cmd(cmd: list[str], cwd: Path, log_path: Path, timeout: float | None = None) -> int:
     log_path.parent.mkdir(parents=True, exist_ok=True)
     with log_path.open("a", encoding="utf-8") as log:
         log.write(f"$ {' '.join(cmd)}\n")
@@ -922,7 +922,7 @@ class BaseDriver(DebugInterfaceDriver):
         self.cell_dir = cell_dir
         self.trace = trace
         self.rest = make_rest(args, timeout=12.0)
-        self.fixture: Optional[MatrixFixture] = None
+        self.fixture: MatrixFixture | None = None
 
     def event(self, kind: str, **data: Any) -> None:
         payload = {"time": now_stamp(), "kind": kind, **data}
@@ -930,7 +930,7 @@ class BaseDriver(DebugInterfaceDriver):
         self.trace.flush()
 
     def write_bytes(self, address: int, data: bytes) -> None:
-        last_error: Optional[Exception] = None
+        last_error: Exception | None = None
         for attempt in range(6):
             try:
                 self.rest.write_mem(address, data)
@@ -945,7 +945,7 @@ class BaseDriver(DebugInterfaceDriver):
     def read_bytes(self, address: int, length: int) -> bytes:
         return self.rest.read_mem(address, length)
 
-    def machine_is_held(self) -> Optional[bool]:
+    def machine_is_held(self) -> bool | None:
         """Whether the cartridge is still holding the C64 in Ultimax.
 
         Ultimax leaves $1000-$CFFF undecoded on the bus, so a read of $C000 from
@@ -1154,7 +1154,7 @@ class BaseDriver(DebugInterfaceDriver):
         """
         started = time.time()
         deadline = started + timeout
-        last_error: Optional[Exception] = None
+        last_error: Exception | None = None
         stable_reads = 0
         attempts = 0
         while time.time() < deadline:
@@ -1203,7 +1203,7 @@ class BaseDriver(DebugInterfaceDriver):
             self.event("progress_failure_snapshot_error", error=str(exc))
         raise GateError(f"{label}: progress byte ${address:04X} did not change; seen={sorted(seen)}")
 
-    def stack_return_at(self, sp: int) -> Optional[int]:
+    def stack_return_at(self, sp: int) -> int | None:
         stack = self.read_bytes(0x0100, 256)
         return stack[(sp + 1) & 0xFF] | (stack[(sp + 2) & 0xFF] << 8)
 
@@ -1231,7 +1231,7 @@ class TelnetDebugDriver(BaseDriver):
     def __init__(self, args: argparse.Namespace, row: dict[str, Any],
                  cell_dir: Path, trace) -> None:
         super().__init__(args, row, cell_dir, trace)
-        self.session: Optional[mt.MonitorSession] = None
+        self.session: mt.MonitorSession | None = None
 
     def open_monitor(self):
         mt.wait_for_monitor_ready(self.args.host, self.args.port,
@@ -1663,7 +1663,7 @@ class RestDebugDriver(BaseDriver):
                 + text)
         return text
 
-    def _open_breakpoint_popup_if_any(self) -> Optional[str]:
+    def _open_breakpoint_popup_if_any(self) -> str | None:
         """Like _open_breakpoint_popup, but tolerates a table with nothing
         armed: the firmware only opens this popup when debug_has_breakpoint()
         is true (see machine_monitor.cc), so CBM+P legitimately does nothing
@@ -2005,7 +2005,7 @@ def sr_mask(a: int, b: int) -> bool:
     return (a & ~(0x10 | 0x20)) == (b & ~(0x10 | 0x20))
 
 
-def assert_state_pc_sp(state: DebugState, pc: int, sp: Optional[int], label: str) -> None:
+def assert_state_pc_sp(state: DebugState, pc: int, sp: int | None, label: str) -> None:
     if state.pc != pc:
         raise GateError(f"{label}: expected PC ${pc:04X}, got ${state.pc:04X}")
     if sp is not None and state.sp != sp:
@@ -2048,7 +2048,7 @@ def clone_cpu(cpu: ORC.CPU6502) -> ORC.CPU6502:
 def step_and_wait_pc(driver: BaseDriver, action, target: int, label: str,
                      start_pc: int, timeout: float = 8.0,
                      retries: int = 3) -> DebugState:
-    last_exc: Optional[Exception] = None
+    last_exc: Exception | None = None
     for attempt in range(retries + 1):
         action()
         try:
@@ -2111,7 +2111,7 @@ VICE_MAX_SLOTS = 16
 # the kernel drops it for us if the run is killed, so a crashed run leaves no
 # stale claim behind.
 _VICE_SLOT_LOCK_FDS: list[int] = []
-_VICE_SLOT: Optional[int] = None
+_VICE_SLOT: int | None = None
 
 
 def _slot_ports_free(slot: int) -> bool:
@@ -2174,8 +2174,8 @@ class ViceBinaryMonitor:
     def __init__(self, port: int, artifact_dir: Path) -> None:
         self.port = port
         self.artifact_dir = artifact_dir
-        self.proc: Optional[subprocess.Popen] = None
-        self.sock: Optional[socket.socket] = None
+        self.proc: subprocess.Popen | None = None
+        self.sock: socket.socket | None = None
         self.request_id = 1
         self.reg_ids: dict[str, int] = {}
 
@@ -2257,7 +2257,7 @@ class ViceBinaryMonitor:
             pass
         self.sock.settimeout(old_timeout)
 
-    def command(self, command: int, body: bytes = b"", response_type: Optional[int] = None) -> bytes:
+    def command(self, command: int, body: bytes = b"", response_type: int | None = None) -> bytes:
         if self.sock is None:
             raise HarnessBug("VICE socket not open")
         request_id = self.request_id
@@ -2395,10 +2395,10 @@ class DualOracles:
                      values={f"{a:04X}": f"{v:02X}" for a, v in live_counters.items()})
         self.cpu = ORC.CPU6502(bytearray(mem))
         self.cpu.set_state(entry.ac, entry.xr, entry.yr, entry.sp, entry.pc, entry.sr)
-        self.vice: Optional[ViceBinaryMonitor] = None
+        self.vice: ViceBinaryMonitor | None = None
         self.vice_enabled = False
         self.trace: list[dict[str, Any]] = []
-        self.vice_warning: Optional[str] = None
+        self.vice_warning: str | None = None
         vice_path = self._vice_path()
         if vice_path is not None:
             port = vice_port(1)
@@ -2451,7 +2451,7 @@ class DualOracles:
             json.dumps(self.trace, indent=2) + "\n", encoding="utf-8")
 
     @staticmethod
-    def _vice_path() -> Optional[Path]:
+    def _vice_path() -> Path | None:
         for directory in os.environ.get("PATH", "").split(os.pathsep):
             candidate = Path(directory) / "x64sc"
             if candidate.exists():
@@ -2498,7 +2498,7 @@ class DualOracles:
 
     def advance_until_pc(self, target: int, label: str, max_steps: int = 4096) -> int:
         count = 0
-        last: Optional[ORC.StepResult] = None
+        last: ORC.StepResult | None = None
         while self.cpu.pc != target and count < max_steps:
             last = self.cpu.step()
             count += 1
@@ -2809,7 +2809,7 @@ def run_step_trace_dual(driver: BaseDriver, row: dict[str, Any], cell_dir: Path,
     return len(trace)
 
 
-def run_vice_oracle_check(artifact_dir: Path, port: Optional[int] = None,
+def run_vice_oracle_check(artifact_dir: Path, port: int | None = None,
                           minimum_opcodes: int = 100) -> dict[str, Any]:
     if port is None:
         port = vice_port(0)
@@ -2916,7 +2916,7 @@ def run_cell(args: argparse.Namespace, row: dict[str, Any], ledger: Ledger) -> N
             log.write(line + "\n")
 
         driver = make_driver(args, row, cell_dir, trace)
-        oracles: Optional[DualOracles] = None
+        oracles: DualOracles | None = None
         try:
             seed = 0x154100 + row["repetition"] + MEMORY_MODES.index(row["memory_mode"]) * 100
             row["program_seed"] = seed
@@ -2935,7 +2935,7 @@ def run_cell(args: argparse.Namespace, row: dict[str, Any], ledger: Ledger) -> N
             row["start_pc"] = f"{entry.pc:04X}"
             row["footer_validated"] = not driver.contextless_entry()
             assert_state_pc_sp(entry, fixture.entry, None, "entry")
-            sp_entry: Optional[int] = None if driver.contextless_entry() else entry.sp
+            sp_entry: int | None = None if driver.contextless_entry() else entry.sp
             oracles = DualOracles(driver, fixture, entry, cell_dir)
             oracles.compare_state_and_stack(entry, "entry")
             row["vice_oracle_validated"] = oracles.vice_enabled
@@ -3038,7 +3038,7 @@ def run_cell(args: argparse.Namespace, row: dict[str, Any], ledger: Ledger) -> N
             elif row["memory_mode"] == "rom":
                 log_line(f"{cid}: Step Into along live ROM path to real JSR")
                 state = over
-                jsr_result: Optional[ORC.StepResult] = None
+                jsr_result: ORC.StepResult | None = None
                 step_trace = []
                 for index in range(1, 32):
                     before_sp = state.sp
@@ -3643,7 +3643,7 @@ def run_opcode_volume(args: argparse.Namespace, artifact_dir: Path) -> dict[str,
 
 
 def final_hygiene(args: argparse.Namespace, artifact_dir: Path,
-                  preflight: Optional[dict[str, Any]] = None) -> dict[str, Any]:
+                  preflight: dict[str, Any] | None = None) -> dict[str, Any]:
     results = {
         "rest_liveness": make_rest(args).alive(),
         "telnet_liveness": tcp_probe(args.host, args.port),
@@ -3708,9 +3708,7 @@ def write_final_report(args: argparse.Namespace, artifact_dir: Path, ledger: Led
                         if row["status"] in ("FAIL", "BLOCKED_WITH_EVIDENCE")]
     masking_violations = COUNTERS.violations()
     opcode_pass = opcode.get("opcode_requirement_status") == "PASS"
-    if not all_done or masking_violations:
-        verdict = "NOT PRODUCTION READY"
-    elif genuine_failures or not opcode_pass:
+    if not all_done or masking_violations or genuine_failures or not opcode_pass:
         verdict = "NOT PRODUCTION READY"
     else:
         verdict = "PRODUCTION READY"
@@ -3875,7 +3873,7 @@ def write_final_report(args: argparse.Namespace, artifact_dir: Path, ledger: Led
     return verdict
 
 
-def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run the Machine Code Monitor debugger matrix gate")
     parser.add_argument("--host", required=True)
     parser.add_argument("--rest-host", required=True)
@@ -4073,7 +4071,7 @@ def run_banking_scope(args: argparse.Namespace, artifact_dir: Path) -> int:
             "expected_sources": dict(zip(("A000", "D020", "E000"), sources)),
             "rows": {},
         }
-        driver: Optional[RestDebugDriver] = None
+        driver: RestDebugDriver | None = None
         with (state_dir / "trace.jsonl").open(
                 "a", encoding="utf-8", buffering=1) as trace:
             try:
@@ -4259,7 +4257,7 @@ VIC_BANK_BASES = (0x0000, 0x4000, 0x8000, 0xC000)
 ENTRY_FOOTER_PROGRESS = 0xC1F0
 
 
-def _launch_fixture_from_basic(driver: "RestDebugDriver", fixture: MatrixFixture) -> None:
+def _launch_fixture_from_basic(driver: RestDebugDriver, fixture: MatrixFixture) -> None:
     """Start the fixture from the BASIC prompt, outside the monitor.
 
     The monitor must open onto a machine that is already running the program in
@@ -4338,7 +4336,7 @@ def run_entry_footer_scope(args: argparse.Namespace, artifact_dir: Path) -> int:
             "expected_vic_bank": vic_bank,
             "expected_footer": expected_footer,
         }
-        driver: Optional[RestDebugDriver] = None
+        driver: RestDebugDriver | None = None
         with (cell_dir / "trace.jsonl").open(
                 "a", encoding="utf-8", buffering=1) as trace:
             try:
@@ -4504,10 +4502,10 @@ def run_alert_scope(args: argparse.Namespace, artifact_dir: Path) -> int:
 # its terminal status, which is the only moment a wrapper can name a verdict
 # and its wall time without duplicating the ledger. Left None here: this
 # runner's own console output is its progress line.
-CELL_OBSERVER: Optional[Any] = None
+CELL_OBSERVER: Any | None = None
 
 
-def main(argv: Optional[list[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     mt.set_target(debug_suite_target(args))
     if not args.artifact_dir:
@@ -4530,7 +4528,7 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     run_ledger_root = (Path(args.run_ledger) if args.run_ledger
                        else RUNLEDGER.default_root(REPO_ROOT))
-    run_record: Optional[dict[str, Any]] = None
+    run_record: dict[str, Any] | None = None
     if not args.no_run_ledger:
         try:
             run_ledger_root.mkdir(parents=True, exist_ok=True)

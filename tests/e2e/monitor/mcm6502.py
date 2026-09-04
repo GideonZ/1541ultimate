@@ -33,7 +33,6 @@ Run `python3 mcm6502.py --selftest` for the built-in correctness vectors.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Callable, Dict, List, Optional, Tuple
 
 # Status flag bit masks.
 C = 0x01  # carry
@@ -73,13 +72,13 @@ class StepResult:
     bytes_consumed: int
     cycles: int
     page_crossed: bool
-    branch_taken: Optional[bool]
-    reads: List[MemEvent] = field(default_factory=list)
-    writes: List[MemEvent] = field(default_factory=list)
+    branch_taken: bool | None
+    reads: list[MemEvent] = field(default_factory=list)
+    writes: list[MemEvent] = field(default_factory=list)
 
 
 class CPU6502:
-    def __init__(self, mem: Optional[bytearray] = None):
+    def __init__(self, mem: bytearray | None = None):
         self.mem = mem if mem is not None else bytearray(0x10000)
         if len(self.mem) != 0x10000:
             raise ValueError("memory must be exactly 64 KiB")
@@ -92,8 +91,8 @@ class CPU6502:
         # keeping bit5 set and B clear in the live register (B only exists in
         # pushed copies on the NMOS part).
         self.p = U | I
-        self._reads: List[MemEvent] = []
-        self._writes: List[MemEvent] = []
+        self._reads: list[MemEvent] = []
+        self._writes: list[MemEvent] = []
         self._build_table()
 
     # ---- state helpers -------------------------------------------------
@@ -154,50 +153,50 @@ class CPU6502:
 
     # ---- addressing modes ---------------------------------------------
     # each returns (address, page_crossed). Operand bytes are consumed off PC.
-    def _imm(self) -> Tuple[int, bool]:
+    def _imm(self) -> tuple[int, bool]:
         addr = self.pc
         self.pc = (self.pc + 1) & 0xFFFF
         return addr, False
 
-    def _zp(self) -> Tuple[int, bool]:
+    def _zp(self) -> tuple[int, bool]:
         addr = self._read(self.pc)
         self.pc = (self.pc + 1) & 0xFFFF
         return addr, False
 
-    def _zpx(self) -> Tuple[int, bool]:
+    def _zpx(self) -> tuple[int, bool]:
         base = self._read(self.pc)
         self.pc = (self.pc + 1) & 0xFFFF
         return (base + self.x) & 0xFF, False
 
-    def _zpy(self) -> Tuple[int, bool]:
+    def _zpy(self) -> tuple[int, bool]:
         base = self._read(self.pc)
         self.pc = (self.pc + 1) & 0xFFFF
         return (base + self.y) & 0xFF, False
 
-    def _abs(self) -> Tuple[int, bool]:
+    def _abs(self) -> tuple[int, bool]:
         addr = self._read_word(self.pc)
         self.pc = (self.pc + 2) & 0xFFFF
         return addr, False
 
-    def _absx(self) -> Tuple[int, bool]:
+    def _absx(self) -> tuple[int, bool]:
         base = self._read_word(self.pc)
         self.pc = (self.pc + 2) & 0xFFFF
         addr = (base + self.x) & 0xFFFF
         return addr, (base & 0xFF00) != (addr & 0xFF00)
 
-    def _absy(self) -> Tuple[int, bool]:
+    def _absy(self) -> tuple[int, bool]:
         base = self._read_word(self.pc)
         self.pc = (self.pc + 2) & 0xFFFF
         addr = (base + self.y) & 0xFFFF
         return addr, (base & 0xFF00) != (addr & 0xFF00)
 
-    def _indx(self) -> Tuple[int, bool]:
+    def _indx(self) -> tuple[int, bool]:
         zp = self._read(self.pc)
         self.pc = (self.pc + 1) & 0xFFFF
         addr = self._read_word_zp((zp + self.x) & 0xFF)
         return addr, False
 
-    def _indy(self) -> Tuple[int, bool]:
+    def _indy(self) -> tuple[int, bool]:
         zp = self._read(self.pc)
         self.pc = (self.pc + 1) & 0xFFFF
         base = self._read_word_zp(zp)
@@ -256,7 +255,7 @@ class CPU6502:
         self._set_flag(C, reg >= val)
         self._set_zn(diff & 0xFF)
 
-    def _branch(self, cond: bool) -> Tuple[bool, bool, int]:
+    def _branch(self, cond: bool) -> tuple[bool, bool, int]:
         off = self._read(self.pc)
         self.pc = (self.pc + 1) & 0xFFFF
         if off & 0x80:
@@ -272,7 +271,7 @@ class CPU6502:
     def _build_table(self) -> None:
         # table[opcode] = (mnemonic, mode_fn_name or None, handler, base_cycles,
         #                  add_cycle_on_page_cross)
-        t: Dict[int, Tuple] = {}
+        t: dict[int, tuple] = {}
 
         # We define handlers inline per opcode group below. To keep this honest
         # and exhaustive, each opcode is registered explicitly.
