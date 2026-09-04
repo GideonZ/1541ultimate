@@ -355,51 +355,76 @@ FILES_CREATE_IMAGE_SURVIVES = _fix(
 # /v1/configs/No%20Such%20Category answers HTTP 404 on firmware with the fix,
 # and HTTP 200 with an empty errors list on a C64 Ultimate 1.2.0, so a caller
 # cannot tell a store it does not have from one that is empty.
+#
+# U2 added 2026-09-04: the bench U2+L, freshly reflashed from test-merge
+# ff01a651, answers the same wrong way -- HTTP 200, empty errors. Measured
+# twice (two attempts of one rest-api-coverage run, identical both times).
+# Not diagnosed against source: unlike files-create-image-survives below,
+# nothing here points to a specific line, so whether this is a genuine gap
+# on U2 or something route_configs.cc does differently per product is open.
 CONFIGS_REFUSE_UNKNOWN_CATEGORY = _fix(
     "configs-refuse-unknown-category",
     "GET /v1/configs/<store> answers HTTP 404 for a store this machine does "
     "not have, rather than 200 with nothing in it",
-    (C64U,))
+    (C64U, U2))
 
 # Measured with tests/e2e/api/rest_api_coverage_test.py against a C64 Ultimate
 # 1.2.0: PUT /v1/configs/<store>/<item>/<value>, the form that carries the
 # value as a third path element, answers HTTP 400 "Function none requires
 # parameter value". Only the ?value= form is served there, so the route that
 # software/api/route_configs.cc names setConfigItemByPath does not exist yet.
+#
+# U2 added 2026-09-04, same bench U2+L, same measurement, same caveat as
+# configs-refuse-unknown-category just above.
 CONFIGS_SET_VALUE_IN_PATH = _fix(
     "configs-set-value-in-path",
     "PUT /v1/configs/<store>/<item>/<value> sets the item, rather than "
     "refusing the request for want of a value argument",
-    (C64U,))
+    (C64U, U2))
 
 # Measured the same way: PUT /v1/configs:load_from_flash closes the connection
 # on a C64 Ultimate 1.2.0, which reaches the client as
 # "[Errno 104] Connection reset by peer". The device answers again afterwards,
 # so this is the request failing rather than the machine going down, but a
 # check cannot tell a flash round trip happened.
+#
+# U2 added 2026-09-04, same bench U2+L, same measurement, same caveat.
 CONFIGS_FLASH_ROUNDTRIP = _fix(
     "configs-flash-roundtrip",
     "PUT /v1/configs:load_from_flash answers, so a save and load round trip "
     "can be read back",
-    (C64U,))
+    (C64U, U2))
 
 # Two fields GET /v1/info carries on the 3.15 line and not on a C64 Ultimate
-# 1.2.0. Measured on the bench: u64 and u2 both report `git_commit_hash`,
-# `ethernet_mac` and `wifi_mac`; c64u reports product, firmware_version,
+# 1.2.0. u64 reports both. c64u reports product, firmware_version,
 # fpga_version, core_version, hostname and unique_id and none of the three.
 # They are separate entries because they are separate additions to the route
 # and can be backported one at a time.
+#
+# U2 moved from "reports both" to this table 2026-09-04: the bench U2+L,
+# freshly reflashed from test-merge ff01a651, reports neither in
+# GET /v1/info -- confirmed by direct curl, not just this suite. Surprising,
+# because software/api/routes.cc's `->add("git_commit_hash", APP_VERSION_HASH)`
+# has no `#ifdef U64` guard (only `core_version` a few lines below does), so
+# source reads as if every product should carry it; APP_VERSION_HASH itself
+# was confirmed correctly generated for this exact build
+# (target/u2plus_L/riscv/ultimate/output/gitinfo.h read back "ff01a651",
+# matching the build). Why the field still does not reach the response is
+# not diagnosed -- no firmware debugging access from here. Treat "u64 and u2
+# both report it" as no longer established until someone with source access
+# explains the gap; a plain (non-L) Ultimate II+ was not available to test
+# and may behave differently again.
 INFO_REPORTS_INTERFACES = _fix(
     "info-reports-interfaces",
     "GET /v1/info reports each network interface's MAC address, so a run can "
     "say which machine it was talking to from the answer alone",
-    (C64U,))
+    (C64U, U2))
 
 INFO_NAMES_ITS_COMMIT = _fix(
     "info-names-its-commit",
     "GET /v1/info reports git_commit_hash, so what is running can be tied to "
     "a commit rather than to a version string two release lines share",
-    (C64U,))
+    (C64U, U2))
 
 # What tests/e2e/network/ident_service_switch_test.py asserts: turning the
 # ident service on makes it answer within a few seconds, live, without a
