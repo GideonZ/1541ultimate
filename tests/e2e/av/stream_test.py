@@ -170,8 +170,11 @@ def wait_until_scanning(device: UltimateApi, capture: AvStreamCapture,
     Capturing rather than sleeping between polls, because the stream sockets
     have to keep draining. A poll loop that left them alone would overflow the
     receive buffer and lose packets from the window this is waiting to measure.
+
+    The caller has to clear the signature before the upload, not here: the
+    program writes it once, at startup, so a clear that lands after it has run
+    waits for a store that is never repeated.
     """
-    device.machine.writemem(RUNNING_ADDRESS, bytes(1))
     deadline = time.monotonic() + timeout
     while True:
         capture.capture(0.20)
@@ -216,6 +219,11 @@ def measure_key_pop(device: UltimateApi, capture: AvStreamCapture) -> tuple[floa
 
 def run_key_pop(device: UltimateApi) -> None:
     device.machine.reset(force=True)
+    # Before the upload: the program stores the signature once, as it starts,
+    # and a clear after that point would wait for a store that never repeats.
+    # A reset does not clear RAM, so a signature left by an earlier run would
+    # otherwise be read as this run's.
+    device.machine.writemem(RUNNING_ADDRESS, bytes(1))
     program = assemble(SCRIPT_DIR / "av_pop_key.asm")
     with AvStreamCapture(device.target) as capture:
         capture.capture(0.15)
