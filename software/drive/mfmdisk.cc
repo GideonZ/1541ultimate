@@ -95,6 +95,13 @@ uint32_t MfmDisk :: init(MfmFormat_t type, int tracks)
     uint32_t size = 0;
     uint32_t offset = 0;
 
+    // D81 track counts come from file size; keep them within the fixed arrays.
+    if (tracks < 0) {
+        tracks = 0;
+    } else if (tracks > WD_MAX_TRACKS_PER_SIDE) {
+        tracks = WD_MAX_TRACKS_PER_SIDE;
+    }
+
     printf("MfmDiskInit: Sizeof side0 = %d\n", sizeof(side0));
     memset(side0, 0, sizeof(side0));
     memset(side1, 0, sizeof(side1));

@@ -45,6 +45,11 @@ jobs:
              --target /tmp/lint-packages -r tests/requirements-lint.txt && \
            PYTHONPATH=/tmp/lint-packages python3 tests/lib/lint_test.py"
 
+      - name: Check D81 track bounds
+        run: |
+          docker run --rm \
+          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make d81_tracks_test"
+
       # Also the gate that catches an endpoint whose documentation was not
       # updated with it. Runs before the firmware builds because it costs seconds.
       - name: Check OpenAPI Specification
