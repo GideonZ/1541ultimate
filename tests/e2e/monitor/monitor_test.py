@@ -2995,21 +2995,59 @@ def run_help_layout_test(session: MonitorSession) -> None:
     assert_help_closed(screen, "closing help after the layout check")
 
 
+# Four corners per window. A frame the browser draws for itself is not
+# something open over the browser, and on a C64 Ultimate the browser has one.
+CORNERS_PER_WINDOW = 4
+
+
+def window_corners(snapshot: Snapshot) -> int:
+    """How many window corners are drawn on this screen."""
+    return sum(line.count("+") for line in snapshot.lines)
+
+
+def bare_browser(session: MonitorSession, snapshot: Snapshot) -> bool:
+    """Whether the file browser is showing with nothing drawn over it.
+
+    Three questions, because no one of them answers it on every machine. The
+    status row carries a path only in the browser, which is what says the
+    browser is what is underneath. The monitor draws its own footer, and on a
+    C64 Ultimate its window is the same shape as the browser's own frame, so
+    the footer is what tells them apart. And a task menu, a settings screen or
+    a context menu adds its own corners over whatever the browser draws.
+    """
+    if browser_path(snapshot) is None:
+        return False
+    if monitor_is_on_screen(snapshot):
+        return False
+    own = (CORNERS_PER_WINDOW if session.backend.machine.browser_is_framed
+           else 0)
+    return window_corners(snapshot) <= own
+
+
+def browser_path(snapshot: Snapshot) -> str | None:
+    """The directory the file browser is showing, or None if it is not there.
+
+    The browser is the only screen that puts a path on the status row, which is
+    the rule tests/e2e/lib/rest_backend.py's _in_file_browser already uses.
+    """
+    status = snapshot.lines[-1].lstrip()
+    return status.split()[0] if status.startswith("/") else None
+
+
 def back_out_to_the_bare_browser(session: MonitorSession) -> Snapshot:
     """Press Back until nothing is drawn over the file browser.
 
-    A backend that can put the browser up directly does that, and the Back
-    presses are the fallback for one that cannot. Backing out by pressing Back
-    until no window border is on screen only identifies the browser on a
-    machine that draws it without a frame: a C64 Ultimate frames every menu
-    screen, so that rule pressed Back until the menu itself closed and the next
-    key went to BASIC.
+    Bounded and observed rather than counted: how many presses a context costs
+    is a property of that context. A fixed number of presses either leaves
+    something open or spends a spare press on whatever the browser does with
+    it, and the next thing this suite does is send a key that means something
+    different in each of those states.
 
-    The fallback is bounded and observed rather than counted: how many presses
-    a context costs is a property of that context. A fixed number of presses
-    either leaves something open or spends a spare press on whatever the
-    browser does with it, and the next thing this suite does is send a key that
-    means something different in each of those states.
+    What "nothing over it" looks like is a property of the machine, which is
+    why `bare_browser` asks three questions rather than looking for a window
+    border. This rule was "no window border on screen", and a C64 Ultimate
+    draws its browser inside one: Back was pressed until the menu itself
+    closed, and the next key went to BASIC.
 
     Leaving the settings screens raises "Save changes to Flash?" whenever the
     configuration in memory differs from the one in flash, which it does on any
@@ -3020,17 +3058,21 @@ def back_out_to_the_bare_browser(session: MonitorSession) -> Snapshot:
     `Interface Type` into the device's flash.
     """
     for _ in range(8):
-        snapshot = session.capture()
-        text = snapshot.text()
-        if "Save changes to Flash?" in text:
+        try:
+            snapshot = session.capture()
+        except Failure as exc:
+            # Back at the root of the browser closes the whole menu, which is
+            # one press too far rather than a lost device. The menu goes back
+            # up and the loop reads where it landed.
+            if not str(exc).startswith("menu screen unavailable"):
+                raise
+            session.backend.ensure_ready()
+            continue
+        if "Save changes to Flash?" in snapshot.text():
             session.send_key("RIGHT", settle=True)     # Yes -> No
             session.send_key("ENTER", settle=True)
             continue
-        # Answered above rather than below, because closing the menu with the
-        # dialog up would leave the question unanswered.
-        if session.backend.show_bare_browser():
-            return session.capture()
-        if not any("+--" in line for line in snapshot.lines):
+        if bare_browser(session, snapshot):
             return snapshot
         session.send_key("RUNSTOP", settle=True)
     raise Failure(f"a window was still open after 8 Back presses\n"

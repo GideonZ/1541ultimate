@@ -311,17 +311,6 @@ class RestBackend(Backend):
         self._raise_menu()
         self.enter_file_browser()
 
-    def show_bare_browser(self) -> bool:
-        """Close the menu and open it again, which lands on the file browser.
-
-        See Backend.show_bare_browser. Closing first is what makes this
-        independent of what was drawn over the browser: the object stack goes
-        with the menu, and _open_menu descends the launcher again.
-        """
-        self._close_menu()
-        self._open_menu()
-        return True
-
     def _in_file_browser(self) -> bool:
         """Whether the screen showing is the file browser.
 

@@ -323,21 +323,6 @@ class Backend:
         than doing nothing. See RestBackend.enter_file_browser.
         """
 
-    def show_bare_browser(self) -> bool:
-        """Put the file browser on screen with nothing over it, if this can.
-
-        Answers False where the backend has no way to do it, and the caller
-        then backs out by pressing Back. The REST backend answers True: it
-        closes the on-device menu and opens it again, which lands on the
-        browser on every machine, launcher included.
-
-        A caller cannot do this for itself by pressing Back until no window
-        border is on screen, because what a bare browser looks like is a
-        property of the machine: an Ultimate 64 draws its browser without a
-        frame, a C64 Ultimate draws every menu screen inside one.
-        """
-        return False
-
     def ensure_ready(self) -> None:
         """Make the UI reachable again if the last action tore it down.
 
