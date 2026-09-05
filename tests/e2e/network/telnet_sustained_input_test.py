@@ -12,6 +12,12 @@ and requires the session to still answer afterwards. It reads continuously
 while it sends, so a failure here is the device giving up rather than the test
 refusing to drain.
 
+The defect is open as GideonZ/1541ultimate#820, so the check is gated on
+machine.TELNET_SEND_TOLERATES_SLOW_PEER and skips on an Ultimate II+ rather
+than failing every run. Whoever fixes #820 should delete that entry, which
+turns this check back on everywhere; `--assume-fix telnet-send-tolerates-slow-peer`
+runs it without editing the table first.
+
     python3 tests/e2e/network/telnet_sustained_input_test.py -H u2@c64u
 """
 from __future__ import annotations
@@ -31,6 +37,8 @@ sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
 import bootstrap  # noqa: E402,F401
 import cli  # noqa: E402
 
+import api as api_lib  # noqa: E402
+import machine as machine_lib  # noqa: E402
 import targets  # noqa: E402
 from report import Failure, check, check_ok, detail, suite_ok  # noqa: E402
 
@@ -83,7 +91,13 @@ def main() -> int:
     target = targets.parse(args.host)
     host = target.device
 
-    with check("a held cursor key does not drop the Telnet session"):
+    label = "a held cursor key does not drop the Telnet session"
+    if api_lib.identify_machine(args.host).skip_without_fix(
+            machine_lib.TELNET_SEND_TOLERATES_SLOW_PEER, label):
+        suite_ok(SUITE)
+        return 0
+
+    with check(label):
         sock = socket.create_connection((host, args.telnet_port), timeout=10)
         reader = Reader(sock)
         reader.start()

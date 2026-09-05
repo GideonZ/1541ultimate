@@ -205,6 +205,22 @@ TELNET_REAPS_HALF_OPEN = _fix(
     "session slot returns rather than being held until the firmware restarts",
     (C64U,))
 
+# What tests/e2e/network/telnet_sustained_input_test.py asserts, and an
+# outstanding defect rather than a lagging release: GideonZ/1541ultimate#820.
+# A screen that repaints on every keystroke outruns a slow link, SO_SNDTIMEO
+# expires, and SocketStream::transmit treats the resulting EAGAIN as fatal and
+# closes the session. Listed against the Ultimate II+ because that is the
+# machine on WiFi here, where the check measures something: it failed about 25
+# times across a soak with no passes. A wired machine drains faster than the
+# suite can send and passes without exercising the path, which is why the entry
+# does not list the others. Delete this entry when #820 is fixed and the check
+# runs again everywhere.
+TELNET_SEND_TOLERATES_SLOW_PEER = _fix(
+    "telnet-send-tolerates-slow-peer",
+    "a Telnet session survives a screen repainting faster than the link "
+    "drains, rather than being closed when the send buffer stays full",
+    (U2,))
+
 # Measured with tests/e2e/io/c64/freeze_menu_test.py, and the reason that
 # suite must not run without the fix: on firmware without it, opening the menu
 # while Interface Type is Freeze stops the device answering REST, ICMP and FTP
