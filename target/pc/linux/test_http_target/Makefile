@@ -62,4 +62,5 @@ test-body-removal:
 	@$(MAKE) OUTPUT=output/body-removal RESULT=result/body-removal \
 	    CC="$(CC) -fsanitize=address,undefined -fno-sanitize-recover=all" \
 	    CPP="$(CPP) -fsanitize=address,undefined -fno-sanitize-recover=all" all
+	# ASan must precede any libraries preloaded by the build environment.
 	@LD_PRELOAD="$$($(CPP) -print-file-name=libasan.so)$${LD_PRELOAD:+:$$LD_PRELOAD}" result/body-removal/$(PRJ) --body-removal

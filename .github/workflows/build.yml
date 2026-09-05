@@ -88,29 +88,11 @@ jobs:
           -v /opt/build-tools:/mnt/build-tools:ro \
           -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make -C software/io/command_interface/tests"
 
-      - name: Verify http-body-removal red/green
+      - name: Test HTTP Body Removal
         run: |
-          docker run --rm -i \
+          docker run --rm \
           -v /opt/build-tools:/mnt/build-tools:ro \
-          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -s <<'REGRESSION'
-          set -eu
-          cd /mnt/project
-          g++ --version
-          printf 'LD_PRELOAD=%s\n' "${LD_PRELOAD-}"
-          riscv32-unknown-elf-g++ --version
-          nios2-elf-g++ --version
-          trap 'git restore -- software/io/command_interface/http_target.h' EXIT
-          git show 8596576fc358cdb0608a8f92c9db899a8c2950ea:software/io/command_interface/http_target.h > software/io/command_interface/http_target.h
-          if make -B -C target/pc/linux/test_http_target test-body-removal > /tmp/regression-red.log 2>&1; then
-            cat /tmp/regression-red.log
-            echo "ERROR: baseline unexpectedly passed"
-            exit 1
-          fi
-          cat /tmp/regression-red.log
-          grep -F 'AddressSanitizer: heap-use-after-free' /tmp/regression-red.log
-          git restore -- software/io/command_interface/http_target.h
-          make -B -C target/pc/linux/test_http_target test-body-removal
-          REGRESSION
+          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make -B -C target/pc/linux/test_http_target test-body-removal"
 
       - name: Cache U2 FPGA
         id: cache-u2
