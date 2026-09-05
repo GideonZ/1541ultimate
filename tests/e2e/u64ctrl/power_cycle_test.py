@@ -19,7 +19,10 @@ what happens when the module cold starts, and nothing reachable over the
 network can bring that about.
 
 Two of the four scenarios end with the machine deliberately off, and those
-cannot be recovered by software. While the machine is off the Ultimate
+cannot be recovered by software. Wake On Wi-Fi is no substitute: the control
+module clears its watcher when the machine is switched off with that setting
+disabled, and the module listens on nothing else, so a wake packet reaches
+nothing. While the machine is off the Ultimate
 application is not running, and with it neither the REST API nor the IP stack
 it serves -- the control module only bridges Ethernet frames, it does not
 listen on anything itself. So a machine that correctly stays off can only be
@@ -162,6 +165,23 @@ def main() -> int:
         # After the skips and before anything destructive: a run that cannot be
         # completed says so now rather than after the first mains cut, and a run
         # that was going to skip anyway is not asked for hands it never needs.
+        #
+        # Nothing here can be substituted over the network. The setting under
+        # test lives in the control module's own storage and is read when the
+        # module cold starts, so the only way to exercise it is to remove mains
+        # from the machine, and two of the scenarios end with the machine off,
+        # where only its power button revives it. A run given neither an
+        # actuator nor a terminal reports that and stops, rather than failing
+        # four scenarios for want of hands.
+        if not (args.power_off_cmd and args.power_on_cmd) and not sys.stdin.isatty():
+            check_start("mains can be switched for this run")
+            check_skip(
+                "no socket commands and no terminal to ask an operator on. "
+                "This suite has to remove mains from the machine: pass "
+                "--power-off-cmd and --power-on-cmd, and --power-button-cmd "
+                "for the scenarios that end with the machine off")
+            suite_ok(SUITE)
+            return 0
         mains = Mains(args.power_off_cmd, args.power_on_cmd, args.off_seconds)
         button = PowerButton(args.power_button_cmd)
 
