@@ -86,13 +86,24 @@ int SocketStream :: purge() {
 	return ret;
 }
 
+// Consecutive send timeouts tolerated before the session is given up on. A timeout
+// costs SO_SNDTIMEO (5s, socket_gui.cc), so this bounds a peer that never drains at
+// about a minute, which is longer than the 35s the keepalive needs to spot a peer
+// that has really gone (socket_keepalive.h).
+#define TRANSMIT_TIMEOUT_RETRIES 12
+
 int SocketStream :: transmit(const char *buffer, int out_length)
 {
+	int retries = TRANSMIT_TIMEOUT_RETRIES;
 	while(out_length > 0) {
 		int n = send(actual_socket, buffer, out_length, 0);
 		if (n == out_length) {
 			return 0; // OK!
 		} else if (n < 0) {
+			// A full send buffer is a slow peer, not a gone one, so do not close on it.
+			if ((errno == EAGAIN || errno == EWOULDBLOCK) && (retries-- > 0)) {
+				continue;
+			}
 			puts("ERROR writing to socket");
 			close();
 			return -5;
@@ -102,6 +113,7 @@ int SocketStream :: transmit(const char *buffer, int out_length)
 		} else {
 			out_length -= n;
 			buffer += n;
+			retries = TRANSMIT_TIMEOUT_RETRIES; // the peer is draining after all
 		}
 	}
 	return 0;
