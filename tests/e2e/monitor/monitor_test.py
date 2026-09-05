@@ -2325,8 +2325,14 @@ def run_freeze_toggle_test(session: MonitorSession, live_host: str) -> None:
 
 def run_asm_entry_round_trip_test(session: MonitorSession, rest_host: str,
                                   video_host: str, control: str,
-                                  verify_video: bool) -> None:
-    """Enter instructions, verify their bytes, then prove that G produces video."""
+                                  verify_video: bool, execute: bool = True) -> None:
+    """Enter instructions, verify their bytes, then prove that G produces video.
+
+    `execute` is False on a machine whose Go does not hand over control, where
+    the entry half of this is still worth running and the half that waits for
+    the program to store something can only fail. See
+    machine.MONITOR_GO_TRANSFERS_CONTROL.
+    """
     address = 0xC000
     entered = bytes((0xEE, 0x21, 0xD0, 0x4C, 0x00, 0xC0))
 
@@ -2372,6 +2378,9 @@ def run_asm_entry_round_trip_test(session: MonitorSession, rest_host: str,
     screen.find_line_containing("JMP $C000")
     if read_rest_memory(rest_host, address, len(expected)) != expected:
         raise Failure(f"ASM handoff fixture mismatch at ${address:04X}")
+
+    if not execute:
+        return
 
     write_rest_memory_confirmed(rest_host, 0xC200, b"\x00")
     if verify_video:
@@ -4229,26 +4238,46 @@ def run_tests(context: MonitorContext) -> None:
     with check("Z freezes and releases the machine, or says it cannot"):
         run_freeze_toggle_test(session, live_host)
 
-    with check("ASM entry reaches screen and RAM, then G executes it"):
-        run_asm_entry_round_trip_test(session, rest_host, video_host, control,
-                                      mode != MODE_TELNET)
+    # Everything below that waits for a program to run needs Go to hand the CPU
+    # the address it was given. Where it does not, the entry half of the first
+    # check still runs and the rest is reported as skipped, naming the gap.
+    go_works = not session.backend.machine.missing_fix(
+        machine_lib.MONITOR_GO_TRANSFERS_CONTROL)
+    if go_works:
+        with check("ASM entry reaches screen and RAM, then G executes it"):
+            run_asm_entry_round_trip_test(session, rest_host, video_host, control,
+                                          mode != MODE_TELNET)
+    else:
+        with check("ASM entry reaches screen and RAM"):
+            run_asm_entry_round_trip_test(session, rest_host, video_host, control,
+                                          mode != MODE_TELNET, execute=False)
 
-    with check("G executes finite loop and returns to monitor"):
-        go_address = 0xC000 if is_u2 and frozen else 0x1000
-        write_rest_memory(rest_host, go_address,
-                          bytes.fromhex("A9008D0004A9018D00044C") +
-                          go_address.to_bytes(2, "little"))
-        write_rest_memory(rest_host, 0x0400, bytes([0x20]))
-        session.goto(f"{go_address:04X}")
-        session.goto_run(f"{go_address:04X}")
-        wait_for_rest_byte(rest_host, 0x0400, 0x01)
-        session.enter_monitor()
+    if not session.backend.machine.skip_without_fix(
+            machine_lib.MONITOR_GO_TRANSFERS_CONTROL,
+            "G executes finite loop and returns to monitor"):
+        with check("G executes finite loop and returns to monitor"):
+            go_address = 0xC000 if is_u2 and frozen else 0x1000
+            write_rest_memory(rest_host, go_address,
+                              bytes.fromhex("A9008D0004A9018D00044C") +
+                              go_address.to_bytes(2, "little"))
+            write_rest_memory(rest_host, 0x0400, bytes([0x20]))
+            session.goto(f"{go_address:04X}")
+            session.goto_run(f"{go_address:04X}")
+            wait_for_rest_byte(rest_host, 0x0400, 0x01)
+            session.enter_monitor()
 
-    with check("G repeated execution updates RAM sentinel"):
-        run_go_repeat_test(session, rest_host, frozen, control)
+    if not session.backend.machine.skip_without_fix(
+            machine_lib.MONITOR_GO_TRANSFERS_CONTROL,
+            "G repeated execution updates RAM sentinel"):
+        with check("G repeated execution updates RAM sentinel"):
+            run_go_repeat_test(session, rest_host, frozen, control)
 
     with check("G handoff preserves stable VIC state"):
-        if mode != MODE_TELNET:
+        if session.backend.machine.missing_fix(
+                machine_lib.MONITOR_GO_TRANSFERS_CONTROL):
+            check_skip(session.backend.machine.missing_fix(
+                machine_lib.MONITOR_GO_TRANSFERS_CONTROL))
+        elif mode != MODE_TELNET:
             # The on-device UI drives the C64's VIC for its own display while
             # it is up, and puts it back when it goes away. Measured on
             # hardware in Overlay: $D011 is $1B at the BASIC prompt, $77 while
@@ -4265,7 +4294,11 @@ def run_tests(context: MonitorContext) -> None:
             run_go_visible_state_test(session, rest_host)
 
     with check("G keeps the monitor open"):
-        if frozen:
+        if session.backend.machine.missing_fix(
+                machine_lib.MONITOR_GO_TRANSFERS_CONTROL):
+            check_skip(session.backend.machine.missing_fix(
+                machine_lib.MONITOR_GO_TRANSFERS_CONTROL))
+        elif frozen:
             check_skip("this user interface holds the machine, and handing it "
                        "back on G closes the whole user interface")
         else:

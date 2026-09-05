@@ -197,6 +197,22 @@ IDENT_SWITCHES_LIVE = _fix(
 # UCI_COMPLETES_AN_REU_COMMAND (issue #740) is closed: measured on an
 # Ultimate II+L on c8b7551a, uci_targets_test passes all 37 checks ungated.
 
+# Measured with tests/e2e/monitor/monitor_test.py, and by hand against a C64
+# Ultimate 1.2RC. The monitor's Go hands the CPU an address without resetting
+# the machine: software/monitor/monitor_file_io.cc writes a trampoline at
+# $033C, points NMINV at it and raises an NMI, and the trampoline restores
+# NMINV and jumps to the address. On this machine the setup is right and the
+# jump never happens. After G $C000: $0318/$0319 read 3C 03, $033C holds
+# A9 47 8D 18 03 A9 FE 8D 19 03 4C 00 C0, the jiffy clock at $00A2 keeps
+# advancing, so the machine is running rather than stopped, and the program's
+# own store never lands. Four attempts out of four, and the same checks pass on
+# an Ultimate 64 built from the same monitor sources.
+MONITOR_GO_TRANSFERS_CONTROL = _fix(
+    "monitor-go-transfers-control",
+    "the machine code monitor's Go hands control to the address it was given, "
+    "rather than leaving the machine running what it was already running",
+    (C64U,))
+
 # The one entry where the machine is behind the tree rather than beside it.
 # This branch's monitor has no Debug mode: "Dbg" appears nowhere in
 # software/monitor/, and the key is reserved so that pressing D changes
