@@ -1996,6 +1996,8 @@ paths:
       description: |2-
         Acts as if the menu button on the device had been pressed, which opens the Ultimate menu or closes it again. There is no way to ask whether the menu is open; `GET /v1/machine:menu_screen` answers 404 while it is not.
 
+        A press raises a flag that the menu loop reads. The call waits up to half a second for the loop to take it and answers 503 if the flag is still up, which is what a menu loop that has stopped running looks like from outside. The press stays pending after such an answer, so the menu still acts on it if the loop resumes. A 200 means the loop took the press, not that the menu has finished drawing.
+
         While the menu is open it takes the keyboard, so keys injected through `POST /v1/machine:input` reach the menu rather than the running program.
       operationId: pushMenuButton
       responses:
@@ -2029,6 +2031,10 @@ paths:
                   value:
                     errors:
                       - SubSystem does not exist
+                The menu did not act on the button press:
+                  value:
+                    errors:
+                      - The menu did not act on the button press
   '/v1/machine:menu_screen':
     get:
       tags:

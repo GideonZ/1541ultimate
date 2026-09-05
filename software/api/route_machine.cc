@@ -5,6 +5,8 @@
 #include "c64.h"
 #include "c64_subsys.h"
 #include "userinterface.h"
+#include "FreeRTOS.h"
+#include "task.h"
 #if U64
 #include "keyboard_usb.h"
 #include "joystick_output.h"
@@ -14,6 +16,11 @@ extern "C" bool push_active_menu_button(void) __attribute__((weak));
 
 #define MENU_C64_PAUSE      0x640B
 #define MENU_C64_RESUME     0x640C
+
+// How long machine:menu_button waits for the menu loop to take the press it
+// just queued. The loop runs every three ticks, so this is more than thirty
+// passes of headroom, and it is short enough to leave an HTTP worker free.
+#define MENU_BUTTON_PICKUP_TICKS    (500 / portTICK_PERIOD_MS)
 
 static uint8_t chartohex(const char a)
 {
@@ -33,12 +40,20 @@ API_DOC(PUT, machine, menu_button,
                 "Ultimate menu or closes it again. There is no way to ask whether the menu is "
                 "open; `GET /v1/machine:menu_screen` answers 404 while it is not.\n"
                 "\n"
+                "A press raises a flag that the menu loop reads. The call waits up to half a "
+                "second for the loop to take it and answers 503 if the flag is still up, which "
+                "is what a menu loop that has stopped running looks like from outside. The press "
+                "stays pending after such an answer, so the menu still acts on it if the loop "
+                "resumes. A 200 means the loop took the press, not that the menu has finished "
+                "drawing.\n"
+                "\n"
                 "While the menu is open it takes the keyboard, so keys injected through "
                 "`POST /v1/machine:input` reach the menu rather than the running program.")
     PATH("/v1/machine:menu_button", "pushMenuButton", "")
     RESPONSE("200", "application/json", "ErrorResponse", "The button press was delivered.", "")
     RESPONSE_ERROR("423", "Could not obtain lock of subsystem", "")
     RESPONSE_ERROR("503", "SubSystem does not exist", "")
+    RESPONSE_ERROR("503", "The menu did not act on the button press", "")
 )
 API_CALL(PUT, machine, menu_button, NULL, ARRAY( {  }))
 {
@@ -51,8 +66,29 @@ API_CALL(PUT, machine, menu_button, NULL, ARRAY( {  }))
 #endif
     SubsysCommand *cmd = new SubsysCommand(NULL, SUBSYSID_C64, C64_PUSH_BUTTON, 0);
     SubsysResultCode_t retval = cmd->execute();
-    resp->error(SubsysCommand::error_string(retval.status));
-    resp->json_response(SubsysCommand::http_response_map(retval.status));
+    if (retval.status != SSRET_OK) {
+        resp->error(SubsysCommand::error_string(retval.status));
+        resp->json_response(SubsysCommand::http_response_map(retval.status));
+        return;
+    }
+
+    // The command only raises a flag; the menu loop is what acts on it, and it
+    // clears the flag on every pass. Answering here without looking reported
+    // success for a menu that never opened, and no client could tell the two
+    // apart. A flag that is still up after the wait means the loop is not
+    // running, so the press has not been acted on and will not be until it is.
+    C64 *machine = C64::getMachine();
+    bool pending = machine && machine->buttonPushPending();
+    for (TickType_t waited = 0; pending && (waited < MENU_BUTTON_PICKUP_TICKS); waited++) {
+        vTaskDelay(1);
+        pending = machine->buttonPushPending();
+    }
+    if (pending) {
+        resp->error("The menu did not act on the button press");
+        resp->json_response(HTTP_SERVICE_UNAVAILABLE);
+        return;
+    }
+    resp->json_response(HTTP_OK);
 }
 
 API_DOC(PUT, machine, reset,

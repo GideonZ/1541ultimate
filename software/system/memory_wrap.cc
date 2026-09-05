@@ -1,4 +1,5 @@
 #include "FreeRTOS.h"
+#include "task.h"
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -7,6 +8,9 @@
  * size with the target alignment and must not be inspected here. */
 static const size_t malloc_header_size =
     (sizeof(size_t) + portBYTE_ALIGNMENT - 1) & ~portBYTE_ALIGNMENT_MASK;
+
+/* How long a failed operator new waits before asking for the memory again. */
+#define OUT_OF_MEMORY_RETRY_TICKS   (100 / portTICK_PERIOD_MS)
 
 static void *malloc_allocate(size_t size)
 {
@@ -35,8 +39,18 @@ void * get_mem(size_t size)
 
 	if (!ret) {
         printf("** PANIC **: Error allocating %p..\n", __builtin_return_address(0));
-        while(1)
-            ;
+        /* Callers of operator new cannot take a NULL, so this has to keep
+         * trying. It must not spin while it does: a busy loop here never
+         * yields, so it hangs this task and starves every task below its
+         * priority, which turns one failed allocation into a dead device. */
+        while (!ret) {
+            if (xTaskGetSchedulerState() == taskSCHEDULER_RUNNING) {
+                vTaskDelay(OUT_OF_MEMORY_RETRY_TICKS);
+            }
+            ret = pvPortMalloc(size ? size : 1);
+        }
+        printf("Allocation for %p succeeded after waiting for memory.\n",
+               __builtin_return_address(0));
     }
     return ret;
 }

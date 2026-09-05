@@ -367,6 +367,7 @@ public:
     }
     bool buttonPush(void);
     void setButtonPushed(void);
+    bool buttonPushPending(void);
 
     bool exists(void);
     bool is_accessible(void);

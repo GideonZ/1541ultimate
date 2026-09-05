@@ -1481,6 +1481,13 @@ void C64::setButtonPushed(void)
     buttonPushSeen = true;
 }
 
+// The menu loop clears this on every pass, so a press that is still pending
+// means the loop has not run since it was made.
+bool C64::buttonPushPending(void)
+{
+    return buttonPushSeen;
+}
+
 void C64::checkButton(void)
 {
     static uint8_t button_prev;
