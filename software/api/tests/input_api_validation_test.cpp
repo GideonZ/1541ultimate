@@ -259,3 +259,21 @@ TEST(InputApiValidationTest, RejectsMalformedJsonBeforeValidation)
     EXPECT_TRUE(tokens < 0);
     EXPECT_EQ((JSON *)0, root);
 }
+
+TEST(JsonValueTest, ReplacedPrimitivesRetainTheirParent)
+{
+    JSON_Object object;
+    object.add("value", 0);
+
+    object.set("value", 123);
+    EXPECT_EQ(eInteger, object.get("value")->type());
+    EXPECT_EQ(static_cast<JSON *>(&object), object.get("value")->parent);
+
+    object.set("value", true);
+    EXPECT_EQ(eBool, object.get("value")->type());
+    EXPECT_EQ(static_cast<JSON *>(&object), object.get("value")->parent);
+
+    object.set("value", "replacement");
+    EXPECT_EQ(eString, object.get("value")->type());
+    EXPECT_EQ(static_cast<JSON *>(&object), object.get("value")->parent);
+}
