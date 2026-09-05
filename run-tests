@@ -478,6 +478,8 @@ SUITES: Sequence[Suite] = (
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
     Suite("soak", "listener-soak", "tests/soak/network/listener_soak_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
+    Suite("soak", "ident-leak", "tests/soak/network/ident_leak_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
     # Physical Pico 2 W fixture; selected explicitly with -s after setup.
     Suite("soak", "usb-keyboard-repeat", "tests/soak/io/usb/usb_keyboard_repeat_soak_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --profile @SOAKPROFILE@", manual=True),
