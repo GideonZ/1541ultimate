@@ -3036,17 +3036,19 @@ def back_out_to_the_bare_browser(session: MonitorSession) -> Snapshot:
         for _ in range(BACK_OUT_STEPS):
             try:
                 snapshot = session.capture()
+                if FLASH_DIALOG in snapshot.text():
+                    answer_flash_dialog(session)
+                    continue
+                session.send_key("RUNSTOP", settle=True)
             except Failure as exc:
-                # No menu screen to read means the menu is closed, which is
-                # what the presses were driving at.
-                if not str(exc).startswith("menu screen unavailable"):
+                # Having no menu screen to read means the menu is closed, which
+                # is what the presses were driving at. The press that closes it
+                # reports this from its own settle, not from the read at the
+                # top of the next turn, so both are inside the same try.
+                if "menu screen unavailable" not in str(exc):
                     raise
                 session.backend.reopen_menu_on_browser()
                 return session.capture()
-            if FLASH_DIALOG in snapshot.text():
-                answer_flash_dialog(session)
-                continue
-            session.send_key("RUNSTOP", settle=True)
         raise Failure(f"the menu was still open after {BACK_OUT_STEPS} Back "
                       f"presses\n{session.capture().text()}")
 
