@@ -44,11 +44,13 @@ DEFAULT_UP_TIMEOUT = 90.0
 # Ultimate 1.2RC: a magic packet to REST answering again took 8.8s.
 MIN_SILENCE_SECONDS = 10.0
 SILENCE_SAFETY_FACTOR = 2.0
-# Twice the wake this bench measures, with room over it. A C64 Ultimate 1.2RC
-# answered 8.8s after the packet on three consecutive runs, and the suite
-# checks the window it used against the wake it measured rather than trusting
-# this number.
-DEFAULT_SILENCE_SECONDS = 20.0
+# Three times the wake this bench measures. A C64 Ultimate 1.2RC answered 7.7
+# to 8.8s after the packet on five consecutive runs, and twice that is what
+# `silence_window()` asks for, so this covers a machine that wakes in up to
+# 15s. The suite checks the window it used against the wake it measured rather
+# than trusting this number, and widens it for its later scenarios when the
+# measurement says so.
+DEFAULT_SILENCE_SECONDS = 30.0
 # A quarter second: every wait in this file ends as soon as the device changes
 # state, so the interval, with PROBE_TIMEOUT_SECONDS, is what decides how much
 # of a wake or a shutdown is spent asleep in the harness rather than watching.

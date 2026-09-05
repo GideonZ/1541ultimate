@@ -170,16 +170,20 @@ def main() -> int:
         # test lives in the control module's own storage and is read when the
         # module cold starts, so the only way to exercise it is to remove mains
         # from the machine, and two of the scenarios end with the machine off,
-        # where only its power button revives it. A run given neither an
-        # actuator nor a terminal reports that and stops, rather than failing
-        # four scenarios for want of hands.
-        if not (args.power_off_cmd and args.power_on_cmd) and not sys.stdin.isatty():
-            check_start("mains can be switched for this run")
+        # where only its power button revives it. A run given neither a full
+        # set of actuators nor a terminal reports that and stops, rather than
+        # failing four scenarios for want of hands: the socket commands alone
+        # still stop at the button, which without a terminal is a failure at
+        # the first scenario that ends off.
+        scripted = bool(args.power_off_cmd and args.power_on_cmd
+                        and args.power_button_cmd)
+        if not scripted and not sys.stdin.isatty():
+            check_start("mains and the power button can be driven for this run")
             check_skip(
-                "no socket commands and no terminal to ask an operator on. "
-                "This suite has to remove mains from the machine: pass "
-                "--power-off-cmd and --power-on-cmd, and --power-button-cmd "
-                "for the scenarios that end with the machine off")
+                "no terminal to ask an operator on, and not every actuator "
+                "given. This suite has to remove mains from the machine and "
+                "press its power button: pass --power-off-cmd, --power-on-cmd "
+                "and --power-button-cmd together, or run it from a terminal")
             suite_ok(SUITE)
             return 0
         mains = Mains(args.power_off_cmd, args.power_on_cmd, args.off_seconds)

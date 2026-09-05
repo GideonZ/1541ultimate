@@ -1276,16 +1276,6 @@ def main() -> int:
 
         rows = build_rows(ctx)
 
-        # A row whose browser cannot recover from a dropped event leaves that
-        # browser stale for the rest of the run, so every later row compares
-        # against a listing that never caught up. Skipped rather than failed
-        # where the firmware lacks the fix, because one failure there costs
-        # twelve.
-        # Named one by one rather than matched on the label, because the row
-        # that needs a fix is not always the row that says so: "failed write
-        # creates nothing" blocks its STOR with a directory it creates first,
-        # so it needs the directory notification like the rows that say
-        # "directory" in their name.
         if args.row:
             wanted = [text.lower() for text in args.row]
             rows = [row for row in rows if any(text in row[0].lower() for text in wanted)]

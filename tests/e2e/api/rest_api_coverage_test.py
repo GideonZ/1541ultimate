@@ -483,9 +483,9 @@ def _files_cases() -> list[Case]:
     for kind, extra in (("d64", {"tracks": 35}), ("d71", {}), ("d81", {}),
                         ("dnp", {"tracks": 1})):
         def _create(ctx: Ctx, kind=kind, extra=extra) -> None:
-            # Even the refusal reaches enforce_diskname, which is where the
-            # firmware without this fix stops answering, so the negative case
-            # takes the device down just as the happy one does.
+            # Even the refusal reaches enforce_diskname, so a leak or a bad
+            # free there shows up in the negative case as much as in the
+            # happy one.
             create = getattr(ctx.api.files, f"create_{kind}")
             ctx.refused("PUT", f"/v1/files/{{path}}:create_{kind}",
                         lambda: create(f"{MISSING}.{kind}", **extra))
@@ -639,9 +639,6 @@ def _machine_control_cases() -> list[Case]:
          _pause_resume, exclusive=True)
 
     def _menu_button(ctx: Ctx) -> None:
-        # Opening the menu with Interface Type = Freeze stops a device whose
-        # core lacks the fix for GideonZ#733 answering anything at all, and
-        # recovery is physical. tests/lib/machine.py owns that table.
         ctx.api.machine.menu_button()
         # Poll rather than read once: the press is queued for the UI task, and
         # a second press sent while the first is still opening used to take the

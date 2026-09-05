@@ -20,14 +20,19 @@ Scenarios 2, 3 and 5 put the machine off over REST, which leaves the control
 module powered and associated. Scenarios 2 and 3 leave the setting Enabled, so
 the suite wakes the machine itself with a packet addressed to the Wi-Fi
 module's own MAC, which GET /v1/info reports as `wifi_mac`; no operator and no
-actuator are needed for them. Scenario 2 runs first and times the wake, and
-scenario 3 watches for three times that measured time rather than for the
-worst-case boot budget, which is what keeps the negative check to seconds. Scenario 5 asserts that a packet is ignored with
-the setting Disabled, so it ends with a machine only its power button or its
-mains socket can revive, and it is skipped unless --power-button-cmd, or
---power-off-cmd and --power-on-cmd, are given. Scenario 4, the cold start,
-covers the watcher armed from the module's own start rather than from a power
-transition; it needs the socket commands and is skipped without them.
+actuator are needed for them. Firmware that does not report `wifi_mac` is
+skipped before anything is switched off, because a packet addressed to any
+other MAC reaches nothing that can act on it, unless --mac names the module's
+address. Scenario 2 watches for a fixed window (--silence-seconds) rather than
+for the worst-case boot budget, which is what keeps the negative check to
+seconds; scenario 3 then times the wake, and the run fails if the window it
+watched was shorter than twice that measurement. The later scenarios watch
+for at least twice the measured wake. Scenario 5 asserts that a packet is
+ignored with the setting Disabled, so it ends with a machine that nothing on
+the network can wake; it needs --power-button-cmd and is skipped without it.
+Scenario 4, the cold start, covers the watcher armed from the module's own
+start rather than from a power transition; it needs the socket commands and
+is skipped without them.
 
 Every option can also come from the environment: U64_WOL_MAC, U64_WOL_BROADCAST,
 U64_WOL_PORT, U64_POWER_BUTTON_CMD, U64_POWER_OFF_CMD and U64_POWER_ON_CMD.
@@ -38,8 +43,6 @@ U64_WOL_PORT, U64_POWER_BUTTON_CMD, U64_POWER_OFF_CMD and U64_POWER_ON_CMD.
 import argparse
 import os
 import re
-import socket
-import subprocess
 import sys
 import time
 from pathlib import Path
@@ -79,8 +82,8 @@ DEFAULT_PORT = 9
 
 
 def parse_mac(text: str) -> bytes:
-    """A MAC from a command line or from an ARP table. macOS strips the leading
-    zero of an octet ("24:6f:28:1:22:33"), so each octet is padded."""
+    """A MAC from a command line or from /v1/info. A short octet
+    ("24:6f:28:1:22:33") is padded rather than refused."""
     parts = re.split(r"[:-]", text.strip())
     if len(parts) != 6:
         raise Failure(f"not a MAC address: {text!r}")
@@ -103,35 +106,6 @@ def wifi_mac(info) -> bytes | None:
     if not isinstance(reported, str) or not reported.strip():
         return None
     return parse_mac(reported)
-
-
-def discover_mac(host: str) -> bytes:
-    """The device's MAC, from the host's own neighbour table.
-
-    The fallback for firmware whose /v1/info does not report `wifi_mac`. It
-    answers whichever interface the harness last talked to, so it is right only
-    on a device that is on Wi-Fi. `ip neigh` first, `arp` second: net-tools is
-    no longer installed by default.
-    """
-    try:
-        address = socket.gethostbyname(host)
-    except OSError as exc:
-        raise Failure(f"cannot resolve {host!r}: {exc}") from None
-    tried = []
-    for argv in (["ip", "neigh", "show", address], ["arp", "-n", address]):
-        try:
-            result = subprocess.run(argv, capture_output=True, text=True, check=False)
-        except OSError as exc:
-            tried.append(f"{argv[0]}: {exc.strerror or exc}")
-            continue
-        found = re.search(r"\b([0-9a-f]{1,2}(?::[0-9a-f]{1,2}){5})\b",
-                          result.stdout, re.IGNORECASE)
-        if found:
-            return parse_mac(found.group(1))
-        tried.append(f"{argv[0]}: "
-                     f"{(result.stdout or result.stderr).strip()[:120]!r}")
-    raise Failure(f"no MAC for {address} in the neighbour table; pass --mac. "
-                  + "; ".join(tried))
 
 
 def other_mac(mac: bytes) -> bytes:
@@ -195,10 +169,11 @@ def main() -> int:
     parser.add_argument("-t", "--timeout", type=float,
                         default=float(os.environ.get("U64_TIMEOUT", "5.0")))
     parser.add_argument("--mac", default=os.environ.get("U64_WOL_MAC", ""),
-                        help="The device's MAC address. Taken from the "
-                             "wifi_mac GET /v1/info reports when not given, "
-                             "and from the host's ARP table on firmware that "
-                             "does not report one.")
+                        help="The Wi-Fi module's MAC address. Taken from the "
+                             "wifi_mac GET /v1/info reports when not given; "
+                             "on firmware that does not report one the suite "
+                             "skips rather than guess, because a packet for "
+                             "any other address wakes nothing.")
     parser.add_argument("--broadcast",
                         default=os.environ.get("U64_WOL_BROADCAST", DEFAULT_BROADCAST),
                         help=f"Where to send the packet (default: {DEFAULT_BROADCAST}). "
@@ -211,9 +186,10 @@ def main() -> int:
     parser.add_argument("--power-button-cmd",
                         default=os.environ.get("U64_POWER_BUTTON_CMD", ""),
                         help="Shell command that presses the machine's power "
-                             "button. Without it the operator is asked, which "
-                             "needs a terminal: the last scenario ends with the "
-                             "machine off and no packet may revive it.")
+                             "button. The last scenario ends with the machine "
+                             "off and the setting Disabled, where no packet can "
+                             "revive it, so that scenario runs only with this "
+                             "given and is skipped otherwise.")
     parser.add_argument("--power-off-cmd", default=os.environ.get("U64_POWER_OFF_CMD", ""),
                         help="Shell command that removes mains from the machine. "
                              "With it and --power-on-cmd the cold start scenario "
@@ -260,14 +236,25 @@ def main() -> int:
             return 0
         original = api.configs.current(store, ITEM)
         detail(f"store {store!r}, currently {original!r}")
+        # The packet has to carry the Wi-Fi module's own address: the module is
+        # what stays powered while the machine is off. Nothing else the harness
+        # can find out stands in for it, and the address it has in its ARP
+        # table is usually the wired one (the bench C64 Ultimate is reached at
+        # its Ethernet MAC while its module is associated separately, and the
+        # wake works). So a firmware that does not report `wifi_mac` is skipped
+        # here, before anything is switched off, rather than switched off and
+        # sent a packet for an address that wakes nothing.
         if args.mac:
             mac, source = parse_mac(args.mac), "given on the command line"
         else:
-            reported = wifi_mac(info)
-            if reported is None:
-                mac, source = discover_mac(args.host), "from the ARP table"
-            else:
-                mac, source = reported, "the wifi_mac /v1/info reports"
+            mac = wifi_mac(info)
+            if mac is None:
+                check_skip("GET /v1/info does not report wifi_mac, which is "
+                           "the address a wake packet has to carry; pass --mac "
+                           "with the Wi-Fi module's MAC to run anyway")
+                suite_ok(SUITE)
+                return 0
+            source = "the wifi_mac /v1/info reports"
         detail(f"device MAC {format_mac(mac)} ({source})")
         # Closes the check the two skips above would have closed; report.py
         # nests every later check inside an open one and counts nothing.
@@ -278,8 +265,8 @@ def main() -> int:
         # A machine left off with the setting Enabled is woken by a packet, so
         # the scenarios that leave it that way need no operator and no
         # actuator. Only scenario 5 ends with the setting Disabled, where
-        # nothing on the network can revive it, and that one is skipped unless
-        # a power button or a socket was given.
+        # nothing on the network can revive it, and that one runs only when a
+        # real power button was given.
         button = (PowerButton(args.power_button_cmd) if args.power_button_cmd
                   else WakePacketButton(mac, args.broadcast, args.port))
         # Only when the socket can be scripted; the cold start scenario is
@@ -329,6 +316,15 @@ def main() -> int:
             detail(f"watched {window:.0f}s for a machine that wakes in "
                    f"{measured_wake:.1f}s")
 
+        # The scenarios below watch for at least what the wake just measured
+        # justifies. Only ever widened: a window the caller gave, or the
+        # default, is never shortened by a fast machine.
+        justified = silence_window(measured_wake, window)
+        if justified > window:
+            detail(f"watching for {justified:.0f}s from here on, twice the "
+                   f"{measured_wake:.1f}s wake, rather than {window:.0f}s")
+            window = justified
+
         # The path no other check reaches: the watcher armed from the button
         # handler's own start rather than from an ON or OFF event, which is what
         # a user meets after a real power loss with the default mode.
@@ -357,13 +353,14 @@ def main() -> int:
         # Last, because nothing on the network can revive what it leaves off:
         # the machine ends this scenario with the watcher disarmed, so the
         # packet that recovers every other scenario cannot recover this one.
+        # A mains cycle cannot either, with "Power On After Power Loss" at
+        # whatever the run left it, so only a real power button will do.
         section("5. Disabled")
-        if isinstance(button, WakePacketButton) and mains is None:
+        if not isinstance(button, PowerButton):
             check_start("a magic packet is ignored")
-            check_skip("this scenario leaves the machine off with the wake "
-                       "watcher disarmed, and only its power button or its "
-                       "mains socket brings it back; pass --power-button-cmd, "
-                       "or --power-off-cmd and --power-on-cmd")
+            check_skip("this scenario switches the machine off with the "
+                       "setting Disabled, after which nothing on the network "
+                       "can wake it; it needs --power-button-cmd")
         else:
             with check("a magic packet is ignored"):
                 set_item(api, store, DISABLED)

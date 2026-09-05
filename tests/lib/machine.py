@@ -33,10 +33,10 @@ than assuming a name.
 *Firmware vintage* is what a release does. The Ultimate 64 and the Ultimate
 II+ under test run firmware built from this branch. A C64 Ultimate serves the
 same endpoints from a separate release line, which can lag behind it: before
-the 1.2 release it had neither the FTP listing fix nor the readmem length
-check, and the entries for both are gone from the table because that release
-took them. A gap like that closes when the fix is backported, so it describes
-a release rather than a product.
+1.2RC it had neither the FTP listing fix nor the readmem length check, and
+the entries for both are gone from the table because that release took them.
+A gap like that closes when the fix is backported, so it describes a release
+rather than a product.
 
 One question decides which axis a difference belongs to: would flashing this
 branch's firmware on the machine give it the behaviour? Yes makes it vintage,
@@ -159,18 +159,18 @@ TELNET_SEND_TOLERATES_SLOW_PEER = _fix(
     "drains, rather than being closed when the send buffer stays full",
     (U2,))
 
-# The machine code monitor on the lagging line is an earlier revision of the
+# The machine code monitor on a lagging firmware is an earlier revision of the
 # same program, and tests/e2e/monitor/monitor_test.py asserts this one's
-# behaviour throughout rather than in one place. Read from the two help
-# screens side by side: this branch names "Back a level", "Copy/Paste" and
-# "Follow/Return" at the foot of its help page, where the C64 Ultimate 1.2.0
-# monitor names "Open monitor", "Close monitor" and "Leave edit" instead.
-# Tagged once for the suite rather than per check, because nearly every check
-# depends on some part of it.
+# behaviour throughout rather than in one place: this branch names "Back a
+# level", "Copy/Paste" and "Follow/Return" at the foot of its help page, where
+# the earlier revision names "Open monitor", "Close monitor" and "Leave edit"
+# instead. Tagged once for the suite rather than per check, because nearly
+# every check depends on some part of it. A C64 Ultimate 1.2RC has the current
+# monitor and is not listed.
 #
-# The Ultimate II+L on this bench is here for the same reason and not because
-# it is a cartridge: its flashed 3.15 predates this tree's monitor rework, and
-# Back leaves the monitor from a memory view instead of returning a layer.
+# The Ultimate II+L on this bench is listed because its flashed 3.15 predates
+# this tree's monitor rework, not because it is a cartridge: there, Back
+# leaves the monitor from a memory view instead of returning a layer.
 # Measured on u2@c64u: one ARROW_LEFT from the hex view put the file browser on
 # screen, and the check that retypes a command argument uses that key, so the
 # checks behind it ran against a browser and failed on a monitor that was

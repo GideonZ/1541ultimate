@@ -1802,6 +1802,13 @@ def run_go_keeps_monitor_open_test(session: MonitorSession, rest_host: str) -> N
             f"and is gone now, leaving {strip_frame(screen.line(3))!r} on screen")
 
 
+# The label the monitor ships for bookmark 1, and the title its editor draws.
+# The editor opens with the current label in the field, so clearing it takes one
+# Back per character.
+BOOKMARK_DEFAULT_LABEL = "SCREEN"
+BOOKMARK_LABEL_TITLE = "Label BM1"
+
+
 def run_bookmark_test(session: MonitorSession) -> None:
     screen = ensure_view(session, "HEX ")
 
@@ -1836,8 +1843,19 @@ def run_bookmark_test(session: MonitorSession) -> None:
     screen.find_line_containing("0-9/RET Jmp  S Set  L Label  DEL Reset")
 
     screen = session.send_key("DOWN")
-    screen = session.send_char("L")
-    screen = session.send_text("\b\b\b\b\b\bE2E\r", "bookmark label E2E")
+    session.send_char("L")
+    # Wait for the editor before typing into it, and commit separately once the
+    # field reads back what was typed. Sending the whole edit as one burst
+    # immediately after the key that opens the editor loses the leading
+    # backspaces on a machine that takes longer to draw the popup: measured on a
+    # C64 Ultimate, where the label stayed "SCREEN" while the address and the
+    # width the earlier steps set were both applied, and the same burst is
+    # accepted there once the editor is up.
+    wait_for_prompt(session, BOOKMARK_LABEL_TITLE)
+    screen = session.send_text("\b" * len(BOOKMARK_DEFAULT_LABEL) + "E2E",
+                               "bookmark label E2E")
+    screen.find_line_containing("E2E")
+    screen = session.send_key("ENTER", settle=True)
     assert_line_contains_all(screen, ("1 E2E", "$C123", "HEX 16"))
 
     screen = session.send_key("CTRL_B", settle=True)
@@ -2076,7 +2094,10 @@ def check_anchor_survives_navigation(session: MonitorSession, address: int,
         raise Failure(f"{what}: ${address:04X} is not on screen to begin with\n"
                       f"{baseline.text()}")
 
-    for up, down in (("UP", "DOWN"), ("PGUP", "PGDN")):
+    # The page keys are the machine's: PGUP/PGDN name F1/F7 on an Ultimate 64,
+    # and F7 is Help on a C64 Ultimate, whose monitor pages with F3/F5.
+    keys = session.backend.machine
+    for up, down in (("UP", "DOWN"), (keys.page_up_key, keys.page_down_key)):
         for step in range(ASM_ANCHOR_STEPS):
             screen = session.send_key(up)
             moved = asm_row_for(screen, address)
@@ -2391,12 +2412,13 @@ def run_asm_entry_round_trip_test(session: MonitorSession, rest_host: str,
             capture.clear()
             launched = time.monotonic()
             # Collect until two frames actually differ, not until two frames
-            # exist. The program flashes the background from its first
-            # iteration, so two frames that are identical mean the machine had
-            # not started yet when they were sent, and stopping at the first
-            # pair made this a race against however long this machine takes to
-            # start: a C64 Ultimate lost it, an Ultimate 64 won it. The
-            # deadline is what decides a machine that never starts.
+            # exist. This half proves that the device is streaming video and
+            # that the picture is moving; it is not by itself proof that the
+            # program ran, because the C64 keeps running under Overlay and its
+            # cursor blinks. The read of $C200 below is what says the program
+            # ran. Stopping at the first two frames made even this weaker
+            # statement a race against the stream's own start, which a C64
+            # Ultimate lost and an Ultimate 64 won.
             frames = []
             video_deadline = time.monotonic() + VIDEO_CAPTURE_TIMEOUT_SECONDS
             while time.monotonic() < video_deadline:
@@ -3948,8 +3970,11 @@ def run_tests(context: MonitorContext) -> None:
 
     with check("paging away and back keeps memory view stable"):
         initial_snapshot = screen.text()
-        session.send_key("PGDN")
-        back = session.send_key("PGUP")
+        # The machine's own page keys: F7 pages down on an Ultimate 64 and
+        # opens Help on a C64 Ultimate, which pages with F3/F5.
+        keys = session.backend.machine
+        session.send_key(keys.page_down_key)
+        back = session.send_key(keys.page_up_key)
         assert_equal("Memory stability", initial_snapshot, back.text(), back.last_command)
 
     with check("KERNAL disassembly formatting"):
