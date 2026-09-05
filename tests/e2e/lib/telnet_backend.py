@@ -67,6 +67,9 @@ TELNET_KEY_BYTES: dict[str, bytes] = {
     "F1": b"\x1b[11~",
     "F5": b"\x1b[15~",
     "F3": b"\x1b[13~",
+    # 18 is KEY_F7, which a C64 Ultimate maps to KEY_HELP. The table skips 16
+    # and puts KEY_F6 at 17, so F7 is not where counting in twos would put it.
+    "F7": b"\x1b[18~",
     "F8": b"\x1b[19~",
     "RUNSTOP": b"\x11",
     # Keyboard_C64 delivers the top-left left-arrow key as '`', and the VT100

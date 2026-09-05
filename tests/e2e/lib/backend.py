@@ -439,8 +439,11 @@ KEY_ALIASES: dict[str, list[str]] = {
     # alias for RUN/STOP: the two are the same Back only where the monitor
     # says so, and a test that cannot tell them apart cannot prove that.
     "ARROW_LEFT": ["arrow_left"],
-    # The key the application key mapper turns into KEY_HELP.
+    # The two keys the application key mapper turns into KEY_HELP: F3 on an
+    # Ultimate 64 and an Ultimate II+, F7 on a C64 Ultimate. See
+    # Machine.help_key in tests/lib/machine.py.
     "F3": ["f3"],
+    "F7": ["f7"],
     "COPY": ["ctrl", "c"],
     "PASTE": ["ctrl", "v"],
     "SELECT_ALL": ["ctrl", "a"],
