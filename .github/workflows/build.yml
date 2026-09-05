@@ -96,6 +96,7 @@ jobs:
           set -eu
           cd /mnt/project
           g++ --version
+          printf 'LD_PRELOAD=%s\n' "${LD_PRELOAD-}"
           riscv32-unknown-elf-g++ --version
           nios2-elf-g++ --version
           trap 'git restore -- software/io/command_interface/http_target.h' EXIT
