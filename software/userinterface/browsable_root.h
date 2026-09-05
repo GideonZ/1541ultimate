@@ -16,6 +16,8 @@
 #include "network_interface.h"
 #include "assembly_search.h"
 
+class UserInterface;
+
 class BrowsableNetwork : public Browsable
 {
     Browsable *parent;
@@ -37,7 +39,7 @@ class BrowsableNetwork : public Browsable
         return "Unknown Network";
     }
 
-    void getDisplayString(char *buffer, int width)
+    void getDisplayString(char *buffer, int width, UserInterface *ui)
     {
         NetworkInterface *ni = NetworkInterface ::getInterface(index);
         if (!ni) {
@@ -172,60 +174,59 @@ public:
         return fatname;
     }
 
-	int squeezeToDisplayString(char *string_to_squeeze, char *squeezed_string, int max_width, int squeeze_quarter = 0) {
-		int len = strlen(string_to_squeeze);
+    int squeezeToDisplayString(char *string_to_squeeze, char *squeezed_string, int max_width, int squeeze_quarter = 0)
+    {
+        int len = strlen(string_to_squeeze);
 
-		if (squeeze_quarter < 0 || squeeze_quarter > 3) {
-			squeeze_quarter = 0;
-		}
+        if (squeeze_quarter < 0 || squeeze_quarter > 3) {
+            squeeze_quarter = 0;
+        }
 
-		if (len <= max_width || max_width <= 10 || squeeze_quarter == 0) {
-			// We can fit into available space or its too short anyways or no squeeze
-			strncpy(squeezed_string, string_to_squeeze, max_width);
-		} else {
-			// Need to squeeze the string
-			int remainder = (max_width * squeeze_quarter) % 4;
-			int cut_off_point = (max_width * squeeze_quarter) / 4; // Where's our cut-off point
-			int tail_length = max_width - cut_off_point; // How much needs to be copied after cut-off
-			strncpy(squeezed_string, string_to_squeeze, cut_off_point); // Copy the beginning
-			strncpy(squeezed_string + cut_off_point, string_to_squeeze + len - tail_length, tail_length); // Copy the end
+        if (len <= max_width || max_width <= 10 || squeeze_quarter == 0) {
+            // We can fit into available space or its too short anyways or no squeeze
+            strncpy(squeezed_string, string_to_squeeze, max_width);
+        } else {
+            // Need to squeeze the string
+            int remainder = (max_width * squeeze_quarter) % 4;
+            int cut_off_point = (max_width * squeeze_quarter) / 4;      // Where's our cut-off point
+            int tail_length = max_width - cut_off_point;                // How much needs to be copied after cut-off
+            strncpy(squeezed_string, string_to_squeeze, cut_off_point); // Copy the beginning
+            strncpy(squeezed_string + cut_off_point, string_to_squeeze + len - tail_length,
+                    tail_length); // Copy the end
 
-			squeezed_string[cut_off_point] = '~';
-		}
+            squeezed_string[cut_off_point] = '~';
+        }
         // strcat(squeezed_string, "\er");
         // return 2;
         return 0;
-	}
+    }
 
-	virtual void getDisplayString(char *buffer, int width, int squeeze_option = 0) {
-		static char sizebuf[8];
+    virtual void getDisplayString(char *buffer, int width, UserInterface *ui) {
+        static char sizebuf[8];
         int extra;
-		if (info->name_format & NAME_FORMAT_DIRECT) {
-			FileManager::getFileManager()->get_display_string(parent_path, info->lfname, buffer, width);
-		} else {
-			int display_space = width - 11;
-			char tmp_buffer[display_space + 5];
-			memset(tmp_buffer, '\0', display_space * sizeof(char));
+        if (info->name_format & NAME_FORMAT_DIRECT) {
+            FileManager::getFileManager()->get_display_string(parent_path, info->lfname, buffer, width);
+        } else {
+            int display_space = width - 11;
+            int squeeze_option = ui->filename_overflow_squeeze;
+            char tmp_buffer[display_space + 5];
+            memset(tmp_buffer, '\0', display_space * sizeof(char));
 
-			char sel = getSelection() ? '\x13' : ' ';
-			if (info->is_directory()) {
-				extra = squeezeToDisplayString(info->lfname, tmp_buffer, display_space, squeeze_option);
-				sprintf(buffer, "%#s\eJ DIR%c", display_space + extra, tmp_buffer, sel); // FIXME
-			} else if (info->attrib & AM_VOL) {
-				extra = squeezeToDisplayString(info->lfname, tmp_buffer, display_space, squeeze_option);
-				sprintf(buffer, "\eR%#s\er VOLUME", display_space + extra, tmp_buffer);
-			} else {
-				size_to_string_bytes(info->size, sizebuf);
-				extra = squeezeToDisplayString(info->lfname, tmp_buffer, display_space, squeeze_option);
-				sprintf(buffer, "%#s\e7 %3s%c%s", display_space + extra, tmp_buffer,
-						info->extension, sel, sizebuf);
-			}
-		}
-	}
-
-	virtual void getDisplayString(char *buffer, int width) {
-		getDisplayString(buffer, width, 0);
-	}
+            char sel = getSelection() ? '\x13' : ' ';
+            if (info->is_directory()) {
+                extra = squeezeToDisplayString(info->lfname, tmp_buffer, display_space, squeeze_option);
+                sprintf(buffer, "%#s\eJ DIR%c", display_space + extra, tmp_buffer, sel);
+            } else if (info->attrib & AM_VOL) {
+                extra = squeezeToDisplayString(info->lfname, tmp_buffer, display_space, squeeze_option);
+                sprintf(buffer, "\eR%#s\er VOLUME", display_space + extra, tmp_buffer);
+            } else {
+                size_to_string_bytes(info->size, sizebuf);
+                extra = squeezeToDisplayString(info->lfname, tmp_buffer, display_space, squeeze_option);
+                sprintf(buffer, "%#s\e7 %3s%c%s", display_space + extra, tmp_buffer,
+                        info->extension, sel, sizebuf);
+            }
+        }
+    }
 
 	virtual void fetch_context_items(IndexedList<Action *>&items) {
 		if ((!type) && (!(this->info->attrib & AM_DIR)))

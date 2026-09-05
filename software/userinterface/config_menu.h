@@ -93,10 +93,7 @@ public:
         return item->get_item_altname();
     }
 
-    void getDisplayString(char *buffer, int width)
-    {
-        item->get_display_string(buffer, width, 7, 12); // TODO
-    }
+    void getDisplayString(char *buffer, int width, UserInterface *ui);
 
     void fetch_context_items(IndexedList<Action *>&actions)
     {

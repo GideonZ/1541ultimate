@@ -10,7 +10,7 @@ public:
     virtual ~BrowsableIecNewPartition() { }
 
     const char *getName() { return "New IEC Partition"; }
-    virtual void getDisplayString(char *buffer, int width) {
+    virtual void getDisplayString(char *buffer, int width, UserInterface *ui) {
         snprintf(buffer, width-1, "<Add>");
     }
 	virtual IndexedList<Browsable *> *getSubItems(int &error) { error = -1; return NULL; }
@@ -32,7 +32,7 @@ public:
     virtual ~BrowsableIecPartition() { }
 
     const char *getName() { return name.c_str(); }
-    void getDisplayString(char *buffer, int width) {
+    void getDisplayString(char *buffer, int width, UserInterface *ui) {
         snprintf(buffer, width-1, "%3d: %12s (%16s)", num, name.c_str(), path.c_str());
     }
     void fetch_context_items(IndexedList<Action *>&items) {

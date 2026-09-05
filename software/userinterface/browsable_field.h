@@ -135,7 +135,7 @@ public:
         }
     }
 
-    void getDisplayString(char *buffer, int width)
+    void getDisplayString(char *buffer, int width, UserInterface *ui)
     {
         // minimum window size = 38
         // Field name: 8 chars max, colon, space = 10. Left: 28
@@ -149,7 +149,7 @@ public:
         }
 
         if (field[0] == '$') {
-            sprintf(buffer, "\er            <<  Submit  >> ");
+            sprintf(buffer, "            <<  Submit  >> ");
             return;
         }
 

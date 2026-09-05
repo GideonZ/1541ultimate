@@ -197,13 +197,14 @@ typedef struct {
     int selected_rev;
     int status;
     int inactive;
+    int config;
 } t_scheme_colors;
 
 const t_scheme_colors schemes[] = {
-    { 14, 6, 14, 1, 6,  0, 12, 12 },
-    { 0,  0, 12, 1, 6,  0,  6,  6 },
-    { 13,11, 15,13, 0,  0, 15, 12 },
-    { 0,  0, 15,13, 0,  0, 15, 12 }, // telnet
+    { 14, 6, 14, 1, 6,  0, 12, 12, 7 },
+    { 0,  0, 12, 1, 6,  0,  6,  6, 7 },
+    { 13,11, 15,13, 0,  0, 15, 12, 7 },
+    { 0,  0, 15,13, 0,  0, 15, 12, 7 }, // telnet
 };
 
 void UserInterface :: effectuate_settings(void)
@@ -215,6 +216,8 @@ void UserInterface :: effectuate_settings(void)
     color_sel    = scheme->selected;
     color_status = scheme->status;
     color_inactive = scheme->inactive;
+    color_configitem = scheme->config;
+
     reverse_sel  = scheme->selected_rev;
 
 #if U64

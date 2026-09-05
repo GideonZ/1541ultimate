@@ -336,3 +336,8 @@ void ConfigBrowser :: checkFileManagerEvent(void)
         delete event;
     }
 }
+
+void BrowsableConfigItem :: getDisplayString(char *buffer, int width, UserInterface *ui)
+{
+    item->get_display_string(buffer, width, ui->color_configitem, ui->color_inactive);
+}

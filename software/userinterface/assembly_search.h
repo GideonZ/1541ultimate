@@ -117,7 +117,7 @@ public:
         return &children;
     }
 
-    void getDisplayString(char *buffer, int width) {
+    void getDisplayString(char *buffer, int width, UserInterface *ui) {
         sprintf(buffer, "A64     Assembly 64 Database");
     }
 
@@ -196,7 +196,7 @@ public:
         return &path;
     }
 
-    void getDisplayString(char *buffer, int width)
+    void getDisplayString(char *buffer, int width, UserInterface *ui)
     {
         memset(buffer, ' ', width+2);
         buffer[width+2] = '\0';

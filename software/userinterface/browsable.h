@@ -15,6 +15,7 @@
 #include "action.h"
 
 class FileInfo;
+class UserInterface;
 
 class Browsable
 {
@@ -82,8 +83,7 @@ public:
 	virtual IndexedList<Browsable *> *getSubItems(int &error) { error = 0; return &children; }
 	virtual Browsable *getParent() { return 0; }
 	virtual const char *getName() { return "Browsable"; }
-	virtual void getDisplayString(char *buffer, int width) { strncpy(buffer, getName(), width-1); }
-	virtual void getDisplayString(char *buffer, int width, int squeeze_option) { getDisplayString(buffer, width); }
+	virtual void getDisplayString(char *buffer, int width, UserInterface *ui) { strncpy(buffer, getName(), width-1); }
 };
 
 class BrowsableStatic : public Browsable
@@ -93,7 +93,7 @@ public:
     BrowsableStatic(const char *msg) : message(msg) { selectable = false; }
     ~BrowsableStatic() { }
     const char *getName() { return message; }
-    void getDisplayString(char *buffer, int width) {
+    void getDisplayString(char *buffer, int width, UserInterface *ui) {
         int len = strlen(message);
         if (len > width) {
             len = width;
@@ -117,7 +117,7 @@ public:
     ~BrowsableHeader() { }
     const char *getName() { return message; }
     int getSortOrder() { return sort_order; }
-    void getDisplayString(char *buffer, int width) {
+    void getDisplayString(char *buffer, int width, UserInterface *ui) {
         int len = strlen(message);
         if (len > width) {
             len = width;

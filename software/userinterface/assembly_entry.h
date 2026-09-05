@@ -63,8 +63,8 @@ public:
         return filename.c_str();
     }
 
-    void getDisplayString(char *buffer, int width) {
-        wrappedEntry->getDisplayString(buffer, width,0);
+    void getDisplayString(char *buffer, int width, UserInterface *ui) {
+        wrappedEntry->getDisplayString(buffer, width, ui);
     }
 
 	void fetch_context_items(IndexedList<Action *>&items) {

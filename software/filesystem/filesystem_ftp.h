@@ -15,6 +15,7 @@
 
 class FTPRootNode; // forward
 class FTPServer;   // forward
+class UserInterface; // unused
 
 class BrowsableFTPRoot : public BrowsableDirEntry
 {
@@ -39,7 +40,7 @@ public:
             delete obj;
     }
 
-    void getDisplayString(char *buffer, int width, int sq) {
+    void getDisplayString(char *buffer, int width, UserInterface *ui) {
         sprintf(buffer, "%8s%#s \e\x0d%s", "Ftp", width-18, "Remote FTP Servers", "Ready");
     }
 
