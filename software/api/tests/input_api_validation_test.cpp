@@ -68,6 +68,18 @@ JSON *parse_json_text(const char *text, int &tokens)
 
 } // namespace
 
+TEST(JsonValueTest, RendersFullSignedIntegerRange)
+{
+    JSON_Integer minimum(INT32_MIN);
+    JSON_Integer maximum(INT32_MAX);
+    JSON_Integer negative(-1);
+    JSON_Integer zero(0);
+    EXPECT_EQ(std::string("-2147483648"), std::string(minimum.render()));
+    EXPECT_EQ(std::string("2147483647"), std::string(maximum.render()));
+    EXPECT_EQ(std::string("-1"), std::string(negative.render()));
+    EXPECT_EQ(std::string("0"), std::string(zero.render()));
+}
+
 TEST(InputApiValidationTest, ParsesValidBatchAndPreservesEventDetails)
 {
     InputParsedEvent events[INPUT_API_MAX_EVENTS];
@@ -258,16 +270,4 @@ TEST(InputApiValidationTest, RejectsMalformedJsonBeforeValidation)
 
     EXPECT_TRUE(tokens < 0);
     EXPECT_EQ((JSON *)0, root);
-}
-
-TEST(JsonValueTest, RendersFullSignedIntegerRange)
-{
-    JSON_Integer minimum(INT32_MIN);
-    JSON_Integer maximum(INT32_MAX);
-    JSON_Integer negative(-1);
-    JSON_Integer zero(0);
-    EXPECT_EQ(std::string("-2147483648"), std::string(minimum.render()));
-    EXPECT_EQ(std::string("2147483647"), std::string(maximum.render()));
-    EXPECT_EQ(std::string("-1"), std::string(negative.render()));
-    EXPECT_EQ(std::string("0"), std::string(zero.render()));
 }

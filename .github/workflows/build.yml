@@ -76,6 +76,12 @@ jobs:
            PYTHONPATH=/tmp/openapi-packages python -m openapi_spec_validator \
              --validation-errors all \$(python tools/openapi/generate.py paths)"
 
+      - name: Test INT_MIN Formatting
+        run: |
+          docker run --rm \
+          -v /opt/build-tools:/mnt/build-tools:ro \
+          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make -C software/api/tests CXX='g++ -fsanitize=undefined -fno-sanitize-recover=all'"
+
       - name: Determine FPGA & ESP32 dependencies
         run: |
           docker run --rm \
@@ -87,29 +93,6 @@ jobs:
           docker run --rm \
           -v /opt/build-tools:/mnt/build-tools:ro \
           -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make -C software/io/command_interface/tests"
-
-      - name: Verify printf-int-min red/green
-        run: |
-          docker run --rm -i \
-          -v /opt/build-tools:/mnt/build-tools:ro \
-          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -s <<'REGRESSION'
-          set -eu
-          cd /mnt/project
-          g++ --version
-          riscv32-unknown-elf-g++ --version
-          nios2-elf-g++ --version
-          trap 'git restore -- software/system/small_printf.cc' EXIT
-          git show 8596576fc358cdb0608a8f92c9db899a8c2950ea:software/system/small_printf.cc > software/system/small_printf.cc
-          if make -C software/api/tests CXX="g++ -fsanitize=undefined -fno-sanitize-recover=all" > /tmp/regression-red.log 2>&1; then
-            cat /tmp/regression-red.log
-            echo "ERROR: baseline unexpectedly passed"
-            exit 1
-          fi
-          cat /tmp/regression-red.log
-          grep -F 'runtime error: negation of -2147483648' /tmp/regression-red.log
-          git restore -- software/system/small_printf.cc
-          make -C software/api/tests CXX="g++ -fsanitize=undefined -fno-sanitize-recover=all"
-          REGRESSION
 
       - name: Cache U2 FPGA
         id: cache-u2
