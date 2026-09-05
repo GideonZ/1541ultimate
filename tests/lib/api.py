@@ -27,6 +27,7 @@ import urllib.parse
 from dataclasses import dataclass, field
 from collections.abc import Sequence
 
+import machine
 import pacing
 import targets
 from report import Failure
@@ -523,7 +524,8 @@ class MachineApi:
           to reopen, which RUN/STOP alone does not do.
         - RUN/STOP takes over for the last few attempts, for the editors F8
           does not reach. Never RETURN by default: it activates the entry
-          under the cursor, and on the Assembly 64 entry that opens its form.
+          under the cursor, and on the machine's online-search entry that
+          opens its query form.
         - The menu button is the last resort rather than the first, because it
           is a toggle and does not leave a nested object.
 
@@ -1093,6 +1095,49 @@ def ensure_cartridge_preference(target, password: str | None = None,
             f"{current!r} -> {CARTRIDGE_PREFERENCE_EXTERNAL!r}")
 
 
+# "External" sets internal=0 in C64::ConfigureU64SystemBus, bit 0x08 of which
+# is the IRQ, so the firmware's own NMI never reaches the 6510: the monitor's
+# Go did nothing 4/4 with External and handed over 2/2 with Auto (C64U 1.2RC).
+CARTRIDGE_PREFERENCE_AUTO = "Auto"
+
+
+def ensure_own_cartridge_resources(target, password: str | None = None,
+                                   timeout: float = DEFAULT_TIMEOUT) -> str | None:
+    """Give a machine testing itself its own bus resources back.
+
+    Answers what it changed, or None for a cartridge target, a machine with no
+    cartridge port to prefer, or one that already keeps its own resources.
+    Raises `CartridgePreferenceUnavailable` when a machine that has the store
+    cannot be asked, and `Failure` when it will not take the value. Not saved
+    to flash.
+    """
+    handle = targets.resolve(target)
+    if handle.split:
+        return None
+    device = UltimateApi(handle.device, password, timeout)
+    try:
+        current = device.configs.current(CARTRIDGE_STORE, CARTRIDGE_PREFERENCE_ITEM)
+    except Failure as exc:
+        if CARTRIDGE_STORE not in device.configs.category_names():
+            return None
+        reason = re.sub(r"https?://\S+", "its config API", str(exc))
+        raise CartridgePreferenceUnavailable(
+            f"{handle.device} did not answer for "
+            f"'{CARTRIDGE_PREFERENCE_ITEM}': {reason}") from exc
+    if current != CARTRIDGE_PREFERENCE_EXTERNAL:
+        return None
+    device.configs.set(CARTRIDGE_STORE, CARTRIDGE_PREFERENCE_ITEM,
+                       CARTRIDGE_PREFERENCE_AUTO)
+    now = device.configs.current(CARTRIDGE_STORE, CARTRIDGE_PREFERENCE_ITEM)
+    if now != CARTRIDGE_PREFERENCE_AUTO:
+        raise Failure(
+            f"{handle.device} kept '{CARTRIDGE_PREFERENCE_ITEM}' at {now!r} "
+            f"after it was set to {CARTRIDGE_PREFERENCE_AUTO!r}; its own "
+            f"interrupts stay routed to the cartridge port")
+    return (f"{handle.device}: {CARTRIDGE_PREFERENCE_ITEM} "
+            f"{current!r} -> {CARTRIDGE_PREFERENCE_AUTO!r}")
+
+
 # The computer of a cartridge target has drives of its own, and they answer on
 # the same IEC bus and the same bus IDs as the cartridge's. Measured on an
 # Ultimate II+L in a C64 Ultimate with both machines' Drive A enabled on bus 8:
@@ -1103,6 +1148,26 @@ def ensure_cartridge_preference(target, password: str | None = None,
 DRIVE_STORES = ("Drive A Settings", "Drive B Settings")
 DRIVE_ENABLE_ITEM = "Drive"
 DRIVE_DISABLED = "Disabled"
+# A suite that needs the emulated 1541 to answer sets this for itself: the
+# value ensure_host_drives_off leaves behind belongs to a different target's
+# run, and can reach flash through ConfigBrowser::on_exit while the restore at
+# the end of a run cannot.
+DRIVE_ENABLED = "Enabled"
+
+
+def identify_machine(target, password: str | None = None,
+                     timeout: float = DEFAULT_TIMEOUT) -> machine.Machine:
+    """Which machine `target` is, from one /v1/info answer.
+
+    machine.identify caches per host, so repeated calls cost one request.
+    """
+    host = targets.device_of(target)
+
+    def fetch() -> tuple[str, str]:
+        info = UltimateApi(host, password, timeout).info()
+        return (info.product, info.firmware_version)
+
+    return machine.identify(host, fetch)
 
 
 # Every machine in this tree carries "Fast Reset" in the C64 store: the item is

@@ -56,9 +56,7 @@ sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
                             if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
 import bootstrap  # noqa: E402,F401
 import cli  # noqa: E402
-import api as api_lib
 import ftp as ftp_lib
-import machine as machine_lib
 import rest as rest_lib
 import targets
 from report import (
@@ -917,11 +915,6 @@ def main() -> int:
     session = RestSession(args.host, args.password, args.timeout)
     ftp = FtpFixture(args.host, args.password, args.timeout)
     uci = Uci(session, args.busy_timeout)
-    # Which machine this is, for the scenarios gated on a firmware fix below.
-    info = api_lib.UltimateApi(args.host, args.password, args.timeout).info()
-    machine = machine_lib.identify(
-        targets.device_of(args.host),
-        lambda: (info.product, info.firmware_version))
 
     original: dict[str, str] = {}
     results: dict[str, bool] = {}
@@ -930,26 +923,8 @@ def main() -> int:
     # that the address is the REU's, so the suite must not write to it.
     interface_enabled = False
 
-    # A scenario whose behaviour this machine's firmware does not have yet.
-    # tests/lib/machine.py owns the table and the wording; the entry names the
-    # machines that lack it, so this is one deletion there when it is fixed.
-    GATED = dict.fromkeys(
-        ("issue-740-matrix", "save-reu-offset-past-end",
-         "load-reu-disabled", "save-reu-disabled"),
-        machine_lib.UCI_COMPLETES_AN_REU_COMMAND)
-
     def run(name: str, fn, *fn_args) -> None:
         if name not in selected:
-            return
-        gate = GATED.get(name)
-        reason = machine.missing_fix(gate) if gate else None
-        if reason:
-            # Skipped rather than run: the scenario wedges the interface it is
-            # testing on a machine without the fix, so every scenario after it
-            # would fail for a reason that is not its own.
-            check_start(f"{name}: gated")
-            check_skip(reason)
-            results[name] = True
             return
         results[name] = False  # so an aborted scenario reports FAIL, not "not reached"
         results[name] = fn(*fn_args)

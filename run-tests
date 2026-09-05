@@ -407,8 +407,8 @@ SUITES: Sequence[Suite] = (
     # -H only, because it addresses the stream source rather than the REST
     # surface and takes no password or timeout.
     Suite("e2e", "av-stream", "tests/e2e/av/stream_test.py", "-H @HOST@"),
-    # Drives the Assembly 64 UI against the live service, mostly with negative
-    # cases. Skips rather than fails when the service is unreachable.
+    # Drives the machine's online file search (Assembly 64, or CommoServe on a
+    # C64 Ultimate), mostly with negative cases. Skips when it is unreachable.
     Suite("e2e", "assembly64", "tests/e2e/io/c64/assembly64_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@", profile=profiles.QUICK),
     # Measures the keystroke injection every other suite depends on: a lost key
@@ -436,11 +436,9 @@ SUITES: Sequence[Suite] = (
     # REU with the CPU in turbo, which no other suite here comes close to.
     Suite("e2e", "doom-release", "tests/e2e/io/c64/doom_release_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@", manual=True),
-    # Manual: the last scenario asserts that a packet is ignored, so it leaves a
-    # machine only its power button can revive. Needs the device on Wi-Fi and the
-    # harness in its broadcast domain. Actuators and packet target may also come
-    # from U64_POWER_BUTTON_CMD, U64_POWER_OFF_CMD, U64_POWER_ON_CMD,
-    # U64_WOL_MAC, U64_WOL_BROADCAST, U64_WOL_PORT.
+    # Manual: switches the machine off and wakes it with a packet, so it needs
+    # the device on Wi-Fi and the harness in its broadcast domain. Actuators
+    # and packet target may also come from U64_POWER_*_CMD and U64_WOL_*.
     Suite("e2e", "wake-on-wifi", "tests/e2e/u64ctrl/wake_on_wifi_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@", manual=True),
     # Manual: asserting what the machine does when its input power returns
@@ -496,8 +494,8 @@ SUITES: Sequence[Suite] = (
     Suite("soak", "menu-navigation",
           "tests/soak/filemanager/menu_navigation_soak_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@"),
-    # Drives the Assembly 64 search browser, for the same reason: its query
-    # path is not reachable over REST. Skips when the Assembly 64 service is
+    # Drives the online search browser, for the same reason: its query path is
+    # not reachable over REST. Skips when the machine's search service is
     # unreachable from the device, since the form cannot open without it.
     Suite("soak", "assembly-search-leak",
           "tests/soak/io/c64/assembly_search_leak_test.py",
@@ -2798,10 +2796,8 @@ def exit_code_for(results: list[Result], recoveries: int) -> int:
 def report_stale_gates() -> None:
     """After a run under `--assume-fix`, say which entries it found stale.
 
-    Reads this run's own JSONL back rather than tracking anything separately:
-    `machine.Machine.skip_without_fix` tags the check it lets through with
-    the entry and the machine (`report.note_assumed_fix`), and every suite
-    this process started appends to the same file. See `tools/stale_gates.py`.
+    The tags ride on the per-suite JSONL files, not on this process's own
+    `run.jsonl`, so the whole output directory is read. See tools/stale_gates.py.
 
     Read from the environment rather than from a flag, for the reason
     `run_identity` above already gives: a child run and a run started with
@@ -2815,7 +2811,7 @@ def report_stale_gates() -> None:
     if not path or not os.path.exists(path):
         report.detail("stale gates: not checked, no JSONL was recorded (-j)")
         return
-    stale = stale_gates.find_stale(stale_gates.load_records(path))
+    stale = stale_gates.find_stale(stale_gates.load_run_directory(os.path.dirname(path)))
     if not stale:
         report.detail("stale gates: none")
         return
@@ -3434,7 +3430,7 @@ def main(argv: list[str]) -> int:
     report.detail(f"profile:    {args.profile}"
                   + ("" if args.profile != profiles.DEFAULT else " (default)"))
     if "e2e" in categories:
-        report.detail(f"modes:      {', '.join(modes)}")
+        report.detail(f"modes:      {', '.join(modes) if modes else 'none'}")
     if "soak" in categories:
         report.detail(f"soak:       {options.soak_profile} profile")
     report.detail(f"timeout:    {options.timeout}s")
@@ -3492,6 +3488,18 @@ def main(argv: list[str]) -> int:
             report.check_warn(str(exc))
         else:
             report.check_ok(faster or "already set")
+
+        # A cartridge run leaves this at "External", which routes the machine's
+        # own interrupts to its port and survives a power cycle.
+        if not target.split:
+            report.step_start("the machine keeps its own bus resources")
+            try:
+                restored = api_lib.ensure_own_cartridge_resources(
+                    target, options.password, float(options.timeout))
+            except DEVICE_ERRORS as exc:
+                report.check_warn(str(exc))
+            else:
+                report.check_ok(restored or "already set")
 
         # Before any suite, because a cartridge whose computer has not handed
         # its bus over fails later in ways that name neither the setting nor

@@ -30,17 +30,14 @@ reliable probe exists, which is the rule `api.find_padded_enum` already
 follows: it asks the device which of its stores holds a padded enum rather
 than assuming a name.
 
-*Firmware vintage* is what a release does. The Ultimate 64 and the Ultimate
-II+ under test run firmware built from this branch. A C64 Ultimate serves the
-same endpoints from a separate release line that lags behind it: 1.2.0 has
-neither the FTP listing fix nor the readmem length check below. That gap
-closes when the fix is backported, so it describes a release rather than a
-product.
+*Firmware vintage* is what a release does. A machine can run a release line
+that lags this branch, and a gap like that closes when the fix is backported,
+so it describes a release rather than a product.
 
 One question decides which axis a difference belongs to: would flashing this
 branch's firmware on the machine give it the behaviour? Yes makes it vintage,
 no makes it a capability. A cartridge will never grow a keyboard, so that is a
-capability; a C64 Ultimate will list long FTP names as soon as it takes the
+capability; a lagging release lists long FTP names as soon as it takes the
 commit, so that is vintage.
 
 Tagging a check with the fix it needs
@@ -56,8 +53,9 @@ after the behaviour a machine gains from it rather than after a date, and the
 machine kinds that do not have it yet. A fix every machine has is not in the
 table at all. A check declares what it depends on in one line:
 
-    LABEL = "a 100-character name survives the listing"
-    if device.machine.skip_without_fix(machine.FTP_LISTING_FULL_LENGTH, LABEL):
+    LABEL = "a Telnet session survives a screen it cannot drain"
+    if device.machine.skip_without_fix(
+            machine.TELNET_SEND_TOLERATES_SLOW_PEER, LABEL):
         return
     with check(LABEL):
         ...
@@ -70,7 +68,7 @@ the same fix.
 
 To find out whether a backport has arrived, run with the fix assumed present:
 
-    E2E_ASSUME_FIX=ftp-listing-full-length     one fix, or a list of them
+    E2E_ASSUME_FIX=monitor-d-key-reserved      one fix, or a list of them
     E2E_ASSUME_FIX=all                         every fix in the table
 
 `run-tests --assume-fix NAME` sets that variable for the suites it starts. The
@@ -141,252 +139,31 @@ def _fix(name: str, behaviour: str, lacking: tuple[str, ...]) -> str:
     FIXES[name] = Fix(name=name, behaviour=behaviour, lacking=lacking)
     return name
 
+# What tests/e2e/network/telnet_sustained_input_test.py asserts, and an
+# outstanding defect rather than a lagging release: GideonZ/1541ultimate#820.
+# A screen that repaints on every keystroke outruns a slow link, SO_SNDTIMEO
+# expires, and SocketStream::transmit treats the resulting EAGAIN as fatal and
+# closes the session. Listed against the Ultimate II+ because that is the
+# machine on WiFi here, where the check measures something: it failed about 25
+# times across a soak with no passes. A wired machine drains faster than the
+# suite can send and passes without exercising the path, which is why the entry
+# does not list the others. Delete this entry when #820 is fixed and the check
+# runs again everywhere.
+TELNET_SEND_TOLERATES_SLOW_PEER = _fix(
+    "telnet-send-tolerates-slow-peer",
+    "a Telnet session survives a screen repainting faster than the link "
+    "drains, rather than being closed when the send buffer stays full",
+    (U2,))
 
-# What tests/e2e/network/ftp_server_test.py asserts: a 100-character name is
-# stored, listed unchanged, and removed by the name the listing reported. A
-# C64 Ultimate copies 63 characters and a terminator into the listing, and
-# DELE then refuses the truncated name, so the file cannot be removed at all.
-FTP_LISTING_FULL_LENGTH = _fix(
-    "ftp-listing-full-length",
-    "the FTP server lists a name of up to 127 characters in full, so a name "
-    "taken from a listing addresses the file it names",
-    (C64U,))
-
-# What the bounds scenario of tests/e2e/api/readmem_writemem_test.py asserts.
-# The rejection keeps a zero-size request away from the allocator, because
-# malloc returns NULL for one; a C64 Ultimate answers 200 with an empty body.
-READMEM_REJECTS_ZERO_LENGTH = _fix(
-    "readmem-rejects-zero-length",
-    "GET /v1/machine:readmem answers HTTP 400 to length=0 rather than 200 "
-    "with an empty body",
-    (C64U,))
-
-# What the machine:measure leak check of tests/e2e/api/readmem_writemem_test.py
-# asserts, and the second reason a check must not run without the fix: the
-# unsupported path allocated 64KB before answering 501 and never freed it, so
-# the 25 calls the check makes leak 1.6MB. On a C64 Ultimate 1.2.0 that
-# exhausts the heap and the device stops answering REST, ICMP and FTP
-# altogether; recovery is a mains power cycle by hand. Observed on 2026-09-02,
-# where the check reported FAIL after 91s and took the machine with it.
-MEASURE_FREES_ITS_BUFFER = _fix(
-    "measure-frees-its-buffer",
-    "GET /v1/machine:measure frees its buffer when it answers 501, so "
-    "repeating an unsupported call does not exhaust the heap",
-    (C64U,))
-
-# Measured with a socket probe against each machine, and the reason
-# browser-filesystem-refresh cannot watch a directory through FTP and Telnet at
-# the same time on a C64 Ultimate. Telnet and FTP are served from one pool, and
-# a passive transfer's data connection counts against it:
-#
-#     telnet 0 + 2 FTP controls + data   ok on c64u and u64
-#     telnet 0 + 3 FTP controls + data   reset on c64u, ok on u64
-#     telnet 1 + 1 FTP control  + data   ok on c64u and u64
-#     telnet 1 + 2 FTP controls + data   reset on c64u, ok on u64
-#
-# So a C64 Ultimate 1.2.0 serves three, an Ultimate 64 at least five. HTTP is a
-# separate pool and does not compete. A suite that holds a Telnet session and
-# reads a directory over FTP is already at three with nothing spare, and the
-# device resets whichever socket asked for the fourth.
-SERVES_FOUR_TELNET_FTP_SOCKETS = _fix(
-    "serves-four-telnet-ftp-sockets",
-    "Telnet and FTP together can hold four concurrent sockets, so a directory "
-    "can be watched over FTP while a Telnet session is open",
-    (C64U,))
-
-# Measured with tests/e2e/io/c64/freeze_menu_test.py, and the reason that
-# suite must not run without the fix: on firmware without it, opening the menu
-# while Interface Type is Freeze stops the device answering REST, ICMP and FTP
-# altogether. Recovery is physical, a five-second menu-button hold or a power
-# cycle, so a run that reaches this check loses the device and every suite
-# after it. See GideonZ/1541ultimate#733.
-FREEZE_MENU_OPENS = _fix(
-    "freeze-menu-opens",
-    "opening the menu with Interface Type set to Freeze answers, rather than "
-    "taking the device off the network until it is power cycled",
-    (C64U,))
-
-# Measured with tests/e2e/filemanager/prg_context_menu_test.py. The boot cart
-# shows a 16-character name, and firmware without the fix copies the whole
-# name into that field: software/io/c64/c64_subsys.cc now trims into a fixed
-# buffer, where it used to strcpy. Running a 101-character name on firmware
-# without it leaks the machine subsystem lock, after which every machine: call
-# answers HTTP 423, the UI stops taking injected keys, and only a power cycle
-# recovers. Observed on a C64 Ultimate 1.2.0: machine:reset, machine:resume
-# and machine:reboot all answered 423 while /v1/version and /v1/drives still
-# answered 200.
-BOOTCART_LONG_NAME_SAFE = _fix(
-    "bootcart-long-name-safe",
-    "running a PRG whose name is longer than the boot cart's display field "
-    "leaves the machine subsystem usable, rather than leaking its lock",
-    (C64U,))
-
-# Measured with tests/e2e/filemanager/browser_filesystem_refresh_test.py. A
-# browser drains no file-system events while a context menu and its string box
-# are up, its queue holds eight, and putEvent drops the rest, so a rename typed
-# while other traffic is arriving can lose its own notification. Firmware with
-# the fix reconciles afterwards; without it the listing stays stale until the
-# directory is left and re-entered, and every later row of that matrix then
-# compares against a browser that never caught up.
-BROWSER_REFRESH_AFTER_QUEUE_OVERFLOW = _fix(
-    "browser-refresh-after-queue-overflow",
-    "a browser whose event queue overflowed while a context menu was open "
-    "still shows the committed directory afterwards",
-    (C64U,))
-
-# Measured with tests/e2e/filemanager/browser_filesystem_refresh_test.py, and
-# directly: with a browser open on /Temp, a file created over FTP appeared in
-# its listing after 0.42s, while a directory created the same way never
-# appeared at all in twelve seconds, though FTP and REST both listed it. The
-# rows that rename, delete or create a directory therefore cannot converge,
-# and neither can the seed that puts one there in the first place.
-BROWSER_REFRESH_ON_DIRECTORY_CHANGE = _fix(
-    "browser-refresh-on-directory-change",
-    "a directory added or removed by another writer appears in, or leaves, an "
-    "open browser's listing without leaving and re-entering the directory",
-    (C64U,))
-
-# Measured with tests/e2e/filemanager/browser_filesystem_refresh_test.py: a
-# write made from the Telnet browser did not reach the on-screen menu browser,
-# which went on showing the old size, while the same write made over FTP
-# reached every observer including the menu.
-BROWSER_REFRESH_FROM_TELNET_WRITER = _fix(
-    "browser-refresh-from-telnet-writer",
-    "a file written from the Telnet browser is re-read by the on-screen menu "
-    "browser, so both show the committed size",
-    (C64U,))
-
-# The same pair of browsers, the other way round, and a separate entry because
-# a machine can have one and not the other: when this gap was first written
-# down, a write made from the menu did reach the Telnet browser. Measured on a
-# C64 Ultimate 1.2.0, it does not: with the menu as the writer, the Telnet
-# observer showed each of wmenu1.d64, pmenu1.tst and vmenu1.tst at size 0 and
-# never re-read it, while the menu's own browser, FTP and REST all saw the
-# committed size, and an FTP writer reached the Telnet observer normally.
-BROWSER_REFRESH_FROM_MENU_WRITER = _fix(
-    "browser-refresh-from-menu-writer",
-    "a file written from the on-screen menu browser is re-read by the Telnet "
-    "browser, so both show the committed size",
-    (C64U,))
-
-# The machine code monitor on the lagging line is an earlier revision of the
-# same program, and tests/e2e/monitor/monitor_test.py asserts this one's
-# behaviour throughout rather than in one place. Read from the two help
-# screens side by side: this branch names "Back a level", "Copy/Paste" and
-# "Follow/Return" at the foot of its help page, where the C64 Ultimate 1.2.0
-# monitor names "Open monitor", "Close monitor" and "Leave edit" instead.
-# Tagged once for the suite rather than per check, because nearly every check
-# depends on some part of it.
-#
-# The Ultimate II+L on this bench is here for the same reason and not because
-# it is a cartridge: its flashed 3.15 predates this tree's monitor rework, and
-# Back leaves the monitor from a memory view instead of returning a layer.
-# Measured on u2@c64u: one ARROW_LEFT from the hex view put the file browser on
-# screen, and the check that retypes a command argument uses that key, so the
-# checks behind it ran against a browser and failed on a monitor that was
-# working. It also still answers D with the Debug mode this tree removed; see
-# MONITOR_D_KEY_RESERVED. Reflashing that machine from this tree closes both,
-# and 17 checks of the suite pass there in the meantime, so this entry costs
-# real coverage and should go as soon as it can.
+# The bench Ultimate II+L's flashed 3.15 predates this tree's monitor rework:
+# its help page names "Open monitor", "Close monitor" and "Leave edit" where
+# this one names "Back a level", "Copy/Paste" and "Follow/Return". Goes when
+# that machine is reflashed from this tree.
 MONITOR_EXIT_AND_BACK_KEYS = _fix(
     "monitor-exit-and-back-keys",
     "the machine code monitor offers the Back action and the layer model that "
     "tests/e2e/monitor/monitor_test.py drives",
-    (C64U, U2))
-
-# Measured with tests/e2e/filemanager/cfg_unknown_items_test.py and
-# cfg_whitespace_test.py. A .cfg saved on one machine and loaded on another
-# names stores and items the reader does not have, and pads its values; both
-# are ordinary. Firmware with the fix loads such a file and says "Loading
-# configuration successful!", where a C64 Ultimate 1.2.0 puts "There were
-# errors." on screen and leaves a dialog the user has to answer.
-CFG_LOADS_UNKNOWN_AND_PADDED = _fix(
-    "cfg-loads-unknown-and-padded",
-    "a CFG naming an item this machine does not have, or holding padded "
-    "values, loads without being reported as an error",
-    (C64U,))
-
-# Measured with tests/e2e/io/c64/assembly64_test.py against a C64 Ultimate
-# 1.2.0, driving the CommoServe query form: with the cursor in the form's Name
-# field, PUT /v1/machine:menu_button answered HTTP 200 and the menu stayed
-# open for the full 15 seconds the check waits. Firmware with the fix polls the
-# button from inside UserInterface::string_edit, so the menu closes. RUN/STOP
-# still leaves the field on the machine without it, which is what the suites
-# recover with, but a check that presses the button and waits proves nothing
-# there except that the fix is absent.
-MENU_BUTTON_CLOSES_STRING_EDIT = _fix(
-    "menu-button-closes-string-edit",
-    "the menu button closes the menu while a modal edit field has focus, "
-    "rather than being ignored until the field is left",
-    (C64U,))
-
-# Measured with tests/e2e/api/create_disk_image_test.py against a C64 Ultimate
-# 1.2.0: the first PUT /v1/files/{path}:create_d64 timed out, and the device
-# then answered nothing at all, ICMP included, until it was power cycled. The
-# fix is c90d834a in software/api/routes.h: `ArgsURI::ClearAll` released the
-# disk name that `enforce_diskname` had duplicated with strdup using delete,
-# which reaches heap_4 with an address that is not a block start. The
-# rest-api-coverage cases that only ask for a refusal take the device down the
-# same way, because the name is duplicated before the path is checked.
-#
-# A run that reaches one of these on a machine without the fix loses the device
-# and every suite after it, so the whole of create-disk-image is tagged rather
-# than one case in it.
-FILES_CREATE_IMAGE_SURVIVES = _fix(
-    "files-create-image-survives",
-    "PUT /v1/files/{path}:create_* answers, rather than taking the device off "
-    "the network until it is power cycled",
-    (C64U,))
-
-# Measured with tests/e2e/api/rest_api_coverage_test.py: GET
-# /v1/configs/No%20Such%20Category answers HTTP 404 on firmware with the fix,
-# and HTTP 200 with an empty errors list on a C64 Ultimate 1.2.0, so a caller
-# cannot tell a store it does not have from one that is empty.
-CONFIGS_REFUSE_UNKNOWN_CATEGORY = _fix(
-    "configs-refuse-unknown-category",
-    "GET /v1/configs/<store> answers HTTP 404 for a store this machine does "
-    "not have, rather than 200 with nothing in it",
-    (C64U,))
-
-# Measured with tests/e2e/api/rest_api_coverage_test.py against a C64 Ultimate
-# 1.2.0: PUT /v1/configs/<store>/<item>/<value>, the form that carries the
-# value as a third path element, answers HTTP 400 "Function none requires
-# parameter value". Only the ?value= form is served there, so the route that
-# software/api/route_configs.cc names setConfigItemByPath does not exist yet.
-CONFIGS_SET_VALUE_IN_PATH = _fix(
-    "configs-set-value-in-path",
-    "PUT /v1/configs/<store>/<item>/<value> sets the item, rather than "
-    "refusing the request for want of a value argument",
-    (C64U,))
-
-# Measured the same way: PUT /v1/configs:load_from_flash closes the connection
-# on a C64 Ultimate 1.2.0, which reaches the client as
-# "[Errno 104] Connection reset by peer". The device answers again afterwards,
-# so this is the request failing rather than the machine going down, but a
-# check cannot tell a flash round trip happened.
-CONFIGS_FLASH_ROUNDTRIP = _fix(
-    "configs-flash-roundtrip",
-    "PUT /v1/configs:load_from_flash answers, so a save and load round trip "
-    "can be read back",
-    (C64U,))
-
-# Two fields GET /v1/info carries on the 3.15 line and not on a C64 Ultimate
-# 1.2.0. Measured on the bench: u64 and u2 both report `git_commit_hash`,
-# `ethernet_mac` and `wifi_mac`; c64u reports product, firmware_version,
-# fpga_version, core_version, hostname and unique_id and none of the three.
-# They are separate entries because they are separate additions to the route
-# and can be backported one at a time.
-INFO_REPORTS_INTERFACES = _fix(
-    "info-reports-interfaces",
-    "GET /v1/info reports each network interface's MAC address, so a run can "
-    "say which machine it was talking to from the answer alone",
-    (C64U,))
-
-INFO_NAMES_ITS_COMMIT = _fix(
-    "info-names-its-commit",
-    "GET /v1/info reports git_commit_hash, so what is running can be tied to "
-    "a commit rather than to a version string two release lines share",
-    (C64U,))
+    (U2,))
 
 # What tests/e2e/network/ident_service_switch_test.py asserts: turning the
 # ident service on makes it answer within a few seconds, live, without a
@@ -398,48 +175,8 @@ IDENT_SWITCHES_LIVE = _fix(
     "firmware restart",
     (U2,))
 
-# What the REU scenarios of tests/e2e/io/command_interface/uci_targets_test.py
-# drive. On an Ultimate II+L 3.15, LOAD_REU and SAVE_REU never leave Command
-# Busy once a filename is given, and the interface then refuses every later
-# command on every target with $11/$15 until the firmware restarts. This is
-# issue #740, and it is not confined to the missing image that issue names.
-# Measured on u2@c64u, 2026-09-04, one wedge per run:
-#
-#   04 08 <name>   the image is absent          wedged
-#   04 08 <name>   the REU is switched off      wedged
-#   04 09 <name>   preload offset past the end  wedged
-#
-# The same commands with no filename are refused with 81,INVALID PARAMS and do
-# not wedge, so the fix is about completing a command that does work, not about
-# validating its arguments. One entry rather than one per scenario: there is
-# one behaviour missing, and a suite that wedges the interface it is testing
-# cannot test anything after it.
-UCI_COMPLETES_AN_REU_COMMAND = _fix(
-    "uci-completes-an-reu-command",
-    "the command interface returns to idle after a LOAD_REU or SAVE_REU that "
-    "names a file, whatever the answer, rather than wedging until a restart",
-    (U2,))
-
-# The heap reading the health sweep already reports as absent on this machine:
-# GET /v1/machine:heap is not served by a C64 Ultimate 1.2.0, so nothing can
-# assert a plausible figure from it.
-MACHINE_HEAP_READING = _fix(
-    "machine-heap-reading",
-    "GET /v1/machine:heap reports the free and total heap",
-    (C64U,))
-
-# The one entry here that names an FPGA core rather than firmware. A write to
-# $DF01 has to stop the CPU in its own cycle, or the register writes behind it
-# land on a transfer that is still running; tests/e2e/io/c64/reu_turbo_test.py
-# is the discriminator. Measured by swapping bitstreams on an Ultimate 64 with
-# the same Nios ELF after each: core 1.4E fails at round 0 while the same
-# program is clean at 1 MHz, and core 1.4F passes. A C64 Ultimate serves core
-# 1.4D, which is older than either, and fails the same way.
-REU_TURBO_STOPS_CPU_IN_CYCLE = _fix(
-    "reu-turbo-stops-cpu-in-cycle",
-    "a write to $DF01 stops the CPU in its own cycle, so an REU transfer "
-    "started at full speed returns what it was given",
-    (C64U,))
+# UCI_COMPLETES_AN_REU_COMMAND (issue #740) is closed: measured on an
+# Ultimate II+L on c8b7551a, uci_targets_test passes all 37 checks ungated.
 
 # The one entry where the machine is behind the tree rather than beside it.
 # This branch's monitor has no Debug mode: "Dbg" appears nowhere in
@@ -453,21 +190,6 @@ MONITOR_D_KEY_RESERVED = _fix(
     "the monitor reserves D for a future Debug mode and opens nothing with "
     "it, rather than entering the Debug mode this branch removed",
     (U2,))
-
-# What tests/e2e/network/ident_service_switch_test.py asserts. Firmware without
-# the fix reads each network service switch once, when that listener's task
-# starts, so turning the Ultimate Ident Service off leaves the listener
-# answering until the device restarts; with it, the listener closes its socket
-# when the setting changes and opens one again when it is turned back on.
-# Measured on a C64 Ultimate 1.2.0, which kept answering for the 3 seconds the
-# check waits after the switch was set to Disabled, three attempts out of
-# three.
-SERVICE_SWITCHES_APPLY_LIVE = _fix(
-    "service-switches-apply-live",
-    "a network service switch takes effect while the device runs, so the "
-    "ident listener stops answering when it is disabled and answers again "
-    "when it is re-enabled",
-    (C64U,))
 
 # Every fix at once, for a sweep that asks whether the lagging line has caught
 # up rather than about one behaviour.
@@ -595,67 +317,39 @@ class Machine:
                 else "Assembly 64 Query Form")
 
     @property
-    def min_search_result_rows(self) -> int:
-        """How many rows a result list has to fill to be one at all.
-
-        The two services do not hold the same corpus, and the count is the
-        service's business rather than the firmware's, so this is the floor
-        below which the screen is more likely to be an incidental match than a
-        listing. Measured live with the term "turrican": Assembly 64 answered
-        with 20 matching rows, and CommoServe with the single entry "Turrican
-        intro speech (Tel_Jeroen)".
-        """
-        return 1 if self.kind == C64U else 3
-
-    @property
     def rest_workers(self) -> int:
         """How many REST calls this machine can be asked for at once.
 
-        Two machines are asked for one at a time, for different reasons.
-
-        An Ultimate II+ has no wired interface, so every call crosses its
-        wireless link. Measured on an Ultimate II+L in a C64 Ultimate: three
-        concurrent workers through a 77-route sweep took the cartridge off the
-        network entirely for several minutes, with ping getting no answer at
-        all, and it came back by itself as soon as the load stopped.
-
-        A C64 Ultimate 1.2.0 mixes two answers together under three workers.
-        Measured on the bench: a request for `/v1/help` came back with status
-        404 carrying another request's whole 200 response as its body, headers
-        and all. That is a firmware defect and asking for one call at a time
-        does not fix it, it only stops this sweep tripping over it; the checks
-        themselves all still run.
-
-        An Ultimate 64 answers three at a time and is unaffected.
+        An Ultimate II+ has only a wireless link: three concurrent workers
+        through the 77-route sweep took an Ultimate II+L off the network for
+        several minutes. The others answer three at a time.
         """
-        return 1 if self.kind in (U2, C64U) else 3
+        return 1 if self.kind == U2 else 3
 
     @property
     def task_menu_key(self) -> str:
         """The key that opens the task menu over the file browser.
 
-        F5 on an Ultimate 64 and an Ultimate II+. A C64 Ultimate maps the
-        function keys differently and says so on its own status row: "F1=MENU
-        F3/F5=PGUP/DN F7=HELP". F5 there is Page Down, so pressing it over a
-        listing shorter than a screen does nothing at all, which is what a
-        suite written for the other two sees.
+        The status row says so: "F1=MENU F3/F5=PGUP/DN F7=HELP" on a C64
+        Ultimate, "F5=MENU F1/F7=PGUP/DN F3=HELP" on the others.
         """
         return "F1" if self.kind == C64U else "F5"
 
-    # Which letters the file browser reads as cursor movement is not here: it
-    # follows the "Navigation Style" setting, which every machine offers and a
-    # person can change, so it is read from the device. See
+    # Which letters the file browser reads as cursor movement follows the
+    # "Navigation Style" setting, so it is read from the device; see
     # tests/lib/navigation.py.
 
     @property
     def page_up_key(self) -> str:
-        """The key that scrolls a listing back by a screen."""
-        return "F3" if self.kind == C64U else "PGUP"
+        return "F3" if self.kind == C64U else "F1"
 
     @property
     def page_down_key(self) -> str:
-        """The key that scrolls a listing on by a screen."""
-        return "F5" if self.kind == C64U else "PGDN"
+        return "F5" if self.kind == C64U else "F7"
+
+    @property
+    def help_key(self) -> str:
+        return "F7" if self.kind == C64U else "F3"
 
     @property
     def described(self) -> str:
@@ -697,8 +391,8 @@ class Machine:
 
         The one line a tagged check needs, and the caller returns on True:
 
-            if device.machine.skip_without_fix(machine.FTP_LISTING_FULL_LENGTH,
-                                               LABEL):
+            if device.machine.skip_without_fix(
+                    machine.MONITOR_D_KEY_RESERVED, LABEL):
                 return
             with check(LABEL):
                 ...

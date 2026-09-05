@@ -1560,8 +1560,9 @@ def run_contract_tests(session: RestInputSession) -> None:
 
 def run_keyboard_tests(session: RestInputSession) -> None:
     # These assert what the live C64 matrix sees, so the menu must be closed. It
-    # must also be closed for safety: the sweep below taps F5, which opens the
-    # task menu onto the Assembly 64 form when the UI has focus.
+    # must also be closed for safety: the sweep below taps F5, which on an
+    # Ultimate 64 and an Ultimate II+ opens the task menu onto the online
+    # search's query form when the UI has focus.
     session.close_menu_from_anywhere()
 
     with check("keyboard single-tap batch is consumed by BASIC in order"):
@@ -1875,11 +1876,8 @@ def select_menu_entry(session: RestInputSession, label: str) -> None:
 
 
 def in_file_browser(rows: list[str]) -> bool:
-    """Whether the file browser is what the menu is showing.
-
-    The browser puts the directory it is showing on the status row and nothing
-    else does, so a leading "/" identifies it on every machine.
-    """
+    """Whether a path is on the status row. The launcher shows key hints there;
+    a C64 Ultimate settings screen keeps the browser's path."""
     return rows[MENU_SCREEN_ROWS - 1].lstrip().startswith("/")
 
 

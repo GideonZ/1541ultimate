@@ -19,6 +19,7 @@ rather than an exception from the helper.
 
 from __future__ import annotations
 
+import socket
 import subprocess
 import sys
 import time
@@ -28,19 +29,21 @@ from report import Failure, detail
 
 # A cold start has to load the FPGA before the application answers anything.
 DEFAULT_UP_TIMEOUT = 90.0
-# How long a machine that is supposed to stay off has to stay silent for a
-# check to believe it.
-#
-# It has to be at least the boot budget above, and for a reason worth stating:
-# the two are the same question asked twice. A machine that wrongly powers up
-# has to load the FPGA, boot the application and get on the network before
-# anything answers, and this suite already says that may take up to
-# DEFAULT_UP_TIMEOUT. A shorter silence window therefore proves nothing -- it
-# ends while a machine that did wrongly come up is still booting, and reads its
-# silence as "stayed off". This was 30s, which is a third of the budget the
-# positive checks give the very same boot.
-DEFAULT_SILENCE_SECONDS = DEFAULT_UP_TIMEOUT
-POLL_SECONDS = 2.0
+# A machine that should stay off must stay silent for longer than a wake takes,
+# or a wake that did happen ends unseen. Twice the wake this run measured, with
+# a floor; a C64 Ultimate 1.2RC answered 7.7 to 8.8s after the packet.
+MIN_SILENCE_SECONDS = 10.0
+SILENCE_SAFETY_FACTOR = 2.0
+DEFAULT_SILENCE_SECONDS = 30.0
+POLL_SECONDS = 0.25
+
+
+def silence_window(measured_wake: float | None,
+                   fallback: float = DEFAULT_SILENCE_SECONDS) -> float:
+    """How long to wait before believing a machine stayed off."""
+    if not measured_wake:
+        return fallback
+    return max(MIN_SILENCE_SECONDS, measured_wake * SILENCE_SAFETY_FACTOR)
 
 # Long enough for the control module to lose power. A brief dip leaves the
 # ESP32 running, so nothing cold starts and the machine simply stays as it
@@ -49,10 +52,29 @@ POLL_SECONDS = 2.0
 DEFAULT_OFF_SECONDS = 15.0
 
 
+# A machine that is off never answers, so a probe blocks for its whole timeout;
+# with the suite's -t 30 a 1.3s shutdown read as a minute. A healthy device
+# answers in 10-25ms; a machine slower than this reads as off.
+PROBE_TIMEOUT_SECONDS = 1.5
+
+_probes: dict[tuple[str, str], UltimateApi] = {}
+
+
+def probe_client(api: UltimateApi) -> UltimateApi:
+    """A client on the same device with a liveness-sized timeout, made once."""
+    key = (api.rest.host, api.rest.password)
+    probe = _probes.get(key)
+    if probe is None:
+        probe = UltimateApi(api.rest.target, api.rest.password or None,
+                            PROBE_TIMEOUT_SECONDS)
+        _probes[key] = probe
+    return probe
+
+
 def alive(api: UltimateApi) -> bool:
     """Whether the application answers. Nothing answers while the machine is off."""
     try:
-        return bool(api.version())
+        return bool(probe_client(api).version())
     except Exception:  # noqa: BLE001  (any transport failure means "not there")
         return False
 
@@ -89,11 +111,15 @@ def stays_off(api: UltimateApi, seconds: float) -> bool:
     return True
 
 
-def switch_machine_off(api: UltimateApi, up_timeout: float) -> None:
-    """Put the machine in the off state a scenario needs it to be in."""
+def switch_machine_off(api: UltimateApi, up_timeout: float) -> float:
+    """Switch the machine off and answer how long it took to go quiet."""
+    started = time.monotonic()
     api.machine.poweroff()
     if not wait_for_state(api, False, up_timeout):
         raise Failure("the machine still answered after machine:poweroff")
+    took = time.monotonic() - started
+    detail(f"the machine stopped answering {took:.1f}s after machine:poweroff")
+    return took
 
 
 def run_command(cmd: str, what: str) -> None:
@@ -140,7 +166,67 @@ class Mains:
             ask("switch the socket back ON")
 
 
-def recover_if_off(button: PowerButton | None, api: UltimateApi,
+# Port 9 by convention; the firmware matches on the pattern, not the port.
+WAKE_BROADCAST = "255.255.255.255"
+WAKE_PORT = 9
+WAKE_COPIES = 3
+WAKE_COPY_PAUSE = 0.2
+
+
+def magic_packet(mac: bytes) -> bytes:
+    """The 102 bytes every wake tool sends: six 0xFF, then the MAC sixteen times."""
+    return (b"\xff" * 6) + (mac * 16)
+
+
+def send_magic(mac: bytes, broadcast: str = WAKE_BROADCAST,
+               port: int = WAKE_PORT) -> None:
+    """Send the magic packet for `mac`, repeated, to a broadcast address."""
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+        payload = magic_packet(mac)
+        for _ in range(WAKE_COPIES):
+            sock.sendto(payload, (broadcast, port))
+            time.sleep(WAKE_COPY_PAUSE)
+    detail(f"{WAKE_COPIES} magic packets for {format_mac(mac)} to "
+           f"{broadcast}:{port}")
+
+
+def format_mac(mac: bytes) -> str:
+    return ":".join(f"{octet:02x}" for octet in mac)
+
+
+class WakePacketButton:
+    """Switching a machine on with a magic packet to its Wi-Fi module.
+
+    Works only while "Wake On Wi-Fi" is Enabled; a machine left off with it
+    Disabled needs `PowerButton`.
+    """
+
+    scripted = True
+
+    def __init__(self, mac: bytes, broadcast: str = WAKE_BROADCAST,
+                 port: int = WAKE_PORT) -> None:
+        self.mac = mac
+        self.broadcast = broadcast
+        self.port = port
+
+    def press(self, api: UltimateApi, up_timeout: float) -> float:
+        """Wake the machine, and answer how long it took to answer again."""
+        started = time.monotonic()
+        send_magic(self.mac, self.broadcast, self.port)
+        if not wait_for_state(api, True, up_timeout):
+            raise Failure(
+                f"the machine did not come back after a magic packet for "
+                f"{format_mac(self.mac)}. It wakes only with 'Wake On Wi-Fi' "
+                f"Enabled, on Wi-Fi, and with the harness in the device's own "
+                f"broadcast domain")
+        took = time.monotonic() - started
+        detail(f"answered {took:.1f}s after the packet")
+        return took
+
+
+def recover_if_off(button: PowerButton | WakePacketButton | None,
+                   api: UltimateApi,
                    up_timeout: float) -> None:
     """Get the machine back on, whatever left it off, including a failure.
 

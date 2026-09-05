@@ -16,7 +16,6 @@ sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
                             if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
 import bootstrap  # noqa: E402,F401
 import cli  # noqa: E402
-import machine as machine_lib  # noqa: E402  (needs tests/lib on sys.path first)
 import pacing  # noqa: E402  (needs tests/lib on sys.path first)
 import profiles  # noqa: E402  (needs tests/lib on sys.path first)
 import rest as rest_lib  # noqa: E402  (needs tests/lib on sys.path first)
@@ -120,13 +119,6 @@ class RestSession:
         # For the calls this suite makes no assertion about, so that the menu
         # teardown has one implementation across the tree.
         self.api = UltimateApi(host, password, timeout)
-
-    @property
-    def machine(self) -> machine_lib.Machine:
-        """Which machine this is, for the checks that need a firmware fix."""
-        info = self.api.info()
-        return machine_lib.identify(self.host, lambda: (info.product,
-                                                        info.firmware_version))
 
     def url(self, path: str, params: dict[str, object] | None = None) -> str:
         query = ""
@@ -598,21 +590,16 @@ def run_reset(session: RestSession) -> None:
 # has to be able to fail: `operator new` PANICs and spins forever on OOM
 # (software/system/memory_wrap.cc), which takes the device down with no reset, so
 # the handler uses malloc and reports HTTP 500 instead.
-# Each entry is (params, label, fix). `fix` names the firmware fix the
-# rejection needs, or None where every machine under test has always refused
-# the request. A tagged entry is skipped on a machine that lacks the fix
-# rather than failed, because the scenario below raises on the first
-# unexpected answer and would otherwise take the whole suite with it.
+# Each entry is (params, label). Every machine under test refuses all of them.
 BAD_READ_REQUESTS = [
-    ({"address": "0000", "length": 0}, "zero length",
-     machine_lib.READMEM_REJECTS_ZERO_LENGTH),
-    ({"address": "0000", "length": -1}, "negative length", None),
-    ({"address": "0000", "length": 65537}, "length one past the 64KB cap", None),
-    ({"address": "0000", "length": 16 * 1024 * 1024}, "length far past the cap", None),
-    ({"address": "0000", "length": "99999999999999999999"}, "length that overflows a long", None),
-    ({"address": "ff00", "length": 65536}, "read running past $FFFF", None),
-    ({"address": "10000", "length": 1}, "address above $FFFF", None),
-    ({"address": "-1", "length": 1}, "negative address", None),
+    ({"address": "0000", "length": 0}, "zero length"),
+    ({"address": "0000", "length": -1}, "negative length"),
+    ({"address": "0000", "length": 65537}, "length one past the 64KB cap"),
+    ({"address": "0000", "length": 16 * 1024 * 1024}, "length far past the cap"),
+    ({"address": "0000", "length": "99999999999999999999"}, "length that overflows a long"),
+    ({"address": "ff00", "length": 65536}, "read running past $FFFF"),
+    ({"address": "10000", "length": 1}, "address above $FFFF"),
+    ({"address": "-1", "length": 1}, "negative address"),
 ]
 # Repeats chosen so a 64KB-per-call leak is a few megabytes without making the
 # suite slow. This is a smoke check, not proof of a leak-free heap: nothing over
@@ -635,10 +622,7 @@ def run_bounds(session: RestSession) -> bool:
     section("bounds: readmem rejects out-of-range parameters before allocating, "
             "and max-size reads do not degrade the device")
 
-    for params, label, fix in BAD_READ_REQUESTS:
-        if fix is not None and session.machine.skip_without_fix(
-                fix, f"readmem rejects {label}"):
-            continue
+    for params, label in BAD_READ_REQUESTS:
         with check(f"readmem rejects {label}"):
             status, _, body = session.request("GET", READMEM_PATH, params=params)
             if status != 400:
@@ -656,13 +640,6 @@ def run_bounds(session: RestSession) -> bool:
     # devices the leaking path is the only path this endpoint ever takes.
     measure_label = (f"{MEASURE_LEAK_REPEATS} unsupported machine:measure "
                      "calls leave readmem working")
-    if session.machine.skip_without_fix(
-            machine_lib.MEASURE_FREES_ITS_BUFFER, measure_label):
-        # Not a check this machine merely fails: without the fix the 25 calls
-        # leak 1.6MB, which exhausts a C64 Ultimate's heap and takes it off the
-        # network until someone power cycles it by hand.
-        return True
-
     status, _, _ = session.request("GET", MEASURE_PATH)
     if status == 501:
         with check(measure_label):
