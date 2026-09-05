@@ -1988,6 +1988,39 @@ def a_second_interface_can_be_declared() -> str:
     return "the second interface is attributed, a typo is reported"
 
 
+@case(1, "OBS-7.5", "OBS-7.6", exclusive=True)
+def a_second_interface_from_the_menu_is_collected() -> str:
+    """The active address displayed by the menu maps a syslog sender."""
+    with tempfile.TemporaryDirectory() as directory:
+        collector = syslog_collector.Collector(directory=directory, port=0)
+        if not collector.bind([targets.parse("127.0.0.2")],
+                              menu_addresses={"127.0.0.2": ["192.0.2.71"]}):
+            raise Failure(f"the collector did not start: {collector.problems}")
+        try:
+            collector.deliver("192.0.2.71", b"from the menu interface")
+        finally:
+            collector.stop()
+        found = syslog_collector.read(
+            os.path.join(directory, "127.0.0.2", "syslog.txt"))
+        expect("the menu interface is attributed",
+               [text for _stamp, text in found], ["from the menu interface"])
+        expect("the mapped addresses are retained",
+               collector.addresses_of("127.0.0.2"),
+               ["127.0.0.2", "192.0.2.71"])
+    return "the menu-derived address is mapped and attributed"
+
+
+@case(1, "OBS-7.5", "OBS-7.6", exclusive=True)
+def a_menu_address_read_waits_for_its_first_populated_screen() -> str:
+    expect("a blank launcher is not ready", syslog_collector._menu_ready(
+        [" " * 40] * 25), False)
+    expect("a network launcher is ready", syslog_collector._menu_ready(
+        ["WIRED NETWORK SETUP"]), True)
+    expect("an interface status page is ready", syslog_collector._menu_ready(
+        ["WiFi IP: 192.0.2.71"]), True)
+    return "blank, launcher and status page are distinguished"
+
+
 @case(1, "OBS-2.5")
 def every_record_kind_is_in_the_table() -> str:
     """The record-shape table names every kind and every new field.

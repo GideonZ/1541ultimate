@@ -916,9 +916,30 @@ def start_syslog(args: argparse.Namespace,
     root = directory or args.output_dir
     machines = sorted({machine for target in wanted
                        for machine in target.log_hosts})
+    menu_addresses = {}
+    for target in wanted:
+        if target.device in menu_addresses:
+            continue
+        if target.device.startswith("127."):
+            menu_addresses[target.device] = []
+            continue
+        try:
+            found = syslog_collector.menu_addresses(
+                target, args.password, float(args.timeout))
+        except DEVICE_ERRORS as exc:
+            report.warn(f"device log: {target.device} menu address discovery failed: "
+                        f"{report.format_exception(exc)}")
+            continue
+        except RuntimeError as exc:
+            report.warn(f"device log: {target.device} menu address discovery failed: {exc}")
+            continue
+        menu_addresses[target.device] = sorted(found)
+        report.detail(f"device log:  {target.device} menu addresses: "
+                      f"{', '.join(sorted(found)) or 'none'}")
     collector = syslog_collector.Collector(directory=root,
                                            port=args.syslog_port)
-    opened = collector.bind(wanted, syslog_ports(machines, args.password))
+    opened = collector.bind(wanted, syslog_ports(machines, args.password),
+                            menu_addresses)
     for problem in collector.problems:
         report.warn(f"device log: {problem}")
     if not opened:

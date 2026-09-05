@@ -1809,31 +1809,37 @@ def run_bookmark_test(session: MonitorSession) -> None:
     screen = session.send_key("CTRL_B", settle=True)
     screen.find_line_containing("BOOKMARKS")
     screen = session.send_key("DOWN")
-    screen = session.send_key("DEL")
-    assert_line_contains_all(screen, ("1 SCREEN", "$0400", "SCR 32"))
+    session.send_key("DEL")
+    wait_for_line_containing_all(session, ("1 SCREEN", "$0400", "SCR 32"))
     screen = session.send_key("CTRL_B", settle=True)
     screen.find_line_containing("MONITOR")
 
+    # W toggles between the two hex widths, so the width it lands on is fixed
+    # only if the width it starts from is. Settled here the same way
+    # run_memory_bookmark_width_test settles it; without that this check
+    # depends on whatever the earlier checks left behind, and that differs
+    # between machines, because the checks that skip differ between them.
+    screen = ensure_hex_width(session, 8)
     screen = session.goto("C123")
     screen.find_line_containing("MONITOR HEX $C123")
     screen = session.send_char("W", settle=True)
     screen = session.send_key("CTRL_B", settle=True)
     screen.find_line_containing("BOOKMARKS")
     screen = session.send_key("DOWN")
-    screen = session.send_char("S")
-    assert_line_contains_all(screen, ("BM1 SCREEN $C123 HEX W16", "SET"))
+    session.send_char("S")
+    wait_for_line_containing_all(session, ("BM1 SCREEN $C123 HEX W16", "SET"))
     screen = session.send_key("CTRL_B", settle=True)
     screen.find_line_containing("MONITOR HEX $C123")
 
     screen = session.goto("E000")
     screen.find_line_containing("MONITOR HEX $E000")
-    screen = session.send_key("CBM_1")
-    screen.find_line_containing("MONITOR HEX $C123")
-    screen.find_line_containing("BM1 SCREEN $C123 HEX W16")
+    session.send_key("CBM_1")
+    wait_for_line(session, "MONITOR HEX $C123")
+    wait_for_line(session, "BM1 SCREEN $C123 HEX W16")
 
     screen = session.send_key("CTRL_B", settle=True)
     screen.find_line_containing("BOOKMARKS")
-    assert_line_contains_all(screen, ("1 SCREEN", "$C123", "HEX 16"))
+    screen = wait_for_line_containing_all(session, ("1 SCREEN", "$C123", "HEX 16"))
     screen.find_line_containing("0-9/RET Jmp  S Set  L Label  DEL Reset")
 
     screen = session.send_key("DOWN")
@@ -1841,19 +1847,31 @@ def run_bookmark_test(session: MonitorSession) -> None:
     # Typed only once the editor is up: one burst straight after L lost the
     # backspaces on a C64 Ultimate and the label stayed "SCREEN".
     wait_for_prompt(session, BOOKMARK_LABEL_TITLE)
-    screen = session.send_text("\b" * len(BOOKMARK_DEFAULT_LABEL) + "E2E",
-                               "bookmark label E2E")
-    screen.find_line_containing("E2E")
-    screen = session.send_key("ENTER", settle=True)
-    assert_line_contains_all(screen, ("1 E2E", "$C123", "HEX 16"))
+    session.send_text("\b" * len(BOOKMARK_DEFAULT_LABEL) + "E2E",
+                      "bookmark label E2E")
+    # The whole field, not a substring of the screen: "E2E" appears just as
+    # readily in a field the backspaces left as "SCE2EEN".
+    screen = wait_until(
+        session,
+        lambda s: prompt_field_or_none(s, BOOKMARK_LABEL_TITLE) == "E2E")
+    assert_equal("bookmark label field", "E2E",
+                 prompt_field(screen, BOOKMARK_LABEL_TITLE), "bookmark label E2E")
+
+    session.send_key("ENTER", settle=True)
+    # Leaving the editor restores the screen backup UIStringBox took when it
+    # opened, which still carries the old label, and edit_bookmark_label
+    # repaints the row only after that. The device does commit the edit: a
+    # jump to the bookmark reads "BM1 E2E" even while this row still reads
+    # "1 SCREEN".
+    wait_for_line_containing_all(session, ("1 E2E", "$C123", "HEX 16"))
 
     screen = session.send_key("CTRL_B", settle=True)
     screen.find_line_containing("MONITOR HEX $C123")
     screen = session.goto("E000")
     screen.find_line_containing("MONITOR HEX $E000")
-    screen = session.send_key("CBM_1")
-    screen.find_line_containing("MONITOR HEX $C123")
-    screen.find_line_containing("BM1 E2E $C123 HEX W16")
+    session.send_key("CBM_1")
+    wait_for_line(session, "MONITOR HEX $C123")
+    wait_for_line(session, "BM1 E2E $C123 HEX W16")
 
 
 def run_telnet_poll_guard_test(session: MonitorSession) -> None:
@@ -1872,8 +1890,8 @@ def run_memory_bookmark_width_test(session: MonitorSession, rest_host: str) -> N
     screen = session.send_key("CTRL_B", settle=True)
     screen.find_line_containing("BOOKMARKS")
     screen = session.send_key("DOWN")
-    screen = session.send_key("DEL")
-    assert_line_contains_all(screen, ("1 SCREEN", "$0400", "SCR 32"))
+    session.send_key("DEL")
+    wait_for_line_containing_all(session, ("1 SCREEN", "$0400", "SCR 32"))
     screen = session.send_key("CTRL_B", settle=True)
     screen.find_line_containing("MONITOR")
 
@@ -1887,21 +1905,21 @@ def run_memory_bookmark_width_test(session: MonitorSession, rest_host: str) -> N
     screen = session.send_key("CTRL_B", settle=True)
     screen.find_line_containing("BOOKMARKS")
     screen = session.send_key("DOWN")
-    screen = session.send_char("S")
-    assert_line_contains_all(screen, ("BM1 SCREEN $3000 HEX W16", "SET"))
+    session.send_char("S")
+    wait_for_line_containing_all(session, ("BM1 SCREEN $3000 HEX W16", "SET"))
     screen = session.send_key("CTRL_B", settle=True)
     screen.find_line_containing("MONITOR HEX $3000")
 
     screen = session.goto("E000")
     screen.find_line_containing("MONITOR HEX $E000")
-    screen = session.send_key("CBM_1")
-    screen.find_line_containing("MONITOR HEX $3000")
-    screen.find_line_containing("BM1 SCREEN $3000 HEX W16")
-    screen.find_line_containing("3000 0001020304050607 08090A0B0C0D0E0F")
+    session.send_key("CBM_1")
+    wait_for_line(session, "MONITOR HEX $3000")
+    wait_for_line(session, "BM1 SCREEN $3000 HEX W16")
+    wait_for_line(session, "3000 0001020304050607 08090A0B0C0D0E0F")
 
     screen = session.send_key("CTRL_B", settle=True)
     screen.find_line_containing("BOOKMARKS")
-    assert_line_contains_all(screen, ("1 SCREEN", "$3000", "HEX 16"))
+    wait_for_line_containing_all(session, ("1 SCREEN", "$3000", "HEX 16"))
     screen = session.send_key("CTRL_B", settle=True)
     screen.find_line_containing("MONITOR HEX $3000")
 
@@ -1926,8 +1944,8 @@ def run_binary_bookmark_width_test(session: MonitorSession, rest_host: str) -> N
     screen = session.send_key("CTRL_B", settle=True)
     screen.find_line_containing("BOOKMARKS")
     screen = session.send_key("DOWN")
-    screen = session.send_key("DEL")
-    assert_line_contains_all(screen, ("1 SCREEN", "$0400", "SCR 32"))
+    session.send_key("DEL")
+    wait_for_line_containing_all(session, ("1 SCREEN", "$0400", "SCR 32"))
     screen = session.send_key("CTRL_B", settle=True)
     screen.find_line_containing("MONITOR")
 
@@ -1957,17 +1975,17 @@ def run_binary_bookmark_width_test(session: MonitorSession, rest_host: str) -> N
     screen = session.send_key("CTRL_B", settle=True)
     screen.find_line_containing("BOOKMARKS")
     screen = session.send_key("DOWN")
-    screen = session.send_char("S")
-    assert_line_contains_all(screen, ("BM1 SCREEN $C400 BIN W4", "SET"))
+    session.send_char("S")
+    wait_for_line_containing_all(session, ("BM1 SCREEN $C400 BIN W4", "SET"))
     screen = session.send_key("CTRL_B", settle=True)
     screen.find_line_containing("MONITOR BIN $C400")
 
     screen = session.goto("E000")
     screen.find_line_containing("MONITOR BIN $E000")
-    screen = session.send_key("CBM_1")
-    screen.find_line_containing("MONITOR BIN $C400")
-    screen.find_line_containing("BM1 SCREEN $C400 BIN W4")
-    screen.find_line_containing("C400 ...*..*...**.*...*.*.**..****...")
+    session.send_key("CBM_1")
+    wait_for_line(session, "MONITOR BIN $C400")
+    wait_for_line(session, "BM1 SCREEN $C400 BIN W4")
+    screen = wait_for_line(session, "C400 ...*..*...**.*...*.*.**..****...")
     assert_line_lacks(screen, "12 34 56 78")
 
     screen = session.send_key("CTRL_B", settle=True)
@@ -2793,6 +2811,37 @@ def wait_for_prompt(session: MonitorSession, title: str) -> Snapshot:
     """Wait for a command prompt to be drawn."""
     snapshot = wait_until(session, lambda screen: title in screen.text())
     snapshot.find_line_containing(title)
+    return snapshot
+
+
+def wait_for_line_containing_all(session: MonitorSession,
+                                 values: tuple[str, ...]) -> Snapshot:
+    """Wait for one line to hold every value, then assert that it does.
+
+    Several of the bookmark popup's actions repaint in two stages: the popup
+    itself first, from `refresh_popup_overlay`, and the status row after it,
+    or, when a string box closes, the screen backup it restores first and the
+    committed row after. `RestBackend.send_key` returns on the first frame
+    that differs from the one before the key, which is the first of those
+    stages, so a read taken straight after the key can land on the
+    intermediate frame and see the value the action was about to replace.
+
+    Waiting is bounded by `wait_until`, and the assertion still runs on
+    whatever the screen holds when the budget ends, so a value that never
+    arrives fails with the screen in the message exactly as before.
+    """
+    snapshot = wait_until(
+        session,
+        lambda screen: any(all(value in line for value in values)
+                           for line in screen.lines))
+    assert_line_contains_all(snapshot, values)
+    return snapshot
+
+
+def wait_for_line(session: MonitorSession, needle: str) -> Snapshot:
+    """Wait for `needle` to appear on some line, for the same reason."""
+    snapshot = wait_until(session, lambda screen: needle in screen.text())
+    snapshot.find_line_containing(needle)
     return snapshot
 
 
