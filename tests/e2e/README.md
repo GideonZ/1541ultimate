@@ -142,9 +142,6 @@ that changes one does not decide what the next run starts from.
 
 **Firmware vintage** is what a release lacks. A machine can run a firmware line
 that lags this branch, so a check can be correct and still be unrunnable there.
-The C64 Ultimate did until 1.2RC, which is what the bench device reports, and
-the Ultimate II+L on the bench still does, because it carries a flashed 3.15
-rather than a build of this tree.
 `FIXES` in the same module names each outstanding gap after the behaviour a
 machine gains from it, and lists the machines that do not have it yet. A check
 declares its dependency in one line:

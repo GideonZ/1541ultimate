@@ -29,42 +29,18 @@ from report import Failure, detail
 
 # A cold start has to load the FPGA before the application answers anything.
 DEFAULT_UP_TIMEOUT = 90.0
-# How long a machine that is supposed to stay off has to stay silent for a
-# check to believe it.
-#
-# The window has to outlast a wake this machine would actually perform, or it
-# ends while a machine that did wrongly come up is still booting and reads that
-# silence as "stayed off". What it does not have to outlast is the worst-case
-# boot budget: `DEFAULT_UP_TIMEOUT` is a cap for a machine that may be slow, not
-# a measurement, and using it made the negative check cost 90s every run.
-#
-# So the window is derived from a wake this run measured. `silence_window()`
-# takes the measured time and multiplies it, and this constant is only the
-# floor for a machine that woke faster than the floor. Measured on a C64
-# Ultimate 1.2RC: a magic packet to REST answering again took 8.8s.
+# A machine that should stay off must stay silent for longer than a wake takes,
+# or a wake that did happen ends unseen. Twice the wake this run measured, with
+# a floor; a C64 Ultimate 1.2RC answered 7.7 to 8.8s after the packet.
 MIN_SILENCE_SECONDS = 10.0
 SILENCE_SAFETY_FACTOR = 2.0
-# Three times the wake this bench measures. A C64 Ultimate 1.2RC answered 7.7
-# to 8.8s after the packet on five consecutive runs, and twice that is what
-# `silence_window()` asks for, so this covers a machine that wakes in up to
-# 15s. The suite checks the window it used against the wake it measured rather
-# than trusting this number, and widens it for its later scenarios when the
-# measurement says so.
 DEFAULT_SILENCE_SECONDS = 30.0
-# A quarter second: every wait in this file ends as soon as the device changes
-# state, so the interval, with PROBE_TIMEOUT_SECONDS, is what decides how much
-# of a wake or a shutdown is spent asleep in the harness rather than watching.
 POLL_SECONDS = 0.25
 
 
 def silence_window(measured_wake: float | None,
                    fallback: float = DEFAULT_SILENCE_SECONDS) -> float:
-    """How long to wait before believing a machine stayed off.
-
-    `measured_wake` is how long this machine took to answer after a packet that
-    was supposed to wake it, measured earlier in the same run. Without one
-    there is nothing to scale from and the caller's own budget is used.
-    """
+    """How long to wait before believing a machine stayed off."""
     if not measured_wake:
         return fallback
     return max(MIN_SILENCE_SECONDS, measured_wake * SILENCE_SAFETY_FACTOR)
@@ -76,11 +52,9 @@ def silence_window(measured_wake: float | None,
 DEFAULT_OFF_SECONDS = 15.0
 
 
-# What a liveness probe waits for an answer, which is not what the suite's own
-# requests wait. A request to a machine that is off gets no TCP reply at all,
-# so the probe blocks for its whole timeout, and run-tests passes -t 30: two
-# such probes made a shutdown that finishes in about a second read as a minute.
-# 1.5s is well beyond the 10-25ms this device answers a healthy /v1/version in.
+# A machine that is off never answers, so a probe blocks for its whole timeout;
+# with the suite's -t 30 a 1.3s shutdown read as a minute. A healthy device
+# answers in 10-25ms; a machine slower than this reads as off.
 PROBE_TIMEOUT_SECONDS = 1.5
 
 _probes: dict[tuple[str, str], UltimateApi] = {}
@@ -138,11 +112,7 @@ def stays_off(api: UltimateApi, seconds: float) -> bool:
 
 
 def switch_machine_off(api: UltimateApi, up_timeout: float) -> float:
-    """Put the machine in the off state a scenario needs it to be in.
-
-    Answers how long it took to go quiet, which is the proof that it is off
-    rather than an assumption that it must be by now.
-    """
+    """Switch the machine off and answer how long it took to go quiet."""
     started = time.monotonic()
     api.machine.poweroff()
     if not wait_for_state(api, False, up_timeout):
@@ -196,10 +166,7 @@ class Mains:
             ask("switch the socket back ON")
 
 
-# The magic packet a wake tool sends, and where it sends it. Port 9 is the
-# convention; the firmware matches on the pattern rather than on the port. The
-# copies cover a lost datagram and cost nothing, because the watcher disarms on
-# the first match.
+# Port 9 by convention; the firmware matches on the pattern, not the port.
 WAKE_BROADCAST = "255.255.255.255"
 WAKE_PORT = 9
 WAKE_COPIES = 3
@@ -229,21 +196,10 @@ def format_mac(mac: bytes) -> str:
 
 
 class WakePacketButton:
-    """Switching a machine on with a magic packet rather than with a finger.
+    """Switching a machine on with a magic packet to its Wi-Fi module.
 
-    The Wi-Fi module keeps running while the machine is off, so a machine whose
-    "Wake On Wi-Fi" setting is Enabled comes back from a packet addressed to
-    that module. That makes the scenarios which end with the machine off, and
-    the setting left Enabled, recoverable without an operator or an actuator.
-
-    The address is the module's own, which GET /v1/info reports as `wifi_mac`.
-    It is not the address the harness has in its ARP table: that is whichever
-    interface answered the last request, and the wired PHY is powered down with
-    the machine, so a packet aimed there reaches nothing.
-
-    A machine left off with the setting Disabled cannot be woken by anything on
-    the network, which is why this is not a replacement for `PowerButton`
-    everywhere; the caller decides which of the two a scenario needs.
+    Works only while "Wake On Wi-Fi" is Enabled; a machine left off with it
+    Disabled needs `PowerButton`.
     """
 
     scripted = True

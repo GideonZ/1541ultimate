@@ -407,10 +407,8 @@ SUITES: Sequence[Suite] = (
     # -H only, because it addresses the stream source rather than the REST
     # surface and takes no password or timeout.
     Suite("e2e", "av-stream", "tests/e2e/av/stream_test.py", "-H @HOST@"),
-    # Drives the machine's online file search against the live service, mostly
-    # with negative cases. Which service that is comes from the machine:
-    # Assembly 64 on an Ultimate 64 and an Ultimate II+, CommoServe on a C64
-    # Ultimate. Skips rather than fails when the service is unreachable.
+    # Drives the machine's online file search (Assembly 64, or CommoServe on a
+    # C64 Ultimate), mostly with negative cases. Skips when it is unreachable.
     Suite("e2e", "assembly64", "tests/e2e/io/c64/assembly64_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@", profile=profiles.QUICK),
     # Measures the keystroke injection every other suite depends on: a lost key
@@ -438,13 +436,9 @@ SUITES: Sequence[Suite] = (
     # REU with the CPU in turbo, which no other suite here comes close to.
     Suite("e2e", "doom-release", "tests/e2e/io/c64/doom_release_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@", manual=True),
-    # Manual: it switches the machine off and wakes it with a packet, which
-    # needs the device's Wi-Fi module associated and the harness in its
-    # broadcast domain. The last scenario, which leaves the machine off with
-    # the setting Disabled, runs only with a power button actuator and is
-    # skipped otherwise. Actuators and packet target may also come from
-    # U64_POWER_BUTTON_CMD, U64_POWER_OFF_CMD, U64_POWER_ON_CMD, U64_WOL_MAC,
-    # U64_WOL_BROADCAST, U64_WOL_PORT.
+    # Manual: switches the machine off and wakes it with a packet, so it needs
+    # the device on Wi-Fi and the harness in its broadcast domain. Actuators
+    # and packet target may also come from U64_POWER_*_CMD and U64_WOL_*.
     Suite("e2e", "wake-on-wifi", "tests/e2e/u64ctrl/wake_on_wifi_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@", manual=True),
     # Manual: asserting what the machine does when its input power returns
@@ -2717,50 +2711,6 @@ def resolve_modes(raw: str, profile: str = profiles.DEFAULT) -> list[str]:
     return modes or list(profiles.modes_for(profile))
 
 
-# A transport that a machine cannot survive being driven through, and the fix
-# that makes it survivable. Gating each suite would miss the next suite added,
-# so the transport is dropped once for the whole run.
-#
-# Empty at present. The entry that lived here was the freeze transport, which
-# opens the menu with Interface Type "Freeze" in every UI suite of a freeze
-# pass: a C64 Ultimate before 1.2RC went off the network when it was asked to
-# do that. 1.2RC carries the fix, so freeze is swept on every machine again
-# and machine.FREEZE_MENU_OPENS is gone from the table.
-MODE_REQUIRED_FIXES: dict[str, str] = {}
-
-
-def drop_unsurvivable_modes(target: targets_lib.Target, password: str,
-                            modes: Sequence[str]) -> list[str]:
-    """Modes this machine can be driven through, without the ones it cannot.
-
-    Answers `modes` unchanged when the machine cannot be identified: a run that
-    cannot ask is not a reason to drop coverage, and every suite still applies
-    its own gates.
-    """
-    needed = {mode: MODE_REQUIRED_FIXES[mode] for mode in modes
-              if mode in MODE_REQUIRED_FIXES}
-    if not needed:
-        return list(modes)
-    try:
-        machine = api_lib.identify_machine(
-            target, password or None, DEVICE_RECOVERY_PROBE_TIMEOUT_SECONDS)
-    except DEVICE_ERRORS as exc:
-        report.detail(f"could not ask {target.device} which machine it is "
-                      f"({exc}); sweeping every transport the profile names")
-        return list(modes)
-    kept = []
-    for mode in modes:
-        fix = needed.get(mode)
-        reason = machine.missing_fix(fix) if fix else ""
-        if reason:
-            report.detail(f"not sweeping the {mode} transport: {reason}. "
-                          f"Driving the UI that way takes this machine off the "
-                          f"network until it is power cycled by hand")
-        else:
-            kept.append(mode)
-    return kept
-
-
 def print_listing() -> None:
     print("Profiles, shallowest first. A suite runs from its own profile up.")
     for name in profiles.ORDER:
@@ -3480,7 +3430,6 @@ def main(argv: list[str]) -> int:
     report.detail(f"profile:    {args.profile}"
                   + ("" if args.profile != profiles.DEFAULT else " (default)"))
     if "e2e" in categories:
-        modes = drop_unsurvivable_modes(target, options.password, modes)
         report.detail(f"modes:      {', '.join(modes) if modes else 'none'}")
     if "soak" in categories:
         report.detail(f"soak:       {options.soak_profile} profile")
@@ -3540,11 +3489,8 @@ def main(argv: list[str]) -> int:
         else:
             report.check_ok(faster or "already set")
 
-        # The other half of the same setting, for a machine testing itself: a
-        # bench that has run a cartridge target leaves the value at "External",
-        # which routes this machine's own interrupts to its cartridge port and
-        # survives a power cycle. A no-op on a cartridge target, and on a
-        # machine with no cartridge port to prefer.
+        # A cartridge run leaves this at "External", which routes the machine's
+        # own interrupts to its port and survives a power cycle.
         if not target.split:
             report.step_start("the machine keeps its own bus resources")
             try:

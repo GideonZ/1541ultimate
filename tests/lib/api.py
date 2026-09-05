@@ -525,9 +525,7 @@ class MachineApi:
         - RUN/STOP takes over for the last few attempts, for the editors F8
           does not reach. Never RETURN by default: it activates the entry
           under the cursor, and on the machine's online-search entry that
-          opens its query form. That is Assembly 64 in the task menu of an
-          Ultimate 64 and an Ultimate II+, and COMMOSERVE FILE SEARCH in a
-          C64 Ultimate's launcher.
+          opens its query form.
         - The menu button is the last resort rather than the first, because it
           is a toggle and does not leave a nested object.
 
@@ -1097,21 +1095,9 @@ def ensure_cartridge_preference(target, password: str | None = None,
             f"{current!r} -> {CARTRIDGE_PREFERENCE_EXTERNAL!r}")
 
 
-# What a machine testing itself needs of the same setting, which is the
-# opposite of what a cartridge target needs.
-#
-# `C64::ConfigureU64SystemBus` maps four bus resources to the internal side, to
-# the cartridge port, or to both, and bit 0x08 of that mask is the interrupt.
-# "External" takes `internal = 0`, so the firmware's own NMI never reaches the
-# 6510: the machine code monitor's Go writes its trampoline at $033C, repoints
-# NMINV, pulses C64_MODE_NMI and nothing happens, while the C64 goes on running
-# what it was running. Measured on a C64 Ultimate 1.2RC: four Go attempts out
-# of four did nothing with "External" selected, and two out of two handed over
-# with "Auto", NMINV restored to $FE47 by the trampoline itself.
-#
-# A bench where a cartridge target runs leaves the value at "External", and it
-# survives a power cycle, so a later run of the computer on its own inherits a
-# machine with its internal interrupts switched off.
+# "External" sets internal=0 in C64::ConfigureU64SystemBus, bit 0x08 of which
+# is the IRQ, so the firmware's own NMI never reaches the 6510: the monitor's
+# Go did nothing 4/4 with External and handed over 2/2 with Auto (C64U 1.2RC).
 CARTRIDGE_PREFERENCE_AUTO = "Auto"
 
 
@@ -1119,15 +1105,11 @@ def ensure_own_cartridge_resources(target, password: str | None = None,
                                    timeout: float = DEFAULT_TIMEOUT) -> str | None:
     """Give a machine testing itself its own bus resources back.
 
-    Answers what it did, or None when there was nothing to do: the target is a
-    cartridge in a computer, the machine does not serve the setting, or it
-    already keeps its own resources.
-
-    Raises `Failure` when the machine serves the setting and will not take the
-    value, because everything that depends on the firmware raising an interrupt
-    fails after that in ways that name neither.
-
-    Like the cartridge preference, the change is not saved to flash.
+    Answers what it changed, or None for a cartridge target, a machine with no
+    cartridge port to prefer, or one that already keeps its own resources.
+    Raises `CartridgePreferenceUnavailable` when a machine that has the store
+    cannot be asked, and `Failure` when it will not take the value. Not saved
+    to flash.
     """
     handle = targets.resolve(target)
     if handle.split:
@@ -1135,10 +1117,13 @@ def ensure_own_cartridge_resources(target, password: str | None = None,
     device = UltimateApi(handle.device, password, timeout)
     try:
         current = device.configs.current(CARTRIDGE_STORE, CARTRIDGE_PREFERENCE_ITEM)
-    except Failure:
-        # Every machine that has the setting is a U64-class build; the rest
-        # have no cartridge port to prefer and nothing to put back.
-        return None
+    except Failure as exc:
+        if CARTRIDGE_STORE not in device.configs.category_names():
+            return None
+        reason = re.sub(r"https?://\S+", "its config API", str(exc))
+        raise CartridgePreferenceUnavailable(
+            f"{handle.device} did not answer for "
+            f"'{CARTRIDGE_PREFERENCE_ITEM}': {reason}") from exc
     if current != CARTRIDGE_PREFERENCE_EXTERNAL:
         return None
     device.configs.set(CARTRIDGE_STORE, CARTRIDGE_PREFERENCE_ITEM,

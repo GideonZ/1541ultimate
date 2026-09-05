@@ -30,19 +30,15 @@ reliable probe exists, which is the rule `api.find_padded_enum` already
 follows: it asks the device which of its stores holds a padded enum rather
 than assuming a name.
 
-*Firmware vintage* is what a release does. The Ultimate 64 and the Ultimate
-II+ under test run firmware built from this branch. A C64 Ultimate serves the
-same endpoints from a separate release line, which can lag behind it: before
-1.2RC it had neither the FTP listing fix nor the readmem length check, and
-the entries for both are gone from the table because that release took them.
-A gap like that closes when the fix is backported, so it describes a release
-rather than a product.
+*Firmware vintage* is what a release does. A machine can run a release line
+that lags this branch, and a gap like that closes when the fix is backported,
+so it describes a release rather than a product.
 
 One question decides which axis a difference belongs to: would flashing this
 branch's firmware on the machine give it the behaviour? Yes makes it vintage,
 no makes it a capability. A cartridge will never grow a keyboard, so that is a
-capability; a C64 Ultimate listed long FTP names as soon as it took the
-commit, so that was vintage.
+capability; a lagging release lists long FTP names as soon as it takes the
+commit, so that is vintage.
 
 Tagging a check with the fix it needs
 -------------------------------------
@@ -159,25 +155,10 @@ TELNET_SEND_TOLERATES_SLOW_PEER = _fix(
     "drains, rather than being closed when the send buffer stays full",
     (U2,))
 
-# The machine code monitor on a lagging firmware is an earlier revision of the
-# same program, and tests/e2e/monitor/monitor_test.py asserts this one's
-# behaviour throughout rather than in one place: this branch names "Back a
-# level", "Copy/Paste" and "Follow/Return" at the foot of its help page, where
-# the earlier revision names "Open monitor", "Close monitor" and "Leave edit"
-# instead. Tagged once for the suite rather than per check, because nearly
-# every check depends on some part of it. A C64 Ultimate 1.2RC has the current
-# monitor and is not listed.
-#
-# The Ultimate II+L on this bench is listed because its flashed 3.15 predates
-# this tree's monitor rework, not because it is a cartridge: there, Back
-# leaves the monitor from a memory view instead of returning a layer.
-# Measured on u2@c64u: one ARROW_LEFT from the hex view put the file browser on
-# screen, and the check that retypes a command argument uses that key, so the
-# checks behind it ran against a browser and failed on a monitor that was
-# working. It also still answers D with the Debug mode this tree removed; see
-# MONITOR_D_KEY_RESERVED. Reflashing that machine from this tree closes both,
-# and 17 checks of the suite pass there in the meantime, so this entry costs
-# real coverage and should go as soon as it can.
+# The bench Ultimate II+L's flashed 3.15 predates this tree's monitor rework:
+# its help page names "Open monitor", "Close monitor" and "Leave edit" where
+# this one names "Back a level", "Copy/Paste" and "Follow/Return". Goes when
+# that machine is reflashed from this tree.
 MONITOR_EXIT_AND_BACK_KEYS = _fix(
     "monitor-exit-and-back-keys",
     "the machine code monitor offers the Back action and the layer model that "
@@ -336,94 +317,39 @@ class Machine:
                 else "Assembly 64 Query Form")
 
     @property
-    def min_search_result_rows(self) -> int:
-        """How many rows a result list has to fill to be one at all.
-
-        The two services do not hold the same corpus, and the count is the
-        service's business rather than the firmware's, so this is the floor
-        below which the screen is more likely to be an incidental match than a
-        listing. Measured live with the term "turrican": Assembly 64 answered
-        with 20 matching rows, and CommoServe with the single entry "Turrican
-        intro speech (Tel_Jeroen)".
-        """
-        return 1 if self.kind == C64U else 3
-
-    @property
     def rest_workers(self) -> int:
         """How many REST calls this machine can be asked for at once.
 
-        Two machines are asked for one at a time, for different reasons.
-
-        An Ultimate II+ has no wired interface, so every call crosses its
-        wireless link. Measured on an Ultimate II+L in a C64 Ultimate: three
-        concurrent workers through a 77-route sweep took the cartridge off the
-        network entirely for several minutes, with ping getting no answer at
-        all, and it came back by itself as soon as the load stopped.
-
-        A C64 Ultimate 1.2.0 mixes two answers together under three workers.
-        Measured on the bench: a request for `/v1/help` came back with status
-        404 carrying another request's whole 200 response as its body, headers
-        and all. That is a firmware defect and asking for one call at a time
-        does not fix it, it only stops this sweep tripping over it; the checks
-        themselves all still run.
-
-        An Ultimate 64 answers three at a time and is unaffected.
+        An Ultimate II+ has only a wireless link: three concurrent workers
+        through the 77-route sweep took an Ultimate II+L off the network for
+        several minutes. The others answer three at a time.
         """
-        return 1 if self.kind in (U2, C64U) else 3
+        return 1 if self.kind == U2 else 3
 
     @property
     def task_menu_key(self) -> str:
         """The key that opens the task menu over the file browser.
 
-        F5 on an Ultimate 64 and an Ultimate II+. A C64 Ultimate maps the
-        function keys differently and says so on its own status row: "F1=MENU
-        F3/F5=PGUP/DN F7=HELP". F5 there is Page Down, so pressing it over a
-        listing shorter than a screen does nothing at all, which is what a
-        suite written for the other two sees.
+        The status row says so: "F1=MENU F3/F5=PGUP/DN F7=HELP" on a C64
+        Ultimate, "F5=MENU F1/F7=PGUP/DN F3=HELP" on the others.
         """
         return "F1" if self.kind == C64U else "F5"
 
-    # Which letters the file browser reads as cursor movement is not here: it
-    # follows the "Navigation Style" setting, which every machine offers and a
-    # person can change, so it is read from the device. See
+    # Which letters the file browser reads as cursor movement follows the
+    # "Navigation Style" setting, so it is read from the device; see
     # tests/lib/navigation.py.
 
     @property
     def page_up_key(self) -> str:
-        """The key that scrolls a listing back by a screen."""
-        return "F3" if self.kind == C64U else "PGUP"
-
-    @property
-    def help_key(self) -> str:
-        """The function key the user interface maps to Help.
-
-        The browser's own status row names it, "F7=HELP" on a C64 Ultimate and
-        "F3=HELP" on the others, and the machine code monitor's help page names
-        the same key beside "?".
-        """
-        return "F7" if self.kind == C64U else "F3"
-
-    @property
-    def monitor_page_up_label(self) -> str:
-        """The key the machine code monitor's help names for paging back.
-
-        The machine decides this rather than the monitor: a C64 Ultimate maps
-        its function keys differently, which is the same difference
-        `page_up_key` reports for the file browser. Measured from the two help
-        screens: an Ultimate 64 offers "F1/SH+SP Page up" and a C64 Ultimate
-        "F3/SH+SP Page up", in the same column.
-        """
         return "F3" if self.kind == C64U else "F1"
 
     @property
-    def monitor_page_down_label(self) -> str:
-        """The key the machine code monitor's help names for paging on."""
+    def page_down_key(self) -> str:
         return "F5" if self.kind == C64U else "F7"
 
     @property
-    def page_down_key(self) -> str:
-        """The key that scrolls a listing on by a screen."""
-        return "F5" if self.kind == C64U else "PGDN"
+    def help_key(self) -> str:
+        return "F7" if self.kind == C64U else "F3"
 
     @property
     def described(self) -> str:

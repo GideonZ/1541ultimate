@@ -453,11 +453,8 @@ def assert_equal(label: str, expected: str, actual: str, command: str) -> None:
 def framed_rows(snapshot: Snapshot) -> tuple[int, int] | None:
     """The first and last row inside the monitor's box, or None if undrawn.
 
-    The monitor draws itself in a box, and everything outside that box belongs
-    to whatever else is on screen. On a C64 Ultimate that is the launcher
-    banner, whose logo is written in reversed characters, so a comparison over
-    the whole screen reads twelve cells of somebody else's artwork as monitor
-    highlighting. An Ultimate 64 has no banner there and never showed it.
+    Outside the box is someone else's: a C64 Ultimate's launcher banner above
+    it is drawn in reversed characters.
     """
     borders = [index for index, line in enumerate(snapshot.lines)
                if line.strip().startswith("+") and line.strip().endswith("+")]
@@ -1802,9 +1799,6 @@ def run_go_keeps_monitor_open_test(session: MonitorSession, rest_host: str) -> N
             f"and is gone now, leaving {strip_frame(screen.line(3))!r} on screen")
 
 
-# The label the monitor ships for bookmark 1, and the title its editor draws.
-# The editor opens with the current label in the field, so clearing it takes one
-# Back per character.
 BOOKMARK_DEFAULT_LABEL = "SCREEN"
 BOOKMARK_LABEL_TITLE = "Label BM1"
 
@@ -1844,13 +1838,8 @@ def run_bookmark_test(session: MonitorSession) -> None:
 
     screen = session.send_key("DOWN")
     session.send_char("L")
-    # Wait for the editor before typing into it, and commit separately once the
-    # field reads back what was typed. Sending the whole edit as one burst
-    # immediately after the key that opens the editor loses the leading
-    # backspaces on a machine that takes longer to draw the popup: measured on a
-    # C64 Ultimate, where the label stayed "SCREEN" while the address and the
-    # width the earlier steps set were both applied, and the same burst is
-    # accepted there once the editor is up.
+    # Typed only once the editor is up: one burst straight after L lost the
+    # backspaces on a C64 Ultimate and the label stayed "SCREEN".
     wait_for_prompt(session, BOOKMARK_LABEL_TITLE)
     screen = session.send_text("\b" * len(BOOKMARK_DEFAULT_LABEL) + "E2E",
                                "bookmark label E2E")
@@ -2094,8 +2083,6 @@ def check_anchor_survives_navigation(session: MonitorSession, address: int,
         raise Failure(f"{what}: ${address:04X} is not on screen to begin with\n"
                       f"{baseline.text()}")
 
-    # The page keys are the machine's: PGUP/PGDN name F1/F7 on an Ultimate 64,
-    # and F7 is Help on a C64 Ultimate, whose monitor pages with F3/F5.
     keys = session.backend.machine
     for up, down in (("UP", "DOWN"), (keys.page_up_key, keys.page_down_key)):
         for step in range(ASM_ANCHOR_STEPS):
@@ -2402,14 +2389,8 @@ def run_asm_entry_round_trip_test(session: MonitorSession, rest_host: str,
             session.goto_run(f"{address:04X}")
             capture.clear()
             launched = time.monotonic()
-            # Collect until two frames actually differ, not until two frames
-            # exist. This half proves that the device is streaming video and
-            # that the picture is moving; it is not by itself proof that the
-            # program ran, because the C64 keeps running under Overlay and its
-            # cursor blinks. The read of $C200 below is what says the program
-            # ran. Stopping at the first two frames made even this weaker
-            # statement a race against the stream's own start, which a C64
-            # Ultimate lost and an Ultimate 64 won.
+            # Until two frames differ: the first two of a starting stream are
+            # equal on a C64 Ultimate. The read of $C200 below proves the run.
             frames = []
             video_deadline = time.monotonic() + VIDEO_CAPTURE_TIMEOUT_SECONDS
             while time.monotonic() < video_deadline:
@@ -2938,8 +2919,6 @@ def run_help_layout_test(session: MonitorSession) -> None:
     place.
     """
     screen = open_help(session, "opening help for the layout check")
-    # The keys named on this page are the machine's own, and the columns they
-    # are named in are the monitor's and the same everywhere.
     keys = session.backend.machine
 
     if "Undo" in screen.text() and "Undoc" not in screen.text():
@@ -3000,9 +2979,9 @@ def run_help_layout_test(session: MonitorSession) -> None:
     assert_help_column(screen, "Monitor", 21, "C=+O")
     assert_help_column(screen, "Monitor", 29, "Monitor")
 
-    assert_help_column(screen, "Page down", 1, f"{keys.monitor_page_up_label}/")
+    assert_help_column(screen, "Page down", 1, f"{keys.page_up_key}/")
     assert_help_column(screen, "Page down", 12, "Page up")
-    assert_help_column(screen, "Page down", 21, f"{keys.monitor_page_down_label}/")
+    assert_help_column(screen, "Page down", 21, f"{keys.page_down_key}/")
     assert_help_column(screen, "Page down", 29, "Page down")
 
     # No line inside the Help popup's own border may spill past content
@@ -3023,15 +3002,9 @@ def run_help_layout_test(session: MonitorSession) -> None:
     assert_help_closed(screen, "closing help after the layout check")
 
 
-# A bound on a loop that stops as soon as it is done, not a number of presses
-# any context is expected to cost.
 BACK_OUT_STEPS = 10
-# The dialog leaving a settings screen raises when the configuration in memory
-# differs from the one in flash, which it does on any device where the REST
-# backend switched `Interface Type` for the session. Back does not answer a
-# Yes/No dialog, so it is answered here, with No: this suite only visited those
-# screens and has no configuration change of its own to keep, and answering Yes
-# would write the session's temporary `Interface Type` into the device's flash.
+# Raised on leaving a settings screen once the REST backend has switched
+# Interface Type for the session. Answered No: Yes would write that into flash.
 FLASH_DIALOG = "Save changes to Flash?"
 
 
@@ -3043,52 +3016,26 @@ def answer_flash_dialog(session: MonitorSession) -> None:
 def back_out_to_the_bare_browser(session: MonitorSession) -> Snapshot:
     """Leave the menu showing the file browser with nothing drawn over it.
 
-    Reached by peeling rather than by recognising, wherever the backend can
-    reopen the menu: Back is pressed until the menu itself closes, which every
-    machine agrees on and which the backend reports by having no menu screen to
-    read, and the menu is then opened again, which lands on the browser.
-
-    Recognising the browser from the screen is what this used to do, and no
-    rule does that on every machine. "No window border on screen" is the
-    browser on an Ultimate 64 and never true on a C64 Ultimate, which frames
-    every menu screen. "A path on the status row" is the browser on an Ultimate
-    64, and is true of the C64 Ultimate's settings screens as well, because
-    they draw inside the same frame and leave the same status row. Both rules
-    stopped this loop on a screen that was not the browser, and the checks
-    after it then sent keys that mean something else there.
-
-    A backend that cannot close and reopen the menu keeps the border rule,
-    which is correct on the machines it runs on.
+    No screen rule finds the browser on every machine: a C64 Ultimate frames
+    every screen and its settings screens keep the browser's path. So Back is
+    pressed until it does nothing: REST reports a closed menu, which is then
+    reopened on the browser; Telnet never closes and the screen stops changing.
     """
-    if session.backend.reopens_menu:
-        for _ in range(BACK_OUT_STEPS):
-            try:
-                snapshot = session.capture()
-                if FLASH_DIALOG in snapshot.text():
-                    answer_flash_dialog(session)
-                    continue
-                session.send_key("RUNSTOP", settle=True)
-            except Failure as exc:
-                # Having no menu screen to read means the menu is closed, which
-                # is what the presses were driving at. The press that closes it
-                # reports this from its own settle, not from the read at the
-                # top of the next turn, so both are inside the same try.
-                if "menu screen unavailable" not in str(exc):
-                    raise
-                session.backend.reopen_menu_on_browser()
-                return session.capture()
-        raise Failure(f"the menu was still open after {BACK_OUT_STEPS} Back "
-                      f"presses\n{session.capture().text()}")
-
     for _ in range(BACK_OUT_STEPS):
-        snapshot = session.capture()
-        if FLASH_DIALOG in snapshot.text():
-            answer_flash_dialog(session)
-            continue
-        if not any("+--" in line for line in snapshot.lines):
-            return snapshot
-        session.send_key("RUNSTOP", settle=True)
-    raise Failure(f"a window was still open after {BACK_OUT_STEPS} Back "
+        try:
+            snapshot = session.capture()
+            if FLASH_DIALOG in snapshot.text():
+                answer_flash_dialog(session)
+                continue
+            after = session.send_key("RUNSTOP", settle=True)
+        except Failure as exc:
+            if "menu screen unavailable" not in str(exc):
+                raise
+            session.backend.reopen_menu_on_browser()
+            return session.capture()
+        if not session.backend.reopens_menu and after.text() == snapshot.text():
+            return after
+    raise Failure(f"the menu was still open after {BACK_OUT_STEPS} Back "
                   f"presses\n{session.capture().text()}")
 
 
@@ -3220,8 +3167,7 @@ def run_back_navigation_test(session: MonitorSession) -> None:
     for close_key in ("ARROW_LEFT", "RUNSTOP", "?"):
         close_help(session, close_key)
 
-    # The mapped help key is the other way in, and which key that is belongs
-    # to the machine: F3 on an Ultimate 64, F7 on a C64 Ultimate.
+    # The mapped help key is the other way in.
     help_key = session.backend.machine.help_key
     screen = session.send_key(help_key)
     assert_help_open(screen, f"the mapped help key ({help_key}) opening help")
@@ -3961,8 +3907,6 @@ def run_tests(context: MonitorContext) -> None:
 
     with check("paging away and back keeps memory view stable"):
         initial_snapshot = screen.text()
-        # The machine's own page keys: F7 pages down on an Ultimate 64 and
-        # opens Help on a C64 Ultimate, which pages with F3/F5.
         keys = session.backend.machine
         session.send_key(keys.page_down_key)
         back = session.send_key(keys.page_up_key)

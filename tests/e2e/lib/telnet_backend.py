@@ -59,16 +59,13 @@ TELNET_KEY_BYTES: dict[str, bytes] = {
     "DOWN": b"\x1b[B",
     "RIGHT": b"\x1b[C",
     "LEFT": b"\x1b[D",
-    "PGUP": b"\x1b[5~",
-    "PGDN": b"\x1b[6~",
     # keyboard_vt100.cc getch() indexes its `numeric` table by the escape
     # value, so 11 is KEY_F1, 13 KEY_F3, 15 KEY_F5 and 19 KEY_F8. F1 is here
     # because a C64 Ultimate puts the task menu on it; see tests/lib/machine.py.
     "F1": b"\x1b[11~",
     "F5": b"\x1b[15~",
     "F3": b"\x1b[13~",
-    # 18 is KEY_F7, which a C64 Ultimate maps to KEY_HELP. The table skips 16
-    # and puts KEY_F6 at 17, so F7 is not where counting in twos would put it.
+    # 18, not 17: keyboard_vt100.cc skips 16 and puts KEY_F6 at 17.
     "F7": b"\x1b[18~",
     "F8": b"\x1b[19~",
     "RUNSTOP": b"\x11",

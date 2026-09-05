@@ -319,13 +319,8 @@ class RestBackend(Backend):
         self._open_menu()
 
     def _in_file_browser(self) -> bool:
-        """Whether the screen showing is the file browser.
-
-        The browser puts the directory it is showing on the status row and
-        nothing else does, so a leading "/" is what identifies it. True on
-        every machine; the rest of this method only ever runs where it can be
-        false.
-        """
+        """Whether a path is on the status row. The launcher shows key hints
+        there; a C64 Ultimate settings screen keeps the browser's path."""
         rows = self._decode(self._body()).lines
         return rows[SCREEN_HEIGHT - 1].lstrip().startswith("/")
 

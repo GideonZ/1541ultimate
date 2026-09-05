@@ -572,10 +572,8 @@ def unwind(device: Device) -> None:
 
     F5 is never pressed here: on an Ultimate 64 and an Ultimate II+ it opens
     the task menu onto the Assembly 64 entry, which is what creates this mess
-    in the first place. A C64 Ultimate keeps its search in the launcher
-    instead, and pages a listing with F5. RETURN is
-    pressed only to answer a dialog that offers nothing else; see
-    sole_action_row.
+    in the first place. RETURN is pressed only to answer a dialog that offers
+    nothing else; see sole_action_row.
     """
     for _ in range(UNWIND_PRESSES):
         rows = device.screen()

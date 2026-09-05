@@ -323,18 +323,11 @@ class Backend:
         than doing nothing. See RestBackend.enter_file_browser.
         """
 
-    # Whether reopen_menu_on_browser() below does anything. The REST backend
-    # drives the menu button, so it can close the menu and open it again; the
-    # Telnet backend cannot, because its UI is the session it is reading
-    # through and closing that ends the connection.
+    # Only REST can: the Telnet UI is the session itself.
     reopens_menu = False
 
     def reopen_menu_on_browser(self) -> None:
-        """Close the on-device menu and open it again on the file browser.
-
-        Only defined where `reopens_menu` is True. `enter_file_browser` lands
-        the reopened menu on the browser on every machine, launcher included.
-        """
+        """Close the on-device menu and open it again on the file browser."""
         raise NotImplementedError
 
     def ensure_ready(self) -> None:
@@ -395,19 +388,14 @@ class Backend:
 # Symbolic action -> C64 keyboard matrix combo (software/api/input_api.h
 # INPUT_API_KEYBOARD_MAP is the authoritative name list). Two physical keys
 # (cursor_up_down, cursor_left_right) carry both directions, reversed by
-# shift; PGUP/PGDN reuse the F1/F7 remap every UI context applies
-# (UserInterface::keymapper in software/userinterface/userinterface.cc).
+# shift. Function keys are named for themselves: which one pages, opens the
+# task menu or help depends on the machine (Machine.page_up_key and friends).
 KEY_ALIASES: dict[str, list[str]] = {
     "UP": ["left_shift", "cursor_up_down"],
     "DOWN": ["cursor_up_down"],
     "LEFT": ["left_shift", "cursor_left_right"],
     "RIGHT": ["cursor_left_right"],
-    # The physical key, named for itself because what it does depends on the
-    # machine: PGUP on an Ultimate 64 and an Ultimate II+, the task menu on a
-    # C64 Ultimate. Callers ask Machine which key plays which role.
     "F1": ["f1"],
-    "PGUP": ["f1"],
-    "PGDN": ["f7"],
     "F5": ["f5"],
     # The C64 keyboard has no F8 key; the KERNAL produces KEY_F8 from Shift+F7
     # instead (software/io/c64/keyboard.h). Telnet's VT100 handler accepts the
@@ -439,9 +427,7 @@ KEY_ALIASES: dict[str, list[str]] = {
     # alias for RUN/STOP: the two are the same Back only where the monitor
     # says so, and a test that cannot tell them apart cannot prove that.
     "ARROW_LEFT": ["arrow_left"],
-    # The two keys the application key mapper turns into KEY_HELP: F3 on an
-    # Ultimate 64 and an Ultimate II+, F7 on a C64 Ultimate. See
-    # Machine.help_key in tests/lib/machine.py.
+    # Machine.help_key says which of these is KEY_HELP.
     "F3": ["f3"],
     "F7": ["f7"],
     "COPY": ["ctrl", "c"],

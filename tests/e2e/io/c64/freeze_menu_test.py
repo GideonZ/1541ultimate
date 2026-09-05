@@ -30,6 +30,7 @@ import pacing  # noqa: E402  (needs tests/lib on sys.path first)
 import rest as rest_lib  # noqa: E402  (needs tests/lib on sys.path first)
 import targets  # noqa: E402  (needs tests/lib on sys.path first)
 from api import UltimateApi  # noqa: E402  (needs tests/lib on sys.path first)
+from backend import LAUNCHER_ENTRY_ROWS, find_selected_row_rest  # noqa: E402
 from rest import header_value, json_object  # noqa: E402  (needs tests/lib first)
 from report import (Failure, check, check_skip, check_start, detail, format_exception,
                     section, suite_fail, suite_ok, warn)
@@ -56,8 +57,7 @@ JIFFY_SETTLE_SECONDS = 5.0
 MENU_TOGGLE_SETTLE_SECONDS = pacing.MENU_TOGGLE_SETTLE_SECONDS
 MENU_TOGGLE_TIMEOUT_SECONDS = 5.0
 # The query form is fetched from a third-party server, so it is slower than a
-# redraw. Which server, and where the menu keeps the entry that opens it,
-# depends on the machine; see Machine.search_form_title.
+# redraw.
 FORM_OPEN_TIMEOUT_SECONDS = 20.0
 SCREEN_WIDTH = 40
 SCREEN_HEIGHT = 25
@@ -81,7 +81,7 @@ class RestSession:
 
     @property
     def machine(self) -> machine_lib.Machine:
-        """Which machine this is, for the checks that need a firmware fix."""
+        """Which machine this is, for its menu layout and keys."""
         info = self.api.info()
         return machine_lib.identify(self.host, lambda: (info.product,
                                                         info.firmware_version))
@@ -365,27 +365,12 @@ def run_toggle_while_open(session: RestSession) -> None:
     close_menu(session)
 
 
-# How many steps show_browser_root() takes before it gives up. Each step either
-# leaves a directory, enters the browser from a launcher, or reopens a menu that
-# a Back press closed, so a browser a few directories deep is reached well
-# inside this.
 BROWSER_UNWIND_STEPS = 12
-# The status row, which the browser fills with the directory it is showing.
 STATUS_ROW = SCREEN_HEIGHT - 1
-# Enough Back-and-up presses to reach the first entry of any list the menu
-# draws, which is shorter than the screen because of the frame and status rows.
 HOME_CURSOR_STEPS = 14
 
 
-def menu_rows(session: RestSession) -> list[str] | None:
-    """The menu screen as text, or None when the menu is not drawn.
-
-    The high bit marks a reversed cell and is not part of the character, the
-    same decode tests/e2e/lib/rest_backend.py does.
-    """
-    body = session.menu_screen_bytes()
-    if body is None or len(body) < SCREEN_CELLS:
-        return None
+def decode_rows(body: bytes) -> list[str]:
     rows = []
     for row in range(SCREEN_HEIGHT):
         cells = body[row * SCREEN_WIDTH:(row + 1) * SCREEN_WIDTH]
@@ -394,13 +379,17 @@ def menu_rows(session: RestSession) -> list[str] | None:
     return rows
 
 
-def browser_directory(rows: list[str]) -> str | None:
-    """The directory the file browser is showing, or None if it is not on screen.
+def menu_rows(session: RestSession) -> list[str] | None:
+    """The menu screen as text, or None when the menu is not drawn."""
+    body = session.menu_screen_bytes()
+    if body is None or len(body) < SCREEN_CELLS:
+        return None
+    return decode_rows(body)
 
-    The browser is the only screen that puts a path on the status row, so a
-    leading "/" identifies it on every machine. Same rule as
-    tests/e2e/api/input_test.py's in_file_browser.
-    """
+
+def browser_directory(rows: list[str]) -> str | None:
+    """The path on the status row, or None. The launcher shows key hints there
+    instead; a settings screen keeps the browser's path."""
     status = rows[STATUS_ROW].lstrip()
     if not status.startswith("/"):
         return None
@@ -410,16 +399,8 @@ def browser_directory(rows: list[str]) -> str | None:
 def show_browser_root(session: RestSession) -> None:
     """Leave the menu showing the top of the file browser.
 
-    A fixed burst of Back presses cannot do this. Back at the browser root
-    leaves the browser, and what that reaches depends on the machine: a C64
-    Ultimate returns to the launcher its menu opens on, and the other two close
-    the menu altogether, after which every further key goes to BASIC. That is
-    what a blind burst of twelve did here, and the check that followed then
-    pressed RETURN at a READY prompt and reported that the context menu was not
-    drawn.
-
-    So each step reads the screen and does one thing: leave a directory, enter
-    the browser from a launcher, or reopen a menu that has been closed.
+    Back at the browser root reaches the launcher on a C64 Ultimate and closes
+    the menu on the others, so each step reads the screen rather than counting.
     """
     for _ in range(BROWSER_UNWIND_STEPS):
         if not session.menu_is_open():
@@ -435,8 +416,6 @@ def show_browser_root(session: RestSession) -> None:
             session.tap_keys(["left_shift", "cursor_left_right"])
             continue
         if session.machine.menu_opens_on_launcher:
-            # The launcher's first entry is the browser, and the cursor is put
-            # on it rather than assumed to be there.
             home_cursor(session)
             session.tap("return")
             continue
@@ -445,9 +424,47 @@ def show_browser_root(session: RestSession) -> None:
 
 
 def home_cursor(session: RestSession) -> None:
-    """Put the highlight on the first entry of the list on screen."""
     for _ in range(HOME_CURSOR_STEPS):
         session.tap_keys(["left_shift", "cursor_up_down"])
+
+
+def launcher_selection(session: RestSession) -> tuple[int, list[str]] | None:
+    """(cursor row, rows) of the launcher on screen, or None when it is not."""
+    body = session.menu_screen_bytes()
+    if body is None or len(body) < SCREEN_BYTES:
+        return None
+    try:
+        cursor = find_selected_row_rest(body[:SCREEN_CELLS], body[SCREEN_CELLS:],
+                                        LAUNCHER_ENTRY_ROWS)
+    except Failure:
+        return None
+    if cursor < 0:
+        return None
+    return cursor, decode_rows(body)
+
+
+def put_launcher_cursor_on(session: RestSession, entry: str) -> None:
+    """From the root browser, reach the launcher and select `entry` there."""
+    show_browser_root(session)
+    wedge_aware(session, "leaving the browser for the launcher",
+                lambda: session.tap("run_stop"))
+    deadline = time.monotonic() + MENU_TOGGLE_TIMEOUT_SECONDS
+    found = None
+    while time.monotonic() < deadline:
+        found = launcher_selection(session)
+        if found is not None and any(entry in text for text in found[1]):
+            break
+        time.sleep(MENU_TOGGLE_SETTLE_SECONDS)
+    else:
+        raise Failure(f"the launcher did not offer {entry!r}")
+    cursor, rows = found
+    row = next(n for n, text in enumerate(rows) if entry in text)
+    for _ in range(abs(row - cursor)):
+        session.tap_keys(["cursor_up_down"] if row > cursor
+                         else ["left_shift", "cursor_up_down"])
+    landed = launcher_selection(session)
+    if landed is None or landed[0] != row:
+        raise Failure(f"the launcher cursor is not on {entry!r} at row {row}")
 
 
 def run_context_reopen(session: RestSession) -> None:
@@ -474,13 +491,8 @@ def run_context_reopen(session: RestSession) -> None:
     prepare(session, ENABLED)
     open_menu(session)
     with check("open the context menu on the first browser entry"):
-        # Locate the browser before pressing RETURN instead of inheriting
-        # wherever an earlier suite left it: a suite that ended inside its own
-        # fixture directory leaves the browser showing an empty listing once
-        # that directory is deleted, and RETURN there does nothing. Then home
-        # the cursor: on the search entry RETURN opens a network-backed query
-        # form rather than a context menu, and the menu button cannot dismiss
-        # that form.
+        # Homed first: on the search entry RETURN opens a query form the menu
+        # button cannot dismiss.
         show_browser_root(session)
         home_cursor(session)
         before = session.menu_screen_bytes()
@@ -502,18 +514,15 @@ def run_context_reopen(session: RestSession) -> None:
 
 
 def open_search_entry(session: RestSession) -> None:
-    """Put the machine's online-search entry under the cursor and open it.
+    """Put the machine's online-search entry under the cursor.
 
-    An Ultimate 64 and an Ultimate II+ keep it as the first entry of the task
-    menu, already selected when the menu opens, and the key that opens that
-    menu is the machine's rather than a literal F5.
-
-    A machine that keeps its search in a launcher instead is not driven here,
-    and `run_menu_button_in_form` skips before it reaches this. The only
-    machine that does is a C64 Ultimate, and the behaviour is covered there:
-    tests/e2e/io/c64/assembly64_test.py drives that launcher for real and makes
-    the same assertion about the menu button inside the edit field.
+    The first entry of the task menu on an Ultimate 64 and an Ultimate II+; an
+    entry of the launcher, reached by Back from the root browser, on a C64
+    Ultimate.
     """
+    if session.machine.search_in_launcher:
+        put_launcher_cursor_on(session, session.machine.search_menu_entry)
+        return
     before = session.menu_screen_bytes()
     wedge_aware(session, "opening the task menu",
                 lambda: session.tap(session.machine.task_menu_key.lower()))
@@ -539,19 +548,6 @@ def run_menu_button_in_form(session: RestSession) -> None:
     """
     title = session.machine.search_form_title
     section(f"the menu button works inside the {title}")
-    if session.machine.search_in_launcher:
-        # Not a defect and not a firmware gap: this machine keeps its search in
-        # the launcher its menu opens on rather than in the task menu, so the
-        # route this scenario drives does not exist here. assembly64_test
-        # drives the launcher route on the same machine and asserts the same
-        # thing about the menu button.
-        check_start("the menu button closes the menu from inside the edit field")
-        check_skip(
-            f"{session.machine.described} keeps "
-            f"{session.machine.search_menu_entry!r} in its launcher rather "
-            f"than its task menu; tests/e2e/io/c64/assembly64_test.py covers "
-            f"the menu button in that form")
-        return
     prepare(session, ENABLED)
     open_menu(session)
     with check(f"put the cursor on {session.machine.search_menu_entry!r}"):

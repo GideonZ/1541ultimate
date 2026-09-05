@@ -31,11 +31,9 @@ bytes against a noise floor of a few dozen. The query slope needs few, because
 a single leaked response body is 16 KB -- and each iteration is a request to a
 third-party service, which is not something to make a habit of.
 
-Which service is searched depends on the machine: an Ultimate 64 and an
-Ultimate II+ search Assembly 64, and a C64 Ultimate searches CommoServe from
-the launcher its menu button opens. The paths above are the same on all three,
-and every step here is driven through assembly64_test, which takes the entry
-name, the form title and the way in from the machine. See tests/lib/machine.py.
+The service is the machine's (Assembly 64, or CommoServe on a C64 Ultimate);
+every step is driven through assembly64_test, which takes the way in from
+tests/lib/machine.py.
 
 Uses GET /v1/machine:heap. Firmware predating that endpoint answers 404 and
 every check here skips, so the suite is safe to run against any image. It also

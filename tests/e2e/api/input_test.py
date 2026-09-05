@@ -1876,11 +1876,8 @@ def select_menu_entry(session: RestInputSession, label: str) -> None:
 
 
 def in_file_browser(rows: list[str]) -> bool:
-    """Whether the file browser is what the menu is showing.
-
-    The browser puts the directory it is showing on the status row and nothing
-    else does, so a leading "/" identifies it on every machine.
-    """
+    """Whether a path is on the status row. The launcher shows key hints there;
+    a C64 Ultimate settings screen keeps the browser's path."""
     return rows[MENU_SCREEN_ROWS - 1].lstrip().startswith("/")
 
 

@@ -238,10 +238,7 @@ def run_machine_checks() -> None:
     machine.forget_assumptions()
     try:
         with check("the table decides which machine skips a tagged check"):
-            # Both entries are fixes this branch carries and the flashed 3.15
-            # on the bench Ultimate II+L does not, so an Ultimate 64 and a C64
-            # Ultimate run the checks tagged with them and an Ultimate II+
-            # skips them.
+            # Both entries list the Ultimate II+ only.
             for name in (machine.MONITOR_D_KEY_RESERVED,
                          machine.IDENT_SWITCHES_LIVE):
                 for product, expected in (("Ultimate 64 Elite", True),

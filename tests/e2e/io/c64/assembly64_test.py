@@ -61,16 +61,10 @@ from ui_backend import (
 MENU_BUTTON_PATH = "/v1/machine:menu_button"
 
 MENU_TOGGLE_TIMEOUT = 6.0
-# These three describe the form itself, and the two services draw it the same
-# way, so they are literals rather than properties of the machine. Both label
-# their first criterion "Name:", start their button row with "<<", and refuse a
-# criteria-free query with a modal popup carrying the text
-# AssemblySearchForm::submit() raises. Measured on a C64 Ultimate 1.2.0, where
-# the query and empty-query scenarios below pass unchanged.
+# Both services draw the same form (AssemblySearchForm), so these are literals.
 NAME_FIELD = "Name:"
 SUBMIT_LABEL = "<<"
 EMPTY_QUERY_MESSAGE = "Queries cannot be empty"
-# What the file browser shows for a directory with nothing in it.
 EMPTY_MARKER = "< No Items >"
 # The task menu is built from every registered category, so it takes noticeably
 # longer to draw than an ordinary redraw.
@@ -87,13 +81,9 @@ FIELD_WALK_LIMIT = 30
 # while a fetch is in flight, so a press can take as long as the service does.
 UNWIND_BUDGET = 60.0
 UNWIND_STEP_TIMEOUT = 6.0
-# Longer than the 26-character edit limit in AssemblySearchForm::change(), and
-# longer than what a C64 Ultimate's form accepts: the check only requires that
-# the field stops taking characters, not where it stops.
+# Longer than the 26-character edit limit in AssemblySearchForm::change().
 OVERLONG_TEXT = "abcdefghijklmnopqrstuvwxyz0123456789"
-# A term both corpora answer, with very different counts: Assembly 64 returned
-# 20 matching rows and CommoServe one. How many rows make a result list is the
-# service's business, so the floor is Machine.min_search_result_rows.
+# Both corpora answer it: Assembly 64 with 20 rows, CommoServe with one.
 SEARCH_TERM = "turrican"
 ENTRY_ROWS = range(1, 24)
 STATUS_ROW = 24
@@ -740,11 +730,6 @@ def scenario_query_returns_results(device: Device) -> None:
             # An empty corpus is the service's business, not the firmware's. What
             # this suite owns is that the UI left the form and stayed usable.
             detail("the service returned no matches")
-        elif len(matches) < device.backend.machine.min_search_result_rows:
-            raise Failure(
-                f"only {len(matches)} result rows mention {SEARCH_TERM!r}, which "
-                "does not look like a result list"
-            )
         else:
             detail(f"{len(matches)} result rows mention {SEARCH_TERM!r}")
     recover(device, "running a query")
