@@ -394,18 +394,6 @@ class Machine:
         return "F3" if self.kind == C64U else "PGUP"
 
     @property
-    def browser_is_framed(self) -> bool:
-        """Whether the file browser draws a window frame of its own.
-
-        A C64 Ultimate draws every menu screen inside a rounded frame, so its
-        bare browser already carries one; an Ultimate 64 and an Ultimate II+
-        draw the browser across the whole screen with no frame at all. A caller
-        peeling windows off the browser has to know which, or it reads the
-        browser's own frame as something still open over it.
-        """
-        return self.kind == C64U
-
-    @property
     def monitor_page_up_label(self) -> str:
         """The key the machine code monitor's help names for paging back.
 

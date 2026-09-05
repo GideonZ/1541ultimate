@@ -323,6 +323,20 @@ class Backend:
         than doing nothing. See RestBackend.enter_file_browser.
         """
 
+    # Whether reopen_menu_on_browser() below does anything. The REST backend
+    # drives the menu button, so it can close the menu and open it again; the
+    # Telnet backend cannot, because its UI is the session it is reading
+    # through and closing that ends the connection.
+    reopens_menu = False
+
+    def reopen_menu_on_browser(self) -> None:
+        """Close the on-device menu and open it again on the file browser.
+
+        Only defined where `reopens_menu` is True. `enter_file_browser` lands
+        the reopened menu on the browser on every machine, launcher included.
+        """
+        raise NotImplementedError
+
     def ensure_ready(self) -> None:
         """Make the UI reachable again if the last action tore it down.
 

@@ -311,6 +311,13 @@ class RestBackend(Backend):
         self._raise_menu()
         self.enter_file_browser()
 
+    reopens_menu = True
+
+    def reopen_menu_on_browser(self) -> None:
+        """See Backend.reopen_menu_on_browser."""
+        self._close_menu()
+        self._open_menu()
+
     def _in_file_browser(self) -> bool:
         """Whether the screen showing is the file browser.
 
