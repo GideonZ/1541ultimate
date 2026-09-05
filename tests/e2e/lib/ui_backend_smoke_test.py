@@ -30,6 +30,7 @@ sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
                             if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
 import bootstrap  # noqa: E402,F401
 import cli  # noqa: E402
+import api as api_lib
 import machine
 import pacing
 import profiles  # noqa: E402
@@ -1006,9 +1007,13 @@ def main() -> int:
                                  args.timeout)
 
         section("REST backend, Interface Type = Freeze")
-        if not profiles.skip_below(profiles.QUICK,
-                                   "REST/Freeze: connect, navigate, teardown"):
-            with check("REST/Freeze: connect, navigate, teardown"):
+        freeze_label = "REST/Freeze: connect, navigate, teardown"
+        # This drives the backend directly rather than through the run's
+        # transport, so run-tests' own freeze gate does not cover it.
+        if not profiles.skip_below(profiles.QUICK, freeze_label) and \
+                not api_lib.identify_machine(args.host).skip_without_fix(
+                    machine.FREEZE_MENU_OPENS, freeze_label):
+            with check(freeze_label):
                 run_rest_smoke(args.host, args.password, args.timeout, "Freeze")
     except Failure as exc:
         suite_fail("ui_backend_smoke_test", str(exc))

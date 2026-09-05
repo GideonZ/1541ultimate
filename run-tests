@@ -2713,6 +2713,46 @@ def resolve_modes(raw: str, profile: str = profiles.DEFAULT) -> list[str]:
     return modes or list(profiles.modes_for(profile))
 
 
+# The freeze backend is a RestBackend with interface_type "Freeze", so every UI
+# suite in a freeze pass opens the menu in Freeze mode, which
+# machine.FREEZE_MENU_OPENS says takes a machine lacking the fix off the network
+# until it is power cycled. Gating each suite would still miss the next one
+# added, so the transport is dropped once for the whole run.
+MODE_REQUIRED_FIXES = {"freeze": machine_lib.FREEZE_MENU_OPENS}
+
+
+def drop_unsurvivable_modes(target: targets_lib.Target, password: str,
+                            modes: Sequence[str]) -> list[str]:
+    """Modes this machine can be driven through, without the ones it cannot.
+
+    Answers `modes` unchanged when the machine cannot be identified: a run that
+    cannot ask is not a reason to drop coverage, and every suite still applies
+    its own gates.
+    """
+    needed = {mode: MODE_REQUIRED_FIXES[mode] for mode in modes
+              if mode in MODE_REQUIRED_FIXES}
+    if not needed:
+        return list(modes)
+    try:
+        machine = api_lib.identify_machine(
+            target, password or None, DEVICE_RECOVERY_PROBE_TIMEOUT_SECONDS)
+    except DEVICE_ERRORS as exc:
+        report.detail(f"could not ask {target.device} which machine it is "
+                      f"({exc}); sweeping every transport the profile names")
+        return list(modes)
+    kept = []
+    for mode in modes:
+        fix = needed.get(mode)
+        reason = machine.missing_fix(fix) if fix else ""
+        if reason:
+            report.detail(f"not sweeping the {mode} transport: {reason}. "
+                          f"Driving the UI that way takes this machine off the "
+                          f"network until it is power cycled by hand")
+        else:
+            kept.append(mode)
+    return kept
+
+
 def print_listing() -> None:
     print("Profiles, shallowest first. A suite runs from its own profile up.")
     for name in profiles.ORDER:
@@ -3432,7 +3472,8 @@ def main(argv: list[str]) -> int:
     report.detail(f"profile:    {args.profile}"
                   + ("" if args.profile != profiles.DEFAULT else " (default)"))
     if "e2e" in categories:
-        report.detail(f"modes:      {', '.join(modes)}")
+        modes = drop_unsurvivable_modes(target, options.password, modes)
+        report.detail(f"modes:      {', '.join(modes) if modes else 'none'}")
     if "soak" in categories:
         report.detail(f"soak:       {options.soak_profile} profile")
     report.detail(f"timeout:    {options.timeout}s")

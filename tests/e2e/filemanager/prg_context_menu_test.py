@@ -46,6 +46,7 @@ sys.path.insert(0, bootstrap.directory("e2e", "api"))
 # holds the shared UI backend.
 
 from menu_screen_test import Failure, MenuScreenInfo, RestSession, check
+from api import ConfigsApi, DRIVE_ENABLE_ITEM, DRIVE_ENABLED, DRIVE_STORES
 import ftp as ftp_lib
 import machine as machine_lib
 import pacing
@@ -319,6 +320,13 @@ class Machine:
 
     def remove_drive_a(self) -> None:
         self.session.request("PUT", "/v1/drives/a:remove")
+
+    def drive_a_enable(self) -> str:
+        """Whether the emulated drive A is switched on, as the config reports it."""
+        return ConfigsApi(self.session).current(DRIVE_STORES[0], DRIVE_ENABLE_ITEM)
+
+    def set_drive_a_enable(self, value: str) -> None:
+        ConfigsApi(self.session).set(DRIVE_STORES[0], DRIVE_ENABLE_ITEM, value)
 
     # ---- C64 observation ------------------------------------------------
     def signature(self) -> bytes:
@@ -1250,6 +1258,8 @@ def main() -> int:
 
     failures: list[tuple[str, str]] = []
     total = 0
+    # "" means never read, so the teardown puts back only what this changed.
+    drive_a_was = ""
 
     # Every action is independent, so keep going after a failure: one run then
     # reports the whole context-menu matrix instead of stopping at the first hole.
@@ -1269,6 +1279,25 @@ def main() -> int:
 
         with check(f"seed /Temp with {fixtures.prg}, {fixtures.d64} and a long-named PRG"):
             fixtures.seed(rest_host, args.password)
+
+        # Real Run is the only action here that reaches the C64 over the IEC
+        # bus, so it is the only one needing a drive on it, and a switched-off
+        # drive reports as "FILE NOT FOUND", which reads as a firmware fault.
+        # ensure_host_drives_off leaves a computer's drives off after a
+        # cartridge run, and that value outlives the run: it can reach flash
+        # through ConfigBrowser::on_exit while the restore cannot. Set rather
+        # than skip, so the only IEC-path coverage is not dropped.
+        with check("switch drive A on, so the real 1541 can answer a Real Run"):
+            drive_a_was = machine.drive_a_enable()
+            detail(f"{DRIVE_STORES[0]}/{DRIVE_ENABLE_ITEM} was {drive_a_was!r}")
+            if drive_a_was != DRIVE_ENABLED:
+                machine.set_drive_a_enable(DRIVE_ENABLED)
+                now = machine.drive_a_enable()
+                if now != DRIVE_ENABLED:
+                    raise Failure(
+                        f"{DRIVE_STORES[0]}/{DRIVE_ENABLE_ITEM} stayed at {now!r} "
+                        f"after it was set to {DRIVE_ENABLED!r}; Real Run has no "
+                        f"drive to load from")
 
         if args.repeat > 0:
             names = args.scenario or [name for name, _, _, _ in SCENARIOS]
@@ -1318,6 +1347,10 @@ def main() -> int:
     finally:
         teardown_step("close the menu", machine.close_menu)
         teardown_step("remove drive a", machine.remove_drive_a)
+        if drive_a_was and drive_a_was != DRIVE_ENABLED:
+            teardown_step(
+                f"put {DRIVE_STORES[0]}/{DRIVE_ENABLE_ITEM} back to {drive_a_was!r}",
+                lambda was=drive_a_was: machine.set_drive_a_enable(was))
         if not args.keep_fixtures:
             fixtures.remove(rest_host, args.password)
             teardown_step("remove the leftovers the browser can see",

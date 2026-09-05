@@ -27,6 +27,7 @@ import urllib.parse
 from dataclasses import dataclass, field
 from collections.abc import Sequence
 
+import machine
 import pacing
 import targets
 from report import Failure
@@ -1103,6 +1104,26 @@ def ensure_cartridge_preference(target, password: str | None = None,
 DRIVE_STORES = ("Drive A Settings", "Drive B Settings")
 DRIVE_ENABLE_ITEM = "Drive"
 DRIVE_DISABLED = "Disabled"
+# A suite that needs the emulated 1541 to answer sets this for itself: the
+# value ensure_host_drives_off leaves behind belongs to a different target's
+# run, and can reach flash through ConfigBrowser::on_exit while the restore at
+# the end of a run cannot.
+DRIVE_ENABLED = "Enabled"
+
+
+def identify_machine(target, password: str | None = None,
+                     timeout: float = DEFAULT_TIMEOUT) -> machine.Machine:
+    """Which machine `target` is, from one /v1/info answer.
+
+    machine.identify caches per host, so repeated calls cost one request.
+    """
+    host = targets.device_of(target)
+
+    def fetch() -> tuple[str, str]:
+        info = UltimateApi(host, password, timeout).info()
+        return (info.product, info.firmware_version)
+
+    return machine.identify(host, fetch)
 
 
 # Every machine in this tree carries "Fast Reset" in the C64 store: the item is

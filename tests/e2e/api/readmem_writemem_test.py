@@ -746,6 +746,10 @@ def main() -> int:
 
     original_interface: str | None = None
     results: dict[str, bool] = {}
+    # Stages this machine is gated out of by machine.FIXES. Kept apart from
+    # `results` so the summary can tell a stage that was not allowed to run
+    # from one that should have run and produced nothing.
+    gated: set[str] = set()
 
     try:
         session.close_menu_from_anywhere()
@@ -810,7 +814,24 @@ def main() -> int:
         else:
             detail("skipping live-noise probe: Freeze halts the CPU entirely, no drift is possible")
 
-        if "selfcheck-freeze" in tests:
+        # Three stages below open the menu with Interface Type set to Freeze,
+        # which machine.FREEZE_MENU_OPENS keeps off a machine lacking the fix:
+        # it takes the device off the network until it is power cycled. Gated
+        # once here, so one report line says what the run did not cover.
+        freeze_stages = [name for name in
+                         ("selfcheck-freeze", "overlay-to-freeze", "freeze-to-overlay")
+                         if name in tests]
+        freeze_blocked = bool(freeze_stages) and session.machine.skip_without_fix(
+            machine_lib.FREEZE_MENU_OPENS,
+            f"open the menu in Freeze mode ({', '.join(freeze_stages)})")
+        if freeze_blocked:
+            # A stage the machine is not allowed to run is skipped, not failed.
+            # The summary below fails the suite for any stage that is not True,
+            # which is right for a stage that should have run and did not, and
+            # wrong for one this machine is gated out of.
+            gated.update(freeze_stages)
+
+        if "selfcheck-freeze" in tests and not freeze_blocked:
             results["selfcheck-freeze"] = run_selfcheck(
                 session, INTERFACE_FREEZE, 0x33, noise_addrs, interface_selectable=interface_selectable
             )
@@ -819,9 +840,9 @@ def main() -> int:
         if "screen-round-trip" in tests:
             results["screen-round-trip"] = run_screen_round_trip(
                 session, INTERFACE_OVERLAY, 0x3C)
-        if "overlay-to-freeze" in tests:
+        if "overlay-to-freeze" in tests and not freeze_blocked:
             results["overlay-to-freeze"] = run_cross_mode(session, INTERFACE_OVERLAY, INTERFACE_FREEZE, 0x55, noise_addrs)
-        if "freeze-to-overlay" in tests:
+        if "freeze-to-overlay" in tests and not freeze_blocked:
             results["freeze-to-overlay"] = run_cross_mode(session, INTERFACE_FREEZE, INTERFACE_OVERLAY, 0xAA, noise_addrs)
 
     finally:
@@ -839,6 +860,9 @@ def main() -> int:
     section("summary")
     all_ok = True
     for name in tests:
+        if name in gated:
+            detail(f"{name}: {SKIP}")
+            continue
         outcome = results.get(name)
         status = OK if outcome else (FAIL if outcome is False else SKIP)
         if outcome is not True:

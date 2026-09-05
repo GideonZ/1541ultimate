@@ -194,6 +194,17 @@ SERVES_FOUR_TELNET_FTP_SOCKETS = _fix(
     "can be watched over FTP while a Telnet session is open",
     (C64U,))
 
+# What tests/e2e/network/telnet_stale_session_test.py asserts, and the reason
+# that suite must not run without the fix. Measured on a C64 Ultimate 1.2.0:
+# all four slots stayed taken 75s after the peers vanished, and the listener
+# then refused every later connection, which takes the UI over Telnet away from
+# every suite after it in the run.
+TELNET_REAPS_HALF_OPEN = _fix(
+    "telnet-reaps-half-open",
+    "a Telnet session whose peer vanished without closing is reaped, so its "
+    "session slot returns rather than being held until the firmware restarts",
+    (C64U,))
+
 # Measured with tests/e2e/io/c64/freeze_menu_test.py, and the reason that
 # suite must not run without the fix: on firmware without it, opening the menu
 # while Interface Type is Freeze stops the device answering REST, ICMP and FTP
