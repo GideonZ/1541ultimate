@@ -2909,6 +2909,9 @@ def run_help_layout_test(session: MonitorSession) -> None:
     place.
     """
     screen = open_help(session, "opening help for the layout check")
+    # The keys named on this page are the machine's own, and the columns they
+    # are named in are the monitor's and the same everywhere.
+    keys = session.backend.machine
 
     if "Undo" in screen.text() and "Undoc" not in screen.text():
         raise Failure(f"U is described as Undo rather than Undoc/Case\n{screen.text()}")
@@ -2963,15 +2966,11 @@ def run_help_layout_test(session: MonitorSession) -> None:
     assert_help_column(screen, "Follow/Ret", 21, "RETURN")
     assert_help_column(screen, "Follow/Ret", 29, "Follow/Ret")
 
-    assert_help_column(screen, "Monitor", 1, "?/")
+    assert_help_column(screen, "Monitor", 1, f"?/{keys.help_key}")
     assert_help_column(screen, "Monitor", 12, "Help")
     assert_help_column(screen, "Monitor", 21, "C=+O")
     assert_help_column(screen, "Monitor", 29, "Monitor")
 
-    # The paging keys are the machine's own, so the row is checked against what
-    # this machine names them; the columns are the monitor's and are the same
-    # everywhere.
-    keys = session.backend.machine
     assert_help_column(screen, "Page down", 1, f"{keys.monitor_page_up_label}/")
     assert_help_column(screen, "Page down", 12, "Page up")
     assert_help_column(screen, "Page down", 21, f"{keys.monitor_page_down_label}/")
@@ -3192,9 +3191,11 @@ def run_back_navigation_test(session: MonitorSession) -> None:
     for close_key in ("ARROW_LEFT", "RUNSTOP", "?"):
         close_help(session, close_key)
 
-    # The mapped help key is the other way in.
-    screen = session.send_key("F3")
-    assert_help_open(screen, "the mapped help key opening help")
+    # The mapped help key is the other way in, and which key that is belongs
+    # to the machine: F3 on an Ultimate 64, F7 on a C64 Ultimate.
+    help_key = session.backend.machine.help_key
+    screen = session.send_key(help_key)
+    assert_help_open(screen, f"the mapped help key ({help_key}) opening help")
     screen = session.send_key("RUNSTOP")
     assert_help_closed(screen, "RUN/STOP closing help opened with the help key")
 

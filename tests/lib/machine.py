@@ -394,6 +394,16 @@ class Machine:
         return "F3" if self.kind == C64U else "PGUP"
 
     @property
+    def help_key(self) -> str:
+        """The function key the user interface maps to Help.
+
+        The browser's own status row names it, "F7=HELP" on a C64 Ultimate and
+        "F3=HELP" on the others, and the machine code monitor's help page names
+        the same key beside "?".
+        """
+        return "F7" if self.kind == C64U else "F3"
+
+    @property
     def monitor_page_up_label(self) -> str:
         """The key the machine code monitor's help names for paging back.
 
