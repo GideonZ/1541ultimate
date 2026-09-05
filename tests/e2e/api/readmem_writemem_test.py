@@ -599,7 +599,7 @@ BAD_READ_REQUESTS = [
     ({"address": "0000", "length": "99999999999999999999"}, "length that overflows a long"),
     ({"address": "ff00", "length": 65536}, "read running past $FFFF"),
     ({"address": "10000", "length": 1}, "address above $FFFF"),
-    ({"address": "-1", "length": 1}, "negative address", None),
+    ({"address": "-1", "length": 1}, "negative address"),
 ]
 # Repeats chosen so a 64KB-per-call leak is a few megabytes without making the
 # suite slow. This is a smoke check, not proof of a leak-free heap: nothing over
