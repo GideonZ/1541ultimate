@@ -28,7 +28,8 @@ import targets
 import tempfile
 import threading
 import time
-from support import (CASES, INHERITED_VARIABLES, KEPT_VARIABLES, REPORT_TOOL,
+from support import (CASES, FOREIGN_VARIABLES, INHERITED_VARIABLES,
+    KEPT_VARIABLES, REPORT_TOOL,
     ROOT, RUNNER_PATH, Skipped, UNTESTED_REQUIREMENTS, _harness_hash_edit,
     case, composed_pair, exclusive, free_udp_port, glyph_columns,
     interaction_log, load_report_tool, load_runner, logged_interactions,
@@ -1022,6 +1023,32 @@ def no_runner_variable_escapes_the_scrubbing_list() -> str:
         raise Failure(f"the scrubbing list carries {stale}, which the runner "
                       f"no longer exports")
     return f"{len(exported)} variables, every one scrubbed"
+
+
+@case(1, "OBS-16.6")
+def an_operators_declared_addresses_do_not_reach_a_scripted_run() -> str:
+    """`U64_LOG_ADDRESSES` is scrubbed from a scripted run's environment.
+
+    The collector reports a declared name that belongs to no target of the run,
+    which is the point of the variable: an operator's typo would otherwise show
+    up only as lines in `syslog-unknown-sender.txt` with nothing saying why.
+    A scripted run's targets are the loopback double, so every name a real
+    bench declares is such a name, and the fixture's own report then carries a
+    line per declared machine. Measured live: the checked-in golden document
+    differed under `U64_LOG_ADDRESSES='c64u=...,u64=...,u2=...'`, so the gate's
+    own invocation decided whether this suite passed.
+
+    Not covered by `no_runner_variable_escapes_the_scrubbing_list`, which holds
+    `INHERITED_VARIABLES` to exactly the runner's `E2E_` exports. This variable
+    is nobody's export, so it lives in `FOREIGN_VARIABLES` and needs its own
+    case.
+    """
+    if syslog_collector.ADDRESS_ENV not in FOREIGN_VARIABLES:
+        raise Failure(
+            f"{syslog_collector.ADDRESS_ENV} is not scrubbed from a scripted "
+            f"run, so an operator who declares a bench address changes what "
+            f"the fixture's own report says")
+    return f"{syslog_collector.ADDRESS_ENV} scrubbed"
 
 
 @case(1, "OBS-2.17", exclusive=True)
