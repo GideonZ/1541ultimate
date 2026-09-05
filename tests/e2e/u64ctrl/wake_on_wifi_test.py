@@ -17,11 +17,17 @@ below:
   cross a router. Give --broadcast to aim at a subnet's own instead.
 
 Scenarios 2, 3 and 5 put the machine off over REST, which leaves the control
-module powered and associated. Scenario 5 asserts that a packet is ignored, so
-it ends with a machine only its power button can revive: hence `manual`, and
-hence --power-button-cmd. Scenario 4, the cold start, covers the watcher armed
-from the module's own start rather than from a power transition; it needs
---power-off-cmd and --power-on-cmd and is skipped without them.
+module powered and associated. Scenarios 2 and 3 leave the setting Enabled, so
+the suite wakes the machine itself with a packet addressed to the Wi-Fi
+module's own MAC, which GET /v1/info reports as `wifi_mac`; no operator and no
+actuator are needed for them. Scenario 2 runs first and times the wake, and
+scenario 3 watches for three times that measured time rather than for the
+worst-case boot budget, which is what keeps the negative check to seconds. Scenario 5 asserts that a packet is ignored with
+the setting Disabled, so it ends with a machine only its power button or its
+mains socket can revive, and it is skipped unless --power-button-cmd, or
+--power-off-cmd and --power-on-cmd, are given. Scenario 4, the cold start,
+covers the watcher armed from the module's own start rather than from a power
+transition; it needs the socket commands and is skipped without them.
 
 Every option can also come from the environment: U64_WOL_MAC, U64_WOL_BROADCAST,
 U64_WOL_PORT, U64_POWER_BUTTON_CMD, U64_POWER_OFF_CMD and U64_POWER_ON_CMD.
@@ -46,9 +52,10 @@ sys.path.insert(0, bootstrap.directory("e2e", "u64ctrl"))
 
 from api import UltimateApi
 from machine_power import (DEFAULT_OFF_SECONDS, DEFAULT_SILENCE_SECONDS,
-                           DEFAULT_UP_TIMEOUT, Mains, PowerButton, alive,
-                           recover_if_off, stays_off, switch_machine_off,
-                           wait_for_state)
+                           DEFAULT_UP_TIMEOUT, Mains, PowerButton,
+                           WakePacketButton, alive, format_mac,
+                           recover_if_off, send_magic, silence_window,
+                           stays_off, switch_machine_off, wait_for_state)
 from report import (Failure, check, check_ok, check_skip, check_start, detail,
                     format_exception, section, suite_fail, suite_ok)
 
@@ -67,29 +74,8 @@ MODE_OFF = "Off"
 # rather than on the port, so 7 or a raw frame would do as well.
 DEFAULT_BROADCAST = "255.255.255.255"
 DEFAULT_PORT = 9
-# Wake tools repeat the packet, since a lost datagram is not worth a failed
-# wake. The firmware disarms on the first match, so the copies cost nothing.
-COPIES = 3
-COPY_PAUSE = 0.2
-
-
-def magic_packet(mac: bytes) -> bytes:
-    """The 102 bytes every wake tool sends: six 0xFF, then the MAC sixteen times."""
-    return (b"\xff" * 6) + (mac * 16)
-
-
-def send_magic(mac: bytes, broadcast: str, port: int) -> None:
-    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-        payload = magic_packet(mac)
-        for _ in range(COPIES):
-            sock.sendto(payload, (broadcast, port))
-            time.sleep(COPY_PAUSE)
-    detail(f"{COPIES} magic packets for {format_mac(mac)} to {broadcast}:{port}")
-
-
-def format_mac(mac: bytes) -> str:
-    return ":".join(f"{octet:02x}" for octet in mac)
+# How many copies go out, and where, is in tests/e2e/u64ctrl/machine_power.py,
+# which the power-cycle suite shares.
 
 
 def parse_mac(text: str) -> bytes:
@@ -104,12 +90,28 @@ def parse_mac(text: str) -> bytes:
         raise Failure(f"not a MAC address: {text!r}") from None
 
 
+def wifi_mac(info) -> bytes | None:
+    """The Wi-Fi module's own MAC, as GET /v1/info reports it, or None.
+
+    This is the address a wake packet has to carry. The module is what stays
+    powered while the machine is off, and the wired PHY goes down with the
+    machine, so a packet addressed to the Ethernet MAC, which is what the
+    harness has in its ARP table after talking to a wired device, reaches
+    nothing that can act on it.
+    """
+    reported = info.extra.get("wifi_mac")
+    if not isinstance(reported, str) or not reported.strip():
+        return None
+    return parse_mac(reported)
+
+
 def discover_mac(host: str) -> bytes:
     """The device's MAC, from the host's own neighbour table.
 
-    The device serves it nowhere, so the operating system is asked instead,
-    while the machine is still up and the entry is fresh. `ip neigh` first,
-    `arp` second: net-tools is no longer installed by default.
+    The fallback for firmware whose /v1/info does not report `wifi_mac`. It
+    answers whichever interface the harness last talked to, so it is right only
+    on a device that is on Wi-Fi. `ip neigh` first, `arp` second: net-tools is
+    no longer installed by default.
     """
     try:
         address = socket.gethostbyname(host)
@@ -193,8 +195,10 @@ def main() -> int:
     parser.add_argument("-t", "--timeout", type=float,
                         default=float(os.environ.get("U64_TIMEOUT", "5.0")))
     parser.add_argument("--mac", default=os.environ.get("U64_WOL_MAC", ""),
-                        help="The device's MAC address. Discovered from the "
-                             "host's ARP table when not given.")
+                        help="The device's MAC address. Taken from the "
+                             "wifi_mac GET /v1/info reports when not given, "
+                             "and from the host's ARP table on firmware that "
+                             "does not report one.")
     parser.add_argument("--broadcast",
                         default=os.environ.get("U64_WOL_BROADCAST", DEFAULT_BROADCAST),
                         help=f"Where to send the packet (default: {DEFAULT_BROADCAST}). "
@@ -224,9 +228,11 @@ def main() -> int:
                              "and nothing cold starts.")
     parser.add_argument("--up-timeout", type=float, default=DEFAULT_UP_TIMEOUT,
                         help=f"How long a wake may take (default: {DEFAULT_UP_TIMEOUT:.0f}).")
-    parser.add_argument("--silence-seconds", type=float, default=DEFAULT_SILENCE_SECONDS,
+    parser.add_argument("--silence-seconds", type=float, default=None,
                         help="How long a machine that should stay off must stay "
-                             f"silent (default: {DEFAULT_SILENCE_SECONDS:.0f}).")
+                             f"silent (default: {DEFAULT_SILENCE_SECONDS:.0f}). "
+                             "The run checks this against the wake it measures "
+                             "and says so if it was too short.")
     args = parser.parse_args()
 
     api = UltimateApi(args.host, args.password or None, args.timeout)
@@ -254,36 +260,74 @@ def main() -> int:
             return 0
         original = api.configs.current(store, ITEM)
         detail(f"store {store!r}, currently {original!r}")
-        mac = parse_mac(args.mac) if args.mac else discover_mac(args.host)
-        detail(f"device MAC {format_mac(mac)}"
-               f"{'' if args.mac else ' (from the ARP table)'}")
+        if args.mac:
+            mac, source = parse_mac(args.mac), "given on the command line"
+        else:
+            reported = wifi_mac(info)
+            if reported is None:
+                mac, source = discover_mac(args.host), "from the ARP table"
+            else:
+                mac, source = reported, "the wifi_mac /v1/info reports"
+        detail(f"device MAC {format_mac(mac)} ({source})")
         # Closes the check the two skips above would have closed; report.py
         # nests every later check inside an open one and counts nothing.
         check_ok()
-        # After the skips and before anything switches the machine off, so a run
-        # that was going to skip is never asked for a power button.
-        button = PowerButton(args.power_button_cmd)
+        # After the skips and before anything switches the machine off, so a
+        # run that was going to skip is never asked for a power button.
+        #
+        # A machine left off with the setting Enabled is woken by a packet, so
+        # the scenarios that leave it that way need no operator and no
+        # actuator. Only scenario 5 ends with the setting Disabled, where
+        # nothing on the network can revive it, and that one is skipped unless
+        # a power button or a socket was given.
+        button = (PowerButton(args.power_button_cmd) if args.power_button_cmd
+                  else WakePacketButton(mac, args.broadcast, args.port))
         # Only when the socket can be scripted; the cold start scenario is
         # skipped otherwise.
         mains = None
         if args.power_off_cmd or args.power_on_cmd:
             mains = Mains(args.power_off_cmd, args.power_on_cmd, args.off_seconds)
 
-        # The negative case first: the positive case that follows is what
-        # brings the machine back, so no operator is needed in between.
+        # One off-and-on cycle covers both packets, because the shutdown is
+        # what this suite spends its time on: machine:poweroff takes about a
+        # minute to take a C64 Ultimate 1.2RC off the network, against 8.8s for
+        # the wake. Switching off once and sending the wrong packet before the
+        # right one costs one shutdown instead of two.
         section("2. Enabled, a magic packet for another station")
+        window = args.silence_seconds or DEFAULT_SILENCE_SECONDS
         with check("is ignored"):
             set_item(api, store, ENABLED)
             switch_machine_off(api, args.up_timeout)
             send_magic(other_mac(mac), args.broadcast, args.port)
-            if not stays_off(api, args.silence_seconds):
+            detail(f"watching for {window:.0f}s")
+            if not stays_off(api, window):
                 raise Failure("came up on a packet addressed to another station")
 
         section("3. Enabled, a magic packet for this station")
+        measured_wake = None
         with check("wakes the machine"):
+            started = time.monotonic()
             send_magic(mac, args.broadcast, args.port)
             if not wait_for_state(api, True, args.up_timeout):
                 raise Failure(wake_hint(args))
+            measured_wake = time.monotonic() - started
+            detail(f"answered {measured_wake:.1f}s after the packet")
+
+        # The check above is what says how long a wake takes on this machine,
+        # and the check before it had to watch for longer than that or its
+        # silence proved nothing. The two are compared here rather than the
+        # window being assumed adequate, which is what a fixed 90s window was
+        # buying at the cost of 90s on every run.
+        with check("the ignored-packet window outlasts a wake"):
+            needed = silence_window(measured_wake)
+            if window < needed:
+                raise Failure(
+                    f"the previous check watched for {window:.0f}s, and this "
+                    f"machine wakes in {measured_wake:.1f}s, so a wake that "
+                    f"did happen could have finished unseen. Watch for at "
+                    f"least {needed:.0f}s: --silence-seconds {needed:.0f}")
+            detail(f"watched {window:.0f}s for a machine that wakes in "
+                   f"{measured_wake:.1f}s")
 
         # The path no other check reaches: the watcher armed from the button
         # handler's own start rather than from an ON or OFF event, which is what
@@ -303,22 +347,31 @@ def main() -> int:
                 mains.cycle()
                 # A booting machine is silent too, so this waits out the same
                 # budget a boot is given rather than sampling.
-                if not stays_off(api, args.silence_seconds):
+                if not stays_off(api, window):
                     raise Failure(f"came up by itself with {MODE_ITEM!r} at "
                                   f"{MODE_OFF!r}, so the wake proves nothing")
                 send_magic(mac, args.broadcast, args.port)
                 if not wait_for_state(api, True, args.up_timeout):
                     raise Failure(wake_hint(args))
 
-        # Last, because nothing on the network can revive what it leaves off.
+        # Last, because nothing on the network can revive what it leaves off:
+        # the machine ends this scenario with the watcher disarmed, so the
+        # packet that recovers every other scenario cannot recover this one.
         section("5. Disabled")
-        with check("a magic packet is ignored"):
-            set_item(api, store, DISABLED)
-            switch_machine_off(api, args.up_timeout)
-            send_magic(mac, args.broadcast, args.port)
-            if not stays_off(api, args.silence_seconds):
-                raise Failure(f"came up with {ITEM!r} at {DISABLED!r}")
-        button.press(api, args.up_timeout)
+        if isinstance(button, WakePacketButton) and mains is None:
+            check_start("a magic packet is ignored")
+            check_skip("this scenario leaves the machine off with the wake "
+                       "watcher disarmed, and only its power button or its "
+                       "mains socket brings it back; pass --power-button-cmd, "
+                       "or --power-off-cmd and --power-on-cmd")
+        else:
+            with check("a magic packet is ignored"):
+                set_item(api, store, DISABLED)
+                switch_machine_off(api, args.up_timeout)
+                send_magic(mac, args.broadcast, args.port)
+                if not stays_off(api, window):
+                    raise Failure(f"came up with {ITEM!r} at {DISABLED!r}")
+            button.press(api, args.up_timeout)
 
         suite_ok(SUITE)
         return 0

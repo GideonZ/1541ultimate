@@ -450,8 +450,30 @@ def assert_equal(label: str, expected: str, actual: str, command: str) -> None:
         raise Failure(f"{label} failed after {command}\n{diff}")
 
 
+def framed_rows(snapshot: Snapshot) -> tuple[int, int] | None:
+    """The first and last row inside the monitor's box, or None if undrawn.
+
+    The monitor draws itself in a box, and everything outside that box belongs
+    to whatever else is on screen. On a C64 Ultimate that is the launcher
+    banner, whose logo is written in reversed characters, so a comparison over
+    the whole screen reads twelve cells of somebody else's artwork as monitor
+    highlighting. An Ultimate 64 has no banner there and never showed it.
+    """
+    borders = [index for index, line in enumerate(snapshot.lines)
+               if line.strip().startswith("+") and line.strip().endswith("+")]
+    if len(borders) < 2:
+        return None
+    return borders[0] + 1, borders[-1] - 1
+
+
 def assert_highlight(snapshot: Snapshot, expected_cells: list[tuple[int, int]], command: str) -> None:
-    actual = sorted(snapshot.reverse_cells)
+    inside = framed_rows(snapshot)
+    if inside is None:
+        actual = sorted(snapshot.reverse_cells)
+    else:
+        first, last = inside
+        actual = sorted((col, row) for col, row in snapshot.reverse_cells
+                        if first <= row <= last)
     expected = sorted(expected_cells)
     if actual != expected:
         raise Failure(
@@ -2946,9 +2968,13 @@ def run_help_layout_test(session: MonitorSession) -> None:
     assert_help_column(screen, "Monitor", 21, "C=+O")
     assert_help_column(screen, "Monitor", 29, "Monitor")
 
-    assert_help_column(screen, "Page down", 1, "F1/")
+    # The paging keys are the machine's own, so the row is checked against what
+    # this machine names them; the columns are the monitor's and are the same
+    # everywhere.
+    keys = session.backend.machine
+    assert_help_column(screen, "Page down", 1, f"{keys.monitor_page_up_label}/")
     assert_help_column(screen, "Page down", 12, "Page up")
-    assert_help_column(screen, "Page down", 21, "F7/")
+    assert_help_column(screen, "Page down", 21, f"{keys.monitor_page_down_label}/")
     assert_help_column(screen, "Page down", 29, "Page down")
 
     # No line inside the Help popup's own border may spill past content
@@ -2972,11 +2998,18 @@ def run_help_layout_test(session: MonitorSession) -> None:
 def back_out_to_the_bare_browser(session: MonitorSession) -> Snapshot:
     """Press Back until nothing is drawn over the file browser.
 
-    Bounded and observed rather than counted: how many presses a context costs
-    is a property of that context. A fixed number of presses either leaves
-    something open or spends a spare press on whatever the browser does with
-    it, and the next thing this suite does is send a key that means something
-    different in each of those states.
+    A backend that can put the browser up directly does that, and the Back
+    presses are the fallback for one that cannot. Backing out by pressing Back
+    until no window border is on screen only identifies the browser on a
+    machine that draws it without a frame: a C64 Ultimate frames every menu
+    screen, so that rule pressed Back until the menu itself closed and the next
+    key went to BASIC.
+
+    The fallback is bounded and observed rather than counted: how many presses
+    a context costs is a property of that context. A fixed number of presses
+    either leaves something open or spends a spare press on whatever the
+    browser does with it, and the next thing this suite does is send a key that
+    means something different in each of those states.
 
     Leaving the settings screens raises "Save changes to Flash?" whenever the
     configuration in memory differs from the one in flash, which it does on any
@@ -2993,6 +3026,10 @@ def back_out_to_the_bare_browser(session: MonitorSession) -> Snapshot:
             session.send_key("RIGHT", settle=True)     # Yes -> No
             session.send_key("ENTER", settle=True)
             continue
+        # Answered above rather than below, because closing the menu with the
+        # dialog up would leave the question unanswered.
+        if session.backend.show_bare_browser():
+            return session.capture()
         if not any("+--" in line for line in snapshot.lines):
             return snapshot
         session.send_key("RUNSTOP", settle=True)

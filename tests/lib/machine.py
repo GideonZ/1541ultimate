@@ -394,6 +394,23 @@ class Machine:
         return "F3" if self.kind == C64U else "PGUP"
 
     @property
+    def monitor_page_up_label(self) -> str:
+        """The key the machine code monitor's help names for paging back.
+
+        The machine decides this rather than the monitor: a C64 Ultimate maps
+        its function keys differently, which is the same difference
+        `page_up_key` reports for the file browser. Measured from the two help
+        screens: an Ultimate 64 offers "F1/SH+SP Page up" and a C64 Ultimate
+        "F3/SH+SP Page up", in the same column.
+        """
+        return "F3" if self.kind == C64U else "F1"
+
+    @property
+    def monitor_page_down_label(self) -> str:
+        """The key the machine code monitor's help names for paging on."""
+        return "F5" if self.kind == C64U else "F7"
+
+    @property
     def page_down_key(self) -> str:
         """The key that scrolls a listing on by a screen."""
         return "F5" if self.kind == C64U else "PGDN"
