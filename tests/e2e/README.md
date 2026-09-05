@@ -140,29 +140,30 @@ The runner also reads every setting each machine is running with before the
 first suite and writes the differing ones back when the run ends, so a suite
 that changes one does not decide what the next run starts from.
 
-**Firmware vintage** is what a release lacks. The C64 Ultimate runs a separate
-firmware line that lags the Ultimate 64, so a check can be correct and still be
-unrunnable there. `FIXES` in the same module names each outstanding gap after
-the behaviour a machine gains from it, and lists the machines that do not have
-it yet. A check declares its dependency in one line:
+**Firmware vintage** is what a release lacks. A machine can run a firmware line
+that lags this branch, so a check can be correct and still be unrunnable there.
+The C64 Ultimate did until its 1.2 release, and the Ultimate II+L on the bench
+still does, because it carries a flashed 3.15 rather than a build of this tree.
+`FIXES` in the same module names each outstanding gap after the behaviour a
+machine gains from it, and lists the machines that do not have it yet. A check
+declares its dependency in one line:
 
 ```python
-if ctx.machine.skip_without_fix(machine.BROWSER_REFRESH_ON_DIRECTORY_CHANGE,
-                                label):
+if ctx.machine.skip_without_fix(machine.MONITOR_D_KEY_RESERVED, label):
     return
 ```
 
 The check then reports SKIP with the machine and version in the reason, for
-example `needs the browser-refresh-on-directory-change fix, which C64 Ultimate
-1.2.0 does not have`.
+example `needs the monitor-d-key-reserved fix, which Ultimate II+L 3.15 does
+not have`.
 
 Those names are the amendment point. When a fix is backported, delete its `FIXES`
 entry and every check tagged with it runs again; nothing else changes. To confirm
 a backport before editing the table, run the tagged checks anyway:
 
 ```sh
-./run-tests c64u --assume-fix browser-refresh-on-directory-change
-./run-tests c64u --assume-fix all
+./run-tests u2@c64u --assume-fix monitor-d-key-reserved
+./run-tests u2@c64u --assume-fix all
 ```
 
 `--help` is authoritative for options. `-m/--mode` selects the UI transport

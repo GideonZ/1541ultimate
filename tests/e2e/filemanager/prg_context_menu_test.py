@@ -48,7 +48,6 @@ sys.path.insert(0, bootstrap.directory("e2e", "api"))
 from menu_screen_test import Failure, MenuScreenInfo, RestSession, check
 from api import ConfigsApi, DRIVE_ENABLE_ITEM, DRIVE_ENABLED, DRIVE_STORES
 import ftp as ftp_lib
-import machine as machine_lib
 import pacing
 import targets
 from report import (check_skip, detail, section, suite_fail, suite_ok,
@@ -1325,16 +1324,12 @@ def main() -> int:
                         lambda h=handler, loc=location: h(
                             machine, fixtures, loc, rest_host, args.password))
 
-        # Last on purpose: on firmware without the boot-cart name fix this one
-        # takes the whole device down, which would mask every earlier result.
-        # It is also not merely failed there but skipped, because the device
-        # does not come back without a power cycle and every suite after it in
-        # the run would report an unreachable device.
+        # Last on purpose: firmware that mishandles a name longer than the
+        # boot-cart display field leaks the machine subsystem lock, which would
+        # mask every earlier result in this suite.
         long_name_label = "Run a PRG whose name is far longer than the boot-cart display"
-        if not machine.browser.backend.machine.skip_without_fix(
-                machine_lib.BOOTCART_LONG_NAME_SAFE, long_name_label):
-            run_case(long_name_label,
-                     lambda: run_action_run(machine, fixtures, open_long_name_prg))
+        run_case(long_name_label,
+                 lambda: run_action_run(machine, fixtures, open_long_name_prg))
 
         if failures:
             suite_fail("prg_context_menu_test", f"{len(failures)} of {total} actions")

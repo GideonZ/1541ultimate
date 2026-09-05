@@ -36,7 +36,6 @@ from pathlib import Path
 sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
                             if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
 import bootstrap  # noqa: E402,F401
-import machine as machine_lib
 import rest as rest_lib
 import targets
 from report import (
@@ -745,10 +744,6 @@ def scenario_query_returns_results(device: Device) -> None:
 
 def scenario_menu_button_in_edit_field(device: Device) -> None:
     section("the menu button must work from inside the edit field")
-    if device.backend.machine.skip_without_fix(
-            machine_lib.MENU_BUTTON_CLOSES_STRING_EDIT,
-            "the menu button works from inside the edit field"):
-        return
     if device.mode == MODE_TELNET:
         with check("the menu button works from inside the edit field"):
             check_skip(

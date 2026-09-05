@@ -106,15 +106,12 @@ def main() -> int:
             "ident stops answering when disabled",
             "ident answers again when re-enabled",
         ]
-        if not any([machine.skip_without_fix(
-                machine_lib.SERVICE_SWITCHES_APPLY_LIVE, label)
-                    for label in live_checks]):
-            with check(live_checks[0]):
-                api.configs.set(STORE, ITEM, "Disabled")
-                wait_disabled(args.host)
-            with check(live_checks[1]):
-                api.configs.set(STORE, ITEM, "Enabled")
-                wait_enabled(args.host)
+        with check(live_checks[0]):
+            api.configs.set(STORE, ITEM, "Disabled")
+            wait_disabled(args.host)
+        with check(live_checks[1]):
+            api.configs.set(STORE, ITEM, "Enabled")
+            wait_enabled(args.host)
     except Failure as exc:
         failure = str(exc)
     except Exception as exc:  # noqa: BLE001

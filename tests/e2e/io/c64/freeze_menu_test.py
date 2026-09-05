@@ -462,10 +462,6 @@ def run_menu_button_in_form(session: RestSession) -> None:
     """
     title = session.machine.search_form_title
     section(f"the menu button works inside the {title}")
-    if session.machine.skip_without_fix(
-            machine_lib.MENU_BUTTON_CLOSES_STRING_EDIT,
-            "the menu button closes the menu from inside the edit field"):
-        return
     prepare(session, ENABLED)
     open_menu(session)
     with check(f"put the cursor on {session.machine.search_menu_entry!r}"):
@@ -549,15 +545,6 @@ def main() -> int:
 
     session.close_menu_from_anywhere()
     session.reset()
-    # Checked before anything opens the menu, because on firmware without the
-    # fix that is the keystroke that takes the device off the network, and no
-    # later check could report it: the suites after this one in the run would
-    # fail on an unreachable device instead.
-    if session.machine.skip_without_fix(
-            machine_lib.FREEZE_MENU_OPENS,
-            "this machine opens the menu in Freeze without wedging"):
-        suite_ok("freeze_menu_test")
-        return 0
     if not session.has_config(UI_STORE, UI_ITEM):
         check_start(f"this machine offers a '{UI_ITEM}' to switch")
         check_skip(f"no '{UI_ITEM}' setting on this machine, so there is no "

@@ -39,8 +39,6 @@ sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
 import bootstrap  # noqa: E402,F401
 import cli  # noqa: E402
 
-import api as api_lib
-import machine as machine_lib
 import rest as rest_lib
 import targets
 from report import detail, suite_fail, suite_ok, warn
@@ -310,16 +308,6 @@ def main() -> int:
     parser.add_argument("--poll-interval", type=float, default=3.0,
                         help="seconds between recovery polls")
     args = parser.parse_args()
-
-    # Preflight 0, before anything opens a socket: this suite fills every
-    # session slot and relies on the keepalive reaping them. Without that fix
-    # nothing does, so it leaves the listener refusing every connection for the
-    # rest of the run rather than merely failing.
-    if api_lib.identify_machine(args.host).skip_without_fix(
-            machine_lib.TELNET_REAPS_HALF_OPEN,
-            "half-open Telnet sessions are reaped and their slots return"):
-        suite_ok(SUITE)
-        return 0
 
     # Preflight 1: adding and deleting the alias needs passwordless sudo for `ip`.
     probe = subprocess.run([*IP_CMD, "addr", "show"], capture_output=True, text=True, check=False)

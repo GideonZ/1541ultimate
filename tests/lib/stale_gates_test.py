@@ -60,12 +60,11 @@ def load_stale_gates():
 
 stale_gates = load_stale_gates()
 
-# A real entry this branch added (see machine.py and PR #845), used rather
-# than an invented name so this exercises the table this run will actually
-# read, not a fixture that happens to look like it.
-FIX = machine.INFO_REPORTS_INTERFACES
-FIX_MACHINE = machine.C64U
-LABEL = "GET /v1/info reports each interface's MAC address"
+# A real entry, used rather than an invented name so this exercises the table
+# this run will actually read, not a fixture that happens to look like it.
+FIX = machine.MONITOR_D_KEY_RESERVED
+FIX_MACHINE = machine.U2
+LABEL = "the monitor opens nothing with D"
 
 
 @contextlib.contextmanager

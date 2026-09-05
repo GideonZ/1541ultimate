@@ -30,7 +30,6 @@ sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
                             if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
 import bootstrap  # noqa: E402,F401
 import cli  # noqa: E402
-import api as api_lib
 import machine
 import pacing
 import profiles  # noqa: E402
@@ -239,14 +238,15 @@ def run_machine_checks() -> None:
     machine.forget_assumptions()
     try:
         with check("the table decides which machine skips a tagged check"):
-            # Both entries are fixes this branch carries and the C64 Ultimate's
-            # 1.2.0 line does not, so an Ultimate 64 and an Ultimate II+L run
-            # the checks tagged with them and a C64 Ultimate skips them.
-            for name in (machine.FTP_LISTING_FULL_LENGTH,
-                         machine.READMEM_REJECTS_ZERO_LENGTH):
+            # Both entries are fixes this branch carries and the flashed 3.15
+            # on the bench Ultimate II+L does not, so an Ultimate 64 and a C64
+            # Ultimate run the checks tagged with them and an Ultimate II+
+            # skips them.
+            for name in (machine.MONITOR_D_KEY_RESERVED,
+                         machine.IDENT_SWITCHES_LIVE):
                 for product, expected in (("Ultimate 64 Elite", True),
-                                          ("Ultimate II+L", True),
-                                          ("C64 Ultimate", False)):
+                                          ("C64 Ultimate", True),
+                                          ("Ultimate II+L", False)):
                     found = machine.classify(product).has_fix(name)
                     if found != expected:
                         raise Failure(f"{product!r} and {name}: expected has_fix="
@@ -267,14 +267,14 @@ def run_machine_checks() -> None:
             # A bare SKIP in a log of ninety checks says nothing anyone can act
             # on. The reason carries the tag to pass to --assume-fix and the
             # machine and version to compare against the table.
-            lagging = machine.classify("C64 Ultimate", "1.2.0")
-            reason = lagging.missing_fix(machine.READMEM_REJECTS_ZERO_LENGTH)
-            for needle in ("readmem-rejects-zero-length", "C64 Ultimate", "1.2.0"):
+            lagging = machine.classify("Ultimate II+L", "3.15")
+            reason = lagging.missing_fix(machine.MONITOR_D_KEY_RESERVED)
+            for needle in ("monitor-d-key-reserved", "Ultimate II+L", "3.15"):
                 if reason is None or needle not in reason:
                     raise Failure(f"expected {needle!r} in the skip reason, "
                                   f"got {reason!r}")
-            current = machine.classify("Ultimate 64 Elite", "3.15")
-            if current.missing_fix(machine.READMEM_REJECTS_ZERO_LENGTH) is not None:
+            current = machine.classify("C64 Ultimate", "1.2.0")
+            if current.missing_fix(machine.MONITOR_D_KEY_RESERVED) is not None:
                 raise Failure("a machine that has the fix was given a reason to skip")
 
         with check("skip_without_fix answers True only where the check cannot run"):
@@ -283,21 +283,21 @@ def run_machine_checks() -> None:
             # other skip in the tree uses, and the caller returns on True.
             # Called from inside this check the line it reports is nested, so
             # the report library holds it back and only the answer is visible.
-            lagging = machine.classify("C64 Ultimate", "1.2.0")
-            current = machine.classify("Ultimate II+L", "3.15")
-            if not lagging.skip_without_fix(machine.FTP_LISTING_FULL_LENGTH, "fixture"):
+            lagging = machine.classify("Ultimate II+L", "3.15")
+            current = machine.classify("C64 Ultimate", "1.2.0")
+            if not lagging.skip_without_fix(machine.MONITOR_D_KEY_RESERVED, "fixture"):
                 raise Failure("a machine without the fix was not skipped")
-            if current.skip_without_fix(machine.FTP_LISTING_FULL_LENGTH, "fixture"):
+            if current.skip_without_fix(machine.MONITOR_D_KEY_RESERVED, "fixture"):
                 raise Failure("a machine with the fix was skipped anyway")
 
         with check("an assumed fix runs the checks it gates, which is how a "
                    "backport is found"):
             machine.forget_assumptions()
-            lagging = machine.classify("C64 Ultimate", "1.2.0")
-            machine.assume(machine.FTP_LISTING_FULL_LENGTH)
-            if not lagging.has_fix(machine.FTP_LISTING_FULL_LENGTH):
+            lagging = machine.classify("Ultimate II+L", "3.15")
+            machine.assume(machine.MONITOR_D_KEY_RESERVED)
+            if not lagging.has_fix(machine.MONITOR_D_KEY_RESERVED):
                 raise Failure("the assumed fix still skipped its checks")
-            if lagging.has_fix(machine.READMEM_REJECTS_ZERO_LENGTH):
+            if lagging.has_fix(machine.IDENT_SWITCHES_LIVE):
                 raise Failure("assuming one fix ran the checks of another")
             machine.forget_assumptions()
             machine.assume(machine.ASSUME_ALL)
@@ -308,16 +308,16 @@ def run_machine_checks() -> None:
         with check("an assumption list is parsed as a list, and a typo is refused"):
             machine.forget_assumptions()
             listed = machine.parse_assumptions(
-                f"{machine.FTP_LISTING_FULL_LENGTH}, "
-                f"{machine.READMEM_REJECTS_ZERO_LENGTH}")
-            if listed != {machine.FTP_LISTING_FULL_LENGTH,
-                          machine.READMEM_REJECTS_ZERO_LENGTH}:
+                f"{machine.MONITOR_D_KEY_RESERVED}, "
+                f"{machine.IDENT_SWITCHES_LIVE}")
+            if listed != {machine.MONITOR_D_KEY_RESERVED,
+                          machine.IDENT_SWITCHES_LIVE}:
                 raise Failure(f"expected both fixes, got {sorted(listed)}")
             # A misspelt name that was quietly ignored would leave the checks
             # skipped, which is the answer the flag was run to get past, and
             # the run would look exactly like one where the fix had not landed.
             try:
-                machine.parse_assumptions("ftp-listing-ful-length")
+                machine.parse_assumptions("monitor-d-key-reserve")
             except machine.UnknownFix:
                 pass
             else:
@@ -1008,11 +1008,7 @@ def main() -> int:
 
         section("REST backend, Interface Type = Freeze")
         freeze_label = "REST/Freeze: connect, navigate, teardown"
-        # This drives the backend directly rather than through the run's
-        # transport, so run-tests' own freeze gate does not cover it.
-        if not profiles.skip_below(profiles.QUICK, freeze_label) and \
-                not api_lib.identify_machine(args.host).skip_without_fix(
-                    machine.FREEZE_MENU_OPENS, freeze_label):
+        if not profiles.skip_below(profiles.QUICK, freeze_label):
             with check(freeze_label):
                 run_rest_smoke(args.host, args.password, args.timeout, "Freeze")
     except Failure as exc:

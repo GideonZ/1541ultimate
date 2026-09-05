@@ -2713,12 +2713,16 @@ def resolve_modes(raw: str, profile: str = profiles.DEFAULT) -> list[str]:
     return modes or list(profiles.modes_for(profile))
 
 
-# The freeze backend is a RestBackend with interface_type "Freeze", so every UI
-# suite in a freeze pass opens the menu in Freeze mode, which
-# machine.FREEZE_MENU_OPENS says takes a machine lacking the fix off the network
-# until it is power cycled. Gating each suite would still miss the next one
-# added, so the transport is dropped once for the whole run.
-MODE_REQUIRED_FIXES = {"freeze": machine_lib.FREEZE_MENU_OPENS}
+# A transport that a machine cannot survive being driven through, and the fix
+# that makes it survivable. Gating each suite would miss the next suite added,
+# so the transport is dropped once for the whole run.
+#
+# Empty at present. The entry that lived here was the freeze transport, which
+# opens the menu with Interface Type "Freeze" in every UI suite of a freeze
+# pass: a C64 Ultimate before the 1.2 release went off the network when it was
+# asked to do that. The 1.2 release carries the fix, so freeze is swept on
+# every machine again and machine.FREEZE_MENU_OPENS is gone from the table.
+MODE_REQUIRED_FIXES: dict[str, str] = {}
 
 
 def drop_unsurvivable_modes(target: targets_lib.Target, password: str,

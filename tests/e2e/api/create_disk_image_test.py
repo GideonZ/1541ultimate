@@ -21,9 +21,7 @@ sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
 import bootstrap  # noqa: E402,F401
 import cli  # noqa: E402
 import ftp as ftp_lib  # noqa: E402  (needs tests/lib on sys.path first)
-import machine as machine_lib  # noqa: E402  (needs tests/lib first)
 import rest as rest_lib  # noqa: E402  (needs tests/lib on sys.path first)
-import targets  # noqa: E402  (needs tests/lib on sys.path first)
 from api import UltimateApi  # noqa: E402  (needs tests/lib on sys.path first)
 from report import (  # noqa: E402  (needs tests/lib on sys.path first)
     Failure, teardown_step, check_count, check_fail, check_ok, check_start, detail,
@@ -169,16 +167,6 @@ def main() -> int:
     args = parser.parse_args()
 
     runner = SuiteRunner(args)
-    device = UltimateApi(args.host, args.password, args.timeout)
-    info = device.info()
-    machine = machine_lib.identify(
-        targets.device_of(args.host),
-        lambda: (info.product, info.firmware_version))
-    if machine.skip_without_fix(machine_lib.FILES_CREATE_IMAGE_SURVIVES,
-                                "the device survives creating a disk image"):
-        suite_ok(SUITE)
-        return 0
-
     try:
         passed = runner.run()
     except Failure as exc:
