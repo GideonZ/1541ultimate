@@ -2381,15 +2381,22 @@ def run_asm_entry_round_trip_test(session: MonitorSession, rest_host: str,
             session.goto_run(f"{address:04X}")
             capture.clear()
             launched = time.monotonic()
-            # Collect until there are frames to judge, not for a fixed 0.60s
-            # window a slow-starting stream misses. assert_frames_differ needs two.
+            # Collect until two frames actually differ, not until two frames
+            # exist. The program flashes the background from its first
+            # iteration, so two frames that are identical mean the machine had
+            # not started yet when they were sent, and stopping at the first
+            # pair made this a race against however long this machine takes to
+            # start: a C64 Ultimate lost it, an Ultimate 64 won it. The
+            # deadline is what decides a machine that never starts.
             frames = []
             video_deadline = time.monotonic() + VIDEO_CAPTURE_TIMEOUT_SECONDS
             while time.monotonic() < video_deadline:
                 capture.capture(0.20)
                 frames = [frame for frame in video_frames(capture.video_packets)
                           if frame.received_at >= launched]
-                if len(frames) >= 2:
+                images = [frame.pixels for frame in frames]
+                if len(images) >= 2 and any(image != images[0]
+                                            for image in images[1:]):
                     break
             if not frames:
                 raise Failure(
