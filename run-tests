@@ -407,8 +407,10 @@ SUITES: Sequence[Suite] = (
     # -H only, because it addresses the stream source rather than the REST
     # surface and takes no password or timeout.
     Suite("e2e", "av-stream", "tests/e2e/av/stream_test.py", "-H @HOST@"),
-    # Drives the Assembly 64 UI against the live service, mostly with negative
-    # cases. Skips rather than fails when the service is unreachable.
+    # Drives the machine's online file search against the live service, mostly
+    # with negative cases. Which service that is comes from the machine:
+    # Assembly 64 on an Ultimate 64 and an Ultimate II+, CommoServe on a C64
+    # Ultimate. Skips rather than fails when the service is unreachable.
     Suite("e2e", "assembly64", "tests/e2e/io/c64/assembly64_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@", profile=profiles.QUICK),
     # Measures the keystroke injection every other suite depends on: a lost key
@@ -498,8 +500,8 @@ SUITES: Sequence[Suite] = (
     Suite("soak", "menu-navigation",
           "tests/soak/filemanager/menu_navigation_soak_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@"),
-    # Drives the Assembly 64 search browser, for the same reason: its query
-    # path is not reachable over REST. Skips when the Assembly 64 service is
+    # Drives the online search browser, for the same reason: its query path is
+    # not reachable over REST. Skips when the machine's search service is
     # unreachable from the device, since the form cannot open without it.
     Suite("soak", "assembly-search-leak",
           "tests/soak/io/c64/assembly_search_leak_test.py",

@@ -496,10 +496,11 @@ def describe_open_menu(device: Device) -> str:
     menu, and leaves the menu closed either way, which is the state the
     contract asks for.
 
-    The screen cannot answer this on its own. The Assembly 64 query form prints
-    the same "/" status row as the root browser and leaves the listing area
-    filled with its own fields, so describe() calls it clean and the gate hands
-    the next suite a modal instead of a browser. RUN/STOP leaves the menu only
+    The screen cannot answer this on its own. The online search's query form
+    (Assembly 64's, or CommoServe's on a C64 Ultimate) prints the same "/"
+    status row as the root browser and leaves the listing area filled with its
+    own fields, so describe() calls it clean and the gate hands the next suite
+    a modal instead of a browser. RUN/STOP leaves the menu only
     once the root browser has focus, so the menu closing is what proves nothing
     is stacked on top of it. How many presses that takes is a property of the
     machine: a C64 Ultimate's launcher sits between the browser and the closed
@@ -566,11 +567,13 @@ def unwind(device: Device) -> None:
     RUN/STOP leaves one nested object, or one directory level, per press, and
     leaves the menu entirely once the root browser has focus, so the menu
     closing is the signal that the object stack is empty. Stopping on what the
-    screen shows instead would stop on the Assembly 64 query form, which reports
-    the root browser's own "/" path.
+    screen shows instead would stop on the online search's query form, which
+    reports the root browser's own "/" path.
 
-    F5 is never pressed here: it opens the task menu onto the Assembly 64
-    entry, which is what creates this mess in the first place. RETURN is
+    F5 is never pressed here: on an Ultimate 64 and an Ultimate II+ it opens
+    the task menu onto the Assembly 64 entry, which is what creates this mess
+    in the first place. A C64 Ultimate keeps its search in the launcher
+    instead, and pages a listing with F5. RETURN is
     pressed only to answer a dialog that offers nothing else; see
     sole_action_row.
     """

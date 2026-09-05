@@ -1560,8 +1560,9 @@ def run_contract_tests(session: RestInputSession) -> None:
 
 def run_keyboard_tests(session: RestInputSession) -> None:
     # These assert what the live C64 matrix sees, so the menu must be closed. It
-    # must also be closed for safety: the sweep below taps F5, which opens the
-    # task menu onto the Assembly 64 form when the UI has focus.
+    # must also be closed for safety: the sweep below taps F5, which on an
+    # Ultimate 64 and an Ultimate II+ opens the task menu onto the online
+    # search's query form when the UI has focus.
     session.close_menu_from_anywhere()
 
     with check("keyboard single-tap batch is consumed by BASIC in order"):

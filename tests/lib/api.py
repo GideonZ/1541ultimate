@@ -524,7 +524,10 @@ class MachineApi:
           to reopen, which RUN/STOP alone does not do.
         - RUN/STOP takes over for the last few attempts, for the editors F8
           does not reach. Never RETURN by default: it activates the entry
-          under the cursor, and on the Assembly 64 entry that opens its form.
+          under the cursor, and on the machine's online-search entry that
+          opens its query form. That is Assembly 64 in the task menu of an
+          Ultimate 64 and an Ultimate II+, and COMMOSERVE FILE SEARCH in a
+          C64 Ultimate's launcher.
         - The menu button is the last resort rather than the first, because it
           is a toggle and does not leave a nested object.
 
