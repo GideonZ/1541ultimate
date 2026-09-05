@@ -88,6 +88,12 @@ jobs:
           -v /opt/build-tools:/mnt/build-tools:ro \
           -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make -C software/io/command_interface/tests"
 
+      - name: Test HTTP Body Removal
+        run: |
+          docker run --rm \
+          -v /opt/build-tools:/mnt/build-tools:ro \
+          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make -B -C target/pc/linux/test_http_target test-body-removal"
+
       - name: Cache U2 FPGA
         id: cache-u2
         uses: actions/cache@v6
