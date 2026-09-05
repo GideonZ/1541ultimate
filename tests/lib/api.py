@@ -1097,6 +1097,62 @@ def ensure_cartridge_preference(target, password: str | None = None,
             f"{current!r} -> {CARTRIDGE_PREFERENCE_EXTERNAL!r}")
 
 
+# What a machine testing itself needs of the same setting, which is the
+# opposite of what a cartridge target needs.
+#
+# `C64::ConfigureU64SystemBus` maps four bus resources to the internal side, to
+# the cartridge port, or to both, and bit 0x08 of that mask is the interrupt.
+# "External" takes `internal = 0`, so the firmware's own NMI never reaches the
+# 6510: the machine code monitor's Go writes its trampoline at $033C, repoints
+# NMINV, pulses C64_MODE_NMI and nothing happens, while the C64 goes on running
+# what it was running. Measured on a C64 Ultimate 1.2RC: four Go attempts out
+# of four did nothing with "External" selected, and two out of two handed over
+# with "Auto", NMINV restored to $FE47 by the trampoline itself.
+#
+# A bench where a cartridge target runs leaves the value at "External", and it
+# survives a power cycle, so a later run of the computer on its own inherits a
+# machine with its internal interrupts switched off.
+CARTRIDGE_PREFERENCE_AUTO = "Auto"
+
+
+def ensure_own_cartridge_resources(target, password: str | None = None,
+                                   timeout: float = DEFAULT_TIMEOUT) -> str | None:
+    """Give a machine testing itself its own bus resources back.
+
+    Answers what it did, or None when there was nothing to do: the target is a
+    cartridge in a computer, the machine does not serve the setting, or it
+    already keeps its own resources.
+
+    Raises `Failure` when the machine serves the setting and will not take the
+    value, because everything that depends on the firmware raising an interrupt
+    fails after that in ways that name neither.
+
+    Like the cartridge preference, the change is not saved to flash.
+    """
+    handle = targets.resolve(target)
+    if handle.split:
+        return None
+    device = UltimateApi(handle.device, password, timeout)
+    try:
+        current = device.configs.current(CARTRIDGE_STORE, CARTRIDGE_PREFERENCE_ITEM)
+    except Failure:
+        # Every machine that has the setting is a U64-class build; the rest
+        # have no cartridge port to prefer and nothing to put back.
+        return None
+    if current != CARTRIDGE_PREFERENCE_EXTERNAL:
+        return None
+    device.configs.set(CARTRIDGE_STORE, CARTRIDGE_PREFERENCE_ITEM,
+                       CARTRIDGE_PREFERENCE_AUTO)
+    now = device.configs.current(CARTRIDGE_STORE, CARTRIDGE_PREFERENCE_ITEM)
+    if now != CARTRIDGE_PREFERENCE_AUTO:
+        raise Failure(
+            f"{handle.device} kept '{CARTRIDGE_PREFERENCE_ITEM}' at {now!r} "
+            f"after it was set to {CARTRIDGE_PREFERENCE_AUTO!r}; its own "
+            f"interrupts stay routed to the cartridge port")
+    return (f"{handle.device}: {CARTRIDGE_PREFERENCE_ITEM} "
+            f"{current!r} -> {CARTRIDGE_PREFERENCE_AUTO!r}")
+
+
 # The computer of a cartridge target has drives of its own, and they answer on
 # the same IEC bus and the same bus IDs as the cartridge's. Measured on an
 # Ultimate II+L in a C64 Ultimate with both machines' Drive A enabled on bus 8:

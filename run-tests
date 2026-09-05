@@ -3540,6 +3540,21 @@ def main(argv: list[str]) -> int:
         else:
             report.check_ok(faster or "already set")
 
+        # The other half of the same setting, for a machine testing itself: a
+        # bench that has run a cartridge target leaves the value at "External",
+        # which routes this machine's own interrupts to its cartridge port and
+        # survives a power cycle. A no-op on a cartridge target, and on a
+        # machine with no cartridge port to prefer.
+        if not target.split:
+            report.step_start("the machine keeps its own bus resources")
+            try:
+                restored = api_lib.ensure_own_cartridge_resources(
+                    target, options.password, float(options.timeout))
+            except DEVICE_ERRORS as exc:
+                report.check_warn(str(exc))
+            else:
+                report.check_ok(restored or "already set")
+
         # Before any suite, because a cartridge whose computer has not handed
         # its bus over fails later in ways that name neither the setting nor
         # the computer. A no-op on a target that is its own computer.
