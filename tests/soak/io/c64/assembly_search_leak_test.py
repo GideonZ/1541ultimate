@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Soak: asserts the Assembly 64 search returns the heap it borrows.
+# Soak: asserts the machine's online file search returns the heap it borrows.
 
 """Repeat the search browser's two costly paths and require the free heap back.
 
@@ -31,9 +31,13 @@ bytes against a noise floor of a few dozen. The query slope needs few, because
 a single leaked response body is 16 KB -- and each iteration is a request to a
 third-party service, which is not something to make a habit of.
 
+The service is the machine's (Assembly 64, or CommoServe on a C64 Ultimate);
+every step is driven through assembly64_test, which takes the way in from
+tests/lib/machine.py.
+
 Uses GET /v1/machine:heap. Firmware predating that endpoint answers 404 and
 every check here skips, so the suite is safe to run against any image. It also
-talks to the live Assembly 64 service through the device: when that is
+talks to that live service through the device: when the service is
 unreachable the form never opens, and the suite skips rather than reporting a
 third-party outage as a firmware defect.
 """
@@ -70,7 +74,7 @@ OPEN_MEASURED = 40
 OPEN_TOLERANCE_BYTES_PER_OP = 25
 
 # One warmup is enough: nothing about a query is cached, and every iteration
-# costs the Assembly 64 service two requests.
+# costs the search service two requests.
 QUERY_WARMUP = 1
 QUERY_MEASURED = 5
 # A leaked response body alone is 16,392 bytes. This tolerance is loose on
@@ -136,9 +140,11 @@ def measure(rest: rest_lib.RestClient, title: str, once, warmup: int,
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Assert that repeated Assembly 64 searches do not consume "
-                    "heap. Skips if the firmware has no machine:heap endpoint, "
-                    "or if the Assembly 64 service is unreachable.")
+        description="Assert that repeated online searches do not consume heap. "
+                    "The service is the machine's: Assembly 64 on an Ultimate "
+                    "64 and an Ultimate II+, CommoServe on a C64 Ultimate. "
+                    "Skips if the firmware has no machine:heap endpoint, or if "
+                    "that service is unreachable.")
     cli.add_device_arguments(parser, password=None, timeout=30.0, colour=False)
     parser.add_argument("--telnet-port", type=int,
                         default=int(os.environ.get("U64_TELNET_PORT", "23")))
@@ -157,6 +163,9 @@ def main() -> int:
     backend = make_backend(args.mode, args.host, password, args.timeout,
                            telnet_port=args.telnet_port, telnet_width=60)
     device = a64.Device(backend, args.mode, args.host, password, args.timeout)
+    service = backend.machine.search_service
+    detail(f"this machine searches {service}, from "
+           + ("its launcher" if device.search_in_launcher else "its task menu"))
 
     entries_opened = 0
 
@@ -191,7 +200,7 @@ def main() -> int:
         suite_skip("assembly_search_leak_test", str(exc))
         return 0
     finally:
-        teardown_step("put the Assembly 64 UI back",
+        teardown_step(f"put the {service} UI back",
                     lambda: a64.recover(device, "tearing down"))
         backend.close()
 

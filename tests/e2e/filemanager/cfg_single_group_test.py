@@ -8,10 +8,10 @@ The test restores the setting through the public config API and removes both
 files it creates.
 
 Whether the load then effectuates *only* that group is asserted by
-cfg_partial_effectuate_test.py, which is manual: that behaviour is in
-disrepair, and a gate failing on it every run is a gate a reader stops
-reading. The helpers below are shared with it, so the fixture and the log
-reader cannot drift apart.
+cfg_partial_effectuate_test.py, which is manual because that assertion is state
+dependent: the loader also flushes any other store with an unapplied change
+pending, so the answer depends on what ran before it. The helpers below are
+shared with it, so the fixture and the log reader cannot drift apart.
 
 Which store holds that setting is asked of the machine rather than assumed:
 an Ultimate 64 serves it as "Audio Mixer", an Ultimate II+L as "Audio Output
@@ -64,14 +64,29 @@ def load_fixture(browser) -> None:
     cfg_fixture.load(browser, CFG_NAME, log_name=LOG_NAME)
 
 
-def loading_stores(host: str, password: str) -> list[str]:
+EFFECTUATED_PREFIX = "Effectuating settings of store '"
+CLEAN_PREFIX = "Store '"
+CLEAN_SUFFIX = "is clean after loading."
+
+
+def loader_report(host: str, password: str) -> tuple[list[str], list[str]]:
+    """The stores the loader applied, and the stores it left alone.
+
+    Two lists, because the loader prints a line per store either way and the
+    two mean opposite things. Collecting both into one cannot tell a loader
+    that applied one store from one that applied every store, which is the
+    distinction cfg_partial_effectuate_test exists to make.
+    """
     with ftp_lib.session(host, password, timeout=20) as ftp:
         text = ftp_lib.retrieve(ftp, f"/Temp/{LOG_NAME}").decode("ascii", "replace")
-    stores = []
+    effectuated: list[str] = []
+    clean: list[str] = []
     for line in text.splitlines():
-        if line.startswith("Effectuating settings of store '") or (line.startswith("Store '") and line.endswith("is clean after loading.")):
-            stores.append(line.split("'", 2)[1])
-    return stores
+        if line.startswith(EFFECTUATED_PREFIX):
+            effectuated.append(line.split("'", 2)[1])
+        elif line.startswith(CLEAN_PREFIX) and line.endswith(CLEAN_SUFFIX):
+            clean.append(line.split("'", 2)[1])
+    return effectuated, clean
 
 
 def cleanup(host: str, password: str) -> None:

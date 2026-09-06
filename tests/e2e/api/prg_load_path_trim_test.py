@@ -17,7 +17,8 @@ import cli  # noqa: E402
 
 
 import ftp as ftp_lib
-from report import Failure, check_ok, check_start, detail, section, suite_ok, warn
+from report import (Failure, check_ok, check_start, detail, format_exception, section,
+                    suite_fail, suite_ok, warn)
 from rest import multipart_body
 from temp_settings import (
     AUTO_CLEANUP_ITEM, SUBFOLDERS_ITEM, TempSettingsSuite, add_toggle_arguments)
@@ -194,7 +195,10 @@ def main():
     try:
         runner.run()
         return 0
-    except Failure:
+    except Failure as exc:
+        # Without this the runner sees only the exit status and records the
+        # suite as FAIL with an empty note and no checks.
+        suite_fail(SUITE, format_exception(exc))
         return 1
     finally:
         # Leave the documented clean UI state after the REST/FTP assertions.

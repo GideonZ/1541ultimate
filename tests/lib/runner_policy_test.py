@@ -996,8 +996,8 @@ def run_move_rows_checks():
             self.entry_rows = range(0, stride * 2)
             self.backend = self
             self.machine = self
-            self.page_up_key = "PGUP"
-            self.page_down_key = "PGDN"
+            self.page_up_key = "F1"
+            self.page_down_key = "F7"
             self.sent = []
 
         def page_rows(self):
@@ -1015,7 +1015,7 @@ def run_move_rows_checks():
             stub = _Stub(stride)
             expect(f"stride {stride}", page_rows(stub), stride)
             for distance in range(1, stride * 3 + 2):
-                for sign, page, step in ((1, "PGDN", "DOWN"), (-1, "PGUP", "UP")):
+                for sign, page, step in ((1, "F7", "DOWN"), (-1, "F1", "UP")):
                     stub.sent = []
                     move_rows(stub, sign * distance)
                     pages, singles = divmod(distance, stride)
@@ -1034,7 +1034,7 @@ def run_move_rows_checks():
             for distance in range(0, stride * 3 + 2):
                 stub.sent = []
                 move_rows(stub, distance)
-                covered = sum(stride if key == "PGDN" else 1 for key in stub.sent)
+                covered = sum(stride if key == "F7" else 1 for key in stub.sent)
                 expect(f"stride {stride}, {distance} rows", covered, distance)
 
     with check("a zero move sends nothing at all"):

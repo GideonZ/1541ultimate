@@ -228,16 +228,6 @@ class Ctx:
         raise Failure(f"{method} {path} was accepted, expected one of "
                       f"{sorted(allow)}")
 
-    def require_fix(self, name: str) -> None:
-        """Skip when this machine's firmware predates the behaviour asserted.
-
-        tests/lib/machine.py owns the table of outstanding gaps and the wording,
-        so a backport is one deletion there rather than an edit in every suite.
-        """
-        reason = self.suite.machine.missing_fix(name)
-        if reason:
-            raise Skip(reason)
-
     def refuse_status(self, method: str, path: str, *,
                       params: dict[str, object] | None = None,
                       allow=(400, 403, 404, 412, 500, 501)) -> None:
@@ -272,7 +262,6 @@ def _identity_and_help_cases() -> list[Case]:
     case(("GET", "/v1/info"), "names product and firmware", "happy", _info)
 
     def _info_macs(ctx: Ctx) -> None:
-        ctx.require_fix(machine_lib.INFO_REPORTS_INTERFACES)
         info = ctx.api.info()
         found = {k: v for k, v in info.extra.items()
                  if k in ("ethernet_mac", "wifi_mac")}
@@ -287,7 +276,6 @@ def _identity_and_help_cases() -> list[Case]:
          _info_macs)
 
     def _info_git(ctx: Ctx) -> None:
-        ctx.require_fix(machine_lib.INFO_NAMES_ITS_COMMIT)
         info = ctx.api.info()
         commit = info.extra.get("git_commit_hash")
         if commit is None:
@@ -341,7 +329,6 @@ def _configuration_reads_cases() -> list[Case]:
          _config_item)
 
     def _config_unknown(ctx: Ctx) -> None:
-        ctx.require_fix(machine_lib.CONFIGS_REFUSE_UNKNOWN_CATEGORY)
         ctx.refuse_status("GET", "/v1/configs/No%20Such%20Category", allow=(404,))
     case(("GET", "/v1/configs/{category}"), "refuses an unknown category",
          "negative", _config_unknown)
@@ -369,7 +356,6 @@ def _configuration_writes_cases() -> list[Case]:
 
     def _config_write_path(ctx: Ctx) -> None:
         # The other accepted form: the value as a third path element.
-        ctx.require_fix(machine_lib.CONFIGS_SET_VALUE_IN_PATH)
         category, item, value = ctx.suite.config_target(ctx)
         ctx.api.configs.set_by_path(category, item, value)
         after = ctx.api.configs.current(category, item)
@@ -414,7 +400,6 @@ def _flash_backed_settings_cases() -> list[Case]:
     # Saving writes what is already in force, because no case changes a setting
     # without putting it back first, so the store ends where it started.
     def _flash_roundtrip(ctx: Ctx) -> None:
-        ctx.require_fix(machine_lib.CONFIGS_FLASH_ROUNDTRIP)
         category, item, _value = ctx.suite.config_target(ctx)
         before = ctx.api.configs.current(category, item)
         ctx.api.configs.save_to_flash()
@@ -429,7 +414,6 @@ def _flash_backed_settings_cases() -> list[Case]:
          "happy", _flash_roundtrip, exclusive=True)
 
     def _flash_roundtrip_category(ctx: Ctx) -> None:
-        ctx.require_fix(machine_lib.CONFIGS_FLASH_ROUNDTRIP)
         category, item, _value = ctx.suite.config_target(ctx)
         before = ctx.api.configs.current(category, item)
         ctx.api.configs.save_to_flash(category)
@@ -499,10 +483,9 @@ def _files_cases() -> list[Case]:
     for kind, extra in (("d64", {"tracks": 35}), ("d71", {}), ("d81", {}),
                         ("dnp", {"tracks": 1})):
         def _create(ctx: Ctx, kind=kind, extra=extra) -> None:
-            # Even the refusal reaches enforce_diskname, which is where the
-            # firmware without this fix stops answering, so the negative case
-            # takes the device down just as the happy one does.
-            ctx.require_fix(machine_lib.FILES_CREATE_IMAGE_SURVIVES)
+            # Even the refusal reaches enforce_diskname, so a leak or a bad
+            # free there shows up in the negative case as much as in the
+            # happy one.
             create = getattr(ctx.api.files, f"create_{kind}")
             ctx.refused("PUT", f"/v1/files/{{path}}:create_{kind}",
                         lambda: create(f"{MISSING}.{kind}", **extra))
@@ -530,14 +513,12 @@ def _machine_reads_cases() -> list[Case]:
     def _readmem_bad(ctx: Ctx) -> None:
         # Raw, because the typed call range-checks the length before sending and
         # the point here is what the device does with it.
-        ctx.require_fix(machine_lib.READMEM_REJECTS_ZERO_LENGTH)
         ctx.refuse_status("GET", "/v1/machine:readmem",
                           params={"address": f"{SCRATCH_ADDRESS:04X}", "length": 0})
     case(("GET", "/v1/machine:readmem"), "refuses a zero length", "negative",
          _readmem_bad)
 
     def _heap(ctx: Ctx) -> None:
-        ctx.require_fix(machine_lib.MACHINE_HEAP_READING)
         reading = ctx.api.machine.heap()
         if reading is None:
             raise Failure("machine:heap is not on this firmware")
@@ -658,10 +639,6 @@ def _machine_control_cases() -> list[Case]:
          _pause_resume, exclusive=True)
 
     def _menu_button(ctx: Ctx) -> None:
-        # Opening the menu with Interface Type = Freeze stops a device whose
-        # core lacks the fix for GideonZ#733 answering anything at all, and
-        # recovery is physical. tests/lib/machine.py owns that table.
-        ctx.require_fix(machine_lib.FREEZE_MENU_OPENS)
         ctx.api.machine.menu_button()
         # Poll rather than read once: the press is queued for the UI task, and
         # a second press sent while the first is still opening used to take the
@@ -995,7 +972,6 @@ class SuiteRunner:
             if self._image_ready:
                 return
             if ctx.api.files.info(MOUNT_IMAGE) is None:
-                ctx.require_fix(machine_lib.FILES_CREATE_IMAGE_SURVIVES)
                 ctx.api.files.create_d64(MOUNT_IMAGE, diskname="restapi")
             self._image_ready = True
 
@@ -1148,7 +1124,7 @@ class SuiteRunner:
 
     @property
     def machine(self) -> machine_lib.Machine:
-        """Which machine this is, for the checks that need a firmware fix."""
+        """Which machine this is, for the worker count it serves."""
         info = self.api.info()
         return machine_lib.identify(self.api.host,
                                     lambda: (info.product, info.firmware_version))

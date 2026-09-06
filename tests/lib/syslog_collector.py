@@ -88,6 +88,7 @@ than being absorbed by the port match.
 from __future__ import annotations
 
 import os
+import re
 import select
 import socket
 import threading
@@ -96,6 +97,11 @@ from dataclasses import dataclass, field
 from collections.abc import Callable, Mapping, Sequence
 
 import targets as targets_lib
+import bootstrap  # noqa: E402,F401
+
+_IP_ADDRESS = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
+_NETWORK_PAGES = ("WIRED NETWORK SETUP", "WI-FI NETWORK SETUP")
+_MENU_ROWS = range(2, 24)
 
 # A non-privileged port, and the devices are configured to it rather than to
 # 514. `Syslog::init` defaults to 514 only when the configured value carries no
@@ -184,6 +190,7 @@ class Collector:
     # port turned out to be exclusive. Recorded so a reader can see the
     # assignment the run collected under.
     machine_ports: dict[str, int] = field(default_factory=dict)
+    menu_addresses: dict[str, Sequence[str]] = field(default_factory=dict)
     # How each target's lines were attributed, counted: `port` when the
     # receiving socket identified the machine, `address` when the source
     # address did.
@@ -220,7 +227,8 @@ class Collector:
     # -- lifecycle --
 
     def bind(self, wanted: Sequence[targets_lib.Target],
-             ports: Mapping[str, int] | None = None) -> bool:
+             ports: Mapping[str, int] | None = None,
+             menu_addresses: Mapping[str, Sequence[str]] | None = None) -> bool:
         """Resolve every target's machines and open the ports. Never raises.
 
         `ports` is what each machine's own configuration says it sends its log
@@ -234,7 +242,7 @@ class Collector:
         # Named one at a time rather than driven from a list: only the first
         # step takes the run's targets, and giving the other two parameters
         # they never read to make one loop work is the wrong trade.
-        if not self._choose_addresses(wanted, ports):
+        if not self._choose_addresses(wanted, ports, menu_addresses):
             return False
         if not self._open_socket():
             return False
@@ -243,9 +251,11 @@ class Collector:
         return self._start()
 
     def _choose_addresses(self, wanted: Sequence[targets_lib.Target],
-                          ports: Mapping[str, int] | None) -> bool:
+                          ports: Mapping[str, int] | None,
+                          menu_addresses: Mapping[str, Sequence[str]] | None) -> bool:
         """Which machine each target's log belongs to, and which port it uses."""
         self.unmapped_path = os.path.join(self.directory, UNKNOWN_SENDER_NAME)
+        self.menu_addresses = dict(menu_addresses or {})
         wanted_ports = dict(ports or {})
         # Devices under test first, computers second. A machine can be both:
         # the C64 Ultimate that hosts a cartridge is a target of its own as
@@ -277,7 +287,7 @@ class Collector:
                         (machine, os.path.relpath(taken.path, self.directory)))
                 continue
             self.by_machine[machine] = Route(path, machine, target.token)
-            for address in resolve(machine):
+            for address in resolve(machine, self.menu_addresses.get(machine, ())):
                 held = self.routes.get(address)
                 if held is not None:
                     if held.machine != machine:
@@ -363,7 +373,7 @@ class Collector:
             # Either the name answers nothing, or every address it answers
             # with was already claimed by a machine named earlier. The two are
             # different operator problems and the message says which.
-            why = ("does not resolve" if not resolve(machine)
+            why = ("does not resolve" if not resolve(machine, self.menu_addresses.get(machine, ()))
                    else "resolves only to addresses another machine already "
                         "claims")
             if self.machine_ports[machine] in self.owners:
@@ -626,7 +636,106 @@ class _Discard:
         return
 
 
-def resolve(machine: str) -> list[str]:
+def _screen_rows(body: bytes) -> list[str]:
+    cells = body[:1000]
+    return ["".join(chr(value & 0x7F) if 0x20 <= (value & 0x7F) < 0x7F else " "
+                    for value in cells[offset:offset + 40])
+            for offset in range(0, 1000, 40)]
+
+
+def _active_addresses(rows: Sequence[str]) -> set[str]:
+    found = set()
+    for row in rows:
+        if "Active IP address" in row or "IP:" in row:
+            found.update(_IP_ADDRESS.findall(row))
+    return found
+
+
+def _menu_ready(rows: Sequence[str]) -> bool:
+    return bool(_active_addresses(rows) or any(
+        label in row for label in _NETWORK_PAGES for row in rows))
+
+
+def menu_addresses(target: targets_lib.Target, password: str | None,
+                   timeout: float) -> set[str]:
+    """Read every active interface address shown by the device menu.
+
+    Syslog may leave through an interface other than the one REST resolves to.
+    The running firmware exposes those active addresses in its menu, so read
+    that authoritative screen rather than carrying a bench-specific address.
+    """
+    from api import UltimateApi
+    from ui_backend import find_selected_row_rest
+
+    client = UltimateApi(target.token, password, timeout)
+    opened = client.machine.menu_open()
+    if not opened:
+        client.machine.menu_button()
+    deadline = time.monotonic() + 5.0
+    body = None
+    while time.monotonic() < deadline:
+        body = client.machine.menu_screen()
+        if body is not None:
+            break
+        time.sleep(0.05)
+    if body is None:
+        return set()
+
+    def read() -> tuple[bytes, list[str]]:
+        value = client.machine.menu_screen()
+        if value is None:
+            raise RuntimeError("menu closed while reading interface addresses")
+        return value, _screen_rows(value)
+
+    def tap(inputs: list[str]) -> None:
+        client.machine.send_input([{"kind": "keyboard", "inputs": inputs,
+                                    "transition": "tap"}])
+        time.sleep(0.1)
+
+    addresses = set()
+    try:
+        body, rows = read()
+        deadline = time.monotonic() + 5.0
+        while not _menu_ready(rows) and time.monotonic() < deadline:
+            time.sleep(0.05)
+            body, rows = read()
+        addresses.update(_active_addresses(rows))
+        for label in _NETWORK_PAGES:
+            target_row = next((row for row, text in enumerate(rows)
+                               if label in text), None)
+            if target_row is None:
+                continue
+            for _ in range(24):
+                body, rows = read()
+                cursor = find_selected_row_rest(body[:1000], body[1000:], _MENU_ROWS)
+                if cursor == target_row:
+                    break
+                tap(["cursor_up_down"] if target_row > cursor
+                    else ["left_shift", "cursor_up_down"])
+            else:
+                continue
+            tap(["return"])
+            deadline = time.monotonic() + 3.0
+            while time.monotonic() < deadline:
+                body, page = read()
+                page_addresses = _active_addresses(page)
+                if page_addresses:
+                    addresses.update(page_addresses)
+                    break
+                time.sleep(0.05)
+            tap(["left_shift", "cursor_left_right"])
+            deadline = time.monotonic() + 3.0
+            while time.monotonic() < deadline:
+                body, rows = read()
+                if any(label in row for row in rows):
+                    break
+                time.sleep(0.05)
+    finally:
+        client.machine.menu_button()
+    return addresses
+
+
+def resolve(machine: str, extra: Sequence[str] = ()) -> list[str]:
     """Every IPv4 address a machine answers to, or an empty list.
 
     The same call `av_stream.AvStreamCapture` uses to decide which packets are
@@ -638,7 +747,7 @@ def resolve(machine: str) -> list[str]:
     except OSError:
         found = []
     addresses = {entry[4][0] for entry in found}
-    return sorted(addresses | declared(machine))
+    return sorted(addresses | declared(machine) | set(extra))
 
 
 def declared(machine: str) -> set[str]:

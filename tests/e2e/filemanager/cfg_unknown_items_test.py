@@ -39,8 +39,6 @@ import cfg_fixture  # noqa: E402
 import cli  # noqa: E402
 
 from api import UltimateApi
-import machine as machine_lib
-import targets
 import ftp as ftp_lib
 from report import (Failure, teardown_step, check, check_skip, check_start, detail,
                     format_exception, section, suite_fail, suite_ok)
@@ -102,14 +100,6 @@ def main() -> int:
     args = parser.parse_args()
 
     api = UltimateApi(args.host, args.password or None, args.timeout)
-    info = api.info()
-    device = machine_lib.identify(
-        targets.device_of(args.host),
-        lambda: (info.product, info.firmware_version))
-    if device.skip_without_fix(machine_lib.CFG_LOADS_UNKNOWN_AND_PADDED,
-                               "a CFG with an unknown item loads without being called an error"):
-        suite_ok("cfg_unknown_items_test")
-        return 0
     chosen = api.configs.find_padded_enum()
     if chosen is None:
         check_start("a CFG with an unknown item loads without being called an error")

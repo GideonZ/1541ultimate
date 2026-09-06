@@ -226,6 +226,21 @@ INHERITED_VARIABLES = {
     "E2E_ASSUME_FIX",
 }
 
+# Variables that are nobody's export but that a scripted run must still not
+# inherit. Kept apart from `INHERITED_VARIABLES`, which
+# `no_runner_variable_escapes_the_scrubbing_list` holds to exactly what the
+# runner exports, so a name that is not the runner's cannot live there.
+FOREIGN_VARIABLES = {
+    # An operator's bench addresses, naming machines a scripted run does not
+    # have. The collector reports a declared name that is no target of the run
+    # on purpose, because that is almost always a typo. Inherited here it is
+    # not a typo, it is the real gate's declaration, and it adds a line per
+    # name to the fixture's own report that the checked-in document cannot
+    # carry. Measured live: the golden document differed under
+    # U64_LOG_ADDRESSES='c64u=...,u64=...,u2=...' and matched without it.
+    "U64_LOG_ADDRESSES",
+}
+
 
 def runner_variables() -> set:
     """Every `E2E_` variable name the runner's own source mentions."""
@@ -704,7 +719,8 @@ def scripted_run(double: DeviceDouble, stubs: Sequence[Stub],
     # three cases about the device log then fail for a reason that has nothing
     # to do with them. Measured under `run-tests u64 u2@c64u c64u`, where every
     # target's copy of this suite failed the same three.
-    for inherited in sorted(INHERITED_VARIABLES | {"GITHUB_STEP_SUMMARY"}):
+    for inherited in sorted(INHERITED_VARIABLES | FOREIGN_VARIABLES
+                            | {"GITHUB_STEP_SUMMARY"}):
         environment.pop(inherited, None)
     completed = subprocess.run(
         [sys.executable, wrapper, "-o", output, *arguments, *tokens],

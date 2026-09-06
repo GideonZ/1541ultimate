@@ -450,8 +450,27 @@ def assert_equal(label: str, expected: str, actual: str, command: str) -> None:
         raise Failure(f"{label} failed after {command}\n{diff}")
 
 
+def framed_rows(snapshot: Snapshot) -> tuple[int, int] | None:
+    """The first and last row inside the monitor's box, or None if undrawn.
+
+    Outside the box is someone else's: a C64 Ultimate's launcher banner above
+    it is drawn in reversed characters.
+    """
+    borders = [index for index, line in enumerate(snapshot.lines)
+               if line.strip().startswith("+") and line.strip().endswith("+")]
+    if len(borders) < 2:
+        return None
+    return borders[0] + 1, borders[-1] - 1
+
+
 def assert_highlight(snapshot: Snapshot, expected_cells: list[tuple[int, int]], command: str) -> None:
-    actual = sorted(snapshot.reverse_cells)
+    inside = framed_rows(snapshot)
+    if inside is None:
+        actual = sorted(snapshot.reverse_cells)
+    else:
+        first, last = inside
+        actual = sorted((col, row) for col, row in snapshot.reverse_cells
+                        if first <= row <= last)
     expected = sorted(expected_cells)
     if actual != expected:
         raise Failure(
@@ -1780,51 +1799,79 @@ def run_go_keeps_monitor_open_test(session: MonitorSession, rest_host: str) -> N
             f"and is gone now, leaving {strip_frame(screen.line(3))!r} on screen")
 
 
+BOOKMARK_DEFAULT_LABEL = "SCREEN"
+BOOKMARK_LABEL_TITLE = "Label BM1"
+
+
 def run_bookmark_test(session: MonitorSession) -> None:
     screen = ensure_view(session, "HEX ")
 
     screen = session.send_key("CTRL_B", settle=True)
     screen.find_line_containing("BOOKMARKS")
     screen = session.send_key("DOWN")
-    screen = session.send_key("DEL")
-    assert_line_contains_all(screen, ("1 SCREEN", "$0400", "SCR 32"))
+    session.send_key("DEL")
+    wait_for_line_containing_all(session, ("1 SCREEN", "$0400", "SCR 32"))
     screen = session.send_key("CTRL_B", settle=True)
     screen.find_line_containing("MONITOR")
 
+    # W toggles between the two hex widths, so the width it lands on is fixed
+    # only if the width it starts from is. Settled here the same way
+    # run_memory_bookmark_width_test settles it; without that this check
+    # depends on whatever the earlier checks left behind, and that differs
+    # between machines, because the checks that skip differ between them.
+    screen = ensure_hex_width(session, 8)
     screen = session.goto("C123")
     screen.find_line_containing("MONITOR HEX $C123")
     screen = session.send_char("W", settle=True)
     screen = session.send_key("CTRL_B", settle=True)
     screen.find_line_containing("BOOKMARKS")
     screen = session.send_key("DOWN")
-    screen = session.send_char("S")
-    assert_line_contains_all(screen, ("BM1 SCREEN $C123 HEX W16", "SET"))
+    session.send_char("S")
+    wait_for_line_containing_all(session, ("BM1 SCREEN $C123 HEX W16", "SET"))
     screen = session.send_key("CTRL_B", settle=True)
     screen.find_line_containing("MONITOR HEX $C123")
 
     screen = session.goto("E000")
     screen.find_line_containing("MONITOR HEX $E000")
-    screen = session.send_key("CBM_1")
-    screen.find_line_containing("MONITOR HEX $C123")
-    screen.find_line_containing("BM1 SCREEN $C123 HEX W16")
+    session.send_key("CBM_1")
+    wait_for_line(session, "MONITOR HEX $C123")
+    wait_for_line(session, "BM1 SCREEN $C123 HEX W16")
 
     screen = session.send_key("CTRL_B", settle=True)
     screen.find_line_containing("BOOKMARKS")
-    assert_line_contains_all(screen, ("1 SCREEN", "$C123", "HEX 16"))
+    screen = wait_for_line_containing_all(session, ("1 SCREEN", "$C123", "HEX 16"))
     screen.find_line_containing("0-9/RET Jmp  S Set  L Label  DEL Reset")
 
     screen = session.send_key("DOWN")
-    screen = session.send_char("L")
-    screen = session.send_text("\b\b\b\b\b\bE2E\r", "bookmark label E2E")
-    assert_line_contains_all(screen, ("1 E2E", "$C123", "HEX 16"))
+    session.send_char("L")
+    # Typed only once the editor is up: one burst straight after L lost the
+    # backspaces on a C64 Ultimate and the label stayed "SCREEN".
+    wait_for_prompt(session, BOOKMARK_LABEL_TITLE)
+    session.send_text("\b" * len(BOOKMARK_DEFAULT_LABEL) + "E2E",
+                      "bookmark label E2E")
+    # The whole field, not a substring of the screen: "E2E" appears just as
+    # readily in a field the backspaces left as "SCE2EEN".
+    screen = wait_until(
+        session,
+        lambda s: prompt_field_or_none(s, BOOKMARK_LABEL_TITLE) == "E2E")
+    assert_equal("bookmark label field", "E2E",
+                 prompt_field(screen, BOOKMARK_LABEL_TITLE), "bookmark label E2E")
+
+    session.send_key("ENTER", settle=True)
+    # Leaving the editor restores the screen backup UIStringBox took when it
+    # opened, which still carries the old label, and edit_bookmark_label
+    # repaints the row only after that. The device does commit the edit: a
+    # jump to the bookmark reads "BM1 E2E" even while this row still reads
+    # "1 SCREEN".
+    wait_for_line_containing_all(session, ("1 E2E", "$C123", "HEX 16"))
 
     screen = session.send_key("CTRL_B", settle=True)
     screen.find_line_containing("MONITOR HEX $C123")
     screen = session.goto("E000")
     screen.find_line_containing("MONITOR HEX $E000")
-    screen = session.send_key("CBM_1")
-    screen.find_line_containing("MONITOR HEX $C123")
-    screen.find_line_containing("BM1 E2E $C123 HEX W16")
+    session.send_key("CBM_1")
+    wait_for_line(session, "MONITOR HEX $C123")
+    wait_for_line(session, "BM1 E2E $C123 HEX W16")
 
 
 def run_telnet_poll_guard_test(session: MonitorSession) -> None:
@@ -1843,8 +1890,8 @@ def run_memory_bookmark_width_test(session: MonitorSession, rest_host: str) -> N
     screen = session.send_key("CTRL_B", settle=True)
     screen.find_line_containing("BOOKMARKS")
     screen = session.send_key("DOWN")
-    screen = session.send_key("DEL")
-    assert_line_contains_all(screen, ("1 SCREEN", "$0400", "SCR 32"))
+    session.send_key("DEL")
+    wait_for_line_containing_all(session, ("1 SCREEN", "$0400", "SCR 32"))
     screen = session.send_key("CTRL_B", settle=True)
     screen.find_line_containing("MONITOR")
 
@@ -1858,21 +1905,21 @@ def run_memory_bookmark_width_test(session: MonitorSession, rest_host: str) -> N
     screen = session.send_key("CTRL_B", settle=True)
     screen.find_line_containing("BOOKMARKS")
     screen = session.send_key("DOWN")
-    screen = session.send_char("S")
-    assert_line_contains_all(screen, ("BM1 SCREEN $3000 HEX W16", "SET"))
+    session.send_char("S")
+    wait_for_line_containing_all(session, ("BM1 SCREEN $3000 HEX W16", "SET"))
     screen = session.send_key("CTRL_B", settle=True)
     screen.find_line_containing("MONITOR HEX $3000")
 
     screen = session.goto("E000")
     screen.find_line_containing("MONITOR HEX $E000")
-    screen = session.send_key("CBM_1")
-    screen.find_line_containing("MONITOR HEX $3000")
-    screen.find_line_containing("BM1 SCREEN $3000 HEX W16")
-    screen.find_line_containing("3000 0001020304050607 08090A0B0C0D0E0F")
+    session.send_key("CBM_1")
+    wait_for_line(session, "MONITOR HEX $3000")
+    wait_for_line(session, "BM1 SCREEN $3000 HEX W16")
+    wait_for_line(session, "3000 0001020304050607 08090A0B0C0D0E0F")
 
     screen = session.send_key("CTRL_B", settle=True)
     screen.find_line_containing("BOOKMARKS")
-    assert_line_contains_all(screen, ("1 SCREEN", "$3000", "HEX 16"))
+    wait_for_line_containing_all(session, ("1 SCREEN", "$3000", "HEX 16"))
     screen = session.send_key("CTRL_B", settle=True)
     screen.find_line_containing("MONITOR HEX $3000")
 
@@ -1897,8 +1944,8 @@ def run_binary_bookmark_width_test(session: MonitorSession, rest_host: str) -> N
     screen = session.send_key("CTRL_B", settle=True)
     screen.find_line_containing("BOOKMARKS")
     screen = session.send_key("DOWN")
-    screen = session.send_key("DEL")
-    assert_line_contains_all(screen, ("1 SCREEN", "$0400", "SCR 32"))
+    session.send_key("DEL")
+    wait_for_line_containing_all(session, ("1 SCREEN", "$0400", "SCR 32"))
     screen = session.send_key("CTRL_B", settle=True)
     screen.find_line_containing("MONITOR")
 
@@ -1928,17 +1975,17 @@ def run_binary_bookmark_width_test(session: MonitorSession, rest_host: str) -> N
     screen = session.send_key("CTRL_B", settle=True)
     screen.find_line_containing("BOOKMARKS")
     screen = session.send_key("DOWN")
-    screen = session.send_char("S")
-    assert_line_contains_all(screen, ("BM1 SCREEN $C400 BIN W4", "SET"))
+    session.send_char("S")
+    wait_for_line_containing_all(session, ("BM1 SCREEN $C400 BIN W4", "SET"))
     screen = session.send_key("CTRL_B", settle=True)
     screen.find_line_containing("MONITOR BIN $C400")
 
     screen = session.goto("E000")
     screen.find_line_containing("MONITOR BIN $E000")
-    screen = session.send_key("CBM_1")
-    screen.find_line_containing("MONITOR BIN $C400")
-    screen.find_line_containing("BM1 SCREEN $C400 BIN W4")
-    screen.find_line_containing("C400 ...*..*...**.*...*.*.**..****...")
+    session.send_key("CBM_1")
+    wait_for_line(session, "MONITOR BIN $C400")
+    wait_for_line(session, "BM1 SCREEN $C400 BIN W4")
+    screen = wait_for_line(session, "C400 ...*..*...**.*...*.*.**..****...")
     assert_line_lacks(screen, "12 34 56 78")
 
     screen = session.send_key("CTRL_B", settle=True)
@@ -2054,7 +2101,8 @@ def check_anchor_survives_navigation(session: MonitorSession, address: int,
         raise Failure(f"{what}: ${address:04X} is not on screen to begin with\n"
                       f"{baseline.text()}")
 
-    for up, down in (("UP", "DOWN"), ("PGUP", "PGDN")):
+    keys = session.backend.machine
+    for up, down in (("UP", "DOWN"), (keys.page_up_key, keys.page_down_key)):
         for step in range(ASM_ANCHOR_STEPS):
             screen = session.send_key(up)
             moved = asm_row_for(screen, address)
@@ -2359,15 +2407,17 @@ def run_asm_entry_round_trip_test(session: MonitorSession, rest_host: str,
             session.goto_run(f"{address:04X}")
             capture.clear()
             launched = time.monotonic()
-            # Collect until there are frames to judge, not for a fixed 0.60s
-            # window a slow-starting stream misses. assert_frames_differ needs two.
+            # Until two frames differ: the first two of a starting stream are
+            # equal on a C64 Ultimate. The read of $C200 below proves the run.
             frames = []
             video_deadline = time.monotonic() + VIDEO_CAPTURE_TIMEOUT_SECONDS
             while time.monotonic() < video_deadline:
                 capture.capture(0.20)
                 frames = [frame for frame in video_frames(capture.video_packets)
                           if frame.received_at >= launched]
-                if len(frames) >= 2:
+                images = [frame.pixels for frame in frames]
+                if len(images) >= 2 and any(image != images[0]
+                                            for image in images[1:]):
                     break
             if not frames:
                 raise Failure(
@@ -2764,6 +2814,37 @@ def wait_for_prompt(session: MonitorSession, title: str) -> Snapshot:
     return snapshot
 
 
+def wait_for_line_containing_all(session: MonitorSession,
+                                 values: tuple[str, ...]) -> Snapshot:
+    """Wait for one line to hold every value, then assert that it does.
+
+    Several of the bookmark popup's actions repaint in two stages: the popup
+    itself first, from `refresh_popup_overlay`, and the status row after it,
+    or, when a string box closes, the screen backup it restores first and the
+    committed row after. `RestBackend.send_key` returns on the first frame
+    that differs from the one before the key, which is the first of those
+    stages, so a read taken straight after the key can land on the
+    intermediate frame and see the value the action was about to replace.
+
+    Waiting is bounded by `wait_until`, and the assertion still runs on
+    whatever the screen holds when the budget ends, so a value that never
+    arrives fails with the screen in the message exactly as before.
+    """
+    snapshot = wait_until(
+        session,
+        lambda screen: any(all(value in line for value in values)
+                           for line in screen.lines))
+    assert_line_contains_all(snapshot, values)
+    return snapshot
+
+
+def wait_for_line(session: MonitorSession, needle: str) -> Snapshot:
+    """Wait for `needle` to appear on some line, for the same reason."""
+    snapshot = wait_until(session, lambda screen: needle in screen.text())
+    snapshot.find_line_containing(needle)
+    return snapshot
+
+
 def wait_for_monitor(session: MonitorSession, why: str) -> Snapshot:
     """Wait for the monitor's own view to be back on screen."""
     def drawn(snapshot: Snapshot) -> bool:
@@ -2887,6 +2968,7 @@ def run_help_layout_test(session: MonitorSession) -> None:
     place.
     """
     screen = open_help(session, "opening help for the layout check")
+    keys = session.backend.machine
 
     if "Undo" in screen.text() and "Undoc" not in screen.text():
         raise Failure(f"U is described as Undo rather than Undoc/Case\n{screen.text()}")
@@ -2941,14 +3023,14 @@ def run_help_layout_test(session: MonitorSession) -> None:
     assert_help_column(screen, "Follow/Ret", 21, "RETURN")
     assert_help_column(screen, "Follow/Ret", 29, "Follow/Ret")
 
-    assert_help_column(screen, "Monitor", 1, "?/")
+    assert_help_column(screen, "Monitor", 1, f"?/{keys.help_key}")
     assert_help_column(screen, "Monitor", 12, "Help")
     assert_help_column(screen, "Monitor", 21, "C=+O")
     assert_help_column(screen, "Monitor", 29, "Monitor")
 
-    assert_help_column(screen, "Page down", 1, "F1/")
+    assert_help_column(screen, "Page down", 1, f"{keys.page_up_key}/")
     assert_help_column(screen, "Page down", 12, "Page up")
-    assert_help_column(screen, "Page down", 21, "F7/")
+    assert_help_column(screen, "Page down", 21, f"{keys.page_down_key}/")
     assert_help_column(screen, "Page down", 29, "Page down")
 
     # No line inside the Help popup's own border may spill past content
@@ -2969,35 +3051,41 @@ def run_help_layout_test(session: MonitorSession) -> None:
     assert_help_closed(screen, "closing help after the layout check")
 
 
+BACK_OUT_STEPS = 10
+# Raised on leaving a settings screen once the REST backend has switched
+# Interface Type for the session. Answered No: Yes would write that into flash.
+FLASH_DIALOG = "Save changes to Flash?"
+
+
+def answer_flash_dialog(session: MonitorSession) -> None:
+    session.send_key("RIGHT", settle=True)     # Yes -> No
+    session.send_key("ENTER", settle=True)
+
+
 def back_out_to_the_bare_browser(session: MonitorSession) -> Snapshot:
-    """Press Back until nothing is drawn over the file browser.
+    """Leave the menu showing the file browser with nothing drawn over it.
 
-    Bounded and observed rather than counted: how many presses a context costs
-    is a property of that context. A fixed number of presses either leaves
-    something open or spends a spare press on whatever the browser does with
-    it, and the next thing this suite does is send a key that means something
-    different in each of those states.
-
-    Leaving the settings screens raises "Save changes to Flash?" whenever the
-    configuration in memory differs from the one in flash, which it does on any
-    device where the REST backend switched `Interface Type` for the session.
-    Back does not answer a Yes/No dialog, so that dialog is answered here, with
-    No: this suite only visited those screens and has no configuration change
-    of its own to keep, and answering Yes would write the session's temporary
-    `Interface Type` into the device's flash.
+    No screen rule finds the browser on every machine: a C64 Ultimate frames
+    every screen and its settings screens keep the browser's path. So Back is
+    pressed until it does nothing: REST reports a closed menu, which is then
+    reopened on the browser; Telnet never closes and the screen stops changing.
     """
-    for _ in range(8):
-        snapshot = session.capture()
-        text = snapshot.text()
-        if "Save changes to Flash?" in text:
-            session.send_key("RIGHT", settle=True)     # Yes -> No
-            session.send_key("ENTER", settle=True)
-            continue
-        if not any("+--" in line for line in snapshot.lines):
-            return snapshot
-        session.send_key("RUNSTOP", settle=True)
-    raise Failure(f"a window was still open after 8 Back presses\n"
-                  f"{session.capture().text()}")
+    for _ in range(BACK_OUT_STEPS):
+        try:
+            snapshot = session.capture()
+            if FLASH_DIALOG in snapshot.text():
+                answer_flash_dialog(session)
+                continue
+            after = session.send_key("RUNSTOP", settle=True)
+        except Failure as exc:
+            if "menu screen unavailable" not in str(exc):
+                raise
+            session.backend.reopen_menu_on_browser()
+            return session.capture()
+        if not session.backend.reopens_menu and after.text() == snapshot.text():
+            return after
+    raise Failure(f"the menu was still open after {BACK_OUT_STEPS} Back "
+                  f"presses\n{session.capture().text()}")
 
 
 def enter_monitor_with_shortcut(session: MonitorSession, context: str) -> None:
@@ -3129,8 +3217,9 @@ def run_back_navigation_test(session: MonitorSession) -> None:
         close_help(session, close_key)
 
     # The mapped help key is the other way in.
-    screen = session.send_key("F3")
-    assert_help_open(screen, "the mapped help key opening help")
+    help_key = session.backend.machine.help_key
+    screen = session.send_key(help_key)
+    assert_help_open(screen, f"the mapped help key ({help_key}) opening help")
     screen = session.send_key("RUNSTOP")
     assert_help_closed(screen, "RUN/STOP closing help opened with the help key")
 
@@ -3867,8 +3956,9 @@ def run_tests(context: MonitorContext) -> None:
 
     with check("paging away and back keeps memory view stable"):
         initial_snapshot = screen.text()
-        session.send_key("PGDN")
-        back = session.send_key("PGUP")
+        keys = session.backend.machine
+        session.send_key(keys.page_down_key)
+        back = session.send_key(keys.page_up_key)
         assert_equal("Memory stability", initial_snapshot, back.text(), back.last_command)
 
     with check("KERNAL disassembly formatting"):
@@ -3913,6 +4003,12 @@ def run_tests(context: MonitorContext) -> None:
         if not cycles_bank:
             check_skip("this monitor cannot change the CPU bank: 'o' answers "
                        f"{CPU_BANK_UNAVAILABLE!r}")
+        elif not frozen:
+            # The bank is what a stopped 6510 would see; a running one keeps
+            # BASIC at $A000, so the ROM shadows the RAM this fills.
+            check_skip("this user interface leaves the C64 running, so BASIC "
+                       "ROM is banked in over the RAM at $A000 and a fill "
+                       "there cannot be read back")
         else:
             screen = ensure_view(session, "HEX ")
             session.goto("A000")
@@ -3995,6 +4091,12 @@ def run_tests(context: MonitorContext) -> None:
         if not cycles_bank:
             check_skip("this monitor cannot change the CPU bank: 'o' answers "
                        f"{CPU_BANK_UNAVAILABLE!r}")
+        elif not frozen:
+            # Verified through the monitor's own view, which can only show RAM
+            # under a ROM while the machine is stopped.
+            check_skip("this user interface leaves the C64 running, so ROM is "
+                       "banked in over the RAM these edits target and the "
+                       "monitor's view cannot show what was written")
         else:
             run_cpu_banked_ram_edit_test(session, rest_host, frozen)
 
