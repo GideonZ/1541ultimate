@@ -735,6 +735,52 @@ def scenario_query_returns_results(device: Device) -> None:
     recover(device, "running a query")
 
 
+def scenario_dropdown_preserves_fields(device: Device) -> None:
+    section("dropdown selections preserve the query form (#863)")
+    expected = {"Name:": "turrican", "Group:": "issue863",
+                "Handle:": "barry", "Event:": "hardware"}
+
+    def expect_fields() -> None:
+        for label, value in expected.items():
+            actual = field_value(device, label)
+            if actual != value:
+                raise Failure(f"{label} changed from {value!r} to {actual!r}")
+
+    with check("populate the text fields"):
+        open_query_form(device)
+        for label, value in expected.items():
+            enter_field(device, label)
+            device.type_text(value)
+            device.send_key("ENTER")
+        expect_fields()
+
+    for label in ("Repo:", "Category:", "Subcat:"):
+        with check(f"{label} +/- preserves existing fields"):
+            row = row_of(device, label)
+            if row is None:
+                raise Failure(f"the form has no {label!r} field")
+            select_row(device, row, f"selecting {label!r}")
+            device.type_text("+")
+            first = field_value(device, label)
+            if not first:
+                raise Failure(f"{label} has no preset after +")
+            device.type_text("+")
+            device.type_text("-")
+            expected[label] = first
+            expect_fields()
+        with check(f"cancelling {label} preserves existing fields"):
+            enter_field(device, label)
+            device.send_key("RUNSTOP")
+            expect_fields()
+        with check(f"confirming {label} preserves its value and all other fields"):
+            enter_field(device, label)
+            device.send_key("DOWN")
+            device.send_key("UP")
+            device.send_key("ENTER")
+            expect_fields()
+    recover(device, "selecting query presets")
+
+
 # ------------------------------------------------------------ misbehaviour
 
 def scenario_menu_button_in_edit_field(device: Device) -> None:
@@ -886,6 +932,7 @@ def scenario_reopen_repeatedly(device: Device) -> None:
 SCENARIOS = {
     "open-and-leave": scenario_open_and_leave,
     "query": scenario_query_returns_results,
+    "dropdown-preserves-fields": scenario_dropdown_preserves_fields,
     "menu-button-in-field": scenario_menu_button_in_edit_field,
     "abort-edit": scenario_abort_edit,
     "overlong-and-empty": scenario_overlong_and_empty,

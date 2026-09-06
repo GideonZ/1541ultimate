@@ -24,6 +24,7 @@ class AssemblySearchForm: public TreeBrowserState
 public:
     AssemblySearchForm(Browsable *node, TreeBrowser *tb, int level);
     ~AssemblySearchForm();
+    bool reload_on_action(void) { return false; }
 
     void into(void) { printf("Search Form Into\n"); }
     void level_up(void) { printf("Search Form Up\n"); };
