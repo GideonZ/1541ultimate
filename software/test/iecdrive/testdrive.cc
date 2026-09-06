@@ -1082,6 +1082,51 @@ static void run_iec_rel_sequence(IecDrive *dr, const char *testname)
     memset(gap, 0, sizeof(gap));
     gap[0] = 0xFF;
 
+    // Issue #655: COPY-ALL writes records without a P command and reuses the channel.
+    // Check the native header and exact contents before reopening can alter the file.
+    const char *copy_names[] = { "4:COPYFIRST", "4:COPYSECOND", "4:COPYBOUNDARY" };
+    const char *copy_files[] = { "COPYFIRST.rel", "COPYSECOND.rel", "COPYBOUNDARY.rel" };
+    const uint8_t copy_sizes[] = { 164, 31, 254 };
+    FileManager *fm = FileManager::getFileManager();
+    for (int file = 0; file < 3; file++) {
+        const int size = copy_sizes[file];
+        uint8_t records[2][254];
+        memset(records[0], 'A' + file, sizeof(records[0]));
+        memset(records[1], 'a' + file, sizeof(records[1]));
+        expect_rel_open("Suite4-CopyCreate", dr, chan, copy_names[file], size);
+        expect_rel_write("Suite4-CopyFirstRecord", dr, chan, records[0], size);
+        expect_rel_write("Suite4-CopySecondRecord", dr, chan, records[1], size - 3);
+        close_file(dr, chan);
+        expect_status_ok("Suite4-CopyClose", copy_names[file]);
+        memset(records[1] + size - 3, 0, 3);
+
+        File *verify = NULL;
+        REQUIRE(fm->fopen(dr->get_partition_dir(4), copy_files[file], FA_READ, &verify) == FR_OK);
+        const uint32_t expected_size = 2 + 2 * size;
+        printf("%s: %s: size %u, expected %u\n", testname, copy_names[file],
+               verify->get_size(), expected_size);
+        REQUIRE(verify->get_size() == expected_size);
+        uint8_t actual[510];
+        uint32_t got = 0;
+        REQUIRE(verify->read(actual, sizeof(actual), &got) == FR_OK);
+        fm->fclose(verify);
+        REQUIRE(got == expected_size);
+        REQUIRE(actual[0] == size && actual[1] == 0);
+        REQUIRE(memcmp(actual + 2, records[0], size) == 0);
+        REQUIRE(memcmp(actual + 2 + size, records[1], size) == 0);
+
+        // The supplied editor opens by name alone, then positions the REL record.
+        open_file(dr, chan, copy_names[file]);
+        get_status(dr);
+        expect_status_ok("Suite4-CopyReopenUntyped", copy_names[file]);
+        expect_rel_position_status("Suite4-CopyPositionUntyped", dr, chan, 1, 1, "00, OK,00,00\r");
+        expect_rel_write("Suite4-CopyUpdateUntyped", dr, chan, records[0], size);
+        expect_rel_position_status("Suite4-CopyRepositionUntyped", dr, chan, 1, 1, "00, OK,00,00\r");
+        expect_rel_read("Suite4-CopyReadFirst", dr, chan, records[0], size);
+        expect_rel_read("Suite4-CopyReadSecond", dr, chan, records[1], size - 3);
+        close_file(dr, chan);
+    }
+
     expect_rel_open("Suite4-CreateRel", dr, chan, "4:RELTEST", record_size);
     expect_rel_position_status("Suite4-PositionRecord1", dr, chan, 1, 1, "50,RECORD NOT PRESENT,00,00\r");
     expect_rel_write("Suite4-WriteRecord1", dr, chan, record1, record_size);

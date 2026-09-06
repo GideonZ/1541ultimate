@@ -2442,8 +2442,11 @@ FRESULT FileInCBM::seek(uint32_t pos)
 
 
     if (start_cluster < 0) { // file doesn't yet exist
-        if (!pos) {
-            return FR_OK; // allow if seek to position 0
+        if (pos <= header.size) {
+            // The synthetic header exists before the first data sector is allocated.
+            header.pos = pos;
+            state = (pos < header.size) ? ST_HEADER : ST_LINEAR;
+            return FR_OK;
         }
     }
 
