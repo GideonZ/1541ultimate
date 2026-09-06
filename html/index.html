@@ -381,9 +381,16 @@ $(document).ready(async function () {
             return false;
         }
 
-        // Split into lines, keep only those starting with a digit, and join back
+        // Split into lines and prepare each line for tokenization.
+        // Leading and trailing whitespace is always removed.
+        // Optionally normalize the source to lowercase according to the tokenizer profile.
         var lines = textarea.split('\n')
-                .map(line => line.trim())
+                .map(line => {
+                    line = line.trim();
+                    if (NORMALIZE_TO_LOWERCASE)
+                        line = line.toLowerCase();
+                    return line;
+                })
                 .filter(line => /^\d/.test(line));
 
         // The link pointer of the last line is written after the loop below, which

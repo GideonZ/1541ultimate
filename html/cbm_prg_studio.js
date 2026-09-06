@@ -117,6 +117,36 @@ BASIC_CODE = `!- Welcome to Ultimate BASIC Editor / Tokenizer
 100 print:for i = 0 to 2000: next: return
 `;
 //
+// CASE NORMALIZATION:
+//
+// NORMALIZE_TO_LOWERCASE controls whether the BASIC source is converted
+// to lowercase before tokenization:
+//
+//   true  - convert the source to lowercase
+//   false - preserve the original character case
+//
+// For example, with NORMALIZE_TO_LOWERCASE = true:
+//
+//   10 PRINT "Hello"
+//   20 PrInT "World"
+//
+// are tokenized as:
+//
+//   10 print "hello"
+//   20 print "world"
+//
+// The text displayed in the editor is not changed.
+//
+// Use true for profiles where BASIC keywords should be matched
+// case-insensitively and the profile does not rely on case-sensitive
+// or shifted C64/PETSCII characters.
+//
+// Use false when the profile needs to preserve the original character case.
+//
+// The variable must be defined by every tokenizer profile.
+//
+NORMALIZE_TO_LOWERCASE = false;
+//
 // Special Character Mapping
 SPECIAL = [
 	//Column 1
