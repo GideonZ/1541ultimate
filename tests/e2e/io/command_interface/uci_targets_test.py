@@ -610,8 +610,17 @@ def run_palette(uci: Uci) -> bool:
     product, status = uci.transact(bytes([TARGET_CONTROL, CTRL_CMD_GET_HWINFO, 0x00]))
     if status != STATUS_OK:
         raise Failure(f"{scenario}: could not identify the product: {status!r}")
-    if not product.startswith(b"Ultimate 64"):
-        detail(f"{scenario}: {product.decode('latin-1')} has no U64 palette hardware; skipped")
+    # Asked, not inferred from the product name. The name test read "has no U64
+    # palette hardware" from a string, and a C64 Ultimate is not called
+    # "Ultimate 64", so all nine checks below were skipped on it. Measured on
+    # C64 Ultimate 1.2RC: GET_PALETTE answers 00,OK with a valid 48-byte
+    # palette, so the hardware is there and the checks belong on it. A machine
+    # that genuinely does not serve the command says so, and that is the answer
+    # this trusts.
+    _, probe_status = uci.transact(bytes([TARGET_CONTROL, CTRL_CMD_GET_PALETTE]))
+    if probe_status == STATUS_UNKNOWN_COMMAND:
+        detail(f"{scenario}: {product.decode('latin-1')} does not serve "
+               f"GET_PALETTE; skipped")
         return True
 
     original = expect(
