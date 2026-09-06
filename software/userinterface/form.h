@@ -58,6 +58,7 @@ class FormUIState: public TreeBrowserState
 public:
     FormUIState(Browsable *node, TreeBrowser *tb, int level);
     ~FormUIState();
+    bool reload_on_action(void) { return false; }
 
     void into(void) { printf("Search Form Into\n"); }
     void level_up(void) { printf("Search Form Up\n"); };

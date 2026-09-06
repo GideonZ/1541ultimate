@@ -204,7 +204,7 @@ int TreeBrowser :: poll(int sub_returned)
             // so the notification for what the action just did may have been
             // dropped; re-read the directory instead of trusting the cache.
             state->refresh = true;
-            state->needs_reload = true;
+            state->needs_reload |= state->reload_on_action();
         }
         return ret;
     }
