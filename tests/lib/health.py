@@ -18,9 +18,13 @@ What it covers, and why each one is here:
            The banner alone is not enough: a device out of data connections
            still answers `220` and still takes commands, and only the PASV
            every transfer needs fails.
-- `telnet` port 23 accepts a connection. Proven harmless to the UI: measured at
-           about 45ms, and the menu state and the running C64 are unchanged
-           afterwards, because nothing is sent and the socket is closed at once.
+- `telnet` port 23 accepts a connection *and* does not refuse it. A device
+           whose session slots are all taken still completes the handshake and
+           then answers "Too many connections", so acceptance alone is not
+           enough, for the same reason the FTP entry above needs a data
+           connection. Proven harmless to the UI: measured at about 45ms, and
+           the menu state and the running C64 are unchanged afterwards, because
+           nothing is sent and the socket is closed at once.
 - `ident`  `/v1/info`. Names the product and firmware in the same line, which
            is what makes a log readable weeks later.
 - `dma`    the control port, 64. It is a separate listener from the HTTP server
@@ -219,8 +223,17 @@ def _ping(host: str) -> Check:
     return Check("ping", OK, ms)
 
 
-def _banner(host: str, port: int, expect: bytes = b"") -> str:
-    """Connect, read whatever the listener volunteers, and close at once."""
+# What the Telnet listener answers once every session slot is taken; see
+# software/network/socket_gui.cc.
+TELNET_BUSY = b"Too many connections"
+
+
+def _banner(host: str, port: int, expect: bytes = b"", reject: bytes = b"") -> str:
+    """Connect, read whatever the listener volunteers, and close at once.
+
+    `reject` is for a listener that accepts a connection in order to refuse it,
+    where acceptance is not evidence it is usable.
+    """
     started = time.monotonic()
     with socket.create_connection((host, port), timeout=SOCKET_TIMEOUT_SECONDS) as sock:
         sock.settimeout(SOCKET_TIMEOUT_SECONDS)
@@ -233,6 +246,10 @@ def _banner(host: str, port: int, expect: bytes = b"") -> str:
                             body=greeting)
         if expect and not greeting.startswith(expect):
             raise RuntimeError(f"expected {expect!r}, got {greeting[:32]!r}")
+        if reject and reject in greeting:
+            raise RuntimeError(
+                f"the listener on port {port} refused the connection: "
+                f"{greeting.decode('ascii', 'replace').strip()!r}")
         return ""
 
 
@@ -414,7 +431,8 @@ def probe(host, password: str = "", api: UltimateApi | None = None,
     if not skip("ftp"):
         checks.append(_timed("ftp", lambda: _ftp(host, target.ftp_port, password)))
     if not skip("telnet"):
-        checks.append(_timed("telnet", lambda: _banner(host, target.telnet_port)))
+        checks.append(_timed("telnet", lambda: _banner(host, target.telnet_port,
+                                                       reject=TELNET_BUSY)))
     if not skip("ident"):
         checks.append(_ident(api))
     if not skip("dma"):

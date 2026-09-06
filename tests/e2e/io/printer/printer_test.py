@@ -473,8 +473,9 @@ def flush_via_menu(client, assertions_enabled, settle=MENU_SETTLE_SECONDS):
         # used to run before the menu was opened, where the endpoint answers 404
         # on every build because there is no menu to return, so every run took
         # this branch: the step verified nothing, and its two RETURN presses
-        # landed on the Tasks menu's real first entry, Assembly 64, whose query
-        # form was then left open for the next suite (confirmed live).
+        # landed on the Tasks menu's real first entry, which on the Ultimate 64
+        # this was measured on is Assembly 64, whose query form was then left
+        # open for the next suite (confirmed live).
         client.tap_key(client.task_menu_key)
         time.sleep(settle)
         client.tap_key("return")

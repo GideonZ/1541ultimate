@@ -121,7 +121,7 @@ void TreeBrowserState :: draw()
     if(children->get_elements() == 0) {
 		browser->window->clear();
     	browser->window->move_cursor(0, 0);
-    	browser->window->output("\es< No Items >"); // FIXME
+    	browser->window->output("\eS< No Items >");
     	under_cursor = NULL;
     	return;
     }
@@ -165,8 +165,8 @@ void TreeBrowserState :: draw_item(Browsable *t, int line, bool selected)
             browser->window->reverse_mode(0);
 			browser->window->set_color(browser->user_interface->color_inactive);
 		}
-		int squeeze_type = browser->user_interface->filename_overflow_squeeze;
-		t->getDisplayString(buffer, browser->window->get_size_x(), squeeze_type);
+		// int squeeze_type = browser->user_interface->filename_overflow_squeeze;
+		t->getDisplayString(buffer, browser->window->get_size_x(), browser->user_interface);
 		browser->window->output_line(buffer);
         browser->window->set_background(0);
     } else {
@@ -190,8 +190,8 @@ void TreeBrowserState :: update_selected(void)
     browser->window->move_cursor(0, selected_line);
     browser->window->set_color(browser->user_interface->color_sel); // highlighted
     browser->window->set_background(browser->user_interface->color_sel_bg);
-    int squeeze_type = browser->user_interface->filename_overflow_squeeze;
-    under_cursor->getDisplayString(buffer, browser->window->get_size_x(), squeeze_type);
+    //int squeeze_type = browser->user_interface->filename_overflow_squeeze;
+    under_cursor->getDisplayString(buffer, browser->window->get_size_x(), browser->user_interface);
     browser->window->output_line(buffer);
 }
     

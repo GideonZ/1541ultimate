@@ -32,6 +32,8 @@ public:
     int getCustomBrowsables(Browsable *, IndexedList<Browsable *> &list);
 };
 
+class UserInterface;
+
 class BrowsableTapEntry : public Browsable
 {
     Browsable *parent;
@@ -47,8 +49,8 @@ public:
     const char *getName() { return "BrowsableTapEntry"; }
     void fetch_context_items(IndexedList<Action *> &list);
     IndexedList<Browsable *> *getSubItems(int &error) { error = -1; return &children; }
-    void getDisplayString(char *buffer, int width) {
-        sprintf(buffer, "%#s \eE%6x", width-8, tiEntry->name, tiEntry->offset);
+    void getDisplayString(char *buffer, int width, UserInterface *ui) {
+        sprintf(buffer, "%#s \eE%6x", width-8, tiEntry->name, tiEntry->offset); // FIXME: Hard color
     }
 };
 

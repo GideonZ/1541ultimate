@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Which `machine.FIXES` entries a run under `--assume-fix` found stale.
 
-    python3 tools/stale_gates.py RUN.jsonl
+    python3 tools/stale_gates.py RUN_OUTPUT_DIR
 
 A gate tagged with `machine.FIXES` skips rather than fails, and that is also
 how a check for a since-fixed firmware gap stays disabled: nothing says so
@@ -17,14 +17,19 @@ stale; failing even once says the gap is still real. A tagged check that
 never ran (skipped for an unrelated reason, or the process died first) is
 neither and is left out, because absence is not evidence.
 
+The argument is a run's whole output directory: a tag lands in the suite's own
+`<mode>-<suite>.jsonl`, never in the orchestrator's `run.jsonl` beside it.
+
 Standard library only, so a CI step or an agent can run this over a
-downloaded `run.jsonl` with nothing else installed.
+downloaded run directory with nothing else installed.
 """
 
 from __future__ import annotations
 
 import argparse
+import glob
 import json
+import os
 import sys
 from collections import defaultdict
 from dataclasses import dataclass
@@ -96,12 +101,24 @@ def load_records(path: str):
     return records
 
 
+def load_run_directory(directory: str):
+    """Every record from every `*.jsonl` directly under `directory`.
+
+    One file per suite per mode per attempt, and the tag is in whichever one
+    ran the check. Other files cost nothing: they carry no `fix` field.
+    """
+    records = []
+    for path in sorted(glob.glob(os.path.join(directory, "*.jsonl"))):
+        records.extend(load_records(path))
+    return records
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("jsonl", help="path to a run's JSONL file")
+    parser.add_argument("directory", help="a run's -o/--output-dir directory")
     args = parser.parse_args()
 
-    stale = find_stale(load_records(args.jsonl))
+    stale = find_stale(load_run_directory(args.directory))
     if not stale:
         print("no stale gates")
         return 0

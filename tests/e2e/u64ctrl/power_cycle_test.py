@@ -19,8 +19,8 @@ what happens when the module cold starts, and nothing reachable over the
 network can bring that about.
 
 Two of the four scenarios end with the machine deliberately off, and those
-cannot be recovered by software. While the machine is off the Ultimate
-application is not running, and with it neither the REST API nor the IP stack
+cannot be recovered by software, a wake packet included. While the machine is
+off the Ultimate application is not running, and with it neither the REST API nor the IP stack
 it serves -- the control module only bridges Ethernet frames, it does not
 listen on anything itself. So a machine that correctly stays off can only be
 revived by its power button. This is why the suite is registered `manual`.
@@ -162,6 +162,18 @@ def main() -> int:
         # After the skips and before anything destructive: a run that cannot be
         # completed says so now rather than after the first mains cut, and a run
         # that was going to skip anyway is not asked for hands it never needs.
+        # Without every actuator or a terminal, SKIP rather than four failures.
+        scripted = bool(args.power_off_cmd and args.power_on_cmd
+                        and args.power_button_cmd)
+        if not scripted and not sys.stdin.isatty():
+            check_start("mains and the power button can be driven for this run")
+            check_skip(
+                "no terminal to ask an operator on, and not every actuator "
+                "given. This suite has to remove mains from the machine and "
+                "press its power button: pass --power-off-cmd, --power-on-cmd "
+                "and --power-button-cmd together, or run it from a terminal")
+            suite_ok(SUITE)
+            return 0
         mains = Mains(args.power_off_cmd, args.power_on_cmd, args.off_seconds)
         button = PowerButton(args.power_button_cmd)
 

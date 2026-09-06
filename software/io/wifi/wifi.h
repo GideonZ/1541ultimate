@@ -107,7 +107,7 @@ public:
         this->auth = auth;
     }
 
-    void getDisplayString(char *buffer, int width) {
+    void getDisplayString(char *buffer, int width, UserInterface *ui) {
         sprintf(buffer, "%#s%5d", 31, ssid, dbm);
     }
 

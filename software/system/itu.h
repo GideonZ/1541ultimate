@@ -43,6 +43,7 @@ extern "C" {
 #define ITU_IRQHIGH_WIFI     3
 #define ITU_IRQHIGH_BLING    4
 #define ITU_IRQHIGH_HDMI     5
+#define ITU_IRQHIGH_UNLOCK   6
 #define ITU_IRQHIGH_GURU     7
 
 #define CAPAB_UART          0x00000001

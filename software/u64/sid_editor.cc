@@ -298,6 +298,7 @@ int SidEditor :: handle_key(int c)
     case KEY_F8:
     case KEY_BREAK:
     case KEY_BACK:
+    case '`': // left arrow
         // restore ugly blue
         if(user_interface->host && user_interface->host->is_accessible())
             user_interface->host->set_colors(user_interface->color_bg, user_interface->color_border);

@@ -1,18 +1,34 @@
 #!/usr/bin/env python3
 """E2E: a CFG file effectuates only the stores it names, and no others.
 
-Split out of cfg_single_group_test.py and registered as manual, because the
-behaviour it asserts is in disrepair rather than because the check is wrong.
-Loading a partial .cfg is supposed to leave every store the file does not
-mention alone. Measured on a C64 Ultimate 1.2.0: a file naming one store had
-nineteen stores in its loader diagnostics, so the file was applied as though
-it named all of them.
+Split out of cfg_single_group_test.py and registered as manual. Loading a
+partial .cfg is supposed to leave every store the file does not mention alone.
 
-The half that still holds everywhere is that such a file loads at all, and
-that stays in cfg_single_group_test.py and in the gate. Only this assertion,
-about which stores were considered, is manual: a gate that fails on it every
-run teaches a reader to ignore the suite, and the loading half is what would
-then stop being watched.
+What the loader actually does, measured on a C64 Ultimate 1.2.0 on 2026-09-05:
+it iterates every store and effectuates the ones whose staleEffect is set, so a
+.cfg naming one store also flushes every other store that has an unapplied
+change pending. The same file loaded twice in a row gives 19 stores effectuated
+and then 1, because the first load cleared what was pending. GideonZ/1541ultimate
+#765 fixed this by iterating only the stores the file loaded; commit 03284765
+removed that again for CBM merge compatibility.
+
+Two consequences for anyone changing this suite.
+
+The failure is state dependent. It reports on the session's history as much as
+on the loader, so it can pass on a settled machine and fail after a boot or a
+run that left changes pending. Establishing that nothing else is stale before
+loading the .cfg is what would make it a gate; until then it is manual for that
+reason, not because the behaviour is beyond repair.
+
+The two loader log lines mean opposite things and must not be counted together.
+`Effectuating settings of store 'X' after loading.` is a store that was applied;
+`Store 'X' is clean after loading.` is a store that was not. This suite used to
+collect both into one list, which could not tell a loader that applied one store
+from one that applied all of them, so it failed on correct firmware too. See
+loader_report in cfg_single_group_test.py.
+
+The half that holds everywhere is that such a file loads at all, and that stays
+in cfg_single_group_test.py and in the gate.
 
 Run it by hand, or with --manual, when the loader is changed:
 
@@ -35,13 +51,13 @@ import cli  # noqa: E402
 sys.path.insert(0, bootstrap.directory("e2e", "filemanager"))
 
 from api import UltimateApi
-from report import (Failure, teardown_step, check, check_skip, check_start, format_exception,
-                    suite_fail, suite_ok)
+from report import (Failure, detail, teardown_step, check, check_skip, check_start,
+                    format_exception, suite_fail, suite_ok)
 from ui_backend import add_mode_argument
 
 import cfg_fixture  # noqa: E402
 from cfg_single_group_test import (alternate_value, cleanup, load_fixture,
-                                   loading_stores, upload_fixture)
+                                   loader_report, upload_fixture)
 
 SUITE = "cfg_partial_effectuate_test"
 
@@ -69,9 +85,15 @@ def main() -> int:
             upload_fixture(args.host, args.password, store, item,
                            alternate_value(api, store, item, original))
             load_fixture(browser)
-            stores = loading_stores(args.host, args.password)
-            if stores != [store]:
-                raise Failure(f"Expected [{store!r}] after CFG load, got {stores!r}")
+            effectuated, clean = loader_report(args.host, args.password)
+            detail(f"effectuated {len(effectuated)}, left clean {len(clean)}")
+            if effectuated != [store]:
+                extra = [name for name in effectuated if name != store]
+                raise Failure(
+                    f"the .cfg named only {store!r}, but the loader effectuated "
+                    f"{len(effectuated)} store(s): {effectuated!r}. "
+                    f"{len(extra)} store(s) the file never mentioned were applied: "
+                    f"{extra!r}. Stores left alone: {clean!r}")
 
         suite_ok(SUITE)
         return 0
