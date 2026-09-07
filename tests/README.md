@@ -277,6 +277,7 @@ e2e:
   cfg-unknown-items                 .      .      x      x      x
   cfg-whitespace                    .      .      x      x      x
   create-disk-image                 .      x      x      x      x
+  deferred-machine-actions          .      .      x      x      x
   doom-release                      .      .      .      x      x
   esp-depends                       x      x      x      x      x
   fast-reset                        .      .      x      x      x
@@ -336,8 +337,8 @@ soak:
   usb-keyboard-repeat               .      .      .      x      x
 
                                ------ ------ ------ ------ ------
-  suites                           12     26     51     63     63
-  suite runs                       12     26     51    126    189
+  suites                           12     26     52     64     64
+  suite runs                       12     26     52    128    192
 
 Scenario and check counts, and durations, are not shown here:
 the registry does not know them. They depend on the machine and are

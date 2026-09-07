@@ -439,6 +439,17 @@ SUITES: Sequence[Suite] = (
     # fix and green at about 10x after it.
     Suite("e2e", "fast-reset", "tests/e2e/io/c64/fast_reset_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
+    # Guards GideonZ/commodore#1 (c66ef028): a Reset, a Reboot or a C=+R taken
+    # from the menu has to run after the UI has torn down, so the C64 comes
+    # back to a boot screen with none of the menu's characters on it. The
+    # other half of that change, the menu opening again afterwards, needs the
+    # hardware button's edge detector, which no route this harness has can
+    # reach; those three checks report SKIP with the measurement. It resets
+    # and reboots the machine several times, which is why it is not in the
+    # shallow profiles.
+    Suite("e2e", "deferred-machine-actions",
+          "tests/e2e/io/c64/deferred_actions_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@"),
     # Reproduces #733: with the FPGA decoder fix in the core, "mirroring off" is
     # the regression guard. Runs last, because a device whose core predates that
     # fix stalls the whole Nios on this scenario and needs a JTAG recovery.

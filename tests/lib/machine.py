@@ -344,6 +344,19 @@ class Machine:
                 else "Assembly 64 Query Form")
 
     @property
+    def machine_task_category(self) -> str:
+        """The task-menu category holding Reset, Reboot and the power actions.
+
+        C64_Subsys registers them under "C64 Machine"
+        (software/io/c64/c64_subsys.cc). A C64 Ultimate lists the same actions
+        under "Power & Reset": read off the device on 2026-09-07, where that
+        category offered Reset C64, Reboot C64, Reboot (Clr Mem), Power OFF,
+        Power Cycle, Save C64 Memory and Save REU Memory. Only the category
+        differs; the action labels are the same on both.
+        """
+        return "Power & Reset" if self.kind == C64U else "C64 Machine"
+
+    @property
     def rest_workers(self) -> int:
         """How many REST calls this machine can be asked for at once.
 
