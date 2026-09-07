@@ -425,6 +425,13 @@ SUITES: Sequence[Suite] = (
     # back the wrong bytes. Measured red on core 1.4E and green on 1.4F.
     Suite("e2e", "reu-turbo", "tests/e2e/io/c64/reu_turbo_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
+    # Fast Reset patches the KERNAL's RAM test out of the image the machine
+    # boots, so the observable is how long a reset takes to reach READY. The
+    # setting is applied when the system ROMs load, so the suite reboots
+    # between the two states. Measured red at 1.0x on an Ultimate 64 before the
+    # fix and green at about 10x after it.
+    Suite("e2e", "fast-reset", "tests/e2e/io/c64/fast_reset_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
     # Reproduces #733: with the FPGA decoder fix in the core, "mirroring off" is
     # the regression guard. Runs last, because a device whose core predates that
     # fix stalls the whole Nios on this scenario and needs a JTAG recovery.
