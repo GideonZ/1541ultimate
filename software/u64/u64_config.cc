@@ -44,6 +44,7 @@ extern "C" {
 #include "usb_hid.h"
 #include "usb_hid_config.h"
 #include "monitor_init.h"
+#include "data_streamer.h"
 
 // TODO: This doesn't belong here.
 #ifndef CMD_IF_SLOT_BASE
@@ -2760,6 +2761,9 @@ void U64Config :: set_palette_rgb(const uint8_t rgb[16][3])
     memcpy(active_palette, rgb, sizeof(active_palette));
     active_palette_valid = true;
     program_palette_rgb(rgb);
+    if (dataStreamer) {
+        dataStreamer->sendVicPalette(active_palette);
+    }
 }
 
 void U64Config :: get_palette_rgb(uint8_t rgb[16][3])
@@ -2775,6 +2779,9 @@ void U64Config :: set_palette_color(uint8_t index, const uint8_t rgb[3])
     }
     memcpy(active_palette[index], rgb, 3);
     program_palette_color(index, rgb);
+    if (dataStreamer) {
+        dataStreamer->sendVicPalette(active_palette);
+    }
 }
 
 void U64Config :: reset_palette()

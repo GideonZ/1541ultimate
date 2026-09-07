@@ -58,6 +58,7 @@ import bootstrap  # noqa: E402,F401
 import cli  # noqa: E402
 import ftp as ftp_lib
 import rest as rest_lib
+import streams as stream_lib
 import targets
 from report import (
     FAIL, Failure, OK, SKIP, check, check_skip, check_start, detail,
@@ -117,6 +118,8 @@ CTRL_CMD_GET_PALETTE = 0x51
 CTRL_CMD_SET_PALETTE = 0x52
 CTRL_CMD_SET_PALETTE_COLOR = 0x53
 CTRL_CMD_RESET_PALETTE = 0x54
+VIC_PALETTE_PACKET_SIZE = 60
+VIC_PALETTE_LINE = 0x7FFF
 SOFTIEC_CMD_IDENTIFY = 0x01
 SOFTIEC_CMD_LOAD_SU = 0x10
 SOFTIEC_CMD_GET_FATNAME = 0x22
@@ -604,7 +607,21 @@ def run_control_target(uci: Uci) -> bool:
     return True
 
 
-def run_palette(uci: Uci) -> bool:
+def expect_palette_packet(sock, addresses: set[str], expected: bytes) -> None:
+    for _, packet, mine in stream_lib.receive([sock], addresses, 2.0):
+        if not mine or len(packet) != VIC_PALETTE_PACKET_SIZE:
+            continue
+        if int.from_bytes(packet[4:6], "little") != VIC_PALETTE_LINE:
+            continue
+        if packet[6:12] != bytes([16, 0, 1, 24, 0, 0]):
+            raise Failure(f"palette stream packet has invalid format bytes {packet[6:12]!r}")
+        if packet[12:] != expected:
+            raise Failure(f"palette stream packet was {packet[12:]!r}, expected {expected!r}")
+        return
+    raise Failure("no palette packet arrived on the VIC stream within 2 seconds")
+
+
+def run_palette(session: RestSession, uci: Uci) -> bool:
     """Exercise the U64 runtime palette protocol without changing saved config."""
     scenario = "palette"
     product, status = uci.transact(bytes([TARGET_CONTROL, CTRL_CMD_GET_HWINFO, 0x00]))
@@ -629,7 +646,22 @@ def run_palette(uci: Uci) -> bool:
     if len(original) != 48:
         raise Failure(f"{scenario}: expected 48 palette bytes, got {len(original)}")
 
+    group = session.target.video_group
+    port = session.target.video_port
+    addresses = stream_lib.source_addresses(session.target)
+    if not addresses:
+        raise Failure(f"{scenario}: could not resolve the VIC stream source address")
+    sock = stream_lib.stream_socket(group, port)
+    stream_started = False
     try:
+        with check(f"{scenario}: VIC stream start sends the active RGB palette"):
+            status, body = session.request(
+                "PUT", "/v1/streams/video:start", params={"ip": f"{group}:{port}"})
+            if status != 200:
+                raise Failure(f"video stream start returned HTTP {status}: {body[:200]!r}")
+            stream_started = True
+            expect_palette_packet(sock, addresses, original)
+
         with check(f"{scenario}: SET_PALETTE_COLOR changes only the requested color"):
             changed = bytearray(original)
             changed[-3:] = bytes(component ^ 0x5A for component in changed[-3:])
@@ -640,6 +672,9 @@ def run_palette(uci: Uci) -> bool:
             actual, text = uci.transact(bytes([TARGET_CONTROL, CTRL_CMD_GET_PALETTE]))
             if text != STATUS_OK or actual != bytes(changed):
                 raise Failure(f"{scenario}: single-color readback was {actual!r}, expected {bytes(changed)!r}")
+
+        with check(f"{scenario}: runtime color change sends the updated RGB palette"):
+            expect_palette_packet(sock, addresses, bytes(changed))
 
         expect(uci, f"{scenario}: color index 16 is rejected",
                bytes([TARGET_CONTROL, CTRL_CMD_SET_PALETTE_COLOR, 16, 0, 0, 0]),
@@ -677,13 +712,23 @@ def run_palette(uci: Uci) -> bool:
                bytes([TARGET_CONTROL, CTRL_CMD_RESET_PALETTE, 0]),
                STATUS_INVALID_PARAMS, reply=b"")
     finally:
-        with check(f"{scenario}: restore the original runtime palette"):
-            reply, text = uci.transact(bytes([TARGET_CONTROL, CTRL_CMD_SET_PALETTE]) + original)
-            if text != STATUS_OK or reply:
-                raise Failure(f"{scenario}: restore returned data {reply!r}, status {text!r}")
-            actual, text = uci.transact(bytes([TARGET_CONTROL, CTRL_CMD_GET_PALETTE]))
-            if text != STATUS_OK or actual != original:
-                raise Failure(f"{scenario}: restored palette readback was {actual!r}")
+        try:
+            with check(f"{scenario}: restore the original runtime palette"):
+                reply, text = uci.transact(bytes([TARGET_CONTROL, CTRL_CMD_SET_PALETTE]) + original)
+                if text != STATUS_OK or reply:
+                    raise Failure(f"{scenario}: restore returned data {reply!r}, status {text!r}")
+                actual, text = uci.transact(bytes([TARGET_CONTROL, CTRL_CMD_GET_PALETTE]))
+                if text != STATUS_OK or actual != original:
+                    raise Failure(f"{scenario}: restored palette readback was {actual!r}")
+        finally:
+            try:
+                if stream_started:
+                    with check(f"{scenario}: stop the VIC stream"):
+                        status, body = session.request("PUT", "/v1/streams/video:stop")
+                        if status != 200:
+                            raise Failure(f"video stream stop returned HTTP {status}: {body[:200]!r}")
+            finally:
+                sock.close()
     return True
 
 
@@ -982,7 +1027,7 @@ def main() -> int:
 
         run("transport", run_transport, uci)
         run("control-target", run_control_target, uci)
-        run("palette", run_palette, uci)
+        run("palette", run_palette, session, uci)
         run("issue-740-matrix", run_issue_740_matrix, session, ftp, uci)
         run("save-reu-offset-past-end", run_save_reu_offset_past_end, session, uci)
         run("load-reu-disabled", run_reu_disabled, session, uci, CTRL_CMD_LOAD_REU, "load-reu-disabled")
