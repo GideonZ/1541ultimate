@@ -39,7 +39,11 @@ struct t_cfg_definition stream_cfg[] = {
 DataStreamer :: DataStreamer()
 {
     my_ip = 0;
-    palette_stream_enabled = false;
+    palette_stream_requested = false;
+    palette_generation = 0;
+    palette_task_handle = NULL;
+    palette_socket = -1;
+    palette_socket_ip = 0;
     memset(streams, 0, 4*sizeof(stream_config_t));
 
     cfg = ConfigManager :: getConfigManager()->register_store(0x44617461, "Data Streams", stream_cfg, NULL);
@@ -49,12 +53,19 @@ DataStreamer :: DataStreamer()
     for (int i=0; i < 4; i++) {
         timers[i] = xTimerCreate("StreamTimer", 100, pdFALSE, (void *)i, DataStreamer :: S_timer);
     }
+    if (xTaskCreate(DataStreamer :: S_palette_task, "VIC Palette", configMINIMAL_STACK_SIZE,
+                    this, PRIO_NETSERVICE, &palette_task_handle) != pdPASS) {
+        palette_task_handle = NULL;
+        puts("Could not create VIC palette stream task");
+    }
 }
 
 // This should never be called
 DataStreamer :: ~DataStreamer()
 {
-
+    if (palette_socket >= 0) {
+        lwip_close(palette_socket);
+    }
 }
 
 DataStreamer *dataStreamer;
@@ -86,6 +97,11 @@ void DataStreamer :: S_timer(TimerHandle_t a)
         stream->enable = 0;
         dataStreamer->calculate_udp_headers(streamID);
     }
+}
+
+void DataStreamer :: S_palette_task(void *context)
+{
+    ((DataStreamer *)context)->paletteTask();
 }
 
 SubsysResultCode_e DataStreamer :: startStream(SubsysCommand *cmd)
@@ -221,11 +237,19 @@ SubsysResultCode_e DataStreamer :: startStream(SubsysCommand *cmd)
     }
     stream->enable = 1;
 
+    if (streamID == 0) {
+        const bool requested = strcmp(cmd->filename.c_str(), "1") == 0;
+        taskENTER_CRITICAL();
+        palette_stream_requested = requested;
+        taskEXIT_CRITICAL();
+
+        if (requested && palette_task_handle) {
+            xTaskNotifyGive(palette_task_handle);
+        }
+    }
+
     // start stream!
     calculate_udp_headers(streamID);
-    if ((streamID == 0) && palette_stream_enabled) {
-        sendVicPalette();
-    }
 
     if (cmd->bufferSize) {
         int stopAfter = cmd->bufferSize;
@@ -251,6 +275,11 @@ SubsysResultCode_e DataStreamer :: stopStream(SubsysCommand *cmd)
     }
     stream_config_t *stream = &streams[streamID];
     stream->enable = 0;
+    if (streamID == 0) {
+        taskENTER_CRITICAL();
+        palette_stream_requested = false;
+        taskEXIT_CRITICAL();
+    }
     calculate_udp_headers(streamID);
     return SSRET_OK;
 }
@@ -288,7 +317,7 @@ void DataStreamer :: update_task_items(bool writablePath)
 void DataStreamer :: send_udp_packet(uint32_t ip, uint16_t port, const uint8_t *data, int length)
 {
     int sockfd;
-    static struct sockaddr_in server;
+    struct sockaddr_in server;
 
     sockfd = socket(AF_INET, SOCK_DGRAM, 0);
     if (sockfd < 0)
@@ -302,7 +331,6 @@ void DataStreamer :: send_udp_packet(uint32_t ip, uint16_t port, const uint8_t *
     server.sin_addr.s_addr = ip;
     server.sin_port = htons(port);
 
-    printf("Send UDP data...\n");
     if (sendto(sockfd, data, length, 0, (const struct sockaddr*)&server, sizeof(server)) < 0) {
         printf("Error in sendto()\n");
     }
@@ -310,15 +338,50 @@ void DataStreamer :: send_udp_packet(uint32_t ip, uint16_t port, const uint8_t *
     lwip_close(sockfd);
 }
 
-void DataStreamer :: sendVicPalette()
+bool DataStreamer :: sendVicPalette()
 {
-    palette_stream_enabled = true;
-    stream_config_t *stream = &streams[0];
-    if (!stream->enable) {
-        return;
+    uint32_t source_ip;
+    uint32_t dest_ip;
+    uint16_t dest_port;
+    uint16_t generation;
+    taskENTER_CRITICAL();
+    const bool requested = palette_stream_requested && streams[0].enable;
+    source_ip = my_ip;
+    dest_ip = streams[0].dest_ip;
+    dest_port = streams[0].dest_port;
+    generation = palette_generation;
+    taskEXIT_CRITICAL();
+
+    if (!requested || !source_ip || !dest_ip || !dest_port) {
+        return false;
+    }
+
+    if ((palette_socket < 0) || (palette_socket_ip != source_ip)) {
+        if (palette_socket >= 0) {
+            lwip_close(palette_socket);
+        }
+        palette_socket = socket(AF_INET, SOCK_DGRAM, 0);
+        palette_socket_ip = 0;
+        if (palette_socket < 0) {
+            return false;
+        }
+
+        struct sockaddr_in local;
+        memset(&local, 0, sizeof(local));
+        local.sin_family = AF_INET;
+        local.sin_addr.s_addr = source_ip;
+        local.sin_port = htons(53248);
+        if (bind(palette_socket, (const struct sockaddr *)&local, sizeof(local)) < 0) {
+            lwip_close(palette_socket);
+            palette_socket = -1;
+            return false;
+        }
+        palette_socket_ip = source_ip;
     }
 
     uint8_t packet[60] = { 0 };
+    packet[0] = (uint8_t)generation;
+    packet[1] = (uint8_t)(generation >> 8);
     packet[4] = 239;
     packet[6] = 0x80;
     packet[7] = 0x01;
@@ -328,7 +391,51 @@ void DataStreamer :: sendVicPalette()
     uint8_t rgb[16][3];
     U64Config::get_palette_rgb(rgb);
     memcpy(packet + 12, rgb, 48);
-    send_udp_packet(stream->dest_ip, stream->dest_port, packet, sizeof(packet));
+
+    struct sockaddr_in destination;
+    memset(&destination, 0, sizeof(destination));
+    destination.sin_family = AF_INET;
+    destination.sin_addr.s_addr = dest_ip;
+    destination.sin_port = htons(dest_port);
+    if (sendto(palette_socket, packet, sizeof(packet), 0,
+               (const struct sockaddr *)&destination, sizeof(destination)) < 0) {
+        lwip_close(palette_socket);
+        palette_socket = -1;
+        palette_socket_ip = 0;
+        return false;
+    }
+    return true;
+}
+
+void DataStreamer :: vicPaletteChanged()
+{
+    taskENTER_CRITICAL();
+    palette_generation++;
+    taskEXIT_CRITICAL();
+    if (palette_task_handle) {
+        xTaskNotifyGive(palette_task_handle);
+    }
+}
+
+void DataStreamer :: paletteTask()
+{
+    const TickType_t repeat_ticks = 1000 / portTICK_PERIOD_MS;
+    const TickType_t minimum_ticks = 20 / portTICK_PERIOD_MS;
+    TickType_t last_send = 0;
+
+    while (true) {
+        const uint32_t notified = ulTaskNotifyTake(pdTRUE, repeat_ticks);
+        if (notified && last_send) {
+            const TickType_t now = xTaskGetTickCount();
+            const TickType_t elapsed = now - last_send;
+            if (elapsed < minimum_ticks) {
+                vTaskDelay(minimum_ticks - elapsed);
+            }
+        }
+        if (sendVicPalette()) {
+            last_send = xTaskGetTickCount();
+        }
+    }
 }
 
 
