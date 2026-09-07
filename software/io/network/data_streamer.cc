@@ -39,7 +39,7 @@ struct t_cfg_definition stream_cfg[] = {
 DataStreamer :: DataStreamer()
 {
     my_ip = 0;
-    palette_sequence = 0;
+    palette_stream_enabled = false;
     memset(streams, 0, 4*sizeof(stream_config_t));
 
     cfg = ConfigManager :: getConfigManager()->register_store(0x44617461, "Data Streams", stream_cfg, NULL);
@@ -223,10 +223,8 @@ SubsysResultCode_e DataStreamer :: startStream(SubsysCommand *cmd)
 
     // start stream!
     calculate_udp_headers(streamID);
-    if (streamID == 0) {
-        uint8_t rgb[16][3];
-        U64Config::get_palette_rgb(rgb);
-        sendVicPalette(rgb);
+    if ((streamID == 0) && palette_stream_enabled) {
+        sendVicPalette();
     }
 
     if (cmd->bufferSize) {
@@ -312,22 +310,23 @@ void DataStreamer :: send_udp_packet(uint32_t ip, uint16_t port, const uint8_t *
     lwip_close(sockfd);
 }
 
-void DataStreamer :: sendVicPalette(const uint8_t rgb[16][3])
+void DataStreamer :: sendVicPalette()
 {
+    palette_stream_enabled = true;
     stream_config_t *stream = &streams[0];
     if (!stream->enable) {
         return;
     }
 
     uint8_t packet[60] = { 0 };
-    uint16_t sequence = palette_sequence++;
-    packet[0] = (uint8_t)sequence;
-    packet[1] = (uint8_t)(sequence >> 8);
-    packet[4] = 0xFF;
-    packet[5] = 0x7F; // Reserved line number: this packet carries the VIC palette.
-    packet[6] = 16;
+    packet[4] = 239;
+    packet[6] = 0x80;
+    packet[7] = 0x01;
     packet[8] = 1;
-    packet[9] = 24;
+    packet[9] = 4;
+    packet[10] = 1;
+    uint8_t rgb[16][3];
+    U64Config::get_palette_rgb(rgb);
     memcpy(packet + 12, rgb, 48);
     send_udp_packet(stream->dest_ip, stream->dest_port, packet, sizeof(packet));
 }
