@@ -268,8 +268,10 @@ Profiles, shallowest first. A suite runs from its own profile up.
 
 e2e:
   assembly64                        .      x      x      x      x
+  av-stream                         .      .      x      x      x
   browser-filesystem-refresh        .      .      x      x      x
   browser-long-filename             .      x      x      x      x
+  cfg-loader-log                    x      x      x      x      x
   cfg-partial-effectuate            .      .      .      x      x
   cfg-single-group                  .      x      x      x      x
   cfg-unknown-items                 .      .      x      x      x
@@ -277,12 +279,15 @@ e2e:
   create-disk-image                 .      x      x      x      x
   doom-release                      .      .      .      x      x
   esp-depends                       x      x      x      x      x
+  fast-reset                        .      .      x      x      x
   freeze-menu                       .      .      x      x      x
   ftp-client                        .      x      x      x      x
   ftp-server                        x      x      x      x      x
+  ident-service-switch              .      .      x      x      x
   input                             .      x      x      x      x
   input-batching                    x      x      x      x      x
   key-injection                     .      .      x      x      x
+  lint                              x      x      x      x      x
   machine-code-monitor              .      .      .      x      x
   menu-screen                       x      x      x      x      x
   navigation-keys                   x      x      x      x      x
@@ -294,15 +299,19 @@ e2e:
   prg-load-path-trim                .      x      x      x      x
   printer                           .      x      x      x      x
   readmem-writemem                  x      x      x      x      x
+  registry                          x      x      x      x      x
   rest-api-coverage                 .      x      x      x      x
   reu-turbo                         .      .      x      x      x
   runner-policy                     .      x      x      x      x
+  stale-gates                       .      x      x      x      x
   telnet-drain                      .      x      x      x      x
   telnet-stale-session              .      .      .      x      x
+  telnet-sustained-input            .      .      .      x      x
   temp-auto-cleanup                 .      .      x      x      x
   transport-usage                   x      x      x      x      x
   uci-net-target                    .      .      .      x      x
   uci-targets                       .      .      x      x      x
+  ui-backend-parse                  x      x      x      x      x
   ui-backend-smoke                  x      x      x      x      x
   usb-bulk-out-integrity            .      .      .      x      x
   wake-on-wifi                      .      .      .      x      x
@@ -327,8 +336,8 @@ soak:
   usb-keyboard-repeat               .      .      .      x      x
 
                                ------ ------ ------ ------ ------
-  suites                            8     21     43     52     52
-  suite runs                        8     21     43    104    156
+  suites                           12     26     51     63     63
+  suite runs                       12     26     51    126    189
 
 Scenario and check counts, and durations, are not shown here:
 the registry does not know them. They depend on the machine and are

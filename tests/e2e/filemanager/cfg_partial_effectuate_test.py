@@ -27,6 +27,17 @@ collect both into one list, which could not tell a loader that applied one store
 from one that applied all of them, so it failed on correct firmware too. See
 loader_report in cfg_single_group_test.py.
 
+The debug log interleaves. The device writes it with printf, one character at
+a time and without a lock, so another task printing while the loader prints
+splices its text into the middle of a loader line. Measured on a C64 Ultimate
+1.2RC, the REST poller's "Accept client 0 on socket 7." landed inside
+"Effectuating settings of store 'Audio Mixer' after loading." and this suite
+reported a store called "Audio MAccept client 0 on socket 7.  192.168.1.185:49362".
+`loader_report` now accepts a line only when the prefix and the suffix are both
+on it, and returns the part-lines separately as `damaged`. A run whose log holds
+such a line cannot say which stores were effectuated, so this check reports SKIP
+with those lines rather than a verdict.
+
 The half that holds everywhere is that such a file loads at all, and that stays
 in cfg_single_group_test.py and in the gate.
 
@@ -85,15 +96,35 @@ def main() -> int:
             upload_fixture(args.host, args.password, store, item,
                            alternate_value(api, store, item, original))
             load_fixture(browser)
-            effectuated, clean = loader_report(args.host, args.password)
-            detail(f"effectuated {len(effectuated)}, left clean {len(clean)}")
-            if effectuated != [store]:
-                extra = [name for name in effectuated if name != store]
+            report = loader_report(args.host, args.password)
+            detail(f"effectuated {len(report.effectuated)}, "
+                   f"left clean {len(report.clean)}, "
+                   f"unreadable {len(report.damaged)}")
+            extra = [name for name in report.effectuated if name != store]
+            if extra:
+                # An unexpected store that was read intact is the defect this
+                # suite exists to catch, so it is reported before anything is
+                # said about the log being damaged.
                 raise Failure(
                     f"the .cfg named only {store!r}, but the loader effectuated "
-                    f"{len(effectuated)} store(s): {effectuated!r}. "
+                    f"{len(report.effectuated)} store(s): {report.effectuated!r}. "
                     f"{len(extra)} store(s) the file never mentioned were applied: "
-                    f"{extra!r}. Stores left alone: {clean!r}")
+                    f"{extra!r}. Stores left alone: {report.clean!r}")
+            if report.damaged:
+                # Neither verdict can be reached: a spliced line may have been
+                # a store the file never named. Skipping says so and prints the
+                # lines, where failing would report the interleaving as a
+                # loader defect and passing would hide a store.
+                for line in report.damaged:
+                    detail(f"unreadable log line: {line!r}")
+                check_skip(
+                    f"{len(report.damaged)} loader log line(s) were spliced by "
+                    f"another task writing to the same debug log, so the set of "
+                    f"effectuated stores is not known")
+            elif report.effectuated != [store]:
+                raise Failure(
+                    f"the .cfg named {store!r}, but the loader effectuated "
+                    f"{report.effectuated!r}. Stores left alone: {report.clean!r}")
 
         suite_ok(SUITE)
         return 0
