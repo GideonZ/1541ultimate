@@ -733,6 +733,55 @@ def write_bootstrap(rest: R.Rest, target: int, seed: int) -> BootstrapState:
     return BootstrapState(pc=target, sp=0xF8, ac=ac, xr=xr, yr=yr, sr=sr)
 
 
+# How many times an iteration may install its fixture and launch before it is
+# called a failure. Getting the program into memory and the CPU to its entry
+# point is preparation for what this gate measures, which is the debugger's
+# stepping against an independent 6502 oracle, so a launch that does not
+# arrive costs an attempt rather than the verdict. Measured on u2@c64u, one
+# launch in about 1440 steps does not arrive, each time differently: one
+# stopped with the footer at $CD23, and one at $0343 with the B flag set,
+# which is inside the cassette buffer where the debugger keeps its own
+# handler. Every attempt is counted and the summary carries the total, so a
+# machine that needs them is visible rather than quietly tolerated, and a
+# fixture that never launches still fails.
+#
+# The whole of the setup is repeated, not just the launch. Recovering the
+# machine resets it, which wipes the scratch window and the program written
+# before the launch, so relaunching alone would step a fresh CPU through a
+# fixture that is no longer there while the oracle still holds what was
+# written. Measured, by making exactly that mistake: five consecutive
+# iterations then failed with "scratch mismatch at $C834".
+SETUP_ATTEMPTS = 2
+
+
+def install_and_enter(sess, cpu, rng, seed, stats, build_program):
+    """Install an iteration's fixture and launch it, retrying the whole setup.
+
+    `build_program` is called on each attempt and returns the instructions and
+    the entry address, so a retry rebuilds from the same seeded generator state
+    the caller gave it rather than reusing bytes that a recovery has wiped.
+    """
+    last = None
+    for attempt in range(SETUP_ATTEMPTS):
+        sess.clean_baseline()      # known closed-menu state before a fresh session
+        init_scratch(sess, cpu, rng)   # free-RAM data window, before entry
+        instrs, entry = build_program()
+        write_program(sess, cpu, instrs)
+        try:
+            enter_at(sess, cpu, entry, seed)
+            return instrs, entry
+        except StressError as exc:
+            last = exc
+            stats["entry_relaunches"] = stats.get("entry_relaunches", 0) + 1
+            if attempt + 1 < SETUP_ATTEMPTS:
+                print(f"{time.strftime('%H:%M:%S')} entry launch at "
+                      f"${entry:04X} did not arrive, reinstalling the fixture "
+                      f"and trying again: {exc}", flush=True)
+                sess.recover()
+    raise StressError(
+        f"the fixture did not launch in {SETUP_ATTEMPTS} attempts: {last}")
+
+
 def enter_at(sess: RestSession, cpu, target, seed):
     """Bootstrap registers + JMP target; breakpoint at target; Go; verify footer."""
     expected = write_bootstrap(sess.rest, target, seed)   # writes the $C500 bootstrap
@@ -802,12 +851,9 @@ def run_program_session(sess, rng, instrs, seed, max_steps, jsonl, stats,
                         sp_coherence_check=True, active_write_readback=False,
                         defer_write_validation=True):
     cpu = ORC.CPU6502()
-    sess.clean_baseline()               # known closed-menu state before a fresh session
-    init_scratch(sess, cpu, rng)        # free-RAM data window, before entry (frozen-safe)
-    write_program(sess, cpu, instrs)
+    instrs, _entry = install_and_enter(
+        sess, cpu, rng, seed, stats, lambda: (instrs, instrs[0].addr))
     instrs_by_addr = {ins.addr: ins for ins in instrs}
-    entry = instrs[0].addr
-    enter_at(sess, cpu, entry, seed)
     steps = 0
     while steps < max_steps:
         plan = choose_key_and_advance(cpu, instrs_by_addr)
@@ -866,12 +912,11 @@ def run_program_session(sess, rng, instrs, seed, max_steps, jsonl, stats,
 
 def run_jsr_session(sess, rng, depth, seed, jsonl, stats):
     cpu = ORC.CPU6502()
-    sess.clean_baseline()            # known closed-menu state before a fresh session
-    init_scratch(sess, cpu, rng)     # free-RAM data window, before entry
-    instrs, entry, return_point = gen_jsr_nest(depth, rng)
-    write_program(sess, cpu, instrs)
+    nest = gen_jsr_nest(depth, rng)
+    return_point = nest[2]
+    instrs, _entry = install_and_enter(
+        sess, cpu, rng, seed, stats, lambda: (nest[0], nest[1]))
     instrs_by_addr = {ins.addr: ins for ins in instrs}
-    enter_at(sess, cpu, entry, seed)
     sp_entry = cpu.sp                 # SP at the launcher JSR
     min_sp = sp_entry
     # Step INTO through the whole nest (descend) and let the RTS chain unwind,
@@ -975,7 +1020,7 @@ def main():
     with open(jsonl_path, "w", buffering=1) as jsonl:
         stats = {"steps": 0, "jsr_steps": 0, "jsr_cycles": 0, "liveness_ok": 0,
                  "liveness_fail": 0, "iterations": 0, "errors": 0,
-                 "ops": {}, "keys": {}, "ui": a.ui}
+                 "entry_relaunches": 0, "ops": {}, "keys": {}, "ui": a.ui}
 
         sess = RestSession(a.host, ui=a.ui, c64_host=a.c64_host)
         if not sess.alive():
