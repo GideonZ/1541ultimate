@@ -1083,15 +1083,14 @@ void C64::init_system_roms(void)
     extern uint8_t _default_kernal_65_start[];
     extern uint8_t _default_chars_bin_start[];
 
-    // The ROM image aperture at U64_KERNAL_BASE is write only: a read of it returns
-    // zeros, so the memcmp below never matched there and Fast Reset was never
-    // applied. Build the image in RAM instead and write it to the aperture once.
-    // Cleared first because load_file reports FR_OK for a file shorter than the
-    // buffer and leaves the remaining bytes untouched.
+    // U64_KERNAL_BASE is write only, so the Fast Reset patch below cannot compare
+    // against it. Stage the image in RAM and write it to the aperture once.
+    // A KERNAL shorter than 8192 bytes has no reset vector at $FFFC, so it is
+    // rejected in favour of the default.
     unsigned char *kernal = new unsigned char[8192];
-    memset(kernal, 0, 8192);
-    FRESULT fres = FileManager :: getFileManager()->load_file(ROMS_DIRECTORY, cfg->get_string(CFG_C64_KERNFILE), (uint8_t *)kernal, 8192, NULL);
-    if (fres != FR_OK) {
+    uint32_t kernal_bytes = 0;
+    FRESULT fres = FileManager :: getFileManager()->load_file(ROMS_DIRECTORY, cfg->get_string(CFG_C64_KERNFILE), (uint8_t *)kernal, 8192, &kernal_bytes);
+    if (fres != FR_OK || kernal_bytes != 8192) {
         printf("Failed to load KERNAL ROM; loading default.\n");
         memcpy((void *)kernal, (void *)_default_kernal_65_start, 8192);
     } else if (cfg->get_value(CFG_C64_FASTRESET)) {
