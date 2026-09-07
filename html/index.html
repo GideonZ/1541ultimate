@@ -571,9 +571,9 @@ $(document).ready(async function () {
         
     }
 
-    // * Scans the input string for tokens, special characters, or plain text.
     // * @param {string} s - The input string fragment.
     // * @param {boolean} tokenize - Whether to attempt keyword tokenization.
+    // * @param {boolean} normalize - Whether ordinary characters should be normalized to lowercase.
     // * @returns {[number|null, string]} - Array containing the byte value and the remaining string.
     function scan(s, tokenize = true, normalize = true) {
         s = expandCounts(s);
@@ -604,7 +604,8 @@ $(document).ready(async function () {
             return [null, null];
         }
 
-        // Convert standard character to PETSCII and move to next char
+        // Convert an ordinary character to PETSCII.
+        // When normalization is enabled, convert it to lowercase first.
         let ch = s[0];
         if (normalize)
             ch = ch.toLowerCase();
@@ -651,7 +652,9 @@ $(document).ready(async function () {
         let inData   = false;
 
         while (remainingString && remainingString.length > 0) {
-            // C64 Logic: Tokenization is disabled inside quotes, REM (comments), or after DATA statements
+            // C64 BASIC parsing: keyword tokenization is disabled inside quoted strings,
+            // REM comments, and DATA statements, while their contents are processed
+            // as ordinary characters.
             let shouldTokenize = !(inQuotes || inRemark || inData);
             let [byte, newString] = scan(remainingString, shouldTokenize, !inQuotes);
 
@@ -1972,7 +1975,7 @@ div#left-nav a.darkmode {
 
         <div id="tokenizer" class="page">
             <h1>BASIC Editor / Tokenizer</h1>
-            <p>Here, you may enter a BASIC program (type in lower case, abbreviation is allowed), and upload it directly to your machine.</p>
+            <p>Here, you may enter a BASIC program according to the syntax supported by the currently loaded tokenizer profile, and upload it directly to your machine.</p>
 
 <textarea id="basiceditor" spellcheck="false" autocorrect="off" autocapitalize="off" wrap="off" class="c64-textarea">
 Data loading failed: please try reloading the page (Ctrl+F5).

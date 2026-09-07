@@ -18,7 +18,11 @@
 //      mnemonic is mapped to a unique token in the 0x00-0xFF range.
 //    - TOOLTIP:    Hex-to-Description object mapping for UI tooltips.
 //
-// 3. READY Signature:
+// 3. Configuration Flags:
+//    - NORMALIZE_TO_LOWERCASE: Boolean flag indicating if the entire source
+//      code should be normalized to lowercase before processing.
+//
+// 4. READY Signature:
 //    The final line MUST be: 'window.CBM_SIGNATURE = "READY";'. This signals
 //    the main application that the data load is complete and safe to process.
 // ---------------------------------------------------------------------------
@@ -123,7 +127,7 @@ BASIC_CODE = `!- Welcome to Ultimate BASIC Editor / Tokenizer
 // NORMALIZE_TO_LOWERCASE controls whether the BASIC source is converted
 // to lowercase before tokenization:
 //
-//   true  - convert the source to lowercase
+//   true  - convert the entire source code to lowercase
 //   false - preserve the original character case
 //
 // For example, with NORMALIZE_TO_LOWERCASE = true:
