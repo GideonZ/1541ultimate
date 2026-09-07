@@ -277,9 +277,6 @@ SubsysResultCode_e DataStreamer :: stopStream(SubsysCommand *cmd)
         taskENTER_CRITICAL();
         palette_stream_requested = false;
         taskEXIT_CRITICAL();
-        if (palette_task_handle) {
-            xTaskNotifyGive(palette_task_handle);
-        }
     }
     calculate_udp_headers(streamID);
     return SSRET_OK;
@@ -354,11 +351,6 @@ bool DataStreamer :: sendVicPalette()
     taskEXIT_CRITICAL();
 
     if (!requested || !source_ip || !dest_ip || !dest_port) {
-        if (palette_socket >= 0) {
-            lwip_close(palette_socket);
-            palette_socket = -1;
-            palette_socket_ip = 0;
-        }
         return false;
     }
 
@@ -432,10 +424,7 @@ void DataStreamer :: paletteTask()
     TickType_t last_send = 0;
 
     while (true) {
-        taskENTER_CRITICAL();
-        const bool requested = palette_stream_requested && streams[0].enable;
-        taskEXIT_CRITICAL();
-        const uint32_t notified = ulTaskNotifyTake(pdTRUE, requested ? repeat_ticks : portMAX_DELAY);
+        const uint32_t notified = ulTaskNotifyTake(pdTRUE, repeat_ticks);
         if (notified && last_send) {
             const TickType_t now = xTaskGetTickCount();
             const TickType_t elapsed = now - last_send;
