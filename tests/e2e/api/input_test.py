@@ -31,8 +31,8 @@ import wait
 import rest as rest_lib
 import targets
 from api import UltimateApi
-from report import (Failure, teardown_step, check, check_count, detail, format_exception,
-                    suite_fail, suite_ok, warn)
+from report import (Failure, teardown_step, check, check_count, check_skip, check_start,
+                    detail, format_exception, suite_fail, suite_ok, warn)
 from vic_video import MULTICAST_GROUP, VIDEO_PORT, VicStreamCapture
 
 TEST_CHOICES = (
@@ -44,6 +44,7 @@ TEST_CHOICES = (
     "keyboard-echo-ab-20hz",
     "keyboard-echo-ab-5hz",
     "menu",
+    "menu-open",
     "menu-shift",
     "menu-repeat-printable",
     "menu-repeat-cursor",
@@ -2099,6 +2100,45 @@ def close_rename_editor(session: RestInputSession) -> None:
     session.post_events([{"kind": "release_all"}])
 
 
+def run_menu_open_tests(session: RestInputSession) -> None:
+    """The keyboard route into the menu, on a machine that has one.
+
+    `machine:menu_button` is the signal every machine answers, and other
+    suites cover it. This is the other one: a C64 Ultimate's core reads the
+    keyboard matrix at a RESTORE NMI edge and treats CBM-down plus that edge
+    the way it treats the button. An Ultimate 64 mk1 has no such route, and an
+    Ultimate II+ has no keyboard injection at all: it answers `machine:input`
+    with HTTP 501. Both report a skip here rather than a failure.
+
+    Which machines have a keyboard route, and the request sequence that
+    produces the stimulus, are both in tests/e2e/lib/menu.py so that there is
+    one place to change when the firmware lets the sequence become a single
+    request.
+    """
+    machine = session.machine
+    opener = menu_lib.keyboard_menu_opener(machine.kind, session.post_events)
+    if opener is None:
+        check_start("a keyboard combination opens the menu")
+        check_skip(f"{machine.described} has no keyboard route into its menu; "
+                   f"machine:menu_button is the only signal that opens it")
+        return
+
+    with check(f"{opener.name} opens the menu"):
+        session.close_menu_from_anywhere()
+        if session.menu_screen_open():
+            raise Failure("the menu was already open, so this check would "
+                          "not have measured anything")
+        try:
+            if not opener.open(session.menu_screen_open):
+                raise Failure(
+                    f"the menu did not open within "
+                    f"{menu_lib.MENU_TOGGLE_TIMEOUT_SECONDS}s of {opener.name}")
+        finally:
+            teardown_step("close the menu", session.close_menu_from_anywhere)
+            teardown_step("release injected input",
+                          lambda: session.post_events([{"kind": "release_all"}]))
+
+
 def run_menu_keyboard_tests(session: RestInputSession, selected: list[str] | None = None) -> None:
     """What the keyboard puts into a menu string editor.
 
@@ -2439,6 +2479,8 @@ def run_tests(session: RestInputSession, soak_duration_seconds: float | None = N
         run_keyboard_echo_tests(session, selected=selected)
     if wants_menu_tests(selected):
         menu_selected = selected if selected and "menu" not in selected and "all" not in selected else None
+        if wants_test(menu_selected, "menu-open"):
+            run_menu_open_tests(session)
         run_menu_keyboard_tests(session, selected=menu_selected)
     return 0
 
