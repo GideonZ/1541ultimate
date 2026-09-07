@@ -607,19 +607,17 @@ def run_control_target(uci: Uci) -> bool:
     return True
 
 
-def expect_palette_packet(sock, addresses: set[str], expected: bytes) -> None:
+def expect_palette_packet(sock, addresses: set[str], expected: bytes) -> int:
     for _, packet, mine in stream_lib.receive([sock], addresses, 2.0):
         if not mine or len(packet) != VIC_PALETTE_PACKET_SIZE:
             continue
         if int.from_bytes(packet[4:6], "little") != VIC_PALETTE_LINE:
             continue
-        if packet[:4] != bytes(4):
-            raise Failure(f"palette stream packet has nonzero sequence/frame {packet[:4]!r}")
         if packet[6:12] != bytes([0x80, 0x01, 1, 4, 1, 0]):
             raise Failure(f"palette stream packet has invalid format bytes {packet[6:12]!r}")
         if packet[12:] != expected:
             raise Failure(f"palette stream packet was {packet[12:]!r}, expected {expected!r}")
-        return
+        return int.from_bytes(packet[:2], "little")
     raise Failure("no palette packet arrived on the VIC stream within 2 seconds")
 
 
@@ -627,7 +625,7 @@ def expect_no_palette_packet(sock, addresses: set[str]) -> None:
     for _, packet, mine in stream_lib.receive([sock], addresses, 0.25):
         if (mine and len(packet) == VIC_PALETTE_PACKET_SIZE and
                 packet[10:12] == bytes([1, 0])):
-            raise Failure("VIC stream sent palette data before a runtime palette command")
+            raise Failure("VIC stream sent palette data without an explicit palette request")
 
 
 def run_palette(session: RestSession, uci: Uci) -> bool:
@@ -682,20 +680,26 @@ def run_palette(session: RestSession, uci: Uci) -> bool:
             if text != STATUS_OK or actual != bytes(changed):
                 raise Failure(f"{scenario}: single-color readback was {actual!r}, expected {bytes(changed)!r}")
 
-        with check(f"{scenario}: runtime color change sends the updated RGB palette"):
-            expect_palette_packet(sock, addresses, bytes(changed))
+        with check(f"{scenario}: ordinary VIC stream remains unchanged after a runtime palette command"):
+            expect_no_palette_packet(sock, addresses)
 
-        with check(f"{scenario}: restarted VIC stream repeats the runtime palette"):
+        with check(f"{scenario}: opted-in VIC stream starts with the current runtime palette"):
             status, body = session.request("PUT", "/v1/streams/video:stop")
             if status != 200:
                 raise Failure(f"video stream stop returned HTTP {status}: {body[:200]!r}")
             stream_started = False
             status, body = session.request(
-                "PUT", "/v1/streams/video:start", params={"ip": f"{group}:{port}"})
+                "PUT", "/v1/streams/video:start", params={"ip": f"{group}:{port}", "palette": 1})
             if status != 200:
                 raise Failure(f"video stream restart returned HTTP {status}: {body[:200]!r}")
             stream_started = True
-            expect_palette_packet(sock, addresses, bytes(changed))
+            generation = expect_palette_packet(sock, addresses, bytes(changed))
+
+        with check(f"{scenario}: opted-in VIC stream periodically repeats its palette"):
+            repeated_generation = expect_palette_packet(sock, addresses, bytes(changed))
+            if repeated_generation != generation:
+                raise Failure(
+                    f"palette repeat generation {repeated_generation} differs from initial {generation}")
 
         expect(uci, f"{scenario}: color index 16 is rejected",
                bytes([TARGET_CONTROL, CTRL_CMD_SET_PALETTE_COLOR, 16, 0, 0, 0]),
@@ -710,6 +714,11 @@ def run_palette(session: RestSession, uci: Uci) -> bool:
             actual, text = uci.transact(bytes([TARGET_CONTROL, CTRL_CMD_GET_PALETTE]))
             if text != STATUS_OK or actual != replacement:
                 raise Failure(f"{scenario}: full-palette readback was {actual!r}, expected {replacement!r}")
+
+        with check(f"{scenario}: palette changes advance the streamed generation"):
+            replacement_generation = expect_palette_packet(sock, addresses, replacement)
+            if ((replacement_generation - generation) & 0xFFFF) == 0:
+                raise Failure("palette generation did not advance after SET_PALETTE")
 
         expect(uci, f"{scenario}: short SET_PALETTE payload is rejected",
                bytes([TARGET_CONTROL, CTRL_CMD_SET_PALETTE]) + original[:-1],
@@ -729,9 +738,24 @@ def run_palette(session: RestSession, uci: Uci) -> bool:
             if text != STATUS_OK or actual != default_palette:
                 raise Failure(f"{scenario}: reset palette readback was {actual!r}, expected {default_palette!r}")
 
+        with check(f"{scenario}: RESET_PALETTE is streamed to an opted-in client"):
+            expect_palette_packet(sock, addresses, default_palette)
+
         expect(uci, f"{scenario}: RESET_PALETTE rejects a payload",
                bytes([TARGET_CONTROL, CTRL_CMD_RESET_PALETTE, 0]),
                STATUS_INVALID_PARAMS, reply=b"")
+
+        with check(f"{scenario}: a later ordinary stream is not opted in implicitly"):
+            status, body = session.request("PUT", "/v1/streams/video:stop")
+            if status != 200:
+                raise Failure(f"video stream stop returned HTTP {status}: {body[:200]!r}")
+            stream_started = False
+            status, body = session.request(
+                "PUT", "/v1/streams/video:start", params={"ip": f"{group}:{port}"})
+            if status != 200:
+                raise Failure(f"video stream restart returned HTTP {status}: {body[:200]!r}")
+            stream_started = True
+            expect_no_palette_packet(sock, addresses)
     finally:
         try:
             with check(f"{scenario}: restore the original runtime palette"):

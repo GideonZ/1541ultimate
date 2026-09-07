@@ -21,6 +21,7 @@ extern "C" {
 #include "product.h"
 #include "userinterface.h"
 #include "u64_config.h"
+#include "data_streamer.h"
 #include "audio_select.h"
 #include "fpll.h"
 #include "i2c_drv.h"
@@ -2757,24 +2758,36 @@ static void program_palette_color(uint8_t index, const uint8_t rgb[3])
 
 void U64Config :: set_palette_rgb(const uint8_t rgb[16][3])
 {
+    taskENTER_CRITICAL();
     memcpy(active_palette, rgb, sizeof(active_palette));
     active_palette_valid = true;
+    taskEXIT_CRITICAL();
     program_palette_rgb(rgb);
+    if (dataStreamer) {
+        dataStreamer->vicPaletteChanged();
+    }
 }
 
 void U64Config :: get_palette_rgb(uint8_t rgb[16][3])
 {
+    taskENTER_CRITICAL();
     memcpy(rgb, active_palette_valid ? active_palette : default_colors, sizeof(active_palette));
+    taskEXIT_CRITICAL();
 }
 
 void U64Config :: set_palette_color(uint8_t index, const uint8_t rgb[3])
 {
+    taskENTER_CRITICAL();
     if (!active_palette_valid) {
         memcpy(active_palette, default_colors, sizeof(active_palette));
         active_palette_valid = true;
     }
     memcpy(active_palette[index], rgb, 3);
+    taskEXIT_CRITICAL();
     program_palette_color(index, rgb);
+    if (dataStreamer) {
+        dataStreamer->vicPaletteChanged();
+    }
 }
 
 void U64Config :: reset_palette()

@@ -3342,6 +3342,13 @@ paths:
           schema:
             type: string
           example: '192.168.1.10:11000'
+        - name: palette
+          in: query
+          required: false
+          description: For video, request runtime VIC palette packets (0 or 1).
+          schema:
+            type: integer
+          example: 0
       responses:
         '200':
           description: The stream is running.
@@ -3349,6 +3356,17 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                Palette must be 0 or 1:
+                  value:
+                    errors:
+                      - Palette must be 0 or 1
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
