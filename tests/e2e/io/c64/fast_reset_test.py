@@ -7,11 +7,11 @@ applied when the system ROMs load, which is on cartridge start, so this suite
 reboots between the two states rather than only resetting.
 
 The measurement is reset to READY, screen blanked first so a READY from the
-previous boot cannot match. Measured on an Ultimate 64 Elite I, median of five:
-enabled 0.18s against disabled 2.40s where the patch lands, and 2.40s against
-2.42s where it does not. MIN_SPEEDUP of 2.0 sits between those two populations
-with room for a slow link on either side; above MAX_ENABLED_SECONDS the poll
-cost swamps the difference and the suite skips instead of failing.
+previous boot cannot match, once per state. On an Ultimate 64 Elite I that is
+0.18s enabled against 2.40s disabled where the patch lands, and 2.40s against
+2.42s where it does not, so a single reset each separates them by 10x and no
+averaging is needed. Above MAX_POLL_SECONDS the poll cost swamps the
+difference and the suite skips instead of failing.
 
 Two checks the verdict depends on:
 
@@ -29,7 +29,6 @@ The setting and a reboot into it are restored on the way out.
 from __future__ import annotations
 
 import argparse
-import statistics
 import sys
 import time
 from pathlib import Path
@@ -64,11 +63,9 @@ ALTERNATE_KERNAL_ITEM = "Alternate Kernal"
 SCREEN_BYTES = 400
 BLANK = bytes([0x20]) * SCREEN_BYTES
 
-# A median of three. Within-state spread was 0.02s against the 2.2s that
-# separates a pass from a failure, so this only has to discard a slow sample.
-SAMPLES = 3
-
-# See the measurements in the module docstring.
+# One reset each is enough: the two states are about 10x apart and a machine
+# that cannot patch is 1.0x, so no threshold between them is delicate. 2.0 keeps
+# the margin wide on a slower link.
 MIN_SPEEDUP = 2.0
 
 # Half the 2.40s the disabled state measures. Below this the machine is not
@@ -150,13 +147,11 @@ def apply_and_reboot(api: UltimateApi, value: str) -> None:
 
 
 def measure(api: UltimateApi, value: str) -> float:
-    """Median reset-to-READY seconds with Fast Reset set to `value`."""
+    """Reset-to-READY seconds with Fast Reset set to `value`."""
     apply_and_reboot(api, value)
-    samples = [seconds_to_ready(api) for _ in range(SAMPLES)]
-    median = statistics.median(samples)
-    detail(f"{FAST_RESET}={value}: reset to READY "
-           f"{', '.join(f'{s:.2f}s' for s in samples)}, median {median:.2f}s")
-    return median
+    seconds = seconds_to_ready(api)
+    detail(f"{FAST_RESET}={value}: reset to READY {seconds:.2f}s")
+    return seconds
 
 
 def run(args) -> str | None:
