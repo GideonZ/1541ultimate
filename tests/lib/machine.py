@@ -68,8 +68,8 @@ the same fix.
 
 To find out whether a backport has arrived, run with the fix assumed present:
 
-    E2E_ASSUME_FIX=monitor-exit-and-back-keys  one fix, or a list of them
-    E2E_ASSUME_FIX=all                         every fix in the table
+    E2E_ASSUME_FIX=telnet-send-tolerates-slow-peer  one fix, or a list of them
+    E2E_ASSUME_FIX=all                             every fix in the table
 
 `run-tests --assume-fix NAME` sets that variable for the suites it starts. The
 tagged checks then run on the machine that was skipping them and either pass,
@@ -155,16 +155,6 @@ TELNET_SEND_TOLERATES_SLOW_PEER = _fix(
     "drains, rather than being closed when the send buffer stays full",
     (U2,))
 
-# The bench Ultimate II+L's flashed 3.15 predates this tree's monitor rework:
-# its help page names "Open monitor", "Close monitor" and "Leave edit" where
-# this one names "Back a level", "Copy/Paste" and "Follow/Return". Goes when
-# that machine is reflashed from this tree.
-MONITOR_EXIT_AND_BACK_KEYS = _fix(
-    "monitor-exit-and-back-keys",
-    "the machine code monitor offers the Back action and the layer model that "
-    "tests/e2e/monitor/monitor_test.py drives",
-    (U2,))
-
 # What tests/e2e/network/ident_service_switch_test.py asserts: turning the
 # ident service on makes it answer within a few seconds, live, without a
 # restart. Measured on the bench u2 running 3.15: the switch is accepted and
@@ -173,6 +163,29 @@ IDENT_SWITCHES_LIVE = _fix(
     "ident-switches-live",
     "the ident service starts answering when it is switched on, without a "
     "firmware restart",
+    (U2,))
+
+# Measured with the argument sweep of tests/e2e/monitor/monitor_test.py, which
+# types a command argument character by character and reads the field back
+# with nothing re-sent, and an outstanding defect rather than a lagging
+# release. On u2@c64u a character goes missing a few times in a thousand: 2
+# losses in 89 arguments, about 445 keys, driving the monitor's Jump prompt
+# through the ordinary send path, one in 'ABCD' and one in '1010'. Neither is
+# a repeated key, so RestBackend._runs_without_a_repeat does not cover it, and
+# tests/lib/pacing.py records a sweep from 30ms to 100ms a key that does not
+# move the rate, so it is not the harness paying too little for a key either.
+# The sweep types 39 arguments a run, so at that rate it fails there more
+# often than it passes, and it is the one check in the suite that re-sends
+# nothing by design. Every other check reaches its arguments through
+# type_into_prompt's retype, which absorbs the same loss.
+#
+# Listed against the Ultimate II+ because the keys of a cartridge target
+# cross the computer's keyboard matrix; a machine that serves machine:input
+# itself has no matrix in the path and loses nothing.
+KEY_INJECTION_LOSES_NO_CHARACTER = _fix(
+    "key-injection-loses-no-character",
+    "every character of an injected command argument reaches the monitor, so "
+    "a sweep that re-sends nothing can measure the input path",
     (U2,))
 
 # UCI_COMPLETES_AN_REU_COMMAND (issue #740) is closed: measured on an
@@ -379,7 +392,7 @@ class Machine:
         The one line a tagged check needs, and the caller returns on True:
 
             if device.machine.skip_without_fix(
-                    machine.MONITOR_EXIT_AND_BACK_KEYS, LABEL):
+                    machine.TELNET_SEND_TOLERATES_SLOW_PEER, LABEL):
                 return
             with check(LABEL):
                 ...

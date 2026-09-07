@@ -482,11 +482,11 @@ def the_run_records_what_it_assumed() -> str:
     with DeviceDouble() as double, tempfile.TemporaryDirectory() as workspace:
         assumed = scripted_run(
             double, [Stub("held")],
-            arguments=("--assume-fix", "monitor-exit-and-back-keys"),
+            arguments=("--assume-fix", "telnet-send-tolerates-slow-peer"),
             workspace=workspace)
         run = next(r for r in assumed.records("127.0.0.1", "run.jsonl")
                if r["kind"] == "run")
-        expect("in force", run["assumptions"], ["monitor-exit-and-back-keys"])
+        expect("in force", run["assumptions"], ["telnet-send-tolerates-slow-peer"])
     return "one fix assumed"
 
 
@@ -653,7 +653,7 @@ def several_targets_record_the_plan_and_the_assumptions() -> str:
     with DeviceDouble() as double, tempfile.TemporaryDirectory() as workspace:
         made = scripted_run(double, [Stub("held")],
                             tokens=("127.0.0.1", "127.0.0.1@localhost"),
-                            arguments=("--assume-fix", "monitor-exit-and-back-keys"),
+                            arguments=("--assume-fix", "telnet-send-tolerates-slow-peer"),
                             workspace=workspace)
         parent = [r for r in made.records("run.jsonl") if r["kind"] == "plan"]
         expect("the parent planned", len(parent), 1)
@@ -664,7 +664,7 @@ def several_targets_record_the_plan_and_the_assumptions() -> str:
             records = made.records(*name.split("/"))
             runs = [r for r in records if r["kind"] == "run"]
             expect(f"{name} assumptions", runs[0]["assumptions"],
-                   ["monitor-exit-and-back-keys"])
+                   ["telnet-send-tolerates-slow-peer"])
     return "3 processes, one assumption"
 
 

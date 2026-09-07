@@ -62,9 +62,9 @@ stale_gates = load_stale_gates()
 
 # A real entry, used rather than an invented name so this exercises the table
 # this run will actually read, not a fixture that happens to look like it.
-FIX = machine.MONITOR_EXIT_AND_BACK_KEYS
+FIX = machine.TELNET_SEND_TOLERATES_SLOW_PEER
 FIX_MACHINE = machine.U2
-LABEL = "Back returns one layer instead of leaving the monitor"
+LABEL = "a Telnet session survives a screen it cannot drain"
 
 
 @contextlib.contextmanager

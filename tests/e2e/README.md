@@ -147,20 +147,20 @@ machine gains from it, and lists the machines that do not have it yet. A check
 declares its dependency in one line:
 
 ```python
-if ctx.machine.skip_without_fix(machine.MONITOR_EXIT_AND_BACK_KEYS, label):
+if ctx.machine.skip_without_fix(machine.TELNET_SEND_TOLERATES_SLOW_PEER, label):
     return
 ```
 
 The check then reports SKIP with the machine and version in the reason, for
-example `needs the monitor-exit-and-back-keys fix, which Ultimate II+L 3.15 does
-not have`.
+example `needs the telnet-send-tolerates-slow-peer fix, which Ultimate II+L
+3.15 does not have`.
 
 Those names are the amendment point. When a fix is backported, delete its `FIXES`
 entry and every check tagged with it runs again; nothing else changes. To confirm
 a backport before editing the table, run the tagged checks anyway:
 
 ```sh
-./run-tests u2@c64u --assume-fix monitor-exit-and-back-keys
+./run-tests u2@c64u --assume-fix telnet-send-tolerates-slow-peer
 ./run-tests u2@c64u --assume-fix all
 ```
 
