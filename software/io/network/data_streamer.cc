@@ -370,7 +370,7 @@ bool DataStreamer :: sendVicPalette()
         memset(&local, 0, sizeof(local));
         local.sin_family = AF_INET;
         local.sin_addr.s_addr = source_ip;
-        local.sin_port = htons(53248);
+        local.sin_port = 0;
         if (bind(palette_socket, (const struct sockaddr *)&local, sizeof(local)) < 0) {
             lwip_close(palette_socket);
             palette_socket = -1;
