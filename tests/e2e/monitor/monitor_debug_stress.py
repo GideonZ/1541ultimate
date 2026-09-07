@@ -611,24 +611,42 @@ def _footer_diffs(obs: Footer, cpu) -> list:
     return diffs
 
 
+# How many times a mismatching footer is re-read before it is reported, and how
+# long to wait between those reads. The row is written a field at a time, and
+# on a cartridge it is read back over the computer's keyboard matrix and the
+# cartridge bus, so reads taken close together can all catch it half written.
+# Two measurements set the budget, each one error in about 1440 steps with
+# nothing else wrong in the run: a Step Into of LDA #$15 reported the
+# accumulator as CD, the value the previous stop had left, on two reads 150ms
+# apart; and a JSR step at depth 32 reported XR FF against the oracle's 2D
+# together with a status byte carrying B, which is the row as it stands at the
+# BRK before the captured registers replace it. Five reads over one and a half
+# seconds cover both. Only a mismatch pays for them, and a real divergence is
+# present on every read.
+FOOTER_CONFIRM_READS = 5
+FOOTER_CONFIRM_PAUSE_SECONDS = 0.3
+
+
 def assert_match(obs: Footer, cpu, ctx, refetch=None):
     """Compare the debugger's register footer against the oracle.
 
-    `refetch` re-reads the footer once, and only when a mismatch is already in
-    hand. menu_screen can return the footer row while the debugger is writing
-    it, giving the PC and SP of the new stop beside a register value the
-    previous stop left behind; that reads as a one-register divergence which is
-    not one. A real divergence is still present on the second read, so this
-    cannot hide one, and the happy path pays for no extra read.
+    `refetch` re-reads the footer, and only when a mismatch is already in hand.
+    menu_screen can return the footer row while the debugger is writing it,
+    giving the PC and SP of the new stop beside a register value the previous
+    stop left behind; that reads as a one-register divergence which is not one.
+    A real divergence is present on every read, so this cannot hide one, and
+    the happy path pays for no extra read.
     """
     diffs = _footer_diffs(obs, cpu)
     if diffs and refetch is not None:
-        again = refetch()
-        if again is not None:
-            confirmed = _footer_diffs(again, cpu)
-            if not confirmed:
+        for _ in range(FOOTER_CONFIRM_READS):
+            time.sleep(FOOTER_CONFIRM_PAUSE_SECONDS)
+            again = refetch()
+            if again is None:
+                continue
+            diffs = _footer_diffs(again, cpu)
+            if not diffs:
                 return
-            diffs = confirmed
     if diffs:
         raise StressError(f"{ctx}: oracle/footer mismatch: {', '.join(diffs)}")
 
@@ -670,6 +688,10 @@ class BootstrapState:
     sr: int
 
 
+# How many times the bootstrap may be written before its read-back is believed.
+BOOTSTRAP_WRITE_ATTEMPTS = 3
+
+
 def write_bootstrap(rest: R.Rest, target: int, seed: int) -> BootstrapState:
     """Write the $C500 register bootstrap and return the state it produces.
 
@@ -685,7 +707,24 @@ def write_bootstrap(rest: R.Rest, target: int, seed: int) -> BootstrapState:
         0xA9, ac, 0xA2, xr, 0xA0, yr,       # known registers
         0x4C, target & 0xFF, target >> 8,   # JMP target
     ])
-    rest.write_mem(BOOTSTRAP_ADDR, program)
+    # The bootstrap decides where the CPU goes, and it is written through the
+    # same path that drops a byte occasionally on a cartridge. A lost byte in
+    # its JMP operand sends the machine somewhere this run never expected, and
+    # the Go that follows then stops wherever it traps rather than at the
+    # breakpoint: measured on u2@c64u, one run of twelve reported "footer PC
+    # did not reach C000" with the footer showing $CD23. So it is read back
+    # and written again where it did not land, which is what
+    # write_rest_memory_confirmed does for every other fixture in the tree.
+    for _ in range(BOOTSTRAP_WRITE_ATTEMPTS):
+        rest.write_mem(BOOTSTRAP_ADDR, program)
+        landed = bytes(rest.read_mem(BOOTSTRAP_ADDR, len(program)))
+        if landed == program:
+            break
+    else:
+        raise StressError(
+            f"the ${BOOTSTRAP_ADDR:04X} bootstrap did not land in "
+            f"{BOOTSTRAP_WRITE_ATTEMPTS} attempts: wrote "
+            f"{program.hex().upper()}, read {landed.hex().upper()}")
     sr = FLAG_B | FLAG_I                    # LDY sets N/Z last
     if yr == 0:
         sr |= FLAG_Z
@@ -869,15 +908,32 @@ def run_jsr_session(sess, rng, depth, seed, jsonl, stats):
     return steps
 
 
+LIVENESS_TIMEOUT_SECONDS = 10.0
+
+
 def liveness_check(sess: RestSession):
-    """Exit Debug to a live machine and confirm the jiffy clock advances."""
+    """Exit Debug to a live machine and confirm the jiffy clock advances.
+
+    The clock is polled until it moves rather than sampled once 0.7s after the
+    menu was closed. Handing the machine back is not instant on a cartridge,
+    where the monitor's own user interface is the freezer, and a sample taken
+    while the hand-back is still in flight reads two equal values and reports a
+    machine that was about to run as one that never would. Measured on
+    u2@c64u: one failure in twelve iterations, on the first one, with $0400
+    reading as zeros because a held machine's DMA does.
+
+    A machine that is genuinely left held still fails: it never moves the
+    clock, and the whole budget is spent proving it.
+    """
     sess.close()
     L.ensure_menu_closed(sess.rest)
-    time.sleep(0.2)
     j0 = sess.rest.read_mem(0x00A2, 1)[0]
-    time.sleep(0.5)
-    j1 = sess.rest.read_mem(0x00A2, 1)[0]
-    return j0 != j1
+    deadline = time.time() + LIVENESS_TIMEOUT_SECONDS
+    while time.time() < deadline:
+        time.sleep(0.2)
+        if sess.rest.read_mem(0x00A2, 1)[0] != j0:
+            return True
+    return False
 
 
 # ----------------------------------------------------------------------------
