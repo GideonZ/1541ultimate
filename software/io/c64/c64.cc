@@ -1083,16 +1083,30 @@ void C64::init_system_roms(void)
     extern uint8_t _default_kernal_65_start[];
     extern uint8_t _default_chars_bin_start[];
 
-    FRESULT fres = FileManager :: getFileManager()->load_file(ROMS_DIRECTORY, cfg->get_string(CFG_C64_KERNFILE), (uint8_t *)U64_KERNAL_BASE, 8192, NULL);
+    // The FPGA ROM image aperture at U64_KERNAL_BASE is write only. A read of it
+    // on an Ultimate 64 Elite I returns zero for all 8192 bytes, both through a
+    // block memcpy and byte by byte through a volatile pointer, and a read back
+    // straight after a write returns zeros as well. So the KERNAL image is staged
+    // in a buffer in main memory, where the Fast Reset patch can compare it
+    // against the unpatched original, and only then written to the aperture.
+    // Cleared first because load_file answers FR_OK for a file shorter than the
+    // buffer and leaves the rest of it untouched. Writing to the aperture used
+    // to leave the bytes past the end of such a file as they were; staging in a
+    // fresh allocation would put uninitialised memory there instead.
+    uint8_t *kernal = new uint8_t[8192];
+    memset(kernal, 0, 8192);
+    FRESULT fres = FileManager :: getFileManager()->load_file(ROMS_DIRECTORY, cfg->get_string(CFG_C64_KERNFILE), kernal, 8192, NULL);
     if (fres != FR_OK) {
         printf("Failed to load KERNAL ROM; loading default.\n");
-        memcpy((void *)U64_KERNAL_BASE, (void *)_default_kernal_65_start, 8192);
-    } else if (cfg->get_value(CFG_C64_FASTRESET)) {
-        unsigned char *kernal = (unsigned char *)U64_KERNAL_BASE;
+        memcpy(kernal, (void *)_default_kernal_65_start, 8192);
+    }
+    if (cfg->get_value(CFG_C64_FASTRESET)) {
         if (!memcmp((void *) (kernal+0x1d6c), (void *) fastresetOrg, sizeof(fastresetOrg))) {
-            memcpy((void *) (kernal+0x1d6c), (void *) fastresetPatch, 22);
+            memcpy((void *) (kernal+0x1d6c), (void *) fastresetPatch, sizeof(fastresetPatch));
         }
     }
+    memcpy((void *)U64_KERNAL_BASE, kernal, 8192);
+    delete[] kernal;
 
     FileManager :: getFileManager()->load_file(ROMS_DIRECTORY, cfg->get_string(CFG_C64_BASIFILE), (uint8_t *)U64_BASIC_BASE, 8192, NULL);
     fres = FileManager :: getFileManager()->load_file(ROMS_DIRECTORY, cfg->get_string(CFG_C64_CHARFILE), (uint8_t *)U64_CHARROM_BASE, 4096, NULL);
