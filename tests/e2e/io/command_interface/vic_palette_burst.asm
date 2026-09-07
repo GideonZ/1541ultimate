@@ -10,8 +10,9 @@ ST_STATE = $30
 ST_LAST  = $20
 ST_STAT  = $40
 
-STATUS   = $C000               ; $A5 while running, $5A when complete
+STATUS   = $C000               ; $A4 ready, $A5 running, $5A complete
 COUNT    = $C001               ; completed commands, little endian
+GO       = $C003               ; host writes nonzero to release the burst
 
 FRAMES            = 60
 CHANGES_PER_FRAME = 4
@@ -28,11 +29,17 @@ basic_end
 
 start
         sei
-        lda #$A5
-        sta STATUS
         lda #$00
         sta COUNT
         sta COUNT+1
+        sta GO
+        lda #$A4
+        sta STATUS
+wait_go
+        lda GO
+        beq wait_go
+        lda #$A5
+        sta STATUS
         lda #FRAMES
         sta frames_left
 
@@ -67,6 +74,10 @@ count_done
         lda #$5A
         sta STATUS
         cli
+wait_exit
+        lda GO
+        cmp #$02
+        bne wait_exit
         rts
 
 ; Wait for raster line zero in the low half. $D012 also reads zero at line 256,
