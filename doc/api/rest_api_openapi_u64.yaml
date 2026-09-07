@@ -3363,10 +3363,10 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
-                Palette must be 0 or 1:
+                Palette must be 0 or 1 and is only valid for the video stream:
                   value:
                     errors:
-                      - Palette must be 0 or 1
+                      - Palette must be 0 or 1 and is only valid for the video stream
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':

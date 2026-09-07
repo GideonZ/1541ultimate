@@ -72,6 +72,7 @@ const uint8_t default_colors[16][3] = {
 
 static uint8_t active_palette[16][3];
 static bool active_palette_valid = false;
+static uint16_t active_palette_generation = 0;
 
 // static pointer
 U64Config *u64_configurator = NULL;
@@ -2761,6 +2762,7 @@ void U64Config :: set_palette_rgb(const uint8_t rgb[16][3])
     taskENTER_CRITICAL();
     memcpy(active_palette, rgb, sizeof(active_palette));
     active_palette_valid = true;
+    active_palette_generation++;
     taskEXIT_CRITICAL();
     program_palette_rgb(rgb);
     if (dataStreamer) {
@@ -2768,11 +2770,14 @@ void U64Config :: set_palette_rgb(const uint8_t rgb[16][3])
     }
 }
 
-void U64Config :: get_palette_rgb(uint8_t rgb[16][3])
+uint16_t U64Config :: get_palette_rgb(uint8_t rgb[16][3])
 {
+    // Pair the generation and RGB bytes from one complete palette snapshot.
     taskENTER_CRITICAL();
     memcpy(rgb, active_palette_valid ? active_palette : default_colors, sizeof(active_palette));
+    const uint16_t generation = active_palette_generation;
     taskEXIT_CRITICAL();
+    return generation;
 }
 
 void U64Config :: set_palette_color(uint8_t index, const uint8_t rgb[3])
@@ -2783,6 +2788,7 @@ void U64Config :: set_palette_color(uint8_t index, const uint8_t rgb[3])
         active_palette_valid = true;
     }
     memcpy(active_palette[index], rgb, 3);
+    active_palette_generation++;
     taskEXIT_CRITICAL();
     program_palette_color(index, rgb);
     if (dataStreamer) {

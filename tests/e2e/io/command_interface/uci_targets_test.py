@@ -45,6 +45,7 @@ import argparse
 import ftplib
 import json
 import sys
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -55,6 +56,7 @@ from pathlib import Path
 sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
                             if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
 import bootstrap  # noqa: E402,F401
+import assembler  # noqa: E402
 import cli  # noqa: E402
 import ftp as ftp_lib
 import rest as rest_lib
@@ -120,6 +122,11 @@ CTRL_CMD_SET_PALETTE_COLOR = 0x53
 CTRL_CMD_RESET_PALETTE = 0x54
 VIC_PALETTE_PACKET_SIZE = 60
 VIC_PALETTE_LINE = 239
+VIC_VIDEO_PACKET_SIZE = 780
+PALETTE_BURST_SOURCE = Path(__file__).with_name("vic_palette_burst.asm")
+PALETTE_BURST_STATUS = 0xC000
+PALETTE_BURST_RUNNING = 0xA5
+PALETTE_BURST_DONE = 0x5A
 SOFTIEC_CMD_IDENTIFY = 0x01
 SOFTIEC_CMD_LOAD_SU = 0x10
 SOFTIEC_CMD_GET_FATNAME = 0x22
@@ -234,12 +241,15 @@ class RestSession:
         self.timeout = timeout
 
     def request(self, method: str, path: str, params: dict[str, object] | None = None,
-                repeatable: bool = False, host: str | None = None) -> tuple[int, bytes]:
+                repeatable: bool = False, host: str | None = None,
+                data: bytes | None = None) -> tuple[int, bytes]:
         url = f"http://{host or self.target.host_for(path)}{path}"
         if params:
             url += "?" + urllib.parse.urlencode(params)
         headers = {"X-Password": self.password} if self.password else {}
-        request = urllib.request.Request(url, headers=headers, method=method)
+        if data is not None:
+            headers["Content-Type"] = "application/octet-stream"
+        request = urllib.request.Request(url, data=data, headers=headers, method=method)
         # Transport and retry policy come from tests/lib/rest.py; see
         # rest.may_retry. `repeatable` is this suite's word for idempotent: a
         # register read applies nothing, so it may go again after the request
@@ -258,14 +268,17 @@ class RestSession:
         except (OSError, TimeoutError, urllib.error.URLError) as exc:
             raise Failure(f"{method} {url} failed: {format_exception(exc)}") from exc
 
-    def peek(self, address: int, repeatable: bool = False) -> int:
+    def readmem(self, address: int, length: int, repeatable: bool = False) -> bytes:
         status, body = self.request(
-            "GET", READMEM_PATH, params={"address": f"{address:04x}", "length": 1},
+            "GET", READMEM_PATH, params={"address": f"{address:04x}", "length": length},
             repeatable=repeatable, host=self.register_host
         )
-        if status != 200 or len(body) != 1:
+        if status != 200 or len(body) != length:
             raise Failure(f"readmem(${address:04X}) failed with HTTP {status}: {body[:200]!r}")
-        return body[0]
+        return body
+
+    def peek(self, address: int, repeatable: bool = False) -> int:
+        return self.readmem(address, 1, repeatable)[0]
 
     def poke(self, address: int, value: int) -> None:
         status, body = self.request(
@@ -309,6 +322,11 @@ class RestSession:
         status, body = self.request("PUT", RESET_PATH)
         if status != 200:
             raise Failure(f"reset failed with HTTP {status}: {body[:200]!r}")
+
+    def run_prg(self, program: bytes) -> None:
+        status, body = self.request("POST", "/v1/runners:run_prg", data=program)
+        if status != 200:
+            raise Failure(f"runners:run_prg returned HTTP {status}: {body[:200]!r}")
 
 
 class FtpFixture:
@@ -629,6 +647,50 @@ def expect_no_palette_packet(sock, addresses: set[str], accept_any_source: bool 
             raise Failure("VIC stream sent palette data without an explicit palette request")
 
 
+def capture_palette_burst(session: RestSession, sock, addresses: set[str],
+                          accept_any_source: bool) -> tuple[list[tuple[float, int, bytes]], list[int], int, float]:
+    """Run the 6502 burst fixture while continuously draining the video socket."""
+    samples: list[tuple[float, int, bytes]] = []
+    video_sequences: list[int] = []
+    stop = threading.Event()
+
+    def receive() -> None:
+        while not stop.is_set():
+            for _, packet, mine in stream_lib.receive([sock], addresses, 0.05):
+                if not mine and not accept_any_source:
+                    continue
+                now = time.monotonic()
+                if (len(packet) == VIC_PALETTE_PACKET_SIZE and
+                        int.from_bytes(packet[4:6], "little") == VIC_PALETTE_LINE and
+                        packet[6:12] == bytes([0x80, 0x01, 1, 4, 1, 0])):
+                    samples.append((now, int.from_bytes(packet[:2], "little"), packet[12:]))
+                elif len(packet) == VIC_VIDEO_PACKET_SIZE:
+                    video_sequences.append(int.from_bytes(packet[:2], "little"))
+
+    program = assembler.assemble(PALETTE_BURST_SOURCE)
+    session.poke(PALETTE_BURST_STATUS, 0)
+    receiver = threading.Thread(target=receive, daemon=True)
+    receiver.start()
+    started = time.monotonic()
+    try:
+        session.run_prg(program)
+        deadline = started + 15.0
+        while True:
+            result = session.readmem(PALETTE_BURST_STATUS, 3, repeatable=True)
+            if result[0] == PALETTE_BURST_DONE:
+                break
+            if result[0] not in (0, PALETTE_BURST_RUNNING):
+                raise Failure(f"palette burst reported unexpected status ${result[0]:02X}")
+            if time.monotonic() >= deadline:
+                raise Failure("palette burst did not finish within 15 seconds")
+            time.sleep(0.05)
+        time.sleep(0.1)  # Include the rate-limited packet for the final change.
+    finally:
+        stop.set()
+        receiver.join(timeout=1.0)
+    return samples, video_sequences, int.from_bytes(result[1:3], "little"), time.monotonic() - started
+
+
 def run_palette(session: RestSession, uci: Uci) -> bool:
     """Exercise the U64 runtime palette protocol without changing saved config."""
     scenario = "palette"
@@ -666,9 +728,18 @@ def run_palette(session: RestSession, uci: Uci) -> bool:
     sock = stream_lib.stream_socket(group, port)
     stream_started = False
     try:
-        with check(f"{scenario}: ordinary VIC stream sends no palette packets"):
+        with check(f"{scenario}: invalid palette stream options are rejected"):
+            for stream, value in (("video", 2), ("audio", 1), ("audio", 0)):
+                status, body = session.request(
+                    "PUT", f"/v1/streams/{stream}:start",
+                    params={"ip": f"{group}:{port}", "palette": value})
+                if status != 400:
+                    raise Failure(
+                        f"{stream} stream with palette={value} returned HTTP {status}: {body[:200]!r}")
+
+        with check(f"{scenario}: palette=0 sends no palette packets"):
             status, body = session.request(
-                "PUT", "/v1/streams/video:start", params={"ip": f"{group}:{port}"})
+                "PUT", "/v1/streams/video:start", params={"ip": f"{group}:{port}", "palette": 0})
             if status != 200:
                 raise Failure(f"video stream start returned HTTP {status}: {body[:200]!r}")
             stream_started = True
@@ -705,6 +776,63 @@ def run_palette(session: RestSession, uci: Uci) -> bool:
             if repeated_generation != generation:
                 raise Failure(
                     f"palette repeat generation {repeated_generation} differs from initial {generation}")
+
+        with check(f"{scenario}: rapid changes are coalesced without disturbing video"):
+            # Empty anything queued after the repeat above before measuring the burst.
+            tuple(stream_lib.receive([sock], addresses, 0.05))
+            samples, video_sequences, command_count, seconds = capture_palette_burst(
+                session, sock, addresses, accept_any_source)
+            if command_count < 2 or len(samples) < 2:
+                raise Failure(f"palette burst completed {command_count} changes but streamed {len(samples)} packets")
+            generation_delta = (samples[-1][1] - generation) & 0xFFFF
+            # runners:run_prg resets the C64 before loading; depending on the
+            # active machine settings that reset may also reapply the palette.
+            if generation_delta not in (command_count, command_count + 1):
+                raise Failure(
+                    f"{command_count} changes advanced the generation by {generation_delta}")
+            reset_changes = generation_delta - command_count
+            for _, sample_generation, sample_palette in samples:
+                change = ((sample_generation - generation) & 0xFFFF) - reset_changes
+                if 1 <= change <= command_count:
+                    index = change - 1
+                    expected = bytes(((13 * index) & 0xFF,
+                                      (85 + 29 * index) & 0xFF,
+                                      (170 + 47 * index) & 0xFF))
+                    if sample_palette[18:21] != expected:
+                        raise Failure(
+                            f"generation {sample_generation} carried color {sample_palette[18:21]!r}, "
+                            f"expected {expected!r}")
+            last = command_count - 1
+            expected_color = bytes(((13 * last) & 0xFF,
+                                    (85 + 29 * last) & 0xFF,
+                                    (170 + 47 * last) & 0xFF))
+            readback, text = uci.transact(bytes([TARGET_CONTROL, CTRL_CMD_GET_PALETTE]))
+            if text != STATUS_OK or samples[-1][2] != readback:
+                raise Failure("final streamed palette did not match the device readback")
+            if readback[18:21] != expected_color:
+                raise Failure(f"rapid-change color was {readback[18:21]!r}, expected {expected_color!r}")
+            distinct = [sample for i, sample in enumerate(samples)
+                        if i == 0 or sample[1] != samples[i - 1][1]]
+            if len(distinct) >= command_count:
+                raise Failure(f"{command_count} changes produced {len(distinct)} distinct packets; no coalescing")
+            intervals = [current[0] - previous[0] for previous, current in zip(samples, samples[1:])]
+            sample_span = samples[-1][0] - samples[0][0]
+            packet_rate = (len(samples) - 1) / sample_span if sample_span > 0 else float("inf")
+            # Host scheduling can timestamp two already-queued UDP datagrams
+            # close together, so sustained rate is the stable wire-rate check.
+            if packet_rate > 55.0:
+                raise Failure(f"palette stream sustained {packet_rate:.1f} packets/s, expected at most 55")
+            discontinuities = sum(
+                1 for previous, current in zip(video_sequences, video_sequences[1:])
+                if ((current - previous) & 0xFFFF) != 1)
+            if len(video_sequences) < 100 or discontinuities:
+                raise Failure(
+                    f"video during burst had {len(video_sequences)} packets and "
+                    f"{discontinuities} sequence discontinuities")
+            detail(f"{command_count} palette changes in {seconds:.2f}s -> {len(distinct)} packets; "
+                   f"{packet_rate:.1f} packets/s, minimum observed spacing "
+                   f"{min(intervals) * 1000:.1f} ms; "
+                   f"{len(video_sequences)} consecutive video packets")
 
         expect(uci, f"{scenario}: color index 16 is rejected",
                bytes([TARGET_CONTROL, CTRL_CMD_SET_PALETTE_COLOR, 16, 0, 0, 0]),

@@ -33,7 +33,7 @@ API_DOC(PUT, streams, start,
     PARAM("ip", "string", "Where to send the stream. An address, optionally followed by a port.", "", "192.168.1.10:11000")
     PARAM("palette", "integer", "For video, request runtime VIC palette packets (0 or 1).", "", "0")
     RESPONSE("200", "application/json", "ErrorResponse", "The stream is running.", "")
-    RESPONSE_ERROR("400", "Palette must be 0 or 1", "")
+    RESPONSE_ERROR("400", "Palette must be 0 or 1 and is only valid for the video stream", "")
     RESPONSE_ERROR("404", "Unrecognized stream name 'screen'", "")
     RESPONSE_ERROR("500", "No Operational Network Interface", "")
 )
@@ -62,8 +62,7 @@ API_CALL(PUT, streams, start, NULL, ARRAY ( { { "ip", P_REQUIRED }, { "palette",
 
     const char *paletteArg = args.get_or("palette", NULL);
     const bool paletteRequested = paletteArg && strcmp(paletteArg, "1") == 0;
-    if ((paletteArg && strcmp(paletteArg, "0") != 0 && !paletteRequested) ||
-        (streamIndex != 0 && paletteRequested)) {
+    if (paletteArg && (streamIndex != 0 || (strcmp(paletteArg, "0") != 0 && !paletteRequested))) {
         resp->error("Palette must be 0 or 1 and is only valid for the video stream");
         resp->json_response(HTTP_BAD_REQUEST);
         return;
