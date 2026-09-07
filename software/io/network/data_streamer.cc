@@ -8,6 +8,7 @@
 #include "network_interface.h"
 #include "socket.h"
 #include "netdb.h"
+#include "u64_config.h"
 #include "userinterface.h"
 #include "profiler.h"
 #include "init_function.h"
@@ -38,6 +39,7 @@ struct t_cfg_definition stream_cfg[] = {
 DataStreamer :: DataStreamer()
 {
     my_ip = 0;
+    palette_sequence = 0;
     memset(streams, 0, 4*sizeof(stream_config_t));
 
     cfg = ConfigManager :: getConfigManager()->register_store(0x44617461, "Data Streams", stream_cfg, NULL);
@@ -201,7 +203,8 @@ SubsysResultCode_e DataStreamer :: startStream(SubsysCommand *cmd)
     } else {
         bool ok = false;
         for(int i=0;i<10;i++) {
-            send_udp_packet(query_ip, stream->dest_port);
+            const uint8_t probe[2] = { 0, 0 };
+            send_udp_packet(query_ip, stream->dest_port, probe, sizeof(probe));
             vTaskDelay(20);
             if (intf->peekArpTable(query_ip, stream->dest_mac)) {
                 ok = true;
@@ -220,6 +223,11 @@ SubsysResultCode_e DataStreamer :: startStream(SubsysCommand *cmd)
 
     // start stream!
     calculate_udp_headers(streamID);
+    if (streamID == 0) {
+        uint8_t rgb[16][3];
+        U64Config::get_palette_rgb(rgb);
+        sendVicPalette(rgb);
+    }
 
     if (cmd->bufferSize) {
         int stopAfter = cmd->bufferSize;
@@ -279,7 +287,7 @@ void DataStreamer :: update_task_items(bool writablePath)
     myActions.stopDbg->setHidden(streams[2].enable == 0);
 }
 
-void DataStreamer :: send_udp_packet(uint32_t ip, uint16_t port)
+void DataStreamer :: send_udp_packet(uint32_t ip, uint16_t port, const uint8_t *data, int length)
 {
     int sockfd;
     static struct sockaddr_in server;
@@ -296,13 +304,32 @@ void DataStreamer :: send_udp_packet(uint32_t ip, uint16_t port)
     server.sin_addr.s_addr = ip;
     server.sin_port = htons(port);
 
-    uint8_t buffer[2] = { 0, 0 };
     printf("Send UDP data...\n");
-    if (sendto(sockfd, buffer, 2, 0, (const struct sockaddr*)&server, sizeof(server)) < 0) {
+    if (sendto(sockfd, data, length, 0, (const struct sockaddr*)&server, sizeof(server)) < 0) {
         printf("Error in sendto()\n");
     }
     // close the socket again
     lwip_close(sockfd);
+}
+
+void DataStreamer :: sendVicPalette(const uint8_t rgb[16][3])
+{
+    stream_config_t *stream = &streams[0];
+    if (!stream->enable) {
+        return;
+    }
+
+    uint8_t packet[60] = { 0 };
+    uint16_t sequence = palette_sequence++;
+    packet[0] = (uint8_t)sequence;
+    packet[1] = (uint8_t)(sequence >> 8);
+    packet[4] = 0xFF;
+    packet[5] = 0x7F; // Reserved line number: this packet carries the VIC palette.
+    packet[6] = 16;
+    packet[8] = 1;
+    packet[9] = 24;
+    memcpy(packet + 12, rgb, 48);
+    send_udp_packet(stream->dest_ip, stream->dest_port, packet, sizeof(packet));
 }
 
 
