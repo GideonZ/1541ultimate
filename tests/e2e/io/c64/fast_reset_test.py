@@ -16,19 +16,18 @@ it disabled, and requires the enabled state to be the faster of the two.
 Measured reset-to-READY, median of five samples, the screen blanked before each
 reset so a READY left by the previous boot cannot match:
 
-    Ultimate 64 Elite I, firmware 3.15, git 4acc148c, before the fix
-        Enabled 2.39s   Disabled 2.39s
-    Ultimate 64 Elite I, firmware 3.15, git 4acc148c, with the fix
+    Ultimate 64 Elite I, this branch with software/io/c64/c64.cc reverted to
+    test-merge 4acc148c
+        Enabled 2.40s   Disabled 2.42s
+    Ultimate 64 Elite I, this branch as it stands
         Enabled 0.18s   Disabled 2.40s
-    C64 Ultimate, firmware 1.2RC, git 6e1530b0, which already applied the patch
-        Enabled 0.18s   Disabled 2.45s
 
-So a machine that applies the patch is about ten times faster and a machine
-that does not is not faster at all. MIN_SPEEDUP is 2.0, which sits between
-those two populations with a wide margin on both sides, and the margin is what
-absorbs a slow network: one screen read costs about 25ms on this bench, and
-even a poll costing 0.5s would leave the enabled measurement at roughly 0.7s
-against a 1.20s threshold. Above that the measurement can no longer resolve the
+So a machine that applies the patch is about thirteen times faster and a
+machine that does not is not faster at all. MIN_SPEEDUP is 2.0, which sits
+between those two populations with a wide margin on both sides, and the margin
+is what absorbs a slow network: one 400-byte screen read costs 12 to 18ms on
+this bench, and even a poll costing 0.5s would leave the enabled measurement at
+roughly 0.7s against a 1.20s threshold. Above that the measurement can no longer resolve the
 difference, so the suite says so and skips rather than failing.
 
 Two things the pass would otherwise not mean anything against:
@@ -98,7 +97,7 @@ MIN_SPEEDUP = 2.0
 
 # Below this, the machine did not run the RAM test with the setting disabled, so
 # the comparison has nothing to measure against. The disabled state measured
-# 2.39s on an Ultimate 64 and 2.45s on a C64 Ultimate; 1.20s is half of that.
+# 2.40s to 2.42s on an Ultimate 64, and 1.20s is half of that.
 MIN_CONTROL_SECONDS = 1.20
 
 # One screen read is the resolution of the measurement. 12 to 18ms on this bench
