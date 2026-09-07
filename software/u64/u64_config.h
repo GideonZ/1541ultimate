@@ -161,7 +161,7 @@ public:
     static void get_sid_addresses(ConfigStore *cfg, uint8_t *base, uint8_t *mask, uint8_t *split);
     static void fix_splits(uint8_t *base, uint8_t *mask, uint8_t *split);
     static void list_palettes(ConfigItem *it, IndexedList<char *>& strings);
-    static void get_palette_rgb(uint8_t rgb[16][3]);
+    static uint16_t get_palette_rgb(uint8_t rgb[16][3]);
     static void set_palette_rgb(const uint8_t rgb[16][3]);
     static void set_palette_color(uint8_t index, const uint8_t rgb[3]);
     static void reset_palette();
