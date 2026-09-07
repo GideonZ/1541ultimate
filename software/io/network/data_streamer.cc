@@ -40,7 +40,6 @@ DataStreamer :: DataStreamer()
 {
     my_ip = 0;
     palette_stream_requested = false;
-    palette_generation = 0;
     palette_task_handle = NULL;
     palette_socket = -1;
     palette_socket_ip = 0;
@@ -219,8 +218,7 @@ SubsysResultCode_e DataStreamer :: startStream(SubsysCommand *cmd)
     } else {
         bool ok = false;
         for(int i=0;i<10;i++) {
-            const uint8_t probe[2] = { 0, 0 };
-            send_udp_packet(query_ip, stream->dest_port, probe, sizeof(probe));
+            send_udp_packet(query_ip, stream->dest_port);
             vTaskDelay(20);
             if (intf->peekArpTable(query_ip, stream->dest_mac)) {
                 ok = true;
@@ -279,6 +277,9 @@ SubsysResultCode_e DataStreamer :: stopStream(SubsysCommand *cmd)
         taskENTER_CRITICAL();
         palette_stream_requested = false;
         taskEXIT_CRITICAL();
+        if (palette_task_handle) {
+            xTaskNotifyGive(palette_task_handle);
+        }
     }
     calculate_udp_headers(streamID);
     return SSRET_OK;
@@ -314,7 +315,7 @@ void DataStreamer :: update_task_items(bool writablePath)
     myActions.stopDbg->setHidden(streams[2].enable == 0);
 }
 
-void DataStreamer :: send_udp_packet(uint32_t ip, uint16_t port, const uint8_t *data, int length)
+void DataStreamer :: send_udp_packet(uint32_t ip, uint16_t port)
 {
     int sockfd;
     struct sockaddr_in server;
@@ -331,7 +332,9 @@ void DataStreamer :: send_udp_packet(uint32_t ip, uint16_t port, const uint8_t *
     server.sin_addr.s_addr = ip;
     server.sin_port = htons(port);
 
-    if (sendto(sockfd, data, length, 0, (const struct sockaddr*)&server, sizeof(server)) < 0) {
+    uint8_t buffer[2] = { 0, 0 };
+    printf("Send UDP data...\n");
+    if (sendto(sockfd, buffer, 2, 0, (const struct sockaddr*)&server, sizeof(server)) < 0) {
         printf("Error in sendto()\n");
     }
     // close the socket again
@@ -343,16 +346,19 @@ bool DataStreamer :: sendVicPalette()
     uint32_t source_ip;
     uint32_t dest_ip;
     uint16_t dest_port;
-    uint16_t generation;
     taskENTER_CRITICAL();
     const bool requested = palette_stream_requested && streams[0].enable;
     source_ip = my_ip;
     dest_ip = streams[0].dest_ip;
     dest_port = streams[0].dest_port;
-    generation = palette_generation;
     taskEXIT_CRITICAL();
 
     if (!requested || !source_ip || !dest_ip || !dest_port) {
+        if (palette_socket >= 0) {
+            lwip_close(palette_socket);
+            palette_socket = -1;
+            palette_socket_ip = 0;
+        }
         return false;
     }
 
@@ -383,17 +389,17 @@ bool DataStreamer :: sendVicPalette()
     }
 
     uint8_t packet[60] = { 0 };
+    uint8_t rgb[16][3];
+    const uint16_t generation = U64Config::get_palette_rgb(rgb);
     packet[0] = (uint8_t)generation;
     packet[1] = (uint8_t)(generation >> 8);
-    packet[4] = 239;
-    packet[6] = 0x80;
+    packet[4] = 239;  // reserved line number
+    packet[6] = 0x80; // 384 pixels per line, little endian
     packet[7] = 0x01;
-    packet[8] = 1;
-    packet[9] = 4;
-    packet[10] = 1;
-    uint8_t rgb[16][3];
-    U64Config::get_palette_rgb(rgb);
-    memcpy(packet + 12, rgb, 48);
+    packet[8] = 1;    // one palette
+    packet[9] = 4;    // four bits per VIC color index
+    packet[10] = 1;   // RGB palette encoding
+    memcpy(packet + 12, rgb, sizeof(rgb));
 
     struct sockaddr_in destination;
     memset(&destination, 0, sizeof(destination));
@@ -412,9 +418,6 @@ bool DataStreamer :: sendVicPalette()
 
 void DataStreamer :: vicPaletteChanged()
 {
-    taskENTER_CRITICAL();
-    palette_generation++;
-    taskEXIT_CRITICAL();
     if (palette_task_handle) {
         xTaskNotifyGive(palette_task_handle);
     }
@@ -422,12 +425,17 @@ void DataStreamer :: vicPaletteChanged()
 
 void DataStreamer :: paletteTask()
 {
-    const TickType_t repeat_ticks = 1000 / portTICK_PERIOD_MS;
-    const TickType_t minimum_ticks = 20 / portTICK_PERIOD_MS;
+    const TickType_t repeat_ticks = pdMS_TO_TICKS(1000);
+    // Twenty milliseconds is longer than one PAL or NTSC frame, so even a
+    // burst of palette writes adds at most one metadata packet per video frame.
+    const TickType_t minimum_ticks = pdMS_TO_TICKS(20);
     TickType_t last_send = 0;
 
     while (true) {
-        const uint32_t notified = ulTaskNotifyTake(pdTRUE, repeat_ticks);
+        taskENTER_CRITICAL();
+        const bool requested = palette_stream_requested && streams[0].enable;
+        taskEXIT_CRITICAL();
+        const uint32_t notified = ulTaskNotifyTake(pdTRUE, requested ? repeat_ticks : portMAX_DELAY);
         if (notified && last_send) {
             const TickType_t now = xTaskGetTickCount();
             const TickType_t elapsed = now - last_send;

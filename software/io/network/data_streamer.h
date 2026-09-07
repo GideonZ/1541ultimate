@@ -44,7 +44,6 @@ class DataStreamer : public ObjectWithMenu
     uint8_t  my_mac[6];
     uint32_t my_ip;
     volatile bool palette_stream_requested;
-    volatile uint16_t palette_generation;
     TaskHandle_t palette_task_handle;
     int palette_socket;
     uint32_t palette_socket_ip;
@@ -58,7 +57,7 @@ class DataStreamer : public ObjectWithMenu
     SubsysResultCode_e stopStream(SubsysCommand *cmd);
 
     void calculate_udp_headers(int id);
-    void send_udp_packet(uint32_t ip, uint16_t port, const uint8_t *data, int length);
+    void send_udp_packet(uint32_t ip, uint16_t port);
     bool sendVicPalette();
     void paletteTask();
 public:
