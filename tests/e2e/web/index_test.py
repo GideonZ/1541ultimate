@@ -209,7 +209,20 @@ class Page:
         return self.driver.find_element(By.ID, element_id)
 
     def visible(self, element_id):
-        return self.element(element_id).is_displayed()
+        """Whether the page is showing that element, with absent counting as no.
+
+        A page that never wrote the element at all is the strongest form of not
+        showing it, and a check that asks whether something is offered wants a
+        verdict rather than an exception. A firmware line whose index.html has
+        no such element would otherwise end the run on a traceback instead of
+        reporting the product gap it found. element() still raises, because the
+        callers that click or type need the element to be there.
+        """
+        from selenium.common.exceptions import NoSuchElementException
+        try:
+            return self.element(element_id).is_displayed()
+        except NoSuchElementException:
+            return False
 
     def click(self, element_id):
         self.element(element_id).click()
