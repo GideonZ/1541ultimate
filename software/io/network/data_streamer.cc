@@ -356,7 +356,10 @@ bool DataStreamer :: sendVicPalette()
         return false;
     }
 
-    if ((palette_socket < 0) || (palette_socket_ip != source_ip)) {
+    // LwIP may route unicast over another active interface, so let it choose
+    // that packet's source. Multicast keeps the VIC source for client filtering.
+    const uint32_t socket_ip = (dest_ip & 0x000000F8) == 0x000000E8 ? source_ip : 0;
+    if ((palette_socket < 0) || (palette_socket_ip != socket_ip)) {
         if (palette_socket >= 0) {
             lwip_close(palette_socket);
         }
@@ -365,18 +368,18 @@ bool DataStreamer :: sendVicPalette()
         if (palette_socket < 0) {
             return false;
         }
-
-        struct sockaddr_in local;
-        memset(&local, 0, sizeof(local));
-        local.sin_family = AF_INET;
-        local.sin_addr.s_addr = source_ip;
-        local.sin_port = 0;
-        if (bind(palette_socket, (const struct sockaddr *)&local, sizeof(local)) < 0) {
-            lwip_close(palette_socket);
-            palette_socket = -1;
-            return false;
+        if (socket_ip) {
+            struct sockaddr_in local;
+            memset(&local, 0, sizeof(local));
+            local.sin_family = AF_INET;
+            local.sin_addr.s_addr = socket_ip;
+            if (bind(palette_socket, (const struct sockaddr *)&local, sizeof(local)) < 0) {
+                lwip_close(palette_socket);
+                palette_socket = -1;
+                return false;
+            }
         }
-        palette_socket_ip = source_ip;
+        palette_socket_ip = socket_ip;
     }
 
     uint8_t packet[60] = { 0 };
