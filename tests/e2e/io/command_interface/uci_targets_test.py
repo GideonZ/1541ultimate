@@ -43,6 +43,7 @@ them on exit.
 
 import argparse
 import ftplib
+import itertools
 import json
 import socket
 import sys
@@ -840,7 +841,8 @@ def run_palette(session: RestSession, uci: Uci) -> bool:
                         if i == 0 or sample[1] != samples[i - 1][1]]
             if len(distinct) >= command_count:
                 raise Failure(f"{command_count} changes produced {len(distinct)} distinct packets; no coalescing")
-            intervals = [current[0] - previous[0] for previous, current in zip(samples, samples[1:])]
+            intervals = [current[0] - previous[0]
+                         for previous, current in itertools.pairwise(samples)]
             sample_span = samples[-1][0] - samples[0][0]
             packet_rate = (len(samples) - 1) / sample_span if sample_span > 0 else float("inf")
             # Host scheduling can timestamp two already-queued UDP datagrams
@@ -848,7 +850,7 @@ def run_palette(session: RestSession, uci: Uci) -> bool:
             if packet_rate > 55.0:
                 raise Failure(f"palette stream sustained {packet_rate:.1f} packets/s, expected at most 55")
             discontinuities = sum(
-                1 for previous, current in zip(video_sequences, video_sequences[1:])
+                1 for previous, current in itertools.pairwise(video_sequences)
                 if ((current - previous) & 0xFFFF) != 1)
             if len(video_sequences) < 100 or discontinuities:
                 raise Failure(
