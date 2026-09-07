@@ -29,7 +29,6 @@ import sys
 import time
 import urllib.error
 import urllib.request
-from collections.abc import Sequence
 from pathlib import Path
 
 # The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
@@ -49,6 +48,9 @@ from report import (
     suite_skip,
 )
 from menu import wait_until  # noqa: E402
+import machine  # noqa: E402
+import search_form  # noqa: E402
+from search_form import SearchForm  # noqa: E402
 from ui_backend import (
     Backend,
     MODE_TELNET,
@@ -61,22 +63,13 @@ from ui_backend import (
 MENU_BUTTON_PATH = "/v1/machine:menu_button"
 
 MENU_TOGGLE_TIMEOUT = 6.0
-# Both services draw the same form (AssemblySearchForm), so these are literals.
-NAME_FIELD = "Name:"
-SUBMIT_LABEL = "<<"
 EMPTY_QUERY_MESSAGE = "Queries cannot be empty"
 EMPTY_MARKER = "< No Items >"
 # The task menu is built from every registered category, so it takes noticeably
 # longer to draw than an ordinary redraw.
 TASK_MENU_TIMEOUT = 10.0
-# The form is fetched from the remote service, so it is far slower than a redraw.
-FORM_OPEN_TIMEOUT = 25.0
-# One retry, so a single slow fetch from a third-party server is not a failure.
-FORM_OPEN_ATTEMPTS = 2
 QUERY_TIMEOUT = 40.0
 RECOVER_TIMEOUT = 15.0
-# More than the form has selectable rows, so a walk always terminates.
-FIELD_WALK_LIMIT = 30
 # Unwinding is bounded by time, not by a press count: the UI task ignores keys
 # while a fetch is in flight, so a press can take as long as the service does.
 UNWIND_BUDGET = 60.0
@@ -93,8 +86,10 @@ TELNET_ENTRY_ROWS = range(1, 23)
 TELNET_STATUS_ROW = 23
 
 
-class Skip(RuntimeError):
-    pass
+# The form never appeared, which tests/e2e/lib/search_form.py raises and
+# main() reports as a suite skip: whether a third-party service answers is not
+# what a run of this firmware measures.
+Skip = search_form.Unreachable
 
 
 class Device:
@@ -111,6 +106,13 @@ class Device:
         self.host = host
         self.password = password
         self.timeout = timeout
+        # Everything this suite does inside the query form goes through here,
+        # so the suite reads no field label off the screen itself. The one
+        # step the form cannot do for itself is reaching it, because where the
+        # menu keeps the entry is the machine's business; see reach_form.
+        self.form: SearchForm = SearchForm(
+            backend, mode, self.entry_rows, self.form_title, self.reach_form,
+            telnet_mode=MODE_TELNET)
 
     @property
     def entry_rows(self) -> range:
@@ -121,9 +123,10 @@ class Device:
     # An Ultimate 64 and an Ultimate II+ search Assembly 64, reached from the
     # first entry of the task menu. A C64 Ultimate searches CommoServe,
     # reached from its launcher, and its task menu has no search entry at all.
-    # Both services draw the same query form, so every scenario below runs
-    # unchanged on all three once the name and the way in come from the
-    # machine. See tests/lib/machine.py.
+    # What the two services put on that form differs, which is why the fields
+    # are discovered rather than named; see tests/e2e/lib/search_form.py.
+    # These four are navigation, which is the machine's; see
+    # tests/lib/machine.py.
     @property
     def form_title(self) -> str:
         return self.backend.machine.search_form_title
@@ -169,12 +172,7 @@ class Device:
 
     def cursor_row(self) -> int | None:
         """Row the selection sits on, or None when the menu is closed."""
-        if self.mode == MODE_TELNET:
-            return telnet_field_row(self, self.entry_rows)
-        try:
-            return self.backend.selected_row(self.entry_rows)
-        except Failure:
-            return None
+        return self.form.cursor_row()
 
     def path_row(self) -> str:
         """The browser path from the status row, or "" when the menu is closed."""
@@ -215,7 +213,20 @@ class Device:
         return wait_until(lambda: self.menu_is_open() == want_open, timeout)
 
     def form_visible(self) -> bool:
-        return self.form_title in self.text()
+        return self.form.visible()
+
+    def reach_form(self) -> None:
+        """Navigate to the search entry and open it, from wherever the UI is.
+
+        SearchForm.open() calls this and then waits for the form's title, so
+        this is only the navigation: back out to the root browser, then open
+        the entry from wherever this machine keeps it.
+        """
+        unwind_to_root(self, "opening the query form")
+        if self.search_in_launcher:
+            open_search_entry_in_launcher(self)
+        else:
+            open_search_entry_in_task_menu(self)
 
     def screen_changed(self, before: Snapshot) -> bool:
         current = self.screen()
@@ -269,7 +280,7 @@ def task_menu_ready(device: Device) -> bool:
     and RETURN would then open whatever the browser cursor is on instead. The
     The entry's text can only come from the task menu itself, and it is always
     the menu's first, default-selected category on a freshly opened, not yet
-    navigated menu (exactly the state open_query_form calls this in), so its
+    navigated menu (exactly the state Device.reach_form calls this in), so its
     presence alone is a strong enough signal without needing to also identify
     which row the cursor sits on.
 
@@ -283,16 +294,7 @@ def task_menu_ready(device: Device) -> bool:
     column-0/1 marker check. Both are real, transport-specific limits of
     colour-based selection detection, not something to paper over here.
     """
-    return row_of(device, device.search_entry) is not None
-
-
-def describe_screen(device: Device) -> str:
-    """The non-blank rows, for a failure message that can be acted on."""
-    rows = device.rows()
-    if rows is None:
-        return "    (menu screen unavailable)"
-    lines = [f"    {n:02d}|{text}|" for n, text in enumerate(rows) if text.strip()]
-    return "\n".join(lines) or "    (screen is blank)"
+    return search_form.label_row(device.rows() or [], device.search_entry) is not None
 
 
 def open_search_entry_in_task_menu(device: Device) -> None:
@@ -337,50 +339,19 @@ def open_search_entry_in_launcher(device: Device) -> None:
     if not wait_until(lambda: launcher_entry_row(device) is not None,
                       TASK_MENU_TIMEOUT):
         raise Failure(f"the launcher did not offer {device.search_entry!r}; "
-                      f"screen was:\n{describe_screen(device)}")
+                      f"screen was:\n{device.form.describe_screen()}")
     found = launcher_entry_row(device)
     if found is None:
         raise Failure(f"{device.search_entry!r} left the launcher between two "
-                      f"reads; screen was:\n{describe_screen(device)}")
+                      f"reads; screen was:\n{device.form.describe_screen()}")
     row, cursor = found
     if row != cursor:
         device.send_key_repeat("DOWN" if row > cursor else "UP", abs(row - cursor))
     landed = launcher_entry_row(device)
     if landed is None or landed[1] != row:
         raise Failure(f"the launcher cursor is not on {device.search_entry!r} "
-                      f"at row {row}; screen was:\n{describe_screen(device)}")
+                      f"at row {row}; screen was:\n{device.form.describe_screen()}")
     device.send_key("ENTER")
-
-
-def open_query_form(device: Device) -> None:
-    """Open the machine's online-search query form, from wherever it lives.
-
-    Opening the form is a request to a third-party service, so it is retried
-    once. A single slow or dropped fetch is a property of that server, not
-    something this suite should report as a firmware defect.
-    """
-    for _ in range(FORM_OPEN_ATTEMPTS):
-        unwind_to_root(device, "opening the query form")
-        if device.search_in_launcher:
-            open_search_entry_in_launcher(device)
-        else:
-            open_search_entry_in_task_menu(device)
-        if wait_until(device.form_visible, FORM_OPEN_TIMEOUT):
-            return
-    raise Skip(
-        f"{device.form_title!r} did not appear within {FORM_OPEN_TIMEOUT:.0f}s on "
-        f"{FORM_OPEN_ATTEMPTS} attempts; the service is most likely unreachable "
-        f"from the device. Last screen:\n{describe_screen(device)}"
-    )
-
-
-def leave_form(device: Device) -> None:
-    """RUN/STOP unwinds one level per press until the form is gone."""
-    for _ in range(8):
-        if not device.menu_is_open() or not device.form_visible():
-            return
-        device.send_key("RUNSTOP")
-    raise Failure(f"{device.form_title!r} would not close")
 
 
 def unwind_to_root(device: Device, what: str) -> None:
@@ -485,57 +456,15 @@ def recover(device: Device, what: str) -> None:
         raise Failure(f"{what}: the browser came back empty")
 
 
-def row_of(device: Device, label: str) -> int | None:
-    # `in`, not `.startswith()`: on Telnet's one-row-shorter screen the task
-    # menu box renders a row higher than on REST, so a row can carry both the
-    # overlay's own label and, to its left, leftover text from whatever the
-    # root browser drew on that same row underneath -- the label is still on
-    # the row, just no longer at its start.
-    rows = device.rows()
-    if rows is None:
-        return None
-    for row, text in enumerate(rows):
-        if label in strip_frame(text):
-            return row
-    return None
-
-
-def _box_interior_bounds(text: str) -> tuple[int, int] | None:
-    """Column span strictly between a row's own left/right box border.
-
-    Finding the marker anywhere on the row is not enough: the box's own
-    title is drawn in the same colour as the marker (a header decoration,
-    not a selection), and so, further right, is a status column belonging
-    to whatever the root browser drew on that row before the box covered
-    most of it. Both sit outside the box's own field-label area, so scoping
-    the search to strictly between this row's two "|" border cells (the same
-    two columns select_row's caller already relies on to delimit the field
-    text itself) excludes both.
-    """
-    left = text.find("|")
-    right = text.rfind("|")
-    if left == -1 or right == -1 or left == right:
-        return None
-    return left + 1, right
-
-
-def no_cursor_reason(device: Device) -> str:
-    """Why cursor_row() answered None, which is two different faults."""
-    if device.mode == MODE_TELNET and device.backend.selected_sgr is None:
-        return ("the colour that marks a selection was never measured, so no "
-                "row can be read; see prime_selection_marker")
-    return "the menu closed while moving the cursor"
-
-
 def prime_selection_marker(device: Device) -> None:
     """Teach the Telnet backend which colour marks a selected row.
 
     TelnetBackend measures that colour the first time it is asked for a
-    selected row, and this suite never asks: for the form it reads
-    telnet_field_row instead, because the form's fields are indented past the
-    first two columns TelnetBackend scans. So the colour was never measured,
-    telnet_field_row found none, and every cursor_row() answered None as
-    though the menu had closed.
+    selected row, and this suite never asks: inside the form,
+    SearchForm.cursor_row reads the box interior instead, because the form's
+    fields are indented past the first two columns TelnetBackend scans. So the
+    colour was never measured, that reader found none, and every cursor_row()
+    answered None as though the menu had closed.
 
     The root browser is the screen the backend can measure, so it is measured
     here while that screen is still up and before a form covers it.
@@ -548,144 +477,12 @@ def prime_selection_marker(device: Device) -> None:
         pass
 
 
-def telnet_field_row(device: Device, entry_rows: Sequence[int]) -> int | None:
-    """Telnet equivalent of Backend.selected_row(), scoped to this form.
-
-    TelnetBackend.selected_row() only checks a row's first two columns for
-    the marker colour (see ui_backend.py), which assumes the selected
-    content starts at column 0 -- true for the root browser's own listing,
-    false for this form's box, which REST also draws differently positioned
-    but which happens to still leave REST's colour-plane detection intact.
-    Column 0 is unusable here (see row_of), so this scans within the row's
-    own box borders instead, and skips the title row (identified by its own
-    text, not by position) since its colour is cosmetic, not a selection.
-    """
-    rows = device.rows()
-    colours = device.backend.screen.colours
-    marker = device.backend.selected_sgr
-    if rows is None or marker is None:
-        return None
-    title_row = row_of(device, device.form_title)
-    for row in entry_rows:
-        if row == title_row:
-            continue
-        bounds = _box_interior_bounds(rows[row])
-        if bounds is None:
-            continue
-        left, right = bounds
-        # The colour is the machine's, measured by the backend from a listing
-        # rather than pinned here: an Ultimate 64 marks the cursor 0;32;1 and
-        # a C64 Ultimate 0;37;1.
-        if any(colours[row][col] == marker for col in range(left, right)):
-            return row
-    return None
-
-
-def select_row(device: Device, target: int, what: str) -> None:
-    """Put the selection on a known row.
-
-    The distance is read off the screen and covered in one batched run of
-    keys, the way Browser.select_entry moves a file listing, rather than one
-    request and one settle per row. Walking cost about a fifth of a second a
-    row, which is what made moving between form fields visibly slow.
-
-    The move is confirmed afterwards rather than assumed, because the cursor
-    lives only in the colour half of the screen and a form that wraps at its
-    ends would land somewhere else. Two batched attempts are made, so that a
-    run which only partly landed is corrected in one more request. If the
-    cursor is still not on the target row, the walk below takes over: it is
-    slower, but it reads the position back after every single step.
-    """
-    for _ in range(2):
-        current = device.cursor_row()
-        if current is None:
-            raise Failure(f"{what}: {no_cursor_reason(device)}")
-        if current == target:
-            return
-        device.send_key_repeat("DOWN" if current < target else "UP",
-                               abs(target - current))
-
-    # The jump did not land: fall back to one verified step at a time.
-    for _ in range(FIELD_WALK_LIMIT):
-        current = device.cursor_row()
-        if current is None:
-            raise Failure(f"{what}: {no_cursor_reason(device)}")
-        if current == target:
-            return
-        device.send_key("DOWN" if current < target else "UP")
-    raise Failure(f"{what}: the cursor never reached row {target}; "
-                  f"screen was:\n{device.text()}")
-
-
-def enter_field(device: Device, label: str) -> None:
-    """Put the cursor on a named field and open its editor."""
-    row = row_of(device, label)
-    if row is None:
-        raise Failure(f"the form has no {label!r} field")
-    select_row(device, row, f"selecting {label!r}")
-    device.send_key("ENTER")
-
-
-# An empty form field is drawn as a run of underscores, so what is read back
-# off the screen for one is not an empty string.
-FIELD_PLACEHOLDER_CHARS = "_ "
-
-
-def field_value(device: Device, label: str) -> str:
-    """What a form field currently shows, with its empty placeholder removed."""
-    row = row_of(device, label)
-    rows = device.rows() or []
-    if row is None or row >= len(rows):
-        return ""
-    text = strip_frame(rows[row]).split(label, 1)[-1]
-    return text.strip().strip(FIELD_PLACEHOLDER_CHARS).strip()
-
-
-def empty_field(device: Device, label: str, taps: int = 40,
-                attempts: int = 3) -> None:
-    """Leave a named form field empty, and confirm that it is.
-
-    KEY_CLEAR empties UIStringEdit's buffer whatever its length, so where the
-    transport can spell it this is one injected key instead of forty. On a
-    cartridge, where every key crosses the host's keyboard matrix, neither
-    spelling is reliable on its own: the field kept the previous check's text,
-    and the query that should have been refused as empty was sent as a real
-    search that took 46s to come back. So the field is read back and the other
-    spelling is tried, rather than a clear being assumed to have worked.
-    """
-    clear = getattr(device.backend, "clear_field_key", None)
-    for attempt in range(attempts):
-        enter_field(device, label)
-        if clear and attempt == 0:
-            device.send_key(clear)
-        else:
-            device.send_key_repeat("DEL", taps)
-        device.send_key("ENTER")
-        if not field_value(device, label):
-            return
-    raise Failure(
-        f"the {label!r} field still holds {field_value(device, label)!r} after "
-        f"{attempts} attempts to empty it"
-    )
-
-
-def submit_query(device: Device) -> None:
-    """RETURN on the Submit row at the bottom of the form runs the query."""
-    row = row_of(device, SUBMIT_LABEL)
-    if row is None:
-        raise Failure("the form has no Submit row")
-    select_row(device, row, "selecting Submit")
-    device.send_key("ENTER")
-
-
-# ---------------------------------------------------------------- happy path
-
 def scenario_open_and_leave(device: Device) -> None:
     section("the form opens from the menu and closes again")
     with check(f"open the {device.form_title}"):
-        open_query_form(device)
+        device.form.open()
     with check("the form leaves cleanly with RUN/STOP"):
-        leave_form(device)
+        device.form.leave()
         if device.form_visible():
             raise Failure("the form is still on screen")
     recover(device, "opening and leaving the form")
@@ -694,9 +491,11 @@ def scenario_open_and_leave(device: Device) -> None:
 def scenario_query_returns_results(device: Device) -> None:
     section(f"a real query is sent to {device.backend.machine.search_service}")
     with check("open the form and enter the first field"):
-        open_query_form(device)
+        device.form.open()
         before = device.screen()
-        enter_field(device, NAME_FIELD)
+        first = device.form.first_field()
+        detail(f"the query term goes in {first.label!r}, the form's first field")
+        device.form.edit(first)
         # Telnet's rendering shows no visible difference between the field
         # merely selected and its editor actually open (confirmed live: a
         # character typed right after ENTER lands correctly either way), so
@@ -707,17 +506,15 @@ def scenario_query_returns_results(device: Device) -> None:
             before is None or not wait_until(lambda: device.screen_changed(before), 8.0)
         ):
             raise Failure("the edit field did not open")
-    with check("the typed term lands in the Name field"):
-        device.type_text(SEARCH_TERM)
-        device.send_key("ENTER")
-        row = row_of(device, NAME_FIELD)
-        if row is None:
-            raise Failure("the form no longer shows a Name field")
-        shown = (device.rows() or [])[row]
+    with check("the typed term lands in the first field"):
+        device.form.type_text(SEARCH_TERM)
+        device.form.confirm()
+        shown = device.form.field(first.label).value
         if SEARCH_TERM not in shown.lower():
-            raise Failure(f"the Name field shows {shown.strip()!r}, not {SEARCH_TERM!r}")
+            raise Failure(f"the {first.label} field shows {shown!r}, "
+                          f"not {SEARCH_TERM!r}")
     with check("the service answers and the results match what was asked for"):
-        submit_query(device)
+        device.form.submit()
         if not wait_until(lambda: device.menu_is_open() and not device.form_visible(),
                           QUERY_TIMEOUT):
             raise Failure("the form never gave way to a result list")
@@ -735,49 +532,118 @@ def scenario_query_returns_results(device: Device) -> None:
     recover(device, "running a query")
 
 
+def field_term(index: int, field: search_form.Field) -> str:
+    """A distinct value to type into a discovered free-text field.
+
+    Built from the field's own name rather than from a table, so it stays
+    readable in a failure message whatever the service calls its fields, and
+    is unique per field so one field's value cannot pass for another's. Short
+    enough for the 26-character limit in AssemblySearchForm::change().
+    """
+    return f"{field.name.lower().replace(' ', '')[:8]}{index}"
+
+
 def scenario_dropdown_preserves_fields(device: Device) -> None:
     section("dropdown selections preserve the query form (#863)")
-    expected = {"Name:": "turrican", "Group:": "issue863",
-                "Handle:": "barry", "Event:": "hardware"}
+    form = device.form
+    texts: tuple[search_form.Field, ...] = ()
+    presets: tuple[search_form.Field, ...] = ()
 
-    def expect_fields() -> None:
-        for label, value in expected.items():
-            actual = field_value(device, label)
-            if actual != value:
-                raise Failure(f"{label} changed from {value!r} to {actual!r}")
+    with check("the form draws fields, and at least one of them is a dropdown"):
+        form.open()
+        drawn = form.fields()
+        detail(f"{len(drawn)} field(s) drawn: "
+               + ", ".join(field.label for field in drawn))
+        texts, presets = form.classify()
+        detail(f"{len(texts)} free text: "
+               + ", ".join(field.label for field in texts))
+        detail(f"{len(presets)} dropdown: "
+               + ", ".join(field.label for field in presets))
+        # Discovery that found nothing must fail rather than pass quietly: a
+        # scenario that silently covered no field would look the same as one
+        # that covered every field, which is exactly the state this scenario
+        # was in on a C64 Ultimate before the fields were discovered.
+        if not presets:
+            raise Failure(
+                f"none of the {len(drawn)} field(s) on the "
+                f"{device.form_title!r} took a value when it was cycled, so "
+                f"this machine's service offers no dropdown and the "
+                f"behaviour #863 is about cannot be exercised here")
+        if not texts:
+            raise Failure(
+                f"every field on the {device.form_title!r} is a dropdown, so "
+                f"there is no free-text field to prove is left alone")
 
-    with check("populate the text fields"):
-        open_query_form(device)
-        for label, value in expected.items():
-            enter_field(device, label)
-            device.type_text(value)
-            device.send_key("ENTER")
-        expect_fields()
+    with check("populate the free-text fields"):
+        expected: dict[str, str] = {}
+        for index, field in enumerate(texts):
+            form.edit(field)
+            form.type_text(field_term(index, field))
+            form.confirm()
+        expected = form.values()
+        for index, field in enumerate(texts):
+            term = field_term(index, field)
+            if expected.get(field.label) != term:
+                raise Failure(f"{field.label} holds "
+                              f"{expected.get(field.label)!r}, not {term!r}")
 
-    for label in ("Repo:", "Category:", "Subcat:"):
+    for field in presets:
+        label = field.label
+        # A field discovery found and that has since gone is a defect, not a
+        # reason to skip: SearchForm.field raises rather than returning None.
         with check(f"{label} +/- preserves existing fields"):
-            row = row_of(device, label)
-            if row is None:
-                raise Failure(f"the form has no {label!r} field")
-            select_row(device, row, f"selecting {label!r}")
-            device.type_text("+")
-            first = field_value(device, label)
-            if not first:
-                raise Failure(f"{label} has no preset after +")
-            device.type_text("+")
-            device.type_text("-")
-            expected[label] = first
-            expect_fields()
+            form.focus(field)
+            # Each step asserts the same thing: this field took a value, and
+            # no other field moved. Reading this field's own value back after
+            # every keystroke, rather than requiring the pair "+ +  -" to end
+            # where it started, keeps the check independent of how many
+            # presets the service listed for it. updown() clamps at both ends,
+            # so a two-entry list would not come back to where it started.
+            for keystroke in (form.cycle_next, form.cycle_next,
+                              form.cycle_previous):
+                keystroke()
+                value = form.field(label).value
+                if not value:
+                    raise Failure(f"{label} lost its value when it was cycled")
+                expected[label] = value
+                form.expect_unchanged(expected)
         with check(f"cancelling {label} preserves existing fields"):
-            enter_field(device, label)
-            device.send_key("RUNSTOP")
-            expect_fields()
-        with check(f"confirming {label} preserves its value and all other fields"):
-            enter_field(device, label)
-            device.send_key("DOWN")
-            device.send_key("UP")
-            device.send_key("ENTER")
-            expect_fields()
+            form.edit(field)
+            form.cancel()
+            form.expect_unchanged(expected)
+        confirm_label = f"confirming {label} preserves its value and all other fields"
+        if device.backend.machine.skip_without_fix(
+                machine.QUERY_FORM_SURVIVES_DROPDOWN_CONFIRM, confirm_label):
+            # The check is skipped rather than run and failed, so the rest of
+            # this scenario still runs on that machine: the defect empties
+            # every field, so a form left in that state would fail every
+            # later check for a reason that has nothing to do with what they
+            # assert.
+            continue
+        with check(confirm_label):
+            # The context menu opens on its own first item, not on the value
+            # the field is holding: AssemblySearchForm::change calls
+            # browser->context(0), and fetch_context_items lists the presets in
+            # the order the service gave them. So DOWN then UP is a no-op on
+            # the menu, and confirming applies the menu's first item. That
+            # preserves the field's value only when the field is already on the
+            # first preset, which is where the field is put first. The check
+            # that came before this one drove the field to an arbitrary preset,
+            # so without this step "confirming preserves its value" would be
+            # asserting the order the service listed its presets in.
+            form.focus(field)
+            form.cycle_to_first()
+            rewound = form.field(label).value
+            if not rewound:
+                raise Failure(f"{label} lost its value when it was rewound to "
+                              f"its first preset")
+            expected[label] = rewound
+            form.expect_unchanged(expected)
+            form.edit(field)
+            form.press("DOWN")
+            form.press("UP")
+            form.confirm()
+            form.expect_unchanged(expected)
     recover(device, "selecting query presets")
 
 
@@ -792,8 +658,8 @@ def scenario_menu_button_in_edit_field(device: Device) -> None:
             )
         return
     with check("open the form and enter the edit field"):
-        open_query_form(device)
-        enter_field(device, NAME_FIELD)
+        device.form.open()
+        device.form.edit(device.form.first_field())
     with check("the menu button closes the menu from inside the field"):
         press_menu_button(device)
         if not device.wait_menu(False, RECOVER_TIMEOUT):
@@ -818,10 +684,10 @@ def scenario_menu_button_in_edit_field(device: Device) -> None:
 def scenario_abort_edit(device: Device) -> None:
     section("an aborted edit must not wedge the form")
     with check("open the form, type into a field, then abort"):
-        open_query_form(device)
-        enter_field(device, NAME_FIELD)
-        device.type_text("zzz")
-        device.send_key("RUNSTOP")
+        device.form.open()
+        device.form.edit(device.form.first_field())
+        device.form.type_text("zzz")
+        device.form.cancel()
     with check("the form is still usable after the abort"):
         if not device.menu_is_open():
             raise Failure("the menu closed when the edit was aborted")
@@ -831,10 +697,10 @@ def scenario_abort_edit(device: Device) -> None:
 def scenario_overlong_and_empty(device: Device) -> None:
     section("over-long and empty input")
     with check("type more than the field accepts"):
-        open_query_form(device)
-        enter_field(device, NAME_FIELD)
-        device.type_text(OVERLONG_TEXT)
-        device.send_key("ENTER")
+        device.form.open()
+        device.form.edit(device.form.first_field())
+        device.form.type_text(OVERLONG_TEXT)
+        device.form.confirm()
     with check("an empty query is refused rather than sent"):
         if device.mode == MODE_TELNET:
             # The warning this produces is a third level of overlay nesting
@@ -851,8 +717,8 @@ def scenario_overlong_and_empty(device: Device) -> None:
             # Emptying the field is confirmed rather than assumed: a query
             # that still holds the previous check's text is a real search,
             # which takes tens of seconds to come back and reports no warning.
-            empty_field(device, NAME_FIELD)
-            submit_query(device)
+            device.form.clear(device.form.first_field())
+            device.form.submit()
             if not wait_until(lambda: EMPTY_QUERY_MESSAGE in device.text(), QUERY_TIMEOUT):
                 raise Failure(
                     f"submitting an empty query did not report "
@@ -877,11 +743,11 @@ def scenario_overlong_and_empty(device: Device) -> None:
 def scenario_key_mashing(device: Device) -> None:
     section("a user mashing keys while the form is busy")
     with check("submit a query and hammer keys while it runs"):
-        open_query_form(device)
-        enter_field(device, NAME_FIELD)
-        device.type_text(SEARCH_TERM)
-        device.send_key("ENTER")
-        submit_query(device)
+        device.form.open()
+        device.form.edit(device.form.first_field())
+        device.form.type_text(SEARCH_TERM)
+        device.form.confirm()
+        device.form.submit()
         # Deliberately not this machine's task-menu key. These presses are
         # noise a user makes while the form is busy, and the recovery
         # afterwards expects to be at most one nested object away from the
@@ -909,8 +775,8 @@ def scenario_reopen_repeatedly(device: Device) -> None:
     section("opening and abandoning the form repeatedly")
     with check("open and abandon the form three times"):
         for _ in range(3):
-            open_query_form(device)
-            leave_form(device)
+            device.form.open()
+            device.form.leave()
     with check("the menu button closes and reopens the form three times"):
         if device.mode == MODE_TELNET:
             check_skip(
@@ -918,14 +784,14 @@ def scenario_reopen_repeatedly(device: Device) -> None:
             )
         else:
             for _ in range(3):
-                open_query_form(device)
+                device.form.open()
                 press_menu_button(device)
                 if not device.wait_menu(False, RECOVER_TIMEOUT):
                     raise Failure("the menu would not close with the form open")
                 press_menu_button(device)
                 if not device.wait_menu(True, RECOVER_TIMEOUT):
                     raise Failure("the menu would not reopen after the form was left open")
-                leave_form(device)
+                device.form.leave()
     recover(device, "repeated open and abandon")
 
 
@@ -991,7 +857,7 @@ def main() -> int:
     finally:
         def leave_any_open_form() -> None:
             if device.menu_is_open():
-                leave_form(device)
+                device.form.leave()
 
         teardown_step("leave the query form", leave_any_open_form)
         backend.close()
