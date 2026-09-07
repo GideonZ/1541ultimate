@@ -29,7 +29,9 @@ BASIC_CODE = `!- Welcome to Ultimate BASIC Editor / Tokenizer
 !- Current Profile: CBM prg Studio Mapping Standard Basic
 !-
 !- QUICK TIPS:
-!- - Use lowercase for BASIC commands (e.g. print, goto).
+!- - Use uppercase or lowercase for BASIC commands (e.g. print, PRINT).
+!- - C64 BASIC keyword abbreviations are permitted,
+!-   e.g., goto > gO, print > ?, then > tH.
 !- - Special keys use curly braces: {clear}, {red}, {f1}, etc.
 !- - Control/Commodore keys: {ct a} / {cm a}.
 !- - Shift/Uppercase: Typing UPPERCASE letters in this editor
@@ -39,8 +41,6 @@ BASIC_CODE = `!- Welcome to Ultimate BASIC Editor / Tokenizer
 !-   These are compliant with CBM prg Studio, though
 !-   alternative formats such as {5 space}, {3 asterisk},
 !-   or {3 *} are also acceptable.
-!- - C64 BASIC keyword abbreviations are permitted,
-!-   e.g., goto > gO, print > ?, then > tH.
 !-
 !- IMPORTANT:
 !- For mathematical operators, signs should not be placed
@@ -61,7 +61,8 @@ BASIC_CODE = `!- Welcome to Ultimate BASIC Editor / Tokenizer
 !- clear screen, set uppercase mode and white color
 10 print "{clear}{uppercase}{white}";
 !- print HELLO WORLD! text
-11 print "hello world!"
+11 print "hello"
+12 PRINT "world!"
 
 !- gosub to delay loop
 20 gosub 100
@@ -417,74 +418,74 @@ SPECIAL = [
 //
 // BASIC Instructions and Commands Mapping
 TOKENS = [
-	['restore', 140],	['reS', 140],		['resT', 140],		['restO', 140],		['restoR', 140],
-	['input#', 132],	['iN', 132],		['inP', 132],		['inpU', 132],		['inpuT', 132],
-	['return', 142],	['reT', 142],		['retU', 142],		['retuR', 142],
-	['verify', 149],	['vE', 149],		['veR', 149],		['verI', 149],		['veriF', 149],
-	['print#', 152],	['pR', 152],		['prI', 152],		['priN', 152],		['prinT', 152],
-	['right$', 201],	['rI', 201],		['riG', 201],		['rigH', 201],		['righT', 201],
-	['input', 133],		//No abbreviation
-	['gosub', 141],		['goS', 141],		['gosU', 141],
-	['print', 153],		['?', 153],
-	['close', 160],		['clO', 160],		['cloS', 160],
-	['left$', 200],		['leF', 200],		['lefT', 200],
-	['next', 130],		['nE', 130],		['neX', 130],
-	['data', 131],		['dA', 131],
-	['read', 135],		['rE', 135],
-	['goto', 137],		['gO', 137],		['goT', 137],
-	['stop', 144],		['sT', 144],		['stO', 144],
-	['wait', 146],		['wA', 146],		['waI', 146],
-	['load', 147],		['lO', 147],		['loA', 147],
-	['save', 148],		['sA', 148],		['saV', 148],
-	['poke', 151],		['pO', 151],		['poK', 151],
-	['cont', 154],		['cO', 154],		['coN', 154],
-	['list', 155],		['lI', 155],		['liS', 155],
-	['open', 159],		['oP', 159],		['opE', 159],
-	['tab(', 163],		['tA', 163],		['taB', 163],
-	['spc(', 166],		['sP', 166],		['spC', 166],
-	['then', 167],		['tH', 167],		['thE', 167],
-	['step', 169],		['stE', 169],
-	['peek', 194],		['pE', 194],		['peE', 194],
-	['str$', 196],		['stR', 196],
-	['chr$', 199],		['cH', 199],		['chR', 199],
-	['mid$', 202],		['mI', 202],		['miD', 202],
-	['end', 128],		['eN', 128],
-	['for', 129],		['fO', 129],
-	['dim', 134],		['dI', 134],
-	['let', 136],		['lE', 136],
-	['run', 138],		['rU', 138],
-	['rem', 143],		//No abbreviation
-	['def', 150],		['dE', 150],
-	['clr', 156],		['cL', 156],
-	['cmd', 157],		['cM', 157],
-	['sys', 158],		['sY', 158],
-	['get', 161],		['gE', 161],
-	['new', 162],		//No abbreviation
-	['not', 168],		['nO', 168],
-	['and', 175],		['aN', 175],
-	['sgn', 180],		['sG', 180],
-	['int', 181],		//No abbreviation
-	['abs', 182],		['aB', 182],
-	['usr', 183],		['uS', 183],
-	['fre', 184],		['fR', 184],
-	['pos', 185],		//No abbreviation
-	['sqr', 186],		['sQ', 186],
-	['rnd', 187],		['rN', 187],
-	['log', 188],		//No abbreviation
-	['exp', 189],		['eX', 189],
-	['cos', 190],		//No abbreviation
-	['sin', 191],		['sI', 191],
-	['tan', 192],		//No abbreviation
-	['atn', 193],		['aT', 193],
-	['len', 195],		//No abbreviation
-	['val', 197],		['vA', 197],
-	['asc', 198],		['aS', 198],
-	['if', 139],		//No abbreviation
-	['on', 145],		//No abbreviation
-	['to', 164],		//No abbreviation
-	['fn', 165],		//No abbreviation
-	['or', 176],		//No abbreviation
-	['go', 203],		//No abbreviation
+	['RESTORE', 140],	['restore', 140],	['reS', 140],		['resT', 140],		['restO', 140],		['restoR', 140],
+	['INPUT#', 132],	['input#', 132],	['iN', 132],		['inP', 132],		['inpU', 132],		['inpuT', 132],
+	['RETURN', 142],	['return', 142],	['reT', 142],		['retU', 142],		['retuR', 142],
+	['VERIFY', 149],	['verify', 149],	['vE', 149],		['veR', 149],		['verI', 149],		['veriF', 149],
+	['PRINT#', 152],	['print#', 152],	['pR', 152],		['prI', 152],		['priN', 152],		['prinT', 152],
+	['RIGHT$', 201],	['right$', 201],	['rI', 201],		['riG', 201],		['rigH', 201],		['righT', 201],
+	['INPUT', 133],		['input', 133],		//No abbreviation
+	['GOSUB', 141],		['gosub', 141],		['goS', 141],		['gosU', 141],
+	['PRINT', 153],		['print', 153],		['?', 153],
+	['CLOSE', 160],		['close', 160],		['clO', 160],		['cloS', 160],
+	['LEFT$', 200],		['left$', 200],		['leF', 200],		['lefT', 200],
+	['NEXT', 130],		['next', 130],		['nE', 130],		['neX', 130],
+	['DATA', 131],		['data', 131],		['dA', 131],
+	['READ', 135],		['read', 135],		['rE', 135],
+	['GOTO', 137],		['goto', 137],		['gO', 137],		['goT', 137],
+	['STOP', 144],		['stop', 144],		['sT', 144],		['stO', 144],
+	['WAIT', 146],		['wait', 146],		['wA', 146],		['waI', 146],
+	['LOAD', 147],		['load', 147],		['lO', 147],		['loA', 147],
+	['SAVE', 148],		['save', 148],		['sA', 148],		['saV', 148],
+	['POKE', 151],		['poke', 151],		['pO', 151],		['poK', 151],
+	['CONT', 154],		['cont', 154],		['cO', 154],		['coN', 154],
+	['LIST', 155],		['list', 155],		['lI', 155],		['liS', 155],
+	['OPEN', 159],		['open', 159],		['oP', 159],		['opE', 159],
+	['TAB(', 163],		['tab(', 163],		['tA', 163],		['taB', 163],
+	['SPC(', 166],		['spc(', 166],		['sP', 166],		['spC', 166],
+	['THEN', 167],		['then', 167],		['tH', 167],		['thE', 167],
+	['STEP', 169],		['step', 169],		['stE', 169],
+	['PEEK', 194],		['peek', 194],		['pE', 194],		['peE', 194],
+	['STR$', 196],		['str$', 196],		['stR', 196],
+	['CHR$', 199],		['chr$', 199],		['cH', 199],		['chR', 199],
+	['MID$', 202],		['mid$', 202],		['mI', 202],		['miD', 202],
+	['END', 128],		['end', 128],		['eN', 128],
+	['FOR', 129],		['for', 129],		['fO', 129],
+	['DIM', 134],		['dim', 134],		['dI', 134],
+	['LET', 136],		['let', 136],		['lE', 136],
+	['RUN', 138],		['run', 138],		['rU', 138],
+	['REM', 143],		['rem', 143],		//No abbreviation
+	['DEF', 150],		['def', 150],		['dE', 150],
+	['CLR', 156],		['clr', 156],		['cL', 156],
+	['CMD', 157],		['cmd', 157],		['cM', 157],
+	['SYS', 158],		['sys', 158],		['sY', 158],
+	['GET', 161],		['get', 161],		['gE', 161],
+	['NEW', 162],		['new', 162],		//No abbreviation
+	['NOT', 168],		['not', 168],		['nO', 168],
+	['AND', 175],		['and', 175],		['aN', 175],
+	['SGN', 180],		['sgn', 180],		['sG', 180],
+	['INT', 181],		['int', 181],		//No abbreviation
+	['ABS', 182],		['abs', 182],		['aB', 182],
+	['USR', 183],		['usr', 183],		['uS', 183],
+	['FRE', 184],		['fre', 184],		['fR', 184],
+	['POS', 185],		['pos', 185],		//No abbreviation
+	['SQR', 186],		['sqr', 186],		['sQ', 186],
+	['RND', 187],		['rnd', 187],		['rN', 187],
+	['LOG', 188],		['log', 188],		//No abbreviation
+	['EXP', 189],		['exp', 189],		['eX', 189],
+	['COS', 190],		['cos', 190],		//No abbreviation
+	['SIN', 191],		['sin', 191],		['sI', 191],
+	['TAN', 192],		['tan', 192],		//No abbreviation
+	['ATN', 193],		['atn', 193],		['aT', 193],
+	['LEN', 195],		['len', 195],		//No abbreviation
+	['VAL', 197],		['val', 197],		['vA', 197],
+	['ASC', 198],		['asc', 198],		['aS', 198],
+	['IF', 139],		['if', 139],		//No abbreviation
+	['ON', 145],		['on', 145],		//No abbreviation
+	['TO', 164],		['to', 164],		//No abbreviation
+	['FN', 165],		['fn', 165],		//No abbreviation
+	['OR', 176],		['or', 176],		//No abbreviation
+	['GO', 203],		['go', 203],		//No abbreviation
 	//
 	['+', 170],
 	['-', 171],

@@ -575,7 +575,7 @@ $(document).ready(async function () {
     // * @param {string} s - The input string fragment.
     // * @param {boolean} tokenize - Whether to attempt keyword tokenization.
     // * @returns {[number|null, string]} - Array containing the byte value and the remaining string.
-    function scan(s, tokenize = true) {
+    function scan(s, tokenize = true, normalize = true) {
         s = expandCounts(s);
 
         if (tokenize) {
@@ -605,7 +605,11 @@ $(document).ready(async function () {
         }
 
         // Convert standard character to PETSCII and move to next char
-        return [asciiToPetscii(s.charCodeAt(0)), s.substring(1)];
+        let ch = s[0];
+        if (normalize)
+            ch = ch.toLowerCase();
+
+        return [asciiToPetscii(ch.charCodeAt(0)), s.substring(1)];
     }
 
     // * Expands character repetition shorthands into individual tokens.
@@ -649,7 +653,7 @@ $(document).ready(async function () {
         while (remainingString && remainingString.length > 0) {
             // C64 Logic: Tokenization is disabled inside quotes, REM (comments), or after DATA statements
             let shouldTokenize = !(inQuotes || inRemark || inData);
-            let [byte, newString] = scan(remainingString, shouldTokenize);
+            let [byte, newString] = scan(remainingString, shouldTokenize, !inQuotes);
 
             // C64 CRITICAL FIX: If a 0x00 byte is generated, terminate the line immediately.
             // This ensures compatibility with the C64 Kernal/BASIC interpreter, which
