@@ -715,8 +715,10 @@ def run_palette(session: RestSession, uci: Uci) -> bool:
 
     group = session.target.video_group
     port = session.target.video_port
-    # Palette metadata uses the same source address as the FPGA VIC stream.
-    accept_any_source = False
+    # A dual-homed Ultimate can send the FPGA video from one interface and the
+    # software palette packet from another. A unicast destination belongs only
+    # to this socket; multicast still needs source filtering between devices.
+    accept_any_source = not stream_lib.is_multicast(group)
     addresses = stream_lib.source_addresses(session.target)
     if not addresses:
         raise Failure(f"{scenario}: could not resolve the VIC stream source address")
