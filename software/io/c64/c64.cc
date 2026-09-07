@@ -1083,26 +1083,20 @@ void C64::init_system_roms(void)
     extern uint8_t _default_kernal_65_start[];
     extern uint8_t _default_chars_bin_start[];
 
-    // The FPGA ROM image aperture at U64_KERNAL_BASE is write only. A read of it
-    // on an Ultimate 64 Elite I returns zero for all 8192 bytes, both through a
-    // block memcpy and byte by byte through a volatile pointer, and a read back
-    // straight after a write returns zeros as well. So the KERNAL image is staged
-    // in a buffer in main memory, where the Fast Reset patch can compare it
-    // against the unpatched original, and only then written to the aperture.
-    // Cleared first because load_file answers FR_OK for a file shorter than the
-    // buffer and leaves the rest of it untouched. Writing to the aperture used
-    // to leave the bytes past the end of such a file as they were; staging in a
-    // fresh allocation would put uninitialised memory there instead.
-    uint8_t *kernal = new uint8_t[8192];
+    // The ROM image aperture at U64_KERNAL_BASE is write only: a read of it returns
+    // zeros, so the memcmp below never matched there and Fast Reset was never
+    // applied. Build the image in RAM instead and write it to the aperture once.
+    // Cleared first because load_file reports FR_OK for a file shorter than the
+    // buffer and leaves the remaining bytes untouched.
+    unsigned char *kernal = new unsigned char[8192];
     memset(kernal, 0, 8192);
-    FRESULT fres = FileManager :: getFileManager()->load_file(ROMS_DIRECTORY, cfg->get_string(CFG_C64_KERNFILE), kernal, 8192, NULL);
+    FRESULT fres = FileManager :: getFileManager()->load_file(ROMS_DIRECTORY, cfg->get_string(CFG_C64_KERNFILE), (uint8_t *)kernal, 8192, NULL);
     if (fres != FR_OK) {
         printf("Failed to load KERNAL ROM; loading default.\n");
-        memcpy(kernal, (void *)_default_kernal_65_start, 8192);
-    }
-    if (cfg->get_value(CFG_C64_FASTRESET)) {
+        memcpy((void *)kernal, (void *)_default_kernal_65_start, 8192);
+    } else if (cfg->get_value(CFG_C64_FASTRESET)) {
         if (!memcmp((void *) (kernal+0x1d6c), (void *) fastresetOrg, sizeof(fastresetOrg))) {
-            memcpy((void *) (kernal+0x1d6c), (void *) fastresetPatch, sizeof(fastresetPatch));
+            memcpy((void *) (kernal+0x1d6c), (void *) fastresetPatch, 22);
         }
     }
     memcpy((void *)U64_KERNAL_BASE, kernal, 8192);
