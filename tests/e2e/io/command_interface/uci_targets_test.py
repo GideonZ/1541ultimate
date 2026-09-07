@@ -650,7 +650,8 @@ def expect_palette_packet(sock, addresses: set[str], expected: bytes,
 def expect_no_palette_packet(sock, addresses: set[str], accept_any_source: bool = False) -> None:
     for _, packet, mine in stream_lib.receive([sock], addresses, 0.25):
         if ((mine or accept_any_source) and len(packet) == VIC_PALETTE_PACKET_SIZE and
-                packet[10:12] == bytes([1, 0])):
+                int.from_bytes(packet[4:6], "little") == VIC_PALETTE_LINE and
+                packet[6:12] == bytes([0x80, 0x01, 1, 4, 1, 0])):
             raise Failure("VIC stream sent palette data without an explicit palette request")
 
 
@@ -714,10 +715,8 @@ def run_palette(session: RestSession, uci: Uci) -> bool:
 
     group = session.target.video_group
     port = session.target.video_port
-    # A dual-homed Ultimate can send the FPGA video from one interface and the
-    # software palette packet from another. A unicast destination belongs only
-    # to this socket; multicast still needs source filtering between devices.
-    accept_any_source = not stream_lib.is_multicast(group)
+    # Palette metadata uses the same source address as the FPGA VIC stream.
+    accept_any_source = False
     addresses = stream_lib.source_addresses(session.target)
     if not addresses:
         raise Failure(f"{scenario}: could not resolve the VIC stream source address")
