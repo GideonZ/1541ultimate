@@ -828,7 +828,7 @@ void C64::dma_transfer_frozen(uint16_t offset, uint8_t *buffer, int length, int 
     C64_DMA_MEMONLY = saved_memonly;
 }
 
-#if U64 == 1
+#if U64
 // Defined in u64_config.cc, which owns the FPGA audio mixer and the settings
 // it is programmed from. Weak because the updater application links this file
 // without that one; there the SID writes below stand on their own.
@@ -836,13 +836,12 @@ extern void u64_mute_sids(void) __attribute__((weak));
 extern void u64_unmute_sids(void) __attribute__((weak));
 #endif
 
-// Silence the SIDs while the freezer owns the machine. The SID master volume
-// is what does it, on every target. Where an FPGA mixer is available it is
-// closed around those writes, so the click they make is not heard; see
-// u64_mute_sids().
+// Silence the SIDs while the freezer owns the machine. Where an FPGA mixer is
+// available, use it instead of stepping the SID master-volume DC offset. Other
+// targets retain the portable SID-register fallback.
 static void freezer_mute_sids(void)
 {
-#if U64 == 1
+#if U64
     if (u64_mute_sids) {
         u64_mute_sids();
         return;
@@ -855,7 +854,7 @@ static void freezer_mute_sids(void)
 
 static void freezer_unmute_sids(void)
 {
-#if U64 == 1
+#if U64
     if (u64_unmute_sids) {
         u64_unmute_sids();
         return;
