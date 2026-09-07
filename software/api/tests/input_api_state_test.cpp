@@ -208,6 +208,42 @@ TEST(RestKeyboardStateTest, RestoreTapIsTemporaryAndNotPersistent)
     EXPECT_FALSE(restore);
 }
 
+// A queued tap carrying both matrix keys and `restore` is what one
+// `machine:input` request for C= plus RESTORE turns into. The C64 only reads
+// the combination as C= plus RESTORE if the CBM column is already down in the
+// matrix when the NMI edge arrives, so this asserts the hardware registers
+// rather than the REST snapshot: applyMatrixState() writes matrix[0..7] before
+// it writes the restore register at matrix[9], and the same tick sets both.
+TEST(RestKeyboardStateTest, QueuedTapDrivesMatrixAndRestoreTogether)
+{
+    Keyboard_USB keyboard;
+    volatile uint8_t hardware_matrix[11] = { 0 };
+    uint8_t combo[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
+
+    const InputKeyboardMapEntry *cbm = find_keyboard_entry("commodore");
+    ASSERT_TRUE(cbm != 0);
+    add_key_to_matrix(combo, "commodore");
+
+    keyboard.setMatrix(hardware_matrix);
+    keyboard.enableMatrix(true);
+    ASSERT_TRUE(keyboard.restQueueTap(combo, true, 2));
+
+    EXPECT_TRUE((hardware_matrix[cbm->row] & (1 << cbm->col)) == 0);
+    EXPECT_TRUE((hardware_matrix[9] & 1) == 0);
+
+    keyboard.tickRestOverlays();
+    EXPECT_TRUE((hardware_matrix[cbm->row] & (1 << cbm->col)) != 0);
+    EXPECT_TRUE((hardware_matrix[9] & 1) != 0);
+
+    keyboard.tickRestOverlays();
+    EXPECT_TRUE((hardware_matrix[cbm->row] & (1 << cbm->col)) != 0);
+    EXPECT_TRUE((hardware_matrix[9] & 1) != 0);
+
+    keyboard.tickRestOverlays();
+    EXPECT_TRUE((hardware_matrix[cbm->row] & (1 << cbm->col)) == 0);
+    EXPECT_TRUE((hardware_matrix[9] & 1) == 0);
+}
+
 TEST(RestKeyboardStateTest, QueuedTapPreservesChordAndOrder)
 {
     Keyboard_USB keyboard;
