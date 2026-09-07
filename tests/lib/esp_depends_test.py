@@ -47,9 +47,15 @@ def cached_projects():
         workflow = handle.read()
 
     # Only the ESP32 cache step; the FPGA caches list .bit files elsewhere.
-    start = workflow.find("name: Cache ESP32 Targets")
+    # Found by the step's `id`, not by its display name. The workflow refers to
+    # that id itself, in `steps.cache-esp32.outputs.cache-hit`, so renaming it
+    # breaks the build and cannot pass unnoticed. The display name is free text:
+    # it reads "Cache ESP32 Targets" here and "Cache ESP32 Target" on the C64
+    # Ultimate firmware line, which runs this same test tree, and matching it
+    # exactly made the check raise before it compared anything.
+    start = workflow.find("id: cache-esp32")
     if start < 0:
-        raise Failure("build.yml has no 'Cache ESP32 Targets' step any more; "
+        raise Failure("build.yml has no step with `id: cache-esp32` any more; "
                       "this check needs updating to wherever the ESP32 cache moved")
     end = workflow.find("restore-keys:", start)
     projects = sorted(set(CACHED_ARTIFACT.findall(workflow[start:end])))
