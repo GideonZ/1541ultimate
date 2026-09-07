@@ -581,6 +581,7 @@ MonitorBookmarks :: MonitorBookmarks()
         }
         if (cfg) {
             cfg->hide();
+            cfg->effectuate();
         }
     }
     persistence_available = (cfg != NULL);

@@ -25,7 +25,6 @@ Exit 0 = GREEN (all slots reaped, full capacity recovers); non-zero = RED / setu
 import argparse
 import ipaddress
 import json
-import os
 import socket
 import subprocess
 import sys
@@ -34,8 +33,11 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-# tests/lib holds the reporting rules every suite shares.
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "lib"))
+# The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
+import cli  # noqa: E402
 
 import rest as rest_lib
 import targets
@@ -181,7 +183,7 @@ class SetupError(RuntimeError):
 
 def query_ip(args: list[str]) -> list:
     """Run a read-only `ip -j` query. These need no root, unlike `ip addr add/del`."""
-    result = subprocess.run(["ip", "-j"] + args, capture_output=True, text=True)
+    result = subprocess.run(["ip", "-j", *args], capture_output=True, text=True, check=False)
     if result.returncode != 0:
         raise SetupError(f"`ip -j {' '.join(args)}` failed: {(result.stderr or result.stdout).strip()}")
     try:
@@ -233,7 +235,7 @@ def detect_lan_path(device_ip: str) -> tuple[str, str, int]:
 def answers_ping(address: str) -> bool:
     result = subprocess.run(
         ["ping", "-c", "1", "-W", "1", address], capture_output=True, text=True
-    )
+, check=False)
     return result.returncode == 0
 
 
@@ -259,13 +261,13 @@ def pick_victim_ip(source: str, prefix_len: int, device_ip: str) -> str:
 
 
 def add_ip_alias(iface: str, victim_ip: str, prefix_len: int) -> None:
-    run_cmd(IP_CMD + ["addr", "add", f"{victim_ip}/{prefix_len}", "dev", iface])
+    run_cmd([*IP_CMD, "addr", "add", f"{victim_ip}/{prefix_len}", "dev", iface])
 
 
 def del_ip_alias(iface: str, victim_ip: str, prefix_len: int) -> bool:
     """Remove the throwaway victim IP; return True on success. Never raises."""
     result = subprocess.run(
-        IP_CMD + ["addr", "del", f"{victim_ip}/{prefix_len}", "dev", iface],
+        [*IP_CMD, "addr", "del", f"{victim_ip}/{prefix_len}", "dev", iface],
         check=False, capture_output=True, text=True,
     )
     if result.returncode != 0:
@@ -292,12 +294,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description="Red/green E2E for the telnet half-open session leak "
                     "(needs sudo on ip for the vanishing-peer alias).")
-    parser.add_argument("-H", "--host", default=os.environ.get("U64_HOST", "u64"),
-                        help="device hostname or IP (default: $U64_HOST or u64)")
-    parser.add_argument("-p", "--password", default=os.environ.get("U64_PASS", ""),
-                        help="REST password (default: $U64_PASS, empty). Taken for "
-                             "consistency with every other suite; this one drives "
-                             "raw TCP and does not need it today.")
+    cli.add_device_arguments(parser, colour=False, timeout=None)
     parser.add_argument("--iface", default=None,
                         help="LAN interface for the throwaway victim IP "
                              "(default: the interface that routes to the device)")
@@ -313,7 +310,7 @@ def main() -> int:
     args = parser.parse_args()
 
     # Preflight 1: adding and deleting the alias needs passwordless sudo for `ip`.
-    probe = subprocess.run(IP_CMD + ["addr", "show"], capture_output=True, text=True)
+    probe = subprocess.run([*IP_CMD, "addr", "show"], capture_output=True, text=True, check=False)
     if probe.returncode != 0:
         suite_fail(SUITE, "cannot run `sudo -n ip` - grant passwordless sudo for `ip` or "
             f"run under sudo. ({(probe.stderr or probe.stdout).strip()})")

@@ -9,6 +9,16 @@ LDLIBS = -lm
 LANG = C
 REVISION := "1515?"
 CFLAGS = -O2 -DREVISION="\"$(REVISION)\""
+# wchar.h declares wcwidth() only when _XOPEN_SOURCE is undefined, while the
+# macOS SDK declares it unconditionally, so the two conflict and the build
+# stops at 64tass.o. Defining it also selects the platform's wcwidth over the
+# one below, which is what that guard is for. 700 clears the `>= 500` test in
+# isnprintf.c, under which a fallback replaces snprintf and drops its size
+# bound; 500 itself does not build, the SDK exposing snprintf only above the
+# level it selects.
+ifeq ($(shell uname -s), Darwin)
+CFLAGS += -D_XOPEN_SOURCE=700
+endif
 LDFLAGS =
 CFLAGS += $(LDFLAGS)
 TARGET = 64tass

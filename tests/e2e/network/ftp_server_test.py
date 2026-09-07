@@ -14,19 +14,16 @@ and browser_long_filename_test both build fixtures that long.
 
 import argparse
 import ftplib
-import os
 import sys
 from pathlib import Path
 
-# tests/lib holds the reporting rules every suite shares; tests/e2e/lib holds
-# the one REST helper that reads a device's product and firmware.
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "lib"))
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
+# The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
+import cli  # noqa: E402
 
 import ftp as ftp_lib
-import machine as machine_lib
-import targets
-import ui_backend
 from report import (
     Failure, check, check_count, detail, format_exception, section, suite_fail, suite_ok)
 
@@ -56,14 +53,6 @@ class Server:
         self.host = host
         self.password = password
         self.timeout = timeout
-
-    @property
-    def machine(self) -> machine_lib.Machine:
-        """Which machine serves this FTP, for the checks that need a fix."""
-        return machine_lib.identify(
-            targets.device_of(self.host),
-            lambda: ui_backend.fetch_product(self.host, self.password or None,
-                                             self.timeout))
 
     def connect(self) -> ftplib.FTP:
         return ftp_lib.connect(self.host, self.password, self.timeout, TEST_DIR)
@@ -101,19 +90,6 @@ def scenario_names_round_trip(server: Server) -> None:
             if ftp_lib.names(client, prefix="ftpsrv_ctl_"):
                 raise Failure("the entry survived DELE")
 
-        long_name_checks = [
-            f"a {len(regression)}-character name is listed unchanged",
-            "SIZE answers for the long name the listing reported",
-            "that file is removed by the name the listing reported",
-        ]
-        if any(server.machine.skip_without_fix(
-                machine_lib.FTP_LISTING_FULL_LENGTH, label)
-               for label in long_name_checks):
-            # The three below all read the name back from the listing, so a
-            # listing that truncates fails the first and makes the other two
-            # meaningless. Skipped together rather than one at a time.
-            return
-
         with check(f"a {len(regression)}-character name is listed unchanged"):
             server.store(client, regression)
             reported = server.listed(client, "ftpsrv_long_")
@@ -146,11 +122,7 @@ def scenario_names_round_trip(server: Server) -> None:
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(
         description="Verify the device's FTP server reports names it can address.")
-    parser.add_argument("-H", "--host", default=os.environ.get("U64_HOST", "u64"))
-    parser.add_argument("-p", "--password",
-                        default=os.environ.get("U64_PASS", ""))
-    parser.add_argument("-t", "--timeout", type=float,
-                        default=float(os.environ.get("U64_TIMEOUT", "10.0")))
+    cli.add_device_arguments(parser, colour=False)
     return parser.parse_args(argv)
 
 
@@ -159,9 +131,6 @@ def main() -> int:
     server = Server(args.host, args.password, args.timeout)
     try:
         scenario_names_round_trip(server)
-    except Failure as exc:
-        suite_fail(SUITE, str(exc))
-        return 1
     except Exception as exc:  # noqa: BLE001  (a lost device must not print a traceback alone)
         suite_fail(SUITE, format_exception(exc))
         return 1

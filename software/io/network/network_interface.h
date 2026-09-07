@@ -104,6 +104,7 @@ protected:
     static void lwip_free_callback(struct pbuf *p);
     static int dhcp_change(ConfigItem *it);
 public:
+    using ConfigurableObject::effectuate_registered_settings;
 
     NetworkInterface(void *driver,
                 driver_output_function_t out,
@@ -112,6 +113,9 @@ public:
 
     virtual void attach_config();
     virtual const char *identify() { return "Wired Network"; }
+    // Whether this interface is a radio. Only a radio stays up while the
+    // machine is off, which is what makes it the one that can be woken.
+    virtual bool is_wireless() { return false; }
 
 	bool start();
     void stop();

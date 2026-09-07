@@ -29,19 +29,17 @@ import sys
 import time
 import urllib.error
 import urllib.request
-from typing import Dict, List, Optional, Sequence, Tuple
+from collections.abc import Sequence
+from pathlib import Path
 
-# tests/lib holds the reporting rules every suite shares; tests/e2e/lib
-# holds the shared UI backend.
-sys.path.insert(0, os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "lib"))
-sys.path.insert(0, os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
-import machine as machine_lib
+# The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
 import rest as rest_lib
 import targets
 from report import (
-    Failure,
+    teardown_step, Failure,
     check,
     check_skip,
     detail,
@@ -63,11 +61,11 @@ from ui_backend import (
 MENU_BUTTON_PATH = "/v1/machine:menu_button"
 
 MENU_TOGGLE_TIMEOUT = 6.0
+# Both services draw the same form (AssemblySearchForm), so these are literals.
 NAME_FIELD = "Name:"
 SUBMIT_LABEL = "<<"
-EMPTY_MARKER = "< No Items >"
-# AssemblySearchForm refuses a query with no criteria, with a modal popup.
 EMPTY_QUERY_MESSAGE = "Queries cannot be empty"
+EMPTY_MARKER = "< No Items >"
 # The task menu is built from every registered category, so it takes noticeably
 # longer to draw than an ordinary redraw.
 TASK_MENU_TIMEOUT = 10.0
@@ -85,7 +83,7 @@ UNWIND_BUDGET = 60.0
 UNWIND_STEP_TIMEOUT = 6.0
 # Longer than the 26-character edit limit in AssemblySearchForm::change().
 OVERLONG_TEXT = "abcdefghijklmnopqrstuvwxyz0123456789"
-# A term both corpora have many entries for.
+# Both corpora answer it: Assembly 64 with 20 rows, CommoServe with one.
 SEARCH_TERM = "turrican"
 ENTRY_ROWS = range(1, 24)
 STATUS_ROW = 24
@@ -105,7 +103,7 @@ class Device:
         backend: Backend,
         mode: str,
         host: str,
-        password: Optional[str],
+        password: str | None,
         timeout: float,
     ) -> None:
         self.backend = backend
@@ -146,7 +144,7 @@ class Device:
     def status_row(self) -> int:
         return TELNET_STATUS_ROW if self.mode == MODE_TELNET else STATUS_ROW
 
-    def screen(self) -> Optional[Snapshot]:
+    def screen(self) -> Snapshot | None:
         try:
             return self.backend.capture()
         except Failure as exc:
@@ -163,13 +161,13 @@ class Device:
     def menu_is_open(self) -> bool:
         return self.screen() is not None
 
-    def rows(self) -> Optional[List[str]]:
+    def rows(self) -> list[str] | None:
         snapshot = self.screen()
         if snapshot is None:
             return None
         return snapshot.lines
 
-    def cursor_row(self) -> Optional[int]:
+    def cursor_row(self) -> int | None:
         """Row the selection sits on, or None when the menu is closed."""
         if self.mode == MODE_TELNET:
             return telnet_field_row(self, self.entry_rows)
@@ -189,7 +187,7 @@ class Device:
     def type_text(self, text: str) -> None:
         self.backend.send_text(text, f"type {text}")
 
-    def send_key(self, key: str) -> Optional[Snapshot]:
+    def send_key(self, key: str) -> Snapshot | None:
         # RUN/STOP legitimately closes the menu when it pops the last level
         # off the object stack (unwind_to_root's whole point). Backend.send_key
         # settles by re-capturing the screen, which raises "menu screen
@@ -202,7 +200,7 @@ class Device:
                 return None
             raise
 
-    def send_key_repeat(self, key: str, count: int) -> Optional[Snapshot]:
+    def send_key_repeat(self, key: str, count: int) -> Snapshot | None:
         try:
             return self.backend.send_key_repeat(key, count)
         except Failure as exc:
@@ -227,8 +225,8 @@ class Device:
         )
 
 
-def device_is_alive(host: str, password: Optional[str], timeout: float) -> bool:
-    headers: Dict[str, str] = {}
+def device_is_alive(host: str, password: str | None, timeout: float) -> bool:
+    headers: dict[str, str] = {}
     if password:
         headers["X-Password"] = password
     request = urllib.request.Request(f"http://{targets.device_of(host)}/v1/version", headers=headers)
@@ -241,7 +239,7 @@ def device_is_alive(host: str, password: Optional[str], timeout: float) -> bool:
 
 def press_menu_button(device: Device) -> None:
     """Use the REST-only menu-button API that this scenario specifically tests."""
-    headers: Dict[str, str] = {}
+    headers: dict[str, str] = {}
     if device.password:
         headers["X-Password"] = device.password
     request = urllib.request.Request(
@@ -309,7 +307,7 @@ def open_search_entry_in_task_menu(device: Device) -> None:
     device.send_key("ENTER")
 
 
-def launcher_entry_row(device: Device) -> Optional[Tuple[int, int]]:
+def launcher_entry_row(device: Device) -> tuple[int, int] | None:
     """(row of the search entry, row of the cursor), or None when either is gone.
 
     Both come from one screen, because a repaint between two reads would make
@@ -421,7 +419,11 @@ def unwind_to_root(device: Device, what: str) -> None:
         if device.screen() is None:
             device.ensure_ready()
             return
-        if device.mode == MODE_TELNET and device.cursor_row() is None:
+        # None also means "marker never measured", and the measurement is at
+        # the root this loop walks towards, so stopping for it is circular.
+        if (device.mode == MODE_TELNET
+                and device.backend.selected_sgr is not None
+                and device.cursor_row() is None):
             return
         if wait_until(lambda: device.screen_changed(before), UNWIND_STEP_TIMEOUT):
             continue
@@ -460,7 +462,10 @@ def at_root_browser(device: Device) -> bool:
     # every scenario then walked until the menu closed instead of stopping at
     # the browser. What identifies an overlay is a box drawn inside the
     # listing, which survives the strip.
-    text = "\n".join(strip_frame(row) for row in rows)
+    # Listing rows only: the title row carries the product name, and the "+"
+    # in "Ultimate II+L" would read as an overlay border.
+    text = "\n".join(strip_frame(rows[index]) for index in device.entry_rows
+                     if index < len(rows))
     if "+" in text or "|" in text:
         return False
     return "Temp" in text
@@ -480,7 +485,7 @@ def recover(device: Device, what: str) -> None:
         raise Failure(f"{what}: the browser came back empty")
 
 
-def row_of(device: Device, label: str) -> Optional[int]:
+def row_of(device: Device, label: str) -> int | None:
     # `in`, not `.startswith()`: on Telnet's one-row-shorter screen the task
     # menu box renders a row higher than on REST, so a row can carry both the
     # overlay's own label and, to its left, leftover text from whatever the
@@ -495,7 +500,7 @@ def row_of(device: Device, label: str) -> Optional[int]:
     return None
 
 
-def _box_interior_bounds(text: str) -> Optional[Tuple[int, int]]:
+def _box_interior_bounds(text: str) -> tuple[int, int] | None:
     """Column span strictly between a row's own left/right box border.
 
     Finding the marker anywhere on the row is not enough: the box's own
@@ -543,7 +548,7 @@ def prime_selection_marker(device: Device) -> None:
         pass
 
 
-def telnet_field_row(device: Device, entry_rows: Sequence[int]) -> Optional[int]:
+def telnet_field_row(device: Device, entry_rows: Sequence[int]) -> int | None:
     """Telnet equivalent of Backend.selected_row(), scoped to this form.
 
     TelnetBackend.selected_row() only checks a row's first two columns for
@@ -608,7 +613,8 @@ def select_row(device: Device, target: int, what: str) -> None:
         if current == target:
             return
         device.send_key("DOWN" if current < target else "UP")
-    raise Failure(f"{what}: the cursor never reached row {target}")
+    raise Failure(f"{what}: the cursor never reached row {target}; "
+                  f"screen was:\n{device.text()}")
 
 
 def enter_field(device: Device, label: str) -> None:
@@ -618,6 +624,49 @@ def enter_field(device: Device, label: str) -> None:
         raise Failure(f"the form has no {label!r} field")
     select_row(device, row, f"selecting {label!r}")
     device.send_key("ENTER")
+
+
+# An empty form field is drawn as a run of underscores, so what is read back
+# off the screen for one is not an empty string.
+FIELD_PLACEHOLDER_CHARS = "_ "
+
+
+def field_value(device: Device, label: str) -> str:
+    """What a form field currently shows, with its empty placeholder removed."""
+    row = row_of(device, label)
+    rows = device.rows() or []
+    if row is None or row >= len(rows):
+        return ""
+    text = strip_frame(rows[row]).split(label, 1)[-1]
+    return text.strip().strip(FIELD_PLACEHOLDER_CHARS).strip()
+
+
+def empty_field(device: Device, label: str, taps: int = 40,
+                attempts: int = 3) -> None:
+    """Leave a named form field empty, and confirm that it is.
+
+    KEY_CLEAR empties UIStringEdit's buffer whatever its length, so where the
+    transport can spell it this is one injected key instead of forty. On a
+    cartridge, where every key crosses the host's keyboard matrix, neither
+    spelling is reliable on its own: the field kept the previous check's text,
+    and the query that should have been refused as empty was sent as a real
+    search that took 46s to come back. So the field is read back and the other
+    spelling is tried, rather than a clear being assumed to have worked.
+    """
+    clear = getattr(device.backend, "clear_field_key", None)
+    for attempt in range(attempts):
+        enter_field(device, label)
+        if clear and attempt == 0:
+            device.send_key(clear)
+        else:
+            device.send_key_repeat("DEL", taps)
+        device.send_key("ENTER")
+        if not field_value(device, label):
+            return
+    raise Failure(
+        f"the {label!r} field still holds {field_value(device, label)!r} after "
+        f"{attempts} attempts to empty it"
+    )
 
 
 def submit_query(device: Device) -> None:
@@ -681,24 +730,61 @@ def scenario_query_returns_results(device: Device) -> None:
             # An empty corpus is the service's business, not the firmware's. What
             # this suite owns is that the UI left the form and stayed usable.
             detail("the service returned no matches")
-        elif len(matches) < device.backend.machine.min_search_result_rows:
-            raise Failure(
-                f"only {len(matches)} result rows mention {SEARCH_TERM!r}, which "
-                "does not look like a result list"
-            )
         else:
             detail(f"{len(matches)} result rows mention {SEARCH_TERM!r}")
     recover(device, "running a query")
+
+
+def scenario_dropdown_preserves_fields(device: Device) -> None:
+    section("dropdown selections preserve the query form (#863)")
+    expected = {"Name:": "turrican", "Group:": "issue863",
+                "Handle:": "barry", "Event:": "hardware"}
+
+    def expect_fields() -> None:
+        for label, value in expected.items():
+            actual = field_value(device, label)
+            if actual != value:
+                raise Failure(f"{label} changed from {value!r} to {actual!r}")
+
+    with check("populate the text fields"):
+        open_query_form(device)
+        for label, value in expected.items():
+            enter_field(device, label)
+            device.type_text(value)
+            device.send_key("ENTER")
+        expect_fields()
+
+    for label in ("Repo:", "Category:", "Subcat:"):
+        with check(f"{label} +/- preserves existing fields"):
+            row = row_of(device, label)
+            if row is None:
+                raise Failure(f"the form has no {label!r} field")
+            select_row(device, row, f"selecting {label!r}")
+            device.type_text("+")
+            first = field_value(device, label)
+            if not first:
+                raise Failure(f"{label} has no preset after +")
+            device.type_text("+")
+            device.type_text("-")
+            expected[label] = first
+            expect_fields()
+        with check(f"cancelling {label} preserves existing fields"):
+            enter_field(device, label)
+            device.send_key("RUNSTOP")
+            expect_fields()
+        with check(f"confirming {label} preserves its value and all other fields"):
+            enter_field(device, label)
+            device.send_key("DOWN")
+            device.send_key("UP")
+            device.send_key("ENTER")
+            expect_fields()
+    recover(device, "selecting query presets")
 
 
 # ------------------------------------------------------------ misbehaviour
 
 def scenario_menu_button_in_edit_field(device: Device) -> None:
     section("the menu button must work from inside the edit field")
-    if device.backend.machine.skip_without_fix(
-            machine_lib.MENU_BUTTON_CLOSES_STRING_EDIT,
-            "the menu button works from inside the edit field"):
-        return
     if device.mode == MODE_TELNET:
         with check("the menu button works from inside the edit field"):
             check_skip(
@@ -762,13 +848,15 @@ def scenario_overlong_and_empty(device: Device) -> None:
             # rather than leaving the device wedged for every check after.
             check_skip("submitting an empty query wedges the popup it raises; no known recovery over telnet")
         else:
-            enter_field(device, NAME_FIELD)
-            device.send_key_repeat("DEL", 40)
-            device.send_key("ENTER")
+            # Emptying the field is confirmed rather than assumed: a query
+            # that still holds the previous check's text is a real search,
+            # which takes tens of seconds to come back and reports no warning.
+            empty_field(device, NAME_FIELD)
             submit_query(device)
             if not wait_until(lambda: EMPTY_QUERY_MESSAGE in device.text(), QUERY_TIMEOUT):
                 raise Failure(
-                    f"submitting an empty query did not report {EMPTY_QUERY_MESSAGE!r}"
+                    f"submitting an empty query did not report "
+                    f"{EMPTY_QUERY_MESSAGE!r}; screen was:\n{device.text()}"
                 )
     with check("the warning is dismissed and the form is still usable"):
         if device.mode == MODE_TELNET:
@@ -844,6 +932,7 @@ def scenario_reopen_repeatedly(device: Device) -> None:
 SCENARIOS = {
     "open-and-leave": scenario_open_and_leave,
     "query": scenario_query_returns_results,
+    "dropdown-preserves-fields": scenario_dropdown_preserves_fields,
     "menu-button-in-field": scenario_menu_button_in_edit_field,
     "abort-edit": scenario_abort_edit,
     "overlong-and-empty": scenario_overlong_and_empty,
@@ -896,17 +985,15 @@ def main() -> int:
             SCENARIOS[name](device)
     except Skip as exc:
         suite_skip("assembly64_test", str(exc))
-        try:
-            recover(device, "skipping")
-        except Exception:
-            pass
+        teardown_step("put the UI back after skipping",
+                    lambda: recover(device, "skipping"))
         return 0
     finally:
-        try:
+        def leave_any_open_form() -> None:
             if device.menu_is_open():
                 leave_form(device)
-        except Exception:
-            pass
+
+        teardown_step("leave the query form", leave_any_open_form)
         backend.close()
 
     suite_ok("assembly64_test")

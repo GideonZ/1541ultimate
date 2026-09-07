@@ -150,7 +150,7 @@ IecDrive :: IecDrive() : SubSystem(SUBSYSID_IEC)
         ->add("Name", "NO NAME")
         ->add("Path", "");
 
-    effectuate_settings();
+    effectuate_registered_settings();
 
     vfs = new IecFileSystem(this);
 
@@ -291,7 +291,7 @@ SubsysResultCode_e IecDrive :: executeCommand(SubsysCommand *cmd)
 
 void IecDrive :: reset(void)
 {
-    effectuate_settings();
+    effectuate_registered_settings();
     for(int i=0; i < 16; i++) {
         channels[i]->reset();
     }

@@ -35,6 +35,7 @@ public:
     virtual ~NetworkLWIP_WiFi();
 
     const char *identify() { return "WiFi"; }
+    bool is_wireless() { return true; }
     void attach_config();
 
     // User Interface

@@ -25,8 +25,9 @@ import re
 import time
 import urllib.parse
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Sequence, Tuple
+from collections.abc import Sequence
 
+import machine
 import pacing
 import targets
 from report import Failure
@@ -97,19 +98,19 @@ class Info:
     firmware_version: str
     fpga_version: str
     hostname: str
-    extra: Dict[str, object] = field(default_factory=dict)
+    extra: dict[str, object] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
 class DriveInfo:
     slot: str
     enabled: bool
-    bus_id: Optional[int]
+    bus_id: int | None
     type: str
     rom: str
     image_file: str
     image_path: str
-    extra: Dict[str, object] = field(default_factory=dict)
+    extra: dict[str, object] = field(default_factory=dict)
 
     @property
     def mounted(self) -> bool:
@@ -122,10 +123,10 @@ class FileInfo:
     filename: str
     size: int
     extension: str
-    extra: Dict[str, object] = field(default_factory=dict)
+    extra: dict[str, object] = field(default_factory=dict)
 
 
-def _errors(payload: object, what: str) -> Dict[str, object]:
+def _errors(payload: object, what: str) -> dict[str, object]:
     """Unwrap the device's `{..., "errors": [...]}` envelope."""
     if not isinstance(payload, dict):
         raise Failure(f"{what}: expected a JSON object, got {type(payload).__name__}")
@@ -135,7 +136,7 @@ def _errors(payload: object, what: str) -> Dict[str, object]:
     return payload
 
 
-def input_body_bytes(events: Sequence[Dict[str, object]]) -> int:
+def input_body_bytes(events: Sequence[dict[str, object]]) -> int:
     """How large the request body for these events is, as the device sees it.
 
     The same serialisation the transport uses, so the number this returns is
@@ -144,7 +145,7 @@ def input_body_bytes(events: Sequence[Dict[str, object]]) -> int:
     return len(json.dumps({"events": list(events)}).encode("utf-8"))
 
 
-def input_batches(events: Sequence[Dict[str, object]]) -> List[List[Dict[str, object]]]:
+def input_batches(events: Sequence[dict[str, object]]) -> list[list[dict[str, object]]]:
     """Split events into batches `machine:input` accepts, one request each.
 
     Both device limits apply and neither implies the other: at most
@@ -157,10 +158,10 @@ def input_batches(events: Sequence[Dict[str, object]]) -> List[List[Dict[str, ob
     returned as its own batch, so the device reports it rather than this
     silently dropping it.
     """
-    batches: List[List[Dict[str, object]]] = []
-    current: List[Dict[str, object]] = []
+    batches: list[list[dict[str, object]]] = []
+    current: list[dict[str, object]] = []
     for event in events:
-        candidate = current + [event]
+        candidate = [*current, event]
         if current and (len(candidate) > MAX_INPUT_EVENTS
                         or input_body_bytes(candidate) > MAX_INPUT_BODY_BYTES):
             batches.append(current)
@@ -209,7 +210,7 @@ class MachineApi:
         # first suite in a fresh process does not reset a machine nothing has
         # touched since. Any mutating call clears the assumption by advancing
         # the counter past it.
-        self._reset_at: Optional[Tuple[int, int]] = (
+        self._reset_at: tuple[int, int] | None = (
             self._counts()
             if os.environ.get("U64_DEVICE_RESET") == "1" else None)
 
@@ -236,7 +237,7 @@ class MachineApi:
                 return False
             time.sleep(READY_POLL_SECONDS)
 
-    def _counts(self) -> Tuple[int, int]:
+    def _counts(self) -> tuple[int, int]:
         """What has moved the machine, seen from this client and the process.
 
         Two counters, because either can be the one that saw it. This client's
@@ -360,7 +361,7 @@ class MachineApi:
             raise Failure(f"writemem ${address:04X} ({len(data)} bytes) returned "
                           f"HTTP {code}: {body[:160]!r}")
 
-    def measure(self) -> Optional[bytes]:
+    def measure(self) -> bytes | None:
         """A bus timing capture, or None where the FPGA cannot measure (501)."""
         code, _, body = self._rest.request("GET", "/v1/machine:measure",
                                            idempotent=True)
@@ -370,7 +371,7 @@ class MachineApi:
             raise Failure(f"machine:measure returned HTTP {code}: {body[:160]!r}")
         return body
 
-    def debugreg(self) -> Optional[str]:
+    def debugreg(self) -> str | None:
         """The debug register as two hex digits, or None where it does not exist.
 
         Both debugreg routes sit inside `#if U64`, so on other products they
@@ -386,7 +387,7 @@ class MachineApi:
         payload = _errors(_json(body, "machine:debugreg"), "machine:debugreg")
         return str(payload.get("value", ""))
 
-    def set_debugreg(self, value: str) -> Optional[str]:
+    def set_debugreg(self, value: str) -> str | None:
         """Set the debug register, returning what it reads back, or None where
         the route does not exist."""
         code, _, body = self._rest.request("PUT", "/v1/machine:debugreg",
@@ -398,7 +399,7 @@ class MachineApi:
         payload = _errors(_json(body, "machine:debugreg"), "machine:debugreg")
         return str(payload.get("value", ""))
 
-    def heap(self) -> Optional[Dict[str, int]]:
+    def heap(self) -> dict[str, int] | None:
         """Free, low-water and total FreeRTOS heap, or None on firmware without it.
 
         `free` is the figure to diff. `min_ever_free` is the low-water mark
@@ -420,8 +421,22 @@ class MachineApi:
         return {name: int(payload.get(name, 0))
                 for name in ("free", "min_ever_free", "total")}
 
-    def menu_screen(self, timeout: Optional[float] = None,
-                    retries: Optional[int] = None) -> Optional[bytes]:
+    def heap_free(self) -> int:
+        """The free-heap figure the leak suites diff.
+
+        Five soak suites each defined this one-liner over `heap()`. It raises
+        rather than returning None on firmware without the endpoint, because a
+        caller measuring a slope has nothing to measure without it; a caller
+        deciding whether to skip asks `heap()` and reads the None.
+        """
+        reading = self.heap()
+        if reading is None:
+            raise Failure("machine:heap is not served by this firmware, so a "
+                          "heap slope cannot be measured")
+        return reading["free"]
+
+    def menu_screen(self, timeout: float | None = None,
+                    retries: int | None = None) -> bytes | None:
         """The rendered menu screen, or None when no menu is open (HTTP 404).
 
         `timeout` and `retries` are for a caller that has to bound how long
@@ -438,10 +453,10 @@ class MachineApi:
     def menu_open(self) -> bool:
         return self.menu_screen() is not None
 
-    def input_state(self) -> Dict[str, object]:
+    def input_state(self) -> dict[str, object]:
         return _errors(self._rest.json("/v1/machine:input"), "machine:input")
 
-    def send_input(self, events: Sequence[Dict[str, object]]) -> None:
+    def send_input(self, events: Sequence[dict[str, object]]) -> None:
         if not 0 < len(events) <= MAX_INPUT_EVENTS:
             raise Failure(f"an input batch holds 1..{MAX_INPUT_EVENTS} events, got {len(events)}")
         body_bytes = input_body_bytes(events)
@@ -470,7 +485,7 @@ class MachineApi:
     def release_all(self) -> None:
         self.send_input([{"kind": "release_all"}])
 
-    def menu_rows(self) -> List[str]:
+    def menu_rows(self) -> list[str]:
         """The open menu as 25 rows of text, or an empty list when it is closed.
 
         Only the character plane is decoded, and only its printable range;
@@ -481,7 +496,7 @@ class MachineApi:
         return [] if body is None else self.rows_of(body)
 
     @staticmethod
-    def rows_of(body: bytes) -> List[str]:
+    def rows_of(body: bytes) -> list[str]:
         """The same decode, for a caller that already holds the payload.
 
         Separate so that reading the screen and reading its text is one
@@ -492,7 +507,7 @@ class MachineApi:
                         for c in body[:SCREEN_CELLS])
         return [chars[r * SCREEN_COLS:(r + 1) * SCREEN_COLS] for r in range(SCREEN_ROWS)]
 
-    def close_menu_from_anywhere(self, confirm_key: Optional[str] = None) -> None:
+    def close_menu_from_anywhere(self, confirm_key: str | None = None) -> None:
         """Back out of the whole UI object stack until the menu is closed.
 
         Every step here is one that a separate copy of this got wrong, and the
@@ -509,7 +524,8 @@ class MachineApi:
           to reopen, which RUN/STOP alone does not do.
         - RUN/STOP takes over for the last few attempts, for the editors F8
           does not reach. Never RETURN by default: it activates the entry
-          under the cursor, and on the Assembly 64 entry that opens its form.
+          under the cursor, and on the machine's online-search entry that
+          opens its query form.
         - The menu button is the last resort rather than the first, because it
           is a toggle and does not leave a nested object.
 
@@ -553,9 +569,9 @@ class DrivesApi:
             raise Failure(f"unknown drive {slot!r}; expected one of {', '.join(DRIVE_SLOTS)}")
         return slot
 
-    def list(self) -> Dict[str, DriveInfo]:
+    def list(self) -> dict[str, DriveInfo]:
         payload = _errors(self._rest.json("/v1/drives"), "drives")
-        found: Dict[str, DriveInfo] = {}
+        found: dict[str, DriveInfo] = {}
         for entry in payload.get("drives", []):
             if not isinstance(entry, dict):
                 continue
@@ -580,15 +596,15 @@ class DrivesApi:
             raise Failure(f"drive {slot!r} is missing from the drives listing")
         return found[slot]
 
-    def _act(self, slot: str, action: str, params: Optional[Dict[str, object]] = None) -> None:
+    def _act(self, slot: str, action: str, params: dict[str, object] | None = None) -> None:
         path = f"/v1/drives/{self._slot(slot)}:{action}"
         code, _, body = self._rest.request("PUT", path, params=params)
         if code != 200:
             raise Failure(f"{path} returned HTTP {code}: {body[:160]!r}")
 
-    def mount(self, slot: str, image: str, type: Optional[str] = None,
-              mode: Optional[str] = None) -> None:
-        params: Dict[str, object] = {"image": image}
+    def mount(self, slot: str, image: str, type: str | None = None,
+              mode: str | None = None) -> None:
+        params: dict[str, object] = {"image": image}
         if type is not None:
             params["type"] = type
         if mode is not None:
@@ -623,10 +639,10 @@ class ConfigsApi:
     def __init__(self, rest: RestClient) -> None:
         self._rest = rest
 
-    def categories(self) -> Dict[str, object]:
+    def categories(self) -> dict[str, object]:
         return _errors(self._rest.json("/v1/configs"), "configs")
 
-    def category_names(self) -> List[str]:
+    def category_names(self) -> list[str]:
         """Just the category names.
 
         `categories()` hands back the whole answer, whose keys are "categories"
@@ -638,7 +654,7 @@ class ConfigsApi:
             raise Failure("configs: no category list in the answer")
         return [str(name) for name in listed]
 
-    def category(self, category: str) -> Dict[str, object]:
+    def category(self, category: str) -> dict[str, object]:
         payload = _errors(self._rest.json(f"/v1/configs/{_quote(category)}"),
                           f"configs/{category}")
         value = payload.get(category)
@@ -657,7 +673,7 @@ class ConfigsApi:
         """
         return self.category(category).get(item)
 
-    def item(self, category: str, item: str) -> Dict[str, object]:
+    def item(self, category: str, item: str) -> dict[str, object]:
         """One item's full description: its current value, range and default."""
         path = f"/v1/configs/{_quote(category)}/{_quote(item)}"
         payload = _errors(self._rest.json(path), f"configs/{category}/{item}")
@@ -668,7 +684,7 @@ class ConfigsApi:
             raise Failure(f"configs/{category}/{item}: item missing from the answer")
         return entry
 
-    def find_padded_enum(self) -> Optional[Tuple[str, str]]:
+    def find_padded_enum(self) -> tuple[str, str] | None:
         """A store and enum item this machine serves whose labels are padded.
 
         The three CFG suites all need one setting of the same shape: an enum
@@ -715,8 +731,13 @@ class ConfigsApi:
         return value if isinstance(value, str) else ""
 
     def set(self, category: str, item: str, value: object) -> None:
+        # idempotent: the call names both the item and the value it is to hold,
+        # so a resend after a transport failure writes the same value again.
+        # Without it a config write is not retried once the request has left
+        # the client, which the suites that restore a captured setting rely on.
         path = f"/v1/configs/{_quote(category)}/{_quote(item)}"
-        code, _, body = self._rest.request("PUT", path, params={"value": value})
+        code, _, body = self._rest.request("PUT", path, params={"value": value},
+                                           idempotent=True)
         if code != 200:
             raise Failure(f"{path}={value!r} returned HTTP {code}: {body[:160]!r}")
 
@@ -730,11 +751,11 @@ class ConfigsApi:
         """
         path = (f"/v1/configs/{_quote(category)}/{_quote(item)}"
                 f"/{_quote(str(value))}")
-        code, _, body = self._rest.request("PUT", path)
+        code, _, body = self._rest.request("PUT", path, idempotent=True)
         if code != 200:
             raise Failure(f"{path} returned HTTP {code}: {body[:160]!r}")
 
-    def apply(self, settings: Dict[str, Dict[str, object]]) -> None:
+    def apply(self, settings: dict[str, dict[str, object]]) -> None:
         """Set several items at once, as the JSON body form of the route."""
         body = json.dumps(settings).encode("utf-8")
         code, _, answer = self._rest.request(
@@ -743,20 +764,20 @@ class ConfigsApi:
         if code != 200:
             raise Failure(f"POST /v1/configs returned HTTP {code}: {answer[:160]!r}")
 
-    def _flash(self, action: str, category: Optional[str]) -> None:
+    def _flash(self, action: str, category: str | None) -> None:
         path = (f"/v1/configs:{action}" if category is None
                 else f"/v1/configs/{_quote(category)}:{action}")
         code, _, body = self._rest.request("PUT", path)
         if code != 200:
             raise Failure(f"{path} returned HTTP {code}: {body[:160]!r}")
 
-    def save_to_flash(self, category: Optional[str] = None) -> None:
+    def save_to_flash(self, category: str | None = None) -> None:
         self._flash("save_to_flash", category)
 
-    def load_from_flash(self, category: Optional[str] = None) -> None:
+    def load_from_flash(self, category: str | None = None) -> None:
         self._flash("load_from_flash", category)
 
-    def reset_to_default(self, category: Optional[str] = None) -> None:
+    def reset_to_default(self, category: str | None = None) -> None:
         self._flash("reset_to_default", category)
 
 
@@ -766,7 +787,7 @@ class FilesApi:
     def __init__(self, rest: RestClient) -> None:
         self._rest = rest
 
-    def info(self, path: str) -> Optional[FileInfo]:
+    def info(self, path: str) -> FileInfo | None:
         """File information, or None when the path does not exist (HTTP 404)."""
         code, _, body = self._rest.request("GET", f"/v1/files/{_quote_path(path)}:info")
         if code == 404:
@@ -788,15 +809,15 @@ class FilesApi:
     def exists(self, path: str) -> bool:
         return self.info(path) is not None
 
-    def _create(self, kind: str, path: str, params: Dict[str, object]) -> None:
+    def _create(self, kind: str, path: str, params: dict[str, object]) -> None:
         target = f"/v1/files/{_quote_path(path)}:create_{kind}"
         code, _, body = self._rest.request("PUT", target, params=params)
         if code != 200:
             raise Failure(f"{target} returned HTTP {code}: {body[:160]!r}")
 
-    def create_d64(self, path: str, tracks: Optional[int] = None,
-                   diskname: Optional[str] = None) -> None:
-        params: Dict[str, object] = {}
+    def create_d64(self, path: str, tracks: int | None = None,
+                   diskname: str | None = None) -> None:
+        params: dict[str, object] = {}
         if tracks is not None:
             _in_range("tracks", tracks, D64_TRACKS)
             params["tracks"] = tracks
@@ -804,15 +825,15 @@ class FilesApi:
             params["diskname"] = diskname
         self._create("d64", path, params)
 
-    def create_d71(self, path: str, diskname: Optional[str] = None) -> None:
+    def create_d71(self, path: str, diskname: str | None = None) -> None:
         self._create("d71", path, {"diskname": diskname} if diskname else {})
 
-    def create_d81(self, path: str, diskname: Optional[str] = None) -> None:
+    def create_d81(self, path: str, diskname: str | None = None) -> None:
         self._create("d81", path, {"diskname": diskname} if diskname else {})
 
-    def create_dnp(self, path: str, tracks: int, diskname: Optional[str] = None) -> None:
+    def create_dnp(self, path: str, tracks: int, diskname: str | None = None) -> None:
         _in_range("tracks", tracks, DNP_TRACKS)
-        params: Dict[str, object] = {"tracks": tracks}
+        params: dict[str, object] = {"tracks": tracks}
         if diskname is not None:
             params["diskname"] = diskname
         self._create("dnp", path, params)
@@ -824,7 +845,7 @@ class RunnersApi:
     def __init__(self, rest: RestClient) -> None:
         self._rest = rest
 
-    def _run(self, action: str, params: Dict[str, object]) -> None:
+    def _run(self, action: str, params: dict[str, object]) -> None:
         path = f"/v1/runners:{action}"
         code, _, body = self._rest.request("PUT", path, params=params)
         if code != 200:
@@ -839,8 +860,8 @@ class RunnersApi:
     def run_crt(self, file: str) -> None:
         self._run("run_crt", {"file": file})
 
-    def sidplay(self, file: str, songnr: Optional[int] = None) -> None:
-        params: Dict[str, object] = {"file": file}
+    def sidplay(self, file: str, songnr: int | None = None) -> None:
+        params: dict[str, object] = {"file": file}
         if songnr is not None:
             params["songnr"] = songnr
         self._run("sidplay", params)
@@ -849,8 +870,8 @@ class RunnersApi:
         self._run("modplay", {"file": file})
 
     def upload(self, action: str, payload: bytes,
-               params: Optional[Dict[str, object]] = None,
-               timeout: Optional[float] = None) -> Response:
+               params: dict[str, object] | None = None,
+               timeout: float | None = None) -> Response:
         """POST a file body to a runner, e.g. `upload("run_prg", prg_bytes)`.
 
         `timeout` is worth setting for a large body. A megabytes-sized REU image
@@ -869,16 +890,16 @@ class StreamsApi:
     def __init__(self, rest: RestClient) -> None:
         self._rest = rest
 
-    def start(self, stream: str, timeout: Optional[float] = None,
-              retries: Optional[int] = None, **params: object) -> None:
+    def start(self, stream: str, timeout: float | None = None,
+              retries: int | None = None, **params: object) -> None:
         path = f"/v1/streams/{_quote(stream)}:start"
         code, _, body = self._rest.request("PUT", path, params=params or None,
                                            timeout=timeout, retries=retries)
         if code != 200:
             raise Failure(f"{path} returned HTTP {code}: {body[:160]!r}")
 
-    def stop(self, stream: str, timeout: Optional[float] = None,
-             retries: Optional[int] = None) -> None:
+    def stop(self, stream: str, timeout: float | None = None,
+             retries: int | None = None) -> None:
         path = f"/v1/streams/{_quote(stream)}:stop"
         code, _, body = self._rest.request("PUT", path, timeout=timeout,
                                            retries=retries)
@@ -893,7 +914,7 @@ class UltimateApi:
     itself rather than about what the device did.
     """
 
-    def __init__(self, host, password: Optional[str] = None,
+    def __init__(self, host, password: str | None = None,
                  timeout: float = DEFAULT_TIMEOUT) -> None:
         # `host` is a target token or a resolved handle; see tests/lib/targets.py.
         self.rest = RestClient(host, password, timeout)
@@ -944,7 +965,7 @@ class UltimateApi:
             return False
 
     def unreachable_reason(self, budget: float = 10.0,
-                           poll: float = 1.0) -> Optional[str]:
+                           poll: float = 1.0) -> str | None:
         """None when the device answers within `budget`, else why it did not.
 
         `reachable()` answers yes or no, which is all a gate needs. A suite
@@ -992,7 +1013,7 @@ def _quote_path(value: str) -> str:
     return urllib.parse.quote(value.lstrip("/"), safe="/")
 
 
-def _in_range(name: str, value: int, bounds: Tuple[int, int]) -> None:
+def _in_range(name: str, value: int, bounds: tuple[int, int]) -> None:
     low, high = bounds
     if not low <= value <= high:
         raise Failure(f"{name} {value} is outside {low}..{high}")
@@ -1028,8 +1049,8 @@ class CartridgePreferenceUnavailable(Failure):
     """
 
 
-def ensure_cartridge_preference(target, password: Optional[str] = None,
-                                timeout: float = DEFAULT_TIMEOUT) -> Optional[str]:
+def ensure_cartridge_preference(target, password: str | None = None,
+                                timeout: float = DEFAULT_TIMEOUT) -> str | None:
     """Make the computer of a cartridge target prefer the cartridge in its port.
 
     Answers what it did, for a caller that reports it:
@@ -1072,3 +1093,165 @@ def ensure_cartridge_preference(target, password: Optional[str] = None,
             f"cartridge in its port will not own the bus")
     return (f"{handle.computer}: {CARTRIDGE_PREFERENCE_ITEM} "
             f"{current!r} -> {CARTRIDGE_PREFERENCE_EXTERNAL!r}")
+
+
+# "External" sets internal=0 in C64::ConfigureU64SystemBus, bit 0x08 of which
+# is the IRQ, so the firmware's own NMI never reaches the 6510: the monitor's
+# Go did nothing 4/4 with External and handed over 2/2 with Auto (C64U 1.2RC).
+CARTRIDGE_PREFERENCE_AUTO = "Auto"
+
+
+def ensure_own_cartridge_resources(target, password: str | None = None,
+                                   timeout: float = DEFAULT_TIMEOUT) -> str | None:
+    """Give a machine testing itself its own bus resources back.
+
+    Answers what it changed, or None for a cartridge target, a machine with no
+    cartridge port to prefer, or one that already keeps its own resources.
+    Raises `CartridgePreferenceUnavailable` when a machine that has the store
+    cannot be asked, and `Failure` when it will not take the value. Not saved
+    to flash.
+    """
+    handle = targets.resolve(target)
+    if handle.split:
+        return None
+    device = UltimateApi(handle.device, password, timeout)
+    try:
+        current = device.configs.current(CARTRIDGE_STORE, CARTRIDGE_PREFERENCE_ITEM)
+    except Failure as exc:
+        if CARTRIDGE_STORE not in device.configs.category_names():
+            return None
+        reason = re.sub(r"https?://\S+", "its config API", str(exc))
+        raise CartridgePreferenceUnavailable(
+            f"{handle.device} did not answer for "
+            f"'{CARTRIDGE_PREFERENCE_ITEM}': {reason}") from exc
+    if current != CARTRIDGE_PREFERENCE_EXTERNAL:
+        return None
+    device.configs.set(CARTRIDGE_STORE, CARTRIDGE_PREFERENCE_ITEM,
+                       CARTRIDGE_PREFERENCE_AUTO)
+    now = device.configs.current(CARTRIDGE_STORE, CARTRIDGE_PREFERENCE_ITEM)
+    if now != CARTRIDGE_PREFERENCE_AUTO:
+        raise Failure(
+            f"{handle.device} kept '{CARTRIDGE_PREFERENCE_ITEM}' at {now!r} "
+            f"after it was set to {CARTRIDGE_PREFERENCE_AUTO!r}; its own "
+            f"interrupts stay routed to the cartridge port")
+    return (f"{handle.device}: {CARTRIDGE_PREFERENCE_ITEM} "
+            f"{current!r} -> {CARTRIDGE_PREFERENCE_AUTO!r}")
+
+
+# The computer of a cartridge target has drives of its own, and they answer on
+# the same IEC bus and the same bus IDs as the cartridge's. Measured on an
+# Ultimate II+L in a C64 Ultimate with both machines' Drive A enabled on bus 8:
+# every action that goes through the bus failed - Run, Load, Mount & Run, Real
+# Run, and the printer suite's PRG, which timed out waiting for output - while
+# every action that goes through DMA passed. Two devices answering as drive 8
+# is not a defect in either of them.
+DRIVE_STORES = ("Drive A Settings", "Drive B Settings")
+DRIVE_ENABLE_ITEM = "Drive"
+DRIVE_DISABLED = "Disabled"
+# A suite that needs the emulated 1541 to answer sets this for itself: the
+# value ensure_host_drives_off leaves behind belongs to a different target's
+# run, and can reach flash through ConfigBrowser::on_exit while the restore at
+# the end of a run cannot.
+DRIVE_ENABLED = "Enabled"
+
+
+def identify_machine(target, password: str | None = None,
+                     timeout: float = DEFAULT_TIMEOUT) -> machine.Machine:
+    """Which machine `target` is, from one /v1/info answer.
+
+    machine.identify caches per host, so repeated calls cost one request.
+    """
+    host = targets.device_of(target)
+
+    def fetch() -> tuple[str, str]:
+        info = UltimateApi(host, password, timeout).info()
+        return (info.product, info.firmware_version)
+
+    return machine.identify(host, fetch)
+
+
+# Every machine in this tree carries "Fast Reset" in the C64 store: the item is
+# outside the `#if U64` guard in software/io/c64/c64.cc. It defaults to
+# Disabled, which makes each reset run the KERNAL's full RAM test. A run resets
+# the machine before most suites, so that test is paid for over and over.
+FAST_RESET_ITEM = "Fast Reset"
+FAST_RESET_ENABLED = "Enabled"
+
+
+def ensure_fast_reset(target, password: str | None = None,
+                      timeout: float = DEFAULT_TIMEOUT) -> str | None:
+    """Make every machine this target occupies skip the RAM test on reset.
+
+    Answers what it changed, or None when there was nothing to change. A
+    machine that does not serve the item is passed over rather than reported,
+    for the same reason a computer without drives has nothing to silence.
+
+    Both halves of a cartridge target are set, because either half can reset
+    the C64 and the setting belongs to whichever one does.
+
+    The caller captures the settings before calling this, so what the run found
+    is what it puts back, and that capture is the only thing this relies on.
+
+    Do not read "a REST write does not reach flash" into that. The write marks
+    the store flash-stale, and `ConfigBrowser::on_exit` in
+    software/userinterface/config_menu.cc writes every stale store to flash
+    when the config browser is left, unless 'Auto Save Config' is No. Several
+    suites in a run open and leave that browser, and the C64 Ultimate on this
+    bench has the setting on Yes, so a value this helper changes can be in
+    flash by the time the run ends. A run killed between here and the restore
+    can therefore leave the machine with Fast Reset enabled for good.
+    """
+    handle = targets.resolve(target)
+    changed = []
+    for host in handle.resources:
+        machine = UltimateApi(host, password, timeout)
+        try:
+            current = machine.configs.current(CARTRIDGE_STORE, FAST_RESET_ITEM)
+        except Failure:
+            continue
+        if current == FAST_RESET_ENABLED:
+            continue
+        machine.configs.set(CARTRIDGE_STORE, FAST_RESET_ITEM, FAST_RESET_ENABLED)
+        now = machine.configs.current(CARTRIDGE_STORE, FAST_RESET_ITEM)
+        if now != FAST_RESET_ENABLED:
+            raise Failure(
+                f"{host} kept {CARTRIDGE_STORE}/{FAST_RESET_ITEM} at {now!r} "
+                f"after it was set to {FAST_RESET_ENABLED!r}")
+        changed.append(f"{host}: {current!r} -> {FAST_RESET_ENABLED!r}")
+    return ", ".join(changed) if changed else None
+
+
+def ensure_host_drives_off(target, password: str | None = None,
+                           timeout: float = DEFAULT_TIMEOUT) -> str | None:
+    """Silence the computer's own drives, so the cartridge owns the IEC bus.
+
+    Answers what it did, or None when there was nothing to do: the target is
+    its own computer, or the computer's drives are already off.
+
+    Like the cartridge preference, the change is not saved to flash. A store
+    the computer does not serve is passed over rather than reported, because a
+    computer without drives is a computer with nothing to silence.
+    """
+    handle = targets.resolve(target)
+    if not handle.split:
+        return None
+    computer = UltimateApi(handle.computer, password, timeout)
+    silenced = []
+    for store in DRIVE_STORES:
+        try:
+            current = computer.configs.current(store, DRIVE_ENABLE_ITEM)
+        except Failure:
+            continue
+        if current == DRIVE_DISABLED:
+            continue
+        computer.configs.set(store, DRIVE_ENABLE_ITEM, DRIVE_DISABLED)
+        now = computer.configs.current(store, DRIVE_ENABLE_ITEM)
+        if now != DRIVE_DISABLED:
+            raise Failure(
+                f"{handle.computer} kept {store}/{DRIVE_ENABLE_ITEM} at "
+                f"{now!r} after it was set to {DRIVE_DISABLED!r}; it will "
+                f"answer on the IEC bus alongside the cartridge")
+        silenced.append(store)
+    if not silenced:
+        return None
+    return f"{handle.computer}: {', '.join(silenced)} -> {DRIVE_DISABLED!r}"

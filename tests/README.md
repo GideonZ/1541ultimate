@@ -123,6 +123,7 @@ pip install -r tests/requirements.txt
 | `pyftpdlib` | `e2e/filesystem/ftp_client_test.py` |
 | `selenium` | `e2e/web/theme_test.py`, `e2e/web/index_test.py`. Also needs an installed Chrome or Firefox with its WebDriver on PATH, and a route to the CDN `html/index.html` loads jQuery from; whatever is missing is reported as a skip |
 | `pytesseract` | `e2e/io/printer/printer_test.py`, only under `--stage verify` |
+| `ruff` | `tests/lib/lint_test.py`, and `make lint_test`, which lint this tree against `tests/ruff.toml`. Pinned in `tests/requirements-lint.txt`, which this file includes, because the suite is a gate |
 | `ffmpeg`, `ffprobe` | `./run-tests --record` only. Not Python packages. The lossless default needs the `libx264rgb` encoder, which keeps the frames pixel exact; a build without it is refused at startup rather than after half an hour of capture. |
 | `pandoc`, `weasyprint` | Optional, never installed in CI: one command turns `index.md` into a PDF. |
 

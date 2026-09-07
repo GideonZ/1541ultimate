@@ -52,6 +52,7 @@ class U64Config : public ConfigurableObject, ObjectWithMenu, SubSystem
     SemaphoreHandle_t hpd_monitor_sem;
     static uint8_t hpd_monitor_irq(void *a);
     static void hpd_monitor_task(void *a);
+    static uint8_t unlock_irq(void *a);
 
     class U64Mixer : public ConfigurableObject
     {
@@ -160,7 +161,10 @@ public:
     static void get_sid_addresses(ConfigStore *cfg, uint8_t *base, uint8_t *mask, uint8_t *split);
     static void fix_splits(uint8_t *base, uint8_t *mask, uint8_t *split);
     static void list_palettes(ConfigItem *it, IndexedList<char *>& strings);
+    static void get_palette_rgb(uint8_t rgb[16][3]);
     static void set_palette_rgb(const uint8_t rgb[16][3]);
+    static void set_palette_color(uint8_t index, const uint8_t rgb[3]);
+    static void reset_palette();
     static void set_palette_yuv(const uint8_t yuv[16][3]);
     static void rgb_to_yuv(const uint8_t rgb[3], uint8_t yuv[3], bool ntsc);
     static bool load_palette_vpl(const char *path, const char *filename);

@@ -20,17 +20,20 @@ import sys
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-sys.path.insert(0, str(SCRIPT_DIR))
+# The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
+import cli  # noqa: E402
+sys.path.insert(0, bootstrap.directory("e2e", "io", "printer"))
 import png_lite  # noqa: E402  (local module, needs SCRIPT_DIR on sys.path first)
 
 # tests/lib holds the shared FTP and reporting helpers.
-sys.path.insert(0, str(SCRIPT_DIR.parents[2] / "lib"))
 import ftp as ftp_lib  # noqa: E402  (needs tests/lib on sys.path first)
 from report import (  # noqa: E402  (needs tests/lib on sys.path first)
     Failure, check_fail, check_ok, check_start, section, suite_fail, suite_ok)
 
 FTP_USER_DEFAULT = ftp_lib.FTP_USER
-FTP_PASSWORD_DEFAULT = ftp_lib.FTP_DEFAULT_PASSWORD
 
 
 def download(host, user, password, path, timeout=15):
@@ -75,9 +78,14 @@ def verify_one(host, user, password, path, is_ascii):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("-H", "--host", default=os.environ.get("U64_HOST", "u64"))
+    # Only -H: this reads the printer's output over FTP with --ftp-user and
+    # --ftp-password, and takes no REST password or per-call budget.
+    parser.add_argument(
+        "-H", "--host", default=cli.host_default(),
+        help=f"Device, or a cartridge@computer target "
+             f"(default: ${cli.DEFAULT_HOST_ENV}, else {cli.FALLBACK_HOST})")
     parser.add_argument("--ftp-user", default=FTP_USER_DEFAULT)
-    parser.add_argument("--ftp-password", default=FTP_PASSWORD_DEFAULT)
+    parser.add_argument("--ftp-password", default=ftp_lib.FTP_DEFAULT_PASSWORD)
     parser.add_argument("--output-base", help="Printer output file base, e.g. /Usb0/printer/e2e-abc")
     parser.add_argument("--pages", type=int, default=1, help="Expected page count for --output-base")
     parser.add_argument("--ascii", action="store_true", help="Treat --output-base as ASCII (<base>.txt)")

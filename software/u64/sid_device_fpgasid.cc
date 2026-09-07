@@ -91,7 +91,7 @@ SidDeviceFpgaSid::SidDeviceFpgaSid(int socket, volatile uint8_t *base) : SidDevi
     }
     fpga_rev = base[3];
     config = new SidDeviceFpgaSid :: FpgaSidConfig(this);
-    config->effectuate_settings();
+    config->effectuate_registered_settings();
 }
 
 void SidDeviceFpgaSid :: SetSidType(int type)

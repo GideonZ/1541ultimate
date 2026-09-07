@@ -536,6 +536,11 @@ def load_target(directory: str, slug: str) -> TargetRun:
             target.health.append(record)
         elif kind == "warning":
             target.warnings.append(record)
+        elif kind == "teardown":
+            # A teardown step that could not put something back. It reads as a
+            # warning about the target, which is what it is: the suite's own
+            # verdict stands, and the next suite inherits whatever was left.
+            target.warnings.append(record)
         elif kind == "gap":
             target.gaps.append(record)
         elif kind == "action":

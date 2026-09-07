@@ -20,9 +20,9 @@ public:
 	RtcConfigStore(const char *name, t_cfg_definition *defs) : ConfigStore(NULL, name, defs, NULL) { }
 	~RtcConfigStore() {  }
 
-	void read(void) { }
-	void write(void) { }
-    void effectuate(void) { }
+	void read(bool ignore) override { }
+	void write(void) override { }
+    void effectuate(void) override { set_effectuated(); }
 	void at_open_config(void);
 	void at_close_config(void);
 

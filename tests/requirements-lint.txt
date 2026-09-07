@@ -1,0 +1,9 @@
+# The linter tests/lib/lint_test.py runs over tests/ and run-tests, with the
+# rules in tests/ruff.toml.
+#
+#   python3 -m pip install -r tests/requirements-lint.txt
+#
+# Pinned because this is a gate: a ruff release that adds a rule to one of the
+# selected families should turn the build red when somebody moves the pin, not
+# on an unrelated morning. Nothing else in the build needs this.
+ruff==0.16.5

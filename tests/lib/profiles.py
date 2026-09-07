@@ -45,7 +45,7 @@ which reports the check as SKIP naming the profile it needs, in the same shape
 from __future__ import annotations
 
 import os
-from typing import Optional, Sequence, Tuple
+from collections.abc import Sequence
 
 from report import check_skip, check_start
 
@@ -56,7 +56,7 @@ DEEP = "deep"
 EXHAUSTIVE = "exhaustive"
 
 # In order, shallowest first. Membership is cumulative along this list.
-ORDER: Tuple[str, ...] = (SMOKE, QUICK, STANDARD, DEEP, EXHAUSTIVE)
+ORDER: tuple[str, ...] = (SMOKE, QUICK, STANDARD, DEEP, EXHAUSTIVE)
 
 # What a bare `run-tests` does. Deliberately not the deepest: the default is
 # the one a person runs before pushing, and a default that takes twenty minutes
@@ -113,7 +113,7 @@ def rank(name: str) -> int:
     return ORDER.index(parse(name))
 
 
-def includes(needed: str, selected: Optional[str] = None) -> bool:
+def includes(needed: str, selected: str | None = None) -> bool:
     """Whether `selected` is deep enough to run something tagged `needed`."""
     return rank(selected or current()) >= rank(needed)
 
@@ -127,7 +127,7 @@ def includes_manual(name: str) -> bool:
     return parse(name) in INCLUDES_MANUAL
 
 
-def missing(needed: str, selected: Optional[str] = None) -> str:
+def missing(needed: str, selected: str | None = None) -> str:
     """Why this profile does not run something tagged `needed`, or ""."""
     if includes(needed, selected):
         return ""
@@ -135,7 +135,7 @@ def missing(needed: str, selected: Optional[str] = None) -> str:
             f"{selected or current()}")
 
 
-def skip_below(needed: str, label: str, selected: Optional[str] = None) -> bool:
+def skip_below(needed: str, label: str, selected: str | None = None) -> bool:
     """Report `label` as skipped, and answer True, when the profile is shallower.
 
     The one line a tagged check needs, and the caller returns on True:

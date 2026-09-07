@@ -27,8 +27,12 @@ What it serves:
 
     REST      version, info, machine:menu_screen, machine:readmem,
               machine:heap, machine:input, machine:reset and the other machine
-              actions, the drives listing, a few configuration items, and
-              streams:start and streams:stop
+              actions, the drives listing, the PRG/CRT/SID runners, both forms
+              of drives:mount, a few configuration items, and streams:start
+              and streams:stop
+    Pages     what the device serves from html/, when a test hands the double
+              that directory. A browser proxied at the double then reaches the
+              real page and the real API on one address.
     FTP       the 220 banner the health sweep reads, and nothing else
     Telnet    an accepted connection, which is all the health sweep asks for
     DMA       the IDENTIFY exchange on the control port
@@ -43,13 +47,13 @@ from __future__ import annotations
 import http.server
 import json
 import os
+import pathlib
 import socket
 import socketserver
 import struct
 import threading
 import urllib.parse
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
 
 import targets
 
@@ -67,6 +71,11 @@ SCREEN_BYTES = SCREEN_CELLS * 2
 # answered by a length-prefixed title.
 DMA_CMD_IDENTIFY = 0xFF0E
 IDENTIFY_TITLE = b"ULTIMATE-DOUBLE"
+
+# What the device's own web server labels the files in html/ as.
+PAGE_TYPES = {".html": "text/html", ".css": "text/css",
+              ".js": "application/javascript", ".json": "application/json",
+              ".woff": "font/woff", ".svg": "image/svg+xml"}
 
 DEFAULT_PRODUCT = "Ultimate 64"
 DEFAULT_FIRMWARE = "3.15"
@@ -102,10 +111,13 @@ class Request:
 
     method: str
     path: str
-    params: Dict[str, str] = field(default_factory=dict)
+    params: dict[str, str] = field(default_factory=dict)
+    # What was uploaded, for a test asserting that a file reached the device
+    # rather than only that a request did.
+    body: bytes = b""
 
     @property
-    def key(self) -> Tuple[str, str]:
+    def key(self) -> tuple[str, str]:
         return (self.method, self.path)
 
 
@@ -118,7 +130,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         return
 
     @property
-    def double(self) -> "DeviceDouble":
+    def double(self) -> DeviceDouble:
         return self.server.double  # type: ignore[attr-defined]
 
     def do_GET(self) -> None:
@@ -134,10 +146,9 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         parsed = urllib.parse.urlparse(self.path)
         params = {k: v[0] for k, v in urllib.parse.parse_qs(parsed.query).items()}
         length = int(self.headers.get("Content-Length") or 0)
-        if length:
-            self.rfile.read(length)
+        body = self.rfile.read(length) if length else b""
         double = self.double
-        double.record(Request(method, parsed.path, params))
+        double.record(Request(method, parsed.path, params, body))
 
         faults = double.faults
         if faults.offline or (double.offline_flag
@@ -145,6 +156,11 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             # No status line at all: the client sees the connection close,
             # which is what a device that has stopped answering produces.
             self.close_connection = True
+            return
+        if not parsed.path.startswith("/v1/"):
+            # The pages the device serves, and it serves them without a
+            # password: the page is where the password is entered.
+            self._send_page(parsed.path)
             return
         if double.password and \
                 self.headers.get("X-Password") != double.password:
@@ -157,6 +173,17 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             return
         status, body, content_type = handler(params)
         self._send(status, body, content_type)
+
+    def _send_page(self, path: str) -> None:
+        """A file from `html/`, when the double was given that directory."""
+        root = self.double.pages
+        target = (root / ("index.html" if path == "/" else path.lstrip("/"))).resolve() \
+            if root else None
+        if target is None or root.resolve() not in target.parents or not target.is_file():
+            self._send(404, b"not found", "text/plain")
+            return
+        self._send(200, target.read_bytes(),
+                   PAGE_TYPES.get(target.suffix, "application/octet-stream"))
 
     def _send(self, status: int, body: bytes, content_type: str) -> None:
         self.send_response(status)
@@ -175,16 +202,19 @@ class _Server(socketserver.ThreadingMixIn, http.server.HTTPServer):
 class DeviceDouble:
     """A fake device on loopback. Start it, point a handle at it, stop it."""
 
-    def __init__(self, password: str = "") -> None:
+    def __init__(self, password: str = "", pages: str = "") -> None:
         self.password = password
+        # The device's own html/ directory, when a test needs the pages served
+        # as well as the API. Left unset, every non-/v1/ path answers 404.
+        self.pages = pathlib.Path(pages) if pages else None
         self.faults = Faults()
-        self.requests: List[Request] = []
+        self.requests: list[Request] = []
         self.product = DEFAULT_PRODUCT
         self.firmware_version = DEFAULT_FIRMWARE
         self.fpga_version = DEFAULT_FPGA
         # What machine:menu_screen answers with while a menu is open. 25 rows
         # of text, rendered into the character plane on demand.
-        self.menu_rows: List[str] = ["Ultimate 64 menu".ljust(SCREEN_COLS)] + \
+        self.menu_rows: list[str] = ["Ultimate 64 menu".ljust(SCREEN_COLS)] + \
             [f"row {n:02d}".ljust(SCREEN_COLS) for n in range(1, SCREEN_ROWS)]
         # When set, a menu counts as open for exactly as long as this path
         # exists. A file rather than a flag for the same reason
@@ -197,9 +227,9 @@ class DeviceDouble:
         self.mounted_image = ""
         # What the double was asked to stream, and where to. A caller that has
         # to leave the streams as it found them is tested against these.
-        self.streams_started: List[str] = []
-        self.streams_stopped: List[str] = []
-        self.stream_address: Dict[str, str] = {}
+        self.streams_started: list[str] = []
+        self.streams_stopped: list[str] = []
+        self.stream_address: dict[str, str] = {}
         # When set, a keystroke moves which row carries the reverse-video bit
         # rather than changing any text, which is what moving a cursor through
         # a listing looks like on the wire.
@@ -209,7 +239,7 @@ class DeviceDouble:
         # whole tree: a fake of several hundred items would be a second
         # implementation of the device's configuration rather than a stand-in
         # for the few things anything here asks about.
-        self.configs: Dict[str, Dict[str, str]] = {
+        self.configs: dict[str, dict[str, str]] = {
             # The value tests/e2e/lib/ui_backend.py asks for under --mode
             # overlay, so a session starts without switching the setting.
             "User Interface Settings": {"Interface Type": "Overlay on HDMI"},
@@ -237,7 +267,7 @@ class DeviceDouble:
             target=self._http.serve_forever, kwargs={"poll_interval": 0.005},
             name="double-http", daemon=True)
         self._http_thread.start()
-        self._ftp = _BannerListener(b"220 Ultimate FTP\r\n")
+        self._ftp = _FtpListener()
         self._telnet = _BannerListener(b"")
         self._dma = _DmaListener()
 
@@ -277,7 +307,7 @@ class DeviceDouble:
         """
         self._ftp.refuse_flag = path
 
-    def environment(self) -> Dict[str, str]:
+    def environment(self) -> dict[str, str]:
         """The variables that point a child process's targets at this double."""
         return {targets.REST_PORT_ENV: str(self.rest_port),
                 targets.FTP_PORT_ENV: str(self._ftp.port),
@@ -290,7 +320,7 @@ class DeviceDouble:
         with self._lock:
             self.requests.append(request)
 
-    def calls(self, method: str = "", path: str = "") -> List[Request]:
+    def calls(self, method: str = "", path: str = "") -> list[Request]:
         """Every recorded request, optionally narrowed to one method or path."""
         with self._lock:
             found = list(self.requests)
@@ -315,6 +345,9 @@ class DeviceDouble:
             ("POST", "/v1/machine:input"): self._input,
             ("PUT", "/v1/machine:writemem"): self._ok_json,
             ("POST", "/v1/machine:writemem"): self._ok_json,
+            ("POST", "/v1/runners:run_prg"): self._ok_json,
+            ("POST", "/v1/runners:run_crt"): self._ok_json,
+            ("POST", "/v1/runners:sidplay"): self._ok_json,
         }
         found = table.get((method, path))
         if found is not None:
@@ -325,7 +358,9 @@ class DeviceDouble:
             return lambda params, path=path: self._config(path)
         if method == "PUT" and path.startswith("/v1/streams/"):
             return lambda params, path=path: self._stream(path, params)
-        if method == "PUT" and path.startswith("/v1/drives/"):
+        if method in ("PUT", "POST") and path.startswith("/v1/drives/"):
+            # POST is the upload-and-mount form, which carries the image in the
+            # body rather than naming one already on the device.
             return lambda params, path=path: self._drive_action(path, params)
         if method == "PUT" and path.startswith("/v1/configs"):
             return lambda params, path=path: self._set_config(path, params)
@@ -429,7 +464,7 @@ class DeviceDouble:
         return 200, self._json({}), "application/json"
 
     def _drive_action(self, path, params):
-        slot, _, action = path[len("/v1/drives/"):].partition(":")
+        _slot, _, action = path[len("/v1/drives/"):].partition(":")
         with self._lock:
             if action == "mount":
                 self.mounted_image = str(params.get("image", ""))
@@ -488,7 +523,7 @@ class DeviceDouble:
         return 200, self._json({}), "application/json"
 
     @staticmethod
-    def _json(payload: Dict[str, object]) -> bytes:
+    def _json(payload: dict[str, object]) -> bytes:
         payload = dict(payload)
         payload.setdefault("errors", [])
         return json.dumps(payload).encode("utf-8")
@@ -502,7 +537,7 @@ class DeviceDouble:
         self._telnet.close()
         self._dma.close()
 
-    def __enter__(self) -> "DeviceDouble":
+    def __enter__(self) -> DeviceDouble:
         return self
 
     def __exit__(self, *_exc) -> None:
@@ -533,7 +568,7 @@ class _BannerListener:
         while self.running:
             try:
                 connection, _ = self.socket.accept()
-            except socket.timeout:
+            except TimeoutError:
                 continue
             except OSError:
                 return
@@ -555,6 +590,85 @@ class _BannerListener:
             pass
 
 
+class _FtpListener(_BannerListener):
+    """Enough FTP for the health check: greet, log in, and list over PASV.
+
+    The sweep no longer proves FTP by its banner alone, because a device out of
+    data connections still sends one. It asks for a listing, so the double has
+    to be able to give it one or every sweep against the double fails.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(b"220 Ultimate FTP\r\n")
+
+    def _serve(self) -> None:
+        while self.running:
+            try:
+                connection, _ = self.socket.accept()
+            except TimeoutError:
+                continue
+            except OSError:
+                return
+            refusing = self.refuse or (self.refuse_flag
+                                       and os.path.exists(self.refuse_flag))
+            if refusing:
+                connection.close()
+                continue
+            threading.Thread(target=self._session, args=(connection,),
+                             daemon=True).start()
+
+    def _session(self, connection: socket.socket) -> None:
+        data_socket = None
+        try:
+            connection.settimeout(2.0)
+            connection.sendall(self.banner)
+            while True:
+                line = connection.recv(512)
+                if not line:
+                    return
+                command = line.decode("ascii", "replace").strip().upper()
+                if command.startswith("USER"):
+                    connection.sendall(b"331 Password required\r\n")
+                elif command.startswith("PASS"):
+                    connection.sendall(b"230 Logged in\r\n")
+                elif command.startswith("TYPE"):
+                    connection.sendall(b"200 Type set\r\n")
+                elif command.startswith("PASV"):
+                    data_socket = socket.socket()
+                    data_socket.bind((LOOPBACK, 0))
+                    data_socket.listen(1)
+                    data_socket.settimeout(2.0)
+                    port = data_socket.getsockname()[1]
+                    connection.sendall(
+                        ("227 Entering Passive Mode (127,0,0,1,%d,%d)\r\n"
+                         % (port >> 8, port & 0xFF)).encode("ascii"))
+                elif command.startswith(("NLST", "LIST")):
+                    if data_socket is None:
+                        connection.sendall(b"425 Use PASV first\r\n")
+                        continue
+                    connection.sendall(b"150 Opening data connection\r\n")
+                    try:
+                        transfer, _ = data_socket.accept()
+                        transfer.sendall(b"Temp\r\n")
+                        transfer.close()
+                    except (TimeoutError, OSError):
+                        pass
+                    data_socket.close()
+                    data_socket = None
+                    connection.sendall(b"226 Transfer complete\r\n")
+                elif command.startswith("QUIT"):
+                    connection.sendall(b"221 Goodbye\r\n")
+                    return
+                else:
+                    connection.sendall(b"200 Ok\r\n")
+        except (TimeoutError, OSError):
+            return
+        finally:
+            if data_socket is not None:
+                data_socket.close()
+            connection.close()
+
+
 class _DmaListener(_BannerListener):
     """The control port: read a command word, answer a length-prefixed title."""
 
@@ -565,7 +679,7 @@ class _DmaListener(_BannerListener):
         while self.running:
             try:
                 connection, _ = self.socket.accept()
-            except socket.timeout:
+            except TimeoutError:
                 continue
             except OSError:
                 return
@@ -616,7 +730,7 @@ def pack_pixels(pixels: bytes) -> bytes:
 
 
 def video_packets(frame: int, first_sequence: int = 0, height: int = PAL_LINES,
-                  pattern: int = 0, pixels: Optional[bytes] = None) -> List[bytes]:
+                  pattern: int = 0, pixels: bytes | None = None) -> list[bytes]:
     """One frame's datagrams, in order.
 
     `pattern` fills every nibble, so a test can tell one frame's pixels from
@@ -641,7 +755,7 @@ def video_packets(frame: int, first_sequence: int = 0, height: int = PAL_LINES,
 
 
 def audio_packets(first_sequence: int = 0, count: int = 1,
-                  sample: int = 1000) -> List[bytes]:
+                  sample: int = 1000) -> list[bytes]:
     """`count` audio datagrams carrying one repeated sample value."""
     body = struct.pack("<h", sample) * (AUDIO_SAMPLE_BYTES // 2)
     return [struct.pack("<H", (first_sequence + n) & 0xFFFF) + body
@@ -663,7 +777,7 @@ class UdpSender:
         self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.socket.bind((source, 0))
 
-    def send(self, packets: List[bytes]) -> int:
+    def send(self, packets: list[bytes]) -> int:
         for packet in packets:
             self.socket.sendto(packet, (self.host, self.port))
         return len(packets)
@@ -674,14 +788,14 @@ class UdpSender:
         except OSError:
             pass
 
-    def __enter__(self) -> "UdpSender":
+    def __enter__(self) -> UdpSender:
         return self
 
     def __exit__(self, *_exc) -> None:
         self.close()
 
 
-def syslog_lines(sender: UdpSender, lines: List[str]) -> int:
+def syslog_lines(sender: UdpSender, lines: list[str]) -> int:
     """One datagram per line, which is what Syslog::forwardLogging sends.
 
     No priority prefix, no version, no timestamp, no hostname and no trailing

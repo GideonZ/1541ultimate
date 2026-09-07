@@ -22,7 +22,6 @@ registers at $DF20 upwards.
 """
 
 import time
-from typing import Dict, List, Optional, Tuple
 
 from report import Failure, detail
 
@@ -119,7 +118,7 @@ class Reply:
 class Transaction:
     """Every observable of one command: its reply blocks and the final state."""
 
-    def __init__(self, command: bytes, blocks: List[Reply], final_status: int,
+    def __init__(self, command: bytes, blocks: list[Reply], final_status: int,
                  elapsed: float) -> None:
         self.command = command
         self.blocks = blocks
@@ -226,8 +225,11 @@ class Uci:
                 raise Wedged(
                     f"command {command.hex(' ') or '<empty>'} never left Command Busy after "
                     f"{self.busy_timeout:.0f}s: {describe_status(status)}. The command "
-                    f"interface is now wedged for every target (issue #740) and only a "
-                    f"firmware restart or power cycle releases it."
+                    f"interface is now wedged for every target (issue #740). "
+                    f"Measured on u2@c64u, 2026-09-04: machine:reset, machine:reboot "
+                    f"and injected keys do not release it, a power cycle always does, "
+                    f"and it came back once after a runners:run_prg on the same "
+                    f"machine. Try run_prg first, it is much cheaper."
                 )
             time.sleep(BUSY_POLL_SECONDS)
 
@@ -268,11 +270,11 @@ class Uci:
                 raise Failure(f"response queue did not drain within {DRAIN_LIMIT_BYTES} "
                               f"bytes: {bytes(out)[:80]!r}")
 
-    def drain(self) -> Tuple[bytes, bytes]:
+    def drain(self) -> tuple[bytes, bytes]:
         return (self._drain_response(),
                 self._drain(ST_STAT_AV, REG_STATUS, "status"))
 
-    def probe_drain(self, command: bytes, cap: int) -> Tuple[int, bool, bytes]:
+    def probe_drain(self, command: bytes, cap: int) -> tuple[int, bool, bytes]:
         """Push one command and pull bytes until DATA_AV clears or `cap` is hit.
 
         Returns how many bytes the queue handed out, whether DATA_AV cleared,
@@ -301,7 +303,7 @@ class Uci:
         self.release()
         return len(out), cleared, bytes(out[-6:])
 
-    def probe_abort(self, command: bytes) -> Tuple[int, bool]:
+    def probe_abort(self, command: bytes) -> tuple[int, bool]:
         """Push one command, take its first reply block, then abandon it.
 
         Returns how many bytes that first block carried and whether the
@@ -350,7 +352,7 @@ class Uci:
                 f"this reply is sent in one part, so the state has to be Data Last"
             )
 
-        blocks: List[Reply] = []
+        blocks: list[Reply] = []
         while True:
             data = self._drain_response()
             overrun = bytes(self.peek(REG_RESPONSE) for _ in range(overrun_reads)) if not blocks else b""

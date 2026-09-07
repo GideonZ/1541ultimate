@@ -41,21 +41,24 @@
 
 #include "FreeRTOS.h"
 #include "task.h"
+#include "config.h"
 //#include "semphr.h"
 #include "indexed_list.h"
 #include "vfs.h"
 
 #define ERR_OK 0
 
-class FTPDaemon
+class FTPDaemon : public ConfigurableObject
 {
 	static void ftp_listen_task(void *a);
+	volatile bool enabled;
 public:
 	TaskHandle_t listenTaskHandle;
 
 	FTPDaemon();
 	~FTPDaemon() { }
 
+	void effectuate_settings(void);
 	int listen_task(void);
 };
 

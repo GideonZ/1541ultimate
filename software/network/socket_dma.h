@@ -11,10 +11,11 @@
 #include "menu.h"
 #include "filemanager.h"
 #include "subsys.h"
+#include "config.h"
 
 #define SOCKET_BUFFER_SIZE 200000
 
-class SocketDMA {
+class SocketDMA : public ConfigurableObject {
 	static void dmaThread(void *a);
 	static void identThread(void *a);
 	static bool performCommand(int socket, void *load_buffer, int length, uint16_t cmd, uint32_t len, struct in_addr *client_ip, bool &authenticated);
@@ -22,9 +23,12 @@ class SocketDMA {
 	static int  writeSocket(int socket, void *buffer, int length);
 
 	uint8_t *load_buffer;
+	volatile bool dmaEnabled;
+	volatile bool identEnabled;
 public:
 	SocketDMA();
 	virtual ~SocketDMA();
+	void effectuate_settings(void);
 
 };
 

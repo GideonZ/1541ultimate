@@ -21,6 +21,8 @@ class SidDeviceFpgaSid: public SidDevice {
         static void S_effectuate(volatile uint8_t *base, ConfigStore *store);
         static bool dukestahAdapterPresent;
     public:
+        using ConfigurableObject::effectuate_registered_settings;
+
         static void setDukestahAdapterPresent() {dukestahAdapterPresent = true;}
 
         FpgaSidConfig(SidDeviceFpgaSid *parent);
@@ -54,7 +56,7 @@ class SidDeviceFpgaSid: public SidDevice {
     FpgaSidConfig *config;
 public:
     SidDeviceFpgaSid(int socket, volatile uint8_t *base);
-    void effectuate_settings() { config->effectuate_settings(); }
+    void effectuate_settings() { config->effectuate_registered_settings(); }
     void setDukestahAdapterPresent() { config->setDukestahAdapterPresent(); }
     virtual ~SidDeviceFpgaSid();
 

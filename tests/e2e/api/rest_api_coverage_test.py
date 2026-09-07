@@ -45,7 +45,6 @@
 # tests/lib/machine.py knows some releases lack.
 
 import argparse
-import os
 import posixpath
 import re
 import socket
@@ -55,20 +54,19 @@ import time
 import urllib.error
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Set, Tuple
+from collections.abc import Callable
 
-# tests/lib holds the reporting rules, the typed API and the one REST client;
-# tests/e2e/lib holds the settings fixtures the cfg-* suites share.
-sys.path.insert(0, os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
-sys.path.insert(0, os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", "lib"))
+# The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
+import cli  # noqa: E402
 import ftp as ftp_lib  # noqa: E402  (needs tests/lib on sys.path first)
 import machine as machine_lib  # noqa: E402  (needs tests/lib on sys.path first)
 import rest as rest_lib  # noqa: E402  (needs tests/lib on sys.path first)
 from api import UltimateApi  # noqa: E402  (needs tests/lib on sys.path first)
 from report import (  # noqa: E402  (needs tests/lib on sys.path first)
-    Failure, check_count, check_fail, check_ok, check_skip, check_start, detail,
+    Failure, teardown_step, check_count, check_fail, check_ok, check_skip, check_start, detail,
     format_exception, section, suite_fail, suite_ok, warn)
 from temp_settings import AUTO_CLEANUP_ITEM, CONFIG_CATEGORY  # noqa: E402
 
@@ -112,18 +110,18 @@ MENU_SETTLE_SECONDS = 5.0
 DEFAULT_WORKERS = 3
 DEFAULT_REPEAT = 3
 
-Key = Tuple[str, str]                       # (METHOD, operation path)
+Key = tuple[str, str]                       # (METHOD, operation path)
 
 # The only operation this suite will not call. Everything else is reachable
 # without leaving the device worse off, given the restore each case does.
-EXCLUDED: Dict[Key, str] = {
+EXCLUDED: dict[Key, str] = {
     ("PUT", "/v1/machine:poweroff"):
         "turns the device off, and no test can turn it back on",
 }
 
 # Operations whose happy path belongs to another suite, named so that "no happy
 # case here" is a decision rather than an omission.
-HAPPY_ELSEWHERE: Dict[Key, str] = {
+HAPPY_ELSEWHERE: dict[Key, str] = {
     ("PUT", "/v1/files/{path}:create_d64"): "create-disk-image",
     ("PUT", "/v1/files/{path}:create_d71"): "create-disk-image",
     ("PUT", "/v1/files/{path}:create_d81"): "create-disk-image",
@@ -137,7 +135,7 @@ HAPPY_ELSEWHERE: Dict[Key, str] = {
 
 # Operations with no happy path anywhere, and why. Printed on every run, so the
 # gaps this suite knows about stay visible instead of passing as covered.
-NEGATIVE_ONLY: Dict[Key, str] = {
+NEGATIVE_ONLY: dict[Key, str] = {
     ("PUT", "/v1/drives/{drive}:load_rom"):
         "a wrong file leaves the drive with a broken ROM until the next reboot, "
         "and the tree has no drive ROM to load a good one from",
@@ -152,7 +150,7 @@ NEGATIVE_ONLY: Dict[Key, str] = {
 
 # Maps an API_CALL handler to the operation path the contract gives it, for the
 # fallback gate. Only the routes that take path parameters need an entry.
-HANDLER_PATHS: Dict[Tuple[str, str, str], List[str]] = {
+HANDLER_PATHS: dict[tuple[str, str, str], list[str]] = {
     ("GET", "files", "info"): ["/v1/files/{path}:info"],
     ("PUT", "files", "create_d64"): ["/v1/files/{path}:create_d64"],
     ("PUT", "files", "create_d71"): ["/v1/files/{path}:create_d71"],
@@ -190,7 +188,7 @@ class Skip(Exception):
 class Case:
     """One thing to call, and what has to be true afterwards."""
 
-    def __init__(self, key: Optional[Key], name: str, kind: str,
+    def __init__(self, key: Key | None, name: str, kind: str,
                  run: Callable[["Ctx"], None], *, exclusive: bool = False) -> None:
         self.key = key                  # None for protocol cases
         self.name = name
@@ -230,18 +228,8 @@ class Ctx:
         raise Failure(f"{method} {path} was accepted, expected one of "
                       f"{sorted(allow)}")
 
-    def require_fix(self, name: str) -> None:
-        """Skip when this machine's firmware predates the behaviour asserted.
-
-        tests/lib/machine.py owns the table of outstanding gaps and the wording,
-        so a backport is one deletion there rather than an edit in every suite.
-        """
-        reason = self.suite.machine.missing_fix(name)
-        if reason:
-            raise Skip(reason)
-
     def refuse_status(self, method: str, path: str, *,
-                      params: Optional[Dict[str, object]] = None,
+                      params: dict[str, object] | None = None,
                       allow=(400, 403, 404, 412, 500, 501)) -> None:
         """Assert a refusal for a call the typed API has no method for.
 
@@ -254,8 +242,9 @@ class Ctx:
                           f"of {sorted(allow)}: {body[:160]!r}")
 
 
-def build_cases() -> List[Case]:
-    c: List[Case] = []
+def _identity_and_help_cases() -> list[Case]:
+    """The # ---- identity and help routes."""
+    c: list[Case] = []
 
     def case(key, name, kind, fn, exclusive=False):
         c.append(Case(key, name, kind, fn, exclusive=exclusive))
@@ -272,6 +261,33 @@ def build_cases() -> List[Case]:
             raise Failure(f"product or firmware missing: {info}")
     case(("GET", "/v1/info"), "names product and firmware", "happy", _info)
 
+    def _info_macs(ctx: Ctx) -> None:
+        info = ctx.api.info()
+        found = {k: v for k, v in info.extra.items()
+                 if k in ("ethernet_mac", "wifi_mac")}
+        for key, value in found.items():
+            if not re.fullmatch(r"([0-9A-F]{2}:){5}[0-9A-F]{2}", str(value)):
+                raise Failure(f"{key} is not a MAC address: {value!r}")
+        # The request that just answered arrived over one of the interfaces, so
+        # at least one of them has to know its own address.
+        if not found:
+            raise Failure(f"no interface address reported: {info}")
+    case(("GET", "/v1/info"), "reports the interface MAC addresses", "happy",
+         _info_macs)
+
+    def _info_git(ctx: Ctx) -> None:
+        info = ctx.api.info()
+        commit = info.extra.get("git_commit_hash")
+        if commit is None:
+            raise Failure(f"no git_commit_hash reported: {info}")
+        # An abbreviated hash, as `git rev-parse --short HEAD` prints it. An
+        # empty one means the firmware was built outside a git checkout, which
+        # leaves the field unable to answer what is running.
+        if not re.fullmatch(r"[0-9a-f]{7,40}", str(commit)):
+            raise Failure(f"git_commit_hash is not a commit hash: {commit!r}")
+    case(("GET", "/v1/info"), "names the commit it was built from", "happy",
+         _info_git)
+
     def _help(ctx: Ctx) -> None:
         if not ctx.api.help("version"):
             raise Failure("the help page was empty")
@@ -282,6 +298,16 @@ def build_cases() -> List[Case]:
         # accepts it.
         ctx.refuse_status("GET", "/v1/help")
     case(("GET", "/v1/help"), "refuses a missing command", "negative", _help_bad)
+
+    return c
+
+
+def _configuration_reads_cases() -> list[Case]:
+    """The # ---- configuration reads routes."""
+    c: list[Case] = []
+
+    def case(key, name, kind, fn, exclusive=False):
+        c.append(Case(key, name, kind, fn, exclusive=exclusive))
 
     # ---- configuration reads --------------------------------------------
     def _configs(ctx: Ctx) -> None:
@@ -303,10 +329,19 @@ def build_cases() -> List[Case]:
          _config_item)
 
     def _config_unknown(ctx: Ctx) -> None:
-        ctx.require_fix(machine_lib.CONFIGS_REFUSE_UNKNOWN_CATEGORY)
         ctx.refuse_status("GET", "/v1/configs/No%20Such%20Category", allow=(404,))
     case(("GET", "/v1/configs/{category}"), "refuses an unknown category",
          "negative", _config_unknown)
+
+    return c
+
+
+def _configuration_writes_cases() -> list[Case]:
+    """The # ---- configuration writes routes."""
+    c: list[Case] = []
+
+    def case(key, name, kind, fn, exclusive=False):
+        c.append(Case(key, name, kind, fn, exclusive=exclusive))
 
     # ---- configuration writes -------------------------------------------
     def _config_write(ctx: Ctx) -> None:
@@ -321,7 +356,6 @@ def build_cases() -> List[Case]:
 
     def _config_write_path(ctx: Ctx) -> None:
         # The other accepted form: the value as a third path element.
-        ctx.require_fix(machine_lib.CONFIGS_SET_VALUE_IN_PATH)
         category, item, value = ctx.suite.config_target(ctx)
         ctx.api.configs.set_by_path(category, item, value)
         after = ctx.api.configs.current(category, item)
@@ -352,11 +386,20 @@ def build_cases() -> List[Case]:
     case(("POST", "/v1/configs"), "refuses an unknown category", "negative",
          _config_apply_bad)
 
+    return c
+
+
+def _flash_backed_settings_cases() -> list[Case]:
+    """The # ---- flash-backed settings routes."""
+    c: list[Case] = []
+
+    def case(key, name, kind, fn, exclusive=False):
+        c.append(Case(key, name, kind, fn, exclusive=exclusive))
+
     # ---- flash-backed settings ------------------------------------------
     # Saving writes what is already in force, because no case changes a setting
     # without putting it back first, so the store ends where it started.
     def _flash_roundtrip(ctx: Ctx) -> None:
-        ctx.require_fix(machine_lib.CONFIGS_FLASH_ROUNDTRIP)
         category, item, _value = ctx.suite.config_target(ctx)
         before = ctx.api.configs.current(category, item)
         ctx.api.configs.save_to_flash()
@@ -371,7 +414,6 @@ def build_cases() -> List[Case]:
          "happy", _flash_roundtrip, exclusive=True)
 
     def _flash_roundtrip_category(ctx: Ctx) -> None:
-        ctx.require_fix(machine_lib.CONFIGS_FLASH_ROUNDTRIP)
         category, item, _value = ctx.suite.config_target(ctx)
         before = ctx.api.configs.current(category, item)
         ctx.api.configs.save_to_flash(category)
@@ -415,6 +457,16 @@ def build_cases() -> List[Case]:
          "resets everything, needs --allow-global-reset", "happy",
          lambda ctx: ctx.suite.global_reset(ctx), exclusive=True)
 
+    return c
+
+
+def _files_cases() -> list[Case]:
+    """The # ---- files routes."""
+    c: list[Case] = []
+
+    def case(key, name, kind, fn, exclusive=False):
+        c.append(Case(key, name, kind, fn, exclusive=exclusive))
+
     # ---- files -----------------------------------------------------------
     def _files_info(ctx: Ctx) -> None:
         if ctx.api.files.info(SCRATCH) is None:
@@ -431,15 +483,24 @@ def build_cases() -> List[Case]:
     for kind, extra in (("d64", {"tracks": 35}), ("d71", {}), ("d81", {}),
                         ("dnp", {"tracks": 1})):
         def _create(ctx: Ctx, kind=kind, extra=extra) -> None:
-            # Even the refusal reaches enforce_diskname, which is where the
-            # firmware without this fix stops answering, so the negative case
-            # takes the device down just as the happy one does.
-            ctx.require_fix(machine_lib.FILES_CREATE_IMAGE_SURVIVES)
+            # Even the refusal reaches enforce_diskname, so a leak or a bad
+            # free there shows up in the negative case as much as in the
+            # happy one.
             create = getattr(ctx.api.files, f"create_{kind}")
             ctx.refused("PUT", f"/v1/files/{{path}}:create_{kind}",
                         lambda: create(f"{MISSING}.{kind}", **extra))
         case(("PUT", f"/v1/files/{{path}}:create_{kind}"),
              "refuses an unwritable path", "negative", _create)
+
+    return c
+
+
+def _machine_reads_cases() -> list[Case]:
+    """The # ---- machine reads routes."""
+    c: list[Case] = []
+
+    def case(key, name, kind, fn, exclusive=False):
+        c.append(Case(key, name, kind, fn, exclusive=exclusive))
 
     # ---- machine reads ---------------------------------------------------
     def _readmem(ctx: Ctx) -> None:
@@ -452,14 +513,12 @@ def build_cases() -> List[Case]:
     def _readmem_bad(ctx: Ctx) -> None:
         # Raw, because the typed call range-checks the length before sending and
         # the point here is what the device does with it.
-        ctx.require_fix(machine_lib.READMEM_REJECTS_ZERO_LENGTH)
         ctx.refuse_status("GET", "/v1/machine:readmem",
                           params={"address": f"{SCRATCH_ADDRESS:04X}", "length": 0})
     case(("GET", "/v1/machine:readmem"), "refuses a zero length", "negative",
          _readmem_bad)
 
     def _heap(ctx: Ctx) -> None:
-        ctx.require_fix(machine_lib.MACHINE_HEAP_READING)
         reading = ctx.api.machine.heap()
         if reading is None:
             raise Failure("machine:heap is not on this firmware")
@@ -507,6 +566,16 @@ def build_cases() -> List[Case]:
     case(("GET", "/v1/machine:menu_screen"), "answers 404 with no menu open",
          "happy", _menu_screen)
 
+    return c
+
+
+def _machine_writes_cases() -> list[Case]:
+    """The # ---- machine writes routes."""
+    c: list[Case] = []
+
+    def case(key, name, kind, fn, exclusive=False):
+        c.append(Case(key, name, kind, fn, exclusive=exclusive))
+
     # ---- machine writes --------------------------------------------------
     def _writemem_put(ctx: Ctx) -> None:
         before = ctx.api.machine.readmem(SCRATCH_ADDRESS, 1)
@@ -547,6 +616,16 @@ def build_cases() -> List[Case]:
     case(("POST", "/v1/machine:input"), "refuses an empty event list", "negative",
          _input_post_bad)
 
+    return c
+
+
+def _machine_control_cases() -> list[Case]:
+    """The # ---- machine control routes."""
+    c: list[Case] = []
+
+    def case(key, name, kind, fn, exclusive=False):
+        c.append(Case(key, name, kind, fn, exclusive=exclusive))
+
     # ---- machine control -------------------------------------------------
     def _pause_resume(ctx: Ctx) -> None:
         # Neither has an outcome REST can see: the VIC keeps running while the
@@ -560,10 +639,6 @@ def build_cases() -> List[Case]:
          _pause_resume, exclusive=True)
 
     def _menu_button(ctx: Ctx) -> None:
-        # Opening the menu with Interface Type = Freeze stops a device whose
-        # core lacks the fix for GideonZ#733 answering anything at all, and
-        # recovery is physical. tests/lib/machine.py owns that table.
-        ctx.require_fix(machine_lib.FREEZE_MENU_OPENS)
         ctx.api.machine.menu_button()
         # Poll rather than read once: the press is queued for the UI task, and
         # a second press sent while the first is still opening used to take the
@@ -588,6 +663,16 @@ def build_cases() -> List[Case]:
             raise Failure("the C64 did not reach the BASIC prompt after a reboot")
     case(("PUT", "/v1/machine:reboot"), "the C64 comes back to READY", "happy",
          _reboot, exclusive=True)
+
+    return c
+
+
+def _drives_cases() -> list[Case]:
+    """The # ---- drives routes."""
+    c: list[Case] = []
+
+    def case(key, name, kind, fn, exclusive=False):
+        c.append(Case(key, name, kind, fn, exclusive=exclusive))
 
     # ---- drives ----------------------------------------------------------
     def _drives_list(ctx: Ctx) -> None:
@@ -720,6 +805,16 @@ def build_cases() -> List[Case]:
         case(("PUT", f"/v1/drives/{{drive}}:{action}"),
              "refuses an unknown drive letter", "negative", _unknown_drive)
 
+    return c
+
+
+def _runners_cases() -> list[Case]:
+    """The # ---- runners routes."""
+    c: list[Case] = []
+
+    def case(key, name, kind, fn, exclusive=False):
+        c.append(Case(key, name, kind, fn, exclusive=exclusive))
+
     # ---- runners ---------------------------------------------------------
     for action in ("sidplay", "modplay", "load_prg", "run_prg", "run_crt"):
         def _runner_missing(ctx: Ctx, action=action) -> None:
@@ -733,6 +828,16 @@ def build_cases() -> List[Case]:
             ctx.refuse_status("POST", f"/v1/runners:{action}")
         case(("POST", f"/v1/runners:{action}"), "refuses a request with no body",
              "negative", _runner_no_body)
+
+    return c
+
+
+def _streams_cases() -> list[Case]:
+    """The # ---- streams routes."""
+    c: list[Case] = []
+
+    def case(key, name, kind, fn, exclusive=False):
+        c.append(Case(key, name, kind, fn, exclusive=exclusive))
 
     # ---- streams ---------------------------------------------------------
     def _stream_roundtrip(ctx: Ctx) -> None:
@@ -779,6 +884,16 @@ def build_cases() -> List[Case]:
     case(("PUT", "/v1/streams/{stream}:stop"), "refuses an unknown stream",
          "negative", _stream_stop_unknown)
 
+    return c
+
+
+def _protocol_cases() -> list[Case]:
+    """The # ---- protocol routes."""
+    c: list[Case] = []
+
+    def case(key, name, kind, fn, exclusive=False):
+        c.append(Case(key, name, kind, fn, exclusive=exclusive))
+
     # ---- protocol --------------------------------------------------------
     def _unknown_route(ctx: Ctx) -> None:
         code, _, _b = ctx.api.rest.request("GET", "/v1/no_such_group:no_such_command")
@@ -804,6 +919,34 @@ def build_cases() -> List[Case]:
     return c
 
 
+# Every family of routes, in the order a reader of the API document
+# meets them. build_cases was one 548-line function holding all of
+# them, which is the longest in the tree and the only place a new
+# route could be added.
+CASE_FAMILIES = (
+    _identity_and_help_cases,
+    _configuration_reads_cases,
+    _configuration_writes_cases,
+    _flash_backed_settings_cases,
+    _files_cases,
+    _machine_reads_cases,
+    _machine_writes_cases,
+    _machine_control_cases,
+    _drives_cases,
+    _runners_cases,
+    _streams_cases,
+    _protocol_cases,
+)
+
+
+def build_cases() -> list[Case]:
+    """Every case, family by family."""
+    cases: list[Case] = []
+    for family in CASE_FAMILIES:
+        cases.extend(family())
+    return cases
+
+
 class SuiteRunner:
     def __init__(self, args) -> None:
         self.args = args
@@ -814,14 +957,14 @@ class SuiteRunner:
         self.state_lock = threading.Lock()
         self.dead = threading.Event()
         self._image_ready = False
-        self._image_bytes: Optional[bytes] = None
-        self._config_target: Optional[Tuple[str, str, str]] = None
-        self._reset_category: Optional[str] = None
-        self._local_ip: Optional[str] = None
-        self.restore_drive: Optional[Tuple[bool, str, str]] = None
-        self.restore_config: Optional[Dict[str, str]] = None
+        self._image_bytes: bytes | None = None
+        self._config_target: tuple[str, str, str] | None = None
+        self._reset_category: str | None = None
+        self._local_ip: str | None = None
+        self.restore_drive: tuple[bool, str, str] | None = None
+        self.restore_config: dict[str, str] | None = None
         self.restore_config_category = CONFIG_CATEGORY
-        self._reset_snapshot: Optional[Dict[str, str]] = None
+        self._reset_snapshot: dict[str, str] | None = None
 
     # -- fixtures -----------------------------------------------------------
     def ensure_mount_image(self, ctx: Ctx) -> None:
@@ -829,7 +972,6 @@ class SuiteRunner:
             if self._image_ready:
                 return
             if ctx.api.files.info(MOUNT_IMAGE) is None:
-                ctx.require_fix(machine_lib.FILES_CREATE_IMAGE_SURVIVES)
                 ctx.api.files.create_d64(MOUNT_IMAGE, diskname="restapi")
             self._image_ready = True
 
@@ -844,7 +986,7 @@ class SuiteRunner:
             self._image_bytes = data
         return data
 
-    def config_target(self, ctx: Ctx) -> Tuple[str, str, str]:
+    def config_target(self, ctx: Ctx) -> tuple[str, str, str]:
         """A settings item and its current value, so a write can be a no-op.
 
         The item the cfg-* suites use is preferred, so the report names the same
@@ -871,7 +1013,7 @@ class SuiteRunner:
                 return self._config_target
         raise Skip("no readable settings item to write back")
 
-    def remember_reset_snapshot(self, snapshot: Dict[str, str]) -> None:
+    def remember_reset_snapshot(self, snapshot: dict[str, str]) -> None:
         """Kept so cleanup() can put the category back if a case is cut short."""
         with self.state_lock:
             if self._reset_snapshot is None:
@@ -893,9 +1035,9 @@ class SuiteRunner:
                 return name
         raise Skip("no category outside the deny list to reset")
 
-    def snapshot_category(self, ctx: Ctx, category: str) -> Dict[str, str]:
+    def snapshot_category(self, ctx: Ctx, category: str) -> dict[str, str]:
         items = ctx.api.configs.category(category)
-        found: Dict[str, str] = {}
+        found: dict[str, str] = {}
         for name in items:
             try:
                 value = ctx.api.configs.current(category, name)
@@ -908,7 +1050,7 @@ class SuiteRunner:
         return found
 
     def restore_category(self, ctx: Ctx, category: str,
-                         snapshot: Dict[str, str]) -> None:
+                         snapshot: dict[str, str]) -> None:
         for name, value in snapshot.items():
             try:
                 ctx.api.configs.set(category, name, value)
@@ -963,18 +1105,32 @@ class SuiteRunner:
                 return False
             time.sleep(0.2)
 
-    def alive(self) -> Optional[str]:
+    def alive(self) -> str | None:
         return self.api.unreachable_reason(LIVENESS_TIMEOUT_SECONDS)
 
     @property
+    def workers(self) -> int:
+        """Concurrent workers, capped by what the machine's link can take.
+
+        The default is what a machine on Ethernet answers comfortably. An
+        Ultimate II+ has only a wireless link, and three workers through this
+        sweep took one off the network for several minutes; see
+        machine.Machine.rest_workers. An explicit -w is obeyed as given,
+        because someone asking for a number is asking to measure that number.
+        """
+        if self.args.workers != DEFAULT_WORKERS:
+            return self.args.workers
+        return min(self.args.workers, self.machine.rest_workers)
+
+    @property
     def machine(self) -> machine_lib.Machine:
-        """Which machine this is, for the checks that need a firmware fix."""
+        """Which machine this is, for the worker count it serves."""
         info = self.api.info()
         return machine_lib.identify(self.api.host,
                                     lambda: (info.product, info.firmware_version))
 
     # -- coverage -----------------------------------------------------------
-    def contract_operations(self) -> Tuple[Set[Key], str]:
+    def contract_operations(self) -> tuple[set[Key], str]:
         """Every operation the device serves, and where the list came from."""
         specs = sorted(OPENAPI_DIR.glob("rest_api_openapi_*.yaml"))
         if specs:
@@ -983,7 +1139,7 @@ class SuiteRunner:
             except ImportError:
                 specs = []
         if specs:
-            found: Set[Key] = set()
+            found: set[Key] = set()
             for spec in specs:
                 document = yaml.safe_load(spec.read_text(encoding="utf-8"))
                 for path, item in (document.get("paths") or {}).items():
@@ -1061,7 +1217,7 @@ class SuiteRunner:
         return True
 
     # -- execution ----------------------------------------------------------
-    def run_once(self, case: Case) -> Optional[str]:
+    def run_once(self, case: Case) -> str | None:
         api = self.client()
         try:
             case.run(Ctx(api, self))
@@ -1083,8 +1239,8 @@ class SuiteRunner:
     def run_cases(self) -> bool:
         shared = [c for c in self.cases if not c.exclusive]
         exclusive = [c for c in self.cases if c.exclusive]
-        results: Dict[int, str] = {}
-        attempted: Set[int] = set()
+        results: dict[int, str] = {}
+        attempted: set[int] = set()
         lock = threading.Lock()
 
         def task(case: Case) -> None:
@@ -1104,7 +1260,7 @@ class SuiteRunner:
                 for _ in range(self.args.repeat):
                     task(case)
         else:
-            with ThreadPoolExecutor(max_workers=self.args.workers) as pool:
+            with ThreadPoolExecutor(max_workers=self.workers) as pool:
                 for _ in range(self.args.repeat):
                     if self.dead.is_set():
                         break
@@ -1162,7 +1318,7 @@ class SuiteRunner:
 
         section("operations")
         detail(f"{len(self.cases)} cases x{self.args.repeat}, {self.args.order}"
-               + (f", {self.args.workers} workers"
+               + (f", {self.workers} workers"
                   if self.args.order == "concurrent" else ""))
         return self.run_cases()
 
@@ -1170,35 +1326,52 @@ class SuiteRunner:
     def cleanup(self) -> None:
         """Put back everything a case could have changed, however the run ended.
 
-        Quiet and best effort: a cleanup failure on a device that has already
-        gone down would bury the reason the suite failed.
-        """
-        def quietly(action) -> None:
-            try:
-                action()
-            except Exception:                            # noqa: BLE001
-                pass
+        Best effort: a cleanup failure on a device that has already gone down
+        must not bury the reason the suite failed. report.teardown_step keeps that
+        property and writes down what it could not put back, so the next suite's
+        failure can be traced to this one.
 
-        quietly(self.api.machine.resume)
-        quietly(lambda: self.api.rest.request("PUT", "/v1/streams/debug:stop"))
-        quietly(lambda: self.api.drives.unlink("a"))
+        Every step is attempted whatever the ones before it did. They restore
+        different things - the drive, a category, the scratch directory - and
+        one that cannot be put back is not a reason to leave the others
+        changed. `Skip` is this module's own exception and is not a device
+        fault, so teardown_step lets it through; it is caught here rather than
+        being allowed to end the sequence.
+        """
+        def step(label, action):
+            try:
+                teardown_step(label, action)
+            except Skip as exc:
+                detail(f"teardown: {label}: {exc}")
+
+        step("resume the machine", self.api.machine.resume)
+        step("stop the debug stream",
+             lambda: self.api.rest.request("PUT", "/v1/streams/debug:stop"))
+        step("unlink drive a", lambda: self.api.drives.unlink("a"))
         if self.restore_drive is not None:
             enabled, mode, image = self.restore_drive
-            quietly(lambda: self.api.drives.set_mode("a", mode))
-            quietly(lambda: (self.api.drives.on if enabled else self.api.drives.off)("a"))
+            step(f"restore drive a mode {mode}",
+                 lambda: self.api.drives.set_mode("a", mode))
+            step(f"restore drive a {'on' if enabled else 'off'}",
+                 lambda: (self.api.drives.on if enabled else self.api.drives.off)("a"))
             if image:
-                quietly(lambda: self.api.drives.mount("a", image))
+                step(f"remount {image} on drive a",
+                     lambda: self.api.drives.mount("a", image))
         if self.restore_config:
-            quietly(lambda: self.restore_category(
-                Ctx(self.api, self), self.restore_config_category,
-                self.restore_config))
+            step(f"restore the {self.restore_config_category} category",
+                 lambda: self.restore_category(
+                     Ctx(self.api, self), self.restore_config_category,
+                     self.restore_config))
         if self._config_target is not None:
             category, item, value = self._config_target
-            quietly(lambda: self.api.configs.set(category, item, value))
+            step(f"restore {category}/{item}",
+                 lambda: self.api.configs.set(category, item, value))
         if self._reset_category is not None and self._reset_snapshot:
-            quietly(lambda: self.restore_category(
-                Ctx(self.api, self), self._reset_category, self._reset_snapshot))
-        quietly(self._remove_scratch)
+            step(f"restore the {self._reset_category} category",
+                 lambda: self.restore_category(
+                     Ctx(self.api, self), self._reset_category,
+                     self._reset_snapshot))
+        step("remove the scratch directory", self._remove_scratch)
 
     def _remove_scratch(self) -> None:
         with ftp_lib.session(self.args.host, self.args.password) as client:
@@ -1208,10 +1381,7 @@ class SuiteRunner:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("-H", "--host", default=os.environ.get("U64_HOST", "u64"))
-    parser.add_argument("-p", "--password", default=os.environ.get("U64_PASS"))
-    parser.add_argument("-t", "--timeout", type=float,
-                        default=float(os.environ.get("U64_TIMEOUT", "10.0")))
+    cli.add_device_arguments(parser, password=None, colour=False)
     parser.add_argument("-r", "--repeat", type=int, default=DEFAULT_REPEAT,
                         help="how many times each case runs (default: %(default)s)")
     parser.add_argument("--order", choices=("concurrent", "sequential"),

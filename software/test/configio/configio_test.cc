@@ -152,13 +152,11 @@ int main(int argc, char **argv)
     check(sid->get_value(0x01) == 1, "precondition: the SID store reads 8580");
 
     MemFile in;
-    IndexedList<ConfigStore *> loaded(8, NULL);
     StreamTextLog log(4096);
     in.load("[SID Socket 1: PDsid]\nEmulation Mode=6581\n\n");
-    bool ok = ConfigIO::S_read_from_file(&in, &log, loaded);
+    bool ok = ConfigIO::S_read_from_file(&in, &log);
     check(ok, "a well-formed .cfg loads without error");
     check(sid->get_value(0x01) == 0, "the value from the file is applied to the store");
-    check(loaded.get_elements() == 1, "only the store named in the file is reported as loaded");
 
     printf("-- enum labels with spaces survive a round trip\n");
     /* An ARMSID writes "8580 Lowest Filt Freq= ~45" into a .cfg, padding and
@@ -176,11 +174,10 @@ int main(int argc, char **argv)
     sid->set_value(0x02, 0);
     sid->set_value(0x03, 2);
     MemFile padback;
-    IndexedList<ConfigStore *> loadedpad(8, NULL);
     StreamTextLog logpad(4096);
     padback.load("[SID Socket 1: PDsid]\n8580 Lowest Filt Freq= ~45\n"
                  "8580 Highest Filt Freq=12 kHz\n\n");
-    check(ConfigIO::S_read_from_file(&padback, &logpad, loadedpad),
+    check(ConfigIO::S_read_from_file(&padback, &logpad),
           "reading those values back is not an error");
     check(sid->get_value(0x02) == 1, "the padded label is matched exactly");
     check(sid->get_value(0x03) == 0, "the label with an inner space is matched");
@@ -193,14 +190,13 @@ int main(int argc, char **argv)
     sid->set_value(0x03, 2);
     sid->set_value(0x01, 0);
     MemFile hand;
-    IndexedList<ConfigStore *> loaded_hand(8, NULL);
     StreamTextLog log_hand(4096);
     hand.load("[SID Socket 1: PDsid]\n"
               "8580 Lowest Filt Freq=30\n"          /* label is "  30" */
               "8580 Highest Filt Freq=  12 kHz  \n" /* inner space kept */
               "  Emulation Mode  =  8580  \n"       /* spaces around both */
               "\n");
-    check(ConfigIO::S_read_from_file(&hand, &log_hand, loaded_hand),
+    check(ConfigIO::S_read_from_file(&hand, &log_hand),
           "a hand-spaced file loads without error");
     check(sid->get_value(0x02) == 0, "an unpadded value matches a padded label");
     check(sid->get_value(0x03) == 0, "outer spaces are ignored, the inner one is not");
@@ -209,46 +205,40 @@ int main(int argc, char **argv)
     printf("-- tolerance is not laxity\n");
     sid->set_value(0x02, 1);
     MemFile bogus;
-    IndexedList<ConfigStore *> loaded_bogus(8, NULL);
     StreamTextLog log_bogus(4096);
     bogus.load("[SID Socket 1: PDsid]\n8580 Lowest Filt Freq=31\n\n");
-    check(!ConfigIO::S_read_from_file(&bogus, &log_bogus, loaded_bogus),
+    check(!ConfigIO::S_read_from_file(&bogus, &log_bogus),
           "a value that is not a choice is still an error");
     check(sid->get_value(0x02) == 1, "and the store keeps its previous value");
 
     printf("-- an unknown item is a warning, not a failure\n");
     MemFile unknown_item;
-    IndexedList<ConfigStore *> loaded2(8, NULL);
     StreamTextLog log2(4096);
     unknown_item.load("[SID Socket 1: PDsid]\nFilter Strength=7\nEmulation Mode=8580\n\n");
-    ok = ConfigIO::S_read_from_file(&unknown_item, &log2, loaded2);
+    ok = ConfigIO::S_read_from_file(&unknown_item, &log2);
     check(ok, "an unknown item does not fail the load");
     check(sid->get_value(0x01) == 1,
           "items after the unknown one are still applied");
 
     printf("-- an unknown store is a warning, not a failure\n");
     MemFile unknown_store;
-    IndexedList<ConfigStore *> loaded3(8, NULL);
     StreamTextLog log3(4096);
     unknown_store.load("[SID Socket 2: PDsid]\nEmulation Mode=6581\n\n");
-    ok = ConfigIO::S_read_from_file(&unknown_store, &log3, loaded3);
+    ok = ConfigIO::S_read_from_file(&unknown_store, &log3);
     check(ok, "a store this machine does not have does not fail the load");
-    check(loaded3.get_elements() == 0, "an unknown store contributes nothing to load");
     check(sid->get_value(0x01) == 1, "an unknown store does not touch another store");
 
     printf("-- a malformed file is still an error\n");
     MemFile broken;
-    IndexedList<ConfigStore *> loaded4(8, NULL);
     StreamTextLog log4(4096);
     broken.load("[SID Socket 1: PDsid]\nEmulation Mode\n\n");
-    ok = ConfigIO::S_read_from_file(&broken, &log4, loaded4);
+    ok = ConfigIO::S_read_from_file(&broken, &log4);
     check(!ok, "a line with no '=' is reported as an error");
 
     MemFile orphan;
-    IndexedList<ConfigStore *> loaded5(8, NULL);
     StreamTextLog log5(4096);
     orphan.load("Emulation Mode=6581\n\n");
-    ok = ConfigIO::S_read_from_file(&orphan, &log5, loaded5);
+    ok = ConfigIO::S_read_from_file(&orphan, &log5);
     check(!ok, "an item outside any store is reported as an error");
 
     printf("\n%d checks, %d failed\n", checks, failures);

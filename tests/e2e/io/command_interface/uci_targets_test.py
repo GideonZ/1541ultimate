@@ -9,7 +9,9 @@ every target until the machine was power-cycled.
 
 It also covers the transport state machine, the control target's rejection paths,
 and reply framing on the SoftIEC target, whose single-part replies were announced
-as "Data More" and left a client waiting for a block that is never sent.
+as "Data More" and left a client waiting for a block that is never sent. On
+Ultimate 64 hardware it verifies the runtime RGB palette commands and restores
+the palette before exiting.
 
 Every expected value here was taken from the firmware and confirmed against a
 real device. The manuals under doc/ ("Ultimate Command Interface - Register API",
@@ -42,17 +44,18 @@ them on exit.
 import argparse
 import ftplib
 import json
-import os
 import sys
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from typing import Dict, List, Optional, Tuple
+from pathlib import Path
 
-# tests/lib holds the reporting rules every suite shares.
-sys.path.insert(0, os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "lib"))
+# The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
+import cli  # noqa: E402
 import ftp as ftp_lib
 import rest as rest_lib
 import targets
@@ -110,6 +113,10 @@ CTRL_CMD_IDENTIFY = 0x01
 CTRL_CMD_LOAD_REU = 0x08
 CTRL_CMD_SAVE_REU = 0x09
 CTRL_CMD_GET_HWINFO = 0x28
+CTRL_CMD_GET_PALETTE = 0x51
+CTRL_CMD_SET_PALETTE = 0x52
+CTRL_CMD_SET_PALETTE_COLOR = 0x53
+CTRL_CMD_RESET_PALETTE = 0x54
 SOFTIEC_CMD_IDENTIFY = 0x01
 SOFTIEC_CMD_LOAD_SU = 0x10
 SOFTIEC_CMD_GET_FATNAME = 0x22
@@ -183,6 +190,7 @@ RESET_SETTLE_SECONDS = 3.0
 TESTS = [
     "transport",
     "control-target",
+    "palette",
     "issue-740-matrix",
     "save-reu-offset-past-end",
     "load-reu-disabled",
@@ -207,7 +215,7 @@ def as_int32(reply: bytes) -> int:
 
 
 class RestSession:
-    def __init__(self, host: str, password: Optional[str], timeout: float) -> None:
+    def __init__(self, host: str, password: str | None, timeout: float) -> None:
         self.target = targets.parse(host)
         self.host = self.target.device
         # The command interface registers are decoded on the C64 expansion bus,
@@ -222,8 +230,8 @@ class RestSession:
         self.password = password
         self.timeout = timeout
 
-    def request(self, method: str, path: str, params: Optional[Dict[str, object]] = None,
-                repeatable: bool = False, host: Optional[str] = None) -> Tuple[int, bytes]:
+    def request(self, method: str, path: str, params: dict[str, object] | None = None,
+                repeatable: bool = False, host: str | None = None) -> tuple[int, bytes]:
         url = f"http://{host or self.target.host_for(path)}{path}"
         if params:
             url += "?" + urllib.parse.urlencode(params)
@@ -264,7 +272,7 @@ class RestSession:
         if status != 200:
             raise Failure(f"writemem(${address:04X}, ${value:02X}) failed with HTTP {status}: {body[:200]!r}")
 
-    def get_config(self, category: str) -> Dict[str, object]:
+    def get_config(self, category: str) -> dict[str, object]:
         status, body = self.request("GET", f"/v1/configs/{urllib.parse.quote(category)}", repeatable=True)
         if status != 200:
             raise Failure(f"GET config {category!r} failed with HTTP {status}: {body[:200]!r}")
@@ -276,7 +284,7 @@ class RestSession:
         if status != 200:
             raise Failure(f"PUT config {category!r}/{item!r}={value!r} failed with HTTP {status}: {body[:200]!r}")
 
-    def file_info(self, path: str) -> Optional[Dict[str, object]]:
+    def file_info(self, path: str) -> dict[str, object] | None:
         quoted = urllib.parse.quote(path.lstrip("/"))
         status, body = self.request("GET", f"/v1/files/{quoted}:info", repeatable=True)
         if status == 404:
@@ -303,11 +311,11 @@ class RestSession:
 class FtpFixture:
     """Files this suite puts on the device, over FTP because REST cannot delete."""
 
-    def __init__(self, host: str, password: Optional[str], timeout: float) -> None:
+    def __init__(self, host: str, password: str | None, timeout: float) -> None:
         self.host = targets.device_of(host)
         self.password = password or ""
         self.timeout = timeout
-        self.created: List[str] = []
+        self.created: list[str] = []
 
     def _open(self) -> ftplib.FTP:
         return ftp_lib.connect(self.host, self.password, self.timeout)
@@ -423,12 +431,15 @@ class Uci:
                 raise Wedged(
                     f"command {command.hex(' ') or '<empty>'} never left Command Busy after "
                     f"{self.busy_timeout:.0f}s: {describe_status(status)}. The command "
-                    f"interface is now wedged for every target (issue #740) and only a "
-                    f"firmware restart or power cycle releases it."
+                    f"interface is now wedged for every target (issue #740). "
+                    f"Measured on u2@c64u, 2026-09-04: machine:reset, machine:reboot "
+                    f"and injected keys do not release it, a power cycle always does, "
+                    f"and it came back once after a runners:run_prg on the same "
+                    f"machine. Try run_prg first, it is much cheaper."
                 )
             time.sleep(BUSY_POLL_SECONDS)
 
-    def drain(self) -> Tuple[bytes, bytes]:
+    def drain(self) -> tuple[bytes, bytes]:
         return (bytes(self._drain(ST_DATA_AV, REG_RESPONSE, "response")),
                 bytes(self._drain(ST_STAT_AV, REG_STATUS, "status")))
 
@@ -440,7 +451,7 @@ class Uci:
                 raise Failure(f"{what} queue did not drain within {MAX_QUEUE_BYTES} bytes: {bytes(out)[:80]!r}")
         return out
 
-    def transact(self, command: bytes) -> Tuple[bytes, bytes]:
+    def transact(self, command: bytes) -> tuple[bytes, bytes]:
         """Push one command and return (response data, status text).
 
         Every command this suite sends is answered in one part, so the reply has to
@@ -469,7 +480,7 @@ class Uci:
 
 
 def expect(uci: Uci, label: str, command: bytes, status: bytes,
-           reply: Optional[bytes] = None, reply_prefix: Optional[bytes] = None) -> bytes:
+           reply: bytes | None = None, reply_prefix: bytes | None = None) -> bytes:
     """Run one command and check the documented status and reply."""
     with check(label):
         got_reply, got_status = uci.transact(command)
@@ -590,6 +601,89 @@ def run_control_target(uci: Uci) -> bool:
            bytes([TARGET_CONTROL, CTRL_CMD_SAVE_REU]), STATUS_INVALID_PARAMS, reply=b"")
     expect(uci, f"{scenario}: GET_HWINFO rejects a device number it does not have",
            bytes([TARGET_CONTROL, CTRL_CMD_GET_HWINFO, 0x02]), STATUS_INVALID_PARAMS, reply=b"")
+    return True
+
+
+def run_palette(uci: Uci) -> bool:
+    """Exercise the U64 runtime palette protocol without changing saved config."""
+    scenario = "palette"
+    product, status = uci.transact(bytes([TARGET_CONTROL, CTRL_CMD_GET_HWINFO, 0x00]))
+    if status != STATUS_OK:
+        raise Failure(f"{scenario}: could not identify the product: {status!r}")
+    # Asked, not inferred from the product name. The name test read "has no U64
+    # palette hardware" from a string, and a C64 Ultimate is not called
+    # "Ultimate 64", so all nine checks below were skipped on it. Measured on
+    # C64 Ultimate 1.2RC: GET_PALETTE answers 00,OK with a valid 48-byte
+    # palette, so the hardware is there and the checks belong on it. A machine
+    # that genuinely does not serve the command says so, and that is the answer
+    # this trusts.
+    _, probe_status = uci.transact(bytes([TARGET_CONTROL, CTRL_CMD_GET_PALETTE]))
+    if probe_status == STATUS_UNKNOWN_COMMAND:
+        detail(f"{scenario}: {product.decode('latin-1')} does not serve "
+               f"GET_PALETTE; skipped")
+        return True
+
+    original = expect(
+        uci, f"{scenario}: GET_PALETTE returns 16 RGB colors",
+        bytes([TARGET_CONTROL, CTRL_CMD_GET_PALETTE]), STATUS_OK)
+    if len(original) != 48:
+        raise Failure(f"{scenario}: expected 48 palette bytes, got {len(original)}")
+
+    try:
+        with check(f"{scenario}: SET_PALETTE_COLOR changes only the requested color"):
+            changed = bytearray(original)
+            changed[-3:] = bytes(component ^ 0x5A for component in changed[-3:])
+            command = bytes([TARGET_CONTROL, CTRL_CMD_SET_PALETTE_COLOR, 15]) + changed[-3:]
+            reply, text = uci.transact(command)
+            if text != STATUS_OK or reply:
+                raise Failure(f"{scenario}: single-color set returned data {reply!r}, status {text!r}")
+            actual, text = uci.transact(bytes([TARGET_CONTROL, CTRL_CMD_GET_PALETTE]))
+            if text != STATUS_OK or actual != bytes(changed):
+                raise Failure(f"{scenario}: single-color readback was {actual!r}, expected {bytes(changed)!r}")
+
+        expect(uci, f"{scenario}: color index 16 is rejected",
+               bytes([TARGET_CONTROL, CTRL_CMD_SET_PALETTE_COLOR, 16, 0, 0, 0]),
+               STATUS_INVALID_PARAMS, reply=b"")
+
+        with check(f"{scenario}: SET_PALETTE replaces all 16 RGB colors"):
+            replacement = bytes((i * 37 + 11) & 0xFF for i in range(48))
+            reply, text = uci.transact(
+                bytes([TARGET_CONTROL, CTRL_CMD_SET_PALETTE]) + replacement)
+            if text != STATUS_OK or reply:
+                raise Failure(f"{scenario}: full set returned data {reply!r}, status {text!r}")
+            actual, text = uci.transact(bytes([TARGET_CONTROL, CTRL_CMD_GET_PALETTE]))
+            if text != STATUS_OK or actual != replacement:
+                raise Failure(f"{scenario}: full-palette readback was {actual!r}, expected {replacement!r}")
+
+        expect(uci, f"{scenario}: short SET_PALETTE payload is rejected",
+               bytes([TARGET_CONTROL, CTRL_CMD_SET_PALETTE]) + original[:-1],
+               STATUS_INVALID_PARAMS, reply=b"")
+        expect(uci, f"{scenario}: GET_PALETTE rejects a payload",
+               bytes([TARGET_CONTROL, CTRL_CMD_GET_PALETTE, 0]),
+               STATUS_INVALID_PARAMS, reply=b"")
+
+        with check(f"{scenario}: RESET_PALETTE restores the built-in C64 colors"):
+            default_palette = bytes.fromhex(
+                "000000 f7f7f7 8d2f34 6ad4cd 9835a4 4cb442 2c29b1 efef5d "
+                "984e20 5b3800 d1676d 4a4a4a 7b7b7b 9fef93 6d6aef b2b2b2")
+            reply, text = uci.transact(bytes([TARGET_CONTROL, CTRL_CMD_RESET_PALETTE]))
+            if text != STATUS_OK or reply:
+                raise Failure(f"{scenario}: reset returned data {reply!r}, status {text!r}")
+            actual, text = uci.transact(bytes([TARGET_CONTROL, CTRL_CMD_GET_PALETTE]))
+            if text != STATUS_OK or actual != default_palette:
+                raise Failure(f"{scenario}: reset palette readback was {actual!r}, expected {default_palette!r}")
+
+        expect(uci, f"{scenario}: RESET_PALETTE rejects a payload",
+               bytes([TARGET_CONTROL, CTRL_CMD_RESET_PALETTE, 0]),
+               STATUS_INVALID_PARAMS, reply=b"")
+    finally:
+        with check(f"{scenario}: restore the original runtime palette"):
+            reply, text = uci.transact(bytes([TARGET_CONTROL, CTRL_CMD_SET_PALETTE]) + original)
+            if text != STATUS_OK or reply:
+                raise Failure(f"{scenario}: restore returned data {reply!r}, status {text!r}")
+            actual, text = uci.transact(bytes([TARGET_CONTROL, CTRL_CMD_GET_PALETTE]))
+            if text != STATUS_OK or actual != original:
+                raise Failure(f"{scenario}: restored palette readback was {actual!r}")
     return True
 
 
@@ -791,7 +885,7 @@ def release_interface(uci: Uci) -> bool:
         return False
 
 
-def restore_settings(session: RestSession, original: Dict[str, str], keep_config: bool) -> bool:
+def restore_settings(session: RestSession, original: dict[str, str], keep_config: bool) -> bool:
     """Put every setting the suite wrote back, and prove it took effect."""
     if not original or keep_config:
         return True
@@ -816,12 +910,10 @@ def main() -> int:
                     "CTRL_CMD_SAVE_REU complete and leave the interface usable (issue #740), "
                     "and that SoftIEC replies are framed as single-part."
     )
-    parser.add_argument("-H", "--host", default=os.environ.get("U64_HOST", "u64"))
-    parser.add_argument("-p", "--password", default=os.environ.get("U64_PASS"))
-    parser.add_argument("-t", "--timeout", type=float, default=float(os.environ.get("U64_TIMEOUT", "30.0")))
+    cli.add_device_arguments(parser, password=None, timeout=30.0, colour=False)
     parser.add_argument("-b", "--busy-timeout", type=float, default=BUSY_TIMEOUT_SECONDS,
                         help="How long a single command may stay in Command Busy before it counts as wedged.")
-    parser.add_argument("--test", action="append", choices=["all"] + TESTS)
+    parser.add_argument("--test", action="append", choices=["all", *TESTS])
     parser.add_argument("--no-reset", action="store_true",
                         help="Skip resetting the C64 before the test (use an already-stable machine).")
     parser.add_argument("--keep-config", action="store_true",
@@ -833,8 +925,8 @@ def main() -> int:
     ftp = FtpFixture(args.host, args.password, args.timeout)
     uci = Uci(session, args.busy_timeout)
 
-    original: Dict[str, str] = {}
-    results: Dict[str, bool] = {}
+    original: dict[str, str] = {}
+    results: dict[str, bool] = {}
     cleanup_ok = True
     # $DF1C only belongs to the command interface once the setting is on; before
     # that the address is the REU's, so the suite must not write to it.
@@ -890,6 +982,7 @@ def main() -> int:
 
         run("transport", run_transport, uci)
         run("control-target", run_control_target, uci)
+        run("palette", run_palette, uci)
         run("issue-740-matrix", run_issue_740_matrix, session, ftp, uci)
         run("save-reu-offset-past-end", run_save_reu_offset_past_end, session, uci)
         run("load-reu-disabled", run_reu_disabled, session, uci, CTRL_CMD_LOAD_REU, "load-reu-disabled")

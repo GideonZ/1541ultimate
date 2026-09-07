@@ -229,7 +229,7 @@ void C1541 :: init(void)
     disk_state = e_no_disk;
 
     mfm_controller->init();
-    effectuate_settings();
+    effectuate_registered_settings();
 
 	xTaskCreate( C1541 :: run, (const char *)(this->drive_name.c_str()), configMINIMAL_STACK_SIZE, this, PRIO_FLOPPY, &taskHandle );
 }
@@ -1210,7 +1210,7 @@ void C1541 :: set_rom_config(int idx, const char *fname)
     uint8_t config_ids[] = { CFG_C1541_ROMFILE0, CFG_C1541_ROMFILE1, CFG_C1541_ROMFILE2 };
     cfg->set_string(config_ids[idx], fname);
     cfg->write();
-    effectuate_settings();
+    effectuate_registered_settings();
 }
 
 void C1541 :: list_roms(ConfigItem *it, IndexedList<char *>& strings)

@@ -16,8 +16,12 @@ answers are both in this file's reach.
 
 import os
 import sys
+from pathlib import Path
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
 
 import openapi_contract  # noqa: E402  (needs tests/lib on sys.path first)
 from report import Failure, check, detail, suite_fail, suite_ok  # noqa: E402

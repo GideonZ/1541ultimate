@@ -9,12 +9,13 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from typing import Dict, List, Optional, Set, Tuple
+from pathlib import Path
 
-# tests/lib holds the reporting rules every suite shares.
-sys.path.insert(0, os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
-import machine as machine_lib  # noqa: E402  (needs tests/lib on sys.path first)
+# The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
+import cli  # noqa: E402
 import pacing  # noqa: E402  (needs tests/lib on sys.path first)
 import profiles  # noqa: E402  (needs tests/lib on sys.path first)
 import rest as rest_lib  # noqa: E402  (needs tests/lib on sys.path first)
@@ -78,7 +79,7 @@ def classify(addr: int) -> str:
     return "ram"
 
 
-def build_multipart(field_name: str, filename: str, data: bytes) -> Tuple[bytes, str]:
+def build_multipart(field_name: str, filename: str, data: bytes) -> tuple[bytes, str]:
     boundary = "----readmemwritememtest0123456789"
     parts = []
     parts.append(f"--{boundary}\r\n".encode())
@@ -92,7 +93,7 @@ def build_multipart(field_name: str, filename: str, data: bytes) -> Tuple[bytes,
     return body, f"multipart/form-data; boundary={boundary}"
 
 
-def summarize_ranges(addrs: List[int], limit: int = 20) -> List[str]:
+def summarize_ranges(addrs: list[int], limit: int = 20) -> list[str]:
     if not addrs:
         return []
     ranges = []
@@ -110,7 +111,7 @@ def summarize_ranges(addrs: List[int], limit: int = 20) -> List[str]:
 
 
 class RestSession:
-    def __init__(self, host: str, password: Optional[str], timeout: float) -> None:
+    def __init__(self, host: str, password: str | None, timeout: float) -> None:
         self.target = targets.parse(host)
         self.host = self.target.device
         self.password = password
@@ -119,14 +120,7 @@ class RestSession:
         # teardown has one implementation across the tree.
         self.api = UltimateApi(host, password, timeout)
 
-    @property
-    def machine(self) -> machine_lib.Machine:
-        """Which machine this is, for the checks that need a firmware fix."""
-        info = self.api.info()
-        return machine_lib.identify(self.host, lambda: (info.product,
-                                                        info.firmware_version))
-
-    def url(self, path: str, params: Optional[Dict[str, object]] = None) -> str:
+    def url(self, path: str, params: dict[str, object] | None = None) -> str:
         query = ""
         if params:
             query = "?" + urllib.parse.urlencode(params)
@@ -138,13 +132,13 @@ class RestSession:
         self,
         method: str,
         path: str,
-        params: Optional[Dict[str, object]] = None,
-        payload: Optional[Dict[str, object]] = None,
-        raw_body: Optional[bytes] = None,
-        content_type: Optional[str] = None,
-    ) -> Tuple[int, Dict[str, str], bytes]:
+        params: dict[str, object] | None = None,
+        payload: dict[str, object] | None = None,
+        raw_body: bytes | None = None,
+        content_type: str | None = None,
+    ) -> tuple[int, dict[str, str], bytes]:
         body = raw_body
-        headers: Dict[str, str] = {}
+        headers: dict[str, str] = {}
         if self.password:
             headers["X-Password"] = self.password
         if payload is not None:
@@ -218,7 +212,7 @@ class RestSession:
     def close_menu_from_anywhere(self) -> None:
         self.api.machine.close_menu_from_anywhere()
 
-    def get_config(self, category: str) -> Dict[str, object]:
+    def get_config(self, category: str) -> dict[str, object]:
         status, _, body = self.request("GET", f"/v1/configs/{urllib.parse.quote(category)}")
         if status != 200:
             raise Failure(f"GET config {category!r} failed with HTTP {status}: {body[:200]!r}")
@@ -257,11 +251,11 @@ def make_pattern(xor_value: int) -> bytes:
     return bytes(((addr ^ xor_value) & 0xFF) for addr in range(MEM_SIZE))
 
 
-def probe_live_noise(session: RestSession, samples: int, interval: float) -> Set[int]:
+def probe_live_noise(session: RestSession, samples: int, interval: float) -> set[int]:
     """Addresses that change on their own while the C64 is running (jiffy clock,
     IRQ-driven cursor blink, etc.), captured before any test writes so cross-mode
     comparisons don't misreport ordinary background CPU activity as a bug."""
-    noisy: Set[int] = set()
+    noisy: set[int] = set()
     previous = session.read_full()
     for _ in range(samples - 1):
         time.sleep(interval)
@@ -275,11 +269,11 @@ def probe_live_noise(session: RestSession, samples: int, interval: float) -> Set
 
 # One probe per 4 KB of plain RAM, avoiding page zero (whose first two bytes are
 # the CPU port), the stack, and screen RAM.
-FROZEN_PROBE_ADDRESSES = [0x0800] + list(range(0x1000, 0xD000, 0x1000))
+FROZEN_PROBE_ADDRESSES = [2048, *list(range(4096, 53248, 4096))]
 FROZEN_PROBE_BYTES = 4
 
 
-def frozen_dma_blind_spots(session: "RestSession") -> List[int]:
+def frozen_dma_blind_spots(session: "RestSession") -> list[int]:
     """The 4 KB windows a DMA write does not reach while the machine is frozen.
 
     A cartridge freezes the computer it is plugged into rather than a machine of
@@ -293,7 +287,7 @@ def frozen_dma_blind_spots(session: "RestSession") -> List[int]:
     the frozen round-trip comparison and named in the output; everything else
     is still compared byte for byte.
     """
-    blind: List[int] = []
+    blind: list[int] = []
     for address in FROZEN_PROBE_ADDRESSES:
         # A ROM window answers with the ROM image whatever the write did, which
         # skip_rom already accounts for; only plain RAM is probed here.
@@ -312,14 +306,14 @@ def compare(
     *,
     label: str,
     allow_screen_mismatch: bool,
-    noise_addrs: Set[int],
+    noise_addrs: set[int],
     skip_rom: bool = False,
-    unreachable_addrs: Set[int] = frozenset(),
-    session: Optional["RestSession"] = None,
+    unreachable_addrs: set[int] = frozenset(),
+    session: "RestSession | None" = None,
 ) -> bool:
-    ram_mismatches: List[int] = []
-    color_mismatches: List[int] = []
-    screen_mismatches: List[int] = []
+    ram_mismatches: list[int] = []
+    color_mismatches: list[int] = []
+    screen_mismatches: list[int] = []
     ignored_noise = 0
     ignored_rom = 0
     ignored_unreachable = 0
@@ -391,7 +385,7 @@ def compare(
         detail(f"[{label}] screen mismatch ranges:")
         for line in summarize_ranges(screen_mismatches):
             detail(line)
-        seen: Dict[int, int] = {}
+        seen: dict[int, int] = {}
         for addr in screen_mismatches:
             seen[actual[addr]] = seen.get(actual[addr], 0) + 1
         common = sorted(seen.items(), key=lambda kv: -kv[1])[:4]
@@ -413,7 +407,7 @@ def compare(
 
 
 def run_selfcheck(
-    session: RestSession, interface: str, xor_value: int, noise_addrs: Set[int], interface_selectable: bool = True
+    session: RestSession, interface: str, xor_value: int, noise_addrs: set[int], interface_selectable: bool = True
 ) -> bool:
     label = f"selfcheck-{interface.lower().replace(' ', '-')}"
     if interface_selectable:
@@ -422,7 +416,7 @@ def run_selfcheck(
     with check(f"open menu ({interface})"):
         session.set_menu_open(True)
 
-    unreachable: Set[int] = set()
+    unreachable: set[int] = set()
     noise_addrs = set(noise_addrs)
     if interface == INTERFACE_FREEZE:
         with check("every 4 KB of RAM answers DMA while the machine is frozen"):
@@ -536,7 +530,7 @@ def run_cross_mode(
     write_interface: str,
     read_interface: str,
     xor_value: int,
-    noise_addrs: Set[int],
+    noise_addrs: set[int],
 ) -> bool:
     label = f"{write_interface.lower().replace(' ', '-')}-write_{read_interface.lower().replace(' ', '-')}-read"
 
@@ -596,21 +590,16 @@ def run_reset(session: RestSession) -> None:
 # has to be able to fail: `operator new` PANICs and spins forever on OOM
 # (software/system/memory_wrap.cc), which takes the device down with no reset, so
 # the handler uses malloc and reports HTTP 500 instead.
-# Each entry is (params, label, fix). `fix` names the firmware fix the
-# rejection needs, or None where every machine under test has always refused
-# the request. A tagged entry is skipped on a machine that lacks the fix
-# rather than failed, because the scenario below raises on the first
-# unexpected answer and would otherwise take the whole suite with it.
+# Each entry is (params, label). Every machine under test refuses all of them.
 BAD_READ_REQUESTS = [
-    ({"address": "0000", "length": 0}, "zero length",
-     machine_lib.READMEM_REJECTS_ZERO_LENGTH),
-    ({"address": "0000", "length": -1}, "negative length", None),
-    ({"address": "0000", "length": 65537}, "length one past the 64KB cap", None),
-    ({"address": "0000", "length": 16 * 1024 * 1024}, "length far past the cap", None),
-    ({"address": "0000", "length": "99999999999999999999"}, "length that overflows a long", None),
-    ({"address": "ff00", "length": 65536}, "read running past $FFFF", None),
-    ({"address": "10000", "length": 1}, "address above $FFFF", None),
-    ({"address": "-1", "length": 1}, "negative address", None),
+    ({"address": "0000", "length": 0}, "zero length"),
+    ({"address": "0000", "length": -1}, "negative length"),
+    ({"address": "0000", "length": 65537}, "length one past the 64KB cap"),
+    ({"address": "0000", "length": 16 * 1024 * 1024}, "length far past the cap"),
+    ({"address": "0000", "length": "99999999999999999999"}, "length that overflows a long"),
+    ({"address": "ff00", "length": 65536}, "read running past $FFFF"),
+    ({"address": "10000", "length": 1}, "address above $FFFF"),
+    ({"address": "-1", "length": 1}, "negative address"),
 ]
 # Repeats chosen so a 64KB-per-call leak is a few megabytes without making the
 # suite slow. This is a smoke check, not proof of a leak-free heap: nothing over
@@ -633,10 +622,7 @@ def run_bounds(session: RestSession) -> bool:
     section("bounds: readmem rejects out-of-range parameters before allocating, "
             "and max-size reads do not degrade the device")
 
-    for params, label, fix in BAD_READ_REQUESTS:
-        if fix is not None and session.machine.skip_without_fix(
-                fix, f"readmem rejects {label}"):
-            continue
+    for params, label in BAD_READ_REQUESTS:
         with check(f"readmem rejects {label}"):
             status, _, body = session.request("GET", READMEM_PATH, params=params)
             if status != 400:
@@ -654,13 +640,6 @@ def run_bounds(session: RestSession) -> bool:
     # devices the leaking path is the only path this endpoint ever takes.
     measure_label = (f"{MEASURE_LEAK_REPEATS} unsupported machine:measure "
                      "calls leave readmem working")
-    if session.machine.skip_without_fix(
-            machine_lib.MEASURE_FREES_ITS_BUFFER, measure_label):
-        # Not a check this machine merely fails: without the fix the 25 calls
-        # leak 1.6MB, which exhausts a C64 Ultimate's heap and takes it off the
-        # network until someone power cycles it by hand.
-        return True
-
     status, _, _ = session.request("GET", MEASURE_PATH)
     if status == 501:
         with check(measure_label):
@@ -697,14 +676,14 @@ NOISE_DEPENDENT_TESTS = ["selfcheck-overlay", "screen-round-trip",
                          "overlay-to-freeze", "freeze-to-overlay"]
 
 
-def expand_tests(selected: Optional[List[str]]) -> List[str]:
+def expand_tests(selected: list[str] | None) -> list[str]:
     all_tests = ["bounds", "selfcheck-freeze", "selfcheck-overlay", "screen-round-trip",
                  "overlay-to-freeze", "freeze-to-overlay"]
     if not selected:
         if not profiles.includes(profiles.QUICK):
             return list(SMOKE_TESTS)
         return all_tests
-    expanded: List[str] = []
+    expanded: list[str] = []
     for name in selected:
         names = all_tests if name == "all" else [name]
         for item in names:
@@ -718,19 +697,8 @@ def main() -> int:
         description="Validate REST readmem/writemem correctness within, and consistency across, "
                     "the Freeze and Overlay-on-HDMI interface modes on real firmware."
     )
-    parser.add_argument("-H", "--host", default=os.environ.get("U64_HOST", "u64"))
+    cli.add_device_arguments(parser, password=None, timeout=30.0, colour=False)
     parser.add_argument("-r", "--rest-host", default=os.environ.get("U64_REST_HOST"))
-    parser.add_argument(
-        "-p",
-        "--password",
-        default=os.environ.get("U64_PASS"),
-    )
-    parser.add_argument(
-        "-t",
-        "--timeout",
-        type=float,
-        default=float(os.environ.get("U64_TIMEOUT", "30.0")),
-    )
     parser.add_argument(
         "--test",
         action="append",
@@ -753,8 +721,8 @@ def main() -> int:
     session = RestSession(rest_host, args.password, args.timeout)
     tests = expand_tests(args.test)
 
-    original_interface: Optional[str] = None
-    results: Dict[str, bool] = {}
+    original_interface: str | None = None
+    results: dict[str, bool] = {}
 
     try:
         session.close_menu_from_anywhere()
@@ -802,7 +770,7 @@ def main() -> int:
         if "bounds" in tests:
             results["bounds"] = run_bounds(session)
 
-        noise_addrs: Set[int] = set()
+        noise_addrs: set[int] = set()
         # Eight full 64KB reads, so it is only worth paying where a stage
         # actually reads memory with the CPU running.
         if interface_selectable and not any(t in NOISE_DEPENDENT_TESTS for t in tests):

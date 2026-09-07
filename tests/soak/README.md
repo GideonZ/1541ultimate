@@ -13,7 +13,7 @@ and run only when `--soak` or `--all` asks for them.
 | `network/connection_test.py` | Long-running soak and stress across ICMP, UDP/64 identity discovery, the TCP/64 DMA command channel, Telnet, FTP, REST, the optional modem listener, and audio/video UDP streams |
 | `network/listener_soak_test.py` | Short soak (about two minutes) that churns abandoned Telnet/FTP connections while REST stays in use, checking no session slot is lost and REST latency does not degrade |
 | `io/usb/usb_keyboard_repeat_soak_test.py` | Pico 2 W hardware regression soak for #797 / PR #796 USB keyboard repeat |
-| `io/c64/assembly_search_leak_test.py` | The Assembly 64 search browser's two costly paths, which are reachable only by driving the menu |
+| `io/c64/assembly_search_leak_test.py` | The online search browser's two costly paths, which are reachable only by driving the menu; the service is the machine's (Assembly 64, or CommoServe on a C64 Ultimate) |
 | `filemanager/menu_navigation_soak_test.py` | The browser's page-key cursor movement and one-keystroke field clearing, against a listing of files named for their own index |
 | `filemanager/prg_context_menu_leak_test.py` | The browser's PRG context-menu load actions, which go through a different code path from the REST launcher |
 | `filemanager/browser_refresh_leak_test.py` | The filesystem-refresh matrix, which needs a browser open on a directory while its contents change |
@@ -152,3 +152,8 @@ constraints and never run it concurrently.
   limited to documented transient protocol behaviour.
 - Document destructive behaviour, privileges, target state and cleanup
   limitations here; keep flag-by-flag detail in `--help`.
+- Keep the host-side code passing
+  `ruff check --config tests/ruff.toml tests run-tests`. The MicroPython under
+  `io/usb/pico/` is excluded from that lint, because it runs on the
+  microcontroller rather than on the host and keeps its own compact style;
+  everything else here is held to the same rules as the rest of the tree.

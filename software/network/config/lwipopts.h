@@ -766,13 +766,13 @@
  * LWIP_NETIF_LOOPBACK==1: Support sending packets with a destination IP
  * address equal to the netif IP address, looping them back up the stack.
  */
-#define LWIP_NETIF_LOOPBACK             0
+#define LWIP_NETIF_LOOPBACK             1
 
 /**
  * LWIP_LOOPBACK_MAX_PBUFS: Maximum number of pbufs on queue for loopback
  * sending for each netif (0 = disabled)
  */
-#define LWIP_LOOPBACK_MAX_PBUFS         0
+#define LWIP_LOOPBACK_MAX_PBUFS         8
 
 /**
  * LWIP_NETIF_LOOPBACK_MULTITHREADING: Indicates whether threading is enabled in
@@ -1011,9 +1011,10 @@
 #define RECV_BUFSIZE_DEFAULT            INT_MAX
 
 /**
- * SO_REUSE==1: Enable SO_REUSEADDR and SO_REUSEPORT options. DO NOT USE!
+ * SO_REUSE==1: Enable SO_REUSEADDR and SO_REUSEPORT options. Listener tasks
+ * use this to rebind immediately after a service is disabled and re-enabled.
  */
-#define SO_REUSE                        0
+#define SO_REUSE                        1
 
 /*
    ----------------------------------------

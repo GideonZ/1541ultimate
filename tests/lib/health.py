@@ -14,10 +14,17 @@ What it covers, and why each one is here:
 - `ping`   the device is on the network at all. Distinguishes a wedged service
            from a device that has gone.
 - `rest`   `/v1/version`. Nearly every suite drives the device through this.
-- `ftp`    port 21 answers with its `220` banner. The file suites need it.
-- `telnet` port 23 accepts a connection. Proven harmless to the UI: measured at
-           about 45ms, and the menu state and the running C64 are unchanged
-           afterwards, because nothing is sent and the socket is closed at once.
+- `ftp`    port 21 answers, and a listing comes back over a data connection.
+           The banner alone is not enough: a device out of data connections
+           still answers `220` and still takes commands, and only the PASV
+           every transfer needs fails.
+- `telnet` port 23 accepts a connection *and* does not refuse it. A device
+           whose session slots are all taken still completes the handshake and
+           then answers "Too many connections", so acceptance alone is not
+           enough, for the same reason the FTP entry above needs a data
+           connection. Proven harmless to the UI: measured at about 45ms, and
+           the menu state and the running C64 are unchanged afterwards, because
+           nothing is sent and the socket is closed at once.
 - `ident`  `/v1/info`. Names the product and firmware in the same line, which
            is what makes a log readable weeks later.
 - `dma`    the control port, 64. It is a separate listener from the HTTP server
@@ -46,14 +53,16 @@ moving raster is reported as an observation rather than a fault.
 from __future__ import annotations
 
 import http.client
+import ftplib
 import socket
 import struct
 import subprocess
 import sys
 import time
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Sequence, Tuple
+from collections.abc import Sequence
 
+import ftp as ftp_lib
 import interactions
 import targets
 from api import UltimateApi
@@ -118,7 +127,7 @@ class Check:
     detail: str = ""
     # The figures a check measured rather than timed. Only the heap check has
     # any; the other eight are latencies.
-    figures: Optional[Dict[str, int]] = None
+    figures: dict[str, int] | None = None
 
     def render(self) -> str:
         if self.state == SKIP:
@@ -137,14 +146,14 @@ class Check:
 
 @dataclass(frozen=True)
 class Health:
-    checks: Tuple[Check, ...]
+    checks: tuple[Check, ...]
 
     @property
     def ok(self) -> bool:
         return not self.failed
 
     @property
-    def failed(self) -> Tuple[str, ...]:
+    def failed(self) -> tuple[str, ...]:
         return tuple(c.name for c in self.checks if c.state == FAIL)
 
     def detail_for(self, name: str) -> str:
@@ -174,7 +183,7 @@ def _timed(name: str, action) -> Check:
     return Check(name, OK, (time.perf_counter() - started) * 1000.0, detail)
 
 
-def ping_command(host: str, platform: str = sys.platform) -> List[str]:
+def ping_command(host: str, platform: str = sys.platform) -> list[str]:
     """The `ping` argument list for one probe of `host` on this platform.
 
     `-W` carries a different unit on each family, and passing the wrong one is
@@ -202,7 +211,7 @@ def _ping(host: str) -> Check:
         completed = subprocess.run(
             ping_command(host),
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            timeout=PING_TIMEOUT_SECONDS + 2)
+            timeout=PING_TIMEOUT_SECONDS + 2, check=False)
     except FileNotFoundError:
         # No ping binary. Not knowing is not the same as a bad answer.
         return Check("ping", SKIP, 0.0, "no ping command")
@@ -214,21 +223,91 @@ def _ping(host: str) -> Check:
     return Check("ping", OK, ms)
 
 
-def _banner(host: str, port: int, expect: bytes = b"") -> str:
-    """Connect, read whatever the listener volunteers, and close at once."""
+# What the Telnet listener answers once every session slot is taken; see
+# software/network/socket_gui.cc.
+TELNET_BUSY = b"Too many connections"
+
+
+def _banner(host: str, port: int, expect: bytes = b"", reject: bytes = b"") -> str:
+    """Connect, read whatever the listener volunteers, and close at once.
+
+    `reject` is for a listener that accepts a connection in order to refuse it,
+    where acceptance is not evidence it is usable.
+    """
     started = time.monotonic()
     with socket.create_connection((host, port), timeout=SOCKET_TIMEOUT_SECONDS) as sock:
         sock.settimeout(SOCKET_TIMEOUT_SECONDS)
         try:
             greeting = sock.recv(128)
-        except (socket.timeout, TimeoutError):
+        except TimeoutError:
             greeting = b""
         interactions.record("socket", f"banner {port}", host=host,
                             ms=round((time.monotonic() - started) * 1000.0, 1),
                             body=greeting)
         if expect and not greeting.startswith(expect):
             raise RuntimeError(f"expected {expect!r}, got {greeting[:32]!r}")
+        if reject and reject in greeting:
+            raise RuntimeError(
+                f"the listener on port {port} refused the connection: "
+                f"{greeting.decode('ascii', 'replace').strip()!r}")
         return ""
+
+
+def _ftp_listing(host: str, port: int, password: str, passive: bool) -> None:
+    """One listing over a data connection, in the mode asked for.
+
+    Through tests/lib/ftp.py, so the login, the timeout and the close are the
+    ones every suite uses. This used to log in as "ultimate"/"ultimate" while
+    the library used "user"/"password". Neither is observable today: the
+    firmware reads the user name only for the dirs/into/both listing-mode
+    selectors, and takes any password when none is configured
+    (software/network/ftpd.cc, cmd_user and cmd_pass). Two credential pairs
+    would have to be kept in step if that ever changed, so there is one.
+    """
+    with ftp_lib.session(targets.Target(token=host, device=host, computer=host,
+                                        ftp_port=port),
+                         password, timeout=SOCKET_TIMEOUT_SECONDS,
+                         passive=passive) as client:
+        client.nlst("/")
+
+
+def _ftp(host: str, port: int, password: str = "") -> str:
+    """Prove FTP can still carry a transfer, not just answer its banner.
+
+    The suites transfer in passive mode, which is ftplib's default, so that is
+    what the sweep proves. A device whose data path has stopped working still
+    answers `220` and still takes commands, and only the transfer fails.
+    Measured on a C64 Ultimate part-way through a standard run: every passive
+    transfer was reset from then on while the banner check called the device
+    healthy, so the runner kept feeding it suites and seven more failed for a
+    reason that had nothing to do with them.
+
+    When passive fails, active mode is tried as well, because which of the two
+    failed says what is wrong: both failing is a device that cannot transfer at
+    all, and passive alone failing is a device whose passive listener is gone
+    while its files are still readable. A listing is the cheapest thing that
+    opens a data connection either way.
+    """
+    started = time.monotonic()
+    try:
+        _ftp_listing(host, port, password, passive=True)
+    except (*ftplib.all_errors, EOFError) as exc:
+        # Every one of these has to leave the sweep as a failed check. An
+        # ftplib error that is not one _timed catches escapes the sweep
+        # instead, and the runner then dies part-way through a run rather than
+        # reporting a degraded device: a listener that closes without its
+        # banner raises EOFError, which killed the whole run.
+        detail = f"{type(exc).__name__}: {exc}".strip(": ")
+        try:
+            _ftp_listing(host, port, password, passive=False)
+        except (*ftplib.all_errors, EOFError):
+            raise RuntimeError(f"no data connection at all, {detail}") from exc
+        raise RuntimeError(
+            f"passive transfers are refused and active ones work, {detail}"
+        ) from exc
+    interactions.record("ftp", "nlst /", host=host,
+                        ms=round((time.monotonic() - started) * 1000.0, 1))
+    return ""
 
 
 def _dma_identify(host: str, port: int) -> str:
@@ -323,7 +402,7 @@ def _moves(api: UltimateApi, address: int, means: str,
                        f"{budget:g}s: {means}")
 
 
-def probe(host, password: str = "", api: Optional[UltimateApi] = None,
+def probe(host, password: str = "", api: UltimateApi | None = None,
           include: Sequence[str] = ()) -> Health:
     """Sweep the device once. `include` limits it to the named checks.
 
@@ -344,15 +423,16 @@ def probe(host, password: str = "", api: Optional[UltimateApi] = None,
     def skip(name: str) -> bool:
         return bool(wanted) and name not in wanted
 
-    checks: List[Check] = []
+    checks: list[Check] = []
     if not skip("ping"):
         checks.append(_ping(host))
     if not skip("rest"):
         checks.append(_timed("rest", lambda: api.version() and ""))
     if not skip("ftp"):
-        checks.append(_timed("ftp", lambda: _banner(host, target.ftp_port, b"220")))
+        checks.append(_timed("ftp", lambda: _ftp(host, target.ftp_port, password)))
     if not skip("telnet"):
-        checks.append(_timed("telnet", lambda: _banner(host, target.telnet_port)))
+        checks.append(_timed("telnet", lambda: _banner(host, target.telnet_port,
+                                                       reject=TELNET_BUSY)))
     if not skip("ident"):
         checks.append(_ident(api))
     if not skip("dma"):
@@ -413,11 +493,11 @@ def main() -> int:
     import sys
 
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import cli  # noqa: PLC0415
     from report import detail, suite_fail, suite_ok  # noqa: PLC0415
 
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("-H", "--host", default=os.environ.get("U64_HOST", "u64"))
-    parser.add_argument("-p", "--password", default=os.environ.get("U64_PASS", ""))
+    cli.add_device_arguments(parser, colour=False, timeout=None)
     parser.add_argument("-c", "--check", action="append", default=[],
                         help="Run only this check. Repeatable.")
     args = parser.parse_args()

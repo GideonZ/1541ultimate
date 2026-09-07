@@ -48,7 +48,7 @@ architecture gideon of decode_comb is
     signal inst_type    : t_instruction_type;
     signal imm_value    : std_logic_vector(31 downto 0);
 begin
-    process(program_counter, instruction, inst_valid, inst_func3, inst_imm12, inst_opcode, inst_type, imm_value)
+    process(program_counter, interrupt, inst_valid, inst_func3, inst_imm12, inst_opcode, inst_type, imm_value)
         variable opcode_idx   : natural range 0 to 31;
 
         procedure illegal is
@@ -109,8 +109,8 @@ begin
             decoded.mem_read_sext <= not inst_func3(2);
             -- mem address is always rs1 + imm
 
-        -- when  3 => -- FENCE
-        --    null;
+        when  3 => -- FENCE
+            null;
 
         when  4 => -- ALU_IMM
             inst_type <= Itype;

@@ -69,16 +69,26 @@ static void socket_dma_set_timeouts(int socket_fd)
 extern cart_def sid_cart;
 extern cart_def boot_cart;
 
-SocketDMA::SocketDMA() {
+SocketDMA::SocketDMA() : dmaEnabled(false), identEnabled(false) {
+	cfg = networkConfig.cfg;
+	cfg->addObject(this);
+	dmaEnabled = cfg->get_value(CFG_NETWORK_ULTIMATE_DMA_SERVICE) != 0;
+	identEnabled = cfg->get_value(CFG_NETWORK_ULTIMATE_IDENT_SERVICE) != 0;
 	load_buffer = new uint8_t[SOCKET_BUFFER_SIZE];
 	if (load_buffer) {
-	    xTaskCreate( dmaThread, "DMA Load Task", configMINIMAL_STACK_SIZE, (void *)load_buffer, PRIO_NETSERVICE, NULL );
+	    xTaskCreate( dmaThread, "DMA Load Task", configMINIMAL_STACK_SIZE, this, PRIO_NETSERVICE, NULL );
 	}
-    xTaskCreate(identThread, "UDP Ident Task", configMINIMAL_STACK_SIZE, NULL, PRIO_NETSERVICE, NULL );
+    xTaskCreate(identThread, "UDP Ident Task", configMINIMAL_STACK_SIZE, this, PRIO_NETSERVICE, NULL );
 }
 
 SocketDMA::~SocketDMA() {
     delete[] load_buffer;
+}
+
+void SocketDMA::effectuate_settings(void)
+{
+	dmaEnabled = cfg->get_value(CFG_NETWORK_ULTIMATE_DMA_SERVICE) != 0;
+	identEnabled = cfg->get_value(CFG_NETWORK_ULTIMATE_IDENT_SERVICE) != 0;
 }
 
 bool SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint16_t cmd, uint32_t len, struct in_addr *client_ip, bool &authenticated)
@@ -374,12 +384,15 @@ int SocketDMA::writeSocket(int socket, void *buffer, int length)
     return sent;
 }
 
-void SocketDMA::dmaThread(void *load_buffer)
+void SocketDMA::dmaThread(void *a)
 {
-    while (networkConfig.cfg->get_value(CFG_NETWORK_ULTIMATE_DMA_SERVICE) == 0) {
-        vTaskDelay(2000 / portTICK_PERIOD_MS);
-    }
-    puts("Socket DMA server starting");
+    SocketDMA *daemon = (SocketDMA *)a;
+    void *load_buffer = daemon->load_buffer;
+    while (1) {
+        while (!daemon->dmaEnabled) {
+            vTaskDelay(2000 / portTICK_PERIOD_MS);
+        }
+        puts("Socket DMA server starting");
 
 	int sockfd, newsockfd, portno;
 	unsigned long int clilen;
@@ -389,11 +402,15 @@ void SocketDMA::dmaThread(void *load_buffer)
     /* First call to socket() function */
     sockfd = socket(AF_INET, SOCK_STREAM, 0);
 
-    if (sockfd < 0)
+	if (sockfd < 0)
 	{
     	puts("ERROR dmaThread opening socket");
-    	return;
+		vTaskDelay(2000 / portTICK_PERIOD_MS);
+		continue;
 	}
+	int reuse = 1;
+	setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, (char *)&reuse, sizeof(reuse));
+	socket_dma_set_timeouts(sockfd);
 
     printf("DMA Thread Sockfd = %8x\n", sockfd);
 
@@ -409,7 +426,9 @@ void SocketDMA::dmaThread(void *load_buffer)
     if (bind(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0)
     {
  	    puts("dmaThread ERROR on binding");
-	    return;
+	    closesocket(sockfd);
+	    vTaskDelay(2000 / portTICK_PERIOD_MS);
+	    continue;
     }
 
     /* Now start listening for the clients, here process will
@@ -421,14 +440,22 @@ void SocketDMA::dmaThread(void *load_buffer)
     uint8_t your_ip[4];
     uint16_t your_port;
 
-    while(1) {
+    while(daemon->dmaEnabled) {
 		/* Accept actual connection from the client */
         clilen = sizeof(cli_addr);
 		newsockfd = accept(sockfd, (struct sockaddr *)&cli_addr, &clilen);
+		if (!daemon->dmaEnabled) {
+			if (newsockfd >= 0) {
+				closesocket(newsockfd);
+			}
+			break;
+		}
 		if (newsockfd < 0)
 		{
-			puts("dmaThread ERROR on accept");
-            vTaskDelay(100 / portTICK_PERIOD_MS);
+			if (errno != EAGAIN && errno != EWOULDBLOCK) {
+				puts("dmaThread ERROR on accept");
+                vTaskDelay(100 / portTICK_PERIOD_MS);
+			}
             continue;
 		}
 
@@ -450,7 +477,7 @@ void SocketDMA::dmaThread(void *load_buffer)
 		const char *password = networkConfig.cfg->get_string(CFG_NETWORK_PASSWORD);
 		if (!*password)
 	            authenticated = true;
-		while(1) {
+		while(daemon->dmaEnabled) {
 	        n = recv(newsockfd, buf, 2, 0);
 	        if (n <= 0) {
 	            break;
@@ -490,17 +517,13 @@ void SocketDMA::dmaThread(void *load_buffer)
         puts("ERROR reading from socket");
         closesocket(newsockfd);
     }
-    // this will never happen
     closesocket(sockfd);
+    }
 }
 
-void SocketDMA::identThread(void *_a)
+void SocketDMA::identThread(void *a)
 {
-    while (networkConfig.cfg->get_value(CFG_NETWORK_ULTIMATE_IDENT_SERVICE) == 0) {
-        vTaskDelay(2000 / portTICK_PERIOD_MS);
-    }
-    puts("Socket ident server starting");
-
+	SocketDMA *daemon = (SocketDMA *)a;
 	int sockfd, newsockfd, portno;
 	unsigned long int clilen;
     struct sockaddr_in serv_addr, cli_addr;
@@ -510,17 +533,24 @@ void SocketDMA::identThread(void *_a)
     char menu_header[64];
 
     getProductTitleString(menu_header, sizeof(menu_header), true);
+	while (1) {
+        while (!daemon->identEnabled) {
+            vTaskDelay(2000 / portTICK_PERIOD_MS);
+        }
+        puts("Socket ident server starting");
 
     /* First call to socket() function */
     sockfd = socket(AF_INET, SOCK_DGRAM, 0);
 
-    if (sockfd < 0)
+	if (sockfd < 0)
 	{
     	puts("ERROR identThread opening socket");
-    	vTaskDelete(NULL);
+		vTaskDelay(2000 / portTICK_PERIOD_MS);
+		continue;
 	}
+	socket_dma_set_timeouts(sockfd);
 
-    while(1) {
+    while(daemon->identEnabled) {
         /* Initialize socket structure */
         memset((char *) &serv_addr, 0, sizeof(serv_addr));
         portno = 64;
@@ -536,14 +566,19 @@ void SocketDMA::identThread(void *_a)
             vTaskDelay(500); // some seconds
             continue; // try again
         }
-        while(1) {
+        while(daemon->identEnabled) {
             // Receive client's message:
             int n = recvfrom(sockfd, client_message, sizeof(client_message), 0,
                 (struct sockaddr*)&cli_addr, &client_struct_length);
+            if (!daemon->identEnabled) {
+                break;
+            }
             if (n < 0) {
-                printf("Couldn't receive: %d\n", n);
-                vTaskDelay(500); // some seconds
-                continue; // try again
+                if (errno != EAGAIN && errno != EWOULDBLOCK) {
+                    printf("Couldn't receive: %d\n", n);
+                    vTaskDelay(500); // some seconds
+                }
+                continue;
             }
             printf("Received Ident Request from IP: %s and port: %i\n",
                 inet_ntoa(cli_addr.sin_addr), ntohs(cli_addr.sin_port));
@@ -613,8 +648,8 @@ void SocketDMA::identThread(void *_a)
             }
         }
     }
-    // this will never happen
     lwip_close(sockfd);
+	}
 }
 
 #include "init_function.h"

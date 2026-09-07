@@ -9,7 +9,7 @@ OPENAPI = python3 tools/openapi/generate.py
 #   make openapi_validate PYTHON=/path/to/venv/bin/python
 PYTHON ?= python3
 
-.PHONY: all app_space app_space_test observability_test host_tests openapi openapi_check openapi_test openapi_validate
+.PHONY: all app_space app_space_test observability_test lint_test host_tests openapi openapi_check openapi_test openapi_validate
 
 all: esp32 u2_rv u2plus u2pl u64 u64ii
 	@$(APP_SPACE) report
@@ -26,6 +26,11 @@ app_space_test:
 # `observability` suite.
 observability_test:
 	@python3 tests/lib/observability_test.py
+
+# The lint over tests/ and run-tests, with the rules in tests/ruff.toml.
+# Needs ruff: python3 -m pip install -r tests/requirements-lint.txt
+lint_test:
+	@python3 tests/lib/lint_test.py
 
 # The OpenAPI documents of the REST API, one per product family. `openapi_check`
 # is the gate: it rebuilds them in memory and fails when the committed copies

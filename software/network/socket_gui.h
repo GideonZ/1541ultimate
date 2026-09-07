@@ -10,13 +10,16 @@
 
 #include "FreeRTOS.h"
 #include "task.h"
+#include "config.h"
 
-class SocketGui
+class SocketGui : public ConfigurableObject
 {
+	volatile bool enabled;
 public:
 	TaskHandle_t listenTaskHandle;
 
 	SocketGui();
+	void effectuate_settings(void);
 	int listenTask(void);
 };
 

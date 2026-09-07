@@ -288,9 +288,12 @@ tools/svf_dump
 tools/swap
 tools/c64/*.prg
 software/6502/sidcrt/target
+software/io/command_interface/tests/paletteCommandTest
 *.d
 tools/dump_bus_trace
 tools/64tass/*.o
+tools/64tass/64tass
+tools/64tass/.build-lock
 /chars/
 .vscode
 .idea

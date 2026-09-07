@@ -225,7 +225,7 @@ AudioConfig :: AudioConfig()
         }
     }
 
-    effectuate_settings();
+    effectuate_registered_settings();
 }
     
 

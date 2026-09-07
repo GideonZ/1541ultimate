@@ -29,7 +29,7 @@ static struct t_cfg_definition swin_sid_config[] = {
 SidDeviceSwinSid::SidDeviceSwinSid(int socket, volatile uint8_t *base) : SidDevice(socket)
 {
     config = new SidDeviceSwinSid :: SwinSidConfig(this);
-    config->effectuate_settings();
+    config->effectuate_registered_settings();
 }
 
 void SidDeviceSwinSid :: SetSidType(int type)

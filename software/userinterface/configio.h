@@ -28,7 +28,6 @@ typedef enum {
 class ConfigIO : public ObjectWithMenu
 {
     static void S_write_store_to_file(ConfigStore *s, File *f);
-    static void S_write_to_file(File *f);
 
     static t_cfg_line_result S_read_store_element(ConfigStore *st, const char *line, int linenr, StreamTextLog *log);
     static SubsysResultCode_e S_reset_log(SubsysCommand *cmd);
@@ -59,6 +58,8 @@ public:
     static SubsysResultCode_e S_load_associated_config(SubsysCommand *cmd);
     static SubsysResultCode_e S_load_associated_config_usr(SubsysCommand *cmd);
 
+    // Public so the host test can drive a round trip without a filesystem.
+    static void S_write_to_file(File *f);
     static bool S_read_from_file(File *f, StreamTextLog *log);
 };
 

@@ -80,7 +80,7 @@ private:
     void run_editor(Editor *);
 public:
     int color_border, color_bg, color_fg, color_sel, color_sel_bg, reverse_sel;
-    int color_status, color_inactive;
+    int color_status, color_inactive, color_configitem;
 
     int config_save, filename_overflow_squeeze, navmode;
     bool logo;

@@ -12,25 +12,24 @@ import threading
 import time
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Callable
+from collections.abc import Callable
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
-# tests/lib holds the helpers every suite shares.
-sys.path.insert(0, str(SCRIPT_DIR.parents[1] / "lib"))
+# The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
+sys.path.insert(0, bootstrap.directory("soak", "network"))
 
 import report  # noqa: E402
 
 import ftp_probe  # noqa: E402
 import http_probe  # noqa: E402
-import ident_probe  # noqa: E402
-import modem_probe  # noqa: E402
-import ping_probe  # noqa: E402
-import dma_probe  # noqa: E402
 import stream_monitor  # noqa: E402
-import telnet_probe  # noqa: E402
+import connection_runtime  # noqa: E402
 from connection_runtime import (  # noqa: E402
     ProbeCorrectness,
     ProbeExecutionContext,
@@ -137,15 +136,16 @@ HISTORICAL_CORRECTNESS_EVIDENCE = {
     },
 }
 
-PROBE_RUNNERS = {
-    "ping": ping_probe.run_probe,
-    "ident": ident_probe.run_probe,
-    "dma": dma_probe.run_probe,
-    "telnet": telnet_probe.run_probe,
-    "ftp": ftp_probe.run_probe,
-    "http": http_probe.run_probe,
-    "modem": modem_probe.run_probe,
-}
+def probe_runner(name: str):
+    """The entry point of one probe, from the registry in connection_runtime.
+
+    This was a dictionary of seven functions, which meant naming all seven
+    modules whatever the run asked for. Each of them opens sockets and reads
+    the environment at import. Five are deferred by this: ftp_probe and
+    http_probe are still imported at the top of this module, which reads
+    constants off them.
+    """
+    return connection_runtime.probe(name).run_probe
 
 
 def default_probe_random_seed() -> int:
@@ -234,7 +234,7 @@ class ExecutionState:
             return 0
         ordered = sorted(samples)
         rank = max(1, math.ceil(percentile / 100.0 * len(ordered)))
-        return int(round(ordered[rank - 1]))
+        return round(ordered[rank - 1])
 
     def next_probe_operation_index(self, protocol: str, runner_id: int, surface: ProbeSurface, pool_size: int) -> int:
         if pool_size < 1:
@@ -267,7 +267,7 @@ class ExecutionState:
             with self.sample_lock:
                 self.failure_count += 1
         self.record_latency(protocol, outcome.elapsed_ms)
-        self.emit_log(protocol, outcome.result, f"{outcome.detail} latency_ms={int(round(outcome.elapsed_ms))}", iteration=iteration, runner_id=runner_id)
+        self.emit_log(protocol, outcome.result, f"{outcome.detail} latency_ms={round(outcome.elapsed_ms)}", iteration=iteration, runner_id=runner_id)
 
     def emit_iteration_summary(self, started_at: float, iteration: int, runner_id: int) -> None:
         if not self.settings.verbose and self.settings.log_every > 1 and iteration % self.settings.log_every != 0:
@@ -697,7 +697,8 @@ def execute_probe(
     runner_id: int = 1,
     iteration: int = 1,
 ) -> ProbeOutcome:
-    runners = PROBE_RUNNERS if probe_runners is None else probe_runners
+    # probe_runners is how a caller substitutes a probe, which the self-tests
+    # do; otherwise the registry is asked for the one this protocol names.
     context = ProbeExecutionContext(
         protocol=protocol,
         runner_id=runner_id,
@@ -705,7 +706,9 @@ def execute_probe(
         surface=config.probe_surfaces.get(protocol, ProbeSurface.SMOKE),
         state=state,
     )
-    return runners[protocol](settings, config.probe_correctness[protocol], context=context)
+    runner = (probe_runner(protocol) if probe_runners is None
+              else probe_runners[protocol])
+    return runner(settings, config.probe_correctness[protocol], context=context)
 
 
 def execute_probe_safely(

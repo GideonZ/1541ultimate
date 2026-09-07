@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Soak: asserts the Assembly 64 search returns the heap it borrows.
+# Soak: asserts the machine's online file search returns the heap it borrows.
 
 """Repeat the search browser's two costly paths and require the free heap back.
 
@@ -31,9 +31,13 @@ bytes against a noise floor of a few dozen. The query slope needs few, because
 a single leaked response body is 16 KB -- and each iteration is a request to a
 third-party service, which is not something to make a habit of.
 
+The service is the machine's (Assembly 64, or CommoServe on a C64 Ultimate);
+every step is driven through assembly64_test, which takes the way in from
+tests/lib/machine.py.
+
 Uses GET /v1/machine:heap. Firmware predating that endpoint answers 404 and
 every check here skips, so the suite is safe to run against any image. It also
-talks to the live Assembly 64 service through the device: when that is
+talks to that live service through the device: when the service is
 unreachable the form never opens, and the suite skips rather than reporting a
 third-party outage as a firmware defect.
 """
@@ -41,20 +45,20 @@ third-party outage as a firmware defect.
 import argparse
 import os
 import sys
-import time
 from pathlib import Path
 
-# tests/lib holds the reporting rules and the shared REST client; tests/e2e
-# holds the UI backend and this fixture's own e2e suite, which already knows
-# how to open the form, fill a field and submit a query.
-sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "lib"))
-sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "e2e" / "lib"))
-sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "e2e" / "io" / "c64"))
+# The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
+import leak  # noqa: E402
+import cli  # noqa: E402
+sys.path.insert(0, bootstrap.directory("e2e", "io", "c64"))
 
 import api as api_lib  # noqa: E402  (needs tests/lib on sys.path first)
 import rest as rest_lib  # noqa: E402  (needs tests/lib on sys.path first)
 from report import (  # noqa: E402
-    Failure, check, check_ok, check_skip, check_start, detail, format_exception,
+    Failure, teardown_step, check_ok, detail, format_exception,
     section, suite_fail, suite_ok, suite_skip)
 from menu import wait_until  # noqa: E402
 from ui_backend import add_mode_argument, make_backend  # noqa: E402
@@ -70,7 +74,7 @@ OPEN_MEASURED = 40
 OPEN_TOLERANCE_BYTES_PER_OP = 25
 
 # One warmup is enough: nothing about a query is cached, and every iteration
-# costs the Assembly 64 service two requests.
+# costs the search service two requests.
 QUERY_WARMUP = 1
 QUERY_MEASURED = 5
 # A leaked response body alone is 16,392 bytes. This tolerance is loose on
@@ -80,10 +84,6 @@ QUERY_MEASURED = 5
 QUERY_TOLERANCE_BYTES_PER_OP = 2000
 
 SETTLE_SECONDS = 6.0
-
-
-def heap_free(rest: rest_lib.RestClient) -> int:
-    return int(api_lib.MachineApi(rest).heap()["free"])
 
 
 def open_and_leave(device) -> None:
@@ -125,49 +125,27 @@ def query_and_open_entry(device) -> bool:
 
 
 def measure(rest: rest_lib.RestClient, title: str, once, warmup: int,
-            measured: int, tolerance: int, unit: str) -> bool:
+            measured: int, tolerance: int, unit: str, units: str) -> bool:
     """Warm up, then require the free heap to be flat over `measured` runs."""
-    section(title)
-
-    with check(f"warm up ({warmup} {unit}, one-time costs land here)"):
-        for _ in range(warmup):
-            once()
-        time.sleep(SETTLE_SECONDS)
-
-    seen = {}
     try:
-        with check(f"free heap is flat across {measured} more {unit}"):
-            before = heap_free(rest)
-            for _ in range(measured):
-                once()
-            time.sleep(SETTLE_SECONDS)
-            after = heap_free(rest)
-            consumed = before - after
-            seen.update(before=before, after=after, consumed=consumed,
-                        per_op=consumed / measured)
-            if seen["per_op"] > tolerance:
-                raise Failure(
-                    f"{title} leaks about {seen['per_op']:.0f} bytes per "
-                    f"iteration ({consumed} bytes over {measured})")
-        ok = True
+        leak.slope(once=once, heap=api_lib.MachineApi(rest).heap_free,
+                   warmup=warmup, iterations=measured,
+                   tolerance_bytes_per_op=tolerance,
+                   unit=unit, units=units,
+                   settle_seconds=SETTLE_SECONDS, title=title)
+        return True
     except Failure:
-        ok = False
-    if seen:
-        detail(f"free before {seen['before']}, after {seen['after']}")
-        detail(f"consumed {seen['consumed']} bytes over {measured} {unit} "
-               f"= {seen['per_op']:.0f} bytes each (tolerance {tolerance})")
-    return ok
+        return False
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Assert that repeated Assembly 64 searches do not consume "
-                    "heap. Skips if the firmware has no machine:heap endpoint, "
-                    "or if the Assembly 64 service is unreachable.")
-    parser.add_argument("-H", "--host", default=os.environ.get("U64_HOST", "u64"))
-    parser.add_argument("-p", "--password", default=os.environ.get("U64_PASS"))
-    parser.add_argument("-t", "--timeout", type=float,
-                        default=float(os.environ.get("U64_TIMEOUT", "30.0")))
+        description="Assert that repeated online searches do not consume heap. "
+                    "The service is the machine's: Assembly 64 on an Ultimate "
+                    "64 and an Ultimate II+, CommoServe on a C64 Ultimate. "
+                    "Skips if the firmware has no machine:heap endpoint, or if "
+                    "that service is unreachable.")
+    cli.add_device_arguments(parser, password=None, timeout=30.0, colour=False)
     parser.add_argument("--telnet-port", type=int,
                         default=int(os.environ.get("U64_TELNET_PORT", "23")))
     add_mode_argument(parser, default=os.environ.get("U64_MODE", "overlay"))
@@ -176,12 +154,7 @@ def main() -> int:
     password = args.password or None
     rest = rest_lib.RestClient(args.host, password, args.timeout)
 
-    check_start("device exposes GET /v1/machine:heap")
-    if api_lib.MachineApi(rest).heap() is None:
-        check_skip("firmware predates GET /v1/machine:heap, nothing to measure")
-        section("summary")
-        detail("skipped: device firmware has no machine:heap endpoint")
-        suite_ok("assembly_search_leak_test")
+    if not leak.heap_is_served(api_lib.MachineApi(rest).heap, "assembly_search_leak_test"):
         return 0
     check_ok()
 
@@ -190,6 +163,9 @@ def main() -> int:
     backend = make_backend(args.mode, args.host, password, args.timeout,
                            telnet_port=args.telnet_port, telnet_width=60)
     device = a64.Device(backend, args.mode, args.host, password, args.timeout)
+    service = backend.machine.search_service
+    detail(f"this machine searches {service}, from "
+           + ("its launcher" if device.search_in_launcher else "its task menu"))
 
     entries_opened = 0
 
@@ -201,10 +177,11 @@ def main() -> int:
     try:
         opens_ok = measure(rest, "opening and closing the search browser",
                            lambda: open_and_leave(device), OPEN_WARMUP,
-                           OPEN_MEASURED, OPEN_TOLERANCE_BYTES_PER_OP, "opens")
+                           OPEN_MEASURED, OPEN_TOLERANCE_BYTES_PER_OP,
+                           "open", "opens")
         query_ok = measure(rest, "running a query and opening a result",
                            one_query, QUERY_WARMUP, QUERY_MEASURED,
-                           QUERY_TOLERANCE_BYTES_PER_OP, "queries")
+                           QUERY_TOLERANCE_BYTES_PER_OP, "query", "queries")
 
         section("summary")
         detail(f"open/close slope: {'OK' if opens_ok else 'FAIL'}")
@@ -223,10 +200,8 @@ def main() -> int:
         suite_skip("assembly_search_leak_test", str(exc))
         return 0
     finally:
-        try:
-            a64.recover(device, "tearing down")
-        except Exception:
-            pass
+        teardown_step(f"put the {service} UI back",
+                    lambda: a64.recover(device, "tearing down"))
         backend.close()
 
 

@@ -34,6 +34,7 @@ TapeController :: TapeController() : SubSystem(SUBSYSID_TAPE_PLAYER)
     fm = FileManager :: getFileManager();
     register_store(0x54415045, "Tape Settings", tape_config);
     cfg->set_sort_order(SORT_ORDER_CFG_TAPE);
+    effectuate_registered_settings();
     
     file = NULL;
 	paused = 0;

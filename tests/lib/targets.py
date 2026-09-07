@@ -41,7 +41,6 @@ from __future__ import annotations
 import os
 import re
 from dataclasses import dataclass
-from typing import Tuple
 
 SEPARATOR = "@"
 
@@ -164,7 +163,7 @@ class Target:
         return self.computer
 
     @property
-    def log_hosts(self) -> Tuple[str, ...]:
+    def log_hosts(self) -> tuple[str, ...]:
         """Whose logs belong to this target, the device under test first.
 
         Both machines of a cartridge target log: the firmware being tested is
@@ -176,7 +175,7 @@ class Target:
         return (self.device,)
 
     @property
-    def resources(self) -> Tuple[str, ...]:
+    def resources(self) -> tuple[str, ...]:
         """The physical machines this target occupies while it runs.
 
         Two targets may not run at the same time when these overlap: a
@@ -187,7 +186,7 @@ class Target:
             return (self.device, self.computer)
         return (self.device,)
 
-    def conflicts_with(self, other: "Target") -> bool:
+    def conflicts_with(self, other: Target) -> bool:
         return bool(set(self.resources) & set(other.resources))
 
     def host_for(self, path: str) -> str:
@@ -300,7 +299,7 @@ def _port(variable: str, default: int) -> int:
     return default
 
 
-def resolve(host: "str | Target") -> Target:
+def resolve(host: str | Target) -> Target:
     """A target from a handle or from a token, for a library that takes either.
 
     Every library here takes whatever the runner gave it, which is a token, and
@@ -309,12 +308,24 @@ def resolve(host: "str | Target") -> Target:
     return host if isinstance(host, Target) else parse(host)
 
 
-def host_for(token: "str | Target", path: str) -> str:
+def host_for(token: str | Target, path: str) -> str:
     """Which machine of `token` serves `path`. See Target.host_for."""
     return resolve(token).host_for(path)
 
 
-def device_of(token: "str | Target") -> str:
+def is_cartridge(host: str) -> bool:
+    """Whether `host` names a cartridge inside a computer, as `u2@c64u` does.
+
+    For a suite that is known not to work in that arrangement and skips itself
+    with a reason rather than failing. The property is the target's, not the
+    machine's: the same cartridge on its own is a different proposition, and
+    tests/lib/machine.py's fix table, which keys on the product, cannot say
+    this.
+    """
+    return parse(host).split
+
+
+def device_of(token: str | Target) -> str:
     """The bare host name in a target token, for a caller that needs one.
 
     Anything opening a socket - ping, FTP, Telnet, the DMA control port - wants

@@ -38,7 +38,6 @@ Two rules about the addressing, both of which look like accidents and are not:
   why exactly one process binds the syslog port.
 """
 
-import os
 import select
 import socket
 import struct
@@ -46,11 +45,13 @@ import sys
 import time
 from array import array
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Optional, Sequence, Set
+from collections.abc import Iterable, Sequence
+from pathlib import Path
 
-sys.path.insert(0, os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-    "lib"))
+# The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
 
 import targets as targets_lib  # noqa: E402
 from report import Failure  # noqa: E402
@@ -64,7 +65,7 @@ AUDIO_GROUP = targets_lib.AUDIO_GROUP
 AUDIO_PORT = targets_lib.AUDIO_PORT
 
 
-def stream_socket(group: str, port: int, timeout: Optional[float] = 2.0) -> socket.socket:
+def stream_socket(group: str, port: int, timeout: float | None = 2.0) -> socket.socket:
     """A socket receiving one stream, sharing its port with anything else.
 
     Joins `group` when it is a multicast address. A unicast address is a real
@@ -103,7 +104,7 @@ def is_multicast(address: str) -> bool:
     return 224 <= first <= 239
 
 
-def source_addresses(host) -> Set[str]:
+def source_addresses(host) -> set[str]:
     """Every address whose packets count as this device's.
 
     A second machine streaming into the same group is indistinguishable from
@@ -137,9 +138,9 @@ class Arming:
     def __init__(self, api, target=None) -> None:
         self.api = api
         self.target = targets_lib.resolve(target) if target is not None else None
-        self.started: Set[str] = set()
-        self.arms: Dict[str, int] = {}
-        self.failures: Dict[str, str] = {}
+        self.started: set[str] = set()
+        self.arms: dict[str, int] = {}
+        self.failures: dict[str, str] = {}
 
     def address(self, stream: str) -> str:
         handle = self.target
@@ -152,8 +153,8 @@ class Arming:
         return f"{group}:{port}"
 
     def start(self, stream: str, already_arriving: bool = False,
-              timeout: Optional[float] = None,
-              retries: Optional[int] = None) -> bool:
+              timeout: float | None = None,
+              retries: int | None = None) -> bool:
         """Ask the device to send `stream`, unless it already is.
 
         `already_arriving` is the caller saying it has seen packets from its
@@ -217,7 +218,7 @@ class Arming:
         self.stop_all()
 
 
-def receive(sockets: Sequence[socket.socket], addresses: Set[str],
+def receive(sockets: Sequence[socket.socket], addresses: set[str],
             timeout: float) -> Iterable:
     """Every packet that arrives within `timeout`.
 
@@ -406,8 +407,8 @@ class _FrameBuilder:
         # frames shorter than that (NTSC) simply leave the tail unused and
         # it gets sliced off in `_finish`.
         self.buffer = bytearray(HEIGHT_PAL * BYTES_PER_LINE)
-        self.received_lines: Set[int] = set()
-        self.height: Optional[int] = None  # known only once the last packet arrives
+        self.received_lines: set[int] = set()
+        self.height: int | None = None  # known only once the last packet arrives
         self.last_seen = False
 
     def add_packet(self, line: int, is_last: bool, payload: bytes) -> None:
@@ -456,11 +457,11 @@ class FrameAssembler:
     """
 
     def __init__(self) -> None:
-        self._last_seq: Optional[int] = None
-        self._last_completed_frame: Optional[int] = None
+        self._last_seq: int | None = None
+        self._last_completed_frame: int | None = None
         # Keyed by frame number, in arrival order. See push.
-        self._builders: "Dict[int, _FrameBuilder]" = {}
-        self._counts: Dict[str, int] = {
+        self._builders: dict[int, _FrameBuilder] = {}
+        self._counts: dict[str, int] = {
             "packets": 0,
             "packets_dropped": 0,
             "packets_malformed": 0,
@@ -477,9 +478,9 @@ class FrameAssembler:
         }
         # One count per reason, so a reader can tell a run that competed for
         # the stream from a device that kept restarting.
-        self.discontinuities: Dict[str, int] = {}
+        self.discontinuities: dict[str, int] = {}
 
-    def push(self, data: bytes) -> Optional[Frame]:
+    def push(self, data: bytes) -> Frame | None:
         """Take one datagram. Return the frame it completed, or None."""
         self._counts["packets"] += 1
 
@@ -556,7 +557,7 @@ class FrameAssembler:
         self._counts["stream_discontinuities"] += 1
         self.discontinuities[reason] = self.discontinuities.get(reason, 0) + 1
 
-    def counts(self) -> Dict[str, int]:
+    def counts(self) -> dict[str, int]:
         """Packet/frame accounting since construction; see the class docstring."""
         return dict(self._counts)
 
@@ -724,7 +725,7 @@ def _clamp16(value: float) -> int:
     return v
 
 
-def _fade_channel(last_sample: int, next_sample: int, n: int) -> List[int]:
+def _fade_channel(last_sample: int, next_sample: int, n: int) -> list[int]:
     """Build n concealment samples for one channel bridging a gap.
 
     The shape is: hold-and-fade the last real sample toward zero for most
@@ -758,7 +759,7 @@ def _fade_channel(last_sample: int, next_sample: int, n: int) -> List[int]:
     return fade + ramp
 
 
-def _fade_to_silence(last_sample: int, n: int) -> List[int]:
+def _fade_to_silence(last_sample: int, n: int) -> list[int]:
     """Build n concealment samples for one channel fading toward zero.
 
     Used by silence(), which has no known future sample to ramp into
@@ -770,7 +771,7 @@ def _fade_to_silence(last_sample: int, n: int) -> List[int]:
     return [_clamp16(last_sample * (n - i) / n) for i in range(n)]
 
 
-def _interleave(left: List[int], right: List[int]) -> bytes:
+def _interleave(left: list[int], right: list[int]) -> bytes:
     """Pack per-channel int16 sample lists into s16le interleaved stereo bytes."""
     n = len(left)
     frames = [0] * (2 * n)
@@ -830,7 +831,7 @@ class AudioTimeline:
         self._has_samples = False
         self._last_l = 0
         self._last_r = 0
-        self._counts: Dict[str, int] = {
+        self._counts: dict[str, int] = {
             "packets": 0,
             "packets_written": 0,
             "packets_lost": 0,
@@ -846,7 +847,7 @@ class AudioTimeline:
             "malformed": 0,
             "stream_discontinuities": 0,
         }
-        self.discontinuities: Dict[str, int] = {}
+        self.discontinuities: dict[str, int] = {}
 
     def _update_last_samples(self, payload: bytes) -> None:
         last_l, last_r = struct.unpack_from("<2h", payload, len(payload) - FRAME_BYTES)
@@ -1022,7 +1023,7 @@ class AudioTimeline:
             self._has_samples = True
         return _interleave(left, right)
 
-    def counts(self) -> Dict[str, int]:
+    def counts(self) -> dict[str, int]:
         """Return a snapshot of the running per-outcome packet counters.
 
         Keys: packets, packets_written, packets_lost, packets_concealed,

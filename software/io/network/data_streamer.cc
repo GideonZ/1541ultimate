@@ -42,6 +42,7 @@ DataStreamer :: DataStreamer()
 
     cfg = ConfigManager :: getConfigManager()->register_store(0x44617461, "Data Streams", stream_cfg, NULL);
     cfg->set_sort_order(SORT_ORDER_CFG_STREAMS);
+    cfg->effectuate();
 
     for (int i=0; i < 4; i++) {
         timers[i] = xTimerCreate("StreamTimer", 100, pdFALSE, (void *)i, DataStreamer :: S_timer);

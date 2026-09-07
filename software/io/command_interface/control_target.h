@@ -26,6 +26,10 @@
 #define CTRL_CMD_DISK_B_POWER   0x35
 #define CTRL_CMD_GET_RAMDISKINFO   0x40
 #define CTRL_CMD_LOAD_CONFIG       0x50
+#define CTRL_CMD_GET_PALETTE       0x51
+#define CTRL_CMD_SET_PALETTE       0x52
+#define CTRL_CMD_SET_PALETTE_COLOR 0x53
+#define CTRL_CMD_RESET_PALETTE     0x54
 
 class ControlTarget : CommandTarget
 {

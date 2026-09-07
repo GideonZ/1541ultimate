@@ -62,10 +62,18 @@ static void socket_gui_set_timeouts(int socket_fd)
     net_enable_client_keepalive(socket_fd);
 }
 
-SocketGui :: SocketGui()
+SocketGui :: SocketGui() : enabled(false)
 {
     printf("Starting Telnet Server\n");
+	cfg = networkConfig.cfg;
+	cfg->addObject(this);
+	enabled = cfg->get_value(CFG_NETWORK_TELNET_SERVICE) != 0;
 	xTaskCreate( socket_gui_listen_task, "Socket Gui Listener", configMINIMAL_STACK_SIZE, this, PRIO_NETSERVICE, &listenTaskHandle );
+}
+
+void SocketGui :: effectuate_settings(void)
+{
+	enabled = cfg->get_value(CFG_NETWORK_TELNET_SERVICE) != 0;
 }
 
 static bool socket_ensure_authenticated(SocketStream *str) {
@@ -211,73 +219,98 @@ void socket_gui_task(void *a)
 
 int SocketGui :: listenTask(void)
 {
-    while (networkConfig.cfg->get_value(CFG_NETWORK_TELNET_SERVICE) == 0) {
-        vTaskDelay(2000 / portTICK_PERIOD_MS);
-    }
-    puts("Telnet server starting");
-
-	int sockfd, portno;
+	int portno;
 	socklen_t clilen;
     struct sockaddr_in serv_addr, cli_addr;
 
-    sockfd = socket(AF_INET, SOCK_STREAM, 0);
-    if (sockfd < 0) {
-       puts("ERROR opening socket");
-       return -1;
-    }
-    memset((char *) &serv_addr, 0, sizeof(serv_addr));
-    portno = 23;
-    serv_addr.sin_family = AF_INET;
-    serv_addr.sin_addr.s_addr = INADDR_ANY;
-    serv_addr.sin_port = htons(portno);
-    // Retry binding rather than exiting permanently: a transient failure would
-    // otherwise kill the telnet listener until reboot.
-    while (bind(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0) {
-        puts("Telnet: ERROR on binding; retrying in 2s");
-        vTaskDelay(2000 / portTICK_PERIOD_MS);
-    }
-
-    listen(sockfd, 2);
-
     while(1) {
-    	clilen = sizeof(cli_addr);
-		int actual_socket = accept(sockfd, (struct sockaddr *) &cli_addr, &clilen);
-		if (actual_socket < 0) {
-			 puts("ERROR on accept");
-			 vTaskDelay(100 / portTICK_PERIOD_MS);
-			 continue;
+        while (!enabled) {
+            vTaskDelay(2000 / portTICK_PERIOD_MS);
+        }
+        puts("Telnet server starting");
+
+		int sockfd = socket(AF_INET, SOCK_STREAM, 0);
+		if (sockfd < 0) {
+			puts("ERROR opening socket");
+			vTaskDelay(2000 / portTICK_PERIOD_MS);
+			continue;
 		}
-
-        socket_gui_set_timeouts(actual_socket);
-
-		// Cap concurrent telnet sessions: refuse politely rather than let
-		// abandoned connections accumulate and drain the shared netconn pool.
-		if (telnet_sessions >= TELNET_MAX_SESSIONS) {
-			const char *busy = "Too many connections, try again later.\r\n";
-			send(actual_socket, busy, strlen(busy), 0);
-			shutdown(actual_socket, 2);
-			lwip_close(actual_socket);
-			vTaskDelay(100 / portTICK_PERIOD_MS);
+		int reuse = 1;
+		setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, (char *)&reuse, sizeof(reuse));
+		struct timeval timeout;
+		timeout.tv_sec = 0;
+		timeout.tv_usec = 250000;
+		setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout, sizeof(timeout));
+		if (!enabled) {
+			lwip_close(sockfd);
+			continue;
+		}
+		memset((char *) &serv_addr, 0, sizeof(serv_addr));
+		portno = 23;
+		serv_addr.sin_family = AF_INET;
+		serv_addr.sin_addr.s_addr = INADDR_ANY;
+		serv_addr.sin_port = htons(portno);
+		// Retry binding rather than exiting permanently: a transient failure would
+		// otherwise kill the telnet listener until reboot.
+		while (enabled && bind(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0) {
+			puts("Telnet: ERROR on binding; retrying in 2s");
+			vTaskDelay(2000 / portTICK_PERIOD_MS);
+		}
+		if (!enabled) {
+			lwip_close(sockfd);
 			continue;
 		}
 
-		SocketStream *stream = new SocketStream(actual_socket);
-		// telnet_sessions is decremented from each session task on exit; guard the
-		// read-modify-write so concurrent decrements cannot lose an update and drift
-		// the count (which would eventually make the cap refuse every connection).
-		portENTER_CRITICAL();
-		telnet_sessions++;
-		portEXIT_CRITICAL();
-		BaseType_t res = xTaskCreate( socket_gui_task, "Socket Gui Task", configMINIMAL_STACK_SIZE, stream, PRIO_USERIFACE, NULL );
-		if (res != pdPASS) {
-			puts("Telnet: xTaskCreate failed; dropping connection");
-			portENTER_CRITICAL();
-			telnet_sessions--;
-			portEXIT_CRITICAL();
-			stream->close();
-			delete stream;
-			vTaskDelay(100 / portTICK_PERIOD_MS);
-			continue;
+		listen(sockfd, 2);
+
+		while(enabled) {
+			clilen = sizeof(cli_addr);
+			int actual_socket = accept(sockfd, (struct sockaddr *) &cli_addr, &clilen);
+			if (!enabled) {
+				if (actual_socket >= 0) {
+					lwip_close(actual_socket);
+				}
+				break;
+			}
+			if (actual_socket < 0) {
+				if (errno != EAGAIN && errno != EWOULDBLOCK) {
+					puts("ERROR on accept");
+					vTaskDelay(100 / portTICK_PERIOD_MS);
+				}
+				continue;
+			}
+
+            socket_gui_set_timeouts(actual_socket);
+
+            // Cap concurrent telnet sessions: refuse politely rather than let
+            // abandoned connections accumulate and drain the shared netconn pool.
+            if (telnet_sessions >= TELNET_MAX_SESSIONS) {
+                const char *busy = "Too many connections, try again later.\r\n";
+                send(actual_socket, busy, strlen(busy), 0);
+                shutdown(actual_socket, 2);
+                lwip_close(actual_socket);
+                vTaskDelay(100 / portTICK_PERIOD_MS);
+                continue;
+            }
+
+            SocketStream *stream = new SocketStream(actual_socket);
+            // telnet_sessions is decremented from each session task on exit; guard the
+            // read-modify-write so concurrent decrements cannot lose an update and drift
+            // the count (which would eventually make the cap refuse every connection).
+            portENTER_CRITICAL();
+            telnet_sessions++;
+            portEXIT_CRITICAL();
+            BaseType_t res = xTaskCreate( socket_gui_task, "Socket Gui Task", configMINIMAL_STACK_SIZE, stream, PRIO_USERIFACE, NULL );
+            if (res != pdPASS) {
+                puts("Telnet: xTaskCreate failed; dropping connection");
+                portENTER_CRITICAL();
+                telnet_sessions--;
+                portEXIT_CRITICAL();
+                stream->close();
+                delete stream;
+                vTaskDelay(100 / portTICK_PERIOD_MS);
+			}
 		}
+		lwip_close(sockfd);
     }
 }

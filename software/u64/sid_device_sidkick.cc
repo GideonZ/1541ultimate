@@ -55,6 +55,7 @@ SidDeviceSidKick::SidDeviceSidKick(int socket, volatile uint8_t *base, int subty
     // otherwise record 6581 for everyone. ArmSid reads its parameters at this
     // same point for the same reason.
     config->at_open_config();
+    config->set_effectuated();
 }
 
 void SidDeviceSidKick :: SetSidType(int type)
@@ -101,6 +102,7 @@ void SidDeviceSidKick::SidKickConfig :: effectuate(void)
 {
     ConfigItem *i = find_item(CFG_KICKSID_TYPE);
     if (!i) {
+        set_effectuated();
         return;
     }
 
@@ -118,6 +120,7 @@ void SidDeviceSidKick::SidKickConfig :: effectuate(void)
     // Restore C64 mode
     C64_MODE = parent->pre_mode;
     parent->post();
+    set_effectuated();
 }
 
 int SidDeviceSidKick::SidKickConfig:: S_cfg_pdsid_type(ConfigItem *it)

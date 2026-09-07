@@ -19,7 +19,6 @@ test can run the same scenario down either route.
 
 import os
 import time
-from typing import List, Optional, Tuple
 
 from assembler import assemble
 from report import Failure, detail
@@ -96,11 +95,11 @@ class NativeUci:
         status, _, body = self.runners.upload("run_prg", prg)
         if status != 200:
             raise Failure(f"runners:run_prg returned HTTP {status}: {body[:160]!r}")
-        deadline = time.time() + START_TIMEOUT_SECONDS
+        deadline = time.monotonic() + START_TIMEOUT_SECONDS
         while True:
             if self.machine.readmem(READY, 1)[0] == AGENT_READY:
                 break
-            if time.time() > deadline:
+            if time.monotonic() > deadline:
                 raise Failure(
                     f"the 6502 agent did not report ready within "
                     f"{START_TIMEOUT_SECONDS:.0f}s; ${READY:04X} never became "
@@ -112,7 +111,7 @@ class NativeUci:
     # -- one command --------------------------------------------------------
 
     def _run(self, command: bytes, overrun_reads: int, cap: int,
-             max_blocks: int = MAX_BLOCKS, abort_first: bool = False) -> Tuple[bytes, bytes]:
+             max_blocks: int = MAX_BLOCKS, abort_first: bool = False) -> tuple[bytes, bytes]:
         """Hand one command to the agent and return (result block, payload)."""
         if len(command) > CMD_QUEUE_BYTES:
             raise Failure(f"a command of {len(command)} bytes does not fit the command queue")
@@ -126,13 +125,13 @@ class NativeUci:
         self.machine.writemem(OPT_ABRT, bytes([0x01 if abort_first else 0x00]))
         self.machine.writemem(GO, bytes([0x01]))
 
-        deadline = time.time() + self.busy_timeout
+        deadline = time.monotonic() + self.busy_timeout
         while True:
             sequence = self.machine.readmem(SEQ, 1)[0]
             if sequence != self._sequence:
                 self._sequence = sequence
                 break
-            if time.time() > deadline:
+            if time.monotonic() > deadline:
                 raise Failure(
                     f"the 6502 agent did not finish {command.hex(' ')} within "
                     f"{self.busy_timeout:.0f}s. It is either wedged in the command "
@@ -162,9 +161,9 @@ class NativeUci:
         Data More reply through its blocks, so this only unpacks what it
         recorded.
         """
-        started = time.time()
+        started = time.monotonic()
         block, payload = self._run(command, overrun_reads, DEFAULT_DRAIN_CAP)
-        elapsed = time.time() - started
+        elapsed = time.monotonic() - started
         flags = self._byte(block, R_FLAGS)
         if flags & FLAG_WAIT_TIMEOUT:
             raise Failure(f"command {command.hex(' ') or '<empty>'} never left Command Busy: "
@@ -193,7 +192,7 @@ class NativeUci:
         text = self._at(block, STATBUF, self._byte(block, R_SLEN))
         overrun = self._at(block, R_OVRN, min(overrun_reads, MAX_OVERRUN_READS))
 
-        blocks: List[Reply] = []
+        blocks: list[Reply] = []
         previous = 0
         for index in range(count):
             cumulative = int.from_bytes(self._at(block, R_BLEN + index * 2, 2), "little")
@@ -221,7 +220,7 @@ class NativeUci:
 
     # -- raw drain ----------------------------------------------------------
 
-    def probe_drain(self, command: bytes, cap: int) -> Tuple[int, bool, bytes]:
+    def probe_drain(self, command: bytes, cap: int) -> tuple[int, bool, bytes]:
         """Push one command and pull bytes until DATA_AV clears or `cap` is hit.
 
         Returns how many bytes the queue handed out, whether DATA_AV cleared,
@@ -240,7 +239,7 @@ class NativeUci:
 
     # -- abort --------------------------------------------------------------
 
-    def probe_abort(self, command: bytes) -> Tuple[int, bool]:
+    def probe_abort(self, command: bytes) -> tuple[int, bool]:
         """Push one command, take its first reply block, then abandon it.
 
         The same measurement uci.Uci.probe_abort makes: how many bytes that

@@ -316,7 +316,7 @@ void LedStrip :: run(void)
     RGB fixed;
 
     setup_config_menu();
-    effectuate_settings();
+    effectuate_registered_settings();
     update_menu();
 
     while(1) {

@@ -83,6 +83,7 @@ public:
     void show_progress(const char *msg, int steps) {} // not blocking
     void update_progress(const char *msg, int steps) {} // not blocking
     void hide_progress(void) {} // not blocking (of course)
+    void run_editor(const char *, int);
 };
 
 #endif

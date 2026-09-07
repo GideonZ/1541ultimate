@@ -2,16 +2,14 @@ from __future__ import annotations
 
 import socket
 import time
-from typing import Callable
+from collections.abc import Callable
 
 from connection_runtime import (
     ProbeExecutionContext,
     ProbeOutcome,
     ProbeSurface,
     RuntimeSettings,
-    run_surface_operation,
-    select_operation_index,
-    surface_detail,
+    run_selected_surface_operation,
 )
 
 
@@ -27,7 +25,7 @@ def read_banner(settings: RuntimeSettings) -> str:
         while True:
             try:
                 chunk = sock.recv(4096)
-            except socket.timeout:
+            except TimeoutError:
                 break
             if not chunk:
                 break
@@ -55,17 +53,8 @@ def surface_operations(surface: ProbeSurface) -> tuple[tuple[str, Callable[[Runt
 def run_probe(settings: RuntimeSettings, correctness, *, context: ProbeExecutionContext | None = None) -> ProbeOutcome:
     del correctness
     if context is not None:
-        operations = surface_operations(context.surface)
-        index = select_operation_index(context, len(operations))
-        op_name, operation = operations[index]
-        started_at = time.perf_counter_ns()
-        try:
-            detail = run_surface_operation("modem", operation, settings)
-            elapsed_ms = (time.perf_counter_ns() - started_at) / 1_000_000.0
-            return ProbeOutcome("OK", surface_detail(context.surface, op_name, detail), elapsed_ms)
-        except Exception as error:
-            elapsed_ms = (time.perf_counter_ns() - started_at) / 1_000_000.0
-            return ProbeOutcome("FAIL", surface_detail(context.surface, op_name, str(error)), elapsed_ms)
+        return run_selected_surface_operation(
+            "modem", context, settings, surface_operations(context.surface))
 
     started_at = time.perf_counter_ns()
     try:

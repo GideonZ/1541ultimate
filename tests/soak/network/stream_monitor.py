@@ -7,7 +7,7 @@ import struct
 import threading
 import time
 from dataclasses import dataclass
-from typing import Callable, Sequence
+from collections.abc import Callable, Sequence
 
 import dma_probe
 
@@ -412,7 +412,7 @@ class _StreamReceiver(threading.Thread):
         while not self.stop_event.is_set():
             try:
                 payload, address = self.sock.recvfrom(STREAM_PACKET_SIZES[self.tracker.kind] + 64)
-            except socket.timeout:
+            except TimeoutError:
                 self.tracker.note_idle()
                 continue
             except OSError:

@@ -181,6 +181,13 @@ SCHEMAS = {
                         "description": "Full product name, including the core version on Ultimate 64 hardware.",
                     },
                     "firmware_version": {"type": "string"},
+                    "git_commit_hash": {
+                        "type": "string",
+                        "description": (
+                            "Abbreviated hash of the commit the firmware was built from. It "
+                            "tells two builds that carry the same version number apart."
+                        ),
+                    },
                     "fpga_version": {
                         "type": "string",
                         "description": "FPGA build number in hexadecimal.",
@@ -193,6 +200,22 @@ SCHEMAS = {
                     "unique_id": {
                         "type": "string",
                         "description": "Omitted when the device has no unique id configured.",
+                    },
+                    "ethernet_mac": {
+                        "type": "string",
+                        "description": (
+                            "MAC address of the wired interface, upper case, colon separated. "
+                            "Omitted while the interface has not started and its address is "
+                            "not known."
+                        ),
+                    },
+                    "wifi_mac": {
+                        "type": "string",
+                        "description": (
+                            "MAC address of the Wi-Fi interface, upper case, colon separated. "
+                            "Omitted on hardware without a Wi-Fi module, and while the module "
+                            "has not started and its address is not known."
+                        ),
                     },
                 },
             },

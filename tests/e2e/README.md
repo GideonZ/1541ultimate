@@ -63,9 +63,9 @@ to drive it.
 | `io/` | `software/io/` | Device-facing I/O subsystems, nested by production package (`c64/`, `command_interface/`, `printer/`) |
 | `monitor/` | `software/monitor/` | Machine-code monitor behaviour |
 | `network/` | `software/network/` | Network service and connection lifecycle |
-| `web/` | `html/`, `software/httpd/` | The two pages the device serves, driven in an installed Chrome and Firefox: their light/dark theme, and what `index.html` puts on the wire against a stub device that records every REST call |
+| `web/` | `html/`, `software/httpd/` | The two pages the device serves, driven in an installed Chrome and Firefox: their light/dark theme, and what `index.html` puts on the wire against the device double |
 | `u64ctrl/` | `software/u64ctrl/` | The ESP32 control module: what it does across a loss of input power, and waking the machine from off over Wi-Fi |
-| `lib/` | - | Support code shared by E2E suites only: the UI backend (`ui_backend.py`), its menu primitives (`menu.py`), the UI-state gate (`ui_state.py`), the spool of every screen the harness read (`screens.py`), the recorder that composes a run's video (`recorder.py`, with the stream, band, glyph and VIC-text modules beside it), the smoke test of the UI backend itself (`ui_backend_smoke_test.py`), and the device-free check of the Telnet drain state machine (`telnet_drain_test.py`) |
+| `lib/` | - | Support code shared by E2E suites only: the UI backend, split by transport into `backend.py`, `rest_backend.py`, `telnet_backend.py` and `browser.py` and re-exported from `ui_backend.py`, its menu primitives (`menu.py`), the UI-state gate (`ui_state.py`), the spool of every screen the harness read (`screens.py`), the recorder that composes a run's video (`recorder.py`, with the stream, band, glyph and VIC-text modules beside it), the smoke test of the UI backend itself (`ui_backend_smoke_test.py`), and two device-free checks: the Telnet drain state machine (`telnet_drain_test.py`) and the screen parsers (`ui_backend_parse_test.py`) |
 
 Assets and narrowly scoped helpers stay beside the suite that owns them.
 Reporting is shared beyond E2E and lives in [`tests/lib/`](../lib/).
@@ -140,29 +140,28 @@ The runner also reads every setting each machine is running with before the
 first suite and writes the differing ones back when the run ends, so a suite
 that changes one does not decide what the next run starts from.
 
-**Firmware vintage** is what a release lacks. The C64 Ultimate runs a separate
-firmware line that lags the Ultimate 64, so a check can be correct and still be
-unrunnable there. `FIXES` in the same module names each outstanding gap after
-the behaviour a machine gains from it, and lists the machines that do not have
-it yet. A check declares its dependency in one line:
+**Firmware vintage** is what a release lacks. A machine can run a firmware line
+that lags this branch, so a check can be correct and still be unrunnable there.
+`FIXES` in the same module names each outstanding gap after the behaviour a
+machine gains from it, and lists the machines that do not have it yet. A check
+declares its dependency in one line:
 
 ```python
-if ctx.machine.skip_without_fix(machine.BROWSER_REFRESH_ON_DIRECTORY_CHANGE,
-                                label):
+if ctx.machine.skip_without_fix(machine.MONITOR_D_KEY_RESERVED, label):
     return
 ```
 
 The check then reports SKIP with the machine and version in the reason, for
-example `needs the browser-refresh-on-directory-change fix, which C64 Ultimate
-1.2.0 does not have`.
+example `needs the monitor-d-key-reserved fix, which Ultimate II+L 3.15 does
+not have`.
 
 Those names are the amendment point. When a fix is backported, delete its `FIXES`
 entry and every check tagged with it runs again; nothing else changes. To confirm
 a backport before editing the table, run the tagged checks anyway:
 
 ```sh
-./run-tests c64u --assume-fix browser-refresh-on-directory-change
-./run-tests c64u --assume-fix all
+./run-tests u2@c64u --assume-fix monitor-d-key-reserved
+./run-tests u2@c64u --assume-fix all
 ```
 
 `--help` is authoritative for options. `-m/--mode` selects the UI transport
@@ -213,6 +212,9 @@ leave it dirty.
 3. Give the runner a stable kebab-case selector and register every executable
    suite in `run-tests`. New suites are automatic unless they need operator
    opt-in; document any `manual` reason next to the runner entry.
+   `tests/lib/registry_test.py` fails the gate when a suite is missing from the
+   registry, when a registered path does not exist, or when a registration
+   names an argument the suite would refuse.
 4. Keep the default scenario deterministic and bounded. Assert externally
    visible outcomes, not private implementation timing. Report through
    `tests/lib/report.py`; see [its rules](../lib/README.md).
@@ -286,21 +288,27 @@ leave it dirty.
    rate, a drive reaping a session, a real 1541 load. Say so in a comment next
    to the wait, so the next reader does not have to rediscover it.
 
+11. Keep the suite passing `ruff check --config tests/ruff.toml tests run-tests`.
+    `lint_test.py` runs that at the front of every profile.
+    [`tests/lib/README.md`](../lib/README.md) says what belongs in that
+    configuration and what belongs in a `# noqa` comment at the site; both
+    need the reason written next to them.
+
 Before submitting a structural or test-only change:
 
 ```sh
-python3 -m py_compile $(find tests -name '*.py' -type f -not -path '*/__pycache__/*')
+# Syntax, unused imports, dead assignments and names that are only resolved
+# when the line runs. ruff's F rules are pyflakes, so this covers the check
+# that used to be a separate pyflakes invocation, and it reads every file
+# rather than only the ones a run reaches.
+python3 tests/lib/lint_test.py
 ./run-tests --list
 
-# Proves every suite's imports resolve, which py_compile alone does not.
+# The lint parses each file; this imports it, which is a stronger statement:
+# it proves the sys.path bootstrap resolves and the module-level code runs.
 for f in $(find tests -name '*_test.py' -not -path '*/__pycache__/*'); do
     python3 "$f" --help >/dev/null || echo "FAILED $f"
 done
-
-# Neither of the above sees a name that is only resolved when the line runs, so
-# a helper used on a branch the gate does not reach stays broken until someone
-# hits it. pyflakes finds those, and is worth installing for this one check.
-python3 -m pyflakes $(git ls-files tests | grep '\.py$') run-tests
 ```
 
 For behaviour changes, deploy the affected firmware and run the narrowest

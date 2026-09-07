@@ -48,15 +48,16 @@ import time
 import urllib.request
 from pathlib import Path
 
-SCRIPT_DIR = Path(__file__).resolve().parent
-sys.path.insert(0, str(SCRIPT_DIR.parents[2] / "lib"))
-sys.path.insert(0, str(SCRIPT_DIR.parents[1] / "lib"))
+# The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
 
 from api import UltimateApi                                        # noqa: E402
 from rest import retrying_urlopen                                  # noqa: E402
 import streams                                                     # noqa: E402
 import targets                                                     # noqa: E402
-from report import (Failure, check, check_ok, check_skip, check_start,   # noqa: E402
+from report import (Failure, teardown_step, check, check_ok, check_skip, check_start,   # noqa: E402
                     detail, format_exception, suite_fail, suite_ok, suite_skip)
 
 SUITE = "doom_release_test"
@@ -179,7 +180,7 @@ def apply_settings(api: UltimateApi, previous: dict) -> None:
     holding everything already changed. Returning it instead would abandon the
     machine in PAL with a 16 MB REU and turbo selected.
     """
-    wanted = list(SETTINGS) + [(TURBO_STORE, TURBO_ITEM, turbo_register_value(api))]
+    wanted = [*list(SETTINGS), (TURBO_STORE, TURBO_ITEM, turbo_register_value(api))]
     for store, item, value in wanted:
         current = api.configs.current(store, item)
         previous[(store, item)] = current
@@ -395,10 +396,7 @@ def run(args):
         return None
     finally:
         restore_settings(api, previous)
-        try:
-            api.machine.reset()
-        except Exception:               # noqa: BLE001 - best effort teardown
-            pass
+        teardown_step("reset the machine", api.machine.reset)
 
 
 def main() -> int:
@@ -425,9 +423,6 @@ def main() -> int:
             return 0
         suite_ok(SUITE)
         return 0
-    except Failure as exc:
-        suite_fail(SUITE, str(exc))
-        return 1
     except Exception as exc:            # noqa: BLE001
         suite_fail(SUITE, format_exception(exc))
         return 1

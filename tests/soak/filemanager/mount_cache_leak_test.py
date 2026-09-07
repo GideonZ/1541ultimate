@@ -25,21 +25,23 @@ every check here skips, so the suite is safe to run against any image.
 """
 
 import argparse
-import os
 import sys
 import time
 from pathlib import Path
 
-# tests/lib holds the reporting rules and the shared REST client; the D64
-# builder lives with the suite that already needed one.
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "lib"))
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "e2e" / "filemanager"))
+# The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
+import leak  # noqa: E402
+import cli  # noqa: E402
+sys.path.insert(0, bootstrap.directory("e2e", "filemanager"))
 
 import api as api_lib  # noqa: E402  (needs tests/lib on sys.path first)
 import ftp as ftp_lib  # noqa: E402
 import rest as rest_lib  # noqa: E402
 from report import (  # noqa: E402
-    Failure, check, check_ok, check_skip, check_start, detail, format_exception,
+    Failure, teardown_step, check, check_ok, detail, format_exception,
     section, suite_fail, suite_ok)
 from prg_context_menu_test import build_d64, default_fixture_token, PRG_BYTES  # noqa: E402
 
@@ -106,16 +108,18 @@ def re_enter(host: str, password: str, indices, times: int) -> None:
 
 def cleanup(host: str, password: str, indices) -> int:
     removed = 0
-    try:
+
+    def remove_all() -> None:
+        nonlocal removed
         with ftp_lib.session(host, password, timeout=60) as ftp:
             for i in indices:
-                try:
-                    ftp_lib.delete_quietly(ftp, TEMP + image_name(i))
+                # delete_quietly answers whether the entry went away and never
+                # raises, so its result is the count; teardown_step would report
+                # True for a refusal.
+                if ftp_lib.delete_quietly(ftp, TEMP + image_name(i)):
                     removed += 1
-                except Exception:
-                    pass
-    except Exception:
-        pass
+
+    teardown_step("remove the images this run mounted", remove_all)
     return removed
 
 
@@ -123,21 +127,13 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description="Assert that browsing many disk images does not consume heap. "
                     "Skips if the firmware has no machine:heap endpoint.")
-    parser.add_argument("-H", "--host", default=os.environ.get("U64_HOST", "u64"))
-    parser.add_argument("-p", "--password", default=os.environ.get("U64_PASS"))
-    parser.add_argument("-t", "--timeout", type=float,
-                        default=float(os.environ.get("U64_TIMEOUT", "30.0")))
+    cli.add_device_arguments(parser, password=None, timeout=30.0, colour=False)
     args = parser.parse_args()
 
     rest = rest_lib.RestClient(args.host, args.password or None, args.timeout)
     password = args.password or ""
 
-    check_start("device exposes GET /v1/machine:heap")
-    if api_lib.MachineApi(rest).heap() is None:
-        check_skip("firmware predates GET /v1/machine:heap, nothing to measure")
-        section("summary")
-        detail("skipped: device firmware has no machine:heap endpoint")
-        suite_ok("mount_cache_leak_test")
+    if not leak.heap_is_served(api_lib.MachineApi(rest).heap, "mount_cache_leak_test"):
         return 0
     check_ok()
 
@@ -148,6 +144,10 @@ def main() -> int:
     stats = {}
 
     try:
+        # Not tests/lib/leak.py: seed_and_enter opens one FTP session for a
+        # whole range of images, and calling it per image would open twenty
+        # sessions instead of one and measure their cost as well. The method is
+        # the same one leak.slope implements; the batching is what differs.
         section("entering one image after another")
         with check(f"fill the mount cache ({WARMUP} images, the working set is paid for here)"):
             seed_and_enter(args.host, password, warm)
