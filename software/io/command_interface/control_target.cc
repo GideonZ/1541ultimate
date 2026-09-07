@@ -13,6 +13,7 @@
 #if U64
 #include "u64_config.h"
 #include "u64.h"
+#include "data_streamer.h"
 #else
 #include "audio_select.h"
 #endif
@@ -273,6 +274,7 @@ void ControlTarget :: parse_command(Message *command, Message **reply, Message *
                 *status = &c_status_invalid_params;
             } else {
                 U64Config::set_palette_rgb(rgb);
+                if (dataStreamer) dataStreamer->sendVicPalette();
                 *status = &c_status_ok;
             }
             break;
@@ -285,6 +287,7 @@ void ControlTarget :: parse_command(Message *command, Message **reply, Message *
                 *status = &c_status_invalid_params;
             } else {
                 U64Config::set_palette_color(index, rgb);
+                if (dataStreamer) dataStreamer->sendVicPalette();
                 *status = &c_status_ok;
             }
             break;
@@ -295,6 +298,7 @@ void ControlTarget :: parse_command(Message *command, Message **reply, Message *
                 *status = &c_status_invalid_params;
             } else {
                 U64Config::reset_palette();
+                if (dataStreamer) dataStreamer->sendVicPalette();
                 *status = &c_status_ok;
             }
             break;
