@@ -332,6 +332,13 @@ SUITES: Sequence[Suite] = (
           "-H @HOST@ -p @PASS@ --mode @MODE@"),
     Suite("e2e", "cfg-single-group", "tests/e2e/filemanager/cfg_single_group_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@", profile=profiles.QUICK),
+    # Needs no device: it reads the loader's debug log parser over recorded
+    # text. The device writes that log with an unlocked, character-at-a-time
+    # printf, so another task's line splices into the middle of a loader line;
+    # the splice is not reproducible on demand, which is why the case is a
+    # recorded one rather than a device run.
+    Suite("e2e", "cfg-loader-log", "tests/e2e/filemanager/cfg_loader_log_test.py",
+          "", profile=profiles.SMOKE),
     # Manual: loading a partial .cfg is supposed to leave the stores it does
     # not name alone, and that no longer holds. Measured on a C64 Ultimate
     # 1.2.0, a file naming one store listed nineteen in its loader
@@ -364,6 +371,8 @@ SUITES: Sequence[Suite] = (
     Suite("e2e", "usb-bulk-out-integrity",
           "tests/e2e/io/usb/bulk_out_integrity_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@", manual=True),
+    Suite("e2e", "rel-copy", "tests/e2e/io/iec/rel_copy_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
     # Drives the UCI control and SoftIEC targets over $DF1B-$DF1F; reproduces #740.
     # A #740 regression leaves the interface stuck in Command Busy for every target
     # until the firmware restarts, so run it after the suites that drive the menu
@@ -474,6 +483,24 @@ SUITES: Sequence[Suite] = (
     # back the wrong bytes. Measured red on core 1.4E and green on 1.4F.
     Suite("e2e", "reu-turbo", "tests/e2e/io/c64/reu_turbo_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
+    # Fast Reset patches the KERNAL's RAM test out of the image the machine
+    # boots, so the observable is how long a reset takes to reach READY. The
+    # setting is applied when the system ROMs load, so the suite reboots
+    # between the two states. Measured red at 1.0x on an Ultimate 64 before the
+    # fix and green at about 10x after it.
+    Suite("e2e", "fast-reset", "tests/e2e/io/c64/fast_reset_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
+    # Guards GideonZ/commodore#1 (c66ef028): a Reset, a Reboot or a C=+R taken
+    # from the menu has to run after the UI has torn down, so the C64 comes
+    # back to a boot screen with none of the menu's characters on it. The
+    # other half of that change, the menu opening again afterwards, needs the
+    # hardware button's edge detector, which no route this harness has can
+    # reach; those three checks report SKIP with the measurement. It resets
+    # and reboots the machine several times, which is why it is not in the
+    # shallow profiles.
+    Suite("e2e", "deferred-machine-actions",
+          "tests/e2e/io/c64/deferred_actions_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@"),
     # Reproduces #733: with the FPGA decoder fix in the core, "mirroring off" is
     # the regression guard. Runs last, because a device whose core predates that
     # fix stalls the whole Nios on this scenario and needs a JTAG recovery.
@@ -524,6 +551,8 @@ SUITES: Sequence[Suite] = (
     Suite("soak", "heap-leak", "tests/soak/api/heap_leak_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
     Suite("soak", "listener-soak", "tests/soak/network/listener_soak_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
+    Suite("soak", "ident-leak", "tests/soak/network/ident_leak_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
     # Physical Pico 2 W fixture; selected explicitly with -s after setup.
     Suite("soak", "usb-keyboard-repeat", "tests/soak/io/usb/usb_keyboard_repeat_soak_test.py",

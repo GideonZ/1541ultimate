@@ -223,7 +223,7 @@ int parse_open(const char *buf, open_t& fn)
             if (i == 1) {
                 fn.filetype = e_rel;
                 if (modifiers[2]) {
-                    fn.record_size = modifiers[2][0];
+                    fn.record_size = (uint8_t)modifiers[2][0];
                 } // if not set, it will be zero
                 i++;
             } else {
