@@ -144,6 +144,14 @@ def blank_screen(api: UltimateApi) -> None:
     the prompt returns at once, proving nothing. The menu's own characters
     would still be there too, which is exactly what the leftover check is
     looking for.
+
+    This must only be called while the menu is closed. The freeze interface
+    draws the menu into the same screen RAM, so blanking it there erases a
+    menu the firmware still reports as open and does not redraw. The browser
+    then reads a blank screen and cannot find its selected row. Blanking
+    before the menu opens still gives each check what it needs, because the
+    menu is drawn into the blanked screen afterwards and any characters it
+    leaves behind are still there to be found.
     """
     api.machine.writemem(SCREEN_RAM, bytes([SPACE_CODE]) * SCREEN_BYTES)
 
@@ -376,12 +384,12 @@ def run_menu_action(browser, api: UltimateApi, action: str,
     # it instead. Nothing here should leave a menu behind, and this is the
     # cheap guarantee that it did not.
     close_menu(api)
+    blank_screen(api)
     route = open_menu(api)
     if not api.machine.menu_open():
         raise Failure(f"the menu did not open after {MENU_OPEN_PRESSES} x "
                       f"{route}")
     browser.go_to_root()
-    blank_screen(api)
     take_menu_action(browser, browser.backend.machine.machine_task_category,
                      action)
     return wait_for_prompt(api, timeout), route
@@ -429,12 +437,12 @@ def scenario_browser_reset_shortcut(browser, api: UltimateApi) -> None:
         # request_hide_then_action sets to MENU_HIDE, so the browser leaves
         # before the reset runs.
         close_menu(api)
+        blank_screen(api)
         route = open_menu(api)
         if not api.machine.menu_open():
             raise Failure(f"the menu did not open after {MENU_OPEN_PRESSES} x "
                           f"{route}")
         browser.go_to_root()
-        blank_screen(api)
         # C= + R resets the machine, which closes the menu, so the settle read
         # after the keystroke answers 404; see take_menu_action.
         try:

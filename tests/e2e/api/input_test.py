@@ -2113,7 +2113,9 @@ def run_menu_open_tests(session: RestInputSession) -> None:
     Which machines have a keyboard route, and the request sequence that
     produces the stimulus, are both in tests/e2e/lib/menu.py so that there is
     one place to change when the firmware lets the sequence become a single
-    request.
+    request. Having the route is not the same as the firmware answering it,
+    so the check is also tagged with machine.KEYBOARD_COMBINATION_OPENS_MENU
+    and reports a skip on a firmware line that ignores the combination.
     """
     machine = session.machine
     opener = menu_lib.keyboard_menu_opener(machine.kind, session.post_events)
@@ -2123,7 +2125,11 @@ def run_menu_open_tests(session: RestInputSession) -> None:
                    f"machine:menu_button is the only signal that opens it")
         return
 
-    with check(f"{opener.name} opens the menu"):
+    label = f"{opener.name} opens the menu"
+    if machine.skip_without_fix(machine_lib.KEYBOARD_COMBINATION_OPENS_MENU, label):
+        return
+
+    with check(label):
         session.close_menu_from_anywhere()
         if session.menu_screen_open():
             raise Failure("the menu was already open, so this check would "

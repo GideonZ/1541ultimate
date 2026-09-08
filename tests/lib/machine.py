@@ -218,6 +218,24 @@ QUERY_FORM_SURVIVES_DROPDOWN_CONFIRM = _fix(
     "the other fields, rather than emptying the whole form",
     (C64U,))
 
+# What the "opens the menu" check in tests/e2e/api/input_test.py asserts, on
+# the one machine tests/e2e/lib/menu.py gives a keyboard route into the menu.
+# A C64 Ultimate's core reads the keyboard matrix at a RESTORE NMI edge and
+# treats CBM held down plus that edge the way it treats the menu button, so
+# the combination has to open the menu.
+#
+# Measured on a C64 Ultimate, 2026-09-07: an injected C= plus RESTORE did not
+# open the menu on any of 6 attempts, while machine:menu_button opened it every
+# time. The firmware that lacks this fix does not resync the button edge
+# detector after the menu closes, so the edge the combination raises is not
+# read as a fresh press. tests/e2e/io/c64/deferred_actions_test.py records the
+# same limitation for its own menu-reopening checks.
+KEYBOARD_COMBINATION_OPENS_MENU = _fix(
+    "keyboard-combination-opens-menu",
+    "an injected C= plus RESTORE opens the menu, the same way the menu button "
+    "does, rather than being ignored",
+    (C64U,))
+
 # Every fix at once, for a sweep that asks whether the lagging line has caught
 # up rather than about one behaviour.
 ASSUME_ALL = "all"
