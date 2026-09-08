@@ -378,6 +378,12 @@ public:
         int sect = pos / 254;
         offset_in_sector = 2 + (pos - (sect * 254));
 
+        // At a full-sector EOF, append from the end of the last allocated sector.
+        if (sect > 0 && sect == datablocks && offset_in_sector == 2 && pos == get_file_size()) {
+            sect--;
+            offset_in_sector = 256;
+        }
+
         int clust = sect / 720;
         if (clust >= clusters.get_elements()) {
             return FR_INVALID_PARAMETER;

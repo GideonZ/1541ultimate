@@ -953,6 +953,25 @@ int IecChannel :: setup_file_access()
         return 0;
     }
 
+    // Existing REL files also open by name alone (for example the E.DATA editor).
+    // Resolve the type before choosing access flags and setting up record I/O.
+    if (name_to_open.filetype == e_any) {
+        FileInfo info(48);
+        FRESULT fres = fm->fstat(full_path, info);
+        if (fres == FR_NO_FILE) {
+            GETPARTITION(name_to_open.file.partition, partition, 0);
+            fres = resolve_existing_iec_path(fm, partition, name_to_open.file, e_any,
+                                             false, true, true, work, &info);
+            full_path = work.c_str();
+        }
+        if (fres != FR_OK) {
+            drive->set_error_fres(fres);
+            return 0;
+        }
+        char cbm_name[24];
+        IecPartition::CreateIecName(&info, cbm_name, name_to_open.filetype);
+    }
+
     uint8_t flags;
     switch(name_to_open.access) {
     case e_append:
@@ -1006,6 +1025,7 @@ int IecChannel :: setup_file_access()
             drive->set_error_fres(fres);
             if (fres == FR_OK) {
                 recordSize = name_to_open.record_size;
+                recordOffset = 2; // First record follows the REL header, also on a reused channel.
                 state = e_record;
             }
         } else { // file already exists
