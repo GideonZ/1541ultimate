@@ -41,8 +41,10 @@ HEIGHT = 24
 STATUS_LINE_RE = re.compile(
     f"{core.STATUS_LINE_RE.pattern}|{core.U2_STATUS_LINE_RE.pattern}")
 find_status_line = core.find_any_status_line
+Snapshot = core.Snapshot
 read_rest_memory = core.read_rest_memory
 write_rest_memory = core.write_rest_memory
+write_rest_memory_confirmed = core.write_rest_memory_confirmed
 wait_for_rest_byte = core.wait_for_rest_byte
 parse_memory_row = core.parse_memory_row
 ensure_hex_width = core.ensure_hex_width
