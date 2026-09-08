@@ -83,7 +83,12 @@ READY_TIMEOUT = 20.0
 
 # Every name product_name[] in software/system/product.cc can report, split by
 # whether MENU_C64_POWEROFF does anything on that product.
-POWER_PRODUCTS = ("Ultimate 64", "Ultimate 64 Elite", "Ultimate 64-II")
+# Both namings of the same hardware. product_name[] in
+# software/system/product.cc renames the last two under COMMODORE, so a
+# check that lists only one naming passes while the other build hides the
+# item on machines that can power off.
+POWER_PRODUCTS = ("Ultimate 64", "Ultimate 64 Elite", "Ultimate 64-II",
+                  "C64 Ultimate (MK1)", "C64 Ultimate")
 CARTRIDGE_PRODUCTS = ("Ultimate", "Ultimate II", "Ultimate II+", "Ultimate II+L")
 
 # The disk images the page mounts rather than runs, and the drive it uses.
