@@ -40,6 +40,14 @@ WORKFLOW = os.path.join(ROOT, ".github", "workflows", "build.yml")
 # "/build/", minus the leading "software/" that esp_depends.py runs inside of.
 CACHED_ARTIFACT = re.compile(r"^\s*software/(\S+?)/build/\S+\s*$", re.MULTILINE)
 
+# esp_depends.py names the directories it hashes in one list near the top, of
+# the form `dirs = [ 'u64ctrl', 'u64ctrl/main' ]`. The two firmware lines that
+# run this test tree do not list the same projects, so the directory the
+# missing-directory check breaks is read out of the script rather than written
+# in here.
+DIRS_LIST = re.compile(r"^\s*dirs\s*=\s*\[(.*?)\]", re.MULTILINE | re.DOTALL)
+QUOTED_PATH = re.compile(r"'([^']*)'|\"([^\"]*)\"")
+
 
 def cached_projects():
     """The ESP32 projects whose build output CI stores in the ESP32 cache."""
@@ -94,13 +102,46 @@ def run_coverage_check():
         detail("watched: " + ", ".join(f"{p} ({hashed[p]} files)" for p in cached))
 
 
+def listed_directories(script):
+    """The quoted paths in esp_depends.py's own `dirs` list, in source order."""
+    match = DIRS_LIST.search(script)
+    if not match:
+        return []
+    return [single or double
+            for single, double in QUOTED_PATH.findall(match.group(1))
+            if single or double]
+
+
+def directory_to_break(dirs):
+    """The entry to misspell: a nested path when the list holds one.
+
+    A nested path is the interesting case. Its parent directory still exists,
+    so a misspelling of the child is the one that hashes nothing while looking
+    plausible. The choice is by source order, so the same list always picks the
+    same directory.
+    """
+    for entry in dirs:
+        if "/" in entry:
+            return entry
+    return dirs[0]
+
+
 def run_missing_directory_check():
     """A directory that is not there has to be an error, not a quiet no-op."""
     with check("a misspelt directory fails instead of silently hashing nothing"):
         with open(DEPENDS_SCRIPT, encoding="utf-8") as handle:
             original = handle.read()
-        if "wifi/raw_u64/main" not in original:
-            raise Failure("esp_depends.py no longer lists wifi/raw_u64/main; "
+        dirs = listed_directories(original)
+        if not dirs:
+            raise Failure("esp_depends.py has no directory list this check can "
+                          "use: no `dirs = [ ... ]` of quoted paths was found")
+        target = directory_to_break(dirs)
+        broken = target + "_does_not_exist"
+        mutated = re.sub(r"(['\"])" + re.escape(target) + r"\1",
+                         lambda match: match.group(1) + broken + match.group(1),
+                         original, count=1)
+        if mutated == original:
+            raise Failure(f"could not misspell {target!r} in esp_depends.py; "
                           "this check needs updating")
         # The copy runs from software/ because the globs are relative to it, but
         # it is a copy: a run interrupted here must not leave the real script
@@ -108,16 +149,17 @@ def run_missing_directory_check():
         broken_path = os.path.join(SOFTWARE_DIR, ".esp_depends_missing_dir_check.py")
         try:
             with open(broken_path, "w", encoding="utf-8") as handle:
-                handle.write(original.replace("wifi/raw_u64/main",
-                                              "wifi/raw_does_not_exist/main"))
+                handle.write(mutated)
             result = subprocess.run([sys.executable, broken_path], cwd=SOFTWARE_DIR,
                                     capture_output=True, text=True, check=False)
         finally:
             if os.path.exists(broken_path):
                 os.remove(broken_path)
         if result.returncode == 0:
-            raise Failure("a missing directory was accepted; the cache key would "
-                          "silently stop depending on that project")
+            raise Failure(f"a missing directory ({broken}) was accepted; the "
+                          "cache key would silently stop depending on that project")
+        detail(f"{target} misspelt as {broken}: esp_depends.py exited "
+               f"{result.returncode}")
 
 
 def main():
