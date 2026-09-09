@@ -304,6 +304,11 @@ class C64 : public GenericHost, ConfigurableObject
 
     void setup_config_menu();
     bool isFrozen;
+    // Set once freeze() has taken the program's I/O state and set the CIA up
+    // for the cartridge, cleared before unfreeze() puts that state back. The
+    // keyboard is scanned from a timer on a cartridge (Keyboard_C64), so the
+    // window in which it may touch CIA1 has to be explicit.
+    bool keyboardScanAllowed;
     // When set, resume() leaves the cartridge NMI asserted (C64_MODE_NMI) as it
     // un-stops the CPU instead of clearing C64_MODE, so a debug launch NMI raised
     // while the CPU was stopped survives the un-stop and is taken by the 6510.
@@ -401,6 +406,7 @@ public:
     bool exists(void);
     bool is_accessible(void);
     bool is_stopped(void);
+    bool keyboard_scan_allowed(void);
 
     // The freezer menu is up, so the machine is held and its I/O has been
     // reconfigured for the cartridge's own use.

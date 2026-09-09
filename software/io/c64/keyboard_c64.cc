@@ -9,6 +9,7 @@
 #ifndef NO_FILE_ACCESS
 #include "FreeRTOS.h"
 #include "task.h"
+#include "timers.h"
 #endif
 
 uint8_t wasd_to_joy = 0; // overwritten by U64_config, if it exists
@@ -108,11 +109,53 @@ Keyboard_C64 :: Keyboard_C64(GenericHost *h, volatile uint8_t *row, volatile uin
     key_tail = 0;
     mtrx_prev  = 0xFF;
     shift_prev = 0xFF;
+    scan_paused = 0;
+    scan_timer = 0;
+#if KEYBOARD_C64_TIMER_SCAN
+    // The repeat delays count scans. getch() scanned every 4 ticks; this
+    // scans every KEYBOARD_C64_SCAN_PERIOD_TICKS, so scale them to keep the
+    // same repeat rate in wall-clock time.
+    repeat_speed = (repeat_speed * 4) / KEYBOARD_C64_SCAN_PERIOD_TICKS;
+    first_delay = (first_delay * 4) / KEYBOARD_C64_SCAN_PERIOD_TICKS;
+    scan_timer = xTimerCreate("KbScan", KEYBOARD_C64_SCAN_PERIOD_TICKS, pdTRUE, this,
+                              (TimerCallbackFunction_t) Keyboard_C64 :: scan_timer_callback);
+    if (scan_timer) {
+        xTimerStart((TimerHandle_t) scan_timer, 0);
+    }
+#endif
     delay_count = first_delay;
 }
 
 Keyboard_C64 :: ~Keyboard_C64()
 {
+#if KEYBOARD_C64_TIMER_SCAN
+    if (scan_timer) {
+        xTimerStop((TimerHandle_t) scan_timer, portMAX_DELAY);
+        xTimerDelete((TimerHandle_t) scan_timer, portMAX_DELAY);
+        scan_timer = 0;
+    }
+#endif
+}
+
+// Runs in the timer service task, above the network tasks, so a request being
+// served does not hold the scan off either. The host says whether the CIA may
+// be touched at all: only while the machine is stopped and its I/O is the
+// cartridge's, never between restore_io() and resume().
+void Keyboard_C64 :: scan_timer_callback(void *timer)
+{
+#if KEYBOARD_C64_TIMER_SCAN
+    Keyboard_C64 *keyboard = (Keyboard_C64 *) pvTimerGetTimerID((TimerHandle_t) timer);
+    if (!keyboard || keyboard->scan_paused || !keyboard->host) {
+        return;
+    }
+    if (!keyboard->host->keyboard_scan_allowed()) {
+        // Nothing to see, and nothing seen: the next key is a new key.
+        keyboard->mtrx_prev = 0xFF;
+        keyboard->shift_prev = 0xFF;
+        return;
+    }
+    keyboard->scan();
+#endif
 }
 
 uint8_t Keyboard_C64 :: scan_keyboard(volatile uint8_t *row_reg, volatile uint8_t *col_reg)
@@ -316,7 +359,9 @@ int Keyboard_C64 :: getch(void)
     vTaskDelayUntil(&previousWake, 4);
     TickType_t now = xTaskGetTickCount();
     previousWake = now;
-    scan();
+    if (!scan_timer) {
+        scan();
+    }
 #else
     scan();
     wait_ms(20);
@@ -363,6 +408,9 @@ void Keyboard_C64 :: wait_free(void)
     if(!(host->is_accessible()))
         return;
 
+    // The timer scan drives the same column select; keep it out of the way
+    // while this loop reads all rows at once.
+    scan_paused++;
 #if U64==2
     BLING_RX_FLAGS = 0x01; // disable shift lock in bling board
 #endif
@@ -377,6 +425,7 @@ void Keyboard_C64 :: wait_free(void)
 #if U64==2
     BLING_RX_FLAGS = 0x00; // allow shift lock
 #endif
+    scan_paused--;
 }
 
 void Keyboard_C64 :: set_delays(int initial, int repeat)

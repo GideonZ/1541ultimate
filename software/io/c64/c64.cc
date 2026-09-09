@@ -223,6 +223,7 @@ C64::C64()
     C64_STOP_MODE = STOP_COND_FORCE;
     C64_MODE = MODE_NORMAL;
     isFrozen = false;
+    keyboardScanAllowed = false;
     nmi_on_resume = false;
     cpu_port_captured = false;
     captured_cpu_port = 0;
@@ -320,6 +321,7 @@ void C64 :: init_poll_task(void *a)
 C64::~C64()
 {
     if (isFrozen) {
+        keyboardScanAllowed = false;
         restore_io();
         resume();
         isFrozen = false;
@@ -1270,6 +1272,7 @@ void C64::freeze(void)
     init_io();
 
     isFrozen = true;
+    keyboardScanAllowed = true;
 }
 
 /*
@@ -1396,6 +1399,11 @@ void C64::unfreeze()
     if (!isFrozen)
         return;
 
+    // From here the CIA belongs to the program again: restore_io() writes
+    // its registers back, and a scan landing between that and resume() would
+    // leave the keyboard column select as the scan left it.
+    keyboardScanAllowed = false;
+
     if (!backupIsValid) {
         // Nothing left to put back: something else already restored it
         // while isFrozen stayed set. A reset issued with the menu open
@@ -1508,6 +1516,7 @@ void C64 :: start_cartridge(void *vdef)
     C64_MODE = C64_MODE_UNRESET;
 
     isFrozen = false;
+    keyboardScanAllowed = false;
     backupIsValid = false;
 }
 
@@ -1520,6 +1529,15 @@ Screen *C64::getScreen(void)
 bool C64::is_accessible(void)
 {
     return isFrozen;
+}
+
+bool C64::keyboard_scan_allowed(void)
+{
+    // The same window the user interface's own scan had, freeze() to
+    // unfreeze(), minus the restore at its end. It includes the time the
+    // debugger has released the machine to run to a breakpoint with the
+    // menu still up: that is when a cancel key has to arrive.
+    return keyboardScanAllowed && isFrozen;
 }
 
 Keyboard *C64::getKeyboard(void)
