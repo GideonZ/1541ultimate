@@ -119,67 +119,10 @@ int parse_full_path(const char *buf, filename_t& name, bool *replace = NULL, boo
     return 0;
 }
 
-// Reads a run of decimal digits, and says whether there was one at all. The value
-// saturates at sixteen bits, which is what CBM DOS keeps and far more than any field
-// of a date needs, so a long run of digits cannot overflow.
-static const char *scan_decimal(const char *p, int &value, bool &converted)
-{
-    int digits = 0;
-    value = 0;
-    while (isdigit((uint8_t)*p)) {
-        value = (value * 10) + (*(p++) - '0');
-        if (value > 0xFFFF) {
-            value = 0xFFFF;
-        }
-        digits++;
-    }
-    converted = (digits > 0);
-    return p;
-}
-
-// The time stamp in a directory filter, spelled MM/DD/YY HH:MM xM with x either A
-// or P, as in $:*=>01/02/25 03:04 PM.
-//
-// Read here rather than with sscanf, because the firmware brings its own in
-// small_printf.cc: it counts a conversion whether or not it made one, and it has no
-// %c, storing a whole int through the caller's char pointer instead.
-static int parse_dir_timestamp(const char *buf, uint32_t &datetime)
-{
-    static const char separators[] = { '/', '/', ' ', ':' };
-    int field[5];
-    const char *p = buf;
-
-    for (int i = 0; i < 5; i++) {
-        bool converted = false;
-        while (*p == ' ') {
-            p++;
-        }
-        p = scan_decimal(p, field[i], converted);
-        if (!converted) {
-            return ERR_SYNTAX;
-        }
-        if (i < 4) {
-            if (*p != separators[i]) {
-                return ERR_SYNTAX;
-            }
-            p++;
-        }
-    }
-    while (*p == ' ') {
-        p++;
-    }
-    if ((*p != 'A') && (*p != 'P')) {
-        return ERR_SYNTAX;
-    }
-
-    int year = field[2] + ((field[2] < 80) ? 2000 : 1900);
-    int hour = (field[3] % 12) + ((*p == 'P') ? 12 : 0);
-    datetime = make_fat_time(year, field[0], field[1], hour, field[4], 0);
-    return 0;
-}
-
 int parse_dir_option(const char *buf, dir_options_t &opt)
 {
+    int M, d, y, h, h12, m, n;
+    char ampm;
     uint32_t datetime;
 
     switch(buf[0]) {
@@ -195,9 +138,13 @@ int parse_dir_option(const char *buf, dir_options_t &opt)
     case 'N': opt.timefmt = e_stamp_none; break;
     case '<':
     case '>':
-        if (parse_dir_timestamp(buf + 1, datetime) != 0) {
+        // MM/DD/YY HH:MM xM, with x either A or P, as in $:*=>01/02/25 03:04 PM.
+        n = sscanf(buf+1, "%d/%d/%d %d:%d %c", &M, &d, &y, &h12, &m, &ampm);
+        if (n != 6)
             return ERR_SYNTAX;
-        }
+        y += (y < 80) ? 2000 : 1900;
+        h = (h12 % 12) + (ampm == 'P' ? 12:0);
+        datetime = make_fat_time(y, M, d, h, m, 0);
         if (buf[0] == '<')
             opt.max_datetime = datetime;
         else
