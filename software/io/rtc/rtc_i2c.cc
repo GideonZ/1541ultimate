@@ -400,6 +400,10 @@ extern "C" uint32_t get_fattime(void) /* 31-25: Year(0-127 org.1980), 24-21: Mon
 extern "C" void get_current_time(int& wd, int& year, int& month, int& day, int& hour, int& min, int& sec)
 {
     rtc.get_time(year, month, day, wd, hour, min, sec);
+    // The chip counts years from 1980, the way a FAT time stamp does. Callers of
+    // this function want a calendar year: the drive's own time commands print it
+    // straight into the answer they give the Commodore.
+    year += 1980;
 }
 
 #include "init_function.h"
