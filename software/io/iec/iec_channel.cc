@@ -690,9 +690,25 @@ static FRESULT open_by_rendered_iec_name(FileManager *fm, IecPartition *partitio
     return fm->fopen(resolved.c_str(), flags, file);
 }
 
+// The partition type shown in the partition directory follows the file system that
+// sits at the root of the partition: a mounted disk image reports the drive model it
+// emulates, and a directory on the host file system reports a native partition.
+static const char *iec_partition_type(FileManager *fm, IecPartition *prt)
+{
+    FileInfo info(32);
+    if (!fm->is_path_valid(prt->GetRootPath(), &info)) {
+        return "NAT";
+    }
+    if (!info.fs) {
+        return "NAT";
+    }
+    return info.fs->get_partition_type();
+}
+
 int IecChannel::read_dir_entry(void)
 {
     FileInfo info(40);
+    const char *partition_type = NULL;
     FRESULT fres;
     if (state == e_dir) {
         if (!dir) {
@@ -715,9 +731,9 @@ int IecChannel::read_dir_entry(void)
             info.date = fattime >> 16;
             info.time = fattime & 0xFFFF;
             info.attrib = AM_DIR;
-            const char *ps = prt->GetRootPath();
-            //sprintf(info.lfname, "PART%03d", part_idx);
-            strncpy(info.lfname, ps, info.lfsize);
+            strncpy(info.lfname, prt->GetName(), info.lfsize);
+            info.lfname[info.lfsize - 1] = 0;
+            partition_type = iec_partition_type(fm, prt);
             part_idx ++;
         }
     }
@@ -810,7 +826,7 @@ int IecChannel::read_dir_entry(void)
         buffer[pos++] = 32;
 
     const char *types[] = { "ANY", "PRG", "SEQ", "USR", "REL", "DIR" };
-    memcpy(&buffer[27 - chars], types[(int)ftype], 3);
+    memcpy(&buffer[27 - chars], partition_type ? partition_type : types[(int)ftype], 3);
 
     pointer = 0;
     prefetch = 0;
@@ -1398,13 +1414,11 @@ int IecCommandChannel :: do_buffer_position(int chan, int pos)
         set_error(ERR_SYNTAX_ERROR_CMD);
         return ERR_SYNTAX_ERROR_CMD;
     }
-    if ((pos < 0) || (pos > 255)) {
-        set_error(ERR_SYNTAX_ERROR_CMD);
-        return ERR_SYNTAX_ERROR_CMD;
-    }
     IecChannel *channel;
     channel = drive->get_data_channel(chan);
-    channel->pointer = pos;
+    // CBM DOS keeps only the low byte of the position, so a value past the end of
+    // the 256 byte buffer wraps rather than being refused.
+    channel->pointer = pos & 0xFF;
     channel->reset_prefetch();
     set_error(ERR_ALL_OK);
     return ERR_ALL_OK;
@@ -1422,6 +1436,18 @@ int IecCommandChannel::do_change_dir(filename_t& dest)
 {
     GETPARTITION(dest.partition, prt, -1);
     DBGIECV("Partition %d ('%s') Change dir %s:%s\n", dest.partition, prt->GetFullPath(), dest.path.c_str(), dest.filename.c_str());
+
+    // The left arrow (PETSCII 0x5F, rendered here as an underscore) means the parent
+    // directory. It is documented both directly after the command word, as in "CD_",
+    // and behind a colon, as in "CD:_" or "CD/SUB/:_". Only the first form arrives as
+    // a path; move the second into the path so that both take the same route.
+    if (dest.filename == "_") {
+        dest.filename = "";
+        if (dest.path.length() && (dest.path[-1] != '/')) {
+            dest.path += "/";
+        }
+        dest.path += "_";
+    }
 
     mstring full_path;
     mstring relative_path;
@@ -1690,6 +1716,14 @@ int IecCommandChannel::do_pwd_command()
 int IecCommandChannel::do_set_position(int chan, uint32_t pos, int recnr, int recoffset)
 {
     DBGIECV("Set File position to %u on chan %d. RecNr %d:%d\n", pos, chan, recnr, recoffset);
+    // The documented BASIC form of the position command adds 96 to the secondary
+    // address, as in PRINT#15,"P"CHR$(96+2)CHR$(lo)CHR$(hi)CHR$(offset), while other
+    // programs send the bare secondary address. CBM DOS masks the byte down to its
+    // low four bits only when it is 19 or more, so both forms reach the same channel
+    // while a byte just outside the channel range is still refused.
+    if (chan >= 19) {
+        chan &= 0x0F;
+    }
     if ((chan < 0) || (chan > 14)) {
         return ERR_SYNTAX_ERROR_CMD;
     }
@@ -1820,6 +1854,13 @@ t_channel_retval IecCommandChannel::push_command(uint8_t b)
         wr_pointer = 0;
         break;
     case 0x00: // end of data, command received in buffer
+        // BASIC's PRINT# terminates every command with a carriage return. CBM DOS
+        // uses that CR as the end-of-command marker and does not treat it as part
+        // of the command itself, so a single trailing CR is removed here. Only the
+        // last byte is removed, to keep commands that carry binary parameters intact.
+        if (wr_pointer && (wr_buffer[wr_pointer - 1] == 0x0D)) {
+            wr_pointer--;
+        }
         wr_buffer[wr_pointer] = 0;
         if (wr_pointer) {
             drive->set_error(0, 0, 0);

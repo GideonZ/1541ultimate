@@ -119,10 +119,68 @@ int parse_full_path(const char *buf, filename_t& name, bool *replace = NULL, boo
     return 0;
 }
 
+// Reads a run of decimal digits, and says whether there was one at all.
+static const char *scan_decimal(const char *p, int &value, bool &converted)
+{
+    int digits = 0;
+    value = 0;
+    while (isdigit((uint8_t)*p)) {
+        value = (value * 10) + (*(p++) - '0');
+        if (value > 0xFFFF) { // a field of a date and time never needs more
+            value = 0xFFFF;
+        }
+        digits++;
+    }
+    converted = (digits > 0);
+    return p;
+}
+
+// The time stamp in a directory filter, spelled MM/DD/YY HH:MM xM with x either A
+// or P, as in $:*=>01/02/25 03:04 PM.
+//
+// This is parsed here rather than with sscanf because the firmware brings its own
+// sscanf: it counts a conversion whether or not anything was converted, and it does
+// not implement %c at all, storing a whole int through the caller's char pointer
+// instead. The old format string asked for both, so on the device the return value
+// said nothing and the am/pm marker was always overwritten with zero, which made
+// every afternoon stamp read as morning.
+static int parse_dir_timestamp(const char *buf, uint32_t &datetime)
+{
+    static const char separators[] = { '/', '/', ' ', ':' };
+    int field[5];
+    const char *p = buf;
+
+    for (int i = 0; i < 5; i++) {
+        bool converted = false;
+        while (*p == ' ') {
+            p++;
+        }
+        p = scan_decimal(p, field[i], converted);
+        if (!converted) {
+            return ERR_SYNTAX;
+        }
+        if (i < 4) {
+            if (*p != separators[i]) {
+                return ERR_SYNTAX;
+            }
+            p++;
+        }
+    }
+    while (*p == ' ') {
+        p++;
+    }
+    if ((*p != 'A') && (*p != 'P')) {
+        return ERR_SYNTAX;
+    }
+
+    int year = field[2] + ((field[2] < 80) ? 2000 : 1900);
+    int hour = (field[3] % 12) + ((*p == 'P') ? 12 : 0);
+    datetime = make_fat_time(year, field[0], field[1], hour, field[4], 0);
+    return 0;
+}
+
 int parse_dir_option(const char *buf, dir_options_t &opt)
 {
-    int M, d, y, h, h12, m, n;
-    char ampm;
     uint32_t datetime;
 
     switch(buf[0]) {
@@ -138,13 +196,9 @@ int parse_dir_option(const char *buf, dir_options_t &opt)
     case 'N': opt.timefmt = e_stamp_none; break;
     case '<':
     case '>':
-        n = sscanf(buf+1, "%d/%d/%d %d:%d %c", &M, &d, &y, &h12, &m, &ampm);
-        if (n != 6)
+        if (parse_dir_timestamp(buf + 1, datetime) != 0) {
             return ERR_SYNTAX;
-        // convert am/pm time back to normal time format
-        y += (y < 80) ? 2000 : 1900;
-        h = (h12 % 12) + (ampm == 'P' ? 12:0);
-        datetime = make_fat_time(y, M, d, h, m, 0);
+        }
         if (buf[0] == '<')
             opt.max_datetime = datetime;
         else
@@ -241,30 +295,72 @@ int parse_open(const char *buf, open_t& fn)
     return 0;
 }
 
+// The parameters of a block command are decimal numbers separated by a space, a
+// comma or a cursor right (0x1D), and a colon may stand between the command word and
+// the first parameter. The 1541 ROM routine at $CC6F skips exactly those characters.
+//
+// This matters because a Commodore rarely sends the bare form. PRINT#15,"U1:";2;0;18;0
+// puts "U1: 2  0  18  0 " on the bus, since BASIC prints a space before and after
+// every positive number, and the "VIEW BAM" program on the 1541 TEST/DEMO disk also
+// uses the literal forms "U1:2,0,18,0" and "B-P:2,144".
+static bool is_block_parameter_separator(uint8_t c)
+{
+    return (c == ' ') || (c == ',') || (c == ':') || (c == 0x1D);
+}
+
+static int parse_block_parameters(const uint8_t *buffer, int len, int *values, int count)
+{
+    int found = 0;
+    int i = 0;
+
+    while (found < count) {
+        while ((i < len) && is_block_parameter_separator(buffer[i])) {
+            i++;
+        }
+        if ((i >= len) || !isdigit(buffer[i])) {
+            break;
+        }
+        uint32_t value = 0;
+        while ((i < len) && isdigit(buffer[i])) {
+            value = (value * 10) + (uint32_t)(buffer[i] - '0');
+            if (value > 0xFFFF) { // CBM DOS keeps a parameter in sixteen bits
+                value = 0xFFFF;
+            }
+            i++;
+        }
+        values[found++] = (int)value;
+    }
+    return found;
+}
+
 int IecParser :: block_command(const uint8_t *buffer, int len)
 {
     if (buffer[1] != '-') {
         return ERR_SYNTAX;
     }
-    int n, chan, part, track, sector;
+    int n;
+    int p[4];
+    const uint8_t *params = buffer + 3;
+    int param_len = (len > 3) ? (len - 3) : 0;
+
     switch(buffer[2]) {
     case 'R':
-        n = sscanf((const char *)buffer+3, "%d%d%d%d", &chan, &part, &track, &sector);
+        n = parse_block_parameters(params, param_len, p, 4);
         if (n != 4) return ERR_SYNTAX;
-        return exec->do_block_read(chan, part, track, sector);
+        return exec->do_block_read(p[0], p[1], p[2], p[3]);
     case 'W':
-        n = sscanf((const char *)buffer+3, "%d%d%d%d", &chan, &part, &track, &sector);
+        n = parse_block_parameters(params, param_len, p, 4);
         if (n != 4) return ERR_SYNTAX;
-        return exec->do_block_write(chan, part, track, sector);
+        return exec->do_block_write(p[0], p[1], p[2], p[3]);
     case 'P':
-        n = sscanf((const char *)buffer+3, "%d%d", &chan, &part);
+        n = parse_block_parameters(params, param_len, p, 2);
         if (n != 2) return ERR_SYNTAX;
-        return exec->do_buffer_position(chan, part);
+        return exec->do_buffer_position(p[0], p[1]);
     case 'A':
     case 'F':
-        n = sscanf((const char *)buffer+3, "%d%d%d%d", &chan, &part, &track, &sector);
+        n = parse_block_parameters(params, param_len, p, 4);
         if (n != 4) return ERR_SYNTAX;
-        return exec->do_block_allocate(chan, part, track, sector, buffer[2] == 'A');
+        return exec->do_block_allocate(p[0], p[1], p[2], p[3], buffer[2] == 'A');
     default:
         return ERR_UNKNOWN_CMD;
     }
@@ -280,7 +376,9 @@ int IecParser :: cp_command(const uint8_t *buffer, int len)
             return ERR_SYNTAX;
         }
     } else {
-        if (sscanf((const char *)buffer + 2, "%d", &part) != 1) {
+        // Partition 0 means "the one already selected", which is also what a command
+        // with no number at all asks for.
+        if (parse_block_parameters(buffer + 2, (len > 2) ? (len - 2) : 0, &part, 1) != 1) {
             return exec->do_set_current_partition(0);
         }
     }
@@ -497,10 +595,11 @@ int IecParser :: time_command(const uint8_t *buffer, int len)
             return ERR_SYNTAX;
         }
         switch(buffer[3]) {
-        case 'A': // ASC-II in wrong date order format
-            // "dow. mo/da/yr hr:mi:se xx"+CHR$(13)
+        case 'A': // ASCII
+            // "dow. mo/da/yr hr:mi:se xx"+CHR$(13), month first, as every other date
+            // this drive prints. The day and the month used to be the other way round.
             reslen = sprintf((char *)result, "%s %02d/%02d/%02d %02d:%02d:%02d %s\r",
-                wd4[wd], day, month, year % 100, hour12, min, sec, (hour >= 12)?"PM":"AM");  
+                wd4[wd], month, day, year % 100, hour12, min, sec, (hour >= 12)?"PM":"AM");  
             break;
         case 'D': // In binary form
             // wd, yr, mon, day, hr12, min, sec, flag, 0D
@@ -544,17 +643,34 @@ int IecParser :: time_command(const uint8_t *buffer, int len)
 
 int IecParser :: user_command(const uint8_t *buffer, int len)
 {
-    int n, chan, part, track, sector;
+    int n;
+    int p[4];
+    const uint8_t *params = buffer + 2;
+    int param_len = (len > 2) ? (len - 2) : 0;
+
+    // CBM DOS selects the user command from the low nibble of the character after
+    // the U, so U1 and UA are the same command, U2 and UB are the same, and so are
+    // U9 and UI, and U: and UJ.
     switch(buffer[1]) {
     case '1':
-        n = sscanf((const char *)buffer+2, "%d%d%d%d", &chan, &part, &track, &sector);
+    case 'A':
+        n = parse_block_parameters(params, param_len, p, 4);
         if (n != 4) return ERR_SYNTAX;
-        return exec->do_block_read(chan, part, track, sector);
+        return exec->do_block_read(p[0], p[1], p[2], p[3]);
     case '2':
-        n = sscanf((const char *)buffer+2, "%d%d%d%d", &chan, &part, &track, &sector);
+    case 'B':
+        n = parse_block_parameters(params, param_len, p, 4);
         if (n != 4) return ERR_SYNTAX;
-        return exec->do_block_write(chan, part, track, sector);
+        return exec->do_block_write(p[0], p[1], p[2], p[3]);
+    case '9':
     case 'I':
+        // UI+ and UI- only select the serial bus timing. They are not a reset, so
+        // they must not answer with the power-up message the way UI does.
+        if ((param_len > 0) && ((params[0] == '+') || (params[0] == '-'))) {
+            return 0;
+        }
+        return exec->do_initialize();
+    case ':':
     case 'J':
         return exec->do_initialize();
     default:
