@@ -268,8 +268,11 @@ static void apply_joystick_event(const InputParsedEvent &event)
         active_low |= event.joystick_mask;
         if (event.port == 1) {
             JoystickOutput::instance().setRestPort1Persistent(active_low);
+            // Cancel any in-flight tap so it can't mask this release.
+            JoystickOutput::instance().cancelRestPort1Overlay(event.joystick_mask);
         } else {
             JoystickOutput::instance().setRestPort2Persistent(active_low);
+            JoystickOutput::instance().cancelRestPort2Overlay(event.joystick_mask);
         }
         break;
     case INPUT_PARSED_TAP:
