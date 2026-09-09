@@ -54,9 +54,9 @@ The suite assembles `iec_agent.asm` with the repository's 64tass. The C64 runs
 KERNAL OPEN, CHKOUT/CHROUT, CHKIN/CHRIN and CLOSE over the actual IEC bus; REST
 only supplies the agent's commands and retrieves its results. FTP independently
 checks the stored REL header, file size and every data byte.
-Each transaction gets two uninterrupted seconds before its result is checked:
-REST memory reads stop the C64 and can otherwise disturb IEC timing. A transaction
-that is still busy then fails the test. Allow roughly ten minutes for the suite.
+Each transaction is left uninterrupted for as long as the bytes it carries need:
+REST memory reads stop the C64 and can otherwise disturb IEC timing. See the timing
+section below. Allow roughly three minutes for the suite.
 
 Generated fixtures cover FAT, D64 and D81 destinations, record lengths 1, 31,
 164 and 254, consecutive files on the same channel without a positioning command,
@@ -86,3 +86,24 @@ otherwise disappear on hosts whose plain `char` is unsigned.
 The reporter's disk and copy utilities are not bundled; the deterministic suite
 requires no external disk image. A separate reproduction using the issue attachment
 can verify COPY-ALL and the supplied `edata edit 3.0` editor on the same firmware.
+
+## Timing, and which profile runs these
+
+`iec_agent.py` waits blind after every mailbox transaction and only then reads the
+result. It has to: a REST memory read halts the C64 for the duration of the copy,
+and one that lands inside a serial transfer corrupts it. Polling the mailbox every
+20 ms through a 254 byte read spoiled one read in thirty on the test machine, so
+there is no cheap way to learn early that a transaction has finished.
+
+The wait is therefore an estimate of how long the transfer takes, not a poll. It is
+a fixed part per operation, between 0.08 s and 0.22 s, plus 1.8 ms a byte, and a
+further 1.2 s for a transaction addressed to an emulated drive, which seeks and
+reads at the speed of the hardware it emulates. Those numbers were measured by
+scaling all of them together and running the suites at each scale until transactions
+began to overrun; the values here keep a little under twice that margin. A
+transaction that needs longer still gets two seconds of grace, and each suite reports
+how many needed it, so a wait that is too tight shows up as a number rather than as a
+rare corrupted read.
+
+`iec-dos-commands` takes about 24 s and `rel-copy` about 3 minutes. Both are tagged
+`standard`, so they run in the merge gate and not in the default `run-tests` run.
