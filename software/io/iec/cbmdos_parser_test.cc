@@ -4,6 +4,7 @@
 
 #include "cbmdos_parser.h"
 #include "pattern.h"
+#include "iec_trace.h"
 
 typedef struct {
     int partition;
@@ -258,8 +259,77 @@ void test_command_terminator(void)
     test_dispatch("B-P:2,13\r", 9, 0, "buffer position", 2, 13);
 }
 
+/* ==== SOFTIEC-TRACE diagnostics for #877; removed together with them ==== */
+
+// The byte formatters the #877 Software IEC diagnostics use. They take a length and
+// must never read the payload as a string, because an IEC payload can carry an
+// embedded zero, a carriage return that is a parameter rather than a terminator, and
+// shifted PETSCII bytes above 0x7F.
+void test_trace_render(const char *what, const uint8_t *data, int len,
+                       const char *exp_hex, const char *exp_text)
+{
+    char hex[SOFTIEC_TRACE_HEX_SIZE];
+    char txt[SOFTIEC_TRACE_TEXT_SIZE];
+    int hex_len = softiec_trace_hex(data, len, hex, sizeof(hex));
+    int txt_len = softiec_trace_text(data, len, txt, sizeof(txt));
+    bool ok = (strcmp(hex, exp_hex) == 0) && (strcmp(txt, exp_text) == 0) &&
+              (hex_len == (int)strlen(exp_hex)) && (txt_len == (int)strlen(exp_text));
+    if (ok) {
+        printf("Trace %s => OK!\n", what);
+        return;
+    }
+    printf("Trace %s rendered [%s] \"%s\", expected [%s] \"%s\"\n",
+           what, hex, txt, exp_hex, exp_text);
+    failures++;
+}
+
+// A rendering that does not fit has to say so rather than look like a short payload.
+void test_trace_truncation(void)
+{
+    const uint8_t data[] = { 0x41, 0x42, 0x43, 0x44 };
+    char hex[8];
+    char txt[6];
+    softiec_trace_hex(data, 4, hex, sizeof(hex));
+    softiec_trace_text(data, 4, txt, sizeof(txt));
+    if ((strcmp(hex, "41 42..") == 0) && (strcmp(txt, "ABC..") == 0)) {
+        printf("Trace truncation => OK!\n");
+        return;
+    }
+    printf("Trace truncation rendered [%s] \"%s\", expected [41 42..] \"ABC..\"\n", hex, txt);
+    failures++;
+}
+
+void test_trace_formatters(void)
+{
+    const uint8_t empty[1] = { 0 };
+    test_trace_render("empty payload", empty, 0, "", "");
+
+    // The command that started #881: C, shifted P, and partition 13 as a byte.
+    const uint8_t change_partition[] = { 'C', 0xD0, 0x0D };
+    test_trace_render("binary change partition", change_partition, 3,
+                      "43 D0 0D", "C\\xD0\\r");
+
+    // A text command with the carriage return PRINT# appends behind it.
+    const uint8_t text_command[] = { 'G', '-', 'P', 0x0D };
+    test_trace_render("text command with terminator", text_command, 4,
+                      "47 2D 50 0D", "G-P\\r");
+
+    // An embedded zero is a payload byte here, not the end of the payload.
+    const uint8_t with_zero[] = { 'A', 0x00, 'B' };
+    test_trace_render("embedded zero", with_zero, 3, "41 00 42", "A\\0B");
+
+    // Quotes and backslashes have to survive the quoted rendering.
+    const uint8_t quoting[] = { '"', '\\', 0x0A };
+    test_trace_render("quoting", quoting, 3, "22 5C 0A", "\\\"\\\\\\n");
+
+    test_trace_truncation();
+}
+/* ==================== end of the #877 diagnostics tests ==================== */
+
 int main(int argc, const char *argv[])
 {
+    test_trace_formatters(); // #877 diagnostics; removed with them
+
     open_t o;
     d_parse_open("JUSTFILE", o,     0,
                 { -1, "", "JUSTFILE", false, false, e_any, e_not_set,

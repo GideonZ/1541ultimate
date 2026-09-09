@@ -7,6 +7,7 @@
 #include "init_function.h"
 #include "json.h"
 #include "iec_ui.h"
+#include "iec_trace.h"
 
 #ifndef FS_ROOT
 #define FS_ROOT "/USB0/"
@@ -132,6 +133,7 @@ IecDrive :: IecDrive() : SubSystem(SUBSYSID_IEC)
     intf = IecInterface :: get_iec_interface();
 	fm = FileManager :: getFileManager();
     my_bus_id = 0;
+    vfs = NULL; // registering the settings makes them take effect before this is built
 
     register_store(0x49454300, "SoftIEC Drive Settings", iec_config);
     cfg->set_sort_order(SORT_ORDER_CFG_SOFTIEC);
@@ -170,6 +172,8 @@ IecDrive :: IecDrive() : SubSystem(SUBSYSID_IEC)
     // Register and configure the processor
     slot_id = intf->register_slave(this);
     intf->configure();
+
+    trace_configuration("startup"); // #877 diagnostics only
 }
 
 IecDrive :: ~IecDrive()
@@ -193,6 +197,27 @@ IecChannel *IecDrive :: get_data_channel(int chan)
     return (IecChannel *)channels[chan & 15];
 }
 
+// #877 diagnostics: what the drive is, and where each of its partitions points. One
+// line for the drive and one per partition, written when the settings take effect and
+// whenever a partition moves, so a log says what the drive was pointed at.
+void IecDrive :: trace_configuration(const char *when)
+{
+    SOFTIEC_TRACE(this, 15, 0x00, "CONFIG", NULL, 0,
+                  "%s enabled=%d bus_id=%d", when, enable ? 1 : 0, my_bus_id);
+    if (!vfs) {
+        return; // the settings take effect while the drive is still being built
+    }
+    for (int i = 0; i < MAX_PARTITIONS; i++) {
+        IecPartition *p = vfs->GetPartition(i);
+        if (!p || (p->GetPartitionNumber() != i)) {
+            continue; // GetPartition falls back to the current one for index 0
+        }
+        SOFTIEC_TRACE(this, 15, 0x00, "CONFIG", NULL, 0,
+                      "%s partition=%d name=%s root=%s cwd=%s", when, i,
+                      p->GetName(), p->GetRootPath(), p->GetFullPath());
+    }
+}
+
 void IecDrive :: effectuate_settings(void)
 {
     my_bus_id = cfg->get_value(CFG_IEC_BUS_ID);
@@ -201,6 +226,7 @@ void IecDrive :: effectuate_settings(void)
     enable = uint8_t(cfg->get_value(CFG_IEC_ENABLE));
 
     intf->configure();
+    trace_configuration("settings");
 }
 
 void IecDrive :: create_task_items(void)
@@ -368,6 +394,7 @@ void IecDrive :: set_iec_dir(IecSlave *sl, void *data)
         p->SetRoot(pd->path);
         p->SetName(pd->name);
     }
+    drive->trace_configuration("set-dir");
     delete[] pd->path;
     delete[] pd->name;
     delete pd;

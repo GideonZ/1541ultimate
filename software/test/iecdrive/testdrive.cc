@@ -4,6 +4,9 @@
 #include "file_device.h"
 #include "filesystem_fat.h"
 #include "macros.h"
+#include "iec_trace.h" // #877 diagnostics; removed with them
+#include <unistd.h>
+#include <string.h>
 
 void outbyte(int c) { putc(c, stdout); }
 CommandInterface cmd_if;
@@ -2180,6 +2183,153 @@ void execute_suite10(FileManager *fm, IecDrive *dr)
     printf("Suite10 completed successfully!\n");
 }
 
+
+/* =============================================================================
+ * SOFTIEC-TRACE diagnostics, GideonZ/1541ultimate#877.
+ *
+ * TEMPORARY. This whole block and its single call in main() are removed together
+ * with the diagnostics themselves. It captures what the drive writes while a few
+ * representative operations run, and checks that each one produced a line under
+ * the shared prefix, with the payload bytes the operation actually carried.
+ * ============================================================================= */
+
+#if SOFTIEC_TRACE_ENABLED
+
+static char trace_capture[256 * 1024];
+
+static void trace_capture_begin(int &saved_fd, FILE *&sink)
+{
+    const char *testname = "SoftIecTrace";
+    fflush(stdout);
+    saved_fd = dup(fileno(stdout));
+    sink = fopen("trace_capture.txt", "w+");
+    REQUIRE(saved_fd >= 0);
+    REQUIRE(sink != NULL);
+    dup2(fileno(sink), fileno(stdout));
+}
+
+static void trace_capture_end(int saved_fd, FILE *sink)
+{
+    const char *testname = "SoftIecTrace";
+    fflush(stdout);
+    dup2(saved_fd, fileno(stdout));
+    close(saved_fd);
+    fseek(sink, 0, SEEK_SET);
+    size_t got = fread(trace_capture, 1, sizeof(trace_capture) - 1, sink);
+    trace_capture[got] = 0;
+    fclose(sink);
+    remove("trace_capture.txt");
+}
+
+static void expect_trace_line(const char *testname, const char *what, const char *needle)
+{
+    if (strstr(trace_capture, needle) == NULL) {
+        printf("%s: %s: no SOFTIEC-TRACE line containing '%s'\n", testname, what, needle);
+    }
+    REQUIRE(strstr(trace_capture, needle) != NULL);
+}
+
+// Every diagnostic line has to start with the shared prefix, so that removing the
+// feature is a matter of finding one string. Other output the firmware writes during
+// the same operations is left alone; what is checked is that nothing mentions the
+// prefix anywhere but at the start of a line.
+static void expect_every_line_prefixed(const char *testname)
+{
+    const char *p = trace_capture;
+    int traced = 0;
+    while (*p) {
+        const char *end = strchr(p, '\n');
+        int len = end ? (int)(end - p) : (int)strlen(p);
+        if (strncmp(p, SOFTIEC_TRACE_PREFIX, strlen(SOFTIEC_TRACE_PREFIX)) == 0) {
+            traced++;
+        } else if (memmem(p, len, SOFTIEC_TRACE_PREFIX, strlen(SOFTIEC_TRACE_PREFIX))) {
+            printf("%s: a line mentions the prefix but does not start with it: '%.*s'\n",
+                   testname, len, p);
+            REQUIRE(false);
+        }
+        if (!end) {
+            break;
+        }
+        p = end + 1;
+    }
+    if (traced < 8) {
+        printf("%s: only %d diagnostic lines were captured\n", testname, traced);
+    }
+    REQUIRE(traced >= 8);
+}
+
+static void run_softiec_trace_suite(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "SoftIecTrace";
+    print_scenario("SoftIecTrace", "SOFTIEC-TRACE diagnostics (#877)");
+
+    // A partition of its own, so the state the earlier suites left behind cannot
+    // change what this one sees.
+    save_fixture_file(fm, "/Temp", "TRACED.seq", "TRACE PAYLOAD");
+    dr->add_partition(9, "/Temp", "TRACEPART");
+    expect_command_response(testname, dr, "CP9\r", "02,PARTITION SELECTED,09,00\r");
+
+    int saved_fd = -1;
+    FILE *sink = NULL;
+    trace_capture_begin(saved_fd, sink);
+
+    // A textual command with the carriage return PRINT# appends.
+    send_command(dr, "G-P\r");
+
+    // Change Partition in its binary form, carrying partition 13 as a byte. The
+    // command and the terminator are the same byte, which is the whole of #881.
+    static const uint8_t change_partition[] = { 'C', 0xD0, 0x0D };
+    send_command_data(dr, change_partition, 3);
+    get_status(dr);
+
+    // An OPEN, a read and a CLOSE on a data channel.
+    uint8_t body[64];
+    open_file(dr, 2, "9:TRACED,S,R");
+    get_status(dr);
+    int got = read_file(dr, 2, body, sizeof(body));
+    close_file(dr, 2);
+
+    trace_capture_end(saved_fd, sink);
+
+    if (got != 13) {
+        printf("%s: read %d bytes from the fixture, expected 13\n", testname, got);
+    }
+    REQUIRE(got == 13);
+    expect_every_line_prefixed(testname);
+
+    // The command bytes, in hex and in the escaped form, with the carriage return
+    // still distinguishable from a printable byte.
+    expect_trace_line(testname, "G-P command", "CMD dev=");
+    expect_trace_line(testname, "G-P command bytes", "hex=[47 2D 50 0D]");
+    expect_trace_line(testname, "G-P command text", "txt=\"G-P\\r\"");
+    expect_trace_line(testname, "G-P reply", "REPLY dev=");
+    expect_trace_line(testname, "G-P reply length", "len=31");
+
+    // Partition 13 arrives as a byte and is not confused with the terminator.
+    expect_trace_line(testname, "binary change partition", "hex=[43 D0 0D]");
+    expect_trace_line(testname, "binary change partition text", "txt=\"C\\xD0\\r\"");
+
+    // The open carries the name the bus delivered and where it landed.
+    expect_trace_line(testname, "open name", "hex=[39 3A 54 52 41 43 45 44 2C 53 2C 52]");
+    expect_trace_line(testname, "open host path", "host=/Temp/TRACED.seq");
+
+    // The close reports how much crossed the channel and what the data began with.
+    expect_trace_line(testname, "close byte count", "read=13 [54 52 41 43 45 20 50 41 59 4C 4F 41 44]");
+    expect_trace_line(testname, "close write count", "written=0");
+
+    // The error channel read the host performs after each operation.
+    expect_trace_line(testname, "status read", "STATUS dev=");
+
+    printf("SoftIecTrace completed successfully!\n");
+}
+
+#else /* the diagnostics are compiled out, so there is nothing to check */
+
+static void run_softiec_trace_suite(FileManager *fm, IecDrive *dr) { }
+
+#endif
+/* ===================== end of the #877 diagnostics suite ===================== */
+
 int main(int argc, const char **argv)
 {
     UserInterface *ui = new UserInterface("Test Drive");
@@ -2204,6 +2354,7 @@ int main(int argc, const char **argv)
     execute_suite6(fm, dr);
     execute_suite7(fm, dr);
     execute_suite10(fm, dr);
+    run_softiec_trace_suite(fm, dr); // #877 diagnostics; removed with them
 
     delete dr;
     delete ui;

@@ -86,6 +86,7 @@ public:
 
     // Local Functions
     void set_error(int err, int track, int sector);
+    void trace_configuration(const char *when); // #877 diagnostics only
     void set_error_fres(FRESULT fres);
 
     int get_error_string(char *); // writes string into buffer
