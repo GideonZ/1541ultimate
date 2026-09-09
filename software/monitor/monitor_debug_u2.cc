@@ -163,7 +163,6 @@ protected:
     }
     virtual bool launch_contextless_with_breakpoints(uint16_t address)
     {
-        (void)address;
         // begin_stopped_session()'s return says whether IT put the machine in
         // the stopped state, for end_stopped_session()'s "only the one who
         // stopped it resumes it" pairing elsewhere. It is the wrong signal
@@ -187,6 +186,16 @@ protected:
                       (uint8_t)(CONTEXTLESS_LAUNCHER & 0xFF));
         machine->poke((uint16_t)(CONTEXTLESS_NMI_VECTOR + 1),
                       (uint8_t)(CONTEXTLESS_LAUNCHER >> 8));
+        // The soft vector above is only reached through the KERNAL's NMI
+        // entry. A program that runs with the KERNAL banked out ($01 bit 1
+        // clear) makes the 6510 fetch $FFFA/$FFFB from the RAM underneath, so
+        // that copy has to name the launcher too: measured on a U2+L in a C64
+        // Ultimate, a $01=$35 program launched through the soft vector alone
+        // took the NMI to whatever the RAM held and stopped at a stray BRK
+        // there, never at the breakpoint. Both vectors are patched, the way
+        // C64::capture_cpu_port_via_nmi() does, because which one is live is
+        // exactly what a stale port reading would get wrong.
+        install_hard_nmi_vector_to(CONTEXTLESS_LAUNCHER);
         machine->end_stopped_session_nmi(true);
         return true;
     }

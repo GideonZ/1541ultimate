@@ -59,6 +59,11 @@ static const int MAX_BREAKPOINT_RELAUNCH = 2;
 // aperture. A lost write is rare, so this is a small bound rather than a long
 // loop; exhausting it is reported instead of retried further.
 static const int PATCH_WRITE_ATTEMPTS = 4;
+// Times the RAM hardware NMI vector is written on install. It cannot be read
+// back to confirm (the cartridge DMA read returns the ROM image at $E000+), and
+// the bank-flip DMA path that reaches it loses ~1 write in 50, so it is written
+// several times; the launch fails only if every copy is lost.
+static const int HARD_NMI_VECTOR_WRITES = 4;
 static const int BREAKPOINT_WAIT_MS = 5000;
 static const int HIGH_MEMORY_BREAKPOINT_WAIT_MS = 900;
 
@@ -576,17 +581,35 @@ void BrkDebugSession :: save_and_install_hard_nmi_vector(uint8_t cpu_port)
         }
         return;
     }
+    install_hard_nmi_vector_to(NMI_TRAMPOLINE_ADDR);
+}
+
+void BrkDebugSession :: install_hard_nmi_vector_to(uint16_t target)
+{
     if (!hard_nmi_vector_installed) {
         saved_hard_nmi_vector[0] = peek_cpu(HARD_NMI_VECTOR_LO,
                                             HARD_VECTOR_RAM_CPU_PORT);
         saved_hard_nmi_vector[1] = peek_cpu(HARD_NMI_VECTOR_HI,
                                             HARD_VECTOR_RAM_CPU_PORT);
         hard_nmi_vector_installed = true;
+        printf("MCM hard NMI vector: RAM $FFFA=%02X%02X -> $%04X\n",
+               saved_hard_nmi_vector[1], saved_hard_nmi_vector[0], target);
     }
-    poke_cpu(HARD_NMI_VECTOR_LO, (uint8_t)(NMI_TRAMPOLINE_ADDR & 0xFF),
-             HARD_VECTOR_RAM_CPU_PORT);
-    poke_cpu(HARD_NMI_VECTOR_HI, (uint8_t)(NMI_TRAMPOLINE_ADDR >> 8),
-             HARD_VECTOR_RAM_CPU_PORT);
+    // $FFFA/$FFFB sits in RAM under the KERNAL, which a U2 in a C64 Ultimate
+    // reaches only through C64::dma_transfer_frozen's bank-flip path. That path
+    // loses about one write in fifty (measured; see the monitor suite README),
+    // and this vector cannot be read back to check: the cartridge's DMA read
+    // returns the KERNAL image at $E000+ whatever the CPU port says. A lost
+    // write here sends a KERNAL-out launch NMI to the stale RAM vector instead
+    // of the launcher, so the write is repeated. Each repeat lands after the
+    // previous flip has settled, so the odds of every copy missing are the
+    // single-write rate raised to HARD_NMI_VECTOR_WRITES.
+    for (int i = 0; i < HARD_NMI_VECTOR_WRITES; i++) {
+        poke_cpu(HARD_NMI_VECTOR_LO, (uint8_t)(target & 0xFF),
+                 HARD_VECTOR_RAM_CPU_PORT);
+        poke_cpu(HARD_NMI_VECTOR_HI, (uint8_t)(target >> 8),
+                 HARD_VECTOR_RAM_CPU_PORT);
+    }
 }
 
 void BrkDebugSession :: uninstall_hard_nmi_vector(void)

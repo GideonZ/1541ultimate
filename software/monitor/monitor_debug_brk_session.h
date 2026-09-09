@@ -54,6 +54,13 @@ protected:
     virtual bool launch_contextless_with_breakpoints(uint16_t) { return false; }
     // Page-three facts for a backend that has to rebuild that page itself.
     static uint16_t hard_brk_stub_address(void);
+    // Points the RAM copy of the hardware NMI vector ($FFFA/$FFFB under the
+    // KERNAL) at `target`, saving the program's bytes once per session.
+    // uninstall_hard_nmi_vector() puts them back. A backend whose launch
+    // delivers an NMI while the program may have the KERNAL banked out calls
+    // this for its launcher, because the 6510 then fetches the vector from RAM
+    // and the soft $0318 vector never gets a turn.
+    void install_hard_nmi_vector_to(uint16_t target);
     // Zeroes, in the caller's image of page three, the bytes only the launched
     // program may write, so a trap taken during the handoff cannot be read back
     // as the run's result.

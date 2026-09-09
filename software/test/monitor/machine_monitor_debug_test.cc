@@ -433,6 +433,11 @@ public:
     bool contextless_breakpoint_launch_supported;
     int contextless_breakpoint_launches;
     uint16_t contextless_breakpoint_launch_address;
+    // Models the U2 launcher: a backend whose contextless launch also names
+    // its launcher in the RAM copy of the hardware NMI vector.
+    bool contextless_launch_installs_hard_nmi;
+    uint16_t contextless_launcher;
+    int drop_hard_nmi_writes;
     int brk_patch_writes;
     bool nmi_restores_vector;
     uint8_t saved_fake_nmi_vector[2];
@@ -479,6 +484,9 @@ public:
           contextless_breakpoint_launch_supported(false),
           contextless_breakpoint_launches(0),
           contextless_breakpoint_launch_address(0),
+          contextless_launch_installs_hard_nmi(false),
+          contextless_launcher(0x0340),
+          drop_hard_nmi_writes(0),
           brk_patch_writes(0), nmi_restores_vector(true), delay_calls(0), cancel_poll_cost_ms(0),
           pokes_at_cancel(0),
           last_brk_patch_addr(0),
@@ -576,6 +584,14 @@ protected:
     virtual uint8_t peek_cpu(uint16_t a, uint8_t) { return ram[a]; }
     virtual void poke_cpu(uint16_t a, uint8_t b, uint8_t)
     {
+        // Models the U2 DMA write loss on the RAM hardware NMI vector: the
+        // first `drop_hard_nmi_writes` writes to $FFFA/$FFFB are swallowed, as
+        // the bank-flip DMA path swallows about one write in fifty on hardware.
+        if ((a == FAKE_HARD_NMI_VECTOR_LO || a == FAKE_HARD_NMI_VECTOR_HI)
+                && drop_hard_nmi_writes > 0) {
+            drop_hard_nmi_writes--;
+            return;
+        }
         // $0000/$0001 are the 6510-port RAM mirror the capture refreshes;
         // they are never BRK patch sites, so keep them out of the counter.
         if (b == 0x00 &&
@@ -683,6 +699,9 @@ protected:
     {
         contextless_breakpoint_launches++;
         contextless_breakpoint_launch_address = address;
+        if (contextless_launch_installs_hard_nmi) {
+            install_hard_nmi_vector_to(contextless_launcher);
+        }
         return true;
     }
     virtual void delay_ms(int ms)
@@ -5311,6 +5330,76 @@ static int test_contextless_breakpoint_go_uses_backend_launch()
     return 0;
 }
 
+static int test_contextless_backend_launch_installs_and_restores_hard_nmi_vector()
+{
+    // A cartridge launch delivers its NMI to a program that may have the KERNAL
+    // banked out, so the launcher has to be named in the RAM copy of $FFFA/$FFFB
+    // as well as in $0318, and the program's bytes have to come back at cleanup.
+    FakeFreezeMachine m(false);
+    m.contextless_breakpoint_launch_supported = true;
+    m.contextless_launch_installs_hard_nmi = true;
+    m.ram[FAKE_HARD_NMI_VECTOR_LO] = 0xC0;
+    m.ram[FAKE_HARD_NMI_VECTOR_HI] = 0x46;
+    m.ram[0xC000] = 0xEA;
+
+    MonitorBreakpoints bps;
+    bps.allocate(0xC000, 0x05);
+    DebugContext from;
+    debug_context_reset(&from);
+    m.arm_capture_context(0xC000, 0xF8, 0, 0, 0, 0x24);
+
+    DebugSession::Result r = m.go(from, &bps, 0xC500);
+    if (expect(r == DebugSession::DBG_OK,
+               "Contextless breakpoint Go must complete through the backend launch")) return 1;
+    if (expect(m.contextless_breakpoint_launches == 1,
+               "Contextless breakpoint Go must launch once")) return 1;
+    if (expect(m.ram[FAKE_HARD_NMI_VECTOR_LO] == 0x40 &&
+               m.ram[FAKE_HARD_NMI_VECTOR_HI] == 0x03,
+               "The RAM NMI vector must name the launcher while the session runs")) return 1;
+
+    m.cleanup();
+    if (expect(m.ram[FAKE_HARD_NMI_VECTOR_LO] == 0xC0 &&
+               m.ram[FAKE_HARD_NMI_VECTOR_HI] == 0x46,
+               "Cleanup must restore the program's RAM NMI vector bytes")) return 1;
+    return 0;
+}
+
+static int test_contextless_hard_nmi_vector_survives_dropped_dma_writes()
+{
+    // The RAM hardware NMI vector reaches the cartridge only through the
+    // bank-flip DMA path, which loses about one write in fifty and cannot be
+    // read back to confirm. Dropping the first three writes to $FFFA/$FFFB, as
+    // that loss would, must still leave the launcher installed, because the
+    // vector is written more than three times. With a single write it would be
+    // left pointing at the program's stale vector and the launch NMI would miss.
+    FakeFreezeMachine m(false);
+    m.contextless_breakpoint_launch_supported = true;
+    m.contextless_launch_installs_hard_nmi = true;
+    m.ram[FAKE_HARD_NMI_VECTOR_LO] = 0x43;   // a stale KERNAL vector ($FE43)
+    m.ram[FAKE_HARD_NMI_VECTOR_HI] = 0xFE;
+    m.drop_hard_nmi_writes = 3;
+    m.ram[0xC000] = 0xEA;
+
+    MonitorBreakpoints bps;
+    bps.allocate(0xC000, 0x05);
+    DebugContext from;
+    debug_context_reset(&from);
+    m.arm_capture_context(0xC000, 0xF8, 0, 0, 0, 0x24);
+
+    DebugSession::Result r = m.go(from, &bps, 0xC500);
+    if (expect(r == DebugSession::DBG_OK,
+               "Launch must complete even with the first RAM NMI writes lost")) return 1;
+    if (expect(m.ram[FAKE_HARD_NMI_VECTOR_LO] == 0x40 &&
+               m.ram[FAKE_HARD_NMI_VECTOR_HI] == 0x03,
+               "A later write must land the launcher despite dropped DMA writes")) return 1;
+
+    m.cleanup();
+    if (expect(m.ram[FAKE_HARD_NMI_VECTOR_LO] == 0x43 &&
+               m.ram[FAKE_HARD_NMI_VECTOR_HI] == 0xFE,
+               "Cleanup must restore the program's RAM NMI vector bytes")) return 1;
+    return 0;
+}
+
 static int test_go_from_current_breakpoint_stops_at_callee_breakpoint()
 {
     FakeFreezeMachine m(false);
@@ -9382,6 +9471,8 @@ int main()
     RUN(test_traced_kernal_to_basic_step_out_patches_kernal_return);
     RUN(test_freeze_go_breakpoint_refreezes);
     RUN(test_contextless_breakpoint_go_uses_backend_launch);
+    RUN(test_contextless_backend_launch_installs_and_restores_hard_nmi_vector);
+    RUN(test_contextless_hard_nmi_vector_survives_dropped_dma_writes);
     RUN(test_go_from_current_breakpoint_stops_at_callee_breakpoint);
     RUN(test_go_from_current_visible_rom_breakpoint_uses_patch_aware_bytes);
     RUN(test_step_over_stops_at_callee_breakpoint);
