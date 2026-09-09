@@ -693,13 +693,25 @@ static FRESULT open_by_rendered_iec_name(FileManager *fm, IecPartition *partitio
 // The type of a partition follows the file system at its root: a mounted disk image
 // reports the drive model it emulates, everything else is native. Only the file
 // system of the returned info is used.
-static const char *iec_partition_type(FileManager *fm, IecPartition *prt)
+static cbm_partition_type_t iec_partition_type(FileManager *fm, IecPartition *prt)
 {
     FileInfo info(32);
     if (fm->is_path_valid(prt->GetRootPath(), &info) && info.fs) {
         return info.fs->get_partition_type();
     }
-    return "NAT";
+    return e_partition_native;
+}
+
+// The three character name CMD DOS prints for a partition type. The field is three
+// wide, so the shorter names carry their trailing space.
+static const char *cbm_partition_type_name(cbm_partition_type_t type)
+{
+    switch (type) {
+    case e_partition_1541: return "41 ";
+    case e_partition_1571: return "71 ";
+    case e_partition_1581: return "81 ";
+    default: return "NAT";
+    }
 }
 
 int IecChannel::read_dir_entry(void)
@@ -730,8 +742,14 @@ int IecChannel::read_dir_entry(void)
             info.attrib = AM_DIR;
             strncpy(info.lfname, prt->GetName(), info.lfsize);
             info.lfname[info.lfsize - 1] = 0;
-            partition_type = iec_partition_type(fm, prt);
+            cbm_partition_type_t type = iec_partition_type(fm, prt);
+            partition_type = cbm_partition_type_name(type);
             part_idx ++;
+            // A type given as $=P:*=N and the like lists only partitions of that type.
+            if (name_to_open.dir_opt.partition_types &&
+                !(name_to_open.dir_opt.partition_types & (1 << (int)type))) {
+                return 1;
+            }
         }
     }
 
@@ -1381,17 +1399,12 @@ int IecCommandChannel::do_block_write(int chan, int part, int track, int sector)
     return 0;
 }
 
-int IecCommandChannel::do_block_allocate(int chan, int part, int track, int sector, bool alloc)
+int IecCommandChannel::do_block_allocate(int part, int track, int sector, bool alloc)
 {
-    if ((chan < 0) || (chan > 14)) {
-        set_error(ERR_SYNTAX_ERROR_CMD);
-        return ERR_SYNTAX_ERROR_CMD;
-    }
     if (part >= MAX_PARTITIONS) {
         set_error(ERR_SYNTAX_ERROR_CMD);
         return ERR_SYNTAX_ERROR_CMD;
     }
-    IecChannel *channel = drive->get_data_channel(chan);
     GETPARTITION(part, partition, -1);
     Path path(partition->GetFullPath());
     FRESULT fres;
@@ -1767,30 +1780,36 @@ int IecCommandChannel::do_set_position(int chan, uint32_t pos, int recnr, int re
 int IecCommandChannel::do_get_partition_info(int part)
 {
     IecPartition *p = drive->vfs->GetPartition(part);
-    buffer[30] = 0x0d;
     memset(buffer, 0, 30);
+    buffer[30] = 0x0d;
+    drive->set_error(0, 0, 0);
+
+    // Byte 0 is the type, byte 1 is reserved and byte 2 is the partition number. A
+    // partition that does not exist is not an error: type 0 is what CMD DOS calls
+    // "not created", and the caller asked for exactly that answer.
+    buffer[2] = (uint8_t)drive->vfs->GetTargetPartitionNumber(part);
 
     if (p) {
-        drive->set_error(0, 0, 0);
-        buffer[1] = 1;
-        buffer[2] = (uint8_t)part;
+        buffer[0] = (uint8_t)iec_partition_type(fm, p);
 
+        // The name in bytes 3 to 18 is the one the partition directory shows, which
+        // is the partition's own name rather than the path it is rooted at.
         char cbm_name[24];
         FileInfo info(40);
         filetype_t ftype = e_any;
-        strncpy(info.lfname, p->GetRootPath(), info.lfsize);
+        strncpy(info.lfname, p->GetName(), info.lfsize);
+        info.lfname[info.lfsize - 1] = 0;
         IecPartition::CreateIecName(&info, cbm_name, ftype);
 
         strncpy((char *)(buffer+3), cbm_name, 16);
         buffer[27] = 0xFF; // for now always reporting 0xFF0000 as partition size
-    } else {
-        drive->set_error(77, part, 0);
     }
 
+    // Thirty bytes of information plus the carriage return that ends the reply.
     last_byte = 30;
     pointer = 0;
     prefetch = 0;
-    prefetch_max = 30;
+    prefetch_max = 31;
     state = e_status;
     return 0;
 
@@ -1847,12 +1866,6 @@ t_channel_retval IecCommandChannel::push_command(uint8_t b)
         wr_pointer = 0;
         break;
     case 0x00: // end of data, command received in buffer
-        // BASIC's PRINT# ends every command with a carriage return, which CBM DOS
-        // takes as the end of the command rather than as part of it. Only the last
-        // byte goes, so a command carrying binary parameters keeps them.
-        if (wr_pointer && (wr_buffer[wr_pointer - 1] == 0x0D)) {
-            wr_pointer--;
-        }
         wr_buffer[wr_pointer] = 0;
         if (wr_pointer) {
             drive->set_error(0, 0, 0);

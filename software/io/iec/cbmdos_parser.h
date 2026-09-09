@@ -49,9 +49,10 @@ typedef struct {
     uint32_t min_datetime;
     uint32_t max_datetime;
     uint8_t filetypes; // P,S,U,R, B/D
+    uint8_t partition_types; // one bit per CMD partition type; zero means all of them
 } dir_options_t;
 
-const dir_options_t c_dir_options_init = { e_stream_file, e_stamp_none, 0, 0, 0x00 };
+const dir_options_t c_dir_options_init = { e_stream_file, e_stamp_none, 0, 0, 0x00, 0x00 };
 
 typedef struct {
     filename_t file;
@@ -72,7 +73,7 @@ class IecCommandExecuter
 public:
     virtual int do_block_read(int chan, int part, int track, int sector) { return 0; }
     virtual int do_block_write(int chan, int part, int track, int sector) { return 0; }
-    virtual int do_block_allocate(int chan, int part, int track, int sector, bool allocate) { return 0; }
+    virtual int do_block_allocate(int part, int track, int sector, bool allocate) { return 0; }
     virtual int do_buffer_position(int chan, int pos) { return 0; }
     virtual int do_set_current_partition(int part) { return 0; }
     virtual int do_change_dir(filename_t& dest) { return 0; }
@@ -115,6 +116,7 @@ public:
 int parse_open(const char *buf, open_t& fn);
 int parse_full_path(const char *buf, filename_t& name, bool *replace, bool path_only);
 int parse_dir_option(const char *buf, dir_options_t &opt);
+int parse_partition_option(const char *buf, dir_options_t &opt);
 const char *cbmdos_time(uint32_t dt, char *buf, bool longfmt);
 const uint32_t make_fat_time(int y, int M, int d, int h, int m, int s);
 

@@ -18,10 +18,11 @@ typedef struct {
     uint32_t min_time;
     uint32_t max_time;
     uint8_t filetypes;
+    uint8_t partition_types;
 } open_result_t;
 
 const open_result_t c_open_result_init = { 0, "", "", false, false, e_any, e_not_set,
-                                            e_stream_file, e_stamp_none, 0x0, 0x0, 0x00 };
+                                            e_stream_file, e_stamp_none, 0x0, 0x0, 0x00, 0x00 };
 
 #include "cbmdos_stubs.cc"
 IecCommandExecuterStubs exec;
@@ -52,6 +53,7 @@ void print_open(open_t& o)
         const char *fmt[] = { "None", "Short", "Long "};
         printf("  Stamp Format: %s\n", fmt[(int)o.dir_opt.timefmt] );
         printf("  File Types: %02x\n", o.dir_opt.filetypes);
+        printf("  Partition Types: %02x\n", o.dir_opt.partition_types);
         if (o.dir_opt.min_datetime) {
             printf("  From Time: %s (%08x)\n", cbmdos_time(o.dir_opt.min_datetime, buf, true), o.dir_opt.min_datetime);
         }
@@ -80,6 +82,7 @@ void d_parse_open(const char *buf, open_t& o, int expected_retval = 0, open_resu
         ok &= (o.dir_opt.stream == result.stream);
         ok &= (o.dir_opt.timefmt == result.timefmt);
         ok &= (o.dir_opt.filetypes == result.filetypes);
+        ok &= (o.dir_opt.partition_types == result.partition_types);
         ok &= (o.dir_opt.min_datetime == result.min_time);
         ok &= (o.dir_opt.max_datetime == result.max_time);
     }
@@ -158,8 +161,15 @@ void test_block_command_forms(void)
     test_dispatch("U1:2, 0 ,18,\x1D""0", 14, 0, "block read", 2, 0, 18, 0);
     test_dispatch("B-R:2,0,18,1", 12, 0, "block read", 2, 0, 18, 1);
     test_dispatch("B-W: 2  0  18  2 ", 17, 0, "block write", 2, 0, 18, 2);
-    test_dispatch("B-A:2,0,16,3", 12, 0, "block allocate", 2, 0, 16, 3);
-    test_dispatch("B-F:2,0,16,4", 12, 0, "block free", 2, 0, 16, 4);
+    // Allocate and free take three numbers, the partition, the track and the sector,
+    // as both the 1541 and the CMD manuals write them. This is what CHECK DISK on
+    // the 1541 TEST/DEMO disk sends, as PRINT#15,"B-A:"D$;T;S. A fourth number is
+    // ignored, which is what the drive does with a parameter it never reads.
+    test_dispatch("B-A:0,17,1", 10, 0, "block allocate", 0, 17, 1);
+    test_dispatch("B-F:0,17,1", 10, 0, "block free", 0, 17, 1);
+    test_dispatch("B-A: 0  17  1 ", 14, 0, "block allocate", 0, 17, 1);
+    test_dispatch("B-A:2,0,16,3", 12, 0, "block allocate", 2, 0, 16);
+    test_dispatch("B-A:0,17", 8, ERR_SYNTAX, NULL);
     test_dispatch("B-P: 2  0 ", 10, 0, "buffer position", 2, 0);
 
     // U1 and UA are the same command, and so are U2 and UB.
@@ -195,6 +205,57 @@ void test_block_command_forms(void)
     // which of the two it uses from the state of the channel.
     test_dispatch("P\x02\x01\x00\x01", 5, 0, "set position", 2, 0x10001, 1, 1);
     test_dispatch("P\x62\x01\x00\x01", 5, 0, "set position", 0x62, 0x10001, 1, 1);
+}
+
+// What happens to the carriage return BASIC's PRINT# appends, and to the commands
+// whose last parameter can be that same byte. CBM DOS drops one carriage return
+// from the end of the command before reading it; the 1541 ROM does that at $C2B3.
+// Where the last parameter is optional this leaves an ambiguity, and the CMD hard
+// disk manual answers it for G-P: "To avoid problems with reading information from
+// Partition 13, the G-P command should always be sent with a trailing carriage
+// return (CHR$(13))." Change Partition in its binary form is the one command whose
+// last parameter is mandatory, so it keeps a parameter of 13.
+void test_command_terminator(void)
+{
+    // An empty command line is not a command.
+    test_dispatch("\r", 1, 0, NULL);
+
+    // C<shift-P> selects a partition by a byte, so 13 is a partition number whether
+    // or not a terminator followed it. This is the regression reported against the
+    // first version of this fix.
+    test_dispatch("C\xD0\x0D", 3, 0, "select partition", 13);
+    test_dispatch("C\xD0\x0D\x0D", 4, 0, "select partition", 13);
+    test_dispatch("C\xD0\x04", 3, 0, "select partition", 4);
+    test_dispatch("C\xD0\x04\x0D", 4, 0, "select partition", 4);
+    test_dispatch("C\xD0", 2, ERR_SYNTAX, NULL);
+    // CPn takes the same number in ASCII, where no byte is ambiguous.
+    test_dispatch("CP4", 3, 0, "select partition", 4);
+    test_dispatch("CP13\r", 5, 0, "select partition", 13);
+    // Partition 0 means the one already selected, which is also what no number asks
+    // for.
+    test_dispatch("CP\r", 3, 0, "select partition", 0);
+
+    // G-P without a number, and with 255, both ask about the current partition. A
+    // CMD drive answers 0 with its system partition; there is none here, so that
+    // also reads back as the current one.
+    test_dispatch("G-P", 3, 0, "partition info", 0);
+    test_dispatch("G-P\r", 4, 0, "partition info", 0);
+    test_dispatch("G-P\xFF", 4, 0, "partition info", 0);
+    test_dispatch("G-P\x04", 4, 0, "partition info", 4);
+    test_dispatch("G-P\x04\r", 5, 0, "partition info", 4);
+    // Partition 13 needs the terminator the manual asks for, exactly as on a CMD
+    // drive.
+    test_dispatch("G-P\x0D\x0D", 5, 0, "partition info", 13);
+
+    // The position command has the same optional last parameter. Sent from BASIC the
+    // terminator is there and the offset of 13 arrives; without it the offset is
+    // taken as the terminator and the command positions to a record instead.
+    test_dispatch("P\x02\x0A\x00\x0D\x0D", 6, 0, "set position", 2, 0xD000A, 10, 13);
+    test_dispatch("P\x02\x0A\x00\x0D", 5, 0, "set position", 2, 10, 0, 0);
+
+    // A command whose parameters are text loses the terminator rather than reading
+    // it as a value.
+    test_dispatch("B-P:2,13\r", 9, 0, "buffer position", 2, 13);
 }
 
 int main(int argc, const char *argv[])
@@ -339,6 +400,34 @@ int main(int argc, const char *argv[])
                 { 69, "", "", false, false, e_any, e_not_set,
                   e_stream_partitions, e_stamp_none, 0x0, 0x00, 0x00 });
 
+    // The partition directory filters by partition type, where a directory of files
+    // takes its own options. LOAD"$=P:*=tp" with tp one of N, 4, 7, 8 or C.
+    d_parse_open("$=P:*=N", o, 0,
+                { -1, "", "*", true, false, e_any, e_not_set,
+                  e_stream_partitions, e_stamp_none, 0x0, 0x00, 0x00, 0x02 });
+
+    d_parse_open("$=P:*=4", o, 0,
+                { -1, "", "*", true, false, e_any, e_not_set,
+                  e_stream_partitions, e_stamp_none, 0x0, 0x00, 0x00, 0x04 });
+
+    d_parse_open("$=P:*=7", o, 0,
+                { -1, "", "*", true, false, e_any, e_not_set,
+                  e_stream_partitions, e_stamp_none, 0x0, 0x00, 0x00, 0x08 });
+
+    d_parse_open("$=P:*=8", o, 0,
+                { -1, "", "*", true, false, e_any, e_not_set,
+                  e_stream_partitions, e_stamp_none, 0x0, 0x00, 0x00, 0x10 });
+
+    d_parse_open("$=P:*=C", o, 0,
+                { -1, "", "*", true, false, e_any, e_not_set,
+                  e_stream_partitions, e_stamp_none, 0x0, 0x00, 0x00, 0x20 });
+
+    d_parse_open("$=P:*=4,8", o, 0,
+                { -1, "", "*", true, false, e_any, e_not_set,
+                  e_stream_partitions, e_stamp_none, 0x0, 0x00, 0x00, 0x14 });
+
+    d_parse_open("$=P:*=X", o, ERR_SYNTAX);
+
     d_parse_open("$//", o, 0,
                 { -1, "//", "", false, false, e_any, e_not_set,
                   e_stream_dir, e_stamp_none, 0x0, 0x00, 0x00 });
@@ -369,6 +458,7 @@ int main(int argc, const char *argv[])
     test_command( 0, (const uint8_t *)"U2 2 0 18 4\r", 12);
     test_command( 0, (const uint8_t *)"B-P 2 234\r", 10);
     test_block_command_forms();
+    test_command_terminator();
     test_command(32, (const uint8_t *)"C99:EMPTY=", 10);
     test_command( 0, (const uint8_t *)"C1:FCOPY=3:FCOPY", 16);
     test_command( 0, (const uint8_t *)"C:FULLSTATS=STAT1,3:STAT3", 25);

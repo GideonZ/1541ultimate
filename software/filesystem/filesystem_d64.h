@@ -252,7 +252,7 @@ public:
 
 	~FileSystemD64() { }
 
-    const char *get_partition_type(void) { return "41 "; }
+    cbm_partition_type_t get_partition_type(void) { return e_partition_1541; }
     bool init(void);
     FRESULT format(const char *name);
     FRESULT get_free (uint32_t*, uint32_t*);
@@ -284,7 +284,7 @@ public:
 	    delete[] bam2_buffer;
 	}
 
-	const char *get_partition_type(void) { return "71 "; }
+	cbm_partition_type_t get_partition_type(void) { return e_partition_1571; }
 	bool init(void);
     FRESULT format(const char *name);
     FRESULT get_free (uint32_t*, uint32_t*);
@@ -325,7 +325,7 @@ public:
         delete[] bam_buffer;
     }
 
-    const char *get_partition_type(void) { return "81 "; }
+    cbm_partition_type_t get_partition_type(void) { return e_partition_1581; }
     bool init(void);
     FRESULT format(const char *name);
     FRESULT get_free (uint32_t*, uint32_t*);

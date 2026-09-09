@@ -631,6 +631,21 @@ static void expect_command_ok(const char *testname, IecDrive *dr, const char *cm
     expect_command_response(testname, dr, cmd, "00, OK,00,00\r");
 }
 
+// The same, for a command whose parameters are binary and so cannot be a C string.
+static void send_command_data(IecDrive *dr, const uint8_t *data, int len);
+
+static void expect_command_data_response(const char *testname, IecDrive *dr,
+                                         const uint8_t *cmd, int len, const char *expected)
+{
+    send_command_data(dr, cmd, len);
+    get_status(dr);
+    if (strcmp(last_status, expected) != 0) {
+        printf("%s: response was '%s', expected '%s'\n", testname, last_status, expected);
+        dump_hex_relative(cmd, len);
+    }
+    REQUIRE(strcmp(last_status, expected) == 0);
+}
+
 static void expect_command_bytes(const char *testname, IecDrive *dr, const char *cmd,
                                  const uint8_t *expected, int expected_len)
 {
@@ -1499,11 +1514,11 @@ static void run_suite9_block_matrix(FileManager *fm, IecDrive *dr)
 
         uint32_t free_before = get_free_sectors(fm, c.mount);
 
-        expect_command_ok("Suite9-BlockAllocate", dr, "B-A 2 9 17 10");
+        expect_command_ok("Suite9-BlockAllocate", dr, "B-A 9 17 10");
         uint32_t free_after_alloc = get_free_sectors(fm, c.mount);
         REQUIRE(free_after_alloc + 1 == free_before);
 
-        expect_command_ok("Suite9-BlockFree", dr, "B-F 2 9 17 10");
+        expect_command_ok("Suite9-BlockFree", dr, "B-F 9 17 10");
         uint32_t free_after_free = get_free_sectors(fm, c.mount);
         REQUIRE(free_after_free == free_before);
     }
@@ -1512,8 +1527,8 @@ static void run_suite9_block_matrix(FileManager *fm, IecDrive *dr)
     prepare_fat_partition(fm, dr, fat_path, 8, "FAT-BLOCK");
     expect_command_status_prefix("Suite9-FAT-BlockRead", dr, "B-R 2 8 17 0", "78,BLOCK ACCESS DENIED");
     expect_command_status_prefix("Suite9-FAT-BlockWrite", dr, "B-W 2 8 17 0", "78,BLOCK ACCESS DENIED");
-    expect_command_status_prefix("Suite9-FAT-BlockAllocate", dr, "B-A 2 8 17 0", "78,BLOCK ACCESS DENIED");
-    expect_command_status_prefix("Suite9-FAT-BlockFree", dr, "B-F 2 8 17 0", "78,BLOCK ACCESS DENIED");
+    expect_command_status_prefix("Suite9-FAT-BlockAllocate", dr, "B-A 8 17 0", "78,BLOCK ACCESS DENIED");
+    expect_command_status_prefix("Suite9-FAT-BlockFree", dr, "B-F 8 17 0", "78,BLOCK ACCESS DENIED");
 
     printf("Suite9 completed successfully!\n");
 }
@@ -1675,6 +1690,24 @@ static void run_suite10_command_terminator(FileManager *fm, IecDrive *dr)
     // has to leave the command channel usable.
     send_command(dr, "\r");
     expect_command_response("Suite10-AFTER-EMPTY-COMMAND", dr, "CP12\r", "02,PARTITION SELECTED,12,00\r");
+
+    // C<shift-P> takes its partition number as a byte, and that byte can be the same
+    // carriage return BASIC appends. Partition 13 is the case, and it is what the
+    // JiffyDOS command @"C<shift-P>"+CHR$(13) sends: three bytes and no terminator.
+    prepare_fat_partition(fm, dr, "/Fat/s10_p13", 13, "PART13");
+    const uint8_t cp13[3] = { 'C', 0xD0, 0x0D };
+    expect_command_data_response("Suite10-CP-BINARY-13", dr, cp13, sizeof(cp13),
+                                 "02,PARTITION SELECTED,13,00\r");
+    // The same command from BASIC, where PRINT# adds the terminator behind it.
+    const uint8_t cp13_term[4] = { 'C', 0xD0, 0x0D, 0x0D };
+    expect_command_data_response("Suite10-CP-BINARY-13-TERMINATED", dr, cp13_term, sizeof(cp13_term),
+                                 "02,PARTITION SELECTED,13,00\r");
+    const uint8_t cp12[3] = { 'C', 0xD0, 12 };
+    expect_command_data_response("Suite10-CP-BINARY-12", dr, cp12, sizeof(cp12),
+                                 "02,PARTITION SELECTED,12,00\r");
+    const uint8_t cp_missing[2] = { 'C', 0xD0 };
+    expect_command_data_response("Suite10-CP-BINARY-NO-PARAMETER", dr, cp_missing, sizeof(cp_missing),
+                                 "30,SYNTAX ERROR,00,00\r");
 }
 
 static void run_suite10_directory_navigation(FileManager *fm, IecDrive *dr)
@@ -1855,10 +1888,12 @@ static void run_suite10_block_commands(FileManager *fm, IecDrive *dr)
 
     // Allocating and freeing in the same form. Sector 17/11 is free on a disk that
     // was just formatted.
+    // The manuals write these with three numbers: the drive or partition, the track
+    // and the sector. There is no channel, because neither command touches a buffer.
     uint32_t free_before = get_free_sectors(fm, image);
-    expect_command_ok("Suite10-BA-SpaceForm", dr, "B-A: 2  0  17  11 \r");
+    expect_command_ok("Suite10-BA-SpaceForm", dr, "B-A: 0  17  11 \r");
     REQUIRE(get_free_sectors(fm, image) + 1 == free_before);
-    expect_command_ok("Suite10-BF-CommaForm", dr, "B-F:2,0,17,11\r");
+    expect_command_ok("Suite10-BF-CommaForm", dr, "B-F:0,17,11\r");
     REQUIRE(get_free_sectors(fm, image) == free_before);
 
     // Refusals. Too few parameters is a syntax error whatever the separators are, a
@@ -1937,6 +1972,19 @@ static void expect_partition_line(const char *testname, const uint8_t *listing, 
     REQUIRE(false);
 }
 
+// The other half of the check above: a partition the filter was meant to leave out.
+static void expect_partition_absent(const char *testname, const uint8_t *listing, int length, int part)
+{
+    for (int offset = 32; offset + 32 <= length; offset += 32) {
+        int blocks = listing[offset + 2] | (listing[offset + 3] << 8);
+        if (blocks == part) {
+            printf("%s: partition %d is in the listing and should not be\n", testname, part);
+            dump_hex_relative(listing + offset, 32);
+        }
+        REQUIRE(blocks != part);
+    }
+}
+
 // Reads a whole directory stream, whether of files or of partitions.
 static int read_directory_stream(const char *testname, IecDrive *dr, const char *name,
                                     uint8_t *listing, int size)
@@ -1983,13 +2031,94 @@ static void run_suite10_partition_directory(FileManager *fm, IecDrive *dr)
     got = read_directory_stream(testname, dr, "$=P:IMAGE 15?1", listing, sizeof(listing));
     expect_partition_line("Suite10-PartFilteredD64", listing, got, 21, "IMAGE 1541", "41 ");
     expect_partition_line("Suite10-PartFilteredD81", listing, got, 23, "IMAGE 1581", "81 ");
-    for (int offset = 32; offset + 32 <= got; offset += 32) {
-        int blocks = listing[offset + 2] | (listing[offset + 3] << 8);
-        if (blocks == 20) {
-            printf("%s: the pattern did not exclude partition 20\n", testname);
-        }
-        REQUIRE(blocks != 20);
+    expect_partition_absent("Suite10-PartPatternExcludes", listing, got, 20);
+
+    // It also takes a type, which is what the second half of LOAD"$=P:*=tp" selects.
+    got = read_directory_stream(testname, dr, "$=P:*=4", listing, sizeof(listing));
+    expect_partition_line("Suite10-PartTypeD64", listing, got, 21, "IMAGE 1541", "41 ");
+    expect_partition_absent("Suite10-PartTypeExcludesNative", listing, got, 20);
+    expect_partition_absent("Suite10-PartTypeExcludesD71", listing, got, 22);
+
+    got = read_directory_stream(testname, dr, "$=P:*=N", listing, sizeof(listing));
+    expect_partition_line("Suite10-PartTypeNativeDir", listing, got, 20, "NATIVE DIR", "NAT");
+    expect_partition_line("Suite10-PartTypeNativeDnp", listing, got, 24, "IMAGE NATIVE", "NAT");
+    expect_partition_absent("Suite10-PartTypeNativeExcludesD64", listing, got, 21);
+
+    // Several types at once, and one this drive can never have.
+    got = read_directory_stream(testname, dr, "$=P:*=4,8", listing, sizeof(listing));
+    expect_partition_line("Suite10-PartTypesD64", listing, got, 21, "IMAGE 1541", "41 ");
+    expect_partition_line("Suite10-PartTypesD81", listing, got, 23, "IMAGE 1581", "81 ");
+    expect_partition_absent("Suite10-PartTypesExcludeD71", listing, got, 22);
+
+    got = read_directory_stream(testname, dr, "$=P:*=C", listing, sizeof(listing));
+    for (int part = 20; part <= 24; part++) {
+        expect_partition_absent("Suite10-PartTypeCpm", listing, got, part);
     }
+}
+
+// The reply to G-P: thirty bytes and a carriage return. Byte 0 is the CMD partition
+// type, byte 1 is reserved, byte 2 is the partition number and bytes 3 to 18 carry
+// the name the partition directory shows.
+static void expect_partition_info(const char *testname, IecDrive *dr, const uint8_t *cmd,
+                                  int len, int type, int part, const char *name)
+{
+    send_command_data(dr, cmd, len);
+    get_status(dr);
+    bool ok = (last_status_size == 31) && (last_status[0] == type) && (last_status[1] == 0) &&
+              (last_status[2] == part) && (last_status[30] == 0x0D) &&
+              (strncmp(last_status + 3, name, 16) == 0);
+    if (!ok) {
+        char got_name[17] = { 0 };
+        memcpy(got_name, last_status + 3, 16);
+        printf("%s: %d bytes, type %d, partition %d, name '%s'; expected 31 bytes, type %d, "
+               "partition %d, name '%s'\n", testname, last_status_size, last_status[0],
+               last_status[2], got_name, type, part, name);
+        dump_hex_relative((uint8_t *)last_status, last_status_size);
+    }
+    REQUIRE(ok);
+}
+
+static void run_suite10_partition_info(FileManager *fm, IecDrive *dr)
+{
+    print_scenario("Suite10", "Partition information");
+    // Partition 13 is the one whose number is the same byte as the terminator, and
+    // an earlier scenario has since mounted an image there.
+    prepare_fat_partition(fm, dr, "/Fat/s10_p13", 13, "PART13");
+
+    // The partitions the directory scenario above created, read back one at a time.
+    // The type is the CMD code the directory prints as NAT, 41, 71 and 81.
+    const uint8_t native_dir[4] = { 'G', '-', 'P', 20 };
+    expect_partition_info("Suite10-InfoNativeDir", dr, native_dir, sizeof(native_dir), 1, 20, "NATIVE DIR");
+    const uint8_t d64[4] = { 'G', '-', 'P', 21 };
+    expect_partition_info("Suite10-InfoD64", dr, d64, sizeof(d64), 2, 21, "IMAGE 1541");
+    const uint8_t d71[4] = { 'G', '-', 'P', 22 };
+    expect_partition_info("Suite10-InfoD71", dr, d71, sizeof(d71), 3, 22, "IMAGE 1571");
+    const uint8_t d81[4] = { 'G', '-', 'P', 23 };
+    expect_partition_info("Suite10-InfoD81", dr, d81, sizeof(d81), 4, 23, "IMAGE 1581");
+    const uint8_t dnp[4] = { 'G', '-', 'P', 24 };
+    expect_partition_info("Suite10-InfoDnp", dr, dnp, sizeof(dnp), 1, 24, "IMAGE NATIVE");
+
+    // With the terminator BASIC appends, and with a number that is not a partition.
+    const uint8_t d64_term[5] = { 'G', '-', 'P', 21, 0x0D };
+    expect_partition_info("Suite10-InfoTerminated", dr, d64_term, sizeof(d64_term), 2, 21, "IMAGE 1541");
+    // A partition that does not exist reports type 0, which CMD DOS calls "not
+    // created". Asking about one is not an error.
+    const uint8_t missing[4] = { 'G', '-', 'P', 99 };
+    expect_partition_info("Suite10-InfoAbsent", dr, missing, sizeof(missing), 0, 99, "");
+
+    // No number and 255 both ask about the partition already selected.
+    expect_command_response("Suite10-InfoSelect", dr, "CP22\r", "02,PARTITION SELECTED,22,00\r");
+    const uint8_t current[3] = { 'G', '-', 'P' };
+    expect_partition_info("Suite10-InfoCurrent", dr, current, sizeof(current), 3, 22, "IMAGE 1571");
+    const uint8_t current255[4] = { 'G', '-', 'P', 255 };
+    expect_partition_info("Suite10-InfoCurrent255", dr, current255, sizeof(current255), 3, 22, "IMAGE 1571");
+    // Partition 13 is the number whose byte is the terminator. The CMD manual asks
+    // for the terminator to be sent as well, and with it the partition is reached;
+    // without it the command reads as though it carried no number at all.
+    const uint8_t part13[5] = { 'G', '-', 'P', 0x0D, 0x0D };
+    expect_partition_info("Suite10-InfoPartition13", dr, part13, sizeof(part13), 1, 13, "PART13");
+    const uint8_t part13_bare[4] = { 'G', '-', 'P', 0x0D };
+    expect_partition_info("Suite10-InfoPartition13Bare", dr, part13_bare, sizeof(part13_bare), 3, 22, "IMAGE 1571");
 }
 
 static void run_suite10_directory_streams(FileManager *fm, IecDrive *dr)
@@ -2045,6 +2174,7 @@ void execute_suite10(FileManager *fm, IecDrive *dr)
     run_suite10_block_commands(fm, dr);
     run_suite10_user_commands(dr);
     run_suite10_partition_directory(fm, dr);
+    run_suite10_partition_info(fm, dr);
     run_suite10_directory_streams(fm, dr);
 
     printf("Suite10 completed successfully!\n");

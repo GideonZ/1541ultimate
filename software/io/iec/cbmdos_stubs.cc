@@ -27,7 +27,7 @@ class IecCommandExecuterStubs : public IecCommandExecuter
 public:
     int do_block_read(int chan, int part, int track, int sector);
     int do_block_write(int chan, int part, int track, int sector);
-    int do_block_allocate(int chan, int part, int track, int sector, bool allocate);
+    int do_block_allocate(int part, int track, int sector, bool allocate);
     int do_buffer_position(int chan, int pos);
     int do_set_current_partition(int part);
     int do_change_dir(filename_t& dest);
@@ -59,10 +59,10 @@ int IecCommandExecuterStubs::do_block_write(int chan, int part, int track, int s
     return 0;
 }
 
-int IecCommandExecuterStubs::do_block_allocate(int chan, int part, int track, int sector, bool allocate)
+int IecCommandExecuterStubs::do_block_allocate(int part, int track, int sector, bool allocate)
 {
-    record_stub_call(allocate ? "block allocate" : "block free", chan, part, track, sector);
-    printf("Block %s: Channel %d, Partition %d, T/S %d/%d\n", allocate ? "allocate" : "free", chan, part, track, sector);
+    record_stub_call(allocate ? "block allocate" : "block free", part, track, sector);
+    printf("Block %s: Partition %d, T/S %d/%d\n", allocate ? "allocate" : "free", part, track, sector);
     return 0;
 }
 
@@ -161,6 +161,7 @@ int IecCommandExecuterStubs::do_pwd_command()
 
 int IecCommandExecuterStubs :: do_get_partition_info(int part)
 {
+    record_stub_call("partition info", part);
     printf("Partition Info command\n");
     return 0;
 }

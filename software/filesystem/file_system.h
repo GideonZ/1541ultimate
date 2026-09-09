@@ -1,6 +1,16 @@
 #ifndef FILE_SYSTEM_H
 #define FILE_SYSTEM_H
 
+// The partition types CMD DOS defines. Byte 0 of the reply to G-P is one of these,
+// and the partition directory prints the matching three character name.
+typedef enum {
+    e_partition_none = 0,
+    e_partition_native = 1,
+    e_partition_1541 = 2,
+    e_partition_1571 = 3,
+    e_partition_1581 = 4,
+} cbm_partition_type_t;
+
 #include <string.h>
 #include <stdio.h>
 #include "partition.h"
@@ -42,11 +52,12 @@ public:
 
 	virtual bool    init();              // Initialize file system
     virtual bool    is_writable() { return false; } // by default a file system is not writable, unless we implement it
-    // Three character partition type reported in the IEC partition directory ($=P).
-    // CMD DOS calls a partition that holds its own native file system "NAT", and
-    // reports a drive emulation partition by the drive model it emulates. A
-    // directory on the host file system and a DNP image are both native.
-    virtual const char *get_partition_type(void) { return "NAT"; }
+    // CMD DOS partition type. It is reported twice, as the code in byte 0 of the
+    // G-P reply and as the three character name in the partition directory ($=P),
+    // so both come from this one answer. A partition holding a native file system
+    // is native, which covers a directory on the host file system and a DNP image;
+    // a partition rooted in a disk image reports the drive model it emulates.
+    virtual cbm_partition_type_t get_partition_type(void) { return e_partition_native; }
 	virtual FRESULT format(const char *name);    // create initial structures of empty disk
 	virtual bool    supports_direct_sector_access(void) { return false; }
 

@@ -17,6 +17,11 @@ is why a harness that builds its command strings by hand does not reach them:
     its name, and typed every partition DIR instead of NAT or the drive model of
     the image at its root (#877).
 
+  * The partition commands that carry their number as a byte rather than as text
+    were reported against the first version of this fix. CMD DOS spells Change
+    Partition either "CPn" or "C" followed by a shifted P and the number, and that
+    number can be 13, which is the same byte PRINT# appends as a terminator.
+
 Two more checks are here rather than on the host because they cannot fail there.
 The device uses the firmware's own sscanf, which has no %c and counts a conversion
 it did not make, while a host build links the C library's: a directory filtered by
@@ -213,6 +218,37 @@ def check_partition_directory(agent, api):
             raise Failure(f"A partition rooted at a directory is typed {kind!r}, expected 'NAT'")
 
 
+def check_partition_commands(agent):
+    """#877 in its programmatic form, and the partition commands that carry a byte."""
+    # CMD DOS has two spellings of Change Partition: "CPn" with the number in ASCII,
+    # and "C" followed by a shifted P and the number as a byte. The byte can be 13,
+    # which is the same carriage return BASIC appends, so a drive that drops the
+    # terminator without looking at the command loses the parameter.
+    with check("C<shift-P> reads a partition number of 13 as a number"):
+        response = agent.command(bytes([ord("C"), 0xD0, 13]), allowed=(77,))
+        detail(response)
+        if not response.startswith("77,SELECTED PARTITION ILLEGAL,13"):
+            raise Failure(f"Selecting partition 13 answered {response!r}")
+        response = agent.command(bytes([ord("C"), 0xD0, 1]), allowed=(2,))
+        if not response.startswith("02,PARTITION SELECTED,01"):
+            raise Failure(f"Selecting partition 1 answered {response!r}")
+
+    # G-P answers with thirty bytes and a carriage return: the type, a reserved byte,
+    # the partition number and the name the partition directory shows.
+    with check("G-P reports the type, the number and the name of the partition"):
+        info = agent.command_reply(b"G-P" + bytes([1]), 40)
+        detail(f"{len(info)} bytes, type {info[0]}, partition {info[2]}, name {info[3:19]!r}")
+        if len(info) != 31 or info[30] != 13:
+            raise Failure(f"G-P answered {len(info)} bytes ending {info[-1:]!r}, expected 31 ending in a carriage return")
+        if info[0] != 1 or info[1] != 0:
+            raise Failure(f"G-P reports type {info[0]} in byte 0 and {info[1]} in the reserved byte 1, expected 1 and 0")
+        if info[2] != 1:
+            raise Failure(f"G-P reports partition {info[2]}, expected 1")
+        name = info[3:19].rstrip(b"\0").decode("ascii", "replace")
+        if name.startswith("/"):
+            raise Failure(f"G-P names the partition by its path, {name!r}")
+
+
 def run(args):
     api = UltimateApi(args.host, args.password, args.timeout)
     agent = Agent(api)
@@ -258,7 +294,8 @@ def run(args):
                 ("command channel", lambda: check_command_channel(agent, api, args.password, folder, root)),
                 ("block commands", lambda: check_block_commands(agent, api, args.password, folder, image)),
                 ("time stamp filter", lambda: check_timestamp_filter(agent, api, args.password, folder, root)),
-                ("partition directory", lambda: check_partition_directory(agent, api))):
+                ("partition directory", lambda: check_partition_directory(agent, api)),
+                ("partition commands", lambda: check_partition_commands(agent))):
             section(label)
             try:
                 agent.command("CD//")
