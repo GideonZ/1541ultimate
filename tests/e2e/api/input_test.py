@@ -668,13 +668,24 @@ def read_keyboard_row(session: RestInputSession, row: int) -> int:
 def read_joystick_pots(session: RestInputSession, port: int) -> tuple[int, int]:
     if port not in (1, 2):
         raise Failure(f"Invalid joystick port for POT read: {port}")
-    # Mirror Anykey's VIC-II probe: select the joystick port on CIA1 first,
-    # leave the machine running briefly, then read SID POTX/POTY.
-    session.write_memory(0xDC02, b"\xC0")
-    session.write_memory(0xDC00, b"\x40" if port == 1 else b"\x80")
-    time.sleep(0.10)
-    regs = session.read_memory(0xD419, 2)
-    return regs[0], regs[1]
+    # Select the joystick port's paddle group on CIA1, then read SID
+    # POTX/POTY. This must pause the machine like read_joystick_cia and
+    # read_keyboard_row above: left running, the KERNAL's keyboard-scan IRQ
+    # rewrites $DC00 about every 20ms (it cycles the column-select mask,
+    # which shares bits 6/7 with the paddle-group select), racing whatever
+    # this function just wrote there before the 0.10s settle elapses. On real
+    # hardware that race made the port argument close to meaningless: reads
+    # reflected whichever group the KERNAL's scan last selected, not the one
+    # requested here.
+    session.pause()
+    try:
+        session.write_memory(0xDC02, b"\xC0")
+        session.write_memory(0xDC00, b"\x40" if port == 1 else b"\x80")
+        time.sleep(0.10)
+        regs = session.read_memory(0xD419, 2)
+        return regs[0], regs[1]
+    finally:
+        session.resume()
 
 
 def assert_joystick_pots(session: RestInputSession, port: int, potx: int, poty: int) -> None:
@@ -2332,15 +2343,35 @@ def run_joystick_checks(session: RestInputSession) -> None:
         assert_joystick_ports(session, 0x1F, 0x0F)
         assert_anykey_extra_buttons(session, 2, fire2=False, fire3=False)
 
-    with check("joystick port 2 fire2 lights only Anykey button 2"):
+    with check("joystick port 2 fire2 lights only Anykey button 2, only on port 2"):
         session.post_events([{"kind": "release_all"}])
         session.post_events([{"kind": "joystick", "port": 2, "inputs": ["fire2"], "transition": "press"}])
         assert_anykey_extra_buttons(session, 2, fire2=True, fire3=False)
+        assert_anykey_extra_buttons(session, 1, fire2=False, fire3=False)
 
-    with check("joystick port 2 fire3 lights only Anykey button 3"):
+    with check("joystick port 2 fire3 lights only Anykey button 3, only on port 2"):
         session.post_events([{"kind": "release_all"}])
         session.post_events([{"kind": "joystick", "port": 2, "inputs": ["fire3"], "transition": "press"}])
         assert_anykey_extra_buttons(session, 2, fire2=False, fire3=True)
+        assert_anykey_extra_buttons(session, 1, fire2=False, fire3=False)
+
+    # Regression coverage for #879: fire2/fire3 pressed on one port must not
+    # appear on the other port's POT reading. The addendum spec requires a
+    # REST-held fire2/fire3 to assert only the selected port's POT line (see
+    # doc/research/keyboard-and-joystick-rest-api/spec-addendum1.md, section 4,
+    # constraint 3); the fix removed a cross-port POT mirror in
+    # JoystickOutput::apply() that violated this.
+    with check("joystick port 1 fire2 lights only Anykey button 2, only on port 1"):
+        session.post_events([{"kind": "release_all"}])
+        session.post_events([{"kind": "joystick", "port": 1, "inputs": ["fire2"], "transition": "press"}])
+        assert_anykey_extra_buttons(session, 1, fire2=True, fire3=False)
+        assert_anykey_extra_buttons(session, 2, fire2=False, fire3=False)
+
+    with check("joystick port 1 fire3 lights only Anykey button 3, only on port 1"):
+        session.post_events([{"kind": "release_all"}])
+        session.post_events([{"kind": "joystick", "port": 1, "inputs": ["fire3"], "transition": "press"}])
+        assert_anykey_extra_buttons(session, 1, fire2=False, fire3=True)
+        assert_anykey_extra_buttons(session, 2, fire2=False, fire3=False)
 
     with check("joystick port 1 up press is visible on CIA reads"):
         session.post_events([{"kind": "release_all"}])
