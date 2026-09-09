@@ -690,14 +690,54 @@ static FRESULT open_by_rendered_iec_name(FileManager *fm, IecPartition *partitio
     return fm->fopen(resolved.c_str(), flags, file);
 }
 
+// The partition types CMD DOS defines, which are the drive's own vocabulary and not
+// the file system layer's. Byte 0 of the reply to G-P is one of these codes, and the
+// partition directory prints the matching three character name.
+typedef enum {
+    e_partition_none = 0,
+    e_partition_native = 1,
+    e_partition_1541 = 2,
+    e_partition_1571 = 3,
+    e_partition_1581 = 4,
+} cbm_partition_type_t;
+
+// Which CMD partition type a file system presents as, decided from the geometry the
+// file system reports and from nothing else:
+//
+//   no track and sector addressing     a directory on the host file system   NAT
+//   256 sectors on track 1             a DNP image                           NAT
+//   40 sectors on track 1              a D81 image                           81
+//   21 sectors on track 1, <= 42 tracks    a D64 image                       41
+//   21 sectors on track 1, > 42 tracks     a D71 image                       71
+//
+// The size of the first zone identifies three of the four layouts on its own. A 1541
+// disk and a 1571 disk share it, because a 1571 disk is the 1541 layout twice over, so
+// the track count separates those two. 42 tracks is the largest extended 1541 image.
+static cbm_partition_type_t cbm_partition_type_of(FileSystem *fs)
+{
+    if (!fs || !fs->supports_direct_sector_access()) {
+        return e_partition_native;
+    }
+    switch (fs->get_sectors_in_track(1)) {
+    case 256: // a CMD native partition addresses 256 sectors on every track
+        return e_partition_native;
+    case 40:  // a 1581 disk has 40 sectors on every track
+        return e_partition_1581;
+    case 21:  // the first zone of a 1541 disk, and of each side of a 1571 disk
+        return (fs->get_num_tracks() > 42) ? e_partition_1571 : e_partition_1541;
+    default:
+        return e_partition_native;
+    }
+}
+
 // The type of a partition follows the file system at its root: a mounted disk image
 // reports the drive model it emulates, everything else is native. Only the file
 // system of the returned info is used.
 static cbm_partition_type_t iec_partition_type(FileManager *fm, IecPartition *prt)
 {
     FileInfo info(32);
-    if (fm->is_path_valid(prt->GetRootPath(), &info) && info.fs) {
-        return info.fs->get_partition_type();
+    if (fm->is_path_valid(prt->GetRootPath(), &info)) {
+        return cbm_partition_type_of(info.fs);
     }
     return e_partition_native;
 }

@@ -1,16 +1,6 @@
 #ifndef FILE_SYSTEM_H
 #define FILE_SYSTEM_H
 
-// The partition types CMD DOS defines. Byte 0 of the reply to G-P is one of these,
-// and the partition directory prints the matching three character name.
-typedef enum {
-    e_partition_none = 0,
-    e_partition_native = 1,
-    e_partition_1541 = 2,
-    e_partition_1571 = 3,
-    e_partition_1581 = 4,
-} cbm_partition_type_t;
-
 #include <string.h>
 #include <stdio.h>
 #include "partition.h"
@@ -52,14 +42,14 @@ public:
 
 	virtual bool    init();              // Initialize file system
     virtual bool    is_writable() { return false; } // by default a file system is not writable, unless we implement it
-    // CMD DOS partition type. It is reported twice, as the code in byte 0 of the
-    // G-P reply and as the three character name in the partition directory ($=P),
-    // so both come from this one answer. A partition holding a native file system
-    // is native, which covers a directory on the host file system and a DNP image;
-    // a partition rooted in a disk image reports the drive model it emulates.
-    virtual cbm_partition_type_t get_partition_type(void) { return e_partition_native; }
 	virtual FRESULT format(const char *name);    // create initial structures of empty disk
 	virtual bool    supports_direct_sector_access(void) { return false; }
+
+    // Geometry of a file system that addresses its medium by track and sector, in the
+    // same terms as read_sector() and allocate_sector() below. Tracks are numbered
+    // from one. A file system without that kind of addressing reports no tracks.
+    virtual int     get_num_tracks(void) { return 0; }
+    virtual int     get_sectors_in_track(int track) { return 0; }
 
     virtual FRESULT get_free (uint32_t *e, uint32_t *cs) { *e = 0; *cs = 0; return FR_OK; } // Get number of free sectors on the file system
     virtual FRESULT sync(void) { return FR_OK; } // by default we can't write, and syncing is thus always successful
