@@ -44,6 +44,10 @@ class Keyboard_C64 : public Keyboard
     // Held by the user interface task while it drives the CIA itself
     // (wait_free), so the timer scan keeps its hands off the column select.
     volatile int  scan_paused;
+    volatile int  deferred_scans;
+    uint8_t last_key_mtrx;
+    uint8_t last_key_shift;
+    uint16_t last_release_ms;
     void *scan_timer;
     static void scan_timer_callback(void *timer);
 public:

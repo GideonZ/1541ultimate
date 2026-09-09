@@ -309,6 +309,12 @@ class C64 : public GenericHost, ConfigurableObject
     // keyboard is scanned from a timer on a cartridge (Keyboard_C64), so the
     // window in which it may touch CIA1 has to be explicit.
     bool keyboardScanAllowed;
+    // Non-zero while dma_transfer_frozen() has put the machine back in the
+    // program's own mode to reach memory the freezer's Ultimax cart hides.
+    // The keyboard scan reads the CIA through the cartridge port, and in that
+    // window a program that banked I/O out ($01=$30/$34) has RAM there instead;
+    // the scan then reads "no key" mid-tap and delivers the key twice.
+    volatile int dmaModeWindow;
     // When set, resume() leaves the cartridge NMI asserted (C64_MODE_NMI) as it
     // un-stops the CPU instead of clearing C64_MODE, so a debug launch NMI raised
     // while the CPU was stopped survives the un-stop and is taken by the 6510.
@@ -407,6 +413,7 @@ public:
     bool is_accessible(void);
     bool is_stopped(void);
     bool keyboard_scan_allowed(void);
+    bool keyboard_scan_deferred(void);
 
     // The freezer menu is up, so the machine is held and its I/O has been
     // reconfigured for the cartridge's own use.

@@ -21,6 +21,11 @@ public:
     // Whether a keyboard scan may drive the machine's CIA right now, from any
     // task: the host holds the bus and is not restoring the program's I/O.
     virtual bool keyboard_scan_allowed(void) { return is_accessible(); }
+    // Whether a scan that is allowed should still wait for the next tick: the
+    // host is momentarily driving the bus in the program's own banking, so
+    // the CIA may not be at its address right now. A deferred scan keeps its
+    // key state, unlike a disallowed one; the key is still down.
+    virtual bool keyboard_scan_deferred(void) { return false; }
     virtual bool is_permanent(void) { return false; }
 
     //    virtual void reset(void) { }

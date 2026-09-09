@@ -111,6 +111,10 @@ Keyboard_C64 :: Keyboard_C64(GenericHost *h, volatile uint8_t *row, volatile uin
     shift_prev = 0xFF;
     scan_paused = 0;
     scan_timer = 0;
+    deferred_scans = 0;
+    last_key_mtrx = 0xFF;
+    last_key_shift = 0xFF;
+    last_release_ms = 0;
 #if KEYBOARD_C64_TIMER_SCAN
     // The repeat delays count scans. getch() scanned every 4 ticks; this
     // scans every KEYBOARD_C64_SCAN_PERIOD_TICKS, so scale them to keep the
@@ -152,6 +156,12 @@ void Keyboard_C64 :: scan_timer_callback(void *timer)
         // Nothing to see, and nothing seen: the next key is a new key.
         keyboard->mtrx_prev = 0xFF;
         keyboard->shift_prev = 0xFF;
+        return;
+    }
+    if (keyboard->host->keyboard_scan_deferred()) {
+        // The CIA may not be at its address this instant; the key state stays
+        // what it was, so a held key is not reported again on the next tick.
+        keyboard->deferred_scans++;
         return;
     }
     keyboard->scan();
@@ -297,6 +307,9 @@ void Keyboard_C64 :: scan(void)
                 col = (col << 1) | 1;
             }
         } else if (!software_joy_only) { // no key pressed
+            if (mtrx_prev != 0xFF) {
+                last_release_ms = getMsTimer();
+            }
             mtrx_prev = 0xFF;
             shift_prev = 0xFF;
 #if U64 == 2
@@ -340,8 +353,21 @@ void Keyboard_C64 :: scan(void)
         return;
     } else {  // first time this key was pressed
         delay_count = first_delay;
+        // A key seen again within ~120 ms of its release cannot be a second
+        // host tap: the REST keyboard tap holds 40 ms and the debugger issues
+        // one command per step, seconds apart. It is a scan that read RAM
+        // instead of the CIA (a DMA mode window not covered by the deferral)
+        // and reported the still-held key as released then pressed again.
+        // Logged as the canary for that race; the value is the gap in ms.
+        uint16_t since = (uint16_t)(getMsTimer() - last_release_ms);
+        if (mtrx == last_key_mtrx && shift_flag == last_key_shift && since < 40) {
+            printf("KB: spurious re-press %02X/%02X after %ums\n",
+                   mtrx, shift_flag, (unsigned)since);
+        }
         mtrx_prev = mtrx;
         shift_prev = shift_flag;
+        last_key_mtrx = mtrx;
+        last_key_shift = shift_flag;
     }
 
 //    printf("%b ", key);

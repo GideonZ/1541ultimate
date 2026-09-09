@@ -224,6 +224,7 @@ C64::C64()
     C64_MODE = MODE_NORMAL;
     isFrozen = false;
     keyboardScanAllowed = false;
+    dmaModeWindow = 0;
     nmi_on_resume = false;
     cpu_port_captured = false;
     captured_cpu_port = 0;
@@ -886,6 +887,7 @@ void C64::dma_transfer_frozen(uint16_t offset, uint8_t *buffer, int length, int 
             uint8_t saved_mode = C64_MODE;
             bool restore_mode = (saved_mode & C64_MODE_ULTIMAX) && (saved_mode != frozen_mode);
             if (restore_mode) {
+                dmaModeWindow++;
                 C64_MODE = frozen_mode;
                 // The mode change reaches the C64's memory decoding over the
                 // cartridge port with a delay that a one- or two-byte transfer
@@ -911,6 +913,10 @@ void C64::dma_transfer_frozen(uint16_t offset, uint8_t *buffer, int length, int 
             if (restore_mode) {
                 wait_10us(2);
                 C64_MODE = saved_mode;
+                // The mode change reaches the C64's decoding with the same
+                // delay as above, so the window closes only after it.
+                wait_10us(2);
+                dmaModeWindow--;
             }
         } else if ((backup = frozen_backup_for(addr, &backup_range_end,
                                                screen_backup, ram_backup,
@@ -1538,6 +1544,11 @@ bool C64::keyboard_scan_allowed(void)
     // debugger has released the machine to run to a breakpoint with the
     // menu still up: that is when a cancel key has to arrive.
     return keyboardScanAllowed && isFrozen;
+}
+
+bool C64::keyboard_scan_deferred(void)
+{
+    return dmaModeWindow != 0;
 }
 
 Keyboard *C64::getKeyboard(void)
