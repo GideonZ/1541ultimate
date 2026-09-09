@@ -4266,6 +4266,9 @@ VIC_BANK_BASES = (0x0000, 0x4000, 0x8000, 0xC000)
 ENTRY_FOOTER_PROGRESS = 0xC1F0
 
 
+ENTRY_FOOTER_LAUNCH_ATTEMPTS = 3
+
+
 def _launch_fixture_from_basic(driver: RestDebugDriver, fixture: MatrixFixture) -> None:
     """Start the fixture from the BASIC prompt, outside the monitor.
 
@@ -4273,16 +4276,39 @@ def _launch_fixture_from_basic(driver: RestDebugDriver, fixture: MatrixFixture) 
     its chosen banking, so the launch cannot come from the monitor's own `G`:
     on a U2+L that goes through the boot cartridge and resets the C64 first.
     Typing SYS at the C64U keyboard leaves the monitor entirely out of it.
+
+    The SYS is typed into BASIC over the C64 Ultimate's injected keyboard, which
+    drops a keystroke occasionally (measured elsewhere in this suite). A dropped
+    character sends SYS to the wrong address and the fixture never reaches its
+    loop, so the launch is a precondition that is retried, not the behaviour
+    under test: the machine is reset to BASIC and the fixture reinstalled before
+    each attempt, the same recovery `install_and_enter` uses in the stress gate.
+    The entry-footer assertion still runs exactly once, on the launch that took.
     """
-    driver.rest.write_mem(ENTRY_FOOTER_PROGRESS, bytes([0x00]))
-    # Lower case here on purpose: char_to_combo() shifts an upper-case letter,
-    # and a shifted key at the BASIC prompt types a graphic character, not "S".
-    driver.rest.send_text(f"sys {fixture.bootstrap_addr}\r")
-    driver.event("fixture_launched_from_basic",
-                 address=f"{fixture.bootstrap_addr:04X}")
-    driver.wait_progress_change(ENTRY_FOOTER_PROGRESS,
-                                "fixture running before monitor open",
-                                timeout=6.0)
+    last: Exception | None = None
+    for attempt in range(1, ENTRY_FOOTER_LAUNCH_ATTEMPTS + 1):
+        driver.rest.write_mem(ENTRY_FOOTER_PROGRESS, bytes([0x00]))
+        # Lower case here on purpose: char_to_combo() shifts an upper-case
+        # letter, and a shifted key at the BASIC prompt types a graphic
+        # character, not "S".
+        driver.rest.send_text(f"sys {fixture.bootstrap_addr}\r")
+        driver.event("fixture_launched_from_basic",
+                     address=f"{fixture.bootstrap_addr:04X}", attempt=attempt)
+        try:
+            driver.wait_progress_change(ENTRY_FOOTER_PROGRESS,
+                                        "fixture running before monitor open",
+                                        timeout=6.0)
+            return
+        except GateError as exc:
+            last = exc
+            if attempt >= ENTRY_FOOTER_LAUNCH_ATTEMPTS:
+                break
+            driver.event("fixture_launch_retry", attempt=attempt, error=str(exc))
+            driver.reset_baseline()
+            driver.install_fixture(fixture)
+    raise GateError(
+        f"the fixture did not launch from BASIC in "
+        f"{ENTRY_FOOTER_LAUNCH_ATTEMPTS} attempts: {last}")
 
 
 def run_entry_footer_scope(args: argparse.Namespace, artifact_dir: Path) -> int:
