@@ -114,10 +114,10 @@ void softiec_trace(IecDrive *drive, int channel, uint8_t secondary,
 // and the last sixteen are kept, which is enough to see that the right file went by,
 // and a block costs a constant amount of work rather than a cost per byte.
 //
-// The count is of bytes handed to the bus, taken where the channel prefetches them.
-// A transfer the host restarts re-reads bytes that were already handed over, so a
-// restarted transfer counts them twice. Nothing else re-reads, so a count that
-// matches the file size means the file went across once.
+// The count is of bytes the host took off the bus, taken where the channel is told
+// they were accepted. Counting where the channel prefetches instead would count a
+// byte the host was offered and did not take, and a buffer position command rewinds
+// the same pointer as a retry does, so the two cannot be told apart there.
 void IecChannel::trace_reset_counters(void)
 {
     trace_rd = 0;
@@ -153,6 +153,20 @@ void IecChannel::trace_record_read(const uint8_t *data, int len)
         trace_rd_ring[(trace_rd + len - keep + i) & 15] = data[len - keep + i];
     }
     trace_rd += len;
+#endif
+}
+
+// The bytes at the read pointer that the host has just taken.
+void IecChannel::trace_record_pop(int n)
+{
+#if SOFTIEC_TRACE_ENABLED
+    if ((n <= 0) || (pointer < 0) || (pointer >= 512)) {
+        return;
+    }
+    if ((pointer + n) > 512) {
+        n = 512 - pointer;
+    }
+    trace_record_read(&buffer[pointer], n);
 #endif
 }
 
@@ -275,9 +289,6 @@ t_channel_retval IecChannel::prefetch_data(uint8_t& data)
         } else {
             data = buffer[prefetch];
         }
-        if (ret != IEC_NO_FILE) {
-            trace_record_read(&buffer[prefetch], 1);
-        }
         prefetch++;
         return ret;
     }
@@ -287,7 +298,6 @@ t_channel_retval IecChannel::prefetch_data(uint8_t& data)
 
     if (prefetch < prefetch_max) {
         data = buffer[prefetch];
-        trace_record_read(&buffer[prefetch], 1);
         prefetch++;
         return IEC_OK;
     }
@@ -316,7 +326,6 @@ t_channel_retval IecChannel::prefetch_more(int max_fetch, uint8_t*& datapointer,
     }
     datapointer = &buffer[prefetch];
     fetched = max_fetch;
-    trace_record_read(datapointer, max_fetch);
     prefetch += max_fetch;
     if (last) {
         return IEC_LAST;
@@ -332,6 +341,7 @@ t_channel_retval IecChannel::pop_more(int pop_size)
             state = e_complete;
             return IEC_NO_FILE; // no more data?
         }
+        trace_record_pop(pop_size);
         pointer += pop_size;
         if (pointer == 512) {
             if (read_block()) { // also resets pointer.
@@ -348,6 +358,7 @@ t_channel_retval IecChannel::pop_more(int pop_size)
             state = e_complete;
             return IEC_NO_FILE; // no more data?
         }
+        trace_record_pop(pop_size);
         pointer += pop_size;
         if (pointer == prefetch_max) {
             while (read_dir_entry() > 0)
@@ -356,6 +367,7 @@ t_channel_retval IecChannel::pop_more(int pop_size)
         }
         break;
     case e_record:
+        trace_record_pop(pop_size);
         pointer += pop_size;
         if (pointer > last_byte) {
             recordOffset += recordSize;
@@ -368,6 +380,7 @@ t_channel_retval IecChannel::pop_more(int pop_size)
         }
         break;
     case e_buffer:
+        trace_record_pop(pop_size);
         pointer += pop_size;
         break;
 
@@ -386,6 +399,7 @@ t_channel_retval IecChannel::pop_data(void)
             pointer ++; // make sure it's beyond the last byte now
             return IEC_NO_FILE; // no more data?
         } else if (pointer == 511) {
+            trace_record_pop(1);
             if (read_block()) { // also resets pointer.
                 trace_fault("read_block while streaming", IEC_READ_ERROR);
                 return IEC_READ_ERROR;
@@ -400,6 +414,7 @@ t_channel_retval IecChannel::pop_data(void)
             state = e_complete;
             return IEC_NO_FILE; // no more data?
         } else if (pointer == prefetch_max - 1) {
+            trace_record_pop(1);
             while (read_dir_entry() > 0)
                 ;
             return IEC_OK;
@@ -424,6 +439,7 @@ t_channel_retval IecChannel::pop_data(void)
         return IEC_NO_FILE;
     }
 
+    trace_record_pop(1);
     pointer++;
     return IEC_OK;
 }

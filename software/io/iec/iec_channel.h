@@ -314,6 +314,7 @@ class IecChannel {
     uint16_t trace_dropped;
     bool trace_faulted;
     void trace_record_read(const uint8_t *data, int len);
+    void trace_record_pop(int n);
     void trace_record_write(uint8_t b);
     void trace_reset_counters(void);
     void trace_fault(const char *what, int rv);
