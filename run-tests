@@ -361,6 +361,12 @@ SUITES: Sequence[Suite] = (
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@", manual=True),
     Suite("e2e", "rel-copy", "tests/e2e/io/iec/rel_copy_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
+    # The three IEC command channel defects of #875, #876 and #877, driven from the
+    # C64 so that the bytes on the bus are the bytes PRINT# puts there: the carriage
+    # return that terminates a command, and the spaces BASIC prints around a number.
+    # A harness that builds command strings by hand cannot reproduce any of them.
+    Suite("e2e", "iec-dos-commands", "tests/e2e/io/iec/dos_command_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
     # Drives the UCI control and SoftIEC targets over $DF1B-$DF1F; reproduces #740.
     # A #740 regression leaves the interface stuck in Command Busy for every target
     # until the firmware restarts, so run it after the suites that drive the menu

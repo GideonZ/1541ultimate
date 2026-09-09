@@ -61,6 +61,8 @@ void print_open(open_t& o)
     }
 }
 
+int failures = 0;
+
 void d_parse_open(const char *buf, open_t& o, int expected_retval = 0, open_result_t result = c_open_result_init)
 {
     int err = parse_open(buf, o);
@@ -87,12 +89,13 @@ void d_parse_open(const char *buf, open_t& o, int expected_retval = 0, open_resu
     }
 
     if (err) {
-        printf("Open '%s' is invalid: %d\n", buf, err);
+        printf("Open '%s' is invalid: %d, expected %d\n", buf, err, expected_retval);
     } else {
         printf("Open '%s' results in:\n", buf);
         print_open(o);
     }
     printf("\n");
+    failures++;
 }
 
 void test_command(int exp_retval, const uint8_t *cmd, int len)
@@ -100,9 +103,98 @@ void test_command(int exp_retval, const uint8_t *cmd, int len)
     int retval = parser.execute_command(cmd, len);
     if (retval != exp_retval) {
         printf("Command '%s' returned %d, expected %d\n", cmd, retval, exp_retval);
+        failures++;
     } else {
         printf("Command '%s' => OK!\n", cmd);
     }
+}
+
+// Checks what the parser passed on, not only that it accepted the command. Pass
+// NULL for the command name to require that nothing at all was dispatched.
+void test_dispatch(const char *cmd, int len, int exp_retval,
+                   const char *what, int a = 0, int b = 0, int c = 0, int d = 0)
+{
+    last_stub_call.command = NULL;
+    int retval = parser.execute_command((const uint8_t *)cmd, len);
+    bool ok = (retval == exp_retval);
+    if (what) {
+        ok = ok && last_stub_call.command && (strcmp(last_stub_call.command, what) == 0) &&
+             (last_stub_call.a == a) && (last_stub_call.b == b) &&
+             (last_stub_call.c == c) && (last_stub_call.d == d);
+    } else {
+        ok = ok && (last_stub_call.command == NULL);
+    }
+    if (ok) {
+        printf("Dispatch '%s' => OK!\n", cmd);
+        return;
+    }
+    printf("Dispatch '%s' returned %d (expected %d) and called %s(%d,%d,%d,%d), expected %s(%d,%d,%d,%d)\n",
+           cmd, retval, exp_retval,
+           last_stub_call.command ? last_stub_call.command : "nothing",
+           last_stub_call.a, last_stub_call.b, last_stub_call.c, last_stub_call.d,
+           what ? what : "nothing", a, b, c, d);
+    failures++;
+}
+
+// The separators CBM DOS accepts between the parameters of a block command, and
+// the aliases its user commands answer to. The 1541 ROM parses these parameters at
+// $CC6F, skipping a run of space, comma or cursor right before each number, and
+// skipping one colon between the command word and the first parameter. Its user
+// command dispatch takes the low four bits of the character after the U, which is
+// why U1 and UA are one command and U9 and UI are another.
+void test_block_command_forms(void)
+{
+    // What PRINT#15,"U1:";2;0;18;0 puts on the bus: BASIC prints a space before and
+    // after every positive number. This is the earlier VIEW BAM on the 1541
+    // TEST/DEMO disk, and the reproduction in issue #876.
+    test_dispatch("U1: 2  0  18  0 \r", 17, 0, "block read", 2, 0, 18, 0);
+    // What the 9/84 revision of the same program sends.
+    test_dispatch("U1:2,0,18,0\r", 12, 0, "block read", 2, 0, 18, 0);
+    test_dispatch("B-P:2,144\r", 10, 0, "buffer position", 2, 144);
+    // The remaining separator spellings.
+    test_dispatch("U1 2,0,18,0", 11, 0, "block read", 2, 0, 18, 0);
+    test_dispatch("U1:2 0 18 0", 11, 0, "block read", 2, 0, 18, 0);
+    test_dispatch("U1 2\x1D""0\x1D""18\x1D""0", 11, 0, "block read", 2, 0, 18, 0);
+    test_dispatch("U1:2, 0 ,18,\x1D""0", 14, 0, "block read", 2, 0, 18, 0);
+    test_dispatch("B-R:2,0,18,1", 12, 0, "block read", 2, 0, 18, 1);
+    test_dispatch("B-W: 2  0  18  2 ", 17, 0, "block write", 2, 0, 18, 2);
+    test_dispatch("B-A:2,0,16,3", 12, 0, "block allocate", 2, 0, 16, 3);
+    test_dispatch("B-F:2,0,16,4", 12, 0, "block free", 2, 0, 16, 4);
+    test_dispatch("B-P: 2  0 ", 10, 0, "buffer position", 2, 0);
+
+    // U1 and UA are the same command, and so are U2 and UB.
+    test_dispatch("UA:2,0,18,0", 11, 0, "block read", 2, 0, 18, 0);
+    test_dispatch("UB:2,0,18,5", 11, 0, "block write", 2, 0, 18, 5);
+
+    // Parameters that are not there, and characters that are not separators.
+    test_dispatch("U1:2,0", 6, ERR_SYNTAX, NULL);
+    test_dispatch("B-R:", 4, ERR_SYNTAX, NULL);
+    test_dispatch("B-R", 3, ERR_SYNTAX, NULL);
+    test_dispatch("B-R:X,0,18,0", 12, ERR_SYNTAX, NULL);
+    test_dispatch("B-P:2", 5, ERR_SYNTAX, NULL);
+
+    // A multi digit parameter, and one long enough to overflow a smaller accumulator.
+    test_dispatch("B-P:12,255", 10, 0, "buffer position", 12, 255);
+    test_dispatch("B-P:2,99999999999", 17, 0, "buffer position", 2, 0xFFFF);
+
+    // U9 and UI reset the drive, and so do U: and UJ. UI+ and UI- only select the
+    // serial bus timing, so they must not reset anything.
+    test_dispatch("UI", 2, 73, "initialize");
+    test_dispatch("U9", 2, 73, "initialize");
+    test_dispatch("UJ", 2, 73, "initialize");
+    test_dispatch("U:", 2, 73, "initialize");
+    test_dispatch("UI+", 3, 0, NULL);
+    test_dispatch("UI-", 3, 0, NULL);
+    test_dispatch("U9+", 3, 0, NULL);
+    // U3 to U8 jump into a drive buffer, which has no equivalent here.
+    test_dispatch("U3:2,0,18,0", 11, ERR_UNKNOWN_CMD, NULL);
+
+    // The position command takes the secondary address either on its own or with 96
+    // added to it, which is the form the manuals document. Three parameter bytes are
+    // both a byte position and a record number with an offset; the drive decides
+    // which of the two it uses from the state of the channel.
+    test_dispatch("P\x02\x01\x00\x01", 5, 0, "set position", 2, 0x10001, 1, 1);
+    test_dispatch("P\x62\x01\x00\x01", 5, 0, "set position", 0x62, 0x10001, 1, 1);
 }
 
 int main(int argc, const char *argv[])
@@ -251,6 +343,23 @@ int main(int argc, const char *argv[])
                 { -1, "//", "", false, false, e_any, e_not_set,
                   e_stream_dir, e_stamp_none, 0x0, 0x00, 0x00 });
     
+    // A directory time stamp filter, which the firmware's own sscanf could not read.
+    d_parse_open("$:*=>01/02/25 03:04 PM", o, 0,
+                { -1, "", "*", true, false, e_any, e_not_set,
+                  e_stream_dir, e_stamp_none, make_fat_time(2025, 1, 2, 15, 4, 0), 0x00, 0x00 });
+    d_parse_open("$:*=<12/31/79 11:59 AM", o, 0,
+                { -1, "", "*", true, false, e_any, e_not_set,
+                  e_stream_dir, e_stamp_none, 0x0, make_fat_time(2079, 12, 31, 11, 59, 0), 0x00 });
+    d_parse_open("$:*=>01/02/25 12:00 AM", o, 0,
+                { -1, "", "*", true, false, e_any, e_not_set,
+                  e_stream_dir, e_stamp_none, make_fat_time(2025, 1, 2, 0, 0, 0), 0x00, 0x00 });
+    d_parse_open("$:*=>01/02/25 12:00 PM", o, 0,
+                { -1, "", "*", true, false, e_any, e_not_set,
+                  e_stream_dir, e_stamp_none, make_fat_time(2025, 1, 2, 12, 0, 0), 0x00, 0x00 });
+    d_parse_open("$:*=>01/02/25 03:04", o, ERR_SYNTAX);
+    d_parse_open("$:*=>01-02-25 03:04 PM", o, ERR_SYNTAX);
+    d_parse_open("$:*=>january", o, ERR_SYNTAX);
+
     test_command( 0, (const uint8_t *)"C:S=/C64 OS/:S", 14);
     test_command( 0, (const uint8_t *)"B-R 2 0 18 1\r", 13);
     test_command( 0, (const uint8_t *)"B-W 2 0 18 2\r", 13);
@@ -259,6 +368,7 @@ int main(int argc, const char *argv[])
     test_command( 0, (const uint8_t *)"U1 2 0 18 3\r", 12);
     test_command( 0, (const uint8_t *)"U2 2 0 18 4\r", 12);
     test_command( 0, (const uint8_t *)"B-P 2 234\r", 10);
+    test_block_command_forms();
     test_command(32, (const uint8_t *)"C99:EMPTY=", 10);
     test_command( 0, (const uint8_t *)"C1:FCOPY=3:FCOPY", 16);
     test_command( 0, (const uint8_t *)"C:FULLSTATS=STAT1,3:STAT3", 25);
@@ -273,7 +383,10 @@ int main(int argc, const char *argv[])
     test_command( 0, (const uint8_t *)"P\x02\xC8\0", 4);
     test_command( 0, (const uint8_t *)"P\x02\x2C\x01\0", 5);
     test_command( 0, (const uint8_t *)"P\x02\x90\x01\0\0", 6);
-    test_command( 0, (const uint8_t *)"P\x02\xF4\x01\0\0\0", 7);
+    // A position is at most four bytes wide, so five parameter bytes is a syntax
+    // error. This case expected acceptance, and had been failing unnoticed because
+    // the program did not report a failing exit status.
+    test_command(ERR_SYNTAX, (const uint8_t *)"P\x02\xF4\x01\0\0\0", 7);
     test_command( 0, (const uint8_t *)"CD:TEMP", 7);
     test_command( 0, (const uint8_t *)"CD1//TEMP", 9);
     test_command( 0, (const uint8_t *)"CD1//TEMP/TEMP2", 15);
@@ -308,4 +421,10 @@ int main(int argc, const char *argv[])
     test_command( 0, (const uint8_t *)"MD:PATH\xC1\xC2", 9);
     test_command( 0, (const uint8_t *)"XPWD", 4);
 
+    if (failures) {
+        printf("\n%d command parsing check(s) failed.\n", failures);
+        return 1;
+    }
+    printf("\nAll command parsing checks passed.\n");
+    return 0;
 }

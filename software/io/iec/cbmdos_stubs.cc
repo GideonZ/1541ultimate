@@ -4,6 +4,24 @@
 // temporary
 void print_file(filename_t& name);
 
+// The command the parser dispatched last, and the parameters it passed on, so a
+// test can check what was parsed rather than only that parsing returned no error.
+typedef struct {
+    const char *command;
+    int a, b, c, d;
+} stub_call_t;
+
+stub_call_t last_stub_call = { NULL, 0, 0, 0, 0 };
+
+static void record_stub_call(const char *command, int a = 0, int b = 0, int c = 0, int d = 0)
+{
+    last_stub_call.command = command;
+    last_stub_call.a = a;
+    last_stub_call.b = b;
+    last_stub_call.c = c;
+    last_stub_call.d = d;
+}
+
 class IecCommandExecuterStubs : public IecCommandExecuter
 {
 public:
@@ -29,30 +47,35 @@ public:
 
 int IecCommandExecuterStubs::do_block_read(int chan, int part, int track, int sector)
 {
+    record_stub_call("block read", chan, part, track, sector);
     printf("Block read: Channel %d, Partition %d, T/S %d/%d\n", chan, part, track, sector);
     return 0;
 }
 
 int IecCommandExecuterStubs::do_block_write(int chan, int part, int track, int sector)
 {
+    record_stub_call("block write", chan, part, track, sector);
     printf("Block write: Channel %d, Partition %d, T/S %d/%d\n", chan, part, track, sector);
     return 0;
 }
 
 int IecCommandExecuterStubs::do_block_allocate(int chan, int part, int track, int sector, bool allocate)
 {
+    record_stub_call(allocate ? "block allocate" : "block free", chan, part, track, sector);
     printf("Block %s: Channel %d, Partition %d, T/S %d/%d\n", allocate ? "allocate" : "free", chan, part, track, sector);
     return 0;
 }
 
 int IecCommandExecuterStubs::do_buffer_position(int chan, int pos)
 {
+    record_stub_call("buffer position", chan, pos);
     printf("Position in buffer: Chan %d: %d\n", chan, pos);
     return 0;
 }
 
 int IecCommandExecuterStubs::do_set_current_partition(int part)
 {
+    record_stub_call("select partition", part);
     printf("Change to partition %d\n", part);
     return 0;
 }
@@ -88,6 +111,7 @@ int IecCommandExecuterStubs::do_copy(filename_t& dest, filename_t sources[], int
 
 int IecCommandExecuterStubs::do_initialize()
 {
+    record_stub_call("initialize");
     return 73;
 }
 
@@ -124,6 +148,7 @@ int IecCommandExecuterStubs::do_cmd_response(uint8_t *data, int len)
 
 int IecCommandExecuterStubs::do_set_position(int chan, uint32_t pos, int recnr, int recoffset)
 {
+    record_stub_call("set position", chan, (int)pos, recnr, recoffset);
     printf("Set File position to %lu on chan %d (or record #%d:%d)\n", pos, chan, recnr, recoffset);
     return 0;
 }
