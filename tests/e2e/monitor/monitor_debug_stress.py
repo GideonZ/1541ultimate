@@ -265,8 +265,16 @@ class RestSession:
             time.sleep(0.1)
         raise StressError(f"{ctx}: footer PC did not reach {pc:04X} (last={last})\n{self.text()}")
 
+    # How long one Step key has to show progress before it is sent again. A
+    # split session reads its footer from a cartridge on WiFi, where a single
+    # menu_screen fetch can stall for seconds while the step itself has long
+    # landed, and a re-send then steps a second time.
+    STEP_PROGRESS_SECONDS = 1.6
+    SPLIT_STEP_PROGRESS_SECONDS = 4.0
+
     def progress_step(self, key, expected_pc, writes, max_resend=3,
-                      active_write_progress=False, expected_sp=None):
+                      active_write_progress=False, expected_sp=None,
+                      previous_pc=None):
         """Send a Step key and re-send it if the step makes no progress. The clean
         -stop release after a Go/entry intermittently re-traps the first step at the
         launch site without advancing (the documented B16 FPGA-aperture behaviour);
@@ -280,15 +288,26 @@ class RestSession:
         wait_footer_pc(): a footer still showing the previous step can carry the
         same PC as the one being waited for when the program visits an address
         twice, and treating that as progress skips a re-send that was needed.
+        `previous_pc`, where the caller knows it, is the PC the step started
+        from. A footer that has left it did take the key, so the step is not
+        sent again: it is either still being drawn, which wait_footer_pc()
+        gives more time, or the debugger went somewhere else, which
+        assert_match() reports. A re-send there would step twice and report
+        the second step as the debugger's mismatch.
         Returns True once progress is observed."""
         first_w = next(((a, v) for a, v in writes if a not in (0x0000, 0x0001)), None)
+        budget = (self.SPLIT_STEP_PROGRESS_SECONDS if self.split
+                  else self.STEP_PROGRESS_SECONDS)
         for attempt in range(max_resend + 1):
             if attempt:
                 self.step_resends += 1
             self.rest.tap([key])
-            deadline = time.time() + 1.6
+            deadline = time.time() + budget
+            last = None
             while time.time() < deadline:
                 f = self.footer()
+                if f:
+                    last = f
                 if f and f.pc == expected_pc and (expected_sp is None
                                                   or f.sp == expected_sp):
                     return True
@@ -296,6 +315,8 @@ class RestSession:
                     if self.rest.read_mem(first_w[0], 1)[0] == (first_w[1] & 0xFF):
                         return True
                 time.sleep(0.1)
+            if previous_pc is not None and last is not None and last.pc != previous_pc:
+                return True
         return False
 
     # --- monitor lifecycle ---
@@ -856,6 +877,7 @@ def run_program_session(sess, rng, instrs, seed, max_steps, jsonl, stats,
     instrs_by_addr = {ins.addr: ins for ins in instrs}
     steps = 0
     while steps < max_steps:
+        pre_pc = cpu.pc
         plan = choose_key_and_advance(cpu, instrs_by_addr)
         if plan is None:
             break
@@ -865,7 +887,8 @@ def run_program_session(sess, rng, instrs, seed, max_steps, jsonl, stats,
         # write confirmation is capability-gated because it can see freezer
         # backing state rather than live target bytes.
         if not sess.progress_step(key, cpu.pc, writes,
-                                  active_write_progress=active_write_readback):
+                                  active_write_progress=active_write_readback,
+                                  previous_pc=pre_pc):
             raise StressError(f"step {steps} {mnem}: no progress after re-sends "
                               f"(want PC {cpu.pc:04X}){sess.hold_note()}")
         if active_write_readback:
@@ -927,9 +950,11 @@ def run_jsr_session(sess, rng, depth, seed, jsonl, stats):
         guard += 1
         if instrs_by_addr.get(cpu.pc) is None:
             raise StressError(f"jsr nest stepped outside program at {cpu.pc:04X}")
+        pre_pc = cpu.pc
         cpu.step()
         min_sp = min(min_sp, cpu.sp)
-        if not sess.progress_step("t", cpu.pc, [], expected_sp=cpu.sp):
+        if not sess.progress_step("t", cpu.pc, [], expected_sp=cpu.sp,
+                                  previous_pc=pre_pc):
             raise StressError(f"jsr step {steps}: no progress (want PC {cpu.pc:04X})")
         f = sess.wait_footer_pc(cpu.pc, timeout=8.0, ctx=f"jsr step {steps}",
                                 sp=cpu.sp)
