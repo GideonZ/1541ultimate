@@ -1715,7 +1715,7 @@ SubsysResultCode_e U64Config :: executeCommand(SubsysCommand *cmd)
 	char sidString[40];
 	C64 *machine;
 	static char poke_buffer[16];
-	uint32_t addr, value;
+	uint32_t addr = 0, value = 0;
 
 	switch(cmd->functionID) {
     case MENU_U64_SAVEEDID:
@@ -1748,8 +1748,10 @@ SubsysResultCode_e U64Config :: executeCommand(SubsysCommand *cmd)
 
     case MENU_U64_POKE:
         if ((cmd->user_interface->string_box("Poke AAAA,DD", poke_buffer, 16) > 0) && (*poke_buffer)) {
-            sscanf(poke_buffer, "%x,%x", &addr, &value);
-
+            if (sscanf(poke_buffer, "%x,%x", &addr, &value) != 2) {
+                cmd->user_interface->popup("Give an address and a value, as AAAA,DD", BUTTON_OK);
+                break;
+            }
             C64 *machine = C64 :: getMachine();
             portENTER_CRITICAL();
 

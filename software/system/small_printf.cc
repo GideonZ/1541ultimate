@@ -309,88 +309,123 @@ extern "C" int vsnprintf(char *str, size_t size, const char *fmt, va_list ap)
     return (ret);
 }
 
-int _conv(const char *buf, int pos, int radix, int *result)
+static bool _is_space(char c)
 {
-	*result = 0;
-	char c;
-	int nega = 0;
-	int start = 1;
-	if (buf[pos] == '-') {
-		nega = 1;
-		pos++;
-	}
-
-	while(buf[pos]) {
-		c = buf[pos++];
-		if (isdigit(c)) {
-			*result *= radix;
-			*result += ((int)c) - 48;
-			start = 0;
-		} else if ( (radix > 10) && (((c >= 'A') && (c <= 'F')) || ((c >= 'a') && (c <= 'f')))) {
-			*result *= radix;
-			*result += ((int)(c & 0x0F)) + 9;
-            start = 0;
-		} else if (((c == ' ') || (c == '\n') || (c == '\r') || (c == '\t')) && (start)) {
-			continue;
-		} else {
-			break;
-		}
-	}
-	if (nega)
-		*result = -(*result);
-
-	return pos;
+    return (c == ' ') || (c == '\n') || (c == '\r') || (c == '\t');
 }
 
+// Reads one number in the given radix, and says whether there was one. Leaves pos on
+// the first character it did not use, so the caller can match what follows.
+static bool _conv(const char *buf, int *pos, int radix, int *result)
+{
+    int p = *pos;
+    int value = 0;
+    int digits = 0;
+    bool negative = false;
+
+    while (_is_space(buf[p])) {
+        p++;
+    }
+    if ((buf[p] == '-') || (buf[p] == '+')) {
+        negative = (buf[p] == '-');
+        p++;
+    }
+    for (;;) {
+        char c = buf[p];
+        int digit;
+        if ((c >= '0') && (c <= '9')) {
+            digit = c - '0';
+        } else if ((radix > 10) && (c >= 'A') && (c <= 'F')) {
+            digit = (c - 'A') + 10;
+        } else if ((radix > 10) && (c >= 'a') && (c <= 'f')) {
+            digit = (c - 'a') + 10;
+        } else {
+            break;
+        }
+        value = (value * radix) + digit;
+        digits++;
+        p++;
+    }
+    if (!digits) {
+        return false;
+    }
+    *result = negative ? -value : value;
+    *pos = p;
+    return true;
+}
+
+// A small scanf. It follows the C rules that its callers are written against: a
+// conversion that does not happen is not counted and does not store anything, a
+// literal in the format has to match the input, and whitespace in the format matches
+// any run of whitespace including none. Scanning stops at the first mismatch.
+//
+// One deliberate simplification: an input that ends before the first conversion
+// returns 0, where C returns EOF. No caller distinguishes the two.
 extern "C" int _vscanf(const char *buf, const char *fmt, va_list ap)
 {
-	int do_conv = 0;
 	int pos = 0;
-	int result = 0;
-	char *dest;
 	int count = 0;
 
-	int len = strlen(fmt);
-	int i;
-	for (i=0;i<len;i++) {
-	    if (!buf[pos]) {
-	        break;
-	    }
-	    if (fmt[i] == '%') {
-			do_conv = 1;
-			continue;
-		}
-		if (do_conv) {
-			do_conv = 0;
-			void *pntr = va_arg(ap, void *); // get pointer parameter to store result
-			switch(fmt[i]) {
-			case 'd': // scan for integer
-				pos = _conv(buf, pos, 10, &result);
-				*((int *)pntr) = result;
-				count++;
-				break;
-			case 'x': // scan for integer from hex
-				pos = _conv(buf, pos, 16, &result);
-				*((int *)pntr) = result;
-				count++;
-				break;
-			case 's': // up to white space
-				dest = (char *)pntr;
-				while(buf[pos]) {
-					if ((buf[pos] == ' ') || (buf[pos] == '\n') || (buf[pos] == '\r') || (buf[pos] == '\t')) {
-						pos ++;
-						break;
-					}
-					*(dest++) = buf[pos++];
-				}
-				*(dest) = 0;
-				count++;
-				break;
-			default:
-				*((int *)pntr) = 0;
+	for (int i = 0; fmt[i]; i++) {
+		if (_is_space(fmt[i])) {
+			while (_is_space(buf[pos])) {
+				pos++;
 			}
 			continue;
 		}
+		if (fmt[i] != '%') {
+			if (buf[pos] != fmt[i]) {
+				return count;
+			}
+			pos++;
+			continue;
+		}
+
+		i++;
+		if (!fmt[i]) {
+			return count;
+		}
+		void *pntr = va_arg(ap, void *);
+		int result = 0;
+		switch (fmt[i]) {
+		case 'd':
+			if (!_conv(buf, &pos, 10, &result)) {
+				return count;
+			}
+			*((int *)pntr) = result;
+			break;
+		case 'x':
+			if (!_conv(buf, &pos, 16, &result)) {
+				return count;
+			}
+			*((int *)pntr) = result;
+			break;
+		case 'c':
+			if (!buf[pos]) {
+				return count;
+			}
+			*((char *)pntr) = buf[pos++];
+			break;
+		case 's': {
+			// No field width is supported, so the destination has to be big enough
+			// for the whole word. No caller in this firmware uses %s.
+			char *dest = (char *)pntr;
+			while (_is_space(buf[pos])) {
+				pos++;
+			}
+			if (!buf[pos]) {
+				return count;
+			}
+			while (buf[pos] && !_is_space(buf[pos])) {
+				*(dest++) = buf[pos++];
+			}
+			*dest = 0;
+			break;
+		}
+		default:
+			return count;
+		}
+		count++;
 	}
 	return count;
 }
