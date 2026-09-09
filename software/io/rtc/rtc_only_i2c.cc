@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include "rtc_only.h"
+#include "rtc_epoch.h"
 #include "i2c_drv.h"
 #include "itu.h"
 
@@ -224,10 +225,7 @@ uint32_t get_fattime (void)	/* 31-25: Year(0-127 org.1980), 24-21: Month(1-12), 
 extern "C" void get_current_time(int& wd, int& year, int& month, int& day, int& hour, int& min, int& sec)
 {
     rtc.get_time(year, month, day, wd, hour, min, sec);
-    // The chip counts years from 1980, the way a FAT time stamp does. Callers of
-    // this function want a calendar year: the drive's own time commands print it
-    // straight into the answer they give the Commodore.
-    year += 1980;
+    year += RTC_EPOCH_YEAR; // get_time() counts years from the epoch, callers do not
 }
 
 
