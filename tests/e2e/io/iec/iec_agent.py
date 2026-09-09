@@ -26,21 +26,24 @@ MAILBOX_CAPACITY = 254
 # mailbox every 20 ms through a 254 byte read spoiled one read in thirty on an
 # Ultimate 64 Elite. Do not turn this wait into a poll loop.
 #
-# Measured on that machine: the bus carries about 600 bytes a second, a 254 byte read
-# takes 0.42 s and a two byte command under 0.03 s. The rate below allows about a
-# third more. The fixed part covers the KERNAL call and the REST round trip, and for
-# everything but a write also the work the drive does for the command it was just
-# given, which runs after the unlisten and delays the transfer that follows.
-SECONDS_PER_BYTE = 0.0035
-FIXED_SECONDS = {OPEN: 0.35, WRITE: 0.15, READ_TO_EOI: 0.45, CLOSE: 0.30, READ_COUNT: 0.35}
+# The wait is what the suites spend their time on, 84% of it, so the numbers below
+# were calibrated rather than guessed. Every budget was scaled together and the whole
+# suite run at each scale: it was clean down to three tenths of these values and
+# began to overrun below that. These keep a little under twice that margin. The fixed
+# part covers the KERNAL call and the REST round trip, and for everything but a write
+# also the work the drive does for the command it was just given, which runs after
+# the unlisten and delays the transfer that follows.
+SECONDS_PER_BYTE = 0.0018
+FIXED_SECONDS = {OPEN: 0.18, WRITE: 0.08, READ_TO_EOI: 0.22, CLOSE: 0.15, READ_COUNT: 0.18}
 
 # What a read that ends at EOI is assumed to carry when the caller says nothing.
 STATUS_BYTES = 64
 
 # A device that is not the Software IEC drive is a drive emulation, and answers at the
 # speed of the hardware it emulates. A 1541 seeks and reads its directory before it
-# says anything, which is not a byte count.
-EMULATED_DRIVE_SECONDS = 1.8
+# says anything, which is not a byte count. Calibrated the same way: 0.8 s left one
+# transaction in a REL run short, 1.2 s left none.
+EMULATED_DRIVE_SECONDS = 1.2
 
 # What a transaction gets on top of its budget before the host gives up. Needing this
 # is not a failure, but the look that found the transaction busy may have landed in
