@@ -437,6 +437,11 @@ public:
     // its launcher in the RAM copy of the hardware NMI vector.
     bool contextless_launch_installs_hard_nmi;
     uint16_t contextless_launcher;
+    // Models a lost launch NMI: the first `contextless_launch_misses` launches
+    // arm a capture at a stray PC (as the hard-BRK safety net would after the
+    // launcher failed to run), so run_to() sees the wrong PC and re-issues.
+    int contextless_launch_misses;
+    uint16_t contextless_launch_stray_pc;
     int drop_hard_nmi_writes;
     int brk_patch_writes;
     bool nmi_restores_vector;
@@ -486,6 +491,8 @@ public:
           contextless_breakpoint_launch_address(0),
           contextless_launch_installs_hard_nmi(false),
           contextless_launcher(0x0340),
+          contextless_launch_misses(0),
+          contextless_launch_stray_pc(0xFE40),
           drop_hard_nmi_writes(0),
           brk_patch_writes(0), nmi_restores_vector(true), delay_calls(0), cancel_poll_cost_ms(0),
           pokes_at_cancel(0),
@@ -584,14 +591,6 @@ protected:
     virtual uint8_t peek_cpu(uint16_t a, uint8_t) { return ram[a]; }
     virtual void poke_cpu(uint16_t a, uint8_t b, uint8_t)
     {
-        // Models the U2 DMA write loss on the RAM hardware NMI vector: the
-        // first `drop_hard_nmi_writes` writes to $FFFA/$FFFB are swallowed, as
-        // the bank-flip DMA path swallows about one write in fifty on hardware.
-        if ((a == FAKE_HARD_NMI_VECTOR_LO || a == FAKE_HARD_NMI_VECTOR_HI)
-                && drop_hard_nmi_writes > 0) {
-            drop_hard_nmi_writes--;
-            return;
-        }
         // $0000/$0001 are the 6510-port RAM mirror the capture refreshes;
         // they are never BRK patch sites, so keep them out of the counter.
         if (b == 0x00 &&
@@ -701,6 +700,11 @@ protected:
         contextless_breakpoint_launch_address = address;
         if (contextless_launch_installs_hard_nmi) {
             install_hard_nmi_vector_to(contextless_launcher);
+        }
+        if (contextless_launch_misses > 0) {
+            contextless_launch_misses--;
+            // The launcher did not run; the next trap is a stray, not the BP.
+            arm_capture_context(contextless_launch_stray_pc, 0xF8, 0x87, 0xF7, 0x06, 0xB5);
         }
         return true;
     }
@@ -5364,39 +5368,40 @@ static int test_contextless_backend_launch_installs_and_restores_hard_nmi_vector
     return 0;
 }
 
-static int test_contextless_hard_nmi_vector_survives_dropped_dma_writes()
+static int test_contextless_launch_reissues_when_it_misses_the_breakpoint()
 {
-    // The RAM hardware NMI vector reaches the cartridge only through the
-    // bank-flip DMA path, which loses about one write in fifty and cannot be
-    // read back to confirm. Dropping the first three writes to $FFFA/$FFFB, as
-    // that loss would, must still leave the launcher installed, because the
-    // vector is written more than three times. With a single write it would be
-    // left pointing at the program's stale vector and the launch NMI would miss.
+    // The launch NMI vector is written over a lossy, unverifiable DMA path, so
+    // a launch can be issued and not delivered, and the CPU then traps at a
+    // stray address instead of the breakpoint. go() must notice the trap is not
+    // at an armed breakpoint and re-issue the launch. One modelled miss must
+    // still end at the breakpoint $C000.
     FakeFreezeMachine m(false);
     m.contextless_breakpoint_launch_supported = true;
     m.contextless_launch_installs_hard_nmi = true;
-    m.ram[FAKE_HARD_NMI_VECTOR_LO] = 0x43;   // a stale KERNAL vector ($FE43)
+    m.contextless_launch_misses = 1;   // first launch traps at the stray PC
+    m.ram[FAKE_HARD_NMI_VECTOR_LO] = 0x43;
     m.ram[FAKE_HARD_NMI_VECTOR_HI] = 0xFE;
-    m.drop_hard_nmi_writes = 3;
     m.ram[0xC000] = 0xEA;
 
     MonitorBreakpoints bps;
     bps.allocate(0xC000, 0x05);
     DebugContext from;
-    debug_context_reset(&from);
-    m.arm_capture_context(0xC000, 0xF8, 0, 0, 0, 0x24);
+    debug_context_reset(&from);        // contextless: launched through the boot cart
 
     DebugSession::Result r = m.go(from, &bps, 0xC500);
     if (expect(r == DebugSession::DBG_OK,
-               "Launch must complete even with the first RAM NMI writes lost")) return 1;
-    if (expect(m.ram[FAKE_HARD_NMI_VECTOR_LO] == 0x40 &&
-               m.ram[FAKE_HARD_NMI_VECTOR_HI] == 0x03,
-               "A later write must land the launcher despite dropped DMA writes")) return 1;
+               "A launch that missed the breakpoint must re-issue and complete")) return 1;
+    if (expect(m.contextless_breakpoint_launches == 2,
+               "The missed launch must be re-issued exactly once")) return 1;
+    DebugContext got;
+    if (expect(m.snapshot(&got) == DebugSession::DBG_OK && got.valid &&
+               got.pc == 0xC000,
+               "The re-issued launch must end at the breakpoint")) return 1;
 
     m.cleanup();
     if (expect(m.ram[FAKE_HARD_NMI_VECTOR_LO] == 0x43 &&
                m.ram[FAKE_HARD_NMI_VECTOR_HI] == 0xFE,
-               "Cleanup must restore the program's RAM NMI vector bytes")) return 1;
+               "Cleanup must restore the RAM NMI vector bytes after a retry")) return 1;
     return 0;
 }
 
@@ -9472,7 +9477,7 @@ int main()
     RUN(test_freeze_go_breakpoint_refreezes);
     RUN(test_contextless_breakpoint_go_uses_backend_launch);
     RUN(test_contextless_backend_launch_installs_and_restores_hard_nmi_vector);
-    RUN(test_contextless_hard_nmi_vector_survives_dropped_dma_writes);
+    RUN(test_contextless_launch_reissues_when_it_misses_the_breakpoint);
     RUN(test_go_from_current_breakpoint_stops_at_callee_breakpoint);
     RUN(test_go_from_current_visible_rom_breakpoint_uses_patch_aware_bytes);
     RUN(test_step_over_stops_at_callee_breakpoint);

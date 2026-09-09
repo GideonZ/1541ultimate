@@ -55,15 +55,17 @@ static const uint16_t DEBUG_AREA_END  = 0x03FB;
 // Max extra attempts to re-issue a patched launch when the live 6510 fetched past
 // an installed BRK and ran away. The race is rare per launch, so keep it bounded.
 static const int MAX_BREAKPOINT_RELAUNCH = 2;
+// A cartridge contextless launch delivers its NMI through a vector the U2
+// writes into RAM under the KERNAL, over a DMA path that loses a write now and
+// then and cannot be read back to confirm. When that write is lost the launcher
+// never runs and the CPU traps somewhere other than the breakpoint (or not at
+// all). run_to() detects that from the captured PC and re-issues the launch;
+// this bounds the re-issues before a genuine miss is reported.
+static const int CONTEXTLESS_LAUNCH_RETRIES = 3;
 // Attempts to get one patch byte written and read back through the machine
 // aperture. A lost write is rare, so this is a small bound rather than a long
 // loop; exhausting it is reported instead of retried further.
 static const int PATCH_WRITE_ATTEMPTS = 4;
-// Times the RAM hardware NMI vector is written on install. It cannot be read
-// back to confirm (the cartridge DMA read returns the ROM image at $E000+), and
-// the bank-flip DMA path that reaches it loses ~1 write in 50, so it is written
-// several times; the launch fails only if every copy is lost.
-static const int HARD_NMI_VECTOR_WRITES = 4;
 static const int BREAKPOINT_WAIT_MS = 5000;
 static const int HIGH_MEMORY_BREAKPOINT_WAIT_MS = 900;
 
@@ -595,21 +597,16 @@ void BrkDebugSession :: install_hard_nmi_vector_to(uint16_t target)
         printf("MCM hard NMI vector: RAM $FFFA=%02X%02X -> $%04X\n",
                saved_hard_nmi_vector[1], saved_hard_nmi_vector[0], target);
     }
-    // $FFFA/$FFFB sits in RAM under the KERNAL, which a U2 in a C64 Ultimate
-    // reaches only through C64::dma_transfer_frozen's bank-flip path. That path
-    // loses about one write in fifty (measured; see the monitor suite README),
-    // and this vector cannot be read back to check: the cartridge's DMA read
-    // returns the KERNAL image at $E000+ whatever the CPU port says. A lost
-    // write here sends a KERNAL-out launch NMI to the stale RAM vector instead
-    // of the launcher, so the write is repeated. Each repeat lands after the
-    // previous flip has settled, so the odds of every copy missing are the
-    // single-write rate raised to HARD_NMI_VECTOR_WRITES.
-    for (int i = 0; i < HARD_NMI_VECTOR_WRITES; i++) {
-        poke_cpu(HARD_NMI_VECTOR_LO, (uint8_t)(target & 0xFF),
-                 HARD_VECTOR_RAM_CPU_PORT);
-        poke_cpu(HARD_NMI_VECTOR_HI, (uint8_t)(target >> 8),
-                 HARD_VECTOR_RAM_CPU_PORT);
-    }
+    // $FFFA/$FFFB is RAM under the KERNAL, reached only through
+    // C64::dma_transfer_frozen's bank-flip DMA path, which loses a write now
+    // and then and cannot be read back to confirm (the cartridge DMA read
+    // returns the KERNAL image at $E000+). A lost write here sends a KERNAL-out
+    // launch NMI to the stale RAM vector; run_to() detects that the launcher
+    // did not run and re-issues the launch, so a single write is enough here.
+    poke_cpu(HARD_NMI_VECTOR_LO, (uint8_t)(target & 0xFF),
+             HARD_VECTOR_RAM_CPU_PORT);
+    poke_cpu(HARD_NMI_VECTOR_HI, (uint8_t)(target >> 8),
+             HARD_VECTOR_RAM_CPU_PORT);
 }
 
 void BrkDebugSession :: uninstall_hard_nmi_vector(void)
@@ -2771,6 +2768,53 @@ DebugSession::Result BrkDebugSession :: go(const DebugContext &from,
     }
     DebugContext captured;
     read_captured_context(&captured, cpu_port);
+    // A launch to a breakpoint with the KERNAL banked out reaches the launcher
+    // through the hardware NMI vector in RAM under the KERNAL, written over a
+    // DMA path that loses a write now and then and cannot be read back to
+    // confirm. When that write is lost the launcher never runs and the CPU
+    // traps somewhere other than the breakpoint (via the hard-BRK safety net)
+    // or does not trap at all, whichever launch branch above was used. The trap
+    // PC is the signal: while it is not an armed breakpoint, re-issue the launch
+    // as a fresh contextless run to start_pc, up to a bounded number of times.
+    // A run that reached a breakpoint does not loop, and a backend without a
+    // contextless boot-cart launch (the U64) has no lossy vector and is skipped.
+    for (int relaunch = 0;
+         supports_contextless_breakpoint_launch() && start_pc != 0 &&
+             relaunch < CONTEXTLESS_LAUNCH_RETRIES &&
+             !context_at_breakpoint(captured, bps, from.pc, skip_current_bp);
+         relaunch++) {
+        printf("MCM go: launch reached $%04X, not an armed breakpoint; "
+               "re-issuing to $%04X (attempt %d of %d)\n",
+               captured.valid ? captured.pc : 0xFFFF, start_pc,
+               relaunch + 2, CONTEXTLESS_LAUNCH_RETRIES + 1);
+        cpu_parked_in_spin = false;
+        has_last_context = false;
+        debug_context_reset(&last_context);
+        end_run_window();
+        restore_patches();
+        PatchInstallResult rp = install_breakpoints(
+            bps, from.pc, from_target, skip_current_bp, skip_current_bp);
+        if (rp != PATCH_INSTALL_OK) {
+            restore_patches();
+            return (rp == PATCH_INSTALL_NOT_SUPPORTED) ?
+                DBG_BREAKPOINT_NOT_INSTALLABLE : DBG_PATCH_FAILED;
+        }
+        save_and_install_handler();
+        if (!launch_contextless_run_window(start_pc)) {
+            return DBG_REFUSED;
+        }
+        Result rewaited = wait_for_sentinel(wait_ms);
+        rewaited = relaunch_on_breakpoint_runaway(
+            rewaited, 0, false, 0, false, cpu_port, wait_ms);
+        if (rewaited != DBG_OK) {
+            restore_patches();
+            uninstall_handler();
+            cpu_parked_in_spin = false;
+            end_run_window();
+            return rewaited;
+        }
+        read_captured_context(&captured, cpu_port);
+    }
     restore_patches();
     reset_spin_target();
     cpu_parked_in_spin = true;
