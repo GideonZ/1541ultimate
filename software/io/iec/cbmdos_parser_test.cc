@@ -383,9 +383,7 @@ int main(int argc, const char *argv[])
     test_command( 0, (const uint8_t *)"P\x02\xC8\0", 4);
     test_command( 0, (const uint8_t *)"P\x02\x2C\x01\0", 5);
     test_command( 0, (const uint8_t *)"P\x02\x90\x01\0\0", 6);
-    // A position is at most four bytes wide, so five parameter bytes is a syntax
-    // error. This case expected acceptance, and had been failing unnoticed because
-    // the program did not report a failing exit status.
+    // A position is at most four bytes wide, so five parameter bytes is a syntax error.
     test_command(ERR_SYNTAX, (const uint8_t *)"P\x02\xF4\x01\0\0\0", 7);
     test_command( 0, (const uint8_t *)"CD:TEMP", 7);
     test_command( 0, (const uint8_t *)"CD1//TEMP", 9);

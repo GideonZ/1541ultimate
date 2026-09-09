@@ -1664,9 +1664,8 @@ static void run_suite10_command_terminator(FileManager *fm, IecDrive *dr)
     close_file(dr, chan);
     expect_status_ok("Suite10-RelClose", "12:RELPOS");
 
-    // A command that fills the 64 byte command buffer still has to be executed. The
-    // zero terminator that follows the last byte used to land on the byte count
-    // itself, which set it to zero and dropped the command without a word.
+    // A command that fills the 64 byte command buffer still has to be executed: the
+    // zero written after its last byte must not reach the byte count itself.
     char full[65];
     memset(full, 'Z', 64);
     full[64] = 0;
@@ -1915,8 +1914,9 @@ static void expect_partition_line(const char *testname, const uint8_t *listing, 
         for (int n = blocks; n >= 10; n /= 10) {
             digits++;
         }
-        char shown[20];
+        char shown[24]; // a quoted name is at most sixteen characters and two quotes
         int len = snprintf(shown, sizeof(shown), "\"%s\"", name);
+        REQUIRE(len < (int)sizeof(shown));
         int quote_at = 4 + (3 - digits) + 1;
         int type_at = 27 - digits;
         bool name_ok = (memcmp(line + quote_at, shown, len) == 0);

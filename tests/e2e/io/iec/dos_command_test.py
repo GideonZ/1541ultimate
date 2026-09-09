@@ -3,23 +3,29 @@
 
 """Hardware regression for GideonZ/1541ultimate#875, #876 and #877.
 
-These three defects are about the bytes a Commodore actually puts on the bus, so
-they cannot be reproduced by a harness that builds command strings by hand:
+What these defects have in common is the bytes a Commodore puts on the bus, which
+is why a harness that builds its command strings by hand does not reach them:
 
-  * PRINT# terminates every command with a carriage return, and the firmware
-    counted that return as part of the command. "CD//OS" became a request for a
-    directory whose name ends in a carriage return and answered 71, DIRECTORY
-    ERROR (#875).
+  * PRINT# ends every command with a carriage return, and the firmware counted it
+    as part of the command. "CD//OS" became a request for a directory whose name
+    ends in a carriage return, and answered 71, DIRECTORY ERROR (#875).
   * BASIC prints a space before and after every number, so PRINT#15,"U1:";2;0;18;0
     arrives as "U1: 2  0  18  0 ". The parameter parser could not step over the
-    colon, and the block commands answered 30, SYNTAX ERROR (#876).
+    colon, so the colon became the channel number and every value moved one place:
+    the track number arrived as the partition number (#876).
   * The partition directory showed the path a partition is rooted at instead of
     its name, and typed every partition DIR instead of NAT or the drive model of
     the image at its root (#877).
 
-The C64 runs iec_agent.asm and performs the KERNAL calls itself. REST only fills
-the agent's mailbox, creates the disk image and reads settings; FTP creates the
-scratch directory and fetches the image for comparison.
+Two more checks are here rather than on the host because they cannot fail there.
+The device uses the firmware's own sscanf, which has no %c and counts a conversion
+it did not make, while a host build links the C library's: a directory filtered by
+a time stamp answered 30, SYNTAX ERROR, and the year the time commands reported
+came straight from the real time clock, which counts from 1980.
+
+The C64 runs iec_agent.asm and makes the KERNAL calls itself. REST only fills the
+agent's mailbox, creates the disk image and reads settings; FTP creates the scratch
+directory and fetches the image for comparison.
 
 The suite needs a C64 with a standard KERNAL, REST and FTP, and exactly one
 Software IEC partition numbered 1. It temporarily uses device 11, restores the
