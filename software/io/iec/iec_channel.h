@@ -344,9 +344,7 @@ public:
 
 class IecCommandChannel: public IecChannel, public IecCommandExecuter {
     IecParser *parser;
-    // 64 command bytes plus the terminating zero that push_command writes after the
-    // last one. Without the extra byte a command that fills the buffer wrote that
-    // zero over the low byte of wr_pointer, and the command was then dropped.
+    // 64 command bytes, plus the zero push_command writes after the last one.
     uint8_t wr_buffer[65];
     int wr_pointer;
 

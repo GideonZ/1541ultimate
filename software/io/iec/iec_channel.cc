@@ -690,19 +690,16 @@ static FRESULT open_by_rendered_iec_name(FileManager *fm, IecPartition *partitio
     return fm->fopen(resolved.c_str(), flags, file);
 }
 
-// The partition type shown in the partition directory follows the file system that
-// sits at the root of the partition: a mounted disk image reports the drive model it
-// emulates, and a directory on the host file system reports a native partition.
+// The type of a partition follows the file system at its root: a mounted disk image
+// reports the drive model it emulates, everything else is native. Only the file
+// system of the returned info is used.
 static const char *iec_partition_type(FileManager *fm, IecPartition *prt)
 {
     FileInfo info(32);
-    if (!fm->is_path_valid(prt->GetRootPath(), &info)) {
-        return "NAT";
+    if (fm->is_path_valid(prt->GetRootPath(), &info) && info.fs) {
+        return info.fs->get_partition_type();
     }
-    if (!info.fs) {
-        return "NAT";
-    }
-    return info.fs->get_partition_type();
+    return "NAT";
 }
 
 int IecChannel::read_dir_entry(void)
@@ -1416,9 +1413,7 @@ int IecCommandChannel :: do_buffer_position(int chan, int pos)
     }
     IecChannel *channel;
     channel = drive->get_data_channel(chan);
-    // CBM DOS keeps only the low byte of the position, so a value past the end of
-    // the 256 byte buffer wraps rather than being refused.
-    channel->pointer = pos & 0xFF;
+    channel->pointer = pos & 0xFF; // CBM DOS keeps only the low byte, so it wraps
     channel->reset_prefetch();
     set_error(ERR_ALL_OK);
     return ERR_ALL_OK;
@@ -1437,10 +1432,9 @@ int IecCommandChannel::do_change_dir(filename_t& dest)
     GETPARTITION(dest.partition, prt, -1);
     DBGIECV("Partition %d ('%s') Change dir %s:%s\n", dest.partition, prt->GetFullPath(), dest.path.c_str(), dest.filename.c_str());
 
-    // The left arrow (PETSCII 0x5F, rendered here as an underscore) means the parent
-    // directory. It is documented both directly after the command word, as in "CD_",
-    // and behind a colon, as in "CD:_" or "CD/SUB/:_". Only the first form arrives as
-    // a path; move the second into the path so that both take the same route.
+    // The left arrow, PETSCII 0x5F, means the parent directory both after the command
+    // word, as in "CD_", and behind a colon, as in "CD:_" or "CD/SUB/:_". Only the
+    // first arrives as a path, so move the second there and both take one route.
     if (dest.filename == "_") {
         dest.filename = "";
         if (dest.path.length() && (dest.path[-1] != '/')) {
@@ -1716,11 +1710,10 @@ int IecCommandChannel::do_pwd_command()
 int IecCommandChannel::do_set_position(int chan, uint32_t pos, int recnr, int recoffset)
 {
     DBGIECV("Set File position to %u on chan %d. RecNr %d:%d\n", pos, chan, recnr, recoffset);
-    // The documented BASIC form of the position command adds 96 to the secondary
-    // address, as in PRINT#15,"P"CHR$(96+2)CHR$(lo)CHR$(hi)CHR$(offset), while other
-    // programs send the bare secondary address. CBM DOS masks the byte down to its
-    // low four bits only when it is 19 or more, so both forms reach the same channel
-    // while a byte just outside the channel range is still refused.
+    // The documented BASIC form adds 96 to the secondary address, as in
+    // PRINT#15,"P"CHR$(96+2)..., while other programs send it bare. CBM DOS masks the
+    // byte to its low four bits only from 19 up, so both forms reach the same channel
+    // and a byte just outside the channel range is still refused.
     if (chan >= 19) {
         chan &= 0x0F;
     }
@@ -1854,10 +1847,9 @@ t_channel_retval IecCommandChannel::push_command(uint8_t b)
         wr_pointer = 0;
         break;
     case 0x00: // end of data, command received in buffer
-        // BASIC's PRINT# terminates every command with a carriage return. CBM DOS
-        // uses that CR as the end-of-command marker and does not treat it as part
-        // of the command itself, so a single trailing CR is removed here. Only the
-        // last byte is removed, to keep commands that carry binary parameters intact.
+        // BASIC's PRINT# ends every command with a carriage return, which CBM DOS
+        // takes as the end of the command rather than as part of it. Only the last
+        // byte goes, so a command carrying binary parameters keeps them.
         if (wr_pointer && (wr_buffer[wr_pointer - 1] == 0x0D)) {
             wr_pointer--;
         }

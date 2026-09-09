@@ -119,14 +119,16 @@ int parse_full_path(const char *buf, filename_t& name, bool *replace = NULL, boo
     return 0;
 }
 
-// Reads a run of decimal digits, and says whether there was one at all.
+// Reads a run of decimal digits, and says whether there was one at all. The value
+// saturates at sixteen bits, which is what CBM DOS keeps and far more than any field
+// of a date needs, so a long run of digits cannot overflow.
 static const char *scan_decimal(const char *p, int &value, bool &converted)
 {
     int digits = 0;
     value = 0;
     while (isdigit((uint8_t)*p)) {
         value = (value * 10) + (*(p++) - '0');
-        if (value > 0xFFFF) { // a field of a date and time never needs more
+        if (value > 0xFFFF) {
             value = 0xFFFF;
         }
         digits++;
@@ -138,12 +140,9 @@ static const char *scan_decimal(const char *p, int &value, bool &converted)
 // The time stamp in a directory filter, spelled MM/DD/YY HH:MM xM with x either A
 // or P, as in $:*=>01/02/25 03:04 PM.
 //
-// This is parsed here rather than with sscanf because the firmware brings its own
-// sscanf: it counts a conversion whether or not anything was converted, and it does
-// not implement %c at all, storing a whole int through the caller's char pointer
-// instead. The old format string asked for both, so on the device the return value
-// said nothing and the am/pm marker was always overwritten with zero, which made
-// every afternoon stamp read as morning.
+// Read here rather than with sscanf, because the firmware brings its own in
+// small_printf.cc: it counts a conversion whether or not it made one, and it has no
+// %c, storing a whole int through the caller's char pointer instead.
 static int parse_dir_timestamp(const char *buf, uint32_t &datetime)
 {
     static const char separators[] = { '/', '/', ' ', ':' };
@@ -297,15 +296,15 @@ int parse_open(const char *buf, open_t& fn)
 
 // The parameters of a block command are decimal numbers separated by a space, a
 // comma or a cursor right (0x1D), and a colon may stand between the command word and
-// the first parameter. The 1541 ROM routine at $CC6F skips exactly those characters.
+// the first parameter. The 1541 ROM routine at $CC6F skips exactly those.
 //
-// This matters because a Commodore rarely sends the bare form. PRINT#15,"U1:";2;0;18;0
-// puts "U1: 2  0  18  0 " on the bus, since BASIC prints a space before and after
-// every positive number, and the "VIEW BAM" program on the 1541 TEST/DEMO disk also
-// uses the literal forms "U1:2,0,18,0" and "B-P:2,144".
-static bool is_block_parameter_separator(uint8_t c)
+// A Commodore rarely sends the bare form: PRINT#15,"U1:";2;0;18;0 puts
+// "U1: 2  0  18  0 " on the bus, because BASIC prints a space before and after every
+// positive number, and the "VIEW BAM" program on the 1541 TEST/DEMO disk sends the
+// literal forms "U1:2,0,18,0" and "B-P:2,144".
+static bool is_block_parameter_separator(uint8_t c, bool before_first)
 {
-    return (c == ' ') || (c == ',') || (c == ':') || (c == 0x1D);
+    return (c == ' ') || (c == ',') || (c == 0x1D) || (before_first && (c == ':'));
 }
 
 static int parse_block_parameters(const uint8_t *buffer, int len, int *values, int count)
@@ -314,7 +313,7 @@ static int parse_block_parameters(const uint8_t *buffer, int len, int *values, i
     int i = 0;
 
     while (found < count) {
-        while ((i < len) && is_block_parameter_separator(buffer[i])) {
+        while ((i < len) && is_block_parameter_separator(buffer[i], found == 0)) {
             i++;
         }
         if ((i >= len) || !isdigit(buffer[i])) {
@@ -596,8 +595,8 @@ int IecParser :: time_command(const uint8_t *buffer, int len)
         }
         switch(buffer[3]) {
         case 'A': // ASCII
-            // "dow. mo/da/yr hr:mi:se xx"+CHR$(13), month first, as every other date
-            // this drive prints. The day and the month used to be the other way round.
+            // "dow. mo/da/yr hr:mi:se xx"+CHR$(13): month first, as in every other
+            // date this drive prints.
             reslen = sprintf((char *)result, "%s %02d/%02d/%02d %02d:%02d:%02d %s\r",
                 wd4[wd], month, day, year % 100, hour12, min, sec, (hour >= 12)?"PM":"AM");  
             break;
