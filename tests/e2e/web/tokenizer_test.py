@@ -98,7 +98,7 @@ INSERT_AT = 10
 
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    parser.add_argument("--browser", default="all", choices=("all",) + browser_lib.BROWSERS,
+    parser.add_argument("--browser", default="all", choices=("all", *browser_lib.BROWSERS),
                         help="Which browsers to drive. Default: every one installed.")
     parser.add_argument("-t", "--timeout", type=float, default=READY_TIMEOUT,
                         help="How long a page has to become ready.")
