@@ -40,7 +40,7 @@ import cli  # noqa: E402
 import ftp  # noqa: E402
 from api import UltimateApi  # noqa: E402
 from config_snapshot import Snapshot  # noqa: E402
-from iec_agent import Agent  # noqa: E402
+from iec_agent import STATUS_BYTES, Agent  # noqa: E402
 from report import Failure, check, detail, section, suite_fail, suite_ok, teardown_step  # noqa: E402
 
 SUITE = "iec_dos_command_test"
@@ -156,7 +156,7 @@ def check_timestamp_filter(agent, api, password, folder, root):
 
     with check("the clock the drive reports agrees with the stamp it writes"):
         agent.call(2, 15, b"T-RA")
-        now = agent.call(3, 15).decode("ascii").strip()
+        now = agent.call(3, 15, expect=STATUS_BYTES).decode("ascii").strip()
         reported = re.search(r"(\d\d)/(\d\d)/(\d\d) ", now)
         if not reported:
             raise Failure(f"T-RA answered {now!r}")
@@ -259,6 +259,8 @@ def run(args):
                 action()
             except Failure as exc:
                 failed.append(f"{label}: {exc}")
+        if agent.overruns:
+            detail(f"{agent.overruns} transactions needed longer than the estimated transfer time")
         if failed:
             raise Failure("; ".join(failed))
     finally:

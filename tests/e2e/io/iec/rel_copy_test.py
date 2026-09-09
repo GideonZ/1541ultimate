@@ -141,6 +141,8 @@ def run(args):
                         agent.call(4, device=10)
                 api.drives.remove("a")
                 mounted = False
+        if agent.overruns:
+            detail(f"{agent.overruns} transactions needed longer than the estimated transfer time")
         return not failed
     finally:
         def restore_iec():
