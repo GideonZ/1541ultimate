@@ -584,6 +584,10 @@ $(document).ready(async function () {
     function scan(s, tokenize = true, normalize = true) {
         s = expandCounts(s);
 
+        if (basic_error !== "") {
+            return [null, null];
+        }
+
         if (tokenize) {
             for (let i = 0; i < TOKENS.length; i++) {
                 let [token, value] = TOKENS[i];
@@ -625,10 +629,21 @@ $(document).ready(async function () {
         // This regex handles two variants:
         // 1. {3 space} -> format used in "COMPUTE!'s Gazette" magazine
         // 2. {space*3} -> format compatible with CBMprgStudio
-        return input.replace(/\{(\d+) ([^}]+)\}|\{([^}]+)\*(\d+)\}/g, (_, count1, word1, word2, count2) => {
+        const regex = /\{(\d+) ([^}]+)\}|\{([^}]+)\*(\d+)\}/g;
+        let totalCount = 0;
+
+        for (const match of input.matchAll(regex)) {
+            totalCount += Number(match[1] || match[4]);
+            if (totalCount > 999) {
+                basic_error = "The number of special character repetitions is too large. The line cannot be generated.";
+                return input;
+            }
+        }
+
+        return input.replace(regex, (_, count1, word1, word2, count2) => {
             // Extract values from whichever group was matched
             const count = Number(count1 || count2);
-            const word = word1 || word2
+            const word = word1 || word2;
 
             // Generates repeated tokens, e.g., {space}{space}{space}
             return Array(count).fill(`{${word}}`).join('');
