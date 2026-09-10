@@ -413,6 +413,12 @@ $(document).ready(async function () {
             // Correctly extract only the leading digits as line number
             const lineNum = currentLineText.match(/^\d+/)?.[0] || "unknown";
 
+            // VALIDATION: BASIC line number must fit in the 16-bit line number field
+            if(Number(lineNum) > 65535) {
+                showBASICerror("Error in line " + lineNum + ". Invalid BASIC line number. Max is 65535. Program was not sent.");
+                return false;
+            }
+
             const tokenizedLine = new TokenizedLine(currentLineText, addr);
 
             // VALIDATION: Total line size in memory
