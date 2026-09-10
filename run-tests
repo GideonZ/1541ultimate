@@ -451,6 +451,14 @@ SUITES: Sequence[Suite] = (
     # fix and green at about 10x after it.
     Suite("e2e", "fast-reset", "tests/e2e/io/c64/fast_reset_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
+    # An 8K $E000 cartridge with EXROM high and GAME low runs the machine in
+    # Ultimax mode, where the VIC fetches characters and colour through the
+    # cartridge rather than from the C64's own memory. The observable is the
+    # picture, so the suite starts Jupiter Lander, taps F1 and compares the
+    # whole VIC frame against a reference, index for index. It takes the video
+    # stream, and reboots the machine afterwards to remove the cartridge.
+    Suite("e2e", "ultimax-cartridge", "tests/e2e/io/c64/ultimax_cartridge_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
     # Guards GideonZ/commodore#1 (c66ef028): a Reset, a Reboot or a C=+R taken
     # from the menu has to run after the UI has torn down, so the C64 comes
     # back to a boot screen with none of the menu's characters on it. The
