@@ -383,7 +383,7 @@ $(document).ready(async function () {
 
         // Split into lines and prepare each line for tokenization.
         // Leading and trailing whitespace is always removed.
-        // Optionally normalize the source to lowercase according to the tokenizer profile.
+        // Optionally normalize the entire source to lowercase according to the tokenizer profile.
         var lines = textarea.split('\n')
                 .map(line => {
                     line = line.trim();
@@ -671,9 +671,11 @@ $(document).ready(async function () {
                 // Mode switching based on standard C64 BASIC v2.0 token values
                 if (byte === 34) {          // ASCII/PETSCII for double quotes (")
                     inQuotes = !inQuotes;
-                } else if (byte === 143) {  // C64 Token for REM ($8F)
+                } else if (byte === 58 && inData && !inQuotes) {  // Colon ($3A) terminates DATA
+                    inData = false;
+                } else if (shouldTokenize && byte === 143) {      // C64 Token for REM ($8F)
                     inRemark = true;
-                } else if (byte === 131) {  // C64 Token for DATA ($83)
+                } else if (shouldTokenize && byte === 131) {      // C64 Token for DATA ($83)
                     inData = true;
                 }
             }
