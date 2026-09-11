@@ -1,33 +1,24 @@
 #!/usr/bin/env python3
-"""E2E: the freezer takes the machine's sound quietly and every way out returns it.
+"""E2E: the freezer silences the machine quietly, and every way out returns it.
 
-Two ways out, and they are different code: closing the menu runs
-`C64::unfreeze`, launching anything from the menu runs `C64::start_cartridge`.
-Only the first restored the audio until 35023e32, which is what #887 reports as
-a SID player that shows a tune playing and makes no sound.
+Two ways out, two pieces of code: closing the menu runs `C64::unfreeze`,
+launching from the menu runs `C64::start_cartridge`. Only the first restored
+the audio until 35023e32, reported as #887.
 
-The launch has to be a SID play, and "SID Player Autoconfig" has to be off,
-which is the reporter's configuration. Both are what leave the FPGA mixer for
-`start_cartridge` to restore. Measured on an Ultimate 64 Elite with the fix
-reverted: a relaunched tune is silent with autoconfig off and audible with it
-on, and a relaunched PRG is audible either way.
+The launch must be a SID play with "SID Player Autoconfig" off, which is the
+reporter's configuration and the only combination that leaves the mixer closed:
+`SidAutoConfig` sets `skipReset`, so the reset the launch causes does not
+re-effectuate the settings, and with autoconfig on `SetMixerAutoSid` reopens
+the SID channels anyway. Measured with the fix reverted, a relaunched PRG is
+audible either way.
 
-  - `U64Config::SidAutoConfig` sets `skipReset`, so the C64 reset the launch
-    causes does not re-effectuate the settings, and the mixer stays closed. A
-    PRG launch sets no such flag, so the reset handler reprograms the mixer and
-    hides the defect.
-  - With autoconfig on, `SetMixerAutoSid` rewrites the SID mixer channels while
-    it remaps them, which restores them as a side effect.
+Only the FPGA mixer mutes silently. The SID master volume write it replaced
+steps the DC offset and clicks, so the two entry checks skip where the "Audio
+Mixer" store is absent.
 
-Where the FPGA audio mixer does the muting, taking the machine is also silent.
-The older method, writing the SID master volume, steps the output's DC offset
-and is heard as a click, so the two entry checks skip on a machine that still
-uses it. "Audio Mixer" in the config stores tells the two apart.
-
-The audio stream is the instrument here, not the subject; what the streams
-themselves have to do is tests/e2e/av/stream_test.py's. One packet's RMS is the
-whole measurement, so nothing here depends on a note, a frequency or a system
-mode.
+The audio stream is the instrument, not the subject: one packet's RMS is the
+whole measurement, so nothing depends on note, frequency or system mode. What
+the streams themselves have to do is tests/e2e/av/stream_test.py's.
 """
 
 from __future__ import annotations
@@ -71,24 +62,19 @@ PSID_HEADER_BYTES = 0x7C
 INIT_ADDRESS = 0x1000
 PLAY_ADDRESS = 0x1040
 
-# The RMS that separates an audible machine from a silent one. The stimulus is
-# a full-volume sawtooth and a silent machine measures far below this: measured
-# 0.178 against 0.001 on an Ultimate 64 Elite.
+# Audible against silent: measured 0.178 and 0.001 on an Ultimate 64 Elite.
 AUDIBLE_RMS = 0.01
 # One measurement window, and the slice a menu-button wait measures in.
 WINDOW_SECONDS = 0.4
 SLICE_SECONDS = 0.1
-# How long the tone has to appear in. A launch resets the machine and loads.
+# A launch resets the machine and loads; a transient dies in about one window.
 TONE_TIMEOUT_SECONDS = 6.0
-# How long a transient has to die away in, measured in whole windows.
 SILENCE_TIMEOUT_SECONDS = 2.0
-# What counts as muted, against the tone's own peak, floored for a quiet
-# baseline. Measured frozen RMS is 0.000, so this is not a tight bound.
+# Muted, against the tone's own peak. Measured frozen RMS is 0.000.
 MUTE_RATIO = 0.10
 MUTE_FLOOR = 0.003
-# How much louder than the tone the menu entry may be. Measured 0.176 against a
-# 0.178 tone with the mixer mute; the SID-volume mute it replaced was measured
-# at peak sample 19000 against a silent-machine floor of 19.
+# Entry against the tone: measured 0.176 of 0.178 with the mixer mute, and
+# 0.319 with the SID-volume mute it replaced.
 POP_HEADROOM = 1.5
 
 
@@ -108,8 +94,8 @@ def peak(capture: AvStreamCapture, seconds: float = WINDOW_SECONDS) -> float:
 def peak_entering_menu(device: UltimateApi, capture: AvStreamCapture) -> float:
     """Open the freezer menu; answer the loudest packet between button and menu.
 
-    Measured in slices so the window provably spans the transition: the mute
-    happens in `backup_io`, before the menu screen this waits for.
+    Sliced so the window provably spans the transition: the mute happens in
+    `backup_io`, before the menu screen this waits for.
     """
     capture.clear()
     device.machine.menu_button()
@@ -133,11 +119,9 @@ def settled_peak(capture: AvStreamCapture, threshold: float,
                  timeout: float) -> float:
     """Wait for the machine to clear `threshold`, then answer its steady level.
 
-    Two windows, and the quieter of them. A tune starts with the SID's own DC
-    step, measured at RMS 0.660 against a 0.178 note, and one window taken
-    straight after the wait can still hold it; the step is shorter than a
-    window, so it cannot inflate both. The wait itself is for the launch, which
-    resets the machine and loads.
+    The quieter of two windows: a tune starts with the SID's own DC step,
+    measured at RMS 0.660 against a 0.178 note, and it is shorter than a
+    window, so it cannot inflate both.
     """
     deadline = time.monotonic() + timeout
     while peak(capture) <= threshold and time.monotonic() < deadline:
@@ -153,11 +137,9 @@ def mute_ceiling(baseline: float) -> float:
 def require_silence(capture: AvStreamCapture, ceiling: float, what: str) -> float:
     """Wait for the machine to go quieter than `ceiling`, and answer that level.
 
-    What the checks assert is that it goes quiet, not that it was already:
-    transients have to be allowed to pass. The SID-volume mute steps the DC
-    offset, measured on u2@c64u at RMS 0.051 in the window the freeze lands in
-    and 0.000 in the next, and a reset clicks to RMS 0.014 about half a second
-    in on an Ultimate 64 Elite.
+    It has to go quiet, not to have been quiet already: the SID-volume mute
+    clicks (0.051 then 0.000 on u2@c64u) and a reset clicks to 0.014 about half
+    a second in.
     """
     deadline = time.monotonic() + SILENCE_TIMEOUT_SECONDS
     quiet = peak(capture)
@@ -178,15 +160,15 @@ def tone_sid() -> bytes:
                       f"${INIT_ADDRESS:04X}")
     header = bytearray(PSID_HEADER_BYTES)
     header[:4] = b"PSID"
-    # Big-endian: version 2, data offset, load address (0, so it is taken from
-    # the first two bytes of the data), init, play, one song, starting at one.
+    # Big-endian: version 2, data offset, load address (0: taken from the
+    # data), init, play, one song, starting at one.
     struct.pack_into(">7H", header, 4, 2, PSID_HEADER_BYTES, 0,
                      INIT_ADDRESS, PLAY_ADDRESS, 1, 1)
     for offset, text in ((0x16, b"FREEZE TONE"), (0x36, b"E2E"), (0x56, b"2026")):
         header[offset:offset + 0x20] = text.ljust(0x20, b"\0")
     if len(header) != PSID_HEADER_BYTES:
-        # A slice assigned the wrong width grows a bytearray rather than
-        # failing, which moves the data past the header's own data offset.
+        # A wrong-width slice grows a bytearray instead of failing, which
+        # moves the data past the header's own data offset.
         raise Failure(f"the PSID header is {len(header)} bytes, not "
                       f"{PSID_HEADER_BYTES}")
     return bytes(header) + program
@@ -209,11 +191,10 @@ def serves_store(device: UltimateApi, store: str) -> bool:
 
 
 def refresh_mixer(device: UltimateApi) -> None:
-    """Reprogram the FPGA mixer, by rewriting one of the items that programs it.
+    """Reprogram the FPGA mixer by rewriting one of the items that programs it.
 
-    A machine left frozen keeps its mixer closed across a reset whenever
-    `skipReset` is set, so this is both the setup that guarantees a known
-    starting point and the teardown that hands one on.
+    With `skipReset` set a closed mixer survives a reset, so this is both the
+    known starting point and the one handed to the next suite.
     """
     volume = config_value(device, MIXER_STORE, MIXER_ITEM)
     if volume:
@@ -224,8 +205,7 @@ def run_checks(device: UltimateApi, interface: str, mixer_mute: bool) -> None:
     refresh_mixer(device)
     device.machine.reset(force=True)
     if interface:
-        # Only where the machine offers a choice. An Ultimate II+L has no such
-        # item and always freezes.
+        # Only where there is a choice; an Ultimate II+L always freezes.
         device.configs.set(UI_STORE, UI_ITEM, FREEZE)
     tune = tone_sid()
     with AvStreamCapture(device.target) as capture:
@@ -293,15 +273,13 @@ def run(args) -> None:
     mixer_mute = serves_store(device, MIXER_STORE)
     try:
         if autoconfig:
-            # On, the SID player rewrites the mixer channels itself while it
-            # remaps the SIDs, which restores them whatever the freezer did.
+            # On, the SID player reopens the mixer channels itself, whatever
+            # the freezer did.
             device.configs.set(U64_STORE, AUTOCONFIG_ITEM, "Disabled")
         run_checks(device, interface, mixer_mute)
     finally:
-        # The tune plays until something stops it, and the mixer can be left
-        # closed across a reset, so both are put back. teardown_step so a
-        # teardown that cannot reach the device reports itself rather than
-        # replacing the verdict.
+        # teardown_step so a teardown that cannot reach the device reports
+        # itself rather than replacing the verdict.
         teardown_step("stop the tune", lambda: device.machine.reset(force=True))
         teardown_step("reprogram the audio mixer", lambda: refresh_mixer(device))
         if autoconfig:

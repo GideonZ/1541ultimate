@@ -471,23 +471,19 @@ SUITES: Sequence[Suite] = (
     Suite("e2e", "deferred-machine-actions",
           "tests/e2e/io/c64/deferred_actions_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@"),
-    # Taking the machine has to take its sound with it quietly, and every way
-    # of handing it back has to hand the sound back: closing the menu, and
-    # launching something from it. The second was missed until 35023e32, which
-    # is #887; every launch route ends in C64::start_cartridge, so running a
-    # PRG covers the SID player and a CRT as well. The quiet part is the FPGA
-    # mixer mute, which replaced a SID volume write that clicked, so the two
-    # entry checks skip where there is no mixer. The observable is the RMS of
-    # the device's audio stream; packets from another target on the same group
-    # are filtered out by source address, so a concurrent run is not a problem.
+    # Taking the machine has to take its sound with it quietly, and both ways
+    # of handing it back have to hand the sound back: closing the menu, and
+    # launching from it. The second was missed until 35023e32, which is #887.
+    # The launch has to be a SID play with autoconfig off, the only combination
+    # the C64 reset handler does not mask; the suite says why. The observable
+    # is the RMS of the device's audio stream, filtered by source address, so a
+    # concurrent run on the same group is not a problem.
     #
-    # quick, so it runs by default. Its device operations are the ones the
-    # shallower profiles already use - the menu button and a reset in
-    # menu-screen, a config write in the cfg suites, the video stream in input -
-    # and it is cheap: measured 7.5s to 8.1s over three runs on an Ultimate 64
-    # Elite and 9.2s on u2@c64u, against the minute that keeps av-stream out.
-    # It reads the streams without taking them, so it can run under --record
-    # beside the recorder.
+    # quick, so it runs by default: its device operations are the ones the
+    # shallower profiles already use (menu button and reset in menu-screen, a
+    # config write in the cfg suites, the video stream in input), and it is
+    # cheap, measured 7.5s to 8.1s on an Ultimate 64 Elite and 9.2s on u2@c64u.
+    # It reads the streams without taking them, so it runs under --record too.
     Suite("e2e", "freezer-audio", "tests/e2e/io/c64/freezer_audio_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@", profile=profiles.QUICK),
     # Reproduces #733: with the FPGA decoder fix in the core, "mirroring off" is

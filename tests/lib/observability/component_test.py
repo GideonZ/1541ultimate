@@ -615,9 +615,8 @@ def a_stream_this_did_not_start_is_not_stopped() -> str:
 def _loopback_stream_target(double: DeviceDouble) -> targets.Target:
     """The double, with its streams on loopback and on ports the kernel picks.
 
-    A capture built from the real handle would join the multicast group the
-    bench devices are streaming into, so it would receive a real machine's
-    packets and a real machine would receive its arming requests.
+    The real handle would join the group the bench devices stream into, so a
+    real machine would receive the arming requests.
     """
     return dataclasses.replace(double.target(), video_group="127.0.0.1",
                                audio_group="127.0.0.1", video_port=0,
@@ -628,14 +627,9 @@ def _loopback_stream_target(double: DeviceDouble) -> targets.Target:
 def av_capture_leaves_a_recorder_owned_stream_running() -> str:
     """A capture records an already-arriving stream without taking it over.
 
-    The recorder has its own sockets on the same group, so a suite receiving
-    the same packets costs it nothing. Arming a stream that is already running
-    does cost it: the suite's own close would stop the feed the recorder is
-    still reading, and the gap in the recording would be attributed to the
-    device rather than to the suite.
-
-    Both halves are checked against the device double, which records every
-    streams:start and streams:stop it is sent.
+    Receiving the recorder's packets costs it nothing; arming its stream would,
+    because this capture's close would then stop its feed. Both halves are
+    checked against the double, which records every streams:start and stop.
     """
 
     with DeviceDouble() as double:
@@ -654,9 +648,8 @@ def av_capture_leaves_a_recorder_owned_stream_running() -> str:
             capture.close()
         expect("and neither was stopped", double.streams_stopped, [])
 
-        # The other half: nothing is arriving, so the capture has to arm both
-        # itself and stop both afterwards. Without this, a capture that armed
-        # nothing at all would pass the case above.
+        # The other half: with nothing arriving it has to arm both and stop
+        # both, or a capture that armed nothing would pass the case above.
         idle = AvStreamCapture(_loopback_stream_target(double))
         try:
             idle.start()

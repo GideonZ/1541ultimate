@@ -1,5 +1,5 @@
 ; Continuous SID tone for freezer_audio_test.py, as a PSID init/play pair.
-; init gates one full-volume sawtooth and returns, play does nothing, so the
+; init gates one full-volume sawtooth and returns; play does nothing, so the
 ; note sustains for as long as the player runs.
 
 *=$1000
@@ -22,7 +22,7 @@ clear_sid:
         sta $d404
         rts
 
-; Fixed: the PSID header in freezer_audio_test.py names both addresses.
+; Fixed: freezer_audio_test.py's PSID header names both addresses.
 *=$1040
 play:
         rts
