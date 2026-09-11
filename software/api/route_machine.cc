@@ -211,9 +211,13 @@ API_DOC(PUT, machine, writemem,
 )
 API_CALL(PUT, machine, writemem, NULL, ARRAY( { {"address", P_REQUIRED}, {"data", P_REQUIRED} }))
 {
-    int address = strtol(args["address"], NULL, 16);
+    const char *addr_str = args["address"];
+    char *addr_end;
+    int address = strtol(addr_str, &addr_end, 16);
 
-    if ((address < 0) || (address > 65535)) {
+    // Reject an unparseable or trailing-garbage address: strtol() yields 0 for such
+    // input, which would otherwise pass the range check and be treated as $0000.
+    if ((addr_end == addr_str) || (*addr_end != '\0') || (address < 0) || (address > 65535)) {
         resp->error("Invalid address");
         resp->json_response(HTTP_BAD_REQUEST);
         return;
@@ -283,9 +287,13 @@ API_DOC(POST, machine, writemem,
 )
 API_CALL(POST, machine, writemem, &attachment_writer, ARRAY( { {"address", P_REQUIRED} }))
 {
-    int address = strtol(args["address"], NULL, 16);
+    const char *addr_str = args["address"];
+    char *addr_end;
+    int address = strtol(addr_str, &addr_end, 16);
 
-    if ((address < 0) || (address > 65535)) {
+    // Reject an unparseable or trailing-garbage address: strtol() yields 0 for such
+    // input, which would otherwise pass the range check and be treated as $0000.
+    if ((addr_end == addr_str) || (*addr_end != '\0') || (address < 0) || (address > 65535)) {
         resp->error("Invalid address");
         resp->json_response(HTTP_BAD_REQUEST);
         return;
@@ -349,9 +357,13 @@ API_DOC(GET, machine, readmem,
 )
 API_CALL(GET, machine, readmem, NULL, ARRAY( { {"address", P_REQUIRED}, {"length", P_OPTIONAL} }))
 {
-    int address = strtol(args["address"], NULL, 16);
+    const char *addr_str = args["address"];
+    char *addr_end;
+    int address = strtol(addr_str, &addr_end, 16);
 
-    if ((address < 0) || (address > 65535)) {
+    // Reject an unparseable or trailing-garbage address: strtol() yields 0 for such
+    // input, which would otherwise pass the range check and be treated as $0000.
+    if ((addr_end == addr_str) || (*addr_end != '\0') || (address < 0) || (address > 65535)) {
         resp->error("Invalid address");
         resp->json_response(HTTP_BAD_REQUEST);
         return;
