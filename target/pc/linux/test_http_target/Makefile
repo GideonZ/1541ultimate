@@ -52,6 +52,13 @@ LFLAGS   = --gc-sections
 
 include ../../../common/rules.mk
 
+# Exercise sign extension even on hosts where plain char is signed by default.
+.PHONY: test-integer-widths
+test-integer-widths:
+	@$(MAKE) OUTPUT=output/integer-widths RESULT=result/integer-widths \
+	    CPP="$(CPP) -funsigned-char" all
+	@result/integer-widths/$(PRJ) --integer-widths
+
 $(RESULT)/$(PRJ): $(OBJS_C) $(OBJS_CC) $(OBJS_ASM) $(OBJS_6502) $(OBJS_BIN) $(OBJS_IEC) $(OBJS_NANO)
 	@echo Linking...
 	$(CPP) $(ALL_OBJS) $(LLIB) -o $(RESULT)/$(PRJ) $(LIBS)
