@@ -26,6 +26,28 @@ static uint8_t chartohex(const char a)
     return 0xff;
 }
 
+// The grammar the three memory endpoints document for their address: hex
+// digits, 0000 to FFFF, and nothing else. strtol is not that grammar. It skips
+// leading whitespace, accepts an optional sign, and stops at the first
+// character it cannot use, so " 1234", "+1234", "-0" and "12ZZ" all parsed and
+// were acted on.
+static bool parse_address(const char *text, int &address)
+{
+    if ((text == NULL) || (*text == '\0')) {
+        return false;
+    }
+    int value = 0;
+    for (const char *p = text; *p; p++) {
+        uint8_t digit = chartohex(*p);
+        if ((digit == 0xff) || (value > 0x0FFF)) {
+            return false;
+        }
+        value = (value << 4) | digit;
+    }
+    address = value;
+    return true;
+}
+
 API_DOC(PUT, machine, menu_button,
     TAG("Machine")
     SUMMARY("Press the menu button")
@@ -211,13 +233,8 @@ API_DOC(PUT, machine, writemem,
 )
 API_CALL(PUT, machine, writemem, NULL, ARRAY( { {"address", P_REQUIRED}, {"data", P_REQUIRED} }))
 {
-    const char *addr_str = args["address"];
-    char *addr_end;
-    int address = strtol(addr_str, &addr_end, 16);
-
-    // Reject an unparseable or trailing-garbage address: strtol() yields 0 for such
-    // input, which would otherwise pass the range check and be treated as $0000.
-    if ((addr_end == addr_str) || (*addr_end != '\0') || (address < 0) || (address > 65535)) {
+    int address;
+    if (!parse_address(args["address"], address)) {
         resp->error("Invalid address");
         resp->json_response(HTTP_BAD_REQUEST);
         return;
@@ -287,13 +304,8 @@ API_DOC(POST, machine, writemem,
 )
 API_CALL(POST, machine, writemem, &attachment_writer, ARRAY( { {"address", P_REQUIRED} }))
 {
-    const char *addr_str = args["address"];
-    char *addr_end;
-    int address = strtol(addr_str, &addr_end, 16);
-
-    // Reject an unparseable or trailing-garbage address: strtol() yields 0 for such
-    // input, which would otherwise pass the range check and be treated as $0000.
-    if ((addr_end == addr_str) || (*addr_end != '\0') || (address < 0) || (address > 65535)) {
+    int address;
+    if (!parse_address(args["address"], address)) {
         resp->error("Invalid address");
         resp->json_response(HTTP_BAD_REQUEST);
         return;
@@ -357,13 +369,8 @@ API_DOC(GET, machine, readmem,
 )
 API_CALL(GET, machine, readmem, NULL, ARRAY( { {"address", P_REQUIRED}, {"length", P_OPTIONAL} }))
 {
-    const char *addr_str = args["address"];
-    char *addr_end;
-    int address = strtol(addr_str, &addr_end, 16);
-
-    // Reject an unparseable or trailing-garbage address: strtol() yields 0 for such
-    // input, which would otherwise pass the range check and be treated as $0000.
-    if ((addr_end == addr_str) || (*addr_end != '\0') || (address < 0) || (address > 65535)) {
+    int address;
+    if (!parse_address(args["address"], address)) {
         resp->error("Invalid address");
         resp->json_response(HTTP_BAD_REQUEST);
         return;
