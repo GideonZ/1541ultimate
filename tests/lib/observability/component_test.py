@@ -13,6 +13,7 @@ them in the order TIERS names.
 from device_double import DeviceDouble
 from report import Failure
 from api import UltimateApi
+from av_stream import AvStreamCapture
 from selftest import expect
 import health
 import json
@@ -609,6 +610,32 @@ def a_stream_this_did_not_start_is_not_stopped() -> str:
         arming.stop_all()
         expect("only what it started", double.streams_stopped, ["video"])
     return "started once, stopped once"
+
+
+@case(2, "OBS-8.3", "OBS-8.4")
+def av_capture_leaves_a_recorder_owned_stream_running() -> str:
+    """A capture records an already-arriving stream without taking it over."""
+
+    class Arming:
+        def __init__(self) -> None:
+            self.calls = []
+            self.started = set()
+            self.failures = {}
+
+        def start(self, stream, already_arriving=False):
+            self.calls.append((stream, already_arriving))
+            return False
+
+    capture = object.__new__(AvStreamCapture)
+    capture.arming = Arming()
+    capture._arriving_streams = lambda: {"video", "audio"}
+    capture.started = False
+    capture.start()
+    expect("both streams observed", capture.arming.calls,
+           [("video", True), ("audio", True)])
+    expect("capture is ready", capture.started, True)
+    expect("the recorder stream was not taken", capture.arming.started, set())
+    return "video and audio left to the recorder"
 
 
 @case(2, "OBS-8.4", "OBS-8.5", "OBS-8.26", "OBS-14.3")

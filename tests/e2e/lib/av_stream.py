@@ -77,6 +77,23 @@ class AvStreamCapture:
         self.foreign_packets = 0
         self.started = False
 
+    def _arriving_streams(self) -> set[str]:
+        """Which streams this device was already sending before this capture.
+
+        The recorder has its own multicast sockets, so receiving the same
+        packets is harmless. Starting an already-running stream is not: the
+        later close would stop the recorder's feed. Drain this capture's fresh
+        sockets briefly before arming, and leave any stream found there alone.
+        """
+        sockets = {self.video_socket: "video", self.audio_socket: "audio"}
+        arriving = set()
+        for sock, _data, mine in streams.receive(list(sockets), self.source_addresses, 0.25):
+            if mine:
+                arriving.add(sockets[sock])
+            else:
+                self.foreign_packets += 1
+        return arriving
+
     def start(self) -> None:
         """Arm both streams, or leave neither armed.
 
@@ -84,8 +101,13 @@ class AvStreamCapture:
         answer. A capture that carried on with one stream armed would fail
         later as an empty capture, which says nothing about what went wrong.
         """
-        self.arming.start("video")
-        if not self.arming.start("audio") and "audio" not in self.arming.started:
+        arriving = self._arriving_streams()
+        video_started = self.arming.start("video", already_arriving="video" in arriving)
+        if not video_started and "video" not in arriving:
+            raise Failure("the video stream could not be started: "
+                          + self.arming.failures.get("video", "no reason given"))
+        audio_started = self.arming.start("audio", already_arriving="audio" in arriving)
+        if not audio_started and "audio" not in arriving:
             self.arming.stop("video")
             raise Failure("the audio stream could not be started: "
                           + self.arming.failures.get("audio", "no reason given"))
