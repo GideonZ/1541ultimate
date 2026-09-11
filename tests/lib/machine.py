@@ -236,6 +236,12 @@ KEYBOARD_COMBINATION_OPENS_MENU = _fix(
     "does, rather than being ignored",
     (C64U,))
 
+DEBUGREG_REJECTS_INVALID_VALUE = _fix(
+    "debugreg-rejects-invalid-value",
+    "machine:debugreg answers HTTP 400 to a value that is not two hexadecimal "
+    "digits, rather than writing a truncated or zero byte to the register",
+    (C64U,))
+
 MEMORY_API_REJECTS_INVALID_ADDRESS = _fix(
     "memory-api-rejects-invalid-address",
     "readmem and writemem answer HTTP 400 to an address that is not valid "
