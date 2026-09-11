@@ -58,8 +58,10 @@ AUDIBLE_RMS = 0.01
 # One measurement window, and the slice a menu-button wait measures in.
 WINDOW_SECONDS = 0.4
 SLICE_SECONDS = 0.1
-# Launching resets the machine and loads, so the tone is seconds away.
-TONE_TIMEOUT_SECONDS = 10.0
+# Launching resets the machine and loads, so the tone is seconds away. The same
+# budget stream_test.py's wait_until_scanning uses for a PRG to start, which
+# covers a bench under contention.
+TONE_TIMEOUT_SECONDS = 6.0
 # What counts as muted, against the tone's own peak, floored for a quiet
 # baseline. Conservative rather than measured; every run prints its peaks.
 MUTE_RATIO = 0.10

@@ -478,12 +478,17 @@ SUITES: Sequence[Suite] = (
     # PRG covers the SID player and a CRT as well. The quiet part is the FPGA
     # mixer mute, which replaced a SID volume write that clicked, so the two
     # entry checks skip where there is no mixer. The observable is the RMS of
-    # the device's audio stream, so the suite needs the device to be the only
-    # one streaming to that group.
+    # the device's audio stream; packets from another target on the same group
+    # are filtered out by source address, so a concurrent run is not a problem.
     #
-    # quick, so it runs by default: it is the only guard on any of this, and at
-    # about twenty seconds it is affordable there. It reads the streams without
-    # taking them, so it can run under --record beside the recorder.
+    # quick, so it runs by default. Its device operations are the ones the
+    # shallower profiles already use - the menu button and a reset in
+    # menu-screen, a config write in the cfg suites, the video stream in input -
+    # and its estimated cost is 10s to 15s, well under the minute that keeps
+    # av-stream out. That estimate is not measured yet; if the hardware runs
+    # come back much higher, this belongs at standard with the other freezer
+    # suite. It reads the streams without taking them, so it can run under
+    # --record beside the recorder.
     Suite("e2e", "freezer-audio", "tests/e2e/io/c64/freezer_audio_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@", profile=profiles.QUICK),
     # Reproduces #733: with the FPGA decoder fix in the core, "mirroring off" is
