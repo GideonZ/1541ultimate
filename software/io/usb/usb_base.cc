@@ -567,6 +567,7 @@ int UsbBase :: control_exchange(struct t_pipe *pipe, void *out, int outlen, void
 
     if (outlen != 8) {
         printf("%s Unsupported setup length.\n", pipe->name);
+        xSemaphoreGive(mutex);
         return -10;
     }
 

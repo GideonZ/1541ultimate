@@ -102,6 +102,10 @@ UsbAx88772Driver :: UsbAx88772Driver(UsbInterface *intf, uint16_t prodID) : UsbD
     this->prodID = prodID;
 
     dataBuffersBlock = new uint8_t[1536 * NUM_AX_BUFFERS];
+    // Reached through BIT31 like the receive pool, so that it lands in
+    // uncached space on any target that turns the data cache on.
+    txBufferBlock = new uint8_t[AX_HEADER_LEN + AX_MAX_PACKET_LEN];
+    txBuffer = &txBufferBlock[BIT31];
 
     for (int i=0; i < NUM_AX_BUFFERS; i++) {
         freeBuffers.push(&dataBuffersBlock[BIT31 + 1536 * i]); // set bit 31, so that it is non-cacheable
@@ -113,6 +117,7 @@ UsbAx88772Driver :: ~UsbAx88772Driver()
 	if(netstack)
 		releaseNetworkStack(netstack);
 	delete[] dataBuffersBlock;
+	delete[] txBufferBlock;
 }
 
 UsbDriver * UsbAx88772Driver :: test_driver(UsbInterface *intf)
@@ -604,13 +609,27 @@ err_t UsbAx88772Driver :: output_packet(uint8_t *buffer, int pkt_len)
 		return ERR_CONN;
 	//dump_hex(buffer, 32);
 
-	uint8_t *size = buffer - 4;
-    size[0] = uint8_t(pkt_len & 0xFF);
-    size[1] = uint8_t(pkt_len >> 8);
-    size[2] = size[0] ^ 0xFF;
-    size[3] = size[1] ^ 0xFF;
+	if ((pkt_len < 0) || (pkt_len > AX_MAX_PACKET_LEN)) {
+		return ERR_ARG;
+	}
 
-	host->bulk_out(&bulk_out_pipe, size, pkt_len + 4);
+	// The adapter wants a four byte length header immediately in front of the
+	// frame. Writing it at buffer - 4 only works for a buffer that came back
+	// from this driver's own receive pool, which keeps four bytes of headroom
+	// because the receive path hands the stack usb_buffer + 4. Neither buffer
+	// the stack supplies on transmit has any: the chained-pbuf path passes a
+	// static array, so the write lands in whatever precedes it in .bss, and the
+	// single-pbuf path passes pbuf->payload, where ETH_PAD_SIZE is 0 and
+	// PBUF_LINK_ENCAPSULATION_HLEN is left at its default, so it lands in the
+	// pbuf's own metadata or the neighbouring pool entry. Assemble header and
+	// frame in a buffer this driver owns instead.
+	txBuffer[0] = uint8_t(pkt_len & 0xFF);
+	txBuffer[1] = uint8_t(pkt_len >> 8);
+	txBuffer[2] = txBuffer[0] ^ 0xFF;
+	txBuffer[3] = txBuffer[1] ^ 0xFF;
+	memcpy(txBuffer + AX_HEADER_LEN, buffer, pkt_len);
+
+	host->bulk_out(&bulk_out_pipe, txBuffer, pkt_len + AX_HEADER_LEN);
 
 	return ERR_OK;
 }
