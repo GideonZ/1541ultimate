@@ -2,26 +2,34 @@
 """E2E: the freezer silences the machine, and every way out gives the sound back.
 
 Taking the machine has to take its sound with it, and handing it back has to
-hand the sound back. There are two ways back: closing the menu, and starting a
-cartridge from it. The second was missed, so a cartridge started from the
-freezer menu ran with the mixer still closed until GideonZ/1541ultimate
-35023e32 called `freezer_unmute_sids` from `C64::start_cartridge`. This is the
-regression guard for both.
+hand the sound back. There are two ways back and they are different code:
+closing the menu runs `C64::unfreeze`, while launching anything from the menu
+runs `C64::start_cartridge`. Only the first restored the audio, so anything
+launched from the freezer menu ran silently until GideonZ/1541ultimate 35023e32
+called `freezer_unmute_sids` from `start_cartridge` as well. GideonZ/1541ultimate#887
+is a user hitting that: the SID player shows a tune playing and makes no sound,
+every time but the first. This is the regression guard for both ways out.
 
-The firmware has two mute mechanisms, and which one runs decides what each
+Launching a PRG covers every launch. `C64_Subsys::dma_load` ends in
+`start_cartridge(&boot_cart)`, `FileTypeSID::play_file` reaches the same
+function through `C64_START_CART` with its own cartridge definition, and
+`runners:run_crt` and the menu's own Reboot do too. The unmute is unconditional
+inside that function, so one launch exercises the line all of them depend on.
+`dma_load` does not call `unfreeze` on the way, so nothing else could restore
+the audio for it.
+
+The firmware has two mute mechanisms, and which one runs decides what the last
 check proves:
 
 - On the Ultimate 64 family `freezer_mute_sids` closes the FPGA audio mixer.
   That sits after the SID, so while the menu is open nothing the 6502 does can
   be heard, and only the firmware can open it again.
 - Everywhere else it writes 0 to the SID master volume registers, $D418 among
-  them. A program running on the C64 can write those back.
+  them. A program running on the C64 can write those back, and this suite's
+  stimulus does, so on those machines the last check shows that the machine
+  came back audible rather than that the firmware restored it.
 
-Entering the menu and closing it normally are therefore checked on every
-target: both mechanisms mute, and `C64::unfreeze` restores both. The cartridge
-check is a guard on the `start_cartridge` fix where the mixer mute is in use,
-and a check that the machine came back audible at all elsewhere, because the
-cartridge image sets its own SID volume when it starts.
+The first three checks hold for both mechanisms and run on every target.
 
 The observable is the device's own audio stream, used here only as the
 instrument that can hear the machine; what the stream itself has to do is
@@ -33,7 +41,6 @@ on a machine in either system mode.
 from __future__ import annotations
 
 import argparse
-import struct
 import sys
 import time
 from pathlib import Path
@@ -55,8 +62,6 @@ SUITE = "freezer_audio_test"
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 TONE = SCRIPT_DIR / "freeze_tone.asm"
-# The same source assembled as an 8 KiB Ultimax ROM image; see freeze_tone.asm.
-TONE_CARTRIDGE_DEFINES = {"CARTRIDGE": 1}
 
 UI_STORE = "User Interface Settings"
 UI_ITEM = "Interface Type"
@@ -83,13 +88,6 @@ TONE_TIMEOUT_SECONDS = 10.0
 # tightening should be based on.
 MUTE_RATIO = 0.10
 MUTE_FLOOR = 0.003
-
-# The CRT container tone_cartridge() writes, and the image it wraps. An 8 KiB
-# ROM at $E000, which is two bytes more as a .prg because of the load address.
-CRT_HEADER_BYTES = 0x40
-CRT_CHIP_HEADER_BYTES = 0x10
-IMAGE_BYTES = 0x2000
-IMAGE_PRG_BYTES = IMAGE_BYTES + 2
 
 
 def audio_peak(capture: AvStreamCapture, seconds: float) -> float:
@@ -147,36 +145,6 @@ def freeze_and_confirm_silence(device: UltimateApi, capture: AvStreamCapture,
     return peak
 
 
-def tone_cartridge() -> bytes:
-    """A minimal Ultimax CRT that starts the same continuous tone after reset.
-
-    Built here rather than committed, so the cartridge and the PRG cannot drift
-    apart: both are freeze_tone.asm. The layout is the CRT container's, all of
-    it big-endian: a $40-byte file header, then one CHIP packet holding the
-    $2000-byte image that loads at $E000.
-    """
-    program = assemble(TONE, TONE_CARTRIDGE_DEFINES)
-    if program[:2] != b"\x00\xe0" or len(program) != IMAGE_PRG_BYTES:
-        raise Failure(f"the freeze tone cartridge build is {len(program)} bytes "
-                      f"at ${int.from_bytes(program[:2], 'little'):04X}, not an "
-                      f"8 KiB image at $E000")
-    header = bytearray(CRT_HEADER_BYTES)
-    header[:16] = b"C64 CARTRIDGE   "
-    struct.pack_into(">I", header, 0x10, CRT_HEADER_BYTES)
-    struct.pack_into(">H", header, 0x14, 0x0100)       # container version 1.0
-    # Type 0, "normal cartridge", is left at $16. EXROM inactive and GAME
-    # active is what puts the machine in Ultimax mode; in this header a 1 is
-    # the inactive line.
-    header[0x18:0x1A] = b"\x01\x00"
-    header[0x20:0x40] = b"FREEZE TONE".ljust(0x20, b"\0")
-    chip = bytearray(CRT_CHIP_HEADER_BYTES)
-    chip[:4] = b"CHIP"
-    struct.pack_into(">I", chip, 4, CRT_CHIP_HEADER_BYTES + IMAGE_BYTES)
-    struct.pack_into(">H", chip, 12, 0xE000)           # load address
-    struct.pack_into(">H", chip, 14, IMAGE_BYTES)
-    return bytes(header + chip + program[2:])
-
-
 def interface_type(device: UltimateApi) -> str:
     """The machine's Interface Type, or "" where it does not serve the item.
 
@@ -197,9 +165,12 @@ def run_checks(device: UltimateApi) -> None:
     # The handle rather than the host name: for a cartridge target the audio
     # belongs to the computer it is plugged into, and only the handle knows
     # which machine that is.
+    # POST rather than a path: the program travels with the request, so the
+    # suite needs nothing on the device's storage.
+    program = assemble(TONE)
     with AvStreamCapture(device.target) as capture:
         with check("a continuous tone reaches the audio stream"):
-            device.runners.upload("run_prg", assemble(TONE))
+            device.runners.upload("run_prg", program)
             baseline = loudest_within(capture, TONE_FLOOR, TONE_TIMEOUT_SECONDS)
             if baseline <= TONE_FLOOR:
                 raise Failure(f"the tone never got past RMS {TONE_FLOOR:.3f}; "
@@ -221,22 +192,20 @@ def run_checks(device: UltimateApi) -> None:
                               f"audible tone has to clear")
             detail(f"resumed RMS {resumed:.3f}")
 
-        with check("starting a cartridge from the freezer menu gives the "
+        with check("launching a program from the freezer menu gives the "
                    "sound back"):
             # Freezing again is this check's precondition rather than its
-            # subject: without it a cartridge start would be measured against a
+            # subject: without it the launch would be measured against a
             # machine that was already audible.
             freeze_and_confirm_silence(device, capture, ceiling,
                                        "the second freeze")
-            # POST rather than a path: the image travels with the request, so
-            # the check needs nothing on the device's storage.
-            device.runners.upload("run_crt", tone_cartridge())
-            started = loudest_within(capture, ceiling, TONE_TIMEOUT_SECONDS)
-            if started <= ceiling:
-                raise Failure(f"the cartridge started with the machine still "
-                              f"silenced, at RMS {started:.3f} against the "
+            device.runners.upload("run_prg", program)
+            launched = loudest_within(capture, ceiling, TONE_TIMEOUT_SECONDS)
+            if launched <= ceiling:
+                raise Failure(f"the program started with the machine still "
+                              f"silenced, at RMS {launched:.3f} against the "
                               f"{ceiling:.3f} an audible tone has to clear")
-            detail(f"cartridge RMS {started:.3f}")
+            detail(f"relaunched RMS {launched:.3f}")
 
 
 def run(args) -> str:
@@ -248,12 +217,13 @@ def run(args) -> str:
     try:
         run_checks(device)
     finally:
-        # A reboot is what removes the uploaded cartridge and returns the
-        # machine to its configured one; the setting goes back after it, for
-        # the suite that runs next. teardown_step rather than a bare call, so a
-        # teardown that cannot reach the device reports itself instead of
-        # replacing the verdict of the check that failed.
-        teardown_step("restore the configured cartridge", device.machine.reboot)
+        # The tone plays until something stops it, and a reset does: the C64's
+        # reset line reaches the SID. Without this the next suite meets a
+        # machine that is still making a noise. teardown_step rather than a
+        # bare call, so a teardown that cannot reach the device reports itself
+        # instead of replacing the verdict of the check that failed.
+        teardown_step("stop the tone",
+                      lambda: device.machine.reset(force=True))
         teardown_step(
             f"restore {UI_ITEM} to {original_interface!r}",
             lambda: device.configs.set(UI_STORE, UI_ITEM, original_interface))

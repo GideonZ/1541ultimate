@@ -1,24 +1,10 @@
-; Continuous SID tone for the freezer mixer checks in stream_test.py.
+; Continuous SID tone, the stimulus for freezer_audio_test.py.
 ;
-; One source, two builds, chosen by -D CARTRIDGE=1:
-;
-;   CARTRIDGE = 0   a BASIC-stub PRG at $0801, started with runners:run_prg.
-;   CARTRIDGE = 1   an 8 KiB Ultimax ROM image at $E000 whose reset vector runs
-;                   the same code, started with runners:run_crt. The reset
-;                   vectors are in cartridge ROM, so starting the cartridge
-;                   starts the tone with no PRG and no keyboard involved.
-;
-; The tone itself is identical in both, which is what lets the suite compare
-; the peak it measures after a cartridge start against the baseline it measured
-; from the PRG.
+; Plays one full-volume sawtooth for as long as the machine runs it, so the
+; suite can measure how loud the machine is at any moment without having to
+; time anything. Nothing here reads the keyboard or the raster, so it keeps
+; playing while the freezer owns the machine.
 
-        .weak
-CARTRIDGE = 0
-        .endweak
-
-        .if CARTRIDGE
-*=$e000
-        .else
 *=$0801
         .word basic_end
         .word 10
@@ -27,7 +13,6 @@ CARTRIDGE = 0
         .byte 0
 basic_end:
         .word 0
-        .endif
 
 start:
         sei
@@ -52,12 +37,3 @@ clear_sid:
         cli
 loop:
         jmp loop
-
-        .if CARTRIDGE
-; RESET and IRQ/BRK both enter at the top. In Ultimax mode there is no stack
-; page, so nothing here may use one, and an interrupt that did arrive would
-; restart the tone rather than run off into unmapped memory.
-*=$fffc
-        .word start
-        .word start
-        .endif

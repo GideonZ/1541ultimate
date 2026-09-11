@@ -473,11 +473,12 @@ SUITES: Sequence[Suite] = (
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@"),
     # Taking the machine has to take its sound with it, and every way of
     # handing it back has to hand the sound back: closing the menu, and
-    # starting a cartridge from it. The second was missed until 35023e32. The
-    # observable is the RMS of the device's audio stream, so the suite needs
-    # the device to be the only one streaming to that group. It changes the
-    # Interface Type and reboots the machine, which is why it is not in the
-    # shallow profiles.
+    # launching something from it. The second was missed until 35023e32, which
+    # is #887. Every launch route ends in C64::start_cartridge, so running a
+    # PRG covers the SID player and a CRT as well. The observable is the RMS of
+    # the device's audio stream, so the suite needs the device to be the only
+    # one streaming to that group. It changes the Interface Type and resets the
+    # machine, which is why it is not in the shallow profiles.
     Suite("e2e", "freezer-audio", "tests/e2e/io/c64/freezer_audio_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
     # Reproduces #733: with the FPGA decoder fix in the core, "mirroring off" is
