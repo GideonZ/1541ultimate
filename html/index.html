@@ -677,6 +677,15 @@ $(document).ready(async function () {
             // REM comments, and DATA statements, while their contents are processed
             // as ordinary characters.
             let shouldTokenize = !(inQuotes || inRemark || inData);
+
+            // In DATA, shifted letters outside quotes are preserved by converting them
+            // to lowercase, matching CBMprgStudio. Inside quotes, the shifted characters
+            // are preserved unchanged.
+            //
+            // Note: The native C64 BASIC interpreter, when a line is confirmed with RETURN,
+            // discards shifted letters that are outside quotes. Whether behavior such as
+            // silently discarding characters should be reproduced by a tokenizer tool
+            // is debatable.
             let [byte, newString] = scan(remainingString, shouldTokenize, !inQuotes);
 
             // C64 CRITICAL FIX: If a 0x00 byte is generated, terminate the line immediately.
