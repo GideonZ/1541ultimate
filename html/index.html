@@ -602,8 +602,11 @@ $(document).ready(async function () {
                 let [token, value] = SPECIAL[i];
                 if (s.startsWith(token)) {
                     // A null byte (0x00) acts as an absolute end-of-line (EOL) terminator
-                    // in Commodore BASIC v2.0. If we encounter {null} (value 0), we return an
-                    // empty string to signal the main tokenizer loop to stop processing this line.
+                    // in Commodore BASIC v2.0. If the tokenizer encounters {null} (value 0),
+                    // it stops processing the source line. Allowing data after the EOL could
+                    // create malformed or additional BASIC line records, bypassing the normal
+                    // line-length checks and automatically generated line pointers. Whether a
+                    // tokenizer should allow such behavior is debatable.
                     if (value === 0) {
                         return [0, ""];
                     }
@@ -698,9 +701,10 @@ $(document).ready(async function () {
             // even though no keyword tokenization took place after REM.
             let [byte, newString] = scan(remainingString, shouldTokenize, !inQuotes);
 
-            // C64 CRITICAL FIX: If a 0x00 byte is generated, terminate the line immediately.
-            // This ensures compatibility with the C64 Kernal/BASIC interpreter, which
-            // stops parsing the line at the first null byte, regardless of the line pointer.
+            // If a 0x00 byte is generated, stop processing the source line.
+            // In the stored Commodore BASIC v2.0 program format, 0x00 terminates
+            // the current BASIC line. Continuing past it could create malformed
+            // or additional BASIC line records.
             if (byte === 0) {
                 break;
             }
