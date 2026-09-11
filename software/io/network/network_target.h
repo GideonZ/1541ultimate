@@ -21,6 +21,10 @@
 #define NET_CMD_CLOSE_SOCKET        0x09
 #define NET_CMD_READ_SOCKET         0x10
 #define NET_CMD_WRITE_SOCKET        0x11
+// 0x12 to 0x15 are taken by the TCP listener commands of the third party
+// ultimateii-dos-lib, whose samples send them, so the chunked write takes the
+// first code above those rather than a free looking one below them.
+#define NET_CMD_WRITE_SOCKET_CHUNK  0x16
 
 #define NET_CMD_BUFSIZE 2048
 
@@ -37,6 +41,11 @@
 // fragments that are dropped before any socket sees them.
 #define NET_MAX_SOCKET_READ 1472
 
+// The largest payload a chunked write accepts, which is the largest UDP payload
+// that can leave: IP_FRAG is 0 in software/network/config/lwipopts.h. Stream
+// sockets are held to it too, having no framing for chunking to preserve.
+#define NET_MAX_SOCKET_WRITE 1472
+
 // The largest reply block the transport can deliver. The FPGA stops the
 // response pointer on the last byte of the response buffer while it still
 // reports data available, so a block of exactly CMD_MAX_REPLY_LEN never ends
@@ -49,6 +58,10 @@
 
 #if NET_MAX_SOCKET_READ > NET_CMD_BUFSIZE
 #error "the socket read buffer cannot hold the largest accepted read"
+#endif
+
+#if NET_MAX_SOCKET_WRITE > NET_CMD_BUFSIZE
+#error "the socket write buffer cannot hold the largest accepted write"
 #endif
 
 class NetworkTarget : public CommandTarget {
@@ -69,6 +82,13 @@ class NetworkTarget : public CommandTarget {
     int read_offset;
     Message *read_status;
 
+    // A chunked write accumulates in `buffer` until the announced total has
+    // arrived, so a payload too large for one command still leaves as one
+    // datagram. write_offset bytes of write_total are in, for write_handle.
+    uint8_t write_handle;
+    int write_total;
+    int write_offset;
+
     // The sockets this target opened, oldest first. It reads, writes and
     // closes only these, so a stale handle cannot reach a socket the firmware
     // opened for itself. Any command handing out a socket must track it here.
@@ -83,9 +103,12 @@ class NetworkTarget : public CommandTarget {
     void open_socket(Message *command, Message **reply, Message **status, int);
     void read_socket(Message *command, Message **reply, Message **status);
     void write_socket(Message *command, Message **reply, Message **status);
+    void write_socket_chunk(Message *command, Message **reply, Message **status);
+    void send_to_socket(int socketnr, uint8_t *src, int length, Message **reply, Message **status);
     void close_socket(Message *command, Message **reply, Message **status);
     void start_read_reply(int payload_length, Message *result, Message **reply, Message **status);
     void discard_read_reply(void);
+    void discard_write_chunk(void);
 public:
 	NetworkTarget(int id);
 	virtual ~NetworkTarget();
