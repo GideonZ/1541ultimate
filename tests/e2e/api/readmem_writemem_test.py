@@ -23,12 +23,13 @@ import rest as rest_lib  # noqa: E402  (needs tests/lib on sys.path first)
 import targets  # noqa: E402  (needs tests/lib on sys.path first)
 from api import UltimateApi, identify_machine  # noqa: E402  (needs tests/lib on sys.path first)
 from report import (
-    FAIL, OK, SKIP, Failure, check, detail, format_exception, section, suite_fail,
-    suite_ok, warn)
+    FAIL, OK, SKIP, Failure, check, check_skip, check_start, detail,
+    format_exception, section, suite_fail, suite_ok, warn)
 
 MENU_SCREEN_PATH = "/v1/machine:menu_screen"
 MENU_BUTTON_PATH = "/v1/machine:menu_button"
 READMEM_PATH = "/v1/machine:readmem"
+DEBUGREG_PATH = "/v1/machine:debugreg"
 WRITEMEM_PATH = "/v1/machine:writemem"
 MEASURE_PATH = "/v1/machine:measure"
 RESET_PATH = "/v1/machine:reset"
@@ -711,6 +712,54 @@ def run_bad_address(session: RestSession) -> bool:
     return True
 
 
+# Values outside the documented grammar for machine:debugreg, which is two hex
+# digits. strtol() yields 0 for the first two, takes the sign on "-0", stops at
+# the first unusable character on "1G", and truncates "1FF" to FF, so an
+# unguarded parse writes a byte the caller never asked for.
+BAD_DEBUGREG_VALUES = ["ZZ", "0xZZ", "-0", "1G", "1FF"]
+
+
+def run_bad_debugreg(session: RestSession) -> bool:
+    """Reject a debug register value that is not two hex digits, and write nothing.
+
+    The register is readable, so "wrote nothing" is asserted directly: the GET
+    before and after each refused write has to answer the same byte.
+    """
+    label = "machine:debugreg rejects a malformed value"
+    if identify_machine(session.host).skip_without_fix(
+            machine_lib.DEBUGREG_REJECTS_INVALID_VALUE, label):
+        return True
+
+    api = session.api
+    before = api.machine.debugreg()
+    if before is None:
+        # Both debugreg routes sit inside `#if U64`; elsewhere they are not in
+        # the route table at all.
+        check_start(label)
+        check_skip("this machine does not serve machine:debugreg")
+        return True
+
+    section("bad-debugreg: machine:debugreg rejects a value that is not two hex digits")
+
+    for bad in BAD_DEBUGREG_VALUES:
+        with check(f"debugreg rejects value={bad!r}"):
+            status, _, body = session.request(
+                "PUT", DEBUGREG_PATH, params={"value": bad})
+            if status != 400:
+                raise Failure(f"debugreg(value={bad!r}) returned HTTP {status}, "
+                              f"expected 400: {body[:200]!r}")
+            after = api.machine.debugreg()
+            if after != before:
+                raise Failure(f"debugreg(value={bad!r}) changed the register "
+                              f"from {before!r} to {after!r}")
+
+    with check("debugreg still takes a valid value"):
+        if api.machine.set_debugreg("1F") is None:
+            raise Failure("machine:debugreg stopped answering")
+
+    return True
+
+
 FREEZE_ONLY_TESTS = ["selfcheck-freeze"]
 OVERLAY_DEPENDENT_TESTS = ["selfcheck-overlay", "screen-round-trip",
                            "overlay-to-freeze", "freeze-to-overlay"]
@@ -733,8 +782,9 @@ NOISE_DEPENDENT_TESTS = ["selfcheck-overlay", "screen-round-trip",
 
 
 def expand_tests(selected: list[str] | None) -> list[str]:
-    all_tests = ["bounds", "bad-address", "selfcheck-freeze", "selfcheck-overlay",
-                 "screen-round-trip", "overlay-to-freeze", "freeze-to-overlay"]
+    all_tests = ["bounds", "bad-address", "bad-debugreg", "selfcheck-freeze",
+                 "selfcheck-overlay", "screen-round-trip", "overlay-to-freeze",
+                 "freeze-to-overlay"]
     if not selected:
         if not profiles.includes(profiles.QUICK):
             return list(SMOKE_TESTS)
@@ -758,8 +808,9 @@ def main() -> int:
     parser.add_argument(
         "--test",
         action="append",
-        choices=("all", "bounds", "bad-address", "selfcheck-freeze", "selfcheck-overlay",
-                 "screen-round-trip", "overlay-to-freeze", "freeze-to-overlay"),
+        choices=("all", "bounds", "bad-address", "bad-debugreg", "selfcheck-freeze",
+                 "selfcheck-overlay", "screen-round-trip", "overlay-to-freeze",
+                 "freeze-to-overlay"),
     )
     parser.add_argument(
         "--keep-config",
@@ -831,6 +882,11 @@ def main() -> int:
         # stage writes memory in earnest.
         if "bad-address" in tests:
             results["bad-address"] = run_bad_address(session)
+
+        # Same defect in the one other hexadecimal parameter this file's
+        # endpoints take; see GideonZ/1541ultimate#885.
+        if "bad-debugreg" in tests:
+            results["bad-debugreg"] = run_bad_debugreg(session)
 
         noise_addrs: set[int] = set()
         # Eight full 64KB reads, so it is only worth paying where a stage

@@ -26,25 +26,25 @@ static uint8_t chartohex(const char a)
     return 0xff;
 }
 
-// The grammar the three memory endpoints document for their address: hex
-// digits, 0000 to FFFF, and nothing else. strtol is not that grammar. It skips
+// The grammar this file's hexadecimal parameters document: hex digits, no
+// larger than `limit`, and nothing else. strtol is not that grammar. It skips
 // leading whitespace, accepts an optional sign, and stops at the first
 // character it cannot use, so " 1234", "+1234", "-0" and "12ZZ" all parsed and
-// were acted on.
-static bool parse_address(const char *text, int &address)
+// were acted on, and a value over the limit was truncated rather than refused.
+static bool parse_hex(const char *text, int limit, int &value)
 {
     if ((text == NULL) || (*text == '\0')) {
         return false;
     }
-    int value = 0;
+    int parsed = 0;
     for (const char *p = text; *p; p++) {
         uint8_t digit = chartohex(*p);
-        if ((digit == 0xff) || (value > 0x0FFF)) {
+        if ((digit == 0xff) || (parsed > (limit >> 4))) {
             return false;
         }
-        value = (value << 4) | digit;
+        parsed = (parsed << 4) | digit;
     }
-    address = value;
+    value = parsed;
     return true;
 }
 
@@ -234,7 +234,7 @@ API_DOC(PUT, machine, writemem,
 API_CALL(PUT, machine, writemem, NULL, ARRAY( { {"address", P_REQUIRED}, {"data", P_REQUIRED} }))
 {
     int address;
-    if (!parse_address(args["address"], address)) {
+    if (!parse_hex(args["address"], 0xFFFF, address)) {
         resp->error("Invalid address");
         resp->json_response(HTTP_BAD_REQUEST);
         return;
@@ -305,7 +305,7 @@ API_DOC(POST, machine, writemem,
 API_CALL(POST, machine, writemem, &attachment_writer, ARRAY( { {"address", P_REQUIRED} }))
 {
     int address;
-    if (!parse_address(args["address"], address)) {
+    if (!parse_hex(args["address"], 0xFFFF, address)) {
         resp->error("Invalid address");
         resp->json_response(HTTP_BAD_REQUEST);
         return;
@@ -370,7 +370,7 @@ API_DOC(GET, machine, readmem,
 API_CALL(GET, machine, readmem, NULL, ARRAY( { {"address", P_REQUIRED}, {"length", P_OPTIONAL} }))
 {
     int address;
-    if (!parse_address(args["address"], address)) {
+    if (!parse_hex(args["address"], 0xFFFF, address)) {
         resp->error("Invalid address");
         resp->json_response(HTTP_BAD_REQUEST);
         return;
@@ -472,12 +472,18 @@ API_DOC(PUT, machine, debugreg,
                 "reads back afterwards, which is not necessarily what was written: some bits are "
                 "driven by the hardware.")
     PATH("/v1/machine:debugreg", "writeDebugRegister", "")
-    PARAM("value", "string", "Byte to write, in hexadecimal.", "", "1F")
+    PARAM("value", "string", "Byte to write, in hexadecimal, 00 to FF.", "", "1F")
     RESPONSE("200", "application/json", "DebugRegisterResponse", "The register after the write.", "")
+    RESPONSE_ERROR("400", "Invalid value", "")
 )
 API_CALL(PUT, machine, debugreg, NULL, ARRAY( { { "value", P_REQUIRED } }))
 {
-    int value = strtol(args["value"], NULL, 16);
+    int value;
+    if (!parse_hex(args["value"], 0xFF, value)) {
+        resp->error("Invalid value");
+        resp->json_response(HTTP_BAD_REQUEST);
+        return;
+    }
     U64_DEBUG_REGISTER = (uint8_t)value;
 
     char buf[4];
