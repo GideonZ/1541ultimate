@@ -29,6 +29,11 @@ AUDIO_PORT = streams.AUDIO_PORT
 VIDEO_PACKET_BYTES = streams.VIDEO_PACKET_BYTES
 AUDIO_PACKET_BYTES = streams.AUDIO_PACKET_BYTES
 
+# How long a capture listens before arming, to find a stream somebody else is
+# already sending. Many times the 8ms between audio packets, so a momentary
+# stall is not read as a stopped stream.
+ARRIVING_PROBE_SECONDS = 0.25
+
 
 @dataclass(frozen=True)
 class Packet:
@@ -77,15 +82,41 @@ class AvStreamCapture:
         self.foreign_packets = 0
         self.started = False
 
-    def start(self) -> None:
-        """Arm both streams, or leave neither armed.
+    def _arriving_streams(self) -> set[str]:
+        """Which streams this device was already sending before this capture.
 
-        Arming reports a refusal rather than raising, so this checks the
-        answer. A capture that carried on with one stream armed would fail
-        later as an empty capture, which says nothing about what went wrong.
+        Receiving the same packets as the recorder is harmless; arming a stream
+        it started is not, because this capture's close would then stop its
+        feed and leave a gap the device looks responsible for. Only packets
+        from this target count: another machine on the group is foreign.
         """
-        self.arming.start("video")
-        if not self.arming.start("audio") and "audio" not in self.arming.started:
+        sockets = {self.video_socket: "video", self.audio_socket: "audio"}
+        arriving = set()
+        for sock, _data, mine in streams.receive(list(sockets),
+                                                 self.source_addresses,
+                                                 ARRIVING_PROBE_SECONDS):
+            if mine:
+                arriving.add(sockets[sock])
+            else:
+                self.foreign_packets += 1
+        return arriving
+
+    def start(self) -> None:
+        """Have both streams arriving, having armed either both or neither.
+
+        A stream already arriving is observed rather than armed, so this never
+        takes one from whoever started it; see `_arriving_streams`. Arming
+        refuses rather than raises, so both answers are checked: carrying on
+        with one stream would fail later as an empty capture, which says
+        nothing about what went wrong.
+        """
+        arriving = self._arriving_streams()
+        video_started = self.arming.start("video", already_arriving="video" in arriving)
+        if not video_started and "video" not in arriving:
+            raise Failure("the video stream could not be started: "
+                          + self.arming.failures.get("video", "no reason given"))
+        audio_started = self.arming.start("audio", already_arriving="audio" in arriving)
+        if not audio_started and "audio" not in arriving:
             self.arming.stop("video")
             raise Failure("the audio stream could not be started: "
                           + self.arming.failures.get("audio", "no reason given"))
