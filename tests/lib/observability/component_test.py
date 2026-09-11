@@ -612,30 +612,60 @@ def a_stream_this_did_not_start_is_not_stopped() -> str:
     return "started once, stopped once"
 
 
+def _loopback_stream_target(double: DeviceDouble) -> targets.Target:
+    """The double, with its streams on loopback and on ports the kernel picks.
+
+    A capture built from the real handle would join the multicast group the
+    bench devices are streaming into, so it would receive a real machine's
+    packets and a real machine would receive its arming requests.
+    """
+    return dataclasses.replace(double.target(), video_group="127.0.0.1",
+                               audio_group="127.0.0.1", video_port=0,
+                               audio_port=0)
+
+
 @case(2, "OBS-8.3", "OBS-8.4")
 def av_capture_leaves_a_recorder_owned_stream_running() -> str:
-    """A capture records an already-arriving stream without taking it over."""
+    """A capture records an already-arriving stream without taking it over.
 
-    class Arming:
-        def __init__(self) -> None:
-            self.calls = []
-            self.started = set()
-            self.failures = {}
+    The recorder has its own sockets on the same group, so a suite receiving
+    the same packets costs it nothing. Arming a stream that is already running
+    does cost it: the suite's own close would stop the feed the recorder is
+    still reading, and the gap in the recording would be attributed to the
+    device rather than to the suite.
 
-        def start(self, stream, already_arriving=False):
-            self.calls.append((stream, already_arriving))
-            return False
+    Both halves are checked against the device double, which records every
+    streams:start and streams:stop it is sent.
+    """
 
-    capture = object.__new__(AvStreamCapture)
-    capture.arming = Arming()
-    capture._arriving_streams = lambda: {"video", "audio"}
-    capture.started = False
-    capture.start()
-    expect("both streams observed", capture.arming.calls,
-           [("video", True), ("audio", True)])
-    expect("capture is ready", capture.started, True)
-    expect("the recorder stream was not taken", capture.arming.started, set())
-    return "video and audio left to the recorder"
+    with DeviceDouble() as double:
+        capture = AvStreamCapture(_loopback_stream_target(double))
+        video = UdpSender("127.0.0.1", capture.video_socket.getsockname()[1])
+        audio = UdpSender("127.0.0.1", capture.audio_socket.getsockname()[1])
+        try:
+            video.send(video_packets(0, 0, pattern=3)[:2])
+            audio.send(audio_packets(0, 2))
+            capture.start()
+            expect("neither stream was taken", double.streams_started, [])
+            expect("the capture is ready anyway", capture.started, True)
+        finally:
+            video.close()
+            audio.close()
+            capture.close()
+        expect("and neither was stopped", double.streams_stopped, [])
+
+        # The other half: nothing is arriving, so the capture has to arm both
+        # itself and stop both afterwards. Without this, a capture that armed
+        # nothing at all would pass the case above.
+        idle = AvStreamCapture(_loopback_stream_target(double))
+        try:
+            idle.start()
+            expect("an idle device is armed", double.streams_started,
+                   ["video", "audio"])
+        finally:
+            idle.close()
+        expect("and stopped again", double.streams_stopped, ["audio", "video"])
+    return "one stream left to the recorder, one armed and given back"
 
 
 @case(2, "OBS-8.4", "OBS-8.5", "OBS-8.26", "OBS-14.3")

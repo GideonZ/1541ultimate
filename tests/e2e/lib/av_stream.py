@@ -29,6 +29,13 @@ AUDIO_PORT = streams.AUDIO_PORT
 VIDEO_PACKET_BYTES = streams.VIDEO_PACKET_BYTES
 AUDIO_PACKET_BYTES = streams.AUDIO_PACKET_BYTES
 
+# How long a capture listens before arming, to find a stream somebody else is
+# already sending. A running stream delivers an audio packet every 8ms and a
+# video packet far more often, so this is many times what it takes to see one;
+# it is this long rather than shorter so that a momentary stall is not read as
+# a stopped stream.
+ARRIVING_PROBE_SECONDS = 0.25
+
 
 @dataclass(frozen=True)
 class Packet:
@@ -81,13 +88,21 @@ class AvStreamCapture:
         """Which streams this device was already sending before this capture.
 
         The recorder has its own multicast sockets, so receiving the same
-        packets is harmless. Starting an already-running stream is not: the
-        later close would stop the recorder's feed. Drain this capture's fresh
-        sockets briefly before arming, and leave any stream found there alone.
+        packets is harmless. Starting an already-running stream is not: this
+        capture would then own it, and its close would stop the feed the
+        recorder is still reading, which shows up in the recording as a gap the
+        device looks responsible for. So listen on this capture's own fresh
+        sockets first, and leave any stream found there alone.
+
+        Only packets from this target count. Another machine streaming into the
+        same group is counted as foreign and changes nothing, because arming is
+        a request to this device about its own sender.
         """
         sockets = {self.video_socket: "video", self.audio_socket: "audio"}
         arriving = set()
-        for sock, _data, mine in streams.receive(list(sockets), self.source_addresses, 0.25):
+        for sock, _data, mine in streams.receive(list(sockets),
+                                                 self.source_addresses,
+                                                 ARRIVING_PROBE_SECONDS):
             if mine:
                 arriving.add(sockets[sock])
             else:
@@ -95,11 +110,14 @@ class AvStreamCapture:
         return arriving
 
     def start(self) -> None:
-        """Arm both streams, or leave neither armed.
+        """Have both streams arriving, having armed either both or neither.
 
-        Arming reports a refusal rather than raising, so this checks the
-        answer. A capture that carried on with one stream armed would fail
-        later as an empty capture, which says nothing about what went wrong.
+        A stream already arriving is observed rather than armed, so this
+        capture never takes one from whoever started it; see
+        `_arriving_streams`. Arming reports a refusal rather than raising, so
+        both answers are checked here: a capture that carried on with only one
+        stream would reach the assertions and fail there as an empty capture,
+        which says nothing about what went wrong.
         """
         arriving = self._arriving_streams()
         video_started = self.arming.start("video", already_arriving="video" in arriving)

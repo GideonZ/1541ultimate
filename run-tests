@@ -421,8 +421,9 @@ SUITES: Sequence[Suite] = (
     # the multicast streams, so it needs the device to be the only one
     # streaming to that group.
     #
-    # standard rather than smoke: it is the only suite that reads the streams
-    # at all, and at about a minute it is too slow for the shallow profiles.
+    # standard rather than smoke: it is the only suite whose subject is the
+    # streams themselves rather than something measured through them, and at
+    # about a minute it is too slow for the shallow profiles.
     # -H only, because it addresses the stream source rather than the REST
     # surface and takes no password or timeout.
     Suite("e2e", "av-stream", "tests/e2e/av/stream_test.py", "-H @HOST@"),
@@ -470,6 +471,15 @@ SUITES: Sequence[Suite] = (
     Suite("e2e", "deferred-machine-actions",
           "tests/e2e/io/c64/deferred_actions_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@"),
+    # Taking the machine has to take its sound with it, and every way of
+    # handing it back has to hand the sound back: closing the menu, and
+    # starting a cartridge from it. The second was missed until 35023e32. The
+    # observable is the RMS of the device's audio stream, so the suite needs
+    # the device to be the only one streaming to that group. It changes the
+    # Interface Type and reboots the machine, which is why it is not in the
+    # shallow profiles.
+    Suite("e2e", "freezer-audio", "tests/e2e/io/c64/freezer_audio_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
     # Reproduces #733: with the FPGA decoder fix in the core, "mirroring off" is
     # the regression guard. Runs last, because a device whose core predates that
     # fix stalls the whole Nios on this scenario and needs a JTAG recovery.

@@ -4,7 +4,6 @@
 import argparse
 import math
 import os
-import struct
 import sys
 import time
 from pathlib import Path
@@ -24,7 +23,6 @@ from av_stream import (
     AUDIO_PACKET_BYTES,
     VIDEO_PACKET_BYTES,
     AvStreamCapture,
-    audio_rms,
     audio_samples,
     first_bright_frame,
     first_loud_packet,
@@ -32,19 +30,10 @@ from av_stream import (
     video_frames,
 )
 import targets
-from report import (Failure, check, check_skip, detail, suite_fail, suite_ok,
+from report import (Failure, check, detail, suite_fail, suite_ok,
                     suite_skip)
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-FREEZE_TONE = SCRIPT_DIR / "freeze_tone.asm"
-FREEZE_TONE_CARTRIDGE = SCRIPT_DIR / "freeze_tone_cart.asm"
-
-UI_STORE = "User Interface Settings"
-UI_ITEM = "Interface Type"
-FREEZE = "Freeze"
-MENU_TIMEOUT_SECONDS = 5.0
-MIXER_MUTE_RATIO = 0.10
-MIXER_MUTE_FLOOR = 0.003
 
 # av_pop_key.asm stores this the moment its raster IRQ is armed.
 RUNNING_ADDRESS = 0xC000
@@ -255,86 +244,6 @@ def run_key_pop(device: UltimateApi) -> None:
             raise Failure(f"key-triggered A/V marker offset is {offset * 1000:.1f}ms")
 
 
-def audio_peak(capture: AvStreamCapture, seconds: float) -> float:
-    """The loudest packet in a short, fresh audio window."""
-    capture.clear()
-    capture.capture(seconds)
-    if not capture.audio_packets:
-        raise Failure("no audio packets captured")
-    return max(audio_rms(packet) for packet in capture.audio_packets)
-
-
-def require_menu(device: UltimateApi, want_open: bool) -> None:
-    deadline = time.monotonic() + MENU_TIMEOUT_SECONDS
-    while time.monotonic() < deadline:
-        if device.machine.menu_open() == want_open:
-            return
-        time.sleep(0.1)
-    raise Failure(f"the freezer menu did not {'open' if want_open else 'close'}")
-
-
-def toggle_menu(device: UltimateApi, want_open: bool) -> None:
-    device.machine.menu_button()
-    require_menu(device, want_open)
-
-
-def tone_cartridge() -> bytes:
-    """A minimal Ultimax CRT that starts the same continuous tone after reset."""
-    program = assemble(FREEZE_TONE_CARTRIDGE)
-    if program[:2] != b"\x00\xe0" or len(program) != 0x2002:
-        raise Failure("freeze tone cartridge is not an 8 KiB image at $E000")
-    header = bytearray(0x40)
-    header[:16] = b"C64 CARTRIDGE   "
-    struct.pack_into(">I", header, 0x10, len(header))
-    struct.pack_into(">H", header, 0x14, 0x0100)
-    header[0x18:0x1A] = b"\x01\x00"  # The CRT header's Ultimax EXROM/GAME pair.
-    header[0x20:0x30] = b"FREEZE TONE\0".ljust(16, b"\0")
-    chip = bytearray(b"CHIP" + b"\0" * 12)
-    struct.pack_into(">I", chip, 4, 0x2010)
-    struct.pack_into(">H", chip, 12, 0xE000)
-    struct.pack_into(">H", chip, 14, 0x2000)
-    return bytes(header + chip + program[2:])
-
-
-def run_freezer_mixer(device: UltimateApi) -> None:
-    """The freeze menu silences U64 mixers and every exit restores them."""
-    original_interface = device.configs.current(UI_STORE, UI_ITEM)
-    device.machine.reset(force=True)
-    try:
-        device.configs.set(UI_STORE, UI_ITEM, FREEZE)
-        with AvStreamCapture(device.target) as capture:
-            device.runners.upload("run_prg", assemble(FREEZE_TONE))
-            baseline = audio_peak(capture, 0.5)
-            if baseline < 0.01:
-                raise Failure(f"the continuous tone peak is only {baseline:.3f}")
-
-            toggle_menu(device, want_open=True)
-            frozen_peak = audio_peak(capture, 0.4)
-            if targets.is_cartridge(device.target.token):
-                if frozen_peak < baseline * MIXER_MUTE_RATIO:
-                    raise Failure("a cartridge freezer unexpectedly muted the host mixer")
-            elif frozen_peak > max(MIXER_MUTE_FLOOR, baseline * MIXER_MUTE_RATIO):
-                raise Failure(f"the freezer menu left the mixer audible ({frozen_peak:.3f}, "
-                              f"baseline {baseline:.3f})")
-
-            toggle_menu(device, want_open=False)
-            resumed_peak = audio_peak(capture, 0.4)
-            if resumed_peak < baseline * MIXER_MUTE_RATIO:
-                raise Failure("the mixer remained muted after the menu closed")
-
-            toggle_menu(device, want_open=True)
-            audio_peak(capture, 0.2)
-            device.runners.upload("run_crt", tone_cartridge())
-            cartridge_peak = audio_peak(capture, 0.8)
-            if cartridge_peak < baseline * MIXER_MUTE_RATIO:
-                raise Failure("the mixer remained muted after the CRT started")
-    finally:
-        # The uploaded CRT is transient; reboot returns to the configured cart
-        # before restoring the UI setting for the suite that follows.
-        device.machine.reboot()
-        device.configs.set(UI_STORE, UI_ITEM, original_interface)
-
-
 def system_mode(device: UltimateApi) -> str | None:
     """The machine's System Mode, or None where it does not serve the item."""
     try:
@@ -353,9 +262,8 @@ def main() -> int:
         help="C64U stream source")
     parser.add_argument("-p", "--password", default=cli.password_default(),
                         help=f"REST password (default: ${cli.DEFAULT_PASSWORD_ENV})")
-    parser.add_argument("--case", choices=("all", "ladder", "pop", "freezer"), default="all")
+    parser.add_argument("--case", choices=("all", "ladder", "pop"), default="all")
     args = parser.parse_args()
-    stimulus_skip = ""
     if targets.is_cartridge(args.host):
         # Measured on u2@c64u, 2026-09-04: the tone ladder is detected one note
         # out (146.8Hz expected, 130.8Hz seen), on every attempt. The ladder is
@@ -363,9 +271,12 @@ def main() -> int:
         # actions skipped on this target in prg_context_menu_test rather than
         # being a fault in the anchor, which this branch fixed and which passes
         # on u64.
-        stimulus_skip = ("the tone ladder is detected one note out when this suite runs "
-                         "against a cartridge inside a computer; see the same skip in "
-                         "prg_context_menu_test")
+        suite_skip(
+            "stream_test",
+            "the tone ladder is detected one note out when this suite runs "
+            "against a cartridge inside a computer; see the same skip in "
+            "prg_context_menu_test")
+        return 0
     device = UltimateApi(args.host, args.password or None)
     # The ladder's constants are PAL throughout: PAL_AUDIO_RATE, a 50Hz frame
     # rate in the slot arithmetic, and note frequencies derived from both. On a
@@ -378,32 +289,20 @@ def main() -> int:
     # like a stream fault; making the suite mode-aware needs the NTSC audio
     # rate measured on the device, which is work of its own.
     mode = system_mode(device)
-    if not stimulus_skip and mode is not None and mode != "PAL":
-        stimulus_skip = (f"the tone ladder is PAL throughout, from its {PAL_AUDIO_RATE:.1f}Hz "
-                         f"audio rate to the 50Hz frame rate its slot timing counts in, and "
-                         f"this machine is in {mode}")
-    if stimulus_skip and args.case in ("ladder", "pop"):
-        suite_skip("stream_test", stimulus_skip)
+    if mode is not None and mode != "PAL":
+        suite_skip(
+            "stream_test",
+            f"the tone ladder is PAL throughout, from its {PAL_AUDIO_RATE:.1f}Hz "
+            f"audio rate to the 50Hz frame rate its slot timing counts in, and "
+            f"this machine is in {mode}")
         return 0
     try:
         if args.case in ("all", "ladder"):
             with check("tone ladder reaches audio and video streams"):
-                if stimulus_skip:
-                    check_skip(stimulus_skip)
-                else:
-                    run_tone_ladder(device)
+                run_tone_ladder(device)
         if args.case in ("all", "pop"):
             with check("Space key reaches aligned audio and video pop"):
-                if stimulus_skip:
-                    check_skip(stimulus_skip)
-                else:
-                    run_key_pop(device)
-        if args.case in ("all", "freezer"):
-            with check("freezer mixer mutes and restores the continuous tone"):
-                if not device.configs.current(UI_STORE, UI_ITEM):
-                    check_skip(f"this target has no {UI_ITEM!r} setting")
-                else:
-                    run_freezer_mixer(device)
+                run_key_pop(device)
     except (Failure, OSError) as exc:
         suite_fail("stream_test", str(exc))
         return 1
