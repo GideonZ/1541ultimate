@@ -1,23 +1,9 @@
-; Continuous SID tone, the stimulus for freezer_audio_test.py.
-;
-; Plays one full-volume sawtooth for as long as the machine runs it, so the
-; suite can measure how loud the machine is at any moment without having to
-; time anything. Nothing here reads the keyboard or the raster, so it keeps
-; playing while the freezer owns the machine.
+; Continuous SID tone for freezer_audio_test.py, as a PSID init/play pair.
+; init gates one full-volume sawtooth and returns, play does nothing, so the
+; note sustains for as long as the player runs.
 
-*=$0801
-        .word basic_end
-        .word 10
-        .byte $9e
-        .text format("%4d", start)
-        .byte 0
-basic_end:
-        .word 0
-
-start:
-        sei
-        lda #$37
-        sta $01
+*=$1000
+init:
         lda #0
         ldx #$18
 clear_sid:
@@ -34,6 +20,9 @@ clear_sid:
         sta $d418
         lda #$11
         sta $d404
-        cli
-loop:
-        jmp loop
+        rts
+
+; Fixed: the PSID header in freezer_audio_test.py names both addresses.
+*=$1040
+play:
+        rts

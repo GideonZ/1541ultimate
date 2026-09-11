@@ -484,11 +484,10 @@ SUITES: Sequence[Suite] = (
     # quick, so it runs by default. Its device operations are the ones the
     # shallower profiles already use - the menu button and a reset in
     # menu-screen, a config write in the cfg suites, the video stream in input -
-    # and its estimated cost is 10s to 15s, well under the minute that keeps
-    # av-stream out. That estimate is not measured yet; if the hardware runs
-    # come back much higher, this belongs at standard with the other freezer
-    # suite. It reads the streams without taking them, so it can run under
-    # --record beside the recorder.
+    # and it is cheap: measured 7.5s to 8.1s over three runs on an Ultimate 64
+    # Elite and 9.2s on u2@c64u, against the minute that keeps av-stream out.
+    # It reads the streams without taking them, so it can run under --record
+    # beside the recorder.
     Suite("e2e", "freezer-audio", "tests/e2e/io/c64/freezer_audio_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@", profile=profiles.QUICK),
     # Reproduces #733: with the FPGA decoder fix in the core, "mirroring off" is
