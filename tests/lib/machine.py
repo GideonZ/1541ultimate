@@ -236,6 +236,12 @@ KEYBOARD_COMBINATION_OPENS_MENU = _fix(
     "does, rather than being ignored",
     (C64U,))
 
+MEMORY_API_REJECTS_INVALID_ADDRESS = _fix(
+    "memory-api-rejects-invalid-address",
+    "readmem and writemem answer HTTP 400 to an address that is not valid "
+    "hexadecimal, rather than parsing it as $0000 and acting there",
+    (C64U, U2))
+
 # Every fix at once, for a sweep that asks whether the lagging line has caught
 # up rather than about one behaviour.
 ASSUME_ALL = "all"

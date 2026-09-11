@@ -16,11 +16,12 @@ sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
                             if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
 import bootstrap  # noqa: E402,F401
 import cli  # noqa: E402
+import machine as machine_lib  # noqa: E402  (needs tests/lib on sys.path first)
 import pacing  # noqa: E402  (needs tests/lib on sys.path first)
 import profiles  # noqa: E402  (needs tests/lib on sys.path first)
 import rest as rest_lib  # noqa: E402  (needs tests/lib on sys.path first)
 import targets  # noqa: E402  (needs tests/lib on sys.path first)
-from api import UltimateApi  # noqa: E402  (needs tests/lib on sys.path first)
+from api import UltimateApi, identify_machine  # noqa: E402  (needs tests/lib on sys.path first)
 from report import (
     FAIL, OK, SKIP, Failure, check, detail, format_exception, section, suite_fail,
     suite_ok, warn)
@@ -655,6 +656,59 @@ def run_bounds(session: RestSession) -> bool:
     return True
 
 
+# Addresses that are not valid hexadecimal. strtol() yields 0 for each of them,
+# so an unguarded parse passes the range check and the endpoint acts on $0000 --
+# for writemem, a destructive write answered with HTTP 200.
+BAD_ADDRESSES = ["ZZZZ", "0xZZZZ", "gggg"]
+
+
+def run_bad_address(session: RestSession) -> bool:
+    """Reject an address that is not valid hex, on every endpoint that parses one.
+
+    The status code is the whole assertion. $0000 is the 6510 processor port
+    rather than plain RAM, so reading it back is not a reliable witness to the
+    clobber this rejects, and a memory compare there could pass either way.
+    """
+    label = "readmem and writemem reject a malformed address"
+    if identify_machine(session.host).skip_without_fix(
+            machine_lib.MEMORY_API_REJECTS_INVALID_ADDRESS, label):
+        return True
+
+    section("bad-address: readmem and writemem reject an address that is not valid hex")
+
+    for bad in BAD_ADDRESSES:
+        with check(f"readmem rejects address={bad!r}"):
+            status, _, body = session.request(
+                "GET", READMEM_PATH, params={"address": bad, "length": 1})
+            if status != 400:
+                raise Failure(f"readmem(address={bad!r}) returned HTTP {status}, "
+                              f"expected 400: {body[:200]!r}")
+
+        # data= is sent so the request reaches the address parse at all: a
+        # missing required parameter is refused before it, which would pass this
+        # check for a reason that has nothing to do with the address.
+        with check(f"writemem PUT rejects address={bad!r}"):
+            status, _, body = session.request(
+                "PUT", WRITEMEM_PATH, params={"address": bad, "data": "00"})
+            if status != 400:
+                raise Failure(f"writemem PUT(address={bad!r}) returned HTTP {status}, "
+                              f"expected 400: {body[:200]!r}")
+
+        # A body is sent for the same reason: an empty one is refused with 412
+        # before the address is parsed. session.request rather than
+        # session.writemem, which raises on any non-200.
+        with check(f"writemem POST rejects address={bad!r}"):
+            raw_body, content_type = build_multipart("file", "data.bin", b"\x00")
+            status, _, body = session.request(
+                "POST", WRITEMEM_PATH, params={"address": bad},
+                raw_body=raw_body, content_type=content_type)
+            if status != 400:
+                raise Failure(f"writemem POST(address={bad!r}) returned HTTP {status}, "
+                              f"expected 400: {body[:200]!r}")
+
+    return True
+
+
 FREEZE_ONLY_TESTS = ["selfcheck-freeze"]
 OVERLAY_DEPENDENT_TESTS = ["selfcheck-overlay", "screen-round-trip",
                            "overlay-to-freeze", "freeze-to-overlay"]
@@ -677,8 +731,8 @@ NOISE_DEPENDENT_TESTS = ["selfcheck-overlay", "screen-round-trip",
 
 
 def expand_tests(selected: list[str] | None) -> list[str]:
-    all_tests = ["bounds", "selfcheck-freeze", "selfcheck-overlay", "screen-round-trip",
-                 "overlay-to-freeze", "freeze-to-overlay"]
+    all_tests = ["bounds", "bad-address", "selfcheck-freeze", "selfcheck-overlay",
+                 "screen-round-trip", "overlay-to-freeze", "freeze-to-overlay"]
     if not selected:
         if not profiles.includes(profiles.QUICK):
             return list(SMOKE_TESTS)
@@ -702,8 +756,8 @@ def main() -> int:
     parser.add_argument(
         "--test",
         action="append",
-        choices=("all", "bounds", "selfcheck-freeze", "selfcheck-overlay", "screen-round-trip",
-                 "overlay-to-freeze", "freeze-to-overlay"),
+        choices=("all", "bounds", "bad-address", "selfcheck-freeze", "selfcheck-overlay",
+                 "screen-round-trip", "overlay-to-freeze", "freeze-to-overlay"),
     )
     parser.add_argument(
         "--keep-config",
@@ -769,6 +823,12 @@ def main() -> int:
         # if readmem mishandles its own parameters, everything after it is noise.
         if "bounds" in tests:
             results["bounds"] = run_bounds(session)
+
+        # Same reasoning as bounds, and equally cheap: an address the firmware
+        # mis-parses is acted on at $0000, so prove it is refused before any
+        # stage writes memory in earnest.
+        if "bad-address" in tests:
+            results["bad-address"] = run_bad_address(session)
 
         noise_addrs: set[int] = set()
         # Eight full 64KB reads, so it is only worth paying where a stage
