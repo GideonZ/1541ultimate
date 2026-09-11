@@ -686,6 +686,16 @@ $(document).ready(async function () {
             // discards shifted letters that are outside quotes. Whether behavior such as
             // silently discarding characters should be reproduced by a tokenizer tool
             // is debatable.
+            //
+            // In REM, keyword and abbreviation tokenization is disabled until the end
+            // of the line. Shifted letters outside quotes are still normalized to
+            // lowercase by this tokenizer, matching CBMprgStudio.
+            //
+            // This differs from the native C64 BASIC interpreter, which preserves shifted
+            // PETSCII characters after REM. Because some high-bit PETSCII byte values
+            // overlap with values interpreted by LIST as BASIC tokens, the native C64
+            // may display such characters as BASIC keywords when the line is listed,
+            // even though no keyword tokenization took place after REM.
             let [byte, newString] = scan(remainingString, shouldTokenize, !inQuotes);
 
             // C64 CRITICAL FIX: If a 0x00 byte is generated, terminate the line immediately.
