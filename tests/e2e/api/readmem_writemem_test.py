@@ -656,10 +656,12 @@ def run_bounds(session: RestSession) -> bool:
     return True
 
 
-# Addresses that are not valid hexadecimal. strtol() yields 0 for each of them,
-# so an unguarded parse passes the range check and the endpoint acts on $0000 --
-# for writemem, a destructive write answered with HTTP 200.
-BAD_ADDRESSES = ["ZZZZ", "0xZZZZ", "gggg"]
+# Addresses outside the documented grammar, which is hex digits and nothing
+# else. strtol() accepts every one of them: it yields 0 for the first three,
+# takes the sign on "-0" and "+1", and stops at the first unusable character on
+# "12GG", so an unguarded parse passes the range check and the endpoint acts on
+# an address. For writemem that is a destructive write answered with HTTP 200.
+BAD_ADDRESSES = ["ZZZZ", "0xZZZZ", "gggg", "-0", "+1", "12GG"]
 
 
 def run_bad_address(session: RestSession) -> bool:
