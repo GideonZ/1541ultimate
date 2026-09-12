@@ -407,6 +407,10 @@ class IecCommandChannel: public IecChannel, public IecCommandExecuter {
     int do_set_position(int chan, uint32_t pos, int recnr, int recoffset);
     int do_pwd_command();
     int do_get_partition_info(int part);
+    int do_rename_partition(const char *newname, const char *oldname);
+    int do_rename_header(filename_t& dest);
+    int do_set_device_number(int dev);
+    int do_write_protect(bool on);
 public:
     IecCommandChannel(IecDrive *dr, int ch);
     virtual ~IecCommandChannel();

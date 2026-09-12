@@ -659,6 +659,11 @@ t_channel_retval IecChannel::write_record(void)
     if (!recordDirty) {
         return IEC_OK; // do nothing; no data was received
     }
+    if (int err = drive->refuse_write()) {
+        drive->set_error(err, 0, 0);
+        state = e_error;
+        return IEC_WRITE_ERROR;
+    }
     if (f) {
         if ((pointer < recordSize) && (pointer >= 0)) {
             memset(buffer + pointer, 0, recordSize - pointer); // fill up with zeros at the end
@@ -1314,6 +1319,17 @@ int IecChannel :: setup_file_access()
         IecPartition::CreateIecName(&info, cbm_name, name_to_open.filetype);
     }
 
+    // A save, a write, an append and the creation of a relative file change the medium.
+    if (int err = drive->refuse_write()) {
+        FileInfo existing(4);
+        bool creates_rel = (name_to_open.filetype == e_rel) && (name_to_open.record_size != 0) &&
+                           (fm->fstat(full_path, existing) != FR_OK);
+        if ((name_to_open.access == e_write) || (name_to_open.access == e_append) || creates_rel) {
+            drive->set_error(err, 0, 0);
+            return 0;
+        }
+    }
+
     uint8_t flags;
     switch(name_to_open.access) {
     case e_append:
@@ -1739,6 +1755,9 @@ int IecCommandChannel :: do_block_read(int chan, int part, int track, int sector
 
 int IecCommandChannel::do_block_write(int chan, int part, int track, int sector)
 {
+    if (int err = drive->refuse_write()) {
+        return err;
+    }
     if ((chan < 0) || (chan > 14)) {
         set_error(ERR_SYNTAX_ERROR_CMD);
         return ERR_SYNTAX_ERROR_CMD;
@@ -1765,6 +1784,9 @@ int IecCommandChannel::do_block_write(int chan, int part, int track, int sector)
 
 int IecCommandChannel::do_block_allocate(int part, int track, int sector, bool alloc)
 {
+    if (int err = drive->refuse_write()) {
+        return err;
+    }
     if (part >= MAX_PARTITIONS) {
         set_error(ERR_SYNTAX_ERROR_CMD);
         return ERR_SYNTAX_ERROR_CMD;
@@ -1835,6 +1857,9 @@ int IecCommandChannel::do_change_dir(filename_t& dest)
 
 int IecCommandChannel::do_make_dir(filename_t& dest)
 {
+    if (int err = drive->refuse_write()) {
+        return err;
+    }
     mstring work;
     const char *fullpath = ConstructPath(work, dest, e_folder, e_read);
     if (fullpath) {
@@ -1849,6 +1874,9 @@ int IecCommandChannel::do_make_dir(filename_t& dest)
 
 int IecCommandChannel::do_remove_dir(filename_t& dest)
 {
+    if (int err = drive->refuse_write()) {
+        return err;
+    }
     mstring work;
     const char *fullpath = ConstructPath(work, dest, e_folder, e_read);
     if (fullpath) {
@@ -1876,6 +1904,9 @@ int IecCommandChannel::do_remove_dir(filename_t& dest)
 
 int IecCommandChannel::do_copy(filename_t& dest, filename_t sources[], int n)
 {
+    if (int err = drive->refuse_write()) {
+        return err;
+    }
     // Curiously, an original drive takes the file type from the FIRST file it copies.
     // So in order to know the destination extension, we'd need to first open the first file
     // using wildcards and then see what file was opened.
@@ -1983,6 +2014,9 @@ int IecCommandChannel::do_format(uint8_t *name, uint8_t id1, uint8_t id2)
 
 int IecCommandChannel::do_rename(filename_t &src, filename_t &dest)
 {
+    if (int err = drive->refuse_write()) {
+        return err;
+    }
     mstring works, workd;
     const char *src_path = ConstructPath(works, src, e_any, e_read);
     FileInfo info(48);
@@ -2018,6 +2052,9 @@ int IecCommandChannel::do_rename(filename_t &src, filename_t &dest)
 
 int IecCommandChannel::do_scratch(filename_t filenames[], int n)
 {
+    if (int err = drive->refuse_write()) {
+        return err;
+    }
     DBGIECV("Scratch %d files:\n", n);
     mstring work;
     int scratched = 0;
@@ -2215,6 +2252,129 @@ int IecCommandChannel::do_get_partition_info(int part)
 // Byte 28      - Size of partition (middle byte)
 // Byte 29      - Size of partition (low byte)
 // Byte 30      - CHR$(13)
+}
+
+// R-P:newname=oldname (SI-051). The old name is matched against the name the
+// partition directory shows, and the new one must not be shown by another partition.
+int IecCommandChannel::do_rename_partition(const char *newname, const char *oldname)
+{
+    if (int err = drive->refuse_write()) {
+        return err;
+    }
+    IecPartition *found = NULL;
+    for (int i = 1; i < MAX_PARTITIONS; i++) {
+        IecPartition *p = drive->vfs->GetPartition(i);
+        if (!p || (p->GetPartitionNumber() != i)) {
+            continue;
+        }
+        char shown[24];
+        FileInfo info(40);
+        filetype_t ftype = e_any;
+        strncpy(info.lfname, p->GetName(), info.lfsize);
+        info.lfname[info.lfsize - 1] = 0;
+        IecPartition::CreateIecName(&info, shown, ftype);
+        if (!found && pattern_match(oldname, shown, false)) {
+            found = p;
+        } else if (strcmp(newname, shown) == 0) {
+            return ERR_FILE_EXISTS;
+        }
+    }
+    if (!found) {
+        return ERR_FILE_NOT_FOUND;
+    }
+    char host[52];
+    petscii_to_fat(newname, host, sizeof(host));
+    found->SetName(host);
+    drive->trace_configuration("rename-partition"); // #877 diagnostics only
+    return 0;
+}
+
+// R-H[n][path]:newname (SI-064). A directory on a host file system has no header
+// apart from its name, so the directory itself is renamed; at the root of a partition
+// the header is the partition's name. A partition standing inside the renamed
+// directory follows it.
+int IecCommandChannel::do_rename_header(filename_t& dest)
+{
+    if (int err = drive->refuse_write()) {
+        return err;
+    }
+    GETPARTITION(dest.partition, partition, -1);
+    char host[52];
+    petscii_to_fat(dest.filename.c_str(), host, sizeof(host));
+
+    mstring full_path, relative;
+    FRESULT fres = resolve_directory_path(fm, partition, dest.path, full_path, &relative);
+    if (fres != FR_OK) {
+        drive->set_error_fres(fres);
+        return 0;
+    }
+    if (strcmp(relative.c_str(), "/") == 0) {
+        partition->SetName(host);
+        return 0;
+    }
+
+    // relative is /A/B/C/: the parent is /A/B/ and the directory is C.
+    char rel[256];
+    strncpy(rel, relative.c_str(), sizeof(rel) - 1);
+    rel[sizeof(rel) - 1] = 0;
+    int len = strlen(rel);
+    if (len && (rel[len - 1] == '/')) {
+        rel[--len] = 0;
+    }
+    char *last = strrchr(rel, '/');
+    if (!last) {
+        drive->set_error(ERR_DIRECTORY_ERROR, partition->GetPartitionNumber(), 0);
+        return 0;
+    }
+    *last = 0; // rel is now the parent, without its trailing slash
+
+    mstring old_full(partition->GetRootPath());
+    old_full += relative.c_str() + 1;
+    mstring new_full(partition->GetRootPath());
+    new_full += rel[0] ? (rel + 1) : "";
+    if (rel[0]) {
+        new_full += "/";
+    }
+    new_full += host;
+
+    const char *o = old_full.c_str();
+    if (old_full.length() && (o[old_full.length() - 1] == '/')) {
+        mstring trimmed(o, 0, old_full.length() - 2);
+        old_full = trimmed;
+    }
+    fres = fm->rename(old_full.c_str(), new_full.c_str());
+    if (fres != FR_OK) {
+        drive->set_error_fres(fres);
+        return 0;
+    }
+
+    // Follow the partition's working directory into the new name.
+    const char *cwd = partition->GetRelativePath();
+    int rlen = relative.length();
+    if (strncmp(cwd, relative.c_str(), rlen) == 0) {
+        mstring moved(rel);
+        moved += "/";
+        moved += host;
+        moved += "/";
+        moved += cwd + rlen;
+        partition->cd(moved.c_str());
+    }
+    return 0;
+}
+
+// U0>, S-8, S-9 and S-D (SI-100, SI-101). The drive answers this command on the
+// number it was addressed on and every later one on the new number.
+int IecCommandChannel::do_set_device_number(int dev)
+{
+    drive->set_device_number(dev);
+    return 0;
+}
+
+// W-0 and W-1 (SI-102).
+int IecCommandChannel::do_write_protect(bool on)
+{
+    drive->set_write_protect(on);
+    return 0;
 }
 
 int IecCommandChannel::ext_open_file(const char *filenameOrCommand)

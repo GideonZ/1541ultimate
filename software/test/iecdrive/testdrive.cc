@@ -2369,6 +2369,218 @@ static void s11_si046_partition_count(FileManager *fm, IecDrive *dr)
     REQUIRE(shown == partitions);
 }
 
+// Reads what the command channel has to say, however long it is. last_status only
+// holds a status line, and M-R can answer with 256 bytes.
+static int read_command_channel(IecDrive *dr, uint8_t *out, int size)
+{
+    dr->push_ctrl(SLAVE_CMD_ATN);
+    dr->push_ctrl(0x6F);
+    dr->talk();
+    int total = 0;
+    while (total < size) {
+        uint8_t *data;
+        int n = 0;
+        t_channel_retval ret = dr->prefetch_more(256, data, n);
+        if (n > size - total) {
+            n = size - total;
+        }
+        memcpy(out + total, data, n);
+        total += n;
+        dr->pop_more(n);
+        if ((ret != IEC_OK) || (n == 0)) {
+            break;
+        }
+    }
+    return total;
+}
+
+// SI-051: R-P:newname=oldname renames a partition.
+static void s11_si051_rename_partition(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite11-SI051-RenamePartition";
+    const char *path = s11_partition(fm, dr, "si051");
+    dr->add_partition(42, path, "OLDNAME");
+    expect_command_response(testname, dr, "R-P:NEWNAME=OLDNAME\r", "00, OK,00,00\r");
+    const uint8_t gp42[4] = { 'G', '-', 'P', 42 };
+    expect_partition_info(testname, dr, gp42, sizeof(gp42), 1, 42, "NEWNAME");
+    expect_directory_contains(testname, dr, "$=P", "\"NEWNAME\"");
+    // A partition that is not there, and a name another partition already has.
+    expect_command_response(testname, dr, "R-P:OTHER=NOSUCH\r", "62,FILE NOT FOUND,00,00\r");
+    expect_command_response(testname, dr, "R-P:SUITE11=NEWNAME\r", "63,FILE EXISTS,00,00\r");
+    expect_partition_info(testname, dr, gp42, sizeof(gp42), 1, 42, "NEWNAME");
+}
+
+// SI-064: R-H renames the header of a directory. A directory on a host file system has
+// no header apart from its name, so the directory is renamed, and a partition that is
+// standing in it stays there under the new name. At the root of a partition the
+// header is the partition's name.
+static void s11_si064_rename_header(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite11-SI064-RenameHeader";
+    const char *path = s11_partition(fm, dr, "si064");
+    char host[80];
+    expect_command_ok(testname, dr, "MD:SUB\r");
+    expect_command_ok(testname, dr, "MD/SUB/:DEEP\r");
+    expect_command_ok(testname, dr, "CD/SUB/DEEP\r");
+    expect_command_response(testname, dr, "R-H40//SUB/:NEWSUB\r", "00, OK,00,00\r");
+    snprintf(host, sizeof(host), "%s/NEWSUB/DEEP", path);
+    expect_path_exists(testname, fm, host);
+    snprintf(host, sizeof(host), "%s/SUB", path);
+    expect_path_absent(testname, fm, host);
+    expect_command_response(testname, dr, "XPWD\r", "40:/NEWSUB/DEEP/");
+    // The current directory, named by R-H with no path.
+    expect_command_response(testname, dr, "R-H:BOTTOM\r", "00, OK,00,00\r");
+    expect_command_response(testname, dr, "XPWD\r", "40:/NEWSUB/BOTTOM/");
+    // The root of the partition carries the partition's name.
+    expect_command_response(testname, dr, "R-H40//:TOPNAME\r", "00, OK,00,00\r");
+    const uint8_t gp40[4] = { 'G', '-', 'P', 40 };
+    expect_partition_info(testname, dr, gp40, sizeof(gp40), 1, 40, "TOPNAME");
+    // Sixteen characters at most, and a name another directory already has.
+    expect_command_response(testname, dr, "R-H:ABCDEFGHIJKLMNOPQ\r", "34,SYNTAX ERROR,00,00\r");
+    expect_command_ok(testname, dr, "MD//NEWSUB/:TAKEN\r");
+    expect_command_response(testname, dr, "R-H:TAKEN\r", "63,FILE EXISTS,00,00\r");
+}
+
+// SI-100: U0>+CHR$(d) moves the drive to device number d for as long as it runs; the
+// configured number is not written.
+static void s11_si100_device_number(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite11-SI100-DeviceNumber";
+    s11_partition(fm, dr, "si100");
+    int configured = dr->get_address();
+    const uint8_t u0_12[5] = { 'U', '0', '>', 12, 0x0D };
+    expect_command_data_response(testname, dr, u0_12, sizeof(u0_12), "00, OK,00,00\r");
+    printf("%s: device number now %d, configured %d\n", testname, dr->get_address(), configured);
+    REQUIRE(dr->get_address() == 12);
+    // The drive keeps answering on the command channel.
+    expect_command_response(testname, dr, "UI\r", "73,U64HD ULTIMATE DOS V2.0,00,00\r");
+    // Outside 8 to 30 nothing changes.
+    const uint8_t u0_7[4] = { 'U', '0', '>', 7 };
+    expect_command_data_response(testname, dr, u0_7, sizeof(u0_7), "30,SYNTAX ERROR,00,00\r");
+    REQUIRE(dr->get_address() == 12);
+    expect_command_response(testname, dr, "S-D\r", "00, OK,00,00\r");
+    REQUIRE(dr->get_address() == configured);
+}
+
+// SI-101: S-8 and S-9 set the device number to 8 and 9, S-D restores the configured
+// one. None of them scratches a file.
+static void s11_si101_swap(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite11-SI101-Swap";
+    s11_partition(fm, dr, "si101");
+    int configured = dr->get_address();
+    expect_command_response(testname, dr, "S-8\r", "00, OK,00,00\r");
+    printf("%s: device number after S-8: %d\n", testname, dr->get_address());
+    REQUIRE(dr->get_address() == 8);
+    expect_command_response(testname, dr, "S-9\r", "00, OK,00,00\r");
+    REQUIRE(dr->get_address() == 9);
+    expect_command_response(testname, dr, "S-D\r", "00, OK,00,00\r");
+    REQUIRE(dr->get_address() == configured);
+    // A file that happens to be called -8 is not scratched by it.
+    expect_iec_write_ok(testname, dr, 2, "-8,S,W", "not scratched");
+    expect_command_response(testname, dr, "S-8\r", "00, OK,00,00\r");
+    expect_iec_file(testname, dr, 2, "-8,S,R", "not scratched");
+    expect_command_response(testname, dr, "S-D\r", "00, OK,00,00\r");
+}
+
+// SI-102: W-1 write protects the whole drive until W-0: every write answers 26.
+static void s11_si102_write_protect(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite11-SI102-WriteProtect";
+    s11_partition(fm, dr, "si102");
+    expect_iec_write_ok(testname, dr, 2, "KEEP,S,W", "kept");
+    expect_command_ok(testname, dr, "MD:KEEPDIR\r");
+    uint8_t record[16];
+    memset(record, 'R', sizeof(record));
+    expect_rel_open(testname, dr, 3, "RELKEEP", sizeof(record));
+    expect_rel_write(testname, dr, 3, record, sizeof(record));
+    close_file(dr, 3);
+    create_formatted_image(fm, "/Fat/s11_si102.d64", "PROTECT", 683, e_image_d64);
+    dr->add_partition(43, "/Fat/s11_si102.d64", "PROTECTED");
+    expect_command_response(testname, dr, "W-1\r", "00, OK,00,00\r");
+
+    // Relative files: an existing one opens and reads, a record write and a new file
+    // are refused.
+    expect_rel_open(testname, dr, 3, "RELKEEP", sizeof(record));
+    send_channel_data(dr, 3, record, sizeof(record));
+    get_status(dr);
+    expect_status_prefix(testname, "REL record write", "26,WRITE PROTECT ON");
+    close_file(dr, 3);
+    expect_rel_open_status_prefix(testname, dr, 3, "RELNEW", sizeof(record), "26,WRITE PROTECT ON");
+    close_file(dr, 3);
+    // Direct access writes and allocations.
+    open_buffer_channel(testname, dr, 4);
+    expect_command_response(testname, dr, "U2:4,43,18,5\r", "26,WRITE PROTECT ON,00,00\r");
+    expect_command_response(testname, dr, "B-A:43,18,5\r", "26,WRITE PROTECT ON,00,00\r");
+    close_file(dr, 4);
+
+    expect_iec_open_status_prefix(testname, dr, 1, "SAVED", "26,WRITE PROTECT ON");
+    close_file(dr, 1);
+    expect_iec_open_status_prefix(testname, dr, 2, "NEW,S,W", "26,WRITE PROTECT ON");
+    close_file(dr, 2);
+    expect_iec_open_status_prefix(testname, dr, 2, "KEEP,S,A", "26,WRITE PROTECT ON");
+    close_file(dr, 2);
+    expect_iec_open_status_prefix(testname, dr, 2, "@:KEEP,S,W", "26,WRITE PROTECT ON");
+    close_file(dr, 2);
+    expect_command_response(testname, dr, "S:KEEP\r", "26,WRITE PROTECT ON,00,00\r");
+    expect_command_response(testname, dr, "R:MOVED=KEEP\r", "26,WRITE PROTECT ON,00,00\r");
+    expect_command_response(testname, dr, "C:COPIED=KEEP\r", "26,WRITE PROTECT ON,00,00\r");
+    expect_command_response(testname, dr, "MD:NEWDIR\r", "26,WRITE PROTECT ON,00,00\r");
+    expect_command_response(testname, dr, "RD:KEEPDIR\r", "26,WRITE PROTECT ON,00,00\r");
+    expect_command_response(testname, dr, "R-H:RENAMED\r", "26,WRITE PROTECT ON,00,00\r");
+    // Reading still works.
+    expect_iec_file(testname, dr, 2, "KEEP,S,R", "kept");
+
+    expect_command_response(testname, dr, "W-0\r", "00, OK,00,00\r");
+    expect_iec_write_ok(testname, dr, 2, "NEW,S,W", "written");
+    expect_command_response(testname, dr, "S:KEEP\r", "01, FILES SCRATCHED,01,00\r");
+}
+
+// SI-105 and SI-112: M-R answers the number of bytes asked for, all zero, and does not
+// read past the end of the page; M-W and M-E are accepted and do nothing.
+static void s11_si105_memory_commands(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite11-SI105-MemoryCommands";
+    s11_partition(fm, dr, "si105");
+    uint8_t reply[512];
+
+    // The four probes C64 OS sends during its boot, two bytes each, as PRINT# sends them.
+    static const uint16_t probes[] = { 0xFEA4, 0xE5C5, 0xA6E8, 0x0002 };
+    for (int i = 0; i < 4; i++) {
+        uint8_t cmd[7] = { 'M', '-', 'R', (uint8_t)(probes[i] & 0xFF), (uint8_t)(probes[i] >> 8), 2, 0x0D };
+        send_command_data(dr, cmd, sizeof(cmd));
+        memset(reply, 0xAA, sizeof(reply));
+        int got = read_command_channel(dr, reply, sizeof(reply));
+        printf("%s: M-R $%04X,2 answered %d bytes: %02X %02X\n", testname, probes[i], got, reply[0], reply[1]);
+        REQUIRE(got == 2);
+        REQUIRE((reply[0] == 0) && (reply[1] == 0));
+    }
+    // After the bytes, the error channel says OK again.
+    get_status(dr);
+    expect_current_status(testname, "after M-R", "00, OK,00,00\r");
+
+    // No count reads one byte, a count of zero reads 256, and the page end stops it.
+    const uint8_t one[5] = { 'M', '-', 'R', 0x00, 0xFE };
+    send_command_data(dr, one, sizeof(one));
+    REQUIRE(read_command_channel(dr, reply, sizeof(reply)) == 1);
+    const uint8_t all[6] = { 'M', '-', 'R', 0x00, 0xFE, 0x00 };
+    send_command_data(dr, all, sizeof(all));
+    int got = read_command_channel(dr, reply, sizeof(reply));
+    printf("%s: M-R $FE00,0 answered %d bytes\n", testname, got);
+    REQUIRE(got == 256);
+    for (int i = 0; i < 256; i++) {
+        REQUIRE(reply[i] == 0);
+    }
+    const uint8_t edge[6] = { 'M', '-', 'R', 0xF0, 0xFE, 0x20 };
+    send_command_data(dr, edge, sizeof(edge));
+    REQUIRE(read_command_channel(dr, reply, sizeof(reply)) == 16);
+
+    const uint8_t mw[8] = { 'M', '-', 'W', 0x00, 0x05, 0x02, 0xEA, 0x60 };
+    expect_command_data_response(testname, dr, mw, sizeof(mw), "00, OK,00,00\r");
+    const uint8_t me[5] = { 'M', '-', 'E', 0x00, 0x05 };
+    expect_command_data_response(testname, dr, me, sizeof(me), "00, OK,00,00\r");
+}
+
 struct Suite11Case {
     const char *name;
     void (*run)(FileManager *fm, IecDrive *dr);
@@ -2385,6 +2597,12 @@ static const Suite11Case suite11_cases[] = {
     { "Suite11-SI054-Validate",          s11_si054_validate },
     { "Suite11-SI045-PartitionDirectory", s11_si045_partition_directory },
     { "Suite11-SI046-PartitionCount",    s11_si046_partition_count },
+    { "Suite11-SI051-RenamePartition",   s11_si051_rename_partition },
+    { "Suite11-SI064-RenameHeader",      s11_si064_rename_header },
+    { "Suite11-SI100-DeviceNumber",      s11_si100_device_number },
+    { "Suite11-SI101-Swap",              s11_si101_swap },
+    { "Suite11-SI102-WriteProtect",      s11_si102_write_protect },
+    { "Suite11-SI105-MemoryCommands",    s11_si105_memory_commands },
 };
 
 // Runs every case, or only those whose name contains `only`.

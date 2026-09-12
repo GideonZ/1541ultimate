@@ -171,6 +171,7 @@ public:
     void unregister_slave(int slot);
     void configure(void);
     void reset(void);
+    void readdress(int slot);
 
     // Slave Info
     static void info(StreamTextLog &b);

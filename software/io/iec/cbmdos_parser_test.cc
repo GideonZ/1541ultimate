@@ -267,6 +267,82 @@ void test_command_terminator(void)
 //   31 the first character is not a command letter
 //   33 a wildcard or a character a name cannot carry
 //   34 no name, or a colon with nothing after it
+// Like test_dispatch, and also compares the names the command carried, as the stub
+// recorded them.
+void test_dispatch_text(const char *cmd, int len, int exp_retval, const char *what,
+                        const char *text, int a = 0)
+{
+    last_stub_call.command = NULL;
+    last_stub_call.text[0] = 0;
+    int retval = parser.execute_command((const uint8_t *)cmd, len);
+    bool ok = (retval == exp_retval) && last_stub_call.command &&
+              (strcmp(last_stub_call.command, what) == 0) &&
+              (strcmp(last_stub_call.text, text) == 0) && (last_stub_call.a == a);
+    if (ok) {
+        printf("Dispatch '%s' => OK!\n", cmd);
+        return;
+    }
+    printf("Dispatch '%s' returned %d (expected %d) and called %s(%d,'%s'), expected %s(%d,'%s')\n",
+           cmd, retval, exp_retval,
+           last_stub_call.command ? last_stub_call.command : "nothing",
+           last_stub_call.a, last_stub_call.text, what, a, text);
+    failures++;
+}
+
+// The commands phase 3 of the specification adds, and the routing that has to find
+// them before it falls through to rename and scratch.
+void test_added_commands(void)
+{
+    // SI-051: R-P renames a partition. It must not reach the file rename.
+    test_dispatch_text("R-P:WORK=NATIVE 1", 17, 0, "rename partition", "WORK|NATIVE 1");
+    test_dispatch_text("R-P:WORK=NATIVE 1\r", 18, 0, "rename partition", "WORK|NATIVE 1");
+    test_dispatch("R-P:WORK", 8, 30, NULL);
+    test_dispatch("R-P:=OLD", 8, 34, NULL);
+    test_dispatch("R-P:NEW=", 8, 34, NULL);
+    test_dispatch("R-X:FOO", 7, 30, NULL);
+    // SI-064: R-H renames the header of a directory, with a partition and a path.
+    test_dispatch_text("R-H:WORK", 8, 0, "rename header", "-1||WORK");
+    test_dispatch_text("R-H3:DOWNLOADS\r", 15, 0, "rename header", "3||DOWNLOADS");
+    test_dispatch_text("R-H1//ASSEM/:BUDDY64", 20, 0, "rename header", "1|//ASSEM/|BUDDY64");
+    test_dispatch("R-H:NAME*", 9, 33, NULL);
+    test_dispatch("R-H:ABCDEFGHIJKLMNOPQ", 21, 34, NULL); // 17 characters
+
+    // SI-101: S-8, S-9 and S-D swap the device number; they are not a scratch of a
+    // file called -8. Zero asks for the configured number.
+    test_dispatch("S-8", 3, 0, "device number", 8);
+    test_dispatch("S-9\r", 4, 0, "device number", 9);
+    test_dispatch("S-D", 3, 0, "device number", 0);
+    test_dispatch("S-X", 3, 30, NULL);
+    // SI-100: U0> followed by the device number as a byte.
+    test_dispatch("U0>\x0C", 4, 0, "device number", 12);
+    test_dispatch("U0>\x1E\r", 5, 0, "device number", 30);
+    test_dispatch("U0>\x0D\r", 5, 0, "device number", 13);
+    test_dispatch("U0>\x07", 4, 30, NULL);
+    test_dispatch("U0>\x1F", 4, 30, NULL);
+    test_dispatch("U0", 2, 30, NULL);
+    test_dispatch("U0+", 3, 30, NULL);
+
+    // SI-102: W-1 and W-0 set and clear the write protect.
+    test_dispatch("W-1", 3, 0, "write protect", 1);
+    test_dispatch("W-0\r", 4, 0, "write protect", 0);
+    test_dispatch("W-2", 3, 30, NULL);
+    test_dispatch("W", 1, 30, NULL);
+
+    // SI-105 and SI-112: M-R answers the number of bytes asked for, every one of them
+    // zero; no count means one, a count of zero means 256, and it stops at the end of
+    // the page. M-W and M-E are accepted and do nothing.
+    test_dispatch("M-R\xA4\xFE\x02", 6, 0, "command response", 2);
+    test_dispatch("M-R\x02\x00\x02\r", 7, 0, "command response", 2);
+    test_dispatch("M-R\xA4\xFE", 5, 0, "command response", 1);
+    test_dispatch("M-R\x00\xFE\x00", 6, 0, "command response", 256);
+    test_dispatch("M-R\xF0\x00\x20", 6, 0, "command response", 16);
+    test_dispatch("M-R\xA4", 4, 30, NULL);
+    test_dispatch("M-W\x00\x05\x01\xEA", 7, 0, NULL);
+    test_dispatch("M-E\x00\x05", 5, 0, NULL);
+    test_dispatch("M-X", 3, 30, NULL);
+    test_dispatch("MD:DIR", 6, 0, NULL); // still a directory command
+}
+
 void test_error_codes(void)
 {
     // SI-031: not a command letter. CHR$(0) and A are what the reporter measured on
@@ -576,6 +652,7 @@ int main(int argc, const char *argv[])
     test_block_command_forms();
     test_command_terminator();
     test_error_codes();
+    test_added_commands();
     test_command(34, (const uint8_t *)"C99:EMPTY=", 10);
     test_command( 0, (const uint8_t *)"C1:FCOPY=3:FCOPY", 16);
     test_command( 0, (const uint8_t *)"C:FULLSTATS=STAT1,3:STAT3", 25);

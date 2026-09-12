@@ -90,6 +90,10 @@ public:
     virtual int do_set_position(int chan, uint32_t pos, int recnr, int recoffset) { return 0; }
     virtual int do_pwd_command() { return 0; }
     virtual int do_get_partition_info(int part) { return 0; }
+    virtual int do_rename_partition(const char *newname, const char *oldname) { return 0; }
+    virtual int do_rename_header(filename_t& dest) { return 0; }
+    virtual int do_set_device_number(int dev) { return 0; } // 0: the configured number
+    virtual int do_write_protect(bool on) { return 0; }
 };
 
 class IecParser
@@ -109,6 +113,10 @@ class IecParser
     int user_command(const uint8_t *buffer, int len);
     int extended_command(const uint8_t *buffer, int len);
     int get_command(const uint8_t *buffer, int len);
+    int rename_sub_command(const uint8_t *buffer, int len);
+    int swap_command(const uint8_t *buffer, int len);
+    int write_protect_command(const uint8_t *buffer, int len);
+    int memory_command(const uint8_t *buffer, int len);
 
 public:
     IecParser(IecCommandExecuter *e) : exec(e) { }

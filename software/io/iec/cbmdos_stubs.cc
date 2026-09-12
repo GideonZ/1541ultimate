@@ -9,9 +9,10 @@ void print_file(filename_t& name);
 typedef struct {
     const char *command;
     int a, b, c, d;
+    char text[96]; // the names a command carried, where it carried any
 } stub_call_t;
 
-stub_call_t last_stub_call = { NULL, 0, 0, 0, 0 };
+stub_call_t last_stub_call = { NULL, 0, 0, 0, 0, "" };
 
 static void record_stub_call(const char *command, int a = 0, int b = 0, int c = 0, int d = 0)
 {
@@ -20,6 +21,14 @@ static void record_stub_call(const char *command, int a = 0, int b = 0, int c = 
     last_stub_call.b = b;
     last_stub_call.c = c;
     last_stub_call.d = d;
+    last_stub_call.text[0] = 0;
+}
+
+// A file name as partition, path and name, for a test to compare as one string.
+static void record_stub_name(filename_t& name)
+{
+    snprintf(last_stub_call.text, sizeof(last_stub_call.text), "%d|%s|%s",
+             name.partition, name.path.c_str(), name.filename.c_str());
 }
 
 class IecCommandExecuterStubs : public IecCommandExecuter
@@ -43,6 +52,10 @@ public:
     int do_set_position(int chan, uint32_t pos, int recnr, int recoffset);
     int do_pwd_command();
     int do_get_partition_info(int part);
+    int do_rename_partition(const char *newname, const char *oldname);
+    int do_rename_header(filename_t& dest);
+    int do_set_device_number(int dev);
+    int do_write_protect(bool on);
 };
 
 
@@ -149,7 +162,38 @@ int IecCommandExecuterStubs::do_scratch(filename_t filenames[], int n)
 
 int IecCommandExecuterStubs::do_cmd_response(uint8_t *data, int len)
 {
-    dump_hex_relative(data, len);
+    record_stub_call("command response", len);
+    int nonzero = 0;
+    for (int i = 0; i < len; i++) {
+        nonzero += (data[i] != 0);
+    }
+    last_stub_call.b = nonzero;
+    return 0;
+}
+
+int IecCommandExecuterStubs::do_rename_partition(const char *newname, const char *oldname)
+{
+    record_stub_call("rename partition");
+    snprintf(last_stub_call.text, sizeof(last_stub_call.text), "%s|%s", newname, oldname);
+    return 0;
+}
+
+int IecCommandExecuterStubs::do_rename_header(filename_t& dest)
+{
+    record_stub_call("rename header");
+    record_stub_name(dest);
+    return 0;
+}
+
+int IecCommandExecuterStubs::do_set_device_number(int dev)
+{
+    record_stub_call("device number", dev);
+    return 0;
+}
+
+int IecCommandExecuterStubs::do_write_protect(bool on)
+{
+    record_stub_call("write protect", on ? 1 : 0);
     return 0;
 }
 

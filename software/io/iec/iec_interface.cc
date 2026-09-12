@@ -144,6 +144,17 @@ void IecInterface :: configure(void)
     }
 }
 
+// Writes one slave's device number into the processor, for a number that changes
+// while the drive is in use (U0>, S-8). Unlike configure(), the processor is not held
+// in reset, because the command that asks for this is still on the bus.
+void IecInterface :: readdress(int slot)
+{
+    if ((slot < 0) || (slot >= MAX_SLOTS) || !slaves[slot] || !slaves[slot]->is_enabled()) {
+        return;
+    }
+    set_slot_devnum(slot, slaves[slot]->get_address());
+}
+
 void IecInterface :: reset(void)
 {
     HW_IEC_RESET_ENABLE = 0;

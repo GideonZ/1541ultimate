@@ -139,6 +139,7 @@ IecDrive :: IecDrive() : SubSystem(SUBSYSID_IEC)
     cfg->set_sort_order(SORT_ORDER_CFG_SOFTIEC);
 
     enable = false;
+    write_protected = false;
     cmd_path = fm->get_new_path("IEC Gui Path");
 
     last_error_code = ERR_DOS;
@@ -380,6 +381,27 @@ t_channel_retval IecDrive :: pop_more(int byte_count)
 void IecDrive :: talk(void)
 {
     channels[current_channel]->talk();
+}
+
+// The device number for as long as the drive runs, from U0> or S-8, S-9 and S-D (SI-100,
+// SI-101). It is not written to the configuration: HD 9-49 describes the change as
+// temporary. 0 asks for the configured number back.
+void IecDrive :: set_device_number(int dev)
+{
+    if (dev == 0) {
+        dev = cfg->get_value(CFG_IEC_BUS_ID);
+    }
+    my_bus_id = dev;
+    cmd_if.set_kernal_device_id(my_bus_id);
+    intf->readdress(slot_id);
+    trace_configuration("device-number"); // #877 diagnostics only
+}
+
+// While the software write protect is on, every command and every open that would
+// change the medium answers 26 (SI-102). Returns the error to answer, or 0.
+int IecDrive :: refuse_write(void)
+{
+    return write_protected ? ERR_WRITE_PROTECT_ON : 0;
 }
 
 // called from IEC task, statically
