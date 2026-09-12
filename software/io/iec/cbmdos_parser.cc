@@ -436,9 +436,11 @@ int IecParser :: get_command(const uint8_t *buffer, int len)
     return 0;
 }
 
+// I[n][:] initialises the medium. UI is a different command, a reset that answers
+// with the DOS version, and is handled by user_command().
 int IecParser :: initialize_command(const uint8_t *buffer, int len)
 {
-    return exec->do_initialize();
+    return exec->do_initialize_buffers();
 }
 
 int IecParser :: format_command(const uint8_t *buffer, int len)
@@ -711,6 +713,7 @@ int IecParser :: execute_command(const uint8_t *buffer, int len)
     case 'S': return scratch_command(buffer, len);
     case 'T': return time_command(buffer, len);
     case 'U': return user_command(buffer, len);
+    case 'V': return 0; // validate: a host file system has nothing to validate
     case 'X':
     case 'E':
         return extended_command(buffer, len);

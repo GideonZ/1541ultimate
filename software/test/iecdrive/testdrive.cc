@@ -1925,7 +1925,8 @@ static void run_suite10_user_commands(IecDrive *dr)
     expect_command_status_prefix("Suite10-U9", dr, "U9\r", "73,");
     expect_command_status_prefix("Suite10-UJ", dr, "UJ\r", "73,");
     expect_command_status_prefix("Suite10-UColon", dr, "U:\r", "73,");
-    expect_command_status_prefix("Suite10-I", dr, "I0\r", "73,");
+    // I is not UI: it initialises and answers OK (SI-053).
+    expect_command_status_prefix("Suite10-I", dr, "I0\r", "00, OK");
 
     // U3 to U8 jump into a drive buffer, which this drive has no equivalent for. U is
     // a command letter, so that is 30 (SI-104); Z is not, so that is 31 (SI-031).
@@ -2195,6 +2196,8 @@ void execute_suite10(FileManager *fm, IecDrive *dr)
 // fail on its own before its change and to pass after it.
 // ---------------------------------------------------------------------------
 
+#include "iec_channel.h"
+
 // A fresh directory on the FAT file, mounted as partition 40, selected, and entered at
 // its root.
 static const char *s11_partition(FileManager *fm, IecDrive *dr, const char *dir)
@@ -2269,6 +2272,103 @@ static void s11_si036_block_range(FileManager *fm, IecDrive *dr)
     close_file(dr, 2);
 }
 
+// SI-033: a scratch that matches nothing is not an error. The answer is 01 with a
+// count of zero, as HD B-1 and the 1541 give it. C64 OS sends S/TEMPORARY/:* on every
+// boot, whether or not the directory holds anything.
+static void s11_si033_scratch_nothing(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite11-SI033-ScratchNothing";
+    s11_partition(fm, dr, "si033");
+    expect_command_response(testname, dr, "S:NOSUCHFILE\r", "01, FILES SCRATCHED,00,00\r");
+    expect_command_ok(testname, dr, "MD:TEMPORARY\r");
+    expect_command_response(testname, dr, "S/TEMPORARY/:*\r", "01, FILES SCRATCHED,00,00\r");
+    // The count still counts.
+    expect_iec_write_ok(testname, dr, 2, "/TEMPORARY/:GONE,S,W", "x");
+    expect_command_response(testname, dr, "S/TEMPORARY/:*\r", "01, FILES SCRATCHED,01,00\r");
+}
+
+// SI-053: I initialises. There is no medium to read in, so it answers OK, and like
+// sd2iec it closes the channels a program left open, flushing what was written to
+// them. UI is a different command and still answers with the DOS version.
+static void s11_si053_initialize(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite11-SI053-Initialize";
+    s11_partition(fm, dr, "si053");
+    expect_command_response(testname, dr, "I\r", "00, OK,00,00\r");
+    expect_command_response(testname, dr, "I0:\r", "00, OK,00,00\r");
+    expect_command_response(testname, dr, "UI\r", "73,U64HD ULTIMATE DOS V2.0,00,00\r");
+
+    // A file written and never closed: I closes it, so what was written is there.
+    open_file(dr, 3, "LEFTOPEN,S,W");
+    get_status(dr);
+    expect_status_ok(testname, "LEFTOPEN,S,W");
+    send_channel_data(dr, 3, (const uint8_t *)"FLUSHED", 7);
+    expect_command_response(testname, dr, "I\r", "00, OK,00,00\r");
+    expect_iec_file(testname, dr, 2, "LEFTOPEN,S,R", "FLUSHED");
+}
+
+// SI-054: V validates. A host file system has nothing to validate, so it answers OK.
+static void s11_si054_validate(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite11-SI054-Validate";
+    s11_partition(fm, dr, "si054");
+    expect_command_response(testname, dr, "V\r", "00, OK,00,00\r");
+    expect_command_response(testname, dr, "V0:\r", "00, OK,00,00\r");
+}
+
+// SI-045 and SI-046: the partition directory is a header, one line per partition and
+// the BASIC end marker, with no blocks free line (issue #890), and the number in front
+// of the header name is the number of partitions.
+static void s11_si045_partition_directory(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite11-SI045-PartitionDirectory";
+    s11_partition(fm, dr, "si045");
+    int partitions = 0;
+    for (int i = 1; i < MAX_PARTITIONS; i++) {
+        IecPartition *p = dr->get_file_system()->GetPartition(i);
+        if (p && (p->GetPartitionNumber() == i)) {
+            partitions++;
+        }
+    }
+    uint8_t listing[8192];
+    int got = read_directory_stream(testname, dr, "$=P", listing, sizeof(listing));
+    if (memmem(listing, got, "BLOCKS FREE", 11)) {
+        printf("%s: the partition directory has a blocks free line\n", testname);
+        dump_hex_relative(listing + got - 64, 64);
+    }
+    REQUIRE(memmem(listing, got, "BLOCKS FREE", 11) == NULL);
+    // A header and one 32 byte line per partition, then the two zero bytes that end a
+    // BASIC program.
+    if (got != (32 * (partitions + 1)) + 2) {
+        printf("%s: %d bytes for %d partitions, expected %d\n", testname, got, partitions,
+               (32 * (partitions + 1)) + 2);
+    }
+    REQUIRE(got == (32 * (partitions + 1)) + 2);
+    REQUIRE((listing[got - 2] == 0) && (listing[got - 1] == 0));
+}
+
+static void s11_si046_partition_count(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite11-SI046-PartitionCount";
+    s11_partition(fm, dr, "si046");
+    int partitions = 0;
+    for (int i = 1; i < MAX_PARTITIONS; i++) {
+        IecPartition *p = dr->get_file_system()->GetPartition(i);
+        if (p && (p->GetPartitionNumber() == i)) {
+            partitions++;
+        }
+    }
+    uint8_t listing[8192];
+    read_directory_stream(testname, dr, "$=P", listing, sizeof(listing));
+    // Bytes 4 and 5 of the header are the line number BASIC prints before the name.
+    int shown = listing[4] | (listing[5] << 8);
+    if (shown != partitions) {
+        printf("%s: header shows %d, there are %d partitions\n", testname, shown, partitions);
+    }
+    REQUIRE(partitions > 1);
+    REQUIRE(shown == partitions);
+}
+
 struct Suite11Case {
     const char *name;
     void (*run)(FileManager *fm, IecDrive *dr);
@@ -2280,6 +2380,11 @@ static const Suite11Case suite11_cases[] = {
     { "Suite11-SI030-MissingName",       s11_si030_missing_name },
     { "Suite11-SI030-WildcardTarget",    s11_si030_wildcard_target },
     { "Suite11-SI036-BlockRange",        s11_si036_block_range },
+    { "Suite11-SI033-ScratchNothing",    s11_si033_scratch_nothing },
+    { "Suite11-SI053-Initialize",        s11_si053_initialize },
+    { "Suite11-SI054-Validate",          s11_si054_validate },
+    { "Suite11-SI045-PartitionDirectory", s11_si045_partition_directory },
+    { "Suite11-SI046-PartitionCount",    s11_si046_partition_count },
 };
 
 // Runs every case, or only those whose name contains `only`.

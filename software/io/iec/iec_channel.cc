@@ -573,6 +573,7 @@ t_channel_retval IecChannel::push_command(uint8_t b)
                     if (rv == IEC_OK) {
                         close_file();
                         state = e_idle;
+                        name_to_open.access = e_not_set; // closed; closing again is not a write
                     }
                 } else {
                     state = e_error;
@@ -1054,6 +1055,19 @@ int IecChannel::read_dir_entry(void)
             dir = NULL;
         }
 
+        pointer = 0;
+        prefetch = 0;
+        if (state == e_partlist) {
+            // A partition directory has no blocks free line (SI-045, issue #890): the
+            // BASIC end marker follows the last partition.
+            buffer[0] = 0;
+            buffer[1] = 0;
+            last_byte = 1;
+            prefetch_max = 1;
+            state = e_dir; // with no directory open, the next call returns -1
+            return 0;
+        }
+
         if (dir_free > 65535) {
             buffer[2] = 0xFF;
             buffer[3] = 0xFF;
@@ -1170,6 +1184,8 @@ int IecChannel :: setup_partition_read()
     last_byte = -1;
     dir_free = 0;
     memcpy(buffer, c_header, 32);
+    // The number in front of the header name is the number of partitions (SI-046).
+    buffer[4] = (uint8_t)drive->vfs->CountPartitions();
     memcpy(buffer+8, "ULTIMATE HD", 11);
     memcpy(buffer+26, "UL 64", 5);
     return 0;
@@ -1947,6 +1963,18 @@ int IecCommandChannel::do_initialize()
     return ERR_DOS;
 }
 
+// I: there is no medium to read in again, so what is left of initialising is what
+// sd2iec does, closing the data channels a program left open (SI-053). A channel
+// written to is closed the way a CLOSE from the host closes it, so its data is kept.
+int IecCommandChannel::do_initialize_buffers()
+{
+    for (int i = 0; i < 15; i++) {
+        drive->get_data_channel(i)->push_command(0xE0);
+    }
+    drive->set_error(ERR_ALL_OK, 0, 0);
+    return 0;
+}
+
 int IecCommandChannel::do_format(uint8_t *name, uint8_t id1, uint8_t id2)
 {
     printf("Format: %s %02x %02x\n", name, id1, id2);
@@ -2025,9 +2053,7 @@ int IecCommandChannel::do_scratch(filename_t filenames[], int n)
             }
         }
     }
-    if (scratched == 0) {
-        return ERR_FILE_NOT_FOUND;
-    }
+    // Scratching nothing is not an error: the answer is 01 with a count of zero (SI-033).
     set_error(ERR_FILES_SCRATCHED, scratched);
     return 0;
 }

@@ -248,6 +248,16 @@ public:
         }
     }
 
+    int CountPartitions(void) {
+        int count = 0;
+        for(int i=1;i<MAX_PARTITIONS; i++) {
+            if (partitions[i]) {
+                count++;
+            }
+        }
+        return count;
+    }
+
     int GetUnusedPartition(void) {
         for(int i=1;i<MAX_PARTITIONS; i++) {
             if (!partitions[i]) {
@@ -389,6 +399,7 @@ class IecCommandChannel: public IecChannel, public IecCommandExecuter {
     int do_remove_dir(filename_t& dest);
     int do_copy(filename_t& dest, filename_t sources[], int n);
     int do_initialize();
+    int do_initialize_buffers();
     int do_format(uint8_t *name, uint8_t id1, uint8_t id2);
     int do_rename(filename_t &src, filename_t &dest);
     int do_scratch(filename_t filenames[], int n);

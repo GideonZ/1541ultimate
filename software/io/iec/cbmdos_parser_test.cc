@@ -290,6 +290,15 @@ void test_error_codes(void)
     test_dispatch("XFOO", 4, 30, NULL);
     test_dispatch("EFOO", 4, 30, NULL);
 
+    // SI-053 and SI-054: I and V are commands of their own. I releases the channels a
+    // program left open and answers OK; UI is the reset that answers with the DOS
+    // version; V has nothing to validate and answers OK.
+    test_dispatch("I", 1, 0, "initialize buffers");
+    test_dispatch("I0:\r", 4, 0, "initialize buffers");
+    test_dispatch("UI", 2, 73, "initialize");
+    test_dispatch("V", 1, 0, NULL);
+    test_dispatch("V0:\r", 4, 0, NULL);
+
     // An open name carrying a character a name cannot carry.
     open_t o;
     d_parse_open("FILE=X", o, 33);

@@ -35,6 +35,7 @@ public:
     int do_remove_dir(filename_t& dest);
     int do_copy(filename_t& dest, filename_t sources[], int n);
     int do_initialize();
+    int do_initialize_buffers();
     int do_format(uint8_t *name, uint8_t id1, uint8_t id2);
     int do_rename(filename_t &src, filename_t &dest);
     int do_scratch(filename_t filenames[], int n);
@@ -113,6 +114,12 @@ int IecCommandExecuterStubs::do_initialize()
 {
     record_stub_call("initialize");
     return 73;
+}
+
+int IecCommandExecuterStubs::do_initialize_buffers()
+{
+    record_stub_call("initialize buffers");
+    return 0;
 }
 
 int IecCommandExecuterStubs::do_format(uint8_t *name, uint8_t id1, uint8_t id2)
