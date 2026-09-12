@@ -1516,30 +1516,11 @@ class RestDebugDriver(BaseDriver):
         # parked session will not navigate: the next cell's first goto times out
         # and the failure is reported against a cell that did nothing wrong.
         # Runs after this cell's verdict is decided, so it cannot mask it.
-        #
-        # A twelve-second budget, not three quick taps: tearing a session down
-        # restores every patched byte before the header redraws, so on a slow
-        # exit the Dbg flag can outlive the keystroke by several seconds - see
-        # monitor_debug_test.py's dbg._ensure_no_debug(), which exists because a
-        # short fixed budget was measured not enough. This mirrors that
-        # function for the REST transport: re-send only every 4s rather than
-        # stacking taps, and back out of a BREAKPOINTS or BOOKMARKS popup
-        # first, since either would otherwise eat a C=+D the loop is waiting on.
+        # _drain_stale_debug() is the shared popup-aware teardown; see it and
+        # monitor_debug_test.py's dbg._ensure_no_debug() for why a bare run of
+        # C=+D taps is not enough (slow exits, and popups that eat the key).
         try:
-            deadline = time.time() + 12.0
-            last_sent = 0.0
-            while time.time() < deadline:
-                text = self.rest.screen_text()
-                if "Dbg" not in text:
-                    break
-                if "BREAKPOINTS" in text or "BOOKMARKS" in text:
-                    self.rest.tap(["run_stop"])
-                    time.sleep(0.2)
-                    continue
-                if time.time() - last_sent > 4.0:
-                    self.rest.tap(["commodore", "d"])
-                    last_sent = time.time()
-                time.sleep(0.2)
+            self._drain_stale_debug()
             self.event("close_monitor_debug_state",
                        debug_active="Dbg" in self.rest.screen_text())
         except Exception as exc:  # noqa: BLE001 - teardown must not mask a verdict
@@ -1825,6 +1806,50 @@ class RestDebugDriver(BaseDriver):
             f"{self.row['cell_id']}: clear bp ${address:04X}")
         self.event("clear_breakpoint", address=f"{address:04X}")
 
+    def _drain_stale_debug(self, budget: float = 12.0) -> bool:
+        """Leave any Debug session over the REST transport, robustly.
+
+        Shared by close_monitor() (cell end) and leave_stale_debug() (cell
+        start) so both tear a session down the same way. Two properties matter
+        and a bare run of C=+D taps has neither:
+
+        - A BREAKPOINTS or BOOKMARKS popup owns the keyboard, so a C=+D sent
+          into one is swallowed and the session never leaves. The popup is
+          backed out with RUN/STOP first. This is the case that made a stale
+          session survive into the next cell: a cell that left the breakpoint
+          list popup open handed the next cell a Dbg flag that four bare C=+D
+          taps could not clear, and the next cell failed as if it had inherited
+          an unclosable session.
+        - Tearing a session down restores every patched byte before the header
+          redraws, so on a slow exit the Dbg flag outlives the keystroke by
+          several seconds; the key is re-sent every 4s rather than stacked.
+
+        Returns True once the monitor no longer shows Dbg (or its screen cannot
+        be read, meaning nothing is inherited), False if the budget elapses
+        with Dbg still shown.
+        """
+        deadline = time.time() + budget
+        last_sent = 0.0
+        while time.time() < deadline:
+            try:
+                text = self.rest.screen_text()
+            except mt.Failure:
+                return True     # no monitor screen to read; nothing inherited
+            if "Dbg" not in text:
+                return True
+            if "BREAKPOINTS" in text or "BOOKMARKS" in text:
+                self.rest.tap(["run_stop"])
+                time.sleep(0.2)
+                continue
+            if time.time() - last_sent > 4.0:
+                self.rest.tap(["commodore", "d"])
+                last_sent = time.time()
+            time.sleep(0.2)
+        try:
+            return "Dbg" not in self.rest.screen_text()
+        except mt.Failure:
+            return True
+
     def leave_stale_debug(self) -> None:
         """End a Debug session inherited from an earlier cell.
 
@@ -1834,17 +1859,19 @@ class RestDebugDriver(BaseDriver):
         will not navigate: its first goto times out and the failure is reported
         against a cell that did nothing wrong. This runs with the monitor open
         and before any of the tested workflow, so it cannot mask this cell.
+
+        Uses the same popup-aware teardown as close_monitor(): a stale session
+        can arrive with its breakpoint-list popup still open, which eats a bare
+        C=+D, so the popup is backed out with RUN/STOP before C=+D is sent.
         """
-        for attempt in range(4):
-            try:
-                if "Dbg" not in self.rest.screen_text():
-                    if attempt:
-                        self.event("left_stale_debug", taps=attempt)
-                    return
-            except mt.Failure:
-                return          # no monitor screen to read; nothing inherited
-            self.rest.tap(["commodore", "d"])
-            time.sleep(0.5)
+        try:
+            had_debug = "Dbg" in self.rest.screen_text()
+        except mt.Failure:
+            return              # no monitor screen to read; nothing inherited
+        if self._drain_stale_debug():
+            if had_debug:
+                self.event("left_stale_debug")
+            return
         raise GateError(
             "inherited Debug session would not exit with C=+D:\n"
             + self.rest.screen_text())

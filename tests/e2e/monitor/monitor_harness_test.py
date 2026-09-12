@@ -1262,6 +1262,88 @@ class RegressionPlanTest(unittest.TestCase):
                     self.assertIn(cell.term(), text)
 
 
+class StaleDebugTeardownTest(unittest.TestCase):
+    """RestDebugDriver.leave_stale_debug must clear a session whose breakpoint
+    popup is still open.
+
+    A popup owns the keyboard, so a C=+D sent into one is swallowed. A cell that
+    ended with the breakpoint-list popup open therefore handed the next cell a
+    Dbg flag that a bare run of C=+D taps could not clear, and the next cell
+    failed with "inherited Debug session would not exit with C=+D". The teardown
+    now backs the popup out with RUN/STOP first, the same way close_monitor()
+    and monitor_debug_test.py's _ensure_no_debug() already do.
+    """
+
+    class _PopupRest:
+        """A monitor whose Debug session opens with its breakpoint popup up.
+
+        RUN/STOP closes the popup; C=+D then leaves Debug. A C=+D sent while the
+        popup is up is eaten, which is the firmware behaviour the teardown has to
+        cope with.
+        """
+
+        def __init__(self, start="popup"):
+            self.state = start          # "popup" -> "debug" -> "clear"
+            self.taps = []
+
+        def screen_text(self):
+            if self.state == "popup":
+                return "MONITOR ASM $C000            Dbg\nBREAKPOINTS\n"
+            if self.state == "debug":
+                return "MONITOR ASM $C000            Dbg\n"
+            return "MONITOR ASM $C000\n"
+
+        def tap(self, keys):
+            self.taps.append(list(keys))
+            if keys == ["run_stop"] and self.state == "popup":
+                self.state = "debug"
+            elif keys == ["commodore", "d"] and self.state == "debug":
+                self.state = "clear"
+            # C=+D while the popup is up is swallowed: no state change.
+
+    class _Driver:
+        # Bind the real methods under test so the fake exercises production
+        # code rather than a copy of it.
+        _drain_stale_debug = gate.RestDebugDriver._drain_stale_debug
+        leave_stale_debug = gate.RestDebugDriver.leave_stale_debug
+
+        def __init__(self, rest):
+            self.rest = rest
+            self.events = []
+
+        def event(self, name, **kw):
+            self.events.append((name, kw))
+
+    def test_leave_stale_debug_backs_out_popup_then_leaves(self):
+        rest = self._PopupRest(start="popup")
+        drv = self._Driver(rest)
+        # Must not raise GateError, and must end with Debug gone.
+        drv.leave_stale_debug()
+        self.assertNotIn("Dbg", rest.screen_text())
+        self.assertIn(["run_stop"], rest.taps,
+                      "the popup was never backed out")
+        self.assertIn(["commodore", "d"], rest.taps,
+                      "C=+D was never sent after the popup closed")
+
+    def test_bare_ctrl_d_would_stay_stuck_behind_the_popup(self):
+        # The control: the old behaviour, four bare C=+D taps with no popup
+        # back-out, leaves the session stuck. This is what regressed the run.
+        rest = self._PopupRest(start="popup")
+        for _ in range(4):
+            if "Dbg" not in rest.screen_text():
+                break
+            rest.tap(["commodore", "d"])
+        self.assertIn("Dbg", rest.screen_text(),
+                      "the popup should have eaten every bare C=+D")
+
+    def test_leave_stale_debug_is_a_noop_without_an_inherited_session(self):
+        rest = self._PopupRest(start="clear")
+        drv = self._Driver(rest)
+        drv.leave_stale_debug()
+        self.assertEqual(rest.taps, [], "no keys should be sent when nothing "
+                         "is inherited")
+
+
 if __name__ == "__main__":
     # The runner may pass device options that these host-side checks ignore.
     result = unittest.main(argv=[sys.argv[0]], verbosity=2, exit=False)
