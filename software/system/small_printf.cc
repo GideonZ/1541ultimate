@@ -21,7 +21,7 @@ _cvt(int val, char *buf, int radix, const char *digits, int leading_zeros, int w
 	if((signd) && (val < 0)) {
 		*buf++ = '-';
 		length++;
-		v = -val;
+		v = 0U - (unsigned int)val;
 	} else {
         v = val;
     }
