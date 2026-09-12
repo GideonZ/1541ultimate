@@ -753,9 +753,10 @@ def run_bad_debugreg(session: RestSession) -> bool:
                 raise Failure(f"debugreg(value={bad!r}) changed the register "
                               f"from {before!r} to {after!r}")
 
-    with check("debugreg still takes a valid value"):
-        if api.machine.set_debugreg("1F") is None:
-            raise Failure("machine:debugreg stopped answering")
+    with check("debugreg still takes a valid value without changing it"):
+        after = api.machine.set_debugreg(before)
+        if after != before:
+            raise Failure(f"wrote back {before!r}, reads {after!r}")
 
     return True
 
