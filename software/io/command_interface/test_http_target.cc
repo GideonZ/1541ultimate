@@ -424,6 +424,30 @@ static void test_external_json(HttpTarget *target)
     command_external_empty(target, "external delete object", HTTP_CMD_BODY_REMOVE, handle, "%1", status_ok);
 }
 
+static void test_body_removal(HttpTarget *target)
+{
+    static const uint8_t gideon[] = { HTTP_DATA_STRING, 6, 'G', 'i', 'd', 'e', 'o', 'n' };
+    const char *removed[] = { "branch/child", "branch", "sibling", "items[0]" };
+    const char *selected[] = { "branch/child", "branch/child", "branch/child", "items[0]" };
+    const char *destination[] = { "branch/name", "name", "branch/child/name", "items[0]/name" };
+    for (unsigned i = 0; i < sizeof(removed) / sizeof(removed[0]); ++i) {
+        char json[] = "{\"branch\":{\"child\":{}},\"sibling\":{},\"items\":[{}]}";
+        uint8_t handle = 0xFF;
+        target->create_body_from_json(json, sizeof(json) - 1, &handle);
+        command_external_empty(target, "select editing position", HTTP_CMD_BODY_MOVE, handle, selected[i], status_ok);
+        command_external_empty(target, "delete selected node, ancestor or sibling", HTTP_CMD_BODY_REMOVE, handle, removed[i], status_ok);
+        if (i == 3) {
+            // Deleting an array element should leave its containing array selected.
+            uint8_t data[] = { 6, HTTP_CMD_BODY_ADD_OBJECT, handle, 0 };
+            Message command = make_msg(data, sizeof(data));
+            run_expect_empty(target, "append after deleting array selection", &command, status_ok);
+        }
+        add_external_name(target, handle);
+        query_external(target, "edit after deletion reaches surviving parent", handle, destination[i], gideon, sizeof(gideon));
+        command_external_empty(target, "free navigation body", HTTP_CMD_BODY_FREE, handle, "", status_ok);
+    }
+}
+
 static void test_free_all(HttpTarget *target)
 {
     // After test_external_json: headers[0] and bodies[0..2] are all allocated.
@@ -525,6 +549,12 @@ int main(int argc, char **argv)
         return 1;
     }
 
+    if ((argc > 1) && (strcmp(argv[1], "--body-removal") == 0)) {
+        test_body_removal(target);
+        printf("Body removal: %d checks, %d failures\n", checks, failures);
+        return failures ? 1 : 0;
+    }
+
     test_headers(target);
     test_legacy_body_object(target);
     test_legacy_body_array(target);
@@ -534,6 +564,7 @@ int main(int argc, char **argv)
     test_external_json(target);
     test_free_all(target);
     test_body_clear(target);
+    test_body_removal(target);
 
     if ((argc > 1) && (strcmp(argv[1], "--network") == 0)) {
         run_network_smoke(target);
