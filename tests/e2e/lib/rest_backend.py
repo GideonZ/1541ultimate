@@ -302,7 +302,20 @@ class RestBackend(Backend):
             raise Failure(f"menu_button failed with HTTP {status}: {body[:160]!r}")
         deadline = time.monotonic() + SETTLE_TIMEOUT_SECONDS
         while time.monotonic() < deadline:
-            if self._menu_open():
+            screen = self._menu_screen_body()
+            if screen is not None:
+                # The menu answers the moment it opens, before the browser has
+                # drawn: on an Ultimate 64 in Overlay mode the character matrix
+                # still holds what the previous UI left there, and the browser
+                # paints over it row by row during the next few tens of
+                # milliseconds. Observed as a monitor status line from a closed
+                # session being read as "the monitor is up", so the key that
+                # would have opened it was never sent. Opening the menu is a
+                # redraw like any other, so it gets the same wait every keypress
+                # gets: the screen has to hold still before it is anyone's to
+                # read.
+                wait_screen_settled(self._menu_screen_body,
+                                    timeout=SETTLE_TIMEOUT_SECONDS, known=screen)
                 return
             time.sleep(POLL_INTERVAL_SECONDS)
         raise Failure("the on-device menu did not open")
