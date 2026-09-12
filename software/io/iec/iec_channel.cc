@@ -1710,6 +1710,8 @@ int IecCommandChannel :: do_block_read(int chan, int part, int track, int sector
     fres = fm->fs_read_sector(&path, channel->buffer, track, sector);
     if (fres == FR_DENIED) {
         drive->set_error(ERR_DENIED, track, sector);
+    } else if (fres == FR_INVALID_PARAMETER) { // outside the disk (SI-036)
+        drive->set_error(ERR_ILLEGAL_TRACK_SECTOR, track, sector);
     } else {
         drive->set_error_fres(fres);
     }
@@ -1736,6 +1738,8 @@ int IecCommandChannel::do_block_write(int chan, int part, int track, int sector)
     fres = fm->fs_write_sector(&path, channel->buffer, track, sector);
     if (fres == FR_DENIED) {
         drive->set_error(ERR_DENIED, track, sector);
+    } else if (fres == FR_INVALID_PARAMETER) { // outside the disk (SI-036)
+        drive->set_error(ERR_ILLEGAL_TRACK_SECTOR, track, sector);
     } else {
         drive->set_error_fres(fres);
     }
@@ -1755,6 +1759,8 @@ int IecCommandChannel::do_block_allocate(int part, int track, int sector, bool a
     fres = fm->fs_allocate_sector(&path, track, sector, alloc);
     if (fres == FR_DENIED) {
         drive->set_error(ERR_DENIED, track, sector);
+    } else if (fres == FR_INVALID_PARAMETER) { // outside the disk (SI-036)
+        drive->set_error(ERR_ILLEGAL_TRACK_SECTOR, track, sector);
     } else {
         drive->set_error_fres(fres);
     }

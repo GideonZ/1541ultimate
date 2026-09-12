@@ -114,7 +114,7 @@ int parse_full_path(const char *buf, filename_t& name, bool *replace = NULL, boo
     }
     name.has_wildcard = name.filename.contains_any("?*");
     if (!path_only && name.filename.length() == 0) {
-        return ERR_ILLEGAL_NAME;
+        return ERR_NO_NAME;
     }
     return 0;
 }
@@ -256,7 +256,7 @@ int parse_open(const char *buf, open_t& fn)
     }
 
     if (fn.file.filename.contains_any(",=:\xA0\r")) {
-        return ERR_ILLEGAL_CHARS;
+        return ERR_ILLEGAL_NAME;
     }
     return 0;
 }
@@ -332,7 +332,7 @@ int IecParser :: block_command(const uint8_t *buffer, int len)
         if (n < 3) return ERR_SYNTAX;
         return exec->do_block_allocate(p[0], p[1], p[2], buffer[2] == 'A');
     default:
-        return ERR_UNKNOWN_CMD;
+        return ERR_SYNTAX;
     }
     return 0;
 }
@@ -360,7 +360,7 @@ int IecParser :: cp_command(const uint8_t *buffer, int len)
 int IecParser :: dir_command(const uint8_t *buffer, int len)
 {
     if (buffer[1] != 'D') {
-        return ERR_UNKNOWN_CMD;
+        return ERR_SYNTAX;
     }
     mstring cmd((const char *)buffer, 2, len-1);    
     filename_t dest;
@@ -373,7 +373,7 @@ int IecParser :: dir_command(const uint8_t *buffer, int len)
     case 'M': return exec->do_make_dir(dest);
     case 'R': return exec->do_remove_dir(dest);
     default:
-        return ERR_UNKNOWN_CMD;
+        return ERR_SYNTAX;
     }
     return 0;
 }
@@ -431,7 +431,7 @@ int IecParser :: get_command(const uint8_t *buffer, int len)
         }
         return ERR_SYNTAX;
     default:
-        return ERR_UNKNOWN_CMD;
+        return ERR_SYNTAX;
     }
     return 0;
 }
@@ -614,7 +614,7 @@ int IecParser :: time_command(const uint8_t *buffer, int len)
     case 'W':
         return 0; // just assume OK
     }
-    return ERR_UNKNOWN_CMD;
+    return ERR_SYNTAX;
 }
 
 int IecParser :: user_command(const uint8_t *buffer, int len)
@@ -650,7 +650,7 @@ int IecParser :: user_command(const uint8_t *buffer, int len)
     case 'J':
         return exec->do_initialize();
     default:
-        return ERR_UNKNOWN_CMD;
+        return ERR_SYNTAX;
     }
     return 0;
 }
@@ -661,7 +661,7 @@ int IecParser :: extended_command(const uint8_t *buffer, int len)
     if (cmd == "PWD") {
         return exec->do_pwd_command();
     }
-    return ERR_UNKNOWN_CMD;
+    return ERR_SYNTAX;
 }
 
 // BASIC's PRINT# ends a command with a carriage return, and CBM DOS drops it before

@@ -71,7 +71,7 @@ const char msg62[] = "FILE NOT FOUND";			//62
 const char msg63[] = "FILE EXISTS";				//63
 const char msg64[] = "FILE TYPE MISMATCH";		//64
 //const char msg65[] = "NO BLOCK";				//65
-//const char msg66[] = "ILLEGAL TRACK AND SECTOR";//66
+const char msg66[] = "ILLEGAL TRACK OR SECTOR"; //66, as sd2iec and the 1541 ROM print it
 //const char msg67[] = "ILLEGAL SYSTEM T OR S";	//67
 const char msg69[] = "FILESYSTEM ERROR";        //69
 const char msg70[] = "NO CHANNEL";	            //70
@@ -113,7 +113,7 @@ const IEC_ERROR_MSG last_error_msgs[] = {
 		{ 63, msg63, NR_OF_EL(msg63) - 1 },
 		{ 64, msg64, NR_OF_EL(msg64) - 1 },
 //		{ 65, msg65, NR_OF_EL(msg65) - 1 },
-//		{ 66, msg66, NR_OF_EL(msg66) - 1 },
+		{ 66, msg66, NR_OF_EL(msg66) - 1 },
 //		{ 67, msg67, NR_OF_EL(msg67) - 1 },
         { 69, msg69, NR_OF_EL(msg69) - 1 },
 		{ 70, msg70, NR_OF_EL(msg70) - 1 },

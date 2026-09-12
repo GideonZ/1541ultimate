@@ -63,10 +63,11 @@ typedef struct {
     uint16_t record_size;
 } open_t;
 
-#define ERR_SYNTAX        30
-#define ERR_ILLEGAL_CHARS 31
-#define ERR_ILLEGAL_NAME  32
-#define ERR_UNKNOWN_CMD   33
+// The syntax errors of CBM and CMD DOS (HD B-2, 1541 User's Guide).
+#define ERR_SYNTAX        30 // the command was recognised, its arguments were not
+#define ERR_UNKNOWN_CMD   31 // the first character is not a command letter
+#define ERR_ILLEGAL_NAME  33 // a wildcard or a character a name cannot carry
+#define ERR_NO_NAME       34 // no name, or a colon with nothing after it
 
 class IecCommandExecuter
 {

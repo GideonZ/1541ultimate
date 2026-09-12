@@ -1042,7 +1042,7 @@ static void run_iec_partition3_sequence(IecDrive *dr, const char *label)
     expect_command_response("TEST13", dr, "CP3", "02,PARTITION SELECTED,03,00\r");
     expect_command_response("TEST14", dr, "XPWD", "3:/");
     expect_command_response("TEST15", dr, "T-RI", "2025-06-26T00:41:01 WED\r");
-    expect_command_response("TEST16", dr, "C3:BAD=", "32,SYNTAX ERROR,00,00\r");
+    expect_command_response("TEST16", dr, "C3:BAD=", "34,SYNTAX ERROR,00,00\r");
 
     expect_command_ok("TEST17", dr, "C3:COMBO=3:BASIC,3:LITERAL");
     expect_iec_file("TEST18", dr, 0, "3:COMBO", "BASIC:PRGLITERAL:PRG");
@@ -1356,7 +1356,7 @@ void execute_suite7(FileManager *fm, IecDrive *dr)
 
     expect_iec_open_status_prefix("Suite7-OpenBadModifier", dr, 0, "7:BAD,X", "30,SYNTAX ERROR");
     expect_iec_open_status_prefix("Suite7-OpenBadRecordType", dr, 0, "7:BAD,P,L", "30,SYNTAX ERROR");
-    expect_iec_open_status_prefix("Suite7-OpenMalformedReplace", dr, 0, "@345:", "32,SYNTAX ERROR");
+    expect_iec_open_status_prefix("Suite7-OpenMalformedReplace", dr, 0, "@345:", "34,SYNTAX ERROR");
     expect_iec_open_status_prefix("Suite7-OpenMalformedDollar", dr, 0, "$", "00");
     //expect_iec_open_status_prefix("Suite7-OpenMalformedHash", dr, 0, "#", "30,SYNTAX ERROR");
 
@@ -1422,7 +1422,7 @@ static void run_suite8_time_copy_rename_scratch(IecDrive *dr)
     expect_command_bytes("Suite8-T-RD", dr, "T-RD", t_rd, sizeof(t_rd));
     expect_command_bytes("Suite8-T-RB", dr, "T-RB", t_rb, sizeof(t_rb));
 
-    expect_command_response("Suite8-COPY-MISSING-SOURCE", dr, "C2:DEST=", "32,SYNTAX ERROR,00,00\r");
+    expect_command_response("Suite8-COPY-MISSING-SOURCE", dr, "C2:DEST=", "34,SYNTAX ERROR,00,00\r");
     expect_command_ok("Suite8-COPY-A-BB", dr, "C2:DEST=1:A,1:BB");
     expect_iec_file("Suite8-COPY-DEST", dr, 0, "2:DEST", "This is really a silly test.This is really a silly test.");
 
@@ -1683,11 +1683,12 @@ static void run_suite10_command_terminator(FileManager *fm, IecDrive *dr)
     expect_status_ok("Suite10-RelClose", "12:RELPOS");
 
     // A command that fills the 64 byte command buffer still has to be executed: the
-    // zero written after its last byte must not reach the byte count itself.
+    // zero written after its last byte must not reach the byte count itself. Z is not
+    // a command letter, so the answer is 31 (SI-031).
     char full[65];
     memset(full, 'Z', 64);
     full[64] = 0;
-    expect_command_status_prefix("Suite10-FullBuffer", dr, full, "33,SYNTAX ERROR");
+    expect_command_status_prefix("Suite10-FullBuffer", dr, full, "31,SYNTAX ERROR");
 
     // A command that is nothing but a carriage return carries no command at all, and
     // has to leave the command channel usable.
@@ -1905,8 +1906,8 @@ static void run_suite10_block_commands(FileManager *fm, IecDrive *dr)
     expect_command_status_prefix("Suite10-U1-TooFew", dr, "U1: 2  0 \r", "30,SYNTAX ERROR");
     expect_command_status_prefix("Suite10-BR-NoParams", dr, "B-R:\r", "30,SYNTAX ERROR");
     expect_command_status_prefix("Suite10-BR-NotNumeric", dr, "B-R:X,0,18,0\r", "30,SYNTAX ERROR");
-    expect_command_status_prefix("Suite10-U1-BadTrack", dr, "U1:2,0,99,0\r", "69,FILESYSTEM ERROR");
-    expect_command_status_prefix("Suite10-U1-BadSector", dr, "U1:2,0,18,99\r", "69,FILESYSTEM ERROR");
+    expect_command_status_prefix("Suite10-U1-BadTrack", dr, "U1:2,0,99,0\r", "66,ILLEGAL TRACK OR SECTOR");
+    expect_command_status_prefix("Suite10-U1-BadSector", dr, "U1:2,0,18,99\r", "66,ILLEGAL TRACK OR SECTOR");
     expect_command_status_prefix("Suite10-U1-OnDirectory", dr, "U1:2,12,18,0\r", "78,BLOCK ACCESS DENIED");
     expect_command_response("Suite10-CP13-Again", dr, "CP13\r", "02,PARTITION SELECTED,13,00\r");
 }
@@ -1926,9 +1927,10 @@ static void run_suite10_user_commands(IecDrive *dr)
     expect_command_status_prefix("Suite10-UColon", dr, "U:\r", "73,");
     expect_command_status_prefix("Suite10-I", dr, "I0\r", "73,");
 
-    // U3 to U8 jump into a drive buffer, which this drive has no equivalent for.
-    expect_command_status_prefix("Suite10-U3", dr, "U3:2,0,18,0\r", "33,SYNTAX ERROR");
-    expect_command_status_prefix("Suite10-Unknown", dr, "ZZ\r", "33,SYNTAX ERROR");
+    // U3 to U8 jump into a drive buffer, which this drive has no equivalent for. U is
+    // a command letter, so that is 30 (SI-104); Z is not, so that is 31 (SI-031).
+    expect_command_status_prefix("Suite10-U3", dr, "U3:2,0,18,0\r", "30,SYNTAX ERROR");
+    expect_command_status_prefix("Suite10-Unknown", dr, "ZZ\r", "31,SYNTAX ERROR");
 
     // Reading the error channel clears it, as it does on a real drive.
     expect_command_status_prefix("Suite10-ErrorSet", dr, "CD//NOSUCH\r", "71,DIRECTORY ERROR");
@@ -2183,6 +2185,125 @@ void execute_suite10(FileManager *fm, IecDrive *dr)
     printf("Suite10 completed successfully!\n");
 }
 
+// ---------------------------------------------------------------------------
+// Suite11: doc/softiec_compatibility_spec.md, one case per requirement, each named
+// after the paragraph it checks.
+//
+// Every case works on a partition of its own and sets it up itself, so a case can be
+// run alone: `./result/testdrive SI031` runs only the Suite11 cases whose name
+// contains SI031 and skips every other suite. That is how a requirement is shown to
+// fail on its own before its change and to pass after it.
+// ---------------------------------------------------------------------------
+
+// A fresh directory on the FAT file, mounted as partition 40, selected, and entered at
+// its root.
+static const char *s11_partition(FileManager *fm, IecDrive *dr, const char *dir)
+{
+    const char *testname = "Suite11";
+    static char path[64];
+    snprintf(path, sizeof(path), "/Fat/s11_%s", dir);
+    FRESULT fres = fm->create_dir(path);
+    REQUIRE(fres == FR_OK || fres == FR_EXIST);
+    dr->add_partition(40, path, "SUITE11");
+    expect_command_response(testname, dr, "CP40\r", "02,PARTITION SELECTED,40,00\r");
+    expect_command_ok(testname, dr, "CD//\r");
+    return path;
+}
+
+// SI-031: a command whose first byte is not a command letter answers 31, which is
+// what the 1541 ROM loads at $C175 when its command table has no match.
+static void s11_si031_unrecognised(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite11-SI031-Unrecognised";
+    s11_partition(fm, dr, "si031");
+    // CHR$(0) is the command C64 OS sends during its boot, measured as 33 on #877.
+    const uint8_t chr0[1] = { 0 };
+    expect_command_data_response(testname, dr, chr0, 1, "31,SYNTAX ERROR,00,00\r");
+    expect_command_response(testname, dr, "Z\r", "31,SYNTAX ERROR,00,00\r");
+    expect_command_response(testname, dr, "Q", "31,SYNTAX ERROR,00,00\r");
+}
+
+// SI-030: a command letter followed by a sub-command that does not exist answers 30,
+// because the command was recognised. U3 jumps into drive memory (SI-104) and B-E
+// executes a drive buffer (SI-095); neither exists here.
+static void s11_si030_unknown_subcommand(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite11-SI030-UnknownSubcommand";
+    s11_partition(fm, dr, "si030a");
+    expect_command_response(testname, dr, "U3:2,0,18,0\r", "30,SYNTAX ERROR,00,00\r");
+    expect_command_response(testname, dr, "B-E:2,0,18,0\r", "30,SYNTAX ERROR,00,00\r");
+}
+
+// SI-030: a colon with nothing after it is a missing name, 34.
+static void s11_si030_missing_name(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite11-SI030-MissingName";
+    s11_partition(fm, dr, "si030b");
+    expect_command_response(testname, dr, "C:NEW=\r", "34,SYNTAX ERROR,00,00\r");
+    expect_command_response(testname, dr, "R:NEW=\r", "34,SYNTAX ERROR,00,00\r");
+}
+
+// SI-030: a wildcard in the target of a copy or a rename is an illegal name, 33.
+static void s11_si030_wildcard_target(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite11-SI030-WildcardTarget";
+    s11_partition(fm, dr, "si030c");
+    expect_command_response(testname, dr, "C:NEW*=OLD\r", "33,SYNTAX ERROR,00,00\r");
+    expect_command_response(testname, dr, "R:NEW?=OLD\r", "33,SYNTAX ERROR,00,00\r");
+}
+
+// SI-036: a block command outside the disk is error 66, which CBM DOS names, and not
+// the Ultimate's own 69 with a file system result code in the track field.
+static void s11_si036_block_range(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite11-SI036-BlockRange";
+    const char *image = "/Fat/s11_si036.d64";
+    create_formatted_image(fm, image, "RANGE", 683, e_image_d64);
+    dr->add_partition(41, image, "RANGE");
+    expect_command_response(testname, dr, "CP41\r", "02,PARTITION SELECTED,41,00\r");
+    open_buffer_channel(testname, dr, 2);
+    expect_command_response(testname, dr, "U1:2,0,99,0\r", "66,ILLEGAL TRACK OR SECTOR,99,00\r");
+    expect_command_response(testname, dr, "U1:2,0,18,99\r", "66,ILLEGAL TRACK OR SECTOR,18,99\r");
+    expect_command_response(testname, dr, "U2:2,0,36,0\r", "66,ILLEGAL TRACK OR SECTOR,36,00\r");
+    expect_command_response(testname, dr, "B-A:0,40,1\r", "66,ILLEGAL TRACK OR SECTOR,40,01\r");
+    close_file(dr, 2);
+}
+
+struct Suite11Case {
+    const char *name;
+    void (*run)(FileManager *fm, IecDrive *dr);
+};
+
+static const Suite11Case suite11_cases[] = {
+    { "Suite11-SI031-Unrecognised",      s11_si031_unrecognised },
+    { "Suite11-SI030-UnknownSubcommand", s11_si030_unknown_subcommand },
+    { "Suite11-SI030-MissingName",       s11_si030_missing_name },
+    { "Suite11-SI030-WildcardTarget",    s11_si030_wildcard_target },
+    { "Suite11-SI036-BlockRange",        s11_si036_block_range },
+};
+
+// Runs every case, or only those whose name contains `only`.
+void execute_suite11(FileManager *fm, IecDrive *dr, const char *only)
+{
+    const char *testname = "Suite11";
+    int ran = 0;
+    print_scenario("Suite11", "Software IEC compatibility specification");
+    for (size_t i = 0; i < sizeof(suite11_cases) / sizeof(suite11_cases[0]); i++) {
+        if (only && !strstr(suite11_cases[i].name, only)) {
+            continue;
+        }
+        printf("  %s\n", suite11_cases[i].name);
+        suite11_cases[i].run(fm, dr);
+        ran++;
+    }
+    if (only) {
+        printf("Suite11 ran %d case(s) matching '%s'\n", ran, only);
+        REQUIRE(ran > 0);
+        return;
+    }
+    printf("Suite11 completed successfully!\n");
+}
+
 
 /* =============================================================================
  * SOFTIEC-TRACE diagnostics, GideonZ/1541ultimate#877.
@@ -2346,15 +2467,20 @@ int main(int argc, const char **argv)
     File *f;
     FileManager *fm = FileManager :: getFileManager();
 
-    execute_suite8(fm, dr);
-    run_suite9_block_matrix(fm, dr);
-    execute_suite3(fm, dr);
-    execute_suite4(fm, dr);
-    execute_suite5(fm, dr);
-    execute_suite6(fm, dr);
-    execute_suite7(fm, dr);
-    execute_suite10(fm, dr);
-    run_softiec_trace_suite(fm, dr); // #877 diagnostics; removed with them
+    // With an argument, only the Suite11 cases whose name contains it run.
+    const char *only = (argc > 1) ? argv[1] : NULL;
+    if (!only) {
+        execute_suite8(fm, dr);
+        run_suite9_block_matrix(fm, dr);
+        execute_suite3(fm, dr);
+        execute_suite4(fm, dr);
+        execute_suite5(fm, dr);
+        execute_suite6(fm, dr);
+        execute_suite7(fm, dr);
+        execute_suite10(fm, dr);
+        run_softiec_trace_suite(fm, dr); // #877 diagnostics; removed with them
+    }
+    execute_suite11(fm, dr, only);
 
     delete dr;
     delete ui;

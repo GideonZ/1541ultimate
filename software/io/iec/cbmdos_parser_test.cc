@@ -197,8 +197,9 @@ void test_block_command_forms(void)
     test_dispatch("UI+", 3, 0, NULL);
     test_dispatch("UI-", 3, 0, NULL);
     test_dispatch("U9+", 3, 0, NULL);
-    // U3 to U8 jump into a drive buffer, which has no equivalent here.
-    test_dispatch("U3:2,0,18,0", 11, ERR_UNKNOWN_CMD, NULL);
+    // U3 to U8 jump into a drive buffer, which has no equivalent here. U is a command
+    // letter, so only the sub-command is unknown: 30, not 31 (SI-104).
+    test_dispatch("U3:2,0,18,0", 11, 30, NULL);
 
     // The position command takes the secondary address either on its own or with 96
     // added to it, which is the form the manuals document. Three parameter bytes are
@@ -257,6 +258,42 @@ void test_command_terminator(void)
     // A command whose parameters are text loses the terminator rather than reading
     // it as a value.
     test_dispatch("B-P:2,13\r", 9, 0, "buffer position", 2, 13);
+}
+
+// The error numbers of doc/softiec_compatibility_spec.md SI-030, one case per return
+// site whose number differs from 30. The numbers are written out rather than taken
+// from the constants, so a constant with the wrong value cannot pass.
+//   30 the command was recognised and its arguments were not
+//   31 the first character is not a command letter
+//   33 a wildcard or a character a name cannot carry
+//   34 no name, or a colon with nothing after it
+void test_error_codes(void)
+{
+    // SI-031: not a command letter. CHR$(0) and A are what the reporter measured on
+    // #877; Z and Q never become commands.
+    test_dispatch("\0", 1, 31, NULL);
+    test_dispatch("Z", 1, 31, NULL);
+    test_dispatch("Q\r", 2, 31, NULL);
+    // A colon with nothing after it.
+    test_dispatch("C99:EMPTY=", 10, 34, NULL);
+    test_dispatch("R:NEW=", 6, 34, NULL);
+    // A wildcard in the target of a copy or a rename.
+    test_dispatch("C:NEW*=OLD", 10, 33, NULL);
+    test_dispatch("R:NEW?=OLD", 10, 33, NULL);
+    // A command letter followed by a sub-command that does not exist.
+    test_dispatch("B-X:1,2,3", 9, 30, NULL);
+    test_dispatch("B-E:2,0,18,0", 12, 30, NULL); // SI-095: no drive memory to run code in
+    test_dispatch("MX", 2, 30, NULL);
+    test_dispatch("G-X", 3, 30, NULL);
+    test_dispatch("UZ", 2, 30, NULL);
+    test_dispatch("T-X", 3, 30, NULL);
+    test_dispatch("XFOO", 4, 30, NULL);
+    test_dispatch("EFOO", 4, 30, NULL);
+
+    // An open name carrying a character a name cannot carry.
+    open_t o;
+    d_parse_open("FILE=X", o, 33);
+    d_parse_open("@345:", o, 34);
 }
 
 /* ==== SOFTIEC-TRACE diagnostics for #877; removed together with them ==== */
@@ -383,7 +420,7 @@ int main(int argc, const char *argv[])
                 { -1, "//FROMROOT/DEEPER", "BLAH", false, false, e_seq, e_read,
                   e_stream_file, e_stamp_none, 0x0, 0x0, 0x00});
 
-    d_parse_open("@345:", o, ERR_ILLEGAL_NAME);
+    d_parse_open("@345:", o, 34); // no name after the colon
 
     d_parse_open(",", o, ERR_SYNTAX);
 
@@ -529,7 +566,8 @@ int main(int argc, const char *argv[])
     test_command( 0, (const uint8_t *)"B-P 2 234\r", 10);
     test_block_command_forms();
     test_command_terminator();
-    test_command(32, (const uint8_t *)"C99:EMPTY=", 10);
+    test_error_codes();
+    test_command(34, (const uint8_t *)"C99:EMPTY=", 10);
     test_command( 0, (const uint8_t *)"C1:FCOPY=3:FCOPY", 16);
     test_command( 0, (const uint8_t *)"C:FULLSTATS=STAT1,3:STAT3", 25);
     test_command( 0, (const uint8_t *)"C2:MCOPY=1/COPIERS/:MCOPY", 25);
