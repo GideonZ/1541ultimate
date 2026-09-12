@@ -20,60 +20,11 @@ import bootstrap  # noqa: E402,F401
 import cli  # noqa: E402
 import ftp  # noqa: E402
 from api import UltimateApi  # noqa: E402
-from assembler import assemble  # noqa: E402
 from config_snapshot import Snapshot  # noqa: E402
+from iec_agent import Agent  # noqa: E402
 from report import Failure, check, detail, section, suite_fail, suite_ok, teardown_step  # noqa: E402
 
 SUITE = "rel_copy_test"
-
-
-class Agent:
-    def __init__(self, api):
-        self.api = api
-
-    def start(self):
-        self.api.machine.close_menu_from_anywhere()
-        self.api.machine.writemem(0xc000, bytes(7))
-        self.api.runners.upload("run_prg", assemble(Path(__file__).with_name("rel_agent.asm")))
-        self.wait(0xc001, 0xa5)
-
-    def wait(self, address, value):
-        deadline = time.monotonic() + 15
-        while time.monotonic() < deadline:
-            if self.api.machine.readmem(address, 1) == bytes([value]):
-                return
-            time.sleep(.05)
-        raise Failure(f"IEC agent timed out at ${address:04x}")
-
-    def call(self, op, channel=5, data=b"", device=11):
-        if len(data) > 254:
-            raise ValueError("IEC transaction exceeds mailbox capacity")
-        if data:
-            self.api.machine.writemem(0xc100, data)
-        self.api.machine.writemem(0xc002, bytes([device, channel, len(data), 0, 0]))
-        self.api.machine.writemem(0xc000, bytes([op]))
-        # REST memory reads halt the C64; let the IEC transaction finish first.
-        time.sleep(2)
-        if self.api.machine.readmem(0xc000, 1) != b"\0":
-            raise Failure("IEC transaction exceeded the two-second observation window")
-        count, status, error = self.api.machine.readmem(0xc004, 3)
-        if error or status & ~64:
-            raise Failure(f"KERNAL op={op} device={device} channel={channel}: ST={status}, error={error}")
-        if op == 3:
-            if status != 64:
-                raise Failure(f"IEC read ended without EOI: ST={status}")
-            return self.api.machine.readmem(0xc100, count)
-        return b""
-
-    def status(self, allowed=(0,)):
-        response = self.call(3, 15).decode("ascii").strip()
-        if int(response.split(",", 1)[0]) not in allowed:
-            raise Failure(f"DOS status: {response}")
-        return response
-
-    def command(self, command, allowed=(0,)):
-        self.call(2, 15, command if isinstance(command, bytes) else command.encode("ascii"))
-        self.status(allowed)
 
 
 def require_equal(actual, expected, context):
@@ -190,6 +141,8 @@ def run(args):
                         agent.call(4, device=10)
                 api.drives.remove("a")
                 mounted = False
+        if agent.overruns:
+            detail(f"{agent.overruns} transactions needed longer than the estimated transfer time")
         return not failed
     finally:
         def restore_iec():

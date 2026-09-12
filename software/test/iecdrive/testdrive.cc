@@ -362,7 +362,7 @@ void create_file(const char *filename, int blocks)
 #include "blockdev_emul.h"
 void init_fat_file()
 {
-    create_file("format.fat", 4*1*1024);
+    create_file("format.fat", 16*1024); // 4 MB: room for the images Suite10 mounts
     static BlockDevice_Emulated blk("format.fat", 512);
     static Partition prt(&blk, 0, 0, 0);
     static FileSystemFAT fs(&prt);
@@ -1396,7 +1396,8 @@ static void run_suite8_time_copy_rename_scratch(IecDrive *dr)
     const char *write_msg = "This is some random string that should be written to an open file.";
 
     print_scenario(suite, "Time, copy, rename, scratch");
-    expect_command_response("Suite8-T-RA", dr, "T-RA", "WED. 26/06/25 12:41:01 AM\r");
+    // Month first: 26 June 2025, not the 6th of the 26th month.
+    expect_command_response("Suite8-T-RA", dr, "T-RA", "WED. 06/26/25 12:41:01 AM\r");
     expect_command_response("Suite8-T-RI", dr, "T-RI", "2025-06-26T00:41:01 WED\r");
     static const uint8_t t_rd[] = { 3, 125, 6, 26, 12, 41, 1, 0, 0x0d };
     static const uint8_t t_rb[] = { 3, 0x25, 0x06, 0x26, 0x12, 0x41, 0x01, 0, 0x0d };
@@ -1517,6 +1518,538 @@ static void run_suite9_block_matrix(FileManager *fm, IecDrive *dr)
     printf("Suite9 completed successfully!\n");
 }
 
+
+// ---------------------------------------------------------------------------
+// Suite10: the command channel as a Commodore actually drives it.
+//
+// The suites above build their command strings by hand. A Commodore does not.
+// PRINT# appends a carriage return to every command, and BASIC prints a space
+// before and after every number, so the bytes that arrive carry a terminator and
+// separators that none of the earlier suites ever sent. Issues #875 and #876 both
+// live in exactly that gap. Suite10 sends the byte sequences a Commodore produces
+// and checks the command surface against the CMD and Commodore documentation.
+// ---------------------------------------------------------------------------
+
+#include "blockdev_file.h"
+#include "filesystem_d64.h"
+
+typedef enum { e_image_d64, e_image_d71, e_image_d81, e_image_dnp } image_kind_t;
+
+static void create_formatted_image(FileManager *fm, const char *path, const char *diskname,
+                                   int blocks, image_kind_t kind)
+{
+    const char *testname = "create_formatted_image";
+    File *f = NULL;
+    FRESULT fres = fm->fopen(path, FA_CREATE_ALWAYS | FA_WRITE | FA_READ, &f);
+    if (fres != FR_OK) {
+        printf("%s: could not create %s: %s\n", testname, path, FileSystem::get_error_string(fres));
+    }
+    REQUIRE(fres == FR_OK);
+
+    uint8_t empty[256];
+    memset(empty, 0, sizeof(empty));
+    for (int i = 0; i < blocks; i++) {
+        uint32_t transferred = 0;
+        fres = f->write(empty, sizeof(empty), &transferred);
+        REQUIRE(fres == FR_OK);
+        REQUIRE(transferred == sizeof(empty));
+    }
+
+    {
+        // The file system stack borrows the File, so it has to be gone before the
+        // file is closed. This is what the REST image creation routes do.
+        BlockDevice_File blk(f, 256);
+        Partition prt(&blk, 0, 0, 0);
+        switch (kind) {
+        case e_image_d64: { FileSystemD64 fs(&prt, true); fres = fs.format(diskname); break; }
+        case e_image_d71: { FileSystemD71 fs(&prt, true); fres = fs.format(diskname); break; }
+        case e_image_d81: { FileSystemD81 fs(&prt, true); fres = fs.format(diskname); break; }
+        default:          { FileSystemDNP fs(&prt, true); fres = fs.format(diskname); break; }
+        }
+    }
+    fm->fclose(f);
+    if (fres != FR_OK) {
+        printf("%s: could not format %s: %s\n", testname, path, FileSystem::get_error_string(fres));
+    }
+    REQUIRE(fres == FR_OK);
+}
+
+static void expect_path_exists(const char *testname, FileManager *fm, const char *path)
+{
+    if (!fm->is_path_valid(path)) {
+        printf("%s: expected '%s' to exist\n", testname, path);
+    }
+    REQUIRE(fm->is_path_valid(path));
+}
+
+static void expect_path_absent(const char *testname, FileManager *fm, const char *path)
+{
+    if (fm->is_path_valid(path)) {
+        printf("%s: expected '%s' to be gone\n", testname, path);
+    }
+    REQUIRE(!fm->is_path_valid(path));
+}
+
+// PRINT#15,"P"+CHR$(96+channel)+CHR$(lo)+CHR$(hi)+CHR$(offset) is the documented
+// form of the position command: the channel byte carries the secondary address plus
+// 96, and BASIC appends a carriage return.
+static void expect_rel_position_basic_form(const char *testname, IecDrive *dr, uint8_t chan,
+                                           uint16_t record, uint8_t offset, const char *expected)
+{
+    uint8_t cmd[6] = {
+        'P',
+        (uint8_t)(96 + chan),
+        (uint8_t)(record & 0xFF),
+        (uint8_t)(record >> 8),
+        offset,
+        0x0D
+    };
+    send_command_data(dr, cmd, sizeof(cmd));
+    get_status(dr);
+    if (strcmp(last_status, expected) != 0) {
+        printf("%s: P channel %u record %u offset %u: status was '%s', expected '%s'\n",
+               testname, chan, record, offset, last_status, expected);
+    }
+    REQUIRE(strcmp(last_status, expected) == 0);
+}
+
+static void run_suite10_command_terminator(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite10";
+
+    print_scenario("Suite10", "Commands carrying the carriage return that PRINT# appends");
+    prepare_fat_partition(fm, dr, "/Fat/s10", 12, "CMDPART");
+    FRESULT fres = fm->create_dir("/Fat/s10/os");
+    REQUIRE(fres == FR_OK || fres == FR_EXIST);
+
+    expect_command_response("Suite10-CP12", dr, "CP12\r", "02,PARTITION SELECTED,12,00\r");
+
+    // PRINT#15,"CD//OS" is the reproduction in issue #875.
+    expect_command_ok("Suite10-CD-FROM-ROOT", dr, "CD//OS\r");
+    expect_command_response("Suite10-PWD-IN-SUBDIR", dr, "XPWD\r", "12:/OS/");
+    expect_command_ok("Suite10-CD-TO-ROOT", dr, "CD//\r");
+    expect_command_response("Suite10-PWD-AT-ROOT", dr, "XPWD\r", "12:/");
+    expect_command_ok("Suite10-CD-BY-NAME", dr, "CD:OS\r");
+    expect_command_response("Suite10-PWD-AFTER-NAME", dr, "XPWD\r", "12:/OS/");
+    expect_command_ok("Suite10-CD-TO-PARENT", dr, "CD_\r");
+    expect_command_response("Suite10-PWD-AFTER-PARENT", dr, "XPWD\r", "12:/");
+
+    // A carriage return that reached the name would create a directory whose name
+    // ends in one, which nothing could then open again.
+    expect_command_ok("Suite10-MD", dr, "MD:MADEDIR\r");
+    expect_path_exists("Suite10-MD-EXACT-NAME", fm, "/Fat/s10/MADEDIR");
+    expect_directory_contains("Suite10-DIR-SHOWS-MADEDIR", dr, "$12", "\"MADEDIR\"");
+    expect_command_ok("Suite10-CD-INTO-MADEDIR", dr, "CD:MADEDIR\r");
+    expect_command_ok("Suite10-CD-OUT-OF-MADEDIR", dr, "CD//\r");
+    expect_command_ok("Suite10-RD", dr, "RD:MADEDIR\r");
+    expect_path_absent("Suite10-RD-REMOVED", fm, "/Fat/s10/MADEDIR");
+
+    // The position command carries four binary parameters. With the carriage return
+    // counted as one of them, a five byte command became a six byte one and the
+    // record number and the offset were read as a plain byte position instead.
+    const uint8_t chan = 4;
+    const uint8_t record_size = 16;
+    uint8_t first[16], second[16];
+    memset(first, 'A', sizeof(first));
+    memset(second, 'B', sizeof(second));
+
+    expect_rel_open("Suite10-RelCreate", dr, chan, "12:RELPOS", record_size);
+    expect_rel_position_status("Suite10-RelSeekNew1", dr, chan, 1, 1, "50,RECORD NOT PRESENT,00,00\r");
+    expect_rel_write("Suite10-RelWrite1", dr, chan, first, sizeof(first));
+    expect_rel_position_status("Suite10-RelSeekNew2", dr, chan, 2, 1, "50,RECORD NOT PRESENT,00,00\r");
+    expect_rel_write("Suite10-RelWrite2", dr, chan, second, sizeof(second));
+    expect_rel_position_basic_form("Suite10-RelSeekBasicForm", dr, chan, 1, 1, "00, OK,00,00\r");
+    expect_rel_read("Suite10-RelReadFirst", dr, chan, first, sizeof(first));
+    expect_rel_read("Suite10-RelReadSecond", dr, chan, second, sizeof(second));
+    close_file(dr, chan);
+    expect_status_ok("Suite10-RelClose", "12:RELPOS");
+
+    // A command that fills the 64 byte command buffer still has to be executed: the
+    // zero written after its last byte must not reach the byte count itself.
+    char full[65];
+    memset(full, 'Z', 64);
+    full[64] = 0;
+    expect_command_status_prefix("Suite10-FullBuffer", dr, full, "33,SYNTAX ERROR");
+
+    // A command that is nothing but a carriage return carries no command at all, and
+    // has to leave the command channel usable.
+    send_command(dr, "\r");
+    expect_command_response("Suite10-AFTER-EMPTY-COMMAND", dr, "CP12\r", "02,PARTITION SELECTED,12,00\r");
+}
+
+static void run_suite10_directory_navigation(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite10";
+    FRESULT fres;
+
+    print_scenario("Suite10", "CD, MD, RD and CP in the forms the CMD manual documents");
+    prepare_fat_partition(fm, dr, "/Fat/nav", 30, "NAVIGATE");
+    fres = fm->create_dir("/Fat/nav/sub");
+    REQUIRE(fres == FR_OK || fres == FR_EXIST);
+    fres = fm->create_dir("/Fat/nav/sub/deep");
+    REQUIRE(fres == FR_OK || fres == FR_EXIST);
+    create_formatted_image(fm, "/Fat/nav/img.d64", "NAVIMAGE", 683, e_image_d64);
+
+    expect_command_response("Suite10-CP30", dr, "CP30\r", "02,PARTITION SELECTED,30,00\r");
+
+    // A path that begins with two slashes starts at the partition root, one slash or
+    // a colon introduces a name relative to the current directory, and each further
+    // subdirectory is separated by a single slash.
+    expect_command_ok("Suite10-NavRoot", dr, "CD//\r");
+    expect_command_ok("Suite10-NavDeepFromRoot", dr, "CD//SUB/DEEP\r");
+    expect_command_response("Suite10-NavPwdDeep", dr, "XPWD\r", "30:/SUB/DEEP/");
+    expect_command_ok("Suite10-NavRootAgain", dr, "CD//\r");
+    expect_command_ok("Suite10-NavColonAfterPath", dr, "CD//SUB/:DEEP\r");
+    expect_command_response("Suite10-NavPwdColonForm", dr, "XPWD\r", "30:/SUB/DEEP/");
+    expect_command_ok("Suite10-NavTrailingSlash", dr, "CD//SUB/DEEP/\r");
+    expect_command_response("Suite10-NavPwdTrailingSlash", dr, "XPWD\r", "30:/SUB/DEEP/");
+
+    // The left arrow, which arrives as an underscore, moves to the parent both when
+    // it follows the command word and when it stands behind a colon.
+    expect_command_ok("Suite10-NavParentBare", dr, "CD_\r");
+    expect_command_response("Suite10-NavPwdParentBare", dr, "XPWD\r", "30:/SUB/");
+    expect_command_ok("Suite10-NavParentColon", dr, "CD:_\r");
+    expect_command_response("Suite10-NavPwdParentColon", dr, "XPWD\r", "30:/");
+
+    // A partition number in front of the path selects the partition to act on.
+    expect_command_ok("Suite10-NavPartitionPrefixed", dr, "CD30//SUB\r");
+    expect_command_response("Suite10-NavPwdPartitionPrefixed", dr, "XPWD\r", "30:/SUB/");
+    expect_command_ok("Suite10-NavBackToRoot", dr, "CD//\r");
+
+    // A directory that is not there leaves the current directory where it was.
+    expect_command_response("Suite10-NavMissing", dr, "CD//NOSUCH\r", "71,DIRECTORY ERROR,30,00\r");
+    expect_command_response("Suite10-NavPwdAfterMissing", dr, "XPWD\r", "30:/");
+
+    // A mounted disk image is entered and left like a directory.
+    expect_command_ok("Suite10-NavEnterImage", dr, "CD:IMG.D64\r");
+    expect_command_response("Suite10-NavPwdInImage", dr, "XPWD\r", "30:/IMG.D64/");
+    // The header of a CBM image carries its volume name, padded to sixteen
+    // characters, so only the opening quote and the name are matched here.
+    expect_directory_contains("Suite10-NavImageHeader", dr, "$30", "\"NAVIMAGE ");
+    expect_command_ok("Suite10-NavLeaveImage", dr, "CD:_\r");
+    expect_command_response("Suite10-NavPwdAfterImage", dr, "XPWD\r", "30:/");
+
+    // MD creates the name behind the colon relative to the path in front of it, and
+    // RD removes a directory only when it is empty.
+    expect_command_ok("Suite10-MdPlain", dr, "MD:MD1\r");
+    expect_command_ok("Suite10-MdNested", dr, "MD/MD1/:MD2\r");
+    expect_command_ok("Suite10-MdNestedFromRoot", dr, "MD//MD1/:MD3\r");
+    expect_path_exists("Suite10-MdNestedExists", fm, "/Fat/nav/MD1/MD2");
+    expect_path_exists("Suite10-MdNestedFromRootExists", fm, "/Fat/nav/MD1/MD3");
+    expect_command_response("Suite10-RdNotEmpty", dr, "RD:MD1\r", "63,FILE EXISTS,00,00\r");
+    expect_command_ok("Suite10-RdNested", dr, "RD//MD1/:MD2\r");
+    expect_command_ok("Suite10-RdNestedFromRoot", dr, "RD//MD1/:MD3\r");
+    expect_command_ok("Suite10-RdNowEmpty", dr, "RD:MD1\r");
+    expect_path_absent("Suite10-RdRemoved", fm, "/Fat/nav/MD1");
+    expect_command_response("Suite10-RdMissing", dr, "RD:NOSUCH\r", "62,FILE NOT FOUND,00,00\r");
+
+    // CP reports the partition it selected, CP without a number reports the current
+    // one, and a partition that does not exist is refused.
+    expect_command_response("Suite10-CpCurrent", dr, "CP\r", "02,PARTITION SELECTED,30,00\r");
+    expect_command_response("Suite10-CpExplicit", dr, "CP12\r", "02,PARTITION SELECTED,12,00\r");
+    expect_command_response("Suite10-CpSpaced", dr, "CP 30\r", "02,PARTITION SELECTED,30,00\r");
+    expect_command_response("Suite10-CpIllegal", dr, "CP99\r", "77,SELECTED PARTITION ILLEGAL,99,00\r");
+    expect_command_response("Suite10-CpBinary", dr, "C\xD0\x1E", "02,PARTITION SELECTED,30,00\r");
+}
+
+static void run_suite10_block_commands(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite10";
+    const uint8_t chan = 2;
+    const char *image = "/Fat/s10_blocks.d64";
+
+    print_scenario("Suite10", "Block commands in the forms PRINT# produces");
+    create_formatted_image(fm, image, "BLOCKTEST", 683, e_image_d64);
+    dr->add_partition(13, image, "BLOCKPART");
+    expect_command_response("Suite10-CP13", dr, "CP13\r", "02,PARTITION SELECTED,13,00\r");
+
+    // PRINT#15,"U1:";2;0;18;0 sends "U1: 2  0  18  0 " and a carriage return, and
+    // drive number 0 means the currently selected partition. This is the earlier of
+    // the two "VIEW BAM" programs on the 1541 TEST/DEMO disk, and the reproduction in
+    // issue #876. The 9/84 revision of the same program sends "U1:2,0,18,0" instead.
+    open_buffer_channel("Suite10-OpenBuffer", dr, chan);
+    expect_command_ok("Suite10-U1-SpaceForm", dr, "U1: 2  0  18  0 \r");
+
+    uint8_t bam[256];
+    read_buffer_channel("Suite10-ReadBam", dr, chan, bam, sizeof(bam));
+    // Track 18 sector 0 of a 1541 disk links to the first directory sector and holds
+    // the DOS version byte 'A'. All 256 bytes have to be readable after U1.
+    if ((bam[0] != 18) || (bam[1] != 1) || (bam[2] != 'A')) {
+        printf("%s: BAM sector did not start with 18/1/'A': %02x %02x %02x\n",
+               testname, bam[0], bam[1], bam[2]);
+        dump_hex_relative(bam, 16);
+    }
+    REQUIRE(bam[0] == 18);
+    REQUIRE(bam[1] == 1);
+    REQUIRE(bam[2] == 'A');
+
+    // The separator spellings themselves are checked exhaustively, and against the
+    // values they parse to, by the parser tests in target/pc/linux/parse. What is
+    // checked here is that the whole drive reads the same sector for the form the
+    // 9/84 VIEW BAM sends, for the UA spelling of U1, and for an explicit partition
+    // number in place of drive 0.
+    uint8_t again[256];
+    static const char *read_forms[] = {
+        "U1:2,0,18,0\r",
+        "UA: 2  0  18  0 \r",
+        "U1:2,13,18,0\r",
+    };
+    for (size_t i = 0; i < sizeof(read_forms) / sizeof(read_forms[0]); i++) {
+        expect_command_ok("Suite10-BlockReadForm", dr, read_forms[i]);
+        read_buffer_channel("Suite10-BlockReadForm", dr, chan, again, sizeof(again));
+        if (memcmp(again, bam, sizeof(bam)) != 0) {
+            printf("%s: '%s' did not read the same sector\n", testname, read_forms[i]);
+        }
+        REQUIRE(memcmp(again, bam, sizeof(bam)) == 0);
+    }
+
+    // B-R is accepted in the same spellings. What it leaves the buffer pointer at is
+    // deliberately not asserted here: on a real drive B-R sets it from the first byte
+    // of the sector while U1 exposes all 256 bytes, and this drive does not make that
+    // distinction. That difference is a separate question from the one #876 reports.
+    expect_command_ok("Suite10-BlockReadBR", dr, "B-R:2,0,18,0\r");
+
+    // PRINT#15,"B-P:";2;144 sends "B-P: 2  144 ", which is how VIEW BAM reaches the
+    // disk name inside the sector it just read.
+    expect_command_ok("Suite10-BP-SpaceForm", dr, "U1: 2  0  18  0 \r");
+    read_buffer_channel("Suite10-BP-Prefill", dr, chan, again, sizeof(again));
+    expect_command_ok("Suite10-BP-Position", dr, "B-P: 2  144 \r");
+    uint8_t name_area[16];
+    read_buffer_channel("Suite10-BP-ReadName", dr, chan, name_area, sizeof(name_area));
+    if (memcmp(name_area, bam + 144, sizeof(name_area)) != 0) {
+        printf("%s: the buffer pointer did not move to offset 144\n", testname);
+        dump_hex_relative(name_area, sizeof(name_area));
+    }
+    REQUIRE(memcmp(name_area, bam + 144, sizeof(name_area)) == 0);
+    expect_command_ok("Suite10-BP-CommaForm", dr, "B-P:2,144\r");
+    read_buffer_channel("Suite10-BP-ReadNameAgain", dr, chan, name_area, sizeof(name_area));
+    REQUIRE(memcmp(name_area, bam + 144, sizeof(name_area)) == 0);
+
+    // CBM DOS keeps only the low byte of a buffer position, so 300 is 44 and not a
+    // refusal.
+    expect_command_ok("Suite10-BP-PastEnd", dr, "B-P:2,300\r");
+    read_buffer_channel("Suite10-BP-ReadWrapped", dr, chan, name_area, sizeof(name_area));
+    REQUIRE(memcmp(name_area, bam + 44, sizeof(name_area)) == 0);
+
+    // A block written in the same form, read back through U1 and through UB.
+    uint8_t payload[256];
+    make_increment_pattern(payload);
+    expect_command_ok("Suite10-BP-Rewind", dr, "B-P: 2  0 \r");
+    send_channel_data(dr, chan, payload, sizeof(payload));
+    expect_command_ok("Suite10-U2-SpaceForm", dr, "U2: 2  0  17  10 \r");
+    expect_command_ok("Suite10-U1-ReadBack", dr, "U1: 2  0  17  10 \r");
+    uint8_t written[256];
+    read_buffer_channel("Suite10-ReadBackWritten", dr, chan, written, sizeof(written));
+    REQUIRE(memcmp(written, payload, sizeof(payload)) == 0);
+
+    make_sector_payload(payload, "UB WRITE");
+    expect_command_ok("Suite10-BP-RewindAgain", dr, "B-P: 2  0 \r");
+    send_channel_data(dr, chan, payload, sizeof(payload));
+    expect_command_ok("Suite10-UB-Alias", dr, "UB:2,0,17,10\r");
+    expect_command_ok("Suite10-U1-ReadBackUB", dr, "U1:2,0,17,10\r");
+    read_buffer_channel("Suite10-ReadBackUB", dr, chan, written, sizeof(written));
+    REQUIRE(memcmp(written, payload, sizeof(payload)) == 0);
+
+    close_file(dr, chan);
+    expect_status_ok("Suite10-CloseBuffer", "#2");
+
+    // Allocating and freeing in the same form. Sector 17/11 is free on a disk that
+    // was just formatted.
+    uint32_t free_before = get_free_sectors(fm, image);
+    expect_command_ok("Suite10-BA-SpaceForm", dr, "B-A: 2  0  17  11 \r");
+    REQUIRE(get_free_sectors(fm, image) + 1 == free_before);
+    expect_command_ok("Suite10-BF-CommaForm", dr, "B-F:2,0,17,11\r");
+    REQUIRE(get_free_sectors(fm, image) == free_before);
+
+    // Refusals. Too few parameters is a syntax error whatever the separators are, a
+    // track or sector outside the disk is refused, and a partition that is a plain
+    // directory has no sectors to address at all.
+    expect_command_status_prefix("Suite10-U1-TooFew", dr, "U1: 2  0 \r", "30,SYNTAX ERROR");
+    expect_command_status_prefix("Suite10-BR-NoParams", dr, "B-R:\r", "30,SYNTAX ERROR");
+    expect_command_status_prefix("Suite10-BR-NotNumeric", dr, "B-R:X,0,18,0\r", "30,SYNTAX ERROR");
+    expect_command_status_prefix("Suite10-U1-BadTrack", dr, "U1:2,0,99,0\r", "69,FILESYSTEM ERROR");
+    expect_command_status_prefix("Suite10-U1-BadSector", dr, "U1:2,0,18,99\r", "69,FILESYSTEM ERROR");
+    expect_command_status_prefix("Suite10-U1-OnDirectory", dr, "U1:2,12,18,0\r", "78,BLOCK ACCESS DENIED");
+    expect_command_response("Suite10-CP13-Again", dr, "CP13\r", "02,PARTITION SELECTED,13,00\r");
+}
+
+static void run_suite10_user_commands(IecDrive *dr)
+{
+    const char *testname = "Suite10";
+
+    print_scenario("Suite10", "User commands and the error channel");
+
+    // CBM DOS takes the user command from the low four bits of the character after
+    // the U, so U9 and UI are one command and U: and UJ are another. Both report the
+    // DOS version, which is how a drive answers after it has been initialised.
+    expect_command_status_prefix("Suite10-UI", dr, "UI\r", "73,");
+    expect_command_status_prefix("Suite10-U9", dr, "U9\r", "73,");
+    expect_command_status_prefix("Suite10-UJ", dr, "UJ\r", "73,");
+    expect_command_status_prefix("Suite10-UColon", dr, "U:\r", "73,");
+    expect_command_status_prefix("Suite10-I", dr, "I0\r", "73,");
+
+    // U3 to U8 jump into a drive buffer, which this drive has no equivalent for.
+    expect_command_status_prefix("Suite10-U3", dr, "U3:2,0,18,0\r", "33,SYNTAX ERROR");
+    expect_command_status_prefix("Suite10-Unknown", dr, "ZZ\r", "33,SYNTAX ERROR");
+
+    // Reading the error channel clears it, as it does on a real drive.
+    expect_command_status_prefix("Suite10-ErrorSet", dr, "CD//NOSUCH\r", "71,DIRECTORY ERROR");
+    get_status(dr);
+    expect_current_status("Suite10-ErrorCleared", "status re-read", "00, OK,00,00\r");
+}
+
+// A directory line is 32 bytes long when no time stamp was asked for: two link
+// bytes, the block count, the name padded and in quotes, and the three character
+// type. In a partition directory the block count is the partition number.
+static void expect_partition_line(const char *testname, const uint8_t *listing, int length,
+                                  int part, const char *name, const char *type)
+{
+    for (int offset = 32; offset + 32 <= length; offset += 32) {
+        const uint8_t *line = listing + offset;
+        int blocks = line[2] | (line[3] << 8);
+        if (blocks != part) {
+            continue;
+        }
+        int digits = 1;
+        for (int n = blocks; n >= 10; n /= 10) {
+            digits++;
+        }
+        char shown[24]; // a quoted name is at most sixteen characters and two quotes
+        int len = snprintf(shown, sizeof(shown), "\"%s\"", name);
+        REQUIRE(len < (int)sizeof(shown));
+        int quote_at = 4 + (3 - digits) + 1;
+        int type_at = 27 - digits;
+        bool name_ok = (memcmp(line + quote_at, shown, len) == 0);
+        bool type_ok = (memcmp(line + type_at, type, 3) == 0);
+        if (!name_ok || !type_ok) {
+            char got_type[4] = { 0 };
+            memcpy(got_type, line + type_at, 3);
+            printf("%s: partition %d has type '%s', expected name %s type '%s'\n",
+                   testname, part, got_type, shown, type);
+            dump_hex_relative(line, 32);
+        }
+        REQUIRE(name_ok);
+        REQUIRE(type_ok);
+        return;
+    }
+    printf("%s: partition %d does not appear in the partition directory\n", testname, part);
+    dump_hex_relative(listing, length);
+    REQUIRE(false);
+}
+
+// Reads a whole directory stream, whether of files or of partitions.
+static int read_directory_stream(const char *testname, IecDrive *dr, const char *name,
+                                    uint8_t *listing, int size)
+{
+    memset(listing, 0, size);
+    open_file(dr, 0, name);
+    get_status(dr);
+    expect_status_ok(testname, name);
+    int got = read_file(dr, 0, listing, size);
+    REQUIRE(got > 0);
+    close_file(dr, 0);
+    expect_status_ok(testname, name);
+    return got;
+}
+
+static void run_suite10_partition_directory(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite10";
+
+    print_scenario("Suite10", "Partition directory names and types");
+    prepare_fat_partition(fm, dr, "/Fat/s10_native", 20, "NATIVE DIR");
+    create_formatted_image(fm, "/Fat/s10_p.d64", "P41", 683, e_image_d64);
+    create_formatted_image(fm, "/Fat/s10_p.d71", "P71", 1366, e_image_d71);
+    create_formatted_image(fm, "/Fat/s10_p.d81", "P81", 3200, e_image_d81);
+    create_formatted_image(fm, "/Fat/s10_p.dnp", "PNAT", 4 * 256, e_image_dnp);
+    dr->add_partition(21, "/Fat/s10_p.d64", "IMAGE 1541");
+    dr->add_partition(22, "/Fat/s10_p.d71", "IMAGE 1571");
+    dr->add_partition(23, "/Fat/s10_p.d81", "IMAGE 1581");
+    dr->add_partition(24, "/Fat/s10_p.dnp", "IMAGE NATIVE");
+
+    uint8_t listing[8192];
+    int got = read_directory_stream(testname, dr, "$=P", listing, sizeof(listing));
+
+    // The name is the partition name, not the path it is rooted at, and the type
+    // follows the file system at that root: CMD DOS reports a native partition as
+    // NAT and a drive emulation partition by the model it emulates. This is #877.
+    expect_partition_line("Suite10-PartNativeDir", listing, got, 20, "NATIVE DIR", "NAT");
+    expect_partition_line("Suite10-PartD64", listing, got, 21, "IMAGE 1541", "41 ");
+    expect_partition_line("Suite10-PartD71", listing, got, 22, "IMAGE 1571", "71 ");
+    expect_partition_line("Suite10-PartD81", listing, got, 23, "IMAGE 1581", "81 ");
+    expect_partition_line("Suite10-PartDnp", listing, got, 24, "IMAGE NATIVE", "NAT");
+
+    // The partition directory takes a pattern, like any other directory.
+    got = read_directory_stream(testname, dr, "$=P:IMAGE 15?1", listing, sizeof(listing));
+    expect_partition_line("Suite10-PartFilteredD64", listing, got, 21, "IMAGE 1541", "41 ");
+    expect_partition_line("Suite10-PartFilteredD81", listing, got, 23, "IMAGE 1581", "81 ");
+    for (int offset = 32; offset + 32 <= got; offset += 32) {
+        int blocks = listing[offset + 2] | (listing[offset + 3] << 8);
+        if (blocks == 20) {
+            printf("%s: the pattern did not exclude partition 20\n", testname);
+        }
+        REQUIRE(blocks != 20);
+    }
+}
+
+static void run_suite10_directory_streams(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite10";
+    uint32_t tr;
+
+    print_scenario("Suite10", "Directory streams and their filters");
+    prepare_fat_partition(fm, dr, "/Fat/list", 31, "LISTING");
+    fm->save_file(true, "/Fat/list", "one.prg", (const uint8_t *)"ONE", 3, &tr);
+    fm->save_file(true, "/Fat/list", "two.seq", (const uint8_t *)"TWO", 3, &tr);
+    FRESULT fres = fm->create_dir("/Fat/list/three");
+    REQUIRE(fres == FR_OK || fres == FR_EXIST);
+    expect_command_response("Suite10-CP31", dr, "CP31\r", "02,PARTITION SELECTED,31,00\r");
+
+    // The header of a directory carries the partition name, and the entries carry
+    // the CBM file type that the stored extension maps to.
+    expect_directory_contains("Suite10-ListHeader", dr, "$31", "\"LISTING ");
+    expect_directory_contains("Suite10-ListPrg", dr, "$31", "\"ONE\"");
+    expect_directory_contains("Suite10-ListSeq", dr, "$31", "\"TWO\"");
+    expect_directory_contains("Suite10-ListDir", dr, "$31", "\"THREE\"");
+    expect_directory_contains("Suite10-ListBlocksFree", dr, "$31", "BLOCKS FREE.");
+
+    // A type filter keeps only the matching entries, and a pattern keeps only the
+    // matching names.
+    uint8_t listing[4096];
+    int got = read_directory_stream(testname, dr, "$31:*=P", listing, sizeof(listing));
+    REQUIRE(memmem(listing, got, "\"ONE\"", 5) != NULL);
+    REQUIRE(memmem(listing, got, "\"TWO\"", 5) == NULL);
+    REQUIRE(memmem(listing, got, "\"THREE\"", 7) == NULL);
+
+    got = read_directory_stream(testname, dr, "$31:*=S", listing, sizeof(listing));
+    REQUIRE(memmem(listing, got, "\"TWO\"", 5) != NULL);
+    REQUIRE(memmem(listing, got, "\"ONE\"", 5) == NULL);
+
+    got = read_directory_stream(testname, dr, "$31:*=D", listing, sizeof(listing));
+    REQUIRE(memmem(listing, got, "\"THREE\"", 7) != NULL);
+    REQUIRE(memmem(listing, got, "\"ONE\"", 5) == NULL);
+
+    got = read_directory_stream(testname, dr, "$31:O*", listing, sizeof(listing));
+    REQUIRE(memmem(listing, got, "\"ONE\"", 5) != NULL);
+    REQUIRE(memmem(listing, got, "\"TWO\"", 5) == NULL);
+
+    // A directory of another partition is read without leaving this one.
+    expect_directory_contains("Suite10-ListOtherPartition", dr, "$12", "\"CMDPART ");
+    expect_command_response("Suite10-StillOnPartition31", dr, "XPWD\r", "31:/");
+}
+
+void execute_suite10(FileManager *fm, IecDrive *dr)
+{
+    run_suite10_command_terminator(fm, dr);
+    run_suite10_directory_navigation(fm, dr);
+    run_suite10_block_commands(fm, dr);
+    run_suite10_user_commands(dr);
+    run_suite10_partition_directory(fm, dr);
+    run_suite10_directory_streams(fm, dr);
+
+    printf("Suite10 completed successfully!\n");
+}
+
 int main(int argc, const char **argv)
 {
     UserInterface *ui = new UserInterface("Test Drive");
@@ -1540,6 +2073,7 @@ int main(int argc, const char **argv)
     execute_suite5(fm, dr);
     execute_suite6(fm, dr);
     execute_suite7(fm, dr);
+    execute_suite10(fm, dr);
 
     delete dr;
     delete ui;

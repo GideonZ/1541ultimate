@@ -1519,6 +1519,9 @@ void C64 :: start_cartridge(void *vdef)
     } else { // Cartridge specified
         set_cartridge(def);
     }
+#if U64
+    freezer_unmute_sids(); // restore the mixer if crt is started from menu
+#endif
     C64_MODE = C64_MODE_UNRESET;
 
     isFrozen = false;

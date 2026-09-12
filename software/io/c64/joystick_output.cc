@@ -80,15 +80,6 @@ void JoystickOutput :: apply(void)
     outputSnapshot(port1, port2, pot1x, pot1y, pot2x, pot2y);
     C64_JOY1_SWOUT = port1 | 0xE0;
     C64_JOY2_SWOUT = port2 | 0xE0;
-    // U64 exposes the C64-visible POT pair through the first paddle output registers.
-    // Keep the port 2 registers updated, but mirror asserted lows so Anykey-style
-    // button reads observe REST fire2/fire3 on either joystick port.
-    if (pot2x == JOYSTICK_POT_PRESSED) {
-        pot1x = JOYSTICK_POT_PRESSED;
-    }
-    if (pot2y == JOYSTICK_POT_PRESSED) {
-        pot1y = JOYSTICK_POT_PRESSED;
-    }
     C64_PADDLE_1_X = pot1x;
     C64_PADDLE_1_Y = pot1y;
     C64_PADDLE_2_X = pot2x;
@@ -96,10 +87,8 @@ void JoystickOutput :: apply(void)
     if (usb_hid_get_active_mouse_interfaces) {
         mouse_port1_enabled = usb_hid_get_active_mouse_interfaces() > 0;
     }
-    bool rest_port1_extra = joystick_has_extra_button_press(usb_p1 & rest_p1_persistent & rest_p1_overlay);
-    bool rest_port2_extra = joystick_has_extra_button_press(rest_p2_persistent & rest_p2_overlay);
-    C64_MOUSE_EN_1 = (mouse_port1_enabled || rest_port1_extra || rest_port2_extra) ? 1 : 0;
-    C64_MOUSE_EN_2 = rest_port2_extra ? 1 : 0;
+    C64_MOUSE_EN_1 = (mouse_port1_enabled || joystick_has_extra_button_press(usb_p1 & rest_p1_persistent & rest_p1_overlay)) ? 1 : 0;
+    C64_MOUSE_EN_2 = joystick_has_extra_button_press(rest_p2_persistent & rest_p2_overlay) ? 1 : 0;
 #endif
 }
 
@@ -145,10 +134,11 @@ void JoystickOutput :: restPersistentSnapshot(uint8_t &port1_active_low, uint8_t
     port2_active_low = rest_p2_persistent & JOYSTICK_INPUT_MASK;
 }
 
-static void arm_overlay_bits(uint8_t &overlay, uint8_t hold_state[7], uint8_t active_low_mask, const uint8_t hold[7])
+static void arm_overlay_bits(uint8_t &overlay, uint8_t hold_state[JOYSTICK_BUTTON_COUNT], uint8_t active_low_mask,
+    const uint8_t hold[JOYSTICK_BUTTON_COUNT])
 {
     active_low_mask &= JOYSTICK_INPUT_MASK;
-    for (int i = 0; i < 7; i++) {
+    for (int i = 0; i < JOYSTICK_BUTTON_COUNT; i++) {
         uint8_t bit = (1 << i);
         if (hold[i] != 0) {
             hold_state[i] = hold[i];
@@ -161,7 +151,7 @@ static void arm_overlay_bits(uint8_t &overlay, uint8_t hold_state[7], uint8_t ac
     }
 }
 
-void JoystickOutput :: armRestPort1Overlay(uint8_t active_low_mask, const uint8_t hold[7])
+void JoystickOutput :: armRestPort1Overlay(uint8_t active_low_mask, const uint8_t hold[JOYSTICK_BUTTON_COUNT])
 {
 #if U64
     portENTER_CRITICAL();
@@ -173,7 +163,7 @@ void JoystickOutput :: armRestPort1Overlay(uint8_t active_low_mask, const uint8_
 #endif
 }
 
-void JoystickOutput :: armRestPort2Overlay(uint8_t active_low_mask, const uint8_t hold[7])
+void JoystickOutput :: armRestPort2Overlay(uint8_t active_low_mask, const uint8_t hold[JOYSTICK_BUTTON_COUNT])
 {
 #if U64
     portENTER_CRITICAL();
@@ -185,10 +175,47 @@ void JoystickOutput :: armRestPort2Overlay(uint8_t active_low_mask, const uint8_
 #endif
 }
 
-static bool tick_overlay_bits(uint8_t &overlay, uint8_t hold_state[7])
+// Forces the masked bits' overlay back to released and cancels their hold
+// countdown; other bits' overlays and countdowns are untouched.
+static void cancel_overlay_bits(uint8_t &overlay, uint8_t hold_state[JOYSTICK_BUTTON_COUNT], uint8_t mask)
+{
+    mask &= JOYSTICK_INPUT_MASK;
+    for (int i = 0; i < JOYSTICK_BUTTON_COUNT; i++) {
+        if (mask & (1 << i)) {
+            hold_state[i] = 0;
+            overlay |= (1 << i);
+        }
+    }
+}
+
+void JoystickOutput :: cancelRestPort1Overlay(uint8_t mask)
+{
+#if U64
+    portENTER_CRITICAL();
+#endif
+    cancel_overlay_bits(rest_p1_overlay, rest_p1_hold, mask);
+    apply();
+#if U64
+    portEXIT_CRITICAL();
+#endif
+}
+
+void JoystickOutput :: cancelRestPort2Overlay(uint8_t mask)
+{
+#if U64
+    portENTER_CRITICAL();
+#endif
+    cancel_overlay_bits(rest_p2_overlay, rest_p2_hold, mask);
+    apply();
+#if U64
+    portEXIT_CRITICAL();
+#endif
+}
+
+static bool tick_overlay_bits(uint8_t &overlay, uint8_t hold_state[JOYSTICK_BUTTON_COUNT])
 {
     bool changed = false;
-    for (int i = 0; i < 7; i++) {
+    for (int i = 0; i < JOYSTICK_BUTTON_COUNT; i++) {
         if (hold_state[i] == 0) {
             continue;
         }
