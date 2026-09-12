@@ -22,6 +22,15 @@ requirement therefore states the source of truth, what the firmware does now, an
 whether anything has to change. Requirements that change nothing are kept because
 they are the contract that later work must not break.
 
+Where a statement about current behaviour says "measured", it was obtained by running
+the command against the head of PR #881, using a probe linked against the same object
+files `target/pc/linux/iecdrive` links. The rest were read from the source, and each
+names the file and symbol so a reader can check it.
+
+Nothing in this document is left open. Where the sources disagreed, section 16 states
+which primary source settled it, and for two of the cases that source is the 1541 ROM
+in `roms/1541.bin` rather than any manual.
+
 ---
 
 ## 1. Sources of truth and how conflicts are settled
@@ -62,7 +71,9 @@ This specification applies it as follows.
    and the one the reporter maintains.
 3. Where IDE and SD disagree, SD wins, and the difference is recorded in section 16.
 4. Where a source disagrees with the reporter's own measurement on real hardware,
-   neither wins silently: the case goes into section 16 as an open question.
+   neither wins on authority. The disagreement is resolved from a primary source that
+   can settle it, normally the 1541 ROM in `roms/1541.bin`, and section 16 states the
+   evidence. Nothing in this document is left open.
 5. Ultimate extensions are allowed where they cannot be mistaken for a documented
    command and do not change the answer to one.
 
@@ -203,9 +214,15 @@ lost: `U resolve_directory_path()` also accepts `.` and `..` as path components,
 `CD/../OTHERDIR` does the same thing, and `..` is the spelling GAP singles out as
 "something that none of the other devices can do". The existing test moves to `..`.
 
-**SI-015.** `CD/:<-` is not specified here. `SD do_chdir()` treats it as the parent,
-because the byte after the colon is the name; the reporter wrote on #877 that it
-should enter the directory. See section 16, C2.
+**SI-015.** `CD/:<-` goes to the parent. The colon introduces the name, so the arrow
+is in the name position and SI-014 applies unchanged. Sources: `SD do_chdir()`, which
+reaches its `name[0]=='_'` branch for this spelling; HD 9-18, "The back arrow cannot
+be combined with any subdirectory path information", which says the arrow is not a
+path element and therefore only ever a name. The reporter wrote on #877 that this
+form should enter the directory, but also that he had "no reference for `cd/:<-`
+except trying in an emulator". One rule that explains both of Greg Nacu's hardware
+measurements is worth more than a second rule for a spelling nothing sends: to enter
+a directory named `<-` the command is `CD/<-`. See section 16, C2.
 
 ### 3.3 The command terminator
 
@@ -357,9 +374,43 @@ Note the divergence: `SD parse_doscommand()` answers 30 here and reserves 31 for
 empty command. This specification follows HD, 1541, ROM and the reporter's stated
 expectation rather than SD, and section 16 records it as C1.
 
-**SI-032.** A wildcard in a name opened for writing answers `33`, except with
-save-and-replace, where it answers `64,FILE TYPE MISMATCH`. Source:
-`SD src/fileops.c`, in the "no match found" branch of `file_open()`:
+**SI-032.** Opening a name for writing has four cases, and each has a different
+answer.
+
+| Case | Answer | Source |
+| --- | --- | --- |
+| wildcard, no `@` | `33` | 1541: "Pattern matching characters cannot be used in the Save command or when Opening files for the purpose of Writing new data"; `SD file_open()` |
+| `@`, the pattern matches a file of the same type | replace it, keeping the **matched** file's name rather than the pattern | ROM `$D8FC` falls through on a type match; IDE 7.1; `SD file_open()` |
+| `@`, the pattern matches a file of a different type, or matches a REL file | `64,FILE TYPE MISMATCH` | ROM `$D8F5` |
+| `@`, the pattern matches nothing | `64` | `SD file_open()` |
+
+The third row is the one that reconciles the sources, and it comes straight out of
+the 1541 ROM. The save-with-replace path compares the type of the entry it found
+against the type the open asked for:
+
+```
+D8E1  AD 00 02  LDA $0200      ; first byte of the name
+D8E4  C9 40     CMP #$40       ; '@' ?
+D8E6  F0 0D     BEQ $D8F5      ; yes: the replace path
+...
+D8F5  A5 E7     LDA $E7        ; the found entry's type byte
+D8F7  29 07     AND #$07       ; 0 DEL, 1 SEQ, 2 PRG, 3 USR, 4 REL
+D8F9  CD 4A 02  CMP $024A      ; the requested type
+D8FC  D0 67     BNE $D965      ; different -> error 64
+D8FE  C9 04     CMP #$04       ; REL?
+D900  F0 63     BEQ $D965      ; also error 64
+...
+D965  A9 64     LDA #$64
+D967  4C C8 C1  JMP $C1C8      ; CMDERR
+```
+
+`SAVE` asks for PRG. So `SAVE"@:foo*"` answers `64` on a real drive whenever the
+first entry matching `foo*` is not a PRG, which is what the reporter measured on
+#877, and it replaces the file when it is. The same check guards the ordinary open
+at `$D95C`, which is where the `64` of SI-035 comes from.
+
+`SD file_open()` produces the same four answers, by a different route for the last
+row:
 
 ```c
 if (ustrchr(fname, '*') || ustrchr(fname, '?') || (*fname == 160)) {
@@ -369,16 +420,10 @@ if (ustrchr(fname, '*') || ustrchr(fname, '?') || (*fname == 160)) {
 }
 ```
 
-The asymmetry is deliberate, and it is reached only when nothing matched. When
-something does match, `@` replaces the matched file and keeps the matched file's
-name rather than the pattern, which is the same rule IDE states in 7.1: "This will
-overwrite the first file in working directory beginning with 'A'. File type is not
-changed. Wildcards are only allowed if replace is used!"
-
 Current behaviour: `U parse_open()` does not reject a wildcard in a write name at
 all. The 33 the reporter saw is produced further down, by the file system layer
-refusing a host name that contains `*`, so the distinction between 33 and 64 cannot
-be made where it has to be made. **Change required**, in the parser.
+refusing a host name that contains `*`, so none of the four cases can be told apart
+where they have to be. **Change required**, in the parser and in the open path.
 
 **SI-033.** Scratching nothing is not an error. The answer is
 `01,FILES SCRATCHED,00,00`. Sources: HD B-1, "01 FILES SCRATCHED (not an error).
@@ -527,9 +572,9 @@ recognise `R-P` and `R-H` before falling through to the file rename, as
 no-op that answers `00, OK` and frees the user buffers. Sources: HD 9-13, "This
 function is performed automatically by the HD, but the command has been implemented
 to retain compatibility"; `SD parse_initialize()`, which frees the user buffers.
-Current behaviour: `U IecCommandChannel::do_initialize()` returns `ERR_DOS`, which
-is the 73 power-up message, because `U user_command()` routes `UI` to the same
-executer method. **Change required:** `I` and `UI` are different commands and must
+Current behaviour, measured: `I` answers `73,U64HD ULTIMATE DOS V2.0,00,00`, because
+`U IecCommandChannel::do_initialize()` returns `ERR_DOS` and `U user_command()`
+routes `UI` to the same executer method. **Change required:** `I` and `UI` are different commands and must
 answer differently. `I` answers `00, OK`; `UI` answers the 73 message.
 
 **SI-054.** `V[n][:]` validates. On a host file system there is nothing to validate,
@@ -549,8 +594,10 @@ Sources: HD 9-9 and 9-11; 1581 User's Guide, which gives the same syntax.
 **SI-060.** `MD[n][path]:name` creates a directory. A colon is required; without one
 the answer is `34`. A name that is a single shifted space answers `34`. Sources:
 HD 9-17, which states the colon rule as its first guideline; `SD parse_mkdir()`.
-Current behaviour: `U dir_command()` parses with `path_only = true`, which accepts a
-missing colon. **Change required.**
+Current behaviour is worse than accepting the colon-less form. `U dir_command()`
+parses with `path_only = true`, so a command with no colon produces an empty name and
+an empty path, and `MD` then tries to create the current directory itself: measured,
+`MD NOCOLON` answers `63,FILE EXISTS`. **Change required.**
 
 **SI-061.** `CD[n]{<-|[path][:]name}` changes directory, per SI-010 and SI-014.
 Current behaviour: correct except for the left arrow and for wildcards in
@@ -569,9 +616,10 @@ command answers `34`. It refuses a directory that is not empty. Sources: HD 9-19
 "This command does not allow the use of paths in order to avoid problems with
 removing a subdirectory which is a parent of the directory in which you are located";
 `SD parse_rmdir()`, which rejects any `/` with `ERROR_SYNTAX_NONAME` and answers
-`63,FILE EXISTS` for a directory that still has entries. Current behaviour:
-`U do_remove_dir()` accepts a path and maps `FR_DENIED` to `ERR_FILE_EXISTS`.
-**Change required** for the path rejection.
+`63,FILE EXISTS` for a directory that still has entries. Current behaviour: `U do_remove_dir()` accepts a path and maps `FR_DENIED` to
+`ERR_FILE_EXISTS`. Measured, `RD/PROBEDIR` removes the directory and answers
+`00, OK`, which is the case HD 9-19 forbids in order to stop a user removing a parent
+of the directory they are standing in. **Change required** for the path rejection.
 
 **SI-064.** `R-H[n][path]:newname` renames a directory header. The name is at most
 16 characters. Sources: HD 9-15; IDE 15.6.5; `SD parse_set_header(3)`, which also
@@ -660,9 +708,13 @@ more than one source appends them into the target. Path parsing restarts for eve
 source. The target takes the file type of the first source. Sources: HD 9-28, which
 caps the sources at five; SD README, which has no cap and states the type rule.
 Current behaviour: `U do_copy()` takes the type from the first source already, and
-`U copy_command()` caps the sources at 8. GAP reported the copy command producing
-`kernal.bin.bin` and ignoring paths; both are consequences of the type extension
-handling and of the path resolution and are covered by SI-072 and SI-012.
+`U copy_command()` caps the sources at 8. GAP reported, against firmware 3.10a, that
+the copy command produced `kernal.bin.bin` and ignored paths. Neither is still true.
+Measured on the head of PR #881, by linking a probe against the same objects the host
+suite uses: `C:PROBE2.BIN=PROBE.BIN` answers `00, OK` and the listing shows
+`PROBE2.BIN  PRG`, one extension and not two; `C/SUB/:PROBE3.BIN=PROBE.BIN` answers
+`00, OK` and the file appears in `SUB`. The requirement is therefore to keep a test
+for both, not to fix anything.
 
 **SI-076.** `L[n][path]:name` toggles the lock flag on one file or directory. A
 locked file lists with `<` after its type and cannot be scratched; a locked directory
@@ -817,7 +869,8 @@ device 9 and back to the configured default. Sources: HD 9-34; IDE 15.4.1. On th
 drive there is nothing to swap with, so `S-8` and `S-9` set the device number
 directly and `S-D` restores the configured one. **Change required**, and note the
 parsing hazard: `U execute_command()` routes every `S` to `scratch_command()`, so
-`S-8` currently tries to scratch a file named `-8`. `SD parse_doscommand()` guards
+`S-8` currently tries to scratch a file named `-8` and answers, measured,
+`62,FILE NOT FOUND`. `SD parse_doscommand()` guards
 this with `if (command_length == 3 && command_buffer[1] == '-')`.
 
 **SI-102.** `W-0` and `W-1` clear and set a software write protect for the whole
@@ -826,16 +879,44 @@ drive. Sources: HD 9-35; IDE 15.4.10. While set, every write answers
 has no `W` case at all, so today it answers 33 and after SI-031 it would answer 31;
 either way the command has to be added rather than reclassified.
 
-**SI-103.** `UI` answers the power-up message `73,<dos version>,00,00` and changes
-nothing. `UI+` and `UI-` select the serial timing and answer `00, OK`. `UJ` closes
-the open buffers and answers the 73 message without resetting the current directory,
-the current partition or a mounted image. `U`+shifted J (`CHR$(202)`) is a real
-reset. Sources: HD 9-51; SD README under `UI/UJ` and `U<Shift-J>`; GSD "Warm, Cold
-and Hard Reset". Current behaviour: `UI`, `UI+`, `UI-` and `UJ` are handled;
-`U`+`CHR$(202)` is not. GAP reports "cold reset and hard reset 'uj' and 'uJ' seem to
-lock up the bus. Needs a STOP+RESTORE to recover", which is against firmware 3.10a
-and needs re-testing before anything is changed. **Change required** for
-`U`+`CHR$(202)` and for verifying GAP's report.
+**SI-103.** The three resets are distinct.
+
+| Command | Effect | Answer |
+| --- | --- | --- |
+| `UI` | nothing | `73,<dos version>,00,00` |
+| `UI+`, `UI-` | select the serial timing | `00, OK` |
+| `UJ` | close every open data channel; keep the current partition, every partition's current directory, and any mounted image | `73,...` |
+| `U`+shifted J, `CHR$(202)` | close every open data channel, return every partition to its root, select the default partition | `73,...` |
+
+Sources: HD 9-51; SD README under `UI/UJ` and `U<Shift-J>`; GSD "Warm, Cold and Hard
+Reset". Current behaviour: `UI`, `UI+`, `UI-` and `UJ` are recognised but `UJ` only
+sets the error code, closing nothing; `U`+`CHR$(202)` is not recognised at all.
+
+**None of the three may reconfigure the IEC interface.** GAP reports that "cold reset
+and hard reset 'uj' and 'uJ' seem to lock up the bus. Needs a STOP+RESTORE to
+recover", against firmware 3.10a. The mechanism is visible in the present code and
+must be designed out rather than re-measured. `IecDrive::reset()` begins with
+`effectuate_registered_settings()`, which reaches `IecInterface::configure()`, and
+that function opens with
+
+```cpp
+HW_IEC_RESET_ENABLE = 0;
+```
+
+holding the IEC processor in reset while it rewrites the device-number slots, then
+releasing it. Command handlers run on the "IEC Server" task, inside the bus state
+machine loop in `IecInterface::task()`, while the host still has the command channel
+addressed. Resetting the IEC processor from there drops the drive off the bus in the
+middle of a handshake, and a host waiting on a handshake that never completes is
+exactly the symptom GAP describes.
+
+**Change required**, in three parts. Implement `UJ` so that it closes the channels.
+Implement `U`+`CHR$(202)`. And implement both so that the drive answers the current
+transaction first and performs the state reset when the command channel has been
+unlistened, never calling `IecInterface::configure()`, because nothing about the bus
+configuration changes: the device number, the enable flag and the slot assignment are
+all unchanged by a drive reset. `IecDrive::reset()` as it stands is the menu's reset,
+not a command handler's, and must not be reused without removing that call.
 
 **SI-104.** `U3` to `U8` and `UC` to `UH` jump into drive memory and are not
 implemented; they answer `30`, for the same reason as SI-095. Source: HD 9-51.
@@ -891,17 +972,42 @@ TRACE shows C64 OS reading exactly `$FEA4`, `$E5C5`, `$A6E8` and `$0002`, two by
 each, before falling back to `UI`. The probe strings are literal bytes inside
 `OS/LIBRARY/IEC.LIB.R`.
 
-**SI-112.** `M-R` at an address this drive does not recognise returns the requested
-number of bytes of a constant fill. The reporter proposed `42`. This satisfies
-programs that only check the length, and leaves the drive unidentifiable as any other
-model, which SI-111 requires.
+**SI-112.** `M-R` returns the requested number of bytes, every byte `$00`, at every
+address. There is no address table and no exception.
 
-**SI-113.** Whether this drive should answer the C64 OS probes with a signature of
-its own, and if so which, is an open question for Greg Nacu. See section 16, C10. Until it
-is settled, SI-112 applies to all four addresses, which is what C64 OS already copes
-with: the boot in TRACE succeeded.
+Three things follow from that choice and each is a reason for it.
 
-**SI-114.** The sd2iec `XR` mechanism, which serves a real drive ROM image from a file
+* The byte count is what makes a probe well formed. A device that answers a syntax
+  error to `M-R` is not merely unidentifiable, it is broken from the caller's point
+  of view, which is what TRACE shows happening to C64 OS today. The reporter's
+  position on #877 was the same, and he proposed 42; the count is the part both
+  positions agree on.
+* `$00` matches none of the model signatures in SI-111, so no caller can conclude
+  1541, 1571, 1581 or CMD.
+* `$00` is the one value sd2iec deliberately returns for a detection address:
+  `{ 0xfffe, { 0x00, 0x00 }, 0xff }` in `SD drive_magics`, commented "Disable AR6
+  fastloader". Returning it everywhere gives every fastloader that probes the same
+  answer that makes Action Replay 6 fall back to the KERNAL loader.
+
+**SI-113.** This drive does **not** implement sd2iec's `drive_magics` table, which
+returns bytes chosen to put DreamLoad, ULoad Model 3 and Krill's loader into 1541 or
+1571 mode. Those values are correct for sd2iec because sd2iec reimplements those
+loaders. This drive implements none of them, so a loader that concluded "1541" from a
+faked byte would go on to upload drive code with `M-W` and call it with `M-E`, and
+then wait for a response that is never coming. Answering `$00` makes the same loader
+fall back to the standard serial protocol, which works.
+
+**SI-114.** Identification of this drive is the `UI` string, and its format is fixed
+here so that software can rely on it: `73,U64HD ULTIMATE DOS V2.0,00,00`. The
+leading token is the device family and the trailing token is the DOS version. A
+future revision may raise the version; it may not change the family token, and it may
+not introduce a memory signature at `$FEA0` or anywhere else. Software that needs to
+recognise this drive matches on the string, which is also what SD README tells
+authors to do for sd2iec: "DO NOT use M-R for this purpose. Use the UI command
+instead." That C64 OS already copes with this is not an assumption: the boot in TRACE
+falls through all four `M-R` probes to `UI` and succeeds.
+
+**SI-115.** The sd2iec `XR` mechanism, which serves a real drive ROM image from a file
 for `M-R` so that GEOS and Wheels can identify a drive, is out of scope. Sources:
 SD README under `XR` and under GEOS and Wheels; GAP does not ask for it. The
 reporter asked on #877 that the documentation state plainly that there is no GEOS and
@@ -977,7 +1083,8 @@ in fact maps `D` to DEL. `H` additionally shows hidden files.
 
 Current behaviour: `U parse_dir_option()` accepts all of them, but it maps `H` to bit
 6 of the type mask while `U read_dir_entry()` tests `1 << ftype` with `ftype` at most
-5, so `LOAD"$:*=H"` matches nothing at all instead of widening the listing.
+5. Measured, `$:*=H` lists the header and no entries at all, where `$:*=P` and
+`$:*=B` list correctly.
 **Change required:** `H` is not a type, it is a flag that suppresses the hidden
 filter, and it must be kept separate from the type bits.
 
@@ -1137,6 +1244,27 @@ escaped. With both changes the function gives `AB` for `AB`+`$A0`, `A` for
 surrounding memory. The same change belongs in sd2iec, because SI-140 only holds if
 both sides agree.
 
+**SI-148.** The policy the fixed rule serves, which the reporter asked to have
+settled before anyone changes the code:
+
+1. `$A0` is a legal byte inside a CBM name. It maps to the host as `{A0}` and maps
+   back unchanged. Nothing rejects it on read.
+2. A **trailing** run of `$A0` is padding, not data, and is dropped before mapping. A
+   CBM directory entry is a fixed 16-byte field padded with `$A0`, so a name arriving
+   from one carries padding that was never part of the name.
+3. A name that is empty, or whose first byte is `$A0`, is refused on create, with
+   `33`, or `64` when `@` is given. This is the same branch as the wildcard rejection
+   in SI-032: `SD file_open()` tests `(*fname == 160)` alongside `*` and `?`, and
+   `SD parse_mkdir()` and `parse_rename()` refuse such a name with `34`.
+4. A directory listing ends the name at its terminator or at 16 characters, **not** at
+   the first `$A0`. A 1541 puts the closing quote at the first `$A0` because that is
+   where its fixed-width field stops carrying name, and reproducing that would make
+   this drive and an sd2iec print different names for the same file.
+   `SD createentry()` ends at `$22`, `$00` or 16, and this drive does the same.
+
+Together with SI-147 that is the whole of the shifted space question, and it needs
+nothing further from anyone.
+
 ---
 
 ## 15. Limits, and what must not break
@@ -1206,29 +1334,27 @@ each must be updated in the same commit as the change, not separately.
 
 ---
 
-## 16. Conflicts between the sources, and open questions
+## 16. Conflicts between the sources, and how each is decided
 
-Each row states what each source says, what this specification decides, and why.
-The rows marked **open** need an answer before the corresponding requirement can be
-implemented; the rest are decided here.
+Every row is decided. Where the sources disagreed, the row states the primary
+evidence that settled it rather than which source was preferred. Nothing here is
+left for someone else to answer before the work can start.
 
-| # | Case | Sources | Decision |
+| # | Case | What the sources said | Decision and evidence |
 | --- | --- | --- | --- |
-| C1 | Error code for an unrecognised command | HD B-2, 1541 and ROM `$C175` say 31. `SD parse_doscommand()` says 30 and uses 31 for an empty command. The reporter asked for 31 on #877. | 31 (SI-031). Three of the four sources agree, including the one the reporter cited. |
-| C2 | `CD/:<-` | `SD do_chdir()` goes to the parent, because the byte after the colon is a name. The reporter wrote on #877 that it should enter the directory named `<-`. | **Open.** The rule in SI-014, that the left arrow is a name in the name position and a character in a path position, predicts the parent, and that is also what sd2iec does. Confirm with the reporter before implementing. |
-| C3 | `SAVE"@:foo*"` when a file matches | The reporter measured `64,FILE TYPE MISMATCH` on a real drive. `SD file_open()` and IDE 7.1 both replace the matched file and keep its name; sd2iec answers 64 only when nothing matched. | **Open.** SI-032 follows sd2iec and IDE. Ask the reporter which sub-case he measured. |
-| C4 | `$=P` footer | Issue #890 and `SD pdir_refill()` say no footer. IDE prints `4 PARTITIONS.`. | No footer (SI-045). The issue is explicit and sd2iec is the tie-breaker. |
-| C5 | `$=P:*=C` | HD 9-14 says `C` selects 1581 CP/M. `SD load_directory()` maps `C` to internal type 12, which is `80 `, an 8050 image. | Accept `C` and match nothing, since this drive has neither. Recorded so the sd2iec mapping is not copied by mistake. |
-| C6 | `=D` directory filter | `SD` and this firmware treat `D` as a synonym for `B`, a directory. IDE 6.2 maps `D` to DEL. GSD warns that on other drives `D` matches everything. | Keep `D` as a synonym for `B` (SI-134) and document that software should send `B`. |
-| C7 | Wildcards with more than one `*` | `SD match_name_str()` and CBM DOS stop at the first `*`. This firmware backtracks. GAP calls the difference harmless. | Keep the current behaviour (SI-136). It narrows rather than widens a match. |
-| C8 | G-P byte 1 | HD and RL say reserved zero. FD defines a disk-information bit field and `SD` writes `0xE2`, presenting itself as an FD-2000. | Zero (SI-042). This drive is not an FD. |
-| C9 | G-P block unit | HD and FD count 512-byte blocks; RL counts 256-byte blocks. | 512 (SI-041), following the HD, which is the reference text. |
-| C10 | What `M-R` should answer at the C64 OS probe addresses | Nothing documents what C64 OS concludes from each answer. SD README says not to use `M-R` for detection at all. | **Open.** SI-112 fills with a constant until Greg Nacu answers. |
-| C11 | Whether `UJ` and `U`+shifted J lock the bus | GAP reports it against firmware 3.10a. Nothing since has tested it. | **Open.** Re-test before changing anything (SI-103). |
-| C12 | Shifted space (`$A0`) inside a name | The reporter wrote on #877 that this "is a topic of its own, but I do not want to start that topic without having discussed that first". | Partly settled. SI-147 fixes the two defects in the existing rule, which is not a policy question. What remains open is the policy: whether a name may contain a shifted space at all, and what a directory listing should show for one, given that CBM DOS pads entries with `$A0` and stops printing at the first one. That needs the reporter's position, and it affects both projects, because they share the code. |
-| C13 | GAP's report that the copy command produces `kernal.bin.bin` and ignores paths | Measured against firmware 3.10a. The type extension handling and the path resolution have both changed since. | Re-measure before acting. If it still happens it is a consequence of SI-072 and SI-012 rather than a defect of `C` itself. |
-
----
+| C1 | Error code for an unrecognised command | HD B-2 and 1541 say 31. `SD parse_doscommand()` says 30 and reserves 31 for an empty command. The reporter asked for 31. | **31** (SI-031). Settled by ROM `$C175`: the command-table miss loads `#$31`. sd2iec is the outlier, and the reporter's request agrees with the hardware. |
+| C2 | `CD/:<-` | `SD do_chdir()` goes to the parent. The reporter expected it to enter a directory named `<-`, while noting he had no reference for the spelling beyond an emulator. | **Parent** (SI-015). One rule covers every measured case: the arrow is the parent in the name position and a literal character in a path component. HD 9-18 says the arrow "cannot be combined with any subdirectory path information", which is the same statement. `CD/<-` remains the way to enter such a directory. |
+| C3 | `SAVE"@:foo*"` | The reporter measured `64` on a real drive. `SD file_open()` and IDE 7.1 replace the matched file; sd2iec answers 64 only when nothing matched. | **Settled by ROM `$D8F5`** (SI-032). Save-with-replace compares the found entry's type against the requested type and answers 64 on a mismatch or on a REL. `SAVE` asks for PRG, so a `foo*` that first matches a non-PRG answers 64 and one that matches a PRG replaces it. Every source is consistent once that check is known. |
+| C4 | `$=P` footer | Issue #890 and `SD pdir_refill()` say no footer. IDE prints `n PARTITIONS.`. | **No footer** (SI-045). The issue is explicit, sd2iec agrees, and IDE64's footer is its own extension. |
+| C5 | `$=P:*=C` | HD 9-14 says `C` selects 1581 CP/M. `SD load_directory()` maps `C` to internal type 12, which is `80 `, an 8050 image. | Accept `C` and match nothing, because this drive has neither kind of partition. Recorded so the sd2iec mapping is not copied by mistake. |
+| C6 | `=D` directory filter | `SD` and this firmware treat `D` as DIR. IDE 6.2 maps `D` to DEL. GSD warns that on other drives `D` matches everything. | Keep `D` as a synonym for `B` (SI-134), and say in the user documentation that software should send `B`. Changing it would break the sd2iec software that already sends `D`, and no software can be relying on `D` meaning DEL here because this drive has no DEL entries. |
+| C7 | Wildcards with more than one `*` | `SD match_name_str()` and CBM DOS stop at the first `*`. This firmware backtracks. GAP calls the difference harmless. | Keep the current behaviour (SI-136). For one `*` it agrees with sd2iec's default; for more it narrows rather than widens a match, so no command can act on more files than the other devices would. |
+| C8 | G-P byte 1 | HD and RL say reserved zero. FD defines a disk-information bit field and `SD` writes `0xE2`, which decodes as an FD-2000 with a 1.6 MB disk. | **Zero** (SI-042). Byte 1 is a claim about the device model, and this drive is not an FD. |
+| C9 | G-P block unit | HD and FD count 512-byte blocks; RL counts 256-byte blocks. | **512** (SI-041), following the HD, which is the reference text and the larger of the two devices this drive resembles. |
+| C10 | What `M-R` should answer | Nothing documents what C64 OS concludes from each answer. SD README says not to use `M-R` for detection at all. The reporter proposed a constant 42. | **The requested count of `$00` bytes at every address, and no magic table** (SI-112, SI-113). `$00` matches no model signature, and it is the value sd2iec deliberately returns at `$FFFE` to make Action Replay 6 fall back to the KERNAL loader. Faking a 1541 signature would invite a loader to upload drive code this drive cannot run. Identification is the `UI` string, whose format SI-114 fixes. |
+| C11 | Whether `UJ` and `U`+shifted J lock the bus | GAP reports it against firmware 3.10a. Nothing since has tested it. | **Settled from the code, not by re-measuring** (SI-103). `IecDrive::reset()` reaches `IecInterface::configure()`, which sets `HW_IEC_RESET_ENABLE = 0` and holds the IEC processor in reset while it rewrites the slots. Command handlers run on the IEC task inside the bus state machine with the host still addressed, so that call is a bus-lock by construction. The requirement is that no reset command touches the interface, which removes the mechanism whether or not 3.10a's symptom survives today. |
+| C12 | Shifted space (`$A0`) inside a name | The reporter wrote that this "is a topic of its own, but I do not want to start that topic without having discussed that first". | **Decided** (SI-147 for the two defects, SI-148 for the policy): `$A0` is legal inside a name and maps to `{A0}`; a trailing run is padding and is dropped; a name that is empty or starts with `$A0` is refused on create; a listing ends the name at its terminator or at 16 characters rather than at the first `$A0`, because ending it earlier would make this drive and an sd2iec print different names for the same file. |
+| C13 | GAP's report that copy produces `kernal.bin.bin` and ignores paths | Measured against firmware 3.10a. | **Already fixed.** Measured on the head of PR #881 with a probe linked against the host suite's objects: the target gets one extension and a target path is honoured (SI-075). The requirement is a regression test. |
 
 ## 17. Tests
 
@@ -1243,6 +1369,15 @@ system.
 listing layouts of section 13, the partition directory of section 5.3, file and
 directory commands, relative files, direct access, the x00 wrapper. The existing
 suites 3 to 10 are the model, and Suite10 already covers the #875 to #877 work.
+
+The measurements marked "measured" in this document were taken by linking a small
+probe against this target's objects, sending each command through
+`IecCommandChannel::push_command()` and reading `IecDrive::get_error_string()` back.
+Those cases belong in the suite as they are implemented, one assertion per
+requirement, so that the answer recorded here becomes the answer the suite enforces.
+The set is: the eleven commands of section 4.1, the scratch of SI-033, the `MD` and
+`RD` forms of SI-060 and SI-063, the two copies of SI-075, the three filters of
+SI-134, and the four left-arrow forms of SI-014.
 
 **T3. Hardware, `tests/e2e/io/iec`.** Only what a host build cannot reach. Two
 classes qualify and both have already caught defects:
@@ -1319,7 +1454,7 @@ Named so that the boundary is explicit rather than implied.
 * 1581-style sub-partitions (SI-055).
 * The sd2iec direct sector commands `DI`, `DR`, `DW` (SI-096).
 * Serving a drive ROM image for `M-R` so that GEOS and Wheels identify a drive
-  (SI-114). GEOS and Wheels support needs gateware work and is a separate project;
+  (SI-115). GEOS and Wheels support needs gateware work and is a separate project;
   the reporter asked that the documentation say so.
 * Swap lists, `XS` and the disk change buttons: they are a user interface feature of
   a device with physical buttons, and `U cbmdos_parser.cc` already records the
