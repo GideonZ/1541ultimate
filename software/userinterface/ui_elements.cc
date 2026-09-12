@@ -133,7 +133,7 @@ int UIPopup :: poll(int dummy)
     if (c == -1) // nothing pressed
     	return 0;
     if (c == -2) // error
-    	return -1;
+	return -1;
 
     int i;
     int selected_button = -1;

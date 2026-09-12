@@ -42,15 +42,13 @@ public:
 #define KEY_CTRL_L 0x0C
 #define KEY_CTRL_N 0x0E
 #define KEY_CTRL_O 0x0F
+#define KEY_CTRL_P 0x10
 #define KEY_CTRL_V 0x16
 
-// Combinations that cannot use their ASCII control code, because that code is
-// already a discrete key here. C= plus a digit has no ASCII control code at
-// all; C=+R would produce 0x12, which is KEY_DOWN, so binding it to the ASCII
-// code would make the cursor-down key act as C=+R everywhere in the UI. Both
-// are therefore given synthetic codes above the ASCII range instead. Keep
-// KEY_CTRL_R outside KEY_CTRL_0..KEY_CTRL_9, which key_is_ctrl_digit() below
-// treats as a contiguous block.
+// Synthetic codes above the ASCII range: C= plus a digit has no ASCII control
+// code, and C=+R's would be 0x12 (KEY_DOWN), which would alias the cursor key.
+// Keep KEY_CTRL_R outside KEY_CTRL_0..KEY_CTRL_9, a contiguous block per
+// key_is_ctrl_digit() below.
 #define KEY_CTRL_0  0xB0
 #define KEY_CTRL_1  0xB1
 #define KEY_CTRL_2  0xB2

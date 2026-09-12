@@ -111,6 +111,11 @@ SRCS_CC	 =  u2p_init.cc \
 			monitor_init.cc \
 			monitor_file_io.cc \
 			monitor_bookmarks.cc \
+			monitor_breakpoints.cc \
+			monitor_debug.cc \
+			monitor_debug_brk_session.cc \
+			monitor_debug_u64.cc \
+			monitor_debug_predictor.cc \
 			machine_monitor.cc \
 			disassembler_6502.cc \
 			assembler_6502.cc \
@@ -248,7 +253,7 @@ SRCS_IEC = iec_code.iec
 SRCS_NANO = nano_minimal.nan
 
 PATH_INC =  $(addprefix -I, $(VPATH))
-OPTIONS  = -g -ffunction-sections -Os -DOS -DDEVELOPER=0 -DNIOS=1 -DCLOCK_FREQ=66666667 -DU64=1 -Wno-write-strings -mno-hw-div -mno-hw-mul -mno-hw-mulx
+OPTIONS  = -g -ffunction-sections -Os -DOS -DDEVELOPER=0 -DNIOS=1 -DCLOCK_FREQ=66666667 -DU64=1 -Wno-write-strings -mno-hw-div -mno-hw-mul -mno-hw-mulx -DMACHINE_MONITOR=1
 COPTIONS = $(OPTIONS) -std=gnu99
 CPPOPT   = $(OPTIONS) -std=gnu++11 -fno-exceptions -fno-rtti -fno-threadsafe-statics -fpermissive
 LINK 	 = $(BSP)/linker.x

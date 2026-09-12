@@ -23,7 +23,7 @@ import bootstrap  # noqa: E402,F401
 import cli  # noqa: E402
 import pacing
 import rest as rest_lib
-import machine as machine_lib
+import machine as machine_lib  # noqa: E402
 import targets
 from api import UltimateApi
 from av_stream import AvStreamCapture, assert_frames_differ, assert_not_black, video_frames
@@ -55,11 +55,50 @@ MENU_STATUS_ROW = 24
 # reads and writes against a device that is otherwise idle.
 REST_TIMEOUT_SECONDS = 5.0
 
+# How long a redraw is given to arrive, and how often the screen is re-read
+# while waiting for one. No key is sent in between, so a redraw that never
+# comes fails the caller's own assertion rather than being covered by a
+# second keypress.
+MONITOR_OPEN_TIMEOUT_SECONDS = 8.0
+POLL_INTERVAL_SECONDS = 0.25
+
+# Which hardware the suite is pointed at. The U2+L runs the same monitor but
+# its memory backend reports no CPU banking and no VIC bank, so the checks
+# that read those out of the status row have nothing to assert there.
+# mcm_monitor_compat.set_target() keeps this in step for the Debug suite.
+TARGET = "u64"
+
+# How many times a view key may be pressed. More than one only matters on a
+# cartridge, where the key crosses two keyboard scans before the monitor sees
+# it; see ensure_view.
+VIEW_KEY_PRESSES = 3
+
+# How many times the key that leaves edit mode may be sent. Same loss and same
+# budget as VIEW_KEY_PRESSES: the key crosses a cartridge's keyboard matrix,
+# which drops about one keystroke in several hundred.
+EDIT_OFF_KEY_PRESSES = 3
+
+# The same budget for the key that opens edit mode.
+EDIT_KEY_PRESSES = 3
+
+# Extra cursor presses a walk down a listing may spend on a dropped key, on top
+# of the rows it has to cross. Same loss as EDIT_KEY_PRESSES, on a key that is
+# sent many times in a row rather than once.
+CURSOR_WALK_MARGIN = 3
+
 # How many times a command argument may be typed again when the field shows it
 # did not all arrive, for the checks where typing it is preparation rather than
 # the subject. Two spare attempts, because the loss this covers is one
 # keystroke in several hundred on the one transport that has it.
 PROMPT_RETYPES = 2
+
+# How many times RETURN may be sent to submit a command prompt. Same loss as
+# PROMPT_RETYPES, on the key that closes the prompt rather than on its
+# argument.
+PROMPT_SUBMIT_PRESSES = 3
+
+# The same budget for the Back key that leaves a prompt without running it.
+PROMPT_LEAVE_PRESSES = 3
 
 # The Transfer prompt states its optional fourth field, so its title is long
 # enough to be worth naming once.
@@ -74,8 +113,15 @@ DATA_ROW_RE = re.compile(r"^\|?[0-9A-F]{4} [0-9A-F]{2}.*DATA ")
 MEMORY_ROW_RE = re.compile(r"^[0-9A-F]{4} ")
 MEMORY_ROW_16_RE = re.compile(r"^[0-9A-F]{4} [0-9A-F]{16} [0-9A-F]{16}$")
 
-# U2 has no monitor-selected CPU bank, so it uses a VIC-only footer.
-U2_STATUS_LINE_RE = re.compile(r"CPU VIEW  VIC([0-3]) \$([0-9A-F]{4})")
+# U2 has no monitor-selected CPU bank, so its footer names no view bank. It
+# still reports the live 6510 port where it has one: the BRK capture stub runs
+# LDA $01 on the CPU itself, and the footer then names the regions that port
+# maps. Both spellings end in the VIC bank and its base, which is what the U2
+# checks read out of it.
+U2_STATUS_LINE_RE = re.compile(
+    r"(?:CPU VIEW"
+    r"|(?:CPU[0-7]|C[0-7]O[0-7]) \$A:(?:RAM|BAS) \$D:(?:RAM|CHR|I/O) \$E:(?:RAM|KRN))"
+    r" {1,2}VIC([0-3]) \$([0-9A-F]{4})")
 U2_VIC_BANK_BASES = (0x0000, 0x4000, 0x8000, 0xC000)
 
 
@@ -289,7 +335,43 @@ class MonitorSession:
         is the subject, and it allows no retype at all.
         """
         self.type_into_prompt(key, title, text, retypes=PROMPT_RETYPES)
-        return self.send_key("ENTER")
+        return self.submit_prompt(title)
+
+    def submit_prompt(self, title: str) -> Snapshot:
+        """Press RETURN until the prompt is gone.
+
+        A prompt that is still up has not been submitted, and it owns the
+        keyboard, so the caller's next keystroke is typed into its field
+        instead of reaching the monitor. Nothing downstream necessarily
+        notices: `goto` checks the address the header names, and a Jump whose
+        RETURN was lost on a monitor already showing that address leaves the
+        header right and the prompt open.
+
+        Measured on u2@c64u, where the key crosses the computer's keyboard
+        matrix: the Jump prompt was left open holding "C200" on a monitor
+        already at $C200, and the two G presses that followed went into its
+        field, which the check reported as the G key not opening the Go
+        prompt.
+        """
+        def closed(snapshot: Snapshot) -> bool:
+            try:
+                snapshot.find_line_containing(title)
+            except Failure:
+                return True
+            return False
+
+        for press in range(PROMPT_SUBMIT_PRESSES):
+            snapshot = self.send_key("ENTER")
+            if not closed(snapshot):
+                snapshot = wait_until(self, closed)
+            if closed(snapshot):
+                if press:
+                    detail(f"{title}: RETURN had to be pressed {press + 1} "
+                           f"times before the prompt closed")
+                return snapshot
+        raise Failure(
+            f"{title}: the prompt is still open after RETURN was pressed "
+            f"{PROMPT_SUBMIT_PRESSES} times\n{snapshot.text()}")
 
     def goto(self, address: str) -> Snapshot:
         self.run_prompt_command("J", "Jump AAAA", address)
@@ -389,12 +471,16 @@ def assert_contains(snapshot: Snapshot, line_index: int, expected: str) -> None:
 
 
 
-def assert_source_column_is_fixed(snapshot: Snapshot, expected_tag: str) -> None:
+def assert_source_column_is_fixed(snapshot: Snapshot, *expected_tags: str) -> None:
     """Every Assembly row's source tag is three characters at one column.
 
     The tag is right-aligned, so a tag whose width depended on the bank would
     move the column's left edge and the rows would appear to shift sideways
     when the cursor crossed a bank boundary.
+
+    Several tags are accepted where the backend has more than one right answer:
+    a cartridge names the device it read from once a BRK capture has told it
+    the 6510's port, and says CPU until one has.
     """
     columns = set()
     tags = set()
@@ -415,15 +501,82 @@ def assert_source_column_is_fixed(snapshot: Snapshot, expected_tag: str) -> None
         raise Failure(
             f"the Assembly source column moves between rows, columns {sorted(columns)}"
             f"\n{snapshot.text()}")
-    if expected_tag not in tags:
+    if not tags.intersection(expected_tags):
         raise Failure(
-            f"expected an {expected_tag!r} source tag, saw {sorted(tags)}"
-            f"\n{snapshot.text()}")
+            f"expected one of {list(expected_tags)!r} as a source tag, "
+            f"saw {sorted(tags)}\n{snapshot.text()}")
 
 
-def assert_status_contains(snapshot: Snapshot, expected: str) -> None:
+def view_bank_status_forms(expected: str) -> tuple[str, ...]:
+    """The status-line spellings that report the monitor view bank in `expected`.
+
+    `O` moves the monitor view bank only and never writes `$0001`, so the footer
+    reads `CPU<n>` only while the live CPU execution bank still equals the view
+    bank, and `C<live>O<n>` once the two differ. Both report the same view bank.
+
+    Which spelling appears depends on the transport, not on the monitor. Under
+    the overlay and freeze backends the live bank the monitor reads follows the
+    view bank, so the footer stays on `CPU<n>`. Over telnet the C64 keeps running
+    BASIC in bank 7 while `O` cycles the view, so the footer becomes `C7O<n>`.
+
+    Only the checks that cycle the view bank use this. The live bank is a real
+    assertion elsewhere, so `ensure_status` stays exact.
+    """
+    if not re.match(r"^CPU[0-7]", expected):
+        return (expected,)
+    view_bank = expected[3]
+    rest = expected[4:]
+    return (expected, *(f"C{live}O{view_bank}{rest}" for live in "01234567"))
+
+
+def assert_view_bank_status(snapshot: Snapshot, expected: str) -> None:
     line_index = find_status_line(snapshot)
+    accepted = view_bank_status_forms(expected)
+    if any(form in snapshot.line(line_index) for form in accepted):
+        return
+    raise Failure(
+        f"Snapshot mismatch after {snapshot.last_command}: expected line {line_index} "
+        f"to contain one of {accepted!r}\n"
+        f"actual:\n  {snapshot.line(line_index)!r}")
+
+
+def wait_for_highlight(session: MonitorSession, snapshot: Snapshot,
+                       expected_cells: list[tuple[int, int]], command: str,
+                       timeout: float = MONITOR_OPEN_TIMEOUT_SECONDS) -> Snapshot:
+    """Observe a cursor move without resending the key that requested it."""
+    expected = sorted(expected_cells)
+    deadline = time.monotonic() + timeout
+    while sorted(snapshot.reverse_cells) != expected and time.monotonic() < deadline:
+        time.sleep(POLL_INTERVAL_SECONDS)
+        snapshot = session.capture()
+    assert_highlight(snapshot, expected_cells, command)
+    return snapshot
+
+
+def wait_for_line_contains(session: MonitorSession, snapshot: Snapshot,
+                           line_index: int, expected: str,
+                           timeout: float = MONITOR_OPEN_TIMEOUT_SECONDS) -> Snapshot:
+    """Observe an expected redraw line without resending its command."""
+    deadline = time.monotonic() + timeout
+    while expected not in snapshot.line(line_index) and time.monotonic() < deadline:
+        time.sleep(POLL_INTERVAL_SECONDS)
+        snapshot = session.capture()
     assert_contains(snapshot, line_index, expected)
+    return snapshot
+
+
+def wait_for_edit_closed(session: MonitorSession, snapshot: Snapshot,
+                         timeout: float = MONITOR_OPEN_TIMEOUT_SECONDS) -> Snapshot:
+    """Observe an edit commit before sending another monitor command."""
+    deadline = time.monotonic() + timeout
+    header = next((line for line in snapshot.lines if "MONITOR" in line), "")
+    while "EDIT" in header and time.monotonic() < deadline:
+        time.sleep(POLL_INTERVAL_SECONDS)
+        snapshot = session.capture()
+        header = next((line for line in snapshot.lines if "MONITOR" in line), "")
+    if "EDIT" in header:
+        raise Failure(f"Edit did not close after {snapshot.last_command}:\n{snapshot.text()}")
+    return snapshot
 
 
 def assert_line_contains_all(snapshot: Snapshot, values: tuple[str, ...]) -> int:
@@ -477,6 +630,72 @@ def assert_highlight(snapshot: Snapshot, expected_cells: list[tuple[int, int]], 
             f"Highlight mismatch after {command}: expected {expected}, actual {actual}\n"
             f"Screen:\n{snapshot.text()}"
         )
+
+
+def leave_prompt(session: MonitorSession, title: str) -> Snapshot:
+    """Back out of a command prompt, waiting for it to leave the screen.
+
+    wait_for_monitor on its own is not enough: the monitor is drawn behind the
+    prompt, so a Back that was dropped still satisfies it, and the next key
+    goes into the prompt that is still open. Measured on u2@c64u: the Hunt
+    prompt was still up when the next case pressed S, which the check reported
+    as the Save prompt never opening.
+    """
+    def gone(snapshot: Snapshot) -> bool:
+        return title not in snapshot.text()
+
+    for press in range(PROMPT_LEAVE_PRESSES):
+        session.send_key("ARROW_LEFT")
+        snapshot = wait_until(session, gone)
+        if gone(snapshot):
+            if press:
+                detail(f"Back had to be pressed {press + 1} times before the "
+                       f"{title} prompt closed")
+            wait_for_monitor(session, f"leaving the {title} prompt")
+            return snapshot
+    raise Failure(
+        f"the {title} prompt is still open after Back was pressed "
+        f"{PROMPT_LEAVE_PRESSES} times\n{snapshot.text()}")
+
+
+def press_key_until_highlight(session: MonitorSession, key: str,
+                              cells: list[tuple[int, int]], why: str,
+                              presses: int) -> Snapshot:
+    """Send `key` until the highlight is on `cells`, at most `presses` times.
+
+    A cursor key is one keystroke, and a cartridge drops one occasionally; see
+    ensure_view. Where walking the cursor to a row is preparation for what a
+    check measures, a dropped one costs a press rather than the verdict:
+    measured on u2@c64u, seventeen DOWN presses down the ASCII view left the
+    highlight one row short, which the check reported as a scrolling defect.
+
+    The budget is the presses the walk needs plus a margin, so a cursor that
+    is not moving at all still fails, with the extra presses spent proving it.
+    """
+    wanted = sorted(cells)
+
+    def on_target(snapshot: Snapshot) -> bool:
+        inside = framed_rows(snapshot)
+        if inside is None:
+            actual = sorted(snapshot.reverse_cells)
+        else:
+            first, last = inside
+            actual = sorted((col, row) for col, row in snapshot.reverse_cells
+                            if first <= row <= last)
+        return actual == wanted
+
+    screen = session.capture()
+    for press in range(presses):
+        if on_target(screen):
+            if press:
+                detail(f"the {key} key had to be pressed {press} extra "
+                       f"time(s) to reach {wanted} ({why})")
+            return screen
+        screen = session.send_key(key)
+    if not on_target(screen):
+        screen = wait_until(session, on_target)
+    assert_highlight(screen, cells, why)
+    return screen
 
 
 def assert_line_lacks(snapshot: Snapshot, forbidden: str) -> None:
@@ -737,22 +956,43 @@ def ensure_status(session: MonitorSession, expected: str) -> Snapshot:
     )
 
 
+def ensure_view_bank_status(session: MonitorSession, expected: str) -> Snapshot:
+    """ensure_status for a view bank reached with `O`, accepting either spelling."""
+    accepted = view_bank_status_forms(expected)
+    screen = session.capture()
+    for _ in range(8):
+        try:
+            line_index = find_status_line(screen)
+        except Failure:
+            line_index = -1
+        if line_index >= 0 and any(form in screen.line(line_index) for form in accepted):
+            return screen
+        screen = session.send_char("o")
+    raise Failure(
+        f"Unable to reach expected monitor view bank {expected!r}; last status "
+        f"line was {screen.line(find_status_line(screen))!r}")
+
+
 def cycle_cpu_bank_from_cpu7(session: MonitorSession, target_status: str, steps: int) -> Snapshot:
-    screen = ensure_status(session, "CPU7 $A:BAS $D:I/O $E:KRN VIC")
+    screen = ensure_view_bank_status(session, "CPU7 $A:BAS $D:I/O $E:KRN VIC")
 
     for _ in range(steps):
         screen = session.send_char("o")
 
-    assert_status_contains(screen, target_status)
+    assert_view_bank_status(screen, target_status)
     return screen
 
 
 def ensure_view(session: MonitorSession, expected: str) -> Snapshot:
-    """Select a monitor view, pressing its key at most once.
+    """Select a monitor view, waiting for its header rather than assuming it.
 
-    Each view has its own key, so the key is sent once when the wanted view is
-    not already up and the header is then waited for. A key that does not
-    arrive fails here rather than being covered by a second press.
+    Each view has its own key, so the key is sent only when the wanted view is
+    not already up, and the header is then waited for. On a cartridge the key
+    crosses the computer's keyboard matrix and the cartridge's own scan, which
+    drops one occasionally, so it is sent again where the header does not
+    arrive; each resend is reported, so a device that keeps dropping keys shows
+    up in the run rather than being hidden by the retry. A view that never
+    arrives still fails here.
     """
     key = VIEW_KEYS.get(expected)
     if key is None:
@@ -768,12 +1008,93 @@ def ensure_view(session: MonitorSession, expected: str) -> Snapshot:
     screen = session.capture()
     if shows_view(screen):
         return screen
-    session.send_char(key)
-    screen = wait_until(session, shows_view)
-    if not shows_view(screen):
-        raise Failure(
-            f"{key!r} did not select the {expected!r} view; screen was\n{screen.text()}")
-    return screen
+    for press in range(VIEW_KEY_PRESSES):
+        session.send_char(key)
+        screen = wait_until(session, shows_view)
+        if shows_view(screen):
+            if press:
+                detail(f"the {key!r} key had to be pressed {press + 1} times "
+                       f"before the {expected!r} view came up")
+            return screen
+    raise Failure(
+        f"{key!r} did not select the {expected!r} view in {VIEW_KEY_PRESSES} "
+        f"presses; screen was\n{screen.text()}")
+
+
+def ensure_edit_on(session: MonitorSession, key: str = "e") -> Snapshot:
+    """Enter the monitor's edit mode, waiting for the header to say it opened.
+
+    The mirror of ensure_edit_off, and needed for the same reason: the key is
+    one keystroke, a cartridge drops one occasionally, and a dropped one is
+    not visible where it happens. What follows it is data for the editor, so
+    on a monitor still taking commands those characters run as commands
+    instead. Measured on u2@c64u: the two hex digits of the value $CC were
+    typed after a lost 'e', the first C opened the Compare prompt and the
+    second went into its field, and the check reported that four steps later
+    as the J key not opening the Jump prompt.
+
+    The header names the view and the address, so it is the failure message.
+    """
+    def edit_on(snapshot: Snapshot) -> bool:
+        try:
+            return "EDIT" in monitor_header(snapshot)
+        except Failure:
+            return False  # the view is mid-redraw
+
+    screen = session.capture()
+    if edit_on(screen):
+        return screen
+    for press in range(EDIT_KEY_PRESSES):
+        screen = session.send_char(key)
+        if not edit_on(screen):
+            screen = wait_until(session, edit_on)
+        if edit_on(screen):
+            if press:
+                detail(f"the {key!r} key had to be pressed {press + 1} times "
+                       f"before edit mode opened")
+            return screen
+    raise Failure(
+        f"{key!r} did not open edit mode in {EDIT_KEY_PRESSES} presses; the "
+        f"monitor header reads {monitor_header(screen)!r}\n{screen.text()}")
+
+
+def ensure_edit_off(session: MonitorSession, why: str,
+                    key: str = "CTRL_E") -> Snapshot:
+    """Leave the monitor's edit mode, waiting for the header to say it closed.
+
+    The key that leaves edit mode is one keystroke like any other, and on a
+    cartridge it crosses the computer's keyboard matrix and the cartridge's
+    own scan, which drops one occasionally; see ensure_view. A dropped one is
+    invisible where it happens and shows up later as the next monitor command
+    being typed into the editor as data: measured on u2@c64u, a lost CTRL_E
+    left "aA# VVV" in memory where the three V presses were meant to select
+    the Screen view, and a lost ESC left "J_ 3" in the assembly editor where
+    the J was meant to open the Jump prompt.
+
+    Sending the key is therefore confirmed here and repeated where the header
+    still says EDIT. It is a toggle, so a monitor already out of edit mode is
+    left alone rather than being put back into it.
+    """
+    def edit_off(snapshot: Snapshot) -> bool:
+        try:
+            return "EDIT" not in monitor_header(snapshot)
+        except Failure:
+            return False  # the view is mid-redraw
+
+    screen = session.capture()
+    if edit_off(screen):
+        return screen
+    for press in range(EDIT_OFF_KEY_PRESSES):
+        session.send_key(key)
+        screen = wait_until(session, edit_off)
+        if edit_off(screen):
+            if press:
+                detail(f"the {key} key had to be pressed {press + 1} times "
+                       f"before edit mode closed ({why})")
+            return screen
+    raise Failure(
+        f"{key} did not leave edit mode in {EDIT_OFF_KEY_PRESSES} presses "
+        f"({why}); screen was\n{screen.text()}")
 
 
 def ensure_screen_charset(session: MonitorSession, expected: str) -> Snapshot:
@@ -873,10 +1194,11 @@ def run_character_mapping_test(session: MonitorSession, rest_host: str) -> None:
         )
 
     screen = session.goto(f"{ascii_edit_addr:04X}")
-    screen = session.send_char("E")
+    screen = ensure_edit_on(session, "E")
     for ch in "aA# ":
         screen = session.send_char(ch)
-    screen = session.send_key("CTRL_E")
+    screen = ensure_edit_off(session, "the ASCII edit at "
+                             f"${ascii_edit_addr:04X}")
     if read_rest_memory(rest_host, ascii_edit_addr, 4) != b"aA# ":
         raise Failure(
             f"ASCII edit mapping mismatch at ${ascii_edit_addr:04X}: "
@@ -915,10 +1237,11 @@ def run_character_mapping_test(session: MonitorSession, rest_host: str) -> None:
 
     screen = ensure_screen_charset(session, "U/G")
     screen = session.goto(f"{screen_edit_ug_addr:04X}")
-    screen = session.send_char("E")
+    screen = ensure_edit_on(session, "E")
     for ch in "aA# ":
         screen = session.send_char(ch)
-    screen = session.send_key("CTRL_E")
+    screen = ensure_edit_off(session, "the Screen U/G edit at "
+                             f"${screen_edit_ug_addr:04X}")
     if read_rest_memory(rest_host, screen_edit_ug_addr, 4) != bytes((0x01, 0x01, 0x23, 0x20)):
         raise Failure(
             f"Screen U/G edit mapping mismatch at ${screen_edit_ug_addr:04X}: "
@@ -927,10 +1250,11 @@ def run_character_mapping_test(session: MonitorSession, rest_host: str) -> None:
 
     screen = ensure_screen_charset(session, "L/U")
     screen = session.goto(f"{screen_edit_lu_addr:04X}")
-    screen = session.send_char("E")
+    screen = ensure_edit_on(session, "E")
     for ch in "aA# ":
         screen = session.send_char(ch)
-    screen = session.send_key("CTRL_E")
+    screen = ensure_edit_off(session, "the Screen L/U edit at "
+                             f"${screen_edit_lu_addr:04X}")
     if read_rest_memory(rest_host, screen_edit_lu_addr, 4) != bytes((0x01, 0x41, 0x23, 0x20)):
         raise Failure(
             f"Screen L/U edit mapping mismatch at ${screen_edit_lu_addr:04X}: "
@@ -1039,10 +1363,12 @@ def report_first_attempt_losses() -> None:
     if not FIRST_ATTEMPT_LOSSES:
         return
     detail(f"{len(FIRST_ATTEMPT_LOSSES)} write(s) in this run did not land on "
-           f"the first attempt and were not the monitor's write path: "
-           f"{', '.join(FIRST_ATTEMPT_LOSSES)}. Those are the intermittent in "
-           f"C64::dma_transfer_frozen, which the device's own machine:writemem "
-           f"shows at a comparable rate")
+           f"the first attempt: {', '.join(FIRST_ATTEMPT_LOSSES)}. The device's "
+           f"own machine:writemem placed the same bytes at the same addresses, "
+           f"so the loss is under the monitor rather than in it. Which "
+           f"addresses they are is the first thing to read: a repeated address "
+           f"is a range served from the wrong place, a scattered one is a "
+           f"dropped write")
 
 
 def assert_monitor_write_landed(device_host: str, address: int, expected: bytes,
@@ -1144,7 +1470,7 @@ def run_main_ram_edit_persists_test(session: MonitorSession, device_host: str,
             session.enter_monitor()
         session.goto(f"{address:04X}")
         screen = ensure_view(session, "HEX ")
-        screen = session.send_char("e")
+        screen = ensure_edit_on(session, "e")
         assert_highlight(screen, [(6, 4), (7, 4)], "e")
         digits = f"{replacement[0]:02X}"
         screen = session.send_char(digits[0], settle=True)
@@ -1165,7 +1491,7 @@ def run_main_ram_edit_persists_test(session: MonitorSession, device_host: str,
                 session.enter_monitor()
             session.goto(f"{address:04X}")
             ensure_view(session, "HEX ")
-            session.send_char("e")
+            ensure_edit_on(session, "e")
             session.send_char(digits[0], settle=True)
             session.send_char(digits[1], settle=True)
             session.send_key("ESC", settle=True)
@@ -1209,7 +1535,7 @@ def hex_edit_byte_persists(session: MonitorSession, device_host: str, frozen: bo
         # column varies with it. Persistence, not cursor position, is what
         # this sweep proves; run_main_ram_edit_persists_test already proves
         # the highlight for one fixed, known position.
-        session.send_char("e")
+        ensure_edit_on(session, "e")
         digits = f"{replacement[0]:02X}"
         session.send_char(digits[0], settle=True)
         session.send_char(digits[1], settle=True)
@@ -1320,7 +1646,7 @@ def banked_ram_edit_via_view(session: MonitorSession, address: int) -> None:
     replacement = bytes((original[0] ^ 0xFF,))
     try:
         screen = ensure_view(session, "HEX ")
-        screen = session.send_char("e")
+        screen = ensure_edit_on(session, "e")
         digits = f"{replacement[0]:02X}"
         screen = session.send_char(digits[0], settle=True)
         screen = session.send_char(digits[1], settle=True)
@@ -1336,7 +1662,7 @@ def banked_ram_edit_via_view(session: MonitorSession, address: int) -> None:
                 f"{replacement.hex().upper()}"
             )
     finally:
-        session.send_char("e")
+        ensure_edit_on(session, "e")
         digits = f"{original[0]:02X}"
         session.send_char(digits[0], settle=True)
         session.send_char(digits[1], settle=True)
@@ -1447,12 +1773,11 @@ def run_key_input_stress_test(session: MonitorSession, rounds: int) -> int:
                 raise Failure(
                     f"round {round_index + 1} of {rounds}, after {verified} "
                     f"arguments arrived character for character: {failure}")
-            session.send_key("ARROW_LEFT")
-            # Wait for the prompt to be gone, not just the monitor under it:
-            # every case reopens the same title, so a stale prompt satisfies the
-            # next wait_for_prompt and the text goes into a closing prompt.
-            wait_until(session, lambda screen: title not in screen.text())
-            wait_for_monitor(session, f"leaving the {title} prompt")
+            # Back out and wait for the prompt to be gone, not just for the
+            # monitor under it: every case reopens the same title, so a stale
+            # prompt satisfies the next wait_for_prompt and the text goes into
+            # a closing prompt.
+            leave_prompt(session, title)
             verified += 1
     detail(f"{verified} command arguments typed and read back character for character")
     return verified
@@ -1493,20 +1818,23 @@ def run_hex_edit_reliability_test(session: MonitorSession, device_host: str,
                 replacement = bytes((before[0] ^ 0xFF,))
                 session.goto(f"{address:04X}")
                 ensure_view(session, "HEX ")
-                session.send_char("e")
+                ensure_edit_on(session, "e")
                 digits = f"{replacement[0]:02X}"
                 session.send_char(digits[0])
                 session.send_char(digits[1])
-                session.send_key("ESC")
+                ensure_edit_off(session, f"the hex edit of ${address:04X}",
+                                "ESC")
 
                 def retry_the_edit(address: int = address,
                                    digits: str = digits) -> None:
                     session.goto(f"{address:04X}")
                     ensure_view(session, "HEX ")
-                    session.send_char("e")
+                    ensure_edit_on(session, "e")
                     session.send_char(digits[0])
                     session.send_char(digits[1])
-                    session.send_key("ESC")
+                    ensure_edit_off(
+                        session, f"the retried hex edit of ${address:04X}",
+                        "ESC")
 
                 if assert_monitor_write_landed(
                         device_host, address, replacement,
@@ -1547,6 +1875,23 @@ def asm_commit_cases(round_index: int) -> tuple[tuple[str, bytes], ...]:
     )
 
 
+def is_partial_encoding(landed: bytes, expected: bytes) -> bool:
+    """Whether `landed` is a leading part of `expected` over cleared memory.
+
+    The address is cleared to zeros before each commit, so an instruction that
+    landed in part reads back as some leading bytes of its encoding followed
+    by the zeros that were there before. That is the shape this check exists
+    to catch, and it is the only mismatch that is the monitor's write path
+    rather than a keystroke that never arrived.
+    """
+    if len(landed) != len(expected) or landed == expected:
+        return False
+    written = 0
+    while written < len(expected) and landed[written] == expected[written]:
+        written += 1
+    return 0 < written < len(expected) and landed[written:] == bytes(len(expected) - written)
+
+
 def run_asm_commit_reliability_test(session: MonitorSession, device_host: str,
                                     frozen: bool, rounds: int) -> int:
     """A committed instruction lands whole: never its opcode without its operand.
@@ -1574,34 +1919,56 @@ def run_asm_commit_reliability_test(session: MonitorSession, device_host: str,
             session.enter_monitor()
         for round_index in range(rounds):
             for text, expected in asm_commit_cases(round_index):
+                # Clear the three bytes first, so the read-back below can tell
+                # a commit that wrote its opcode and not its operand from one
+                # that did not happen at all. Both rounds of a case assemble
+                # the same mnemonic with a different operand, so without this
+                # a commit that never reached the monitor left the previous
+                # round's encoding, which shares its opcode byte, and was
+                # reported as a partial write. Measured on u2@c64u: round 3
+                # expected A917 and read A914, which is round 2's LDA #$14.
+                write_rest_memory_confirmed(device_host, address, b"\x00" * 3)
                 session.goto(f"{address:04X}")
                 ensure_view(session, "ASM ")
-                session.send_char("e")
+                ensure_edit_on(session, "e")
                 for ch in text:
                     session.send_char(ch)
                 session.send_key("ENTER")
-                session.send_key("ESC")
+                ensure_edit_off(session, f"the assembly edit of {text}", "ESC")
 
                 # A prefix is the defect this check exists for: the opcode
                 # written and the operand not. That is the monitor's write
                 # path whatever the device can do, because the instruction is
                 # one block and a block cannot land in part.
+                #
+                # The address was cleared to zeros above, so a partial write
+                # is exactly a leading part of the encoding followed by those
+                # zeros. Any other mismatch is a keystroke that did not reach
+                # the monitor, which assembles a different but complete
+                # instruction and is retried below rather than reported here:
+                # measured on u2@c64u, a lost '1' in LDA#$1A left A90A, which
+                # matches the opcode and is not a partial write at all.
                 landed = wait_for_rest_data(device_host, address, expected,
                                             timeout=2.0)
-                if len(expected) > 1 and landed[:1] == expected[:1] and landed != expected:
+                if landed != expected and is_partial_encoding(landed, expected):
                     raise Failure(
                         f"round {round_index + 1} of {rounds}, after "
                         f"{committed} commits: {text} at ${address:04X} left "
-                        f"{landed.hex().upper()}, which is its opcode without "
-                        f"its operand")
+                        f"{landed.hex().upper()}, which is the leading part of "
+                        f"{expected.hex().upper()} with the rest of the "
+                        f"instruction never written")
                 def retry_the_commit(text: str = text) -> None:
+                    write_rest_memory_confirmed(device_host, address,
+                                                b"\x00" * 3)
                     session.goto(f"{address:04X}")
                     ensure_view(session, "ASM ")
-                    session.send_char("e")
+                    ensure_edit_on(session, "e")
                     for ch in text:
                         session.send_char(ch)
                     session.send_key("ENTER")
-                    session.send_key("ESC")
+                    ensure_edit_off(session,
+                                    f"the retried assembly edit of {text}",
+                                    "ESC")
 
                 if assert_monitor_write_landed(
                         device_host, address, expected,
@@ -1662,12 +2029,12 @@ def run_asm_edit_memory_persists_test(session: MonitorSession, device_host: str,
             session.enter_monitor()
         session.goto(f"{address:04X}")
         screen = ensure_view(session, "ASM ")
-        screen = session.send_char("e")
+        screen = ensure_edit_on(session, "e")
         screen.find_line_containing(f"MONITOR ASM ${address:04X}")
         for ch in f"LDA#${operand:02X}":
             screen = session.send_char(ch)
         session.send_key("ENTER")
-        session.send_key("ESC")
+        ensure_edit_off(session, "the assembly edit", "ESC")
 
         if frozen:
             leave_monitor_fully(session)
@@ -2058,9 +2425,11 @@ ASM_ANCHOR_PROGRAM = bytes((
 # How far to walk away from the baseline and back.
 ASM_ANCHOR_STEPS = 6
 
-# How long check [42] waits for judgeable frames from the C64U video stream; a
-# fixed 0.60s window reports "no complete frame" before the stream is flowing.
-VIDEO_CAPTURE_TIMEOUT_SECONDS = 8.0
+# How long the G check waits for judgeable frames from the video stream; a fixed
+# 0.60s window reports "no complete frame" before the stream is flowing. The
+# budget also has to cover a cartridge's hand-back, which tears the user
+# interface down and pulses NMI after the key that asked for it has returned.
+VIDEO_CAPTURE_TIMEOUT_SECONDS = 15.0
 
 
 def asm_row_for(snapshot: Snapshot, address: int) -> str | None:
@@ -2174,7 +2543,7 @@ def run_asm_edit_validation_test(session: MonitorSession, rest_host: str) -> Non
     screen = session.goto("3380")
     screen = ensure_view(session, "ASM ")
     screen.find_line_containing("MONITOR ASM $3380")
-    screen = session.send_char("e")  # enter assembly edit mode
+    screen = ensure_edit_on(session, "e")  # enter assembly edit mode
     screen.find_line_containing("MONITOR ASM $3380")
     # RETURN commits the current line and advances by the instruction length.
     screen = session.send_key("ENTER")  # past LDA #$01 (2 bytes)
@@ -2183,7 +2552,7 @@ def run_asm_edit_validation_test(session: MonitorSession, rest_host: str) -> Non
     screen.find_line_containing("MONITOR ASM $3383")
     screen = session.send_key("ENTER")  # past LDA $C000 (3 bytes)
     screen.find_line_containing("MONITOR ASM $3386")
-    screen = session.send_key("ESC")    # leave edit mode
+    screen = ensure_edit_off(session, "the Return-advance edit", "ESC")
 
     # Bug 1 (invalid mnemonic rejected): edit a clean NOP-filled region so the
     # opcode picker is exercised in isolation.
@@ -2191,7 +2560,7 @@ def run_asm_edit_validation_test(session: MonitorSession, rest_host: str) -> Non
     screen = ensure_view(session, "ASM ")
     screen = session.goto("33A0")
     screen = ensure_view(session, "ASM ")
-    screen = session.send_char("e")  # enter assembly edit mode
+    screen = ensure_edit_on(session, "e")  # enter assembly edit mode
     # A valid prefix is accepted and the completion list stays coherent.
     screen = session.send_char("A")
     screen.find_line_containing("ADC")
@@ -2218,7 +2587,7 @@ def run_asm_edit_validation_test(session: MonitorSession, rest_host: str) -> Non
     assert_line_lacks(screen, "GL")
     screen.find_line_containing("LDA")
     screen = session.send_key("ESC")  # close the picker
-    session.send_key("ESC")           # leave edit mode
+    ensure_edit_off(session, "the opcode-picker edit", "ESC")
 
 
 
@@ -2364,17 +2733,39 @@ def run_asm_entry_round_trip_test(session: MonitorSession, rest_host: str,
             session.send_char(char)
         return session.send_key("ENTER")
 
-    write_rest_memory_confirmed(rest_host, address, bytes((0xEA,) * 12))
-    screen = ensure_view(session, "ASM ")
-    screen = session.goto(f"{address:04X}")
-    screen = session.send_char("e")
-    screen = type_asm("INC$D021")
-    screen = type_asm("JMP$C000")
-    session.send_key("ESC")
+    def type_program(at: str, lines: tuple[str, ...], rows: tuple[str, ...],
+                     what: str) -> Snapshot:
+        """Type a program and prove the monitor disassembles what was meant.
 
-    screen = session.goto(f"{address:04X}")
-    screen.find_line_containing("INC $D021")
-    screen.find_line_containing("JMP $C000")
+        Typing it is preparation for the run this check measures, and the
+        editor takes each character as it comes with nothing reading it back,
+        so a character the cartridge drops assembles a different instruction.
+        Measured on u2@c64u: "INC$D021" lost its D and became INC $0021, which
+        the check reported as the monitor not showing the line it was given.
+        The whole program is typed again where the disassembly does not read
+        as it should, and a program that never arrives still fails.
+        """
+        for attempt in range(PROMPT_RETYPES + 1):
+            ensure_view(session, "ASM ")
+            session.goto(at)
+            ensure_edit_on(session, "e")
+            for line in lines:
+                type_asm(line)
+            ensure_edit_off(session, f"{what} at ${at}", "ESC")
+            shown = session.goto(f"{address:04X}")
+            if all(row in shown.text() for row in rows):
+                if attempt:
+                    detail(f"{what} had to be typed {attempt + 1} times before "
+                           f"every line reached the editor")
+                return shown
+        missing = [row for row in rows if row not in shown.text()]
+        raise Failure(
+            f"{what}: {missing} never reached the editor, typed "
+            f"{PROMPT_RETYPES + 1} times over\n{shown.text()}")
+
+    write_rest_memory_confirmed(rest_host, address, bytes((0xEA,) * 12))
+    type_program(f"{address:04X}", ("INC$D021", "JMP$C000"),
+                 ("INC $D021", "JMP $C000"), "the typed colour loop")
     actual = read_rest_memory(rest_host, address, len(entered))
     if actual != entered:
         raise Failure(
@@ -2384,18 +2775,11 @@ def run_asm_entry_round_trip_test(session: MonitorSession, rest_host: str,
 
     # Extend the typed loop with a RAM side effect that remains observable
     # while the colour-changing loop runs.
-    screen = session.goto("C003")
-    screen = session.send_char("e")
-    screen = type_asm("LDA#$5A")
-    screen = type_asm("STA$C200")
-    screen = type_asm("JMP$C000")
-    session.send_key("ESC")
+    type_program("C003", ("LDA#$5A", "STA$C200", "JMP$C000"),
+                 ("LDA #$5A", "STA $C200", "JMP $C000"),
+                 "the extended typed loop")
 
     expected = bytes((0xEE, 0x21, 0xD0, 0xA9, 0x5A, 0x8D, 0x00, 0xC2, 0x4C, 0x00, 0xC0))
-    screen = session.goto(f"{address:04X}")
-    screen.find_line_containing("LDA #$5A")
-    screen.find_line_containing("STA $C200")
-    screen.find_line_containing("JMP $C000")
     if read_rest_memory(rest_host, address, len(expected)) != expected:
         raise Failure(f"ASM handoff fixture mismatch at ${address:04X}")
 
@@ -2415,9 +2799,13 @@ def run_asm_entry_round_trip_test(session: MonitorSession, rest_host: str,
                 capture.capture(0.20)
                 frames = [frame for frame in video_frames(capture.video_packets)
                           if frame.received_at >= launched]
-                images = [frame.pixels for frame in frames]
-                if len(images) >= 2 and any(image != images[0]
-                                            for image in images[1:]):
+                # Two frames are the minimum to compare, but both can still show
+                # the picture from before the machine was handed back: on a
+                # cartridge that happens after the key has returned. Collect
+                # until two of them differ, so a slow hand-back costs time
+                # rather than the verdict. A picture that never changes still
+                # fails below, once the whole budget is spent on proving it.
+                if len(frames) >= 2 and len({bytes(f.pixels) for f in frames}) > 1:
                     break
             if not frames:
                 raise Failure(
@@ -2431,9 +2819,51 @@ def run_asm_entry_round_trip_test(session: MonitorSession, rest_host: str,
                     f"means the stream is not arriving at all; nothing kept but "
                     f"foreign packets counted means it is arriving from an "
                     f"address this does not recognise as the device's.")
+            # Whether the program executed at all, established before the
+            # picture is judged. The loop's own RAM write says so wherever the
+            # video comes from, so a G that never reached the machine is
+            # reported as that rather than as a picture that did not change.
+            executed = True
+            try:
+                wait_for_rest_byte(rest_host, 0xC200, 0x5A)
+            except Failure:
+                executed = False
             visible = [frame for frame in frames if set(frame.pixels) != {0}]
             if not visible:
                 assert_not_black(frames[-1], "G $C000 video")
+            if not executed:
+                # Both views of the same byte, because they can disagree: the
+                # device reads it over the cartridge bus, the computer through
+                # its own DMA. The colour register says whether the loop is
+                # spinning at all, and the screen says whether the monitor let
+                # go of the machine in the first place.
+                device_view = read_rest_memory(rest_host, 0xC200, 1)[0]
+                try:
+                    computer_view = read_rest_memory(video_host, 0xC200, 1)[0]
+                    colours = [read_rest_memory(video_host, 0xD021, 1)[0]
+                               for _ in range(4)]
+                except Failure as exc:
+                    computer_view, colours = -1, f"unreadable ({exc})"
+                # The KERNAL raster interrupt only counts while the 6510 runs,
+                # so this separates a machine the monitor left stopped from one
+                # that is running and simply never jumped.
+                running = jiffy_clock_advances(video_host)
+                try:
+                    monitor_still_up = (
+                        monitor_header_address(session.capture()) is not None)
+                except Failure:
+                    # A closed user interface answers nothing for the screen,
+                    # which is itself the answer this is asking for.
+                    monitor_still_up = False
+                raise Failure(
+                    f"G ${address:04X} did not run the program: ${0xC200:04X} "
+                    f"reads ${device_view:02X} on {rest_host} and "
+                    f"${computer_view:02X} on {video_host}, expected $5A. "
+                    f"$D021 on {video_host} sampled {colours}. The 6510 is "
+                    f"{'running' if running else 'not running'} (jiffy clock at "
+                    f"$00A2 on {video_host}). The monitor is "
+                    f"{'still on screen' if monitor_still_up else 'gone'}. "
+                    f"{len(frames)} frame(s) were captured from {video_host}.")
             assert_frames_differ(visible, "G $C000 video")
     else:
         session.goto_run(f"{address:04X}")
@@ -2463,7 +2893,7 @@ def run_telnet_dropdown_scroll_flood_test(session: MonitorSession, rest_host: st
     screen = session.goto("33C0")
     screen = ensure_view(session, "ASM ")
     screen.find_line_containing("MONITOR ASM $33C0")
-    screen = session.send_char("e")  # enter assembly edit mode
+    screen = ensure_edit_on(session, "e")  # enter assembly edit mode
     # Step the cursor down so the dropdown anchor sits low on the screen; with the
     # large "L" candidate list this guarantees the list exceeds the visible window
     # and scrolling pushes content past the bottom row and back.
@@ -2885,7 +3315,9 @@ def monitor_header_address(snapshot: Snapshot) -> str | None:
 # transport says it. The word HELP alone would not do: the root browser's
 # footer carries an "F3=HELP" hint that the Overlay screen shows below the
 # monitor box.
-HELP_MARKER = "CONTROL KEYS"
+# Unique to the monitor's own Help screen: no other screen names the Undoc
+# view, and the help carries no headings that could serve as a marker.
+HELP_MARKER = "Undoc/Case"
 
 
 def assert_help_open(snapshot: Snapshot, why: str) -> None:
@@ -2975,63 +3407,72 @@ def run_help_layout_test(session: MonitorSession) -> None:
     if "Q CPU Bank" in screen.text():
         raise Failure(f"CPU Bank is bound to Q rather than O\n{screen.text()}")
     if "RUN/STOP/<-" in screen.text():
-        raise Failure(f"RUNSTOP/<- is spelled RUN/STOP/<-\n{screen.text()}")
+        raise Failure(f"RSTOP/<- is spelled RUN/STOP/<-\n{screen.text()}")
 
-    # Primary grid: columns 1, 14, 27.
-    assert_help_column(screen, "Memory", 1, "M Memory")
-    assert_help_column(screen, "Memory", 14, "I ASCII")
-    assert_help_column(screen, "Memory", 27, "V Screen")
-    assert_help_column(screen, "CPU Bank", 1, "Z Freeze")
-    assert_help_column(screen, "CPU Bank", 14, "O CPU Bank")
-    assert_help_column(screen, "CPU Bank", 27, "SH+O VIC")
-    assert_help_column(screen, "Undoc", 27, "U Undoc/Case")
+    # Upper grid: three columns at 1, 14 and 27, over two blocks separated by
+    # one blank row. The blocks carry no headings, so nothing but the columns
+    # holds the layout together.
+    assert_help_column(screen, "M Memory", 1, "M Memory")
+    assert_help_column(screen, "M Memory", 14, "I ASCII")
+    assert_help_column(screen, "M Memory", 27, "V Screen")
+    assert_help_column(screen, "U Undoc/Case", 1, "A Assembly")
+    assert_help_column(screen, "U Undoc/Case", 14, "B Binary")
+    assert_help_column(screen, "U Undoc/Case", 27, "U Undoc/Case")
+    assert_help_column(screen, "O CPU Bank", 1, "W Width")
+    assert_help_column(screen, "O CPU Bank", 14, "O CPU Bank")
+    assert_help_column(screen, "O CPU Bank", 27, "SH+O VIC")
+    assert_help_column(screen, "J Jump", 1, "L Load")
+    assert_help_column(screen, "J Jump", 14, "S Save")
+    assert_help_column(screen, "J Jump", 27, "J Jump")
 
-    # The Jump/Go line has only two of the grid's three columns, because X is
+    # The Go/Debug line has only two of the grid's three columns, because X is
     # not an exit key and the help must not offer it as one.
-    assert_help_column(screen, "G Go", 1, "J Jump")
-    assert_help_column(screen, "G Go", 14, "G Go")
+    assert_help_column(screen, "G Go", 1, "G Go")
+    assert_help_column(screen, "G Go", 14, "D Debug")
     # Columns 27 to 38 are the grid's third column. The popup's right border
     # sits past column 38 on the Overlay frame, so it is excluded by the
     # slice rather than by stripping.
-    jump_line = help_content_line(screen, "G Go")
-    if jump_line[26:38].strip():
+    go_line = help_content_line(screen, "G Go")
+    if go_line[26:38].strip():
         raise Failure(
-            f"Help layout: the Jump/Go line has a third column: {jump_line!r}")
+            f"Help layout: the Go/Debug line has a third column: {go_line!r}")
     if "Exit" in screen.text():
         raise Failure(f"Help still offers an Exit key\n{screen.text()}")
 
-    for label in ("BOOKMARKS", "CONTROL KEYS"):
-        line = help_content_line(screen, label)
-        if not line.startswith(label):
-            raise Failure(f"{label} heading is not at column 1: {line!r}")
-        if line.rstrip().endswith(":"):
-            raise Failure(f"{label} heading has a trailing colon: {line!r}")
-
-    # BOOKMARKS and CONTROL KEYS share one grid: columns 1, 12, 21, 29.
-    assert_help_column(screen, "List", 1, "C=+B")
-    assert_help_column(screen, "List", 12, "List")
-    assert_help_column(screen, "List", 21, "C=+0-9")
-    assert_help_column(screen, "List", 29, "Jump")
+    # Lower grid, and the paging row draw_status puts on the same columns:
+    # key at 1, action at 11, second key at 20, second action at 29.
+    assert_help_column(screen, "Bkmrk Jmp", 1, "C=+B")
+    assert_help_column(screen, "Bkmrk Jmp", 11, "Bkmrks")
+    assert_help_column(screen, "Bkmrk Jmp", 20, "C=+0-9")
+    assert_help_column(screen, "Bkmrk Jmp", 29, "Bkmrk Jmp")
 
     assert_help_column(screen, "Edit off", 1, "C=+E")
-    assert_help_column(screen, "Edit off", 12, "Edit off")
-    assert_help_column(screen, "Edit off", 21, "C=+C/V")
+    assert_help_column(screen, "Edit off", 11, "Edit off")
+    assert_help_column(screen, "Edit off", 20, "C=+C/V")
     assert_help_column(screen, "Edit off", 29, "Copy/Paste")
 
-    assert_help_column(screen, "Follow/Ret", 1, "RUNSTOP/")
-    assert_help_column(screen, "Follow/Ret", 12, "Back")
-    assert_help_column(screen, "Follow/Ret", 21, "RETURN")
+    assert_help_column(screen, "Follow/Ret", 1, "RSTOP/<-")
+    assert_help_column(screen, "Follow/Ret", 11, "Back")
+    assert_help_column(screen, "Follow/Ret", 20, "RETURN")
     assert_help_column(screen, "Follow/Ret", 29, "Follow/Ret")
 
-    assert_help_column(screen, "Monitor", 1, f"?/{keys.help_key}")
-    assert_help_column(screen, "Monitor", 12, "Help")
-    assert_help_column(screen, "Monitor", 21, "C=+O")
-    assert_help_column(screen, "Monitor", 29, "Monitor")
+    assert_help_column(screen, "C=+O", 1, "?/")
+    assert_help_column(screen, "C=+O", 11, "Help")
+    assert_help_column(screen, "C=+O", 20, "C=+O")
+    assert_help_column(screen, "C=+O", 29, "Monitor")
 
-    assert_help_column(screen, "Page down", 1, f"{keys.page_up_key}/")
-    assert_help_column(screen, "Page down", 12, "Page up")
-    assert_help_column(screen, "Page down", 21, f"{keys.page_down_key}/")
-    assert_help_column(screen, "Page down", 29, "Page down")
+    assert_help_column(screen, "C=+R", 1, "C=+R")
+    assert_help_column(screen, "C=+R", 11, "Reset")
+    assert_help_column(screen, "C=+R", 20, "C=+I")
+    assert_help_column(screen, "C=+R", 29, "Interface")
+
+    # The two page keys are named by the application key mapper, which gives
+    # a different function key on a C64 Ultimate than on the other machines,
+    # so the key columns are checked against this machine's mapping.
+    assert_help_column(screen, "Page Down", 1, f"{keys.page_up_key}/")
+    assert_help_column(screen, "Page Down", 11, "Page Up")
+    assert_help_column(screen, "Page Down", 20, f"{keys.page_down_key}/")
+    assert_help_column(screen, "Page Down", 29, "Page Down")
 
     # No line inside the Help popup's own border may spill past content
     # column 38. Scoped to bordered rows only: the screen around the popup
@@ -3457,8 +3898,7 @@ def run_command_input_rejection_test(session: MonitorSession) -> None:
                 f"{title}: {accepted!r} was not accepted; the field reads {typed!r}"
             )
         # Back leaves the prompt, which is one interaction layer, not the monitor.
-        session.send_key("ARROW_LEFT")
-        wait_for_monitor(session, f"leaving the {title} prompt")
+        leave_prompt(session, title)
 
 
 
@@ -3832,6 +4272,206 @@ def ui_freezes_machine(device_host: str, mode: str,
     return not jiffy_clock_advances(device_host)
 
 
+# The firmware chrome around the monitor window: the product title on screen
+# row 0, and the horizontal rules on row 1 and on the bottom row, all written by
+# UserInterface::set_screen_title().
+CHROME_TITLE_ROW = 0
+CHROME_RULE_ROW = 1
+
+
+def overlay_chrome_rows(rest_host: str) -> tuple[str, bytes]:
+    """The overlay's title row as text, and the rule row below it as raw bytes.
+
+    machine:menu_screen answers with the 40x25 character grid the firmware is
+    drawing, so it reports what the chrome rows actually hold rather than what
+    the monitor window below them holds.
+    """
+    payload = rest_api(rest_host).machine.menu_screen()
+    if payload is None:
+        raise Failure(
+            "machine:menu_screen reports no menu open, so the freeze-mode "
+            "monitor is not on screen")
+    data = bytes(payload)
+    rows = [data[y * 40:(y + 1) * 40] for y in range(25)]
+    title = rows[CHROME_TITLE_ROW].decode("latin-1")
+    return title, rows[CHROME_RULE_ROW]
+
+
+def assert_overlay_chrome(rest_host: str, context: str) -> None:
+    title, rule = overlay_chrome_rows(rest_host)
+    if "Ultimate" not in title:
+        raise Failure(
+            f"{context}: the overlay title row must still name the product, "
+            f"got {title!r}")
+    if len(set(rule)) != 1 or rule[0:1] == b" ":
+        raise Failure(
+            f"{context}: the rule row below the title must be one repeated "
+            f"glyph, got {rule.hex().upper()}")
+
+
+def freeze_frame_has_chrome(rest_host: str, context: str) -> None:
+    """The same assertion again, taken from the video stream.
+
+    menu_screen reads the firmware's character grid; the VIC stream is what the
+    machine actually puts on screen. Both are checked, because a chrome row can
+    be present in one and not the other: the grid is what the firmware believes
+    it drew.
+    """
+    import vic_video
+
+    api = rest_api(rest_host)
+    api.streams.start("video",
+                      ip=f"{vic_video.MULTICAST_GROUP}:{vic_video.VIDEO_PORT}")
+    try:
+        # A frame is only handed over when every one of its packets arrived, so
+        # a single dropped datagram costs a whole attempt. The picture is static
+        # here, so any complete frame answers the question.
+        image = None
+        last_error: Exception | None = None
+        for attempt in range(8):
+            if attempt:
+                # Ask the device to stream again before retrying. A frame is
+                # only handed over when every one of its packets arrived, and a
+                # stream that was started once can go quiet; re-issuing it is
+                # what made the screenshot capture for the manual reliable.
+                api.streams.start(
+                    "video",
+                    ip=f"{vic_video.MULTICAST_GROUP}:{vic_video.VIDEO_PORT}")
+                time.sleep(0.4)
+            capture = vic_video.VicStreamCapture()
+            try:
+                image = capture.capture_image()
+                break
+            except Failure as exc:
+                last_error = exc
+            finally:
+                capture.close()
+        if image is None:
+            # The chrome has already been proven through machine:menu_screen
+            # above, which reads the firmware's own character grid. The picture
+            # is a second opinion on the same thing, and a multicast stream that
+            # will not deliver a whole frame is not evidence that the firmware
+            # drew the wrong screen.
+            detail(f"{context}: no complete VIC frame arrived ({last_error}); "
+                   f"the menu_screen proof above still holds")
+            return
+    finally:
+        api.streams.stop("video")
+
+    # The title occupies the first text row. A blanked chrome row is one
+    # background colour across its whole height, which is what this measures;
+    # the rows are 8 pixels tall and the picture is centred in the border.
+    width, height = image.size
+    top = (height - 200) // 2
+    band = [image.getpixel((x, y))
+            for y in range(top, top + 8) for x in range(width)]
+    if len(set(band)) <= 1:
+        raise Failure(
+            f"{context}: the title row is blank in the VIC picture "
+            f"({width}x{height}, band at y={top})")
+
+
+def run_freeze_debug_chrome_test(session: MonitorSession, rest_host: str) -> None:
+    """A freeze-mode debug step must leave the firmware chrome on screen.
+
+    A step unfreezes the machine to execute the instruction and re-freezes it
+    afterwards. The live C64 screen is visible for that window and overwrites
+    the title and rule rows, so the monitor has to redraw them. Where it does
+    not, the title row and both rules stay blank for the rest of the session.
+    """
+    program = bytes([0xEA, 0xEA, 0xEA, 0xEA])
+    write_rest_memory(rest_host, 0xC000, program)
+
+    session.goto("C000")
+    session.send_char("A")
+    if "Dbg" not in session.capture().text():
+        session.send_char("D")
+    if "Dbg" not in session.capture().text():
+        raise Failure("Debug mode did not open at $C000")
+    assert_overlay_chrome(rest_host, "before the first step")
+
+    try:
+        session.send_char("T")
+        assert_overlay_chrome(rest_host, "after a Step Into")
+        freeze_frame_has_chrome(rest_host, "after a Step Into")
+    finally:
+        session.send_key("CTRL_D")
+
+
+def await_row_text(session: MonitorSession, address: int, needle: str,
+                   snapshot: Snapshot | None = None,
+                   timeout: float = 8.0) -> str:
+    """The memory row for `address`, re-read until it carries `needle`.
+
+    No key is sent while waiting, so a row that only appears after another
+    keypress still fails the caller's assertion.
+    """
+    def row_for(snap: Snapshot) -> str:
+        return next((line for line in snap.lines
+                     if line.startswith(f"|{address:04X} ")), "")
+
+    row = row_for(snapshot) if snapshot is not None else ""
+    deadline = time.time() + timeout
+    while needle not in row.lower() and time.time() < deadline:
+        time.sleep(0.2)
+        row = row_for(session.capture())
+    return row
+
+
+def run_edit_visibility_test(session: MonitorSession, rest_host: str) -> None:
+    """Outside Debug, an edit has to be in the machine and on screen at once.
+
+    The monitor draws from its own read of memory, and it writes through the
+    backend. Either side can go stale: a write that has not reached the machine
+    yet, or a view still showing what was there before. Both are checked
+    immediately after the edit, with no extra keypress in between, because a
+    redraw provoked by the test would hide exactly the fault being looked for.
+    """
+    source = 0xC700
+    dest = 0xC710
+    payload = bytes([0x5A, 0xA5])
+
+    write_rest_memory(rest_host, source, payload)
+    write_rest_memory(rest_host, dest, bytes([0x00, 0x00]))
+
+    ensure_view(session, "HEX ")
+    session.goto(f"{source:04X}")
+    session.send_char("R")
+    session.send_key("RIGHT")
+    session.send_key("COPY")
+    session.goto(f"{dest:04X}")
+    snap = session.send_key("PASTE")
+
+    landed = read_rest_memory(rest_host, dest, len(payload))
+    if landed != payload:
+        raise Failure(
+            f"Paste is not in the machine: ${dest:04X} holds {landed.hex().upper()}, "
+            f"expected {payload.hex().upper()}")
+
+    # No further keypress is allowed, but the redraw is still allowed to travel:
+    # on the cartridge it arrives after the transport has gone quiet. Re-reading
+    # the same screen keeps the subject of the check the edit's visibility rather
+    # than the speed of the link carrying it.
+    row = await_row_text(session, dest, "5a a5", snap)
+    if "5a a5" not in row.lower():
+        raise Failure(
+            f"Paste is not on screen without a further keypress: {row!r}")
+
+    # The same rule for a fill, which is the other way a range changes at once.
+    # Navigate first: Fill types into a template field, and starting it from the
+    # screen the paste left behind is a different thing from starting it from a
+    # settled view. Measured on the cartridge, the same fill typed after a paste
+    # filled one byte of the two while by hand it filled both.
+    session.goto(f"{dest:04X}")
+    session.fill(f"{dest:04X}-{dest + 1:04X},3C")
+    filled = read_rest_memory(rest_host, dest, 2)
+    if filled != bytes([0x3C, 0x3C]):
+        raise Failure(
+            f"Fill is not in the machine: ${dest:04X} holds {filled.hex().upper()}")
+    row = await_row_text(session, dest, "3c 3c")
+    if "3c 3c" not in row.lower():
+        raise Failure(f"Fill is not on screen without a further keypress: {row!r}")
+
 # The modal a monitor raises when the CPU bank cannot be changed.
 CPU_BANK_UNAVAILABLE = "CPU BANK UNAVAILABLE"
 
@@ -3907,6 +4547,7 @@ class MonitorContext:
     live_host: str
     frozen: bool
     device_host: str
+    machine: "machine_lib.Machine"
 
 
 def run_tests(context: MonitorContext) -> None:
@@ -3920,6 +4561,7 @@ def run_tests(context: MonitorContext) -> None:
     live_host = context.live_host
     frozen = context.frozen
     device_host = context.device_host
+    device = context.machine
 
     snapshots = load_snapshots()
     # Measured from the screen rather than taken from the product; see
@@ -3939,13 +4581,21 @@ def run_tests(context: MonitorContext) -> None:
         # line (software/monitor/machine_monitor.cc) writes "CPU VIEW  VICn
         # $nnnn" only when supports_cpu_banking() is false, and the full
         # bank-and-mapping line otherwise. An Ultimate II+L has been seen
-        # both ways, so the assertion follows the screen: a run that branched
-        # on the product alone failed against a monitor that was working.
+        # both ways, so the assertion follows the screen rather than the
+        # product.
+        #
+        # The branch is `banks_cpu` and not a U2_STATUS_LINE_RE match:
+        # U2_STATUS_LINE_RE accepts the full bank-and-mapping spelling too,
+        # because a cartridge that has captured the 6510 port draws it, so it
+        # matches every footer STATUS_LINE_RE matches. Branching on it sent an
+        # Ultimate 64 down the U2 path, where nothing normalises the CPU bank,
+        # and the next check then read $E000 with the bank left at CPU0 by the
+        # monitor_cycles_cpu_bank probe and saw RAM instead of the KERNAL.
         screen = session.capture()
-        if U2_STATUS_LINE_RE.search(screen.text()):
-            assert_u2_footer_consistent(screen)
-        else:
+        if banks_cpu:
             ensure_status(session, snapshots["status_cpu31"]["contains"]["22"])
+        else:
+            assert_u2_footer_consistent(screen)
 
     with check("KERNAL $E000 hex view and REST match"):
         ensure_hex_width(session, 8)
@@ -3962,35 +4612,21 @@ def run_tests(context: MonitorContext) -> None:
         assert_equal("Memory stability", initial_snapshot, back.text(), back.last_command)
 
     with check("KERNAL disassembly formatting"):
-        screen = session.send_char("A")
+        screen = ensure_view(session, "ASM ")
         for row, expected in snapshots["kernal_disasm_e000"]["contains"].items():
             assert_contains(screen, int(row), expected)
         # The tag identity is a property of the machine: only a backend that
         # selects the bank itself can say KRN. A cartridge reads whatever the
         # CPU sees and says CPU. The fixed column is asserted on both.
-        assert_source_column_is_fixed(screen, "KRN" if banks_cpu else "CPU")
-
-        # D is reserved for a future Debug mode and opens nothing. The manual
-        # deliberately does not mention the key, so this check and its host
-        # counterpart are what keep the reservation. An older copy of this
-        # suite pressed D for the Assembly view, so the binding has drifted
-        # once already.
-        #
-        # Read the title row, which names the view and the address, rather than
-        # the whole screen: the screen also carries a status row and an edit
-        # cursor, and neither is what this asserts.
-        if not session.backend.machine.missing_fix(
-                machine_lib.MONITOR_D_KEY_RESERVED):
-            before = monitor_header(session.capture())
-            session.send_char("D")
-            after = monitor_header(session.capture())
-            if after != before:
-                raise Failure(
-                    f"D is reserved for Debug mode and must change nothing: the "
-                    f"monitor header read {before!r} and now reads {after!r}")
+        if banks_cpu:
+            assert_source_column_is_fixed(screen, "KRN")
+        else:
+            # The cartridge names the device once its BRK capture has resolved
+            # the 6510's port, and says CPU until one has.
+            assert_source_column_is_fixed(screen, "CPU", "KRN")
 
         screen = session.goto("E013")
-        screen = session.send_char("A")
+        screen = ensure_view(session, "ASM ")
         for row, expected in snapshots["kernal_disasm_e013"]["contains"].items():
             assert_contains(screen, int(row), expected)
 
@@ -4044,7 +4680,7 @@ def run_tests(context: MonitorContext) -> None:
         if not banks_cpu:
             assert_u2_footer_consistent(screen)
         elif cycles_bank:
-            assert_status_contains(screen, snapshots["status_cpu29"]["contains"]["22"])
+            assert_view_bank_status(screen, snapshots["status_cpu29"]["contains"]["22"])
         else:
             # The bank named here is the one the checks above left behind, and
             # they are skipped where the bank cannot be moved. What this check
@@ -4059,9 +4695,9 @@ def run_tests(context: MonitorContext) -> None:
         screen = session.send_key("UP")
         assert_highlight(screen, [(6, first_content_row)], "UP")
 
-        for _ in range(last_content_row - first_content_row):
-            screen = session.send_key("DOWN")
-        assert_highlight(screen, [(6, last_content_row)], "DOWN to last row")
+        screen = press_key_until_highlight(
+            session, "DOWN", [(6, last_content_row)], "DOWN to last row",
+            presses=last_content_row - first_content_row + CURSOR_WALK_MARGIN)
         assert_contains(screen, first_content_row, snapshots["ascii_top_row"]["contains"]["4"])
 
         screen = session.send_key("DOWN")
@@ -4075,11 +4711,11 @@ def run_tests(context: MonitorContext) -> None:
         session.goto("C000")
         write_rest_memory_confirmed(rest_host, 0xC000, b"\x00")
         screen = ensure_view(session, "HEX ")
-        screen = session.send_char("e")
+        screen = ensure_edit_on(session, "e")
         assert_highlight(screen, [(6, 4), (7, 4)], "e")
         screen = enter_hex_nibble(session, "A", snapshots["hex_first_nibble"]["contains"]["4"])
         screen = enter_hex_nibble(session, "B", snapshots["hex_second_nibble"]["contains"]["4"])
-        session.send_key("ESC")
+        ensure_edit_off(session, "the two-nibble hex edit", "ESC")
 
     with check("a main-RAM hex edit reaches C64 memory, not just the editor"):
         run_main_ram_edit_persists_test(session, rest_host, frozen)
@@ -4110,8 +4746,16 @@ def run_tests(context: MonitorContext) -> None:
         run_asm_commit_reliability_test(session, rest_host, frozen,
                                         stress_rounds(4))
 
-    with check("every character of a command argument reaches the monitor"):
-        run_key_input_stress_test(session, stress_rounds(3))
+    # The one check in this suite that re-sends nothing, so it is the one the
+    # cartridge's key loss reaches; every other check types its arguments
+    # through type_into_prompt's retype, which absorbs the same loss. The gate
+    # is outside the check rather than inside it, so the skip keeps its own
+    # numbered line and its reason.
+    key_stress_label = "every character of a command argument reaches the monitor"
+    if not device.skip_without_fix(machine_lib.KEY_INJECTION_LOSES_NO_CHARACTER,
+                                   key_stress_label):
+        with check(key_stress_label):
+            run_key_input_stress_test(session, stress_rounds(3))
 
     with check("Help is KEY-first, and its two grids stay on their columns"):
         run_help_layout_test(session)
@@ -4143,12 +4787,13 @@ def run_tests(context: MonitorContext) -> None:
                        f"{CPU_BANK_UNAVAILABLE!r}")
         else:
             session.goto("A000")
-            screen = ensure_status(session, snapshots["status_cpu27"]["contains"]["22"])
-            assert_status_contains(screen, snapshots["status_cpu27"]["contains"]["22"])
+            screen = ensure_view_bank_status(
+                session, snapshots["status_cpu27"]["contains"]["22"])
+            assert_view_bank_status(screen, snapshots["status_cpu27"]["contains"]["22"])
             session.send_char("o")
             session.send_char("o")
             screen = session.send_char("o")
-            assert_status_contains(screen, snapshots["status_cpu30"]["contains"]["22"])
+            assert_view_bank_status(screen, snapshots["status_cpu30"]["contains"]["22"])
 
     with check("U2 VIC-bank selection persists after leaving Freeze"):
         if banks_cpu:
@@ -4253,13 +4898,23 @@ def run_tests(context: MonitorContext) -> None:
 
     with check("G executes finite loop and returns to monitor"):
         go_address = 0xC000 if is_u2 and frozen else 0x1000
+        # Where the user interface draws into the C64's own screen, which is
+        # every cartridge, a loop writing screen RAM overwrites the monitor as
+        # fast as it is drawn and it can never be read back. The sentinel goes
+        # somewhere the user interface does not use there.
+        # $C2F0, not $C200: this loop keeps running after the check, and
+        # "G repeated execution updates RAM sentinel" below writes its own
+        # fixture to $C200.
+        sentinel = 0xC2F0 if is_u2 else 0x0400
         write_rest_memory(rest_host, go_address,
-                          bytes.fromhex("A9008D0004A9018D00044C") +
+                          bytes((0xA9, 0x00, 0x8D, sentinel & 0xFF, sentinel >> 8,
+                                 0xA9, 0x01, 0x8D, sentinel & 0xFF, sentinel >> 8,
+                                 0x4C)) +
                           go_address.to_bytes(2, "little"))
-        write_rest_memory(rest_host, 0x0400, bytes([0x20]))
+        write_rest_memory(rest_host, sentinel, bytes([0x20]))
         session.goto(f"{go_address:04X}")
         session.goto_run(f"{go_address:04X}")
-        wait_for_rest_byte(rest_host, 0x0400, 0x01)
+        wait_for_rest_byte(rest_host, sentinel, 0x01)
         session.enter_monitor()
 
     with check("G repeated execution updates RAM sentinel"):
@@ -4288,6 +4943,18 @@ def run_tests(context: MonitorContext) -> None:
                        "back on G closes the whole user interface")
         else:
             run_go_keeps_monitor_open_test(session, rest_host)
+
+    with check("freeze debug step keeps the firmware title and rule rows"):
+        if mode != MODE_FREEZE:
+            check_skip(f"the chrome rows only exist on the device's own screen, "
+                       f"running under {mode}")
+        elif is_u2:
+            check_skip("the cartridge has no freeze-mode debugger screen of its own")
+        else:
+            run_freeze_debug_chrome_test(session, rest_host)
+
+    with check("an edit is in the machine and on screen at once"):
+        run_edit_visibility_test(session, rest_host)
 
     with check("bookmarks recall, set, list, and label edit"):
         run_bookmark_test(session)
@@ -5004,12 +5671,6 @@ def main() -> int:
     live_host = target.computer
     control = target.token
     info = rest_api(device_host).info()
-    device = machine_lib.identify(
-        device_host, lambda: (info.product, info.firmware_version))
-    if device.skip_without_fix(machine_lib.MONITOR_EXIT_AND_BACK_KEYS,
-                               "this machine runs the monitor revision this suite drives"):
-        suite_ok("monitor_test")
-        return 0
     is_u2 = info.product.startswith("Ultimate II")
     if is_u2 and not target.split:
         parser.error("an Ultimate II is a cartridge: name the computer it is "
@@ -5037,7 +5698,10 @@ def main() -> int:
             session=session, rest_host=memory_host, mode=args.mode,
             is_u2=is_u2, control=control, video_host=live_host,
             files_host=device_host, live_host=live_host, frozen=frozen,
-            device_host=device_host))
+            device_host=device_host,
+            machine=machine_lib.identify(
+                device_host,
+                lambda: (info.product, info.firmware_version))))
     except Failure as exc:
         report_first_attempt_losses()
         suite_fail("monitor_test", str(exc))

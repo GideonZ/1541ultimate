@@ -33,6 +33,7 @@ sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
                             if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
 import bootstrap  # noqa: E402,F401
 import cli  # noqa: E402
+import pacing  # noqa: E402
 import ui_backend  # noqa: E402
 from report import Failure, check, detail, suite_fail, suite_ok  # noqa: E402
 from selftest import expect  # noqa: E402
@@ -227,10 +228,99 @@ def frame(screen: Screen, rows: range, first: int, last: int) -> None:
         screen.chars[row * WIDTH + last] = ui_backend.BOX_VERTICAL
 
 
+class ScriptedRest(ui_backend.RestBackend):
+    """A RestBackend whose device is a script of menu_screen answers.
+
+    Built without the constructor, which talks to a device. `screens` is what
+    successive GET menu_screen requests return once the menu button has been
+    pressed: None for a 404, otherwise a Screen. The last entry repeats.
+    """
+
+    def __init__(self, screens: list) -> None:
+        self.last_command = "<test>"
+        self._cursor_colour = None
+        self._screens = list(screens)
+        self.menu_pressed = False
+        self.reads_after_press = 0
+
+    def _request(self, method: str, path: str, payload=None):
+        if path == ui_backend.MENU_BUTTON_PATH:
+            self.menu_pressed = True
+            return 200, b"{}"
+        if path == ui_backend.MENU_SCREEN_PATH:
+            if not self.menu_pressed:
+                return 404, b""
+            self.reads_after_press += 1
+            screen = self._screens.pop(0) if len(self._screens) > 1 else self._screens[0]
+            if screen is None:
+                return 404, b""
+            return 200, screen.body()
+        raise AssertionError(f"unexpected request {method} {path}")
+
+
+def monitor_window() -> Screen:
+    """What the overlay still shows the instant the menu reopens: the browser
+    title row, and under it the monitor window the previous UI left behind."""
+    screen = Screen().text(0, "*** Ultimate 64 Elite (V1.4F) 3.15 ***")
+    screen.text(3, "|MONITOR ASM $3370                     |", column=0)
+    for row in range(4, 22):
+        screen.text(row, f"|{0x3370 + row:04X} 00        BRK               [RAM]|", column=0)
+    screen.text(22, "|CPU7 $A:BAS $D:I/O $E:KRN VIC0 $0000  |", column=0)
+    return screen
+
+
+def browser() -> Screen:
+    screen = Screen().text(0, "*** Ultimate 64 Elite (V1.4F) 3.15 ***")
+    screen.text(1, "-" * 40, column=0)
+    screen.text(2, "Temp    RAM Disk               Ready", column=0)
+    screen.text(3, "Flash   Flash Disk             Ready", column=0)
+    screen.text(24, "/                              -F3=HELP-", column=0)
+    return screen
+
+
+def half_drawn() -> Screen:
+    """The browser has painted its top rows over the monitor window; the rest
+    of the window, its CPU footer included, is still on screen."""
+    screen = monitor_window()
+    fresh = browser()
+    for row in range(0, 8):
+        start = row * WIDTH
+        screen.chars[start:start + WIDTH] = fresh.chars[start:start + WIDTH]
+    return screen
+
+
+def run_menu_open_redraw_checks() -> None:
+    """Raising the menu must not return a screen the browser is still painting.
+
+    Observed on an Ultimate 64 in Overlay mode: `machine:menu_screen` answers
+    200 the moment the menu reopens, but the overlay's character matrix still
+    holds whatever the previous UI drew, and the file browser paints over it
+    row by row during the next few tens of milliseconds. A caller that reads
+    the screen in that window sees a monitor status line that is not there,
+    decides the monitor is already open, and types its next key at a browser.
+    """
+    with check("the menu-open wait returns the browser, not the window it is painting over"):
+        device = ScriptedRest([monitor_window(), half_drawn(), browser()])
+        device._raise_menu()
+        after = device.capture()
+        expect("first row the caller sees", after.lines[3].strip(),
+               browser().body()[3 * WIDTH:4 * WIDTH].decode().strip())
+        expect("status row the caller sees", after.lines[24].strip(),
+               "/                              -F3=HELP-")
+
+    with check("a menu that opened already drawn costs only the stability reads"):
+        device = ScriptedRest([browser()])
+        device._raise_menu()
+        expect("menu button pressed", device.menu_pressed, True)
+        # One read to see the menu answer, then the reads that prove it stable.
+        expect("reads spent", device.reads_after_press <= 1 + pacing.SETTLE_STABLE_SAMPLES + 1, True)
+
+
 def main() -> int:
     cli.device_free_arguments(__doc__)
     try:
         run_checks()
+        run_menu_open_redraw_checks()
     except Failure as exc:
         suite_fail("ui_backend_parse_test", str(exc))
         return 1

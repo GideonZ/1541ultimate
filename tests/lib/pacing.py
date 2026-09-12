@@ -237,6 +237,36 @@ KEY_DRAIN_SECONDS = _seconds("U64_UI_KEY_DRAIN", 0.02)
 # runs at 25ms a key for cursors and 31ms for text.
 SPLIT_KEY_DRAIN_SECONDS = _seconds("U64_UI_SPLIT_KEY_DRAIN", 0.06)
 
+# Idle matrix a cartridge target needs between two taps of the SAME key, on top
+# of waiting out the queue the previous request left behind.
+#
+# The cartridge reads the computer's keyboard matrix by scanning it, once per
+# call to Keyboard_C64::getch(), and that call comes round again only after the
+# menu has finished with the previous key. Between two taps of one key inside a
+# single request the matrix is empty for REST_TAP_GAP_TICKS, one 20ms tick. A
+# scan that does not land inside that gap sees the same matrix position on both
+# sides of it, reads one key held down, and keyboard_c64.cc's scan() suppresses
+# the second tap as auto-repeat. A different key is never dropped, because the
+# position changed.
+#
+# Measured on u2@c64u through RestBackend.send_text, typing into the monitor's
+# ASCII edit page at $C000 and reading the bytes back, 16 keys a run:
+#
+#   "aabbccdd..." in one request                     22 of 64 arrived
+#   split at each repeat, previous queue waited out, then
+#       150ms idle                                   64 of 64
+#        50ms idle                                   64 of 64
+#        20ms idle                                   64 of 64
+#   "abcdefgh..." (never split) in the same sessions  64 of 64
+#
+# The wait for the previous run to drain is what carries this: an earlier
+# version that split at each repeat and posted the next request immediately
+# still lost 15 of 64, because the new keys queued behind the old ones with
+# only the queue's own 20ms between them. This constant is the margin on top of
+# that, and 50ms is the smallest value with a measured value below it that also
+# held.
+SPLIT_REPEATED_KEY_GAP_SECONDS = _seconds("U64_UI_SPLIT_REPEATED_KEY_GAP", 0.05)
+
 
 def key_drain_seconds(split: bool, host: str | None = None) -> float:
     """What one key of a batch costs on this target, in seconds.
