@@ -1035,6 +1035,10 @@ def _in_range(name: str, value: int, bounds: tuple[int, int]) -> None:
 CARTRIDGE_STORE = "C64 and Cartridge Settings"
 CARTRIDGE_PREFERENCE_ITEM = "Cartridge Preference"
 CARTRIDGE_PREFERENCE_EXTERNAL = "External"
+# How long the computer gets to reach the BASIC prompt after the reboot that
+# makes the preference reach the running bus. A reboot restarts the whole
+# machine, so this is longer than READY_TIMEOUT_SECONDS, which covers a reset.
+CARTRIDGE_REBOOT_TIMEOUT_SECONDS = 30.0
 
 
 class CartridgePreferenceUnavailable(Failure):
@@ -1055,16 +1059,20 @@ def ensure_cartridge_preference(target, password: str | None = None,
 
     Answers what it did, for a caller that reports it:
 
-      None            nothing to do - the target is its own computer, or the
-                      computer already prefers the external cartridge
-      a description   the value it changed, and from what
+      None            nothing to do - the target is its own computer
+      a description   the config state and that the computer was rebooted
 
     Raises `CartridgePreferenceUnavailable` when the computer cannot be asked,
     and `Failure` when it serves the setting and will not take it.
 
-    The change is not saved to flash. It takes effect through the item's own
-    change hook, and leaving flash alone keeps a test run from deciding what a
-    machine boots with.
+    The config write is not saved to flash, which keeps a test run from
+    deciding what a machine boots with. The value alone does not reach the
+    running bus: the computer routes the cartridge port only when it boots and
+    initialises its cartridge, so the item's change hook updates the stored
+    value without re-routing the bus that is already running. For a split
+    target this therefore reboots the computer and waits for it to come back,
+    unconditionally - including when the value already read External, because
+    the stored value does not prove the running bus is routed to the cartridge.
     """
     handle = targets.resolve(target)
     if not handle.split:
@@ -1081,18 +1089,31 @@ def ensure_cartridge_preference(target, password: str | None = None,
         raise CartridgePreferenceUnavailable(
             f"{handle.computer} did not answer for "
             f"'{CARTRIDGE_PREFERENCE_ITEM}': {reason}") from exc
-    if current == CARTRIDGE_PREFERENCE_EXTERNAL:
-        return None
-    computer.configs.set(CARTRIDGE_STORE, CARTRIDGE_PREFERENCE_ITEM,
-                         CARTRIDGE_PREFERENCE_EXTERNAL)
-    now = computer.configs.current(CARTRIDGE_STORE, CARTRIDGE_PREFERENCE_ITEM)
-    if now != CARTRIDGE_PREFERENCE_EXTERNAL:
-        raise Failure(
-            f"{handle.computer} kept '{CARTRIDGE_PREFERENCE_ITEM}' at {now!r} "
-            f"after it was set to {CARTRIDGE_PREFERENCE_EXTERNAL!r}; the "
-            f"cartridge in its port will not own the bus")
-    return (f"{handle.computer}: {CARTRIDGE_PREFERENCE_ITEM} "
-            f"{current!r} -> {CARTRIDGE_PREFERENCE_EXTERNAL!r}")
+    if current != CARTRIDGE_PREFERENCE_EXTERNAL:
+        computer.configs.set(CARTRIDGE_STORE, CARTRIDGE_PREFERENCE_ITEM,
+                             CARTRIDGE_PREFERENCE_EXTERNAL)
+        now = computer.configs.current(CARTRIDGE_STORE, CARTRIDGE_PREFERENCE_ITEM)
+        if now != CARTRIDGE_PREFERENCE_EXTERNAL:
+            raise Failure(
+                f"{handle.computer} kept '{CARTRIDGE_PREFERENCE_ITEM}' at {now!r} "
+                f"after it was set to {CARTRIDGE_PREFERENCE_EXTERNAL!r}; the "
+                f"cartridge in its port will not own the bus")
+    # The reboot is what makes the value reach the running bus. Blank the top
+    # of screen RAM first, the same way reset() does: without it,
+    # wait_until_ready() can match the READY prompt the computer was already
+    # showing before the reboot took the machine down, and return before the
+    # machine has actually restarted.
+    computer.machine.writemem(SCREEN_RAM, bytes([0x20]) * len(READY_SCREEN_CODES))
+    computer.machine.reboot()
+    ready = computer.machine.wait_until_ready(CARTRIDGE_REBOOT_TIMEOUT_SECONDS)
+    reached = "reached the BASIC prompt" if ready else (
+        f"did not reach the BASIC prompt within "
+        f"{CARTRIDGE_REBOOT_TIMEOUT_SECONDS:.0f}s")
+    from_state = (f"{current!r} -> {CARTRIDGE_PREFERENCE_EXTERNAL!r}"
+                  if current != CARTRIDGE_PREFERENCE_EXTERNAL
+                  else f"already {CARTRIDGE_PREFERENCE_EXTERNAL!r}")
+    return (f"{handle.computer}: {CARTRIDGE_PREFERENCE_ITEM} {from_state}, "
+            f"rebooted so the cartridge owns the bus ({reached})")
 
 
 # "External" sets internal=0 in C64::ConfigureU64SystemBus, bit 0x08 of which
