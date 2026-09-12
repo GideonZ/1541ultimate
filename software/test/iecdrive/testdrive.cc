@@ -4,6 +4,9 @@
 #include "file_device.h"
 #include "filesystem_fat.h"
 #include "macros.h"
+#include "iec_trace.h" // #877 diagnostics; removed with them
+#include <unistd.h>
+#include <string.h>
 
 void outbyte(int c) { putc(c, stdout); }
 CommandInterface cmd_if;
@@ -631,6 +634,21 @@ static void expect_command_ok(const char *testname, IecDrive *dr, const char *cm
     expect_command_response(testname, dr, cmd, "00, OK,00,00\r");
 }
 
+// The same, for a command whose parameters are binary and so cannot be a C string.
+static void send_command_data(IecDrive *dr, const uint8_t *data, int len);
+
+static void expect_command_data_response(const char *testname, IecDrive *dr,
+                                         const uint8_t *cmd, int len, const char *expected)
+{
+    send_command_data(dr, cmd, len);
+    get_status(dr);
+    if (strcmp(last_status, expected) != 0) {
+        printf("%s: response was '%s', expected '%s'\n", testname, last_status, expected);
+        dump_hex_relative(cmd, len);
+    }
+    REQUIRE(strcmp(last_status, expected) == 0);
+}
+
 static void expect_command_bytes(const char *testname, IecDrive *dr, const char *cmd,
                                  const uint8_t *expected, int expected_len)
 {
@@ -1024,7 +1042,7 @@ static void run_iec_partition3_sequence(IecDrive *dr, const char *label)
     expect_command_response("TEST13", dr, "CP3", "02,PARTITION SELECTED,03,00\r");
     expect_command_response("TEST14", dr, "XPWD", "3:/");
     expect_command_response("TEST15", dr, "T-RI", "2025-06-26T00:41:01 WED\r");
-    expect_command_response("TEST16", dr, "C3:BAD=", "32,SYNTAX ERROR,00,00\r");
+    expect_command_response("TEST16", dr, "C3:BAD=", "34,SYNTAX ERROR,00,00\r");
 
     expect_command_ok("TEST17", dr, "C3:COMBO=3:BASIC,3:LITERAL");
     expect_iec_file("TEST18", dr, 0, "3:COMBO", "BASIC:PRGLITERAL:PRG");
@@ -1338,7 +1356,7 @@ void execute_suite7(FileManager *fm, IecDrive *dr)
 
     expect_iec_open_status_prefix("Suite7-OpenBadModifier", dr, 0, "7:BAD,X", "30,SYNTAX ERROR");
     expect_iec_open_status_prefix("Suite7-OpenBadRecordType", dr, 0, "7:BAD,P,L", "30,SYNTAX ERROR");
-    expect_iec_open_status_prefix("Suite7-OpenMalformedReplace", dr, 0, "@345:", "32,SYNTAX ERROR");
+    expect_iec_open_status_prefix("Suite7-OpenMalformedReplace", dr, 0, "@345:", "34,SYNTAX ERROR");
     expect_iec_open_status_prefix("Suite7-OpenMalformedDollar", dr, 0, "$", "00");
     //expect_iec_open_status_prefix("Suite7-OpenMalformedHash", dr, 0, "#", "30,SYNTAX ERROR");
 
@@ -1404,7 +1422,7 @@ static void run_suite8_time_copy_rename_scratch(IecDrive *dr)
     expect_command_bytes("Suite8-T-RD", dr, "T-RD", t_rd, sizeof(t_rd));
     expect_command_bytes("Suite8-T-RB", dr, "T-RB", t_rb, sizeof(t_rb));
 
-    expect_command_response("Suite8-COPY-MISSING-SOURCE", dr, "C2:DEST=", "32,SYNTAX ERROR,00,00\r");
+    expect_command_response("Suite8-COPY-MISSING-SOURCE", dr, "C2:DEST=", "34,SYNTAX ERROR,00,00\r");
     expect_command_ok("Suite8-COPY-A-BB", dr, "C2:DEST=1:A,1:BB");
     expect_iec_file("Suite8-COPY-DEST", dr, 0, "2:DEST", "This is really a silly test.This is really a silly test.");
 
@@ -1499,11 +1517,11 @@ static void run_suite9_block_matrix(FileManager *fm, IecDrive *dr)
 
         uint32_t free_before = get_free_sectors(fm, c.mount);
 
-        expect_command_ok("Suite9-BlockAllocate", dr, "B-A 2 9 17 10");
+        expect_command_ok("Suite9-BlockAllocate", dr, "B-A 9 17 10");
         uint32_t free_after_alloc = get_free_sectors(fm, c.mount);
         REQUIRE(free_after_alloc + 1 == free_before);
 
-        expect_command_ok("Suite9-BlockFree", dr, "B-F 2 9 17 10");
+        expect_command_ok("Suite9-BlockFree", dr, "B-F 9 17 10");
         uint32_t free_after_free = get_free_sectors(fm, c.mount);
         REQUIRE(free_after_free == free_before);
     }
@@ -1512,8 +1530,8 @@ static void run_suite9_block_matrix(FileManager *fm, IecDrive *dr)
     prepare_fat_partition(fm, dr, fat_path, 8, "FAT-BLOCK");
     expect_command_status_prefix("Suite9-FAT-BlockRead", dr, "B-R 2 8 17 0", "78,BLOCK ACCESS DENIED");
     expect_command_status_prefix("Suite9-FAT-BlockWrite", dr, "B-W 2 8 17 0", "78,BLOCK ACCESS DENIED");
-    expect_command_status_prefix("Suite9-FAT-BlockAllocate", dr, "B-A 2 8 17 0", "78,BLOCK ACCESS DENIED");
-    expect_command_status_prefix("Suite9-FAT-BlockFree", dr, "B-F 2 8 17 0", "78,BLOCK ACCESS DENIED");
+    expect_command_status_prefix("Suite9-FAT-BlockAllocate", dr, "B-A 8 17 0", "78,BLOCK ACCESS DENIED");
+    expect_command_status_prefix("Suite9-FAT-BlockFree", dr, "B-F 8 17 0", "78,BLOCK ACCESS DENIED");
 
     printf("Suite9 completed successfully!\n");
 }
@@ -1665,16 +1683,35 @@ static void run_suite10_command_terminator(FileManager *fm, IecDrive *dr)
     expect_status_ok("Suite10-RelClose", "12:RELPOS");
 
     // A command that fills the 64 byte command buffer still has to be executed: the
-    // zero written after its last byte must not reach the byte count itself.
+    // zero written after its last byte must not reach the byte count itself. Z is not
+    // a command letter, so the answer is 31 (SI-031).
     char full[65];
     memset(full, 'Z', 64);
     full[64] = 0;
-    expect_command_status_prefix("Suite10-FullBuffer", dr, full, "33,SYNTAX ERROR");
+    expect_command_status_prefix("Suite10-FullBuffer", dr, full, "31,SYNTAX ERROR");
 
     // A command that is nothing but a carriage return carries no command at all, and
     // has to leave the command channel usable.
     send_command(dr, "\r");
     expect_command_response("Suite10-AFTER-EMPTY-COMMAND", dr, "CP12\r", "02,PARTITION SELECTED,12,00\r");
+
+    // C<shift-P> takes its partition number as a byte, and that byte can be the same
+    // carriage return BASIC appends. Partition 13 is the case, and it is what the
+    // JiffyDOS command @"C<shift-P>"+CHR$(13) sends: three bytes and no terminator.
+    prepare_fat_partition(fm, dr, "/Fat/s10_p13", 13, "PART13");
+    const uint8_t cp13[3] = { 'C', 0xD0, 0x0D };
+    expect_command_data_response("Suite10-CP-BINARY-13", dr, cp13, sizeof(cp13),
+                                 "02,PARTITION SELECTED,13,00\r");
+    // The same command from BASIC, where PRINT# adds the terminator behind it.
+    const uint8_t cp13_term[4] = { 'C', 0xD0, 0x0D, 0x0D };
+    expect_command_data_response("Suite10-CP-BINARY-13-TERMINATED", dr, cp13_term, sizeof(cp13_term),
+                                 "02,PARTITION SELECTED,13,00\r");
+    const uint8_t cp12[3] = { 'C', 0xD0, 12 };
+    expect_command_data_response("Suite10-CP-BINARY-12", dr, cp12, sizeof(cp12),
+                                 "02,PARTITION SELECTED,12,00\r");
+    const uint8_t cp_missing[2] = { 'C', 0xD0 };
+    expect_command_data_response("Suite10-CP-BINARY-NO-PARAMETER", dr, cp_missing, sizeof(cp_missing),
+                                 "30,SYNTAX ERROR,00,00\r");
 }
 
 static void run_suite10_directory_navigation(FileManager *fm, IecDrive *dr)
@@ -1855,10 +1892,12 @@ static void run_suite10_block_commands(FileManager *fm, IecDrive *dr)
 
     // Allocating and freeing in the same form. Sector 17/11 is free on a disk that
     // was just formatted.
+    // The manuals write these with three numbers: the drive or partition, the track
+    // and the sector. There is no channel, because neither command touches a buffer.
     uint32_t free_before = get_free_sectors(fm, image);
-    expect_command_ok("Suite10-BA-SpaceForm", dr, "B-A: 2  0  17  11 \r");
+    expect_command_ok("Suite10-BA-SpaceForm", dr, "B-A: 0  17  11 \r");
     REQUIRE(get_free_sectors(fm, image) + 1 == free_before);
-    expect_command_ok("Suite10-BF-CommaForm", dr, "B-F:2,0,17,11\r");
+    expect_command_ok("Suite10-BF-CommaForm", dr, "B-F:0,17,11\r");
     REQUIRE(get_free_sectors(fm, image) == free_before);
 
     // Refusals. Too few parameters is a syntax error whatever the separators are, a
@@ -1867,8 +1906,8 @@ static void run_suite10_block_commands(FileManager *fm, IecDrive *dr)
     expect_command_status_prefix("Suite10-U1-TooFew", dr, "U1: 2  0 \r", "30,SYNTAX ERROR");
     expect_command_status_prefix("Suite10-BR-NoParams", dr, "B-R:\r", "30,SYNTAX ERROR");
     expect_command_status_prefix("Suite10-BR-NotNumeric", dr, "B-R:X,0,18,0\r", "30,SYNTAX ERROR");
-    expect_command_status_prefix("Suite10-U1-BadTrack", dr, "U1:2,0,99,0\r", "69,FILESYSTEM ERROR");
-    expect_command_status_prefix("Suite10-U1-BadSector", dr, "U1:2,0,18,99\r", "69,FILESYSTEM ERROR");
+    expect_command_status_prefix("Suite10-U1-BadTrack", dr, "U1:2,0,99,0\r", "66,ILLEGAL TRACK OR SECTOR");
+    expect_command_status_prefix("Suite10-U1-BadSector", dr, "U1:2,0,18,99\r", "66,ILLEGAL TRACK OR SECTOR");
     expect_command_status_prefix("Suite10-U1-OnDirectory", dr, "U1:2,12,18,0\r", "78,BLOCK ACCESS DENIED");
     expect_command_response("Suite10-CP13-Again", dr, "CP13\r", "02,PARTITION SELECTED,13,00\r");
 }
@@ -1886,11 +1925,13 @@ static void run_suite10_user_commands(IecDrive *dr)
     expect_command_status_prefix("Suite10-U9", dr, "U9\r", "73,");
     expect_command_status_prefix("Suite10-UJ", dr, "UJ\r", "73,");
     expect_command_status_prefix("Suite10-UColon", dr, "U:\r", "73,");
-    expect_command_status_prefix("Suite10-I", dr, "I0\r", "73,");
+    // I is not UI: it initialises and answers OK (SI-053).
+    expect_command_status_prefix("Suite10-I", dr, "I0\r", "00, OK");
 
-    // U3 to U8 jump into a drive buffer, which this drive has no equivalent for.
-    expect_command_status_prefix("Suite10-U3", dr, "U3:2,0,18,0\r", "33,SYNTAX ERROR");
-    expect_command_status_prefix("Suite10-Unknown", dr, "ZZ\r", "33,SYNTAX ERROR");
+    // U3 to U8 jump into a drive buffer, which this drive has no equivalent for. U is
+    // a command letter, so that is 30 (SI-104); Z is not, so that is 31 (SI-031).
+    expect_command_status_prefix("Suite10-U3", dr, "U3:2,0,18,0\r", "30,SYNTAX ERROR");
+    expect_command_status_prefix("Suite10-Unknown", dr, "ZZ\r", "31,SYNTAX ERROR");
 
     // Reading the error channel clears it, as it does on a real drive.
     expect_command_status_prefix("Suite10-ErrorSet", dr, "CD//NOSUCH\r", "71,DIRECTORY ERROR");
@@ -1935,6 +1976,19 @@ static void expect_partition_line(const char *testname, const uint8_t *listing, 
     printf("%s: partition %d does not appear in the partition directory\n", testname, part);
     dump_hex_relative(listing, length);
     REQUIRE(false);
+}
+
+// The other half of the check above: a partition the filter was meant to leave out.
+static void expect_partition_absent(const char *testname, const uint8_t *listing, int length, int part)
+{
+    for (int offset = 32; offset + 32 <= length; offset += 32) {
+        int blocks = listing[offset + 2] | (listing[offset + 3] << 8);
+        if (blocks == part) {
+            printf("%s: partition %d is in the listing and should not be\n", testname, part);
+            dump_hex_relative(listing + offset, 32);
+        }
+        REQUIRE(blocks != part);
+    }
 }
 
 // Reads a whole directory stream, whether of files or of partitions.
@@ -1983,13 +2037,94 @@ static void run_suite10_partition_directory(FileManager *fm, IecDrive *dr)
     got = read_directory_stream(testname, dr, "$=P:IMAGE 15?1", listing, sizeof(listing));
     expect_partition_line("Suite10-PartFilteredD64", listing, got, 21, "IMAGE 1541", "41 ");
     expect_partition_line("Suite10-PartFilteredD81", listing, got, 23, "IMAGE 1581", "81 ");
-    for (int offset = 32; offset + 32 <= got; offset += 32) {
-        int blocks = listing[offset + 2] | (listing[offset + 3] << 8);
-        if (blocks == 20) {
-            printf("%s: the pattern did not exclude partition 20\n", testname);
-        }
-        REQUIRE(blocks != 20);
+    expect_partition_absent("Suite10-PartPatternExcludes", listing, got, 20);
+
+    // It also takes a type, which is what the second half of LOAD"$=P:*=tp" selects.
+    got = read_directory_stream(testname, dr, "$=P:*=4", listing, sizeof(listing));
+    expect_partition_line("Suite10-PartTypeD64", listing, got, 21, "IMAGE 1541", "41 ");
+    expect_partition_absent("Suite10-PartTypeExcludesNative", listing, got, 20);
+    expect_partition_absent("Suite10-PartTypeExcludesD71", listing, got, 22);
+
+    got = read_directory_stream(testname, dr, "$=P:*=N", listing, sizeof(listing));
+    expect_partition_line("Suite10-PartTypeNativeDir", listing, got, 20, "NATIVE DIR", "NAT");
+    expect_partition_line("Suite10-PartTypeNativeDnp", listing, got, 24, "IMAGE NATIVE", "NAT");
+    expect_partition_absent("Suite10-PartTypeNativeExcludesD64", listing, got, 21);
+
+    // Several types at once, and one this drive can never have.
+    got = read_directory_stream(testname, dr, "$=P:*=4,8", listing, sizeof(listing));
+    expect_partition_line("Suite10-PartTypesD64", listing, got, 21, "IMAGE 1541", "41 ");
+    expect_partition_line("Suite10-PartTypesD81", listing, got, 23, "IMAGE 1581", "81 ");
+    expect_partition_absent("Suite10-PartTypesExcludeD71", listing, got, 22);
+
+    got = read_directory_stream(testname, dr, "$=P:*=C", listing, sizeof(listing));
+    for (int part = 20; part <= 24; part++) {
+        expect_partition_absent("Suite10-PartTypeCpm", listing, got, part);
     }
+}
+
+// The reply to G-P: thirty bytes and a carriage return. Byte 0 is the CMD partition
+// type, byte 1 is reserved, byte 2 is the partition number and bytes 3 to 18 carry
+// the name the partition directory shows.
+static void expect_partition_info(const char *testname, IecDrive *dr, const uint8_t *cmd,
+                                  int len, int type, int part, const char *name)
+{
+    send_command_data(dr, cmd, len);
+    get_status(dr);
+    bool ok = (last_status_size == 31) && (last_status[0] == type) && (last_status[1] == 0) &&
+              (last_status[2] == part) && (last_status[30] == 0x0D) &&
+              (strncmp(last_status + 3, name, 16) == 0);
+    if (!ok) {
+        char got_name[17] = { 0 };
+        memcpy(got_name, last_status + 3, 16);
+        printf("%s: %d bytes, type %d, partition %d, name '%s'; expected 31 bytes, type %d, "
+               "partition %d, name '%s'\n", testname, last_status_size, last_status[0],
+               last_status[2], got_name, type, part, name);
+        dump_hex_relative((uint8_t *)last_status, last_status_size);
+    }
+    REQUIRE(ok);
+}
+
+static void run_suite10_partition_info(FileManager *fm, IecDrive *dr)
+{
+    print_scenario("Suite10", "Partition information");
+    // Partition 13 is the one whose number is the same byte as the terminator, and
+    // an earlier scenario has since mounted an image there.
+    prepare_fat_partition(fm, dr, "/Fat/s10_p13", 13, "PART13");
+
+    // The partitions the directory scenario above created, read back one at a time.
+    // The type is the CMD code the directory prints as NAT, 41, 71 and 81.
+    const uint8_t native_dir[4] = { 'G', '-', 'P', 20 };
+    expect_partition_info("Suite10-InfoNativeDir", dr, native_dir, sizeof(native_dir), 1, 20, "NATIVE DIR");
+    const uint8_t d64[4] = { 'G', '-', 'P', 21 };
+    expect_partition_info("Suite10-InfoD64", dr, d64, sizeof(d64), 2, 21, "IMAGE 1541");
+    const uint8_t d71[4] = { 'G', '-', 'P', 22 };
+    expect_partition_info("Suite10-InfoD71", dr, d71, sizeof(d71), 3, 22, "IMAGE 1571");
+    const uint8_t d81[4] = { 'G', '-', 'P', 23 };
+    expect_partition_info("Suite10-InfoD81", dr, d81, sizeof(d81), 4, 23, "IMAGE 1581");
+    const uint8_t dnp[4] = { 'G', '-', 'P', 24 };
+    expect_partition_info("Suite10-InfoDnp", dr, dnp, sizeof(dnp), 1, 24, "IMAGE NATIVE");
+
+    // With the terminator BASIC appends, and with a number that is not a partition.
+    const uint8_t d64_term[5] = { 'G', '-', 'P', 21, 0x0D };
+    expect_partition_info("Suite10-InfoTerminated", dr, d64_term, sizeof(d64_term), 2, 21, "IMAGE 1541");
+    // A partition that does not exist reports type 0, which CMD DOS calls "not
+    // created". Asking about one is not an error.
+    const uint8_t missing[4] = { 'G', '-', 'P', 99 };
+    expect_partition_info("Suite10-InfoAbsent", dr, missing, sizeof(missing), 0, 99, "");
+
+    // No number and 255 both ask about the partition already selected.
+    expect_command_response("Suite10-InfoSelect", dr, "CP22\r", "02,PARTITION SELECTED,22,00\r");
+    const uint8_t current[3] = { 'G', '-', 'P' };
+    expect_partition_info("Suite10-InfoCurrent", dr, current, sizeof(current), 3, 22, "IMAGE 1571");
+    const uint8_t current255[4] = { 'G', '-', 'P', 255 };
+    expect_partition_info("Suite10-InfoCurrent255", dr, current255, sizeof(current255), 3, 22, "IMAGE 1571");
+    // Partition 13 is the number whose byte is the terminator. The CMD manual asks
+    // for the terminator to be sent as well, and with it the partition is reached;
+    // without it the command reads as though it carried no number at all.
+    const uint8_t part13[5] = { 'G', '-', 'P', 0x0D, 0x0D };
+    expect_partition_info("Suite10-InfoPartition13", dr, part13, sizeof(part13), 1, 13, "PART13");
+    const uint8_t part13_bare[4] = { 'G', '-', 'P', 0x0D };
+    expect_partition_info("Suite10-InfoPartition13Bare", dr, part13_bare, sizeof(part13_bare), 3, 22, "IMAGE 1571");
 }
 
 static void run_suite10_directory_streams(FileManager *fm, IecDrive *dr)
@@ -2045,10 +2180,599 @@ void execute_suite10(FileManager *fm, IecDrive *dr)
     run_suite10_block_commands(fm, dr);
     run_suite10_user_commands(dr);
     run_suite10_partition_directory(fm, dr);
+    run_suite10_partition_info(fm, dr);
     run_suite10_directory_streams(fm, dr);
 
     printf("Suite10 completed successfully!\n");
 }
+
+// ---------------------------------------------------------------------------
+// Suite11: doc/softiec_compatibility_spec.md, one case per requirement, each named
+// after the paragraph it checks.
+//
+// Every case works on a partition of its own and sets it up itself, so a case can be
+// run alone: `./result/testdrive SI031` runs only the Suite11 cases whose name
+// contains SI031 and skips every other suite. That is how a requirement is shown to
+// fail on its own before its change and to pass after it.
+// ---------------------------------------------------------------------------
+
+#include "iec_channel.h"
+
+// A fresh directory on the FAT file, mounted as partition 40, selected, and entered at
+// its root.
+static const char *s11_partition(FileManager *fm, IecDrive *dr, const char *dir)
+{
+    const char *testname = "Suite11";
+    static char path[64];
+    snprintf(path, sizeof(path), "/Fat/s11_%s", dir);
+    FRESULT fres = fm->create_dir(path);
+    REQUIRE(fres == FR_OK || fres == FR_EXIST);
+    dr->add_partition(40, path, "SUITE11");
+    expect_command_response(testname, dr, "CP40\r", "02,PARTITION SELECTED,40,00\r");
+    expect_command_ok(testname, dr, "CD//\r");
+    return path;
+}
+
+// SI-031: a command whose first byte is not a command letter answers 31, which is
+// what the 1541 ROM loads at $C175 when its command table has no match.
+static void s11_si031_unrecognised(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite11-SI031-Unrecognised";
+    s11_partition(fm, dr, "si031");
+    // CHR$(0) is the command C64 OS sends during its boot, measured as 33 on #877.
+    const uint8_t chr0[1] = { 0 };
+    expect_command_data_response(testname, dr, chr0, 1, "31,SYNTAX ERROR,00,00\r");
+    expect_command_response(testname, dr, "Z\r", "31,SYNTAX ERROR,00,00\r");
+    expect_command_response(testname, dr, "Q", "31,SYNTAX ERROR,00,00\r");
+}
+
+// SI-030: a command letter followed by a sub-command that does not exist answers 30,
+// because the command was recognised. U3 jumps into drive memory (SI-104) and B-E
+// executes a drive buffer (SI-095); neither exists here.
+static void s11_si030_unknown_subcommand(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite11-SI030-UnknownSubcommand";
+    s11_partition(fm, dr, "si030a");
+    expect_command_response(testname, dr, "U3:2,0,18,0\r", "30,SYNTAX ERROR,00,00\r");
+    expect_command_response(testname, dr, "B-E:2,0,18,0\r", "30,SYNTAX ERROR,00,00\r");
+}
+
+// SI-030: a colon with nothing after it is a missing name, 34.
+static void s11_si030_missing_name(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite11-SI030-MissingName";
+    s11_partition(fm, dr, "si030b");
+    expect_command_response(testname, dr, "C:NEW=\r", "34,SYNTAX ERROR,00,00\r");
+    expect_command_response(testname, dr, "R:NEW=\r", "34,SYNTAX ERROR,00,00\r");
+}
+
+// SI-030: a wildcard in the target of a copy or a rename is an illegal name, 33.
+static void s11_si030_wildcard_target(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite11-SI030-WildcardTarget";
+    s11_partition(fm, dr, "si030c");
+    expect_command_response(testname, dr, "C:NEW*=OLD\r", "33,SYNTAX ERROR,00,00\r");
+    expect_command_response(testname, dr, "R:NEW?=OLD\r", "33,SYNTAX ERROR,00,00\r");
+}
+
+// SI-036: a block command outside the disk is error 66, which CBM DOS names, and not
+// the Ultimate's own 69 with a file system result code in the track field.
+static void s11_si036_block_range(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite11-SI036-BlockRange";
+    const char *image = "/Fat/s11_si036.d64";
+    create_formatted_image(fm, image, "RANGE", 683, e_image_d64);
+    dr->add_partition(41, image, "RANGE");
+    expect_command_response(testname, dr, "CP41\r", "02,PARTITION SELECTED,41,00\r");
+    open_buffer_channel(testname, dr, 2);
+    expect_command_response(testname, dr, "U1:2,0,99,0\r", "66,ILLEGAL TRACK OR SECTOR,99,00\r");
+    expect_command_response(testname, dr, "U1:2,0,18,99\r", "66,ILLEGAL TRACK OR SECTOR,18,99\r");
+    expect_command_response(testname, dr, "U2:2,0,36,0\r", "66,ILLEGAL TRACK OR SECTOR,36,00\r");
+    expect_command_response(testname, dr, "B-A:0,40,1\r", "66,ILLEGAL TRACK OR SECTOR,40,01\r");
+    close_file(dr, 2);
+}
+
+// SI-033: a scratch that matches nothing is not an error. The answer is 01 with a
+// count of zero, as HD B-1 and the 1541 give it. C64 OS sends S/TEMPORARY/:* on every
+// boot, whether or not the directory holds anything.
+static void s11_si033_scratch_nothing(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite11-SI033-ScratchNothing";
+    s11_partition(fm, dr, "si033");
+    expect_command_response(testname, dr, "S:NOSUCHFILE\r", "01, FILES SCRATCHED,00,00\r");
+    expect_command_ok(testname, dr, "MD:TEMPORARY\r");
+    expect_command_response(testname, dr, "S/TEMPORARY/:*\r", "01, FILES SCRATCHED,00,00\r");
+    // The count still counts.
+    expect_iec_write_ok(testname, dr, 2, "/TEMPORARY/:GONE,S,W", "x");
+    expect_command_response(testname, dr, "S/TEMPORARY/:*\r", "01, FILES SCRATCHED,01,00\r");
+}
+
+// SI-053: I initialises. There is no medium to read in, so it answers OK, and like
+// sd2iec it closes the channels a program left open, flushing what was written to
+// them. UI is a different command and still answers with the DOS version.
+static void s11_si053_initialize(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite11-SI053-Initialize";
+    s11_partition(fm, dr, "si053");
+    expect_command_response(testname, dr, "I\r", "00, OK,00,00\r");
+    expect_command_response(testname, dr, "I0:\r", "00, OK,00,00\r");
+    expect_command_response(testname, dr, "UI\r", "73,U64HD ULTIMATE DOS V2.0,00,00\r");
+
+    // A file written and never closed: I closes it, so what was written is there.
+    open_file(dr, 3, "LEFTOPEN,S,W");
+    get_status(dr);
+    expect_status_ok(testname, "LEFTOPEN,S,W");
+    send_channel_data(dr, 3, (const uint8_t *)"FLUSHED", 7);
+    expect_command_response(testname, dr, "I\r", "00, OK,00,00\r");
+    expect_iec_file(testname, dr, 2, "LEFTOPEN,S,R", "FLUSHED");
+}
+
+// SI-054: V validates. A host file system has nothing to validate, so it answers OK.
+static void s11_si054_validate(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite11-SI054-Validate";
+    s11_partition(fm, dr, "si054");
+    expect_command_response(testname, dr, "V\r", "00, OK,00,00\r");
+    expect_command_response(testname, dr, "V0:\r", "00, OK,00,00\r");
+}
+
+// SI-045 and SI-046: the partition directory is a header, one line per partition and
+// the BASIC end marker, with no blocks free line (issue #890), and the number in front
+// of the header name is the number of partitions.
+static void s11_si045_partition_directory(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite11-SI045-PartitionDirectory";
+    s11_partition(fm, dr, "si045");
+    int partitions = 0;
+    for (int i = 1; i < MAX_PARTITIONS; i++) {
+        IecPartition *p = dr->get_file_system()->GetPartition(i);
+        if (p && (p->GetPartitionNumber() == i)) {
+            partitions++;
+        }
+    }
+    uint8_t listing[8192];
+    int got = read_directory_stream(testname, dr, "$=P", listing, sizeof(listing));
+    if (memmem(listing, got, "BLOCKS FREE", 11)) {
+        printf("%s: the partition directory has a blocks free line\n", testname);
+        dump_hex_relative(listing + got - 64, 64);
+    }
+    REQUIRE(memmem(listing, got, "BLOCKS FREE", 11) == NULL);
+    // A header and one 32 byte line per partition, then the two zero bytes that end a
+    // BASIC program.
+    if (got != (32 * (partitions + 1)) + 2) {
+        printf("%s: %d bytes for %d partitions, expected %d\n", testname, got, partitions,
+               (32 * (partitions + 1)) + 2);
+    }
+    REQUIRE(got == (32 * (partitions + 1)) + 2);
+    REQUIRE((listing[got - 2] == 0) && (listing[got - 1] == 0));
+}
+
+static void s11_si046_partition_count(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite11-SI046-PartitionCount";
+    s11_partition(fm, dr, "si046");
+    int partitions = 0;
+    for (int i = 1; i < MAX_PARTITIONS; i++) {
+        IecPartition *p = dr->get_file_system()->GetPartition(i);
+        if (p && (p->GetPartitionNumber() == i)) {
+            partitions++;
+        }
+    }
+    uint8_t listing[8192];
+    read_directory_stream(testname, dr, "$=P", listing, sizeof(listing));
+    // Bytes 4 and 5 of the header are the line number BASIC prints before the name.
+    int shown = listing[4] | (listing[5] << 8);
+    if (shown != partitions) {
+        printf("%s: header shows %d, there are %d partitions\n", testname, shown, partitions);
+    }
+    REQUIRE(partitions > 1);
+    REQUIRE(shown == partitions);
+}
+
+// Reads what the command channel has to say, however long it is. last_status only
+// holds a status line, and M-R can answer with 256 bytes.
+static int read_command_channel(IecDrive *dr, uint8_t *out, int size)
+{
+    dr->push_ctrl(SLAVE_CMD_ATN);
+    dr->push_ctrl(0x6F);
+    dr->talk();
+    int total = 0;
+    while (total < size) {
+        uint8_t *data;
+        int n = 0;
+        t_channel_retval ret = dr->prefetch_more(256, data, n);
+        if (n > size - total) {
+            n = size - total;
+        }
+        memcpy(out + total, data, n);
+        total += n;
+        dr->pop_more(n);
+        if ((ret != IEC_OK) || (n == 0)) {
+            break;
+        }
+    }
+    return total;
+}
+
+// SI-051: R-P:newname=oldname renames a partition.
+static void s11_si051_rename_partition(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite11-SI051-RenamePartition";
+    const char *path = s11_partition(fm, dr, "si051");
+    dr->add_partition(42, path, "OLDNAME");
+    expect_command_response(testname, dr, "R-P:NEWNAME=OLDNAME\r", "00, OK,00,00\r");
+    const uint8_t gp42[4] = { 'G', '-', 'P', 42 };
+    expect_partition_info(testname, dr, gp42, sizeof(gp42), 1, 42, "NEWNAME");
+    expect_directory_contains(testname, dr, "$=P", "\"NEWNAME\"");
+    // A partition that is not there, and a name another partition already has.
+    expect_command_response(testname, dr, "R-P:OTHER=NOSUCH\r", "62,FILE NOT FOUND,00,00\r");
+    expect_command_response(testname, dr, "R-P:SUITE11=NEWNAME\r", "63,FILE EXISTS,00,00\r");
+    expect_partition_info(testname, dr, gp42, sizeof(gp42), 1, 42, "NEWNAME");
+}
+
+// SI-064: R-H renames the header of a directory. A directory on a host file system has
+// no header apart from its name, so the directory is renamed, and a partition that is
+// standing in it stays there under the new name. At the root of a partition the
+// header is the partition's name.
+static void s11_si064_rename_header(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite11-SI064-RenameHeader";
+    const char *path = s11_partition(fm, dr, "si064");
+    char host[80];
+    expect_command_ok(testname, dr, "MD:SUB\r");
+    expect_command_ok(testname, dr, "MD/SUB/:DEEP\r");
+    expect_command_ok(testname, dr, "CD/SUB/DEEP\r");
+    expect_command_response(testname, dr, "R-H40//SUB/:NEWSUB\r", "00, OK,00,00\r");
+    snprintf(host, sizeof(host), "%s/NEWSUB/DEEP", path);
+    expect_path_exists(testname, fm, host);
+    snprintf(host, sizeof(host), "%s/SUB", path);
+    expect_path_absent(testname, fm, host);
+    expect_command_response(testname, dr, "XPWD\r", "40:/NEWSUB/DEEP/");
+    // The current directory, named by R-H with no path.
+    expect_command_response(testname, dr, "R-H:BOTTOM\r", "00, OK,00,00\r");
+    expect_command_response(testname, dr, "XPWD\r", "40:/NEWSUB/BOTTOM/");
+    // The root of the partition carries the partition's name.
+    expect_command_response(testname, dr, "R-H40//:TOPNAME\r", "00, OK,00,00\r");
+    const uint8_t gp40[4] = { 'G', '-', 'P', 40 };
+    expect_partition_info(testname, dr, gp40, sizeof(gp40), 1, 40, "TOPNAME");
+    // Sixteen characters at most, and a name another directory already has.
+    expect_command_response(testname, dr, "R-H:ABCDEFGHIJKLMNOPQ\r", "34,SYNTAX ERROR,00,00\r");
+    expect_command_ok(testname, dr, "MD//NEWSUB/:TAKEN\r");
+    expect_command_response(testname, dr, "R-H:TAKEN\r", "63,FILE EXISTS,00,00\r");
+}
+
+// SI-100: U0>+CHR$(d) moves the drive to device number d for as long as it runs; the
+// configured number is not written.
+static void s11_si100_device_number(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite11-SI100-DeviceNumber";
+    s11_partition(fm, dr, "si100");
+    int configured = dr->get_address();
+    const uint8_t u0_12[5] = { 'U', '0', '>', 12, 0x0D };
+    expect_command_data_response(testname, dr, u0_12, sizeof(u0_12), "00, OK,00,00\r");
+    printf("%s: device number now %d, configured %d\n", testname, dr->get_address(), configured);
+    REQUIRE(dr->get_address() == 12);
+    // The drive keeps answering on the command channel.
+    expect_command_response(testname, dr, "UI\r", "73,U64HD ULTIMATE DOS V2.0,00,00\r");
+    // Outside 8 to 30 nothing changes.
+    const uint8_t u0_7[4] = { 'U', '0', '>', 7 };
+    expect_command_data_response(testname, dr, u0_7, sizeof(u0_7), "30,SYNTAX ERROR,00,00\r");
+    REQUIRE(dr->get_address() == 12);
+    expect_command_response(testname, dr, "S-D\r", "00, OK,00,00\r");
+    REQUIRE(dr->get_address() == configured);
+}
+
+// SI-101: S-8 and S-9 set the device number to 8 and 9, S-D restores the configured
+// one. None of them scratches a file.
+static void s11_si101_swap(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite11-SI101-Swap";
+    s11_partition(fm, dr, "si101");
+    int configured = dr->get_address();
+    expect_command_response(testname, dr, "S-8\r", "00, OK,00,00\r");
+    printf("%s: device number after S-8: %d\n", testname, dr->get_address());
+    REQUIRE(dr->get_address() == 8);
+    expect_command_response(testname, dr, "S-9\r", "00, OK,00,00\r");
+    REQUIRE(dr->get_address() == 9);
+    expect_command_response(testname, dr, "S-D\r", "00, OK,00,00\r");
+    REQUIRE(dr->get_address() == configured);
+    // A file that happens to be called -8 is not scratched by it.
+    expect_iec_write_ok(testname, dr, 2, "-8,S,W", "not scratched");
+    expect_command_response(testname, dr, "S-8\r", "00, OK,00,00\r");
+    expect_iec_file(testname, dr, 2, "-8,S,R", "not scratched");
+    expect_command_response(testname, dr, "S-D\r", "00, OK,00,00\r");
+}
+
+// SI-102: W-1 write protects the whole drive until W-0: every write answers 26.
+static void s11_si102_write_protect(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite11-SI102-WriteProtect";
+    s11_partition(fm, dr, "si102");
+    expect_iec_write_ok(testname, dr, 2, "KEEP,S,W", "kept");
+    expect_command_ok(testname, dr, "MD:KEEPDIR\r");
+    uint8_t record[16];
+    memset(record, 'R', sizeof(record));
+    expect_rel_open(testname, dr, 3, "RELKEEP", sizeof(record));
+    expect_rel_write(testname, dr, 3, record, sizeof(record));
+    close_file(dr, 3);
+    create_formatted_image(fm, "/Fat/s11_si102.d64", "PROTECT", 683, e_image_d64);
+    dr->add_partition(43, "/Fat/s11_si102.d64", "PROTECTED");
+    expect_command_response(testname, dr, "W-1\r", "00, OK,00,00\r");
+
+    // Relative files: an existing one opens and reads, a record write and a new file
+    // are refused.
+    expect_rel_open(testname, dr, 3, "RELKEEP", sizeof(record));
+    send_channel_data(dr, 3, record, sizeof(record));
+    get_status(dr);
+    expect_status_prefix(testname, "REL record write", "26,WRITE PROTECT ON");
+    close_file(dr, 3);
+    expect_rel_open_status_prefix(testname, dr, 3, "RELNEW", sizeof(record), "26,WRITE PROTECT ON");
+    close_file(dr, 3);
+    // Direct access writes and allocations.
+    open_buffer_channel(testname, dr, 4);
+    expect_command_response(testname, dr, "U2:4,43,18,5\r", "26,WRITE PROTECT ON,00,00\r");
+    expect_command_response(testname, dr, "B-A:43,18,5\r", "26,WRITE PROTECT ON,00,00\r");
+    close_file(dr, 4);
+
+    expect_iec_open_status_prefix(testname, dr, 1, "SAVED", "26,WRITE PROTECT ON");
+    close_file(dr, 1);
+    expect_iec_open_status_prefix(testname, dr, 2, "NEW,S,W", "26,WRITE PROTECT ON");
+    close_file(dr, 2);
+    expect_iec_open_status_prefix(testname, dr, 2, "KEEP,S,A", "26,WRITE PROTECT ON");
+    close_file(dr, 2);
+    expect_iec_open_status_prefix(testname, dr, 2, "@:KEEP,S,W", "26,WRITE PROTECT ON");
+    close_file(dr, 2);
+    expect_command_response(testname, dr, "S:KEEP\r", "26,WRITE PROTECT ON,00,00\r");
+    expect_command_response(testname, dr, "R:MOVED=KEEP\r", "26,WRITE PROTECT ON,00,00\r");
+    expect_command_response(testname, dr, "C:COPIED=KEEP\r", "26,WRITE PROTECT ON,00,00\r");
+    expect_command_response(testname, dr, "MD:NEWDIR\r", "26,WRITE PROTECT ON,00,00\r");
+    expect_command_response(testname, dr, "RD:KEEPDIR\r", "26,WRITE PROTECT ON,00,00\r");
+    expect_command_response(testname, dr, "R-H:RENAMED\r", "26,WRITE PROTECT ON,00,00\r");
+    // Reading still works.
+    expect_iec_file(testname, dr, 2, "KEEP,S,R", "kept");
+
+    expect_command_response(testname, dr, "W-0\r", "00, OK,00,00\r");
+    expect_iec_write_ok(testname, dr, 2, "NEW,S,W", "written");
+    expect_command_response(testname, dr, "S:KEEP\r", "01, FILES SCRATCHED,01,00\r");
+}
+
+// SI-105 and SI-112: M-R answers the number of bytes asked for, all zero, and does not
+// read past the end of the page; M-W and M-E are accepted and do nothing.
+static void s11_si105_memory_commands(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite11-SI105-MemoryCommands";
+    s11_partition(fm, dr, "si105");
+    uint8_t reply[512];
+
+    // The four probes C64 OS sends during its boot, two bytes each, as PRINT# sends them.
+    static const uint16_t probes[] = { 0xFEA4, 0xE5C5, 0xA6E8, 0x0002 };
+    for (int i = 0; i < 4; i++) {
+        uint8_t cmd[7] = { 'M', '-', 'R', (uint8_t)(probes[i] & 0xFF), (uint8_t)(probes[i] >> 8), 2, 0x0D };
+        send_command_data(dr, cmd, sizeof(cmd));
+        memset(reply, 0xAA, sizeof(reply));
+        int got = read_command_channel(dr, reply, sizeof(reply));
+        printf("%s: M-R $%04X,2 answered %d bytes: %02X %02X\n", testname, probes[i], got, reply[0], reply[1]);
+        REQUIRE(got == 2);
+        REQUIRE((reply[0] == 0) && (reply[1] == 0));
+    }
+    // After the bytes, the error channel says OK again.
+    get_status(dr);
+    expect_current_status(testname, "after M-R", "00, OK,00,00\r");
+
+    // No count reads one byte, a count of zero reads 256, and the page end stops it.
+    const uint8_t one[5] = { 'M', '-', 'R', 0x00, 0xFE };
+    send_command_data(dr, one, sizeof(one));
+    REQUIRE(read_command_channel(dr, reply, sizeof(reply)) == 1);
+    const uint8_t all[6] = { 'M', '-', 'R', 0x00, 0xFE, 0x00 };
+    send_command_data(dr, all, sizeof(all));
+    int got = read_command_channel(dr, reply, sizeof(reply));
+    printf("%s: M-R $FE00,0 answered %d bytes\n", testname, got);
+    REQUIRE(got == 256);
+    for (int i = 0; i < 256; i++) {
+        REQUIRE(reply[i] == 0);
+    }
+    const uint8_t edge[6] = { 'M', '-', 'R', 0xF0, 0xFE, 0x20 };
+    send_command_data(dr, edge, sizeof(edge));
+    REQUIRE(read_command_channel(dr, reply, sizeof(reply)) == 16);
+
+    const uint8_t mw[8] = { 'M', '-', 'W', 0x00, 0x05, 0x02, 0xEA, 0x60 };
+    expect_command_data_response(testname, dr, mw, sizeof(mw), "00, OK,00,00\r");
+    const uint8_t me[5] = { 'M', '-', 'E', 0x00, 0x05 };
+    expect_command_data_response(testname, dr, me, sizeof(me), "00, OK,00,00\r");
+}
+
+struct Suite11Case {
+    const char *name;
+    void (*run)(FileManager *fm, IecDrive *dr);
+};
+
+static const Suite11Case suite11_cases[] = {
+    { "Suite11-SI031-Unrecognised",      s11_si031_unrecognised },
+    { "Suite11-SI030-UnknownSubcommand", s11_si030_unknown_subcommand },
+    { "Suite11-SI030-MissingName",       s11_si030_missing_name },
+    { "Suite11-SI030-WildcardTarget",    s11_si030_wildcard_target },
+    { "Suite11-SI036-BlockRange",        s11_si036_block_range },
+    { "Suite11-SI033-ScratchNothing",    s11_si033_scratch_nothing },
+    { "Suite11-SI053-Initialize",        s11_si053_initialize },
+    { "Suite11-SI054-Validate",          s11_si054_validate },
+    { "Suite11-SI045-PartitionDirectory", s11_si045_partition_directory },
+    { "Suite11-SI046-PartitionCount",    s11_si046_partition_count },
+    { "Suite11-SI051-RenamePartition",   s11_si051_rename_partition },
+    { "Suite11-SI064-RenameHeader",      s11_si064_rename_header },
+    { "Suite11-SI100-DeviceNumber",      s11_si100_device_number },
+    { "Suite11-SI101-Swap",              s11_si101_swap },
+    { "Suite11-SI102-WriteProtect",      s11_si102_write_protect },
+    { "Suite11-SI105-MemoryCommands",    s11_si105_memory_commands },
+};
+
+// Runs every case, or only those whose name contains `only`.
+void execute_suite11(FileManager *fm, IecDrive *dr, const char *only)
+{
+    const char *testname = "Suite11";
+    int ran = 0;
+    print_scenario("Suite11", "Software IEC compatibility specification");
+    for (size_t i = 0; i < sizeof(suite11_cases) / sizeof(suite11_cases[0]); i++) {
+        if (only && !strstr(suite11_cases[i].name, only)) {
+            continue;
+        }
+        printf("  %s\n", suite11_cases[i].name);
+        suite11_cases[i].run(fm, dr);
+        ran++;
+    }
+    if (only) {
+        printf("Suite11 ran %d case(s) matching '%s'\n", ran, only);
+        REQUIRE(ran > 0);
+        return;
+    }
+    printf("Suite11 completed successfully!\n");
+}
+
+
+/* =============================================================================
+ * SOFTIEC-TRACE diagnostics, GideonZ/1541ultimate#877.
+ *
+ * TEMPORARY. This whole block and its single call in main() are removed together
+ * with the diagnostics themselves. It captures what the drive writes while a few
+ * representative operations run, and checks that each one produced a line under
+ * the shared prefix, with the payload bytes the operation actually carried.
+ * ============================================================================= */
+
+#if SOFTIEC_TRACE_ENABLED
+
+static char trace_capture[256 * 1024];
+
+static void trace_capture_begin(int &saved_fd, FILE *&sink)
+{
+    const char *testname = "SoftIecTrace";
+    fflush(stdout);
+    saved_fd = dup(fileno(stdout));
+    sink = fopen("trace_capture.txt", "w+");
+    REQUIRE(saved_fd >= 0);
+    REQUIRE(sink != NULL);
+    dup2(fileno(sink), fileno(stdout));
+}
+
+static void trace_capture_end(int saved_fd, FILE *sink)
+{
+    const char *testname = "SoftIecTrace";
+    fflush(stdout);
+    dup2(saved_fd, fileno(stdout));
+    close(saved_fd);
+    fseek(sink, 0, SEEK_SET);
+    size_t got = fread(trace_capture, 1, sizeof(trace_capture) - 1, sink);
+    trace_capture[got] = 0;
+    fclose(sink);
+    remove("trace_capture.txt");
+}
+
+static void expect_trace_line(const char *testname, const char *what, const char *needle)
+{
+    if (strstr(trace_capture, needle) == NULL) {
+        printf("%s: %s: no SOFTIEC-TRACE line containing '%s'\n", testname, what, needle);
+    }
+    REQUIRE(strstr(trace_capture, needle) != NULL);
+}
+
+// Every diagnostic line has to start with the shared prefix, so that removing the
+// feature is a matter of finding one string. Other output the firmware writes during
+// the same operations is left alone; what is checked is that nothing mentions the
+// prefix anywhere but at the start of a line.
+static void expect_every_line_prefixed(const char *testname)
+{
+    const char *p = trace_capture;
+    int traced = 0;
+    while (*p) {
+        const char *end = strchr(p, '\n');
+        int len = end ? (int)(end - p) : (int)strlen(p);
+        if (strncmp(p, SOFTIEC_TRACE_PREFIX, strlen(SOFTIEC_TRACE_PREFIX)) == 0) {
+            traced++;
+        } else if (memmem(p, len, SOFTIEC_TRACE_PREFIX, strlen(SOFTIEC_TRACE_PREFIX))) {
+            printf("%s: a line mentions the prefix but does not start with it: '%.*s'\n",
+                   testname, len, p);
+            REQUIRE(false);
+        }
+        if (!end) {
+            break;
+        }
+        p = end + 1;
+    }
+    if (traced < 8) {
+        printf("%s: only %d diagnostic lines were captured\n", testname, traced);
+    }
+    REQUIRE(traced >= 8);
+}
+
+static void run_softiec_trace_suite(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "SoftIecTrace";
+    print_scenario("SoftIecTrace", "SOFTIEC-TRACE diagnostics (#877)");
+
+    // A partition of its own, so the state the earlier suites left behind cannot
+    // change what this one sees.
+    save_fixture_file(fm, "/Temp", "TRACED.seq", "TRACE PAYLOAD");
+    dr->add_partition(9, "/Temp", "TRACEPART");
+    expect_command_response(testname, dr, "CP9\r", "02,PARTITION SELECTED,09,00\r");
+
+    int saved_fd = -1;
+    FILE *sink = NULL;
+    trace_capture_begin(saved_fd, sink);
+
+    // A textual command with the carriage return PRINT# appends.
+    send_command(dr, "G-P\r");
+
+    // Change Partition in its binary form, carrying partition 13 as a byte. The
+    // command and the terminator are the same byte, which is the whole of #881.
+    static const uint8_t change_partition[] = { 'C', 0xD0, 0x0D };
+    send_command_data(dr, change_partition, 3);
+    get_status(dr);
+
+    // An OPEN, a read and a CLOSE on a data channel.
+    uint8_t body[64];
+    open_file(dr, 2, "9:TRACED,S,R");
+    get_status(dr);
+    int got = read_file(dr, 2, body, sizeof(body));
+    close_file(dr, 2);
+
+    trace_capture_end(saved_fd, sink);
+
+    if (got != 13) {
+        printf("%s: read %d bytes from the fixture, expected 13\n", testname, got);
+    }
+    REQUIRE(got == 13);
+    expect_every_line_prefixed(testname);
+
+    // The command bytes, in hex and in the escaped form, with the carriage return
+    // still distinguishable from a printable byte.
+    expect_trace_line(testname, "G-P command", "CMD dev=");
+    expect_trace_line(testname, "G-P command bytes", "hex=[47 2D 50 0D]");
+    expect_trace_line(testname, "G-P command text", "txt=\"G-P\\r\"");
+    expect_trace_line(testname, "G-P reply", "REPLY dev=");
+    expect_trace_line(testname, "G-P reply length", "len=31");
+
+    // Partition 13 arrives as a byte and is not confused with the terminator.
+    expect_trace_line(testname, "binary change partition", "hex=[43 D0 0D]");
+    expect_trace_line(testname, "binary change partition text", "txt=\"C\\xD0\\r\"");
+
+    // The open carries the name the bus delivered and where it landed.
+    expect_trace_line(testname, "open name", "hex=[39 3A 54 52 41 43 45 44 2C 53 2C 52]");
+    expect_trace_line(testname, "open host path", "host=/Temp/TRACED.seq");
+
+    // The close reports how much crossed the channel and what the data began with.
+    expect_trace_line(testname, "close byte count", "read=13 [54 52 41 43 45 20 50 41 59 4C 4F 41 44]");
+    expect_trace_line(testname, "close write count", "written=0");
+
+    // The error channel read the host performs after each operation.
+    expect_trace_line(testname, "status read", "STATUS dev=");
+
+    printf("SoftIecTrace completed successfully!\n");
+}
+
+#else /* the diagnostics are compiled out, so there is nothing to check */
+
+static void run_softiec_trace_suite(FileManager *fm, IecDrive *dr) { }
+
+#endif
+/* ===================== end of the #877 diagnostics suite ===================== */
 
 int main(int argc, const char **argv)
 {
@@ -2066,14 +2790,20 @@ int main(int argc, const char **argv)
     File *f;
     FileManager *fm = FileManager :: getFileManager();
 
-    execute_suite8(fm, dr);
-    run_suite9_block_matrix(fm, dr);
-    execute_suite3(fm, dr);
-    execute_suite4(fm, dr);
-    execute_suite5(fm, dr);
-    execute_suite6(fm, dr);
-    execute_suite7(fm, dr);
-    execute_suite10(fm, dr);
+    // With an argument, only the Suite11 cases whose name contains it run.
+    const char *only = (argc > 1) ? argv[1] : NULL;
+    if (!only) {
+        execute_suite8(fm, dr);
+        run_suite9_block_matrix(fm, dr);
+        execute_suite3(fm, dr);
+        execute_suite4(fm, dr);
+        execute_suite5(fm, dr);
+        execute_suite6(fm, dr);
+        execute_suite7(fm, dr);
+        execute_suite10(fm, dr);
+        run_softiec_trace_suite(fm, dr); // #877 diagnostics; removed with them
+    }
+    execute_suite11(fm, dr, only);
 
     delete dr;
     delete ui;

@@ -72,6 +72,33 @@ void FileSystemCBM::set_volume_name(const char *name, uint8_t *bam_name, const c
 }
 
 
+// The layout table is a list of (number of tracks, sectors per track) pairs, ending
+// in a pair whose track count is negative, which stands for every remaining track.
+int FileSystemCBM::get_sectors_in_track(int track)
+{
+    if (track < 1) {
+        return 0;
+    }
+    --track;
+    const int *m = layout;
+    while ((m[0] >= 1) && (track >= m[0])) {
+        track -= m[0];
+        m += 2;
+    }
+    return m[1];
+}
+
+// The medium ends where its last sector is, so the track that sector sits on is the
+// last track.
+int FileSystemCBM::get_num_tracks(void)
+{
+    int track, sector;
+    if (!get_track_sector(num_sectors - 1, track, sector)) {
+        return 0;
+    }
+    return track;
+}
+
 int FileSystemCBM::get_abs_sector(int track, int sector)
 {
     int result = sector;

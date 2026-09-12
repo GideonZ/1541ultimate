@@ -168,4 +168,9 @@ class Agent:
 
     def command(self, command, allowed=(0,)):
         self.call(WRITE, 15, command if isinstance(command, bytes) else command.encode("ascii"))
-        self.status(allowed)
+        return self.status(allowed)
+
+    def command_reply(self, command, size):
+        """A command whose answer is data rather than a status line, such as G-P."""
+        self.call(WRITE, 15, command)
+        return self.call(READ_TO_EOI, 15, expect=size)

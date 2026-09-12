@@ -33,6 +33,10 @@ void IecInterface :: configure(void)
     // printf("IEC Interface configure.\n");
 }
 
+void IecInterface :: readdress(int slot)
+{
+}
+
 int IecInterface :: register_slave(IecSlave *slave)
 {
     for(int i=0; i < available_slots; i++) {

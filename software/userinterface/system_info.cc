@@ -19,6 +19,10 @@
 extern C1541 *c1541_A;
 extern C1541 *c1541_B;
 
+extern "C" {
+    int rtos_resource_report(char *buf, int size); // software/system/assert.c
+}
+
 /*
 Drive Status information:
 
@@ -158,7 +162,9 @@ void SystemInfo :: storage_info(StreamTextLog& b)
 
 void SystemInfo :: generate(UserInterface *ui)
 {
-    StreamTextLog buffer(4096);
+    // The task list below needs room of its own; a StreamTextLog that fills up
+    // starts again from the top.
+    StreamTextLog buffer(8192);
     char buf[40];
 
     buffer.format("System Information\n");
@@ -201,6 +207,15 @@ void SystemInfo :: generate(UserInterface *ui)
     buffer.format("Storage Devices:\n");
     buffer.format("================\n");
     storage_info(buffer);
+
+    // What would show a stack overrun coming, or a heap running down, before either
+    // stops the firmware.
+    buffer.format("Memory:\n");
+    buffer.format("=======\n");
+    char *report = new char[2048];
+    rtos_resource_report(report, 2048);
+    buffer.raw(report);
+    delete[] report;
 
     ui->run_editor(buffer.getText(), buffer.getLength());
 }

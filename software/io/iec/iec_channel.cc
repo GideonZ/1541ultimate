@@ -1,9 +1,228 @@
 #include "iec_channel.h"
 #include "dump_hex.h"
 #include "rtc.h"
+#include "iec_trace.h"
+#include <stdarg.h>
+
+/* ------------------------------------------------------------------------------
+ * Software IEC compatibility diagnostics for GideonZ/1541ultimate#877.
+ *
+ * One line per completed high level operation, never one per bus byte. Every line
+ * starts with SOFTIEC_TRACE_PREFIX, so `grep SOFTIEC-TRACE` on a device log finds
+ * all of them and a search of this file finds every call site. Removing the feature
+ * means deleting this block, software/io/iec/iec_trace.h and the SOFTIEC_TRACE()
+ * calls below; -DSOFTIEC_TRACE_ENABLED=0 turns it off instead. No command behaviour
+ * depends on it.
+ * ------------------------------------------------------------------------------ */
+
+#if SOFTIEC_TRACE_ENABLED
+
+// The sequence number and the line buffers are shared. Two tasks can reach the drive:
+// the IEC task, and the task behind the menu and the REST interface. Two lines written
+// at the same instant can therefore interleave or share a number. That is a defect a
+// reader can see rather than one that misleads, and keeping the buffers out of the IEC
+// task's small stack matters more.
+static uint32_t softiec_trace_sequence = 0;
+
+static const char *softiec_trace_stream(stream_type_t s)
+{
+    switch (s) {
+    case e_stream_file:       return "file";
+    case e_stream_buffer:     return "buffer";
+    case e_stream_dir:        return "dir";
+    case e_stream_partitions: return "partitions";
+    default:                  return "?";
+    }
+}
+
+static const char *softiec_trace_filetype(filetype_t t)
+{
+    switch (t) {
+    case e_any:    return "any";
+    case e_prg:    return "prg";
+    case e_seq:    return "seq";
+    case e_usr:    return "usr";
+    case e_rel:    return "rel";
+    case e_folder: return "dir";
+    default:       return "?";
+    }
+}
+
+static const char *softiec_trace_access(fileaccess_t a)
+{
+    switch (a) {
+    case e_not_set: return "none";
+    case e_read:    return "read";
+    case e_write:   return "write";
+    case e_append:  return "append";
+    default:        return "?";
+    }
+}
+
+// Writes one diagnostic line. The payload is passed with its length and is never
+// treated as a string, so embedded zeroes, carriage returns and shifted PETSCII
+// bytes all reach the log. The buffers are static because the IEC task has a small
+// stack; a line is built and printed in one go.
+void softiec_trace(IecDrive *drive, int channel, uint8_t secondary,
+                   const char *op, const uint8_t *payload, int len,
+                   const char *detail_fmt, ...)
+{
+    static char hex[SOFTIEC_TRACE_HEX_SIZE];
+    static char txt[SOFTIEC_TRACE_TEXT_SIZE];
+    static char err[80];
+    static char detail[320];
+
+    softiec_trace_hex(payload, len, hex, sizeof(hex));
+    softiec_trace_text(payload, len, txt, sizeof(txt));
+
+    detail[0] = 0;
+    if (detail_fmt) {
+        va_list ap;
+        va_start(ap, detail_fmt);
+        vsnprintf(detail, sizeof(detail), detail_fmt, ap);
+        va_end(ap);
+    }
+
+    // The drive's own rendering of the error channel. Reading it here does not clear
+    // it; only the command channel's reader does that. The carriage return it ends
+    // in would split the log line, so it goes.
+    int n = drive->get_error_string(err);
+    if ((n < 0) || (n >= (int)sizeof(err))) {
+        n = 0;
+    }
+    while ((n > 0) && ((err[n - 1] == 0x0D) || (err[n - 1] == 0x0A))) {
+        n--;
+    }
+    err[n] = 0;
+
+    // An operation that carries no payload leaves the payload fields out rather than
+    // printing three empty ones, which keeps the common lines short.
+    if (payload && (len > 0)) {
+        printf(SOFTIEC_TRACE_PREFIX " #%d %s dev=%d sa=$%02X chan=%d len=%d hex=[%s] txt=\"%s\" %s err=%s\n",
+               (int)(++softiec_trace_sequence), op, (int)drive->get_address(), (int)secondary,
+               channel, len, hex, txt, detail, err);
+    } else {
+        printf(SOFTIEC_TRACE_PREFIX " #%d %s dev=%d sa=$%02X chan=%d %s err=%s\n",
+               (int)(++softiec_trace_sequence), op, (int)drive->get_address(), (int)secondary,
+               channel, detail, err);
+    }
+}
+
+#endif /* SOFTIEC_TRACE_ENABLED */
+
+// The bytes that crossed a channel are counted, not logged. Only the first sixteen
+// and the last sixteen are kept, which is enough to see that the right file went by,
+// and a block costs a constant amount of work rather than a cost per byte.
+//
+// The count is of bytes the host took off the bus, taken where the channel is told
+// they were accepted. Counting where the channel prefetches instead would count a
+// byte the host was offered and did not take, and a buffer position command rewinds
+// the same pointer as a retry does, so the two cannot be told apart there.
+void IecChannel::trace_reset_counters(void)
+{
+    trace_rd = 0;
+    trace_wr = 0;
+    trace_dropped = 0;
+    trace_faulted = false;
+}
+
+// One line the first time a channel fails, so a channel that fails on every byte
+// does not fill the log.
+void IecChannel::trace_fault(const char *what, int rv)
+{
+    if (trace_faulted) {
+        return;
+    }
+    trace_faulted = true;
+    SOFTIEC_TRACE(drive, channel, (uint8_t)(0x60 | channel), "FAULT", NULL, 0,
+                  "at=%s retval=%d state=%d", what, rv, (int)state);
+}
+
+
+void IecChannel::trace_record_read(const uint8_t *data, int len)
+{
+#if SOFTIEC_TRACE_ENABLED
+    if (!data || (len <= 0)) {
+        return;
+    }
+    for (int i = 0; (i < len) && (trace_rd + i < 16); i++) {
+        trace_rd_head[trace_rd + i] = data[i];
+    }
+    int keep = (len > 16) ? 16 : len;
+    for (int i = 0; i < keep; i++) {
+        trace_rd_ring[(trace_rd + len - keep + i) & 15] = data[len - keep + i];
+    }
+    trace_rd += len;
+#endif
+}
+
+// The bytes at the read pointer that the host has just taken.
+void IecChannel::trace_record_pop(int n)
+{
+#if SOFTIEC_TRACE_ENABLED
+    if ((n <= 0) || (pointer < 0) || (pointer >= 512)) {
+        return;
+    }
+    if ((pointer + n) > 512) {
+        n = 512 - pointer;
+    }
+    trace_record_read(&buffer[pointer], n);
+#endif
+}
+
+void IecChannel::trace_record_write(uint8_t b)
+{
+#if SOFTIEC_TRACE_ENABLED
+    if (trace_wr < 16) {
+        trace_wr_head[trace_wr] = b;
+    }
+    trace_wr_ring[trace_wr & 15] = b;
+    trace_wr++;
+#endif
+}
+
+#if SOFTIEC_TRACE_ENABLED
+
+// Copies the last bytes of a ring back into the order they arrived in.
+static int softiec_trace_tail(const uint8_t *ring, uint32_t count, uint8_t *out)
+{
+    int n = (count > 16) ? 16 : (int)count;
+    for (int i = 0; i < n; i++) {
+        out[i] = ring[(count - n + i) & 15];
+    }
+    return n;
+}
+
+// Renders a byte count and the window that was kept, as "0", or "13 [41 42 ...]", or
+// "1264 [ ...sixteen... ... ...sixteen... ]". The caller's buffer needs 128 characters.
+// The two scratch buffers are static to keep them off the IEC task's stack; the result
+// is copied into the caller's buffer before this returns, so two calls in one argument
+// list do not tread on each other.
+static const char *softiec_trace_flow(uint32_t count, const uint8_t *head,
+                                      const uint8_t *ring, char *out, int out_size)
+{
+    static char head_hex[3 * 16 + 4];
+    static char tail_hex[3 * 16 + 4];
+    static uint8_t tail[16];
+    int n = (count > 16) ? 16 : (int)count;
+    softiec_trace_hex(head, n, head_hex, sizeof(head_hex));
+    int m = softiec_trace_tail(ring, count, tail);
+    softiec_trace_hex(tail, m, tail_hex, sizeof(tail_hex));
+    if (count == 0) {
+        snprintf(out, out_size, "0");
+    } else if (count <= 16) {
+        snprintf(out, out_size, "%d [%s]", (int)count, head_hex);
+    } else {
+        snprintf(out, out_size, "%d [%s ... %s]", (int)count, head_hex, tail_hex);
+    }
+    return out;
+}
+
+#endif /* SOFTIEC_TRACE_ENABLED */
 
 IecChannel::IecChannel(IecDrive *dr, int ch)
 {
+    trace_reset_counters();
     fm = FileManager::getFileManager();
     drive = dr;
     channel = ch;
@@ -32,6 +251,7 @@ IecChannel::~IecChannel()
 
 void IecChannel::reset(void)
 {
+    trace_reset_counters();
     close_file();
 
     pingpong = true;
@@ -121,12 +341,15 @@ t_channel_retval IecChannel::pop_more(int pop_size)
             state = e_complete;
             return IEC_NO_FILE; // no more data?
         }
+        trace_record_pop(pop_size);
         pointer += pop_size;
         if (pointer == 512) {
-            if (read_block())  // also resets pointer.
+            if (read_block()) { // also resets pointer.
+                trace_fault("read_block while streaming", IEC_READ_ERROR);
                 return IEC_READ_ERROR;
-            else
+            } else {
                 return IEC_OK;
+            }
         }
         break;
     case e_dir:
@@ -135,6 +358,7 @@ t_channel_retval IecChannel::pop_more(int pop_size)
             state = e_complete;
             return IEC_NO_FILE; // no more data?
         }
+        trace_record_pop(pop_size);
         pointer += pop_size;
         if (pointer == prefetch_max) {
             while (read_dir_entry() > 0)
@@ -143,6 +367,7 @@ t_channel_retval IecChannel::pop_more(int pop_size)
         }
         break;
     case e_record:
+        trace_record_pop(pop_size);
         pointer += pop_size;
         if (pointer > last_byte) {
             recordOffset += recordSize;
@@ -155,6 +380,7 @@ t_channel_retval IecChannel::pop_more(int pop_size)
         }
         break;
     case e_buffer:
+        trace_record_pop(pop_size);
         pointer += pop_size;
         break;
 
@@ -173,10 +399,13 @@ t_channel_retval IecChannel::pop_data(void)
             pointer ++; // make sure it's beyond the last byte now
             return IEC_NO_FILE; // no more data?
         } else if (pointer == 511) {
-            if (read_block())  // also resets pointer.
+            trace_record_pop(1);
+            if (read_block()) { // also resets pointer.
+                trace_fault("read_block while streaming", IEC_READ_ERROR);
                 return IEC_READ_ERROR;
-            else
+            } else {
                 return IEC_OK;
+            }
         }
         break;
     case e_dir:
@@ -185,6 +414,7 @@ t_channel_retval IecChannel::pop_data(void)
             state = e_complete;
             return IEC_NO_FILE; // no more data?
         } else if (pointer == prefetch_max - 1) {
+            trace_record_pop(1);
             while (read_dir_entry() > 0)
                 ;
             return IEC_OK;
@@ -209,6 +439,7 @@ t_channel_retval IecChannel::pop_data(void)
         return IEC_NO_FILE;
     }
 
+    trace_record_pop(1);
     pointer++;
     return IEC_OK;
 }
@@ -234,6 +465,7 @@ int IecChannel::read_block(void)
     }
     if (res != FR_OK) {
         state = e_error;
+        trace_fault("read_block", IEC_READ_ERROR);
         return IEC_READ_ERROR;
     }
     if (curblk->valid_bytes == 0) {
@@ -262,17 +494,22 @@ t_channel_retval IecChannel::push_data(uint8_t b)
 
     switch (state) {
     case e_filename:
-        if (pointer < 64)
+        if (pointer < 64) {
             buffer[pointer++] = b;
+        } else {
+            trace_dropped++; // #877: the name is longer than the channel buffer
+        }
         break;
 
     case e_record:
         if (pointer == recordSize) {
             // issue error 50
             drive->get_command_channel()->set_error(ERR_OVERFLOW_IN_RECORD, 0, 0);
+            trace_fault("push_data record overflow", IEC_BYTE_LOST);
             return IEC_BYTE_LOST;
         } else {
             buffer[pointer++] = b;
+            trace_record_write(b);
             recordDirty = true;
         }
         break;
@@ -280,6 +517,7 @@ t_channel_retval IecChannel::push_data(uint8_t b)
 
     case e_file:
         buffer[pointer++] = b;
+        trace_record_write(b);
         if (pointer == 512) {
             FRESULT res = FR_DENIED;
             if (f) {
@@ -289,6 +527,7 @@ t_channel_retval IecChannel::push_data(uint8_t b)
                 fm->fclose(f);
                 f = NULL;
                 state = e_error;
+                trace_fault("push_data block write", IEC_WRITE_ERROR);
                 return IEC_WRITE_ERROR;
             }
             pointer = 0;
@@ -298,10 +537,12 @@ t_channel_retval IecChannel::push_data(uint8_t b)
     case e_buffer:
         if (pointer < 256) {
             buffer[pointer++] = b;
+            trace_record_write(b);
         }
         break;
 
     default:
+        trace_fault("push_data on a channel that is not writing", IEC_BYTE_LOST);
         return IEC_BYTE_LOST;
     }
     return IEC_OK;
@@ -316,32 +557,47 @@ t_channel_retval IecChannel::push_command(uint8_t b)
         pointer = 0;
         break;
     case 0xE0: // close
-        if ((name_to_open.access == e_write) || (name_to_open.access == e_append)) {
-            if (f) {
-                if (pointer > 0) {
-                    uint32_t dummy;
-                    FRESULT res = f->write(buffer, pointer, &dummy);
-                    if (res != FR_OK) {
-                        state = e_error;
-                        return IEC_WRITE_ERROR;
+        {
+            // One exit, so the #877 diagnostics see every outcome of a close.
+            t_channel_retval rv = IEC_OK;
+            if ((name_to_open.access == e_write) || (name_to_open.access == e_append)) {
+                if (f) {
+                    if (pointer > 0) {
+                        uint32_t dummy;
+                        FRESULT res = f->write(buffer, pointer, &dummy);
+                        if (res != FR_OK) {
+                            state = e_error;
+                            rv = IEC_WRITE_ERROR;
+                        }
                     }
+                    if (rv == IEC_OK) {
+                        close_file();
+                        state = e_idle;
+                        name_to_open.access = e_not_set; // closed; closing again is not a write
+                    }
+                } else {
+                    state = e_error;
+                    rv = IEC_WRITE_ERROR;
                 }
+            } else if (state == e_record) {
+                state = e_idle;
+                rv = write_record();
                 close_file();
             } else {
-                state = e_error;
-                return IEC_WRITE_ERROR;
+                close_file();
+                state = e_idle;
             }
-        } else if (state == e_record) {
-            state = e_idle;
-            t_channel_retval r = write_record();
-            close_file();
-            return r;
-        } else {
-            close_file();
+            static char rd[128], wr[128];
+            SOFTIEC_TRACE(drive, channel, (uint8_t)(0xE0 | channel), "CLOSE", NULL, 0,
+                          "read=%s written=%s result=%d",
+                          softiec_trace_flow(trace_rd, trace_rd_head, trace_rd_ring, rd, sizeof(rd)),
+                          softiec_trace_flow(trace_wr, trace_wr_head, trace_wr_ring, wr, sizeof(wr)),
+                          (int)rv);
+            return rv;
         }
-        state = e_idle;
-        break;
     case 0x60:
+        SOFTIEC_TRACE(drive, channel, (uint8_t)(0x60 | channel), "ADDR", NULL, 0,
+                      "addressed for data, state=%d", (int)state);
         reset_prefetch();
         break;
     case 0x00: // end of data
@@ -402,6 +658,11 @@ t_channel_retval IecChannel::write_record(void)
 
     if (!recordDirty) {
         return IEC_OK; // do nothing; no data was received
+    }
+    if (int err = drive->refuse_write()) {
+        drive->set_error(err, 0, 0);
+        state = e_error;
+        return IEC_WRITE_ERROR;
     }
     if (f) {
         if ((pointer < recordSize) && (pointer >= 0)) {
@@ -690,16 +951,68 @@ static FRESULT open_by_rendered_iec_name(FileManager *fm, IecPartition *partitio
     return fm->fopen(resolved.c_str(), flags, file);
 }
 
+// The partition types CMD DOS defines, which are the drive's own vocabulary and not
+// the file system layer's. Byte 0 of the reply to G-P is one of these codes, and the
+// partition directory prints the matching three character name.
+typedef enum {
+    e_partition_none = 0,
+    e_partition_native = 1,
+    e_partition_1541 = 2,
+    e_partition_1571 = 3,
+    e_partition_1581 = 4,
+} cbm_partition_type_t;
+
+// Which CMD partition type a file system presents as, decided from the geometry the
+// file system reports and from nothing else:
+//
+//   no track and sector addressing     a directory on the host file system   NAT
+//   256 sectors on track 1             a DNP image                           NAT
+//   40 sectors on track 1              a D81 image                           81
+//   21 sectors on track 1, <= 42 tracks    a D64 image                       41
+//   21 sectors on track 1, > 42 tracks     a D71 image                       71
+//
+// The size of the first zone identifies three of the four layouts on its own. A 1541
+// disk and a 1571 disk share it, because a 1571 disk is the 1541 layout twice over, so
+// the track count separates those two. 42 tracks is the largest extended 1541 image.
+static cbm_partition_type_t cbm_partition_type_of(FileSystem *fs)
+{
+    if (!fs || !fs->supports_direct_sector_access()) {
+        return e_partition_native;
+    }
+    switch (fs->get_sectors_in_track(1)) {
+    case 256: // a CMD native partition addresses 256 sectors on every track
+        return e_partition_native;
+    case 40:  // a 1581 disk has 40 sectors on every track
+        return e_partition_1581;
+    case 21:  // the first zone of a 1541 disk, and of each side of a 1571 disk
+        return (fs->get_num_tracks() > 42) ? e_partition_1571 : e_partition_1541;
+    default:
+        return e_partition_native;
+    }
+}
+
 // The type of a partition follows the file system at its root: a mounted disk image
 // reports the drive model it emulates, everything else is native. Only the file
 // system of the returned info is used.
-static const char *iec_partition_type(FileManager *fm, IecPartition *prt)
+static cbm_partition_type_t iec_partition_type(FileManager *fm, IecPartition *prt)
 {
     FileInfo info(32);
-    if (fm->is_path_valid(prt->GetRootPath(), &info) && info.fs) {
-        return info.fs->get_partition_type();
+    if (fm->is_path_valid(prt->GetRootPath(), &info)) {
+        return cbm_partition_type_of(info.fs);
     }
-    return "NAT";
+    return e_partition_native;
+}
+
+// The three character name CMD DOS prints for a partition type. The field is three
+// wide, so the shorter names carry their trailing space.
+static const char *cbm_partition_type_name(cbm_partition_type_t type)
+{
+    switch (type) {
+    case e_partition_1541: return "41 ";
+    case e_partition_1571: return "71 ";
+    case e_partition_1581: return "81 ";
+    default: return "NAT";
+    }
 }
 
 int IecChannel::read_dir_entry(void)
@@ -730,8 +1043,14 @@ int IecChannel::read_dir_entry(void)
             info.attrib = AM_DIR;
             strncpy(info.lfname, prt->GetName(), info.lfsize);
             info.lfname[info.lfsize - 1] = 0;
-            partition_type = iec_partition_type(fm, prt);
+            cbm_partition_type_t type = iec_partition_type(fm, prt);
+            partition_type = cbm_partition_type_name(type);
             part_idx ++;
+            // A type given as $=P:*=N and the like lists only partitions of that type.
+            if (name_to_open.dir_opt.partition_types &&
+                !(name_to_open.dir_opt.partition_types & (1 << (int)type))) {
+                return 1;
+            }
         }
     }
 
@@ -739,6 +1058,19 @@ int IecChannel::read_dir_entry(void)
         if (dir) {
             delete dir;
             dir = NULL;
+        }
+
+        pointer = 0;
+        prefetch = 0;
+        if (state == e_partlist) {
+            // A partition directory has no blocks free line (SI-045, issue #890): the
+            // BASIC end marker follows the last partition.
+            buffer[0] = 0;
+            buffer[1] = 0;
+            last_byte = 1;
+            prefetch_max = 1;
+            state = e_dir; // with no directory open, the next call returns -1
+            return 0;
         }
 
         if (dir_free > 65535) {
@@ -857,6 +1189,8 @@ int IecChannel :: setup_partition_read()
     last_byte = -1;
     dir_free = 0;
     memcpy(buffer, c_header, 32);
+    // The number in front of the header name is the number of partitions (SI-046).
+    buffer[4] = (uint8_t)drive->vfs->CountPartitions();
     memcpy(buffer+8, "ULTIMATE HD", 11);
     memcpy(buffer+26, "UL 64", 5);
     return 0;
@@ -985,6 +1319,17 @@ int IecChannel :: setup_file_access()
         IecPartition::CreateIecName(&info, cbm_name, name_to_open.filetype);
     }
 
+    // A save, a write, an append and the creation of a relative file change the medium.
+    if (int err = drive->refuse_write()) {
+        FileInfo existing(4);
+        bool creates_rel = (name_to_open.filetype == e_rel) && (name_to_open.record_size != 0) &&
+                           (fm->fstat(full_path, existing) != FR_OK);
+        if ((name_to_open.access == e_write) || (name_to_open.access == e_append) || creates_rel) {
+            drive->set_error(err, 0, 0);
+            return 0;
+        }
+    }
+
     uint8_t flags;
     switch(name_to_open.access) {
     case e_append:
@@ -1100,31 +1445,73 @@ int IecChannel::setup_buffer_access(void)
 
 int IecChannel::open_file(void)  // name should be in buffer
 {
+#if SOFTIEC_TRACE_ENABLED
+    // #877 diagnostics: the name as the bus delivered it, taken now because setting
+    // up the stream reads the first block of the file into the same buffer. The
+    // rendering is cut at SOFTIEC_TRACE_MAX_BYTES; the reported length is the real one.
+    static uint8_t trace_raw_name[256];
+    int raw_kept = (pointer > (int)sizeof(trace_raw_name)) ? (int)sizeof(trace_raw_name) : pointer;
+    if (raw_kept > 0) {
+        memcpy(trace_raw_name, buffer, raw_kept);
+    }
+#endif
+    trace_reset_counters();
     buffer[pointer] = 0; // string terminator
     DBGIECV("Open file. Raw Filename = '%s'\n", buffer);
     int parse_err = parse_open((const char *)buffer, name_to_open);
     if (parse_err) {
         state = e_error;
         drive->set_error(parse_err, 0, 0);
+        SOFTIEC_TRACE(drive, channel, (uint8_t)(0xF0 | channel), "OPEN", trace_raw_name, raw_kept,
+                      "parse=%d", parse_err);
         return -1;
     }
 
     IecPartition *partition = drive->vfs->GetPartition(name_to_open.file.partition);
     recordSize = 0;
 
+    int result = -1;
     switch(name_to_open.dir_opt.stream) {
     case e_stream_buffer:
-        return setup_buffer_access();
+        result = setup_buffer_access();
+        break;
     case e_stream_dir:
-        return setup_directory_read();
+        result = setup_directory_read();
+        break;
     case e_stream_partitions:
-        return setup_partition_read();
+        result = setup_partition_read();
+        break;
     case e_stream_file:
-        return setup_file_access();
+        result = setup_file_access();
+        break;
     default: // file
         DBGIEC("Unknown stream mode\n");
+        break;
     }
-    return -1;
+    // Where the open landed matters as much as what was asked for, so the line
+    // carries the partition's working directory and, for a file, the host path and
+    // the size the drive found there.
+    if (f) {
+        SOFTIEC_TRACE(drive, channel, (uint8_t)(0xF0 | channel), "OPEN", trace_raw_name, raw_kept,
+                      "parse=0 dropped=%d stream=%s type=%s access=%s part=%d cwd=%s host=%s size=%d result=%d",
+                      (int)trace_dropped,
+                      softiec_trace_stream(name_to_open.dir_opt.stream),
+                      softiec_trace_filetype(name_to_open.filetype),
+                      softiec_trace_access(name_to_open.access),
+                      name_to_open.file.partition,
+                      partition ? partition->GetFullPath() : "-",
+                      f->get_path(), (int)f->get_size(), result);
+    } else {
+        SOFTIEC_TRACE(drive, channel, (uint8_t)(0xF0 | channel), "OPEN", trace_raw_name, raw_kept,
+                      "parse=0 dropped=%d stream=%s type=%s access=%s part=%d cwd=%s result=%d",
+                      (int)trace_dropped,
+                      softiec_trace_stream(name_to_open.dir_opt.stream),
+                      softiec_trace_filetype(name_to_open.filetype),
+                      softiec_trace_access(name_to_open.access),
+                      name_to_open.file.partition,
+                      partition ? partition->GetFullPath() : "-", result);
+    }
+    return result;
 }
 
 int IecChannel::close_file(void) // file should be open
@@ -1231,6 +1618,8 @@ IecCommandChannel::IecCommandChannel(IecDrive *dr, int ch) :
 {
     parser = new IecParser(this);
     wr_pointer = 0;
+    trace_secondary = (uint8_t)(0x60 | 15);
+    trace_cmd_dropped = 0;
 }
 
 IecCommandChannel::~IecCommandChannel()
@@ -1242,6 +1631,7 @@ void IecCommandChannel::reset(void)
 {
     IecChannel::reset();
     set_error(ERR_DOS);
+    SOFTIEC_TRACE(drive, 15, (uint8_t)(0x60 | 15), "RESET", NULL, 0, "drive reset");
 }
 
 void IecCommandChannel::set_error(int err, int track, int sector)
@@ -1266,6 +1656,9 @@ void IecCommandChannel::get_error_string(void)
 void IecCommandChannel::talk(void)
 {
     if (state != e_status) {
+        // Logged before the string is fetched, because fetching it clears the error.
+        // The err= field is therefore the answer the host is about to read.
+        SOFTIEC_TRACE(drive, 15, (uint8_t)(0x60 | 15), "STATUS", NULL, 0, "read by host");
         get_error_string();
         state = e_status;
     }
@@ -1306,6 +1699,7 @@ t_channel_retval IecCommandChannel::push_data(uint8_t b)
         wr_buffer[wr_pointer++] = b;
         return IEC_OK;
     }
+    trace_cmd_dropped++; // #877: the command is longer than the command buffer
     return IEC_BYTE_LOST;
 }
 
@@ -1348,6 +1742,8 @@ int IecCommandChannel :: do_block_read(int chan, int part, int track, int sector
     fres = fm->fs_read_sector(&path, channel->buffer, track, sector);
     if (fres == FR_DENIED) {
         drive->set_error(ERR_DENIED, track, sector);
+    } else if (fres == FR_INVALID_PARAMETER) { // outside the disk (SI-036)
+        drive->set_error(ERR_ILLEGAL_TRACK_SECTOR, track, sector);
     } else {
         drive->set_error_fres(fres);
     }
@@ -1359,6 +1755,9 @@ int IecCommandChannel :: do_block_read(int chan, int part, int track, int sector
 
 int IecCommandChannel::do_block_write(int chan, int part, int track, int sector)
 {
+    if (int err = drive->refuse_write()) {
+        return err;
+    }
     if ((chan < 0) || (chan > 14)) {
         set_error(ERR_SYNTAX_ERROR_CMD);
         return ERR_SYNTAX_ERROR_CMD;
@@ -1374,6 +1773,8 @@ int IecCommandChannel::do_block_write(int chan, int part, int track, int sector)
     fres = fm->fs_write_sector(&path, channel->buffer, track, sector);
     if (fres == FR_DENIED) {
         drive->set_error(ERR_DENIED, track, sector);
+    } else if (fres == FR_INVALID_PARAMETER) { // outside the disk (SI-036)
+        drive->set_error(ERR_ILLEGAL_TRACK_SECTOR, track, sector);
     } else {
         drive->set_error_fres(fres);
     }
@@ -1381,23 +1782,23 @@ int IecCommandChannel::do_block_write(int chan, int part, int track, int sector)
     return 0;
 }
 
-int IecCommandChannel::do_block_allocate(int chan, int part, int track, int sector, bool alloc)
+int IecCommandChannel::do_block_allocate(int part, int track, int sector, bool alloc)
 {
-    if ((chan < 0) || (chan > 14)) {
-        set_error(ERR_SYNTAX_ERROR_CMD);
-        return ERR_SYNTAX_ERROR_CMD;
+    if (int err = drive->refuse_write()) {
+        return err;
     }
     if (part >= MAX_PARTITIONS) {
         set_error(ERR_SYNTAX_ERROR_CMD);
         return ERR_SYNTAX_ERROR_CMD;
     }
-    IecChannel *channel = drive->get_data_channel(chan);
     GETPARTITION(part, partition, -1);
     Path path(partition->GetFullPath());
     FRESULT fres;
     fres = fm->fs_allocate_sector(&path, track, sector, alloc);
     if (fres == FR_DENIED) {
         drive->set_error(ERR_DENIED, track, sector);
+    } else if (fres == FR_INVALID_PARAMETER) { // outside the disk (SI-036)
+        drive->set_error(ERR_ILLEGAL_TRACK_SECTOR, track, sector);
     } else {
         drive->set_error_fres(fres);
     }
@@ -1456,6 +1857,9 @@ int IecCommandChannel::do_change_dir(filename_t& dest)
 
 int IecCommandChannel::do_make_dir(filename_t& dest)
 {
+    if (int err = drive->refuse_write()) {
+        return err;
+    }
     mstring work;
     const char *fullpath = ConstructPath(work, dest, e_folder, e_read);
     if (fullpath) {
@@ -1470,6 +1874,9 @@ int IecCommandChannel::do_make_dir(filename_t& dest)
 
 int IecCommandChannel::do_remove_dir(filename_t& dest)
 {
+    if (int err = drive->refuse_write()) {
+        return err;
+    }
     mstring work;
     const char *fullpath = ConstructPath(work, dest, e_folder, e_read);
     if (fullpath) {
@@ -1497,6 +1904,9 @@ int IecCommandChannel::do_remove_dir(filename_t& dest)
 
 int IecCommandChannel::do_copy(filename_t& dest, filename_t sources[], int n)
 {
+    if (int err = drive->refuse_write()) {
+        return err;
+    }
     // Curiously, an original drive takes the file type from the FIRST file it copies.
     // So in order to know the destination extension, we'd need to first open the first file
     // using wildcards and then see what file was opened.
@@ -1584,6 +1994,18 @@ int IecCommandChannel::do_initialize()
     return ERR_DOS;
 }
 
+// I: there is no medium to read in again, so what is left of initialising is what
+// sd2iec does, closing the data channels a program left open (SI-053). A channel
+// written to is closed the way a CLOSE from the host closes it, so its data is kept.
+int IecCommandChannel::do_initialize_buffers()
+{
+    for (int i = 0; i < 15; i++) {
+        drive->get_data_channel(i)->push_command(0xE0);
+    }
+    drive->set_error(ERR_ALL_OK, 0, 0);
+    return 0;
+}
+
 int IecCommandChannel::do_format(uint8_t *name, uint8_t id1, uint8_t id2)
 {
     printf("Format: %s %02x %02x\n", name, id1, id2);
@@ -1592,6 +2014,9 @@ int IecCommandChannel::do_format(uint8_t *name, uint8_t id1, uint8_t id2)
 
 int IecCommandChannel::do_rename(filename_t &src, filename_t &dest)
 {
+    if (int err = drive->refuse_write()) {
+        return err;
+    }
     mstring works, workd;
     const char *src_path = ConstructPath(works, src, e_any, e_read);
     FileInfo info(48);
@@ -1627,6 +2052,9 @@ int IecCommandChannel::do_rename(filename_t &src, filename_t &dest)
 
 int IecCommandChannel::do_scratch(filename_t filenames[], int n)
 {
+    if (int err = drive->refuse_write()) {
+        return err;
+    }
     DBGIECV("Scratch %d files:\n", n);
     mstring work;
     int scratched = 0;
@@ -1662,9 +2090,7 @@ int IecCommandChannel::do_scratch(filename_t filenames[], int n)
             }
         }
     }
-    if (scratched == 0) {
-        return ERR_FILE_NOT_FOUND;
-    }
+    // Scratching nothing is not an error: the answer is 01 with a count of zero (SI-033).
     set_error(ERR_FILES_SCRATCHED, scratched);
     return 0;
 }
@@ -1678,6 +2104,7 @@ int IecCommandChannel::do_cmd_response(uint8_t *data, int len)
     prefetch_max = len;
     state = e_status;
     drive->set_error(0, 0, 0);
+    SOFTIEC_TRACE(drive, 15, (uint8_t)(0x60 | 15), "REPLY", buffer, len, "command response");
     return 0;
 }
 
@@ -1704,6 +2131,7 @@ int IecCommandChannel::do_pwd_command()
     prefetch_max = len;
     state = e_status;
     drive->set_error(0, 0, 0);
+    SOFTIEC_TRACE(drive, 15, (uint8_t)(0x60 | 15), "REPLY", buffer, len, "working directory");
     return 0;
 }
 
@@ -1767,31 +2195,38 @@ int IecCommandChannel::do_set_position(int chan, uint32_t pos, int recnr, int re
 int IecCommandChannel::do_get_partition_info(int part)
 {
     IecPartition *p = drive->vfs->GetPartition(part);
-    buffer[30] = 0x0d;
     memset(buffer, 0, 30);
+    buffer[30] = 0x0d;
+    drive->set_error(0, 0, 0);
+
+    // Byte 0 is the type, byte 1 is reserved and byte 2 is the partition number. A
+    // partition that does not exist is not an error: type 0 is what CMD DOS calls
+    // "not created", and the caller asked for exactly that answer.
+    buffer[2] = (uint8_t)drive->vfs->GetTargetPartitionNumber(part);
 
     if (p) {
-        drive->set_error(0, 0, 0);
-        buffer[1] = 1;
-        buffer[2] = (uint8_t)part;
+        buffer[0] = (uint8_t)iec_partition_type(fm, p);
 
+        // The name in bytes 3 to 18 is the one the partition directory shows, which
+        // is the partition's own name rather than the path it is rooted at.
         char cbm_name[24];
         FileInfo info(40);
         filetype_t ftype = e_any;
-        strncpy(info.lfname, p->GetRootPath(), info.lfsize);
+        strncpy(info.lfname, p->GetName(), info.lfsize);
+        info.lfname[info.lfsize - 1] = 0;
         IecPartition::CreateIecName(&info, cbm_name, ftype);
 
         strncpy((char *)(buffer+3), cbm_name, 16);
         buffer[27] = 0xFF; // for now always reporting 0xFF0000 as partition size
-    } else {
-        drive->set_error(77, part, 0);
     }
 
+    // Thirty bytes of information plus the carriage return that ends the reply.
     last_byte = 30;
     pointer = 0;
     prefetch = 0;
-    prefetch_max = 30;
+    prefetch_max = 31;
     state = e_status;
+    SOFTIEC_TRACE(drive, 15, (uint8_t)(0x60 | 15), "REPLY", buffer, 31, "partition info");
     return 0;
 
 // Byte 0
@@ -1819,6 +2254,129 @@ int IecCommandChannel::do_get_partition_info(int part)
 // Byte 30      - CHR$(13)
 }
 
+// R-P:newname=oldname (SI-051). The old name is matched against the name the
+// partition directory shows, and the new one must not be shown by another partition.
+int IecCommandChannel::do_rename_partition(const char *newname, const char *oldname)
+{
+    if (int err = drive->refuse_write()) {
+        return err;
+    }
+    IecPartition *found = NULL;
+    for (int i = 1; i < MAX_PARTITIONS; i++) {
+        IecPartition *p = drive->vfs->GetPartition(i);
+        if (!p || (p->GetPartitionNumber() != i)) {
+            continue;
+        }
+        char shown[24];
+        FileInfo info(40);
+        filetype_t ftype = e_any;
+        strncpy(info.lfname, p->GetName(), info.lfsize);
+        info.lfname[info.lfsize - 1] = 0;
+        IecPartition::CreateIecName(&info, shown, ftype);
+        if (!found && pattern_match(oldname, shown, false)) {
+            found = p;
+        } else if (strcmp(newname, shown) == 0) {
+            return ERR_FILE_EXISTS;
+        }
+    }
+    if (!found) {
+        return ERR_FILE_NOT_FOUND;
+    }
+    char host[52];
+    petscii_to_fat(newname, host, sizeof(host));
+    found->SetName(host);
+    drive->trace_configuration("rename-partition"); // #877 diagnostics only
+    return 0;
+}
+
+// R-H[n][path]:newname (SI-064). A directory on a host file system has no header
+// apart from its name, so the directory itself is renamed; at the root of a partition
+// the header is the partition's name. A partition standing inside the renamed
+// directory follows it.
+int IecCommandChannel::do_rename_header(filename_t& dest)
+{
+    if (int err = drive->refuse_write()) {
+        return err;
+    }
+    GETPARTITION(dest.partition, partition, -1);
+    char host[52];
+    petscii_to_fat(dest.filename.c_str(), host, sizeof(host));
+
+    mstring full_path, relative;
+    FRESULT fres = resolve_directory_path(fm, partition, dest.path, full_path, &relative);
+    if (fres != FR_OK) {
+        drive->set_error_fres(fres);
+        return 0;
+    }
+    if (strcmp(relative.c_str(), "/") == 0) {
+        partition->SetName(host);
+        return 0;
+    }
+
+    // relative is /A/B/C/: the parent is /A/B/ and the directory is C.
+    char rel[256];
+    strncpy(rel, relative.c_str(), sizeof(rel) - 1);
+    rel[sizeof(rel) - 1] = 0;
+    int len = strlen(rel);
+    if (len && (rel[len - 1] == '/')) {
+        rel[--len] = 0;
+    }
+    char *last = strrchr(rel, '/');
+    if (!last) {
+        drive->set_error(ERR_DIRECTORY_ERROR, partition->GetPartitionNumber(), 0);
+        return 0;
+    }
+    *last = 0; // rel is now the parent, without its trailing slash
+
+    mstring old_full(partition->GetRootPath());
+    old_full += relative.c_str() + 1;
+    mstring new_full(partition->GetRootPath());
+    new_full += rel[0] ? (rel + 1) : "";
+    if (rel[0]) {
+        new_full += "/";
+    }
+    new_full += host;
+
+    const char *o = old_full.c_str();
+    if (old_full.length() && (o[old_full.length() - 1] == '/')) {
+        mstring trimmed(o, 0, old_full.length() - 2);
+        old_full = trimmed;
+    }
+    fres = fm->rename(old_full.c_str(), new_full.c_str());
+    if (fres != FR_OK) {
+        drive->set_error_fres(fres);
+        return 0;
+    }
+
+    // Follow the partition's working directory into the new name.
+    const char *cwd = partition->GetRelativePath();
+    int rlen = relative.length();
+    if (strncmp(cwd, relative.c_str(), rlen) == 0) {
+        mstring moved(rel);
+        moved += "/";
+        moved += host;
+        moved += "/";
+        moved += cwd + rlen;
+        partition->cd(moved.c_str());
+    }
+    return 0;
+}
+
+// U0>, S-8, S-9 and S-D (SI-100, SI-101). The drive answers this command on the
+// number it was addressed on and every later one on the new number.
+int IecCommandChannel::do_set_device_number(int dev)
+{
+    drive->set_device_number(dev);
+    return 0;
+}
+
+// W-0 and W-1 (SI-102).
+int IecCommandChannel::do_write_protect(bool on)
+{
+    drive->set_write_protect(on);
+    return 0;
+}
+
 int IecCommandChannel::ext_open_file(const char *filenameOrCommand)
 {
     strncpy((char *) wr_buffer, filenameOrCommand, 63);
@@ -1839,27 +2397,29 @@ t_channel_retval IecCommandChannel::push_command(uint8_t b)
     int err;
     switch (b) {
     case 0x60:
+        trace_secondary = (uint8_t)(0x60 | 15);
         reset_prefetch();
         break;
     case 0xE0:
     case 0xF0:
+        trace_secondary = (uint8_t)(b | 15);
         pointer = 0;
         wr_pointer = 0;
+        trace_cmd_dropped = 0;
+        SOFTIEC_TRACE(drive, 15, trace_secondary, (b == 0xF0) ? "OPEN" : "CLOSE",
+                      NULL, 0, "channel=command");
         break;
     case 0x00: // end of data, command received in buffer
-        // BASIC's PRINT# ends every command with a carriage return, which CBM DOS
-        // takes as the end of the command rather than as part of it. Only the last
-        // byte goes, so a command carrying binary parameters keeps them.
-        if (wr_pointer && (wr_buffer[wr_pointer - 1] == 0x0D)) {
-            wr_pointer--;
-        }
         wr_buffer[wr_pointer] = 0;
         if (wr_pointer) {
             drive->set_error(0, 0, 0);
             err = parser->execute_command(wr_buffer, wr_pointer);
             if (err) set_error(err);
+            SOFTIEC_TRACE(drive, 15, trace_secondary, "CMD", wr_buffer, wr_pointer,
+                          "dropped=%d result=%d", (int)trace_cmd_dropped, err);
         }
         wr_pointer = 0;
+        trace_cmd_dropped = 0;
         break;
     default:
         printf("Error on channel %d. Unknown command: %b\n", channel, b);

@@ -248,6 +248,16 @@ public:
         }
     }
 
+    int CountPartitions(void) {
+        int count = 0;
+        for(int i=1;i<MAX_PARTITIONS; i++) {
+            if (partitions[i]) {
+                count++;
+            }
+        }
+        return count;
+    }
+
     int GetUnusedPartition(void) {
         for(int i=1;i<MAX_PARTITIONS; i++) {
             if (!partitions[i]) {
@@ -300,6 +310,25 @@ class IecChannel {
     IecPartition *partition;
     char fs_filename[64];
 
+    // #877 diagnostics only: what has crossed this channel since it was opened. The
+    // first sixteen bytes and the last sixteen are kept so a log line can show that
+    // the right data went by without carrying the data itself. trace_dropped counts
+    // the bytes the 64 byte name buffer had no room for, and trace_faulted keeps a
+    // channel that fails on every byte to one line.
+    uint32_t trace_rd;
+    uint32_t trace_wr;
+    uint8_t trace_rd_head[16];
+    uint8_t trace_rd_ring[16];
+    uint8_t trace_wr_head[16];
+    uint8_t trace_wr_ring[16];
+    uint16_t trace_dropped;
+    bool trace_faulted;
+    void trace_record_read(const uint8_t *data, int len);
+    void trace_record_pop(int n);
+    void trace_record_write(uint8_t b);
+    void trace_reset_counters(void);
+    void trace_fault(const char *what, int rv);
+
 private:
     int setup_partition_read();
     int setup_directory_read();
@@ -321,6 +350,9 @@ public:
     IecChannel(IecDrive *dr, int ch);
     virtual ~IecChannel();
     virtual void reset(void);
+    // Not traced: the interface layer calls this on every transmit FIFO refill, so a
+    // JiffyDOS load would produce a line per block. The addressing is traced instead,
+    // in push_command(), which happens once per transfer.
     virtual void talk(void)
     {
     }
@@ -347,6 +379,11 @@ class IecCommandChannel: public IecChannel, public IecCommandExecuter {
     // 64 command bytes, plus the zero push_command writes after the last one.
     uint8_t wr_buffer[65];
     int wr_pointer;
+    // #877 diagnostics only: the secondary address that carried the command bytes,
+    // so a log line can tell an OPEN 15,dev,15,"..." from a PRINT#15, and the count
+    // of command bytes the 64 byte buffer had no room for.
+    uint8_t trace_secondary;
+    uint16_t trace_cmd_dropped;
 
     void mem_read(void);
     void mem_write(void);
@@ -354,7 +391,7 @@ class IecCommandChannel: public IecChannel, public IecCommandExecuter {
 
     int do_block_read(int chan, int part, int track, int sector);
     int do_block_write(int chan, int part, int track, int sector);
-    int do_block_allocate(int chan, int part, int track, int sector, bool alloc);
+    int do_block_allocate(int part, int track, int sector, bool alloc);
     int do_buffer_position(int chan, int pos);
     int do_set_current_partition(int part);
     int do_change_dir(filename_t& dest);
@@ -362,6 +399,7 @@ class IecCommandChannel: public IecChannel, public IecCommandExecuter {
     int do_remove_dir(filename_t& dest);
     int do_copy(filename_t& dest, filename_t sources[], int n);
     int do_initialize();
+    int do_initialize_buffers();
     int do_format(uint8_t *name, uint8_t id1, uint8_t id2);
     int do_rename(filename_t &src, filename_t &dest);
     int do_scratch(filename_t filenames[], int n);
@@ -369,6 +407,10 @@ class IecCommandChannel: public IecChannel, public IecCommandExecuter {
     int do_set_position(int chan, uint32_t pos, int recnr, int recoffset);
     int do_pwd_command();
     int do_get_partition_info(int part);
+    int do_rename_partition(const char *newname, const char *oldname);
+    int do_rename_header(filename_t& dest);
+    int do_set_device_number(int dev);
+    int do_write_protect(bool on);
 public:
     IecCommandChannel(IecDrive *dr, int ch);
     virtual ~IecCommandChannel();

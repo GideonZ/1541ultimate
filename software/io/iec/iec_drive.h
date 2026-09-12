@@ -26,6 +26,7 @@ class IecDrive : public IecSlave, SubSystem, ObjectWithMenu, ConfigurableObject
 
     int my_bus_id;
     bool enable;
+    bool write_protected; // W-1 (SI-102)
 
     FileManager *fm;
     IecChannel *channels[16];
@@ -85,7 +86,11 @@ public:
     t_channel_retval pop_more(int);
 
     // Local Functions
+    void set_device_number(int dev);
+    void set_write_protect(bool on) { write_protected = on; }
+    int refuse_write(void);
     void set_error(int err, int track, int sector);
+    void trace_configuration(const char *when); // #877 diagnostics only
     void set_error_fres(FRESULT fres);
 
     int get_error_string(char *); // writes string into buffer
@@ -120,6 +125,7 @@ public:
 #define ERR_FILE_NOT_FOUND				62
 #define ERR_FILE_EXISTS					63
 #define ERR_FILE_TYPE_MISMATCH			64
+#define ERR_ILLEGAL_TRACK_SECTOR        66
 #define ERR_FRESULT_CODE                69
 #define ERR_NO_CHANNEL          		70
 #define ERR_DIRECTORY_ERROR				71

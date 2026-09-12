@@ -204,6 +204,10 @@ public:
     bool    is_writable();
     bool    supports_direct_sector_access(void) { return true; }
 
+    // Geometry, read out of the disk layout this file system was built with.
+    int     get_num_tracks(void);
+    int     get_sectors_in_track(int track);
+
     // Create initial structures of empty disk
     virtual FRESULT format(const char *name) { return FR_NO_FILESYSTEM; }
     // Get number of free sectors on the file system
@@ -252,7 +256,6 @@ public:
 
 	~FileSystemD64() { }
 
-    const char *get_partition_type(void) { return "41 "; }
     bool init(void);
     FRESULT format(const char *name);
     FRESULT get_free (uint32_t*, uint32_t*);
@@ -284,7 +287,6 @@ public:
 	    delete[] bam2_buffer;
 	}
 
-	const char *get_partition_type(void) { return "71 "; }
 	bool init(void);
     FRESULT format(const char *name);
     FRESULT get_free (uint32_t*, uint32_t*);
@@ -325,7 +327,6 @@ public:
         delete[] bam_buffer;
     }
 
-    const char *get_partition_type(void) { return "81 "; }
     bool init(void);
     FRESULT format(const char *name);
     FRESULT get_free (uint32_t*, uint32_t*);

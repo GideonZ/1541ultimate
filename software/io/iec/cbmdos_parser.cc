@@ -114,7 +114,7 @@ int parse_full_path(const char *buf, filename_t& name, bool *replace = NULL, boo
     }
     name.has_wildcard = name.filename.contains_any("?*");
     if (!path_only && name.filename.length() == 0) {
-        return ERR_ILLEGAL_NAME;
+        return ERR_NO_NAME;
     }
     return 0;
 }
@@ -153,6 +153,24 @@ int parse_dir_option(const char *buf, dir_options_t &opt)
         break;
     default:
         return ERR_SYNTAX;    
+    }
+    return 0;
+}
+
+// The partition directory takes a type where a directory of files takes its
+// options: LOAD"$=P[:*][=tp]" with tp one of N, 4, 7, 8 or C. The bit set here is
+// the CMD partition type code, so the drive can test it against a partition's own
+// type without a second table.
+int parse_partition_option(const char *buf, dir_options_t &opt)
+{
+    switch(buf[0]) {
+    case 'N': opt.partition_types |= (1 << 1); break; // native, and a DNP image
+    case '4': opt.partition_types |= (1 << 2); break; // 1541 image
+    case '7': opt.partition_types |= (1 << 3); break; // 1571 image
+    case '8': opt.partition_types |= (1 << 4); break; // 1581 image
+    case 'C': opt.partition_types |= (1 << 5); break; // 1581 CP/M, which this drive has none of
+    default:
+        return ERR_SYNTAX;
     }
     return 0;
 }
@@ -201,7 +219,9 @@ int parse_open(const char *buf, open_t& fn)
             const char *parts[6] = { NULL };
             int n = opts.split(',', parts, 6);
             for (int i=0;i<n;i++) {
-                err = parse_dir_option(parts[i], fn.dir_opt);
+                err = (fn.dir_opt.stream == e_stream_partitions)
+                    ? parse_partition_option(parts[i], fn.dir_opt)
+                    : parse_dir_option(parts[i], fn.dir_opt);
                 if (err) return err;
             }
         }
@@ -236,7 +256,7 @@ int parse_open(const char *buf, open_t& fn)
     }
 
     if (fn.file.filename.contains_any(",=:\xA0\r")) {
-        return ERR_ILLEGAL_CHARS;
+        return ERR_ILLEGAL_NAME;
     }
     return 0;
 }
@@ -304,11 +324,15 @@ int IecParser :: block_command(const uint8_t *buffer, int len)
         return exec->do_buffer_position(p[0], p[1]);
     case 'A':
     case 'F':
+        // Allocate and free take the partition, the track and the sector. They do
+        // not take a channel, because they touch no buffer; the manuals write them
+        // as B-A:"drive;track;block. A fourth number is what the ROM's parameter
+        // reader would have collected and the command would then have ignored.
         n = parse_block_parameters(params, param_len, p, 4);
-        if (n != 4) return ERR_SYNTAX;
-        return exec->do_block_allocate(p[0], p[1], p[2], p[3], buffer[2] == 'A');
+        if (n < 3) return ERR_SYNTAX;
+        return exec->do_block_allocate(p[0], p[1], p[2], buffer[2] == 'A');
     default:
-        return ERR_UNKNOWN_CMD;
+        return ERR_SYNTAX;
     }
     return 0;
 }
@@ -317,10 +341,12 @@ int IecParser :: cp_command(const uint8_t *buffer, int len)
 {
     int part = 0;
     if (buffer[1] & 0x80) { // binary
-        part = buffer[2];
-        if (len != 3) {
+        // C<shift-P> always carries its partition number, so anything after it is
+        // the terminator BASIC appends and not a second parameter.
+        if (len < 3) {
             return ERR_SYNTAX;
         }
+        part = buffer[2];
     } else {
         // Partition 0 means "the one already selected", which is also what a command
         // with no number at all asks for.
@@ -334,7 +360,7 @@ int IecParser :: cp_command(const uint8_t *buffer, int len)
 int IecParser :: dir_command(const uint8_t *buffer, int len)
 {
     if (buffer[1] != 'D') {
-        return ERR_UNKNOWN_CMD;
+        return ERR_SYNTAX;
     }
     mstring cmd((const char *)buffer, 2, len-1);    
     filename_t dest;
@@ -347,7 +373,7 @@ int IecParser :: dir_command(const uint8_t *buffer, int len)
     case 'M': return exec->do_make_dir(dest);
     case 'R': return exec->do_remove_dir(dest);
     default:
-        return ERR_UNKNOWN_CMD;
+        return ERR_SYNTAX;
     }
     return 0;
 }
@@ -395,20 +421,26 @@ int IecParser :: get_command(const uint8_t *buffer, int len)
     switch(buffer[2]) {
     case 'P':
         if (len == 4) {
-            return exec->do_get_partition_info((int)buffer[3]);
+            // 255 asks for the current partition, which is what no parameter asks
+            // for as well. Partition 0 is the system partition on a CMD drive; there
+            // is none here, so it also reads back as the current one.
+            int wanted = (int)buffer[3];
+            return exec->do_get_partition_info((wanted == 255) ? 0 : wanted);
         } else if (len == 3) {
             return exec->do_get_partition_info(0);
         }
         return ERR_SYNTAX;
     default:
-        return ERR_UNKNOWN_CMD;
+        return ERR_SYNTAX;
     }
     return 0;
 }
 
+// I[n][:] initialises the medium. UI is a different command, a reset that answers
+// with the DOS version, and is handled by user_command().
 int IecParser :: initialize_command(const uint8_t *buffer, int len)
 {
-    return exec->do_initialize();
+    return exec->do_initialize_buffers();
 }
 
 int IecParser :: format_command(const uint8_t *buffer, int len)
@@ -510,6 +542,119 @@ int IecParser :: scratch_command(const uint8_t *buffer, int len)
     return exec->do_scratch(filenames, n);
 }
 
+// R-P:newname=oldname renames a partition (SI-051) and R-H[n][path]:newname renames
+// the header of a directory (SI-064). The dash has to be recognised before the
+// command is taken for a file rename, as sd2iec does with
+// command_length > 2 && command_buffer[1] == '-'.
+int IecParser :: rename_sub_command(const uint8_t *buffer, int len)
+{
+    mstring cmd((const char *)buffer, 3, len-1);
+    switch(buffer[2]) {
+    case 'P': {
+        const char *colon = strchr(cmd.c_str(), ':');
+        if (!colon) {
+            return ERR_NO_NAME;
+        }
+        mstring names(colon + 1);
+        const char *oldname;
+        if (!names.split('=', &oldname)) {
+            return ERR_SYNTAX;
+        }
+        if ((names.length() == 0) || !oldname[0]) {
+            return ERR_NO_NAME;
+        }
+        if ((names.length() > 16) || (strlen(oldname) > 16)) {
+            return ERR_NO_NAME;
+        }
+        if (names.contains_any("*?")) {
+            return ERR_ILLEGAL_NAME;
+        }
+        return exec->do_rename_partition(names.c_str(), oldname);
+    }
+    case 'H': {
+        filename_t dest;
+        int err = parse_full_path(cmd.c_str(), dest, NULL, false);
+        if (err) {
+            return err;
+        }
+        // A header may carry an id after a comma, which a host directory has no
+        // place for; sd2iec limits it to five characters.
+        const char *id;
+        if (dest.filename.split(',', &id) && (strlen(id) > 5)) {
+            return ERR_NO_NAME;
+        }
+        if ((dest.filename.length() == 0) || (dest.filename.length() > 16)) {
+            return ERR_NO_NAME;
+        }
+        if (dest.filename.contains_any("*?")) {
+            return ERR_ILLEGAL_NAME;
+        }
+        return exec->do_rename_header(dest);
+    }
+    default:
+        return ERR_SYNTAX;
+    }
+}
+
+// S-8, S-9 and S-D, the software swap of HD 9-34 (SI-101). Only the exact three byte
+// form is a swap; anything longer is a scratch.
+int IecParser :: swap_command(const uint8_t *buffer, int len)
+{
+    switch(buffer[2]) {
+    case '8': return exec->do_set_device_number(8);
+    case '9': return exec->do_set_device_number(9);
+    case 'D': return exec->do_set_device_number(0);
+    default:
+        return ERR_SYNTAX;
+    }
+}
+
+// W-0 and W-1 clear and set the software write protect (SI-102).
+int IecParser :: write_protect_command(const uint8_t *buffer, int len)
+{
+    if ((len == 3) && (buffer[1] == '-')) {
+        if (buffer[2] == '0') {
+            return exec->do_write_protect(false);
+        }
+        if (buffer[2] == '1') {
+            return exec->do_write_protect(true);
+        }
+    }
+    return ERR_SYNTAX;
+}
+
+// M-R, M-W and M-E (SI-105). This drive has no drive memory, so M-R answers the number
+// of bytes asked for, every one of them $00, which is no drive's signature (SI-112);
+// M-W and M-E are accepted and do nothing.
+int IecParser :: memory_command(const uint8_t *buffer, int len)
+{
+    switch(buffer[2]) {
+    case 'R': {
+        if (len < 5) {
+            return ERR_SYNTAX;
+        }
+        // No count reads one byte, as the 1541 ROM does at $CB24; a count of zero is
+        // 256; and a read stops at the end of the page.
+        int count = (len >= 6) ? buffer[5] : 1;
+        if (count == 0) {
+            count = 256;
+        }
+        if (count > 256 - buffer[3]) {
+            count = 256 - buffer[3];
+        }
+        uint8_t zeros[256];
+        memset(zeros, 0, sizeof(zeros));
+        return exec->do_cmd_response(zeros, count);
+    }
+    case 'W':
+        return (len >= 6) ? 0 : ERR_SYNTAX;
+    case 'E':
+        return (len >= 5) ? 0 : ERR_SYNTAX;
+    default:
+        return ERR_SYNTAX;
+    }
+}
+
 static uint8_t bcdbyte(int a)
 {
     if(a > 99)
@@ -584,7 +729,7 @@ int IecParser :: time_command(const uint8_t *buffer, int len)
     case 'W':
         return 0; // just assume OK
     }
-    return ERR_UNKNOWN_CMD;
+    return ERR_SYNTAX;
 }
 
 int IecParser :: user_command(const uint8_t *buffer, int len)
@@ -619,8 +764,16 @@ int IecParser :: user_command(const uint8_t *buffer, int len)
     case ':':
     case 'J':
         return exec->do_initialize();
+    case '0':
+        // U0>+CHR$(d) changes the device number (SI-100). CBM DOS takes the > from its
+        // low five bits, as sd2iec does. The other U0 forms select serial timing and
+        // retries this drive does not have.
+        if ((len == 4) && ((params[0] & 0x1F) == 0x1E) && (params[1] >= 8) && (params[1] <= 30)) {
+            return exec->do_set_device_number(params[1]);
+        }
+        return ERR_SYNTAX;
     default:
-        return ERR_UNKNOWN_CMD;
+        return ERR_SYNTAX;
     }
     return 0;
 }
@@ -631,11 +784,32 @@ int IecParser :: extended_command(const uint8_t *buffer, int len)
     if (cmd == "PWD") {
         return exec->do_pwd_command();
     }
-    return ERR_UNKNOWN_CMD;
+    return ERR_SYNTAX;
+}
+
+// BASIC's PRINT# ends a command with a carriage return, and CBM DOS drops it before
+// reading the command: the 1541 ROM does that at $C2B3. Change Partition in its
+// binary form is the exception, because its partition byte is not optional, so a
+// byte that happens to be a carriage return is that parameter. CMD DOS has the same
+// ambiguity wherever the last parameter is optional, and its manual answers it by
+// telling programmers to send the terminator themselves when they want partition 13.
+static int strip_terminator(const uint8_t *buffer, int len)
+{
+    if ((len > 1) && (buffer[0] == 'C') && (buffer[1] == 0xD0)) {
+        return len;
+    }
+    if (len && (buffer[len - 1] == 0x0D)) {
+        return len - 1;
+    }
+    return len;
 }
 
 int IecParser :: execute_command(const uint8_t *buffer, int len)
 {
+    len = strip_terminator(buffer, len);
+    if (len <= 0) { // an empty command line is not a command
+        return 0;
+    }
     switch(buffer[0]) {
     case 'B': return block_command(buffer, len);
     case 'C': 
@@ -649,17 +823,30 @@ int IecParser :: execute_command(const uint8_t *buffer, int len)
         break;
     case 'G': return get_command(buffer, len);
     case 'I': return initialize_command(buffer, len);
-    case 'M': return dir_command(buffer, len);
+    case 'M':
+        if (buffer[1] == '-') {
+            return memory_command(buffer, len);
+        }
+        return dir_command(buffer, len);
     case 'N': return format_command(buffer, len);
     case 'P': return position_command(buffer, len);
     case 'R':
+        if ((len > 2) && (buffer[1] == '-')) {
+            return rename_sub_command(buffer, len);
+        }
         if (buffer[1] == 'D') {
             return dir_command(buffer, len);
         }
         return rename_command(buffer, len);
-    case 'S': return scratch_command(buffer, len);
+    case 'S':
+        if ((len == 3) && (buffer[1] == '-')) {
+            return swap_command(buffer, len);
+        }
+        return scratch_command(buffer, len);
     case 'T': return time_command(buffer, len);
     case 'U': return user_command(buffer, len);
+    case 'V': return 0; // validate: a host file system has nothing to validate
+    case 'W': return write_protect_command(buffer, len);
     case 'X':
     case 'E':
         return extended_command(buffer, len);
