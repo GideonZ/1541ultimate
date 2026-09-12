@@ -784,18 +784,45 @@ where the 2 is the raw `FRESULT` `FR_INT_ERR` put into the track variable by
 channel, extend the file where the medium allows it, and answer `72,DISK FULL` where
 it does not.
 
-**SI-084.** The record size of a relative file on the host file system is stored as
-sd2iec stores it, so that a file written by one device is readable by the other. With
-an x00 wrapper the record length is byte 25 of the 26-byte header
-(`SD P00_RECORDLEN_OFFSET`); without a wrapper it is the first byte of the file
-(`SD create_file()`, `ops_scratch[0] = recordlen`, and SD README, "When x00 support
-is disabled the first byte of a REL file is assumed to be the record length").
+**SI-084.** A relative file on the host file system is read in either of the two
+layouts in use, and written in the one this firmware already writes. Nothing on a
+user's medium changes.
 
-Current behaviour: `U setup_file_access()` writes a **two-byte** little-endian record
-size and `U seek_record()` places the first record at offset 2. A `.rel` file is
-therefore not interchangeable with sd2iec in either direction. **Change required**,
-and it is a migration: existing `.rel` files written by this firmware have the
-two-byte header. See SI-151.
+| | header | first record at | file size |
+| --- | --- | --- | --- |
+| this firmware | two bytes, record length little endian | 2 | `2 + n*r` |
+| sd2iec, no wrapper | one byte, the record length | 1 | `1 + n*r` |
+| either, with an x00 wrapper | 26 bytes, record length at offset 25 | 26 | `26 + n*r` |
+
+Sources: `U setup_file_access()` writes `uint16_t wrd = record_size` and
+`U seek_record()` uses `const uint32_t c_header = 2`; `SD create_file()` sets
+`buf->pvt.fat.headersize = 1` and writes that one byte, and `SD fat_file_seek()`
+adds `headersize` to every position; `SD P00_RECORDLEN_OFFSET` is 25, and SD README
+says "When x00 support is disabled the first byte of a REL file is assumed to be the
+record length".
+
+**The two plain layouts are told apart deterministically, not by a heuristic.** Both
+put the record length `r` in byte 0, so `r` is known before the layout is. This
+firmware's files are `2 + n*r` bytes and sd2iec's are `1 + n*r`, so `size mod r` is
+`2 mod r` for one and `1 mod r` for the other. Those two values coincide only when
+`r` divides 1, that is only at `r == 1`, and HD 9-31 gives the legal record length as
+2 to 254. So the test is exact for every file either device can legally have written.
+A second, cheaper check comes first: byte 1 is zero in this firmware's layout,
+because a record length below 256 has a zero high byte, so a non-zero byte 1 settles
+it immediately.
+
+**Change required**, and it is purely additive. Read both plain layouts and the
+wrapped one; keep writing the two byte layout for a plain `.rel`. Interchange on the
+write side is SI-146.
+
+Current behaviour: `U setup_file_access()` reads the first two bytes as one little
+endian record length and refuses a value of 256 or more with
+`50,RECORD NOT PRESENT`. Against an sd2iec file the second byte is payload, so the
+usual outcome is that refusal. The case that matters is the other one: when that
+payload byte happens to be zero the value is accepted, the record length is right,
+and every record is then read one byte late. Silent misreading is the behaviour to
+replace, and it is why the discriminator above is on the file size rather than on the
+record length alone.
 
 ---
 
@@ -1188,9 +1215,12 @@ file moved between an Ultimate, an sd2iec and VICE keeps its identity.
 existing users see no change. When on, it follows sd2iec mode 1 (x00 for SEQ, USR and
 REL, plain for PRG) or mode 2 (x00 for everything). Source: SD README under `XEnum`.
 
-**SI-146.** SI-144 also settles SI-084: with an x00 wrapper the record length of a
-relative file is in the header at a fixed offset, which is the layout both devices
-already agree on.
+**SI-146.** The x00 wrapper is the whole of the write side answer for relative files.
+With it the record length is at a fixed header offset that both devices already
+agree on, so a relative file created while SI-145 is enabled is readable by an
+sd2iec without either device changing its plain layout. A plain `.rel` keeps this
+firmware's two byte layout for ever, which is why SI-084 needs no migration and why
+no file a user already has is touched.
 
 ### 14.3 The shifted space defect
 
@@ -1304,20 +1334,24 @@ already correct.
 7. Relative file behaviour as covered by Suite4 of `software/test/iecdrive`
    (SI-080).
 8. The `{HH}` name mapping (SI-140).
-9. JiffyDOS acceleration, which is implemented in the IEC processor microcode
-   `software/io/iec/iec_code.iec` and is what GAP, writing in 2023, reported missing.
+9. The two byte record length header of a plain `.rel` file (SI-084). This one is
+   newly on the list: an earlier revision of this document proposed changing it, and
+   the reason it is here is that changing it would alter the meaning of every
+   relative file this firmware has already written.
+10. JiffyDOS acceleration, which is implemented in the IEC processor microcode
+    `software/io/iec/iec_code.iec` and is what GAP, writing in 2023, reported
+    missing.
 
-### 15.3 Migration
+### 15.3 Consequences elsewhere
 
-**SI-151.** Changing the relative file header from two bytes to one (SI-084) changes
-the meaning of every `.rel` file this firmware has already written. The
-implementation must detect the old layout and keep reading it. The two are
-distinguishable: in the old layout byte 1 is the high byte of a record size below
-256 and is therefore zero, and a record size of zero is invalid in the new layout.
-An alternative is to migrate only files that also carry an x00 header, and to leave
-plain `.rel` files on the old layout. Whichever is chosen must be stated in the
-implementation and covered by a test that opens a file written by the current
-firmware.
+**SI-151. Retired.** An earlier revision of this document required the relative file
+record length to change from two bytes to one, and this requirement carried the
+migration for the files this firmware had already written. Both were wrong: a
+migration over user data, by a heuristic, in order to gain an interchange that the
+x00 wrapper already provides, is a cost with no matching benefit. SI-084 now reads
+both plain layouts and keeps writing the existing one, and SI-146 provides the
+interchange, so there is nothing to migrate. The number is left retired rather than
+reused, so that a reference to it in an older note resolves to this paragraph.
 
 **SI-152.** Raising the command buffer (SI-021) changes the `SOFTIEC_TRACE_MAX_BYTES`
 assumption in `software/io/iec/iec_trace.h`, which is 64 because the buffers are 64.
@@ -1431,8 +1465,8 @@ SI-065 the header name, SI-137 the raw directory.
 
 **Group 6, naming.** SI-147 first, because it is the only requirement in this
 document that makes two Ultimate models write different bytes to the same medium.
-Then SI-142 the two divergences, SI-144 to SI-146 x00, SI-084 and SI-151 the
-relative file header.
+Then SI-142 the two divergences, then SI-144 to SI-146 x00 together with SI-084,
+which is the relative file reader the wrapper completes.
 
 **Group 7, the rest.** SI-090 to SI-092 large buffers, SI-094 `B-R` and `B-W`,
 SI-077 the sd2iec attribute commands, SI-120 clock writes.
