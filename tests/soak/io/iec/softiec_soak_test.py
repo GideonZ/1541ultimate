@@ -1019,27 +1019,31 @@ class Session:
         position command to record 0, to a high record and to record 65535, which pushes
         seek_record and its file growth. The record number is kept moderate for the payload
         it verifies so the firmware does not spend long filling a huge gap with empty
-        records; record 65535 is only positioned to, and its 50 or 0 answer is allowed."""
+        records; record 65535 is only positioned to, and 0, 50, 51 or 72 is allowed there."""
         self.partition()
         self.command(f"CD//{self.here}/WORK/", allowed=(0,))
         length = self.random.choice([1, 200, 254])
         name = f"RB{length}"
-        self.command(f"S:{name}", allowed=(1,))
-        self.open(9, name.encode("ascii") + b",L," + bytes([length]))
-        # Record 0 is treated as record 1 by the firmware; record 65535 is the top of the
-        # 16 bit record number.
-        for edge in (0, 65535):
-            self.command(bytes([ord("P"), 0x60 | 9, edge & 0xFF, edge >> 8, 1]), allowed=(0, 50, 51))
-        record = self.random.choice([80, 160, 250])
-        payload = bytes(self.random.randrange(1, 256) for _ in range(self.random.randrange(1, length + 1)))
-        self.command(bytes([ord("P"), 0x60 | 9, record & 0xFF, record >> 8, 1]), allowed=(0, 50))
-        self.agent.call(WRITE, 9, payload)
-        self.command(bytes([ord("P"), 0x60 | 9, record & 0xFF, record >> 8, 1]), allowed=(0, 50))
-        back = self.read(9, limit=length)
-        self.close(9)
-        # Record 65535 grows the file towards 16 MB, which fills a RAM disk partition; the file
-        # is scratched so a full medium does not outlast this step.
         self.command(f"S:{name}", allowed=(0, 1))
+        try:
+            self.open(9, name.encode("ascii") + b",L," + bytes([length]))
+            # Record 0 is treated as record 1 by the firmware; record 65535 is the top of the
+            # 16 bit record number, and growing the file that far fills a RAM disk partition,
+            # which answers 72.
+            for edge in (0, 65535):
+                self.command(bytes([ord("P"), 0x60 | 9, edge & 0xFF, edge >> 8, 1]),
+                             allowed=(0, 50, 51, 72))
+            record = self.random.choice([80, 160, 250])
+            payload = bytes(self.random.randrange(1, 256) for _ in range(self.random.randrange(1, length + 1)))
+            self.command(bytes([ord("P"), 0x60 | 9, record & 0xFF, record >> 8, 1]), allowed=(0, 50))
+            self.agent.call(WRITE, 9, payload)
+            self.command(bytes([ord("P"), 0x60 | 9, record & 0xFF, record >> 8, 1]), allowed=(0, 50))
+            back = self.read(9, limit=length)
+        finally:
+            # The file grown towards record 65535 is scratched whatever happened, so a full
+            # medium does not outlast this step and starve the lanes of the phases after it.
+            self.close(9)
+            self.command(f"S:{name}", allowed=(0, 1))
         if back[:len(payload)] != payload:
             raise Corruption(f"record {record} of {name} read {back!r}, wrote {payload!r}")
 
