@@ -569,7 +569,7 @@ class Session:
                  "/DRIVERS/:KBD.C64", "/LIBRARY/:WORKSPACE.O"]
         attempted = []
         opened = []
-        for channel in range(2, 10):
+        for channel in range(2, 11):
             try:
                 response = self.open(channel, self.random.choice(names))
             except Failure:
