@@ -73,7 +73,10 @@ public:
     virtual bool     needs_sorting() { return false; }
     virtual FRESULT  read_sector(uint8_t *buffer, int track, int sector) { return FR_DENIED; }
     virtual FRESULT  write_sector(uint8_t *buffer, int track, int sector) { return FR_DENIED; }
-    virtual FRESULT  allocate_sector(int track, int sector, bool alloc) { return FR_DENIED; }
+    // Allocates or frees one block. Freeing a free block succeeds and changes nothing.
+    // Allocating an allocated block returns FR_EXIST with track and sector set to the next
+    // higher free block, or to 0 when no higher block is free.
+    virtual FRESULT  allocate_sector(int &track, int &sector, bool alloc) { return FR_DENIED; }
 };
 
 #include "factory.h"

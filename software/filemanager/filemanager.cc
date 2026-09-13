@@ -870,7 +870,7 @@ FRESULT FileManager::fs_write_sector(Path *path, uint8_t *buffer, int track, int
     return fres;
 }
 
-FRESULT FileManager::fs_allocate_sector(Path *path, int track, int sector, bool alloc)
+FRESULT FileManager::fs_allocate_sector(Path *path, int &track, int &sector, bool alloc)
 {
     PathInfo pathInfo(rootfs);
     pathInfo.init(path);

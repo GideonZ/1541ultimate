@@ -760,17 +760,34 @@ FRESULT FileSystemCBM::write_sector(uint8_t *buffer, int track, int sector)
     return FR_OK;
 }
 
-FRESULT FileSystemCBM::allocate_sector(int track, int sector, bool alloc)
+// B-A of an allocated block answers 65, NO BLOCK, with the next higher free block, or track
+// 0 when there is none (1541-II User's Guide, error 65; HD 9-43). set_sector_allocation()
+// fails only when the block is already in the requested state.
+FRESULT FileSystemCBM::allocate_sector(int &track, int &sector, bool alloc)
 {
     int abs_sect = get_abs_sector(track, sector);
     if (abs_sect < 0) {
         return FR_INVALID_PARAMETER;
     }
-    bool res = set_sector_allocation(track, sector, alloc);
-    if (!res) {
-        return FR_DISK_ERR;
+    if (set_sector_allocation(track, sector, alloc) || !alloc) {
+        return FR_OK;
     }
-    return FR_OK;
+    for (int t = track, s = sector + 1; t <= get_num_tracks(); t++, s = 0) {
+        for (; s < get_sectors_in_track(t); s++) {
+            // Freeing succeeds only on an allocated block, and allocating it again restores
+            // the map and its free count exactly.
+            if (set_sector_allocation(t, s, false)) {
+                set_sector_allocation(t, s, true);
+            } else {
+                track = t;
+                sector = s;
+                return FR_EXIST;
+            }
+        }
+    }
+    track = 0;
+    sector = 0;
+    return FR_EXIST;
 }
 
 /**************************************************************************************

@@ -1927,7 +1927,11 @@ int IecCommandChannel::do_block_allocate(int part, int track, int sector, bool a
     GETPARTITION(0, partition, -1);
     Path path(partition->GetFullPath());
     FRESULT fres = fm->fs_allocate_sector(&path, track, sector, alloc);
-    sector_error(fres, track, sector);
+    if (fres == FR_EXIST) { // the block was allocated; track and sector name the next free one
+        drive->set_error(ERR_NO_BLOCK, track, sector);
+    } else {
+        sector_error(fres, track, sector);
+    }
     state = e_idle;
     return 0;
 }

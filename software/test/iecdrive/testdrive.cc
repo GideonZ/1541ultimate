@@ -2339,6 +2339,40 @@ static void s11_si036_block_range(FileManager *fm, IecDrive *dr)
     close_file(dr, 2);
 }
 
+// B-A of a block that is already allocated answers 65, NO BLOCK, with the next higher
+// free track and sector, or track 0 when no higher block is free (1541-II User's Guide,
+// error 65; HD 9-43 and appendix B). B-F of a block that is already free changes nothing
+// and is not an error; neither manual lists one. Both answered 74, DRIVE NOT READY.
+static void s11_block_allocate_answers(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite11-BlockAllocateAnswers";
+    const char *image = "/Fat/s11_ba.d64";
+    create_formatted_image(fm, image, "ALLOC", 683, e_image_d64);
+    dr->add_partition(42, image, "ALLOC");
+    expect_command_response(testname, dr, "CP42\r", "02,PARTITION SELECTED,42,00\r");
+    uint8_t listing[4096];
+    int got = read_directory_stream(testname, dr, "$", listing, sizeof(listing));
+    int free_before = listing[got - 30] | (listing[got - 29] << 8); // the BLOCKS FREE line
+
+    // A formatted disk holds the BAM at 18/0 and the first directory block at 18/1.
+    expect_command_response(testname, dr, "B-A:0,18,0\r", "65,NO BLOCK,18,02\r");
+    expect_command_response(testname, dr, "B-A:0,1,0\r", "00, OK,00,00\r");
+    expect_command_response(testname, dr, "B-A:0,1,0\r", "65,NO BLOCK,01,01\r");
+    got = read_directory_stream(testname, dr, "$", listing, sizeof(listing));
+    REQUIRE((listing[got - 30] | (listing[got - 29] << 8)) == free_before - 1);
+    expect_command_response(testname, dr, "B-F:0,1,0\r", "00, OK,00,00\r");
+    expect_command_response(testname, dr, "B-F:0,1,0\r", "00, OK,00,00\r");
+    got = read_directory_stream(testname, dr, "$", listing, sizeof(listing));
+    REQUIRE((listing[got - 30] | (listing[got - 29] << 8)) == free_before);
+
+    // The last block of track 35 has no higher block after it.
+    expect_command_response(testname, dr, "B-A:0,35,16\r", "00, OK,00,00\r");
+    expect_command_response(testname, dr, "B-A:0,35,16\r", "65,NO BLOCK,00,00\r");
+    expect_command_response(testname, dr, "B-F:0,35,16\r", "00, OK,00,00\r");
+    got = read_directory_stream(testname, dr, "$", listing, sizeof(listing));
+    REQUIRE((listing[got - 30] | (listing[got - 29] << 8)) == free_before);
+}
+
 // SI-033: a scratch that matches nothing is not an error. The answer is 01 with a
 // count of zero, as HD B-1 and the 1541 give it. C64 OS sends S/TEMPORARY/:* on every
 // boot, whether or not the directory holds anything.
@@ -4678,6 +4712,7 @@ static const Suite11Case suite11_cases[] = {
     { "Suite11-OperationLog",            s11_operation_log },
     { "Suite11-OperationLogBounds",      s11_operation_log_bounds },
     { "Suite11-OperationLogNoReconfigure", s11_operation_log_no_reconfigure },
+    { "Suite11-BlockAllocateAnswers",    s11_block_allocate_answers },
     { "Suite11-Crash-DamagedChain",      s11_crash_damaged_chain },
     { "Suite11-Crash-LongHostName",      s11_crash_long_host_name },
     { "Suite11-Crash-RecordPastEnd",     s11_crash_record_past_end },
