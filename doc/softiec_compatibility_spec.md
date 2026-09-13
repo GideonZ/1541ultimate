@@ -1871,6 +1871,17 @@ leaked its buffer when a source partition did not exist, a UCI open that left th
 previous file open, and concurrent access to the partition table from the menu, REST,
 UCI and the IEC task.
 
+The stress mode of the Software IEC soak found one more on both devices: `B-A` of a block
+that is already allocated answered `74,DRIVE NOT READY`. It now answers `65,NO BLOCK` with
+the next higher free track and sector, or track 0 when no higher block is free, as the
+1541-II User's Guide (error 65) and HD 9-43 describe. `B-F` of a block that is already
+free, which also answered 74, now answers OK and changes nothing; neither manual lists an
+error for it. sd2iec does not implement `B-A` or `B-F`.
+
+A review of the operation log found that any change in the Software IEC settings held the
+IEC processor in reset, so turning **Log Every Operation** on or off dropped a transfer on
+the bus. Only a change of the device number or of the enable reconfigures the processor now.
+
 ---
 
 ## 19. Out of scope
