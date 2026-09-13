@@ -18,7 +18,7 @@ and run only when `--soak` or `--all` asks for them.
 | `filemanager/prg_context_menu_leak_test.py` | The browser's PRG context-menu load actions, which go through a different code path from the REST launcher |
 | `filemanager/browser_refresh_leak_test.py` | The filesystem-refresh matrix, which needs a browser open on a directory while its contents change |
 | `filemanager/mount_cache_leak_test.py` | Entering one disk image after another, which mounts each one and holds the image file open |
-| `io/iec/softiec_soak_test.py` | The Software IEC drive under the pattern of a C64 OS session (#877), driven from the C64 over the real bus while REST and FTP load the device; fails if the firmware stops answering, data read back differs, or the heap keeps shrinking |
+| `io/iec/softiec_soak_test.py` | The Software IEC drive driven from the C64 over the real bus while REST and FTP load the device (#877). `--mode` selects a realistic C64 OS soak, a hostile stress that edge-tests the command channel, OPEN names, channels, transfers, direct access and the PC lanes racing the bus, or `both` in turn. Fails if the firmware stops answering, if fixture data read back differs, or if the heap does not come back; `--profile stress` runs the stress mode for ten minutes and `--profile soak` runs the soak mode for four hours |
 
 The heap suites all read `GET /v1/machine:heap`. Firmware predating that
 endpoint answers 404 and their checks skip, so they are safe to run against any
