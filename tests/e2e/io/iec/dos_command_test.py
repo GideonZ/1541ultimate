@@ -37,11 +37,9 @@ Software IEC partition numbered 1. It temporarily uses device 11, restores the
 Software IEC settings and working directory, and deletes only its own fixtures.
 """
 import argparse
-import datetime
 import io
 import re
 import sys
-import time
 import traceback
 import uuid
 from pathlib import Path
@@ -240,27 +238,12 @@ def check_compatibility(agent, api, password, folder, root):
             raise Failure("; ".join(problems))
 
     def device_number():
-        def close_quietly(device):
-            # Closing the command channel addresses the device the logical file was
-            # opened on. Once the drive has moved, that device is not present, and the
-            # KERNAL says so in ST; the file is closed all the same.
-            try:
-                agent.call(4, channel=15, device=device)
-            except Failure:
-                pass
-
-        agent.call(2, 15, b"U0>" + bytes([12]) + b"\r")
-        # The drive list says where the drive is without addressing a device that may not
-        # be there: a KERNAL open of an absent device leaves the agent busy past its budget.
-        moved = iec_drive(api)["bus_id"]
+        moved = agent.move_drive(12)
         detail(f"after U0>+CHR$(12) the drive list reports device {moved}")
         if moved != 12:
             agent.status((0,))
             raise Failure(f"the drive stayed at device {moved}")
-        close_quietly(11)
-        agent.softiec_device = 12
         try:
-            agent.call(1, channel=15, device=12)
             reply = agent.call(3, 15, device=12, expect=STATUS_BYTES).decode("ascii").strip()
             detail(f"device 12 answered {reply!r}")
             if not reply.startswith("00,"):
@@ -268,13 +251,7 @@ def check_compatibility(agent, api, password, folder, root):
         finally:
             # Back to device 11 whatever happened, so the checks after this one still
             # have their drive.
-            try:
-                agent.call(2, 15, b"U0>" + bytes([11]) + b"\r", device=12)
-            except Failure:
-                pass
-            close_quietly(12)
-            agent.softiec_device = 11
-            agent.call(1, channel=15)
+            agent.move_drive(11)
         agent.status((0,))
 
     def left_arrow():
@@ -410,14 +387,6 @@ def check_compatibility(agent, api, password, folder, root):
             agent.call(4, channel=3)
     if failed:
         raise Failure(f"{len(failed)} compatibility checks failed")
-
-
-def iec_drive(api):
-    """The Software IEC drive's entry in the drive list."""
-    for entry in api.rest.json("/v1/drives")["drives"]:
-        if "IEC Drive" in entry:
-            return entry["IEC Drive"]
-    raise Failure("The drive list has no IEC Drive")
 
 
 def listing_of(agent, name):
