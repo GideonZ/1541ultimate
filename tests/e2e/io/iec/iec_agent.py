@@ -76,6 +76,10 @@ class Agent:
         self.overruns = 0
         # The KERNAL status of the last transaction. Bit 6 is end of file.
         self.last_status = 0
+        # Read the mailbox back after writing it, before the agent is told to act. A REST
+        # upload that could not be stored (a full RAM disk) has been seen to answer success and
+        # leave the old bytes in place, which the agent would then put on the bus.
+        self.verify_writes = False
 
     def start(self):
         self.api.machine.close_menu_from_anywhere()
@@ -107,6 +111,9 @@ class Agent:
             raise ValueError("READ_COUNT needs at least one byte")
         if data:
             self.api.machine.writemem(0xc100, data)
+            if self.verify_writes and (self.api.machine.readmem(0xc100, len(data)) != bytes(data)):
+                raise Failure(f"the agent's mailbox does not hold the {len(data)} bytes just "
+                              f"written to it over REST")
         # The KERNAL refuses logical file number zero, so a directory, which needs
         # secondary address zero, is opened on a different logical file number.
         self.api.machine.writemem(0xc002, bytes(
