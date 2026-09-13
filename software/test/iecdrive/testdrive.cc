@@ -3913,6 +3913,30 @@ static void s11_operation_log(FileManager *fm, IecDrive *dr)
     expect_log_line(testname, "listing end", "SoftIEC: listing end dev=11 chan=0 part=9 dir=\"/\" len=32 txt=\"");
     REQUIRE(count_log_lines() >= 7);
 
+    // Every line ends in " #" and a sequence number one higher than the line before it, so
+    // a reader of the device log can tell a line lost or delivered twice from one the drive
+    // wrote twice.
+    int previous = -1;
+    int numbered = 0;
+    for (const char *p = log_capture; (p = strstr(p, "SoftIEC: ")) != NULL; p++) {
+        const char *end = strchr(p, '\n');
+        const char *hash = NULL;
+        for (const char *q = p; q && *q && (!end || q < end); q++) {
+            if (*q == '#') {
+                hash = q;
+            }
+        }
+        REQUIRE(hash != NULL);
+        int sequence = atoi(hash + 1);
+        if (previous >= 0) {
+            REQUIRE(sequence == previous + 1);
+        }
+        previous = sequence;
+        numbered++;
+    }
+    printf("%s: %d lines numbered, the last %d\n", testname, numbered, previous);
+    REQUIRE(numbered == count_log_lines());
+
     cfg->set_value(0x55, 0);
     REQUIRE(!dr->log_every_operation());
     log_capture_begin(saved_fd, sink);

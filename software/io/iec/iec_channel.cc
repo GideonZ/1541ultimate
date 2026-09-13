@@ -21,7 +21,8 @@ bool IecChannel::drive_failed(void)
 }
 
 // Writes one line: what happened, the current partition and its working directory, the
-// bytes involved, optionally a labelled second set of bytes, and the error channel's answer.
+// bytes involved, optionally a labelled second set of bytes, the error channel's answer and
+// a sequence number.
 // Bytes are passed with their length and never treated as a string, and every rendering is
 // bounded by its buffer. The buffers are static to keep them off the IEC task's small
 // stack; every caller holds the drive's lock (CR-6), so two lines cannot be built at once.
@@ -49,10 +50,13 @@ void IecChannel::log_line(const char *what, const uint8_t *payload, int len,
     softiec_log_text((const uint8_t *)cwd, cwd ? strlen(cwd) : 0, dir, sizeof(dir));
     softiec_log_text(payload, payload ? len : 0, txt, sizeof(txt));
     softiec_log_text(extra, extra ? extra_len : 0, more, sizeof(more));
-    printf(SOFTIEC_LOG_PREFIX "%s dev=%d chan=%d part=%d dir=\"%s\" len=%d txt=\"%s\"%s%s%s%s%s -> %s\n",
+    // The sequence number counts every line, so a reader can tell a line that was lost or
+    // delivered twice on the way to the log from one the drive wrote twice.
+    static unsigned sequence = 0;
+    printf(SOFTIEC_LOG_PREFIX "%s dev=%d chan=%d part=%d dir=\"%s\" len=%d txt=\"%s\"%s%s%s%s%s -> %s #%u\n",
            what, (int)drive->get_address(), channel, part ? part->GetPartitionNumber() : 0, dir,
            payload ? len : 0, txt, label ? " " : "", label ? label : "", label ? "=\"" : "",
-           label ? more : "", label ? "\"" : "", err);
+           label ? more : "", label ? "\"" : "", err, ++sequence);
 }
 
 // One line the first time a channel fails after it was opened, so a channel that fails
