@@ -1720,7 +1720,9 @@ that answers with data, such as `M-R`, the host file an open reached or the firs
 bytes of a listing, and a listing writes its last line as well. Every line carries the
 bytes the host sent, the error channel's answer, and the current partition and its
 directory as they are once the operation has run, so the line of a `CD` shows the
-directory it entered. With the setting off, a successful command costs one read of the setting and
+directory it entered. Every line ends in ` #` and a sequence number that counts the lines
+the drive has written, so a reader can tell a line lost or delivered twice on the way to
+the log from one the drive wrote twice. With the setting off, a successful command costs one read of the setting and
 writes nothing. The setting exists so that a trace like TRACE, of what a program sends
 and what the drive answers, can be recorded with a release build.
 
