@@ -3888,6 +3888,34 @@ static void s11_operation_log(FileManager *fm, IecDrive *dr)
     REQUIRE(count_log_lines() == 0);
 }
 
+// Changing Log Every Operation must not reconfigure the IEC interface, which on the device
+// holds the IEC processor in reset and so drops a transfer that is on the bus. A change of
+// the device number or of the enable still does.
+static void s11_operation_log_no_reconfigure(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite11-OperationLogNoReconfigure";
+    ConfigStore *cfg = s11_softiec_settings();
+    int configured = iec_interface_configure_calls;
+    cfg->set_value(0x55, 1);
+    dr->effectuate_settings();
+    cfg->set_value(0x55, 0);
+    dr->effectuate_settings();
+    printf("%s: interface configured %d times by two changes of the log setting\n", testname,
+           iec_interface_configure_calls - configured);
+    REQUIRE(iec_interface_configure_calls == configured);
+
+    int bus_id = cfg->get_value(0x52);
+    cfg->set_value(0x52, bus_id + 1);
+    dr->effectuate_settings();
+    REQUIRE(iec_interface_configure_calls == configured + 1);
+    REQUIRE(dr->get_address() == bus_id + 1);
+    cfg->set_value(0x52, bus_id);
+    dr->effectuate_settings();
+    REQUIRE(iec_interface_configure_calls == configured + 2);
+    REQUIRE(dr->get_address() == bus_id);
+    expect_command_status_prefix(testname, dr, "UI\r", "73,");
+}
+
 // The operation log with the longest inputs it takes: a working directory near the length
 // a command can name, a 253 byte command, names that fill the buffer, and replies of 256
 // bytes. Every line must stay within its buffers; the AddressSanitizer build of this suite
@@ -4649,6 +4677,7 @@ static const Suite11Case suite11_cases[] = {
     { "Suite11-FailureLog",              s11_failure_log },
     { "Suite11-OperationLog",            s11_operation_log },
     { "Suite11-OperationLogBounds",      s11_operation_log_bounds },
+    { "Suite11-OperationLogNoReconfigure", s11_operation_log_no_reconfigure },
     { "Suite11-Crash-DamagedChain",      s11_crash_damaged_chain },
     { "Suite11-Crash-LongHostName",      s11_crash_long_host_name },
     { "Suite11-Crash-RecordPastEnd",     s11_crash_record_past_end },

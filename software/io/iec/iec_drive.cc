@@ -138,6 +138,7 @@ IecDrive :: IecDrive() : SubSystem(SUBSYSID_IEC)
     intf = IecInterface :: get_iec_interface();
 	fm = FileManager :: getFileManager();
     my_bus_id = 0;
+    enable = false;
     vfs = NULL; // registering the settings makes them take effect before this is built
 
     register_store(0x49454300, "SoftIEC Drive Settings", iec_config);
@@ -225,12 +226,19 @@ IecChannel *IecDrive :: get_data_channel(int chan)
 void IecDrive :: effectuate_settings(void)
 {
     IecDriveLock guard(this); // configure() holds the IEC processor in reset (CR-6)
-    my_bus_id = cfg->get_value(CFG_IEC_BUS_ID);
+    int bus_id = cfg->get_value(CFG_IEC_BUS_ID);
+    bool enabled = cfg->get_value(CFG_IEC_ENABLE) != 0;
+    // Holding the processor in reset drops a transfer on the bus, so a change of Log Every
+    // Operation alone, which is read where it is used, leaves the processor running.
+    bool reconfigure = (bus_id != my_bus_id) || (enabled != enable);
+    my_bus_id = bus_id;
     cmd_if.set_kernal_device_id(my_bus_id);
-    
-    enable = uint8_t(cfg->get_value(CFG_IEC_ENABLE));
 
-    intf->configure();
+    enable = enabled;
+
+    if (reconfigure) {
+        intf->configure();
+    }
 }
 
 void IecDrive :: create_task_items(void)
