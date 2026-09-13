@@ -107,6 +107,8 @@ REST_LANE_SECONDS = 1.5
 FTP_LANE_SECONDS = 4.0
 # How many operations the failure report names.
 HISTORY = 25
+# How many recorded anomalies a phase's report quotes in full, besides counting them all.
+ANOMALY_EXAMPLES = 10
 
 
 def pattern(name, size):
@@ -165,6 +167,7 @@ class Session:
         self.iteration = 0
         self.counts = {}
         self.anomalies = {}
+        self.anomaly_examples = []
         self.statuses = {}
         self.lane_errors = []
         self.lane_counts = {"rest": 0, "ftp": 0}
@@ -177,6 +180,7 @@ class Session:
         self.iteration = 0
         self.counts = {}
         self.anomalies = {}
+        self.anomaly_examples = []
         self.statuses = {}
         self.lane_errors = []
         self.lane_counts = {"rest": 0, "ftp": 0}
@@ -199,6 +203,9 @@ class Session:
         """Record a KERNAL or DOS error that is an allowed outcome of a hostile step."""
         self.anomalies[what] = self.anomalies.get(what, 0) + 1
         self.note(f"{what} raised {exc}")
+        if len(self.anomaly_examples) < ANOMALY_EXAMPLES:
+            self.anomaly_examples.append(f"iteration {self.iteration} ({what}): {exc}; before it: "
+                                         + " | ".join(self.history[-4:-1]))
 
     def command(self, text, allowed=None):
         data = text if isinstance(text, bytes) else text.encode("latin-1")
@@ -1054,6 +1061,8 @@ def run_phase(session, duration, policy):
                 detail(f"statuses seen: {dict(sorted(session.statuses.items()))}")
             if session.anomalies:
                 detail(f"anomalies recorded: {dict(sorted(session.anomalies.items()))}")
+                for example in session.anomaly_examples:
+                    detail(f"  {example}")
             if session.lane_errors:
                 detail("lane errors: " + "; ".join(session.lane_errors[:10]))
             failures = failures + heap_verdict(session, policy, heap)
