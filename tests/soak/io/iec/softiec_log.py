@@ -64,6 +64,9 @@ SPOOL_FORMAT = "<source ip> <HH:MM:SS> <text>"
 # lines lost between them; a longer step is a number made unreadable by another task's text.
 MAX_SEQUENCE_STEP = 500
 
+# The sequence number a line ends with, also found at the end of the second half of a split line.
+_SEQUENCE_TAIL = re.compile(r" #(\d+)$")
+
 # How far ahead the correlation looks for the line or the event that realigns a stream after
 # a drop, before it treats the current one as missing or unexpected. Wide enough to step over
 # a burst of dropped lines, bounded so the pass stays linear.
@@ -356,6 +359,8 @@ class Correlation:
     duplicates: int = 0
     gaps: int = 0
     unreadable_numbers: int = 0
+    # Numbers seen only at the end of a split line: the line arrived but did not parse.
+    split_numbers: int = 0
     # Lines another task's message was printed into, paired with their operation by kind,
     # channel and byte count.
     interleaved: int = 0
@@ -369,10 +374,12 @@ class Correlation:
     @property
     def allowance(self) -> int:
         """How many expected lines may be missing: with sequence numbers, the numbers absent from
-        the window; without them, the split fragments seen."""
+        the window and the numbers whose line arrived split; without them, the split fragments
+        seen."""
         # A line whose number could not be read did arrive, and it spans one of the numbers
         # counted as missing, so each one lowers the allowance by one.
-        return max(0, self.gaps - self.unreadable_numbers) if self.numbered else self.splits
+        return max(0, self.gaps + self.split_numbers - self.unreadable_numbers) \
+            if self.numbered else self.splits
 
     @property
     def unexplained_missing(self) -> int:
@@ -403,7 +410,7 @@ class Correlation:
                 f"lines), {len(self.unexpected)} unexpected ({len(self.unexpected_bad)} "
                 f"well-formed), {self.optional} optional, {self.splits} split, "
                 f"{self.duplicates} delivered twice, {self.gaps} sequence gaps, "
-                f"{self.unreadable_numbers} unreadable numbers, "
+                f"{self.unreadable_numbers} unreadable numbers, {self.split_numbers} numbers only in split lines, "
                 f"{self.interleaved} interleaved{toggle}")
 
 
@@ -462,10 +469,12 @@ def correlate_toggle(events: list[Event], texts: list[str], flips: list[Flip],
     return _correlate(events, texts, state_of, label=label or "logging toggled")
 
 
-def _deduplicate(lines: list[LogLine], result: Correlation) -> list[LogLine]:
-    """Drops a line delivered twice, counts the sequence numbers missing from the window, and
-    reports two different lines that carry the same number. Lines without a number (an older
-    firmware) are passed through and the split count stays the allowance."""
+def _deduplicate(lines: list[LogLine], result: Correlation,
+                 arrivals: list[tuple[int, bool]]) -> list[LogLine]:
+    """Drops a line delivered twice, counts the sequence numbers missing from the window and
+    the numbers seen only at the end of a split line, and reports two different lines that
+    carry the same number. Lines without a number (an older firmware) are passed through and
+    the split count stays the allowance."""
     numbers = [ln.seq for ln in lines if ln.seq is not None]
     if not numbers:
         return lines
@@ -489,17 +498,23 @@ def _deduplicate(lines: list[LogLine], result: Correlation) -> list[LogLine]:
     # number another task's message was printed into can be far off (#4415 read as #44152),
     # so a step backwards or of more than MAX_SEQUENCE_STEP is not a gap: that number is
     # counted as unreadable and skipped.
+    parsed_numbers = set(seen)
+    counted: set[int] = set()
     previous = None
-    for ln in kept:
-        if ln.seq is None:
-            continue
+    for seq, _parsed in arrivals:
+        if seq in counted:
+            continue  # the same number again: a line delivered twice
         if previous is None:
-            previous = ln.seq
-        elif previous < ln.seq <= previous + MAX_SEQUENCE_STEP:
-            result.gaps += ln.seq - previous - 1
-            previous = ln.seq
+            previous = seq
+        elif previous < seq <= previous + MAX_SEQUENCE_STEP:
+            result.gaps += seq - previous - 1
+            previous = seq
         else:
             result.unreadable_numbers += 1
+            continue
+        counted.add(seq)
+        if seq not in parsed_numbers:
+            result.split_numbers += 1
     return kept
 
 
@@ -528,13 +543,21 @@ def _correlate(events, texts, state_of, label, steady_state=None):
     field by field whatever the state, so a wrong chan, dev, status or reply always fails."""
     result = Correlation(label=label)
     lines: list[LogLine] = []
+    arrivals: list[tuple[int, bool]] = []  # (sequence number, whether its line parsed)
     for text in texts:
         parsed = parse_line(text)
         if parsed is not None:
             lines.append(parsed)
-        elif carries_prefix(text):
+            if parsed.seq is not None:
+                arrivals.append((parsed.seq, True))
+            continue
+        if carries_prefix(text):
             result.splits += 1
-    lines = _deduplicate(lines, result)
+        # The end of a split line arrives on its own and still ends in its sequence number.
+        tail = _SEQUENCE_TAIL.search(text)
+        if tail:
+            arrivals.append((int(tail.group(1)), False))
+    lines = _deduplicate(lines, result, arrivals)
     result.parsed = len(lines)
 
     def expected(ev: Event) -> bool:
@@ -739,10 +762,9 @@ def select_window(entries: list[tuple[str, str]], start_nonce: str, end_nonce: s
               for nonce in (pre_nonce, start_nonce, end_nonce, post_nonce) if nonce}
 
     def is_marker(text: str, nonce: str | None) -> bool:
-        if not nonce:
-            return False
-        parsed = parse_line(text)
-        return parsed is not None and parsed.what == "command failed" and parsed.txt == wanted[nonce]
+        # Found by its text anywhere in a datagram, so a marker line another task's message
+        # split still bounds the window.
+        return bool(nonce) and (f'txt="{wanted[nonce]}"' in text or wanted[nonce] + '"' in text)
 
     device_ip = None
     for ip, text in entries:
