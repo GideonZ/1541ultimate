@@ -125,6 +125,25 @@ def start_cartridge(device: UltimateApi, image: bytes) -> None:
         raise Failure(f"runners:run_crt returned HTTP {code}: {body[:160]!r}")
 
 
+def frame_pixels(capture: VicStreamCapture) -> bytes | None:
+    """The next frame's palette indices, or None when a gap cut the frame short.
+
+    The socket drops datagrams once its buffer is full, which happens while the
+    suite waits on a request and does not read. A capture whose packet budget
+    spans that gap cannot assemble a frame. Measured on an Ultimate 64 with the
+    host's 2 MB default buffer: of 120 captures taken as the first or second
+    read after a 0.5s to 1.4s pause, 13 failed, each with about 6,250 packets
+    missing inside its window, and the next capture succeeded every time. That
+    says nothing about the picture, so the polling loops read on.
+    """
+    try:
+        return capture.capture_image().tobytes()
+    except Failure as exc:
+        if "complete VIC frame" not in str(exc):
+            raise
+        return None
+
+
 def wait_for_restart(capture: VicStreamCapture, reference: bytes) -> None:
     """Read frames until one is not the game screen.
 
@@ -134,7 +153,8 @@ def wait_for_restart(capture: VicStreamCapture, reference: bytes) -> None:
     """
     deadline = time.monotonic() + MATCH_TIMEOUT_SECONDS
     while time.monotonic() < deadline:
-        if capture.capture_image().tobytes() != reference:
+        pixels = frame_pixels(capture)
+        if pixels is not None and pixels != reference:
             return
     raise Failure("the game screen of the previous start never went away")
 
@@ -159,7 +179,9 @@ def wait_for_game_screen(device: UltimateApi, capture: VicStreamCapture,
             device.machine.press(START_KEY)
             taps += 1
             next_tap = time.monotonic() + TAP_INTERVAL_SECONDS
-        pixels = capture.capture_image().tobytes()
+        pixels = frame_pixels(capture)
+        if pixels is None:
+            continue
         if pixels == reference:
             detail(f"the game screen arrived {time.monotonic() - started:.1f}s "
                    f"after the cartridge started, on tap {taps}")
