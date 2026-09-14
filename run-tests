@@ -460,6 +460,13 @@ SUITES: Sequence[Suite] = (
     # stream, and reboots the machine afterwards to remove the cartridge.
     Suite("e2e", "ultimax-cartridge", "tests/e2e/io/c64/ultimax_cartridge_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
+    # COMAL 80 selects its banks with bit 7 set, which addresses offset 2 MB on
+    # a product with 4 MB of cartridge memory; the image was mirrored only to
+    # 1 MB, so it started to a blank screen (#899). The suite builds a four-bank
+    # type 21 CRT in code and reads each bank's marker bytes back from screen
+    # RAM. It reboots the machine afterwards to remove the cartridge.
+    Suite("e2e", "comal80-cartridge", "tests/e2e/io/c64/comal80_cartridge_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
     # Guards GideonZ/commodore#1 (c66ef028): a Reset, a Reboot or a C=+R taken
     # from the menu has to run after the UI has torn down, so the C64 comes
     # back to a boot screen with none of the menu's characters on it. The

@@ -276,6 +276,7 @@ e2e:
   cfg-single-group                  .      x      x      x      x
   cfg-unknown-items                 .      .      x      x      x
   cfg-whitespace                    .      .      x      x      x
+  comal80-cartridge                 .      .      x      x      x
   create-disk-image                 .      x      x      x      x
   deferred-machine-actions          .      .      x      x      x
   doom-release                      .      .      .      x      x
@@ -341,8 +342,8 @@ soak:
   usb-keyboard-repeat               .      .      .      x      x
 
                                ------ ------ ------ ------ ------
-  suites                           12     26     56     68     68
-  suite runs                       12     26     56    136    204
+  suites                           12     26     57     69     69
+  suite runs                       12     26     57    138    207
 
 Scenario and check counts, and durations, are not shown here:
 the registry does not know them. They depend on the machine and are
