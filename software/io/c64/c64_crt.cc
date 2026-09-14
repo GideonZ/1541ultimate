@@ -238,6 +238,10 @@ SubsysResultCode_e C64_CRT::read_chip_packet(File *f, t_crt_chip_chunk *chunk)
         return SSRET_OK; // stop, no error
     }
     if (strncmp((char*)chip_header, "CHIP", 4)) {
+        if (chip_chunks.get_elements()) { // data after the last packet, e.g. transfer padding
+            chunk->last = true;
+            return SSRET_OK; // stop, no error
+        }
         return SSRET_ERROR_IN_FILE_FORMAT; // stop, error
     }
 
