@@ -64,13 +64,17 @@ SPOOL_FORMAT = "<source ip> <HH:MM:SS> <text>"
 # lines lost between them; a longer step is a number made unreadable by another task's text.
 MAX_SEQUENCE_STEP = 500
 
+# The fewest characters another task's message puts into a field. The shortest seen is a
+# socket number and address, over thirty; renderings of different bytes differ by far less.
+MIN_INTERLEAVED = 8
+
 # The sequence number a line ends with, also found at the end of the second half of a split line.
 _SEQUENCE_TAIL = re.compile(r" #(\d+)$")
 
-# How far ahead the correlation looks for the line or the event that realigns a stream after
-# a drop, before it treats the current one as missing or unexpected. Wide enough to step over
-# a burst of dropped lines, bounded so the pass stays linear.
-LOOKAHEAD = 60
+# How far from the diagonal the alignment of events and lines looks, on top of the difference
+# in their counts. Wide enough for the lines a phase loses in a burst, bounded so the table
+# stays linear in the length of the phase.
+ALIGN_BAND = 400
 
 _HEX = "0123456789ABCDEF"
 
@@ -518,9 +522,79 @@ def _deduplicate(lines: list[LogLine], result: Correlation,
     return kept
 
 
+def _align(events: list[Event], lines: list[LogLine], pairs) -> list[tuple[str, Event | None, LogLine | None]]:
+    """The events and the lines in one order-keeping alignment with the most pairs, as a
+    list of ("pair", event, line), ("event", event, None) and ("line", None, line).
+
+    A longest common subsequence rather than a greedy walk: the same command, open or close
+    recurs every few iterations, and with many lines lost a greedy walk can pair a line with a
+    later copy of its operation and throw every pair after it out. The table is computed in a
+    band around the diagonal, ALIGN_BAND cells to each side, which the losses of a phase stay
+    well within, so its cost is linear in the length of the phase."""
+    n, m = len(events), len(lines)
+    if n == 0 or m == 0:
+        return [("event", ev, None) for ev in events] + [("line", None, ln) for ln in lines]
+    band = ALIGN_BAND + abs(n - m)
+    width = m + 1
+    # The exact pairing by key is checked first; the slower interleaving test runs only for a
+    # line of the same kind and channel whose text is longer than the event's rendering.
+    event_keys = [ev.key for ev in events]
+    line_keys = [ln.key for ln in lines]
+    score = [0] * ((n + 1) * width)
+    move = bytearray((n + 1) * width)  # 1 pair, 2 skip an event, 3 skip a line
+    for j in range(1, m + 1):
+        move[j] = 3
+    for i in range(1, n + 1):
+        ev = events[i - 1]
+        centre = (i * m) // n
+        low = max(1, centre - band)
+        high = min(m, centre + band)
+        row = i * width
+        above = row - width
+        score[row + low - 1] = score[above + low - 1] if low > 1 else 0
+        move[row] = 2
+        if low > 1:
+            move[row + low - 1] = 2
+        for j in range(low, high + 1):
+            best = score[above + j]
+            step = 2
+            if score[row + j - 1] > best:
+                best = score[row + j - 1]
+                step = 3
+            if (score[above + j - 1] + 1 > best) and (
+                    event_keys[i - 1] == line_keys[j - 1]
+                    or ((event_keys[i - 1][:2] == line_keys[j - 1][:2])
+                        and (len(line_keys[j - 1][2]) >= len(event_keys[i - 1][2]) + MIN_INTERLEAVED)
+                        and pairs(ev, lines[j - 1]))):
+                best = score[above + j - 1] + 1
+                step = 1
+            score[row + j] = best
+            move[row + j] = step
+        for j in range(high + 1, m + 1):
+            score[row + j] = score[row + j - 1]
+            move[row + j] = 3
+    out: list[tuple[str, Event | None, LogLine | None]] = []
+    i, j = n, m
+    while i > 0 or j > 0:
+        step = move[i * width + j] if (i > 0 and j > 0) else (2 if i > 0 else 3)
+        if step == 1:
+            out.append(("pair", events[i - 1], lines[j - 1]))
+            i -= 1
+            j -= 1
+        elif step == 2:
+            out.append(("event", events[i - 1], None))
+            i -= 1
+        else:
+            out.append(("line", None, lines[j - 1]))
+            j -= 1
+    out.reverse()
+    return out
+
+
 def _interleaved(want: str, got: str) -> bool:
-    """Whether `got` is `want` with other text inserted at one place."""
-    if len(got) <= len(want):
+    """Whether `got` is `want` with another task's text, at least MIN_INTERLEAVED characters,
+    inserted at one place."""
+    if len(got) < len(want) + MIN_INTERLEAVED:
         return False
     prefix = 0
     while (prefix < len(want)) and (want[prefix] == got[prefix]):
@@ -629,70 +703,24 @@ def _correlate(events, texts, state_of, label, steady_state=None):
         leaves the line well-formed)."""
         if ev.key == ln.key:
             return True
+        # Another task's message is a whole line of text, so a short difference is not one: the
+        # renderings of two different binary parameters (\xA0 against \0) differ by as little
+        # as two characters. The status has to agree as well.
+        status_agrees = (ev.status is None) or (ln.status_code is None) or (ev.status == ln.status_code)
         return (ev.cls == ln.cls) and (ev.chan == ln.chan) and (ln.length == len(ev.txt)) \
-            and _interleaved(render_text(ev.txt), ln.txt)
+            and status_agrees and _interleaved(render_text(ev.txt), ln.txt)
 
-    last_seq = None
-    ei = li = 0
-    while ei < len(events) or li < len(lines):
-        ev = events[ei] if ei < len(events) else None
-        ln = lines[li] if li < len(lines) else None
-        if ln is not None and ln.optional and (ev is None or not pairs(ev, ln)):
-            result.optional += 1
-            li += 1
-            continue
-        if ev is None:
-            record_unexpected(ln)
-            li += 1
-            continue
-        if ln is None:
-            record_missing(ev)
-            ei += 1
-            continue
-        if pairs(ev, ln):
+    for kind, ev, ln in _align(events, lines, pairs):
+        if kind == "pair":
             if ev.key != ln.key:
                 result.interleaved += 1
             judge(ev, ln)
-            if ln.seq is not None:
-                last_seq = ln.seq
-            ei += 1
-            li += 1
-            continue
-        # Misaligned: find the nearer realignment and step over the drop it implies.
-        ahead_event = None
-        for j in range(ei, min(len(events), ei + LOOKAHEAD)):
-            if pairs(events[j], ln):
-                ahead_event = j
-                break
-        ahead_line = None
-        for k in range(li, min(len(lines), li + LOOKAHEAD)):
-            if pairs(ev, lines[k]):
-                ahead_line = k
-                break
-        # The sequence numbers say how many lines were lost just before this one; stepping
-        # over that many events or fewer is what they show happened, whichever realignment
-        # happens to be nearer.
-        lost_here = None
-        if (ln.seq is not None) and (last_seq is not None):
-            lost_here = ln.seq - last_seq - 1
-        shown_lost = (ahead_event is not None) and (lost_here is not None) \
-            and (0 < ahead_event - ei <= lost_here)
-        nearer = (ahead_event is not None) and (ahead_line is None
-                                                or (ahead_event - ei) <= (ahead_line - li))
-        if shown_lost or nearer:
-            for j in range(ei, ahead_event):
-                record_missing(events[j])
-            ei = ahead_event
-        elif ahead_line is not None:
-            for k in range(li, ahead_line):
-                if lines[k].optional:
-                    result.optional += 1
-                else:
-                    record_unexpected(lines[k])
-            li = ahead_line
+        elif kind == "event":
+            record_missing(ev)
+        elif ln.optional:
+            result.optional += 1
         else:
             record_unexpected(ln)
-            li += 1
     return result
 
 
