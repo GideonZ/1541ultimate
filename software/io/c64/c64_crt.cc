@@ -280,6 +280,10 @@ SubsysResultCode_e C64_CRT::read_chip_packet(File *f, t_crt_chip_chunk *chunk)
         }
     }
 
+    if (load == 0xA000) {
+        a000_seen = true; // an Ocean CRT with $A000 chips needs 16K mode
+    }
+
     // if ((load == 0xA000) && !a000_seen) {
     //     a000_seen = true;
     //     if (bank > 0) { // strange; first time A000 is seen, it is not bank 0.
