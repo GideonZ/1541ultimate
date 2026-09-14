@@ -81,6 +81,7 @@ partition numbered 1. It uses device 11, and restores the settings, the partitio
 working directory, and removes its own directory.
 """
 import argparse
+import contextlib
 import os
 import random
 import sys
@@ -136,6 +137,8 @@ LIVENESS_ATTEMPTS = 6
 # How long a phase waits for its end marker to reach the syslog before correlating.
 LOG_FLUSH_SECONDS = 30.0
 LIVENESS_RETRY_SECONDS = 2.0
+# How long a pause of the lanes waits for their requests already on the way.
+LANE_PAUSE_SECONDS = 1.0
 
 REST_LANE_SECONDS = 1.5
 FTP_LANE_SECONDS = 4.0
@@ -862,7 +865,8 @@ class Session:
         registers. Skipped with a reason where the command interface is not present."""
         if self.uci is None:
             return
-        self.uci.exercise(self)
+        with self.lanes_paused():
+            self.uci.exercise(self)
 
     # -- the C64 lane: stress operations ---------------------------------------------
     #
@@ -1176,7 +1180,8 @@ class Session:
         a bus channel may be open (CR-6). Skipped where the command interface is absent."""
         if self.uci is None:
             return
-        self.uci.exercise(self, hostile=True)
+        with self.lanes_paused():
+            self.uci.exercise(self, hostile=True)
 
     def direct_access_edges(self):
         """Direct access to a D64 at the edges of its geometry and past them: B-P, U1, U2,
@@ -1444,6 +1449,18 @@ class Session:
                 except Exception:
                     time.sleep(LIVENESS_RETRY_SECONDS)
             return False
+        finally:
+            self.quiet.clear()
+
+    @contextlib.contextmanager
+    def lanes_paused(self):
+        """Pauses the REST and FTP lanes for a UCI step. The target is driven one register write
+        per REST request, and with the stress lanes filling the network a queued command byte
+        was seen not to arrive, so the next command's bytes ran as part of it."""
+        self.quiet.set()
+        try:
+            time.sleep(LANE_PAUSE_SECONDS)  # let the requests already on the way finish
+            yield
         finally:
             self.quiet.clear()
 
