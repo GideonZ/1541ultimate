@@ -501,6 +501,28 @@ static void test_body_clear(HttpTarget *target)
     run_expect_empty(target, "body clear: invalid handle", &clear_bad, status_bad_req);
 }
 
+static void test_integer_widths(HttpTarget *target)
+{
+    char json[] = "{}";
+    uint8_t handle = 0xFF;
+    target->create_body_from_json(json, sizeof(json) - 1, &handle);
+    for (int width = 1; width <= 4; ++width) {
+        // Zero, maximum positive, minimum negative, and -1 at each wire width.
+        for (int boundary = 0; boundary < 4; ++boundary) {
+            uint8_t data[] = { 6, HTTP_CMD_BODY_ADD_INT, handle, 1, 'n', 0, 0, 0, 0 };
+            memset(data + 5, boundary == 1 || boundary == 3 ? 0xFF : 0, width);
+            data[4 + width] = boundary == 1 ? 0x7F : boundary == 2 ? 0x80 : boundary == 3 ? 0xFF : 0;
+            Message command = make_msg(data, 5 + width);
+            run_expect_empty(target, "add signed integer boundary", &command, status_ok);
+            uint8_t expected[] = { HTTP_DATA_INTEGER, 0, 0, 0, 0 };
+            memset(expected + 1, boundary >= 2 ? 0xFF : 0, 4);
+            memcpy(expected + 1, data + 5, width);
+            query_external(target, "integer sign extension", handle, "n", expected, sizeof(expected));
+        }
+    }
+    command_external_empty(target, "free integer body", HTTP_CMD_BODY_FREE, handle, "", status_ok);
+}
+
 static void run_network_smoke(HttpTarget *target)
 {
     Message *reply;
@@ -520,6 +542,11 @@ static void run_network_smoke(HttpTarget *target)
 int main(int argc, char **argv)
 {
     HttpTarget *target = (HttpTarget *)command_targets[6];
+    if (target && (argc > 1) && (strcmp(argv[1], "--integer-widths") == 0)) {
+        test_integer_widths(target);
+        printf("Integer widths: %d checks, %d failures\n", checks, failures);
+        return failures ? 1 : 0;
+    }
     if (!target) {
         printf("FAIL target 6 was not registered\n");
         return 1;
@@ -533,6 +560,7 @@ int main(int argc, char **argv)
     test_structured_body_add(target);
     test_external_json(target);
     test_free_all(target);
+    test_integer_widths(target);
     test_body_clear(target);
 
     if ((argc > 1) && (strcmp(argv[1], "--network") == 0)) {
