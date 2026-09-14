@@ -17,6 +17,12 @@ jobs:
           submodules: recursive
           fetch-depth: 0
 
+      - name: Test JSON Replacement
+        run: |
+          docker run --rm \
+          -v /opt/build-tools:/mnt/build-tools:ro \
+          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make -C software/api/tests"
+
       - name: Generate Version String
         run: echo "GIT_VERSION=$(git describe --tags --always)" >>$GITHUB_ENV
 
