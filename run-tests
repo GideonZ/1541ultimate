@@ -291,6 +291,10 @@ SUITES: Sequence[Suite] = (
     # fail for a reason that is not its own.
     Suite("e2e", "create-disk-image", "tests/e2e/api/create_disk_image_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@", profile=profiles.QUICK),
+    # Reads physical track 81 through a real emulated 1581, then mounts an
+    # oversized D81 and proves the bounded layout leaves the device usable.
+    Suite("e2e", "d81-track-bounds", "tests/e2e/drive/d81_track_bounds_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --test all", profile=profiles.QUICK),
     # Calls every endpoint the firmware registers, and fails when one is
     # neither probed nor excluded with a reason. The lockup that prompted it
     # shipped because no suite called that route at all, so the gate matters
