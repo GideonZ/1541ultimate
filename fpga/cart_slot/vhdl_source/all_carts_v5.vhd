@@ -339,11 +339,13 @@ begin
                 
             
             when c_ocean_16K =>
+                -- variant 0 and 1 (Comal 80): bit 6 switches the cartridge off
                 if io_write='1' and io_addr(8)='0' then -- DE00 range
                     bank_bits(21 downto 14) <= io_wdata;
+                    mode_bits(0) <= io_wdata(6) and not variant(1);
                 end if;
-                game_n    <= '0';
-                exrom_n   <= '0';
+                game_n    <= mode_bits(0);
+                exrom_n   <= mode_bits(0);
                 serve_rom <= '1';
                 rom_mode  <= "01"; -- 16K banks
 
