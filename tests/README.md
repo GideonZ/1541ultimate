@@ -271,6 +271,7 @@ e2e:
   av-stream                         .      .      x      x      x
   browser-filesystem-refresh        .      .      x      x      x
   browser-long-filename             .      x      x      x      x
+  c64gs-cartridge                   .      .      x      x      x
   cfg-loader-log                    x      x      x      x      x
   cfg-partial-effectuate            .      .      .      x      x
   cfg-single-group                  .      x      x      x      x
@@ -341,8 +342,8 @@ soak:
   usb-keyboard-repeat               .      .      .      x      x
 
                                ------ ------ ------ ------ ------
-  suites                           12     26     56     68     68
-  suite runs                       12     26     56    136    204
+  suites                           12     26     57     69     69
+  suite runs                       12     26     57    138    207
 
 Scenario and check counts, and durations, are not shown here:
 the registry does not know them. They depend on the machine and are
