@@ -342,10 +342,11 @@ class RecordingAgent:
                                       count=count, secondary=secondary, expect=expect)
         except Failure:
             if is_status_read and (self._pending is not None):
-                # The command was sent but its status was not read; it may have logged.
-                _kind, txt, dev, t0, _chan = self._pending
+                # The command or open was sent but its status was not read; it may have logged.
+                kind, txt, dev, t0, chan = self._pending
                 self._pending = None
-                self._append("command", 15, txt, dev, None, t0, now, optional=True)
+                self._append(kind, 15 if kind == "command" else chan, txt, dev, None, t0, now,
+                             optional=True)
             elif (op == OPEN) and (len(data) > 0):
                 sa = channel if secondary is None else secondary
                 self._append("command" if sa == 15 else "open",
@@ -1510,7 +1511,7 @@ class Session:
                 out.write(f"{ev.what} chan={ev.chan} dev={ev.dev} len={len(ev.txt)} "
                           f"txt=\"{softiec_log.render_text(ev.txt)}\" status={ev.status} "
                           f"reply={None if ev.reply is None else softiec_log.render_text(ev.reply)!r} "
-                          f"optional={ev.optional}\n")
+                          f"optional={ev.optional} hex={ev.txt.hex()}\n")
         with open(f"{stem}-lines.txt", "w", encoding="utf-8", errors="replace") as out:
             out.write(f"# from {device_ip}\n")
             for text in texts:

@@ -60,6 +60,10 @@ LOG_TEXT_SIZE = 4 * 64 + 4
 # collector and the suite share.
 SPOOL_FORMAT = "<source ip> <HH:MM:SS> <text>"
 
+# The largest step between the sequence numbers of two lines in a row that still counts as
+# lines lost between them; a longer step is a number made unreadable by another task's text.
+MAX_SEQUENCE_STEP = 500
+
 # How far ahead the correlation looks for the line or the event that realigns a stream after
 # a drop, before it treats the current one as missing or unexpected. Wide enough to step over
 # a burst of dropped lines, bounded so the pass stays linear.
@@ -351,6 +355,7 @@ class Correlation:
     # each a line lost on the way or split so it did not parse.
     duplicates: int = 0
     gaps: int = 0
+    unreadable_numbers: int = 0
     # Lines another task's message was printed into, paired with their operation by kind,
     # channel and byte count.
     interleaved: int = 0
@@ -363,9 +368,11 @@ class Correlation:
 
     @property
     def allowance(self) -> int:
-        """How many expected lines may be missing: with sequence numbers, exactly the numbers
-        absent from the window; without them, the split fragments seen."""
-        return self.gaps if self.numbered else self.splits
+        """How many expected lines may be missing: with sequence numbers, the numbers absent from
+        the window; without them, the split fragments seen."""
+        # A line whose number could not be read did arrive, and it spans one of the numbers
+        # counted as missing, so each one lowers the allowance by one.
+        return max(0, self.gaps - self.unreadable_numbers) if self.numbered else self.splits
 
     @property
     def unexplained_missing(self) -> int:
@@ -396,6 +403,7 @@ class Correlation:
                 f"lines), {len(self.unexpected)} unexpected ({len(self.unexpected_bad)} "
                 f"well-formed), {self.optional} optional, {self.splits} split, "
                 f"{self.duplicates} delivered twice, {self.gaps} sequence gaps, "
+                f"{self.unreadable_numbers} unreadable numbers, "
                 f"{self.interleaved} interleaved{toggle}")
 
 
@@ -477,7 +485,21 @@ def _deduplicate(lines: list[LogLine], result: Correlation) -> list[LogLine]:
         else:
             result.contradictions.append(
                 f"two different lines carry sequence number {ln.seq}: {first.raw!r} and {ln.raw!r}")
-    result.gaps = (max(seen) - min(seen) + 1) - len(seen)
+    # Gaps are counted between numbers that step forward in the order the lines arrived. A
+    # number another task's message was printed into can be far off (#4415 read as #44152),
+    # so a step backwards or of more than MAX_SEQUENCE_STEP is not a gap: that number is
+    # counted as unreadable and skipped.
+    previous = None
+    for ln in kept:
+        if ln.seq is None:
+            continue
+        if previous is None:
+            previous = ln.seq
+        elif previous < ln.seq <= previous + MAX_SEQUENCE_STEP:
+            result.gaps += ln.seq - previous - 1
+            previous = ln.seq
+        else:
+            result.unreadable_numbers += 1
     return kept
 
 
