@@ -339,7 +339,7 @@ begin
                 
             
             when c_ocean_16K =>
-                -- variant 0 and 1 (Comal 80): bit 6 switches the cartridge off
+                -- variant 0 and 1 (black Comal 80): bit 6 switches the cartridge off
                 if io_write='1' and io_addr(8)='0' then -- DE00 range
                     bank_bits(21 downto 14) <= io_wdata;
                     mode_bits(0) <= io_wdata(6) and not variant(1);

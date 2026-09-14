@@ -554,7 +554,9 @@ void C64_CRT::configure_cart(cart_def *def)
             prohibit = CART_PROHIBIT_IO;
             break;
         case CART_COMAL80:
-            if (total_read > 65536) {
+            if (crt_header[CRTHDR_SUBTYPE] == 1) {
+                cart_type = CART_TYPE_OCEAN_16K | VARIANT_2; // Grey Comal 80: bit 6 does not switch the cartridge off
+            } else if (total_read > 65536) {
                 cart_type = CART_TYPE_OCEAN_16K | VARIANT_1; // Comal 80 Pakma // V5: Type = Ocean_16K, Variant = 1
             } else {
                 cart_type = CART_TYPE_OCEAN_16K; // Comal 80 // V5: Type = Ocean_16K, Variant = 0
