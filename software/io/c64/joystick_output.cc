@@ -75,6 +75,7 @@ static void joystick_mouse_pace_callback(TimerHandle_t timer)
 JoystickOutput :: JoystickOutput()
 {
     usb_p1 = JOYSTICK_INPUT_MASK;
+    rest_mouse_p1 = JOYSTICK_INPUT_MASK;
     usb_p1_mouse = false;
     usb_p1_source = NULL;
     rest_p1_persistent = JOYSTICK_INPUT_MASK;
@@ -113,7 +114,7 @@ void JoystickOutput :: apply(void)
     if (usb_hid_get_active_mouse_interfaces) {
         mouse_port1_enabled = usb_hid_get_active_mouse_interfaces() > 0;
     }
-    C64_MOUSE_EN_1 = (mouse_port1_enabled || joystick_has_extra_button_press(usb_p1 & rest_p1_persistent & rest_p1_overlay)) ? 1 : 0;
+    C64_MOUSE_EN_1 = (mouse_port1_enabled || joystick_has_extra_button_press(usb_p1 & rest_mouse_p1 & rest_p1_persistent & rest_p1_overlay)) ? 1 : 0;
     C64_MOUSE_EN_2 = joystick_has_extra_button_press(rest_p2_persistent & rest_p2_overlay) ? 1 : 0;
 #endif
 }
@@ -124,6 +125,18 @@ void JoystickOutput :: setUsbPort1(uint8_t active_low_mask)
     portENTER_CRITICAL();
 #endif
     usb_p1 = (active_low_mask & JOYSTICK_DIGITAL_MASK) | (JOYSTICK_INPUT_MASK & ~JOYSTICK_DIGITAL_MASK);
+    apply();
+#if U64
+    portEXIT_CRITICAL();
+#endif
+}
+
+void JoystickOutput :: setRestMousePort1(uint8_t active_low_mask)
+{
+#if U64
+    portENTER_CRITICAL();
+#endif
+    rest_mouse_p1 = (active_low_mask & JOYSTICK_DIGITAL_MASK) | (JOYSTICK_INPUT_MASK & ~JOYSTICK_DIGITAL_MASK);
     apply();
 #if U64
     portEXIT_CRITICAL();
@@ -193,6 +206,18 @@ void JoystickOutput :: setMouseFrameRate(int hertz)
 #if U64
     portEXIT_CRITICAL();
 #endif
+}
+
+bool JoystickOutput :: mouseSettled(void) const
+{
+#if U64
+    portENTER_CRITICAL();
+#endif
+    bool settled = !usb_p1_mouse || usb_p1_pacer.settled();
+#if U64
+    portEXIT_CRITICAL();
+#endif
+    return settled;
 }
 
 void JoystickOutput :: clearUsbPort1Mouse(void)
@@ -378,7 +403,7 @@ void JoystickOutput :: snapshot(uint8_t &port1_active_low, uint8_t &port2_active
 void JoystickOutput :: outputSnapshot(uint8_t &port1_active_low, uint8_t &port2_active_low,
     uint8_t &port1_potx, uint8_t &port1_poty, uint8_t &port2_potx, uint8_t &port2_poty) const
 {
-    uint8_t port1 = usb_p1 & rest_p1_persistent & rest_p1_overlay;
+    uint8_t port1 = usb_p1 & rest_mouse_p1 & rest_p1_persistent & rest_p1_overlay;
     uint8_t port2 = rest_p2_persistent & rest_p2_overlay;
     port1_active_low = port1 & JOYSTICK_DIGITAL_MASK;
     port2_active_low = port2 & JOYSTICK_DIGITAL_MASK;

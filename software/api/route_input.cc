@@ -1,4 +1,5 @@
 #include "input_api.h"
+#include "rest_mouse_queue.h"
 #include "route_input_menu.h"
 
 #include "routes.h"
@@ -6,6 +7,9 @@
 #include "itu.h"
 #include "keyboard_usb.h"
 #include "joystick_output.h"
+#if U64
+#include "usb_hid.h"
+#endif
 
 #include "FreeRTOS.h"
 #include "semphr.h"
@@ -179,6 +183,16 @@ static const TickType_t ROUTE_INPUT_MENU_REPEAT_TIMER_TICKS = (pdMS_TO_TICKS(20)
 static SemaphoreHandle_t rest_input_mutex = NULL;
 static TimerHandle_t rest_menu_repeat_timer = NULL;
 static RouteInputMenuKeyboardState rest_menu_keyboard_state;
+// A mouse tap holds its buttons for two PAL frames, so a program that reads the
+// buttons once per frame sees the press.
+static const int REST_MOUSE_TAP_HOLD_TICKS = (pdMS_TO_TICKS(40) > 0) ? pdMS_TO_TICKS(40) : 1;
+static const TickType_t REST_MOUSE_TIMER_TICKS = 1;
+// The shortest time between two REST mouse reports: the 20ms at which the
+// firmware polls a USB mouse. See RestMouseQueue.
+static const int REST_MOUSE_REPORT_TICKS = (pdMS_TO_TICKS(20) > 0) ? pdMS_TO_TICKS(20) : 1;
+static RestMouseQueue rest_mouse_queue;
+static TimerHandle_t rest_mouse_timer = NULL;
+static TickType_t rest_mouse_last_report = 0;
 
 static void route_input_menu_repeat_timer_callback(TimerHandle_t timer);
 
@@ -244,6 +258,70 @@ static SemaphoreHandle_t input_mutex(void)
     }
     ensure_menu_repeat_timer();
     return rest_input_mutex;
+}
+
+// Sends the reports that are due to the REST mouse. It runs in the timer task
+// and shares the input mutex with the handlers, so the virtual mouse is only
+// ever driven from one place at a time; a tick that finds the mutex taken
+// leaves the work to the next tick.
+static void rest_mouse_timer_callback(TimerHandle_t timer)
+{
+    if (!rest_input_mutex || (xSemaphoreTake(rest_input_mutex, 0) != pdTRUE)) {
+        return;
+    }
+    UsbHidDriver *mouse = UsbHidDriver::restMouse();
+    TickType_t now = xTaskGetTickCount();
+    RestMouseReport report;
+    // A report waits while the POT lines still carry earlier movement, which
+    // the pacer would otherwise cap (MousePotPacer::MAX_BACKLOG).
+    while (mouse && JoystickOutput::instance().mouseSettled() &&
+           rest_mouse_queue.takeDue((int)(now - rest_mouse_last_report), REST_MOUSE_REPORT_TICKS, report)) {
+        mouse->restMouseReport(report.buttons, report.dx, report.dy, report.wheel, report.pan);
+        rest_mouse_last_report = now;
+    }
+    if (!rest_mouse_queue.pending()) {
+        xTimerStop(timer, 0);
+    }
+    xSemaphoreGive(rest_input_mutex);
+}
+
+static void apply_mouse_event(const InputParsedEvent &event)
+{
+    UsbHidDriver *mouse = UsbHidDriver::restMouse();
+    if (!mouse) {
+        return;
+    }
+    if (!rest_mouse_timer) {
+        rest_mouse_timer = xTimerCreate("RestMouse", REST_MOUSE_TIMER_TICKS, pdTRUE, NULL, rest_mouse_timer_callback);
+        if (!rest_mouse_timer) {
+            return;
+        }
+    }
+    if (!mouse->restMouseAttached()) {
+        mouse->restMouseAttach();
+        rest_mouse_queue.clear(0);
+    }
+    // An idle queue sends its first report straight away, unless the previous
+    // report went out less than 20ms ago. Only a long idle spell is clamped,
+    // so the tick difference cannot overflow.
+    TickType_t now = xTaskGetTickCount();
+    if ((TickType_t)(now - rest_mouse_last_report) > (TickType_t)RestMouseQueue::CAPACITY) {
+        rest_mouse_last_report = now - RestMouseQueue::CAPACITY;
+    }
+    rest_mouse_queue.append(event, REST_MOUSE_TAP_HOLD_TICKS, portTICK_PERIOD_MS);
+    xTimerStart(rest_mouse_timer, 0);
+}
+
+// Drops every pending mouse report, lets go of the buttons and detaches the REST
+// mouse, so port 1's POT lines go back to joystick use. Called with the input
+// mutex held.
+static void release_rest_mouse(void)
+{
+    rest_mouse_queue.clear(0);
+    UsbHidDriver *mouse = UsbHidDriver::restMouse();
+    if (mouse && mouse->restMouseAttached()) {
+        mouse->restMouseDetach();
+    }
 }
 
 static void apply_joystick_event(const InputParsedEvent &event)
@@ -523,6 +601,12 @@ static void apply_batch(const InputParsedEvent *events, int event_count, RouteIn
         case INPUT_PARSED_JOYSTICK:
             apply_joystick_event(events[i]);
             break;
+        case INPUT_PARSED_MOUSE_BUTTONS:
+        case INPUT_PARSED_MOUSE_MOVE:
+        case INPUT_PARSED_MOUSE_WHEEL:
+        case INPUT_PARSED_MOUSE_PATH:
+            apply_mouse_event(events[i]);
+            break;
         case INPUT_PARSED_RELEASE_ALL:
             rest_input_menu_button_tick = 0;
             rest_menu_keyboard_state.clear();
@@ -531,6 +615,7 @@ static void apply_batch(const InputParsedEvent *events, int event_count, RouteIn
             }
             system_usb_keyboard.restReleaseAll();
             JoystickOutput::instance().releaseAllRest();
+            release_rest_mouse();
             break;
         }
     }
@@ -594,6 +679,32 @@ static void emit_state_snapshot(ResponseWrapper *resp, const RouteInputResponseK
     joysticks->add(port2);
 
     resp->json->add("joysticks", joysticks);
+
+    UsbHidDriver *mouse = UsbHidDriver::restMouse();
+    bool attached = mouse && mouse->restMouseAttached();
+    uint8_t buttons = attached ? mouse->restMouseButtons() : 0;
+    JSON_List *mouse_inputs = JSON::List();
+    for (int i = 0; i < INPUT_API_MOUSE_BUTTON_MAP_COUNT; i++) {
+        if (buttons & INPUT_API_MOUSE_BUTTON_MAP[i].mask) {
+            mouse_inputs->add(INPUT_API_MOUSE_BUTTON_MAP[i].name);
+        }
+    }
+    resp->json->add("mouse", JSON::Obj()
+        ->add("attached", attached)
+        ->add("inputs", mouse_inputs)
+        ->add("pending", rest_mouse_queue.pending()));
+}
+
+extern "C" void route_input_release_rest_mouse(void)
+{
+    // No input request has run yet, so there is no REST mouse to release.
+    SemaphoreHandle_t mutex = rest_input_mutex;
+    if (!mutex) {
+        return;
+    }
+    xSemaphoreTake(mutex, portMAX_DELAY);
+    release_rest_mouse();
+    xSemaphoreGive(mutex);
 }
 
 static bool ensure_input_capability(ResponseWrapper *resp)
@@ -613,23 +724,27 @@ static bool ensure_input_capability(ResponseWrapper *resp)
 #if U64
 API_DOC(GET, machine, input,
     TAG("Input")
-    SUMMARY("Read the keyboard and joystick state")
+    SUMMARY("Read the keyboard, joystick and mouse state")
     DESCRIPTION("Returns every key and joystick input that is currently held, both the ones this "
                 "API is holding and the ones the Ultimate menu is holding, so the answer matches "
                 "what the machine sees.\n"
+                "\n"
+                "`mouse` describes the mouse this API drives: whether it is attached, the buttons "
+                "it holds now, and how many of its reports are still waiting to be sent. A client "
+                "that needs a path or a wheel turn to have finished waits for `pending` to reach 0.\n"
                 "\n"
                 "The FPGA build has to carry the block that drives the keyboard and joystick "
                 "lines. A build without it answers 501.")
     PATH("/v1/machine:input", "getInputState", "")
     RESPONSE("200", "application/json", "InputStateResponse", "What is being held right now.", "")
-    RESPONSE_EXAMPLE("200", "Shift and fire", "{\n  \"keyboard\" : { \"inputs\" : [ \"left_shift\", \"a\" ] },\n  \"joysticks\" : [\n    { \"port\" : 1, \"inputs\" : [ \"up\", \"fire\" ] },\n    { \"port\" : 2, \"inputs\" : [] }\n  ],\n  \"errors\" : []\n}", "")
+    RESPONSE_EXAMPLE("200", "Shift, fire and a mouse button", "{\n  \"keyboard\" : { \"inputs\" : [ \"left_shift\", \"a\" ] },\n  \"joysticks\" : [\n    { \"port\" : 1, \"inputs\" : [ \"up\", \"fire\" ] },\n    { \"port\" : 2, \"inputs\" : [] }\n  ],\n  \"mouse\" : { \"attached\" : true, \"inputs\" : [ \"left\" ], \"pending\" : 0 },\n  \"errors\" : []\n}", "")
     RESPONSE_ERROR("501", "Keyboard and joystick injection require Ultimate 64-class hardware.", "")
     RESPONSE_ERROR("500", "Could not create REST input mutex.", "")
 )
 #else
 API_DOC(GET, machine, input,
     TAG("Input")
-    SUMMARY("Read the keyboard and joystick state")
+    SUMMARY("Read the keyboard, joystick and mouse state")
     DESCRIPTION("Not implemented on this product. Keyboard and joystick injection needs the "
                 "hardware that drives those lines, which a cartridge does not have. The call is "
                 "registered so that a client is told why rather than reading a 404 as a wrong URL, "
@@ -664,7 +779,7 @@ API_CALL(GET, machine, input, NULL, ARRAY( { }))
 #if U64
 API_DOC(POST, machine, input,
     TAG("Input")
-    SUMMARY("Apply keyboard and joystick events")
+    SUMMARY("Apply keyboard, joystick and mouse events")
     DESCRIPTION("Applies up to 64 input events in the order they are given and returns the state "
                 "that results. The whole batch is validated before any of it is applied, so a "
                 "batch that is rejected changes nothing.\n"
@@ -672,6 +787,34 @@ API_DOC(POST, machine, input,
                 "`press` holds an input down until something releases it, `release` lets it go, "
                 "and `tap` does both, which is what typing needs. A `release_all` event drops "
                 "everything this API is holding, and a machine reset does the same.\n"
+                "\n"
+                "A `mouse` event drives a wheel mouse on control port 1, which the firmware "
+                "handles exactly as it handles a USB mouse: Mouse Mode, the sensitivities, the "
+                "Micromys wheel and menu navigation all apply. Each event does one thing. "
+                "`inputs` with a `transition` presses, releases or taps `left`, `right` and "
+                "`middle`. `move` sends one report of `x` and `y` HID counts, -127 to 127 each, "
+                "positive right and down; it is the call to use for the lowest latency. As with a "
+                "USB mouse, Mouse Sensitivity scales the counts and one report moves the pointer "
+                "by at most 63 on each axis; at the default sensitivity of 8 a count is one "
+                "pointer step, so a path that has to arrive exactly keeps its steps within "
+                "-63..63. `wheel` "
+                "turns `vertical` (positive away from the user) and `horizontal` (positive to "
+                "the right) by whole detents, one report per detent. `path` replays up to 256 "
+                "`[x, y]` steps, one report every `interval_ms` (20 to 1000, default 20), which "
+                "keeps a drawn path's shape; a request holds at most 1024 JSON values and a step "
+                "takes three, so one request carries about 330 steps in all. "
+                "In Mouse + Wheel mode the Micromys lines queue at most 16 pulses, as for a USB "
+                "mouse, and `pending` reaches 0 before the last pulse has ended. Mouse reports are sent in order from a queue, no "
+                "closer together than 20ms, the rate at which the firmware polls a USB mouse. A "
+                "C64 mouse driver reads the position once per frame and takes more than 63 "
+                "counts in one frame as a move the other way, so the firmware spreads fast "
+                "movement over several frames, and the next report waits until the movement "
+                "before it has reached the port: a fast path takes longer than its `interval_ms` "
+                "steps add up to, but no step is lost. So a `release` "
+                "after a `path` in the same batch waits for the path, and press, path and "
+                "release in one batch is a drag. The response comes back once the batch is "
+                "queued; `mouse.pending` says how many reports are still to go. "
+                "The first mouse event attaches the mouse and `release_all` detaches it.\n"
                 "\n"
                 "`restore` is not part of the keyboard matrix; it is wired to NMI, so only "
                 "transition `tap` does anything with it. It may share an event with matrix "
@@ -684,17 +827,18 @@ API_DOC(POST, machine, input,
     PATH("/v1/machine:input", "applyInputEvents", "")
     BODY("application/json", "InputBatch", "The events to apply, in order.")
     RESPONSE("200", "application/json", "InputStateResponse", "What is held after the batch was applied.", "")
-    RESPONSE_EXAMPLE("200", "After typing LOAD", "{\n  \"keyboard\" : { \"inputs\" : [] },\n  \"joysticks\" : [\n    { \"port\" : 1, \"inputs\" : [] },\n    { \"port\" : 2, \"inputs\" : [] }\n  ],\n  \"errors\" : []\n}", "")
+    RESPONSE_EXAMPLE("200", "After typing LOAD", "{\n  \"keyboard\" : { \"inputs\" : [] },\n  \"joysticks\" : [\n    { \"port\" : 1, \"inputs\" : [] },\n    { \"port\" : 2, \"inputs\" : [] }\n  ],\n  \"mouse\" : { \"attached\" : false, \"inputs\" : [], \"pending\" : 0 },\n  \"errors\" : []\n}", "")
     RESPONSE_ERROR("400", "Content type should be 'application/json'.", "")
     RESPONSE_ERROR("400", "`events` must contain 1..64 entries.", "")
     RESPONSE_ERROR("400", "JSON body is too large.", "")
-    RESPONSE_ERROR("400", "events[0]: `kind` must be one of `keyboard`, `joystick`, or `release_all`.", "")
+    RESPONSE_ERROR("400", "events[0]: `kind` must be one of `keyboard`, `joystick`, `mouse`, or `release_all`.", "")
+    RESPONSE_ERROR("429", "The batch needs 300 mouse reports and the queue has room for 24; wait for `mouse.pending` to fall.", "")
     RESPONSE_ERROR("501", "Keyboard and joystick injection require Ultimate 64-class hardware.", "")
 )
 #else
 API_DOC(POST, machine, input,
     TAG("Input")
-    SUMMARY("Apply keyboard and joystick events")
+    SUMMARY("Apply keyboard, joystick and mouse events")
     DESCRIPTION("Not implemented on this product. Keyboard and joystick injection needs the "
                 "hardware that drives those lines, which a cartridge does not have. The call is "
                 "registered so that a client is told why rather than reading a 404 as a wrong URL, "
@@ -749,7 +893,13 @@ API_CALL(POST, machine, input, &input_json_writer, ARRAY( { }))
         return;
     }
 
-    int tokens = convert_text_to_json_objects(text, text_size, 1024, &obj);
+    int tokens = convert_text_to_json_objects(text, text_size, INPUT_API_MAX_JSON_TOKENS, &obj);
+    if (tokens == -1) {             // JSMN_ERROR_NOMEM: the token budget ran out
+        resp->error("The request has more than %d JSON values; send long mouse paths in several requests.",
+                    INPUT_API_MAX_JSON_TOKENS);
+        resp->json_response(HTTP_BAD_REQUEST);
+        return;
+    }
     if (tokens < 0) {
         resp->error("JSON could not be parsed. Error: %d", tokens);
         resp->json_response(HTTP_BAD_REQUEST);
@@ -771,6 +921,16 @@ API_CALL(POST, machine, input, &input_json_writer, ARRAY( { }))
             resp->error("%s", err);
         }
         resp->json_response(HTTP_BAD_REQUEST);
+        return;
+    }
+    int mouse_needed = 0;
+    int mouse_room = 0;
+    if (!RestMouseQueue::batchFits(events, event_count, rest_mouse_queue.room(), mouse_needed, mouse_room)) {
+        xSemaphoreGive(mutex);
+        delete obj;
+        resp->error("The batch needs %d mouse reports and the queue has room for %d; "
+                    "wait for `mouse.pending` to fall.", mouse_needed, mouse_room);
+        resp->json_response(HTTP_TOO_MANY_REQUESTS);
         return;
     }
     RouteInputResponseKeys response_keys;

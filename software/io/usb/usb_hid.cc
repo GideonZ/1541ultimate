@@ -53,6 +53,8 @@ static const int USB_HID_MENU_WHEEL_EXTRA_STEP_THRESHOLD = 15;
 static const int USB_HID_MENU_MAX_PENDING_VERTICAL_KEYS = 2;
 
 int usb_hid_active_mouse_interfaces = 0;
+// 1 while the REST mouse is attached; it is counted in usb_hid_active_mouse_interfaces.
+static int usb_hid_rest_mouse_interfaces = 0;
 
 static t_usb_hid_keyboard_idle_state usb_hid_keyboard_idle_state = { 0, 0 };
 
@@ -71,12 +73,13 @@ void usb_hid_set_joy1_output(uint8_t active_low_mask)
 }
 
 #if U64
-void usb_hid_set_mouse1_position(int16_t mouse_x, int16_t mouse_y, const void *source)
+void usb_hid_set_mouse1_position(int16_t mouse_x, int16_t mouse_y)
 {
 #if !RECOVERYAPP
-    JoystickOutput::instance().setUsbPort1Mouse(mouse_x, mouse_y, source);
+    // Every mouse, USB or REST, moves the one shared position, so the POT
+    // lines follow a single source.
+    JoystickOutput::instance().setUsbPort1Mouse(mouse_x, mouse_y, NULL);
 #else
-    (void)source;
     C64_PADDLE_1_X = mouse_x & 0x7F;
     C64_PADDLE_1_Y = mouse_y & 0x7F;
 #endif
@@ -723,7 +726,7 @@ UsbHidDriver :: UsbHidDriver(UsbInterface *intf) : UsbDriver(intf)
     mouse = false;
     descriptor_keyboard = false;
     descriptor_mouse = false;
-    mouse_x = mouse_y = 0;
+    rest_source = false;
     mouse_joy = 0x1F;
     memset(native_wheel_delta_queue, 0, sizeof(native_wheel_delta_queue));
     native_wheel_queue_head = 0;
@@ -782,6 +785,120 @@ UsbHidDriver :: ~UsbHidDriver()
     }
 }
 
+// One 1351 position for control port 1, which every mouse moves: a second USB
+// mouse, or the REST mouse, continues from where the first one left the pointer.
+int16_t UsbHidDriver :: mouse_x = 0;
+int16_t UsbHidDriver :: mouse_y = 0;
+
+// The REST mouse's report: three buttons, then relative X, Y, vertical wheel
+// and horizontal wheel (AC Pan), one byte each. It is parsed like a USB
+// mouse's descriptor, so every report goes through the same handling.
+static const uint8_t usb_hid_rest_mouse_descriptor[] = {
+    0x05, 0x01, 0x09, 0x02, 0xA1, 0x01, 0x09, 0x01, 0xA1, 0x00,
+    0x05, 0x09, 0x19, 0x01, 0x29, 0x03, 0x15, 0x00, 0x25, 0x01, 0x95, 0x03, 0x75, 0x01, 0x81, 0x02,
+    0x95, 0x01, 0x75, 0x05, 0x81, 0x01,
+    0x05, 0x01, 0x09, 0x30, 0x09, 0x31, 0x09, 0x38, 0x15, 0x81, 0x25, 0x7F, 0x75, 0x08, 0x95, 0x03, 0x81, 0x06,
+    0x05, 0x0C, 0x0A, 0x38, 0x02, 0x15, 0x81, 0x25, 0x7F, 0x75, 0x08, 0x95, 0x01, 0x81, 0x06,
+    0xC0, 0xC0
+};
+
+UsbHidDriver *UsbHidDriver :: restMouse(void)
+{
+    static UsbHidDriver *driver = NULL;
+    if (driver) {
+        return driver;
+    }
+    UsbHidDriver *created = new UsbHidDriver(NULL);
+    created->rest_source = true;
+    HidReportParser parser;
+    t_hid_mouse_fields fields;
+    if ((parser.decode(&created->report_items, usb_hid_rest_mouse_descriptor, sizeof(usb_hid_rest_mouse_descriptor)) != 0) ||
+        !created->report_items.locateMouseFields(fields)) {
+        delete created;
+        return NULL;
+    }
+    created->descriptor_mouse = true;
+    created->rep_mouse_x = fields.mouse_x;
+    created->rep_mouse_y = fields.mouse_y;
+    created->rep_button1 = fields.button1;
+    created->rep_button2 = fields.button2;
+    created->rep_button3 = fields.button3;
+    created->rep_wheel_v = fields.wheel_v;
+    created->rep_wheel_h = fields.wheel_h;
+    created->has_button1 = fields.has_button1;
+    created->has_button2 = fields.has_button2;
+    created->has_button3 = fields.has_button3;
+    created->has_wheel_v = fields.has_wheel_v;
+    created->has_wheel_h = fields.has_wheel_h;
+    driver = created;
+    return driver;
+}
+
+bool UsbHidDriver :: restMouseAttached(void) const
+{
+    return mouse;
+}
+
+void UsbHidDriver :: restMouseAttach(void)
+{
+    if (mouse) {
+        return;
+    }
+    mouse = true;
+    mouse_registered = true;
+    usb_hid_active_mouse_interfaces++;
+    usb_hid_rest_mouse_interfaces = 1;
+    usb_hid_apply_mouse_output_enable();
+}
+
+void UsbHidDriver :: restMouseDetach(void)
+{
+    if (!mouse) {
+        return;
+    }
+    disable();
+    usb_hid_rest_mouse_interfaces = 0;
+    mouse = false;
+}
+
+void UsbHidDriver :: restMouseReport(uint8_t buttons, int dx, int dy, int wheel, int pan)
+{
+    if (!mouse) {
+        return;
+    }
+    const uint8_t report[] = { buttons, (uint8_t)(int8_t)dx, (uint8_t)(int8_t)dy,
+                               (uint8_t)(int8_t)wheel, (uint8_t)(int8_t)pan };
+    process_mouse_report(report, sizeof(report));
+    // A wheel detent becomes pulses only when poll() takes it off the queue.
+    poll();
+}
+
+uint8_t UsbHidDriver :: restMouseButtons(void) const
+{
+    uint8_t buttons = 0;
+    if (!(mouse_joy & 0x10)) {
+        buttons |= 0x01;
+    }
+    if (!(mouse_joy & 0x01)) {
+        buttons |= 0x02;
+    }
+    if (!(mouse_joy & 0x02)) {
+        buttons |= 0x04;
+    }
+    return buttons;
+}
+
+void UsbHidDriver :: set_joy1_output(uint8_t active_low_mask)
+{
+#if U64 && !RECOVERYAPP
+    if (rest_source) {
+        JoystickOutput::instance().setRestMousePort1(active_low_mask);
+        return;
+    }
+#endif
+    usb_hid_set_joy1_output(active_low_mask);
+}
+
 void UsbHidDriver :: S_wheel_pulse_timer(TimerHandle_t a)
 {
     UsbHidDriver *driver = (UsbHidDriver *)pvTimerGetTimerID(a);
@@ -812,7 +929,7 @@ void UsbHidDriver :: service_native_wheel_timer(void)
         native_wheel_output_active = 0;
         portEXIT_CRITICAL();
 
-        usb_hid_set_joy1_output(output_mouse_joy);
+        set_joy1_output(output_mouse_joy);
         if (wheel_pulse_timer) {
             xTimerStop(wheel_pulse_timer, 0);
         }
@@ -842,7 +959,7 @@ void UsbHidDriver :: service_native_wheel_timer(void)
     }
     portEXIT_CRITICAL();
 
-    usb_hid_set_joy1_output(output_mouse_joy);
+    set_joy1_output(output_mouse_joy);
     if (!wheel_pulse_timer) {
         return;
     }
@@ -1096,7 +1213,11 @@ void UsbHidDriver :: disable()
                                      0x1F);
     usb_hid_set_native_wheel_output_active(native_wheel_output_active, false);
 #if U64
-    if (usb_hid_active_mouse_interfaces == 0) {
+    // The lines of the USB mice go back to released once no USB mouse is left;
+    // the REST mouse drives lines of its own.
+    if (rest_source) {
+        set_joy1_output(0x1F);
+    } else if ((usb_hid_active_mouse_interfaces - usb_hid_rest_mouse_interfaces) <= 0) {
         usb_hid_set_joy1_output(0x1F);
     }
 #endif
@@ -1186,7 +1307,7 @@ void UsbHidDriver :: poll(void)
                                              wheel_pulse_next_tick,
                                              wheel_pulse_burst_direction,
                                              wheel_pulse_burst_count);
-            usb_hid_set_joy1_output(output_mouse_joy);
+            set_joy1_output(output_mouse_joy);
         }
         usb_hid_set_native_wheel_output_active(native_wheel_output_active, false);
         return;
@@ -1236,85 +1357,70 @@ void UsbHidDriver :: interrupt_handler()
         }
     }
 
-    if (mouse) {
-        int mouse_mode = usb_hid_get_mouse_mode();
-        bool motion_to_cursor = HidMouseInterpreter::mouseModeRoutesMotionToCursor(mouse_mode);
-        bool motion_to_pointer = HidMouseInterpreter::mouseModeRoutesMotionToPointer(mouse_mode);
-        bool wheel_to_cursor = HidMouseInterpreter::mouseModeRoutesWheelToCursor(mouse_mode);
-        bool wheel_to_pointer = HidMouseInterpreter::mouseModeRoutesWheelToPointer(mouse_mode);
-        bool menu_override = usb_hid_menu_override_active();
-        int wheel_v = 0;
-        int wheel_h = 0;
-        int motion_x = 0;
-        int motion_y = 0;
-        bool handled_mouse = false;
-        bool left_button_pressed = previous_left_button_pressed;
-        bool right_button_pressed = (mouse_joy & 0x01) == 0;
-        uint8_t previous_mouse_joy = mouse_joy;
-        bool previous_middle_button_pressed = (previous_mouse_joy & 0x02) == 0;
-        bool compact_shared_wheel_report = descriptor_mouse &&
-                                           has_button3 &&
-                                           has_wheel_v &&
-                                           has_wheel_h &&
-                                           HidMouseInterpreter::isCompactSharedWheelReport(rep_button3,
-                                                                                           rep_wheel_v,
-                                                                                           rep_wheel_h);
+    if (mouse && process_mouse_report(irq_data, data_len)) {
+        handled = true;
+    }
 
-        if (descriptor_mouse) {
-            bool axis_report = HidReport::hasValue(irq_data, data_len, rep_mouse_x) || HidReport::hasValue(irq_data, data_len, rep_mouse_y);
-            bool button1_report = has_button1 && HidReport::hasValue(irq_data, data_len, rep_button1);
-            bool button2_report = has_button2 && HidReport::hasValue(irq_data, data_len, rep_button2);
-            bool button3_report = has_button3 && HidReport::hasValue(irq_data, data_len, rep_button3);
-            bool wheel_v_report = has_wheel_v && HidReport::hasValue(irq_data, data_len, rep_wheel_v);
-            bool wheel_h_report = has_wheel_h && HidReport::hasValue(irq_data, data_len, rep_wheel_h);
+    if (!handled) {
+	    printf("HID (ADDR=%d) IRQ data: ", device->current_address);
+	    for(int i=0;i<data_len;i++) {
+	        printf("%b ", irq_data[i]);
+	    } printf("\n");
+	}
+    host->resume_input_pipe(this->irq_transaction);
+}
 
-            handled_mouse = axis_report || button1_report || button2_report || button3_report || wheel_v_report || wheel_h_report;
+// One mouse report, from a USB mouse or from the REST mouse, applied to port 1,
+// the menu or the cursor keys as the mouse mode says. Returns whether the report
+// held mouse data.
+bool UsbHidDriver :: process_mouse_report(const uint8_t *irq_data, int data_len)
+{
+    bool handled = false;
+    int mouse_mode = usb_hid_get_mouse_mode();
+    bool motion_to_cursor = HidMouseInterpreter::mouseModeRoutesMotionToCursor(mouse_mode);
+    bool motion_to_pointer = HidMouseInterpreter::mouseModeRoutesMotionToPointer(mouse_mode);
+    bool wheel_to_cursor = HidMouseInterpreter::mouseModeRoutesWheelToCursor(mouse_mode);
+    bool wheel_to_pointer = HidMouseInterpreter::mouseModeRoutesWheelToPointer(mouse_mode);
+    bool menu_override = usb_hid_menu_override_active();
+    int wheel_v = 0;
+    int wheel_h = 0;
+    int motion_x = 0;
+    int motion_y = 0;
+    bool handled_mouse = false;
+    bool left_button_pressed = previous_left_button_pressed;
+    bool right_button_pressed = (mouse_joy & 0x01) == 0;
+    uint8_t previous_mouse_joy = mouse_joy;
+    bool previous_middle_button_pressed = (previous_mouse_joy & 0x02) == 0;
+    bool compact_shared_wheel_report = descriptor_mouse &&
+                                       has_button3 &&
+                                       has_wheel_v &&
+                                       has_wheel_h &&
+                                       HidMouseInterpreter::isCompactSharedWheelReport(rep_button3,
+                                                                                       rep_wheel_v,
+                                                                                       rep_wheel_h);
 
-            if (button1_report) {
-                usb_hid_set_mouse_button(mouse_joy, 0x10, HidReport::getValueFromData(irq_data, data_len, rep_button1) != 0);
-            }
-            if (button2_report) {
-                usb_hid_set_mouse_button(mouse_joy, 0x01, HidReport::getValueFromData(irq_data, data_len, rep_button2) != 0);
-            }
-            if (button3_report) {
-                usb_hid_set_mouse_button(mouse_joy, 0x02, HidReport::getValueFromData(irq_data, data_len, rep_button3) != 0);
-            }
-            if (axis_report) {
-                motion_x = HidReport::getValueFromData(irq_data, data_len, rep_mouse_x);
-                motion_y = HidReport::getValueFromData(irq_data, data_len, rep_mouse_y);
-                int raw_motion_x = motion_x;
-                int raw_motion_y = motion_y;
-                int sensitivity = usb_hid_get_mouse_sensitivity();
-                int acceleration = usb_hid_get_mouse_acceleration();
-                usb_hid_apply_pointer_sensitivity(motion_x, motion_y, sensitivity,
-                                                  pointer_sensitivity_setting,
-                                                  pointer_sensitivity_remainder_x,
-                                                  pointer_sensitivity_remainder_y);
-                usb_hid_apply_pointer_acceleration(motion_x, motion_y,
-                                                   raw_motion_x, raw_motion_y, acceleration,
-                                                   adaptive_accel_ema_x16, adaptive_accel_scale_factor);
-                if (motion_to_pointer || menu_override) {
-                    HidMouseInterpreter::applyRelativeMotion(mouse_x, mouse_y, motion_x, motion_y);
-                }
-            }
-            if (wheel_v_report) {
-                wheel_v = HidReport::getValueFromData(irq_data, data_len, rep_wheel_v);
-            }
-            if (wheel_h_report) {
-                wheel_h = HidReport::getValueFromData(irq_data, data_len, rep_wheel_h);
-            }
-            left_button_pressed = (mouse_joy & 0x10) == 0;
-            right_button_pressed = (mouse_joy & 0x01) == 0;
-        } else {
-            t_hid_boot_mouse_sample sample;
-            HidBootProtocol::decodeMouseReport(irq_data, data_len, sample);
-            handled_mouse = true;
-            mouse_joy = 0x1F;
-            usb_hid_set_mouse_button(mouse_joy, 0x10, (sample.buttons & 0x01) != 0);
-            usb_hid_set_mouse_button(mouse_joy, 0x01, (sample.buttons & 0x02) != 0);
-            usb_hid_set_mouse_button(mouse_joy, 0x02, (sample.buttons & 0x04) != 0);
-            motion_x = sample.x;
-            motion_y = sample.y;
+    if (descriptor_mouse) {
+        bool axis_report = HidReport::hasValue(irq_data, data_len, rep_mouse_x) || HidReport::hasValue(irq_data, data_len, rep_mouse_y);
+        bool button1_report = has_button1 && HidReport::hasValue(irq_data, data_len, rep_button1);
+        bool button2_report = has_button2 && HidReport::hasValue(irq_data, data_len, rep_button2);
+        bool button3_report = has_button3 && HidReport::hasValue(irq_data, data_len, rep_button3);
+        bool wheel_v_report = has_wheel_v && HidReport::hasValue(irq_data, data_len, rep_wheel_v);
+        bool wheel_h_report = has_wheel_h && HidReport::hasValue(irq_data, data_len, rep_wheel_h);
+
+        handled_mouse = axis_report || button1_report || button2_report || button3_report || wheel_v_report || wheel_h_report;
+
+        if (button1_report) {
+            usb_hid_set_mouse_button(mouse_joy, 0x10, HidReport::getValueFromData(irq_data, data_len, rep_button1) != 0);
+        }
+        if (button2_report) {
+            usb_hid_set_mouse_button(mouse_joy, 0x01, HidReport::getValueFromData(irq_data, data_len, rep_button2) != 0);
+        }
+        if (button3_report) {
+            usb_hid_set_mouse_button(mouse_joy, 0x02, HidReport::getValueFromData(irq_data, data_len, rep_button3) != 0);
+        }
+        if (axis_report) {
+            motion_x = HidReport::getValueFromData(irq_data, data_len, rep_mouse_x);
+            motion_y = HidReport::getValueFromData(irq_data, data_len, rep_mouse_y);
             int raw_motion_x = motion_x;
             int raw_motion_y = motion_y;
             int sensitivity = usb_hid_get_mouse_sensitivity();
@@ -1327,191 +1433,225 @@ void UsbHidDriver :: interrupt_handler()
                                                raw_motion_x, raw_motion_y, acceleration,
                                                adaptive_accel_ema_x16, adaptive_accel_scale_factor);
             if (motion_to_pointer || menu_override) {
+                portENTER_CRITICAL();
                 HidMouseInterpreter::applyRelativeMotion(mouse_x, mouse_y, motion_x, motion_y);
+                portEXIT_CRITICAL();
             }
-            left_button_pressed = (sample.buttons & 0x01) != 0;
-            right_button_pressed = (sample.buttons & 0x02) != 0;
+        }
+        if (wheel_v_report) {
+            wheel_v = HidReport::getValueFromData(irq_data, data_len, rep_wheel_v);
+        }
+        if (wheel_h_report) {
+            wheel_h = HidReport::getValueFromData(irq_data, data_len, rep_wheel_h);
+        }
+        left_button_pressed = (mouse_joy & 0x10) == 0;
+        right_button_pressed = (mouse_joy & 0x01) == 0;
+    } else {
+        t_hid_boot_mouse_sample sample;
+        HidBootProtocol::decodeMouseReport(irq_data, data_len, sample);
+        handled_mouse = true;
+        mouse_joy = 0x1F;
+        usb_hid_set_mouse_button(mouse_joy, 0x10, (sample.buttons & 0x01) != 0);
+        usb_hid_set_mouse_button(mouse_joy, 0x01, (sample.buttons & 0x02) != 0);
+        usb_hid_set_mouse_button(mouse_joy, 0x02, (sample.buttons & 0x04) != 0);
+        motion_x = sample.x;
+        motion_y = sample.y;
+        int raw_motion_x = motion_x;
+        int raw_motion_y = motion_y;
+        int sensitivity = usb_hid_get_mouse_sensitivity();
+        int acceleration = usb_hid_get_mouse_acceleration();
+        usb_hid_apply_pointer_sensitivity(motion_x, motion_y, sensitivity,
+                                          pointer_sensitivity_setting,
+                                          pointer_sensitivity_remainder_x,
+                                          pointer_sensitivity_remainder_y);
+        usb_hid_apply_pointer_acceleration(motion_x, motion_y,
+                                           raw_motion_x, raw_motion_y, acceleration,
+                                           adaptive_accel_ema_x16, adaptive_accel_scale_factor);
+        if (motion_to_pointer || menu_override) {
+            portENTER_CRITICAL();
+            HidMouseInterpreter::applyRelativeMotion(mouse_x, mouse_y, motion_x, motion_y);
+            portEXIT_CRITICAL();
+        }
+        left_button_pressed = (sample.buttons & 0x01) != 0;
+        right_button_pressed = (sample.buttons & 0x02) != 0;
+    }
+
+    if (handled_mouse) {
+        bool reversed_wheel = usb_hid_get_wheel_direction() == WHEEL_DIRECTION_REVERSED;
+        int scroll_factor = usb_hid_get_scroll_factor();
+        uint8_t output_mouse_joy = mouse_joy;
+        bool middle_button_pressed = (mouse_joy & 0x02) == 0;
+        if (HidMouseInterpreter::shouldSuppressMiddleClickWheelNoise(compact_shared_wheel_report,
+                                                                     middle_button_pressed,
+                                                                     previous_middle_button_pressed)) {
+            wheel_v = 0;
+            wheel_h = 0;
+        }
+        int wheel_h_normalized = HidMouseInterpreter::normalizeHorizontalWheel(wheel_h,
+                                                                               !compact_shared_wheel_report);
+        int wheel_v_normalized = HidMouseInterpreter::normalizeVerticalWheel(wheel_v);
+        int wheel_h_keys = HidMouseInterpreter::applyWheelDirection(wheel_h_normalized, reversed_wheel);
+        int wheel_v_keys = HidMouseInterpreter::applyWheelDirection(wheel_v_normalized, reversed_wheel);
+        int wheel_h_axis = wheel_h_keys;
+        int wheel_v_axis = -wheel_v_keys;
+
+        if (!rest_source &&
+            usb_hid_mouse_report_has_activity(motion_x, motion_y, wheel_h_normalized, wheel_v_normalized, mouse_joy, previous_mouse_joy)) {
+            usb_hid_set_visibility(usb_hid_mouse_visibility, device, interface, descriptor_mouse);
+            usb_hid_publish_visibility();
         }
 
-        if (handled_mouse) {
-            bool reversed_wheel = usb_hid_get_wheel_direction() == WHEEL_DIRECTION_REVERSED;
-            int scroll_factor = usb_hid_get_scroll_factor();
-            uint8_t output_mouse_joy = mouse_joy;
-            bool middle_button_pressed = (mouse_joy & 0x02) == 0;
-            if (HidMouseInterpreter::shouldSuppressMiddleClickWheelNoise(compact_shared_wheel_report,
-                                                                         middle_button_pressed,
-                                                                         previous_middle_button_pressed)) {
-                wheel_v = 0;
-                wheel_h = 0;
+        if (menu_override) {
+            output_mouse_joy |= 0x11;
+            if (left_button_pressed) {
+                if (!menu_left_button_consumed) {
+                    usb_hid_queue_menu_key(KEY_RETURN, 1, 1);
+                    menu_left_button_consumed = true;
+                }
+            } else {
+                menu_left_button_consumed = false;
             }
-            int wheel_h_normalized = HidMouseInterpreter::normalizeHorizontalWheel(wheel_h,
-                                                                                   !compact_shared_wheel_report);
-            int wheel_v_normalized = HidMouseInterpreter::normalizeVerticalWheel(wheel_v);
-            int wheel_h_keys = HidMouseInterpreter::applyWheelDirection(wheel_h_normalized, reversed_wheel);
-            int wheel_v_keys = HidMouseInterpreter::applyWheelDirection(wheel_v_normalized, reversed_wheel);
-            int wheel_h_axis = wheel_h_keys;
-            int wheel_v_axis = -wheel_v_keys;
-
-            if (usb_hid_mouse_report_has_activity(motion_x, motion_y, wheel_h_normalized, wheel_v_normalized, mouse_joy, previous_mouse_joy)) {
-                usb_hid_set_visibility(usb_hid_mouse_visibility, device, interface, descriptor_mouse);
-                usb_hid_publish_visibility();
+            if (right_button_pressed) {
+                if (!menu_right_button_consumed) {
+                    usb_hid_queue_menu_key(KEY_LEFT, 1, 1);
+                    menu_right_button_consumed = true;
+                }
+            } else {
+                menu_right_button_consumed = false;
             }
+        } else {
+            menu_left_button_consumed = left_button_pressed;
+            menu_right_button_consumed = right_button_pressed;
+        }
 
+        if (!menu_override && motion_to_cursor) {
+            usb_hid_queue_motion_keys(motion_x, motion_y);
+        }
+
+        if ((wheel_v_normalized != 0) || (wheel_h_normalized != 0)) {
             if (menu_override) {
-                output_mouse_joy |= 0x11;
-                if (left_button_pressed) {
-                    if (!menu_left_button_consumed) {
-                        usb_hid_queue_menu_key(KEY_RETURN, 1, 1);
-                        menu_left_button_consumed = true;
-                    }
-                } else {
-                    menu_left_button_consumed = false;
+                wheel_axis_h_remainder = 0;
+                wheel_axis_v_remainder = 0;
+                wheel_key_h_remainder = 0;
+                wheel_key_v_remainder = 0;
+                uint32_t now_ticks = (uint32_t)xTaskGetTickCount();
+                int menu_wheel_h = usb_hid_filter_menu_wheel_step(HidMouseInterpreter::scaleMenuWheelKeys(wheel_h_keys), menu_wheel_h_latch);
+                int menu_wheel_v = HidMouseInterpreter::scaleMenuWheelBurst(
+                    wheel_v_keys,
+                    now_ticks,
+                    menu_wheel_v_last_tick,
+                    menu_wheel_v_mode,
+                    menu_wheel_v_burst_direction,
+                    menu_wheel_v_burst_accumulator,
+                    USB_HID_MENU_WHEEL_FAST_GAP_TICKS,
+                    USB_HID_MENU_WHEEL_SLOW_GAP_TICKS,
+                    USB_HID_MENU_WHEEL_RESET_GAP_TICKS,
+                    USB_HID_MENU_WHEEL_EXTRA_STEP_THRESHOLD);
+                menu_wheel_v_latch = 0;
+                if (menu_wheel_v > 0) {
+                    usb_hid_queue_menu_key(KEY_UP, menu_wheel_v, USB_HID_MENU_MAX_PENDING_VERTICAL_KEYS);
+                } else if (menu_wheel_v < 0) {
+                    usb_hid_queue_menu_key(KEY_DOWN, -menu_wheel_v, USB_HID_MENU_MAX_PENDING_VERTICAL_KEYS);
                 }
-                if (right_button_pressed) {
-                    if (!menu_right_button_consumed) {
-                        usb_hid_queue_menu_key(KEY_LEFT, 1, 1);
-                        menu_right_button_consumed = true;
-                    }
-                } else {
-                    menu_right_button_consumed = false;
-                }
-            } else {
-                menu_left_button_consumed = left_button_pressed;
-                menu_right_button_consumed = right_button_pressed;
-            }
-
-            if (!menu_override && motion_to_cursor) {
-                usb_hid_queue_motion_keys(motion_x, motion_y);
-            }
-
-            if ((wheel_v_normalized != 0) || (wheel_h_normalized != 0)) {
-                if (menu_override) {
-                    wheel_axis_h_remainder = 0;
-                    wheel_axis_v_remainder = 0;
-                    wheel_key_h_remainder = 0;
-                    wheel_key_v_remainder = 0;
-                    uint32_t now_ticks = (uint32_t)xTaskGetTickCount();
-                    int menu_wheel_h = usb_hid_filter_menu_wheel_step(HidMouseInterpreter::scaleMenuWheelKeys(wheel_h_keys), menu_wheel_h_latch);
-                    int menu_wheel_v = HidMouseInterpreter::scaleMenuWheelBurst(
-                        wheel_v_keys,
-                        now_ticks,
-                        menu_wheel_v_last_tick,
-                        menu_wheel_v_mode,
-                        menu_wheel_v_burst_direction,
-                        menu_wheel_v_burst_accumulator,
-                        USB_HID_MENU_WHEEL_FAST_GAP_TICKS,
-                        USB_HID_MENU_WHEEL_SLOW_GAP_TICKS,
-                        USB_HID_MENU_WHEEL_RESET_GAP_TICKS,
-                        USB_HID_MENU_WHEEL_EXTRA_STEP_THRESHOLD);
-                    menu_wheel_v_latch = 0;
-                    if (menu_wheel_v > 0) {
-                        usb_hid_queue_menu_key(KEY_UP, menu_wheel_v, USB_HID_MENU_MAX_PENDING_VERTICAL_KEYS);
-                    } else if (menu_wheel_v < 0) {
-                        usb_hid_queue_menu_key(KEY_DOWN, -menu_wheel_v, USB_HID_MENU_MAX_PENDING_VERTICAL_KEYS);
-                    }
-                    usb_hid_queue_wheel_keys(menu_wheel_h, 0);
-                } else if (wheel_to_cursor) {
-                    menu_wheel_h_latch = 0;
-                    menu_wheel_v_latch = 0;
-                    menu_wheel_v_mode = HidMouseInterpreter::MENU_WHEEL_MODE_PRECISE;
-                    menu_wheel_v_burst_accumulator = 0;
-                    menu_wheel_v_burst_direction = 0;
-                    menu_wheel_v_last_tick = 0;
-                    wheel_axis_h_remainder = 0;
-                    wheel_axis_v_remainder = 0;
-                    wheel_step_accumulator = 0;
-                    usb_hid_queue_wheel_keys(
-                        HidMouseInterpreter::scaleHorizontalWheelKeys(wheel_h_keys, scroll_factor, wheel_key_h_remainder),
-                        HidMouseInterpreter::scaleVerticalWheelKeys(wheel_v_keys, scroll_factor, wheel_key_v_remainder));
-                } else if (wheel_to_pointer) {
-                    menu_wheel_h_latch = 0;
-                    menu_wheel_v_latch = 0;
-                    menu_wheel_v_mode = HidMouseInterpreter::MENU_WHEEL_MODE_PRECISE;
-                    menu_wheel_v_burst_accumulator = 0;
-                    menu_wheel_v_burst_direction = 0;
-                    menu_wheel_v_last_tick = 0;
-                    wheel_key_h_remainder = 0;
-                    wheel_key_v_remainder = 0;
-                    wheel_step_accumulator = 0;
-                    HidMouseInterpreter::applyWheelAxisDeltas(
-                        mouse_x,
-                        mouse_y,
-                        HidMouseInterpreter::scaleHorizontalWheelAxisDelta(wheel_h_axis, scroll_factor, wheel_axis_h_remainder),
-                        HidMouseInterpreter::scaleVerticalWheelAxisDelta(wheel_v_axis, scroll_factor, wheel_axis_v_remainder));
-                } else if (HidMouseInterpreter::mouseModeRoutesWheelToNative(mouse_mode)) {
-                    menu_wheel_h_latch = 0;
-                    menu_wheel_v_latch = 0;
-                    menu_wheel_v_mode = HidMouseInterpreter::MENU_WHEEL_MODE_PRECISE;
-                    menu_wheel_v_burst_accumulator = 0;
-                    menu_wheel_v_burst_direction = 0;
-                    menu_wheel_v_last_tick = 0;
-                    wheel_axis_h_remainder = 0;
-                    wheel_axis_v_remainder = 0;
-                    wheel_key_h_remainder = 0;
-                    wheel_key_v_remainder = 0;
-                    int wheel_steps = HidMouseInterpreter::applyWheelDirection(
-                        HidMouseInterpreter::accumulateNativeWheelSteps(
-                            wheel_v_normalized,
-                            scroll_factor,
-                            wheel_step_accumulator),
-                        reversed_wheel);
-                    usb_hid_publish_native_wheel_input(native_wheel_delta_queue,
-                                                       sizeof(native_wheel_delta_queue) / sizeof(native_wheel_delta_queue[0]),
-                                                       native_wheel_queue_head,
-                                                       native_wheel_queue_tail,
-                                                       native_wheel_base_joy,
-                                                       wheel_steps,
-                                                       output_mouse_joy);
-                }
-            } else {
+                usb_hid_queue_wheel_keys(menu_wheel_h, 0);
+            } else if (wheel_to_cursor) {
                 menu_wheel_h_latch = 0;
                 menu_wheel_v_latch = 0;
-            }
-
-            if (HidMouseInterpreter::mouseModeRoutesWheelToNative(mouse_mode)) {
-                output_mouse_joy = HidMouseInterpreter::applyWheelPulseMask(output_mouse_joy,
-                                                                            HidMouseInterpreter::WHEEL_PULSE_PHASE_IDLE,
-                                                                            0);
+                menu_wheel_v_mode = HidMouseInterpreter::MENU_WHEEL_MODE_PRECISE;
+                menu_wheel_v_burst_accumulator = 0;
+                menu_wheel_v_burst_direction = 0;
+                menu_wheel_v_last_tick = 0;
+                wheel_axis_h_remainder = 0;
+                wheel_axis_v_remainder = 0;
+                wheel_step_accumulator = 0;
+                usb_hid_queue_wheel_keys(
+                    HidMouseInterpreter::scaleHorizontalWheelKeys(wheel_h_keys, scroll_factor, wheel_key_h_remainder),
+                    HidMouseInterpreter::scaleVerticalWheelKeys(wheel_v_keys, scroll_factor, wheel_key_v_remainder));
+            } else if (wheel_to_pointer) {
+                menu_wheel_h_latch = 0;
+                menu_wheel_v_latch = 0;
+                menu_wheel_v_mode = HidMouseInterpreter::MENU_WHEEL_MODE_PRECISE;
+                menu_wheel_v_burst_accumulator = 0;
+                menu_wheel_v_burst_direction = 0;
+                menu_wheel_v_last_tick = 0;
+                wheel_key_h_remainder = 0;
+                wheel_key_v_remainder = 0;
+                wheel_step_accumulator = 0;
+                int wheel_axis_h_delta = HidMouseInterpreter::scaleHorizontalWheelAxisDelta(wheel_h_axis, scroll_factor, wheel_axis_h_remainder);
+                int wheel_axis_v_delta = HidMouseInterpreter::scaleVerticalWheelAxisDelta(wheel_v_axis, scroll_factor, wheel_axis_v_remainder);
+                portENTER_CRITICAL();
+                HidMouseInterpreter::applyWheelAxisDeltas(mouse_x, mouse_y, wheel_axis_h_delta, wheel_axis_v_delta);
+                portEXIT_CRITICAL();
+            } else if (HidMouseInterpreter::mouseModeRoutesWheelToNative(mouse_mode)) {
+                menu_wheel_h_latch = 0;
+                menu_wheel_v_latch = 0;
+                menu_wheel_v_mode = HidMouseInterpreter::MENU_WHEEL_MODE_PRECISE;
+                menu_wheel_v_burst_accumulator = 0;
+                menu_wheel_v_burst_direction = 0;
+                menu_wheel_v_last_tick = 0;
+                wheel_axis_h_remainder = 0;
+                wheel_axis_v_remainder = 0;
+                wheel_key_h_remainder = 0;
+                wheel_key_v_remainder = 0;
+                int wheel_steps = HidMouseInterpreter::applyWheelDirection(
+                    HidMouseInterpreter::accumulateNativeWheelSteps(
+                        wheel_v_normalized,
+                        scroll_factor,
+                        wheel_step_accumulator),
+                    reversed_wheel);
                 usb_hid_publish_native_wheel_input(native_wheel_delta_queue,
                                                    sizeof(native_wheel_delta_queue) / sizeof(native_wheel_delta_queue[0]),
                                                    native_wheel_queue_head,
                                                    native_wheel_queue_tail,
                                                    native_wheel_base_joy,
-                                                   0,
+                                                   wheel_steps,
                                                    output_mouse_joy);
-                if (!usb_hid_get_native_wheel_output_active(native_wheel_output_active)) {
-                    usb_hid_set_joy1_output(output_mouse_joy);
-                }
-            } else {
-                output_mouse_joy = HidMouseInterpreter::applyWheelPulseMask(output_mouse_joy,
-                                                                            HidMouseInterpreter::WHEEL_PULSE_PHASE_IDLE,
-                                                                            0);
-                usb_hid_clear_native_wheel_input(native_wheel_queue_head,
-                                                 native_wheel_queue_tail,
-                                                 native_wheel_base_joy,
-                                                 output_mouse_joy);
             }
+        } else {
+            menu_wheel_h_latch = 0;
+            menu_wheel_v_latch = 0;
+        }
+
+        if (HidMouseInterpreter::mouseModeRoutesWheelToNative(mouse_mode)) {
+            output_mouse_joy = HidMouseInterpreter::applyWheelPulseMask(output_mouse_joy,
+                                                                        HidMouseInterpreter::WHEEL_PULSE_PHASE_IDLE,
+                                                                        0);
+            usb_hid_publish_native_wheel_input(native_wheel_delta_queue,
+                                               sizeof(native_wheel_delta_queue) / sizeof(native_wheel_delta_queue[0]),
+                                               native_wheel_queue_head,
+                                               native_wheel_queue_tail,
+                                               native_wheel_base_joy,
+                                               0,
+                                               output_mouse_joy);
+            if (!usb_hid_get_native_wheel_output_active(native_wheel_output_active)) {
+                set_joy1_output(output_mouse_joy);
+            }
+        } else {
+            output_mouse_joy = HidMouseInterpreter::applyWheelPulseMask(output_mouse_joy,
+                                                                        HidMouseInterpreter::WHEEL_PULSE_PHASE_IDLE,
+                                                                        0);
+            usb_hid_clear_native_wheel_input(native_wheel_queue_head,
+                                             native_wheel_queue_tail,
+                                             native_wheel_base_joy,
+                                             output_mouse_joy);
+        }
 
 #if U64
-            usb_hid_set_mouse1_position(mouse_x, mouse_y, this);
-            if (!HidMouseInterpreter::mouseModeRoutesWheelToNative(mouse_mode)) {
-                usb_hid_set_joy1_output(output_mouse_joy);
-            }
-#else
-            printf("Mouse: %4x,%4x %b\n", mouse_x, mouse_y, output_mouse_joy);
-#endif
-            previous_left_button_pressed = left_button_pressed;
-            handled = true;
+        // Every mouse moves the one port 1 position, so it is read and
+        // published in one step.
+        portENTER_CRITICAL();
+        usb_hid_set_mouse1_position(mouse_x, mouse_y);
+        portEXIT_CRITICAL();
+        if (!HidMouseInterpreter::mouseModeRoutesWheelToNative(mouse_mode)) {
+            set_joy1_output(output_mouse_joy);
         }
+#else
+        printf("Mouse: %4x,%4x %b\n", mouse_x, mouse_y, output_mouse_joy);
+#endif
+        previous_left_button_pressed = left_button_pressed;
+        handled = true;
     }
-
-    if (!handled) {
-	    printf("HID (ADDR=%d) IRQ data: ", device->current_address);
-	    for(int i=0;i<data_len;i++) {
-	        printf("%b ", irq_data[i]);
-	    } printf("\n");
-	}
-    host->resume_input_pipe(this->irq_transaction);
+    return handled;
 }
 
 void UsbHidDriver :: pipe_error(int pipe) // called from IRQ!

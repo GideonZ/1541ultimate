@@ -1885,7 +1885,7 @@ paths:
     get:
       tags:
         - Input
-      summary: Read the keyboard and joystick state
+      summary: Read the keyboard, joystick and mouse state
       description: Not implemented on this product. Keyboard and joystick injection needs the hardware that drives those lines, which a cartridge does not have. The call is registered so that a client is told why rather than reading a 404 as a wrong URL, and it always answers 501 here. The Ultimate 64 document describes what it does on hardware that has it.
       operationId: getInputState
       responses:
@@ -1905,7 +1905,7 @@ paths:
     post:
       tags:
         - Input
-      summary: Apply keyboard and joystick events
+      summary: Apply keyboard, joystick and mouse events
       description: Not implemented on this product. Keyboard and joystick injection needs the hardware that drives those lines, which a cartridge does not have. The call is registered so that a client is told why rather than reading a 404 as a wrong URL, and it always answers 501 here. The Ultimate 64 document describes what it does on hardware that has it.
       operationId: applyInputEvents
       requestBody:
@@ -2202,7 +2202,7 @@ paths:
       description: |2-
         Resets the C64 and re-initialises the cartridge with it, which is what the Reboot entry in the menu does. Use this rather than `machine:reset` when a cartridge has to start from scratch.
 
-        On Ultimate 64 hardware every key and joystick direction the input API is holding is released as part of the reboot.
+        On Ultimate 64 hardware every key and joystick direction the input API is holding is released as part of the reboot, and its mouse is detached with its pending reports dropped.
 
         **Caution (machine-state):** Whatever the machine was running is lost, and the cartridge is started from scratch.
       operationId: rebootMachine
@@ -2249,7 +2249,7 @@ paths:
       description: |2-
         Pulls reset on the C64. The machine restarts with whatever cartridge is active, which is not the same as starting from cold; use `machine:reboot` for that.
 
-        On Ultimate 64 hardware every key and joystick direction the input API is holding is released as part of the reset, so a reset cannot leave an injected key stuck down.
+        On Ultimate 64 hardware every key and joystick direction the input API is holding is released as part of the reset, and its mouse is detached with its pending reports dropped, so a reset cannot leave an injected key stuck down.
 
         **Caution (machine-state):** Whatever the machine was running is lost.
       operationId: resetMachine
@@ -3481,6 +3481,10 @@ components:
       oneOf:
         - $ref: '#/components/schemas/KeyboardEvent'
         - $ref: '#/components/schemas/JoystickEvent'
+        - $ref: '#/components/schemas/MouseButtonEvent'
+        - $ref: '#/components/schemas/MouseMoveEvent'
+        - $ref: '#/components/schemas/MouseWheelEvent'
+        - $ref: '#/components/schemas/MousePathEvent'
         - $ref: '#/components/schemas/ReleaseAllEvent'
     InputTransition:
       type: string
@@ -3625,9 +3629,112 @@ components:
               description: Range that was written, as first-last in hexadecimal.
               examples:
                 - d020-d021
+    MouseButtonEvent:
+      type: object
+      description: Mouse buttons to press, release or tap. A tap holds them for 40ms.
+      required:
+        - kind
+        - inputs
+        - transition
+      additionalProperties: false
+      properties:
+        kind:
+          const: mouse
+        transition:
+          $ref: '#/components/schemas/InputTransition'
+        inputs:
+          type: array
+          minItems: 1
+          maxItems: 3
+          description: Button names, no duplicates.
+          items:
+            $ref: '#/components/schemas/MouseInput'
+    MouseInput:
+      type: string
+      enum:
+        - left
+        - right
+        - middle
+    MouseMotion:
+      type: integer
+      minimum: -127
+      maximum: 127
+      description: HID counts, positive right on x and down on y.
+    MouseMoveEvent:
+      type: object
+      description: One mouse report moving the mouse, sent as soon as the queue reaches it.
+      required:
+        - kind
+        - move
+      additionalProperties: false
+      properties:
+        kind:
+          const: mouse
+        move:
+          type: object
+          additionalProperties: false
+          minProperties: 1
+          properties:
+            x:
+              $ref: '#/components/schemas/MouseMotion'
+            y:
+              $ref: '#/components/schemas/MouseMotion'
+    MousePathEvent:
+      type: object
+      description: 'Moves replayed at no less than a fixed interval, which keeps a drawn path''s shape. A request holds at most 1024 JSON values and a step takes three.'
+      required:
+        - kind
+        - path
+      additionalProperties: false
+      properties:
+        kind:
+          const: mouse
+        path:
+          type: array
+          minItems: 1
+          maxItems: 256
+          description: 'Relative [x, y] steps, one report each.'
+          items:
+            type: array
+            minItems: 2
+            maxItems: 2
+            items:
+              $ref: '#/components/schemas/MouseMotion'
+        interval_ms:
+          type: integer
+          minimum: 20
+          maximum: 1000
+          default: 20
+          description: Time between two steps.
+    MouseWheelEvent:
+      type: object
+      description: Wheel detents, one report each, vertical first, at least 20ms apart.
+      required:
+        - kind
+        - wheel
+      additionalProperties: false
+      properties:
+        kind:
+          const: mouse
+        wheel:
+          type: object
+          additionalProperties: false
+          minProperties: 1
+          description: At least one wheel must turn.
+          properties:
+            vertical:
+              type: integer
+              minimum: -64
+              maximum: 64
+              description: 'Detents; positive turns the wheel away from the user.'
+            horizontal:
+              type: integer
+              minimum: -64
+              maximum: 64
+              description: 'Detents; positive is to the right.'
     ReleaseAllEvent:
       type: object
-      description: Releases every key and joystick input the API is holding. Takes no other members.
+      description: Releases every key, joystick input and mouse button the API is holding, and detaches its mouse. Takes no other members.
       required:
         - kind
       additionalProperties: false

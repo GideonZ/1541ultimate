@@ -1,9 +1,15 @@
 #!/usr/bin/env python3
 # E2E: a USB mouse arrives on control port 1 as a 1351 mouse with a Micromys wheel.
 
-"""Move, click and scroll a USB mouse in every mouse mode, and read what the C64 saw.
+"""Move, click and scroll a mouse in every mouse mode, and read what the C64 saw.
 
-The Pico 2 W fixture (`tests/lib/pico_hid.py`) is the USB mouse and keyboard.
+The mouse comes from one of two backends, chosen with --backend. `rest` (the
+default) sends `mouse` events to `POST /v1/machine:input`, which the firmware
+handles exactly as a USB mouse's reports, and needs no hardware. `pico` uses
+the Pico 2 W fixture (`tests/lib/pico_hid.py`) as a real USB mouse and
+keyboard. Where a scenario holds a key, `rest` holds it over REST and `pico` on
+the fixture's USB keyboard.
+
 The C64 runs `tools/c64/mouse-listener.asm`, which follows control port 1 as a
 1351 driver with Micromys wheel support does, port 2 as a joystick routine
 does, and the keyboard as a scan does, and keeps all of it in RAM.
@@ -71,7 +77,7 @@ menus
     freezes the C64 (Interface Type Freeze, or no HDMI display). Once the menu
     closes, the mouse reaches the C64 again.
 
-Needs the Pico fixture on a USB port of the machine, so it is manual.
+With --backend pico the suite needs the fixture on a USB port of the machine.
 """
 
 from __future__ import annotations
@@ -91,7 +97,7 @@ sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
 import bootstrap  # noqa: E402,F401
 import cli  # noqa: E402
 from api import UltimateApi  # noqa: E402
-from mouse import MouseListener, MouseState, PicoMouse  # noqa: E402
+from mouse import MouseListener, MouseState, PicoMouse, RestMouse  # noqa: E402
 from pico_hid import Pico, discover_pico  # noqa: E402
 from report import Failure, check, check_skip, detail, format_exception, suite_fail, suite_ok  # noqa: E402
 
@@ -139,7 +145,7 @@ def configure(api: UltimateApi, **settings: object) -> None:
 
 
 @contextmanager
-def fresh(listener: MouseListener, mouse: PicoMouse) -> Iterator[None]:
+def fresh(listener: MouseListener, mouse: PicoMouse | RestMouse) -> Iterator[None]:
     """Start a check from a quiet listener with its counters at zero.
 
     The origin is always a position the mouse itself set, which can never be
@@ -334,15 +340,21 @@ def motion_at_frame_rate(api, listener, mouse, mode: str) -> None:
     # frames. At wheel sensitivity 16, scaleVerticalWheelAxisDelta turns a
     # vertical value of 1 into 40 counts (normalizeVerticalWheel makes it 8,
     # then 8 * 16 * 10/32), and scaleHorizontalWheelAxisDelta turns a
-    # horizontal value of 2 into 64 counts (2 * 16 * 2), clamped to 63.
+    # horizontal value of 2 into 64 counts (2 * 16 * 2), clamped to 63. REST
+    # cannot put motion and wheel into one report: it sends the move, then one
+    # report of value 1 per detent, 32 counts each horizontally.
     configure(api, Mouse_Mode="Mouse", Mouse_Wheel_Sensitivity=16)
-    stream_case(listener, mouse, at + "motion and vertical wheel in one report: 103 counts up, no wrap",
-                0, -63, 10, 150, (0, -1030), wheel=1, frame_rate=rate)
-    stream_case(listener, mouse, at + "motion and horizontal wheel in one report: 126 counts right, no wrap",
-                63, 0, 10, 150, (1260, 0), pan=2 * PAN_POSITIVE_SIGN, frame_rate=rate)
+    one_report = isinstance(mouse, PicoMouse)
+    how = "in one report" if one_report else "one report after the other"
+    vertical = 40
+    horizontal = 63 if one_report else 2 * 32
+    stream_case(listener, mouse, at + f"motion and vertical wheel {how}: {63 + vertical} counts up, no wrap",
+                0, -63, 10, 150, (0, -10 * (63 + vertical)), wheel=1, frame_rate=rate)
+    stream_case(listener, mouse, at + f"motion and horizontal wheel {how}: {63 + horizontal} counts right, no wrap",
+                63, 0, 10, 150, (10 * (63 + horizontal), 0), pan=2 * PAN_POSITIVE_SIGN, frame_rate=rate)
     stream_case(listener, mouse, at + "motion and both wheels as fast as the host polls never wrap",
-                63, -63, 30, 0, None, ((1, 30 * 126), (-30 * 103, -1)), wheel=1, pan=2 * PAN_POSITIVE_SIGN,
-                frame_rate=rate)
+                63, -63, 30, 0, None, ((1, 30 * (63 + horizontal)), (-30 * (63 + vertical), -1)), wheel=1,
+                pan=2 * PAN_POSITIVE_SIGN, frame_rate=rate)
 
 
 def test_motion_speed(api, listener, mouse) -> None:
@@ -402,6 +414,19 @@ def test_buttons(api, listener, mouse) -> None:
         require(state.presses == expected, f"expected presses {expected}", state)
         require_still(state, "the buttons")
         require_no_pulses(state, "the buttons")
+
+    if isinstance(mouse, RestMouse):
+        # `transition: tap` exists only over REST: the firmware holds the
+        # buttons for two PAL frames, long enough for a read once per frame.
+        for combination in (("left",), ("right",), ("middle",), ALL_BUTTONS):
+            with check(f"a REST tap of {'+'.join(combination)} is one press each and ends released"), \
+                    fresh(listener, mouse):
+                mouse.tap(*combination)
+                state = listener.quiet()
+                detail(str(state))
+                expected = {name: int(name in combination) for name in ALL_BUTTONS}
+                require(state.presses == expected, f"expected presses {expected}", state)
+                require(not state.held, "a button is still held", state)
 
 
 # ----------------------------------------------------------- wheel-micromys --
@@ -799,7 +824,7 @@ def telnet_session(host: str, password: str | None) -> Iterator[None]:
         time.sleep(1.0)
 
 
-def press_each_button(listener: MouseListener, mouse: PicoMouse) -> None:
+def press_each_button(listener: MouseListener, mouse: PicoMouse | RestMouse) -> None:
     for button in ALL_BUTTONS:
         mouse.buttons(button)
         listener.wait_until(lambda s, button=button: s.held == {button})
@@ -894,18 +919,24 @@ SCENARIOS = {
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     cli.add_device_arguments(parser, password=None)
-    parser.add_argument("--pico-host", help="fixture IP address; required on networks that do not "
-                        "forward broadcast between the wired test host and the Wi-Fi client")
+    parser.add_argument("--backend", choices=("rest", "pico"), default="rest",
+                        help="where the mouse comes from (default: rest)")
+    parser.add_argument("--pico-host", help="fixture IP address, for --backend pico, on networks that do "
+                        "not forward broadcast between the wired test host and the Wi-Fi client")
     parser.add_argument("--test", action="append", choices=TESTS,
                         help="run one scenario; repeat for several (default: all)")
     args = parser.parse_args()
     if tuple(SCENARIOS) != TESTS:
         raise Failure("TESTS and SCENARIOS name different scenarios")
     api = UltimateApi(args.host, args.password, args.timeout)
-    pico = Pico(args.pico_host or discover_pico())
-    with check("the Pico fixture offers a USB mouse"):
-        pico.require_mouse()
-    mouse = PicoMouse(pico)
+    pico = None
+    if args.backend == "pico":
+        pico = Pico(args.pico_host or discover_pico())
+        with check("the Pico fixture offers a USB mouse"):
+            pico.require_mouse()
+        mouse = PicoMouse(pico)
+    else:
+        mouse = RestMouse(api)
     listener = MouseListener(api)
     saved = {item: api.configs.item(CATEGORY, item).get("current") for item in (*DEFAULTS, "System Mode")}
     detail("saved settings: " + ", ".join(f"{item}={value!r}" for item, value in saved.items()))
@@ -919,7 +950,7 @@ def main() -> int:
         for name in args.test or TESTS:
             SCENARIOS[name](api, listener, mouse)
     finally:
-        for step in (mouse.release_all, pico.release_all, api.machine.release_all,
+        for step in (mouse.release_all, (pico.release_all if pico else lambda: None), api.machine.release_all,
                      lambda: [api.configs.set(CATEGORY, item, value)
                               for item, value in saved.items() if value is not None],
                      lambda: api.machine.reset(force=True)):
@@ -927,7 +958,8 @@ def main() -> int:
                 step()
             except Exception as exc:
                 detail("cleanup failure: " + format_exception(exc))
-        pico.close()
+        if pico:
+            pico.close()
     suite_ok(SUITE)
     return 0
 
