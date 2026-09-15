@@ -26,8 +26,9 @@ motion-speed
     Movement as a hand makes it: slow and precise moves, flicks whose speed
     rises to a peak and falls again in all eight directions, a square and a
     circle that come back to where they started, and a flick straight back.
-    Every movement lands exactly, and up to a peak of 48 counts per report no
-    step goes against the movement. One report beyond the 63-count clamp,
+    Up to 31 counts per report every movement lands exactly and no step goes
+    against it; faster flicks, which can put two reports into one frame, land
+    within one 1351 wrap (128 counts). One report beyond the 63-count clamp,
     Mouse Sensitivity 1 and 16, and adaptive acceleration land where the
     firmware's scaling says.
 buttons
@@ -61,7 +62,9 @@ rest-joystick
     #909), and a REST fire2 press and release on port 1 still reach the POT
     lines while the mouse is attached.
 menus
-    With the menu open on the machine's own screen, the wheel moves its
+    With a Telnet menu session open, the C64 still gets every button and wheel
+    pulse and no cursor key: that menu has its own keyboard. With the menu open
+    on the machine's own screen, the wheel moves its
     selection and the C64 gets neither buttons, pulses nor keys; that part is
     skipped when the menu freezes the C64 (Interface Type Freeze, or no HDMI
     display). Once the menu closes, the mouse reaches the C64 again.
@@ -73,6 +76,7 @@ from __future__ import annotations
 
 import argparse
 import math
+import socket
 import sys
 import threading
 import time
@@ -133,20 +137,41 @@ def configure(api: UltimateApi, **settings: object) -> None:
         api.configs.set(CATEGORY, item, value)
 
 
+# The 7-bit value both POT lines are parked on before a check.
+PARKED_POT = 24
+
+
+def park(listener: MouseListener, mouse: PicoMouse) -> None:
+    """Move the mouse so both POT lines read PARKED_POT in their low 7 bits.
+
+    A 1351 driver reads only those 7 bits, where the released joystick value
+    $80 reads as 0. A check that started from a position of 0 could not see the
+    firmware write $80 over the mouse position (issue #909).
+    """
+    state = listener.quiet()
+    # POTX follows the mouse's x; POTY moves against it.
+    dx = (PARKED_POT - (state.potx & 0x7F)) % 128
+    dy = ((state.poty & 0x7F) - PARKED_POT) % 128
+    if dx or dy:
+        mouse.move(dx, dy)
+
+
 @contextmanager
-def fresh(listener: MouseListener, mouse: PicoMouse) -> Iterator[None]:
+def fresh(listener: MouseListener, mouse: PicoMouse, parked: bool = True) -> Iterator[None]:
     """Start a check from a quiet listener with its counters at zero.
 
-    The origin is always a position the mouse itself set, which can never be
-    $80: a settings change or a machine reset can leave the POT lines at the
-    released joystick value, and a check that started there could not see the
-    firmware put them back to it.
+    The origin is a position the mouse itself set, parked away from the
+    released joystick value (see park). `parked=False` leaves the position
+    alone, for Cursor mode, where motion types keys instead, and for a caller
+    that has parked the mouse itself.
     """
+    if parked:
+        park(listener, mouse)
     mouse.move(1, 1)
     mouse.move(-1, -1)
     state = listener.quiet()
-    if (state.potx, state.poty) == (0x80, 0x80):
-        raise Failure(f"the POT lines do not follow the mouse: {state}")
+    if parked and (not (state.potx & 0x7F) or not (state.poty & 0x7F)):
+        raise Failure(f"the POT lines do not follow the mouse, or sit where $80 would not show: {state}")
     listener.reset()
     yield
 
@@ -198,9 +223,14 @@ def test_move(api, listener, mouse) -> None:
 # A hand moving the mouse: the speed rises to a peak and falls again. Each
 # factor of the peak is one step of two reports at the host's 20ms poll rate.
 FLICK_SHAPE = (0.2, 0.6, 1.0, 0.6, 0.2)
-# The fastest peak at which the suite requires every step to go the right way.
-# Faster flicks, up to the 63-count clamp, are checked only for where they land.
-STEADY_PEAK = 48
+# The USB mouse is polled every 20ms, and now and then the firmware handles two
+# reports inside one frame. Up to 31 counts per report, two of them stay within
+# the 63 counts a 1351 driver reads the right way round, so every step and the
+# landing are checked exactly. Faster flicks may lose one 1351 wrap (128
+# counts) now and then, as a real 1351 mouse moved that fast would, so they
+# are checked to land within that.
+STEADY_PEAK = 31
+ONE_WRAP = 128
 
 
 def flick(dx: int, dy: int) -> list[tuple[int, int]]:
@@ -209,8 +239,8 @@ def flick(dx: int, dy: int) -> list[tuple[int, int]]:
 
 
 def movement_case(listener, mouse, label: str, steps: list[tuple[int, int]], reports_per_step: int = 2,
-                  monotonic: bool = True, expected: tuple[int, int] | None = None) -> None:
-    """Send `steps` as a hand would and require the exact landing position.
+                  monotonic: bool = True, expected: tuple[int, int] | None = None, tolerance: int = 0) -> None:
+    """Send `steps` as a hand would and require where they land, within `tolerance` counts.
 
     `expected` defaults to the sum of the steps, which is where they land at
     Mouse Sensitivity 8.
@@ -221,7 +251,8 @@ def movement_case(listener, mouse, label: str, steps: list[tuple[int, int]], rep
         if expected is None:
             expected = (sum(x for x, _ in steps) * reports_per_step, sum(y for _, y in steps) * reports_per_step)
         detail(str(state))
-        require((state.x, state.y) == expected, f"expected position {expected}", state)
+        require(abs(state.x - expected[0]) <= tolerance and abs(state.y - expected[1]) <= tolerance,
+                f"expected position {expected}" + (f" within {tolerance} counts" if tolerance else ""), state)
         if monotonic:
             require_monotonic(state, sum(x for x, _ in steps), sum(y for _, y in steps))
 
@@ -262,25 +293,26 @@ def test_motion_speed(api, listener, mouse) -> None:
     configure(api, Mouse_Mode="Mouse")
     movement_case(listener, mouse, "slow and precise: 1 count per report", [(1, 0)] * 30, 3)
     movement_case(listener, mouse, "slow and precise the other way, diagonally", [(-1, 1)] * 30, 3)
-    for peak in (16, 32, STEADY_PEAK, REPORT_CLAMP):
+    for peak in (16, STEADY_PEAK, 48, REPORT_CLAMP):
         steady = peak <= STEADY_PEAK
+        tolerance = 0 if steady else ONE_WRAP
         for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (-1, 1), (1, -1), (-1, -1)):
             if not steady and dx and dy:
                 continue
-            movement_case(listener, mouse,
-                          f"a flick peaking at {peak} counts per report towards {dx},{dy} lands exactly"
-                          + ("" if steady else " (landing only)"),
-                          flick(dx * peak, dy * peak), monotonic=steady)
+            outcome = "lands exactly, every step forward" if steady else "lands within one wrap"
+            movement_case(listener, mouse, f"a flick peaking at {peak} counts per report towards {dx},{dy}: {outcome}",
+                          flick(dx * peak, dy * peak), monotonic=steady, tolerance=tolerance)
     movement_case(listener, mouse, "a square at 12 counts per report comes back to where it started",
                   [(12, 0)] * 4 + [(0, 12)] * 4 + [(-12, 0)] * 4 + [(0, -12)] * 4, monotonic=False)
     circle = [(round(20 * math.cos(math.tau * i / 16)), round(20 * math.sin(math.tau * i / 16))) for i in range(16)]
     movement_case(listener, mouse, "a circle at 20 counts per report comes back to where it started",
                   circle, monotonic=False)
     movement_case(listener, mouse, "a flick straight back comes back to where it started",
-                  flick(40, 0) + flick(-40, 0), monotonic=False)
+                  flick(STEADY_PEAK, 0) + flick(-STEADY_PEAK, 0), monotonic=False)
     with check("one report beyond the clamp moves by 63 counts (clampDelta)"), fresh(listener, mouse):
-        mouse.move(127, 0)
-        mouse.move(0, -127)
+        # move() splits large moves; a stream of one sends the report as it is.
+        mouse.stream(dx=127, count=1)
+        mouse.stream(dy=-127, count=1)
         state = listener.quiet()
         detail(str(state))
         require((state.x, state.y) == (REPORT_CLAMP, -REPORT_CLAMP), "expected position (63, -63)", state)
@@ -300,14 +332,18 @@ def test_motion_speed(api, listener, mouse) -> None:
         require((state.x, state.y) == (400, REPORT_CLAMP), "expected position (400, 63)", state)
     # Adaptive acceleration scales by 384/256 to 576/256 depending on recent
     # speed, before the clamp; adaptive_acceleration_total follows it.
-    for dx, dy, count in ((10, 10, 40), (30, 30, 20)):
+    # The faster case sends its reports 40ms apart, so no two share a frame.
+    for dx, dy, count, interval_ms in ((10, 10, 40, 0), (30, 30, 20, 40)):
         configure(api, Mouse_Mode="Mouse")
-        # A report with acceleration off clears the speed history.
+        # A report with acceleration off clears the speed history; park there too,
+        # so no report but fresh()'s two moves comes before the check.
         mouse.move(1, 1)
+        park(listener, mouse)
         configure(api, Mouse_Mode="Mouse", Mouse_Acceleration="Adaptive")
         expected = adaptive_acceleration_total(dx, dy, count)
-        with check(f"adaptive acceleration: {count} x {dx},{dy} counts lands at {expected}"), fresh(listener, mouse):
-            mouse.path([(dx, dy)] * (count // 2), 2)
+        with check(f"adaptive acceleration: {count} x {dx},{dy} counts lands at {expected}"), \
+                fresh(listener, mouse, parked=False):
+            mouse.stream(dx=dx, dy=dy, count=count, interval_ms=interval_ms)
             state = listener.quiet()
             detail(str(state))
             require((state.x, state.y) == expected, f"expected position {expected}", state)
@@ -474,7 +510,8 @@ def wheel_cursor_cases(api, listener, mouse, mode: str) -> None:
         for vertical, horizontal in ((1, 0), (-2, 0), (0, 1), (0, -2)):
             expected = cursor_expectation(vertical, horizontal, sensitivity)
             with check(f"{mode}, sensitivity {sensitivity}: wheel {vertical}/{horizontal} "
-                       f"types cursor keys towards {max(expected, key=expected.get)}"), fresh(listener, mouse):
+                       f"types cursor keys towards {max(expected, key=expected.get)}"), \
+                    fresh(listener, mouse, parked=mode != "Cursor"):
                 mouse.wheel(vertical=vertical, horizontal=horizontal, gap_ms=300)
                 state = listener.quiet()
                 detail(str(state))
@@ -503,13 +540,15 @@ def test_cursor_mode(api, listener, mouse) -> None:
                              (0, -2, {"up": 1}), (1, 0, {"right": 1})):
         keys = dict.fromkeys(("up", "down", "left", "right"), 0)
         keys.update(expected)
-        with check(f"Cursor: motion {dx},{dy} types {expected} and leaves the pointer"), fresh(listener, mouse):
+        with check(f"Cursor: motion {dx},{dy} types {expected} and leaves the pointer"), \
+                fresh(listener, mouse, parked=False):
             mouse.move(dx, dy)
             state = listener.quiet()
             detail(str(state))
             require_cursor_keys(state, keys)
             require_still(state, "motion in Cursor mode")
-    with check("Cursor: motion far faster than the keys can be typed leaves no key stuck"), fresh(listener, mouse):
+    with check("Cursor: motion far faster than the keys can be typed leaves no key stuck"), \
+            fresh(listener, mouse, parked=False):
         mouse.path(flick(REPORT_CLAMP, 0), 2)
         state = listener.quiet(timeout=30)
         detail(str(state))
@@ -662,11 +701,57 @@ def test_rest_joystick(api, listener, mouse) -> None:
 
 # ------------------------------------------------------------------- menus --
 
+TELNET_PORT = 23
 MENU_TIMEOUT_SECONDS = 5.0
+MENU_DRAW_SECONDS = 1.5
 UI_CATEGORY = "User Interface Settings"
 # At 50Hz a two-second menu visit is about 100 frames; far fewer means the menu
 # froze the machine.
 MENU_RUNNING_FRAMES = 25
+
+
+def _telnet_read(connection: socket.socket, seconds: float) -> bytes:
+    """Everything the server sends within `seconds`."""
+    received = b""
+    deadline = time.monotonic() + seconds
+    connection.settimeout(0.1)
+    while time.monotonic() < deadline:
+        try:
+            chunk = connection.recv(4096)
+        except TimeoutError:
+            continue
+        if not chunk:
+            raise Failure("the Telnet server closed the session")
+        received += chunk
+    return received
+
+
+@contextmanager
+def telnet_session(host: str, password: str | None) -> Iterator[None]:
+    """Hold a Telnet menu session open on the machine for the body.
+
+    Logs in when the machine asks for its network password, and returns only
+    once the menu has drawn itself (VT100 escape sequences), so the body runs
+    while the remote menu is active.
+    """
+    connection = socket.create_connection((host, TELNET_PORT), timeout=5)
+    try:
+        received = _telnet_read(connection, 1.0)
+        if b"Password:" in received:
+            if not password:
+                raise Failure("the Telnet server asks for a password; pass it with -p")
+            connection.sendall(password.encode() + b"\r\n")
+            received = _telnet_read(connection, MENU_DRAW_SECONDS)
+            if b"Incorrect password" in received:
+                raise Failure("the Telnet server refused the password")
+        if b"\x1b[" not in received:
+            received += _telnet_read(connection, MENU_DRAW_SECONDS)
+        if b"\x1b[" not in received:
+            raise Failure("the Telnet session did not draw a menu")
+        yield
+    finally:
+        connection.close()
+        time.sleep(1.0)
 
 
 def press_each_button(listener: MouseListener, mouse: PicoMouse) -> None:
@@ -687,6 +772,19 @@ def wait_menu(api: UltimateApi, open_: bool) -> None:
 
 def test_menus(api, listener, mouse) -> None:
     configure(api)
+    with check("with a Telnet menu session open, the C64 still gets buttons and wheel, and no keys"), \
+            fresh(listener, mouse):
+        with telnet_session(api.host, api.rest.password):
+            press_each_button(listener, mouse)
+            mouse.wheel(vertical=2)
+            mouse.wheel(vertical=-1)
+            state = listener.quiet()
+        detail(str(state))
+        require(state.presses == dict.fromkeys(ALL_BUTTONS, 1), "expected one press of each button", state)
+        require((state.wheel_up, state.wheel_down) == (2, 1), "expected 2 up and 1 down pulses", state)
+        require_no_cursor_keys(state, "the mouse during a Telnet session")
+        require_still(state, "the mouse during a Telnet session")
+
     # With Interface Type Freeze, or with no HDMI display attached, the menu
     # stops the C64 and the listener with it, so what the C64 got under the menu
     # is checked only while it is seen to keep running.
