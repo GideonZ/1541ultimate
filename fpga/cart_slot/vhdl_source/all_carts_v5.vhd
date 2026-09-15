@@ -74,6 +74,13 @@ architecture gideon of all_carts_v5 is
     signal mode_bits    : std_logic_vector(2 downto 0);
     signal ef_write     : std_logic := '0';
     signal georam_bank  : std_logic_vector(15 downto 0);
+
+    -- Magic Desk Plus: a 256 byte window at DF00 onto either 128K of SRAM or an
+    -- 8K/32K EEPROM, selected by DE03. DE01 picks the page inside it.
+    signal mdp_page     : std_logic_vector(7 downto 0);
+    signal mdp_half     : std_logic; -- DE03 bit 0: which 64K half of the SRAM
+    signal mdp_sram     : std_logic; -- DE03 bit 5: 1 = SRAM, 0 = EEPROM
+    signal mdp_page_m   : std_logic_vector(7 downto 0);
     
     signal freeze_act_d : std_logic;
     signal cart_en      : std_logic;
@@ -114,6 +121,7 @@ architecture gideon of all_carts_v5 is
     -- Simple bankers with RAM
     constant c_pagefox      : std_logic_vector(4 downto 0) := "10000";
     constant c_easy_flash   : std_logic_vector(4 downto 0) := "10001";
+    constant c_magic_desk_p : std_logic_vector(4 downto 0) := "10010"; -- Magic Desk Plus
 
     -- Freezers
     constant c_fc           : std_logic_vector(4 downto 0) := "11000";
@@ -128,7 +136,7 @@ architecture gideon of all_carts_v5 is
     constant c_serve_rom_rr : std_logic_vector(0 to 7) := "11011111";
     constant c_serve_io_rr  : std_logic_vector(0 to 7) := "10101111";
     
-    type t_address_select is ( ROM, RAM, GEO );
+    type t_address_select is ( ROM, RAM, GEO, MDP );
     signal addr_map         : t_address_select;
 
     -- alias
@@ -141,6 +149,12 @@ architecture gideon of all_carts_v5 is
     signal georam_mask      : std_logic_vector(15 downto 0);
 
 begin
+    -- An 8K EEPROM has 32 pages and ignores the upper bits of DE01, a 32K one
+    -- has 128 and ignores bit 7. The SRAM uses all 256 pages of its half.
+    mdp_page_m <= mdp_page when mdp_sram = '1' else
+                  mdp_page and X"7F" when variant(0) = '1' else
+                  mdp_page and X"1F";
+
     with size_ctrl select georam_mask <=
         "0000000111111111" when "000",
         "0000001111111111" when "001",
@@ -186,6 +200,9 @@ begin
                 bank_bits    <= (others => '0');
                 ram_bank     <= (others => '0');
                 georam_bank  <= (others => '0');
+                mdp_page     <= (others => '0');
+                mdp_half     <= '0'; -- first 64K portion
+                mdp_sram     <= '0'; -- EEPROM is active at power-up
                 ef_write     <= '0';
                 allow_bank   <= '0';
                 do_io2       <= '1';
@@ -338,6 +355,38 @@ begin
                 rom_mode  <= "00"; -- 8K banks
                 
             
+            when c_magic_desk_p =>
+                -- Magic Desk Plus. The ROM half is a Magic Desk with one more
+                -- bank bit: DE00 bits 0..6 select one of 128 8K banks and bit 7
+                -- disables the ROM. On top of that sit three things the plain
+                -- Magic Desk does not have: a page register at DE01, a control
+                -- register at DE03, and a 256 byte window at DF00 onto either
+                -- 128K of SRAM or an 8K/32K EEPROM.
+                --
+                -- The window stays served whether or not the ROM is switched
+                -- off, which is what the hardware does and what its file system
+                -- relies on.
+                if io_write='1' and io_addr(8)='0' then -- DE00 range
+                    case io_addr(7 downto 0) is
+                    when X"00" =>
+                        bank_bits(21 downto 14) <= '0' & io_wdata(6 downto 0);
+                        mode_bits(0) <= io_wdata(7); -- ROM disable
+                    when X"01" =>
+                        mdp_page <= io_wdata;
+                    when X"03" =>
+                        mdp_half <= io_wdata(0);
+                        mdp_sram <= io_wdata(5);
+                    when others =>
+                        null;
+                    end case;
+                end if;
+                game_n    <= '1';
+                exrom_n   <= mode_bits(0);
+                serve_rom <= '1';
+                serve_io2 <= '1';
+                cart_en   <= not mode_bits(0);
+                rom_mode  <= "00"; -- 8K banks
+
             when c_ocean_16K =>
                 if io_write='1' and io_addr(8)='0' then -- DE00 range
                     bank_bits(21 downto 14) <= io_wdata;
@@ -741,6 +790,12 @@ begin
                 addr_map <= GEO;
             end if;
 
+        when c_magic_desk_p =>
+            if slot_addr(15 downto 8)=X"DF" then
+                allow_write <= '1';
+                addr_map <= MDP;
+            end if;
+
         when c_128 =>
             if slot_addr(15 downto 8)=X"DF" and slot_addr(7)='1' and variant(2)='1' then
                 allow_write <= '1';
@@ -761,13 +816,21 @@ begin
     end process;
     
     -- Calculate the final memory address
-    process(addr_map, rom_addr, ram_addr, kernal_area, georam_bank, slot_addr) 
+    process(addr_map, rom_addr, ram_addr, kernal_area, georam_bank, slot_addr,
+            mdp_sram, mdp_half, mdp_page_m) 
     begin
         case addr_map is
         when RAM =>
             mem_addr_i <= ram_addr;
         when GEO =>
             mem_addr_i <= g_georam_base(27 downto 24) & georam_bank & slot_addr(7 downto 0);
+        when MDP =>
+            -- Shares the region the REU and GeoRAM use, so no target needs a
+            -- memory area of its own for this. The EEPROM occupies the first
+            -- 128K of it and the SRAM the second, which keeps both inside the
+            -- 256K every target has there.
+            mem_addr_i <= g_georam_base(27 downto 24) & "000000" & mdp_sram &
+                          mdp_half & mdp_page_m & slot_addr(7 downto 0);
         when others =>        
             mem_addr_i <= rom_addr;
         end case;                
