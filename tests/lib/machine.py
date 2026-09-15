@@ -248,6 +248,19 @@ MEMORY_API_REJECTS_INVALID_ADDRESS = _fix(
     "hexadecimal, rather than parsing it as $0000 and acting there",
     (C64U, U2))
 
+# What the bit 6 check in tests/e2e/io/c64/comal80_cartridge_test.py asserts.
+# The fix is in the cartridge logic of the FPGA image, not in the application.
+# The Ultimate 64 images ship prebuilt in external/, so an Ultimate 64 lacks it
+# until they are rebuilt. The Ultimate II family's images are built from fpga/
+# with the firmware, and the C64 Ultimate's image comes from another tree; both
+# are listed so the check cannot fail a routine run before they are measured.
+# Delete a kind once `--assume-fix` passes on it.
+COMAL80_CARTRIDGE_OFF_BIT = _fix(
+    "comal80-cartridge-off-bit",
+    "a $DE00 write with bit 6 set switches a COMAL 80 cartridge off, rather "
+    "than leaving it mapped",
+    (U64, U2, C64U))
+
 # Every fix at once, for a sweep that asks whether the lagging line has caught
 # up rather than about one behaviour.
 ASSUME_ALL = "all"
