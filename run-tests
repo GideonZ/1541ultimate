@@ -464,6 +464,14 @@ SUITES: Sequence[Suite] = (
     # stream, and reboots the machine afterwards to remove the cartridge.
     Suite("e2e", "ultimax-cartridge", "tests/e2e/io/c64/ultimax_cartridge_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
+    # RoboCop 2 and Shadow of the Beast read Ocean banks 16 to 31 at $A000, but
+    # every type 5 CRT was started in 8K mode, where $A000 never shows the
+    # cartridge, so they started to a black screen. The suite builds a 32-bank
+    # type 5 CRT in code with banks 16 to 31 listed at $A000, and reads each
+    # bank's marker byte back from screen RAM. It reboots the machine
+    # afterwards to remove the cartridge.
+    Suite("e2e", "ocean-cartridge", "tests/e2e/io/c64/ocean_cartridge_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
     # Guards GideonZ/commodore#1 (c66ef028): a Reset, a Reboot or a C=+R taken
     # from the menu has to run after the UI has torn down, so the C64 comes
     # back to a boot screen with none of the menu's characters on it. The

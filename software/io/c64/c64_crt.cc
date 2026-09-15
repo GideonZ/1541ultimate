@@ -284,6 +284,10 @@ SubsysResultCode_e C64_CRT::read_chip_packet(File *f, t_crt_chip_chunk *chunk)
         }
     }
 
+    if (load == 0xA000) {
+        a000_seen = true; // an Ocean CRT with $A000 chips needs 16K mode
+    }
+
     // if ((load == 0xA000) && !a000_seen) {
     //     a000_seen = true;
     //     if (bank > 0) { // strange; first time A000 is seen, it is not bank 0.
@@ -352,8 +356,9 @@ void C64_CRT::auto_mirror(void)
     while (size <= highest_bank) {
         size <<= 1;
     }
-    // we support 1MB of cart memory, so max 64 banks
-    while(size < 64) {
+    // mirror up to the end of the cart memory, which is what the FPGA can address
+    int max_banks = max_cart / bank_multiplier;
+    while(size < max_banks) {
         // mirror the data
         printf("Mirroring %6x bytes from %p to %p.\n", size * bank_multiplier, cart_memory, cart_memory + size * bank_multiplier);
         memcpy(cart_memory + size * bank_multiplier, cart_memory, size * bank_multiplier);
