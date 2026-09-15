@@ -8,6 +8,7 @@
 #include "network_interface.h"
 #include "socket.h"
 #include "netdb.h"
+#include "u64_config.h"
 #include "userinterface.h"
 #include "profiler.h"
 #include "init_function.h"
@@ -38,6 +39,10 @@ struct t_cfg_definition stream_cfg[] = {
 DataStreamer :: DataStreamer()
 {
     my_ip = 0;
+    palette_stream_requested = false;
+    palette_task_handle = NULL;
+    palette_socket = -1;
+    palette_socket_ip = 0;
     memset(streams, 0, 4*sizeof(stream_config_t));
 
     cfg = ConfigManager :: getConfigManager()->register_store(0x44617461, "Data Streams", stream_cfg, NULL);
@@ -47,12 +52,19 @@ DataStreamer :: DataStreamer()
     for (int i=0; i < 4; i++) {
         timers[i] = xTimerCreate("StreamTimer", 100, pdFALSE, (void *)i, DataStreamer :: S_timer);
     }
+    if (xTaskCreate(DataStreamer :: S_palette_task, "VIC Palette", configMINIMAL_STACK_SIZE,
+                    this, PRIO_NETSERVICE, &palette_task_handle) != pdPASS) {
+        palette_task_handle = NULL;
+        puts("Could not create VIC palette stream task");
+    }
 }
 
 // This should never be called
 DataStreamer :: ~DataStreamer()
 {
-
+    if (palette_socket >= 0) {
+        lwip_close(palette_socket);
+    }
 }
 
 DataStreamer *dataStreamer;
@@ -84,6 +96,11 @@ void DataStreamer :: S_timer(TimerHandle_t a)
         stream->enable = 0;
         dataStreamer->calculate_udp_headers(streamID);
     }
+}
+
+void DataStreamer :: S_palette_task(void *context)
+{
+    ((DataStreamer *)context)->paletteTask();
 }
 
 SubsysResultCode_e DataStreamer :: startStream(SubsysCommand *cmd)
@@ -218,6 +235,17 @@ SubsysResultCode_e DataStreamer :: startStream(SubsysCommand *cmd)
     }
     stream->enable = 1;
 
+    if (streamID == 0) {
+        const bool requested = strcmp(cmd->filename.c_str(), "1") == 0;
+        taskENTER_CRITICAL();
+        palette_stream_requested = requested;
+        taskEXIT_CRITICAL();
+
+        if (requested && palette_task_handle) {
+            xTaskNotifyGive(palette_task_handle);
+        }
+    }
+
     // start stream!
     calculate_udp_headers(streamID);
 
@@ -245,6 +273,11 @@ SubsysResultCode_e DataStreamer :: stopStream(SubsysCommand *cmd)
     }
     stream_config_t *stream = &streams[streamID];
     stream->enable = 0;
+    if (streamID == 0) {
+        taskENTER_CRITICAL();
+        palette_stream_requested = false;
+        taskEXIT_CRITICAL();
+    }
     calculate_udp_headers(streamID);
     return SSRET_OK;
 }
@@ -282,7 +315,7 @@ void DataStreamer :: update_task_items(bool writablePath)
 void DataStreamer :: send_udp_packet(uint32_t ip, uint16_t port)
 {
     int sockfd;
-    static struct sockaddr_in server;
+    struct sockaddr_in server;
 
     sockfd = socket(AF_INET, SOCK_DGRAM, 0);
     if (sockfd < 0)
@@ -303,6 +336,106 @@ void DataStreamer :: send_udp_packet(uint32_t ip, uint16_t port)
     }
     // close the socket again
     lwip_close(sockfd);
+}
+
+bool DataStreamer :: sendVicPalette()
+{
+    uint32_t source_ip;
+    uint32_t dest_ip;
+    uint16_t dest_port;
+    taskENTER_CRITICAL();
+    const bool requested = palette_stream_requested && streams[0].enable;
+    source_ip = my_ip;
+    dest_ip = streams[0].dest_ip;
+    dest_port = streams[0].dest_port;
+    taskEXIT_CRITICAL();
+
+    if (!requested || !source_ip || !dest_ip || !dest_port) {
+        return false;
+    }
+
+    // LwIP may route unicast over another active interface, so let it choose
+    // that packet's source. Multicast keeps the VIC source for client filtering.
+    const uint32_t socket_ip = (dest_ip & 0x000000F8) == 0x000000E8 ? source_ip : 0;
+    if ((palette_socket < 0) || (palette_socket_ip != socket_ip)) {
+        if (palette_socket >= 0) {
+            lwip_close(palette_socket);
+        }
+        palette_socket = socket(AF_INET, SOCK_DGRAM, 0);
+        palette_socket_ip = 0;
+        if (palette_socket < 0) {
+            return false;
+        }
+        if (socket_ip) {
+            struct sockaddr_in local;
+            memset(&local, 0, sizeof(local));
+            local.sin_family = AF_INET;
+            local.sin_addr.s_addr = socket_ip;
+            if (bind(palette_socket, (const struct sockaddr *)&local, sizeof(local)) < 0) {
+                lwip_close(palette_socket);
+                palette_socket = -1;
+                return false;
+            }
+        }
+        palette_socket_ip = socket_ip;
+    }
+
+    uint8_t packet[60] = { 0 };
+    uint8_t rgb[16][3];
+    const uint16_t generation = U64Config::get_palette_rgb(rgb);
+    packet[0] = (uint8_t)generation;
+    packet[1] = (uint8_t)(generation >> 8);
+    packet[4] = 239;  // reserved line number
+    packet[6] = 0x80; // 384 pixels per line, little endian
+    packet[7] = 0x01;
+    packet[8] = 1;    // one palette
+    packet[9] = 4;    // four bits per VIC color index
+    packet[10] = 1;   // palette packet type indicator
+    memcpy(packet + 12, rgb, sizeof(rgb));
+
+    struct sockaddr_in destination;
+    memset(&destination, 0, sizeof(destination));
+    destination.sin_family = AF_INET;
+    destination.sin_addr.s_addr = dest_ip;
+    destination.sin_port = htons(dest_port);
+    if (sendto(palette_socket, packet, sizeof(packet), 0,
+               (const struct sockaddr *)&destination, sizeof(destination)) < 0) {
+        lwip_close(palette_socket);
+        palette_socket = -1;
+        palette_socket_ip = 0;
+        return false;
+    }
+    return true;
+}
+
+void DataStreamer :: vicPaletteChanged()
+{
+    if (palette_task_handle) {
+        xTaskNotifyGive(palette_task_handle);
+    }
+}
+
+void DataStreamer :: paletteTask()
+{
+    const TickType_t repeat_ticks = pdMS_TO_TICKS(1000);
+    // Twenty milliseconds is longer than one PAL or NTSC frame, so even a
+    // burst of palette writes adds at most one metadata packet per video frame.
+    const TickType_t minimum_ticks = pdMS_TO_TICKS(20);
+    TickType_t last_send = 0;
+
+    while (true) {
+        const uint32_t notified = ulTaskNotifyTake(pdTRUE, repeat_ticks);
+        if (notified && last_send) {
+            const TickType_t now = xTaskGetTickCount();
+            const TickType_t elapsed = now - last_send;
+            if (elapsed < minimum_ticks) {
+                vTaskDelay(minimum_ticks - elapsed);
+            }
+        }
+        if (sendVicPalette()) {
+            last_send = xTaskGetTickCount();
+        }
+    }
 }
 
 
