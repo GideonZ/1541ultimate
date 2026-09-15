@@ -131,6 +131,17 @@ static bool all_ff(const uint8_t *p, uint32_t n)
     return std::all_of(p, p + n, [](uint8_t b) { return b == 0xFF; });
 }
 
+// A 256K Ocean image as VICE's cartconv writes it: banks 0 to 15 at $8000 and
+// banks 16 to 31 at $A000. The chips at $A000 need 16K mode.
+static Crt ocean_256k(void)
+{
+    Crt crt(5);
+    for (int b = 0; b < 32; b++) {
+        crt.chip(b, b < 16 ? 0x8000 : 0xA000, 0x2000);
+    }
+    return crt;
+}
+
 // The cartridge logic and I/O restrictions each CRT type selects.
 static void test_cartridge_types(void)
 {
@@ -155,6 +166,7 @@ static void test_cartridge_types(void)
         { "Final Cartridge III+",    Crt(3).banks(LARGE, 0x8000, 0x4000),                 CART_TYPE_FC3PLUS,         CART_PROHIBIT_IO, 0 },
         { "Simons Basic",            Crt(4).banks(2, 0x8000, 0x2000),                     CART_TYPE_SBASIC,          CART_PROHIBIT_DEXX, 0 },
         { "Ocean, chips at $8000",   Crt(5).banks(LARGE, 0x8000, 0x2000),                 CART_TYPE_OCEAN_8K,        CART_PROHIBIT_DEXX, 0 },
+        { "Ocean, 256K with chips at $A000", ocean_256k(),                                CART_TYPE_OCEAN_16K | VARIANT_3, CART_PROHIBIT_DEXX, 0 },
         { "Super Games",             Crt(8).banks(SMALL, 0x8000, 0x4000),                 CART_TYPE_SUPERGAMES,      CART_PROHIBIT_DFXX, 0 },
         { "Atomic Power",            Crt(9).banks(SMALL, 0x8000, 0x2000),                 CART_TYPE_NORDIC,          CART_PROHIBIT_IO, CART_WMIRROR | CART_DYNAMIC },
         { "Epyx FastLoad",           Crt(10).banks(1, 0x8000, 0x2000),                    CART_TYPE_EPYX,            CART_PROHIBIT_IO, 0 },
