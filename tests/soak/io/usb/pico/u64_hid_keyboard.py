@@ -23,12 +23,13 @@ class U64Keyboard(HIDInterface):
         self.reports_sent = 0
         self._last_sent = time.ticks_ms()
 
-    def start(self):
+    def start(self, *siblings):
         # Configure before USB comes up (from boot.py), so the U64 sees this
         # HID interface during its *first* enumeration.  Retain CDC for
-        # provisioning/recovery: U64 walks every interface and claims this
-        # keyboard-only HID interface (class 03) while ignoring CDC (02/0A).
-        usb.device.get().init(self, builtin_driver=True)
+        # provisioning/recovery: U64 walks every interface and claims the
+        # HID interfaces (class 03) while ignoring CDC (02/0A).  `siblings`
+        # are further interfaces of the same device, such as the test mouse.
+        usb.device.get().init(self, *siblings, builtin_driver=True)
 
     def set_key(self, key):
         self.report[2] = key or 0
@@ -52,6 +53,7 @@ class U64Keyboard(HIDInterface):
             self.send_now()
 
 
-# Assigned by boot.py.  Keeping it here avoids importing boot.py a second time
-# when main.py starts.
+# Assigned by boot.py.  Keeping them here avoids importing boot.py a second
+# time when main.py starts.
 keyboard = None
+mouse = None

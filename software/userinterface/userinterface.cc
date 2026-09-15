@@ -149,6 +149,7 @@ UserInterface :: UserInterface(const char *title, bool use_logo) : title(title)
     screen = NULL;
     doBreak = false;
     available = false;
+    remote = false;
     color_sel_bg = 0;
     filename_overflow_squeeze = 0;
     menu_response_to_action = MENU_NOP;
@@ -179,6 +180,9 @@ void UserInterface :: set_available(bool enable)
         return;
     }
     available = enable;
+    if (remote) {
+        return;
+    }
     portENTER_CRITICAL();
     if (enable) {
         active_user_interface_count++;
@@ -264,6 +268,7 @@ void UserInterface :: set_screen(Screen *s)
 
 void UserInterface :: run_remote(void)
 {
+    remote = true;
     host->take_ownership(this);
     appear();
     set_available(true);

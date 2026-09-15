@@ -45,7 +45,7 @@ public:
 	// pointer; get_char()/transmit() set actual_socket to -1 on disconnect, so this
 	// is how run_remote() and the UI menu loops detect a gone telnet client. Without
 	// the override the base returns true forever and a disconnected session never
-	// leaves run_remote() (leaked task/UI graph, pinned active_user_interface_count).
+	// leaves run_remote() (leaked task and UI graph).
 	bool is_alive(void) { return actual_socket >= 0; }
     void charout(int c)
     {
