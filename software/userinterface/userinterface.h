@@ -66,9 +66,6 @@ private:
     bool initialized;
     bool doBreak;
     bool available;
-    // A menu on a network stream (Telnet). It has its own keyboard, so it does
-    // not count as a menu the USB keyboard and mouse, or REST, are driving.
-    bool remote;
     mstring title;
     UIObject *ui_objects[MAX_UI_OBJECTS];
     UIStatusBox *status_box;
@@ -138,7 +135,6 @@ public:
     void run_machine_monitor(MemoryBackend *backend);
     void swapDisk(void);
     void send_keystroke(int key);
-    // A menu is open on the machine's own screen. Telnet menus do not count.
     static bool anyMenuActive(void);
     enum {
         ACTIVE_SCREEN_MATRIX_WIDTH = 40,

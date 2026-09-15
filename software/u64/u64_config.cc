@@ -43,7 +43,6 @@ extern "C" {
 #include "hdmi_scan.h"
 #include "usb_hid.h"
 #include "usb_hid_config.h"
-#include "joystick_output.h"
 #include "monitor_init.h"
 
 // TODO: This doesn't belong here.
@@ -1110,9 +1109,6 @@ void U64Config :: effectuate_settings()
         systemMode = (t_video_mode)cfg->get_value(CFG_SYSTEM_MODE);
         doPll = true;
     }
-    // A 1351 driver reads the mouse once per frame.
-    JoystickOutput::instance().setMouseFrameRate(
-        ((systemMode == e_NTSC_60) || (systemMode == e_PAL_60) || (systemMode == e_PAL_60_lock)) ? 60 : 50);
 
     const char *palette = cfg->get_string(CFG_PALETTE);
     if (strlen(palette)) {

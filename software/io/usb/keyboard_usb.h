@@ -20,14 +20,6 @@ static const int USB_KEY_BUFFER_SIZE = 64;
 // so it needs one slot more than the largest batch the input API accepts (64).
 static const int USB_INJECTED_BUFFER_SIZE = USB_KEY_BUFFER_SIZE + 1;
 static const int REST_TAP_QUEUE_SIZE = 128;
-// getch() calls that an injected cursor key stays down on the C64 matrix, and
-// then stays up before the next injected key starts. With the menu closed the
-// user interface polls every 3 ticks, and a 3-tick delay can end after just over
-// two ticks, so each window lasts at least about 25ms: longer than a PAL frame,
-// so the KERNAL scan and a program that scans once per frame see every press
-// and every release, and two presses of the same key are not read as one.
-static const int USB_INJECTED_MATRIX_HOLD_CALLS = 2;
-static const int USB_INJECTED_MATRIX_GAP_CALLS = 2;
 // Ticks of the 20ms REST input timer that a queued tap stays released before
 // the next one starts, so the KERNAL scan that follows sees the key up and
 // treats the next press as a new key rather than a held one. Declared here
@@ -92,7 +84,6 @@ class Keyboard_USB : public Keyboard
     uint16_t last_report_time;
     bool repeat_stale;
     int  injected_matrix_hold;
-    int  injected_matrix_gap;
 	void applyMatrixState(void);
 	void clearInjectedMatrixState(void);
 	void setInjectedMatrixKey(int key);
