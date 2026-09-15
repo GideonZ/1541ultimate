@@ -351,7 +351,7 @@ begin
 
             when c_system3 => -- 16K, only 8K used?
                 if (io_write='1' or io_read='1') and io_addr(8)='0' then -- DE00 range
-                    bank_bits(21 downto 14) <= io_wdata;
+                    bank_bits(21 downto 14) <= "00" & io_addr(5 downto 0); -- max 64 banks of 8K
                     -- turn on
                     mode_bits(0) <= '0';
                 -- elsif io_read='1' and io_addr(8)='0' then

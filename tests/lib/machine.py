@@ -248,6 +248,20 @@ MEMORY_API_REJECTS_INVALID_ADDRESS = _fix(
     "hexadecimal, rather than parsing it as $0000 and acting there",
     (C64U, U2))
 
+# What tests/e2e/io/c64/c64gs_cartridge_test.py asserts. The fix is in the
+# cartridge logic of the FPGA image, not in the application. The Ultimate 64
+# images ship prebuilt in external/, so an Ultimate 64 lacks it until they are
+# rebuilt. Measured there only, with locally built cores that differ in that
+# one change. The Ultimate II family's images are built from fpga/ with the
+# firmware, and the C64 Ultimate's image comes from another tree; both are
+# listed so the suite cannot fail a routine run before they are measured.
+# Delete a kind once `--assume-fix` passes on it.
+C64GS_BANK_FROM_ADDRESS = _fix(
+    "c64gs-bank-from-address",
+    "a C64 Game System cartridge selects the bank named by the address of an "
+    "IO1 read or write, rather than the byte on the data bus",
+    (U64, U2, C64U))
+
 # What the bit 6 check in tests/e2e/io/c64/comal80_cartridge_test.py asserts.
 # The fix is in the cartridge logic of the FPGA image, not in the application.
 # The Ultimate 64 images ship prebuilt in external/, so an Ultimate 64 lacks it
