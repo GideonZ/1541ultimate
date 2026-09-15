@@ -51,6 +51,14 @@ class IecDrive : public IecSlave, SubSystem, ObjectWithMenu, ConfigurableObject
     } myActions;
 
     JSON_Object *form_fields;
+
+    // CR-6: the IEC task, the GUI, the REST server and the UCI target all reach the channels
+    // and the partitions. Each entry point holds this recursive lock while it does, and
+    // lock_depth counts how deep the holder is.
+#ifndef RUNS_ON_PC
+    SemaphoreHandle_t mutex;
+#endif
+    int lock_depth;
 public:
     IecDrive();
     virtual ~IecDrive();
@@ -85,6 +93,8 @@ public:
     t_channel_retval pop_more(int);
 
     // Local Functions
+    void set_device_number(int dev);
+    bool log_every_operation(void);
     void set_error(int err, int track, int sector);
     void set_error_fres(FRESULT fres);
 
@@ -96,8 +106,21 @@ public:
     void add_partition(int p, const char *path, const char *name);
     void load_partitions(const char *p, const char *f);
 
+    void lock(void);
+    void unlock(void);
+
     friend class IecChannel;
     friend class IecCommandChannel;
+    friend int iec_drive_lock_depth(IecDrive *drive);
+};
+
+// Holds a drive's lock for as long as it is in scope.
+class IecDriveLock
+{
+    IecDrive *drive;
+public:
+    IecDriveLock(IecDrive *d) : drive(d) { drive->lock(); }
+    ~IecDriveLock() { drive->unlock(); }
 };
 
 #define ERR_ALL_OK						00
@@ -120,6 +143,8 @@ public:
 #define ERR_FILE_NOT_FOUND				62
 #define ERR_FILE_EXISTS					63
 #define ERR_FILE_TYPE_MISMATCH			64
+#define ERR_NO_BLOCK                    65
+#define ERR_ILLEGAL_TRACK_SECTOR        66
 #define ERR_FRESULT_CODE                69
 #define ERR_NO_CHANNEL          		70
 #define ERR_DIRECTORY_ERROR				71

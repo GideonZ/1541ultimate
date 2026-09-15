@@ -14,7 +14,9 @@ typedef enum _t_channel_state {
     
 } t_channel_state;
 
-static uint8_t c_header[32] = { 1,  1,  4,  1,  0,  0, 18, 34,
+// A listing is a BASIC program: load address $0401, then the header line with a link
+// of $0101 (SI-130).
+static uint8_t c_header[32] = { 1,  4,  1,  1,  0,  0, 18, 34,
                             32, 32, 32, 32, 32, 32, 32, 32,
                             32, 32, 32, 32, 32, 32, 32, 32,
                             34, 32, 48, 48, 32, 50, 65,  0 };
@@ -22,6 +24,11 @@ static uint8_t c_header[32] = { 1,  1,  4,  1,  0,  0, 18, 34,
 class IecCommandChannel;
 
 #define MAX_PARTITIONS 256
+
+// x00 wrappers (SI-144): the header in front of the data of a P00, S00, U00 or R00 file.
+#define X00_HEADER_SIZE 26
+bool iec_x00_probe(FileManager *fm, const char *path, char *cbm_name, filetype_t *type, uint8_t *record_length);
+int iec_entry_name(FileManager *fm, const char *dir_path, FileInfo *info, char *cbm_name, filetype_t& type);
 
 static inline bool is_valid_partition_number(int p)
 {
@@ -185,11 +192,15 @@ public:
         }
     }
 
+    // The drive's lock (CR-6), which the menu's partition list also takes.
+    IecDrive *get_drive(void) { return drive; }
+
     void add_partition(int p, const char *path, const char *name)
     {
         if (!is_valid_partition_number(p)) {
             return;
         }
+        IecDriveLock guard(drive);
         if (partitions[p]) {
             partitions[p]->SetName(name);
             partitions[p]->SetRoot(path);
@@ -203,6 +214,7 @@ public:
         if (!is_valid_partition_number(p)) {
             return;
         }
+        IecDriveLock guard(drive);
         if (partitions[p]) {
             delete partitions[p];
             partitions[p] = NULL;
@@ -246,6 +258,16 @@ public:
         if (is_valid_partition_number(pn)) {
             currentPartition = pn;
         }
+    }
+
+    int CountPartitions(void) {
+        int count = 0;
+        for(int i=1;i<MAX_PARTITIONS; i++) {
+            if (partitions[i]) {
+                count++;
+            }
+        }
+        return count;
     }
 
     int GetUnusedPartition(void) {
@@ -293,12 +315,30 @@ class IecChannel {
 
     uint32_t recordOffset;
     uint8_t recordSize;
+    // The bytes in front of the data of the open file: an x00 header, or the record length
+    // of a relative file in one of its layouts (SI-084).
+    uint32_t dataOffset;
     bool recordDirty;
+
+    // A direct access channel (#): the partition that was current when it was opened, which
+    // its block commands use (SI-093).
+    int buffer_partition;
+
+    // The directory a listing reads, which x00 names are probed in (SI-144).
+    mstring dir_path;
 
     // temporaries
     uint8_t flags;
     IecPartition *partition;
     char fs_filename[64];
+
+    // Set when a failure of this channel has been logged, so a channel that fails on every
+    // byte writes one line (see iec_log.h).
+    bool fault_logged;
+    bool drive_failed(void);
+    void log_line(const char *what, const uint8_t *payload, int len,
+                  const char *label, const uint8_t *extra, int extra_len);
+    void log_fault(const char *what);
 
 private:
     int setup_partition_read();
@@ -344,17 +384,20 @@ public:
 
 class IecCommandChannel: public IecChannel, public IecCommandExecuter {
     IecParser *parser;
-    // 64 command bytes, plus the zero push_command writes after the last one.
-    uint8_t wr_buffer[65];
+    // CBMDOS_COMMAND_BUFFER_SIZE command bytes, plus the zero push_command writes after
+    // the last one.
+    uint8_t wr_buffer[CBMDOS_COMMAND_BUFFER_SIZE + 1];
     int wr_pointer;
 
     void mem_read(void);
     void mem_write(void);
     void get_error_string(void);
 
-    int do_block_read(int chan, int part, int track, int sector);
-    int do_block_write(int chan, int part, int track, int sector);
-    int do_block_allocate(int chan, int part, int track, int sector, bool alloc);
+    IecChannel *buffer_channel(int chan);
+    void sector_error(FRESULT fres, int track, int sector);
+    int do_block_read(int chan, int part, int track, int sector, bool length_byte);
+    int do_block_write(int chan, int part, int track, int sector, bool length_byte);
+    int do_block_allocate(int part, int track, int sector, bool alloc);
     int do_buffer_position(int chan, int pos);
     int do_set_current_partition(int part);
     int do_change_dir(filename_t& dest);
@@ -362,13 +405,17 @@ class IecCommandChannel: public IecChannel, public IecCommandExecuter {
     int do_remove_dir(filename_t& dest);
     int do_copy(filename_t& dest, filename_t sources[], int n);
     int do_initialize();
-    int do_format(uint8_t *name, uint8_t id1, uint8_t id2);
+    int do_initialize_buffers();
+    int do_reset(bool cold);
+    int do_format(filename_t& dest, const char *id);
     int do_rename(filename_t &src, filename_t &dest);
     int do_scratch(filename_t filenames[], int n);
     int do_cmd_response(uint8_t *data, int len);
     int do_set_position(int chan, uint32_t pos, int recnr, int recoffset);
     int do_pwd_command();
     int do_get_partition_info(int part);
+    int do_set_device_number(int dev);
+    int do_lock(filename_t& name);
 public:
     IecCommandChannel(IecDrive *dr, int ch);
     virtual ~IecCommandChannel();

@@ -72,6 +72,33 @@ void FileSystemCBM::set_volume_name(const char *name, uint8_t *bam_name, const c
 }
 
 
+// The layout table is a list of (number of tracks, sectors per track) pairs, ending
+// in a pair whose track count is negative, which stands for every remaining track.
+int FileSystemCBM::get_sectors_in_track(int track)
+{
+    if (track < 1) {
+        return 0;
+    }
+    --track;
+    const int *m = layout;
+    while ((m[0] >= 1) && (track >= m[0])) {
+        track -= m[0];
+        m += 2;
+    }
+    return m[1];
+}
+
+// The medium ends where its last sector is, so the track that sector sits on is the
+// last track.
+int FileSystemCBM::get_num_tracks(void)
+{
+    int track, sector;
+    if (!get_track_sector(num_sectors - 1, track, sector)) {
+        return 0;
+    }
+    return track;
+}
+
 int FileSystemCBM::get_abs_sector(int track, int sector)
 {
     int result = sector;
@@ -535,6 +562,35 @@ FRESULT FileSystemCBM::file_rename(const char *old_name, const char *new_name)
     return res;
 }
 
+// A CBM directory entry has one attribute a host file system also has: the lock, bit 6
+// of the file type byte, which reads back as AM_RDO.
+FRESULT FileSystemCBM::file_attrib(const char *path, uint8_t attrib, uint8_t mask)
+{
+    if (mask & ~AM_RDO) {
+        return FR_NOT_ENABLED;
+    }
+    PathInfo pi(this);
+    pi.init(path);
+    PathStatus_t pres = walk_path(pi);
+    if (pres == e_DirNotFound) {
+        return FR_NO_PATH;
+    }
+    if (pres != e_EntryFound) {
+        return FR_NO_FILE;
+    }
+    DirInCBM *dd = new DirInCBM(this, pi.getParentInfo()->cluster);
+    FileInfo info(56);
+    FRESULT res = find_file(pi.getFileName(), dd, &info);
+    if ((res == FR_OK) && (mask & AM_RDO)) {
+        DirEntryCBM *p = dd->get_pointer();
+        p->std_fileType = (attrib & AM_RDO) ? (p->std_fileType | 0x40) : (p->std_fileType & ~0x40);
+        dirty = 1;
+        res = sync();
+    }
+    delete dd;
+    return res;
+}
+
 FRESULT FileSystemCBM::deallocate_vlir_records(uint8_t track, uint8_t sector, uint8_t *visited)
 {
 	uint8_t *rblk = new uint8_t[256];
@@ -704,17 +760,34 @@ FRESULT FileSystemCBM::write_sector(uint8_t *buffer, int track, int sector)
     return FR_OK;
 }
 
-FRESULT FileSystemCBM::allocate_sector(int track, int sector, bool alloc)
+// B-A of an allocated block answers 65, NO BLOCK, with the next higher free block, or track
+// 0 when there is none (1541-II User's Guide, error 65; HD 9-43). set_sector_allocation()
+// fails only when the block is already in the requested state.
+FRESULT FileSystemCBM::allocate_sector(int &track, int &sector, bool alloc)
 {
     int abs_sect = get_abs_sector(track, sector);
     if (abs_sect < 0) {
         return FR_INVALID_PARAMETER;
     }
-    bool res = set_sector_allocation(track, sector, alloc);
-    if (!res) {
-        return FR_DISK_ERR;
+    if (set_sector_allocation(track, sector, alloc) || !alloc) {
+        return FR_OK;
     }
-    return FR_OK;
+    for (int t = track, s = sector + 1; t <= get_num_tracks(); t++, s = 0) {
+        for (; s < get_sectors_in_track(t); s++) {
+            // Freeing succeeds only on an allocated block, and allocating it again restores
+            // the map and its free count exactly.
+            if (set_sector_allocation(t, s, false)) {
+                set_sector_allocation(t, s, true);
+            } else {
+                track = t;
+                sector = s;
+                return FR_EXIST;
+            }
+        }
+    }
+    track = 0;
+    sector = 0;
+    return FR_EXIST;
 }
 
 /**************************************************************************************
@@ -2173,6 +2246,9 @@ FRESULT FileInCBM::read_linear(uint8_t *dst, int len, uint32_t& tr)
             return FR_DISK_ERR;
         }
         bytes_left = (1 + (int)fs->sect_buffer[1]) - offset_in_sector;
+        if (bytes_left < 0) { // positioned past the end of the file
+            bytes_left = 0;
+        }
     }
 
     // determine number of bytes to transfer now
@@ -2415,7 +2491,7 @@ uint32_t FileInCBM::get_size()
     fs->get_track_sector(abs, ct, cs);
     do {
         abs = fs->get_abs_sector(ct, cs);
-        if (visited[abs]) {
+        if ((abs < 0) || visited[abs]) { // a link outside the disk, or a loop
             break;
         }
         visited[abs] = 1;

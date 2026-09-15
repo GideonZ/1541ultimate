@@ -2,6 +2,9 @@
 #include "json.h"
 #include "dump_hex.h"
 
+// How long a JiffyDOS talk waits for the host to take a byte before the pass ends.
+#define JIFFY_SPIN_TICKS (configTICK_RATE_HZ / 10)
+
 IecInterface *iec_if = NULL;
 
 IecInterface *IecInterface :: get_iec_interface(void)
@@ -144,6 +147,17 @@ void IecInterface :: configure(void)
     }
 }
 
+// Writes one slave's device number into the processor, for a number that changes
+// while the drive is in use (U0>). Unlike configure(), the processor is not held
+// in reset, because the command that asks for this is still on the bus.
+void IecInterface :: readdress(int slot)
+{
+    if ((slot < 0) || (slot >= MAX_SLOTS) || !slaves[slot] || !slaves[slot]->is_enabled()) {
+        return;
+    }
+    set_slot_devnum(slot, slaves[slot]->get_address());
+}
+
 void IecInterface :: reset(void)
 {
     HW_IEC_RESET_ENABLE = 0;
@@ -172,9 +186,22 @@ void IecInterface :: task()
 
         gotSomething = xQueueReceive(queueToIec, &closure, 2); // here is the vTaskDelay(2) that used to be here
 
+        // A closure runs before the slaves are locked, because it can run for long, as a warp
+        // copy does, and must not keep other tasks from a drive meanwhile.
         if (gotSomething == pdTRUE) {
             if (closure.func) {
                 closure.func(closure.obj, closure.data);
+            }
+        }
+
+        // The slaves are locked for one pass over the bus, so the drive's own entry points,
+        // which lock again for every byte, only count up and down (CR-6). The pass unlocks
+        // exactly the slaves it locked.
+        IecSlave *locked[MAX_SLOTS];
+        for (int i = 0; i < MAX_SLOTS; i++) {
+            locked[i] = slaves[i];
+            if (locked[i]) {
+                locked[i]->lock();
             }
         }
 
@@ -281,9 +308,15 @@ void IecInterface :: task()
         if(talking) {
             while(1) {
                 if (jiffy_load) {
-                    // Simply spin while fifo is full
-                    while(HW_IEC_TX_FIFO_STATUS & IEC_FIFO_FULL)
+                    // Spin while the fifo is full, which does not last while the host takes
+                    // the bytes. A host that stops taking them must not hold this task, and
+                    // the slaves' locks, for ever: the pass then ends, as for a normal talk.
+                    TickType_t spin_start = xTaskGetTickCount();
+                    while ((HW_IEC_TX_FIFO_STATUS & IEC_FIFO_FULL) &&
+                           ((xTaskGetTickCount() - spin_start) < JIFFY_SPIN_TICKS))
                         ;
+                    if (HW_IEC_TX_FIFO_STATUS & IEC_FIFO_FULL)
+                        break;
                 } else {
                     // Exit loop when fifo is full
                     if(HW_IEC_TX_FIFO_STATUS & IEC_FIFO_FULL)
@@ -330,6 +363,12 @@ void IecInterface :: task()
                 addressed_slave->pop_more(jiffy_transfer);
             } else {
                 jiffy_load = false;
+            }
+        }
+
+        for (int i = MAX_SLOTS - 1; i >= 0; i--) {
+            if (locked[i]) {
+                locked[i]->unlock();
             }
         }
     }

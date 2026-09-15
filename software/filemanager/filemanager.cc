@@ -500,6 +500,28 @@ void FileManager::get_display_string(Path *p, const char *filename, char *buffer
     n->get_display_string(buffer, width);
 }
 
+// A directory handed out by open_directory(). Its file system is listed in
+// open_directory_fs until the directory is deleted, so the mount cache does not release
+// a disk image that a directory is still being read from: the Software IEC keeps a
+// listing's directory open across bus reads, while other channels enter other images.
+class ManagedDirectory : public Directory
+{
+    FileManager *fm;
+    FileSystem *fs;
+    Directory *dir;
+public:
+    ManagedDirectory(FileManager *m, FileSystem *f, Directory *d) : fm(m), fs(f), dir(d) {
+        fm->open_directory_fs.append(fs); // open_directory() holds the lock
+    }
+    ~ManagedDirectory() {
+        fm->lock();
+        delete dir;
+        fm->open_directory_fs.remove(fs);
+        fm->unlock();
+    }
+    FRESULT get_entry(FileInfo &info) { return dir->get_entry(info); }
+};
+
 FRESULT FileManager::open_directory(const char *path, Directory **dir, FileInfo *info)
 {
     *dir = NULL;
@@ -518,6 +540,9 @@ FRESULT FileManager::open_directory(const char *path, Directory **dir, FileInfo 
     }
     FileSystem *fs = pathInfo.getLastInfo()->fs;
     res = fs->dir_open(pathInfo.getPathFromLastFS(), dir);
+    if ((res == FR_OK) && *dir) {
+        *dir = new ManagedDirectory(this, fs, *dir);
+    }
     unlock();
     return res;
 }
@@ -772,23 +797,51 @@ FRESULT FileManager::get_free(Path *path, uint32_t &free, uint32_t &cluster_size
     return fres;
 }
 
-FRESULT FileManager::fs_read_sector(Path *path, uint8_t *buffer, int track, int sector)
+FRESULT FileManager::get_total(Path *path, uint32_t &total, uint32_t &cluster_size)
 {
     PathInfo pathInfo(rootfs);
     pathInfo.init(path);
+    lock();
     FRESULT fres = find_pathentry(pathInfo, true);
     if (fres != FR_OK) {
+        unlock();
         return fres;
     }
     FileInfo *inf = pathInfo.getLastInfo();
     if (!inf || !(inf->fs)) {
+        unlock();
+        return FR_NO_FILESYSTEM;
+    }
+    fres = inf->fs->get_total(&total, &cluster_size);
+
+    unlock();
+    return fres;
+}
+
+// The sector functions take the lock like every other entry point: find_pathentry() can
+// mount and evict disk images, which changes mount_points under another task.
+FRESULT FileManager::fs_read_sector(Path *path, uint8_t *buffer, int track, int sector)
+{
+    PathInfo pathInfo(rootfs);
+    pathInfo.init(path);
+    lock();
+    FRESULT fres = find_pathentry(pathInfo, true);
+    if (fres != FR_OK) {
+        unlock();
+        return fres;
+    }
+    FileInfo *inf = pathInfo.getLastInfo();
+    if (!inf || !(inf->fs)) {
+        unlock();
         return FR_NO_FILESYSTEM;
     }
     fres = inf->fs->sync();
     if (fres != FR_OK) {
+        unlock();
         return fres;
     }
     fres = inf->fs->read_sector(buffer, track, sector);
+    unlock();
     return fres;
 }
 
@@ -796,38 +849,47 @@ FRESULT FileManager::fs_write_sector(Path *path, uint8_t *buffer, int track, int
 {
     PathInfo pathInfo(rootfs);
     pathInfo.init(path);
+    lock();
     FRESULT fres = find_pathentry(pathInfo, true);
     if (fres != FR_OK) {
+        unlock();
         return fres;
     }
     FileInfo *inf = pathInfo.getLastInfo();
     if (!inf || !(inf->fs)) {
+        unlock();
         return FR_NO_FILESYSTEM;
     }
     fres = inf->fs->sync();
     if (fres != FR_OK) {
+        unlock();
         return fres;
     }
     fres = inf->fs->write_sector(buffer, track, sector);
+    unlock();
     return fres;
 }
 
-FRESULT FileManager::fs_allocate_sector(Path *path, int track, int sector, bool alloc)
+FRESULT FileManager::fs_allocate_sector(Path *path, int &track, int &sector, bool alloc)
 {
     PathInfo pathInfo(rootfs);
     pathInfo.init(path);
+    lock();
     FRESULT fres = find_pathentry(pathInfo, true);
     if (fres != FR_OK) {
+        unlock();
         return fres;
     }
     FileInfo *inf = pathInfo.getLastInfo();
     if (!inf || !(inf->fs)) {
+        unlock();
         return FR_NO_FILESYSTEM;
     }
     fres = inf->fs->allocate_sector(track, sector, alloc);
     if (fres == FR_OK) {
         fres = inf->fs->sync();
     }
+    unlock();
     return fres;
 }
 
@@ -978,6 +1040,11 @@ bool FileManager::is_mount_evictable(MountPoint *mp)
             return false;
         }
     }
+    for (int i = 0; i < open_directory_fs.get_elements(); i++) {
+        if (open_directory_fs[i] == fs) {
+            return false;
+        }
+    }
     for (int i = 0; i < mount_points.get_elements(); i++) {
         MountPoint *other = mount_points[i];
         if (other && (other != mp) && other->get_file() &&
@@ -1107,6 +1174,24 @@ FRESULT FileManager::delete_file(const char *pathname)
     pathInfo.init(pathname);
     lock();
     FRESULT fres = delete_file_impl(pathInfo);
+    unlock();
+    return fres;
+}
+
+// Sets the attribute bits in mask to those in attrib, for the file systems that keep any.
+FRESULT FileManager::set_attributes(const char *pathname, uint8_t attrib, uint8_t mask)
+{
+    PathInfo pathInfo(rootfs);
+    pathInfo.init(pathname);
+    lock();
+    FRESULT fres = find_pathentry(pathInfo, false);
+    if (fres == FR_OK) {
+        fres = pathInfo.getLastInfo()->fs->file_attrib(pathInfo.getPathFromLastFS(), attrib, mask);
+        if (fres == FR_OK) {
+            mstring work;
+            sendEventToObservers(eRefreshDirectory, pathInfo.getFullPath(work, -1), "");
+        }
+    }
     unlock();
     return fres;
 }
