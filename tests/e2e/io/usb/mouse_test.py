@@ -678,8 +678,12 @@ def test_concurrent(api, listener, mouse) -> None:
         mover = Background(lambda: mouse.stream(dx=4, dy=-4, wheel=1, count=12, interval_ms=150,
                                                 buttons=("right",), key="a"))
         for _ in range(4):
-            api.machine.send_input([{"kind": "joystick", "port": 2, "inputs": ["up"], "transition": "tap"}])
-            time.sleep(0.3)
+            # Held for 100ms: the listener samples port 2 once per pass, and a
+            # pass that redraws the screen can take longer than a frame.
+            api.machine.send_input([{"kind": "joystick", "port": 2, "inputs": ["up"], "transition": "press"}])
+            time.sleep(0.1)
+            api.machine.send_input([{"kind": "joystick", "port": 2, "inputs": ["up"], "transition": "release"}])
+            time.sleep(0.2)
         mover.join()
         mouse.buttons()
         state = listener.quiet()
