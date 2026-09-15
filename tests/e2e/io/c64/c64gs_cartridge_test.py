@@ -11,16 +11,18 @@ of the address, every game on that cartridge crashed on start.
 
 The suite does not ship a ROM image. It builds a 64-bank type 15 CRT here:
 bank 0 autostarts, copies a small routine to $C000 and runs it from RAM, and
-the routine selects every bank twice, copying the marker byte at $9FF0 to
-screen RAM each time:
+the routine selects every bank three times, copying the marker byte at $9FF0
+to screen RAM each time:
 
 - by writing, with a data byte that names a different bank: bank X is
   selected with `STA $DE00,X` and A = X xor $3F
 - by reading, with `LDA $DE00,X`
+- by writing in the upper half of IO1, with `STA $DEC0,X` and A = X xor $3F:
+  only A0 to A5 are latched, so $DEC0+X names bank X as well
 
-Each bank's marker is its own number, so the two rows read back say which bank
-every selection reached. A data latch shows the write row reversed and the read
-row as whatever the bus held.
+Each bank's marker is its own number, so the three rows read back say which
+bank every selection reached. A data latch shows the write rows reversed and
+the read row as whatever the bus held.
 
 The fix is in the FPGA image, and the Ultimate 64 images ship prebuilt, so the
 suite is gated on `machine.C64GS_BANK_FROM_ADDRESS` and reports SKIP on a
@@ -53,7 +55,8 @@ BANKS = 64
 MARKER = 0x1FF0             # $9FF0 in each bank
 WRITE_ROW = 0x0400          # screen RAM rows 0 and 1
 READ_ROW = 0x0450           # screen RAM rows 2 and 3
-DONE = 0x04A0               # screen RAM row 4, set to $01 when both passes ran
+HIGH_ROW = 0x04A0           # screen RAM rows 4 and 5
+DONE = 0x04F0               # screen RAM row 6, set to $01 when all passes ran
 BLANK = 0xA0                # not a marker value, so a byte the routine never wrote cannot pass
 
 # Bank 0 at $8000: the CBM80 autostart header, then a loop that copies ROUTINE
@@ -74,9 +77,17 @@ ROUTINE = bytes([
     0x9D, 0x50, 0x04,       # C019  STA $0450,X
     0xCA,                   # C01C  DEX
     0x10, 0xF4,             # C01D  BPL $C013
-    0xA9, 0x01,             # C01F  LDA #$01
-    0x8D, 0xA0, 0x04,       # C021  STA $04A0
-    0x4C, 0x24, 0xC0,       # C024  JMP $C024
+    0xA2, 0x3F,             # C01F  LDX #$3F
+    0x8A,                   # C021  TXA
+    0x49, 0x3F,             # C022  EOR #$3F
+    0x9D, 0xC0, 0xDE,       # C024  STA $DEC0,X      A6 and A7 set, low six bits name bank X
+    0xAD, 0xF0, 0x9F,       # C027  LDA $9FF0
+    0x9D, 0xA0, 0x04,       # C02A  STA $04A0,X
+    0xCA,                   # C02D  DEX
+    0x10, 0xF1,             # C02E  BPL $C021
+    0xA9, 0x01,             # C030  LDA #$01
+    0x8D, 0xF0, 0x04,       # C032  STA $04F0
+    0x4C, 0x35, 0xC0,       # C035  JMP $C035
 ])
 BOOT = bytes([
     0x09, 0x80, 0x09, 0x80,             # $8000 cold and warm start vectors: $8009
@@ -137,7 +148,7 @@ def run(args) -> bool:
     wanted = bytes(range(BANKS))
     try:
         with check("the generated C64GS cartridge starts and runs its routine"):
-            # Blank both rows and the done flag first, so bytes left by an
+            # Blank the rows and the done flag first, so bytes left by an
             # earlier run cannot pass.
             device.machine.writemem(WRITE_ROW, bytes([BLANK]) * (DONE + 1 - WRITE_ROW))
             device.runners.upload("run_crt", c64gs_crt())
@@ -148,13 +159,16 @@ def run(args) -> bool:
                 time.sleep(0.25)
             written = device.machine.readmem(WRITE_ROW, BANKS)
             read = device.machine.readmem(READ_ROW, BANKS)
+            high = device.machine.readmem(HIGH_ROW, BANKS)
         # Both selections are reported, so a failure says which access is wrong.
         failures = []
         for label, row, access in (
                 ("C64GS bank writes select the bank their address names",
                  written, "STA $DE00,X with A = X xor $3F"),
                 ("C64GS bank reads select the bank their address names",
-                 read, "LDA $DE00,X")):
+                 read, "LDA $DE00,X"),
+                ("C64GS bank writes to $DEC0-$DEFF select the bank in the low six address bits",
+                 high, "STA $DEC0,X with A = X xor $3F")):
             try:
                 with check(label):
                     if row != wanted:
