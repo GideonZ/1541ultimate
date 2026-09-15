@@ -592,15 +592,17 @@ static void usb_hid_relinquish_sibling_boot_functions(UsbDevice *device, UsbInte
     }
 }
 
+static void usb_hid_queue_menu_key(int key, int repeat, int max_pending);
+
+// Cursor keys the wheel or the motion types onto the C64. Each one takes about
+// four user interface polls (keyboard_usb.h), so at most this many wait in each
+// direction, and a turn the other way drops the ones still waiting: the cursor
+// stops within a second of the mouse.
+static const int USB_HID_CURSOR_MAX_PENDING_KEYS = 16;
+
 static void usb_hid_queue_key(int key, int repeat)
 {
-    if (repeat <= 0) {
-        return;
-    }
-    if (repeat > (USB_INJECTED_BUFFER_SIZE - 1)) {
-        repeat = USB_INJECTED_BUFFER_SIZE - 1;
-    }
-    system_usb_keyboard.push_head_repeat(key, repeat);
+    usb_hid_queue_menu_key(key, repeat, USB_HID_CURSOR_MAX_PENDING_KEYS);
 }
 
 static void usb_hid_queue_menu_key(int key, int repeat, int max_pending)

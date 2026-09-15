@@ -47,12 +47,14 @@ wheel-mouse
     Mouse mode: both wheels move the pointer, slowly and fast, with Mouse Wheel
     Direction Normal and Reversed.
 wheel-cursor
-    Mouse + Cursor mode: both wheels type cursor keys in their direction, at
-    wheel sensitivities 1 and 2, and the pointer stays where it is.
+    Mouse + Cursor mode: both wheels type exactly the cursor keys the wheel
+    sensitivity asks for, at sensitivities 1 and 2, and the pointer stays where
+    it is.
 cursor-mode
-    Cursor mode: both wheels and the motion type cursor keys in their
-    direction, and motion far faster than keys can be typed leaves no key
-    stuck.
+    Cursor mode: both wheels and the motion type exactly the expected cursor
+    keys. Motion far faster than keys can be typed stops typing within 1.5
+    seconds of the mouse and leaves no key stuck, and turning the other way
+    drops the keys still waiting.
 concurrent
     Buttons held while moving, wheel detents and buttons inside motion
     reports, a USB key held while moving and while the wheel pulses, and REST
@@ -413,12 +415,15 @@ def test_wheel_micromys(api, listener, mouse) -> None:
         detail(f"one slow detent after it: {after}")
         require((after.wheel_up, after.wheel_down) == (1, 0), "a pulse was left over from the burst", after)
 
-    with check("a reversal inside a fast burst pulses the new direction exactly"), fresh(listener, mouse):
+    with check("a reversal inside a fast burst pulses the new direction"), fresh(listener, mouse):
         mouse.wheel(vertical=8, gap_ms=0)
         mouse.wheel(vertical=-3, gap_ms=0)
         state = listener.quiet()
         detail(str(state))
-        require(state.wheel_down == 3, "expected exactly 3 down pulses after the reversal", state)
+        # When the firmware's queue of wheel deltas is full, a new delta is added
+        # to the last queued one (usb_hid_publish_native_wheel_input), so the
+        # first down detent can cancel an up detent still waiting there.
+        require(2 <= state.wheel_down <= 3, "expected 2 or 3 down pulses after the reversal", state)
         require(1 <= state.wheel_up <= 8, "expected some, at most 8, up pulses before it", state)
         require_still(state, "the wheel")
 
@@ -491,16 +496,8 @@ def cursor_expectation(vertical: int, horizontal: int, sensitivity: int) -> dict
 
 
 def require_cursor_keys(state: MouseState, expected: dict[str, int]) -> None:
-    """Keys only in the expected direction, at least one and at most the expected count.
-
-    Identical injected cursor keys that follow each other closely can reach the
-    C64 as one longer press, so the count is not exact.
-    """
-    for name, count in expected.items():
-        if count:
-            require(1 <= state.cursor[name] <= count, f"expected 1 to {count} {name} keys", state)
-        else:
-            require(state.cursor[name] == 0, f"expected no {name} keys", state)
+    """Exactly the expected cursor keys, each a press of its own, and none left down."""
+    require(state.cursor == expected, f"expected cursor keys {expected}", state)
     require(state.keys_held == 0, "a key is still down", state)
 
 
@@ -510,7 +507,7 @@ def wheel_cursor_cases(api, listener, mouse, mode: str) -> None:
         for vertical, horizontal in ((1, 0), (-2, 0), (0, 1), (0, -2)):
             expected = cursor_expectation(vertical, horizontal, sensitivity)
             with check(f"{mode}, sensitivity {sensitivity}: wheel {vertical}/{horizontal} "
-                       f"types cursor keys towards {max(expected, key=expected.get)}"), \
+                       f"types cursor keys {expected}"), \
                     fresh(listener, mouse, parked=mode != "Cursor"):
                 mouse.wheel(vertical=vertical, horizontal=horizontal, gap_ms=300)
                 state = listener.quiet()
@@ -531,6 +528,10 @@ def test_wheel_cursor(api, listener, mouse) -> None:
         require_no_cursor_keys(state, "motion in Mouse + Cursor mode")
 
 
+# USB_HID_CURSOR_MAX_PENDING_KEYS (16) keys of about 60ms each, with a margin.
+CURSOR_RUN_ON_SECONDS = 1.5
+
+
 def test_cursor_mode(api, listener, mouse) -> None:
     wheel_cursor_cases(api, listener, mouse, "Cursor")
     configure(api, Mouse_Mode="Cursor")
@@ -547,14 +548,28 @@ def test_cursor_mode(api, listener, mouse) -> None:
             detail(str(state))
             require_cursor_keys(state, keys)
             require_still(state, "motion in Cursor mode")
-    with check("Cursor: motion far faster than the keys can be typed leaves no key stuck"), \
+    with check("Cursor: motion far faster than the keys can be typed stops soon after the mouse"), \
             fresh(listener, mouse, parked=False):
         mouse.path(flick(REPORT_CLAMP, 0), 2)
-        state = listener.quiet(timeout=30)
-        detail(str(state))
+        stopped = time.monotonic()
+        hold = 0.3
+        state = listener.quiet(timeout=30, hold=hold)
+        run_on = time.monotonic() - stopped - hold
+        detail(f"keys kept coming for {run_on:.2f}s after the mouse stopped: {state}")
         require(state.cursor["right"] >= 1 and not state.cursor["left"], "expected right keys only", state)
+        require(run_on < CURSOR_RUN_ON_SECONDS, f"keys kept coming for more than {CURSOR_RUN_ON_SECONDS}s", state)
         require(state.keys_held == 0, "a key is still down", state)
         require_still(state, "motion in Cursor mode")
+    with check("Cursor: turning the other way drops the keys still waiting"), fresh(listener, mouse, parked=False):
+        mouse.path(flick(REPORT_CLAMP, 0), 2)
+        mouse.move(-4, 0)
+        state = listener.quiet(timeout=30)
+        detail(str(state))
+        require(state.cursor["left"] == 1, "expected one left key after the turn", state)
+        # The flick takes about half a second, enough for a handful of keys; the
+        # rest of the 16 that were waiting must not be typed.
+        require(state.cursor["right"] <= 12, "right keys still waiting were typed after the turn", state)
+        require(state.keys_held == 0, "a key is still down", state)
 
 
 # --------------------------------------------------------------- concurrent --
