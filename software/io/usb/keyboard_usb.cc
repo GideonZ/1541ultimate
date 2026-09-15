@@ -173,6 +173,7 @@ Keyboard_USB :: Keyboard_USB()
 	injected_head = 0;
 	injected_tail = 0;
 	injected_matrix_hold = 0;
+	injected_matrix_gap = 0;
 
     repeat_speed = 4;
     first_delay = 16;
@@ -255,6 +256,7 @@ void Keyboard_USB :: applyRestWasdGuard(void) const
 
 void Keyboard_USB :: clearInjectedMatrixState(void)
 {
+	injected_matrix_gap = 0;
 	if (injected_matrix_hold == 0) {
 		return;
 	}
@@ -355,7 +357,7 @@ void Keyboard_USB :: setInjectedMatrixKey(int key)
 		injected_matrix_hold = 0;
 		return;
 	}
-	injected_matrix_hold = 1;
+	injected_matrix_hold = USB_INJECTED_MATRIX_HOLD_CALLS;
 	applyMatrixState();
 }
 
@@ -534,12 +536,20 @@ void Keyboard_USB :: setReportIdlePeriod(int period_ms)
 // called from the user interface thread
 int  Keyboard_USB :: getch(void)
 {
+    // While an injected key is down on the C64 matrix, and for the release
+    // gap after it, the next injected key waits.
+    bool injected_matrix_busy = false;
     if (injected_matrix_hold > 0) {
 		injected_matrix_hold--;
 		if (injected_matrix_hold == 0) {
 			memset(injected_matrix_state, 0, sizeof(injected_matrix_state));
 			applyMatrixState();
+			injected_matrix_gap = USB_INJECTED_MATRIX_GAP_CALLS - 1;
 		}
+		injected_matrix_busy = true;
+    } else if (injected_matrix_gap > 0) {
+		injected_matrix_gap--;
+		injected_matrix_busy = true;
     }
     if ((num_keys == 1) && repeatIsLive()) { // implement repeat for one key pressed (other than the modifiers)
         if (delay_count == 0) {
@@ -567,7 +577,7 @@ int  Keyboard_USB :: getch(void)
     }
     int injected_key = -1;
     portENTER_CRITICAL();
-    if (injected_head != injected_tail) {
+    if (!injected_matrix_busy && (injected_head != injected_tail)) {
 		injected_key = injected_buffer[injected_tail];
 		injected_tail ++;
 		if (injected_tail == USB_INJECTED_BUFFER_SIZE) {
@@ -985,6 +995,7 @@ void Keyboard_USB :: setMatrix(volatile uint8_t *matrix)
 	memset(matrix_state, 0, sizeof(matrix_state));
 	memset(injected_matrix_state, 0, sizeof(injected_matrix_state));
 	injected_matrix_hold = 0;
+	injected_matrix_gap = 0;
 
 	if (this->matrix) {
 		for (int i=0; i<8; i++) {

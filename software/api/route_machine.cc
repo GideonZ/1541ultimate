@@ -9,6 +9,7 @@
 #include "keyboard_usb.h"
 #include "joystick_output.h"
 extern "C" void route_input_note_menu_button(void);
+extern "C" void route_input_release_rest_mouse(void);
 extern "C" bool push_active_menu_button(void) __attribute__((weak));
 #endif
 
@@ -85,8 +86,8 @@ API_DOC(PUT, machine, reset,
                 "which is not the same as starting from cold; use `machine:reboot` for that.\n"
                 "\n"
                 "On Ultimate 64 hardware every key and joystick direction the input API is "
-                "holding is released as part of the reset, so a reset cannot leave an injected "
-                "key stuck down.")
+                "holding is released as part of the reset, and its mouse is detached with its "
+                "pending reports dropped, so a reset cannot leave an injected key stuck down.")
     PATH("/v1/machine:reset", "resetMachine", "")
     RESPONSE("200", "application/json", "ErrorResponse", "The machine was reset.", "")
     RESPONSE_ERROR("423", "Could not obtain lock of subsystem", "")
@@ -100,6 +101,7 @@ API_CALL(PUT, machine, reset, NULL, ARRAY( {  }))
 #if U64
         system_usb_keyboard.restReleaseAll();
         JoystickOutput::instance().releaseAllRest();
+        route_input_release_rest_mouse();
 #endif
     }
     resp->error(SubsysCommand::error_string(retval.status));
@@ -115,7 +117,8 @@ API_DOC(PUT, machine, reboot,
                 "cartridge has to start from scratch.\n"
                 "\n"
                 "On Ultimate 64 hardware every key and joystick direction the input API is "
-                "holding is released as part of the reboot.")
+                "holding is released as part of the reboot, and its mouse is detached with its "
+                "pending reports dropped.")
     PATH("/v1/machine:reboot", "rebootMachine", "")
     RESPONSE("200", "application/json", "ErrorResponse", "The machine was rebooted.", "")
     RESPONSE_ERROR("423", "Could not obtain lock of subsystem", "")
@@ -129,6 +132,7 @@ API_CALL(PUT, machine, reboot, NULL, ARRAY( {  }))
 #if U64
         system_usb_keyboard.restReleaseAll();
         JoystickOutput::instance().releaseAllRest();
+        route_input_release_rest_mouse();
 #endif
     }
     resp->error(SubsysCommand::error_string(retval.status));

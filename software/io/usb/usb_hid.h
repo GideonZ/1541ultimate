@@ -32,7 +32,8 @@ class UsbHidDriver : public UsbDriver
     bool mouse;
     bool descriptor_keyboard;
     bool descriptor_mouse;
-    int16_t mouse_x, mouse_y;
+    bool rest_source;
+    static int16_t mouse_x, mouse_y;
     uint8_t mouse_joy;
     int native_wheel_delta_queue[8];
     uint8_t native_wheel_queue_head;
@@ -84,6 +85,8 @@ class UsbHidDriver : public UsbDriver
     int adaptive_accel_scale_factor;
     static void S_wheel_pulse_timer(TimerHandle_t a);
     void service_native_wheel_timer(void);
+    void set_joy1_output(uint8_t active_low_mask);
+    bool process_mouse_report(const uint8_t *data, int data_len);
 
 public:
 	static UsbDriver *test_driver(UsbInterface *intf);
@@ -102,6 +105,17 @@ public:
 	void pipe_error(int pipe);
 
     void interrupt_handler();
+
+    // The REST mouse: a wheel mouse with no USB device behind it, whose reports
+    // go through the same handling as a USB mouse's. NULL on a failure to build
+    // it. Its buttons and wheel pulses reach port 1 as their own source, and it
+    // moves the same port 1 position as a USB mouse. Call only from one task.
+    static UsbHidDriver *restMouse(void);
+    bool restMouseAttached(void) const;
+    void restMouseAttach(void);
+    void restMouseDetach(void);
+    void restMouseReport(uint8_t buttons, int dx, int dy, int wheel, int pan);
+    uint8_t restMouseButtons(void) const;   // HID order: left 1, right 2, middle 4
 };
 
 #endif
