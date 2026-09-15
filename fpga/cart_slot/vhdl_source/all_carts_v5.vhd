@@ -72,6 +72,7 @@ architecture gideon of all_carts_v5 is
     signal bank_bits    : std_logic_vector(21 downto 13); -- Max 4 MB
     signal ram_bank     : std_logic_vector(15 downto 13) := "000";
     signal mode_bits    : std_logic_vector(2 downto 0);
+    signal ocean_off    : std_logic; -- dedicated cartridge-off flag for c_ocean_16K (COMAL 80), kept out of the shared mode_bits mux since that net is already read by ~15 other cart types
     signal ef_write     : std_logic := '0';
     signal georam_bank  : std_logic_vector(15 downto 0);
     
@@ -175,6 +176,7 @@ begin
                 bank_bits  <= (others => '0');
                 ram_bank   <= (others => '0');
                 mode_bits  <= (others => '0');
+                ocean_off  <= '0';
                 cart_en    <= '1';
                 hold_nmi   <= '1';
 
@@ -183,6 +185,7 @@ begin
                 cart_logic_d <= cart_logic;
                 variant      <= cart_variant;
                 mode_bits    <= (others => '0');
+                ocean_off    <= '0';
                 bank_bits    <= (others => '0');
                 ram_bank     <= (others => '0');
                 georam_bank  <= (others => '0');
@@ -342,10 +345,10 @@ begin
                 -- variant 0 and 1 (black Comal 80): bit 6 switches the cartridge off
                 if io_write='1' and io_addr(8)='0' then -- DE00 range
                     bank_bits(21 downto 14) <= io_wdata;
-                    mode_bits(0) <= io_wdata(6) and not variant(1);
+                    ocean_off <= io_wdata(6) and not variant(1);
                 end if;
-                game_n    <= mode_bits(0);
-                exrom_n   <= mode_bits(0);
+                game_n    <= ocean_off;
+                exrom_n   <= ocean_off;
                 serve_rom <= '1';
                 rom_mode  <= "01"; -- 16K banks
 
