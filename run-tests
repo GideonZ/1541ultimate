@@ -349,6 +349,12 @@ SUITES: Sequence[Suite] = (
     Suite("e2e", "cfg-whitespace", "tests/e2e/filemanager/cfg_whitespace_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@"),
     Suite("e2e", "printer", "tests/e2e/io/printer/printer_test.py", "-H @HOST@ -p @PASS@", profile=profiles.QUICK),
+    # Manual: both need the Pico 2 W fixture (tests/lib/pico_hid.py) on a USB
+    # port of the machine, as a USB mouse on control port 1.
+    Suite("e2e", "usb-mouse", "tests/e2e/io/usb/mouse_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@", manual=True),
+    Suite("e2e", "micromys-wheel", "tests/e2e/io/usb/micromys_wheel_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@", manual=True),
     # Writes a 64 KiB file to real USB media, so it needs a stick in the machine
     # and leaves nothing behind. The regression check fails on firmware carrying
     # #803; the control and the RAM-disk comparison beside it say whether a

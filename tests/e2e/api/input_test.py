@@ -2355,6 +2355,27 @@ def run_joystick_tests(session: RestInputSession) -> None:
 def run_joystick_checks(session: RestInputSession) -> None:
     session.post_events([{"kind": "release_all"}])
 
+    # A USB mouse emulates a 1351 on port 1, and its position is on the POT
+    # lines whenever no REST fire2/fire3 press holds them. A position is at
+    # most $7F, so it reads as buttons 2 and 3 pressed, as a real 1351 does.
+    # With nothing held, anything but $80/$80 on port 1 means such a device is
+    # attached; the expectations that port 1's extra buttons read released
+    # cannot hold then and are left out. Port 2, and port 1 while REST holds
+    # an extra button, are still checked.
+    port1_idle_pots = read_joystick_pots(session, 1)
+    # A mouse position is 7 bits on both lines. A value of $80 or more on one
+    # line with no input held is a stuck extra button, which must fail below.
+    port1_driven = port1_idle_pots != (0x80, 0x80) and max(port1_idle_pots) <= 0x7F
+    if port1_driven:
+        warn("port 1 POT lines read $%02X/$%02X with no input held, so a USB mouse drives them; "
+             "the checks that port 1's extra buttons read released are skipped" % port1_idle_pots)
+
+    def assert_extra_buttons(expected: dict[int, tuple[bool, bool]]) -> None:
+        if port1_driven and expected.get(1) == (False, False):
+            expected = {port: value for port, value in expected.items() if port != 1}
+        if expected:
+            assert_anykey_extra_buttons_both(session, expected)
+
     # Regression coverage for #879: fire2/fire3 on one port must not appear
     # on the other port's POT reading. Covers both ports and both inputs.
     ANYKEY_ISOLATION_CASES = (
@@ -2376,8 +2397,7 @@ def run_joystick_checks(session: RestInputSession) -> None:
                 session.post_events([{"kind": "release_all"}])
                 session.post_events(
                     [{"kind": "joystick", "port": own_port, "inputs": [input_name], "transition": "press"}])
-                assert_anykey_extra_buttons_both(
-                    session, {own_port: (fire2_expected, fire3_expected), other_port: (False, False)})
+                assert_extra_buttons({own_port: (fire2_expected, fire3_expected), other_port: (False, False)})
 
     with check("joystick fire2 on one port and fire3 on the other stay independent"):
         # Both ports held at once with different extra-button state.
@@ -2388,7 +2408,7 @@ def run_joystick_checks(session: RestInputSession) -> None:
                 {"kind": "joystick", "port": 2, "inputs": ["fire3"], "transition": "press"},
             ]
         )
-        assert_anykey_extra_buttons_both(session, {1: (True, False), 2: (False, True)})
+        assert_extra_buttons({1: (True, False), 2: (False, True)})
 
     with check("joystick fire2/fire3 tap auto-releases the POT hardware state"):
         session.post_events([{"kind": "release_all"}])
@@ -2437,11 +2457,11 @@ def run_joystick_checks(session: RestInputSession) -> None:
         session.post_events([{"kind": "joystick", "port": 2, "inputs": ["fire", "fire2", "fire3"], "transition": "press"}])
         assert_joystick_ports(session, 0x1F, 0x0F)
         assert_input_state(session, [], [], ["fire", "fire2", "fire3"])
-        assert_anykey_extra_buttons_both(session, {2: (True, True), 1: (False, False)})
+        assert_extra_buttons({2: (True, True), 1: (False, False)})
         session.post_events([{"kind": "joystick", "port": 2, "inputs": ["fire2"], "transition": "release"}])
         assert_joystick_ports(session, 0x1F, 0x0F)
         assert_input_state(session, [], [], ["fire", "fire3"])
-        assert_anykey_extra_buttons_both(session, {2: (False, True), 1: (False, False)})
+        assert_extra_buttons({2: (False, True), 1: (False, False)})
 
     with check("joystick release in the same batch as a tap on the same input wins"):
         session.post_events([{"kind": "release_all"}])
@@ -2525,7 +2545,7 @@ def run_joystick_checks(session: RestInputSession) -> None:
         )
         assert_joystick_ports(session, 0x1F, 0x1F)
         assert_state_empty(session)
-        assert_anykey_extra_buttons_both(session, {1: (False, False), 2: (False, False)})
+        assert_extra_buttons({1: (False, False), 2: (False, False)})
 
     with check("machine reset clears keyboard and joystick REST state"):
         session.post_events(
