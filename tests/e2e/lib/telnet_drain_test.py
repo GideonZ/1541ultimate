@@ -72,6 +72,9 @@ def drain(bursts, expect_redraw, expect_settle=False, timeout=20.0):
     backend.screen = VT100Screen()
     backend.last_command = "fixture"
     backend._last_drain_bytes = 0
+    # The quiet window a whole machine needs. A cartridge is given a longer one
+    # (CARTRIDGE_TELNET_IDLE_GAP_SECONDS), which is not what these bursts time.
+    backend._idle_gap_seconds = pacing.TELNET_IDLE_GAP_SECONDS
     backend._expect_redraw = expect_redraw
     backend._expect_settle = expect_settle
 

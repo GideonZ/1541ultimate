@@ -54,7 +54,8 @@ NAME = "registry_test"
 
 # What run-tests substitutes into a suite's argument template before starting
 # it. A token outside this set would reach the suite as a literal.
-TOKENS = {"@HOST@", "@PASS@", "@TIMEOUT@", "@MODE@", "@SOAKPROFILE@"}
+TOKENS = {"@HOST@", "@DEVICE@", "@COMPUTER@", "@PASS@", "@TIMEOUT@",
+          "@MODE@", "@SOAKPROFILE@"}
 
 # Files ending in _test.py that no profile should select, each with its reason.
 # A file that is not a suite belongs here rather than in the registry, so that
@@ -106,6 +107,10 @@ OWN_DEVICE_ARGUMENTS = {
     # -t is how long the page has to become ready, not a device call budget.
     "tests/e2e/web/index_test.py": "-t is READY_TIMEOUT, a page load",
     "tests/e2e/web/theme_test.py": "-t is READY_TIMEOUT, a page load",
+    # -t names a test group here, and the per-call budget is --timeout.
+    "tests/e2e/monitor/monitor_debug_test.py":
+        "-t is --test, the repeatable test-group selector; the per-call budget "
+        "is --timeout, and -P/--telnet-port sits beside -H",
 }
 
 

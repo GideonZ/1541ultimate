@@ -1055,7 +1055,8 @@ class CartridgePreferenceUnavailable(Failure):
 
 def ensure_cartridge_preference(target, password: str | None = None,
                                 timeout: float = DEFAULT_TIMEOUT) -> str | None:
-    """Make the computer of a cartridge target prefer the cartridge in its port.
+    """Make the computer of a cartridge target prefer the cartridge in its port,
+    on the running bus and not only in the config store.
 
     Answers what it did, for a caller that reports it:
 

@@ -20,12 +20,10 @@ static const int USB_KEY_BUFFER_SIZE = 64;
 // so it needs one slot more than the largest batch the input API accepts (64).
 static const int USB_INJECTED_BUFFER_SIZE = USB_KEY_BUFFER_SIZE + 1;
 static const int REST_TAP_QUEUE_SIZE = 128;
-// Ticks of the 20ms REST input timer that a queued tap stays released before
-// the next one starts, so the KERNAL scan that follows sees the key up and
-// treats the next press as a new key rather than a held one. Declared here
-// rather than in keyboard_usb.cc because the queue tests tick the timer this
-// many times rather than a number written out again. See
-// REST_KEYBOARD_TAP_HOLD_QUEUE_TICKS in software/api/route_input.cc.
+// Ticks of the 20ms REST input timer a queued tap stays released, so the
+// KERNAL scan sees the key up before the next press. Declared here so the
+// queue tests can tick by this constant. See REST_KEYBOARD_TAP_HOLD_QUEUE_TICKS
+// in software/api/route_input.cc.
 static const uint8_t REST_TAP_GAP_TICKS = 1;
 #define USB_DATA_SIZE 8
 

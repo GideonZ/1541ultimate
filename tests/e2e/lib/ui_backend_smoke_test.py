@@ -240,7 +240,7 @@ def run_machine_checks() -> None:
     try:
         with check("the table decides which machine skips a tagged check"):
             # Both entries list the Ultimate II+ only.
-            for name in (machine.MONITOR_D_KEY_RESERVED,
+            for name in (machine.TELNET_SEND_TOLERATES_SLOW_PEER,
                          machine.IDENT_SWITCHES_LIVE):
                 for product, expected in (("Ultimate 64 Elite", True),
                                           ("C64 Ultimate", True),
@@ -266,13 +266,13 @@ def run_machine_checks() -> None:
             # on. The reason carries the tag to pass to --assume-fix and the
             # machine and version to compare against the table.
             lagging = machine.classify("Ultimate II+L", "3.15")
-            reason = lagging.missing_fix(machine.MONITOR_D_KEY_RESERVED)
-            for needle in ("monitor-d-key-reserved", "Ultimate II+L", "3.15"):
+            reason = lagging.missing_fix(machine.TELNET_SEND_TOLERATES_SLOW_PEER)
+            for needle in ("telnet-send-tolerates-slow-peer", "Ultimate II+L", "3.15"):
                 if reason is None or needle not in reason:
                     raise Failure(f"expected {needle!r} in the skip reason, "
                                   f"got {reason!r}")
             current = machine.classify("C64 Ultimate", "1.2.0")
-            if current.missing_fix(machine.MONITOR_D_KEY_RESERVED) is not None:
+            if current.missing_fix(machine.TELNET_SEND_TOLERATES_SLOW_PEER) is not None:
                 raise Failure("a machine that has the fix was given a reason to skip")
 
         with check("skip_without_fix answers True only where the check cannot run"):
@@ -283,17 +283,17 @@ def run_machine_checks() -> None:
             # the report library holds it back and only the answer is visible.
             lagging = machine.classify("Ultimate II+L", "3.15")
             current = machine.classify("C64 Ultimate", "1.2.0")
-            if not lagging.skip_without_fix(machine.MONITOR_D_KEY_RESERVED, "fixture"):
+            if not lagging.skip_without_fix(machine.TELNET_SEND_TOLERATES_SLOW_PEER, "fixture"):
                 raise Failure("a machine without the fix was not skipped")
-            if current.skip_without_fix(machine.MONITOR_D_KEY_RESERVED, "fixture"):
+            if current.skip_without_fix(machine.TELNET_SEND_TOLERATES_SLOW_PEER, "fixture"):
                 raise Failure("a machine with the fix was skipped anyway")
 
         with check("an assumed fix runs the checks it gates, which is how a "
                    "backport is found"):
             machine.forget_assumptions()
             lagging = machine.classify("Ultimate II+L", "3.15")
-            machine.assume(machine.MONITOR_D_KEY_RESERVED)
-            if not lagging.has_fix(machine.MONITOR_D_KEY_RESERVED):
+            machine.assume(machine.TELNET_SEND_TOLERATES_SLOW_PEER)
+            if not lagging.has_fix(machine.TELNET_SEND_TOLERATES_SLOW_PEER):
                 raise Failure("the assumed fix still skipped its checks")
             if lagging.has_fix(machine.IDENT_SWITCHES_LIVE):
                 raise Failure("assuming one fix ran the checks of another")
@@ -306,16 +306,16 @@ def run_machine_checks() -> None:
         with check("an assumption list is parsed as a list, and a typo is refused"):
             machine.forget_assumptions()
             listed = machine.parse_assumptions(
-                f"{machine.MONITOR_D_KEY_RESERVED}, "
+                f"{machine.TELNET_SEND_TOLERATES_SLOW_PEER}, "
                 f"{machine.IDENT_SWITCHES_LIVE}")
-            if listed != {machine.MONITOR_D_KEY_RESERVED,
+            if listed != {machine.TELNET_SEND_TOLERATES_SLOW_PEER,
                           machine.IDENT_SWITCHES_LIVE}:
                 raise Failure(f"expected both fixes, got {sorted(listed)}")
             # A misspelt name that was quietly ignored would leave the checks
             # skipped, which is the answer the flag was run to get past, and
             # the run would look exactly like one where the fix had not landed.
             try:
-                machine.parse_assumptions("monitor-d-key-reserve")
+                machine.parse_assumptions("telnet-send-tolerates-slow-pee")
             except machine.UnknownFix:
                 pass
             else:
