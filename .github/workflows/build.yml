@@ -20,6 +20,12 @@ jobs:
       - name: Generate Version String
         run: echo "GIT_VERSION=$(git describe --tags --always)" >>$GITHUB_ENV
 
+      - name: Test CRT Loader
+        run: |
+          docker run --rm \
+          -v /opt/build-tools:/mnt/build-tools:ro \
+          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make -C software/io/c64/tests"
+
       # The harness that watches an E2E gate run, checked on every push. It
       # needs no device and no network beyond loopback, and it runs before the
       # firmware builds because it costs seconds and a broken report generator
@@ -87,12 +93,6 @@ jobs:
           docker run --rm \
           -v /opt/build-tools:/mnt/build-tools:ro \
           -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make -C software/io/command_interface/tests"
-
-      - name: Test CRT Loader
-        run: |
-          docker run --rm \
-          -v /opt/build-tools:/mnt/build-tools:ro \
-          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make -C software/io/c64/tests"
 
       - name: Cache U2 FPGA
         id: cache-u2
