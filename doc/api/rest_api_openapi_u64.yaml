@@ -1892,7 +1892,7 @@ paths:
         - name: value
           in: query
           required: true
-          description: Byte to write, in hexadecimal.
+          description: Byte to write, in hexadecimal, 00 to FF.
           schema:
             type: string
           example: '1F'
@@ -1903,6 +1903,17 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/DebugRegisterResponse'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                Invalid value:
+                  value:
+                    errors:
+                      - Invalid value
         '403':
           $ref: '#/components/responses/Forbidden'
   '/v1/machine:heap':

@@ -551,7 +551,7 @@ def _machine_reads_cases() -> list[Case]:
         before = ctx.api.machine.debugreg()
         if before is None:
             raise Skip("the debug register is not built into this product")
-        after = ctx.api.machine.set_debugreg(f"0x{before}")
+        after = ctx.api.machine.set_debugreg(before)
         if after != before:
             raise Failure(f"wrote back {before!r}, reads {after!r}")
     case(("PUT", "/v1/machine:debugreg"), "writing the held value back is a no-op",

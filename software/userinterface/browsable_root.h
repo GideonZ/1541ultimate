@@ -130,6 +130,8 @@ public:
 			return &children; // cached version OK
 		}
 
+		if ((!type) && (!(this->info->attrib & AM_DIR)))
+			type = FileType :: getFileTypeFactory()->create(this);
 		if (type) {
 		    if (type->getCustomBrowsables(this, children) >= 0) {
 		        error = 0;
