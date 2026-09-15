@@ -289,6 +289,7 @@ tools/swap
 tools/c64/*.prg
 software/6502/sidcrt/target
 software/io/command_interface/tests/paletteCommandTest
+software/io/c64/tests/build
 *.d
 tools/dump_bus_trace
 tools/64tass/*.o
