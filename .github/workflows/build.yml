@@ -17,6 +17,12 @@ jobs:
           submodules: recursive
           fetch-depth: 0
 
+      - name: Test JSON Replacement
+        run: |
+          docker run --rm \
+          -v /opt/build-tools:/mnt/build-tools:ro \
+          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make -C software/api/tests"
+
       - name: Generate Version String
         run: echo "GIT_VERSION=$(git describe --tags --always)" >>$GITHUB_ENV
 
@@ -51,6 +57,11 @@ jobs:
              --target /tmp/lint-packages -r tests/requirements-lint.txt && \
            PYTHONPATH=/tmp/lint-packages python3 tests/lib/lint_test.py"
 
+      - name: Check D81 track bounds
+        run: |
+          docker run --rm \
+          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make d81_tracks_test"
+
       # Also the gate that catches an endpoint whose documentation was not
       # updated with it. Runs before the firmware builds because it costs seconds.
       - name: Check OpenAPI Specification
@@ -82,17 +93,35 @@ jobs:
            PYTHONPATH=/tmp/openapi-packages python -m openapi_spec_validator \
              --validation-errors all \$(python tools/openapi/generate.py paths)"
 
+      - name: Test INT_MIN Formatting
+        run: |
+          docker run --rm \
+          -v /opt/build-tools:/mnt/build-tools:ro \
+          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make -C software/api/tests CXX='g++ -fsanitize=undefined -fno-sanitize-recover=all'"
+
       - name: Determine FPGA & ESP32 dependencies
         run: |
           docker run --rm \
           -v /opt/build-tools:/mnt/build-tools:ro \
           -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make fpga_depends && make esp_depends"
 
+      - name: Test HTTP Signed Integers
+        run: |
+          docker run --rm \
+          -v /opt/build-tools:/mnt/build-tools:ro \
+          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make -B -C target/pc/linux/test_http_target test-integer-widths"
+
       - name: Test UCI Palette Commands
         run: |
           docker run --rm \
           -v /opt/build-tools:/mnt/build-tools:ro \
           -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make -C software/io/command_interface/tests"
+
+      - name: Test HTTP Body Removal
+        run: |
+          docker run --rm \
+          -v /opt/build-tools:/mnt/build-tools:ro \
+          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make -B -C target/pc/linux/test_http_target test-body-removal"
 
       - name: Cache U2 FPGA
         id: cache-u2

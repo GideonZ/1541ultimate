@@ -465,6 +465,13 @@ public:
     void remove(JSON *j)
     {
         if (j && j->parent) {
+            // Keep the editing position alive when removing it or an ancestor.
+            for (JSON *cursor = current; cursor; cursor = cursor->parent) {
+                if (cursor == j) {
+                    current = j->parent;
+                    break;
+                }
+            }
             if (j->parent->type() == eObject) {
                 JSON_Object *p = (JSON_Object  *)j->parent;
                 p->remove(j);
