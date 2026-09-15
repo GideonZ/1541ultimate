@@ -420,9 +420,10 @@ def test_wheel_micromys(api, listener, mouse) -> None:
         mouse.wheel(vertical=-3, gap_ms=0)
         state = listener.quiet()
         detail(str(state))
-        # When the firmware's queue of wheel deltas is full, a new delta is added
-        # to the last queued one (usb_hid_publish_native_wheel_input), so the
-        # first down detent can cancel an up detent still waiting there.
+        # By design a new wheel delta is added to the last queued one when the
+        # queue is full (usb_hid_publish_native_wheel_input), so the first down
+        # detent can cancel an up detent still waiting there. That keeps the
+        # wheel responsive when it turns the other way.
         require(2 <= state.wheel_down <= 3, "expected 2 or 3 down pulses after the reversal", state)
         require(1 <= state.wheel_up <= 8, "expected some, at most 8, up pulses before it", state)
         require_still(state, "the wheel")
