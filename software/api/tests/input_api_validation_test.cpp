@@ -68,6 +68,18 @@ JSON *parse_json_text(const char *text, int &tokens)
 
 } // namespace
 
+TEST(JsonValueTest, RendersFullSignedIntegerRange)
+{
+    JSON_Integer minimum(INT32_MIN);
+    JSON_Integer maximum(INT32_MAX);
+    JSON_Integer negative(-1);
+    JSON_Integer zero(0);
+    EXPECT_EQ(std::string("-2147483648"), std::string(minimum.render()));
+    EXPECT_EQ(std::string("2147483647"), std::string(maximum.render()));
+    EXPECT_EQ(std::string("-1"), std::string(negative.render()));
+    EXPECT_EQ(std::string("0"), std::string(zero.render()));
+}
+
 TEST(InputApiValidationTest, ParsesValidBatchAndPreservesEventDetails)
 {
     InputParsedEvent events[INPUT_API_MAX_EVENTS];
@@ -350,4 +362,22 @@ TEST(InputApiValidationTest, RejectsMalformedJsonBeforeValidation)
 
     EXPECT_TRUE(tokens < 0);
     EXPECT_EQ((JSON *)0, root);
+}
+
+TEST(JsonValueTest, ReplacedPrimitivesRetainTheirParent)
+{
+    JSON_Object object;
+    object.add("value", 0);
+
+    object.set("value", 123);
+    EXPECT_EQ(eInteger, object.get("value")->type());
+    EXPECT_EQ(static_cast<JSON *>(&object), object.get("value")->parent);
+
+    object.set("value", true);
+    EXPECT_EQ(eBool, object.get("value")->type());
+    EXPECT_EQ(static_cast<JSON *>(&object), object.get("value")->parent);
+
+    object.set("value", "replacement");
+    EXPECT_EQ(eString, object.get("value")->type());
+    EXPECT_EQ(static_cast<JSON *>(&object), object.get("value")->parent);
 }

@@ -26,6 +26,12 @@ stream carries, so the comparison never converts colour and never guesses which
 palette the device is running. The palette attached to it is the device's
 built-in one, which is what makes the file viewable and what a saved failure
 frame is rendered in; nothing in the comparison reads it.
+
+The same image is then started again with 96 bytes of 0x1A after its last chip
+packet, and has to reach the same frame. A header that follows the chip packets
+and lacks the CHIP signature marks the end of the file, as it did up to firmware
+3.10 and does in VICE (#900). A file whose first packet is not a chip packet is
+still refused.
 """
 
 from __future__ import annotations
@@ -70,6 +76,13 @@ TAP_INTERVAL_SECONDS = 1.5
 # that needs several taps to see one.
 MATCH_TIMEOUT_SECONDS = 15.0
 
+# The copy of an EasyFlash game attached to #900 is the released file followed
+# by these bytes, which pad it to a multiple of 128 bytes. Firmware 3.11 to 3.15
+# refused it with "Error detected in file format" before reading any chip data,
+# so the same tail on this image reproduces the refusal.
+TRAILING_PADDING = b"\x1a" * 96
+CRT_HEADER_SIZE = 0x40
+
 
 def golden_frame() -> tuple[bytes, tuple[int, int], list[int]]:
     """The reference frame's palette indices, its geometry and its palette."""
@@ -101,9 +114,54 @@ def save_frame(pixels: bytes, size: tuple[int, int], palette: list[int]) -> None
     detail(f"the closest frame is in {path}")
 
 
+def start_cartridge(device: UltimateApi, image: bytes) -> None:
+    """Start a cartridge image and require the device to have accepted it.
+
+    POST rather than a path: the image travels with the request, so the check
+    needs nothing on the device's storage.
+    """
+    code, _, body = device.runners.upload("run_crt", image)
+    if code != 200:
+        raise Failure(f"runners:run_crt returned HTTP {code}: {body[:160]!r}")
+
+
+def frame_pixels(capture: VicStreamCapture) -> bytes | None:
+    """The next frame's palette indices, or None when a gap cut the frame short.
+
+    The socket drops datagrams once its buffer is full, which happens while the
+    suite waits on a request and does not read. A capture whose packet budget
+    spans that gap cannot assemble a frame. Measured on an Ultimate 64 with the
+    host's 2 MB default buffer: of 120 captures taken as the first or second
+    read after a 0.5s to 1.4s pause, 13 failed, each with about 6,250 packets
+    missing inside its window, and the next capture succeeded every time. That
+    says nothing about the picture, so the polling loops read on.
+    """
+    try:
+        return capture.capture_image().tobytes()
+    except Failure as exc:
+        if "complete VIC frame" not in str(exc):
+            raise
+        return None
+
+
+def wait_for_restart(capture: VicStreamCapture, reference: bytes) -> None:
+    """Read frames until one is not the game screen.
+
+    The previous start left the game screen on the stream, and the socket still
+    holds frames of it from before the restart. A match read before the screen
+    has changed could be one of those frames rather than the new start.
+    """
+    deadline = time.monotonic() + MATCH_TIMEOUT_SECONDS
+    while time.monotonic() < deadline:
+        pixels = frame_pixels(capture)
+        if pixels is not None and pixels != reference:
+            return
+    raise Failure("the game screen of the previous start never went away")
+
+
 def wait_for_game_screen(device: UltimateApi, capture: VicStreamCapture,
                          reference: bytes, size: tuple[int, int],
-                         palette: list[int]) -> None:
+                         palette: list[int], cartridge: str) -> None:
     """Tap the start key until the stream carries the reference frame.
 
     Every frame is compared as it arrives rather than one being taken after a
@@ -121,7 +179,9 @@ def wait_for_game_screen(device: UltimateApi, capture: VicStreamCapture,
             device.machine.press(START_KEY)
             taps += 1
             next_tap = time.monotonic() + TAP_INTERVAL_SECONDS
-        pixels = capture.capture_image().tobytes()
+        pixels = frame_pixels(capture)
+        if pixels is None:
+            continue
         if pixels == reference:
             detail(f"the game screen arrived {time.monotonic() - started:.1f}s "
                    f"after the cartridge started, on tap {taps}")
@@ -141,7 +201,7 @@ def wait_for_game_screen(device: UltimateApi, capture: VicStreamCapture,
         detail(f"{capture.foreign_packets} packets on the group came from "
                f"another address and were ignored")
     save_frame(closest, size, palette)
-    raise Failure(f"the Ultimax cartridge did not draw {REFERENCE.name}")
+    raise Failure(f"the {cartridge} did not draw {REFERENCE.name}")
 
 
 def run(args) -> str:
@@ -162,12 +222,23 @@ def run(args) -> str:
             if streaming != size:
                 return (f"the reference is a {size[0]}x{size[1]} PAL frame and "
                         f"this machine streams {streaming[0]}x{streaming[1]}")
+            image = CARTRIDGE.read_bytes()
             with check(f"an Ultimax cartridge draws {REFERENCE.name}"):
-                # POST rather than a path: the image travels with the request,
-                # so the check needs nothing on the device's storage.
                 started = True
-                device.runners.upload("run_crt", CARTRIDGE.read_bytes())
-                wait_for_game_screen(device, capture, reference, size, palette)
+                start_cartridge(device, image)
+                wait_for_game_screen(device, capture, reference, size, palette,
+                                     "Ultimax cartridge")
+            with check(f"the cartridge with trailing padding draws {REFERENCE.name}"):
+                start_cartridge(device, image + TRAILING_PADDING)
+                wait_for_restart(capture, reference)
+                wait_for_game_screen(device, capture, reference, size, palette,
+                                     "cartridge with trailing padding")
+            with check("a file whose first packet is not a chip packet is refused"):
+                code, _, body = device.runners.upload(
+                    "run_crt", image[:CRT_HEADER_SIZE] + TRAILING_PADDING)
+                if code != 415:
+                    raise Failure(f"runners:run_crt returned HTTP {code}, "
+                                  f"expected 415: {body[:160]!r}")
     finally:
         capture.close()
         if started:

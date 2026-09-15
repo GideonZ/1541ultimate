@@ -52,7 +52,22 @@ LFLAGS   = --gc-sections
 
 include ../../../common/rules.mk
 
+# Exercise sign extension even on hosts where plain char is signed by default.
+.PHONY: test-integer-widths
+test-integer-widths:
+	@$(MAKE) OUTPUT=output/integer-widths RESULT=result/integer-widths \
+	    CPP="$(CPP) -funsigned-char" all
+	@result/integer-widths/$(PRJ) --integer-widths
+
 $(RESULT)/$(PRJ): $(OBJS_C) $(OBJS_CC) $(OBJS_ASM) $(OBJS_6502) $(OBJS_BIN) $(OBJS_IEC) $(OBJS_NANO)
 	@echo Linking...
 	$(CPP) $(ALL_OBJS) $(LLIB) -o $(RESULT)/$(PRJ) $(LIBS)
 
+# Run the removal regression independently of the external JSON fixture.
+.PHONY: test-body-removal
+test-body-removal:
+	@$(MAKE) OUTPUT=output/body-removal RESULT=result/body-removal \
+	    CC="$(CC) -fsanitize=address,undefined -fno-sanitize-recover=all" \
+	    CPP="$(CPP) -fsanitize=address,undefined -fno-sanitize-recover=all" all
+	# ASan must precede any libraries preloaded by the build environment.
+	@LD_PRELOAD="$$($(CPP) -print-file-name=libasan.so)$${LD_PRELOAD:+:$$LD_PRELOAD}" result/body-removal/$(PRJ) --body-removal

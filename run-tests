@@ -291,6 +291,10 @@ SUITES: Sequence[Suite] = (
     # fail for a reason that is not its own.
     Suite("e2e", "create-disk-image", "tests/e2e/api/create_disk_image_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@", profile=profiles.QUICK),
+    # Reads physical track 81 through a real emulated 1581, then mounts an
+    # oversized D81 and proves the bounded layout leaves the device usable.
+    Suite("e2e", "d81-track-bounds", "tests/e2e/drive/d81_track_bounds_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --test all", profile=profiles.QUICK),
     # Calls every endpoint the firmware registers, and fails when one is
     # neither probed nor excluded with a reason. The lockup that prompted it
     # shipped because no suite called that route at all, so the gate matters
@@ -459,6 +463,14 @@ SUITES: Sequence[Suite] = (
     # whole VIC frame against a reference, index for index. It takes the video
     # stream, and reboots the machine afterwards to remove the cartridge.
     Suite("e2e", "ultimax-cartridge", "tests/e2e/io/c64/ultimax_cartridge_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
+    # RoboCop 2 and Shadow of the Beast read Ocean banks 16 to 31 at $A000, but
+    # every type 5 CRT was started in 8K mode, where $A000 never shows the
+    # cartridge, so they started to a black screen. The suite builds a 32-bank
+    # type 5 CRT in code with banks 16 to 31 listed at $A000, and reads each
+    # bank's marker byte back from screen RAM. It reboots the machine
+    # afterwards to remove the cartridge.
+    Suite("e2e", "ocean-cartridge", "tests/e2e/io/c64/ocean_cartridge_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
     # A C64 Game System cartridge latches its bank from the address of any IO1
     # access; the FPGA latched the data byte, so every game on the C64GS 4-in-1

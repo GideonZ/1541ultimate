@@ -295,6 +295,7 @@ e2e:
   menu-screen                       x      x      x      x      x
   navigation-keys                   x      x      x      x      x
   observability                     .      .      x      x      x
+  ocean-cartridge                   .      .      x      x      x
   openapi-contract                  .      x      x      x      x
   openapi-validator                 .      x      x      x      x
   power-cycle                       .      .      .      x      x
@@ -342,8 +343,8 @@ soak:
   usb-keyboard-repeat               .      .      .      x      x
 
                                ------ ------ ------ ------ ------
-  suites                           12     26     57     69     69
-  suite runs                       12     26     57    138    207
+  suites                           12     26     58     70     70
+  suite runs                       12     26     58    140    210
 
 Scenario and check counts, and durations, are not shown here:
 the registry does not know them. They depend on the machine and are
