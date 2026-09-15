@@ -475,6 +475,25 @@ SUITES: Sequence[Suite] = (
     # stream, and reboots the machine afterwards to remove the cartridge.
     Suite("e2e", "ultimax-cartridge", "tests/e2e/io/c64/ultimax_cartridge_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
+    # COMAL 80 selects its banks with bit 7 set, which addresses offset 2 MB on
+    # a product with 4 MB of cartridge memory; the image was mirrored only to
+    # 1 MB, so it started to a blank screen (#899). The suite builds four-bank
+    # type 21 CRTs in code and reads each bank's marker bytes back from screen
+    # RAM. It also checks that bit 6 switches the cartridge off
+    # (ultimate_releases#49), gated on comal80-cartridge-off-bit because that
+    # fix is in the FPGA image, and that a grey (subtype 1) CRT keeps the
+    # cartridge on. It reboots the machine afterwards to remove the cartridge.
+    Suite("e2e", "comal80-cartridge", "tests/e2e/io/c64/comal80_cartridge_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
+    # EasyFlash decodes six bits of its bank register, and an EasyFlash image of
+    # Maniac Mansion writes $78 to $7B there; on a product with 4 MB of cartridge
+    # memory those banks lie above 1 MB, which read $FF unless the image repeats
+    # up to the end of the cartridge memory (#899). The suite builds a 64-bank
+    # type 32 CRT in code, selects every bank with $00, $40, $80 and $C0 in the
+    # upper bits, and reads each bank's marker back from screen RAM. It reboots
+    # the machine afterwards to remove the cartridge.
+    Suite("e2e", "easyflash-cartridge", "tests/e2e/io/c64/easyflash_cartridge_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
     # RoboCop 2 and Shadow of the Beast read Ocean banks 16 to 31 at $A000, but
     # every type 5 CRT was started in 8K mode, where $A000 never shows the
     # cartridge, so they started to a black screen. The suite builds a 32-bank
