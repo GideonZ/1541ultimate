@@ -472,6 +472,15 @@ SUITES: Sequence[Suite] = (
     # afterwards to remove the cartridge.
     Suite("e2e", "ocean-cartridge", "tests/e2e/io/c64/ocean_cartridge_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
+    # A C64 Game System cartridge latches its bank from the address of any IO1
+    # access; the FPGA latched the data byte, so every game on the C64GS 4-in-1
+    # crashed on start. The suite builds a 64-bank type 15 CRT in code and reads
+    # each bank's marker back from screen RAM, and reboots afterwards to remove
+    # the cartridge. The fix is in the FPGA image, and the Ultimate 64 images are
+    # prebuilt, so it is gated on machine.C64GS_BANK_FROM_ADDRESS and reports
+    # SKIP until the table says a machine has it.
+    Suite("e2e", "c64gs-cartridge", "tests/e2e/io/c64/c64gs_cartridge_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
     # Guards GideonZ/commodore#1 (c66ef028): a Reset, a Reboot or a C=+R taken
     # from the menu has to run after the UI has torn down, so the C64 comes
     # back to a boot screen with none of the menu's characters on it. The
