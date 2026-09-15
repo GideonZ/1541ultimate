@@ -336,8 +336,8 @@ begin
                 serve_rom <= '1';
                 cart_en   <= not mode_bits(0);
                 rom_mode  <= "00"; -- 8K banks
-                
-            
+                -- cache-bust: force a fresh synthesis for the #901 CI bisection (throwaway)
+
             when c_ocean_16K =>
                 if io_write='1' and io_addr(8)='0' then -- DE00 range
                     bank_bits(21 downto 14) <= io_wdata;
