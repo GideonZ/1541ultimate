@@ -70,6 +70,26 @@ void usb_hid_set_joy1_output(uint8_t active_low_mask)
 #endif
 }
 
+#if U64
+void usb_hid_set_mouse1_position(int16_t mouse_x, int16_t mouse_y, const void *source)
+{
+#if !RECOVERYAPP
+    JoystickOutput::instance().setUsbPort1Mouse(mouse_x, mouse_y, source);
+#else
+    (void)source;
+    C64_PADDLE_1_X = mouse_x & 0x7F;
+    C64_PADDLE_1_Y = mouse_y & 0x7F;
+#endif
+}
+
+void usb_hid_clear_mouse1_position(void)
+{
+#if !RECOVERYAPP
+    JoystickOutput::instance().clearUsbPort1Mouse();
+#endif
+}
+#endif
+
 struct t_usb_hid_visibility
 {
     char name[33];
@@ -307,6 +327,7 @@ void usb_hid_apply_mouse_output_enable()
 #if U64
     C64_MOUSE_EN_1 = (usb_hid_active_mouse_interfaces > 0) ? 1 : 0;
     if (usb_hid_active_mouse_interfaces == 0) {
+        usb_hid_clear_mouse1_position();
         usb_hid_set_joy1_output(0x1F);
     }
 #endif
@@ -592,15 +613,17 @@ static void usb_hid_relinquish_sibling_boot_functions(UsbDevice *device, UsbInte
     }
 }
 
+static void usb_hid_queue_menu_key(int key, int repeat, int max_pending);
+
+// Cursor keys the wheel or the motion types onto the C64. Each one takes about
+// four user interface polls (keyboard_usb.h), so at most this many wait in each
+// direction, and a turn the other way drops the ones still waiting: the cursor
+// stops within a second of the mouse.
+static const int USB_HID_CURSOR_MAX_PENDING_KEYS = 16;
+
 static void usb_hid_queue_key(int key, int repeat)
 {
-    if (repeat <= 0) {
-        return;
-    }
-    if (repeat > (USB_INJECTED_BUFFER_SIZE - 1)) {
-        repeat = USB_INJECTED_BUFFER_SIZE - 1;
-    }
-    system_usb_keyboard.push_head_repeat(key, repeat);
+    usb_hid_queue_menu_key(key, repeat, USB_HID_CURSOR_MAX_PENDING_KEYS);
 }
 
 static void usb_hid_queue_menu_key(int key, int repeat, int max_pending)
@@ -1470,11 +1493,10 @@ void UsbHidDriver :: interrupt_handler()
             }
 
 #if U64
+            usb_hid_set_mouse1_position(mouse_x, mouse_y, this);
             if (!HidMouseInterpreter::mouseModeRoutesWheelToNative(mouse_mode)) {
                 usb_hid_set_joy1_output(output_mouse_joy);
             }
-            C64_PADDLE_1_X = mouse_x & 0x7F;
-            C64_PADDLE_1_Y = mouse_y & 0x7F;
 #else
             printf("Mouse: %4x,%4x %b\n", mouse_x, mouse_y, output_mouse_joy);
 #endif
