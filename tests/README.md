@@ -280,6 +280,7 @@ e2e:
   create-disk-image                 .      x      x      x      x
   deferred-machine-actions          .      .      x      x      x
   doom-release                      .      .      .      x      x
+  easyflash-cartridge               .      .      x      x      x
   esp-depends                       x      x      x      x      x
   fast-reset                        .      .      x      x      x
   freeze-menu                       .      .      x      x      x
@@ -342,8 +343,8 @@ soak:
   usb-keyboard-repeat               .      .      .      x      x
 
                                ------ ------ ------ ------ ------
-  suites                           12     26     57     69     69
-  suite runs                       12     26     57    138    207
+  suites                           12     26     58     70     70
+  suite runs                       12     26     58    140    210
 
 Scenario and check counts, and durations, are not shown here:
 the registry does not know them. They depend on the machine and are

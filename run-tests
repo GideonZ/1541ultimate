@@ -470,6 +470,15 @@ SUITES: Sequence[Suite] = (
     # cartridge on. It reboots the machine afterwards to remove the cartridge.
     Suite("e2e", "comal80-cartridge", "tests/e2e/io/c64/comal80_cartridge_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
+    # EasyFlash decodes six bits of its bank register, and an EasyFlash image of
+    # Maniac Mansion writes $78 to $7B there; on a product with 4 MB of cartridge
+    # memory those banks lie above 1 MB, which read $FF unless the image repeats
+    # up to the end of the cartridge memory (#899). The suite builds a 64-bank
+    # type 32 CRT in code, selects every bank with $00, $40, $80 and $C0 in the
+    # upper bits, and reads each bank's marker back from screen RAM. It reboots
+    # the machine afterwards to remove the cartridge.
+    Suite("e2e", "easyflash-cartridge", "tests/e2e/io/c64/easyflash_cartridge_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
     # Guards GideonZ/commodore#1 (c66ef028): a Reset, a Reboot or a C=+R taken
     # from the menu has to run after the UI has torn down, so the C64 comes
     # back to a boot screen with none of the menu's characters on it. The
