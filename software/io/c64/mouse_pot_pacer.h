@@ -3,24 +3,20 @@
 
 #include "integer.h"
 
-// Paces a 1351 mouse position onto the POT lines of control port 1, so that a
-// C64 mouse driver never sees the pointer jump backward.
+// Paces a 1351 mouse position onto control port 1's POT lines, so a C64 mouse
+// driver never sees the pointer jump backward.
 //
-// A 1351 driver reads the 7-bit POT values once per frame and takes the change
-// as a move of -64 to +63 counts. A larger change between two reads looks like
-// a move the other way. Mouse reports come every 20ms, but the firmware handles
-// each one after a varying delay, so two of them can land inside one frame.
+// A driver reads the 7-bit values once per frame and takes the change as a move
+// of -64 to +63 counts; more than that reads as a move the other way. Reports
+// come every 20ms but are handled after a varying delay, so two of them can
+// land inside one frame.
 //
-// The pacer therefore changes the lines at most once per GAP_MS, by at most
-// MAX_STEP counts per axis. Two changes are then more than GAP_MS - 1 ms apart
-// on the millisecond clock: a PAL frame (19.95ms), plus the 0.52ms the SID
-// takes to measure a POT line, plus up to 2.5ms by which the driver's interrupt
-// runs late. Between two reads of a driver that reads once per frame, there is
-// then at most one change. NTSC frames are shorter, so the same gap covers them.
-//
-// Movement the lines cannot show yet waits, up to MAX_BEHIND counts per axis;
-// anything beyond that is dropped, so the pointer stops at most two changes
-// after the mouse does. Movement that fits goes out at once.
+// The lines therefore change at most once per GAP_MS, by at most MAX_STEP
+// counts per axis. GAP_MS - 1 ms covers a PAL frame (19.95ms), the 0.52ms the
+// SID takes to measure a POT line and 2.5ms of interrupt delay, so no two reads
+// of a driver that reads once per frame see two changes; NTSC frames are
+// shorter. Movement that has to wait is capped at MAX_BEHIND counts per axis
+// and the rest is dropped, so the pointer stops two changes after the mouse.
 class MousePotPacer
 {
 public:
@@ -71,8 +67,7 @@ public:
         resetAxis(y_axis, 0);
     }
 
-    // Shows (x, y) at once, at millisecond `now`. It counts as a change, so the
-    // next one waits GAP_MS.
+    // Shows (x, y) at once; it counts as a change, so the next waits GAP_MS.
     void reset(int16_t x, int16_t y, uint16_t now)
     {
         resetAxis(x_axis, x);
@@ -80,7 +75,7 @@ public:
         last_change = now;
     }
 
-    // The running position the mouse has reached. It may wrap past int16_t.
+    // The running position, which may wrap past int16_t.
     void setTarget(int16_t x, int16_t y)
     {
         follow(x_axis, x);
@@ -92,10 +87,9 @@ public:
         return x_axis.behind || y_axis.behind;
     }
 
-    // Shows more of the waiting movement if GAP_MS has passed since the last
-    // change. Returns whether the lines changed. The clock wraps every 65.536
-    // seconds; after a quiet spell of a multiple of that, a change can wait up to
-    // GAP_MS longer than needed, but never goes out sooner.
+    // Shows more of the waiting movement once GAP_MS has passed, and says
+    // whether the lines changed. A wrap of the 65.536s clock can make a change
+    // wait up to GAP_MS longer, never less.
     bool advance(uint16_t now)
     {
         if (!isBehind() || ((uint16_t)(now - last_change) < gap_ms)) {

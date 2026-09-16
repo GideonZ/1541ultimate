@@ -368,12 +368,12 @@ def test_motion_speed(api, listener, mouse) -> None:
 # ------------------------------------------------------------------- pacing --
 
 FRAME_RATES = {"PAL": 50, "NTSC": 60}
-# MousePotPacer shows at most 126 waiting counts per axis, 63 per change, one
-# change per 24ms on 5ms timer ticks; this is that time with a margin.
+# MousePotPacer shows 126 waiting counts in two changes, 24ms apart on 5ms
+# timer ticks, plus a margin.
 PACER_CATCH_UP_SECONDS = 0.15
-# One change of at most 63 counts per 24ms shows less than 63 counts every
-# 20ms, and the pacer drops what waits beyond 126 counts. Of what 63 counts per
-# report would move, well over two thirds arrives, however far the reports go.
+# 63 counts per 24ms is less than the 63 counts every 20ms a mouse can report,
+# and the pacer drops what waits beyond 126 counts, so of what 63 counts per
+# report would move, well over two thirds arrives.
 FAST_ARRIVES = 0.7
 FAST_REPORTS = 60
 
@@ -405,9 +405,9 @@ def fast_case(listener, mouse, label: str, dx: int, dy: int, frame_rate: int, se
             stop.set()
             if loader:
                 loader.join()
-        # No read until the POT lines have caught up: a read stops the 6510, and
-        # a frame the listener missed would put two frames of movement into one
-        # step, which could look like a wrap the firmware never made.
+        # No read until the lines have caught up: a read stops the 6510, and a
+        # frame the listener misses joins two frames of movement into one step,
+        # which looks like a wrap the firmware never made.
         time.sleep(PACER_CATCH_UP_SECONDS)
         first_read = time.monotonic()
         after = listener.state()
@@ -443,11 +443,9 @@ def pacing_at_frame_rate(api, listener, mouse, mode: str) -> None:
               REPORT_CLAMP, -REPORT_CLAMP, rate, (REPORT_CLAMP * FAST_REPORTS, -REPORT_CLAMP * FAST_REPORTS),
               load=lambda: api.configs.item(CATEGORY, "Mouse Mode"))
     if isinstance(mouse, PicoMouse):
-        # A report whose motion and wheel move the pointer the same way moves it
-        # by more than 63 counts. At wheel sensitivity 16,
-        # scaleVerticalWheelAxisDelta turns a vertical value of 1 into 40 counts
-        # (normalizeVerticalWheel makes it 8, then 8 * 16 * 10/32). REST cannot
-        # put motion and wheel into one report.
+        # Motion and wheel the same way in one report move more than 63 counts:
+        # at wheel sensitivity 16, scaleVerticalWheelAxisDelta makes a vertical
+        # value of 1 into 40 counts. REST cannot put both in one report.
         configure(api, Mouse_Mode="Mouse", Mouse_Wheel_Sensitivity=16)
         fast_case(listener, mouse, at + "motion and wheel in one report, 103 counts up, never move backward",
                   0, -REPORT_CLAMP, rate, (0, -(REPORT_CLAMP + 40) * FAST_REPORTS), wheel=1)

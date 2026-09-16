@@ -183,12 +183,10 @@ static const TickType_t ROUTE_INPUT_MENU_REPEAT_TIMER_TICKS = (pdMS_TO_TICKS(20)
 static SemaphoreHandle_t rest_input_mutex = NULL;
 static TimerHandle_t rest_menu_repeat_timer = NULL;
 static RouteInputMenuKeyboardState rest_menu_keyboard_state;
-// A mouse tap holds its buttons for two PAL frames, so a program that reads the
-// buttons once per frame sees the press.
+// Two PAL frames, so a program reading the buttons once per frame sees a tap.
 static const int REST_MOUSE_TAP_HOLD_TICKS = (pdMS_TO_TICKS(40) > 0) ? pdMS_TO_TICKS(40) : 1;
 static const TickType_t REST_MOUSE_TIMER_TICKS = 1;
-// The shortest time between two REST mouse reports: the 20ms at which the
-// firmware polls a USB mouse. See RestMouseQueue.
+// The shortest time between two reports: the 20ms at which a USB mouse is polled.
 static const int REST_MOUSE_REPORT_TICKS = (pdMS_TO_TICKS(20) > 0) ? pdMS_TO_TICKS(20) : 1;
 // Longer than any report waits, so an idle queue's first report is due at once.
 static const TickType_t REST_MOUSE_IDLE_TICKS = pdMS_TO_TICKS(2 * INPUT_API_MAX_MOUSE_PATH_INTERVAL_MS);
@@ -262,10 +260,9 @@ static SemaphoreHandle_t input_mutex(void)
     return rest_input_mutex;
 }
 
-// Sends the reports that are due to the REST mouse. It runs in the timer task
-// and shares the input mutex with the handlers, so the virtual mouse is only
-// ever driven from one place at a time; a tick that finds the mutex taken
-// leaves the work to the next tick.
+// Sends the reports that are due, from the timer task under the input mutex, so
+// the virtual mouse is driven from one place at a time; a tick that finds the
+// mutex taken leaves the work to the next.
 static void rest_mouse_timer_callback(TimerHandle_t timer)
 {
     if (!rest_input_mutex || (xSemaphoreTake(rest_input_mutex, 0) != pdTRUE)) {
@@ -274,8 +271,6 @@ static void rest_mouse_timer_callback(TimerHandle_t timer)
     UsbHidDriver *mouse = UsbHidDriver::restMouse();
     TickType_t now = xTaskGetTickCount();
     RestMouseReport report;
-    // At most one report goes out per tick, as the next is at least
-    // REST_MOUSE_REPORT_TICKS away.
     if (mouse && rest_mouse_queue.takeDue((int)(now - rest_mouse_last_report), REST_MOUSE_REPORT_TICKS, report)) {
         mouse->restMouseReport(report.buttons, report.dx, report.dy, report.wheel, report.pan);
         rest_mouse_last_report = now;
@@ -302,9 +297,8 @@ static void apply_mouse_event(const InputParsedEvent &event)
         mouse->restMouseAttach();
         rest_mouse_queue.clear(0);
     }
-    // An idle queue sends its first report straight away, unless the previous
-    // report went out less than 20ms ago. A long idle spell is clamped to
-    // REST_MOUSE_IDLE_TICKS, so the tick difference cannot overflow an int.
+    // An idle queue sends its first report at once, unless the previous one went
+    // out less than 20ms ago. The clamp keeps the tick difference within an int.
     TickType_t now = xTaskGetTickCount();
     if ((TickType_t)(now - rest_mouse_last_report) > REST_MOUSE_IDLE_TICKS) {
         rest_mouse_last_report = now - REST_MOUSE_IDLE_TICKS;
@@ -313,9 +307,8 @@ static void apply_mouse_event(const InputParsedEvent &event)
     xTimerStart(rest_mouse_timer, 0);
 }
 
-// Drops every pending mouse report, lets go of the buttons and detaches the REST
-// mouse, so port 1's POT lines go back to joystick use. Called with the input
-// mutex held.
+// Drops the pending reports and detaches the REST mouse, so port 1 goes back to
+// joystick use. Called with the input mutex held.
 static void release_rest_mouse(void)
 {
     rest_mouse_queue.clear(0);

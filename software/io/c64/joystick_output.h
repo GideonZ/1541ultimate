@@ -12,8 +12,7 @@ class JoystickOutput
     uint8_t usb_p1;
     uint8_t rest_mouse_p1;      // lines of the REST mouse, a source of its own
     // The 1351 position every mouse on port 1 moves. apply() writes the POT
-    // lines from what the pacer shows, so a port 1 line update keeps the
-    // position, and fast movement cannot turn around between frames.
+    // lines from what the pacer shows.
     bool mouse_active;
     MousePotPacer mouse_pacer;
     uint8_t rest_p1_persistent;
@@ -31,15 +30,14 @@ public:
 
     void setUsbPort1(uint8_t active_low_mask);
     void setRestMousePort1(uint8_t active_low_mask);
-    // x and y are the running mouse position in counts; only their low seven
-    // bits reach the POT lines, paced by MousePotPacer. Both may be called in a
-    // critical section.
+    // The running mouse position in counts; only its low seven bits reach the
+    // POT lines, paced by MousePotPacer. Both may run in a critical section.
     void setMousePosition(int16_t x, int16_t y);
     void clearMousePosition(void);
-    // Starts the pacing timer if the POT lines are behind the mouse. Call it
-    // outside a critical section, after setMousePosition().
+    // Starts the pacing timer if the lines are behind the mouse. Call it outside
+    // a critical section, after setMousePosition().
     void paceMouse(void);
-    // Shows more of the mouse movement as the pacer allows. Run by the pacing timer.
+    // Shows more of the movement as the pacer allows. Run by the pacing timer.
     void tickMouse(void);
 
     void setRestPort1Persistent(uint8_t active_low_mask);

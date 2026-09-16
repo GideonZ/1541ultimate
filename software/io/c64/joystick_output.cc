@@ -21,9 +21,9 @@ static const uint32_t JOYSTICK_REST_TIMER_TICKS = (pdMS_TO_TICKS(20) > 0) ? pdMS
 // Runs every tick while the POT lines are behind the mouse.
 static TimerHandle_t joystick_mouse_timer = NULL;
 
-// The pacer works on the millisecond clock: a 5ms tick cannot tell a change
-// 20ms after the previous one from one 24ms after it. The clock is read in the
-// same critical section that writes the POT lines.
+// The pacer needs the millisecond clock: a 5ms tick cannot tell a change 20ms
+// after the previous one from one 24ms after it. It is read in the same
+// critical section that writes the POT lines.
 static uint16_t joystick_now(void)
 {
     return getMsTimer();
@@ -396,8 +396,7 @@ void JoystickOutput :: outputSnapshot(uint8_t &port1_active_low, uint8_t &port2_
     port1_active_low = port1 & JOYSTICK_DIGITAL_MASK;
     port2_active_low = port2 & JOYSTICK_DIGITAL_MASK;
     // A REST fire2 or fire3 press owns both POT lines while held. Otherwise a
-    // mouse keeps its position on them whenever a port 1 line changes, such as
-    // on every Micromys wheel pulse (#909).
+    // mouse keeps its position on them through every port 1 line change (#909).
     if (mouse_active && !joystick_has_extra_button_press(port1)) {
         port1_potx = mouse_pacer.potX();
         port1_poty = mouse_pacer.potY();

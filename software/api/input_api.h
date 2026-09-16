@@ -13,13 +13,11 @@ static const int INPUT_API_MAX_JOYSTICK_INPUTS = 7;
 static const int INPUT_API_ERROR_SIZE = 160;
 // JSON values a request may hold: the tokenizer's limit.
 static const int INPUT_API_MAX_JSON_TOKENS = 1024;
-// A mouse report moves by at most this many HID counts on each axis, as the
-// eight-bit relative fields of a USB mouse report do.
+// HID counts per axis in one report, as a USB mouse's eight-bit fields.
 static const int INPUT_API_MAX_MOUSE_MOTION = 127;
 // Wheel detents in one event, sent as one report each.
 static const int INPUT_API_MAX_MOUSE_DETENTS = 64;
-// Steps in one `path`. Each step costs three JSON tokens of the 1024 a request
-// may use.
+// Steps in one `path`; each one costs three of the JSON tokens above.
 static const int INPUT_API_MAX_MOUSE_PATH_STEPS = 256;
 // A path step every 20ms at most, as often as the firmware polls a USB mouse.
 static const int INPUT_API_MIN_MOUSE_PATH_INTERVAL_MS = 20;
@@ -449,9 +447,8 @@ static inline bool input_api_parse_joystick_event(JSON_Object *obj, InputParsedE
     return true;
 }
 
-// An optional integer member within low..high. `out` keeps its value when the
-// member is absent. Errors name it `object_name.name`, or `name` when
-// `object_name` is NULL.
+// An optional integer within low..high; `out` keeps its value when the member
+// is absent. Errors name it `object_name.name`, or `name` when that is NULL.
 static inline bool input_api_get_int_member(JSON_Object *obj, const char *object_name, const char *name,
     int low, int high, int &out, char *err, size_t err_size)
 {
@@ -632,8 +629,7 @@ static inline bool input_api_parse_mouse_path(JSON_Object *obj, InputParsedEvent
     return true;
 }
 
-// A mouse event does exactly one thing: buttons (`inputs` with a
-// `transition`), one `move`, a `wheel` turn, or a `path` of moves.
+// A mouse event does one thing: buttons, one `move`, a `wheel` turn or a `path`.
 static inline bool input_api_parse_mouse_event(JSON_Object *obj, InputParsedEvent &out, char *err, size_t err_size)
 {
     static const char *const allowed[] = { "kind", "inputs", "transition", "move", "wheel", "path", "interval_ms" };

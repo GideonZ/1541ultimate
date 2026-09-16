@@ -106,10 +106,9 @@ public:
 
     void interrupt_handler();
 
-    // The REST mouse: a wheel mouse with no USB device behind it, whose reports
-    // go through the same handling as a USB mouse's. NULL on a failure to build
-    // it. Its buttons and wheel pulses reach port 1 as their own source, and it
-    // moves the same port 1 position as a USB mouse. Call only from one task.
+    // A wheel mouse with no USB device behind it, whose reports go through the
+    // same handling as a USB mouse's; NULL if it cannot be built. Its buttons and
+    // wheel pulses are their own port 1 source. Call only from one task.
     static UsbHidDriver *restMouse(void);
     bool restMouseAttached(void) const;
     void restMouseAttach(void);

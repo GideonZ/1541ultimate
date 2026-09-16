@@ -5,17 +5,13 @@
 
 #include <stdlib.h>
 
-// The reports the REST mouse still has to send, in order. Each one is what a
-// USB wheel mouse would send: the buttons held, a relative move and a wheel
-// turn. `wait_ticks` is how long after the previous report it goes out, so a
-// path keeps its timing and a tap keeps its button down for a while.
+// The reports the REST mouse still has to send, in order: what a USB wheel
+// mouse would send, plus `wait_ticks`, how long after the previous report it
+// goes out, so a path keeps its timing and a tap holds its buttons.
 //
-// Reports leave no closer together than the firmware polls a USB mouse, so the
-// REST mouse does no more than a USB mouse can, and MousePotPacer paces both
-// the same way.
-//
-// The queue only builds and hands out reports; route_input.cc sends them to
-// the virtual mouse from its timer, under the input mutex.
+// The queue only builds and hands out reports. route_input.cc sends them from
+// its timer, under the input mutex, no faster than the firmware polls a USB
+// mouse.
 
 struct RestMouseReport {
     uint8_t buttons;

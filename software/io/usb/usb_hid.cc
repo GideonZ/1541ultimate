@@ -76,8 +76,7 @@ void usb_hid_set_joy1_output(uint8_t active_low_mask)
 void usb_hid_set_mouse1_position(int16_t mouse_x, int16_t mouse_y)
 {
 #if !RECOVERYAPP
-    // Every mouse, USB or REST, moves the one shared position, so the POT
-    // lines follow a single source.
+    // Every mouse moves the one shared position.
     JoystickOutput::instance().setMousePosition(mouse_x, mouse_y);
 #else
     C64_PADDLE_1_X = mouse_x & 0x7F;
@@ -798,14 +797,14 @@ UsbHidDriver :: ~UsbHidDriver()
     }
 }
 
-// One 1351 position for control port 1, which every mouse moves: a second USB
-// mouse, or the REST mouse, continues from where the first one left the pointer.
+// One 1351 position for control port 1: a second USB mouse, or the REST mouse,
+// carries on from where the first left the pointer.
 int16_t UsbHidDriver :: mouse_x = 0;
 int16_t UsbHidDriver :: mouse_y = 0;
 
-// The REST mouse's report: three buttons, then relative X, Y, vertical wheel
-// and horizontal wheel (AC Pan), one byte each. It is parsed like a USB
-// mouse's descriptor, so every report goes through the same handling.
+// The REST mouse's report: three buttons, then relative X, Y, vertical wheel and
+// horizontal wheel (AC Pan), one byte each. Parsed like a USB mouse's descriptor,
+// so its reports go through the same handling.
 static const uint8_t usb_hid_rest_mouse_descriptor[] = {
     0x05, 0x01, 0x09, 0x02, 0xA1, 0x01, 0x09, 0x01, 0xA1, 0x00,
     0x05, 0x09, 0x19, 0x01, 0x29, 0x03, 0x15, 0x00, 0x25, 0x01, 0x95, 0x03, 0x75, 0x01, 0x81, 0x02,
@@ -1378,9 +1377,8 @@ void UsbHidDriver :: interrupt_handler()
     host->resume_input_pipe(this->irq_transaction);
 }
 
-// One mouse report, from a USB mouse or from the REST mouse, applied to port 1,
-// the menu or the cursor keys as the mouse mode says. Returns whether the report
-// held mouse data.
+// One report, from a USB or the REST mouse, applied to port 1, the menu or the
+// cursor keys as the mouse mode says. Returns whether it held mouse data.
 bool UsbHidDriver :: process_mouse_report(const uint8_t *irq_data, int data_len)
 {
     bool handled = false;
@@ -1645,8 +1643,6 @@ bool UsbHidDriver :: process_mouse_report(const uint8_t *irq_data, int data_len)
         }
 
 #if U64
-        // Every mouse moves the one port 1 position, so it is read and
-        // published in one step.
         portENTER_CRITICAL();
         usb_hid_set_mouse1_position(mouse_x, mouse_y);
         portEXIT_CRITICAL();
