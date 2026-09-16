@@ -6,11 +6,14 @@ import hashlib
 import os
 import sys
 import time
-from typing import Dict, List, Optional, Tuple
+from typing import ClassVar
+from pathlib import Path
 
-# tests/lib holds the reporting rules every suite shares.
-sys.path.insert(0, os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
+# The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
+import cli  # noqa: E402
 import pacing  # noqa: E402  (needs tests/lib on sys.path first)
 from api import MachineApi
 from report import (Failure, check, check_skip, check_start, detail, format_exception,
@@ -53,7 +56,7 @@ class RestSession(RestClient):
     menu helpers below are specific to this suite.
     """
 
-    def __init__(self, host: str, password: Optional[str] = None,
+    def __init__(self, host: str, password: str | None = None,
                  timeout: float = 10.0) -> None:
         super().__init__(host, password, timeout)
         self.machine = MachineApi(self)
@@ -114,7 +117,7 @@ class RestSession(RestClient):
         verify_binary_contract(status, headers, body)
         return body
 
-    def try_get_menu_screen(self) -> Optional[bytes]:
+    def try_get_menu_screen(self) -> bytes | None:
         status, headers, body = self.request("GET", MENU_SCREEN_PATH)
         if status == 404:
             content_type = header_value(headers, "Content-Type")
@@ -125,7 +128,7 @@ class RestSession(RestClient):
         verify_binary_contract(status, headers, body)
         return body
 
-    def post_events(self, events: List[Dict[str, object]]) -> Dict[str, object]:
+    def post_events(self, events: list[dict[str, object]]) -> dict[str, object]:
         status, headers, body = self.request("POST", INPUT_PATH, payload={"events": events})
         if status != 200:
             raise Failure(f"input event failed with HTTP {status}: {body[:160]!r}")
@@ -134,7 +137,7 @@ class RestSession(RestClient):
             raise Failure(f"expected application/json from input event, got {content_type!r}")
         return json_object("input event", body)
 
-    def tap_keyboard(self, inputs: List[str]) -> None:
+    def tap_keyboard(self, inputs: list[str]) -> None:
         self.post_events([{"kind": "keyboard", "inputs": inputs, "transition": "tap"}])
 
     def release_all_input(self) -> None:
@@ -166,7 +169,7 @@ def require_error(label: str, body: bytes, message: str) -> None:
         raise Failure(f"{label}: expected errors to contain {message!r}, got {data!r}")
 
 
-def verify_binary_contract(status: int, headers: Dict[str, str], body: bytes) -> None:
+def verify_binary_contract(status: int, headers: dict[str, str], body: bytes) -> None:
     if status != 200:
         raise Failure(f"expected HTTP 200, got HTTP {status}: {body[:160]!r}")
 
@@ -253,30 +256,8 @@ def run_auth(session: RestSession) -> None:
         require_error("menu_screen auth", body, FORBIDDEN)
 
 
-def parse_duration(value: str) -> float:
-    text = value.strip().lower()
-    multiplier = 1.0
-    if text.endswith("ms"):
-        multiplier = 0.001
-        text = text[:-2]
-    elif text.endswith("s"):
-        text = text[:-1]
-    elif text.endswith("m"):
-        multiplier = 60.0
-        text = text[:-1]
-
-    try:
-        duration = float(text) * multiplier
-    except ValueError as exc:
-        raise argparse.ArgumentTypeError(f"invalid duration: {value!r}") from exc
-
-    if duration <= 0.0:
-        raise argparse.ArgumentTypeError("duration must be greater than zero")
-    return duration
-
-
-def parse_soak_stages(value: str) -> List[float]:
-    stages = [parse_duration(part) for part in value.split(",") if part.strip()]
+def parse_soak_stages(value: str) -> list[float]:
+    stages = [cli.parse_duration(part) for part in value.split(",") if part.strip()]
     if not stages:
         raise argparse.ArgumentTypeError("at least one soak stage is required")
     return stages
@@ -314,8 +295,8 @@ class MenuScreenInfo:
         best_foreground_row = -1
         best_foreground_count = 0
         for row in range(2, SCREEN_HEIGHT - 1):
-            background_counts: Dict[int, int] = {}
-            foreground_counts: Dict[int, int] = {}
+            background_counts: dict[int, int] = {}
+            foreground_counts: dict[int, int] = {}
             reverse_count = 0
             row_chars = chars[row * SCREEN_WIDTH + 1:(row + 1) * SCREEN_WIDTH - 1]
             row_colors = colors[row * SCREEN_WIDTH + 1:(row + 1) * SCREEN_WIDTH - 1]
@@ -351,9 +332,10 @@ class MenuScreenInfo:
 
 
 class MenuSoakNavigator:
-    UP = ["left_shift", "cursor_up_down"]
-    DOWN = ["cursor_up_down"]
-    F2 = ["left_shift", "f1"]
+    # Key sequences, read and never mutated, so one list per class is right.
+    UP: ClassVar[list[str]] = ["left_shift", "cursor_up_down"]
+    DOWN: ClassVar[list[str]] = ["cursor_up_down"]
+    F2: ClassVar[list[str]] = ["left_shift", "f1"]
 
     def __init__(self) -> None:
         self.reset()
@@ -365,8 +347,8 @@ class MenuSoakNavigator:
         self.top_level_sections = 0
         self.boundary_hits = 0
         self.last_action = ""
-        self.last_screen_id: Optional[bytes] = None
-        self.last_selected_row: Optional[int] = None
+        self.last_screen_id: bytes | None = None
+        self.last_selected_row: int | None = None
 
     def _remember_action(self, action: str, info: MenuScreenInfo) -> None:
         self.last_action = action
@@ -395,7 +377,7 @@ class MenuSoakNavigator:
 
         self.last_action = ""
 
-    def next_key(self, body: bytes) -> Tuple[str, List[str]]:
+    def next_key(self, body: bytes) -> tuple[str, list[str]]:
         info = MenuScreenInfo(body)
         self._apply_last_action_outcome(info)
 
@@ -429,7 +411,7 @@ class MenuSoakNavigator:
         return f"move selection downward from row {info.selected_row}", self.DOWN
 
 
-def run_soak(session: RestSession, stages: List[float], navigation_interval: float) -> None:
+def run_soak(session: RestSession, stages: list[float], navigation_interval: float) -> None:
     if not session.menu_screen_unavailable():
         session.close_menu()
     session.open_menu()
@@ -498,10 +480,10 @@ def run_soak(session: RestSession, stages: List[float], navigation_interval: flo
         session.close_menu_from_anywhere()
 
 
-def expand_tests(selected: Optional[List[str]]) -> List[str]:
+def expand_tests(selected: list[str] | None) -> list[str]:
     if not selected:
         selected = ["contract", "unavailable", "auth"]
-    expanded: List[str] = []
+    expanded: list[str] = []
     for name in selected:
         names = ["contract", "unavailable", "auth"] if name == "all" else [name]
         for item in names:
@@ -512,19 +494,8 @@ def expand_tests(selected: Optional[List[str]]) -> List[str]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Validate /v1/machine:menu_screen on real firmware.")
-    parser.add_argument("-H", "--host", default=os.environ.get("U64_HOST", "u64"))
+    cli.add_device_arguments(parser, password=None, timeout=5.0, colour=False)
     parser.add_argument("-r", "--rest-host", default=os.environ.get("U64_REST_HOST"))
-    parser.add_argument(
-        "-p",
-        "--password",
-        default=os.environ.get("U64_PASS"),
-    )
-    parser.add_argument(
-        "-t",
-        "--timeout",
-        type=float,
-        default=float(os.environ.get("U64_TIMEOUT", "5.0")),
-    )
     parser.add_argument(
         "--test",
         action="append",
@@ -544,7 +515,7 @@ def main() -> int:
     )
     parser.add_argument(
         "--soak-key-interval",
-        type=parse_duration,
+        type=cli.parse_duration,
         default=SOAK_NAVIGATION_INTERVAL_SECONDS,
         metavar="DURATION",
         help="Minimum interval between REST keyboard navigation taps during soak.",

@@ -2,6 +2,7 @@
 #define DICT_H
 
 #include <stdint.h>
+#include <stdio.h>
 #include "indexed_list.h"
 
 template <class K, class V>

@@ -6,7 +6,7 @@
 The benchmark uploads the same small attachment-backed payload via HTTP in two
 timed stages against the same Ultimate 64: first with Temp auto cleanup and
 Temp subfolders enabled, then with both disabled. Each stage starts from an
-empty managed Temp area, records upload latency samples, and asserts 
+empty managed Temp area, records upload latency samples, and asserts
 that the resulting managed uploadcount matches the expected cleanup behavior.
 """
 
@@ -15,20 +15,21 @@ from collections import deque
 import ftplib
 import json
 import math
-import os
 import statistics
 import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
 
-# tests/lib holds the reporting rules every suite shares.
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
+# The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
+import cli  # noqa: E402
 
 import ftp as ftp_lib
-import rest as rest_lib
 from api import UltimateApi
-from report import detail, progress, progress_done, section, suite_fail, suite_ok, warn
+from report import assert_or_warn, detail, progress, progress_done, section, suite_fail, suite_ok, warn
 
 SUITE = "temp_auto_cleanup_perf_test"
 CONFIG_CATEGORY = "User Interface Settings"
@@ -63,7 +64,7 @@ def require_stage_mode(flag, value):
 
 def percentile(values, percent):
     ordered = sorted(values)
-    index = int(math.ceil((percent / 100.0) * len(ordered))) - 1
+    index = math.ceil((percent / 100.0) * len(ordered)) - 1
     return ordered[max(0, min(index, len(ordered) - 1))]
 
 
@@ -85,14 +86,6 @@ def managed_upload_dirs(subfolder):
     return ("/Temp", "/Temp/upload")
 
 
-def assert_or_warn(assertions_enabled, condition, message):
-    if condition:
-        return
-    if assertions_enabled:
-        raise RuntimeError(message)
-    warn(message)
-
-
 @dataclass
 class StageResult:
     name: str
@@ -111,60 +104,60 @@ class StageResult:
 
 
 class U64Client:
+    """The device, as this benchmark talks to it.
+
+    A facade over `tests/lib/api.py` rather than a second REST client, for the
+    reason printer_test.py gives: `require_ok` re-implemented
+    `RestClient.expect` including the error-document parsing while a
+    `UltimateApi` sat beside it, so two clients addressed one device.
+
+    `allow_warning` is what is left that the library does not have: this
+    benchmark is run with assertions off to measure rather than judge, and a
+    route answering non-200 is then a note beside the numbers.
+    """
+
     def __init__(self, host, password, assertions_enabled):
         self.host = host
         self.password = password
         self.assertions_enabled = assertions_enabled
-        # For the calls this benchmark makes no measurement of, so that the
-        # menu teardown has one implementation across the tree.
         self.api = UltimateApi(host, password)
 
     def close(self):
         return
 
-    def _headers(self, body, extra_headers=None):
-        headers = {"Connection": "close"}
-        if self.password:
-            headers["X-Password"] = self.password
-        if body is not None:
-            headers["Content-Length"] = str(len(body))
-        if extra_headers:
-            headers.update(extra_headers)
-        return headers
-
     def request(self, method, path, body=None, retry=True, extra_headers=None):
-        # Transport and retry policy come from tests/lib/rest.py; see
-        # rest.may_retry. A request without a payload carries its arguments in
-        # the query string, so applying it twice is the same as once.
-        status, _headers, payload = rest_lib.retrying_http_request(
-            self.host, method, path,
-            body=body,
-            headers=self._headers(body, extra_headers),
-            timeout=10,
-            idempotent=retry and body is None,
-        )
+        # A request without a payload carries its arguments in the query
+        # string, so applying it twice is the same as applying it once; see
+        # rest.may_retry.
+        status, _headers, payload = self.api.rest.request(
+            method, path, body=body, headers=extra_headers,
+            idempotent=retry and body is None)
         return status, payload
 
-    def require_ok(self, method, path, body=None, description=None, allow_warning=False, extra_headers=None):
-        status, payload = self.request(method, path, body=body, extra_headers=extra_headers)
+    def require_ok(self, method, path, body=None, description=None,
+                   allow_warning=False, extra_headers=None):
+        if not allow_warning or self.assertions_enabled:
+            return self.api.rest.expect(method, path, body=body,
+                                        headers=extra_headers)
+        status, payload = self.request(method, path, body=body,
+                                       extra_headers=extra_headers)
         if status == 200:
             return payload
-
+        # The body, not just the status: this is the --no-assertions path,
+        # where the warning is the only record of what went wrong. The route
+        # reports why in an "errors" field, and a body that is not JSON is
+        # shown raw rather than dropped.
         message = f"{description or path} failed with HTTP {status}"
         if payload:
             try:
-                document = json.loads(payload.decode("utf-8"))
-                errors = document.get("errors")
+                errors = json.loads(payload.decode("utf-8")).get("errors")
+            except (ValueError, UnicodeDecodeError, AttributeError):
+                message += f": {payload[:160]!r}"
+            else:
                 if errors:
                     message += f": {errors}"
-            except (ValueError, UnicodeDecodeError):
-                message += f": {payload[:160]!r}"
-
-        if allow_warning and not self.assertions_enabled:
-            warn(message)
-            return None
-
-        raise RuntimeError(message)
+        warn(message)
+        return None
 
     def close_menu_from_anywhere(self):
         self.api.machine.close_menu_from_anywhere()
@@ -206,10 +199,7 @@ def parse_args():
             "original Temp settings are restored before exit unless --no-config-change is used."
         ),
     )
-    parser.add_argument("-H", "--host", default=os.environ.get("U64_HOST", "u64"),
-                        help="IP or hostname of the U64 (default: $U64_HOST or u64)")
-    parser.add_argument("-p", "--password", default=os.environ.get("U64_PASS", ""),
-                        help="U64 REST password (default: $U64_PASS, empty)")
+    cli.add_device_arguments(parser, colour=False)
     parser.add_argument(
         "-n",
         "--no-assertions",

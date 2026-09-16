@@ -1817,7 +1817,7 @@ paths:
 
         `git_commit_hash` is the abbreviated hash of the commit the firmware was built from, the same one the System Information screen shows. It tells two builds that carry the same version number apart.
 
-        `ethernet_mac` and `wifi_mac` are the addresses of the wired and the wireless interface. Each is left out when the device has no such interface, or when that interface has not started and its address is therefore not known yet. They are what a caller sends a Wake-on-LAN magic packet to, which carries a MAC and not an IP address.
+        `ethernet_mac` and `wifi_mac` are the addresses of the wired and the wireless interface. Each is left out when the device has no such interface, or when that interface has not started and its address is therefore not known yet, and only the first interface of each kind is reported. A caller that wants to wake the device sends its magic packet to `wifi_mac`, which carries a MAC and not an IP address; the wired interface does not wake the device.
 
         The same information is also available without HTTP, from the Ultimate Ident Service on UDP port 64, which answers a broadcast and so can be used to find a device whose address is not known.
       operationId: getInfo
@@ -1892,7 +1892,7 @@ paths:
         - name: value
           in: query
           required: true
-          description: Byte to write, in hexadecimal.
+          description: Byte to write, in hexadecimal, 00 to FF.
           schema:
             type: string
           example: '1F'
@@ -1903,6 +1903,17 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/DebugRegisterResponse'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                Invalid value:
+                  value:
+                    errors:
+                      - Invalid value
         '403':
           $ref: '#/components/responses/Forbidden'
   '/v1/machine:heap':
@@ -1941,9 +1952,9 @@ paths:
     get:
       tags:
         - Input
-      summary: Read the keyboard and joystick state
+      summary: Read the keyboard, joystick and mouse state
       description: |2-
-        Returns every key and joystick input that is currently held, both the ones this API is holding and the ones the Ultimate menu is holding, so the answer matches what the machine sees.
+        Returns every key and joystick input that is held right now, both the ones this API is holding and the ones the Ultimate menu is holding, so the answer matches what the machine sees. `mouse` covers only the mouse this API drives; its buttons reach control port 1 but are not listed under `joysticks`.
 
         The FPGA build has to carry the block that drives the keyboard and joystick lines. A build without it answers 501.
       operationId: getInputState
@@ -1955,7 +1966,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/InputStateResponse'
               examples:
-                Shift and fire:
+                Shift, fire and a mouse button:
                   value:
                     keyboard:
                       inputs:
@@ -1968,6 +1979,11 @@ paths:
                           - fire
                       - port: 2
                         inputs: []
+                    mouse:
+                      attached: true
+                      inputs:
+                        - left
+                      pending: 0
                     errors: []
         '403':
           $ref: '#/components/responses/Forbidden'
@@ -1996,15 +2012,17 @@ paths:
     post:
       tags:
         - Input
-      summary: Apply keyboard and joystick events
+      summary: Apply keyboard, joystick and mouse events
       description: |2-
         Applies up to 64 input events in the order they are given and returns the state that results. The whole batch is validated before any of it is applied, so a batch that is rejected changes nothing.
 
-        `press` holds an input down until something releases it, `release` lets it go, and `tap` does both, which is what typing needs. A `release_all` event drops everything this API is holding, and a machine reset does the same.
+        `press` holds an input down until something releases it, `release` lets it go, and `tap` does both. A `release_all` event drops everything this API is holding, and so does a machine reset. `restore` is not part of the keyboard matrix but wired to NMI, so only `tap` does anything with it.
 
-        `restore` is not part of the keyboard matrix; it is wired to NMI. It has to appear on its own and only with transition `tap`.
+        A `mouse` event presses, releases or taps buttons, sends one `move`, turns the `wheel` by whole detents, or replays a `path` of moves. The firmware handles the reports as it handles a USB mouse's, sending them in order at least 20ms apart and pacing the movement so the pointer never jumps backward. `mouse.pending` counts the reports still to send, and a batch that needs more than the 1024-report queue is refused with 429.
 
-        The request must be `application/json` and the body must be under 4096 bytes. The FPGA build has to carry the block that drives those lines; a build without it answers 501.
+        The mouse settings apply to these events as they do to a USB mouse. At the default Mouse Sensitivity of 8, one count of `move` or `path` is one step of the C64 pointer; 1 makes it an eighth of a step and 16 makes it two. Mouse Wheel Sensitivity scales what a detent does, and Mouse Mode decides whether motion moves the pointer or types cursor keys.
+
+        The request must be `application/json`, under 4096 bytes and at most 1024 JSON values, which is about 330 path steps. The FPGA build has to carry the block that drives those lines; a build without it answers 501.
       operationId: applyInputEvents
       requestBody:
         required: true
@@ -2030,6 +2048,10 @@ paths:
                         inputs: []
                       - port: 2
                         inputs: []
+                    mouse:
+                      attached: false
+                      inputs: []
+                      pending: 0
                     errors: []
         '400':
           description: Bad request
@@ -2050,10 +2072,10 @@ paths:
                   value:
                     errors:
                       - JSON body is too large.
-                'events[0]: `kind` must be one of `keyboard`, `joystick`, or `release_all`.':
+                'events[0]: `kind` must be one of `keyboard`, `joystick`, `mouse`, or `release_all`.':
                   value:
                     errors:
-                      - 'events[0]: `kind` must be one of `keyboard`, `joystick`, or `release_all`.'
+                      - 'events[0]: `kind` must be one of `keyboard`, `joystick`, `mouse`, or `release_all`.'
         '403':
           $ref: '#/components/responses/Forbidden'
         '412':
@@ -2067,6 +2089,17 @@ paths:
                   value:
                     errors:
                       - Expected Body, but got none.
+        '429':
+          description: Too many requests
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                'The batch needs 300 mouse reports and the queue has room for 24; wait for `mouse.pending` to fall.':
+                  value:
+                    errors:
+                      - 'The batch needs 300 mouse reports and the queue has room for 24; wait for `mouse.pending` to fall.'
         '501':
           description: Not implemented
           content:
@@ -2364,7 +2397,7 @@ paths:
       description: |2-
         Resets the C64 and re-initialises the cartridge with it, which is what the Reboot entry in the menu does. Use this rather than `machine:reset` when a cartridge has to start from scratch.
 
-        On Ultimate 64 hardware every key and joystick direction the input API is holding is released as part of the reboot.
+        On Ultimate 64 hardware every key and joystick direction the input API is holding is released as part of the reboot, and its mouse is detached.
 
         **Caution (machine-state):** Whatever the machine was running is lost, and the cartridge is started from scratch.
       operationId: rebootMachine
@@ -2411,7 +2444,7 @@ paths:
       description: |2-
         Pulls reset on the C64. The machine restarts with whatever cartridge is active, which is not the same as starting from cold; use `machine:reboot` for that.
 
-        On Ultimate 64 hardware every key and joystick direction the input API is holding is released as part of the reset, so a reset cannot leave an injected key stuck down.
+        On Ultimate 64 hardware every key and joystick direction the input API is holding is released as part of the reset, and its mouse is detached, so a reset cannot leave an injected input stuck down.
 
         **Caution (machine-state):** Whatever the machine was running is lost.
       operationId: resetMachine
@@ -3756,6 +3789,10 @@ components:
       oneOf:
         - $ref: '#/components/schemas/KeyboardEvent'
         - $ref: '#/components/schemas/JoystickEvent'
+        - $ref: '#/components/schemas/MouseButtonEvent'
+        - $ref: '#/components/schemas/MouseMoveEvent'
+        - $ref: '#/components/schemas/MouseWheelEvent'
+        - $ref: '#/components/schemas/MousePathEvent'
         - $ref: '#/components/schemas/ReleaseAllEvent'
     InputStateResponse:
       allOf:
@@ -3786,6 +3823,22 @@ components:
                     description: Every direction or button currently held.
                     items:
                       type: string
+            mouse:
+              type: object
+              description: The mouse this API drives on control port 1.
+              properties:
+                attached:
+                  type: boolean
+                  description: 'Set by the first mouse event. `release_all`, a reset or a reboot detaches the mouse and drops its queue.'
+                inputs:
+                  type: array
+                  description: Buttons held.
+                  items:
+                    $ref: '#/components/schemas/MouseInput'
+                pending:
+                  type: integer
+                  minimum: 0
+                  description: Reports queued and not yet sent.
     InputTransition:
       type: string
       enum:
@@ -3929,9 +3982,112 @@ components:
               description: Range that was written, as first-last in hexadecimal.
               examples:
                 - d020-d021
+    MouseButtonEvent:
+      type: object
+      description: Presses, releases or taps mouse buttons. A tap holds them for 40ms.
+      required:
+        - kind
+        - inputs
+        - transition
+      additionalProperties: false
+      properties:
+        kind:
+          const: mouse
+        transition:
+          $ref: '#/components/schemas/InputTransition'
+        inputs:
+          type: array
+          minItems: 1
+          maxItems: 3
+          description: Button names, no duplicates.
+          items:
+            $ref: '#/components/schemas/MouseInput'
+    MouseInput:
+      type: string
+      enum:
+        - left
+        - right
+        - middle
+    MouseMotion:
+      type: integer
+      minimum: -127
+      maximum: 127
+      description: 'HID counts; positive is right on x and down on y.'
+    MouseMoveEvent:
+      type: object
+      description: One mouse report.
+      required:
+        - kind
+        - move
+      additionalProperties: false
+      properties:
+        kind:
+          const: mouse
+        move:
+          type: object
+          additionalProperties: false
+          minProperties: 1
+          properties:
+            x:
+              $ref: '#/components/schemas/MouseMotion'
+            y:
+              $ref: '#/components/schemas/MouseMotion'
+    MousePathEvent:
+      type: object
+      description: Relative moves, one report per step.
+      required:
+        - kind
+        - path
+      additionalProperties: false
+      properties:
+        kind:
+          const: mouse
+        path:
+          type: array
+          minItems: 1
+          maxItems: 256
+          description: '[x, y] steps.'
+          items:
+            type: array
+            minItems: 2
+            maxItems: 2
+            items:
+              $ref: '#/components/schemas/MouseMotion'
+        interval_ms:
+          type: integer
+          minimum: 20
+          maximum: 1000
+          default: 20
+          description: Milliseconds between steps.
+    MouseWheelEvent:
+      type: object
+      description: Turns the wheels by whole detents, one report each, vertical first.
+      required:
+        - kind
+        - wheel
+      additionalProperties: false
+      properties:
+        kind:
+          const: mouse
+        wheel:
+          type: object
+          additionalProperties: false
+          minProperties: 1
+          description: At least one value must be non-zero.
+          properties:
+            vertical:
+              type: integer
+              minimum: -64
+              maximum: 64
+              description: Positive turns away from the user.
+            horizontal:
+              type: integer
+              minimum: -64
+              maximum: 64
+              description: Positive turns to the right.
     ReleaseAllEvent:
       type: object
-      description: Releases every key and joystick input the API is holding. Takes no other members.
+      description: Releases every key, joystick input and mouse button the API is holding, and detaches its mouse. Takes no other members.
       required:
         - kind
       additionalProperties: false

@@ -56,7 +56,6 @@ import json
 import os
 import threading
 import time
-from typing import Dict, List, Optional
 
 try:
     import fcntl
@@ -192,7 +191,7 @@ class _Pending:
     """
 
     def __init__(self) -> None:
-        self.record: Optional[dict] = None
+        self.record: dict | None = None
         self.identity: tuple = ()
         self.repeat = 0
         self.updated = 0.0
@@ -217,7 +216,7 @@ def sequence_path() -> str:
 # The counter file, opened once per destination and kept open, because the
 # lock is on the open description and reopening it per record would cost a
 # path lookup per interaction for nothing.
-_sequence_handle: Optional[int] = None
+_sequence_handle: int | None = None
 _sequence_for = ""
 
 
@@ -232,7 +231,7 @@ def _close_sequence() -> None:
             pass
 
 
-def _sequence_file() -> Optional[int]:
+def _sequence_file() -> int | None:
     """The open counter file for this destination, or None if there is none."""
     global _sequence_handle, _sequence_for
     if _sequence_handle is not None and _sequence_for == LOG_PATH:
@@ -265,10 +264,10 @@ class _shared_append:
     """
 
     def __init__(self) -> None:
-        self.handle: Optional[int] = None
+        self.handle: int | None = None
         self.seq = 0
 
-    def __enter__(self) -> "_shared_append":
+    def __enter__(self) -> _shared_append:
         self.handle = _sequence_file()
         if self.handle is None:
             self.seq = _next_seq[0]
@@ -296,7 +295,7 @@ class _shared_append:
             pass
 
 
-def _describe_body(body) -> Dict[str, object]:
+def _describe_body(body) -> dict[str, object]:
     """A response body as either its text or a digest and a file beside the log.
 
     Returns the fields that go on the record. A body that could not be stored
@@ -312,7 +311,7 @@ def _describe_body(body) -> Dict[str, object]:
         raw = bytes(body)
     else:
         raw = str(body).encode("utf-8", "replace")
-    found: Dict[str, object] = {"body_bytes": len(raw)}
+    found: dict[str, object] = {"body_bytes": len(raw)}
     if not raw:
         return found
     text = raw.decode("utf-8", "replace")
@@ -346,7 +345,7 @@ def _describe_body(body) -> Dict[str, object]:
     return found
 
 
-def note_menu(open_now: Optional[bool]) -> None:
+def note_menu(open_now: bool | None) -> None:
     """Say whether the device's overlay menu is open, as the harness last saw it.
 
     Written onto every record after it, because the answer to "was this key
@@ -382,7 +381,7 @@ def note_screen(identity: object) -> None:
     _state["screen"] = hashlib.sha256(raw).hexdigest()[:DIGEST_CHARS]
 
 
-def fault_of(exc: Optional[BaseException]) -> str:
+def fault_of(exc: BaseException | None) -> str:
     """Which connection-level failure this is, as one word, or ""."""
     if exc is None:
         return ""
@@ -401,7 +400,7 @@ def fault_of(exc: Optional[BaseException]) -> str:
 class Call:
     """One interaction that has been issued and has not answered yet."""
 
-    __slots__ = ("transport", "operation", "fields", "started", "announced")
+    __slots__ = ("announced", "fields", "operation", "started", "transport")
 
     def __init__(self, transport: str, operation: str, fields: dict) -> None:
         self.transport = transport
@@ -411,12 +410,12 @@ class Call:
         self.announced = False
 
 
-_in_flight: List[Call] = []
+_in_flight: list[Call] = []
 _in_flight_lock = threading.Lock()
-_watcher: Optional[threading.Thread] = None
+_watcher: threading.Thread | None = None
 
 
-def begin(transport: str, operation: str, **fields) -> Optional[Call]:
+def begin(transport: str, operation: str, **fields) -> Call | None:
     """Say that an interaction has been issued. Never raises.
 
     Returns a handle to pass to `finish`. A call that has not answered within
@@ -436,7 +435,7 @@ def begin(transport: str, operation: str, **fields) -> Optional[Call]:
         return None
 
 
-def finish(call: Optional[Call], **fields) -> None:
+def finish(call: Call | None, **fields) -> None:
     """Say that an issued interaction has answered. Never raises."""
     if call is None:
         # `begin` returns None when this run keeps no log, so there is nothing
@@ -457,7 +456,7 @@ def finish(call: Optional[Call], **fields) -> None:
         pass
 
 
-def in_flight() -> List[dict]:
+def in_flight() -> list[dict]:
     """Every interaction issued and not yet answered, oldest first.
 
     For a caller showing what the run is doing now rather than what it has
@@ -525,9 +524,9 @@ def record(transport: str, operation: str, **fields) -> None:
         pass
 
 
-def _record(transport: str, operation: str, fields: Dict[str, object]) -> None:
+def _record(transport: str, operation: str, fields: dict[str, object]) -> None:
     body = fields.pop("body", None)
-    entry: Dict[str, object] = {"kind": "interaction", "transport": transport,
+    entry: dict[str, object] = {"kind": "interaction", "transport": transport,
                                 "op": operation}
     for name, value in fields.items():
         if value is None or value == "":
@@ -634,7 +633,7 @@ def transcript_path() -> str:
     return os.path.join(os.path.dirname(LOG_PATH) or ".", TRANSCRIPT_NAME)
 
 
-def transcript_line(entry: Dict[str, object]) -> str:
+def transcript_line(entry: dict[str, object]) -> str:
     """One interaction as one line, for somebody reading rather than parsing.
 
     The same `seq` as the JSONL record it was written from, so a reader who
@@ -651,7 +650,7 @@ def transcript_line(entry: Dict[str, object]) -> str:
     when = time.strftime("%H:%M:%S", time.localtime(
         float(entry.get("time") or 0.0)))
     parts = [f"{entry.get('seq', 0):>6}", when,
-             f"{str(entry.get('transport', '')):<7}",
+             f"{entry.get('transport', '')!s:<7}",
              str(entry.get("op", ""))]
     for name, prefix in (("status", "-> "), ("fault", "fault="),
                          ("params", "")):

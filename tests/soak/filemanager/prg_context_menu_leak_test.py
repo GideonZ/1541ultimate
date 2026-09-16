@@ -22,23 +22,22 @@ every check here skips, so the suite is safe to run against any image.
 """
 
 import argparse
-import os
 import sys
-import time
 from pathlib import Path
 
-# tests/lib holds the reporting rules and the shared REST client; tests/e2e
-# holds the browser backend and this fixture's own menu-driving suite, which
-# already knows how to seed a PRG and invoke a context-menu action on it.
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "lib"))
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "e2e" / "lib"))
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "e2e" / "api"))
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "e2e" / "filemanager"))
+# The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
+import leak  # noqa: E402
+import cli  # noqa: E402
+sys.path.insert(0, bootstrap.directory("e2e", "api"))
+sys.path.insert(0, bootstrap.directory("e2e", "filemanager"))
 
 import api as api_lib  # noqa: E402  (needs tests/lib on sys.path first)
 import rest as rest_lib  # noqa: E402  (needs tests/lib on sys.path first)
 from report import (  # noqa: E402
-    Failure, check, check_ok, check_skip, check_start, detail, format_exception,
+    Failure, teardown_step, check, check_ok, detail, format_exception,
     section, suite_fail, suite_ok)
 from ui_backend import add_mode_argument, make_browser  # noqa: E402
 from menu_screen_test import RestSession  # noqa: E402
@@ -58,10 +57,6 @@ SETTLE_SECONDS = 6.0
 TOLERANCE_BYTES_PER_OP = 1500
 
 
-def heap_free(rest: rest_lib.RestClient) -> int:
-    return int(api_lib.MachineApi(rest).heap()["free"])
-
-
 def run_once(machine, fixtures) -> None:
     """One full browser Run: reset, descend to the PRG, pick Run, see it run."""
     ctx.run_action_run(machine, fixtures, ctx.open_plain_prg)
@@ -69,49 +64,25 @@ def run_once(machine, fixtures) -> None:
 
 
 def measure_slope(rest: rest_lib.RestClient, machine, fixtures) -> bool:
-    section("the browser's Run action returns the heap it borrows")
-
-    with check(f"warm up ({WARMUP} runs, one-time costs land here)"):
-        for _ in range(WARMUP):
-            run_once(machine, fixtures)
-        time.sleep(SETTLE_SECONDS)
-
-    measured = {}
     try:
-        with check(f"free heap is flat across {MEASURED} more Run actions"):
-            before = heap_free(rest)
-            for _ in range(MEASURED):
-                run_once(machine, fixtures)
-            time.sleep(SETTLE_SECONDS)
-            after = heap_free(rest)
-            consumed = before - after
-            measured.update(before=before, after=after, consumed=consumed,
-                            per_op=consumed / MEASURED)
-            if measured["per_op"] > TOLERANCE_BYTES_PER_OP:
-                raise Failure(
-                    f"the Run context-menu action leaks about {measured['per_op']:.0f} "
-                    f"bytes per invocation ({consumed} bytes over {MEASURED} runs)")
-        ok = True
+        leak.slope(once=lambda: run_once(machine, fixtures),
+                   heap=api_lib.MachineApi(rest).heap_free,
+                   warmup=WARMUP, iterations=MEASURED,
+                   tolerance_bytes_per_op=TOLERANCE_BYTES_PER_OP,
+                   unit="run", settle_seconds=SETTLE_SECONDS,
+                   title="the browser's Run action returns the heap it borrows")
+        return True
     except Failure:
-        ok = False
-    if measured:
-        detail(f"free before {measured['before']}, after {measured['after']}")
-        detail(f"consumed {measured['consumed']} bytes over {MEASURED} runs "
-               f"= {measured['per_op']:.0f} bytes/run "
-               f"(tolerance {TOLERANCE_BYTES_PER_OP})")
-    return ok
+        return False
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Assert that repeated PRG context-menu actions do not consume "
                     "heap. Skips if the firmware has no machine:heap endpoint.")
-    parser.add_argument("-H", "--host", default=os.environ.get("U64_HOST", "u64"))
+    cli.add_device_arguments(parser, password=None, timeout=30.0, colour=False)
     parser.add_argument("-P", "--port", type=int, default=23,
                         help="Telnet port, for --mode telnet.")
-    parser.add_argument("-p", "--password", default=os.environ.get("U64_PASS"))
-    parser.add_argument("-t", "--timeout", type=float,
-                        default=float(os.environ.get("U64_TIMEOUT", "30.0")))
     parser.add_argument("--rest-host", default=None,
                         help="Override the REST host when it differs from --host.")
     parser.add_argument("--fixture-token", default=ctx.default_fixture_token(),
@@ -123,12 +94,7 @@ def main() -> int:
     rest_host = args.rest_host or args.host
     rest = rest_lib.RestClient(rest_host, args.password or None, args.timeout)
 
-    check_start("device exposes GET /v1/machine:heap")
-    if api_lib.MachineApi(rest).heap() is None:
-        check_skip("firmware predates GET /v1/machine:heap, nothing to measure")
-        section("summary")
-        detail("skipped: device firmware has no machine:heap endpoint")
-        suite_ok("prg_context_menu_leak_test")
+    if not leak.heap_is_served(api_lib.MachineApi(rest).heap, "prg_context_menu_leak_test"):
         return 0
     check_ok()
 
@@ -159,17 +125,11 @@ def main() -> int:
         suite_fail("prg_context_menu_leak_test", "see the summary above")
         return 1
     finally:
-        for teardown in (machine.close_menu, machine.remove_drive_a):
-            try:
-                teardown()
-            except Exception:
-                pass
+        teardown_step("close the menu", machine.close_menu)
+        teardown_step("remove drive a", machine.remove_drive_a)
         if not args.keep_fixtures:
             fixtures.remove(rest_host, args.password)
-        try:
-            machine.close()
-        except Exception:
-            pass
+        teardown_step("close the session", machine.close)
 
 
 if __name__ == "__main__":

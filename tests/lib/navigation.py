@@ -42,7 +42,7 @@ tests/lib/machine.py derives a capability.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, Dict, Optional
+from collections.abc import Callable
 
 CONFIG_CATEGORY = "User Interface Settings"
 CONFIG_ITEM = "Navigation Style"
@@ -105,7 +105,7 @@ def classify(style: str) -> Navigation:
     return Navigation(style=style if style == WASD_CURSORS else QUICK_SEARCH)
 
 
-_cache: Dict[str, Navigation] = {}
+_cache: dict[str, Navigation] = {}
 
 
 def identify(host: str, fetch_style: Callable[[], str]) -> Navigation:
@@ -123,7 +123,7 @@ def identify(host: str, fetch_style: Callable[[], str]) -> Navigation:
     return cached
 
 
-def forget(host: Optional[str] = None) -> None:
+def forget(host: str | None = None) -> None:
     """Drop what was learnt, for a caller that changed the setting."""
     if host is None:
         _cache.clear()

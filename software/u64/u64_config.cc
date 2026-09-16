@@ -45,6 +45,12 @@ extern "C" {
 #include "usb_hid_config.h"
 #include "monitor_init.h"
 
+// TODO: This doesn't belong here.
+#ifndef CMD_IF_SLOT_BASE
+#define CMD_IF_SLOT_BASE       *((volatile uint8_t *)(CMD_IF_BASE + 0x0))
+#define CMD_IF_SLOT_ENABLE     *((volatile uint8_t *)(CMD_IF_BASE + 0x1))
+#endif
+
 const uint8_t default_colors[16][3] = {
     { 0x00, 0x00, 0x00 },
     { 0xF7, 0xF7, 0xF7 },
@@ -965,6 +971,8 @@ U64Config :: U64Config() : SubSystem(SUBSYSID_U64)
         install_high_irq(ITU_IRQHIGH_HDMI, U64Config::hpd_monitor_irq, u64_configurator);
         xSemaphoreGive(hpd_monitor_sem);
 
+        install_high_irq(ITU_IRQHIGH_UNLOCK, U64Config :: unlock_irq, u64_configurator);
+
 //        u64_configurator->hdmiMonitor = u64_configurator->IsMonitorHDMI(); // requires I2C
         u64_configurator->sockets.effectuate_registered_settings();
         u64_configurator->mixercfg.effectuate_registered_settings();
@@ -1001,6 +1009,15 @@ void U64Config :: hpd_monitor_task(void *_a)
     }
 }
 
+uint8_t U64Config :: unlock_irq(void *a)
+{
+    C64_POKE(0xD038, 0); // disable the IRQ once again
+//    C64_POKE(0xD020, 0); // testing only
+    C64_BUS_INTERNAL |= 0x02; // Enable DF00-DFFF internal mapping to reach UCI
+    CMD_IF_SLOT_ENABLE = 1;
+    CMD_IF_SLOT_BASE = 0x47; // $$DF1C
+    return 1;
+}
 
 void U64Config :: ResetHandler()
 {
@@ -1295,9 +1312,9 @@ int U64Config :: setFilter(ConfigItem *it)
 // rather than instead of them: the $D418 mute stays, and stays portable, and
 // on this hardware it happens where it cannot be heard.
 //
-// The first eight bytes are the SID channels: UltiSID 1 and 2, socket 1 and 2,
-// right and left. SetMixerAutoSid zeroes the same eight to mute the SIDs while
-// it remaps them.
+// The first eight bytes of either mixer are the SID channels: UltiSID 1 and 2,
+// socket 1 and 2, right and left. SetMixerAutoSid zeroes the same eight in the
+// main mixer while it remaps them.
 void u64_mute_sids(void)
 {
     volatile uint8_t *mixer = (volatile uint8_t *)U64_AUDIO_MIXER;
@@ -1305,6 +1322,12 @@ void u64_mute_sids(void)
     for (int i = 0; i < 8; i++) {
         mixer[i] = 0;
     }
+#if U64 == 2
+    mixer = (volatile uint8_t *)U64_SPEAKER_MIXER;
+    for (int i = 0; i < 8; i++) {
+        mixer[i] = 0;
+    }
+#endif
 }
 
 // From the stored settings, not from what was there before the mute: the mixer
@@ -1692,7 +1715,7 @@ SubsysResultCode_e U64Config :: executeCommand(SubsysCommand *cmd)
 	char sidString[40];
 	C64 *machine;
 	static char poke_buffer[16];
-	uint32_t addr, value;
+	uint32_t addr = 0, value = 0;
 
 	switch(cmd->functionID) {
     case MENU_U64_SAVEEDID:
@@ -1725,8 +1748,10 @@ SubsysResultCode_e U64Config :: executeCommand(SubsysCommand *cmd)
 
     case MENU_U64_POKE:
         if ((cmd->user_interface->string_box("Poke AAAA,DD", poke_buffer, 16) > 0) && (*poke_buffer)) {
-            sscanf(poke_buffer, "%x,%x", &addr, &value);
-
+            if (sscanf(poke_buffer, "%x,%x", &addr, &value) != 2) {
+                cmd->user_interface->popup("Give an address and a value, as AAAA,DD", BUTTON_OK);
+                break;
+            }
             C64 *machine = C64 :: getMachine();
             portENTER_CRITICAL();
 
@@ -2661,7 +2686,6 @@ void U64Config :: configure_hdmi_output(void)
 
 #if U64 == 2
     volatile t_video_timing_regs *regs = (volatile t_video_timing_regs *)U64II_HDMI_REGS;
-
     regs->resync = 2;
 #endif
 }

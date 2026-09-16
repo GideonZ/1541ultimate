@@ -22,21 +22,22 @@ import tempfile
 import time
 import urllib.parse
 import urllib.request
-from typing import Dict, List
+from pathlib import Path
 
-# tests/lib holds the reporting rules every suite shares; tests/e2e/lib
-# holds the shared UI backend.
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "lib"))
+# The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
+import cli  # noqa: E402
 import ftp as ftp_lib
 import rest as rest_lib
 from api import UltimateApi
 import targets
-from report import Failure, check, format_exception, suite_fail, suite_ok
+from report import Failure, teardown_step, check, format_exception, suite_fail, suite_ok
 from ui_backend import Browser, add_mode_argument, make_browser, strip_frame
 
 FTP_USER = "user"
-FTP_DEFAULT_PASSWORD = "password"
+FTP_DEFAULT_PASSWORD = ftp_lib.FTP_DEFAULT_PASSWORD
 ROOT_PATH = "/"
 TEMP_PATH = "/Temp/"
 TEST_DIR_PREFIX = "zlfn-"
@@ -63,14 +64,14 @@ TELNET_STATUS_ROW = 23
 TELNET_WIDTH = 60
 TELNET_HEIGHT = 24
 
-def rest_headers(password: str) -> Dict[str, str]:
+def rest_headers(password: str) -> dict[str, str]:
     headers = {}
     if password:
         headers["X-Password"] = password
     return headers
 
 
-def rest_json(host: str, password: str, method: str, path: str) -> Dict[str, object]:
+def rest_json(host: str, password: str, method: str, path: str) -> dict[str, object]:
     request = urllib.request.Request(
         f"http://{targets.host_for(host, path)}{path}",
         data=b"" if method == "PUT" else None,
@@ -93,7 +94,7 @@ def create_seed_d64(host: str, password: str, test_dir: str) -> None:
         raise Failure(f"Seed D64 creation failed: {body}")
 
 
-def fixture_info(host: str, password: str, test_dir: str, name: str) -> Dict[str, object]:
+def fixture_info(host: str, password: str, test_dir: str, name: str) -> dict[str, object]:
     path = f"/v1/files/Temp/{test_dir}/{name}:info"
     body = rest_json(host, password, "GET", path)
     info = body.get("files")
@@ -102,7 +103,7 @@ def fixture_info(host: str, password: str, test_dir: str, name: str) -> Dict[str
     return info
 
 
-def get_drive_a_image(host: str) -> Dict[str, object]:
+def get_drive_a_image(host: str) -> dict[str, object]:
     with rest_lib.retrying_urlopen(
             urllib.request.Request(f"http://{targets.device_of(host)}/v1/drives"), 10.0) as response:
         payload = json.loads(response.read().decode("utf-8"))
@@ -116,18 +117,14 @@ def cleanup_fixture_files(ftp: ftplib.FTP, test_dir: str) -> None:
     directory = f"/Temp/{test_dir}"
     for name in ftp_lib.names(ftp, directory):
         if (
-            name == TEMP_SEED_NAME
-            or name == RENAMED_NAME
-            or name.startswith(FIXTURE_PREFIX)
+            name in (TEMP_SEED_NAME, RENAMED_NAME) or name.startswith(FIXTURE_PREFIX)
         ):
             ftp_lib.delete_quietly(ftp, f"{directory}/{name}")
 
 
 def cleanup_remote_state(host: str, password: str, test_dir: str) -> None:
-    try:
-        rest_json(host, password, "PUT", "/v1/drives/a:remove")
-    except Exception:
-        pass
+    teardown_step("remove drive a", lambda: rest_json(
+        host, password, "PUT", "/v1/drives/a:remove"))
 
     ftp = ftp_lib.connect(host, password, timeout=20)
     try:
@@ -196,7 +193,7 @@ def open_fixture_directory(browser: Browser, test_dir: str) -> None:
     browser.go_to_directory(f"Temp/{test_dir}")
 
 
-def open_fixture_context_menu(browser: Browser) -> List[str]:
+def open_fixture_context_menu(browser: Browser) -> list[str]:
     browser.select_entry("zz")
     if "D64" not in browser.selected_text():
         raise Failure(f"Expected D64 fixture selected, got {browser.selected_text()!r}")
@@ -306,18 +303,7 @@ def reset_machine(host: str, password: str) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Validate long-filename browser actions on real firmware.")
-    parser.add_argument("-H", "--host", default=os.environ.get("U64_HOST", "u64"))
-    parser.add_argument(
-        "-p",
-        "--password",
-        default=os.environ.get("U64_PASS", ""),
-    )
-    parser.add_argument(
-        "-t",
-        "--timeout",
-        type=float,
-        default=float(os.environ.get("U64_TIMEOUT", "5.0")),
-    )
+    cli.add_device_arguments(parser, timeout=5.0, colour=False)
     parser.add_argument("--telnet-port", type=int, default=int(os.environ.get("U64_TELNET_PORT", "23")))
     parser.add_argument("--test-dir", default=default_test_dir())
     add_mode_argument(parser)
@@ -348,17 +334,11 @@ def main() -> int:
 
         suite_ok("browser_long_filename_test")
         return 0
-    except Failure as exc:
-        suite_fail("browser_long_filename_test", str(exc))
-        return 1
     except Exception as exc:  # noqa: BLE001
         suite_fail("browser_long_filename_test", format_exception(exc))
         return 1
     finally:
-        try:
-            browser.close()
-        except Exception:
-            pass
+        teardown_step("close the browser session", browser.close)
         cleanup_remote_state(args.host, args.password, args.test_dir)
 
 

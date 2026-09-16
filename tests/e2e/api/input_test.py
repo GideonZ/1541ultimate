@@ -14,23 +14,26 @@ import urllib.parse
 import urllib.request
 from collections import Counter
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from PIL import Image
 
-# tests/lib holds the reporting rules every suite shares.
-sys.path.insert(0, os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
-sys.path.insert(0, os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", "lib"))
+# The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
+import menu as menu_lib  # noqa: E402
+import cli  # noqa: E402
+import profiles  # noqa: E402
 import ftp as ftp_lib
 import machine as machine_lib
 import pacing
+import wait
 import rest as rest_lib
 import targets
 from api import UltimateApi
-from report import (Failure, check, check_count, detail, format_exception,
-                    suite_fail, suite_ok, warn)
+from report import (Failure, teardown_step, check, check_count, check_skip, check_start,
+                    detail, format_exception, suite_fail, suite_ok, warn)
 from vic_video import MULTICAST_GROUP, VIDEO_PORT, VicStreamCapture
 
 TEST_CHOICES = (
@@ -42,10 +45,34 @@ TEST_CHOICES = (
     "keyboard-echo-ab-20hz",
     "keyboard-echo-ab-5hz",
     "menu",
+    "menu-open",
     "menu-shift",
     "menu-repeat-printable",
     "menu-repeat-cursor",
+    "mouse",
 )
+# What each profile runs, on top of the profile before it. Smoke keeps the
+# checks that guard the lines a build breaks most easily: the request contract
+# and both joystick ports. The keyboard, the mouse and the menu follow, and the
+# echo and repeat sweeps, which take seconds each, wait for deep.
+PROFILE_TESTS = {
+    profiles.SMOKE: ("contract", "joystick"),
+    profiles.QUICK: ("keyboard", "mouse"),
+    profiles.STANDARD: ("menu",),
+    profiles.DEEP: ("keyboard-echo-alphabet", "keyboard-echo-ab-20hz", "keyboard-echo-ab-5hz",
+                    "menu-open", "menu-shift", "menu-repeat-printable", "menu-repeat-cursor"),
+    profiles.EXHAUSTIVE: (),
+}
+
+
+def tests_for(profile: str) -> list[str]:
+    """The scenarios `profile` runs, in the order TEST_CHOICES declares them."""
+    wanted: set[str] = set()
+    for name in profiles.ORDER:
+        wanted |= set(PROFILE_TESTS[name])
+        if name == profile:
+            break
+    return [test for test in TEST_CHOICES if test in wanted]
 # Bounded retry for idempotent reads whose transport failed; see request().
 TRANSPORT_RETRIES = 3
 TRANSPORT_RETRY_PAUSE_SECONDS = 0.5
@@ -114,7 +141,7 @@ FONT_BYTES = FONT_PATH.read_bytes()[: 256 * 8]
 PRINTABLE_FALLBACK = {
     0x00: " ",
 }
-KEYBOARD_MATRIX: Dict[str, Tuple[int, int]] = {
+KEYBOARD_MATRIX: dict[str, tuple[int, int]] = {
     "inst_del": (0, 0),
     "return": (0, 1),
     "cursor_left_right": (0, 2),
@@ -182,20 +209,20 @@ KEYBOARD_MATRIX: Dict[str, Tuple[int, int]] = {
 }
 
 
-def wants_test(selected: Optional[List[str]], name: str) -> bool:
+def wants_test(selected: list[str] | None, name: str) -> bool:
     return selected is None or "all" in selected or name in selected
 
 
-def wants_menu_tests(selected: Optional[List[str]]) -> bool:
+def wants_menu_tests(selected: list[str] | None) -> bool:
     return wants_test(selected, "menu") or any(item.startswith("menu-") for item in selected or [])
 
 
-def wants_keyboard_echo_tests(selected: Optional[List[str]]) -> bool:
+def wants_keyboard_echo_tests(selected: list[str] | None) -> bool:
     return any(item.startswith("keyboard-echo-") for item in selected or [])
 
 
 class RestInputSession:
-    def __init__(self, host: str, password: Optional[str], timeout: float) -> None:
+    def __init__(self, host: str, password: str | None, timeout: float) -> None:
         self.target = targets.parse(host)
         self.host = self.target.device
         self.password = password
@@ -216,7 +243,7 @@ class RestInputSession:
         return machine_lib.identify(
             self.host, lambda: (info.product, info.firmware_version))
 
-    def url(self, path: str, params: Optional[Dict[str, Any]] = None) -> str:
+    def url(self, path: str, params: dict[str, Any] | None = None) -> str:
         query = ""
         if params:
             query = "?" + urllib.parse.urlencode(params)
@@ -228,9 +255,9 @@ class RestInputSession:
         self,
         method: str,
         path: str,
-        params: Optional[Dict[str, Any]] = None,
-        body: Optional[bytes] = None,
-        content_type: Optional[str] = "application/json",
+        params: dict[str, Any] | None = None,
+        body: bytes | None = None,
+        content_type: str | None = "application/json",
     ) -> bytes:
         headers = {}
         if self.password:
@@ -256,20 +283,20 @@ class RestInputSession:
         self,
         method: str,
         path: str,
-        params: Optional[Dict[str, Any]] = None,
-        payload: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+        params: dict[str, Any] | None = None,
+        payload: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         body = None if payload is None else json.dumps(payload).encode("utf-8")
         data = self.request(method, path, params=params, body=body)
         return json.loads(data.decode("utf-8"))
 
-    def get_state(self) -> Dict[str, Any]:
+    def get_state(self) -> dict[str, Any]:
         return self.json_request("GET", "/v1/machine:input")
 
-    def post_events(self, events: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def post_events(self, events: list[dict[str, Any]]) -> dict[str, Any]:
         return self.json_request("POST", "/v1/machine:input", payload={"events": events})
 
-    def post_payload_expect_error(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+    def post_payload_expect_error(self, payload: dict[str, Any]) -> dict[str, Any]:
         try:
             self.json_request("POST", "/v1/machine:input", payload=payload)
         except urllib.error.HTTPError as exc:
@@ -278,10 +305,10 @@ class RestInputSession:
             return json.loads(exc.read().decode("utf-8"))
         raise Failure("Expected HTTP 400, but request succeeded")
 
-    def post_events_expect_error(self, events: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def post_events_expect_error(self, events: list[dict[str, Any]]) -> dict[str, Any]:
         return self.post_payload_expect_error({"events": events})
 
-    def post_raw_expect_error(self, body: bytes, content_type: Optional[str]) -> Dict[str, Any]:
+    def post_raw_expect_error(self, body: bytes, content_type: str | None) -> dict[str, Any]:
         try:
             self.request("POST", "/v1/machine:input", body=body, content_type=content_type)
         except urllib.error.HTTPError as exc:
@@ -290,8 +317,8 @@ class RestInputSession:
             return json.loads(exc.read().decode("utf-8"))
         raise Failure("Expected HTTP 400, but request succeeded")
 
-    def post_without_body_expect_error(self, expected_code: int = 412) -> Dict[str, Any]:
-        headers: Dict[str, str] = {"Content-Type": "application/json"}
+    def post_without_body_expect_error(self, expected_code: int = 412) -> dict[str, Any]:
+        headers: dict[str, str] = {"Content-Type": "application/json"}
         if self.password:
             headers["X-Password"] = self.password
         connection = None
@@ -305,11 +332,8 @@ class RestInputSession:
         except http.client.HTTPException as exc:
             raise Failure(f"HTTP client failure: {exc}") from exc
         finally:
-            try:
-                if connection is not None:
-                    connection.close()
-            except Exception:
-                pass
+            if connection is not None:
+                teardown_step("close the HTTP connection", connection.close)
 
     def put(self, command: str) -> None:
         self.request("PUT", f"/v1/machine:{command}")
@@ -323,7 +347,7 @@ class RestInputSession:
     def reset(self) -> None:
         self.put("reset")
 
-    def menu_screen(self) -> Optional[bytes]:
+    def menu_screen(self) -> bytes | None:
         try:
             return self.request("GET", "/v1/machine:menu_screen")
         except urllib.error.HTTPError as exc:
@@ -353,7 +377,7 @@ class RestInputSession:
 
 
 class FrameText:
-    def __init__(self, image: Image.Image, lines: List[str], codes: List[List[int]], bbox: Tuple[int, int, int, int]) -> None:
+    def __init__(self, image: Image.Image, lines: list[str], codes: list[list[int]], bbox: tuple[int, int, int, int]) -> None:
         self.image = image
         self.lines = lines
         self.codes = codes
@@ -371,7 +395,7 @@ class C64FrameOCR:
     def __init__(self) -> None:
         self.font = FONT_BYTES
 
-    def _cell_mask(self, cell: Image.Image) -> List[int]:
+    def _cell_mask(self, cell: Image.Image) -> list[int]:
         bg = Counter(cell.getdata()).most_common(1)[0][0]
         mask = []
         for y in range(8):
@@ -382,7 +406,7 @@ class C64FrameOCR:
             mask.append(row)
         return mask
 
-    def _best_match(self, mask: List[int]) -> Tuple[int, int]:
+    def _best_match(self, mask: list[int]) -> tuple[int, int]:
         best_dist = 999
         best_code = 0
         for code in range(256):
@@ -408,7 +432,7 @@ class C64FrameOCR:
                 score += self._best_match(self._cell_mask(cell))[0]
         return score
 
-    def _active_bbox(self, image: Image.Image) -> Tuple[int, int, int, int]:
+    def _active_bbox(self, image: Image.Image) -> tuple[int, int, int, int]:
         border = image.getpixel((0, 0))
         min_x, min_y = image.width, image.height
         max_x, max_y = -1, -1
@@ -462,11 +486,11 @@ class C64FrameOCR:
     def decode(self, image: Image.Image) -> FrameText:
         left, top, right, bottom = self._active_bbox(image)
         active = image.crop((left, top, right, bottom))
-        lines: List[str] = []
-        codes: List[List[int]] = []
+        lines: list[str] = []
+        codes: list[list[int]] = []
         for row in range(25):
-            chars: List[str] = []
-            row_codes: List[int] = []
+            chars: list[str] = []
+            row_codes: list[int] = []
             for col in range(40):
                 cell = active.crop((col * 8, row * 8, (col + 1) * 8, (row + 1) * 8))
                 _, code = self._best_match(self._cell_mask(cell))
@@ -479,7 +503,7 @@ class C64FrameOCR:
 
 def wait_for_input_ready(session: RestInputSession, timeout: float) -> None:
     deadline = time.time() + timeout
-    last_error: Optional[BaseException] = None
+    last_error: BaseException | None = None
     while time.time() < deadline:
         try:
             session.get_state()
@@ -530,7 +554,7 @@ def try_clear_basic_screen(session: RestInputSession) -> bool:
     return False
 
 
-def find_cursor_row(session: RestInputSession) -> Optional[int]:
+def find_cursor_row(session: RestInputSession) -> int | None:
     screen = session.read_memory(0x0400, 1000)
     for index, value in enumerate(screen):
         if value == 0xA0:
@@ -568,15 +592,57 @@ def assert_joystick_ports(session: RestInputSession, port1: int, port2: int) -> 
         )
 
 
+EMPTY_JOYSTICKS = [{"port": 1, "inputs": []}, {"port": 2, "inputs": []}]
+
+# A tap batch is accepted at once and drains through the C64's keyboard matrix
+# afterwards, so the state is not empty the instant the request answers. It is
+# not steadily non-empty either: each tap presses and releases, so between two
+# taps the state is momentarily empty. A poll for "empty" therefore returns
+# while the batch is still draining - measured here, it answered after 0.45s of
+# a train that takes about six seconds, and the next check then read the tap
+# that arrived after it. The condition is that the state has been empty for
+# longer than the gap between taps.
+BATCH_DRAIN_TIMEOUT_SECONDS = 12.0
+BATCH_DRAIN_QUIET_SECONDS = 0.75
+
+
+def state_is_empty(session: RestInputSession) -> bool:
+    state = session.get_state()
+    return (state.get("keyboard", {}).get("inputs") == []
+            and state.get("joysticks") == EMPTY_JOYSTICKS)
+
+
 def assert_state_empty(session: RestInputSession) -> None:
     state = session.get_state()
     if state.get("keyboard", {}).get("inputs") != []:
         raise Failure(f"Expected empty keyboard state, got {state}")
-    if state.get("joysticks") != [{"port": 1, "inputs": []}, {"port": 2, "inputs": []}]:
+    if state.get("joysticks") != EMPTY_JOYSTICKS:
         raise Failure(f"Expected empty joystick state, got {state}")
 
 
-def assert_error_body_only(body: Dict[str, Any]) -> None:
+def wait_state_empty(session: RestInputSession, what: str) -> None:
+    """Wait for an injected batch to finish draining, then require it empty.
+
+    "Empty" has to hold for BATCH_DRAIN_QUIET_SECONDS, not merely be true once:
+    see the constant. The two sleeps this replaced were a flat 1.2s for ten
+    taps and 6.0s for sixty, paid in full on every run whatever the device did.
+    """
+    def drained() -> bool:
+        # Paced, because every state_is_empty() is a REST GET and the device
+        # serves four connection slots: an unpaced loop would issue a couple of
+        # hundred requests per quiet window and starve the rest of the run.
+        quiet_until = time.monotonic() + BATCH_DRAIN_QUIET_SECONDS
+        while time.monotonic() < quiet_until:
+            if not state_is_empty(session):
+                return False
+            time.sleep(pacing.POLL_INTERVAL_SECONDS)
+        return True
+
+    wait.wait_until(drained, what, timeout=BATCH_DRAIN_TIMEOUT_SECONDS)
+    assert_state_empty(session)
+
+
+def assert_error_body_only(body: dict[str, Any]) -> None:
     if not body.get("errors"):
         raise Failure(f"Expected validation errors, got {body}")
     if "keyboard" in body or "joysticks" in body:
@@ -585,9 +651,9 @@ def assert_error_body_only(body: Dict[str, Any]) -> None:
 
 def assert_input_state(
     session: RestInputSession,
-    keyboard: List[str],
-    joystick1: List[str],
-    joystick2: List[str],
+    keyboard: list[str],
+    joystick1: list[str],
+    joystick2: list[str],
 ) -> None:
     state = session.get_state()
     if state.get("errors") != []:
@@ -598,9 +664,9 @@ def assert_input_state(
         raise Failure(f"Joystick state mismatch; expected {joystick1}/{joystick2}, got {state}")
 
 
-def read_joystick_cia(session: RestInputSession) -> Tuple[int, int]:
-    session.pause()
+def read_joystick_cia(session: RestInputSession) -> tuple[int, int]:
     try:
+        session.pause()
         session.write_memory(0xDC02, b"\x00")
         session.write_memory(0xDC03, b"\x00")
         regs = session.read_memory(0xDC00, 2)
@@ -612,8 +678,8 @@ def read_joystick_cia(session: RestInputSession) -> Tuple[int, int]:
 
 
 def read_keyboard_row(session: RestInputSession, row: int) -> int:
-    session.pause()
     try:
+        session.pause()
         session.write_memory(0xDC02, b"\xFF")
         session.write_memory(0xDC03, b"\x00")
         session.write_memory(0xDC00, bytes([(~(1 << row)) & 0xFF]))
@@ -623,16 +689,34 @@ def read_keyboard_row(session: RestInputSession, row: int) -> int:
         session.resume()
 
 
-def read_joystick_pots(session: RestInputSession, port: int) -> Tuple[int, int]:
-    if port not in (1, 2):
-        raise Failure(f"Invalid joystick port for POT read: {port}")
-    # Mirror Anykey's VIC-II probe: select the joystick port on CIA1 first,
-    # leave the machine running briefly, then read SID POTX/POTY.
-    session.write_memory(0xDC02, b"\xC0")
+def _select_and_read_pot(session: RestInputSession, port: int) -> tuple[int, int]:
     session.write_memory(0xDC00, b"\x40" if port == 1 else b"\x80")
     time.sleep(0.10)
     regs = session.read_memory(0xD419, 2)
     return regs[0], regs[1]
+
+
+def read_joystick_pots(session: RestInputSession, port: int) -> tuple[int, int]:
+    if port not in (1, 2):
+        raise Failure(f"Invalid joystick port for POT read: {port}")
+    # Select the paddle group on CIA1, then read SID POTX/POTY. Must pause
+    # like read_joystick_cia/read_keyboard_row: left running, the KERNAL's
+    # keyboard-scan IRQ overwrites $DC00 within ~20ms and races this write.
+    try:
+        session.pause()
+        session.write_memory(0xDC02, b"\xC0")
+        return _select_and_read_pot(session, port)
+    finally:
+        session.resume()
+
+
+def read_joystick_pots_both(session: RestInputSession) -> dict[int, tuple[int, int]]:
+    try:
+        session.pause()
+        session.write_memory(0xDC02, b"\xC0")
+        return {1: _select_and_read_pot(session, 1), 2: _select_and_read_pot(session, 2)}
+    finally:
+        session.resume()
 
 
 def assert_joystick_pots(session: RestInputSession, port: int, potx: int, poty: int) -> None:
@@ -644,8 +728,7 @@ def assert_joystick_pots(session: RestInputSession, port: int, potx: int, poty: 
         )
 
 
-def assert_anykey_extra_buttons(session: RestInputSession, port: int, fire2: bool, fire3: bool) -> None:
-    potx, poty = read_joystick_pots(session, port)
+def _check_anykey_extra_buttons(port: int, potx: int, poty: int, fire2: bool, fire3: bool) -> None:
     actual_fire2 = (potx & 0x80) == 0
     actual_fire3 = (poty & 0x80) == 0
     if (actual_fire2, actual_fire3) != (fire2, fire3):
@@ -654,6 +737,18 @@ def assert_anykey_extra_buttons(session: RestInputSession, port: int, fire2: boo
             f"expected fire2/fire3={fire2}/{fire3}, got {actual_fire2}/{actual_fire3} "
             f"from POTX/POTY=${potx:02X}/${poty:02X}"
         )
+
+
+def assert_anykey_extra_buttons(session: RestInputSession, port: int, fire2: bool, fire3: bool) -> None:
+    potx, poty = read_joystick_pots(session, port)
+    _check_anykey_extra_buttons(port, potx, poty, fire2, fire3)
+
+
+def assert_anykey_extra_buttons_both(session: RestInputSession, expected: dict[int, tuple[bool, bool]]) -> None:
+    pots = read_joystick_pots_both(session)
+    for port, (fire2, fire3) in expected.items():
+        potx, poty = pots[port]
+        _check_anykey_extra_buttons(port, potx, poty, fire2, fire3)
 
 
 def assert_keyboard_matrix(session: RestInputSession, input_name: str, active: bool) -> None:
@@ -671,7 +766,7 @@ def assert_keyboard_matrix(session: RestInputSession, input_name: str, active: b
         )
 
 
-def assert_keyboard_matrix_inputs(session: RestInputSession, inputs: List[str]) -> None:
+def assert_keyboard_matrix_inputs(session: RestInputSession, inputs: list[str]) -> None:
     for input_name in inputs:
         assert_keyboard_matrix(session, input_name, True)
 
@@ -828,8 +923,8 @@ def wait_for_screen_row_prefix(session: RestInputSession, row: int, expected_tex
         time.sleep(0.02)
 
 
-def keyboard_tap_events_for_text(text: str) -> List[Dict[str, Any]]:
-    events: List[Dict[str, Any]] = []
+def keyboard_tap_events_for_text(text: str) -> list[dict[str, Any]]:
+    events: list[dict[str, Any]] = []
     for ch in text:
         if "a" <= ch <= "z" or "0" <= ch <= "9":
             events.append({"kind": "keyboard", "inputs": [ch], "transition": "tap"})
@@ -840,7 +935,7 @@ def keyboard_tap_events_for_text(text: str) -> List[Dict[str, Any]]:
     return events
 
 
-def keyboard_press_inputs_for_char(ch: str) -> List[str]:
+def keyboard_press_inputs_for_char(ch: str) -> list[str]:
     if "a" <= ch <= "z" or "0" <= ch <= "9":
         return [ch]
     if "A" <= ch <= "Z":
@@ -848,7 +943,7 @@ def keyboard_press_inputs_for_char(ch: str) -> List[str]:
     raise Failure(f"Unsupported keyboard press text {ch!r}")
 
 
-def keyboard_release_inputs_for_char(ch: str) -> List[str]:
+def keyboard_release_inputs_for_char(ch: str) -> list[str]:
     if "A" <= ch <= "Z":
         return [ch.lower(), "left_shift"]
     return keyboard_press_inputs_for_char(ch)
@@ -875,7 +970,7 @@ def post_keyboard_text_at_rate(session: RestInputSession, text: str, hz: float) 
         # Small ordered bursts exercise the API's documented batch path and
         # are harder on its input queue than evenly spaced single events,
         # while avoiding one short-lived TCP connection per character.
-        events: List[Dict[str, Any]] = []
+        events: list[dict[str, Any]] = []
         for ch in chunk:
             events.extend(keyboard_tap_events_for_text(ch))
         session.post_events(events)
@@ -913,6 +1008,15 @@ def prepare_keyboard_echo_program(session: RestInputSession) -> int:
 
 
 def run_keyboard_echo_stress_case(session: RestInputSession, text: str, hz: float, offset: int) -> int:
+    # Blank the cells this case will read before a key is sent. The wait below
+    # treats a non-blank byte that is not the expected one as a character that
+    # was delivered wrongly and fails on the first poll, which is only sound
+    # if the cells start blank. The echo program writes over whatever the
+    # screen already holds and does not clear it, so on a machine still
+    # showing the boot banner the banner decided the verdict: the third case
+    # reads $042F, which holds a '*' of "**** COMMODORE 64 BASIC V2 ****"
+    # until the echo program gets there.
+    session.write_memory(0x0400 + offset, b"\x20" * len(text))
     try:
         post_keyboard_text_at_rate(session, text, hz)
         wait_for_keyboard_echo_sequence(session, text, offset, timeout=max(6.0, len(text) * 0.25))
@@ -920,20 +1024,18 @@ def run_keyboard_echo_stress_case(session: RestInputSession, text: str, hz: floa
         assert_state_empty(session)
         return offset + len(text)
     finally:
-        try:
-            session.post_events([{"kind": "release_all"}])
-        except Exception:
-            pass
+        teardown_step("release every held key",
+                    lambda: session.post_events([{"kind": "release_all"}]))
 
 
-def keyboard_tap_events_for_menu_text(text: str) -> List[Dict[str, Any]]:
+def keyboard_tap_events_for_menu_text(text: str) -> list[dict[str, Any]]:
     punctuation = {
         "/": "slash",
         ".": "period",
         "-": "minus",
         ":": "colon",
     }
-    events: List[Dict[str, Any]] = []
+    events: list[dict[str, Any]] = []
     for ch in text:
         if "a" <= ch <= "z" or "0" <= ch <= "9":
             events.append({"kind": "keyboard", "inputs": [ch], "transition": "tap"})
@@ -948,7 +1050,7 @@ def keyboard_tap_events_for_menu_text(text: str) -> List[Dict[str, Any]]:
     return events
 
 
-def ensure_menu_evidence_dir() -> Optional[str]:
+def ensure_menu_evidence_dir() -> str | None:
     if not MENU_EVIDENCE_DIR:
         return None
     os.makedirs(MENU_EVIDENCE_DIR, exist_ok=True)
@@ -977,16 +1079,16 @@ def save_menu_frame(tag: str, frame: FrameText) -> None:
         handle.write("\n")
 
 
-def capture_menu_frame(capture: VicStreamCapture, ocr: C64FrameOCR, tag: Optional[str] = None) -> FrameText:
+def capture_menu_frame(capture: VicStreamCapture, ocr: C64FrameOCR, tag: str | None = None) -> FrameText:
     frame = ocr.decode(capture.capture_image())
     if tag is not None:
         save_menu_frame(tag, frame)
     return frame
 
 
-def wait_for_menu_text(capture: VicStreamCapture, ocr: C64FrameOCR, needles: List[str], timeout: float, tag: str) -> FrameText:
+def wait_for_menu_text(capture: VicStreamCapture, ocr: C64FrameOCR, needles: list[str], timeout: float, tag: str) -> FrameText:
     deadline = time.monotonic() + timeout
-    last_frame: Optional[FrameText] = None
+    last_frame: FrameText | None = None
     upper_needles = [needle.upper() for needle in needles]
     while time.monotonic() < deadline:
         frame = capture_menu_frame(capture, ocr)
@@ -1010,27 +1112,17 @@ def non_space_run_length(frame: FrameText, row: int, start_col: int, width: int 
     return count
 
 
-def frame_cell_mask(frame: FrameText, ocr: C64FrameOCR, row: int, col: int) -> List[int]:
+def frame_cell_mask(frame: FrameText, ocr: C64FrameOCR, row: int, col: int) -> list[int]:
     left, top, _, _ = frame.bbox
     cell = frame.image.crop((left + (col * 8), top + (row * 8), left + ((col + 1) * 8), top + ((row + 1) * 8)))
     return ocr._cell_mask(cell)
 
 
-def first_mask_position(frame: FrameText, ocr: C64FrameOCR, row: int, start_col: int, width: int, expected_mask: List[int]) -> int:
+def first_mask_position(frame: FrameText, ocr: C64FrameOCR, row: int, start_col: int, width: int, expected_mask: list[int]) -> int:
     for col in range(start_col, start_col + width):
         if frame_cell_mask(frame, ocr, row, col) == expected_mask:
             return col
     raise Failure("Expected glyph mask not found in decoded frame.")
-
-
-def parse_duration_seconds(text: str) -> float:
-    match = re.fullmatch(r"\s*(\d+(?:\.\d+)?)\s*([smhSMH]?)\s*", text)
-    if not match:
-        raise Failure(f"Unsupported duration {text!r}; use values like 30, 45s, 5m, or 1.5h")
-    value = float(match.group(1))
-    unit = match.group(2).lower()
-    scale = {"": 1.0, "s": 1.0, "m": 60.0, "h": 3600.0}[unit]
-    return value * scale
 
 
 def append_screen_tail(screen_tail: str, text: str, limit: int = 200) -> str:
@@ -1051,7 +1143,7 @@ def soak_keyboard_basic_case(session: RestInputSession, screen_tail: str, text: 
     return screen_tail
 
 
-def soak_keyboard_hold_case(session: RestInputSession, persistent_inputs: List[str], tap_inputs: List[str]) -> None:
+def soak_keyboard_hold_case(session: RestInputSession, persistent_inputs: list[str], tap_inputs: list[str]) -> None:
     session.post_events([{"kind": "release_all"}])
     session.post_events(
         [
@@ -1072,7 +1164,7 @@ def soak_keyboard_hold_case(session: RestInputSession, persistent_inputs: List[s
     assert_state_empty(session)
 
 
-def soak_joystick_case(session: RestInputSession, port: int, pressed_inputs: List[str], release_inputs: List[str]) -> None:
+def soak_joystick_case(session: RestInputSession, port: int, pressed_inputs: list[str], release_inputs: list[str]) -> None:
     session.post_events([{"kind": "release_all"}])
     session.post_events([{"kind": "joystick", "port": port, "inputs": pressed_inputs, "transition": "press"}])
     active = [item for item in pressed_inputs if item not in release_inputs]
@@ -1116,7 +1208,7 @@ def soak_interleaved_case(
     screen_tail: str,
     text: str,
     joystick_port: int,
-    joystick_inputs: List[str],
+    joystick_inputs: list[str],
 ) -> str:
     session.post_events([{"kind": "joystick", "port": joystick_port, "inputs": joystick_inputs, "transition": "press"}])
     session.json_request(
@@ -1193,19 +1285,19 @@ def soak_invalid_body_case(session: RestInputSession) -> None:
     assert_state_empty(session)
 
 
-def menu_keyboard_tap(session: RestInputSession, inputs: List[str], settle: float = MENU_KEY_SETTLE_SECONDS) -> Dict[str, Any]:
+def menu_keyboard_tap(session: RestInputSession, inputs: list[str], settle: float = MENU_KEY_SETTLE_SECONDS) -> dict[str, Any]:
     response = session.post_events([{"kind": "keyboard", "inputs": inputs, "transition": "tap"}])
     time.sleep(settle)
     return response
 
 
-def menu_keyboard_transition(session: RestInputSession, inputs: List[str], transition: str, settle: float = MENU_KEY_SETTLE_SECONDS) -> Dict[str, Any]:
+def menu_keyboard_transition(session: RestInputSession, inputs: list[str], transition: str, settle: float = MENU_KEY_SETTLE_SECONDS) -> dict[str, Any]:
     response = session.post_events([{"kind": "keyboard", "inputs": inputs, "transition": transition}])
     time.sleep(settle)
     return response
 
 
-def menu_keyboard_f2_tap(session: RestInputSession, settle: float = MENU_KEY_SETTLE_SECONDS) -> Dict[str, Any]:
+def menu_keyboard_f2_tap(session: RestInputSession, settle: float = MENU_KEY_SETTLE_SECONDS) -> dict[str, Any]:
     # The REST API uses C64 matrix names: F2 is shifted F1.
     return menu_keyboard_tap(session, ["left_shift", "f1"], settle)
 
@@ -1216,7 +1308,7 @@ def close_menu_keyboard(session: RestInputSession) -> None:
     session.post_events([{"kind": "release_all"}])
 
 
-def read_menu_screen(session: RestInputSession) -> Optional[Tuple[List[str], List[List[int]]]]:
+def read_menu_screen(session: RestInputSession) -> tuple[list[str], list[list[int]]] | None:
     """The open menu as text rows and colour rows, or None when it is closed."""
     body = session.menu_screen()
     if body is None:
@@ -1224,8 +1316,8 @@ def read_menu_screen(session: RestInputSession) -> Optional[Tuple[List[str], Lis
     if len(body) != MENU_SCREEN_BYTES:
         raise Failure(f"menu_screen returned {len(body)} bytes, expected {MENU_SCREEN_BYTES}")
     cells = MENU_SCREEN_ROWS * MENU_SCREEN_COLS
-    rows: List[str] = []
-    colours: List[List[int]] = []
+    rows: list[str] = []
+    colours: list[list[int]] = []
     for row in range(MENU_SCREEN_ROWS):
         start = row * MENU_SCREEN_COLS
         codes = body[start:start + MENU_SCREEN_COLS]
@@ -1244,7 +1336,7 @@ def read_menu_screen(session: RestInputSession) -> Optional[Tuple[List[str], Lis
 MENU_FRAME_CHARS = "|+-"
 
 
-def menu_label_column(text: str) -> Optional[int]:
+def menu_label_column(text: str) -> int | None:
     """The column where a list row's own text begins, past any frame."""
     for column, character in enumerate(text):
         if character != " " and character not in MENU_FRAME_CHARS:
@@ -1252,7 +1344,7 @@ def menu_label_column(text: str) -> Optional[int]:
     return None
 
 
-def menu_selection(rows: List[str], colours: List[List[int]]) -> Optional[Tuple[int, str]]:
+def menu_selection(rows: list[str], colours: list[list[int]]) -> tuple[int, str] | None:
     """The highlighted entry as (row, text), or None when nothing is highlighted."""
     for row in range(MENU_LIST_FIRST_ROW, MENU_LIST_LAST_ROW + 1):
         column = menu_label_column(rows[row])
@@ -1261,7 +1353,7 @@ def menu_selection(rows: List[str], colours: List[List[int]]) -> Optional[Tuple[
     return None
 
 
-def menu_row_with(rows: List[str], label: str) -> Optional[int]:
+def menu_row_with(rows: list[str], label: str) -> int | None:
     """The list row holding `label`, or None when it is not on screen."""
     for row in range(MENU_LIST_FIRST_ROW, MENU_LIST_LAST_ROW + 1):
         if label in rows[row]:
@@ -1294,7 +1386,7 @@ def wait_for_menu(session: RestInputSession, predicate, description: str,
         time.sleep(pacing.POLL_INTERVAL_SECONDS)
 
 
-def wait_for_menu_selection(session: RestInputSession, description: str) -> Tuple[List[str], Tuple[int, str]]:
+def wait_for_menu_selection(session: RestInputSession, description: str) -> tuple[list[str], tuple[int, str]]:
     """The screen and its highlighted entry, once the menu shows one."""
     def highlighted(rows, colours):
         found = menu_selection(rows, colours)
@@ -1304,7 +1396,7 @@ def wait_for_menu_selection(session: RestInputSession, description: str) -> Tupl
 
 
 def wait_for_menu_selection_change(session: RestInputSession,
-                                   before: Tuple[int, str]) -> Optional[Tuple[int, str]]:
+                                   before: tuple[int, str]) -> tuple[int, str] | None:
     """The highlighted entry once it differs from `before`, or None if it never does.
 
     A cursor key moves the highlight to another row, or, at the edge of a list
@@ -1349,11 +1441,14 @@ def set_config_value(session: RestInputSession, category: str, item: str, value:
 
 
 def open_menu(session: RestInputSession) -> None:
-    """Bring the menu up, unless it is already showing."""
-    if session.menu_screen_open():
-        return
-    session.put("menu_button")
-    wait_for_menu(session, lambda rows, colours: True, "the menu to open")
+    """Bring the menu up, unless it is already showing.
+
+    menu.toggle_menu is the shared press-then-poll: the press is a toggle, so
+    a transport failure is not retried and the state poll answers either way.
+    """
+    if not menu_lib.toggle_menu(lambda: session.put("menu_button"),
+                                session.menu_screen_open, want_open=True):
+        raise Failure("the menu did not open")
 
 
 def soak_special_key_edge_case(session: RestInputSession) -> None:
@@ -1372,7 +1467,7 @@ def soak_special_key_edge_case(session: RestInputSession) -> None:
         assert_state_empty(session)
 
 
-def soak_rapid_mixed_case(session: RestInputSession, screen_tail: str, text_chunks: List[str], joystick_inputs: List[str]) -> str:
+def soak_rapid_mixed_case(session: RestInputSession, screen_tail: str, text_chunks: list[str], joystick_inputs: list[str]) -> str:
     session.post_events([{"kind": "joystick", "port": 1, "inputs": joystick_inputs, "transition": "press"}])
     for chunk in text_chunks:
         session.json_request(
@@ -1517,10 +1612,155 @@ def run_contract_tests(session: RestInputSession) -> None:
         session.post_events([{"kind": "release_all"}])
 
 
+EMPTY_MOUSE = {"attached": False, "inputs": [], "pending": 0}
+MOUSE_QUEUE_CAPACITY = 1024  # RestMouseQueue::CAPACITY
+MOUSE_PATH_STEPS = 256       # INPUT_API_MAX_MOUSE_PATH_STEPS
+
+
+def mouse_state(session: RestInputSession) -> dict[str, Any]:
+    return session.get_state().get("mouse", {})
+
+
+def wait_mouse_sent(session: RestInputSession, timeout: float = 30.0) -> dict[str, Any]:
+    state: dict[str, Any] = {}
+
+    def sent() -> bool:
+        nonlocal state
+        state = mouse_state(session)
+        return state.get("pending") == 0
+
+    wait.wait_until(sent, "the REST mouse to send its reports", timeout=timeout)
+    return state
+
+
+def assert_mouse_state(session: RestInputSession, attached: bool, inputs: list[str]) -> None:
+    state = wait_mouse_sent(session)
+    expected = {"attached": attached, "inputs": inputs, "pending": 0}
+    if state != expected:
+        raise Failure(f"Mouse state mismatch; expected {expected}, got {state}")
+
+
+def post_events_expect_status(session: RestInputSession, events: list[dict[str, Any]], status: int) -> dict[str, Any]:
+    try:
+        session.json_request("POST", "/v1/machine:input", payload={"events": events})
+    except urllib.error.HTTPError as exc:
+        if exc.code != status:
+            raise Failure(f"Expected HTTP {status}, got HTTP {exc.code}: {exc.read()[:200]!r}") from exc
+        return json.loads(exc.read().decode("utf-8"))
+    raise Failure(f"Expected HTTP {status}, but the request succeeded")
+
+
+# Events the parser must refuse, each with part of the error it must give.
+INVALID_MOUSE_EVENTS = (
+    ({"kind": "mouse", "move": {"x": 128}}, "`move.x` must be -127..127."),
+    ({"kind": "mouse", "move": {"y": "1"}}, "`move.y` must be an integer."),
+    ({"kind": "mouse", "move": {"z": 1}}, "Unknown field `move.z`."),
+    ({"kind": "mouse", "move": {}}, "`move` must have `x` or `y`."),
+    ({"kind": "mouse", "move": {"x": 1}, "wheel": {"vertical": 1}}, "exactly one of"),
+    ({"kind": "mouse"}, "exactly one of"),
+    ({"kind": "mouse", "move": {"x": 1}, "transition": "press"}, "`transition` is only valid with `inputs`."),
+    ({"kind": "mouse", "move": {"x": 1}, "interval_ms": 20}, "`interval_ms` is only valid with `path`."),
+    ({"kind": "mouse", "wheel": {"vertical": 0}}, "`wheel` must turn at least one wheel."),
+    ({"kind": "mouse", "wheel": {"horizontal": -65}}, "`wheel.horizontal` must be -64..64."),
+    ({"kind": "mouse", "path": []}, "`path` must contain 1..256 steps."),
+    ({"kind": "mouse", "path": [[0, 0]] * 257}, "`path` must contain 1..256 steps."),
+    ({"kind": "mouse", "path": [[1, 2, 3]]}, "`path[0]` must be an [x, y] pair."),
+    ({"kind": "mouse", "path": [[1, 2], [3, 128]]}, "`path[1]` values must be -127..127."),
+    ({"kind": "mouse", "path": [[1, 2]], "interval_ms": 19}, "`interval_ms` must be 20..1000."),
+    ({"kind": "mouse", "inputs": ["back"], "transition": "press"}, "`back` is not a valid mouse input."),
+    ({"kind": "mouse", "inputs": ["left", "left"], "transition": "tap"}, "`left` appears more than once"),
+    ({"kind": "mouse", "inputs": [], "transition": "press"}, "`inputs` must contain 1..3 entries."),
+)
+
+
+def run_mouse_tests(session: RestInputSession) -> None:
+    """The REST mouse contract: state, attach and detach, validation, queue room.
+
+    What a mouse event does on the C64 is checked by tests/e2e/io/usb/mouse_test.py.
+    """
+    with check("mouse state is detached and empty after release_all"):
+        body = session.post_events([{"kind": "release_all"}])
+        if body.get("mouse") != EMPTY_MOUSE:
+            raise Failure(f"Expected {EMPTY_MOUSE} in the POST response, got {body}")
+        assert_mouse_state(session, False, [])
+
+    with check("a mouse button press attaches the mouse and is reported in order"):
+        session.post_events([{"kind": "mouse", "inputs": ["right", "left"], "transition": "press"},
+                             {"kind": "mouse", "inputs": ["right"], "transition": "release"}])
+        assert_mouse_state(session, True, ["left"])
+
+    with check("invalid mouse events are rejected with their error and change nothing"):
+        for event, message in INVALID_MOUSE_EVENTS:
+            body = session.post_events_expect_error([{"kind": "mouse", "inputs": ["middle"], "transition": "press"},
+                                                     event])
+            assert_error_body_only(body)
+            if "mouse" in body:
+                raise Failure(f"Error response must not include the mouse state, got {body}")
+            if not any(message in error for error in body["errors"]):
+                raise Failure(f"Expected an error containing {message!r} for {event}, got {body['errors']}")
+            assert_mouse_state(session, True, ["left"])
+
+    with check("a tap presses and releases, and a path is queued behind it"):
+        body = session.post_events([{"kind": "mouse", "inputs": ["middle"], "transition": "tap"},
+                                    {"kind": "mouse", "path": [[1, 0]] * 20}])
+        if body.get("mouse", {}).get("pending", 0) < 20:
+            raise Failure(f"Expected at least 20 reports pending right after the POST, got {body}")
+        assert_mouse_state(session, True, ["left"])
+
+    with check(f"the queue holds {MOUSE_QUEUE_CAPACITY} reports and refuses a batch beyond that with 429"):
+        slow_path = {"kind": "mouse", "path": [[0, 0]] * MOUSE_PATH_STEPS, "interval_ms": 1000}
+        for _ in range(MOUSE_QUEUE_CAPACITY // MOUSE_PATH_STEPS):
+            session.post_events([slow_path])
+        before = mouse_state(session)
+        body = post_events_expect_status(session, [{"kind": "mouse", "inputs": ["right"], "transition": "press"},
+                                                    slow_path], 429)
+        after = mouse_state(session)
+        if not any("mouse reports" in error for error in body.get("errors", [])):
+            raise Failure(f"Expected a queue room error, got {body}")
+        if after["inputs"] != ["left"] or after["pending"] > before["pending"]:
+            raise Failure(f"A refused batch changed the mouse: before {before}, after {after}")
+
+    with check("a request over the JSON value limit is refused with a clear error"):
+        # Two full paths are 1536 JSON values in 3.1KB when written compactly,
+        # under the 4096-byte body limit, so it is the value limit that refuses them.
+        compact = json.dumps({"events": [{"kind": "mouse", "path": [[0, 0]] * MOUSE_PATH_STEPS}] * 2},
+                             separators=(",", ":")).encode()
+        body = session.post_raw_expect_error(compact, "application/json")
+        if not any("JSON values" in error for error in body.get("errors", [])):
+            raise Failure(f"Expected the JSON value limit error, got {body}")
+
+    with check("release_all in a batch makes room for what follows it"):
+        body = session.post_events([{"kind": "release_all"},
+                                    {"kind": "mouse", "path": [[0, 0]] * MOUSE_PATH_STEPS}])
+        if not body.get("mouse", {}).get("attached"):
+            raise Failure(f"Expected the path after release_all to attach the mouse again, got {body}")
+        assert_mouse_state(session, True, [])
+
+    with check("release_all detaches the mouse"):
+        session.post_events([{"kind": "mouse", "inputs": ["left"], "transition": "press"}])
+        session.post_events([{"kind": "release_all"}])
+        assert_mouse_state(session, False, [])
+
+    with check("a machine reset detaches the mouse and drops its queue"):
+        session.post_events([{"kind": "mouse", "inputs": ["left"], "transition": "press"},
+                             {"kind": "mouse", "path": [[0, 0]] * 50, "interval_ms": 1000}])
+        # Read the state before anything posts release_all, which would detach
+        # the mouse on its own.
+        session.close_menu_from_anywhere()
+        session.reset()
+        time.sleep(RESET_APPLY_SECONDS)
+        wait_for_basic_ready(session)
+        state = mouse_state(session)
+        session.post_events([{"kind": "release_all"}])
+        if state != EMPTY_MOUSE:
+            raise Failure(f"Expected {EMPTY_MOUSE} after the reset, got {state}")
+
+
 def run_keyboard_tests(session: RestInputSession) -> None:
     # These assert what the live C64 matrix sees, so the menu must be closed. It
-    # must also be closed for safety: the sweep below taps F5, which opens the
-    # task menu onto the Assembly 64 form when the UI has focus.
+    # must also be closed for safety: the sweep below taps F5, which on an
+    # Ultimate 64 and an Ultimate II+ opens the task menu onto the online
+    # search's query form when the UI has focus.
     session.close_menu_from_anywhere()
 
     with check("keyboard single-tap batch is consumed by BASIC in order"):
@@ -1667,8 +1907,7 @@ def run_keyboard_tests(session: RestInputSession) -> None:
         response = session.json_request("POST", "/v1/machine:input", payload={"events": keyboard_tap_events_for_text("ABCDEFGHIJ")})
         if not response.get("keyboard", {}).get("inputs"):
             raise Failure(f"Expected a live tap snapshot while the batch was draining, got {response}")
-        time.sleep(1.2)
-        assert_state_empty(session)
+        wait_state_empty(session, "the ten-tap batch to drain")
         session.post_events([{"kind": "release_all"}])
 
     with check("keyboard long repeated tap train drains fully without sticky state"):
@@ -1677,8 +1916,7 @@ def run_keyboard_tests(session: RestInputSession) -> None:
         response = session.json_request("POST", "/v1/machine:input", payload={"events": repeated})
         if response.get("keyboard", {}).get("inputs") != ["a"]:
             raise Failure(f"Expected repeated tap train to expose the live a snapshot, got {response}")
-        time.sleep(6.0)
-        assert_state_empty(session)
+        wait_state_empty(session, "the sixty-tap train to drain")
         session.post_events([{"kind": "release_all"}])
 
     with check("invalid keyboard batch does not mutate state"):
@@ -1693,7 +1931,7 @@ def run_keyboard_tests(session: RestInputSession) -> None:
         assert_state_empty(session)
 
 
-def run_keyboard_echo_tests(session: RestInputSession, selected: Optional[List[str]] = None) -> None:
+def run_keyboard_echo_tests(session: RestInputSession, selected: list[str] | None = None) -> None:
     offset = prepare_keyboard_echo_program(session)
 
     if wants_test(selected, "keyboard-echo-alphabet"):
@@ -1758,7 +1996,7 @@ MENU_REPEAT_HOLD_SECONDS = float(
 RENAME_FIELD_ROWS_BELOW_TITLE = 2
 
 
-def rename_dialog_title_row(rows: List[str]) -> Optional[int]:
+def rename_dialog_title_row(rows: list[str]) -> int | None:
     return next((i for i, row in enumerate(rows) if RENAME_DIALOG_TITLE in row), None)
 
 
@@ -1778,8 +2016,8 @@ def read_rename_field(session: RestInputSession) -> str:
     return value
 
 
-def overlay_label_colour(rows: List[str], colours: List[List[int]],
-                         label: str) -> Optional[int]:
+def overlay_label_colour(rows: list[str], colours: list[list[int]],
+                         label: str) -> int | None:
     """The colour the context menu draws `label` in, or None if it is absent.
 
     Read at the label's own first column, not across the row. The context menu
@@ -1835,12 +2073,9 @@ def select_menu_entry(session: RestInputSession, label: str) -> None:
                 f"{label!r}; it is on {current[1].strip()!r}. Menu screen was:\n" + "\n".join(rows))
 
 
-def in_file_browser(rows: List[str]) -> bool:
-    """Whether the file browser is what the menu is showing.
-
-    The browser puts the directory it is showing on the status row and nothing
-    else does, so a leading "/" identifies it on every machine.
-    """
+def in_file_browser(rows: list[str]) -> bool:
+    """Whether a path is on the status row. The launcher shows key hints there;
+    a C64 Ultimate settings screen keeps the browser's path."""
     return rows[MENU_SCREEN_ROWS - 1].lstrip().startswith("/")
 
 
@@ -2027,7 +2262,7 @@ def wait_for_rename_field(session: RestInputSession, expected: str) -> None:
         f"the rename field to read {expected!r}")
 
 
-def _field_of(rows: List[str]) -> Optional[str]:
+def _field_of(rows: list[str]) -> str | None:
     title = rename_dialog_title_row(rows)
     if title is None:
         return None
@@ -2062,7 +2297,52 @@ def close_rename_editor(session: RestInputSession) -> None:
     session.post_events([{"kind": "release_all"}])
 
 
-def run_menu_keyboard_tests(session: RestInputSession, selected: Optional[List[str]] = None) -> None:
+def run_menu_open_tests(session: RestInputSession) -> None:
+    """The keyboard route into the menu, on a machine that has one.
+
+    `machine:menu_button` is the signal every machine answers, and other
+    suites cover it. This is the other one: a C64 Ultimate's core reads the
+    keyboard matrix at a RESTORE NMI edge and treats CBM-down plus that edge
+    the way it treats the button. An Ultimate 64 mk1 has no such route, and an
+    Ultimate II+ has no keyboard injection at all: it answers `machine:input`
+    with HTTP 501. Both report a skip here rather than a failure.
+
+    Which machines have a keyboard route, and the request sequence that
+    produces the stimulus, are both in tests/e2e/lib/menu.py so that there is
+    one place to change when the firmware lets the sequence become a single
+    request. Having the route is not the same as the firmware answering it,
+    so the check is also tagged with machine.KEYBOARD_COMBINATION_OPENS_MENU
+    and reports a skip on a firmware line that ignores the combination.
+    """
+    machine = session.machine
+    opener = menu_lib.keyboard_menu_opener(machine.kind, session.post_events)
+    if opener is None:
+        check_start("a keyboard combination opens the menu")
+        check_skip(f"{machine.described} has no keyboard route into its menu; "
+                   f"machine:menu_button is the only signal that opens it")
+        return
+
+    label = f"{opener.name} opens the menu"
+    if machine.skip_without_fix(machine_lib.KEYBOARD_COMBINATION_OPENS_MENU, label):
+        return
+
+    with check(label):
+        session.close_menu_from_anywhere()
+        if session.menu_screen_open():
+            raise Failure("the menu was already open, so this check would "
+                          "not have measured anything")
+        try:
+            if not opener.open(session.menu_screen_open):
+                raise Failure(
+                    f"the menu did not open within "
+                    f"{menu_lib.MENU_TOGGLE_TIMEOUT_SECONDS}s of {opener.name}")
+        finally:
+            teardown_step("close the menu", session.close_menu_from_anywhere)
+            teardown_step("release injected input",
+                          lambda: session.post_events([{"kind": "release_all"}]))
+
+
+def run_menu_keyboard_tests(session: RestInputSession, selected: list[str] | None = None) -> None:
     """What the keyboard puts into a menu string editor.
 
     Three scenarios sharing one editor session, against the browser's rename
@@ -2185,10 +2465,8 @@ def run_menu_keyboard_tests(session: RestInputSession, selected: Optional[List[s
             except Failure:
                 pass
         session.close_menu_from_anywhere()
-        try:
-            remove_rename_fixture(session.host)
-        except Exception:  # noqa: BLE001 - the verdict is already decided
-            pass
+        teardown_step("remove the rename fixture",
+                    lambda: remove_rename_fixture(session.host))
         session.post_events([{"kind": "release_all"}])
         assert_state_empty(session)
 
@@ -2245,21 +2523,68 @@ def run_joystick_tests(session: RestInputSession) -> None:
 def run_joystick_checks(session: RestInputSession) -> None:
     session.post_events([{"kind": "release_all"}])
 
-    with check("joystick port 2 fire keeps Anykey buttons 2 and 3 released"):
+    # A USB mouse emulates a 1351 on port 1, and its position is on the POT
+    # lines whenever no REST fire2/fire3 press holds them. A position is at
+    # most $7F, so it reads as buttons 2 and 3 pressed, as a real 1351 does.
+    # With nothing held, anything but $80/$80 on port 1 means such a device is
+    # attached; the expectations that port 1's extra buttons read released
+    # cannot hold then and are left out. Port 2, and port 1 while REST holds
+    # an extra button, are still checked.
+    port1_idle_pots = read_joystick_pots(session, 1)
+    # A mouse position is 7 bits on both lines. A value of $80 or more on one
+    # line with no input held is a stuck extra button, which must fail below.
+    port1_driven = port1_idle_pots != (0x80, 0x80) and max(port1_idle_pots) <= 0x7F
+    if port1_driven:
+        warn("port 1 POT lines read $%02X/$%02X with no input held, so a USB mouse drives them; "
+             "the checks that port 1's extra buttons read released are skipped" % port1_idle_pots)
+
+    def assert_extra_buttons(expected: dict[int, tuple[bool, bool]]) -> None:
+        if port1_driven and expected.get(1) == (False, False):
+            expected = {port: value for port, value in expected.items() if port != 1}
+        if expected:
+            assert_anykey_extra_buttons_both(session, expected)
+
+    # Regression coverage for #879: fire2/fire3 on one port must not appear
+    # on the other port's POT reading. Covers both ports and both inputs.
+    ANYKEY_ISOLATION_CASES = (
+        # (input, fire2 expected on the pressed port, fire3 expected on the pressed port)
+        ("fire", False, False),
+        ("fire2", True, False),
+        ("fire3", False, True),
+    )
+    for own_port in (1, 2):
+        other_port = 2 if own_port == 1 else 1
+        for input_name, fire2_expected, fire3_expected in ANYKEY_ISOLATION_CASES:
+            if input_name == "fire":
+                label = f"joystick port {own_port} fire keeps Anykey buttons 2 and 3 released"
+            else:
+                button = "2" if input_name == "fire2" else "3"
+                label = (f"joystick port {own_port} {input_name} lights only Anykey button {button}, "
+                          f"only on port {own_port}")
+            with check(label):
+                session.post_events([{"kind": "release_all"}])
+                session.post_events(
+                    [{"kind": "joystick", "port": own_port, "inputs": [input_name], "transition": "press"}])
+                assert_extra_buttons({own_port: (fire2_expected, fire3_expected), other_port: (False, False)})
+
+    with check("joystick fire2 on one port and fire3 on the other stay independent"):
+        # Both ports held at once with different extra-button state.
         session.post_events([{"kind": "release_all"}])
-        session.post_events([{"kind": "joystick", "port": 2, "inputs": ["fire"], "transition": "press"}])
-        assert_joystick_ports(session, 0x1F, 0x0F)
+        session.post_events(
+            [
+                {"kind": "joystick", "port": 1, "inputs": ["fire2"], "transition": "press"},
+                {"kind": "joystick", "port": 2, "inputs": ["fire3"], "transition": "press"},
+            ]
+        )
+        assert_extra_buttons({1: (True, False), 2: (False, True)})
+
+    with check("joystick fire2/fire3 tap auto-releases the POT hardware state"):
+        session.post_events([{"kind": "release_all"}])
+        session.post_events([{"kind": "joystick", "port": 2, "inputs": ["fire2", "fire3"], "transition": "tap"}])
+        time.sleep(0.2)
         assert_anykey_extra_buttons(session, 2, fire2=False, fire3=False)
-
-    with check("joystick port 2 fire2 lights only Anykey button 2"):
-        session.post_events([{"kind": "release_all"}])
-        session.post_events([{"kind": "joystick", "port": 2, "inputs": ["fire2"], "transition": "press"}])
-        assert_anykey_extra_buttons(session, 2, fire2=True, fire3=False)
-
-    with check("joystick port 2 fire3 lights only Anykey button 3"):
-        session.post_events([{"kind": "release_all"}])
-        session.post_events([{"kind": "joystick", "port": 2, "inputs": ["fire3"], "transition": "press"}])
-        assert_anykey_extra_buttons(session, 2, fire2=False, fire3=True)
+        if session.get_state()["joysticks"][1]["inputs"] != []:
+            raise Failure(f"Expected port 2 state empty after tap auto-release, got {session.get_state()}")
 
     with check("joystick port 1 up press is visible on CIA reads"):
         session.post_events([{"kind": "release_all"}])
@@ -2295,14 +2620,27 @@ def run_joystick_checks(session: RestInputSession) -> None:
         session.post_events([{"kind": "joystick", "port": 2, "inputs": ["fire"], "transition": "release"}])
         assert_joystick_ports(session, 0x1F, 0x1E)
 
-    with check("joystick fire2/fire3 round-trip through REST state"):
+    with check("joystick fire2/fire3 round-trip through REST state and POT hardware"):
         session.post_events([{"kind": "release_all"}])
         session.post_events([{"kind": "joystick", "port": 2, "inputs": ["fire", "fire2", "fire3"], "transition": "press"}])
         assert_joystick_ports(session, 0x1F, 0x0F)
         assert_input_state(session, [], [], ["fire", "fire2", "fire3"])
+        assert_extra_buttons({2: (True, True), 1: (False, False)})
         session.post_events([{"kind": "joystick", "port": 2, "inputs": ["fire2"], "transition": "release"}])
         assert_joystick_ports(session, 0x1F, 0x0F)
         assert_input_state(session, [], [], ["fire", "fire3"])
+        assert_extra_buttons({2: (False, True), 1: (False, False)})
+
+    with check("joystick release in the same batch as a tap on the same input wins"):
+        session.post_events([{"kind": "release_all"}])
+        response = session.post_events(
+            [
+                {"kind": "joystick", "port": 2, "inputs": ["fire2"], "transition": "tap"},
+                {"kind": "joystick", "port": 2, "inputs": ["fire2"], "transition": "release"},
+            ]
+        )
+        if response["joysticks"][1]["inputs"] != []:
+            raise Failure(f"Expected port 2 empty right after the batch, got {response}")
 
     with check("joystick release_all then press in same batch is visible on CIA reads"):
         session.post_events(
@@ -2365,16 +2703,17 @@ def run_joystick_checks(session: RestInputSession) -> None:
         assert_joystick_ports(session, 0x1F, 0x0F)
         session.post_events([{"kind": "release_all"}])
 
-    with check("joystick release_all clears both ports"):
+    with check("joystick release_all clears both ports, including POT hardware"):
         session.post_events(
             [
-                {"kind": "joystick", "port": 1, "inputs": ["up"], "transition": "press"},
-                {"kind": "joystick", "port": 2, "inputs": ["fire"], "transition": "press"},
+                {"kind": "joystick", "port": 1, "inputs": ["up", "fire2"], "transition": "press"},
+                {"kind": "joystick", "port": 2, "inputs": ["fire", "fire3"], "transition": "press"},
                 {"kind": "release_all"},
             ]
         )
         assert_joystick_ports(session, 0x1F, 0x1F)
         assert_state_empty(session)
+        assert_extra_buttons({1: (False, False), 2: (False, False)})
 
     with check("machine reset clears keyboard and joystick REST state"):
         session.post_events(
@@ -2387,7 +2726,7 @@ def run_joystick_checks(session: RestInputSession) -> None:
         assert_state_empty(session)
 
 
-def run_tests(session: RestInputSession, soak_duration_seconds: Optional[float] = None, selected: Optional[List[str]] = None) -> int:
+def run_tests(session: RestInputSession, soak_duration_seconds: float | None = None, selected: list[str] | None = None) -> int:
     wait_for_input_ready(session, timeout=15.0)
     reset_to_basic(session)
     if soak_duration_seconds is not None:
@@ -2400,10 +2739,14 @@ def run_tests(session: RestInputSession, soak_duration_seconds: Optional[float] 
         run_joystick_tests(session)
     if wants_test(selected, "keyboard"):
         run_keyboard_tests(session)
+    if wants_test(selected, "mouse"):
+        run_mouse_tests(session)
     if wants_keyboard_echo_tests(selected):
         run_keyboard_echo_tests(session, selected=selected)
     if wants_menu_tests(selected):
         menu_selected = selected if selected and "menu" not in selected and "all" not in selected else None
+        if wants_test(menu_selected, "menu-open"):
+            run_menu_open_tests(session)
         run_menu_keyboard_tests(session, selected=menu_selected)
     return 0
 
@@ -2413,16 +2756,20 @@ def main() -> int:
         description="Validate U64 keyboard and joystick REST input injection",
         epilog="Use --soak to continue with expanded long-run REST input coverage after the standard checks.",
     )
-    parser.add_argument("-H", "--host", default=os.environ.get("U64_HOST", "u64"))
+    cli.add_device_arguments(parser, password=None, timeout=5.0, colour=False)
     parser.add_argument("-r", "--rest-host", default=os.environ.get("U64_REST_HOST"))
-    parser.add_argument("-p", "--password", default=os.environ.get("U64_PASS"))
-    parser.add_argument("-t", "--timeout", type=float, default=float(os.environ.get("U64_TIMEOUT", "5.0")))
     parser.add_argument("-s", "--soak", action="store_true", help="run the expanded soak suite after the standard checks")
     parser.add_argument(
         "--test",
         action="append",
         choices=TEST_CHOICES,
         help="run one suite or menu subtest; repeat for multiple selections",
+    )
+    parser.add_argument(
+        "--profile",
+        choices=profiles.ORDER,
+        default=profiles.current(),
+        help="run the scenarios of this profile (default: the runner's, else quick)",
     )
     parser.add_argument(
         "-d",
@@ -2434,8 +2781,8 @@ def main() -> int:
 
     rest_host = args.rest_host or args.host
     session = RestInputSession(rest_host, args.password, args.timeout)
-    selected_tests = None if not args.test else args.test
-    soak_duration_seconds = parse_duration_seconds(args.soak_duration) if args.soak else None
+    selected_tests = args.test if args.test else tests_for(args.profile)
+    soak_duration_seconds = cli.parse_duration(args.soak_duration) if args.soak else None
     if args.soak and selected_tests is not None:
         suite_fail("input_test", "--test cannot be combined with --soak")
         return 2

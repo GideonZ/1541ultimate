@@ -13,14 +13,14 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Tuple
+from collections.abc import Callable
+from dataclasses import dataclass
 
-# tests/lib holds the reporting rules every suite shares; tests/e2e/lib
-# holds the shared UI backend.
-sys.path.insert(0, os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
-sys.path.insert(0, os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", "lib"))
+# The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
+import cli  # noqa: E402
 import pacing
 import rest as rest_lib
 import machine as machine_lib
@@ -136,7 +136,7 @@ class MonitorSession:
                  expect_redraw: bool = True) -> Snapshot:
         return self.backend.send_key(key, settle=settle, expect_redraw=expect_redraw)
 
-    def send_key_count(self, key: str) -> Tuple[Snapshot, int]:
+    def send_key_count(self, key: str) -> tuple[Snapshot, int]:
         """Telnet-only: see TelnetBackend.send_key_count."""
         return self.backend.send_key_count(key)
 
@@ -373,7 +373,7 @@ class MonitorSession:
         return snapshot
 
 
-def load_snapshots() -> Dict[str, Dict[str, Dict[str, str]]]:
+def load_snapshots() -> dict[str, dict[str, dict[str, str]]]:
     with SNAPSHOT_FILE.open("r", encoding="utf-8") as handle:
         return json.load(handle)
 
@@ -426,7 +426,7 @@ def assert_status_contains(snapshot: Snapshot, expected: str) -> None:
     assert_contains(snapshot, line_index, expected)
 
 
-def assert_line_contains_all(snapshot: Snapshot, values: Tuple[str, ...]) -> int:
+def assert_line_contains_all(snapshot: Snapshot, values: tuple[str, ...]) -> int:
     for index, line in enumerate(snapshot.lines):
         if all(value in line for value in values):
             return index
@@ -450,8 +450,27 @@ def assert_equal(label: str, expected: str, actual: str, command: str) -> None:
         raise Failure(f"{label} failed after {command}\n{diff}")
 
 
-def assert_highlight(snapshot: Snapshot, expected_cells: List[Tuple[int, int]], command: str) -> None:
-    actual = sorted(snapshot.reverse_cells)
+def framed_rows(snapshot: Snapshot) -> tuple[int, int] | None:
+    """The first and last row inside the monitor's box, or None if undrawn.
+
+    Outside the box is someone else's: a C64 Ultimate's launcher banner above
+    it is drawn in reversed characters.
+    """
+    borders = [index for index, line in enumerate(snapshot.lines)
+               if line.strip().startswith("+") and line.strip().endswith("+")]
+    if len(borders) < 2:
+        return None
+    return borders[0] + 1, borders[-1] - 1
+
+
+def assert_highlight(snapshot: Snapshot, expected_cells: list[tuple[int, int]], command: str) -> None:
+    inside = framed_rows(snapshot)
+    if inside is None:
+        actual = sorted(snapshot.reverse_cells)
+    else:
+        first, last = inside
+        actual = sorted((col, row) for col, row in snapshot.reverse_cells
+                        if first <= row <= last)
     expected = sorted(expected_cells)
     if actual != expected:
         raise Failure(
@@ -477,7 +496,7 @@ def assert_ascii_width(snapshot: Snapshot, row: int) -> None:
         raise Failure(f"ASCII width mismatch after {snapshot.last_command}: expected 32, got {len(payload)}")
 
 
-def find_memory_rows(snapshot: Snapshot) -> List[int]:
+def find_memory_rows(snapshot: Snapshot) -> list[int]:
     rows = [index for index, line in enumerate(snapshot.lines) if MEMORY_ROW_RE.match(line[1:] if line.startswith("|") else line)]
     if not rows:
         raise Failure(f"No memory rows found after {snapshot.last_command}\n{snapshot.text()}")
@@ -495,7 +514,7 @@ def read_rest_memory(host: str, address: int, length: int) -> bytes:
         return response.read()
 
 
-_REST_CLIENTS: Dict[str, UltimateApi] = {}
+_REST_CLIENTS: dict[str, UltimateApi] = {}
 
 
 def rest_api(host: str) -> UltimateApi:
@@ -564,9 +583,9 @@ def write_rest_memory_confirmed(host: str, address: int, data: bytes,
 
 def wait_for_rest_data(host: str, address: int, expected: bytes,
                        timeout: float = 5.0) -> bytes:
-    deadline = time.time() + timeout
+    deadline = time.monotonic() + timeout
     actual = b""
-    while time.time() < deadline:
+    while time.monotonic() < deadline:
         actual = read_rest_memory(host, address, len(expected))
         if actual == expected:
             return actual
@@ -574,7 +593,7 @@ def wait_for_rest_data(host: str, address: int, expected: bytes,
     return actual
 
 
-def close_rest_menu(control: str, password: Optional[str]) -> None:
+def close_rest_menu(control: str, password: str | None) -> None:
     """Shut the on-device menu, whichever machine of `control` owns which half.
 
     The menu belongs to the device under test, and the keys that leave it
@@ -627,7 +646,7 @@ def close_rest_menu(control: str, password: Optional[str]) -> None:
         time.sleep(0.5)
 
 
-def reset_rest_machine(control: str, password: Optional[str]) -> None:
+def reset_rest_machine(control: str, password: str | None) -> None:
     close_rest_menu(control, password)
 
     # Let the reset supersede any program that was still executing. READY can
@@ -637,8 +656,8 @@ def reset_rest_machine(control: str, password: Optional[str]) -> None:
 
 
 def wait_for_rest_byte(host: str, address: int, expected: int, timeout: float = 2.0) -> None:
-    deadline = time.time() + timeout
-    while time.time() < deadline:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
         value = read_rest_memory(host, address, 1)[0]
         if value == expected:
             return
@@ -657,7 +676,7 @@ def assert_rest_matches_row(snapshot: Snapshot, line_index: int, address: int, r
         )
 
 
-def parse_memory_row(snapshot: Snapshot, address: int, line_index: Optional[int] = None) -> bytes:
+def parse_memory_row(snapshot: Snapshot, address: int, line_index: int | None = None) -> bytes:
     target = f"{address:04X}"
     candidate_indexes = [line_index] if line_index is not None else range(len(snapshot.lines))
 
@@ -680,7 +699,7 @@ def parse_memory_row(snapshot: Snapshot, address: int, line_index: Optional[int]
     )
 
 
-def parse_text_row(snapshot: Snapshot, address: int, line_index: Optional[int] = None) -> str:
+def parse_text_row(snapshot: Snapshot, address: int, line_index: int | None = None) -> str:
     target = f"{address:04X} "
     candidate_indexes = [line_index] if line_index is not None else range(len(snapshot.lines))
 
@@ -921,7 +940,7 @@ def run_character_mapping_test(session: MonitorSession, rest_host: str) -> None:
 
 def goto_and_read_byte(
     session: MonitorSession, address: str, address_int: int,
-    expected: Optional[int] = None, timeout: float = 3.0,
+    expected: int | None = None, timeout: float = 3.0,
 ) -> int:
     """Navigate to `address` once and read its first byte.
 
@@ -940,8 +959,8 @@ def goto_and_read_byte(
     if expected is None or value == expected:
         return value
 
-    deadline = time.time() + timeout
-    while time.time() < deadline:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
         time.sleep(0.05)
         screen = session.capture()
         try:
@@ -1009,7 +1028,7 @@ def device_write_lands(device_host: str, address: int, data: bytes) -> bool:
 # the monitor. Counted for the whole run and reported at the end of it, so a
 # suite that passes while the shared DMA path lost writes says how many rather
 # than only saying that each individual one was not the monitor's fault.
-FIRST_ATTEMPT_LOSSES: List[str] = []
+FIRST_ATTEMPT_LOSSES: list[str] = []
 
 
 def note_first_attempt_loss(address: int, what: str) -> None:
@@ -1028,7 +1047,7 @@ def report_first_attempt_losses() -> None:
 
 def assert_monitor_write_landed(device_host: str, address: int, expected: bytes,
                                 what: str, timeout: float = 5.0,
-                                retry_monitor_write: Optional[Callable[[], None]] = None
+                                retry_monitor_write: Callable[[], None] | None = None
                                 ) -> bool:
     """Require a monitor write to have landed, or the loss to be underneath it.
 
@@ -1184,16 +1203,16 @@ def hex_edit_byte_persists(session: MonitorSession, device_host: str, frozen: bo
         if frozen:
             session.enter_monitor()
         session.goto(f"{address:04X}")
-        screen = ensure_view(session, "HEX ")
+        ensure_view(session, "HEX ")
         # No assert_highlight here: unlike the fixed $1000 case, this address
         # can land at any offset within its 8-byte row, so the highlighted
         # column varies with it. Persistence, not cursor position, is what
         # this sweep proves; run_main_ram_edit_persists_test already proves
         # the highlight for one fixed, known position.
-        screen = session.send_char("e")
+        session.send_char("e")
         digits = f"{replacement[0]:02X}"
-        screen = session.send_char(digits[0], settle=True)
-        screen = session.send_char(digits[1], settle=True)
+        session.send_char(digits[0], settle=True)
+        session.send_char(digits[1], settle=True)
         session.send_key("ESC", settle=True)
 
         if frozen:
@@ -1513,7 +1532,7 @@ def run_hex_edit_reliability_test(session: MonitorSession, device_host: str,
     return wrote
 
 
-def asm_commit_cases(round_index: int) -> Tuple[Tuple[str, bytes], ...]:
+def asm_commit_cases(round_index: int) -> tuple[tuple[str, bytes], ...]:
     """One instruction of each length, with operands that change every round.
 
     Changing the operand every round is what stops a stale read from passing:
@@ -1780,51 +1799,79 @@ def run_go_keeps_monitor_open_test(session: MonitorSession, rest_host: str) -> N
             f"and is gone now, leaving {strip_frame(screen.line(3))!r} on screen")
 
 
+BOOKMARK_DEFAULT_LABEL = "SCREEN"
+BOOKMARK_LABEL_TITLE = "Label BM1"
+
+
 def run_bookmark_test(session: MonitorSession) -> None:
     screen = ensure_view(session, "HEX ")
 
     screen = session.send_key("CTRL_B", settle=True)
     screen.find_line_containing("BOOKMARKS")
     screen = session.send_key("DOWN")
-    screen = session.send_key("DEL")
-    assert_line_contains_all(screen, ("1 SCREEN", "$0400", "SCR 32"))
+    session.send_key("DEL")
+    wait_for_line_containing_all(session, ("1 SCREEN", "$0400", "SCR 32"))
     screen = session.send_key("CTRL_B", settle=True)
     screen.find_line_containing("MONITOR")
 
+    # W toggles between the two hex widths, so the width it lands on is fixed
+    # only if the width it starts from is. Settled here the same way
+    # run_memory_bookmark_width_test settles it; without that this check
+    # depends on whatever the earlier checks left behind, and that differs
+    # between machines, because the checks that skip differ between them.
+    screen = ensure_hex_width(session, 8)
     screen = session.goto("C123")
     screen.find_line_containing("MONITOR HEX $C123")
     screen = session.send_char("W", settle=True)
     screen = session.send_key("CTRL_B", settle=True)
     screen.find_line_containing("BOOKMARKS")
     screen = session.send_key("DOWN")
-    screen = session.send_char("S")
-    assert_line_contains_all(screen, ("BM1 SCREEN $C123 HEX W16", "SET"))
+    session.send_char("S")
+    wait_for_line_containing_all(session, ("BM1 SCREEN $C123 HEX W16", "SET"))
     screen = session.send_key("CTRL_B", settle=True)
     screen.find_line_containing("MONITOR HEX $C123")
 
     screen = session.goto("E000")
     screen.find_line_containing("MONITOR HEX $E000")
-    screen = session.send_key("CBM_1")
-    screen.find_line_containing("MONITOR HEX $C123")
-    screen.find_line_containing("BM1 SCREEN $C123 HEX W16")
+    session.send_key("CBM_1")
+    wait_for_line(session, "MONITOR HEX $C123")
+    wait_for_line(session, "BM1 SCREEN $C123 HEX W16")
 
     screen = session.send_key("CTRL_B", settle=True)
     screen.find_line_containing("BOOKMARKS")
-    assert_line_contains_all(screen, ("1 SCREEN", "$C123", "HEX 16"))
+    screen = wait_for_line_containing_all(session, ("1 SCREEN", "$C123", "HEX 16"))
     screen.find_line_containing("0-9/RET Jmp  S Set  L Label  DEL Reset")
 
     screen = session.send_key("DOWN")
-    screen = session.send_char("L")
-    screen = session.send_text("\b\b\b\b\b\bE2E\r", "bookmark label E2E")
-    assert_line_contains_all(screen, ("1 E2E", "$C123", "HEX 16"))
+    session.send_char("L")
+    # Typed only once the editor is up: one burst straight after L lost the
+    # backspaces on a C64 Ultimate and the label stayed "SCREEN".
+    wait_for_prompt(session, BOOKMARK_LABEL_TITLE)
+    session.send_text("\b" * len(BOOKMARK_DEFAULT_LABEL) + "E2E",
+                      "bookmark label E2E")
+    # The whole field, not a substring of the screen: "E2E" appears just as
+    # readily in a field the backspaces left as "SCE2EEN".
+    screen = wait_until(
+        session,
+        lambda s: prompt_field_or_none(s, BOOKMARK_LABEL_TITLE) == "E2E")
+    assert_equal("bookmark label field", "E2E",
+                 prompt_field(screen, BOOKMARK_LABEL_TITLE), "bookmark label E2E")
+
+    session.send_key("ENTER", settle=True)
+    # Leaving the editor restores the screen backup UIStringBox took when it
+    # opened, which still carries the old label, and edit_bookmark_label
+    # repaints the row only after that. The device does commit the edit: a
+    # jump to the bookmark reads "BM1 E2E" even while this row still reads
+    # "1 SCREEN".
+    wait_for_line_containing_all(session, ("1 E2E", "$C123", "HEX 16"))
 
     screen = session.send_key("CTRL_B", settle=True)
     screen.find_line_containing("MONITOR HEX $C123")
     screen = session.goto("E000")
     screen.find_line_containing("MONITOR HEX $E000")
-    screen = session.send_key("CBM_1")
-    screen.find_line_containing("MONITOR HEX $C123")
-    screen.find_line_containing("BM1 E2E $C123 HEX W16")
+    session.send_key("CBM_1")
+    wait_for_line(session, "MONITOR HEX $C123")
+    wait_for_line(session, "BM1 E2E $C123 HEX W16")
 
 
 def run_telnet_poll_guard_test(session: MonitorSession) -> None:
@@ -1843,8 +1890,8 @@ def run_memory_bookmark_width_test(session: MonitorSession, rest_host: str) -> N
     screen = session.send_key("CTRL_B", settle=True)
     screen.find_line_containing("BOOKMARKS")
     screen = session.send_key("DOWN")
-    screen = session.send_key("DEL")
-    assert_line_contains_all(screen, ("1 SCREEN", "$0400", "SCR 32"))
+    session.send_key("DEL")
+    wait_for_line_containing_all(session, ("1 SCREEN", "$0400", "SCR 32"))
     screen = session.send_key("CTRL_B", settle=True)
     screen.find_line_containing("MONITOR")
 
@@ -1858,21 +1905,21 @@ def run_memory_bookmark_width_test(session: MonitorSession, rest_host: str) -> N
     screen = session.send_key("CTRL_B", settle=True)
     screen.find_line_containing("BOOKMARKS")
     screen = session.send_key("DOWN")
-    screen = session.send_char("S")
-    assert_line_contains_all(screen, ("BM1 SCREEN $3000 HEX W16", "SET"))
+    session.send_char("S")
+    wait_for_line_containing_all(session, ("BM1 SCREEN $3000 HEX W16", "SET"))
     screen = session.send_key("CTRL_B", settle=True)
     screen.find_line_containing("MONITOR HEX $3000")
 
     screen = session.goto("E000")
     screen.find_line_containing("MONITOR HEX $E000")
-    screen = session.send_key("CBM_1")
-    screen.find_line_containing("MONITOR HEX $3000")
-    screen.find_line_containing("BM1 SCREEN $3000 HEX W16")
-    screen.find_line_containing("3000 0001020304050607 08090A0B0C0D0E0F")
+    session.send_key("CBM_1")
+    wait_for_line(session, "MONITOR HEX $3000")
+    wait_for_line(session, "BM1 SCREEN $3000 HEX W16")
+    wait_for_line(session, "3000 0001020304050607 08090A0B0C0D0E0F")
 
     screen = session.send_key("CTRL_B", settle=True)
     screen.find_line_containing("BOOKMARKS")
-    assert_line_contains_all(screen, ("1 SCREEN", "$3000", "HEX 16"))
+    wait_for_line_containing_all(session, ("1 SCREEN", "$3000", "HEX 16"))
     screen = session.send_key("CTRL_B", settle=True)
     screen.find_line_containing("MONITOR HEX $3000")
 
@@ -1897,8 +1944,8 @@ def run_binary_bookmark_width_test(session: MonitorSession, rest_host: str) -> N
     screen = session.send_key("CTRL_B", settle=True)
     screen.find_line_containing("BOOKMARKS")
     screen = session.send_key("DOWN")
-    screen = session.send_key("DEL")
-    assert_line_contains_all(screen, ("1 SCREEN", "$0400", "SCR 32"))
+    session.send_key("DEL")
+    wait_for_line_containing_all(session, ("1 SCREEN", "$0400", "SCR 32"))
     screen = session.send_key("CTRL_B", settle=True)
     screen.find_line_containing("MONITOR")
 
@@ -1928,17 +1975,17 @@ def run_binary_bookmark_width_test(session: MonitorSession, rest_host: str) -> N
     screen = session.send_key("CTRL_B", settle=True)
     screen.find_line_containing("BOOKMARKS")
     screen = session.send_key("DOWN")
-    screen = session.send_char("S")
-    assert_line_contains_all(screen, ("BM1 SCREEN $C400 BIN W4", "SET"))
+    session.send_char("S")
+    wait_for_line_containing_all(session, ("BM1 SCREEN $C400 BIN W4", "SET"))
     screen = session.send_key("CTRL_B", settle=True)
     screen.find_line_containing("MONITOR BIN $C400")
 
     screen = session.goto("E000")
     screen.find_line_containing("MONITOR BIN $E000")
-    screen = session.send_key("CBM_1")
-    screen.find_line_containing("MONITOR BIN $C400")
-    screen.find_line_containing("BM1 SCREEN $C400 BIN W4")
-    screen.find_line_containing("C400 ...*..*...**.*...*.*.**..****...")
+    session.send_key("CBM_1")
+    wait_for_line(session, "MONITOR BIN $C400")
+    wait_for_line(session, "BM1 SCREEN $C400 BIN W4")
+    screen = wait_for_line(session, "C400 ...*..*...**.*...*.*.**..****...")
     assert_line_lacks(screen, "12 34 56 78")
 
     screen = session.send_key("CTRL_B", settle=True)
@@ -2016,7 +2063,7 @@ ASM_ANCHOR_STEPS = 6
 VIDEO_CAPTURE_TIMEOUT_SECONDS = 8.0
 
 
-def asm_row_for(snapshot: Snapshot, address: int) -> Optional[str]:
+def asm_row_for(snapshot: Snapshot, address: int) -> str | None:
     """The disassembly row for `address`, or None when it is off screen.
 
     Anchored on the row starting with the address rather than merely
@@ -2054,7 +2101,8 @@ def check_anchor_survives_navigation(session: MonitorSession, address: int,
         raise Failure(f"{what}: ${address:04X} is not on screen to begin with\n"
                       f"{baseline.text()}")
 
-    for up, down in (("UP", "DOWN"), ("PGUP", "PGDN")):
+    keys = session.backend.machine
+    for up, down in (("UP", "DOWN"), (keys.page_up_key, keys.page_down_key)):
         for step in range(ASM_ANCHOR_STEPS):
             screen = session.send_key(up)
             moved = asm_row_for(screen, address)
@@ -2311,9 +2359,9 @@ def run_asm_entry_round_trip_test(session: MonitorSession, rest_host: str,
     def type_asm(line: str) -> Snapshot:
         if isinstance(session.backend, TelnetBackend):
             return session.send_text(line + "\r", f"ASM {line}")
-        screen = session.send_char(line[0])
+        session.send_char(line[0])
         for char in line[1:]:
-            screen = session.send_char(char)
+            session.send_char(char)
         return session.send_key("ENTER")
 
     write_rest_memory_confirmed(rest_host, address, bytes((0xEA,) * 12))
@@ -2359,15 +2407,17 @@ def run_asm_entry_round_trip_test(session: MonitorSession, rest_host: str,
             session.goto_run(f"{address:04X}")
             capture.clear()
             launched = time.monotonic()
-            # Collect until there are frames to judge, not for a fixed 0.60s
-            # window a slow-starting stream misses. assert_frames_differ needs two.
+            # Until two frames differ: the first two of a starting stream are
+            # equal on a C64 Ultimate. The read of $C200 below proves the run.
             frames = []
             video_deadline = time.monotonic() + VIDEO_CAPTURE_TIMEOUT_SECONDS
             while time.monotonic() < video_deadline:
                 capture.capture(0.20)
                 frames = [frame for frame in video_frames(capture.video_packets)
                           if frame.received_at >= launched]
-                if len(frames) >= 2:
+                images = [frame.pixels for frame in frames]
+                if len(images) >= 2 and any(image != images[0]
+                                            for image in images[1:]):
                     break
             if not frames:
                 raise Failure(
@@ -2561,9 +2611,9 @@ def clear_prompt_field(session: MonitorSession) -> None:
 
 def wait_for_screen_contains(session: MonitorSession, text: str,
                              timeout: float = 5.0) -> Snapshot:
-    deadline = time.time() + timeout
+    deadline = time.monotonic() + timeout
     snapshot = session.capture()
-    while time.time() < deadline:
+    while time.monotonic() < deadline:
         if text in snapshot.text():
             return snapshot
         time.sleep(0.05)
@@ -2600,7 +2650,7 @@ def wait_for_rest_file(host: str, path: str, timeout: float = 60.0) -> None:
     raise Failure(f"Saved file {path} not found via REST")
 
 
-def monitor_save(session: MonitorSession, mem_range: str, enter_dirs: List[str], filename: str) -> Snapshot:
+def monitor_save(session: MonitorSession, mem_range: str, enter_dirs: list[str], filename: str) -> Snapshot:
     """Save mem_range to filename, navigating from root through enter_dirs.
 
     enter_dirs is a list of quick-seek prefixes to step into (e.g. ["MS"] for a
@@ -2611,9 +2661,9 @@ def monitor_save(session: MonitorSession, mem_range: str, enter_dirs: List[str],
     session.send_text(mem_range + "\r", f"save range {mem_range}")
     picker_to_root(session)
     # Root-entry order differs by target, so seek /Temp by name.
-    snapshot = picker_enter(session, "Temp")
+    picker_enter(session, "Temp")
     for prefix in enter_dirs:
-        snapshot = picker_enter(session, prefix)
+        picker_enter(session, prefix)
     # The cursor defaults to "<< Create New File >>"; RIGHT picks it and the
     # monitor then asks for the file name.
     session.send_key("RIGHT")
@@ -2622,12 +2672,12 @@ def monitor_save(session: MonitorSession, mem_range: str, enter_dirs: List[str],
     # names a file nobody asked for, reported only as the file not found.
     session.retype_until_field_reads("Save as", filename)
     session.send_key("ENTER")
-    snapshot = wait_for_screen_contains(session, "SAVE")
+    wait_for_screen_contains(session, "SAVE")
     # Dismissing this popup has the same two-burst redraw as other settled keys.
     return session.send_key("ENTER", settle=True)  # dismiss the confirmation popup
 
 
-def monitor_load(session: MonitorSession, enter_dirs: List[str], filename: str,
+def monitor_load(session: MonitorSession, enter_dirs: list[str], filename: str,
                  params: str = "PRG,0,AUTO") -> Snapshot:
     """Load filename back, navigating from root through enter_dirs.
 
@@ -2731,7 +2781,7 @@ def prompt_field(snapshot: Snapshot, title: str) -> str:
     return field_line.strip().strip(PROMPT_BORDER).strip()
 
 
-def prompt_field_or_none(snapshot: Snapshot, title: str) -> Optional[str]:
+def prompt_field_or_none(snapshot: Snapshot, title: str) -> str | None:
     """What an open prompt holds, or None while it is not drawn."""
     try:
         return prompt_field(snapshot, title)
@@ -2747,10 +2797,10 @@ def wait_until(session: MonitorSession, ready, timeout: float = 5.0) -> Snapshot
     check, so polling is both faster than the settle gap when the screen is
     already right and more patient than it when the redraw is late.
     """
-    deadline = time.time() + timeout
+    deadline = time.monotonic() + timeout
     snapshot = session.capture()
     while not ready(snapshot):
-        if time.time() >= deadline:
+        if time.monotonic() >= deadline:
             return snapshot
         time.sleep(0.05)
         snapshot = session.capture()
@@ -2761,6 +2811,37 @@ def wait_for_prompt(session: MonitorSession, title: str) -> Snapshot:
     """Wait for a command prompt to be drawn."""
     snapshot = wait_until(session, lambda screen: title in screen.text())
     snapshot.find_line_containing(title)
+    return snapshot
+
+
+def wait_for_line_containing_all(session: MonitorSession,
+                                 values: tuple[str, ...]) -> Snapshot:
+    """Wait for one line to hold every value, then assert that it does.
+
+    Several of the bookmark popup's actions repaint in two stages: the popup
+    itself first, from `refresh_popup_overlay`, and the status row after it,
+    or, when a string box closes, the screen backup it restores first and the
+    committed row after. `RestBackend.send_key` returns on the first frame
+    that differs from the one before the key, which is the first of those
+    stages, so a read taken straight after the key can land on the
+    intermediate frame and see the value the action was about to replace.
+
+    Waiting is bounded by `wait_until`, and the assertion still runs on
+    whatever the screen holds when the budget ends, so a value that never
+    arrives fails with the screen in the message exactly as before.
+    """
+    snapshot = wait_until(
+        session,
+        lambda screen: any(all(value in line for value in values)
+                           for line in screen.lines))
+    assert_line_contains_all(snapshot, values)
+    return snapshot
+
+
+def wait_for_line(session: MonitorSession, needle: str) -> Snapshot:
+    """Wait for `needle` to appear on some line, for the same reason."""
+    snapshot = wait_until(session, lambda screen: needle in screen.text())
+    snapshot.find_line_containing(needle)
     return snapshot
 
 
@@ -2790,7 +2871,7 @@ def monitor_header(snapshot: Snapshot) -> str:
     return snapshot.line(snapshot.find_line_containing("MONITOR "))
 
 
-def monitor_header_address(snapshot: Snapshot) -> Optional[str]:
+def monitor_header_address(snapshot: Snapshot) -> str | None:
     """The address the monitor header names, or None while it is not drawn."""
     try:
         header = monitor_header(snapshot)
@@ -2887,6 +2968,7 @@ def run_help_layout_test(session: MonitorSession) -> None:
     place.
     """
     screen = open_help(session, "opening help for the layout check")
+    keys = session.backend.machine
 
     if "Undo" in screen.text() and "Undoc" not in screen.text():
         raise Failure(f"U is described as Undo rather than Undoc/Case\n{screen.text()}")
@@ -2941,14 +3023,14 @@ def run_help_layout_test(session: MonitorSession) -> None:
     assert_help_column(screen, "Follow/Ret", 21, "RETURN")
     assert_help_column(screen, "Follow/Ret", 29, "Follow/Ret")
 
-    assert_help_column(screen, "Monitor", 1, "?/")
+    assert_help_column(screen, "Monitor", 1, f"?/{keys.help_key}")
     assert_help_column(screen, "Monitor", 12, "Help")
     assert_help_column(screen, "Monitor", 21, "C=+O")
     assert_help_column(screen, "Monitor", 29, "Monitor")
 
-    assert_help_column(screen, "Page down", 1, "F1/")
+    assert_help_column(screen, "Page down", 1, f"{keys.page_up_key}/")
     assert_help_column(screen, "Page down", 12, "Page up")
-    assert_help_column(screen, "Page down", 21, "F7/")
+    assert_help_column(screen, "Page down", 21, f"{keys.page_down_key}/")
     assert_help_column(screen, "Page down", 29, "Page down")
 
     # No line inside the Help popup's own border may spill past content
@@ -2969,35 +3051,41 @@ def run_help_layout_test(session: MonitorSession) -> None:
     assert_help_closed(screen, "closing help after the layout check")
 
 
+BACK_OUT_STEPS = 10
+# Raised on leaving a settings screen once the REST backend has switched
+# Interface Type for the session. Answered No: Yes would write that into flash.
+FLASH_DIALOG = "Save changes to Flash?"
+
+
+def answer_flash_dialog(session: MonitorSession) -> None:
+    session.send_key("RIGHT", settle=True)     # Yes -> No
+    session.send_key("ENTER", settle=True)
+
+
 def back_out_to_the_bare_browser(session: MonitorSession) -> Snapshot:
-    """Press Back until nothing is drawn over the file browser.
+    """Leave the menu showing the file browser with nothing drawn over it.
 
-    Bounded and observed rather than counted: how many presses a context costs
-    is a property of that context. A fixed number of presses either leaves
-    something open or spends a spare press on whatever the browser does with
-    it, and the next thing this suite does is send a key that means something
-    different in each of those states.
-
-    Leaving the settings screens raises "Save changes to Flash?" whenever the
-    configuration in memory differs from the one in flash, which it does on any
-    device where the REST backend switched `Interface Type` for the session.
-    Back does not answer a Yes/No dialog, so that dialog is answered here, with
-    No: this suite only visited those screens and has no configuration change
-    of its own to keep, and answering Yes would write the session's temporary
-    `Interface Type` into the device's flash.
+    No screen rule finds the browser on every machine: a C64 Ultimate frames
+    every screen and its settings screens keep the browser's path. So Back is
+    pressed until it does nothing: REST reports a closed menu, which is then
+    reopened on the browser; Telnet never closes and the screen stops changing.
     """
-    for _ in range(8):
-        snapshot = session.capture()
-        text = snapshot.text()
-        if "Save changes to Flash?" in text:
-            session.send_key("RIGHT", settle=True)     # Yes -> No
-            session.send_key("ENTER", settle=True)
-            continue
-        if not any("+--" in line for line in snapshot.lines):
-            return snapshot
-        session.send_key("RUNSTOP", settle=True)
-    raise Failure(f"a window was still open after 8 Back presses\n"
-                  f"{session.capture().text()}")
+    for _ in range(BACK_OUT_STEPS):
+        try:
+            snapshot = session.capture()
+            if FLASH_DIALOG in snapshot.text():
+                answer_flash_dialog(session)
+                continue
+            after = session.send_key("RUNSTOP", settle=True)
+        except Failure as exc:
+            if "menu screen unavailable" not in str(exc):
+                raise
+            session.backend.reopen_menu_on_browser()
+            return session.capture()
+        if not session.backend.reopens_menu and after.text() == snapshot.text():
+            return after
+    raise Failure(f"the menu was still open after {BACK_OUT_STEPS} Back "
+                  f"presses\n{session.capture().text()}")
 
 
 def enter_monitor_with_shortcut(session: MonitorSession, context: str) -> None:
@@ -3129,8 +3217,9 @@ def run_back_navigation_test(session: MonitorSession) -> None:
         close_help(session, close_key)
 
     # The mapped help key is the other way in.
-    screen = session.send_key("F3")
-    assert_help_open(screen, "the mapped help key opening help")
+    help_key = session.backend.machine.help_key
+    screen = session.send_key(help_key)
+    assert_help_open(screen, f"the mapped help key ({help_key}) opening help")
     screen = session.send_key("RUNSTOP")
     assert_help_closed(screen, "RUN/STOP closing help opened with the help key")
 
@@ -3282,7 +3371,7 @@ def run_transfer_relocate_outside_copy_test(session: MonitorSession, rest_host: 
 
 def run_back_is_data_in_text_views_test(session: MonitorSession, rest_host: str) -> None:
     """Where the left-arrow key is edit data it stays data; RUN/STOP still backs out."""
-    for view_key, view, address, expected in (("I", "ASC ", 0xC010, 0x60),
+    for _view_key, view, address, expected in (("I", "ASC ", 0xC010, 0x60),
                                               ("V", "SCR ", 0xC011, 0x1F)):
         write_rest_memory_confirmed(rest_host, address, b"\x00")
         ensure_view(session, view)
@@ -3791,9 +3880,47 @@ def monitor_banks_cpu(session: MonitorSession) -> bool:
     raise Failure(f"the monitor drew neither status footer:\n{text}")
 
 
-def run_tests(session: MonitorSession, rest_host: str, mode: str, is_u2: bool,
-              control: str, video_host: str, files_host: str, live_host: str,
-              frozen: bool, device_host: str) -> None:
+@dataclass(frozen=True)
+class MonitorContext:
+    """Where each surface of the machine under test is, and what it is.
+
+    These were ten positional parameters on run_tests, five of them host names
+    that differ only for a cartridge target: on a u2@c64u the monitor and the
+    files are the cartridge's, the video is the computer's, and which host
+    answers a memory read depends on whether the machine is frozen. Passing
+    them positionally meant a call site had to get five host names in the right
+    order with nothing to catch a swap.
+
+    `is_u2` is the product; `frozen` is the state the UI was found in. Both are
+    here because a check needs to know which it is reasoning about: see
+    monitor_banks_cpu for the difference between what the product is and what
+    this monitor's backend does.
+    """
+
+    session: "MonitorSession"
+    rest_host: str
+    mode: str
+    is_u2: bool
+    control: str
+    video_host: str
+    files_host: str
+    live_host: str
+    frozen: bool
+    device_host: str
+
+
+def run_tests(context: MonitorContext) -> None:
+    session = context.session
+    rest_host = context.rest_host
+    mode = context.mode
+    is_u2 = context.is_u2
+    control = context.control
+    video_host = context.video_host
+    files_host = context.files_host
+    live_host = context.live_host
+    frozen = context.frozen
+    device_host = context.device_host
+
     snapshots = load_snapshots()
     # Measured from the screen rather than taken from the product; see
     # monitor_banks_cpu. `is_u2` stays for the things that really are about
@@ -3829,8 +3956,9 @@ def run_tests(session: MonitorSession, rest_host: str, mode: str, is_u2: bool,
 
     with check("paging away and back keeps memory view stable"):
         initial_snapshot = screen.text()
-        session.send_key("PGDN")
-        back = session.send_key("PGUP")
+        keys = session.backend.machine
+        session.send_key(keys.page_down_key)
+        back = session.send_key(keys.page_up_key)
         assert_equal("Memory stability", initial_snapshot, back.text(), back.last_command)
 
     with check("KERNAL disassembly formatting"):
@@ -3875,6 +4003,12 @@ def run_tests(session: MonitorSession, rest_host: str, mode: str, is_u2: bool,
         if not cycles_bank:
             check_skip("this monitor cannot change the CPU bank: 'o' answers "
                        f"{CPU_BANK_UNAVAILABLE!r}")
+        elif not frozen:
+            # The bank is what a stopped 6510 would see; a running one keeps
+            # BASIC at $A000, so the ROM shadows the RAM this fills.
+            check_skip("this user interface leaves the C64 running, so BASIC "
+                       "ROM is banked in over the RAM at $A000 and a fill "
+                       "there cannot be read back")
         else:
             screen = ensure_view(session, "HEX ")
             session.goto("A000")
@@ -3957,6 +4091,12 @@ def run_tests(session: MonitorSession, rest_host: str, mode: str, is_u2: bool,
         if not cycles_bank:
             check_skip("this monitor cannot change the CPU bank: 'o' answers "
                        f"{CPU_BANK_UNAVAILABLE!r}")
+        elif not frozen:
+            # Verified through the monitor's own view, which can only show RAM
+            # under a ROM while the machine is stopped.
+            check_skip("this user interface leaves the C64 running, so ROM is "
+                       "banked in over the RAM these edits target and the "
+                       "monitor's view cannot show what was written")
         else:
             run_cpu_banked_ram_edit_test(session, rest_host, frozen)
 
@@ -4251,9 +4391,9 @@ def assert_machine_is_running(live_host: str, context: str,
     reset fails the first; a machine that booted and then had its interrupts
     stopped fails the second.
     """
-    deadline = time.time() + timeout
+    deadline = time.monotonic() + timeout
     vector = read_rest_memory(live_host, KERNAL_IRQ_VECTOR, 2)
-    while time.time() < deadline and vector != KERNAL_IRQ_HANDLER:
+    while time.monotonic() < deadline and vector != KERNAL_IRQ_HANDLER:
         time.sleep(0.2)
         vector = read_rest_memory(live_host, KERNAL_IRQ_VECTOR, 2)
     if vector != KERNAL_IRQ_HANDLER:
@@ -4263,8 +4403,8 @@ def assert_machine_is_running(live_host: str, context: str,
             f"the 6510 restarted but never finished the KERNAL's boot")
 
     first = read_rest_memory(live_host, 0x00A0, 3)
-    deadline = time.time() + 3.0
-    while time.time() < deadline:
+    deadline = time.monotonic() + 3.0
+    while time.monotonic() < deadline:
         time.sleep(0.2)
         if read_rest_memory(live_host, 0x00A0, 3) != first:
             return
@@ -4333,8 +4473,8 @@ def press_reset_shortcut(session: MonitorSession, rest_host: str,
     write_rest_memory_confirmed(rest_host, RESET_SENTINEL_ADDRESS, RESET_SENTINEL)
     send_key_that_may_close_the_ui(session, "CBM_R")
 
-    deadline = time.time() + 5.0
-    while time.time() < deadline and not monitor_has_gone(session):
+    deadline = time.monotonic() + 5.0
+    while time.monotonic() < deadline and not monitor_has_gone(session):
         time.sleep(0.2)
     if not monitor_has_gone(session):
         screen = session.capture()
@@ -4344,8 +4484,8 @@ def press_reset_shortcut(session: MonitorSession, rest_host: str,
         raise Failure(f"{context}: C=+R did not leave the monitor\n"
                       f"{screen.text()}")
 
-    deadline = time.time() + 15.0
-    while time.time() < deadline and reset_sentinel_survives(rest_host):
+    deadline = time.monotonic() + 15.0
+    while time.monotonic() < deadline and reset_sentinel_survives(rest_host):
         time.sleep(0.2)
     if reset_sentinel_survives(rest_host):
         raise Failure(
@@ -4445,7 +4585,7 @@ def run_reset_interface_combination_test(
         ensure_monitor_open(session)
 
 
-def read_interface_type(device_host: str) -> Optional[str]:
+def read_interface_type(device_host: str) -> str | None:
     """The device's `Interface Type` setting, or None where it has none.
 
     Read over REST rather than off the screen, so the same oracle works on
@@ -4460,12 +4600,12 @@ def read_interface_type(device_host: str) -> Optional[str]:
     return current if isinstance(current, str) else None
 
 
-def wait_for_interface_type(device_host: str, unwanted: Optional[str],
-                            timeout: float = 6.0) -> Optional[str]:
+def wait_for_interface_type(device_host: str, unwanted: str | None,
+                            timeout: float = 6.0) -> str | None:
     """Re-read the setting until it is no longer `unwanted`, or the budget ends."""
-    deadline = time.time() + timeout
+    deadline = time.monotonic() + timeout
     current = read_interface_type(device_host)
-    while time.time() < deadline and current == unwanted:
+    while time.monotonic() < deadline and current == unwanted:
         time.sleep(0.2)
         current = read_interface_type(device_host)
     return current
@@ -4604,9 +4744,9 @@ def assert_interface_swap_from_the_monitor_closes_the_ui(
                    "between the freeze menu and the HDMI overlay, neither of "
                    "which is this session")
         else:
-            deadline = time.time() + 5.0
+            deadline = time.monotonic() + 5.0
             closed = False
-            while time.time() < deadline and not closed:
+            while time.monotonic() < deadline and not closed:
                 try:
                     session.capture()
                 except Failure as exc:
@@ -4687,8 +4827,8 @@ def assert_reset_shortcuts_from_the_file_browser(
     # releases the user interface's hold on the machine before resetting it.
     write_rest_memory_confirmed(rest_host, RESET_SENTINEL_ADDRESS, RESET_SENTINEL)
     send_key_that_may_close_the_ui(session, "CBM_R")
-    deadline = time.time() + 15.0
-    while time.time() < deadline and reset_sentinel_survives(rest_host):
+    deadline = time.monotonic() + 15.0
+    while time.monotonic() < deadline and reset_sentinel_survives(rest_host):
         time.sleep(0.2)
     if reset_sentinel_survives(rest_host):
         raise Failure(
@@ -4792,8 +4932,8 @@ def run_machine_reset_shortcut_test(session: MonitorSession, rest_host: str,
                "backend owns the machine")
         return
 
-    deadline = time.time() + 5.0
-    while time.time() < deadline and not monitor_has_gone(session):
+    deadline = time.monotonic() + 5.0
+    while time.monotonic() < deadline and not monitor_has_gone(session):
         time.sleep(0.2)
     if not monitor_has_gone(session):
         raise Failure(
@@ -4801,8 +4941,8 @@ def run_machine_reset_shortcut_test(session: MonitorSession, rest_host: str,
 
     # The machine reboots on its own clock, so this waits for the sentinel to
     # go rather than reading it once.
-    deadline = time.time() + 15.0
-    while time.time() < deadline and reset_sentinel_survives(rest_host):
+    deadline = time.monotonic() + 15.0
+    while time.monotonic() < deadline and reset_sentinel_survives(rest_host):
         time.sleep(0.2)
     if reset_sentinel_survives(rest_host):
         raise Failure(
@@ -4827,17 +4967,12 @@ def run_machine_reset_shortcut_test(session: MonitorSession, rest_host: str,
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Validate the machine monitor over REST, Freeze, or Telnet")
-    parser.add_argument("-H", "--host", default=os.environ.get("U64_HOST", "u64"),
-                        help="Target: a host, or cartridge@computer for a cartridge "
-                             "under test (see tests/lib/targets.py).")
+    cli.add_device_arguments(parser, password=None, timeout=5.0, colour=False)
     parser.add_argument("-P", "--telnet-port", "--port", dest="port", type=int,
                         default=int(os.environ.get("U64_TELNET_PORT", "23")))
     parser.add_argument("-r", "--rest-host", default=os.environ.get("U64_REST_HOST"),
                         help="REST address of the device under test, when it differs "
                              "from its name in the target.")
-    parser.add_argument("-p", "--password", default=os.environ.get("U64_PASS"))
-    parser.add_argument("-t", "--timeout", type=float,
-                        default=float(os.environ.get("U64_TIMEOUT", "5.0")))
     add_mode_argument(parser, default=os.environ.get("U64_MODE", "overlay"))
     args = parser.parse_args()
 
@@ -4898,8 +5033,11 @@ def main() -> int:
         session = MonitorSession(backend)  # opens the menu and enters the monitor
         frozen = ui_freezes_machine(device_host, args.mode, machine_was_running)
         memory_host = device_host if frozen else live_host
-        run_tests(session, memory_host, args.mode, is_u2, control,
-                  live_host, device_host, live_host, frozen, device_host)
+        run_tests(MonitorContext(
+            session=session, rest_host=memory_host, mode=args.mode,
+            is_u2=is_u2, control=control, video_host=live_host,
+            files_host=device_host, live_host=live_host, frozen=frozen,
+            device_host=device_host))
     except Failure as exc:
         report_first_attempt_losses()
         suite_fail("monitor_test", str(exc))

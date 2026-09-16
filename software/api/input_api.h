@@ -11,11 +11,27 @@ static const int INPUT_API_MAX_EVENTS = 64;
 static const int INPUT_API_MAX_KEYBOARD_INPUTS = 8;
 static const int INPUT_API_MAX_JOYSTICK_INPUTS = 7;
 static const int INPUT_API_ERROR_SIZE = 160;
+// JSON values a request may hold: the tokenizer's limit.
+static const int INPUT_API_MAX_JSON_TOKENS = 1024;
+// HID counts per axis in one report, as a USB mouse's eight-bit fields.
+static const int INPUT_API_MAX_MOUSE_MOTION = 127;
+// Wheel detents in one event, sent as one report each.
+static const int INPUT_API_MAX_MOUSE_DETENTS = 64;
+// Steps in one `path`; each one costs three of the JSON tokens above.
+static const int INPUT_API_MAX_MOUSE_PATH_STEPS = 256;
+// A path step every 20ms at most, as often as the firmware polls a USB mouse.
+static const int INPUT_API_MIN_MOUSE_PATH_INTERVAL_MS = 20;
+static const int INPUT_API_MAX_MOUSE_PATH_INTERVAL_MS = 1000;
+static const int INPUT_API_DEFAULT_MOUSE_PATH_INTERVAL_MS = 20;
 
 enum InputParsedKind {
     INPUT_PARSED_KEYBOARD,
     INPUT_PARSED_JOYSTICK,
-    INPUT_PARSED_RELEASE_ALL
+    INPUT_PARSED_RELEASE_ALL,
+    INPUT_PARSED_MOUSE_BUTTONS,
+    INPUT_PARSED_MOUSE_MOVE,
+    INPUT_PARSED_MOUSE_WHEEL,
+    INPUT_PARSED_MOUSE_PATH
 };
 
 enum InputParsedTransition {
@@ -36,6 +52,11 @@ struct InputJoystickMapEntry {
     uint8_t bit;
 };
 
+struct InputMouseButtonMapEntry {
+    const char *name;
+    uint8_t mask;               // bit in a HID mouse report's button byte
+};
+
 struct InputParsedEvent {
     InputParsedKind kind;
     InputParsedTransition transition;
@@ -43,6 +64,14 @@ struct InputParsedEvent {
     uint8_t keyboard_count;
     uint8_t keyboard_index[INPUT_API_MAX_KEYBOARD_INPUTS];
     uint8_t joystick_mask;
+    uint8_t mouse_buttons;
+    int16_t mouse_x;            // move
+    int16_t mouse_y;
+    int16_t wheel_vertical;     // wheel, in detents; positive is away from the user
+    int16_t wheel_horizontal;   // positive is to the right
+    JSON_List *path;            // path: validated [x, y] steps, owned by the request
+    uint16_t path_steps;
+    uint16_t path_interval_ms;
 };
 
 static const InputKeyboardMapEntry INPUT_API_KEYBOARD_MAP[] = {
@@ -123,7 +152,14 @@ static const InputJoystickMapEntry INPUT_API_JOYSTICK_MAP[] = {
     { "fire3", 6 },
 };
 
+static const InputMouseButtonMapEntry INPUT_API_MOUSE_BUTTON_MAP[] = {
+    { "left", 0x01 },
+    { "right", 0x02 },
+    { "middle", 0x04 },
+};
+
 static const int INPUT_API_KEYBOARD_MAP_COUNT = sizeof(INPUT_API_KEYBOARD_MAP) / sizeof(INPUT_API_KEYBOARD_MAP[0]);
+static const int INPUT_API_MOUSE_BUTTON_MAP_COUNT = sizeof(INPUT_API_MOUSE_BUTTON_MAP) / sizeof(INPUT_API_MOUSE_BUTTON_MAP[0]);
 static const int INPUT_API_JOYSTICK_MAP_COUNT = sizeof(INPUT_API_JOYSTICK_MAP) / sizeof(INPUT_API_JOYSTICK_MAP[0]);
 
 static inline const InputKeyboardMapEntry *input_api_keyboard_map(void)
@@ -325,8 +361,17 @@ static inline bool input_api_parse_keyboard_event(JSON_Object *obj, InputParsedE
         }
     }
 
-    if (has_restore && ((count != 1) || (out.transition != INPUT_PARSED_TAP))) {
-        input_api_set_error(err, err_size, "`restore` must appear alone in `inputs` and only with transition `tap`.");
+    // `restore` drives the NMI line rather than a keyboard matrix column, so it
+    // is an edge and not a level. `press` and `release` have nothing to act on:
+    // route_input.cc skips the restore entry when it builds the live matrix for
+    // both transitions, so accepting them here would return 200 and do nothing.
+    // Matrix keys alongside it are a different case and are allowed: a queued
+    // tap asserts the matrix columns and the restore line from one call, and
+    // Keyboard_USB::applyMatrixState() writes the matrix rows before the
+    // restore register, which is the order C= plus RESTORE and RUN/STOP plus
+    // RESTORE need.
+    if (has_restore && (out.transition != INPUT_PARSED_TAP)) {
+        input_api_set_error(err, err_size, "`restore` is only valid with transition `tap`.");
         return false;
     }
     return true;
@@ -402,6 +447,223 @@ static inline bool input_api_parse_joystick_event(JSON_Object *obj, InputParsedE
     return true;
 }
 
+// An optional integer within low..high; `out` keeps its value when the member
+// is absent. Errors name it `object_name.name`, or `name` when that is NULL.
+static inline bool input_api_get_int_member(JSON_Object *obj, const char *object_name, const char *name,
+    int low, int high, int &out, char *err, size_t err_size)
+{
+    if (!input_api_has_key(obj, name)) {
+        return true;
+    }
+    const char *dot = object_name ? "." : "";
+    if (!object_name) {
+        object_name = "";
+    }
+    JSON *value = obj->get(name);
+    if (value->type() != eInteger) {
+        sprintf(err, "`%s%s%s` must be an integer.", object_name, dot, name);
+        return false;
+    }
+    int number = ((JSON_Integer *)value)->get_value();
+    if ((number < low) || (number > high)) {
+        sprintf(err, "`%s%s%s` must be %d..%d.", object_name, dot, name, low, high);
+        return false;
+    }
+    out = number;
+    return true;
+}
+
+static inline JSON_Object *input_api_get_object_field(JSON_Object *obj, const char *name,
+    const char *const *allowed, int allowed_count, char *err, size_t err_size)
+{
+    JSON *value = obj->get(name);
+    if (value->type() != eObject) {
+        sprintf(err, "`%s` must be an object.", name);
+        return NULL;
+    }
+    JSON_Object *member = (JSON_Object *)value;
+    IndexedList<const char *> *keys = member->get_keys();
+    for (int i = 0; i < keys->get_elements(); i++) {
+        if (!input_api_key_allowed((*keys)[i], allowed, allowed_count)) {
+            char preview[32];
+            input_api_copy_preview(preview, sizeof(preview), (*keys)[i]);
+            sprintf(err, "Unknown field `%s.%s`.", name, preview);
+            return NULL;
+        }
+    }
+    return member;
+}
+
+static inline bool input_api_parse_mouse_buttons(JSON_Object *obj, InputParsedEvent &out, char *err, size_t err_size)
+{
+    if (!input_api_parse_transition(obj, out.transition, err, err_size)) {
+        return false;
+    }
+    JSON *inputs = obj->get("inputs");
+    if (inputs->type() != eList) {
+        input_api_set_error(err, err_size, "`inputs` must be an array.");
+        return false;
+    }
+    JSON_List *list = (JSON_List *)inputs;
+    int count = list->get_num_elements();
+    if ((count < 1) || (count > INPUT_API_MOUSE_BUTTON_MAP_COUNT)) {
+        input_api_set_error(err, err_size, "`inputs` must contain 1..3 entries.");
+        return false;
+    }
+    out.kind = INPUT_PARSED_MOUSE_BUTTONS;
+    out.mouse_buttons = 0;
+    for (int i = 0; i < count; i++) {
+        JSON *entry = (*list)[i];
+        if (entry->type() != eString) {
+            input_api_set_error(err, err_size, "Mouse inputs must be strings.");
+            return false;
+        }
+        const char *name = ((JSON_String *)entry)->get_string();
+        uint8_t mask = 0;
+        for (int b = 0; b < INPUT_API_MOUSE_BUTTON_MAP_COUNT; b++) {
+            if (strcmp(name, INPUT_API_MOUSE_BUTTON_MAP[b].name) == 0) {
+                mask = INPUT_API_MOUSE_BUTTON_MAP[b].mask;
+            }
+        }
+        char preview[32];
+        input_api_copy_preview(preview, sizeof(preview), name);
+        if (!mask) {
+            sprintf(err, "`%s` is not a valid mouse input.", preview);
+            return false;
+        }
+        if (out.mouse_buttons & mask) {
+            sprintf(err, "`%s` appears more than once in `inputs`.", preview);
+            return false;
+        }
+        out.mouse_buttons |= mask;
+    }
+    return true;
+}
+
+static inline bool input_api_parse_mouse_move(JSON_Object *obj, InputParsedEvent &out, char *err, size_t err_size)
+{
+    static const char *const allowed[] = { "x", "y" };
+    JSON_Object *move = input_api_get_object_field(obj, "move", allowed, 2, err, err_size);
+    int x = 0, y = 0;
+    if (!move ||
+        !input_api_get_int_member(move, "move", "x", -INPUT_API_MAX_MOUSE_MOTION, INPUT_API_MAX_MOUSE_MOTION,
+            x, err, err_size) ||
+        !input_api_get_int_member(move, "move", "y", -INPUT_API_MAX_MOUSE_MOTION, INPUT_API_MAX_MOUSE_MOTION,
+            y, err, err_size)) {
+        return false;
+    }
+    if (!input_api_has_key(move, "x") && !input_api_has_key(move, "y")) {
+        input_api_set_error(err, err_size, "`move` must have `x` or `y`.");
+        return false;
+    }
+    out.kind = INPUT_PARSED_MOUSE_MOVE;
+    out.mouse_x = x;
+    out.mouse_y = y;
+    return true;
+}
+
+static inline bool input_api_parse_mouse_wheel(JSON_Object *obj, InputParsedEvent &out, char *err, size_t err_size)
+{
+    static const char *const allowed[] = { "vertical", "horizontal" };
+    JSON_Object *wheel = input_api_get_object_field(obj, "wheel", allowed, 2, err, err_size);
+    int vertical = 0, horizontal = 0;
+    if (!wheel ||
+        !input_api_get_int_member(wheel, "wheel", "vertical", -INPUT_API_MAX_MOUSE_DETENTS,
+            INPUT_API_MAX_MOUSE_DETENTS, vertical, err, err_size) ||
+        !input_api_get_int_member(wheel, "wheel", "horizontal", -INPUT_API_MAX_MOUSE_DETENTS,
+            INPUT_API_MAX_MOUSE_DETENTS, horizontal, err, err_size)) {
+        return false;
+    }
+    if (!vertical && !horizontal) {
+        input_api_set_error(err, err_size, "`wheel` must turn at least one wheel.");
+        return false;
+    }
+    out.kind = INPUT_PARSED_MOUSE_WHEEL;
+    out.wheel_vertical = vertical;
+    out.wheel_horizontal = horizontal;
+    return true;
+}
+
+static inline bool input_api_parse_mouse_path(JSON_Object *obj, InputParsedEvent &out, char *err, size_t err_size)
+{
+    JSON *path = obj->get("path");
+    if (path->type() != eList) {
+        input_api_set_error(err, err_size, "`path` must be an array of [x, y] steps.");
+        return false;
+    }
+    JSON_List *steps = (JSON_List *)path;
+    int count = steps->get_num_elements();
+    if ((count < 1) || (count > INPUT_API_MAX_MOUSE_PATH_STEPS)) {
+        sprintf(err, "`path` must contain 1..%d steps.", INPUT_API_MAX_MOUSE_PATH_STEPS);
+        return false;
+    }
+    for (int i = 0; i < count; i++) {
+        JSON *step = (*steps)[i];
+        if ((step->type() != eList) || (((JSON_List *)step)->get_num_elements() != 2)) {
+            sprintf(err, "`path[%d]` must be an [x, y] pair.", i);
+            return false;
+        }
+        for (int axis = 0; axis < 2; axis++) {
+            JSON *value = (*(JSON_List *)step)[axis];
+            if (value->type() != eInteger) {
+                sprintf(err, "`path[%d]` must hold integers.", i);
+                return false;
+            }
+            int v = ((JSON_Integer *)value)->get_value();
+            if ((v < -INPUT_API_MAX_MOUSE_MOTION) || (v > INPUT_API_MAX_MOUSE_MOTION)) {
+                sprintf(err, "`path[%d]` values must be -%d..%d.", i, INPUT_API_MAX_MOUSE_MOTION,
+                    INPUT_API_MAX_MOUSE_MOTION);
+                return false;
+            }
+        }
+    }
+    int interval = INPUT_API_DEFAULT_MOUSE_PATH_INTERVAL_MS;
+    if (!input_api_get_int_member(obj, NULL, "interval_ms", INPUT_API_MIN_MOUSE_PATH_INTERVAL_MS,
+            INPUT_API_MAX_MOUSE_PATH_INTERVAL_MS, interval, err, err_size)) {
+        return false;
+    }
+    out.kind = INPUT_PARSED_MOUSE_PATH;
+    out.path = steps;
+    out.path_steps = count;
+    out.path_interval_ms = interval;
+    return true;
+}
+
+// A mouse event does one thing: buttons, one `move`, a `wheel` turn or a `path`.
+static inline bool input_api_parse_mouse_event(JSON_Object *obj, InputParsedEvent &out, char *err, size_t err_size)
+{
+    static const char *const allowed[] = { "kind", "inputs", "transition", "move", "wheel", "path", "interval_ms" };
+    if (!input_api_reject_unknown_keys(obj, allowed, sizeof(allowed) / sizeof(allowed[0]), err, err_size)) {
+        return false;
+    }
+    bool inputs = input_api_has_key(obj, "inputs");
+    bool move = input_api_has_key(obj, "move");
+    bool wheel = input_api_has_key(obj, "wheel");
+    bool path = input_api_has_key(obj, "path");
+    if ((int)inputs + (int)move + (int)wheel + (int)path != 1) {
+        input_api_set_error(err, err_size, "A mouse event needs exactly one of `inputs`, `move`, `wheel`, or `path`.");
+        return false;
+    }
+    if (!inputs && input_api_has_key(obj, "transition")) {
+        input_api_set_error(err, err_size, "`transition` is only valid with `inputs`.");
+        return false;
+    }
+    if (!path && input_api_has_key(obj, "interval_ms")) {
+        input_api_set_error(err, err_size, "`interval_ms` is only valid with `path`.");
+        return false;
+    }
+    if (inputs) {
+        return input_api_parse_mouse_buttons(obj, out, err, err_size);
+    }
+    if (move) {
+        return input_api_parse_mouse_move(obj, out, err, err_size);
+    }
+    if (wheel) {
+        return input_api_parse_mouse_wheel(obj, out, err, err_size);
+    }
+    return input_api_parse_mouse_path(obj, out, err, err_size);
+}
+
 static inline bool input_api_parse_release_all_event(JSON_Object *obj, InputParsedEvent &out,
     char *err, size_t err_size)
 {
@@ -435,10 +697,13 @@ static inline bool input_api_parse_event(JSON *json, InputParsedEvent &out, char
     if (strcmp(kind, "joystick") == 0) {
         return input_api_parse_joystick_event(obj, out, err, err_size);
     }
+    if (strcmp(kind, "mouse") == 0) {
+        return input_api_parse_mouse_event(obj, out, err, err_size);
+    }
     if (strcmp(kind, "release_all") == 0) {
         return input_api_parse_release_all_event(obj, out, err, err_size);
     }
-    input_api_set_error(err, err_size, "`kind` must be one of `keyboard`, `joystick`, or `release_all`.");
+    input_api_set_error(err, err_size, "`kind` must be one of `keyboard`, `joystick`, `mouse`, or `release_all`.");
     return false;
 }
 

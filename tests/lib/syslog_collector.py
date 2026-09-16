@@ -88,14 +88,20 @@ than being absorbed by the port match.
 from __future__ import annotations
 
 import os
+import re
 import select
 import socket
 import threading
 import time
 from dataclasses import dataclass, field
-from typing import Callable, Dict, List, Mapping, Optional, Sequence, Set, Tuple
+from collections.abc import Callable, Mapping, Sequence
 
 import targets as targets_lib
+import bootstrap  # noqa: E402,F401
+
+_IP_ADDRESS = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
+_NETWORK_PAGES = ("WIRED NETWORK SETUP", "WI-FI NETWORK SETUP")
+_MENU_ROWS = range(2, 24)
 
 # A non-privileged port, and the devices are configured to it rather than to
 # 514. `Syslog::init` defaults to 514 only when the configured value carries no
@@ -170,57 +176,59 @@ class Collector:
     directory: str
     port: int = DEFAULT_PORT
     clock: Callable[[], float] = time.time
-    routes: Dict[str, Route] = field(default_factory=dict)
+    routes: dict[str, Route] = field(default_factory=dict)
     # Where each machine's lines go, for a datagram the receiving socket has
     # already identified. One entry per machine, and the same Route object the
     # address map holds, so the two paths cannot file one machine's lines in
     # two places.
-    by_machine: Dict[str, Route] = field(default_factory=dict)
+    by_machine: dict[str, Route] = field(default_factory=dict)
     # Which machine owns each port, for the ports exactly one machine sends
     # to. A port more than one machine sends to has no entry, and its
     # datagrams are attributed by source address.
-    owners: Dict[int, str] = field(default_factory=dict)
+    owners: dict[int, str] = field(default_factory=dict)
     # What each machine's configuration says it sends to, whether or not that
     # port turned out to be exclusive. Recorded so a reader can see the
     # assignment the run collected under.
-    machine_ports: Dict[str, int] = field(default_factory=dict)
+    machine_ports: dict[str, int] = field(default_factory=dict)
+    menu_addresses: dict[str, Sequence[str]] = field(default_factory=dict)
     # How each target's lines were attributed, counted: `port` when the
     # receiving socket identified the machine, `address` when the source
     # address did.
-    attributed: Dict[str, Dict[str, int]] = field(default_factory=dict)
+    attributed: dict[str, dict[str, int]] = field(default_factory=dict)
     # For a target whose second machine already had a file under another
     # target's slug: the machine, and where its log actually went. One
     # machine's log is written once, and this is what says where.
-    elsewhere: Dict[str, List[Tuple[str, str]]] = field(default_factory=dict)
+    elsewhere: dict[str, list[tuple[str, str]]] = field(default_factory=dict)
     unmapped_path: str = ""
     started: float = 0.0
     lines: int = 0
     unmapped: int = 0
-    problems: List[str] = field(default_factory=list)
+    problems: list[str] = field(default_factory=list)
     # When each machine last said anything, and the silences that followed.
     # See `gaps` for what counts as one.
-    seen: Dict[str, float] = field(default_factory=dict)
-    silences: List[dict] = field(default_factory=list)
+    seen: dict[str, float] = field(default_factory=dict)
+    silences: list[dict] = field(default_factory=list)
     # Which addresses actually sent lines, per target token, and how many
     # each sent. The mapped addresses are what the run expected; these are
     # what it got, and a device that logs from a second interface is the
     # difference between the two.
-    senders: Dict[str, Dict[str, int]] = field(default_factory=dict)
+    senders: dict[str, dict[str, int]] = field(default_factory=dict)
     # The same for the addresses no target claimed.
-    unknown: Dict[str, int] = field(default_factory=dict)
+    unknown: dict[str, int] = field(default_factory=dict)
     # Every port this collector bound, kept apart from the live sockets so
     # that what it collected on is still answerable after it has stopped.
-    bound: List[int] = field(default_factory=list)
-    _sockets: Dict[int, socket.socket] = field(default_factory=dict)
-    _thread: Optional[threading.Thread] = None
+    bound: list[int] = field(default_factory=list)
+    _sockets: dict[int, socket.socket] = field(default_factory=dict)
+    _thread: threading.Thread | None = None
     _running: bool = False
-    _handles: Dict[str, object] = field(default_factory=dict)
+    _handles: dict[str, object] = field(default_factory=dict)
     _lock: threading.Lock = field(default_factory=threading.Lock)
 
     # -- lifecycle --
 
     def bind(self, wanted: Sequence[targets_lib.Target],
-             ports: Optional[Mapping[str, int]] = None) -> bool:
+             ports: Mapping[str, int] | None = None,
+             menu_addresses: Mapping[str, Sequence[str]] | None = None) -> bool:
         """Resolve every target's machines and open the ports. Never raises.
 
         `ports` is what each machine's own configuration says it sends its log
@@ -231,7 +239,23 @@ class Collector:
         already cost 15 to 30 minutes. A collector that cannot start leaves the
         run exactly as it was.
         """
+        # Named one at a time rather than driven from a list: only the first
+        # step takes the run's targets, and giving the other two parameters
+        # they never read to make one loop work is the wrong trade.
+        if not self._choose_addresses(wanted, ports, menu_addresses):
+            return False
+        if not self._open_socket():
+            return False
+        if not self._prepare_outputs():
+            return False
+        return self._start()
+
+    def _choose_addresses(self, wanted: Sequence[targets_lib.Target],
+                          ports: Mapping[str, int] | None,
+                          menu_addresses: Mapping[str, Sequence[str]] | None) -> bool:
+        """Which machine each target's log belongs to, and which port it uses."""
         self.unmapped_path = os.path.join(self.directory, UNKNOWN_SENDER_NAME)
+        self.menu_addresses = dict(menu_addresses or {})
         wanted_ports = dict(ports or {})
         # Devices under test first, computers second. A machine can be both:
         # the C64 Ultimate that hosts a cartridge is a target of its own as
@@ -263,7 +287,7 @@ class Collector:
                         (machine, os.path.relpath(taken.path, self.directory)))
                 continue
             self.by_machine[machine] = Route(path, machine, target.token)
-            for address in resolve(machine):
+            for address in resolve(machine, self.menu_addresses.get(machine, ())):
                 held = self.routes.get(address)
                 if held is not None:
                     if held.machine != machine:
@@ -290,6 +314,10 @@ class Collector:
                     f"{ADDRESS_ENV} names {name!r}, which is not a machine of "
                     f"any target in this run: {sorted(machines)}")
 
+        return True
+
+    def _open_socket(self) -> bool:
+        """Bind the run's ports. False when the main one could not be opened."""
         # 0.0.0.0 rather than a chosen interface: the runner host may have more
         # than one, and a datagram's source address is what identifies a
         # device, so binding the wildcard costs nothing and removes an operator
@@ -324,13 +352,16 @@ class Collector:
                 # One port refusing to open costs that machine's attribution
                 # and nothing else, so the run keeps the collector it has.
                 self.machine_ports[machine] = self.port
+        return True
 
+    def _prepare_outputs(self) -> bool:
+        """Which file each machine's lines go to, and what cannot be attributed."""
         # A port exactly one machine sends to identifies that machine, whatever
         # address its datagrams carry. A port two of them send to identifies
         # nothing, so it has no owner and its datagrams are attributed by
         # source address as before. Decided after the ports are bound, because
         # a port that could not be opened is not one anything arrives on.
-        users: Dict[int, Set[str]] = {}
+        users: dict[int, set[str]] = {}
         for machine, port in self.machine_ports.items():
             users.setdefault(port, set()).add(machine)
         self.owners = {port: sorted(machines)[0]
@@ -342,7 +373,7 @@ class Collector:
             # Either the name answers nothing, or every address it answers
             # with was already claimed by a machine named earlier. The two are
             # different operator problems and the message says which.
-            why = ("does not resolve" if not resolve(machine)
+            why = ("does not resolve" if not resolve(machine, self.menu_addresses.get(machine, ()))
                    else "resolves only to addresses another machine already "
                         "claims")
             if self.machine_ports[machine] in self.owners:
@@ -354,6 +385,10 @@ class Collector:
                     f"{machine} {why} and shares its syslog port, so its "
                     f"lines cannot be attributed and land in "
                     f"{UNKNOWN_SENDER_NAME}")
+        return True
+
+    def _start(self) -> bool:
+        """Open the output files and start the receiving thread."""
         self.started = self.clock()
         # Opened now rather than on the first datagram. A file that cannot be
         # written is a startup problem the operator can act on; discovered
@@ -368,7 +403,7 @@ class Collector:
         self._thread.start()
         return True
 
-    def _listen(self, port: int) -> Optional[int]:
+    def _listen(self, port: int) -> int | None:
         """Bind one UDP port, or say why it could not be. Returns the port."""
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -382,11 +417,11 @@ class Collector:
         self.bound.append(bound)
         return bound
 
-    def ports(self) -> List[int]:
+    def ports(self) -> list[int]:
         """Every port this collector bound, whether or not it is still open."""
         return sorted(self.bound)
 
-    def ports_of(self, token: str) -> List[int]:
+    def ports_of(self, token: str) -> list[int]:
         """The ports this run collects `token`'s machines on."""
         return sorted({self.machine_ports[route.machine]
                        for route in self.routes.values()
@@ -453,7 +488,7 @@ class Collector:
                 self.deliver(address, data, sock.getsockname()[1])
 
     def deliver(self, address: str, data: bytes,
-                port: Optional[int] = None) -> None:
+                port: int | None = None) -> None:
         """Write one datagram's lines. The receive path, exposed for a test.
 
         `port` is the one it arrived on, which is what identifies the machine
@@ -517,7 +552,8 @@ class Collector:
                 return
             try:
                 os.makedirs(os.path.dirname(path), exist_ok=True)
-                self._handles[path] = open(path, "a", encoding="utf-8")
+                # A handle table the collector owns and closes in stop().
+                self._handles[path] = open(path, "a", encoding="utf-8")  # noqa: SIM115
             except OSError as exc:
                 self.problems.append(f"{path} could not be written: {exc}")
                 self._handles[path] = _Discard()
@@ -534,23 +570,23 @@ class Collector:
 
     # -- what it collected --
 
-    def files(self) -> List[Tuple[str, str]]:
+    def files(self) -> list[tuple[str, str]]:
         """Each target token and the file its lines went to."""
         found = {(route.target, route.path)
                  for route in self.by_machine.values()}
         return sorted(found)
 
-    def addresses_of(self, token: str) -> List[str]:
+    def addresses_of(self, token: str) -> list[str]:
         """Every address this run expects `token`'s lines to arrive from."""
         return sorted(address for address, route in self.routes.items()
                       if route.target == token)
 
-    def observed(self, token: str) -> Dict[str, int]:
+    def observed(self, token: str) -> dict[str, int]:
         """Every address `token`'s lines actually arrived from, with a count."""
         with self._lock:
             return dict(self.senders.get(token, {}))
 
-    def unknown_senders(self) -> Dict[str, int]:
+    def unknown_senders(self) -> dict[str, int]:
         """Every address no target claimed, with how many lines it sent."""
         with self._lock:
             return dict(self.unknown)
@@ -560,12 +596,12 @@ class Collector:
         with self._lock:
             return machine in self.seen
 
-    def attribution_of(self, token: str) -> Dict[str, int]:
+    def attribution_of(self, token: str) -> dict[str, int]:
         """How `token`'s lines were attributed, by port and by address."""
         with self._lock:
             return dict(self.attributed.get(token, {}))
 
-    def gaps(self, until: Optional[float] = None) -> List[dict]:
+    def gaps(self, until: float | None = None) -> list[dict]:
         """Every interval a device that had been logging said nothing.
 
         A machine still silent when the run ends carries no `ended`, which is
@@ -600,7 +636,106 @@ class _Discard:
         return
 
 
-def resolve(machine: str) -> List[str]:
+def _screen_rows(body: bytes) -> list[str]:
+    cells = body[:1000]
+    return ["".join(chr(value & 0x7F) if 0x20 <= (value & 0x7F) < 0x7F else " "
+                    for value in cells[offset:offset + 40])
+            for offset in range(0, 1000, 40)]
+
+
+def _active_addresses(rows: Sequence[str]) -> set[str]:
+    found = set()
+    for row in rows:
+        if "Active IP address" in row or "IP:" in row:
+            found.update(_IP_ADDRESS.findall(row))
+    return found
+
+
+def _menu_ready(rows: Sequence[str]) -> bool:
+    return bool(_active_addresses(rows) or any(
+        label in row for label in _NETWORK_PAGES for row in rows))
+
+
+def menu_addresses(target: targets_lib.Target, password: str | None,
+                   timeout: float) -> set[str]:
+    """Read every active interface address shown by the device menu.
+
+    Syslog may leave through an interface other than the one REST resolves to.
+    The running firmware exposes those active addresses in its menu, so read
+    that authoritative screen rather than carrying a bench-specific address.
+    """
+    from api import UltimateApi
+    from ui_backend import find_selected_row_rest
+
+    client = UltimateApi(target.token, password, timeout)
+    opened = client.machine.menu_open()
+    if not opened:
+        client.machine.menu_button()
+    deadline = time.monotonic() + 5.0
+    body = None
+    while time.monotonic() < deadline:
+        body = client.machine.menu_screen()
+        if body is not None:
+            break
+        time.sleep(0.05)
+    if body is None:
+        return set()
+
+    def read() -> tuple[bytes, list[str]]:
+        value = client.machine.menu_screen()
+        if value is None:
+            raise RuntimeError("menu closed while reading interface addresses")
+        return value, _screen_rows(value)
+
+    def tap(inputs: list[str]) -> None:
+        client.machine.send_input([{"kind": "keyboard", "inputs": inputs,
+                                    "transition": "tap"}])
+        time.sleep(0.1)
+
+    addresses = set()
+    try:
+        body, rows = read()
+        deadline = time.monotonic() + 5.0
+        while not _menu_ready(rows) and time.monotonic() < deadline:
+            time.sleep(0.05)
+            body, rows = read()
+        addresses.update(_active_addresses(rows))
+        for label in _NETWORK_PAGES:
+            target_row = next((row for row, text in enumerate(rows)
+                               if label in text), None)
+            if target_row is None:
+                continue
+            for _ in range(24):
+                body, rows = read()
+                cursor = find_selected_row_rest(body[:1000], body[1000:], _MENU_ROWS)
+                if cursor == target_row:
+                    break
+                tap(["cursor_up_down"] if target_row > cursor
+                    else ["left_shift", "cursor_up_down"])
+            else:
+                continue
+            tap(["return"])
+            deadline = time.monotonic() + 3.0
+            while time.monotonic() < deadline:
+                body, page = read()
+                page_addresses = _active_addresses(page)
+                if page_addresses:
+                    addresses.update(page_addresses)
+                    break
+                time.sleep(0.05)
+            tap(["left_shift", "cursor_left_right"])
+            deadline = time.monotonic() + 3.0
+            while time.monotonic() < deadline:
+                body, rows = read()
+                if any(label in row for row in rows):
+                    break
+                time.sleep(0.05)
+    finally:
+        client.machine.menu_button()
+    return addresses
+
+
+def resolve(machine: str, extra: Sequence[str] = ()) -> list[str]:
     """Every IPv4 address a machine answers to, or an empty list.
 
     The same call `av_stream.AvStreamCapture` uses to decide which packets are
@@ -612,10 +747,10 @@ def resolve(machine: str) -> List[str]:
     except OSError:
         found = []
     addresses = {entry[4][0] for entry in found}
-    return sorted(addresses | declared(machine))
+    return sorted(addresses | declared(machine) | set(extra))
 
 
-def declared(machine: str) -> "Set[str]":
+def declared(machine: str) -> set[str]:
     """Addresses an operator has attached to a machine by hand.
 
     A device with two interfaces logs from whichever one the route picks, and
@@ -649,14 +784,14 @@ def declared(machine: str) -> "Set[str]":
 # ---------------------------------------------------------------------------
 
 
-def read(path: str) -> List[Tuple[float, str]]:
+def read(path: str) -> list[tuple[float, str]]:
     """Every line in a collected log, with the time it was received.
 
     The interface for a suite that needs to assert on a device log line: it
     reads this rather than opening a socket, because a second socket on the
     port would silently take about half the datagrams.
     """
-    found: List[Tuple[float, str]] = []
+    found: list[tuple[float, str]] = []
     try:
         with open(path, encoding="utf-8", errors="replace") as handle:
             for line in handle:

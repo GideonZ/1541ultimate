@@ -23,7 +23,8 @@ import fcntl
 import os
 import subprocess
 import tempfile
-from typing import Mapping, Optional, Union
+from typing import Union
+from collections.abc import Mapping
 
 from report import Failure
 
@@ -47,7 +48,7 @@ def assembler_runs() -> bool:
     try:
         return subprocess.run(
             [ASSEMBLER, "--version"], capture_output=True,
-            timeout=VERSION_TIMEOUT_SECONDS).returncode == 0
+            timeout=VERSION_TIMEOUT_SECONDS, check=False).returncode == 0
     except (OSError, subprocess.SubprocessError):
         return False
 
@@ -75,7 +76,7 @@ def ensure_assembler() -> None:
         # first. On a fresh checkout there is nothing to clear and this costs
         # one no-op make.
         subprocess.run(["make", "-C", ASSEMBLER_SOURCE_DIR, "clean"],
-                       capture_output=True, timeout=BUILD_TIMEOUT_SECONDS)
+                       capture_output=True, timeout=BUILD_TIMEOUT_SECONDS, check=False)
         try:
             os.remove(ASSEMBLER)
         except OSError:
@@ -83,7 +84,7 @@ def ensure_assembler() -> None:
         try:
             result = subprocess.run(
                 ["make", "-C", ASSEMBLER_SOURCE_DIR],
-                capture_output=True, text=True, timeout=BUILD_TIMEOUT_SECONDS)
+                capture_output=True, text=True, timeout=BUILD_TIMEOUT_SECONDS, check=False)
         except (OSError, subprocess.SubprocessError) as exc:
             raise Failure(f"could not build {ASSEMBLER}: {exc}") from exc
         if result.returncode or not assembler_runs():
@@ -93,7 +94,7 @@ def ensure_assembler() -> None:
 
 
 def assemble(source: Union[str, "os.PathLike[str]"],
-             defines: Optional[Mapping[str, object]] = None) -> bytes:
+             defines: Mapping[str, object] | None = None) -> bytes:
     """Return the assembled program, with its two-byte load address in front.
 
     `defines` becomes 64tass -D arguments. A source shared with a build that is
@@ -112,8 +113,8 @@ def assemble(source: Union[str, "os.PathLike[str]"],
             for name, value in (defines or {}).items():
                 command += ["-D", f"{name}={value}"]
             result = subprocess.run(
-                command + ["-o", output, source],
-                capture_output=True, text=True, timeout=ASSEMBLE_TIMEOUT_SECONDS)
+                [*command, "-o", output, source],
+                capture_output=True, text=True, timeout=ASSEMBLE_TIMEOUT_SECONDS, check=False)
         except (OSError, subprocess.SubprocessError) as exc:
             raise Failure(f"could not run {ASSEMBLER}: {exc}") from exc
         if result.returncode:

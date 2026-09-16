@@ -118,11 +118,12 @@ pip install -r tests/requirements.txt
 | `openapi-python-client` | `e2e/api/openapi_contract_test.py`, generates a client from the OpenAPI document |
 | `openapi-schema-validator` | `tests/lib/openapi_contract.py`, checks device answers against the document |
 | `openapi-spec-validator` | `e2e/api/openapi_contract_test.py`, and `make openapi_validate`, which check the documents themselves against OpenAPI 3.1. Pinned in `tools/openapi/requirements.txt`, which this file includes, because the make target is a build gate |
-| `Pillow` | `e2e/api/input_test.py`, `e2e/io/printer/printer_test.py` |
+| `Pillow` | `e2e/api/input_test.py`, `e2e/io/c64/ultimax_cartridge_test.py`, `e2e/io/printer/printer_test.py` |
 | `PyYAML` | `tests/lib/openapi_contract.py`, reads `doc/api/rest_api_openapi_*.yaml` |
 | `pyftpdlib` | `e2e/filesystem/ftp_client_test.py` |
 | `selenium` | `e2e/web/theme_test.py`, `e2e/web/index_test.py`. Also needs an installed Chrome or Firefox with its WebDriver on PATH, and a route to the CDN `html/index.html` loads jQuery from; whatever is missing is reported as a skip |
 | `pytesseract` | `e2e/io/printer/printer_test.py`, only under `--stage verify` |
+| `ruff` | `tests/lib/lint_test.py`, and `make lint_test`, which lint this tree against `tests/ruff.toml`. Pinned in `tests/requirements-lint.txt`, which this file includes, because the suite is a gate |
 | `ffmpeg`, `ffprobe` | `./run-tests --record` only. Not Python packages. The lossless default needs the `libx264rgb` encoder, which keeps the frames pixel exact; a build without it is refused at startup rather than after half an hour of capture. |
 | `pandoc`, `weasyprint` | Optional, never installed in CI: one command turns `index.md` into a PDF. |
 
@@ -267,25 +268,39 @@ Profiles, shallowest first. A suite runs from its own profile up.
 
 e2e:
   assembly64                        .      x      x      x      x
+  av-stream                         .      .      x      x      x
   browser-filesystem-refresh        .      .      x      x      x
   browser-long-filename             .      x      x      x      x
+  c64gs-cartridge                   .      .      x      x      x
+  cfg-loader-log                    x      x      x      x      x
   cfg-partial-effectuate            .      .      .      x      x
   cfg-single-group                  .      x      x      x      x
   cfg-unknown-items                 .      .      x      x      x
   cfg-whitespace                    .      .      x      x      x
+  comal80-cartridge                 .      .      x      x      x
   create-disk-image                 .      x      x      x      x
+  d81-track-bounds                  .      x      x      x      x
+  deferred-machine-actions          .      .      x      x      x
   doom-release                      .      .      .      x      x
+  easyflash-cartridge               .      .      x      x      x
   esp-depends                       x      x      x      x      x
+  fast-reset                        .      .      x      x      x
   freeze-menu                       .      .      x      x      x
+  freezer-audio                     .      x      x      x      x
   ftp-client                        .      x      x      x      x
   ftp-server                        x      x      x      x      x
-  input                             .      x      x      x      x
+  ident-service-switch              .      .      x      x      x
+  iec-dos-commands                  .      .      x      x      x
+  input                             x      x      x      x      x
   input-batching                    x      x      x      x      x
   key-injection                     .      .      x      x      x
+  lint                              x      x      x      x      x
   machine-code-monitor              .      .      .      x      x
   menu-screen                       x      x      x      x      x
+  micromys-wheel                    .      .      .      x      x
   navigation-keys                   x      x      x      x      x
   observability                     .      .      x      x      x
+  ocean-cartridge                   .      .      x      x      x
   openapi-contract                  .      x      x      x      x
   openapi-validator                 .      x      x      x      x
   power-cycle                       .      .      .      x      x
@@ -293,17 +308,25 @@ e2e:
   prg-load-path-trim                .      x      x      x      x
   printer                           .      x      x      x      x
   readmem-writemem                  x      x      x      x      x
+  registry                          x      x      x      x      x
+  rel-copy                          .      .      x      x      x
   rest-api-coverage                 .      x      x      x      x
   reu-turbo                         .      .      x      x      x
   runner-policy                     .      x      x      x      x
+  stale-gates                       .      x      x      x      x
   telnet-drain                      .      x      x      x      x
   telnet-stale-session              .      .      .      x      x
+  telnet-sustained-input            .      .      .      x      x
   temp-auto-cleanup                 .      .      x      x      x
   transport-usage                   x      x      x      x      x
   uci-net-target                    .      .      .      x      x
   uci-targets                       .      .      x      x      x
+  ui-backend-parse                  x      x      x      x      x
   ui-backend-smoke                  x      x      x      x      x
+  ultimax-cartridge                 .      .      x      x      x
   usb-bulk-out-integrity            .      .      .      x      x
+  usb-mouse                         x      x      x      x      x
+  usb-mouse-pico                    .      .      .      x      x
   wake-on-wifi                      .      .      .      x      x
   web-index                         .      .      .      x      x
   web-theme                         .      .      .      x      x
@@ -318,6 +341,7 @@ soak:
   assembly-search-leak              .      .      x      x      x
   browser-refresh-leak              .      .      x      x      x
   heap-leak                         .      .      x      x      x
+  ident-leak                        .      .      x      x      x
   listener-soak                     .      .      x      x      x
   menu-navigation                   .      .      x      x      x
   mount-cache-leak                  .      .      x      x      x
@@ -326,8 +350,8 @@ soak:
   usb-keyboard-repeat               .      .      .      x      x
 
                                ------ ------ ------ ------ ------
-  suites                            8     21     43     52     52
-  suite runs                        8     21     43    104    156
+  suites                           14     29     63     77     77
+  suite runs                       14     29     63    154    231
 
 Scenario and check counts, and durations, are not shown here:
 the registry does not know them. They depend on the machine and are

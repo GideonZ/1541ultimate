@@ -55,11 +55,13 @@ import sys
 import threading
 import time
 from dataclasses import dataclass, field
-from typing import Callable, Dict, List, Optional, Sequence, Tuple
+from collections.abc import Callable, Sequence
+from pathlib import Path
 
-sys.path.insert(0, os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-    "lib"))
+# The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
 
 import targets as targets_lib  # noqa: E402
 
@@ -335,7 +337,7 @@ class Options:
     menu_min_interval_ms: int = 0
     ffmpeg_args: str = ""
 
-    def as_record(self) -> Dict[str, object]:
+    def as_record(self) -> dict[str, object]:
         return {"video": self.video, "audio": self.audio, "menu": self.menu,
                 "stamp": self.stamp, "layout": self.layout,
                 "quality": self.quality, "scale": self.scale, "fps": self.fps,
@@ -359,7 +361,7 @@ class Geometry:
         return self.width // glyphs.GLYPH_WIDTH
 
 
-def decimate(phase: int, fps: int) -> Tuple[int, bool]:
+def decimate(phase: int, fps: int) -> tuple[int, bool]:
     """Whether this source frame is one of the ones the output keeps.
 
     Deterministic decimation, and the reason it is a phase accumulator rather
@@ -380,13 +382,13 @@ def decimate(phase: int, fps: int) -> Tuple[int, bool]:
     return phase - SOURCE_FPS, True
 
 
-def geometry_for(video: bool, menu: bool, layout: str) -> Dict[str, Geometry]:
+def geometry_for(video: bool, menu: bool, layout: str) -> dict[str, Geometry]:
     """The canvas for each output file this run will write.
 
     Dropping a source changes the canvas rather than leaving a blank pane, and
     `separate` gives each pane a file of its own with no gutter.
     """
-    made: Dict[str, Geometry] = {}
+    made: dict[str, Geometry] = {}
     # The panes, the band under them, and room under that for the progress bar
     # and the state edge, so nothing is drawn over anything else.
     height = PANE_HEIGHT + band_lib.HEIGHT + EDGE_PIXELS + BAR_HEIGHT + BAR_GAP
@@ -425,16 +427,16 @@ class RunState:
     # because a record that names the check joins on the number and a reader
     # looking at a frame reads the words.
     check: str = ""
-    check_index: Optional[int] = None
+    check_index: int | None = None
     failed_at: float = 0.0
     unhealthy: bool = False
     unhealthy_at: float = 0.0
-    segments: List[str] = field(default_factory=list)
-    verdicts: Dict[str, str] = field(default_factory=dict)
+    segments: list[str] = field(default_factory=list)
+    verdicts: dict[str, str] = field(default_factory=dict)
     # Which segments took more than one attempt. A retried suite is one
     # segment whatever it cost, because a bar whose width changes mid-run is
     # not a progress bar, and the colour says the outcome was not clean.
-    retried: Dict[str, bool] = field(default_factory=dict)
+    retried: dict[str, bool] = field(default_factory=dict)
     current_segment: int = -1
     # Whether the last thing the run recorded was a suite closing. Between
     # suites there is no Telnet session and the overlay is all there is, which
@@ -453,7 +455,7 @@ class RunState:
         return f"{self.label}-{self.suite}-{self.attempt}" if self.suite else ""
 
 
-def as_index(value) -> Optional[int]:
+def as_index(value) -> int | None:
     """A check index as a number, or None when the record does not carry one."""
     try:
         return int(value)
@@ -485,8 +487,8 @@ class JsonlTail:
     def __init__(self, directory: str) -> None:
         self.directory = directory
         self.state = RunState()
-        self._offsets: Dict[str, int] = {}
-        self._partial: Dict[str, str] = {}
+        self._offsets: dict[str, int] = {}
+        self._partial: dict[str, str] = {}
 
     def poll(self) -> RunState:
         """Read whatever has been appended since the last look."""
@@ -515,7 +517,7 @@ class JsonlTail:
             self.state.check = "check 1"
         self.state.between_suites = False
 
-    def _files(self) -> List[str]:
+    def _files(self) -> list[str]:
         try:
             names = sorted(name for name in os.listdir(self.directory)
                            if name.endswith(".jsonl"))
@@ -527,7 +529,7 @@ class JsonlTail:
         # empty one.
         return [name for name in names if name not in SHARED_JSONL]
 
-    def _read(self, path: str) -> List[dict]:
+    def _read(self, path: str) -> list[dict]:
         try:
             size = os.path.getsize(path)
         except OSError:
@@ -653,7 +655,7 @@ def _payload(value: object) -> bytes:
         return b""
 
 
-def _why_no_video(cause: Optional[Dict[str, str]]) -> str:
+def _why_no_video(cause: dict[str, str] | None) -> str:
     """What the card in an empty screen pane says.
 
     A gap the run can explain names the suite that caused it. A gap it cannot
@@ -694,7 +696,7 @@ class Composer:
     """
 
     def __init__(self, geometry: Geometry, options: Options,
-                 identity: Dict[str, str]) -> None:
+                 identity: dict[str, str]) -> None:
         self.geometry = geometry
         self.options = options
         self.identity = identity
@@ -702,13 +704,13 @@ class Composer:
         # The last frame composed without the annotations. See compose.
         self.plain = b""
 
-    def compose(self, screen: Optional[Tuple[int, int, bytes]],
-                harness: Optional[Sequence[str]], harness_kind: str,
+    def compose(self, screen: tuple[int, int, bytes] | None,
+                harness: Sequence[str] | None, harness_kind: str,
                 state: RunState, position: float, wall: float,
                 harness_raw: bytes = b"", stale: bool = False,
-                cause: Optional[Dict[str, str]] = None,
+                cause: dict[str, str] | None = None,
                 live: bool = True, age: str = "",
-                ticker: Optional["band_lib.Ticker"] = None) -> bytes:
+                ticker: band_lib.Ticker | None = None) -> bytes:
         """One canvas, as RGB bytes, for one slot.
 
         `self.plain` is left holding the same frame without the annotations,
@@ -732,8 +734,8 @@ class Composer:
             return self.canvas.to_rgb()
         return self.plain
 
-    def _draw_screen(self, screen: Optional[Tuple[int, int, bytes]],
-                     cause: Optional[Dict[str, str]] = None) -> None:
+    def _draw_screen(self, screen: tuple[int, int, bytes] | None,
+                     cause: dict[str, str] | None = None) -> None:
         x = self.geometry.screen_x
         if screen is None:
             self._card(x, SCREEN_PANE_WIDTH, _why_no_video(cause))
@@ -747,7 +749,7 @@ class Composer:
         self.canvas.blit_indices(x, max(top, 0), width,
                                  min(height, PANE_HEIGHT), indices)
 
-    def _draw_harness(self, rows: Optional[Sequence[str]], kind: str,
+    def _draw_harness(self, rows: Sequence[str] | None, kind: str,
                       raw: bytes = b"", stale: bool = False,
                       live: bool = True) -> None:
         """One surface, drawn as itself, and never made to look live when it is not.
@@ -822,7 +824,7 @@ class Composer:
             (state.scenario, SECONDARY_TEXT),
             (state.check, SECONDARY_TEXT)))
 
-    def _draw_fields(self, row: int, fields: Sequence[Tuple[str, int]]) -> None:
+    def _draw_fields(self, row: int, fields: Sequence[tuple[str, int]]) -> None:
         """One stamp row, as fields laid out left to right in their own rank.
 
         Truncation is applied to the row rather than to each field, so the
@@ -979,7 +981,7 @@ class Composer:
                                   CHROME_TEXT, CHROME)
         return self.canvas.to_rgb()
 
-    def overview(self, groups: Sequence[Tuple[str, Sequence[Tuple[str, str, bool]]]]
+    def overview(self, groups: Sequence[tuple[str, Sequence[tuple[str, str, bool]]]]
                  ) -> bytes:
         """The opening card: what this recording is, grouped and aligned.
 
@@ -1025,17 +1027,17 @@ class Composer:
 
     @staticmethod
     def _card_block(heading: str,
-                    fields: Sequence[Tuple[str, str, bool]]
-                    ) -> List[List[Tuple[str, int]]]:
+                    fields: Sequence[tuple[str, str, bool]]
+                    ) -> list[list[tuple[str, int]]]:
         """One group as rows of coloured runs, its labels aligned to one width."""
         label_width = max(len(label) for label, _value, _primary in fields)
-        rows: List[List[Tuple[str, int]]] = [[(heading, CARD_HEADING)]]
+        rows: list[list[tuple[str, int]]] = [[(heading, CARD_HEADING)]]
         for label, value, primary in fields:
             rows.append([("  " + label.ljust(label_width) + "  ", CARD_LABEL),
                          (value, CARD_VALUE if primary else CARD_SECONDARY)])
         return rows
 
-    def _draw_column(self, blocks: Sequence[List[List[Tuple[str, int]]]],
+    def _draw_column(self, blocks: Sequence[list[list[tuple[str, int]]]],
                      left: int, top: int, room: int) -> None:
         row = 0
         for index, block in enumerate(blocks):
@@ -1057,7 +1059,7 @@ class Composer:
                 row += 1
 
 
-Block = List[List[Tuple[str, int]]]
+Block = list[list[tuple[str, int]]]
 
 
 def _block_width(block: Block) -> int:
@@ -1071,7 +1073,7 @@ def _column_height(column: Sequence[Block]) -> int:
     return sum(len(block) for block in column) + max(0, len(column) - 1)
 
 
-def _split_blocks(blocks: Sequence[Block], columns: int) -> List[List[Block]]:
+def _split_blocks(blocks: Sequence[Block], columns: int) -> list[list[Block]]:
     """Deal the groups into `columns` columns, in order and as evenly as it goes.
 
     In order, because the groups answer a reader's questions in the order they
@@ -1103,7 +1105,7 @@ def menu_indent(pane_width: int) -> int:
     return indent - indent % glyphs.GLYPH_WIDTH
 
 
-def annotation_free_area(geometry: Geometry) -> Tuple[int, int, int, int]:
+def annotation_free_area(geometry: Geometry) -> tuple[int, int, int, int]:
     """The rectangle of a composed frame no annotation is ever drawn into.
 
     The stamp and the pane labels own the top three character rows, and the
@@ -1208,7 +1210,7 @@ def format_wall(when: float) -> str:
 
 
 def encoder_command(path: str, geometry: Geometry, options: Options,
-                    binary: str = "ffmpeg") -> List[str]:
+                    binary: str = "ffmpeg") -> list[str]:
     """The command for one output file.
 
     Fed raw, not encoded: the frames enter as rgb24 at the composed geometry
@@ -1290,7 +1292,7 @@ def encoder_available(binary: str = "ffmpeg") -> str:
         return f"{binary} is not on PATH"
     try:
         completed = subprocess.run([binary, "-hide_banner", "-encoders"],
-                                   capture_output=True, text=True, timeout=20)
+                                   capture_output=True, text=True, timeout=20, check=False)
     except (OSError, subprocess.TimeoutExpired) as exc:
         return f"{binary} could not be run: {exc}"
     if "libx264rgb" not in completed.stdout:
@@ -1299,7 +1301,7 @@ def encoder_available(binary: str = "ffmpeg") -> str:
     return ""
 
 
-def audio_command(path: str, rate: float, binary: str = "ffmpeg") -> List[str]:
+def audio_command(path: str, rate: float, binary: str = "ffmpeg") -> list[str]:
     """The command for the run's one audio track.
 
     The rate declared is the device's own rounded value rather than 48000: it
@@ -1308,7 +1310,7 @@ def audio_command(path: str, rate: float, binary: str = "ffmpeg") -> List[str]:
     drift over a long run.
     """
     return [binary, "-hide_banner", "-loglevel", "error", "-y",
-            "-f", "s16le", "-ar", str(int(round(rate))), "-ac", "2",
+            "-f", "s16le", "-ar", str(round(rate)), "-ac", "2",
             "-i", "pipe:0", "-c:a", "aac", "-b:a", "128k", path]
 
 
@@ -1327,7 +1329,7 @@ class Encoder:
         self.shed = 0
         self.problem = ""
         # Set when the slot loop closed the process without waiting for it.
-        self.finishing: "subprocess.Popen | None" = None
+        self.finishing: subprocess.Popen | None = None
         try:
             self.process = subprocess.Popen(
                 list(command), stdin=subprocess.PIPE,
@@ -1522,7 +1524,7 @@ class InteractionTail:
         # with it.
         self.last_reference = ""
 
-    def poll(self) -> List[dict]:
+    def poll(self) -> list[dict]:
         """Every interaction appended since the last look, oldest first."""
         try:
             size = os.path.getsize(self.path)
@@ -1609,7 +1611,7 @@ class PaneMode:
     def __init__(self) -> None:
         self.mode = ""
         self.since = 0.0
-        self.keys: List[str] = []
+        self.keys: list[str] = []
 
     def apply(self, records: Sequence[dict], now: float) -> None:
         for record in records:
@@ -1674,7 +1676,7 @@ class SpoolTail:
     def __init__(self, path: str) -> None:
         self.path = path
         self.offset = 0
-        self.rows: Optional[List[str]] = None
+        self.rows: list[str] | None = None
         # The menu payload the screen was rendered from. The pane is drawn
         # from this rather than from the rows: the selected row is bit 7 of a
         # character byte and the colours are the colour plane, and neither
@@ -1688,13 +1690,13 @@ class SpoolTail:
         # pane is sticky: a menu screen arriving does not make the menu the
         # surface being driven, and a pane told to show a Telnet session has
         # to have that session's last screen to show.
-        self.screens: Dict[str, Tuple[List[str], bytes, float]] = {}
+        self.screens: dict[str, tuple[list[str], bytes, float]] = {}
         # The last thing a suite did to a device stream, so a pane with no
         # source can say who took it rather than that it is unavailable.
-        self.stream_event: Dict[str, str] = {}
+        self.stream_event: dict[str, str] = {}
         # Every one of those since the last look, for a reader that has to act
         # on each rather than only show the latest. Drained by `take_events`.
-        self.stream_events: List[Dict[str, str]] = []
+        self.stream_events: list[dict[str, str]] = []
 
     def poll(self, now: float) -> None:
         try:
@@ -1740,7 +1742,7 @@ class SpoolTail:
                 }
                 self.stream_events.append(self.stream_event)
 
-    def take_events(self) -> List[Dict[str, str]]:
+    def take_events(self) -> list[dict[str, str]]:
         """Every stream event since the last call, oldest first."""
         found, self.stream_events = self.stream_events, []
         return found
@@ -1757,7 +1759,7 @@ class AudioCursor:
     pretending the missing seconds were silence.
     """
 
-    def __init__(self, timeline: "streams.AudioTimeline", rate: float,
+    def __init__(self, timeline: streams.AudioTimeline, rate: float,
                  fps: int) -> None:
         self.timeline = timeline
         self.rate = rate
@@ -1833,7 +1835,7 @@ class AudioCursor:
 class Sources:
     """What each pane is showing, and how long each has had nothing new."""
 
-    frame: Optional[Tuple[int, int, bytes]] = None
+    frame: tuple[int, int, bytes] | None = None
     frame_at: float = 0.0
     video_at: float = 0.0
     audio_at: float = 0.0
@@ -1848,7 +1850,7 @@ class Recorder:
     """
 
     def __init__(self, directory: str, target, api, options: Options,
-                 identity: Optional[Dict[str, str]] = None,
+                 identity: dict[str, str] | None = None,
                  clock: Callable[[], float] = time.monotonic,
                  wall_clock: Callable[[], float] = time.time,
                  encoder_binary: str = "ffmpeg") -> None:
@@ -1866,16 +1868,16 @@ class Recorder:
         self.slots = 0
         self.shed = 0
         self.padded = 0
-        self.foreign: Dict[str, int] = {}
-        self.rearms: Dict[str, int] = {"video": 0, "audio": 0}
+        self.foreign: dict[str, int] = {}
+        self.rearms: dict[str, int] = {"video": 0, "audio": 0}
         self.menu_requests = 0
         self.menu_failures = 0
         # Which video timing the audio rate was taken from. See _observe_pal.
         self.timing = ""
         self.audio_rate = 0.0
-        self.problems: List[str] = []
-        self.files: List[str] = []
-        self.geometry: Dict[str, Geometry] = {}
+        self.problems: list[str] = []
+        self.files: list[str] = []
+        self.geometry: dict[str, Geometry] = {}
 
         self._assembler = streams.FrameAssembler()
         self._audio = streams.AudioTimeline()
@@ -1887,18 +1889,18 @@ class Recorder:
         self._pane = PaneMode()
         self._ticker = band_lib.Ticker()
         self._sources = Sources()
-        self._cursor: Optional[AudioCursor] = None
-        self._audio_encoder: Optional[Encoder] = None
+        self._cursor: AudioCursor | None = None
+        self._audio_encoder: Encoder | None = None
         self._audio_path = ""
-        self._encoders: Dict[str, Encoder] = {}
-        self._composers: Dict[str, Composer] = {}
-        self._sockets: List = []
+        self._encoders: dict[str, Encoder] = {}
+        self._composers: dict[str, Composer] = {}
+        self._sockets: list = []
         self._addresses: set = set()
         self._running = False
-        self._thread: Optional[threading.Thread] = None
-        self._last_canvas: Dict[str, bytes] = {}
+        self._thread: threading.Thread | None = None
+        self._last_canvas: dict[str, bytes] = {}
         # The same frames without the annotations, which is what a still is.
-        self._plain_canvas: Dict[str, bytes] = {}
+        self._plain_canvas: dict[str, bytes] = {}
         # The decimation phase of OBS-8.27, and what it dropped.
         self._phase = 0
         self.decimated = 0
@@ -1912,7 +1914,7 @@ class Recorder:
         # stills as a short one and the set stays readable.
         # The last screen decoded out of the device's video, and when, so an
         # unchanged screen costs one comparison rather than one decode.
-        self._screen_text: Optional[List[str]] = None
+        self._screen_text: list[str] | None = None
         self._screen_text_at = 0.0
         self._screen_text_frame = b""
         self.screen_texts = 0
@@ -1923,8 +1925,8 @@ class Recorder:
         self.screens_unreadable = 0
         self._picker = StillPicker()
         self._picking = ""
-        self._picking_identity: Dict[str, object] = {}
-        self.stills: List[dict] = []
+        self._picking_identity: dict[str, object] = {}
+        self.stills: list[dict] = []
 
     # -- lifecycle --
 
@@ -1999,7 +2001,7 @@ class Recorder:
         self._thread.start()
         return ""
 
-    def stop(self) -> Dict[str, object]:
+    def stop(self) -> dict[str, object]:
         """End the recording and return its own health record."""
         self._running = False
         alive = False
@@ -2046,7 +2048,7 @@ class Recorder:
             return True
         deadline = self.clock() + TIMING_WAIT_SECONDS
         while self.clock() < deadline:
-            for sock, data, mine in streams.receive(
+            for _sock, data, mine in streams.receive(
                     video, self._addresses, deadline - self.clock()):
                 if not mine:
                     continue
@@ -2495,7 +2497,7 @@ class Recorder:
 
     # -- stage 6: what the run leaves behind --
 
-    def overview_groups(self) -> List[Tuple[str, List[Tuple[str, str, bool]]]]:
+    def overview_groups(self) -> list[tuple[str, list[tuple[str, str, bool]]]]:
         """What the opening card says, as three groups of labelled fields.
 
         In the order a viewer asks the questions in: which machine is this,
@@ -2533,7 +2535,7 @@ class Recorder:
     def _write_cards_tail(self) -> None:
         """The summary card: how it went, without opening the report."""
         state = self._tail.poll()
-        counts: Dict[str, int] = {}
+        counts: dict[str, int] = {}
         for verdict in state.verdicts.values():
             counts[verdict] = counts.get(verdict, 0) + 1
         failed = sorted(name for name, verdict in state.verdicts.items()
@@ -2553,7 +2555,7 @@ class Recorder:
         19.999999999999996 in binary floating point, so the card that was
         meant to be held for two seconds was held for 1.9.
         """
-        for _ in range(max(1, int(round(seconds / interval)))):
+        for _ in range(max(1, round(seconds / interval))):
             if self._audio_encoder is not None and self._cursor is not None:
                 self._audio_encoder.write(self._cursor.take(), budget=interval)
             for name, encoder in self._encoders.items():
@@ -2564,14 +2566,14 @@ class Recorder:
         """Where the run's audio track is, until the finishing pass folds it in."""
         return self._audio_path
 
-    def record(self) -> Dict[str, object]:
+    def record(self) -> dict[str, object]:
         """The recording's own health, for the `kind=capture` record.
 
         A file with thousands of padded frames or hundreds of re-arms is
         telling a reader that the run fought the recorder for the stream, which
         is worth knowing before drawing conclusions from what it shows.
         """
-        found: Dict[str, object] = {
+        found: dict[str, object] = {
             "target": self.target.token,
             "files": sorted(self.files),
             "started": self.started_wall,
@@ -2701,7 +2703,7 @@ def srt_time(seconds: float) -> str:
     return srt_stamp(milliseconds(seconds))
 
 
-def cue_times(cues: Sequence[Tuple[float, float, str]]) -> List[Tuple[int, int]]:
+def cue_times(cues: Sequence[tuple[float, float, str]]) -> list[tuple[int, int]]:
     """The start and end each cue is written with, in whole milliseconds.
 
     Separate from the formatting because the property that matters is about
@@ -2722,13 +2724,13 @@ def cue_times(cues: Sequence[Tuple[float, float, str]]) -> List[Tuple[int, int]]
 
     `cues` is expected in start order, which `cues_and_chapters` sorts it into.
     """
-    starts: List[int] = []
+    starts: list[int] = []
     previous = -1
     for start, _end, _text in cues:
         at = max(milliseconds(start), previous + 1)
         starts.append(at)
         previous = at
-    times: List[Tuple[int, int]] = []
+    times: list[tuple[int, int]] = []
     for index, (_start, end, _text) in enumerate(cues):
         at = starts[index]
         until = max(milliseconds(end), at + MINIMUM_CUE_MS)
@@ -2738,7 +2740,7 @@ def cue_times(cues: Sequence[Tuple[float, float, str]]) -> List[Tuple[int, int]]
     return times
 
 
-def subtitles(cues: Sequence[Tuple[float, float, str]]) -> str:
+def subtitles(cues: Sequence[tuple[float, float, str]]) -> str:
     """One `.srt`, which regenerates without touching the video.
 
     Never a burned-in overlay: a sidecar costs no re-encode and is plain text,
@@ -2759,7 +2761,7 @@ def subtitles(cues: Sequence[Tuple[float, float, str]]) -> str:
     return "\n".join(parts)
 
 
-def chapter_metadata(chapters: Sequence[Tuple[float, float, str]]) -> str:
+def chapter_metadata(chapters: Sequence[tuple[float, float, str]]) -> str:
     """An ffmpeg metadata file, for a stream copy that touches no frame."""
     lines = [";FFMETADATA1"]
     for start, end, title in chapters:
@@ -2800,7 +2802,7 @@ def finish_file(path: str, metadata: str, audio: str = "",
         with open(meta_path, "w", encoding="utf-8") as handle:
             handle.write(metadata)
         completed = subprocess.run(command, capture_output=True, text=True,
-                                   timeout=300)
+                                   timeout=300, check=False)
     except (OSError, subprocess.TimeoutExpired) as exc:
         return f"the audio and the chapters could not be added: {exc}"
     finally:
@@ -2828,7 +2830,7 @@ class Still:
 
     kind: str
     canvas: bytes
-    rows: List[str]
+    rows: list[str]
     frame: int
     position: float
     # The last interaction the run had recorded when this frame was composed,
@@ -2854,13 +2856,13 @@ class StillPicker:
                  threshold: float = TRANSITION_THRESHOLD) -> None:
         self.limit = limit
         self.threshold = threshold
-        self.first: Optional[Still] = None
-        self.last: Optional[Still] = None
-        self.changes: List[Tuple[int, Still]] = []
-        self._previous: Optional[bytes] = None
+        self.first: Still | None = None
+        self.last: Still | None = None
+        self.changes: list[tuple[int, Still]] = []
+        self._previous: bytes | None = None
         self._index = 0
 
-    def offer(self, canvas: bytes, rows: Optional[Sequence[str]],
+    def offer(self, canvas: bytes, rows: Sequence[str] | None,
               ranked_on: bytes, frame: int = 0, position: float = 0.0,
               reference: str = "") -> None:
         """One composed frame, with what it was composed from and where it is.
@@ -2887,13 +2889,13 @@ class StillPicker:
         self._previous = ranked_on
         self._index += 1
 
-    def stills(self) -> List[Still]:
+    def stills(self) -> list[Still]:
         """The chosen stills, in capture order, each naming its own kind."""
         # By the frame each was taken at, so the set reads in capture order
         # whatever order the transitions were ranked in. The second key keeps
         # first before a transition and a transition before last when a suite
         # run was short enough that two of them fall on one frame.
-        found: List[Tuple[int, int, str, Still]] = []
+        found: list[tuple[int, int, str, Still]] = []
         if self.first is not None:
             found.append((self.first.frame, 0, "first", self.first))
         for _changed, still in self.changes:
@@ -2908,7 +2910,7 @@ class StillPicker:
 
 def write_stills(directory: str, stem: str, width: int, height: int,
                  chosen: Sequence[Still], pane: str = "",
-                 height_kept: int = 0) -> List[dict]:
+                 height_kept: int = 0) -> list[dict]:
     """Write each still as a pair of files sharing one name.
 
     The pair exists because the two readers need different things: the image
@@ -2929,7 +2931,7 @@ def write_stills(directory: str, stem: str, width: int, height: int,
         from PIL import Image
     except ImportError:
         Image = None
-    written: List[dict] = []
+    written: list[dict] = []
     try:
         os.makedirs(directory, exist_ok=True)
     except OSError:
@@ -2968,9 +2970,9 @@ def write_stills(directory: str, stem: str, width: int, height: int,
     return written
 
 
-def records_in(directory: str) -> List[Tuple[str, dict]]:
+def records_in(directory: str) -> list[tuple[str, dict]]:
     """Every record a target's directory holds, with the file it came from."""
-    found: List[Tuple[str, dict]] = []
+    found: list[tuple[str, dict]] = []
     try:
         names = sorted(name for name in os.listdir(directory)
                        if name.endswith(".jsonl"))
@@ -3001,7 +3003,7 @@ def retry_note(record: dict) -> str:
 
 
 def cues_and_chapters(directory: str, target: str, started: float,
-                      lead_in: float) -> Tuple[List, List]:
+                      lead_in: float) -> tuple[list, list]:
     """The subtitle cues and the chapter marks for a finished run.
 
     Generated after the run, from the same JSONL, where every interval is
@@ -3013,8 +3015,8 @@ def cues_and_chapters(directory: str, target: str, started: float,
     who has the report open and a reader who has the player open are looking at
     the same strings.
     """
-    cues: List[Tuple[float, float, str]] = []
-    chapters: List[Tuple[float, float, str]] = []
+    cues: list[tuple[float, float, str]] = []
+    chapters: list[tuple[float, float, str]] = []
     for name, record in records_in(directory):
         if name == "run.jsonl":
             if record.get("kind") == "suite":
@@ -3056,7 +3058,7 @@ def cues_and_chapters(directory: str, target: str, started: float,
 
 def finish(directory: str, target: str, started: float, lead_in: float,
            files: Sequence[str], audio: str = "",
-           binary: str = "ffmpeg") -> List[str]:
+           binary: str = "ffmpeg") -> list[str]:
     """Write the subtitles and put the chapters in.
 
     Returns what went wrong and which sidecars were written, because the
@@ -3070,8 +3072,8 @@ def finish(directory: str, target: str, started: float, lead_in: float,
     generated once and written N times, which is a copy of a derived artefact
     rather than a second authored one.
     """
-    problems: List[str] = []
-    written: List[str] = []
+    problems: list[str] = []
+    written: list[str] = []
     cues, chapters = cues_and_chapters(directory, target, started, lead_in)
     text = subtitles(cues)
     metadata = chapter_metadata(chapters)

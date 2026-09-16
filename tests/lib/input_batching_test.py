@@ -24,10 +24,13 @@ navigation after it failed too.
 This needs no device: it measures the same serialisation the transport sends.
 """
 
-import os
 import sys
+from pathlib import Path
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
 from api import (MAX_INPUT_BODY_BYTES, MAX_INPUT_EVENTS,  # noqa: E402
                  input_batches, input_body_bytes)
 from report import Failure, check, detail, suite_fail, suite_ok  # noqa: E402

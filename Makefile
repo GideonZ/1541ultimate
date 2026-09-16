@@ -9,7 +9,7 @@ OPENAPI = python3 tools/openapi/generate.py
 #   make openapi_validate PYTHON=/path/to/venv/bin/python
 PYTHON ?= python3
 
-.PHONY: all app_space app_space_test observability_test host_tests openapi openapi_check openapi_test openapi_validate
+.PHONY: all app_space app_space_test d81_tracks_test observability_test lint_test host_tests openapi openapi_check openapi_test openapi_validate
 
 all: esp32 u2_rv u2plus u2pl u64 u64ii
 	@$(APP_SPACE) report
@@ -20,12 +20,25 @@ app_space:
 app_space_test:
 	@python3 tools/test_app_space.py
 
+d81_tracks_test:
+	@tmpdir=$$(mktemp -d); trap 'rm -rf "$$tmpdir"' EXIT; \
+	$(CXX) -std=c++11 -fsanitize=address,undefined \
+	$(if $(filter Linux,$(shell uname -s)),-static-libasan -static-libubsan) \
+	-fno-omit-frame-pointer \
+	-Isoftware/drive software/drive/mfmdisk.cc software/test/drive/mfmdisk_tracks_test.cc -o "$$tmpdir/test"; \
+	"$$tmpdir/test"
+
 # The observability harness: the report generator, the console capture, the
 # device double and everything else that watches a gate run. Needs no device
 # and no network beyond loopback, and is the same module the gate runs as its
 # `observability` suite.
 observability_test:
 	@python3 tests/lib/observability_test.py
+
+# The lint over tests/ and run-tests, with the rules in tests/ruff.toml.
+# Needs ruff: python3 -m pip install -r tests/requirements-lint.txt
+lint_test:
+	@python3 tests/lib/lint_test.py
 
 # The OpenAPI documents of the REST API, one per product family. `openapi_check`
 # is the gate: it rebuilds them in memory and fails when the committed copies

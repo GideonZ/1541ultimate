@@ -22,7 +22,7 @@ void init_ram_disk(void *obj, void *param)
     uint8_t *ramdisk_mem = new uint8_t[size]; // 1 MB only
     ramdisk_blk = new BlockDevice_Ram(ramdisk_mem, sz, sectors);
 #else
-    const int size = (int)&__ram_disk_limit - (int)&__ram_disk_start; // 3 * 1024 * 1024;
+    const int size = (int)&__ram_disk_limit - (int)&__ram_disk_start;
     const int sectors = size / sz;
     ramdisk_blk = new BlockDevice_Ram(&__ram_disk_start, sz, sectors);
 #endif

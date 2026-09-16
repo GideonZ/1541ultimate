@@ -370,9 +370,11 @@ t_cfg_line_result ConfigIO :: S_read_store_element(ConfigStore *st, const char *
 
     // now we know what item should be configured, and how to 'read' the string
     bool found = false;
-    int value;
+    int value = 0;
     if (item->definition->type == CFG_TYPE_VALUE) {
-        sscanf(valuestr, "%d", &value);
+        if (sscanf(valuestr, "%d", &value) != 1) {
+            return CFG_LINE_MALFORMED;
+        }
         if (value != item->value) {
             item->value = value;
             st->staleEffect = true;

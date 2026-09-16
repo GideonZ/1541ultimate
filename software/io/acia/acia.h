@@ -164,7 +164,7 @@ public:
     void SetCTS(uint8_t value);
     void EnableRTSInRx(uint8_t value);
     void SetRxPushback(uint8_t value);
-    
+
     // efficient transfers
     int      GetRxSpace(void);
     volatile uint8_t *GetRxPointer(void);

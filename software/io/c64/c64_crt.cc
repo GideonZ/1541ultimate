@@ -240,6 +240,10 @@ SubsysResultCode_e C64_CRT::read_chip_packet(File *f, t_crt_chip_chunk *chunk)
         return SSRET_OK; // stop, no error
     }
     if (strncmp((char*)chip_header, "CHIP", 4)) {
+        if (chip_chunks.get_elements()) { // data after the last packet, e.g. transfer padding
+            chunk->last = true;
+            return SSRET_OK; // stop, no error
+        }
         return SSRET_ERROR_IN_FILE_FORMAT; // stop, error
     }
 
@@ -341,6 +345,10 @@ SubsysResultCode_e C64_CRT::read_chip_packet(File *f, t_crt_chip_chunk *chunk)
         return SSRET_OK;
     }
 
+    if (load == 0xA000) {
+        a000_seen = true; // an Ocean CRT with $A000 chips needs 16K mode
+    }
+
     // if ((load == 0xA000) && !a000_seen) {
     //     a000_seen = true;
     //     if (bank > 0) { // strange; first time A000 is seen, it is not bank 0.
@@ -409,8 +417,9 @@ void C64_CRT::auto_mirror(void)
     while (size <= highest_bank) {
         size <<= 1;
     }
-    // we support 1MB of cart memory, so max 64 banks
-    while(size < 64) {
+    // mirror up to the end of the cart memory, which is what the FPGA can address
+    int max_banks = max_cart / bank_multiplier;
+    while(size < max_banks) {
         // mirror the data
         printf("Mirroring %6x bytes from %p to %p.\n", size * bank_multiplier, cart_memory, cart_memory + size * bank_multiplier);
         memcpy(cart_memory + size * bank_multiplier, cart_memory, size * bank_multiplier);
@@ -641,7 +650,9 @@ void C64_CRT::configure_cart(cart_def *def)
             prohibit = CART_PROHIBIT_IO;
             break;
         case CART_COMAL80:
-            if (total_read > 65536) {
+            if (crt_header[CRTHDR_SUBTYPE] == 1) {
+                cart_type = CART_TYPE_OCEAN_16K | VARIANT_2; // Grey Comal 80: bit 6 does not switch the cartridge off
+            } else if (total_read > 65536) {
                 cart_type = CART_TYPE_OCEAN_16K | VARIANT_1; // Comal 80 Pakma // V5: Type = Ocean_16K, Variant = 1
             } else {
                 cart_type = CART_TYPE_OCEAN_16K; // Comal 80 // V5: Type = Ocean_16K, Variant = 0

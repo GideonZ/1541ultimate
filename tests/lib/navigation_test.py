@@ -15,24 +15,21 @@ firmware behaviour these expectations rest on was measured on a C64 Ultimate
 1.2.0 and is recorded in tests/lib/navigation.py.
 """
 
-import os
 import sys
-from typing import List, Optional, Sequence, Tuple
+from collections.abc import Sequence
+from pathlib import Path
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
-    os.path.abspath(__file__))), "e2e", "lib"))
+# The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
+from selftest import expect  # noqa: E402
 
 import navigation  # noqa: E402
 from report import (  # noqa: E402
     Failure, add_colour_argument, apply_colour, check, detail, suite_fail, suite_ok)
 
 import ui_backend  # noqa: E402
-
-
-def expect(label, actual, wanted):
-    if actual != wanted:
-        raise Failure(f"{label}: got {actual!r}, expected {wanted!r}")
 
 
 class RecordingBackend(ui_backend.Backend):
@@ -45,7 +42,7 @@ class RecordingBackend(ui_backend.Backend):
     def __init__(self, style: str, selected: str = "") -> None:
         self._navigation = navigation.classify(style)
         self.selected = selected
-        self.sent: List[str] = []
+        self.sent: list[str] = []
 
     @property
     def navigation(self) -> navigation.Navigation:
@@ -75,7 +72,7 @@ class RecordingBackend(ui_backend.Backend):
         self.send_key(key)
         return self.send_text(text, label)
 
-    def selected_text(self, entry_rows: Optional[Sequence[int]] = None) -> str:
+    def selected_text(self, entry_rows: Sequence[int] | None = None) -> str:
         return self.selected
 
     @property
@@ -83,7 +80,7 @@ class RecordingBackend(ui_backend.Backend):
         return "".join(self.sent)
 
 
-def browser(style: str, selected: str = "") -> Tuple[ui_backend.Browser, RecordingBackend]:
+def browser(style: str, selected: str = "") -> tuple[ui_backend.Browser, RecordingBackend]:
     backend = RecordingBackend(style, selected)
     return ui_backend.Browser(backend, range(2, 24), 24), backend
 
@@ -182,6 +179,41 @@ def run_browser_checks():
         expect("keys", backend.typed, "wasd.prg")
 
 
+def run_duration_checks() -> None:
+    """The one duration parser, which had five copies and three behaviours.
+
+    The copy kept is the one that accepted every unit and rejected the rest;
+    ftp_client_test.py's accepted no bad value at all, so `--duration 5x` ended
+    the run with a bare ValueError traceback out of float().
+    """
+    import argparse
+
+    import cli
+
+    with check("a duration is read in every unit the suites use"):
+        for text, seconds in (("30", 30.0), ("500ms", 0.5), ("45s", 45.0),
+                              ("5m", 300.0), ("1.5h", 5400.0), (" 2M ", 120.0)):
+            expect(f"{text!r}", cli.parse_duration(text), seconds)
+
+    with check("a duration that is not one is a usage error, not a traceback"):
+        for text in ("5x", "", "s", "abc"):
+            try:
+                cli.parse_duration(text)
+            except argparse.ArgumentTypeError as exc:
+                expect(f"{text!r} names itself", repr(text) in str(exc), True)
+            else:
+                raise Failure(f"{text!r} was accepted as a duration")
+
+    with check("a duration has to be a length of time, so zero is refused"):
+        for text in ("0", "0s", "-3s", "-1"):
+            try:
+                cli.parse_duration(text)
+            except argparse.ArgumentTypeError as exc:
+                expect(f"{text!r} says why", "greater than zero" in str(exc), True)
+            else:
+                raise Failure(f"{text!r} was accepted as a duration")
+
+
 def main() -> int:
     import argparse
 
@@ -191,6 +223,7 @@ def main() -> int:
     try:
         run_setting_checks()
         run_browser_checks()
+        run_duration_checks()
     except Failure as exc:
         suite_fail("navigation_test", str(exc))
         return 1

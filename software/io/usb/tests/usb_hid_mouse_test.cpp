@@ -798,3 +798,53 @@ TEST(AdaptiveAccelerationTest, HighSpeedMovementBoostsLowSensitivitySetting)
 	EXPECT_TRUE(motion > baseline);
 	EXPECT_EQ(576, adaptive_accel_scale_factor);
 }
+
+// Cursor mode: motion types a key for the movement it brings, and the movement
+// that is not worth a key yet is carried, so a slow hand types one key at a
+// time instead of one per report.
+TEST(CursorMotionKeysTest, KeysFollowTheMovementAndCarryTheRest)
+{
+	int remainder = 0;
+	EXPECT_EQ(2, HidMouseInterpreter::scaleCursorMotionKeys(8, remainder));
+	EXPECT_EQ(0, remainder);
+	EXPECT_EQ(3, HidMouseInterpreter::scaleCursorMotionKeys(13, remainder));
+	EXPECT_EQ(1, remainder);
+	EXPECT_EQ(-3, HidMouseInterpreter::scaleCursorMotionKeys(-13, remainder));
+	EXPECT_EQ(-1, remainder);
+}
+
+TEST(CursorMotionKeysTest, MovementTooSmallForAKeyTypesNothingUntilItAddsUp)
+{
+	int remainder = 0;
+	for (int report = 0; report < 3; report++) {
+		EXPECT_EQ(0, HidMouseInterpreter::scaleCursorMotionKeys(1, remainder));
+	}
+	EXPECT_EQ(1, HidMouseInterpreter::scaleCursorMotionKeys(1, remainder));
+	EXPECT_EQ(0, remainder);
+}
+
+TEST(CursorMotionKeysTest, ATurnDropsTheMovementLeftFromTheWayBefore)
+{
+	int remainder = 0;
+	EXPECT_EQ(0, HidMouseInterpreter::scaleCursorMotionKeys(3, remainder));
+	EXPECT_EQ(3, remainder);
+	EXPECT_EQ(-3, HidMouseInterpreter::scaleCursorMotionKeys(-12, remainder));
+	EXPECT_EQ(0, remainder);
+	EXPECT_EQ(0, HidMouseInterpreter::scaleCursorMotionKeys(3, remainder));
+	EXPECT_EQ(-1, HidMouseInterpreter::scaleCursorMotionKeys(-4, remainder));
+}
+
+// At Mouse Sensitivity 1 one count is an eighth of a count of movement, so a
+// key needs 32 counts: the setting is what makes single cursor steps possible.
+TEST(CursorMotionKeysTest, LowSensitivityNeedsAWholeHandMovementPerKey)
+{
+	int scale = HidMouseInterpreter::computeSensitivityScaleFactor(1);
+	int sensitivity_remainder = 0;
+	int cursor_remainder = 0;
+	int keys = 0;
+	for (int report = 0; report < 32; report++) {
+		int scaled = HidMouseInterpreter::scaleFixedWithRemainder(1, scale, sensitivity_remainder);
+		keys += HidMouseInterpreter::scaleCursorMotionKeys(scaled, cursor_remainder);
+	}
+	EXPECT_EQ(1, keys);
+}

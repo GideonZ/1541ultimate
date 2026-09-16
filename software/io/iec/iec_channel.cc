@@ -690,9 +690,22 @@ static FRESULT open_by_rendered_iec_name(FileManager *fm, IecPartition *partitio
     return fm->fopen(resolved.c_str(), flags, file);
 }
 
+// The type of a partition follows the file system at its root: a mounted disk image
+// reports the drive model it emulates, everything else is native. Only the file
+// system of the returned info is used.
+static const char *iec_partition_type(FileManager *fm, IecPartition *prt)
+{
+    FileInfo info(32);
+    if (fm->is_path_valid(prt->GetRootPath(), &info) && info.fs) {
+        return info.fs->get_partition_type();
+    }
+    return "NAT";
+}
+
 int IecChannel::read_dir_entry(void)
 {
     FileInfo info(40);
+    const char *partition_type = NULL;
     FRESULT fres;
     if (state == e_dir) {
         if (!dir) {
@@ -715,9 +728,9 @@ int IecChannel::read_dir_entry(void)
             info.date = fattime >> 16;
             info.time = fattime & 0xFFFF;
             info.attrib = AM_DIR;
-            const char *ps = prt->GetRootPath();
-            //sprintf(info.lfname, "PART%03d", part_idx);
-            strncpy(info.lfname, ps, info.lfsize);
+            strncpy(info.lfname, prt->GetName(), info.lfsize);
+            info.lfname[info.lfsize - 1] = 0;
+            partition_type = iec_partition_type(fm, prt);
             part_idx ++;
         }
     }
@@ -810,7 +823,7 @@ int IecChannel::read_dir_entry(void)
         buffer[pos++] = 32;
 
     const char *types[] = { "ANY", "PRG", "SEQ", "USR", "REL", "DIR" };
-    memcpy(&buffer[27 - chars], types[(int)ftype], 3);
+    memcpy(&buffer[27 - chars], partition_type ? partition_type : types[(int)ftype], 3);
 
     pointer = 0;
     prefetch = 0;
@@ -953,6 +966,25 @@ int IecChannel :: setup_file_access()
         return 0;
     }
 
+    // Existing REL files also open by name alone (for example the E.DATA editor).
+    // Resolve the type before choosing access flags and setting up record I/O.
+    if (name_to_open.filetype == e_any) {
+        FileInfo info(48);
+        FRESULT fres = fm->fstat(full_path, info);
+        if (fres == FR_NO_FILE) {
+            GETPARTITION(name_to_open.file.partition, partition, 0);
+            fres = resolve_existing_iec_path(fm, partition, name_to_open.file, e_any,
+                                             false, true, true, work, &info);
+            full_path = work.c_str();
+        }
+        if (fres != FR_OK) {
+            drive->set_error_fres(fres);
+            return 0;
+        }
+        char cbm_name[24];
+        IecPartition::CreateIecName(&info, cbm_name, name_to_open.filetype);
+    }
+
     uint8_t flags;
     switch(name_to_open.access) {
     case e_append:
@@ -1006,6 +1038,7 @@ int IecChannel :: setup_file_access()
             drive->set_error_fres(fres);
             if (fres == FR_OK) {
                 recordSize = name_to_open.record_size;
+                recordOffset = 2; // First record follows the REL header, also on a reused channel.
                 state = e_record;
             }
         } else { // file already exists
@@ -1378,13 +1411,9 @@ int IecCommandChannel :: do_buffer_position(int chan, int pos)
         set_error(ERR_SYNTAX_ERROR_CMD);
         return ERR_SYNTAX_ERROR_CMD;
     }
-    if ((pos < 0) || (pos > 255)) {
-        set_error(ERR_SYNTAX_ERROR_CMD);
-        return ERR_SYNTAX_ERROR_CMD;
-    }
     IecChannel *channel;
     channel = drive->get_data_channel(chan);
-    channel->pointer = pos;
+    channel->pointer = pos & 0xFF; // CBM DOS keeps only the low byte, so it wraps
     channel->reset_prefetch();
     set_error(ERR_ALL_OK);
     return ERR_ALL_OK;
@@ -1402,6 +1431,17 @@ int IecCommandChannel::do_change_dir(filename_t& dest)
 {
     GETPARTITION(dest.partition, prt, -1);
     DBGIECV("Partition %d ('%s') Change dir %s:%s\n", dest.partition, prt->GetFullPath(), dest.path.c_str(), dest.filename.c_str());
+
+    // The left arrow, PETSCII 0x5F, means the parent directory both after the command
+    // word, as in "CD_", and behind a colon, as in "CD:_" or "CD/SUB/:_". Only the
+    // first arrives as a path, so move the second there and both take one route.
+    if (dest.filename == "_") {
+        dest.filename = "";
+        if (dest.path.length() && (dest.path[-1] != '/')) {
+            dest.path += "/";
+        }
+        dest.path += "_";
+    }
 
     mstring full_path;
     mstring relative_path;
@@ -1670,6 +1710,13 @@ int IecCommandChannel::do_pwd_command()
 int IecCommandChannel::do_set_position(int chan, uint32_t pos, int recnr, int recoffset)
 {
     DBGIECV("Set File position to %u on chan %d. RecNr %d:%d\n", pos, chan, recnr, recoffset);
+    // The documented BASIC form adds 96 to the secondary address, as in
+    // PRINT#15,"P"CHR$(96+2)..., while other programs send it bare. CBM DOS masks the
+    // byte to its low four bits only from 19 up, so both forms reach the same channel
+    // and a byte just outside the channel range is still refused.
+    if (chan >= 19) {
+        chan &= 0x0F;
+    }
     if ((chan < 0) || (chan > 14)) {
         return ERR_SYNTAX_ERROR_CMD;
     }
@@ -1800,6 +1847,12 @@ t_channel_retval IecCommandChannel::push_command(uint8_t b)
         wr_pointer = 0;
         break;
     case 0x00: // end of data, command received in buffer
+        // BASIC's PRINT# ends every command with a carriage return, which CBM DOS
+        // takes as the end of the command rather than as part of it. Only the last
+        // byte goes, so a command carrying binary parameters keeps them.
+        if (wr_pointer && (wr_buffer[wr_pointer - 1] == 0x0D)) {
+            wr_pointer--;
+        }
         wr_buffer[wr_pointer] = 0;
         if (wr_pointer) {
             drive->set_error(0, 0, 0);

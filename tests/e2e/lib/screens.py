@@ -41,11 +41,13 @@ import json
 import os
 import sys
 import time
-from typing import List, Optional, Sequence
+from collections.abc import Sequence
+from pathlib import Path
 
-sys.path.insert(0, os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-    "lib"))
+# The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
 
 import report  # noqa: E402
 
@@ -75,7 +77,7 @@ def enabled() -> bool:
     return bool(SPOOL_PATH)
 
 
-def publish(kind: str, rows: Sequence[str], raw: Optional[bytes] = None,
+def publish(kind: str, rows: Sequence[str], raw: bytes | None = None,
             cols: int = 0, key: object = None) -> None:
     """Record one screen, when it differs from the last one of its kind.
 
@@ -173,13 +175,13 @@ def publish_stream(data: bytes) -> None:
         pass
 
 
-def read(path: str) -> List[dict]:
+def read(path: str) -> list[dict]:
     """Every screen in a spool, for a reader that has one.
 
     A record written while a writer was mid-line is skipped, the same rule
     every other reader of these files follows.
     """
-    found: List[dict] = []
+    found: list[dict] = []
     try:
         with open(path, encoding="utf-8", errors="replace") as handle:
             for line in handle:
@@ -197,8 +199,8 @@ def read(path: str) -> List[dict]:
 
 
 def last_before(path: str, when: float, kind: str = "", suite: str = "",
-                attempt: Optional[int] = None,
-                non_blank: bool = False) -> Optional[dict]:
+                attempt: int | None = None,
+                non_blank: bool = False) -> dict | None:
     """The most recent screen in `path` at or before `when`.
 
     What the harness was looking at when something happened, which is what a

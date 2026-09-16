@@ -18,11 +18,15 @@ Needs no device, so it runs first and costs nothing.
 """
 
 import ast
-import argparse
 import os
 import sys
+from pathlib import Path
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
+import cli  # noqa: E402
 from report import detail, suite_fail, suite_ok  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -46,13 +50,27 @@ EXEMPT = {
     # rest.may_retry, which the check below verifies.
     os.path.join(TESTS, "e2e", "filesystem", "ftp_client_test.py"):
         "paces its own retries around the connection pool; uses rest.may_retry",
+    # Drives FTP itself to measure how the server behaves: it checks the 220
+    # and 230 codes by hand, quits after the greeting without logging in,
+    # abandons a session after login, and closes without QUIT. tests/lib/ftp.py
+    # logs in and raises on a bad code, so it cannot express any of that. The
+    # same reason http_probe.py is exempt above.
+    os.path.join(TESTS, "soak", "network", "ftp_probe.py"):
+        "drives FTP itself to measure how the server behaves under stress",
     # The one place the policy lives.
     LIBRARY: "defines the policy",
+    os.path.join(TESTS, "lib", "ftp.py"): "is the FTP transport",
 }
 
 BANNED = {
     ("urllib", "request", "urlopen"): "urllib.request.urlopen",
     ("http", "client", "HTTPConnection"): "http.client.HTTPConnection",
+    # The same rule for FTP, which had drifted the way HTTP did before this
+    # check existed: twelve private sessions, each with its own timeout (none
+    # at all in one soak) and its own login. The passive/active retry the
+    # health check gained reached none of them, so a device that refuses one
+    # mode failed them with a raw ftplib.error_perm instead of a named message.
+    ("ftplib", "FTP"): "ftplib.FTP",
 }
 
 
@@ -125,9 +143,15 @@ def reset_offenders(path, tree):
     return found
 
 
+def read_source(path):
+    """The file's text, with the handle closed before it is parsed."""
+    with open(path, encoding="utf-8") as handle:
+        return handle.read()
+
+
 def offenders(path):
     try:
-        tree = ast.parse(open(path, encoding="utf-8").read(), filename=path)
+        tree = ast.parse(read_source(path), filename=path)
     except SyntaxError as exc:
         return [(getattr(exc, "lineno", 0), f"could not be parsed: {exc}")]
     found = []
@@ -167,7 +191,7 @@ def uses_policy(path):
     NameError instead of deciding whether to retry. A grep cannot tell a call
     from a name that happens to be spelled the same.
     """
-    source = open(path, encoding="utf-8").read()
+    source = read_source(path)
     if "may_retry" not in source:
         return False, "no reference to rest.may_retry"
     try:
@@ -180,11 +204,7 @@ def uses_policy(path):
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0]
-                                     if __doc__ else "")
-    report_module = sys.modules["report"]
-    report_module.add_colour_argument(parser)
-    report_module.apply_colour(parser.parse_args().color)
+    cli.device_free_arguments(__doc__)
     problems = []
     scanned = 0
     for path in sorted(MUST_USE_POLICY):
@@ -217,19 +237,29 @@ def main():
                 continue
             path = os.path.join(base, name)
             try:
-                tree = ast.parse(open(path, encoding="utf-8").read(), filename=path)
+                tree = ast.parse(read_source(path), filename=path)
             except SyntaxError:
                 continue
             for line, what in reset_offenders(path, tree):
                 resets.append((os.path.relpath(path, ROOT), line, what))
 
     if problems:
-        suite_fail("check_transport_usage",
-                   f"{len(problems)} direct HTTP call(s) bypass tests/lib/rest.py")
+        ftp = [one for one in problems if "ftplib" in one[2]]
+        http = [one for one in problems if one not in ftp]
+        parts = []
+        if http:
+            parts.append(f"{len(http)} direct HTTP call(s) bypass tests/lib/rest.py")
+        if ftp:
+            parts.append(f"{len(ftp)} direct FTP session(s) bypass tests/lib/ftp.py")
+        suite_fail("check_transport_usage", "; ".join(parts))
         for path, line, what in problems:
             detail(f"{path}:{line} calls {what}")
-        detail("Use rest.RestClient, rest.retrying_urlopen or "
-               "rest.retrying_http_request; they share rest.may_retry.")
+        if http:
+            detail("For HTTP use rest.RestClient, rest.retrying_urlopen or "
+                   "rest.retrying_http_request; they share rest.may_retry.")
+        if ftp:
+            detail("For FTP use ftp.connect or ftp.session; they carry the "
+                   "login, the timeout and the passive/active choice.")
         return 1
 
     if resets:

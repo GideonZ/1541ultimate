@@ -9,6 +9,7 @@
 #include "keyboard_usb.h"
 #include "joystick_output.h"
 extern "C" void route_input_note_menu_button(void);
+extern "C" void route_input_release_rest_mouse(void);
 extern "C" bool push_active_menu_button(void) __attribute__((weak));
 #endif
 
@@ -24,6 +25,28 @@ static uint8_t chartohex(const char a)
     if ((a >= 'a') && (a <= 'f'))
         return 10 + a - 'a';
     return 0xff;
+}
+
+// The grammar this file's hexadecimal parameters document: hex digits, no
+// larger than `limit`, and nothing else. strtol is not that grammar. It skips
+// leading whitespace, accepts an optional sign, and stops at the first
+// character it cannot use, so " 1234", "+1234", "-0" and "12ZZ" all parsed and
+// were acted on, and a value over the limit was truncated rather than refused.
+static bool parse_hex(const char *text, int limit, int &value)
+{
+    if ((text == NULL) || (*text == '\0')) {
+        return false;
+    }
+    int parsed = 0;
+    for (const char *p = text; *p; p++) {
+        uint8_t digit = chartohex(*p);
+        if ((digit == 0xff) || (parsed > (limit >> 4))) {
+            return false;
+        }
+        parsed = (parsed << 4) | digit;
+    }
+    value = parsed;
+    return true;
 }
 
 API_DOC(PUT, machine, menu_button,
@@ -63,8 +86,8 @@ API_DOC(PUT, machine, reset,
                 "which is not the same as starting from cold; use `machine:reboot` for that.\n"
                 "\n"
                 "On Ultimate 64 hardware every key and joystick direction the input API is "
-                "holding is released as part of the reset, so a reset cannot leave an injected "
-                "key stuck down.")
+                "holding is released as part of the reset, and its mouse is detached, so a reset "
+                "cannot leave an injected input stuck down.")
     PATH("/v1/machine:reset", "resetMachine", "")
     RESPONSE("200", "application/json", "ErrorResponse", "The machine was reset.", "")
     RESPONSE_ERROR("423", "Could not obtain lock of subsystem", "")
@@ -78,6 +101,7 @@ API_CALL(PUT, machine, reset, NULL, ARRAY( {  }))
 #if U64
         system_usb_keyboard.restReleaseAll();
         JoystickOutput::instance().releaseAllRest();
+        route_input_release_rest_mouse();
 #endif
     }
     resp->error(SubsysCommand::error_string(retval.status));
@@ -93,7 +117,7 @@ API_DOC(PUT, machine, reboot,
                 "cartridge has to start from scratch.\n"
                 "\n"
                 "On Ultimate 64 hardware every key and joystick direction the input API is "
-                "holding is released as part of the reboot.")
+                "holding is released as part of the reboot, and its mouse is detached.")
     PATH("/v1/machine:reboot", "rebootMachine", "")
     RESPONSE("200", "application/json", "ErrorResponse", "The machine was rebooted.", "")
     RESPONSE_ERROR("423", "Could not obtain lock of subsystem", "")
@@ -107,6 +131,7 @@ API_CALL(PUT, machine, reboot, NULL, ARRAY( {  }))
 #if U64
         system_usb_keyboard.restReleaseAll();
         JoystickOutput::instance().releaseAllRest();
+        route_input_release_rest_mouse();
 #endif
     }
     resp->error(SubsysCommand::error_string(retval.status));
@@ -211,9 +236,8 @@ API_DOC(PUT, machine, writemem,
 )
 API_CALL(PUT, machine, writemem, NULL, ARRAY( { {"address", P_REQUIRED}, {"data", P_REQUIRED} }))
 {
-    int address = strtol(args["address"], NULL, 16);
-
-    if ((address < 0) || (address > 65535)) {
+    int address;
+    if (!parse_hex(args["address"], 0xFFFF, address)) {
         resp->error("Invalid address");
         resp->json_response(HTTP_BAD_REQUEST);
         return;
@@ -283,9 +307,8 @@ API_DOC(POST, machine, writemem,
 )
 API_CALL(POST, machine, writemem, &attachment_writer, ARRAY( { {"address", P_REQUIRED} }))
 {
-    int address = strtol(args["address"], NULL, 16);
-
-    if ((address < 0) || (address > 65535)) {
+    int address;
+    if (!parse_hex(args["address"], 0xFFFF, address)) {
         resp->error("Invalid address");
         resp->json_response(HTTP_BAD_REQUEST);
         return;
@@ -349,9 +372,8 @@ API_DOC(GET, machine, readmem,
 )
 API_CALL(GET, machine, readmem, NULL, ARRAY( { {"address", P_REQUIRED}, {"length", P_OPTIONAL} }))
 {
-    int address = strtol(args["address"], NULL, 16);
-
-    if ((address < 0) || (address > 65535)) {
+    int address;
+    if (!parse_hex(args["address"], 0xFFFF, address)) {
         resp->error("Invalid address");
         resp->json_response(HTTP_BAD_REQUEST);
         return;
@@ -453,12 +475,18 @@ API_DOC(PUT, machine, debugreg,
                 "reads back afterwards, which is not necessarily what was written: some bits are "
                 "driven by the hardware.")
     PATH("/v1/machine:debugreg", "writeDebugRegister", "")
-    PARAM("value", "string", "Byte to write, in hexadecimal.", "", "1F")
+    PARAM("value", "string", "Byte to write, in hexadecimal, 00 to FF.", "", "1F")
     RESPONSE("200", "application/json", "DebugRegisterResponse", "The register after the write.", "")
+    RESPONSE_ERROR("400", "Invalid value", "")
 )
 API_CALL(PUT, machine, debugreg, NULL, ARRAY( { { "value", P_REQUIRED } }))
 {
-    int value = strtol(args["value"], NULL, 16);
+    int value;
+    if (!parse_hex(args["value"], 0xFF, value)) {
+        resp->error("Invalid value");
+        resp->json_response(HTTP_BAD_REQUEST);
+        return;
+    }
     U64_DEBUG_REGISTER = (uint8_t)value;
 
     char buf[4];

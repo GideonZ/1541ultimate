@@ -58,7 +58,7 @@ public:
     virtual ~BrowsablePicker() { }
 
     const char *getName() { return message; }
-    void getDisplayString(char *buffer, int width) {
+    void getDisplayString(char *buffer, int width, UserInterface *ui) {
         int len = strlen(message);
         if (len > width) {
             len = width;

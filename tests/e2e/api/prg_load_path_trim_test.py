@@ -3,25 +3,27 @@
 
 import argparse
 import ftplib
-import os
 import posixpath
 import sys
 import tempfile
 import time
 from pathlib import Path
 
-SCRIPT_DIR = Path(__file__).resolve().parent
-# tests/lib holds the reporting rules every suite shares; tests/e2e/lib
-# holds the shared UI backend and the managed-/Temp settings base.
-sys.path.insert(0, str(SCRIPT_DIR.parents[1] / "lib"))
-sys.path.insert(0, str(SCRIPT_DIR.parent / "lib"))
+# The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
+import cli  # noqa: E402
+
 
 import ftp as ftp_lib
-from report import Failure, check_ok, check_start, detail, section, suite_ok, warn
+from report import (Failure, check_ok, check_start, detail, format_exception, section,
+                    suite_fail, suite_ok, warn)
 from rest import multipart_body
 from temp_settings import (
     AUTO_CLEANUP_ITEM, SUBFOLDERS_ITEM, TempSettingsSuite, add_toggle_arguments)
 from ui_backend import add_mode_argument
+
 
 SUITE = "prg_load_path_trim_test"
 
@@ -66,7 +68,7 @@ class SuiteRunner(TempSettingsSuite):
         try:
             response = self.ftp(lambda client: ftp_lib.store(
                 client, self.args.remote_file, self.local_prg.read_bytes()))
-        except ftplib.all_errors + (Failure,) as exc:
+        except (*ftplib.all_errors, Failure) as exc:
             self.fail(f"Could not upload PUT fixture (FTP {exc})")
             return
         if response.startswith(("226", "200")):
@@ -183,8 +185,7 @@ class SuiteRunner(TempSettingsSuite):
 
 def main():
     parser = argparse.ArgumentParser(description="Validate PRG runner boot-cart path trimming.")
-    parser.add_argument("-H", "--host", default=os.environ.get("U64_HOST", "u64"))
-    parser.add_argument("-p", "--password", default=os.environ.get("U64_PASS", ""))
+    cli.add_device_arguments(parser, colour=False, timeout=None)
     parser.add_argument("--remote-file", default="/Temp/rest-prg-path-trim-target-example.prg")
     parser.add_argument("--upload-name", default="rest-prg-path-trim-upload-example.prg")
     add_toggle_arguments(parser)
@@ -194,7 +195,10 @@ def main():
     try:
         runner.run()
         return 0
-    except Failure:
+    except Failure as exc:
+        # Without this the runner sees only the exit status and records the
+        # suite as FAIL with an empty note and no checks.
+        suite_fail(SUITE, format_exception(exc))
         return 1
     finally:
         # Leave the documented clean UI state after the REST/FTP assertions.

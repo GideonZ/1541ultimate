@@ -8,7 +8,6 @@
 
 #include "FreeRTOS.h"
 #include "task.h"
-#include <atomic>
 #include "config.h"
 #include "indexed_list.h"
 
@@ -17,7 +16,7 @@
 class HTTPDaemon : public ConfigurableObject
 {
 	static void http_listen_task(void *a);
-	std::atomic<bool> enabled;
+	volatile bool enabled;
 public:
 	TaskHandle_t listenTaskHandle;
 

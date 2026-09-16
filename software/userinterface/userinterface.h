@@ -66,6 +66,9 @@ private:
     bool initialized;
     bool doBreak;
     bool available;
+    // A menu on a network stream (Telnet). It has its own keyboard, so it does
+    // not count as a menu the USB keyboard and mouse, or REST, are driving.
+    bool remote;
     mstring title;
     UIObject *ui_objects[MAX_UI_OBJECTS];
     UIStatusBox *status_box;
@@ -80,7 +83,7 @@ private:
     void run_editor(Editor *);
 public:
     int color_border, color_bg, color_fg, color_sel, color_sel_bg, reverse_sel;
-    int color_status, color_inactive;
+    int color_status, color_inactive, color_configitem;
 
     int config_save, filename_overflow_squeeze, navmode;
     bool logo;

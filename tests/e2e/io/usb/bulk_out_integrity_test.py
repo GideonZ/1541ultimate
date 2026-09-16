@@ -54,9 +54,12 @@ import struct
 import sys
 import time
 from pathlib import Path
-from typing import List, Optional
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "lib"))
+# The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
+import cli  # noqa: E402
 
 import ftp as ftp_lib
 from report import (
@@ -98,12 +101,12 @@ def payload() -> bytes:
     return struct.pack(f"<{SIZE // 4}I", *((TAG << 24) | w for w in range(SIZE // 4)))
 
 
-def control_writes(data: bytes) -> List[bytes]:
+def control_writes(data: bytes) -> list[bytes]:
     """Equal writes that never leave a whole sector over."""
     return [data[o:o + CONTROL] for o in range(0, len(data), CONTROL)]
 
 
-def paced_writes(data: bytes) -> List[bytes]:
+def paced_writes(data: bytes) -> list[bytes]:
     """The shape that puts every write after the first two at 2 modulo 512."""
     writes = [data[:HEAD], data[HEAD:HEAD + TAIL]]
     writes += [data[o:o + BODY] for o in range(HEAD + TAIL, len(data), BODY)]
@@ -116,7 +119,7 @@ SHAPES = {
 }
 
 
-def paced_store(client: ftplib.FTP, path: str, writes: List[bytes],
+def paced_store(client: ftplib.FTP, path: str, writes: list[bytes],
                 transfer_timeout: float) -> float:
     """STOR one write at a time, pausing between them.
 
@@ -222,7 +225,7 @@ def round_trip(client: ftplib.FTP, directory: str, data: bytes, shape: str,
         f"at the right size and with no error reported")
 
 
-def first_usb_dir(client: ftplib.FTP) -> Optional[str]:
+def first_usb_dir(client: ftplib.FTP) -> str | None:
     """The USB volume to write to, or None when the machine has no medium in.
 
     Which port the medium is in is not this suite's business; see
@@ -241,7 +244,7 @@ def usable(client: ftplib.FTP, directory: str) -> bool:
 
 
 def scenario_upload_integrity(host: str, password: str, timeout: float,
-                              usb_dir: Optional[str], ram_dir: str,
+                              usb_dir: str | None, ram_dir: str,
                               transfer_timeout: float) -> None:
     section("an upload to USB storage is stored as it was sent")
     data = payload()
@@ -291,10 +294,7 @@ def scenario_upload_integrity(host: str, password: str, timeout: float,
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(
         description="Verify FTP uploads to USB storage are stored unaltered.")
-    parser.add_argument("-H", "--host", default=os.environ.get("U64_HOST", "u64"))
-    parser.add_argument("-p", "--password", default=os.environ.get("U64_PASS", ""))
-    parser.add_argument("-t", "--timeout", type=float,
-                        default=float(os.environ.get("U64_TIMEOUT", "10.0")))
+    cli.add_device_arguments(parser, colour=False)
     parser.add_argument("--usb-dir", default=os.environ.get("U64_USB_DIR") or None,
                         help="USB medium to write to (default: the first USB "
                              "volume the device serves).")
@@ -313,9 +313,6 @@ def main() -> int:
         scenario_upload_integrity(args.host, args.password, args.timeout,
                                   args.usb_dir, args.ram_dir,
                                   args.transfer_timeout)
-    except Failure as exc:
-        suite_fail(SUITE, str(exc))
-        return 1
     except Exception as exc:  # noqa: BLE001  (a lost device must not print a traceback alone)
         suite_fail(SUITE, format_exception(exc))
         return 1

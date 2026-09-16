@@ -16,17 +16,20 @@ So: batch taps into as few requests as the firmware allows, and wait on observed
 state instead of a fixed delay. Callers pass their own transport, so a suite can
 adopt this without restructuring its session class.
 """
-import os
 import sys
 import time
-from typing import Callable, List, Optional, Sequence, Tuple
+from collections.abc import Callable, Sequence
+from pathlib import Path
 
-# tests/lib holds the pacing every suite shares; see tests/lib/pacing.py for
-# why these are not constants of this module any more.
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                "..", "..", "lib"))
+# The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
 import api  # noqa: E402  (needs tests/lib on sys.path first)
+import interactions  # noqa: E402
+import machine as machine_lib  # noqa: E402
 import pacing  # noqa: E402
+import report  # noqa: E402
 
 # Kept as names so callers read the same way; the values live in tests/lib/pacing.py.
 KEY_SETTLE_SECONDS = pacing.KEY_SETTLE_SECONDS
@@ -37,7 +40,7 @@ def tap_event(keys: Sequence[str]) -> dict:
     return {"kind": "keyboard", "inputs": list(keys), "transition": "tap"}
 
 
-def tap_batches(keys_list: Sequence[Sequence[str]]) -> List[List[dict]]:
+def tap_batches(keys_list: Sequence[Sequence[str]]) -> list[list[dict]]:
     """Split a run of taps into batches the firmware will accept.
 
     Both device limits decide that, the event count and the request body size;
@@ -46,7 +49,7 @@ def tap_batches(keys_list: Sequence[Sequence[str]]) -> List[List[dict]]:
     return api.input_batches([tap_event(k) for k in keys_list])
 
 
-def send_taps(post_events: Callable[[List[dict]], None], keys_list: Sequence[Sequence[str]]) -> None:
+def send_taps(post_events: Callable[[list[dict]], None], keys_list: Sequence[Sequence[str]]) -> None:
     """Send a run of taps in as few requests as possible.
 
     The firmware drains the batch through the same matrix path as separate
@@ -56,12 +59,12 @@ def send_taps(post_events: Callable[[List[dict]], None], keys_list: Sequence[Seq
         post_events(batch)
 
 
-def repeat_key(post_events: Callable[[List[dict]], None], keys: Sequence[str], count: int) -> None:
+def repeat_key(post_events: Callable[[list[dict]], None], keys: Sequence[str], count: int) -> None:
     send_taps(post_events, [keys] * count)
 
 
 def wait_until(predicate: Callable[[], bool], timeout: float,
-               interval: Optional[float] = None) -> bool:
+               interval: float | None = None) -> bool:
     """Poll until predicate holds. Returns False on timeout.
 
     `interval` defaults to the shared pacing value at call time, not at import
@@ -90,20 +93,32 @@ def toggle_menu(press_button: Callable[[], None], menu_is_open: Callable[[], boo
     The press is a toggle, so a transport failure is not retried: the request may
     already have been applied. The state is polled instead, which answers it
     either way.
+
+    That is right for a device fault and wrong for a caller bug. A TypeError
+    from a changed signature, or a KeyError from a changed response shape, used
+    to be swallowed here and then surfaced as "the menu did not open" once the
+    poll timed out, so a harness bug was reported as a device fault and the
+    runner ran its recovery policy against a healthy device. Only
+    report.DEVICE_FAULTS is caught, which is the same set teardown_step
+    swallows and excludes TypeError by construction, and the exception that
+    was caught is written into the interaction log rather than lost.
     """
     if menu_is_open() == want_open:
         return True
     try:
         press_button()
-    except Exception:
-        pass
+    except report.DEVICE_FAULTS as exc:
+        interactions.record("rest", "menu_button",
+                            error=f"{type(exc).__name__}: {exc}",
+                            note="swallowed: the press is a toggle, so the "
+                                 "state poll below answers it either way")
     return wait_menu_state(menu_is_open, want_open, timeout)
 
 
-def wait_screen_settled(screen: Callable[[], Optional[bytes]], timeout: float,
-                        stable_samples: Optional[int] = None,
-                        known: Optional[bytes] = None
-                        ) -> Tuple[bool, Optional[bytes]]:
+def wait_screen_settled(screen: Callable[[], bytes | None], timeout: float,
+                        stable_samples: int | None = None,
+                        known: bytes | None = None
+                        ) -> tuple[bool, bytes | None]:
     """Wait until the menu screen stops changing.
 
     A batch is accepted by REST immediately but drains through the C64 matrix
@@ -138,10 +153,10 @@ def wait_screen_settled(screen: Callable[[], Optional[bytes]], timeout: float,
     return False, last
 
 
-def wait_screen_changes(screen: Callable[[], Optional[bytes]], before: Optional[bytes],
+def wait_screen_changes(screen: Callable[[], bytes | None], before: bytes | None,
                         timeout: float, min_samples: int = 1,
-                        hard_timeout: Optional[float] = None
-                        ) -> Tuple[bool, Optional[bytes]]:
+                        hard_timeout: float | None = None
+                        ) -> tuple[bool, bytes | None]:
     """Wait for the menu screen to differ from 'before'.
 
     Drawing takes longer than a key tap, and acting before it finishes loses the
@@ -197,3 +212,126 @@ def wait_screen_changes(screen: Callable[[], Optional[bytes]], before: Optional[
         remaining_budget = max(0.0, timeout - elapsed)
         time.sleep(min(pacing.POLL_INTERVAL_SECONDS,
                        remaining_budget / remaining_reads))
+
+
+# --- Getting the menu open --------------------------------------------------
+#
+# Two things open the menu and they are not the same signal. `machine:menu_button`
+# is the one every machine answers. A keyboard combination is the other, and
+# whether a machine has one is a property of its core rather than of its
+# firmware: an Ultimate 64 mk1 wires the menu button straight to physical pins
+# (fpga/fpga_top/ultimate_fpga/vhdl_source/u2p_lattice_minimized.vhd passes
+# `buttons => button_i`), and nothing in software/ or in the VHDL here maps a
+# key combination onto it. A C64 Ultimate's bitstream is prebuilt and not in
+# this repository (external/u64e2_*.bit), and it does map C= plus RESTORE.
+#
+# A suite asks for an opener rather than choosing between a button press and a
+# key sequence, so the sequence has one implementation and one place to change.
+
+
+class MenuOpener:
+    """One way of getting the menu open. `name` says which, for a report."""
+
+    name = ""
+
+    def press(self) -> None:
+        raise NotImplementedError
+
+    def open(self, menu_is_open: Callable[[], bool],
+             timeout: float = MENU_TOGGLE_TIMEOUT_SECONDS) -> bool:
+        """Open the menu and wait for it. True when it is open.
+
+        A menu that is already open is left alone, so this is safe to call
+        from a check that does not know the state it inherited.
+        """
+        return toggle_menu(self.press, menu_is_open, True, timeout)
+
+
+class ButtonMenuOpener(MenuOpener):
+    """`PUT /v1/machine:menu_button`, which every machine answers."""
+
+    name = "the menu button"
+
+    def __init__(self, press_menu_button: Callable[[], None]) -> None:
+        self._press_menu_button = press_menu_button
+
+    def press(self) -> None:
+        self._press_menu_button()
+
+
+class CommodoreRestoreMenuOpener(MenuOpener):
+    """C= held down while RESTORE is tapped.
+
+    RESTORE is not a keyboard matrix key; it is an edge on the NMI line. The
+    core recognises the combination by reading the keyboard matrix at that
+    edge, so the CBM key has to be down in the matrix before the edge arrives
+    and still down when it is sampled.
+
+    This is the only place the sequence is emitted. It takes three requests
+    because `machine:input` refuses `restore` in an event that carries any
+    other input, so the CBM key has to be pressed, the RESTORE tapped and the
+    CBM key released separately. Firmware that accepts the two together turns
+    this into `single_request_events()` and nothing else changes; the C64 sees
+    the same stimulus either way, because a queued tap asserts the matrix
+    columns and the restore line from one call and
+    Keyboard_USB::applyMatrixState() writes the matrix rows before the restore
+    register.
+    """
+
+    name = "C= plus RESTORE"
+
+    # How long the RESTORE tap is left to reach the core before C= comes back
+    # up. The tap itself is held for two ticks of the firmware's 20ms REST
+    # input timer, so this has to outlast that.
+    HOLD_SECONDS = 0.15
+
+    def __init__(self, post_events: Callable[[list[dict]], None]) -> None:
+        self._post_events = post_events
+
+    @staticmethod
+    def single_request_events() -> list[dict]:
+        """The one-request form, for firmware whose parser accepts it."""
+        return [tap_event(["commodore", "restore"])]
+
+    def press(self) -> None:
+        self._post_events([{"kind": "keyboard", "inputs": ["commodore"],
+                            "transition": "press"}])
+        try:
+            self._post_events([tap_event(["restore"])])
+            time.sleep(self.HOLD_SECONDS)
+        finally:
+            self._post_events([{"kind": "keyboard", "inputs": ["commodore"],
+                                "transition": "release"}])
+
+
+# The keyboard way in, per machine. A machine absent from this table has none,
+# which is a statement about its core and not about its firmware version.
+_KEYBOARD_MENU_OPENERS = {
+    machine_lib.C64U: CommodoreRestoreMenuOpener,
+}
+
+
+def keyboard_menu_opener(kind: str,
+                         post_events: Callable[[list[dict]], None]
+                         ) -> MenuOpener | None:
+    """The keyboard opener for this machine, or None where it has none.
+
+    None is not a failure. A caller that needs the menu open falls back to
+    `ButtonMenuOpener`; a caller testing the keyboard route itself reports a
+    skip naming the machine.
+    """
+    opener = _KEYBOARD_MENU_OPENERS.get(kind)
+    return None if opener is None else opener(post_events)
+
+
+def menu_opener(kind: str,
+                post_events: Callable[[list[dict]], None],
+                press_menu_button: Callable[[], None],
+                prefer_keyboard: bool = False) -> MenuOpener:
+    """An opener for this machine: the button unless the keyboard is asked for
+    and this machine has one."""
+    if prefer_keyboard:
+        opener = keyboard_menu_opener(kind, post_events)
+        if opener is not None:
+            return opener
+    return ButtonMenuOpener(press_menu_button)

@@ -42,6 +42,11 @@ public:
 
 	virtual bool    init();              // Initialize file system
     virtual bool    is_writable() { return false; } // by default a file system is not writable, unless we implement it
+    // Three character partition type reported in the IEC partition directory ($=P).
+    // CMD DOS calls a partition that holds its own native file system "NAT", and
+    // reports a drive emulation partition by the drive model it emulates. A
+    // directory on the host file system and a DNP image are both native.
+    virtual const char *get_partition_type(void) { return "NAT"; }
 	virtual FRESULT format(const char *name);    // create initial structures of empty disk
 	virtual bool    supports_direct_sector_access(void) { return false; }
 

@@ -18,9 +18,7 @@ from connection_runtime import (
     RuntimeSettings,
     has_multiple_runners,
     is_expected_incomplete_disconnect,
-    run_surface_operation,
-    select_operation_index,
-    surface_detail,
+    run_selected_surface_operation,
 )
 
 
@@ -289,7 +287,7 @@ def memory_write_verify(settings: RuntimeSettings, address: str, data_hex: str) 
 
 def _runner_probe_write_address(runner_id: int) -> str:
     slot = (runner_id - 1) % PROBE_WRITE_RUNNER_SLOT_COUNT
-    return f"0x{PROBE_WRITE_ADDRESSES[slot]:04X}"
+    return f"{PROBE_WRITE_ADDRESSES[slot]:04X}"
 
 
 def surface_operations(
@@ -307,17 +305,18 @@ def surface_operations(
         ("get_vol_ultisid_1", lambda settings: read_audio_mixer_item(settings, shared_state=shared_state)),
         ("get_drives", lambda settings: generic_read(settings, "/v1/drives")),
         ("get_files_temp", lambda settings: generic_read(settings, "/v1/files?path=/Temp")),
-        ("mem_read_zero_page", lambda settings: memory_read(settings, "0x0000", 16)),
-        ("mem_read_screen_ram", lambda settings: memory_read(settings, "0x0400", 16)),
-        ("mem_read_io_area", lambda settings: memory_read(settings, "0xD000", 16)),
-        ("mem_read_debug_register", lambda settings: memory_read(settings, "0xD7FF", 1)),
+        ("mem_read_zero_page", lambda settings: memory_read(settings, "0000", 16)),
+        ("mem_read_screen_ram", lambda settings: memory_read(settings, "0400", 16)),
+        ("mem_read_io_area", lambda settings: memory_read(settings, "D000", 16)),
+        ("mem_read_debug_register", lambda settings: memory_read(settings, "D7FF", 1)),
     )
     if surface == ProbeSurface.SMOKE:
         return (("get_version_smoke", lambda settings: generic_read(settings, "/v1/version")),)
     if surface == ProbeSurface.READ:
         return read_operations
     probe_write_address = _runner_probe_write_address(runner_id)
-    operations = read_operations + (
+    operations = (
+        *read_operations,
         ("mem_write_probe_a5", lambda settings: memory_write_verify(settings, probe_write_address, "A5")),
         ("mem_write_probe_5a", lambda settings: memory_write_verify(settings, probe_write_address, "5A")),
         ("set_vol_ultisid_1_0_db", lambda settings: write_audio_mixer_item(settings, "0 dB", shared_state=shared_state)),
@@ -386,16 +385,7 @@ def run_probe(settings: RuntimeSettings, correctness, *, context: ProbeExecution
             concurrent_multi_runner=has_multiple_runners(context),
             shared_state=context.state,
         )
-        index = select_operation_index(context, len(operations))
-        op_name, operation = operations[index]
-        started_at = time.perf_counter_ns()
-        try:
-            detail = run_surface_operation("http", operation, settings)
-            elapsed_ms = (time.perf_counter_ns() - started_at) / 1_000_000.0
-            return ProbeOutcome("OK", surface_detail(context.surface, op_name, detail), elapsed_ms)
-        except Exception as error:
-            elapsed_ms = (time.perf_counter_ns() - started_at) / 1_000_000.0
-            return ProbeOutcome("FAIL", surface_detail(context.surface, op_name, str(error)), elapsed_ms)
+        return run_selected_surface_operation("http", context, settings, operations)
 
     del correctness
     conn = http.client.HTTPConnection(settings.host, settings.http_port, timeout=8)

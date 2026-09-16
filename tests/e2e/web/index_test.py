@@ -57,10 +57,13 @@ import pathlib
 import sys
 import tempfile
 import time
+from pathlib import Path
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
+# The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
+sys.path.insert(0, bootstrap.directory("e2e", "web"))
 
 import browser as browser_lib  # noqa: E402
 from device_double import DeviceDouble  # noqa: E402
@@ -80,7 +83,12 @@ READY_TIMEOUT = 20.0
 
 # Every name product_name[] in software/system/product.cc can report, split by
 # whether MENU_C64_POWEROFF does anything on that product.
-POWER_PRODUCTS = ("Ultimate 64", "Ultimate 64 Elite", "Ultimate 64-II")
+# Both namings of the same hardware. product_name[] in
+# software/system/product.cc renames the last two under COMMODORE, so a
+# check that lists only one naming passes while the other build hides the
+# item on machines that can power off.
+POWER_PRODUCTS = ("Ultimate 64", "Ultimate 64 Elite", "Ultimate 64-II",
+                  "C64 Ultimate (MK1)", "C64 Ultimate")
 CARTRIDGE_PRODUCTS = ("Ultimate", "Ultimate II", "Ultimate II+", "Ultimate II+L")
 
 # The disk images the page mounts rather than runs, and the drive it uses.
@@ -94,7 +102,7 @@ RUNNER_ROUTES = {"prg": "/v1/runners:run_prg",
 
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    parser.add_argument("--browser", default="all", choices=("all",) + browser_lib.BROWSERS,
+    parser.add_argument("--browser", default="all", choices=("all", *browser_lib.BROWSERS),
                         help="Which browsers to drive. Default: every one installed.")
     parser.add_argument("-t", "--timeout", type=float, default=READY_TIMEOUT,
                         help="How long a page has to become ready.")
@@ -206,7 +214,20 @@ class Page:
         return self.driver.find_element(By.ID, element_id)
 
     def visible(self, element_id):
-        return self.element(element_id).is_displayed()
+        """Whether the page is showing that element, with absent counting as no.
+
+        A page that never wrote the element at all is the strongest form of not
+        showing it, and a check that asks whether something is offered wants a
+        verdict rather than an exception. A firmware line whose index.html has
+        no such element would otherwise end the run on a traceback instead of
+        reporting the product gap it found. element() still raises, because the
+        callers that click or type need the element to be there.
+        """
+        from selenium.common.exceptions import NoSuchElementException
+        try:
+            return self.element(element_id).is_displayed()
+        except NoSuchElementException:
+            return False
 
     def click(self, element_id):
         self.element(element_id).click()
@@ -330,7 +351,7 @@ def check_power_off(page):
 
 def check_uploads(page, directory):
     """Each file type reaches the route that handles it, with what it needs."""
-    for kind in DISK_IMAGES + ("D64",):
+    for kind in (*DISK_IMAGES, "D64"):
         page.device.clear()
         source = image(directory, "disk.%s" % kind)
         with check("a .%s is mounted through POST %s" % (kind, MOUNT_ROUTE)):

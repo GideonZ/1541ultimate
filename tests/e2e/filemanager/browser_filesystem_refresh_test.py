@@ -32,19 +32,21 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Sequence, Tuple
+from collections.abc import Callable, Sequence
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "api"))
+# The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
+import cli  # noqa: E402
+sys.path.insert(0, bootstrap.directory("e2e", "api"))
 # tests/lib holds the reporting rules every suite shares; tests/e2e/lib
 # holds the shared UI backend.
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "lib"))
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
 
 import ftp as ftp_lib
-import machine as machine_lib
 import rest as rest_lib
 import targets
-from report import detail, suite_fail, suite_ok
+from report import teardown_step, detail, suite_fail, suite_ok
 
 from menu_screen_test import (
     SCREEN_WIDTH,
@@ -56,7 +58,7 @@ import ui_backend
 
 
 FTP_USER = "user"
-FTP_DEFAULT_PASSWORD = "password"
+FTP_DEFAULT_PASSWORD = ftp_lib.FTP_DEFAULT_PASSWORD
 
 ROOT_PATH = "/"
 TEST_DIR_PREFIX = "zbfr"
@@ -99,6 +101,8 @@ TELNET_STATUS_ROW = 23
 PICKER_TITLE = "Select Path"
 PICKER_SELECT_ENTRY = "<< Select Current Dir >>"
 EMPTY_DIRECTORY_MARKER = "< No Items >"
+TAP_HEADER = b"C64-TAPE-RAW\x01\x00\x00\x00\x00\x00\x00\x00"
+TAP_INDEX = b"0x000014 intro\n0x000020 finale\n"
 
 # Box glyphs: the C64 screen draws them below 0x20 so the menu snapshot renders
 # them as spaces, while Screen_VT100 draws them in the alternate character set,
@@ -124,13 +128,13 @@ def size_to_string_bytes(size: int) -> str:
 class Entry:
     """One directory entry as a single observer reports it."""
 
-    def __init__(self, name: str, kind: str, size_text: str, exact_size: Optional[int] = None) -> None:
+    def __init__(self, name: str, kind: str, size_text: str, exact_size: int | None = None) -> None:
         self.name = name
         self.kind = kind  # "dir", "file" or "volume"
         self.size_text = size_text  # the 5-character rendered size, "" for a directory
         self.exact_size = exact_size  # bytes, where the observer reports them
 
-    def key(self) -> Tuple[str, str, str]:
+    def key(self) -> tuple[str, str, str]:
         return (self.name, self.kind, self.size_text)
 
     def __repr__(self) -> str:
@@ -140,10 +144,10 @@ class Entry:
         return f"{self.name}[{self.size_text}]{exact}"
 
 
-Snapshot = Dict[str, Entry]
+Snapshot = dict[str, Entry]
 
 
-def expected_snapshot(entries: Sequence[Tuple[str, Optional[int]]]) -> Snapshot:
+def expected_snapshot(entries: Sequence[tuple[str, int | None]]) -> Snapshot:
     """Canonical state: (name, exact size), or (name, None) for a directory."""
     result: Snapshot = {}
     for name, size in entries:
@@ -154,7 +158,7 @@ def expected_snapshot(entries: Sequence[Tuple[str, Optional[int]]]) -> Snapshot:
     return result
 
 
-def snapshot_keys(snapshot: Snapshot) -> List[Tuple[str, str, str]]:
+def snapshot_keys(snapshot: Snapshot) -> list[tuple[str, str, str]]:
     return sorted(entry.key() for entry in snapshot.values())
 
 
@@ -164,7 +168,7 @@ def format_snapshot(snapshot: Snapshot) -> str:
     return ", ".join(repr(snapshot[name]) for name in sorted(snapshot))
 
 
-def strip_browser_frame(row: str, width: int) -> Tuple[str, int]:
+def strip_browser_frame(row: str, width: int) -> tuple[str, int]:
     """A browser row without the window frame, and the width that leaves.
 
     A C64 Ultimate draws its file browser inside a framed window, so every
@@ -181,7 +185,7 @@ def strip_browser_frame(row: str, width: int) -> Tuple[str, int]:
     return row, width
 
 
-def parse_browser_row(row: str, width: int) -> Optional[Entry]:
+def parse_browser_row(row: str, width: int) -> Entry | None:
     """Split one rendered browser line.
 
     BrowsableDirEntry::getDisplayString (browsable_root.h:200-224) lays the row
@@ -212,7 +216,7 @@ def restrict(snapshot: Snapshot, names: Sequence[str]) -> Snapshot:
 # --------------------------------------------------------------------------
 
 
-def rest_json(host: str, password: str, method: str, path: str, timeout: float = 15.0) -> Dict[str, object]:
+def rest_json(host: str, password: str, method: str, path: str, timeout: float = 15.0) -> dict[str, object]:
     headers = {"X-Password": password} if password else {}
     request = urllib.request.Request(
         # Keyboard injection belongs to the C64-side computer on a cartridge
@@ -236,7 +240,7 @@ class RestOracle:
         self.password = password
         self.directory = directory.strip("/")
 
-    def info(self, name: str) -> Optional[Dict[str, object]]:
+    def info(self, name: str) -> dict[str, object] | None:
         quoted = urllib.parse.quote(f"{self.directory}/{name}")
         try:
             body = rest_json(self.host, self.password, "GET", f"/v1/files/{quoted}:info")
@@ -276,7 +280,7 @@ class FtpObserver:
     def __init__(self, host: str, password: str, directory: str) -> None:
         self.ftp = ftp_connect(host, password)
         self.ftp.cwd(directory)
-        self.last_raw: List[str] = []
+        self.last_raw: list[str] = []
 
     def close(self) -> None:
         ftp_lib.close(self.ftp)
@@ -369,7 +373,7 @@ remove_tree = ftp_lib.remove_tree
 
 class Matrix:
     def __init__(self) -> None:
-        self.cells: List[Tuple[str, str, str, str, str]] = []
+        self.cells: list[tuple[str, str, str, str, str]] = []
 
     def record(self, operation: str, origin: str, observer: str, verdict: str, note: str = "") -> None:
         self.cells.append((operation, origin, observer, verdict, note))
@@ -381,7 +385,7 @@ class Matrix:
             if note:
                 line += f" {note}"
             lines.append(line)
-        counts: Dict[str, int] = {}
+        counts: dict[str, int] = {}
         for _, _, _, verdict, _ in self.cells:
             counts[verdict] = counts.get(verdict, 0) + 1
         lines.append("-" * 78)
@@ -401,21 +405,13 @@ class Context:
         self.matrix = Matrix()
 
         self.session = RestSession(self.host, self.password or None, self.timeout)
-        self.menu: Optional[FilesystemRefreshBrowser] = None
-        self.telnet: Optional[FilesystemRefreshBrowser] = None
-        self.ftp_observer: Optional[FtpObserver] = None
-        self.ftp_driver: Optional[ftplib.FTP] = None
+        self.menu: FilesystemRefreshBrowser | None = None
+        self.telnet: FilesystemRefreshBrowser | None = None
+        self.ftp_observer: FtpObserver | None = None
+        self.ftp_driver: ftplib.FTP | None = None
         self.oracle = RestOracle(self.host, self.password, f"Temp/{self.test_dir}")
 
-    @property
-    def machine(self) -> machine_lib.Machine:
-        """Which machine this is, for the rows that need a firmware fix."""
-        return machine_lib.identify(
-            targets.device_of(self.host),
-            lambda: ui_backend.fetch_product(self.host, self.password or None,
-                                             self.timeout))
-
-    def observers(self, exclude: Sequence[str] = ()) -> List[object]:
+    def observers(self, exclude: Sequence[str] = ()) -> list[object]:
         assert self.menu is not None and self.telnet is not None
         every = [BrowserObserver(self.menu), BrowserObserver(self.telnet)]
         if self.ftp_observer is not None:
@@ -435,7 +431,7 @@ class Context:
         observers = self.observers(exclude)
         expected_keys = snapshot_keys(expected)
         start = time.monotonic()
-        latest: Dict[str, Snapshot] = {}
+        latest: dict[str, Snapshot] = {}
         while True:
             latest = {observer.name: observer.snapshot(names) for observer in observers}
             if all(snapshot_keys(snapshot) == expected_keys for snapshot in latest.values()):
@@ -446,7 +442,7 @@ class Context:
         elapsed = time.monotonic() - start
 
         oracle = self.oracle.snapshot(names)
-        failed: List[object] = []
+        failed: list[object] = []
         for observer in observers:
             snapshot = latest[observer.name]
             problem = ""
@@ -511,7 +507,7 @@ class Context:
 # --------------------------------------------------------------------------
 
 
-def seed_files(ctx: Context, entries: Sequence[Tuple[str, int]]) -> None:
+def seed_files(ctx: Context, entries: Sequence[tuple[str, int]]) -> None:
     assert ctx.ftp_driver is not None
     for name, size in entries:
         ftp_store(ctx.ftp_driver, f"{ctx.fixture_path}/{name}", b"U" * size)
@@ -944,6 +940,23 @@ def row_paste_browser(ctx: Context, browser: FilesystemRefreshBrowser, origin: s
     ftp_try(lambda: ctx.ftp_driver.delete(f"{ctx.source_path}/{name}"))
 
 
+def row_enter_tap_index(ctx: Context, browser: FilesystemRefreshBrowser, stem: str) -> None:
+    """Enter (index) must survive the context action's listing refresh."""
+    assert ctx.ftp_driver is not None
+    tap_name = f"{stem}.tap"
+    idx_name = f"{stem}.idx"
+    names = [tap_name, idx_name]
+    ftp_store(ctx.ftp_driver, f"{ctx.fixture_path}/{tap_name}", TAP_HEADER)
+    ftp_store(ctx.ftp_driver, f"{ctx.fixture_path}/{idx_name}", TAP_INDEX)
+    ctx.baseline(expected_snapshot([(tap_name, len(TAP_HEADER)), (idx_name, len(TAP_INDEX))]), names)
+
+    browser.select_entry(tap_name)
+    browser.invoke_context_action("Enter (index)")
+    browser.select_entry("intro")
+    browser.select_entry("finale")
+    browser.recover_to(f"Temp/{ctx.test_dir}")
+
+
 # ---- failure paths -------------------------------------------------------
 
 
@@ -993,7 +1006,7 @@ def row_failed_write(ctx: Context, blocking_dir: str) -> None:
 
     try:
         ftp_store(ctx.ftp_driver, f"{ctx.fixture_path}/{blocking_dir}", b"X" * SIZE_S1)
-    except ftplib.all_errors + (Failure,):
+    except (*ftplib.all_errors, Failure):
         # The refusal is the point of this row; ftp.store reports it as Failure.
         pass
     else:
@@ -1031,48 +1044,7 @@ def row_short_write(ctx: Context, name: str) -> None:
 # --------------------------------------------------------------------------
 
 
-# The rows that cannot converge without a given firmware fix. Kept beside the
-# rows themselves so a label renamed below is renamed here too.
-ROWS_NEEDING_FIX = {
-    # These three hold the FTP data connection open on purpose and look through
-    # every observer while it is open, because the create notification fires
-    # when the file is opened and the size only when it is closed. That needs a
-    # fourth socket: the Telnet session, the FTP control, the FTP data
-    # connection, and then whatever the observer looks through. A C64 Ultimate
-    # serves three across Telnet and FTP, and the observer's own read is what
-    # the device resets. See machine.SERVES_FOUR_TELNET_FTP_SOCKETS.
-    machine_lib.SERVES_FOUR_TELNET_FTP_SOCKETS: (
-        "create from FTP",
-        "write from FTP",
-        "short write commits consistently",
-    ),
-    machine_lib.BROWSER_REFRESH_AFTER_QUEUE_OVERFLOW: (
-        "rename under observer-queue pressure from the Menu",
-        "rename under observer-queue pressure from Telnet",
-    ),
-    machine_lib.BROWSER_REFRESH_ON_DIRECTORY_CHANGE: (
-        "rename a directory from the Menu",
-        "rename a directory from Telnet",
-        "delete a non-empty directory from the Menu",
-        "delete a non-empty directory from Telnet",
-        "remove a directory from FTP",
-        "create from FTP (mkd)",
-        "failed write creates nothing",
-    ),
-    machine_lib.BROWSER_REFRESH_FROM_TELNET_WRITER: (
-        "write from Telnet",
-        "copy over an existing file from Telnet",
-        "paste into the watched directory from Telnet",
-    ),
-    machine_lib.BROWSER_REFRESH_FROM_MENU_WRITER: (
-        "write from the Menu",
-        "copy over an existing file from the Menu",
-        "paste into the watched directory from the Menu",
-    ),
-}
-
-
-def build_rows(ctx: "Context") -> List[Tuple[str, Callable[[], None], Sequence[str]]]:
+def build_rows(ctx: "Context") -> list[tuple[str, Callable[[], None], Sequence[str]]]:
     """Every matrix row, in run order. Labels are what -r/--row matches on."""
     return [
         ("rename from the Menu",
@@ -1159,6 +1131,11 @@ def build_rows(ctx: "Context") -> List[Tuple[str, Callable[[], None], Sequence[s
         ("paste into the watched directory from Telnet",
          lambda: row_paste_browser(ctx, ctx.telnet, "Telnet", "vtel1.tst"), ["vtel1.tst"]),
 
+        ("enter a TAP index from the Menu",
+         lambda: row_enter_tap_index(ctx, ctx.menu, "imenu1"), ["imenu1.tap", "imenu1.idx"]),
+        ("enter a TAP index from Telnet",
+         lambda: row_enter_tap_index(ctx, ctx.telnet, "itel1"), ["itel1.tap", "itel1.idx"]),
+
         ("failed rename shows nothing",
          lambda: row_failed_rename(ctx, "frn1.tst", "frn2.tst"), ["frn1.tst", "frn2.tst"]),
         ("failed delete removes nothing",
@@ -1170,13 +1147,13 @@ def build_rows(ctx: "Context") -> List[Tuple[str, Callable[[], None], Sequence[s
     ]
 
 
-def run_row(ctx: Context, label: str, action: Callable[[], None], fixtures: Sequence[str]) -> Optional[Failure]:
+def run_row(ctx: Context, label: str, action: Callable[[], None], fixtures: Sequence[str]) -> Failure | None:
     """Run one matrix row, then clean up and resync whatever it left behind.
 
     A red cell must not hide the cells after it: the whole matrix is measured
     in one pass and the run only reports FAIL at the end.
     """
-    problem: Optional[Failure] = None
+    problem: Failure | None = None
     try:
         with check(label):
             action()
@@ -1184,10 +1161,8 @@ def run_row(ctx: Context, label: str, action: Callable[[], None], fixtures: Sequ
         problem = exc
         print(f"     {exc}")
     finally:
-        try:
-            drop_names(ctx, fixtures)
-        except Exception:
-            pass
+        teardown_step("remove the fixtures this scenario created",
+                    lambda: drop_names(ctx, fixtures))
     if problem is not None:
         resync_browsers(ctx)
     return problem
@@ -1271,20 +1246,7 @@ def open_observers(ctx: Context) -> None:
     ctx.telnet.go_to_directory(f"Temp/{ctx.test_dir}")
 
     ctx.ftp_driver = ftp_connect(ctx.host, ctx.password)
-    if ctx.machine.missing_fix(machine_lib.SERVES_FOUR_TELNET_FTP_SOCKETS):
-        # Three sockets is exactly what a Telnet session and one FTP transfer
-        # need, so watching the directory over FTP as well leaves no margin:
-        # any socket the device has not finished releasing makes the next one
-        # the fourth, and it is reset. The rows still run and are still
-        # checked, by the Menu, by Telnet and by the REST oracle, which is the
-        # one that says what actually committed. What is lost on this machine
-        # is the FTP column of the matrix, not the rows.
-        ctx.ftp_observer = None
-        detail(f"not watching over FTP: {ctx.machine.kind} serves three "
-               "concurrent Telnet and FTP sockets, and a Telnet session plus "
-               "one transfer already needs all three")
-    else:
-        ctx.ftp_observer = FtpObserver(ctx.host, ctx.password, ctx.fixture_path)
+    ctx.ftp_observer = FtpObserver(ctx.host, ctx.password, ctx.fixture_path)
 
 
 def close_observers(ctx: Context) -> None:
@@ -1303,24 +1265,13 @@ def close_observers(ctx: Context) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Verify that every browser converges on the committed file system.")
-    parser.add_argument("-H", "--host", default=os.environ.get("U64_HOST", "u64"))
-    parser.add_argument(
-        "-p",
-        "--password",
-        default=os.environ.get("U64_PASS", ""),
-    )
-    parser.add_argument(
-        "-t",
-        "--timeout",
-        type=float,
-        # 30s, matching what run-tests passes. It was 5s, which is below
-        # pacing.TELNET_SETTLE_GAP_SECONDS: a committed Telnet prompt is
-        # settled by waiting six seconds of quiet, so every Telnet send_text
-        # in this suite timed out before it could succeed. That made the suite
-        # unrunnable by hand while passing under the runner, which is the worst
-        # way for a default to be wrong.
-        default=float(os.environ.get("U64_TIMEOUT", "30.0")),
-    )
+    # 30s, matching what run-tests passes. It was 5s, which is below
+    # pacing.TELNET_SETTLE_GAP_SECONDS: a committed Telnet prompt is settled by
+    # waiting six seconds of quiet, so every Telnet send_text in this suite
+    # timed out before it could succeed. That made the suite unrunnable by hand
+    # while passing under the runner, which is the worst way for a default to
+    # be wrong.
+    cli.add_device_arguments(parser, timeout=30.0, colour=False)
     parser.add_argument("--test-dir", default=default_test_dir())
     parser.add_argument(
         "-r",
@@ -1348,24 +1299,6 @@ def main() -> int:
         assert ctx.telnet is not None
 
         rows = build_rows(ctx)
-
-        # A row whose browser cannot recover from a dropped event leaves that
-        # browser stale for the rest of the run, so every later row compares
-        # against a listing that never caught up. Skipped rather than failed
-        # where the firmware lacks the fix, because one failure there costs
-        # twelve.
-        # Named one by one rather than matched on the label, because the row
-        # that needs a fix is not always the row that says so: "failed write
-        # creates nothing" blocks its STOR with a directory it creates first,
-        # so it needs the directory notification like the rows that say
-        # "directory" in their name.
-        for fix, labels in ROWS_NEEDING_FIX.items():
-            if not ctx.machine.missing_fix(fix):
-                continue
-            for label in labels:
-                if any(row[0] == label for row in rows):
-                    ctx.machine.skip_without_fix(fix, label)
-            rows = [row for row in rows if row[0] not in labels]
 
         if args.row:
             wanted = [text.lower() for text in args.row]

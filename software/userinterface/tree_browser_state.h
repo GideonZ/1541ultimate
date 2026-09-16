@@ -38,6 +38,8 @@ public:
     virtual void draw_item(Browsable *t, int line, bool selected);
 
     //    virtual void reselect();
+    // Forms retain live field values; directory states can rebuild their entries.
+    virtual bool reload_on_action(void) { return true; }
     virtual void reload(void);
     virtual void up(int);
     virtual void down(int);

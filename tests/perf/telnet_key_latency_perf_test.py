@@ -15,16 +15,19 @@ import os
 import statistics
 import sys
 import time
-from typing import Callable, List, Optional
+from collections.abc import Callable
+from pathlib import Path
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(HERE, "..", "e2e", "lib"))
-sys.path.insert(0, os.path.join(HERE, "..", "lib"))
-sys.path.insert(0, os.path.join(HERE, "..", "e2e", "monitor"))
+# The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
+sys.path.insert(0, bootstrap.directory("e2e", "monitor"))
 
 import targets  # noqa: E402
 from report import (Failure, check, check_ok, detail,  # noqa: E402
-                    suite_fail, suite_ok)
+                    suite_ok)
 from ui_backend import make_backend  # noqa: E402
 import monitor_test as mt  # noqa: E402
 
@@ -42,17 +45,17 @@ BUDGET_ESC_MS = 1400.0
 SUITE = "telnet_key_latency_perf_test"
 
 
-def _percentile(values: List[float], fraction: float) -> float:
+def _percentile(values: list[float], fraction: float) -> float:
     ordered = sorted(values)
-    index = min(len(ordered) - 1, int(round(fraction * (len(ordered) - 1))))
+    index = min(len(ordered) - 1, round(fraction * (len(ordered) - 1)))
     return ordered[index]
 
 
 def measure(session, backend, send: Callable[[], None],
             settled: Callable[[], bool], samples: int,
-            settle_first: Optional[Callable[[], None]] = None) -> List[float]:
+            settle_first: Callable[[], None] | None = None) -> list[float]:
     """Time `send` until `settled` reports the screen caught up, `samples` times."""
-    timings: List[float] = []
+    timings: list[float] = []
     for _ in range(samples):
         if settle_first:
             settle_first()
@@ -71,7 +74,7 @@ def measure(session, backend, send: Callable[[], None],
     return timings
 
 
-def summarise(name: str, timings: List[float], budget_ms: float) -> bool:
+def summarise(name: str, timings: list[float], budget_ms: float) -> bool:
     median = statistics.median(timings)
     worst = max(timings)
     p90 = _percentile(timings, 0.90)
@@ -97,7 +100,7 @@ def main() -> int:
     session.enter_monitor()
     mt.ensure_view(session, "HEX ")
 
-    def header_addr() -> Optional[str]:
+    def header_addr() -> str | None:
         try:
             return mt.monitor_header_address(session.capture())
         except Failure:

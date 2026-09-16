@@ -23,7 +23,6 @@ import json
 import os
 import pathlib
 import re
-from typing import Dict, Optional, Tuple
 
 from report import Failure
 
@@ -43,7 +42,7 @@ U64_ONLY_INFO_FIELD = "core_version"
 
 METHODS = ("get", "put", "post", "delete", "patch", "head", "options")
 
-_documents: Dict[str, "Contract"] = {}
+_documents: dict[str, Contract] = {}
 
 
 def enabled() -> bool:
@@ -54,11 +53,11 @@ def document_path(profile: str) -> pathlib.Path:
     return DOCUMENT_DIR / (DOCUMENT_NAME % profile)
 
 
-def profile_of(info: Dict[str, object]) -> str:
+def profile_of(info: dict[str, object]) -> str:
     return "u64" if U64_ONLY_INFO_FIELD in info else "u2"
 
 
-def declared_profile() -> Optional[str]:
+def declared_profile() -> str | None:
     name = os.environ.get(ENV_PROFILE, "").strip()
     if not name:
         return None
@@ -67,7 +66,7 @@ def declared_profile() -> Optional[str]:
     return name
 
 
-def _load_yaml(path: pathlib.Path) -> Dict[str, object]:
+def _load_yaml(path: pathlib.Path) -> dict[str, object]:
     try:
         import yaml
     except ImportError as exc:
@@ -90,12 +89,12 @@ def _oas_validator():
 
 
 class Operation:
-    def __init__(self, template: str, method: str, body: Dict[str, object]) -> None:
+    def __init__(self, template: str, method: str, body: dict[str, object]) -> None:
         self.template = template
         self.method = method
         self.body = body
         self.operation_id = body.get("operationId", "")
-        self.responses: Optional[Dict[str, object]] = None
+        self.responses: dict[str, object] | None = None
 
     def __str__(self) -> str:
         return "%s %s (%s)" % (self.method.upper(), self.template, self.operation_id)
@@ -104,13 +103,13 @@ class Operation:
 class Contract:
     """One product family's document, ready to check answers against."""
 
-    def __init__(self, profile: str, document: Dict[str, object]) -> None:
+    def __init__(self, profile: str, document: dict[str, object]) -> None:
         self.profile = profile
         self.document = document
         # Built once per schema. Constructing one costs milliseconds, and the
         # suites this runs under measure the device in milliseconds.
-        self._validators: Dict[str, object] = {}
-        self.operations: Dict[Tuple[str, str], Operation] = {}
+        self._validators: dict[str, object] = {}
+        self.operations: dict[tuple[str, str], Operation] = {}
         for template, item in document["paths"].items():
             for method, body in item.items():
                 if method in METHODS:
@@ -119,7 +118,7 @@ class Contract:
         self._loose = self._matchers(r".+")
 
     @classmethod
-    def load(cls, profile: str) -> "Contract":
+    def load(cls, profile: str) -> Contract:
         if profile not in _documents:
             path = document_path(profile)
             if not path.exists():
@@ -137,7 +136,7 @@ class Contract:
             out.append((re.compile("^%s$" % pattern), template))
         return out
 
-    def template_for(self, path: str) -> Optional[str]:
+    def template_for(self, path: str) -> str | None:
         """The path template a request path belongs to, or None when there is none."""
         for matchers in (self._strict, self._loose):
             found = [template for pattern, template in matchers if pattern.match(path)]
@@ -148,7 +147,7 @@ class Contract:
         return None
 
     def check(self, method: str, path: str, status: int,
-              headers: Dict[str, str], body: bytes) -> None:
+              headers: dict[str, str], body: bytes) -> None:
         """Raise `Failure` when an answer does not match what the document promises."""
         path = path.split("?", 1)[0]
         if not path.startswith("/v1/") and path != "/v1":
@@ -172,7 +171,7 @@ class Contract:
         self._check_status(operation, path, status)
         self._check_body(operation, path, status, headers, body)
 
-    def _responses(self, operation: Operation) -> Dict[str, object]:
+    def _responses(self, operation: Operation) -> dict[str, object]:
         if operation.responses is not None:
             return operation.responses
         out = {}
@@ -184,7 +183,7 @@ class Contract:
         operation.responses = out
         return out
 
-    def _validator(self, schema: Dict[str, object]):
+    def _validator(self, schema: dict[str, object]):
         key = json.dumps(schema, sort_keys=True)
         if key not in self._validators:
             self._validators[key] = _oas_validator()(
@@ -201,7 +200,7 @@ class Contract:
         )
 
     def _check_body(self, operation: Operation, path: str, status: int,
-                    headers: Dict[str, str], body: bytes) -> None:
+                    headers: dict[str, str], body: bytes) -> None:
         response = self._responses(operation).get(str(status))
         if not response:
             return

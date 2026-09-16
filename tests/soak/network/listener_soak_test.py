@@ -32,11 +32,12 @@ import sys
 import time
 import urllib.error
 import urllib.request
-from typing import List, Optional
+from pathlib import Path
 
-# tests/lib holds the reporting rules every suite shares.
-sys.path.insert(0, os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
+# The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
 import targets
 from report import Failure, check, check_ok, check_start, suite_fail, suite_ok
 
@@ -55,7 +56,7 @@ REST_BUDGET_SECONDS = 5.0
 DEGRADATION_FACTOR = 4.0
 
 
-def rest_latency(host: str, password: Optional[str], timeout: float) -> float:
+def rest_latency(host: str, password: str | None, timeout: float) -> float:
     """How long /v1/version takes on the device under test.
 
     Every surface this suite touches - REST, Telnet, FTP - is served by the
@@ -73,7 +74,7 @@ def rest_latency(host: str, password: Optional[str], timeout: float) -> float:
     return time.monotonic() - start
 
 
-def sample_rest(host: str, password: Optional[str], samples: int, budget: float) -> List[float]:
+def sample_rest(host: str, password: str | None, samples: int, budget: float) -> list[float]:
     out = []
     for _ in range(samples):
         try:

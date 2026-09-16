@@ -66,7 +66,8 @@ SRCS_IEC =
 SRCS_NANO = 
 
 PATH_INC =  $(addprefix -I, $(VPATH))
-OPTIONS  = -g -ffunction-sections -O0 -DRUNS_ON_PC -DSAFEMODE -Wno-format -Wno-format-extra-args
+# Match Nios char signedness even when the host is ARM.
+OPTIONS  = -g -ffunction-sections -O0 -DRUNS_ON_PC -DSAFEMODE -Wno-format -Wno-format-extra-args -fsigned-char
 COPTIONS = $(OPTIONS) -std=c99
 CPPOPT   = $(OPTIONS) -fno-exceptions -fno-rtti -fno-threadsafe-statics -fpermissive
 LIBS     =  -lgcc -lcurses

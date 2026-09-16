@@ -10,19 +10,20 @@ import sys
 import tempfile
 import time
 from pathlib import Path
-from typing import List, Tuple
 
-SCRIPT_DIR = Path(__file__).resolve().parent
-# tests/lib holds the reporting rules every suite shares; tests/e2e/lib
-# holds the shared UI backend and the managed-/Temp settings base.
-sys.path.insert(0, str(SCRIPT_DIR.parents[1] / "lib"))
-sys.path.insert(0, str(SCRIPT_DIR.parent / "lib"))
+# The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
+import cli  # noqa: E402
+
 
 import ftp as ftp_lib
 from report import Failure, check_ok, check_start, detail, section, suite_ok, warn
 from temp_settings import (
     AUTO_CLEANUP_ITEM, SUBFOLDERS_ITEM, TempSettingsSuite, add_toggle_arguments)
 from ui_backend import add_mode_argument
+
 
 SUITE = "temp_auto_cleanup_test"
 MANAGED_SIZE = 524288
@@ -45,10 +46,10 @@ class TempCleanup(TempSettingsSuite):
         self.mounted_base_8 = ""
         self.mounted_base_9 = ""
 
-    def names(self, directory: str) -> List[str]:
+    def names(self, directory: str) -> list[str]:
         return self.ftp(lambda c: ftp_lib.names(c, directory))
 
-    def listing(self, directory: str) -> List[str]:
+    def listing(self, directory: str) -> list[str]:
         return self.ftp(lambda c: ftp_lib.listing(c, directory))
 
     def exists(self, path: str) -> bool:
@@ -107,7 +108,7 @@ class TempCleanup(TempSettingsSuite):
         names = self.names(self.upload_dir)
         return sum(base in names for base in (self.mounted_base_8, self.mounted_base_9) if base)
 
-    def stats(self) -> Tuple[int, int, int, int, int]:
+    def stats(self) -> tuple[int, int, int, int, int]:
         root = self.listing("/Temp")
         cache = self.listing(self.upload_dir)
         root_size = sum(int(x.split()[4]) for x in root if x.startswith("-"))
@@ -296,8 +297,7 @@ class TempCleanup(TempSettingsSuite):
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Validate Temp auto cleanup behavior on a real Ultimate 64.")
-    parser.add_argument("-H", "--host", default=os.environ.get("U64_HOST", "u64"))
-    parser.add_argument("-p", "--password", default=os.environ.get("U64_PASS", ""))
+    cli.add_device_arguments(parser, colour=False, timeout=None)
     parser.add_argument("-l", "--limit", type=int, default=10)
     parser.add_argument("--seed-count", type=int, default=10)
     parser.add_argument("--test-count", type=int, default=12)

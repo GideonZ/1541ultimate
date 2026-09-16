@@ -16,7 +16,7 @@ import importlib.machinery
 import sys
 import types
 from pathlib import Path
-from typing import List, Optional, Sequence, Tuple
+from collections.abc import Sequence
 
 GLYPH_WIDTH = 8
 GLYPH_HEIGHT = 8
@@ -78,7 +78,7 @@ MENU_COLUMNS = _MENU_COLUMNS
 MENU_ROWS = _MENU_ROWS
 
 
-def _load_unshifted_rom_rows(path: Path) -> List[bytes]:
+def _load_unshifted_rom_rows(path: Path) -> list[bytes]:
     """Load the unshifted (upper case + graphics) 256-glyph set.
 
     characters.901225-01.bin is 4096 bytes: two 2048-byte sets of 256
@@ -103,8 +103,8 @@ def _load_unshifted_rom_rows(path: Path) -> List[bytes]:
     return [unshifted[i * _BYTES_PER_CHAR : (i + 1) * _BYTES_PER_CHAR] for i in range(_CHARS_PER_SET)]
 
 
-_ROM_ROWS: List[bytes] = _load_unshifted_rom_rows(_CHAR_ROM_PATH)
-_MENU_ROM_ROWS: List[bytes] = _load_unshifted_rom_rows(_MENU_CHAR_SET_PATH)
+_ROM_ROWS: list[bytes] = _load_unshifted_rom_rows(_CHAR_ROM_PATH)
+_MENU_ROM_ROWS: list[bytes] = _load_unshifted_rom_rows(_MENU_CHAR_SET_PATH)
 _BLANK_GLYPH_ROWS: bytes = bytes(GLYPH_HEIGHT)
 
 # Per-index RGB translate tables for blit_indices. c64_rgb only defines 16
@@ -150,10 +150,10 @@ def screen_code_for(character: str) -> int:
 # One glyph's eight rows, already expanded to RGB, keyed by the character and
 # the colour pair it is drawn in. Bounded by the character set times the pairs
 # a caller actually uses, which for this module's callers is a handful.
-_GLYPH_ROWS: "dict" = {}
+_GLYPH_ROWS: dict = {}
 
 
-def _glyph_rows(character: str, fg_rgb: bytes, bg_rgb: bytes) -> "list":
+def _glyph_rows(character: str, fg_rgb: bytes, bg_rgb: bytes) -> list:
     # Bit 7 is the leftmost pixel of the row, per the ROM layout note, which
     # is what _expanded_rows implements.
     return _expanded_rows(_rom_rows_for(character), fg_rgb, bg_rgb)
@@ -178,7 +178,7 @@ def _rom_rows_for(character: str) -> bytes:
     return _ROM_ROWS[index]
 
 
-def _expanded_rows(rows: bytes, fg_rgb: bytes, bg_rgb: bytes) -> "list":
+def _expanded_rows(rows: bytes, fg_rgb: bytes, bg_rgb: bytes) -> list:
     """One glyph's eight rows as RGB, cached on the rows and the colour pair.
 
     Keyed on the row bitmask rather than on a character, so a caller drawing
@@ -211,7 +211,7 @@ class Canvas:
         r, g, b = c64_rgb(colour)
         self._pixels = bytearray((r, g, b)) * (width * height)
 
-    def _clip_rect(self, x: int, y: int, w: int, h: int) -> Optional[Tuple[int, int, int, int]]:
+    def _clip_rect(self, x: int, y: int, w: int, h: int) -> tuple[int, int, int, int] | None:
         """Intersect (x, y, w, h) with the canvas, or None if it is empty.
 
         Every drawing entry point runs its target rectangle through this so
@@ -293,7 +293,7 @@ class Canvas:
         offset = (y * self.width + x) * 3
         self._pixels[offset : offset + 3] = rgb
 
-    def draw_text(self, x: int, y: int, text: str, colour: int, background: Optional[int] = None) -> None:
+    def draw_text(self, x: int, y: int, text: str, colour: int, background: int | None = None) -> None:
         """Draw text at (x, y) in 8x8 glyphs from the character ROM.
 
         With `background` given, each glyph cell is fully opaque (every

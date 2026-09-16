@@ -828,7 +828,7 @@ void C64::dma_transfer_frozen(uint16_t offset, uint8_t *buffer, int length, int 
     C64_DMA_MEMONLY = saved_memonly;
 }
 
-#if U64 == 1
+#if U64
 // Defined in u64_config.cc, which owns the FPGA audio mixer and the settings
 // it is programmed from. Weak because the updater application links this file
 // without that one; there the SID writes below stand on their own.
@@ -836,13 +836,12 @@ extern void u64_mute_sids(void) __attribute__((weak));
 extern void u64_unmute_sids(void) __attribute__((weak));
 #endif
 
-// Silence the SIDs while the freezer owns the machine. The SID master volume
-// is what does it, on every target. Where an FPGA mixer is available it is
-// closed around those writes, so the click they make is not heard; see
-// u64_mute_sids().
+// Silence the SIDs while the freezer owns the machine. Where an FPGA mixer is
+// available, use it instead of stepping the SID master-volume DC offset. Other
+// targets retain the portable SID-register fallback.
 static void freezer_mute_sids(void)
 {
-#if U64 == 1
+#if U64
     if (u64_mute_sids) {
         u64_mute_sids();
         return;
@@ -855,7 +854,7 @@ static void freezer_mute_sids(void)
 
 static void freezer_unmute_sids(void)
 {
-#if U64 == 1
+#if U64
     if (u64_unmute_sids) {
         u64_unmute_sids();
         return;
@@ -1083,16 +1082,23 @@ void C64::init_system_roms(void)
     extern uint8_t _default_kernal_65_start[];
     extern uint8_t _default_chars_bin_start[];
 
-    FRESULT fres = FileManager :: getFileManager()->load_file(ROMS_DIRECTORY, cfg->get_string(CFG_C64_KERNFILE), (uint8_t *)U64_KERNAL_BASE, 8192, NULL);
-    if (fres != FR_OK) {
+    // U64_KERNAL_BASE is write only, so the Fast Reset patch below cannot compare
+    // against it. Stage the image in RAM and write it to the aperture once.
+    // A KERNAL shorter than 8192 bytes has no reset vector at $FFFC, so it is
+    // rejected in favour of the default.
+    unsigned char *kernal = new unsigned char[8192];
+    uint32_t kernal_bytes = 0;
+    FRESULT fres = FileManager :: getFileManager()->load_file(ROMS_DIRECTORY, cfg->get_string(CFG_C64_KERNFILE), (uint8_t *)kernal, 8192, &kernal_bytes);
+    if (fres != FR_OK || kernal_bytes != 8192) {
         printf("Failed to load KERNAL ROM; loading default.\n");
-        memcpy((void *)U64_KERNAL_BASE, (void *)_default_kernal_65_start, 8192);
+        memcpy((void *)kernal, (void *)_default_kernal_65_start, 8192);
     } else if (cfg->get_value(CFG_C64_FASTRESET)) {
-        unsigned char *kernal = (unsigned char *)U64_KERNAL_BASE;
         if (!memcmp((void *) (kernal+0x1d6c), (void *) fastresetOrg, sizeof(fastresetOrg))) {
             memcpy((void *) (kernal+0x1d6c), (void *) fastresetPatch, 22);
         }
     }
+    memcpy((void *)U64_KERNAL_BASE, kernal, 8192);
+    delete[] kernal;
 
     FileManager :: getFileManager()->load_file(ROMS_DIRECTORY, cfg->get_string(CFG_C64_BASIFILE), (uint8_t *)U64_BASIC_BASE, 8192, NULL);
     fres = FileManager :: getFileManager()->load_file(ROMS_DIRECTORY, cfg->get_string(CFG_C64_CHARFILE), (uint8_t *)U64_CHARROM_BASE, 4096, NULL);
@@ -1208,6 +1214,9 @@ void C64 :: start_cartridge(void *vdef)
     } else { // Cartridge specified
         set_cartridge(def);
     }
+#if U64
+    freezer_unmute_sids(); // restore the mixer if crt is started from menu
+#endif
     C64_MODE = C64_MODE_UNRESET;
 
     isFrozen = false;

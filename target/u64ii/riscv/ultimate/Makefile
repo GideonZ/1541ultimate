@@ -5,6 +5,8 @@ ARCHITECTURE = riscv
 # CPU architecture and ABI
 MARCH ?= rv32im
 MABI  ?= ilp32
+# The core has no divider: link libraries built without the M extension
+LIBMARCH ?= rv32i
 
 include ../../../common/environment.mk
 # /home/gideon/proj/ultimate/target/u64ii/riscv/ultimate/result/ultimate.elf

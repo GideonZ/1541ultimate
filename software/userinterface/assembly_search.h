@@ -24,6 +24,7 @@ class AssemblySearchForm: public TreeBrowserState
 public:
     AssemblySearchForm(Browsable *node, TreeBrowser *tb, int level);
     ~AssemblySearchForm();
+    bool reload_on_action(void) { return false; }
 
     void into(void) { printf("Search Form Into\n"); }
     void level_up(void) { printf("Search Form Up\n"); };
@@ -117,7 +118,7 @@ public:
         return &children;
     }
 
-    void getDisplayString(char *buffer, int width) {
+    void getDisplayString(char *buffer, int width, UserInterface *ui) {
         sprintf(buffer, "A64     Assembly 64 Database");
     }
 
@@ -196,7 +197,7 @@ public:
         return &path;
     }
 
-    void getDisplayString(char *buffer, int width)
+    void getDisplayString(char *buffer, int width, UserInterface *ui)
     {
         memset(buffer, ' ', width+2);
         buffer[width+2] = '\0';
