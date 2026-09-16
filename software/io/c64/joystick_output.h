@@ -9,6 +9,7 @@ static const int JOYSTICK_BUTTON_COUNT = 7;
 class JoystickOutput
 {
     uint8_t usb_p1;
+    bool rest_p1_pots;          // a REST extra button wrote port 1's POT lines last
     uint8_t rest_p1_persistent;
     uint8_t rest_p2_persistent;
     uint8_t rest_p1_overlay;

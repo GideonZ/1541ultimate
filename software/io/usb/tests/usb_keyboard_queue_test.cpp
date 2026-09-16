@@ -1,6 +1,8 @@
 #include "host_test/host_test.h"
 #include "../keyboard_usb.h"
 
+#include <string>
+
 TEST(KeyboardUsbQueueTest, PushHeadPrependsInjectedKey)
 {
 	Keyboard_USB keyboard;
@@ -122,6 +124,11 @@ TEST(KeyboardUsbQueueTest, InjectedCursorKeyPulsesMatrix)
 	keyboard.push_head(KEY_UP);
 
 	EXPECT_EQ(KEY_UP, keyboard.getch());
+	EXPECT_EQ(0x80, matrix[0]);
+	EXPECT_EQ(0x10, matrix[6]);
+
+	// Held for USB_INJECTED_MATRIX_HOLD_CALLS polls, then released.
+	EXPECT_EQ(-1, keyboard.getch());
 	EXPECT_EQ(0x80, matrix[0]);
 	EXPECT_EQ(0x10, matrix[6]);
 
@@ -465,4 +472,35 @@ TEST(KeyboardUsbRepeatTest, ClearBufferStopsARepeatThatIsRunning)
 	// instead of emitting into the buffer that was just cleared.
 	EXPECT_EQ(0, poll_ui(keyboard, 'a', 16, NULL));
 	EXPECT_EQ('a', keyboard.getch());
+}
+
+// Cursor-mode mouse input queues repeated cursor keys. On the C64 matrix each
+// one has to be held, and then seen released, for longer than a keyboard scan,
+// or two presses of the same key read as one. The trace records, after every
+// getch() call (one user interface poll), whether CRSR-down (row 0, bit 7) is
+// down.
+TEST(KeyboardUsbQueueTest, RepeatedInjectedMatrixKeyIsReleasedBetweenPresses)
+{
+	Keyboard_USB keyboard;
+	volatile uint8_t matrix[11] = { 0 };
+	keyboard.setMatrix(matrix);
+	keyboard.enableMatrix(true);
+	keyboard.push_head_repeat(KEY_DOWN, 2);
+
+	char trace[13] = { 0 };
+	for (int i = 0; i < 12; i++) {
+		keyboard.getch();
+		trace[i] = (matrix[0] & 0x80) ? '1' : '0';
+	}
+	EXPECT_EQ(std::string("110011000000"), std::string(trace));
+}
+
+TEST(KeyboardUsbQueueTest, InjectedKeysReachTheMenuWithoutMatrixDelay)
+{
+	Keyboard_USB keyboard;
+	keyboard.push_head_repeat(KEY_DOWN, 2);
+
+	EXPECT_EQ(KEY_DOWN, keyboard.getch());
+	EXPECT_EQ(KEY_DOWN, keyboard.getch());
+	EXPECT_EQ(-1, keyboard.getch());
 }

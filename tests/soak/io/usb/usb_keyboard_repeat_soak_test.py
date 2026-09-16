@@ -50,21 +50,11 @@ from __future__ import annotations
 
 import argparse
 import ftplib
-import glob
 import io
-import json
-import os
 import random
 import re
-import shutil
-import socket
-import select
-import struct
-import subprocess
 import sys
-import tempfile
 import time
-import urllib.request
 from pathlib import Path
 from typing import Any
 
@@ -77,25 +67,9 @@ import cli  # noqa: E402
 from api import MachineApi  # noqa: E402
 from report import Failure, check, detail, format_exception, suite_fail, suite_ok  # noqa: E402
 from rest import RestClient, header_value  # noqa: E402
+from pico_hid import PROTOCOL_VERSION, Pico, discover_pico, setup_pico  # noqa: E402
 
-PROTOCOL_VERSION = 1
-MAGIC = "u64-usb-keyboard-soak"
-DISCOVERY_PORT = 49196
-TCP_PORT = 49197
-MAX_LINE = 512
-UF2_VERSION = "1.28.0"
-UF2_URL = "https://micropython.org/resources/firmware/RPI_PICO2_W-20260406-v1.28.0.uf2"
-# Exact micropython-lib commit examined with this fixture.  HIDInterface handles
-# SET_IDLE/GET_IDLE; the fixture's own scheduler implements the required resend.
-HID_LIB_REVISION = "ee4bb8ff139e24c42b739935fbd8ec7c4d061e02"
-HID_FILES = (
-    # usb-device 0.2.1 and usb-device-hid 0.2.0, both at this exact revision.
-    ("usb-device/usb/device/__init__.py", "usb/device/__init__.py"),
-    ("usb-device/usb/device/core.py", "usb/device/core.py"),
-    ("usb-device-hid/usb/device/hid.py", "usb/device/hid.py"),
-)
 DEFAULT_DURATION = {"stress": 120.0, "soak": 12 * 60 * 60.0}
-KEY_F13 = 183  # Linux input-event-codes.h
 # The root browser holds six entries, so a held key reaches its end within a
 # fraction of a second and further presses stop moving the selection.  The suite
 # builds its own list on the RAM disk instead, deep enough that a held key never
@@ -103,6 +77,10 @@ KEY_F13 = 183  # Linux input-event-codes.h
 # headroom for the mid-repeat holds below, which can move several rows in one
 # shot, without the recentring logic having to run every iteration.
 DEEP_LIST_DIRECTORY = "usbsoak"
+# How many entries of the RAM disk the setup navigation steps past to find the
+# list. /Temp normally holds a handful; this bounds the search on one that
+# holds far more.
+RAM_DISK_SEARCH_LIMIT = 32
 DEEP_LIST_ENTRIES = 200
 ROW_NAME_WIDTH = len(str(DEEP_LIST_ENTRIES - 1))
 # The soak builds and removes this listing while the device is under load,
@@ -194,124 +172,6 @@ def parse_row_index(text: str) -> int:
     if not match:
         raise Failure(f"selected row does not look like a soak list entry: {text!r}")
     return int(match.group(1))
-
-
-class Pico:
-    def __init__(self, host: str):
-        self.host, self.sock, self.request_id = host, None, 0
-    def connect(self):
-        self.close()
-        self.sock = socket.create_connection((self.host, TCP_PORT), timeout=5)
-        self.sock.settimeout(8)
-    def close(self):
-        if self.sock:
-            try:
-                self.sock.close()
-            except OSError:
-                pass
-        self.sock = None
-    def call(self, command: str, **kwargs) -> dict[str, Any]:
-        if not self.sock:
-            self.connect()
-        self.request_id += 1
-        request = {"protocol_version": PROTOCOL_VERSION, "id": self.request_id, "command": command, **kwargs}
-        wire = (json.dumps(request, separators=(",", ":")) + "\n").encode()
-        if len(wire) > MAX_LINE:
-            raise Failure("fixture request unexpectedly exceeds protocol limit")
-        try:
-            self.sock.sendall(wire)
-            data = b""
-            while not data.endswith(b"\n"):
-                part = self.sock.recv(MAX_LINE - len(data))
-                if not part:
-                    raise OSError("fixture closed its control connection")
-                data += part
-            answer = json.loads(data)
-        except (OSError, ValueError, json.JSONDecodeError) as exc:
-            self.close()
-            raise Failure(f"Pico control failure: {exc}") from exc
-        if answer.get("id") != self.request_id or answer.get("protocol_version") != PROTOCOL_VERSION or not answer.get("ok"):
-            raise Failure(f"Pico rejected {command}: {answer.get('error', answer)!r}")
-        return answer["result"]
-
-
-def discover_pico(timeout: float = 4.0) -> str:
-    request = json.dumps({"service": MAGIC, "protocol_version": PROTOCOL_VERSION}).encode()
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-    sock.settimeout(.25)
-    found = set()
-    deadline = time.monotonic() + timeout
-    # Limited broadcast is not always bridged between wired Ethernet and Wi-Fi.
-    # Also send the ordinary /24 directed broadcast for the common lab LAN.
-    targets = [("255.255.255.255", DISCOVERY_PORT)]
-    try:
-        probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        probe.connect(("8.8.8.8", 80))
-        octets = probe.getsockname()[0].split(".")
-        probe.close()
-        if len(octets) == 4:
-            targets.append((".".join([*octets[:3], "255"]), DISCOVERY_PORT))
-    except OSError:
-        pass
-    try:
-        while time.monotonic() < deadline:
-            for target in targets:
-                sock.sendto(request, target)
-            try:
-                while True:
-                    body, address = sock.recvfrom(MAX_LINE)
-                    reply = json.loads(body)
-                    if reply.get("service") == MAGIC and reply.get("protocol_version") == PROTOCOL_VERSION:
-                        found.add(reply.get("ip") or address[0])
-            except TimeoutError:
-                pass
-    finally:
-        sock.close()
-    if not found:
-        found = sweep_for_pico()
-    if len(found) != 1:
-        raise Failure("expected exactly one Pico fixture, found %r. Pass --pico-host with the "
-                      "fixture's IP address if this network does not forward broadcast between "
-                      "the wired test host and the Wi-Fi client." % sorted(found))
-    return found.pop()
-
-
-def sweep_for_pico(port: int = TCP_PORT) -> set:
-    """Find the fixture by connecting to every address on the test host's /24.
-
-    Access points commonly drop broadcast between a wired host and a Wi-Fi
-    client, which makes UDP discovery return nothing.  A direct TCP connection
-    to the fixture's control port is not affected by that.
-    """
-    import concurrent.futures
-    try:
-        probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        probe.connect(("8.8.8.8", 80))
-        octets = probe.getsockname()[0].split(".")
-        probe.close()
-    except OSError:
-        return set()
-    if len(octets) != 4:
-        return set()
-    prefix = ".".join(octets[:3])
-    detail("discovery: broadcast found nothing, sweeping %s.0/24 for the fixture control port" % prefix)
-
-    def probe_address(last):
-        address = "%s.%d" % (prefix, last)
-        try:
-            connection = socket.create_connection((address, port), timeout=1.5)
-            connection.close()
-        except OSError:
-            return None
-        try:
-            status = Pico(address).call("status")
-        except Failure:
-            return None
-        return address if status.get("service") == MAGIC else None
-
-    with concurrent.futures.ThreadPoolExecutor(max_workers=64) as pool:
-        return {result for result in pool.map(probe_address, range(1, 255)) if result}
 
 
 class U64:
@@ -540,9 +400,18 @@ def enter_deep_list(u64: U64):
         raise Failure(f"expected the RAM disk at the top of the root browser, found {text!r}")
     u64.key("return", settle=.5)
     u64.key("return", settle=.9)
-    _row, text = u64.screen()
-    if not text.startswith(DEEP_LIST_DIRECTORY):
-        raise Failure(f"expected {DEEP_LIST_DIRECTORY!r} inside the RAM disk, found {text!r}")
+    # The RAM disk also holds whatever else is in /Temp, such as the cache
+    # directory runner uploads create, so the list is found by name rather
+    # than by position.
+    seen = []
+    for _ in range(RAM_DISK_SEARCH_LIMIT):
+        _row, text = u64.screen()
+        if text.startswith(DEEP_LIST_DIRECTORY):
+            break
+        seen.append(text)
+        u64.key("cursor_up_down", settle=.15)
+    else:
+        raise Failure(f"expected {DEEP_LIST_DIRECTORY!r} inside the RAM disk, found {seen!r}")
     u64.key("return", settle=.5)
     u64.key("return", settle=.9)
     _row, text = u64.screen()
@@ -701,211 +570,6 @@ def run_soak(pico: Pico, u64: U64, duration: float, seed: int,
                 require_fixture(pico.call("status"))
 
 
-def bootsel_disks():
-    matches = []
-    for path in glob.glob("/dev/disk/by-id/*"):
-        name = os.path.basename(path).lower()
-        if "rp2350" in name or ("rpi" in name and "pico" in name):
-            if not name.endswith("-part1"):
-                matches.append(os.path.realpath(path))
-    return sorted(set(matches))
-
-
-def serial_ports():
-    return sorted(glob.glob("/dev/serial/by-id/*"))
-
-
-def linux_hid_self_test(pico: Pico):
-    """Observe a benign F13 press and release arriving from the Pico keyboard.
-
-    Reading `/dev/input/event*` directly requires membership of the `input`
-    group.  Where that is not available, an X11 session can observe the same
-    key through `xinput`, which needs no extra privilege.  F13 is used because
-    it has no default binding in the shell, although some desktops open a
-    settings panel for it.
-    """
-    paths = glob.glob("/dev/input/by-id/*MicroPython*event-kbd")
-    if len(paths) != 1:
-        raise Failure(f"expected one Linux event device for the Pico keyboard, found {paths!r}")
-    try:
-        fd = os.open(paths[0], os.O_RDONLY | os.O_NONBLOCK)
-    except PermissionError:
-        detail("setup: %s is not readable by this user, using xinput instead" % paths[0])
-        return xinput_hid_self_test(pico)
-    except OSError as exc:
-        raise Failure(f"cannot read {paths[0]} for HID self-test: {exc}") from exc
-    pressed = released = False
-    try:
-        pico.call("tap", key="f13", duration_ms=30)
-        deadline = time.monotonic() + 2
-        event = struct.Struct("llHHI")
-        while time.monotonic() < deadline:
-            readable, _, _ = select.select([fd], [], [], .1)
-            if not readable:
-                continue
-            data = os.read(fd, event.size * 16)
-            for offset in range(0, len(data) - event.size + 1, event.size):
-                _, _, event_type, code, value = event.unpack_from(data, offset)
-                if event_type == 1 and code == KEY_F13:
-                    pressed |= value == 1
-                    released |= value == 0
-        if not (pressed and released):
-            raise Failure("Pico HID self-test did not produce both Linux KEY_F13 press and release")
-    finally:
-        os.close(fd)
-        pico.call("release_all")
-
-
-def xinput_hid_self_test(pico: Pico):
-    if not shutil.which("xinput") or not os.environ.get("DISPLAY"):
-        raise Failure("the Pico input device is not readable and no X11 xinput fallback is available; "
-                      "add this user to the input group and log in again")
-    listing = subprocess.run(["xinput", "list"], text=True, stdout=subprocess.PIPE, check=False).stdout
-    identifiers = [line.split("id=", 1)[1].split()[0] for line in listing.splitlines()
-                   if "MicroPython" in line and "slave  keyboard" in line]
-    if len(identifiers) != 1:
-        raise Failure(f"expected one MicroPython xinput keyboard, found {identifiers!r}")
-    watcher = subprocess.Popen(["xinput", "test", identifiers[0]], text=True,
-                               stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
-    try:
-        time.sleep(.5)
-        pico.call("tap", key="f13", duration_ms=30)
-        time.sleep(1.0)
-    finally:
-        watcher.terminate()
-        output = watcher.communicate(timeout=5)[0] or ""
-        pico.call("release_all")
-    # X11 keycodes are the kernel's evdev codes plus 8.
-    expected = str(KEY_F13 + 8)
-    presses = sum(line.startswith("key press") and line.split()[-1] == expected for line in output.splitlines())
-    releases = sum(line.startswith("key release") and line.split()[-1] == expected for line in output.splitlines())
-    if (presses, releases) != (1, 1):
-        raise Failure(f"expected exactly one F13 press and release through xinput, saw {presses} and {releases}")
-
-
-def run(command, **kwargs):
-    detail("setup: " + " ".join(command))
-    return subprocess.run(command, check=True, text=True, **kwargs)
-
-
-def linux_validation(pico: Pico):
-    """Validate the fixture against Linux, which is all that setup can prove.
-
-    The U64 has not been attached yet, so the HID idle rate is whatever Linux
-    negotiated.  `require_fixture` additionally demands `idle_rate == 25`, which
-    only the Ultimate 64 firmware sets, so it is not used here.
-    """
-    status = pico.call("status")
-    if status.get("protocol_version") != PROTOCOL_VERSION:
-        raise Failure("Pico reported protocol version %r, expected %d" % (status.get("protocol_version"), PROTOCOL_VERSION))
-    if not status.get("hid_open"):
-        raise Failure("Pico booted but its HID interface is not open on Linux: %s" % status)
-    linux_hid_self_test(pico)
-    detail("setup: Linux validation passed; idle_rate is %r as negotiated by Linux, not by the U64"
-           % status.get("idle_rate"))
-
-
-def setup_pico(ssid_override: str | None, pico_host: str | None = None):
-    ssid = ssid_override or os.environ.get("PICO_WIFI_SSID")
-    password = os.environ.get("PICO_WIFI_PASSWORD")
-    if not ssid or not password:
-        raise Failure("--setup-pico requires PICO_WIFI_SSID and PICO_WIFI_PASSWORD (password is never printed)")
-    if not shutil.which("mpremote"):
-        raise Failure("mpremote is required; run: pip install -r tests/requirements.txt")
-    cache = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "1541ultimate" / "pico-usb-keyboard-soak"
-    cache.mkdir(parents=True, exist_ok=True)
-    disks, ports = bootsel_disks(), serial_ports()
-    if len(disks) == 1:
-        uf2 = cache / ("RPI_PICO2_W-v" + UF2_VERSION + ".uf2")
-        if not uf2.exists():
-            detail("setup: downloading pinned official MicroPython " + UF2_VERSION + " to " + str(uf2))
-            urllib.request.urlretrieve(UF2_URL, uf2)
-        mount = None
-        for candidate in ("/media/" + os.environ.get("USER", "") + "/RP2350", "/run/media/" + os.environ.get("USER", "") + "/RP2350"):
-            if os.path.ismount(candidate):
-                mount = candidate
-        if not mount:
-            output = subprocess.check_output(["udisksctl", "mount", "-b", disks[0] + "1"], text=True)
-            mount = output.split(" at ", 1)[1].strip().rstrip(".")
-        detail("setup: copying UF2 to " + mount)
-        shutil.copy2(uf2, mount)
-        os.sync()
-        deadline = time.monotonic() + 45
-        port = None
-        while time.monotonic() < deadline:
-            ports = serial_ports()
-            if len(ports) == 1:
-                port = ports[0]
-                break
-            time.sleep(.5)
-        if not port:
-            raise Failure("MicroPython CDC did not enumerate within 45s")
-    elif len(ports) == 1:
-        # The board already runs MicroPython and still exposes its CDC serial
-        # port, so it can be re-provisioned without erasing the firmware.
-        port = ports[0]
-        detail("setup: no BOOTSEL disk; re-provisioning the MicroPython board on " + port)
-    else:
-        raise Failure("found %r BOOTSEL disks and %r MicroPython serial ports; expected one of either. "
-                      "Unplug the Pico 2 W. Hold down BOOTSEL, reconnect its USB cable while continuing "
-                      "to hold BOOTSEL, then release BOOTSEL after about one second." % (disks, ports))
-    # mip accepts an index/package pair, not a raw manifest URL.  Copy the
-    # package files through mpremote instead, after caching the exact upstream
-    # revision.  This avoids silently taking whichever package version happens
-    # to be current when setup is run.
-    hid_cache = cache / ("micropython-lib-" + HID_LIB_REVISION)
-    for upstream, target in HID_FILES:
-        local = hid_cache / target
-        if not local.exists():
-            local.parent.mkdir(parents=True, exist_ok=True)
-            url = ("https://raw.githubusercontent.com/micropython/micropython-lib/" +
-                   HID_LIB_REVISION + "/micropython/usb/" + upstream)
-            detail("setup: downloading pinned usb-device-hid source " + upstream)
-            urllib.request.urlretrieve(url, local)
-    for directory in (":/lib", ":/lib/usb", ":/lib/usb/device"):
-        # mkdir fails when the directory already exists, which is the normal
-        # state on a board that has been provisioned before.
-        mkdir = ["mpremote", "connect", port, "fs", "mkdir", directory]
-        detail("setup: " + " ".join(mkdir))
-        subprocess.run(mkdir, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False)
-    for _, target in HID_FILES:
-        run(["mpremote", "connect", port, "cp", str(hid_cache / target), ":/lib/" + target])
-    # delete=False because mpremote needs the path after the handle closes;
-    # the finally below unlinks it.
-    config = tempfile.NamedTemporaryFile("w", delete=False)  # noqa: SIM115
-    try:
-        config.write("WIFI_SSID = %r\nWIFI_PASSWORD = %r\n" % (ssid, password))
-        config.close()
-        pico = Path(__file__).with_name("pico")
-        # boot.py is copied last and nothing is run afterwards.  Every mpremote
-        # command soft resets the board, which executes boot.py.  Once boot.py
-        # exists, that reset configures the HID interface during early boot and
-        # removes the CDC serial port this deployment path depends on.
-        for source, destination in ((pico / "u64_hid_keyboard.py", ":u64_hid_keyboard.py"),
-                                    (pico / "main.py", ":main.py"),
-                                    (Path(config.name), ":config.py"),
-                                    (pico / "boot.py", ":boot.py")):
-            run(["mpremote", "connect", port, "cp", str(source), destination])
-    finally:
-        os.unlink(config.name)
-    # `mpremote reset` deliberately leaves a raw REPL, which does not run
-    # main.py.  A machine reset ends the management session and starts the
-    # deployed application.  This is the first reset after boot.py exists, so
-    # it is also the first boot that configures HID before enumeration.  The
-    # serial port disappears and reappears, so this command's own exit status
-    # is not meaningful.
-    command = ["mpremote", "connect", port, "exec", "import machine; machine.reset()"]
-    detail("setup: " + " ".join(command))
-    subprocess.run(command, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False)
-    # Wi-Fi association after a reset takes up to 30 s on this board.
-    time.sleep(8)
-    host = pico_host or discover_pico(30)
-    pico = Pico(host)
-    linux_validation(pico)
-    status = pico.call("status")
-    print("Pico 2 W configured successfully.\n\nDevice: %s\nWi-Fi: connected\nIP: %s\n\nNow unplug the Pico from this computer and connect it to a rear USB port of the Ultimate 64.\n\nThen run:\n\n./run-tests -H u64 --soak -s usb-keyboard-repeat" % (status["device_id"], host))
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     cli.add_device_arguments(parser, password=None, colour=False)
@@ -919,6 +583,7 @@ def main() -> int:
     args = parser.parse_args()
     if args.setup_pico:
         setup_pico(args.wifi_ssid, args.pico_host)
+        print("\nThen run:\n\n./run-tests -H u64 --soak -s usb-keyboard-repeat")
         return 0
     host = args.pico_host or discover_pico()
     pico = Pico(host)

@@ -52,6 +52,7 @@ static void joystick_overlay_timer(TimerHandle_t timer)
 JoystickOutput :: JoystickOutput()
 {
     usb_p1 = JOYSTICK_INPUT_MASK;
+    rest_p1_pots = false;
     rest_p1_persistent = JOYSTICK_INPUT_MASK;
     rest_p2_persistent = JOYSTICK_INPUT_MASK;
     rest_p1_overlay = JOYSTICK_INPUT_MASK;
@@ -78,16 +79,24 @@ void JoystickOutput :: apply(void)
     uint8_t port1, port2, pot1x, pot1y, pot2x, pot2y;
     bool mouse_port1_enabled = false;
     outputSnapshot(port1, port2, pot1x, pot1y, pot2x, pot2y);
-    C64_JOY1_SWOUT = port1 | 0xE0;
-    C64_JOY2_SWOUT = port2 | 0xE0;
-    C64_PADDLE_1_X = pot1x;
-    C64_PADDLE_1_Y = pot1y;
-    C64_PADDLE_2_X = pot2x;
-    C64_PADDLE_2_Y = pot2y;
     if (usb_hid_get_active_mouse_interfaces) {
         mouse_port1_enabled = usb_hid_get_active_mouse_interfaces() > 0;
     }
-    C64_MOUSE_EN_1 = (mouse_port1_enabled || joystick_has_extra_button_press(usb_p1 & rest_p1_persistent & rest_p1_overlay)) ? 1 : 0;
+    bool port1_extra_button = joystick_has_extra_button_press(usb_p1 & rest_p1_persistent & rest_p1_overlay);
+    C64_JOY1_SWOUT = port1 | 0xE0;
+    C64_JOY2_SWOUT = port2 | 0xE0;
+    // A USB mouse writes its 1351 position to port 1's POT lines with each
+    // report. Writing the released value here would move the pointer whenever
+    // a port 1 line changes, such as on every Micromys wheel pulse (#909).
+    // A REST fire2/fire3 press still writes them, and so does its release.
+    if (!mouse_port1_enabled || port1_extra_button || rest_p1_pots) {
+        C64_PADDLE_1_X = pot1x;
+        C64_PADDLE_1_Y = pot1y;
+    }
+    rest_p1_pots = port1_extra_button;
+    C64_PADDLE_2_X = pot2x;
+    C64_PADDLE_2_Y = pot2y;
+    C64_MOUSE_EN_1 = (mouse_port1_enabled || port1_extra_button) ? 1 : 0;
     C64_MOUSE_EN_2 = joystick_has_extra_button_press(rest_p2_persistent & rest_p2_overlay) ? 1 : 0;
 #endif
 }

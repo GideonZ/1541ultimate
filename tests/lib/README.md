@@ -27,6 +27,7 @@ repository-root `run-tests` all use it.
 | `interactions.py` | Every interaction the harness had with a device, written as it happens |
 | `device_double.py` | One fake Ultimate on loopback, for the observability tests and, handed `html/`, for the browser suites |
 | `syslog_collector.py` | The devices' own log, collected off the network while a run happens |
+| `pico_hid.py` | The Pico 2 W USB keyboard and mouse fixture: its control client, network discovery and setup |
 | `fixtures/e2e-run.expected.md` | The report generated from a fixture the tests build for themselves; see below |
 | `../ruff.toml` | Which lint rules this tree is held to, and for each one that is off, either the reason or the finding that removes it |
 
