@@ -344,7 +344,8 @@ public:
 
 class IecCommandChannel: public IecChannel, public IecCommandExecuter {
     IecParser *parser;
-    uint8_t wr_buffer[64];
+    // 64 command bytes, plus the zero push_command writes after the last one.
+    uint8_t wr_buffer[65];
     int wr_pointer;
 
     void mem_read(void);

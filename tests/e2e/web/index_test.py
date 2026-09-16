@@ -83,7 +83,12 @@ READY_TIMEOUT = 20.0
 
 # Every name product_name[] in software/system/product.cc can report, split by
 # whether MENU_C64_POWEROFF does anything on that product.
-POWER_PRODUCTS = ("Ultimate 64", "Ultimate 64 Elite", "Ultimate 64-II")
+# Both namings of the same hardware. product_name[] in
+# software/system/product.cc renames the last two under COMMODORE, so a
+# check that lists only one naming passes while the other build hides the
+# item on machines that can power off.
+POWER_PRODUCTS = ("Ultimate 64", "Ultimate 64 Elite", "Ultimate 64-II",
+                  "C64 Ultimate (MK1)", "C64 Ultimate")
 CARTRIDGE_PRODUCTS = ("Ultimate", "Ultimate II", "Ultimate II+", "Ultimate II+L")
 
 # The disk images the page mounts rather than runs, and the drive it uses.
@@ -209,7 +214,20 @@ class Page:
         return self.driver.find_element(By.ID, element_id)
 
     def visible(self, element_id):
-        return self.element(element_id).is_displayed()
+        """Whether the page is showing that element, with absent counting as no.
+
+        A page that never wrote the element at all is the strongest form of not
+        showing it, and a check that asks whether something is offered wants a
+        verdict rather than an exception. A firmware line whose index.html has
+        no such element would otherwise end the run on a traceback instead of
+        reporting the product gap it found. element() still raises, because the
+        callers that click or type need the element to be there.
+        """
+        from selenium.common.exceptions import NoSuchElementException
+        try:
+            return self.element(element_id).is_displayed()
+        except NoSuchElementException:
+            return False
 
     def click(self, element_id):
         self.element(element_id).click()

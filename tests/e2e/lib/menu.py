@@ -27,6 +27,7 @@ sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
 import bootstrap  # noqa: E402,F401
 import api  # noqa: E402  (needs tests/lib on sys.path first)
 import interactions  # noqa: E402
+import machine as machine_lib  # noqa: E402
 import pacing  # noqa: E402
 import report  # noqa: E402
 
@@ -211,3 +212,126 @@ def wait_screen_changes(screen: Callable[[], bytes | None], before: bytes | None
         remaining_budget = max(0.0, timeout - elapsed)
         time.sleep(min(pacing.POLL_INTERVAL_SECONDS,
                        remaining_budget / remaining_reads))
+
+
+# --- Getting the menu open --------------------------------------------------
+#
+# Two things open the menu and they are not the same signal. `machine:menu_button`
+# is the one every machine answers. A keyboard combination is the other, and
+# whether a machine has one is a property of its core rather than of its
+# firmware: an Ultimate 64 mk1 wires the menu button straight to physical pins
+# (fpga/fpga_top/ultimate_fpga/vhdl_source/u2p_lattice_minimized.vhd passes
+# `buttons => button_i`), and nothing in software/ or in the VHDL here maps a
+# key combination onto it. A C64 Ultimate's bitstream is prebuilt and not in
+# this repository (external/u64e2_*.bit), and it does map C= plus RESTORE.
+#
+# A suite asks for an opener rather than choosing between a button press and a
+# key sequence, so the sequence has one implementation and one place to change.
+
+
+class MenuOpener:
+    """One way of getting the menu open. `name` says which, for a report."""
+
+    name = ""
+
+    def press(self) -> None:
+        raise NotImplementedError
+
+    def open(self, menu_is_open: Callable[[], bool],
+             timeout: float = MENU_TOGGLE_TIMEOUT_SECONDS) -> bool:
+        """Open the menu and wait for it. True when it is open.
+
+        A menu that is already open is left alone, so this is safe to call
+        from a check that does not know the state it inherited.
+        """
+        return toggle_menu(self.press, menu_is_open, True, timeout)
+
+
+class ButtonMenuOpener(MenuOpener):
+    """`PUT /v1/machine:menu_button`, which every machine answers."""
+
+    name = "the menu button"
+
+    def __init__(self, press_menu_button: Callable[[], None]) -> None:
+        self._press_menu_button = press_menu_button
+
+    def press(self) -> None:
+        self._press_menu_button()
+
+
+class CommodoreRestoreMenuOpener(MenuOpener):
+    """C= held down while RESTORE is tapped.
+
+    RESTORE is not a keyboard matrix key; it is an edge on the NMI line. The
+    core recognises the combination by reading the keyboard matrix at that
+    edge, so the CBM key has to be down in the matrix before the edge arrives
+    and still down when it is sampled.
+
+    This is the only place the sequence is emitted. It takes three requests
+    because `machine:input` refuses `restore` in an event that carries any
+    other input, so the CBM key has to be pressed, the RESTORE tapped and the
+    CBM key released separately. Firmware that accepts the two together turns
+    this into `single_request_events()` and nothing else changes; the C64 sees
+    the same stimulus either way, because a queued tap asserts the matrix
+    columns and the restore line from one call and
+    Keyboard_USB::applyMatrixState() writes the matrix rows before the restore
+    register.
+    """
+
+    name = "C= plus RESTORE"
+
+    # How long the RESTORE tap is left to reach the core before C= comes back
+    # up. The tap itself is held for two ticks of the firmware's 20ms REST
+    # input timer, so this has to outlast that.
+    HOLD_SECONDS = 0.15
+
+    def __init__(self, post_events: Callable[[list[dict]], None]) -> None:
+        self._post_events = post_events
+
+    @staticmethod
+    def single_request_events() -> list[dict]:
+        """The one-request form, for firmware whose parser accepts it."""
+        return [tap_event(["commodore", "restore"])]
+
+    def press(self) -> None:
+        self._post_events([{"kind": "keyboard", "inputs": ["commodore"],
+                            "transition": "press"}])
+        try:
+            self._post_events([tap_event(["restore"])])
+            time.sleep(self.HOLD_SECONDS)
+        finally:
+            self._post_events([{"kind": "keyboard", "inputs": ["commodore"],
+                                "transition": "release"}])
+
+
+# The keyboard way in, per machine. A machine absent from this table has none,
+# which is a statement about its core and not about its firmware version.
+_KEYBOARD_MENU_OPENERS = {
+    machine_lib.C64U: CommodoreRestoreMenuOpener,
+}
+
+
+def keyboard_menu_opener(kind: str,
+                         post_events: Callable[[list[dict]], None]
+                         ) -> MenuOpener | None:
+    """The keyboard opener for this machine, or None where it has none.
+
+    None is not a failure. A caller that needs the menu open falls back to
+    `ButtonMenuOpener`; a caller testing the keyboard route itself reports a
+    skip naming the machine.
+    """
+    opener = _KEYBOARD_MENU_OPENERS.get(kind)
+    return None if opener is None else opener(post_events)
+
+
+def menu_opener(kind: str,
+                post_events: Callable[[list[dict]], None],
+                press_menu_button: Callable[[], None],
+                prefer_keyboard: bool = False) -> MenuOpener:
+    """An opener for this machine: the button unless the keyboard is asked for
+    and this machine has one."""
+    if prefer_keyboard:
+        opener = keyboard_menu_opener(kind, post_events)
+        if opener is not None:
+            return opener
+    return ButtonMenuOpener(press_menu_button)

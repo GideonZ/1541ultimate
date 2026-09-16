@@ -1312,9 +1312,9 @@ int U64Config :: setFilter(ConfigItem *it)
 // rather than instead of them: the $D418 mute stays, and stays portable, and
 // on this hardware it happens where it cannot be heard.
 //
-// The first eight bytes are the SID channels: UltiSID 1 and 2, socket 1 and 2,
-// right and left. SetMixerAutoSid zeroes the same eight to mute the SIDs while
-// it remaps them.
+// The first eight bytes of either mixer are the SID channels: UltiSID 1 and 2,
+// socket 1 and 2, right and left. SetMixerAutoSid zeroes the same eight in the
+// main mixer while it remaps them.
 void u64_mute_sids(void)
 {
     volatile uint8_t *mixer = (volatile uint8_t *)U64_AUDIO_MIXER;
@@ -1322,6 +1322,12 @@ void u64_mute_sids(void)
     for (int i = 0; i < 8; i++) {
         mixer[i] = 0;
     }
+#if U64 == 2
+    mixer = (volatile uint8_t *)U64_SPEAKER_MIXER;
+    for (int i = 0; i < 8; i++) {
+        mixer[i] = 0;
+    }
+#endif
 }
 
 // From the stored settings, not from what was there before the mute: the mixer
@@ -1709,7 +1715,7 @@ SubsysResultCode_e U64Config :: executeCommand(SubsysCommand *cmd)
 	char sidString[40];
 	C64 *machine;
 	static char poke_buffer[16];
-	uint32_t addr, value;
+	uint32_t addr = 0, value = 0;
 
 	switch(cmd->functionID) {
     case MENU_U64_SAVEEDID:
@@ -1742,8 +1748,10 @@ SubsysResultCode_e U64Config :: executeCommand(SubsysCommand *cmd)
 
     case MENU_U64_POKE:
         if ((cmd->user_interface->string_box("Poke AAAA,DD", poke_buffer, 16) > 0) && (*poke_buffer)) {
-            sscanf(poke_buffer, "%x,%x", &addr, &value);
-
+            if (sscanf(poke_buffer, "%x,%x", &addr, &value) != 2) {
+                cmd->user_interface->popup("Give an address and a value, as AAAA,DD", BUTTON_OK);
+                break;
+            }
             C64 *machine = C64 :: getMachine();
             portENTER_CRITICAL();
 

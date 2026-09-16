@@ -297,6 +297,10 @@ SUITES: Sequence[Suite] = (
     # fail for a reason that is not its own.
     Suite("e2e", "create-disk-image", "tests/e2e/api/create_disk_image_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@", profile=profiles.QUICK),
+    # Reads physical track 81 through a real emulated 1581, then mounts an
+    # oversized D81 and proves the bounded layout leaves the device usable.
+    Suite("e2e", "d81-track-bounds", "tests/e2e/drive/d81_track_bounds_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --test all", profile=profiles.QUICK),
     # Calls every endpoint the firmware registers, and fails when one is
     # neither probed nor excluded with a reason. The lockup that prompted it
     # shipped because no suite called that route at all, so the gate matters
@@ -326,6 +330,13 @@ SUITES: Sequence[Suite] = (
           "-H @HOST@ -p @PASS@ --mode @MODE@"),
     Suite("e2e", "cfg-single-group", "tests/e2e/filemanager/cfg_single_group_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@", profile=profiles.QUICK),
+    # Needs no device: it reads the loader's debug log parser over recorded
+    # text. The device writes that log with an unlocked, character-at-a-time
+    # printf, so another task's line splices into the middle of a loader line;
+    # the splice is not reproducible on demand, which is why the case is a
+    # recorded one rather than a device run.
+    Suite("e2e", "cfg-loader-log", "tests/e2e/filemanager/cfg_loader_log_test.py",
+          "", profile=profiles.SMOKE),
     # Manual: loading a partial .cfg is supposed to leave the stores it does
     # not name alone, and that no longer holds. Measured on a C64 Ultimate
     # 1.2.0, a file naming one store listed nineteen in its loader
@@ -358,6 +369,18 @@ SUITES: Sequence[Suite] = (
     Suite("e2e", "usb-bulk-out-integrity",
           "tests/e2e/io/usb/bulk_out_integrity_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@", manual=True),
+    Suite("e2e", "rel-copy", "tests/e2e/io/iec/rel_copy_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
+    # The IEC command channel defects of #875, #876 and #877, driven from the C64 so
+    # that the bytes on the bus are the ones PRINT# puts there: the carriage return
+    # that ends a command, and the spaces BASIC prints around a number. A harness
+    # that builds command strings by hand reaches none of them, and neither does a
+    # host build reach the two checks that depend on the firmware's own sscanf.
+    # Standard rather than quick: 24 s is small against the merge gate but not
+    # against the run a person makes before pushing, and rel-copy beside it is
+    # already the IEC suite that costs real time.
+    Suite("e2e", "iec-dos-commands", "tests/e2e/io/iec/dos_command_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@", profile=profiles.STANDARD),
     # Drives the UCI control and SoftIEC targets over $DF1B-$DF1F; reproduces #740.
     # A #740 regression leaves the interface stuck in Command Busy for every target
     # until the firmware restarts, so run it after the suites that drive the menu
@@ -408,8 +431,9 @@ SUITES: Sequence[Suite] = (
     # the multicast streams, so it needs the device to be the only one
     # streaming to that group.
     #
-    # standard rather than smoke: it is the only suite that reads the streams
-    # at all, and at about a minute it is too slow for the shallow profiles.
+    # standard rather than smoke: it is the only suite whose subject is the
+    # streams themselves rather than something measured through them, and at
+    # about a minute it is too slow for the shallow profiles.
     # -H only, because it addresses the stream source rather than the REST
     # surface and takes no password or timeout.
     Suite("e2e", "av-stream", "tests/e2e/av/stream_test.py", "-H @HOST@"),
@@ -438,6 +462,76 @@ SUITES: Sequence[Suite] = (
     # fix and green at about 10x after it.
     Suite("e2e", "fast-reset", "tests/e2e/io/c64/fast_reset_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
+    # An 8K $E000 cartridge with EXROM high and GAME low runs the machine in
+    # Ultimax mode, where the VIC fetches characters and colour through the
+    # cartridge rather than from the C64's own memory. The observable is the
+    # picture, so the suite starts Jupiter Lander, taps F1 and compares the
+    # whole VIC frame against a reference, index for index. It takes the video
+    # stream, and reboots the machine afterwards to remove the cartridge.
+    Suite("e2e", "ultimax-cartridge", "tests/e2e/io/c64/ultimax_cartridge_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
+    # COMAL 80 selects its banks with bit 7 set, which addresses offset 2 MB on
+    # a product with 4 MB of cartridge memory; the image was mirrored only to
+    # 1 MB, so it started to a blank screen (#899). The suite builds four-bank
+    # type 21 CRTs in code and reads each bank's marker bytes back from screen
+    # RAM. It also checks that bit 6 switches the cartridge off
+    # (ultimate_releases#49), gated on comal80-cartridge-off-bit because that
+    # fix is in the FPGA image, and that a grey (subtype 1) CRT keeps the
+    # cartridge on. It reboots the machine afterwards to remove the cartridge.
+    Suite("e2e", "comal80-cartridge", "tests/e2e/io/c64/comal80_cartridge_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
+    # EasyFlash decodes six bits of its bank register, and an EasyFlash image of
+    # Maniac Mansion writes $78 to $7B there; on a product with 4 MB of cartridge
+    # memory those banks lie above 1 MB, which read $FF unless the image repeats
+    # up to the end of the cartridge memory (#899). The suite builds a 64-bank
+    # type 32 CRT in code, selects every bank with $00, $40, $80 and $C0 in the
+    # upper bits, and reads each bank's marker back from screen RAM. It reboots
+    # the machine afterwards to remove the cartridge.
+    Suite("e2e", "easyflash-cartridge", "tests/e2e/io/c64/easyflash_cartridge_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
+    # RoboCop 2 and Shadow of the Beast read Ocean banks 16 to 31 at $A000, but
+    # every type 5 CRT was started in 8K mode, where $A000 never shows the
+    # cartridge, so they started to a black screen. The suite builds a 32-bank
+    # type 5 CRT in code with banks 16 to 31 listed at $A000, and reads each
+    # bank's marker byte back from screen RAM. It reboots the machine
+    # afterwards to remove the cartridge.
+    Suite("e2e", "ocean-cartridge", "tests/e2e/io/c64/ocean_cartridge_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
+    # A C64 Game System cartridge latches its bank from the address of any IO1
+    # access; the FPGA latched the data byte, so every game on the C64GS 4-in-1
+    # crashed on start. The suite builds a 64-bank type 15 CRT in code and reads
+    # each bank's marker back from screen RAM, and reboots afterwards to remove
+    # the cartridge. The fix is in the FPGA image, and the Ultimate 64 images are
+    # prebuilt, so it is gated on machine.C64GS_BANK_FROM_ADDRESS and reports
+    # SKIP until the table says a machine has it.
+    Suite("e2e", "c64gs-cartridge", "tests/e2e/io/c64/c64gs_cartridge_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
+    # Guards GideonZ/commodore#1 (c66ef028): a Reset, a Reboot or a C=+R taken
+    # from the menu has to run after the UI has torn down, so the C64 comes
+    # back to a boot screen with none of the menu's characters on it. The
+    # other half of that change, the menu opening again afterwards, needs the
+    # hardware button's edge detector, which no route this harness has can
+    # reach; those three checks report SKIP with the measurement. It resets
+    # and reboots the machine several times, which is why it is not in the
+    # shallow profiles.
+    Suite("e2e", "deferred-machine-actions",
+          "tests/e2e/io/c64/deferred_actions_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@"),
+    # Taking the machine has to take its sound with it quietly, and both ways
+    # of handing it back have to hand the sound back: closing the menu, and
+    # launching from it. The second was missed until 35023e32, which is #887.
+    # The launch has to be a SID play with autoconfig off, the only combination
+    # the C64 reset handler does not mask; the suite says why. The observable
+    # is the RMS of the device's audio stream, filtered by source address, so a
+    # concurrent run on the same group is not a problem.
+    #
+    # quick, so it runs by default: its device operations are the ones the
+    # shallower profiles already use (menu button and reset in menu-screen, a
+    # config write in the cfg suites, the video stream in input), and it is
+    # cheap, measured 7.5s to 8.1s on an Ultimate 64 Elite and 9.2s on u2@c64u.
+    # It reads the streams without taking them, so it runs under --record too.
+    Suite("e2e", "freezer-audio", "tests/e2e/io/c64/freezer_audio_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@", profile=profiles.QUICK),
     # Reproduces #733: with the FPGA decoder fix in the core, "mirroring off" is
     # the regression guard. Runs last, because a device whose core predates that
     # fix stalls the whole Nios on this scenario and needs a JTAG recovery.
@@ -488,6 +582,8 @@ SUITES: Sequence[Suite] = (
     Suite("soak", "heap-leak", "tests/soak/api/heap_leak_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
     Suite("soak", "listener-soak", "tests/soak/network/listener_soak_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
+    Suite("soak", "ident-leak", "tests/soak/network/ident_leak_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
     # Physical Pico 2 W fixture; selected explicitly with -s after setup.
     Suite("soak", "usb-keyboard-repeat", "tests/soak/io/usb/usb_keyboard_repeat_soak_test.py",

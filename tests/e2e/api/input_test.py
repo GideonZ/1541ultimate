@@ -31,8 +31,8 @@ import wait
 import rest as rest_lib
 import targets
 from api import UltimateApi
-from report import (Failure, teardown_step, check, check_count, detail, format_exception,
-                    suite_fail, suite_ok, warn)
+from report import (Failure, teardown_step, check, check_count, check_skip, check_start,
+                    detail, format_exception, suite_fail, suite_ok, warn)
 from vic_video import MULTICAST_GROUP, VIDEO_PORT, VicStreamCapture
 
 TEST_CHOICES = (
@@ -44,6 +44,7 @@ TEST_CHOICES = (
     "keyboard-echo-ab-20hz",
     "keyboard-echo-ab-5hz",
     "menu",
+    "menu-open",
     "menu-shift",
     "menu-repeat-printable",
     "menu-repeat-cursor",
@@ -640,8 +641,8 @@ def assert_input_state(
 
 
 def read_joystick_cia(session: RestInputSession) -> tuple[int, int]:
-    session.pause()
     try:
+        session.pause()
         session.write_memory(0xDC02, b"\x00")
         session.write_memory(0xDC03, b"\x00")
         regs = session.read_memory(0xDC00, 2)
@@ -653,8 +654,8 @@ def read_joystick_cia(session: RestInputSession) -> tuple[int, int]:
 
 
 def read_keyboard_row(session: RestInputSession, row: int) -> int:
-    session.pause()
     try:
+        session.pause()
         session.write_memory(0xDC02, b"\xFF")
         session.write_memory(0xDC03, b"\x00")
         session.write_memory(0xDC00, bytes([(~(1 << row)) & 0xFF]))
@@ -664,16 +665,34 @@ def read_keyboard_row(session: RestInputSession, row: int) -> int:
         session.resume()
 
 
-def read_joystick_pots(session: RestInputSession, port: int) -> tuple[int, int]:
-    if port not in (1, 2):
-        raise Failure(f"Invalid joystick port for POT read: {port}")
-    # Mirror Anykey's VIC-II probe: select the joystick port on CIA1 first,
-    # leave the machine running briefly, then read SID POTX/POTY.
-    session.write_memory(0xDC02, b"\xC0")
+def _select_and_read_pot(session: RestInputSession, port: int) -> tuple[int, int]:
     session.write_memory(0xDC00, b"\x40" if port == 1 else b"\x80")
     time.sleep(0.10)
     regs = session.read_memory(0xD419, 2)
     return regs[0], regs[1]
+
+
+def read_joystick_pots(session: RestInputSession, port: int) -> tuple[int, int]:
+    if port not in (1, 2):
+        raise Failure(f"Invalid joystick port for POT read: {port}")
+    # Select the paddle group on CIA1, then read SID POTX/POTY. Must pause
+    # like read_joystick_cia/read_keyboard_row: left running, the KERNAL's
+    # keyboard-scan IRQ overwrites $DC00 within ~20ms and races this write.
+    try:
+        session.pause()
+        session.write_memory(0xDC02, b"\xC0")
+        return _select_and_read_pot(session, port)
+    finally:
+        session.resume()
+
+
+def read_joystick_pots_both(session: RestInputSession) -> dict[int, tuple[int, int]]:
+    try:
+        session.pause()
+        session.write_memory(0xDC02, b"\xC0")
+        return {1: _select_and_read_pot(session, 1), 2: _select_and_read_pot(session, 2)}
+    finally:
+        session.resume()
 
 
 def assert_joystick_pots(session: RestInputSession, port: int, potx: int, poty: int) -> None:
@@ -685,8 +704,7 @@ def assert_joystick_pots(session: RestInputSession, port: int, potx: int, poty: 
         )
 
 
-def assert_anykey_extra_buttons(session: RestInputSession, port: int, fire2: bool, fire3: bool) -> None:
-    potx, poty = read_joystick_pots(session, port)
+def _check_anykey_extra_buttons(port: int, potx: int, poty: int, fire2: bool, fire3: bool) -> None:
     actual_fire2 = (potx & 0x80) == 0
     actual_fire3 = (poty & 0x80) == 0
     if (actual_fire2, actual_fire3) != (fire2, fire3):
@@ -695,6 +713,18 @@ def assert_anykey_extra_buttons(session: RestInputSession, port: int, fire2: boo
             f"expected fire2/fire3={fire2}/{fire3}, got {actual_fire2}/{actual_fire3} "
             f"from POTX/POTY=${potx:02X}/${poty:02X}"
         )
+
+
+def assert_anykey_extra_buttons(session: RestInputSession, port: int, fire2: bool, fire3: bool) -> None:
+    potx, poty = read_joystick_pots(session, port)
+    _check_anykey_extra_buttons(port, potx, poty, fire2, fire3)
+
+
+def assert_anykey_extra_buttons_both(session: RestInputSession, expected: dict[int, tuple[bool, bool]]) -> None:
+    pots = read_joystick_pots_both(session)
+    for port, (fire2, fire3) in expected.items():
+        potx, poty = pots[port]
+        _check_anykey_extra_buttons(port, potx, poty, fire2, fire3)
 
 
 def assert_keyboard_matrix(session: RestInputSession, input_name: str, active: bool) -> None:
@@ -2099,6 +2129,51 @@ def close_rename_editor(session: RestInputSession) -> None:
     session.post_events([{"kind": "release_all"}])
 
 
+def run_menu_open_tests(session: RestInputSession) -> None:
+    """The keyboard route into the menu, on a machine that has one.
+
+    `machine:menu_button` is the signal every machine answers, and other
+    suites cover it. This is the other one: a C64 Ultimate's core reads the
+    keyboard matrix at a RESTORE NMI edge and treats CBM-down plus that edge
+    the way it treats the button. An Ultimate 64 mk1 has no such route, and an
+    Ultimate II+ has no keyboard injection at all: it answers `machine:input`
+    with HTTP 501. Both report a skip here rather than a failure.
+
+    Which machines have a keyboard route, and the request sequence that
+    produces the stimulus, are both in tests/e2e/lib/menu.py so that there is
+    one place to change when the firmware lets the sequence become a single
+    request. Having the route is not the same as the firmware answering it,
+    so the check is also tagged with machine.KEYBOARD_COMBINATION_OPENS_MENU
+    and reports a skip on a firmware line that ignores the combination.
+    """
+    machine = session.machine
+    opener = menu_lib.keyboard_menu_opener(machine.kind, session.post_events)
+    if opener is None:
+        check_start("a keyboard combination opens the menu")
+        check_skip(f"{machine.described} has no keyboard route into its menu; "
+                   f"machine:menu_button is the only signal that opens it")
+        return
+
+    label = f"{opener.name} opens the menu"
+    if machine.skip_without_fix(machine_lib.KEYBOARD_COMBINATION_OPENS_MENU, label):
+        return
+
+    with check(label):
+        session.close_menu_from_anywhere()
+        if session.menu_screen_open():
+            raise Failure("the menu was already open, so this check would "
+                          "not have measured anything")
+        try:
+            if not opener.open(session.menu_screen_open):
+                raise Failure(
+                    f"the menu did not open within "
+                    f"{menu_lib.MENU_TOGGLE_TIMEOUT_SECONDS}s of {opener.name}")
+        finally:
+            teardown_step("close the menu", session.close_menu_from_anywhere)
+            teardown_step("release injected input",
+                          lambda: session.post_events([{"kind": "release_all"}]))
+
+
 def run_menu_keyboard_tests(session: RestInputSession, selected: list[str] | None = None) -> None:
     """What the keyboard puts into a menu string editor.
 
@@ -2280,21 +2355,48 @@ def run_joystick_tests(session: RestInputSession) -> None:
 def run_joystick_checks(session: RestInputSession) -> None:
     session.post_events([{"kind": "release_all"}])
 
-    with check("joystick port 2 fire keeps Anykey buttons 2 and 3 released"):
+    # Regression coverage for #879: fire2/fire3 on one port must not appear
+    # on the other port's POT reading. Covers both ports and both inputs.
+    ANYKEY_ISOLATION_CASES = (
+        # (input, fire2 expected on the pressed port, fire3 expected on the pressed port)
+        ("fire", False, False),
+        ("fire2", True, False),
+        ("fire3", False, True),
+    )
+    for own_port in (1, 2):
+        other_port = 2 if own_port == 1 else 1
+        for input_name, fire2_expected, fire3_expected in ANYKEY_ISOLATION_CASES:
+            if input_name == "fire":
+                label = f"joystick port {own_port} fire keeps Anykey buttons 2 and 3 released"
+            else:
+                button = "2" if input_name == "fire2" else "3"
+                label = (f"joystick port {own_port} {input_name} lights only Anykey button {button}, "
+                          f"only on port {own_port}")
+            with check(label):
+                session.post_events([{"kind": "release_all"}])
+                session.post_events(
+                    [{"kind": "joystick", "port": own_port, "inputs": [input_name], "transition": "press"}])
+                assert_anykey_extra_buttons_both(
+                    session, {own_port: (fire2_expected, fire3_expected), other_port: (False, False)})
+
+    with check("joystick fire2 on one port and fire3 on the other stay independent"):
+        # Both ports held at once with different extra-button state.
         session.post_events([{"kind": "release_all"}])
-        session.post_events([{"kind": "joystick", "port": 2, "inputs": ["fire"], "transition": "press"}])
-        assert_joystick_ports(session, 0x1F, 0x0F)
+        session.post_events(
+            [
+                {"kind": "joystick", "port": 1, "inputs": ["fire2"], "transition": "press"},
+                {"kind": "joystick", "port": 2, "inputs": ["fire3"], "transition": "press"},
+            ]
+        )
+        assert_anykey_extra_buttons_both(session, {1: (True, False), 2: (False, True)})
+
+    with check("joystick fire2/fire3 tap auto-releases the POT hardware state"):
+        session.post_events([{"kind": "release_all"}])
+        session.post_events([{"kind": "joystick", "port": 2, "inputs": ["fire2", "fire3"], "transition": "tap"}])
+        time.sleep(0.2)
         assert_anykey_extra_buttons(session, 2, fire2=False, fire3=False)
-
-    with check("joystick port 2 fire2 lights only Anykey button 2"):
-        session.post_events([{"kind": "release_all"}])
-        session.post_events([{"kind": "joystick", "port": 2, "inputs": ["fire2"], "transition": "press"}])
-        assert_anykey_extra_buttons(session, 2, fire2=True, fire3=False)
-
-    with check("joystick port 2 fire3 lights only Anykey button 3"):
-        session.post_events([{"kind": "release_all"}])
-        session.post_events([{"kind": "joystick", "port": 2, "inputs": ["fire3"], "transition": "press"}])
-        assert_anykey_extra_buttons(session, 2, fire2=False, fire3=True)
+        if session.get_state()["joysticks"][1]["inputs"] != []:
+            raise Failure(f"Expected port 2 state empty after tap auto-release, got {session.get_state()}")
 
     with check("joystick port 1 up press is visible on CIA reads"):
         session.post_events([{"kind": "release_all"}])
@@ -2330,14 +2432,27 @@ def run_joystick_checks(session: RestInputSession) -> None:
         session.post_events([{"kind": "joystick", "port": 2, "inputs": ["fire"], "transition": "release"}])
         assert_joystick_ports(session, 0x1F, 0x1E)
 
-    with check("joystick fire2/fire3 round-trip through REST state"):
+    with check("joystick fire2/fire3 round-trip through REST state and POT hardware"):
         session.post_events([{"kind": "release_all"}])
         session.post_events([{"kind": "joystick", "port": 2, "inputs": ["fire", "fire2", "fire3"], "transition": "press"}])
         assert_joystick_ports(session, 0x1F, 0x0F)
         assert_input_state(session, [], [], ["fire", "fire2", "fire3"])
+        assert_anykey_extra_buttons_both(session, {2: (True, True), 1: (False, False)})
         session.post_events([{"kind": "joystick", "port": 2, "inputs": ["fire2"], "transition": "release"}])
         assert_joystick_ports(session, 0x1F, 0x0F)
         assert_input_state(session, [], [], ["fire", "fire3"])
+        assert_anykey_extra_buttons_both(session, {2: (False, True), 1: (False, False)})
+
+    with check("joystick release in the same batch as a tap on the same input wins"):
+        session.post_events([{"kind": "release_all"}])
+        response = session.post_events(
+            [
+                {"kind": "joystick", "port": 2, "inputs": ["fire2"], "transition": "tap"},
+                {"kind": "joystick", "port": 2, "inputs": ["fire2"], "transition": "release"},
+            ]
+        )
+        if response["joysticks"][1]["inputs"] != []:
+            raise Failure(f"Expected port 2 empty right after the batch, got {response}")
 
     with check("joystick release_all then press in same batch is visible on CIA reads"):
         session.post_events(
@@ -2400,16 +2515,17 @@ def run_joystick_checks(session: RestInputSession) -> None:
         assert_joystick_ports(session, 0x1F, 0x0F)
         session.post_events([{"kind": "release_all"}])
 
-    with check("joystick release_all clears both ports"):
+    with check("joystick release_all clears both ports, including POT hardware"):
         session.post_events(
             [
-                {"kind": "joystick", "port": 1, "inputs": ["up"], "transition": "press"},
-                {"kind": "joystick", "port": 2, "inputs": ["fire"], "transition": "press"},
+                {"kind": "joystick", "port": 1, "inputs": ["up", "fire2"], "transition": "press"},
+                {"kind": "joystick", "port": 2, "inputs": ["fire", "fire3"], "transition": "press"},
                 {"kind": "release_all"},
             ]
         )
         assert_joystick_ports(session, 0x1F, 0x1F)
         assert_state_empty(session)
+        assert_anykey_extra_buttons_both(session, {1: (False, False), 2: (False, False)})
 
     with check("machine reset clears keyboard and joystick REST state"):
         session.post_events(
@@ -2439,6 +2555,8 @@ def run_tests(session: RestInputSession, soak_duration_seconds: float | None = N
         run_keyboard_echo_tests(session, selected=selected)
     if wants_menu_tests(selected):
         menu_selected = selected if selected and "menu" not in selected and "all" not in selected else None
+        if wants_test(menu_selected, "menu-open"):
+            run_menu_open_tests(session)
         run_menu_keyboard_tests(session, selected=menu_selected)
     return 0
 

@@ -58,6 +58,7 @@ to drive it.
 | Folder | Production owner | Coverage |
 |---|---|---|
 | `api/` | `software/api/` | REST contracts for input, menu screen, memory, disk-image creation and PRG runners, plus `rest-api-coverage`, which calls every registered operation |
+| `drive/` | `software/drive/` | Emulated drive geometry and media access through the C64-facing drive protocol |
 | `filemanager/` | `software/filemanager/`, `software/userinterface/` | Browser actions, change notification, and managed `/Temp` lifecycle |
 | `filesystem/` | `software/filesystem/` | Filesystem implementations, including the remote FTP filesystem |
 | `io/` | `software/io/` | Device-facing I/O subsystems, nested by production package (`c64/`, `command_interface/`, `printer/`) |

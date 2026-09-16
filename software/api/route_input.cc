@@ -268,8 +268,11 @@ static void apply_joystick_event(const InputParsedEvent &event)
         active_low |= event.joystick_mask;
         if (event.port == 1) {
             JoystickOutput::instance().setRestPort1Persistent(active_low);
+            // Cancel any in-flight tap so it can't mask this release.
+            JoystickOutput::instance().cancelRestPort1Overlay(event.joystick_mask);
         } else {
             JoystickOutput::instance().setRestPort2Persistent(active_low);
+            JoystickOutput::instance().cancelRestPort2Overlay(event.joystick_mask);
         }
         break;
     case INPUT_PARSED_TAP:
@@ -670,8 +673,10 @@ API_DOC(POST, machine, input,
                 "and `tap` does both, which is what typing needs. A `release_all` event drops "
                 "everything this API is holding, and a machine reset does the same.\n"
                 "\n"
-                "`restore` is not part of the keyboard matrix; it is wired to NMI. It has to "
-                "appear on its own and only with transition `tap`.\n"
+                "`restore` is not part of the keyboard matrix; it is wired to NMI, so only "
+                "transition `tap` does anything with it. It may share an event with matrix "
+                "keys: a tap of `[\"commodore\", \"restore\"]` puts the C= key down in the "
+                "matrix before it raises the restore line.\n"
                 "\n"
                 "The request must be `application/json` and the body must be under 4096 bytes. "
                 "The FPGA build has to carry the block that drives those lines; a build without "

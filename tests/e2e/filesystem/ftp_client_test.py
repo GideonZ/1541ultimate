@@ -59,6 +59,7 @@ import bootstrap  # noqa: E402,F401
 import menu as menu_lib  # noqa: E402
 import ftp as ftp_lib  # noqa: E402
 import cli  # noqa: E402
+import leak  # noqa: E402
 
 import pacing  # noqa: E402  (needs tests/lib on sys.path first)
 import rest as rest_lib
@@ -69,7 +70,7 @@ from ui_backend import (  # noqa: E402  (needs tests/e2e/lib first)
     find_selected_row_rest, measure_cursor_colour)
 from api import UltimateApi  # noqa: E402  (needs tests/lib on sys.path first)
 from report import (  assert_or_warn, # noqa: E402  (needs tests/lib on sys.path first)
-    Failure, teardown_step, check_count, check_fail, check_ok, check_start, check_warn, detail, last_label,
+    Failure, teardown_step, check_count, check_fail, check_ok, check_skip, check_start, check_warn, detail, last_label,
     section, suite_fail, suite_ok, warn)
 
 
@@ -1878,6 +1879,25 @@ SOAK_OPS = [soak_browse, soak_read, soak_edit, soak_mkdir, soak_upload,
             soak_rename, soak_recreate]
 
 
+def stage_heap(ctx):
+    machine = ctx.s.api.machine
+    if machine.heap() is None:
+        check_start("FTP form heap stability")
+        check_skip("firmware has no machine:heap endpoint")
+        ctx.record("heap", "host form cleanup", "SKIP")
+        return
+    if ctx.alias is None:
+        ctx.alias = safe_name(ctx.args.alias_prefix)
+        create_host(ctx, ctx.alias)
+    measured = leak.slope(
+        once=lambda: soak_recreate(ctx, 0), heap=machine.heap_free,
+        warmup=2, iterations=8, tolerance_bytes_per_op=32,
+        unit="host recreation", settle_seconds=3,
+        title="FTP host forms release queued filesystem events")
+    ctx.record("heap", "host form cleanup", "OK",
+               notes=measured.one_line(32))
+
+
 def stage_soak(ctx):
     section("stage: soak")
     s, server = ctx.s, ctx.server
@@ -2019,7 +2039,7 @@ def print_failure_diagnostics(ctx, exc):
 # ---------------------------------------------------------------------------
 # CLI + main
 # ---------------------------------------------------------------------------
-STAGE_ORDER = ["smoke", "core", "edge", "matrix", "negative", "soak"]
+STAGE_ORDER = ["smoke", "core", "edge", "matrix", "negative", "heap", "soak"]
 
 
 def parse_ports(text):
@@ -2098,7 +2118,7 @@ def infer_advertised_host(device_host):
 
 def stages_for(args):
     if args.stage == "all":
-        return ["smoke", "core", "edge", "matrix", "negative", "soak"]
+        return ["smoke", "core", "edge", "matrix", "negative", "heap", "soak"]
     if args.stage == "smoke":
         return ["smoke"]
     # any explicit non-smoke stage implies smoke setup first for a clean host
@@ -2158,7 +2178,7 @@ def main(argv=None):
             for stage in run:
                 {"smoke": stage_smoke, "core": stage_core, "edge": stage_edge,
                  "matrix": stage_matrix, "negative": stage_negative,
-                 "soak": stage_soak}[stage](ctx)
+                 "heap": stage_heap, "soak": stage_soak}[stage](ctx)
             if args.run_prg:
                 stage_prg(ctx)
         except HardCrash as exc:

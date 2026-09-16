@@ -325,8 +325,17 @@ static inline bool input_api_parse_keyboard_event(JSON_Object *obj, InputParsedE
         }
     }
 
-    if (has_restore && ((count != 1) || (out.transition != INPUT_PARSED_TAP))) {
-        input_api_set_error(err, err_size, "`restore` must appear alone in `inputs` and only with transition `tap`.");
+    // `restore` drives the NMI line rather than a keyboard matrix column, so it
+    // is an edge and not a level. `press` and `release` have nothing to act on:
+    // route_input.cc skips the restore entry when it builds the live matrix for
+    // both transitions, so accepting them here would return 200 and do nothing.
+    // Matrix keys alongside it are a different case and are allowed: a queued
+    // tap asserts the matrix columns and the restore line from one call, and
+    // Keyboard_USB::applyMatrixState() writes the matrix rows before the
+    // restore register, which is the order C= plus RESTORE and RUN/STOP plus
+    // RESTORE need.
+    if (has_restore && (out.transition != INPUT_PARSED_TAP)) {
+        input_api_set_error(err, err_size, "`restore` is only valid with transition `tap`.");
         return false;
     }
     return true;

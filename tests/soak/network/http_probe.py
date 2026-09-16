@@ -287,7 +287,7 @@ def memory_write_verify(settings: RuntimeSettings, address: str, data_hex: str) 
 
 def _runner_probe_write_address(runner_id: int) -> str:
     slot = (runner_id - 1) % PROBE_WRITE_RUNNER_SLOT_COUNT
-    return f"0x{PROBE_WRITE_ADDRESSES[slot]:04X}"
+    return f"{PROBE_WRITE_ADDRESSES[slot]:04X}"
 
 
 def surface_operations(
@@ -305,10 +305,10 @@ def surface_operations(
         ("get_vol_ultisid_1", lambda settings: read_audio_mixer_item(settings, shared_state=shared_state)),
         ("get_drives", lambda settings: generic_read(settings, "/v1/drives")),
         ("get_files_temp", lambda settings: generic_read(settings, "/v1/files?path=/Temp")),
-        ("mem_read_zero_page", lambda settings: memory_read(settings, "0x0000", 16)),
-        ("mem_read_screen_ram", lambda settings: memory_read(settings, "0x0400", 16)),
-        ("mem_read_io_area", lambda settings: memory_read(settings, "0xD000", 16)),
-        ("mem_read_debug_register", lambda settings: memory_read(settings, "0xD7FF", 1)),
+        ("mem_read_zero_page", lambda settings: memory_read(settings, "0000", 16)),
+        ("mem_read_screen_ram", lambda settings: memory_read(settings, "0400", 16)),
+        ("mem_read_io_area", lambda settings: memory_read(settings, "D000", 16)),
+        ("mem_read_debug_register", lambda settings: memory_read(settings, "D7FF", 1)),
     )
     if surface == ProbeSurface.SMOKE:
         return (("get_version_smoke", lambda settings: generic_read(settings, "/v1/version")),)

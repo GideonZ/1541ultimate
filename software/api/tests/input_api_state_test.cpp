@@ -208,6 +208,42 @@ TEST(RestKeyboardStateTest, RestoreTapIsTemporaryAndNotPersistent)
     EXPECT_FALSE(restore);
 }
 
+// A queued tap carrying both matrix keys and `restore` is what one
+// `machine:input` request for C= plus RESTORE turns into. The C64 only reads
+// the combination as C= plus RESTORE if the CBM column is already down in the
+// matrix when the NMI edge arrives, so this asserts the hardware registers
+// rather than the REST snapshot: applyMatrixState() writes matrix[0..7] before
+// it writes the restore register at matrix[9], and the same tick sets both.
+TEST(RestKeyboardStateTest, QueuedTapDrivesMatrixAndRestoreTogether)
+{
+    Keyboard_USB keyboard;
+    volatile uint8_t hardware_matrix[11] = { 0 };
+    uint8_t combo[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
+
+    const InputKeyboardMapEntry *cbm = find_keyboard_entry("commodore");
+    ASSERT_TRUE(cbm != 0);
+    add_key_to_matrix(combo, "commodore");
+
+    keyboard.setMatrix(hardware_matrix);
+    keyboard.enableMatrix(true);
+    ASSERT_TRUE(keyboard.restQueueTap(combo, true, 2));
+
+    EXPECT_TRUE((hardware_matrix[cbm->row] & (1 << cbm->col)) == 0);
+    EXPECT_TRUE((hardware_matrix[9] & 1) == 0);
+
+    keyboard.tickRestOverlays();
+    EXPECT_TRUE((hardware_matrix[cbm->row] & (1 << cbm->col)) != 0);
+    EXPECT_TRUE((hardware_matrix[9] & 1) != 0);
+
+    keyboard.tickRestOverlays();
+    EXPECT_TRUE((hardware_matrix[cbm->row] & (1 << cbm->col)) != 0);
+    EXPECT_TRUE((hardware_matrix[9] & 1) != 0);
+
+    keyboard.tickRestOverlays();
+    EXPECT_TRUE((hardware_matrix[cbm->row] & (1 << cbm->col)) == 0);
+    EXPECT_TRUE((hardware_matrix[9] & 1) == 0);
+}
+
 TEST(RestKeyboardStateTest, QueuedTapPreservesChordAndOrder)
 {
     Keyboard_USB keyboard;
@@ -774,6 +810,43 @@ TEST(RestJoystickStateTest, Fire2AndFire3PersistAndReleaseIndependently)
     JoystickOutput::instance().setRestPort1Persistent(0x5F);
     JoystickOutput::instance().snapshot(port1, port2);
     EXPECT_EQ(0x5F, port1);
+}
+
+TEST(RestJoystickStateTest, ReleaseCancelsInFlightTapOverlayImmediately)
+{
+    // Tap then release of the same input, as route_input.cc applies them.
+    reset_joystick_output();
+    uint8_t hold[7] = { 0, 0, 0, 0, 0, 1, 0 };  // fire2 (bit 5) tapped
+    uint8_t port1 = 0;
+    uint8_t port2 = 0;
+
+    // Tap shows fire2 pressed.
+    JoystickOutput::instance().armRestPort1Overlay(0x7F & ~0x20, hold);
+    JoystickOutput::instance().snapshot(port1, port2);
+    EXPECT_EQ(0x5F, port1);
+
+    // Release must take effect immediately, not wait for the tap to expire.
+    JoystickOutput::instance().setRestPort1Persistent(0x7F);
+    JoystickOutput::instance().cancelRestPort1Overlay(0x20);
+    JoystickOutput::instance().snapshot(port1, port2);
+    EXPECT_EQ(0x7F, port1);
+}
+
+TEST(RestJoystickStateTest, CancelOverlayLeavesOtherBitsAlone)
+{
+    reset_joystick_output();
+    uint8_t hold[7] = { 0, 0, 0, 0, 0, 1, 1 };  // fire2 and fire3 both tapped
+    uint8_t port1 = 0;
+    uint8_t port2 = 0;
+
+    JoystickOutput::instance().armRestPort1Overlay(0x7F & ~0x60, hold);
+    JoystickOutput::instance().cancelRestPort1Overlay(0x20);  // cancel fire2 only
+    JoystickOutput::instance().snapshot(port1, port2);
+    EXPECT_EQ(0x3F, port1);  // fire2 (bit 5) released, fire3 (bit 6) still mid-tap
+
+    JoystickOutput::instance().tickOverlays();
+    JoystickOutput::instance().snapshot(port1, port2);
+    EXPECT_EQ(0x7F, port1);  // fire3's own countdown still auto-releases normally
 }
 
 TEST(RestJoystickStateTest, Fire2MapsToPotXAndFire3MapsToPotY)

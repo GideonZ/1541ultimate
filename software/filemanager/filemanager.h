@@ -276,6 +276,11 @@ public:
     }
     void deregisterObserver(ObserverQueue *q) {
     	observers.remove(q);
+        // Unsubscribed observers will never consume their pending events.
+        FileManagerEvent *event;
+        while ((event = (FileManagerEvent *)q->waitForEvent(0))) {
+            delete event;
+        }
     }
     void sendEventToObservers(eFileManagerEventType e, const char *p, const char *n="") {
         // printf("Sending FM event to %d observers: %d %s %s\n", observers.get_elements(), e, p, n);

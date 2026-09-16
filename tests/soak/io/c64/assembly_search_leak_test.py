@@ -88,8 +88,8 @@ SETTLE_SECONDS = 6.0
 
 def open_and_leave(device) -> None:
     """One full open and close of the search browser."""
-    a64.open_query_form(device)
-    a64.leave_form(device)
+    device.form.open()
+    device.form.leave()
 
 
 def query_and_open_entry(device) -> bool:
@@ -100,11 +100,14 @@ def query_and_open_entry(device) -> bool:
     not the entries path. That is reported rather than failed: an empty corpus
     is the service's business, not the firmware's.
     """
-    a64.open_query_form(device)
-    a64.enter_field(device, a64.NAME_FIELD)
-    device.type_text(a64.SEARCH_TERM)
-    device.send_key("ENTER")
-    a64.submit_query(device)
+    device.form.open()
+    # The form's first field, read off the screen rather than named: which
+    # fields the form draws follows the service, so a literal label works on
+    # one machine and not the next. See tests/e2e/lib/search_form.py.
+    device.form.edit(device.form.first_field())
+    device.form.type_text(a64.SEARCH_TERM)
+    device.form.confirm()
+    device.form.submit()
 
     opened = False
     if wait_until(lambda: device.menu_is_open() and not device.form_visible(),

@@ -68,6 +68,18 @@ JSON *parse_json_text(const char *text, int &tokens)
 
 } // namespace
 
+TEST(JsonValueTest, RendersFullSignedIntegerRange)
+{
+    JSON_Integer minimum(INT32_MIN);
+    JSON_Integer maximum(INT32_MAX);
+    JSON_Integer negative(-1);
+    JSON_Integer zero(0);
+    EXPECT_EQ(std::string("-2147483648"), std::string(minimum.render()));
+    EXPECT_EQ(std::string("2147483647"), std::string(maximum.render()));
+    EXPECT_EQ(std::string("-1"), std::string(negative.render()));
+    EXPECT_EQ(std::string("0"), std::string(zero.render()));
+}
+
 TEST(InputApiValidationTest, ParsesValidBatchAndPreservesEventDetails)
 {
     InputParsedEvent events[INPUT_API_MAX_EVENTS];
@@ -152,7 +164,10 @@ TEST(InputApiValidationTest, AcceptsEveryDocumentedKeyboardInput)
     }
 }
 
-TEST(InputApiValidationTest, RejectsRestoreOutsideTapAloneRule)
+// `restore` is an edge on the NMI line, not a matrix column, and route_input.cc
+// skips it when it builds the live matrix for a press and for a release. Both
+// transitions have to stay rejected, or the call answers 200 and does nothing.
+TEST(InputApiValidationTest, RejectsRestorePress)
 {
     InputParsedEvent events[INPUT_API_MAX_EVENTS];
     int event_count = 0;
@@ -163,7 +178,96 @@ TEST(InputApiValidationTest, RejectsRestoreOutsideTapAloneRule)
 
     EXPECT_FALSE(validate(root, events, event_count, error_index, err));
     EXPECT_EQ(0, error_index);
-    EXPECT_TRUE(err.find("`restore` must appear alone") != std::string::npos);
+    EXPECT_EQ(std::string("`restore` is only valid with transition `tap`."), err);
+
+    delete root;
+}
+
+TEST(InputApiValidationTest, RejectsRestoreRelease)
+{
+    InputParsedEvent events[INPUT_API_MAX_EVENTS];
+    int event_count = 0;
+    int error_index = -1;
+    std::string err;
+
+    JSON *root = make_root(JSON::List()->add(make_keyboard_event("release", { "restore" })));
+
+    EXPECT_FALSE(validate(root, events, event_count, error_index, err));
+    EXPECT_EQ(0, error_index);
+    EXPECT_EQ(std::string("`restore` is only valid with transition `tap`."), err);
+
+    delete root;
+}
+
+// A restore tap on its own keeps working, which is what every caller written
+// against the previous rule sends.
+TEST(InputApiValidationTest, AcceptsRestoreTapAlone)
+{
+    InputParsedEvent events[INPUT_API_MAX_EVENTS];
+    int event_count = 0;
+    int error_index = -1;
+    std::string err;
+
+    JSON *root = make_root(JSON::List()->add(make_keyboard_event("tap", { "restore" })));
+
+    EXPECT_TRUE(validate(root, events, event_count, error_index, err));
+    EXPECT_EQ(1, event_count);
+    EXPECT_EQ(1, events[0].keyboard_count);
+
+    delete root;
+}
+
+// The relaxation: matrix keys may share a tap with `restore`, in either order,
+// which is what C= plus RESTORE and RUN/STOP plus RESTORE need.
+TEST(InputApiValidationTest, AcceptsRestoreTapWithMatrixKeys)
+{
+    const InputKeyboardMapEntry *keyboard_map = input_api_keyboard_map();
+
+    for (int order = 0; order < 2; order++) {
+        InputParsedEvent events[INPUT_API_MAX_EVENTS];
+        int event_count = 0;
+        int error_index = -1;
+        std::string err;
+
+        JSON *root = make_root(JSON::List()->add((order == 0)
+            ? make_keyboard_event("tap", { "commodore", "restore" })
+            : make_keyboard_event("tap", { "restore", "commodore" })));
+
+        EXPECT_TRUE(validate(root, events, event_count, error_index, err));
+        EXPECT_EQ(1, event_count);
+        EXPECT_EQ(2, events[0].keyboard_count);
+
+        int restore_count = 0;
+        int matrix_count = 0;
+        for (int i = 0; i < events[0].keyboard_count; i++) {
+            if (keyboard_map[events[0].keyboard_index[i]].restore) {
+                restore_count++;
+            } else {
+                matrix_count++;
+            }
+        }
+        EXPECT_EQ(1, restore_count);
+        EXPECT_EQ(1, matrix_count);
+
+        delete root;
+    }
+}
+
+// The batch limit still applies with `restore` in the list, and a duplicate is
+// still refused, so relaxing the rule did not open either of those.
+TEST(InputApiValidationTest, RejectsDuplicateRestoreInTap)
+{
+    InputParsedEvent events[INPUT_API_MAX_EVENTS];
+    int event_count = 0;
+    int error_index = -1;
+    std::string err;
+
+    JSON *root = make_root(
+        JSON::List()->add(make_keyboard_event("tap", { "restore", "commodore", "restore" })));
+
+    EXPECT_FALSE(validate(root, events, event_count, error_index, err));
+    EXPECT_EQ(0, error_index);
+    EXPECT_TRUE(err.find("appears more than once") != std::string::npos);
 
     delete root;
 }
@@ -258,4 +362,22 @@ TEST(InputApiValidationTest, RejectsMalformedJsonBeforeValidation)
 
     EXPECT_TRUE(tokens < 0);
     EXPECT_EQ((JSON *)0, root);
+}
+
+TEST(JsonValueTest, ReplacedPrimitivesRetainTheirParent)
+{
+    JSON_Object object;
+    object.add("value", 0);
+
+    object.set("value", 123);
+    EXPECT_EQ(eInteger, object.get("value")->type());
+    EXPECT_EQ(static_cast<JSON *>(&object), object.get("value")->parent);
+
+    object.set("value", true);
+    EXPECT_EQ(eBool, object.get("value")->type());
+    EXPECT_EQ(static_cast<JSON *>(&object), object.get("value")->parent);
+
+    object.set("value", "replacement");
+    EXPECT_EQ(eString, object.get("value")->type());
+    EXPECT_EQ(static_cast<JSON *>(&object), object.get("value")->parent);
 }

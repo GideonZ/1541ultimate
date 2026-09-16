@@ -191,6 +191,90 @@ MONITOR_D_KEY_RESERVED = _fix(
     "it, rather than entering the Debug mode this branch removed",
     (U2,))
 
+# What the "confirming ... preserves its value and all other fields" checks in
+# tests/e2e/io/c64/assembly64_test.py assert, and the behaviour
+# GideonZ/1541ultimate#865 gave the Assembly 64 query form. The C64 Ultimate
+# searches CommoServe, whose form is drawn by a different class in that
+# release line and still clears itself.
+#
+# Measured on a C64 Ultimate 1.2RC, overlay mode, 2026-09-07. With all nine
+# fields of the CommoServe File Search form holding values, opening the
+# "Category:" dropdown and confirming any item empties every field on the
+# form, free-text and preset alike:
+#
+#   before {'Name:': 'name0', 'Group:': 'group1', 'Handle:': 'handle2',
+#           'Event:': 'event3', 'Category:': 'Apps', 'Date:': '1980',
+#           'Type:': 'crt', 'Sort:': 'Name', 'Order:': 'Ascending'}
+#   after  every one of those nine ''
+#
+# Three key paths do it: RETURN on the item the menu opens on, DOWN then UP
+# then RETURN, and DOWN then RETURN. Leaving the menu with RUN/STOP keeps the
+# fields, and so does cycling the same field with "+" and "-", so only the
+# context-menu action is affected. An Ultimate 64 Elite on 3.15 keeps every
+# field on all three paths.
+QUERY_FORM_SURVIVES_DROPDOWN_CONFIRM = _fix(
+    "query-form-survives-dropdown-confirm",
+    "confirming a preset from the query form's dropdown keeps the values in "
+    "the other fields, rather than emptying the whole form",
+    (C64U,))
+
+# What the "opens the menu" check in tests/e2e/api/input_test.py asserts, on
+# the one machine tests/e2e/lib/menu.py gives a keyboard route into the menu.
+# A C64 Ultimate's core reads the keyboard matrix at a RESTORE NMI edge and
+# treats CBM held down plus that edge the way it treats the menu button, so
+# the combination has to open the menu.
+#
+# Measured on a C64 Ultimate, 2026-09-07: an injected C= plus RESTORE did not
+# open the menu on any of 6 attempts, while machine:menu_button opened it every
+# time. The firmware that lacks this fix does not resync the button edge
+# detector after the menu closes, so the edge the combination raises is not
+# read as a fresh press. tests/e2e/io/c64/deferred_actions_test.py records the
+# same limitation for its own menu-reopening checks.
+KEYBOARD_COMBINATION_OPENS_MENU = _fix(
+    "keyboard-combination-opens-menu",
+    "an injected C= plus RESTORE opens the menu, the same way the menu button "
+    "does, rather than being ignored",
+    (C64U,))
+
+DEBUGREG_REJECTS_INVALID_VALUE = _fix(
+    "debugreg-rejects-invalid-value",
+    "machine:debugreg answers HTTP 400 to a value that is not two hexadecimal "
+    "digits, rather than writing a truncated or zero byte to the register",
+    (C64U,))
+
+MEMORY_API_REJECTS_INVALID_ADDRESS = _fix(
+    "memory-api-rejects-invalid-address",
+    "readmem and writemem answer HTTP 400 to an address that is not valid "
+    "hexadecimal, rather than parsing it as $0000 and acting there",
+    (C64U, U2))
+
+# What tests/e2e/io/c64/c64gs_cartridge_test.py asserts. The fix is in the
+# cartridge logic of the FPGA image, not in the application. The Ultimate 64
+# images ship prebuilt in external/, so an Ultimate 64 lacks it until they are
+# rebuilt. Measured there only, with locally built cores that differ in that
+# one change. The Ultimate II family's images are built from fpga/ with the
+# firmware, and the C64 Ultimate's image comes from another tree; both are
+# listed so the suite cannot fail a routine run before they are measured.
+# Delete a kind once `--assume-fix` passes on it.
+C64GS_BANK_FROM_ADDRESS = _fix(
+    "c64gs-bank-from-address",
+    "a C64 Game System cartridge selects the bank named by the address of an "
+    "IO1 read or write, rather than the byte on the data bus",
+    (U64, U2, C64U))
+
+# What the bit 6 check in tests/e2e/io/c64/comal80_cartridge_test.py asserts.
+# The fix is in the cartridge logic of the FPGA image, not in the application.
+# The Ultimate 64 images ship prebuilt in external/, so an Ultimate 64 lacks it
+# until they are rebuilt. The Ultimate II family's images are built from fpga/
+# with the firmware, and the C64 Ultimate's image comes from another tree; both
+# are listed so the check cannot fail a routine run before they are measured.
+# Delete a kind once `--assume-fix` passes on it.
+COMAL80_CARTRIDGE_OFF_BIT = _fix(
+    "comal80-cartridge-off-bit",
+    "a $DE00 write with bit 6 set switches a COMAL 80 cartridge off, rather "
+    "than leaving it mapped",
+    (U64, U2, C64U))
+
 # Every fix at once, for a sweep that asks whether the lagging line has caught
 # up rather than about one behaviour.
 ASSUME_ALL = "all"
@@ -315,6 +399,19 @@ class Machine:
         """The title the online search's query form draws."""
         return ("CommoServe File Search" if self.kind == C64U
                 else "Assembly 64 Query Form")
+
+    @property
+    def machine_task_category(self) -> str:
+        """The task-menu category holding Reset, Reboot and the power actions.
+
+        C64_Subsys registers them under "C64 Machine"
+        (software/io/c64/c64_subsys.cc). A C64 Ultimate lists the same actions
+        under "Power & Reset": read off the device on 2026-09-07, where that
+        category offered Reset C64, Reboot C64, Reboot (Clr Mem), Power OFF,
+        Power Cycle, Save C64 Memory and Save REU Memory. Only the category
+        differs; the action labels are the same on both.
+        """
+        return "Power & Reset" if self.kind == C64U else "C64 Machine"
 
     @property
     def rest_workers(self) -> int:

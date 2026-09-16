@@ -154,6 +154,7 @@ public:
             if (strcasecmp(keys[i], key) == 0) { // key exists!
                 delete values[i];
                 values.replace_idx(i, new JSON_Integer(val));
+                values[i]->parent = this;
                 return this;
             }
         }
@@ -165,6 +166,7 @@ public:
             if (strcasecmp(keys[i], key) == 0) { // key exists!
                 delete values[i];
                 values.replace_idx(i, new JSON_Bool(b));
+                values[i]->parent = this;
                 return this;
             }
         }
@@ -176,6 +178,7 @@ public:
             if (strcasecmp(keys[i], key) == 0) { // key exists!
                 delete values[i];
                 values.replace_idx(i, new JSON_String(str));
+                values[i]->parent = this;
                 return this;
             }
         }
