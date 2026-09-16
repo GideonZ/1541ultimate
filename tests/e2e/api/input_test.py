@@ -24,6 +24,7 @@ sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
 import bootstrap  # noqa: E402,F401
 import menu as menu_lib  # noqa: E402
 import cli  # noqa: E402
+import profiles  # noqa: E402
 import ftp as ftp_lib
 import machine as machine_lib
 import pacing
@@ -50,6 +51,28 @@ TEST_CHOICES = (
     "menu-repeat-cursor",
     "mouse",
 )
+# What each profile runs, on top of the profile before it. Smoke keeps the
+# checks that guard the lines a build breaks most easily: the request contract
+# and both joystick ports. The keyboard, the mouse and the menu follow, and the
+# echo and repeat sweeps, which take seconds each, wait for deep.
+PROFILE_TESTS = {
+    profiles.SMOKE: ("contract", "joystick"),
+    profiles.QUICK: ("keyboard", "mouse"),
+    profiles.STANDARD: ("menu",),
+    profiles.DEEP: ("keyboard-echo-alphabet", "keyboard-echo-ab-20hz", "keyboard-echo-ab-5hz",
+                    "menu-open", "menu-shift", "menu-repeat-printable", "menu-repeat-cursor"),
+    profiles.EXHAUSTIVE: (),
+}
+
+
+def tests_for(profile: str) -> list[str]:
+    """The scenarios `profile` runs, in the order TEST_CHOICES declares them."""
+    wanted: set[str] = set()
+    for name in profiles.ORDER:
+        wanted |= set(PROFILE_TESTS[name])
+        if name == profile:
+            break
+    return [test for test in TEST_CHOICES if test in wanted]
 # Bounded retry for idempotent reads whose transport failed; see request().
 TRANSPORT_RETRIES = 3
 TRANSPORT_RETRY_PAUSE_SECONDS = 0.5
@@ -2743,6 +2766,12 @@ def main() -> int:
         help="run one suite or menu subtest; repeat for multiple selections",
     )
     parser.add_argument(
+        "--profile",
+        choices=profiles.ORDER,
+        default=profiles.current(),
+        help="run the scenarios of this profile (default: the runner's, else quick)",
+    )
+    parser.add_argument(
         "-d",
         "--soak-duration",
         default="5m",
@@ -2752,7 +2781,7 @@ def main() -> int:
 
     rest_host = args.rest_host or args.host
     session = RestInputSession(rest_host, args.password, args.timeout)
-    selected_tests = None if not args.test else args.test
+    selected_tests = args.test if args.test else tests_for(args.profile)
     soak_duration_seconds = cli.parse_duration(args.soak_duration) if args.soak else None
     if args.soak and selected_tests is not None:
         suite_fail("input_test", "--test cannot be combined with --soak")

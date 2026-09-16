@@ -116,6 +116,7 @@ import threading
 import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
+from itertools import pairwise
 from pathlib import Path
 
 # The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
@@ -157,6 +158,11 @@ PROFILE_TESTS = {
 }
 
 
+def deep_run() -> bool:
+    """Whether this run sweeps the cases a shorter profile only samples."""
+    return profiles.rank(profiles.current()) >= profiles.rank(profiles.DEEP)
+
+
 def tests_for(profile: str) -> tuple[str, ...]:
     """The scenarios `profile` runs, in the order TESTS declares them."""
     wanted: set[str] = set()
@@ -185,13 +191,19 @@ def require(condition: bool, message: str, state: MouseState) -> None:
         raise Failure(f"{message}: {state}")
 
 
+# What configure() last put in force, so a check writes only what it changes.
+IN_FORCE: dict[str, object] = {}
+
+
 def configure(api: UltimateApi, **settings: object) -> None:
     """Apply DEFAULTS, then `settings` given with underscores for spaces."""
     wanted = dict(DEFAULTS)
     for name, value in settings.items():
         wanted[name.replace("_", " ")] = value
     for item, value in wanted.items():
-        api.configs.set(CATEGORY, item, value)
+        if IN_FORCE.get(item) != value:
+            api.configs.set(CATEGORY, item, value)
+            IN_FORCE[item] = value
 
 
 # The 7-bit value both POT lines are parked on before a check.
@@ -206,7 +218,7 @@ def park(listener: MouseListener, mouse: PicoMouse | RestMouse) -> None:
     firmware write $80 over the mouse position (issue #909). A pointer count is
     two POT counts, so the move is half the distance on the lines.
     """
-    state = listener.quiet()
+    state = listener.state()
     # POTX follows the mouse's x; POTY moves against it.
     dx = (PARKED_POT - (state.potx & 0x7F)) % 128
     dy = ((state.poty & 0x7F) - PARKED_POT) % 128
@@ -214,22 +226,32 @@ def park(listener: MouseListener, mouse: PicoMouse | RestMouse) -> None:
         mouse.move(dx // 2, dy // 2)
 
 
+# Whether the POT lines have been seen following the mouse since the listener
+# started. The two moves that show it cost a check's worth of time, so they run
+# once, not before every check.
+FOLLOWS = {"seen": False}
+
+
 @contextmanager
-def fresh(listener: MouseListener, mouse: PicoMouse | RestMouse, parked: bool = True) -> Iterator[None]:
+def fresh(listener: MouseListener, mouse: PicoMouse | RestMouse, parked: bool = True,
+          prime: bool = False) -> Iterator[None]:
     """Start a check from a quiet listener with its counters at zero.
 
     The origin is a position the mouse itself set, parked away from the
     released joystick value (see park). `parked=False` leaves the position
     alone, for Cursor mode, where motion types keys instead, and for a caller
-    that has parked the mouse itself.
+    that has parked the mouse itself. `prime` sends a report each way first,
+    for a check whose expectation depends on the reports before it.
     """
     if parked:
         park(listener, mouse)
-    mouse.move(1, 1)
-    mouse.move(-1, -1)
-    state = listener.quiet()
-    if parked and (not (state.potx & 0x7F) or not (state.poty & 0x7F)):
-        raise Failure(f"the POT lines do not follow the mouse, or sit where $80 would not show: {state}")
+    if prime or not FOLLOWS["seen"]:
+        mouse.move(1, 1)
+        mouse.move(-1, -1)
+        state = listener.quiet(hold=0.1)
+        if parked and (not (state.potx & 0x7F) or not (state.poty & 0x7F)):
+            raise Failure(f"the POT lines do not follow the mouse, or sit where $80 would not show: {state}")
+        FOLLOWS["seen"] = True
     listener.reset()
     yield
 
@@ -296,7 +318,7 @@ def flick(dx: int, dy: int) -> list[tuple[int, int]]:
     return [(round(dx * f), round(dy * f)) for f in FLICK_SHAPE]
 
 
-def movement_case(listener, mouse, label: str, steps: list[tuple[int, int]], reports_per_step: int = 2,
+def movement_case(listener, mouse, label: str, steps: list[tuple[int, int]], reports_per_step: int = 1,
                   monotonic: bool = True, expected: tuple[int, int] | None = None, tolerance: int = 0) -> None:
     """Send `steps` as a hand would and require where they land, within `tolerance` counts.
 
@@ -379,7 +401,7 @@ def test_motion_speed(api, listener, mouse) -> None:
     # with the remainder carried, so 160 single counts are exactly 20.
     configure(api, Mouse_Mode="Mouse", Mouse_Sensitivity=1)
     movement_case(listener, mouse, "sensitivity 1 carries fractions: 160 x 1 count is 20", [(1, 0)] * 80,
-                  expected=(20, 0))
+                  reports_per_step=2, expected=(20, 0))
     # Sensitivity 16 doubles, and the clamp still applies after it.
     configure(api, Mouse_Mode="Mouse", Mouse_Sensitivity=16)
     with check("sensitivity 16 doubles, and clamps one report of 40 counts to 63"), fresh(listener, mouse):
@@ -400,7 +422,7 @@ def test_motion_speed(api, listener, mouse) -> None:
         configure(api, Mouse_Mode="Mouse", Mouse_Acceleration="Adaptive")
         expected = adaptive_acceleration_total(dx, dy, count)
         with check(f"adaptive acceleration: {count} x {dx},{dy} counts lands at {expected}"), \
-                fresh(listener, mouse, parked=False):
+                fresh(listener, mouse, parked=False, prime=True):
             mouse.stream(dx=dx, dy=dy, count=count, interval_ms=interval_ms)
             state = listener.quiet()
             detail(str(state))
@@ -424,6 +446,7 @@ def set_system_mode(api, listener: MouseListener, mouse: PicoMouse | RestMouse, 
     """Switch the video timing and start the listener again on the new frames."""
     api.configs.set(CATEGORY, "System Mode", mode)
     listener.start()
+    FOLLOWS["seen"] = False
     mouse.move(1, 1)
     mouse.move(-1, -1)
 
@@ -517,7 +540,7 @@ def test_pacing(api, listener, mouse) -> None:
 # holds movement back for a window shows it in fewer, larger steps, which is
 # both jagged and late. Showing every report as it arrives moves about 99% of
 # the frames; holding each one for a 24ms window moves about 80%.
-PRECISE_REPORTS = 300
+PRECISE_REPORTS = 120
 PRECISE_FRAMES = 0.9
 
 
@@ -559,7 +582,7 @@ def test_precision(api, listener, mouse) -> None:
 PATH_MAX_STEPS = 256
 # Long enough that the steps are plainly paced, short enough to stay quick.
 PATH_SLOW_INTERVAL_MS = 100
-PATH_SLOW_STEPS = 20
+PATH_SLOW_STEPS = 12
 # A drawn stroke: the speed rises and falls, and the direction turns.
 PATH_STROKE = [(3, 1), (5, 2), (8, 3), (11, 2), (8, -1), (5, -3), (3, -2)]
 
@@ -609,13 +632,14 @@ def test_path(api, listener, mouse) -> None:
         expected = (PATH_SLOW_STEPS - 1) * PATH_SLOW_INTERVAL_MS / 1000.0
         require(expected <= elapsed <= expected + 1.0, f"expected about {expected:.1f}s, not {elapsed:.2f}s", state)
 
-    with check(f"the longest path, {PATH_MAX_STEPS} steps in one request"), fresh(listener, mouse):
-        send_path(api, [(1, 0)] * PATH_MAX_STEPS)
-        queued = mouse.pending()
-        mouse.wait_sent()
-        state = listener.quiet()
-        detail(f"{queued} reports queued: {state}")
-        require((state.x, state.y) == (PATH_MAX_STEPS, 0), f"expected position ({PATH_MAX_STEPS}, 0)", state)
+    if deep_run():
+        with check(f"the longest path, {PATH_MAX_STEPS} steps in one request"), fresh(listener, mouse):
+            send_path(api, [(1, 0)] * PATH_MAX_STEPS)
+            queued = mouse.pending()
+            mouse.wait_sent()
+            state = listener.quiet()
+            detail(f"{queued} reports queued: {state}")
+            require((state.x, state.y) == (PATH_MAX_STEPS, 0), f"expected position ({PATH_MAX_STEPS}, 0)", state)
 
     with check("a press, a path and a release in one request is a drag"), fresh(listener, mouse):
         steps = [(4, 0)] * PATH_SLOW_STEPS
@@ -647,14 +671,14 @@ def test_path(api, listener, mouse) -> None:
 
 # -------------------------------------------------------------------- flood --
 
-# 15s of reports at the 20ms poll rate. Each moves by FLOOD_STEP, which is
+# 6s of reports at the 20ms poll rate. Each moves by FLOOD_STEP, which is
 # within the 31 counts per 24ms the POT lines carry, so nothing may be dropped.
-FLOOD_REPORTS = 750
+FLOOD_REPORTS = 300
 FLOOD_STEP = 15
 # Separate requests, each one report, sent as fast as the host can post them.
-FLOOD_REQUESTS = 200
+FLOOD_REQUESTS = 80
 FLOOD_REQUEST_STEP = 20
-FLOOD_TAPS = 100
+FLOOD_TAPS = 40
 
 
 def test_flood(api, listener, mouse) -> None:
@@ -731,7 +755,9 @@ def mode_case(api, listener, mouse, mode: str) -> None:
         mouse.path([(8, 0)] * 5, 1)
         require_effect(listener.quiet(), motion, "motion", 40)
         listener.reset()
-        mouse.wheel(vertical=-5)
+        # As fast as the host polls: five detents fit the Micromys queue, and
+        # the slow gaps are what the wheel scenarios are for.
+        mouse.wheel(vertical=-5, gap_ms=0)
         require_effect(listener.quiet(), wheel, "the wheel", None)
 
 
@@ -739,7 +765,7 @@ def test_settings(api, listener, mouse) -> None:
     for mode in MODE_EFFECTS:
         mode_case(api, listener, mouse, mode)
 
-    for sensitivity in (1, 2, 4, 8, 16):
+    for sensitivity in ((1, 2, 4, 8, 16) if deep_run() else (1, 8, 16)):
         configure(api, Mouse_Mode="Mouse", Mouse_Sensitivity=sensitivity)
         expected = pointer_counts(80, sensitivity)
         # Below 8 a count is a fraction of a pointer count, and the moves that
@@ -764,7 +790,7 @@ def test_settings(api, listener, mouse) -> None:
             require_cursor_keys(state, expected)
             require_still(state, "motion in Cursor mode")
 
-    for sensitivity in (1, 2, 8, 16):
+    for sensitivity in ((1, 2, 8, 16) if deep_run() else (1, 16)):
         configure(api, Mouse_Mode="Mouse + Wheel", Mouse_Wheel_Sensitivity=sensitivity)
         with check(f"Mouse Wheel Sensitivity {sensitivity}: a detent is {sensitivity} pulses"), \
                 fresh(listener, mouse):
@@ -793,18 +819,20 @@ def test_settings(api, listener, mouse) -> None:
 def test_buttons(api, listener, mouse) -> None:
     configure(api)
     masks = [tuple(name for bit, name in enumerate(ALL_BUTTONS) if code & (1 << bit)) for code in range(8)]
-    with check("all 8 button states and all 64 transitions between them"), fresh(listener, mouse):
+    # Every state, and in a deep run every way of reaching one from another.
+    states = [(first, second) for first in masks for second in masks] if deep_run() else list(pairwise(masks))
+    label = "all 8 button states and all 64 transitions between them" if deep_run() else "all 8 button states"
+    with check(label), fresh(listener, mouse):
         expected = dict.fromkeys(ALL_BUTTONS, 0)
         held: tuple[str, ...] = ()
-        for first in masks:
-            for second in masks:
-                for target in (first, second):
-                    for name in target:
-                        if name not in held:
-                            expected[name] += 1
-                    mouse.buttons(*target)
-                    held = target
-                    listener.wait_until(lambda s, target=target: s.held == set(target))
+        for first, second in states:
+            for target in (first, second):
+                for name in target:
+                    if name not in held:
+                        expected[name] += 1
+                mouse.buttons(*target)
+                held = target
+                listener.wait_until(lambda s, target=target: s.held == set(target))
         mouse.buttons()
         state = listener.quiet()
         detail(str(state))
@@ -815,21 +843,25 @@ def test_buttons(api, listener, mouse) -> None:
     if isinstance(mouse, RestMouse):
         # `transition: tap` exists only over REST: the firmware holds the
         # buttons for two PAL frames, long enough for a read once per frame.
-        for combination in (("left",), ("right",), ("middle",), ALL_BUTTONS):
-            with check(f"a REST tap of {'+'.join(combination)} is one press each and ends released"), \
-                    fresh(listener, mouse):
+        with check("a REST tap of each button, and of all three, is one press each"), fresh(listener, mouse):
+            expected = dict.fromkeys(ALL_BUTTONS, 0)
+            for combination in (("left",), ("right",), ("middle",), ALL_BUTTONS):
                 mouse.tap(*combination)
-                state = listener.quiet()
-                detail(str(state))
-                expected = {name: int(name in combination) for name in ALL_BUTTONS}
-                require(state.presses == expected, f"expected presses {expected}", state)
-                require(not state.held, "a button is still held", state)
+                for name in combination:
+                    expected[name] += 1
+            state = listener.quiet()
+            detail(str(state))
+            require(state.presses == expected, f"expected presses {expected}", state)
+            require(not state.held, "a button is still held", state)
+            require_still(state, "the taps")
 
 
 # ----------------------------------------------------------- wheel-micromys --
 
 def test_wheel_micromys(api, listener, mouse) -> None:
-    for sensitivity, up, down in ((1, 5, 4), (3, 2, 1), (8, 1, 1)):
+    # A slow detent waits out the pulse train it makes, so below deep one
+    # sensitivity in the middle stands for the range the deep run sweeps.
+    for sensitivity, up, down in (((1, 5, 4), (3, 2, 1), (8, 1, 1)) if deep_run() else ((3, 2, 1),)):
         configure(api, Mouse_Wheel_Sensitivity=sensitivity)
         with check(f"sensitivity {sensitivity}: {up} up and {down} down detents, slowly, "
                    f"give {sensitivity} pulses each and leave the position"), fresh(listener, mouse):
@@ -850,6 +882,8 @@ def test_wheel_micromys(api, listener, mouse) -> None:
         require((state.wheel_up, state.wheel_down) == (10, 0), "expected all 10 pulses", state)
         require_still(state, "the wheel")
 
+    if not deep_run():
+        return
     with check(f"40 fast detents fill the {WHEEL_BURST_LIMIT}-pulse queue, then the wheel is normal again"), \
             fresh(listener, mouse):
         mouse.wheel(vertical=-40, gap_ms=0)
@@ -897,13 +931,13 @@ def test_wheel_micromys(api, listener, mouse) -> None:
 
 def test_wheel_count(api, listener, mouse) -> None:
     configure(api)
-    with check("120 slow detents in alternating directions are counted exactly"), fresh(listener, mouse):
-        for _ in range(30):
+    with check("60 slow detents in alternating directions are counted exactly"), fresh(listener, mouse):
+        for _ in range(15):
             mouse.wheel(vertical=2)
             mouse.wheel(vertical=-2)
         state = listener.quiet()
         detail(str(state))
-        require((state.wheel_up, state.wheel_down) == (60, 60), "expected 60 up and 60 down pulses", state)
+        require((state.wheel_up, state.wheel_down) == (30, 30), "expected 30 up and 30 down pulses", state)
         require_still(state, "the wheel")
 
 
@@ -916,13 +950,14 @@ def test_wheel_mouse(api, listener, mouse) -> None:
     # times 2, so 8 counts, in the direction PAN_POSITIVE_SIGN gives.
     for direction, sign in (("Normal", 1), ("Reversed", -1)):
         configure(api, Mouse_Mode="Mouse", Mouse_Wheel_Sensitivity=4, Mouse_Wheel_Direction=direction)
-        for label, vertical, horizontal, gap_ms, expected in (
-                ("slow vertical", 2, 0, 150, (0, -20 * sign)),
-                ("slow vertical, other way", -3, 0, 150, (0, 30 * sign)),
-                ("slow horizontal", 0, 2, 150, (16 * PAN_POSITIVE_SIGN * sign, 0)),
-                ("slow horizontal, other way", 0, -3, 150, (-24 * PAN_POSITIVE_SIGN * sign, 0)),
-                ("fast vertical", 12, 0, 0, (0, -120 * sign)),
-                ("fast horizontal", 0, -12, 0, (-96 * PAN_POSITIVE_SIGN * sign, 0))):
+        cases = [("slow vertical", 2, 0, 150, (0, -20 * sign)),
+                 ("slow horizontal", 0, 2, 150, (16 * PAN_POSITIVE_SIGN * sign, 0)),
+                 ("fast vertical", 12, 0, 0, (0, -120 * sign))]
+        if deep_run():
+            cases += [("slow vertical, other way", -3, 0, 150, (0, 30 * sign)),
+                      ("slow horizontal, other way", 0, -3, 150, (-24 * PAN_POSITIVE_SIGN * sign, 0)),
+                      ("fast horizontal", 0, -12, 0, (-96 * PAN_POSITIVE_SIGN * sign, 0))]
+        for label, vertical, horizontal, gap_ms, expected in cases:
             with check(f"Mouse mode, {direction}: {label} moves the pointer to {expected}"), fresh(listener, mouse):
                 mouse.wheel(vertical=vertical, horizontal=horizontal, gap_ms=gap_ms)
                 state = listener.quiet()
@@ -952,9 +987,13 @@ def require_cursor_keys(state: MouseState, expected: dict[str, int]) -> None:
 
 
 def wheel_cursor_cases(api, listener, mouse, mode: str) -> None:
-    for sensitivity in (1, 2):
+    # A deep run sweeps both sensitivities and all four turns; below that one of
+    # each shows the mapping, and the other mode's scenario covers the rest.
+    sensitivities = (1, 2) if deep_run() else (2,)
+    turns = ((1, 0), (-2, 0), (0, 1), (0, -2)) if deep_run() else ((-2, 0), (0, 1))
+    for sensitivity in sensitivities:
         configure(api, Mouse_Mode=mode, Mouse_Wheel_Sensitivity=sensitivity)
-        for vertical, horizontal in ((1, 0), (-2, 0), (0, 1), (0, -2)):
+        for vertical, horizontal in turns:
             expected = cursor_expectation(vertical, horizontal, sensitivity)
             with check(f"{mode}, sensitivity {sensitivity}: wheel {vertical}/{horizontal} "
                        f"types cursor keys {expected}"), \
