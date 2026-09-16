@@ -47,6 +47,11 @@ settings
     Every mouse setting: what each Mouse Mode does with motion and the wheel,
     Mouse Sensitivity 1 to 16 on the pointer and on the cursor keys, Mouse
     Wheel Sensitivity 1 to 16, and both wheel directions.
+path
+    REST `path` events: a drawn stroke lands where its steps add up and shows
+    one step per frame, a path that turns comes back, interval_ms paces the
+    steps, the longest path of 256 steps arrives, a press and release around a
+    path make a drag, and two paths in one request run in order.
 precision
     The slowest movement a mouse makes: reports of one and two counts. Every
     report has to reach the POT lines in its own frame, in the step the mouse
@@ -134,7 +139,7 @@ DEFAULTS = {
     "Menu Mouse Navigation": "Enabled",
 }
 
-TESTS = ("move", "motion-speed", "pacing", "precision", "flood", "settings", "buttons", "wheel-micromys",
+TESTS = ("move", "motion-speed", "pacing", "precision", "path", "flood", "settings", "buttons", "wheel-micromys",
          "wheel-count", "wheel-mouse",
          "wheel-cursor", "cursor-mode", "concurrent", "rest-joystick", "menus")
 
@@ -508,6 +513,98 @@ def test_precision(api, listener, mouse) -> None:
     configure(api, Mouse_Mode="Mouse")
     for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1), (1, -1), (2, 2)):
         precise_case(listener, mouse, f"{PRECISE_REPORTS} reports of {dx},{dy} move a frame each", dx, dy)
+
+
+# --------------------------------------------------------------------- path --
+
+# INPUT_API_MAX_MOUSE_PATH_STEPS, the longest path one request may hold.
+PATH_MAX_STEPS = 256
+# Long enough that the steps are plainly paced, short enough to stay quick.
+PATH_SLOW_INTERVAL_MS = 100
+PATH_SLOW_STEPS = 20
+# A drawn stroke: the speed rises and falls, and the direction turns.
+PATH_STROKE = [(3, 1), (5, 2), (8, 3), (11, 2), (8, -1), (5, -3), (3, -2)]
+
+
+def send_path(api, steps, interval_ms: int = 20, before=(), after=()) -> None:
+    """One request: `before`, the path, then `after`."""
+    events = [*before, {"kind": "mouse", "path": [list(step) for step in steps], "interval_ms": interval_ms}, *after]
+    api.machine.send_input(events)
+
+
+def path_sum(steps) -> tuple[int, int]:
+    return sum(x for x, _ in steps), sum(y for _, y in steps)
+
+
+def test_path(api, listener, mouse) -> None:
+    if not isinstance(mouse, RestMouse):
+        with check("`path` is a REST event"):
+            check_skip("run this suite with --backend rest to check paths")
+        return
+    configure(api, Mouse_Mode="Mouse")
+
+    with check("a drawn stroke lands where its steps add up, one step per frame"), fresh(listener, mouse):
+        steps = PATH_STROKE * 5
+        send_path(api, steps)
+        mouse.wait_sent()
+        state = listener.quiet()
+        detail(str(state))
+        require((state.x, state.y) == path_sum(steps), f"expected position {path_sum(steps)}", state)
+        require(state.moved >= 0.9 * len(steps), f"only {state.moved} frames moved of {len(steps)} steps", state)
+
+    with check("a path that turns back comes back to where it started"), fresh(listener, mouse):
+        steps = PATH_STROKE + [(-x, -y) for x, y in reversed(PATH_STROKE)]
+        send_path(api, steps)
+        mouse.wait_sent()
+        state = listener.quiet()
+        detail(str(state))
+        require((state.x, state.y) == (0, 0), "the path did not come back", state)
+
+    with check(f"interval_ms {PATH_SLOW_INTERVAL_MS} paces the steps"), fresh(listener, mouse):
+        started = time.monotonic()
+        send_path(api, [(2, 0)] * PATH_SLOW_STEPS, interval_ms=PATH_SLOW_INTERVAL_MS)
+        mouse.wait_sent()
+        elapsed = time.monotonic() - started
+        state = listener.quiet()
+        detail(f"{PATH_SLOW_STEPS} steps took {elapsed:.2f}s: {state}")
+        require((state.x, state.y) == (2 * PATH_SLOW_STEPS, 0), "the steps did not all arrive", state)
+        expected = (PATH_SLOW_STEPS - 1) * PATH_SLOW_INTERVAL_MS / 1000.0
+        require(expected <= elapsed <= expected + 1.0, f"expected about {expected:.1f}s, not {elapsed:.2f}s", state)
+
+    with check(f"the longest path, {PATH_MAX_STEPS} steps in one request"), fresh(listener, mouse):
+        send_path(api, [(1, 0)] * PATH_MAX_STEPS)
+        queued = mouse.pending()
+        mouse.wait_sent()
+        state = listener.quiet()
+        detail(f"{queued} reports queued: {state}")
+        require((state.x, state.y) == (PATH_MAX_STEPS, 0), f"expected position ({PATH_MAX_STEPS}, 0)", state)
+
+    with check("a press, a path and a release in one request is a drag"), fresh(listener, mouse):
+        steps = [(4, 0)] * PATH_SLOW_STEPS
+        send_path(api, steps, interval_ms=PATH_SLOW_INTERVAL_MS,
+                  before=[{"kind": "mouse", "inputs": ["left"], "transition": "press"}],
+                  after=[{"kind": "mouse", "inputs": ["left"], "transition": "release"}])
+        during = listener.wait_until(lambda s: s.held == {"left"} and s.x > 0)
+        mouse.wait_sent()
+        state = listener.quiet()
+        detail(f"held while moving: {during}")
+        detail(str(state))
+        require((state.x, state.y) == path_sum(steps), f"expected position {path_sum(steps)}", state)
+        require(state.presses["left"] == 1, "expected one left press", state)
+        require(not state.held, "the button is still held", state)
+
+    with check("two paths in one request run one after the other"), fresh(listener, mouse):
+        there = [(6, 0)] * 10
+        back = [(0, 6)] * 10
+        api.machine.send_input([
+            {"kind": "mouse", "path": [list(step) for step in there], "interval_ms": 20},
+            {"kind": "mouse", "path": [list(step) for step in back], "interval_ms": 20},
+        ])
+        mouse.wait_sent()
+        state = listener.quiet()
+        detail(str(state))
+        require((state.x, state.y) == (60, 60), "expected position (60, 60)", state)
+        require(state.step_x[0] >= 0 and state.step_y[0] >= 0, "a step went against the paths", state)
 
 
 # -------------------------------------------------------------------- flood --
@@ -1202,7 +1299,8 @@ def test_menus(api, listener, mouse) -> None:
 
 SCENARIOS = {
     "move": test_move, "motion-speed": test_motion_speed, "pacing": test_pacing,
-    "precision": test_precision, "flood": test_flood, "settings": test_settings, "buttons": test_buttons,
+    "precision": test_precision, "path": test_path, "flood": test_flood, "settings": test_settings,
+    "buttons": test_buttons,
     "wheel-micromys": test_wheel_micromys, "wheel-count": test_wheel_count, "wheel-mouse": test_wheel_mouse,
     "wheel-cursor": test_wheel_cursor, "cursor-mode": test_cursor_mode, "concurrent": test_concurrent,
     "rest-joystick": test_rest_joystick, "menus": test_menus,

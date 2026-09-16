@@ -575,6 +575,108 @@ TEST(RestMouseQueueTest, BuildsReportsWithButtonsCarriedAndTimingKept)
     delete root;
 }
 
+// A path is one report per step: the first goes out with the reports before it,
+// the rest `interval_ms` apart, rounded up to whole ticks.
+TEST(RestMouseQueueTest, APathIsOneReportPerStepAtItsOwnInterval)
+{
+    static InputParsedEvent events[INPUT_API_MAX_EVENTS];
+    int count = 0;
+    JSON *root = NULL;
+    ASSERT_TRUE(parse_batch(
+        "{\"events\":["
+        "{\"kind\":\"mouse\",\"path\":[[1,-1],[2,-2]],\"interval_ms\":21},"
+        "{\"kind\":\"mouse\",\"path\":[[3,-3]]}"
+        "]}", events, count, root));
+    RestMouseQueue queue;
+    queue.clear(0);
+    for (int i = 0; i < count; i++) {
+        queue.append(events[i], 8, 5);
+    }
+    EXPECT_EQ(3, queue.pending());
+    // 21ms is five 5ms ticks; the second path follows the first without a gap
+    // of its own, and its own interval starts from its second step.
+    EXPECT_EQ(std::string(
+        "0 1 -1 0 0 0\n"
+        "0 2 -2 0 0 5\n"
+        "0 3 -3 0 0 0\n"), drain(queue));
+    delete root;
+}
+
+// A drag: the button goes down, every step of the path follows with it held,
+// and the release comes after the last step.
+TEST(RestMouseQueueTest, APathBetweenAPressAndAReleaseKeepsTheButtonDown)
+{
+    static InputParsedEvent events[INPUT_API_MAX_EVENTS];
+    int count = 0;
+    JSON *root = NULL;
+    ASSERT_TRUE(parse_batch(
+        "{\"events\":["
+        "{\"kind\":\"mouse\",\"inputs\":[\"left\"],\"transition\":\"press\"},"
+        "{\"kind\":\"mouse\",\"path\":[[4,0],[4,0],[4,0]],\"interval_ms\":20},"
+        "{\"kind\":\"mouse\",\"inputs\":[\"left\"],\"transition\":\"release\"}"
+        "]}", events, count, root));
+    RestMouseQueue queue;
+    queue.clear(0);
+    for (int i = 0; i < count; i++) {
+        queue.append(events[i], 8, 5);
+    }
+    EXPECT_EQ(std::string(
+        "1 0 0 0 0 0\n"
+        "1 4 0 0 0 0\n"
+        "1 4 0 0 0 4\n"
+        "1 4 0 0 0 4\n"
+        "0 0 0 0 0 0\n"), drain(queue));
+    delete root;
+}
+
+// The longest path a request may hold, and what it costs the queue.
+TEST(RestMouseQueueTest, TheLongestPathFillsAQuarterOfTheQueue)
+{
+    std::string steps;
+    for (int i = 0; i < INPUT_API_MAX_MOUSE_PATH_STEPS; i++) {
+        steps += (i ? ",[1,0]" : "[1,0]");
+    }
+    std::string text = "{\"events\":[{\"kind\":\"mouse\",\"path\":[" + steps + "]}]}";
+    static InputParsedEvent events[INPUT_API_MAX_EVENTS];
+    int count = 0;
+    JSON *root = NULL;
+    ASSERT_TRUE(parse_batch(text.c_str(), events, count, root));
+    EXPECT_EQ(INPUT_API_MAX_MOUSE_PATH_STEPS, RestMouseQueue::reportsFor(events[0]));
+    RestMouseQueue queue;
+    queue.clear(0);
+    queue.append(events[0], 8, 5);
+    EXPECT_EQ(INPUT_API_MAX_MOUSE_PATH_STEPS, queue.pending());
+    EXPECT_EQ(RestMouseQueue::CAPACITY - INPUT_API_MAX_MOUSE_PATH_STEPS, queue.room());
+    int needed = 0;
+    int room = 0;
+    EXPECT_TRUE(RestMouseQueue::batchFits(events, 1, queue.room(), needed, room));
+    delete root;
+}
+
+// Every step of a path reaches the queue as it was sent, including the ends of
+// the range and a step that does not move.
+TEST(RestMouseQueueTest, APathKeepsEveryStepAsItWasSent)
+{
+    static InputParsedEvent events[INPUT_API_MAX_EVENTS];
+    int count = 0;
+    JSON *root = NULL;
+    ASSERT_TRUE(parse_batch(
+        "{\"events\":[{\"kind\":\"mouse\",\"path\":"
+        "[[127,-127],[-127,127],[0,0],[1,0],[0,-1]],\"interval_ms\":20}]}", events, count, root));
+    EXPECT_EQ(5, events[0].path_steps);
+    EXPECT_EQ(20, events[0].path_interval_ms);
+    RestMouseQueue queue;
+    queue.clear(0);
+    queue.append(events[0], 8, 5);
+    EXPECT_EQ(std::string(
+        "0 127 -127 0 0 0\n"
+        "0 -127 127 0 0 4\n"
+        "0 0 0 0 0 4\n"
+        "0 1 0 0 0 4\n"
+        "0 0 -1 0 0 4\n"), drain(queue));
+    delete root;
+}
+
 TEST(RestMouseQueueTest, WaitsUntilAReportIsDue)
 {
     static InputParsedEvent events[INPUT_API_MAX_EVENTS];
