@@ -15,8 +15,9 @@
 // counts per axis. GAP_MS - 1 ms covers a PAL frame (19.95ms), the 0.52ms the
 // SID takes to measure a POT line and 2.5ms of interrupt delay, so no two reads
 // of a driver that reads once per frame see two changes; NTSC frames are
-// shorter. Movement that has to wait is capped at MAX_BEHIND counts per axis
-// and the rest is dropped, so the pointer stops two changes after the mouse.
+// shorter. Movement that has to wait is capped at MAX_BEHIND counts per axis,
+// which is what one report can move (63 of motion plus 63 of wheel), and the
+// rest is dropped, so the pointer stops two changes after the mouse.
 class MousePotPacer
 {
 public:

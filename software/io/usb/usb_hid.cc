@@ -336,16 +336,29 @@ void usb_hid_apply_mouse_output_enable()
 }
 
 // USB mice register from the USB task and the REST mouse from the REST tasks,
-// so the count changes in a critical section.
-void usb_hid_count_mouse_interface(int delta)
+// so the count and the REST flag, which have to agree, change together in a
+// critical section.
+void usb_hid_count_mouse_interface(int delta, bool rest_mouse)
 {
     portENTER_CRITICAL();
     usb_hid_active_mouse_interfaces += delta;
     if (usb_hid_active_mouse_interfaces < 0) {
         usb_hid_active_mouse_interfaces = 0;
     }
+    if (rest_mouse) {
+        usb_hid_rest_mouse_interfaces = (delta > 0) ? 1 : 0;
+    }
     portEXIT_CRITICAL();
     usb_hid_apply_mouse_output_enable();
+}
+
+// Whether a USB mouse other than the REST mouse is still registered.
+bool usb_hid_usb_mouse_registered(void)
+{
+    portENTER_CRITICAL();
+    bool any = (usb_hid_active_mouse_interfaces - usb_hid_rest_mouse_interfaces) > 0;
+    portEXIT_CRITICAL();
+    return any;
 }
 
 }
@@ -814,11 +827,17 @@ static const uint8_t usb_hid_rest_mouse_descriptor[] = {
     0xC0, 0xC0
 };
 
+static UsbHidDriver *usb_hid_rest_mouse = NULL;
+
+UsbHidDriver *UsbHidDriver :: restMouseIfBuilt(void)
+{
+    return usb_hid_rest_mouse;
+}
+
 UsbHidDriver *UsbHidDriver :: restMouse(void)
 {
-    static UsbHidDriver *driver = NULL;
-    if (driver) {
-        return driver;
+    if (usb_hid_rest_mouse) {
+        return usb_hid_rest_mouse;
     }
     UsbHidDriver *created = new UsbHidDriver(NULL);
     created->rest_source = true;
@@ -842,8 +861,8 @@ UsbHidDriver *UsbHidDriver :: restMouse(void)
     created->has_button3 = fields.has_button3;
     created->has_wheel_v = fields.has_wheel_v;
     created->has_wheel_h = fields.has_wheel_h;
-    driver = created;
-    return driver;
+    usb_hid_rest_mouse = created;
+    return usb_hid_rest_mouse;
 }
 
 bool UsbHidDriver :: restMouseAttached(void) const
@@ -858,8 +877,7 @@ void UsbHidDriver :: restMouseAttach(void)
     }
     mouse = true;
     mouse_registered = true;
-    usb_hid_rest_mouse_interfaces = 1;
-    usb_hid_count_mouse_interface(1);
+    usb_hid_count_mouse_interface(1, true);
 }
 
 void UsbHidDriver :: restMouseDetach(void)
@@ -868,7 +886,6 @@ void UsbHidDriver :: restMouseDetach(void)
         return;
     }
     disable();
-    usb_hid_rest_mouse_interfaces = 0;
     mouse = false;
 }
 
@@ -1164,7 +1181,7 @@ void UsbHidDriver :: install(UsbInterface *intf)
     }
     if (mouse && !mouse_registered) {
         mouse_registered = true;
-        usb_hid_count_mouse_interface(1);
+        usb_hid_count_mouse_interface(1, false);
     }
     int interface_number = usb_hid_get_source_interface(interface);
     if (mouse && usb_hid_should_claim_visibility(usb_hid_mouse_visibility.source_device,
@@ -1210,7 +1227,7 @@ void UsbHidDriver :: disable()
     }
     if (mouse_registered) {
         mouse_registered = false;
-        usb_hid_count_mouse_interface(-1);
+        usb_hid_count_mouse_interface(-1, rest_source);
     }
 
     mouse_joy = 0x1F;
@@ -1224,7 +1241,7 @@ void UsbHidDriver :: disable()
     // the REST mouse drives lines of its own.
     if (rest_source) {
         set_joy1_output(0x1F);
-    } else if ((usb_hid_active_mouse_interfaces - usb_hid_rest_mouse_interfaces) <= 0) {
+    } else if (!usb_hid_usb_mouse_registered()) {
         usb_hid_set_joy1_output(0x1F);
     }
 #endif

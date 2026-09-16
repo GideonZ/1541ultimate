@@ -20,6 +20,7 @@ extern "C" int usb_hid_get_active_mouse_interfaces(void) __attribute__((weak));
 static const uint32_t JOYSTICK_REST_TIMER_TICKS = (pdMS_TO_TICKS(20) > 0) ? pdMS_TO_TICKS(20) : 1;
 // Runs every tick while the POT lines are behind the mouse.
 static TimerHandle_t joystick_mouse_timer = NULL;
+static void joystick_mouse_timer_callback(TimerHandle_t timer);
 
 // The pacer needs the millisecond clock: a 5ms tick cannot tell a change 20ms
 // after the previous one from one 24ms after it. It is read in the same
@@ -31,12 +32,16 @@ static uint16_t joystick_now(void)
 
 static void joystick_mouse_timer_start(bool start)
 {
-    if (joystick_mouse_timer && (start != (xTimerIsTimerActive(joystick_mouse_timer) != pdFALSE))) {
-        if (start) {
-            xTimerStart(joystick_mouse_timer, 0);
-        } else {
-            xTimerStop(joystick_mouse_timer, 0);
-        }
+    if (!joystick_mouse_timer && start) {
+        joystick_mouse_timer = xTimerCreate("MousePace", 1, pdTRUE, NULL, joystick_mouse_timer_callback);
+    }
+    if (!joystick_mouse_timer) {
+        return;
+    }
+    if (start) {
+        xTimerStart(joystick_mouse_timer, 0);
+    } else {
+        xTimerStop(joystick_mouse_timer, 0);
     }
 }
 #else
@@ -103,7 +108,6 @@ JoystickOutput :: JoystickOutput()
     if (timer) {
         xTimerStart(timer, 0);
     }
-    joystick_mouse_timer = xTimerCreate("MousePace", 1, pdTRUE, NULL, joystick_mouse_timer_callback);
 #endif
 }
 
@@ -215,9 +219,7 @@ void JoystickOutput :: tickMouse(void)
 #if U64
     portEXIT_CRITICAL();
 #endif
-    if (!behind) {
-        joystick_mouse_timer_start(false);
-    }
+    joystick_mouse_timer_start(behind);
 }
 
 void JoystickOutput :: setRestPort1Persistent(uint8_t active_low_mask)

@@ -37,6 +37,9 @@ private:
 
     void push(uint8_t buttons, int dx, int dy, int wheel, int pan, int wait_ticks)
     {
+        if (count >= CAPACITY) {        // the caller checked with batchFits()
+            return;
+        }
         RestMouseReport &report = reports[(head + count) % CAPACITY];
         report.buttons = buttons;
         report.dx = (int8_t)dx;

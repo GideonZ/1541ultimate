@@ -268,7 +268,7 @@ static void rest_mouse_timer_callback(TimerHandle_t timer)
     if (!rest_input_mutex || (xSemaphoreTake(rest_input_mutex, 0) != pdTRUE)) {
         return;
     }
-    UsbHidDriver *mouse = UsbHidDriver::restMouse();
+    UsbHidDriver *mouse = UsbHidDriver::restMouseIfBuilt();
     TickType_t now = xTaskGetTickCount();
     RestMouseReport report;
     if (mouse && rest_mouse_queue.takeDue((int)(now - rest_mouse_last_report), REST_MOUSE_REPORT_TICKS, report)) {
@@ -312,7 +312,7 @@ static void apply_mouse_event(const InputParsedEvent &event)
 static void release_rest_mouse(void)
 {
     rest_mouse_queue.clear(0);
-    UsbHidDriver *mouse = UsbHidDriver::restMouse();
+    UsbHidDriver *mouse = UsbHidDriver::restMouseIfBuilt();
     if (mouse && mouse->restMouseAttached()) {
         mouse->restMouseDetach();
     }
@@ -674,7 +674,7 @@ static void emit_state_snapshot(ResponseWrapper *resp, const RouteInputResponseK
 
     resp->json->add("joysticks", joysticks);
 
-    UsbHidDriver *mouse = UsbHidDriver::restMouse();
+    UsbHidDriver *mouse = UsbHidDriver::restMouseIfBuilt();
     bool attached = mouse && mouse->restMouseAttached();
     uint8_t buttons = attached ? mouse->restMouseButtons() : 0;
     JSON_List *mouse_inputs = JSON::List();
@@ -723,7 +723,8 @@ API_DOC(GET, machine, input,
                 "API is holding and the ones the Ultimate menu is holding, so the answer matches "
                 "what the machine sees.\n"
                 "\n"
-                "`mouse` shows only the mouse this API drives.\n"
+                "`mouse` shows only the mouse this API drives; its buttons reach control port 1 "
+                "but are not listed under `joysticks`.\n"
                 "\n"
                 "The FPGA build has to carry the block that drives the keyboard and joystick "
                 "lines. A build without it answers 501.")
@@ -794,7 +795,9 @@ API_DOC(POST, machine, input,
                 "per 24ms by at most 63 counts per axis, so a driver that reads once per frame "
                 "never sees the pointer move backward. Faster movement waits, up to 126 counts "
                 "per axis, and beyond that is dropped; path steps of up to 31 counts arrive "
-                "exactly. The response returns once the batch is queued; `mouse.pending` counts "
+                "exactly. Two things move the lines in one step: a REST `fire2` or `fire3` press "
+                "on port 1 takes them over while it is held, and the first event after the mouse "
+                "attaches. The response returns once the batch is queued; `mouse.pending` counts "
                 "the reports still to send. A batch that does not fit into the 1024-report queue "
                 "is refused with 429. A request holds at most 1024 JSON values, about 330 path "
                 "steps. In Mouse + Wheel mode at most 16 wheel pulses are queued, and `pending` "
@@ -878,7 +881,12 @@ API_CALL(POST, machine, input, &input_json_writer, ARRAY( { }))
     }
 
     int tokens = convert_text_to_json_objects(text, text_size, INPUT_API_MAX_JSON_TOKENS, &obj);
-    if (tokens == -1) {             // JSMN_ERROR_NOMEM: the token budget ran out
+    if (tokens == JSON_ALLOC_FAILED) {
+        resp->error("Could not allocate JSON buffer.");
+        resp->json_response(HTTP_INTERNAL_SERVER_ERROR);
+        return;
+    }
+    if (tokens == JSON_TOO_MANY_VALUES) {
         resp->error("The request has more than %d JSON values; send long mouse paths in several requests.",
                     INPUT_API_MAX_JSON_TOKENS);
         resp->json_response(HTTP_BAD_REQUEST);

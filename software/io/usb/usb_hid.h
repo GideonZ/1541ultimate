@@ -110,6 +110,7 @@ public:
     // same handling as a USB mouse's; NULL if it cannot be built. Its buttons and
     // wheel pulses are their own port 1 source. Call only from one task.
     static UsbHidDriver *restMouse(void);
+    static UsbHidDriver *restMouseIfBuilt(void);    // NULL until restMouse() built it
     bool restMouseAttached(void) const;
     void restMouseAttach(void);
     void restMouseDetach(void);
