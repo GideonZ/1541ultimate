@@ -8,9 +8,11 @@ the port 2 lines and a press count for every key in a fixed RAM block, which
 `MouseListener` reads over REST, and shows them on screen.
 
 The mouse itself comes from a backend with one interface: `move`, `press`,
-`release` and `wheel`. `PicoMouse` drives the USB mouse of the Pico 2 W fixture
-(`tests/lib/pico_hid.py`), so a check runs through the firmware's USB HID
-driver exactly as a real mouse does.
+`release`, `buttons`, `wheel` and `stream`. `RestMouse` sends `mouse` events to
+`POST /v1/machine:input`, which the firmware feeds through the same report
+handling as a USB mouse, and needs no hardware. `PicoMouse` drives the USB
+mouse of the Pico 2 W fixture (`tests/lib/pico_hid.py`), so a check runs
+through the firmware's USB driver exactly as a real mouse does.
 
     listener = MouseListener(api)
     listener.start()
@@ -19,14 +21,16 @@ driver exactly as a real mouse does.
     mouse.move(20, 10)
     state = listener.wait_until(lambda s: s.x == 20)
 
-Positions are in POT counts. With Mouse Sensitivity 8 and acceleration off,
-one HID count moves the position by one POT count. Y grows downwards.
+Positions are in pointer counts, what a 1351 driver shows: the mouse advances
+the POT value by two for each of them, and a driver halves the change it reads.
+With Mouse Sensitivity 8 and acceleration off, one HID count is one pointer
+count. Y grows downwards.
 """
 
 from __future__ import annotations
 
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -38,7 +42,7 @@ LISTENER_SOURCE = Path(__file__).resolve().parents[3] / "tools" / "c64" / "mouse
 
 # Result block of mouse-listener.asm.
 BLOCK = 0xC000
-BLOCK_LENGTH = 0x68
+BLOCK_LENGTH = 0x6A
 READY_VALUE = 0xA5
 RESET = 0xC001
 
@@ -55,6 +59,7 @@ KEYS = {
 START_TIMEOUT_SECONDS = 10.0
 STABLE_READ_ATTEMPTS = 10
 RESET_TIMEOUT_SECONDS = 3.0
+
 
 def _signed16(low: int, high: int) -> int:
     value = low | (high << 8)
@@ -73,6 +78,11 @@ def _counters(state: MouseState) -> tuple:
 
 def _signed8(value: int) -> int:
     return value - 0x100 if value & 0x80 else value
+
+
+def _pointer(pot_counts: int) -> int:
+    """POT counts as a 1351 driver shows them: two counts to the pointer count."""
+    return int(pot_counts / 2)
 
 
 @dataclass(frozen=True)
@@ -97,6 +107,8 @@ class MouseState:
     keys_held: int
     key_counts: bytes
     matrix: bytes
+    # Frames whose position changed: with `frames`, how smooth the movement was.
+    moved: int
 
     def key_presses(self, name: str) -> int:
         column, row = KEYS[name]
@@ -116,7 +128,8 @@ class MouseState:
         return (f"x={self.x} y={self.y} step x{self.step_x} y{self.step_y} held={held} presses[{presses}] "
                 f"wheel up={self.wheel_up} down={self.wheel_down} "
                 f"port2={port2} [{port2_presses}] cursor[{cursor}] keys held={self.keys_held} [{keys}] "
-                f"pot=${self.potx:02X}/${self.poty:02X} lines=${self.lines:02X} frames={self.frames}")
+                f"pot=${self.potx:02X}/${self.poty:02X} lines=${self.lines:02X} "
+                f"frames={self.frames} moved={self.moved}")
 
 
 class MouseListener:
@@ -168,18 +181,19 @@ class MouseListener:
         if b[0] != READY_VALUE:
             raise Failure("the mouse listener is not running")
         return MouseState(
-            x=_signed16(b[2], b[3]), y=_signed16(b[4], b[5]),
+            x=_pointer(_signed16(b[2], b[3])), y=_pointer(_signed16(b[4], b[5])),
             held=frozenset(name for name, bit in BUTTON_BITS.items() if b[6] & bit),
             presses={"left": b[7], "middle": b[8], "right": b[9]},
             wheel_up=b[10], wheel_down=b[11], frames=b[12] | (b[13] << 8),
             potx=b[14], poty=b[15], lines=b[16],
-            step_x=(_signed8(b[0x11]), _signed8(b[0x12])),
+            step_x=(_pointer(_signed8(b[0x11])), _pointer(_signed8(b[0x12]))),
             # Y moves opposite to POTY.
-            step_y=(-_signed8(b[0x14]), -_signed8(b[0x13])),
+            step_y=(_pointer(-_signed8(b[0x14])), _pointer(-_signed8(b[0x13]))),
             port2=frozenset(name for bit, name in enumerate(PORT2_LINES) if b[0x15] & (1 << bit)),
             port2_presses={name: b[0x16 + bit] for bit, name in enumerate(PORT2_LINES)},
             cursor={"up": b[0x1B], "down": b[0x1C], "left": b[0x1D], "right": b[0x1E]},
-            keys_held=b[0x1F], key_counts=bytes(b[0x20:0x60]), matrix=bytes(b[0x60:0x68]))
+            keys_held=b[0x1F], key_counts=bytes(b[0x20:0x60]), matrix=bytes(b[0x60:0x68]),
+            moved=b[0x68] | (b[0x69] << 8))
 
     def quiet(self, timeout: float = 15.0, hold: float = 0.3) -> MouseState:
         """Wait until nothing is held or pending and no counter changes for `hold` seconds.
@@ -310,3 +324,138 @@ class PicoMouse:
             gap_ms = 100 * pulses_per_detent + 150
         self.pico.mouse_wheel(vertical=vertical, horizontal=horizontal, gap_ms=gap_ms)
         time.sleep(self.REPORT_SECONDS)
+
+
+class RestMouse:
+    """Mouse input over REST: `mouse` events on `POST /v1/machine:input`.
+
+    Every call waits until the firmware has sent all of its reports
+    (`mouse.pending` is 0), so a check reads the result of the call and not of
+    part of it.
+    """
+
+    REPORT_CLAMP = 63
+    PATH_STEPS = 256
+    MIN_INTERVAL_MS = 20
+    PENDING_TIMEOUT_SECONDS = 120.0
+
+    def __init__(self, api) -> None:
+        self.api = api
+        self.held: set[str] = set()
+
+    def _send(self, events: Sequence[dict]) -> None:
+        for start in range(0, len(events), 64):
+            self.api.machine.send_input(list(events[start:start + 64]))
+
+    def pending(self) -> int:
+        return int(self.api.machine.input_state().get("mouse", {}).get("pending", 0))
+
+    def wait_sent(self) -> None:
+        deadline = time.monotonic() + self.PENDING_TIMEOUT_SECONDS
+        while self.pending():
+            if time.monotonic() > deadline:
+                raise Failure("the REST mouse still had reports pending")
+            time.sleep(0.05)
+        # The last report is handled by the firmware a moment after it leaves
+        # the queue.
+        time.sleep(0.03)
+
+    def _path(self, steps: list[tuple[int, int]], interval_ms: int) -> None:
+        interval_ms = max(self.MIN_INTERVAL_MS, interval_ms)
+        events = [{"kind": "mouse", "path": [list(step) for step in steps[start:start + self.PATH_STEPS]],
+                   "interval_ms": interval_ms}
+                  for start in range(0, len(steps), self.PATH_STEPS)]
+        for event in events:
+            self._send([event])
+            self.wait_sent()
+
+    def path(self, steps: list[tuple[int, int]], reports_per_step: int = 2) -> None:
+        """Move through `steps`, each as `reports_per_step` reports 20ms apart; see `PicoMouse.path`."""
+        self._path([step for step in steps for _ in range(reports_per_step)], self.MIN_INTERVAL_MS)
+
+    def move(self, dx: int, dy: int) -> None:
+        """Move by dx, dy HID counts, split into steps of at most 63 counts."""
+        steps = []
+        while dx or dy:
+            step_x = max(-self.REPORT_CLAMP, min(self.REPORT_CLAMP, dx))
+            step_y = max(-self.REPORT_CLAMP, min(self.REPORT_CLAMP, dy))
+            steps.append((step_x, step_y))
+            dx -= step_x
+            dy -= step_y
+        if len(steps) == 1:
+            self._send([{"kind": "mouse", "move": {"x": steps[0][0], "y": steps[0][1]}}])
+            self.wait_sent()
+        elif steps:
+            self._path(steps, self.MIN_INTERVAL_MS)
+
+    def press(self, button: str) -> None:
+        self.buttons(*(self.held | {button}))
+
+    def release(self, button: str) -> None:
+        self.buttons(*(self.held - {button}))
+
+    def release_all(self) -> None:
+        self.buttons()
+
+    def tap(self, *buttons: str) -> None:
+        """Press and release these buttons in one event; held buttons stay held."""
+        self._send([{"kind": "mouse", "inputs": sorted(buttons), "transition": "tap"}])
+        self.wait_sent()
+
+    def buttons(self, *pressed: str) -> None:
+        """Exactly these buttons held."""
+        wanted = set(pressed)
+        events = []
+        if wanted - self.held:
+            events.append({"kind": "mouse", "inputs": sorted(wanted - self.held), "transition": "press"})
+        if self.held - wanted:
+            events.append({"kind": "mouse", "inputs": sorted(self.held - wanted), "transition": "release"})
+        if events:
+            self._send(events)
+            self.wait_sent()
+        self.held = wanted
+
+    def wheel(self, vertical: int = 0, horizontal: int = 0, pulses_per_detent: int = 1,
+              gap_ms: int | None = None) -> None:
+        """Turn the wheels by whole detents, vertical first; see `PicoMouse.wheel`."""
+        if gap_ms is None:
+            gap_ms = 100 * pulses_per_detent + 150
+        if gap_ms <= self.MIN_INTERVAL_MS:
+            if vertical or horizontal:
+                self._send([{"kind": "mouse", "wheel": {"vertical": vertical, "horizontal": horizontal}}])
+                self.wait_sent()
+            return
+        detents = ([{"vertical": 1 if vertical > 0 else -1}] * abs(vertical) +
+                   [{"horizontal": 1 if horizontal > 0 else -1}] * abs(horizontal))
+        for detent in detents:
+            self._send([{"kind": "mouse", "wheel": detent}])
+            self.wait_sent()
+            time.sleep(gap_ms / 1000.0)
+
+    def stream(self, dx: int = 0, dy: int = 0, count: int = 1, interval_ms: int = 0, wheel: int = 0,
+               pan: int = 0, buttons: tuple[str, ...] | None = None, key: str | None = None) -> dict:
+        """`count` identical reports, at least 20ms apart; see `PicoMouse.stream`.
+
+        `key` is held on the keyboard over REST for the whole stream.
+        """
+        started = time.monotonic()
+        if buttons is not None:
+            self.buttons(*buttons)
+        if key is not None:
+            self.api.machine.send_input([{"kind": "keyboard", "inputs": [key], "transition": "press"}])
+        try:
+            if wheel or pan:
+                for _ in range(count):
+                    events = []
+                    if dx or dy:
+                        events.append({"kind": "mouse", "move": {"x": dx, "y": dy}})
+                    events.append({"kind": "mouse", "wheel": {"vertical": wheel, "horizontal": pan}})
+                    self._send(events)
+                    self.wait_sent()
+                    time.sleep(max(interval_ms, self.MIN_INTERVAL_MS) / 1000.0)
+            else:
+                self._path([(dx, dy)] * count, interval_ms)
+        finally:
+            if key is not None:
+                self.api.machine.send_input([{"kind": "keyboard", "inputs": [key], "transition": "release"}])
+        return {"sent": count, "elapsed_ms": int((time.monotonic() - started) * 1000)}

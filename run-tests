@@ -283,8 +283,13 @@ SUITES: Sequence[Suite] = (
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@", profile=profiles.SMOKE),
     Suite("e2e", "menu-screen", "tests/e2e/api/menu_screen_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --test all", profile=profiles.SMOKE),
+    # Keyboard, joystick and mouse injection over REST, checked against what the
+    # C64 reads back. It runs the scenarios its profile asks for
+    # (input_test.py PROFILE_TESTS): the contract and both joystick ports in
+    # smoke, the keyboard and mouse in quick, the menu in standard, and the echo
+    # and repeat sweeps in deep.
     Suite("e2e", "input", "tests/e2e/api/input_test.py",
-          "-H @HOST@ -p @PASS@ -t @TIMEOUT@", profile=profiles.QUICK),
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@", profile=profiles.SMOKE),
     # Creates every disk-image kind and reads the device back after each one.
     # A create that answers 200 and then takes the device down is the defect
     # this catches, so it runs early: a dead device makes every later suite
@@ -349,10 +354,16 @@ SUITES: Sequence[Suite] = (
     Suite("e2e", "cfg-whitespace", "tests/e2e/filemanager/cfg_whitespace_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@"),
     Suite("e2e", "printer", "tests/e2e/io/printer/printer_test.py", "-H @HOST@ -p @PASS@", profile=profiles.QUICK),
-    # Manual: both need the Pico 2 W fixture (tests/lib/pico_hid.py) on a USB
-    # port of the machine, as a USB mouse on control port 1.
+    # usb-mouse drives the mouse over REST and needs no hardware; it runs the
+    # scenarios its profile asks for (mouse_test.py PROFILE_TESTS), from two in
+    # smoke to every one in deep, where it also sweeps PAL and NTSC and takes
+    # minutes. usb-mouse-pico runs the same scenarios with the Pico 2 W fixture
+    # (tests/lib/pico_hid.py) as a USB mouse on control port 1, and micromys-wheel
+    # needs the fixture too.
     Suite("e2e", "usb-mouse", "tests/e2e/io/usb/mouse_test.py",
-          "-H @HOST@ -p @PASS@ -t @TIMEOUT@", manual=True),
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@", profile=profiles.SMOKE),
+    Suite("e2e", "usb-mouse-pico", "tests/e2e/io/usb/mouse_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --backend pico", manual=True, profile=profiles.DEEP),
     Suite("e2e", "micromys-wheel", "tests/e2e/io/usb/micromys_wheel_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@", manual=True),
     # Writes a 64 KiB file to real USB media, so it needs a stick in the machine

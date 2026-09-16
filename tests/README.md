@@ -291,7 +291,7 @@ e2e:
   ftp-server                        x      x      x      x      x
   ident-service-switch              .      .      x      x      x
   iec-dos-commands                  .      .      x      x      x
-  input                             .      x      x      x      x
+  input                             x      x      x      x      x
   input-batching                    x      x      x      x      x
   key-injection                     .      .      x      x      x
   lint                              x      x      x      x      x
@@ -325,7 +325,8 @@ e2e:
   ui-backend-smoke                  x      x      x      x      x
   ultimax-cartridge                 .      .      x      x      x
   usb-bulk-out-integrity            .      .      .      x      x
-  usb-mouse                         .      .      .      x      x
+  usb-mouse                         x      x      x      x      x
+  usb-mouse-pico                    .      .      .      x      x
   wake-on-wifi                      .      .      .      x      x
   web-index                         .      .      .      x      x
   web-theme                         .      .      .      x      x
@@ -349,8 +350,8 @@ soak:
   usb-keyboard-repeat               .      .      .      x      x
 
                                ------ ------ ------ ------ ------
-  suites                           12     28     62     76     76
-  suite runs                       12     28     62    152    228
+  suites                           14     29     63     77     77
+  suite runs                       14     29     63    154    231
 
 Scenario and check counts, and durations, are not shown here:
 the registry does not know them. They depend on the machine and are

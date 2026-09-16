@@ -24,6 +24,7 @@ sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
 import bootstrap  # noqa: E402,F401
 import menu as menu_lib  # noqa: E402
 import cli  # noqa: E402
+import profiles  # noqa: E402
 import ftp as ftp_lib
 import machine as machine_lib
 import pacing
@@ -48,7 +49,30 @@ TEST_CHOICES = (
     "menu-shift",
     "menu-repeat-printable",
     "menu-repeat-cursor",
+    "mouse",
 )
+# What each profile runs, on top of the profile before it. Smoke keeps the
+# checks that guard the lines a build breaks most easily: the request contract
+# and both joystick ports. The keyboard, the mouse and the menu follow, and the
+# echo and repeat sweeps, which take seconds each, wait for deep.
+PROFILE_TESTS = {
+    profiles.SMOKE: ("contract", "joystick"),
+    profiles.QUICK: ("keyboard", "mouse"),
+    profiles.STANDARD: ("menu",),
+    profiles.DEEP: ("keyboard-echo-alphabet", "keyboard-echo-ab-20hz", "keyboard-echo-ab-5hz",
+                    "menu-open", "menu-shift", "menu-repeat-printable", "menu-repeat-cursor"),
+    profiles.EXHAUSTIVE: (),
+}
+
+
+def tests_for(profile: str) -> list[str]:
+    """The scenarios `profile` runs, in the order TEST_CHOICES declares them."""
+    wanted: set[str] = set()
+    for name in profiles.ORDER:
+        wanted |= set(PROFILE_TESTS[name])
+        if name == profile:
+            break
+    return [test for test in TEST_CHOICES if test in wanted]
 # Bounded retry for idempotent reads whose transport failed; see request().
 TRANSPORT_RETRIES = 3
 TRANSPORT_RETRY_PAUSE_SECONDS = 0.5
@@ -1588,6 +1612,150 @@ def run_contract_tests(session: RestInputSession) -> None:
         session.post_events([{"kind": "release_all"}])
 
 
+EMPTY_MOUSE = {"attached": False, "inputs": [], "pending": 0}
+MOUSE_QUEUE_CAPACITY = 1024  # RestMouseQueue::CAPACITY
+MOUSE_PATH_STEPS = 256       # INPUT_API_MAX_MOUSE_PATH_STEPS
+
+
+def mouse_state(session: RestInputSession) -> dict[str, Any]:
+    return session.get_state().get("mouse", {})
+
+
+def wait_mouse_sent(session: RestInputSession, timeout: float = 30.0) -> dict[str, Any]:
+    state: dict[str, Any] = {}
+
+    def sent() -> bool:
+        nonlocal state
+        state = mouse_state(session)
+        return state.get("pending") == 0
+
+    wait.wait_until(sent, "the REST mouse to send its reports", timeout=timeout)
+    return state
+
+
+def assert_mouse_state(session: RestInputSession, attached: bool, inputs: list[str]) -> None:
+    state = wait_mouse_sent(session)
+    expected = {"attached": attached, "inputs": inputs, "pending": 0}
+    if state != expected:
+        raise Failure(f"Mouse state mismatch; expected {expected}, got {state}")
+
+
+def post_events_expect_status(session: RestInputSession, events: list[dict[str, Any]], status: int) -> dict[str, Any]:
+    try:
+        session.json_request("POST", "/v1/machine:input", payload={"events": events})
+    except urllib.error.HTTPError as exc:
+        if exc.code != status:
+            raise Failure(f"Expected HTTP {status}, got HTTP {exc.code}: {exc.read()[:200]!r}") from exc
+        return json.loads(exc.read().decode("utf-8"))
+    raise Failure(f"Expected HTTP {status}, but the request succeeded")
+
+
+# Events the parser must refuse, each with part of the error it must give.
+INVALID_MOUSE_EVENTS = (
+    ({"kind": "mouse", "move": {"x": 128}}, "`move.x` must be -127..127."),
+    ({"kind": "mouse", "move": {"y": "1"}}, "`move.y` must be an integer."),
+    ({"kind": "mouse", "move": {"z": 1}}, "Unknown field `move.z`."),
+    ({"kind": "mouse", "move": {}}, "`move` must have `x` or `y`."),
+    ({"kind": "mouse", "move": {"x": 1}, "wheel": {"vertical": 1}}, "exactly one of"),
+    ({"kind": "mouse"}, "exactly one of"),
+    ({"kind": "mouse", "move": {"x": 1}, "transition": "press"}, "`transition` is only valid with `inputs`."),
+    ({"kind": "mouse", "move": {"x": 1}, "interval_ms": 20}, "`interval_ms` is only valid with `path`."),
+    ({"kind": "mouse", "wheel": {"vertical": 0}}, "`wheel` must turn at least one wheel."),
+    ({"kind": "mouse", "wheel": {"horizontal": -65}}, "`wheel.horizontal` must be -64..64."),
+    ({"kind": "mouse", "path": []}, "`path` must contain 1..256 steps."),
+    ({"kind": "mouse", "path": [[0, 0]] * 257}, "`path` must contain 1..256 steps."),
+    ({"kind": "mouse", "path": [[1, 2, 3]]}, "`path[0]` must be an [x, y] pair."),
+    ({"kind": "mouse", "path": [[1, 2], [3, 128]]}, "`path[1]` values must be -127..127."),
+    ({"kind": "mouse", "path": [[1, 2]], "interval_ms": 19}, "`interval_ms` must be 20..1000."),
+    ({"kind": "mouse", "inputs": ["back"], "transition": "press"}, "`back` is not a valid mouse input."),
+    ({"kind": "mouse", "inputs": ["left", "left"], "transition": "tap"}, "`left` appears more than once"),
+    ({"kind": "mouse", "inputs": [], "transition": "press"}, "`inputs` must contain 1..3 entries."),
+)
+
+
+def run_mouse_tests(session: RestInputSession) -> None:
+    """The REST mouse contract: state, attach and detach, validation, queue room.
+
+    What a mouse event does on the C64 is checked by tests/e2e/io/usb/mouse_test.py.
+    """
+    with check("mouse state is detached and empty after release_all"):
+        body = session.post_events([{"kind": "release_all"}])
+        if body.get("mouse") != EMPTY_MOUSE:
+            raise Failure(f"Expected {EMPTY_MOUSE} in the POST response, got {body}")
+        assert_mouse_state(session, False, [])
+
+    with check("a mouse button press attaches the mouse and is reported in order"):
+        session.post_events([{"kind": "mouse", "inputs": ["right", "left"], "transition": "press"},
+                             {"kind": "mouse", "inputs": ["right"], "transition": "release"}])
+        assert_mouse_state(session, True, ["left"])
+
+    with check("invalid mouse events are rejected with their error and change nothing"):
+        for event, message in INVALID_MOUSE_EVENTS:
+            body = session.post_events_expect_error([{"kind": "mouse", "inputs": ["middle"], "transition": "press"},
+                                                     event])
+            assert_error_body_only(body)
+            if "mouse" in body:
+                raise Failure(f"Error response must not include the mouse state, got {body}")
+            if not any(message in error for error in body["errors"]):
+                raise Failure(f"Expected an error containing {message!r} for {event}, got {body['errors']}")
+            assert_mouse_state(session, True, ["left"])
+
+    with check("a tap presses and releases, and a path is queued behind it"):
+        body = session.post_events([{"kind": "mouse", "inputs": ["middle"], "transition": "tap"},
+                                    {"kind": "mouse", "path": [[1, 0]] * 20}])
+        if body.get("mouse", {}).get("pending", 0) < 20:
+            raise Failure(f"Expected at least 20 reports pending right after the POST, got {body}")
+        assert_mouse_state(session, True, ["left"])
+
+    with check(f"the queue holds {MOUSE_QUEUE_CAPACITY} reports and refuses a batch beyond that with 429"):
+        slow_path = {"kind": "mouse", "path": [[0, 0]] * MOUSE_PATH_STEPS, "interval_ms": 1000}
+        for _ in range(MOUSE_QUEUE_CAPACITY // MOUSE_PATH_STEPS):
+            session.post_events([slow_path])
+        before = mouse_state(session)
+        body = post_events_expect_status(session, [{"kind": "mouse", "inputs": ["right"], "transition": "press"},
+                                                    slow_path], 429)
+        after = mouse_state(session)
+        if not any("mouse reports" in error for error in body.get("errors", [])):
+            raise Failure(f"Expected a queue room error, got {body}")
+        if after["inputs"] != ["left"] or after["pending"] > before["pending"]:
+            raise Failure(f"A refused batch changed the mouse: before {before}, after {after}")
+
+    with check("a request over the JSON value limit is refused with a clear error"):
+        # Two full paths are 1536 JSON values in 3.1KB when written compactly,
+        # under the 4096-byte body limit, so it is the value limit that refuses them.
+        compact = json.dumps({"events": [{"kind": "mouse", "path": [[0, 0]] * MOUSE_PATH_STEPS}] * 2},
+                             separators=(",", ":")).encode()
+        body = session.post_raw_expect_error(compact, "application/json")
+        if not any("JSON values" in error for error in body.get("errors", [])):
+            raise Failure(f"Expected the JSON value limit error, got {body}")
+
+    with check("release_all in a batch makes room for what follows it"):
+        body = session.post_events([{"kind": "release_all"},
+                                    {"kind": "mouse", "path": [[0, 0]] * MOUSE_PATH_STEPS}])
+        if not body.get("mouse", {}).get("attached"):
+            raise Failure(f"Expected the path after release_all to attach the mouse again, got {body}")
+        assert_mouse_state(session, True, [])
+
+    with check("release_all detaches the mouse"):
+        session.post_events([{"kind": "mouse", "inputs": ["left"], "transition": "press"}])
+        session.post_events([{"kind": "release_all"}])
+        assert_mouse_state(session, False, [])
+
+    with check("a machine reset detaches the mouse and drops its queue"):
+        session.post_events([{"kind": "mouse", "inputs": ["left"], "transition": "press"},
+                             {"kind": "mouse", "path": [[0, 0]] * 50, "interval_ms": 1000}])
+        # Read the state before anything posts release_all, which would detach
+        # the mouse on its own.
+        session.close_menu_from_anywhere()
+        session.reset()
+        time.sleep(RESET_APPLY_SECONDS)
+        wait_for_basic_ready(session)
+        state = mouse_state(session)
+        session.post_events([{"kind": "release_all"}])
+        if state != EMPTY_MOUSE:
+            raise Failure(f"Expected {EMPTY_MOUSE} after the reset, got {state}")
+
+
 def run_keyboard_tests(session: RestInputSession) -> None:
     # These assert what the live C64 matrix sees, so the menu must be closed. It
     # must also be closed for safety: the sweep below taps F5, which on an
@@ -2571,6 +2739,8 @@ def run_tests(session: RestInputSession, soak_duration_seconds: float | None = N
         run_joystick_tests(session)
     if wants_test(selected, "keyboard"):
         run_keyboard_tests(session)
+    if wants_test(selected, "mouse"):
+        run_mouse_tests(session)
     if wants_keyboard_echo_tests(selected):
         run_keyboard_echo_tests(session, selected=selected)
     if wants_menu_tests(selected):
@@ -2596,6 +2766,12 @@ def main() -> int:
         help="run one suite or menu subtest; repeat for multiple selections",
     )
     parser.add_argument(
+        "--profile",
+        choices=profiles.ORDER,
+        default=profiles.current(),
+        help="run the scenarios of this profile (default: the runner's, else quick)",
+    )
+    parser.add_argument(
         "-d",
         "--soak-duration",
         default="5m",
@@ -2605,7 +2781,7 @@ def main() -> int:
 
     rest_host = args.rest_host or args.host
     session = RestInputSession(rest_host, args.password, args.timeout)
-    selected_tests = None if not args.test else args.test
+    selected_tests = args.test if args.test else tests_for(args.profile)
     soak_duration_seconds = cli.parse_duration(args.soak_duration) if args.soak else None
     if args.soak and selected_tests is not None:
         suite_fail("input_test", "--test cannot be combined with --soak")

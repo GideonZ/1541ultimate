@@ -67,6 +67,7 @@
 ;                   $C020 + column * 8 + row, where the column is
 ;                   the bit of $DC00 and the row the bit of $DC01
 ;   $C060  MATRIX   the last scan, 8 bytes, one per column, 1 = down
+;   $C068  MOVED    16-bit count of frames whose position changed
 ;
 ; Between samples port A drives no keyboard column: with $DC00 at $40, bit
 ; 7 would select column 7 and its keys would read as port 1 lines. Port 1's
@@ -106,6 +107,7 @@ CRSRRIGHT = $C01E
 KEYSHELD  = $C01F
 KEYCOUNT  = $C020
 MATRIX    = $C060
+MOVED     = $C068
 COUNTS_END = $C060              ; RESET zeroes MINDPX up to here, and POS_X to FRAMES
 
 ; Listener state, after the result block.
@@ -114,6 +116,7 @@ OLD_Y     = $C081
 PREV1     = $C082
 PREV2     = $C083
 NEWBITS   = $C084
+MOVEDNOW  = $C094               ; non-zero when this frame's position changed
 DELTA     = $C085
 EXTEND    = $C086
 LASTTOP   = $C087
@@ -276,7 +279,9 @@ sample_position
         inc FRAMES
         bne +
         inc FRAMES+1
-+       lda #$40                ; bit 6: port 1's paddle group
++       lda #$00
+        sta MOVEDNOW
+        lda #$40                ; bit 6: port 1's paddle group
         sta CIA1_PRA
         lda POTY
         sta POTY_LAST
@@ -292,6 +297,9 @@ sample_position
         jsr signed7
         ldx #MINDPX - MINDPX
         jsr track_step
+        lda DELTA
+        ora MOVEDNOW
+        sta MOVEDNOW
         clc
         lda POS_X
         adc DELTA
@@ -307,7 +315,13 @@ sample_position
         jsr signed7
         ldx #MINDPY - MINDPX
         jsr track_step
-        sec                     ; the POT value falls as the mouse moves down
+        lda DELTA
+        ora MOVEDNOW
+        beq +
+        inc MOVED
+        bne +
+        inc MOVED+1
++       sec                     ; the POT value falls as the mouse moves down
         lda POS_Y
         sbc DELTA
         sta POS_Y
@@ -487,6 +501,8 @@ reset_state
 -       sta MINDPX,x
         dex
         bpl -
+        sta MOVED
+        sta MOVED+1
         lda #$40                ; bit 6: port 1's paddle group
         sta CIA1_PRA
         lda POTX
