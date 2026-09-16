@@ -291,7 +291,7 @@ e2e:
   ftp-server                        x      x      x      x      x
   ident-service-switch              .      .      x      x      x
   iec-dos-commands                  .      .      x      x      x
-  input                             .      x      x      x      x
+  input                             x      x      x      x      x
   input-batching                    x      x      x      x      x
   key-injection                     .      .      x      x      x
   lint                              x      x      x      x      x
@@ -350,8 +350,8 @@ soak:
   usb-keyboard-repeat               .      .      .      x      x
 
                                ------ ------ ------ ------ ------
-  suites                           13     29     63     77     77
-  suite runs                       13     29     63    154    231
+  suites                           14     29     63     77     77
+  suite runs                       14     29     63    154    231
 
 Scenario and check counts, and durations, are not shown here:
 the registry does not know them. They depend on the machine and are
