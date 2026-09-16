@@ -138,7 +138,6 @@ public:
     void run_machine_monitor(MemoryBackend *backend);
     void swapDisk(void);
     void send_keystroke(int key);
-    // A menu is open on the machine's own screen. Telnet menus do not count.
     static bool anyMenuActive(void);
     enum {
         ACTIVE_SCREEN_MATRIX_WIDTH = 40,

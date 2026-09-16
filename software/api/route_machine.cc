@@ -86,8 +86,8 @@ API_DOC(PUT, machine, reset,
                 "which is not the same as starting from cold; use `machine:reboot` for that.\n"
                 "\n"
                 "On Ultimate 64 hardware every key and joystick direction the input API is "
-                "holding is released as part of the reset, and its mouse is detached with its "
-                "pending reports dropped, so a reset cannot leave an injected key stuck down.")
+                "holding is released as part of the reset, and its mouse is detached, so a reset "
+                "cannot leave an injected input stuck down.")
     PATH("/v1/machine:reset", "resetMachine", "")
     RESPONSE("200", "application/json", "ErrorResponse", "The machine was reset.", "")
     RESPONSE_ERROR("423", "Could not obtain lock of subsystem", "")
@@ -117,8 +117,7 @@ API_DOC(PUT, machine, reboot,
                 "cartridge has to start from scratch.\n"
                 "\n"
                 "On Ultimate 64 hardware every key and joystick direction the input API is "
-                "holding is released as part of the reboot, and its mouse is detached with its "
-                "pending reports dropped.")
+                "holding is released as part of the reboot, and its mouse is detached.")
     PATH("/v1/machine:reboot", "rebootMachine", "")
     RESPONSE("200", "application/json", "ErrorResponse", "The machine was rebooted.", "")
     RESPONSE_ERROR("423", "Could not obtain lock of subsystem", "")

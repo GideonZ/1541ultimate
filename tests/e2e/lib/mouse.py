@@ -286,6 +286,20 @@ class PicoMouse:
             raise Failure(f"the fixture sent {stream.get('sent')} of {count} reports")
         return stream
 
+    def path(self, steps: list[tuple[int, int]], reports_per_step: int = 2) -> None:
+        """Move through `steps`, each as `reports_per_step` reports at the host's poll rate.
+
+        The steps follow each other as fast as the fixture takes commands, so a
+        list whose steps grow and shrink moves the mouse the way a hand speeds
+        up and slows down.
+        """
+        for dx, dy in steps:
+            status = self.pico.mouse_stream(dx=dx, dy=dy, count=reports_per_step)
+            sent = status.get("last_stream", {}).get("sent")
+            if sent != reports_per_step:
+                raise Failure(f"the fixture sent {sent} of {reports_per_step} reports")
+        time.sleep(self.REPORT_SECONDS)
+
     def wheel(self, vertical: int = 0, horizontal: int = 0, pulses_per_detent: int = 1,
               gap_ms: int | None = None) -> None:
         """Turn the wheels by whole detents, vertical first.
@@ -343,6 +357,10 @@ class RestMouse:
         for event in events:
             self._send([event])
             self.wait_sent()
+
+    def path(self, steps: list[tuple[int, int]], reports_per_step: int = 2) -> None:
+        """Move through `steps`, each as `reports_per_step` reports 20ms apart; see `PicoMouse.path`."""
+        self._path([step for step in steps for _ in range(reports_per_step)], self.MIN_INTERVAL_MS)
 
     def move(self, dx: int, dy: int) -> None:
         """Move by dx, dy HID counts, split into steps of at most 63 counts."""

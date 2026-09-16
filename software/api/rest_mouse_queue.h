@@ -11,9 +11,8 @@
 // path keeps its timing and a tap keeps its button down for a while.
 //
 // Reports leave no closer together than the firmware polls a USB mouse, so the
-// REST mouse does no more than a USB mouse can. MousePotPacer spreads fast
-// movement over frames, and route_input.cc holds the next report back until
-// the movement before it is on the POT lines, so none of a path is dropped.
+// REST mouse does no more than a USB mouse can, and MousePotPacer paces both
+// the same way.
 //
 // The queue only builds and hands out reports; route_input.cc sends them to
 // the virtual mouse from its timer, under the input mutex.

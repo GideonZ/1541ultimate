@@ -18,21 +18,36 @@ extern "C" int usb_hid_get_active_mouse_interfaces(void) __attribute__((weak));
 
 #if U64 && !RECOVERYAPP
 static const uint32_t JOYSTICK_REST_TIMER_TICKS = (pdMS_TO_TICKS(20) > 0) ? pdMS_TO_TICKS(20) : 1;
-// Runs every tick while the mouse position on the POT lines is behind the
-// mouse, to show more of it as the budget frees up.
-static TimerHandle_t joystick_mouse_pace_timer = NULL;
+// Runs every tick while the POT lines are behind the mouse.
+static TimerHandle_t joystick_mouse_timer = NULL;
 
-// MousePotPacer keeps its budget on the millisecond clock, because a tick of
-// 5ms is too coarse to tell a report 20ms after the previous one from one 16ms
-// after it.
+// The pacer works on the millisecond clock: a 5ms tick cannot tell a change
+// 20ms after the previous one from one 24ms after it. The clock is read in the
+// same critical section that writes the POT lines.
 static uint16_t joystick_now(void)
 {
     return getMsTimer();
+}
+
+static void joystick_mouse_timer_start(bool start)
+{
+    if (joystick_mouse_timer && (start != (xTimerIsTimerActive(joystick_mouse_timer) != pdFALSE))) {
+        if (start) {
+            xTimerStart(joystick_mouse_timer, 0);
+        } else {
+            xTimerStop(joystick_mouse_timer, 0);
+        }
+    }
 }
 #else
 static uint16_t joystick_now(void)
 {
     return 0;
+}
+
+static void joystick_mouse_timer_start(bool start)
+{
+    (void)start;
 }
 #endif
 
@@ -65,10 +80,10 @@ static void joystick_overlay_timer(TimerHandle_t timer)
     JoystickOutput::instance().tickOverlays();
 }
 
-static void joystick_mouse_pace_callback(TimerHandle_t timer)
+static void joystick_mouse_timer_callback(TimerHandle_t timer)
 {
     (void)timer;
-    JoystickOutput::instance().tickMouse(joystick_now());
+    JoystickOutput::instance().tickMouse();
 }
 #endif
 
@@ -76,8 +91,7 @@ JoystickOutput :: JoystickOutput()
 {
     usb_p1 = JOYSTICK_INPUT_MASK;
     rest_mouse_p1 = JOYSTICK_INPUT_MASK;
-    usb_p1_mouse = false;
-    usb_p1_source = NULL;
+    mouse_active = false;
     rest_p1_persistent = JOYSTICK_INPUT_MASK;
     rest_p2_persistent = JOYSTICK_INPUT_MASK;
     rest_p1_overlay = JOYSTICK_INPUT_MASK;
@@ -89,7 +103,7 @@ JoystickOutput :: JoystickOutput()
     if (timer) {
         xTimerStart(timer, 0);
     }
-    joystick_mouse_pace_timer = xTimerCreate("MousePace", 1, pdTRUE, NULL, joystick_mouse_pace_callback);
+    joystick_mouse_timer = xTimerCreate("MousePace", 1, pdTRUE, NULL, joystick_mouse_timer_callback);
 #endif
 }
 
@@ -105,16 +119,17 @@ void JoystickOutput :: apply(void)
     uint8_t port1, port2, pot1x, pot1y, pot2x, pot2y;
     bool mouse_port1_enabled = false;
     outputSnapshot(port1, port2, pot1x, pot1y, pot2x, pot2y);
+    if (usb_hid_get_active_mouse_interfaces) {
+        mouse_port1_enabled = usb_hid_get_active_mouse_interfaces() > 0;
+    }
+    bool port1_extra_button = joystick_has_extra_button_press(usb_p1 & rest_mouse_p1 & rest_p1_persistent & rest_p1_overlay);
     C64_JOY1_SWOUT = port1 | 0xE0;
     C64_JOY2_SWOUT = port2 | 0xE0;
     C64_PADDLE_1_X = pot1x;
     C64_PADDLE_1_Y = pot1y;
     C64_PADDLE_2_X = pot2x;
     C64_PADDLE_2_Y = pot2y;
-    if (usb_hid_get_active_mouse_interfaces) {
-        mouse_port1_enabled = usb_hid_get_active_mouse_interfaces() > 0;
-    }
-    C64_MOUSE_EN_1 = (mouse_port1_enabled || joystick_has_extra_button_press(usb_p1 & rest_mouse_p1 & rest_p1_persistent & rest_p1_overlay)) ? 1 : 0;
+    C64_MOUSE_EN_1 = (mouse_port1_enabled || port1_extra_button) ? 1 : 0;
     C64_MOUSE_EN_2 = joystick_has_extra_button_press(rest_p2_persistent & rest_p2_overlay) ? 1 : 0;
 #endif
 }
@@ -143,93 +158,66 @@ void JoystickOutput :: setRestMousePort1(uint8_t active_low_mask)
 #endif
 }
 
-void JoystickOutput :: setUsbPort1Mouse(int16_t x, int16_t y, const void *source)
+void JoystickOutput :: setMousePosition(int16_t x, int16_t y)
 {
 #if U64
     portENTER_CRITICAL();
 #endif
-    if (!usb_p1_mouse) {
-        usb_p1_mouse = true;
-        usb_p1_source = source;
-        usb_p1_pacer.reset(x, y, joystick_now());
-        apply();
+    uint16_t now = joystick_now();
+    if (!mouse_active) {
+        mouse_active = true;
+        mouse_pacer.reset(x, y, now);
     } else {
-        if (source != usb_p1_source) {
-            usb_p1_source = source;
-            usb_p1_pacer.rebase(x, y);
-        }
-        usb_p1_pacer.setTarget(x, y);
-        if (usb_p1_pacer.advance(joystick_now())) {
-            apply();
-        }
+        mouse_pacer.setTarget(x, y);
+        mouse_pacer.advance(now);
     }
-    bool settled = usb_p1_pacer.settled();
-#if U64
-    portEXIT_CRITICAL();
-#endif
-#if U64 && !RECOVERYAPP
-    if (!settled && joystick_mouse_pace_timer) {
-        xTimerStart(joystick_mouse_pace_timer, 0);
-    }
-#else
-    (void)settled;
-#endif
-}
-
-void JoystickOutput :: tickMouse(uint16_t now)
-{
-#if U64
-    portENTER_CRITICAL();
-#endif
-    if (usb_p1_mouse && usb_p1_pacer.advance(now)) {
-        apply();
-    }
-    bool settled = !usb_p1_mouse || usb_p1_pacer.settled();
-#if U64
-    portEXIT_CRITICAL();
-#endif
-#if U64 && !RECOVERYAPP
-    if (settled && joystick_mouse_pace_timer) {
-        xTimerStop(joystick_mouse_pace_timer, 0);
-    }
-#else
-    (void)settled;
-#endif
-}
-
-void JoystickOutput :: setMouseFrameRate(int hertz)
-{
-#if U64
-    portENTER_CRITICAL();
-#endif
-    usb_p1_pacer.setWindow((hertz >= 60) ? MousePotPacer::WINDOW_60HZ : MousePotPacer::WINDOW_50HZ);
-#if U64
-    portEXIT_CRITICAL();
-#endif
-}
-
-bool JoystickOutput :: mouseSettled(void) const
-{
-#if U64
-    portENTER_CRITICAL();
-#endif
-    bool settled = !usb_p1_mouse || usb_p1_pacer.settled();
-#if U64
-    portEXIT_CRITICAL();
-#endif
-    return settled;
-}
-
-void JoystickOutput :: clearUsbPort1Mouse(void)
-{
-#if U64
-    portENTER_CRITICAL();
-#endif
-    usb_p1_mouse = false;
     apply();
 #if U64
     portEXIT_CRITICAL();
 #endif
+}
+
+void JoystickOutput :: paceMouse(void)
+{
+#if U64
+    portENTER_CRITICAL();
+#endif
+    bool behind = mouse_active && mouse_pacer.isBehind();
+#if U64
+    portEXIT_CRITICAL();
+#endif
+    if (behind) {
+        joystick_mouse_timer_start(true);
+    }
+}
+
+void JoystickOutput :: clearMousePosition(void)
+{
+#if U64
+    portENTER_CRITICAL();
+#endif
+    mouse_active = false;
+    apply();
+#if U64
+    portEXIT_CRITICAL();
+#endif
+}
+
+void JoystickOutput :: tickMouse(void)
+{
+#if U64
+    portENTER_CRITICAL();
+#endif
+    if (mouse_active && mouse_pacer.advance(joystick_now())) {
+        apply();
+    }
+    bool behind = mouse_active && mouse_pacer.isBehind();
+#if U64
+    portEXIT_CRITICAL();
+#endif
+    if (!behind) {
+        joystick_mouse_timer_start(false);
+    }
 }
 
 void JoystickOutput :: setRestPort1Persistent(uint8_t active_low_mask)
@@ -407,11 +395,12 @@ void JoystickOutput :: outputSnapshot(uint8_t &port1_active_low, uint8_t &port2_
     uint8_t port2 = rest_p2_persistent & rest_p2_overlay;
     port1_active_low = port1 & JOYSTICK_DIGITAL_MASK;
     port2_active_low = port2 & JOYSTICK_DIGITAL_MASK;
-    // A REST fire2/fire3 press owns both port 1 POT lines while it is held,
-    // because a mouse position would read as a pressed button on the other line.
-    if (usb_p1_mouse && !joystick_has_extra_button_press(port1)) {
-        port1_potx = usb_p1_pacer.potX();
-        port1_poty = usb_p1_pacer.potY();
+    // A REST fire2 or fire3 press owns both POT lines while held. Otherwise a
+    // mouse keeps its position on them whenever a port 1 line changes, such as
+    // on every Micromys wheel pulse (#909).
+    if (mouse_active && !joystick_has_extra_button_press(port1)) {
+        port1_potx = mouse_pacer.potX();
+        port1_poty = mouse_pacer.potY();
     } else {
         port1_potx = joystick_potx_value(port1);
         port1_poty = joystick_poty_value(port1);

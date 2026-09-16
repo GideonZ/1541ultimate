@@ -138,15 +138,11 @@ void add_key_to_matrix(uint8_t matrix[8], const char *name)
     matrix[entry->row] |= (1 << entry->col);
 }
 
-// Two mice on port 1, told apart by address.
-const int usb_mouse_a = 0;
-const int usb_mouse_b = 0;
-
 void reset_joystick_output(void)
 {
-    JoystickOutput::instance().clearUsbPort1Mouse();
-    JoystickOutput::instance().setMouseFrameRate(50);
     JoystickOutput::instance().setUsbPort1(0x1F);
+    JoystickOutput::instance().setRestMousePort1(0x1F);
+    JoystickOutput::instance().clearMousePosition();
     JoystickOutput::instance().releaseAllRest();
 }
 
@@ -878,452 +874,260 @@ TEST(RestJoystickStateTest, Fire2MapsToPotXAndFire3MapsToPotY)
     EXPECT_EQ(0x00, pot2y);
 }
 
+static void port1_pots(uint8_t &potx, uint8_t &poty)
+{
+    uint8_t port1, port2, pot2x, pot2y;
+    JoystickOutput::instance().outputSnapshot(port1, port2, potx, poty, pot2x, pot2y);
+}
+
 // Issue #909: in Mouse + Wheel mode the wheel pulses port 1's left and right
-// lines through setUsbPort1(). Each update rewrites the POT registers, which
-// must keep the USB mouse position instead of the released joystick value.
-TEST(UsbMouseJoystickOutputTest, MousePositionSurvivesPort1LineUpdates)
+// lines. A line update must keep the mouse position on the POT lines instead of
+// writing the released joystick value.
+TEST(MouseJoystickOutputTest, MousePositionSurvivesPort1LineUpdates)
 {
     reset_joystick_output();
-    uint8_t port1 = 0;
-    uint8_t port2 = 0;
-    uint8_t pot1x = 0;
-    uint8_t pot1y = 0;
-    uint8_t pot2x = 0;
-    uint8_t pot2y = 0;
-    uint8_t hold[JOYSTICK_BUTTON_COUNT] = { 0 };
-
-    JoystickOutput::instance().setUsbPort1Mouse(0x15, 0x2A, &usb_mouse_a);
+    uint8_t potx = 0;
+    uint8_t poty = 0;
+    JoystickOutput::instance().setMousePosition(0x15, 0x2A);
     JoystickOutput::instance().setUsbPort1(0x1B);
-    JoystickOutput::instance().outputSnapshot(port1, port2, pot1x, pot1y, pot2x, pot2y);
-    EXPECT_EQ(0x1B, port1);
-    EXPECT_EQ(0x15, pot1x);
-    EXPECT_EQ(0x2A, pot1y);
-    EXPECT_EQ(0x80, pot2x);
-    EXPECT_EQ(0x80, pot2y);
-
-    JoystickOutput::instance().setUsbPort1(0x1F);
-    JoystickOutput::instance().setRestPort2Persistent(0x1E);
-    hold[0] = 1;
-    JoystickOutput::instance().armRestPort1Overlay(0x1E, hold);
-    JoystickOutput::instance().tickOverlays();
-    JoystickOutput::instance().outputSnapshot(port1, port2, pot1x, pot1y, pot2x, pot2y);
-    EXPECT_EQ(0x1F, port1);
-    EXPECT_EQ(0x1E, port2);
-    EXPECT_EQ(0x15, pot1x);
-    EXPECT_EQ(0x2A, pot1y);
+    JoystickOutput::instance().setRestMousePort1(0x1E);
+    port1_pots(potx, poty);
+    EXPECT_EQ(0x15, potx);
+    EXPECT_EQ(0x2A, poty);
 }
 
-TEST(UsbMouseJoystickOutputTest, RestExtraButtonOwnsBothPort1PotLinesWhileHeld)
+TEST(MouseJoystickOutputTest, RestExtraButtonOwnsThePotLinesWhileHeld)
 {
     reset_joystick_output();
-    uint8_t port1 = 0;
-    uint8_t port2 = 0;
-    uint8_t pot1x = 0;
-    uint8_t pot1y = 0;
-    uint8_t pot2x = 0;
-    uint8_t pot2y = 0;
-
-    JoystickOutput::instance().setUsbPort1Mouse(0x15, 0x2A, &usb_mouse_a);
-    JoystickOutput::instance().setRestPort1Persistent(0x5F);
-    JoystickOutput::instance().outputSnapshot(port1, port2, pot1x, pot1y, pot2x, pot2y);
-    EXPECT_EQ(0x00, pot1x);
-    EXPECT_EQ(0x80, pot1y);
-
+    uint8_t potx = 0;
+    uint8_t poty = 0;
+    JoystickOutput::instance().setMousePosition(0x15, 0x2A);
+    JoystickOutput::instance().setRestPort1Persistent(0x5F);    // fire2 held
+    port1_pots(potx, poty);
+    EXPECT_EQ(0x00, potx);
+    EXPECT_EQ(0x80, poty);
     JoystickOutput::instance().setRestPort1Persistent(0x7F);
-    JoystickOutput::instance().outputSnapshot(port1, port2, pot1x, pot1y, pot2x, pot2y);
-    EXPECT_EQ(0x15, pot1x);
-    EXPECT_EQ(0x2A, pot1y);
+    port1_pots(potx, poty);
+    EXPECT_EQ(0x15, potx);
+    EXPECT_EQ(0x2A, poty);
 }
 
-TEST(UsbMouseJoystickOutputTest, ClearingTheMouseRestoresReleasedPotValues)
+TEST(MouseJoystickOutputTest, ClearingTheMouseRestoresTheReleasedPotValues)
+{
+    reset_joystick_output();
+    uint8_t potx = 0;
+    uint8_t poty = 0;
+    JoystickOutput::instance().setMousePosition(0x15, 0x2A);
+    JoystickOutput::instance().clearMousePosition();
+    port1_pots(potx, poty);
+    EXPECT_EQ(0x80, potx);
+    EXPECT_EQ(0x80, poty);
+}
+
+TEST(MouseJoystickOutputTest, RestMouseLinesAreASourceOfTheirOwn)
 {
     reset_joystick_output();
     uint8_t port1 = 0;
     uint8_t port2 = 0;
-    uint8_t pot1x = 0;
-    uint8_t pot1y = 0;
-    uint8_t pot2x = 0;
-    uint8_t pot2y = 0;
-
-    JoystickOutput::instance().setUsbPort1Mouse(0x15, 0x2A, &usb_mouse_a);
-    JoystickOutput::instance().clearUsbPort1Mouse();
-    JoystickOutput::instance().outputSnapshot(port1, port2, pot1x, pot1y, pot2x, pot2y);
-    EXPECT_EQ(0x80, pot1x);
-    EXPECT_EQ(0x80, pot1y);
+    JoystickOutput::instance().setRestMousePort1(0x0F);          // left button
+    JoystickOutput::instance().setUsbPort1(0x1E);
+    JoystickOutput::instance().setUsbPort1(0x1F);                // a USB mouse lets go
+    JoystickOutput::instance().snapshot(port1, port2);
+    EXPECT_EQ(0x7F, port1);                                      // REST joystick state only
+    uint8_t out1, out2, pot1x, pot1y, pot2x, pot2y;
+    JoystickOutput::instance().outputSnapshot(out1, out2, pot1x, pot1y, pot2x, pot2y);
+    EXPECT_EQ(0x0F, out1);
 }
 
-// MousePotPacer: a 1351 driver samples the POT lines once per frame, so the
-// changes shown within one budget window must add up to at most 63 counts.
-
-// Drives a pacer on a millisecond clock, as the firmware does: reports when
-// they are handled, and the pacing timer every 5ms. Every change is checked
-// against the budget.
-struct PacerRun {
-    enum { HISTORY = 4096 };
-
+TEST(MousePotPacerTest, MovementThatFitsGoesOutAtOnce)
+{
     MousePotPacer pacer;
-    int window;
-    int now;
-    int timer;
-    int16_t x;
-    int16_t y;
-    int shown_x;
-    int shown_y;
-    int changes;
-    int change_time[HISTORY];
-    int change_x[HISTORY];
-    int change_y[HISTORY];
-    bool over_budget;
+    pacer.reset(0, 0, 1000);
+    pacer.setTarget(30, -63);
+    EXPECT_TRUE(pacer.advance(1000 + MousePotPacer::GAP_MS));
+    EXPECT_EQ(30, pacer.potX());
+    EXPECT_EQ(0x7F & -63, pacer.potY());
+    EXPECT_FALSE(pacer.isBehind());
+}
 
-    explicit PacerRun(int window_ms) : window(window_ms), now(0), timer(0), x(0), y(0),
-        shown_x(0), shown_y(0), changes(0), over_budget(false)
-    {
-        pacer.setWindow(window_ms);
-        // Long enough ago that the jump reset() makes is out of the window.
-        pacer.reset(0, 0, (uint16_t)-1000);
-    }
+TEST(MousePotPacerTest, ChangesAreAtLeastTheGapApartAndAtMostAStepLarge)
+{
+    MousePotPacer pacer;
+    pacer.reset(0, 0, 0);
+    pacer.setTarget(100, 0);
+    EXPECT_FALSE(pacer.advance(MousePotPacer::GAP_MS - 1));     // the reset was a change
+    EXPECT_TRUE(pacer.advance(MousePotPacer::GAP_MS));
+    EXPECT_EQ(63, pacer.potX());
+    EXPECT_FALSE(pacer.advance(2 * MousePotPacer::GAP_MS - 1));
+    EXPECT_TRUE(pacer.advance(2 * MousePotPacer::GAP_MS));
+    EXPECT_EQ(100, pacer.potX());
+    EXPECT_FALSE(pacer.isBehind());
+}
 
-    static int signed7(int difference)
-    {
-        difference &= 0x7F;
-        return (difference >= 64) ? difference - 128 : difference;
-    }
-
-    void advance(void)
-    {
-        uint8_t before_x = pacer.potX();
-        uint8_t before_y = pacer.potY();
-        if (!pacer.advance((uint16_t)now)) {
-            return;
-        }
-        int step_x = signed7(pacer.potX() - before_x);
-        int step_y = signed7(pacer.potY() - before_y);
-        shown_x += step_x;
-        shown_y += step_y;
-        if (changes >= HISTORY) {
-            over_budget = true;
-            return;
-        }
-        change_time[changes] = now;
-        change_x[changes] = abs(step_x);
-        change_y[changes] = abs(step_y);
+TEST(MousePotPacerTest, WaitingMovementIsCappedSoThePointerStopsSoon)
+{
+    MousePotPacer pacer;
+    pacer.reset(0, 0, 0);
+    pacer.setTarget(1000, -1000);
+    int changes = 0;
+    for (int now = MousePotPacer::GAP_MS; pacer.isBehind(); now += MousePotPacer::GAP_MS) {
+        EXPECT_TRUE(pacer.advance((uint16_t)now));
         changes++;
-        int sum_x = 0;
-        int sum_y = 0;
-        for (int i = changes - 1; (i >= 0) && (change_time[i] > now - window); i--) {
-            sum_x += change_x[i];
-            sum_y += change_y[i];
-        }
-        if ((sum_x > MousePotPacer::MAX_CHANGE) || (sum_y > MousePotPacer::MAX_CHANGE)) {
-            over_budget = true;
-        }
     }
-
-    // Runs the pacing timer up to `until`.
-    void runUntil(int until)
-    {
-        while (timer <= until) {
-            now = timer;
-            advance();
-            timer += 5;
-        }
-        now = until;
-    }
-
-    // A report that moves by (dx, dy), handled at `at`.
-    void report(int at, int dx, int dy)
-    {
-        runUntil(at);
-        x += dx;
-        y += dy;
-        pacer.setTarget(x, y);
-        advance();
-    }
-
-    void drain(void)
-    {
-        int stop = now + 1000;
-        while (!pacer.settled() && (timer < stop)) {
-            runUntil(timer);
-        }
-    }
-};
-
-TEST(MousePotPacerTest, FullReportsEvery20msGoOutAtOnceAt60Hz)
-{
-    PacerRun run(MousePotPacer::WINDOW_60HZ);
-    for (int i = 0; i < 50; i++) {
-        run.report(3 + (i * 20), 63, -63);
-        EXPECT_TRUE(run.pacer.settled());
-        EXPECT_EQ(run.x, run.shown_x);
-        EXPECT_EQ(run.y, run.shown_y);
-    }
-    EXPECT_FALSE(run.over_budget);
+    EXPECT_EQ(2, changes);
+    EXPECT_EQ(MousePotPacer::MAX_BEHIND, pacer.potX());
+    EXPECT_EQ(0x7F & -MousePotPacer::MAX_BEHIND, pacer.potY());
 }
 
-TEST(MousePotPacerTest, HalfReportsEvery20msGoOutAtOnceAt50Hz)
-{
-    PacerRun run(MousePotPacer::WINDOW_50HZ);
-    for (int i = 0; i < 50; i++) {
-        run.report(3 + (i * 20), 31, 20);
-        EXPECT_TRUE(run.pacer.settled());
-        EXPECT_EQ(run.x, run.shown_x);
-        EXPECT_EQ(run.y, run.shown_y);
-    }
-    EXPECT_FALSE(run.over_budget);
-}
-
-TEST(MousePotPacerTest, TwoFullReports20msApartAreSpreadAt50Hz)
+TEST(MousePotPacerTest, AReversalCancelsMovementThatWaits)
 {
     MousePotPacer pacer;
-    pacer.setWindow(MousePotPacer::WINDOW_50HZ);
-    pacer.reset(0, 0, 50);
-    pacer.setTarget(63, 0);
-    EXPECT_TRUE(pacer.advance(100));
-    pacer.setTarget(126, 0);
-    EXPECT_FALSE(pacer.advance(120));
-    EXPECT_FALSE(pacer.advance(121));
-    EXPECT_TRUE(pacer.advance(122));
-    EXPECT_TRUE(pacer.settled());
-    EXPECT_EQ(126 & 0x7F, pacer.potX());
+    pacer.reset(0, 0, 0);
+    pacer.setTarget(90, 0);
+    pacer.setTarget(0, 0);
+    EXPECT_FALSE(pacer.isBehind());
+    EXPECT_FALSE(pacer.advance(1000));
+    EXPECT_EQ(0, pacer.potX());
 }
 
-TEST(MousePotPacerTest, BunchedReportsStayInsideTheBudgetAndLandExactly)
+TEST(MousePotPacerTest, TheClockWrapNeverLetsAChangeOutEarly)
 {
-    for (int window = MousePotPacer::WINDOW_60HZ; window <= MousePotPacer::WINDOW_50HZ; window++) {
-        PacerRun run(window);
-        // Full reports every 20ms, handled up to 12ms late, with the wheel
-        // adding 63 counts to every fifth. The late handling bunches reports
-        // together; the average stays inside what the budget carries.
-        static const int late[] = { 0, 12, 1, 11, 0, 6, 12, 0, 3, 9 };
-        for (int i = 0; i < 40; i++) {
-            run.report((i * 30) + late[i % 10], (i % 5 == 4) ? 126 : 63, -63);
-        }
-        run.drain();
-        EXPECT_TRUE(run.pacer.settled());
-        EXPECT_FALSE(run.over_budget);
-        EXPECT_EQ(run.x, run.shown_x);
-        EXPECT_EQ(run.y, run.shown_y);
-    }
-}
-
-TEST(MousePotPacerTest, TheBacklogIsCappedSoThePointerStopsSoonAfterTheMouse)
-{
-    PacerRun run(MousePotPacer::WINDOW_50HZ);
-    // Two seconds of 63 and 126 counts every 20ms, more than the 22ms window,
-    // with its releases on 5ms timer runs, carries.
-    for (int i = 0; i < 100; i++) {
-        run.report(i * 20, 63, (i % 2) ? 126 : 63);
-    }
-    int stopped_at = run.now;
-    run.drain();
-    EXPECT_TRUE(run.pacer.settled());
-    EXPECT_FALSE(run.over_budget);
-    EXPECT_TRUE(run.shown_y < run.y);
-    // 252 counts are four windows, each ending on a 5ms timer run.
-    EXPECT_TRUE((run.timer - stopped_at) <= 4 * (MousePotPacer::WINDOW_50HZ + 5) + 5);
-}
-
-TEST(MousePotPacerTest, AReversalTurnsBackWithoutOverrunningTheBudget)
-{
-    PacerRun run(MousePotPacer::WINDOW_50HZ);
-    run.report(0, 100, 0);
-    EXPECT_EQ(63, run.shown_x);
-    run.report(10, -110, 0);
-    EXPECT_EQ(63, run.shown_x);
-    run.drain();
-    EXPECT_FALSE(run.over_budget);
-    EXPECT_EQ(-10, run.shown_x);
+    MousePotPacer pacer;
+    pacer.reset(0, 0, 65530);
+    pacer.setTarget(10, 0);
+    EXPECT_FALSE(pacer.advance((uint16_t)(65530 + MousePotPacer::GAP_MS - 1)));
+    EXPECT_TRUE(pacer.advance((uint16_t)(65530 + MousePotPacer::GAP_MS)));
 }
 
 TEST(MousePotPacerTest, ThePositionMayWrapPastInt16)
 {
     MousePotPacer pacer;
     pacer.reset(32760, 0, 0);
-    pacer.setTarget((int16_t)-32766, 0);
-    EXPECT_TRUE(pacer.advance(100));
-    EXPECT_TRUE(pacer.settled());
-    EXPECT_EQ((uint8_t)((-32766) & 0x7F), pacer.potX());
+    pacer.setTarget((int16_t)-32766, 0);                         // +10 counts
+    EXPECT_TRUE(pacer.advance(MousePotPacer::GAP_MS));
+    EXPECT_EQ((uint8_t)((32760 + 10) & 0x7F), pacer.potX());
 }
 
-TEST(MousePotPacerTest, TheBudgetHoldsAcrossTheMillisecondClockWrap)
-{
-    MousePotPacer pacer;
-    pacer.setWindow(MousePotPacer::WINDOW_50HZ);
-    pacer.reset(0, 0, 65000);
-    pacer.setTarget(63, 0);
-    EXPECT_TRUE(pacer.advance(65530));
-    pacer.setTarget(126, 0);
-    EXPECT_FALSE(pacer.advance(10));
-    EXPECT_FALSE(pacer.advance(15));
-    EXPECT_TRUE(pacer.advance(16));
-    EXPECT_EQ(126 & 0x7F, pacer.potX());
-}
+namespace {
 
-TEST(MousePotPacerTest, TheJumpAResetMakesSpendsItsWindow)
-{
-    MousePotPacer pacer;
-    pacer.setWindow(MousePotPacer::WINDOW_50HZ);
-    pacer.reset(63, 0, 1000);
-    pacer.setTarget(126, 0);
-    EXPECT_FALSE(pacer.advance(1015));
-    EXPECT_FALSE(pacer.advance(1021));
-    EXPECT_TRUE(pacer.advance(1022));
-    EXPECT_EQ(126 & 0x7F, pacer.potX());
-}
+// The firmware and a C64 mouse driver in microseconds. Reports come every 20ms
+// and are handled up to `handling_us` late; the pacing timer ticks every 5ms,
+// up to 2ms late; each report is handed to the pacer as the firmware does. The
+// driver reads the POT line once per frame, up to 0.52ms (SID) plus 2.5ms
+// (interrupt) late. A read is backward when the 7-bit change it sees is not the
+// change the pointer made since the previous read.
+struct PacedMouseRun {
+    unsigned seed;
+    int backward;
+    int dropped;
+    int longest_catch_up_ms;
 
-// An oracle of its own: reports are handled up to 15ms late, the pacing timer
-// runs every 5ms, and a driver reads the lines once per frame from a random
-// phase, seeing them as they were up to 0.52ms earlier (the SID's measuring
-// cycle). No two reads may differ by more than 63 counts.
-static int worst_frame_step(int window, double frame_ms, int counts_per_report, unsigned seed)
-{
-    MousePotPacer pacer;
-    pacer.setWindow(window);
-    pacer.reset(0, 0, 0);
-    unsigned lcg = seed;
-    struct Change { double at; int shown; };
-    static Change changes[4096];
-    int change_count = 0;
-    int16_t position = 0;
-    int shown = 0;
-    double report_at = 100.0;
-    double timer_at = 0.0;
-    changes[change_count++] = (Change){ 0.0, 0 };
-    for (int report = 0; report < 400; report++) {
-        lcg = lcg * 1103515245u + 12345u;
-        double handled = report_at + ((lcg >> 16) % 150) / 10.0;
-        while (timer_at < handled) {
-            if (pacer.advance((uint16_t)timer_at)) {
-                shown += PacerRun::signed7(pacer.potX() - (shown & 0x7F));
-                changes[change_count++] = (Change){ timer_at, shown };
+    int random(int limit)
+    {
+        seed = seed * 1103515245u + 12345u;
+        return (int)((seed >> 8) % (unsigned)limit);
+    }
+
+    PacedMouseRun(unsigned run_seed, int gap_ms, int frame_us, int max_step, int handling_us, int seconds)
+        : seed(run_seed), backward(0), dropped(0), longest_catch_up_ms(0)
+    {
+        MousePotPacer pacer(gap_ms);
+        const int end_us = seconds * 1000000;
+        int position = 0;
+        int shown = 0;                                           // unwrapped position on the line
+        int last_seen = 0;
+        pacer.reset(0, 0, 0);
+        int next_report = 20000;
+        int report_count = 0;
+        int next_tick = 5000;
+        int next_read = random(frame_us) + random(3020);
+        int frame_start = next_read;
+        int last_report_us = 0;
+        bool reporting = true;
+        for (int now_us = 0; now_us < end_us + 500000; now_us += 100) {
+            uint16_t now_ms = (uint16_t)(now_us / 1000);
+            bool changed = false;
+            uint8_t before = pacer.potX();
+            if (reporting && (now_us >= next_report)) {
+                int step = random(2 * max_step + 1) - max_step;
+                position += step;
+                pacer.setTarget((int16_t)position, 0);
+                changed = pacer.advance(now_ms);
+                last_report_us = now_us;
+                report_count++;
+                next_report = 20000 * (report_count + 1) + random(handling_us + 1);
+                if (next_report >= end_us) {
+                    reporting = false;
+                }
             }
-            timer_at += 5.0;
-        }
-        position = (int16_t)(position + counts_per_report);
-        pacer.setTarget(position, 0);
-        if (pacer.advance((uint16_t)handled)) {
-            shown += PacerRun::signed7(pacer.potX() - (shown & 0x7F));
-            changes[change_count++] = (Change){ handled, shown };
-        }
-        report_at += 20.0;
-    }
-    for (int i = 0; i < 400; i++, timer_at += 5.0) {
-        if (pacer.advance((uint16_t)timer_at)) {
-            shown += PacerRun::signed7(pacer.potX() - (shown & 0x7F));
-            changes[change_count++] = (Change){ timer_at, shown };
-        }
-    }
-    int worst = 0;
-    for (int phase = 0; phase < 20; phase++) {
-        double read_at = 100.0 + phase * frame_ms / 20.0;
-        int previous = 0;
-        bool first = true;
-        for (; read_at < timer_at; read_at += frame_ms) {
-            lcg = lcg * 1103515245u + 12345u;
-            double seen_at = read_at - ((lcg >> 16) % 53) / 100.0;
-            int value = 0;
-            for (int i = 0; (i < change_count) && (changes[i].at <= seen_at); i++) {
-                value = changes[i].shown;
+            if (now_us >= next_tick) {
+                changed |= pacer.advance(now_ms);
+                next_tick += 5000 + random(2001);
             }
-            if (!first && (abs(value - previous) > worst)) {
-                worst = abs(value - previous);
+            if (changed) {
+                int step = (int)(int8_t)((uint8_t)(pacer.potX() - before) << 1) >> 1;
+                shown += step;
             }
-            previous = value;
-            first = false;
+            if (now_us >= next_read) {
+                int seen = (int)(int8_t)((uint8_t)((shown - last_seen) & 0x7F) << 1) >> 1;
+                if (seen != shown - last_seen) {
+                    backward++;
+                }
+                last_seen = shown;
+                frame_start += frame_us;
+                next_read = frame_start + random(3020);
+            }
+            if (!reporting && !pacer.isBehind() && last_report_us) {
+                int catch_up_ms = (now_us - last_report_us) / 1000;
+                if (catch_up_ms > longest_catch_up_ms) {
+                    longest_catch_up_ms = catch_up_ms;
+                }
+                last_report_us = 0;
+            }
+        }
+        dropped = position - shown;
+        if (dropped < 0) {
+            dropped = -dropped;
         }
     }
-    return worst;
-}
+};
 
-TEST(MousePotPacerTest, NoFrameReadsMoreThan63Counts)
+const int PAL_FRAME_US = 19950;
+const int NTSC_FRAME_US = 16715;
+
+} // namespace
+
+TEST(MousePotPacerTest, NoDriverReadSeesThePointerMoveBackward)
 {
-    for (unsigned seed = 1; seed <= 4; seed++) {
-        EXPECT_TRUE(worst_frame_step(MousePotPacer::WINDOW_50HZ, 1000.0 / 50.124, 126, seed) <= 63);
-        EXPECT_TRUE(worst_frame_step(MousePotPacer::WINDOW_50HZ, 1000.0 / 50.124, 63, seed) <= 63);
-        EXPECT_TRUE(worst_frame_step(MousePotPacer::WINDOW_60HZ, 1000.0 / 59.826, 126, seed) <= 63);
-        EXPECT_TRUE(worst_frame_step(MousePotPacer::WINDOW_60HZ, 1000.0 / 59.826, 63, seed) <= 63);
+    for (unsigned seed = 1; seed <= 40; seed++) {
+        for (int frame_us : { PAL_FRAME_US, NTSC_FRAME_US }) {
+            // Full-speed reports, bunched by late handling, with a wheel on top.
+            PacedMouseRun run(seed, MousePotPacer::GAP_MS, frame_us, 126, 15000, 10);
+            EXPECT_EQ(0, run.backward);
+            EXPECT_TRUE(run.longest_catch_up_ms <= 3 * 30);
+        }
     }
 }
 
-TEST(MousePotPacerTest, AQuietSpellFreesTheWholeBudget)
+// The same runs with changes allowed closer together than a frame: the check
+// above would fail, so it can tell.
+TEST(MousePotPacerTest, AShorterGapLetsReadsSeeThePointerMoveBackward)
 {
-    MousePotPacer pacer;
-    pacer.reset(0, 0, 0);
-    pacer.setTarget(63, 0);
-    EXPECT_TRUE(pacer.advance(50));
-    pacer.setTarget(126, 0);
-    EXPECT_TRUE(pacer.advance(5000));
-    EXPECT_EQ(126 & 0x7F, pacer.potX());
+    int backward = 0;
+    for (unsigned seed = 1; seed <= 40; seed++) {
+        PacedMouseRun run(seed, 15, PAL_FRAME_US, 126, 15000, 10);
+        backward += run.backward;
+    }
+    EXPECT_TRUE(backward > 0);
 }
 
-TEST(UsbMouseJoystickOutputTest, PotOutputFollowsThePacer)
+TEST(MousePotPacerTest, HandMovementArrivesExactly)
 {
-    reset_joystick_output();
-    uint8_t port1 = 0;
-    uint8_t port2 = 0;
-    uint8_t pot1x = 0;
-    uint8_t pot1y = 0;
-    uint8_t pot2x = 0;
-    uint8_t pot2y = 0;
-
-    // Off the device the clock setUsbPort1Mouse() reads stands at 0ms. The first
-    // report spends the budget of its window, so the next waits a window.
-    JoystickOutput::instance().setUsbPort1Mouse(0, 0, &usb_mouse_a);
-    JoystickOutput::instance().setUsbPort1Mouse(100, 0, &usb_mouse_a);
-    JoystickOutput::instance().outputSnapshot(port1, port2, pot1x, pot1y, pot2x, pot2y);
-    EXPECT_EQ(0, pot1x);
-    JoystickOutput::instance().tickMouse(MousePotPacer::WINDOW_50HZ - 1);
-    JoystickOutput::instance().outputSnapshot(port1, port2, pot1x, pot1y, pot2x, pot2y);
-    EXPECT_EQ(0, pot1x);
-    JoystickOutput::instance().tickMouse(MousePotPacer::WINDOW_50HZ);
-    JoystickOutput::instance().outputSnapshot(port1, port2, pot1x, pot1y, pot2x, pot2y);
-    EXPECT_EQ(63, pot1x);
-    JoystickOutput::instance().tickMouse(2 * MousePotPacer::WINDOW_50HZ);
-    JoystickOutput::instance().outputSnapshot(port1, port2, pot1x, pot1y, pot2x, pot2y);
-    EXPECT_EQ(100, pot1x);
-}
-
-// A second mouse has its own running position; taking over the POT lines must
-// not turn the distance between the two positions into movement.
-TEST(UsbMouseJoystickOutputTest, AnotherMouseTakesOverWithoutMovingThePointer)
-{
-    reset_joystick_output();
-    uint8_t port1 = 0;
-    uint8_t port2 = 0;
-    uint8_t pot1x = 0;
-    uint8_t pot1y = 0;
-    uint8_t pot2x = 0;
-    uint8_t pot2y = 0;
-
-    JoystickOutput::instance().setUsbPort1Mouse(0x15, 0x2A, &usb_mouse_a);
-    JoystickOutput::instance().setUsbPort1Mouse(0x55, 0x2A, &usb_mouse_b);
-    JoystickOutput::instance().tickMouse(100);
-    JoystickOutput::instance().outputSnapshot(port1, port2, pot1x, pot1y, pot2x, pot2y);
-    EXPECT_EQ(0x15, pot1x);
-    JoystickOutput::instance().setUsbPort1Mouse(0x5A, 0x2A, &usb_mouse_b);
-    JoystickOutput::instance().tickMouse(200);
-    JoystickOutput::instance().outputSnapshot(port1, port2, pot1x, pot1y, pot2x, pot2y);
-    EXPECT_EQ(0x1A, pot1x);
-}
-
-TEST(UsbMouseJoystickOutputTest, TheFrameRateSetsThePacingWindow)
-{
-    reset_joystick_output();
-    uint8_t port1 = 0;
-    uint8_t port2 = 0;
-    uint8_t pot1x = 0;
-    uint8_t pot1y = 0;
-    uint8_t pot2x = 0;
-    uint8_t pot2y = 0;
-
-    JoystickOutput::instance().setMouseFrameRate(60);
-    JoystickOutput::instance().setUsbPort1Mouse(0, 0, &usb_mouse_a);
-    JoystickOutput::instance().setUsbPort1Mouse(0, 100, &usb_mouse_a);
-    JoystickOutput::instance().tickMouse(MousePotPacer::WINDOW_60HZ);
-    JoystickOutput::instance().outputSnapshot(port1, port2, pot1x, pot1y, pot2x, pot2y);
-    EXPECT_EQ(63, pot1y);
-    JoystickOutput::instance().tickMouse(2 * MousePotPacer::WINDOW_60HZ);
-    JoystickOutput::instance().outputSnapshot(port1, port2, pot1x, pot1y, pot2x, pot2y);
-    EXPECT_EQ(100, pot1y);
+    for (unsigned seed = 1; seed <= 40; seed++) {
+        for (int frame_us : { PAL_FRAME_US, NTSC_FRAME_US }) {
+            PacedMouseRun run(seed, MousePotPacer::GAP_MS, frame_us, 31, 15000, 10);
+            EXPECT_EQ(0, run.backward);
+            EXPECT_EQ(0, run.dropped);
+        }
+    }
 }

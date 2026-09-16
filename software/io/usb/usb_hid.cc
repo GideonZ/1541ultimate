@@ -78,7 +78,7 @@ void usb_hid_set_mouse1_position(int16_t mouse_x, int16_t mouse_y)
 #if !RECOVERYAPP
     // Every mouse, USB or REST, moves the one shared position, so the POT
     // lines follow a single source.
-    JoystickOutput::instance().setUsbPort1Mouse(mouse_x, mouse_y, NULL);
+    JoystickOutput::instance().setMousePosition(mouse_x, mouse_y);
 #else
     C64_PADDLE_1_X = mouse_x & 0x7F;
     C64_PADDLE_1_Y = mouse_y & 0x7F;
@@ -88,7 +88,7 @@ void usb_hid_set_mouse1_position(int16_t mouse_x, int16_t mouse_y)
 void usb_hid_clear_mouse1_position(void)
 {
 #if !RECOVERYAPP
-    JoystickOutput::instance().clearUsbPort1Mouse();
+    JoystickOutput::instance().clearMousePosition();
 #endif
 }
 #endif
@@ -334,6 +334,19 @@ void usb_hid_apply_mouse_output_enable()
         usb_hid_set_joy1_output(0x1F);
     }
 #endif
+}
+
+// USB mice register from the USB task and the REST mouse from the REST tasks,
+// so the count changes in a critical section.
+void usb_hid_count_mouse_interface(int delta)
+{
+    portENTER_CRITICAL();
+    usb_hid_active_mouse_interfaces += delta;
+    if (usb_hid_active_mouse_interfaces < 0) {
+        usb_hid_active_mouse_interfaces = 0;
+    }
+    portEXIT_CRITICAL();
+    usb_hid_apply_mouse_output_enable();
 }
 
 }
@@ -846,9 +859,8 @@ void UsbHidDriver :: restMouseAttach(void)
     }
     mouse = true;
     mouse_registered = true;
-    usb_hid_active_mouse_interfaces++;
     usb_hid_rest_mouse_interfaces = 1;
-    usb_hid_apply_mouse_output_enable();
+    usb_hid_count_mouse_interface(1);
 }
 
 void UsbHidDriver :: restMouseDetach(void)
@@ -1152,9 +1164,8 @@ void UsbHidDriver :: install(UsbInterface *intf)
         usb_hid_update_keyboard_idle_period();
     }
     if (mouse && !mouse_registered) {
-        usb_hid_active_mouse_interfaces++;
         mouse_registered = true;
-        usb_hid_apply_mouse_output_enable();
+        usb_hid_count_mouse_interface(1);
     }
     int interface_number = usb_hid_get_source_interface(interface);
     if (mouse && usb_hid_should_claim_visibility(usb_hid_mouse_visibility.source_device,
@@ -1199,11 +1210,8 @@ void UsbHidDriver :: disable()
         irq_transaction = 0;
     }
     if (mouse_registered) {
-        if (usb_hid_active_mouse_interfaces > 0) {
-            usb_hid_active_mouse_interfaces--;
-        }
         mouse_registered = false;
-        usb_hid_apply_mouse_output_enable();
+        usb_hid_count_mouse_interface(-1);
     }
 
     mouse_joy = 0x1F;
@@ -1642,6 +1650,9 @@ bool UsbHidDriver :: process_mouse_report(const uint8_t *irq_data, int data_len)
         portENTER_CRITICAL();
         usb_hid_set_mouse1_position(mouse_x, mouse_y);
         portEXIT_CRITICAL();
+#if !RECOVERYAPP
+        JoystickOutput::instance().paceMouse();
+#endif
         if (!HidMouseInterpreter::mouseModeRoutesWheelToNative(mouse_mode)) {
             set_joy1_output(output_mouse_joy);
         }

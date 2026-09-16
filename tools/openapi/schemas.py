@@ -540,11 +540,11 @@ SCHEMAS = {
                         "properties": {
                             "attached": {
                                 "type": "boolean",
-                                "description": "Attached by the first mouse event, detached by `release_all`.",
+                                "description": "Set by the first mouse event. `release_all`, a reset or a reboot detaches the mouse and drops its queue.",
                             },
                             "inputs": {
                                 "type": "array",
-                                "description": "The buttons it holds now.",
+                                "description": "Buttons held.",
                                 "items": {"$ref": "#/components/schemas/MouseInput"},
                             },
                             "pending": {
@@ -624,7 +624,7 @@ SCHEMAS = {
     },
     "MouseButtonEvent": {
         "type": "object",
-        "description": "Mouse buttons to press, release or tap. A tap holds them for 40ms.",
+        "description": "Presses, releases or taps mouse buttons. A tap holds them for 40ms.",
         "required": ["kind", "inputs", "transition"],
         "additionalProperties": False,
         "properties": {
@@ -641,7 +641,7 @@ SCHEMAS = {
     },
     "MouseMoveEvent": {
         "type": "object",
-        "description": "One mouse report moving the mouse, sent as soon as the queue reaches it.",
+        "description": "One mouse report.",
         "required": ["kind", "move"],
         "additionalProperties": False,
         "properties": {
@@ -659,7 +659,7 @@ SCHEMAS = {
     },
     "MouseWheelEvent": {
         "type": "object",
-        "description": "Wheel detents, one report each, vertical first, at least 20ms apart.",
+        "description": "Turns the wheels by whole detents, one report each, vertical first.",
         "required": ["kind", "wheel"],
         "additionalProperties": False,
         "properties": {
@@ -668,15 +668,15 @@ SCHEMAS = {
                 "type": "object",
                 "additionalProperties": False,
                 "minProperties": 1,
-                "description": "At least one wheel must turn.",
+                "description": "At least one value must be non-zero.",
                 "properties": {
                     "vertical": {
                         "type": "integer", "minimum": -64, "maximum": 64,
-                        "description": "Detents; positive turns the wheel away from the user.",
+                        "description": "Positive turns away from the user.",
                     },
                     "horizontal": {
                         "type": "integer", "minimum": -64, "maximum": 64,
-                        "description": "Detents; positive is to the right.",
+                        "description": "Positive turns to the right.",
                     },
                 },
             },
@@ -684,7 +684,7 @@ SCHEMAS = {
     },
     "MousePathEvent": {
         "type": "object",
-        "description": "Moves replayed at no less than a fixed interval, which keeps a drawn path's shape. A request holds at most 1024 JSON values and a step takes three.",
+        "description": "Relative moves, one report per step.",
         "required": ["kind", "path"],
         "additionalProperties": False,
         "properties": {
@@ -693,7 +693,7 @@ SCHEMAS = {
                 "type": "array",
                 "minItems": 1,
                 "maxItems": 256,
-                "description": "Relative [x, y] steps, one report each.",
+                "description": "[x, y] steps.",
                 "items": {
                     "type": "array",
                     "minItems": 2,
@@ -703,7 +703,7 @@ SCHEMAS = {
             },
             "interval_ms": {
                 "type": "integer", "minimum": 20, "maximum": 1000, "default": 20,
-                "description": "Time between two steps.",
+                "description": "Milliseconds between steps.",
             },
         },
     },
@@ -711,7 +711,7 @@ SCHEMAS = {
         "type": "integer",
         "minimum": -127,
         "maximum": 127,
-        "description": "HID counts, positive right on x and down on y.",
+        "description": "HID counts; positive is right on x and down on y.",
     },
     "MouseInput": {
         "type": "string",

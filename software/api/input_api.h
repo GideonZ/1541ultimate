@@ -449,27 +449,30 @@ static inline bool input_api_parse_joystick_event(JSON_Object *obj, InputParsedE
     return true;
 }
 
+// An optional integer member within low..high. `out` keeps its value when the
+// member is absent. Errors name it `object_name.name`, or `name` when
+// `object_name` is NULL.
 static inline bool input_api_get_int_member(JSON_Object *obj, const char *object_name, const char *name,
-    int low, int high, bool required, int &out, char *err, size_t err_size)
+    int low, int high, int &out, char *err, size_t err_size)
 {
-    JSON *value = obj->get(name);
-    if (!value) {
-        if (required) {
-            sprintf(err, "`%s.%s` is required.", object_name, name);
-            return false;
-        }
-        out = 0;
+    if (!input_api_has_key(obj, name)) {
         return true;
     }
+    const char *dot = object_name ? "." : "";
+    if (!object_name) {
+        object_name = "";
+    }
+    JSON *value = obj->get(name);
     if (value->type() != eInteger) {
-        sprintf(err, "`%s.%s` must be an integer.", object_name, name);
+        sprintf(err, "`%s%s%s` must be an integer.", object_name, dot, name);
         return false;
     }
-    out = ((JSON_Integer *)value)->get_value();
-    if ((out < low) || (out > high)) {
-        sprintf(err, "`%s.%s` must be %d..%d.", object_name, name, low, high);
+    int number = ((JSON_Integer *)value)->get_value();
+    if ((number < low) || (number > high)) {
+        sprintf(err, "`%s%s%s` must be %d..%d.", object_name, dot, name, low, high);
         return false;
     }
+    out = number;
     return true;
 }
 
@@ -544,12 +547,12 @@ static inline bool input_api_parse_mouse_move(JSON_Object *obj, InputParsedEvent
 {
     static const char *const allowed[] = { "x", "y" };
     JSON_Object *move = input_api_get_object_field(obj, "move", allowed, 2, err, err_size);
-    int x, y;
+    int x = 0, y = 0;
     if (!move ||
         !input_api_get_int_member(move, "move", "x", -INPUT_API_MAX_MOUSE_MOTION, INPUT_API_MAX_MOUSE_MOTION,
-            false, x, err, err_size) ||
+            x, err, err_size) ||
         !input_api_get_int_member(move, "move", "y", -INPUT_API_MAX_MOUSE_MOTION, INPUT_API_MAX_MOUSE_MOTION,
-            false, y, err, err_size)) {
+            y, err, err_size)) {
         return false;
     }
     if (!input_api_has_key(move, "x") && !input_api_has_key(move, "y")) {
@@ -566,12 +569,12 @@ static inline bool input_api_parse_mouse_wheel(JSON_Object *obj, InputParsedEven
 {
     static const char *const allowed[] = { "vertical", "horizontal" };
     JSON_Object *wheel = input_api_get_object_field(obj, "wheel", allowed, 2, err, err_size);
-    int vertical, horizontal;
+    int vertical = 0, horizontal = 0;
     if (!wheel ||
         !input_api_get_int_member(wheel, "wheel", "vertical", -INPUT_API_MAX_MOUSE_DETENTS,
-            INPUT_API_MAX_MOUSE_DETENTS, false, vertical, err, err_size) ||
+            INPUT_API_MAX_MOUSE_DETENTS, vertical, err, err_size) ||
         !input_api_get_int_member(wheel, "wheel", "horizontal", -INPUT_API_MAX_MOUSE_DETENTS,
-            INPUT_API_MAX_MOUSE_DETENTS, false, horizontal, err, err_size)) {
+            INPUT_API_MAX_MOUSE_DETENTS, horizontal, err, err_size)) {
         return false;
     }
     if (!vertical && !horizontal) {
@@ -618,18 +621,9 @@ static inline bool input_api_parse_mouse_path(JSON_Object *obj, InputParsedEvent
         }
     }
     int interval = INPUT_API_DEFAULT_MOUSE_PATH_INTERVAL_MS;
-    if (input_api_has_key(obj, "interval_ms")) {
-        JSON *value = obj->get("interval_ms");
-        if (value->type() != eInteger) {
-            input_api_set_error(err, err_size, "`interval_ms` must be an integer.");
-            return false;
-        }
-        interval = ((JSON_Integer *)value)->get_value();
-        if ((interval < INPUT_API_MIN_MOUSE_PATH_INTERVAL_MS) || (interval > INPUT_API_MAX_MOUSE_PATH_INTERVAL_MS)) {
-            sprintf(err, "`interval_ms` must be %d..%d.", INPUT_API_MIN_MOUSE_PATH_INTERVAL_MS,
-                INPUT_API_MAX_MOUSE_PATH_INTERVAL_MS);
-            return false;
-        }
+    if (!input_api_get_int_member(obj, NULL, "interval_ms", INPUT_API_MIN_MOUSE_PATH_INTERVAL_MS,
+            INPUT_API_MAX_MOUSE_PATH_INTERVAL_MS, interval, err, err_size)) {
+        return false;
     }
     out.kind = INPUT_PARSED_MOUSE_PATH;
     out.path = steps;

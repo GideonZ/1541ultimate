@@ -11,12 +11,11 @@ class JoystickOutput
 {
     uint8_t usb_p1;
     uint8_t rest_mouse_p1;      // lines of the REST mouse, a source of its own
-    // The 1351 position of a USB mouse on port 1. apply() writes the POT
-    // registers from what the pacer shows, so every port 1 update keeps the
-    // mouse position, and fast movement cannot turn around between frames.
-    bool usb_p1_mouse;
-    const void *usb_p1_source;  // the mouse that reported last
-    MousePotPacer usb_p1_pacer;
+    // The 1351 position every mouse on port 1 moves. apply() writes the POT
+    // lines from what the pacer shows, so a port 1 line update keeps the
+    // position, and fast movement cannot turn around between frames.
+    bool mouse_active;
+    MousePotPacer mouse_pacer;
     uint8_t rest_p1_persistent;
     uint8_t rest_p2_persistent;
     uint8_t rest_p1_overlay;
@@ -32,19 +31,16 @@ public:
 
     void setUsbPort1(uint8_t active_low_mask);
     void setRestMousePort1(uint8_t active_low_mask);
-    // x and y are the running position of the mouse `source` in counts; only
-    // their low seven bits reach the POT lines, paced by MousePotPacer.
-    void setUsbPort1Mouse(int16_t x, int16_t y, const void *source);
-    void clearUsbPort1Mouse(void);
-    // Whether the POT lines show all of the mouse movement given so far. The
-    // REST mouse sends its next report only then, so a path is never dropped.
-    bool mouseSettled(void) const;
-    // Shows more of the mouse movement, as far as the pacer's budget allows.
-    // Called by the pacing timer; `now` is the millisecond clock.
-    void tickMouse(uint16_t now);
-    // The frame rate of the machine, which sets how far apart two changes of
-    // the mouse position on the POT lines must be to reach separate frames.
-    void setMouseFrameRate(int hertz);
+    // x and y are the running mouse position in counts; only their low seven
+    // bits reach the POT lines, paced by MousePotPacer. Both may be called in a
+    // critical section.
+    void setMousePosition(int16_t x, int16_t y);
+    void clearMousePosition(void);
+    // Starts the pacing timer if the POT lines are behind the mouse. Call it
+    // outside a critical section, after setMousePosition().
+    void paceMouse(void);
+    // Shows more of the mouse movement as the pacer allows. Run by the pacing timer.
+    void tickMouse(void);
 
     void setRestPort1Persistent(uint8_t active_low_mask);
     void setRestPort2Persistent(uint8_t active_low_mask);

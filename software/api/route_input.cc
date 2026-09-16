@@ -190,6 +190,8 @@ static const TickType_t REST_MOUSE_TIMER_TICKS = 1;
 // The shortest time between two REST mouse reports: the 20ms at which the
 // firmware polls a USB mouse. See RestMouseQueue.
 static const int REST_MOUSE_REPORT_TICKS = (pdMS_TO_TICKS(20) > 0) ? pdMS_TO_TICKS(20) : 1;
+// Longer than any report waits, so an idle queue's first report is due at once.
+static const TickType_t REST_MOUSE_IDLE_TICKS = pdMS_TO_TICKS(2 * INPUT_API_MAX_MOUSE_PATH_INTERVAL_MS);
 static RestMouseQueue rest_mouse_queue;
 static TimerHandle_t rest_mouse_timer = NULL;
 static TickType_t rest_mouse_last_report = 0;
@@ -272,10 +274,9 @@ static void rest_mouse_timer_callback(TimerHandle_t timer)
     UsbHidDriver *mouse = UsbHidDriver::restMouse();
     TickType_t now = xTaskGetTickCount();
     RestMouseReport report;
-    // A report waits while the POT lines still carry earlier movement, which
-    // the pacer would otherwise cap (MousePotPacer::MAX_BACKLOG).
-    while (mouse && JoystickOutput::instance().mouseSettled() &&
-           rest_mouse_queue.takeDue((int)(now - rest_mouse_last_report), REST_MOUSE_REPORT_TICKS, report)) {
+    // At most one report goes out per tick, as the next is at least
+    // REST_MOUSE_REPORT_TICKS away.
+    if (mouse && rest_mouse_queue.takeDue((int)(now - rest_mouse_last_report), REST_MOUSE_REPORT_TICKS, report)) {
         mouse->restMouseReport(report.buttons, report.dx, report.dy, report.wheel, report.pan);
         rest_mouse_last_report = now;
     }
@@ -302,11 +303,11 @@ static void apply_mouse_event(const InputParsedEvent &event)
         rest_mouse_queue.clear(0);
     }
     // An idle queue sends its first report straight away, unless the previous
-    // report went out less than 20ms ago. Only a long idle spell is clamped,
-    // so the tick difference cannot overflow.
+    // report went out less than 20ms ago. A long idle spell is clamped to
+    // REST_MOUSE_IDLE_TICKS, so the tick difference cannot overflow an int.
     TickType_t now = xTaskGetTickCount();
-    if ((TickType_t)(now - rest_mouse_last_report) > (TickType_t)RestMouseQueue::CAPACITY) {
-        rest_mouse_last_report = now - RestMouseQueue::CAPACITY;
+    if ((TickType_t)(now - rest_mouse_last_report) > REST_MOUSE_IDLE_TICKS) {
+        rest_mouse_last_report = now - REST_MOUSE_IDLE_TICKS;
     }
     rest_mouse_queue.append(event, REST_MOUSE_TAP_HOLD_TICKS, portTICK_PERIOD_MS);
     xTimerStart(rest_mouse_timer, 0);
@@ -729,9 +730,7 @@ API_DOC(GET, machine, input,
                 "API is holding and the ones the Ultimate menu is holding, so the answer matches "
                 "what the machine sees.\n"
                 "\n"
-                "`mouse` describes the mouse this API drives: whether it is attached, the buttons "
-                "it holds now, and how many of its reports are still waiting to be sent. A client "
-                "that needs a path or a wheel turn to have finished waits for `pending` to reach 0.\n"
+                "`mouse` shows only the mouse this API drives.\n"
                 "\n"
                 "The FPGA build has to carry the block that drives the keyboard and joystick "
                 "lines. A build without it answers 501.")
@@ -788,33 +787,25 @@ API_DOC(POST, machine, input,
                 "and `tap` does both, which is what typing needs. A `release_all` event drops "
                 "everything this API is holding, and a machine reset does the same.\n"
                 "\n"
-                "A `mouse` event drives a wheel mouse on control port 1, which the firmware "
-                "handles exactly as it handles a USB mouse: Mouse Mode, the sensitivities, the "
-                "Micromys wheel and menu navigation all apply. Each event does one thing. "
-                "`inputs` with a `transition` presses, releases or taps `left`, `right` and "
-                "`middle`. `move` sends one report of `x` and `y` HID counts, -127 to 127 each, "
-                "positive right and down; it is the call to use for the lowest latency. As with a "
-                "USB mouse, Mouse Sensitivity scales the counts and one report moves the pointer "
-                "by at most 63 on each axis; at the default sensitivity of 8 a count is one "
-                "pointer step, so a path that has to arrive exactly keeps its steps within "
-                "-63..63. `wheel` "
-                "turns `vertical` (positive away from the user) and `horizontal` (positive to "
-                "the right) by whole detents, one report per detent. `path` replays up to 256 "
-                "`[x, y]` steps, one report every `interval_ms` (20 to 1000, default 20), which "
-                "keeps a drawn path's shape; a request holds at most 1024 JSON values and a step "
-                "takes three, so one request carries about 330 steps in all. "
-                "In Mouse + Wheel mode the Micromys lines queue at most 16 pulses, as for a USB "
-                "mouse, and `pending` reaches 0 before the last pulse has ended. Mouse reports are sent in order from a queue, no "
-                "closer together than 20ms, the rate at which the firmware polls a USB mouse. A "
-                "C64 mouse driver reads the position once per frame and takes more than 63 "
-                "counts in one frame as a move the other way, so the firmware spreads fast "
-                "movement over several frames, and the next report waits until the movement "
-                "before it has reached the port: a fast path takes longer than its `interval_ms` "
-                "steps add up to, but no step is lost. So a `release` "
-                "after a `path` in the same batch waits for the path, and press, path and "
-                "release in one batch is a drag. The response comes back once the batch is "
-                "queued; `mouse.pending` says how many reports are still to go. "
-                "The first mouse event attaches the mouse and `release_all` detaches it.\n"
+                "A `mouse` event drives a wheel mouse on control port 1 through the same handling "
+                "as a USB mouse, so Mouse Mode, the sensitivities, the Micromys wheel and menu "
+                "navigation apply. Each event does one thing: `inputs` with a `transition` for "
+                "buttons, one `move` report, a `wheel` turn of one report per detent, or a `path` "
+                "of moves `interval_ms` apart. After Mouse Sensitivity is applied, one report "
+                "moves the pointer at most 63 counts per axis; at the default sensitivity one HID "
+                "count is one pointer count.\n"
+                "\n"
+                "Mouse reports are queued and sent in order, at least 20ms apart, which is how "
+                "often the firmware polls a USB mouse; a press, a path and a release in one batch "
+                "make a drag. As for a USB mouse, the position on the port changes at most once "
+                "per 24ms by at most 63 counts per axis, so a driver that reads once per frame "
+                "never sees the pointer move backward. Faster movement waits, up to 126 counts "
+                "per axis, and beyond that is dropped; path steps of up to 31 counts arrive "
+                "exactly. The response returns once the batch is queued; `mouse.pending` counts "
+                "the reports still to send. A batch that does not fit into the 1024-report queue "
+                "is refused with 429. A request holds at most 1024 JSON values, about 330 path "
+                "steps. In Mouse + Wheel mode at most 16 wheel pulses are queued, and `pending` "
+                "reaches 0 before the last pulse ends.\n"
                 "\n"
                 "`restore` is not part of the keyboard matrix; it is wired to NMI, so only "
                 "transition `tap` does anything with it. It may share an event with matrix "

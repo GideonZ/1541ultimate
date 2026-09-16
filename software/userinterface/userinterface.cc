@@ -33,8 +33,6 @@ IndexedList<UserInterface *> *get_user_interfaces(void)
     return &interfaces;
 }
 
-// Menus open on the machine's own screen, which the USB keyboard and mouse and
-// REST input drive. Remote menus are not counted.
 volatile int active_user_interface_count = 0;
 
 }

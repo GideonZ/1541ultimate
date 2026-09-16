@@ -1956,7 +1956,7 @@ paths:
       description: |2-
         Returns every key and joystick input that is currently held, both the ones this API is holding and the ones the Ultimate menu is holding, so the answer matches what the machine sees.
 
-        `mouse` describes the mouse this API drives: whether it is attached, the buttons it holds now, and how many of its reports are still waiting to be sent. A client that needs a path or a wheel turn to have finished waits for `pending` to reach 0.
+        `mouse` shows only the mouse this API drives.
 
         The FPGA build has to carry the block that drives the keyboard and joystick lines. A build without it answers 501.
       operationId: getInputState
@@ -2020,7 +2020,9 @@ paths:
 
         `press` holds an input down until something releases it, `release` lets it go, and `tap` does both, which is what typing needs. A `release_all` event drops everything this API is holding, and a machine reset does the same.
 
-        A `mouse` event drives a wheel mouse on control port 1, which the firmware handles exactly as it handles a USB mouse: Mouse Mode, the sensitivities, the Micromys wheel and menu navigation all apply. Each event does one thing. `inputs` with a `transition` presses, releases or taps `left`, `right` and `middle`. `move` sends one report of `x` and `y` HID counts, -127 to 127 each, positive right and down; it is the call to use for the lowest latency. As with a USB mouse, Mouse Sensitivity scales the counts and one report moves the pointer by at most 63 on each axis; at the default sensitivity of 8 a count is one pointer step, so a path that has to arrive exactly keeps its steps within -63..63. `wheel` turns `vertical` (positive away from the user) and `horizontal` (positive to the right) by whole detents, one report per detent. `path` replays up to 256 `[x, y]` steps, one report every `interval_ms` (20 to 1000, default 20), which keeps a drawn path's shape; a request holds at most 1024 JSON values and a step takes three, so one request carries about 330 steps in all. In Mouse + Wheel mode the Micromys lines queue at most 16 pulses, as for a USB mouse, and `pending` reaches 0 before the last pulse has ended. Mouse reports are sent in order from a queue, no closer together than 20ms, the rate at which the firmware polls a USB mouse. A C64 mouse driver reads the position once per frame and takes more than 63 counts in one frame as a move the other way, so the firmware spreads fast movement over several frames, and the next report waits until the movement before it has reached the port: a fast path takes longer than its `interval_ms` steps add up to, but no step is lost. So a `release` after a `path` in the same batch waits for the path, and press, path and release in one batch is a drag. The response comes back once the batch is queued; `mouse.pending` says how many reports are still to go. The first mouse event attaches the mouse and `release_all` detaches it.
+        A `mouse` event drives a wheel mouse on control port 1 through the same handling as a USB mouse, so Mouse Mode, the sensitivities, the Micromys wheel and menu navigation apply. Each event does one thing: `inputs` with a `transition` for buttons, one `move` report, a `wheel` turn of one report per detent, or a `path` of moves `interval_ms` apart. After Mouse Sensitivity is applied, one report moves the pointer at most 63 counts per axis; at the default sensitivity one HID count is one pointer count.
+
+        Mouse reports are queued and sent in order, at least 20ms apart, which is how often the firmware polls a USB mouse; a press, a path and a release in one batch make a drag. As for a USB mouse, the position on the port changes at most once per 24ms by at most 63 counts per axis, so a driver that reads once per frame never sees the pointer move backward. Faster movement waits, up to 126 counts per axis, and beyond that is dropped; path steps of up to 31 counts arrive exactly. The response returns once the batch is queued; `mouse.pending` counts the reports still to send. A batch that does not fit into the 1024-report queue is refused with 429. A request holds at most 1024 JSON values, about 330 path steps. In Mouse + Wheel mode at most 16 wheel pulses are queued, and `pending` reaches 0 before the last pulse ends.
 
         `restore` is not part of the keyboard matrix; it is wired to NMI, so only transition `tap` does anything with it. It may share an event with matrix keys: a tap of `["commodore", "restore"]` puts the C= key down in the matrix before it raises the restore line.
 
@@ -2092,7 +2094,7 @@ paths:
                     errors:
                       - Expected Body, but got none.
         '429':
-          description: Error
+          description: Too many requests
           content:
             application/json:
               schema:
@@ -2399,7 +2401,7 @@ paths:
       description: |2-
         Resets the C64 and re-initialises the cartridge with it, which is what the Reboot entry in the menu does. Use this rather than `machine:reset` when a cartridge has to start from scratch.
 
-        On Ultimate 64 hardware every key and joystick direction the input API is holding is released as part of the reboot, and its mouse is detached with its pending reports dropped.
+        On Ultimate 64 hardware every key and joystick direction the input API is holding is released as part of the reboot, and its mouse is detached.
 
         **Caution (machine-state):** Whatever the machine was running is lost, and the cartridge is started from scratch.
       operationId: rebootMachine
@@ -2446,7 +2448,7 @@ paths:
       description: |2-
         Pulls reset on the C64. The machine restarts with whatever cartridge is active, which is not the same as starting from cold; use `machine:reboot` for that.
 
-        On Ultimate 64 hardware every key and joystick direction the input API is holding is released as part of the reset, and its mouse is detached with its pending reports dropped, so a reset cannot leave an injected key stuck down.
+        On Ultimate 64 hardware every key and joystick direction the input API is holding is released as part of the reset, and its mouse is detached, so a reset cannot leave an injected input stuck down.
 
         **Caution (machine-state):** Whatever the machine was running is lost.
       operationId: resetMachine
@@ -3831,10 +3833,10 @@ components:
               properties:
                 attached:
                   type: boolean
-                  description: 'Attached by the first mouse event, detached by `release_all`.'
+                  description: 'Set by the first mouse event. `release_all`, a reset or a reboot detaches the mouse and drops its queue.'
                 inputs:
                   type: array
-                  description: The buttons it holds now.
+                  description: Buttons held.
                   items:
                     $ref: '#/components/schemas/MouseInput'
                 pending:
@@ -3986,7 +3988,7 @@ components:
                 - d020-d021
     MouseButtonEvent:
       type: object
-      description: Mouse buttons to press, release or tap. A tap holds them for 40ms.
+      description: Presses, releases or taps mouse buttons. A tap holds them for 40ms.
       required:
         - kind
         - inputs
@@ -4014,10 +4016,10 @@ components:
       type: integer
       minimum: -127
       maximum: 127
-      description: HID counts, positive right on x and down on y.
+      description: 'HID counts; positive is right on x and down on y.'
     MouseMoveEvent:
       type: object
-      description: One mouse report moving the mouse, sent as soon as the queue reaches it.
+      description: One mouse report.
       required:
         - kind
         - move
@@ -4036,7 +4038,7 @@ components:
               $ref: '#/components/schemas/MouseMotion'
     MousePathEvent:
       type: object
-      description: 'Moves replayed at no less than a fixed interval, which keeps a drawn path''s shape. A request holds at most 1024 JSON values and a step takes three.'
+      description: Relative moves, one report per step.
       required:
         - kind
         - path
@@ -4048,7 +4050,7 @@ components:
           type: array
           minItems: 1
           maxItems: 256
-          description: 'Relative [x, y] steps, one report each.'
+          description: '[x, y] steps.'
           items:
             type: array
             minItems: 2
@@ -4060,10 +4062,10 @@ components:
           minimum: 20
           maximum: 1000
           default: 20
-          description: Time between two steps.
+          description: Milliseconds between steps.
     MouseWheelEvent:
       type: object
-      description: Wheel detents, one report each, vertical first, at least 20ms apart.
+      description: Turns the wheels by whole detents, one report each, vertical first.
       required:
         - kind
         - wheel
@@ -4075,18 +4077,18 @@ components:
           type: object
           additionalProperties: false
           minProperties: 1
-          description: At least one wheel must turn.
+          description: At least one value must be non-zero.
           properties:
             vertical:
               type: integer
               minimum: -64
               maximum: 64
-              description: 'Detents; positive turns the wheel away from the user.'
+              description: Positive turns away from the user.
             horizontal:
               type: integer
               minimum: -64
               maximum: 64
-              description: 'Detents; positive is to the right.'
+              description: Positive turns to the right.
     ReleaseAllEvent:
       type: object
       description: Releases every key, joystick input and mouse button the API is holding, and detaches its mouse. Takes no other members.
