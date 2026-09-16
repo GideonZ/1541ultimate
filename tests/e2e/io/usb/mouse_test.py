@@ -612,12 +612,16 @@ def test_settings(api, listener, mouse) -> None:
     for sensitivity in (1, 2, 4, 8, 16):
         configure(api, Mouse_Mode="Mouse", Mouse_Sensitivity=sensitivity)
         expected = pointer_counts(80, sensitivity)
+        # Below 8 a count is a fraction of a pointer count, and the moves that
+        # start the check can leave part of one behind.
         movement_case(listener, mouse, f"Mouse Sensitivity {sensitivity}: 80 counts land at {expected}",
-                      [(8, 0)] * 10, reports_per_step=1, expected=(expected, 0), monotonic=False)
+                      [(8, 0)] * 10, reports_per_step=1, expected=(expected, 0), monotonic=False,
+                      tolerance=0 if sensitivity >= 8 else 1)
 
-    # The setting that makes single cursor steps possible: at 1, a key needs 32
-    # counts of hand movement; at 8, one every 4.
-    for sensitivity, counts in ((1, 32), (8, 8)):
+    # The setting that makes single cursor steps possible: at 1 a key needs 32
+    # counts of hand movement, at 8 one every 4. The counts sent land between
+    # two keys, so the fraction the earlier moves leave cannot change the total.
+    for sensitivity, counts in ((1, 34), (8, 10)):
         configure(api, Mouse_Mode="Cursor", Mouse_Sensitivity=sensitivity)
         keys = pointer_counts(counts, sensitivity) // CURSOR_KEY_COUNTS
         with check(f"Cursor, Mouse Sensitivity {sensitivity}: {counts} counts type {keys} cursor keys"), \
