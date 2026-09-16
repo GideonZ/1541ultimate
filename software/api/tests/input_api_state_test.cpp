@@ -1021,6 +1021,7 @@ struct PacedMouseRun {
     int backward;
     int dropped;
     int longest_catch_up_ms;
+    int reports;
 
     int random(int limit)
     {
@@ -1029,7 +1030,7 @@ struct PacedMouseRun {
     }
 
     PacedMouseRun(unsigned run_seed, int gap_ms, int frame_us, int max_step, int handling_us, int seconds)
-        : seed(run_seed), backward(0), dropped(0), longest_catch_up_ms(0)
+        : seed(run_seed), backward(0), dropped(0), longest_catch_up_ms(0), reports(0)
     {
         MousePotPacer pacer(gap_ms);
         const int end_us = seconds * 1000000;
@@ -1085,6 +1086,7 @@ struct PacedMouseRun {
                 last_report_us = 0;
             }
         }
+        reports = report_count;
         dropped = position - shown;
         if (dropped < 0) {
             dropped = -dropped;
@@ -1126,6 +1128,20 @@ TEST(MousePotPacerTest, HandMovementArrivesExactly)
     for (unsigned seed = 1; seed <= 40; seed++) {
         for (int frame_us : { PAL_FRAME_US, NTSC_FRAME_US }) {
             PacedMouseRun run(seed, MousePotPacer::GAP_MS, frame_us, 31, 15000, 10);
+            EXPECT_EQ(0, run.backward);
+            EXPECT_EQ(0, run.dropped);
+        }
+    }
+}
+
+// A minute of reports at the rate the lines carry, of which there are thousands:
+// every count arrives.
+TEST(MousePotPacerTest, NothingIsLostInALongRunWithinWhatTheLinesCarry)
+{
+    for (unsigned seed = 1; seed <= 10; seed++) {
+        for (int frame_us : { PAL_FRAME_US, NTSC_FRAME_US }) {
+            PacedMouseRun run(seed, MousePotPacer::GAP_MS, frame_us, 31, 15000, 60);
+            EXPECT_TRUE(run.reports >= 2500);
             EXPECT_EQ(0, run.backward);
             EXPECT_EQ(0, run.dropped);
         }

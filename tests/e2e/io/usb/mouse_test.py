@@ -43,6 +43,10 @@ pacing
     other REST calls load the machine. No frame sees a step against the
     movement or beyond 63 counts (MousePotPacer), most of the movement
     arrives, and the pointer stops soon after the mouse.
+flood
+    Thousands of reports at the rate the POT lines carry, in both directions,
+    and over REST also hundreds of separate requests and button taps: every
+    count, press and release arrives, and no frame steps backward.
 buttons
     All eight button states and all 64 transitions between them: what is held
     and how many presses were counted, without moving the position. With
@@ -121,7 +125,7 @@ DEFAULTS = {
     "Menu Mouse Navigation": "Enabled",
 }
 
-TESTS = ("move", "motion-speed", "pacing", "buttons", "wheel-micromys", "wheel-count", "wheel-mouse",
+TESTS = ("move", "motion-speed", "pacing", "flood", "buttons", "wheel-micromys", "wheel-count", "wheel-mouse",
          "wheel-cursor", "cursor-mode", "concurrent", "rest-joystick", "menus")
 
 # The largest change a report may make to the position (`clampDelta(..., 63)`
@@ -460,6 +464,53 @@ def test_pacing(api, listener, mouse) -> None:
     finally:
         if original is not None:
             set_system_mode(api, listener, mouse, original)
+
+
+# -------------------------------------------------------------------- flood --
+
+# 15s of reports at the 20ms poll rate. Each moves by FLOOD_STEP, which is
+# within the 63 counts per 24ms the POT lines carry, so nothing may be dropped.
+FLOOD_REPORTS = 750
+FLOOD_STEP = 31
+# Separate requests, each one report, sent as fast as the host can post them.
+FLOOD_REQUESTS = 200
+FLOOD_REQUEST_STEP = 20
+FLOOD_TAPS = 100
+
+
+def test_flood(api, listener, mouse) -> None:
+    configure(api, Mouse_Mode="Mouse")
+    for dx, dy in ((FLOOD_STEP, -FLOOD_STEP), (-FLOOD_STEP, FLOOD_STEP)):
+        with check(f"{FLOOD_REPORTS} reports of {dx},{dy} land exactly"), fresh(listener, mouse):
+            mouse.stream(dx=dx, dy=dy, count=FLOOD_REPORTS)
+            time.sleep(PACER_CATCH_UP_SECONDS)
+            state = listener.quiet()
+            detail(str(state))
+            expected = (dx * FLOOD_REPORTS, dy * FLOOD_REPORTS)
+            require((state.x, state.y) == expected, f"expected position {expected}", state)
+            require_monotonic(state, dx, dy)
+
+    if not isinstance(mouse, RestMouse):
+        return
+    with check(f"{FLOOD_REQUESTS} separate requests of one report each land exactly"), fresh(listener, mouse):
+        for _ in range(FLOOD_REQUESTS):
+            api.machine.send_input([{"kind": "mouse", "move": {"x": FLOOD_REQUEST_STEP}}])
+        mouse.wait_sent()
+        state = listener.quiet()
+        detail(str(state))
+        expected = FLOOD_REQUESTS * FLOOD_REQUEST_STEP
+        require((state.x, state.y) == (expected, 0), f"expected position ({expected}, 0)", state)
+        require_monotonic(state, FLOOD_REQUEST_STEP, 0)
+
+    with check(f"{FLOOD_TAPS} taps in a row are {FLOOD_TAPS} presses and end released"), fresh(listener, mouse):
+        for _ in range(FLOOD_TAPS):
+            api.machine.send_input([{"kind": "mouse", "inputs": ["left"], "transition": "tap"}])
+        mouse.wait_sent()
+        state = listener.quiet()
+        detail(str(state))
+        require(state.presses["left"] == FLOOD_TAPS, f"expected {FLOOD_TAPS} left presses", state)
+        require(not state.held, "a button is still held", state)
+        require_still(state, "the taps")
 
 
 # ------------------------------------------------------------------ buttons --
@@ -983,7 +1034,8 @@ def test_menus(api, listener, mouse) -> None:
 
 
 SCENARIOS = {
-    "move": test_move, "motion-speed": test_motion_speed, "pacing": test_pacing, "buttons": test_buttons,
+    "move": test_move, "motion-speed": test_motion_speed, "pacing": test_pacing, "flood": test_flood,
+    "buttons": test_buttons,
     "wheel-micromys": test_wheel_micromys, "wheel-count": test_wheel_count, "wheel-mouse": test_wheel_mouse,
     "wheel-cursor": test_wheel_cursor, "cursor-mode": test_cursor_mode, "concurrent": test_concurrent,
     "rest-joystick": test_rest_joystick, "menus": test_menus,
