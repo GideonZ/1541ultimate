@@ -534,6 +534,26 @@ SCHEMAS = {
                             },
                         },
                     },
+                    "mouse": {
+                        "type": "object",
+                        "description": "The mouse this API drives on control port 1.",
+                        "properties": {
+                            "attached": {
+                                "type": "boolean",
+                                "description": "Set by the first mouse event. `release_all`, a reset or a reboot detaches the mouse and drops its queue.",
+                            },
+                            "inputs": {
+                                "type": "array",
+                                "description": "Buttons held.",
+                                "items": {"$ref": "#/components/schemas/MouseInput"},
+                            },
+                            "pending": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "description": "Reports queued and not yet sent.",
+                            },
+                        },
+                    },
                 },
             },
         ]
@@ -558,6 +578,10 @@ SCHEMAS = {
         "oneOf": [
             {"$ref": "#/components/schemas/KeyboardEvent"},
             {"$ref": "#/components/schemas/JoystickEvent"},
+            {"$ref": "#/components/schemas/MouseButtonEvent"},
+            {"$ref": "#/components/schemas/MouseMoveEvent"},
+            {"$ref": "#/components/schemas/MouseWheelEvent"},
+            {"$ref": "#/components/schemas/MousePathEvent"},
             {"$ref": "#/components/schemas/ReleaseAllEvent"},
         ]
     },
@@ -598,9 +622,104 @@ SCHEMAS = {
             },
         },
     },
+    "MouseButtonEvent": {
+        "type": "object",
+        "description": "Presses, releases or taps mouse buttons. A tap holds them for 40ms.",
+        "required": ["kind", "inputs", "transition"],
+        "additionalProperties": False,
+        "properties": {
+            "kind": {"const": "mouse"},
+            "transition": {"$ref": "#/components/schemas/InputTransition"},
+            "inputs": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 3,
+                "description": "Button names, no duplicates.",
+                "items": {"$ref": "#/components/schemas/MouseInput"},
+            },
+        },
+    },
+    "MouseMoveEvent": {
+        "type": "object",
+        "description": "One mouse report.",
+        "required": ["kind", "move"],
+        "additionalProperties": False,
+        "properties": {
+            "kind": {"const": "mouse"},
+            "move": {
+                "type": "object",
+                "additionalProperties": False,
+                "minProperties": 1,
+                "properties": {
+                    "x": {"$ref": "#/components/schemas/MouseMotion"},
+                    "y": {"$ref": "#/components/schemas/MouseMotion"},
+                },
+            },
+        },
+    },
+    "MouseWheelEvent": {
+        "type": "object",
+        "description": "Turns the wheels by whole detents, one report each, vertical first.",
+        "required": ["kind", "wheel"],
+        "additionalProperties": False,
+        "properties": {
+            "kind": {"const": "mouse"},
+            "wheel": {
+                "type": "object",
+                "additionalProperties": False,
+                "minProperties": 1,
+                "description": "At least one value must be non-zero.",
+                "properties": {
+                    "vertical": {
+                        "type": "integer", "minimum": -64, "maximum": 64,
+                        "description": "Positive turns away from the user.",
+                    },
+                    "horizontal": {
+                        "type": "integer", "minimum": -64, "maximum": 64,
+                        "description": "Positive turns to the right.",
+                    },
+                },
+            },
+        },
+    },
+    "MousePathEvent": {
+        "type": "object",
+        "description": "Relative moves, one report per step.",
+        "required": ["kind", "path"],
+        "additionalProperties": False,
+        "properties": {
+            "kind": {"const": "mouse"},
+            "path": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 256,
+                "description": "[x, y] steps.",
+                "items": {
+                    "type": "array",
+                    "minItems": 2,
+                    "maxItems": 2,
+                    "items": {"$ref": "#/components/schemas/MouseMotion"},
+                },
+            },
+            "interval_ms": {
+                "type": "integer", "minimum": 20, "maximum": 1000, "default": 20,
+                "description": "Milliseconds between steps.",
+            },
+        },
+    },
+    "MouseMotion": {
+        "type": "integer",
+        "minimum": -127,
+        "maximum": 127,
+        "description": "HID counts; positive is right on x and down on y.",
+    },
+    "MouseInput": {
+        "type": "string",
+        "enum": ["left", "right", "middle"],
+    },
     "ReleaseAllEvent": {
         "type": "object",
-        "description": "Releases every key and joystick input the API is holding. Takes no other members.",
+        "description": "Releases every key, joystick input and mouse button the API is holding, and detaches its mouse. Takes no other members.",
         "required": ["kind"],
         "additionalProperties": False,
         "properties": {"kind": {"const": "release_all"}},
