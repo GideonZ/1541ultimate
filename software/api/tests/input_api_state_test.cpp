@@ -944,22 +944,57 @@ TEST(MousePotPacerTest, MovementThatFitsGoesOutAtOnce)
     MousePotPacer pacer;
     pacer.reset(0, 0, 1000);
     pacer.setTarget(30, -63);
-    EXPECT_TRUE(pacer.advance(1000 + MousePotPacer::GAP_MS));
+    EXPECT_TRUE(pacer.advance(1000 + MousePotPacer::WINDOW_MS));
     EXPECT_EQ(30, pacer.potX());
     EXPECT_EQ(0x7F & -63, pacer.potY());
     EXPECT_FALSE(pacer.isBehind());
 }
 
-TEST(MousePotPacerTest, ChangesAreAtLeastTheGapApartAndAtMostAStepLarge)
+// The regression this guards against: a mouse reporting one count every 20ms
+// must move the lines by one count at each report, not by two counts half as
+// often.
+TEST(MousePotPacerTest, EverySmallMoveGoesOutInTheMillisecondItArrives)
+{
+    MousePotPacer pacer;
+    pacer.reset(0, 0, 0);
+    int position = 0;
+    for (int report = 1; report <= 50; report++) {
+        uint16_t now = (uint16_t)(MousePotPacer::WINDOW_MS + 20 * report);
+        uint8_t before = pacer.potX();
+        position++;
+        pacer.setTarget((int16_t)position, 0);
+        EXPECT_TRUE(pacer.advance(now));
+        EXPECT_EQ(1, (int)(uint8_t)(pacer.potX() - before));
+        EXPECT_FALSE(pacer.isBehind());
+    }
+}
+
+// Several small moves inside one window go out as they arrive, as long as they
+// add up to no more than one window's worth.
+TEST(MousePotPacerTest, SmallMovesInOneWindowAllGoOutAtOnce)
+{
+    MousePotPacer pacer;
+    pacer.reset(0, 0, 0);
+    int position = 0;
+    for (int report = 1; report <= 12; report++) {
+        position += 5;
+        pacer.setTarget((int16_t)position, 0);
+        EXPECT_TRUE(pacer.advance((uint16_t)(MousePotPacer::WINDOW_MS + report)));
+        EXPECT_EQ(5 * report, pacer.potX());
+    }
+    EXPECT_FALSE(pacer.isBehind());
+}
+
+TEST(MousePotPacerTest, WhatOverflowsTheWindowWaitsForRoomInIt)
 {
     MousePotPacer pacer;
     pacer.reset(0, 0, 0);
     pacer.setTarget(100, 0);
-    EXPECT_FALSE(pacer.advance(MousePotPacer::GAP_MS - 1));     // the reset was a change
-    EXPECT_TRUE(pacer.advance(MousePotPacer::GAP_MS));
-    EXPECT_EQ(63, pacer.potX());
-    EXPECT_FALSE(pacer.advance(2 * MousePotPacer::GAP_MS - 1));
-    EXPECT_TRUE(pacer.advance(2 * MousePotPacer::GAP_MS));
+    EXPECT_FALSE(pacer.advance(1));                             // the reset spent the window
+    EXPECT_TRUE(pacer.advance(MousePotPacer::WINDOW_MS));
+    EXPECT_EQ(63, pacer.potX());                                // a window's worth of it
+    EXPECT_FALSE(pacer.advance(2 * MousePotPacer::WINDOW_MS - 1));
+    EXPECT_TRUE(pacer.advance(2 * MousePotPacer::WINDOW_MS));
     EXPECT_EQ(100, pacer.potX());
     EXPECT_FALSE(pacer.isBehind());
 }
@@ -970,7 +1005,7 @@ TEST(MousePotPacerTest, WaitingMovementIsCappedSoThePointerStopsSoon)
     pacer.reset(0, 0, 0);
     pacer.setTarget(1000, -1000);
     int changes = 0;
-    for (int now = MousePotPacer::GAP_MS; pacer.isBehind(); now += MousePotPacer::GAP_MS) {
+    for (int now = MousePotPacer::WINDOW_MS; pacer.isBehind(); now += MousePotPacer::WINDOW_MS) {
         EXPECT_TRUE(pacer.advance((uint16_t)now));
         changes++;
     }
@@ -995,8 +1030,8 @@ TEST(MousePotPacerTest, TheClockWrapNeverLetsAChangeOutEarly)
     MousePotPacer pacer;
     pacer.reset(0, 0, 65530);
     pacer.setTarget(10, 0);
-    EXPECT_FALSE(pacer.advance((uint16_t)(65530 + MousePotPacer::GAP_MS - 1)));
-    EXPECT_TRUE(pacer.advance((uint16_t)(65530 + MousePotPacer::GAP_MS)));
+    EXPECT_FALSE(pacer.advance((uint16_t)(65530 + MousePotPacer::WINDOW_MS - 1)));
+    EXPECT_TRUE(pacer.advance((uint16_t)(65530 + MousePotPacer::WINDOW_MS)));
 }
 
 TEST(MousePotPacerTest, ThePositionMayWrapPastInt16)
@@ -1004,7 +1039,7 @@ TEST(MousePotPacerTest, ThePositionMayWrapPastInt16)
     MousePotPacer pacer;
     pacer.reset(32760, 0, 0);
     pacer.setTarget((int16_t)-32766, 0);                         // +10 counts
-    EXPECT_TRUE(pacer.advance(MousePotPacer::GAP_MS));
+    EXPECT_TRUE(pacer.advance(MousePotPacer::WINDOW_MS));
     EXPECT_EQ((uint8_t)((32760 + 10) & 0x7F), pacer.potX());
 }
 
@@ -1022,6 +1057,11 @@ struct PacedMouseRun {
     int dropped;
     int longest_catch_up_ms;
     int reports;
+    int largest_change;                                          // biggest single change of the line
+    int latest_report_ms;                                        // longest a report waited to be shown
+    int reads_that_moved;
+    int reads;
+    int reports_that_moved;
 
     int random(int limit)
     {
@@ -1030,7 +1070,8 @@ struct PacedMouseRun {
     }
 
     PacedMouseRun(unsigned run_seed, int gap_ms, int frame_us, int max_step, int handling_us, int seconds)
-        : seed(run_seed), backward(0), dropped(0), longest_catch_up_ms(0), reports(0)
+        : seed(run_seed), backward(0), dropped(0), longest_catch_up_ms(0), reports(0),
+          largest_change(0), latest_report_ms(0), reads_that_moved(0), reads(0), reports_that_moved(0)
     {
         MousePotPacer pacer(gap_ms);
         const int end_us = seconds * 1000000;
@@ -1038,12 +1079,15 @@ struct PacedMouseRun {
         int shown = 0;                                           // unwrapped position on the line
         int last_seen = 0;
         pacer.reset(0, 0, 0);
-        int next_report = 20000;
+        // The jump a reset makes spends its window, so reporting starts after it.
+        const int settle_us = MousePotPacer::WINDOW_MS * 1000;
+        int next_report = settle_us + 20000;
         int report_count = 0;
         int next_tick = 5000;
         int next_read = random(frame_us) + random(3020);
         int frame_start = next_read;
         int last_report_us = 0;
+        int waiting_since_us = -1;                               // when the line fell behind
         bool reporting = true;
         for (int now_us = 0; now_us < end_us + 500000; now_us += 100) {
             uint16_t now_ms = (uint16_t)(now_us / 1000);
@@ -1051,12 +1095,18 @@ struct PacedMouseRun {
             uint8_t before = pacer.potX();
             if (reporting && (now_us >= next_report)) {
                 int step = random(2 * max_step + 1) - max_step;
+                if (step) {
+                    reports_that_moved++;
+                }
                 position += step;
                 pacer.setTarget((int16_t)position, 0);
                 changed = pacer.advance(now_ms);
                 last_report_us = now_us;
+                if (pacer.isBehind() && (waiting_since_us < 0)) {
+                    waiting_since_us = now_us;
+                }
                 report_count++;
-                next_report = 20000 * (report_count + 1) + random(handling_us + 1);
+                next_report = settle_us + 20000 * (report_count + 1) + random(handling_us + 1);
                 if (next_report >= end_us) {
                     reporting = false;
                 }
@@ -1068,11 +1118,26 @@ struct PacedMouseRun {
             if (changed) {
                 int step = (int)(int8_t)((uint8_t)(pacer.potX() - before) << 1) >> 1;
                 shown += step;
+                int size = (step < 0) ? -step : step;
+                if (size > largest_change) {
+                    largest_change = size;
+                }
+                if (!pacer.isBehind() && (waiting_since_us >= 0)) {
+                    int waited_ms = (now_us - waiting_since_us) / 1000;
+                    if (waited_ms > latest_report_ms) {
+                        latest_report_ms = waited_ms;
+                    }
+                    waiting_since_us = -1;
+                }
             }
             if (now_us >= next_read) {
                 int seen = (int)(int8_t)((uint8_t)((shown - last_seen) & 0x7F) << 1) >> 1;
                 if (seen != shown - last_seen) {
                     backward++;
+                }
+                reads++;
+                if (shown != last_seen) {
+                    reads_that_moved++;
                 }
                 last_seen = shown;
                 frame_start += frame_us;
@@ -1104,7 +1169,7 @@ TEST(MousePotPacerTest, NoDriverReadSeesThePointerMoveBackward)
     for (unsigned seed = 1; seed <= 40; seed++) {
         for (int frame_us : { PAL_FRAME_US, NTSC_FRAME_US }) {
             // Full-speed reports, bunched by late handling, with a wheel on top.
-            PacedMouseRun run(seed, MousePotPacer::GAP_MS, frame_us, 126, 15000, 10);
+            PacedMouseRun run(seed, MousePotPacer::WINDOW_MS, frame_us, 126, 15000, 10);
             EXPECT_EQ(0, run.backward);
             EXPECT_TRUE(run.longest_catch_up_ms <= 3 * 30);
         }
@@ -1127,9 +1192,31 @@ TEST(MousePotPacerTest, HandMovementArrivesExactly)
 {
     for (unsigned seed = 1; seed <= 40; seed++) {
         for (int frame_us : { PAL_FRAME_US, NTSC_FRAME_US }) {
-            PacedMouseRun run(seed, MousePotPacer::GAP_MS, frame_us, 31, 15000, 10);
+            PacedMouseRun run(seed, MousePotPacer::WINDOW_MS, frame_us, 31, 15000, 10);
             EXPECT_EQ(0, run.backward);
             EXPECT_EQ(0, run.dropped);
+        }
+    }
+}
+
+// Slow and precise movement, the case a pointer is judged by: every report
+// reaches the lines in the millisecond it arrives, in the step the mouse made,
+// and nearly every frame a driver reads shows that step. A pacer that let the
+// lines change only once per window would bunch these into steps of two, half
+// as often.
+TEST(MousePotPacerTest, PreciseMovementIsShownStepForStep)
+{
+    for (unsigned seed = 1; seed <= 20; seed++) {
+        for (int frame_us : { PAL_FRAME_US, NTSC_FRAME_US }) {
+            for (int counts : { 1, 2 }) {
+                // Reports as the firmware hands them over, without bunching.
+                PacedMouseRun run(seed, MousePotPacer::WINDOW_MS, frame_us, counts, 2000, 10);
+                EXPECT_EQ(0, run.dropped);
+                EXPECT_EQ(0, run.backward);
+                EXPECT_EQ(0, run.latest_report_ms);
+                EXPECT_TRUE(run.largest_change <= counts);
+                EXPECT_TRUE(run.reads_that_moved * 10 >= run.reports_that_moved * 8);
+            }
         }
     }
 }
@@ -1140,7 +1227,7 @@ TEST(MousePotPacerTest, NothingIsLostInALongRunWithinWhatTheLinesCarry)
 {
     for (unsigned seed = 1; seed <= 10; seed++) {
         for (int frame_us : { PAL_FRAME_US, NTSC_FRAME_US }) {
-            PacedMouseRun run(seed, MousePotPacer::GAP_MS, frame_us, 31, 15000, 60);
+            PacedMouseRun run(seed, MousePotPacer::WINDOW_MS, frame_us, 31, 15000, 60);
             EXPECT_TRUE(run.reports >= 2500);
             EXPECT_EQ(0, run.backward);
             EXPECT_EQ(0, run.dropped);

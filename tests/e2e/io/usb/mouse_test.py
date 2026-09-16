@@ -43,6 +43,10 @@ pacing
     other REST calls load the machine. No frame sees a step against the
     movement or beyond 63 counts (MousePotPacer), most of the movement
     arrives, and the pointer stops soon after the mouse.
+precision
+    The slowest movement a mouse makes: reports of one and two counts. Every
+    report has to reach the POT lines in its own frame, in the step the mouse
+    made, so the pointer follows the hand without lagging or jumping.
 flood
     Thousands of reports at the rate the POT lines carry, in both directions,
     and over REST also hundreds of separate requests and button taps: every
@@ -125,7 +129,8 @@ DEFAULTS = {
     "Menu Mouse Navigation": "Enabled",
 }
 
-TESTS = ("move", "motion-speed", "pacing", "flood", "buttons", "wheel-micromys", "wheel-count", "wheel-mouse",
+TESTS = ("move", "motion-speed", "pacing", "precision", "flood", "buttons", "wheel-micromys", "wheel-count",
+         "wheel-mouse",
          "wheel-cursor", "cursor-mode", "concurrent", "rest-joystick", "menus")
 
 # The largest change a report may make to the position (`clampDelta(..., 63)`
@@ -464,6 +469,39 @@ def test_pacing(api, listener, mouse) -> None:
     finally:
         if original is not None:
             set_system_mode(api, listener, mouse, original)
+
+
+# ---------------------------------------------------------------- precision --
+
+# Reports of one or two counts at the 20ms poll rate, which every frame can
+# show. PRECISE_FRAMES is how many of them may share a frame with another or
+# fall into a frame the listener missed: the rest have to move a frame of their
+# own, or the pointer is stepping further and less often than the mouse did.
+PRECISE_REPORTS = 300
+PRECISE_FRAMES = 0.8
+
+
+def precise_case(listener, mouse, label: str, dx: int, dy: int) -> None:
+    with check(label), fresh(listener, mouse):
+        mouse.stream(dx=dx, dy=dy, count=PRECISE_REPORTS)
+        time.sleep(PACER_CATCH_UP_SECONDS)
+        state = listener.quiet()
+        detail(str(state))
+        expected = (dx * PRECISE_REPORTS, dy * PRECISE_REPORTS)
+        require((state.x, state.y) == expected, f"expected position {expected}", state)
+        step = max(abs(dx), abs(dy))
+        require(state.step_x[1] - state.step_x[0] <= 2 * step and state.step_y[1] - state.step_y[0] <= 2 * step,
+                f"a frame moved by more than two reports of {step}", state)
+        require(state.moved >= PRECISE_FRAMES * PRECISE_REPORTS,
+                f"only {state.moved} frames moved, expected at least "
+                f"{PRECISE_FRAMES * PRECISE_REPORTS:.0f} of {PRECISE_REPORTS} reports", state)
+        require_monotonic(state, dx, dy)
+
+
+def test_precision(api, listener, mouse) -> None:
+    configure(api, Mouse_Mode="Mouse")
+    for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1), (1, -1), (2, 2)):
+        precise_case(listener, mouse, f"{PRECISE_REPORTS} reports of {dx},{dy} move a frame each", dx, dy)
 
 
 # -------------------------------------------------------------------- flood --
@@ -1034,8 +1072,8 @@ def test_menus(api, listener, mouse) -> None:
 
 
 SCENARIOS = {
-    "move": test_move, "motion-speed": test_motion_speed, "pacing": test_pacing, "flood": test_flood,
-    "buttons": test_buttons,
+    "move": test_move, "motion-speed": test_motion_speed, "pacing": test_pacing,
+    "precision": test_precision, "flood": test_flood, "buttons": test_buttons,
     "wheel-micromys": test_wheel_micromys, "wheel-count": test_wheel_count, "wheel-mouse": test_wheel_mouse,
     "wheel-cursor": test_wheel_cursor, "cursor-mode": test_cursor_mode, "concurrent": test_concurrent,
     "rest-joystick": test_rest_joystick, "menus": test_menus,

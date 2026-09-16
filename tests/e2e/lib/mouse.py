@@ -40,7 +40,7 @@ LISTENER_SOURCE = Path(__file__).resolve().parents[3] / "tools" / "c64" / "mouse
 
 # Result block of mouse-listener.asm.
 BLOCK = 0xC000
-BLOCK_LENGTH = 0x68
+BLOCK_LENGTH = 0x6A
 READY_VALUE = 0xA5
 RESET = 0xC001
 
@@ -100,6 +100,8 @@ class MouseState:
     keys_held: int
     key_counts: bytes
     matrix: bytes
+    # Frames whose position changed: with `frames`, how smooth the movement was.
+    moved: int
 
     def key_presses(self, name: str) -> int:
         column, row = KEYS[name]
@@ -119,7 +121,8 @@ class MouseState:
         return (f"x={self.x} y={self.y} step x{self.step_x} y{self.step_y} held={held} presses[{presses}] "
                 f"wheel up={self.wheel_up} down={self.wheel_down} "
                 f"port2={port2} [{port2_presses}] cursor[{cursor}] keys held={self.keys_held} [{keys}] "
-                f"pot=${self.potx:02X}/${self.poty:02X} lines=${self.lines:02X} frames={self.frames}")
+                f"pot=${self.potx:02X}/${self.poty:02X} lines=${self.lines:02X} "
+                f"frames={self.frames} moved={self.moved}")
 
 
 class MouseListener:
@@ -182,7 +185,8 @@ class MouseListener:
             port2=frozenset(name for bit, name in enumerate(PORT2_LINES) if b[0x15] & (1 << bit)),
             port2_presses={name: b[0x16 + bit] for bit, name in enumerate(PORT2_LINES)},
             cursor={"up": b[0x1B], "down": b[0x1C], "left": b[0x1D], "right": b[0x1E]},
-            keys_held=b[0x1F], key_counts=bytes(b[0x20:0x60]), matrix=bytes(b[0x60:0x68]))
+            keys_held=b[0x1F], key_counts=bytes(b[0x20:0x60]), matrix=bytes(b[0x60:0x68]),
+            moved=b[0x68] | (b[0x69] << 8))
 
     def quiet(self, timeout: float = 15.0, hold: float = 0.3) -> MouseState:
         """Wait until nothing is held or pending and no counter changes for `hold` seconds.
