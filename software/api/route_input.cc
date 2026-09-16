@@ -787,6 +787,12 @@ API_DOC(POST, machine, input,
                 "counts the reports still to send, and a batch that needs more than the "
                 "1024-report queue is refused with 429.\n"
                 "\n"
+                "The mouse settings apply to these events as they do to a USB mouse. At the "
+                "default Mouse Sensitivity of 8, one count of `move` or `path` is one step of the "
+                "C64 pointer; 1 makes it an eighth of a step and 16 makes it two. Mouse Wheel "
+                "Sensitivity scales what a detent does, and Mouse Mode decides whether motion "
+                "moves the pointer or types cursor keys.\n"
+                "\n"
                 "The request must be `application/json`, under 4096 bytes and at most 1024 JSON "
                 "values, which is about 330 path steps. The FPGA build has to carry the block "
                 "that drives those lines; a build without it answers 501.")
