@@ -492,27 +492,35 @@ PRECISE_REPORTS = 300
 PRECISE_FRAMES = 0.9
 
 
-def precise_case(listener, mouse, label: str, dx: int, dy: int) -> None:
+def stream_case(listener, mouse, label: str, dx: int, dy: int, count: int, moved_frames: float = 0) -> None:
+    """`count` identical reports: where they land, and how many frames moved.
+
+    `moved_frames` is how many of the reports have to move a frame of their own,
+    which is what tells smooth movement from movement shown in fewer, larger
+    steps. Without it only the landing and the direction of each step are checked.
+    """
     with check(label), fresh(listener, mouse):
-        mouse.stream(dx=dx, dy=dy, count=PRECISE_REPORTS)
+        mouse.stream(dx=dx, dy=dy, count=count)
         time.sleep(PACER_CATCH_UP_SECONDS)
         state = listener.quiet()
         detail(str(state))
-        expected = (dx * PRECISE_REPORTS, dy * PRECISE_REPORTS)
+        expected = (dx * count, dy * count)
         require((state.x, state.y) == expected, f"expected position {expected}", state)
-        step = max(abs(dx), abs(dy))
-        require(state.step_x[1] - state.step_x[0] <= 2 * step and state.step_y[1] - state.step_y[0] <= 2 * step,
-                f"a frame moved by more than two reports of {step}", state)
-        require(state.moved >= PRECISE_FRAMES * PRECISE_REPORTS,
-                f"only {state.moved} frames moved, expected at least "
-                f"{PRECISE_FRAMES * PRECISE_REPORTS:.0f} of {PRECISE_REPORTS} reports", state)
+        if moved_frames:
+            step = max(abs(dx), abs(dy))
+            require(state.step_x[1] - state.step_x[0] <= 2 * step and state.step_y[1] - state.step_y[0] <= 2 * step,
+                    f"a frame moved by more than two reports of {step}", state)
+            require(state.moved >= moved_frames * count,
+                    f"only {state.moved} frames moved, expected at least {moved_frames * count:.0f} of {count}",
+                    state)
         require_monotonic(state, dx, dy)
 
 
 def test_precision(api, listener, mouse) -> None:
     configure(api, Mouse_Mode="Mouse")
     for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1), (1, -1), (2, 2)):
-        precise_case(listener, mouse, f"{PRECISE_REPORTS} reports of {dx},{dy} move a frame each", dx, dy)
+        stream_case(listener, mouse, f"{PRECISE_REPORTS} reports of {dx},{dy} move a frame each",
+                    dx, dy, PRECISE_REPORTS, moved_frames=PRECISE_FRAMES)
 
 
 # --------------------------------------------------------------------- path --
@@ -622,14 +630,8 @@ FLOOD_TAPS = 100
 def test_flood(api, listener, mouse) -> None:
     configure(api, Mouse_Mode="Mouse")
     for dx, dy in ((FLOOD_STEP, -FLOOD_STEP), (-FLOOD_STEP, FLOOD_STEP)):
-        with check(f"{FLOOD_REPORTS} reports of {dx},{dy} land exactly"), fresh(listener, mouse):
-            mouse.stream(dx=dx, dy=dy, count=FLOOD_REPORTS)
-            time.sleep(PACER_CATCH_UP_SECONDS)
-            state = listener.quiet()
-            detail(str(state))
-            expected = (dx * FLOOD_REPORTS, dy * FLOOD_REPORTS)
-            require((state.x, state.y) == expected, f"expected position {expected}", state)
-            require_monotonic(state, dx, dy)
+        stream_case(listener, mouse, f"{FLOOD_REPORTS} reports of {dx},{dy} land exactly",
+                    dx, dy, FLOOD_REPORTS)
 
     if not isinstance(mouse, RestMouse):
         return
