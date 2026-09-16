@@ -15,8 +15,7 @@
 #define ENABLE_PCAP  0
 #define NUM_BUFFERS  32
 
-// Ethernet's shortest legal frame on the wire, excluding the FCS.
-#define ETH_MIN_FRAME_LEN 60
+#include "eth_tx_frame.h"
 
 static uint8_t freemap[NUM_BUFFERS];
 static int freecnt;
@@ -331,14 +330,9 @@ err_t RmiiInterface :: output_packet(uint8_t *buffer, int pkt_len)
 	// Pad the data as well, in a buffer this driver owns. Transmission is
 	// asynchronous, but the RMII_TX_BUSY test above means the previous frame
 	// has left before this buffer is filled again.
-	if (pkt_len < ETH_MIN_FRAME_LEN) {
-		if (pkt_len < 0) {
-			return ERR_ARG;
-		}
-		memcpy(tx_pad_buffer, buffer, pkt_len);
-		memset(tx_pad_buffer + pkt_len, 0, ETH_MIN_FRAME_LEN - pkt_len);
-		buffer  = tx_pad_buffer;
-		pkt_len = ETH_MIN_FRAME_LEN;
+	if (!eth_tx_frame_to_send(buffer, pkt_len, tx_pad_buffer, ETH_MIN_FRAME_LEN,
+	                          &buffer, &pkt_len)) {
+		return ERR_ARG;
 	}
 
 	RMII_TX_ADDRESS = (uint32_t)buffer;

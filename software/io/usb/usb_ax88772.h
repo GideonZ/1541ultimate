@@ -8,9 +8,8 @@
 
 #define NUM_AX_BUFFERS 64
 
-// The adapter prefixes every frame it is given with a four byte length
-// header. 1536 is the buffer size the receive pool uses.
-#define AX_HEADER_LEN     4
+// AX_HEADER_LEN lives in eth_tx_frame.h, next to the code that writes it.
+// 1536 is the buffer size the receive pool uses.
 #define AX_MAX_PACKET_LEN 1536
 
 class UsbAx88772Driver : public UsbDriver
