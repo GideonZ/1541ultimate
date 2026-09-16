@@ -279,22 +279,25 @@ e2e:
   cfg-whitespace                    .      .      x      x      x
   comal80-cartridge                 .      .      x      x      x
   create-disk-image                 .      x      x      x      x
+  d81-track-bounds                  .      x      x      x      x
   deferred-machine-actions          .      .      x      x      x
   doom-release                      .      .      .      x      x
   easyflash-cartridge               .      .      x      x      x
   esp-depends                       x      x      x      x      x
   fast-reset                        .      .      x      x      x
   freeze-menu                       .      .      x      x      x
+  freezer-audio                     .      x      x      x      x
   ftp-client                        .      x      x      x      x
   ftp-server                        x      x      x      x      x
   ident-service-switch              .      .      x      x      x
   iec-dos-commands                  .      .      x      x      x
-  input                             .      x      x      x      x
+  input                             x      x      x      x      x
   input-batching                    x      x      x      x      x
   key-injection                     .      .      x      x      x
   lint                              x      x      x      x      x
   machine-code-monitor              .      .      .      x      x
   menu-screen                       x      x      x      x      x
+  micromys-wheel                    .      .      .      x      x
   navigation-keys                   x      x      x      x      x
   observability                     .      .      x      x      x
   ocean-cartridge                   .      .      x      x      x
@@ -322,6 +325,8 @@ e2e:
   ui-backend-smoke                  x      x      x      x      x
   ultimax-cartridge                 .      .      x      x      x
   usb-bulk-out-integrity            .      .      .      x      x
+  usb-mouse                         x      x      x      x      x
+  usb-mouse-pico                    .      .      .      x      x
   wake-on-wifi                      .      .      .      x      x
   web-index                         .      .      .      x      x
   web-theme                         .      .      .      x      x
@@ -345,8 +350,8 @@ soak:
   usb-keyboard-repeat               .      .      .      x      x
 
                                ------ ------ ------ ------ ------
-  suites                           12     26     60     72     72
-  suite runs                       12     26     60    144    216
+  suites                           14     29     63     77     77
+  suite runs                       14     29     63    154    231
 
 Scenario and check counts, and durations, are not shown here:
 the registry does not know them. They depend on the machine and are
