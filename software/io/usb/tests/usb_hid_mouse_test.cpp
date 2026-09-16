@@ -810,7 +810,7 @@ TEST(CursorMotionKeysTest, KeysFollowTheMovementAndCarryTheRest)
 	EXPECT_EQ(3, HidMouseInterpreter::scaleCursorMotionKeys(13, remainder));
 	EXPECT_EQ(1, remainder);
 	EXPECT_EQ(-3, HidMouseInterpreter::scaleCursorMotionKeys(-13, remainder));
-	EXPECT_EQ(0, remainder);
+	EXPECT_EQ(-1, remainder);
 }
 
 TEST(CursorMotionKeysTest, MovementTooSmallForAKeyTypesNothingUntilItAddsUp)
@@ -823,12 +823,14 @@ TEST(CursorMotionKeysTest, MovementTooSmallForAKeyTypesNothingUntilItAddsUp)
 	EXPECT_EQ(0, remainder);
 }
 
-TEST(CursorMotionKeysTest, ATurnSpendsTheMovementLeftFromTheWayBefore)
+TEST(CursorMotionKeysTest, ATurnDropsTheMovementLeftFromTheWayBefore)
 {
 	int remainder = 0;
 	EXPECT_EQ(0, HidMouseInterpreter::scaleCursorMotionKeys(3, remainder));
-	EXPECT_EQ(0, HidMouseInterpreter::scaleCursorMotionKeys(-3, remainder));
+	EXPECT_EQ(3, remainder);
+	EXPECT_EQ(-3, HidMouseInterpreter::scaleCursorMotionKeys(-12, remainder));
 	EXPECT_EQ(0, remainder);
+	EXPECT_EQ(0, HidMouseInterpreter::scaleCursorMotionKeys(3, remainder));
 	EXPECT_EQ(-1, HidMouseInterpreter::scaleCursorMotionKeys(-4, remainder));
 }
 

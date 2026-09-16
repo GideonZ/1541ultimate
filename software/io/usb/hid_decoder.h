@@ -406,13 +406,17 @@ class HidMouseInterpreter
     }
 
     // One cursor key per CURSOR_KEY_COUNTS counts of motion, the leftover
-    // carried to the next report: a report types keys for the movement it
-    // brings, not at least one for any movement at all. The sign says which
-    // way, so a turn spends the leftover of the way before.
+    // carried to the next report, so a report types keys for the movement it
+    // brings rather than at least one for any movement at all. Movement the
+    // other way drops the leftover instead of spending it, so a turn types the
+    // keys the hand made and nothing is taken off them.
     enum { CURSOR_KEY_COUNTS = 4 };
 
     static int scaleCursorMotionKeys(int motion_delta, int &remainder)
     {
+        if (motion_delta && ((motion_delta > 0) ? (remainder < 0) : (remainder > 0))) {
+            remainder = 0;
+        }
         int total = remainder + motion_delta;
         int keys = total / CURSOR_KEY_COUNTS;
         remainder = total - keys * CURSOR_KEY_COUNTS;
