@@ -709,22 +709,22 @@ static void usb_hid_queue_wheel_keys(int wheel_h, int wheel_v)
     }
 }
 
-static void usb_hid_queue_motion_keys(int motion_x, int motion_y)
+static void usb_hid_queue_motion_keys(int motion_x, int motion_y, int &remainder_x, int &remainder_y)
 {
     motion_y = HidMouseInterpreter::normalizeCursorVerticalMotion(motion_y);
-    int horizontal = HidMouseInterpreter::scaleCursorMotionKeys(motion_x);
-    int vertical = HidMouseInterpreter::scaleCursorMotionKeys(motion_y);
+    int horizontal = HidMouseInterpreter::scaleCursorMotionKeys(motion_x, remainder_x);
+    int vertical = HidMouseInterpreter::scaleCursorMotionKeys(motion_y, remainder_y);
 
-    if (motion_y > 0) {
+    if (vertical > 0) {
         usb_hid_queue_key(KEY_UP, vertical);
-    } else if (motion_y < 0) {
-        usb_hid_queue_key(KEY_DOWN, vertical);
+    } else if (vertical < 0) {
+        usb_hid_queue_key(KEY_DOWN, -vertical);
     }
 
-    if (motion_x > 0) {
+    if (horizontal > 0) {
         usb_hid_queue_key(KEY_RIGHT, horizontal);
-    } else if (motion_x < 0) {
-        usb_hid_queue_key(KEY_LEFT, horizontal);
+    } else if (horizontal < 0) {
+        usb_hid_queue_key(KEY_LEFT, -horizontal);
     }
 }
 
@@ -797,6 +797,8 @@ UsbHidDriver :: UsbHidDriver(UsbInterface *intf) : UsbDriver(intf)
     pointer_sensitivity_setting = -1;
     pointer_sensitivity_remainder_x = 0;
     pointer_sensitivity_remainder_y = 0;
+    cursor_motion_x_remainder = 0;
+    cursor_motion_y_remainder = 0;
     adaptive_accel_ema_x16 = 0;
     adaptive_accel_scale_factor = HidMouseInterpreter::ADAPTIVE_ACCELERATION_FALLBACK_SCALE;
 }
@@ -1267,6 +1269,8 @@ void UsbHidDriver :: disable()
     pointer_sensitivity_setting = -1;
     pointer_sensitivity_remainder_x = 0;
     pointer_sensitivity_remainder_y = 0;
+    cursor_motion_x_remainder = 0;
+    cursor_motion_y_remainder = 0;
     adaptive_accel_ema_x16 = 0;
     adaptive_accel_scale_factor = HidMouseInterpreter::ADAPTIVE_ACCELERATION_FALLBACK_SCALE;
 }
@@ -1548,7 +1552,7 @@ bool UsbHidDriver :: process_mouse_report(const uint8_t *irq_data, int data_len)
         }
 
         if (!menu_override && motion_to_cursor) {
-            usb_hid_queue_motion_keys(motion_x, motion_y);
+            usb_hid_queue_motion_keys(motion_x, motion_y, cursor_motion_x_remainder, cursor_motion_y_remainder);
         }
 
         if ((wheel_v_normalized != 0) || (wheel_h_normalized != 0)) {

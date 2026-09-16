@@ -405,17 +405,18 @@ class HidMouseInterpreter
         return scaleFixed(raw_delta, computeSensitivityScaleFactor(sensitivity));
     }
 
-    static int scaleCursorMotionKeys(int motion_delta)
+    // One cursor key per CURSOR_KEY_COUNTS counts of motion, the leftover
+    // carried to the next report: a report types keys for the movement it
+    // brings, not at least one for any movement at all. The sign says which
+    // way, so a turn spends the leftover of the way before.
+    enum { CURSOR_KEY_COUNTS = 4 };
+
+    static int scaleCursorMotionKeys(int motion_delta, int &remainder)
     {
-        int magnitude = (motion_delta < 0) ? -motion_delta : motion_delta;
-        if (magnitude == 0) {
-            return 0;
-        }
-        int repeat = divideRounded(magnitude, 4);
-        if (repeat == 0) {
-            repeat = 1;
-        }
-        return clampDelta(repeat, 63);
+        int total = remainder + motion_delta;
+        int keys = total / CURSOR_KEY_COUNTS;
+        remainder = total - keys * CURSOR_KEY_COUNTS;
+        return clampDelta(keys, 63);
     }
 
     static int normalizeCursorVerticalMotion(int motion_y)

@@ -79,6 +79,8 @@ class UsbHidDriver : public UsbDriver
     int wheel_pulse_burst_direction;
     uint8_t wheel_pulse_burst_count;
     int pointer_sensitivity_setting;
+    int cursor_motion_x_remainder;      // motion not yet worth a cursor key
+    int cursor_motion_y_remainder;
     int pointer_sensitivity_remainder_x;
     int pointer_sensitivity_remainder_y;
     int adaptive_accel_ema_x16;

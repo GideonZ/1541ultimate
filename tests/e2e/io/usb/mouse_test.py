@@ -43,6 +43,10 @@ pacing
     other REST calls load the machine. No frame sees a step against the
     movement or beyond 63 counts (MousePotPacer), most of the movement
     arrives, and the pointer stops soon after the mouse.
+settings
+    Every mouse setting: what each Mouse Mode does with motion and the wheel,
+    Mouse Sensitivity 1 to 16 on the pointer and on the cursor keys, Mouse
+    Wheel Sensitivity 1 to 16, and both wheel directions.
 precision
     The slowest movement a mouse makes: reports of one and two counts. Every
     report has to reach the POT lines in its own frame, in the step the mouse
@@ -85,7 +89,8 @@ rest-joystick
     #909), and a REST fire2 press on port 1 still owns the POT lines while
     the mouse is attached; its release gives them back to the mouse.
 menus
-    With a Telnet menu session open, the C64 still gets every button and wheel
+    Menu Mouse Navigation Disabled leaves the menu where it is. With a Telnet
+    menu session open, the C64 still gets every button and wheel
     pulse and no cursor key: that menu has its own keyboard. With the menu open
     on the machine's own screen, the wheel moves its
     selection and the C64 gets neither buttons, pulses nor keys; that part is
@@ -129,8 +134,8 @@ DEFAULTS = {
     "Menu Mouse Navigation": "Enabled",
 }
 
-TESTS = ("move", "motion-speed", "pacing", "precision", "flood", "buttons", "wheel-micromys", "wheel-count",
-         "wheel-mouse",
+TESTS = ("move", "motion-speed", "pacing", "precision", "flood", "settings", "buttons", "wheel-micromys",
+         "wheel-count", "wheel-mouse",
          "wheel-cursor", "cursor-mode", "concurrent", "rest-joystick", "menus")
 
 # The largest change a report may make to the position (`clampDelta(..., 63)`
@@ -474,11 +479,12 @@ def test_pacing(api, listener, mouse) -> None:
 # ---------------------------------------------------------------- precision --
 
 # Reports of one or two counts at the 20ms poll rate, which every frame can
-# show. PRECISE_FRAMES is how many of them may share a frame with another or
-# fall into a frame the listener missed: the rest have to move a frame of their
-# own, or the pointer is stepping further and less often than the mouse did.
+# show. Nearly all of them have to move a frame of their own: a pointer that
+# holds movement back for a window shows it in fewer, larger steps, which is
+# both jagged and late. Showing every report as it arrives moves about 99% of
+# the frames; holding each one for a 24ms window moves about 80%.
 PRECISE_REPORTS = 300
-PRECISE_FRAMES = 0.8
+PRECISE_FRAMES = 0.9
 
 
 def precise_case(listener, mouse, label: str, dx: int, dy: int) -> None:
@@ -549,6 +555,103 @@ def test_flood(api, listener, mouse) -> None:
         require(state.presses["left"] == FLOOD_TAPS, f"expected {FLOOD_TAPS} left presses", state)
         require(not state.held, "a button is still held", state)
         require_still(state, "the taps")
+
+
+# ----------------------------------------------------------------- settings --
+
+# HidMouseInterpreter: the pointer moves counts * sensitivity / 8, a cursor key
+# is CURSOR_KEY_COUNTS of that movement, and a detent is 8 wheel units.
+CURSOR_KEY_COUNTS = 4
+# What each Mouse Mode does with motion and with a wheel detent.
+MODE_EFFECTS = {
+    "Mouse": ("pointer", "pointer"),
+    "Mouse + Wheel": ("pointer", "pulses"),
+    "Mouse + Cursor": ("pointer", "keys"),
+    "Cursor": ("keys", "keys"),
+}
+
+
+def pointer_counts(counts: int, sensitivity: int) -> int:
+    """Where `counts` of motion land at `sensitivity`, with the remainder carried."""
+    return counts * sensitivity // 8
+
+
+def mode_case(api, listener, mouse, mode: str, moving: bool) -> None:
+    """Move 40 counts or turn 5 detents in `mode` and require only what it maps to."""
+    motion, wheel = MODE_EFFECTS[mode]
+    effect = motion if moving else wheel
+    what = "motion" if moving else "the wheel"
+    configure(api, Mouse_Mode=mode, Mouse_Wheel_Sensitivity=1)
+    with check(f"{mode}: {what} drives the {effect}"), fresh(listener, mouse, parked=mode != "Cursor"):
+        if moving:
+            mouse.path([(8, 0)] * 5, 1)
+        else:
+            mouse.wheel(vertical=-5)
+        state = listener.quiet()
+        detail(str(state))
+        if effect == "pointer":
+            moved = (state.x == 40) if moving else ((state.x, state.y) != (0, 0))
+            require(moved, "the pointer did not move", state)
+        else:
+            require_still(state, what)
+        if effect == "keys":
+            require(any(state.cursor.values()), f"{what} typed no cursor key", state)
+        else:
+            require_no_cursor_keys(state, what)
+        if effect == "pulses":
+            require(state.wheel_down == 5, "expected 5 down pulses", state)
+        else:
+            require_no_pulses(state, what)
+
+
+def test_settings(api, listener, mouse) -> None:
+    for mode in MODE_EFFECTS:
+        for moving in (True, False):
+            mode_case(api, listener, mouse, mode, moving)
+
+    for sensitivity in (1, 2, 4, 8, 16):
+        configure(api, Mouse_Mode="Mouse", Mouse_Sensitivity=sensitivity)
+        expected = pointer_counts(80, sensitivity)
+        movement_case(listener, mouse, f"Mouse Sensitivity {sensitivity}: 80 counts land at {expected}",
+                      [(8, 0)] * 10, reports_per_step=1, expected=(expected, 0), monotonic=False)
+
+    # The setting that makes single cursor steps possible: at 1, a key needs 32
+    # counts of hand movement; at 8, one every 4.
+    for sensitivity, counts in ((1, 32), (8, 8)):
+        configure(api, Mouse_Mode="Cursor", Mouse_Sensitivity=sensitivity)
+        keys = pointer_counts(counts, sensitivity) // CURSOR_KEY_COUNTS
+        with check(f"Cursor, Mouse Sensitivity {sensitivity}: {counts} counts type {keys} cursor keys"), \
+                fresh(listener, mouse, parked=False):
+            mouse.path([(1, 0)] * counts, 1)
+            state = listener.quiet()
+            detail(str(state))
+            expected = dict.fromkeys(("up", "down", "left", "right"), 0)
+            expected["right"] = keys
+            require_cursor_keys(state, expected)
+            require_still(state, "motion in Cursor mode")
+
+    for sensitivity in (1, 2, 8, 16):
+        configure(api, Mouse_Mode="Mouse + Wheel", Mouse_Wheel_Sensitivity=sensitivity)
+        with check(f"Mouse Wheel Sensitivity {sensitivity}: a detent is {sensitivity} pulses"), \
+                fresh(listener, mouse):
+            mouse.wheel(vertical=1, pulses_per_detent=sensitivity)
+            state = listener.quiet()
+            detail(str(state))
+            require((state.wheel_up, state.wheel_down) == (sensitivity, 0),
+                    f"expected {sensitivity} up pulses", state)
+            require_still(state, "the wheel")
+
+    for direction, first in (("Normal", "up"), ("Reversed", "down")):
+        configure(api, Mouse_Mode="Mouse + Cursor", Mouse_Wheel_Sensitivity=1, Mouse_Wheel_Direction=direction)
+        with check(f"Mouse Wheel Direction {direction}: a detent away from the user types {first}"), \
+                fresh(listener, mouse):
+            mouse.wheel(vertical=1)
+            state = listener.quiet()
+            detail(str(state))
+            expected = dict.fromkeys(("up", "down", "left", "right"), 0)
+            expected[first] = 2
+            require_cursor_keys(state, expected)
+    configure(api)
 
 
 # ------------------------------------------------------------------ buttons --
@@ -748,15 +851,17 @@ CURSOR_RUN_ON_SECONDS = 1.5
 def test_cursor_mode(api, listener, mouse) -> None:
     wheel_cursor_cases(api, listener, mouse, "Cursor")
     configure(api, Mouse_Mode="Cursor")
-    # scaleCursorMotionKeys: a report types divideRounded(|motion|, 4) keys,
-    # at least one; the vertical motion is negated first, so down is down.
-    for dx, dy, expected in ((8, 0, {"right": 2}), (-12, 0, {"left": 3}), (0, 8, {"down": 2}),
-                             (0, -2, {"up": 1}), (1, 0, {"right": 1})):
+    # scaleCursorMotionKeys: one key per CURSOR_KEY_COUNTS counts of motion,
+    # carrying the rest; the vertical motion is negated first, so down is down.
+    for moves, expected in (([(8, 0)], {"right": 2}), ([(-12, 0)], {"left": 3}), ([(0, 8)], {"down": 2}),
+                            ([(0, -2)], {}), ([(0, -2)] * 2, {"up": 1}),
+                            ([(1, 0)] * 3, {}), ([(1, 0)] * 4, {"right": 1})):
         keys = dict.fromkeys(("up", "down", "left", "right"), 0)
         keys.update(expected)
-        with check(f"Cursor: motion {dx},{dy} types {expected} and leaves the pointer"), \
+        with check(f"Cursor: {moves} types {expected or 'nothing'} and leaves the pointer"), \
                 fresh(listener, mouse, parked=False):
-            mouse.move(dx, dy)
+            for dx, dy in moves:
+                mouse.move(dx, dy)
             state = listener.quiet()
             detail(str(state))
             require_cursor_keys(state, keys)
@@ -1062,6 +1167,26 @@ def test_menus(api, listener, mouse) -> None:
             require(state.presses["right"] == 0, "the C64 saw the right button under the menu", state)
             require_no_cursor_keys(state, "the mouse under the menu")
 
+    with check("with Menu Mouse Navigation Disabled the wheel leaves the menu alone"):
+        api.configs.set(UI_CATEGORY, "Interface Type", "Overlay on HDMI")
+        configure(api, Menu_Mouse_Navigation="Disabled")
+        try:
+            api.machine.menu_button()
+            wait_menu(api, True)
+            time.sleep(0.5)
+            before = api.machine.menu_screen()
+            mouse.wheel(vertical=-1)
+            time.sleep(0.5)
+            after = api.machine.menu_screen()
+        finally:
+            api.machine.close_menu_from_anywhere()
+            wait_menu(api, False)
+            configure(api)
+            if interface_type is not None:
+                api.configs.set(UI_CATEGORY, "Interface Type", interface_type)
+        if after != before:
+            raise Failure("a wheel detent moved the menu selection with mouse navigation disabled")
+
     with check("once the menu has closed the mouse reaches the C64 again"), fresh(listener, mouse):
         press_each_button(listener, mouse)
         mouse.wheel(vertical=1)
@@ -1073,7 +1198,7 @@ def test_menus(api, listener, mouse) -> None:
 
 SCENARIOS = {
     "move": test_move, "motion-speed": test_motion_speed, "pacing": test_pacing,
-    "precision": test_precision, "flood": test_flood, "buttons": test_buttons,
+    "precision": test_precision, "flood": test_flood, "settings": test_settings, "buttons": test_buttons,
     "wheel-micromys": test_wheel_micromys, "wheel-count": test_wheel_count, "wheel-mouse": test_wheel_mouse,
     "wheel-cursor": test_wheel_cursor, "cursor-mode": test_cursor_mode, "concurrent": test_concurrent,
     "rest-joystick": test_rest_joystick, "menus": test_menus,
