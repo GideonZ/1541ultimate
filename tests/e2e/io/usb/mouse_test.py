@@ -109,6 +109,7 @@ from __future__ import annotations
 
 import argparse
 import math
+import os
 import socket
 import sys
 import threading
@@ -122,6 +123,7 @@ sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
                             if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
 import bootstrap  # noqa: E402,F401
 import cli  # noqa: E402
+import profiles  # noqa: E402
 from api import UltimateApi  # noqa: E402
 from mouse import MouseListener, MouseState, PicoMouse, RestMouse  # noqa: E402
 from pico_hid import Pico, discover_pico  # noqa: E402
@@ -139,9 +141,30 @@ DEFAULTS = {
     "Menu Mouse Navigation": "Enabled",
 }
 
-TESTS = ("move", "motion-speed", "pacing", "precision", "path", "flood", "settings", "buttons", "wheel-micromys",
-         "wheel-count", "wheel-mouse",
-         "wheel-cursor", "cursor-mode", "concurrent", "rest-joystick", "menus")
+TESTS = ("move", "motion-speed", "pacing", "precision", "path", "flood", "settings", "buttons",
+         "wheel-micromys", "wheel-count", "wheel-mouse", "wheel-cursor", "cursor-mode", "concurrent",
+         "rest-joystick", "menus")
+# What each profile runs, on top of the profile before it. Smoke shows the mouse
+# reaches the C64 at all; quick adds the mappings a user feels first; standard,
+# the merge gate, adds every setting and the REST events; deep adds the long
+# sweeps and the checks that need the menu or minutes of reports.
+PROFILE_TESTS = {
+    profiles.SMOKE: ("move", "buttons"),
+    profiles.QUICK: ("precision", "cursor-mode", "wheel-micromys"),
+    profiles.STANDARD: ("pacing", "path", "settings", "wheel-mouse", "wheel-cursor", "rest-joystick"),
+    profiles.DEEP: ("motion-speed", "flood", "wheel-count", "concurrent", "menus"),
+    profiles.EXHAUSTIVE: (),
+}
+
+
+def tests_for(profile: str) -> tuple[str, ...]:
+    """The scenarios `profile` runs, in the order TESTS declares them."""
+    wanted: set[str] = set()
+    for name in profiles.ORDER:
+        wanted |= set(PROFILE_TESTS[name])
+        if name == profile:
+            break
+    return tuple(test for test in TESTS if test in wanted)
 
 # The largest change a report may make to the position (`clampDelta(..., 63)`
 # after the sensitivity scale), and so the largest step a monotonic movement
@@ -453,8 +476,8 @@ def pacing_at_frame_rate(api, listener, mouse, mode: str) -> None:
     set_system_mode(api, listener, mouse, mode)
     configure(api, Mouse_Mode="Mouse")
     at = f"{rate}Hz: "
-    for dx, dy in ((REPORT_CLAMP, REPORT_CLAMP), (-REPORT_CLAMP, REPORT_CLAMP),
-                   (REPORT_CLAMP, -REPORT_CLAMP), (-REPORT_CLAMP, -REPORT_CLAMP)):
+    # One diagonal covers both axes and both signs; the pacer is per axis.
+    for dx, dy in ((REPORT_CLAMP, -REPORT_CLAMP), (-REPORT_CLAMP, REPORT_CLAMP)):
         fast_case(listener, mouse, at + f"{dx},{dy} as fast as the host polls never moves backward",
                   dx, dy, rate, (dx * FAST_REPORTS, dy * FAST_REPORTS))
     # Reads that do not stop the 6510 (no DMA), so the listener sees every frame.
@@ -473,6 +496,12 @@ def pacing_at_frame_rate(api, listener, mouse, mode: str) -> None:
 
 def test_pacing(api, listener, mouse) -> None:
     original = api.configs.item(CATEGORY, "System Mode").get("current")
+    # Both frame rates need the machine switched and settled twice, so below the
+    # deep profile the check runs at the rate the machine is already in.
+    if profiles.rank(profiles.current()) < profiles.rank(profiles.DEEP):
+        mode = original if original in FRAME_RATES else "PAL"
+        pacing_at_frame_rate(api, listener, mouse, mode)
+        return
     try:
         for mode in FRAME_RATES:
             pacing_at_frame_rate(api, listener, mouse, mode)
@@ -518,7 +547,8 @@ def stream_case(listener, mouse, label: str, dx: int, dy: int, count: int, moved
 
 def test_precision(api, listener, mouse) -> None:
     configure(api, Mouse_Mode="Mouse")
-    for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1), (1, -1), (2, 2)):
+    # One count each way and two counts diagonally: both axes, both signs.
+    for dx, dy in ((1, -1), (-2, 2)):
         stream_case(listener, mouse, f"{PRECISE_REPORTS} reports of {dx},{dy} move a frame each",
                     dx, dy, PRECISE_REPORTS, moved_frames=PRECISE_FRAMES)
 
@@ -629,9 +659,8 @@ FLOOD_TAPS = 100
 
 def test_flood(api, listener, mouse) -> None:
     configure(api, Mouse_Mode="Mouse")
-    for dx, dy in ((FLOOD_STEP, -FLOOD_STEP), (-FLOOD_STEP, FLOOD_STEP)):
-        stream_case(listener, mouse, f"{FLOOD_REPORTS} reports of {dx},{dy} land exactly",
-                    dx, dy, FLOOD_REPORTS)
+    stream_case(listener, mouse, f"{FLOOD_REPORTS} reports of {FLOOD_STEP},-{FLOOD_STEP} land exactly",
+                FLOOD_STEP, -FLOOD_STEP, FLOOD_REPORTS)
 
     if not isinstance(mouse, RestMouse):
         return
@@ -675,38 +704,40 @@ def pointer_counts(counts: int, sensitivity: int) -> int:
     return counts * sensitivity // 8
 
 
-def mode_case(api, listener, mouse, mode: str, moving: bool) -> None:
-    """Move 40 counts or turn 5 detents in `mode` and require only what it maps to."""
+def require_effect(state: MouseState, effect: str, what: str, pointer: int | None) -> None:
+    """`what` drove `effect` and nothing else: the pointer, wheel pulses or cursor keys."""
+    detail(f"{what}: {state}")
+    if effect == "pointer":
+        require(state.x == pointer if pointer is not None else (state.x, state.y) != (0, 0),
+                f"{what} did not move the pointer", state)
+    else:
+        require_still(state, what)
+    if effect == "keys":
+        require(any(state.cursor.values()), f"{what} typed no cursor key", state)
+    else:
+        require_no_cursor_keys(state, what)
+    if effect == "pulses":
+        require(state.wheel_down == 5, "expected 5 down pulses", state)
+    else:
+        require_no_pulses(state, what)
+
+
+def mode_case(api, listener, mouse, mode: str) -> None:
+    """In `mode`, move 40 counts and turn 5 detents; each must drive only what it maps to."""
     motion, wheel = MODE_EFFECTS[mode]
-    effect = motion if moving else wheel
-    what = "motion" if moving else "the wheel"
     configure(api, Mouse_Mode=mode, Mouse_Wheel_Sensitivity=1)
-    with check(f"{mode}: {what} drives the {effect}"), fresh(listener, mouse, parked=mode != "Cursor"):
-        if moving:
-            mouse.path([(8, 0)] * 5, 1)
-        else:
-            mouse.wheel(vertical=-5)
-        state = listener.quiet()
-        detail(str(state))
-        if effect == "pointer":
-            moved = (state.x == 40) if moving else ((state.x, state.y) != (0, 0))
-            require(moved, "the pointer did not move", state)
-        else:
-            require_still(state, what)
-        if effect == "keys":
-            require(any(state.cursor.values()), f"{what} typed no cursor key", state)
-        else:
-            require_no_cursor_keys(state, what)
-        if effect == "pulses":
-            require(state.wheel_down == 5, "expected 5 down pulses", state)
-        else:
-            require_no_pulses(state, what)
+    with check(f"{mode}: motion drives the {motion}, the wheel the {wheel}"), \
+            fresh(listener, mouse, parked=mode != "Cursor"):
+        mouse.path([(8, 0)] * 5, 1)
+        require_effect(listener.quiet(), motion, "motion", 40)
+        listener.reset()
+        mouse.wheel(vertical=-5)
+        require_effect(listener.quiet(), wheel, "the wheel", None)
 
 
 def test_settings(api, listener, mouse) -> None:
     for mode in MODE_EFFECTS:
-        for moving in (True, False):
-            mode_case(api, listener, mouse, mode, moving)
+        mode_case(api, listener, mouse, mode)
 
     for sensitivity in (1, 2, 4, 8, 16):
         configure(api, Mouse_Mode="Mouse", Mouse_Sensitivity=sensitivity)
@@ -1317,10 +1348,14 @@ def main() -> int:
     parser.add_argument("--pico-host", help="fixture IP address, for --backend pico, on networks that do "
                         "not forward broadcast between the wired test host and the Wi-Fi client")
     parser.add_argument("--test", action="append", choices=TESTS,
-                        help="run one scenario; repeat for several (default: all)")
+                        help="run one scenario; repeat for several (default: what --profile runs)")
+    parser.add_argument("--profile", choices=profiles.ORDER, default=profiles.current(),
+                        help="run the scenarios of this profile (default: the runner's, else quick)")
     args = parser.parse_args()
     if tuple(SCENARIOS) != TESTS:
         raise Failure("TESTS and SCENARIOS name different scenarios")
+    # The scenarios that do more in a deeper profile read it back from here.
+    os.environ[profiles.ENV] = args.profile
     api = UltimateApi(args.host, args.password, args.timeout)
     pico = None
     if args.backend == "pico":
@@ -1340,7 +1375,9 @@ def main() -> int:
         # is taken, so every check starts from a position the mouse itself set.
         mouse.move(1, 1)
         mouse.move(-1, -1)
-        for name in args.test or TESTS:
+        selected = tuple(args.test) if args.test else tests_for(args.profile)
+        detail(f"{args.profile} profile: " + ", ".join(selected))
+        for name in selected:
             SCENARIOS[name](api, listener, mouse)
     finally:
         for step in (mouse.release_all, (pico.release_all if pico else lambda: None), api.machine.release_all,

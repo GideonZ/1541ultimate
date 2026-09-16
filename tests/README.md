@@ -325,7 +325,7 @@ e2e:
   ui-backend-smoke                  x      x      x      x      x
   ultimax-cartridge                 .      .      x      x      x
   usb-bulk-out-integrity            .      .      .      x      x
-  usb-mouse                         .      .      .      x      x
+  usb-mouse                         x      x      x      x      x
   usb-mouse-pico                    .      .      .      x      x
   wake-on-wifi                      .      .      .      x      x
   web-index                         .      .      .      x      x
@@ -350,8 +350,8 @@ soak:
   usb-keyboard-repeat               .      .      .      x      x
 
                                ------ ------ ------ ------ ------
-  suites                           12     28     62     77     77
-  suite runs                       12     28     62    154    231
+  suites                           13     29     63     77     77
+  suite runs                       13     29     63    154    231
 
 Scenario and check counts, and durations, are not shown here:
 the registry does not know them. They depend on the machine and are

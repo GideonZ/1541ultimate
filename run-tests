@@ -349,15 +349,16 @@ SUITES: Sequence[Suite] = (
     Suite("e2e", "cfg-whitespace", "tests/e2e/filemanager/cfg_whitespace_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@"),
     Suite("e2e", "printer", "tests/e2e/io/printer/printer_test.py", "-H @HOST@ -p @PASS@", profile=profiles.QUICK),
-    # The mouse suites take minutes and switch the machine between PAL and NTSC
-    # and through every mouse setting, putting each back at the end. usb-mouse
-    # drives the mouse over REST; usb-mouse-pico and micromys-wheel need the
-    # Pico 2 W fixture (tests/lib/pico_hid.py) on a USB port of the machine, as
-    # a USB mouse on control port 1.
+    # usb-mouse drives the mouse over REST and needs no hardware; it runs the
+    # scenarios its profile asks for (mouse_test.py PROFILE_TESTS), from two in
+    # smoke to every one in deep, where it also sweeps PAL and NTSC and takes
+    # minutes. usb-mouse-pico runs the same scenarios with the Pico 2 W fixture
+    # (tests/lib/pico_hid.py) as a USB mouse on control port 1, and micromys-wheel
+    # needs the fixture too.
     Suite("e2e", "usb-mouse", "tests/e2e/io/usb/mouse_test.py",
-          "-H @HOST@ -p @PASS@ -t @TIMEOUT@", manual=True),
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@", profile=profiles.SMOKE),
     Suite("e2e", "usb-mouse-pico", "tests/e2e/io/usb/mouse_test.py",
-          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --backend pico", manual=True),
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --backend pico", manual=True, profile=profiles.DEEP),
     Suite("e2e", "micromys-wheel", "tests/e2e/io/usb/micromys_wheel_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@", manual=True),
     # Writes a 64 KiB file to real USB media, so it needs a stick in the machine
