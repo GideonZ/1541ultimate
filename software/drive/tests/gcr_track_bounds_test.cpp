@@ -8,6 +8,10 @@
 //   2. track length never validated against the buffer      -> ValidatedLength
 //   3. half-tracks inherit the previous track's length      -> TrackParameters
 //   4. divide by zero on a zero-length track                -> ValidatedLength
+//
+// And what checking the buffer alone still let through, found in review of the
+// first fix: a truncated file whose track header arrived but whose track data
+// did not -> TruncatedImage.
 
 #include "../../io/usb/tests/host_test/host_test.h"
 #include "../gcr_track_bounds.h"
@@ -23,6 +27,11 @@ const uint32_t kRotationSpeed = 50000000 / 20;                     // CLOCK_FREQ
 } // namespace
 
 // ---------------------------------------------------------------- problem 2 --
+//
+// The third argument is how much of the buffer the file filled. Passing
+// kMaxSize here models an image that filled it completely, which is what the
+// buffer-overrun cases below are about; the truncated cases further down pass
+// the smaller number a short file leaves behind.
 
 TEST(ValidatedLength, AcceptsALegitimateTrack)
 {
@@ -73,6 +82,49 @@ TEST(ValidatedLength, SurvivesAnOffsetPastTheBuffer)
     EXPECT_EQ(gcr_validated_track_length(0x1E0C, kMaxSize + 1, kMaxSize, kMaxTrackLen), 0);
     EXPECT_EQ(gcr_validated_track_length(0x1E0C, 0xFFFFFFFFu, kMaxSize, kMaxTrackLen), 0);
     EXPECT_EQ(gcr_validated_track_length(0x1E0C, kMaxSize - 1, kMaxSize, kMaxTrackLen), 0);
+}
+
+// ------------------------------------------------------------ truncation --
+//
+// Reported by @chrisgleissner against the first version of this fix, which
+// bounded the track by the size of the buffer rather than by what the file
+// delivered. The buffer is not zeroed between mounts, so what lies past the
+// end of a short file is the previous image.
+
+TEST(TruncatedImage, RejectsATrackWhoseDataNeverArrived)
+{
+    // The reported case, exactly: a 14-byte GCR-1541 file. Track 0 points at
+    // offset 12, the two length bytes are there, and they declare a full
+    // 0x1E0C track. Against the buffer this passes; against the file it must
+    // not, or gcr_data+14 .. gcr_data+7705 go to the drive unread.
+    EXPECT_EQ(gcr_validated_track_length(0x1E0C, 12, 14, kMaxTrackLen), 0);
+}
+
+TEST(TruncatedImage, RejectsATrackCutShortByOneByte)
+{
+    const uint32_t bytes_read = 12 + 2 + 0x1E0C - 1;
+    EXPECT_EQ(gcr_validated_track_length(0x1E0C, 12, bytes_read, kMaxTrackLen), 0);
+}
+
+TEST(TruncatedImage, AcceptsATrackEndingExactlyWhereTheFileDoes)
+{
+    const uint32_t bytes_read = 12 + 2 + 0x1E0C;
+    EXPECT_EQ(gcr_validated_track_length(0x1E0C, 12, bytes_read, kMaxTrackLen), 0x1E0C);
+}
+
+TEST(TruncatedImage, DoesNotCareHowLargeTheBufferIs)
+{
+    // Same track, same short file. The only difference between these two calls
+    // used to be the answer: the buffer was the bound, so the whole image was
+    // judged by memory that had nothing to do with it.
+    EXPECT_EQ(gcr_validated_track_length(0x1E0C, 12, kMaxSize, kMaxTrackLen), 0x1E0C);
+    EXPECT_EQ(gcr_validated_track_length(0x1E0C, 12, 14, kMaxTrackLen), 0);
+}
+
+TEST(TruncatedImage, SurvivesAnEmptyRead)
+{
+    EXPECT_EQ(gcr_validated_track_length(0x1E0C, 12, 0, kMaxTrackLen), 0);
+    EXPECT_EQ(gcr_validated_track_length(0x1E0C, 0, 0, kMaxTrackLen), 0);
 }
 
 // ---------------------------------------------------------------- problem 4 --

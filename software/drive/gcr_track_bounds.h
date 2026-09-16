@@ -38,25 +38,31 @@ static inline bool gcr_track_header_is_readable(uint32_t offset, uint32_t bytes_
  *
  *   declared    the 16-bit word from the image, flag bits included
  *   offset      byte offset of that word within the buffer
- *   capacity    size of the buffer
+ *   bytes_read  how much of the buffer the file actually filled
  *   max_length  longest track the format allows
  *
- * The masked field holds 14 bits, so it admits lengths more than twice the
- * longest legitimate track, and a track near the end of the buffer can declare
- * a length that runs off it. Both are rejected here rather than programmed.
+ * The bound is what was read, not how large the buffer is. A truncated image
+ * can declare a track whose header is present but whose data never arrived,
+ * and the buffer behind it holds whatever the previous mount left there. So
+ * the whole track, header word included, has to lie inside what was read:
+ * offset + 2 + length <= bytes_read, written as subtractions so that no sum
+ * can wrap.
+ *
+ * The masked field holds 14 bits, so it also admits lengths more than twice
+ * the longest legitimate track. Rejected here rather than programmed.
  */
 static inline int gcr_validated_track_length(uint16_t declared, uint32_t offset,
-                                             uint32_t capacity, int max_length)
+                                             uint32_t bytes_read, int max_length)
 {
     int length = (int)(declared & 0x3FFF);
 
     if (length <= 0 || length > max_length) {
         return 0;   /* zero would also divide by zero in insert_disk() */
     }
-    if (offset > capacity || (capacity - offset) < 2) {
+    if (offset > bytes_read || (bytes_read - offset) < 2) {
         return 0;
     }
-    if ((uint32_t)length > (capacity - offset - 2)) {
+    if ((uint32_t)length > (bytes_read - offset - 2)) {
         return 0;
     }
     return length;

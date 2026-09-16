@@ -722,9 +722,9 @@ bool GcrImage :: load(File *f)
     	}
     	tr = gcr_data + offset;
     	w = tr[0] | (uint16_t(tr[1]) << 8);
-    	int length = gcr_validated_track_length(w, offset, GCRIMAGE_MAXSIZE, GCRIMAGE_MAXTRACKLEN);
+    	int length = gcr_validated_track_length(w, offset, bytes_read, GCRIMAGE_MAXTRACKLEN);
     	if(!length) {
-    		printf("Track %d: declared length %d does not fit the image. Track skipped.\n",
+    		printf("Track %d: declared length %d was not delivered by the file. Track skipped.\n",
     		       i, (int)(w & 0x3FFF));
     		continue; // invalidate() left this entry unused; leave it that way
     	}
