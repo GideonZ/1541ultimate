@@ -180,14 +180,15 @@ def park(listener: MouseListener, mouse: PicoMouse | RestMouse) -> None:
 
     A 1351 driver reads only those 7 bits, where the released joystick value
     $80 reads as 0. A check that started from a position of 0 could not see the
-    firmware write $80 over the mouse position (issue #909).
+    firmware write $80 over the mouse position (issue #909). A pointer count is
+    two POT counts, so the move is half the distance on the lines.
     """
     state = listener.quiet()
     # POTX follows the mouse's x; POTY moves against it.
     dx = (PARKED_POT - (state.potx & 0x7F)) % 128
     dy = ((state.poty & 0x7F) - PARKED_POT) % 128
     if dx or dy:
-        mouse.move(dx, dy)
+        mouse.move(dx // 2, dy // 2)
 
 
 @contextmanager
@@ -258,13 +259,13 @@ def test_move(api, listener, mouse) -> None:
 # factor of the peak is one step of two reports at the host's 20ms poll rate.
 FLICK_SHAPE = (0.2, 0.6, 1.0, 0.6, 0.2)
 # The USB mouse is polled every 20ms, and now and then the firmware handles two
-# reports inside one frame. Up to 31 counts per report, two of them stay within
-# the 63 counts a 1351 driver reads the right way round, so every step and the
-# landing are checked exactly. Faster flicks may lose one 1351 wrap (128
-# counts) now and then, as a real 1351 mouse moved that fast would, so they
+# reports inside one frame. Up to STEADY_PEAK counts per report, two of them
+# stay within the 31 counts a 1351 driver reads the right way round, so every
+# step and the landing are checked exactly. Faster flicks may lose one 1351
+# wrap (64 counts) now and then, as a real 1351 moved that fast would, so they
 # are checked to land within that.
-STEADY_PEAK = 31
-ONE_WRAP = 128
+STEADY_PEAK = 15
+ONE_WRAP = 64
 
 
 def flick(dx: int, dy: int) -> list[tuple[int, int]]:
@@ -327,7 +328,7 @@ def test_motion_speed(api, listener, mouse) -> None:
     configure(api, Mouse_Mode="Mouse")
     movement_case(listener, mouse, "slow and precise: 1 count per report", [(1, 0)] * 30, 3)
     movement_case(listener, mouse, "slow and precise the other way, diagonally", [(-1, 1)] * 30, 3)
-    for peak in (16, STEADY_PEAK, 48, REPORT_CLAMP):
+    for peak in (8, STEADY_PEAK, 24, 31):
         steady = peak <= STEADY_PEAK
         tolerance = 0 if steady else ONE_WRAP
         for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (-1, 1), (1, -1), (-1, -1)):
@@ -387,13 +388,12 @@ def test_motion_speed(api, listener, mouse) -> None:
 # ------------------------------------------------------------------- pacing --
 
 FRAME_RATES = {"PAL": 50, "NTSC": 60}
-# MousePotPacer shows 126 waiting counts in two changes, 24ms apart on 5ms
+# MousePotPacer shows what waits in changes of 63 POT counts, 24ms apart on 5ms
 # timer ticks, plus a margin.
-PACER_CATCH_UP_SECONDS = 0.15
-# 63 counts per 24ms is less than the 63 counts every 20ms a mouse can report,
-# and the pacer drops what waits beyond 126 counts, so of what 63 counts per
-# report would move, well over two thirds arrives.
-FAST_ARRIVES = 0.7
+PACER_CATCH_UP_SECONDS = 0.25
+# The port carries about 31 counts per 24ms, and a mouse at full speed reports
+# 63 every 20ms, so about two fifths of that arrives.
+FAST_ARRIVES = 0.35
 FAST_REPORTS = 60
 
 
@@ -618,9 +618,9 @@ def test_path(api, listener, mouse) -> None:
 # -------------------------------------------------------------------- flood --
 
 # 15s of reports at the 20ms poll rate. Each moves by FLOOD_STEP, which is
-# within the 63 counts per 24ms the POT lines carry, so nothing may be dropped.
+# within the 31 counts per 24ms the POT lines carry, so nothing may be dropped.
 FLOOD_REPORTS = 750
-FLOOD_STEP = 31
+FLOOD_STEP = 15
 # Separate requests, each one report, sent as fast as the host can post them.
 FLOOD_REQUESTS = 200
 FLOOD_REQUEST_STEP = 20

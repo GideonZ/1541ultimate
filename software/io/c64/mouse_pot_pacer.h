@@ -20,14 +20,14 @@
 // lines with no delay and in the steps the mouse made.
 //
 // What waits is capped at MAX_BEHIND counts per axis, which is what one report
-// can move (63 of motion plus 63 of wheel), and the rest is dropped, so the
-// pointer stops just after the mouse.
+// can move: 63 counts of motion plus 63 of wheel, each two POT counts. The rest
+// is dropped, so the pointer stops just after the mouse.
 class MousePotPacer
 {
 public:
     enum {
         MAX_STEP = 63,
-        MAX_BEHIND = 2 * MAX_STEP,
+        MAX_BEHIND = 4 * MAX_STEP,
         WINDOW_MS = 24
     };
 

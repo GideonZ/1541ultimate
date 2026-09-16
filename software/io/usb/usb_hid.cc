@@ -73,14 +73,21 @@ void usb_hid_set_joy1_output(uint8_t active_low_mask)
 }
 
 #if U64
+// A 1351 steps the POT value by two for each count of the pointer, and a driver
+// halves the change it reads. Stepping by one would leave the pointer where it
+// was on every other count.
+static const int MOUSE_POT_COUNTS_PER_STEP = 2;
+
 void usb_hid_set_mouse1_position(int16_t mouse_x, int16_t mouse_y)
 {
+    int16_t pot_x = (int16_t)(mouse_x * MOUSE_POT_COUNTS_PER_STEP);
+    int16_t pot_y = (int16_t)(mouse_y * MOUSE_POT_COUNTS_PER_STEP);
 #if !RECOVERYAPP
     // Every mouse moves the one shared position.
-    JoystickOutput::instance().setMousePosition(mouse_x, mouse_y);
+    JoystickOutput::instance().setMousePosition(pot_x, pot_y);
 #else
-    C64_PADDLE_1_X = mouse_x & 0x7F;
-    C64_PADDLE_1_Y = mouse_y & 0x7F;
+    C64_PADDLE_1_X = pot_x & 0x7F;
+    C64_PADDLE_1_Y = pot_y & 0x7F;
 #endif
 }
 

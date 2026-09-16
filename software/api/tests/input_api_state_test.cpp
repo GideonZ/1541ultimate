@@ -1009,8 +1009,8 @@ TEST(MousePotPacerTest, WaitingMovementIsCappedSoThePointerStopsSoon)
         EXPECT_TRUE(pacer.advance((uint16_t)now));
         changes++;
     }
-    EXPECT_EQ(2, changes);
-    EXPECT_EQ(MousePotPacer::MAX_BEHIND, pacer.potX());
+    EXPECT_EQ(MousePotPacer::MAX_BEHIND / MousePotPacer::MAX_STEP, changes);
+    EXPECT_EQ(MousePotPacer::MAX_BEHIND & 0x7F, pacer.potX());
     EXPECT_EQ(0x7F & -MousePotPacer::MAX_BEHIND, pacer.potY());
 }
 
@@ -1171,7 +1171,9 @@ TEST(MousePotPacerTest, NoDriverReadSeesThePointerMoveBackward)
             // Full-speed reports, bunched by late handling, with a wheel on top.
             PacedMouseRun run(seed, MousePotPacer::WINDOW_MS, frame_us, 126, 15000, 10);
             EXPECT_EQ(0, run.backward);
-            EXPECT_TRUE(run.longest_catch_up_ms <= 3 * 30);
+            // What waits goes out in MAX_BEHIND / MAX_STEP changes, one per window.
+            EXPECT_TRUE(run.longest_catch_up_ms <=
+                (MousePotPacer::MAX_BEHIND / MousePotPacer::MAX_STEP + 1) * (MousePotPacer::WINDOW_MS + 6));
         }
     }
 }

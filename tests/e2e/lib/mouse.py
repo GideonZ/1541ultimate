@@ -21,8 +21,10 @@ through the firmware's USB driver exactly as a real mouse does.
     mouse.move(20, 10)
     state = listener.wait_until(lambda s: s.x == 20)
 
-Positions are in POT counts. With Mouse Sensitivity 8 and acceleration off,
-one HID count moves the position by one POT count. Y grows downwards.
+Positions are in pointer counts, what a 1351 driver shows: the mouse advances
+the POT value by two for each of them, and a driver halves the change it reads.
+With Mouse Sensitivity 8 and acceleration off, one HID count is one pointer
+count. Y grows downwards.
 """
 
 from __future__ import annotations
@@ -76,6 +78,11 @@ def _counters(state: MouseState) -> tuple:
 
 def _signed8(value: int) -> int:
     return value - 0x100 if value & 0x80 else value
+
+
+def _pointer(pot_counts: int) -> int:
+    """POT counts as a 1351 driver shows them: two counts to the pointer count."""
+    return int(pot_counts / 2)
 
 
 @dataclass(frozen=True)
@@ -174,14 +181,14 @@ class MouseListener:
         if b[0] != READY_VALUE:
             raise Failure("the mouse listener is not running")
         return MouseState(
-            x=_signed16(b[2], b[3]), y=_signed16(b[4], b[5]),
+            x=_pointer(_signed16(b[2], b[3])), y=_pointer(_signed16(b[4], b[5])),
             held=frozenset(name for name, bit in BUTTON_BITS.items() if b[6] & bit),
             presses={"left": b[7], "middle": b[8], "right": b[9]},
             wheel_up=b[10], wheel_down=b[11], frames=b[12] | (b[13] << 8),
             potx=b[14], poty=b[15], lines=b[16],
-            step_x=(_signed8(b[0x11]), _signed8(b[0x12])),
+            step_x=(_pointer(_signed8(b[0x11])), _pointer(_signed8(b[0x12]))),
             # Y moves opposite to POTY.
-            step_y=(-_signed8(b[0x14]), -_signed8(b[0x13])),
+            step_y=(_pointer(-_signed8(b[0x14])), _pointer(-_signed8(b[0x13]))),
             port2=frozenset(name for bit, name in enumerate(PORT2_LINES) if b[0x15] & (1 << bit)),
             port2_presses={name: b[0x16 + bit] for bit, name in enumerate(PORT2_LINES)},
             cursor={"up": b[0x1B], "down": b[0x1C], "left": b[0x1D], "right": b[0x1E]},
