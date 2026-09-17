@@ -565,9 +565,18 @@ int UsbBase :: control_exchange(struct t_pipe *pipe, void *out, int outlen, void
     	return -9;
     }
 
+    // One exit, so no path out can leave the mutex held. It was forgotten on the
+    // setup length check once already; see GideonZ/1541ultimate#822, problem 5.
+    int result_code = control_exchange_locked(pipe, out, outlen, in, inlen);
+    xSemaphoreGive(mutex);
+    return result_code;
+}
+
+// Runs with the mutex held; the caller above gives it back on every path.
+int UsbBase :: control_exchange_locked(struct t_pipe *pipe, void *out, int outlen, void *in, int inlen)
+{
     if (outlen != 8) {
         printf("%s Unsupported setup length.\n", pipe->name);
-        xSemaphoreGive(mutex);
         return -10;
     }
 
@@ -589,7 +598,6 @@ int UsbBase :: control_exchange(struct t_pipe *pipe, void *out, int outlen, void
 	result = complete_command(100);
 	if ((result & URES_RESULT_MSK) != URES_ACK) {
 		printf("%s Setup Result: %04x\n", pipe->name, result);
-	    xSemaphoreGive(mutex);
 		return -1;
 	}
 
@@ -614,7 +622,6 @@ int UsbBase :: control_exchange(struct t_pipe *pipe, void *out, int outlen, void
 	// dump_hex(read_buf, transferred);
 
 	if ((result & URES_RESULT_MSK) == URES_STALL) {
-	    xSemaphoreGive(mutex);
 		return -4;
 	}
 
@@ -638,7 +645,6 @@ int UsbBase :: control_exchange(struct t_pipe *pipe, void *out, int outlen, void
 			break;
 		}
 	}
-    xSemaphoreGive(mutex);
 	return transferred;
 }
 
