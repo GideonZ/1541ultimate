@@ -14,7 +14,13 @@
 // that no sentinel byte is inside what the function says to transmit.
 
 #include "../../usb/tests/host_test/host_test.h"
+#ifdef ETH_TX_FRAME_LEGACY
+#include "eth_tx_frame_legacy.h"   // the pre-fix behaviour: the red half
+#else
 #include "../eth_tx_frame.h"
+#endif
+
+#include <vector>
 
 namespace {
 
@@ -202,4 +208,137 @@ TEST(Ax88772TxBlock, RefusesWhatItCannotAssemble)
     EXPECT_EQ(ax88772_tx_block(NULL, 42, tx, sizeof(tx)), -1);
     EXPECT_EQ(ax88772_tx_block(frame, 42, NULL, sizeof(tx)), -1);
     EXPECT_EQ(ax88772_tx_block(frame, 0, tx, AX_HEADER_LEN - 1), -1);
+}
+
+// --------------------------------------------------- the review's cases --
+//
+// GideonZ/1541ultimate#843 asked for the two contracts to be pinned at the
+// lengths where they break, with a canary on both sides of every buffer rather
+// than only in front of it. A leak past the end is what problem 4 actually was,
+// so the tail guard is the one that matters most here.
+
+namespace {
+
+// A frame with eight sentinel bytes in front of it and eight behind, so a write
+// or a read on either side of the frame is visible. The frame itself is filled
+// with a pattern that is never the sentinel.
+struct GuardedFrame {
+    static const int kGuard = 8;
+
+    std::vector<uint8_t> block;
+    int len;
+
+    explicit GuardedFrame(int frame_len)
+        : block((size_t)(2 * kGuard + (frame_len > 0 ? frame_len : 1)), kSentinel),
+          len(frame_len)
+    {
+        for (int i = 0; i < frame_len; i++) {
+            bytes()[i] = (uint8_t)(0x10 + (i & 0x7F));   // 0x10..0x8F, never 0xA5
+        }
+    }
+
+    uint8_t *bytes() { return &block[kGuard]; }
+
+    bool guards_intact() const
+    {
+        for (int i = 0; i < kGuard; i++) {
+            if (block[i] != kSentinel) {
+                return false;
+            }
+            if (block[block.size() - 1 - i] != kSentinel) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    bool unchanged() const
+    {
+        for (int i = 0; i < len; i++) {
+            if (block[kGuard + i] != (uint8_t)(0x10 + (i & 0x7F))) {
+                return false;
+            }
+        }
+        return guards_intact();
+    }
+};
+
+} // namespace
+
+TEST(Ax88772TxBlock, AssemblesEveryLengthTheReviewNamedWithBothGuardsIntact)
+{
+    // 1537 is one byte more than the block can carry and has to be refused;
+    // every other length is assembled whole.
+    const int lengths[] = { 0, 1, 1500, 1536, 1537 };
+
+    for (int i = 0; i < 5; i++) {
+        const int len = lengths[i];
+        GuardedFrame frame(len);
+
+        std::vector<uint8_t> dst((size_t)(2 * GuardedFrame::kGuard + AX_HEADER_LEN + 1536),
+                                 kSentinel);
+        uint8_t *tx = &dst[GuardedFrame::kGuard];
+
+        const int sent = ax88772_tx_block(frame.bytes(), len, tx, AX_HEADER_LEN + 1536);
+
+        if (len > 1536) {
+            EXPECT_EQ(sent, -1);
+        } else {
+            EXPECT_EQ(sent, len + AX_HEADER_LEN);
+            // The four byte header: length little endian, then each byte
+            // complemented.
+            EXPECT_EQ((int)tx[0], len & 0xFF);
+            EXPECT_EQ((int)tx[1], (len >> 8) & 0xFF);
+            EXPECT_EQ((int)tx[2], (len & 0xFF) ^ 0xFF);
+            EXPECT_EQ((int)tx[3], ((len >> 8) & 0xFF) ^ 0xFF);
+            // The payload, byte for byte, and nothing else.
+            EXPECT_EQ(memcmp(tx + AX_HEADER_LEN, frame.bytes(), (size_t)len), 0);
+        }
+
+        // Nothing on either side of either buffer moved. The header used to be
+        // written at frame - 4, which is the front guard here.
+        EXPECT_TRUE(frame.unchanged());
+        for (int g = 0; g < GuardedFrame::kGuard; g++) {
+            EXPECT_EQ((int)dst[g], (int)kSentinel);
+            EXPECT_EQ((int)dst[dst.size() - 1 - g], (int)kSentinel);
+        }
+    }
+}
+
+TEST(ShortFrame, LeavesTheCallersBufferAloneAtEveryLengthTheReviewNamed)
+{
+    // 42 is an ARP request, 59 the last length that needs padding, 60 the first
+    // that does not. None of the three may change the buffer the stack owns.
+    const int lengths[] = { 42, 59, 60 };
+
+    for (int i = 0; i < 3; i++) {
+        const int len = lengths[i];
+        GuardedFrame frame(len);
+
+        std::vector<uint8_t> pad_block((size_t)(2 * GuardedFrame::kGuard + ETH_MIN_FRAME_LEN),
+                                       kSentinel);
+        uint8_t *pad = &pad_block[GuardedFrame::kGuard];
+
+        uint8_t *out = NULL;
+        int out_len = 0;
+        EXPECT_TRUE(eth_tx_frame_to_send(frame.bytes(), len, pad, ETH_MIN_FRAME_LEN,
+                                         &out, &out_len));
+        EXPECT_EQ(out_len, len < ETH_MIN_FRAME_LEN ? ETH_MIN_FRAME_LEN : len);
+
+        // What goes on the wire starts with the frame and continues with zeros,
+        // never with whatever was next to it.
+        EXPECT_EQ(memcmp(out, frame.bytes(), (size_t)len), 0);
+        for (int j = len; j < out_len; j++) {
+            EXPECT_EQ((int)out[j], 0);
+        }
+
+        // The caller's buffer is untouched, guards included.
+        EXPECT_TRUE(frame.unchanged());
+
+        // And the pad buffer is written only as far as the minimum frame.
+        for (int g = 0; g < GuardedFrame::kGuard; g++) {
+            EXPECT_EQ((int)pad_block[g], (int)kSentinel);
+            EXPECT_EQ((int)pad_block[pad_block.size() - 1 - g], (int)kSentinel);
+        }
+    }
 }
