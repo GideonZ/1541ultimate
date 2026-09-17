@@ -43,22 +43,31 @@ class DataStreamer : public ObjectWithMenu
 
     uint8_t  my_mac[6];
     uint32_t my_ip;
+    volatile bool palette_stream_requested;
+    TaskHandle_t palette_task_handle;
+    int palette_socket;
+    uint32_t palette_socket_ip;
 
     stream_config_t streams[4];
     TimerHandle_t timers[4];
 
     static void S_timer(TimerHandle_t a);
+    static void S_palette_task(void *context);
     SubsysResultCode_e startStream(SubsysCommand *cmd);
     SubsysResultCode_e stopStream(SubsysCommand *cmd);
 
     void calculate_udp_headers(int id);
     void send_udp_packet(uint32_t ip, uint16_t port);
+    bool sendVicPalette();
+    void paletteTask();
 public:
     DataStreamer();
     virtual ~DataStreamer();
 
     static SubsysResultCode_e S_startStream(SubsysCommand *cmd);
     static SubsysResultCode_e S_stopStream(SubsysCommand *cmd);
+
+    void vicPaletteChanged();
 
     // from ObjectWithMenu
     void create_task_items(void);
