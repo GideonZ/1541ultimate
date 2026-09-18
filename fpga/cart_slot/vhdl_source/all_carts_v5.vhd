@@ -385,9 +385,16 @@ begin
                 end if;
                 game_n    <= '1';
                 exrom_n   <= mode_bits(0);
-                serve_rom <= '1';
+                -- DE00 bit 7 takes the ROM away, not the cartridge. cart_en is
+                -- what serve_enable is built from, so clearing it would drop
+                -- IO2 as well and the window would stop answering -- which is
+                -- exactly what the comment above says must not happen. Take the
+                -- ROM away by not serving 8000-BFFF instead: slot_slave decodes
+                -- that range on serve_rom alone, without consulting ROMLn, so
+                -- the RAM under the cartridge is what answers there.
+                serve_rom <= not mode_bits(0);
                 serve_io2 <= '1';
-                cart_en   <= not mode_bits(0);
+                cart_en   <= '1';
                 rom_mode  <= "00"; -- 8K banks
 
             when c_ocean_16K =>
