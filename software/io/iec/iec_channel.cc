@@ -1461,7 +1461,7 @@ int IecChannel :: setup_file_access()
         }
         break;
     default:
-        flags = FA_READ; 
+        flags = FA_READ | FA_OPEN_FROM_CBM;
     }
     if (name_to_open.filetype == e_rel) {
         flags |= ( FA_READ | FA_WRITE );

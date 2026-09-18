@@ -1641,6 +1641,7 @@ FRESULT DirInCBM::get_entry(FileInfo &f)
                 f.size = (int) p->size_low + 256 * (int) p->size_high;
                 f.size *= 254;
                 f.name_format = NAME_FORMAT_CBM;
+                f.cbm_filetype = tp;
 
                 uint16_t yr = (p->year < 80) ? (p->year + 20) : (p->year - 80);
                 f.date  = yr << 9;

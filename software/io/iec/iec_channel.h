@@ -120,8 +120,17 @@ public:
         memset(out, 0, 24);
 
         bool cutExtension = false;
+        // A CBM file system reports the directory entry's own type, which the extension
+        // cannot always carry: a GEOS file is given the extension CVT for the host file
+        // system while its type bits say SEQ, PRG or USR (SI-149).
+        static const filetype_t cbm_types[8] = {
+            e_any, e_seq, e_prg, e_usr, e_rel, e_any, e_folder, e_any
+        };
         if (dir) {
             type = e_folder;
+        } else if (inf->cbm_filetype) {
+            type = cbm_types[inf->cbm_filetype & 7];
+            cutExtension = true;
         } else if (strcmp(ext, "PRG") == 0) {
             type = e_prg;
             cutExtension = true;

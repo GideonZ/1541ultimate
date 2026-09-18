@@ -1394,29 +1394,53 @@ any secondary address returns the listing, as before.
 ### 13.4 File types inside a disk image
 
 **SI-149.** A file in a mounted CBM disk image is listed with the type its directory entry
-carries. A GEOS file is an ordinary entry whose type bits say SEQ, PRG or USR, with the
-GEOS info block pointer at offset `$15` and the GEOS file structure at offset `$17` filled
-in as well, and CBM DOS lists it by the type bits like any other file. Sources: 917, where
-a GEOS disk mapped as a partition listed every file as SEQ, which the reporter confirmed
-on "all Geos disks" including a Geos 2.0 boot disk converted to D64; the 1541 directory
-entry layout, which has no GEOS type.
+carries, and a read of it over the bus delivers the file itself. A GEOS file is an ordinary
+entry whose type bits say SEQ, PRG or USR, with the GEOS info block pointer at offset `$15`
+and the GEOS file structure at offset `$17` filled in as well, and CBM DOS lists it by the
+type bits like any other file. Sources: 917, where a GEOS disk mapped as a partition listed
+every file as SEQ, which the reporter confirmed on "all Geos disks" including a Geos 2.0
+boot disk converted to D64; the 1541 directory entry layout, which has no GEOS type;
+`SD d64ops.c`, whose `d64_readdir()` takes `typeflags` from the entry's type byte and which
+has no GEOS or CVT case anywhere in `d64ops.c` or `fatops.c`.
 
-Current behaviour: `U FileSystemCBM` gives every GEOS entry the extension `CVT`, because
+Previous behaviour: `U FileSystemCBM` gives every GEOS entry the extension `CVT`, because
 CVT is the interchange format the Ultimate's file browser writes when it copies a GEOS
 file out to the host file system, and the browser and the FTP server read the same
-directory. `U IecPartition::CreateIecName()` recognises `PRG`, `SEQ`, `REL` and `USR` and
-nothing else, so `read_dir_entry()` falls back to SEQ. An open of the same file over the
-bus also delivers the CVT stream, which puts a header block in front of the file, rather
-than the file itself. **Change required.**
+directory. `U IecPartition::CreateIecName()` recognised `PRG`, `SEQ`, `REL` and `USR` and
+nothing else, so `read_dir_entry()` fell back to SEQ. An open of the same file over the
+bus also delivered the CVT stream, which puts a header block in front of the file, rather
+than the file itself, and an open of a VLIR file answered nothing at all and logged a
+channel fault.
 
-**Decision (PR #881): not implemented.** The two halves have to change together. Listing a
-GEOS file as PRG while an open still returns a CVT stream would be worse than the present
-state, because a `LOAD` would then be offered a file that cannot run. The type and the
-open both come from `software/filesystem/filesystem_d64.cc`, which the file browser, the
-FTP server and the UCI target share, so the change belongs in its own issue and its own
-regression tests rather than in this one. Nothing in TRACE, GAP or #877 needs it, and no
-GEOS application can start from this drive in any case, because the GEOS speeder is not
-implemented. The drive continues to list GEOS files as SEQ.
+**Implemented (PR #881).** Both halves changed together, because either one alone is worse
+than the previous state: the type alone would offer a `LOAD` a stream it cannot run, and
+the stream alone would leave the type contradicting the disk.
+
+* `FileInfo` carries the directory entry's type bits in a new field, `cbm_filetype`, which
+  is zero on a file system that has no CBM type. `U DirInCBM::get_entry()` fills it in, and
+  `U IecPartition::CreateIecName()` uses it when it is set, in front of the extension
+  comparison it did before. The `CVT` extension itself is unchanged, so the file browser,
+  the FTP server and the UCI target still see and write `.CVT` files as they did.
+* The IEC read open passes `FA_OPEN_FROM_CBM`, which `U FileInCBM::open()` already tested
+  and which no caller had ever set. The CVT header branch is skipped and the file's own
+  chain is read. A VLIR file's chain is its record block, which is what a 1541 hands over.
+
+The `C` command still copies a GEOS file out of an image as a CVT container, because
+`U IecCommandChannel::do_copy()` opens each source with a plain `FA_READ`. That keeps the
+interchange format on a copy to the host file system, where it is what the receiving side
+needs, and it is the one place where a copy and a read of the same file differ.
+
+Measured against a reference 1541: VICE's `c1541` lists `geos-2.0r-cenbe.d64` as
+`prg prg usr usr usr usr usr usr usr`, which is what this drive now lists and is neither
+the nine `SEQ` of the previous behaviour nor the nine `PRG` a type-only change would give.
+`c1541` extracts `DISK COPY` from `deskpack-plus-b.d64` as 4,335 bytes; this drive now
+hands out the same 4,335 bytes. That file has a load address of `$0801` and a `10 SYS(2064)`
+line, so it loads and runs from BASIC. It is the only one of the 355 GEOS entries on the
+twenty GEOS disks that were scanned for which that is true, so the change is a correctness
+fix first and an enabling one only incidentally.
+
+GEOS itself still cannot start from this drive, because the GEOS speeder is not
+implemented; that is out of scope here and belongs in its own issue.
 
 
 ---
@@ -1787,7 +1811,8 @@ rejection, SI-074 rename checks, SI-093 direct access partition binding.
 
 **Group 5, the listings.** SI-130 header bytes, SI-133 the size remainder,
 SI-065 the header name, SI-137 the raw directory, SI-138 the end of file at the end of a
-listing, SI-139 the length and columns of a time stamped line.
+listing, SI-139 the length and columns of a time stamped line, SI-149 the type of a file
+inside a disk image.
 
 **Group 6, naming.** SI-147 first, because it is the only requirement in this
 document that makes two Ultimate models write different bytes to the same medium.
@@ -1852,7 +1877,6 @@ affected by them.
 | SI-105 `M-W`, `M-E` | Nothing written is kept and nothing is run, so an OK would tell a fast loader its drive code runs | `30` |
 | SI-120 `T-WA`, `T-WB`, `T-WD`, `T-WI` | The clock belongs to the system, and C64 OS sets it through its UCI clock driver (GAP) | `30`, which SI-120 allows |
 | SI-137 raw directory | It would change what existing programs, and clients of the UCI target, receive when they open `$` on a data channel | the listing, as before |
-| SI-149 GEOS file types in an image | The type and the open both come from the image file system the menu, the FTP server and the UCI target share, and changing only the listed type would offer a `LOAD` a file it cannot run; no command in TRACE, GAP or #877 needs it | GEOS files keep listing as SEQ |
 | SI-145 writing x00 files | A new user setting that no report asks for; reading x00 files (SI-144) already gives the interchange | new files are written plain |
 
 **Implemented in part, or with a difference.** For each: what is implemented, what is
