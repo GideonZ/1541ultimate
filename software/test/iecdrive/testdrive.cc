@@ -2796,6 +2796,128 @@ static void s11_si133_size_remainder(FileManager *fm, IecDrive *dr)
     }
 }
 
+// One GET#, as BASIC performs it: address the channel to talk, take a single byte, and
+// release the bus again. The drive sees a fresh talk for every byte, which is what
+// separates this from a load (SI-138, issue #917).
+static t_channel_retval s11_get_byte(IecDrive *dr, uint8_t chan, uint8_t *out)
+{
+    dr->push_ctrl(SLAVE_CMD_ATN);
+    dr->push_ctrl(0x60 | chan);
+    dr->talk();
+    uint8_t data = 0;
+    t_channel_retval ret = dr->prefetch_data(data);
+    if ((ret == IEC_OK) || (ret == IEC_LAST)) {
+        *out = data;
+        dr->pop_data();
+    }
+    return ret;
+}
+
+// SI-138: the last byte of a listing carries EOI, whatever the size of the reads that
+// brought the listing in. Reported on issue #917: a BASIC program that reads a listing
+// with GET# never saw a status of 64 and read zeroes for ever. The tail is read one byte
+// per talk here, which is the case that failed; a whole-stream read never does.
+static void s11_si138_listing_eof(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite11-SI138-ListingEof";
+    const char *path = s11_partition(fm, dr, "si138");
+    uint32_t tr;
+    uint8_t data[16];
+    memset(data, 'e', sizeof(data));
+    REQUIRE(fm->save_file(true, path, "ONE.prg", data, sizeof(data), &tr) == FR_OK);
+    REQUIRE(fm->save_file(true, path, "TWO.seq", data, sizeof(data), &tr) == FR_OK);
+
+    static const char *listings[] = { "$", "$=T:*", "$=T:*=L", "$=P" };
+    for (int i = 0; i < 4; i++) {
+        const char *name = listings[i];
+        uint8_t listing[4096];
+        int total = read_directory_stream(testname, dr, name, listing, sizeof(listing));
+        REQUIRE(total > 4);
+
+        // Everything but the last four bytes in one piece, then the tail one byte at a
+        // time. The fourth of those bytes is the last byte of the listing.
+        open_file(dr, 0, name);
+        get_status(dr);
+        expect_status_ok(testname, name);
+        REQUIRE(read_file_limited(dr, 0, NULL, total - 4) == (total - 4));
+
+        int reads = 0;
+        t_channel_retval ret = IEC_OK;
+        uint8_t byte = 0xFF;
+        while ((reads < 16) && (ret == IEC_OK)) {
+            ret = s11_get_byte(dr, 0, &byte);
+            reads++;
+        }
+        printf("%s: %s ends after %d single byte reads with %d\n", testname, name, reads, (int)ret);
+        REQUIRE(ret == IEC_LAST);
+        REQUIRE(reads == 4);
+        REQUIRE(byte == 0);
+        close_file(dr, 0);
+        expect_status_ok(testname, name);
+    }
+}
+
+// The time stamp a line of `length` bytes carries, given the block count in front of it.
+// The type field sits at a fixed printed column, so everything behind it moves with the
+// number of digits BASIC prints for the line number.
+static void s11_expect_stamped_line(const char *testname, const uint8_t *line, int length,
+                                    const char *type, int gap, int stamp_len)
+{
+    int blocks = line[2] | (line[3] << 8);
+    int chars = (blocks >= 1000) ? 4 : (blocks >= 100) ? 3 : (blocks >= 10) ? 2 : 1;
+    int type_at = 27 - chars;
+    int stamp_at = type_at + (int)strlen(type) + gap;
+    printf("%s: %d blocks, type at %d, stamp at %d: ", testname, blocks, type_at, stamp_at);
+    for (int i = 0; i < length; i++) {
+        printf("%02X ", line[i]);
+    }
+    printf("\n");
+    REQUIRE(memcmp(line + type_at, type, strlen(type)) == 0);
+    for (int i = type_at + (int)strlen(type); i < stamp_at; i++) {
+        REQUIRE(line[i] == 32);
+    }
+    REQUIRE((line[stamp_at + 2] == '/') && (line[stamp_at + 5] == '/' || line[stamp_at + 5] == ' '));
+    // The filler CMD DOS puts behind the stamp, and the zero that ends the BASIC line.
+    for (int i = stamp_at + stamp_len; i < length - 1; i++) {
+        REQUIRE(line[i] == 1);
+    }
+    REQUIRE(line[length - 1] == 0);
+}
+
+// SI-139: a time stamped line is a fixed 64 bytes long, or 42 in the short format, and
+// the bytes behind the stamp are 0x01. Reported on issue #917 against a CMD HD and an
+// sd2iec: SoftIEC put the stamp two columns early in the long format and left the filler
+// out of both, so a line was as long as its contents made it.
+static void s11_si139_stamped_entries(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite11-SI139-StampedEntries";
+    const char *path = s11_partition(fm, dr, "si139");
+    uint32_t tr;
+    uint8_t data[3000];
+    memset(data, 'x', sizeof(data));
+    // One block, so BASIC prints one digit, and twelve blocks, so it prints two. The two
+    // digit case is the one the report names: one filler byte in the short format.
+    REQUIRE(fm->save_file(true, path, "SMALL.prg", data, 16, &tr) == FR_OK);
+    REQUIRE(fm->save_file(true, path, "BIGGER.prg", data, sizeof(data), &tr) == FR_OK);
+
+    static const struct { const char *name; int line; const char *type; int gap; int stamp; }
+    cases[] = {
+        { "$=T:*=L", 64, "PRG", 3, 19 }, // MM/DD/YY   HH.MM xM
+        { "$=T:*",   42, "P",   1, 13 }, // MM/DD HH.MM x
+    };
+    for (int i = 0; i < 2; i++) {
+        uint8_t listing[4096];
+        int got = read_directory_stream(testname, dr, cases[i].name, listing, sizeof(listing));
+        // A header and a blocks free line of 32 bytes, and two lines in between.
+        printf("%s: %s is %d bytes\n", testname, cases[i].name, got);
+        REQUIRE(got == 64 + 2 * cases[i].line);
+        for (int entry = 0; entry < 2; entry++) {
+            s11_expect_stamped_line(testname, listing + 32 + entry * cases[i].line,
+                                    cases[i].line, cases[i].type, cases[i].gap, cases[i].stamp);
+        }
+    }
+}
+
 // SI-134: $:*=H lists what $:* lists; H shows hidden files and filters nothing out.
 static void s11_si134_hidden_flag(FileManager *fm, IecDrive *dr)
 {
@@ -4708,6 +4830,8 @@ static const Suite11Case suite11_cases[] = {
     { "Suite11-SI150-DeepPath",          s11_si150_deep_path },
     { "Suite11-SI130-ListingHeader",     s11_si130_listing_header },
     { "Suite11-SI133-SizeRemainder",     s11_si133_size_remainder },
+    { "Suite11-SI138-ListingEof",       s11_si138_listing_eof },
+    { "Suite11-SI139-StampedEntries",    s11_si139_stamped_entries },
     { "Suite11-SI134-HiddenFlag",        s11_si134_hidden_flag },
     { "Suite11-SI065-HeaderName",        s11_si065_header_name },
     { "Suite11-SI032-WildcardWrite",     s11_si032_wildcard_write },

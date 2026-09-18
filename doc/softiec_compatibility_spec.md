@@ -10,7 +10,8 @@ who wants to know what the firmware does now should read
 
 PR #881 implements this specification only in part. A review of the implementation
 applied one rule: a requirement is implemented when it fixes a defect, or when the
-reporter of #877 or #890, the C64 OS author's article "Gaps in Software IEC" (GAP) or
+reporter of #877, #890 or #917, the C64 OS author's article "Gaps in Software IEC" (GAP)
+or
 the C64 OS boot trace (TRACE) names it. Every requirement that PR #881 decided not to
 implement, or implemented differently from what is written here, carries a paragraph
 that starts with **Decision (PR #881)** directly below it, stating what was decided,
@@ -22,7 +23,7 @@ and that in doing so it also becomes a closer replacement for an sd2iec, a CMD H
 CMD FD, a CMD RAMLink and an IDE64 for every other program that already targets
 those. Issues [#877](https://github.com/GideonZ/1541ultimate/issues/877) and
 [#890](https://github.com/GideonZ/1541ultimate/issues/890) are the immediate
-drivers; this document covers the whole command surface those issues sit in, so the
+drivers, with [#917](https://github.com/GideonZ/1541ultimate/issues/917) added later; this document covers the whole command surface those issues sit in, so the
 work can be done once rather than one report at a time.
 
 This is not a greenfield design. The Software IEC drive has shipped for years to a
@@ -60,6 +61,7 @@ in `roms/1541.bin` rather than any manual.
 | **GSD** | Greg Nacu, "SD2IEC User's Manual" v1.3, c64os.com/post/sd2iecdocumentation. |
 | **GFN** | Greg Nacu, "Understanding SD2IEC Filenaming", c64os.com/post/sd2iecfilenames. |
 | **GUG** | *C64 OS User's Guide*, File System chapter, c64os.com/c64os/usersguide/filesystem. |
+| **917** | Issue [#917](https://github.com/GideonZ/1541ultimate/issues/917), "More SoftIEC compatibility issues", opened by the reporter on 18 September 2026. It carries Greg Nacu's measurements of a CMD HD and an sd2iec against this drive, and photographs of the two BASIC programs he used. The programs are transcribed in appendix C. |
 | **TRACE** | `log_boot.log.txt`, attached by the reporter to #877 on 11 September 2026. 601 lines of `SOFTIEC-TRACE` output from one successful C64 OS boot on a U64 II. |
 | **U** | This firmware at PR #881 head `16f7e31b`. Paths are relative to the repository root. |
 
@@ -1273,6 +1275,53 @@ be set to (filesize MOD 254)+2"; GSD "File Sizes and Blocks Free". Not implement
 **change required.** It costs nothing and it is the only way a C64 program can learn
 a file's true size from a listing.
 
+**SI-138.** The last byte of a listing is sent with EOI, whatever the size of the reads
+that bring the listing in. A BASIC program that reads a listing one byte at a time with
+`GET#` must therefore see the KERNAL status become 64 on that byte and 0 on every byte
+before it. Sources: 917, where the same program ended against a CMD HD and an sd2iec and
+ran for ever against this drive, reading zeroes with a status of 0; `SD dir_footer()`,
+which sets `sendeoi` on the blocks free line.
+
+Current behaviour: the end of a listing is the only buffer for which
+`U read_dir_entry()` sets `last_byte`, and it sets `prefetch_max` to 31 where that buffer
+holds 32 valid bytes, and to 1 where the partition listing's end marker holds 2.
+`U IecChannel::pop_data()` tests `pointer == prefetch_max - 1` and so reaches that branch
+one byte before `pointer == last_byte`. It then calls `read_dir_entry()` again, which
+returns -1 without moving `pointer`, and the channel stands one byte short of its last
+byte for ever. A load does not notice: `prefetch_data()` runs ahead within one talk and
+reaches `last_byte`, which sends the EOI. A `GET#` addresses the channel to talk again for
+every byte, and `push_command(0x60)` resets the prefetch to the stuck pointer, so the
+program gets the same byte back for ever. **Change required.**
+
+**SI-139.** A time stamped directory line has a fixed length: 64 bytes in the long format
+and 42 bytes in the short format, counting the link pointer, the block count and the zero
+that ends the BASIC line. The bytes between the end of the stamp and that zero are `$01`.
+The stamp begins four characters behind the three character type of the long format and
+two characters behind the single type letter of the short format; the first of the three
+characters in the long format is the lock and splat position of SI-132.
+
+Sources: `SD createentry()`, which clears the line to index 63 for `DIR_FMT_CMD_LONG` and
+index 41 for `DIR_FMT_CMD_SHORT`, writes the type at `data + 1`, the long stamp at
+`data + 7` and the short stamp at `data + 3`, and then fills what is left with `1` up to
+the zero. HD 9-22 agrees: measuring the character positions in the scan rather than
+reading its extracted text, the type starts 19 columns behind the opening quote of the
+name in both formats, the date starts 6 columns behind the start of the type in the long
+format and 2 in the short format, and the time starts 11 columns behind the start of the
+date in the long format and 6 in the short format. 917 reports the same two properties as
+measurements against a CMD HD and an sd2iec: "each directory entry is precisely 64 bytes"
+in the long format, and "there are 3 spaces 0x20 characters following the CBM file type
+before the start of the date ... Except, on SoftIEC there's only one space. And there are
+none of the $01 padding bytes after the time."
+
+Current behaviour: `U read_dir_entry()` writes the long stamp at offset `31 - chars` and
+the short stamp at offset `29 - chars`, where `chars` is the number of digits in the block
+count, and sets `prefetch_max` to whatever length the contents came to. A long line is
+therefore 48 bytes for a one digit block count and 45 for a four digit one, with the stamp
+two columns too far left and one space where three belong. A short line is 42 bytes down
+to 39 with the columns already right. **Change required** in both formats. The filler is
+what 917 saw first: "on lines where the filesize is 2 digits, there is a trailing 0x01
+before the 0x00 line ending on CMD HD but not on SoftIEC".
+
 ### 13.2 Filters
 
 **SI-134.** `LOAD"$[n][path][:pattern[=tp]]"` filters by name and type. `tp` is `P`,
@@ -1299,7 +1348,13 @@ files by a leading dot rather than by an attribute, and no report asks for the c
 `>stamp` and `<stamp` and the stamp format `MM/DD/YY HH:MM xM`. The long line is
 `112 "TESTFILE"       PRG   07/27/19 03.44 PM` and the short line is
 `112 "TESTFILE"       P 07/27 03.44 P`. Sources: HD 9-21 and 9-22; GSD "Time and Date
-Stamped Directory Listings". Unchanged; `U cbmdos_time()` produces both forms.
+Stamped Directory Listings". The options, the filter and the two stamp formats are
+unchanged; `U cbmdos_time()` produces both. What the line they sit in looks like is
+SI-139, and **that has changed**: PR #881 widened the gap between the date and the time
+in the long format from one space to three. The two lines above are the manual's examples
+as text extraction renders them, and that rendering drops spaces: it puts the type two
+columns to the left of where a 1541 puts it. SI-139 gives the column positions, taken from
+the character positions in the scan rather than from the extracted text.
 
 **SI-136.** Wildcard matching: `?` matches one character and `*` matches the rest.
 Only one `*` is meaningful. Characters after the `*` are matched against the end of
@@ -1335,6 +1390,34 @@ priority, because only tools that read the BAM directly need it.
 change what existing programs receive when they open `$` on a data channel, including
 clients of the UCI target, which opens on the channel number the client sends. `$` on
 any secondary address returns the listing, as before.
+
+### 13.4 File types inside a disk image
+
+**SI-149.** A file in a mounted CBM disk image is listed with the type its directory entry
+carries. A GEOS file is an ordinary entry whose type bits say SEQ, PRG or USR, with the
+GEOS info block pointer at offset `$15` and the GEOS file structure at offset `$17` filled
+in as well, and CBM DOS lists it by the type bits like any other file. Sources: 917, where
+a GEOS disk mapped as a partition listed every file as SEQ, which the reporter confirmed
+on "all Geos disks" including a Geos 2.0 boot disk converted to D64; the 1541 directory
+entry layout, which has no GEOS type.
+
+Current behaviour: `U FileSystemCBM` gives every GEOS entry the extension `CVT`, because
+CVT is the interchange format the Ultimate's file browser writes when it copies a GEOS
+file out to the host file system, and the browser and the FTP server read the same
+directory. `U IecPartition::CreateIecName()` recognises `PRG`, `SEQ`, `REL` and `USR` and
+nothing else, so `read_dir_entry()` falls back to SEQ. An open of the same file over the
+bus also delivers the CVT stream, which puts a header block in front of the file, rather
+than the file itself. **Change required.**
+
+**Decision (PR #881): not implemented.** The two halves have to change together. Listing a
+GEOS file as PRG while an open still returns a CVT stream would be worse than the present
+state, because a `LOAD` would then be offered a file that cannot run. The type and the
+open both come from `software/filesystem/filesystem_d64.cc`, which the file browser, the
+FTP server and the UCI target share, so the change belongs in its own issue and its own
+regression tests rather than in this one. Nothing in TRACE, GAP or #877 needs it, and no
+GEOS application can start from this drive in any case, because the GEOS speeder is not
+implemented. The drive continues to list GEOS files as SEQ.
+
 
 ---
 
@@ -1621,6 +1704,9 @@ left for someone else to answer before the work can start.
 | C12 | Shifted space (`$A0`) inside a name | The reporter wrote that this "is a topic of its own, but I do not want to start that topic without having discussed that first". | **Decided** (SI-147 for the two defects, SI-148 for the policy): `$A0` is legal inside a name and maps to `{A0}`; a trailing run is padding and is dropped; a name that is empty or starts with `$A0` is refused on create; a listing ends the name at its terminator or at 16 characters rather than at the first `$A0`, because ending it earlier would make this drive and an sd2iec print different names for the same file. |
 | C13 | GAP's report that copy produces `kernal.bin.bin` and ignores paths | Measured against firmware 3.10a. | **Already fixed.** Measured on the head of PR #881 with a probe linked against the host suite's objects: the target gets one extension and a target path is honoured (SI-075). The requirement is a regression test. |
 | C14 | `R` across directories | IDE 15.2.3 renames or moves a file between directories. `SD parse_rename()` answers `62,FILE NOT FOUND` when the two paths differ. HD 9-26 says the two names must be in the same partition. | This document decided **62** (SI-074), by precedence rule 3: SD wins over IDE. **PR #881 reversed it:** the move worked before PR #881, a test on `master` asserted it, and no program has been named that needs the `62`. |
+| C15 | The two identification bytes in a listing header | 917 reports that this drive prints `00 2a` where a CMD HD prints `hd 1h`, and calls the difference harmless. `SD dirheader[]` prints the disk id `IK` and the DOS version `2A`. | **Keep `00 2a`.** The field is a claim about the device: `1H` is the CMD HD's own DOS version, and a drive that answers `UI` with its own identification string (SI-114) should not print a CMD HD's version in its listings. sd2iec prints a made up id and `2A` for the same reason, so the shape of the current answer is the one an sd2iec-like device gives. |
+| C16 | The low byte of a line's link pointer | 917 reports that a CMD HD prints `01 01` on every line and that this drive prints something else. SD README defines the low byte as `(filesize MOD 254)+2`, and GSD documents it. | **Keep the remainder** (SI-133). It is what sd2iec does, its author documented it, and it is the only way a program can learn a file's exact length from a listing. A program that reads the link as an end-of-program marker is unaffected, because the byte is never 0 and the high byte stays 1. |
+
 
 ## 17. Tests
 
@@ -1644,7 +1730,9 @@ requirement, so that the answer recorded here becomes the answer the suite enfor
 The set is: the ten commands of the probe's first section (`A`, `V`, `R-P`, `S-8`,
 `W-1`, `U0>`, `L`, `R-H`, `I`, `M-R`), the scratch of SI-033, the `MD` and
 `RD` forms of SI-060 and SI-063, the two copies of SI-075, the three filters of
-SI-134, and the four left-arrow forms of SI-014. For the requirements PR #881 decided not
+SI-134, and the four left-arrow forms of SI-014. The listing layout of SI-138 and SI-139
+needs a reader that addresses the channel to talk for every byte, because a whole stream
+read cannot fail for either of them. For the requirements PR #881 decided not
 to implement, the tests assert the answer given in the decision, so that a later
 implementation has to change a test on purpose.
 
@@ -1698,7 +1786,8 @@ SI-016 the second terminator branch, SI-060 the `MD` colon, SI-063 the `RD` path
 rejection, SI-074 rename checks, SI-093 direct access partition binding.
 
 **Group 5, the listings.** SI-130 header bytes, SI-133 the size remainder,
-SI-065 the header name, SI-137 the raw directory.
+SI-065 the header name, SI-137 the raw directory, SI-138 the end of file at the end of a
+listing, SI-139 the length and columns of a time stamped line.
 
 **Group 6, naming.** SI-147 first, because it is the only requirement in this
 document that makes two Ultimate models write different bytes to the same medium.
@@ -1740,8 +1829,8 @@ Elite, and to 15 lines of 668 during `iec-dos-commands` and a soak on a U2+L.
 
 ### 18.1 What PR #881 implements
 
-PR #881 implements a requirement when it fixes a defect, or when the reporter of #877 or
-#890, GAP or TRACE names it. A review of the implementation against that rule decided
+PR #881 implements a requirement when it fixes a defect, or when the reporter of #877,
+#890 or #917, GAP or TRACE names it. A review of the implementation against that rule decided
 against the requirements in the first table and narrowed the ones in the list after it.
 Each of them also has a **Decision (PR #881)** paragraph below the requirement itself, and
 the tests assert the answer given here. The requirements not named in this section are
@@ -1763,6 +1852,7 @@ affected by them.
 | SI-105 `M-W`, `M-E` | Nothing written is kept and nothing is run, so an OK would tell a fast loader its drive code runs | `30` |
 | SI-120 `T-WA`, `T-WB`, `T-WD`, `T-WI` | The clock belongs to the system, and C64 OS sets it through its UCI clock driver (GAP) | `30`, which SI-120 allows |
 | SI-137 raw directory | It would change what existing programs, and clients of the UCI target, receive when they open `$` on a data channel | the listing, as before |
+| SI-149 GEOS file types in an image | The type and the open both come from the image file system the menu, the FTP server and the UCI target share, and changing only the listed type would offer a `LOAD` a file it cannot run; no command in TRACE, GAP or #877 needs it | GEOS files keep listing as SEQ |
 | SI-145 writing x00 files | A new user setting that no report asks for; reading x00 files (SI-144) already gives the interchange | new files are written plain |
 
 **Implemented in part, or with a difference.** For each: what is implemented, what is
@@ -1976,10 +2066,47 @@ other software that already targets these devices.
 
 ## Appendix B. Requirement index
 
-Sections 2 to 15 define 102 numbered paragraphs, SI-001 to SI-153 with gaps, one of
+Sections 2 to 15 define 105 numbered paragraphs, SI-001 to SI-153 with gaps, one of
 which (SI-151) is retired. Requirements that change nothing are marked "Unchanged"
 and exist as a contract. Requirements marked "Change required", or stated as "Add",
 "Close" or "Not implemented" (SI-036, SI-077, SI-142, SI-144 to SI-146), are the
 work, and section 18 orders them. Section 18.1 lists the requirements PR #881 decided
 not to implement or implemented in part, and each of them carries its decision below
 the requirement.
+
+## Appendix C. The programs issue #917 reports
+
+Both programs were reported as photographs of a C64 screen. They are transcribed here so
+that they can be run and turned into tests without reading the pictures again.
+
+The first program copies a time stamped listing byte by byte onto a second device. Greg
+Nacu ran it with the listing on a Software IEC partition and the output file on an
+sd2iec, and it never ended.
+
+```basic
+10 OPEN2,8,2,"@//:DIRDATA.D,S,W"
+20 OPEN3,8,0,"$=T:*"
+30 GET#3,A$:S1=ST:PRINT#2,A$;
+40 IFS1=0THEN30
+50 CLOSE2:CLOSE3
+```
+
+Line 30 saves the status of the read in `S1` before the write to the other device
+overwrites `ST`. Line 40 loops while that status is 0, so the program ends on the first
+read whose status is not 0, which on a CMD HD and on an sd2iec is the 64 of the last byte.
+
+The second program is the reduced case, with no second device involved. It prints the
+value of each byte and the status that came with it.
+
+```basic
+10 OPEN2,8,0,"$=T:*"
+20 GET#2,A$:A$=A$+CHR$(0):S1=ST:PRINTASC(A$),S1
+30 IFS1=0THEN20
+40 CLOSE2
+```
+
+The photograph of its output ends with a line reading `0` and `64`: the last byte of the
+listing is a zero and it arrives with end of file set. Against this drive the same program
+printed `0` and `0` without stopping. SI-138 is the requirement, and the screen above the
+first program also shows the directory it was reading, whose header is the CMD HD's
+`1 "TESTS            " HD 1H` (C15).

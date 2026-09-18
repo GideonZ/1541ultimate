@@ -51,7 +51,7 @@ import cli  # noqa: E402
 import ftp  # noqa: E402
 from api import UltimateApi  # noqa: E402
 from config_snapshot import Snapshot  # noqa: E402
-from iec_agent import STATUS_BYTES, Agent  # noqa: E402
+from iec_agent import CLOSE, MAILBOX_CAPACITY, OPEN, READ_COUNT, STATUS_BYTES, Agent  # noqa: E402
 from report import Failure, check, detail, section, suite_fail, suite_ok, teardown_step  # noqa: E402
 
 SUITE = "iec_dos_command_test"
@@ -160,7 +160,8 @@ def check_timestamp_filter(agent, api, password, folder, root):
         client.storbinary(f"STOR {root.rstrip('/')}/{folder}/stamped.prg", io.BytesIO(b"stamped"))
 
     listing = listing_of(agent, f"$//{here}:*=L")
-    stamped = re.search(rb'"STAMPED\s*"\s+PRG\s+(\d\d)/(\d\d)/(\d\d) (\d\d)\.(\d\d) ([AP])M', listing)
+    # The long format puts three spaces between the date and the time (SI-139).
+    stamped = re.search(rb'"STAMPED\s*"\s+PRG\s+(\d\d)/(\d\d)/(\d\d)\s+(\d\d)\.(\d\d) ([AP])M', listing)
     if not stamped:
         raise Failure(f"the long listing carries no stamp for the file just written: {listing!r}")
     month, day, year, hour12, minute, half = (f.decode() for f in stamped.groups())
@@ -188,6 +189,88 @@ def check_timestamp_filter(agent, api, password, folder, root):
             raise Failure(f"the file is not reported newer than {date} {clock} AM")
         if b"STAMPED" in listing_of(agent, f"$//{here}:*=>{date} {clock} PM"):
             raise Failure(f"the file is reported newer than {date} {clock} PM")
+
+
+def stamped_lines(listing, length, what):
+    """The entry lines of a time stamped listing, which all have the same length."""
+    body = listing[LINE:len(listing) - LINE]
+    if not body or len(body) % length:
+        raise Failure(f"{what} has {len(listing)} bytes, which is not a header, "
+                      f"a blocks free line and whole lines of {length} bytes")
+    return [body[i:i + length] for i in range(0, len(body), length)]
+
+
+def check_stamped_line(line, what, type_name, gap, stamp_len):
+    """SI-139: where the stamp sits in a line, and the filler behind it."""
+    digits = len(str(line[2] | (line[3] << 8)))
+    type_at = 27 - digits
+    stamp_at = type_at + len(type_name) + gap
+    if line[type_at:type_at + len(type_name)] != type_name:
+        raise Failure(f"{what}: the type is not {type_name!r} at offset {type_at}: {line!r}")
+    if line[type_at + len(type_name):stamp_at] != b" " * gap:
+        raise Failure(f"{what}: the {gap} characters between the type and the stamp are "
+                      f"{line[type_at + len(type_name):stamp_at]!r}: {line!r}")
+    if not re.match(rb"\d\d/\d\d", line[stamp_at:stamp_at + 5]):
+        raise Failure(f"{what}: no stamp at offset {stamp_at}: {line!r}")
+    filler = line[stamp_at + stamp_len:len(line) - 1]
+    if filler != b"\x01" * len(filler) or line[-1] != 0:
+        raise Failure(f"{what}: the line ends {line[stamp_at + stamp_len:]!r}, expected "
+                      f"{len(filler)} filler bytes of 01 and a zero: {line!r}")
+
+
+def check_listing_layout(agent, folder):
+    """#917, SI-139: a time stamped line is a fixed 64 bytes, or 42 in the short format.
+
+    The stamp starts four characters behind a three character type and two behind the
+    single letter of the short format, and CMD DOS fills what is left of the line with
+    0x01. This drive wrote the long stamp two columns early and ended every line where
+    its contents happened to end.
+    """
+    here = folder.upper()
+    for name, length, type_name, gap, stamp_len in (
+            (f"$//{here}:*=P,L", 64, b"PRG", 3, 19),
+            (f"$=T//{here}:*=P", 42, b"P", 1, 13)):
+        with check(f"SI-139: {name} lines are {length} bytes with 0x01 filler"):
+            listing = listing_of(agent, name)
+            lines = stamped_lines(listing, length, name)
+            detail(f"{name}: {len(lines)} lines of {length} bytes, first {lines[0]!r}")
+            for line in lines:
+                check_stamped_line(line, name, type_name, gap, stamp_len)
+
+
+def check_listing_eof(agent, folder):
+    """#917, SI-138: the last byte of a listing carries EOI.
+
+    The tail is read one byte per transaction, which is what BASIC's GET# does: the
+    KERNAL addresses the drive to talk, takes one byte and untalks again. Reading the
+    listing in larger pieces cannot fail for this, because the drive then runs ahead
+    within one talk and reaches the last byte on its own.
+    """
+    here = folder.upper()
+    name = f"$//{here}:*"
+    with check("SI-138: a listing read one byte at a time ends with status 64"):
+        total = len(listing_of(agent, name))
+        agent.call(OPEN, channel=3, data=name.encode("ascii"), secondary=0)
+        try:
+            agent.status()
+            remaining = total - 4
+            while remaining:
+                step = min(remaining, MAILBOX_CAPACITY)
+                agent.read_exact(step, channel=3)
+                remaining -= step
+            tail = b""
+            for _ in range(8):
+                tail += agent.call(READ_COUNT, channel=3, count=1)
+                if agent.last_status & 64:
+                    break
+            else:
+                raise Failure(f"{len(tail)} single byte reads at the end of a {total} byte "
+                              f"listing all answered status 0: {tail!r}")
+        finally:
+            agent.call(CLOSE, channel=3)
+        detail(f"the last {len(tail)} bytes of a {total} byte listing read one at a time: {tail!r}")
+        if len(tail) != 4 or tail[-1] != 0:
+            raise Failure(f"end of file arrived after {len(tail)} of the last 4 bytes: {tail!r}")
 
 
 def check_compatibility(agent, api, password, folder, root):
@@ -496,6 +579,8 @@ def run(args):
                 ("command channel", lambda: check_command_channel(agent, api, args.password, folder, root)),
                 ("block commands", lambda: check_block_commands(agent, api, args.password, folder, image)),
                 ("time stamp filter", lambda: check_timestamp_filter(agent, api, args.password, folder, root)),
+                ("listing layout", lambda: check_listing_layout(agent, folder)),
+                ("listing end of file", lambda: check_listing_eof(agent, folder)),
                 ("partition directory", lambda: check_partition_directory(agent, api)),
                 ("partition commands", lambda: check_partition_commands(agent)),
                 ("compatibility specification", lambda: check_compatibility(agent, api, args.password, folder, root))):
