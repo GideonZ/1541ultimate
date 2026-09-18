@@ -25,6 +25,18 @@
 #define MDPLUS_SRAM_OFFSET   0x20000
 #define MDPLUS_BANK_EEPROM   0
 
+// Which parts a Magic Desk Plus has is declared in the CRT header's hardware
+// revision byte, not inferred from what the file happens to carry: a released
+// image brings no store at all and still has both. VICE r46239 settled the
+// numbering -- its cartconv and its manual disagreed with its emulator, and the
+// emulator was right.
+#define MDPLUS_REV_SRAM_EEPROM_32K  0
+#define MDPLUS_REV_SRAM_EEPROM_8K   1
+#define MDPLUS_REV_EEPROM_32K       2
+#define MDPLUS_REV_EEPROM_8K        3
+#define MDPLUS_REV_SRAM             4
+#define MDPLUS_REV_MAX              4
+
 // Local definitions, NOT hardware select!
 typedef enum {
     CART_NOT_IMPL,
