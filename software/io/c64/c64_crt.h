@@ -7,6 +7,36 @@
 
 #define CARTS_DIRECTORY "/flash/carts"
 
+// Magic Desk Plus keeps its non-volatile memory in the CRT file, in chunks at
+// DF00, the address of the window they are reached through. The bank field says
+// which piece a chunk is, because the size field cannot: it is 16 bits, so the
+// 128K of SRAM does not fit in one chunk and is carried in four.
+//
+//   bank 0      the EEPROM, 8K or 32K, the two sizes the format allows
+//   bank 1..4   the SRAM, in quarters, in address order
+//
+// The cartridge logic reaches the EEPROM in the first half of its area and the
+// SRAM in the second.
+#define MDPLUS_EEPROM_8K     0x2000
+#define MDPLUS_EEPROM_32K    0x8000
+#define MDPLUS_EEPROM_AREA   0x20000
+#define MDPLUS_SRAM_CHUNK    0x8000
+#define MDPLUS_SRAM_CHUNKS   4
+#define MDPLUS_SRAM_OFFSET   0x20000
+#define MDPLUS_BANK_EEPROM   0
+
+// Which parts a Magic Desk Plus has is declared in the CRT header's hardware
+// revision byte, not inferred from what the file happens to carry: a released
+// image brings no store at all and still has both. VICE r46239 settled the
+// numbering -- its cartconv and its manual disagreed with its emulator, and the
+// emulator was right.
+#define MDPLUS_REV_SRAM_EEPROM_32K  0
+#define MDPLUS_REV_SRAM_EEPROM_8K   1
+#define MDPLUS_REV_EEPROM_32K       2
+#define MDPLUS_REV_EEPROM_8K        3
+#define MDPLUS_REV_SRAM             4
+#define MDPLUS_REV_MAX              4
+
 // Local definitions, NOT hardware select!
 typedef enum {
     CART_NOT_IMPL,
@@ -14,6 +44,7 @@ typedef enum {
     CART_ACTION,
     CART_RETRO,
     CART_DOMARK,
+    CART_MDPLUS,
     CART_OCEAN_8K,
     CART_OCEAN_16K,
     CART_EASYFLASH,
@@ -69,6 +100,8 @@ class C64_CRT
     int          bank_multiplier;
     int          machine; // 64 or 128
     bool         a000_seen;
+    uint8_t      mdp_sram_parts; // bit per Magic Desk Plus SRAM chunk seen
+    uint32_t     mdp_eeprom_size; // size of its EEPROM image, 0 when it has none
     e_known_cart local_type;
     uint8_t      max_bank;
     uint8_t      highest_bank;
