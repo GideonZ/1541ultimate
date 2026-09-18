@@ -58,6 +58,10 @@ struct Crt {
     uint8_t subtype = 0;
     std::vector<Chip> chips;
     std::vector<uint8_t> trailer;
+    // A header a real tool wrote, used verbatim in place of the built one, so
+    // that a test can ask what the loader makes of an actual file rather than
+    // of this builder's idea of one.
+    std::vector<uint8_t> raw_header;
 
     Crt(uint16_t hw_type, int for_machine = 64) : machine(for_machine), hw(hw_type) {}
 
@@ -80,14 +84,18 @@ struct Crt {
 
     std::vector<uint8_t> bytes() const {
         std::vector<uint8_t> out(0x40, 0);
-        memcpy(out.data(), machine == 128 ? "C128 CARTRIDGE  " : "C64 CARTRIDGE   ", 16);
-        out[0x13] = 0x40;
-        out[0x14] = 1;
-        out[0x16] = hw >> 8;
-        out[0x17] = hw & 0xFF;
-        out[0x18] = exrom;
-        out[0x19] = game;
-        out[0x1A] = subtype;
+        if (raw_header.size() == 0x40) {
+            memcpy(out.data(), raw_header.data(), 0x40);
+        } else {
+            memcpy(out.data(), machine == 128 ? "C128 CARTRIDGE  " : "C64 CARTRIDGE   ", 16);
+            out[0x13] = 0x40;
+            out[0x14] = 1;
+            out[0x16] = hw >> 8;
+            out[0x17] = hw & 0xFF;
+            out[0x18] = exrom;
+            out[0x19] = game;
+            out[0x1A] = subtype;
+        }
         for (const Chip &c : chips) {
             uint32_t len = 0x10 + c.data.size();
             const uint8_t h[16] = { 'C', 'H', 'I', 'P', uint8_t(len >> 24), uint8_t(len >> 16), uint8_t(len >> 8), uint8_t(len),
@@ -529,6 +537,77 @@ static void test_magic_desk_plus(void)
           "the same SRAM chunk twice: load returned %d, want already defined", r.rc);
 }
 
+// The header of mdplustest.crt, byte for byte. The other tests here build their
+// own headers, so they agree with this file's idea of a CRT rather than with a
+// real one; this is the header a Magic Desk Plus actually arrives with.
+static const uint8_t mdplus_real_header[0x40] = {
+    0x43, 0x36, 0x34, 0x20, 0x43, 0x41, 0x52, 0x54,  // "C64 CART"
+    0x52, 0x49, 0x44, 0x47, 0x45, 0x20, 0x20, 0x20,  // "RIDGE   "
+    0x00, 0x00, 0x00, 0x40, 0x01, 0x00, 0x00, 0x57,  // header $40, v1.0, type 87
+    0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  // exrom 0, game 1: 8K mode
+    0x4D, 0x61, 0x67, 0x69, 0x63, 0x20, 0x44, 0x65,  // "Magic De"
+    0x73, 0x6B, 0x20, 0x50, 0x6C, 0x75, 0x73, 0x00,  // "sk Plus"
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+};
+
+// The shape of a Magic Desk Plus that exists, rather than one built to be
+// tested: crystalct's mdplustest.crt, the Magic Desk Plus Manager, offered in
+// GideonZ/1541ultimate#844 as the image to test the mapper with. It is 262720
+// bytes of 32 ROM banks at $8000 and nothing else -- no $DF00 chunk, no EEPROM,
+// no SRAM -- which is the released shape: VICE keeps the store in files beside
+// the image, so a Magic Desk Plus need not carry one.
+//
+// The bank payloads are this file's own, since what is regressed is the shape
+// and the header, not the manager's 6502. A store the image does not bring has
+// to read as an erased device: it lives in the memory the REU uses, and the
+// manager's own SRAM and EEPROM detection is what reads it first.
+//
+// https://github.com/crystalct/MagicDeskPlus/tree/main/CRT_TEST
+static void test_magic_desk_plus_real_image(void)
+{
+    Crt crt(87);
+    crt.raw_header.assign(mdplus_real_header, mdplus_real_header + 0x40);
+    crt.banks(32, 0x8000, 0x2000);
+
+    // 1 MB is what a cartridge region is unless a target asks for more, and the
+    // released shape has to load there: 32 banks at 16K each is 512K.
+    const uint32_t regions[] = { 1 * MB, 4 * MB };
+    for (uint32_t max_rom : regions) {
+        Loaded r = load_with_store(crt, max_rom);
+        CHECK(r.rc == SSRET_OK, "mdplustest.crt in %dK: load returned %d", max_rom / K, r.rc);
+
+        // No EEPROM chunk, so the page register is masked to $1F, as VICE masks
+        // it when it has to make an EEPROM image from nothing. VARIANT_1 would
+        // say $7F and would be the 32K device this file does not carry.
+        CHECK(r.type == CART_TYPE_MDPLUS,
+              "mdplustest.crt in %dK: cartridge type $%02X, want $%02X (the 8K EEPROM mask)",
+              max_rom / K, r.type, CART_TYPE_MDPLUS);
+        CHECK(r.prohibit == CART_PROHIBIT_IO,
+              "mdplustest.crt in %dK: prohibit $%03X, want $%03X",
+              max_rom / K, r.prohibit, CART_PROHIBIT_IO);
+        CHECK(r.guard_intact, "mdplustest.crt in %dK: wrote past the cartridge region", max_rom / K);
+
+        // The cartridge logic reads bank N at N * 16K: $DE00 bits 0..6 land in
+        // bank_bits(21 downto 14), and bit 13 stays low in 8K mode, so only the
+        // low 8K of each 16K step is ever addressed.
+        int wrong = 0;
+        uint16_t first_wrong = 0;
+        for (const Chip &c : crt.chips) {
+            if (memcmp(r.at(c.bank * 16 * K), c.data.data(), c.data.size()) && !wrong++) {
+                first_wrong = c.bank;
+            }
+        }
+        CHECK(!wrong, "mdplustest.crt in %dK: %d of 32 ROM banks are not at bank * 16K, first bank %d",
+              max_rom / K, wrong, first_wrong);
+
+        CHECK(all_ff(host_reu_memory, MDPLUS_EEPROM_32K),
+              "mdplustest.crt in %dK: the EEPROM the image does not carry is not erased", max_rom / K);
+        CHECK(all_ff(host_reu_memory + MDPLUS_SRAM_OFFSET, MDPLUS_SRAM_CHUNK * MDPLUS_SRAM_CHUNKS),
+              "mdplustest.crt in %dK: the SRAM the image does not carry is not erased", max_rom / K);
+    }
+}
+
 int main()
 {
     test_cartridge_types();
@@ -537,6 +616,7 @@ int main()
     test_chip_placement();
     test_mirroring();
     test_magic_desk_plus();
+    test_magic_desk_plus_real_image();
     fprintf(stderr, "c64_crt_test: %s (%d checks, %d failed)\n", failures ? "FAIL" : "OK", checks, failures);
     return failures ? 1 : 0;
 }
