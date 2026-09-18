@@ -10,9 +10,11 @@ and bit 0 chooses which 64K half of the SRAM. Murder on the Mississippi
 Remastered uses the format because the SRAM takes a note at a time, which is
 what Flash cannot do.
 
-The suite does not ship a ROM image. It builds a 128-bank type 19 CRT here,
-with its store in CHIP chunks at $DF00 — the address of the window, since the
-bank field is what says which piece a chunk is. Bank 0 autostarts, copies a
+The suite does not ship a ROM image. It builds a 128-bank type 87 CRT here —
+the id VICE assigns to Magic Desk Plus — with its store in CHIP chunks at
+$DF00, the address of the window, since the bank field is what says which
+piece a chunk is. A released image need not carry a store: this one does,
+because the window is what the suite measures. Bank 0 autostarts, copies a
 routine to $C000 and runs it from RAM, because the first $DE00 write replaces
 the ROM it would otherwise be executing. The routine then:
 
@@ -223,12 +225,12 @@ def chip(bank: int, load: int, data: bytes) -> bytes:
 
 
 def magicdesk_plus_crt() -> bytes:
-    """A type 19 CRT of 128 8K banks, a 32K EEPROM and 128K of SRAM."""
+    """A type 87 CRT of 128 8K banks, a 32K EEPROM and 128K of SRAM."""
     header = bytearray(0x40)
     header[0:16] = b"C64 CARTRIDGE   "
     header[0x10:0x14] = (0x40).to_bytes(4, "big")
     header[0x14:0x16] = b"\x01\x00"
-    header[0x16:0x18] = (19).to_bytes(2, "big")     # Magic Desk, Domark, HES Australia
+    header[0x16:0x18] = (87).to_bytes(2, "big")     # Magic Desk Plus, the id VICE assigns
     header[0x18] = 0                                # EXROM low
     header[0x19] = 1                                # GAME high: 8K mode
     header[0x20:0x20 + 11] = b"MDPLUS-TEST"
