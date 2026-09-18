@@ -725,6 +725,100 @@ def run_reset_guard_checks():
         expect("resets sent", sum(1 for _, p in rest.sent if p.endswith("reset")), 1)
 
 
+def run_cartridge_preference_checks():
+    """Changing the computer's cartridge preference is followed by a reboot.
+
+    The computer routes its cartridge port when it initialises its cartridge,
+    which it does when it boots, so a preference written to a running computer
+    reaches the config store and not the bus. Measured on the bench: with the
+    value changed and the computer left running, the cartridge's NMI never
+    reached the 6510, the monitor's status row showed no banking, and every
+    debug step stopped with no captured context.
+
+    No device: the config store and the machine calls are served by a stub.
+    """
+    import api as api_module
+
+    class StubComputer:
+        """Enough of UltimateApi for the preflight: configs plus machine."""
+
+        def __init__(self, initial, ready=True):
+            self.calls = []
+            self.value = initial
+            outer = self
+
+            class Configs:
+                def current(self, store, item):
+                    outer.calls.append(("get", item))
+                    return outer.value
+
+                def set(self, store, item, value):
+                    outer.calls.append(("set", item, value))
+                    outer.value = value
+
+            class Machine:
+                def writemem(self, address, data):
+                    outer.calls.append(("writemem", address, data))
+
+                def reboot(self):
+                    outer.calls.append(("reboot",))
+
+                def wait_until_ready(self, timeout):
+                    outer.calls.append(("wait", timeout))
+                    return ready
+
+            self.configs = Configs()
+            self.machine = Machine()
+
+    def preflight(initial, ready=True):
+        computer = StubComputer(initial, ready)
+        original = api_module.UltimateApi
+        api_module.UltimateApi = lambda *args, **kwargs: computer
+        try:
+            described = api_module.ensure_cartridge_preference("u2@c64u")
+        finally:
+            api_module.UltimateApi = original
+        return computer, described
+
+    with check("a changed preference reboots the computer"):
+        computer, described = preflight("Auto")
+        expect("value set", ("set", api_module.CARTRIDGE_PREFERENCE_ITEM,
+                             api_module.CARTRIDGE_PREFERENCE_EXTERNAL)
+               in computer.calls, True)
+        expect("rebooted", ("reboot",) in computer.calls, True)
+        expect("reboot came after the change",
+               computer.calls.index(("reboot",)) >
+               computer.calls.index(("set", api_module.CARTRIDGE_PREFERENCE_ITEM,
+                                     api_module.CARTRIDGE_PREFERENCE_EXTERNAL)),
+               True)
+        if "reboot" not in (described or ""):
+            raise Failure(f"the caller was not told about the reboot: {described!r}")
+
+    with check("a computer already reading External is rebooted anyway"):
+        # The config store answering External does not prove the running bus
+        # is routed that way - only a boot since the value was set does,
+        # because the computer applies it at boot and nowhere else. Measured
+        # on the bench: a computer that reached External at some earlier boot
+        # or reset, and was never rebooted since, still showed 'CPU VIEW' with
+        # no banking. So this reboots unconditionally rather than trusting the
+        # config read.
+        computer, described = preflight(api_module.CARTRIDGE_PREFERENCE_EXTERNAL)
+        expect("no redundant write",
+              ("set", api_module.CARTRIDGE_PREFERENCE_ITEM,
+               api_module.CARTRIDGE_PREFERENCE_EXTERNAL) in computer.calls, False)
+        expect("rebooted", ("reboot",) in computer.calls, True)
+        if "already" not in (described or ""):
+            raise Failure(f"the caller was not told the value was already "
+                          f"correct: {described!r}")
+
+    with check("a computer that does not come back is reported, not hidden"):
+        computer, described = preflight("Auto", ready=False)
+        expect("rebooted", ("reboot",) in computer.calls, True)
+        if "did not reach the BASIC prompt" not in (described or ""):
+            raise Failure(f"a computer that stayed dark was described as if it "
+                          f"had come back: {described!r}")
+
+
 def run_health_checks():
     ok = health.Check("rest", health.OK, 12.0)
     bad = health.Check("ftp", health.FAIL, 2000.0, "connection refused")
@@ -1715,6 +1809,7 @@ def main():
             run_degraded_recovery_checks(runner)
             run_output_dir_option_checks(runner)
             run_reset_guard_checks()
+            run_cartridge_preference_checks()
             run_retry_checks(runner, tmpdir)
             run_jsonl_contract_checks(runner, tmpdir)
             run_health_checks()

@@ -3,6 +3,47 @@
 
 #include "integer.h"
 
+class DebugSession;
+
+enum MonitorBackingStore {
+    MONITOR_BACKING_RAM = 0,
+    MONITOR_BACKING_BASIC,
+    MONITOR_BACKING_KERNAL,
+    MONITOR_BACKING_IO,
+    MONITOR_BACKING_CHAR
+};
+
+static inline MonitorBackingStore monitor_backing_store_for_cpu_port(uint16_t address, uint8_t cpu_port)
+{
+    cpu_port &= 0x07;
+    if (address >= 0xA000 && address <= 0xBFFF)
+        return ((cpu_port & 0x03) == 0x03) ? MONITOR_BACKING_BASIC : MONITOR_BACKING_RAM;
+    if (address >= 0xD000 && address <= 0xDFFF) {
+        if ((cpu_port & 0x03) == 0x00) return MONITOR_BACKING_RAM;
+        return (cpu_port & 0x04) ? MONITOR_BACKING_IO : MONITOR_BACKING_CHAR;
+    }
+    if (address >= 0xE000)
+        return (cpu_port & 0x02) ? MONITOR_BACKING_KERNAL : MONITOR_BACKING_RAM;
+    return MONITOR_BACKING_RAM;
+}
+
+static inline const char *monitor_backing_store_tag(MonitorBackingStore target)
+{
+    switch (target) {
+        case MONITOR_BACKING_BASIC: return "BAS";
+        case MONITOR_BACKING_KERNAL: return "KRN";
+        case MONITOR_BACKING_IO: return "I/O";
+        case MONITOR_BACKING_CHAR: return "CHR";
+        default: return "RAM";
+    }
+}
+
+static inline bool monitor_backing_store_is_visible_rom(MonitorBackingStore target)
+{
+    return target == MONITOR_BACKING_BASIC || target == MONITOR_BACKING_KERNAL ||
+           target == MONITOR_BACKING_CHAR;
+}
+
 class MemoryBackend
 {
     uint8_t monitor_cpu_port;
@@ -37,23 +78,26 @@ public:
         }
     }
 
-    // Freeze / pause control. Backends that can hold the host machine in a
-    // stopped state across many reads/writes (so register/IO state is stable)
-    // override these. The monitor exposes a Z toggle to drive this. Default
-    // behaviour is a no-op so non-U64 backends remain unaffected.
-    // Whether the machine the monitor is looking at can be reset. The reset
-    // itself is performed by whoever owns the machine, because it has to let
-    // go of it first; see run_machine_monitor.cc. A backend that answers false
-    // makes the monitor say so rather than appear to have done something.
+    // Freeze/pause control: backends that can hold the host machine stopped
+    // across many reads/writes override these (default no-op). Monitor's Z
+    // toggle drives it.
+
+    // Whether the machine can be reset; the reset itself is performed by
+    // whoever owns the machine (see run_machine_monitor.cc). A backend
+    // answering false makes the monitor say so.
     virtual bool supports_reset(void) const { return false; }
+    virtual bool reset_machine(void) { return false; }
 
     virtual bool supports_freeze(void) const { return false; }
     virtual bool freeze_available(void) const { return supports_freeze(); }
     virtual bool is_frozen(void) const { return false; }
     virtual void set_frozen(bool) { }
     virtual bool supports_cpu_banking(void) const { return true; }
+    virtual bool live_cpu_port_known(void) const { return supports_cpu_banking(); }
+    virtual bool has_debug_observed_cpu_port(void) const { return false; }
     virtual bool supports_vic_bank(void) const { return true; }
     virtual bool supports_go(void) const { return true; }
+    virtual DebugSession *create_debug_session(void) { return 0; }
     virtual uint8_t monitor_poll_hz(void) const { return 50; }
 
     virtual void set_monitor_cpu_port(uint8_t value)
@@ -69,6 +113,12 @@ public:
     virtual uint8_t get_live_cpu_port(void)
     {
         return read(0x0001) & 0x07;
+    }
+
+    virtual void invalidate_live_cpu_port_cache(void) { }
+    virtual MonitorBackingStore backing_store_for_cpu_port(uint16_t address, uint8_t cpu_port) const
+    {
+        return monitor_backing_store_for_cpu_port(address, cpu_port);
     }
 
     virtual uint8_t get_live_vic_bank(void)
@@ -89,13 +139,10 @@ public:
         set_monitor_cpu_port(saved_cpu_port);
     }
 
-    // Whether reads at this address are live I/O registers rather than memory.
-    // The disassembler needs to know: an I/O register answers differently from
-    // one read to the next, so decoding it as an opcode produces a different
-    // instruction, and a different instruction *length*, on every redraw, and
-    // every row below it moves. Derived from source_name so there is one rule
-    // for what lives where, and a backend that names its regions differently
-    // only has to override that one.
+    // Whether reads at this address are live I/O rather than memory. The
+    // disassembler needs this: a register that answers differently each read
+    // decodes to a different instruction/length on every redraw, shifting
+    // every row below. Derived from source_name, the one rule for what lives where.
     virtual bool reads_live_io(uint16_t address) const
     {
         const char *source = source_name(address);
@@ -103,26 +150,10 @@ public:
         return source && source[0] == 'I' && source[1] == 'O' && source[2] == 0;
     }
 
-    // Whether the Assembly view should show this address as data rather than
-    // decode it. Two sources qualify, for two unrelated reasons:
-    //
-    //   I/O   is volatile. See reads_live_io above: the bytes change between
-    //         reads, so the decoded instruction length changes with them and
-    //         every row below re-aligns while the user is only scrolling.
-    //
-    //   CHAR  is stable and has none of that problem. It is excluded because
-    //         it is character bitmap data and never was code, so decoding it
-    //         produces instructions that are meaningless whatever they say.
-    //
-    // Deliberately separate from reads_live_io rather than folded into it.
-    // That predicate answers what the address *reads*, character ROM is not
-    // I/O, and a test asserts it says so. This one answers how the view should
-    // *draw* the address, which is a different question with a different
-    // answer for CHAR.
-    //
-    // RAM at these addresses is unaffected and still disassembles, which is
-    // what makes the $D000-$DFFF rule about the banked source rather than
-    // about the address range.
+    // Whether to show this address as data instead of decoding it: true for
+    // volatile I/O (reads_live_io; a shifting instruction length would
+    // misalign every row below on scroll) and for CHAR (bitmap, never code).
+    // RAM at the same addresses is unaffected: this is about banked source.
     virtual bool shows_as_data(uint16_t address) const
     {
         const char *source = source_name(address);
