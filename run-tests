@@ -527,7 +527,7 @@ SUITES: Sequence[Suite] = (
     # volatile store: 128 banks of 8K at $DE00, and a 256 byte window at $DF00
     # onto 128K of battery-backed SRAM or an 8K/32K EEPROM, with $DE01 choosing
     # the page and $DE03 choosing the area. Murder on the Mississippi Remastered
-    # needs it. The suite builds a 128-bank type 19 CRT in code, with its store
+    # needs it. The suite builds a 128-bank type 87 CRT in code, with its store
     # in chunks at $DF00, and reads back which bank every selection reached and
     # which page of which area the window served, including with the ROM
     # switched off. The mapper is cartridge logic in the FPGA image rather than
