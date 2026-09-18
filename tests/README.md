@@ -296,6 +296,7 @@ e2e:
   key-injection                     .      .      x      x      x
   lint                              x      x      x      x      x
   machine-code-monitor              .      .      .      x      x
+  magicdesk-plus-cartridge          .      .      x      x      x
   menu-screen                       x      x      x      x      x
   micromys-wheel                    .      .      .      x      x
   navigation-keys                   x      x      x      x      x
@@ -350,8 +351,8 @@ soak:
   usb-keyboard-repeat               .      .      .      x      x
 
                                ------ ------ ------ ------ ------
-  suites                           14     29     63     77     77
-  suite runs                       14     29     63    154    231
+  suites                           14     29     64     78     78
+  suite runs                       14     29     64    156    234
 
 Scenario and check counts, and durations, are not shown here:
 the registry does not know them. They depend on the machine and are
