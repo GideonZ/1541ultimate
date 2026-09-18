@@ -518,7 +518,14 @@ void C1541 :: map_gcr_image_to_mfm(void)
             if (!gcr || !mtr) {
                 continue;
             }
-            mtr->reservedSpace = gtr->track_length - MFM_TRACK_HEADER_SIZE;
+            // A track shorter than the metadata area cannot carry one, whatever
+            // its marker says, and there is no space behind an area that does
+            // not fit. Leave the entry as init() zeroed it: no sectors, no
+            // reserved space, so UpdateTrack() admits no write for this track.
+            if (!gcr_track_can_hold_mfm_header(gtr->track_length, MFM_TRACK_HEADER_SIZE)) {
+                continue;
+            }
+            mtr->reservedSpace = gcr_mfm_reserved_space(gtr->track_length, MFM_TRACK_HEADER_SIZE);
             mtr->offsetInFile = (int)gcr - (int)gcr_image->gcr_data;
             mtr->offsetInFile += MFM_TRACK_HEADER_SIZE;
 

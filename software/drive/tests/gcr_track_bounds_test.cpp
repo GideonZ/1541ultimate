@@ -12,6 +12,10 @@
 // And what checking the buffer alone still let through, found in review of the
 // first fix: a truncated file whose track header arrived but whose track data
 // did not -> TruncatedImage.
+//
+// And what checking the declared extent still let through, found in review of
+// the second fix: a track short enough that the MFM mapping's own, larger
+// assumption about it does not hold -> MfmHeader.
 
 #include "../../io/usb/tests/host_test/host_test.h"
 #include "../gcr_track_bounds.h"
@@ -23,6 +27,7 @@ const uint32_t kMaxSize      = (0x1EF8 * 80) + (12 + (168 * 10));  // GCRIMAGE_M
 const int      kMaxTrackLen  = 0x1EF8;                             // GCRIMAGE_MAXTRACKLEN
 const int      kDummyLen     = 0x1E0C;                             // GCRIMAGE_DUMMYTRACKLEN
 const uint32_t kRotationSpeed = 50000000 / 20;                     // CLOCK_FREQ / 20 on the U64
+const int      kMfmHeaderSize = 2 + (32 * 5);                      // MFM_TRACK_HEADER_SIZE
 
 } // namespace
 
@@ -228,4 +233,71 @@ TEST(TrackParameters, TreatsANegativeLengthAsAbsent)
     gcr_track_parameters(0x00800000, -1, 0x00900000, kDummyLen, kRotationSpeed,
                          &address, &param);
     EXPECT_EQ(address, 0x00900000u);
+}
+
+// --------------------------------------------------------- the MFM header --
+//
+// Reported by @chrisgleissner against the second version of this fix. The
+// length check above proves that the bytes a track declares were delivered.
+// map_gcr_image_to_mfm() then makes a second and larger assumption about the
+// same track: that it is long enough to carry the MFM metadata area, which it
+// reads whole and reserves the remainder behind.
+
+TEST(MfmHeader, RejectsATrackTooShortToCarryTheMetadata)
+{
+    EXPECT_FALSE(gcr_track_can_hold_mfm_header(1, kMfmHeaderSize));
+    EXPECT_FALSE(gcr_track_can_hold_mfm_header(kMfmHeaderSize - 1, kMfmHeaderSize));
+}
+
+TEST(MfmHeader, AcceptsATrackExactlyAsLongAsTheMetadata)
+{
+    EXPECT_TRUE(gcr_track_can_hold_mfm_header(kMfmHeaderSize, kMfmHeaderSize));
+    EXPECT_EQ(gcr_mfm_reserved_space(kMfmHeaderSize, kMfmHeaderSize), 0u);
+}
+
+TEST(MfmHeader, ReservesWhatLiesBehindTheMetadata)
+{
+    EXPECT_EQ(gcr_mfm_reserved_space(0x1E0C, kMfmHeaderSize), (uint32_t)(0x1E0C - 162));
+    EXPECT_EQ(gcr_mfm_reserved_space(1000, kMfmHeaderSize), 838u);
+}
+
+TEST(MfmHeader, NeverUnderflowsTheReservedSpace)
+{
+    // The field is a uint32_t and gates every track write. A short track used
+    // to reach it as a subtraction, so "1 - 162" became 4294967135 and
+    // UpdateTrack() admitted a write of any size at all.
+    EXPECT_EQ(gcr_mfm_reserved_space(1, kMfmHeaderSize), 0u);
+    EXPECT_EQ(gcr_mfm_reserved_space(0, kMfmHeaderSize), 0u);
+    EXPECT_EQ(gcr_mfm_reserved_space(-1, kMfmHeaderSize), 0u);
+    for (int len = -4; len < kMfmHeaderSize; len++) {
+        EXPECT_EQ(gcr_mfm_reserved_space(len, kMfmHeaderSize), 0u);
+    }
+}
+
+TEST(MfmHeader, TheReportedEndOfBufferCase)
+{
+    // @chrisgleissner's file, exactly: GCRIMAGE_MAXSIZE bytes long, track 0
+    // pointing at GCRIMAGE_MAXSIZE - 3, declaring 0x8001 -- one byte of track,
+    // marked MFM -- with a sector count of 32 in the final byte of the file.
+    const uint32_t offset = kMaxSize - 3;
+    const uint16_t declared = 0x8001;
+
+    // The header is readable and the one declared byte really was delivered,
+    // so the length check passes it. That is correct and not the bug.
+    EXPECT_TRUE(gcr_track_header_is_readable(offset, kMaxSize));
+    EXPECT_EQ(gcr_validated_track_length(declared, offset, kMaxSize, kMaxTrackLen), 1);
+
+    // The mapping is where it has to stop. Believing the marker would read the
+    // full 162-byte metadata area from a track holding one byte at the very end
+    // of the buffer, so the sector loop runs past the allocation.
+    const int length = gcr_validated_track_length(declared, offset, kMaxSize, kMaxTrackLen);
+    EXPECT_FALSE(gcr_track_can_hold_mfm_header(length, kMfmHeaderSize));
+    EXPECT_EQ(gcr_mfm_reserved_space(length, kMfmHeaderSize), 0u);
+}
+
+TEST(MfmHeader, TreatsAnAbsurdHeaderSizeAsNoHeader)
+{
+    EXPECT_FALSE(gcr_track_can_hold_mfm_header(0x1E0C, 0));
+    EXPECT_FALSE(gcr_track_can_hold_mfm_header(0x1E0C, -162));
+    EXPECT_EQ(gcr_mfm_reserved_space(0x1E0C, 0), 0u);
 }

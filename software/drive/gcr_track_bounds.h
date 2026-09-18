@@ -68,6 +68,41 @@ static inline int gcr_validated_track_length(uint16_t declared, uint32_t offset,
     return length;
 }
 
+/* An MFM track carries a metadata area at its front: a sector count, a version
+ * byte, and five bytes for each of up to WD_MAX_SECTORS_PER_TRACK sectors.
+ * map_gcr_image_to_mfm() reads that area whole for a track marked MFM, and
+ * reserves what lies behind it for sector data. Neither exists unless the
+ * track is at least as long as the area itself.
+ *
+ * Length and MFM marker share one word in a G64, so 0x8001 -- a one-byte track
+ * marked MFM -- is a legal thing to put in an image. The declared extent then
+ * checks out: one byte was delivered. The mapping used to believe the marker
+ * anyway, read the full metadata area from that one byte, and take the space
+ * behind it as a subtraction in an unsigned field, where it cannot come out
+ * negative.
+ *
+ *   track_length  the validated length of the track
+ *   header_size   bytes of metadata at the front of an MFM track
+ */
+static inline bool gcr_track_can_hold_mfm_header(int track_length, int header_size)
+{
+    if (header_size <= 0 || track_length <= 0) {
+        return false;
+    }
+    return track_length >= header_size;
+}
+
+/* Bytes behind the metadata area, or 0 for a track with no room for one. The
+ * caller keeps this in an unsigned field that gates every track write, so it
+ * must never be reached by underflow. */
+static inline uint32_t gcr_mfm_reserved_space(int track_length, int header_size)
+{
+    if (!gcr_track_can_hold_mfm_header(track_length, header_size)) {
+        return 0;
+    }
+    return (uint32_t)(track_length - header_size);
+}
+
 /* Builds one entry of the drive's track parameter RAM: the address the engine
  * works at, and a word carrying the last valid offset in the low half and the
  * bit time in the high half.
