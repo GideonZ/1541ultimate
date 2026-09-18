@@ -1412,6 +1412,25 @@ bus also delivered the CVT stream, which puts a header block in front of the fil
 than the file itself, and an open of a VLIR file answered nothing at all and logged a
 channel fault.
 
+**The read is a regression introduced in 3.15, the listed type is not.** The two halves
+have different histories, and the reporter raised the first of them on 917.
+
+* The read worked in 3.14 and 3.14d. `FA_OPEN_FROM_CBM` was added in November 2020 by
+  commit `8ee46e83`, "Opening from IEC should not do CVT conversion. Fixed.", which both
+  defined the flag and passed it from `IecChannel::open_file()`. The call
+  `fm->fopen(partition->GetPath(), fs_filename, flags | FA_OPEN_FROM_CBM, &f)` is present
+  at tag `v3.14` and at tag `v3.14d`. Commit `76d887bd`, "Pulled in the iec_compatibility
+  branch" of 23 June 2026, rewrote that open and dropped the argument. `76d887bd` is an
+  ancestor of `v3.15` and is not an ancestor of `v3.14d`, so every release from 3.15 on
+  hands out the CVT container where 3.14d handed out the file. The flag itself was left in
+  `fs_errors_flags.h` and still tested by `FileInCBM::open()`, with no caller anywhere in
+  the tree.
+* The listed type has never matched a CBM drive. At 3.14d `CreateIecName()` copied the
+  extension straight into the three type characters for a name that is already in CBM
+  form, so a GEOS file listed as `CVT`, which is not a CBM file type at all. 3.15 lists it
+  as `SEQ`. Neither is what the entry's type bits say, so this half is a defect of long
+  standing whose symptom changed in 3.15, not a regression.
+
 **Implemented (PR #881).** Both halves changed together, because either one alone is worse
 than the previous state: the type alone would offer a `LOAD` a stream it cannot run, and
 the stream alone would leave the type contradicting the disk.
@@ -1438,6 +1457,23 @@ hands out the same 4,335 bytes. That file has a load address of `$0801` and a `1
 line, so it loads and runs from BASIC. It is the only one of the 355 GEOS entries on the
 twenty GEOS disks that were scanned for which that is true, so the change is a correctness
 fix first and an enabling one only incidentally.
+
+Measured on an Ultimate 64 Elite, with `deskpack-plus-b.d64` mounted as the Software IEC
+partition and the same BASIC program run from the C64 on each firmware. The program sends
+`CD:DESKPACK.D64`, prints the printable bytes of `$:DISK COPY`, then prints the first eight
+bytes an open of `DISK COPY` returns.
+
+| Firmware | Listed type | First eight bytes |
+| --- | --- | --- |
+| 3.14d (`40a41caa`), FPGA 122, core 1.49 | `CVT` | `1 8 13 8 10 0 158 40` |
+| 3.15 as this PR found it (`bc3f2dc4`), FPGA 125, core 1.50 | `SEQ` | `130 0 0 68 73 83 75 32` |
+| This change (`79a53425`), FPGA 125, core 1.50 | `PRG` | `1 8 13 8 10 0 158 40` |
+
+`1 8 13 8 10 0 158 40` is `$01 $08 $0D $08 $0A $00 $9E $28`, the load address and first
+BASIC line of the file, and is what `c1541` extracts. `130 0 0 68 73 83 75 32` is
+`$82 $00 $00` followed by `DISK `, which is the CVT header's copy of the directory entry:
+its first two bytes are read as a load address of `$0082`. Each firmware was run from its
+own matching bitstream over JTAG, so 3.14d ran on the FPGA core it shipped with.
 
 GEOS itself still cannot start from this drive, because the GEOS speeder is not
 implemented; that is out of scope here and belongs in its own issue.

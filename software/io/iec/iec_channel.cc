@@ -1461,6 +1461,9 @@ int IecChannel :: setup_file_access()
         }
         break;
     default:
+        // FA_OPEN_FROM_CBM keeps FileInCBM::open() from wrapping a GEOS file in a CVT
+        // header, which belongs to the file browser and not to the bus (SI-149). 3.14d
+        // passed it here; commit 76d887bd rewrote this open and dropped it.
         flags = FA_READ | FA_OPEN_FROM_CBM;
     }
     if (name_to_open.filetype == e_rel) {

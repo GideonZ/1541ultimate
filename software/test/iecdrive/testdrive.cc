@@ -2925,6 +2925,11 @@ static void s11_si139_stamped_entries(FileManager *fm, IecDrive *dr)
 // partition listed every file as SEQ. The extension the image file system gives a GEOS
 // entry is CVT, which the IEC name builder did not recognise, so the type fell back to
 // SEQ; the open then took the branch that puts a header block in front of the data.
+//
+// The read half of this case is a regression guard. 3.14 and 3.14d passed
+// FA_OPEN_FROM_CBM from the IEC open and received the file; commit 76d887bd rewrote that
+// open and dropped the argument, so 3.15 received the CVT container. Anyone rewriting
+// setup_file_access() again fails here rather than shipping the same loss twice.
 static void s11_si149_geos_entries(FileManager *fm, IecDrive *dr)
 {
     const char *testname = "Suite11-SI149-GeosEntries";
