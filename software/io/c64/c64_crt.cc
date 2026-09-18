@@ -253,11 +253,6 @@ SubsysResultCode_e C64_CRT::read_chip_packet(File *f, t_crt_chip_chunk *chunk)
     uint16_t size = get_word(chip_header + CRTCHP_SIZE);
     uint16_t type = get_word(chip_header + CRTCHP_TYPE);
 
-    // Detect C128 mode carts
-    if ((load == 0xC000) || (size == 0x8000)) {
-        bank_multiplier = 32 * 1024;
-    }
-
     // Detect E2PROM
     if (load == 0xDE00) {
         printf("Reading EEPROM data, size $%4x.\n", size);
@@ -343,6 +338,14 @@ SubsysResultCode_e C64_CRT::read_chip_packet(File *f, t_crt_chip_chunk *chunk)
             return SSRET_FILE_READ_FAILED;
         }
         return SSRET_OK;
+    }
+
+    // Detect C128 mode carts. This asks the ROM chunks only, which is why it
+    // comes after the two stores above: a Magic Desk Plus SRAM chunk is $8000
+    // bytes as well, and read first it would turn every ROM bank into a 32K
+    // one.
+    if ((load == 0xC000) || (size == 0x8000)) {
+        bank_multiplier = 32 * 1024;
     }
 
     if (load == 0xA000) {

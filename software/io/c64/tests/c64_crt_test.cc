@@ -13,6 +13,7 @@
 uint8_t _eapi_65_start[768];
 uint32_t host_fpga_capabilities = CAPAB_EEPROM;
 uint32_t host_cart_max_rom = 0;
+uint8_t host_reu_memory[256 * 1024];
 
 static const uint32_t K = 1024;
 static const uint32_t MB = 1024 * K;
@@ -353,6 +354,170 @@ static void test_mirroring(void)
     CHECK(all_ff(r.at(3 * 32 * K), 4 * MB - 3 * 32 * K), "C128: memory after the image is not $FF");
 }
 
+// Magic Desk Plus (GideonZ/1541ultimate#727) is CRT hardware type 19 like a
+// plain Magic Desk, and nothing in the header tells the two apart: the store is
+// the only thing that can. It travels in CHIP chunks at $DF00, the address of
+// the window the machine reaches it through, and the bank field says which
+// piece a chunk is, because the size field cannot — it is 16 bits, so the 128K
+// of SRAM does not fit in one chunk. Bank 0 is the EEPROM, banks 1 to 4 the
+// SRAM in address order. Both land in the memory the REU uses, which is why
+// this cart prohibits the REU.
+static Crt mdplus(int rom_banks, uint16_t eeprom, int sram_chunks)
+{
+    Crt crt(19);
+    crt.banks(rom_banks, 0x8000, 0x2000);
+    if (eeprom) {
+        crt.chip(MDPLUS_BANK_EEPROM, 0xDF00, eeprom);
+    }
+    for (int i = 1; i <= sram_chunks; i++) {
+        crt.chip(uint16_t(i), 0xDF00, MDPLUS_SRAM_CHUNK);
+    }
+    return crt;
+}
+
+static uint32_t store_offset(const Chip &c)
+{
+    return (c.bank == MDPLUS_BANK_EEPROM)
+        ? 0
+        : MDPLUS_SRAM_OFFSET + (c.bank - 1) * MDPLUS_SRAM_CHUNK;
+}
+
+// Fill the store with a byte the file never brings, so a chunk the loader did
+// not place is visible as what the last cartridge left behind.
+static Loaded load_with_store(const Crt &crt, uint32_t max_rom = 4 * MB)
+{
+    memset(host_reu_memory, 0x5A, sizeof(host_reu_memory));
+    return load(crt, max_rom);
+}
+
+static void check_store(const char *what, const Crt &crt)
+{
+    for (const Chip &c : crt.chips) {
+        if (c.load != 0xDF00) {
+            continue;
+        }
+        uint32_t offset = store_offset(c);
+        CHECK(!memcmp(host_reu_memory + offset, c.data.data(), c.data.size()),
+              "%s: the store chunk of bank %d is not at offset $%05X", what, c.bank, offset);
+    }
+}
+
+static void test_magic_desk_plus(void)
+{
+    // Without a store it stays a plain Magic Desk.
+    Loaded r = load_with_store(mdplus(16, 0, 0));
+    CHECK(r.rc == SSRET_OK && r.type == CART_TYPE_DOMARK && r.prohibit == CART_PROHIBIT_DEXX,
+          "Magic Desk without a store: type $%02X and prohibit $%03X, want $%02X and $%03X",
+          r.type, r.prohibit, CART_TYPE_DOMARK, CART_PROHIBIT_DEXX);
+
+    // The EEPROM image size chooses the page mask and so chooses the variant,
+    // exactly as it does in VICE: 8K masks the page register to $1F, 32K to
+    // $7F. A cart that brought only SRAM gets the 8K mask.
+    struct Row { const char *what; uint16_t eeprom; int sram; uint16_t type; };
+    const Row rows[] = {
+        { "Magic Desk Plus, SRAM only",   0,                 MDPLUS_SRAM_CHUNKS, CART_TYPE_MDPLUS },
+        { "Magic Desk Plus, 8K EEPROM",   MDPLUS_EEPROM_8K,  MDPLUS_SRAM_CHUNKS, CART_TYPE_MDPLUS },
+        { "Magic Desk Plus, 32K EEPROM",  MDPLUS_EEPROM_32K, MDPLUS_SRAM_CHUNKS, CART_TYPE_MDPLUS | VARIANT_1 },
+        { "Magic Desk Plus, EEPROM only", MDPLUS_EEPROM_32K, 0,                  CART_TYPE_MDPLUS | VARIANT_1 },
+    };
+    for (const Row &row : rows) {
+        Crt crt = mdplus(16, row.eeprom, row.sram);
+        r = load_with_store(crt);
+        CHECK(r.rc == SSRET_OK, "%s: load returned %d", row.what, r.rc);
+        CHECK(r.type == row.type, "%s: cartridge type $%02X, want $%02X", row.what, r.type, row.type);
+        // The window is all of $DF00..$DFFF and the registers sit at $DE00 to
+        // $DE03, so nothing else may have either I/O page: not the UCI at
+        // $DF1C, not the sampler, not an ACIA, and not the REU whose memory
+        // this cart borrows.
+        CHECK(r.prohibit == CART_PROHIBIT_IO, "%s: prohibit $%03X, want $%03X",
+              row.what, r.prohibit, CART_PROHIBIT_IO);
+        CHECK(r.guard_intact, "%s: wrote past the cartridge region", row.what);
+        check_store(row.what, crt);
+    }
+
+    // What the file does not bring reads as an erased device rather than as
+    // whatever the cartridge before it left in the REU.
+    Crt partial = mdplus(16, MDPLUS_EEPROM_8K, 1);
+    r = load_with_store(partial);
+    CHECK(all_ff(host_reu_memory + MDPLUS_EEPROM_8K, MDPLUS_EEPROM_32K - MDPLUS_EEPROM_8K),
+          "an 8K EEPROM leaves the rest of the EEPROM area unerased");
+    CHECK(all_ff(host_reu_memory + MDPLUS_SRAM_OFFSET + MDPLUS_SRAM_CHUNK,
+                 MDPLUS_SRAM_CHUNK * (MDPLUS_SRAM_CHUNKS - 1)),
+          "one SRAM chunk leaves the other three unerased");
+
+    // The ROM half is a Magic Desk with one more bank bit: 128 banks of 8K,
+    // and the cartridge logic reads bank N at N * 16K, as it does for every 8K
+    // banker. That holds whatever order the chunks arrive in — and a store
+    // chunk is $8000 bytes, which is also how the loader recognises a C128
+    // image.
+    for (int store_first = 0; store_first < 2; store_first++) {
+        Crt crt(19);
+        if (!store_first) {
+            crt.banks(128, 0x8000, 0x2000);
+        }
+        for (int i = 1; i <= MDPLUS_SRAM_CHUNKS; i++) {
+            crt.chip(uint16_t(i), 0xDF00, MDPLUS_SRAM_CHUNK);
+        }
+        if (store_first) {
+            crt.banks(128, 0x8000, 0x2000);
+        }
+        const char *what = store_first ? "Magic Desk Plus with its store before the ROM"
+                                       : "Magic Desk Plus with its store after the ROM";
+        r = load_with_store(crt);
+        CHECK(r.rc == SSRET_OK, "%s: load returned %d", what, r.rc);
+        int wrong = 0;
+        uint16_t first_wrong = 0;
+        for (const Chip &c : crt.chips) {
+            if (c.load != 0x8000) {
+                continue;
+            }
+            if (memcmp(r.at(c.bank * 16 * K), c.data.data(), c.data.size()) && !wrong++) {
+                first_wrong = c.bank;
+            }
+        }
+        CHECK(!wrong, "%s: %d of 128 ROM banks are not at bank * 16K, first bank %d",
+              what, wrong, first_wrong);
+        check_store(what, crt);
+    }
+
+    // Sizes and bank numbers the store cannot have. VICE accepts an EEPROM
+    // image only at 8K or 32K, and there are four SRAM chunks, never five.
+    r = load_with_store(mdplus(16, 0x1000, 0));
+    CHECK(r.rc == SSRET_ERROR_IN_FILE_FORMAT,
+          "a 4K EEPROM chunk: load returned %d, want format error", r.rc);
+    r = load_with_store(mdplus(16, 0x4000, 0));
+    CHECK(r.rc == SSRET_ERROR_IN_FILE_FORMAT,
+          "a 16K EEPROM chunk: load returned %d, want format error", r.rc);
+
+    Crt short_sram(19);
+    short_sram.banks(16, 0x8000, 0x2000).chip(1, 0xDF00, 0x4000);
+    r = load_with_store(short_sram);
+    CHECK(r.rc == SSRET_ERROR_IN_FILE_FORMAT,
+          "a 16K SRAM chunk: load returned %d, want format error", r.rc);
+
+    Crt fifth(19);
+    fifth.banks(16, 0x8000, 0x2000).chip(MDPLUS_SRAM_CHUNKS + 1, 0xDF00, MDPLUS_SRAM_CHUNK);
+    r = load_with_store(fifth);
+    CHECK(r.rc == SSRET_ERROR_IN_FILE_FORMAT,
+          "a fifth SRAM chunk: load returned %d, want format error", r.rc);
+
+    Crt twice_eeprom(19);
+    twice_eeprom.banks(16, 0x8000, 0x2000)
+        .chip(MDPLUS_BANK_EEPROM, 0xDF00, MDPLUS_EEPROM_8K)
+        .chip(MDPLUS_BANK_EEPROM, 0xDF00, MDPLUS_EEPROM_8K);
+    r = load_with_store(twice_eeprom);
+    CHECK(r.rc == SSRET_EEPROM_ALREADY_DEFINED,
+          "two EEPROM chunks: load returned %d, want already defined", r.rc);
+
+    Crt twice_sram(19);
+    twice_sram.banks(16, 0x8000, 0x2000)
+        .chip(2, 0xDF00, MDPLUS_SRAM_CHUNK)
+        .chip(2, 0xDF00, MDPLUS_SRAM_CHUNK);
+    r = load_with_store(twice_sram);
+    CHECK(r.rc == SSRET_EEPROM_ALREADY_DEFINED,
+          "the same SRAM chunk twice: load returned %d, want already defined", r.rc);
+}
+
 int main()
 {
     test_cartridge_types();
@@ -360,6 +525,7 @@ int main()
     test_packets();
     test_chip_placement();
     test_mirroring();
+    test_magic_desk_plus();
     fprintf(stderr, "c64_crt_test: %s (%d checks, %d failed)\n", failures ? "FAIL" : "OK", checks, failures);
     return failures ? 1 : 0;
 }
