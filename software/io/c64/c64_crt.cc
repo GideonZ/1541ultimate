@@ -217,6 +217,15 @@ SubsysResultCode_e C64_CRT::check_header(File *f, cart_def *def)
                 printf("%s - Not implemented\n", cart_list->cart_name);
                 return SSRET_NOT_IMPLEMENTED;
             }
+            if (local_type == CART_MDPLUS) {
+                // The revision byte is what says which parts this cart has, so
+                // one the format does not define leaves nothing to fit.
+                if (crt_header[CRTHDR_SUBTYPE] > MDPLUS_REV_MAX) {
+                    printf("Magic Desk Plus revision %d; it must be 0 to %d.\n",
+                           crt_header[CRTHDR_SUBTYPE], MDPLUS_REV_MAX);
+                    return SSRET_ERROR_IN_FILE_FORMAT;
+                }
+            }
             if (local_type == CART_GMOD2) {
                 if (!(getFpgaCapabilities() & CAPAB_EEPROM)) {
                     printf("GMOD2 EEPROM Not implemented.\n", cart_list->cart_name);
@@ -596,12 +605,19 @@ void C64_CRT::configure_cart(cart_def *def)
             // register at DE03 and a 256 byte window at DF00. The window lives
             // in the memory the REU uses, so the two cannot both be on.
             //
-            // The EEPROM image size chooses the page mask, exactly as it does
-            // in VICE: 8K masks the page register to 0x1F, 32K to 0x7F. A cart
-            // that brought only SRAM gets the 8K mask, which is what VICE also
-            // creates when it has to make an EEPROM image from nothing.
+            // The header's revision byte says which parts are fitted, and with
+            // them the page mask: a 32K EEPROM has 128 pages and masks the page
+            // register to 0x7F, an 8K one has 32 and masks it to 0x1F. Reading
+            // it from the EEPROM chunk instead would get a released image wrong,
+            // because a released image carries no store and still has both parts
+            // -- Murder on the Mississippi Remastered is revision 0, 32 ROM
+            // banks and nothing else, with its store in files beside the image.
+            //
+            // A revision that fits no EEPROM leaves the mask with nothing to
+            // choose, so it takes the 0x1F one and never uses it.
             cart_type = CART_TYPE_MDPLUS;
-            if (mdp_eeprom_size == MDPLUS_EEPROM_32K) {
+            if ((crt_header[CRTHDR_SUBTYPE] == MDPLUS_REV_SRAM_EEPROM_32K) ||
+                (crt_header[CRTHDR_SUBTYPE] == MDPLUS_REV_EEPROM_32K)) {
                 cart_type |= VARIANT_1;
             }
             // The window is the whole of DF00..DFFF and the registers sit at

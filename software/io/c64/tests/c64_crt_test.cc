@@ -369,9 +369,11 @@ static void test_mirroring(void)
 // of SRAM does not fit in one chunk. Bank 0 is the EEPROM, banks 1 to 4 the
 // SRAM in address order. Both land in the memory the REU uses, which is why
 // this cart prohibits the REU. A released image need not carry a store at all.
-static Crt mdplus(int rom_banks, uint16_t eeprom, int sram_chunks)
+static Crt mdplus(int rom_banks, uint16_t eeprom, int sram_chunks,
+                  uint8_t revision = MDPLUS_REV_SRAM_EEPROM_32K)
 {
     Crt crt(87);
+    crt.header(0, 1, revision);
     crt.banks(rom_banks, 0x8000, 0x2000);
     if (eeprom) {
         crt.chip(MDPLUS_BANK_EEPROM, 0xDF00, eeprom);
@@ -422,25 +424,39 @@ static void test_magic_desk_plus(void)
     // a Magic Desk Plus, and what the file does not bring has to read as an
     // erased device rather than as what the last cartridge left in the REU.
     r = load_with_store(mdplus(32, 0, 0));
-    CHECK(r.rc == SSRET_OK && r.type == CART_TYPE_MDPLUS,
-          "Magic Desk Plus without a store: type $%02X, want $%02X", r.type, CART_TYPE_MDPLUS);
+    CHECK(r.rc == SSRET_OK && r.type == (CART_TYPE_MDPLUS | VARIANT_1),
+          "Magic Desk Plus without a store: type $%02X, want $%02X",
+          r.type, CART_TYPE_MDPLUS | VARIANT_1);
     CHECK(all_ff(host_reu_memory, MDPLUS_EEPROM_32K),
           "a Magic Desk Plus without an EEPROM image does not find it erased");
     CHECK(all_ff(host_reu_memory + MDPLUS_SRAM_OFFSET, MDPLUS_SRAM_CHUNK * MDPLUS_SRAM_CHUNKS),
           "a Magic Desk Plus without an SRAM image does not find it erased");
 
-    // The EEPROM image size chooses the page mask and so chooses the variant,
-    // exactly as it does in VICE: 8K masks the page register to $1F, 32K to
-    // $7F. A cart that brought only SRAM gets the 8K mask.
-    struct Row { const char *what; uint16_t eeprom; int sram; uint16_t type; };
+    // The revision byte chooses the page mask, and so chooses the variant: a
+    // 32K EEPROM has 128 pages and masks the page register to $7F, an 8K one
+    // has 32 and masks it to $1F. What the file carries does not come into it,
+    // which is the whole point -- a released image carries no store at all.
+    // VICE r46239 settled the numbering: its emulator was right and its
+    // cartconv and manual were not.
+    struct Row { const char *what; uint8_t rev; uint16_t eeprom; int sram; uint16_t type; };
     const Row rows[] = {
-        { "Magic Desk Plus, SRAM only",   0,                 MDPLUS_SRAM_CHUNKS, CART_TYPE_MDPLUS },
-        { "Magic Desk Plus, 8K EEPROM",   MDPLUS_EEPROM_8K,  MDPLUS_SRAM_CHUNKS, CART_TYPE_MDPLUS },
-        { "Magic Desk Plus, 32K EEPROM",  MDPLUS_EEPROM_32K, MDPLUS_SRAM_CHUNKS, CART_TYPE_MDPLUS | VARIANT_1 },
-        { "Magic Desk Plus, EEPROM only", MDPLUS_EEPROM_32K, 0,                  CART_TYPE_MDPLUS | VARIANT_1 },
+        { "Magic Desk Plus rev 0, SRAM and 32K EEPROM", MDPLUS_REV_SRAM_EEPROM_32K,
+          MDPLUS_EEPROM_32K, MDPLUS_SRAM_CHUNKS, CART_TYPE_MDPLUS | VARIANT_1 },
+        { "Magic Desk Plus rev 1, SRAM and 8K EEPROM",  MDPLUS_REV_SRAM_EEPROM_8K,
+          MDPLUS_EEPROM_8K,  MDPLUS_SRAM_CHUNKS, CART_TYPE_MDPLUS },
+        { "Magic Desk Plus rev 2, 32K EEPROM only",     MDPLUS_REV_EEPROM_32K,
+          MDPLUS_EEPROM_32K, 0,                  CART_TYPE_MDPLUS | VARIANT_1 },
+        { "Magic Desk Plus rev 3, 8K EEPROM only",      MDPLUS_REV_EEPROM_8K,
+          MDPLUS_EEPROM_8K,  0,                  CART_TYPE_MDPLUS },
+        { "Magic Desk Plus rev 4, SRAM only",           MDPLUS_REV_SRAM,
+          0,                 MDPLUS_SRAM_CHUNKS, CART_TYPE_MDPLUS },
+        // The revision decides even when the file carries the other size, so a
+        // mismatch cannot quietly move the mask.
+        { "Magic Desk Plus rev 1 carrying a 32K chunk", MDPLUS_REV_SRAM_EEPROM_8K,
+          MDPLUS_EEPROM_32K, MDPLUS_SRAM_CHUNKS, CART_TYPE_MDPLUS },
     };
     for (const Row &row : rows) {
-        Crt crt = mdplus(16, row.eeprom, row.sram);
+        Crt crt = mdplus(16, row.eeprom, row.sram, row.rev);
         r = load_with_store(crt);
         CHECK(r.rc == SSRET_OK, "%s: load returned %d", row.what, r.rc);
         CHECK(r.type == row.type, "%s: cartridge type $%02X, want $%02X", row.what, r.type, row.type);
@@ -528,6 +544,13 @@ static void test_magic_desk_plus(void)
     CHECK(r.rc == SSRET_EEPROM_ALREADY_DEFINED,
           "two EEPROM chunks: load returned %d, want already defined", r.rc);
 
+    // A revision the format does not define leaves nothing to fit.
+    Crt bad_rev = mdplus(16, 0, MDPLUS_SRAM_CHUNKS, MDPLUS_REV_MAX + 1);
+    r = load_with_store(bad_rev);
+    CHECK(r.rc == SSRET_ERROR_IN_FILE_FORMAT,
+          "Magic Desk Plus revision %d: load returned %d, want format error",
+          MDPLUS_REV_MAX + 1, r.rc);
+
     Crt twice_sram(87);
     twice_sram.banks(16, 0x8000, 0x2000)
         .chip(2, 0xDF00, MDPLUS_SRAM_CHUNK)
@@ -577,12 +600,13 @@ static void test_magic_desk_plus_real_image(void)
         Loaded r = load_with_store(crt, max_rom);
         CHECK(r.rc == SSRET_OK, "mdplustest.crt in %dK: load returned %d", max_rom / K, r.rc);
 
-        // No EEPROM chunk, so the page register is masked to $1F, as VICE masks
-        // it when it has to make an EEPROM image from nothing. VARIANT_1 would
-        // say $7F and would be the 32K device this file does not carry.
-        CHECK(r.type == CART_TYPE_MDPLUS,
-              "mdplustest.crt in %dK: cartridge type $%02X, want $%02X (the 8K EEPROM mask)",
-              max_rom / K, r.type, CART_TYPE_MDPLUS);
+        // Header byte $1A is 0, which fits a 32K EEPROM, so the page register
+        // masks to $7F. The file carries no EEPROM chunk at all: reading the
+        // size from the chunk rather than the header is exactly what would get
+        // this image wrong, and did until VICE r46239 settled the numbering.
+        CHECK(r.type == (CART_TYPE_MDPLUS | VARIANT_1),
+              "mdplustest.crt in %dK: cartridge type $%02X, want $%02X (revision 0, the 32K EEPROM mask)",
+              max_rom / K, r.type, CART_TYPE_MDPLUS | VARIANT_1);
         CHECK(r.prohibit == CART_PROHIBIT_IO,
               "mdplustest.crt in %dK: prohibit $%03X, want $%03X",
               max_rom / K, r.prohibit, CART_PROHIBIT_IO);
