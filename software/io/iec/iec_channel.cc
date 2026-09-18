@@ -1023,6 +1023,18 @@ static const char *cbm_partition_type_name(cbm_partition_type_t type)
     }
 }
 
+// A time stamped directory line has a fixed length: CMD DOS fills the space behind the
+// stamp with 0x01 and ends the BASIC line with a zero (SI-139). `used` is the first byte
+// behind the stamp and `length` the length the line must have. Returns that length.
+static int pad_stamped_entry(uint8_t *buffer, int used, int length)
+{
+    while (used < (length - 1)) {
+        buffer[used++] = 1;
+    }
+    buffer[length - 1] = 0;
+    return length;
+}
+
 int IecChannel::read_dir_entry(void)
 {
     FileInfo info(INFO_SIZE); // the whole host name, which an x00 file is probed by
@@ -1076,7 +1088,7 @@ int IecChannel::read_dir_entry(void)
             buffer[0] = 0;
             buffer[1] = 0;
             last_byte = 1;
-            prefetch_max = 1;
+            prefetch_max = 2; // the count of valid bytes, so that pop_data() reaches last_byte
             state = e_dir; // with no directory open, the next call returns -1
             if (drive->log_every_operation()) {
                 log_line("listing end", buffer, 2, NULL, NULL, 0);
@@ -1096,7 +1108,7 @@ int IecChannel::read_dir_entry(void)
         memcpy(&buffer[4], "BLOCKS FREE.             \0\0\0", 28);
         last_byte = 31;
         pointer = 0;
-        prefetch_max = 31;
+        prefetch_max = 32; // the count of valid bytes, so that pop_data() reaches last_byte
         prefetch = 0;
         state = e_dir; // This causes a -1 to be returned next time this function is called
         if (drive->log_every_operation()) {
@@ -1190,13 +1202,15 @@ int IecChannel::read_dir_entry(void)
         prefetch_max = 32;
         break;
     case e_stamp_long:
-        cbmdos_time(dt, (char *)buffer + 31 - chars, true);
-        prefetch_max = 31 + 18 - chars;
+        // Three spaces follow the type, so the stamp starts four characters behind it, and
+        // the line is a fixed 64 bytes (SI-139). SD createentry() and HD 9-22.
+        cbmdos_time(dt, (char *)buffer + 33 - chars, true);
+        prefetch_max = pad_stamped_entry(buffer, 33 - chars + 19, 64);
         break;
     case e_stamp_short:
         buffer[28 - chars] = 32; // space out second letter of file type
         cbmdos_time(dt, (char *)buffer + 29 - chars, false);
-        prefetch_max = 29 + 14 - chars;
+        prefetch_max = pad_stamped_entry(buffer, 29 - chars + 13, 42);
         break;
     }
     return 0;

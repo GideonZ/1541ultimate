@@ -826,8 +826,9 @@ const char *cbmdos_time(uint32_t dt, char *buf, bool longfmt)
     s = (dt & 31) << 1;
     int h12 = (h % 12); if (h12 == 0) h12 = 12;
     if (longfmt) {
-        // 07/27/19 03.44 PM
-        sprintf(buf, "%02d/%02d/%02d %02d.%02d %cM", M, D, y % 100, h12, m, (h >= 12)?'P':'A');
+        // 07/27/19   03.44 PM. The three spaces are what a CMD HD prints between the date
+        // and the time in a long listing, measured on HD 9-22 and matching SD createentry().
+        sprintf(buf, "%02d/%02d/%02d   %02d.%02d %cM", M, D, y % 100, h12, m, (h >= 12)?'P':'A');
     } else {
         // 07/27 03.44 P
         sprintf(buf, "%02d/%02d %02d.%02d %c", M, D, h12, m, (h >= 12)?'P':'A');
