@@ -20,6 +20,7 @@ char last_status[300]; // a status, or a binary reply of up to 256 bytes
 int negative_fetches = 0; // prefetch_more offering fewer than zero bytes, which a real reader copies
 int last_status_size;
 void create_iec_d64_fixture(const char *path);
+void create_iec_geos_fixture(const char *path);
 void create_iec_d81_fixture(const char *path);
 FRESULT copy_to(const char *from, const char *to);
 void open_file(IecDrive *dr, uint8_t chan, const char *fn);
@@ -2918,6 +2919,62 @@ static void s11_si139_stamped_entries(FileManager *fm, IecDrive *dr)
     }
 }
 
+// SI-149: a GEOS file in a mounted image is listed with the type its own directory entry
+// carries, and a read over the bus delivers the file rather than the CVT container the
+// file browser builds around it. Reported on issue #917, where a GEOS disk mapped as a
+// partition listed every file as SEQ. The extension the image file system gives a GEOS
+// entry is CVT, which the IEC name builder did not recognise, so the type fell back to
+// SEQ; the open then took the branch that puts a header block in front of the data.
+static void s11_si149_geos_entries(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite11-SI149-GeosEntries";
+    const char *path = s11_partition(fm, dr, "si149");
+    create_iec_geos_fixture("output/iec_geos_cases.d64");
+    char host[96];
+    snprintf(host, sizeof(host), "%s/GEOS.D64", path);
+    REQUIRE(copy_to("output/iec_geos_cases.d64", host) == FR_OK);
+    expect_command_ok(testname, dr, "CD:GEOS.D64\r");
+
+    // The listed type, taken from each entry's own type bits.
+    static const struct { const char *name; const char *type; } listed[] = {
+        { "\"GEOSPRG\"",  "PRG" },
+        { "\"GEOSSEQ\"",  "SEQ" },
+        { "\"GEOSUSR\"",  "USR" },
+        { "\"PLAINPRG\"", "PRG" },
+    };
+    for (int i = 0; i < 4; i++) {
+        // Every entry is one block, so BASIC prints one digit and the type sits at a
+        // fixed column: the gap behind the name shortens as the name grows.
+        char expected[48];
+        snprintf(expected, sizeof(expected), "%s%*s%s", listed[i].name,
+                 (int)(19 - strlen(listed[i].name)), "", listed[i].type);
+        expect_directory_contains(testname, dr, "$", expected);
+    }
+
+    // The bytes a read delivers. A CVT stream starts with the directory entry, so its
+    // first byte would be the type byte 0x82 and not the load address of the file.
+    expect_iec_file(testname, dr, 2, "GEOSPRG", "\x01\x08GEOS:PRG");
+    expect_iec_file(testname, dr, 2, "GEOSSEQ", "GEOS:SEQ");
+    expect_iec_file(testname, dr, 2, "PLAINPRG", "\x01\x08PLAIN:PRG");
+
+    // A VLIR file points at a record block, which a drive hands over as a whole sector.
+    // Before the change this read answered nothing and logged a channel fault.
+    uint8_t vlir[512];
+    memset(vlir, 0, sizeof(vlir));
+    open_file(dr, 2, "GEOSUSR");
+    get_status(dr);
+    expect_status_ok(testname, "GEOSUSR");
+    int got = read_file(dr, 2, vlir, sizeof(vlir));
+    printf("%s: GEOSUSR read %d bytes, first four %02x %02x %02x %02x\n",
+           testname, got, vlir[0], vlir[1], vlir[2], vlir[3]);
+    REQUIRE(got == 254);
+    REQUIRE(vlir[0] == 17);
+    REQUIRE(vlir[1] == 11);
+    REQUIRE(memcmp(vlir + 2, "VLIR", 4) == 0);
+    close_file(dr, 2);
+    expect_status_ok(testname, "GEOSUSR");
+}
+
 // SI-134: $:*=H lists what $:* lists; H shows hidden files and filters nothing out.
 static void s11_si134_hidden_flag(FileManager *fm, IecDrive *dr)
 {
@@ -4832,6 +4889,7 @@ static const Suite11Case suite11_cases[] = {
     { "Suite11-SI133-SizeRemainder",     s11_si133_size_remainder },
     { "Suite11-SI138-ListingEof",       s11_si138_listing_eof },
     { "Suite11-SI139-StampedEntries",    s11_si139_stamped_entries },
+    { "Suite11-SI149-GeosEntries",       s11_si149_geos_entries },
     { "Suite11-SI134-HiddenFlag",        s11_si134_hidden_flag },
     { "Suite11-SI065-HeaderName",        s11_si065_header_name },
     { "Suite11-SI032-WildcardWrite",     s11_si032_wildcard_write },
