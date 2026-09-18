@@ -94,7 +94,12 @@ const struct C64_CRT::t_cart C64_CRT::c_recognized_c64_carts[] = {
     { 84, 0xFF, CART_NOT_IMPL,  "Profi-DOS" },
     { 85, 0xFF, CART_NOT_IMPL,  "Magic Desk 16" },
     { 86, 0xFF, CART_MEGABYTER, "Protovision Megabyter" },
-    { 87, 0xFF, CART_TWOMEGABYTER, "Protovision TwoMegabyter" },
+    // VICE assigns 87 to Magic Desk Plus (CARTRIDGE_MAGIC_DESK_PLUS, and its
+    // CARTRIDGE_LAST), and every released Magic Desk Plus image carries it.
+    // TwoMegabyter has no assigned id at all, so it moves off the one it was
+    // borrowing and takes the next free number in anticipation of getting it.
+    { 87, 0xFF, CART_MDPLUS,    "Magic Desk Plus" },
+    { 88, 0xFF, CART_TWOMEGABYTER, "Protovision TwoMegabyter" },
 
     { 0xFFFF, 0xFF, CART_NOT_IMPL, "" } };
 
@@ -291,8 +296,9 @@ SubsysResultCode_e C64_CRT::read_chip_packet(File *f, t_crt_chip_chunk *chunk)
     // does in VICE, which accepts an EEPROM image only at 8K or 32K. Banks 1
     // to 4 are the SRAM in address order.
     //
-    // A Magic Desk cart without any of this is a plain Magic Desk: the two
-    // share CRT hardware type 19 and nothing in the header tells them apart.
+    // A released image need not carry any of it, and the ones built for VICE do
+    // not: this is how the Ultimate writes the store back with Save Cartridge,
+    // so that a saved game survives the next load.
     if (load == 0xDF00) {
         uint8_t *store = (uint8_t *)REU_MEMORY_BASE;
 
@@ -540,12 +546,23 @@ void C64_CRT::configure_cart(cart_def *def)
 {
     printf("Total ROM size read: %6x bytes.\n", total_read);
 
-    // A Magic Desk that brought its own non-volatile store is a Magic Desk
-    // Plus. Both are CRT hardware type 19 and the header does not distinguish
-    // them, so the store is the only thing that can.
-    if ((local_type == CART_DOMARK) && (mdp_sram_parts || mdp_eeprom_size)) {
-        printf("Magic Desk Plus store present; using the Plus mapping.\n");
-        local_type = CART_MDPLUS;
+    // A Magic Desk Plus file need not carry its store: VICE keeps the SRAM and
+    // the EEPROM in files beside the image rather than in it, and the Murder on
+    // the Mississippi Remastered release is 32 ROM banks and nothing else. What
+    // it does not bring has to read as an erased device, because the store
+    // lives in the memory the REU uses and would otherwise be whatever the
+    // cartridge before it left there.
+    if (local_type == CART_MDPLUS) {
+        uint8_t *store = (uint8_t *)REU_MEMORY_BASE;
+        if (!mdp_eeprom_size) {
+            printf("Magic Desk Plus without an EEPROM image; erasing it.\n");
+            memset(store, 0xFF, MDPLUS_EEPROM_32K);
+        }
+        if (!mdp_sram_parts) {
+            printf("Magic Desk Plus without an SRAM image; erasing it.\n");
+            memset(store + MDPLUS_SRAM_OFFSET, 0xFF,
+                   MDPLUS_SRAM_CHUNK * MDPLUS_SRAM_CHUNKS);
+        }
     }
 
     uint16_t cart_type = CART_TYPE_NONE;
