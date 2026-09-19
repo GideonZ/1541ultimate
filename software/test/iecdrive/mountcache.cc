@@ -246,9 +246,70 @@ static void no_eject(FileManager *fm)
     printf("[%s] passed\n", testname);
 }
 
+// The image is deleted and a new one is created under the same path. The
+// listing must describe the new image.
+static void recreate_same_name(FileManager *fm)
+{
+    const char *testname = "Suite12-RecreateSameName";
+    printf("\n[%s] An image deleted and created again under the same path\n", testname);
+
+    const char *image = "/Fat/stale4.d64";
+    create_iec_d64_fixture("output/stale4.d64");
+    REQUIRE(copy_to("output/stale4.d64", image) == FR_OK);
+
+    list_image(testname, fm, image);
+
+    uint8_t payload[254];
+    fill_pattern(payload, sizeof(payload), 0x7E);
+    write_through_mount(testname, fm, "/Fat/stale4.d64/OLDFILE", payload, sizeof(payload));
+
+    REQUIRE(fm->delete_file(image) == FR_OK);
+
+    // A fresh image of the same size at the same path, as creating one in the
+    // browser does.
+    uint8_t *blank = new uint8_t[D64_SIZE];
+    memset(blank, 0, D64_SIZE);
+    File *f = NULL;
+    REQUIRE(fm->fopen(image, FA_WRITE | FA_CREATE_NEW, &f) == FR_OK);
+    uint32_t transferred = 0;
+    REQUIRE(f->write(blank, D64_SIZE, &transferred) == FR_OK);
+    REQUIRE(transferred == D64_SIZE);
+    fm->fclose(f);
+    delete[] blank;
+
+    File *g = NULL;
+    REQUIRE(fm->fopen(image, FA_READ | FA_WRITE, &g) == FR_OK);
+    FileSystemInFile_D64 emb(0, true);
+    emb.init(g);
+    REQUIRE(emb.getFileSystem() != NULL);
+    REQUIRE(emb.getFileSystem()->format("BLANK") == FR_OK);
+    REQUIRE(emb.getFileSystem()->sync() == FR_OK);
+    fm->fclose(g);
+
+    // The listing of the new image must not show the old image's file.
+    Path *p = fm->get_new_path("mountcache");
+    p->cd(image);
+    IndexedList<FileInfo *> listing(16, NULL);
+    REQUIRE(fm->get_directory(p, listing, NULL) == FR_OK);
+    int old_entries = 0;
+    for (int i = 0; i < listing.get_elements(); i++) {
+        if (strncmp(listing[i]->lfname, "OLDFILE", 7) == 0) {
+            old_entries++;
+        }
+        delete listing[i];
+    }
+    listing.clear_list();
+    fm->release_path(p);
+
+    printf("%s: entries of the deleted image still listed: %d\n", testname, old_entries);
+    REQUIRE(old_entries == 0);
+    printf("[%s] passed\n", testname);
+}
+
 void execute_suite12(FileManager *fm)
 {
     browser_first(fm);
     drive_holds_image(fm);
     no_eject(fm);
+    recreate_same_name(fm);
 }
