@@ -413,18 +413,6 @@ void C64_CRT::patch_easyflash_eapi()
     }
 }
 
-void C64_CRT::unpatch_easyflash_eapi()
-{
-    if (!original_eapi)
-        return;
-    if (local_type != CART_EASYFLASH)
-        return;
-
-    uint8_t* eapi = cart_memory + 0x3800;
-    memcpy(eapi, original_eapi, 768);
-    printf("EAPI successfully un-patched!\n");
-}
-
 SubsysResultCode_e C64_CRT::read_crt(File *file, cart_def *def)
 {
     clear_cart_mem();
@@ -721,7 +709,13 @@ SubsysResultCode_e C64_CRT::save_crt(File *fo)
         return SSRET_DISK_ERROR;
     }
 
-    crt->unpatch_easyflash_eapi();
+    // Memory holds our EAPI; the file gets the one it came with. Written from the saved copy, because
+    // restoring it in place would change code that a running C64 may be executing.
+    uint8_t *eapi = NULL;
+    if (crt->original_eapi && (crt->local_type == CART_EASYFLASH)) {
+        eapi = crt->cart_memory + 0x3800;
+    }
+
     for (int i=0; i<crt->chip_chunks.get_elements(); i++) {
         t_crt_chip_chunk *cc = crt->chip_chunks[i];
         uint16_t size = get_word(cc->header + CRTCHP_SIZE);
@@ -757,12 +751,23 @@ SubsysResultCode_e C64_CRT::save_crt(File *fo)
             break;
         }
 
-        res = fo->write(cc->ram_location, size, &written);
+        uint8_t *data = cc->ram_location;
+        if (eapi && (eapi >= data) && (eapi + 768 <= data + size)) {
+            uint32_t before = eapi - data;
+            res = fo->write(data, before, &written);
+            if (res == FR_OK) {
+                res = fo->write(crt->original_eapi, 768, &written);
+            }
+            if (res == FR_OK) {
+                res = fo->write(eapi + 768, size - before - 768, &written);
+            }
+        } else {
+            res = fo->write(data, size, &written);
+        }
         if (res != FR_OK) {
             break;
         }
     }
-    crt->patch_easyflash_eapi();
 
     if (res == FR_OK) {
         return SSRET_OK;

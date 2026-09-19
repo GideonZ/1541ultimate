@@ -96,7 +96,6 @@ class C64_CRT
     SubsysResultCode_e read_chip_packet(File *f, t_crt_chip_chunk *chunk);
     void clear_cart_mem(void);
     void patch_easyflash_eapi();
-    void unpatch_easyflash_eapi();
     void regenerate_easyflash_chunks();
     SubsysResultCode_e read_crt(File *file, cart_def *def);
     void configure_cart(cart_def *def);
