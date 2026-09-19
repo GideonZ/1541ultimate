@@ -742,6 +742,9 @@ FRESULT FileManager::fopen_impl(PathInfo &pathInfo, uint8_t flags, File **file)
         open_file_list.append(*file);
         (*file)->write_intent = ((flags & FA_WRITE) != 0);
         pathInfo.workPath.getTail(0, (*file)->get_path_reference());
+        if ((*file)->write_intent) {
+            discard_mounts_of_file((*file)->get_path());
+        }
         note_managed_temp_open(*file);
         if (create) {
             const char *pathstring = pathInfo.getFullPath(workpath, -1);
@@ -918,6 +921,9 @@ void FileManager::fclose(File *f)
             }
         }
     }
+    if (f->write_intent) {
+        discard_mounts_of_file(path);
+    }
     open_file_list.remove(f);
     f->close();
     if (publish_dir) {
@@ -1024,6 +1030,42 @@ void FileManager::evict_mount_points(void)
     }
 }
 
+
+// A mounted image holds that image's BAM and directory in memory. A write to
+// the image file through any other handle leaves that copy describing an image
+// that no longer exists, so the next allocation through the mount hands out
+// blocks the other writer has already used. Drop the mount when such a handle
+// is opened and again when it is closed; the next access to the image mounts it
+// from the file as it now stands.
+void FileManager::discard_mounts_of_file(const char *path)
+{
+    if (!path) {
+        return;
+    }
+    bool removed = false;
+    for (int i = 0; i < mount_points.get_elements(); i++) {
+        MountPoint *mp = mount_points[i];
+        if (!mp || !mp->get_file()) {
+            continue;
+        }
+        if (strcmp(mp->get_file()->get_path(), path) != 0) {
+            continue;
+        }
+        if (!is_mount_evictable(mp)) {
+            // A file is open inside the image. Releasing the mount would free
+            // the file system under that file.
+            printf("FileManager: '%s' is written through another handle while in use.\n", path);
+            continue;
+        }
+        printf("FileManager: dropping mount of '%s'; the file is written through another handle.\n", path);
+        release_mount_point(mp);
+        mount_points.mark_for_removal(i);
+        removed = true;
+    }
+    if (removed) {
+        mount_points.purge_list();
+    }
+}
 
 MountPoint *FileManager::add_mount_point(SubPath *path, File *file, FileSystemInFile *emb)
 {
