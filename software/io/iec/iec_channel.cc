@@ -2319,8 +2319,10 @@ int IecCommandChannel::do_rename(filename_t &src, filename_t &dest)
         use_found_name(works, info);
     } else {
         GETPARTITION(src.partition, partition, 0);
+        // A subdirectory is renamed under its own name, so directories are matched
+        // as well as files (SI-074).
         fres = resolve_existing_iec_path(fm, partition, src, e_any,
-                                         false, true, src.has_wildcard,
+                                         true, true, src.has_wildcard,
                                          works, &info);
     }
     src_path = works.c_str();

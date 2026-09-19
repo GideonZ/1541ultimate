@@ -345,6 +345,19 @@ def check_compatibility(agent, api, password, folder, root):
         agent.command(b"RD:_\r")
         agent.command(b"CD//\r")
 
+    def rename_directory():
+        # HD 9-26 heads its section "Renaming Files and Subdirectories", and sd2iec
+        # matches an entry of any type, so R renames a subdirectory as well as a file.
+        agent.command(b"CD//" + here + b"\r")
+        agent.command(b"MD:DIRA\r")
+        agent.command(b"R:DIRB=DIRA\r", allowed=(0,))
+        agent.command(b"CD:DIRB\r")
+        agent.command(b"CD//" + here + b"\r")
+        response = agent.command(b"R:DIRC=DIRA\r", allowed=(62,))
+        detail(f"a name that belongs to nothing answers {response!r}")
+        agent.command(b"RD:DIRB\r")
+        agent.command(b"CD//\r")
+
     def shifted_space():
         for name, host in ((b"PAD\xa0", "PAD.seq"), (b"IN\xa0SIDE", "IN{A0}SIDE.seq")):
             agent.call(1, channel=3, data=b"//" + here + b"/:" + name + b",S,W")
@@ -459,6 +472,7 @@ def check_compatibility(agent, api, password, folder, root):
             ("SI-021, SI-022: a 253 byte command runs, a 254 byte one is refused", command_length),
             ("SI-071: N creates a D64 image", format_image),
             ("SI-103: UJ closes the channels and U+shifted J returns to the root, and the drive still answers", resets),
+            ("SI-074: R renames a subdirectory", rename_directory),
             ("SI-144: a P00 file lists, loads, renames and scratches under the name in its header", x00_read),
             ("SI-084: a relative file in sd2iec's one byte layout reads its records", rel_layouts),
     ):

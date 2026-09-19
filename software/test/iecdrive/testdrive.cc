@@ -3139,6 +3139,19 @@ static void s11_si072_raw_names(FileManager *fm, IecDrive *dr)
 
 // SI-074: a rename refuses a name that exists with any type (63) and an empty name (34),
 // and moves a file into another directory of the partition, as it did before.
+// Whether a directory listing carries a run of bytes, for a case that has to assert
+// that an entry is gone as well as that one is there.
+static bool listing_holds(const uint8_t *listing, int got, const char *text)
+{
+    int len = strlen(text);
+    for (int i = 0; i <= got - len; i++) {
+        if (memcmp(listing + i, text, len) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
 static void s11_si074_rename_checks(FileManager *fm, IecDrive *dr)
 {
     const char *testname = "Suite11-SI074-RenameChecks";
@@ -3155,6 +3168,26 @@ static void s11_si074_rename_checks(FileManager *fm, IecDrive *dr)
     expect_command_response(testname, dr, "R:=OLD\r", "34,SYNTAX ERROR,00,00\r");
     expect_command_ok(testname, dr, "R:FRESH=OLD\r");
     expect_iec_file(testname, dr, 0, "FRESH", "old");
+
+    // A subdirectory is renamed under its own name, as HD 9-26 "Renaming Files and
+    // Subdirectories" describes and as SD parse_rename() does: it matches an entry of
+    // any type, so a directory entry is found.
+    expect_command_ok(testname, dr, "MD:DIRA\r");
+    expect_command_ok(testname, dr, "R:DIRB=DIRA\r");
+    uint8_t listing[4096];
+    int got = read_directory_stream(testname, dr, "$", listing, sizeof(listing));
+    REQUIRE(listing_holds(listing, got, "\"DIRB\""));
+    REQUIRE(!listing_holds(listing, got, "\"DIRA\""));
+    // The renamed directory is still a directory, and can be entered under its new name.
+    REQUIRE(listing_holds(listing, got, "DIR"));
+    expect_command_ok(testname, dr, "CD:DIRB\r");
+    expect_command_ok(testname, dr, "CD//\r");
+    // The name a directory already has is refused for a file and for another directory.
+    expect_command_response(testname, dr, "R:DIRB=FRESH\r", "63,FILE EXISTS,00,00\r");
+    expect_command_ok(testname, dr, "MD:DIRC\r");
+    expect_command_response(testname, dr, "R:DIRB=DIRC\r", "63,FILE EXISTS,00,00\r");
+    // A name that belongs to nothing still answers 62.
+    expect_command_response(testname, dr, "R:DIRD=NOSUCHDIR\r", "62,FILE NOT FOUND,00,00\r");
 }
 
 // SI-083: P on a file opened for writing moves past the end, and the next write extends
@@ -4863,6 +4896,7 @@ static void s11_soak(FileManager *fm, IecDrive *dr)
     REQUIRE(negative_fetches == 0);
     REQUIRE(heap_at_end <= heap_after_warmup + 64 * 1024);
 }
+
 
 struct Suite11Case {
     const char *name;

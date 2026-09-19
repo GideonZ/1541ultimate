@@ -769,23 +769,36 @@ and the element count is capped at 8 by `filename_t filenames[8]` in
 separate filename parameters"), so the cap already exceeds the CMD reference; SD README
 under `S:` sets no limit below the command length, and that is the target.
 
-**SI-074.** `R[n][path]:newname=[[n][path]:]pattern` renames. Source and destination
-must be in the same directory; if they are not, the answer is `62,FILE NOT FOUND`.
-An empty new name answers `34`. A new name that already exists answers `63`, unless
-it differs from the old name only by case. A wildcard in the new name answers `33`.
-Sources: HD 9-26; `SD parse_rename()`, including its note that "The 1541 renames the
-file to '=' in this case, but I consider that a bug". Current behaviour:
-`U do_rename()` does not check that the two directories agree and does not check for
-an existing destination, and the wildcard rejection in `U rename_command()` answers
+**SI-074.** `R[n][path]:newname=[[n][path]:]pattern` renames a file or a subdirectory.
+Source and destination must be in the same directory; if they are not, the answer is
+`62,FILE NOT FOUND`. An empty new name answers `34`. A new name that already exists
+answers `63`, unless it differs from the old name only by case. A wildcard in the new
+name answers `33`. Sources: HD 9-26, whose section is headed "Renaming Files and
+Subdirectories" and which reads "Filenames and Native Mode subdirectory names may be
+changed by using either the DOS RENAME or the BASIC 7.0 RENAME command", with
+appendix J listing the command as "RENAME (Files and Subdirectories)";
+`SD parse_rename()`, which passes `FLAG_HIDDEN` and no type to `first_match()`, so an
+entry of any type is matched, and whose `fat_rename()` renames the host entry, a
+directory included; and `SD parse_rename()`'s note that "The 1541 renames the file to
+'=' in this case, but I consider that a bug". Current behaviour:
+`U do_rename()` does not check that the two directories agree, does not check for
+an existing destination, and matches files only, so a subdirectory answers
+`62,FILE NOT FOUND`; the wildcard rejection in `U rename_command()` answers
 32 rather than 33. **Change required.**
 
 **Decision (PR #881): implemented except the directory rule.** The name checks are
 implemented: `34` for an empty new name, `33` for a wildcard in it, `63` for a new name
-that an entry of any type already has. The rule that source and destination be in one
+that an entry of any type already has. A subdirectory is renamed under its own name:
+`U do_rename()` resolves the source with directories allowed, and `CreateIecName()`
+already reports `e_folder` for one, so the destination is built without a file type
+extension. The rule that source and destination be in one
 directory is not: before PR #881 a rename moved a file into another directory or
 partition, `Suite8-RENAME-P1-TO-P2` in `software/test/iecdrive/testdrive.cc` asserted
 that on `master`, IDE 15.2.3 documents the move, and no program has been named that
 needs the `62`. An x00 file (SI-144) moved this way keeps its host name. See C14.
+The directory half was reported on 917 as `@"MD:A` followed by `@"R:B=A` answering
+`62,FILE NOT FOUND`, and the reporter's `finit` hits it when it renames `OS` through a
+temporary name.
 
 **SI-075.** `C[n][path]:new=[[n][path]:]name[,[[n][path]:]name...]` copies, and with
 more than one source appends them into the target. Path parsing restarts for every
@@ -1963,7 +1976,8 @@ not, why, and whether a C64 OS boot as recorded in TRACE is affected.
   * C64 OS: not affected; TRACE has no `N`.
 * **SI-074, rename.**
   * Implemented: `34` for an empty new name, `33` for a wildcard in it, `63` for a name any
-    entry already has.
+    entry already has, and the rename of a subdirectory (HD 9-26, "Renaming Files and
+    Subdirectories").
   * Not implemented: `62` for a rename into another directory or partition. The file is
     moved, as it was before PR #881 (decision C14 is reversed).
   * Why: the move worked on `master`, a `master` test asserted it, and IDE64 documents it;
