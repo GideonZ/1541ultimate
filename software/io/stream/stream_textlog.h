@@ -45,10 +45,15 @@ public:
         }
     }
 
+    // Every task that prints writes here, and nothing locks it. The position is read once
+    // and checked before it is used, so two writers can lose a character to each other but
+    // cannot write outside the buffer, however they interleave.
     void charout(int c) {
-        if (offset >= size) {
-            offset = 0; // clear!
+        int o = offset;
+        if ((o < 0) || (o >= size)) {
+            o = 0; // clear!
         }
+        offset = o;
         if (!enabled) {
             return;
         }
@@ -59,7 +64,8 @@ public:
     	} else if ((c < 32) && (c != 10) && (c != 13)) {
     		return;
     	}
-        buffer[offset++] = (char)c;
+        buffer[o] = (char)c;
+        offset = o + 1;
     }
 
     void raw(const char *data) {

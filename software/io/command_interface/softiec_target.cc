@@ -56,6 +56,7 @@ void SoftIECTarget :: parse_command(Message *command, Message **reply, Message *
         *status = &c_iec_module_not_loaded;
         return;
     }
+    IecDriveLock guard(iec_drive); // the IEC task and the GUI reach the same channels (CR-6)
 
     switch(command->message[1]) {
         case SOFTIEC_CMD_IDENTIFY:
@@ -270,6 +271,7 @@ void SoftIECTarget :: prepare_data(int count)
 void SoftIECTarget :: get_more_data(Message **reply, Message **status)
 {
     if (input_channel) {
+        IecDriveLock guard(iec_drive);
 #if SIEC_TARGET_DEBUG > 1
         printf("Popping %d bytes.\n", input_length);
 #endif
@@ -286,6 +288,7 @@ void SoftIECTarget :: get_more_data(Message **reply, Message **status)
 void SoftIECTarget :: abort(int a)
 {
     if (input_channel) {
+        IecDriveLock guard(iec_drive);
         int bytes = (a < input_length) ? a : input_length;
 #if SIEC_TARGET_DEBUG
         printf("Pop(%d:%d)\n", bytes, a);
@@ -605,13 +608,19 @@ void SoftIECTarget :: cmd_get_iecname(Message *command, Message **reply, Message
     command->message[command->length] = 0; // make sure it's null terminated
     FileInfo info(128);
     info.lfname[127] = 0;
-    strncpy(info.lfname, (const char *)&command->message[2], 127);
+    const char *given = (const char *)&command->message[2];
+    const char *base = strrchr(given, '/');
+    strncpy(info.lfname, base ? (base + 1) : given, 127);
     get_extension(info.lfname, info.extension, true);
 
     filetype_t found_type = e_any;
     char iec_name[24];
 
     IecPartition::CreateIecName(&info, iec_name, found_type);
+    // Given a full path, an x00 wrapper names the file the way the drive lists it (SI-144).
+    if (base) {
+        iec_x00_probe(FileManager::getFileManager(), given, iec_name, &found_type, NULL);
+    }
     data_message.message[0] = (uint8_t)found_type;
     data_message.length = 1 + strlen(iec_name);
     strcpy((char *)&data_message.message[1], iec_name);

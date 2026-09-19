@@ -204,6 +204,10 @@ public:
     bool    is_writable();
     bool    supports_direct_sector_access(void) { return true; }
 
+    // Geometry, read out of the disk layout this file system was built with.
+    int     get_num_tracks(void);
+    int     get_sectors_in_track(int track);
+
     // Create initial structures of empty disk
     virtual FRESULT format(const char *name) { return FR_NO_FILESYSTEM; }
     // Get number of free sectors on the file system
@@ -220,10 +224,11 @@ public:
 
     FRESULT file_rename(const char *old_name, const char *new_name);  // Renames a file
     FRESULT file_delete(const char *path); // deletes a file
+    FRESULT file_attrib(const char *path, uint8_t attrib, uint8_t mask); // only AM_RDO, the lock bit
 
     FRESULT read_sector(uint8_t *buffer, int track, int sector);
     FRESULT write_sector(uint8_t *buffer, int track, int sector);
-    FRESULT allocate_sector(int track, int sector, bool alloc);
+    FRESULT allocate_sector(int &track, int &sector, bool alloc);
 
     friend class DirInCBM;
     friend class FileInCBM;
@@ -252,7 +257,6 @@ public:
 
 	~FileSystemD64() { }
 
-    const char *get_partition_type(void) { return "41 "; }
     bool init(void);
     FRESULT format(const char *name);
     FRESULT get_free (uint32_t*, uint32_t*);
@@ -284,7 +288,6 @@ public:
 	    delete[] bam2_buffer;
 	}
 
-	const char *get_partition_type(void) { return "71 "; }
 	bool init(void);
     FRESULT format(const char *name);
     FRESULT get_free (uint32_t*, uint32_t*);
@@ -325,7 +328,6 @@ public:
         delete[] bam_buffer;
     }
 
-    const char *get_partition_type(void) { return "81 "; }
     bool init(void);
     FRESULT format(const char *name);
     FRESULT get_free (uint32_t*, uint32_t*);
