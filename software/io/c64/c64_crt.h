@@ -83,6 +83,9 @@ class C64_CRT
     int          eeprom_size;
     uint8_t     *original_eapi;
 
+    // Full pathname the image was loaded from or last saved to; empty if it came from no file.
+    mstring      source;
+
     static C64_CRT *get_instance(void); // singleton
 
     C64_CRT();
@@ -104,6 +107,8 @@ public:
     static SubsysResultCode_e save_crt(File *f);
     static int clear_crt(void);
     static bool is_valid(void);
+    static void set_source(const char *path, const char *filename);
+    static const char *get_source(void);
 
     static void clear_definition(cart_def *def);
 };

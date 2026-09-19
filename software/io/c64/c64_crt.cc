@@ -142,6 +142,7 @@ void C64_CRT::initialize(uint8_t *mem, uint32_t max_size)
     highest_bank = 0;
     a000_seen = false;
     bank_multiplier = 16 * 1024;
+    source = "";
 }
 
 void C64_CRT::cleanup()
@@ -682,8 +683,27 @@ SubsysResultCode_e C64_CRT::load_crt(const char *path, const char *filename, car
 
     if (retval != SSRET_OK) {
         work->initialize(NULL, 0); // clear remaining stuff if not successful
+    } else {
+        set_source(path, filename);
     }
     return { retval };
+}
+
+// REST passes an empty path and a full pathname as filename.
+void C64_CRT::set_source(const char *path, const char *filename)
+{
+    C64_CRT *crt = get_instance();
+    crt->source = path;
+    int len = crt->source.length();
+    if (len && (path[len - 1] != '/')) {
+        crt->source += "/";
+    }
+    crt->source += filename;
+}
+
+const char *C64_CRT::get_source(void)
+{
+    return get_instance()->source.c_str();
 }
 
 SubsysResultCode_e C64_CRT::save_crt(File *fo)

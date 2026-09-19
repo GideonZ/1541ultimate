@@ -367,6 +367,8 @@ SubsysResultCode_e C64_Subsys::executeCommand(SubsysCommand *cmd)
                     fm->fclose(f);
                     if (retval != SSRET_OK) {
                         cmd->user_interface->popup(SubsysCommand::error_string(retval), BUTTON_OK);
+                    } else {
+                        C64_CRT::set_source(cmd->path.c_str(), buffer); // the cartridge now belongs to this file
                     }
                 }
             }
