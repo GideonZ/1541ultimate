@@ -21,6 +21,7 @@ int negative_fetches = 0; // prefetch_more offering fewer than zero bytes, which
 int last_status_size;
 void create_iec_d64_fixture(const char *path);
 void create_iec_geos_fixture(const char *path);
+void execute_suite12(FileManager *fm);
 void create_iec_d81_fixture(const char *path);
 FRESULT copy_to(const char *from, const char *to);
 void open_file(IecDrive *dr, uint8_t chan, const char *fn);
@@ -5019,6 +5020,7 @@ int main(int argc, const char **argv)
         execute_suite6(fm, dr);
         execute_suite7(fm, dr);
         execute_suite10(fm, dr);
+        execute_suite12(fm);
     }
     execute_suite11(fm, dr, only);
 

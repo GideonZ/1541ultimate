@@ -56,6 +56,7 @@ SRCS_CC	 =  small_printf.cc \
 			json.cc \
 			init_function.cc \
 			d64.cc \
+			mountcache.cc \
 			d81.cc \
 			testdrive.cc
 

@@ -140,6 +140,7 @@ class FileManager
 	FRESULT rename_impl(PathInfo &from, PathInfo &to);
 	FRESULT delete_file_impl(PathInfo &pathInfo);
 	void release_mount_point(MountPoint *mp);
+	void discard_mounts_of_file(const char *path);
 	void get_temp_directory_path(const char *category, mstring &directory_out);
 	FRESULT build_temp_path(const char *category, const char *suggested_name, uint32_t seq, bool unique_name, uint32_t suffix,
 	        bool create_dirs, mstring &canonical_path_out);
