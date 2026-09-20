@@ -34,12 +34,16 @@ typedef int FRESULT;
 
 class FileInfo {};
 
-// A read-only file over bytes the test registered by name.
+// A file over bytes the test registered by name for reading, or over a buffer
+// the test owns for writing, so a saved cartridge can be inspected.
 class File {
+    static const std::vector<uint8_t> &no_data() { static const std::vector<uint8_t> e; return e; }
     const std::vector<uint8_t> &data;
+    std::vector<uint8_t> *sink;
     size_t pos;
 public:
-    explicit File(const std::vector<uint8_t> &d) : data(d), pos(0) {}
+    explicit File(const std::vector<uint8_t> &d) : data(d), sink(NULL), pos(0) {}
+    explicit File(std::vector<uint8_t> *out) : data(no_data()), sink(out), pos(0) {}
     FRESULT read(void *buffer, uint32_t len, uint32_t *transferred) {
         size_t n = (pos < data.size()) ? std::min<size_t>(len, data.size() - pos) : 0;
         memcpy(buffer, data.data() + pos, n);
@@ -47,7 +51,14 @@ public:
         *transferred = (uint32_t)n;
         return FR_OK;
     }
-    FRESULT write(const void *, uint32_t len, uint32_t *transferred) { *transferred = len; return FR_OK; }
+    FRESULT write(const void *buffer, uint32_t len, uint32_t *transferred) {
+        if (sink) {
+            const uint8_t *p = (const uint8_t *)buffer;
+            sink->insert(sink->end(), p, p + len);
+        }
+        *transferred = len;
+        return FR_OK;
+    }
     FRESULT seek(uint32_t offset) { pos = offset; return FR_OK; }
 };
 
