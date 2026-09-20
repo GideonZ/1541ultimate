@@ -89,9 +89,10 @@ before copying: a write during the copy sets the flag again and is caught next t
     for each 32-bit word w:  h = rotl(h ^ w, 5) + 0x9E3779B9
 
 Each step is a bijection in `h` for a fixed `w`, so two images that differ in a single word
-always hash differently. No multiply: the U64 Nios II is the `tiny` core
-(`nios_appl_bsp/system.h`), without hardware multiplier and without data cache. The absence of
-a data cache also means CPU reads see every FPGA write to cartridge memory.
+always hash differently. It uses no multiply because the firmware is not built with one:
+`software/nios_appl_bsp/public.mk` passes `-mno-hw-mul` and `-mno-hw-mulx` to every U64 object, so
+a multiply is a library call however the FPGA is fitted. Cartridge memory is read straight from
+`0x03C00000` with no cache bypass, which is what that BSP's `ALT_CPU_DCACHE_SIZE 0` permits.
 
 Before hashing, a set EEPROM latch is resolved by copying the EEPROM into its chunk buffer, so the
 EEPROM is covered by the same hash.
