@@ -3056,6 +3056,12 @@ static void s11_si134_hidden_flag(FileManager *fm, IecDrive *dr)
     REQUIRE(s11_listing_line(all, n_all, "SECRET") == NULL);
     REQUIRE(s11_listing_line(all, n_all, "VISIBLE") != NULL);
     REQUIRE(s11_listing_line(hidden, n_hidden, "SECRET") != NULL);
+    // A hidden entry in a listing that asks for it carries an H behind the lock mark,
+    // as SD createentry() writes it (SI-132).
+    const uint8_t *secret = s11_listing_line(hidden, n_hidden, "SECRET");
+    REQUIRE(memcmp(secret + 4, "   \"SECRET\"           PRG H", 27) == 0);
+    REQUIRE(memcmp(s11_listing_line(hidden, n_hidden, "VISIBLE") + 4,
+                   "   \"VISIBLE\"          PRG  ", 27) == 0);
     // A hidden entry still answers to its name, which is the only way to reach it and
     // to turn the flag back.
     expect_iec_file(testname, dr, 0, "SECRET", "S");

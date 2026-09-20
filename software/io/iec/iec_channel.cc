@@ -1186,6 +1186,12 @@ int IecChannel::read_dir_entry(void)
     if (!partition_type && (info.attrib & AM_RDO)) {
         buffer[30 - chars] = '<'; // locked (SI-132)
     }
+    // A hidden entry lists only when the filter asks for it, and then it carries an H
+    // behind the lock mark, which is the one place a listing reports the attribute
+    // (SI-132).
+    if (!partition_type && (info.attrib & AM_HID)) {
+        buffer[31 - chars] = 'H';
+    }
     // An entry in a CBM image whose closed bit is clear is a file a write never finished,
     // and every Commodore drive marks it with a splat in front of the type (SI-132).
     if (!partition_type && info.cbm_filetype && !(info.cbm_filetype & 0x80)) {

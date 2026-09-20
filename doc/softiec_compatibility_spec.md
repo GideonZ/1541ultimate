@@ -661,8 +661,8 @@ Sources: HD 9-27; `SD parse_scratch()`; IDE 15.2.2, whose examples include
 `@S/STUFF/:*=OLD,*=BAK,/STUFF/BAK/:*`.
 
 **SI-074.** `R[n][path]:newname=[[n][path]:]pattern` renames a file or a subdirectory.
-Source and destination must be in the same directory; if they are not, the answer is
-`62,FILE NOT FOUND`. An empty new name answers `34`. A new name that already exists
+When the source path and the destination path differ, the entry moves. An empty new
+name answers `34`. A new name that already exists
 answers `63`, unless it differs from the old name only by case. A wildcard in the new
 name answers `33`. Sources: HD 9-26, whose section is headed "Renaming Files and
 Subdirectories" and which reads "Filenames and Native Mode subdirectory names may be
@@ -673,14 +673,14 @@ entry of any type is matched, and whose `fat_rename()` renames the host entry, a
 directory included; and `SD parse_rename()`'s note that "The 1541 renames the file to
 '=' in this case, but I consider that a bug".
 
-**Difference from the CMD manuals and sd2iec.** The name checks are in force: `34` for an empty new name, `33` for a wildcard in it, `63` for a new name
-that an entry of any type already has. A subdirectory is renamed under its own name:
-`U do_rename()` resolves the source with directories allowed, and `CreateIecName()`
-already reports `e_folder` for one, so the destination is built without a file type
-extension. The rule that source and destination be in one
-directory is not in force: a rename moves the entry, which IDE 15.2.3 documents,
-`Suite8-RENAME-P1-TO-P2` in `software/test/iecdrive/testdrive.cc` asserts, and no program
-has been named that needs the `62`. An x00 file (SI-144) moved this way keeps its host name. See C14.
+**Difference from the CMD manuals and sd2iec.** `SD parse_rename()` answers `62,FILE
+NOT FOUND` when the two paths differ and HD 9-26 requires one partition, where this
+drive moves the entry, as IDE 15.2.3 documents. `Suite8-RENAME-P1-TO-P2` in
+`software/test/iecdrive/testdrive.cc` asserts the move, and no program has been named
+that needs the `62`. An x00 file (SI-144) moved this way keeps its host name. A
+subdirectory is renamed under its own name: `U do_rename()` resolves the source with
+directories allowed, and `CreateIecName()` reports `e_folder` for one, so the
+destination is built without a file type extension. See C14.
 The directory half was reported on 917 as `@"MD:A` followed by `@"R:B=A` answering
 `62,FILE NOT FOUND`, and the reporter's `finit` hits it when it renames `OS` through a
 temporary name.
@@ -1172,9 +1172,13 @@ the listing at `$0101`.
 number, is the partition number for a file listing and the number of partitions for a
 partition listing. See SI-046.
 
-**SI-132.** The file type field is followed by `<` when the entry is locked, and preceded
-by `*` when it was not closed. Sources: HD 9-30 for `<`; `SD createentry()` for both (the
-splat is CBM DOS behaviour and is not on HD 9-30). Locking is SI-076.
+**SI-132.** The file type field is followed by `<` when the entry is locked, then by `H`
+when it carries the hidden attribute, and it is preceded by `*` when the entry was not
+closed. A line for a hidden entry reads `PRG<H` or `PRG H`. Sources: HD 9-30 for `<`;
+`SD createentry()` for all three (the splat is CBM DOS behaviour and is not on HD 9-30);
+GSD, "sd2iec marks hidden files with an H after the lock mark, which comes after the file
+type. If the file is not locked, a space is left where the lock mark would go." Locking is
+SI-076 and the attribute is SI-134.
 
 The splat is the closed bit of a CBM directory entry, bit 7 of its type byte, so it
 appears for an entry inside a mounted image and never for a host file, which has no such
@@ -1411,6 +1415,17 @@ where SI-142 states a difference and its reason.
   is padded with them. See SI-147, which is about the state this rule is actually in.
 * The CBM file type is the host extension `.prg`, `.seq`, `.usr` or `.rel`, added on
   create and hidden on read.
+
+**Difference from sd2iec: a host name longer than 16 characters.** GSD reads, "Long
+filenames (i.e names not within the 8.3 limits) are supported on FAT, but for
+compatibility reasons the 8.3 name is used if the long name exceeds 16 characters."
+This drive renders the first 16 characters of the long name instead. The 8.3 name is a
+property of FAT alone, and `FileInfo` carries one name for every file system the
+Ultimate mounts, CBM disk images and FTP among them, so presenting it would mean
+plumbing a second name through all of them. The rendered name a listing shows is the
+name every command here accepts, because `resolve_existing_iec_path()` matches against
+the rendered names of a directory scan (SI-143), so a file is reachable under the name
+it shows. What differs is the name the two devices print for the same file.
 
 **SI-142.** `*` and `?` are escaped as SI-141 escapes the other characters, and a
 create of a name containing either is refused per SI-032, as `SD a76deb2` does.
@@ -1782,6 +1797,7 @@ differently from one of its sources, for a reason given below the requirement.
 | SI-077 | `EL`, `EU` and `A` act on every entry a name matches, directories included, where sd2iec skips directories and `A` takes the first match |
 | SI-120 | A write is refused when the day is not a day of that month, which `SD parse_timewrite()` does not check, and every field is read at its documented width |
 | SI-136 | A second `*` matches in the middle of a name, where CBM DOS and sd2iec stop at the first |
+| SI-141 | A host name longer than 16 characters renders as its first 16 characters, where sd2iec prints the 8.3 name |
 | SI-142 | The length guard of `SD` is not adopted, because it would change no host name the drive produces |
 
 ---
@@ -1814,6 +1830,11 @@ Named so that the boundary is explicit rather than implied.
   partitions of this drive are the entries of the **Software IEC** configuration,
   which the user edits in the Ultimate menu, and the command channel selects one
   with `CP` (SI-016) and reads them with `$=P` (SI-047).
+* sd2iec's EEPROM file system, the small partition it exposes from the spare space of
+  the microcontroller's own EEPROM (SD README, "EEPROM file system"). It exists
+  because that hardware has an EEPROM larger than its configuration needs. A
+  partition of this drive is a directory of the Ultimate file system, and the
+  Ultimate's own flash is reachable as one of those.
 * M2I files, which sd2iec itself has deprecated (SD README, Deprecation notices).
 * Mapping each Ultimate storage device to its own IEC device number, which GAP asks
   for. The partition model in section 2 answers the same need within one device
@@ -1829,9 +1850,8 @@ Named so that the boundary is explicit rather than implied.
     `U0>MR` and `U0>MW` (HD 9-49), which select serial timing, retries, interleave
     and 1571 modes that this drive does not have. The 1541 ROM's command table at
     `$FE89` also carries `&` (execute utility file), which HD does not list.
-  * IDE section 15: 15.2.3 moving a file between directories with `R` (this
-    specification follows `SD parse_rename()` and answers `62`, SI-074; see C14);
-    15.2.5 hide; 15.4.2 get disk change; 15.4.5, 15.4.6 and 15.4.7 (`U0>P`, `U0>E`,
+  * IDE section 15: 15.2.5 hide, whose IDE64 spelling is its own; the sd2iec
+    spelling `EH` is in force under SI-077; 15.4.2 get disk change; 15.4.5, 15.4.6 and 15.4.7 (`U0>P`, `U0>E`,
     `U0>L`, power, eject and medium lock); 15.4.9 format disk; 15.5.1 direct access
     identify and the LBA forms of buffer read and write; 15.6.2 change root
     directory; 15.7 CD-ROM commands. All of them address IDE64 hardware or its CFS
@@ -1893,7 +1913,7 @@ further rule of the requirement it follows and is numbered that way so that the 
 already cited elsewhere keep their meaning.
 
 Section 18.1 is the index of the five deliberately unsupported requirements and of the
-eight that are in force and answer differently from one of their sources. Everything else
+nine that are in force and answer differently from one of their sources. Everything else
 in sections 2 to 15 is in force as written. Section 19 is what is out of scope, which is
 a different thing: those are capabilities this drive does not have rather than commands
 it declines to implement.
@@ -1979,7 +1999,7 @@ row.
 
 | Section of the manual | Settled by |
 | --- | --- |
-| Files: long filenames, and the 8.3 name when a long one exceeds 16 characters | SI-140 to SI-143 |
+| Files: long filenames, and the 8.3 name when a long one exceeds 16 characters | SI-140 to SI-143; the 8.3 fallback is a stated difference under SI-141 |
 | Files: x00 wrappers, the header, the extension family, the internal name in a listing, renaming the internal name | SI-144, SI-144a, SI-144b, SI-145, SI-146 |
 | Files: relative files, and the record length of a plain one | SI-080, SI-084, SI-146 |
 | Files: positioning (seeking) within a file with `P` | SI-081, SI-082, SI-083 |
@@ -1996,6 +2016,7 @@ row.
 | Partitions: the partition model, the default partition, partition numbers in names and in commands | SI-002, SI-013 |
 | Partitions: disk images, mounting and unmounting | SI-003, SI-062, SI-072 |
 | Partitions: creating and deleting partitions in the MBR | Section 19 |
+| Partitions: the EEPROM file system | Section 19 |
 | Partitions: changing partitions, `CP` and `C`+shifted P | SI-040 |
 | Partitions: formatting | SI-052, SI-071, SI-071a |
 | Partitions: the partition directory | SI-044 to SI-050 |
