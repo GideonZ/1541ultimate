@@ -229,7 +229,7 @@ public:
         return fatname;
     }
 
-    int squeezeToDisplayString(char *string_to_squeeze, char *squeezed_string, int max_width, int squeeze_quarter = 0)
+    int squeezeToDisplayString(const char *string_to_squeeze, char *squeezed_string, int max_width, int squeeze_quarter = 0)
     {
         int len = strlen(string_to_squeeze);
 

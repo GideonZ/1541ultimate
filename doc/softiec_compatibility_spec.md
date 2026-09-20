@@ -1730,7 +1730,14 @@ classes qualify and both have already caught defects:
   build above does not settle it. The U64 build is Nios II, where `char` is signed, and
   the U64 II and U2+L builds are RISC-V, where it is not. SI-147 is the known case.
 
-**T4. The C64 OS acceptance test.** Install C64 OS on a Software IEC partition, boot
+**T4. The file browser and the run routes, `tests/e2e/filemanager` and
+`tests/e2e/api`.** SI-144b is about what a person sees and does on the device, so it is
+checked there: `prg_context_menu_test.py` drives every context menu action of the real
+browser against a plain `PRG`, a `P00` wrapper and a `PRG` inside a `D64`, and
+`prg_load_path_trim_test.py` runs a wrapper through the REST routes that start a
+program and reads the name the boot cart prints.
+
+**T5. The C64 OS acceptance test.** Install C64 OS on a Software IEC partition, boot
 it, and compare the `SoftIEC:` lines of the resulting log against TRACE. The drive
 logs a line only for a failed command, a failed open and a channel fault, so the
 criterion is that no such line carries an error code that a CMD HD would not also
@@ -1834,7 +1841,9 @@ Named so that the boundary is explicit rather than implied.
   the microcontroller's own EEPROM (SD README, "EEPROM file system"). It exists
   because that hardware has an EEPROM larger than its configuration needs. A
   partition of this drive is a directory of the Ultimate file system, and the
-  Ultimate's own flash is reachable as one of those.
+  Ultimate's own flash is reachable as one of those. The `!` partition alias goes with
+  it: `CP!:`, `$!` and `!:NAME` address the EEPROM partition wherever it ended up, and
+  with no such partition there is nothing for the alias to name.
 * M2I files, which sd2iec itself has deprecated (SD README, Deprecation notices).
 * Mapping each Ultimate storage device to its own IEC device number, which GAP asks
   for. The partition model in section 2 answers the same need within one device
