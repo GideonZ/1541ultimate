@@ -111,6 +111,7 @@ public:
     virtual int do_get_partition_info(int part) { return 0; }
     virtual int do_set_device_number(int dev) { return 0; }
     virtual int do_restore_device_number() { return 0; } // S-D, back to the configured number
+    virtual int do_set_write_protect(bool on) { return 0; } // W-1 and W-0 (SI-102)
     // L and EH turn one attribute of one entry over; EL, EU and A set the attributes in
     // mask to those in attrib on every entry each name matches (SI-076, SI-077).
     virtual int do_toggle_attributes(filename_t& name, uint8_t bits) { return 0; }

@@ -58,6 +58,7 @@ public:
     int do_get_partition_info(int part);
     int do_set_device_number(int dev);
     int do_restore_device_number();
+    int do_set_write_protect(bool on);
     int do_set_header(filename_t& dest, const char *id);
     int do_rename_partition(const char *newname, const char *oldname);
     int do_toggle_attributes(filename_t& name, uint8_t bits);
@@ -195,6 +196,12 @@ int IecCommandExecuterStubs::do_cmd_response(uint8_t *data, int len)
 int IecCommandExecuterStubs::do_set_device_number(int dev)
 {
     record_stub_call("device number", dev);
+    return 0;
+}
+
+int IecCommandExecuterStubs::do_set_write_protect(bool on)
+{
+    record_stub_call("write protect", on ? 1 : 0);
     return 0;
 }
 

@@ -1191,6 +1191,12 @@ int IecParser :: execute_command(const uint8_t *buffer, int len)
         }
         return scratch_command(buffer, len);
     case 'T': return time_command(buffer, len);
+    case 'W':
+        // W-1 sets the software write protect and W-0 clears it (SI-102, HD 9-35).
+        if ((len == 3) && (buffer[1] == '-') && ((buffer[2] == '0') || (buffer[2] == '1'))) {
+            return exec->do_set_write_protect(buffer[2] == '1');
+        }
+        return ERR_SYNTAX;
     case 'U': return user_command(buffer, len);
     case 'A':
     case 'D':

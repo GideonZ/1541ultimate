@@ -330,6 +330,14 @@ void test_added_commands(void)
     // A file rename still reaches the file rename.
     test_dispatch("R:NEW=OLD", 9, 0, NULL);
 
+    // SI-102: W-1 sets the software write protect and W-0 clears it, in exactly three
+    // characters. W is a command letter only for those two.
+    test_dispatch("W-1", 3, 0, "write protect", 1);
+    test_dispatch("W-0\r", 4, 0, "write protect", 0);
+    test_dispatch("W-2", 3, ERR_SYNTAX, NULL);
+    test_dispatch("W-1X", 4, ERR_SYNTAX, NULL);
+    test_dispatch("W", 1, ERR_SYNTAX, NULL);
+
     // SI-100: U0> followed by the device number as a byte.
     test_dispatch("U0>\x0C", 4, 0, "device number", 12);
     test_dispatch("U0>\x1E\r", 5, 0, "device number", 30);

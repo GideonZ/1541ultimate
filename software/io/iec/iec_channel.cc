@@ -495,6 +495,14 @@ t_channel_retval IecChannel::write_record(void)
     if (!recordDirty) {
         return IEC_OK; // do nothing; no data was received
     }
+    // A relative file opens for reading whatever the command asks for while the drive is
+    // write protected, so the record write is where the protection answers (SI-102). The
+    // record is dropped and the channel stays open, because the file can still be read.
+    if (drive->is_write_protected()) {
+        drive->get_command_channel()->set_error(ERR_WRITE_PROTECT_ON, 0, 0);
+        recordDirty = false;
+        return IEC_OK;
+    }
     if (f) {
         if ((pointer < recordSize) && (pointer >= 0)) {
             memset(buffer + pointer, 0, recordSize - pointer); // fill up with zeros at the end
@@ -535,6 +543,13 @@ t_channel_retval IecChannel::write_record(void)
     if (!partition) { \
         drive->get_command_channel()->set_error(ERR_PARTITION_ERROR, drive->vfs->GetTargetPartitionNumber(part)); \
         return reterr; \
+    }
+
+// W-1 and W-0 (SI-102, HD 9-35). Every gate that changes a medium asks the drive, and
+// `Suite11-SI102-WriteProtect` sends one command through each of them.
+#define REFUSE_WHEN_WRITE_PROTECTED() \
+    if (drive->is_write_protected()) { \
+        return ERR_WRITE_PROTECT_ON; \
     }
 
 static void iec_path_to_fs_path(mstring &path)
@@ -1480,6 +1495,17 @@ int IecChannel :: setup_file_access()
         }
     }
 
+    // A write protected drive opens nothing that would create or change a file, and
+    // opens a relative file for reading only (SI-102).
+    if (drive->is_write_protected()) {
+        if (name_to_open.filetype == e_rel) {
+            flags = FA_READ;
+        } else if (flags & FA_WRITE) {
+            drive->set_error(ERR_WRITE_PROTECT_ON, 0, 0);
+            return 0;
+        }
+    }
+
     DBGIECV("Setup File Access %s %02x\n", full_path, flags);
 
     // A relative file that already exists is opened by its CBM name, which finds it in an
@@ -1733,6 +1759,11 @@ int IecChannel::seek_record(int recordNumber, int offset)
     uint32_t currentSize = f->get_size();
     FRESULT fres;
     int err = ERR_ALL_OK;
+    if ((currentSize < minimumFileSize) && drive->is_write_protected()) {
+        // Reaching a record past the end grows the file, which a write protected drive
+        // does not do; the record really is not there (SI-102).
+        return ERR_RECORD_NOT_PRESENT;
+    }
     if (currentSize < minimumFileSize) { // append with additional records that are 'FF's, followed by zeros.
         fres = f->seek(currentSize);
 
@@ -1933,6 +1964,7 @@ int IecCommandChannel :: do_block_read(int chan, int part, int track, int sector
 // pointer minus one in byte 0 (SI-094).
 int IecCommandChannel::do_block_write(int chan, int part, int track, int sector, bool length_byte)
 {
+    REFUSE_WHEN_WRITE_PROTECTED();
     IecChannel *channel = buffer_channel(chan);
     if (!channel) {
         return 0;
@@ -1952,6 +1984,7 @@ int IecCommandChannel::do_block_write(int chan, int part, int track, int sector,
 // parameter is ignored like that of the other direct access commands (SI-013).
 int IecCommandChannel::do_block_allocate(int part, int track, int sector, bool alloc)
 {
+    REFUSE_WHEN_WRITE_PROTECTED();
     GETPARTITION(0, partition, -1);
     Path path(partition->GetFullPath());
     FRESULT fres = fm->fs_allocate_sector(&path, track, sector, alloc);
@@ -2020,6 +2053,7 @@ int IecCommandChannel::do_change_dir(filename_t& dest)
 
 int IecCommandChannel::do_make_dir(filename_t& dest)
 {
+    REFUSE_WHEN_WRITE_PROTECTED();
     mstring work;
     const char *fullpath = ConstructPath(work, dest, e_folder, e_read);
     if (fullpath) {
@@ -2034,6 +2068,7 @@ int IecCommandChannel::do_make_dir(filename_t& dest)
 
 int IecCommandChannel::do_remove_dir(filename_t& dest)
 {
+    REFUSE_WHEN_WRITE_PROTECTED();
     mstring work;
     const char *fullpath = ConstructPath(work, dest, e_folder, e_read);
     if (fullpath) {
@@ -2063,6 +2098,7 @@ int IecCommandChannel::do_remove_dir(filename_t& dest)
 
 int IecCommandChannel::do_copy(filename_t& dest, filename_t sources[], int n)
 {
+    REFUSE_WHEN_WRITE_PROTECTED();
     // Curiously, an original drive takes the file type from the FIRST file it copies.
     // So in order to know the destination extension, we'd need to first open the first file
     // using wildcards and then see what file was opened.
@@ -2206,6 +2242,7 @@ int IecCommandChannel::do_reset(bool cold)
 // existing file is left alone, as an existing DNP always is. A new image needs an id.
 int IecCommandChannel::do_format(filename_t& dest, const char *id)
 {
+    REFUSE_WHEN_WRITE_PROTECTED();
     GETPARTITION(dest.partition, partition, -1);
     mstring dir;
     FRESULT fres = resolve_directory_path(fm, partition, dest.path, dir);
@@ -2318,6 +2355,7 @@ int IecCommandChannel::do_format(filename_t& dest, const char *id)
 
 int IecCommandChannel::do_rename(filename_t &src, filename_t &dest)
 {
+    REFUSE_WHEN_WRITE_PROTECTED();
     mstring works, workd;
     const char *src_path = ConstructPath(works, src, e_any, e_read);
     FileInfo info(INFO_SIZE);
@@ -2461,6 +2499,7 @@ static int scratch_matching(FileManager *fm, const char *dir_path, const char *p
 // and deleted a locked entry that followed an unlocked one (CR-8, SI-076).
 int IecCommandChannel::do_scratch(filename_t filenames[], int n)
 {
+    REFUSE_WHEN_WRITE_PROTECTED();
     DBGIECV("Scratch %d files:\n", n);
     mstring work;
     int scratched = 0;
@@ -2712,6 +2751,7 @@ static uint8_t fat_attributes_of(uint8_t iec_bits)
 // L and EH: one entry, one attribute, turned over (SI-076, SI-077).
 int IecCommandChannel::do_toggle_attributes(filename_t& name, uint8_t bits)
 {
+    REFUSE_WHEN_WRITE_PROTECTED();
     GETPARTITION(name.partition, partition, -1);
     mstring work;
     FileInfo info(INFO_SIZE);
@@ -2777,6 +2817,7 @@ static int set_attributes_matching(FileManager *fm, const char *dir_path, const 
 // EL, EU and A (SI-077).
 int IecCommandChannel::do_set_attributes(filename_t names[], int n, uint8_t attrib, uint8_t mask)
 {
+    REFUSE_WHEN_WRITE_PROTECTED();
     mstring work;
     FRESULT last_error = FR_OK;
     int changed = 0;
@@ -2808,6 +2849,7 @@ int IecCommandChannel::do_set_attributes(filename_t names[], int n, uint8_t attr
 // name at the root of a partition.
 int IecCommandChannel::do_set_header(filename_t& name, const char *id)
 {
+    REFUSE_WHEN_WRITE_PROTECTED();
     GETPARTITION(name.partition, partition, 0);
     mstring work, relative;
     FRESULT fres = resolve_directory_path(fm, partition, name.path, work, &relative);
@@ -2875,6 +2917,7 @@ int IecCommandChannel::do_set_header(filename_t& name, const char *id)
 // partition list is searched for it.
 int IecCommandChannel::do_rename_partition(const char *newname, const char *oldname)
 {
+    REFUSE_WHEN_WRITE_PROTECTED();
     for (int i = 1; i < MAX_PARTITIONS; i++) {
         IecPartition *p = drive->vfs->GetPartition(i);
         if (p && (p->GetPartitionNumber() == i) && !strcasecmp(p->GetName(), oldname)) {
@@ -2890,6 +2933,12 @@ int IecCommandChannel::do_rename_partition(const char *newname, const char *oldn
 int IecCommandChannel::do_set_device_number(int dev)
 {
     drive->set_device_number(dev);
+    return 0;
+}
+
+int IecCommandChannel::do_set_write_protect(bool on)
+{
+    drive->set_write_protect(on);
     return 0;
 }
 

@@ -1091,15 +1091,27 @@ answers `30`, because `S` is a command letter and its argument is not (SI-030); 
 covers `S-C`, the SCSI pass-through of SI-106. sd2iec answers the whole group `31`,
 recognising the form without implementing the swap.
 
-**SI-102.** `W-0` and `W-1` clear and set a software write protect for the whole
-drive. Sources: HD 9-35; IDE 15.4.10. While set, every write answers
-`26,WRITE PROTECT ON`. Not implemented; **change required.** `U execute_command()`
-has no `W` case at all, so today it answers 33 and after SI-031 it would answer 31;
-either way the command has to be added rather than reclassified.
+**SI-102.** `W-1` sets a software write protect for the whole drive and `W-0` clears
+it. Sources: HD 9-35; IDE 15.4.10. While it is set, everything that would change a
+medium answers `26,WRITE PROTECT ON` and changes nothing, and everything that only reads
+works as it does otherwise. The command is exactly three characters, and `W` is a command
+letter only for those two, so any other `W` answers `30`. The protection lasts as long as
+the drive runs and is not written to the settings, as the device number of `U0>` is not
+(SI-100).
 
-**Decision (PR #881): not implemented.** No report or program asks for a software write
-protect, and it needed a check in every path that writes. `W` is not a command letter
-here, so the drive answers `31`.
+**SI-102a.** The gates the protection is enforced at, which together are every path from
+the bus to a medium.
+
+| Gate | Commands that reach it |
+| --- | --- |
+| the eleven command handlers that change a medium | `MD`, `RD`, `C`, `N`, `R`, `S`, `R-H`, `R-P`, `L`, `EL`, `EU`, `EH`, `A`, `U2`, `B-W`, `B-A`, `B-F` |
+| the file open | a write, an append and a replace, which answer `26` and open nothing |
+| the relative file | it opens for reading, and the record write answers `26`, drops the record and leaves the channel open, because the file can still be read |
+| the record seek | a record past the end of the file is not created; the answer is `50,RECORD NOT PRESENT` |
+
+`Suite11-SI102-WriteProtect` sends one command through each gate and then checks that
+the medium is unchanged and that reads still work, so a gate left out fails a test rather
+than leaving a hole.
 
 **SI-103.** The three resets are distinct.
 
@@ -1970,7 +1982,6 @@ affected by them.
 | --- | --- | --- |
 | SI-054 `V` | Inside a disk image, an OK would claim a validation of the block map that did not happen | `31` |
 | SI-090 `##n`, SI-092 | Large buffers serve sd2iec's 512 byte sector commands `DR` and `DW`, which are out of scope (SI-096); this drive's block commands use 256 byte sectors | `##n` opens a standard buffer; a third `B-P` number is ignored |
-| SI-102 `W-0`, `W-1` | No report or program asks for a software write protect, and it needs a check in every path that writes | `31` |
 | SI-105 `M-W`, `M-E` | Nothing written is kept and nothing is run, so an OK would tell a fast loader its drive code runs | `30` |
 | SI-137 raw directory | It would change what existing programs, and clients of the UCI target, receive when they open `$` on a data channel | the listing, as before |
 | SI-145 writing x00 files | A new user setting that no report asks for; reading x00 files (SI-144) already gives the interchange | new files are written plain |

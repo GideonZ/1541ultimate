@@ -138,6 +138,7 @@ IecDrive :: IecDrive() : SubSystem(SUBSYSID_IEC)
     intf = IecInterface :: get_iec_interface();
 	fm = FileManager :: getFileManager();
     my_bus_id = 0;
+    write_protect = false;
     enable = false;
     vfs = NULL; // registering the settings makes them take effect before this is built
 

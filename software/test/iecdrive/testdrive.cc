@@ -3486,6 +3486,92 @@ static void s11_si076_lock(FileManager *fm, IecDrive *dr)
     expect_command_response(testname, dr, "S47:INIMAGE\r", "01, FILES SCRATCHED,00,00\r");
 }
 
+// SI-102: while the software write protect is set, every command and every open that
+// would change a medium answers 26 and changes nothing, and everything that only reads
+// still works. One check per gate the drive guards, so a gate that is left out is a
+// failure here rather than a hole nobody notices.
+static void s11_si102_write_protect(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite11-SI102-WriteProtect";
+    const char *protect = "26,WRITE PROTECT ON,00,00\r";
+    s11_partition(fm, dr, "si102");
+    expect_iec_write_ok(testname, dr, 1, "KEEP", "keep");
+    expect_command_ok(testname, dr, "MD:SUB\r");
+    expect_rel_open(testname, dr, 2, "RECORDS", 8);
+    expect_rel_position_status(testname, dr, 2, 1, 1, "50,RECORD NOT PRESENT,00,00\r");
+    expect_rel_write(testname, dr, 2, (const uint8_t *)"FIRSTREC", 8);
+    close_file(dr, 2);
+    create_formatted_image(fm, "/Fat/s11_si102.d64", "PROTECT", 683, e_image_d64);
+    dr->add_partition(44, "/Fat/s11_si102.d64", "PROTECT");
+
+    expect_command_ok(testname, dr, "W-1\r");
+
+    // The commands that change a medium.
+    expect_command_response(testname, dr, "MD:NEWDIR\r", protect);
+    expect_command_response(testname, dr, "RD:SUB\r", protect);
+    expect_command_response(testname, dr, "C:COPY=KEEP\r", protect);
+    expect_command_response(testname, dr, "N:FRESH.D64\r", protect);
+    expect_command_response(testname, dr, "R:OTHER=KEEP\r", protect);
+    expect_command_response(testname, dr, "S:KEEP\r", protect);
+    expect_command_response(testname, dr, "R-H:NEWHEAD\r", protect);
+    expect_command_response(testname, dr, "L:KEEP\r", protect);
+    expect_command_response(testname, dr, "EL:KEEP\r", protect);
+    expect_command_response(testname, dr, "EU:KEEP\r", protect);
+    expect_command_response(testname, dr, "EHKEEP\r", protect);
+    expect_command_response(testname, dr, "A:R=KEEP\r", protect);
+    expect_command_response(testname, dr, "R-P:OTHER=PROTECT\r", protect);
+
+    // The block commands that write, on the image partition.
+    expect_command_response(testname, dr, "CP44\r", "02,PARTITION SELECTED,44,00\r");
+    open_buffer_channel(testname, dr, 3);
+    expect_command_response(testname, dr, "U2:3,0,1,0\r", protect);
+    expect_command_response(testname, dr, "B-W:3,0,1,0\r", protect);
+    expect_command_response(testname, dr, "B-A:0,1,0\r", protect);
+    expect_command_response(testname, dr, "B-F:0,1,0\r", protect);
+    // Reading a block still works.
+    expect_command_ok(testname, dr, "U1:3,0,1,0\r");
+    close_file(dr, 3);
+    expect_command_response(testname, dr, "CP40\r", "02,PARTITION SELECTED,40,00\r");
+
+    // The opens that would write, and the record write of a relative file, which is
+    // opened for reading and writing whatever the command asks for.
+    expect_iec_open_status_prefix(testname, dr, 1, "NEWFILE", "26,");
+    expect_iec_open_status_prefix(testname, dr, 1, "@KEEP", "26,");
+    expect_iec_open_status_prefix(testname, dr, 2, "KEEP,S,A", "26,");
+    // The record that is there is read; the one past the end is not created, and a
+    // write to either is refused.
+    expect_rel_open(testname, dr, 2, "RECORDS", 8);
+    expect_rel_position_status(testname, dr, 2, 1, 1, "00, OK,00,00\r");
+    expect_rel_read(testname, dr, 2, (const uint8_t *)"FIRSTREC", 8);
+    expect_rel_position_status(testname, dr, 2, 9, 1, "50,RECORD NOT PRESENT,00,00\r");
+    expect_rel_position_status(testname, dr, 2, 1, 1, "00, OK,00,00\r");
+    send_channel_data(dr, 2, (const uint8_t *)"12345678", 8);
+    get_status(dr);
+    expect_current_status(testname, "REL write while protected", protect);
+    // The channel stays usable, and the record still holds what it held.
+    expect_rel_position_status(testname, dr, 2, 1, 1, "00, OK,00,00\r");
+    expect_rel_read(testname, dr, 2, (const uint8_t *)"FIRSTREC", 8);
+    close_file(dr, 2);
+
+    // Nothing was changed, and reading is unaffected.
+    expect_iec_file(testname, dr, 0, "KEEP", "keep");
+    char type[8];
+    bool present;
+    s11_listing_type(dr, testname, "$", "KEEP", type, &present);
+    REQUIRE(present && !strcmp(type, "PRG "));
+    s11_listing_type(dr, testname, "$", "SUB", type, &present);
+    REQUIRE(present);
+    expect_command_ok(testname, dr, "CD//SUB\r");
+    expect_command_ok(testname, dr, "CD//\r");
+
+    // W-0 gives the medium back.
+    expect_command_ok(testname, dr, "W-0\r");
+    expect_command_ok(testname, dr, "MD:NEWDIR\r");
+    expect_command_ok(testname, dr, "RD:NEWDIR\r");
+    expect_command_response(testname, dr, "W-2\r", "30,SYNTAX ERROR,00,00\r");
+    dr->get_file_system()->RemovePartition(44);
+}
+
 // SI-077: the sd2iec spellings of the attribute commands. EL and EU set and clear the
 // lock that L turns over (SI-076), EH turns the hidden flag over, and A names every
 // attribute an entry is to carry.
@@ -5144,6 +5230,7 @@ static const Suite11Case suite11_cases[] = {
     { "Suite11-SI077-AttributeCommands", s11_si077_attribute_commands },
     { "Suite11-SI051-RenamePartition",   s11_si051_rename_partition },
     { "Suite11-SI064-RenameHeader",      s11_si064_rename_header },
+    { "Suite11-SI102-WriteProtect",      s11_si102_write_protect },
     { "Suite11-SI090-BufferPointer",     s11_si090_buffer_pointer },
     { "Suite11-SI093-BoundPartition",    s11_si093_bound_partition },
     { "Suite11-SI094-BlockLength",       s11_si094_block_length },
