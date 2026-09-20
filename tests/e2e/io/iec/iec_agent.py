@@ -190,9 +190,10 @@ class Agent:
         self.call(WRITE, 15, command)
         return self.call(READ_TO_EOI, 15, expect=size)
 
-    def move_drive(self, device):
-        """Moves the Software IEC drive to `device` with U0>, and returns the device number
-        the drive list reports afterwards.
+    def move_drive(self, device, command=None):
+        """Moves the Software IEC drive to `device` and returns the device number the drive
+        list reports afterwards. The default command is U0>, and `command` sends another
+        form, such as the S-8 of SI-101.
 
         The drive list says where the drive went without addressing a device that may not
         be there: a KERNAL open of an absent device leaves the agent busy past its budget.
@@ -200,7 +201,7 @@ class Agent:
         the new one, and later calls address the new number.
         """
         old = self.softiec_device
-        self.call(WRITE, 15, b"U0>" + bytes([device]) + b"\r", device=old)
+        self.call(WRITE, 15, command or (b"U0>" + bytes([device]) + b"\r"), device=old)
         moved = iec_drive(self.api)["bus_id"]
         if (moved == device) and (device != old):
             try:

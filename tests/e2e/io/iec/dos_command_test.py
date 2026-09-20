@@ -337,6 +337,90 @@ def check_compatibility(agent, api, password, folder, root):
             agent.move_drive(11)
         agent.status((0,))
 
+    def device_aliases():
+        # SI-101: S-8, S-9 and S-D are the typed aliases of the same move, and they are
+        # exactly three characters, so S:-8 is still a scratch.
+        moved = agent.move_drive(9, command=b"S-9\r")
+        detail(f"after S-9 the drive list reports device {moved}")
+        if moved != 9:
+            agent.status((0,))
+            raise Failure(f"the drive stayed at device {moved}")
+        try:
+            reply = agent.call(3, 15, device=9, expect=STATUS_BYTES).decode("ascii").strip()
+            detail(f"device 9 answered {reply!r}")
+            if not reply.startswith("00,"):
+                raise Failure(f"device 9 answered {reply!r}")
+        finally:
+            # S-D returns the drive to the number the settings hold, which this suite
+            # has set to 11.
+            back = agent.move_drive(11, command=b"S-D\r")
+            detail(f"after S-D the drive list reports device {back}")
+        if back != 11:
+            raise Failure(f"S-D left the drive at device {back}")
+        agent.status((0,))
+
+    def clock_write():
+        # SI-120 on the real clock chip: the drive's clock is the system clock, so the
+        # value written here is read back through every form and then put back.
+        before = agent.command_reply(b"T-RI\r", 24).decode("ascii").strip()
+        detail(f"the clock reads {before!r}")
+        if not re.match(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d [A-Z]{3}$", before):
+            raise Failure(f"T-RI answered {before!r}")
+        try:
+            agent.command(b"T-WI2026-09-12T13:02:03\r", allowed=(0,))
+            iso = agent.command_reply(b"T-RI\r", 24).decode("ascii").strip()
+            ascii_form = agent.command_reply(b"T-RA\r", 26).decode("ascii").strip()
+            decimal = agent.command_reply(b"T-RD\r", 9)
+            bcd = agent.command_reply(b"T-RB\r", 9)
+            detail(f"after T-WI the clock reads {iso!r}, {ascii_form!r}, "
+                   f"{decimal.hex()}, {bcd.hex()}")
+            if iso != "2026-09-12T13:02:03 SAT":
+                raise Failure(f"T-RI answered {iso!r} after a clock write")
+            if ascii_form != "SAT. 09/12/26 01:02:03 PM":
+                raise Failure(f"T-RA answered {ascii_form!r} after a clock write")
+            if decimal != bytes([6, 126, 9, 12, 1, 2, 3, 1, 13]):
+                raise Failure(f"T-RD answered {decimal.hex()} after a clock write")
+            if bcd != bytes([6, 0x26, 0x09, 0x12, 0x01, 0x02, 0x03, 1, 13]):
+                raise Failure(f"T-RB answered {bcd.hex()} after a clock write")
+            # A day the month does not have is refused and changes nothing.
+            agent.command(b"T-WI2026-02-30T00:00:00\r", allowed=(30,))
+            still = agent.command_reply(b"T-RI\r", 24).decode("ascii").strip()
+            if still != iso:
+                raise Failure(f"a refused clock write left the clock at {still!r}")
+            # The clock the drive set is the system clock, so a file written over FTP
+            # right afterwards carries that date in its time stamp.
+            with ftp.session(api.host, password) as client:
+                ftp.store(client, f"{directory}/CLOCK.PRG", b"stamped by the written clock")
+            stamped = listing_of(agent, f"$//{here.decode()}/:CLOCK*=L")
+            detail(f"a file written after the clock write lists as {stamped[LINE:2 * LINE]!r}")
+            if b"09/12/26" not in stamped:
+                raise Failure("a file written after the clock write is not stamped 09/12/26")
+            agent.command(b"S//" + here + b"/:CLOCK\r", allowed=(1,))
+        finally:
+            # Put the clock back where it was, whatever happened, and check it took.
+            agent.command(b"T-WI" + before[:19].encode("ascii") + b"\r", allowed=(0,))
+            restored = agent.command_reply(b"T-RI\r", 24).decode("ascii").strip()
+            detail(f"the clock is back at {restored!r}")
+        if restored[:19] != before[:19]:
+            raise Failure(f"the clock was left at {restored!r}, not {before!r}")
+
+    def write_protect():
+        # SI-102 over the real bus: while W-1 is set nothing that changes a medium runs.
+        agent.command(b"CD//" + here + b"\r")
+        agent.command(b"W-1\r", allowed=(0,))
+        try:
+            for command in (b"MD:PROTECTED\r", b"S:*\r", b"R:X=Y\r"):
+                response = agent.command(command, allowed=(26,))
+                detail(f"{command!r} answers {response!r}")
+            listing = listing_of(agent, f"$//{here}")
+            if b"PROTECTED" in listing:
+                raise Failure("a directory was created while the drive was write protected")
+        finally:
+            agent.command(b"W-0\r", allowed=(0,))
+        agent.command(b"MD:PROTECTED\r", allowed=(0,))
+        agent.command(b"RD:PROTECTED\r", allowed=(0,))
+        agent.command(b"CD//\r")
+
     def left_arrow():
         agent.command(b"CD//" + here + b"\r")
         agent.command(b"MD:_\r")
@@ -467,6 +551,9 @@ def check_compatibility(agent, api, password, folder, root):
             ("SI-105: M-R answers the two bytes C64 OS asks for, all zero", memory_read),
             ("SI-045, SI-046, SI-130: the partition directory", partition_directory),
             ("SI-100: U0> moves the drive to device 12 on the bus, and U0> moves it back", device_number),
+            ("SI-101: S-9 and S-D move the drive on the bus", device_aliases),
+            ("SI-120: T-W sets the clock the drive and the system share", clock_write),
+            ("SI-102: W-1 refuses every command that changes a medium", write_protect),
             ("SI-014: a left arrow between slashes is a directory name", left_arrow),
             ("SI-147, SI-148: a shifted space in a name, on this CPU", shifted_space),
             ("SI-021, SI-022: a 253 byte command runs, a 254 byte one is refused", command_length),
