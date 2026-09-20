@@ -14,9 +14,10 @@
 
 #define X00_HEADER_SIZE 26
 
-// The CBM file type the host name announces, as the letter 'P', 'S', 'U' or 'R', and
-// false when the name is not an x00 name. The name alone does not make a wrapper; the
-// header has to be read as well.
+// The CBM file type an x00 extension announces, as the letter 'P', 'S', 'U' or 'R', and
+// false for any other extension. `x00_name` takes a whole path and reads the extension of
+// its last component. A name alone does not make a wrapper; the header has to be read too.
+bool x00_extension(const char *ext, char *type_letter);
 bool x00_name(const char *path, char *type_letter);
 
 // The header of an x00 file, checked. cbm_name takes 17 bytes and record_length one.

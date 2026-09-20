@@ -2,14 +2,9 @@
 #include <ctype.h>
 #include <string.h>
 
-bool x00_name(const char *path, char *type_letter)
+bool x00_extension(const char *ext, char *type_letter)
 {
-    const char *dot = strrchr(path, '.');
-    if (!dot || strchr(dot, '/')) {
-        return false;
-    }
-    const char *ext = dot + 1;
-    if (!ext[0] || !isdigit((uint8_t)ext[1]) || !isdigit((uint8_t)ext[2]) || ext[3]) {
+    if (!ext || !ext[0] || !isdigit((uint8_t)ext[1]) || !isdigit((uint8_t)ext[2]) || ext[3]) {
         return false;
     }
     char letter = (char)toupper((uint8_t)ext[0]);
@@ -20,6 +15,12 @@ bool x00_name(const char *path, char *type_letter)
         *type_letter = letter;
     }
     return true;
+}
+
+bool x00_name(const char *path, char *type_letter)
+{
+    const char *dot = strrchr(path, '.');
+    return dot && !strchr(dot, '/') && x00_extension(dot + 1, type_letter);
 }
 
 bool x00_header(const uint8_t *header, uint32_t length, char *cbm_name, uint8_t *record_length)

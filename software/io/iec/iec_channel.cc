@@ -636,19 +636,8 @@ static void append_path_component(mstring& path, const char *component)
 // The CBM file type an x00 name announces, in the drive's own vocabulary (SI-144). The
 // header itself is read by software/filetypes/x00_wrapper.cc, which the C64 loader uses
 // as well.
-static bool x00_type(const char *path_or_ext, bool is_extension, filetype_t *type)
+static bool x00_type_of_letter(char letter, filetype_t *type)
 {
-    char letter = 0;
-    if (is_extension) {
-        char name[8] = ".";
-        strncpy(name + 1, path_or_ext, 4);
-        name[5] = 0;
-        if (!x00_name(name, &letter)) {
-            return false;
-        }
-    } else if (!x00_name(path_or_ext, &letter)) {
-        return false;
-    }
     switch (letter) {
     case 'P': *type = e_prg; return true;
     case 'S': *type = e_seq; return true;
@@ -658,12 +647,24 @@ static bool x00_type(const char *path_or_ext, bool is_extension, filetype_t *typ
     return false;
 }
 
+static bool x00_type_of_name(const char *path, filetype_t *type)
+{
+    char letter = 0;
+    return x00_name(path, &letter) && x00_type_of_letter(letter, type);
+}
+
+static bool x00_type_of_extension(const char *ext, filetype_t *type)
+{
+    char letter = 0;
+    return x00_extension(ext, &letter) && x00_type_of_letter(letter, type);
+}
+
 // The CBM name, and the type, of a host file that is a genuine x00 wrapper; false for any
 // other file, which is not opened unless its extension is an x00 one.
 bool iec_x00_probe(FileManager *fm, const char *path, char *cbm_name, filetype_t *type, uint8_t *record_length)
 {
     filetype_t found;
-    if (!x00_type(path, false, &found)) {
+    if (!x00_type_of_name(path, &found)) {
         return false;
     }
     File *file = NULL;
@@ -691,7 +692,7 @@ int iec_entry_name(FileManager *fm, const char *dir_path, FileInfo *info, char *
     IecPartition::CreateIecName(info, cbm_name, type);
     filetype_t wrapped;
     if ((info->attrib & AM_DIR) || (info->name_format & NAME_FORMAT_CBM) || !dir_path ||
-        !x00_type(info->extension, true, &wrapped)) {
+        !x00_type_of_extension(info->extension, &wrapped)) {
         return 0;
     }
     mstring path(dir_path);
@@ -701,10 +702,6 @@ int iec_entry_name(FileManager *fm, const char *dir_path, FileInfo *info, char *
     }
     return X00_HEADER_SIZE;
 }
-
-// Moves a file opened for reading past its x00 header when it has one, and returns the
-// size of the header, 0 or X00_HEADER_SIZE (SI-144).
-
 
 // ConstructPath() names a file of any type with the pattern .???, which fstat() matches.
 // This puts the name fstat() found in place of the pattern, because an x00 file is told
@@ -1741,12 +1738,12 @@ int IecChannel::seek_record(int recordNumber, int offset)
     uint32_t currentSize = f->get_size();
     FRESULT fres;
     int err = ERR_ALL_OK;
-    if ((currentSize < minimumFileSize) && drive->is_write_protected()) {
+    if (currentSize < minimumFileSize) { // append with additional records that are 'FF's, followed by zeros.
         // Reaching a record past the end grows the file, which a write protected drive
         // does not do; the record really is not there (SI-102).
-        return ERR_RECORD_NOT_PRESENT;
-    }
-    if (currentSize < minimumFileSize) { // append with additional records that are 'FF's, followed by zeros.
+        if (drive->is_write_protected()) {
+            return ERR_RECORD_NOT_PRESENT;
+        }
         fres = f->seek(currentSize);
 
         uint8_t *block = new uint8_t[512];
