@@ -1306,6 +1306,8 @@ static void run_iec_append_replace_sequence(IecDrive *dr, const char *label)
     printf("Append/replace sequence on %s completed successfully!\n", label);
 }
 
+// SI-035: an open for writing when a file of that name exists answers 63, an open for
+// reading when none does answers 62, and an existing REL opened with another type 64.
 void execute_suite5(FileManager *fm, IecDrive *dr)
 {
     const char *testname = "Suite5";

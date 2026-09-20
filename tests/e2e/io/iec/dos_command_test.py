@@ -655,6 +655,8 @@ def check_partition_commands(agent):
     # and "C" followed by a shifted P and the number as a byte. The byte can be 13,
     # which is the same carriage return BASIC appends, so a drive that drops the
     # terminator without looking at the command loses the parameter.
+    # SI-017 and SI-034: the binary Change Partition keeps a parameter byte of 13, and a
+    # partition that is not there answers 77.
     with check("C<shift-P> reads a partition number of 13 as a number"):
         response = agent.command(bytes([ord("C"), 0xD0, 13]), allowed=(77,))
         detail(response)
