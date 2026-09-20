@@ -3629,7 +3629,10 @@ static void s11_si077_attribute_commands(FileManager *fm, IecDrive *dr)
     REQUIRE(s11_listing_line(listing, got, "TWO") != NULL);
     expect_command_ok(testname, dr, "A:=TWO\r");
 
-    // A name that matches nothing.
+    // A name that matches nothing, which is also what the sd2iec form that write
+    // protects a whole image answers, because `$` matches no entry (SI-077).
+    expect_command_response(testname, dr, "EL:$\r", "62,FILE NOT FOUND,00,00\r");
+    expect_command_response(testname, dr, "EU:$\r", "62,FILE NOT FOUND,00,00\r");
     expect_command_response(testname, dr, "EL:NOSUCH\r", "62,FILE NOT FOUND,00,00\r");
     expect_command_response(testname, dr, "EHNOSUCH\r", "62,FILE NOT FOUND,00,00\r");
 
@@ -3929,6 +3932,45 @@ static void s11_si144_shared_header(FileManager *fm, IecDrive *dr)
                testname, cases[i].host, skipped, head[0], head[1]);
         REQUIRE(skipped == cases[i].header);
         REQUIRE((got == 2) && (head[0] == 0x01) && (head[1] == 0x08));
+    }
+}
+
+// SI-137 and SI-145: the two things the drive deliberately does not do on this side.
+// Opening `$` on a data channel gives the BASIC listing and not the raw directory
+// sectors, and a file the drive creates is written plain and not in an x00 wrapper.
+static void s11_deliberate_exclusions(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite11-DeliberateExclusions";
+    const char *path = s11_partition(fm, dr, "excl");
+    uint8_t listing[4096];
+
+    // SI-137: the same bytes on channel 0, on channel 2 and on channel 14.
+    int n0 = read_directory_stream(testname, dr, "$", listing, sizeof(listing));
+    REQUIRE((n0 > 4) && (listing[0] == 1) && (listing[1] == 4));
+    for (uint8_t chan = 2; chan <= 14; chan += 12) {
+        uint8_t other[4096];
+        open_file(dr, chan, "$");
+        get_status(dr);
+        expect_current_status(testname, "$ on a data channel", "00, OK,00,00\r");
+        int n = read_file(dr, chan, other, sizeof(other));
+        close_file(dr, chan);
+        printf("%s: $ on channel %u is %d bytes, on channel 0 it is %d\n",
+               testname, chan, n, n0);
+        REQUIRE((n == n0) && (memcmp(other, listing, n0) == 0));
+    }
+
+    // SI-145: a new file of every type is written under its host name, with no header.
+    static const struct { const char *name; const char *host; } written[] = {
+        { "PLAINSEQ,S,W", "plainseq.seq" },
+        { "PLAINUSR,U,W", "plainusr.usr" },
+        { "PLAINPRG,P,W", "plainprg.prg" },
+    };
+    for (int i = 0; i < 3; i++) {
+        expect_iec_write_ok(testname, dr, 2, written[i].name, "payload");
+        uint8_t raw[64];
+        int got = s11_read_host_file(fm, path, written[i].host, raw, sizeof(raw));
+        printf("%s: %s is %d bytes on the host\n", testname, written[i].host, got);
+        REQUIRE((got == 7) && (memcmp(raw, "payload", 7) == 0));
     }
 }
 
@@ -5306,6 +5348,7 @@ static const Suite11Case suite11_cases[] = {
     { "Suite11-SI103-Resets",            s11_si103_resets },
     { "Suite11-SI144-ReadX00",           s11_si144_read_x00 },
     { "Suite11-SI144-SharedHeader",      s11_si144_shared_header },
+    { "Suite11-DeliberateExclusions",    s11_deliberate_exclusions },
     { "Suite11-SI084-RelLayouts",        s11_si084_rel_layouts },
     { "Suite11-SI144-X00Paths",          s11_x00_paths },
     { "Suite11-SI084-RelInImage",        s11_rel_in_image },

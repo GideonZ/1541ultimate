@@ -332,6 +332,14 @@ void test_added_commands(void)
     // A file rename still reaches the file rename.
     test_dispatch("R:NEW=OLD", 9, 0, NULL);
 
+    // The commands section 18.1 marks deliberately unsupported answer what it says, so a
+    // later implementation has to change a test on purpose. SI-054 `V` is not a command
+    // letter, as it is not one in SD parse_doscommand(); SI-105 `M-W` and `M-E` are
+    // refused arguments of a command letter that is one.
+    test_dispatch("V", 1, ERR_UNKNOWN_CMD, NULL);
+    test_dispatch("V:", 2, ERR_UNKNOWN_CMD, NULL);
+    test_dispatch("V1:\r", 4, ERR_UNKNOWN_CMD, NULL);
+
     // SI-102: W-1 sets the software write protect and W-0 clears it, in exactly three
     // characters. W is a command letter only for those two.
     test_dispatch("W-1", 3, 0, "write protect", 1);

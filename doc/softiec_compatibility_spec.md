@@ -1599,36 +1599,21 @@ These are stated so that later work does not quietly regress them.
 
 ### 15.3 Consequences elsewhere
 
-**SI-151. Retired.** An earlier revision of this document required the relative file
-record length to change from two bytes to one, and this requirement carried the
-migration for the files this firmware had already written. Both were wrong: a
-migration over user data, by a heuristic, in order to gain an interchange that the
-x00 wrapper already provides, is a cost with no matching benefit. SI-084 now reads
-both plain layouts and keeps writing the existing one, and SI-146 provides the
-interchange, so there is nothing to migrate. The number is left retired rather than
-reused, so that a reference to it in an older note resolves to this paragraph.
+**SI-151. Retired.** The number held a requirement to migrate the relative files this
+firmware had written, from a two byte record length to a one byte one. A migration over
+user data, by a heuristic, to gain an interchange the x00 wrapper already provides, is a
+cost with no matching benefit; SI-084 reads both plain layouts instead. The number is
+left retired rather than reused, so that a reference to it in an older note resolves
+here.
 
-**SI-152.** Raising the command buffer (SI-021) changes the `SOFTIEC_LOG_MAX_BYTES`
-assumption in `software/io/iec/iec_log.h`, which is 64 because the buffers were 64.
-The failure log must keep reporting a command's real length and mark where its
-rendering is cut.
-
-A log line carries one rendering of the bytes, as
-text with every byte that is not printable ASCII written as `\xNN`, which loses nothing.
-A rendering that does not fit its 260 character buffer ends in `..`, and the line still
-carries the real length. The lines of the setting **Log Every Operation** (section 18)
-render the directory, the host path and a reply the same way.
-
-**SI-153.** Three existing tests encode behaviour this specification changes, and
-each must be updated in the same commit as the change, not separately.
-
-| Test | Today | After |
-| --- | --- | --- |
-| `Suite8-CD-PARENT-OTHERDIR` in `software/test/iecdrive/testdrive.cc` | `CD/_/OTHERDIR` succeeds | rewritten as `CD/../OTHERDIR` (SI-014) |
-| any test that asserts `62,FILE NOT FOUND` from a scratch that matched nothing | 62 | `01,FILES SCRATCHED,00,00` (SI-033) |
-| any test that asserts `33` for a command whose first letter is not a command letter | 33 | `31` (SI-031) |
-| `Suite10-U3` in `testdrive.cc` and `test_dispatch("U3:2,0,18,0", ..., ERR_UNKNOWN_CMD)` in `software/io/iec/cbmdos_parser_test.cc` | 33 | `30`, because `U` is a command letter and only the sub-command is unknown (SI-104, SI-030) |
-| `Suite10-FullBuffer` in `testdrive.cc`, which sends 64 bytes of `Z` and asserts `33,SYNTAX ERROR` to show the full buffer is still executed | 33 | `32`, because a command that fills the buffer is refused (SI-022); the test's purpose, that the 64th byte is not lost, needs a 64-byte command that is valid, sent after the buffer is raised |
+**SI-152.** A log line carries one rendering of the bytes of a command, as text with
+every byte that is not printable ASCII written as `\xNN`, which loses nothing. A
+rendering that does not fit its 260 character buffer ends in `..`, and the line still
+carries the command's real length, so a reader can tell a long command from a cut
+rendering of one. `SOFTIEC_LOG_MAX_BYTES` in `software/io/iec/iec_log.h` is how many
+command bytes a line renders, and it is bounded by the command buffer of SI-021. The
+lines of the setting **Log Every Operation** (section 18) render the directory, the host
+path and a reply the same way.
 
 ---
 
@@ -1864,7 +1849,7 @@ other software that already targets these devices.
 
 ## Appendix B. Requirement index
 
-Sections 2 to 15 define the numbered paragraphs SI-001 to SI-153, with gaps, one of which
+Sections 2 to 15 define the numbered paragraphs SI-001 to SI-152, with gaps, one of which
 (SI-151) is retired. A paragraph whose number carries a letter, such as SI-103a, states a
 further rule of the requirement it follows and is numbered that way so that the numbers
 already cited elsewhere keep their meaning.
