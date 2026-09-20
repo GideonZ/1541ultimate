@@ -148,6 +148,14 @@ PRG_BYTES = bytes(
     ]
 ) + SIGNATURE + MESSAGE.encode("ascii") + bytes([0x0D, 0x00])
 
+# The CBM name inside the x00 fixture. It carries a space and is longer than the 8.3
+# host name the wrapper lives under, so a browser row that shows it can only have come
+# from the header (SI-144).
+P00_CBM_NAME = "WRAPPED PROGRAM"
+P00_HEADER = (b"C64File\0" + P00_CBM_NAME.encode("ascii").ljust(16, b"\0")
+              + b"\0" + bytes([0]))
+P00_BYTES = P00_HEADER + PRG_BYTES
+
 SECTORS_PER_TRACK = [21] * 17 + [19] * 7 + [18] * 6 + [17] * 5
 D64_SIZE = 174848
 D64_DIR_TRACK = 18
@@ -650,6 +658,9 @@ class Fixtures:
         self.token = token
         self.prg = f"{FIXTURE_PREFIX}{token}.prg"
         self.d64 = f"{FIXTURE_PREFIX}{token}.d64"
+        # The same program behind a P00 header, under a host name that says nothing
+        # about what it holds.
+        self.p00 = f"{FIXTURE_PREFIX}{token}w.p00"
         self.target_dir = f"{FIXTURE_PREFIX}{token}tgt"
         self.disk_serial = 0
         # A name far beyond the 16 characters the boot cart can display. The
@@ -668,6 +679,7 @@ class Fixtures:
         payload = {
             self.prg: PRG_BYTES,
             self.long_prg: PRG_BYTES,
+            self.p00: P00_BYTES,
             self.d64: build_d64(DISK_NAME, CBM_FILE_NAME, PRG_BYTES),
         }
         with ftp_lib.session(host, password, timeout=30) as ftp:
@@ -690,6 +702,10 @@ class Fixtures:
     def reseed_prg(self, host: str, password: str) -> None:
         with ftp_lib.session(host, password, timeout=30) as ftp:
             self._store(ftp, self.prg, PRG_BYTES)
+
+    def reseed_p00(self, host: str, password: str) -> None:
+        with ftp_lib.session(host, password, timeout=30) as ftp:
+            self._store(ftp, self.p00, P00_BYTES)
 
     def new_disk(self, host: str, password: str) -> None:
         """A fresh image name: the browser caches a disk directory per path."""
@@ -766,6 +782,13 @@ def open_plain_prg(machine: Machine, fixtures: Fixtures) -> None:
 def open_long_name_prg(machine: Machine, fixtures: Fixtures) -> None:
     machine.open_temp()
     machine.select_entry(fixtures.long_prefix)
+
+
+def open_wrapped_prg(machine: Machine, fixtures: Fixtures) -> None:
+    machine.open_temp()
+    # By the name in the header, not by the host name: the browser shows a wrapper
+    # under the name the C64 sees.
+    machine.select_entry(P00_CBM_NAME)
 
 
 def open_disk_prg(machine: Machine, fixtures: Fixtures) -> None:
@@ -871,6 +894,14 @@ class PlainLocation:
     def entry_name(self, fixtures: Fixtures) -> str:
         return fixtures.prg
 
+    def host_name(self, fixtures: Fixtures) -> str:
+        """The name on the medium, which is the browser's row for everything but a
+        wrapper, whose row carries the name in its header instead."""
+        return self.entry_name(fixtures)
+
+    def file_bytes(self) -> bytes:
+        return PRG_BYTES
+
     def renamed_to(self, fixtures: Fixtures) -> str:
         return f"{FIXTURE_PREFIX}{fixtures.token}ren.prg"
 
@@ -904,8 +935,50 @@ class DiskLocation:
     def refresh(self, host: str, password: str, fixtures: Fixtures) -> None:
         fixtures.new_disk(host, password)
 
+    def host_name(self, fixtures: Fixtures) -> str:
+        return self.entry_name(fixtures)
+
+    def file_bytes(self) -> bytes:
+        return PRG_BYTES
+
     def forbidden_actions(self) -> tuple[str, ...]:
         return ()
+
+
+class WrappedLocation:
+    """The same PRG behind a P00 header, as an ordinary file in /Temp.
+
+    Everything the browser offers a plain PRG it has to offer this file too, and every
+    action has to act on the program inside rather than on the header in front of it
+    (SI-144). The browser row carries the name from the header, which is how this
+    location tells the two apart.
+    """
+
+    label = "a PRG in a P00 wrapper"
+
+    def open(self, machine: Machine, fixtures: Fixtures) -> None:
+        open_wrapped_prg(machine, fixtures)
+
+    def entry_name(self, _fixtures: Fixtures) -> str:
+        return P00_CBM_NAME
+
+    def host_name(self, fixtures: Fixtures) -> str:
+        return fixtures.p00
+
+    def file_bytes(self) -> bytes:
+        return P00_BYTES
+
+    def renamed_to(self, fixtures: Fixtures) -> str:
+        return f"{FIXTURE_PREFIX}{fixtures.token}wren.p00"
+
+    def listing(self, host: str, password: str, fixtures: Fixtures) -> list[str]:
+        return fixtures.temp_listing(host, password)
+
+    def refresh(self, host: str, password: str, fixtures: Fixtures) -> None:
+        fixtures.reseed_p00(host, password)
+
+    def forbidden_actions(self) -> tuple[str, ...]:
+        return ("Mount & Run", "Real Run")
 
 
 def assert_present(names: list[str], wanted: str, what: str) -> None:
@@ -977,10 +1050,11 @@ def action_copy_to(machine: Machine, fixtures: Fixtures, location, host: str, pa
     copied = fixtures.temp_listing(host, password, f"{fixtures.target_dir}/")
     if len(copied) != 1:
         raise Failure(f"expected exactly one copy in the target directory, got {copied}")
-    if fetch_temp_file(host, password, f"{fixtures.target_dir}/{copied[0]}")[:len(PRG_BYTES)] != PRG_BYTES:
+    wanted = location.file_bytes()
+    if fetch_temp_file(host, password, f"{fixtures.target_dir}/{copied[0]}")[:len(wanted)] != wanted:
         raise Failure(f"the copy {copied[0]!r} does not hold the fixture bytes")
     assert_present(location.listing(host, password, fixtures),
-                   location.entry_name(fixtures), "Copy to... removed the original")
+                   location.host_name(fixtures), "Copy to... removed the original")
 
 
 def action_move_to(machine: Machine, fixtures: Fixtures, location, host: str, password: str) -> None:
@@ -997,13 +1071,13 @@ def action_move_to(machine: Machine, fixtures: Fixtures, location, host: str, pa
     if len(moved) != 1:
         raise Failure(f"expected exactly one moved file in the target directory, got {moved}")
     assert_absent(location.listing(host, password, fixtures),
-                  location.entry_name(fixtures), "Move to... left the original behind")
+                  location.host_name(fixtures), "Move to... left the original behind")
 
 
 def action_rename(machine: Machine, fixtures: Fixtures, location, host: str, password: str) -> None:
     location.refresh(host, password, fixtures)
     location.open(machine, fixtures)
-    original = location.entry_name(fixtures)
+    original = location.host_name(fixtures)
     renamed = location.renamed_to(fixtures)
     machine.invoke_context_action("Rename")
     machine.wait_for_text("Give a new name..")
@@ -1017,7 +1091,7 @@ def action_rename(machine: Machine, fixtures: Fixtures, location, host: str, pas
 def action_delete(machine: Machine, fixtures: Fixtures, location, host: str, password: str) -> None:
     location.refresh(host, password, fixtures)
     location.open(machine, fixtures)
-    original = location.entry_name(fixtures)
+    original = location.host_name(fixtures)
     machine.invoke_context_action("Delete")
     machine.wait_for_text("Are you sure?")
     machine.press_popup_button("y")
@@ -1253,7 +1327,7 @@ def main() -> int:
     machine = Machine(session, browser)
     fixtures = Fixtures(args.fixture_token)
 
-    locations = [PlainLocation(), DiskLocation()]
+    locations = [PlainLocation(), WrappedLocation(), DiskLocation()]
 
     failures: list[tuple[str, str]] = []
     total = 0
@@ -1276,7 +1350,8 @@ def main() -> int:
             machine.close_menu()
             machine.reset()
 
-        with check(f"seed /Temp with {fixtures.prg}, {fixtures.d64} and a long-named PRG"):
+        with check(f"seed /Temp with {fixtures.prg}, {fixtures.p00}, {fixtures.d64} "
+                   f"and a long-named PRG"):
             fixtures.seed(rest_host, args.password)
 
         # Real Run is the only action here that reaches the C64 over the IEC

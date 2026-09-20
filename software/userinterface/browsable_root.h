@@ -11,6 +11,7 @@
 #include "browsable.h"
 #include "filemanager.h"
 #include "filetypes.h"
+#include "x00_wrapper.h"
 #include "size_str.h"
 #include "user_file_interaction.h"
 #include "network_interface.h"
@@ -75,8 +76,56 @@ class BrowsableDirEntry : public Browsable
 	FileInfo *info;
 	FileType *type;
 	char *fatname;
+	// The name a P00, S00, U00 or R00 file carries in its header, which is the name the
+	// C64 sees and the drive lists; NULL for every other file. Read once, because the
+	// host name of such a file is an 8.3 rendering that does not identify it (SI-144).
+	char *cbm_name;
+	bool cbm_probed;
 	Path *path;
 	Path *parent_path;
+
+	// The CBM name inside an x00 wrapper, or NULL. The file is opened once per entry;
+	// the drive's own listing reads the same header for the same reason (SI-144).
+	const char *wrappedName(void) {
+		if (cbm_probed) {
+			return cbm_name;
+		}
+		cbm_probed = true;
+		char letter = 0;
+		if (!info || (info->attrib & (AM_DIR | AM_VOL)) ||
+		    !x00_extension(info->extension, &letter)) {
+			return NULL;
+		}
+		mstring full(parent_path->get_path());
+		if (full[-1] != '/') {
+			full += "/";
+		}
+		full += info->lfname;
+		File *f = NULL;
+		FileManager *fm = FileManager::getFileManager();
+		if (fm->fopen(full.c_str(), FA_READ, &f) != FR_OK) {
+			return NULL;
+		}
+		uint8_t head[X00_HEADER_SIZE];
+		uint32_t got = 0;
+		char name[17];
+		bool wrapped = (f->read(head, X00_HEADER_SIZE, &got) == FR_OK) &&
+		               x00_header(head, got, name, NULL);
+		fm->fclose(f);
+		if (!wrapped) {
+			return NULL;
+		}
+		// The 16 bytes are padded with shifted spaces or zeros, neither of which the
+		// screen should show.
+		int len = 16;
+		while ((len > 0) && ((uint8_t)name[len - 1] <= ' ' || (uint8_t)name[len - 1] == 0xA0)) {
+			len--;
+		}
+		name[len] = 0;
+		cbm_name = new char[len + 1];
+		strcpy(cbm_name, name);
+		return cbm_name;
+	}
 
 	void setPath(void) {
 		if (!path) {
@@ -94,6 +143,8 @@ public:
 		this->parent = parent;
 		this->parent_path = pp;
 		this->fatname = NULL;
+		this->cbm_name = NULL;
+		this->cbm_probed = false;
 	}
 
 	virtual ~BrowsableDirEntry() {
@@ -103,6 +154,8 @@ public:
 			delete info;
 		if (fatname)
 		    delete fatname;
+		if (cbm_name)
+		    delete[] cbm_name;
 		if (path)
 			FileManager :: getFileManager() -> release_path(path);
 	}
@@ -223,7 +276,12 @@ public:
                 sprintf(buffer, "\eR%#s\er VOLUME", display_space + extra, tmp_buffer);
             } else {
                 size_to_string_bytes(info->size, sizebuf);
-                extra = squeezeToDisplayString(info->lfname, tmp_buffer, display_space, squeeze_option);
+                // A wrapper shows the name it carries, because its host name is an 8.3
+                // rendering that does not identify it; the extension still says P00
+                // (SI-144).
+                const char *shown = wrappedName();
+                extra = squeezeToDisplayString(shown ? shown : info->lfname, tmp_buffer,
+                                               display_space, squeeze_option);
                 sprintf(buffer, "%#s\e7 %3s%c%s", display_space + extra, tmp_buffer,
                         info->extension, sel, sizebuf);
             }

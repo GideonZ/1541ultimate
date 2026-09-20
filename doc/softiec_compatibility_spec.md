@@ -1455,13 +1455,28 @@ is GAP's section on file names, which asks the drive to follow how sd2iec stores
 types.
 
 **SI-144a.** The header is read in one place, `software/filetypes/x00_wrapper.cc`, which
-the drive and the C64 loader both use. The loader needs it because a file it DMA loads is
-read from its first byte: the first two bytes are the load address, so an x00 file whose
-header is not skipped loads its wrapper to the address the letters `C6` spell. That is
-every path that reaches `C64_DMA_LOAD`, `C64_DMA_LOAD_MNT` and `C64_DMA_LOAD_RAW`: Run,
-Load and DMA in the file browser, and the control and REST routes that start a program.
-The header is skipped only for a file whose name is an x00 name and whose signature is
-there, so a `.PRG` file and a `.P00` file that is not a wrapper load as they are.
+the drive, the file browser and the C64 loader all use. The loader needs it because a file
+it DMA loads is read from its first byte: the first two bytes are the load address, so an
+x00 file whose header is not skipped loads its wrapper to the address the letters `C6`
+spell. That is every path that reaches `C64_DMA_LOAD`, `C64_DMA_LOAD_MNT` and
+`C64_DMA_LOAD_RAW`: Run, Load and DMA in the file browser, and the control and REST routes
+that start a program. The header is skipped only for a file whose name is an x00 name and
+whose signature is there, so a `.PRG` file and a `.P00` file that is not a wrapper load as
+they are.
+
+**SI-144b.** The file browser treats an x00 file as the CBM file it holds. A `P00` file
+offers the actions a `.PRG` file offers, and each acts on the program inside. The row
+shows the name from the header, because the host name of such a file is an 8.3 rendering
+that does not identify it, while the extension column still says `P00` so that the
+wrapper is visible; every operation that names the file on the medium, a rename, a copy
+and a delete among them, uses the host name. `S00`, `U00` and `R00` files show their
+header name in the same way and offer what a `.SEQ`, a `.USR` and a `.REL` file offer,
+which is nothing beyond the operations every file has.
+
+Reading these files is only worth having if they can be used from the device itself, so
+this is a part of SI-144 rather than an extra: `tests/e2e/filemanager/prg_context_menu_test.py`
+drives every context menu action of the real browser against a `P00` wrapper and checks
+that the program inside is what runs.
 
 **SI-145.** Writing x00 files is a configuration choice, default off, so that
 existing users see no change. When on, it follows sd2iec mode 1 (x00 for SEQ, USR and
