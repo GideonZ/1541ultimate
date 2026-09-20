@@ -1,22 +1,16 @@
 # Software IEC: CMD DOS, sd2iec and C64 OS compatibility
 
-**Status: specification.** This describes what is to be built. It is not a
-description of what the firmware does today, except where it cites current code by
-file and symbol, and every such citation is labelled as current behaviour. A reader
-who wants to know what the firmware does now should read
-[software/test/iecdrive/doc.md](../software/test/iecdrive/doc.md),
-[doc/filenames_design.txt](filenames_design.txt) and
-[tests/e2e/io/iec/README.md](../tests/e2e/io/iec/README.md).
+**Status: the contract.** This describes what the Software IEC drive does and why.
+Every requirement is either in force, and the tests in `target/pc/linux/parse`,
+`target/pc/linux/iecdrive` and `tests/e2e/io/iec` hold the drive to it, or it is marked
+**Deliberately unsupported** and says what the drive answers instead and why that is the
+right answer. Section 18.1 lists the deliberate exclusions in one table.
 
-PR #881 implements this specification only in part. A review of the implementation
-applied one rule: a requirement is implemented when it fixes a defect, or when the
-reporter of #877, #890 or #917, the C64 OS author's article "Gaps in Software IEC" (GAP)
-or
-the C64 OS boot trace (TRACE) names it. Every requirement that PR #881 decided not to
-implement, or implemented differently from what is written here, carries a paragraph
-that starts with **Decision (PR #881)** directly below it, stating what was decided,
-why, and what the drive answers instead. Section 18.1 lists all of them in one table.
-The "Current behaviour" statements describe the firmware before PR #881.
+Two further documents describe the same drive from other angles:
+[software/test/iecdrive/doc.md](../software/test/iecdrive/doc.md) on the name mapping and
+[tests/e2e/io/iec/README.md](../tests/e2e/io/iec/README.md) on the hardware tests.
+[doc/filenames_design.txt](filenames_design.txt) is the original design note for the
+mapping.
 
 The goal is that an Ultimate 64 or Ultimate II+ can be the system drive of C64 OS,
 and that in doing so it also becomes a closer replacement for an sd2iec, a CMD HD, a
@@ -26,16 +20,14 @@ those. Issues [#877](https://github.com/GideonZ/1541ultimate/issues/877) and
 drivers, with [#917](https://github.com/GideonZ/1541ultimate/issues/917) added later; this document covers the whole command surface those issues sit in, so the
 work can be done once rather than one report at a time.
 
-This is not a greenfield design. The Software IEC drive has shipped for years to a
-large install base, and several of the behaviours below are already correct. Every
-requirement therefore states the source of truth, what the firmware does now, and
-whether anything has to change. Requirements that change nothing are kept because
-they are the contract that later work must not break.
+The Software IEC drive has shipped for years to a large install base, so every
+requirement states the source of truth it comes from, and the requirements that ask for
+nothing unusual are written down as well, because they are the contract that later work
+must not break.
 
-Where a statement about current behaviour says "measured", it was obtained by running
-the command against the head of PR #881, using a probe linked against the same object
-files `target/pc/linux/iecdrive` links. The rest were read from the source, and each
-names the file and symbol so a reader can check it.
+Where a requirement cites a measurement, it was obtained by running the command through
+`IecCommandChannel::push_command()` and reading `IecDrive::get_error_string()` back, in a
+probe linked against the same object files `target/pc/linux/iecdrive` links.
 
 Nothing in this document is left open. Where the sources disagreed, section 16 states
 which primary source settled it, and for two of the cases that source is the 1541 ROM
@@ -63,7 +55,7 @@ in `roms/1541.bin` rather than any manual.
 | **GUG** | *C64 OS User's Guide*, File System chapter, c64os.com/c64os/usersguide/filesystem. |
 | **917** | Issue [#917](https://github.com/GideonZ/1541ultimate/issues/917), "More SoftIEC compatibility issues", opened by the reporter on 18 September 2026. It carries Greg Nacu's measurements of a CMD HD and an sd2iec against this drive, and photographs of the two BASIC programs he used. The programs are transcribed in appendix C. |
 | **TRACE** | `log_boot.log.txt`, attached by the reporter to #877 on 11 September 2026. 601 lines of `SOFTIEC-TRACE` output from one successful C64 OS boot on a U64 II. |
-| **U** | This firmware at PR #881 head `16f7e31b`. Paths are relative to the repository root. |
+| **U** | This firmware. Paths are relative to the repository root. |
 
 ### 1.2 Precedence
 
@@ -97,7 +89,7 @@ The specification is met when all of the following hold.
 * **A2.** Every requirement below has at least one automated test, in
   `target/pc/linux/parse`, `target/pc/linux/iecdrive` or `tests/e2e/io/iec`, and the
   test fails when the behaviour is reverted.
-* **A3.** No behaviour marked "Unchanged" in section 15.2 has changed.
+* **A3.** Nothing in section 15.2 behaves differently.
 
 ---
 
@@ -105,10 +97,9 @@ The specification is met when all of the following hold.
 
 ### 2.1 Device, partitions, directories
 
-**SI-001.** The drive presents one IEC device number, configurable from 8 to 30.
-Current behaviour: `U software/io/iec/iec_drive.cc`, `CFG_IEC_BUS_ID`, range 8..30,
-default 11. Unchanged. GUG confirms C64 OS expects storage devices in 8..30 and
-supports up to five at a time.
+**SI-001.** The drive presents one IEC device number, configurable from 8 to 30, with
+11 as the default. GUG confirms that C64 OS expects storage devices in 8 to 30 and
+supports five at a time.
 
 **SI-002.** The drive presents partitions numbered 1 to 255. Each partition has a
 name, a root directory on the host virtual file system, and its own current
@@ -117,29 +108,21 @@ directory. Partition 0 is not a partition a user can enter; as a parameter it me
 current partition), FD (1 to 31), RL (1 to 31), IDE 15.3.1 ("Partition 0 is not a
 valid parameter"), GUG ("CMD devices support 255 partitions, numbered from 1 to 255.
 Partition 0 is a special system partition that cannot be accessed directly").
-Current behaviour: `U iec_channel.h`, `is_valid_partition_number()` accepts 1..255
-and `IecFileSystem::GetTargetPartitionNumber()` maps any index below 1 to the
-current partition. Unchanged.
 
 **SI-003.** A partition's root may be a directory on the host file system or a
 mounted CBM disk image, because the Ultimate virtual file system mounts `.d64`,
-`.d71`, `.d81` and `.dnp` images as directories. Unchanged.
+`.d71`, `.d81` and `.dnp` images as directories.
 
 **SI-004.** The blocks free reported for any directory is the free space of the
 partition, not of the directory. Source: HD 4-5, "all of the blocks within a Native
 Mode partition are shared between all directories within that partition".
-Current behaviour: `U IecChannel::setup_directory_read()` calls `fm->get_free()` on
-the listed directory's own path. Unchanged in effect, because the host file system
-reports per-volume free space.
 
 ### 2.2 What the partition model must not do
 
 **SI-005.** The root of a partition is a real directory. Files can be created in it,
 it can be listed, and its blocks free is that of the partition. GAP's principal
 objection was that the drive presented its storage devices as directory entries of a
-pseudo root that could hold no files. Current behaviour: a partition root is an
-ordinary host directory, so this holds. Unchanged, and stated so that it is not
-regressed.
+pseudo root that could hold no files.
 
 ---
 
@@ -165,23 +148,14 @@ leading front slashes. Each subdirectory is added to the path by specifying the
 subdirectory name followed by a single trailing slash. The trailing slash is always
 required."
 
-Current behaviour: `U iec_path_to_fs_path()` in `software/io/iec/iec_channel.cc`
-strips a single leading slash, rewrites `_` to `..`, then collapses `//` to `/`,
-which produces exactly this. GAP's complaint that a single slash meant the root is
-out of date. Unchanged.
-
 **SI-011.** The colon is optional when the name is preceded by a slash. Source:
 HD 9-19, "It is not required that you include the colon before the subdirectory
-name, as long as the subdirectory name is preceded by a slash." Unchanged.
+name, as long as the subdirectory name is preceded by a slash."
 
 **SI-012.** A path component may contain wildcards, and the first match is used.
 Sources: SD README under CD/MD/RD, "You can use wildcards anywhere in the path";
 IDE 6.2, "These wildcards can be used in path elements or filename too, in this case
-the first filename will be matched." Current behaviour: `U resolve_directory_path()`
-calls `find_rendered_iec_child()` with `allow_wildcards` false for every component.
-**Change required.** `.` and `..` as path components already work there and are a
-deliberate extension beyond the CMD devices; GAP calls them out as "something that
-none of the other devices can do".
+the first filename will be matched."
 
 **SI-013.** The partition number may replace the drive number in any command that
 accepts one, except the direct access commands. A direct access channel is bound to
@@ -189,12 +163,7 @@ the partition that was current when the channel was opened, and the partition
 parameter of `B-R`, `B-W`, `U1`, `U2`, `B-A`, `B-F` and `B-E` is therefore always
 written as 0. Source: HD 9-8 and 9-44; GSD "Partition Numbers in Disk Commands".
 (IDE 15.5 does not state this rule: IDEDOS direct access addresses sectors by LBA and
-has no partition parameter.) **Change required:** the current implementation resolves the partition
-parameter of the block commands against the partition table
-(`U IecCommandChannel::do_block_read()` and its siblings call `GETPARTITION(part,...)`),
-which means a program that correctly sends 0 gets the current partition only by
-accident of `GetTargetPartitionNumber()`, and a program that sends a real number
-addresses a partition the channel was not opened on.
+has no partition parameter.)
 
 ### 3.2 The left arrow
 
@@ -211,20 +180,12 @@ between slashes.
 | `MD:<-` | create a directory named `<-` | Greg Nacu, same measurement |
 | `RD:<-` | remove it | Greg Nacu, same measurement |
 
-Current behaviour: `U iec_path_to_fs_path()` rewrites every `_` to `..` wherever it
-appears, so `CD/<-` goes to the parent instead of entering the directory, and a
-directory named `<-` cannot be reached at all. **Change required.** The rewrite must
-happen only in the name position, which `U IecCommandChannel::do_change_dir()`
-already isolates for the `CD:<-` case.
-
-This has one consequence for existing behaviour that has to be accepted
-deliberately. `CD/<-/OTHERDIR`, going up and then down again in one command, works
-today and is covered by `Suite8-CD-PARENT-OTHERDIR` in
-`software/test/iecdrive/testdrive.cc`. After this change the left arrow in that
-position is a directory name and the command fails. The capability itself is not
-lost: `U resolve_directory_path()` also accepts `.` and `..` as path components, so
-`CD/../OTHERDIR` does the same thing, and `..` is the spelling GAP singles out as
-"something that none of the other devices can do". The existing test moves to `..`.
+The rule has one consequence worth stating. `CD/<-/OTHERDIR`, going up and then down
+again in one command, is not a way up, because the arrow between slashes is a directory
+name. The spelling for that is `CD/../OTHERDIR`: `U resolve_directory_path()` accepts `.`
+and `..` as path components, and `..` is the spelling GAP singles out as "something that
+none of the other devices can do". `Suite8-CD-PARENT-OTHERDIR` in
+`software/test/iecdrive/testdrive.cc` covers it.
 
 **SI-015.** `CD/:<-` goes to the parent. The colon introduces the name, so the arrow
 is in the name position and SI-014 applies unchanged. Sources: `SD do_chdir()`, which
@@ -260,12 +221,7 @@ C2CA  C8        INY
 C2CB  8C 74 02  STY $0274      ; the length the parser uses
 ```
 
-Current behaviour: `U strip_terminator()` in `software/io/iec/cbmdos_parser.cc`
-removes one trailing carriage return only. The second branch is missing.
-**Change required**, and it is not cosmetic: it is the reason CMD's manual tells
-programmers to append the terminator themselves when a parameter can be 13.
-
-**Decision (PR #881): implemented in part.** The second branch drops a carriage return
+**Difference from the ROM.** The second branch drops a carriage return
 second to last only when a line feed follows it, which is what BASIC's `PRINT#` to a
 logical file number of 128 or more sends (C64 ROM `$AAD7`). The ROM's branch also cuts a
 binary parameter of 13 short, for example the high byte of an `M-R` address or a count
@@ -274,27 +230,26 @@ do not need to be reproduced". A lone carriage return, which is an empty command
 the strip, answers `31`, as the ROM does at `$C175` and as sd2iec does.
 
 **SI-017.** The binary Change Partition command is exempt from SI-016, because its
-parameter byte is mandatory and cannot be a terminator. Current behaviour:
-`U strip_terminator()` already exempts `C` followed by `$D0`. Unchanged.
+parameter byte is mandatory and cannot be a terminator.
 
 **SI-018.** The Position command is exempt from SI-016, because its last parameter
 byte is data. Source: `SD parse_position()` begins `command_length =
-original_length;`, restoring the length from before the strip. **Change required.**
+original_length;`, restoring the length from before the strip.
 
-**Decision (PR #881): implemented with one difference from sd2iec.** The record number
+**Difference from sd2iec.** The record number
 and the offset of a relative file are read from the command as sent, so a 13 in the
 offset's place is the offset, as the ROM reads it at `$E23E`. The position in a plain
 file (SI-082) is read from the command without its terminator. sd2iec reads it from
 the command as sent, which makes the documented BASIC form `"P"+CHR$(ch)+CHR$(lo)`
-position to `lo + 13*256`; before PR #881 this drive stripped the terminator and
-positioned to `lo`, and keeping that avoids a regression for the form GSD documents. A
+position to `lo + 13*256`, where here it positions to `lo`, which is what the form GSD
+documents means. A
 record number sent without an offset and without a terminator, as a machine language
 caller sends it, takes both of its bytes.
 
 **SI-019.** Where the last parameter is optional, the terminator wins, so partition
 13 has to be asked for with the terminator sent explicitly. Source: HD 9-16,
 "To avoid problems with reading information from Partition 13, the G-P command
-should always be sent with a trailing carriage return (CHR$(13))." Unchanged.
+should always be sent with a trailing carriage return (CHR$(13))."
 
 ### 3.4 Numeric parameters
 
@@ -302,7 +257,7 @@ should always be sent with a trailing carriage return (CHR$(13))." Unchanged.
 any run of spaces, commas or cursor-right characters, and a colon may stand between
 the command word and the first parameter. Source: HD 9-5 and 9-6, which show
 `PRINT#15,"U1";2;0;1;34`, `PRINT#15,"U1 2 0 1 34"` and `PRINT#15,"U1:";2;0;1;34`
-as equivalent. Unchanged; `U parse_block_parameters()` implements it.
+as equivalent; `U parse_block_parameters()` reads them.
 
 ### 3.5 Command length
 
@@ -314,21 +269,12 @@ including all the slashes is 232 characters", which is the binding number, becau
 C64 OS path plus a partition number, a colon and a 16-character name does not fit in
 anything smaller.
 
-Current behaviour: `U iec_channel.h` declares `wr_buffer[65]` and both
-`IecCommandChannel::push_data()` and `IecChannel::push_data()` stop storing at 64
-bytes. **Change required.**
-
 **SI-022.** A command longer than the buffer answers `32,SYNTAX ERROR` and is not
 executed. Sources: HD B-2, error 32; `SD parse_doscommand()`, which returns
 `ERROR_SYNTAX_TOOLONG` when the command fills the buffer; ROM `$C2CE`, which raises
 error 32 when the command length reaches 42.
 
-Current behaviour: the excess bytes are counted in `trace_cmd_dropped` and
-discarded, and the truncated command is then executed. **Change required**, and this
-is a data loss defect rather than a compatibility one: a `S` command truncated in the
-middle of a path scratches files in the wrong directory.
-
-**Decision (PR #881): implemented, and extended to names.** A command of 254 bytes or
+The rule covers names as well as commands. A command of 254 bytes or
 more answers `32` and is not executed. An OPEN name of 254 bytes or more answers `32` as
 well and opens nothing, rather than creating or reading a file under its first bytes.
 
@@ -338,48 +284,23 @@ well and opens nothing, rather than creating or reading a file under its first b
 
 ### 4.1 The table
 
-The drive's own table in `U software/io/iec/iec_drive.cc` already carries the right
-numbers and strings. What is wrong is the parser's private constants, which the
-parser returns to the drive.
-
-**SI-030.** `U software/io/iec/cbmdos_parser.h` defines
-
-```c
-#define ERR_SYNTAX        30
-#define ERR_ILLEGAL_CHARS 31
-#define ERR_ILLEGAL_NAME  32
-#define ERR_UNKNOWN_CMD   33
-```
-
-The names and the numbers do not agree with CBM or CMD DOS. The correct meanings
-are, from HD B-2 and 1541:
+**SI-030.** The five syntax errors are distinct, and each is raised for one condition.
+From HD B-2 and 1541:
 
 | Code | Meaning | Raised when |
 | --- | --- | --- |
-| 30 | SYNTAX ERROR (general) | the command was recognised but could not be parsed |
+| 30 | SYNTAX ERROR (general) | the command letter was recognised and its arguments were not |
 | 31 | SYNTAX ERROR (unrecognized command) | the first character is not a command letter |
-| 32 | SYNTAX ERROR (command string too long) | over the command buffer |
-| 33 | SYNTAX ERROR (illegal file name) | a wildcard where wildcards are not accepted |
-| 34 | SYNTAX ERROR (missing file name) | no name, or a missing colon |
+| 32 | SYNTAX ERROR (command string too long) | the command or the name fills the buffer (SI-022) |
+| 33 | SYNTAX ERROR (illegal file name) | a wildcard, or a character a name cannot carry, where one is not accepted |
+| 34 | SYNTAX ERROR (missing file name) | no name, or a colon with nothing after it |
 
-**Change required:** rename the constants to their real meanings and correct the
-return sites. There are 35 of them in `cbmdos_parser.cc`; these are the ones whose
-value changes. Every other site returns 30, which stays 30 because the command letter
-was recognised and only its arguments were not.
+The drive's table of codes and strings is in `U software/io/iec/iec_drive.cc` and the
+parser's constants are in `U software/io/iec/cbmdos_parser.h`, where each carries the
+condition it stands for as a comment.
 
-| Site | Condition | Today | Required |
-| --- | --- | --- | --- |
-| `execute_command()` final `return` | first character is not a command letter | 33 | **31** (SI-031) |
-| `parse_full_path()`, empty name | a colon with nothing after it | 32 | **34** |
-| `parse_open()`, `contains_any(",=:\xA0\r")` | illegal character in a name | 31 | **33** |
-| `copy_command()`, `dest.has_wildcard` | wildcard in the copy target | 32 | **33** |
-| `rename_command()`, `dest.has_wildcard` | wildcard in the rename target | 32 | **33** |
-| `block_command()` default | `B` followed by an unknown letter | 33 | **30** |
-| `dir_command()` defaults | `C`, `M` or `R` followed by an unknown letter | 33 | **30** |
-| `get_command()` default | `G` followed by an unknown letter | 33 | **30** |
-| `user_command()` default | `U` followed by an unknown letter | 33 | **30** |
-| `time_command()` final `return` | `T` followed by an unknown letter | 33 | **30** |
-| `extended_command()` | `X` or `E` followed by an unknown word | 33 | **30** |
+An Ultimate extension is allowed where it cannot be mistaken for a documented command and
+does not change the answer to one (precedence rule 5). `XPWD` (SI-066) is the only one.
 
 **SI-031.** An unrecognised command answers `31`. Verified in ROM at `$C160`:
 
@@ -401,9 +322,6 @@ and stated in 1541 ("31: SYNTAX ERROR (invalid command). The DOS does not recogn
 the command. It must begin with the first character sent.") and HD B-2. The reporter
 asked for 31 on #877 on 11 September 2026, having measured `33` for a one-byte
 command `CHR$(0)` and for `A`.
-
-Current behaviour: `U IecParser::execute_command()` returns `ERR_UNKNOWN_CMD`, which
-is 33. **Change required.**
 
 Note the divergence: `SD parse_doscommand()` answers 30 here and reserves 31 for an
 empty command. This specification follows HD, 1541, ROM and the reporter's stated
@@ -458,11 +376,6 @@ if (ustrchr(fname, '*') || ustrchr(fname, '?') || (*fname == 160)) {
 (`src/fileops.c` at `9087321`; commit `a76deb2` introduced the `*` and `?` tests and
 the `160` test was added later.)
 
-Current behaviour: `U parse_open()` does not reject a wildcard in a write name at
-all. The 33 the reporter saw is produced further down, by the file system layer
-refusing a host name that contains `*`, so none of the four cases can be told apart
-where they have to be. **Change required**, in the parser and in the open path.
-
 **SI-033.** Scratching nothing is not an error. The answer is
 `01,FILES SCRATCHED,00,00`. Sources: HD B-1, "01 FILES SCRATCHED (not an error).
 The number of files scratched will be indicated in the track variable";
@@ -470,25 +383,21 @@ The number of files scratched will be indicated in the track variable";
 `set_error_ts(ERROR_SCRATCHED,count,0)`; IDE 15.2.2, which shows the count in the
 track field.
 
-Current behaviour: `U IecCommandChannel::do_scratch()` returns
-`ERR_FILE_NOT_FOUND` when the count is zero. TRACE shows C64 OS hitting exactly this
-with `S/TEMPORARY/:*`. **Change required.**
-
-**Decision (PR #881): implemented, with a path check.** A scratch whose path does not
+**Difference from the CMD manuals.** A scratch whose path does not
 exist answers `71,DIRECTORY ERROR` with the partition number, instead of
 `01,FILES SCRATCHED,00,00`, so a mistyped path is reported rather than looking like an
 empty directory. sd2iec also reports the path error (`SD parse_scratch()`).
 
 **SI-034.** Selecting a partition that does not exist answers
-`77,SELECTED PARTITION ILLEGAL`. Source: HD B-5. Unchanged.
+`77,SELECTED PARTITION ILLEGAL`. Source: HD B-5.
 
 **SI-035.** Opening a file for writing when one of that name exists, without `@`,
 answers `63,FILE EXISTS`. Opening for reading when none exists answers
 `62,FILE NOT FOUND`. Opening an existing REL file with a non-REL type answers `64`.
-Sources: HD B-3 and B-4; `SD file_open()`. Unchanged; covered by Suite5 of
+Sources: HD B-3 and B-4; `SD file_open()`. Covered by Suite5 of
 `software/test/iecdrive/testdrive.cc`.
 
-### 4.2 Errors that must stop being reported as 69
+### 4.2 The error code that is not a CBM DOS error
 
 **SI-036.** `69,FILESYSTEM ERROR` is an Ultimate code with no counterpart on any
 other device. It must not be the answer to a condition that CBM DOS names.
@@ -505,7 +414,7 @@ documented code first. The known case is SI-083.
 **SI-040.** `CPn`, with the number in ASCII, and `C` followed by shifted P (`$D0`)
 with the number as one binary byte, both select a partition and answer
 `02,PARTITION SELECTED,<n>,00`. Sources: HD 9-10, FD, RL, IDE 15.3.1, SD README.
-Unchanged since #878 and #881; TRACE shows C64 OS using the binary form 29 times in
+TRACE shows C64 OS using the binary form 29 times in
 one boot and the ASCII form once.
 
 ### 5.2 Get partition info
@@ -513,11 +422,7 @@ one boot and the ASCII form once.
 **SI-041.** `G-P` with no parameter, or with 255, answers for the current partition.
 With 0 it answers for the system partition, which this drive does not have, so byte 0
 is 0, meaning "not created", and byte 2 is 0. With any other value it answers for
-that partition, and again byte 0 is 0 if it does not exist. Current behaviour:
-`U IecParser::get_command()` rewrites 255 to 0 and passes an absent parameter as 0,
-and `U do_get_partition_info()` then resolves 0 to the current partition, so all
-three cases give the same answer. **Change required:** 0 and "absent" are different
-questions.
+that partition, and again byte 0 is 0 if it does not exist.
 The answer is 30 bytes followed by `CHR$(13)`, laid out as HD 9-15 and 9-16 give it:
 
 | Byte | Content |
@@ -532,13 +437,9 @@ The answer is 30 bytes followed by `CHR$(13)`, laid out as HD 9-15 and 9-16 give
 | 30 | `CHR$(13)` |
 
 Bytes 19-21 and 27-29 are counted in 512-byte blocks on the HD and the FD and in
-256-byte blocks on RAMLink (RL, same page). This drive follows the HD and uses 512.
-
-Current behaviour: correct since PR #881, including the type in byte 0 and the
-partition's own name in bytes 3 to 18. What remains wrong is that byte 27 is set to
-`0xFF` as a placeholder, so every partition reports a size of 16711680 blocks.
-**Change required:** report the real free-plus-used size of the partition's file
-system, clamped to `0xFFFFFF`, which is what `SD parse_getpartition()` does.
+256-byte blocks on RAMLink (RL, same page). This drive follows the HD and uses 512. The
+size is the free plus the used space of the partition's file system, clamped to
+`0xFFFFFF`, which is what `SD parse_getpartition()` answers with.
 
 **SI-042.** Byte 1 stays zero. The FD redefines it as a disk-information bit field
 (FD, Getting Partition Information: bit 7 disk present, bit 6 formatted, bit 5 valid
@@ -546,19 +447,18 @@ CMD or CBM format, bit 4 true 1581, bits 3-0 density) and sd2iec writes `0xE2` t
 which decodes as an FD-2000 with a 1.6 MB disk inserted. This drive is not an FD and
 must not claim to be one. IDE leaves the byte unused (IDE table 26).
 
-**SI-043.** The partition type is decided from the file system at the partition's
-root. Current behaviour, added in PR #881: `U cbm_partition_type_of()` reads the
-geometry, mapping no track and sector addressing or 256 sectors per track to native,
-40 sectors to 1581, and 21 sectors to 1541 or 1571 by track count. This reaches the
-same mapping `SD pdir_refill()` reaches from the image type
-(`(imagetype & D64_TYPE_MASK) + TYPE_NAT - 1` with `D64_TYPE_DNP == 1`, so a DNP
-image lists as native). Unchanged.
+**SI-043.** The partition type is decided from the geometry of the file system at the
+partition's root: no track and sector addressing, or 256 sectors on track 1, is native;
+40 sectors is a 1581; and 21 sectors is a 1541, or a 1571 above 42 tracks. That reaches
+the same mapping `SD pdir_refill()` reaches from the image type
+(`(imagetype & D64_TYPE_MASK) + TYPE_NAT - 1` with `D64_TYPE_DNP == 1`, so a DNP image
+lists as native). `$=P` and `G-P` read it from the same function, so they cannot
+disagree.
 
 ### 5.3 Partition directory
 
 **SI-044.** `LOAD"$=P[:pattern][=tp]"` lists the partitions. `tp` is one of `N`, `4`,
-`7`, `8`, `C`. Sources: HD 9-14; FD and RL, which drop `C`; SD README. Unchanged
-since PR #881.
+`7`, `8`, `C`. Sources: HD 9-14; FD and RL, which drop `C`; SD README.
 
 **SI-045.** The listing is a header line, one line per partition, and the BASIC end
 marker. **There is no blocks free line.** Source: issue #890; GAP, "The partition
@@ -570,30 +470,21 @@ buf->sendeoi = 1;
 memset(buf->data,0,2);
 ```
 
-Current behaviour: `U IecChannel::read_dir_entry()` shares its end-of-listing path
-with the file directory and emits `0 BLOCKS FREE.`. **Change required.** This is
-issue #890.
-
 **SI-046.** The number printed before the header name is the number of partitions.
 Sources: GAP, "The first number before the partition directory's header line is a
 count of how many "user" partitions there are"; `SD load_directory()`,
-`buf->data[HEADER_OFFSET_DRIVE] = max_part`. Current behaviour:
-`U IecChannel::setup_partition_read()` copies `c_header` and never sets byte 4, so
-the number is 0. **Change required.**
+`buf->data[HEADER_OFFSET_DRIVE] = max_part`.
 
 **SI-047.** The block count column of each partition line is the partition number.
 Sources: GAP, "The typical block size of a directory entry is used for the partition
-number"; `SD pdir_refill()`, `dent.blocksize = part + 1`. Current behaviour:
-`U read_dir_entry()` sets `info.size = part_idx * 254` so that the block conversion
-yields the partition number. Unchanged.
+number"; `SD pdir_refill()`, `dent.blocksize = part + 1`.
 
 **SI-048.** The type column is the three-character partition type: `NAT`, `41 `,
-`71 `, `81 `. Sources: issue #877; SD `filetypes[]` entries 8 to 11. Unchanged since
-PR #881.
+`71 `, `81 `. Sources: issue #877; SD `filetypes[]` entries 8 to 11.
 
 **SI-049.** The header name is the drive's name, not a partition's. `SD` uses the
 static string `SD2IEC` with id `IK`. This drive uses `ULTIMATE HD` with id `UL 64`,
-which is already in `U setup_partition_read()`. Unchanged.
+which `U setup_partition_read()` holds.
 
 **SI-050.** A `SYSTEM` line is not emitted. `SD` emits one from `syspart_line[]`
 immediately after the header, and IDE lists partition 255 as the disk label line.
@@ -623,10 +514,7 @@ menu, so the command is as durable as the user interface it shares the list with
 no-op that answers `00, OK` and frees the user buffers. Sources: HD 9-13, "This
 function is performed automatically by the HD, but the command has been implemented
 to retain compatibility"; `SD parse_initialize()`, which frees the user buffers.
-Current behaviour, measured: `I` answers `73,U64HD ULTIMATE DOS V2.0,00,00`, because
-`U IecCommandChannel::do_initialize()` returns `ERR_DOS` and `U user_command()`
-routes `UI` to the same executer method. **Change required:** `I` and `UI` are different commands and must
-answer differently. `I` answers `00, OK`; `UI` answers the 73 message.
+`I` answers `00, OK`; `UI` answers the 73 message.
 
 **SI-054.** `V[n][:]` validates. **Deliberately unsupported**; the drive answers `31`,
 which is also what `SD parse_doscommand()` answers, having no `V` in its command switch.
@@ -656,32 +544,20 @@ Sources: HD 9-9 and 9-11; 1581 User's Guide, which gives the same syntax.
 **SI-060.** `MD[n][path]:name` creates a directory. A colon is required; without one
 the answer is `34`. A name that is a single shifted space answers `34`. Sources:
 HD 9-17, which states the colon rule as its first guideline; `SD parse_mkdir()`.
-Current behaviour is worse than accepting the colon-less form. `U dir_command()`
-parses with `path_only = true`, so a command with no colon produces an empty name and
-an empty path, and `MD` then tries to create the current directory itself: measured,
-`MD NOCOLON` answers `63,FILE EXISTS`. **Change required.**
 
 **SI-061.** `CD[n]{<-|[path][:]name}` changes directory, per SI-010 and SI-014.
-Current behaviour: correct except for the left arrow and for wildcards in
-intermediate components.
 
 **SI-062.** `CD` into a file whose name has a disk image extension mounts that image
 and makes its root the current directory; `CD<-` from the root of a mounted image
 unmounts it. Sources: SD README, "CD is also used to mount/unmount image files";
-GSD "Mounting a Disk Image". Current behaviour: the Ultimate virtual file system
-mounts images as directories, so `CD:GAME.D64` already works and `CD<-` already
-leaves. Unchanged, and recorded because it is the feature `XI` in sd2iec exists to
-make discoverable.
+GSD "Mounting a Disk Image".
 
 **SI-063.** `RD[n]:name` removes a directory. It takes no path: a `/` anywhere in the
 command answers `34`. It refuses a directory that is not empty. Sources: HD 9-19,
 "This command does not allow the use of paths in order to avoid problems with
 removing a subdirectory which is a parent of the directory in which you are located";
 `SD parse_rmdir()`, which rejects any `/` with `ERROR_SYNTAX_NONAME` and answers
-`63,FILE EXISTS` for a directory that still has entries. Current behaviour: `U do_remove_dir()` accepts a path and maps `FR_DENIED` to
-`ERR_FILE_EXISTS`. Measured, `RD/PROBEDIR` removes the directory and answers
-`00, OK`, which is the case HD 9-19 forbids in order to stop a user removing a parent
-of the directory they are standing in. **Change required** for the path rejection.
+`63,FILE EXISTS` for a directory that still has entries.
 
 **SI-064.** `R-H[n][path]:newname[,id]` renames the header of a directory. The name is
 at most 16 characters and the id two. Sources: HD 9-15; IDE 15.6.5;
@@ -716,9 +592,10 @@ behavior to SD2IEC's way, in the name of compatibility"; `SD fat_getdirlabel()`,
 which returns the volume name for the root and otherwise walks `..` to find the entry
 whose cluster is the current directory and returns that entry's name.
 
-Current behaviour: `U setup_directory_read()` uses `partition->GetName()` for every
-directory, truncated to its last 16 characters. That is no longer the full path GAP
-complained about, but it is still not the directory's own name. **Change required.**
+**SI-066.** `XPWD` answers with the current partition and its current directory, as
+`<n>:<path>`, in upper case and ending in a slash, and it leaves the error channel at
+`00, OK`. It is an Ultimate extension, which SI-030's fifth rule allows: no CMD or
+sd2iec command has that spelling, and nothing else answers the question.
 
 ---
 
@@ -731,7 +608,7 @@ complained about, but it is still not the directory's own name. **Change require
 forces write and PRG; any other secondary address defaults an unspecified type to
 SEQ. Sources: HD 9-23 to 9-31 for `,P`, `,S`, `,U`, `,L`, `,R`, `,W` and `,A`;
 `SD file_open()` for `,M` (`case 'M': /* Modify */`, which HD does not document) and
-for "Force mode+type for secondaries 0/1". Unchanged; `U setup_file_access()` implements it.
+for "Force mode+type for secondaries 0/1"; `U setup_file_access()` applies it.
 
 **SI-071.** `N[n]:name[,id]` creates or formats a disk image, as sd2iec does, because
 this drive has no formattable medium of its own. Source: SD README under `N:` and
@@ -768,22 +645,13 @@ extension added. Source: `SD should_save_raw()`; SD README, "PRG files that have
 D41, D71, D81, DNP or M2I as an extension will always be written without an x00
 header and without any additional PRG file extension."
 
-Current behaviour: `U IecChannel::ConstructPath()` appends the type extension
-unconditionally, so JiffyDOS's MD81 produces `FOO.D81.prg`. The reporter reported
-this on #877. **Change required.**
-
 ### 7.2 Scratch, rename, copy
 
 **SI-073.** `S[n][path]:pattern[,[n][path]:pattern...]` scratches. Each element gets
 its own partition and path. Directories are skipped. The answer is
 `01,FILES SCRATCHED,<count>,00` with the count in the track variable, per SI-033.
 Sources: HD 9-27; `SD parse_scratch()`; IDE 15.2.2, whose examples include
-`@S/STUFF/:*=OLD,*=BAK,/STUFF/BAK/:*`. Current behaviour: the parser splits on
-commas and parses each element, which is right; the error code is wrong per SI-033
-and the element count is capped at 8 by `filename_t filenames[8]` in
-`U scratch_command()`. HD 9-27 caps the list at five names ("will accept up to five
-separate filename parameters"), so the cap already exceeds the CMD reference; SD README
-under `S:` sets no limit below the command length, and that is the target.
+`@S/STUFF/:*=OLD,*=BAK,/STUFF/BAK/:*`.
 
 **SI-074.** `R[n][path]:newname=[[n][path]:]pattern` renames a file or a subdirectory.
 Source and destination must be in the same directory; if they are not, the answer is
@@ -796,22 +664,16 @@ appendix J listing the command as "RENAME (Files and Subdirectories)";
 `SD parse_rename()`, which passes `FLAG_HIDDEN` and no type to `first_match()`, so an
 entry of any type is matched, and whose `fat_rename()` renames the host entry, a
 directory included; and `SD parse_rename()`'s note that "The 1541 renames the file to
-'=' in this case, but I consider that a bug". Current behaviour:
-`U do_rename()` does not check that the two directories agree, does not check for
-an existing destination, and matches files only, so a subdirectory answers
-`62,FILE NOT FOUND`; the wildcard rejection in `U rename_command()` answers
-32 rather than 33. **Change required.**
+'=' in this case, but I consider that a bug".
 
-**Decision (PR #881): implemented except the directory rule.** The name checks are
-implemented: `34` for an empty new name, `33` for a wildcard in it, `63` for a new name
+**Difference from the CMD manuals and sd2iec.** The name checks are in force: `34` for an empty new name, `33` for a wildcard in it, `63` for a new name
 that an entry of any type already has. A subdirectory is renamed under its own name:
 `U do_rename()` resolves the source with directories allowed, and `CreateIecName()`
 already reports `e_folder` for one, so the destination is built without a file type
 extension. The rule that source and destination be in one
-directory is not: before PR #881 a rename moved a file into another directory or
-partition, `Suite8-RENAME-P1-TO-P2` in `software/test/iecdrive/testdrive.cc` asserted
-that on `master`, IDE 15.2.3 documents the move, and no program has been named that
-needs the `62`. An x00 file (SI-144) moved this way keeps its host name. See C14.
+directory is not in force: a rename moves the entry, which IDE 15.2.3 documents,
+`Suite8-RENAME-P1-TO-P2` in `software/test/iecdrive/testdrive.cc` asserts, and no program
+has been named that needs the `62`. An x00 file (SI-144) moved this way keeps its host name. See C14.
 The directory half was reported on 917 as `@"MD:A` followed by `@"R:B=A` answering
 `62,FILE NOT FOUND`, and the reporter's `finit` hits it when it renames `OS` through a
 temporary name.
@@ -822,21 +684,13 @@ source. The target takes the file type of the first source. Sources: HD 9-28, wh
 caps the sources at five; SD README under `C:`, which has no cap; `SD parse_copy()`,
 whose `savedtype` takes the type from the first source (the README does not state
 the type rule).
-Current behaviour: `U do_copy()` takes the type from the first source already, and
-`U copy_command()` caps the sources at 8. GAP reported, against firmware 3.10a, that
-the copy command produced `kernal.bin.bin` and ignored paths. Neither is still true.
-Measured on the head of PR #881, by linking a probe against the same objects the host
-suite uses: `C:PROBE2.BIN=PROBE.BIN` answers `00, OK` and the listing shows
-`PROBE2.BIN  PRG`, one extension and not two; `C/SUB/:PROBE3.BIN=PROBE.BIN` answers
-`00, OK` and the file appears in `SUB`. The requirement is therefore to keep a test
-for both, not to fix anything.
 
 **SI-076.** `L[n][path]:name` toggles the lock flag on one file or directory. A
 locked file lists with `<` after its type and cannot be scratched; a locked directory
 cannot be removed. Sources: HD 9-30; IDE 15.2.4; `SD parse_lock()`, which toggles
-`FLAG_RO`. Not implemented; **change required.** The reporter raised it on #877.
+`FLAG_RO`. The reporter raised it on #877.
 
-**Decision (PR #881): implemented.** `L` finds its entry through the directory, as a
+`L` finds its entry through the directory, as a
 scratch does, so it locks the entry a listing shows under that name rather than the
 first host file matching `NAME.???`. On a host file system the lock is the FAT read-only
 attribute, which the Ultimate's FTP server and file browser then also respect; in a disk
@@ -894,20 +748,18 @@ record. `ch` is the channel, which programs written to HD 9-32 send as the secon
 address plus 96. Record numbers and byte offsets are 1-based. Positioning beyond the
 end answers `50,RECORD NOT PRESENT`, which is not an error when the intent is to
 extend the file. Sources: HD 9-31 to 9-33; IDE 15.1.1; GSD "Positioning (seeking)
-Within a File". Unchanged; covered by Suite4 of `software/test/iecdrive/testdrive.cc`.
+Within a File". Covered by Suite4 of `software/test/iecdrive/testdrive.cc`.
 
-**SI-081.** The channel byte of `P` is masked to its low four bits. Source:
-`SD parse_position()`, `find_buffer(command_buffer[1] & 0x0f)`. Current behaviour:
-`U do_set_position()` masks only when the byte is 19 or above, which reaches the same
-channel for both documented spellings but accepts bytes 15 to 18 that no drive
-accepts. Harmless; recorded so that the next reader does not "fix" it into a
-divergence.
+**SI-081.** The channel byte of `P` is masked to its low four bits from 19 up, so both
+the documented BASIC form `PRINT#15,"P"CHR$(96+ch)` and the bare byte reach the same
+channel, while a byte just outside the channel range is still refused. Sources:
+`SD parse_position()`, `find_buffer(command_buffer[1] & 0x0f)`, which masks
+unconditionally; the ROM masks from 19.
 
 **SI-082.** `P` also positions inside a plain file, to a 32-bit little-endian byte
 offset, with the missing high bytes taken as zero. Sources: SD README under `P`;
 GSD "Positioning (seeking) Within a File"; IDE 15.1.1, which documents both the
-four-byte form and `F-P`. Unchanged in principle; `U do_set_position()` implements
-it for `e_file`.
+four-byte form and `F-P`. `U do_set_position()` implements it for `e_file`.
 
 **SI-083.** `P` on a file opened for writing must be able to move beyond the current
 end of the file, and a following write must extend the file. Sources: IDE 7,
@@ -918,18 +770,17 @@ not in TRACE, which is the boot log), which is
 `OPEN "FOO.D81,P,W"`, then `P`+`CHR$(4)`+`CHR$($FF)`+`CHR$($7F)`+`CHR$($0C)` to
 position to 819199, then one byte, then `CLOSE`.
 
-Current behaviour: `U do_set_position()` follows the seek with a 512-byte read to
-refill the channel buffer, which fails on a file opened without read access; and
-inside a mounted image `FileInCBM::seek()` cannot position a file that has no
-allocated first sector. The answer the reporter saw was `69,FILESYSTEM ERROR,02,00`,
-where the 2 is the raw `FRESULT` `FR_INT_ERR` put into the track variable by
-`set_error_fres()`. **Change required:** do not read after seeking on a write
-channel, extend the file where the medium allows it, and answer `72,DISK FULL` where
-it does not.
+A seek on a write channel writes out what the channel holds at the old position and then
+moves, without reading the file back, because the file is not open for reading. A medium
+that cannot put the file there answers `72,DISK FULL`, which CBM DOS names, rather than
+`69` (SI-036).
 
-**SI-084.** A relative file on the host file system is read in either of the two
-layouts in use, and written in the one this firmware already writes. Nothing on a
-user's medium changes.
+**SI-084.** A relative file on the host file system is read in either of the two layouts
+in use and in the `R00` wrapper, and written in the two byte layout. Nothing on a user's
+medium changes. Reading only one layout silently misreads the other: where the second
+byte of an sd2iec file happens to be zero, the record length is right and every record is
+then read one byte late, which is why the discriminator below is on the file size rather
+than on the record length alone.
 
 | | header | first record at | file size |
 | --- | --- | --- | --- |
@@ -964,8 +815,7 @@ The assumptions, and what breaks them:
    `SD fat_file_write()` (`memset(buf->data + buf->lastused + 1, 0, ...)` and
    `buf->lastused = buf->recordlen + 1`). A file truncated by something else, for
    example a copy tool that stopped early, has an arbitrary residue and is read as
-   whichever layout the residue happens to select. That is the same silent outcome
-   the current reader has today for every sd2iec file, and no size-based rule can do
+   whichever layout the residue happens to select, and no size-based rule can do
    better without a wrapper.
 2. `r = 1` is outside HD's legal range, but both writers accept it: `U
    setup_file_access()` refuses only 0 and values of 256 and above, and
@@ -980,20 +830,7 @@ before the size test is applied, so the wrapped layout never enters this compari
 Empty files are covered: a fresh file is 2 bytes from this firmware and 1 byte from
 sd2iec, residues `2 mod r` and 1.
 
-**Change required**, and it is purely additive. Read both plain layouts and the
-wrapped one; keep writing the two byte layout for a plain `.rel`. Interchange on the
-write side is SI-146.
-
-Current behaviour: `U setup_file_access()` reads the first two bytes as one little
-endian record length and refuses a value of 256 or more with
-`50,RECORD NOT PRESENT`. Against an sd2iec file the second byte is payload, so the
-usual outcome is that refusal. The case that matters is the other one: when that
-payload byte happens to be zero the value is accepted, the record length is right,
-and every record is then read one byte late. Silent misreading is the behaviour to
-replace, and it is why the discriminator above is on the file size rather than on the
-record length alone.
-
-**Decision (PR #881): implemented, for host file systems.** Inside a disk image the file
+Inside a disk image the file
 system presents a relative file with a two byte header whatever its size, so the one
 byte test is not applied there. A relative file opened with a record length is looked up
 by its CBM name first, so an existing `R00` file is opened rather than created again
@@ -1029,7 +866,12 @@ not.
 | `B-R`, `B-W`, `B-E`, `U1`, `U2` | channel, partition, track, sector |
 | `B-P` | channel, position |
 
-Unchanged since PR #881, which fixed `B-A` and `B-F` from four parameters to three.
+**SI-091a.** `B-A` of a block that is already allocated answers `65,NO BLOCK` with the
+next higher free track and sector, or track 0 when no higher block is free, which is the
+answer the 1541-II User's Guide gives for error 65 and HD 9-43 describes; a caller reads
+that pair and asks again. `B-F` of a block that is already free answers OK and changes
+nothing, because neither manual lists an error for it. sd2iec implements neither command.
+
 
 **SI-092.** `B-P` takes an optional third parameter, the high byte of a 16-bit buffer
 position. Source: SD README, "The B-P command supports a third parameter that holds the
@@ -1043,17 +885,12 @@ byte the drive can give out and answers `30`.
 channel uses the partition that was current when it was opened. Source: HD 9-8 and
 9-44, "The partition number should always be 0 (zero). This is because direct access
 commands will always access the partition that was the current partition at the time
-the direct access channel was opened"; GSD says the same. **Change required:** bind
-the partition at `#` open time and use it, rather than resolving the parameter with
-`GETPARTITION()` as `U do_block_read()` and its siblings do today.
+the direct access channel was opened"; GSD says the same.
 
 **SI-094.** `B-R` and `B-W` differ from `U1` and `U2`: they use the first byte of the
 block as a length. Sources: HD 9-44 and 9-45; `SD parse_block()`, which sets
 `buf->position = 1; buf->lastused = buf->data[0];` for `B-R` and writes
-`buf->data[0] = buf->position-1` for `B-W`. Current behaviour: `U block_command()`
-maps `B-R` and `U1` to the same executer method. **Change required**, though it is
-low priority: GSD recommends `U1` and `U2` for this reason and most software uses
-them.
+`buf->data[0] = buf->position-1` for `B-W`.
 
 **SI-095.** `B-E` is not implemented and will not be: it executes 6502 code in drive
 memory, which this drive does not have. It answers `30`, because `B` is a recognised
@@ -1072,11 +909,9 @@ SD README under `D`.
 HD 9-49; IDE 15.4.1; `SD parse_user()`, which accepts 4 to 30 and recognises the `>`
 by `(command_buffer[2] & 0x1f) == 0x1e`. GAP lists this as a gap: "Changing the
 device address with u0> command. This is supported on all devices going back to
-ancient times, before the 1541. This produces a syntax error in SoftIEC." Not
-implemented; **change required.** The new number is not persisted unless the user
-saves the settings.
+ancient times, before the 1541. This produces a syntax error in SoftIEC."
 
-**Decision (PR #881): implemented.** The number is written into the IEC processor's
+The number is written into the IEC processor's
 device number slot without holding the processor in reset, because the command is still
 on the bus, and it is not written to the configuration.
 
@@ -1125,34 +960,33 @@ than leaving a hole.
 | `U`+shifted J, `CHR$(202)` | close every open data channel, return every partition to its root, select the default partition | `73,...` |
 
 Sources: HD 9-51; SD README under `UI/UJ` and `U<Shift-J>`; GSD "Warm, Cold and Hard
-Reset". Current behaviour: `UI`, `UI+`, `UI-` and `UJ` are recognised but `UJ` only
-sets the error code, closing nothing; `U`+`CHR$(202)` is not recognised at all.
+Reset".
 
-**None of the three may reconfigure the IEC interface.** GAP reports that "cold reset
-and hard reset 'uj' and 'uJ' seem to lock up the bus. Needs a STOP+RESTORE to
-recover", against firmware 3.10a. The mechanism is visible in the present code and
-must be designed out rather than re-measured. `IecDrive::reset()` begins with
-`effectuate_registered_settings()`, which reaches `IecInterface::configure()`, and
-that function opens with
+**SI-103a. None of the three reconfigures the IEC interface.** A reset answers the
+transaction it arrived in and performs the state reset once the command channel has been
+unlistened, and it never calls `IecInterface::configure()`: nothing about the bus
+configuration changes, because the device number, the enable flag and the slot assignment
+are the same after a drive reset as before it.
+
+The reason is that `IecInterface::configure()` opens with
 
 ```cpp
 HW_IEC_RESET_ENABLE = 0;
 ```
 
-holding the IEC processor in reset while it rewrites the device-number slots, then
-releasing it. Command handlers run on the "IEC Server" task, inside the bus state
-machine loop in `IecInterface::task()`, while the host still has the command channel
-addressed. Resetting the IEC processor from there drops the drive off the bus in the
-middle of a handshake, and a host waiting on a handshake that never completes is
-exactly the symptom GAP describes.
+which holds the IEC processor in reset while it rewrites the device-number slots. Command
+handlers run on the "IEC Server" task, inside the bus state machine loop in
+`IecInterface::task()`, while the host still has the command channel addressed, so a
+reset of the IEC processor from there drops the drive off the bus in the middle of a
+handshake and leaves the host waiting on a handshake that never completes. That is the
+symptom GAP reports against firmware 3.10a: "cold reset and hard reset 'uj' and 'uJ' seem
+to lock up the bus. Needs a STOP+RESTORE to recover". `IecDrive::reset()` is the menu's
+reset, which does reconfigure, and a command handler must not reuse it.
 
-**Change required**, in three parts. Implement `UJ` so that it closes the channels.
-Implement `U`+`CHR$(202)`. And implement both so that the drive answers the current
-transaction first and performs the state reset when the command channel has been
-unlistened, never calling `IecInterface::configure()`, because nothing about the bus
-configuration changes: the device number, the enable flag and the slot assignment are
-all unchanged by a drive reset. `IecDrive::reset()` as it stands is the menu's reset,
-not a command handler's, and must not be reused without removing that call.
+**SI-103b.** A change in the Software IEC settings reconfigures the IEC processor only
+when the device number or the enable flag changes. Holding the processor in reset drops a
+transfer on the bus, so turning a setting such as **Log Every Operation** on or off must
+not do it.
 
 **SI-104.** `U3` to `U8` and `UC` to `UH` jump into drive memory and are not
 implemented; they answer `30`, for the same reason as SI-095. Source: HD 9-51.
@@ -1173,11 +1007,9 @@ What `M-R` returns is specified in section 11. The reporter's position on #877 i
 that the count matters more than the content: "M-R should return the number of
 queried bytes. I agree we have nothing good to return but we can return each byte to
 be 42... That way, a software that does M-R to identify devices is syntactically
-happy." Not implemented; TRACE shows all four of C64 OS's probes answering
-`33,SYNTAX ERROR` because `U execute_command()` routes `M` to `dir_command()`, which
-accepts only `MD`. **Change required.**
+happy." C64 OS sends the four probes at every boot (TRACE).
 
-**Decision (PR #881): `M-R` implemented; `M-W` and `M-E` answer `30`.** Nothing of what
+**`M-W` and `M-E` are deliberately unsupported** and answer `30`. Nothing of what
 `M-W` writes is kept and `M-E` runs nothing, so answering `00, OK` would tell a fast
 loader that its drive code is in place and running. An `00, OK` means the work was done,
 which is also why a clock write that the clock does not accept answers `30` (SI-120). The
@@ -1195,8 +1027,8 @@ would be wrong.
 **SI-110.** The `UI` message is the primary identification and must name this device.
 Source: SD README, "If you are the author of a program that needs to detect sd2iec
 for some reason, DO NOT use M-R for this purpose. Use the UI command instead and
-check the message you get for 'sd2iec' and 'uiec' instead"; GSD "Device Detection".
-Current behaviour: `73,U64HD ULTIMATE DOS V2.0`. Unchanged.
+check the message you get for 'sd2iec' and 'uiec' instead"; GSD "Device Detection". The
+message is `73,U64HD ULTIMATE DOS V2.0,00,00`, whose fixed form SI-114 gives.
 
 **SI-111.** `M-R` must not return the signature of a 1541, a 1571, a 1581 or a CMD
 device, because a program that reads one of those will then drive this device as that
@@ -1224,7 +1056,7 @@ Three things follow from that choice and each is a reason for it.
 
 * The byte count is what makes a probe well formed. A device that answers a syntax
   error to `M-R` is not merely unidentifiable, it is broken from the caller's point
-  of view, which is what TRACE shows happening to C64 OS today. The reporter's
+  of view, which is what TRACE shows happening to C64 OS. The reporter's
   position on #877 was the same, and he proposed 42; the count is the part both
   positions agree on.
 * `$00` matches none of the model signatures in SI-111, so no caller can conclude
@@ -1324,20 +1156,14 @@ line a two-byte link pointer, a two-byte line number carrying the block count, t
 text, and a zero; the program ends with two zero bytes. Source: `SD dirheader[]`,
 `{1, 4, /* BASIC start address */ 1, 1, /* next line pointer */ 0, 0, ...}`.
 
-Current behaviour: `U iec_channel.h` `c_header[32] = { 1, 1, 4, 1, 0, 0, 18, 34, ...}`
-transposes the first four bytes, so the drive sends load address `$0101` and link
-`$0104`. TRACE confirms it on the wire:
-`#48 CLOSE ... read=384 [01 01 04 01 02 00 12 22 4E 4F 20 4E 41 4D 45 20 ...]`.
-
 This is invisible to `LOAD"$",dv`, which is a relocating load, and to `LIST`, which
 uses the link only as an end marker, and to a program that reads `$` as a file and
 skips two bytes. It is wrong for `LOAD"$",dv,1`, an absolute load, which would place
-the listing at `$0101`. **Change required.**
+the listing at `$0101`.
 
 **SI-131.** Byte 4 of the header, the low byte of the header line's BASIC line
 number, is the partition number for a file listing and the number of partitions for a
-partition listing. See SI-046. Current behaviour: correct for a file listing, zero
-for a partition listing.
+partition listing. See SI-046.
 
 **SI-132.** The file type field is followed by `<` when the file is locked, and
 preceded by `*` when the file was not closed. Sources: HD 9-30 for `<`;
@@ -1348,9 +1174,8 @@ required.
 **SI-133.** The low byte of the next-line link pointer is `(file size mod 254) + 2`,
 so that a program can recover the exact byte length of a file. Sources: SD README,
 "If known, the low byte of the next line link pointer of the directory listing will
-be set to (filesize MOD 254)+2"; GSD "File Sizes and Blocks Free". Not implemented;
-**change required.** It costs nothing and it is the only way a C64 program can learn
-a file's true size from a listing.
+be set to (filesize MOD 254)+2"; GSD "File Sizes and Blocks Free". It is the only way a
+C64 program can learn a file's true size from a listing.
 
 **SI-138.** The last byte of a listing is sent with EOI, whatever the size of the reads
 that bring the listing in. A BASIC program that reads a listing one byte at a time with
@@ -1358,17 +1183,6 @@ that bring the listing in. A BASIC program that reads a listing one byte at a ti
 before it. Sources: 917, where the same program ended against a CMD HD and an sd2iec and
 ran for ever against this drive, reading zeroes with a status of 0; `SD dir_footer()`,
 which sets `sendeoi` on the blocks free line.
-
-Current behaviour: the end of a listing is the only buffer for which
-`U read_dir_entry()` sets `last_byte`, and it sets `prefetch_max` to 31 where that buffer
-holds 32 valid bytes, and to 1 where the partition listing's end marker holds 2.
-`U IecChannel::pop_data()` tests `pointer == prefetch_max - 1` and so reaches that branch
-one byte before `pointer == last_byte`. It then calls `read_dir_entry()` again, which
-returns -1 without moving `pointer`, and the channel stands one byte short of its last
-byte for ever. A load does not notice: `prefetch_data()` runs ahead within one talk and
-reaches `last_byte`, which sends the EOI. A `GET#` addresses the channel to talk again for
-every byte, and `push_command(0x60)` resets the prefetch to the stuck pointer, so the
-program gets the same byte back for ever. **Change required.**
 
 **SI-139.** A time stamped directory line has a fixed length: 64 bytes in the long format
 and 42 bytes in the short format, counting the link pointer, the block count and the zero
@@ -1389,15 +1203,6 @@ measurements against a CMD HD and an sd2iec: "each directory entry is precisely 
 in the long format, and "there are 3 spaces 0x20 characters following the CBM file type
 before the start of the date ... Except, on SoftIEC there's only one space. And there are
 none of the $01 padding bytes after the time."
-
-Current behaviour: `U read_dir_entry()` writes the long stamp at offset `31 - chars` and
-the short stamp at offset `29 - chars`, where `chars` is the number of digits in the block
-count, and sets `prefetch_max` to whatever length the contents came to. A long line is
-therefore 48 bytes for a one digit block count and 45 for a four digit one, with the stamp
-two columns too far left and one space where three belong. A short line is 42 bytes down
-to 39 with the columns already right. **Change required** in both formats. The filler is
-what 917 saw first: "on lines where the filesize is 2 digits, there is a trailing 0x01
-before the 0x00 line ending on CMD HD but not on SoftIEC".
 
 ### 13.2 Filters
 
@@ -1428,33 +1233,25 @@ by this requirement.
 `112 "TESTFILE"       PRG   07/27/19 03.44 PM` and the short line is
 `112 "TESTFILE"       P 07/27 03.44 P`. Sources: HD 9-21 and 9-22; GSD "Time and Date
 Stamped Directory Listings". The options, the filter and the two stamp formats are
-unchanged; `U cbmdos_time()` produces both. What the line they sit in looks like is
-SI-139, and **that has changed**: PR #881 widened the gap between the date and the time
-in the long format from one space to three. The two lines above are the manual's examples
-as text extraction renders them, and that rendering drops spaces: it puts the type two
-columns to the left of where a 1541 puts it. SI-139 gives the column positions, taken from
+the same in both. What the line they sit in looks like is SI-139. The two lines above are
+the manual's examples as text extraction renders them, and that rendering drops spaces: it
+puts the type two columns to the left of where a 1541 puts it, and the long format has one
+space between the date and the time where three belong. SI-139 gives the column positions, taken from
 the character positions in the scan rather than from the extracted text.
 
 **SI-136.** Wildcard matching: `?` matches one character and `*` matches the rest.
-Only one `*` is meaningful. Characters after the `*` are matched against the end of
-the name, which is the 1581 rule and sd2iec's default (`SD match_name_str()` with
-`POSTMATCH` set, SD README under `X*+/X*-`, "the default value is enabled (+)").
-Matching stops after 16 characters.
+Characters after the `*` are matched against the end of the name, which is the 1581 rule
+and sd2iec's default (`SD match_name_str()` with `POSTMATCH` set, SD README under
+`X*+/X*-`, "the default value is enabled (+)"). Matching stops after 16 characters.
 
-Current behaviour: `U pattern_match()` is a full backtracking glob, so a second `*`
-matches in the middle of a name. GAP noted it approvingly: "SoftIEC even supports
-more than one * which the other devices do not." It is a superset for one `*` and a
-divergence for more, and it narrows rather than widens a match, so it is safe for
-`S`. Unchanged, and recorded so that it is a known difference rather than an
-accident.
-
-**Decision (PR #881): the matcher was corrected and made iterative.** The recursive
-matcher took time exponential in the number of stars, so one command such as
-`S:****************Q` kept the IEC task busy for minutes, and it accepted a name that
-ended where the pattern had a star, whatever followed the star, so `S:FOO*X` scratched
-`FOO`. `pattern_match()` in `software/components/pattern.cc` now keeps the full glob
-semantics described above, lets only stars remain at the end of a name, and runs in time
-proportional to the product of the two lengths.
+The matcher is a full glob, so a second `*` matches in the middle of a name where CBM DOS
+and `SD match_name_str()` stop at the first one. GAP notes the difference approvingly:
+"SoftIEC even supports more than one * which the other devices do not." For one `*` it
+agrees with sd2iec's default, and for more it narrows rather than widens a match, so no
+command can act on more files than the other devices would; it is recorded so that it is
+a known difference rather than an accident. It runs in time proportional to the product
+of the two lengths, which matters because a command such as `S:****************Q` reaches
+the matcher from the bus.
 
 ### 13.3 Raw directory
 
@@ -1518,9 +1315,8 @@ have different histories, and the reporter raised the first of them on 917.
   as `SEQ`. Neither is what the entry's type bits say, so this half is a defect of long
   standing whose symptom changed in 3.15, not a regression.
 
-**Implemented (PR #881).** Both halves changed together, because either one alone is worse
-than the previous state: the type alone would offer a `LOAD` a stream it cannot run, and
-the stream alone would leave the type contradicting the disk.
+The type and the stream go together: the type alone would offer a `LOAD` a stream it
+cannot run, and the stream alone would leave the type contradicting the disk.
 
 * `FileInfo` carries the directory entry's type bits in a new field, `cbm_filetype`, which
   is zero on a file system that has no CBM type. `U DirInCBM::get_entry()` fills it in, and
@@ -1614,7 +1410,7 @@ to close the two divergences below.
 * The length guard differs by one: sd2iec tests `(i + 4) > maxlen`, this firmware
   tests `(i + 4) >= maxlen`, so it truncates one byte earlier. Adopt sd2iec's.
 
-**Decision (PR #881): the first divergence is closed; the length guard is kept.** `*`
+**Difference from sd2iec: the length guard.** `*`
 and `?` are escaped, and scratch, `RD` and opens by pattern match through a directory
 scan. The guard is not changed: the difference is in what `maxlen` means, the buffer
 size here and the characters before the terminator in sd2iec, and changing the guard
@@ -1626,7 +1422,7 @@ that did exist is fixed: the `{}` appended to a name ending in `.prg`, `.seq`, `
 **SI-143.** Names that the forward mapping can never produce must still be readable.
 `software/test/iecdrive/doc.md` sets this out under "Injectivity vs Accessibility"
 and the code implements it with the rendered-name fallback in
-`resolve_existing_iec_path()` and `find_rendered_iec_child()`. Unchanged. The
+`resolve_existing_iec_path()` and `find_rendered_iec_child()`. The
 warning in that document stands: the fallback must not be used for `S`, because
 scratching by a heuristic match deletes the wrong file.
 
@@ -1668,9 +1464,9 @@ there, so a `.PRG` file and a `.P00` file that is not a wrapper load as they are
 existing users see no change. When on, it follows sd2iec mode 1 (x00 for SEQ, USR and
 REL, plain for PRG) or mode 2 (x00 for everything). Source: SD README under `XEnum`.
 
-**Decision (PR #881): not implemented.** It adds a user setting that no report asks for,
-and reading x00 files (SI-144) already gives the interchange with files that VICE and
-sd2iec write. New files are written plain, as before.
+**Deliberately unsupported.** It adds a user setting that no report asks for, and
+reading x00 files (SI-144) already gives the interchange with files that VICE and sd2iec
+write. New files are written plain.
 
 **SI-146.** The x00 wrapper is the whole of the write side answer for relative files.
 With it the record length is at a fixed header offset that both devices already
@@ -1679,11 +1475,10 @@ sd2iec without either device changing its plain layout. A plain `.rel` keeps thi
 firmware's two byte layout for ever, which is why SI-084 needs no migration and why
 no file a user already has is touched.
 
-**Decision (PR #881): implemented for reading only**, because SI-145 is not
-implemented. An existing `R00` file is read and written through its header; a new
+**Creating a wrapper is deliberately unsupported**, because SI-145 is not. An existing `R00` file is read and written through its header; a new
 relative file is created in the plain two byte layout.
 
-### 14.3 The shifted space defect
+### 14.3 The shifted space
 
 **SI-147.** The shifted space rule is broken in two independent ways, and the second
 makes the same file name map to different host names on different Ultimate models.
@@ -1781,8 +1576,7 @@ has no margin, and anything over it is silently truncated rather than refused.
 
 ### 15.2 Behaviour that must not change
 
-These are stated so that the work below does not quietly regress them. Each is
-already correct.
+These are stated so that later work does not quietly regress them.
 
 1. `//` is the partition root and a single leading `/` is the current directory
    (SI-010).
@@ -1819,7 +1613,7 @@ assumption in `software/io/iec/iec_log.h`, which is 64 because the buffers were 
 The failure log must keep reporting a command's real length and mark where its
 rendering is cut.
 
-**Decision (PR #881): implemented.** A log line carries one rendering of the bytes, as
+A log line carries one rendering of the bytes, as
 text with every byte that is not printable ASCII written as `\xNN`, which loses nothing.
 A rendering that does not fit its 260 character buffer ends in `..`, and the line still
 carries the real length. The lines of the setting **Log Every Operation** (section 18)
@@ -1858,8 +1652,8 @@ left for someone else to answer before the work can start.
 | C10 | What `M-R` should answer | Nothing documents what C64 OS concludes from each answer. SD README says not to use `M-R` for detection at all. The reporter proposed a constant 42. | **The requested count of `$00` bytes at every address, and no magic table** (SI-112, SI-113). `$00` matches no model signature, and it is the value sd2iec deliberately returns at `$FFFE` to make Action Replay 6 fall back to the KERNAL loader. Faking a 1541 signature would invite a loader to upload drive code this drive cannot run. Identification is the `UI` string, whose format SI-114 fixes. |
 | C11 | Whether `UJ` and `U`+shifted J lock the bus | GAP reports it against firmware 3.10a. Nothing since has tested it. | **Settled from the code, not by re-measuring** (SI-103). `IecDrive::reset()` reaches `IecInterface::configure()`, which sets `HW_IEC_RESET_ENABLE = 0` and holds the IEC processor in reset while it rewrites the slots. Command handlers run on the IEC task inside the bus state machine with the host still addressed, so that call is a bus-lock by construction. The requirement is that no reset command touches the interface, which removes the mechanism whether or not 3.10a's symptom survives today. |
 | C12 | Shifted space (`$A0`) inside a name | The reporter wrote that this "is a topic of its own, but I do not want to start that topic without having discussed that first". | **Decided** (SI-147 for the two defects, SI-148 for the policy): `$A0` is legal inside a name and maps to `{A0}`; a trailing run is padding and is dropped; a name that is empty or starts with `$A0` is refused on create; a listing ends the name at its terminator or at 16 characters rather than at the first `$A0`, because ending it earlier would make this drive and an sd2iec print different names for the same file. |
-| C13 | GAP's report that copy produces `kernal.bin.bin` and ignores paths | Measured against firmware 3.10a. | **Already fixed.** Measured on the head of PR #881 with a probe linked against the host suite's objects: the target gets one extension and a target path is honoured (SI-075). The requirement is a regression test. |
-| C14 | `R` across directories | IDE 15.2.3 renames or moves a file between directories. `SD parse_rename()` answers `62,FILE NOT FOUND` when the two paths differ. HD 9-26 says the two names must be in the same partition. | This document decided **62** (SI-074), by precedence rule 3: SD wins over IDE. **PR #881 reversed it:** the move worked before PR #881, a test on `master` asserted it, and no program has been named that needs the `62`. |
+| C13 | GAP's report that copy produces `kernal.bin.bin` and ignores paths | Measured against firmware 3.10a. | **Not reproducible.** Measured with a probe linked against the host suite's objects: the target gets one extension and a target path is honoured (SI-075). The requirement is a regression test. |
+| C14 | `R` across directories | IDE 15.2.3 renames or moves a file between directories. `SD parse_rename()` answers `62,FILE NOT FOUND` when the two paths differ. HD 9-26 says the two names must be in the same partition. | **The move wins** (SI-074). Precedence rule 3 would put SD over IDE, but the drive already moved the entry, a test asserts it, and no program has been named that needs the `62`; taking the move away would break working programs to satisfy a rule of precedence. |
 | C15 | The two identification bytes in a listing header | 917 reports that this drive prints `00 2a` where a CMD HD prints `hd 1h`, and calls the difference harmless. `SD dirheader[]` prints the disk id `IK` and the DOS version `2A`. | **Keep `00 2a`.** The field is a claim about the device: `1H` is the CMD HD's own DOS version, and a drive that answers `UI` with its own identification string (SI-114) should not print a CMD HD's version in its listings. sd2iec prints a made up id and `2A` for the same reason, so the shape of the current answer is the one an sd2iec-like device gives. |
 | C16 | The low byte of a line's link pointer | 917 reports that a CMD HD prints `01 01` on every line and that this drive prints something else. SD README defines the low byte as `(filesize MOD 254)+2`, and GSD documents it. | **Keep the remainder** (SI-133). It is what sd2iec does, its author documented it, and it is the only way a program can learn a file's exact length from a listing. A program that reads the link as an end-of-program marker is unaffected, because the byte is never 0 and the high byte stays 1. |
 
@@ -1878,19 +1672,19 @@ listing layouts of section 13, the partition directory of section 5.3, file and
 directory commands, relative files, direct access, the x00 wrapper. The existing
 suites 3 to 10 are the model, and Suite10 already covers the #875 to #877 work.
 
-The measurements marked "measured" in this document were taken by linking a small
-probe against this target's objects, sending each command through
-`IecCommandChannel::push_command()` and reading `IecDrive::get_error_string()` back.
-Those cases belong in the suite as they are implemented, one assertion per
-requirement, so that the answer recorded here becomes the answer the suite enforces.
-The set is: the ten commands of the probe's first section (`A`, `V`, `R-P`, `S-8`,
-`W-1`, `U0>`, `L`, `R-H`, `I`, `M-R`), the scratch of SI-033, the `MD` and
-`RD` forms of SI-060 and SI-063, the two copies of SI-075, the three filters of
-SI-134, and the four left-arrow forms of SI-014. The listing layout of SI-138 and SI-139
-needs a reader that addresses the channel to talk for every byte, because a whole stream
-read cannot fail for either of them. For the requirements PR #881 decided not
-to implement, the tests assert the answer given in the decision, so that a later
-implementation has to change a test on purpose.
+Suite11 holds one case per requirement, named after the paragraph it checks, and each
+case sets up a partition of its own so that it can be run alone:
+`./result/testdrive SI031` runs the Suite11 cases whose name contains SI031 and skips
+every other suite. That is how a requirement is shown to fail before its change and to
+pass after it. The listing layout of SI-138 and SI-139 needs a reader that addresses the
+channel to talk for every byte, because a whole stream read cannot fail for either of
+them. For the requirements section 18.1 marks deliberately unsupported, the tests assert
+the answer given there, so that a later implementation has to change a test on purpose.
+
+`target/pc/linux/iecdrive_unsigned` builds the same suite with `-funsigned-char`, because
+the U64 II and U2+L are RISC-V, where `char` is unsigned, and SI-147 depended on it.
+`target/pc/linux/iecdrive_asan` builds it under AddressSanitizer; run it with
+`ASAN_OPTIONS=detect_leaks=0`, because the suite does not free what it set up at exit.
 
 **T3. Hardware, `tests/e2e/io/iec`.** Only what a host build cannot reach. Two
 classes qualify and both have already caught defects:
@@ -1905,12 +1699,9 @@ classes qualify and both have already caught defects:
 * Anything whose input is the byte sequence a Commodore actually puts on the bus,
   which is what `iec_agent.asm` produces. The #875 to #877 defects were all of this
   kind: a host test that builds its command strings by hand cannot fail for them.
-* Anything whose behaviour depends on the signedness of `char`. The host builds are
-  `-fsigned-char`, the U64 build is Nios II and also signed, and the U64 II and U2+L
-  builds are RISC-V and unsigned. SI-147 is the known case and no host test can see
-  it. A cheaper alternative for this one class is to compile the affected host suite
-  a second time with `-funsigned-char` and run both, which would catch it without a
-  device.
+* Anything whose behaviour depends on the signedness of `char`, where the second host
+  build above does not settle it. The U64 build is Nios II, where `char` is signed, and
+  the U64 II and U2+L builds are RISC-V, where it is not. SI-147 is the known case.
 
 **T4. The C64 OS acceptance test.** Install C64 OS on a Software IEC partition, boot
 it, and compare the `SoftIEC:` lines of the resulting log against TRACE. The drive
@@ -1922,44 +1713,10 @@ of its 601 lines 11 carry `33,SYNTAX ERROR` and 9 carry `62,FILE NOT FOUND`.
 
 ---
 
-## 18. Order of work
+## 18. The operation log
 
-Grouped so that each group is independently shippable and independently testable.
-
-**Group 1, the defects the reporter raised.** SI-031 error codes, SI-033 scratch,
-SI-045 and SI-046 the partition directory, SI-053 `I`, SI-072 image names,
-SI-083 `P` on a write channel, SI-105 memory commands, SI-071 `N`. These are the
-contents of issues #877 and #890 and they are what unblocks the reporter's testing.
-
-**Group 2, the limits.** SI-021 and SI-022 buffer size and the 32 error. This is a
-data loss defect and it gates anything that sends a long path, which C64 OS does.
-
-**Group 3, the missing commands.** SI-100 `U0>`, SI-101 `S-8`/`S-9`/`S-D`,
-SI-102 `W-0`/`W-1`, SI-054 `V`, SI-051 `R-P`, SI-064 `R-H`, SI-076 `L`.
-
-**Group 4, the grammar.** SI-012 wildcards in path components, SI-014 the left arrow,
-SI-016 the second terminator branch, SI-060 the `MD` colon, SI-063 the `RD` path
-rejection, SI-074 rename checks, SI-093 direct access partition binding.
-
-**Group 5, the listings.** SI-130 header bytes, SI-133 the size remainder,
-SI-065 the header name, SI-137 the raw directory, SI-138 the end of file at the end of a
-listing, SI-139 the length and columns of a time stamped line, SI-149 the type of a file
-inside a disk image.
-
-**Group 6, naming.** SI-147 first, because it is the only requirement in this
-document that makes two Ultimate models write different bytes to the same medium.
-Then SI-142 the two divergences, then SI-144 to SI-146 x00 together with SI-084,
-which is the relative file reader the wrapper completes.
-
-**Group 7, the rest.** SI-090 to SI-092 large buffers, SI-094 `B-R` and `B-W`,
-SI-077 the sd2iec attribute commands, SI-120 clock writes.
-
-Several requirements in groups 3, 5, 6 and 7 were then decided against; section 18.1
-lists them.
-
-The `SOFTIEC-TRACE` diagnostics added by PR #881 were reduced, before release, to two
-kinds of `SoftIEC:` line. The drive always writes one for a command that leaves an
-error, an open that fails and the first failure of a channel. With the setting **Log
+The drive writes two kinds of `SoftIEC:` line to the firmware's log. It always writes one
+for a command that leaves an error, an open that fails and the first failure of a channel. With the setting **Log
 Every Operation** in the SoftIEC Drive Settings, which is off by default, it also writes
 one for every other command, open and close. Such a line adds the reply of a command
 that answers with data, such as `M-R`, the host file an open reached or the first 32
@@ -1984,125 +1741,36 @@ arrives with the next syslog message. With the firmware also printing its REST a
 requests, this happened to 1 line of 732 during a Software IEC soak on an Ultimate 64
 Elite, and to 15 lines of 668 during `iec-dos-commands` and a soak on a U2+L.
 
-### 18.1 What PR #881 implements
+### 18.1 Deliberately unsupported, and the differences from the sources
 
-PR #881 implements a requirement when it fixes a defect, or when the reporter of #877,
-#890 or #917, GAP or TRACE names it. A review of the implementation against that rule decided
-against the requirements in the first table and narrowed the ones in the list after it.
-Each of them also has a **Decision (PR #881)** paragraph below the requirement itself, and
-the tests assert the answer given here. The requirements not named in this section are
-implemented as written; the **Decision (PR #881)** paragraphs of SI-076, SI-084, SI-100,
-SI-144 and SI-152 only record how they were implemented.
-
-**Not implemented.** No command in TRACE uses any of these, so a C64 OS boot is not
-affected by them.
+Everything in sections 2 to 15 is in force except the five commands in the first table.
+Each of them carries the reason below the requirement itself, and a test asserts the
+answer given here, so a later implementation has to change a test on purpose.
 
 | Requirement | Why it is not implemented | What the drive answers |
 | --- | --- | --- |
-| SI-054 `V` | Inside a disk image, an OK would claim a validation of the block map that did not happen | `31` |
+| SI-054 `V` | Validating means rebuilding the block map of an image from every directory, side sector chain and GEOS record chain in it, and a walk that misses one marks live blocks free; an OK without the walk would claim a check that did not happen | `31`, as sd2iec answers |
+| SI-077 `EL:$`, `EU:$` | Write-protecting a whole mounted image changes the writability of a file system the file browser, FTP and REST share; the per-entry lock covers what the command is used for | `62`, the name matching no entry |
 | SI-105 `M-W`, `M-E` | Nothing written is kept and nothing is run, so an OK would tell a fast loader its drive code runs | `30` |
-| SI-137 raw directory | It would change what existing programs, and clients of the UCI target, receive when they open `$` on a data channel | the listing, as before |
-| SI-145 writing x00 files | A new user setting that no report asks for; reading x00 files (SI-144) already gives the interchange | new files are written plain |
+| SI-137 raw directory | Every program that reads a listing byte by byte opens `$` on a data channel, and the UCI target opens it on whatever channel its client sends; on a host file system the sectors would have to be synthesised from the listing in any case | the listing |
+| SI-145 writing x00 files | A user setting that no report asks for; reading them (SI-144) already gives the interchange | new files are written plain |
 
-**Implemented in part, or with a difference.** For each: what is implemented, what is
-not, why, and whether a C64 OS boot as recorded in TRACE is affected.
+Section 19 lists what is out of scope: the commands that run 6502 code in drive memory,
+the hardware a CMD device has and this one does not, and the sd2iec settings commands.
 
-* **SI-016, the command terminator.**
-  * Implemented: a carriage return at the end of a command is dropped (the ROM's first
-    branch), except after `C`+shifted P (SI-017). A carriage return followed by a line
-    feed at the end is dropped as well, and a lone carriage return answers `31`.
-  * Not implemented: the ROM's second branch, which also ends a command at a carriage
-    return second to last when the last byte is something else, dropping that byte. Here
-    both bytes stay part of the command, so `S:NAME`+`CHR$(13)`+`X` scratches nothing
-    where a 1541 scratches `NAME`.
-  * Why: that branch cuts a binary parameter of 13 short, such as the high byte of an
-    `M-R` address or its count, and the reporter asked on #877 for it not to be reproduced.
-  * C64 OS: not affected. None of the 68 commands in TRACE has a carriage return before its
-    last byte.
-* **SI-018, `P`.**
-  * Implemented: the record number and the offset of a relative file are taken from the
-    command as sent, so an offset of 13 is kept.
-  * Different: the position in a plain file is taken from the command without its
-    terminator, where sd2iec takes it from the command as sent. `"P"+CHR$(2)+CHR$(100)`
-    from BASIC positions to byte 100 here and to byte 3,428 on sd2iec.
-  * Why: this drive positioned to byte 100 before PR #881, and that is what GSD's
-    documented form means.
-  * C64 OS: not affected; TRACE has no `P`.
-* **SI-022, commands that fill the buffer.**
-  * Implemented: a command of 254 bytes or more answers `32` and is not executed.
-  * Different: an OPEN name of 254 bytes or more also answers `32` and opens nothing; the
-    requirement names only commands.
-  * Why: a name cut short would create or read a file under its first bytes, the same data
-    loss the requirement prevents for commands.
-  * C64 OS: not affected; its longest open name in TRACE is 26 bytes.
-* **SI-033, scratching nothing.**
-  * Implemented: a scratch that matches nothing answers `01,FILES SCRATCHED,00,00`, which
-    is what C64 OS's `S/TEMPORARY/:*` receives at boot.
-  * Different: a scratch whose path does not exist answers `71,DIRECTORY ERROR` instead.
-  * Why: a mistyped path should be reported rather than look like an empty directory;
-    sd2iec reports it as well.
-  * C64 OS: not affected. Its system directory contains `temporary/`, whose files it
-    scratches at boot (C64 OS file system documentation).
-* **SI-074, rename.**
-  * Implemented: `34` for an empty new name, `33` for a wildcard in it, `63` for a name any
-    entry already has, and the rename of a subdirectory (HD 9-26, "Renaming Files and
-    Subdirectories").
-  * Not implemented: `62` for a rename into another directory or partition. The file is
-    moved, as it was before PR #881 (decision C14 is reversed).
-  * Why: the move worked on `master`, a `master` test asserted it, and IDE64 documents it;
-    no program has been named that needs the `62`.
-  * C64 OS: not affected; TRACE has no `R`.
-* **SI-105, memory commands.**
-  * Implemented: `M-R`, the four probes C64 OS sends at boot, answers the requested count of
-    `$00` bytes.
-  * Not implemented: `M-W` and `M-E`; see the table above.
-  * C64 OS: `M-R` is the part it uses.
-* **SI-136, wildcard matching.**
-  * Implemented: the full glob with any number of `*`, as the requirement records.
-  * Different: the requirement calls the matcher unchanged, but it had two defects that PR
-    #881 fixed. It took time exponential in the number of stars, so one command such as
-    `S:****************Q` kept the IEC task busy for minutes, and it matched a name that
-    ended where the pattern had a `*`, whatever followed, so `S:FOO*X` scratched `FOO`.
-  * Why: both are defects, and the second deletes files the pattern does not name.
-  * C64 OS: not affected. The only pattern in a command in TRACE is `S/TEMPORARY/:*`, and
-    its listings use `$:MENU.M` and `$:UTILITIES.M`, which contain no star.
-* **SI-142, host names.**
-  * Implemented: `*` and `?` are escaped as `{2A}` and `{3F}`, and scratch, `RD` and opens
-    by pattern match through a directory scan.
-  * Not implemented: sd2iec's length guard.
-  * Why: the difference is only in what the length parameter means, and changing it changes
-    no host name the drive produces; the one overrun that existed, the `{}` appended to a
-    long name ending in `.prg`, is fixed.
-  * C64 OS: not affected.
-* **SI-146, relative files in x00 wrappers.**
-  * Implemented: an existing `R00` file is read and written through its header.
-  * Not implemented: creating one; a new relative file is written in the plain two byte
-    layout, because SI-145 is not implemented.
-  * C64 OS: not affected; TRACE opens no relative file.
+**Differences from the sources.** Each of these is a requirement in force that answers
+differently from one of its sources, for a reason given below the requirement.
 
-### 18.2 Defects fixed alongside
-
-The implementation also fixed defects that this specification does not name, found by a
-randomized soak of the drive under AddressSanitizer and by a review aimed at crashes. They
-are listed in the description of PR #881 with the test that shows each one: a negative
-byte count offered for a record read past its end, a disk image chain walked off the
-disk, a read past the end of a file in a disk image, host names copied without a
-terminator, a disk image released by the mount cache while a listing still read it,
-exponential wildcard matching, sector access without the file manager's lock, a copy that
-leaked its buffer when a source partition did not exist, a UCI open that left the
-previous file open, and concurrent access to the partition table from the menu, REST,
-UCI and the IEC task.
-
-The stress mode of the Software IEC soak found one more on both devices: `B-A` of a block
-that is already allocated answered `74,DRIVE NOT READY`. It now answers `65,NO BLOCK` with
-the next higher free track and sector, or track 0 when no higher block is free, as the
-1541-II User's Guide (error 65) and HD 9-43 describe. `B-F` of a block that is already
-free, which also answered 74, now answers OK and changes nothing; neither manual lists an
-error for it. sd2iec does not implement `B-A` or `B-F`.
-
-A review of the operation log found that any change in the Software IEC settings held the
-IEC processor in reset, so turning **Log Every Operation** on or off dropped a transfer on
-the bus. Only a change of the device number or of the enable reconfigures the processor now.
+| Requirement | The difference |
+| --- | --- |
+| SI-016 | A carriage return second to last ends a command only when a line feed follows it, because the ROM's branch cuts a binary parameter of 13 short |
+| SI-018 | The position in a plain file is read from the command without its terminator, where sd2iec reads it from the command as sent |
+| SI-033 | A scratch whose path does not exist answers `71` rather than a count of zero |
+| SI-074 | A rename into another directory or partition moves the entry, where `SD parse_rename()` answers `62` |
+| SI-077 | `EL`, `EU` and `A` act on every entry a name matches, directories included, where sd2iec skips directories and `A` takes the first match |
+| SI-120 | A write is refused when the day is not a day of that month, which `SD parse_timewrite()` does not check, and every field is read at its documented width |
+| SI-136 | A second `*` matches in the middle of a name, where CBM DOS and sd2iec stop at the first |
+| SI-142 | The length guard of `SD` is not adopted, because it would change no host name the drive produces |
 
 ---
 
@@ -2158,10 +1826,10 @@ Named so that the boundary is explicit rather than implied.
   run C64 OS, and the successful run of exactly that sequence is TRACE. It is a
   separate investigation and needs its own issue. What would move it forward is a
   syslog capture that ends at the hang rather than one from a successful boot, and
-  whether REST and ping still answer while the menu button does not. PR #881 fixed the
-  crash and hang defects of section 18.2, measured the IEC task's stack after a soak on
-  a U2+L (3,352 of 6,400 bytes left), and added a soak of the drive over the real bus,
-  `tests/soak/io/iec/softiec_soak_test.py`; none of them reproduced the hang.
+  whether REST and ping still answer while the menu button does not. The IEC task's
+  stack was measured after a soak on a U2+L, with 3,352 of 6,400 bytes left, and the soak
+  of the drive over the real bus, `tests/soak/io/iec/softiec_soak_test.py`, has not
+  reproduced the hang.
 
 ---
 
@@ -2196,13 +1864,16 @@ other software that already targets these devices.
 
 ## Appendix B. Requirement index
 
-Sections 2 to 15 define 105 numbered paragraphs, SI-001 to SI-153 with gaps, one of
-which (SI-151) is retired. Requirements that change nothing are marked "Unchanged"
-and exist as a contract. Requirements marked "Change required", or stated as "Add",
-"Close" or "Not implemented" (SI-036, SI-077, SI-142, SI-144 to SI-146), are the
-work, and section 18 orders them. Section 18.1 lists the requirements PR #881 decided
-not to implement or implemented in part, and each of them carries its decision below
-the requirement.
+Sections 2 to 15 define the numbered paragraphs SI-001 to SI-153, with gaps, one of which
+(SI-151) is retired. A paragraph whose number carries a letter, such as SI-103a, states a
+further rule of the requirement it follows and is numbered that way so that the numbers
+already cited elsewhere keep their meaning.
+
+Section 18.1 is the index of the five deliberately unsupported requirements and of the
+eight that are in force and answer differently from one of their sources. Everything else
+in sections 2 to 15 is in force as written. Section 19 is what is out of scope, which is
+a different thing: those are capabilities this drive does not have rather than commands
+it declines to implement.
 
 ## Appendix C. The programs issue #917 reports
 
