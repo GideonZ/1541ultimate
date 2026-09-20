@@ -1841,6 +1841,14 @@ static void run_suite10_directory_navigation(FileManager *fm, IecDrive *dr)
     expect_command_ok("Suite10-NavParentColon", dr, "CD:_\r");
     expect_command_response("Suite10-NavPwdParentColon", dr, "XPWD\r", "30:/");
 
+    // A name behind the colon is one component, as it is on the CMD devices: the slash
+    // in it is a character of the name and not a path separator, so this enters
+    // nothing (SI-011a).
+    expect_command_ok("Suite10-NavRootBeforeColonPath", dr, "CD//\r");
+    expect_command_response("Suite10-NavColonPathComponents", dr, "CD:SUB/DEEP\r",
+                            "71,DIRECTORY ERROR,30,00\r");
+    expect_command_response("Suite10-NavPwdAfterColonPath", dr, "XPWD\r", "30:/");
+
     // A partition number in front of the path selects the partition to act on.
     expect_command_ok("Suite10-NavPartitionPrefixed", dr, "CD30//SUB\r");
     expect_command_response("Suite10-NavPwdPartitionPrefixed", dr, "XPWD\r", "30:/SUB/");

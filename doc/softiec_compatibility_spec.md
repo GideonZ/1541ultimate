@@ -152,6 +152,13 @@ required."
 HD 9-19, "It is not required that you include the colon before the subdirectory
 name, as long as the subdirectory name is preceded by a slash."
 
+**SI-011a.** A name behind the colon is one component. A slash inside it is a
+character of the name, not a path separator, so `CD:SUB/DEEP` looks for a name
+containing a slash and answers `71,DIRECTORY ERROR` when no such directory exists.
+The path part of SI-010 is the only place a slash separates components. Source:
+HD 9-19, where every descent through more than one level writes the components in
+the path in front of the colon.
+
 **SI-012.** A path component may contain wildcards, and the first match is used.
 Sources: SD README under CD/MD/RD, "You can use wildcards anywhere in the path";
 IDE 6.2, "These wildcards can be used in path elements or filename too, in this case
@@ -1389,7 +1396,7 @@ mode 5 in 2025 (`0f22587`, 6 June 2025) and documented them in that fork's READM
 **SI-140.** This is a compatibility contract, not an implementation detail. A card
 or stick written by an Ultimate must read back on a markusC64 sd2iec in extension
 mode 5, and the reverse. Nothing in this specification may change the mapping except
-to close the two divergences below.
+where SI-142 states a difference and its reason.
 
 **SI-141.** The rules, from the shared implementation and SD README:
 
@@ -1405,22 +1412,19 @@ to close the two divergences below.
 * The CBM file type is the host extension `.prg`, `.seq`, `.usr` or `.rel`, added on
   create and hidden on read.
 
-**SI-142.** Close the two divergences.
+**SI-142.** `*` and `?` are escaped as SI-141 escapes the other characters, and a
+create of a name containing either is refused per SI-032, as `SD a76deb2` does.
+Scratch, `RD` and an open by pattern match through a directory scan, so a pattern
+still reaches the files it names.
 
-* sd2iec also escapes `*` and `?`; this firmware does not. sd2iec additionally
-  refuses to create a name containing either (`SD a76deb2`). Adopt both: escape them,
-  and refuse to create such a name per SI-032.
-* The length guard differs by one: sd2iec tests `(i + 4) > maxlen`, this firmware
-  tests `(i + 4) >= maxlen`, so it truncates one byte earlier. Adopt sd2iec's.
-
-**Difference from sd2iec: the length guard.** `*`
-and `?` are escaped, and scratch, `RD` and opens by pattern match through a directory
-scan. The guard is not changed: the difference is in what `maxlen` means, the buffer
-size here and the characters before the terminator in sd2iec, and changing the guard
-together with every call site leaves every name the drive produces the same while
-`FileInfo::generate_fat_name()` would write one byte past its buffer. The one overrun
-that did exist is fixed: the `{}` appended to a name ending in `.prg`, `.seq`, `.usr` or
-`.rel` is only added when it fits.
+**Difference from sd2iec: the length guard.** sd2iec tests `(i + 4) > maxlen` where
+this firmware tests `(i + 4) >= maxlen`, and the two are not the same test because
+`maxlen` does not mean the same thing: here it is the size of the buffer, in sd2iec it
+is the characters before the terminator. Every name this drive produces is identical
+either way, and adopting sd2iec's form without also changing every call site would let
+`FileInfo::generate_fat_name()` write one byte past its buffer, so the guard stays as
+it is. The `{}` appended to a name ending in `.prg`, `.seq`, `.usr` or `.rel` is added
+only when it fits.
 
 **SI-143.** Names that the forward mapping can never produce must still be readable.
 `software/test/iecdrive/doc.md` sets this out under "Injectivity vs Accessibility"
@@ -1431,8 +1435,8 @@ scratching by a heuristic match deletes the wrong file.
 
 ### 14.2 x00 wrappers
 
-**SI-144.** Add support for reading P00, S00, U00 and R00 files: a 26-byte header
-beginning with `"C64File"` and a zero, the 16-character CBM name plus a terminator at
+**SI-144.** P00, S00, U00 and R00 files are read as the CBM files they hold: a 26-byte
+header beginning with `"C64File"` and a zero, the 16-character CBM name plus a terminator at
 offset 8, the record length at offset 25, then the unmodified data. The host
 extension is `P00`, `S00`, `U00` or `R00`, the two digits incremented only to break
 an 8.3 collision. Sources: `SD src/fatops.c`, `P00_HEADER_SIZE 26`,
@@ -1469,7 +1473,12 @@ offers the actions a `.PRG` file offers, and each acts on the program inside. Th
 shows the name from the header, because the host name of such a file is an 8.3 rendering
 that does not identify it, while the extension column still says `P00` so that the
 wrapper is visible; every operation that names the file on the medium, a rename, a copy
-and a delete among them, uses the host name. `S00`, `U00` and `R00` files show their
+and a delete among them, uses the host name. A browser copy copies the host file whole,
+wrapper included, because it copies a file of the medium and the copy is an x00 file of
+the same name. `FileManager::fcopy` is a byte copy for every caller, and teaching it to
+unwrap would change what the ROM and cartridge installers copy as well. The drive's own
+`C` command is the path that writes the CBM file without its header (SI-075, SI-144), so
+a copy into a mounted disk image is made from the C64 rather than from the browser. `S00`, `U00` and `R00` files show their
 header name in the same way and offer what a `.SEQ`, a `.USR` and a `.REL` file offer,
 which is nothing beyond the operations every file has.
 
@@ -1648,8 +1657,8 @@ left for someone else to answer before the work can start.
 | C3 | `SAVE"@:foo*"` | The reporter measured `64` on a real drive. `SD file_open()` and IDE 7.1 replace the matched file; sd2iec answers 64 only when nothing matched. | **Settled by ROM `$D8F5`** (SI-032). Save-with-replace compares the found entry's type against the requested type and answers 64 on a mismatch or on a REL. `SAVE` asks for PRG, so a `foo*` that first matches a non-PRG answers 64 and one that matches a PRG replaces it. Every source is consistent once that check is known. |
 | C4 | `$=P` footer | Issue #890 and `SD pdir_refill()` say no footer. IDE prints `n PARTITIONS.`. | **No footer** (SI-045). The issue is explicit, sd2iec agrees, and IDE64's footer is its own extension. |
 | C5 | `$=P:*=C` | HD 9-14 says `C` selects 1581 CP/M. `SD load_directory()` maps `C` to internal type 12, which is `80 `, an 8050 image. | Accept `C` and match nothing, because this drive has neither kind of partition. Recorded so the sd2iec mapping is not copied by mistake. |
-| C6 | `=D` directory filter | `SD` and this firmware treat `D` as DIR. IDE 6.2 maps `D` to DEL. GSD warns that on other drives `D` matches everything. | Keep `D` as a synonym for `B` (SI-134), and say in the user documentation that software should send `B`. Changing it would break the sd2iec software that already sends `D`, and no software can be relying on `D` meaning DEL here because this drive has no DEL entries. |
-| C7 | Wildcards with more than one `*` | `SD match_name_str()` and CBM DOS stop at the first `*`. This firmware backtracks. GAP calls the difference harmless. | Keep the current behaviour (SI-136). For one `*` it agrees with sd2iec's default; for more it narrows rather than widens a match, so no command can act on more files than the other devices would. |
+| C6 | `=D` directory filter | `SD` and this firmware treat `D` as DIR. IDE 6.2 maps `D` to DEL. GSD warns that on other drives `D` matches everything. | `D` is a synonym for `B` (SI-134), and say in the user documentation that software should send `B`. Changing it would break the sd2iec software that already sends `D`, and no software can be relying on `D` meaning DEL here because this drive has no DEL entries. |
+| C7 | Wildcards with more than one `*` | `SD match_name_str()` and CBM DOS stop at the first `*`. This firmware backtracks. GAP calls the difference harmless. | Backtracking stands (SI-136). For one `*` it agrees with sd2iec's default; for more it narrows rather than widens a match, so no command can act on more files than the other devices would. |
 | C8 | G-P byte 1 | HD and RL say reserved zero. FD defines a disk-information bit field and `SD` writes `0xE2`, which decodes as an FD-2000 with a 1.6 MB disk. | **Zero** (SI-042). Byte 1 is a claim about the device model, and this drive is not an FD. |
 | C9 | G-P block unit | HD and FD count 512-byte blocks; RL counts 256-byte blocks. | **512** (SI-041), following the HD, which is the reference text and the larger of the two devices this drive resembles. |
 | C10 | What `M-R` should answer | Nothing documents what C64 OS concludes from each answer. SD README says not to use `M-R` for detection at all. The reporter proposed a constant 42. | **The requested count of `$00` bytes at every address, and no magic table** (SI-112, SI-113). `$00` matches no model signature, and it is the value sd2iec deliberately returns at `$FFFE` to make Action Replay 6 fall back to the KERNAL loader. Faking a 1541 signature would invite a loader to upload drive code this drive cannot run. Identification is the `UI` string, whose format SI-114 fixes. |
@@ -1794,6 +1803,17 @@ Named so that the boundary is explicit rather than implied.
   a device with physical buttons, and `U cbmdos_parser.cc` already records the
   reasoning, "Swaplists are not part of the drive, they are part of the user
   interface."
+* The fastloaders other than JiffyDOS. sd2iec accelerates Turbo Disk, Final
+  Cartridge III, ULoad Model 3, GEOS, Wheels, Action Replay 6, Epyx Fastload,
+  Burst Loaders and Dreamload by detecting the loader's upload and answering in its
+  protocol (SD README, "Fastloaders"). Each one is a protocol in the IEC processor
+  microcode `software/io/iec/iec_code.iec`, not firmware, so each is its own piece
+  of work. JiffyDOS is implemented there and is item 10 of section 15.2.
+* Creating a partition. sd2iec's partitions are the primary partitions of the
+  medium's MBR and it does not create them either (SD README, "Partitions"). The
+  partitions of this drive are the entries of the **Software IEC** configuration,
+  which the user edits in the Ultimate menu, and the command channel selects one
+  with `CP` (SI-016) and reads them with `$=P` (SI-047).
 * M2I files, which sd2iec itself has deprecated (SD README, Deprecation notices).
 * Mapping each Ultimate storage device to its own IEC device number, which GAP asks
   for. The partition model in section 2 answers the same need within one device
@@ -1914,3 +1934,86 @@ listing is a zero and it arrives with end of file set. Against this drive the sa
 printed `0` and `0` without stopping. SI-138 is the requirement, and the screen above the
 first program also shows the directory it was reading, whose header is the CMD HD's
 `1 "TESTS            " HD 1H` (C15).
+
+## Appendix D. Conformance against the two C64 OS reference articles
+
+The two articles GAP and GSD are the reasons this specification exists, and they are
+prose rather than lists, so this appendix maps each thing they raise onto the
+requirement that settles it. A reader checking whether an article is answered reads a
+row here and then the requirement it names. Nothing in either article is left without a
+row.
+
+### D.1 GAP, "Gaps in Software IEC"
+
+| What the article raises | Settled by |
+| --- | --- |
+| Storage devices should each get their own IEC device number | Section 19: the partition model of section 2 answers the same need inside one device number |
+| The pseudo root holds no files and its blocks free differs from the directories below it | SI-005, SI-003, SI-004 |
+| A device entry of the pseudo root cannot be renamed and answers `69,FILESYSTEM ERROR` | SI-005, SI-074, SI-036 |
+| The digit in front of the header name is 0 while the listing holds `DIR` entries | SI-131, SI-046 |
+| Path structure: `//` for the root, a trailing slash on every component, a colon before the name | SI-010, SI-011 |
+| A single leading slash must mean the current directory | SI-010 |
+| `CD:AUDIO/TUNEFUL 8` descends two levels | SI-011a |
+| The left arrow must mean the parent directory, not a configured default | SI-014, SI-015 |
+| `..` as a path component, and a directory actually named `..` | SI-014, whose closing paragraph gives `CD/../OTHERDIR` as the way up and down again in one command |
+| `C` with a relative path in the source does nothing | SI-075 |
+| `C` writes the copy into the current directory and appends the host extension a second time | SI-075, C13 |
+| `C` with an absolute path in the target does nothing | SI-075 |
+| Filtering a listing by CBM file type, in both the `=P` and the `=B`/`=D` spellings | SI-134 |
+| The directory header shows a fragment of the path instead of the directory's name | SI-065, SI-064 |
+| `$=P`, the partition directory, and its type filter | SI-044 to SI-050 |
+| `CP`n and `C`+shifted P select the current partition | SI-040, SI-016, SI-017 |
+| The partition number in front of a path, in `C`, `S` and `R` | SI-013 |
+| Partitions rendered as `PART0`, `PART1` directory entries with no free space | SI-002, SI-005 |
+| Partition names are not used | SI-002, SI-041, SI-049 |
+| PETSCII names are unreadable once the medium is read on a PC | SI-140 to SI-148 |
+| The RTC commands over IEC | SI-120 to SI-123 |
+| Time stamped listings and their filters | SI-135, SI-139 |
+| Seeking within a file with `P` | SI-081, SI-082, SI-083 |
+| `U0>`+`CHR$(d)` changes the device number | SI-100 |
+| `UJ` locks up the bus | SI-103, SI-103a |
+| Direct access: buffers, the buffer pointer, block read and write | SI-090 to SI-094 |
+| JiffyDOS acceleration | Section 15.2 item 10; the other fastloaders are in section 19 |
+
+### D.2 GSD, "SD2IEC User's Manual"
+
+| Section of the manual | Settled by |
+| --- | --- |
+| Files: long filenames, and the 8.3 name when a long one exceeds 16 characters | SI-140 to SI-143 |
+| Files: x00 wrappers, the header, the extension family, the internal name in a listing, renaming the internal name | SI-144, SI-144a, SI-144b, SI-145, SI-146 |
+| Files: relative files, and the record length of a plain one | SI-080, SI-084, SI-146 |
+| Files: positioning (seeking) within a file with `P` | SI-081, SI-082, SI-083 |
+| Files: M2I | Section 19; the manual deprecates the format |
+| Files: loading, saving, verifying, pattern matching | SI-032, SI-070, SI-136; `V` as a verify is BASIC's, not a command |
+| Files: renaming files and subdirectories | SI-074 |
+| Files: copying and combining between partitions | SI-075, SI-013 |
+| Files: locking and unlocking | SI-076, SI-077, SI-132 |
+| Files: the file allocation table, `B-A` and `B-F` | SI-091, SI-091a |
+| Directories: loading a directory, sizes, blocks free | SI-130, SI-133, SI-004 |
+| Directories: pattern matching and the type filters | SI-134, SI-136 |
+| Directories: time and date stamped listings and their filters | SI-135, SI-139 |
+| Directories: `MD`, `CD`, `RD`, and `CD` into a disk image | SI-060, SI-061, SI-062, SI-063 |
+| Partitions: the partition model, the default partition, partition numbers in names and in commands | SI-002, SI-013 |
+| Partitions: disk images, mounting and unmounting | SI-003, SI-062, SI-072 |
+| Partitions: creating and deleting partitions in the MBR | Section 19 |
+| Partitions: changing partitions, `CP` and `C`+shifted P | SI-040 |
+| Partitions: formatting | SI-052, SI-071, SI-071a |
+| Partitions: the partition directory | SI-044 to SI-050 |
+| Partitions: renaming partitions and partition headers | SI-051, SI-064 |
+| Partitions: swap lists and the disk change buttons | Section 19 |
+| Device management: firmware update, hot swapping, card detection, sleep mode | Section 19; all four address sd2iec hardware |
+| Device management: device detection and the `UI` identifier | SI-110, SI-111, SI-113, SI-114 |
+| Device management: warm, cold and hard reset | SI-103, SI-103a |
+| Device management: memory access, `M-R`, `M-W`, `M-E` | SI-105, SI-112, SI-115 |
+| Device management: user commands `U1` to `UJ` | SI-091, SI-103, SI-104 |
+| Device management: the device address, `U0>` and `S-8`/`S-9`/`S-D` | SI-100, SI-101 |
+| Device management: the bus protocol setting | Section 19, with the settings commands |
+| Direct access: buffers and large buffers | SI-090 |
+| Direct access: reading and writing data, `B-R`, `B-W`, `U1`, `U2` | SI-093, SI-094 |
+| Direct access: the buffer pointer | SI-092 |
+| Direct access: block execute | SI-095 |
+| Direct access: `DI`, `DR`, `DW`, the direct sector commands | SI-096 |
+| Realtime clock: the four read and four write forms, ASCII, BCD, decimal and ISO | SI-120, SI-121, SI-122, SI-123 |
+| Settings: the `X` family | Section 19, except `XE`, which is SI-145 |
+| Software fastloaders | Section 15.2 item 10 for JiffyDOS; section 19 for the others |
+| Write protect, `26,WRITE PROTECT ON` | SI-102, SI-102a |
