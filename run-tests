@@ -517,6 +517,12 @@ SUITES: Sequence[Suite] = (
     # SKIP until the table says a machine has it.
     Suite("e2e", "c64gs-cartridge", "tests/e2e/io/c64/c64gs_cartridge_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
+    # Guards #925: a .TAP kept playing across the menu being opened and closed,
+    # and the Pause, Resume and Stop actions offered for exactly as long as a
+    # tape is loaded. The fixture is a tape of bare pulses, so it needs nothing
+    # of the C64 but phi2, and the last check waits out a 20-second tape.
+    Suite("e2e", "tape-playback", "tests/e2e/io/c64/tape_playback_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
     # Guards GideonZ/commodore#1 (c66ef028): a Reset, a Reboot or a C=+R taken
     # from the menu has to run after the UI has torn down, so the C64 comes
     # back to a boot screen with none of the menu's characters on it. The

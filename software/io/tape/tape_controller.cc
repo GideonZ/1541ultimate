@@ -91,13 +91,14 @@ void TapeController :: create_task_items(void)
 
 void TapeController :: update_task_items(bool writablePath)
 {
-    if(!file)
-        return;
-	if(!file->isValid()) {
+	if(file && !file->isValid()) {
     	close();
-		return;
 	}
-	if(paused) {
+	if(!file) {
+	    myActions.pause->hide();
+	    myActions.resume->hide();
+	    myActions.stop->hide();
+	} else if(paused) {
 	    myActions.pause->hide();
 	    myActions.resume->show();
 	    myActions.stop->show();
