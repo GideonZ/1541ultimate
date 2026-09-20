@@ -1,7 +1,7 @@
 # Cartridge Auto-Save
 
-Status: builds for U64 and U64-II, verified end to end in an emulator (§7). Not yet tested on
-hardware.
+Status: builds for U64, U64-II and U2+, host test green, carried end to end through an emulator
+(§7), and the EasyFlash case run on a U64 (§6).
 
 ## 1. Purpose
 
@@ -173,6 +173,10 @@ cartridge. If the last rename fails, the new state stays in `NAME.tmp` and the e
 | 9 | Manual *Save Cartridge* as NEW | Change, open menu | Prompt names NEW |
 
 Log lines to check (syslog): `[CRT] hash`, `[CRT] saved`, `[CRT] save failed`.
+
+Row 1 has been run on a U64 (2026-09-20): an EasyFlash game that saves through EAPI, mode Ask. The
+prompt appeared after the game had saved, the file was written back and `NAME.crt.bak` was created.
+The other rows are still open.
 
 ## 7. Emulator run, 2026-09-20
 
