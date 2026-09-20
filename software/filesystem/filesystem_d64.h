@@ -218,6 +218,7 @@ public:
     // functions for reading directories
     FRESULT dir_open(const char *path, Directory **); // Opens directory (creates dir object)
     FRESULT dir_create(const char *path);
+    FRESULT dir_set_label(const char *path, const char *name, const char *id);
 
     // functions for reading and writing files
     FRESULT file_open(const char *filename, uint8_t flags, File **);  // Opens file (creates file object)

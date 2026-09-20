@@ -602,16 +602,20 @@ Recorded so the omission is deliberate rather than accidental.
 
 ### 5.4 Other partition commands
 
-**SI-051.** `R-P:newname=oldname` renames a partition. Source: HD 9-14, FD, RL.
-Not implemented. `U execute_command()` routes every `R` whose second character is not
-`D` to `rename_command()`, which strips the leading letter and then hands `-P:WORK`
-to `parse_full_path()`; that rejects the `-` and answers `30`. **Change required:**
-recognise `R-P` and `R-H` before falling through to the file rename, as
-`SD parse_doscommand()` does with `if (command_length > 2 && command_buffer[1] == '-')`.
+**SI-051.** `R-P:newname=oldname` renames a partition. Source: HD 9-14, FD, RL. The
+old name is a partition's name and not a path, so the partition list is searched for it,
+without regard to case; a name no partition carries answers `77,SELECTED PARTITION
+ILLEGAL`. An empty name on either side answers `34` and a command with no `=` answers
+`30`. The new name is what the partition directory, `G-P` and the header of a listing
+of that partition's root then show.
 
-**Decision (PR #881): not implemented.** Neither report nor GAP nor TRACE uses `R-P`,
-and the rename would live only in memory until the partition list is saved from the
-menu. The drive answers `30`, as before.
+The dash in the second character is what separates `R-P` and `R-H` (SI-064) from a file
+rename, as `SD parse_doscommand()` separates them with
+`if (command_length > 2 && command_buffer[1] == '-')`.
+
+The name lives as long as the drive runs. The partition list is written to an `.IPR`
+file only when the menu saves it, which is equally true of a partition renamed from the
+menu, so the command is as durable as the user interface it shares the list with.
 
 **SI-052.** `N[n]:name[,id]` formats. Its full behaviour is specified in SI-071.
 
@@ -675,23 +679,30 @@ removing a subdirectory which is a parent of the directory in which you are loca
 `00, OK`, which is the case HD 9-19 forbids in order to stop a user removing a parent
 of the directory they are standing in. **Change required** for the path rejection.
 
-**SI-064.** `R-H[n][path]:newname` renames a directory header. The name is at most
-16 characters. Sources: HD 9-15; IDE 15.6.5; `SD parse_set_header(3)`, which also
-accepts an id of at most five characters. On a host file system a directory has no
-header separate from its name, so this renames the directory itself, which is what
-GSD says sd2iec does with the equivalent operation. Not implemented;
-**change required.** C64 OS depends on the header for a related reason: GAP says
-"C64 OS in particular uses the directory header when creating a favorite... The name
-of the favorite is taken from the directory header name."
+**SI-064.** `R-H[n][path]:newname[,id]` renames the header of a directory. The name is
+at most 16 characters and the id two. Sources: HD 9-15; IDE 15.6.5;
+`SD parse_set_header(3)`. The path selects the directory and the name behind the colon
+is the new header; with no path it is the current directory of the partition. An empty
+name answers `34`, a name with a wildcard `33`, and a path that is not there
+`71,DIRECTORY ERROR`.
 
-**Decision (PR #881): not implemented.** On a CMD HD, `R-H` changes only the header
-block and leaves the directory's name in its parent unchanged; on a host file system the
-only equivalent is renaming the directory itself, which is a different operation and
-would surprise a program written for a CMD HD. GSD states that "The R-H command is not
-supported by sd2iec". C64 OS takes a favorite's name from the header, and SI-065, which
-is implemented, makes the header show the directory's own name as sd2iec does. The
-reporter wrote that `R-H` "should add not to far away, for the time being ok". The
-drive answers `30`.
+What a header is depends on what the directory sits in, and in each case it is what a
+listing of that directory shows (SI-065).
+
+| Directory | Header | What `R-H` changes |
+| --- | --- | --- |
+| inside a CBM disk image | the disk name in the BAM of the root, or in the header block of a subdirectory | that name; the disk id and the DOS version stay as they are unless an id is given |
+| a subdirectory on the host file system | the name the parent holds, which is all a host directory has | the directory's name, and the drive's current directory follows it when it is standing in or below that directory |
+| the root of a partition | the partition's name | the partition's name, as `R-P` does (SI-051) |
+
+C64 OS reads the header for a related reason: GAP says "C64 OS in particular uses the
+directory header when creating a favorite... The name of the favorite is taken from the
+directory header name."
+
+The drive asks the file system for the label first and renames the directory only where
+the file system has none, so a medium that gains a separate label later needs no change
+here. GSD states that "The R-H command is not supported by sd2iec"; the CMD manuals
+describe it and this drive follows them.
 
 **SI-065.** The header line of a directory listing carries the name of the directory
 as it appears in its parent, and of the partition when the root is listed. Source:
@@ -1058,18 +1069,17 @@ device number slot without holding the processor in reset, because the command i
 on the bus, and it is not written to the configuration.
 
 **SI-101.** `S-8`, `S-9` and `S-D` are the typed aliases for swapping to device 8,
-device 9 and back to the configured default. Sources: HD 9-34; IDE 15.4.1. On this
-drive there is nothing to swap with, so `S-8` and `S-9` set the device number
-directly and `S-D` restores the configured one. **Change required**, and note the
-parsing hazard: `U execute_command()` routes every `S` to `scratch_command()`, so
-`S-8` currently tries to scratch a file named `-8` and answers, measured,
-`62,FILE NOT FOUND`. `SD parse_doscommand()` guards
-this with `if (command_length == 3 && command_buffer[1] == '-')`, and then answers
-`31`: sd2iec recognises the form but does not implement the swap.
+device 9 and back to the configured default. Sources: HD 9-34; IDE 15.4.1. On this drive
+there is one drive behind the number, so `S-8` and `S-9` set the device number to 8 and
+to 9 and `S-D` returns it to the one the settings hold. The number is not written to the
+settings, as `U0>` does not write it (SI-100).
 
-**Decision (PR #881): not implemented.** There is no second drive to swap with, and no
-report or program asks for the aliases. The three byte forms answer `31`, as sd2iec
-answers them, and are not taken for a scratch of a file named `-8`.
+The command is exactly three characters with a dash in the second, which is how
+`SD parse_doscommand()` tells it from a scratch: `S:-8` scratches a file named `-8` and
+`S-88` scratches one named `-88`. A third character that is none of `8`, `9` and `D`
+answers `30`, because `S` is a command letter and its argument is not (SI-030); that
+covers `S-C`, the SCSI pass-through of SI-106. sd2iec answers the whole group `31`,
+recognising the form without implementing the swap.
 
 **SI-102.** `W-0` and `W-1` clear and set a software write protect for the whole
 drive. Sources: HD 9-35; IDE 15.4.10. While set, every write answers
@@ -1145,9 +1155,9 @@ accepts only `MD`. **Change required.**
 
 **Decision (PR #881): `M-R` implemented; `M-W` and `M-E` answer `30`.** Nothing of what
 `M-W` writes is kept and `M-E` runs nothing, so answering `00, OK` would tell a fast
-loader that its drive code is in place and running; this is the same reason SI-120 gives
-for not answering OK to a clock write that sets nothing. The reporter's request was for
-`M-R`, which C64 OS sends four times at boot (TRACE).
+loader that its drive code is in place and running. An `00, OK` means the work was done,
+which is also why a clock write that the clock does not accept answers `30` (SI-120). The
+reporter's request was for `M-R`, which C64 OS sends four times at boot (TRACE).
 
 **SI-106.** `S-C`, the SCSI pass-through of HD 9-39, is out of scope.
 
@@ -1237,17 +1247,47 @@ minute, second, an AM or PM flag, and `CHR$(13)`, BCD-coded for `B`. The `I` for
 is the ISO 8601 subset `"YYYY-MM-DDThh:mm:ss dow"+CHR$(13)`. Sources: HD 9-36 to
 9-38; IDE 15.4.8; SD README under `T-R and T-W`; GSD "Realtime Clock".
 
-Current behaviour: the four read forms are implemented in
-`U IecParser::time_command()`. The write forms answer `00, OK` and do nothing.
-**Change required** only in that the write forms should set the Ultimate's real time
-clock, which is the device's clock, or answer `30,SYNTAX ERROR` as sd2iec does when
-there is no clock to set. Silently answering OK and not setting the clock is the one
-thing that must not remain.
+A write sets the Ultimate's own real time clock, which is the clock every other
+interface reads and writes: the drive has no clock of its own. The parser validates the
+command, converts it to a calendar date and time, and passes that to
+`set_current_time()`, the accessor each real time clock driver defines beside
+`get_current_time()`; the control interface's `DOS_CMD_SET_TIME` passes through the same
+accessor. A write that is refused, and a write the clock does not accept, answer
+`30,SYNTAX ERROR` and leave the clock alone, so an `00, OK` means the clock was set.
 
-**Decision (PR #881): the write forms answer `30`.** The clock belongs to the system,
-and GAP notes that C64 OS sets it through its UCI real time clock driver. Setting it from
-the IEC bus would have needed a setter in each of the three real time clock drivers.
-`30` is the answer this requirement allows.
+**SI-121.** Each write form carries the fields of the matching read form, at the same
+offsets.
+
+| Form | After `T-Wx` | Shortest accepted |
+| --- | --- | --- |
+| `A` | `dow. mo/da/yr hr:mi:se xM`, the day of week matched on its first two characters, the space and the marker optional | 26 bytes |
+| `B` | day of week, year, month, day, hour in 12-hour form, minute, second, PM flag, all BCD | 12 bytes |
+| `D` | the same eight fields in binary | 12 bytes |
+| `I` | `YYYY-MM-DDThh:mm:ss`, with the day of week a `T-RI` answer ends in accepted and ignored | 23 bytes |
+
+Source: `SD parse_timewrite()`, which is also the source for the rules below.
+
+* The day of week is stored as the `A`, `B` and `D` forms send it, without being checked
+  against the date, as a CMD drive stores it. The `I` form carries none and derives it.
+* A twelve in a 12-hour hour field is midnight or noon, and the PM flag adds half a day.
+  The `A` form without its marker is a 24-hour time.
+* A two-digit year below 80 is in this century and from 80 in the last one.
+* A `CHR$(13)` inside the binary fields of `B` and `D` is data. Only a terminator after
+  the last field of a form is dropped (SI-016).
+
+**SI-122.** A write is refused with `30` when a field is out of range: a month outside 1
+to 12, a day outside the length of that month in that year, a day of week above 6, an
+hour above 23, a minute or a second above 59, a BCD field whose nibbles are not digits,
+or a year outside 1980 to 2079, which is what two BCD digits counted from the epoch hold.
+`SD parse_timewrite()` checks the same ranges apart from the length of the month; that
+check is added here because a 31 February would otherwise reach the clock chip and be
+read back as a different date.
+
+**SI-123.** Every field sits at a fixed offset and every separator is checked. A field
+written to another width is refused, where `SD parse_timewrite()` reads a number of any
+width and then skips one character. The `A` form's AM or PM marker is at a fixed offset
+in that source as well, so a command whose earlier fields are of another width cannot be
+read consistently in any case.
 
 ---
 
@@ -1916,15 +1956,11 @@ affected by them.
 
 | Requirement | Why it is not implemented | What the drive answers |
 | --- | --- | --- |
-| SI-051 `R-P` | No report, GAP or TRACE uses it, and the new name would only live in memory until the partition list is saved from the menu | `30` |
 | SI-054 `V` | Inside a disk image, an OK would claim a validation of the block map that did not happen | `31` |
-| SI-064 `R-H` | On a host directory it would rename the directory itself, which a CMD HD's header rename does not do; sd2iec does not support it either | `30` |
 | SI-077 `EL:`, `EU:`, `EH:`, `A:`, `XH:`, `D:` | `L` (SI-076) provides lock and unlock; hiding files has no effect while listings show hidden files; the header forms are `R-H` | `30` for the `E` and `X` forms, `31` for `A` and `D` |
 | SI-090 `##n`, SI-092 | Large buffers serve sd2iec's 512 byte sector commands `DR` and `DW`, which are out of scope (SI-096); this drive's block commands use 256 byte sectors | `##n` opens a standard buffer; a third `B-P` number is ignored |
-| SI-101 `S-8`, `S-9`, `S-D` | There is no second drive to swap with | `31`, as sd2iec answers |
 | SI-102 `W-0`, `W-1` | No report or program asks for a software write protect, and it needs a check in every path that writes | `31` |
 | SI-105 `M-W`, `M-E` | Nothing written is kept and nothing is run, so an OK would tell a fast loader its drive code runs | `30` |
-| SI-120 `T-WA`, `T-WB`, `T-WD`, `T-WI` | The clock belongs to the system, and C64 OS sets it through its UCI clock driver (GAP) | `30`, which SI-120 allows |
 | SI-137 raw directory | It would change what existing programs, and clients of the UCI target, receive when they open `$` on a data channel | the listing, as before |
 | SI-145 writing x00 files | A new user setting that no report asks for; reading x00 files (SI-144) already gives the interchange | new files are written plain |
 

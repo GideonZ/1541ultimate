@@ -234,6 +234,7 @@ public:
     FRESULT get_free(Path *path, uint32_t &free, uint32_t &cluster_size);
     FRESULT get_total(Path *path, uint32_t &total, uint32_t &cluster_size);
     FRESULT set_attributes(const char *pathname, uint8_t attrib, uint8_t mask);
+    FRESULT set_dir_label(const char *pathname, const char *name, const char *id);
     FRESULT fs_read_sector(Path *path, uint8_t *buffer, int track, int sector);
     FRESULT fs_write_sector(Path *path, uint8_t *buffer, int track, int sector);
     FRESULT fs_allocate_sector(Path *path, int &track, int &sector, bool alloc);

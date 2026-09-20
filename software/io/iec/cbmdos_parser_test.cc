@@ -306,10 +306,30 @@ void test_dispatch_text(const char *cmd, int len, int exp_retval, const char *wh
 // them before it falls through to rename and scratch.
 void test_added_commands(void)
 {
-    // S-8, S-9 and S-D swap device numbers, which this drive does not do; they are not a
-    // scratch of a file called -8 (SD parse_doscommand()).
-    test_dispatch("S-8", 3, 31, NULL);
-    test_dispatch("S-D\r", 4, 31, NULL);
+    // SI-101: S-8, S-9 and S-D move the device number to 8, to 9 and back to the
+    // configured one. Exactly three characters, so S:-8 is still a scratch of "-8"
+    // (SD parse_doscommand()).
+    test_dispatch("S-8", 3, 0, "device number", 8);
+    test_dispatch("S-9\r", 4, 0, "device number", 9);
+    test_dispatch("S-D\r", 4, 0, "restore device number");
+    test_dispatch("S-C", 3, ERR_SYNTAX, NULL); // the SCSI pass-through, out of scope (SI-106)
+    test_dispatch_text("S:-8", 4, 0, "scratch", "-1||-8", 1);
+    test_dispatch_text("S-88", 4, 0, "scratch", "-1||-88", 1);
+    // SI-051 and SI-064: the dash after the R finds the partition rename and the header
+    // rename before a file rename (SD parse_doscommand()).
+    test_dispatch_text("R-P:NEW=OLD", 11, 0, "rename partition", "NEW|OLD");
+    test_dispatch_text("R-P:NEW=OLD\r", 12, 0, "rename partition", "NEW|OLD");
+    test_dispatch("R-P:NEW", 7, ERR_SYNTAX, NULL);
+    test_dispatch("R-P:=OLD", 8, ERR_NO_NAME, NULL);
+    test_dispatch("R-P:NEW=", 8, ERR_NO_NAME, NULL);
+    test_dispatch_text("R-H:NAME", 8, 0, "set header", "-1||NAME|");
+    test_dispatch_text("R-H3//GAMES/:NAME,ID", 20, 0, "set header", "3|//GAMES/|NAME|ID");
+    test_dispatch("R-H:", 4, ERR_NO_NAME, NULL);
+    test_dispatch("R-H:N*", 6, ERR_ILLEGAL_NAME, NULL);
+    test_dispatch("R-X:NAME", 8, ERR_SYNTAX, NULL);
+    // A file rename still reaches the file rename.
+    test_dispatch("R:NEW=OLD", 9, 0, NULL);
+
     // SI-100: U0> followed by the device number as a byte.
     test_dispatch("U0>\x0C", 4, 0, "device number", 12);
     test_dispatch("U0>\x1E\r", 5, 0, "device number", 30);
@@ -331,9 +351,10 @@ void test_added_commands(void)
     test_dispatch("M-W\x00\x05\x01\xEA", 7, 30, NULL);
     test_dispatch("M-E\x00\x05", 5, 30, NULL);
     test_dispatch("M-X", 3, 30, NULL);
-    // SI-120: the clock belongs to the system, so T-W answers 30 rather than an OK that
-    // would set nothing.
-    test_dispatch("T-WI2026-09-12T13:02:03", 23, 30, NULL);
+    // SI-120: T-W sets the system clock, and a form the clock cannot hold answers 30.
+    // The four formats are checked in test_clock_commands().
+    test_dispatch("T-WI2026-09-12T13:02:03", 23, 0, NULL);
+    test_dispatch("T-WI2026-13-12T13:02:03", 23, 30, NULL);
     test_dispatch("MD:DIR", 6, 0, NULL); // still a directory command
 }
 
@@ -418,6 +439,145 @@ void test_lock_command(void)
     test_dispatch_text("L:TEST", 6, 0, "lock", "-1||TEST");
     test_dispatch_text("L1//:TEST\r", 10, 0, "lock", "1|//|TEST");
     test_dispatch("L:", 2, 34, NULL);
+}
+
+// Sends a command and compares the bytes it answered with, so a clock write can be
+// checked by reading the clock back through each of the four read forms.
+static void test_reply(const char *cmd, int len, int exp_retval, const char *label,
+                       const uint8_t *expected, int exp_len)
+{
+    last_stub_call.command = NULL;
+    last_stub_call.reply_len = 0;
+    int retval = parser.execute_command((const uint8_t *)cmd, len);
+    bool ok = (retval == exp_retval) && (last_stub_call.reply_len == exp_len) &&
+              (memcmp(last_stub_call.reply, expected, exp_len) == 0);
+    if (ok) {
+        printf("Reply '%s' => OK!\n", label);
+        return;
+    }
+    printf("Reply '%s' returned %d (expected %d) and answered %d bytes:\n",
+           label, retval, exp_retval, last_stub_call.reply_len);
+    dump_hex(last_stub_call.reply, last_stub_call.reply_len);
+    printf("  expected %d bytes:\n", exp_len);
+    dump_hex(expected, exp_len);
+    failures++;
+}
+
+static void test_reply_text(const char *cmd, int len, const char *label, const char *expected)
+{
+    test_reply(cmd, len, 0, label, (const uint8_t *)expected, strlen(expected));
+}
+
+// SI-120. The four write forms set the system clock, and the four read forms then
+// answer with the time that was written. The formats and the validation follow
+// SD parse_timewrite(): the day of week is taken from the command for A, B and D and
+// derived from the date for I, a twelve hour field of 12 means midnight or noon, and a
+// year below 80 is in this century.
+void test_clock_commands(void)
+{
+    // 2026-09-12 13:02:03, a Saturday, written in each of the four forms and read back
+    // in each of the four forms.
+    static const uint8_t t_rd[] = { 6, 126, 9, 12, 1, 2, 3, 1, 0x0d };
+    static const uint8_t t_rb[] = { 6, 0x26, 0x09, 0x12, 0x01, 0x02, 0x03, 1, 0x0d };
+    static const uint8_t t_wd[] = { 'T','-','W','D', 6, 126, 9, 12, 1, 2, 3, 1 };
+    static const uint8_t t_wb[] = { 'T','-','W','B', 6, 0x26, 0x09, 0x12, 0x01, 0x02, 0x03, 1 };
+    const char *iso = "2026-09-12T13:02:03 SAT\r";
+    const char *ascii = "SAT. 09/12/26 01:02:03 PM\r";
+    // Written between two checks, so that the next write has something to change.
+    const char *elsewhere = "T-WI1999-01-01T01:01:01";
+
+    test_dispatch("T-WI2026-09-12T13:02:03", 23, 0, NULL);
+    test_reply_text("T-RI", 4, "T-WI then T-RI", iso);
+    test_reply_text("T-RA", 4, "T-WI then T-RA", ascii);
+    test_reply("T-RD", 4, 0, "T-WI then T-RD", t_rd, sizeof(t_rd));
+    test_reply("T-RB", 4, 0, "T-WI then T-RB", t_rb, sizeof(t_rb));
+
+    // The ISO form derives the day of week from the date, so the three characters a
+    // T-RI answer ends in are accepted and ignored when they are sent back.
+    test_dispatch(elsewhere, 23, 0, NULL);
+    test_dispatch("T-WI2026-09-12T13:02:03 SAT\r", 28, 0, NULL);
+    test_reply_text("T-RI", 4, "a T-RI answer sent back", iso);
+
+    // Each of the other three forms writes the same moment.
+    test_dispatch(elsewhere, 23, 0, NULL);
+    test_dispatch("T-WA" "SAT. 09/12/26 01:02:03 PM", 29, 0, NULL);
+    test_reply_text("T-RI", 4, "T-WA then T-RI", iso);
+
+    test_dispatch(elsewhere, 23, 0, NULL);
+    test_dispatch((const char *)t_wd, sizeof(t_wd), 0, NULL);
+    test_reply_text("T-RI", 4, "T-WD then T-RI", iso);
+
+    test_dispatch(elsewhere, 23, 0, NULL);
+    test_dispatch((const char *)t_wb, sizeof(t_wb), 0, NULL);
+    test_reply_text("T-RI", 4, "T-WB then T-RI", iso);
+
+    // The terminator BASIC appends is dropped, and a 13 inside the binary data is data:
+    // 11:13:13 on Sunday 13 September 2026 in the decimal form, sent with a terminator.
+    static const uint8_t t_wd13[] = { 'T','-','W','D', 0, 126, 9, 13, 11, 13, 13, 0, 0x0d };
+    test_dispatch((const char *)t_wd13, sizeof(t_wd13), 0, NULL);
+    test_reply_text("T-RI", 4, "a 13 inside the data", "2026-09-13T11:13:13 SUN\r");
+
+    // The day of week of the A, B and D forms is the one the command carries, as on a
+    // CMD drive, which stores it without checking it against the date.
+    static const uint8_t t_wd_dow[] = { 'T','-','W','D', 0, 126, 9, 12, 1, 2, 3, 1 };
+    test_dispatch((const char *)t_wd_dow, sizeof(t_wd_dow), 0, NULL);
+    test_reply_text("T-RI", 4, "the day of week the command carries", "2026-09-12T13:02:03 SUN\r");
+
+    // The leap day of a leap year is a date; the same day in 2021 is not, and a refused
+    // write leaves the clock alone.
+    test_dispatch("T-WI2020-02-29T00:00:00", 23, 0, NULL);
+    test_reply_text("T-RI", 4, "the leap day of 2020", "2020-02-29T00:00:00 SAT\r");
+    test_dispatch("T-WI2021-02-29T00:00:00", 23, ERR_SYNTAX, NULL);
+    test_reply_text("T-RI", 4, "the clock after a refused write", "2020-02-29T00:00:00 SAT\r");
+
+    // The ranges a write refuses, each of which would otherwise reach the clock chip.
+    test_dispatch("T-WI2026-13-01T00:00:00", 23, ERR_SYNTAX, NULL);
+    test_dispatch("T-WI2026-00-01T00:00:00", 23, ERR_SYNTAX, NULL);
+    test_dispatch("T-WI2026-04-31T00:00:00", 23, ERR_SYNTAX, NULL);
+    test_dispatch("T-WI2026-09-00T00:00:00", 23, ERR_SYNTAX, NULL);
+    test_dispatch("T-WI2026-09-12T24:00:00", 23, ERR_SYNTAX, NULL);
+    test_dispatch("T-WI2026-09-12T00:60:00", 23, ERR_SYNTAX, NULL);
+    test_dispatch("T-WI2026-09-12T00:00:60", 23, ERR_SYNTAX, NULL);
+    // The clock chip holds two digits of year from 1980, so nothing outside that.
+    test_dispatch("T-WI1979-12-31T23:59:59", 23, ERR_SYNTAX, NULL);
+    test_dispatch("T-WI2080-01-01T00:00:00", 23, ERR_SYNTAX, NULL);
+    // A day of week of 7, and a BCD field whose low nibble is not a digit.
+    static const uint8_t t_wd_bad_dow[] = { 'T','-','W','D', 7, 126, 9, 12, 1, 2, 3, 1 };
+    test_dispatch((const char *)t_wd_bad_dow, sizeof(t_wd_bad_dow), ERR_SYNTAX, NULL);
+    static const uint8_t t_wb_bad_bcd[] = { 'T','-','W','B', 6, 0x26, 0x0A, 0x12, 0x01, 0x02, 0x03, 1 };
+    test_dispatch((const char *)t_wb_bad_bcd, sizeof(t_wb_bad_bcd), ERR_SYNTAX, NULL);
+    // A command that stops before the last field it needs.
+    test_dispatch("T-WI2026-09-12T13:02", 20, ERR_SYNTAX, NULL);
+    test_dispatch("T-WA" "SAT. 09/12/26 01:02", 23, ERR_SYNTAX, NULL);
+    static const uint8_t t_wd_short[] = { 'T','-','W','D', 6, 126, 9, 12, 1, 2, 3 };
+    test_dispatch((const char *)t_wd_short, sizeof(t_wd_short), ERR_SYNTAX, NULL);
+    // A day of week name no drive prints, and a field that is not a number.
+    test_dispatch("T-WA" "XYZ. 09/12/26 01:02:03 PM", 29, ERR_SYNTAX, NULL);
+    test_dispatch("T-WI2026-XX-12T13:02:03", 23, ERR_SYNTAX, NULL);
+    // An unknown format letter, as for a read (SI-030).
+    test_dispatch("T-WX", 4, ERR_SYNTAX, NULL);
+    test_dispatch("T-W", 3, ERR_SYNTAX, NULL);
+
+    // The ASCII form without its AM or PM marker is a 24 hour time, and a twelve hour
+    // field of 12 with the marker is midnight or noon (SD parse_timewrite()).
+    test_dispatch(elsewhere, 23, 0, NULL);
+    test_dispatch("T-WA" "SAT. 09/12/26 13:02:03", 26, 0, NULL);
+    test_reply_text("T-RI", 4, "an ASCII write without a marker", iso);
+    test_dispatch("T-WA" "SAT. 09/12/26 12:02:03 AM", 29, 0, NULL);
+    test_reply_text("T-RI", 4, "twelve AM is midnight", "2026-09-12T00:02:03 SAT\r");
+    test_dispatch("T-WA" "SAT. 09/12/26 12:02:03 PM", 29, 0, NULL);
+    test_reply_text("T-RI", 4, "twelve PM is noon", "2026-09-12T12:02:03 SAT\r");
+
+    // A year below 80 is in this century, as the Y2K fix in SD parse_timewrite() has it.
+    static const uint8_t t_wd_y2k[] = { 'T','-','W','D', 5, 5, 3, 4, 2, 0, 0, 0 };
+    test_dispatch((const char *)t_wd_y2k, sizeof(t_wd_y2k), 0, NULL);
+    test_reply_text("T-RI", 4, "a year below 80 is this century", "2005-03-04T02:00:00 FRI\r");
+
+    // Leave the clock where the rest of the suite expects it, which is a day of week
+    // the date does not have, so it has to be written in a form that carries one.
+    static const uint8_t t_wd_restore[] = { 'T','-','W','D', 3, 125, 6, 26, 12, 41, 1, 0 };
+    test_dispatch((const char *)t_wd_restore, sizeof(t_wd_restore), 0, NULL);
+    test_reply_text("T-RI", 4, "the clock the rest of the suite reads", "2025-06-26T00:41:01 WED\r");
 }
 
 // B-P positions within the 256 byte buffer; a third number is ignored, as the ROM ignores it.
@@ -850,6 +1010,7 @@ int main(int argc, const char *argv[])
     test_md_rd_grammar();
     test_name_mapping();
     test_lock_command();
+    test_clock_commands();
     test_block_positions_and_lengths();
     test_command(34, (const uint8_t *)"C99:EMPTY=", 10);
     test_command( 0, (const uint8_t *)"C1:FCOPY=3:FCOPY", 16);

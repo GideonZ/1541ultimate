@@ -10,9 +10,11 @@ typedef struct {
     const char *command;
     int a, b, c, d;
     char text[96]; // the names a command carried, where it carried any
+    uint8_t reply[64]; // the bytes a command answered with
+    int reply_len;
 } stub_call_t;
 
-stub_call_t last_stub_call = { NULL, 0, 0, 0, 0, "" };
+stub_call_t last_stub_call = { NULL, 0, 0, 0, 0, "", { 0 }, 0 };
 
 static void record_stub_call(const char *command, int a = 0, int b = 0, int c = 0, int d = 0)
 {
@@ -22,6 +24,7 @@ static void record_stub_call(const char *command, int a = 0, int b = 0, int c = 
     last_stub_call.c = c;
     last_stub_call.d = d;
     last_stub_call.text[0] = 0;
+    last_stub_call.reply_len = 0;
 }
 
 // A file name as partition, path and name, for a test to compare as one string.
@@ -54,6 +57,9 @@ public:
     int do_pwd_command();
     int do_get_partition_info(int part);
     int do_set_device_number(int dev);
+    int do_restore_device_number();
+    int do_set_header(filename_t& dest, const char *id);
+    int do_rename_partition(const char *newname, const char *oldname);
     int do_lock(filename_t& name);
 };
 
@@ -161,6 +167,8 @@ int IecCommandExecuterStubs::do_rename(filename_t &src, filename_t &dest)
 
 int IecCommandExecuterStubs::do_scratch(filename_t filenames[], int n)
 {
+    record_stub_call("scratch", n);
+    record_stub_name(filenames[0]);
     printf("Scratch %d files:\n", n);
     for(int i=0;i<n;i++) {
         printf("  %d. ", i);
@@ -177,12 +185,36 @@ int IecCommandExecuterStubs::do_cmd_response(uint8_t *data, int len)
         nonzero += (data[i] != 0);
     }
     last_stub_call.b = nonzero;
+    last_stub_call.reply_len = (len < (int)sizeof(last_stub_call.reply))
+                             ? len : (int)sizeof(last_stub_call.reply);
+    memcpy(last_stub_call.reply, data, last_stub_call.reply_len);
     return 0;
 }
 
 int IecCommandExecuterStubs::do_set_device_number(int dev)
 {
     record_stub_call("device number", dev);
+    return 0;
+}
+
+int IecCommandExecuterStubs::do_restore_device_number()
+{
+    record_stub_call("restore device number");
+    return 0;
+}
+
+int IecCommandExecuterStubs::do_set_header(filename_t& dest, const char *id)
+{
+    record_stub_call("set header");
+    snprintf(last_stub_call.text, sizeof(last_stub_call.text), "%d|%s|%s|%s",
+             dest.partition, dest.path.c_str(), dest.filename.c_str(), id);
+    return 0;
+}
+
+int IecCommandExecuterStubs::do_rename_partition(const char *newname, const char *oldname)
+{
+    record_stub_call("rename partition");
+    snprintf(last_stub_call.text, sizeof(last_stub_call.text), "%s|%s", newname, oldname);
     return 0;
 }
 

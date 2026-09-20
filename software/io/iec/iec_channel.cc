@@ -2704,11 +2704,100 @@ int IecCommandChannel::do_lock(filename_t& name)
     return 0;
 }
 
+// R-H (SI-064). A directory's header is what a listing of it shows (SI-065): the disk
+// name inside a CBM image, which the file system holds; the directory's own name on a
+// host file system, where the name in the parent is all there is; and the partition's
+// name at the root of a partition.
+int IecCommandChannel::do_set_header(filename_t& name, const char *id)
+{
+    GETPARTITION(name.partition, partition, 0);
+    mstring work, relative;
+    FRESULT fres = resolve_directory_path(fm, partition, name.path, work, &relative);
+    if (fres != FR_OK) {
+        drive->set_error(ERR_DIRECTORY_ERROR, drive->vfs->GetTargetPartitionNumber(name.partition), 0);
+        return 0;
+    }
+    fres = fm->set_dir_label(work.c_str(), name.filename.c_str(), id);
+    if (fres != FR_NOT_ENABLED) {
+        if (fres != FR_OK) {
+            drive->set_error_fres(fres);
+        }
+        return 0;
+    }
+
+    // No label of its own: the name the parent holds is the header.
+    const char *rel = relative.c_str();
+    int rel_len = strlen(rel);
+    while ((rel_len > 0) && (rel[rel_len - 1] == '/')) {
+        rel_len--;
+    }
+    if (rel_len == 0) {
+        partition->SetName(name.filename.c_str());
+        return 0;
+    }
+    char fat_name[52];
+    petscii_to_fat(name.filename.c_str(), fat_name, sizeof(fat_name));
+    mstring renamed;
+    int cut = strlen(work.c_str());
+    while ((cut > 0) && (work[cut - 1] == '/')) {
+        cut--;
+    }
+    while ((cut > 0) && (work[cut - 1] != '/')) {
+        cut--;
+    }
+    renamed.copy(work.c_str(), 0, cut - 1);
+    append_path_component(renamed, fat_name);
+    fres = fm->rename(work.c_str(), renamed.c_str());
+    if (fres != FR_OK) {
+        drive->set_error_fres(fres);
+        return 0;
+    }
+
+    // The drive may be standing in the directory it renamed, or below it, so its current
+    // directory follows the new name.
+    int start = rel_len;
+    while ((start > 0) && (rel[start - 1] != '/')) {
+        start--;
+    }
+    mstring current(partition->GetRelativePath());
+    if (!strncasecmp(current.c_str(), rel, rel_len) &&
+        ((current[rel_len] == 0) || (current[rel_len] == '/'))) {
+        mstring moved;
+        moved.copy(rel, 0, start - 1);
+        moved += fat_name;
+        moved += current.c_str() + rel_len;
+        if (!partition->cd(moved.c_str())) {
+            partition->cd("/");
+        }
+    }
+    return 0;
+}
+
+// R-P (SI-051). The old name is the name a partition carries, not a path, so the
+// partition list is searched for it.
+int IecCommandChannel::do_rename_partition(const char *newname, const char *oldname)
+{
+    for (int i = 1; i < MAX_PARTITIONS; i++) {
+        IecPartition *p = drive->vfs->GetPartition(i);
+        if (p && (p->GetPartitionNumber() == i) && !strcasecmp(p->GetName(), oldname)) {
+            p->SetName(newname);
+            return 0;
+        }
+    }
+    return ERR_PARTITION_ERROR;
+}
+
 // U0> (SI-100). The drive answers this command on the number it was addressed on and
 // every later one on the new number.
 int IecCommandChannel::do_set_device_number(int dev)
 {
     drive->set_device_number(dev);
+    return 0;
+}
+
+int IecCommandChannel::do_restore_device_number()
+{
+    drive->set_device_number(drive->configured_device_number());
     return 0;
 }
 

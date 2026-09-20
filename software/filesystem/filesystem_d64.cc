@@ -314,6 +314,56 @@ FRESULT FileSystemCBM::dir_open(const char *path, Directory **dir) // Opens dire
     return res;
 }
 
+// The header a directory carries in the file system itself: the volume name in the BAM
+// of the root, and the header block of a subdirectory. The disk id and the DOS version
+// keep what they hold unless an id is given, because a rename of the header is not a
+// format (SI-064).
+FRESULT FileSystemCBM::dir_set_label(const char *path, const char *name, const char *id)
+{
+    if (!writable) {
+        return FR_WRITE_PROTECTED;
+    }
+    Directory *d = NULL;
+    FRESULT fres = dir_open(path, &d);
+    if (fres != FR_OK) {
+        return fres;
+    }
+    DirInCBM *cd = (DirInCBM *)d;
+    uint8_t *header;
+    if (cd->root) {
+        header = root_buffer + volume_name_offset;
+    } else {
+        int abs_sect = get_abs_sector(cd->header_track, cd->header_sector);
+        if ((abs_sect < 0) || (move_window(abs_sect) != FR_OK)) {
+            delete d;
+            return FR_DISK_ERR;
+        }
+        header = sect_buffer + 4; // as get_volume_name() reads it for a subdirectory
+    }
+    // Sixteen characters of name, padded with shifted spaces, then a shifted space, the
+    // two character id, a shifted space and the two character DOS version.
+    for (int i = 0; i < 16; i++) {
+        header[i] = 0xA0;
+    }
+    for (int i = 0; (i < 16) && name[i]; i++) {
+        header[i] = (uint8_t)toupper(name[i]);
+    }
+    if (id && *id) {
+        header[18] = 0xA0;
+        header[19] = 0xA0;
+        for (int i = 0; (i < 2) && id[i]; i++) {
+            header[18 + i] = (uint8_t)toupper(id[i]);
+        }
+    }
+    if (cd->root) {
+        root_dirty = true;
+    } else {
+        dirty = 1;
+    }
+    delete d;
+    return sync();
+}
+
 // Creates subdirectory
 FRESULT FileSystemCBM::dir_create(const char *path)
 {

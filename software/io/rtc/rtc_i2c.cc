@@ -4,6 +4,7 @@
 
 #include "rtc.h"
 #include "rtc_epoch.h"
+#include "current_time.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
@@ -402,6 +403,15 @@ extern "C" void get_current_time(int& wd, int& year, int& month, int& day, int& 
 {
     rtc.get_time(year, month, day, wd, hour, min, sec);
     year += RTC_EPOCH_YEAR; // get_time() counts years from the epoch, callers do not
+}
+
+extern "C" bool set_current_time(int wd, int year, int month, int day, int hour, int min, int sec)
+{
+    int y = year - RTC_EPOCH_YEAR;
+    int corr = rtc.get_correction();
+    rtc.set_time(y, month, day, wd, hour, min, sec);
+    rtc.set_time_in_chip(corr, y, month, day, wd, hour, min, sec);
+    return true;
 }
 
 #include "init_function.h"

@@ -36,10 +36,9 @@
 // T-RI -> "YYYY-MM-DDThh:mm:ss dow\r"
 // T-RD -> "{WD}{Y}{M}{D}{h}{m}{s}{am/pm}\r"  Documentation says it's decimal, but it is actually binary h in 12 hour format, Y+1900
 // T-RB -> "{WD}{Y}{M}{D}{h}{m}{s}{am/pm}\r"  BCD format Y<80:+2000, else+1900, also 12 hour format for some strange reason
-// T-WA -> not supported, as the RTC is not part of the drive, but of the system
-// T-WI -> not supported, as the RTC is not part of the drive, but of the system
-// T-WD -> not supported, as the RTC is not part of the drive, but of the system
-// T-WB -> not supported, as the RTC is not part of the drive, but of the system
+// T-WA, T-WB, T-WD, T-WI -> set the system clock from the same layout the matching
+//   read answers with. The day of week is taken from the command except for the ISO
+//   form, which has none and derives it from the date.
 
 // Directories
 // $ [=T] [[n][path]:] [= commalist([TP|OPTION])], OPTION = { L, N, <stamp, >stamp }, stamp = MM/DD/YY HH:MM xM, x = {A | P}
@@ -52,12 +51,27 @@
 // methods should work.
 
 #include "cbmdos_parser.h"
+#include "current_time.h"
+
+// A build with no real time clock driver, which is every host test build, keeps the
+// clock in memory so that the clock commands can still be exercised end to end.
+static int clock_wd = 3, clock_year = 2025, clock_month = 6, clock_day = 26;
+static int clock_hour = 0, clock_min = 41, clock_sec = 1;
 
 extern "C" {
     void get_current_time(int& wd, int& year, int& month, int& day, int& hour, int& min, int& sec) __attribute__((weak));
     void get_current_time(int& wd, int& year, int& month, int& day, int& hour, int& min, int& sec)
     {
-        wd = 3; year = 2025; month = 6; day = 26; hour = 0; min = 41; sec = 1;
+        wd = clock_wd; year = clock_year; month = clock_month; day = clock_day;
+        hour = clock_hour; min = clock_min; sec = clock_sec;
+    }
+
+    bool set_current_time(int wd, int year, int month, int day, int hour, int min, int sec) __attribute__((weak));
+    bool set_current_time(int wd, int year, int month, int day, int hour, int min, int sec)
+    {
+        clock_wd = wd; clock_year = year; clock_month = month; clock_day = day;
+        clock_hour = hour; clock_min = min; clock_sec = sec;
+        return true;
     }
 }
 int parse_full_path(const char *buf, filename_t& name, bool *replace = NULL, bool path_only = false)
@@ -546,6 +560,51 @@ int IecParser :: rename_command(const uint8_t *buffer, int len)
     return exec->do_rename(src, dest);
 }
 
+// R-P:newname=oldname renames a partition and R-H[n][path]:newname[,id] renames the
+// header of a directory (SI-051, SI-064). SD parse_doscommand() finds both the same
+// way, by the dash in the second character, before it falls through to a file rename.
+int IecParser :: rename_dashed_command(const uint8_t *buffer, int len)
+{
+    mstring cmd((const char *)buffer, 3, len-1);
+    switch (buffer[2]) {
+    case 'P': {
+        const char *rest;
+        if (!cmd.split('=', &rest)) {
+            return ERR_SYNTAX;
+        }
+        const char *newname = cmd.c_str();
+        if (*newname == ':') {
+            newname++;
+        }
+        if (!*newname || !*rest) {
+            return ERR_NO_NAME;
+        }
+        return exec->do_rename_partition(newname, rest);
+    }
+    case 'H': {
+        filename_t dest;
+        int err = parse_full_path(cmd.c_str(), dest, NULL, false);
+        if (err) {
+            return err;
+        }
+        const char *id = "";
+        const char *rest;
+        if (dest.filename.split(',', &rest)) {
+            id = rest;
+        }
+        if (dest.filename.length() == 0) {
+            return ERR_NO_NAME;
+        }
+        if (dest.filename.contains_any("?*")) {
+            return ERR_ILLEGAL_NAME;
+        }
+        return exec->do_set_header(dest, id);
+    }
+    default:
+        return ERR_SYNTAX;
+    }
+}
+
 int IecParser :: scratch_command(const uint8_t *buffer, int len)
 {
     while(isalpha(*buffer)) {
@@ -563,6 +622,20 @@ int IecParser :: scratch_command(const uint8_t *buffer, int len)
         }
     }
     return exec->do_scratch(filenames, n);
+}
+
+// S-8, S-9 and S-D, exactly three characters, change the device number to 8, to 9 and
+// back to the configured one (SI-101, HD 9-34). On a CMD device they swap the drive the
+// number addresses; here there is one drive, so they move that drive's number. Any other
+// name after the S is a scratch, so a file named "-8" is scratched as S:-8.
+int IecParser :: swap_command(const uint8_t *buffer, int len)
+{
+    switch (buffer[2]) {
+    case '8': return exec->do_set_device_number(8);
+    case '9': return exec->do_set_device_number(9);
+    case 'D': return exec->do_restore_device_number();
+    default:  return ERR_SYNTAX; // S is a command letter, its argument is not (SI-030)
+    }
 }
 
 // L[n][path]:name toggles the lock of one file or directory (SI-076, HD 9-30).
@@ -613,10 +686,198 @@ static uint8_t bcdbyte(int a)
     return r;
 }
 
+// The day of week names a clock answer carries, which a clock write is also matched
+// against, so the two cannot name the days differently.
+static const char *const c_weekday_4[] = { "SUN.", "MON.", "TUES", "WED.", "THUR", "FRI.", "SAT." };
+static const char *const c_weekday_3[] = { "SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT" };
+
+// The clock chip holds two BCD digits of year counted from 1980, so a write outside
+// that century is refused rather than wrapped.
+#define CLOCK_FIRST_YEAR 1980
+#define CLOCK_LAST_YEAR  2079
+
+// The time a clock write carries, before it is checked.
+typedef struct {
+    int wd, year, month, day, hour, min, sec;
+} clock_time_t;
+
+// A field of decimal digits at a fixed place in a clock command, or -1 when it is not
+// digits. The formats place every field and every separator at a fixed offset, and the
+// A format's AM or PM marker is at a fixed offset even in SD parse_timewrite(), so a
+// field of another width could not be read consistently and is refused.
+static int clock_field(const uint8_t *p, int digits)
+{
+    int value = 0;
+    for (int i = 0; i < digits; i++) {
+        if (!isdigit(p[i])) {
+            return -1;
+        }
+        value = (value * 10) + (p[i] - '0');
+    }
+    return value;
+}
+
+static int clock_bcd(uint8_t b)
+{
+    if (((b & 0x0F) > 9) || ((b >> 4) > 9)) {
+        return -1;
+    }
+    return ((b >> 4) * 10) + (b & 0x0F);
+}
+
+// A two digit year is in this century below 80 and in the last one from 80, which is
+// the Y2K rule of SD parse_timewrite().
+static int clock_year_of(int two_digit)
+{
+    return (two_digit < 80) ? (2000 + two_digit) : (1900 + two_digit);
+}
+
+static int clock_days_in_month(int year, int month)
+{
+    static const int days[] = { 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
+    if ((month == 2) && (((year % 4) == 0) && (((year % 100) != 0) || ((year % 400) == 0)))) {
+        return 29;
+    }
+    return days[month - 1];
+}
+
+// The day of week of a date, 0 for Sunday, by the method SD parse_timewrite() uses for
+// the ISO form, which is the one form that carries no day of week.
+static int clock_day_of_week(int year, int month, int day)
+{
+    int y = year;
+    int d = day + ((month < 3) ? y-- : (y - 2));
+    return ((23 * month / 9) + d + 4 + (y / 4) - (y / 100) + (y / 400)) % 7;
+}
+
+static bool clock_time_valid(const clock_time_t& t)
+{
+    return (t.year >= CLOCK_FIRST_YEAR) && (t.year <= CLOCK_LAST_YEAR) &&
+           (t.month >= 1) && (t.month <= 12) &&
+           (t.day >= 1) && (t.day <= clock_days_in_month(t.year, t.month)) &&
+           (t.wd >= 0) && (t.wd <= 6) &&
+           (t.hour >= 0) && (t.hour <= 23) &&
+           (t.min >= 0) && (t.min <= 59) &&
+           (t.sec >= 0) && (t.sec <= 59);
+}
+
+// T-W in the four forms of SI-120, each laid out exactly as the matching T-R answers
+// it. The A, B and D forms carry the day of week and it is stored as sent, as a CMD
+// drive stores it; the I form has none and it is derived from the date.
+static int parse_clock_write(const uint8_t *buffer, int len, clock_time_t& t)
+{
+    const uint8_t *p = buffer + 4;
+    int hour12, year2;
+
+    switch (buffer[3]) {
+    case 'A':
+        // "dow. mo/da/yr hr:mi:se xM", with the marker and the space before it optional.
+        if (len < 26) {
+            return ERR_SYNTAX;
+        }
+        for (t.wd = 0; t.wd < 7; t.wd++) {
+            if (memcmp(p, c_weekday_4[t.wd], 2) == 0) {
+                break;
+            }
+        }
+        if ((t.wd == 7) || (p[4] != ' ') || (p[7] != '/') || (p[10] != '/') ||
+            (p[13] != ' ') || (p[16] != ':') || (p[19] != ':')) {
+            return ERR_SYNTAX;
+        }
+        t.month = clock_field(p + 5, 2);
+        t.day   = clock_field(p + 8, 2);
+        year2   = clock_field(p + 11, 2);
+        t.hour  = clock_field(p + 14, 2);
+        t.min   = clock_field(p + 17, 2);
+        t.sec   = clock_field(p + 20, 2);
+        if ((t.month < 0) || (t.day < 0) || (year2 < 0) ||
+            (t.hour < 0) || (t.min < 0) || (t.sec < 0)) {
+            return ERR_SYNTAX;
+        }
+        t.year = clock_year_of(year2);
+        // Without the marker the hour is already a 24 hour time.
+        if ((len >= 29) && (p[22] == ' ') && (p[24] == 'M')) {
+            if (t.hour == 12) {
+                t.hour = 0;
+            }
+            if (p[23] == 'P') {
+                t.hour += 12;
+            } else if (p[23] != 'A') {
+                return ERR_SYNTAX;
+            }
+        }
+        break;
+
+    case 'B':
+    case 'D':
+        // wd, year, month, day, hour in 12 hour form, minute, second, PM flag. The
+        // fields are BCD for B and binary for D, and none of them is a terminator.
+        if (len < 12) {
+            return ERR_SYNTAX;
+        }
+        if (buffer[3] == 'B') {
+            t.wd  = clock_bcd(p[0]);
+            year2 = clock_bcd(p[1]);
+            t.month = clock_bcd(p[2]);
+            t.day   = clock_bcd(p[3]);
+            hour12  = clock_bcd(p[4]);
+            t.min   = clock_bcd(p[5]);
+            t.sec   = clock_bcd(p[6]);
+        } else {
+            t.wd  = (int)p[0];
+            year2 = (int)p[1];
+            t.month = (int)p[2];
+            t.day   = (int)p[3];
+            hour12  = (int)p[4];
+            t.min   = (int)p[5];
+            t.sec   = (int)p[6];
+        }
+        if ((year2 < 0) || (hour12 < 0)) {
+            return ERR_SYNTAX;
+        }
+        t.year = clock_year_of(year2);
+        // A twelve in the hour field is midnight or noon, and the flag adds the half day.
+        t.hour = (hour12 == 12) ? 0 : hour12;
+        if (p[7]) {
+            t.hour += 12;
+        }
+        break;
+
+    case 'I':
+        // "YYYY-MM-DDThh:mm:ss", with the day of week a T-RI answer ends in ignored.
+        if (len < 23) {
+            return ERR_SYNTAX;
+        }
+        if ((p[4] != '-') || (p[7] != '-') || (p[10] != 'T') || (p[13] != ':') || (p[16] != ':')) {
+            return ERR_SYNTAX;
+        }
+        t.year  = clock_field(p, 4);
+        t.month = clock_field(p + 5, 2);
+        t.day   = clock_field(p + 8, 2);
+        t.hour  = clock_field(p + 11, 2);
+        t.min   = clock_field(p + 14, 2);
+        t.sec   = clock_field(p + 17, 2);
+        if ((t.year < CLOCK_FIRST_YEAR) || (t.year > CLOCK_LAST_YEAR) ||
+            (t.month < 1) || (t.month > 12)) {
+            return ERR_SYNTAX;
+        }
+        t.wd = clock_day_of_week(t.year, t.month, t.day);
+        break;
+
+    default:
+        return ERR_SYNTAX;
+    }
+
+    if (!clock_time_valid(t)) {
+        return ERR_SYNTAX;
+    }
+    return 0;
+}
+
 int IecParser :: time_command(const uint8_t *buffer, int len)
 {
-    const char *wd4[] = { "SUN.", "MON.", "TUES", "WED.", "THUR", "FRI.", "SAT." };
-    const char *wd3[] = { "SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT" };
+    const char *const *wd4 = c_weekday_4;
+    const char *const *wd3 = c_weekday_3;
     uint8_t result[32];
 
     if (buffer[1] != '-') {
@@ -676,8 +937,22 @@ int IecParser :: time_command(const uint8_t *buffer, int len)
         }
         return exec->do_cmd_response(result, reslen);
         break;
-    case 'W':
-        return ERR_SYNTAX; // the clock belongs to the system, and answering OK would not set it (SI-120)
+    case 'W': {
+        // The clock the drive answers with is the system clock, so a write sets that one
+        // and a read of it through any other interface sees the same moment (SI-120).
+        clock_time_t t;
+        if (len < 4) {
+            return ERR_SYNTAX;
+        }
+        int err = parse_clock_write(buffer, len, t);
+        if (err) {
+            return err;
+        }
+        if (!set_current_time(t.wd, t.year, t.month, t.day, t.hour, t.min, t.sec)) {
+            return ERR_SYNTAX; // nothing was set, so nothing may answer OK
+        }
+        return 0;
+    }
     }
     return ERR_SYNTAX;
 }
@@ -798,10 +1073,13 @@ int IecParser :: execute_command(const uint8_t *buffer, int len)
         if (buffer[1] == 'D') {
             return dir_command(buffer, len);
         }
+        if ((len > 2) && (buffer[1] == '-')) {
+            return rename_dashed_command(buffer, len);
+        }
         return rename_command(buffer, len);
     case 'S':
         if ((len == 3) && (buffer[1] == '-')) {
-            return ERR_UNKNOWN_CMD; // S-8, S-9 and S-D swap device numbers, which this drive does not do (SD parse_doscommand())
+            return swap_command(buffer, len);
         }
         return scratch_command(buffer, len);
     case 'T': return time_command(buffer, len);

@@ -66,6 +66,10 @@ public:
     virtual FRESULT file_rename(const char *old_name, const char *new_name);  // Renames a file
 	virtual FRESULT file_delete(const char *path); // deletes a file
     virtual FRESULT file_attrib(const char *path, uint8_t attrib, uint8_t mask) { return FR_NOT_ENABLED; } // sets the attribute bits in mask to those in attrib
+    // Sets the label a directory carries inside the file system itself, where it has one
+    // that is separate from the name its parent holds. An empty id leaves the one that
+    // is there. A file system whose directories have no such label answers FR_NOT_ENABLED.
+    virtual FRESULT dir_set_label(const char *path, const char *name, const char *id) { return FR_NOT_ENABLED; }
 
 
 	virtual void    file_print_info(File *f) { } // debug

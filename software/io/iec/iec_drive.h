@@ -94,6 +94,7 @@ public:
 
     // Local Functions
     void set_device_number(int dev);
+    int configured_device_number(void);
     bool log_every_operation(void);
     void set_error(int err, int track, int sector);
     void set_error_fres(FRESULT fres);

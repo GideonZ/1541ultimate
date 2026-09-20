@@ -407,6 +407,12 @@ bool IecDrive :: log_every_operation(void)
     return cfg->get_value(CFG_IEC_LOG) > 0;
 }
 
+// The device number the settings hold, which S-D returns the drive to (SI-101).
+int IecDrive :: configured_device_number(void)
+{
+    return cfg->get_value(CFG_IEC_BUS_ID);
+}
+
 // The device number for as long as the drive runs, from U0> (SI-100). It is not written to
 // the configuration: HD 9-49 describes the change as temporary.
 void IecDrive :: set_device_number(int dev)

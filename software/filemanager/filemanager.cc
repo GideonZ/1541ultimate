@@ -1238,6 +1238,26 @@ FRESULT FileManager::set_attributes(const char *pathname, uint8_t attrib, uint8_
     return fres;
 }
 
+// The label the file system itself holds for a directory, where it has one (SI-064).
+FRESULT FileManager::set_dir_label(const char *pathname, const char *name, const char *id)
+{
+    PathInfo pathInfo(rootfs);
+    pathInfo.init(pathname);
+    lock();
+    // A mount point is entered, as open_directory() does, so the label of a directory
+    // inside a mounted image is the one the command reaches.
+    FRESULT fres = find_pathentry(pathInfo, true);
+    if (fres == FR_OK) {
+        fres = pathInfo.getLastInfo()->fs->dir_set_label(pathInfo.getPathFromLastFS(), name, id);
+        if (fres == FR_OK) {
+            mstring work;
+            sendEventToObservers(eRefreshDirectory, pathInfo.getFullPath(work, -1), "");
+        }
+    }
+    unlock();
+    return fres;
+}
+
 FRESULT FileManager::delete_file(Path *path, const char *name)
 {
     PathInfo pathInfo(rootfs);

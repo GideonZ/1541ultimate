@@ -103,7 +103,12 @@ public:
     virtual int do_pwd_command() { return 0; }
     virtual int do_get_partition_info(int part) { return 0; }
     virtual int do_set_device_number(int dev) { return 0; }
+    virtual int do_restore_device_number() { return 0; } // S-D, back to the configured number
     virtual int do_lock(filename_t& name) { return 0; } // L: toggles the lock of one entry
+    // R-H sets the header of the directory the name's path points at, and R-P renames
+    // the partition that carries a name (SI-064, SI-051).
+    virtual int do_set_header(filename_t& dest, const char *id) { return 0; }
+    virtual int do_rename_partition(const char *newname, const char *oldname) { return 0; }
 };
 
 class IecParser
@@ -125,6 +130,8 @@ class IecParser
     int get_command(const uint8_t *buffer, int len);
     int memory_command(const uint8_t *buffer, int len);
     int lock_command(const uint8_t *buffer, int len);
+    int swap_command(const uint8_t *buffer, int len);
+    int rename_dashed_command(const uint8_t *buffer, int len);
 
 public:
     IecParser(IecCommandExecuter *e) : exec(e) { }

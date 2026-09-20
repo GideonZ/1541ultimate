@@ -4,6 +4,7 @@
 #include "file_device.h"
 #include "filesystem_fat.h"
 #include "macros.h"
+#include "current_time.h"
 #include <unistd.h>
 #include <string.h>
 
@@ -1468,6 +1469,33 @@ static void run_suite8_time_copy_rename_scratch(IecDrive *dr)
     static const uint8_t t_rb[] = { 3, 0x25, 0x06, 0x26, 0x12, 0x41, 0x01, 0, 0x0d };
     expect_command_bytes("Suite8-T-RD", dr, "T-RD", t_rd, sizeof(t_rd));
     expect_command_bytes("Suite8-T-RB", dr, "T-RB", t_rb, sizeof(t_rb));
+
+    // SI-120. A clock write reaches the system clock, which is the one every other
+    // interface reads, and a write the clock cannot hold answers 30 and changes nothing.
+    // The four formats and their validation are checked in target/pc/linux/parse.
+    expect_command_ok("Suite8-T-WA", dr, "T-WA" "SAT. 09/12/26 01:02:03 PM");
+    expect_command_response("Suite8-T-WA-READ", dr, "T-RI", "2026-09-12T13:02:03 SAT\r");
+    {
+        const char *testname = "Suite8-T-WA-SYSTEM-CLOCK";
+        int wd, year, month, day, hour, min, sec;
+        get_current_time(wd, year, month, day, hour, min, sec);
+        if ((wd != 6) || (year != 2026) || (month != 9) || (day != 12) ||
+            (hour != 13) || (min != 2) || (sec != 3)) {
+            printf("%s: the system clock reads %d-%02d-%02d %02d:%02d:%02d, day of week %d\n",
+                   testname, year, month, day, hour, min, sec, wd);
+        }
+        REQUIRE((wd == 6) && (year == 2026) && (month == 9) && (day == 12) &&
+                (hour == 13) && (min == 2) && (sec == 3));
+    }
+    expect_command_response("Suite8-T-W-INVALID", dr, "T-WI2026-02-30T00:00:00",
+                            "30,SYNTAX ERROR,00,00\r");
+    expect_command_response("Suite8-T-W-INVALID-READ", dr, "T-RI", "2026-09-12T13:02:03 SAT\r");
+    // Leave the clock where the rest of the suite expects it. Its day of week is not the
+    // one the date has, so it is written in a form that carries one.
+    static const uint8_t t_wd_restore[] = { 'T','-','W','D', 3, 125, 6, 26, 12, 41, 1, 0 };
+    expect_command_data_response("Suite8-T-W-RESTORE", dr, t_wd_restore, sizeof(t_wd_restore),
+                                 "00, OK,00,00\r");
+    expect_command_response("Suite8-T-W-RESTORE-READ", dr, "T-RI", "2025-06-26T00:41:01 WED\r");
 
     expect_command_response("Suite8-COPY-MISSING-SOURCE", dr, "C2:DEST=", "34,SYNTAX ERROR,00,00\r");
     expect_command_ok("Suite8-COPY-A-BB", dr, "C2:DEST=1:A,1:BB");
@@ -3441,6 +3469,97 @@ static void s11_si076_lock(FileManager *fm, IecDrive *dr)
     expect_command_response(testname, dr, "S47:INIMAGE\r", "01, FILES SCRATCHED,00,00\r");
 }
 
+// SI-051: R-P:new=old renames the partition the old name belongs to, and names no
+// partition when nothing carries the old name.
+static void s11_si051_rename_partition(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite11-SI051-RenamePartition";
+    s11_partition(fm, dr, "si051");
+    dr->add_partition(41, "/Temp", "TORENAME");
+    uint8_t listing[8192];
+    int got;
+
+    expect_command_ok(testname, dr, "R-P:RENAMED=TORENAME\r");
+    got = read_directory_stream(testname, dr, "$=P", listing, sizeof(listing));
+    REQUIRE(memmem(listing, got, "RENAMED", 7) != NULL);
+    REQUIRE(memmem(listing, got, "TORENAME", 8) == NULL);
+
+    // The name a partition carries is also what G-P answers with, in bytes 3 to 18.
+    expect_command_data_response(testname, dr, (const uint8_t *)"CP41\r", 5,
+                                 "02,PARTITION SELECTED,41,00\r");
+    send_command(dr, "G-P");
+    REQUIRE(memcmp(last_status + 3, "RENAMED", 7) == 0);
+
+    expect_command_response(testname, dr, "R-P:X=NOSUCHPART\r",
+                            "77,SELECTED PARTITION ILLEGAL,00,00\r");
+    expect_command_response(testname, dr, "R-P:=TORENAME\r", "34,SYNTAX ERROR,00,00\r");
+    expect_command_response(testname, dr, "R-P:RENAMED\r", "30,SYNTAX ERROR,00,00\r");
+    // Put the partition back, so a later case that reads the partition directory is not
+    // looking at a name this one left behind.
+    expect_command_response(testname, dr, "CP40\r", "02,PARTITION SELECTED,40,00\r");
+    dr->get_file_system()->RemovePartition(41);
+}
+
+// SI-064: R-H renames the header a listing of that directory shows, which is the
+// directory's own name on the host file system (SI-065), the partition's name at the
+// root of a partition, and the disk name inside a CBM image.
+static void s11_si064_rename_header(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite11-SI064-RenameHeader";
+    s11_partition(fm, dr, "si064");
+    uint8_t listing[8192];
+    char header[17];
+    header[16] = 0;
+
+    // A subdirectory: its header is its name, so the directory answers to the new one.
+    expect_command_ok(testname, dr, "MD:GAMES\r");
+    expect_command_ok(testname, dr, "R-H/GAMES/:ARCADE\r");
+    read_directory_stream(testname, dr, "$/ARCADE/", listing, sizeof(listing));
+    memcpy(header, listing + 8, 16);
+    printf("%s: header of $/ARCADE/ is '%s'\n", testname, header);
+    REQUIRE(memcmp(listing + 8, "ARCADE          ", 16) == 0);
+    expect_command_ok(testname, dr, "CD//ARCADE\r");
+    expect_command_ok(testname, dr, "R-H:ACTION\r"); // no path: the current directory
+    read_directory_stream(testname, dr, "$", listing, sizeof(listing));
+    REQUIRE(memcmp(listing + 8, "ACTION          ", 16) == 0);
+    expect_command_ok(testname, dr, "CD//\r");
+
+    // The root of a partition, whose header is the partition name.
+    expect_command_ok(testname, dr, "R-H:HOSTPART\r");
+    read_directory_stream(testname, dr, "$", listing, sizeof(listing));
+    memcpy(header, listing + 8, 16);
+    printf("%s: header at the partition root is '%s'\n", testname, header);
+    REQUIRE(memcmp(listing + 8, "HOSTPART        ", 16) == 0);
+
+    // Inside a CBM image the header is the disk name, and the id stays as it is unless
+    // the command carries one.
+    create_formatted_image(fm, "/Fat/s11_si064.d64", "OLDNAME", 683, e_image_d64);
+    dr->add_partition(42, "/Fat/s11_si064.d64", "IMAGEPART");
+    read_directory_stream(testname, dr, "$42", listing, sizeof(listing));
+    char id[6];
+    memcpy(id, listing + 8 + 18, 5);
+    id[5] = 0;
+    expect_command_ok(testname, dr, "R-H42:NEWDISK\r");
+    read_directory_stream(testname, dr, "$42", listing, sizeof(listing));
+    memcpy(header, listing + 8, 16);
+    printf("%s: header of $42 is '%s'\n", testname, header);
+    REQUIRE(memcmp(listing + 8, "NEWDISK         ", 16) == 0);
+    REQUIRE(memcmp(listing + 8 + 18, id, 5) == 0);
+    expect_command_ok(testname, dr, "R-H42:WITHID,QQ\r");
+    read_directory_stream(testname, dr, "$42", listing, sizeof(listing));
+    memcpy(header, listing + 8, 16);
+    printf("%s: header of $42 with an id is '%s'\n", testname, header);
+    REQUIRE(memcmp(listing + 8, "WITHID          ", 16) == 0);
+    REQUIRE(memcmp(listing + 8 + 18, "QQ", 2) == 0);
+
+    // A name that is empty or carries a wildcard is no name to give a header.
+    expect_command_response(testname, dr, "R-H:\r", "34,SYNTAX ERROR,00,00\r");
+    expect_command_response(testname, dr, "R-H:NEW*\r", "33,SYNTAX ERROR,00,00\r");
+    // A path that is not there.
+    expect_command_response(testname, dr, "R-H/NOSUCH/:NAME\r", "71,DIRECTORY ERROR,40,00\r");
+    dr->get_file_system()->RemovePartition(42);
+}
+
 // A 1541 image on partition `part`, selected, with a buffer channel open on `chan`.
 static void s11_block_partition(FileManager *fm, IecDrive *dr, const char *testname, int part,
                                 const char *image, uint8_t chan)
@@ -4942,6 +5061,8 @@ static const Suite11Case suite11_cases[] = {
     { "Suite11-SI147-ShiftedSpace",      s11_si147_shifted_space },
     { "Suite11-SI142-EscapedWildcards",  s11_si142_escaped_wildcards },
     { "Suite11-SI076-Lock",              s11_si076_lock },
+    { "Suite11-SI051-RenamePartition",   s11_si051_rename_partition },
+    { "Suite11-SI064-RenameHeader",      s11_si064_rename_header },
     { "Suite11-SI090-BufferPointer",     s11_si090_buffer_pointer },
     { "Suite11-SI093-BoundPartition",    s11_si093_bound_partition },
     { "Suite11-SI094-BlockLength",       s11_si094_block_length },
