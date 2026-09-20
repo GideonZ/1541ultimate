@@ -746,16 +746,17 @@ this drive has no formattable medium of its own. Source: SD README under `N:` an
   text omits the DNP exception).
 * The disk label is the name with the extension removed.
 
-Current behaviour: `U IecParser::format_command()` parses a `name=type` form that
-nothing sends, and `U do_format()` is a `printf` that answers `00, OK` without doing
-anything. The reporter reported this on #877. **Change required.**
+The name buffer holds a 16 character label and a four character extension, so
+`N:ABCDEFGHIJKLMNOP.D81,AB` creates a D81 image.
 
-**Decision (PR #881): implemented for host directories; refused inside a disk image.**
-When the directory `N` addresses is inside a mounted disk image, sd2iec formats that
-image. Doing that here would write the image file under the file system that has it
-mounted and caches its block map, so `N` answers `30` there instead of creating an image
-inside the image. The name buffer holds a 16 character label and a four character
-extension, so `N:ABCDEFGHIJKLMNOP.D81,AB` creates a D81 image.
+**SI-071a.** When the directory `N` addresses is inside a mounted disk image, `N` formats
+that image rather than creating an image inside it, which is what a program formatting
+its disk asks for. The format goes through the file system that holds the image open, so
+the block map and the directory that file system caches are the ones rewritten and the
+image file keeps its size. A file open on the image answers `60,WRITE FILE OPEN`, because
+that file would go on reading and writing blocks the format has handed back. A
+subdirectory a native image carries is gone with the format, so the partition falls back
+to the deepest directory that still exists.
 
 **SI-072.** A file whose name ends in a disk image extension, or in `.CRT` or
 `.TCRT`, is written to the host file system under exactly that name, with no type
@@ -2021,13 +2022,6 @@ not, why, and whether a C64 OS boot as recorded in TRACE is affected.
     sd2iec reports it as well.
   * C64 OS: not affected. Its system directory contains `temporary/`, whose files it
     scratches at boot (C64 OS file system documentation).
-* **SI-071, `N`.**
-  * Implemented: creating and formatting D64, D71, D81 and DNP images in a host directory.
-  * Not implemented: `N` inside a mounted disk image, which sd2iec answers by formatting
-    that image. Here it answers `30`.
-  * Why: the image file would be rewritten under the file system that has it mounted and
-    caches its block map.
-  * C64 OS: not affected; TRACE has no `N`.
 * **SI-074, rename.**
   * Implemented: `34` for an empty new name, `33` for a wildcard in it, `63` for a name any
     entry already has, and the rename of a subdirectory (HD 9-26, "Renaming Files and

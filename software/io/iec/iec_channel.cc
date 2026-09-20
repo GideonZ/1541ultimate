@@ -2264,15 +2264,42 @@ int IecCommandChannel::do_format(filename_t& dest, const char *id)
         return 0;
     }
 
-    // Inside a disk image N would create an image in the image, which is not what a
-    // program formatting its disk asks for; formatting the mounted image under the file
-    // system that has it open is not safe, so it is refused.
+    // Inside a disk image, N formats that image rather than creating an image inside it,
+    // which is what a program formatting its disk asks for (SI-071, SD parse_new()). The
+    // format goes through the file system that has the image open, so the block map and
+    // the directory it holds are the ones that are rewritten.
     FileInfo dir_info(4);
     Directory *probe = NULL;
     if (fm->open_directory(dir.c_str(), &probe, &dir_info) == FR_OK) {
         delete probe;
         if (dir_info.fs && dir_info.fs->supports_direct_sector_access()) {
-            return ERR_SYNTAX_ERROR_GEN;
+            // A file open on the image would keep reading and writing blocks the format
+            // has handed back, so it is the user's file that decides, not the command.
+            for (int i = 0; i < 15; i++) {
+                IecChannel *ch = drive->get_data_channel(i);
+                if (ch && ch->f && (ch->f->get_file_system() == dir_info.fs)) {
+                    return ERR_WRITE_FILE_OPEN;
+                }
+            }
+            mstring label(dest.filename.c_str());
+            if (*id) {
+                label += ",";
+                label += id;
+            }
+            fres = dir_info.fs->format(label.c_str());
+            if (fres != FR_OK) {
+                drive->set_error_fres(fres);
+                return 0;
+            }
+            // A subdirectory inside the image is gone with the format, so the partition
+            // falls back to the deepest directory that still exists.
+            while (!fm->is_path_valid(partition->GetFullPath())) {
+                if (!partition->cd("..")) {
+                    break;
+                }
+            }
+            set_error(ERR_ALL_OK);
+            return 0;
         }
     }
 

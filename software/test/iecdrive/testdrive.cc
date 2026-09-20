@@ -3362,10 +3362,25 @@ static void s11_si071_format(FileManager *fm, IecDrive *dr)
     // A full sixteen character label keeps its extension.
     expect_command_ok(testname, dr, "N:ABCDEFGHIJKLMNOP.D81,AB\r");
     REQUIRE(s11_host_size(fm, path, "ABCDEFGHIJKLMNOP.D81") == 819200);
-    // Inside a disk image N is refused rather than creating an image in the image.
+    // Inside a disk image N formats that image rather than creating an image in it.
     expect_command_ok(testname, dr, "CD:ONE.D64\r");
-    expect_command_response(testname, dr, "N:WORK,01\r", "30,SYNTAX ERROR,00,00\r");
+    expect_iec_write_ok(testname, dr, 2, "GONE,S,W", "erased by the format");
+    expect_command_ok(testname, dr, "N:WORK,01\r");
     expect_iec_file_missing(testname, dr, 2, "WORK.D64,S,R");
+    expect_iec_file_missing(testname, dr, 2, "GONE,S,R");
+    expect_directory_contains(testname, dr, "$", "\"WORK ");
+    // The image keeps its size, and takes files again.
+    expect_iec_write_ok(testname, dr, 2, "AFTER,S,W", "written after the format");
+    expect_iec_file(testname, dr, 2, "AFTER,S,R", "written after the format");
+    expect_command_ok(testname, dr, "CD:_\r");
+    REQUIRE(s11_host_size(fm, path, "ONE.D64") == 174848);
+    // A file open on the image is not formatted out from under its channel.
+    expect_command_ok(testname, dr, "CD:ONE.D64\r");
+    open_file(dr, 3, "AFTER,S,R");
+    get_status(dr);
+    expect_command_response(testname, dr, "N:BUSY,02\r", "60,WRITE FILE OPEN,00,00\r");
+    close_file(dr, 3);
+    expect_command_ok(testname, dr, "N:BUSY,02\r");
     expect_command_ok(testname, dr, "CD:_\r");
 
     expect_command_response(testname, dr, "S:*\r", "01, FILES SCRATCHED,06,00\r");
