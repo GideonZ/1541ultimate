@@ -38,14 +38,15 @@ bool x00_header(const uint8_t *header, uint32_t length, char *cbm_name, uint8_t 
     return true;
 }
 
-uint32_t x00_skip_header(File *f, const char *path, uint8_t *record_length)
+uint32_t x00_skip_header(File *f, const char *path, uint8_t *record_length, char *cbm_name)
 {
     uint8_t head[X00_HEADER_SIZE];
     uint32_t got = 0;
     if (!f || !x00_name(path, NULL) || !f->get_size()) {
         return 0;
     }
-    if ((f->read(head, X00_HEADER_SIZE, &got) == FR_OK) && x00_header(head, got, NULL, record_length)) {
+    if ((f->read(head, X00_HEADER_SIZE, &got) == FR_OK) &&
+        x00_header(head, got, cbm_name, record_length)) {
         return X00_HEADER_SIZE;
     }
     f->seek(0);

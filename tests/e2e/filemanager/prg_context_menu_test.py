@@ -902,6 +902,9 @@ class PlainLocation:
     def file_bytes(self) -> bytes:
         return PRG_BYTES
 
+    def hex_first_line(self) -> str:
+        return HEX_VIEW_FIRST_LINE
+
     def renamed_to(self, fixtures: Fixtures) -> str:
         return f"{FIXTURE_PREFIX}{fixtures.token}ren.prg"
 
@@ -941,6 +944,9 @@ class DiskLocation:
     def file_bytes(self) -> bytes:
         return PRG_BYTES
 
+    def hex_first_line(self) -> str:
+        return HEX_VIEW_FIRST_LINE
+
     def forbidden_actions(self) -> tuple[str, ...]:
         return ()
 
@@ -967,6 +973,10 @@ class WrappedLocation:
 
     def file_bytes(self) -> bytes:
         return P00_BYTES
+
+    def hex_first_line(self) -> str:
+        # Hex View shows the file, and the file starts with its header.
+        return "0000 43 36 34 46"
 
     def renamed_to(self, fixtures: Fixtures) -> str:
         return f"{FIXTURE_PREFIX}{fixtures.token}wren.p00"
@@ -1004,7 +1014,7 @@ def action_view(machine: Machine, fixtures: Fixtures, location, _host: str, _pas
 def action_hex_view(machine: Machine, fixtures: Fixtures, location, _host: str, _password: str) -> None:
     location.open(machine, fixtures)
     machine.invoke_context_action("Hex View")
-    screen = machine.wait_for_text(HEX_VIEW_FIRST_LINE)
+    screen = machine.wait_for_text(location.hex_first_line())
     if "U64PRG" not in screen:
         raise Failure(f"hex view is not showing the fixture:\n{screen}")
     machine.leave_nested_screen()

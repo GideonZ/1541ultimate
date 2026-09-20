@@ -25,6 +25,7 @@ bool x00_header(const uint8_t *header, uint32_t length, char *cbm_name, uint8_t 
 
 // Moves an open file past its header and answers the size of the header, or leaves the
 // file at the start and answers 0 when it carries none. The path is needed for the name.
-uint32_t x00_skip_header(File *f, const char *path, uint8_t *record_length);
+// cbm_name, when given, takes 17 bytes and receives the name out of the header.
+uint32_t x00_skip_header(File *f, const char *path, uint8_t *record_length, char *cbm_name = NULL);
 
 #endif /* X00_WRAPPER_H */

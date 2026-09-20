@@ -7,6 +7,7 @@
 
 #include "c64.h"
 #include "x00_wrapper.h"
+#include "pattern.h"
 #include "c64_crt.h"
 #include "c64_subsys.h"
 #include <ctype.h>
@@ -60,6 +61,26 @@ static const char *format_bootcrt_display_name(const char *name, char *trimmed)
     memcpy(trimmed + 3, name + length - kTrimmedTailChars, kTrimmedTailChars);
     trimmed[kDisplayChars] = 0;
     return trimmed;
+}
+
+// The name the boot cart prints while it loads. A P00 file and its kin hold the C64 file
+// behind a header, so the name the C64 shows comes out of that header and not out of the
+// 8.3 host name the wrapper lives under; it is rendered the way a host name spells a CBM
+// name, because CbmFileName reads it back that way (SI-144b).
+static const char *x00_load_name(File *f, const char *host_name, char *rendered, int size)
+{
+    char cbm_name[17];
+    cbm_name[0] = 0;
+    if (!x00_skip_header(f, host_name, NULL, cbm_name) || !cbm_name[0]) {
+        return host_name;
+    }
+    int len = 16;
+    while ((len > 0) && ((uint8_t)cbm_name[len - 1] <= ' ' || (uint8_t)cbm_name[len - 1] == 0xA0)) {
+        len--;
+    }
+    cbm_name[len] = 0;
+    petscii_to_fat(cbm_name, rendered, size);
+    return rendered;
 }
 
 cart_def boot_cart; // static => initialized with all zeros.
@@ -402,10 +423,9 @@ SubsysResultCode_e C64_Subsys::executeCommand(SubsysCommand *cmd)
         case C64_DMA_LOAD:
             res = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ, &f);
             if (res == FR_OK) {
-                // A P00 file and its kin hold the C64 file behind a header; the load
-                // address and the data are what follows it.
-                x00_skip_header(f, cmd->filename.c_str(), NULL);
-                dma_load(f, NULL, 0, cmd->filename.c_str(), cmd->mode, c64->cfg->get_value(CFG_C64_DMA_ID));
+                char shown[52];
+                const char *name = x00_load_name(f, cmd->filename.c_str(), shown, sizeof(shown));
+                dma_load(f, NULL, 0, name, cmd->mode, c64->cfg->get_value(CFG_C64_DMA_ID));
                 fm->fclose(f);
             } else {
                 result = SSRET_CANNOT_OPEN_FILE;
@@ -416,10 +436,9 @@ SubsysResultCode_e C64_Subsys::executeCommand(SubsysCommand *cmd)
         case C64_DMA_LOAD_MNT:
             res = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ, &f);
             if (res == FR_OK) {
-                // A P00 file and its kin hold the C64 file behind a header; the load
-                // address and the data are what follows it.
-                x00_skip_header(f, cmd->filename.c_str(), NULL);
-                dma_load(f, NULL, 0, cmd->filename.c_str(), cmd->mode, c1541_A->get_current_iec_address());
+                char shown[52];
+                const char *name = x00_load_name(f, cmd->filename.c_str(), shown, sizeof(shown));
+                dma_load(f, NULL, 0, name, cmd->mode, c1541_A->get_current_iec_address());
                 fm->fclose(f);
             } else {
                 result = SSRET_CANNOT_OPEN_FILE;
@@ -429,8 +448,8 @@ SubsysResultCode_e C64_Subsys::executeCommand(SubsysCommand *cmd)
         case C64_DMA_LOAD_RAW:
             res = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ, &f);
             if (res == FR_OK) {
-                // A P00 file and its kin hold the C64 file behind a header; the load
-                // address and the data are what follows it.
+                // A raw load has no name to print; the header is still skipped, because
+                // the C64 file is what follows it.
                 x00_skip_header(f, cmd->filename.c_str(), NULL);
                 dma_load_raw(f);
                 fm->fclose(f);
