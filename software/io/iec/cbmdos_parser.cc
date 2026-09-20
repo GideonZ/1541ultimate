@@ -872,8 +872,8 @@ static int clock_days_in_month(int year, int month)
 // the ISO form, which is the one form that carries no day of week.
 static int clock_day_of_week(int year, int month, int day)
 {
-    int y = year;
-    int d = day + ((month < 3) ? y-- : (y - 2));
+    int y = (month < 3) ? (year - 1) : year;
+    int d = day + ((month < 3) ? year : (year - 2));
     return ((23 * month / 9) + d + 4 + (y / 4) - (y / 100) + (y / 400)) % 7;
 }
 
