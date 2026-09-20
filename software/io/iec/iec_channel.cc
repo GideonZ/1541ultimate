@@ -1186,6 +1186,11 @@ int IecChannel::read_dir_entry(void)
     if (!partition_type && (info.attrib & AM_RDO)) {
         buffer[30 - chars] = '<'; // locked (SI-132)
     }
+    // An entry in a CBM image whose closed bit is clear is a file a write never finished,
+    // and every Commodore drive marks it with a splat in front of the type (SI-132).
+    if (!partition_type && info.cbm_filetype && !(info.cbm_filetype & 0x80)) {
+        buffer[26 - chars] = '*';
+    }
 
     pointer = 0;
     prefetch = 0;

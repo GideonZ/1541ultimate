@@ -59,7 +59,8 @@ public:
     uint16_t  lfsize;
     uint8_t   attrib;  /* Attribute */
     uint8_t   name_format;
-    uint8_t   cbm_filetype; /* the CBM directory type bits, 0 when the file system has none */
+    uint8_t   cbm_filetype; /* the CBM directory type byte: the type in bits 0 to 3 and bit 7
+                               set when the entry was closed, 0 when the file system has none */
     char   *lfname;
 	char    extension[4];
 

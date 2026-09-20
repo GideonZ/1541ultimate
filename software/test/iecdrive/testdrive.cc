@@ -3956,6 +3956,46 @@ static void s11_si144_shared_header(FileManager *fm, IecDrive *dr)
     }
 }
 
+// SI-132: an entry in a CBM image whose closed bit is clear lists with a splat in front
+// of its type, as every Commodore drive shows a file a write never finished.
+static void s11_si132_splat(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite11-SI132-Splat";
+    s11_block_partition(fm, dr, testname, 45, "/Fat/s11_si132.d64", 2);
+    expect_iec_write_ok(testname, dr, 1, "45:CLOSED", "a file that was closed");
+
+    char type[8];
+    bool present;
+    s11_listing_type(dr, testname, "$45", "CLOSED", type, &present);
+    REQUIRE(present && !strcmp(type, "PRG "));
+
+
+    // Clear the closed bit of the first directory entry, through the block commands, so
+    // that the image carries the entry a Commodore leaves behind after a failed write.
+    uint8_t sector[256];
+    expect_command_ok(testname, dr, "U1:2,0,18,1\r");
+    read_buffer_channel(testname, dr, 2, sector, sizeof(sector));
+    printf("%s: the first directory entry's type byte is %02X\n", testname, sector[2]);
+    REQUIRE(sector[2] == 0x82);
+    sector[2] &= 0x7F;
+    expect_command_ok(testname, dr, "B-P:2,0\r");
+    send_channel_data(dr, 2, sector, sizeof(sector));
+    expect_command_ok(testname, dr, "U2:2,0,18,1\r");
+    close_file(dr, 2);
+
+    // The splat is the column in front of the type, so the whole field is read here.
+    uint8_t listing[4096];
+    int got = read_directory_stream(testname, dr, "$45", listing, sizeof(listing));
+    const uint8_t *line = s11_listing_line(listing, got, "CLOSED");
+    REQUIRE(line != NULL);
+    char field[6];
+    memcpy(field, line + 26 - 1, 5);
+    field[5] = 0;
+    printf("%s: an entry whose closed bit is clear lists its type as '%s'\n", testname, field);
+    REQUIRE(strcmp(field, "*PRG ") == 0);
+    dr->get_file_system()->RemovePartition(45);
+}
+
 // SI-137 and SI-145: the two things the drive deliberately does not do on this side.
 // Opening `$` on a data channel gives the BASIC listing and not the raw directory
 // sectors, and a file the drive creates is written plain and not in an x00 wrapper.
@@ -5369,6 +5409,7 @@ static const Suite11Case suite11_cases[] = {
     { "Suite11-SI103-Resets",            s11_si103_resets },
     { "Suite11-SI144-ReadX00",           s11_si144_read_x00 },
     { "Suite11-SI144-SharedHeader",      s11_si144_shared_header },
+    { "Suite11-SI132-Splat",             s11_si132_splat },
     { "Suite11-DeliberateExclusions",    s11_deliberate_exclusions },
     { "Suite11-SI084-RelLayouts",        s11_si084_rel_layouts },
     { "Suite11-SI144-X00Paths",          s11_x00_paths },

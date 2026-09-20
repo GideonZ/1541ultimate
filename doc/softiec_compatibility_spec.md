@@ -1165,11 +1165,14 @@ the listing at `$0101`.
 number, is the partition number for a file listing and the number of partitions for a
 partition listing. See SI-046.
 
-**SI-132.** The file type field is followed by `<` when the file is locked, and
-preceded by `*` when the file was not closed. Sources: HD 9-30 for `<`;
-`SD createentry()` for both (the splat is CBM DOS behaviour and is not on HD 9-30).
-Locking is SI-076; the splat has no counterpart on a host file system and is not
-required.
+**SI-132.** The file type field is followed by `<` when the entry is locked, and preceded
+by `*` when it was not closed. Sources: HD 9-30 for `<`; `SD createentry()` for both (the
+splat is CBM DOS behaviour and is not on HD 9-30). Locking is SI-076.
+
+The splat is the closed bit of a CBM directory entry, bit 7 of its type byte, so it
+appears for an entry inside a mounted image and never for a host file, which has no such
+bit. `FileInfo::cbm_filetype` carries the bit from the image's file system to the
+listing.
 
 **SI-133.** The low byte of the next-line link pointer is `(file size mod 254) + 2`,
 so that a program can recover the exact byte length of a file. Sources: SD README,
