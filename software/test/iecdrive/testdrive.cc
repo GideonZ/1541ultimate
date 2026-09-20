@@ -3016,7 +3016,10 @@ static void s11_si134_hidden_flag(FileManager *fm, IecDrive *dr)
     const char *path = s11_partition(fm, dr, "si134");
     uint32_t tr;
     REQUIRE(fm->save_file(true, path, "VISIBLE.prg", (const uint8_t *)"V", 1, &tr) == FR_OK);
+    REQUIRE(fm->save_file(true, path, "SECRET.prg", (const uint8_t *)"S", 1, &tr) == FR_OK);
     expect_command_ok(testname, dr, "MD:FOLDER\r");
+
+    // Nothing is hidden yet, so both listings carry every entry.
     uint8_t all[4096], hidden[4096];
     int n_all = read_directory_stream(testname, dr, "$:*", all, sizeof(all));
     int n_hidden = read_directory_stream(testname, dr, "$:*=H", hidden, sizeof(hidden));
@@ -3024,6 +3027,20 @@ static void s11_si134_hidden_flag(FileManager *fm, IecDrive *dr)
     REQUIRE(s11_listing_line(hidden, n_hidden, "VISIBLE") != NULL);
     REQUIRE(s11_listing_line(hidden, n_hidden, "FOLDER") != NULL);
     REQUIRE(n_all == n_hidden);
+
+    // A hidden entry is left out until the filter asks for it, and the flag turns back.
+    expect_command_ok(testname, dr, "EHSECRET\r");
+    n_all = read_directory_stream(testname, dr, "$:*", all, sizeof(all));
+    n_hidden = read_directory_stream(testname, dr, "$:*=H", hidden, sizeof(hidden));
+    REQUIRE(s11_listing_line(all, n_all, "SECRET") == NULL);
+    REQUIRE(s11_listing_line(all, n_all, "VISIBLE") != NULL);
+    REQUIRE(s11_listing_line(hidden, n_hidden, "SECRET") != NULL);
+    // A hidden entry still answers to its name, which is the only way to reach it and
+    // to turn the flag back.
+    expect_iec_file(testname, dr, 0, "SECRET", "S");
+    expect_command_ok(testname, dr, "EHSECRET\r");
+    n_all = read_directory_stream(testname, dr, "$:*", all, sizeof(all));
+    REQUIRE(s11_listing_line(all, n_all, "SECRET") != NULL);
 }
 
 // SI-065: the header of a listing carries the listed directory's own name, and the
@@ -3467,6 +3484,69 @@ static void s11_si076_lock(FileManager *fm, IecDrive *dr)
     printf("%s: locked file in a D64 lists as '%s'\n", testname, type);
     REQUIRE(present && !strcmp(type, "PRG<"));
     expect_command_response(testname, dr, "S47:INIMAGE\r", "01, FILES SCRATCHED,00,00\r");
+}
+
+// SI-077: the sd2iec spellings of the attribute commands. EL and EU set and clear the
+// lock that L turns over (SI-076), EH turns the hidden flag over, and A names every
+// attribute an entry is to carry.
+static void s11_si077_attribute_commands(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite11-SI077-AttributeCommands";
+    s11_partition(fm, dr, "si077");
+    char type[8];
+    bool present;
+    expect_iec_write_ok(testname, dr, 1, "ONE", "1");
+    expect_iec_write_ok(testname, dr, 1, "TWO", "2");
+
+    // EL locks every entry each name matches, and a listing marks a locked entry.
+    expect_command_ok(testname, dr, "EL:ONE,TWO\r");
+    s11_listing_type(dr, testname, "$", "ONE", type, &present);
+    REQUIRE(present && !strcmp(type, "PRG<"));
+    s11_listing_type(dr, testname, "$", "TWO", type, &present);
+    REQUIRE(present && !strcmp(type, "PRG<"));
+    expect_command_response(testname, dr, "S:ONE\r", "01, FILES SCRATCHED,00,00\r");
+
+    // EU clears it again, on a pattern this time.
+    expect_command_ok(testname, dr, "EU:*\r");
+    s11_listing_type(dr, testname, "$", "ONE", type, &present);
+    REQUIRE(present && !strcmp(type, "PRG "));
+    expect_command_response(testname, dr, "S:ONE\r", "01, FILES SCRATCHED,01,00\r");
+
+    // A sets exactly the attributes it names, so R alone locks and clears the rest.
+    expect_command_ok(testname, dr, "A:R=TWO\r");
+    s11_listing_type(dr, testname, "$", "TWO", type, &present);
+    REQUIRE(present && !strcmp(type, "PRG<"));
+    expect_command_ok(testname, dr, "A:=TWO\r");
+    s11_listing_type(dr, testname, "$", "TWO", type, &present);
+    REQUIRE(present && !strcmp(type, "PRG "));
+    // H hides the entry and clears the lock in the same command.
+    expect_command_ok(testname, dr, "A:H=TWO\r");
+    uint8_t listing[4096];
+    int got = read_directory_stream(testname, dr, "$:*", listing, sizeof(listing));
+    REQUIRE(s11_listing_line(listing, got, "TWO") == NULL);
+    got = read_directory_stream(testname, dr, "$:*=H", listing, sizeof(listing));
+    REQUIRE(s11_listing_line(listing, got, "TWO") != NULL);
+    expect_command_ok(testname, dr, "A:=TWO\r");
+
+    // A name that matches nothing.
+    expect_command_response(testname, dr, "EL:NOSUCH\r", "62,FILE NOT FOUND,00,00\r");
+    expect_command_response(testname, dr, "EHNOSUCH\r", "62,FILE NOT FOUND,00,00\r");
+
+    // Inside a CBM image the lock is the type byte's bit 6 and there is no hidden flag,
+    // so EL and EU work and EH answers 30.
+    create_formatted_image(fm, "/Fat/s11_si077.d64", "ATTRS", 683, e_image_d64);
+    dr->add_partition(43, "/Fat/s11_si077.d64", "ATTRS");
+    expect_iec_write_ok(testname, dr, 1, "43:INIMAGE", "i");
+    expect_command_ok(testname, dr, "EL43:INIMAGE\r");
+    s11_listing_type(dr, testname, "$43", "INIMAGE", type, &present);
+    REQUIRE(present && !strcmp(type, "PRG<"));
+    // A colon straight after the partition number is the header form, so the hidden
+    // flag of an entry in partition 43 is asked for with a path.
+    expect_command_response(testname, dr, "EH43/:INIMAGE\r", "30,SYNTAX ERROR,00,00\r");
+    expect_command_ok(testname, dr, "EU43:INIMAGE\r");
+    s11_listing_type(dr, testname, "$43", "INIMAGE", type, &present);
+    REQUIRE(present && !strcmp(type, "PRG "));
+    dr->get_file_system()->RemovePartition(43);
 }
 
 // SI-051: R-P:new=old renames the partition the old name belongs to, and names no
@@ -5061,6 +5141,7 @@ static const Suite11Case suite11_cases[] = {
     { "Suite11-SI147-ShiftedSpace",      s11_si147_shifted_space },
     { "Suite11-SI142-EscapedWildcards",  s11_si142_escaped_wildcards },
     { "Suite11-SI076-Lock",              s11_si076_lock },
+    { "Suite11-SI077-AttributeCommands", s11_si077_attribute_commands },
     { "Suite11-SI051-RenamePartition",   s11_si051_rename_partition },
     { "Suite11-SI064-RenameHeader",      s11_si064_rename_header },
     { "Suite11-SI090-BufferPointer",     s11_si090_buffer_pointer },

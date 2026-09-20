@@ -755,7 +755,10 @@ static FRESULT find_rendered_iec_child(FileManager *fm, const char *full_dir,
     FileInfo info(INFO_SIZE);
     while (dir->get_entry(info) == FR_OK) {
         bool is_dir = (info.attrib & AM_DIR) != 0;
-        if ((info.attrib & (AM_VOL | AM_HID)) || !info.lfname[0]) {
+        // A hidden entry is left out of a listing (SI-134) and still answers to its
+        // name, as SD passes FLAG_HIDDEN to first_match() and next_match() for every
+        // command that names a file.
+        if ((info.attrib & AM_VOL) || !info.lfname[0]) {
             continue;
         }
         if ((is_dir && !allow_dirs) || (!is_dir && !allow_files)) {
@@ -1120,7 +1123,11 @@ int IecChannel::read_dir_entry(void)
     // Skip volume entries
     if (info.attrib & AM_VOL) {
         return 1;
-    }    
+    }
+    // A hidden entry is listed only when the filter asks for it (SI-134).
+    if ((info.attrib & AM_HID) && !name_to_open.dir_opt.show_hidden) {
+        return 1;
+    }
 
     // convert FAT name to CBM name; an x00 wrapper lists as what it wraps (SI-144)
     char cbm_name[24];
@@ -2686,20 +2693,111 @@ int IecCommandChannel::do_get_partition_info(int part)
 // L[n][path]:name toggles the lock of the first file or directory whose CBM name matches
 // (SI-076, HD 9-30). The entry is found through the directory, as a scratch finds it, so
 // the name matches the entry a listing shows.
-int IecCommandChannel::do_lock(filename_t& name)
+// The attributes an entry can carry on the media this drive serves (SI-076, SI-077).
+static uint8_t fat_attributes_of(uint8_t iec_bits)
+{
+    uint8_t attrib = 0;
+    if (iec_bits & IEC_ATTR_LOCKED) {
+        attrib |= AM_RDO;
+    }
+    if (iec_bits & IEC_ATTR_HIDDEN) {
+        attrib |= AM_HID;
+    }
+    if (iec_bits & IEC_ATTR_ARCHIVE) {
+        attrib |= AM_ARC;
+    }
+    return attrib;
+}
+
+// L and EH: one entry, one attribute, turned over (SI-076, SI-077).
+int IecCommandChannel::do_toggle_attributes(filename_t& name, uint8_t bits)
 {
     GETPARTITION(name.partition, partition, -1);
     mstring work;
     FileInfo info(INFO_SIZE);
+    uint8_t mask = fat_attributes_of(bits);
     FRESULT fres = resolve_existing_iec_path(fm, partition, name, e_any, true, true, true, work, &info);
     if (fres == FR_OK) {
-        fres = fm->set_attributes(work.c_str(), info.attrib ^ AM_RDO, AM_RDO);
+        fres = fm->set_attributes(work.c_str(), info.attrib ^ mask, mask);
     }
     if (fres == FR_NOT_ENABLED) {
-        return ERR_SYNTAX_ERROR_GEN; // the medium has no lock
+        return ERR_SYNTAX_ERROR_GEN; // the medium does not carry this attribute
     }
     if (fres != FR_OK) {
         drive->set_error_fres(fres);
+    }
+    return 0;
+}
+
+// Sets the attributes in `mask` to those in `attrib` on every entry a name matches, as
+// the directory shows it. Directories are included, because L already locks one
+// (SI-076) and a lock that EL and L disagreed about would be two locks.
+static int set_attributes_matching(FileManager *fm, const char *dir_path, const char *pattern,
+                                   uint8_t attrib, uint8_t mask, FRESULT *last_error)
+{
+    Directory *dir = NULL;
+    if (fm->open_directory(dir_path, &dir) != FR_OK) {
+        *last_error = FR_NO_PATH;
+        return 0;
+    }
+    IndexedList<mstring *> matches(8, NULL);
+    FileInfo info(INFO_SIZE);
+    while (dir->get_entry(info) == FR_OK) {
+        if ((info.attrib & AM_VOL) || !info.lfname[0]) {
+            continue;
+        }
+        char cbm_name[24];
+        filetype_t ftype = e_any;
+        iec_entry_name(fm, dir_path, &info, cbm_name, ftype);
+        if (!pattern_match(pattern, cbm_name, false)) {
+            continue;
+        }
+        // The entries are collected before any of them is changed, so the directory is
+        // not written while it is being read.
+        char entry[80];
+        mstring *full = new mstring(dir_path);
+        append_path_component(*full, info.generate_fat_name(entry, sizeof(entry)));
+        matches.append(full);
+    }
+    delete dir;
+
+    int changed = 0;
+    for (int i = 0; i < matches.get_elements(); i++) {
+        FRESULT fres = fm->set_attributes(matches[i]->c_str(), attrib, mask);
+        if (fres == FR_OK) {
+            changed++;
+        } else {
+            *last_error = fres;
+        }
+        delete matches[i];
+    }
+    return changed;
+}
+
+// EL, EU and A (SI-077).
+int IecCommandChannel::do_set_attributes(filename_t names[], int n, uint8_t attrib, uint8_t mask)
+{
+    mstring work;
+    FRESULT last_error = FR_OK;
+    int changed = 0;
+    for (int i = 0; i < n; i++) {
+        GETPARTITION(names[i].partition, partition, 0);
+        if (resolve_directory_path(fm, partition, names[i].path, work) != FR_OK) {
+            drive->set_error(ERR_DIRECTORY_ERROR, partition->GetPartitionNumber(), 0);
+            return 0;
+        }
+        changed += set_attributes_matching(fm, work.c_str(), names[i].filename.c_str(),
+                                           fat_attributes_of(attrib), fat_attributes_of(mask),
+                                           &last_error);
+    }
+    if (!changed) {
+        if (last_error == FR_NOT_ENABLED) {
+            return ERR_SYNTAX_ERROR_GEN; // the medium does not carry these attributes
+        }
+        return ERR_FILE_NOT_FOUND;
+    }
+    if (last_error != FR_OK) {
+        drive->set_error_fres(last_error);
     }
     return 0;
 }

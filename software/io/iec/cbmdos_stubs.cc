@@ -60,7 +60,8 @@ public:
     int do_restore_device_number();
     int do_set_header(filename_t& dest, const char *id);
     int do_rename_partition(const char *newname, const char *oldname);
-    int do_lock(filename_t& name);
+    int do_toggle_attributes(filename_t& name, uint8_t bits);
+    int do_set_attributes(filename_t names[], int n, uint8_t attrib, uint8_t mask);
 };
 
 
@@ -218,10 +219,17 @@ int IecCommandExecuterStubs::do_rename_partition(const char *newname, const char
     return 0;
 }
 
-int IecCommandExecuterStubs::do_lock(filename_t& name)
+int IecCommandExecuterStubs::do_toggle_attributes(filename_t& name, uint8_t bits)
 {
-    record_stub_call("lock");
+    record_stub_call("toggle attributes", (int)bits);
     record_stub_name(name);
+    return 0;
+}
+
+int IecCommandExecuterStubs::do_set_attributes(filename_t names[], int n, uint8_t attrib, uint8_t mask)
+{
+    record_stub_call("set attributes", (int)attrib, (int)mask, n);
+    record_stub_name(names[0]);
     return 0;
 }
 

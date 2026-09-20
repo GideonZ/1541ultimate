@@ -425,7 +425,8 @@ class IecCommandChannel: public IecChannel, public IecCommandExecuter {
     int do_get_partition_info(int part);
     int do_set_device_number(int dev);
     int do_restore_device_number();
-    int do_lock(filename_t& name);
+    int do_toggle_attributes(filename_t& name, uint8_t bits);
+    int do_set_attributes(filename_t names[], int n, uint8_t attrib, uint8_t mask);
     int do_set_header(filename_t& dest, const char *id);
     int do_rename_partition(const char *newname, const char *oldname);
 public:

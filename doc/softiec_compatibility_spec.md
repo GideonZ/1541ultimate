@@ -839,32 +839,42 @@ image it is bit 6 of the file type byte. A scratch skips a locked entry, and als
 unlocked entry of the same name and type that follows a locked one in a disk image,
 because deleting by name removes the first entry of that name.
 
-**SI-077.** The sd2iec extensions `EL:`, `EU:`, `EH:`, `A:` and `XH:`/`D:` are
-specified as follows, from `SD parse_ecommand()`, `parse_eunlock()`, `parse_attr()`
-and `parse_set_header()`, and from SD README:
+**SI-077.** The sd2iec spellings of the attribute commands, from
+`SD parse_elock()`, `parse_eunlock()`, `parse_ehide()`, `parse_attr()`,
+`parse_set_header()` and the dispatch in `parse_doscommand()`.
 
 | Command | Effect |
 | --- | --- |
-| `EL:name[,name...]` | set read-only on each match; `EL:$` locks a whole mounted image |
-| `EU:name[,name...]` | clear read-only on each match; `EU:$` unlocks a whole mounted image |
-| `EH[path]:name` | toggle the hidden flag on one file |
-| `EH:name,id` | with a colon straight after the partition, set the directory header |
-| `A:[R][H][A]=name` | set exactly the named attributes and clear the others |
-| `XH:name,id`, `D:name,id`, `R-H:name` | set the directory header |
+| `EL[n][path]:name[,name...]` | set the lock on every entry each name matches |
+| `EU[n][path]:name[,name...]` | clear it on every entry each name matches |
+| `EH[n][path]:name`, with something other than a colon after the partition number | turn the hidden flag of one entry over |
+| `EH[n]:name[,id]`, `XH[n][path]:name[,id]`, `D:name[,id]` | set a directory header, which is `R-H` (SI-064) |
+| `A:[R][H][A]=name[,name...]` | set exactly the attributes named on every entry each name matches, and clear the others |
 
-They are a second priority behind the CMD commands, because C64 OS hides files by a
-leading dot rather than by a device attribute (Greg Nacu, "Hidden Files": "hiding
-files doesn't work on a CMD HD, nor a RAMLink, nor an FD2000 or FD4000"), and the
-Ultimate's name mapping already escapes a leading dot as `{2E}` so such names round
-trip.
+The lock these set and clear is the one `L` turns over (SI-076), so a file `EL` locks is
+a file `L` unlocks and a file a scratch skips. `R` in `A` is that lock, `H` is the hidden
+flag of SI-134 and `A` is the archive flag, which the drive stores and nothing reads.
 
-**Decision (PR #881): not implemented.** `L` (SI-076) provides locking and unlocking,
-which is what the reporter asked for on #877. `EL` and `EU` are sd2iec's spellings of the
-same attribute. `EH` and `A:` with `H` hide files, which only has an effect if listings
-leave hidden files out, and that was not implemented either (see SI-134). `XH:`, `D:`
-and `EH:` with a colon set a directory header, which is `R-H` (SI-064). The drive
-answers `30` for `E` and `X` forms and `31` for `A` and `D`, whose letters are not
-command letters.
+Two differences from the source are deliberate. `SD parse_elock()` and `parse_eunlock()`
+skip directories and `parse_attr()` acts on the first match only; here all five commands
+act on every entry the name matches, directories included, because `L` locks a directory
+(HD 9-30) and a lock that `EL` and `L` disagreed about would be two locks. A name that
+matches nothing answers `62,FILE NOT FOUND`, and a medium that does not carry the
+attribute, such as the hidden flag inside a CBM disk image, answers `30`.
+
+`EL:$` and `EU:$`, which write-protect a whole mounted image in sd2iec, are not
+implemented and answer `62`, because the name `$` matches no entry. Write-protecting a
+mounted image means changing the writability of a file system that the file browser, FTP
+and the REST interface share, and this drive has a per-entry lock that covers what a
+program asks `EL` for.
+
+`XH+` and `XH-`, which turn hidden files on and off for every later listing, are one of
+the sd2iec settings commands that section 19 places out of scope; the filter `=H` asks
+for them per listing instead. They answer `30`.
+
+`A` and `D` are command letters because of `A:` and `D:`, so an unrecognised argument to
+either answers `30` under SI-030. That covers the sd2iec direct sector commands `DI`,
+`DR` and `DW` of SI-096.
 
 ---
 
@@ -1385,17 +1395,19 @@ GSD warns that "If filtering a directory programmatically, B should be used for
 compatibility with CMD storage devices. D is only supported by sd2iec", and IDE 6.2
 in fact maps `D` to DEL. `H` additionally shows hidden files.
 
-Current behaviour: `U parse_dir_option()` accepts all of them, but it maps `H` to bit
-6 of the type mask while `U read_dir_entry()` tests `1 << ftype` with `ftype` at most
-5. Measured, `$:*=H` lists the header and no entries at all, where `$:*=P` and
-`$:*=B` list correctly.
-**Change required:** `H` is not a type, it is a flag that suppresses the hidden
-filter, and it must be kept separate from the type bits.
+`H` is not a type but a flag: a listing leaves out every entry that carries the hidden
+attribute unless `H` asks for them, and it sets no type bit, so `$:*=H` lists what `$:*`
+lists and the hidden entries as well.
 
-**Decision (PR #881): `H` no longer filters; hidden files stay listed.** `H` is accepted
-and sets no type bit, so `$:*=H` lists what `$:*` lists. Leaving hidden files out of a
-listing by default is not implemented: before PR #881 they were listed, C64 OS hides
-files by a leading dot rather than by an attribute, and no report asks for the change.
+**SI-134a.** A hidden entry is left out of a listing and still answers to its name. Every
+command that names an entry finds it: an open, a scratch, a rename, `L`, and the `EH`
+that turns the flag back. `SD` reaches the same place from the other side, by passing
+`FLAG_HIDDEN` to `first_match()` and `next_match()` in every command that names a file.
+Without this a file could be hidden over the bus and never reached again.
+
+C64 OS hides files by a leading dot rather than by an attribute, and the name mapping
+escapes a leading dot as `{2E}` (SI-141), so such a name round trips and is not touched
+by this requirement.
 
 **SI-135.** `LOAD"$=T..."` produces a time-stamped listing, with options `L`, `N`,
 `>stamp` and `<stamp` and the stamp format `MM/DD/YY HH:MM xM`. The long line is
@@ -1957,7 +1969,6 @@ affected by them.
 | Requirement | Why it is not implemented | What the drive answers |
 | --- | --- | --- |
 | SI-054 `V` | Inside a disk image, an OK would claim a validation of the block map that did not happen | `31` |
-| SI-077 `EL:`, `EU:`, `EH:`, `A:`, `XH:`, `D:` | `L` (SI-076) provides lock and unlock; hiding files has no effect while listings show hidden files; the header forms are `R-H` | `30` for the `E` and `X` forms, `31` for `A` and `D` |
 | SI-090 `##n`, SI-092 | Large buffers serve sd2iec's 512 byte sector commands `DR` and `DW`, which are out of scope (SI-096); this drive's block commands use 256 byte sectors | `##n` opens a standard buffer; a third `B-P` number is ignored |
 | SI-102 `W-0`, `W-1` | No report or program asks for a software write protect, and it needs a check in every path that writes | `31` |
 | SI-105 `M-W`, `M-E` | Nothing written is kept and nothing is run, so an OK would tell a fast loader its drive code runs | `30` |
@@ -2029,14 +2040,6 @@ not, why, and whether a C64 OS boot as recorded in TRACE is affected.
     `$00` bytes.
   * Not implemented: `M-W` and `M-E`; see the table above.
   * C64 OS: `M-R` is the part it uses.
-* **SI-134, directory filters.**
-  * Implemented: the type filters, and `H`, which no longer sets a type bit, so `$:*=H`
-    lists every entry instead of none.
-  * Not implemented: leaving hidden files out of a listing unless `H` is given. Hidden
-    files are listed, as before PR #881.
-  * Why: C64 OS hides files by a leading dot rather than by an attribute, and no report
-    asks for the change.
-  * C64 OS: not affected; TRACE lists with `$` and `$:pattern` only.
 * **SI-136, wildcard matching.**
   * Implemented: the full glob with any number of `*`, as the requirement records.
   * Different: the requirement calls the matcher unchanged, but it had two defects that PR

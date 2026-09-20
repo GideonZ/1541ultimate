@@ -434,11 +434,40 @@ void test_name_mapping(void)
 }
 
 // SI-076: L toggles the lock of one entry.
-void test_lock_command(void)
+// SI-076 and SI-077: the commands that change an attribute. L and EH turn one bit of
+// one entry over; EL, EU and A set the bits they name on every entry a name matches.
+void test_attribute_commands(void)
 {
-    test_dispatch_text("L:TEST", 6, 0, "lock", "-1||TEST");
-    test_dispatch_text("L1//:TEST\r", 10, 0, "lock", "1|//|TEST");
+    test_dispatch_text("L:TEST", 6, 0, "toggle attributes", "-1||TEST", IEC_ATTR_LOCKED);
+    test_dispatch_text("L1//:TEST\r", 10, 0, "toggle attributes", "1|//|TEST", IEC_ATTR_LOCKED);
     test_dispatch("L:", 2, 34, NULL);
+
+    test_dispatch_text("EHTEST", 6, 0, "toggle attributes", "-1||TEST", IEC_ATTR_HIDDEN);
+    test_dispatch_text("EH/DIR/:TEST", 12, 0, "toggle attributes", "-1|/DIR/|TEST", IEC_ATTR_HIDDEN);
+
+    test_dispatch("EL:A,B", 6, 0, "set attributes", IEC_ATTR_LOCKED, IEC_ATTR_LOCKED, 2);
+    test_dispatch("EU:A", 4, 0, "set attributes", 0, IEC_ATTR_LOCKED, 1);
+    test_dispatch("EL1//:*\r", 8, 0, "set attributes", IEC_ATTR_LOCKED, IEC_ATTR_LOCKED, 1);
+
+    // A names every attribute the entry is to carry, so the ones it leaves out go.
+    const int all = IEC_ATTR_LOCKED | IEC_ATTR_HIDDEN | IEC_ATTR_ARCHIVE;
+    test_dispatch("A:RH=FOO", 8, 0, "set attributes", IEC_ATTR_LOCKED | IEC_ATTR_HIDDEN, all, 1);
+    test_dispatch("A:=FOO", 6, 0, "set attributes", 0, all, 1);
+    test_dispatch("A:RHA=FOO,BAR", 13, 0, "set attributes", all, all, 2);
+    test_dispatch("A:Z=FOO", 7, ERR_SYNTAX, NULL);
+    test_dispatch("A:FOO", 5, ERR_UNKNOWN_CMD, NULL); // no =, as SD parse_attr() has it
+    test_dispatch("A", 1, ERR_UNKNOWN_CMD, NULL);
+
+    // The three sd2iec spellings of a directory header, which is R-H (SI-064).
+    test_dispatch_text("EH:NAME", 7, 0, "set header", "-1||NAME|");
+    test_dispatch_text("EH3:NAME,ID", 11, 0, "set header", "3||NAME|ID");
+    test_dispatch_text("XH:NAME", 7, 0, "set header", "-1||NAME|");
+    test_dispatch_text("XH/DIR/:NAME", 12, 0, "set header", "-1|/DIR/|NAME|");
+    test_dispatch_text("D:NAME,ID", 9, 0, "set header", "-1||NAME|ID");
+    test_dispatch("XPWD", 4, 0, NULL);
+    test_dispatch("XH+", 3, ERR_SYNTAX, NULL); // a setting, which this drive keeps its own way
+    test_dispatch("DI", 2, ERR_SYNTAX, NULL);  // the direct sector commands (SI-096)
+    test_dispatch("EQ:NAME", 7, ERR_SYNTAX, NULL);
 }
 
 // Sends a command and compares the bytes it answered with, so a clock write can be
@@ -1009,7 +1038,7 @@ int main(int argc, const char *argv[])
     test_command_length_and_terminator();
     test_md_rd_grammar();
     test_name_mapping();
-    test_lock_command();
+    test_attribute_commands();
     test_clock_commands();
     test_block_positions_and_lengths();
     test_command(34, (const uint8_t *)"C99:EMPTY=", 10);

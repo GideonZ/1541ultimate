@@ -148,7 +148,7 @@ int parse_dir_option(const char *buf, dir_options_t &opt)
     case 'R': opt.filetypes |= 0x10; break;
     case 'B': opt.filetypes |= 0x20; break;
     case 'D': opt.filetypes |= 0x20; break;
-    case 'H': break; // show hidden files, which are listed anyway; not a file type (SI-134)
+    case 'H': opt.show_hidden = true; break; // a flag, not a file type (SI-134)
     case 'N': opt.timefmt = e_stamp_none; break;
     case '<':
     case '>':
@@ -581,28 +581,28 @@ int IecParser :: rename_dashed_command(const uint8_t *buffer, int len)
         }
         return exec->do_rename_partition(newname, rest);
     }
-    case 'H': {
-        filename_t dest;
-        int err = parse_full_path(cmd.c_str(), dest, NULL, false);
-        if (err) {
-            return err;
-        }
-        const char *id = "";
-        const char *rest;
-        if (dest.filename.split(',', &rest)) {
-            id = rest;
-        }
-        if (dest.filename.length() == 0) {
-            return ERR_NO_NAME;
-        }
-        if (dest.filename.contains_any("?*")) {
-            return ERR_ILLEGAL_NAME;
-        }
-        return exec->do_set_header(dest, id);
-    }
+    case 'H':
+        return header_command(cmd.c_str());
     default:
         return ERR_SYNTAX;
     }
+}
+
+// A comma separated list of names, each of the form [[n][path]:]pattern, as scratch and
+// the sd2iec attribute commands take it.
+static int parse_name_list(const char *buf, filename_t names[], int max, int *count)
+{
+    mstring cmd(buf);
+    const char *parts[8] = { NULL };
+    int n = cmd.split(',', parts, (max < 8) ? max : 8);
+    for (int i = 0; i < n; i++) {
+        int err = parse_full_path(parts[i], names[i], NULL);
+        if (err) {
+            return err;
+        }
+    }
+    *count = n;
+    return 0;
 }
 
 int IecParser :: scratch_command(const uint8_t *buffer, int len)
@@ -613,13 +613,10 @@ int IecParser :: scratch_command(const uint8_t *buffer, int len)
     }
     mstring cmd((const char *)buffer, 0, len-1);
     filename_t filenames[8];
-    const char *files[8] = { NULL };
-    int n = cmd.split(',', files, 8);
-    for(int i = 0; i < n; i ++) {
-        int err = parse_full_path(files[i], filenames[i], NULL);
-        if (err) {
-            return err;
-        }
+    int n = 0;
+    int err = parse_name_list(cmd.c_str(), filenames, 8, &n);
+    if (err) {
+        return err;
     }
     return exec->do_scratch(filenames, n);
 }
@@ -647,7 +644,127 @@ int IecParser :: lock_command(const uint8_t *buffer, int len)
     if (err) {
         return err;
     }
-    return exec->do_lock(name);
+    return exec->do_toggle_attributes(name, IEC_ATTR_LOCKED);
+}
+
+// [n][path]:name[,id], the argument of every command that sets a directory header:
+// R-H (SI-064) and the sd2iec spellings EH, XH and D (SI-077).
+int IecParser :: header_command(const char *arg)
+{
+    filename_t dest;
+    int err = parse_full_path(arg, dest, NULL, false);
+    if (err) {
+        return err;
+    }
+    const char *id = "";
+    const char *rest;
+    if (dest.filename.split(',', &rest)) {
+        id = rest;
+    }
+    if (dest.filename.length() == 0) {
+        return ERR_NO_NAME;
+    }
+    if (dest.filename.contains_any("?*")) {
+        return ERR_ILLEGAL_NAME;
+    }
+    return exec->do_set_header(dest, id);
+}
+
+// The sd2iec attribute commands (SI-077). EL and EU set and clear the lock on every
+// entry each name matches, EH turns the hidden flag of one entry over, and
+// A:[R][H][A]=name sets exactly the attributes named. The header forms EH with a colon
+// straight after the partition, XH and D are the same command as R-H.
+// Sources: SD parse_elock(), parse_eunlock(), parse_ehide(), parse_attr(),
+// parse_set_header() and the dispatch in parse_doscommand().
+int IecParser :: attribute_command(const uint8_t *buffer, int len)
+{
+    mstring cmd((const char *)buffer, 0, len-1);
+    const char *arg2 = cmd.c_str() + 2; // behind a two character command word
+    filename_t names[8];
+    int n = 0;
+    int err;
+
+    switch (buffer[0]) {
+    case 'A':
+        // A:[R][H][A]=name, whose letters are every attribute the entry is to carry.
+        if (buffer[1] != ':') {
+            return ERR_UNKNOWN_CMD;
+        }
+        {
+            const char *rest;
+            mstring letters(arg2);
+            if (!letters.split('=', &rest)) {
+                return ERR_UNKNOWN_CMD; // SD parse_attr() answers 31 without the =
+            }
+            uint8_t attrib = 0;
+            for (const char *p = letters.c_str(); *p; p++) {
+                switch (*p) {
+                case 'R': attrib |= IEC_ATTR_LOCKED; break;
+                case 'H': attrib |= IEC_ATTR_HIDDEN; break;
+                case 'A': attrib |= IEC_ATTR_ARCHIVE; break;
+                default: return ERR_SYNTAX;
+                }
+            }
+            err = parse_name_list(rest, names, 8, &n);
+            if (err) {
+                return err;
+            }
+            return exec->do_set_attributes(names, n, attrib,
+                                           IEC_ATTR_LOCKED | IEC_ATTR_HIDDEN | IEC_ATTR_ARCHIVE);
+        }
+    case 'D':
+        if (buffer[1] != ':') {
+            return ERR_SYNTAX; // the sd2iec direct sector commands are out of scope (SI-096)
+        }
+        return header_command(cmd.c_str() + 1);
+    case 'E':
+    case 'X':
+        switch (buffer[1]) {
+        case 'L':
+        case 'U':
+            err = parse_name_list(arg2, names, 8, &n);
+            if (err) {
+                return err;
+            }
+            return exec->do_set_attributes(names, n,
+                                           (buffer[1] == 'L') ? IEC_ATTR_LOCKED : 0,
+                                           IEC_ATTR_LOCKED);
+        case 'H': {
+            if (buffer[0] == 'X') {
+                // XH+ and XH- are the setting that adds hidden files to every listing.
+                // This drive keeps its settings in the Ultimate configuration and takes
+                // the request per listing instead, as =H (SI-134).
+                if (len == 3) {
+                    return ERR_SYNTAX;
+                }
+                return header_command(arg2);
+            }
+            // After an EH, a colon straight after the partition number is the header
+            // form; anything else names one entry whose hidden flag is turned over.
+            const char *p = arg2;
+            while ((*p == ' ') || isdigit(*p)) {
+                p++;
+            }
+            if (*p == ':') {
+                return header_command(arg2);
+            }
+            filename_t name;
+            err = parse_full_path(arg2, name, NULL, false);
+            if (err) {
+                return err;
+            }
+            return exec->do_toggle_attributes(name, IEC_ATTR_HIDDEN);
+        }
+        case 'P':
+            if (cmd == "XPWD") {
+                return exec->do_pwd_command();
+            }
+            return ERR_SYNTAX;
+        default:
+            return ERR_SYNTAX;
+        }
+    }
+    return ERR_SYNTAX;
 }
 
 // M-R (SI-105). This drive has no drive memory, so M-R answers the number of bytes
@@ -1005,15 +1122,6 @@ int IecParser :: user_command(const uint8_t *buffer, int len)
     return 0;
 }
 
-int IecParser :: extended_command(const uint8_t *buffer, int len)
-{
-    mstring cmd((const char *)buffer, 1, len-1);
-    if (cmd == "PWD") {
-        return exec->do_pwd_command();
-    }
-    return ERR_SYNTAX;
-}
-
 // BASIC's PRINT# ends a command with a carriage return, and CBM DOS drops it before
 // reading the command: the 1541 ROM does that at $C2B3. Change Partition in its
 // binary form is the exception, because its partition byte is not optional, so a
@@ -1084,9 +1192,11 @@ int IecParser :: execute_command(const uint8_t *buffer, int len)
         return scratch_command(buffer, len);
     case 'T': return time_command(buffer, len);
     case 'U': return user_command(buffer, len);
-    case 'X':
+    case 'A':
+    case 'D':
     case 'E':
-        return extended_command(buffer, len);
+    case 'X':
+        return attribute_command(buffer, len);
     case 'L':
         return lock_command(buffer, len);
     }
