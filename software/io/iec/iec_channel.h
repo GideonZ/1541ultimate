@@ -8,6 +8,7 @@
 #include "filemanager.h"
 #include "mystring.h"
 #include "cbmdos_parser.h"
+#include "x00_wrapper.h"
 
 typedef enum _t_channel_state {
     e_idle, e_filename, e_file, e_dir, e_partlist, e_record, e_buffer, e_complete, e_error, e_status
@@ -26,7 +27,6 @@ class IecCommandChannel;
 #define MAX_PARTITIONS 256
 
 // x00 wrappers (SI-144): the header in front of the data of a P00, S00, U00 or R00 file.
-#define X00_HEADER_SIZE 26
 bool iec_x00_probe(FileManager *fm, const char *path, char *cbm_name, filetype_t *type, uint8_t *record_length);
 int iec_entry_name(FileManager *fm, const char *dir_path, FileInfo *info, char *cbm_name, filetype_t& type);
 

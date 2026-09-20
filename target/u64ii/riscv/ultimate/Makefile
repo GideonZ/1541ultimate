@@ -76,6 +76,7 @@ SRCS_CC	 =  u64ii_init.cc \
 			u64_machine.cc \
 			u64_memory_backend.cc \
 			c64_subsys.cc \
+			x00_wrapper.cc \
 			screen.cc \
 			keyboard_c64.cc \
 			disk_image.cc \

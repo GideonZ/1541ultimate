@@ -3902,6 +3902,36 @@ static int s11_read_host_file(FileManager *fm, const char *dir, const char *host
     return (int)tr;
 }
 
+// SI-144a: the header reader the C64 loader shares with the drive. A file the loader
+// opens has to be moved past its header before its first two bytes are read as a load
+// address, which is what x00_skip_header() does for both of them.
+static void s11_si144_shared_header(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite11-SI144-SharedHeader";
+    const char *path = s11_partition(fm, dr, "si144h");
+    static const uint8_t payload[] = { 0x01, 0x08, 0x0B, 0x08, 0xAA, 0x00 };
+    s11_host_file(fm, path, "GAME.P00", "GAME", 0, payload, sizeof(payload));
+    s11_host_file(fm, path, "PLAIN.PRG", NULL, 0, payload, sizeof(payload));
+    s11_host_file(fm, path, "FAKE.P00", NULL, 0, payload, sizeof(payload));
+
+    static const struct { const char *host; uint32_t header; } cases[] = {
+        { "GAME.P00", X00_HEADER_SIZE }, { "PLAIN.PRG", 0 }, { "FAKE.P00", 0 },
+    };
+    for (int i = 0; i < 3; i++) {
+        File *f = NULL;
+        REQUIRE(fm->fopen(path, cases[i].host, FA_READ, &f) == FR_OK);
+        uint32_t skipped = x00_skip_header(f, cases[i].host, NULL);
+        uint8_t head[2] = { 0, 0 };
+        uint32_t got = 0;
+        f->read(head, 2, &got);
+        fm->fclose(f);
+        printf("%s: %s skipped %u bytes, first two are %02X %02X\n",
+               testname, cases[i].host, skipped, head[0], head[1]);
+        REQUIRE(skipped == cases[i].header);
+        REQUIRE((got == 2) && (head[0] == 0x01) && (head[1] == 0x08));
+    }
+}
+
 // SI-144: a P00, S00, U00 or R00 file that starts with "C64File" lists under the CBM name
 // in its header, with the type of its extension and the size of what follows the 26 byte
 // header, and opens by that name with the header skipped. A file with such an extension
@@ -5275,6 +5305,7 @@ static const Suite11Case suite11_cases[] = {
     { "Suite11-SI094-BlockLength",       s11_si094_block_length },
     { "Suite11-SI103-Resets",            s11_si103_resets },
     { "Suite11-SI144-ReadX00",           s11_si144_read_x00 },
+    { "Suite11-SI144-SharedHeader",      s11_si144_shared_header },
     { "Suite11-SI084-RelLayouts",        s11_si084_rel_layouts },
     { "Suite11-SI144-X00Paths",          s11_x00_paths },
     { "Suite11-SI084-RelInImage",        s11_rel_in_image },

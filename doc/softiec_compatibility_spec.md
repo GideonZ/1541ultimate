@@ -628,17 +628,21 @@ Current behaviour, measured: `I` answers `73,U64HD ULTIMATE DOS V2.0,00,00`, bec
 routes `UI` to the same executer method. **Change required:** `I` and `UI` are different commands and must
 answer differently. `I` answers `00, OK`; `UI` answers the 73 message.
 
-**SI-054.** `V[n][:]` validates. On a host file system there is nothing to validate,
-so it answers `00, OK` without doing anything, which is the same position HD 9-13
-takes for `I`. Not implemented; **change required** (it currently answers 31 after
-SI-031, or 33 today).
+**SI-054.** `V[n][:]` validates. **Deliberately unsupported**; the drive answers `31`,
+which is also what `SD parse_doscommand()` answers, having no `V` in its command switch.
 
-**Decision (PR #881): not implemented.** Inside a mounted disk image, validating means
-rebuilding the block availability map from the directory, and answering `00, OK`
-without doing it would tell a program that the image was checked. The reporter wrote on
-#877 that "V not implemented, but that's ok for the time being". The drive answers
-`31`, the answer for a letter that is not a command, as it did before (33 before
-SI-031).
+On a host file system there is nothing to validate: the file system keeps its own
+allocation and no program can put it out of step through this drive. Inside a mounted
+CBM disk image there is something to validate, and doing it means rebuilding the block
+availability map from every directory in the image, following the chain of each entry,
+the side sector chain of each relative file and the record chain of each GEOS file, and
+recursing into the subdirectories a native image can hold. A walk that misses one of
+those chains marks live blocks free, and the damage appears later, when the next write
+hands those blocks out again; nothing at the time of the command would show it. Answering
+`00, OK` without rebuilding the map would tell a program that the image was checked, which
+SI-030 and the position taken for `M-W` (SI-105) both refuse.
+
+The reporter wrote on #877 that "V not implemented, but that's ok for the time being".
 
 **SI-055.** The 1581-style sub-partition commands `/[n]:name` and
 `/[n]:name,`+`CHR$(st)CHR$(ss)CHR$(sl)CHR$(sh)`+`,C` are not implemented and are out
@@ -1454,17 +1458,25 @@ proportional to the product of the two lengths.
 
 ### 13.3 Raw directory
 
-**SI-137.** `OPEN lf,dv,sa,"$"` with `sa` not 0 returns the raw directory sectors
-rather than the BASIC listing. Sources: `SD load_directory()`, which branches on
-`secondary != 0` into `d64_raw_directory()` or a synthesised BAM sector followed by
-raw 32-byte entries; IDE 6.3, "To open a raw directory channel, use secondary address
-2-14". Not implemented; **change required**, at low
-priority, because only tools that read the BAM directly need it.
+**SI-137.** `OPEN lf,dv,sa,"$"` with `sa` not 0 returns the raw directory sectors rather
+than the BASIC listing. Sources: `SD load_directory()`, which branches on `secondary != 0`
+into `d64_raw_directory()` or a synthesised BAM sector followed by raw 32-byte entries;
+IDE 6.3, "To open a raw directory channel, use secondary address 2-14".
+**Deliberately unsupported**; `$` on any secondary address returns the listing.
 
-**Decision (PR #881): not implemented.** No report or program asks for it, and it would
-change what existing programs receive when they open `$` on a data channel, including
-clients of the UCI target, which opens on the channel number the client sends. `$` on
-any secondary address returns the listing, as before.
+The reason is not the cost of building the sectors, it is what the change would take
+away. Every program that opens `$` on a data channel to read the listing byte by byte
+uses a secondary address other than 0, because a secondary address of 0 is a LOAD; both
+programs the reporter of #917 sent use `OPEN 2,8,0` only because they LOAD nothing else,
+and the CMD manual's own examples use 2. Turning those opens into raw sectors would give
+every one of them the directory of a medium it cannot read, and on a host file system
+there are no directory sectors to give: they would have to be synthesised, entry by
+entry, from the same listing the drive already produces. The UCI Software IEC target
+opens `$` on whatever channel number its client sends, so the same change would reach
+every client of that interface as well.
+
+A program that wants the block map of a disk image has the block commands (SI-090 to
+SI-094), which read the real sectors of the image rather than a synthesis of them.
 
 ### 13.4 File types inside a disk image
 
@@ -1634,14 +1646,23 @@ contain every character CBM DOS allows; and every emulator and every sd2iec unwr
 it the same way regardless of configuration. It is the only mapping under which a
 file moved between an Ultimate, an sd2iec and VICE keeps its identity.
 
-**Decision (PR #881): implemented.** An x00 file lists, opens (with or without a type),
-positions, appends, copies (the data without the header, with the type from the
-header), renames (the name in the header; the host name is kept) and scratches under the
-CBM name in its header. A new file of a name that an x00 file carries answers `63`, and
-with `@` the x00 file is removed and the new file written in its place, as sd2iec's
-`file_open()` does. The UCI `GET_IECNAME` command reads the header when it is given a
-full path. The reason for implementing it is GAP's section on file names, which asks
-the drive to follow how sd2iec stores CBM file types.
+An x00 file lists, opens (with or without a type), positions, appends, copies (the data
+without the header, with the type from the header), renames (the name in the header; the
+host name is kept) and scratches under the CBM name in its header. A new file of a name
+that an x00 file carries answers `63`, and with `@` the x00 file is removed and the new
+file written in its place, as sd2iec's `file_open()` does. The UCI `GET_IECNAME` command
+reads the header when it is given a full path. The reason for reading these files at all
+is GAP's section on file names, which asks the drive to follow how sd2iec stores CBM file
+types.
+
+**SI-144a.** The header is read in one place, `software/filetypes/x00_wrapper.cc`, which
+the drive and the C64 loader both use. The loader needs it because a file it DMA loads is
+read from its first byte: the first two bytes are the load address, so an x00 file whose
+header is not skipped loads its wrapper to the address the letters `C6` spell. That is
+every path that reaches `C64_DMA_LOAD`, `C64_DMA_LOAD_MNT` and `C64_DMA_LOAD_RAW`: Run,
+Load and DMA in the file browser, and the control and REST routes that start a program.
+The header is skipped only for a file whose name is an x00 name and whose signature is
+there, so a `.PRG` file and a `.P00` file that is not a wrapper load as they are.
 
 **SI-145.** Writing x00 files is a configuration choice, default off, so that
 existing users see no change. When on, it follows sd2iec mode 1 (x00 for SEQ, USR and

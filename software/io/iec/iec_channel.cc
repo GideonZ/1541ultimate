@@ -633,15 +633,23 @@ static void append_path_component(mstring& path, const char *component)
     path += component;
 }
 
-// x00 wrappers (SI-144, SD fatops.c): a host file whose extension is P, S, U or R and two
-// digits, and which starts with "C64File" and a zero, carries its CBM name in the 16 bytes
-// at offset 8 and a relative file's record length at offset 25. The data follows the header.
-static bool x00_extension(const char *ext, filetype_t *type)
+// The CBM file type an x00 name announces, in the drive's own vocabulary (SI-144). The
+// header itself is read by software/filetypes/x00_wrapper.cc, which the C64 loader uses
+// as well.
+static bool x00_type(const char *path_or_ext, bool is_extension, filetype_t *type)
 {
-    if (!ext || !ext[0] || !isdigit((uint8_t)ext[1]) || !isdigit((uint8_t)ext[2]) || ext[3]) {
+    char letter = 0;
+    if (is_extension) {
+        char name[8] = ".";
+        strncpy(name + 1, path_or_ext, 4);
+        name[5] = 0;
+        if (!x00_name(name, &letter)) {
+            return false;
+        }
+    } else if (!x00_name(path_or_ext, &letter)) {
         return false;
     }
-    switch (toupper((uint8_t)ext[0])) {
+    switch (letter) {
     case 'P': *type = e_prg; return true;
     case 'S': *type = e_seq; return true;
     case 'U': *type = e_usr; return true;
@@ -650,33 +658,12 @@ static bool x00_extension(const char *ext, filetype_t *type)
     return false;
 }
 
-static bool x00_path(const char *path, filetype_t *type)
-{
-    const char *dot = strrchr(path, '.');
-    return dot && !strchr(dot, '/') && x00_extension(dot + 1, type);
-}
-
-static bool x00_header(const uint8_t *header, uint32_t length, char *cbm_name, uint8_t *record_length)
-{
-    if ((length < X00_HEADER_SIZE) || (memcmp(header, "C64File", 8) != 0)) {
-        return false;
-    }
-    if (cbm_name) {
-        memcpy(cbm_name, header + 8, 16);
-        cbm_name[16] = 0;
-    }
-    if (record_length) {
-        *record_length = header[25];
-    }
-    return true;
-}
-
 // The CBM name, and the type, of a host file that is a genuine x00 wrapper; false for any
 // other file, which is not opened unless its extension is an x00 one.
 bool iec_x00_probe(FileManager *fm, const char *path, char *cbm_name, filetype_t *type, uint8_t *record_length)
 {
     filetype_t found;
-    if (!x00_path(path, &found)) {
+    if (!x00_type(path, false, &found)) {
         return false;
     }
     File *file = NULL;
@@ -704,7 +691,7 @@ int iec_entry_name(FileManager *fm, const char *dir_path, FileInfo *info, char *
     IecPartition::CreateIecName(info, cbm_name, type);
     filetype_t wrapped;
     if ((info->attrib & AM_DIR) || (info->name_format & NAME_FORMAT_CBM) || !dir_path ||
-        !x00_extension(info->extension, &wrapped)) {
+        !x00_type(info->extension, true, &wrapped)) {
         return 0;
     }
     mstring path(dir_path);
@@ -717,20 +704,7 @@ int iec_entry_name(FileManager *fm, const char *dir_path, FileInfo *info, char *
 
 // Moves a file opened for reading past its x00 header when it has one, and returns the
 // size of the header, 0 or X00_HEADER_SIZE (SI-144).
-static uint32_t skip_x00_header(File *f, const char *path, uint8_t *record_length)
-{
-    filetype_t type;
-    uint8_t head[X00_HEADER_SIZE];
-    uint32_t got = 0;
-    if (!x00_path(path, &type) || !f->get_size()) {
-        return 0;
-    }
-    if ((f->read(head, X00_HEADER_SIZE, &got) == FR_OK) && x00_header(head, got, NULL, record_length)) {
-        return X00_HEADER_SIZE;
-    }
-    f->seek(0);
-    return 0;
-}
+
 
 // ConstructPath() names a file of any type with the pattern .???, which fstat() matches.
 // This puts the name fstat() found in place of the pattern, because an x00 file is told
@@ -1544,7 +1518,7 @@ int IecChannel :: setup_file_access()
     // An existing file with an x00 name is read past its header when it has one (SI-144).
     uint8_t wrapped_length = 0;
     if (name_to_open.access != e_write) {
-        dataOffset = skip_x00_header(f, full_path, &wrapped_length);
+        dataOffset = x00_skip_header(f, full_path, &wrapped_length);
     }
     bool wrapped = (dataOffset != 0);
 
@@ -2189,7 +2163,7 @@ int IecCommandChannel::do_copy(filename_t& dest, filename_t sources[], int n)
             drive->set_error_fres(fres);
             break;
         }
-        skip_x00_header(fi, frompath, NULL); // an x00 file copies its data, not its header
+        x00_skip_header(fi, frompath, NULL); // an x00 file copies its data, not its header
         uint32_t bytes_read, bytes_written;
         do {
             fres = fi->read(databuf, 32768, &bytes_read);

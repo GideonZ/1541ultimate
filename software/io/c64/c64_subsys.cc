@@ -6,6 +6,7 @@
  */
 
 #include "c64.h"
+#include "x00_wrapper.h"
 #include "c64_crt.h"
 #include "c64_subsys.h"
 #include <ctype.h>
@@ -401,6 +402,9 @@ SubsysResultCode_e C64_Subsys::executeCommand(SubsysCommand *cmd)
         case C64_DMA_LOAD:
             res = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ, &f);
             if (res == FR_OK) {
+                // A P00 file and its kin hold the C64 file behind a header; the load
+                // address and the data are what follows it.
+                x00_skip_header(f, cmd->filename.c_str(), NULL);
                 dma_load(f, NULL, 0, cmd->filename.c_str(), cmd->mode, c64->cfg->get_value(CFG_C64_DMA_ID));
                 fm->fclose(f);
             } else {
@@ -412,6 +416,9 @@ SubsysResultCode_e C64_Subsys::executeCommand(SubsysCommand *cmd)
         case C64_DMA_LOAD_MNT:
             res = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ, &f);
             if (res == FR_OK) {
+                // A P00 file and its kin hold the C64 file behind a header; the load
+                // address and the data are what follows it.
+                x00_skip_header(f, cmd->filename.c_str(), NULL);
                 dma_load(f, NULL, 0, cmd->filename.c_str(), cmd->mode, c1541_A->get_current_iec_address());
                 fm->fclose(f);
             } else {
@@ -422,6 +429,9 @@ SubsysResultCode_e C64_Subsys::executeCommand(SubsysCommand *cmd)
         case C64_DMA_LOAD_RAW:
             res = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ, &f);
             if (res == FR_OK) {
+                // A P00 file and its kin hold the C64 file behind a header; the load
+                // address and the data are what follows it.
+                x00_skip_header(f, cmd->filename.c_str(), NULL);
                 dma_load_raw(f);
                 fm->fclose(f);
             } else {
