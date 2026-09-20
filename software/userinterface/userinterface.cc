@@ -306,6 +306,13 @@ void UserInterface :: run(void)
     }
 }
 
+void (*UserInterface :: menu_enter_hook)(UserInterface *ui) = NULL;
+
+void UserInterface :: set_menu_enter_hook(void (*hook)(UserInterface *ui))
+{
+    menu_enter_hook = hook;
+}
+
 void UserInterface :: run_once(void)
 {
 #ifndef NO_FILE_ACCESS
@@ -324,6 +331,9 @@ void UserInterface :: run_once(void)
     }
 
     set_available(true);
+    if (menu_enter_hook) {
+        menu_enter_hook(this);
+    }
     while(!doBreak) {
         host->checkButton();
         if (!host->exists()) {

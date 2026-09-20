@@ -86,6 +86,10 @@ class C64_CRT
     // Full pathname the image was loaded from or last saved to; empty if it came from no file.
     mstring      source;
 
+    // Hash of the image as loaded or last saved; a different hash means the C64 changed it.
+    uint32_t     baseline_hash;
+    bool         baseline_valid;
+
     static C64_CRT *get_instance(void); // singleton
 
     C64_CRT();
@@ -101,6 +105,7 @@ class C64_CRT
     void configure_cart(cart_def *def);
     void find_eeprom(void);
     void auto_mirror(void);
+    uint32_t content_hash(void);
 public:
     static SubsysResultCode_e load_crt(const char *path, const char *filename, cart_def *def, uint8_t *mem);
     static SubsysResultCode_e save_crt(File *f);
@@ -108,6 +113,12 @@ public:
     static bool is_valid(void);
     static void set_source(const char *path, const char *filename);
     static const char *get_source(void);
+
+    // Change detection. The hash covers what save_crt() would write; the baseline is the state of
+    // the file, set when the image is loaded and by every successful save.
+    static uint32_t current_hash(void);
+    static uint32_t get_baseline(void);
+    static void set_baseline(uint32_t hash);
 
     static void clear_definition(cart_def *def);
 };

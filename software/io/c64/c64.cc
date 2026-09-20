@@ -68,9 +68,11 @@ static const char *bus_modes[] = { "Quiet", "Writes", "Dynamic", "Dyn. & Writes"
 static const uint8_t bus_mode_values[] = { 0x00, 0x01, 0x02, 0x03, 0x05 }; // Compatibility has write also enabled
 static const char *bus_sharing[] = { "Internal", "External", "Both" };
 static const char *en_dis_geo[] = { "Disabled", "Enabled", "GeoRAM Mode" };
+static const char *crt_autosave[] = { "Off", "Ask", "Auto" };
 
 struct t_cfg_definition c64_config[] = {
     { CFG_C64_CART_CRT,    CFG_TYPE_STRFUNC,"Cartridge",                  "%s", (const char **)C64 :: list_crts,  0, 30, (int)"" },
+    { CFG_C64_CRT_AUTOSAVE,CFG_TYPE_ENUM,   "Save Changed Cartridge",     "%s", crt_autosave, 0,  2, CRT_AUTOSAVE_ASK },
 #if U64
     { CFG_C64_CART_PREF,   CFG_TYPE_ENUM, "Cartridge Preference",         "%s", cartmodes,  0,  3, 0 },
     { CFG_BUS_MODE,        CFG_TYPE_ENUM, "Bus Operation Mode",           "%s", bus_modes,    0,  4, 0 },
@@ -1876,6 +1878,7 @@ void C64 :: setup_config_menu(void)
     grp->append(cfg->find_item(CFG_C64_CHARFILE)->set_item_altname("Character ROM"));
 #endif
     grp->append(cfg->find_item(CFG_C64_CART_CRT));
+    grp->append(cfg->find_item(CFG_C64_CRT_AUTOSAVE));
     grp->append(ConfigItem :: separator());
     grp->append(cfg->find_item(CFG_C64_REU_EN));
     grp->append(cfg->find_item(CFG_C64_REU_SIZE)->set_item_altname("Size"));

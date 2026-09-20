@@ -143,6 +143,8 @@ void C64_CRT::initialize(uint8_t *mem, uint32_t max_size)
     a000_seen = false;
     bank_multiplier = 16 * 1024;
     source = "";
+    baseline_hash = 0;
+    baseline_valid = false;
 }
 
 void C64_CRT::cleanup()
@@ -458,6 +460,10 @@ SubsysResultCode_e C64_CRT::read_crt(File *file, cart_def *def)
     regenerate_easyflash_chunks();
     configure_cart(def);
 
+    // The state the C64 starts from, EAPI patch and mirrors included.
+    baseline_hash = content_hash();
+    baseline_valid = true;
+
     return SSRET_OK;
 }
 
@@ -694,6 +700,47 @@ const char *C64_CRT::get_source(void)
     return get_instance()->source.c_str();
 }
 
+// Over exactly the bytes save_crt() writes. Each step is a bijection in h for a fixed word, so two
+// images that differ in one word always hash differently. No multiply: the U64 Nios II has none.
+uint32_t C64_CRT::content_hash(void)
+{
+    uint32_t h = 0x811C9DC5;
+    for (int i = 0; i < chip_chunks.get_elements(); i++) {
+        t_crt_chip_chunk *cc = chip_chunks[i];
+        uint16_t size = get_word(cc->header + CRTCHP_SIZE);
+        uint16_t load = get_word(cc->header + CRTCHP_LOAD);
+
+        // A pending EEPROM change goes into its buffer first, so the hash covers it.
+        if ((load == 0xDE00) && (size == 0x800) && (getFpgaCapabilities() & CAPAB_EEPROM)) {
+            if (C64 :: get_eeprom_dirty()) {
+                C64 :: get_eeprom_data(cc->ram_location);
+            }
+        }
+
+        const uint32_t *w = (const uint32_t *)cc->ram_location;
+        for (int n = 0; n < size / 4; n++) {
+            h ^= w[n];
+            h = ((h << 5) | (h >> 27)) + 0x9E3779B9;
+        }
+    }
+    return h;
+}
+
+uint32_t C64_CRT::current_hash(void)
+{
+    return get_instance()->content_hash();
+}
+
+uint32_t C64_CRT::get_baseline(void)
+{
+    return get_instance()->baseline_hash;
+}
+
+void C64_CRT::set_baseline(uint32_t hash)
+{
+    get_instance()->baseline_hash = hash;
+}
+
 SubsysResultCode_e C64_CRT::save_crt(File *fo)
 {
     C64_CRT *crt = get_instance();
@@ -703,6 +750,7 @@ SubsysResultCode_e C64_CRT::save_crt(File *fo)
     }
 
     uint32_t written;
+    uint32_t hash = crt->content_hash(); // callers stop the C64, so this is what the file receives
 
     FRESULT res = fo->write(crt->crt_header, 0x40, &written);
     if (res != FR_OK) {
@@ -770,6 +818,7 @@ SubsysResultCode_e C64_CRT::save_crt(File *fo)
     }
 
     if (res == FR_OK) {
+        crt->baseline_hash = hash; // memory and file agree again, whichever file it was
         return SSRET_OK;
     } else {
         return SSRET_DISK_ERROR;
