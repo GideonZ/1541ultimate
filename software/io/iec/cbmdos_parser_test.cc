@@ -506,6 +506,14 @@ void test_attribute_commands(void)
     test_dispatch("XH+", 3, ERR_SYNTAX, NULL); // a setting, which this drive keeps its own way
     test_dispatch("DI", 2, ERR_SYNTAX, NULL);  // the direct sector commands (SI-096)
     test_dispatch("EQ:NAME", 7, ERR_SYNTAX, NULL);
+    // A command that carries no name at all, which must not reach the executer with an
+    // empty list.
+    test_dispatch("EL:", 3, ERR_NO_NAME, NULL);
+    test_dispatch("EL", 2, ERR_NO_NAME, NULL);
+    test_dispatch("EU:", 3, ERR_NO_NAME, NULL);
+    test_dispatch("A:=", 3, ERR_NO_NAME, NULL);
+    test_dispatch("A:R=", 4, ERR_NO_NAME, NULL);
+    test_dispatch("EH", 2, ERR_NO_NAME, NULL);
 }
 
 // Sends a command and compares the bytes it answered with, so a clock write can be

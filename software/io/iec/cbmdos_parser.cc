@@ -605,6 +605,9 @@ static int parse_name_list(const char *buf, filename_t names[], int max, int *co
     mstring cmd(buf);
     const char *parts[8] = { NULL };
     int n = cmd.split(',', parts, (max < 8) ? max : 8);
+    if (n < 1) {
+        return ERR_NO_NAME; // a command that carries no name at all
+    }
     for (int i = 0; i < n; i++) {
         int err = parse_full_path(parts[i], names[i], NULL);
         if (err) {

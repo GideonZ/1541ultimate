@@ -37,9 +37,11 @@ Software IEC partition numbered 1. It temporarily uses device 11, restores the
 Software IEC settings and working directory, and deletes only its own fixtures.
 """
 import argparse
+import datetime
 import io
 import re
 import sys
+import time
 import traceback
 import uuid
 from pathlib import Path
@@ -361,12 +363,30 @@ def check_compatibility(agent, api, password, folder, root):
 
     def clock_write():
         # SI-120 on the real clock chip: the drive's clock is the system clock, so the
-        # value written here is read back through every form and then put back.
-        before = agent.command_reply(b"T-RI\r", 24).decode("ascii").strip()
-        detail(f"the clock reads {before!r}")
-        if not re.match(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d [A-Z]{3}$", before):
-            raise Failure(f"T-RI answered {before!r}")
+        # value written here is read back through every form and then put back. The clock
+        # runs while the check does, so every comparison allows the seconds to advance and
+        # every other field has to match exactly.
+        def parsed(answer, what):
+            stamp = re.match(r"(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d):(\d\d) ([A-Z]{3})$", answer)
+            if not stamp:
+                raise Failure(f"{what} answered {answer!r}")
+            fields = [int(f) for f in stamp.groups()[:6]]
+            return datetime.datetime(*fields), stamp.group(7)
+
+        def near(answer, wanted, what, seconds=10):
+            when, _ = parsed(answer, what)
+            drift = (when - wanted).total_seconds()
+            if not 0 <= drift <= seconds:
+                raise Failure(f"{what} answered {answer!r}, which is {drift:.0f} seconds "
+                              f"from the {wanted.isoformat()} that was written")
+            return when
+
+        before_answer = agent.command_reply(b"T-RI\r", 24).decode("ascii").strip()
+        before, before_day = parsed(before_answer, "T-RI")
+        started = time.monotonic()
+        detail(f"the clock reads {before_answer!r}")
         try:
+            written = datetime.datetime(2026, 9, 12, 13, 2, 3)
             agent.command(b"T-WI2026-09-12T13:02:03\r", allowed=(0,))
             iso = agent.command_reply(b"T-RI\r", 24).decode("ascii").strip()
             ascii_form = agent.command_reply(b"T-RA\r", 26).decode("ascii").strip()
@@ -374,35 +394,62 @@ def check_compatibility(agent, api, password, folder, root):
             bcd = agent.command_reply(b"T-RB\r", 9)
             detail(f"after T-WI the clock reads {iso!r}, {ascii_form!r}, "
                    f"{decimal.hex()}, {bcd.hex()}")
-            if iso != "2026-09-12T13:02:03 SAT":
-                raise Failure(f"T-RI answered {iso!r} after a clock write")
-            if ascii_form != "SAT. 09/12/26 01:02:03 PM":
+            near(iso, written, "T-RI")
+            if not iso.endswith(" SAT"):
+                raise Failure(f"T-RI answered {iso!r}, whose day of week is not SAT")
+            if not re.match(r"SAT\. 09/12/26 01:02:\d\d PM$", ascii_form):
                 raise Failure(f"T-RA answered {ascii_form!r} after a clock write")
-            if decimal != bytes([6, 126, 9, 12, 1, 2, 3, 1, 13]):
+            if decimal[:6] != bytes([6, 126, 9, 12, 1, 2]) or decimal[7:] != bytes([1, 13]):
                 raise Failure(f"T-RD answered {decimal.hex()} after a clock write")
-            if bcd != bytes([6, 0x26, 0x09, 0x12, 0x01, 0x02, 0x03, 1, 13]):
+            if bcd[:6] != bytes([6, 0x26, 0x09, 0x12, 0x01, 0x02]) or bcd[7:] != bytes([1, 13]):
                 raise Failure(f"T-RB answered {bcd.hex()} after a clock write")
-            # A day the month does not have is refused and changes nothing.
+            # The other three write forms reach the same clock. Each is written from a
+            # different moment so that a form that writes nothing cannot pass by leaving
+            # the previous one in place.
+            for form, command, moment, day in (
+                    ("T-WA", b"T-WAFRI. 03/04/05 02:30:00 PM",
+                     datetime.datetime(2005, 3, 4, 14, 30, 0), "FRI"),
+                    ("T-WD", bytes([ord("T"), ord("-"), ord("W"), ord("D"),
+                                    2, 118, 11, 27, 11, 45, 0, 0]),
+                     datetime.datetime(2018, 11, 27, 11, 45, 0), "TUE"),
+                    ("T-WB", bytes([ord("T"), ord("-"), ord("W"), ord("B"),
+                                    2, 0x22, 0x07, 0x19, 0x09, 0x15, 0x00, 1]),
+                     datetime.datetime(2022, 7, 19, 21, 15, 0), "TUE"),
+            ):
+                agent.command(command, allowed=(0,))
+                answer = agent.command_reply(b"T-RI\r", 24).decode("ascii").strip()
+                detail(f"{form} then T-RI reads {answer!r}")
+                near(answer, moment, f"T-RI after {form}")
+                if not answer.endswith(" " + day):
+                    raise Failure(f"{form} carried {day} and T-RI answered {answer!r}")
+
+            # A day the month does not have is refused and does not move the clock.
             agent.command(b"T-WI2026-02-30T00:00:00\r", allowed=(30,))
-            still = agent.command_reply(b"T-RI\r", 24).decode("ascii").strip()
-            if still != iso:
-                raise Failure(f"a refused clock write left the clock at {still!r}")
+            near(agent.command_reply(b"T-RI\r", 24).decode("ascii").strip(),
+                 datetime.datetime(2022, 7, 19, 21, 15, 0),
+                 "T-RI after a refused write", seconds=30)
+            # Back to the moment the stamp check below expects.
+            agent.command(b"T-WI2026-09-12T13:02:03\r", allowed=(0,))
             # The clock the drive set is the system clock, so a file written over FTP
             # right afterwards carries that date in its time stamp.
             with ftp.session(api.host, password) as client:
                 ftp.store(client, f"{directory}/CLOCK.PRG", b"stamped by the written clock")
-            stamped = listing_of(agent, f"$//{here.decode()}/:CLOCK*=L")
+            stamped = listing_of(agent, f"$//{folder.upper()}/:CLOCK*=L")
             detail(f"a file written after the clock write lists as {stamped[LINE:2 * LINE]!r}")
             if b"09/12/26" not in stamped:
                 raise Failure("a file written after the clock write is not stamped 09/12/26")
             agent.command(b"S//" + here + b"/:CLOCK\r", allowed=(1,))
         finally:
-            # Put the clock back where it was, whatever happened, and check it took.
-            agent.command(b"T-WI" + before[:19].encode("ascii") + b"\r", allowed=(0,))
+            # Put the clock back, advanced by the time the check took, so the device is
+            # left with the time it would have reached on its own.
+            back = before + datetime.timedelta(seconds=round(time.monotonic() - started))
+            agent.command(b"T-WI" + back.strftime("%Y-%m-%dT%H:%M:%S").encode("ascii") + b"\r",
+                          allowed=(0,))
             restored = agent.command_reply(b"T-RI\r", 24).decode("ascii").strip()
-            detail(f"the clock is back at {restored!r}")
-        if restored[:19] != before[:19]:
-            raise Failure(f"the clock was left at {restored!r}, not {before!r}")
+            detail(f"the clock is back at {restored!r}, from {before_answer!r}")
+        near(restored, back, "the restored clock", seconds=30)
+        if not restored.endswith(" " + before_day):
+            raise Failure(f"the clock was left reading {restored!r}, not a {before_day}")
 
     def write_protect():
         # SI-102 over the real bus: while W-1 is set nothing that changes a medium runs.
@@ -412,7 +459,7 @@ def check_compatibility(agent, api, password, folder, root):
             for command in (b"MD:PROTECTED\r", b"S:*\r", b"R:X=Y\r"):
                 response = agent.command(command, allowed=(26,))
                 detail(f"{command!r} answers {response!r}")
-            listing = listing_of(agent, f"$//{here}")
+            listing = listing_of(agent, f"$//{folder.upper()}")
             if b"PROTECTED" in listing:
                 raise Failure("a directory was created while the drive was write protected")
         finally:
