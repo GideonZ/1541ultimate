@@ -3741,6 +3741,27 @@ static void s11_si064_rename_header(FileManager *fm, IecDrive *dr)
     expect_command_response(testname, dr, "R-H:NEW*\r", "33,SYNTAX ERROR,00,00\r");
     // A path that is not there.
     expect_command_response(testname, dr, "R-H/NOSUCH/:NAME\r", "71,DIRECTORY ERROR,40,00\r");
+
+    // A native image carries a header block per subdirectory, which is the header a
+    // listing of that subdirectory shows, so R-H there writes that block and not the
+    // volume name of the root.
+    create_formatted_image(fm, "/Fat/s11_si064.dnp", "NATIVE", 4 * 256, e_image_dnp);
+    dr->add_partition(43, "/Fat/s11_si064.dnp", "NATIVEPART");
+    expect_command_ok(testname, dr, "MD43:TOOLS\r");
+    expect_command_ok(testname, dr, "R-H43//TOOLS/:UTILITIES\r");
+    read_directory_stream(testname, dr, "$43//TOOLS/", listing, sizeof(listing));
+    memcpy(header, listing + 8, 16);
+    printf("%s: header of $43//TOOLS/ is '%s'\n", testname, header);
+    REQUIRE(memcmp(listing + 8, "UTILITIES       ", 16) == 0);
+    // The root of the image keeps its own name, and the subdirectory keeps the name its
+    // parent holds, because a native image has a header separate from that name.
+    read_directory_stream(testname, dr, "$43//", listing, sizeof(listing));
+    memcpy(header, listing + 8, 16);
+    printf("%s: header of $43// is '%s'\n", testname, header);
+    REQUIRE(memcmp(listing + 8, "NATIVE          ", 16) == 0);
+    expect_command_ok(testname, dr, "CD43//TOOLS\r");
+    expect_command_ok(testname, dr, "CD43//\r");
+    dr->get_file_system()->RemovePartition(43);
     dr->get_file_system()->RemovePartition(42);
 }
 
