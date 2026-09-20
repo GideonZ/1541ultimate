@@ -1105,6 +1105,8 @@ static void run_iec_partition3_sequence(IecDrive *dr, const char *label)
     printf("IEC partition 3 sequence on %s completed successfully!\n", label);
 }
 
+// SI-070, SI-002, SI-005, SI-010, SI-011: the type and access suffixes of an open, on a
+// partition rooted in a host directory and in an image.
 void execute_suite3(FileManager *fm, IecDrive *dr)
 {
     const char *testname = "Suite3";
@@ -1252,6 +1254,8 @@ static void run_iec_rel_sequence(IecDrive *dr, const char *testname)
     printf("%s completed successfully!\n", testname);
 }
 
+// SI-080, SI-081, SI-082: a relative file opened with a record length, positioned by P
+// on every medium.
 void execute_suite4(FileManager *fm, IecDrive *dr)
 {
     const char *testname = "Suite4";
@@ -1455,6 +1459,7 @@ static void run_suite8_control_plane(FileManager *fm, IecDrive *dr)
     expect_command_response("Suite8-RD-NONEMPTY-HOI", dr, "RD:HOI", "63,FILE EXISTS,00,00\r");
 }
 
+// SI-073, SI-075, SI-120: scratch, copy and the clock.
 static void run_suite8_time_copy_rename_scratch(IecDrive *dr)
 {
     const char *suite = "Suite8";
@@ -1798,6 +1803,8 @@ static void run_suite10_command_terminator(FileManager *fm, IecDrive *dr)
                                  "30,SYNTAX ERROR,00,00\r");
 }
 
+// SI-040, SI-061, SI-062, SI-066: CP, CD in every documented form, CD into an image,
+// and XPWD.
 static void run_suite10_directory_navigation(FileManager *fm, IecDrive *dr)
 {
     const char *testname = "Suite10";
@@ -2102,6 +2109,8 @@ static int read_directory_stream(const char *testname, IecDrive *dr, const char 
     return got;
 }
 
+// SI-043, SI-044, SI-047, SI-048, SI-049, SI-050: the partition directory, its type
+// column, its block count column, its header name and the absence of a SYSTEM line.
 static void run_suite10_partition_directory(FileManager *fm, IecDrive *dr)
 {
     const char *testname = "Suite10";
@@ -2373,6 +2382,8 @@ static void s11_si036_block_range(FileManager *fm, IecDrive *dr)
 // free track and sector, or track 0 when no higher block is free (1541-II User's Guide,
 // error 65; HD 9-43 and appendix B). B-F of a block that is already free changes nothing
 // and is not an error; neither manual lists one. Both answered 74, DRIVE NOT READY.
+// SI-091a: B-A of an allocated block answers 65 with the next free one, and B-F of a
+// free block answers OK.
 static void s11_block_allocate_answers(FileManager *fm, IecDrive *dr)
 {
     const char *testname = "Suite11-BlockAllocateAnswers";
@@ -2542,6 +2553,8 @@ static void s11_si100_device_number(FileManager *fm, IecDrive *dr)
 
 // SI-105 and SI-112: M-R answers the number of bytes asked for, all zero, and does not
 // read past the end of the page; M-W and M-E are refused, because no drive code runs here.
+// SI-105, SI-110, SI-111, SI-112, SI-113, SI-114: M-R answers zeros, which is no
+// drive's signature, and UI is the identification.
 static void s11_si105_memory_commands(FileManager *fm, IecDrive *dr)
 {
     const char *testname = "Suite11-SI105-MemoryCommands";
@@ -2914,10 +2927,8 @@ static void s11_expect_stamped_line(const char *testname, const uint8_t *line, i
     REQUIRE(line[length - 1] == 0);
 }
 
-// SI-139: a time stamped line is a fixed 64 bytes long, or 42 in the short format, and
-// the bytes behind the stamp are 0x01. Reported on issue #917 against a CMD HD and an
-// sd2iec: SoftIEC put the stamp two columns early in the long format and left the filler
-// out of both, so a line was as long as its contents made it.
+// SI-135, SI-139: a time stamped listing in both formats, and the line it produces: a
+// fixed 64 bytes in the long format, 42 in the short one, with 0x01 behind the stamp.
 static void s11_si139_stamped_entries(FileManager *fm, IecDrive *dr)
 {
     const char *testname = "Suite11-SI139-StampedEntries";
@@ -3311,6 +3322,8 @@ static uint32_t s11_host_size(FileManager *fm, const char *dir, const char *name
 // SI-071: N:name[,id] creates a disk image, or formats one, the way sd2iec does, because
 // this drive has no medium of its own to format. The extension picks the format; no
 // extension means .D64, and then an existing file is not overwritten.
+// SI-052, SI-071: N creates and formats the four image kinds, and formats a mounted
+// image in place.
 static void s11_si071_format(FileManager *fm, IecDrive *dr)
 {
     const char *testname = "Suite11-SI071-Format";

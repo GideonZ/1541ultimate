@@ -140,7 +140,8 @@ void test_dispatch(const char *cmd, int len, int exp_retval,
     failures++;
 }
 
-// The separators CBM DOS accepts between the parameters of a block command, and
+// SI-019, SI-020, SI-091: the separators CBM DOS accepts between the parameters of a
+// block command, and
 // the aliases its user commands answer to. The 1541 ROM parses these parameters at
 // $CC6F, skipping a run of space, comma or cursor right before each number, and
 // skipping one colon between the command word and the first parameter. Its user
@@ -430,6 +431,7 @@ static void check_fat_name(const char *what, const char *pet, int maxlen, const 
     failures++;
 }
 
+// SI-140, SI-141, SI-142, SI-143: the mapping between a CBM name and a host name.
 void test_name_mapping(void)
 {
     // Each name is followed by a byte that is not zero, so a test that reads past the
@@ -543,7 +545,7 @@ static void test_reply_text(const char *cmd, int len, const char *label, const c
     test_reply(cmd, len, 0, label, (const uint8_t *)expected, strlen(expected));
 }
 
-// SI-120. The four write forms set the system clock, and the four read forms then
+// SI-120 to SI-123. The four write forms set the system clock, and the four read forms then
 // answer with the time that was written. The formats and the validation follow
 // SD parse_timewrite(): the day of week is taken from the command for A, B and D and
 // derived from the date for I, a twelve hour field of 12 means midnight or noon, and a
@@ -826,6 +828,7 @@ static int build_string(char *out, const char *alphabet, int base, int length, i
 // five characters from a and B, both case modes, gives the reference's answer; and a
 // pattern of forty stars that does not match returns at once, where the recursion took
 // time exponential in the number of stars.
+// SI-136: the wildcard matcher, including the second star this drive allows.
 void test_pattern_match(void)
 {
     char pattern[8], fixed[8];
