@@ -186,7 +186,9 @@ void test_block_command_forms(void)
 
     // A multi digit parameter, and one long enough to overflow a smaller accumulator.
     test_dispatch("B-P:12,255", 10, 0, "buffer position", 12, 255);
-    test_dispatch("B-P:2,99999999999", 17, 0, "buffer position", 2, 0xFFFF);
+    // Two numbers keep the low byte of the position, as the 1541 does, so a parameter
+    // that fills sixteen bits arrives as 255.
+    test_dispatch("B-P:2,99999999999", 17, 0, "buffer position", 2, 0xFF);
 
     // U9 and UI reset the drive, and so do U: and UJ. UI+ and UI- only select the
     // serial bus timing, so they must not reset anything.
@@ -444,6 +446,26 @@ void test_name_mapping(void)
 // SI-076: L toggles the lock of one entry.
 // SI-076 and SI-077: the commands that change an attribute. L and EH turn one bit of
 // one entry over; EL, EU and A set the bits they name on every entry a name matches.
+// SI-090: "##n", exactly three characters, asks for n chained buffers; any other name
+// after the # is the standard buffer.
+void test_buffer_open_forms(void)
+{
+    open_t o;
+    open_result_t r = c_open_result_init;
+    r.stream = e_stream_buffer;
+    r.partition = -1;
+    d_parse_open("#", o, 0, r);
+    if (o.buffers != 0) { printf("'#' asked for %d chained buffers\n", o.buffers); failures++; }
+    d_parse_open("##1", o, 0, r);
+    if (o.buffers != 1) { printf("'##1' asked for %d chained buffers\n", o.buffers); failures++; }
+    d_parse_open("##4", o, 0, r);
+    if (o.buffers != 4) { printf("'##4' asked for %d chained buffers\n", o.buffers); failures++; }
+    d_parse_open("##", o, 0, r);
+    if (o.buffers != 0) { printf("'##' asked for %d chained buffers\n", o.buffers); failures++; }
+    d_parse_open("##12", o, 0, r);
+    if (o.buffers != 0) { printf("'##12' asked for %d chained buffers\n", o.buffers); failures++; }
+}
+
 void test_attribute_commands(void)
 {
     test_dispatch_text("L:TEST", 6, 0, "toggle attributes", "-1||TEST", IEC_ATTR_LOCKED);
@@ -617,11 +639,15 @@ void test_clock_commands(void)
     test_reply_text("T-RI", 4, "the clock the rest of the suite reads", "2025-06-26T00:41:01 WED\r");
 }
 
-// B-P positions within the 256 byte buffer; a third number is ignored, as the ROM ignores it.
-// SI-094: B-R and B-W use the first byte of the block as a length, U1 and U2 do not.
+// B-P positions within a buffer, and a third number is the high byte of that position
+// (SI-092). SI-094: B-R and B-W use the first byte of the block as a length, U1 and U2
+// do not.
 void test_block_positions_and_lengths(void)
 {
-    test_dispatch("B-P 9 4 1", 9, 0, "buffer position", 9, 4);
+    test_dispatch("B-P 9 4 1", 9, 0, "buffer position", 9, 260);
+    test_dispatch("B-P 9 4 0", 9, 0, "buffer position", 9, 4);
+    // Two numbers keep the low byte, as the 1541 does.
+    test_dispatch("B-P:2,300", 9, 0, "buffer position", 2, 44);
     test_dispatch("B-P:2,144", 9, 0, "buffer position", 2, 144);
     test_dispatch("B-R:2,0,18,1", 12, 0, "block read", 2, 0, 18, 1);
     test_dispatch("U1:2,0,18,1", 11, 0, "block read", 2, 0, 18, 1);
@@ -1047,6 +1073,7 @@ int main(int argc, const char *argv[])
     test_md_rd_grammar();
     test_name_mapping();
     test_attribute_commands();
+    test_buffer_open_forms();
     test_clock_commands();
     test_block_positions_and_lengths();
     test_command(34, (const uint8_t *)"C99:EMPTY=", 10);

@@ -1632,8 +1632,16 @@ int IecChannel :: setup_file_access()
 // keeps the partition that is current now (SI-093).
 int IecChannel::setup_buffer_access(void)
 {
+    // A buffer here is 256 bytes, the sector size of every disk image this drive serves,
+    // so a chain of more than one cannot be given out (SI-090). The chain form asking for
+    // one is the same buffer with its pointer at byte 0.
+    if (name_to_open.buffers > 1) {
+        state = e_error;
+        drive->set_error(ERR_NO_CHANNEL, 0, 0);
+        return -1;
+    }
     last_byte = 255;
-    pointer = 1;
+    pointer = (name_to_open.buffers == 1) ? 0 : 1;
     prefetch = pointer;
     prefetch_max = 256;
     buffer_partition = drive->vfs->GetTargetPartitionNumber(0);
@@ -2004,7 +2012,12 @@ int IecCommandChannel :: do_buffer_position(int chan, int pos)
     if (!channel) {
         return 0;
     }
-    channel->pointer = pos & 0xFF;
+    // A buffer is 256 bytes, so a position a high byte puts past its end names no byte
+    // this drive can give out (SI-090, SI-092).
+    if (pos > 255) {
+        return ERR_SYNTAX_ERROR_GEN;
+    }
+    channel->pointer = pos;
     channel->reset_prefetch();
     set_error(ERR_ALL_OK);
     return ERR_ALL_OK;

@@ -3752,6 +3752,30 @@ static void s11_si090_buffer_pointer(FileManager *fm, IecDrive *dr)
     printf("%s: bytes 1 to 3 are %02X %02X %02X\n", testname, sector[1], sector[2], sector[3]);
     REQUIRE(memcmp(sector + 1, "ABC", 3) == 0);
     close_file(dr, 2);
+
+    // "##1" is the same buffer with its pointer at byte 0, so what is written after the
+    // open lands from byte 0 on. A chain of more than one is refused.
+    open_file(dr, 2, "##1");
+    get_status(dr);
+    expect_current_status(testname, "##1", "00, OK,00,00\r");
+    send_channel_data(dr, 2, (const uint8_t *)"XYZ", 3);
+    expect_command_ok(testname, dr, "U2:2,0,2,0\r");
+    expect_command_ok(testname, dr, "U1:2,0,2,0\r");
+    read_buffer_channel(testname, dr, 2, sector, sizeof(sector));
+    printf("%s: bytes 0 to 2 are %02X %02X %02X\n", testname, sector[0], sector[1], sector[2]);
+    REQUIRE(memcmp(sector, "XYZ", 3) == 0);
+    // A position a high byte puts past the end of a 256 byte buffer names no byte.
+    expect_command_response(testname, dr, "B-P 2 4 1\r", "30,SYNTAX ERROR,00,00\r");
+    expect_command_ok(testname, dr, "B-P 2 4 0\r");
+    close_file(dr, 2);
+
+    expect_iec_open_status_prefix(testname, dr, 2, "##2", "70,");
+    expect_iec_open_status_prefix(testname, dr, 2, "##9", "70,");
+    // Anything else after the # is the standard buffer.
+    open_file(dr, 2, "##");
+    get_status(dr);
+    expect_current_status(testname, "##", "00, OK,00,00\r");
+    close_file(dr, 2);
 }
 
 // SI-093 and SI-013: a direct access channel keeps the partition that was current when

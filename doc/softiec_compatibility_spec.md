@@ -999,23 +999,22 @@ beside it (SI-146).
 ## 9. Direct access
 
 **SI-090.** `OPEN lf,dv,sa,"#"` allocates a 256-byte buffer on that channel, with the
-buffer pointer at 1. `"##n"`, exactly three characters, allocates `n` chained
-256-byte buffers with the pointer at 0; if the name is not exactly three characters a
-plain buffer is allocated instead, and if there is not enough room the answer is
-`70,NO CHANNEL`. Sources: SD README "Large buffers", which is the source for `##n`, for
-the `70` answer and for the statement that a standard buffer starts "with the
-read/write pointer set to byte 1"; GSD "Buffers and Large Buffers". HD 9-40 documents
-only `#[bu]`, where `bu` selects a drive buffer number 0 to 29, and says nothing about
-the initial pointer. Current behaviour: `U setup_buffer_access()` gives a fixed 256-byte buffer
-with the pointer at 0. **Change required** for the initial pointer of `#` and for
-`##n`.
+buffer pointer at byte 1. `"##n"`, exactly three characters, asks for `n` chained
+256-byte buffers with the pointer at byte 0; if the name is not exactly three characters
+a standard buffer is allocated instead. Sources: SD README "Large buffers", which is the
+source for `##n`, for the `70` answer and for the statement that a standard buffer starts
+"with the read/write pointer set to byte 1"; GSD "Buffers and Large Buffers". HD 9-40
+documents only `#[bu]`, where `bu` selects a drive buffer number 0 to 29, and says
+nothing about the initial pointer.
 
-**Decision (PR #881): `#` implemented; `##n` not implemented.** sd2iec provides large
-buffers for its direct sector commands `DR` and `DW`, which read and write sectors of
-512 bytes (SD README), and those are out of scope here (SI-096). This drive's block
-commands address disk images with 256 byte sectors only, so a large buffer would have no
-command that fills it from a medium, and it would be the only memory a channel allocates
-and frees. `##n` opens a standard 256 byte buffer.
+`##1` is the standard buffer with its pointer at byte 0. A chain of more than one answers
+`70,NO CHANNEL`, which is the answer SD README gives when there is not enough room: a
+buffer here is 256 bytes because that is the sector size of every disk image this drive
+serves, and the commands that fill a buffer from a medium, `B-R`, `B-W`, `U1` and `U2`,
+each move one such sector. sd2iec has larger buffers because its direct sector commands
+`DR` and `DW` move 512 bytes, and those are out of scope (SI-096). Answering `70` tells a
+program that asked for eight buffers that it did not get them, where handing it one would
+not.
 
 **SI-091.** The parameter forms are, from HD 9-43 to 9-46 and Appendix J:
 
@@ -1028,14 +1027,12 @@ and frees. `##n` opens a standard 256 byte buffer.
 Unchanged since PR #881, which fixed `B-A` and `B-F` from four parameters to three.
 
 **SI-092.** `B-P` takes an optional third parameter, the high byte of a 16-bit buffer
-position, defaulting to zero. Source: SD README, "The B-P command supports a third
-parameter that holds the high byte of the buffer position, For example, 'B-P 9 4 1'
-positions to byte 260"; GSD "The Buffer Pointer". Current behaviour:
-`U block_command()` reads two parameters and `U do_buffer_position()` masks the
-position to eight bits. **Change required** once SI-090 provides large buffers.
-
-**Decision (PR #881): not implemented**, because `##n` is not (SI-090). A third
-parameter is ignored, as the ROM ignores it.
+position. Source: SD README, "The B-P command supports a third parameter that holds the
+high byte of the buffer position, For example, 'B-P 9 4 1' positions to byte 260"; GSD
+"The Buffer Pointer". With two parameters the position is the 1541's eight bit one, which
+keeps the low byte of what it is given, so `B-P:2,300` positions to byte 44. With three,
+the position is sixteen bits, and one past the end of a 256 byte buffer (SI-090) names no
+byte the drive can give out and answers `30`.
 
 **SI-093.** The partition parameter of a direct access command is ignored; the
 channel uses the partition that was current when it was opened. Source: HD 9-8 and
@@ -1981,7 +1978,6 @@ affected by them.
 | Requirement | Why it is not implemented | What the drive answers |
 | --- | --- | --- |
 | SI-054 `V` | Inside a disk image, an OK would claim a validation of the block map that did not happen | `31` |
-| SI-090 `##n`, SI-092 | Large buffers serve sd2iec's 512 byte sector commands `DR` and `DW`, which are out of scope (SI-096); this drive's block commands use 256 byte sectors | `##n` opens a standard buffer; a third `B-P` number is ignored |
 | SI-105 `M-W`, `M-E` | Nothing written is kept and nothing is run, so an OK would tell a fast loader its drive code runs | `30` |
 | SI-137 raw directory | It would change what existing programs, and clients of the UCI target, receive when they open `$` on a data channel | the listing, as before |
 | SI-145 writing x00 files | A new user setting that no report asks for; reading x00 files (SI-144) already gives the interchange | new files are written plain |
@@ -2041,11 +2037,6 @@ not, why, and whether a C64 OS boot as recorded in TRACE is affected.
   * Why: the move worked on `master`, a `master` test asserted it, and IDE64 documents it;
     no program has been named that needs the `62`.
   * C64 OS: not affected; TRACE has no `R`.
-* **SI-090, direct access buffers.**
-  * Implemented: `#` opens a 256 byte buffer with its pointer at byte 1, block commands on a
-    channel not opened with `#` answer `70`, and the channel keeps its partition (SI-093).
-  * Not implemented: `##n`; see the table above.
-  * C64 OS: not affected; TRACE has no `#`.
 * **SI-105, memory commands.**
   * Implemented: `M-R`, the four probes C64 OS sends at boot, answers the requested count of
     `$00` bytes.

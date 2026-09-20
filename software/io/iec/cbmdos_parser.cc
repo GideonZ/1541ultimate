@@ -196,10 +196,17 @@ int parse_open(const char *buf, open_t& fn)
     fn.access = e_not_set;
     fn.filetype = e_any;
     fn.record_size = 0;
+    fn.buffers = 0;
 
     int err = 0;
     if (buf[0] == '#') {
         fn.dir_opt.stream = e_stream_buffer;
+        // "##n", exactly three characters, asks for n chained buffers with the pointer at
+        // byte 0; any other name after the # is a standard buffer, whose pointer starts
+        // at byte 1 (SI-090, SD open_buffer()).
+        if ((buf[1] == '#') && isdigit(buf[2]) && !buf[3]) {
+            fn.buffers = (uint8_t)(buf[2] - '0');
+        }
         // Call parse to initialize the rest
         err = parse_full_path(buf+1, fn.file, NULL, true);
     } else if (buf[0] == '$') {
@@ -340,9 +347,12 @@ int IecParser :: block_command(const uint8_t *buffer, int len)
         if (n != 4) return ERR_SYNTAX;
         return exec->do_block_write(p[0], p[1], p[2], p[3], true);
     case 'P':
-        n = parse_block_parameters(params, param_len, p, 2);
-        if (n != 2) return ERR_SYNTAX;
-        return exec->do_buffer_position(p[0], p[1]);
+        n = parse_block_parameters(params, param_len, p, 3);
+        if (n < 2) return ERR_SYNTAX;
+        // Two numbers are the 1541's eight bit position, which keeps the low byte of
+        // what it is given. A third is the high byte of a sixteen bit position
+        // (SI-092, SD README).
+        return exec->do_buffer_position(p[0], (n >= 3) ? (p[1] + (p[2] << 8)) : (p[1] & 0xFF));
     case 'A':
     case 'F':
         // Allocate and free take the partition, the track and the sector. They do

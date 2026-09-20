@@ -62,6 +62,9 @@ typedef struct {
     fileaccess_t access;
     dir_options_t dir_opt;
     uint16_t record_size;
+    // The chained 256 byte buffers the three character form `##n` asks for, and zero for
+    // the standard buffer of `#`, whose pointer starts at byte 1 rather than 0 (SI-090).
+    uint8_t buffers;
 } open_t;
 
 // The syntax errors of CBM and CMD DOS (HD B-2, 1541 User's Guide).
