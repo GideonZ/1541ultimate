@@ -178,6 +178,11 @@ Row 1 has been run on a U64 (2026-09-20): an EasyFlash game that saves through E
 prompt appeared after the game had saved, the file was written back and `NAME.crt.bak` was created.
 The other rows are still open.
 
+Rows 1 to 4 and 8 are covered by `tests/e2e/io/c64/cartridge_autosave_test.py`, which builds an
+EasyFlash cartridge that programs its own ROM on demand and drives the three modes through the
+menu; it also checks the saved file for the cartridge's own EAPI, and the notice for a source that
+cannot be written back. Rows 5 to 7 and 9 are still by hand.
+
 ## 7. Emulator run, 2026-09-20
 
 ue2emu with the U64-II firmware of this branch, C64 ROMs loaded, the cartridge on a USB stick.

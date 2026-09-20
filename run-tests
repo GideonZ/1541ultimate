@@ -500,6 +500,18 @@ SUITES: Sequence[Suite] = (
     # the machine afterwards to remove the cartridge.
     Suite("e2e", "easyflash-cartridge", "tests/e2e/io/c64/easyflash_cartridge_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
+    # A cartridge the C64 writes to, EasyFlash through EAPI, only changes in
+    # memory; the file it came from kept the state it was loaded with until
+    # somebody ran Save Cartridge by hand, which is how a game's save is lost.
+    # The suite builds a type 32 CRT whose bank 0 programs its own ROM on
+    # demand, and drives the three modes of Save Changed Cartridge: the prompt
+    # and its backup file, silence when nothing changed and when the feature is
+    # Off, the silent write under Auto, and the notice for a source that cannot
+    # be written back. The writing scenarios need a writable medium and report
+    # SKIP without one. It reboots the machine afterwards to remove the
+    # cartridge.
+    Suite("e2e", "cartridge-autosave", "tests/e2e/io/c64/cartridge_autosave_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
     # RoboCop 2 and Shadow of the Beast read Ocean banks 16 to 31 at $A000, but
     # every type 5 CRT was started in 8K mode, where $A000 never shows the
     # cartridge, so they started to a black screen. The suite builds a 32-bank
