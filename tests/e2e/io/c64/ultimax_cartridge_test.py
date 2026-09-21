@@ -50,6 +50,7 @@ import bootstrap  # noqa: E402,F401
 
 import cli                                                      # noqa: E402
 import streams                                                  # noqa: E402
+import targets                                                  # noqa: E402
 from api import UltimateApi                                     # noqa: E402
 from PIL import Image                                           # noqa: E402
 from report import (Failure, check, detail, format_exception,   # noqa: E402
@@ -61,6 +62,11 @@ SUITE = "ultimax_cartridge_test"
 SCRIPT_DIR = Path(__file__).resolve().parent
 CARTRIDGE = SCRIPT_DIR / "jupiter_lander.crt"
 REFERENCE = SCRIPT_DIR / "jupiter_lander.png"
+# The video core the reference was captured on. Another core draws the same
+# game screen with different pixels: core 1.4F scores exactly 72.66% against
+# it, the same on every run, which is a picture that cannot match rather than a
+# cartridge that did not start.
+REFERENCE_CORE = "1.50"
 
 # F1 starts the game from the cartridge's title screen. The cartridge scans the
 # keyboard itself, so a tap sent before it starts is read by nothing: measured,
@@ -208,6 +214,14 @@ def run(args) -> str:
     """Run the check. Returns the reason the suite skipped, or an empty string."""
     reference, size, palette = golden_frame()
     device = UltimateApi(args.host, args.password or None, args.timeout)
+    # The picture comes from the machine with the VIC, which for a cartridge
+    # target is the computer, so that is the core the reference has to match.
+    video = targets.resolve(args.host).video_host
+    info = UltimateApi(video, args.password or None, args.timeout).info()
+    core = info.extra.get("core_version")
+    if core != REFERENCE_CORE:
+        return (f"{REFERENCE.name} was captured on video core {REFERENCE_CORE} and "
+                f"{video} runs core {core}, which draws the game screen differently")
     capture = VicStreamCapture(args.host)
     started = False
     try:
