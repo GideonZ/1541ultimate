@@ -259,13 +259,14 @@ class RestInputSession:
         return machine_lib.identify(
             self.host, lambda: (info.product, info.firmware_version))
 
-    def url(self, path: str, params: dict[str, Any] | None = None) -> str:
+    def url(self, path: str, params: dict[str, Any] | None = None, observe: bool = False) -> str:
         query = ""
         if params:
             query = "?" + urllib.parse.urlencode(params)
         # Keyboard injection belongs to the C64-side computer on a cartridge
-        # target; see tests/lib/targets.py.
-        return f"http://{self.target.host_for(path)}{path}{query}"
+        # target; see tests/lib/targets.py. `observe` sends a memory access
+        # there too, for the reason read_memory gives.
+        return f"http://{self.target.input_host if observe else self.target.host_for(path)}{path}{query}"
 
     def request(
         self,
@@ -274,13 +275,15 @@ class RestInputSession:
         params: dict[str, Any] | None = None,
         body: bytes | None = None,
         content_type: str | None = "application/json",
+        observe: bool = False,
     ) -> bytes:
         headers = {}
         if self.password:
             headers["X-Password"] = self.password
         if body is not None and content_type is not None:
             headers["Content-Type"] = content_type
-        request = urllib.request.Request(self.url(path, params), data=body, headers=headers, method=method)
+        request = urllib.request.Request(self.url(path, params, observe), data=body, headers=headers,
+                                         method=method)
         # Transport and retry policy come from tests/lib/rest.py; see
         # rest.may_retry, which this suite's own policy became.
         #
@@ -384,12 +387,18 @@ class RestInputSession:
         self.put("resume")
 
     def read_memory(self, address: int, length: int) -> bytes:
-        return self.request("GET", "/v1/machine:readmem", params={"address": f"{address:04X}", "length": length})
+        # Through the machine the keys go to. A cartridge serves readmem by
+        # halting the C64 for a DMA, and a tap that lands in the halt is lost,
+        # so reading the screen that way disturbs what these checks measure;
+        # the computer reads its own RAM without stopping it.
+        return self.request("GET", "/v1/machine:readmem", observe=True,
+                            params={"address": f"{address:04X}", "length": length})
 
     def write_memory(self, address: int, data: bytes) -> None:
         if not data:
             raise Failure("write_memory requires at least one byte")
-        self.request("PUT", "/v1/machine:writemem", params={"address": f"{address:04X}", "data": data.hex().upper()})
+        self.request("PUT", "/v1/machine:writemem", observe=True,
+                     params={"address": f"{address:04X}", "data": data.hex().upper()})
 
 
 class FrameText:
@@ -2452,13 +2461,15 @@ def run_menu_keyboard_tests(session: RestInputSession, selected: list[str] | Non
                     raise Failure(f"Expected a repeated run of 'c' ended by the "
                                   f"marker 'z', got {value!r}.")
 
-        if wants_test(selected, "menu-repeat-cursor"):
+        cursor_repeat = "menu editor repeats a held cursor control and stops on release"
+        if wants_test(selected, "menu-repeat-cursor") and not session.machine.skip_without_fix(
+                machine_lib.CARTRIDGE_KEY_SCAN_SEES_EVERY_KEY, cursor_repeat):
             # The same question for a control key, which takes a different path
             # through the decoder. A single tap is the control: the held one has
             # to move the cursor further than it did, and the two markers have
             # to end up adjacent, which says the repeat had stopped before the
             # first of them.
-            with check("menu editor repeats a held cursor control and stops on release"):
+            with check(cursor_repeat):
                 editor()
                 type_into_rename_field(session, "ABCD", "ABCD")
                 menu_keyboard_tap(session, ["left_shift", "cursor_left_right"], 0.0)
