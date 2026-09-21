@@ -1646,15 +1646,10 @@ int C64 :: getSizeOfMP3NativeRamdrive(int devNo)
     return ((uint32_t) noTracks) << 16;
 }
 
-// The hardware flag has to be cleared by whoever reads it. This latch keeps a change that was seen
-// until the EEPROM contents are actually taken, so looking at the flag no longer loses it.
-static bool eeprom_dirty_seen = false;
-
 void C64 :: get_eeprom_data(uint8_t *buffer)
 {
     volatile uint8_t *eeprom = (volatile uint8_t *)(EEPROM_BASE);
-    *eeprom = 1; // clear dirty flag; a write during the copy sets it again
-    eeprom_dirty_seen = false;
+    *eeprom = 1; // clear dirty flag before the copy, so a write during it is not lost
     memcpy(buffer, (void *)(eeprom + 2048), 2048);
 }
 
@@ -1663,17 +1658,15 @@ void C64 :: set_eeprom_data(uint8_t *buffer)
     volatile uint8_t *eeprom = (volatile uint8_t *)(EEPROM_BASE);
     memcpy((void *)(eeprom + 2048), buffer, 2048);
     *eeprom = 1; // clear dirty flag
-    eeprom_dirty_seen = false;
 }
 
 bool C64 :: get_eeprom_dirty(void)
 {
+    // Reading does not clear: the flag stays set until the contents are taken, in
+    // get_eeprom_data() or set_eeprom_data(). Clearing it here lost the change to
+    // whoever looked at it first, which System Info does.
     volatile uint8_t *eeprom = (volatile uint8_t *)(EEPROM_BASE);
-    if (*eeprom != 0) {
-        eeprom_dirty_seen = true;
-        *eeprom = 1; // clear only what was seen, so a write right after the read is not lost
-    }
-    return eeprom_dirty_seen;
+    return (*eeprom != 0);
 }
 
 void C64 :: list_crts(ConfigItem *it, IndexedList<char *>& strings)
