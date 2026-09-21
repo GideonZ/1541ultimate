@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
-# Gate check: the browser reads its keystrokes back, against a lossy backend.
-"""The browser's keystrokes, read back, checked without a device.
+# Gate check: the UI facades read their keystrokes back, against lossy backends.
+"""The browser's and the search form's keystrokes, read back, checked without a device.
 
 A cartridge scans its keyboard from the UI task, so a redraw or a DMA stop can
 let one injected key pass unseen. Measured on a U2+L under load, a rename typed
 as "qmenu2.tst" arrived as "qenu2.tst", and the file was renamed to that. The
 field is read back before it is accepted and typed again when it does not show
 the text, a popup key that leaves the screen unchanged is pressed again, and an
-overlay item is confirmed highlighted before ENTER runs it. A
+overlay item is confirmed highlighted before ENTER runs it, and a search term is read
+back before the form keeps it. A
 device loses a key only now and then and never on demand, so these checks drive
 both methods through scripted backends that drop exactly the keystrokes each
 case names.
@@ -25,6 +26,7 @@ sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
 
 import bootstrap  # noqa: E402,F401
 import browser  # noqa: E402
+import search_form  # noqa: E402
 import cli  # noqa: E402
 import navigation  # noqa: E402
 from report import Failure, check, detail, suite_fail, suite_ok  # noqa: E402
@@ -182,9 +184,10 @@ def fill(backend: LossyBackend) -> list[str]:
 
 
 def run_checks() -> None:
-    # A typing that never shows the name waits this long before it is retried;
-    # a device needs the full allowance, a scripted backend answers at once.
+    # A key that changes nothing waits this long before it is retried; a device
+    # needs the full allowance, a scripted backend answers at once.
     browser.EDIT_FIELD_ECHO_SECONDS = 0.05
+    browser.ACTION_ECHO_SECONDS = 0.05
 
     with check("a field that shows the text is accepted after one typing"):
         backend = LossyBackend([None])
@@ -218,6 +221,54 @@ def run_checks() -> None:
         if (backend.accepted, backend.typings) != (NAME, 2):
             raise Failure(f"a listing row that already showed {NAME!r} was taken for the "
                           f"field: accepted {backend.accepted!r} after {backend.typings} typings")
+
+
+class FormBackend(LossyBackend):
+    """The search form's edit field, losing the keystrokes a case names."""
+
+    def capture(self) -> Capture:
+        return Capture(["Assembly 64 Search", f"Name: {self.field}"])
+
+
+def enter(backend: FormBackend, text: str) -> list[str]:
+    """Run SearchForm.enter_text on `backend`, and the detail lines it reported."""
+    reported: list[str] = []
+    real_detail = search_form.detail
+    search_form.detail = reported.append
+    try:
+        form = search_form.SearchForm(backend, "overlay", range(0, 2), "Assembly 64 Search",
+                                      reach=lambda: None)
+        form.enter_text(text)
+    finally:
+        search_form.detail = real_detail
+    return reported
+
+
+def run_form_checks() -> None:
+    search_form.ENTER_ECHO_SECONDS = 0.05
+
+    with check("a search term that arrives whole is typed once"):
+        backend = FormBackend([None])
+        reported = enter(backend, "turrican")
+        if (backend.field, backend.typings, reported) != ("turrican", 1, []):
+            raise Failure(f"field {backend.field!r} after {backend.typings} typings, "
+                          f"reporting {reported}")
+
+    with check("a doubled letter lost from a search term is typed again and reported"):
+        # "turrican" arrived as "turican" on a U2+L: one r of the pair went unseen.
+        backend = FormBackend([3, None])
+        reported = enter(backend, "turrican")
+        if backend.field != "turrican" or len(reported) != 1:
+            raise Failure(f"field {backend.field!r}, reporting {reported}")
+
+    with check("a term the field never shows fails"):
+        backend = FormBackend([3] * search_form.ENTER_ATTEMPTS)
+        try:
+            enter(backend, "turrican")
+        except Failure:
+            pass
+        else:
+            raise Failure("a term the field never showed was reported as entered")
 
 
 def run_popup_checks() -> None:
@@ -288,11 +339,13 @@ def main() -> int:
         run_checks()
         run_popup_checks()
         run_overlay_checks()
+        run_form_checks()
     except Failure as exc:
-        suite_fail("browser_read_back_test", str(exc))
+        suite_fail("keystroke_read_back_test", str(exc))
         return 1
-    detail("string boxes, popup keys and overlay items read back, against scripted key loss")
-    suite_ok("browser_read_back_test")
+    detail("string boxes, popup keys, overlay items and search terms read back, "
+           "against scripted key loss")
+    suite_ok("keystroke_read_back_test")
     return 0
 
 

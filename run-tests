@@ -256,7 +256,7 @@ SUITES: Sequence[Suite] = (
     # Also needs no device: the string boxes and popup keys every browser suite
     # sends are read back, against backends that drop the keys each case names,
     # because a device loses a key only now and then.
-    Suite("e2e", "browser-read-back", "tests/e2e/lib/browser_read_back_test.py",
+    Suite("e2e", "keystroke-read-back", "tests/e2e/lib/keystroke_read_back_test.py",
           "", profile=profiles.SMOKE),
     # Also needs no device: the Telnet backend decides a redraw is over by
     # watching the stream go quiet, and the three waits that do that cannot be
