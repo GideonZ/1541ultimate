@@ -53,7 +53,7 @@ import cli  # noqa: E402
 import ftp  # noqa: E402
 from api import UltimateApi  # noqa: E402
 from config_snapshot import Snapshot  # noqa: E402
-from iec_agent import CLOSE, MAILBOX_CAPACITY, OPEN, READ_COUNT, STATUS_BYTES, Agent  # noqa: E402
+from iec_agent import CLOSE, MAILBOX_CAPACITY, OPEN, READ_COUNT, STATUS_BYTES, Agent, iec_drive  # noqa: E402
 from report import Failure, check, detail, section, suite_fail, suite_ok, teardown_step  # noqa: E402
 
 SUITE = "iec_dos_command_test"
@@ -72,6 +72,47 @@ def partition_path(api):
         if "IEC Drive" in entry:
             return entry["IEC Drive"]["partitions"][0]["path"]
     raise Failure("The device reports no Software IEC partition")
+
+
+def switch_off_drives_at(api, devices):
+    """Switch off the emulated drives that answer on one of `devices`, and name them.
+
+    SI-100 and SI-101 move the Software IEC drive to 12 and 9, which a bench
+    machine's drive b can hold. They go back on only in the teardown: a drive
+    switching on resets, and the bus is not usable while it does.
+    """
+    busy = [slot for slot, drive in api.drives.list().items()
+            if slot in ("a", "b") and drive.enabled and drive.bus_id in devices]
+    for slot in busy:
+        detail(f"drive {slot} is switched off for the run, it answers on a device the checks use")
+        api.drives.off(slot)
+    return busy
+
+
+def restore_bus_number(api, agent):
+    """Put the Software IEC drive back on the device its settings hold.
+
+    A check that fails after U0> or S-9 leaves the drive on the number it moved
+    to, and a settings write of the same number changes nothing (SI-103b), so
+    the number is written through another value.
+    """
+    category = "SoftIEC Drive Settings"
+    configured = api.configs.get(category, "Soft Drive Bus ID")
+    live = iec_drive(api)["bus_id"]
+    if live != configured:
+        detail(f"the drive was left on device {live}; moving it back to {configured}")
+        try:
+            # The command channel is open on the number the drive is leaving.
+            agent.call(CLOSE, channel=15, device=live)
+        except Failure:
+            pass
+        api.configs.set(category, "Soft Drive Bus ID", 30 if configured != 30 else 29)
+        api.configs.set(category, "Soft Drive Bus ID", configured)
+        live = iec_drive(api)["bus_id"]
+        if live != configured:
+            raise Failure(f"the drive stayed on device {live}")
+        agent.softiec_device = configured
+        agent.call(OPEN, channel=15, device=configured)
 
 
 def parse_directory_line(line):
@@ -616,6 +657,9 @@ def check_compatibility(agent, api, password, folder, root):
         except Failure as exc:
             failed.append(str(exc))
             agent.call(4, channel=3)
+            # A check that fails between moving the drive and moving it back
+            # would otherwise fail every check after it too.
+            restore_bus_number(api, agent)
     if failed:
         raise Failure(f"{len(failed)} compatibility checks failed")
 
@@ -701,7 +745,9 @@ def run(args):
     root = None
     started = False
     created = False
+    switched_off = []
     try:
+        switched_off = switch_off_drives_at(api, (9, 12))
         api.configs.set("SoftIEC Drive Settings", "Soft Drive Bus ID", 11)
         api.configs.set("SoftIEC Drive Settings", "IEC Drive", "Enabled")
         agent.start()
@@ -747,6 +793,7 @@ def run(args):
     finally:
         def restore_directory():
             if started:
+                restore_bus_number(api, agent)
                 agent.call(4, channel=15)
                 agent.call(1, channel=15)
                 agent.command("CD//" + original_path[len(root or ""):].upper())
@@ -770,6 +817,8 @@ def run(args):
         for label, action in (("restore the IEC working directory", restore_directory),
                               ("restore the Software IEC settings", restore_settings),
                               ("remove only this run's fixtures", remove_fixtures),
+                              ("switch the drives on the checks' devices back on",
+                               lambda: [api.drives.on(slot) for slot in switched_off]),
                               ("return the C64 to BASIC", lambda: api.machine.reset(force=True))):
             ok = teardown_step(label, action) and ok
         if not ok:
