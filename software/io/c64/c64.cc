@@ -1255,10 +1255,17 @@ void C64::set_cartridge(cart_def *cart)
         const char *crt = cfg->get_string(CFG_C64_CART_CRT);
         if (strlen(crt)) {
             C64_CRT :: load_crt(CARTS_DIRECTORY, crt, &current_cart_def, cart_mem);
-        } else if (cfg->get_value(CFG_C64_REU_EN) == 2) { // GeoRAM
-            current_cart_def.type = CART_TYPE_GEORAM;
-            current_cart_def.name = "GeoRAM Cartridge";
-            current_cart_def.prohibit = CART_PROHIBIT_ALL_BUT_REU;
+        } else {
+            // Nothing is running any more, and the line above has just written into the image of
+            // whatever was: byte 5 is $8005, inside a CBM80 signature. Drop the image, its source
+            // and its baseline together with the cartridge, so that neither Save Cartridge nor the
+            // auto-save is offered for a cartridge the machine no longer has.
+            C64_CRT :: clear_crt();
+            if (cfg->get_value(CFG_C64_REU_EN) == 2) { // GeoRAM
+                current_cart_def.type = CART_TYPE_GEORAM;
+                current_cart_def.name = "GeoRAM Cartridge";
+                current_cart_def.prohibit = CART_PROHIBIT_ALL_BUT_REU;
+            }
         }
 #endif
     } else {
