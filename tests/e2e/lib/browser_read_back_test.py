@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 # Gate check: the browser reads its keystrokes back, against a lossy backend.
-"""Browser.fill_edit_field and Browser.press_popup_button, checked without a device.
+"""The browser's keystrokes, read back, checked without a device.
 
 A cartridge scans its keyboard from the UI task, so a redraw or a DMA stop can
 let one injected key pass unseen. Measured on a U2+L under load, a rename typed
 as "qmenu2.tst" arrived as "qenu2.tst", and the file was renamed to that. The
 field is read back before it is accepted and typed again when it does not show
-the text, and a popup key that leaves the screen unchanged is pressed again. A
+the text, a popup key that leaves the screen unchanged is pressed again, and an
+overlay item is confirmed highlighted before ENTER runs it. A
 device loses a key only now and then and never on demand, so these checks drive
 both methods through scripted backends that drop exactly the keystrokes each
 case names.
@@ -109,6 +110,62 @@ def press(backend: PopupBackend) -> list[str]:
     return reported
 
 
+class OverlayBackend:
+    """A context menu that loses the key events a case names, in order.
+
+    `lost` holds one entry per key event sent (quick-seek letter, cursor run,
+    ENTER): True for one that never arrives. `readable` says whether the
+    highlight can be read back at all.
+    """
+
+    navigation = navigation.classify(navigation.QUICK_SEARCH)
+    ITEMS = ("View", "Hex View", "Copy to...", "Move to...", "Rename", "Delete")
+
+    def __init__(self, lost: list[bool], readable: bool = True) -> None:
+        self.lost = list(lost)
+        self.readable = readable
+        self.cursor = 0
+        self.activated: list[str] = []
+
+    def _arrives(self) -> bool:
+        return not (self.lost.pop(0) if self.lost else False)
+
+    def capture(self) -> Capture:
+        rows = [(">" if index == self.cursor else " ") + item
+                for index, item in enumerate(self.ITEMS)]
+        return Capture([*rows, f"ran {self.activated}"])
+
+    def selected_text(self, _entry_rows=None) -> str:
+        return self.ITEMS[self.cursor] if self.readable else ""
+
+    def send_char(self, character: str) -> None:
+        if self._arrives():
+            self.cursor = next(index for index, item in enumerate(self.ITEMS)
+                               if item.lower().startswith(character.lower()))
+
+    def send_key_repeat(self, key: str, count: int) -> None:
+        if self._arrives():
+            step = count if key == "DOWN" else -count
+            self.cursor = max(0, min(len(self.ITEMS) - 1, self.cursor + step))
+
+    def send_key(self, key: str) -> None:
+        if key == "ENTER" and self._arrives():
+            self.activated.append(self.ITEMS[self.cursor])
+
+
+def choose(backend: OverlayBackend, label: str) -> list[str]:
+    """Run choose_overlay_item on `backend`, and the detail lines it reported."""
+    reported: list[str] = []
+    real_detail = browser.detail
+    browser.detail = reported.append
+    try:
+        menu = browser.Browser(backend, entry_rows=range(0, 6), status_row=6)
+        menu.choose_overlay_item(list(OverlayBackend.ITEMS), label)
+    finally:
+        browser.detail = real_detail
+    return reported
+
+
 def fill(backend: LossyBackend) -> list[str]:
     """Run fill_edit_field on `backend`, and the detail lines it reported."""
     reported: list[str] = []
@@ -192,15 +249,39 @@ def run_popup_checks() -> None:
                           "second popup nobody asked about")
 
 
+def run_overlay_checks() -> None:
+    with check("a lost quick-seek key is corrected before ENTER, so the named item runs"):
+        # Without the correction the cursor stays on View and ENTER runs View.
+        backend = OverlayBackend([True])
+        reported = choose(backend, "Move to...")
+        if backend.activated != ["Move to..."]:
+            raise Failure(f"ran {backend.activated}")
+        if not any("key was lost" in line for line in reported):
+            raise Failure(f"the correction was not reported: {reported}")
+
+    with check("a lost ENTER is pressed again, and runs the item once"):
+        backend = OverlayBackend([False, True])
+        reported = choose(backend, "Move to...")
+        if backend.activated != ["Move to..."] or len(reported) != 1:
+            raise Failure(f"ran {backend.activated}, reporting {reported}")
+
+    with check("a highlight that cannot be read leaves the navigation as it was sent"):
+        backend = OverlayBackend([], readable=False)
+        reported = choose(backend, "Move to...")
+        if backend.activated != ["Move to..."] or reported:
+            raise Failure(f"ran {backend.activated}, reporting {reported}")
+
+
 def main() -> int:
     cli.device_free_arguments(__doc__)
     try:
         run_checks()
         run_popup_checks()
+        run_overlay_checks()
     except Failure as exc:
         suite_fail("browser_read_back_test", str(exc))
         return 1
-    detail("string boxes and popup keys read back, against scripted key loss")
+    detail("string boxes, popup keys and overlay items read back, against scripted key loss")
     suite_ok("browser_read_back_test")
     return 0
 

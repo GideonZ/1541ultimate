@@ -507,7 +507,42 @@ class Browser:
             self.type_menu_char(character)
         if delta:
             self.press_many("DOWN" if delta > 0 else "UP", abs(delta))
-        self.press("ENTER")
+        self._settle_overlay_selection(labels, label)
+        for attempt in range(EDIT_FIELD_ATTEMPTS):
+            before = self.rows()
+            self.press("ENTER")
+            if self._screen_changes(before):
+                return
+            detail(f"ENTER on {label!r} changed nothing on screen, so it was lost; "
+                   f"pressing it again (attempt {attempt + 2})")
+        raise Failure(f"ENTER on {label!r} changed nothing after {EDIT_FIELD_ATTEMPTS} "
+                      f"presses; screen was:\n{self.screen()}")
+
+    def _settle_overlay_selection(self, labels: list[str], label: str) -> None:
+        """Make sure `label` is the highlighted item before it is activated.
+
+        A navigation key the cartridge did not see leaves another item
+        highlighted, and ENTER would then run that one instead, which can be
+        Delete as easily as anything else. The cursor is walked from where it
+        actually is, and each correction is reported.
+        """
+        wanted = labels.index(label)
+        for attempt in range(EDIT_FIELD_ATTEMPTS):
+            shown = self.selected_text()
+            at = next((index for index, item in enumerate(labels)
+                       if shown and item.split("||", 1)[0].strip() == shown.split("  ")[0].strip()),
+                      None)
+            if at == wanted:
+                return
+            if at is None:
+                # The highlight cannot be read here, which the older path never
+                # needed either; leave the navigation as it was sent.
+                return
+            detail(f"{shown!r} was highlighted where {label!r} was navigated to, so a "
+                   f"key was lost; moving the cursor again (attempt {attempt + 2})")
+            self.press_many("DOWN" if wanted > at else "UP", abs(wanted - at))
+        raise Failure(f"could not highlight {label!r} in the overlay; it shows "
+                      f"{self.selected_text()!r}")
 
     def invoke_context_action(self, label: str) -> None:
         self.choose_overlay_item(self.open_context_menu(), label)
