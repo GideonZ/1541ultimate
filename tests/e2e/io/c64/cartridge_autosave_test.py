@@ -49,12 +49,15 @@ import bootstrap  # noqa: E402,F401
 import cli                                                      # noqa: E402
 import ftp as ftp_lib                                           # noqa: E402
 import menu as menu_lib                                         # noqa: E402
-import pacing                                                   # noqa: E402
+import wait                                                     # noqa: E402
 from api import UltimateApi                                     # noqa: E402
 from assembler import assemble                                  # noqa: E402
 from report import (Failure, check, check_ok, check_skip,       # noqa: E402
                     check_start, detail, format_exception, section,
                     suite_fail, suite_ok, teardown_step)
+
+sys.path.insert(0, bootstrap.directory("e2e", "io", "c64"))
+from easyflash_cartridge_test import chip                       # noqa: E402
 
 SUITE = "cartridge_autosave_test"
 
@@ -94,16 +97,11 @@ SAVE_TIMEOUT_SECONDS = 120.0        # a megabyte onto an SD card
 # No prompt is a negative: long enough that a device about to raise one has.
 QUIET_SECONDS = 8.0
 
-# Roots to save to, in the order a device is likely to have them. /Temp and
-# /Flash are deliberately absent: the firmware refuses both (c64_subsys.cc).
-CANDIDATE_ROOTS = ("/SD", "/Usb0", "/Usb1", "/Usb2", "/Usb3")
-
-
-def chip(bank: int, load: int, rom: bytes) -> bytes:
-    """One CHIP chunk, as the CRT format has it."""
-    return (b"CHIP" + (CHUNK_HEADER + len(rom)).to_bytes(4, "big")
-            + (0).to_bytes(2, "big") + bank.to_bytes(2, "big")
-            + load.to_bytes(2, "big") + len(rom).to_bytes(2, "big") + rom)
+# Where a cartridge can be saved to. The USB volumes are asked for by name
+# rather than assumed, because the device names each after the port its medium
+# is in (ftp.usb_volumes). /Temp and /Flash are deliberately absent: the
+# firmware refuses to write a cartridge back to either (c64_subsys.cc).
+SD_ROOT = "/SD"
 
 
 def boot(length: int) -> bytes:
@@ -219,7 +217,7 @@ class Device:
         like one that is not there.
         """
         with self.ftp() as client:
-            for root in CANDIDATE_ROOTS:
+            for root in [SD_ROOT, *ftp_lib.usb_volumes(client)]:
                 probe = f"{root}/{CRT_NAME}.probe"
                 try:
                     ftp_lib.store(client, probe, b"probe")
@@ -276,23 +274,18 @@ class Device:
     # -- the running cartridge -------------------------------------------
 
     def wait_running(self) -> None:
-        deadline = time.monotonic() + ROUTINE_TIMEOUT_SECONDS
-        while self.api.machine.readmem(RUNNING, 1)[0] != 0x01:
-            if time.monotonic() >= deadline:
-                raise Failure("the cartridge did not reach its routine within "
-                              f"{ROUTINE_TIMEOUT_SECONDS:.0f} s")
-            time.sleep(0.25)
+        wait.wait_until(lambda: self.api.machine.readmem(RUNNING, 1)[0] == 0x01,
+                        "the cartridge reaches its routine",
+                        timeout=ROUTINE_TIMEOUT_SECONDS)
 
     def program(self, offset: int, value: int) -> None:
         """Have the C64 write one byte into the cartridge, and wait for it."""
         before = self.api.machine.readmem(ACK, 1)[0]
         self.api.machine.writemem(OFFSET, bytes([offset]))
         self.api.machine.writemem(COMMAND, bytes([value]))
-        deadline = time.monotonic() + WRITE_TIMEOUT_SECONDS
-        while self.api.machine.readmem(ACK, 1)[0] == before:
-            if time.monotonic() >= deadline:
-                raise Failure("the cartridge routine did not acknowledge a write")
-            time.sleep(0.1)
+        wait.wait_until(lambda: self.api.machine.readmem(ACK, 1)[0] != before,
+                        "the cartridge routine acknowledges the write",
+                        timeout=WRITE_TIMEOUT_SECONDS)
 
     # -- the menu --------------------------------------------------------
 
@@ -321,18 +314,15 @@ class Device:
         self.set_menu(True)
 
     def wait_for_text(self, text: str, timeout: float) -> list[str]:
-        deadline = time.monotonic() + timeout
-        rows: list[str] = []
-        while time.monotonic() < deadline:
-            rows = self.api.machine.menu_rows()
-            if any(text in row for row in rows):
-                return rows
-            time.sleep(0.25)
-        detail("last screen the harness read:")
-        for row in rows:
-            if row.strip():
-                detail(f"  {row}")
-        raise Failure(f"{text!r} did not appear within {timeout:.0f} s")
+        wait.wait_until(lambda: any(text in row for row in self.api.machine.menu_rows()),
+                        f"{text!r} appears on the menu screen", timeout=timeout,
+                        detail=self.screen_text)
+        return self.api.machine.menu_rows()
+
+    def screen_text(self) -> str:
+        """The screen, for a wait that failed to say what it was looking at."""
+        return "\n".join(row.rstrip() for row in self.api.machine.menu_rows()
+                          if row.strip())
 
     def answer(self, key: str, text: str, timeout: float) -> None:
         """Answer the popup carrying `text` with `key`, once.
@@ -344,11 +334,9 @@ class Device:
         one to press through.
         """
         self.api.machine.press(key)
-        deadline = time.monotonic() + timeout
-        while any(text in row for row in self.api.machine.menu_rows()):
-            if time.monotonic() >= deadline:
-                raise Failure(f"{text!r} was still on screen {timeout:.0f} s after {key!r}")
-            time.sleep(pacing.MENU_TOGGLE_SETTLE_SECONDS)
+        wait.wait_until(lambda: not any(text in row for row in self.api.machine.menu_rows()),
+                        f"{text!r} goes away after {key!r}", timeout=timeout,
+                        detail=self.screen_text)
 
     def expect_quiet(self) -> None:
         """No prompt of this feature's, for as long as one could still appear."""
@@ -480,7 +468,7 @@ def run(args) -> None:
         device.root = device.find_root()
         check_start("a writable medium to save the cartridge to")
         if device.root is None:
-            check_skip(f"none of {', '.join(CANDIDATE_ROOTS)} is present and writable")
+            check_skip("the device serves no SD card and no USB volume to save to")
         else:
             check_ok(device.root)
             path = device.place_cartridge()
