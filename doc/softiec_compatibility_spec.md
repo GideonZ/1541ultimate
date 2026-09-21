@@ -1119,7 +1119,10 @@ command, converts it to a calendar date and time, and passes that to
 `set_current_time()`, the accessor each real time clock driver defines beside
 `get_current_time()`; the control interface's `DOS_CMD_SET_TIME` passes through the same
 accessor. A write that is refused, and a write the clock does not accept, answer
-`30,SYNTAX ERROR` and leave the clock alone, so an `00, OK` means the clock was set.
+`30,SYNTAX ERROR` and leave the clock alone, so an `00, OK` means the clock was set. A
+clock driver writes its chip without learning whether the chip took the bytes, so the
+drive reads the clock back after the write, and a clock that does not then show the
+written moment, within the two seconds a read can come after it, answers `30` as well.
 
 **SI-121.** Each write form carries the fields of the matching read form, at the same
 offsets.

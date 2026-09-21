@@ -26,6 +26,27 @@ const open_result_t c_open_result_init = { 0, "", "", false, false, e_any, e_not
                                             e_stream_file, e_stamp_none, 0x0, 0x0, 0x00, 0x00 };
 
 #include "cbmdos_stubs.cc"
+
+// The clock this binary runs against. It keeps what it is set to, as the clock of every
+// build does, unless a case makes it lose writes: it then still reports a write as done,
+// as a driver does whose chip never took the bytes it was sent.
+static int test_clock[7] = { 3, 2025, 6, 26, 0, 41, 1 };
+static bool test_clock_loses_writes = false;
+
+extern "C" void get_current_time(int& wd, int& year, int& month, int& day, int& hour, int& min, int& sec)
+{
+    wd = test_clock[0]; year = test_clock[1]; month = test_clock[2]; day = test_clock[3];
+    hour = test_clock[4]; min = test_clock[5]; sec = test_clock[6];
+}
+
+extern "C" bool set_current_time(int wd, int year, int month, int day, int hour, int min, int sec)
+{
+    if (!test_clock_loses_writes) {
+        int t[7] = { wd, year, month, day, hour, min, sec };
+        memcpy(test_clock, t, sizeof(test_clock));
+    }
+    return true;
+}
 IecCommandExecuterStubs exec;
 IecParser parser(&exec);
 
@@ -631,6 +652,13 @@ void test_clock_commands(void)
     // A day of week name no drive prints, and a field that is not a number.
     test_dispatch("T-WA" "XYZ. 09/12/26 01:02:03 PM", 29, ERR_SYNTAX, NULL);
     test_dispatch("T-WI2026-XX-12T13:02:03", 23, ERR_SYNTAX, NULL);
+    // A write the clock reports as done but does not keep answers as refused, because
+    // the drive reads the clock back rather than trusting the report (SI-120).
+    test_dispatch("T-WI2020-02-29T00:00:00", 23, 0, NULL);
+    test_clock_loses_writes = true;
+    test_dispatch("T-WI2026-09-12T13:02:03", 23, ERR_SYNTAX, NULL);
+    test_clock_loses_writes = false;
+    test_reply_text("T-RI", 4, "the clock after a write it lost", "2020-02-29T00:00:00 SAT\r");
     // An unknown format letter, as for a read (SI-030).
     test_dispatch("T-WX", 4, ERR_SYNTAX, NULL);
     test_dispatch("T-W", 3, ERR_SYNTAX, NULL);

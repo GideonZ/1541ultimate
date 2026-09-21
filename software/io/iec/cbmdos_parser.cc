@@ -891,6 +891,32 @@ static bool clock_time_valid(const clock_time_t& t)
            (t.sec >= 0) && (t.sec <= 59);
 }
 
+// Seconds since 1 March of year 0 in the proleptic Gregorian calendar, which is all a
+// comparison of two moments needs (the days_from_civil method).
+static long clock_seconds(int year, int month, int day, int hour, int min, int sec)
+{
+    year -= (month <= 2) ? 1 : 0;
+    long era = year / 400;
+    long yoe = year - (era * 400);
+    long doy = ((153 * (month + ((month > 2) ? -3 : 9)) + 2) / 5) + day - 1;
+    long doe = (yoe * 365) + (yoe / 4) - (yoe / 100) + doy;
+    return ((((era * 146097) + doe) * 24 + hour) * 60 + min) * 60 + sec;
+}
+
+// Whether the clock now reads the moment just written, within the two seconds a read
+// can come after the write. A clock driver writes its chip without learning whether the
+// chip took the bytes, so reading the clock back is the only way a failed write shows,
+// and a write that did not take must not answer OK (SI-120). The day of week is left
+// out, because a clock that derives it from the date need not read back the one sent.
+static bool clock_holds(const clock_time_t& t)
+{
+    int wd, year, month, day, hour, min, sec;
+    get_current_time(wd, year, month, day, hour, min, sec);
+    long lag = clock_seconds(year, month, day, hour, min, sec) -
+               clock_seconds(t.year, t.month, t.day, t.hour, t.min, t.sec);
+    return (lag >= 0) && (lag <= 2);
+}
+
 // T-W in the four forms of SI-120, each laid out exactly as the matching T-R answers
 // it. The A, B and D forms carry the day of week and it is stored as sent, as a CMD
 // drive stores it; the I form has none and it is derived from the date.
@@ -1078,8 +1104,9 @@ int IecParser :: time_command(const uint8_t *buffer, int len)
         if (err) {
             return err;
         }
-        if (!set_current_time(t.wd, t.year, t.month, t.day, t.hour, t.min, t.sec)) {
-            return ERR_SYNTAX; // nothing was set, so nothing may answer OK
+        if (!set_current_time(t.wd, t.year, t.month, t.day, t.hour, t.min, t.sec) ||
+            !clock_holds(t)) {
+            return ERR_SYNTAX; // the clock does not show it, so nothing may answer OK
         }
         return 0;
     }
