@@ -88,7 +88,6 @@ class C64_CRT
 
     // Hash of the image as loaded or last saved; a different hash means the C64 changed it.
     uint32_t     baseline_hash;
-    bool         baseline_valid;
 
     static C64_CRT *get_instance(void); // singleton
 

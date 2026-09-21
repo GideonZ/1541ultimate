@@ -144,7 +144,6 @@ void C64_CRT::initialize(uint8_t *mem, uint32_t max_size)
     bank_multiplier = 16 * 1024;
     source = "";
     baseline_hash = 0;
-    baseline_valid = false;
 }
 
 void C64_CRT::cleanup()
@@ -462,7 +461,6 @@ SubsysResultCode_e C64_CRT::read_crt(File *file, cart_def *def)
 
     // The state the C64 starts from, EAPI patch and mirrors included.
     baseline_hash = content_hash();
-    baseline_valid = true;
 
     return SSRET_OK;
 }
