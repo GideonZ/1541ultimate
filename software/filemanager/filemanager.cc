@@ -1247,8 +1247,12 @@ FRESULT FileManager::set_dir_label(const char *pathname, const char *name, const
     // A mount point is entered, as open_directory() does, so the label of a directory
     // inside a mounted image is the one the command reaches.
     FRESULT fres = find_pathentry(pathInfo, true);
+    FileInfo *inf = pathInfo.getLastInfo();
+    if ((fres == FR_OK) && (!inf || !inf->fs)) {
+        fres = FR_NO_FILESYSTEM; // as get_free() answers the same path
+    }
     if (fres == FR_OK) {
-        fres = pathInfo.getLastInfo()->fs->dir_set_label(pathInfo.getPathFromLastFS(), name, id);
+        fres = inf->fs->dir_set_label(pathInfo.getPathFromLastFS(), name, id);
         if (fres == FR_OK) {
             mstring work;
             sendEventToObservers(eRefreshDirectory, pathInfo.getFullPath(work, -1), "");
