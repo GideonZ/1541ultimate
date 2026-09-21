@@ -731,10 +731,11 @@ class Session:
         # The commands a session sends now and then, and the ones a person tries by mistake.
         # XPWD answers the working directory as data; I and UJ close channels; the rest are
         # the deliberately-unimplemented forms of section 18.1 (V is 31, E and X other than
-        # XPWD are 30, S-8/S-9/S-D are 31, T-W is 30).
+        # XPWD are 30, T-W is 30). S-8 and S-9 move the drive (SI-101) onto a number another
+        # drive may hold, so they stay with iec-dos-commands, which frees it first.
         for text, allowed in (("I", (0,)), ("I0", (0,)), ("UJ", (73,)), ("U9", (73,)),
                               ("UI+", (0,)), ("UI-", (0,)), ("Z9", (31,)), ("E", (30,)),
-                              ("XYZ", (30,)), ("V", (31,)), ("S-8", (31,)), ("T-W", (30,))):
+                              ("XYZ", (30,)), ("V", (31,)), ("T-W", (30,))):
             if self.random.randrange(2):
                 continue
             self.command(text, allowed=allowed)
