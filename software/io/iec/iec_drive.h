@@ -12,6 +12,10 @@
 
 #define IEC_PARTITION_CONFIG "iec_partitions.ipr"
 
+#define MENU_IEC_ON          0xCA0E
+#define MENU_IEC_OFF         0xCA0F
+#define MENU_IEC_RESET       0xCA10
+
 class IecChannel;
 class IecCommandChannel;
 class IecFileSystem;

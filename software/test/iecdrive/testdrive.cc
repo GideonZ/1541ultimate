@@ -4709,6 +4709,32 @@ static void s11_operation_log_no_reconfigure(FileManager *fm, IecDrive *dr)
     expect_command_status_prefix(testname, dr, "UI\r", "73,");
 }
 
+// The drive's Reset, from the menu or from the drives route, restarts the IEC processor
+// and puts the drive back on the device number its settings hold, whatever the settings
+// did. A processor that stopped answering the bus has no other way back short of
+// turning the drive off.
+static void s11_reset_restarts_processor(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite11-ResetRestartsProcessor";
+    int configured = dr->get_address();
+    const uint8_t u0_moved[4] = { 'U', '0', '>', 12 };
+    expect_command_data_response(testname, dr, u0_moved, sizeof(u0_moved), "00, OK,00,00\r");
+    REQUIRE(dr->get_address() == 12);
+
+    int calls = iec_interface_configure_calls;
+    dr->reset();
+    printf("%s: interface configured %d times by a reset, device %d\n", testname,
+           iec_interface_configure_calls - calls, dr->get_address());
+    REQUIRE(iec_interface_configure_calls > calls);
+    REQUIRE(dr->get_address() == configured);
+
+    // With nothing to change, a reset still restarts the processor.
+    calls = iec_interface_configure_calls;
+    dr->reset();
+    REQUIRE(iec_interface_configure_calls > calls);
+    expect_command_status_prefix(testname, dr, "UI\r", "73,");
+}
+
 // The operation log with the longest inputs it takes: a working directory near the length
 // a command can name, a 253 byte command, names that fill the buffer, and replies of 256
 // bytes. Every line must stay within its buffers; the AddressSanitizer build of this suite
@@ -5482,6 +5508,7 @@ static const Suite11Case suite11_cases[] = {
     { "Suite11-OperationLog",            s11_operation_log },
     { "Suite11-OperationLogBounds",      s11_operation_log_bounds },
     { "Suite11-OperationLogNoReconfigure", s11_operation_log_no_reconfigure },
+    { "Suite11-ResetRestartsProcessor",  s11_reset_restarts_processor },
     { "Suite11-BlockAllocateAnswers",    s11_block_allocate_answers },
     { "Suite11-Crash-DamagedChain",      s11_crash_damaged_chain },
     { "Suite11-Crash-LongHostName",      s11_crash_long_host_name },

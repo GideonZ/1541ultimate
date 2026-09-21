@@ -12,9 +12,6 @@
 #define FS_ROOT "/USB0/"
 #endif
 
-#define MENU_IEC_ON          0xCA0E
-#define MENU_IEC_OFF         0xCA0F
-#define MENU_IEC_RESET       0xCA10
 #define MENU_IEC_SET_DIR     0xCA17
 #define MENU_IEC_SAVE_PAR    0xCA18
 #define MENU_IEC_SHOW_PARTS  0xCA19
@@ -331,6 +328,9 @@ void IecDrive :: reset(void)
 {
     IecDriveLock guard(this);
     effectuate_registered_settings();
+    // The settings restart the IEC processor only for a new device number or enable
+    // (SI-103b); a reset restarts it in any case.
+    intf->configure();
     for(int i=0; i < 16; i++) {
         channels[i]->reset();
     }
