@@ -115,11 +115,15 @@ class BrowsableDirEntry : public Browsable
 		if (!wrapped) {
 			return NULL;
 		}
-		// The 16 bytes are padded with shifted spaces or zeros, neither of which the
-		// screen should show.
-		int len = 16;
-		while ((len > 0) && ((uint8_t)name[len - 1] <= ' ' || (uint8_t)name[len - 1] == 0xA0)) {
-			len--;
+		// The rule the CBM image reader applies to a directory entry: the name ends at
+		// its first shifted space or control byte. A control byte left in would reach
+		// the row, where the screen reads $1B as the start of an escape sequence.
+		int len = 0;
+		while ((len < 16) && ((uint8_t)name[len] >= 0x20) && ((uint8_t)name[len] != 0xA0)) {
+			len++;
+		}
+		if (!len) {
+			return NULL; // nothing to show, so the row keeps the host name
 		}
 		name[len] = 0;
 		cbm_name = new char[len + 1];
