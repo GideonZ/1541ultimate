@@ -56,18 +56,20 @@ void FileSystemCBM::set_volume_name(const char *name, uint8_t *bam_name, const c
     bam_name[21] = dos[0];
     bam_name[22] = dos[1];
 
-    char c;
-    int b;
-    for (int t = 0, b = 0; t < 27; t++) {
-        c = name[b++];
-        if (!c)
-            break;
-        c = toupper(c);
-        if (c == ',') {
-            t = 17;
-            continue;
+    // The name keeps sixteen characters and the id two, as CBM DOS takes them from
+    // N:name,id; anything longer would run into the separator and the DOS type.
+    const char *p = name;
+    for (int t = 0; (t < 16) && *p && (*p != ','); t++) {
+        bam_name[t] = (uint8_t) toupper(*(p++));
+    }
+    while (*p && (*p != ',')) {
+        p++;
+    }
+    if (*p == ',') {
+        p++;
+        for (int t = 0; (t < 2) && p[t]; t++) {
+            bam_name[18 + t] = (uint8_t) toupper(p[t]);
         }
-        bam_name[t] = (uint8_t) c;
     }
 }
 

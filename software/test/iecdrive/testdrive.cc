@@ -3411,6 +3411,13 @@ static void s11_si071_format(FileManager *fm, IecDrive *dr)
     close_file(dr, 3);
     expect_command_ok(testname, dr, "N:BUSY,02\r");
     expect_command_ok(testname, dr, "CD:_\r");
+    // A name past sixteen characters and an id past two are cut to those lengths, as
+    // CBM DOS cuts them, rather than running on into the DOS type behind them.
+    expect_command_ok("Suite11-SI071-FormatLongLabel", dr, "CD:ONE.D64\r");
+    expect_command_ok("Suite11-SI071-FormatLongLabel", dr, "N:ABCDEFGHIJKLMNOPQRST,WXYZ\r");
+    expect_directory_contains("Suite11-SI071-FormatLongLabel", dr, "$",
+                              "\"ABCDEFGHIJKLMNOP\" WX 2A");
+    expect_command_ok("Suite11-SI071-FormatLongLabel", dr, "CD:_\r");
 
     expect_command_response(testname, dr, "S:*\r", "01, FILES SCRATCHED,06,00\r");
 }
