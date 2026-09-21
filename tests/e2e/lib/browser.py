@@ -36,6 +36,11 @@ SIZE_COLUMN_RE = re.compile(r"\d{1,4}[KM]?")
 # three attempts leave room for a second loss without spinning on a dead UI.
 EDIT_FIELD_ATTEMPTS = 3
 EDIT_FIELD_ECHO_SECONDS = 2.0
+# How long a popup button or an overlay's ENTER may leave the screen unchanged
+# before the key counts as lost. Longer than a typing echo, because the key can
+# start work that holds the UI with the popup still drawn, a large delete among
+# them, and pressing again then would answer the next question as well.
+ACTION_ECHO_SECONDS = 6.0
 
 
 class Browser:
@@ -637,8 +642,8 @@ class Browser:
                       f"{EDIT_FIELD_ATTEMPTS} presses; screen was:\n{self.screen()}")
 
     def _screen_changes(self, before: list[str]) -> bool:
-        """Whether the screen moves away from `before` within the echo allowance."""
-        deadline = time.monotonic() + EDIT_FIELD_ECHO_SECONDS
+        """Whether the screen moves away from `before` within ACTION_ECHO_SECONDS."""
+        deadline = time.monotonic() + ACTION_ECHO_SECONDS
         while True:
             if self.rows() != before:
                 return True
