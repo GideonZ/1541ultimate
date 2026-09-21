@@ -3710,6 +3710,22 @@ static void s11_si051_rename_partition(FileManager *fm, IecDrive *dr)
     send_command(dr, "G-P");
     REQUIRE(memcmp(last_status + 3, "RENAMED", 7) == 0);
 
+    // A partition name is sixteen characters, as on the CMD devices, so a longer one
+    // is cut there and the three places that show it agree: the partition directory,
+    // G-P and the header of a listing of the partition's root.
+    expect_command_ok(testname, dr, "R-P:ABCDEFGHIJKLMNOPQRST=RENAMED\r");
+    got = read_directory_stream(testname, dr, "$=P", listing, sizeof(listing));
+    REQUIRE(memmem(listing, got, "\"ABCDEFGHIJKLMNOP\"", 18) != NULL);
+    send_command(dr, "G-P");
+    REQUIRE(memcmp(last_status + 3, "ABCDEFGHIJKLMNOP", 16) == 0);
+    got = read_directory_stream(testname, dr, "$//", listing, sizeof(listing));
+    char header[17];
+    memcpy(header, listing + 8, 16);
+    header[16] = 0;
+    printf("%s: header of $// is '%s'\n", testname, header);
+    REQUIRE(memcmp(listing + 8, "ABCDEFGHIJKLMNOP", 16) == 0);
+    expect_command_ok(testname, dr, "R-P:RENAMED=ABCDEFGHIJKLMNOP\r");
+
     expect_command_response(testname, dr, "R-P:X=NOSUCHPART\r",
                             "77,SELECTED PARTITION ILLEGAL,00,00\r");
     expect_command_response(testname, dr, "R-P:=TORENAME\r", "34,SYNTAX ERROR,00,00\r");

@@ -2936,14 +2936,18 @@ int IecCommandChannel::do_set_header(filename_t& name, const char *id)
 }
 
 // R-P (SI-051). The old name is the name a partition carries, not a path, so the
-// partition list is searched for it.
+// partition list is searched for it. A partition name is sixteen characters, as on
+// the CMD devices, so every place that shows it shows the same name.
 int IecCommandChannel::do_rename_partition(const char *newname, const char *oldname)
 {
     REFUSE_WHEN_WRITE_PROTECTED();
+    char name[17];
+    strncpy(name, newname, 16);
+    name[16] = 0;
     for (int i = 1; i < MAX_PARTITIONS; i++) {
         IecPartition *p = drive->vfs->GetPartition(i);
         if (p && (p->GetPartitionNumber() == i) && !strcasecmp(p->GetName(), oldname)) {
-            p->SetName(newname);
+            p->SetName(name);
             return 0;
         }
     }

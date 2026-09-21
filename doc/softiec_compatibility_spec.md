@@ -504,8 +504,9 @@ Recorded so the omission is deliberate rather than accidental.
 old name is a partition's name and not a path, so the partition list is searched for it,
 without regard to case; a name no partition carries answers `77,SELECTED PARTITION
 ILLEGAL`. An empty name on either side answers `34` and a command with no `=` answers
-`30`. The new name is what the partition directory, `G-P` and the header of a listing
-of that partition's root then show.
+`30`. The new name keeps its first sixteen characters, the length of a CMD partition
+name, and is what the partition directory, `G-P` and the header of a listing of that
+partition's root then show.
 
 The dash in the second character is what separates `R-P` and `R-H` (SI-064) from a file
 rename, as `SD parse_doscommand()` separates them with
@@ -632,7 +633,9 @@ this drive has no formattable medium of its own. Source: SD README under `N:` an
   that an existing `.DNP` is refused with `63` whether or not the extension was given
   (`SD fat_format_image()`, `if (ext == NULL || imagetype == IMG_IS_DNP)`; the README
   text omits the DNP exception).
-* The disk label is the name with the extension removed.
+* The disk label is the name with the extension removed. It keeps sixteen characters
+  and the id two, as CBM DOS takes them, so a longer label or id never runs into the
+  separator and the DOS type the header holds behind them.
 
 The name buffer holds a 16 character label and a four character extension, so
 `N:ABCDEFGHIJKLMNOP.D81,AB` creates a D81 image.
@@ -1487,7 +1490,9 @@ they are.
 offers the actions a `.PRG` file offers, and each acts on the program inside. The row
 shows the name from the header, because the host name of such a file is an 8.3 rendering
 that does not identify it, while the extension column still says `P00` so that the
-wrapper is visible; every operation that names the file on the medium, a rename, a copy
+wrapper is visible. That name ends at its first shifted space or control byte, as the
+name of an entry read from a CBM disk image does, and a header whose name is empty by
+that rule leaves the row showing the host name; every operation that names the file on the medium, a rename, a copy
 and a delete among them, uses the host name. A browser copy copies the host file whole,
 wrapper included, because it copies a file of the medium and the copy is an x00 file of
 the same name. `FileManager::fcopy` is a byte copy for every caller, and teaching it to
