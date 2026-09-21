@@ -97,11 +97,19 @@ a multiply is a library call however the FPGA is fitted. Cartridge memory is rea
 Before hashing, a set EEPROM latch is resolved by copying the EEPROM into its chunk buffer, so the
 EEPROM is covered by the same hash.
 
-All cartridge types are hashed. In `all_carts_v5.vhd` only EasyFlash writes into the ROM
-image (`ef_write`, Ultimax, `$8000`/`$E000`); every other `allow_write` targets the separate cart
-RAM or GeoRAM. The U64 core sources are not part of this repository, so this is unconfirmed for U64 hardware.
-Hashing everything costs time proportional to the image size and needs no per-type knowledge.
-The duration is logged.
+Only what the C64 can change is hashed. In `all_carts_v5.vhd` EasyFlash is the one type with
+`allow_write` set while `addr_map` is ROM (`ef_write`, Ultimax, `$8000`/`$E000`); every other
+`allow_write` targets the separate cart RAM or GeoRAM, outside the chunks this reads. GMod2 changes
+through its EEPROM alone, so its ROM is skipped and only the 2 KiB EEPROM chunk is read. Every
+other type is skipped entirely, which also keeps an image changed by the firmware rather than by
+the C64 from being reported as a save. The duration is logged.
+
+The Protovision Megabyter carries flash that a game programs on the real cartridge, but the
+Ultimate emulates its bank register alone (`all_carts_v5.vhd:369`), so there is nothing of it to
+hash yet. An Ultimate that implements those writes has to add the type to the list.
+
+The U64 core sources are not part of this repository, so none of this is confirmed for U64
+hardware.
 
 The baseline is taken at the end of `read_crt()`, after EAPI patch, mirroring and chunk
 regeneration — the state the C64 starts from. It is renewed after every successful save and after

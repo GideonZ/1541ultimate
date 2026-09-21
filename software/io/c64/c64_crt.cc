@@ -702,6 +702,28 @@ const char *C64_CRT::get_source(void)
 
 // Over exactly the bytes save_crt() writes. Each step is a bijection in h for a fixed word, so two
 // images that differ in one word always hash differently. No multiply: the U64 Nios II has none.
+// Whether the C64 can change this chunk, which is what the hash has to cover.
+//
+// EasyFlash is the only cartridge whose ROM image the machine writes: in all_carts_v5.vhd it is
+// the one type with allow_write set while addr_map is ROM, reached by arming $DE09 the way the
+// EAPI does. GMod2 changes only through its EEPROM; its ROM cannot be written, so 512 KiB of it
+// need not be read on every menu open. The write paths of Action Replay, Retro Replay, KCS, SS5,
+// Pagefox and the C128 cartridges all target memory outside these chunks.
+//
+// The Protovision Megabyter carries flash that a game programs on the real cartridge, but the
+// Ultimate emulates its bank register only, so nothing of it can change here yet.
+static bool chunk_is_writable_by_c64(uint8_t local_type, uint16_t load, uint16_t size)
+{
+    switch (local_type) {
+    case CART_EASYFLASH:
+        return true;
+    case CART_GMOD2:
+        return (load == 0xDE00) && (size == 0x800);
+    default:
+        return false;
+    }
+}
+
 uint32_t C64_CRT::content_hash(void)
 {
     uint32_t h = 0x811C9DC5;
@@ -709,6 +731,10 @@ uint32_t C64_CRT::content_hash(void)
         t_crt_chip_chunk *cc = chip_chunks[i];
         uint16_t size = get_word(cc->header + CRTCHP_SIZE);
         uint16_t load = get_word(cc->header + CRTCHP_LOAD);
+
+        if (!chunk_is_writable_by_c64(local_type, load, size)) {
+            continue;
+        }
 
         // A pending EEPROM change goes into its buffer first, so the hash covers it.
         if ((load == 0xDE00) && (size == 0x800) && (getFpgaCapabilities() & CAPAB_EEPROM)) {
