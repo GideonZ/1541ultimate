@@ -244,6 +244,66 @@ def enter(backend: FormBackend, text: str) -> list[str]:
     return reported
 
 
+class EntryBackend(LossyBackend):
+    """A browser row whose ENTER is lost, arrives, or opens something else."""
+
+    def __init__(self, lost: list[bool], opens: str = "menu") -> None:
+        super().__init__([])
+        self.enter_lost = list(lost)
+        self.opens = opens
+        self.enters = 0
+        self.shown = ["*** Ultimate ***", "> entry.prg"]
+
+    def capture(self) -> Capture:
+        return Capture(list(self.shown))
+
+    def send_key(self, key: str) -> None:
+        if key != "ENTER":
+            return
+        self.enters += 1
+        if self.enter_lost.pop(0) if self.enter_lost else False:
+            return
+        self.shown = self.shown + ([self.opens] if self.opens != "menu" else ["|Run |"])
+
+
+def open_menu(backend: EntryBackend) -> tuple[list[str] | None, list[str]]:
+    """Run open_context_menu, and what it returned and reported."""
+    reported: list[str] = []
+    real_detail = browser.detail
+    browser.detail = reported.append
+    menu = browser.Browser(backend, entry_rows=range(1, 2), status_row=3)
+    menu.wait_for_overlay = lambda before: (["Run"] if menu.rows() != before and
+                                            "|Run |" in menu.rows() else [])
+    menu.overlay_items = menu.wait_for_overlay
+    try:
+        return menu.open_context_menu(), reported
+    except Failure:
+        return None, reported
+    finally:
+        browser.detail = real_detail
+
+
+def run_context_menu_checks() -> None:
+    with check("a context menu that opens is opened with one ENTER"):
+        backend = EntryBackend([False])
+        labels, reported = open_menu(backend)
+        if (labels, backend.enters, reported) != (["Run"], 1, []):
+            raise Failure(f"labels {labels}, {backend.enters} ENTERs, reporting {reported}")
+
+    with check("an ENTER the browser never saw is pressed again, and reported"):
+        backend = EntryBackend([True, False])
+        labels, reported = open_menu(backend)
+        if labels != ["Run"] or backend.enters != 2 or len(reported) != 1:
+            raise Failure(f"labels {labels}, {backend.enters} ENTERs, reporting {reported}")
+
+    with check("a screen that changed into something else gets no second ENTER"):
+        # A second ENTER on whatever appeared could choose from it.
+        backend = EntryBackend([False], opens="Loading...")
+        labels, _reported = open_menu(backend)
+        if labels is not None or backend.enters != 1:
+            raise Failure(f"labels {labels} after {backend.enters} ENTERs")
+
+
 def run_form_checks() -> None:
     search_form.ENTER_ECHO_SECONDS = 0.05
 
@@ -339,6 +399,7 @@ def main() -> int:
         run_checks()
         run_popup_checks()
         run_overlay_checks()
+        run_context_menu_checks()
         run_form_checks()
     except Failure as exc:
         suite_fail("keystroke_read_back_test", str(exc))

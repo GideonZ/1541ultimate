@@ -484,12 +484,30 @@ class Browser:
             time.sleep(pacing.POLL_INTERVAL_SECONDS)
 
     def open_context_menu(self) -> list[str]:
-        before = self.rows()
-        self.press("ENTER")
-        labels = self.wait_for_overlay(before)
-        if not labels:
-            raise Failure(f"no context menu appeared; screen was:\n{self.screen()}")
-        return labels
+        """Open the selected entry's context menu, and return its labels.
+
+        A cartridge can let the ENTER pass unseen, as fill_edit_field describes,
+        and the browser then stays exactly as it was. ENTER goes again only then,
+        and only once the screen has stayed unchanged for ACTION_ECHO_SECONDS
+        rather than the shorter overlay-draw wait: a menu that is merely slow to
+        draw would take a second ENTER as the choice of its first item. A screen
+        that changed into something other than a context menu is reported as it
+        is, without a second ENTER.
+        """
+        for attempt in range(2):
+            before = self.rows()
+            self.press("ENTER")
+            labels = self.wait_for_overlay(before)
+            if not labels and self._screen_changes(before):
+                labels = self.overlay_items(before)
+                if not labels:
+                    break
+            if labels:
+                if attempt:
+                    detail("the context-menu key had to be pressed twice; the first one "
+                           "did not reach the machine")
+                return labels
+        raise Failure(f"no context menu appeared; screen was:\n{self.screen()}")
 
     def choose_overlay_item(self, labels: list[str], label: str) -> None:
         """Select `label` in an open overlay, by the shortest key sequence.
