@@ -528,15 +528,21 @@ class Browser:
         """
         wanted = labels.index(label)
         for attempt in range(EDIT_FIELD_ATTEMPTS):
-            shown = self.selected_text()
+            try:
+                shown = self.selected_text()
+            except Failure:
+                # A transport that cannot find one marked row inside a framed
+                # overlay says so by raising, as Telnet does; that is a highlight
+                # this cannot read, not a failure of the action.
+                return
             at = next((index for index, item in enumerate(labels)
                        if shown and item.split("||", 1)[0].strip() == shown.split("  ")[0].strip()),
                       None)
             if at == wanted:
                 return
             if at is None:
-                # The highlight cannot be read here, which the older path never
-                # needed either; leave the navigation as it was sent.
+                # The highlight cannot be read here; leave the navigation as it
+                # was sent.
                 return
             detail(f"{shown!r} was highlighted where {label!r} was navigated to, so a "
                    f"key was lost; moving the cursor again (attempt {attempt + 2})")

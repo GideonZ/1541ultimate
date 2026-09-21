@@ -115,13 +115,14 @@ class OverlayBackend:
 
     `lost` holds one entry per key event sent (quick-seek letter, cursor run,
     ENTER): True for one that never arrives. `readable` says whether the
-    highlight can be read back at all.
+    highlight can be read back: True, False for an empty answer, or "raises"
+    for a transport that raises as Telnet does.
     """
 
     navigation = navigation.classify(navigation.QUICK_SEARCH)
     ITEMS = ("View", "Hex View", "Copy to...", "Move to...", "Rename", "Delete")
 
-    def __init__(self, lost: list[bool], readable: bool = True) -> None:
+    def __init__(self, lost: list[bool], readable: bool | str = True) -> None:
         self.lost = list(lost)
         self.readable = readable
         self.cursor = 0
@@ -136,6 +137,8 @@ class OverlayBackend:
         return Capture([*rows, f"ran {self.activated}"])
 
     def selected_text(self, _entry_rows=None) -> str:
+        if self.readable == "raises":
+            raise Failure("expected exactly one selected row")
         return self.ITEMS[self.cursor] if self.readable else ""
 
     def send_char(self, character: str) -> None:
@@ -267,6 +270,13 @@ def run_overlay_checks() -> None:
 
     with check("a highlight that cannot be read leaves the navigation as it was sent"):
         backend = OverlayBackend([], readable=False)
+        reported = choose(backend, "Move to...")
+        if backend.activated != ["Move to..."] or reported:
+            raise Failure(f"ran {backend.activated}, reporting {reported}")
+
+    with check("a transport that raises instead of reading the highlight still runs the item"):
+        # Telnet raises when it cannot find one marked row in a framed overlay.
+        backend = OverlayBackend([], readable="raises")
         reported = choose(backend, "Move to...")
         if backend.activated != ["Move to..."] or reported:
             raise Failure(f"ran {backend.activated}, reporting {reported}")
