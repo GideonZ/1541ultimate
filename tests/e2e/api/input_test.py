@@ -232,6 +232,22 @@ class RestInputSession:
         self.api = UltimateApi(host, password, timeout)
 
     @property
+    def input_machine(self) -> machine_lib.Machine:
+        """The machine whose hardware answers the events this suite posts.
+
+        `machine` describes the device under test. REST input is compiled only
+        into the U64-class firmware, so on a cartridge target the events are
+        served by the computer the cartridge sits in, and what the joystick
+        lines do is that firmware's behaviour rather than the cartridge's.
+        """
+        host = self.target.input_host
+        if host == self.host:
+            return self.machine
+        info = UltimateApi(host, self.password, self.timeout).info()
+        return machine_lib.identify(
+            host, lambda: (info.product, info.firmware_version))
+
+    @property
     def machine(self) -> machine_lib.Machine:
         """Which machine this is, asked once of the device.
 
@@ -1678,6 +1694,9 @@ def run_mouse_tests(session: RestInputSession) -> None:
 
     What a mouse event does on the C64 is checked by tests/e2e/io/usb/mouse_test.py.
     """
+    if session.input_machine.skip_without_fix(machine_lib.REST_MOUSE_INPUT,
+                                              "the REST mouse contract"):
+        return
     with check("mouse state is detached and empty after release_all"):
         body = session.post_events([{"kind": "release_all"}])
         if body.get("mouse") != EMPTY_MOUSE:
@@ -2552,6 +2571,8 @@ def run_joystick_checks(session: RestInputSession) -> None:
         ("fire2", True, False),
         ("fire3", False, True),
     )
+    isolation = machine_lib.JOYSTICK_EXTRA_BUTTONS_STAY_ON_THEIR_PORT
+    input_machine = session.input_machine
     for own_port in (1, 2):
         other_port = 2 if own_port == 1 else 1
         for input_name, fire2_expected, fire3_expected in ANYKEY_ISOLATION_CASES:
@@ -2561,22 +2582,26 @@ def run_joystick_checks(session: RestInputSession) -> None:
                 button = "2" if input_name == "fire2" else "3"
                 label = (f"joystick port {own_port} {input_name} lights only Anykey button {button}, "
                           f"only on port {own_port}")
+            if input_name != "fire" and input_machine.skip_without_fix(isolation, label):
+                continue
             with check(label):
                 session.post_events([{"kind": "release_all"}])
                 session.post_events(
                     [{"kind": "joystick", "port": own_port, "inputs": [input_name], "transition": "press"}])
                 assert_extra_buttons({own_port: (fire2_expected, fire3_expected), other_port: (False, False)})
 
-    with check("joystick fire2 on one port and fire3 on the other stay independent"):
-        # Both ports held at once with different extra-button state.
-        session.post_events([{"kind": "release_all"}])
-        session.post_events(
-            [
-                {"kind": "joystick", "port": 1, "inputs": ["fire2"], "transition": "press"},
-                {"kind": "joystick", "port": 2, "inputs": ["fire3"], "transition": "press"},
-            ]
-        )
-        assert_extra_buttons({1: (True, False), 2: (False, True)})
+    independent = "joystick fire2 on one port and fire3 on the other stay independent"
+    if not input_machine.skip_without_fix(isolation, independent):
+        with check(independent):
+            # Both ports held at once with different extra-button state.
+            session.post_events([{"kind": "release_all"}])
+            session.post_events(
+                [
+                    {"kind": "joystick", "port": 1, "inputs": ["fire2"], "transition": "press"},
+                    {"kind": "joystick", "port": 2, "inputs": ["fire3"], "transition": "press"},
+                ]
+            )
+            assert_extra_buttons({1: (True, False), 2: (False, True)})
 
     with check("joystick fire2/fire3 tap auto-releases the POT hardware state"):
         session.post_events([{"kind": "release_all"}])
@@ -2625,22 +2650,37 @@ def run_joystick_checks(session: RestInputSession) -> None:
         session.post_events([{"kind": "joystick", "port": 2, "inputs": ["fire", "fire2", "fire3"], "transition": "press"}])
         assert_joystick_ports(session, 0x1F, 0x0F)
         assert_input_state(session, [], [], ["fire", "fire2", "fire3"])
-        assert_extra_buttons({2: (True, True), 1: (False, False)})
+        assert_extra_buttons({2: (True, True)})
         session.post_events([{"kind": "joystick", "port": 2, "inputs": ["fire2"], "transition": "release"}])
         assert_joystick_ports(session, 0x1F, 0x0F)
         assert_input_state(session, [], [], ["fire", "fire3"])
-        assert_extra_buttons({2: (False, True), 1: (False, False)})
+        assert_extra_buttons({2: (False, True)})
 
-    with check("joystick release in the same batch as a tap on the same input wins"):
-        session.post_events([{"kind": "release_all"}])
-        response = session.post_events(
-            [
-                {"kind": "joystick", "port": 2, "inputs": ["fire2"], "transition": "tap"},
-                {"kind": "joystick", "port": 2, "inputs": ["fire2"], "transition": "release"},
-            ]
-        )
-        if response["joysticks"][1]["inputs"] != []:
-            raise Failure(f"Expected port 2 empty right after the batch, got {response}")
+    # The same press seen from the other port, which is the #879 isolation and
+    # so depends on the input machine carrying #880.
+    held = "joystick fire2/fire3 held on port 2 leave port 1's Anykey buttons released"
+    if not input_machine.skip_without_fix(isolation, held):
+        with check(held):
+            session.post_events([{"kind": "release_all"}])
+            session.post_events(
+                [{"kind": "joystick", "port": 2, "inputs": ["fire", "fire2", "fire3"], "transition": "press"}])
+            assert_extra_buttons({2: (True, True), 1: (False, False)})
+            session.post_events([{"kind": "joystick", "port": 2, "inputs": ["fire2"], "transition": "release"}])
+            assert_extra_buttons({2: (False, True), 1: (False, False)})
+
+    release_wins = "joystick release in the same batch as a tap on the same input wins"
+    if not input_machine.skip_without_fix(
+            machine_lib.JOYSTICK_RELEASE_AFTER_TAP_IN_ONE_BATCH_WINS, release_wins):
+        with check(release_wins):
+            session.post_events([{"kind": "release_all"}])
+            response = session.post_events(
+                [
+                    {"kind": "joystick", "port": 2, "inputs": ["fire2"], "transition": "tap"},
+                    {"kind": "joystick", "port": 2, "inputs": ["fire2"], "transition": "release"},
+                ]
+            )
+            if response["joysticks"][1]["inputs"] != []:
+                raise Failure(f"Expected port 2 empty right after the batch, got {response}")
 
     with check("joystick release_all then press in same batch is visible on CIA reads"):
         session.post_events(

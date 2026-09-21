@@ -175,6 +175,37 @@ IDENT_SWITCHES_LIVE = _fix(
     "firmware restart",
     (U2,))
 
+# What the #879 regression block of tests/e2e/api/input_test.py asserts, and
+# a lagging release rather than an open defect: c72a9cd2 "Stop REST fire2/fire3
+# leaking onto the other joystick port (#880)" is in master and the u64 passes
+# the block, while the C64 Ultimate lineage has not taken it. The joystick lines
+# belong to whichever machine serves the input route, so a cartridge target
+# reports the host's gap; tag the block with the input machine, not the device
+# under test. Delete this entry once the C64 Ultimate carries the commit.
+JOYSTICK_EXTRA_BUTTONS_STAY_ON_THEIR_PORT = _fix(
+    "joystick-extra-buttons-stay-on-their-port",
+    "a REST fire2 or fire3 press reaches only the POT lines of the port it names, leaving the other port's buttons released",
+    (C64U,))
+
+# The same commit, c72a9cd2 (#880), also made a tap and a release of one input
+# in a single machine:input batch end released, which is the order the batch
+# gives them. Like the entry above it is served by the input machine, and the
+# C64 Ultimate lineage leaves the input held. Delete with the entry above.
+JOYSTICK_RELEASE_AFTER_TAP_IN_ONE_BATCH_WINS = _fix(
+    "joystick-release-after-tap-in-one-batch-wins",
+    "a tap followed by a release of the same joystick input in one batch leaves that input released",
+    (C64U,))
+
+# The REST mouse events of faff2fa5, which arrived with #914, and which the
+# mouse scenario of tests/e2e/api/input_test.py asserts. The machine:input route
+# of the C64 Ultimate lineage answers with no mouse state at all, so the first
+# check of the scenario fails and every later one would too. Served by the input
+# machine, like the two entries above. Delete once the C64 Ultimate carries it.
+REST_MOUSE_INPUT = _fix(
+    "rest-mouse-input",
+    "machine:input accepts mouse events and reports the mouse's state",
+    (C64U,))
+
 # UCI_COMPLETES_AN_REU_COMMAND (issue #740) is closed: measured on an
 # Ultimate II+L on c8b7551a, uci_targets_test passes all 37 checks ungated.
 
