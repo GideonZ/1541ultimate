@@ -139,6 +139,13 @@ static const char *crt_save_in_place(UserInterface *ui)
     if (fm->fopen(backup.c_str(), FA_READ, &existing) == FR_OK) {
         fm->fclose(existing);
         res = fm->delete_file(target.c_str());
+        if (res == FR_NO_FILE) {
+            // An earlier attempt got this far and then failed to rename, leaving the saved
+            // state in NAME.tmp and no NAME at all. Taking that as a failure here would
+            // delete NAME.tmp below, so the only copy left would be NAME.bak, and every
+            // later attempt would end the same way. The rename that follows puts NAME back.
+            res = FR_OK;
+        }
     } else {
         res = fm->rename(target.c_str(), backup.c_str());
     }
