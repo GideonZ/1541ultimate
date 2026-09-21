@@ -349,6 +349,19 @@ class Device:
                         raise Failure(f"the menu offered {text!r} when it should not have")
             time.sleep(0.5)
 
+    def dismiss_prompt(self) -> None:
+        """Answer whatever this feature may have left on screen.
+
+        No RETURN: the Save prompt's first button is Yes, so RETURN would save
+        the cartridge from the teardown. The notice has Ok alone, which its
+        own hotkey answers.
+        """
+        rows = self.api.machine.menu_rows()
+        if any(PROMPT in row for row in rows):
+            self.answer("n", PROMPT, PROMPT_TIMEOUT_SECONDS)
+        elif any(NOT_WRITABLE in row for row in rows):
+            self.answer("o", NOT_WRITABLE, PROMPT_TIMEOUT_SECONDS)
+
     def close_menu(self) -> None:
         self.api.machine.close_menu_from_anywhere(confirm_key="return")
 
@@ -461,6 +474,26 @@ def scenario_not_writable(device: Device) -> None:
         device.close_menu()
 
 
+def scenario_reboot(device: Device, path: str) -> None:
+    section("A reboot leaves no cartridge, and so nothing to save")
+    device.set_mode("Ask")
+
+    with check("a reboot is not reported as a save made by the C64"):
+        # Reboot C64 disarms the ROM that was running by writing into its
+        # image. Unless the firmware drops the cartridge with it, the next
+        # menu open finds that write and offers to save a cartridge the
+        # machine no longer has: Yes, or Auto without asking, then writes a
+        # file whose $8005 is zero, which for a normal cartridge is inside
+        # CBM80 and stops it autostarting.
+        device.api.runners.run_crt(path)
+        device.wait_running()
+        device.api.machine.reboot()
+        device.api.machine.wait_until_ready()
+        device.open_menu()
+        device.expect_quiet()
+        device.close_menu()
+
+
 def run(args) -> None:
     device = Device(args)
     try:
@@ -477,8 +510,15 @@ def run(args) -> None:
             scenario_ask_and_save(device, path)
             scenario_off(device, path)
             scenario_auto(device, path)
+            scenario_reboot(device, path)
         scenario_not_writable(device)
     finally:
+        # Before anything else: a check that failed may have left the Save
+        # prompt or the notice on screen, and a reboot from there reaches
+        # release_host() while the user interface task is still inside the
+        # popup the hook opened.
+        teardown_step("answer an open prompt", device.dismiss_prompt)
+        teardown_step("close the menu", lambda: device.set_menu(False))
         teardown_step("restore Save Changed Cartridge", device.restore_mode)
         teardown_step("remove the test cartridge", device.clean_up)
         # A reboot removes the cartridge; a reset would boot straight back into it.
