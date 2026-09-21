@@ -999,7 +999,9 @@ reset, which does reconfigure, and a command handler must not reuse it.
 **SI-103b.** A change in the Software IEC settings reconfigures the IEC processor only
 when the device number or the enable flag changes. Holding the processor in reset drops a
 transfer on the bus, so turning a setting such as **Log Every Operation** on or off must
-not do it.
+not do it. The drive's **Reset**, from the menu or from `PUT /v1/drives/softiec:reset`, is
+meant to drop whatever is on the bus: it restarts the processor in any case and puts the
+drive back on the device number the settings hold. Test: `Suite11-ResetRestartsProcessor`.
 
 **SI-104.** `U3` to `U8` and `UC` to `UH` jump into drive memory and are not
 implemented; they answer `30`, for the same reason as SI-095. Source: HD 9-51.
