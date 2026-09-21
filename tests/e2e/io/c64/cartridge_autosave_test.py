@@ -48,6 +48,7 @@ import bootstrap  # noqa: E402,F401
 
 import cli                                                      # noqa: E402
 import ftp as ftp_lib                                           # noqa: E402
+import menu as menu_lib                                         # noqa: E402
 import pacing                                                   # noqa: E402
 from api import UltimateApi                                     # noqa: E402
 from assembler import assemble                                  # noqa: E402
@@ -296,22 +297,25 @@ class Device:
     # -- the menu --------------------------------------------------------
 
     def set_menu(self, want_open: bool) -> None:
-        """Press the menu button until the menu is open, or closed, as asked."""
-        deadline = time.monotonic() + pacing.MENU_TOGGLE_TIMEOUT_SECONDS
-        while self.api.machine.menu_open() != want_open:
-            if time.monotonic() >= deadline:
-                raise Failure("the menu did not "
-                              + ("open" if want_open else "close"))
-            self.api.machine.menu_button()
-            time.sleep(pacing.MENU_TOGGLE_SETTLE_SECONDS)
+        """Open or close the menu, with one press of its button.
+
+        menu_lib.toggle_menu presses once and then polls, which is the only
+        safe way to drive a toggle: pressing again because the state has not
+        changed yet closes a menu that was still on its way open. The menu can
+        take longer than one poll to appear, and on this branch the hash runs
+        before it does.
+        """
+        if not menu_lib.toggle_menu(self.api.machine.menu_button,
+                                    self.api.machine.menu_open, want_open):
+            raise Failure("the menu did not "
+                          + ("open" if want_open else "close"))
 
     def open_menu(self) -> None:
         """Leave the menu freshly open, whatever it held before.
 
-        Closed and opened with the menu button alone, and both states are read
-        back. Backing out with F8 instead leaves the overlay reporting an open
-        menu that no user interface object has focus in, and every key sent
-        into that goes to the C64 rather than to the firmware.
+        Backing out with F8 instead leaves the overlay reporting an open menu
+        that no user interface object has focus in, and every key sent into
+        that goes to the C64 rather than to the firmware.
         """
         self.set_menu(False)
         self.set_menu(True)
@@ -331,19 +335,19 @@ class Device:
         raise Failure(f"{text!r} did not appear within {timeout:.0f} s")
 
     def answer(self, key: str, text: str, timeout: float) -> None:
-        """Tap `key` until the popup carrying `text` is gone.
+        """Answer the popup carrying `text` with `key`, once.
 
-        The key is repeated rather than sent once, because the first key after
-        the menu opens does not always reach the user interface: the menu
-        button only starts the menu, and until it is up a key goes to the C64
-        instead of to the firmware. The screen is read before each tap, so a
-        popup that has already gone is never answered twice.
+        The caller has waited for the popup, so the user interface owns the
+        keyboard and the key reaches it. A second key would arrive after the
+        popup has gone and land in the browser behind it, where RETURN opens
+        whatever the cursor is on. A key lost here is a defect to report, not
+        one to press through.
         """
+        self.api.machine.press(key)
         deadline = time.monotonic() + timeout
         while any(text in row for row in self.api.machine.menu_rows()):
             if time.monotonic() >= deadline:
-                raise Failure(f"{text!r} was still on screen after {timeout:.0f} s")
-            self.api.machine.press(key)
+                raise Failure(f"{text!r} was still on screen {timeout:.0f} s after {key!r}")
             time.sleep(pacing.MENU_TOGGLE_SETTLE_SECONDS)
 
     def expect_quiet(self) -> None:
