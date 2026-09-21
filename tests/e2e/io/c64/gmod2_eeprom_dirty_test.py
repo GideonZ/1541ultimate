@@ -36,7 +36,9 @@ sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
 import bootstrap  # noqa: E402,F401
 
 import cli                                                      # noqa: E402
+import menu as menu_lib                                         # noqa: E402
 import pacing                                                   # noqa: E402
+import wait                                                     # noqa: E402
 from api import UltimateApi                                     # noqa: E402
 from assembler import assemble                                  # noqa: E402
 from report import (Failure, check, check_ok, check_skip,       # noqa: E402
@@ -137,31 +139,28 @@ class Device:
         code, _, body = self.api.runners.upload("run_crt", gmod2_crt())
         if code != 200:
             raise Failure(f"starting the cartridge returned HTTP {code}: {body[:160]!r}")
-        deadline = time.monotonic() + ROUTINE_TIMEOUT_SECONDS
-        while self.api.machine.readmem(RUNNING, 1)[0] != 0x01:
-            if time.monotonic() >= deadline:
-                raise Failure("the cartridge did not reach its routine within "
-                              f"{ROUTINE_TIMEOUT_SECONDS:.0f} s")
-            time.sleep(0.25)
+        wait.wait_until(lambda: self.api.machine.readmem(RUNNING, 1)[0] == 0x01,
+                        "the cartridge reaches its routine",
+                        timeout=ROUTINE_TIMEOUT_SECONDS)
 
     def write_eeprom(self) -> None:
         """Have the C64 write one word into the EEPROM, and wait for it."""
         self.api.machine.writemem(GO, bytes([0x01]))
-        deadline = time.monotonic() + WRITE_TIMEOUT_SECONDS
-        while self.api.machine.readmem(DONE, 1)[0] != 0x01:
-            if time.monotonic() >= deadline:
-                raise Failure("the cartridge did not finish writing the EEPROM")
-            time.sleep(0.25)
+        wait.wait_until(lambda: self.api.machine.readmem(DONE, 1)[0] == 0x01,
+                        "the cartridge finishes writing the EEPROM",
+                        timeout=WRITE_TIMEOUT_SECONDS)
 
     def set_menu(self, want_open: bool) -> None:
-        """Press the menu button until the menu is open, or closed, as asked."""
-        deadline = time.monotonic() + pacing.MENU_TOGGLE_TIMEOUT_SECONDS
-        while self.api.machine.menu_open() != want_open:
-            if time.monotonic() >= deadline:
-                raise Failure("the menu did not "
-                              + ("open" if want_open else "close"))
-            self.api.machine.menu_button()
-            time.sleep(pacing.MENU_TOGGLE_SETTLE_SECONDS)
+        """Open or close the menu, with one press of its button.
+
+        menu_lib.toggle_menu presses once and then polls, which is the only
+        safe way to drive a toggle: pressing again because the state has not
+        changed yet closes a menu that was still on its way open.
+        """
+        if not menu_lib.toggle_menu(self.api.machine.menu_button,
+                                    self.api.machine.menu_open, want_open):
+            raise Failure("the menu did not "
+                          + ("open" if want_open else "close"))
 
     def open_menu(self) -> None:
         """Leave the menu freshly open, whatever it held before.
