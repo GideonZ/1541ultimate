@@ -216,7 +216,8 @@ def park(listener: MouseListener, mouse: PicoMouse | RestMouse) -> None:
     A 1351 driver reads only those 7 bits, where the released joystick value
     $80 reads as 0. A check that started from a position of 0 could not see the
     firmware write $80 over the mouse position (issue #909). A pointer count is
-    two POT counts, so the move is half the distance on the lines.
+    two POT counts, so the move is half the distance on the lines, and a line
+    that starts an odd distance away stops one count short of PARKED_POT.
     """
     state = listener.state()
     # POTX follows the mouse's x; POTY moves against it.
@@ -1206,7 +1207,8 @@ def test_rest_joystick(api, listener, mouse) -> None:
         held = listener.wait_until(lambda s: (s.potx, s.poty) == (0x00, 0x80))
         detail(f"held: {held}")
         api.machine.send_input([{"kind": "joystick", "port": 1, "inputs": ["fire2"], "transition": "release"}])
-        released = listener.wait_until(lambda s: (s.potx & 0x7F, s.poty & 0x7F) == (PARKED_POT, PARKED_POT))
+        parked = (before.potx & 0x7F, before.poty & 0x7F)
+        released = listener.wait_until(lambda s: (s.potx & 0x7F, s.poty & 0x7F) == parked)
         detail(f"before: {before}; released: {released}")
 
 
