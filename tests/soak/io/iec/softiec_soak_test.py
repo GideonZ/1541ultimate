@@ -101,7 +101,7 @@ from config_snapshot import Snapshot  # noqa: E402
 from report import Failure, check, detail, section, suite_fail, suite_ok, teardown_step  # noqa: E402
 
 sys.path.insert(0, bootstrap.directory("e2e", "io", "iec"))
-from iec_agent import CLOSE, OPEN, READ_COUNT, READ_TO_EOI, STATUS_BYTES, WRITE, Agent, iec_drive  # noqa: E402
+from iec_agent import CLOSE, OPEN, READ_COUNT, READ_TO_EOI, STATUS_BYTES, WRITE, Agent, iec_drive, restorable_path  # noqa: E402
 
 import softiec_log  # noqa: E402
 
@@ -2073,6 +2073,7 @@ def main():
                 session.status()
                 session.command("CD//")
                 session.root = iec_drive(api)["partitions"][0]["path"]
+                original_path = restorable_path(api, original_path, session.root)
                 session.fixture()
                 created = True
             with check("set up the device log source and the UCI target"):

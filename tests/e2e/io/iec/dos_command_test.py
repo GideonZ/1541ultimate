@@ -53,7 +53,7 @@ import cli  # noqa: E402
 import ftp  # noqa: E402
 from api import UltimateApi  # noqa: E402
 from config_snapshot import Snapshot  # noqa: E402
-from iec_agent import CLOSE, MAILBOX_CAPACITY, OPEN, READ_COUNT, STATUS_BYTES, Agent, iec_drive  # noqa: E402
+from iec_agent import CLOSE, MAILBOX_CAPACITY, OPEN, READ_COUNT, STATUS_BYTES, Agent, iec_drive, restorable_path  # noqa: E402
 from report import Failure, check, detail, section, suite_fail, suite_ok, teardown_step  # noqa: E402
 
 SUITE = "iec_dos_command_test"
@@ -758,6 +758,7 @@ def run(args):
         agent.status(tuple(range(100)))
         agent.command("CD//")
         root = partition_path(api)
+        original_path = restorable_path(api, original_path, root)
         if not original_path.casefold().startswith(root.casefold()):
             raise Failure("Cannot restore the Software IEC path relative to its partition root")
 

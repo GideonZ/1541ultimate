@@ -14,7 +14,7 @@ sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
                           if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
 import bootstrap  # noqa: E402,F401
 from assembler import assemble  # noqa: E402
-from report import Failure  # noqa: E402
+from report import Failure, warn  # noqa: E402
 
 OPEN, WRITE, READ_TO_EOI, CLOSE, READ_COUNT = 1, 2, 3, 4, 5
 
@@ -57,6 +57,19 @@ def iec_drive(api):
         if "IEC Drive" in entry:
             return entry["IEC Drive"]
     raise Failure("The drive list has no IEC Drive")
+
+
+def restorable_path(api, path, root):
+    """The directory to put the drive back into: `path`, or `root` when `path` is gone.
+
+    The drive keeps the directory it was last in. A suite whose teardown could
+    not move it back and then removed its fixtures leaves it in a directory that
+    no longer exists, where a CD answers 71 and every later suite's restore fails.
+    """
+    if path.rstrip("/").casefold() == root.rstrip("/").casefold() or api.files.exists(path.rstrip("/")):
+        return path
+    warn(f"the Software IEC drive was left in {path}, which no longer exists; it goes back to {root}")
+    return root
 
 
 def transfer_seconds(op, carried):

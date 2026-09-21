@@ -21,7 +21,7 @@ import cli  # noqa: E402
 import ftp  # noqa: E402
 from api import UltimateApi  # noqa: E402
 from config_snapshot import Snapshot  # noqa: E402
-from iec_agent import Agent  # noqa: E402
+from iec_agent import Agent, restorable_path  # noqa: E402
 from report import Failure, check, detail, section, suite_fail, suite_ok, teardown_step  # noqa: E402
 
 SUITE = "rel_copy_test"
@@ -75,6 +75,7 @@ def run(args):
         agent.command("CD//")
         current = api.rest.json("/v1/drives")
         root = next(e["IEC Drive"]["partitions"][0]["path"] for e in current["drives"] if "IEC Drive" in e)
+        original_path = restorable_path(api, original_path, root)
         if not original_path.startswith(root):
             raise Failure("Cannot restore Software IEC path relative to its partition root")
         path = root.rstrip("/") + "/" + folder
