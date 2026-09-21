@@ -896,12 +896,24 @@ def parse_syslog_server(value: str) -> tuple[str, int] | None:
     return ip, 514
 
 
-def local_addresses() -> set[str]:
-    """This host's IPv4 addresses, so the suite can tell whether the device logs here."""
+def local_addresses(peer: str | None = None) -> set[str]:
+    """This host's IPv4 addresses, so the suite can tell whether the device logs here.
+
+    The host name resolves to 127.0.1.1 on a Debian host, so the address this host sends
+    to `peer` from is asked of the routing table as well: connecting a UDP socket sends
+    nothing and picks the interface a reply would come in on.
+    """
     found = {"127.0.0.1", "0.0.0.0"}
     try:
         for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
             found.add(info[4][0])
     except OSError:
         pass
+    if peer:
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+                probe.connect((peer, 9))
+                found.add(probe.getsockname()[0])
+        except OSError:
+            pass
     return found

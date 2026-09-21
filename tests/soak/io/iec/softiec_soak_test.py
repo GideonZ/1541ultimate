@@ -396,6 +396,9 @@ class Session:
         self.statuses = {}
         self.lane_errors = []
         self.lane_counts = {"rest": 0, "ftp": 0}
+        # When the REST lane last reset the drive, as time.monotonic(): a reset drops the
+        # transfer that is on the bus, so what a step read across it proves nothing.
+        self.drive_reset_at = 0.0
         self.heap_before = None
         self.heap_after = None
         self.stop = threading.Event()
@@ -1329,14 +1332,17 @@ class Session:
                                f"{self.iteration} while REST answers: {exc}") from exc
                 raise
         if self.iteration % 3 == 0:
-            try:
-                self.close(6)
-                self.partition()
-                self.expect_file(6, f"//{self.here}/OS/SETTINGS/:CONFIG.T", "OS/SETTINGS/CONFIG.T.seq")
-            except Corruption:
-                raise
-            except Failure as exc:
-                self.anomaly("checkpoint fixture", exc)
+            self.check_fixture()
+
+    def check_fixture(self):
+        try:
+            self.close(6)
+            self.partition()
+            self.expect_file(6, f"//{self.here}/OS/SETTINGS/:CONFIG.T", "OS/SETTINGS/CONFIG.T.seq")
+        except Corruption:
+            raise
+        except Failure as exc:
+            self.anomaly("checkpoint fixture", exc)
 
     # -- the PC lanes ----------------------------------------------------------------
 
@@ -1391,7 +1397,7 @@ class Session:
                     # The drives helper knows only the emulated slots a and b, so the softiec
                     # slot is reset through the route directly.
                     api.rest.request("PUT", "/v1/drives/softiec:reset")
-                    last_reset = time.monotonic()
+                    last_reset = self.drive_reset_at = time.monotonic()
             except Exception as exc:  # the main lane decides whether this is a death
                 self.lane_errors.append(f"rest at iteration {self.iteration}: {exc}")
 
@@ -1621,10 +1627,15 @@ class Session:
                 label, action = policy.choose(self.random)
                 self.counts[label] = self.counts.get(label, 0) + 1
                 self.note(f"begin {label}")
+                started = time.monotonic()
                 try:
                     action(self)
                 except Corruption as exc:
-                    failures.append(f"iteration {self.iteration} ({label}): {exc}")
+                    if self.drive_reset_at >= started:
+                        # The step's own transfer was dropped by the lane's reset.
+                        self.anomaly(f"{label} across a drive reset", exc)
+                    else:
+                        failures.append(f"iteration {self.iteration} ({label}): {exc}")
                     self.recover_quietly()
                     if len(failures) > 5:
                         break
@@ -1648,12 +1659,21 @@ class Session:
                         if len(failures) > 5:
                             break
                 if policy.checkpoint:
+                    started = time.monotonic()
                     try:
                         self.checkpoint()
                     except Corruption as exc:
-                        failures.append(f"iteration {self.iteration} checkpoint: {exc}")
-                        if len(failures) > 5:
-                            break
+                        try:
+                            if self.drive_reset_at < started:
+                                raise
+                            # A read cut by the lane's reset is read again: a fixture that
+                            # still differs is damaged, one that now matches was not.
+                            self.anomaly("checkpoint read across a drive reset", exc)
+                            self.check_fixture()
+                        except Corruption as damaged:
+                            failures.append(f"iteration {self.iteration} checkpoint: {damaged}")
+                            if len(failures) > 5:
+                                break
                 if self.iteration >= WARMUP_ITERATIONS:
                     heap.append(self.api.machine.heap_free())
                 if self.iteration % 10 == 0:
@@ -1994,7 +2014,7 @@ def setup_syslog_source(session, api, args):
     if parsed is None:
         return None, "the device's 'Log to Syslog Server' setting is empty; pass --syslog-spool"
     ip, port = parsed
-    if ip not in softiec_log.local_addresses():
+    if ip not in softiec_log.local_addresses(api.host):
         return None, (f"the device logs to {ip}, which is not this host; run the collector "
                       f"there and pass --syslog-spool")
     try:
