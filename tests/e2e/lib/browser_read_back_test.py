@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
-# Gate check: fill_edit_field reads the field back, against a lossy backend.
-"""Browser.fill_edit_field, checked without a device.
+# Gate check: the browser reads its keystrokes back, against a lossy backend.
+"""Browser.fill_edit_field and Browser.press_popup_button, checked without a device.
 
 A cartridge scans its keyboard from the UI task, so a redraw or a DMA stop can
 let one injected key pass unseen. Measured on a U2+L under load, a rename typed
 as "qmenu2.tst" arrived as "qenu2.tst", and the file was renamed to that. The
 field is read back before it is accepted and typed again when it does not show
-the text. A device loses a key only now and then and never on demand, so
-these checks drive the method through a scripted backend that drops exactly the
-keystrokes each case names.
+the text, and a popup key that leaves the screen unchanged is pressed again. A
+device loses a key only now and then and never on demand, so these checks drive
+both methods through scripted backends that drop exactly the keystrokes each
+case names.
 
 Needs no device.
 """
@@ -24,6 +25,7 @@ sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
 import bootstrap  # noqa: E402,F401
 import browser  # noqa: E402
 import cli  # noqa: E402
+import navigation  # noqa: E402
 from report import Failure, check, detail, suite_fail, suite_ok  # noqa: E402
 
 NAME = "qmenu2.tst"
@@ -66,6 +68,45 @@ class LossyBackend:
     def send_key_repeat(self, key: str, count: int) -> None:
         if key == "BACKSPACE":
             self.field = self.field[:max(0, len(self.field) - count)]
+
+
+class PopupBackend:
+    """A popup that answers the keys it is scripted to receive.
+
+    `lost` holds one entry per key press: True for a press that never arrives.
+    A press that arrives replaces the screen with `answers`, popped in order,
+    so a case can make an answer open a second popup.
+    """
+
+    navigation = navigation.classify(navigation.QUICK_SEARCH)
+
+    def __init__(self, lost: list[bool], answers: list[list[str]]) -> None:
+        self.lost = list(lost)
+        self.answers = list(answers)
+        self.lines = ["Are you sure?", "Yes  No"]
+        self.presses = 0
+
+    def capture(self) -> Capture:
+        return Capture(list(self.lines))
+
+    def send_char(self, _character: str) -> None:
+        self.presses += 1
+        if self.lost.pop(0) if self.lost else False:
+            return
+        if self.answers:
+            self.lines = self.answers.pop(0)
+
+
+def press(backend: PopupBackend) -> list[str]:
+    """Run press_popup_button on `backend`, and the detail lines it reported."""
+    reported: list[str] = []
+    real_detail = browser.detail
+    browser.detail = reported.append
+    try:
+        browser.Browser(backend, entry_rows=range(1, 2), status_row=3).press_popup_button("y")
+    finally:
+        browser.detail = real_detail
+    return reported
 
 
 def fill(backend: LossyBackend) -> list[str]:
@@ -119,15 +160,48 @@ def run_checks() -> None:
                           f"field: accepted {backend.accepted!r} after {backend.typings} typings")
 
 
+def run_popup_checks() -> None:
+    with check("a popup key that changes the screen is pressed once"):
+        backend = PopupBackend([False], [["listing"]])
+        reported = press(backend)
+        if (backend.presses, reported) != (1, []):
+            raise Failure(f"{backend.presses} presses, reporting {reported}")
+
+    with check("a popup key that changed nothing is pressed again, and the repeat is reported"):
+        backend = PopupBackend([True, False], [["listing"]])
+        reported = press(backend)
+        if backend.presses != 2 or len(reported) != 1 or "was lost" not in reported[0]:
+            raise Failure(f"{backend.presses} presses, reporting {reported}")
+
+    with check("a popup key that never changes the screen fails"):
+        backend = PopupBackend([True] * browser.EDIT_FIELD_ATTEMPTS, [])
+        try:
+            press(backend)
+        except Failure:
+            pass
+        else:
+            raise Failure("a key that never reached the popup was reported as pressed")
+
+    with check("an answer that opens a second popup with the same buttons is not repeated"):
+        # The second popup still shows "Yes  No", so a retry keyed on the
+        # buttons would answer it too. Only an unchanged screen may cause one.
+        backend = PopupBackend([False], [["Delete all its contents?", "Yes  No"]])
+        press(backend)
+        if backend.presses != 1:
+            raise Failure(f"the key was pressed {backend.presses} times, answering the "
+                          "second popup nobody asked about")
+
+
 def main() -> int:
     cli.device_free_arguments(__doc__)
     try:
         run_checks()
+        run_popup_checks()
     except Failure as exc:
-        suite_fail("browser_edit_field_test", str(exc))
+        suite_fail("browser_read_back_test", str(exc))
         return 1
-    detail("a string box read back before it is accepted, against scripted key loss")
-    suite_ok("browser_edit_field_test")
+    detail("string boxes and popup keys read back, against scripted key loss")
+    suite_ok("browser_read_back_test")
     return 0
 
 

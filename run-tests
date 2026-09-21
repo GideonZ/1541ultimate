@@ -253,10 +253,10 @@ SUITES: Sequence[Suite] = (
     # two places past the one it named.
     Suite("e2e", "ui-backend-parse", "tests/e2e/lib/ui_backend_parse_test.py",
           "", profile=profiles.SMOKE),
-    # Also needs no device: the string box every browser suite types names into
-    # is read back before it is accepted, against a backend that drops the keys
-    # each case names, because a device loses a key only now and then.
-    Suite("e2e", "browser-edit-field", "tests/e2e/lib/browser_edit_field_test.py",
+    # Also needs no device: the string boxes and popup keys every browser suite
+    # sends are read back, against backends that drop the keys each case names,
+    # because a device loses a key only now and then.
+    Suite("e2e", "browser-read-back", "tests/e2e/lib/browser_read_back_test.py",
           "", profile=profiles.SMOKE),
     # Also needs no device: the Telnet backend decides a redraw is over by
     # watching the stream go quiet, and the three waits that do that cannot be

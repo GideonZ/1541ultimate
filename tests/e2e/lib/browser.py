@@ -31,9 +31,9 @@ from backend import (Backend, FRAME_CHARS, Snapshot,
 # only a Browser reads listing rows.
 SIZE_COLUMN_RE = re.compile(r"\d{1,4}[KM]?")
 
-# How often fill_edit_field types a field before it gives up, and how long it
-# waits for the screen to echo one typing. One lost key needs one retype; three
-# attempts leave room for a second loss without spinning on a dead field.
+# How often a keystroke the browser reads back is sent before it gives up, and
+# how long it waits for the screen to answer one. One lost key needs one retry;
+# three attempts leave room for a second loss without spinning on a dead UI.
 EDIT_FIELD_ATTEMPTS = 3
 EDIT_FIELD_ECHO_SECONDS = 2.0
 
@@ -577,8 +577,33 @@ class Browser:
         so the key goes through the navigation transform: typed raw on a
         machine set to WASD Cursors it moves the highlight left instead of
         pressing the button.
+
+        A cartridge can let the key pass unseen, as fill_edit_field describes,
+        and a popup answered by nothing just stays up. A button always changes
+        the screen, so a screen left exactly as it was means the key was lost,
+        and it is pressed again and reported. A popup still on screen is not
+        that signal: answering one can open another with the same buttons, and
+        pressing again there would answer a question nobody asked.
         """
-        self.type_menu_char(key)
+        for attempt in range(EDIT_FIELD_ATTEMPTS):
+            before = self.rows()
+            self.type_menu_char(key)
+            if self._screen_changes(before):
+                return
+            detail(f"popup key {key!r} changed nothing on screen, so it was lost; "
+                   f"pressing it again (attempt {attempt + 2})")
+        raise Failure(f"popup key {key!r} changed nothing on screen after "
+                      f"{EDIT_FIELD_ATTEMPTS} presses; screen was:\n{self.screen()}")
+
+    def _screen_changes(self, before: list[str]) -> bool:
+        """Whether the screen moves away from `before` within the echo allowance."""
+        deadline = time.monotonic() + EDIT_FIELD_ECHO_SECONDS
+        while True:
+            if self.rows() != before:
+                return True
+            if time.monotonic() >= deadline:
+                return False
+            time.sleep(0.15)
 
     def wait_for_text(self, text: str, timeout: float = 8.0) -> None:
         deadline = time.monotonic() + timeout
