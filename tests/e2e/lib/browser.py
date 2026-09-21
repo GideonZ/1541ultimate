@@ -31,6 +31,12 @@ from backend import (Backend, FRAME_CHARS, Snapshot,
 # only a Browser reads listing rows.
 SIZE_COLUMN_RE = re.compile(r"\d{1,4}[KM]?")
 
+# How often fill_edit_field types a field before it gives up, and how long it
+# waits for the screen to echo one typing. One lost key needs one retype; three
+# attempts leave room for a second loss without spinning on a dead field.
+EDIT_FIELD_ATTEMPTS = 3
+EDIT_FIELD_ECHO_SECONDS = 2.0
+
 
 class Browser:
     """Navigation primitives for the on-device TreeBrowser, built on a Backend.
@@ -598,15 +604,52 @@ class Browser:
         transport can send KEY_CLEAR the whole buffer goes in one keystroke
         whatever its length, which is the difference between one key and up to
         64 on a machine that drains injected keys at 100ms each.
+
+        The field is read back before it is accepted. A cartridge scans its
+        keyboard from the UI task, so a redraw or a DMA stop can let one key
+        pass unseen, and accepting then renames a file to something nobody
+        typed: measured on a U2+L under load, "qmenu2.tst" arrived as
+        "qenu2.tst". A field that does not show the text is typed again, and
+        each retype is reported, so a lost key is never absorbed silently.
         """
-        if clear_taps:
-            clear = self.backend.clear_field_key
-            if clear:
-                self.press(clear)
-            else:
-                self.press_many("BACKSPACE", clear_taps)
-        self.type_text(text)
+        for attempt in range(EDIT_FIELD_ATTEMPTS):
+            if clear_taps or attempt:
+                self._clear_field(max(clear_taps, len(text) + 4))
+            before = self.rows()
+            self.type_text(text)
+            if self._field_shows(before, text):
+                break
+            detail(f"the edit field did not show {text!r} after it was typed, so a "
+                   f"keystroke was lost; typing it again (attempt {attempt + 2})")
+        else:
+            raise Failure(f"the edit field never showed {text!r} after "
+                          f"{EDIT_FIELD_ATTEMPTS} attempts; screen was:\n{self.screen()}")
         self.press("ENTER")
+
+    def _clear_field(self, taps: int) -> None:
+        clear = self.backend.clear_field_key
+        if clear:
+            self.press(clear)
+        else:
+            self.press_many("BACKSPACE", taps)
+
+    def _field_shows(self, before: list[str], text: str) -> bool:
+        """Whether a row the typing changed now carries `text`.
+
+        Only changed rows count, so a name already visible in the listing
+        behind the field cannot stand in for the field itself.
+        """
+        wanted = text.lower()
+        deadline = time.monotonic() + EDIT_FIELD_ECHO_SECONDS
+        while True:
+            after = self.rows()
+            changed = [row for index, row in enumerate(after)
+                       if index >= len(before) or row != before[index]]
+            if any(wanted in row.lower() for row in changed):
+                return True
+            if time.monotonic() >= deadline:
+                return False
+            time.sleep(0.15)
 
     def recover_to(self, directory: str) -> None:
         """Dismiss whatever is open and end up in `directory`.
