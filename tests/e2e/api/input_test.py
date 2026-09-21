@@ -2018,6 +2018,10 @@ RENAME_DIALOG_TITLE = "Give a new name.."
 LAUNCHER_DESCENT_STEPS = 24
 # Deeper than any directory this suite enters, which is one.
 BROWSER_ROOT_STEPS = 8
+# RUN/STOP closes the rename dialog within a second of reaching the menu, so a
+# dialog still up after this long did not see the key.
+RENAME_CLOSE_ATTEMPTS = 3
+RENAME_CLOSE_WAIT_SECONDS = 3.0
 # A file of this suite's own, in the RAM disk, renamed and then not renamed.
 # A drive entry was used first and it did open the dialog, but renaming a drive
 # is not what the dialog is for and a drive with no media does not offer it at
@@ -2340,11 +2344,26 @@ def clear_rename_field(session: RestInputSession) -> None:
 
 
 def close_rename_editor(session: RestInputSession) -> None:
-    """Abandon the rename. Nothing is renamed and nothing needs restoring."""
-    menu_keyboard_tap(session, ["run_stop"], 0.0)
-    wait_for_menu(session,
-                  lambda rows, colours: (rename_dialog_title_row(rows) is None) or None,
-                  f"the {RENAME_DIALOG_TITLE!r} dialog to close")
+    """Abandon the rename. Nothing is renamed and nothing needs restoring.
+
+    RUN/STOP is pressed again while the dialog stays up: on a cartridge target
+    one key can pass the cartridge's scan unseen (see
+    machine.CARTRIDGE_KEY_SCAN_SEES_EVERY_KEY), and a dialog left open takes
+    every key the teardown sends after it into its text field.
+    """
+    for attempt in range(RENAME_CLOSE_ATTEMPTS):
+        menu_keyboard_tap(session, ["run_stop"], 0.0)
+        try:
+            wait_for_menu(session,
+                          lambda rows, colours: (rename_dialog_title_row(rows) is None) or None,
+                          f"the {RENAME_DIALOG_TITLE!r} dialog to close",
+                          timeout=RENAME_CLOSE_WAIT_SECONDS)
+            break
+        except Failure:
+            if attempt == RENAME_CLOSE_ATTEMPTS - 1:
+                raise
+            detail(f"the {RENAME_DIALOG_TITLE!r} dialog stayed open after RUN/STOP, so "
+                   f"the key was lost; pressing it again (attempt {attempt + 2})")
     session.post_events([{"kind": "release_all"}])
 
 
@@ -2502,21 +2521,13 @@ def run_menu_keyboard_tests(session: RestInputSession, selected: list[str] | Non
         # Nothing to restore: the rename is abandoned with RUN/STOP, so no name
         # was changed and no configuration item was written.
         if opened:
-            # Two attempts, not one: sharing a try meant that when closing the
-            # dialog raised, the browser was never put back and the next suite
-            # started inside the RAM disk. browser-long-filename then could not
-            # find its fixture directory, whose path it builds from the root,
-            # and ftp-client could not find "Remote FTP Servers", which lives
-            # there. Restoring the root is what the next suite depends on, so
-            # it runs whether or not the dialog closed cleanly.
-            try:
-                close_rename_editor(session)
-            except Failure:
-                pass
-            try:
-                go_to_browser_root(session)
-            except Failure:
-                pass
+            # Two steps, so the root is restored whether or not the dialog
+            # closed. The next suite depends on the root: browser-long-filename
+            # builds its fixture path from it, and ftp-client looks for "Remote
+            # FTP Servers" there.
+            teardown_step("close the rename dialog", lambda: close_rename_editor(session))
+            teardown_step("return the browser to the root",
+                          lambda: go_to_browser_root(session))
         session.close_menu_from_anywhere()
         teardown_step("remove the rename fixture",
                     lambda: remove_rename_fixture(session.host))
