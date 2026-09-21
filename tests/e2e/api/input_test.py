@@ -532,6 +532,21 @@ def wait_for_input_ready(session: RestInputSession, timeout: float) -> None:
     raise TimeoutError(f"Timed out waiting for /v1/machine:input on {session.host}")
 
 
+def screen_text(row: bytes) -> str:
+    """A row of screen memory as text, for a failure message: letters, digits and
+    punctuation as themselves, reverse video as normal, anything else as a dot."""
+    text = []
+    for code in row:
+        code &= 0x7F
+        if 1 <= code <= 26:
+            text.append(chr(ord("A") + code - 1))
+        elif code == 0 or 32 <= code <= 63:
+            text.append("@" if code == 0 else chr(code))
+        else:
+            text.append(".")
+    return "".join(text)
+
+
 def wait_for_basic_ready(session: RestInputSession) -> None:
     deadline = time.time() + 6.0
     while time.time() < deadline:
@@ -539,7 +554,13 @@ def wait_for_basic_ready(session: RestInputSession) -> None:
         if READY_SCREEN_CODES in screen:
             return
         time.sleep(0.25)
-    raise Failure("BASIC READY prompt not visible; device may be running a cartridge")
+    # The whole screen, so a failure says where the prompt went rather than
+    # only that it was not in the first rows.
+    screen = session.read_memory(0x0400, 1000)
+    rows = [screen_text(screen[row * 40:(row + 1) * 40]).rstrip() for row in range(25)]
+    shown = "\n".join(f"  {row:2d}|{text}" for row, text in enumerate(rows) if text)
+    raise Failure("BASIC READY prompt not visible in the first 256 bytes of screen "
+                  f"memory; device may be running a cartridge. The screen:\n{shown}")
 
 
 def reset_to_basic(session: RestInputSession) -> None:
@@ -1017,9 +1038,11 @@ def start_keyboard_echo_program(session: RestInputSession) -> int:
 
 
 def prepare_keyboard_echo_program(session: RestInputSession) -> int:
-    session.post_events([{"kind": "keyboard", "inputs": ["return"], "transition": "tap"}])
-    time.sleep(0.5)
-    wait_for_basic_ready(session)
+    # A reset rather than a RETURN on the line the previous scenario left under
+    # the cursor: after the keyboard scenario that line prints no READY in the
+    # rows the wait reads, and these checks must not depend on which scenario
+    # ran before them.
+    reset_to_basic(session)
     return start_keyboard_echo_program(session)
 
 
