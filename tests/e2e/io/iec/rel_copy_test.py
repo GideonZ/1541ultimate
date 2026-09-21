@@ -67,7 +67,11 @@ def run(args):
         agent.start()
         started = True
         agent.call(1, 15)
-        agent.status((0, 73))
+        # Writing a setting to the value it already has leaves the drive alone
+        # (SI-103b), so the error channel can still hold the last error an
+        # earlier suite provoked. UI resets the drive and answers 73 (SI-110),
+        # which is a known state rather than whatever was left behind.
+        agent.command("UI", allowed=(73,))
         agent.command("CD//")
         current = api.rest.json("/v1/drives")
         root = next(e["IEC Drive"]["partitions"][0]["path"] for e in current["drives"] if "IEC Drive" in e)
