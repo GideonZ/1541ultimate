@@ -350,11 +350,24 @@ void Keyboard_C64 :: scan(void)
     }
 
 //    printf("%b ", key);
+    push_key(key);
+}
+
+// The timer scan and the user interface task (push_head) both add keys; getch() is
+// the only reader and the only writer of key_tail.
+void Keyboard_C64 :: push_key(int key)
+{
+#if KEYBOARD_C64_TIMER_SCAN
+    portENTER_CRITICAL();
+#endif
     int next_head = (key_head + 1) % KEY_BUFFER_SIZE;
     if(next_head != key_tail) {
         key_buffer[key_head] = key;
         key_head = next_head;
     }
+#if KEYBOARD_C64_TIMER_SCAN
+    portEXIT_CRITICAL();
+#endif
 }
 
 int Keyboard_C64 :: getch(void)
@@ -384,11 +397,7 @@ int Keyboard_C64 :: getch(void)
 void Keyboard_C64 :: push_head(int c)
 {
     // For now, we only support push tail, alas
-    int next_head = (key_head + 1) % KEY_BUFFER_SIZE;
-    if(next_head != key_tail) {
-        key_buffer[key_head] = c;
-        key_head = next_head;
-    }
+    push_key(c);
 }
 
 void Keyboard_C64 :: wait_free(void)
@@ -441,7 +450,9 @@ void Keyboard_C64 :: set_delays(int initial, int repeat)
 
 void Keyboard_C64 :: clear_buffer(void)
 {
-    key_head = key_tail = 0;
+    // Dropped from the reading end, the only end this task owns, so a key the
+    // scan adds meanwhile is neither lost nor read twice.
+    key_tail = key_head;
     // getch() falls through to the USB keyboard, so its queued input has to go
     // too. Keys injected through the input API are left alone.
     system_usb_keyboard.clear_pending_input();

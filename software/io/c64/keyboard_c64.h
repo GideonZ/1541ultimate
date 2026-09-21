@@ -45,6 +45,7 @@ class Keyboard_C64 : public Keyboard
     volatile int  scan_paused;
     void *scan_timer;
     static void scan_timer_callback(void *timer);
+    void push_key(int key);
 public:
     Keyboard_C64(GenericHost *, volatile uint8_t *r, volatile uint8_t *c, volatile uint8_t *j);
     ~Keyboard_C64();
