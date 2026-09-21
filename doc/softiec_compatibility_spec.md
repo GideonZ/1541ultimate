@@ -680,7 +680,10 @@ directory included; and `SD parse_rename()`'s note that "The 1541 renames the fi
 NOT FOUND` when the two paths differ and HD 9-26 requires one partition, where this
 drive moves the entry, as IDE 15.2.3 documents. `Suite8-RENAME-P1-TO-P2` in
 `software/test/iecdrive/testdrive.cc` asserts the move, and no program has been named
-that needs the `62`. An x00 file (SI-144) moved this way keeps its host name. A
+that needs the `62`. A directory cannot move inside itself, where its only entry would
+be reached through the directory it names; that answers `71,DIRECTORY ERROR`, and the
+check is in `FileManager::rename_impl`, so the browser's Move, FTP and REST are held to it
+as well. An x00 file (SI-144) moved this way keeps its host name. A
 subdirectory is renamed under its own name: `U do_rename()` resolves the source with
 directories allowed, and `CreateIecName()` reports `e_folder` for one, so the
 destination is built without a file type extension. See C14.

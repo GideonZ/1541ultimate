@@ -1352,7 +1352,20 @@ FRESULT FileManager::rename_impl(PathInfo &from, PathInfo &to)
             unlock();
             return FR_INVALID_DRIVE;
         }
-        fres = from.getLastInfo()->fs->file_rename(from.getPathFromLastFS(), to.getPathFromLastFS());
+        // A directory cannot move inside itself: its entry would then be reachable only
+        // through the directory, and the whole tree would be lost with it. FAT does
+        // not check this, and it matches names without regard to case.
+        const char *src = from.getPathFromLastFS();
+        const char *dst = to.getPathFromLastFS();
+        int n = strlen(src);
+        while ((n > 0) && (src[n - 1] == '/')) {
+            n--;
+        }
+        if ((n > 0) && !strncasecmp(src, dst, n) && (dst[n] == '/')) {
+            unlock();
+            return FR_DENIED;
+        }
+        fres = from.getLastInfo()->fs->file_rename(src, dst);
         if (fres == FR_OK) {
             mstring from_file_path, to_file_path;
             mstring from_dir_path, to_dir_path;

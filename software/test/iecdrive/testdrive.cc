@@ -3261,6 +3261,14 @@ static void s11_si074_rename_checks(FileManager *fm, IecDrive *dr)
     expect_command_response(testname, dr, "R:DIRB=DIRC\r", "63,FILE EXISTS,00,00\r");
     // A name that belongs to nothing still answers 62.
     expect_command_response(testname, dr, "R:DIRD=NOSUCHDIR\r", "62,FILE NOT FOUND,00,00\r");
+    // A directory cannot move inside itself: the move would leave its only entry in
+    // a directory that is reached through it, and the whole tree with it.
+    expect_command_ok(testname, dr, "MD/DIRB/:INNER\r");
+    expect_command_response(testname, dr, "R/DIRB/:LOOP=DIRB\r", "71,DIRECTORY ERROR,00,00\r");
+    expect_command_response(testname, dr, "R/DIRB/INNER/:LOOP=DIRB\r", "71,DIRECTORY ERROR,00,00\r");
+    expect_command_ok(testname, dr, "CD:DIRB\r");
+    expect_command_ok(testname, dr, "CD:INNER\r");
+    expect_command_ok(testname, dr, "CD//\r");
 }
 
 // SI-083: P on a file opened for writing moves past the end, and the next write extends
