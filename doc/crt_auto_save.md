@@ -211,5 +211,5 @@ The file is smaller than the original because `save_crt()` drops EasyFlash banks
 `$FF`; `read_crt()` clears the region to `$FF` first, so the image in memory is identical, which is
 what the equal hashes show.
 
-120 ms for 1 MiB on the U64-II RISC-V. The U64 Nios II has no cache and no multiplier, so expect
-more there; the log line carries the number.
+120 ms for 1 MiB on the U64-II RISC-V. The U64 is a Nios II at a lower clock, so expect more there;
+the log line carries the number.

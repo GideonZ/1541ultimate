@@ -699,7 +699,8 @@ const char *C64_CRT::get_source(void)
 }
 
 // Over exactly the bytes save_crt() writes. Each step is a bijection in h for a fixed word, so two
-// images that differ in one word always hash differently. No multiply: the U64 Nios II has none.
+// images that differ in one word always hash differently. No multiply: the U64 firmware is built
+// with -mno-hw-mul, so one would be a library call.
 // Whether the C64 can change this chunk, which is what the hash has to cover.
 //
 // EasyFlash is the only cartridge whose ROM image the machine writes: in all_carts_v5.vhd it is
