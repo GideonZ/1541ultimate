@@ -45,7 +45,7 @@ import bootstrap  # noqa: E402,F401
 
 from backend import Backend, Snapshot, strip_frame  # noqa: E402
 from menu import wait_until  # noqa: E402
-from report import Failure, detail  # noqa: E402
+from report import Failure, warn  # noqa: E402
 
 # The submit row, as BrowsableQueryField::getDisplayString writes it for the
 # "$" field. Firmware text, identical on every machine and for every service.
@@ -214,11 +214,11 @@ class SearchForm:
     def enter_text(self, text: str) -> None:
         """Type `text` into the open edit field, reading it back before it is kept.
 
-        A cartridge can let one key pass its scan unseen, and a doubled letter is
-        the likeliest to go: a release missed between two taps of one key makes
-        the second read as still held. Measured on a U2+L, "turrican" arrived as
-        "turican". A field that does not show the text is emptied and typed
-        again, and each retype is reported.
+        A doubled letter is the likeliest key to be lost: a release missed
+        between two taps of one key makes the second read as still held.
+        Measured on a U2+L, "turrican" arrived as "turican". A field that does
+        not show the text is emptied and typed again, and each retype is
+        reported as a warning.
         """
         for attempt in range(ENTER_ATTEMPTS):
             if attempt:
@@ -231,8 +231,8 @@ class SearchForm:
             self.type_text(text)
             if wait_until(lambda: self._shows_typed(before, text), ENTER_ECHO_SECONDS):
                 return
-            detail(f"the edit field did not show {text!r} after it was typed, so a "
-                   f"keystroke was lost; typing it again (attempt {attempt + 2})")
+            warn(f"the edit field did not show {text!r} after it was typed, so a "
+                 f"keystroke was lost; typing it again (attempt {attempt + 2})")
         raise Failure(f"the edit field never showed {text!r} after {ENTER_ATTEMPTS} "
                       f"attempts; screen was:\n{self.describe_screen()}")
 

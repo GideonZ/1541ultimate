@@ -16,7 +16,7 @@ sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
                             if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
 from report import Failure
 from collections.abc import Sequence
-from report import detail
+from report import warn
 import pacing
 import re
 import time
@@ -504,8 +504,8 @@ class Browser:
                     break
             if labels:
                 if attempt:
-                    detail("the context-menu key had to be pressed twice; the first one "
-                           "did not reach the machine")
+                    warn("the context-menu key had to be pressed twice; the first one "
+                         "did not reach the machine")
                 return labels
         raise Failure(f"no context menu appeared; screen was:\n{self.screen()}")
 
@@ -536,8 +536,8 @@ class Browser:
             self.press("ENTER")
             if self._screen_changes(before):
                 return
-            detail(f"ENTER on {label!r} changed nothing on screen, so it was lost; "
-                   f"pressing it again (attempt {attempt + 2})")
+            warn(f"ENTER on {label!r} changed nothing on screen, so it was lost; "
+                 f"pressing it again (attempt {attempt + 2})")
         raise Failure(f"ENTER on {label!r} changed nothing after {EDIT_FIELD_ATTEMPTS} "
                       f"presses; screen was:\n{self.screen()}")
 
@@ -567,8 +567,8 @@ class Browser:
                 # The highlight cannot be read here; leave the navigation as it
                 # was sent.
                 return
-            detail(f"{shown!r} was highlighted where {label!r} was navigated to, so a "
-                   f"key was lost; moving the cursor again (attempt {attempt + 2})")
+            warn(f"{shown!r} was highlighted where {label!r} was navigated to, so a "
+                 f"key was lost; moving the cursor again (attempt {attempt + 2})")
             self.press_many("DOWN" if wanted > at else "UP", abs(wanted - at))
         raise Failure(f"could not highlight {label!r} in the overlay; it shows "
                       f"{self.selected_text()!r}")
@@ -608,8 +608,8 @@ class Browser:
             categories = self.wait_for_overlay(before)
             if categories:
                 if attempt:
-                    detail("the task-menu key had to be pressed twice; the "
-                           "first one did not reach the machine")
+                    warn("the task-menu key had to be pressed twice; the "
+                         "first one did not reach the machine")
                 return categories
         return []
 
@@ -654,8 +654,8 @@ class Browser:
             self.type_menu_char(key)
             if self._screen_changes(before):
                 return
-            detail(f"popup key {key!r} changed nothing on screen, so it was lost; "
-                   f"pressing it again (attempt {attempt + 2})")
+            warn(f"popup key {key!r} changed nothing on screen, so it was lost; "
+                 f"pressing it again (attempt {attempt + 2})")
         raise Failure(f"popup key {key!r} changed nothing on screen after "
                       f"{EDIT_FIELD_ATTEMPTS} presses; screen was:\n{self.screen()}")
 
@@ -694,12 +694,11 @@ class Browser:
         whatever its length, which is the difference between one key and up to
         64 on a machine that drains injected keys at 100ms each.
 
-        The field is read back before it is accepted. A cartridge scans its
-        keyboard from the UI task, so a redraw or a DMA stop can let one key
-        pass unseen, and accepting then renames a file to something nobody
-        typed: measured on a U2+L under load, "qmenu2.tst" arrived as
-        "qenu2.tst". A field that does not show the text is typed again, and
-        each retype is reported, so a lost key is never absorbed silently.
+        The field is read back before it is accepted, because a lost key would
+        rename a file to something nobody typed: measured on a U2+L under load,
+        "qmenu2.tst" arrived as "qenu2.tst". A field that does not show the
+        text is typed again, and each retype is reported as a warning, so a
+        lost key is never absorbed silently.
         """
         for attempt in range(EDIT_FIELD_ATTEMPTS):
             if clear_taps or attempt:
@@ -708,8 +707,8 @@ class Browser:
             self.type_text(text)
             if self._field_shows(before, text):
                 break
-            detail(f"the edit field did not show {text!r} after it was typed, so a "
-                   f"keystroke was lost; typing it again (attempt {attempt + 2})")
+            warn(f"the edit field did not show {text!r} after it was typed, so a "
+                 f"keystroke was lost; typing it again (attempt {attempt + 2})")
         else:
             raise Failure(f"the edit field never showed {text!r} after "
                           f"{EDIT_FIELD_ATTEMPTS} attempts; screen was:\n{self.screen()}")

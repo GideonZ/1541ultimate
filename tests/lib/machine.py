@@ -206,20 +206,6 @@ REST_MOUSE_INPUT = _fix(
     "machine:input accepts mouse events and reports the mouse's state",
     (C64U,))
 
-# What the held cursor-control check of tests/e2e/api/input_test.py asserts, and
-# an outstanding defect in the cartridge rather than a lagging release. The
-# cartridge scans its keyboard from the UI task, so a redraw or a DMA stop can
-# leave a gap in which a key, or its release, passes unseen; a missed release
-# leaves the key reading as held. The check types shift chords around a held
-# cursor key and failed intermittently on the U2+L on both this tree and the CI
-# build of master. cad0126d "scan the cartridge keyboard from a timer, not the
-# UI task" fixes it on the machine code monitor branch (#705); delete this
-# entry when that commit reaches master.
-CARTRIDGE_KEY_SCAN_SEES_EVERY_KEY = _fix(
-    "cartridge-key-scan-sees-every-key",
-    "the cartridge scans its keyboard often enough that no key or release is lost while its UI is busy",
-    (U2,))
-
 # UCI_COMPLETES_AN_REU_COMMAND (issue #740) is closed: measured on an
 # Ultimate II+L on c8b7551a, uci_targets_test passes all 37 checks ungated.
 

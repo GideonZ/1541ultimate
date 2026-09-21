@@ -2346,10 +2346,8 @@ def clear_rename_field(session: RestInputSession) -> None:
 def close_rename_editor(session: RestInputSession) -> None:
     """Abandon the rename. Nothing is renamed and nothing needs restoring.
 
-    RUN/STOP is pressed again while the dialog stays up: on a cartridge target
-    one key can pass the cartridge's scan unseen (see
-    machine.CARTRIDGE_KEY_SCAN_SEES_EVERY_KEY), and a dialog left open takes
-    every key the teardown sends after it into its text field.
+    RUN/STOP is pressed again while the dialog stays up: a dialog left open
+    takes every key the teardown sends after it into its text field.
     """
     for attempt in range(RENAME_CLOSE_ATTEMPTS):
         menu_keyboard_tap(session, ["run_stop"], 0.0)
@@ -2362,8 +2360,8 @@ def close_rename_editor(session: RestInputSession) -> None:
         except Failure:
             if attempt == RENAME_CLOSE_ATTEMPTS - 1:
                 raise
-            detail(f"the {RENAME_DIALOG_TITLE!r} dialog stayed open after RUN/STOP, so "
-                   f"the key was lost; pressing it again (attempt {attempt + 2})")
+            warn(f"the {RENAME_DIALOG_TITLE!r} dialog stayed open after RUN/STOP, so "
+                 f"the key was lost; pressing it again (attempt {attempt + 2})")
     session.post_events([{"kind": "release_all"}])
 
 
@@ -2481,8 +2479,7 @@ def run_menu_keyboard_tests(session: RestInputSession, selected: list[str] | Non
                                   f"marker 'z', got {value!r}.")
 
         cursor_repeat = "menu editor repeats a held cursor control and stops on release"
-        if wants_test(selected, "menu-repeat-cursor") and not session.machine.skip_without_fix(
-                machine_lib.CARTRIDGE_KEY_SCAN_SEES_EVERY_KEY, cursor_repeat):
+        if wants_test(selected, "menu-repeat-cursor"):
             # The same question for a control key, which takes a different path
             # through the decoder. A single tap is the control: the held one has
             # to move the cursor further than it did, and the two markers have

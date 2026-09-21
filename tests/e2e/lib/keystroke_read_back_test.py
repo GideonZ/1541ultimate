@@ -2,16 +2,15 @@
 # Gate check: the UI facades read their keystrokes back, against lossy backends.
 """The browser's and the search form's keystrokes, read back, checked without a device.
 
-A cartridge scans its keyboard from the UI task, so a redraw or a DMA stop can
-let one injected key pass unseen. Measured on a U2+L under load, a rename typed
-as "qmenu2.tst" arrived as "qenu2.tst", and the file was renamed to that. The
-field is read back before it is accepted and typed again when it does not show
-the text, a popup key that leaves the screen unchanged is pressed again, and an
-overlay item is confirmed highlighted before ENTER runs it, and a search term is read
-back before the form keeps it. A
-device loses a key only now and then and never on demand, so these checks drive
-both methods through scripted backends that drop exactly the keystrokes each
-case names.
+An injected key can be lost on its way to the menu. Measured on a U2+L under
+load, a rename typed as "qmenu2.tst" arrived as "qenu2.tst", and the file was
+renamed to that. The field is read back before it is accepted and typed again
+when it does not show the text, a popup key that leaves the screen unchanged is
+pressed again, an overlay item is confirmed highlighted before ENTER runs it,
+and a search term is read back before the form keeps it. Each retry is
+reported as a warning. A device loses a key only now and then and never on
+demand, so these checks drive both methods through scripted backends that drop
+exactly the keystrokes each case names.
 
 Needs no device.
 """
@@ -103,12 +102,12 @@ class PopupBackend:
 def press(backend: PopupBackend) -> list[str]:
     """Run press_popup_button on `backend`, and the detail lines it reported."""
     reported: list[str] = []
-    real_detail = browser.detail
-    browser.detail = reported.append
+    real_detail = browser.warn
+    browser.warn = reported.append
     try:
         browser.Browser(backend, entry_rows=range(1, 2), status_row=3).press_popup_button("y")
     finally:
-        browser.detail = real_detail
+        browser.warn = real_detail
     return reported
 
 
@@ -161,25 +160,25 @@ class OverlayBackend:
 def choose(backend: OverlayBackend, label: str) -> list[str]:
     """Run choose_overlay_item on `backend`, and the detail lines it reported."""
     reported: list[str] = []
-    real_detail = browser.detail
-    browser.detail = reported.append
+    real_detail = browser.warn
+    browser.warn = reported.append
     try:
         menu = browser.Browser(backend, entry_rows=range(0, 6), status_row=6)
         menu.choose_overlay_item(list(OverlayBackend.ITEMS), label)
     finally:
-        browser.detail = real_detail
+        browser.warn = real_detail
     return reported
 
 
 def fill(backend: LossyBackend) -> list[str]:
     """Run fill_edit_field on `backend`, and the detail lines it reported."""
     reported: list[str] = []
-    real_detail = browser.detail
-    browser.detail = reported.append
+    real_detail = browser.warn
+    browser.warn = reported.append
     try:
         browser.Browser(backend, entry_rows=range(1, 2), status_row=3).fill_edit_field(NAME)
     finally:
-        browser.detail = real_detail
+        browser.warn = real_detail
     return reported
 
 
@@ -233,14 +232,14 @@ class FormBackend(LossyBackend):
 def enter(backend: FormBackend, text: str) -> list[str]:
     """Run SearchForm.enter_text on `backend`, and the detail lines it reported."""
     reported: list[str] = []
-    real_detail = search_form.detail
-    search_form.detail = reported.append
+    real_detail = search_form.warn
+    search_form.warn = reported.append
     try:
         form = search_form.SearchForm(backend, "overlay", range(0, 2), "Assembly 64 Search",
                                       reach=lambda: None)
         form.enter_text(text)
     finally:
-        search_form.detail = real_detail
+        search_form.warn = real_detail
     return reported
 
 
@@ -269,8 +268,8 @@ class EntryBackend(LossyBackend):
 def open_menu(backend: EntryBackend) -> tuple[list[str] | None, list[str]]:
     """Run open_context_menu, and what it returned and reported."""
     reported: list[str] = []
-    real_detail = browser.detail
-    browser.detail = reported.append
+    real_detail = browser.warn
+    browser.warn = reported.append
     menu = browser.Browser(backend, entry_rows=range(1, 2), status_row=3)
     menu.wait_for_overlay = lambda before: (["Run"] if menu.rows() != before and
                                             "|Run |" in menu.rows() else [])
@@ -280,7 +279,7 @@ def open_menu(backend: EntryBackend) -> tuple[list[str] | None, list[str]]:
     except Failure:
         return None, reported
     finally:
-        browser.detail = real_detail
+        browser.warn = real_detail
 
 
 def run_context_menu_checks() -> None:
