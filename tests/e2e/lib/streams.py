@@ -42,6 +42,7 @@ import select
 import socket
 import struct
 import sys
+import threading
 import time
 from array import array
 from dataclasses import dataclass
@@ -135,19 +136,34 @@ class DeviceAddresses:
     def __init__(self, host: str, known: set[str]) -> None:
         self._known = set(known)
         self._foreign: set[str] = set()
+        self._asked: set[str] = set()
         self._unique_id = _unique_id(host)
 
     def __contains__(self, address: object) -> bool:
+        """Whether `address` is this device's, never waiting to find out.
+
+        A caller asks this for every packet, so asking a sender over REST here would
+        stop the capture while the answer came: measured with a u64 and a C64 Ultimate
+        streaming at once, a Wi-Fi sender slow to answer stalled the u64's capture until
+        its socket overflowed and the frame it assembled was black. A new sender is
+        asked in the background and counts as foreign until it has answered; the few
+        packets that costs are packets a capture can do without.
+        """
         if address in self._known:
             return True
         if (not isinstance(address, str) or address in self._foreign
                 or self._unique_id is None):
             return False
+        if address not in self._asked:
+            self._asked.add(address)
+            threading.Thread(target=self._identify, args=(address,), daemon=True).start()
+        return False
+
+    def _identify(self, address: str) -> None:
         if _unique_id(address) == self._unique_id:
             self._known.add(address)
-            return True
-        self._foreign.add(address)
-        return False
+        else:
+            self._foreign.add(address)
 
     def __iter__(self):
         return iter(sorted(self._known))
