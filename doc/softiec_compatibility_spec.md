@@ -55,7 +55,7 @@ in `roms/1541.bin` rather than any manual.
 | **FD** | *CMD FD-Series Disk Drives User's Manual*. |
 | **RL** | *CMD RAMLink User's Manual*. |
 | **IDE** | *The IDE64 Project user's guide*, IDEDOS 0.90, 24 February 2019. Section numbers as printed. Linked by the reporter on #877. |
-| **SD** | sd2iec, the `markusC64/sd2iec` fork, at commit `9087321`. Paths are `src/...`. `SD README` is that fork's README, which the reporter named as its documentation. |
+| **SD** | sd2iec, the `markusC64/sd2iec` fork, at commit `9087321`, on its `devel` branch. Paths are `src/...`. `SD README` is that fork's README, which the reporter named as its documentation. That fork tracks `thierer/sd2iec`, which is itself a clone of the original at `sd2iec.de`; it carries the attribute and locking commands of SI-077 and SI-077a, which neither the CMD manuals nor `thierer/sd2iec` have. A requirement that rests on this fork alone says so. |
 | **1541** | *1541-II Disk Drive User's Guide*, DOS error message list. Where a point needs a Commodore drive other than the 1541, the *1571* and *1581 User's Guides* are cited by name. |
 | **ROM** | `roms/1541.bin` in this repository, 16384 bytes, mapping to `$C000..$FFFF`. Quoted disassembly was produced from that file. |
 | **GAP** | Greg Nacu, "Gaps in Software IEC", c64os.com/post/softwareiecgap, 10 January 2023. The canonical statement of why C64 OS does not support this drive. Written against firmware 3.10a; several of its items are already fixed. |
@@ -733,6 +733,14 @@ because deleting by name removes the first entry of that name.
 `SD parse_elock()`, `parse_eunlock()`, `parse_ehide()`, `parse_attr()`,
 `parse_set_header()` and the dispatch in `parse_doscommand()`.
 
+**These spellings come from one sd2iec line only.** The CMD manuals document `L`
+(HD 9-30) and `R-H` (HD 9-15) and no other attribute command, and none of the five
+functions above is in `thierer/sd2iec`, the line this fork tracks. `EL`, `EU`, `EH`, `A`
+and `XH` therefore rest on SD alone, as does the optional id of SI-064 and the image
+lock of SI-077a. What each of them does to a medium has a second source: the lock is the
+type byte bit CMD documents (SI-076), and the image lock is the header's DOS version
+byte, which a Commodore drive obeys by refusing to write with error 73 (1541).
+
 | Command | Effect |
 | --- | --- |
 | `EL[n][path]:name[,name...]` | set the lock on every entry each name matches |
@@ -1329,13 +1337,13 @@ the character positions in the scan rather than from the extracted text.
 of characters, including none, wherever it stands in the pattern, as a shell glob does.
 `*ED` matches `WALKED` and `MOVED` but not `EDIT`, and `W*D` matches `WALKED`. Characters
 after a `*` are therefore matched against the end of the name, which is the 1581 rule and
-sd2iec's default (`SD match_name_str()` with `POSTMATCH` set, SD README under `X*+/X*-`,
+sd2iec's default (`SD match_name()` with `POSTMATCH` set, SD README under `X*+/X*-`,
 "the default value is enabled (+)"). Character classes such as `[A-Z]` are not supported.
 Matching stops after 16 characters. Test: `test_pattern_match` in
 `software/io/iec/cbmdos_parser_test.cc`.
 
 The matcher is a full glob, so a second `*` matches in the middle of a name where CBM DOS
-and `SD match_name_str()` stop at the first one. GAP notes the difference approvingly:
+and `SD match_name()` stop at the first one. GAP notes the difference approvingly:
 "SoftIEC even supports more than one * which the other devices do not." For one `*` it
 agrees with sd2iec's default, and for more it narrows rather than widens a match, so no
 command can act on more files than the other devices would; it is recorded so that it is
@@ -1764,7 +1772,7 @@ left for someone else to answer before the work can start.
 | C4 | `$=P` footer | Issue #890 and `SD pdir_refill()` say no footer. IDE prints `n PARTITIONS.`. | **No footer** (SI-045). The issue is explicit, sd2iec agrees, and IDE64's footer is its own extension. |
 | C5 | `$=P:*=C` | HD 9-14 says `C` selects 1581 CP/M. `SD load_directory()` maps `C` to internal type 12, which is `80 `, an 8050 image. | Accept `C` and match nothing, because this drive has neither kind of partition. Recorded so the sd2iec mapping is not copied by mistake. |
 | C6 | `=D` directory filter | `SD` and this firmware treat `D` as DIR. IDE 6.2 maps `D` to DEL. GSD warns that on other drives `D` matches everything. | `D` is a synonym for `B` (SI-134), and say in the user documentation that software should send `B`. Changing it would break the sd2iec software that already sends `D`, and no software can be relying on `D` meaning DEL here because this drive has no DEL entries. |
-| C7 | Wildcards with more than one `*` | `SD match_name_str()` and CBM DOS stop at the first `*`. This firmware backtracks. GAP calls the difference harmless. | Backtracking stands (SI-136). For one `*` it agrees with sd2iec's default; for more it narrows rather than widens a match, so no command can act on more files than the other devices would. |
+| C7 | Wildcards with more than one `*` | `SD match_name()` and CBM DOS stop at the first `*`. This firmware backtracks. GAP calls the difference harmless. | Backtracking stands (SI-136). For one `*` it agrees with sd2iec's default; for more it narrows rather than widens a match, so no command can act on more files than the other devices would. |
 | C8 | G-P byte 1 | HD and RL say reserved zero. FD defines a disk-information bit field and `SD` writes `0xE2`, which decodes as an FD-2000 with a 1.6 MB disk. | **Zero** (SI-042). Byte 1 is a claim about the device model, and this drive is not an FD. |
 | C9 | G-P block unit | HD and FD count 512-byte blocks; RL counts 256-byte blocks. | **512** (SI-041), following the HD, which is the reference text and the larger of the two devices this drive resembles. |
 | C10 | What `M-R` should answer | Nothing documents what C64 OS concludes from each answer. SD README says not to use `M-R` for detection at all. The reporter proposed a constant 42. | **The requested count of `$00` bytes at every address, and no magic table** (SI-112, SI-113). `$00` matches no model signature, and it is the value sd2iec deliberately returns at `$FFFE` to make Action Replay 6 fall back to the KERNAL loader. Faking a 1541 signature would invite a loader to upload drive code this drive cannot run. Identification is the `UI` string, whose format SI-114 fixes. |
