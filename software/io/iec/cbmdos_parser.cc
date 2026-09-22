@@ -792,6 +792,10 @@ int IecParser :: memory_command(const uint8_t *buffer, int len)
         memset(zeros, 0, sizeof(zeros));
         return exec->do_cmd_response(zeros, count);
     }
+    case 'E':
+        // No drive code runs here, so every address holds a code this drive does not
+        // know, which is what sd2iec answers when it recognises none (SI-105).
+        return ERR_UNKNOWN_DRIVECODE;
     default:
         return ERR_SYNTAX;
     }

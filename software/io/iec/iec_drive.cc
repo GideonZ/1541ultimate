@@ -78,6 +78,7 @@ const char msg72[] = "DISK FULL";				//72
 const char msg73[] = "U64HD ULTIMATE DOS V2.0"  ;//73 DOS MISMATCH(Returns DOS Version)
 const char msg74[] = "DRIVE NOT READY";			//74
 const char msg77[] = "SELECTED PARTITION ILLEGAL"; //77
+const char msg98[] = "UNKNOWN DRIVE CODE";      //98, as sd2iec answers (SI-105)
 const char msg_c1[] = "BAD COMMAND";			//custom
 const char msg_c2[] = "NOT IMPLEMENTED";		//custom
 const char msg_c3[] = "BLOCK ACCESS DENIED";    //custom
@@ -120,6 +121,7 @@ const IEC_ERROR_MSG last_error_msgs[] = {
 		{ 73, msg73, NR_OF_EL(msg73) - 1 },
 		{ 74, msg74, NR_OF_EL(msg74) - 1 },
         { 77, msg77, NR_OF_EL(msg77) - 1 },
+        { 98, msg98, NR_OF_EL(msg98) - 1 },
 
 		{ 75, msg_c1, NR_OF_EL(msg_c1) - 1 },
 		{ 76, msg_c2, NR_OF_EL(msg_c2) - 1 },

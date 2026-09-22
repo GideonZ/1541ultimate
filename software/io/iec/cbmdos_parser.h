@@ -74,6 +74,7 @@ typedef struct {
 #define ERR_ILLEGAL_NAME  33 // a wildcard or a character a name cannot carry
 #define ERR_NO_NAME       34 // no name, or a colon with nothing after it
 #define ERR_REPLACE_TYPE  64 // FILE TYPE MISMATCH: @ names nothing that can be replaced
+#define ERR_UNKNOWN_DRIVECODE 98 // M-E: the drive code to run is not one this drive knows
 
 // The attributes the attribute commands address (SI-076, SI-077). The drive maps them
 // to whatever the medium holds, so the parser carries no file system constants.

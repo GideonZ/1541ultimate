@@ -583,6 +583,15 @@ is the new header; with no path it is the current directory of the partition. An
 name answers `34`, a name with a wildcard `33`, and a path that is not there
 `71,DIRECTORY ERROR`.
 
+**Difference from the CMD manuals.** The id is an sd2iec extension. HD 9-15 gives the
+syntax as `R-H[n][path]:newname` and names three arguments, the partition, the path and
+the new name, so a CMD HD changes the id only when a disk is formatted.
+`SD parse_set_header()` takes an optional id after a comma and sets it, and the sd2iec
+spellings `EH`, `XH` and `D` reach it (SI-077). This drive takes the id on all four
+spellings, so a program written for either device gets what it asks for, and a command
+without an id leaves the id and the DOS version as they are, which is what the CMD
+manuals describe.
+
 What a header is depends on what the directory sits in, and in each case it is what a
 listing of that directory shows (SI-065).
 
@@ -729,7 +738,7 @@ because deleting by name removes the first entry of that name.
 | `EL[n][path]:name[,name...]` | set the lock on every entry each name matches |
 | `EU[n][path]:name[,name...]` | clear it on every entry each name matches |
 | `EH[n][path]:name`, with something other than a colon after the partition number | turn the hidden flag of one entry over |
-| `EH[n]:name[,id]`, `XH[n][path]:name[,id]`, `D:name[,id]` | set a directory header, which is `R-H` (SI-064) |
+| `EH[n]:name[,id]`, `XH[n][path]:name[,id]`, `D:name[,id]` | set a directory header, which reaches the same place as `R-H` here (SI-064); all four take the optional id |
 | `A:[R][H][A]=name[,name...]` | set exactly the attributes named on every entry each name matches, and clear the others |
 
 The lock these set and clear is the one `L` turns over (SI-076), so a file `EL` locks is
@@ -1043,11 +1052,19 @@ queried bytes. I agree we have nothing good to return but we can return each byt
 be 42... That way, a software that does M-R to identify devices is syntactically
 happy." C64 OS sends the four probes at every boot (TRACE).
 
-**`M-W` and `M-E` are deliberately unsupported** and answer `30`. Nothing of what
-`M-W` writes is kept and `M-E` runs nothing, so answering `00, OK` would tell a fast
-loader that its drive code is in place and running. An `00, OK` means the work was done,
-which is also why a clock write of a date that does not exist answers `30` (SI-122). The
-reporter's request was for `M-R`, which C64 OS sends four times at boot (TRACE).
+**`M-W` and `M-E` are deliberately unsupported.** Nothing of what `M-W` writes is kept
+and `M-E` runs nothing, so answering `00, OK` would tell a fast loader that its drive
+code is in place and running. An `00, OK` means the work was done, which is also why a
+clock write of a date that does not exist answers `30` (SI-122). The reporter's request
+was for `M-R`, which C64 OS sends four times at boot (TRACE).
+
+`M-W` answers `30`: the command is recognised and its bytes are not taken. `M-E` answers
+`98,UNKNOWN DRIVE CODE`, which says what is true here and is the answer sd2iec gives when
+the code it was sent matches no fast loader it implements: `SD run_loader()` sets
+`ERROR_UNKNOWN_DRIVECODE`, code 98, when it reaches the end of its handler table. No
+drive code is ever known here, so every `M-E` answers it. A program that meets this code
+on an sd2iec meets it here for the same reason. `98` is not a CBM DOS code, and no CMD
+device answers it; a program that treats any non-zero code as a refusal is unaffected.
 
 **SI-106.** `S-C`, the SCSI pass-through of HD 9-39, is out of scope.
 
@@ -1064,9 +1081,14 @@ for some reason, DO NOT use M-R for this purpose. Use the UI command instead and
 check the message you get for 'sd2iec' and 'uiec' instead"; GSD "Device Detection". The
 message is `73,U64HD ULTIMATE DOS V2.0,00,00`, whose fixed form SI-114 gives.
 
-**SI-111.** `M-R` must not return the signature of a 1541, a 1571, a 1581 or a CMD
-device, because a program that reads one of those will then drive this device as that
-model. The signatures are, read out of the ROM images in this repository:
+**SI-111.** While the drive answers `M-R` out of itself, as SI-112 has it, `M-R` must not
+return the signature of a 1541, a 1571, a 1581 or a CMD device, because a program that
+reads one of those will then drive this device as that model, and none of those models'
+drive code runs here. The rule is about that mismatch, not about the signatures
+themselves: a drive that served a real ROM image and behaved as that model, which is what
+GEOS and Wheels need and what SI-115 places out of scope, would answer the signature on
+purpose. Adding such a mode replaces this requirement rather than breaking it. The
+signatures are, read out of the ROM images in this repository:
 
 | Address | 1541 | 1571 | 1581 | CMD |
 | --- | --- | --- | --- | --- |
@@ -1123,6 +1145,10 @@ for `M-R` so that GEOS and Wheels can identify a drive, is out of scope. Sources
 SD README under `XR` and under GEOS and Wheels; GAP does not ask for it. The
 reporter asked on #877 that the documentation state plainly that there is no GEOS and
 no Wheels support, which belongs in `GideonZ/1541u-documentation` rather than here.
+
+Out of scope means this document does not require the mechanism and no test holds the
+drive to it. It does not mean it cannot be added; SI-111 says which requirement such a
+mode would replace.
 
 ---
 
@@ -1265,6 +1291,18 @@ in fact maps `D` to DEL. `H` additionally shows hidden files.
 `H` is not a type but a flag: a listing leaves out every entry that carries the hidden
 attribute unless `H` asks for them, and it sets no type bit, so `$:*=H` lists what `$:*`
 lists and the hidden entries as well.
+
+**Where the attribute lives.** A host file system records it, and this drive uses that
+record. A CBM disk image has no field for it: the directory entry's type byte is defined
+by CBM DOS, and a bit set there travels with the image to every drive, emulator and tool
+that reads it. `EH` inside an image therefore answers `30`, the answer SI-077 gives for a
+medium that does not carry an attribute, rather than writing a bit that only some drives
+read. `SD d64_set_attrib()` does write one: it puts the attribute bits into the type byte
+of the directory entry, where bit 5 is a hidden flag CBM DOS does not define, and the
+fork's author reports that upstream sd2iec dropped it for compatibility. An image this
+drive writes is therefore listed the same way by any of them. Nothing in a listing or in
+the name mapping depends on the choice, so it can be revisited if a report asks for
+hidden files inside images, for example to keep a GEOS boot disk tidy.
 
 **SI-134a.** A hidden entry is left out of a listing and still answers to its name. Every
 command that names an entry finds it: an open, a scratch, a rename, `L`, and the `EH`
@@ -1852,6 +1890,7 @@ differently from one of its sources, for a reason given below the requirement.
 | SI-016 | A carriage return second to last ends a command only when a line feed follows it, because the ROM's branch cuts a binary parameter of 13 short |
 | SI-018 | The position in a plain file is read from the command without its terminator, where sd2iec reads it from the command as sent |
 | SI-033 | A scratch whose path does not exist answers `71` rather than a count of zero |
+| SI-064 | `R-H` takes an optional id and sets it, as `SD parse_set_header()` does, where HD 9-15 gives `R-H` a new name only |
 | SI-074 | A rename into another directory or partition moves the entry, where `SD parse_rename()` answers `62` |
 | SI-077 | `EL`, `EU` and `A` act on every entry a name matches, directories included, where sd2iec skips directories and `A` takes the first match |
 | SI-120 | A write sets the drive's own clock, an offset from the system clock that a reset clears, where a CMD drive and sd2iec set their clock chip; the day of week a write carries is not kept; a write is refused when the day is not a day of that month, which `SD parse_timewrite()` does not check, and every field is read at its documented width |
@@ -1974,7 +2013,7 @@ further rule of the requirement it follows and is numbered that way so that the 
 already cited elsewhere keep their meaning.
 
 Section 18.1 is the index of the four deliberately unsupported requirements and of the
-nine that are in force and answer differently from one of their sources. Everything else
+ten that are in force and answer differently from one of their sources. Everything else
 in sections 2 to 15 is in force as written. Section 19 is what is out of scope, which is
 a different thing: those are capabilities this drive does not have rather than commands
 it declines to implement.

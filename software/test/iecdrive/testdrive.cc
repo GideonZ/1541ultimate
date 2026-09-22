@@ -2564,7 +2564,8 @@ static void s11_si100_device_number(FileManager *fm, IecDrive *dr)
 }
 
 // SI-105 and SI-112: M-R answers the number of bytes asked for, all zero, and does not
-// read past the end of the page; M-W and M-E are refused, because no drive code runs here.
+// read past the end of the page; M-W is refused and M-E answers 98, because no drive code
+// runs here.
 // SI-105, SI-110, SI-111, SI-112, SI-113, SI-114: M-R answers zeros, which is no
 // drive's signature, and UI is the identification.
 static void s11_si105_memory_commands(FileManager *fm, IecDrive *dr)
@@ -2607,7 +2608,7 @@ static void s11_si105_memory_commands(FileManager *fm, IecDrive *dr)
     const uint8_t mw[8] = { 'M', '-', 'W', 0x00, 0x05, 0x02, 0xEA, 0x60 };
     expect_command_data_response(testname, dr, mw, sizeof(mw), "30,SYNTAX ERROR,00,00\r");
     const uint8_t me[5] = { 'M', '-', 'E', 0x00, 0x05 };
-    expect_command_data_response(testname, dr, me, sizeof(me), "30,SYNTAX ERROR,00,00\r");
+    expect_command_data_response(testname, dr, me, sizeof(me), "98,UNKNOWN DRIVE CODE,00,00\r");
 }
 
 // SI-021: a command, and the name of a file opened on a data channel, can be longer

@@ -370,7 +370,7 @@ void test_added_commands(void)
 
     // SI-105 and SI-112: M-R answers the number of bytes asked for, every one of them
     // zero; no count means one, a count of zero means 256, and it stops at the end of
-    // the page. M-W and M-E are refused, because this drive runs no drive code.
+    // the page. M-W is refused and M-E answers 98, because this drive runs no drive code.
     test_dispatch("M-R\xA4\xFE\x02", 6, 0, "command response", 2);
     test_dispatch("M-R\x02\x00\x02\r", 7, 0, "command response", 2);
     test_dispatch("M-R\xA4\xFE", 5, 0, "command response", 1);
@@ -378,7 +378,7 @@ void test_added_commands(void)
     test_dispatch("M-R\xF0\x00\x20", 6, 0, "command response", 16);
     test_dispatch("M-R\xA4", 4, 30, NULL);
     test_dispatch("M-W\x00\x05\x01\xEA", 7, 30, NULL);
-    test_dispatch("M-E\x00\x05", 5, 30, NULL);
+    test_dispatch("M-E\x00\x05", 5, ERR_UNKNOWN_DRIVECODE, NULL);
     test_dispatch("M-X", 3, 30, NULL);
     // SI-120: T-W sets the drive's clock, and a form the clock cannot hold answers 30.
     // The four formats are checked in test_clock_commands().
