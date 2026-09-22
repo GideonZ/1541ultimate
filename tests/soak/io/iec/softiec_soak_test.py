@@ -1328,13 +1328,24 @@ class Session:
             self.status()
         except Failure:
             try:
-                self.recover_quietly()
+                self.recover()
                 self.status()
-            except Failure as exc:
-                if self.alive():
-                    raise Dead(f"the drive stopped answering a status read after iteration "
-                               f"{self.iteration} while REST answers: {exc}") from exc
-                raise
+            except Failure:
+                # The agent is driven over REST, and the lanes can starve those requests: a
+                # cartridge's server resets connections under their load. The drive is dead
+                # only if it also fails to answer with the network left to it.
+                self.quiet.set()
+                try:
+                    time.sleep(LIVENESS_RETRY_SECONDS)
+                    self.recover()
+                    self.status()
+                except Failure as exc:
+                    if self.alive():
+                        raise Dead(f"the drive stopped answering a status read after iteration "
+                                   f"{self.iteration} while REST answers: {exc}") from exc
+                    raise
+                finally:
+                    self.quiet.clear()
         if self.iteration % 3 == 0:
             self.check_fixture()
 
