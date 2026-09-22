@@ -4099,6 +4099,129 @@ static void s11_deliberate_exclusions(FileManager *fm, IecDrive *dr)
     }
 }
 
+// SI-144c: a rename of a file in an x00 wrapper writes the new name into the header and
+// gives the host file the same name, with the type letter of the wrapper and two digits
+// that count up while another host file holds the spelling.
+static void s11_si144c_rename_x00(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite11-SI144c-RenameX00";
+    const char *path = s11_partition(fm, dr, "si144c");
+    uint8_t raw[80];
+    char type[8];
+    bool present;
+
+    // Each type letter is kept, and the data behind the header is untouched.
+    static const struct { const char *host; const char *cbm; const char *renamed;
+                          const char *landed; const char *type; } plain[] = {
+        { "GAME.P00", "MY GAME",  "ARENA",    "ARENA.P00",    "PRG " },
+        { "TEXT.S00", "NOTES",    "DIARY",    "DIARY.S00",    "SEQ " },
+        { "DATA.U00", "READINGS", "SAMPLES",  "SAMPLES.U00",  "USR " },
+    };
+    for (int i = 0; i < 3; i++) {
+        s11_host_file(fm, path, plain[i].host, plain[i].cbm, 0, (const uint8_t *)"payload", 7);
+        char command[64];
+        snprintf(command, sizeof(command), "R:%s=%s\r", plain[i].renamed, plain[i].cbm);
+        expect_command_ok(testname, dr, command);
+        REQUIRE(s11_read_host_file(fm, path, plain[i].host, raw, sizeof(raw)) < 0);
+        int got = s11_read_host_file(fm, path, plain[i].landed, raw, sizeof(raw));
+        printf("%s: %s became %s, %d bytes, header names '%s'\n", testname, plain[i].host,
+               plain[i].landed, got, (char *)raw + 8);
+        REQUIRE((got == 33) && (memcmp(raw, "C64File", 8) == 0));
+        REQUIRE(memcmp(raw + 8, plain[i].renamed, strlen(plain[i].renamed) + 1) == 0);
+        REQUIRE(memcmp(raw + 26, "payload", 7) == 0);
+        s11_listing_type(dr, testname, "$", plain[i].renamed, type, &present);
+        REQUIRE(present && !strcmp(type, plain[i].type));
+        expect_iec_file(testname, dr, 2, plain[i].renamed, "payload");
+        close_file(dr, 2);
+    }
+
+    // A relative file keeps its record length, which lives in the header the rename writes.
+    s11_host_file(fm, path, "REC.R00", "RECORDS", 3, (const uint8_t *)"aaabbb", 6);
+    expect_command_ok(testname, dr, "R:TRACKS=RECORDS\r");
+    int got = s11_read_host_file(fm, path, "TRACKS.R00", raw, sizeof(raw));
+    REQUIRE((got == 32) && (raw[25] == 3));
+    expect_rel_open(testname, dr, 2, "TRACKS", 3);
+    close_file(dr, 2);
+
+    // A host file already holding the spelling pushes the wrapper to the next digit and is
+    // left as it is, and a run of them is counted through, the tens digit included.
+    s11_host_file(fm, path, "MOVED.P00", "TOMOVE", 0, (const uint8_t *)"payload", 7);
+    s11_host_file(fm, path, "TAKEN.P00", NULL, 0, (const uint8_t *)"not a wrapper", 13);
+    expect_command_ok(testname, dr, "R:TAKEN=TOMOVE\r");
+    REQUIRE(s11_read_host_file(fm, path, "MOVED.P00", raw, sizeof(raw)) < 0);
+    REQUIRE(s11_read_host_file(fm, path, "TAKEN.P00", raw, sizeof(raw)) == 13);
+    got = s11_read_host_file(fm, path, "TAKEN.P01", raw, sizeof(raw));
+    REQUIRE((got == 33) && (memcmp(raw + 8, "TAKEN", 6) == 0));
+
+    s11_host_file(fm, path, "CROWD.P00", "TOCROWD", 0, (const uint8_t *)"payload", 7);
+    for (int i = 0; i < 10; i++) {
+        char host[16];
+        snprintf(host, sizeof(host), "FULL.P%02d", i);
+        s11_host_file(fm, path, host, NULL, 0, (const uint8_t *)"taken", 5);
+    }
+    expect_command_ok(testname, dr, "R:FULL=TOCROWD\r");
+    got = s11_read_host_file(fm, path, "FULL.P10", raw, sizeof(raw));
+    printf("%s: with ten spellings taken the wrapper landed on FULL.P10, %d bytes\n",
+           testname, got);
+    REQUIRE((got == 33) && (memcmp(raw + 8, "FULL", 5) == 0));
+    REQUIRE(s11_read_host_file(fm, path, "FULL.P00", raw, sizeof(raw)) == 5);
+
+    // A new name that renders to the host name the file already has writes the header
+    // alone, and the file keeps that one host file rather than gaining a second.
+    s11_host_file(fm, path, "SAME.P00", "OTHER NAME", 0, (const uint8_t *)"payload", 7);
+    expect_command_ok(testname, dr, "R:SAME=OTHER NAME\r");
+    got = s11_read_host_file(fm, path, "SAME.P00", raw, sizeof(raw));
+    REQUIRE((got == 33) && (memcmp(raw + 8, "SAME", 5) == 0));
+    s11_listing_type(dr, testname, "$", "SAME", type, &present);
+    REQUIRE(present && !strcmp(type, "PRG "));
+
+    // A name the file system cannot take is rendered as the drive renders it for a new
+    // file, so the CBM name is found again although the host name spells it differently.
+    s11_host_file(fm, path, "ESCAPE.P00", "TOESCAPE", 0, (const uint8_t *)"payload", 7);
+    expect_command_ok(testname, dr, "R:A<B=TOESCAPE\r");
+    got = s11_read_host_file(fm, path, "A{3C}B.P00", raw, sizeof(raw));
+    printf("%s: A<B is held by A{3C}B.P00, %d bytes\n", testname, got);
+    REQUIRE((got == 33) && (memcmp(raw + 8, "A<B", 4) == 0));
+    s11_listing_type(dr, testname, "$", "A<B", type, &present);
+    REQUIRE(present);
+
+    // A name another entry holds is refused, and the file keeps both of its names.
+    s11_host_file(fm, path, "KEEP.P00", "KEEPME", 0, (const uint8_t *)"payload", 7);
+    expect_iec_write_ok(testname, dr, 1, "BLOCKER,S,W", "other");
+    expect_command_response(testname, dr, "R:BLOCKER=KEEPME\r", "63,FILE EXISTS,00,00\r");
+    got = s11_read_host_file(fm, path, "KEEP.P00", raw, sizeof(raw));
+    REQUIRE((got == 33) && (memcmp(raw + 8, "KEEPME", 7) == 0));
+
+    // A file with an x00 extension and no header is an ordinary file, and its rename is
+    // the ordinary one: the name is the host name, and no header is written.
+    s11_host_file(fm, path, "BARE.P00", NULL, 0, (const uint8_t *)"not wrapped", 11);
+    expect_command_ok(testname, dr, "R:PLAIN.PRG=BARE.P00\r");
+    REQUIRE(s11_read_host_file(fm, path, "BARE.P00", raw, sizeof(raw)) < 0);
+    // The new name ends in a type extension, so the host name carries the braces that tell
+    // the mapping the extension is part of the name (SI-142), and no header is written.
+    got = s11_read_host_file(fm, path, "PLAIN.PRG{}", raw, sizeof(raw));
+    printf("%s: the file with no header became PLAIN.PRG{}, %d bytes\n", testname, got);
+    REQUIRE((got == 11) && (memcmp(raw, "not wrapped", 11) == 0));
+
+    // A rename into another directory moves the host file and gives it the new name there.
+    expect_command_ok(testname, dr, "MD:ELSEWHERE\r");
+    s11_host_file(fm, path, "TRAVEL.P00", "TOTRAVEL", 0, (const uint8_t *)"payload", 7);
+    expect_command_ok(testname, dr, "R//ELSEWHERE/:ARRIVED=//:TOTRAVEL\r");
+    REQUIRE(s11_read_host_file(fm, path, "TRAVEL.P00", raw, sizeof(raw)) < 0);
+    char moved[80];
+    snprintf(moved, sizeof(moved), "%s/ELSEWHERE", path);
+    got = s11_read_host_file(fm, moved, "ARRIVED.P00", raw, sizeof(raw));
+    printf("%s: the wrapper moved to ELSEWHERE/ARRIVED.P00, %d bytes\n", testname, got);
+    REQUIRE((got == 33) && (memcmp(raw + 8, "ARRIVED", 8) == 0));
+    expect_iec_file(testname, dr, 2, "//ELSEWHERE/:ARRIVED", "payload");
+    close_file(dr, 2);
+
+    // A scratch after a rename finds the file under its new name and removes the host file
+    // the rename gave it.
+    expect_command_response(testname, dr, "S:ARENA\r", "01, FILES SCRATCHED,01,00\r");
+    REQUIRE(s11_read_host_file(fm, path, "ARENA.P00", raw, sizeof(raw)) < 0);
+}
+
 // SI-144: a P00, S00, U00 or R00 file that starts with "C64File" lists under the CBM name
 // in its header, with the type of its extension and the size of what follows the 26 byte
 // header, and opens by that name with the header skipped. A file with such an extension
@@ -4147,12 +4270,13 @@ static void s11_si144_read_x00(FileManager *fm, IecDrive *dr)
 
     expect_command_ok(testname, dr, "R:TUNES=NOTES\r");
     uint8_t host[64];
-    got = s11_read_host_file(fm, path, "TEXT.S00", host, sizeof(host));
-    printf("%s: after the rename TEXT.S00 is %d bytes, name '%s'\n", testname, got, (char *)host + 8);
+    REQUIRE(s11_read_host_file(fm, path, "TEXT.S00", host, sizeof(host)) < 0);
+    got = s11_read_host_file(fm, path, "TUNES.S00", host, sizeof(host));
+    printf("%s: after the rename TUNES.S00 is %d bytes, name '%s'\n", testname, got, (char *)host + 8);
     REQUIRE((got == 36) && (memcmp(host + 8, "TUNES\0", 6) == 0));
     expect_iec_file(testname, dr, 2, "TUNES,S", "some text!");
     expect_command_response(testname, dr, "S:TUNES\r", "01, FILES SCRATCHED,01,00\r");
-    REQUIRE(s11_read_host_file(fm, path, "TEXT.S00", host, sizeof(host)) < 0);
+    REQUIRE(s11_read_host_file(fm, path, "TUNES.S00", host, sizeof(host)) < 0);
     expect_command_response(testname, dr, "S:MY*\r", "01, FILES SCRATCHED,01,00\r");
     REQUIRE(s11_read_host_file(fm, path, "GAME.P00", host, sizeof(host)) < 0);
 }
@@ -4786,18 +4910,30 @@ static void s11_common_bugs(FileManager *fm, IecDrive *dr)
     close_file(dr, 2);
 
     // Renaming a file that lives in an x00 wrapper rewrites the name in the header and
-    // leaves the wrapper where it is, so no unwrapped file is left holding a header.
+    // renames the wrapper to match, so the host name and the CBM name stay the same name
+    // (SI-144c). The file keeps its wrapper, so no unwrapped file is left holding a header.
     s11_host_file(fm, path, "WRAP.P00", "WRAPPED", 0, (const uint8_t *)"payload", 7);
     expect_command_ok(testname, dr, "R:RENAMED=WRAPPED\r");
     uint8_t raw[64];
-    int n = s11_read_host_file(fm, path, "WRAP.P00", raw, sizeof(raw));
+    REQUIRE(s11_read_host_file(fm, path, "WRAP.P00", raw, sizeof(raw)) < 0);
+    int n = s11_read_host_file(fm, path, "RENAMED.P00", raw, sizeof(raw));
     REQUIRE(n == 33);
     REQUIRE(memcmp(raw, "C64File", 7) == 0);
     REQUIRE(memcmp(raw + 8, "RENAMED", 8) == 0);
-    REQUIRE(s11_read_host_file(fm, path, "RENAMED.P00", raw, sizeof(raw)) < 0);
     REQUIRE(s11_read_host_file(fm, path, "RENAMED.PRG", raw, sizeof(raw)) < 0);
     s11_listing_type(dr, testname, "$", "RENAMED", type, &present);
     REQUIRE(present && !strcmp(type, "PRG "));
+
+    // The two digits of the extension count up while another host file holds the name,
+    // so a rename never writes over a file that is already there (SI-144c).
+    s11_host_file(fm, path, "TAKEN.P00", "TOMOVE", 0, (const uint8_t *)"payload", 7);
+    s11_host_file(fm, path, "MOVED.P00", NULL, 0, (const uint8_t *)"not a wrapper", 13);
+    expect_command_ok(testname, dr, "R:MOVED=TOMOVE\r");
+    REQUIRE(s11_read_host_file(fm, path, "TAKEN.P00", raw, sizeof(raw)) < 0);
+    REQUIRE(s11_read_host_file(fm, path, "MOVED.P00", raw, sizeof(raw)) == 13);
+    n = s11_read_host_file(fm, path, "MOVED.P01", raw, sizeof(raw));
+    REQUIRE(n == 33);
+    REQUIRE(memcmp(raw + 8, "MOVED", 6) == 0);
 
     // A name that starts with a dot and carries an extension keeps its type.
     expect_iec_write_ok(testname, dr, 1, ".FOO.L,S,W", "dotted");
@@ -5836,6 +5972,7 @@ static const Suite11Case suite11_cases[] = {
     { "Suite11-SI094-BlockLength",       s11_si094_block_length },
     { "Suite11-SI103-Resets",            s11_si103_resets },
     { "Suite11-SI144-ReadX00",           s11_si144_read_x00 },
+    { "Suite11-SI144c-RenameX00",        s11_si144c_rename_x00 },
     { "Suite11-SI144-SharedHeader",      s11_si144_shared_header },
     { "Suite11-SI132-Splat",             s11_si132_splat },
     { "Suite11-DeliberateExclusions",    s11_deliberate_exclusions },

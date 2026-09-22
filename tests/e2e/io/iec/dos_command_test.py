@@ -720,17 +720,43 @@ def check_compatibility(agent, api, password, folder, root):
         if data != b"PAYLOAD":
             raise Failure(f"MY GAME reads {data!r}")
         agent.command(b"R//" + here + b"/:TUNE=//" + here + b"/:MY GAME\r")
+        # The host file takes the new name as well, so the two names agree (SI-144c).
         with ftp.session(api.host, password) as client:
-            renamed = ftp.retrieve(client, f"{directory}/GAME.P00")
-        detail(f"after R:TUNE=MY GAME the header names {renamed[8:24]!r}")
+            after = ftp.names(client, directory)
+            renamed = ftp.retrieve(client, f"{directory}/TUNE.P00")
+        detail(f"after R:TUNE=MY GAME the directory holds {sorted(after)} "
+               f"and the header names {renamed[8:24]!r}")
+        if "GAME.P00" in after:
+            raise Failure(f"the rename left GAME.P00 behind: {sorted(after)}")
         if renamed[:26] != x00_header(b"TUNE"):
             raise Failure(f"the rename left the header as {renamed[:26]!r}")
         response = agent.command(b"S//" + here + b"/:TUNE\r", allowed=(1,))
         with ftp.session(api.host, password) as client:
             left = ftp.names(client, directory)
         detail(f"S:TUNE answered {response!r}")
-        if not response.startswith("01, FILES SCRATCHED,01") or "GAME.P00" in left:
+        if not response.startswith("01, FILES SCRATCHED,01") or "TUNE.P00" in left:
             raise Failure(f"S:TUNE answered {response!r} and left {sorted(left)}")
+
+        # A host file already holding the new spelling pushes the wrapper to the next
+        # extension digit and is left as it is (SI-144c).
+        with ftp.session(api.host, password) as client:
+            ftp.store(client, f"{directory}/WRAP.S00", x00_header(b"WRAPPED") + b"text")
+            ftp.store(client, f"{directory}/OCCUPIED.S00", b"not a wrapper")
+        agent.command(b"R//" + here + b"/:OCCUPIED=//" + here + b"/:WRAPPED\r")
+        with ftp.session(api.host, password) as client:
+            names = ftp.names(client, directory)
+            moved = ftp.retrieve(client, f"{directory}/OCCUPIED.S01")
+            blocked = ftp.retrieve(client, f"{directory}/OCCUPIED.S00")
+        detail(f"after the rename onto a taken name the directory holds {sorted(names)}")
+        if "WRAP.S00" in names:
+            raise Failure(f"the rename left WRAP.S00 behind: {sorted(names)}")
+        if moved[:26] != x00_header(b"OCCUPIED") or moved[26:] != b"text":
+            raise Failure(f"OCCUPIED.S01 holds {moved!r}")
+        if blocked != b"not a wrapper":
+            raise Failure(f"the rename wrote over OCCUPIED.S00, which holds {blocked!r}")
+        agent.command(b"S//" + here + b"/:OCCUPIED\r", allowed=(1,))
+        with ftp.session(api.host, password) as client:
+            ftp.delete_quietly(client, f"{directory}/OCCUPIED.S00")
 
     def rel_layouts():
         # sd2iec's layout: the record length in one byte, then records of three bytes.
@@ -765,7 +791,7 @@ def check_compatibility(agent, api, password, folder, root):
             ("SI-071: N creates a D64 image", format_image),
             ("SI-103: UJ closes the channels and U+shifted J returns to the root, and the drive still answers", resets),
             ("SI-074: R renames a subdirectory", rename_directory),
-            ("SI-144: a P00 file lists, loads, renames and scratches under the name in its header", x00_read),
+            ("SI-144, SI-144c: a P00 file lists, loads, renames with its host file and scratches under the name in its header", x00_read),
             ("SI-084: a relative file in sd2iec's one byte layout reads its records", rel_layouts),
     ):
         try:

@@ -730,7 +730,7 @@ class Fixtures:
             with ftp_lib.session(host, password, timeout=30) as ftp:
                 for directory in (f"{self.target_dir}/", ""):
                     for name in ftp_lib.names(ftp, f"{TEMP_PATH}{directory}"):
-                        if not name.startswith(FIXTURE_PREFIX) and directory == "":
+                        if not name.lower().startswith(FIXTURE_PREFIX) and directory == "":
                             continue
                         ftp_lib.delete_quietly(ftp, f"{TEMP_PATH}{directory}{name}")
                 ftp_lib.delete_quietly(ftp, f"{TEMP_PATH}{self.target_dir}")
@@ -1009,8 +1009,21 @@ class WrappedLocation:
         # this fixture just as well.
         return "WRAPPED"
 
+    def rename_input(self, fixtures: Fixtures) -> str:
+        # The row carries the name from the header, so that is the name the rename edits.
+        return f"{FIXTURE_PREFIX}{fixtures.token}wren".upper()
+
     def renamed_to(self, fixtures: Fixtures) -> str:
-        return f"{FIXTURE_PREFIX}{fixtures.token}wren.p00"
+        # The host file takes the same name, with the extension of the wrapper (SI-144c).
+        return f"{self.rename_input(fixtures)}.P00"
+
+    def check_renamed(self, host: str, password: str, fixtures: Fixtures) -> None:
+        content = fetch_temp_file(host, password, self.renamed_to(fixtures))
+        name = content[8:24].rstrip(b"\0")
+        if name != self.rename_input(fixtures).encode("ascii"):
+            raise Failure(f"the header of the renamed wrapper names {name!r}")
+        if content[26:] != PRG_BYTES:
+            raise Failure("the rename changed the program inside the wrapper")
 
     def listing(self, host: str, password: str, fixtures: Fixtures) -> list[str]:
         return fixtures.temp_listing(host, password)
@@ -1120,13 +1133,17 @@ def action_rename(machine: Machine, fixtures: Fixtures, location, host: str, pas
     location.open(machine, fixtures)
     original = location.host_name(fixtures)
     renamed = location.renamed_to(fixtures)
+    typed = getattr(location, "rename_input", location.renamed_to)(fixtures)
     machine.invoke_context_action("Rename")
     machine.wait_for_text("Give a new name..")
-    machine.replace_edit_field(renamed)
+    machine.replace_edit_field(typed)
 
     names = location.listing(host, password, fixtures)
     assert_present(names, renamed, "Rename did not create the new name")
     assert_absent(names, original, "Rename left the old name behind")
+    check = getattr(location, "check_renamed", None)
+    if check:
+        check(host, password, fixtures)
 
 
 def action_delete(machine: Machine, fixtures: Fixtures, location, host: str, password: str) -> None:

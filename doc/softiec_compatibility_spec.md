@@ -148,12 +148,14 @@ This specification applies it as follows.
    it, **SD** is normative, because that is the device the Ultimate most resembles
    and the one the reporter maintains.
 2a. Where SDU and SDM differ, SDU is normative, because that is the line a user is
-   likely to be running, and the requirement says what SDM does. Two such conflicts were
+   likely to be running, and the requirement says what SDM does. Three such conflicts were
    found. The hidden attribute inside a disk image, which SDU clears from the type byte
    and SDM keeps behind a setting: this drive follows SDU (SI-134). And `,M`, which SDU
    opens read and write on a FAT file system and SDM opens for reading: this drive
    follows SDM, for the reason SI-070 gives, which is the exception that proves the rule
-   is about behaviour rather than about which line it came from. Where a
+   is about behaviour rather than about which line it came from. And the rename of a file
+   that lives in an x00 wrapper, where SDU writes the header alone and SDM renames the
+   host file to match it: this drive follows SDM, for the reason SI-144c gives. Where a
    command exists in SDM only, there is nothing to conflict with, and the requirement
    says that it rests on SDM alone: SI-064's optional id, SI-077, SI-077a and the name
    mapping of SI-140 to SI-148. SI-076's `L` is a CMD command (HD 9-30); only its
@@ -885,7 +887,7 @@ drive moves the entry, as IDE 15.2.3 documents. `Suite8-RENAME-P1-TO-P2` in
 that needs the `62`. A directory cannot move inside itself, where its only entry would
 be reached through the directory it names; that answers `71,DIRECTORY ERROR`, and the
 check is in `FileManager::rename_impl`, so the browser's Move, FTP and REST are held to it
-as well. An x00 file (SI-144) moved this way keeps its host name. A
+as well. An x00 file (SI-144) moved this way takes the host name of its new CBM name (SI-144c). A
 subdirectory is renamed under its own name: `U do_rename()` resolves the source with
 directories allowed, and `CreateIecName()` reports `e_folder` for one, so the
 destination is built without a file type extension. See C14.
@@ -1743,13 +1745,34 @@ it the same way regardless of configuration. It is the only mapping under which 
 file moved between an Ultimate, an sd2iec and VICE keeps its identity.
 
 An x00 file lists, opens (with or without a type), positions, appends, copies (the data
-without the header, with the type from the header), renames (the name in the header; the
-host name is kept) and scratches under the CBM name in its header. A new file of a name
+without the header, with the type from the header), renames (the name in the header, and the host
+file to match it) and scratches under the CBM name in its header. A new file of a name
 that an x00 file carries answers `63`, and with `@` the x00 file is removed and the new
 file written in its place, as sd2iec's `file_open()` does. The UCI `GET_IECNAME` command
 reads the header when it is given a full path. The reason for reading these files at all
 is GAP's section on file names, which asks the drive to follow how sd2iec stores CBM file
 types.
+
+**SI-144c.** A rename of a file that lives in an x00 wrapper writes the new name into the
+header and gives the host file the same name: the new CBM name rendered for the file
+system by the mapping of SI-140, the type letter the wrapper already carries, and two
+digits. The digits start at `00` and count up while another host file holds that spelling,
+so a rename never writes over a file that is there; when none of the hundred spellings is
+free the host name stays as it is, and the name in the header is the new one either way.
+The file keeps its wrapper, so no file is left holding a header without the extension that
+announces it. A rename into another directory moves the host file under the new name.
+Source: `SDM fat_rename()`, which builds the host name with `build_name(name, type, 2)`
+and increments the extension while `f_stat()` finds a file of that name.
+
+*Difference from SDU.* `SDU fat_rename()` writes the header and leaves the host file
+where it is, under its old name; its comment reads `/* [PSUR]00 rename, just change the
+internal file name */`. SDBUGS asks for the host name to follow the header, under reduced
+clarity, because two files renamed from the same CBM name are otherwise told apart only
+with a hex editor. This drive follows SDM rather than SDU, which rule 2a of section 1.2
+allows for a stated reason: the header name is the only name this drive shows for such a
+file, on the bus (SI-144) and in the file browser (SI-144b), so a host name left behind is
+a second name that no interface shows and no program reads, an x00 file being found by the
+name in its header.
 
 **SI-144a.** The header is read in one place, `software/filetypes/x00_wrapper.cc`, which
 the drive, the file browser and the C64 loader all use. The loader needs it because a file
@@ -1767,8 +1790,10 @@ shows the name from the header, because the host name of such a file is an 8.3 r
 that does not identify it, while the extension column still says `P00` so that the
 wrapper is visible. That name ends at its first shifted space or control byte, as the
 name of an entry read from a CBM disk image does, and a header whose name is empty by
-that rule leaves the row showing the host name; every operation that names the file on the medium, a rename, a copy
-and a delete among them, uses the host name. A browser copy copies the host file whole,
+that rule leaves the row showing the host name. A rename in the browser edits the name the
+row carries and takes the host file with it, the rename SI-144c describes, so the browser
+and the drive give a wrapper the same name. A copy, a move and a delete act on the file of
+the medium under its host name. A browser copy copies the host file whole,
 wrapper included, because it copies a file of the medium and the copy is an x00 file of
 the same name. `FileManager::fcopy` is a byte copy for every caller, and teaching it to
 unwrap would change what the ROM and cartridge installers copy as well. The drive's own
@@ -2112,6 +2137,7 @@ differently from one of its sources, for a reason given below the requirement.
 | SI-136 | A second `*` matches in the middle of a name, where CBM DOS and sd2iec stop at the first |
 | SI-141 | A host name longer than 16 characters renders as its first 16 characters, where SDM prints the 8.3 name. SDU has no such mapping |
 | SI-142 | The length guard of `SDM` is not adopted, because it would change no host name the drive produces |
+| SI-144c | A rename of a file in an x00 wrapper renames the host file to match the header, as `SDM fat_rename()` does, where `SDU fat_rename()` writes the header alone |
 
 ---
 
@@ -2315,7 +2341,7 @@ row.
 | Section of the manual | Settled by |
 | --- | --- |
 | Files: long filenames, and the 8.3 name when a long one exceeds 16 characters | SI-140 to SI-143; the 8.3 fallback is a stated difference under SI-141 |
-| Files: x00 wrappers, the header, the extension family, the internal name in a listing, renaming the internal name | SI-144, SI-144a, SI-144b, SI-145, SI-146 |
+| Files: x00 wrappers, the header, the extension family, the internal name in a listing, renaming the internal name and the host name with it | SI-144, SI-144a, SI-144b, SI-144c, SI-145, SI-146 |
 | Files: relative files, and the record length of a plain one | SI-080, SI-084, SI-146 |
 | Files: positioning (seeking) within a file with `P` | SI-081, SI-082, SI-083 |
 | Files: M2I | Section 19; the manual deprecates the format |
@@ -2469,11 +2495,12 @@ which section 1.3 allows and names.
 | SI-139 | Suite11-SI139-StampedEntries, iec-dos-commands |
 | SI-140 | parse |
 | SI-141 | Suite11-CommonBugs, parse |
-| SI-142 | Suite11-SI142-EscapedWildcards, parse |
+| SI-142 | Suite11-SI142-EscapedWildcards, Suite11-SI144c-RenameX00, parse |
 | SI-143 | parse |
 | SI-144 | Suite11-CommonBugs, Suite11-SI144-ReadX00, Suite11-SI144-X00Paths, iec-dos-commands, prg-context-menu, softiec-soak |
 | SI-144a | Suite11-SI144-SharedHeader |
 | SI-144b | *(none: see section 1.3)* |
+| SI-144c | Suite11-CommonBugs, Suite11-SI144c-RenameX00, iec-dos-commands, prg-context-menu |
 | SI-145 | Suite11-DeliberateExclusions |
 | SI-146 | Suite11-SI084-RelLayouts |
 | SI-147 | Suite11-SI147-ShiftedSpace, iec-dos-commands, parse |

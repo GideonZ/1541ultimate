@@ -2412,27 +2412,10 @@ int IecCommandChannel::do_rename(filename_t &src, filename_t &dest)
         }
     }
 
-    // An x00 file keeps its host name and gets the new name in its header; into another
-    // directory it moves under that host name.
+    // An x00 file takes the new name in its header and in its host name, so the two agree
+    // and the file browser, a PC and the bus all show the same name (SDM fat_rename()).
     if (wrapped) {
-        File *file = NULL;
-        fres = fm->fopen(src_path, FA_READ | FA_WRITE, &file);
-        if (fres == FR_OK) {
-            char name[16];
-            uint32_t tr;
-            memset(name, 0, sizeof(name));
-            strncpy(name, dest.filename.c_str(), sizeof(name));
-            fres = file->seek(8);
-            if (fres == FR_OK) {
-                fres = file->write(name, sizeof(name), &tr);
-            }
-            fm->fclose(file);
-        }
-        mstring moved(dest_dir.c_str());
-        append_path_component(moved, strrchr(src_path, '/') + 1);
-        if ((fres == FR_OK) && strcmp(moved.c_str(), src_path)) {
-            fres = fm->rename(src_path, moved.c_str());
-        }
+        fres = x00_rename(fm, src_path, dest_dir.c_str(), dest.filename.c_str());
         if (fres != FR_OK) {
             drive->set_error_fres(fres);
         }

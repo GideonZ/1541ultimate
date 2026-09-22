@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include "file.h"
+#include "mystring.h"
 
 class FileManager;
 
@@ -33,6 +34,15 @@ bool x00_read_header(FileManager *fm, const char *path, char *cbm_name, uint8_t 
 // in would reach the screen, which reads $1B as the start of an escape sequence. Answers
 // the length that is left; 0 means there is nothing to show.
 int x00_shown_name(char *cbm_name);
+
+// Gives the CBM file in an x00 wrapper a new name. The name goes into the header, and the
+// host file is renamed to that name rendered for the file system, carrying the type letter
+// of the wrapper and two digits that count up while another host file holds the spelling.
+// `dir` is the directory the file ends up in, which is the one it is in for a rename in
+// place. The host name is left as it is when none of the hundred spellings is free, so the
+// header still carries the new name. `renamed`, when given, receives the resulting path.
+FRESULT x00_rename(FileManager *fm, const char *path, const char *dir, const char *cbm_name,
+                   mstring *renamed = NULL);
 
 // Moves an open file past its header and answers the size of the header, or leaves the
 // file at the start and answers 0 when it carries none. The path is needed for the name.

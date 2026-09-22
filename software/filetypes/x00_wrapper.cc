@@ -1,5 +1,6 @@
 #include "x00_wrapper.h"
 #include "filemanager.h"
+#include "pattern.h"
 #include <ctype.h>
 #include <string.h>
 
@@ -76,4 +77,70 @@ uint32_t x00_skip_header(File *f, const char *path, uint8_t *record_length, char
     }
     f->seek(0);
     return 0;
+}
+
+// One candidate host name for a CBM name: the name rendered for the file system, the type
+// letter of the wrapper at `path`, and the two digits of `index`.
+static bool x00_host_name(const char *path, const char *dir, const char *cbm_name, int index,
+                          mstring& out)
+{
+    char letter = 0;
+    char fatname[52];
+    if (!x00_name(path, &letter)) {
+        return false;
+    }
+    petscii_to_fat(cbm_name, fatname, sizeof(fatname));
+    if (!fatname[0]) {
+        return false;
+    }
+    char tail[5] = { '.', letter, (char)('0' + (index / 10)), (char)('0' + (index % 10)), 0 };
+    out = dir;
+    if (out[-1] != '/') {
+        out += "/";
+    }
+    out += fatname;
+    out += tail;
+    return true;
+}
+
+FRESULT x00_rename(FileManager *fm, const char *path, const char *dir, const char *cbm_name,
+                   mstring *renamed)
+{
+    File *f = NULL;
+    FRESULT fres = fm->fopen(path, FA_READ | FA_WRITE, &f);
+    if (fres != FR_OK) {
+        return fres;
+    }
+    char name[16];
+    uint32_t written;
+    memset(name, 0, sizeof(name));
+    strncpy(name, cbm_name, sizeof(name));
+    fres = f->seek(8);
+    if (fres == FR_OK) {
+        fres = f->write(name, sizeof(name), &written);
+    }
+    fm->fclose(f);
+    if (fres != FR_OK) {
+        return fres;
+    }
+    mstring target(path);
+    for (int i = 0; i < 100; i++) {
+        mstring candidate;
+        FileInfo info(INFO_SIZE);
+        if (!x00_host_name(path, dir, cbm_name, i, candidate)) {
+            break; // no host name can be built, so the file keeps the one it has
+        }
+        if (!strcasecmp(candidate.c_str(), path) ||
+            (fm->fstat(candidate.c_str(), info) != FR_OK)) {
+            target = candidate;
+            break;
+        }
+    }
+    if (strcmp(target.c_str(), path)) {
+        fres = fm->rename(path, target.c_str());
+    }
+    if (renamed && (fres == FR_OK)) {
+        *renamed = target;
+    }
+    return fres;
 }
