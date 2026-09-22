@@ -1016,16 +1016,14 @@ def main():
     assertions_enabled = not args.no_assertions
 
     if targets.is_cartridge(args.host):
-        # Measured on u2@c64u, 2026-09-04: the PRG this suite runs to make the
-        # C64 print never starts, so every phase times out after 60s with REST
-        # still answering. It is the same shape as the load and run actions
-        # skipped in prg_context_menu_test on this target, and the same
-        # evidence applies: driven by hand, the device runs the program.
+        # Measured on u2@c64u: the program prints and the page is written, but
+        # after Flush/Eject the cartridge's menu stays blocked for up to 70s,
+        # so the suite after this one finds a menu that will not open. Kept
+        # skipped until the printer's flush is fixed on the cartridge.
         suite_skip(
             "printer_test",
-            "the PRG that drives the printer does not start when this suite "
-            "runs against a cartridge inside a computer; see the same skip in "
-            "prg_context_menu_test")
+            "after Flush/Eject the cartridge's menu stays blocked for up to "
+            "70 seconds, which breaks the suite that runs next")
         return 0
 
     client = U64Client(args.host, args.password)
