@@ -44,6 +44,69 @@ in `roms/1541.bin` rather than any manual.
 
 ---
 
+## Contents
+
+- [1. Sources of truth and how conflicts are settled](#1-sources-of-truth-and-how-conflicts-are-settled)
+  - [1.1 Source register](#11-source-register)
+  - [1.2 Precedence](#12-precedence)
+  - [1.3 Acceptance](#13-acceptance)
+  - [1.4 Notation](#14-notation)
+  - [1.5 Conformance and traceability](#15-conformance-and-traceability)
+  - [1.6 Terminology](#16-terminology)
+- [2. The model](#2-the-model)
+  - [2.1 Device, partitions, directories](#21-device-partitions-directories)
+  - [2.2 What the partition model must not do](#22-what-the-partition-model-must-not-do)
+- [3. Command string grammar](#3-command-string-grammar)
+  - [3.1 Path syntax](#31-path-syntax)
+  - [3.2 The left arrow](#32-the-left-arrow)
+  - [3.3 The command terminator](#33-the-command-terminator)
+  - [3.4 Numeric parameters](#34-numeric-parameters)
+  - [3.5 Command length](#35-command-length)
+- [4. Error codes](#4-error-codes)
+  - [4.1 The table](#41-the-table)
+  - [4.2 The error code that is not a CBM DOS error](#42-the-error-code-that-is-not-a-cbm-dos-error)
+- [5. Partition commands](#5-partition-commands)
+  - [5.1 Change partition](#51-change-partition)
+  - [5.2 Get partition info](#52-get-partition-info)
+  - [5.3 Partition directory](#53-partition-directory)
+  - [5.4 Other partition commands](#54-other-partition-commands)
+- [6. Directory commands](#6-directory-commands)
+- [7. File commands](#7-file-commands)
+  - [7.1 Open](#71-open)
+  - [7.2 Scratch, rename, copy](#72-scratch-rename-copy)
+- [8. Relative files](#8-relative-files)
+- [9. Direct access](#9-direct-access)
+- [10. Device commands](#10-device-commands)
+- [11. Device identification](#11-device-identification)
+- [12. Real time clock](#12-real-time-clock)
+- [13. Directory listings](#13-directory-listings)
+  - [13.1 Layout](#131-layout)
+  - [13.2 Filters](#132-filters)
+  - [13.3 Raw directory](#133-raw-directory)
+  - [13.4 File types inside a disk image](#134-file-types-inside-a-disk-image)
+- [14. File naming on the host file system](#14-file-naming-on-the-host-file-system)
+  - [14.1 The scheme that already exists](#141-the-scheme-that-already-exists)
+  - [14.2 x00 wrappers](#142-x00-wrappers)
+  - [14.3 The shifted space](#143-the-shifted-space)
+- [15. Limits, and what must not break](#15-limits-and-what-must-not-break)
+  - [15.1 Limits](#151-limits)
+  - [15.2 Behaviour that must not change](#152-behaviour-that-must-not-change)
+  - [15.3 Consequences elsewhere](#153-consequences-elsewhere)
+- [16. Conflicts between the sources, and how each is decided](#16-conflicts-between-the-sources-and-how-each-is-decided)
+- [17. Tests](#17-tests)
+- [18. The operation log](#18-the-operation-log)
+  - [18.1 Deliberately unsupported, and the differences from the sources](#181-deliberately-unsupported-and-the-differences-from-the-sources)
+- [19. Out of scope](#19-out-of-scope)
+- [Appendix A. What C64 OS sends](#appendix-a-what-c64-os-sends)
+- [Appendix B. Requirement index](#appendix-b-requirement-index)
+- [Appendix C. The programs issue #917 reports](#appendix-c-the-programs-issue-917-reports)
+- [Appendix D. Conformance against the two C64 OS reference articles](#appendix-d-conformance-against-the-two-c64-os-reference-articles)
+  - [D.1 GAP, "Gaps in Software IEC"](#d1-gap-gaps-in-software-iec)
+  - [D.2 GSD, "SD2IEC User's Manual"](#d2-gsd-sd2iec-users-manual)
+- [Appendix E. Traceability](#appendix-e-traceability)
+
+---
+
 ## 1. Sources of truth and how conflicts are settled
 
 ### 1.1 Source register
@@ -124,8 +187,10 @@ optional would say nothing an implementation could be held to, and the deliberat
 exclusions are listed instead (section 18.1).
 
 **Rationale, sources and differences.** A requirement's first paragraph is the statement.
-Anything after it explains why, records where the behaviour comes from (`Source:` or
-`Sources:`), or says how it differs from a source (`Difference from ...`). Those
+Anything after it explains why, records where the behaviour comes from, or says how it
+differs from a source (`Difference from ...`). A source is cited either on a line of its
+own, after `Source:` or `Sources:`, or inside the sentence it belongs to where the
+citation is part of the statement. Those
 paragraphs are not separate requirements, and an implementation cannot satisfy a
 requirement by following its rationale rather than its statement.
 
