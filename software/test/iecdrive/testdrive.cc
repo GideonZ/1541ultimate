@@ -2317,7 +2317,8 @@ void execute_suite10(FileManager *fm, IecDrive *dr)
 #include "iec_log.h"
 
 // A fresh directory on the FAT file, mounted as partition 40, selected, and entered at
-// its root.
+// its root. SI-003: a partition roots at a host directory here and at a mounted image in
+// the cases that call add_partition() with one, and every case below uses one or both.
 static const char *s11_partition(FileManager *fm, IecDrive *dr, const char *dir)
 {
     const char *testname = "Suite11";
@@ -3065,7 +3066,7 @@ static void s11_si134_hidden_flag(FileManager *fm, IecDrive *dr)
     REQUIRE(memcmp(secret + 4, "   \"SECRET\"           PRG H", 27) == 0);
     REQUIRE(memcmp(s11_listing_line(hidden, n_hidden, "VISIBLE") + 4,
                    "   \"VISIBLE\"          PRG  ", 27) == 0);
-    // A hidden entry still answers to its name, which is the only way to reach it and
+    // SI-134a: a hidden entry still answers to its name, which is the only way to reach it and
     // to turn the flag back.
     expect_iec_file(testname, dr, 0, "SECRET", "S");
     expect_command_ok(testname, dr, "EHSECRET\r");
@@ -3402,7 +3403,7 @@ static void s11_si071_format(FileManager *fm, IecDrive *dr)
     // A full sixteen character label keeps its extension.
     expect_command_ok(testname, dr, "N:ABCDEFGHIJKLMNOP.D81,AB\r");
     REQUIRE(s11_host_size(fm, path, "ABCDEFGHIJKLMNOP.D81") == 819200);
-    // Inside a disk image N formats that image rather than creating an image in it.
+    // SI-071a: inside a disk image N formats that image rather than creating one in it.
     expect_command_ok(testname, dr, "CD:ONE.D64\r");
     expect_iec_write_ok(testname, dr, 2, "GONE,S,W", "erased by the format");
     expect_command_ok(testname, dr, "N:WORK,01\r");
@@ -3548,7 +3549,7 @@ static void s11_si076_lock(FileManager *fm, IecDrive *dr)
     expect_command_response(testname, dr, "S47:INIMAGE\r", "01, FILES SCRATCHED,00,00\r");
 }
 
-// SI-102: while the software write protect is set, every command and every open that
+// SI-102, SI-102a: while the write protect is set, every command and every open that
 // would change a medium answers 26 and changes nothing, and everything that only reads
 // still works. One check per gate the drive guards, so a gate that is left out is a
 // failure here rather than a hole nobody notices.
@@ -3930,7 +3931,7 @@ static void s11_si094_block_length(FileManager *fm, IecDrive *dr)
 
 extern int iec_interface_configure_calls; // counted by the interface stub
 
-// SI-103: UJ closes the data channels, keeping the partition and its directory, and
+// SI-103, SI-103a: UJ closes the data channels, keeping the partition and its directory, and
 // U+shifted J also returns every partition to its root and selects partition 1. Both
 // answer 73. Neither may reconfigure the IEC interface, which on the device holds the
 // IEC processor in reset, so the command channel has to go on answering.
@@ -4912,8 +4913,8 @@ static void s11_image_write_lock(FileManager *fm, IecDrive *dr)
     expect_iec_write_ok(testname, dr, 1, "64:NEW", "n");
 }
 
-// A JiffyDOS LOAD streams through the interface's talk loop, which pops what each pass
-// sent, and a pass that finds the fifo still full pops nothing. Such a pass must not end
+// SI-153: a JiffyDOS LOAD streams through the interface's talk loop, which pops what each
+// pass sent, and a pass that finds the fifo still full pops nothing. Such a pass must not end
 // the file while the byte at its last position is still unsent, whatever the file size.
 static void s11_jiffy_load_stream(FileManager *fm, IecDrive *dr)
 {

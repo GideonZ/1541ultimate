@@ -115,6 +115,61 @@ The specification is met when all of the following hold.
   test, and SI-151 is retired.
 * **A3.** Nothing in section 15.2 behaves differently.
 
+### 1.4 Notation
+
+**Normative text.** A requirement is a numbered paragraph beginning `SI-nnn`. Its
+statements are normative and are written in the present indicative: "the drive answers
+`31`" states what the drive does and what an implementation has to keep doing. `must` and
+`must not` appear where a statement is a prohibition or where it is easy to read an
+obligation as a description. Nothing here uses `should` or `may`: a requirement that is
+optional would say nothing an implementation could be held to, and the deliberate
+exclusions are listed instead (section 18.1).
+
+**Rationale, sources and differences.** A requirement's first paragraph is the statement.
+Anything after it explains why, records where the behaviour comes from (`Source:` or
+`Sources:`), or says how it differs from a source (`Difference from ...`). Those
+paragraphs are not separate requirements, and an implementation cannot satisfy a
+requirement by following its rationale rather than its statement.
+
+**Identifiers.** `SI-nnn` identifiers are stable. A letter suffix, as in `SI-103b`, is a
+further rule of the requirement it follows and is numbered that way so that a number
+already cited elsewhere keeps its meaning. A retired identifier is not reused; SI-151 is
+the only one.
+
+**Status.** Every requirement has one of four statuses, and a requirement that is not in
+force carries its status in its heading, as in `SI-054 (deliberately unsupported)`. *In
+force* is the default and is not written out. *Deliberately unsupported* means the drive
+refuses the command on purpose; the requirement states what it answers instead, and
+section 18.1 indexes all of them. *Out of scope* means the drive does not have the
+capability the requirement describes; section 19 indexes those. *Retired* applies to
+SI-151 alone, whose number is not reused.
+
+**Typography.** `code` marks a command, an identifier, a file name or a path. A byte is
+`$hh`, an answer on the error channel is `NN,TEXT` as the C64 reads it, and a character
+the C64 sends as a number is `CHR$(n)`. A citation is the register code of section 1.1
+followed by the place in that source, as in `HD 9-15`, `SD file_open()` or `SDM
+d64_set_attrib()`.
+
+### 1.5 Conformance and traceability
+
+An implementation conforms when, for every requirement that is in force, the tests that
+name it pass, and each of those tests fails when the behaviour the requirement states is
+reverted. The second half is what makes the first half worth anything, and it is the rule
+every change to this drive is held to.
+
+The tests name the requirement they check: a `Suite11` case is called after it, a parser
+case carries it in a comment, and a hardware check puts it in the label a run prints.
+Appendix E lists the mapping, which `tools/softiec_traceability.py` generates from the
+test sources, so a requirement that no test names shows up there rather than being
+believed. Section 17 says which layer a requirement belongs in and why.
+
+**Changing a requirement.** A change to what the drive does is a change to the statement
+here, to the tests that name it, and to the firmware, in one piece of work. A statement
+that no longer matches the firmware is a defect in this document, not a description of an
+exception. Where a change makes the drive answer differently from one of its sources, the
+requirement says which source and why, and section 18.1 indexes it. Nothing is settled by
+a note that behaviour drifted.
+
 ---
 
 ## 2. The model
@@ -552,7 +607,7 @@ function is performed automatically by the HD, but the command has been implemen
 to retain compatibility"; `SD parse_initialize()`, which frees the user buffers.
 `I` answers `00, OK`; `UI` answers the 73 message.
 
-**SI-054.** `V[n][:]` validates. **Deliberately unsupported**; the drive answers `31`,
+**SI-054 (deliberately unsupported).** `V[n][:]` validates. **Deliberately unsupported**; the drive answers `31`,
 which is also what `SD parse_doscommand()` answers, having no `V` in its command switch.
 
 On a host file system there is nothing to validate: the file system keeps its own
@@ -568,7 +623,7 @@ SI-030 and the position taken for `M-W` (SI-105) both refuse.
 
 The reporter wrote on #877 that "V not implemented, but that's ok for the time being".
 
-**SI-055.** The 1581-style sub-partition commands `/[n]:name` and
+**SI-055 (out of scope).** The 1581-style sub-partition commands `/[n]:name` and
 `/[n]:name,`+`CHR$(st)CHR$(ss)CHR$(sl)CHR$(sh)`+`,C` are not implemented and are out
 of scope. They address 1581 emulation partitions, which this drive does not have.
 They answer `31,SYNTAX ERROR`, because `/` is not a command letter and SI-030 gives that
@@ -974,7 +1029,7 @@ block as a length. Sources: HD 9-44 and 9-45; `SD parse_block()`, which sets
 memory, which this drive does not have. It answers `30`, because `B` is a recognised
 command letter and only the sub-command is not (SI-030).
 
-**SI-096.** The sd2iec direct sector commands `DI`, `DR` and `DW`, and the error
+**SI-096 (out of scope).** The sd2iec direct sector commands `DI`, `DR` and `DW`, and the error
 `78,BUFFER TOO SMALL`, are out of scope. They expose the raw storage device below the
 file system, which is not something this firmware should offer over IEC. They answer
 `30,SYNTAX ERROR`: `D` is a command letter here, for the header command of SI-077, and
@@ -1073,7 +1128,7 @@ drive back on the device number the settings hold. Test: `Suite11-ResetRestartsP
 **SI-104.** `U3` to `U8` and `UC` to `UH` jump into drive memory and are not
 implemented; they answer `30`, for the same reason as SI-095. Source: HD 9-51.
 
-**SI-105.** The memory commands are implemented as follows.
+**SI-105 (deliberately unsupported).** The memory commands are implemented as follows.
 
 * `M-R`+`CHR$(lo)`+`CHR$(hi)`[+`CHR$(n)`] returns `n` bytes over the error channel,
   with `n` absent meaning 1 and `n` zero meaning 256. It does not read past a page
@@ -1105,7 +1160,7 @@ drive code is ever known here, so every `M-E` answers it. A program that meets t
 on an sd2iec meets it here for the same reason. `98` is not a CBM DOS code, and no CMD
 device answers it; a program that treats any non-zero code as a refusal is unaffected.
 
-**SI-106.** `S-C`, the SCSI pass-through of HD 9-39, is out of scope.
+**SI-106 (out of scope).** `S-C`, the SCSI pass-through of HD 9-39, is out of scope.
 
 ---
 
@@ -1179,7 +1234,7 @@ authors to do for sd2iec: "DO NOT use M-R for this purpose. Use the UI command
 instead." That C64 OS already copes with this is not an assumption: the boot in TRACE
 falls through all four `M-R` probes to `UI` and succeeds.
 
-**SI-115.** The sd2iec `XR` mechanism, which serves a real drive ROM image from a file
+**SI-115 (out of scope).** The sd2iec `XR` mechanism, which serves a real drive ROM image from a file
 for `M-R` so that GEOS and Wheels can identify a drive, is out of scope. Sources:
 SD README under `XR` and under GEOS and Wheels; GAP does not ask for it. The
 reporter asked on #877 that the documentation state plainly that there is no GEOS and
@@ -1384,7 +1439,7 @@ the matcher from the bus.
 
 ### 13.3 Raw directory
 
-**SI-137.** `OPEN lf,dv,sa,"$"` with `sa` not 0 returns the raw directory sectors rather
+**SI-137 (deliberately unsupported).** `OPEN lf,dv,sa,"$"` with `sa` not 0 returns the raw directory sectors rather
 than the BASIC listing. Sources: `SD load_directory()`, which branches on `secondary != 0`
 into `d64_raw_directory()` or a synthesised BAM sector followed by raw 32-byte entries;
 IDE 6.3, "To open a raw directory channel, use secondary address 2-14".
@@ -1621,7 +1676,7 @@ this is a part of SI-144 rather than an extra: `tests/e2e/filemanager/prg_contex
 drives every context menu action of the real browser against a `P00` wrapper and checks
 that the program inside is what runs.
 
-**SI-145.** Writing x00 files is a configuration choice, default off, so that
+**SI-145 (deliberately unsupported).** Writing x00 files is a configuration choice, default off, so that
 existing users see no change. When on, it follows sd2iec mode 1 (x00 for SEQ, USR and
 REL, plain for PRG) or mode 2 (x00 for everything). Source: SD README under `XEnum`.
 
@@ -1629,7 +1684,7 @@ REL, plain for PRG) or mode 2 (x00 for everything). Source: SD README under `XEn
 reading x00 files (SI-144) already gives the interchange with files that VICE and sd2iec
 write. New files are written plain.
 
-**SI-146.** The x00 wrapper is the whole of the write side answer for relative files.
+**SI-146 (deliberately unsupported).** The x00 wrapper is the whole of the write side answer for relative files.
 With it the record length is at a fixed header offset that both devices already
 agree on, so a relative file created while SI-145 is enabled is readable by an
 sd2iec without either device changing its plain layout. A plain `.rel` keeps this
@@ -1774,7 +1829,7 @@ checks of `tests/e2e/io/iec/dos_command_test.py` run with `--kernal`.
 
 ### 15.3 Consequences elsewhere
 
-**SI-151. Retired.** The number held a requirement to migrate the relative files this
+**SI-151 (retired).** The number held a requirement to migrate the relative files this
 firmware had written, from a two byte record length to a one byte one. A migration over
 user data, by a heuristic, to gain an interchange the x00 wrapper already provides, is a
 cost with no matching benefit; SI-084 reads both plain layouts instead. The number is
@@ -2180,3 +2235,133 @@ row.
 | Settings: the `X` family | Section 19, except `XE`, which is SI-145 |
 | Software fastloaders | Section 15.2 item 10 for JiffyDOS; section 19 for the others |
 | Write protect, `26,WRITE PROTECT ON` | SI-102, SI-102a, SI-077a |
+
+## Appendix E. Traceability
+
+Which tests name each requirement, generated by `tools/softiec_traceability.py` from the
+test sources. A case name is a `Suite` case in `target/pc/linux/iecdrive`; `parse` is a
+case in `target/pc/linux/parse`; the remaining names are hardware suites under `tests/`.
+A requirement with no test is one that only says what is out of scope, or is retired,
+which section 1.3 allows and names.
+
+| Requirement | Named by |
+| --- | --- |
+| SI-001 | Suite11-SI001-DeviceNumberRange |
+| SI-002 | Suite3 |
+| SI-003 | Suite11 |
+| SI-004 | Suite11-SI004-BlocksFree |
+| SI-005 | Suite3 |
+| SI-010 | Suite3 |
+| SI-011 | Suite3 |
+| SI-011a | Suite10 |
+| SI-012 | Suite11-SI012-WildcardPath |
+| SI-013 | Suite11-SI093-BoundPartition |
+| SI-014 | Suite11-SI014-LeftArrow, Suite8, iec-dos-commands |
+| SI-015 | Suite11-SI014-LeftArrow |
+| SI-016 | Suite11-SI016-SecondTerminator, parse |
+| SI-017 | iec-dos-commands |
+| SI-018 | Suite11-SI018-PositionExempt, parse |
+| SI-019 | parse |
+| SI-020 | parse |
+| SI-021 | Suite11-SI021-LongNames, iec-dos-commands, parse |
+| SI-022 | Suite10, Suite11-SI022-TooLong, iec-dos-commands, parse |
+| SI-030 | Suite11-SI030-MissingName, Suite11-SI030-UnknownSubcommand, Suite11-SI030-WildcardTarget, Suite11-SI055-SubPartitions, parse |
+| SI-031 | Suite10, Suite11-SI031-Unrecognised, iec-dos-commands, parse |
+| SI-032 | Suite11-SI032-WildcardWrite |
+| SI-033 | Suite11-SI033-ScratchNothing, iec-dos-commands |
+| SI-034 | iec-dos-commands |
+| SI-035 | Suite5 |
+| SI-036 | Suite11-SI036-BlockRange, Suite11-SI083-SeekWriteImage |
+| SI-040 | Suite10 |
+| SI-041 | Suite11-SI041-PartitionSize, parse |
+| SI-042 | Suite11-SI041-PartitionSize |
+| SI-043 | Suite10 |
+| SI-044 | Suite10 |
+| SI-045 | Suite11-SI045-PartitionDirectory, iec-dos-commands |
+| SI-046 | Suite11-SI045-PartitionDirectory, iec-dos-commands |
+| SI-047 | Suite10 |
+| SI-048 | Suite10 |
+| SI-049 | Suite10 |
+| SI-050 | Suite10 |
+| SI-051 | Suite11-SI051-RenamePartition, parse |
+| SI-052 | Suite11-SI071-Format |
+| SI-053 | Suite10, Suite11-SI053-Initialize, iec-dos-commands, parse |
+| SI-054 | parse |
+| SI-055 | Suite11-SI055-SubPartitions |
+| SI-060 | Suite11-SI060-MdColon, parse |
+| SI-061 | Suite10 |
+| SI-062 | Suite10 |
+| SI-063 | Suite10, Suite11-SI063-RdNoPath, Suite6, parse |
+| SI-064 | Suite11-SI064-RenameHeader, parse |
+| SI-065 | Suite11-SI064-RenameHeader, Suite11-SI065-HeaderName |
+| SI-066 | Suite10 |
+| SI-070 | Suite11-SI070-ModifyOpen, Suite3, parse |
+| SI-071 | Suite11-SI071-Format, iec-dos-commands, parse |
+| SI-071a | Suite11-SI071-Format |
+| SI-072 | Suite11-SI072-RawNames |
+| SI-073 | Suite8-T-RA |
+| SI-074 | iec-dos-commands, iecdrive |
+| SI-075 | Suite8-T-RA |
+| SI-076 | Suite11-SI076-Lock, Suite11-SI077-AttributeCommands, parse |
+| SI-077 | Suite11-SI077-AttributeCommands, parse |
+| SI-077a | Suite11-SI077-AttributeCommands, Suite11-SI077-ImageWriteLock, iec-dos-commands |
+| SI-080 | Suite4 |
+| SI-081 | Suite4 |
+| SI-082 | Suite4 |
+| SI-083 | Suite11-SI083-SeekWrite, Suite11-SI083-SeekWriteImage |
+| SI-084 | Suite11-SI084-RelInImage, Suite11-SI084-RelLayouts, iec-dos-commands |
+| SI-090 | Suite11-SI090-BufferPointer, Suite9, parse |
+| SI-091 | parse |
+| SI-091a | Suite11-BlockAllocateAnswers |
+| SI-092 | parse |
+| SI-093 | Suite11-SI070-ModifyOpen, Suite11-SI093-BoundPartition, iecdrive |
+| SI-094 | Suite11-SI094-BlockLength, iecdrive, parse |
+| SI-095 | Suite11-SI030-UnknownSubcommand, parse |
+| SI-096 | parse |
+| SI-100 | Suite11-SI100-DeviceNumber, iec-dos-commands, parse, softiec-soak |
+| SI-101 | iec-dos-commands, parse, softiec-soak |
+| SI-102 | Suite11-SI102-WriteProtect, iec-dos-commands, parse |
+| SI-102a | Suite11-SI102-WriteProtect |
+| SI-103 | Suite11-SI103-Resets, iec-dos-commands, parse, softiec-soak |
+| SI-103a | Suite11-SI103-Resets |
+| SI-103b | iec-dos-commands, rel-copy |
+| SI-104 | Suite10, Suite11-SI030-UnknownSubcommand, parse |
+| SI-105 | Suite11-SI105-MemoryCommands, iec-dos-commands, parse |
+| SI-106 | parse |
+| SI-110 | Suite11-SI105-MemoryCommands, rel-copy |
+| SI-111 | Suite11-SI105-MemoryCommands |
+| SI-112 | Suite11-SI105-MemoryCommands, parse |
+| SI-113 | Suite11-SI105-MemoryCommands |
+| SI-114 | Suite11-SI105-MemoryCommands |
+| SI-115 | *(none: see section 1.3)* |
+| SI-120 | Suite8-T-RA, iec-dos-commands, parse |
+| SI-121 | parse |
+| SI-122 | parse |
+| SI-123 | parse |
+| SI-130 | Suite11-SI130-ListingHeader, iec-dos-commands |
+| SI-131 | Suite11-SI130-ListingHeader |
+| SI-132 | Suite11-SI076-Lock, Suite11-SI132-Splat, Suite11-SI134-HiddenFlag |
+| SI-133 | Suite11-SI133-SizeRemainder |
+| SI-134 | Suite11-SI134-HiddenFlag, parse |
+| SI-134a | Suite11-SI134-HiddenFlag |
+| SI-135 | Suite11-SI139-StampedEntries |
+| SI-136 | parse |
+| SI-137 | Suite11-DeliberateExclusions |
+| SI-138 | Suite11-SI133-SizeRemainder, Suite11-SI138-ListingEof, iec-dos-commands |
+| SI-139 | Suite11-SI139-StampedEntries, iec-dos-commands |
+| SI-140 | parse |
+| SI-141 | parse |
+| SI-142 | Suite11-SI142-EscapedWildcards, parse |
+| SI-143 | parse |
+| SI-144 | Suite11-SI144-ReadX00, Suite11-SI144-X00Paths, iec-dos-commands, prg-context-menu, softiec-soak |
+| SI-144a | Suite11-SI144-SharedHeader |
+| SI-144b | *(none: see section 1.3)* |
+| SI-145 | Suite11-DeliberateExclusions |
+| SI-146 | Suite11-SI084-RelLayouts |
+| SI-147 | Suite11-SI147-ShiftedSpace, iec-dos-commands, parse |
+| SI-148 | Suite11-SI032-WildcardWrite, Suite11-SI147-ShiftedSpace, iec-dos-commands |
+| SI-149 | Suite11-SI149-GeosEntries |
+| SI-150 | Suite11-SI150-DeepPath |
+| SI-151 | *(none: see section 1.3)* |
+| SI-152 | Suite11-FailureLog |
+| SI-153 | Suite11-JiffyLoadStream, iec-dos-commands |

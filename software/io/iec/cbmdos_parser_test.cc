@@ -557,7 +557,7 @@ static void test_reply_text(const char *cmd, int len, const char *label, const c
     test_reply(cmd, len, 0, label, (const uint8_t *)expected, strlen(expected));
 }
 
-// SI-120 to SI-123. The four write forms set the drive's clock, and the four read forms then
+// SI-120, SI-121, SI-122, SI-123. The four write forms set the drive's clock, and the four read forms then
 // answer with the time that was written. The formats and the validation follow
 // SD parse_timewrite(): the day of week of the A, B and D forms must be 0 to 6, a twelve
 // hour field of 12 means midnight or noon, and a year below 80 is in this century. A read
