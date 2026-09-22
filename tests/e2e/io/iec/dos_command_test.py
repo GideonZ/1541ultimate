@@ -488,8 +488,9 @@ def check_compatibility(agent, api, password, folder, root):
     def clock_write():
         # SI-120 on the device: a write sets the drive's own clock, an offset from the
         # system clock, which it leaves alone; UJ returns the drive to the system clock.
-        # The clocks run while the check does, so every comparison allows the seconds to
-        # advance and every other field has to match exactly.
+        # The clocks run while the check does, so every answer is decoded to a moment and
+        # compared as one: a second that carries into the minute, hour or day is not a
+        # difference.
         def parsed(answer, what):
             stamp = re.match(r"(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d):(\d\d) ([A-Z]{3})$", answer)
             if not stamp:
@@ -519,15 +520,42 @@ def check_compatibility(agent, api, password, folder, root):
             bcd = agent.command_reply(b"T-RB\r", 9)
             detail(f"after T-WI the clock reads {iso!r}, {ascii_form!r}, "
                    f"{decimal.hex()}, {bcd.hex()}")
-            near(iso, written, "T-RI")
-            if not iso.endswith(" SAT"):
-                raise Failure(f"T-RI answered {iso!r}, whose day of week is not SAT")
-            if not re.match(r"SAT\. 09/12/26 01:02:\d\d PM$", ascii_form):
+            days = ("SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT")
+            when = near(iso, written, "T-RI")
+            if not iso.endswith(" " + days[(when.weekday() + 1) % 7]):
+                raise Failure(f"T-RI answered {iso!r}, whose day of week is not its date's")
+
+            def twelve_hour(hour, pm):
+                return (hour % 12) + (12 if pm else 0)
+
+            def binary_moment(answer, bcd_coded, what):
+                if len(answer) != 9 or answer[8] != 13:
+                    raise Failure(f"{what} answered {answer.hex()}")
+                f = [((b >> 4) * 10) + (b & 15) for b in answer[1:7]] if bcd_coded else list(answer[1:7])
+                year = (2000 + f[0]) if bcd_coded else (1900 + f[0])
+                if bcd_coded and f[0] >= 80:
+                    year = 1900 + f[0]
+                moment = datetime.datetime(year, f[1], f[2], twelve_hour(f[3], answer[7]), f[4], f[5])
+                if answer[0] != (moment.weekday() + 1) % 7:
+                    raise Failure(f"{what} answered {answer.hex()}, whose day of week is not its date's")
+                return moment
+
+            stamp = re.match(r"([A-Z]{3})[A-Z.] (\d\d)/(\d\d)/(\d\d) (\d\d):(\d\d):(\d\d) ([AP])M$",
+                             ascii_form)
+            if not stamp:
                 raise Failure(f"T-RA answered {ascii_form!r} after a clock write")
-            if decimal[:6] != bytes([6, 126, 9, 12, 1, 2]) or decimal[7:] != bytes([1, 13]):
-                raise Failure(f"T-RD answered {decimal.hex()} after a clock write")
-            if bcd[:6] != bytes([6, 0x26, 0x09, 0x12, 0x01, 0x02]) or bcd[7:] != bytes([1, 13]):
-                raise Failure(f"T-RB answered {bcd.hex()} after a clock write")
+            month, day, year, hour, minute, second = (int(v) for v in stamp.groups()[1:7])
+            moment = datetime.datetime(2000 + year, month, day,
+                                       twelve_hour(hour, stamp.group(8) == "P"), minute, second)
+            if stamp.group(1) != days[(moment.weekday() + 1) % 7]:
+                raise Failure(f"T-RA answered {ascii_form!r}, whose day of week is not its date's")
+            for what, got in (("T-RA", moment),
+                              ("T-RD", binary_moment(decimal, False, "T-RD")),
+                              ("T-RB", binary_moment(bcd, True, "T-RB"))):
+                drift = (got - written).total_seconds()
+                if not 0 <= drift <= 10:
+                    raise Failure(f"{what} read {got.isoformat()}, {drift:.0f} seconds from "
+                                  f"the {written.isoformat()} that was written")
             # The other three write forms set the same clock. Each is written from a
             # different moment so that a form that writes nothing cannot pass by leaving
             # the previous one in place.
