@@ -45,7 +45,10 @@ FileSystemCBM::~FileSystemCBM()
 
 bool FileSystemCBM::is_writable()
 {
-    return writable;
+    // A header whose DOS version byte is below 0x40, other than 0, marks the disk write
+    // protected, as sd2iec reads it (SI-077a).
+    uint8_t version = root_valid ? root_buffer[2] : 0;
+    return writable && !(version && (version < 0x40));
 }
 
 void FileSystemCBM::set_volume_name(const char *name, uint8_t *bam_name, const char *dos)
@@ -322,7 +325,7 @@ FRESULT FileSystemCBM::dir_open(const char *path, Directory **dir) // Opens dire
 // format (SI-064).
 FRESULT FileSystemCBM::dir_set_label(const char *path, const char *name, const char *id)
 {
-    if (!writable) {
+    if (!is_writable()) {
         return FR_WRITE_PROTECTED;
     }
     Directory *d = NULL;
@@ -366,9 +369,27 @@ FRESULT FileSystemCBM::dir_set_label(const char *path, const char *name, const c
     return sync();
 }
 
+// EL:$ and EU:$ (SI-077a). The lock is the header's DOS version byte, so it travels with
+// the image, and a drive running Commodore DOS refuses to write to the disk as well.
+FRESULT FileSystemCBM::set_write_lock(bool locked)
+{
+    if (!writable) {
+        return FR_WRITE_PROTECTED;
+    }
+    if (!root_valid) {
+        return FR_DISK_ERR;
+    }
+    root_buffer[2] = locked ? locked_dos_version : dos_version;
+    root_dirty = true;
+    return sync();
+}
+
 // Creates subdirectory
 FRESULT FileSystemCBM::dir_create(const char *path)
 {
+    if (!is_writable()) {
+        return FR_WRITE_PROTECTED;
+    }
     PathInfo pi(this);
     pi.init(path);
     PathStatus_t ps = walk_path(pi);
@@ -473,6 +494,9 @@ FRESULT FileSystemCBM::find_file(const char *filename, DirInCBM *dir, FileInfo *
 
 FRESULT FileSystemCBM::file_open(const char *pathname, uint8_t flags, File **file)
 {
+    if ((flags & (FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS | FA_OPEN_ALWAYS)) && !is_writable()) {
+        return FR_WRITE_PROTECTED;
+    }
     FileInfo info(56);
     DirInCBM *dd;
     mstring fn;
@@ -560,6 +584,9 @@ FRESULT FileSystemCBM::file_open(const char *pathname, uint8_t flags, File **fil
 
 FRESULT FileSystemCBM::file_rename(const char *old_name, const char *new_name)
 {
+    if (!is_writable()) {
+        return FR_WRITE_PROTECTED;
+    }
     PathInfo pi(this);
     pi.init(old_name);
     PathStatus_t pres = walk_path(pi);
@@ -620,6 +647,9 @@ FRESULT FileSystemCBM::file_attrib(const char *path, uint8_t attrib, uint8_t mas
 {
     if (mask & ~AM_RDO) {
         return FR_NOT_ENABLED;
+    }
+    if (!is_writable()) {
+        return FR_WRITE_PROTECTED;
     }
     PathInfo pi(this);
     pi.init(path);
@@ -699,6 +729,9 @@ FRESULT FileSystemCBM::deallocate_chain(uint8_t track, uint8_t sector, uint8_t *
 
 FRESULT FileSystemCBM::file_delete(const char *path)
 {
+    if (!is_writable()) {
+        return FR_WRITE_PROTECTED;
+    }
     PathInfo pi(this);
     pi.init(path);
     PathStatus_t pres = walk_path(pi);
@@ -801,6 +834,9 @@ FRESULT FileSystemCBM::read_sector(uint8_t *buffer, int track, int sector)
 
 FRESULT FileSystemCBM::write_sector(uint8_t *buffer, int track, int sector)
 {
+    if (!is_writable()) {
+        return FR_WRITE_PROTECTED;
+    }
     int abs_sect = get_abs_sector(track, sector);
     if (abs_sect < 0) {
         return FR_INVALID_PARAMETER;
@@ -817,6 +853,9 @@ FRESULT FileSystemCBM::write_sector(uint8_t *buffer, int track, int sector)
 // fails only when the block is already in the requested state.
 FRESULT FileSystemCBM::allocate_sector(int &track, int &sector, bool alloc)
 {
+    if (!is_writable()) {
+        return FR_WRITE_PROTECTED;
+    }
     int abs_sect = get_abs_sector(track, sector);
     if (abs_sect < 0) {
         return FR_INVALID_PARAMETER;
@@ -852,6 +891,8 @@ bool FileSystemD64::init(void)
     dir_track = 18;
     dir_sector = 1;
     volume_name_offset = 144;
+    dos_version = 0x41;
+    locked_dos_version = 0x3C;
 
     if (prt->read(root_buffer, get_abs_sector(root_track, root_sector), 1) == RES_OK) {
         root_valid = true;
@@ -866,6 +907,8 @@ bool FileSystemD71::init(void)
     dir_track = 18;
     dir_sector = 1;
     volume_name_offset = 144;
+    dos_version = 0x41;
+    locked_dos_version = 0x3C;
 
     if (prt->read(root_buffer, get_abs_sector(root_track, root_sector), 1) == RES_OK) {
         root_valid = true;
@@ -880,6 +923,8 @@ bool FileSystemD81::init(void)
     dir_track = 40;
     dir_sector = 3;
     volume_name_offset = 4;
+    dos_version = 0x44;
+    locked_dos_version = 0x3D;
 
     if (prt->read(root_buffer, get_abs_sector(root_track, root_sector), 1) == RES_OK) {
         root_valid = true;
@@ -900,6 +945,8 @@ bool FileSystemDNP::init(void)
     dir_sector = -1;
 
     volume_name_offset = 4;
+    dos_version = 0x48;
+    locked_dos_version = 0x3E;
 
     if (prt->read(root_buffer, get_abs_sector(root_track, root_sector), 1) == RES_OK) {
         root_valid = true;
@@ -915,6 +962,9 @@ bool FileSystemDNP::init(void)
 
 FRESULT FileSystemD64::format(const char *name)
 {
+    if (!is_writable()) {
+        return FR_WRITE_PROTECTED;
+    }
     memset(root_buffer, 0, 256);
 
     root_buffer[0] = dir_track;
@@ -950,6 +1000,9 @@ FRESULT FileSystemD64::format(const char *name)
 
 FRESULT FileSystemD71::format(const char *name)
 {
+    if (!is_writable()) {
+        return FR_WRITE_PROTECTED;
+    }
     memset(root_buffer, 0, 256);
     memset(bam2_buffer, 0, 256);
 
@@ -994,6 +1047,9 @@ FRESULT FileSystemD71::format(const char *name)
 
 FRESULT FileSystemD81::format(const char *name)
 {
+    if (!is_writable()) {
+        return FR_WRITE_PROTECTED;
+    }
     memset(root_buffer, 0, 256);
     memset(bam_buffer, 0, 512);
 
@@ -1044,6 +1100,9 @@ FRESULT FileSystemD81::format(const char *name)
 
 FRESULT FileSystemDNP::format(const char *name)
 {
+    if (!is_writable()) {
+        return FR_WRITE_PROTECTED;
+    }
     memset(root_buffer, 0, 256);
     memset(bam_buffer, 0, 8192);
 

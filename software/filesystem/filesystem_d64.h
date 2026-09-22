@@ -168,6 +168,10 @@ class FileSystemCBM : public FileSystem
 	int root_track, root_sector;
 	int dir_track, dir_sector;
 	int volume_name_offset;
+    // The DOS version byte of the header, and the value sd2iec writes there to lock the
+    // disk (d64_set_attrib()). A byte below 0x40 other than 0 write protects the disk.
+    uint8_t dos_version;
+    uint8_t locked_dos_version;
 
 	uint8_t *sect_buffer; // one sector
     uint8_t *root_buffer;
@@ -219,6 +223,7 @@ public:
     FRESULT dir_open(const char *path, Directory **); // Opens directory (creates dir object)
     FRESULT dir_create(const char *path);
     FRESULT dir_set_label(const char *path, const char *name, const char *id);
+    FRESULT set_write_lock(bool locked);
 
     // functions for reading and writing files
     FRESULT file_open(const char *filename, uint8_t flags, File **);  // Opens file (creates file object)

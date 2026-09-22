@@ -2454,7 +2454,9 @@ int IecCommandChannel::do_rename(filename_t &src, filename_t &dest)
 // many went. The names are collected before anything is deleted, so the directory is
 // not changed while it is being read. The host name of a pattern escapes its wildcards
 // (SI-142), so the pattern is matched here rather than by the host file system.
-static int scratch_matching(FileManager *fm, const char *dir_path, const char *pattern)
+// `protected_medium` is set when the medium refused a delete as write protected.
+static int scratch_matching(FileManager *fm, const char *dir_path, const char *pattern,
+                            bool *protected_medium)
 {
     Directory *dir = NULL;
     if (fm->open_directory(dir_path, &dir) != FR_OK) {
@@ -2494,8 +2496,11 @@ static int scratch_matching(FileManager *fm, const char *dir_path, const char *p
 
     int scratched = 0;
     for (int i = 0; i < victims.get_elements(); i++) {
-        if (fm->delete_file(victims[i]->c_str()) == FR_OK) {
+        FRESULT fres = fm->delete_file(victims[i]->c_str());
+        if (fres == FR_OK) {
             scratched++;
+        } else if (fres == FR_WRITE_PROTECTED) {
+            *protected_medium = true;
         }
         delete victims[i];
     }
@@ -2515,13 +2520,18 @@ int IecCommandChannel::do_scratch(filename_t filenames[], int n)
     DBGIECV("Scratch %d files:\n", n);
     mstring work;
     int scratched = 0;
+    bool protected_medium = false;
     for(int i=0;i<n;i++) {
         GETPARTITION(filenames[i].partition, partition, 0);
         if (resolve_directory_path(fm, partition, filenames[i].path, work) != FR_OK) {
             drive->set_error(ERR_DIRECTORY_ERROR, partition->GetPartitionNumber(), 0);
             return 0;
         }
-        scratched += scratch_matching(fm, work.c_str(), filenames[i].filename.c_str());
+        scratched += scratch_matching(fm, work.c_str(), filenames[i].filename.c_str(),
+                                      &protected_medium);
+    }
+    if (protected_medium) {
+        return ERR_WRITE_PROTECT_ON; // a disk locked by EL:$ (SI-077a)
     }
     // Scratching nothing is not an error: the answer is 01 with a count of zero (SI-033).
     set_error(ERR_FILES_SCRATCHED, scratched);
@@ -2839,6 +2849,19 @@ int IecCommandChannel::do_set_attributes(filename_t names[], int n, uint8_t attr
             drive->set_error(ERR_DIRECTORY_ERROR, partition->GetPartitionNumber(), 0);
             return 0;
         }
+        if ((mask == IEC_ATTR_LOCKED) && !strcmp(names[i].filename.c_str(), "$")) {
+            // EL:$ and EU:$ lock the disk image the directory is in (SI-077a).
+            FRESULT fres = fm->set_write_lock(work.c_str(), attrib != 0);
+            if (fres == FR_NOT_ENABLED) {
+                return ERR_SYNTAX_ERROR_GEN; // a host directory records no such lock
+            }
+            if (fres != FR_OK) {
+                drive->set_error_fres(fres);
+                return 0;
+            }
+            changed++;
+            continue;
+        }
         changed += set_attributes_matching(fm, work.c_str(), names[i].filename.c_str(),
                                            fat_attributes_of(attrib), fat_attributes_of(mask),
                                            &last_error);
@@ -2846,6 +2869,9 @@ int IecCommandChannel::do_set_attributes(filename_t names[], int n, uint8_t attr
     if (!changed) {
         if (last_error == FR_NOT_ENABLED) {
             return ERR_SYNTAX_ERROR_GEN; // the medium does not carry these attributes
+        }
+        if (last_error == FR_WRITE_PROTECTED) {
+            return ERR_WRITE_PROTECT_ON;
         }
         return ERR_FILE_NOT_FOUND;
     }

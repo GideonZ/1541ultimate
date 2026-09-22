@@ -734,11 +734,21 @@ act on every entry the name matches, directories included, because `L` locks a d
 matches nothing answers `62,FILE NOT FOUND`, and a medium that does not carry the
 attribute, such as the hidden flag inside a CBM disk image, answers `30`.
 
-`EL:$` and `EU:$`, which write-protect a whole mounted image in sd2iec, are not
-implemented and answer `62`, because the name `$` matches no entry. Write-protecting a
-mounted image means changing the writability of a file system that the file browser, FTP
-and the REST interface share, and this drive has a per-entry lock that covers what a
-program asks `EL` for.
+**SI-077a.** `EL:$` write protects the disk image the directory is in, and `EU:$` lifts
+the protection. The lock is the DOS version byte, byte 2 of the header sector: `EL:$`
+writes `$3C` into a D64 or D71, `$3D` into a D81 and `$3E` into a DNP, and `EU:$` writes
+the format's own `$41`, `$44` or `$48` back. A header whose byte is below `$40` and not 0
+write protects the image, whoever wrote it, so an image locked elsewhere arrives locked.
+While it is, every write into the image answers `26,WRITE PROTECT ON` and changes
+nothing: a file open for writing, appending or replacing, a relative file, which opens for
+reading and writing, a scratch, a rename, `EL` and `EU` of an entry, `N`, `R-H`, `U2`,
+`B-W`, `B-A` and `B-F`. Reads are unchanged. On a host directory, which records no such
+lock, `EL:$` and `EU:$` answer `30`. Sources: `SD d64_set_attrib()` for the command and
+the values, and `SD d64_mount()`, which marks an image read only on the same test; 1541,
+error 73, for a Commodore drive refusing to write a disk whose version byte is not its own,
+which is why the lock travels with the image. The protection belongs to the image's file
+system, so the file browser, FTP and REST obey it as well, and a drive emulation that runs
+the Commodore DOS refuses to write the disk. Test: `Suite11-SI077-ImageWriteLock`.
 
 `XH+` and `XH-`, which turn hidden files on and off for every later listing, are one of
 the sd2iec settings commands that section 19 places out of scope; the filter `=H` asks
@@ -1807,14 +1817,13 @@ Elite, and to 15 lines of 668 during `iec-dos-commands` and a soak on a U2+L.
 
 ### 18.1 Deliberately unsupported, and the differences from the sources
 
-Everything in sections 2 to 15 is in force except the five commands in the first table.
+Everything in sections 2 to 15 is in force except the four commands in the first table.
 Each of them carries the reason below the requirement itself, and a test asserts the
 answer given here, so a later implementation has to change a test on purpose.
 
 | Requirement | Why it is not implemented | What the drive answers |
 | --- | --- | --- |
 | SI-054 `V` | Validating means rebuilding the block map of an image from every directory, side sector chain and GEOS record chain in it, and a walk that misses one marks live blocks free; an OK without the walk would claim a check that did not happen | `31`, as sd2iec answers |
-| SI-077 `EL:$`, `EU:$` | Write-protecting a whole mounted image changes the writability of a file system the file browser, FTP and REST share; the per-entry lock covers what the command is used for | `62`, the name matching no entry |
 | SI-105 `M-W`, `M-E` | Nothing written is kept and nothing is run, so an OK would tell a fast loader its drive code runs | `30` |
 | SI-137 raw directory | Every program that reads a listing byte by byte opens `$` on a data channel, and the UCI target opens it on whatever channel its client sends; on a host file system the sectors would have to be synthesised from the listing in any case | the listing |
 | SI-145 writing x00 files | A user setting that no report asks for; reading them (SI-144) already gives the interchange | new files are written plain |
@@ -1951,7 +1960,7 @@ Sections 2 to 15 define the numbered paragraphs SI-001 to SI-153, with gaps, one
 further rule of the requirement it follows and is numbered that way so that the numbers
 already cited elsewhere keep their meaning.
 
-Section 18.1 is the index of the five deliberately unsupported requirements and of the
+Section 18.1 is the index of the four deliberately unsupported requirements and of the
 nine that are in force and answer differently from one of their sources. Everything else
 in sections 2 to 15 is in force as written. Section 19 is what is out of scope, which is
 a different thing: those are capabilities this drive does not have rather than commands
@@ -2046,7 +2055,7 @@ row.
 | Files: loading, saving, verifying, pattern matching | SI-032, SI-070, SI-136; `V` as a verify is BASIC's, not a command |
 | Files: renaming files and subdirectories | SI-074 |
 | Files: copying and combining between partitions | SI-075, SI-013 |
-| Files: locking and unlocking | SI-076, SI-077, SI-132 |
+| Files: locking and unlocking | SI-076, SI-077, SI-077a, SI-132 |
 | Files: the file allocation table, `B-A` and `B-F` | SI-091, SI-091a |
 | Directories: loading a directory, sizes, blocks free | SI-130, SI-133, SI-004 |
 | Directories: pattern matching and the type filters | SI-134, SI-136 |
@@ -2076,4 +2085,4 @@ row.
 | Realtime clock: the four read and four write forms, ASCII, BCD, decimal and ISO | SI-120, SI-121, SI-122, SI-123 |
 | Settings: the `X` family | Section 19, except `XE`, which is SI-145 |
 | Software fastloaders | Section 15.2 item 10 for JiffyDOS; section 19 for the others |
-| Write protect, `26,WRITE PROTECT ON` | SI-102, SI-102a |
+| Write protect, `26,WRITE PROTECT ON` | SI-102, SI-102a, SI-077a |

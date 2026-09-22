@@ -70,6 +70,9 @@ public:
     // that is separate from the name its parent holds. An empty id leaves the one that
     // is there. A file system whose directories have no such label answers FR_NOT_ENABLED.
     virtual FRESULT dir_set_label(const char *path, const char *name, const char *id) { return FR_NOT_ENABLED; }
+    // Sets or clears a write lock the medium itself records, which every writer then
+    // obeys. A file system whose medium records none answers FR_NOT_ENABLED.
+    virtual FRESULT set_write_lock(bool locked) { return FR_NOT_ENABLED; }
 
 
 	virtual void    file_print_info(File *f) { } // debug

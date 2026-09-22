@@ -3673,10 +3673,10 @@ static void s11_si077_attribute_commands(FileManager *fm, IecDrive *dr)
     REQUIRE(s11_listing_line(listing, got, "TWO") != NULL);
     expect_command_ok(testname, dr, "A:=TWO\r");
 
-    // A name that matches nothing, which is also what the sd2iec form that write
-    // protects a whole image answers, because `$` matches no entry (SI-077).
-    expect_command_response(testname, dr, "EL:$\r", "62,FILE NOT FOUND,00,00\r");
-    expect_command_response(testname, dr, "EU:$\r", "62,FILE NOT FOUND,00,00\r");
+    // A name that matches nothing. EL:$ locks a disk image (SI-077a), and a host
+    // directory carries no such lock.
+    expect_command_response(testname, dr, "EL:$\r", "30,SYNTAX ERROR,00,00\r");
+    expect_command_response(testname, dr, "EU:$\r", "30,SYNTAX ERROR,00,00\r");
     expect_command_response(testname, dr, "EL:NOSUCH\r", "62,FILE NOT FOUND,00,00\r");
     expect_command_response(testname, dr, "EHNOSUCH\r", "62,FILE NOT FOUND,00,00\r");
 
@@ -4735,6 +4735,121 @@ static void s11_reset_restarts_processor(FileManager *fm, IecDrive *dr)
     expect_command_status_prefix(testname, dr, "UI\r", "73,");
 }
 
+// The DOS version byte of an image's header, read over the bus as a program reads it.
+static uint8_t s11_header_version(const char *testname, IecDrive *dr, int part, int track, int sector)
+{
+    char cmd[32];
+    uint8_t block[256];
+    // A buffer channel reads from the partition current when it is opened (SI-093).
+    snprintf(cmd, sizeof(cmd), "CP%d\r", part);
+    expect_command_status_prefix(testname, dr, cmd, "02,");
+    open_buffer_channel(testname, dr, 3);
+    snprintf(cmd, sizeof(cmd), "U1:3,%d,%d,%d\r", part, track, sector);
+    expect_command_ok(testname, dr, cmd);
+    read_buffer_channel(testname, dr, 3, block, sizeof(block));
+    close_file(dr, 3);
+    return block[2];
+}
+
+// SI-077a: EL:$ write protects the disk image the directory is in, and EU:$ lifts it, as
+// sd2iec's d64_set_attrib() does: the DOS version byte in the image's header takes the
+// value sd2iec writes for a locked image, and every write into the image answers 26 until
+// the format's own value is back. The byte is the lock, so an image that arrives with a
+// locked value is write protected from the start, and the protection holds for the
+// file manager's writes as well as for the bus.
+static void s11_image_write_lock(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite11-SI077-ImageWriteLock";
+    static const struct {
+        const char *path;
+        int blocks;
+        image_kind_t kind;
+        int track, sector;
+        uint8_t open, locked;
+    } images[] = {
+        { "/Fat/s11_lock.d64", 683, e_image_d64, 18, 0, 0x41, 0x3C },
+        { "/Fat/s11_lock.d71", 1366, e_image_d71, 18, 0, 0x41, 0x3C },
+        { "/Fat/s11_lock.d81", 3200, e_image_d81, 40, 0, 0x44, 0x3D },
+        { "/Fat/s11_lock.dnp", 4 * 256, e_image_dnp, 1, 1, 0x48, 0x3E },
+    };
+    char cmd[48];
+    char name[32];
+    for (int i = 0; i < 4; i++) {
+        int part = 60 + i;
+        create_formatted_image(fm, images[i].path, "LOCK", images[i].blocks, images[i].kind);
+        dr->add_partition(part, images[i].path, "LOCK");
+        snprintf(name, sizeof(name), "%d:BEFORE", part);
+        expect_iec_write_ok(testname, dr, 1, name, "b");
+
+        snprintf(cmd, sizeof(cmd), "EL%d:$\r", part);
+        expect_command_ok(testname, dr, cmd);
+        uint8_t version = s11_header_version(testname, dr, part, images[i].track, images[i].sector);
+        printf("%s: %s locked, DOS version byte %02x\n", testname, images[i].path, version);
+        REQUIRE(version == images[i].locked);
+
+        snprintf(name, sizeof(name), "%d:AFTER,P,W", part);
+        expect_iec_open_status_prefix(testname, dr, 1, name, "26,");
+        close_file(dr, 1);
+        snprintf(cmd, sizeof(cmd), "S%d:BEFORE\r", part);
+        expect_command_status_prefix(testname, dr, cmd, "26,");
+        snprintf(cmd, sizeof(cmd), "R%d:MOVED=BEFORE\r", part);
+        expect_command_status_prefix(testname, dr, cmd, "26,");
+        snprintf(cmd, sizeof(cmd), "EL%d:BEFORE\r", part);
+        expect_command_status_prefix(testname, dr, cmd, "26,");
+        mstring inside(images[i].path);
+        inside += "/HOST";
+        File *f = NULL;
+        FRESULT fres = fm->fopen(inside.c_str(), FA_CREATE_ALWAYS | FA_WRITE, &f);
+        if (f) {
+            fm->fclose(f);
+        }
+        printf("%s: a file manager write into the locked image: %s\n", testname,
+               FileSystem::get_error_string(fres));
+        REQUIRE(fres == FR_WRITE_PROTECTED);
+        if (i == 0) {
+            // The commands that change a disk without opening a file.
+            snprintf(cmd, sizeof(cmd), "CP%d\r", part);
+            expect_command_status_prefix(testname, dr, cmd, "02,");
+            static const char *changes[] = {
+                "N:OTHER,ZZ\r", "R-H:OTHER\r", "U2:3,0,18,5\r", "B-W:3,0,18,5\r",
+                "B-A:0,18,5\r", "B-F:0,18,0\r",
+            };
+            open_buffer_channel(testname, dr, 3);
+            for (int c = 0; c < 6; c++) {
+                expect_command_status_prefix(testname, dr, changes[c], "26,");
+            }
+            close_file(dr, 3);
+            // A relative file opens for reading and writing.
+            expect_rel_open_status_prefix(testname, dr, 4, "RECS", 4, "26,");
+            close_file(dr, 4);
+        }
+        snprintf(name, sizeof(name), "%d:BEFORE", part);
+        expect_iec_file(testname, dr, 2, name, "b");
+
+        snprintf(cmd, sizeof(cmd), "EU%d:$\r", part);
+        expect_command_ok(testname, dr, cmd);
+        version = s11_header_version(testname, dr, part, images[i].track, images[i].sector);
+        REQUIRE(version == images[i].open);
+        snprintf(name, sizeof(name), "%d:AFTER", part);
+        expect_iec_write_ok(testname, dr, 1, name, "a");
+    }
+
+    // A header that already carries the locked value, written before the image is mounted.
+    create_formatted_image(fm, "/Fat/s11_prelocked.d64", "PRELOCK", 683, e_image_d64);
+    File *f = NULL;
+    REQUIRE(fm->fopen("/Fat/s11_prelocked.d64", FA_WRITE | FA_READ, &f) == FR_OK);
+    uint8_t locked = 0x3C;
+    uint32_t transferred = 0;
+    REQUIRE(f->seek(357 * 256 + 2) == FR_OK);
+    REQUIRE(f->write(&locked, 1, &transferred) == FR_OK);
+    fm->fclose(f);
+    dr->add_partition(64, "/Fat/s11_prelocked.d64", "PRELOCK");
+    expect_iec_open_status_prefix(testname, dr, 1, "64:NEW,P,W", "26,");
+    close_file(dr, 1);
+    expect_command_ok(testname, dr, "EU64:$\r");
+    expect_iec_write_ok(testname, dr, 1, "64:NEW", "n");
+}
+
 // A JiffyDOS LOAD streams through the interface's talk loop, which pops what each pass
 // sent, and a pass that finds the fifo still full pops nothing. Such a pass must not end
 // the file while the byte at its last position is still unsent, whatever the file size.
@@ -5562,6 +5677,7 @@ static const Suite11Case suite11_cases[] = {
     { "Suite11-OperationLogNoReconfigure", s11_operation_log_no_reconfigure },
     { "Suite11-ResetRestartsProcessor",  s11_reset_restarts_processor },
     { "Suite11-JiffyLoadStream",         s11_jiffy_load_stream },
+    { "Suite11-SI077-ImageWriteLock",    s11_image_write_lock },
     { "Suite11-BlockAllocateAnswers",    s11_block_allocate_answers },
     { "Suite11-Crash-DamagedChain",      s11_crash_damaged_chain },
     { "Suite11-Crash-LongHostName",      s11_crash_long_host_name },

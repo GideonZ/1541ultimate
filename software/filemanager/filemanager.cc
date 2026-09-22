@@ -1262,6 +1262,28 @@ FRESULT FileManager::set_dir_label(const char *pathname, const char *name, const
     return fres;
 }
 
+// The write lock of the medium the path is on, where the medium records one.
+FRESULT FileManager::set_write_lock(const char *pathname, bool locked)
+{
+    PathInfo pathInfo(rootfs);
+    pathInfo.init(pathname);
+    lock();
+    FRESULT fres = find_pathentry(pathInfo, true);
+    FileInfo *inf = pathInfo.getLastInfo();
+    if ((fres == FR_OK) && (!inf || !inf->fs)) {
+        fres = FR_NO_FILESYSTEM;
+    }
+    if (fres == FR_OK) {
+        fres = inf->fs->set_write_lock(locked);
+        if (fres == FR_OK) {
+            mstring work;
+            sendEventToObservers(eRefreshDirectory, pathInfo.getFullPath(work, -1), "");
+        }
+    }
+    unlock();
+    return fres;
+}
+
 FRESULT FileManager::delete_file(Path *path, const char *name)
 {
     PathInfo pathInfo(rootfs);
