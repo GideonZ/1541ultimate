@@ -4,7 +4,16 @@
 Every requirement is either in force, and the tests in `target/pc/linux/parse`,
 `target/pc/linux/iecdrive` and `tests/e2e/io/iec` hold the drive to it, or it is marked
 **Deliberately unsupported** and says what the drive answers instead and why that is the
-right answer. Section 18.1 lists the deliberate exclusions in one table.
+right answer. Section 18.1 lists the deliberate exclusions in one table, with the
+requirements that answer differently from one of their sources; section 19 lists what is
+out of scope, which is the capabilities this drive does not have at all.
+
+"In force" means implemented in this repository and held to by those tests. A firmware
+release answers as this document describes only from the release that carries the change,
+so a requirement can be in force here and absent from the newest released build. The
+release each requirement first ships in is not tracked here; `git log` on the files a
+requirement names answers that, and the pull request that introduces a requirement says
+so in its own description.
 
 Two further documents describe the same drive from other angles:
 [software/test/iecdrive/doc.md](../software/test/iecdrive/doc.md) on the name mapping and
