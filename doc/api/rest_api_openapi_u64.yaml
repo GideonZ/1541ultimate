@@ -3378,7 +3378,7 @@ paths:
         - name: palette
           in: query
           required: false
-          description: For video, request runtime VIC palette packets (0 or 1).
+          description: 'For video, request runtime VIC palette packets (0 or 1). The setting is device-wide: it applies to every receiver of the stream, and the most recent start sets it.'
           schema:
             type: integer
           example: 0

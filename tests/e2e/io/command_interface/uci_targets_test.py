@@ -10,8 +10,9 @@ every target until the machine was power-cycled.
 It also covers the transport state machine, the control target's rejection paths,
 and reply framing on the SoftIEC target, whose single-part replies were announced
 as "Data More" and left a client waiting for a block that is never sent. On
-Ultimate 64 hardware it verifies the runtime RGB palette commands and restores
-the palette before exiting.
+Ultimate 64 hardware it verifies the runtime RGB palette commands, and the
+palette packets a VIC stream opted into with palette=1 carries, and restores the
+palette before exiting.
 
 Every expected value here was taken from the firmware and confirmed against a
 real device. The manuals under doc/ ("Ultimate Command Interface - Register API",
@@ -45,8 +46,10 @@ import argparse
 import ftplib
 import itertools
 import json
+import select
 import socket
 import sys
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -59,6 +62,7 @@ sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
 import bootstrap  # noqa: E402,F401
 import assembler  # noqa: E402
 import cli  # noqa: E402
+from api import UltimateApi  # noqa: E402
 import ftp as ftp_lib
 import rest as rest_lib
 import streams as stream_lib
@@ -121,9 +125,16 @@ CTRL_CMD_GET_PALETTE = 0x51
 CTRL_CMD_SET_PALETTE = 0x52
 CTRL_CMD_SET_PALETTE_COLOR = 0x53
 CTRL_CMD_RESET_PALETTE = 0x54
-VIC_PALETTE_PACKET_SIZE = 60
-VIC_PALETTE_LINE = 239
-VIC_VIDEO_PACKET_SIZE = 780
+# The debug stream's default destination, from the firmware's stream settings.
+DEBUG_GROUP = "239.0.1.66"
+DEBUG_PORT = 11002
+# Longer than the one-second palette repeat, so a leaked opt-in cannot hide.
+PALETTE_QUIET_SECONDS = 1.5
+# From the device answering to the palette packet arriving. The repeat is a
+# second, so only a send on the event itself makes it this soon.
+PALETTE_PROMPT_SECONDS = 0.3
+# A gap in the video longer than this is the stream stopping, not the network.
+VIDEO_STALL_SECONDS = 0.1
 PALETTE_BURST_SOURCE = Path(__file__).with_name("vic_palette_burst.asm")
 PALETTE_BURST_STATUS = 0xC000
 PALETTE_BURST_READY = 0xA4
@@ -222,6 +233,7 @@ TESTS = [
     "save-reu-disabled",
     "softiec-single-part-reply",
     "softiec-x00-name",
+    "palette-stream",
     "interface-usable-after",
 ]
 
@@ -641,67 +653,7 @@ def run_control_target(uci: Uci) -> bool:
     return True
 
 
-def expect_palette_packet(sock, addresses: set[str], expected: bytes,
-                          accept_any_source: bool = False, timeout: float = 2.0) -> int:
-    last_unexpected = None
-    for _, packet, mine in stream_lib.receive([sock], addresses, timeout):
-        if (not mine and not accept_any_source) or len(packet) != VIC_PALETTE_PACKET_SIZE:
-            continue
-        if int.from_bytes(packet[4:6], "little") != VIC_PALETTE_LINE:
-            continue
-        if packet[6:12] != bytes([0x80, 0x01, 1, 4, 1, 0]):
-            raise Failure(f"palette stream packet has invalid format bytes {packet[6:12]!r}")
-        if packet[12:] != expected:
-            last_unexpected = packet[12:]
-            continue
-        return int.from_bytes(packet[:2], "little")
-    if last_unexpected is not None:
-        raise Failure(f"last palette packet was {last_unexpected!r}, expected {expected!r}")
-    raise Failure(f"no palette packet arrived on the VIC stream within {timeout:g} seconds")
-
-
-def expect_no_palette_packet(sock, addresses: set[str], accept_any_source: bool = False) -> None:
-    for _, packet, mine in stream_lib.receive([sock], addresses, 0.25):
-        if ((mine or accept_any_source) and len(packet) == VIC_PALETTE_PACKET_SIZE and
-                int.from_bytes(packet[4:6], "little") == VIC_PALETTE_LINE and
-                packet[6:12] == bytes([0x80, 0x01, 1, 4, 1, 0])):
-            raise Failure("VIC stream sent palette data without an explicit palette request")
-
-
-def capture_palette_burst(session: RestSession, sock, addresses: set[str],
-                          accept_any_source: bool) -> tuple[list[tuple[float, int, bytes]], list[int], int, float]:
-    """Run the 6502 burst fixture while continuously draining the video socket."""
-    samples: list[tuple[float, int, bytes]] = []
-    video_sequences: list[int] = []
-
-    def receive(timeout: float) -> None:
-        for _, packet, mine in stream_lib.receive([sock], addresses, timeout):
-            if not mine and not accept_any_source:
-                continue
-            now = time.monotonic()
-            if (len(packet) == VIC_PALETTE_PACKET_SIZE and
-                    int.from_bytes(packet[4:6], "little") == VIC_PALETTE_LINE and
-                    packet[6:12] == bytes([0x80, 0x01, 1, 4, 1, 0])):
-                samples.append((now, int.from_bytes(packet[:2], "little"), packet[12:]))
-            elif len(packet) == VIC_VIDEO_PACKET_SIZE:
-                video_sequences.append(int.from_bytes(packet[:2], "little"))
-
-    started = time.monotonic()
-    session.poke(PALETTE_BURST_GO, 1)
-    deadline = started + 15.0
-    while True:
-        receive(0.05)
-        result = session.readmem(PALETTE_BURST_STATUS, 3, repeatable=True)
-        if result[0] == PALETTE_BURST_DONE:
-            break
-        if result[0] != PALETTE_BURST_RUNNING:
-            raise Failure(f"palette burst reported unexpected status ${result[0]:02X}")
-        if time.monotonic() >= deadline:
-            raise Failure("palette burst did not finish within 15 seconds")
-    return samples, video_sequences, int.from_bytes(result[1:3], "little"), time.monotonic() - started
-
-
-def run_palette(session: RestSession, uci: Uci) -> bool:
+def run_palette(uci: Uci) -> bool:
     """Exercise the U64 runtime palette protocol without changing saved config."""
     scenario = "palette"
     product, status = uci.transact(bytes([TARGET_CONTROL, CTRL_CMD_GET_HWINFO, 0x00]))
@@ -726,36 +678,7 @@ def run_palette(session: RestSession, uci: Uci) -> bool:
     if len(original) != 48:
         raise Failure(f"{scenario}: expected 48 palette bytes, got {len(original)}")
 
-    group = session.target.video_group
-    port = session.target.video_port
-    # A dual-homed Ultimate can send the FPGA video from one interface and the
-    # software palette packet from another. A unicast destination belongs only
-    # to this socket; multicast still needs source filtering between devices.
-    accept_any_source = not stream_lib.is_multicast(group)
-    addresses = stream_lib.source_addresses(session.target)
-    if not addresses:
-        raise Failure(f"{scenario}: could not resolve the VIC stream source address")
-    sock = stream_lib.stream_socket(group, port)
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4 * 1024 * 1024)
-    stream_started = False
     try:
-        with check(f"{scenario}: invalid palette stream options are rejected"):
-            for stream, value in (("video", 2), ("audio", 1), ("audio", 0)):
-                status, body = session.request(
-                    "PUT", f"/v1/streams/{stream}:start",
-                    params={"ip": f"{group}:{port}", "palette": value})
-                if status != 400:
-                    raise Failure(
-                        f"{stream} stream with palette={value} returned HTTP {status}: {body[:200]!r}")
-
-        with check(f"{scenario}: palette=0 sends no palette packets"):
-            status, body = session.request(
-                "PUT", "/v1/streams/video:start", params={"ip": f"{group}:{port}", "palette": 0})
-            if status != 200:
-                raise Failure(f"video stream start returned HTTP {status}: {body[:200]!r}")
-            stream_started = True
-            expect_no_palette_packet(sock, addresses, accept_any_source)
-
         with check(f"{scenario}: SET_PALETTE_COLOR changes only the requested color"):
             changed = bytearray(original)
             changed[-3:] = bytes(component ^ 0x5A for component in changed[-3:])
@@ -766,125 +689,6 @@ def run_palette(session: RestSession, uci: Uci) -> bool:
             actual, text = uci.transact(bytes([TARGET_CONTROL, CTRL_CMD_GET_PALETTE]))
             if text != STATUS_OK or actual != bytes(changed):
                 raise Failure(f"{scenario}: single-color readback was {actual!r}, expected {bytes(changed)!r}")
-
-        with check(f"{scenario}: ordinary VIC stream remains unchanged after a runtime palette command"):
-            expect_no_palette_packet(sock, addresses, accept_any_source)
-
-        with check(f"{scenario}: opted-in VIC stream starts with the current runtime palette"):
-            status, body = session.request("PUT", "/v1/streams/video:stop")
-            if status != 200:
-                raise Failure(f"video stream stop returned HTTP {status}: {body[:200]!r}")
-            stream_started = False
-            status, body = session.request(
-                "PUT", "/v1/streams/video:start", params={"ip": f"{group}:{port}", "palette": 1})
-            if status != 200:
-                raise Failure(f"video stream restart returned HTTP {status}: {body[:200]!r}")
-            stream_started = True
-            generation = expect_palette_packet(sock, addresses, bytes(changed), accept_any_source)
-
-        with check(f"{scenario}: opted-in VIC stream periodically repeats its palette"):
-            for _ in range(2):
-                repeated_generation = expect_palette_packet(
-                    sock, addresses, bytes(changed), accept_any_source, timeout=3.0)
-                if repeated_generation != generation:
-                    raise Failure(
-                        f"palette repeat generation {repeated_generation} differs from initial {generation}")
-
-        with check(f"{scenario}: rapid changes are coalesced without disturbing video"):
-            session.poke(PALETTE_BURST_GO, 0)
-            session.poke(PALETTE_BURST_STATUS, 0)
-            session.run_prg(assembler.assemble(PALETTE_BURST_SOURCE))
-            deadline = time.monotonic() + 5.0
-            while session.peek(PALETTE_BURST_STATUS, repeatable=True) != PALETTE_BURST_READY:
-                if time.monotonic() >= deadline:
-                    raise Failure("palette burst fixture did not reach its ready state")
-                time.sleep(0.05)
-            burst_palette, text = uci.transact(bytes([TARGET_CONTROL, CTRL_CMD_GET_PALETTE]))
-            if text != STATUS_OK:
-                raise Failure(f"GET_PALETTE before burst returned {text!r}")
-            status, body = session.request(
-                "PUT", "/v1/streams/video:start", params={"ip": f"{group}:{port}", "palette": 1})
-            if status != 200:
-                raise Failure(f"video stream restart returned HTTP {status}: {body[:200]!r}")
-            generation = expect_palette_packet(
-                sock, addresses, burst_palette, accept_any_source)
-            # Empty video queued around the stream restart before measuring.
-            tuple(stream_lib.receive([sock], addresses, 0.05))
-            samples, video_sequences, command_count, seconds = capture_palette_burst(
-                session, sock, addresses, accept_any_source)
-            if command_count < 2 or len(samples) < 2:
-                raise Failure(
-                    f"palette burst completed {command_count} changes but captured "
-                    f"{len(samples)} palette and {len(video_sequences)} video packets")
-            readback, text = uci.transact(bytes([TARGET_CONTROL, CTRL_CMD_GET_PALETTE]))
-            if text != STATUS_OK:
-                raise Failure(f"GET_PALETTE after burst returned {text!r}")
-            tuple(stream_lib.receive([sock], addresses, 0.05))
-            status, body = session.request(
-                "PUT", "/v1/streams/video:start", params={"ip": f"{group}:{port}", "palette": 1})
-            if status != 200:
-                raise Failure(f"video stream restart returned HTTP {status}: {body[:200]!r}")
-            final_generation = expect_palette_packet(
-                sock, addresses, readback, accept_any_source)
-            session.poke(PALETTE_BURST_GO, 2)
-            generation_delta = (final_generation - generation) & 0xFFFF
-            detail(f"captured {len(samples)} palette and {len(video_sequences)} video packets; "
-                   f"last live generation delta {(samples[-1][1] - generation) & 0xFFFF}, "
-                   f"final delta {generation_delta}")
-            if generation_delta != command_count:
-                raise Failure(
-                    f"{command_count} changes advanced the generation by {generation_delta}")
-            for _, sample_generation, sample_palette in samples:
-                change = (sample_generation - generation) & 0xFFFF
-                if 1 <= change <= command_count:
-                    index = change - 1
-                    expected = bytes(((13 * index) & 0xFF,
-                                      (85 + 29 * index) & 0xFF,
-                                      (170 + 47 * index) & 0xFF))
-                    if sample_palette[18:21] != expected:
-                        raise Failure(
-                            f"generation {sample_generation} carried color {sample_palette[18:21]!r}, "
-                            f"expected {expected!r}")
-            last = command_count - 1
-            expected_color = bytes(((13 * last) & 0xFF,
-                                    (85 + 29 * last) & 0xFF,
-                                    (170 + 47 * last) & 0xFF))
-            if readback[18:21] != expected_color:
-                raise Failure(f"rapid-change color was {readback[18:21]!r}, expected {expected_color!r}")
-            distinct = [sample for i, sample in enumerate(samples)
-                        if i == 0 or sample[1] != samples[i - 1][1]]
-            if len(distinct) >= command_count:
-                raise Failure(f"{command_count} changes produced {len(distinct)} distinct packets; no coalescing")
-            intervals = [current[0] - previous[0]
-                         for previous, current in itertools.pairwise(samples)]
-            sample_span = samples[-1][0] - samples[0][0]
-            packet_rate = (len(samples) - 1) / sample_span if sample_span > 0 else float("inf")
-            # Host scheduling can timestamp two already-queued UDP datagrams
-            # close together, so sustained rate is the stable wire-rate check.
-            if packet_rate > 55.0:
-                raise Failure(f"palette stream sustained {packet_rate:.1f} packets/s, expected at most 55")
-            discontinuities = sum(
-                1 for previous, current in itertools.pairwise(video_sequences)
-                if ((current - previous) & 0xFFFF) != 1)
-            if len(video_sequences) < 100 or discontinuities:
-                raise Failure(
-                    f"video during burst had {len(video_sequences)} packets and "
-                    f"{discontinuities} sequence discontinuities")
-            detail(f"{command_count} palette changes in {seconds:.2f}s -> {len(distinct)} packets; "
-                   f"{packet_rate:.1f} packets/s, minimum observed spacing "
-                   f"{min(intervals) * 1000:.1f} ms; "
-                   f"{len(video_sequences)} consecutive video packets")
-            session.reset()
-            uci.release()
-            resumed_palette, text = uci.transact(bytes([TARGET_CONTROL, CTRL_CMD_GET_PALETTE]))
-            if text != STATUS_OK:
-                raise Failure(f"GET_PALETTE after fixture cleanup returned {text!r}")
-            status, body = session.request(
-                "PUT", "/v1/streams/video:start", params={"ip": f"{group}:{port}", "palette": 1})
-            if status != 200:
-                raise Failure(f"video stream resume returned HTTP {status}: {body[:200]!r}")
-            generation = expect_palette_packet(
-                sock, addresses, resumed_palette, accept_any_source)
 
         expect(uci, f"{scenario}: color index 16 is rejected",
                bytes([TARGET_CONTROL, CTRL_CMD_SET_PALETTE_COLOR, 16, 0, 0, 0]),
@@ -899,11 +703,6 @@ def run_palette(session: RestSession, uci: Uci) -> bool:
             actual, text = uci.transact(bytes([TARGET_CONTROL, CTRL_CMD_GET_PALETTE]))
             if text != STATUS_OK or actual != replacement:
                 raise Failure(f"{scenario}: full-palette readback was {actual!r}, expected {replacement!r}")
-
-        with check(f"{scenario}: palette changes advance the streamed generation"):
-            replacement_generation = expect_palette_packet(sock, addresses, replacement, accept_any_source)
-            if ((replacement_generation - generation) & 0xFFFF) == 0:
-                raise Failure("palette generation did not advance after SET_PALETTE")
 
         expect(uci, f"{scenario}: short SET_PALETTE payload is rejected",
                bytes([TARGET_CONTROL, CTRL_CMD_SET_PALETTE]) + original[:-1],
@@ -923,47 +722,370 @@ def run_palette(session: RestSession, uci: Uci) -> bool:
             if text != STATUS_OK or actual != default_palette:
                 raise Failure(f"{scenario}: reset palette readback was {actual!r}, expected {default_palette!r}")
 
-        with check(f"{scenario}: RESET_PALETTE is streamed to an opted-in client"):
-            expect_palette_packet(sock, addresses, default_palette, accept_any_source)
-
         expect(uci, f"{scenario}: RESET_PALETTE rejects a payload",
                bytes([TARGET_CONTROL, CTRL_CMD_RESET_PALETTE, 0]),
                STATUS_INVALID_PARAMS, reply=b"")
+    finally:
+        with check(f"{scenario}: restore the original runtime palette"):
+            reply, text = uci.transact(bytes([TARGET_CONTROL, CTRL_CMD_SET_PALETTE]) + original)
+            if text != STATUS_OK or reply:
+                raise Failure(f"{scenario}: restore returned data {reply!r}, status {text!r}")
+            actual, text = uci.transact(bytes([TARGET_CONTROL, CTRL_CMD_GET_PALETTE]))
+            if text != STATUS_OK or actual != original:
+                raise Failure(f"{scenario}: restored palette readback was {actual!r}")
+    return True
 
-        with check(f"{scenario}: a later ordinary stream is not opted in implicitly"):
-            status, body = session.request("PUT", "/v1/streams/video:stop")
-            if status != 200:
-                raise Failure(f"video stream stop returned HTTP {status}: {body[:200]!r}")
-            stream_started = False
-            tuple(stream_lib.receive([sock], addresses, 0.05))
-            status, body = session.request(
-                "PUT", "/v1/streams/video:start", params={"ip": f"{group}:{port}"})
-            if status != 200:
-                raise Failure(f"video stream restart returned HTTP {status}: {body[:200]!r}")
-            stream_started = True
-            expect_no_palette_packet(sock, addresses, accept_any_source)
+
+class VicListener:
+    """Drain the VIC stream on a thread of its own.
+
+    A REST call with the stream running takes 80 ms or more, and one PAL frame
+    is 50 datagrams every 20 ms, so a socket read only between calls overflows
+    any receive buffer Linux grants without raising `net.core.rmem_max`. A
+    thread keeps it drained whatever the main thread is waiting on.
+    """
+
+    def __init__(self, sock: socket.socket, addresses: set[str]) -> None:
+        self.sock = sock
+        self.addresses = addresses
+        self.lock = threading.Lock()
+        self.palettes: list[tuple[float, int, bytes]] = []
+        self.video: list[tuple[float, int]] = []
+        self.foreign: set[str] = set()
+        self.error: Failure | None = None
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._run, name="vic-listener", daemon=True)
+
+    def _run(self) -> None:
+        while not self._stop.is_set():
+            ready, _, _ = select.select([self.sock], (), (), 0.1)
+            if not ready:
+                continue
+            try:
+                data, sender = self.sock.recvfrom(2048)
+            except OSError:
+                continue
+            now = time.monotonic()
+            if sender[0] not in self.addresses:
+                with self.lock:
+                    self.foreign.add(sender[0])
+                continue
+            try:
+                palette = stream_lib.palette_packet(data)
+            except Failure as exc:
+                with self.lock:
+                    self.error = self.error or exc
+                continue
+            with self.lock:
+                if palette is not None:
+                    self.palettes.append((now, *palette))
+                elif len(data) == stream_lib.PACKET_SIZE:
+                    self.video.append((now, int.from_bytes(data[:2], "little")))
+
+    def start(self) -> None:
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop.set()
+        self._thread.join(timeout=2.0)
+
+    def raise_error(self) -> None:
+        with self.lock:
+            if self.error is not None:
+                raise self.error
+
+    def palettes_since(self, since: float) -> list[tuple[float, int, bytes]]:
+        with self.lock:
+            return [p for p in self.palettes if p[0] >= since]
+
+    def video_since(self, since: float) -> list[tuple[float, int]]:
+        with self.lock:
+            return [v for v in self.video if v[0] >= since]
+
+    def wait_palette(self, since: float, expected: bytes | None = None,
+                     timeout: float = 2.0) -> tuple[float, int, bytes]:
+        """The first palette packet after `since` carrying `expected`, if given."""
+        deadline = time.monotonic() + timeout
+        while True:
+            self.raise_error()
+            for packet in self.palettes_since(since):
+                if expected is None or packet[2] == expected:
+                    return packet
+            if time.monotonic() >= deadline:
+                seen = self.palettes_since(since)
+                if seen:
+                    raise Failure(f"last palette packet carried {seen[-1][2].hex()}, "
+                                  f"expected {expected.hex() if expected else 'any'}")
+                raise Failure(f"no palette packet arrived within {timeout:g} seconds")
+            time.sleep(0.01)
+
+    def expect_no_palette(self, seconds: float = PALETTE_QUIET_SECONDS) -> None:
+        """Listen longer than one repeat, with video as the positive control."""
+        since = time.monotonic()
+        time.sleep(seconds)
+        self.raise_error()
+        video = self.video_since(since)
+        if len(video) < 100:
+            raise Failure(f"only {len(video)} video packets in {seconds:g} s, so the "
+                          f"absence of palette packets proves nothing")
+        palettes = self.palettes_since(since)
+        if palettes:
+            raise Failure(f"{len(palettes)} palette packets arrived on a stream that "
+                          f"did not ask for them")
+
+
+def expected_burst_color(index: int) -> bytes:
+    """Color 6 after the burst fixture's `index`th change, counting from 0."""
+    return bytes(((13 * index) & 0xFF, (85 + 29 * index) & 0xFF, (170 + 47 * index) & 0xFF))
+
+
+def run_palette_stream(session: RestSession, uci: Uci) -> bool:
+    """Runtime palette packets on the VIC stream (#850), opted into with palette=1.
+
+    Runs after the command-interface scenarios, so a machine that cannot stream
+    to this host costs nothing but this scenario.
+    """
+    scenario = "palette-stream"
+    _, probe_status = uci.transact(bytes([TARGET_CONTROL, CTRL_CMD_GET_PALETTE]))
+    if probe_status == STATUS_UNKNOWN_COMMAND:
+        check_start(f"{scenario}: the machine has a runtime palette")
+        check_skip("GET_PALETTE is not served")
+        return True
+    original, text = uci.transact(bytes([TARGET_CONTROL, CTRL_CMD_GET_PALETTE]))
+    if text != STATUS_OK or len(original) != 48:
+        raise Failure(f"{scenario}: GET_PALETTE returned {len(original)} bytes, status {text!r}")
+
+    video_address = f"{session.target.video_group}:{session.target.video_port}"
+    # The rejected value doubles as the capability probe: firmware without
+    # palette streams refuses the unknown parameter in its own words.
+    status, body = session.request("PUT", "/v1/streams/video:start",
+                                   params={"ip": video_address, "palette": 2})
+    if status == 400 and b"Palette must be 0 or 1" not in body:
+        check_start(f"{scenario}: the firmware offers palette streams")
+        check_skip(f"video:start does not take a palette parameter: {body[:120]!r}")
+        return True
+    if status != 400:
+        raise Failure(f"{scenario}: video:start with palette=2 returned HTTP {status}: {body[:200]!r}")
+
+    api = UltimateApi(session.target, session.password)
+    arming = stream_lib.Arming(api, session.target)
+    addresses = stream_lib.source_addresses(session.target)
+    if not addresses:
+        raise Failure(f"{scenario}: could not resolve the VIC stream source address")
+    sock = stream_lib.stream_socket(session.target.video_group, session.target.video_port)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4 * 1024 * 1024)
+    listener = VicListener(sock, addresses)
+    listener.start()
+    fixture_loaded = False
+    fixture_released = False
+    try:
+        # Whether this host can see the stream at all is a property of the
+        # bench, not of the firmware, so it decides a skip rather than a failure.
+        if not arming.start("video", palette=0):
+            reason = arming.failures.get("video", "")
+            if "No Operational Network Interface" not in reason:
+                raise Failure(f"{scenario}: video:start failed: {reason}")
+            skip = "the VIC stream's network interface has no link"
+        else:
+            since = time.monotonic()
+            time.sleep(1.0)
+            skip = None
+            if len(listener.video_since(since)) < 100:
+                with listener.lock:
+                    foreign = sorted(listener.foreign)
+                skip = (f"the VIC stream arrives from {', '.join(foreign)}, not from "
+                        f"{', '.join(sorted(addresses))}; name that address with -H"
+                        if foreign else "no VIC stream packets reach this host")
+        if skip:
+            check_start(f"{scenario}: the VIC stream reaches this host")
+            check_skip(skip)
+            return True
+
+        with check(f"{scenario}: a refused palette value leaves the debug stream running"):
+            arming.stop("video")
+            debug_sock = stream_lib.stream_socket(DEBUG_GROUP, DEBUG_PORT)
+            try:
+                status, body = session.request("PUT", "/v1/streams/debug:start",
+                                               params={"ip": f"{DEBUG_GROUP}:{DEBUG_PORT}"})
+                if status != 200:
+                    raise Failure(f"debug:start returned HTTP {status}: {body[:200]!r}")
+                for stream, value in (("video", 2), ("audio", 1), ("audio", 0)):
+                    status, body = session.request(
+                        "PUT", f"/v1/streams/{stream}:start",
+                        params={"ip": video_address, "palette": value})
+                    if status != 400:
+                        raise Failure(f"{stream} stream with palette={value} returned "
+                                      f"HTTP {status}: {body[:200]!r}")
+                tuple(stream_lib.receive([debug_sock], addresses, 0.1))
+                debug = sum(1 for _, _, mine in stream_lib.receive([debug_sock], addresses, 0.5)
+                            if mine)
+                if not debug:
+                    raise Failure("the debug stream stopped for a request that was refused")
+            finally:
+                session.request("PUT", "/v1/streams/debug:stop")
+                debug_sock.close()
+            if not arming.start("video", palette=0):
+                raise Failure(f"video:start failed: {arming.failures.get('video')}")
+
+        with check(f"{scenario}: palette=0 sends no palette packets"):
+            listener.expect_no_palette()
+
+        with check(f"{scenario}: a palette change on an ordinary stream sends nothing"):
+            changed = bytearray(original)
+            changed[-3:] = bytes(component ^ 0x5A for component in changed[-3:])
+            reply, text = uci.transact(
+                bytes([TARGET_CONTROL, CTRL_CMD_SET_PALETTE_COLOR, 15]) + changed[-3:])
+            if text != STATUS_OK or reply:
+                raise Failure(f"SET_PALETTE_COLOR returned data {reply!r}, status {text!r}")
+            listener.expect_no_palette()
+
+        with check(f"{scenario}: an opted-in start sends the current palette at once"):
+            arming.stop("video")
+            requested = time.monotonic()
+            if not arming.start("video", palette=1):
+                raise Failure(f"video:start with palette=1 failed: {arming.failures.get('video')}")
+            answered = time.monotonic()
+            arrived, generation, _ = listener.wait_palette(requested, bytes(changed))
+            if arrived - answered > PALETTE_PROMPT_SECONDS:
+                raise Failure(f"the first palette packet came {arrived - answered:.2f} s after "
+                              f"the start was answered")
+
+        with check(f"{scenario}: the palette repeats once a second"):
+            first = listener.wait_palette(arrived + 0.01, bytes(changed), timeout=2.0)
+            second = listener.wait_palette(first[0] + 0.01, bytes(changed), timeout=2.0)
+            interval = second[0] - first[0]
+            if {first[1], second[1]} != {generation}:
+                raise Failure(f"repeats carried generations {first[1]} and {second[1]}, "
+                              f"expected {generation}")
+            if not 0.8 <= interval <= 1.3:
+                raise Failure(f"repeats came {interval:.2f} s apart")
+
+        with check(f"{scenario}: a palette change is sent at once"):
+            previous = listener.wait_palette(second[0] + 0.01, bytes(changed), timeout=2.0)
+            changed[-3:] = bytes(component ^ 0xFF for component in changed[-3:])
+            reply, text = uci.transact(
+                bytes([TARGET_CONTROL, CTRL_CMD_SET_PALETTE_COLOR, 15]) + changed[-3:])
+            done = time.monotonic()
+            if text != STATUS_OK or reply:
+                raise Failure(f"SET_PALETTE_COLOR returned data {reply!r}, status {text!r}")
+            arrived, generation, _ = listener.wait_palette(previous[0] + 0.01, bytes(changed))
+            if arrived - done > PALETTE_PROMPT_SECONDS:
+                raise Failure(f"the changed palette came {arrived - done:.2f} s after the change")
+            # Only a send on change can arrive before the next repeat is due.
+            if done - previous[0] < 0.6 and arrived - previous[0] > 0.9:
+                raise Failure(f"the changed palette came {arrived - previous[0]:.2f} s after the "
+                              f"last repeat, which is when the repeat was due")
+
+        with check(f"{scenario}: rapid changes are coalesced without stopping the video"):
+            session.poke(PALETTE_BURST_GO, 0)
+            session.poke(PALETTE_BURST_STATUS, 0)
+            session.run_prg(assembler.assemble(PALETTE_BURST_SOURCE))
+            fixture_loaded = True
+            deadline = time.monotonic() + 5.0
+            while session.peek(PALETTE_BURST_STATUS, repeatable=True) != PALETTE_BURST_READY:
+                if time.monotonic() >= deadline:
+                    raise Failure("the burst fixture did not reach its ready state")
+                time.sleep(0.05)
+            baseline_palette, text = uci.transact(bytes([TARGET_CONTROL, CTRL_CMD_GET_PALETTE]))
+            if text != STATUS_OK:
+                raise Failure(f"GET_PALETTE before the burst returned {text!r}")
+            _, baseline, _ = listener.wait_palette(time.monotonic(), baseline_palette)
+            started = time.monotonic()
+            session.poke(PALETTE_BURST_GO, 1)
+            deadline = started + 15.0
+            while True:
+                result = session.readmem(PALETTE_BURST_STATUS, 3, repeatable=True)
+                if result[0] == PALETTE_BURST_DONE:
+                    break
+                if result[0] not in (PALETTE_BURST_READY, PALETTE_BURST_RUNNING):
+                    raise Failure(f"the burst fixture reported status ${result[0]:02X}")
+                if time.monotonic() >= deadline:
+                    raise Failure("the burst did not finish within 15 seconds")
+                time.sleep(0.05)
+            finished = time.monotonic()
+            session.poke(PALETTE_BURST_GO, 2)
+            fixture_released = True
+            count = int.from_bytes(result[1:3], "little")
+            final_palette, text = uci.transact(bytes([TARGET_CONTROL, CTRL_CMD_GET_PALETTE]))
+            if text != STATUS_OK:
+                raise Failure(f"GET_PALETTE after the burst returned {text!r}")
+            final = listener.wait_palette(started, final_palette)
+            samples = [p for p in listener.palettes_since(started) if p[0] <= final[0]]
+            video = [v for v in listener.video_since(started) if v[0] <= finished]
+
+            delta = (final[1] - baseline) & 0xFFFF
+            if count < 2 or delta != count:
+                raise Failure(f"{count} changes advanced the generation by {delta}")
+            if final_palette[18:21] != expected_burst_color(count - 1):
+                raise Failure(f"color 6 ended as {final_palette[18:21].hex()}, "
+                              f"expected {expected_burst_color(count - 1).hex()}")
+            for _, sample_generation, sample_palette in samples:
+                change = (sample_generation - baseline) & 0xFFFF
+                if 1 <= change <= count and sample_palette[18:21] != expected_burst_color(change - 1):
+                    raise Failure(f"generation {sample_generation} carried color 6 as "
+                                  f"{sample_palette[18:21].hex()}, expected "
+                                  f"{expected_burst_color(change - 1).hex()}")
+            distinct = len({sample[1] for sample in samples})
+            if distinct >= count:
+                raise Failure(f"{count} changes produced {distinct} distinct palette packets; "
+                              f"nothing was coalesced")
+            span = samples[-1][0] - samples[0][0] if len(samples) > 1 else 0.0
+            rate = (len(samples) - 1) / span if span > 0 else 0.0
+            # Host scheduling can deliver two queued datagrams back to back, so
+            # the sustained rate is the stable measure of the wire rate.
+            if rate > 55.0:
+                raise Failure(f"palette packets came at {rate:.1f} per second, expected at most 55")
+            # Datagrams the host drops are the host's; the firmware's part is to
+            # keep the video coming, so a stall is what fails.
+            stall = max((b[0] - a[0] for a, b in itertools.pairwise(video)), default=0.0)
+            if len(video) < 100 or stall > VIDEO_STALL_SECONDS:
+                raise Failure(f"{len(video)} video packets during the burst, longest gap "
+                              f"{stall * 1000:.0f} ms")
+            lost = sum(((b[1] - a[1]) & 0xFFFF) - 1 for a, b in itertools.pairwise(video)
+                       if ((b[1] - a[1]) & 0xFFFF) < 0x8000)
+            detail(f"{count} changes in {finished - started:.2f} s -> {distinct} palette "
+                   f"packets at {rate:.1f}/s; {len(video)} video packets, {lost} lost on "
+                   f"the way here, longest gap {stall * 1000:.0f} ms")
+
+        with check(f"{scenario}: RESET_PALETTE reaches an opted-in client at once"):
+            session.reset()
+            uci.release()
+            fixture_loaded = False
+            requested = time.monotonic()
+            reply, text = uci.transact(bytes([TARGET_CONTROL, CTRL_CMD_RESET_PALETTE]))
+            done = time.monotonic()
+            if text != STATUS_OK or reply:
+                raise Failure(f"RESET_PALETTE returned data {reply!r}, status {text!r}")
+            default_palette, text = uci.transact(bytes([TARGET_CONTROL, CTRL_CMD_GET_PALETTE]))
+            if text != STATUS_OK:
+                raise Failure(f"GET_PALETTE after RESET_PALETTE returned {text!r}")
+            arrived, _, _ = listener.wait_palette(requested, default_palette)
+            if arrived - done > PALETTE_PROMPT_SECONDS:
+                raise Failure(f"the reset palette came {arrived - done:.2f} s after the reset")
+
+        with check(f"{scenario}: a later ordinary start is not opted in"):
+            arming.stop("video")
+            if not arming.start("video"):
+                raise Failure(f"video:start failed: {arming.failures.get('video')}")
+            listener.expect_no_palette()
     finally:
         try:
-            try:
-                session.poke(PALETTE_BURST_GO, 2)
-            except Failure:
-                pass
+            if fixture_loaded and not fixture_released:
+                # The fixture waits for GO=1 and must not start pushing
+                # commands into the queue the restore below uses.
+                session.reset()
+                uci.release()
             with check(f"{scenario}: restore the original runtime palette"):
                 reply, text = uci.transact(bytes([TARGET_CONTROL, CTRL_CMD_SET_PALETTE]) + original)
                 if text != STATUS_OK or reply:
-                    raise Failure(f"{scenario}: restore returned data {reply!r}, status {text!r}")
+                    raise Failure(f"restore returned data {reply!r}, status {text!r}")
                 actual, text = uci.transact(bytes([TARGET_CONTROL, CTRL_CMD_GET_PALETTE]))
                 if text != STATUS_OK or actual != original:
-                    raise Failure(f"{scenario}: restored palette readback was {actual!r}")
+                    raise Failure(f"restored palette readback was {actual!r}")
         finally:
-            try:
-                if stream_started:
-                    with check(f"{scenario}: stop the VIC stream"):
-                        status, body = session.request("PUT", "/v1/streams/video:stop")
-                        if status != 200:
-                            raise Failure(f"video stream stop returned HTTP {status}: {body[:200]!r}")
-            finally:
-                sock.close()
+            arming.stop_all()
+            listener.stop()
+            sock.close()
     return True
 
 
@@ -1287,13 +1409,14 @@ def main() -> int:
 
         run("transport", run_transport, uci)
         run("control-target", run_control_target, uci)
-        run("palette", run_palette, session, uci)
+        run("palette", run_palette, uci)
         run("issue-740-matrix", run_issue_740_matrix, session, ftp, uci)
         run("save-reu-offset-past-end", run_save_reu_offset_past_end, session, uci)
         run("load-reu-disabled", run_reu_disabled, session, uci, CTRL_CMD_LOAD_REU, "load-reu-disabled")
         run("save-reu-disabled", run_reu_disabled, session, uci, CTRL_CMD_SAVE_REU, "save-reu-disabled")
         run("softiec-single-part-reply", run_softiec_single_part_reply, uci)
         run("softiec-x00-name", run_softiec_x00_name, ftp, uci)
+        run("palette-stream", run_palette_stream, session, uci)
         run("interface-usable-after", run_interface_usable_after, uci)
 
     except Failure as exc:

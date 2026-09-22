@@ -154,14 +154,15 @@ class Arming:
 
     def start(self, stream: str, already_arriving: bool = False,
               timeout: float | None = None,
-              retries: int | None = None) -> bool:
+              retries: int | None = None, **params: object) -> bool:
         """Ask the device to send `stream`, unless it already is.
 
         `already_arriving` is the caller saying it has seen packets from its
         own device at the standard address. That is the one thing about a
         stream that is not free to ask for twice, so a caller that finds it
         running issues no request at all and, by not having started it, leaves
-        it running afterwards.
+        it running afterwards. `params` go on the start request as they are,
+        such as `palette=1`.
         """
         if already_arriving or stream in self.started:
             return False
@@ -170,7 +171,7 @@ class Arming:
             # keep draining sockets bounds this call; see
             # rest.RestClient.request.
             self.api.streams.start(stream, ip=self.address(stream),
-                                   timeout=timeout, retries=retries)
+                                   timeout=timeout, retries=retries, **params)
         except Failure as exc:
             self.failures[stream] = str(exc)
             self.publish("start-failed", stream)
@@ -277,6 +278,26 @@ ENCODING = 0
 BYTES_PER_LINE = PIXELS_PER_LINE // 2
 PAYLOAD_SIZE = LINES_PER_PACKET * BYTES_PER_LINE
 PACKET_SIZE = HEADER_SIZE + PAYLOAD_SIZE
+
+# The runtime palette packet (#850), sent on the video port only to a stream
+# started with palette=1: a video-style header on line 239, then the 16 RGB
+# colors. Its 60 bytes cannot be mistaken for a 780-byte video packet.
+PALETTE_PACKET_SIZE = HEADER_SIZE + 16 * 3
+PALETTE_LINE = 239
+_PALETTE_FORMAT = bytes([0x80, 0x01, 1, 4, 1, 0])
+
+
+def palette_packet(data: bytes) -> tuple[int, bytes] | None:
+    """`(generation, 48 RGB bytes)` for a palette packet, None for anything else.
+
+    A datagram of that size on line 239 with other format bytes raises: it is
+    neither video nor a palette a client could use.
+    """
+    if len(data) != PALETTE_PACKET_SIZE or int.from_bytes(data[4:6], "little") != PALETTE_LINE:
+        return None
+    if data[6:HEADER_SIZE] != _PALETTE_FORMAT:
+        raise Failure(f"palette packet has invalid format bytes {data[6:HEADER_SIZE].hex()}")
+    return int.from_bytes(data[:2], "little"), data[HEADER_SIZE:]
 
 # The two frame heights the hardware actually produces: PAL is 272 lines,
 # NTSC is 240. The last packet's declared height is clamped to this range
