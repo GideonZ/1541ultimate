@@ -4735,6 +4735,58 @@ static void s11_reset_restarts_processor(FileManager *fm, IecDrive *dr)
     expect_command_status_prefix(testname, dr, "UI\r", "73,");
 }
 
+// A JiffyDOS LOAD streams through the interface's talk loop, which pops what each pass
+// sent, and a pass that finds the fifo still full pops nothing. Such a pass must not end
+// the file while the byte at its last position is still unsent, whatever the file size.
+static void s11_jiffy_load_stream(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite11-JiffyLoadStream";
+    const char *path = s11_partition(fm, dr, "jiffyload");
+    const int sizes[] = { 1, 2, 3, 511, 512, 513, 1023, 1025, 2047 };
+    static uint8_t payload[2048];
+    static uint8_t got[2048];
+    for (size_t s = 0; s < sizeof(sizes) / sizeof(sizes[0]); s++) {
+        int size = sizes[s];
+        for (int i = 0; i < size; i++) {
+            payload[i] = (uint8_t)(i * 7 + size);
+        }
+        uint32_t transferred = 0;
+        REQUIRE(fm->save_file(true, path, "JLOAD.prg", payload, size, &transferred) == FR_OK);
+
+        open_file(dr, 2, "JLOAD");
+        dr->push_ctrl(SLAVE_CMD_ATN);
+        dr->push_ctrl(0x62);
+        dr->talk();
+        int total = 0;
+        bool last = false;
+        for (int pass = 0; !last && (pass < 4 * size + 8); pass++) {
+            int sent = 0;
+            // Every other pass finds a fifo of four bytes still full.
+            while ((pass & 1) && (sent < 4)) {
+                uint8_t data;
+                t_channel_retval ret = dr->prefetch_data(data);
+                if ((ret != IEC_OK) && (ret != IEC_LAST)) {
+                    break;
+                }
+                got[total++] = data;
+                sent++;
+                if (ret == IEC_LAST) {
+                    last = true;
+                    break;
+                }
+            }
+            dr->pop_more(sent);
+        }
+        close_file(dr, 2);
+        if (!last || (total != size) || memcmp(payload, got, size)) {
+            printf("%s: %d byte file, %d bytes streamed, last %d\n", testname, size, total, last);
+        }
+        REQUIRE(last);
+        REQUIRE(total == size);
+        REQUIRE(memcmp(payload, got, size) == 0);
+    }
+}
+
 // The operation log with the longest inputs it takes: a working directory near the length
 // a command can name, a 253 byte command, names that fill the buffer, and replies of 256
 // bytes. Every line must stay within its buffers; the AddressSanitizer build of this suite
@@ -5509,6 +5561,7 @@ static const Suite11Case suite11_cases[] = {
     { "Suite11-OperationLogBounds",      s11_operation_log_bounds },
     { "Suite11-OperationLogNoReconfigure", s11_operation_log_no_reconfigure },
     { "Suite11-ResetRestartsProcessor",  s11_reset_restarts_processor },
+    { "Suite11-JiffyLoadStream",         s11_jiffy_load_stream },
     { "Suite11-BlockAllocateAnswers",    s11_block_allocate_answers },
     { "Suite11-Crash-DamagedChain",      s11_crash_damaged_chain },
     { "Suite11-Crash-LongHostName",      s11_crash_long_host_name },

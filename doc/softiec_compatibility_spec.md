@@ -1656,6 +1656,19 @@ These are stated so that later work does not quietly regress them.
     `software/io/iec/iec_code.iec` and is what GAP, writing in 2023, reported
     missing.
 
+**SI-153.** A LOAD delivers every byte of the file under any KERNAL, JiffyDOS included,
+whatever the file's length. The JiffyDOS LOAD protocol moves the file in runs of bytes and
+ends it with a signal of its own. The IEC processor sends the byte that carries the end of
+the file before it gives that signal, also when that byte is the only one it holds at the
+start of a run. It is the only one whenever the drive's last 512 byte buffer of the file
+holds a single byte, because the processor sends everything it has while the drive reads
+that buffer. The drive counts as sent only the bytes a transfer pass sent, so a pass that
+found the processor still busy and sent nothing leaves the last byte to be sent. Sources:
+917, which reported corrupted JiffyDOS loads, measured on an Ultimate 64 with a JiffyDOS
+KERNAL: every file of 512n + 1 bytes, load address included, came back one byte short,
+and every other length came back whole. Tests: Suite11-JiffyLoadStream, and the LOAD
+checks of `tests/e2e/io/iec/dos_command_test.py` run with `--kernal`.
+
 ### 15.3 Consequences elsewhere
 
 **SI-151. Retired.** The number held a requirement to migrate the relative files this
@@ -1933,7 +1946,7 @@ other software that already targets these devices.
 
 ## Appendix B. Requirement index
 
-Sections 2 to 15 define the numbered paragraphs SI-001 to SI-152, with gaps, one of which
+Sections 2 to 15 define the numbered paragraphs SI-001 to SI-153, with gaps, one of which
 (SI-151) is retired. A paragraph whose number carries a letter, such as SI-103a, states a
 further rule of the requirement it follows and is numbered that way so that the numbers
 already cited elsewhere keep their meaning.

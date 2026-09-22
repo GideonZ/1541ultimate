@@ -216,7 +216,7 @@ _jiffy_outer
             WAIT UNTIL DATA=1 # Host ready
             IF EOI THEN _jiffy_load_eoi
             READB # wait for data, also sets eoi if last
-            IF EOI THEN _jiffy_load_eoi
+            # A last byte that starts a block is still sent; the inner loop ends on its eoi.
             IF CTRL THEN _jiffy_load_eoi
             SET DATA=0
             SET CLK=1

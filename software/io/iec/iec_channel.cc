@@ -197,11 +197,12 @@ t_channel_retval IecChannel::pop_more(int pop_size)
 {
     switch (state) {
     case e_file:
-        if (pointer == last_byte) {
+        // A talk pass that found the fifo full pops nothing, not the last byte.
+        pointer += pop_size;
+        if ((last_byte >= 0) && (pointer > last_byte)) {
             state = e_complete;
             return IEC_NO_FILE; // no more data?
         }
-        pointer += pop_size;
         if (pointer == 512) {
             if (read_block()) { // also resets pointer.
                 log_fault("read_block while streaming");
@@ -213,11 +214,11 @@ t_channel_retval IecChannel::pop_more(int pop_size)
         break;
     case e_dir:
     case e_partlist:
-        if (pointer == last_byte) {
+        pointer += pop_size;
+        if ((last_byte >= 0) && (pointer > last_byte)) {
             state = e_complete;
             return IEC_NO_FILE; // no more data?
         }
-        pointer += pop_size;
         if (pointer == prefetch_max) {
             while (read_dir_entry() > 0)
                 ;
