@@ -49,9 +49,8 @@ from menu_screen_test import Failure, MenuScreenInfo, RestSession, check
 from api import ConfigsApi, DRIVE_ENABLE_ITEM, DRIVE_ENABLED, DRIVE_STORES
 import ftp as ftp_lib
 import pacing
-import targets
 from report import (check_skip, detail, section, suite_fail, suite_ok,
-                    suite_skip, teardown_step)
+                    teardown_step)
 from ui_backend import Browser, TelnetBackend, add_mode_argument, make_browser, strip_frame
 
 
@@ -155,6 +154,8 @@ P00_CBM_NAME = "WRAPPED PROGRAM"
 P00_HEADER = (b"C64File\0" + P00_CBM_NAME.encode("ascii").ljust(16, b"\0")
               + b"\0" + bytes([0]))
 P00_BYTES = P00_HEADER + PRG_BYTES
+# How long a typed quick-seek may take to move the cursor on screen.
+SEEK_SECONDS = 5.0
 
 SECTORS_PER_TRACK = [21] * 17 + [19] * 7 + [18] * 6 + [17] * 5
 D64_SIZE = 174848
@@ -791,6 +792,24 @@ def open_wrapped_prg(machine: Machine, fixtures: Fixtures) -> None:
     machine.select_entry(P00_CBM_NAME)
 
 
+def seek_wrapped_by_shown_name(machine: Machine) -> str:
+    """Type the first word of the name a P00 row shows, and return the row the cursor lands on.
+
+    The row shows the name in the header, so that is what a user types to jump
+    to it; the host name says nothing (SI-144).
+    """
+    machine.open_temp()
+    machine.browser.go_to_top()
+    for character in P00_CBM_NAME.split()[0]:
+        machine.browser.type_menu_char(character.lower())
+    deadline = time.monotonic() + SEEK_SECONDS
+    while True:
+        shown = machine.browser.selected_text()
+        if P00_CBM_NAME in shown or time.monotonic() >= deadline:
+            return shown
+        time.sleep(pacing.POLL_INTERVAL_SECONDS)
+
+
 def open_disk_prg(machine: Machine, fixtures: Fixtures) -> None:
     machine.open_temp()
     machine.select_entry(fixtures.d64)
@@ -1305,25 +1324,6 @@ def main() -> int:
     add_mode_argument(parser)
     args = parser.parse_args()
 
-    if targets.is_cartridge(args.host):
-        # Measured on u2@c64u, 2026-09-04: every action that hands the C64 a
-        # program through its own load path - Run, Load, Mount & Run, Real Run -
-        # leaves the machine at a clean BASIC prompt with nothing at $C000,
-        # while DMA, which checks the same signature, passes.
-        #
-        # It is not the device. The same Run driven by hand against the same
-        # target starts the program, and so does this suite's own --repeat mode.
-        # It is therefore something this suite does in matrix order, not yet
-        # found. Skipped rather than left failing so the gate says what is not
-        # covered on this target instead of reporting a device fault.
-        suite_skip(
-            "prg_context_menu_test",
-            "the load and run actions do not start a program when this suite "
-            "drives a cartridge inside a computer, though the same actions "
-            "work by hand and under --repeat on the same target; the cause is "
-            "in this suite and is not yet found")
-        return 0
-
     rest_host = args.rest_host or args.host
     session = RestSession(rest_host, args.password or None, args.timeout)
     browser = make_browser(
@@ -1394,6 +1394,13 @@ def main() -> int:
                         f"{DRIVE_STORES[0]}/{DRIVE_ENABLE_ITEM} stayed at {now!r} "
                         f"after it was set to {DRIVE_ENABLED!r}; Real Run has no "
                         f"drive to load from")
+
+        with check("typing the name a P00 row shows moves the cursor to that row"):
+            shown = seek_wrapped_by_shown_name(machine)
+            detail(f"the cursor is on {shown.strip()!r}")
+            if P00_CBM_NAME not in shown:
+                raise Failure(f"typing {P00_CBM_NAME.split()[0]!r} left the cursor on "
+                              f"{shown.strip()!r}, not on the row that shows {P00_CBM_NAME!r}")
 
         if args.repeat > 0:
             names = args.scenario or [name for name, _, _, _ in SCENARIOS]
