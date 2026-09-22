@@ -400,6 +400,8 @@ class Session:
         # When the REST lane last reset the drive, as time.monotonic(): a reset drops the
         # transfer that is on the bus, so what a step read across it proves nothing.
         self.drive_reset_at = 0.0
+        # Every reset of this phase as (request sent, answer received), for the correlation.
+        self.drive_resets = []
         self.heap_before = None
         self.heap_after = None
         self.stop = threading.Event()
@@ -430,6 +432,7 @@ class Session:
         self.heap_before = None
         self.heap_after = None
         self.log_events = []
+        self.drive_resets = []
         self.flips = []
 
     # -- the C64 lane: shared helpers ------------------------------------------------
@@ -1397,8 +1400,10 @@ class Session:
                 if self.policy.rest_reset and (time.monotonic() - last_reset > 20):
                     # The drives helper knows only the emulated slots a and b, so the softiec
                     # slot is reset through the route directly.
+                    sent = time.monotonic()
                     api.rest.request("PUT", "/v1/drives/softiec:reset")
                     last_reset = self.drive_reset_at = time.monotonic()
+                    self.drive_resets.append((sent, last_reset))
             except Exception as exc:  # the main lane decides whether this is a death
                 self.lane_errors.append(f"rest at iteration {self.iteration}: {exc}")
 
@@ -1565,13 +1570,14 @@ class Session:
             return None, ("the start marker was not found in the syslog; it may have been "
                           "split or dropped, or the device does not log to this collector")
         self.dump_log_window(device_ip, texts)
+        events = softiec_log.across_resets(self.log_events, list(self.drive_resets))
         if self.log_mode == "toggle":
             with self.flip_lock:
                 flips = list(self.flips)
-            result = softiec_log.correlate_toggle(self.log_events, texts, flips, initial_on=False,
+            result = softiec_log.correlate_toggle(events, texts, flips, initial_on=False,
                                                   label=f"toggle from {device_ip}")
         else:
-            result = softiec_log.correlate(self.log_events, texts, logging_on=self.log_on,
+            result = softiec_log.correlate(events, texts, logging_on=self.log_on,
                                           label=f"logging {'on' if self.log_on else 'off'} "
                                                 f"from {device_ip}")
         return result, None

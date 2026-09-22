@@ -44,7 +44,7 @@ import re
 import socket
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 # The prefix every line carries (SOFTIEC_LOG_PREFIX in iec_log.h). Grep key in a device log.
 LOG_PREFIX = "SoftIEC: "
@@ -179,6 +179,22 @@ class Event:
         # carry no text, and without it one lost close would pair every later one with its
         # neighbour's line.
         return (self.cls, self.chan, render_text(self.txt))
+
+
+def across_resets(events: list[Event], resets: list[tuple[float, float]]) -> list[Event]:
+    """The events, with each one a drive reset overlapped made optional and its status unknown.
+
+    `resets` holds each reset as (request sent, answer received) on the same clock as the
+    events. A reset replaces the error channel, so the status the C64 read after it is not
+    the answer the drive logged, and a failure line may or may not have been written before
+    it. The line that does appear is still verified against the event's text and channel."""
+    out = []
+    for ev in events:
+        if (ev.t0 is not None) and (ev.t1 is not None) and \
+                any((sent <= ev.t1) and (answered >= ev.t0) for sent, answered in resets):
+            ev = replace(ev, status=None, optional=True)
+        out.append(ev)
+    return out
 
 
 @dataclass
