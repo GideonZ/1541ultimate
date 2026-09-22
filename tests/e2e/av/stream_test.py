@@ -29,7 +29,6 @@ from av_stream import (
     packet_sequence,
     video_frames,
 )
-import targets
 from report import (Failure, check, detail, suite_fail, suite_ok,
                     suite_skip)
 
@@ -264,19 +263,6 @@ def main() -> int:
                         help=f"REST password (default: ${cli.DEFAULT_PASSWORD_ENV})")
     parser.add_argument("--case", choices=("all", "ladder", "pop"), default="all")
     args = parser.parse_args()
-    if targets.is_cartridge(args.host):
-        # Measured on u2@c64u, 2026-09-04: the tone ladder is detected one note
-        # out (146.8Hz expected, 130.8Hz seen), on every attempt. The ladder is
-        # a PRG the suite runs on the C64, so this belongs with the load and run
-        # actions skipped on this target in prg_context_menu_test rather than
-        # being a fault in the anchor, which this branch fixed and which passes
-        # on u64.
-        suite_skip(
-            "stream_test",
-            "the tone ladder is detected one note out when this suite runs "
-            "against a cartridge inside a computer; see the same skip in "
-            "prg_context_menu_test")
-        return 0
     device = UltimateApi(args.host, args.password or None)
     # The ladder's constants are PAL throughout: PAL_AUDIO_RATE, a 50Hz frame
     # rate in the slot arithmetic, and note frequencies derived from both. On a
