@@ -1037,7 +1037,7 @@ happy." C64 OS sends the four probes at every boot (TRACE).
 **`M-W` and `M-E` are deliberately unsupported** and answer `30`. Nothing of what
 `M-W` writes is kept and `M-E` runs nothing, so answering `00, OK` would tell a fast
 loader that its drive code is in place and running. An `00, OK` means the work was done,
-which is also why a clock write that the clock does not accept answers `30` (SI-120). The
+which is also why a clock write of a date that does not exist answers `30` (SI-122). The
 reporter's request was for `M-R`, which C64 OS sends four times at boot (TRACE).
 
 **SI-106.** `S-C`, the SCSI pass-through of HD 9-39, is out of scope.
@@ -1128,16 +1128,17 @@ minute, second, an AM or PM flag, and `CHR$(13)`, BCD-coded for `B`. The `I` for
 is the ISO 8601 subset `"YYYY-MM-DDThh:mm:ss dow"+CHR$(13)`. Sources: HD 9-36 to
 9-38; IDE 15.4.8; SD README under `T-R and T-W`; GSD "Realtime Clock".
 
-A write sets the Ultimate's own real time clock, which is the clock every other
-interface reads and writes: the drive has no clock of its own. The parser validates the
-command, converts it to a calendar date and time, and passes that to
-`set_current_time()`, the accessor each real time clock driver defines beside
-`get_current_time()`; the control interface's `DOS_CMD_SET_TIME` passes through the same
-accessor. A write that is refused, and a write the clock does not accept, answer
-`30,SYNTAX ERROR` and leave the clock alone, so an `00, OK` means the clock was set. A
-clock driver writes its chip without learning whether the chip took the bytes, so the
-drive reads the clock back after the write, and a clock that does not then show the
-written moment, within the two seconds a read can come after it, answers `30` as well.
+The clock the drive answers with is its own, and a write changes nothing else. The drive
+keeps the difference between the moment written and the system clock, in seconds, and a
+read answers the system clock plus that difference, so the drive's clock runs on with the
+system clock. The system clock is the Ultimate's real time clock, which the firmware sets
+from the network by SNTP while the network setting "SNTP Enable" is on, as it is by
+default (`software/network/sntp_time.cc`), in the time zone the network settings name.
+The file browser, FTP, REST and the time stamps the file system writes keep reading the
+system clock. A reset of the drive clears the difference: the Reset from the menu or the
+drives route, `UJ` and `U`+shifted J. Until a write, and after a reset, a read answers the
+system clock as it reads, its day of week included. A write that is refused answers
+`30,SYNTAX ERROR` and keeps the difference as it was.
 
 **SI-121.** Each write form carries the fields of the matching read form, at the same
 offsets.
@@ -1151,8 +1152,11 @@ offsets.
 
 Source: `SD parse_timewrite()`, which is also the source for the rules below.
 
-* The day of week is stored as the `A`, `B` and `D` forms send it, without being checked
-  against the date, as a CMD drive stores it. The `I` form carries none and derives it.
+* The day of week of the `A`, `B` and `D` forms is checked for its range and not kept:
+  a read after a write derives it from the date, because the drive keeps only a
+  difference in seconds. A CMD drive stores the day of week it is sent without checking
+  it against the date, so a program that sends one the date does not have reads back a
+  different one here. The `I` form carries none.
 * A twelve in a 12-hour hour field is midnight or noon, and the PM flag adds half a day.
   The `A` form without its marker is a 24-hour time.
 * A two-digit year below 80 is in this century and from 80 in the last one.
@@ -1164,8 +1168,8 @@ to 12, a day outside the length of that month in that year, a day of week above 
 hour above 23, a minute or a second above 59, a BCD field whose nibbles are not digits,
 or a year outside 1980 to 2079, which is what two BCD digits counted from the epoch hold.
 `SD parse_timewrite()` checks the same ranges apart from the length of the month; that
-check is added here because a 31 February would otherwise reach the clock chip and be
-read back as a different date.
+check is added here because a 31 February would otherwise be read back as a different
+date.
 
 **SI-123.** Every field sits at a fixed offset and every separator is checked. A field
 written to another width is refused, where `SD parse_timewrite()` reads a number of any
@@ -1841,7 +1845,7 @@ differently from one of its sources, for a reason given below the requirement.
 | SI-033 | A scratch whose path does not exist answers `71` rather than a count of zero |
 | SI-074 | A rename into another directory or partition moves the entry, where `SD parse_rename()` answers `62` |
 | SI-077 | `EL`, `EU` and `A` act on every entry a name matches, directories included, where sd2iec skips directories and `A` takes the first match |
-| SI-120 | A write is refused when the day is not a day of that month, which `SD parse_timewrite()` does not check, and every field is read at its documented width |
+| SI-120 | A write sets the drive's own clock, an offset from the system clock that a reset clears, where a CMD drive and sd2iec set their clock chip; the day of week a write carries is not kept; a write is refused when the day is not a day of that month, which `SD parse_timewrite()` does not check, and every field is read at its documented width |
 | SI-136 | A second `*` matches in the middle of a name, where CBM DOS and sd2iec stop at the first |
 | SI-141 | A host name longer than 16 characters renders as its first 16 characters, where sd2iec prints the 8.3 name |
 | SI-142 | The length guard of `SD` is not adopted, because it would change no host name the drive produces |

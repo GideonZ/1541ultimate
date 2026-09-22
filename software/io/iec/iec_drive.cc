@@ -136,6 +136,7 @@ IecDrive :: IecDrive() : SubSystem(SUBSYSID_IEC)
 	fm = FileManager :: getFileManager();
     my_bus_id = 0;
     write_protect = false;
+    clock_offset = 0;
     enable = false;
     vfs = NULL; // registering the settings makes them take effect before this is built
 
@@ -341,6 +342,7 @@ void IecDrive :: reset(void)
         }
     }
     vfs->SetCurrentPartition(1);
+    clock_offset = 0;
     last_error_code = ERR_DOS;
     last_error_track = 0;
     last_error_sector = 0;

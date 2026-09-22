@@ -486,10 +486,10 @@ def check_compatibility(agent, api, password, folder, root):
         agent.status((0,))
 
     def clock_write():
-        # SI-120 on the real clock chip: the drive's clock is the system clock, so the
-        # value written here is read back through every form and then put back. The clock
-        # runs while the check does, so every comparison allows the seconds to advance and
-        # every other field has to match exactly.
+        # SI-120 on the device: a write sets the drive's own clock, an offset from the
+        # system clock, which it leaves alone; UJ returns the drive to the system clock.
+        # The clocks run while the check does, so every comparison allows the seconds to
+        # advance and every other field has to match exactly.
         def parsed(answer, what):
             stamp = re.match(r"(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d):(\d\d) ([A-Z]{3})$", answer)
             if not stamp:
@@ -505,6 +505,7 @@ def check_compatibility(agent, api, password, folder, root):
                               f"from the {wanted.isoformat()} that was written")
             return when
 
+        agent.command(b"UJ\r", allowed=(73,))  # a drive left with an offset reads the system clock
         before_answer = agent.command_reply(b"T-RI\r", 24).decode("ascii").strip()
         before, before_day = parsed(before_answer, "T-RI")
         started = time.monotonic()
@@ -527,7 +528,7 @@ def check_compatibility(agent, api, password, folder, root):
                 raise Failure(f"T-RD answered {decimal.hex()} after a clock write")
             if bcd[:6] != bytes([6, 0x26, 0x09, 0x12, 0x01, 0x02]) or bcd[7:] != bytes([1, 13]):
                 raise Failure(f"T-RB answered {bcd.hex()} after a clock write")
-            # The other three write forms reach the same clock. Each is written from a
+            # The other three write forms set the same clock. Each is written from a
             # different moment so that a form that writes nothing cannot pass by leaving
             # the previous one in place.
             for form, command, moment, day in (
@@ -545,35 +546,33 @@ def check_compatibility(agent, api, password, folder, root):
                 detail(f"{form} then T-RI reads {answer!r}")
                 near(answer, moment, f"T-RI after {form}")
                 if not answer.endswith(" " + day):
-                    raise Failure(f"{form} carried {day} and T-RI answered {answer!r}")
+                    raise Failure(f"{form} wrote a {day} and T-RI answered {answer!r}")
 
             # A day the month does not have is refused and does not move the clock.
             agent.command(b"T-WI2026-02-30T00:00:00\r", allowed=(30,))
             near(agent.command_reply(b"T-RI\r", 24).decode("ascii").strip(),
                  datetime.datetime(2022, 7, 19, 21, 15, 0),
                  "T-RI after a refused write", seconds=30)
-            # Back to the moment the stamp check below expects.
-            agent.command(b"T-WI2026-09-12T13:02:03\r", allowed=(0,))
-            # The clock the drive set is the system clock, so a file written over FTP
-            # right afterwards carries that date in its time stamp.
+            # The system clock did not move: a file written over FTP after the clock write
+            # carries the system clock's date in its time stamp, not the written one.
             with ftp.session(api.host, password) as client:
-                ftp.store(client, f"{directory}/CLOCK.PRG", b"stamped by the written clock")
+                ftp.store(client, f"{directory}/CLOCK.PRG", b"stamped by the system clock")
             stamped = listing_of(agent, f"$//{folder.upper()}/:CLOCK*=L")
             detail(f"a file written after the clock write lists as {stamped[LINE:2 * LINE]!r}")
-            if b"09/12/26" not in stamped:
-                raise Failure("a file written after the clock write is not stamped 09/12/26")
+            system_date = before.strftime("%m/%d/%y").encode("ascii")
+            if system_date not in stamped or b"07/19/22" in stamped:
+                raise Failure(f"a file written after the clock write is not stamped "
+                              f"{system_date.decode()}, the system clock's date")
             agent.command(b"S//" + here + b"/:CLOCK\r", allowed=(1,))
         finally:
-            # Put the clock back, advanced by the time the check took, so the device is
-            # left with the time it would have reached on its own.
+            # UJ resets the drive, which returns it to the system clock.
+            agent.command(b"UJ\r", allowed=(73,))
             back = before + datetime.timedelta(seconds=round(time.monotonic() - started))
-            agent.command(b"T-WI" + back.strftime("%Y-%m-%dT%H:%M:%S").encode("ascii") + b"\r",
-                          allowed=(0,))
             restored = agent.command_reply(b"T-RI\r", 24).decode("ascii").strip()
-            detail(f"the clock is back at {restored!r}, from {before_answer!r}")
-        near(restored, back, "the restored clock", seconds=30)
+            detail(f"after UJ the clock reads {restored!r}, from {before_answer!r}")
+        near(restored, back, "the clock after UJ", seconds=30)
         if not restored.endswith(" " + before_day):
-            raise Failure(f"the clock was left reading {restored!r}, not a {before_day}")
+            raise Failure(f"after UJ the clock reads {restored!r}, not a {before_day}")
 
     def write_protect():
         # SI-102 over the real bus: while W-1 is set nothing that changes a medium runs.
@@ -723,7 +722,7 @@ def check_compatibility(agent, api, password, folder, root):
             ("SI-045, SI-046, SI-130: the partition directory", partition_directory),
             ("SI-100: U0> moves the drive to device 12 on the bus, and U0> moves it back", device_number),
             ("SI-101: S-9 and S-D move the drive on the bus", device_aliases),
-            ("SI-120: T-W sets the clock the drive and the system share", clock_write),
+            ("SI-120: T-W sets the drive's own clock and UJ returns it to the system clock", clock_write),
             ("SI-102: W-1 refuses every command that changes a medium", write_protect),
             ("SI-014: a left arrow between slashes is a directory name", left_arrow),
             ("SI-147, SI-148: a shifted space in a name, on this CPU", shifted_space),

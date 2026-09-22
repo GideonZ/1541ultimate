@@ -27,25 +27,14 @@ const open_result_t c_open_result_init = { 0, "", "", false, false, e_any, e_not
 
 #include "cbmdos_stubs.cc"
 
-// The clock this binary runs against. It keeps what it is set to, as the clock of every
-// build does, unless a case makes it lose writes: it then still reports a write as done,
-// as a driver does whose chip never took the bytes it was sent.
+// The system clock this binary runs against. The drive never writes it; a case moves it
+// to show that the drive's clock follows it.
 static int test_clock[7] = { 3, 2025, 6, 26, 0, 41, 1 };
-static bool test_clock_loses_writes = false;
 
 extern "C" void get_current_time(int& wd, int& year, int& month, int& day, int& hour, int& min, int& sec)
 {
     wd = test_clock[0]; year = test_clock[1]; month = test_clock[2]; day = test_clock[3];
     hour = test_clock[4]; min = test_clock[5]; sec = test_clock[6];
-}
-
-extern "C" bool set_current_time(int wd, int year, int month, int day, int hour, int min, int sec)
-{
-    if (!test_clock_loses_writes) {
-        int t[7] = { wd, year, month, day, hour, min, sec };
-        memcpy(test_clock, t, sizeof(test_clock));
-    }
-    return true;
 }
 IecCommandExecuterStubs exec;
 IecParser parser(&exec);
@@ -391,7 +380,7 @@ void test_added_commands(void)
     test_dispatch("M-W\x00\x05\x01\xEA", 7, 30, NULL);
     test_dispatch("M-E\x00\x05", 5, 30, NULL);
     test_dispatch("M-X", 3, 30, NULL);
-    // SI-120: T-W sets the system clock, and a form the clock cannot hold answers 30.
+    // SI-120: T-W sets the drive's clock, and a form the clock cannot hold answers 30.
     // The four formats are checked in test_clock_commands().
     test_dispatch("T-WI2026-09-12T13:02:03", 23, 0, NULL);
     test_dispatch("T-WI2026-13-12T13:02:03", 23, 30, NULL);
@@ -566,11 +555,11 @@ static void test_reply_text(const char *cmd, int len, const char *label, const c
     test_reply(cmd, len, 0, label, (const uint8_t *)expected, strlen(expected));
 }
 
-// SI-120 to SI-123. The four write forms set the system clock, and the four read forms then
+// SI-120 to SI-123. The four write forms set the drive's clock, and the four read forms then
 // answer with the time that was written. The formats and the validation follow
-// SD parse_timewrite(): the day of week is taken from the command for A, B and D and
-// derived from the date for I, a twelve hour field of 12 means midnight or noon, and a
-// year below 80 is in this century.
+// SD parse_timewrite(): the day of week of the A, B and D forms must be 0 to 6, a twelve
+// hour field of 12 means midnight or noon, and a year below 80 is in this century. A read
+// derives the day of week from the date, because the drive keeps only an offset.
 void test_clock_commands(void)
 {
     // 2026-09-12 13:02:03, a Saturday, written in each of the four forms and read back
@@ -615,11 +604,28 @@ void test_clock_commands(void)
     test_dispatch((const char *)t_wd13, sizeof(t_wd13), 0, NULL);
     test_reply_text("T-RI", 4, "a 13 inside the data", "2026-09-13T11:13:13 SUN\r");
 
-    // The day of week of the A, B and D forms is the one the command carries, as on a
-    // CMD drive, which stores it without checking it against the date.
+    // The drive's clock is an offset from the system clock, so the day of week a read
+    // answers is the one the date has, whatever the A, B or D form carried.
     static const uint8_t t_wd_dow[] = { 'T','-','W','D', 0, 126, 9, 12, 1, 2, 3, 1 };
     test_dispatch((const char *)t_wd_dow, sizeof(t_wd_dow), 0, NULL);
-    test_reply_text("T-RI", 4, "the day of week the command carries", "2026-09-12T13:02:03 SUN\r");
+    test_reply_text("T-RI", 4, "the day of week of the date", "2026-09-12T13:02:03 SAT\r");
+
+    // A write leaves the system clock alone, and the drive's clock runs with it.
+    int before[7];
+    memcpy(before, test_clock, sizeof(before));
+    test_dispatch("T-WI2026-09-12T13:02:03", 23, 0, NULL);
+    if (memcmp(before, test_clock, sizeof(before))) {
+        printf("T-W changed the system clock\n");
+        failures++;
+    }
+    test_clock[6] += 10;
+    test_reply_text("T-RI", 4, "ten seconds later", "2026-09-12T13:02:13 SAT\r");
+    test_clock[6] -= 10;
+    // Across midnight at the end of a year, from a system clock far from the written time.
+    test_dispatch("T-WI2079-12-31T23:59:59", 23, 0, NULL);
+    test_clock[6] += 1;
+    test_reply_text("T-RI", 4, "a second after the last second of 2079", "2080-01-01T00:00:00 MON\r");
+    test_clock[6] -= 1;
 
     // The leap day of a leap year is a date; the same day in 2021 is not, and a refused
     // write leaves the clock alone.
@@ -652,13 +658,6 @@ void test_clock_commands(void)
     // A day of week name no drive prints, and a field that is not a number.
     test_dispatch("T-WA" "XYZ. 09/12/26 01:02:03 PM", 29, ERR_SYNTAX, NULL);
     test_dispatch("T-WI2026-XX-12T13:02:03", 23, ERR_SYNTAX, NULL);
-    // A write the clock reports as done but does not keep answers as refused, because
-    // the drive reads the clock back rather than trusting the report (SI-120).
-    test_dispatch("T-WI2020-02-29T00:00:00", 23, 0, NULL);
-    test_clock_loses_writes = true;
-    test_dispatch("T-WI2026-09-12T13:02:03", 23, ERR_SYNTAX, NULL);
-    test_clock_loses_writes = false;
-    test_reply_text("T-RI", 4, "the clock after a write it lost", "2020-02-29T00:00:00 SAT\r");
     // An unknown format letter, as for a read (SI-030).
     test_dispatch("T-WX", 4, ERR_SYNTAX, NULL);
     test_dispatch("T-W", 3, ERR_SYNTAX, NULL);
@@ -678,11 +677,10 @@ void test_clock_commands(void)
     test_dispatch((const char *)t_wd_y2k, sizeof(t_wd_y2k), 0, NULL);
     test_reply_text("T-RI", 4, "a year below 80 is this century", "2005-03-04T02:00:00 FRI\r");
 
-    // Leave the clock where the rest of the suite expects it, which is a day of week
-    // the date does not have, so it has to be written in a form that carries one.
-    static const uint8_t t_wd_restore[] = { 'T','-','W','D', 3, 125, 6, 26, 12, 41, 1, 0 };
-    test_dispatch((const char *)t_wd_restore, sizeof(t_wd_restore), 0, NULL);
-    test_reply_text("T-RI", 4, "the clock the rest of the suite reads", "2025-06-26T00:41:01 WED\r");
+    // Without an offset, which a reset of the drive leaves, a read is the system clock as
+    // it reads, day of week included, even one the date does not have.
+    exec.set_clock_offset(0);
+    test_reply_text("T-RI", 4, "the system clock", "2025-06-26T00:41:01 WED\r");
 }
 
 // B-P positions within a buffer, and a third number is the high byte of that position

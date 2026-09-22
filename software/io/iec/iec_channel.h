@@ -426,6 +426,8 @@ class IecCommandChannel: public IecChannel, public IecCommandExecuter {
     int do_set_device_number(int dev);
     int do_restore_device_number();
     int do_set_write_protect(bool on);
+    int64_t get_clock_offset(void);
+    void set_clock_offset(int64_t seconds);
     int do_toggle_attributes(filename_t& name, uint8_t bits);
     int do_set_attributes(filename_t names[], int n, uint8_t attrib, uint8_t mask);
     int do_set_header(filename_t& dest, const char *id);

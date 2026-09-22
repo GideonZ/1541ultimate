@@ -2208,6 +2208,7 @@ int IecCommandChannel::do_initialize_buffers()
 int IecCommandChannel::do_reset(bool cold)
 {
     do_initialize_buffers();
+    drive->set_clock_offset(0); // the drive's clock is the system clock again (SI-120)
     if (cold) {
         for (int i = 1; i < MAX_PARTITIONS; i++) {
             IecPartition *p = drive->vfs->GetPartition(i);
@@ -2976,6 +2977,16 @@ int IecCommandChannel::do_set_device_number(int dev)
 {
     drive->set_device_number(dev);
     return 0;
+}
+
+int64_t IecCommandChannel::get_clock_offset(void)
+{
+    return drive->get_clock_offset();
+}
+
+void IecCommandChannel::set_clock_offset(int64_t seconds)
+{
+    drive->set_clock_offset(seconds);
 }
 
 int IecCommandChannel::do_set_write_protect(bool on)

@@ -36,9 +36,9 @@
 // T-RI -> "YYYY-MM-DDThh:mm:ss dow\r"
 // T-RD -> "{WD}{Y}{M}{D}{h}{m}{s}{am/pm}\r"  Documentation says it's decimal, but it is actually binary h in 12 hour format, Y+1900
 // T-RB -> "{WD}{Y}{M}{D}{h}{m}{s}{am/pm}\r"  BCD format Y<80:+2000, else+1900, also 12 hour format for some strange reason
-// T-WA, T-WB, T-WD, T-WI -> set the system clock from the same layout the matching
-//   read answers with. The day of week is taken from the command except for the ISO
-//   form, which has none and derives it from the date.
+// T-WA, T-WB, T-WD, T-WI -> set the drive's own clock from the same layout the matching
+//   read answers with, as an offset from the system clock; the system clock is not
+//   written (SI-120).
 
 // Directories
 // $ [=T] [[n][path]:] [= commalist([TP|OPTION])], OPTION = { L, N, <stamp, >stamp }, stamp = MM/DD/YY HH:MM xM, x = {A | P}
@@ -53,25 +53,14 @@
 #include "cbmdos_parser.h"
 #include "current_time.h"
 
-// A build with no real time clock driver, which is every host test build, keeps the
-// clock in memory so that the clock commands can still be exercised end to end.
-static int clock_wd = 3, clock_year = 2025, clock_month = 6, clock_day = 26;
-static int clock_hour = 0, clock_min = 41, clock_sec = 1;
-
+// A build with no real time clock driver, which is every host test build, reads a
+// fixed system clock, so that the clock commands can still be exercised end to end.
 extern "C" {
     void get_current_time(int& wd, int& year, int& month, int& day, int& hour, int& min, int& sec) __attribute__((weak));
     void get_current_time(int& wd, int& year, int& month, int& day, int& hour, int& min, int& sec)
     {
-        wd = clock_wd; year = clock_year; month = clock_month; day = clock_day;
-        hour = clock_hour; min = clock_min; sec = clock_sec;
-    }
-
-    bool set_current_time(int wd, int year, int month, int day, int hour, int min, int sec) __attribute__((weak));
-    bool set_current_time(int wd, int year, int month, int day, int hour, int min, int sec)
-    {
-        clock_wd = wd; clock_year = year; clock_month = month; clock_day = day;
-        clock_hour = hour; clock_min = min; clock_sec = sec;
-        return true;
+        wd = 3; year = 2025; month = 6; day = 26;
+        hour = 0; min = 41; sec = 1;
     }
 }
 int parse_full_path(const char *buf, filename_t& name, bool *replace = NULL, bool path_only = false)
@@ -891,30 +880,37 @@ static bool clock_time_valid(const clock_time_t& t)
            (t.sec >= 0) && (t.sec <= 59);
 }
 
-// Seconds since 1 March of year 0 in the proleptic Gregorian calendar, which is all a
-// comparison of two moments needs (the days_from_civil method).
-static long clock_seconds(int year, int month, int day, int hour, int min, int sec)
+// Seconds since 1 March of year 0 in the proleptic Gregorian calendar (the
+// days_from_civil method). 64 bits, because the count passes 2^31 in year 68.
+static int64_t clock_seconds(int year, int month, int day, int hour, int min, int sec)
 {
     year -= (month <= 2) ? 1 : 0;
-    long era = year / 400;
-    long yoe = year - (era * 400);
-    long doy = ((153 * (month + ((month > 2) ? -3 : 9)) + 2) / 5) + day - 1;
-    long doe = (yoe * 365) + (yoe / 4) - (yoe / 100) + doy;
-    return ((((era * 146097) + doe) * 24 + hour) * 60 + min) * 60 + sec;
+    int32_t era = year / 400;
+    int32_t yoe = year - (era * 400);
+    int32_t doy = ((153 * (month + ((month > 2) ? -3 : 9)) + 2) / 5) + day - 1;
+    int32_t doe = (yoe * 365) + (yoe / 4) - (yoe / 100) + doy;
+    int32_t days = (era * 146097) + doe;
+    return ((int64_t)days * 86400) + (((hour * 60) + min) * 60) + sec;
 }
 
-// Whether the clock now reads the moment just written, within the two seconds a read
-// can come after the write. A clock driver writes its chip without learning whether the
-// chip took the bytes, so reading the clock back is the only way a failed write shows,
-// and a write that did not take must not answer OK (SI-120). The day of week is left
-// out, because a clock that derives it from the date need not read back the one sent.
-static bool clock_holds(const clock_time_t& t)
+// The calendar moment of a count from clock_seconds(), the civil_from_days method, with
+// the day of week derived from the date. Only years from 1 on reach it.
+static void clock_from_seconds(int64_t seconds, clock_time_t& t)
 {
-    int wd, year, month, day, hour, min, sec;
-    get_current_time(wd, year, month, day, hour, min, sec);
-    long lag = clock_seconds(year, month, day, hour, min, sec) -
-               clock_seconds(t.year, t.month, t.day, t.hour, t.min, t.sec);
-    return (lag >= 0) && (lag <= 2);
+    int32_t days = (int32_t)(seconds / 86400);
+    int32_t rest = (int32_t)(seconds - ((int64_t)days * 86400));
+    int32_t era = days / 146097;
+    int32_t doe = days - (era * 146097);
+    int32_t yoe = (doe - (doe / 1460) + (doe / 36524) - (doe / 146096)) / 365;
+    int32_t doy = doe - ((365 * yoe) + (yoe / 4) - (yoe / 100));
+    int32_t mp = ((5 * doy) + 2) / 153;
+    t.day = doy - (((153 * mp) + 2) / 5) + 1;
+    t.month = (mp < 10) ? (mp + 3) : (mp - 9);
+    t.year = yoe + (era * 400) + ((t.month <= 2) ? 1 : 0);
+    t.hour = rest / 3600;
+    t.min = (rest / 60) % 60;
+    t.sec = rest % 60;
+    t.wd = clock_day_of_week(t.year, t.month, t.day);
 }
 
 // T-W in the four forms of SI-120, each laid out exactly as the matching T-R answers
@@ -1042,7 +1038,17 @@ int IecParser :: time_command(const uint8_t *buffer, int len)
 
     int wd, day, month, year, hour, min, sec, hour12;
 
+    // The drive's clock is the system clock plus the offset a T-W set (SI-120). Without
+    // one the answer is the system clock as it reads, day of week included.
     get_current_time(wd, year, month, day, hour, min, sec);
+    int64_t now = clock_seconds(year, month, day, hour, min, sec);
+    int64_t offset = exec->get_clock_offset();
+    if (offset) {
+        clock_time_t t;
+        clock_from_seconds(now + offset, t);
+        wd = t.wd; year = t.year; month = t.month; day = t.day;
+        hour = t.hour; min = t.min; sec = t.sec;
+    }
 
     hour12 = (hour % 12); if (hour12 == 0) hour12 = 12;
 
@@ -1094,8 +1100,8 @@ int IecParser :: time_command(const uint8_t *buffer, int len)
         return exec->do_cmd_response(result, reslen);
         break;
     case 'W': {
-        // The clock the drive answers with is the system clock, so a write sets that one
-        // and a read of it through any other interface sees the same moment (SI-120).
+        // The clock the drive answers with is its own: the write sets how far it is from
+        // the system clock, which it does not change (SI-120).
         clock_time_t t;
         if (len < 4) {
             return ERR_SYNTAX;
@@ -1104,10 +1110,7 @@ int IecParser :: time_command(const uint8_t *buffer, int len)
         if (err) {
             return err;
         }
-        if (!set_current_time(t.wd, t.year, t.month, t.day, t.hour, t.min, t.sec) ||
-            !clock_holds(t)) {
-            return ERR_SYNTAX; // the clock does not show it, so nothing may answer OK
-        }
+        exec->set_clock_offset(clock_seconds(t.year, t.month, t.day, t.hour, t.min, t.sec) - now);
         return 0;
     }
     }

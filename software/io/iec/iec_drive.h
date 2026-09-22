@@ -30,6 +30,7 @@ class IecDrive : public IecSlave, SubSystem, ObjectWithMenu, ConfigurableObject
 
     int my_bus_id;
     bool write_protect;
+    int64_t clock_offset;
     bool enable;
 
     FileManager *fm;
@@ -104,6 +105,9 @@ public:
     // runs, as the device number of U0> does.
     bool is_write_protected(void) { return write_protect; }
     void set_write_protect(bool on) { write_protect = on; }
+    // The drive's own clock, as seconds ahead of the system clock (SI-120).
+    int64_t get_clock_offset(void) { return clock_offset; }
+    void set_clock_offset(int64_t seconds) { clock_offset = seconds; }
     bool log_every_operation(void);
     void set_error(int err, int track, int sector);
     void set_error_fres(FRESULT fres);

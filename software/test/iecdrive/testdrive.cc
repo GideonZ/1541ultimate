@@ -1477,32 +1477,34 @@ static void run_suite8_time_copy_rename_scratch(IecDrive *dr)
     expect_command_bytes("Suite8-T-RD", dr, "T-RD", t_rd, sizeof(t_rd));
     expect_command_bytes("Suite8-T-RB", dr, "T-RB", t_rb, sizeof(t_rb));
 
-    // SI-120. A clock write reaches the system clock, which is the one every other
-    // interface reads, and a write the clock cannot hold answers 30 and changes nothing.
+    // SI-120. A clock write sets the drive's own clock, an offset from the system clock,
+    // which it leaves alone; a write the clock cannot hold answers 30 and changes nothing;
+    // and a reset of the drive, UJ, U+shifted J or the Reset, returns to the system clock.
     // The four formats and their validation are checked in target/pc/linux/parse.
+    const char *system_clock = "2025-06-26T00:41:01 WED\r";
     expect_command_ok("Suite8-T-WA", dr, "T-WA" "SAT. 09/12/26 01:02:03 PM");
     expect_command_response("Suite8-T-WA-READ", dr, "T-RI", "2026-09-12T13:02:03 SAT\r");
     {
         const char *testname = "Suite8-T-WA-SYSTEM-CLOCK";
         int wd, year, month, day, hour, min, sec;
         get_current_time(wd, year, month, day, hour, min, sec);
-        if ((wd != 6) || (year != 2026) || (month != 9) || (day != 12) ||
-            (hour != 13) || (min != 2) || (sec != 3)) {
+        if ((year != 2025) || (month != 6) || (day != 26)) {
             printf("%s: the system clock reads %d-%02d-%02d %02d:%02d:%02d, day of week %d\n",
                    testname, year, month, day, hour, min, sec, wd);
         }
-        REQUIRE((wd == 6) && (year == 2026) && (month == 9) && (day == 12) &&
-                (hour == 13) && (min == 2) && (sec == 3));
+        REQUIRE((year == 2025) && (month == 6) && (day == 26) && (hour == 0) && (min == 41));
     }
     expect_command_response("Suite8-T-W-INVALID", dr, "T-WI2026-02-30T00:00:00",
                             "30,SYNTAX ERROR,00,00\r");
     expect_command_response("Suite8-T-W-INVALID-READ", dr, "T-RI", "2026-09-12T13:02:03 SAT\r");
-    // Leave the clock where the rest of the suite expects it. Its day of week is not the
-    // one the date has, so it is written in a form that carries one.
-    static const uint8_t t_wd_restore[] = { 'T','-','W','D', 3, 125, 6, 26, 12, 41, 1, 0 };
-    expect_command_data_response("Suite8-T-W-RESTORE", dr, t_wd_restore, sizeof(t_wd_restore),
-                                 "00, OK,00,00\r");
-    expect_command_response("Suite8-T-W-RESTORE-READ", dr, "T-RI", "2025-06-26T00:41:01 WED\r");
+    send_command(dr, "UJ");
+    expect_command_response("Suite8-T-W-UJ", dr, "T-RI", system_clock);
+    expect_command_ok("Suite8-T-WI", dr, "T-WI2026-09-12T13:02:03");
+    send_command(dr, "U\xCA");
+    expect_command_response("Suite8-T-W-COLD-RESET", dr, "T-RI", system_clock);
+    expect_command_ok("Suite8-T-WI-AGAIN", dr, "T-WI2026-09-12T13:02:03");
+    dr->reset();
+    expect_command_response("Suite8-T-W-RESET", dr, "T-RI", system_clock);
 
     expect_command_response("Suite8-COPY-MISSING-SOURCE", dr, "C2:DEST=", "34,SYNTAX ERROR,00,00\r");
     expect_command_ok("Suite8-COPY-A-BB", dr, "C2:DEST=1:A,1:BB");
