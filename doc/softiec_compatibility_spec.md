@@ -55,7 +55,9 @@ in `roms/1541.bin` rather than any manual.
 | **FD** | *CMD FD-Series Disk Drives User's Manual*. |
 | **RL** | *CMD RAMLink User's Manual*. |
 | **IDE** | *The IDE64 Project user's guide*, IDEDOS 0.90, 24 February 2019. Section numbers as printed. Linked by the reporter on #877. |
-| **SD** | sd2iec, the `markusC64/sd2iec` fork, at commit `9087321`, on its `devel` branch. Paths are `src/...`. `SD README` is that fork's README, which the reporter named as its documentation. That fork tracks `thierer/sd2iec`, which is itself a clone of the original at `sd2iec.de`; it carries the attribute and locking commands of SI-077 and SI-077a, which neither the CMD manuals nor `thierer/sd2iec` have. A requirement that rests on this fork alone says so. |
+| **SDU** | sd2iec as it ships, [`thierer/sd2iec`](https://github.com/thierer/sd2iec) at release [`v1.0.0atentdead0-186-g069555f1`](https://github.com/thierer/sd2iec/releases/tag/v1.0.0atentdead0-186-g069555f1), commit `069555f1`, 13 June 2026. A clone of the original at `sd2iec.de`, and the line a user is most likely to be running. Paths are `src/...`, and `SDU README` is its README. |
+| **SDM** | sd2iec as extended by the reporter of #877 and #917, [`markusC64/sd2iec`](https://github.com/markusC64/sd2iec) at commit `9087321` on its `devel` branch, 4 September 2026. A fork of SDU that tracks it and adds, among other things, the attribute, locking and header commands, the `$` image write lock and the extension mode 5 name mapping. Paths are `src/...`, and `SDM README` is its README, which the reporter named as this drive's sd2iec documentation. |
+| **SD** | Both of them: a citation reads `SD` only where SDU and SDM carry the same behaviour at the two commits above, which was checked for every function, constant and README passage this document cites. Where they differ, the citation names SDU or SDM, and the requirement says what the other one does. |
 | **1541** | *1541-II Disk Drive User's Guide*, DOS error message list. Where a point needs a Commodore drive other than the 1541, the *1571* and *1581 User's Guides* are cited by name. |
 | **ROM** | `roms/1541.bin` in this repository, 16384 bytes, mapping to `$C000..$FFFF`. Quoted disassembly was produced from that file. |
 | **GAP** | Greg Nacu, "Gaps in Software IEC", c64os.com/post/softwareiecgap, 10 January 2023. The canonical statement of why C64 OS does not support this drive. Written against firmware 3.10a; several of its items are already fixed. |
@@ -81,6 +83,14 @@ This specification applies it as follows.
 2. Where a behaviour exists only because a device has a host file system underneath
    it, **SD** is normative, because that is the device the Ultimate most resembles
    and the one the reporter maintains.
+2a. Where SDU and SDM differ, SDU is normative, because that is the line a user is
+   likely to be running, and the requirement says what SDM does. The one such conflict
+   found is the hidden attribute inside a disk image, which SDU clears from the type
+   byte and SDM keeps behind a setting; this drive follows SDU (SI-134). Where a
+   command exists in SDM only, there is nothing to conflict with, and the requirement
+   says that it rests on SDM alone: SI-064's optional id, SI-077, SI-077a and the name
+   mapping of SI-140 to SI-148. SI-076's `L` is a CMD command (HD 9-30); only its
+   sd2iec citation, for the toggle, is SDM's.
 3. Where IDE and SD disagree, SD wins, and the difference is recorded in section 16.
 4. Where a source disagrees with the reporter's own measurement on real hardware,
    neither wins on authority. The disagreement is resolved from a primary source that
@@ -348,7 +358,7 @@ answer.
 
 | Case | Answer | Source |
 | --- | --- | --- |
-| wildcard, no `@` | `33` | 1541: "Pattern matching characters cannot be used in the Save command or when Opening files for the purpose of Writing new data"; `SD file_open()` |
+| wildcard, no `@` | `33` | 1541: "Pattern matching characters cannot be used in the Save command or when Opening files for the purpose of Writing new data"; `SDM file_open()`, which SDU does not do |
 | `@`, the pattern matches a file of the same type | replace it, keeping the **matched** file's name rather than the pattern | ROM `$D8FC` falls through on a type match (the ROM says nothing about which name is kept); IDE 7.1; `SD file_open()` for the name rule |
 | `@`, the pattern matches a file of a different type, or matches a REL file | `64,FILE TYPE MISMATCH` | ROM `$D8F5` |
 | `@`, the pattern matches nothing | `64` | `SD file_open()` |
@@ -378,8 +388,8 @@ first entry matching `foo*` is not a PRG, which is what the reporter reported on
 #877 ("real floppy return 64", 11 September 2026), and it replaces the file when it is. The same check guards the ordinary open
 at `$D95C`, which is where the `64` of SI-035 comes from.
 
-`SD file_open()` produces the same four answers, by a different route for the last
-row:
+`SDM file_open()` produces the same four answers, by a different route for the last
+row; SDU gives the same three but refuses no wildcard on create:
 
 ```c
 if (ustrchr(fname, '*') || ustrchr(fname, '?') || (*fname == 160)) {
@@ -578,7 +588,7 @@ removing a subdirectory which is a parent of the directory in which you are loca
 
 **SI-064.** `R-H[n][path]:newname[,id]` renames the header of a directory. The name is
 at most 16 characters and the id two. Sources: HD 9-15; IDE 15.6.5;
-`SD parse_set_header(3)`. The path selects the directory and the name behind the colon
+`SDM parse_set_header(3)`. The path selects the directory and the name behind the colon
 is the new header; with no path it is the current directory of the partition. An empty
 name answers `34`, a name with a wildcard `33`, and a path that is not there
 `71,DIRECTORY ERROR`.
@@ -586,7 +596,7 @@ name answers `34`, a name with a wildcard `33`, and a path that is not there
 **Difference from the CMD manuals.** The id is an sd2iec extension. HD 9-15 gives the
 syntax as `R-H[n][path]:newname` and names three arguments, the partition, the path and
 the new name, so a CMD HD changes the id only when a disk is formatted.
-`SD parse_set_header()` takes an optional id after a comma and sets it, and the sd2iec
+`SDM parse_set_header()` takes an optional id after a comma and sets it, and the sd2iec
 spellings `EH`, `XH` and `D` reach it (SI-077). This drive takes the id on all four
 spellings, so a program written for either device gets what it asks for, and a command
 without an id leaves the id and the DOS version as they are, which is what the CMD
@@ -718,7 +728,7 @@ the type rule).
 
 **SI-076.** `L[n][path]:name` toggles the lock flag on one file or directory. A
 locked file lists with `<` after its type and cannot be scratched; a locked directory
-cannot be removed. Sources: HD 9-30; IDE 15.2.4; `SD parse_lock()`, which toggles
+cannot be removed. Sources: HD 9-30; IDE 15.2.4; `SDM parse_lock()`, which toggles
 `FLAG_RO`. The reporter raised it on #877.
 
 `L` finds its entry through the directory, as a
@@ -730,14 +740,14 @@ unlocked entry of the same name and type that follows a locked one in a disk ima
 because deleting by name removes the first entry of that name.
 
 **SI-077.** The sd2iec spellings of the attribute commands, from
-`SD parse_elock()`, `parse_eunlock()`, `parse_ehide()`, `parse_attr()`,
+`SDM parse_elock()`, `parse_eunlock()`, `parse_ehide()`, `parse_attr()`,
 `parse_set_header()` and the dispatch in `parse_doscommand()`.
 
-**These spellings come from one sd2iec line only.** The CMD manuals document `L`
-(HD 9-30) and `R-H` (HD 9-15) and no other attribute command, and none of the five
-functions above is in `thierer/sd2iec`, the line this fork tracks. `EL`, `EU`, `EH`, `A`
-and `XH` therefore rest on SD alone, as does the optional id of SI-064 and the image
-lock of SI-077a. What each of them does to a medium has a second source: the lock is the
+**These spellings come from SDM only.** The CMD manuals document `L` (HD 9-30) and
+`R-H` (HD 9-15) and no other attribute command, and none of the five functions above is
+in SDU, which has no lock command at all: it reads the type byte's lock bit for a listing
+and sets it from the FAT read-only attribute. `EL`, `EU`, `EH`, `A` and `XH` therefore
+rest on SDM alone, as do the optional id of SI-064 and the image lock of SI-077a. What each of them does to a medium has a second source: the lock is the
 type byte bit CMD documents (SI-076), and the image lock is the header's DOS version
 byte, which a Commodore drive obeys by refusing to write with error 73 (1541).
 
@@ -753,7 +763,7 @@ The lock these set and clear is the one `L` turns over (SI-076), so a file `EL` 
 a file `L` unlocks and a file a scratch skips. `R` in `A` is that lock, `H` is the hidden
 flag of SI-134 and `A` is the archive flag, which the drive stores and nothing reads.
 
-Two differences from the source are deliberate. `SD parse_elock()` and `parse_eunlock()`
+Two differences from the source are deliberate. `SDM parse_elock()` and `parse_eunlock()`
 skip directories and `parse_attr()` acts on the first match only; here all five commands
 act on every entry the name matches, directories included, because `L` locks a directory
 (HD 9-30) and a lock that `EL` and `L` disagreed about would be two locks. A name that
@@ -769,8 +779,8 @@ While it is, every write into the image answers `26,WRITE PROTECT ON` and change
 nothing: a file open for writing, appending or replacing, a relative file, which opens for
 reading and writing, a scratch, a rename, `EL` and `EU` of an entry, `N`, `R-H`, `U2`,
 `B-W`, `B-A` and `B-F`. Reads are unchanged. On a host directory, which records no such
-lock, `EL:$` and `EU:$` answer `30`. Sources: `SD d64_set_attrib()` for the command and
-the values, and `SD d64_mount()`, which marks an image read only on the same test; 1541,
+lock, `EL:$` and `EU:$` answer `30`. Sources: `SDM d64_set_attrib()` for the command and
+the values, and `SDM d64_mount()`, which marks an image read only on the same test; 1541,
 error 73, for a Commodore drive refusing to write a disk whose version byte is not its own,
 which is why the lock travels with the image. The protection belongs to the image's file
 system, so the file browser, FTP and REST obey it as well, and a drive emulation that runs
@@ -1305,7 +1315,7 @@ record. A CBM disk image has no field for it: the directory entry's type byte is
 by CBM DOS, and a bit set there travels with the image to every drive, emulator and tool
 that reads it. `EH` inside an image therefore answers `30`, the answer SI-077 gives for a
 medium that does not carry an attribute, rather than writing a bit that only some drives
-read. `SD d64_set_attrib()` does write one: it puts the attribute bits into the type byte
+read. `SDM d64_set_attrib()` does write one: it puts the attribute bits into the type byte
 of the directory entry, where bit 5 is a hidden flag CBM DOS does not define, and the
 fork's author reports that upstream sd2iec dropped it for compatibility. An image this
 drive writes is therefore listed the same way by any of them. Nothing in a listing or in
@@ -1472,21 +1482,23 @@ design is `doc/filenames_design.txt` and `software/test/iecdrive/doc.md`; the co
 `petscii_to_fat()` and `fat_to_petscii()` in `software/components/pattern.cc`.
 
 That same scheme is sd2iec's **extension mode 5**. It is not a coincidence and not a
-convergence: the functions are the same code in both projects, down to the comment
+convergence: the functions are the same code in this firmware and SDM, down to the comment
 `// '|' > 96 ;)` and the `reserved_names` table. A unified diff of `petscii_to_fat()`
-between `U software/components/pattern.cc` and `SD src/fatops.c` shows only whitespace,
+between `U software/components/pattern.cc` and `SDM src/fatops.c` shows only whitespace,
 the two divergences listed in SI-142, and one restructured assignment;
 `fat_to_petscii()` differs only in how `hex2bin()` is called. GideonZ wrote
 them here in 2020 (`3ec23bb9`, 4 October 2020); the reporter added them to sd2iec as
 mode 5 in 2025 (`0f22587`, 6 June 2025) and documented them in that fork's README in
-2026 (`ddb949c`). Upstream sd2iec has modes 0 to 4 only.
+2026 (`ddb949c`). SDU has modes 0 to 4 only, and none of this mapping: it converts a name
+with `pet2asc()` and has no `petscii_to_fat()`. A card written by an Ultimate therefore
+reads back name for name on SDM, and on SDU only for names that need no escaping.
 
 **SI-140.** This is a compatibility contract, not an implementation detail. A card
-or stick written by an Ultimate must read back on a markusC64 sd2iec in extension
-mode 5, and the reverse. Nothing in this specification may change the mapping except
+or stick written by an Ultimate must read back on SDM in extension mode 5, and the
+reverse. SDU is not party to it, for the reason above. Nothing in this specification may change the mapping except
 where SI-142 states a difference and its reason.
 
-**SI-141.** The rules, from the shared implementation and SD README:
+**SI-141.** The rules, from the shared implementation and SDM README:
 
 * A byte below 32, at or above 96, or one of `: / \ " < >`, or a leading `.`, is
   written as two upper case hex digits. A run of such bytes shares one pair of
@@ -1512,7 +1524,7 @@ the rendered names of a directory scan (SI-143), so a file is reachable under th
 it shows. What differs is the name the two devices print for the same file.
 
 **SI-142.** `*` and `?` are escaped as SI-141 escapes the other characters, and a
-create of a name containing either is refused per SI-032, as `SD a76deb2` does.
+create of a name containing either is refused per SI-032, as `SDM a76deb2` does.
 Scratch, `RD` and an open by pattern match through a directory scan, so a pattern
 still reaches the files it names.
 
@@ -1611,7 +1623,7 @@ relative file is created in the plain two byte layout.
 **SI-147.** The shifted space rule is broken in two independent ways, and the second
 makes the same file name map to different host names on different Ultimate models.
 
-The code is, in both projects:
+The code is, in this firmware and in SDM:
 
 ```c
 while (*pet) {
@@ -1668,8 +1680,9 @@ settled before anyone changes the code:
    from one carries padding that was never part of the name.
 3. A name that is empty, or whose first byte is `$A0`, is refused on create, with
    `33`, or `64` when `@` is given. This is the same branch as the wildcard rejection
-   in SI-032: `SD file_open()` tests `(*fname == 160)` alongside `*` and `?`, and
-   `SD parse_mkdir()` and `parse_rename()` refuse such a name with `34`.
+   in SI-032: `SDM file_open()` tests `(*fname == 160)` alongside `*` and `?`, and
+   `SDM parse_mkdir()` and `parse_rename()` refuse such a name with `34`. SDU has none
+   of these three tests.
 4. A directory listing ends the name at its terminator or at 16 characters, **not** at
    the first `$A0`. A 1541 puts the closing quote at the first `$A0` because that is
    where its fixed-width field stops carrying name, and reproducing that would make
@@ -1898,7 +1911,7 @@ differently from one of its sources, for a reason given below the requirement.
 | SI-016 | A carriage return second to last ends a command only when a line feed follows it, because the ROM's branch cuts a binary parameter of 13 short |
 | SI-018 | The position in a plain file is read from the command without its terminator, where sd2iec reads it from the command as sent |
 | SI-033 | A scratch whose path does not exist answers `71` rather than a count of zero |
-| SI-064 | `R-H` takes an optional id and sets it, as `SD parse_set_header()` does, where HD 9-15 gives `R-H` a new name only |
+| SI-064 | `R-H` takes an optional id and sets it, as `SDM parse_set_header()` does, where HD 9-15 gives `R-H` a new name only |
 | SI-074 | A rename into another directory or partition moves the entry, where `SD parse_rename()` answers `62` |
 | SI-077 | `EL`, `EU` and `A` act on every entry a name matches, directories included, where sd2iec skips directories and `A` takes the first match |
 | SI-120 | A write sets the drive's own clock, an offset from the system clock that a reset clears, where a CMD drive and sd2iec set their clock chip; the day of week a write carries is not kept; a write is refused when the day is not a day of that month, which `SD parse_timewrite()` does not check, and every field is read at its documented width |
@@ -1964,7 +1977,7 @@ Named so that the boundary is explicit rather than implied.
     identify and the LBA forms of buffer read and write; 15.6.2 change root
     directory; 15.7 CD-ROM commands. All of them address IDE64 hardware or its CFS
     file system.
-  * SD README: the settings commands `X`, `XE+`/`XE-`, `XEL`/`XEU`, `XET`, `XI`,
+  * SD README: the settings commands `X`, `XE+`/`XE-`, `XI`, and SDM's `XEL`/`XEU`, `XET`,
     `XN`, `XH+`/`XH-`, `XD`, `XW`, and `XL`/`XU`, which the README names in a heading
     and does not describe. This drive keeps its settings in the Ultimate
     configuration; SI-145 is the one sd2iec setting (`XE`) that gets a counterpart.
