@@ -7,8 +7,9 @@
 //
 // The year is a calendar year and the day of week is 0 for Sunday. set_current_time()
 // stores the day of week it is given rather than deriving it, because the DOS clock
-// commands and the control interface both carry one, and it answers false when the
-// clock could not be set.
+// commands and the control interface both carry one. The drivers write the chip without
+// learning whether it took the bytes, so they answer true; a caller that has to know
+// reads the clock back (SI-120).
 
 extern "C" {
     void get_current_time(int& wd, int& year, int& month, int& day, int& hour, int& min, int& sec);
