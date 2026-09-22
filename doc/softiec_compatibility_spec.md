@@ -50,23 +50,23 @@ in `roms/1541.bin` rather than any manual.
 
 | Code | Source |
 | --- | --- |
-| **1541** | *1541-II Disk Drive User's Guide*, DOS error message list. Where a point needs a Commodore drive other than the 1541, the *1571* and *1581 User's Guides* are cited by name. |
+| **1541** | [*1541-II Disk Drive User's Guide*](https://www.zimmers.net/anonftp/pub/cbm/manuals/drives/1541-II_Users_Guide.pdf), DOS error message list. Where a point needs a Commodore drive other than the 1541, the *1571* and *1581 User's Guides* are cited by name. |
 | **917** | Issue [#917](https://github.com/GideonZ/1541ultimate/issues/917), "More SoftIEC compatibility issues", opened by the reporter on 18 September 2026. It carries Greg Nacu's measurements of a CMD HD and an sd2iec against this drive, and photographs of the two BASIC programs he used. The programs are transcribed in appendix C. |
-| **FD** | *CMD FD-Series Disk Drives User's Manual*. |
-| **GAP** | Greg Nacu, "Gaps in Software IEC", c64os.com/post/softwareiecgap, 10 January 2023. The canonical statement of why C64 OS does not support this drive. Written against firmware 3.10a; several of its items are already fixed. |
-| **GFN** | Greg Nacu, "Understanding SD2IEC Filenaming", c64os.com/post/sd2iecfilenames. |
-| **GSD** | Greg Nacu, "SD2IEC User's Manual" v1.3, c64os.com/post/sd2iecdocumentation. |
-| **GUG** | *C64 OS User's Guide*, File System chapter, c64os.com/c64os/usersguide/filesystem. |
-| **HD** | *CMD HD Hard Drive User's Manual*, 4th edition, January 1991. The scan linked on issue #877, `primrosebank.net/computers/pet/documents/CMD-HDD-Manual_OCR.pdf`. Page numbers are the manual's own, e.g. 9-15, B-2. |
-| **HDR** | *CMD HD Manual Remaster V0.2*. Same text, cleaner typesetting. Used to resolve OCR damage in HD. |
-| **IDE** | *The IDE64 Project user's guide*, IDEDOS 0.90, 24 February 2019. Section numbers as printed. Linked by the reporter on #877. |
-| **RL** | *CMD RAMLink User's Manual*. |
-| **ROM** | `roms/1541.bin` in this repository, 16384 bytes, mapping to `$C000..$FFFF`. Quoted disassembly was produced from that file. |
-| **SD** | Both of them: a citation reads `SD` only where SDU and SDM carry the same behaviour at the commits their rows name, which was checked for every function, constant and README passage this document cites. Where they differ, the citation names SDU or SDM, and the requirement says what the other one does. |
+| **FD** | [*CMD FD-Series Disk Drives User's Manual*](https://archive.org/details/CMD_FD_Series_Disk_Drive_Users_Manual_1993-10_Creative_Micro_Designs). |
+| **GAP** | Greg Nacu, ["Gaps in Software IEC"](https://c64os.com/post/softwareiecgap), 10 January 2023. The canonical statement of why C64 OS does not support this drive. Written against firmware 3.10a; several of its items are already fixed. |
+| **GFN** | Greg Nacu, ["Understanding SD2IEC Filenaming"](https://c64os.com/post/sd2iecfilenames). |
+| **GSD** | Greg Nacu, ["SD2IEC User's Manual" v1.3](https://c64os.com/post/sd2iecdocumentation). |
+| **GUG** | [*C64 OS User's Guide*, File System chapter](https://c64os.com/c64os/usersguide/filesystem). |
+| **HD** | *CMD HD Hard Drive User's Manual*, 4th edition, January 1991. The scan linked on issue #877, [primrosebank.net scan](http://www.primrosebank.net/computers/pet/documents/CMD-HDD-Manual_OCR.pdf). Page numbers are the manual's own, e.g. 9-15, B-2. A second copy is on [archive.org](https://archive.org/details/cmd-hd-series-user-manual-4th-ed-2nd-printing-feb-1993-creative-micro-designs-inc). |
+| **HDR** | [*CMD HD Manual Remaster V0.2*](https://archive.org/details/cmd-hd-manual-remaster). Same text, cleaner typesetting. Used to resolve OCR damage in HD. |
+| **IDE** | [*The IDE64 Project user's guide*](https://s3.amazonaws.com/com.c64os.resources/weblog/sd2iecdocumentation/manuals/IDE64_Users_Guide.pdf), IDEDOS 0.90, 24 February 2019. Section numbers as printed. Linked by the reporter on #877. |
+| **RL** | [*CMD RAMLink User's Manual*](https://archive.org/details/CMD_RamLink_Users_Manual). |
+| **ROM** | [`roms/1541.bin`](../roms/1541.bin) in this repository, 16384 bytes, mapping to `$C000..$FFFF`. Quoted disassembly was produced from that file. |
+| **SD** | SDU and SDM together: a citation reads `SD` only where SDU and SDM carry the same behaviour at the commits their rows name, which was checked for every function, constant and README passage this document cites. Where they differ, the citation names SDU or SDM, and the requirement says what the other one does. |
 | **SDM** | sd2iec as extended by the reporter of #877 and #917, [`markusC64/sd2iec`](https://github.com/markusC64/sd2iec) at commit `9087321` on its `devel` branch, 4 September 2026. A fork of SDU that tracks it and adds, among other things, the attribute, locking and header commands, the `$` image write lock and the extension mode 5 name mapping. Paths are `src/...`, and `SDM README` is its README, which the reporter named as this drive's sd2iec documentation. |
 | **SDU** | sd2iec as it ships, [`thierer/sd2iec`](https://github.com/thierer/sd2iec) at release [`v1.0.0atentdead0-186-g069555f1`](https://github.com/thierer/sd2iec/releases/tag/v1.0.0atentdead0-186-g069555f1), commit `069555f1`, 13 June 2026. A clone of the original at `sd2iec.de`, and the line a user is most likely to be running. Paths are `src/...`, and `SDU README` is its README. |
-| **TRACE** | `log_boot.log.txt`, attached by the reporter to #877 on 11 September 2026. 601 lines of `SOFTIEC-TRACE` output from one successful C64 OS boot on a U64 II. |
-| **U** | This firmware. Paths are relative to the repository root. |
+| **TRACE** | [`log_boot.log.txt`](https://github.com/user-attachments/files/32097131/log_boot.log.txt), attached by the reporter to #877 on 11 September 2026. 601 lines of `SOFTIEC-TRACE` output from one successful C64 OS boot on a U64 II. |
+| **U** | This firmware, [GideonZ/1541ultimate](https://github.com/GideonZ/1541ultimate). Paths are relative to the repository root. |
 
 ### 1.2 Precedence
 
