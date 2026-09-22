@@ -84,9 +84,12 @@ This specification applies it as follows.
    it, **SD** is normative, because that is the device the Ultimate most resembles
    and the one the reporter maintains.
 2a. Where SDU and SDM differ, SDU is normative, because that is the line a user is
-   likely to be running, and the requirement says what SDM does. The one such conflict
-   found is the hidden attribute inside a disk image, which SDU clears from the type
-   byte and SDM keeps behind a setting; this drive follows SDU (SI-134). Where a
+   likely to be running, and the requirement says what SDM does. Two such conflicts were
+   found. The hidden attribute inside a disk image, which SDU clears from the type byte
+   and SDM keeps behind a setting: this drive follows SDU (SI-134). And `,M`, which SDU
+   opens read and write on a FAT file system and SDM opens for reading: this drive
+   follows SDM, for the reason SI-070 gives, which is the exception that proves the rule
+   is about behaviour rather than about which line it came from. Where a
    command exists in SDM only, there is nothing to conflict with, and the requirement
    says that it rests on SDM alone: SI-064's optional id, SI-077, SI-077a and the name
    mapping of SI-140 to SI-148. SI-076's `L` is a CMD command (HD 9-30); only its
@@ -645,6 +648,14 @@ forces write and PRG; any other secondary address defaults an unspecified type t
 SEQ. Sources: HD 9-23 to 9-31 for `,P`, `,S`, `,U`, `,L`, `,R`, `,W` and `,A`;
 `SD file_open()` for `,M` (`case 'M': /* Modify */`, which HD does not document) and
 for "Force mode+type for secondaries 0/1"; `U setup_file_access()` applies it.
+
+`,M` opens the file for reading. A modify reads a file that a write never closed, which
+a listing marks with a splat (SI-132), and nothing here refuses to read such a file. The
+two sd2iec lines differ: SDM maps modify to read for the same reason, while SDU opens the
+file read and write on a FAT file system and says in its own comment that this differs
+from the original hardware. This drive follows SDM here, because reading is what the
+command means on a Commodore drive and because a write through `,M` would be a second
+way to write a file that `,W` and `,A` already cover. Test: `Suite11-SI070-ModifyOpen`.
 
 **SI-071.** `N[n]:name[,id]` creates or formats a disk image, as sd2iec does, because
 this drive has no formattable medium of its own. Source: SD README under `N:` and

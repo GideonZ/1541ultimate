@@ -246,6 +246,9 @@ int parse_open(const char *buf, open_t& fn)
         case 'R': fn.access = e_read; break;
         case 'W': fn.access = e_write; break;
         case 'A': fn.access = e_append; break;
+        // Modify reads a file a write never closed, which is a read here: the splat is
+        // in the directory entry and nothing refuses to read such a file (SI-070).
+        case 'M': fn.access = e_read; break;
         case 'P': fn.filetype = e_prg; break;
         case 'S': fn.filetype = e_seq; break;
         case 'U': fn.filetype = e_usr; break;

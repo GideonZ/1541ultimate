@@ -966,6 +966,11 @@ int main(int argc, const char *argv[])
                 { -1, "//FROMROOT/DEEPER", "BLAH", false, false, e_seq, e_read,
                   e_stream_file, e_stamp_none, 0x0, 0x0, 0x00});
 
+    // SI-070: ,M opens for reading, which is what a modify is here.
+    d_parse_open("BLAH,S,M", o, 0,
+                { -1, "", "BLAH", false, false, e_seq, e_read,
+                  e_stream_file, e_stamp_none, 0x0, 0x0, 0x00});
+
     d_parse_open("@345:", o, 34); // no name after the colon
 
     d_parse_open(",", o, ERR_SYNTAX);

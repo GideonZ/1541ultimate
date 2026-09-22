@@ -4738,6 +4738,20 @@ static void s11_reset_restarts_processor(FileManager *fm, IecDrive *dr)
     expect_command_status_prefix(testname, dr, "UI\r", "73,");
 }
 
+// SI-070: a file opened with ,M is opened for reading. A modify reads a file a write
+// never closed, and nothing here refuses to read one.
+static void s11_modify_open(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite11-SI070-ModifyOpen";
+    s11_partition(fm, dr, "modify");
+    expect_iec_write_ok(testname, dr, 1, "NOTES,S,W", "written");
+    expect_iec_file(testname, dr, 2, "NOTES,S,M", "written");
+    expect_iec_file(testname, dr, 2, "NOTES,M", "written");
+    // A name that is not there answers 62 through ,M as through ,R.
+    expect_iec_open_status_prefix(testname, dr, 3, "MISSING,S,M", "62,");
+    close_file(dr, 3);
+}
+
 // The DOS version byte of an image's header, read over the bus as a program reads it.
 static uint8_t s11_header_version(const char *testname, IecDrive *dr, int part, int track, int sector)
 {
@@ -5681,6 +5695,7 @@ static const Suite11Case suite11_cases[] = {
     { "Suite11-ResetRestartsProcessor",  s11_reset_restarts_processor },
     { "Suite11-JiffyLoadStream",         s11_jiffy_load_stream },
     { "Suite11-SI077-ImageWriteLock",    s11_image_write_lock },
+    { "Suite11-SI070-ModifyOpen",        s11_modify_open },
     { "Suite11-BlockAllocateAnswers",    s11_block_allocate_answers },
     { "Suite11-Crash-DamagedChain",      s11_crash_damaged_chain },
     { "Suite11-Crash-LongHostName",      s11_crash_long_host_name },
