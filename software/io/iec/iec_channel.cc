@@ -664,18 +664,7 @@ static bool x00_type_of_extension(const char *ext, filetype_t *type)
 bool iec_x00_probe(FileManager *fm, const char *path, char *cbm_name, filetype_t *type, uint8_t *record_length)
 {
     filetype_t found;
-    if (!x00_type_of_name(path, &found)) {
-        return false;
-    }
-    File *file = NULL;
-    if (fm->fopen(path, FA_READ, &file) != FR_OK) {
-        return false;
-    }
-    uint8_t header[X00_HEADER_SIZE];
-    uint32_t got = 0;
-    FRESULT fres = file->read(header, X00_HEADER_SIZE, &got);
-    fm->fclose(file);
-    if ((fres != FR_OK) || !x00_header(header, got, cbm_name, record_length)) {
+    if (!x00_type_of_name(path, &found) || !x00_read_header(fm, path, cbm_name, record_length)) {
         return false;
     }
     if (type) {

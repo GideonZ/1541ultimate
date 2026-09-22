@@ -70,15 +70,9 @@ static const char *format_bootcrt_display_name(const char *name, char *trimmed)
 static const char *x00_load_name(File *f, const char *host_name, char *rendered, int size)
 {
     char cbm_name[17];
-    cbm_name[0] = 0;
-    if (!x00_skip_header(f, host_name, NULL, cbm_name) || !cbm_name[0]) {
+    if (!x00_skip_header(f, host_name, NULL, cbm_name) || !x00_shown_name(cbm_name)) {
         return host_name;
     }
-    int len = 16;
-    while ((len > 0) && ((uint8_t)cbm_name[len - 1] <= ' ' || (uint8_t)cbm_name[len - 1] == 0xA0)) {
-        len--;
-    }
-    cbm_name[len] = 0;
     petscii_to_fat(cbm_name, rendered, size);
     return rendered;
 }

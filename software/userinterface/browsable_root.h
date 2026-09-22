@@ -101,32 +101,12 @@ class BrowsableDirEntry : public Browsable
 			full += "/";
 		}
 		full += info->lfname;
-		File *f = NULL;
-		FileManager *fm = FileManager::getFileManager();
-		if (fm->fopen(full.c_str(), FA_READ, &f) != FR_OK) {
-			return NULL;
-		}
-		uint8_t head[X00_HEADER_SIZE];
-		uint32_t got = 0;
 		char name[17];
-		bool wrapped = (f->read(head, X00_HEADER_SIZE, &got) == FR_OK) &&
-		               x00_header(head, got, name, NULL);
-		fm->fclose(f);
-		if (!wrapped) {
-			return NULL;
-		}
-		// The rule the CBM image reader applies to a directory entry: the name ends at
-		// its first shifted space or control byte. A control byte left in would reach
-		// the row, where the screen reads $1B as the start of an escape sequence.
-		int len = 0;
-		while ((len < 16) && ((uint8_t)name[len] >= 0x20) && ((uint8_t)name[len] != 0xA0)) {
-			len++;
-		}
-		if (!len) {
+		if (!x00_read_header(FileManager::getFileManager(), full.c_str(), name, NULL) ||
+		    !x00_shown_name(name)) {
 			return NULL; // nothing to show, so the row keeps the host name
 		}
-		name[len] = 0;
-		cbm_name = new char[len + 1];
+		cbm_name = new char[strlen(name) + 1];
 		strcpy(cbm_name, name);
 		return cbm_name;
 	}

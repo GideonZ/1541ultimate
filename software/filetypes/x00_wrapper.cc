@@ -1,4 +1,5 @@
 #include "x00_wrapper.h"
+#include "filemanager.h"
 #include <ctype.h>
 #include <string.h>
 
@@ -36,6 +37,30 @@ bool x00_header(const uint8_t *header, uint32_t length, char *cbm_name, uint8_t 
         *record_length = header[25];
     }
     return true;
+}
+
+bool x00_read_header(FileManager *fm, const char *path, char *cbm_name, uint8_t *record_length)
+{
+    File *f = NULL;
+    if (!x00_name(path, NULL) || (fm->fopen(path, FA_READ, &f) != FR_OK)) {
+        return false;
+    }
+    uint8_t head[X00_HEADER_SIZE];
+    uint32_t got = 0;
+    bool found = (f->read(head, X00_HEADER_SIZE, &got) == FR_OK) &&
+                 x00_header(head, got, cbm_name, record_length);
+    fm->fclose(f);
+    return found;
+}
+
+int x00_shown_name(char *cbm_name)
+{
+    int len = 0;
+    while ((len < 16) && ((uint8_t)cbm_name[len] >= 0x20) && ((uint8_t)cbm_name[len] != 0xA0)) {
+        len++;
+    }
+    cbm_name[len] = 0;
+    return len;
 }
 
 uint32_t x00_skip_header(File *f, const char *path, uint8_t *record_length, char *cbm_name)
