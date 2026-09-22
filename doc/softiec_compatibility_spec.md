@@ -1917,7 +1917,7 @@ answer given here, so a later implementation has to change a test on purpose.
 | Requirement | Why it is not implemented | What the drive answers |
 | --- | --- | --- |
 | SI-054 `V` | Validating means rebuilding the block map of an image from every directory, side sector chain and GEOS record chain in it, and a walk that misses one marks live blocks free; an OK without the walk would claim a check that did not happen | `31`, as sd2iec answers |
-| SI-105 `M-W`, `M-E` | Nothing written is kept and nothing is run, so an OK would tell a fast loader its drive code runs | `30` |
+| SI-105 `M-W`, `M-E` | Nothing written is kept and nothing is run, so an OK would tell a fast loader its drive code runs; no drive code is ever known, which is what `M-E` answers | `30` for `M-W`, `98,UNKNOWN DRIVE CODE` for `M-E`, as SD answers for a code it does not know |
 | SI-137 raw directory | Every program that reads a listing byte by byte opens `$` on a data channel, and the UCI target opens it on whatever channel its client sends; on a host file system the sectors would have to be synthesised from the listing in any case | the listing |
 | SI-145 writing x00 files | A user setting that no report asks for; reading them (SI-144) already gives the interchange | new files are written plain |
 
