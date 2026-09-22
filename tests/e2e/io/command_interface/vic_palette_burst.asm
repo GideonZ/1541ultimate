@@ -12,7 +12,7 @@ ST_STAT  = $40
 
 STATUS   = $C000               ; $A4 ready, $A5 running, $5A complete
 COUNT    = $C001               ; completed commands, little endian
-GO       = $C003               ; host writes nonzero to release the burst
+GO       = $C003               ; host writes 1 to start the burst, 2 to exit
 
 FRAMES            = 60
 CHANGES_PER_FRAME = 4
@@ -35,9 +35,11 @@ start
         sta GO
         lda #$A4
         sta STATUS
+; Only 1 starts: the 2 that lets a finished burst exit must not start one.
 wait_go
         lda GO
-        beq wait_go
+        cmp #$01
+        bne wait_go
         lda #$A5
         sta STATUS
         lda #FRAMES
