@@ -38,6 +38,7 @@ Software IEC settings and working directory, and deletes only its own fixtures.
 """
 import argparse
 import datetime
+import ftplib
 import io
 import random
 import re
@@ -55,7 +56,7 @@ import ftp  # noqa: E402
 import kernal  # noqa: E402
 from api import UltimateApi  # noqa: E402
 from config_snapshot import Snapshot  # noqa: E402
-from iec_agent import CLOSE, MAILBOX_CAPACITY, OPEN, READ_COUNT, STATUS_BYTES, Agent, iec_drive, restorable_path  # noqa: E402
+from iec_agent import CLOSE, MAILBOX_CAPACITY, OPEN, READ_COUNT, STATUS_BYTES, WRITE, Agent, iec_drive, restorable_path  # noqa: E402
 from report import Failure, check, detail, section, suite_fail, suite_ok, teardown_step  # noqa: E402
 
 SUITE = "iec_dos_command_test"
@@ -316,6 +317,53 @@ def check_listing_eof(agent, folder):
         detail(f"the last {len(tail)} bytes of a {total} byte listing read one at a time: {tail!r}")
         if len(tail) != 4 or tail[-1] != 0:
             raise Failure(f"end of file arrived after {len(tail)} of the last 4 bytes: {tail!r}")
+
+
+def check_image_lock(agent, api, password, folder, image_path):
+    """#917, SI-077a: EL:$ write protects a disk image and EU:$ lifts the protection.
+
+    The lock is the DOS version byte in the image's header, as in sd2iec, so the image
+    carries it: the drive refuses a save into it, and so does FTP, which reaches the image
+    through the same file system.
+    """
+    def header_version():
+        with ftp.session(api.host, password) as client:
+            return ftp.retrieve(client, image_path)[BAM_OFFSET + 2]
+
+    agent.command(f"CD//{folder.upper()}/{Path(image_path).name.upper()}")
+    try:
+        with check("SI-077a: EL:$ writes the locked DOS version into the header"):
+            agent.command("EL:$")
+            version = header_version()
+            if version != 0x3C:
+                raise Failure(f"the DOS version byte is ${version:02X} after EL:$, expected $3C")
+        with check("SI-077a: a save into the locked image answers 26"):
+            agent.call(OPEN, channel=2, data=b"LOCKED,P,W")
+            try:
+                agent.status((26,))
+            finally:
+                agent.call(CLOSE, channel=2)
+        with check("SI-077a: FTP cannot store a file in the locked image"):
+            with ftp.session(api.host, password) as client:
+                try:
+                    client.storbinary(f"STOR {image_path}/ftpfile.prg", io.BytesIO(b"\x01\x08"))
+                except ftplib.all_errors as exc:
+                    detail(f"FTP answered: {exc}")
+                else:
+                    raise Failure("FTP stored a file in a locked image")
+    finally:
+        agent.command("EU:$")
+    with check("SI-077a: EU:$ puts the DOS version back and a save works again"):
+        version = header_version()
+        if version != 0x41:
+            raise Failure(f"the DOS version byte is ${version:02X} after EU:$, expected $41")
+        agent.call(OPEN, channel=2, data=b"UNLOCKED,P,W")
+        try:
+            agent.status()
+            agent.call(WRITE, channel=2, data=b"\x01\x08")
+        finally:
+            agent.call(CLOSE, channel=2)
+        agent.status()
 
 
 # Contents lengths around the drive's 512 byte buffers and the 254 byte blocks of
@@ -810,6 +858,7 @@ def run(args):
         for label, action in (
                 ("command channel", lambda: check_command_channel(agent, api, args.password, folder, root)),
                 ("block commands", lambda: check_block_commands(agent, api, args.password, folder, image)),
+                ("image lock", lambda: check_image_lock(agent, api, args.password, folder, image)),
                 ("time stamp filter", lambda: check_timestamp_filter(agent, api, args.password, folder, root)),
                 ("listing layout", lambda: check_listing_layout(agent, folder)),
                 ("listing end of file", lambda: check_listing_eof(agent, folder)),
