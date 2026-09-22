@@ -42,15 +42,17 @@ public:
 
 	virtual bool    init();              // Initialize file system
     virtual bool    is_writable() { return false; } // by default a file system is not writable, unless we implement it
-    // Three character partition type reported in the IEC partition directory ($=P).
-    // CMD DOS calls a partition that holds its own native file system "NAT", and
-    // reports a drive emulation partition by the drive model it emulates. A
-    // directory on the host file system and a DNP image are both native.
-    virtual const char *get_partition_type(void) { return "NAT"; }
 	virtual FRESULT format(const char *name);    // create initial structures of empty disk
 	virtual bool    supports_direct_sector_access(void) { return false; }
 
+    // Geometry of a file system that addresses its medium by track and sector, in the
+    // same terms as read_sector() and allocate_sector() below. Tracks are numbered
+    // from one. A file system without that kind of addressing reports no tracks.
+    virtual int     get_num_tracks(void) { return 0; }
+    virtual int     get_sectors_in_track(int track) { return 0; }
+
     virtual FRESULT get_free (uint32_t *e, uint32_t *cs) { *e = 0; *cs = 0; return FR_OK; } // Get number of free sectors on the file system
+    virtual FRESULT get_total(uint32_t *e, uint32_t *cs) { *e = 0; *cs = 0; return FR_NOT_ENABLED; } // Get the number of clusters the file system holds, in the units of get_free
     virtual FRESULT sync(void) { return FR_OK; } // by default we can't write, and syncing is thus always successful
     
     // functions for reading directories
@@ -63,6 +65,7 @@ public:
     virtual FRESULT file_open(const char *filename, uint8_t flags, File **);  // Opens file (creates file object)
     virtual FRESULT file_rename(const char *old_name, const char *new_name);  // Renames a file
 	virtual FRESULT file_delete(const char *path); // deletes a file
+    virtual FRESULT file_attrib(const char *path, uint8_t attrib, uint8_t mask) { return FR_NOT_ENABLED; } // sets the attribute bits in mask to those in attrib
 
 
 	virtual void    file_print_info(File *f) { } // debug
@@ -70,7 +73,10 @@ public:
     virtual bool     needs_sorting() { return false; }
     virtual FRESULT  read_sector(uint8_t *buffer, int track, int sector) { return FR_DENIED; }
     virtual FRESULT  write_sector(uint8_t *buffer, int track, int sector) { return FR_DENIED; }
-    virtual FRESULT  allocate_sector(int track, int sector, bool alloc) { return FR_DENIED; }
+    // Allocates or frees one block. Freeing a free block succeeds and changes nothing.
+    // Allocating an allocated block returns FR_EXIST with track and sector set to the next
+    // higher free block, or to 0 when no higher block is free.
+    virtual FRESULT  allocate_sector(int &track, int &sector, bool alloc) { return FR_DENIED; }
 };
 
 #include "factory.h"

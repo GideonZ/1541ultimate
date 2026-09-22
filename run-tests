@@ -644,6 +644,14 @@ SUITES: Sequence[Suite] = (
     Suite("soak", "mount-cache-leak",
           "tests/soak/filemanager/mount_cache_leak_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
+    # The Software IEC drive driven from the C64 over the real bus while REST and FTP
+    # load the device (#877). The suite has a --mode: a realistic C64 OS soak, a hostile
+    # stress that edge-tests the interface, or both in turn. The --profile the runner
+    # passes maps to a single mode: the stress profile runs the stress mode for ten
+    # minutes, the soak profile runs the soak mode for four hours. See --help and
+    # tests/soak/README.md for --mode and the per-phase durations.
+    Suite("soak", "softiec-soak", "tests/soak/io/iec/softiec_soak_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --profile @SOAKPROFILE@"),
 )
 
 
