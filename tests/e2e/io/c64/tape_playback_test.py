@@ -48,7 +48,8 @@ sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
 import bootstrap  # noqa: E402,F401
 import cli  # noqa: E402
 import ftp as ftp_lib
-from report import (Failure, check, detail, format_exception, section,
+import targets
+from report import (Failure, check, check_skip, detail, format_exception, section,
                     suite_fail, suite_ok, suite_skip, teardown_step)
 from ui_backend import MODE_OVERLAY, close_host_menu, make_browser
 
@@ -286,7 +287,14 @@ def main() -> int:
             expect_actions(browser, (), "after Stop Tape Playback")
 
         with check("a tape plays to its end and then closes itself"):
-            check_tape_plays_to_its_end(browser)
+            if targets.is_cartridge(args.host):
+                # The tape clock runs only while the cassette motor is on
+                # (tape_speed_control.vhd). A cartridge sees the computer's motor
+                # line only through the tape adapter on the cassette port.
+                check_skip("a cartridge's tape advances only with the tape adapter "
+                           "on the computer's cassette port, which carries the motor line")
+            else:
+                check_tape_plays_to_its_end(browser)
 
         suite_ok(SUITE)
         return 0
