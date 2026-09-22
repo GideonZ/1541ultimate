@@ -27,6 +27,10 @@ typedef struct {
     uint8_t  enable;
 } stream_config_t;
 
+// Or'ed into SubsysCommand::mode to start the VIC stream with runtime palette
+// packets. The stream ID is the low byte.
+#define STREAM_MODE_PALETTE 0x100
+
 
 class DataStreamer : public ObjectWithMenu
 {
@@ -46,7 +50,8 @@ class DataStreamer : public ObjectWithMenu
     volatile bool palette_stream_requested;
     TaskHandle_t palette_task_handle;
     int palette_socket;
-    uint32_t palette_socket_ip;
+    uint32_t palette_socket_dest_ip;
+    int palette_socket_dest_port;
 
     stream_config_t streams[4];
     TimerHandle_t timers[4];
@@ -58,8 +63,11 @@ class DataStreamer : public ObjectWithMenu
 
     void calculate_udp_headers(int id);
     void send_udp_packet(uint32_t ip, uint16_t port);
+    bool openPaletteSocket();
+    void closePaletteSocket();
     bool sendVicPalette();
     void paletteTask();
+    void wakePaletteTask();
 public:
     DataStreamer();
     virtual ~DataStreamer();

@@ -2767,12 +2767,16 @@ static void program_palette_color(uint8_t index, const uint8_t rgb[3])
 
 void U64Config :: set_palette_rgb(const uint8_t rgb[16][3])
 {
+    // The registers are written inside the same critical section, so that
+    // what the VIC shows, GET_PALETTE and the streamed generation cannot
+    // disagree when two writers race. That is 16 colours of register writes
+    // and integer YUV conversion; nothing in it blocks.
     taskENTER_CRITICAL();
     memcpy(active_palette, rgb, sizeof(active_palette));
     active_palette_valid = true;
     active_palette_generation++;
-    taskEXIT_CRITICAL();
     program_palette_rgb(rgb);
+    taskEXIT_CRITICAL();
     if (dataStreamer) {
         dataStreamer->vicPaletteChanged();
     }
@@ -2797,8 +2801,8 @@ void U64Config :: set_palette_color(uint8_t index, const uint8_t rgb[3])
     }
     memcpy(active_palette[index], rgb, 3);
     active_palette_generation++;
-    taskEXIT_CRITICAL();
     program_palette_color(index, rgb);
+    taskEXIT_CRITICAL();
     if (dataStreamer) {
         dataStreamer->vicPaletteChanged();
     }
