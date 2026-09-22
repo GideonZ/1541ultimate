@@ -96,6 +96,7 @@ sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
 import bootstrap  # noqa: E402,F401
 import cli  # noqa: E402
 import ftp  # noqa: E402
+import kernal  # noqa: E402
 from api import UltimateApi  # noqa: E402
 from config_snapshot import Snapshot  # noqa: E402
 from report import Failure, check, detail, section, suite_fail, suite_ok, teardown_step  # noqa: E402
@@ -2058,6 +2059,7 @@ def main():
     parser.add_argument("--log-dump",
                         help="a directory to write each phase's recorded operations and the "
                              "device log lines of its window to, for checking a verdict by hand.")
+    kernal.add_arguments(parser)
     args = parser.parse_args()
     phases = plan_phases(args)
     session = Session(args)
@@ -2084,7 +2086,9 @@ def main():
             snapshot[CMD_IF_CATEGORY] = cmd_if_snapshot
         saved = Snapshot(args.host, snapshot)
         started = created = False
+        kernal_run = contextlib.ExitStack()
         try:
+            kernal_run.enter_context(kernal.selected(api, args, args.password))
             with check("start the IEC agent and build the fixture"):
                 api.configs.set(LOG_CATEGORY, "Soft Drive Bus ID", 11)
                 api.configs.set(LOG_CATEGORY, "IEC Drive", "Enabled")
@@ -2137,6 +2141,7 @@ def main():
                                   ("restore the Software IEC and Command Interface settings",
                                    lambda: saved.restore(api)),
                                   ("remove this run's directory", remove_fixture),
+                                  ("restore the KERNAL", kernal_run.close),
                                   ("return the C64 to BASIC", lambda: api.machine.reset(force=True))):
                 ok = teardown_step(label, action) and ok
     except Exception as exc:

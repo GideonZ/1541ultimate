@@ -16,7 +16,7 @@ import bootstrap  # noqa: E402,F401
 from assembler import assemble  # noqa: E402
 from report import Failure, warn  # noqa: E402
 
-OPEN, WRITE, READ_TO_EOI, CLOSE, READ_COUNT = 1, 2, 3, 4, 5
+OPEN, WRITE, READ_TO_EOI, CLOSE, READ_COUNT, LOAD = 1, 2, 3, 4, 5, 6
 
 # The mailbox holds at most 254 bytes, and the agent counts them in one byte.
 MAILBOX_CAPACITY = 254
@@ -34,7 +34,8 @@ MAILBOX_CAPACITY = 254
 # also the work the drive does for the command it was just given, which runs after
 # the unlisten and delays the transfer that follows.
 SECONDS_PER_BYTE = 0.0018
-FIXED_SECONDS = {OPEN: 0.18, WRITE: 0.08, READ_TO_EOI: 0.22, CLOSE: 0.15, READ_COUNT: 0.18}
+FIXED_SECONDS = {OPEN: 0.18, WRITE: 0.08, READ_TO_EOI: 0.22, CLOSE: 0.15, READ_COUNT: 0.18,
+                 LOAD: 0.4}
 
 # What a read that ends at EOI is assumed to carry when the caller says nothing.
 STATUS_BYTES = 64
@@ -111,9 +112,10 @@ class Agent:
     def call(self, op, channel=5, data=b"", device=11, count=None, secondary=None, expect=None):
         """One mailbox operation, and the bytes it read.
 
-        `data` is what WRITE sends, `count` what READ_COUNT asks for, `secondary` the
-        secondary address OPEN uses, and `expect` roughly how much READ_TO_EOI will
-        bring back, which only sizes the wait.
+        `data` is what WRITE sends and the name OPEN and LOAD use, `count` what
+        READ_COUNT asks for, `secondary` the secondary address OPEN uses, and `expect`
+        roughly how much READ_TO_EOI or LOAD will bring back, which only sizes the wait.
+        LOAD answers the end address the KERNAL returned, low byte first.
         """
         requested = len(data) if count is None else count
         if requested > MAILBOX_CAPACITY:
@@ -135,6 +137,8 @@ class Agent:
         carried = requested
         if op == READ_TO_EOI:
             carried = MAILBOX_CAPACITY if expect is None else expect
+        if op == LOAD:
+            carried = expect
         budget = transfer_seconds(op, carried)
         if device != self.softiec_device:
             budget += EMULATED_DRIVE_SECONDS
@@ -161,12 +165,22 @@ class Agent:
             if status != 64:
                 raise Failure(f"IEC read ended without EOI: ST={status}")
             return self.api.machine.readmem(0xc100, returned)
+        if op == LOAD:
+            return bytes(state[3:5])
         if op == READ_COUNT:
             # Fewer bytes than asked for is the end of the stream, and only that.
             if (returned < requested) and (status == 0):
                 raise Failure(f"IEC read stopped after {returned} of {requested} bytes: ST={status}")
             return self.api.machine.readmem(0xc100, returned) if returned else b""
         return b""
+
+    def load(self, name, size, channel=5, device=11):
+        """LOAD `name`, a file of `size` bytes, to its own load address.
+
+        Returns the address after the last byte loaded, as the KERNAL reports it.
+        """
+        end = self.call(LOAD, channel, name.encode("ascii"), device=device, expect=size)
+        return int.from_bytes(end, "little")
 
     def read_exact(self, count, channel=5, device=11):
         """Read exactly count bytes, for a channel that signals EOI only at the end."""

@@ -19,6 +19,7 @@ sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
 import bootstrap  # noqa: E402,F401
 import cli  # noqa: E402
 import ftp  # noqa: E402
+import kernal  # noqa: E402
 from api import UltimateApi  # noqa: E402
 from config_snapshot import Snapshot  # noqa: E402
 from iec_agent import Agent, restorable_path  # noqa: E402
@@ -187,10 +188,12 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     cli.add_device_arguments(parser)
     parser.add_argument("--evidence-dir", default="rel-copy-evidence")
+    kernal.add_arguments(parser)
     args = parser.parse_args()
     try:
-        if not run(args):
-            raise Failure("Copied REL files differ from expected bytes")
+        with kernal.selected(UltimateApi(args.host, args.password, args.timeout), args, args.password):
+            if not run(args):
+                raise Failure("Copied REL files differ from expected bytes")
     except Exception as exc:
         traceback.print_exc()
         suite_fail(SUITE, str(exc))

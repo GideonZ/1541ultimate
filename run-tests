@@ -150,7 +150,8 @@ class Suite:
     """One registered suite.
 
     `args` is a template: @HOST@, @PASS@, @TIMEOUT@, @MODE@ and @SOAKPROFILE@
-    are substituted before the suite is started. @MODE@ appears only in the
+    are substituted before the suite is started, and @KERNAL@ becomes the
+    --kernal and --command-interface the run was given, or nothing. @MODE@ appears only in the
     argument string of suites that accept --mode: whether a suite can drive the
     on-device UI through Telnet as well as REST/Freeze/Overlay, or only works
     one way, is a per-suite call documented next to its entry below.
@@ -386,7 +387,7 @@ SUITES: Sequence[Suite] = (
           "tests/e2e/io/usb/bulk_out_integrity_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@", manual=True),
     Suite("e2e", "rel-copy", "tests/e2e/io/iec/rel_copy_test.py",
-          "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ @KERNAL@"),
     # The IEC command channel defects of #875, #876 and #877, driven from the C64 so
     # that the bytes on the bus are the ones PRINT# puts there: the carriage return
     # that ends a command, and the spaces BASIC prints around a number. A harness
@@ -396,7 +397,7 @@ SUITES: Sequence[Suite] = (
     # against the run a person makes before pushing, and rel-copy beside it is
     # already the IEC suite that costs real time.
     Suite("e2e", "iec-dos-commands", "tests/e2e/io/iec/dos_command_test.py",
-          "-H @HOST@ -p @PASS@ -t @TIMEOUT@", profile=profiles.STANDARD),
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ @KERNAL@", profile=profiles.STANDARD),
     # Drives the UCI control and SoftIEC targets over $DF1B-$DF1F; reproduces #740.
     # A #740 regression leaves the interface stuck in Command Busy for every target
     # until the firmware restarts, so run it after the suites that drive the menu
@@ -656,7 +657,7 @@ SUITES: Sequence[Suite] = (
     # minutes, the soak profile runs the soak mode for four hours. See --help and
     # tests/soak/README.md for --mode and the per-phase durations.
     Suite("soak", "softiec-soak", "tests/soak/io/iec/softiec_soak_test.py",
-          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --profile @SOAKPROFILE@"),
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --profile @SOAKPROFILE@ @KERNAL@"),
 )
 
 
@@ -698,6 +699,10 @@ class Options:
     # Whether the suites spool the screens they read. Defaulted, because it is
     # the only option here a caller can reasonably leave alone.
     screens: bool = True
+    # The KERNAL the Software IEC suites run under, and whether they enable the
+    # Command Interface for it; see tests/lib/kernal.py.
+    kernal: str = ""
+    command_interface: bool = False
 
 
 def git_answer(*arguments: str) -> str | None:
@@ -1917,6 +1922,10 @@ def build_command(suite: Suite, options: Options, mode: str) -> list[str]:
         if token == "@PASS@":
             command.append(options.password)
             continue
+        if token == "@KERNAL@":
+            command += ["--kernal", options.kernal] if options.kernal else []
+            command += ["--command-interface"] if options.command_interface else []
+            continue
         token = token.replace("@HOST@", options.host)
         token = token.replace("@TIMEOUT@", options.timeout)
         token = token.replace("@MODE@", mode)
@@ -2677,6 +2686,16 @@ def build_parser() -> argparse.ArgumentParser:
                             "suites an ordinary run leaves out are included. "
                             "-s names a suite whatever the profile says, and "
                             "-m overrides the transports it would sweep.")
+    e2e.add_argument("--kernal", default="", metavar="IMAGE",
+                     help="Run the Software IEC suites (rel-copy, "
+                          "iec-dos-commands, softiec-soak) under this KERNAL: a "
+                          "file name in the device's ROM directory, or a local "
+                          "file uploaded there for the run (default: the "
+                          "device's own).")
+    e2e.add_argument("--command-interface", action="store_true",
+                     help="Enable the Command Interface for the Software IEC "
+                          "suites, which the UCI (hyperspeed) KERNAL needs to "
+                          "reach the drive.")
     e2e.add_argument("--soak-duration", "--soak-profile", dest="soak_profile",
                      choices=("stress", "soak"), default="stress",
                      help="Set how long the network soak runs: stress takes "
@@ -3138,13 +3157,14 @@ def apply_colour_choice(choice: str) -> None:
 # neither: an option silently dropped here would make a multi-target run quietly
 # different from the single-target run it is supposed to repeat.
 CHILD_FORWARDED_FLAGS = ("e2e", "perf", "soak", "all", "manual", "syslog",
-                         "record")
+                         "record", "command_interface")
 CHILD_FORWARDED_VALUES = (
     ("profile", "--profile"),
     ("modes", "--mode"),
     ("password", "--password"),
     ("timeout", "--timeout"),
     ("soak_profile", "--soak-profile"),
+    ("kernal", "--kernal"),
     ("recover_command", "--recover-command"),
     ("recover_max_per_suite", "--recover-max-per-suite"),
     ("recover_max_total", "--recover-max-total"),
@@ -3577,6 +3597,9 @@ def main(argv: list[str]) -> int:
                       output_dir=args.output_dir, stop_on_fail=args.stop_on_fail,
                       health_check=args.health_check, attempts=args.attempts,
                       screens=args.screens,
+                      kernal=(os.path.abspath(args.kernal) if os.path.isfile(args.kernal)
+                              else args.kernal),
+                      command_interface=args.command_interface,
                       recover_command=args.recover_command,
                       recover_max_per_suite=args.recover_max_per_suite,
                       recover_max_total=args.recover_max_total,
@@ -3593,6 +3616,11 @@ def main(argv: list[str]) -> int:
         report.detail(f"modes:      {', '.join(modes) if modes else 'none'}")
     if "soak" in categories:
         report.detail(f"soak:       {options.soak_profile} profile")
+    if options.kernal or options.command_interface:
+        kernal = options.kernal or "the device's own"
+        report.detail(f"kernal:     {kernal}"
+                      + (", Command Interface enabled" if options.command_interface else "")
+                      + " (Software IEC suites)")
     report.detail(f"timeout:    {options.timeout}s")
     report.detail(f"on failure: {'stop at the first one' if options.stop_on_fail else 'continue'}")
     report.detail("health:    "

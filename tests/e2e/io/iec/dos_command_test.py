@@ -39,6 +39,7 @@ Software IEC settings and working directory, and deletes only its own fixtures.
 import argparse
 import datetime
 import io
+import random
 import re
 import sys
 import time
@@ -51,6 +52,7 @@ sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
 import bootstrap  # noqa: E402,F401
 import cli  # noqa: E402
 import ftp  # noqa: E402
+import kernal  # noqa: E402
 from api import UltimateApi  # noqa: E402
 from config_snapshot import Snapshot  # noqa: E402
 from iec_agent import CLOSE, MAILBOX_CAPACITY, OPEN, READ_COUNT, STATUS_BYTES, Agent, iec_drive, restorable_path  # noqa: E402
@@ -314,6 +316,39 @@ def check_listing_eof(agent, folder):
         detail(f"the last {len(tail)} bytes of a {total} byte listing read one at a time: {tail!r}")
         if len(tail) != 4 or tail[-1] != 0:
             raise Failure(f"end of file arrived after {len(tail)} of the last 4 bytes: {tail!r}")
+
+
+# Contents lengths around the drive's 512 byte buffers and the 254 byte blocks of
+# a disk. With the two byte load address, 509, 1021 and 2045 fill the last buffer
+# with one byte.
+LOAD_SIZES = (1, 3, 252, 253, 254, 509, 510, 511, 1021, 1022, 2045, 2046)
+LOAD_ADDRESS = 0x4000
+
+
+def check_load(agent, api, password, folder, root):
+    """#917, SI-153: a LOAD brings back every byte of the file, whatever its length.
+
+    The KERNAL's LOAD is the one transfer JiffyDOS replaces with a block protocol of
+    its own, which lost the last byte of a file whose final 512 byte buffer holds a
+    single byte. Under the stock KERNAL this checks the ordinary LOAD; run the suite
+    with --kernal to check another KERNAL's.
+    """
+    rnd = random.Random(917)
+    contents = {size: bytes(rnd.randrange(256) for _ in range(size)) for size in LOAD_SIZES}
+    directory = f"{root.rstrip('/')}/{folder}"
+    with ftp.session(api.host, password) as client:
+        for size, body in contents.items():
+            client.storbinary(f"STOR {directory}/load{size}.prg",
+                              io.BytesIO(LOAD_ADDRESS.to_bytes(2, "little") + body))
+    agent.command(f"CD//{folder.upper()}")
+    for size, body in contents.items():
+        with check(f"SI-153: LOAD of a {size + 2} byte file brings back all of it"):
+            end = agent.load(f"LOAD{size}", size)
+            loaded = api.machine.readmem(LOAD_ADDRESS, size)
+            wrong = [i for i in range(size) if loaded[i] != body[i]]
+            if end != LOAD_ADDRESS + size or wrong:
+                raise Failure(f"LOAD ended at ${end:04X}, expected ${LOAD_ADDRESS + size:04X}; "
+                              f"{len(wrong)} bytes differ" + (f", first at {wrong[0]}" if wrong else ""))
 
 
 def check_compatibility(agent, api, password, folder, root):
@@ -778,6 +813,7 @@ def run(args):
                 ("time stamp filter", lambda: check_timestamp_filter(agent, api, args.password, folder, root)),
                 ("listing layout", lambda: check_listing_layout(agent, folder)),
                 ("listing end of file", lambda: check_listing_eof(agent, folder)),
+                ("load", lambda: check_load(agent, api, args.password, folder, root)),
                 ("partition directory", lambda: check_partition_directory(agent, api)),
                 ("partition commands", lambda: check_partition_commands(agent)),
                 ("compatibility specification", lambda: check_compatibility(agent, api, args.password, folder, root))):
@@ -829,9 +865,11 @@ def run(args):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     cli.add_device_arguments(parser)
+    kernal.add_arguments(parser)
     args = parser.parse_args()
     try:
-        run(args)
+        with kernal.selected(UltimateApi(args.host, args.password, args.timeout), args, args.password):
+            run(args)
     except Exception as exc:
         traceback.print_exc()
         suite_fail(SUITE, str(exc))
