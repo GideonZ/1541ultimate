@@ -431,6 +431,13 @@ def check_compatibility(agent, api, password, folder, root):
         if probe != bytes(2):
             raise Failure(f"M-R answered {probe!r}")
         agent.status((0,))
+        # SI-105: no drive code runs here, so M-E answers 98, as sd2iec answers for a
+        # drive code it does not know, and M-W is refused.
+        answer = agent.command(b"M-E" + bytes([0x00, 0x05]) + b"\r", allowed=(98,))
+        detail(f"M-E $0500 answers {answer!r}")
+        if not answer.startswith("98,UNKNOWN DRIVE CODE"):
+            raise Failure(f"M-E answered {answer!r}")
+        agent.command(b"M-W" + bytes([0x00, 0x05, 0x01, 0xEA]) + b"\r", allowed=(30,))
 
     def partition_directory():
         listing = listing_of(agent, "$=P")
