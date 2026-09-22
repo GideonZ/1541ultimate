@@ -4738,6 +4738,51 @@ static void s11_reset_restarts_processor(FileManager *fm, IecDrive *dr)
     expect_command_status_prefix(testname, dr, "UI\r", "73,");
 }
 
+// SI-001: the drive answers on one device number, 8 to 30, 11 by default. The range is
+// the configuration item's, which is what a user can set it to.
+static void s11_device_number_range(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite11-SI001-DeviceNumberRange";
+    ConfigStore *cfg = s11_softiec_settings();
+    ConfigItem *item = cfg->find_item(0x52);
+    REQUIRE(item && item->definition);
+    printf("%s: bus id %d..%d, default %d\n", testname, item->definition->min,
+           item->definition->max, (int)item->definition->def);
+    REQUIRE(item->definition->min == 8);
+    REQUIRE(item->definition->max == 30);
+    REQUIRE(item->definition->def == 11);
+}
+
+// SI-055: the 1581 sub-partition commands are not implemented, and `/` is not a command
+// letter, so they answer 31 as any other unknown command does (SI-030).
+static void s11_sub_partition_commands(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite11-SI055-SubPartitions";
+    s11_partition(fm, dr, "si055");
+    expect_command_response(testname, dr, "/0:NAME\r", "31,SYNTAX ERROR,00,00\r");
+    static const uint8_t make[] = { '/', '0', ':', 'N', 'A', 'M', 'E', ',', 1, 0, 40, 0, ',', 'C' };
+    expect_command_data_response(testname, dr, make, sizeof(make), "31,SYNTAX ERROR,00,00\r");
+}
+
+// SI-004: the blocks free a listing reports is the free space of the partition, not of
+// the directory, which a native image with a subdirectory shows.
+static void s11_blocks_free_is_partition_wide(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite11-SI004-BlocksFree";
+    create_formatted_image(fm, "/Fat/s11_si004.dnp", "FREE", 6 * 256, e_image_dnp);
+    dr->add_partition(45, "/Fat/s11_si004.dnp", "FREE");
+    expect_command_status_prefix(testname, dr, "CP45\r", "02,");
+    expect_command_ok(testname, dr, "MD:SUB\r");
+    uint8_t listing[4096];
+    int got = read_directory_stream(testname, dr, "$", listing, sizeof(listing));
+    int root_free = listing[got - 30] | (listing[got - 29] << 8);
+    got = read_directory_stream(testname, dr, "$:SUB/", listing, sizeof(listing));
+    int sub_free = listing[got - 30] | (listing[got - 29] << 8);
+    printf("%s: the root reports %d blocks free, the subdirectory %d\n",
+           testname, root_free, sub_free);
+    REQUIRE(root_free == sub_free);
+}
+
 // SI-070: a file opened with ,M is opened for reading. A modify reads a file a write
 // never closed, and nothing here refuses to read one.
 static void s11_modify_open(FileManager *fm, IecDrive *dr)
@@ -5696,6 +5741,9 @@ static const Suite11Case suite11_cases[] = {
     { "Suite11-JiffyLoadStream",         s11_jiffy_load_stream },
     { "Suite11-SI077-ImageWriteLock",    s11_image_write_lock },
     { "Suite11-SI070-ModifyOpen",        s11_modify_open },
+    { "Suite11-SI001-DeviceNumberRange", s11_device_number_range },
+    { "Suite11-SI055-SubPartitions",     s11_sub_partition_commands },
+    { "Suite11-SI004-BlocksFree",        s11_blocks_free_is_partition_wide },
     { "Suite11-BlockAllocateAnswers",    s11_block_allocate_answers },
     { "Suite11-Crash-DamagedChain",      s11_crash_damaged_chain },
     { "Suite11-Crash-LongHostName",      s11_crash_long_host_name },

@@ -517,6 +517,8 @@ void test_attribute_commands(void)
     test_dispatch("XPWD", 4, 0, NULL);
     test_dispatch("XH+", 3, ERR_SYNTAX, NULL); // a setting, which this drive keeps its own way
     test_dispatch("DI", 2, ERR_SYNTAX, NULL);  // the direct sector commands (SI-096)
+    test_dispatch("DR", 2, ERR_SYNTAX, NULL);
+    test_dispatch("DW", 2, ERR_SYNTAX, NULL);
     test_dispatch("EQ:NAME", 7, ERR_SYNTAX, NULL);
     // A command that carries no name at all, which must not reach the executer with an
     // empty list.

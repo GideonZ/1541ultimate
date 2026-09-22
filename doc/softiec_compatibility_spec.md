@@ -108,9 +108,11 @@ The specification is met when all of the following hold.
 
 * **A1.** C64 OS installs on, boots from and runs from a Software IEC partition, with
   no error on the command channel that a CMD HD would not also produce.
-* **A2.** Every requirement below has at least one automated test, in
-  `target/pc/linux/parse`, `target/pc/linux/iecdrive` or `tests/e2e/io/iec`, and the
-  test fails when the behaviour is reverted.
+* **A2.** Every requirement below that states an answer the drive gives has at least one
+  automated test, in `target/pc/linux/parse`, `target/pc/linux/iecdrive` or
+  `tests/e2e/io/iec`, and the test fails when the behaviour is reverted. A requirement
+  that states only what is out of scope and names no answer (SI-106, SI-115) has no
+  test, and SI-151 is retired.
 * **A3.** Nothing in section 15.2 behaves differently.
 
 ---
@@ -120,7 +122,9 @@ The specification is met when all of the following hold.
 ### 2.1 Device, partitions, directories
 
 **SI-001.** The drive presents one IEC device number, configurable from 8 to 30, with
-11 as the default. GUG confirms that C64 OS expects storage devices in 8 to 30 and
+11 as the default, which is the range and default of the configuration item
+(`CFG_IEC_BUS_ID` in `U software/io/iec/iec_drive.cc`). Test:
+`Suite11-SI001-DeviceNumberRange`. GUG confirms that C64 OS expects storage devices in 8 to 30 and
 supports five at a time.
 
 **SI-002.** The drive presents partitions numbered 1 to 255. Each partition has a
@@ -137,7 +141,9 @@ mounted CBM disk image, because the Ultimate virtual file system mounts `.d64`,
 
 **SI-004.** The blocks free reported for any directory is the free space of the
 partition, not of the directory. Source: HD 4-5, "all of the blocks within a Native
-Mode partition are shared between all directories within that partition".
+Mode partition are shared between all directories within that partition". Test:
+`Suite11-SI004-BlocksFree`, where the root and a subdirectory of a native image report
+the same count.
 
 ### 2.2 What the partition model must not do
 
@@ -565,7 +571,9 @@ The reporter wrote on #877 that "V not implemented, but that's ok for the time b
 **SI-055.** The 1581-style sub-partition commands `/[n]:name` and
 `/[n]:name,`+`CHR$(st)CHR$(ss)CHR$(sl)CHR$(sh)`+`,C` are not implemented and are out
 of scope. They address 1581 emulation partitions, which this drive does not have.
-Sources: HD 9-9 and 9-11; 1581 User's Guide, which gives the same syntax.
+They answer `31,SYNTAX ERROR`, because `/` is not a command letter and SI-030 gives that
+answer for anything that is not one. Sources: HD 9-9 and 9-11; 1581 User's Guide, which
+gives the same syntax. Test: `Suite11-SI055-SubPartitions`.
 
 ---
 
@@ -798,7 +806,7 @@ system, so the file browser, FTP and REST obey it as well, and a drive emulation
 the Commodore DOS refuses to write the disk. Test: `Suite11-SI077-ImageWriteLock`.
 
 `XH+` and `XH-`, which turn hidden files on and off for every later listing, are one of
-the sd2iec settings commands that section 19 places out of scope; the filter `=H` asks
+SDM's settings commands, which section 19 places out of scope; the filter `=H` asks
 for them per listing instead. They answer `30`.
 
 `A` and `D` are command letters because of `A:` and `D:`, so an unrecognised argument to
@@ -968,8 +976,10 @@ command letter and only the sub-command is not (SI-030).
 
 **SI-096.** The sd2iec direct sector commands `DI`, `DR` and `DW`, and the error
 `78,BUFFER TOO SMALL`, are out of scope. They expose the raw storage device below the
-file system, which is not something this firmware should offer over IEC. Source:
-SD README under `D`.
+file system, which is not something this firmware should offer over IEC. They answer
+`30,SYNTAX ERROR`: `D` is a command letter here, for the header command of SI-077, and
+anything after it that is not a colon is refused. Source: SD README under `D`. Tests:
+`DI`, `DR` and `DW` in `target/pc/linux/parse`.
 
 ---
 
@@ -1011,7 +1021,7 @@ the bus to a medium.
 
 | Gate | Commands that reach it |
 | --- | --- |
-| the eleven command handlers that change a medium | `MD`, `RD`, `C`, `N`, `R`, `S`, `R-H`, `R-P`, `L`, `EL`, `EU`, `EH`, `A`, `U2`, `B-W`, `B-A`, `B-F` |
+| the twelve command handlers that change a medium | `MD`, `RD`, `C`, `N`, `R`, `S`, `R-H`, `R-P`, `L`, `EL`, `EU`, `EH`, `A`, `U2`, `B-W`, `B-A`, `B-F` |
 | the file open | a write, an append and a replace, which answer `26` and open nothing |
 | the relative file | it opens for reading, and the record write answers `26`, drops the record and leaves the channel open, because the file can still be read |
 | the record seek | a record past the end of the file is not created; the answer is `50,RECORD NOT PRESENT` |
@@ -1924,11 +1934,11 @@ differently from one of its sources, for a reason given below the requirement.
 | SI-033 | A scratch whose path does not exist answers `71` rather than a count of zero |
 | SI-064 | `R-H` takes an optional id and sets it, as `SDM parse_set_header()` does, where HD 9-15 gives `R-H` a new name only |
 | SI-074 | A rename into another directory or partition moves the entry, where `SD parse_rename()` answers `62` |
-| SI-077 | `EL`, `EU` and `A` act on every entry a name matches, directories included, where sd2iec skips directories and `A` takes the first match |
+| SI-077 | `EL`, `EU` and `A` act on every entry a name matches, directories included, where SDM skips directories and `A` takes the first match. SDU has none of these commands |
 | SI-120 | A write sets the drive's own clock, an offset from the system clock that a reset clears, where a CMD drive and sd2iec set their clock chip; the day of week a write carries is not kept; a write is refused when the day is not a day of that month, which `SD parse_timewrite()` does not check, and every field is read at its documented width |
 | SI-136 | A second `*` matches in the middle of a name, where CBM DOS and sd2iec stop at the first |
-| SI-141 | A host name longer than 16 characters renders as its first 16 characters, where sd2iec prints the 8.3 name |
-| SI-142 | The length guard of `SD` is not adopted, because it would change no host name the drive produces |
+| SI-141 | A host name longer than 16 characters renders as its first 16 characters, where SDM prints the 8.3 name. SDU has no such mapping |
+| SI-142 | The length guard of `SDM` is not adopted, because it would change no host name the drive produces |
 
 ---
 
@@ -1946,7 +1956,7 @@ Named so that the boundary is explicit rather than implied.
   (SI-115). GEOS and Wheels support needs gateware work and is a separate project;
   the reporter asked that the documentation say so.
 * Swap lists, `XS` and the disk change buttons: they are a user interface feature of
-  a device with physical buttons, and `U cbmdos_parser.cc` already records the
+  a device with physical buttons, and `U software/io/iec/cbmdos_parser.cc` already records the
   reasoning, "Swaplists are not part of the drive, they are part of the user
   interface."
 * The fastloaders other than JiffyDOS. sd2iec accelerates Turbo Disk, Final
