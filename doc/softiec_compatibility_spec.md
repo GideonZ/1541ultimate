@@ -108,11 +108,9 @@ The specification is met when all of the following hold.
 
 * **A1.** C64 OS installs on, boots from and runs from a Software IEC partition, with
   no error on the command channel that a CMD HD would not also produce.
-* **A2.** Every requirement below that states an answer the drive gives has at least one
-  automated test, in `target/pc/linux/parse`, `target/pc/linux/iecdrive` or
-  `tests/e2e/io/iec`, and the test fails when the behaviour is reverted. A requirement
-  that states only what is out of scope and names no answer (SI-106, SI-115) has no
-  test, and SI-151 is retired.
+* **A2.** Every requirement in force is traceable to a test that names it, as section 1.5
+  requires and appendix E shows. The exceptions are the requirements that state only what
+  is out of scope and name no answer (SI-106, SI-115), and the retired SI-151.
 * **A3.** Nothing in section 15.2 behaves differently.
 
 ### 1.4 Notation
@@ -169,6 +167,34 @@ that no longer matches the firmware is a defect in this document, not a descript
 exception. Where a change makes the drive answer differently from one of its sources, the
 requirement says which source and why, and section 18.1 indexes it. Nothing is settled by
 a note that behaviour drifted.
+
+---
+
+### 1.6 Terminology
+
+These terms are used throughout with one meaning each. Where a requirement defines the
+term, it is named.
+
+| Term | Meaning |
+| --- | --- |
+| drive | The Software IEC drive: one device on the serial bus, with one device number (SI-001), serving files from the Ultimate's file systems rather than from a disk of its own. |
+| host file system | The file system the Ultimate itself uses, FAT on a card, a stick or the internal flash, reached through the Ultimate's virtual file system. |
+| medium | Whatever a directory ultimately sits on: a host file system, or a CBM disk image mounted as a directory (SI-003). A requirement says "medium" where the answer is the same for both. |
+| image | A `.d64`, `.d71`, `.d81` or `.dnp` file holding a Commodore disk, which the Ultimate mounts as a directory so that a partition or a directory can sit inside it (SI-003). |
+| partition | One of the drive's numbered areas, 1 to 255, each with a name, a root and its own current directory (SI-002). Partition 0 names the current partition and cannot be entered. |
+| current directory | The directory a partition is in, which every command that takes no path acts on, and which survives a warm reset (SI-103). |
+| entry | One item a directory holds, whether a file or a directory, as a listing shows it. |
+| CBM name | The name a C64 program uses, up to 16 bytes of PETSCII, which may hold bytes a host file system cannot (section 14). |
+| host name | The name the same entry has on the host file system, produced from the CBM name by the mapping of SI-140 to SI-148. |
+| channel | One of the 16 addresses a C64 opens on the drive. Channel 15 is the command channel; 0 to 14 are data channels, which carry a file, a listing or a direct access buffer. |
+| command channel | Channel 15: it takes commands and answers the error channel status, `NN,TEXT,TT,SS` (section 4). |
+| error channel | What a read of the command channel returns: the answer to the last command (section 4). |
+| splat | The `*` a listing puts in front of the type of an entry whose write never closed it (SI-132). |
+| lock | The flag `L` turns over, shown as `<` after the type, which stops a scratch (SI-076). |
+| record | One fixed-length unit of a relative file, addressed by number with `P` (section 8). |
+| buffer | The 256 bytes a direct access channel holds, opened with `#` (SI-090). |
+| terminator | The `CHR$(13)` a `PRINT#` appends to a command, which is not part of the command (SI-016). |
+| pattern | A name holding `*` or `?`, matched as SI-136 states. |
 
 ---
 
@@ -494,6 +520,14 @@ other device. It must not be the answer to a condition that CBM DOS names.
 `U IecDrive::set_error_fres()` maps the unmapped `FRESULT` values to it and puts the
 raw `FRESULT` in the track variable. Every path that can reach a user must map to a
 documented code first. The known case is SI-083.
+
+**SI-154.** Reading the command channel clears the error it reported: a second read, with
+no command between the two, answers `00, OK,00,00`. Every Commodore drive does this, and a
+program that polls the status after each command relies on it, because an error left
+standing would be read again as the answer to the next command. The drive clears the
+status where it renders it, in `U IecCommandChannel::get_error_string()`. The answer to a
+reset is the one exception a caller sees, because `UI` and the two `UJ` forms set `73`
+again after the read that cleared it (SI-103). Test: `Suite11-SI154-StatusClears`.
 
 ---
 
@@ -2104,7 +2138,7 @@ other software that already targets these devices.
 
 ## Appendix B. Requirement index
 
-Sections 2 to 15 define the numbered paragraphs SI-001 to SI-153, with gaps, one of which
+Sections 2 to 15 define the numbered paragraphs SI-001 to SI-154, with gaps, one of which
 (SI-151) is retired. A paragraph whose number carries a letter, such as SI-103a, states a
 further rule of the requirement it follows and is numbered that way so that the numbers
 already cited elsewhere keep their meaning.
@@ -2365,3 +2399,4 @@ which section 1.3 allows and names.
 | SI-151 | *(none: see section 1.3)* |
 | SI-152 | Suite11-FailureLog |
 | SI-153 | Suite11-JiffyLoadStream, iec-dos-commands |
+| SI-154 | Suite11-SI154-StatusClears |

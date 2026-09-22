@@ -4739,6 +4739,21 @@ static void s11_reset_restarts_processor(FileManager *fm, IecDrive *dr)
     expect_command_status_prefix(testname, dr, "UI\r", "73,");
 }
 
+// SI-154: reading the command channel clears the error it reported, so a second read with
+// no command between the two answers 00, OK, as every Commodore drive does.
+static void s11_status_clears(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite11-SI154-StatusClears";
+    s11_partition(fm, dr, "si154");
+    expect_command_response(testname, dr, "ZAP\r", "31,SYNTAX ERROR,00,00\r");
+    get_status(dr);
+    expect_current_status(testname, "the read after the one that reported 31", "00, OK,00,00\r");
+    // A scratch that found nothing reports 01 with its count, and that clears as well.
+    expect_command_response(testname, dr, "S:NOTHERE\r", "01, FILES SCRATCHED,00,00\r");
+    get_status(dr);
+    expect_current_status(testname, "the read after the one that reported 01", "00, OK,00,00\r");
+}
+
 // SI-001: the drive answers on one device number, 8 to 30, 11 by default. The range is
 // the configuration item's, which is what a user can set it to.
 static void s11_device_number_range(FileManager *fm, IecDrive *dr)
@@ -5742,6 +5757,7 @@ static const Suite11Case suite11_cases[] = {
     { "Suite11-JiffyLoadStream",         s11_jiffy_load_stream },
     { "Suite11-SI077-ImageWriteLock",    s11_image_write_lock },
     { "Suite11-SI070-ModifyOpen",        s11_modify_open },
+    { "Suite11-SI154-StatusClears",     s11_status_clears },
     { "Suite11-SI001-DeviceNumberRange", s11_device_number_range },
     { "Suite11-SI055-SubPartitions",     s11_sub_partition_commands },
     { "Suite11-SI004-BlocksFree",        s11_blocks_free_is_partition_wide },
