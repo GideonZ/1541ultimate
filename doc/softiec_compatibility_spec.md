@@ -1264,10 +1264,14 @@ puts the type two columns to the left of where a 1541 puts it, and the long form
 space between the date and the time where three belong. SI-139 gives the column positions, taken from
 the character positions in the scan rather than from the extracted text.
 
-**SI-136.** Wildcard matching: `?` matches one character and `*` matches the rest.
-Characters after the `*` are matched against the end of the name, which is the 1581 rule
-and sd2iec's default (`SD match_name_str()` with `POSTMATCH` set, SD README under
-`X*+/X*-`, "the default value is enabled (+)"). Matching stops after 16 characters.
+**SI-136.** Wildcard matching: `?` matches exactly one character and `*` matches any run
+of characters, including none, wherever it stands in the pattern, as a shell glob does.
+`*ED` matches `WALKED` and `MOVED` but not `EDIT`, and `W*D` matches `WALKED`. Characters
+after a `*` are therefore matched against the end of the name, which is the 1581 rule and
+sd2iec's default (`SD match_name_str()` with `POSTMATCH` set, SD README under `X*+/X*-`,
+"the default value is enabled (+)"). Character classes such as `[A-Z]` are not supported.
+Matching stops after 16 characters. Test: `test_pattern_match` in
+`software/io/iec/cbmdos_parser_test.cc`.
 
 The matcher is a full glob, so a second `*` matches in the middle of a name where CBM DOS
 and `SD match_name_str()` stop at the first one. GAP notes the difference approvingly:

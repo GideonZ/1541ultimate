@@ -890,6 +890,15 @@ void test_pattern_match(void)
         failures++;
         return;
     }
+    // A star matches anywhere, as a shell glob does: characters after it meet the end of
+    // the name (SI-136).
+    if (!pattern_match("*ED", "WALKED", false) || !pattern_match("*ed", "moved", false) ||
+        pattern_match("*ED", "EDIT", false) || !pattern_match("W*D", "WALKED", false) ||
+        !pattern_match("*A*E*", "WALKED", false)) {
+        printf("*ED, W*D or *A*E* did not match as a glob\n");
+        failures++;
+        return;
+    }
     char stars[64];
     memset(stars, '*', 40);
     strcpy(stars + 40, "Q");
