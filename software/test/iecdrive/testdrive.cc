@@ -4739,6 +4739,103 @@ static void s11_reset_restarts_processor(FileManager *fm, IecDrive *dr)
     expect_command_status_prefix(testname, dr, "UI\r", "73,");
 }
 
+// The defects the sd2iec family's common bug list (SDBUGS) records, each checked here
+// against this drive. None of them is present; this case is the guard that keeps it so.
+// It pins SI-019, SI-032, SI-035, SI-071, SI-076, SI-077a, SI-141, SI-144 and SI-148.
+static void s11_common_bugs(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite11-CommonBugs";
+    const char *path = s11_partition(fm, dr, "bugs");
+    char type[8];
+    bool present;
+    uint8_t listing[4096];
+    uint8_t second[4096];
+
+    // A one character directory inside a DNP image lists as a directory with that name,
+    // where the entry the header is written into is the one that can be malformed.
+    create_formatted_image(fm, "/Fat/s11_bug.dnp", "BUGNAT", 6 * 256, e_image_dnp);
+    dr->add_partition(70, "/Fat/s11_bug.dnp", "BUGNAT");
+    expect_command_status_prefix(testname, dr, "CP70\r", "02,");
+    expect_command_ok(testname, dr, "MD:F\r");
+    expect_command_ok(testname, dr, "CD:F\r");
+    int got = read_directory_stream(testname, dr, "$", listing, sizeof(listing));
+    printf("%s: the listing of a one character directory is %d bytes\n", testname, got);
+    REQUIRE(got > 32);
+    REQUIRE(memmem(listing, got, "\"F", 2) != NULL);
+    REQUIRE(memmem(listing, got, "BLOCKS FREE", 11) != NULL);
+    expect_command_ok(testname, dr, "CD:_\r");
+
+    // A relative file whose record length is 13, which a terminator strip can swallow.
+    expect_command_status_prefix(testname, dr, "CP40\r", "02,");
+    expect_rel_open(testname, dr, 4, "RECLEN13", 13);
+    close_file(dr, 4);
+
+    // A second file of a name that only differs by its shifted space padding is the same
+    // name, and a name that is nothing but a shifted space is no name at all.
+    expect_iec_write_ok(testname, dr, 1, "TEST,S,W", "first");
+    expect_iec_open_status_prefix(testname, dr, 2, "TEST\xA0,S,W", "63,");
+    close_file(dr, 2);
+    expect_iec_open_status_prefix(testname, dr, 2, "\xA0,S,W", "33,");
+    close_file(dr, 2);
+
+    // A wildcard is not a character a new name can carry, and a replace that matches
+    // nothing creates nothing.
+    expect_iec_open_status_prefix(testname, dr, 2, "STAR*,S,W", "33,");
+    close_file(dr, 2);
+    expect_iec_open_status_prefix(testname, dr, 2, "@:STAR*,S,W", "64,");
+    close_file(dr, 2);
+
+    // Renaming a file that lives in an x00 wrapper rewrites the name in the header and
+    // leaves the wrapper where it is, so no unwrapped file is left holding a header.
+    s11_host_file(fm, path, "WRAP.P00", "WRAPPED", 0, (const uint8_t *)"payload", 7);
+    expect_command_ok(testname, dr, "R:RENAMED=WRAPPED\r");
+    uint8_t raw[64];
+    int n = s11_read_host_file(fm, path, "WRAP.P00", raw, sizeof(raw));
+    REQUIRE(n == 33);
+    REQUIRE(memcmp(raw, "C64File", 7) == 0);
+    REQUIRE(memcmp(raw + 8, "RENAMED", 8) == 0);
+    REQUIRE(s11_read_host_file(fm, path, "RENAMED.P00", raw, sizeof(raw)) < 0);
+    REQUIRE(s11_read_host_file(fm, path, "RENAMED.PRG", raw, sizeof(raw)) < 0);
+    s11_listing_type(dr, testname, "$", "RENAMED", type, &present);
+    REQUIRE(present && !strcmp(type, "PRG "));
+
+    // A name that starts with a dot and carries an extension keeps its type.
+    expect_iec_write_ok(testname, dr, 1, ".FOO.L,S,W", "dotted");
+    s11_listing_type(dr, testname, "$", ".FOO.L", type, &present);
+    REQUIRE(present && !strcmp(type, "SEQ "));
+
+    // A rename that changes only the case of a name is a rename the drive makes.
+    expect_iec_write_ok(testname, dr, 1, "MiXeD,S,W", "case");
+    expect_command_ok(testname, dr, "R:mixed=MiXeD\r");
+    s11_listing_type(dr, testname, "$", "mixed", type, &present);
+    REQUIRE(present);
+
+    // A locked entry is skipped by a scratch, which answers 01 with a count of none, and
+    // the entry is still there and still locked.
+    create_formatted_image(fm, "/Fat/s11_bugwp.d64", "WPTEST", 683, e_image_d64);
+    dr->add_partition(71, "/Fat/s11_bugwp.d64", "WPTEST");
+    expect_command_status_prefix(testname, dr, "CP71\r", "02,");
+    expect_iec_write_ok(testname, dr, 1, "KEEP,S,W", "keep me");
+    expect_command_ok(testname, dr, "L:KEEP\r");
+    expect_command_response(testname, dr, "S:KEEP\r", "01, FILES SCRATCHED,00,00\r");
+    s11_listing_type(dr, testname, "$", "KEEP", type, &present);
+    REQUIRE(present && !strcmp(type, "SEQ<"));
+
+    // A write refused because the image is locked changes nothing: the directory a
+    // listing shows is the same byte for byte afterwards.
+    expect_iec_write_ok(testname, dr, 1, "GOES,S,W", "unlocked entry");
+    expect_command_ok(testname, dr, "EL:$\r");
+    got = read_directory_stream(testname, dr, "$", listing, sizeof(listing));
+    expect_command_status_prefix(testname, dr, "S:GOES\r", "26,");
+    expect_command_status_prefix(testname, dr, "MD:NEW\r", "26,");
+    int after = read_directory_stream(testname, dr, "$", second, sizeof(second));
+    printf("%s: the listing of a locked image is %d bytes before and %d after\n",
+           testname, got, after);
+    REQUIRE(after == got);
+    REQUIRE(memcmp(listing, second, got) == 0);
+    expect_command_ok(testname, dr, "EU:$\r");
+}
+
 // SI-154: reading the command channel clears the error it reported, so a second read with
 // no command between the two answers 00, OK, as every Commodore drive does.
 static void s11_status_clears(FileManager *fm, IecDrive *dr)
@@ -5757,6 +5854,7 @@ static const Suite11Case suite11_cases[] = {
     { "Suite11-JiffyLoadStream",         s11_jiffy_load_stream },
     { "Suite11-SI077-ImageWriteLock",    s11_image_write_lock },
     { "Suite11-SI070-ModifyOpen",        s11_modify_open },
+    { "Suite11-CommonBugs",             s11_common_bugs },
     { "Suite11-SI154-StatusClears",     s11_status_clears },
     { "Suite11-SI001-DeviceNumberRange", s11_device_number_range },
     { "Suite11-SI055-SubPartitions",     s11_sub_partition_commands },

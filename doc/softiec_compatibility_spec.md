@@ -126,6 +126,7 @@ in `roms/1541.bin` rather than any manual.
 | **RL** | [*CMD RAMLink User's Manual*](https://archive.org/details/CMD_RamLink_Users_Manual). |
 | **ROM** | [`roms/1541.bin`](../roms/1541.bin) in this repository, 16384 bytes, mapping to `$C000..$FFFF`. Quoted disassembly was produced from that file. |
 | **SD** | SDU and SDM together: a citation reads `SD` only where SDU and SDM carry the same behaviour at the commits their rows name, which was checked for every function, constant and README passage this document cites. Where they differ, the citation names SDU or SDM, and the requirement says what the other one does. |
+| **SDBUGS** | [`markusC64/sd2iecCommonBugs`](https://github.com/markusC64/sd2iecCommonBugs), a list of defects the sd2iec family shares, kept by the reporter of #877 and #917. A report is on it when it is in the upstream firmware or in three independent forks. It is not a source of truth for what this drive does: it says what other implementations get wrong, and `Suite11-CommonBugs` checks this drive against it. |
 | **SDM** | sd2iec as extended by the reporter of #877 and #917, [`markusC64/sd2iec`](https://github.com/markusC64/sd2iec) at commit `9087321` on its `devel` branch, 4 September 2026. A fork of SDU that tracks it and adds, among other things, the attribute, locking and header commands, the `$` image write lock and the extension mode 5 name mapping. Paths are `src/...`, and `SDM README` is its README, which the reporter named as this drive's sd2iec documentation. |
 | **SDU** | sd2iec as it ships, [`thierer/sd2iec`](https://github.com/thierer/sd2iec) at release [`v1.0.0atentdead0-186-g069555f1`](https://github.com/thierer/sd2iec/releases/tag/v1.0.0atentdead0-186-g069555f1), commit `069555f1`, 13 June 2026. A clone of the original at `sd2iec.de`, and the line a user is most likely to be running. Paths are `src/...`, and `SDU README` is its README. |
 | **TRACE** | [`log_boot.log.txt`](https://github.com/user-attachments/files/32097131/log_boot.log.txt), attached by the reporter to #877 on 11 September 2026. 601 lines of `SOFTIEC-TRACE` output from one successful C64 OS boot on a U64 II. |
@@ -911,6 +912,12 @@ attribute, which the Ultimate's FTP server and file browser then also respect; i
 image it is bit 6 of the file type byte. A scratch skips a locked entry, and also an
 unlocked entry of the same name and type that follows a locked one in a disk image,
 because deleting by name removes the first entry of that name.
+
+SDBUGS reports that a scratch of a locked file inside an image is carried out rather than
+refused, and expects an error. This drive skips the entry and answers `01, FILES
+SCRATCHED` with a count of none, which is what a 1541 answers and what SI-033 gives for a
+scratch that matched nothing. An error code would tell a program that something failed
+where a Commodore drive reports that nothing was scratched.
 
 **SI-077.** The sd2iec spellings of the attribute commands, from
 `SDM parse_elock()`, `parse_eunlock()`, `parse_ehide()`, `parse_attr()`,
@@ -2017,6 +2024,18 @@ classes qualify and both have already caught defects:
   build above does not settle it. The U64 build is Nios II, where `char` is signed, and
   the U64 II and U2+L builds are RISC-V, where it is not. SI-147 is the known case.
 
+**T3a. The defects other implementations have, `Suite11-CommonBugs`.** SDBUGS records what
+the sd2iec family gets wrong, and each of its reports that can apply to this drive is
+checked here in one case: a one character directory inside a DNP image, a relative file
+whose record length is the terminator byte, a second file whose name differs only by
+shifted space padding, a name that is nothing but a shifted space, a wildcard in a name
+being created, a replace that matches nothing, a rename of a file inside an x00 wrapper, a
+name that starts with a dot and carries an extension, a rename that changes only case, a
+scratch of a locked entry, and a write refused because the image is locked. None of them
+is present here, and the case exists so that a later change cannot introduce one quietly.
+The reports this drive cannot have are the GEOS speeder, which it does not implement
+(SI-115), and the D80 and D82 partition types, which it does not serve.
+
 **T4. The file browser and the run routes, `tests/e2e/filemanager` and
 `tests/e2e/api`.** SI-144b is about what a person sees and does on the device, so it is
 checked there: `prg_context_menu_test.py` drives every context menu action of the real
@@ -2360,16 +2379,16 @@ which section 1.3 allows and names.
 | SI-016 | Suite11-SI016-SecondTerminator, parse |
 | SI-017 | iec-dos-commands |
 | SI-018 | Suite11-SI018-PositionExempt, parse |
-| SI-019 | parse |
+| SI-019 | Suite11-CommonBugs, parse |
 | SI-020 | parse |
 | SI-021 | Suite11-SI021-LongNames, iec-dos-commands, parse |
 | SI-022 | Suite10, Suite11-SI022-TooLong, iec-dos-commands, parse |
 | SI-030 | Suite11-SI030-MissingName, Suite11-SI030-UnknownSubcommand, Suite11-SI030-WildcardTarget, Suite11-SI055-SubPartitions, parse |
 | SI-031 | Suite10, Suite11-SI031-Unrecognised, iec-dos-commands, parse |
-| SI-032 | Suite11-SI032-WildcardWrite |
+| SI-032 | Suite11-CommonBugs, Suite11-SI032-WildcardWrite |
 | SI-033 | Suite11-SI033-ScratchNothing, iec-dos-commands |
 | SI-034 | iec-dos-commands |
-| SI-035 | Suite5 |
+| SI-035 | Suite11-CommonBugs, Suite5 |
 | SI-036 | Suite11-SI036-BlockRange, Suite11-SI083-SeekWriteImage |
 | SI-040 | Suite10 |
 | SI-041 | Suite11-SI041-PartitionSize, parse |
@@ -2395,15 +2414,15 @@ which section 1.3 allows and names.
 | SI-065 | Suite11-SI064-RenameHeader, Suite11-SI065-HeaderName |
 | SI-066 | Suite10 |
 | SI-070 | Suite11-SI070-ModifyOpen, Suite3, parse |
-| SI-071 | Suite11-SI071-Format, iec-dos-commands, parse |
+| SI-071 | Suite11-CommonBugs, Suite11-SI071-Format, iec-dos-commands, parse |
 | SI-071a | Suite11-SI071-Format |
 | SI-072 | Suite11-SI072-RawNames |
 | SI-073 | Suite8-T-RA |
 | SI-074 | iec-dos-commands, iecdrive |
 | SI-075 | Suite8-T-RA |
-| SI-076 | Suite11-SI076-Lock, Suite11-SI077-AttributeCommands, parse |
+| SI-076 | Suite11-CommonBugs, Suite11-SI076-Lock, Suite11-SI077-AttributeCommands, parse |
 | SI-077 | Suite11-SI077-AttributeCommands, parse |
-| SI-077a | Suite11-SI077-AttributeCommands, Suite11-SI077-ImageWriteLock, iec-dos-commands |
+| SI-077a | Suite11-CommonBugs, Suite11-SI077-AttributeCommands, Suite11-SI077-ImageWriteLock, iec-dos-commands |
 | SI-080 | Suite4 |
 | SI-081 | Suite4 |
 | SI-082 | Suite4 |
@@ -2449,16 +2468,16 @@ which section 1.3 allows and names.
 | SI-138 | Suite11-SI133-SizeRemainder, Suite11-SI138-ListingEof, iec-dos-commands |
 | SI-139 | Suite11-SI139-StampedEntries, iec-dos-commands |
 | SI-140 | parse |
-| SI-141 | parse |
+| SI-141 | Suite11-CommonBugs, parse |
 | SI-142 | Suite11-SI142-EscapedWildcards, parse |
 | SI-143 | parse |
-| SI-144 | Suite11-SI144-ReadX00, Suite11-SI144-X00Paths, iec-dos-commands, prg-context-menu, softiec-soak |
+| SI-144 | Suite11-CommonBugs, Suite11-SI144-ReadX00, Suite11-SI144-X00Paths, iec-dos-commands, prg-context-menu, softiec-soak |
 | SI-144a | Suite11-SI144-SharedHeader |
 | SI-144b | *(none: see section 1.3)* |
 | SI-145 | Suite11-DeliberateExclusions |
 | SI-146 | Suite11-SI084-RelLayouts |
 | SI-147 | Suite11-SI147-ShiftedSpace, iec-dos-commands, parse |
-| SI-148 | Suite11-SI032-WildcardWrite, Suite11-SI147-ShiftedSpace, iec-dos-commands |
+| SI-148 | Suite11-CommonBugs, Suite11-SI032-WildcardWrite, Suite11-SI147-ShiftedSpace, iec-dos-commands |
 | SI-149 | Suite11-SI149-GeosEntries |
 | SI-150 | Suite11-SI150-DeepPath |
 | SI-151 | *(none: see section 1.3)* |
