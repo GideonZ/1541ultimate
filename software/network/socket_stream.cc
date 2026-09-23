@@ -13,7 +13,6 @@
 #include <string.h>
 #include <sys/types.h>
 #include <sys/socket.h>
-#include "lwip/sockets.h"
 #include <errno.h>
 #include <unistd.h>
 
@@ -87,58 +86,23 @@ int SocketStream :: purge() {
 	return ret;
 }
 
-// What to do when the peer's buffer is full. A blocking write waits for room on the
-// stack's own semaphore with no timeout at all (lwIP `netconn_apimsg`), which holds this
-// task for as long as the peer stays away, so the write is asked not to block and the
-// wait for room is bounded here. A screen this task draws is a snapshot rather than a
-// stream, so a repaint that still finds no room is dropped whole and the session kept:
-// the next repaint carries the state the screen has then. A repaint that is already part
-// way out cannot be dropped, because the peer would be left with half an escape
-// sequence, so that one is waited for far longer and only then ends the session. The
-// waits are short because the task reads its input between screens: a long wait here
-// stops it emptying the receive queue, which closes the window the peer needs in order to
-// send the keys that would end the burst. A peer that has gone is reaped by the keepalive
-// socket_gui.cc enables.
-#define SEND_STALLS_TOLERATED 3
-#define PART_SENT_STALLS_TOLERATED 150
-#define SEND_STALL_WAIT_MS 200
-
-static bool wait_for_room(int socket_fd)
-{
-	fd_set writeable;
-	struct timeval tv;
-	FD_ZERO(&writeable);
-	FD_SET(socket_fd, &writeable);
-	tv.tv_sec = 0;
-	tv.tv_usec = SEND_STALL_WAIT_MS * 1000;
-	return select(socket_fd + 1, NULL, &writeable, NULL, &tv) > 0;
-}
-
 int SocketStream :: transmit(const char *buffer, int out_length)
 {
-	int stalls = 0;
-	bool part_sent = false;
 	while(out_length > 0) {
-		int n = send(actual_socket, buffer, out_length, MSG_DONTWAIT);
-		if (n > 0) {
+		int n = send(actual_socket, buffer, out_length, 0);
+		if (n == out_length) {
+			return 0; // OK!
+		} else if (n < 0) {
+			puts("ERROR writing to socket");
+			close();
+			return -5;
+		} else if (n == 0) {
+			close();
+			return -5;
+		} else {
 			out_length -= n;
 			buffer += n;
-			part_sent = true;
-			stalls = 0;
-			continue;
 		}
-		if ((n < 0) && ((errno == EAGAIN) || (errno == EWOULDBLOCK) || (errno == ENOMEM))) {
-			if (++stalls <= (part_sent ? PART_SENT_STALLS_TOLERATED : SEND_STALLS_TOLERATED)) {
-				wait_for_room(actual_socket);
-				continue;
-			}
-			if (!part_sent) {
-				return 0; // nothing of this screen has gone out, so drop it
-			}
-		}
-		printf("ERROR writing to socket %d. Errno = %d\n", n, errno);
-		close();
-		return -5;
 	}
 	return 0;
 }
