@@ -346,12 +346,14 @@ void WiFi :: RunModeThread()
                     printf("In %d\n", pkt->len);
                     dump_hex_relative(&pkt->data, 64);
 #endif
-                    netstack->input(buf, (uint8_t*)&pkt->data, pkt->len);
+                    // A copy, because a socket nobody reads holds what it received,
+                    // and one connection can queue more segments than the UART
+                    // has receive buffers: holding them all stops the interface.
+                    netstack->input_copy((uint8_t*)&pkt->data, pkt->len);
                 } else {
                     puts("Packet received, but no net stack!");
-                    uart->FreeBuffer(buf);
                 }
-                // no free, as the packet needs to live on in the network stack
+                uart->FreeBuffer(buf);
                 break;
 
             case EVENT_GOTIP:

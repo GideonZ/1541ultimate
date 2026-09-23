@@ -329,6 +329,25 @@ bool NetworkInterface :: input(void *raw_buffer, uint8_t *payload, int pkt_size)
 	return true;
 }
 
+// Hands lwIP its own copy of a frame, so the caller keeps its buffer.
+bool NetworkInterface :: input_copy(uint8_t *payload, int pkt_size)
+{
+	// Two bytes ahead of the frame put its IP header on a word boundary, as the
+	// drivers' own buffers do.
+	struct pbuf *pbuf = pbuf_alloc(PBUF_RAW, pkt_size + 2, PBUF_RAM);
+	if (!pbuf) {
+		return false;
+	}
+	pbuf_remove_header(pbuf, 2);
+	memcpy(pbuf->payload, payload, pkt_size);
+
+	if (my_net_if.input(pbuf, &my_net_if)!=ERR_OK) {
+		pbuf_free(pbuf);
+		return false;
+	}
+	return true;
+}
+
 void NetworkInterface :: link_up()
 {
     // Enable the network interface
