@@ -484,7 +484,6 @@ int IecParser :: initialize_command(const uint8_t *buffer, int len)
     return exec->do_initialize_buffers();
 }
 
-// N[n][path]:name[,id] creates or formats a disk image (SI-071, SD parse_new()). The
 // The name and the optional id of a command that names a directory header or an image:
 // [n][path]:name[,id]. The id is whatever follows the first comma, and a name of no
 // characters is no name at all.
@@ -505,6 +504,7 @@ int IecParser :: name_and_id(const char *arg, filename_t& dest, const char *&id)
     return 0;
 }
 
+// N[n][path]:name[,id] creates or formats a disk image (SI-071, SD parse_new()). The
 // name needs a colon in front of it, and is split from the id at the first comma.
 int IecParser :: format_command(const uint8_t *buffer, int len)
 {
