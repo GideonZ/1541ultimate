@@ -64,7 +64,7 @@ in `roms/1541.bin` rather than any manual.
   - [3.5 Command length](#35-command-length)
 - [4. Error codes](#4-error-codes)
   - [4.1 The table](#41-the-table)
-  - [4.2 The error code that is not a CBM DOS error](#42-the-error-code-that-is-not-a-cbm-dos-error)
+  - [4.2 The error codes that are not CBM DOS errors](#42-the-error-codes-that-are-not-cbm-dos-errors)
 - [5. Partition commands](#5-partition-commands)
   - [5.1 Change partition](#51-change-partition)
   - [5.2 Get partition info](#52-get-partition-info)
@@ -325,9 +325,11 @@ leading front slashes. Each subdirectory is added to the path by specifying the
 subdirectory name followed by a single trailing slash. The trailing slash is always
 required."
 
-**SI-011.** The colon is optional when the name is preceded by a slash. Source:
-HD 9-19, "It is not required that you include the colon before the subdirectory
-name, as long as the subdirectory name is preceded by a slash."
+**SI-011.** In `CD`, the colon is optional when the name is preceded by a slash.
+Source: HD 9-19, "It is not required that you include the colon before the
+subdirectory name, as long as the subdirectory name is preceded by a slash." The HD
+states it for `CD` only. An OPEN name without a colon is a plain name, as in
+`SD file_open()`, and `MD` and `RD` require the colon (SI-060, SI-063).
 
 **SI-011a.** A name behind the colon is one component. A slash inside it is a
 character of the name, not a path separator, so `CD:SUB/DEEP` looks for a name
@@ -384,9 +386,10 @@ a directory named `<-` the command is `CD/<-`. See section 16, C2.
 ### 3.3 The command terminator
 
 **SI-016.** One trailing carriage return is removed from a command before it is
-parsed, and a command whose second to last byte is a carriage return is truncated at
-that carriage return. This is what CBM DOS does. ROM, at `$C2B3`, reached from the
-command dispatcher at `$C160`:
+parsed, and a carriage return followed by a line feed at the end is removed as a pair.
+CBM DOS also truncates a command at a carriage return that is its second to last byte,
+whatever follows it; this drive does not (the difference below). ROM, at `$C2B3`,
+reached from the command dispatcher at `$C160`:
 
 ```
 C2B3  A4 A3     LDY $A3        ; bytes received
@@ -413,8 +416,11 @@ of 13, and the reporter of #877 wrote that "needing an additional CR for some co
 do not need to be reproduced". A lone carriage return, which is an empty command after
 the strip, answers `31`, as the ROM does at `$C175` and as sd2iec does.
 
-**SI-017.** The binary Change Partition command is exempt from SI-016, because its
-parameter byte is mandatory and cannot be a terminator.
+**SI-017.** The binary Change Partition command and `U0>` are exempt from SI-016,
+because their parameter byte is mandatory and cannot be a terminator: `C`+shifted `P`
+followed by a 13 selects partition 13, and `U0>` followed by a 13 selects device 13
+(SI-100), with or without a terminator after it. `SD parse_user()` reads the byte of
+`U0>` without a length check, and the ROM reads it at `$0203` regardless of the length.
 
 **SI-018.** The Position command is exempt from SI-016, because its last parameter
 byte is data. Source: `SD parse_position()` begins `command_length =
@@ -561,7 +567,8 @@ if (ustrchr(fname, '*') || ustrchr(fname, '?') || (*fname == 160)) {
 the `160` test was added later.)
 
 **SI-033.** Scratching nothing is not an error. The answer is
-`01,FILES SCRATCHED,00,00`. Sources: HD B-1, "01 FILES SCRATCHED (not an error).
+`01, FILES SCRATCHED,00,00`, with the space in front of the text that every CBM drive
+sends for the codes below 20, as it sends `00, OK`. Sources: HD B-1, "01 FILES SCRATCHED (not an error).
 The number of files scratched will be indicated in the track variable";
 `SD parse_scratch()`, which ends unconditionally with
 `set_error_ts(ERROR_SCRATCHED,count,0)`; IDE 15.2.2, which shows the count in the
@@ -569,7 +576,7 @@ track field.
 
 **Difference from the CMD manuals.** A scratch whose path does not
 exist answers `71,DIRECTORY ERROR` with the partition number, instead of
-`01,FILES SCRATCHED,00,00`, so a mistyped path is reported rather than looking like an
+`01, FILES SCRATCHED,00,00`, so a mistyped path is reported rather than looking like an
 empty directory. sd2iec also reports the path error (`SD parse_scratch()`).
 
 **SI-034.** Selecting a partition that does not exist answers
@@ -581,13 +588,27 @@ answers `63,FILE EXISTS`. Opening for reading when none exists answers
 Sources: HD B-3 and B-4; `SD file_open()`. Covered by Suite5 of
 `software/test/iecdrive/testdrive.cc`.
 
-### 4.2 The error code that is not a CBM DOS error
+A name is one entry whatever its type, as on a CBM drive, although a host file system
+keeps `NAME.SEQ` and `NAME.PRG` apart. So a write of a name that exists as another type
+answers `63` without `@`, and `64` with `@`, which is the ROM's check at `$D8F5`
+(SI-032) applied to a literal name as well as to a pattern; and a read of an existing
+REL file under another type, `LOAD` included, answers `64`. Test:
+`Suite11-SI035-TypeOfExistingName`.
+
+### 4.2 The error codes that are not CBM DOS errors
 
 **SI-036.** `69,FILESYSTEM ERROR` is an Ultimate code with no counterpart on any
 other device. It must not be the answer to a condition that CBM DOS names.
 `U IecDrive::set_error_fres()` maps the unmapped `FRESULT` values to it and puts the
 raw `FRESULT` in the track variable. Every path that can reach a user must map to a
 documented code first. The known case is SI-083.
+
+`78,BLOCK ACCESS DENIED` is the other Ultimate code. It answers a block command on a
+partition rooted in a host directory, which has no tracks or sectors (SI-091), with the
+track and sector asked for. No CBM device has a medium without sectors, so no CBM code
+names the condition. sd2iec uses 78 for `BUFFER TOO SMALL`, which this drive never
+answers (SI-096), and answers `20,READ ERROR` for a sector it cannot reach. The table in
+`U iec_drive.cc` also holds 75 and 76, which nothing answers.
 
 **SI-154.** Reading the command channel clears the error it reported: a second read, with
 no command between the two, answers `00, OK,00,00`. Every Commodore drive does this, and a
@@ -622,7 +643,7 @@ The answer is 30 bytes followed by `CHR$(13)`, laid out as HD 9-15 and 9-16 give
 | 0 | partition type: 0 not created, 1 native, 2 1541, 3 1571, 4 1581, 5 1581 CP/M, 6 print buffer, 7 foreign, 255 system |
 | 1 | reserved, `CHR$(0)` |
 | 2 | partition number |
-| 3-18 | partition name as shown in the partition directory |
+| 3-18 | partition name as shown in the partition directory, padded with shifted spaces (`$A0`) as a CMD partition directory and `SD parse_getpartition()` pad it; all zero for a partition that does not exist |
 | 19-21 | start address, high to low |
 | 22-26 | reserved, `CHR$(0)` |
 | 27-29 | size, high to low |
@@ -630,8 +651,11 @@ The answer is 30 bytes followed by `CHR$(13)`, laid out as HD 9-15 and 9-16 give
 
 Bytes 19-21 and 27-29 are counted in 512-byte blocks on the HD and the FD and in
 256-byte blocks on RAMLink (RL, same page). This drive follows the HD and uses 512. The
-size is the free plus the used space of the partition's file system, clamped to
-`0xFFFFFF`, which is what `SD parse_getpartition()` answers with.
+size is the size of the image file for a partition rooted in a disk image, and the size of
+the volume for one rooted in a host directory, rounded up and clamped to `0xFFFFFF`,
+which is what `SD parse_getpartition()` answers with. A D64 that carries error bytes is
+therefore a few blocks larger than the sectors its file system holds. Tests:
+`Suite11-SI041-PartitionSize`, `Suite11-SI041-NamePadding`.
 
 **SI-042.** Byte 1 stays zero. The FD redefines it as a disk-information bit field
 (FD, Getting Partition Information: bit 7 disk present, bit 6 formatted, bit 5 valid
@@ -736,30 +760,48 @@ gives the same syntax. Test: `Suite11-SI055-SubPartitions`.
 
 ## 6. Directory commands
 
-**SI-060.** `MD[n][path]:name` creates a directory. A colon is required; without one
-the answer is `34`. A name that is a single shifted space answers `34`. Sources:
-HD 9-17, which states the colon rule as its first guideline; `SD parse_mkdir()`.
+**SI-060.** `MD[n][path]:name` creates a directory. A colon is required; without one,
+or with nothing after it, the answer is `34`. A name that begins with a shifted space
+answers `34`. A name with a wildcard answers `33`, as a file to be created does (SI-032),
+and so does a name that ends in a dot or a space, which a FAT host drops from the name it
+creates, so that the directory could not be found again under the name it was made with
+(SI-141). Sources: HD 9-17, which states the colon rule as its first guideline;
+`SDM parse_mkdir()` for the shifted space, a check SDU does not make; `SD parse_error()`,
+which answers 33 for the name FatFs refuses. Tests: `Suite11-SI060-MdColon`,
+`Suite11-SI063-RdOnlyDirectories`.
 
-**SI-061.** `CD[n]{<-|[path][:]name}` changes directory, per SI-010 and SI-014.
+**SI-061.** `CD[n]{<-|[path][:]name}` changes directory, per SI-010 and SI-014. A
+`CD` with nothing to change to, `CD` alone or `CD:`, leaves the directory where it is and
+answers `00, OK`. `SD do_chdir()` answers 39 there; the no-op is kept because a program
+that sends `CD:` means "stay here", and answering it with an error would fail that
+program for no benefit.
 
 **SI-062.** `CD` into a file whose name has a disk image extension mounts that image
 and makes its root the current directory; `CD<-` from the root of a mounted image
 unmounts it. Sources: SD README, "CD is also used to mount/unmount image files";
 GSD "Mounting a Disk Image".
 
-**SI-063.** `RD[n]:name` removes a directory. It takes no path: a `/` anywhere in the
+**SI-063.** `RD[n]:name` removes a directory, and nothing else: a file reached by the
+same name, a disk image or a host file without an extension, answers `62,FILE NOT FOUND`
+and stays, as `SD parse_rmdir()` matches only directories. A colon with nothing after it
+is no name and answers `34`, so the directory the drive stands in is not removed from
+under it. It takes no path: a `/` anywhere in the
 command answers `34`. It refuses a directory that is not empty. Sources: HD 9-19,
 "This command does not allow the use of paths in order to avoid problems with
 removing a subdirectory which is a parent of the directory in which you are located";
 `SD parse_rmdir()`, which rejects any `/` with `ERROR_SYNTAX_NONAME` and answers
-`63,FILE EXISTS` for a directory that still has entries.
+`63,FILE EXISTS` for a directory that still has entries. Tests: `Suite11-SI063-RdNoPath`,
+`Suite11-SI063-RdOnlyDirectories`.
 
 **SI-064.** `R-H[n][path]:newname[,id]` renames the header of a directory. The name is
 at most 16 characters and the id two. Sources: HD 9-15; IDE 15.6.5;
 `SDM parse_set_header(3)`. The path selects the directory and the name behind the colon
-is the new header; with no path it is the current directory of the partition. An empty
+is the new header; with no path it is the current directory of the partition. The name
+follows a colon, as for `N`: without one the answer is `34`, so a command whose partition
+digits would otherwise become part of the name renames nothing. An empty
 name answers `34`, a name with a wildcard `33`, and a path that is not there
-`71,DIRECTORY ERROR`.
+`71,DIRECTORY ERROR`. A name longer than sixteen characters keeps its first sixteen
+wherever a header shows it.
 
 **Difference from the CMD manuals.** The id is an sd2iec extension. HD 9-15 gives the
 syntax as `R-H[n][path]:newname` and names three arguments, the partition, the path and
@@ -798,8 +840,11 @@ whose cluster is the current directory and returns that entry's name.
 
 **SI-066.** `XPWD` answers with the current partition and its current directory, as
 `<n>:<path>`, in upper case and ending in a slash, and it leaves the error channel at
-`00, OK`. It is an Ultimate extension, which SI-030's fifth rule allows: no CMD or
-sd2iec command has that spelling, and nothing else answers the question.
+`00, OK`. It is an Ultimate extension, which precedence rule 5 (section 1.2) allows: no
+CMD or sd2iec command has that spelling, and nothing else answers the question. The path
+is the host spelling of the directory, upper cased, so a component whose CBM name holds
+a byte the host escapes shows the escape (SI-141). It reports where the drive stands;
+a program that wants to go back there sends the `CD` it went there with.
 
 ---
 
@@ -808,11 +853,14 @@ sd2iec command has that spelling, and nothing else answers the question.
 ### 7.1 Open
 
 **SI-070.** The type and access suffixes are `,P`, `,S`, `,U`, `,L`+`CHR$(rl)` and
-`,R`, `,W`, `,A`, `,M`. Secondary address 0 forces read and PRG; secondary address 1
-forces write and PRG; any other secondary address defaults an unspecified type to
-SEQ. Sources: HD 9-23 to 9-31 for `,P`, `,S`, `,U`, `,L`, `,R`, `,W` and `,A`;
-`SD file_open()` for `,M` (`case 'M': /* Modify */`, which HD does not document) and
-for "Force mode+type for secondaries 0/1"; `U setup_file_access()` applies it.
+`,R`, `,W`, `,A`, `,M`. Secondary address 0 reads and secondary address 1 writes,
+whatever access the name asks for, and both take PRG when the name gives no type; any
+other secondary address reads when the name gives no access, and a write there takes SEQ
+when the name gives no type. Sources: HD 9-23 to 9-31 for `,P`, `,S`, `,U`, `,L`, `,R`,
+`,W` and `,A`; `SD file_open()` for `,M` (`case 'M': /* Modify */`, which HD does not
+document) and for "Force mode+type for secondaries 0/1", which sets the mode
+unconditionally and the type only where none was given; `U setup_file_access()` applies
+it. Test: `Suite11-SI070-SecondaryForcesMode`.
 
 `,M` opens the file for reading. A modify reads a file that a write never closed, which
 a listing marks with a splat (SI-132), and nothing here refuses to read such a file. The
@@ -830,12 +878,15 @@ this drive has no formattable medium of its own. Source: SD README under `N:` an
   that format is created. `.D64` and `.D41` mean a 1541 image, `.D71` a 1571, `.D81`
   a 1581, `.DNP` a native partition image. An id is required.
 * For `.DNP` the id is a three digit track count and the image is
-  `65536 * tracks` bytes, created but not formatted.
+  `65536 * tracks` bytes, created but not formatted. This rule, the `63` for an existing
+  DNP below and ids of two or three characters come from SDM (`SDM fat_format_image()`);
+  SDU refuses to create a DNP, answering `62`, and requires an id of exactly two
+  characters.
 * If the name has no known image extension, `.D64` is appended, and in that case an
   existing file is **not** overwritten: the answer is `63,FILE EXISTS`.
 * If the file exists and the extension was given explicitly, it is formatted, except
   that an existing `.DNP` is refused with `63` whether or not the extension was given
-  (`SD fat_format_image()`, `if (ext == NULL || imagetype == IMG_IS_DNP)`; the README
+  (`SDM fat_format_image()`, `if (ext == NULL || imagetype == IMG_IS_DNP)`; the README
   text omits the DNP exception).
 * The disk label is the name with the extension removed. It keeps sixteen characters
   and the id two, as CBM DOS takes them, so a longer label or id never runs into the
@@ -851,27 +902,38 @@ the block map and the directory that file system caches are the ones rewritten a
 image file keeps its size. A file open on the image answers `60,WRITE FILE OPEN`, because
 that file would go on reading and writing blocks the format has handed back. A
 subdirectory a native image carries is gone with the format, so the partition falls back
-to the deepest directory that still exists.
+to the deepest directory that still exists. The SDU README says `N:` is ignored for a DNP
+image unless the current directory is its root; this drive formats the image from any
+directory in it, because the program asked for its disk to be formatted wherever it
+stands.
 
-**SI-072.** A file whose name ends in a disk image extension, or in `.CRT` or
+**SI-072.** A PRG file whose name ends in a disk image extension, or in `.CRT` or
 `.TCRT`, is written to the host file system under exactly that name, with no type
-extension added. Source: `SD should_save_raw()`; SD README, "PRG files that have D64,
-D41, D71, D81, DNP or M2I as an extension will always be written without an x00
-header and without any additional PRG file extension."
+extension added. A file of another type with such a name gets its type extension like any
+other name. Sources: `SD should_save_raw()`, which `SD fat_open()` consults only for
+`TYPE_PRG`; SD README, "PRG files that have D64, D41, D71, D81, DNP or M2I as an
+extension will always be written without an x00 header and without any additional PRG
+file extension." A file written raw lists under its host name with the type an unknown
+extension lists as (section 14.1). Test: `Suite11-SI072-RawNames`.
 
 ### 7.2 Scratch, rename, copy
 
 **SI-073.** `S[n][path]:pattern[,[n][path]:pattern...]` scratches. Each element gets
-its own partition and path. Directories are skipped. The answer is
-`01,FILES SCRATCHED,<count>,00` with the count in the track variable, per SI-033.
+its own partition and path, and the list is as long as the command makes it (SI-150).
+Directories are skipped. The answer is
+`01, FILES SCRATCHED,<count>,00` with the count in the track variable, per SI-033.
 Sources: HD 9-27; `SD parse_scratch()`; IDE 15.2.2, whose examples include
-`@S/STUFF/:*=OLD,*=BAK,/STUFF/BAK/:*`.
+`@S/STUFF/:*=OLD,*=BAK,/STUFF/BAK/:*`. Test: `Suite11-SI150-NameLists`.
 
 **SI-074.** `R[n][path]:newname=[[n][path]:]pattern` renames a file or a subdirectory.
 When the source path and the destination path differ, the entry moves. An empty new
 name answers `34`. A new name that already exists
-answers `63`, unless it differs from the old name only by case. A wildcard in the new
-name answers `33`. Sources: HD 9-26, whose section is headed "Renaming Files and
+answers `63`, unless it differs from the old name only by case and the entry stays in its
+directory; an entry that moves meets the names of the directory it moves into, its own
+name included. A destination path that does not exist answers `71,DIRECTORY ERROR` with
+the partition number. A wildcard in the new name answers `33`, and so does a name ending
+in a dot or a space for a directory, for the reason SI-060 gives. Tests:
+`Suite11-SI074-RenameChecks`, `Suite11-SI074-MoveChecks`. Sources: HD 9-26, whose section is headed "Renaming Files and
 Subdirectories" and which reads "Filenames and Native Mode subdirectory names may be
 changed by using either the DOS RENAME or the BASIC 7.0 RENAME command", with
 appendix J listing the command as "RENAME (Files and Subdirectories)";
@@ -897,10 +959,17 @@ temporary name.
 
 **SI-075.** `C[n][path]:new=[[n][path]:]name[,[[n][path]:]name...]` copies, and with
 more than one source appends them into the target. Path parsing restarts for every
-source. The target takes the file type of the first source. Sources: HD 9-28, which
-caps the sources at five; SD README under `C:`, which has no cap; `SD parse_copy()`,
-whose `savedtype` takes the type from the first source (the README does not state
-the type rule).
+source, and the list is as long as the command makes it (SI-150). The target takes the
+file type of the first source. A relative file copies its records: the target has the
+record length of the first source, written once, and each source adds its records
+without its own header, whatever its layout (SI-084). Relative files mixed with other
+types, or relative files of different record lengths, answer `64,FILE TYPE MISMATCH`, and
+a mix of types is refused before the target is created. Sources: HD 9-28, which caps the
+sources at five; SD README under `C:`, which has no cap; `SD parse_copy()`, whose
+`savedtype` takes the type from the first source (the README does not state the type
+rule), which copies a relative file through `open_rel()` record by record and refuses to
+mix it with other types with `ERROR_FILE_TYPE_MISMATCH`. Tests: `Suite11-SI150-NameLists`,
+`Suite11-SI075-CopyRelative`.
 
 **SI-076.** `L[n][path]:name` toggles the lock flag on one file or directory. A
 locked file lists with `<` after its type and cannot be scratched; a locked directory
@@ -946,9 +1015,10 @@ a file `L` unlocks and a file a scratch skips. `R` in `A` is that lock, `H` is t
 flag of SI-134 and `A` is the archive flag, which the drive stores and nothing reads.
 
 Two differences from the source are deliberate. `SDM parse_elock()` and `parse_eunlock()`
-skip directories and `parse_attr()` acts on the first match only; here all five commands
+skip directories and `parse_attr()` acts on the first match only; here `EL`, `EU` and `A`
 act on every entry the name matches, directories included, because `L` locks a directory
-(HD 9-30) and a lock that `EL` and `L` disagreed about would be two locks. A name that
+(HD 9-30) and a lock that `EL` and `L` disagreed about would be two locks. `EH`, like `L`,
+turns over the flag of the one entry the name finds first. A name that
 matches nothing answers `62,FILE NOT FOUND`, and a medium that does not carry the
 attribute, such as the hidden flag inside a CBM disk image, answers `30`.
 
@@ -972,9 +1042,11 @@ the Commodore DOS refuses to write the disk. Test: `Suite11-SI077-ImageWriteLock
 SDM's settings commands, which section 19 places out of scope; the filter `=H` asks
 for them per listing instead. They answer `30`.
 
-`A` and `D` are command letters because of `A:` and `D:`, so an unrecognised argument to
-either answers `30` under SI-030. That covers the sd2iec direct sector commands `DI`,
-`DR` and `DW` of SI-096.
+`D` is a command letter because of `D:`, so an unrecognised argument to it answers `30`
+under SI-030. That covers the sd2iec direct sector commands `DI`, `DR` and `DW` of SI-096.
+`A` followed by anything other than a colon, and `A:` without an `=`, answer `31`, as
+`SD parse_attr()` answers them; a lone `A` is the reporter's SI-031 case, which answers
+the same.
 
 ---
 
@@ -991,16 +1063,32 @@ end answers `50,RECORD NOT PRESENT`, which is not an error when the intent is to
 extend the file. Sources: HD 9-31 to 9-33; IDE 15.1.1; GSD "Positioning (seeking)
 Within a File". Covered by Suite4 of `software/test/iecdrive/testdrive.cc`.
 
+The record length is the byte after `,L,`, whatever byte that is, a comma or a colon
+included, as `SD file_open()` reads it. A record past the end of the file is not there:
+positioning to it grows nothing, and reading it gives one byte of 255 and answers `50`
+without moving on, so reading it again answers the same, as `SD fat_file_seek()` does.
+The file grows when a record past its end is written: a last record the file ends inside
+is completed, every record between it and the one written is an empty record whose first
+byte is 255, as a 1541 fills them, and the record written follows. A write protected drive
+(SI-102) grows nothing because it writes nothing. Tests: `Suite11-SI080-PastTheLastRecord`,
+`Suite11-SI080-RecordLengthBytes`.
+
 **SI-081.** The channel byte of `P` is masked to its low four bits from 19 up, so both
 the documented BASIC form `PRINT#15,"P"CHR$(96+ch)` and the bare byte reach the same
-channel, while a byte just outside the channel range is still refused. Sources:
+channel, while a byte just outside the channel range is still refused. A byte that names
+no data channel, and a channel with nothing open on it, answer `70,NO CHANNEL`. Sources:
 `SD parse_position()`, `find_buffer(command_buffer[1] & 0x0f)`, which masks
-unconditionally; the ROM masks from 19.
+unconditionally and answers `ERROR_NO_CHANNEL` when it finds no buffer; the ROM masks from
+19 and answers 70 at `$E207`. Test: `Suite11-SI081-PositionChannel`.
 
 **SI-082.** `P` also positions inside a plain file, to a 32-bit little-endian byte
 offset, with the missing high bytes taken as zero. Sources: SD README under `P`;
 GSD "Positioning (seeking) Within a File"; IDE 15.1.1, which documents both the
-four-byte form and `F-P`. `U do_set_position()` implements it for `e_file`.
+four-byte form and `F-P`. `U do_set_position()` implements it for `e_file`. A file read
+to its end is still open and positions again. An offset past the end of a file open for
+reading answers `00, OK` and the next read gives nothing; `SD fat_file_seek()` answers
+`50` there, which this drive keeps for relative files, where the record structure makes
+the difference meaningful. Test: `Suite11-SI082-PositionAfterEnd`.
 
 **SI-083.** `P` on a file opened for writing must be able to move beyond the current
 end of the file, and a following write must extend the file. Sources: IDE 7,
@@ -1084,7 +1172,10 @@ beside it (SI-146).
 **SI-090.** `OPEN lf,dv,sa,"#"` allocates a 256-byte buffer on that channel, with the
 buffer pointer at byte 1. `"##n"`, exactly three characters, asks for `n` chained
 256-byte buffers with the pointer at byte 0; if the name is not exactly three characters
-a standard buffer is allocated instead. Sources: SD README "Large buffers", which is the
+a standard buffer is allocated instead, and so it is for `##0` and for `##` followed by
+anything that is not a digit, which ask for no chain at all. `SD open_buffer()` opens
+nothing for `##0` and computes a count from any byte; a standard buffer is the answer that
+leaves the program a working channel. Sources: SD README "Large buffers", which is the
 source for `##n`, for the `70` answer and for the statement that a standard buffer starts
 "with the read/write pointer set to byte 1"; GSD "Buffers and Large Buffers". HD 9-40
 documents only `#[bu]`, where `bu` selects a drive buffer number 0 to 29, and says
@@ -1106,6 +1197,13 @@ not.
 | `B-A`, `B-F` | partition, track, sector |
 | `B-R`, `B-W`, `B-E`, `U1`, `U2` | channel, partition, track, sector |
 | `B-P` | channel, position |
+
+The long spellings the 1541 manual prints, `BLOCK-READ`, `BLOCK-WRITE`, `BLOCK-ALLOCATE`,
+`BLOCK-FREE`, `BUFFER-POINTER` and `BLOCK-EXECUTE`, are the same commands: the letter after
+the dash names the command, as the 1541 ROM and `SD parse_block()` read it. On a partition
+rooted in a host directory, which has no tracks or sectors, `B-R`, `B-W`, `U1`, `U2`,
+`B-A` and `B-F` answer `78,BLOCK ACCESS DENIED` with the track and sector asked for
+(section 4.2). A partition rooted in a disk image serves them.
 
 **SI-091a.** `B-A` of a block that is already allocated answers `65,NO BLOCK` with the
 next higher free track and sector, or track 0 when no higher block is free, which is the
@@ -1156,7 +1254,9 @@ ancient times, before the 1541. This produces a syntax error in SoftIEC."
 
 The number is written into the IEC processor's
 device number slot without holding the processor in reset, because the command is still
-on the bus, and it is not written to the configuration.
+on the bus, and it is not written to the configuration. The number byte is mandatory, so
+a 13 in its place is device 13 with or without a terminator after it (SI-017). Tests:
+`Suite11-SI100-DeviceNumber`, `Suite11-SI103b-SettingAfterU0`.
 
 **SI-101.** `S-8`, `S-9` and `S-D` are the typed aliases for swapping to device 8,
 device 9 and back to the configured default. Sources: HD 9-34; IDE 15.4.1. On this drive
@@ -1202,8 +1302,12 @@ than leaving a hole.
 | `UJ` | close every open data channel; keep the current partition, every partition's current directory, and any mounted image | `73,...` |
 | `U`+shifted J, `CHR$(202)` | close every open data channel, return every partition to its root, select the default partition | `73,...` |
 
-Sources: HD 9-51; SD README under `UI/UJ` and `U<Shift-J>`; GSD "Warm, Cold and Hard
-Reset".
+None of the three clears the write protect of `W-1` (SI-102) or returns the device number
+`U0>`, `S-8` or `S-9` set (SI-100, SI-101): both last as long as the drive runs, and a
+reset over the bus is not the drive stopping. `U`+shifted J on sd2iec is
+`system_reset()`, which restarts the device and so loses both; here the drive's own Reset
+does that (SI-103b). Sources: HD 9-51; SD README under `UI/UJ` and `U<Shift-J>`; GSD
+"Warm, Cold and Hard Reset".
 
 **SI-103a. None of the three reconfigures the IEC interface.** A reset answers the
 transaction it arrived in and performs the state reset once the command channel has been
@@ -1229,9 +1333,12 @@ reset, which does reconfigure, and a command handler must not reuse it.
 **SI-103b.** A change in the Software IEC settings reconfigures the IEC processor only
 when the device number or the enable flag changes. Holding the processor in reset drops a
 transfer on the bus, so turning a setting such as **Log Every Operation** on or off must
-not do it. The drive's **Reset**, from the menu or from `PUT /v1/drives/softiec:reset`, is
-meant to drop whatever is on the bus: it restarts the processor in any case and puts the
-drive back on the device number the settings hold. Test: `Suite11-ResetRestartsProcessor`.
+not do it, and neither must a setting change after `U0>` moved the drive, which leaves it on
+the number `U0>` gave. The drive's **Reset**, from the menu or from
+`PUT /v1/drives/softiec:reset`, is meant to drop whatever is on the bus: it restarts the
+processor in any case and puts the drive back on the device number the settings hold; the
+write protect of `W-1` stays. Tests: `Suite11-ResetRestartsProcessor`,
+`Suite11-OperationLogNoReconfigure`, `Suite11-SI103b-SettingAfterU0`.
 
 **SI-104.** `U3` to `U8` and `UC` to `UH` jump into drive memory and are not
 implemented; they answer `30`, for the same reason as SI-095. Source: HD 9-51.
@@ -1244,9 +1351,14 @@ implemented; they answer `30`, for the same reason as SI-095. Source: HD 9-51.
   boundary; ROM `$CB24` (`LDA $0274 / CMP #$06 / BCC`, one byte when the command is
   shorter than six bytes) and `SD handle_memread()` ("Read 1 Byte if no explicit
   length was provided") for the absent count. HD does not describe the absent case.
-* `M-W`+`CHR$(lo)`+`CHR$(hi)`+`CHR$(n)`+data accepts 1 to 248 bytes and discards
-  them. Source: HD 9-47.
-* `M-E`+`CHR$(lo)`+`CHR$(hi)` answers `00, OK` and does nothing. Source: HD 9-48.
+* `M-W`+`CHR$(lo)`+`CHR$(hi)`+`CHR$(n)`+data answers `30` and keeps nothing; the reason
+  is below. Source for the syntax: HD 9-47.
+* `M-E`+`CHR$(lo)`+`CHR$(hi)` answers `98,UNKNOWN DRIVE CODE` and runs nothing; the reason
+  is below. Source for the syntax: HD 9-48.
+
+A reply of `M-R` belongs to the command that asked for it: the next command replaces it,
+whether or not the reply was read, as it replaces a status (SI-154). Test:
+`Suite11-SI105-UnreadReply`.
 
 What `M-R` returns is specified in section 11. The reporter's position on #877 is
 that the count matters more than the content: "M-R should return the number of
@@ -1307,8 +1419,8 @@ TRACE shows C64 OS reading exactly `$FEA4`, `$E5C5`, `$A6E8` and `$0002`, two by
 each, before falling back to `UI`. The probe strings are literal bytes inside
 `OS/LIBRARY/IEC.LIB.R`.
 
-**SI-112.** `M-R` returns the requested number of bytes, every byte `$00`, at every
-address. There is no address table and no exception.
+**SI-112.** `M-R` returns the requested number of bytes, up to the end of the page
+(SI-105), every byte `$00`, at every address. There is no address table and no exception.
 
 Three things follow from that choice and each is a reason for it.
 
@@ -1361,7 +1473,9 @@ mode would replace.
 `"dow. mo/da/yr hr:mi:se xM"+CHR$(13)` with the day of week four characters followed
 by a space, from `SUN.`, `MON.`, `TUES`, `WED.`, `THUR`, `FRI.`, `SAT.`. The `B` and
 `D` formats are nine bytes: day of week, year, month, day, hour in 12-hour form,
-minute, second, an AM or PM flag, and `CHR$(13)`, BCD-coded for `B`. The `I` format
+minute, second, an AM or PM flag, and `CHR$(13)`, BCD-coded for `B`. The year byte of
+`D` counts from 1900, so 2026 is 126, as `SD parse_timeread()` writes it; a write takes a
+two-digit year as well, by the rule of SI-121. The `I` format
 is the ISO 8601 subset `"YYYY-MM-DDThh:mm:ss dow"+CHR$(13)`. Sources: HD 9-36 to
 9-38; IDE 15.4.8; SD README under `T-R and T-W`; GSD "Realtime Clock".
 
@@ -1412,7 +1526,12 @@ date.
 written to another width is refused, where `SD parse_timewrite()` reads a number of any
 width and then skips one character. The `A` form's AM or PM marker is at a fixed offset
 in that source as well, so a command whose earlier fields are of another width cannot be
-read consistently in any case.
+read consistently in any case. A command is exactly as long as its form: the `A` form is
+26 bytes without the marker and 29 with a space, `A` or `P`, and `M`; the `I` form is 23
+bytes, or 27 with a space and the day of week a `T-RI` answer ends in. Anything else,
+a marker that is not `AM` or `PM` included, answers `30`. `SD parse_timewrite()` ignores a
+marker it does not recognise, which here would leave the clock twelve hours wrong for a
+`PM` typed shifted. Test: `test_clock_commands` in `target/pc/linux/parse`.
 
 ---
 
@@ -1440,7 +1559,9 @@ closed. A line for a hidden entry reads `PRG<H` or `PRG H`. Sources: HD 9-30 for
 `SD createentry()` for all three (the splat is CBM DOS behaviour and is not on HD 9-30);
 GSD, "sd2iec marks hidden files with an H after the lock mark, which comes after the file
 type. If the file is not locked, a space is left where the lock mark would go." Locking is
-SI-076 and the attribute is SI-134.
+SI-076 and the attribute is SI-134. The short time stamped format of SI-139 has no column
+for the lock or the `H`: its stamp begins in the place they would take, as it does in
+`SD createentry()`.
 
 The splat is the closed bit of a CBM directory entry, bit 7 of its type byte, so it
 appears for an entry inside a mounted image and never for a host file, which has no such
@@ -1465,7 +1586,8 @@ and 42 bytes in the short format, counting the link pointer, the block count and
 that ends the BASIC line. The bytes between the end of the stamp and that zero are `$01`.
 The stamp begins four characters behind the three character type of the long format and
 two characters behind the single type letter of the short format; the first of the three
-characters in the long format is the lock and splat position of SI-132.
+characters in the long format is the lock position of SI-132, and the second the `H`. The
+splat stands in front of the type in both formats.
 
 Sources: `SD createentry()`, which clears the line to index 63 for `DIR_FMT_CMD_LONG` and
 index 41 for `DIR_FMT_CMD_SHORT`, writes the type at `data + 1`, the long stamp at
@@ -1521,7 +1643,10 @@ by this requirement.
 `112 "TESTFILE"       PRG   07/27/19 03.44 PM` and the short line is
 `112 "TESTFILE"       P 07/27 03.44 P`. Sources: HD 9-21 and 9-22; GSD "Time and Date
 Stamped Directory Listings". The options, the filter and the two stamp formats are
-the same in both. What the line they sit in looks like is SI-139. The two lines above are
+the same in both. A stamp in a filter is refused with `30` when its marker is not `AM`
+or `PM` or a field is out of its range: month 1 to 12, day 1 to 31, hour 1 to 12,
+minute 0 to 59, since a field out of range would run into the bits of its neighbour in
+the FAT time the filter compares. What the line they sit in looks like is SI-139. The two lines above are
 the manual's examples as text extraction renders them, and that rendering drops spaces: it
 puts the type two columns to the left of where a 1541 puts it, and the long format has one
 space between the date and the time where three belong. SI-139 gives the column positions, taken from
@@ -1533,15 +1658,26 @@ of characters, including none, wherever it stands in the pattern, as a shell glo
 after a `*` are therefore matched against the end of the name, which is the 1581 rule and
 sd2iec's default (`SD match_name()` with `POSTMATCH` set, SD README under `X*+/X*-`,
 "the default value is enabled (+)"). Character classes such as `[A-Z]` are not supported.
-Matching stops after 16 characters. Test: `test_pattern_match` in
+A pattern is compared in full, so a pattern longer than sixteen characters matches a
+name only as long as itself. `SD match_name()` stops after sixteen characters of name;
+here a host name may be longer than sixteen characters and is reachable by its full name
+(SI-141), which a cut at sixteen would lose. Test: `test_pattern_match` in
 `software/io/iec/cbmdos_parser_test.cc`.
+
+A letter matches in either ASCII case. A host name renders in upper case (SI-141), and a
+client that sends a name in ASCII, a tool on a PC or a test harness, sends the lower case
+letters `$61` to `$7A`; folding the case lets it find the name it sees. On a Commodore
+those bytes are graphic characters, which a keyboard does not send for a letter, so the
+only pattern this widens is one that holds a graphic character where a name has a letter.
+Test: `Suite11-SI136-CaseFolding`.
 
 The matcher is a full glob, so a second `*` matches in the middle of a name where CBM DOS
 and `SD match_name()` stop at the first one. GAP notes the difference approvingly:
 "SoftIEC even supports more than one * which the other devices do not." For one `*` it
-agrees with sd2iec's default, and for more it narrows rather than widens a match, so no
-command can act on more files than the other devices would; it is recorded so that it is
-a known difference rather than an accident. It runs in time proportional to the product
+agrees with sd2iec's default, and for more it narrows rather than widens a match; with the
+case folding above, which widens it only for graphic characters, no command a Commodore
+keyboard can type acts on more files than the other devices would. It is recorded so that
+it is a known difference rather than an accident. It runs in time proportional to the product
 of the two lengths, which matters because a command such as `S:****************Q` reaches
 the matcher from the bus.
 
@@ -1579,76 +1715,37 @@ boot disk converted to D64; the 1541 directory entry layout, which has no GEOS t
 `SD d64ops.c`, whose `d64_readdir()` takes `typeflags` from the entry's type byte and which
 has no GEOS or CVT case anywhere in `d64ops.c` or `fatops.c`.
 
-Previous behaviour: `U FileSystemCBM` gives every GEOS entry the extension `CVT`, because
-CVT is the interchange format the Ultimate's file browser writes when it copies a GEOS
-file out to the host file system, and the browser and the FTP server read the same
-directory. `U IecPartition::CreateIecName()` recognised `PRG`, `SEQ`, `REL` and `USR` and
-nothing else, so `read_dir_entry()` fell back to SEQ. An open of the same file over the
-bus also delivered the CVT stream, which puts a header block in front of the file, rather
-than the file itself, and an open of a VLIR file answered nothing at all and logged a
-channel fault.
+Entries whose type is SEQ, PRG, USR, REL or DIR are listed. A closed DEL entry, which
+directory art uses for its separator lines, and an entry of a type above DIR are not
+listed, and a `CBM` partition entry of a 1581 image is listed as SEQ. `SD d64_readdir()`
+lists DEL as `DEL`, CBM as `CBM` and the higher types as `???`; this drive has no DEL, CBM
+or unknown type among the file types it serves, and the lines those would give are a
+listing's decoration rather than files a program opens.
 
-**The read is a regression introduced in 3.15, the listed type is not.** The two halves
-have different histories, and the reporter raised the first of them on 917.
+`FileInfo` carries the directory entry's type bits in `cbm_filetype`, which is zero on a
+file system that has no CBM type. `U DirInCBM::get_entry()` fills it in, and
+`U IecPartition::CreateIecName()` takes the type from it when it is set. The file browser,
+the FTP server and the UCI target see a GEOS file with the extension `CVT`, the
+interchange format the browser writes when it copies a GEOS file out to the host file
+system; that extension does not reach the bus. The IEC read open passes
+`FA_OPEN_FROM_CBM`, so `U FileInCBM::open()` reads the file's own chain rather than
+building a CVT container. A VLIR file's chain is its record block, which is what a 1541
+hands over. The type and the stream go together: the type alone would offer a `LOAD` a
+stream it cannot run, and the stream alone would leave the type contradicting the disk.
 
-* The read worked in 3.14 and 3.14d. `FA_OPEN_FROM_CBM` was added in November 2020 by
-  commit `8ee46e83`, "Opening from IEC should not do CVT conversion. Fixed.", which both
-  defined the flag and passed it from `IecChannel::open_file()`. The call
-  `fm->fopen(partition->GetPath(), fs_filename, flags | FA_OPEN_FROM_CBM, &f)` is present
-  at tag `v3.14` and at tag `v3.14d`. Commit `76d887bd`, "Pulled in the iec_compatibility
-  branch" of 23 June 2026, rewrote that open and dropped the argument. `76d887bd` is an
-  ancestor of `v3.15` and is not an ancestor of `v3.14d`, so every release from 3.15 on
-  hands out the CVT container where 3.14d handed out the file. The flag itself was left in
-  `fs_errors_flags.h` and still tested by `FileInCBM::open()`, with no caller anywhere in
-  the tree.
-* The listed type has never matched a CBM drive. At 3.14d `CreateIecName()` copied the
-  extension straight into the three type characters for a name that is already in CBM
-  form, so a GEOS file listed as `CVT`, which is not a CBM file type at all. 3.15 lists it
-  as `SEQ`. Neither is what the entry's type bits say, so this half is a defect of long
-  standing whose symptom changed in 3.15, not a regression.
-
-The type and the stream go together: the type alone would offer a `LOAD` a stream it
-cannot run, and the stream alone would leave the type contradicting the disk.
-
-* `FileInfo` carries the directory entry's type bits in a new field, `cbm_filetype`, which
-  is zero on a file system that has no CBM type. `U DirInCBM::get_entry()` fills it in, and
-  `U IecPartition::CreateIecName()` uses it when it is set, in front of the extension
-  comparison it did before. The `CVT` extension itself is unchanged, so the file browser,
-  the FTP server and the UCI target still see and write `.CVT` files as they did.
-* The IEC read open passes `FA_OPEN_FROM_CBM`, which `U FileInCBM::open()` already tested
-  and which no caller had ever set. The CVT header branch is skipped and the file's own
-  chain is read. A VLIR file's chain is its record block, which is what a 1541 hands over.
-
-The `C` command still copies a GEOS file out of an image as a CVT container, because
+The `C` command copies a GEOS file out of an image as a CVT container, because
 `U IecCommandChannel::do_copy()` opens each source with a plain `FA_READ`. That keeps the
 interchange format on a copy to the host file system, where it is what the receiving side
 needs, and it is the one place where a copy and a read of the same file differ.
 
 Measured against a reference 1541: VICE's `c1541` lists `geos-2.0r-cenbe.d64` as
-`prg prg usr usr usr usr usr usr usr`, which is what this drive now lists and is neither
-the nine `SEQ` of the previous behaviour nor the nine `PRG` a type-only change would give.
-`c1541` extracts `DISK COPY` from `deskpack-plus-b.d64` as 4,335 bytes; this drive now
-hands out the same 4,335 bytes. That file has a load address of `$0801` and a `10 SYS(2064)`
-line, so it loads and runs from BASIC. It is the only one of the 355 GEOS entries on the
-twenty GEOS disks that were scanned for which that is true, so the change is a correctness
-fix first and an enabling one only incidentally.
-
-Measured on an Ultimate 64 Elite, with `deskpack-plus-b.d64` mounted as the Software IEC
-partition and the same BASIC program run from the C64 on each firmware. The program sends
-`CD:DESKPACK.D64`, prints the printable bytes of `$:DISK COPY`, then prints the first eight
-bytes an open of `DISK COPY` returns.
-
-| Firmware | Listed type | First eight bytes |
-| --- | --- | --- |
-| 3.14d (`40a41caa`), FPGA 122, core 1.49 | `CVT` | `1 8 13 8 10 0 158 40` |
-| 3.15 as this PR found it (`bc3f2dc4`), FPGA 125, core 1.50 | `SEQ` | `130 0 0 68 73 83 75 32` |
-| This change (`79a53425`), FPGA 125, core 1.50 | `PRG` | `1 8 13 8 10 0 158 40` |
-
-`1 8 13 8 10 0 158 40` is `$01 $08 $0D $08 $0A $00 $9E $28`, the load address and first
-BASIC line of the file, and is what `c1541` extracts. `130 0 0 68 73 83 75 32` is
-`$82 $00 $00` followed by `DISK `, which is the CVT header's copy of the directory entry:
-its first two bytes are read as a load address of `$0082`. Each firmware was run from its
-own matching bitstream over JTAG, so 3.14d ran on the FPGA core it shipped with.
+`prg prg usr usr usr usr usr usr usr`, and so does this drive. `c1541` extracts
+`DISK COPY` from `deskpack-plus-b.d64` as 4,335 bytes, and this drive hands out the same
+4,335 bytes, beginning `$01 $08 $0D $08 $0A $00 $9E $28`, the load address `$0801` and a
+`10 SYS(2064)` line. A CVT container would begin `$82 $00 $00` followed by `DISK `, the
+header's copy of the directory entry, whose first two bytes a `LOAD` would take as a load
+address of `$0082`. Of the 355 GEOS entries on the twenty GEOS disks scanned, `DISK COPY`
+is the only one that loads and runs from BASIC. Test: `Suite11-SI149-GeosEntries`.
 
 GEOS itself still cannot start from this drive, because the GEOS speeder is not
 implemented; that is out of scope here and belongs in its own issue.
@@ -1695,6 +1792,15 @@ where SI-142 states a difference and its reason.
   is padded with them. See SI-147, which is about the state this rule is actually in.
 * The CBM file type is the host extension `.prg`, `.seq`, `.usr` or `.rel`, added on
   create and hidden on read.
+* A directory takes its name without a type extension, and a FAT host drops a trailing
+  `.` or space from the name it creates. `MD` and a rename of a directory therefore refuse
+  a name ending in either with `33` (SI-060, SI-074), rather than create a directory that
+  cannot be found again under the name it was made with. SDM maps such a name the same
+  way and creates the unreachable directory; the mapping itself is shared with SDM and is
+  not changed here.
+
+Tests: `test_name_mapping` in `target/pc/linux/parse`, which maps every rule above both
+ways, and `Suite11-CommonBugs`.
 
 **Difference from sd2iec: a host name longer than 16 characters.** GSD reads, "Long
 filenames (i.e names not within the 8.3 limits) are supported on FAT, but for
@@ -1705,7 +1811,9 @@ Ultimate mounts, CBM disk images and FTP among them, so presenting it would mean
 plumbing a second name through all of them. The rendered name a listing shows is the
 name every command here accepts, because `resolve_existing_iec_path()` matches against
 the rendered names of a directory scan (SI-143), so a file is reachable under the name
-it shows. What differs is the name the two devices print for the same file.
+it shows. What differs is the name the two devices print for the same file. A file this
+drive creates has a name of at most sixteen characters (SI-150), so two files list under
+one name only when another tool wrote them.
 
 **SI-142.** `*` and `?` are escaped as SI-141 escapes the other characters, and a
 create of a name containing either is refused per SI-032, as `SDM a76deb2` does.
@@ -1736,6 +1844,12 @@ offset 8, the record length at offset 25, then the unmodified data. The host
 extension is `P00`, `S00`, `U00` or `R00`, the two digits incremented only to break
 an 8.3 collision. Sources: `SD src/fatops.c`, `P00_HEADER_SIZE 26`,
 `P00_CBMNAME_OFFSET 8`, `P00_RECORDLEN_OFFSET 25`, `p00marker[] = "C64File"`; GFN.
+
+The name in the header is the file's name on the bus. A trailing run of `$A0` in it is
+padding, which some programs write in place of zeros, and is dropped as SI-148 drops it
+(`SD fatops.c`, "Some programs pad the name with 0xa0 instead of 0"). The file answers to
+that name only: its host name, `NAME.P00`, is not a second name it can be opened under.
+Test: `Suite11-SI144-HeaderNameOnly`.
 
 Reading is unconditional on sd2iec, in every extension mode. GFN's argument for it is
 worth restating because it is the deciding one: an x00 file preserves the CBM name,
@@ -1881,7 +1995,10 @@ both sides agree.
 settled before anyone changes the code:
 
 1. `$A0` is a legal byte inside a CBM name. It maps to the host as `{A0}` and maps
-   back unchanged. Nothing rejects it on read.
+   back unchanged. Nothing rejects it on read. Inside a disk image the directory entry is
+   the only record of a name, and a name there ends at its first `$A0`, as it does in
+   `SD d64_readdir()`: a file written into an image as `A`+`$A0`+`B` is found again as `A`.
+   Items 1 and 4 are about names on the host file system.
 2. A **trailing** run of `$A0` is padding, not data, and is dropped before mapping. A
    CBM directory entry is a fixed 16-byte field padded with `$A0`, so a name arriving
    from one carries padding that was never part of the name.
@@ -1893,8 +2010,9 @@ settled before anyone changes the code:
 4. A directory listing ends the name at its terminator or at 16 characters, **not** at
    the first `$A0`. A 1541 puts the closing quote at the first `$A0` because that is
    where its fixed-width field stops carrying name, and reproducing that would make
-   this drive and an sd2iec print different names for the same file.
-   `SD createentry()` ends at `$22`, `$00` or 16, and this drive does the same.
+   this drive and an sd2iec print different names for the same file. A `$22` inside a
+   name is printed as it is, as a 1541 prints it, where `SD createentry()` ends the name
+   there.
 
 Together with SI-147 that is the whole of the shifted space question, and it needs
 nothing further from anyone.
@@ -1907,20 +2025,26 @@ nothing further from anyone.
 
 **SI-150.** Summary of the numbers this specification sets, with their sources.
 
-| Limit | Required | Today | Source |
+| Limit | Required | Implemented | Source |
 | --- | --- | --- | --- |
-| command channel buffer | at least 254 | 64 | HD 4-6, `SD CONFIG_COMMAND_BUFFER_SIZE` |
-| OPEN name buffer | at least 254 | 64 | GUG, 232-character paths |
-| path components | no fixed limit below the buffer | unbounded | HD 4-6 |
-| scratch list elements | limited only by the command length | 8 | SD README under `S:`; HD 9-27 allows five |
-| copy source elements | at least 5 | 8 | HD 9-28 |
+| command channel buffer | at least 254 | 254 | HD 4-6, `SD CONFIG_COMMAND_BUFFER_SIZE` |
+| OPEN name buffer | at least 254 | 254 | GUG, 232-character paths |
+| path components | no fixed limit below the buffer | unbounded | HD 4-6; GUG: 232 characters allows about 13 levels of 16-character names |
+| scratch list elements | limited only by the command length | limited only by the command length | SD README under `S:`; HD 9-27 allows five |
+| copy source elements | at least 5 | limited only by the command length | HD 9-28; SD README under `C:` |
 | partitions | 1 to 255 | 1 to 255 | GUG |
 | CBM name | 16 characters | 16 | all |
-| path components in one command | at least 16 | 16 | GUG: 232 characters allows about 13 levels of 16-character names |
 
-The 16-component cap is `path.split('/', components, 16)` in
-`U resolve_directory_path()`. It is adequate for the path length GUG specifies but
-has no margin, and anything over it is silently truncated rather than refused.
+`U resolve_directory_path()` sizes its component list from the path, so a path of any
+depth the buffer holds is followed to its end (`Suite11-SI150-DeepPath`). A scratch, a
+copy and the attribute commands size their name lists from the command in the same way
+(`Suite11-SI150-NameLists`).
+
+A name a file is created under keeps its first sixteen characters, as on a 1541, whether
+the file is written, saved or a new relative file: two long names that agree in their
+first sixteen characters are one name, and the second create answers `63`. A name that is
+only looked up is compared in full (SI-136), so a host file whose name is longer than
+sixteen characters is still reachable by it. Test: `Suite11-SI150-CreatedNameLength`.
 
 ### 15.2 Behaviour that must not change
 
@@ -1971,8 +2095,9 @@ here.
 every byte that is not printable ASCII written as `\xNN`, which loses nothing. A
 rendering that does not fit its 260 character buffer ends in `..`, and the line still
 carries the command's real length, so a reader can tell a long command from a cut
-rendering of one. `SOFTIEC_LOG_MAX_BYTES` in `software/io/iec/iec_log.h` is how many
-command bytes a line renders, and it is bounded by the command buffer of SI-021. The
+rendering of one. `SOFTIEC_LOG_MAX_BYTES` in `software/io/iec/iec_log.h` sizes that
+buffer, four characters for each of 64 bytes and four more, so a line holds all 254 bytes
+of a command of printable text and at least 64 bytes of any command. The
 lines of the setting **Log Every Operation** (section 18) render the directory, the host
 path and a reply the same way.
 
@@ -1991,7 +2116,7 @@ left for someone else to answer before the work can start.
 | C3 | `SAVE"@:foo*"` | The reporter measured `64` on a real drive. `SD file_open()` and IDE 7.1 replace the matched file; sd2iec answers 64 only when nothing matched. | **Settled by ROM `$D8F5`** (SI-032). Save-with-replace compares the found entry's type against the requested type and answers 64 on a mismatch or on a REL. `SAVE` asks for PRG, so a `foo*` that first matches a non-PRG answers 64 and one that matches a PRG replaces it. Every source is consistent once that check is known. |
 | C4 | `$=P` footer | Issue #890 and `SD pdir_refill()` say no footer. IDE prints `n PARTITIONS.`. | **No footer** (SI-045). The issue is explicit, sd2iec agrees, and IDE64's footer is its own extension. |
 | C5 | `$=P:*=C` | HD 9-14 says `C` selects 1581 CP/M. `SD load_directory()` maps `C` to internal type 12, which is `80 `, an 8050 image. | Accept `C` and match nothing, because this drive has neither kind of partition. Recorded so the sd2iec mapping is not copied by mistake. |
-| C6 | `=D` directory filter | `SD` and this firmware treat `D` as DIR. IDE 6.2 maps `D` to DEL. GSD warns that on other drives `D` matches everything. | `D` is a synonym for `B` (SI-134), and say in the user documentation that software should send `B`. Changing it would break the sd2iec software that already sends `D`, and no software can be relying on `D` meaning DEL here because this drive has no DEL entries. |
+| C6 | `=D` directory filter | `SD` and this firmware treat `D` as DIR. IDE 6.2 maps `D` to DEL. GSD warns that on other drives `D` matches everything. | `D` is a synonym for `B` (SI-134), and say in the user documentation that software should send `B`. Changing it would break the sd2iec software that already sends `D`, and no software can be relying on `D` meaning DEL here because this drive lists no DEL entries (SI-149). |
 | C7 | Wildcards with more than one `*` | `SD match_name()` and CBM DOS stop at the first `*`. This firmware backtracks. GAP calls the difference harmless. | Backtracking stands (SI-136). For one `*` it agrees with sd2iec's default; for more it narrows rather than widens a match, so no command can act on more files than the other devices would. |
 | C8 | G-P byte 1 | HD and RL say reserved zero. FD defines a disk-information bit field and `SD` writes `0xE2`, which decodes as an FD-2000 with a 1.6 MB disk. | **Zero** (SI-042). Byte 1 is a claim about the device model, and this drive is not an FD. |
 | C9 | G-P block unit | HD and FD count 512-byte blocks; RL counts 256-byte blocks. | **512** (SI-041), following the HD, which is the reference text and the larger of the two devices this drive resembles. |
@@ -2108,7 +2233,7 @@ Elite, and to 15 lines of 668 during `iec-dos-commands` and a soak on a U2+L.
 
 ### 18.1 Deliberately unsupported, and the differences from the sources
 
-Everything in sections 2 to 15 is in force except the four commands in the first table.
+Everything in sections 2 to 15 is in force except the five requirements in the first table.
 Each of them carries the reason below the requirement itself, and a test asserts the
 answer given here, so a later implementation has to change a test on purpose.
 
@@ -2118,6 +2243,7 @@ answer given here, so a later implementation has to change a test on purpose.
 | SI-105 `M-W`, `M-E` | Nothing written is kept and nothing is run, so an OK would tell a fast loader its drive code runs; no drive code is ever known, which is what `M-E` answers | `30` for `M-W`, `98,UNKNOWN DRIVE CODE` for `M-E`, as SD answers for a code it does not know |
 | SI-137 raw directory | Every program that reads a listing byte by byte opens `$` on a data channel, and the UCI target opens it on whatever channel its client sends; on a host file system the sectors would have to be synthesised from the listing in any case | the listing |
 | SI-145 writing x00 files | A user setting that no report asks for; reading them (SI-144) already gives the interchange | new files are written plain |
+| SI-146 creating R00 files | Follows from SI-145; a plain relative file keeps its two byte layout, which SI-084 reads on both devices | a new relative file is written in the plain two byte layout |
 
 Section 19 lists what is out of scope: the commands that run 6502 code in drive memory,
 the hardware a CMD device has and this one does not, and the sd2iec settings commands.
@@ -2130,14 +2256,23 @@ differently from one of its sources, for a reason given below the requirement.
 | SI-016 | A carriage return second to last ends a command only when a line feed follows it, because the ROM's branch cuts a binary parameter of 13 short |
 | SI-018 | The position in a plain file is read from the command without its terminator, where sd2iec reads it from the command as sent |
 | SI-033 | A scratch whose path does not exist answers `71` rather than a count of zero |
+| SI-061 | `CD` with nothing to change to answers `00, OK` and stays, where `SD do_chdir()` answers `39` |
+| SI-071a | `N` formats a DNP image from any directory in it, where the SDU README ignores it outside the root |
+| SI-082 | An offset past the end of a plain file open for reading answers `00, OK` and reads nothing, where `SD fat_file_seek()` answers `50` |
+| SI-090 | `##0` and `##` with anything but a digit open a standard buffer, where `SD open_buffer()` opens nothing or counts any byte |
+| SI-091 | A block command on a partition rooted in a host directory answers `78,BLOCK ACCESS DENIED`, an Ultimate code (section 4.2), where sd2iec answers `20` and uses 78 for another error |
 | SI-064 | `R-H` takes an optional id and sets it, as `SDM parse_set_header()` does, where HD 9-15 gives `R-H` a new name only |
 | SI-074 | A rename into another directory or partition moves the entry, where `SD parse_rename()` answers `62` |
 | SI-077 | `EL`, `EU` and `A` act on every entry a name matches, directories included, where SDM skips directories and `A` takes the first match. SDU has none of these commands |
+| SI-103 | The resets over the bus keep the write protect of `W-1` and the device number of `U0>`, where `U`+shifted J on sd2iec restarts the device and loses both |
 | SI-120 | A write sets the drive's own clock, an offset from the system clock that a reset clears, where a CMD drive and sd2iec set their clock chip; the day of week a write carries is not kept; a write is refused when the day is not a day of that month, which `SD parse_timewrite()` does not check, and every field is read at its documented width |
-| SI-136 | A second `*` matches in the middle of a name, where CBM DOS and sd2iec stop at the first |
-| SI-141 | A host name longer than 16 characters renders as its first 16 characters, where SDM prints the 8.3 name. SDU has no such mapping |
+| SI-123 | A clock write is exactly as long as its form and its marker is `AM` or `PM`, where `SD parse_timewrite()` ignores what it does not recognise |
+| SI-136 | A second `*` matches in the middle of a name, where CBM DOS and sd2iec stop at the first; a pattern is compared in full, where `SD match_name()` stops after sixteen characters; and a letter matches in either ASCII case, where CBM DOS and sd2iec compare bytes |
+| SI-141 | A host name longer than 16 characters renders as its first 16 characters, where SDM prints the 8.3 name. SDU has no such mapping. A directory name ending in a dot or a space is refused, where SDM creates a directory it cannot find again |
 | SI-142 | The length guard of `SDM` is not adopted, because it would change no host name the drive produces |
 | SI-144c | A rename of a file in an x00 wrapper renames the host file to match the header, as `SDM fat_rename()` does, where `SDU fat_rename()` writes the header alone |
+| SI-148 | A `$22` inside a name is listed as it is, as a 1541 lists it, where `SD createentry()` ends the name there |
+| SI-149 | DEL entries and types above DIR in a disk image are not listed, and a `CBM` entry lists as SEQ, where `SD d64_readdir()` lists them as `DEL`, `CBM` and `???` |
 
 ---
 
@@ -2168,7 +2303,7 @@ Named so that the boundary is explicit rather than implied.
   medium's MBR and it does not create them either (SD README, "Partitions"). The
   partitions of this drive are the entries of the **Software IEC** configuration,
   which the user edits in the Ultimate menu, and the command channel selects one
-  with `CP` (SI-016) and reads them with `$=P` (SI-047).
+  with `CP` (SI-040) and reads them with `$=P` (SI-044).
 * sd2iec's EEPROM file system, the small partition it exposes from the spare space of
   the microcontroller's own EEPROM (SD README, "EEPROM file system"). It exists
   because that hardware has an EEPROM larger than its configuration needs. A
@@ -2177,6 +2312,9 @@ Named so that the boundary is explicit rather than implied.
   it: `CP!:`, `$!` and `!:NAME` address the EEPROM partition wherever it ended up, and
   with no such partition there is nothing for the alias to name.
 * M2I files, which sd2iec itself has deprecated (SD README, Deprecation notices).
+* sd2iec's firmware update, hot swapping of the card, card detection and sleep mode,
+  which address its own hardware. The Ultimate updates, mounts and powers itself
+  through its own menu and REST interface.
 * Mapping each Ultimate storage device to its own IEC device number, which GAP asks
   for. The partition model in section 2 answers the same need within one device
   number, and C64 OS supports at most five devices at once against 255 partitions.
@@ -2197,9 +2335,10 @@ Named so that the boundary is explicit rather than implied.
     identify and the LBA forms of buffer read and write; 15.6.2 change root
     directory; 15.7 CD-ROM commands. All of them address IDE64 hardware or its CFS
     file system.
-  * SD README: the settings commands `X`, `XE+`/`XE-`, `XI`, and SDM's `XEL`/`XEU`, `XET`,
-    `XN`, `XH+`/`XH-`, `XD`, `XW`, and `XL`/`XU`, which the README names in a heading
-    and does not describe. This drive keeps its settings in the Ultimate
+  * SD README: the settings commands `X`, `XE+`/`XE-`, `XI`, `X*+`/`X*-`, `X?`, and
+    SDM's `XEL`/`XEU`, `XET`, `XN`, `XH+`/`XH-`, `XD`, `XW`, and `XL`/`XU`, which the
+    README names in a heading and does not describe. The drive always matches as `X*+`
+    sets it (SI-136). This drive keeps its settings in the Ultimate
     configuration; SI-145 is the one sd2iec setting (`XE`) that gets a counterpart.
     `XS` and `XR` are listed above.
 * The firmware hang the reporter saw three times on #877 while starting C64 OS, where
@@ -2223,7 +2362,7 @@ From TRACE, one successful boot: 68 commands, 107 opens, 208 data addressings, 1
 closes, 80 status reads. Eighteen distinct command strings, eighty-four distinct open
 names, longest open name 26 bytes.
 
-| Command | Count | Answer today |
+| Command | Count | Answer |
 | --- | --- | --- |
 | `C`+`$D0`+`CHR$(2)` | 29 | `02,PARTITION SELECTED` |
 | `CD//OS/DESKTOP/1/` | 11 | `00, OK` |
@@ -2232,12 +2371,14 @@ names, longest open name 26 bytes.
 | `CD//OS/DRIVERS/` | 3 | `00, OK` |
 | `CD//OS/SETTINGS/`, `CD//OS/DESKTOP/`, `CD//OS/CHARSETS/` | 1 each | `00, OK` |
 | `CP2`, `CP2`+CR | 1 each | `02,PARTITION SELECTED` |
-| `M-R` at `$FEA4`, `$E5C5`, `$A6E8`, `$0002`, 2 bytes each | 1 each | `33,SYNTAX ERROR` |
+| `M-R` at `$FEA4`, `$E5C5`, `$A6E8`, `$0002`, 2 bytes each | 1 each | two bytes of `$00` (SI-112) |
 | `UI` | 1 | `73,U64HD ULTIMATE DOS V2.0` |
-| `S/TEMPORARY/:*` | 1 | `62,FILE NOT FOUND` |
-| `CHR$(0)` | 1 | `33,SYNTAX ERROR` |
+| `S/TEMPORARY/:*` | 1 | `01, FILES SCRATCHED,<count>,00` (SI-033) |
+| `CHR$(0)` | 1 | `31,SYNTAX ERROR` (SI-031) |
 
-Open names are of the forms `NAME`, `:NAME`, `/PATH/:NAME`, `$` and `$:PATTERN`.
+The answers are the ones this drive gives, each held by the test of the requirement named
+beside it; the counts are from TRACE. Open names are of the forms `NAME`, `:NAME`,
+`/PATH/:NAME`, `$` and `$:PATTERN`.
 Data channels used are 0, 2, 3 and 14. Names carry shifted PETSCII and spaces, for
 example `:{$C1}BOUT {$D4}HIS {$C1}PP`.
 
@@ -2253,8 +2394,8 @@ Sections 2 to 15 define the numbered paragraphs SI-001 to SI-154, with gaps, one
 further rule of the requirement it follows and is numbered that way so that the numbers
 already cited elsewhere keep their meaning.
 
-Section 18.1 is the index of the four deliberately unsupported requirements and of the
-ten that are in force and answer differently from one of their sources. Everything else
+Section 18.1 is the index of the five deliberately unsupported requirements and of the
+twenty that are in force and answer differently from one of their sources. Everything else
 in sections 2 to 15 is in force as written. Section 19 is what is out of scope, which is
 a different thing: those are capabilities this drive does not have rather than commands
 it declines to implement.
@@ -2363,13 +2504,13 @@ row.
 | Partitions: the partition directory | SI-044 to SI-050 |
 | Partitions: renaming partitions and partition headers | SI-051, SI-064 |
 | Partitions: swap lists and the disk change buttons | Section 19 |
-| Device management: firmware update, hot swapping, card detection, sleep mode | Section 19; all four address sd2iec hardware |
+| Device management: firmware update, hot swapping, card detection, sleep mode | Section 19, which names all four as sd2iec hardware |
 | Device management: device detection and the `UI` identifier | SI-110, SI-111, SI-113, SI-114 |
 | Device management: warm, cold and hard reset | SI-103, SI-103a |
 | Device management: memory access, `M-R`, `M-W`, `M-E` | SI-105, SI-112, SI-115 |
 | Device management: user commands `U1` to `UJ` | SI-091, SI-103, SI-104 |
 | Device management: the device address, `U0>` and `S-8`/`S-9`/`S-D` | SI-100, SI-101 |
-| Device management: the bus protocol setting | Section 19, with the settings commands |
+| Device management: the bus protocol setting | SI-103: `UI+` and `UI-` answer `00, OK` |
 | Direct access: buffers and large buffers | SI-090 |
 | Direct access: reading and writing data, `B-R`, `B-W`, `U1`, `U2` | SI-093, SI-094 |
 | Direct access: the buffer pointer | SI-092 |
@@ -2408,16 +2549,17 @@ which section 1.3 allows and names.
 | SI-019 | Suite11-CommonBugs, parse |
 | SI-020 | parse |
 | SI-021 | Suite11-SI021-LongNames, iec-dos-commands, parse |
-| SI-022 | Suite10, Suite11-SI022-TooLong, iec-dos-commands, parse |
+| SI-022 | Suite10, Suite11-SI022-TooLong, Suite11-SI022-UciTooLong, iec-dos-commands, parse |
 | SI-030 | Suite11-SI030-MissingName, Suite11-SI030-UnknownSubcommand, Suite11-SI030-WildcardTarget, Suite11-SI055-SubPartitions, parse |
 | SI-031 | Suite10, Suite11-SI031-Unrecognised, iec-dos-commands, parse |
-| SI-032 | Suite11-CommonBugs, Suite11-SI032-WildcardWrite |
+| SI-032 | Suite11-CommonBugs, Suite11-SI032-WildcardWrite, Suite11-SI035-TypeOfExistingName |
 | SI-033 | Suite11-SI033-ScratchNothing, iec-dos-commands |
 | SI-034 | iec-dos-commands |
-| SI-035 | Suite11-CommonBugs, Suite5 |
+| SI-035 | Suite11-CR8-ScratchScan, Suite11-CommonBugs, Suite11-SI035-TypeOfExistingName, Suite5 |
 | SI-036 | Suite11-SI036-BlockRange, Suite11-SI083-SeekWriteImage |
+| SI-154 | Suite11-SI105-UnreadReply, Suite11-SI154-StatusClears |
 | SI-040 | Suite10 |
-| SI-041 | Suite11-SI041-PartitionSize, parse |
+| SI-041 | Suite11-SI041-NamePadding, Suite11-SI041-PartitionSize, iecdrive, parse |
 | SI-042 | Suite11-SI041-PartitionSize |
 | SI-043 | Suite10 |
 | SI-044 | Suite10 |
@@ -2425,9 +2567,9 @@ which section 1.3 allows and names.
 | SI-046 | Suite11-SI045-PartitionDirectory, iec-dos-commands |
 | SI-047 | Suite10 |
 | SI-048 | Suite10 |
-| SI-049 | Suite10 |
+| SI-049 | Suite10, Suite11-SI045-PartitionDirectory |
 | SI-050 | Suite10 |
-| SI-051 | Suite11-SI051-RenamePartition, parse |
+| SI-051 | Suite11-SI051-RenamePartition, Suite11-SI064-RootHeaderLength, parse |
 | SI-052 | Suite11-SI071-Format |
 | SI-053 | Suite10, Suite11-SI053-Initialize, iec-dos-commands, parse |
 | SI-054 | parse |
@@ -2435,23 +2577,23 @@ which section 1.3 allows and names.
 | SI-060 | Suite11-SI060-MdColon, parse |
 | SI-061 | Suite10 |
 | SI-062 | Suite10 |
-| SI-063 | Suite10, Suite11-SI063-RdNoPath, Suite6, parse |
-| SI-064 | Suite11-SI064-RenameHeader, parse |
+| SI-063 | Suite10, Suite11-SI063-RdNoPath, Suite11-SI063-RdOnlyDirectories, Suite6, parse |
+| SI-064 | Suite11-SI064-RenameHeader, Suite11-SI064-RootHeaderLength, parse |
 | SI-065 | Suite11-SI064-RenameHeader, Suite11-SI065-HeaderName |
 | SI-066 | Suite10 |
-| SI-070 | Suite11-SI070-ModifyOpen, Suite3, parse |
+| SI-070 | Suite11-SI070-ModifyOpen, Suite11-SI070-SecondaryForcesMode, Suite3, parse |
 | SI-071 | Suite11-CommonBugs, Suite11-SI071-Format, iec-dos-commands, parse |
 | SI-071a | Suite11-SI071-Format |
 | SI-072 | Suite11-SI072-RawNames |
-| SI-073 | Suite8-T-RA |
-| SI-074 | iec-dos-commands, iecdrive |
-| SI-075 | Suite8-T-RA |
+| SI-073 | Suite11-SI150-NameLists, Suite8-T-RA |
+| SI-074 | Suite11-SI074-MoveChecks, iec-dos-commands, iecdrive |
+| SI-075 | Suite11-SI075-CopyRelative, Suite11-SI150-NameLists, Suite8-T-RA |
 | SI-076 | Suite11-CommonBugs, Suite11-SI076-Lock, Suite11-SI077-AttributeCommands, parse |
 | SI-077 | Suite11-SI077-AttributeCommands, parse |
 | SI-077a | Suite11-CommonBugs, Suite11-SI077-AttributeCommands, Suite11-SI077-ImageWriteLock, iec-dos-commands |
-| SI-080 | Suite4 |
-| SI-081 | Suite4 |
-| SI-082 | Suite4 |
+| SI-080 | Suite11-SI080-PastTheLastRecord, Suite11-SI080-RecordLengthBytes, Suite11-SI084-RelInImage, Suite4, Suite4-CopyCreate, parse |
+| SI-081 | Suite11-SI081-PositionChannel, Suite4 |
+| SI-082 | Suite11-SI082-PositionAfterEnd, Suite4 |
 | SI-083 | Suite11-SI083-SeekWrite, Suite11-SI083-SeekWriteImage |
 | SI-084 | Suite11-SI084-RelInImage, Suite11-SI084-RelLayouts, iec-dos-commands |
 | SI-090 | Suite11-SI090-BufferPointer, Suite9, parse |
@@ -2462,15 +2604,15 @@ which section 1.3 allows and names.
 | SI-094 | Suite11-SI094-BlockLength, iecdrive, parse |
 | SI-095 | Suite11-SI030-UnknownSubcommand, parse |
 | SI-096 | parse |
-| SI-100 | Suite11-SI100-DeviceNumber, iec-dos-commands, parse, softiec-soak |
+| SI-100 | Suite11-SI100-DeviceNumber, Suite11-SI103b-SettingAfterU0, iec-dos-commands, parse, softiec-soak |
 | SI-101 | iec-dos-commands, parse, softiec-soak |
 | SI-102 | Suite11-SI102-WriteProtect, iec-dos-commands, parse |
-| SI-102a | Suite11-SI102-WriteProtect |
+| SI-102a | Suite11-SI102-WriteProtect, Suite11-SI102a-NewRelative |
 | SI-103 | Suite11-SI103-Resets, iec-dos-commands, parse, softiec-soak |
 | SI-103a | Suite11-SI103-Resets |
-| SI-103b | iec-dos-commands, rel-copy |
+| SI-103b | Suite11-OperationLogNoReconfigure, Suite11-ResetRestartsProcessor, Suite11-SI103b-SettingAfterU0, iec-dos-commands, rel-copy |
 | SI-104 | Suite10, Suite11-SI030-UnknownSubcommand, parse |
-| SI-105 | Suite11-SI105-MemoryCommands, iec-dos-commands, parse |
+| SI-105 | Suite11-SI105-MemoryCommands, Suite11-SI105-UnreadReply, iec-dos-commands, parse |
 | SI-106 | parse |
 | SI-110 | Suite11-SI105-MemoryCommands, rel-copy |
 | SI-111 | Suite11-SI105-MemoryCommands |
@@ -2486,28 +2628,27 @@ which section 1.3 allows and names.
 | SI-131 | Suite11-SI130-ListingHeader |
 | SI-132 | Suite11-SI076-Lock, Suite11-SI132-Splat, Suite11-SI134-HiddenFlag |
 | SI-133 | Suite11-SI133-SizeRemainder |
-| SI-134 | Suite11-SI134-HiddenFlag, parse |
-| SI-134a | Suite11-SI134-HiddenFlag |
-| SI-135 | Suite11-SI139-StampedEntries |
-| SI-136 | parse |
-| SI-137 | Suite11-DeliberateExclusions |
 | SI-138 | Suite11-SI133-SizeRemainder, Suite11-SI138-ListingEof, iec-dos-commands |
 | SI-139 | Suite11-SI139-StampedEntries, iec-dos-commands |
+| SI-134 | Suite11-SI134-HiddenFlag, parse |
+| SI-134a | Suite11-SI134-HiddenFlag |
+| SI-135 | Suite11-SI139-StampedEntries, parse |
+| SI-136 | Suite11-SI136-CaseFolding, parse |
+| SI-137 | Suite11-DeliberateExclusions |
+| SI-149 | Suite11-SI149-GeosEntries |
 | SI-140 | parse |
-| SI-141 | Suite11-CommonBugs, parse |
+| SI-141 | Suite11-CommonBugs, Suite11-SI074-MoveChecks, parse |
 | SI-142 | Suite11-SI142-EscapedWildcards, Suite11-SI144c-RenameX00, parse |
-| SI-143 | parse |
-| SI-144 | Suite11-CommonBugs, Suite11-SI144-ReadX00, Suite11-SI144-X00Paths, iec-dos-commands, prg-context-menu, softiec-soak |
-| SI-144a | Suite11-SI144-SharedHeader |
-| SI-144b | *(none: see section 1.3)* |
+| SI-143 | Suite11-SI150-CreatedNameLength, parse |
+| SI-144 | Suite11-CommonBugs, Suite11-SI144-HeaderNameOnly, Suite11-SI144-ReadX00, Suite11-SI144-X00Paths, iec-dos-commands, prg-context-menu, softiec-soak |
 | SI-144c | Suite11-CommonBugs, Suite11-SI144c-RenameX00, iec-dos-commands, prg-context-menu |
+| SI-144a | Suite11-SI144-SharedHeader, prg-load-path-trim |
+| SI-144b | prg-context-menu, prg-load-path-trim |
 | SI-145 | Suite11-DeliberateExclusions |
 | SI-146 | Suite11-SI084-RelLayouts |
 | SI-147 | Suite11-SI147-ShiftedSpace, iec-dos-commands, parse |
-| SI-148 | Suite11-CommonBugs, Suite11-SI032-WildcardWrite, Suite11-SI147-ShiftedSpace, iec-dos-commands |
-| SI-149 | Suite11-SI149-GeosEntries |
-| SI-150 | Suite11-SI150-DeepPath |
+| SI-148 | Suite11-CommonBugs, Suite11-SI032-WildcardWrite, Suite11-SI144-HeaderNameOnly, Suite11-SI147-ShiftedSpace, iec-dos-commands |
+| SI-150 | Suite11-SI150-CreatedNameLength, Suite11-SI150-DeepPath, Suite11-SI150-NameLists |
+| SI-153 | Suite11-JiffyLoadStream, iec-dos-commands |
 | SI-151 | *(none: see section 1.3)* |
 | SI-152 | Suite11-FailureLog |
-| SI-153 | Suite11-JiffyLoadStream, iec-dos-commands |
-| SI-154 | Suite11-SI154-StatusClears |

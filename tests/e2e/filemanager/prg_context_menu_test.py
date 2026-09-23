@@ -981,7 +981,7 @@ class WrappedLocation:
 
     Everything the browser offers a plain PRG it has to offer this file too, and every
     action has to act on the program inside rather than on the header in front of it
-    (SI-144). The browser row carries the name from the header, which is how this
+    (SI-144, SI-144b). The browser row carries the name from the header, which is how this
     location tells the two apart.
     """
 

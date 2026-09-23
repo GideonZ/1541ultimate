@@ -22,7 +22,8 @@ SOURCES = {
     'tests/e2e/api/prg_load_path_trim_test.py': 'prg-load-path-trim',
 }
 
-FUNCTION = re.compile(r'^(?:static\s+)?(?:void|int|bool)\s+(\w+)\s*\(|^def\s+(\w+)\s*\(')
+# A Python test can be a method of a class, so its def may be indented.
+FUNCTION = re.compile(r'^(?:static\s+)?(?:void|int|bool)\s+(\w+)\s*\(|^\s*def\s+(\w+)\s*\(')
 CASE_NAME = re.compile(r'testname\s*=\s*"([^"]+)"|"(Suite\d+[A-Za-z0-9_-]+)"')
 
 
