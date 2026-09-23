@@ -139,6 +139,7 @@ class IecParser
     int dir_command(const uint8_t *buffer, int len);
     int copy_command(const uint8_t *buffer, int len);
     int initialize_command(const uint8_t *buffer, int len);
+    int name_and_id(const char *arg, filename_t& dest, const char *&id);
     int format_command(const uint8_t *buffer, int len);
     int position_command(const uint8_t *buffer, int len, int stripped_len);
     int rename_command(const uint8_t *buffer, int len);

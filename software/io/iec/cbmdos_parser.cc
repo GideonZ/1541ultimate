@@ -485,6 +485,26 @@ int IecParser :: initialize_command(const uint8_t *buffer, int len)
 }
 
 // N[n][path]:name[,id] creates or formats a disk image (SI-071, SD parse_new()). The
+// The name and the optional id of a command that names a directory header or an image:
+// [n][path]:name[,id]. The id is whatever follows the first comma, and a name of no
+// characters is no name at all.
+int IecParser :: name_and_id(const char *arg, filename_t& dest, const char *&id)
+{
+    id = "";
+    int err = parse_full_path(arg, dest, NULL, false);
+    if (err) {
+        return err;
+    }
+    const char *rest;
+    if (dest.filename.split(',', &rest)) {
+        id = rest;
+    }
+    if (dest.filename.length() == 0) {
+        return ERR_NO_NAME;
+    }
+    return 0;
+}
+
 // name needs a colon in front of it, and is split from the id at the first comma.
 int IecParser :: format_command(const uint8_t *buffer, int len)
 {
@@ -493,17 +513,10 @@ int IecParser :: format_command(const uint8_t *buffer, int len)
         return ERR_NO_NAME;
     }
     filename_t dest;
-    int err = parse_full_path(cmd.c_str(), dest, NULL, false);
+    const char *id;
+    int err = name_and_id(cmd.c_str(), dest, id);
     if (err) {
         return err;
-    }
-    const char *id = "";
-    const char *rest;
-    if (dest.filename.split(',', &rest)) {
-        id = rest;
-    }
-    if (dest.filename.length() == 0) {
-        return ERR_NO_NAME;
     }
     return exec->do_format(dest, id);
 }
@@ -657,17 +670,10 @@ int IecParser :: lock_command(const uint8_t *buffer, int len)
 int IecParser :: header_command(const char *arg)
 {
     filename_t dest;
-    int err = parse_full_path(arg, dest, NULL, false);
+    const char *id;
+    int err = name_and_id(arg, dest, id);
     if (err) {
         return err;
-    }
-    const char *id = "";
-    const char *rest;
-    if (dest.filename.split(',', &rest)) {
-        id = rest;
-    }
-    if (dest.filename.length() == 0) {
-        return ERR_NO_NAME;
     }
     if (dest.filename.contains_any("?*")) {
         return ERR_ILLEGAL_NAME;
