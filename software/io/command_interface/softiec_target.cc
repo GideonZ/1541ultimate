@@ -52,7 +52,8 @@ void SoftIECTarget :: parse_command(Message *command, Message **reply, Message *
     *reply  = &c_message_empty;
     *status = &c_status_unknown_cmd_local;
 
-    if (!iec_drive) {
+    // With "IEC Drive" Disabled the drive answers here as it does when it is not built in (SI-107).
+    if (!iec_drive || !iec_drive->serves_uci()) {
         *status = &c_iec_module_not_loaded;
         return;
     }

@@ -4914,6 +4914,35 @@ static void s11_operation_log_no_reconfigure(FileManager *fm, IecDrive *dr)
     expect_command_status_prefix(testname, dr, "UI\r", "73,");
 }
 
+// SI-107: "IEC Drive" puts the drive on the bus and gives a UCI KERNAL its number at $DF1B
+// when Enabled, keeps only the UCI side when UCI Only, and turns off both when Disabled, where
+// the KERNAL is given 31, no device a program opens.
+static void s11_si107_setting_modes(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite11-SI107-SettingModes";
+    ConfigStore *cfg = s11_softiec_settings();
+    int original = cfg->get_value(0x51);
+    int device = dr->get_address();
+    const struct { int value; const char *name; bool bus; bool uci; int kernal; } modes[] = {
+        { 1, "Enabled",  true,  true,  device },
+        { 2, "Disabled", false, false, 31 },
+        { 0, "UCI Only", false, true,  device },
+        { 2, "Disabled", false, false, 31 },
+        { 1, "Enabled",  true,  true,  device },
+    };
+    for (int i = 0; i < (int)(sizeof(modes) / sizeof(modes[0])); i++) {
+        cfg->set_value(0x51, modes[i].value);
+        dr->effectuate_settings();
+        printf("%s: %s: on the bus %d, UCI %d, $DF1B %d\n", testname, modes[i].name,
+               dr->is_enabled(), dr->serves_uci(), cmd_if.kernal_device_id);
+        REQUIRE(dr->is_enabled() == modes[i].bus);
+        REQUIRE(dr->serves_uci() == modes[i].uci);
+        REQUIRE(cmd_if.kernal_device_id == modes[i].kernal);
+    }
+    cfg->set_value(0x51, original);
+    dr->effectuate_settings();
+}
+
 // SI-103b: the drive's Reset, from the menu or from the drives route, restarts the IEC
 // processor and puts the drive back on the device number its settings hold, whatever the
 // settings did. A processor that stopped answering the bus has no other way back short of
@@ -6506,6 +6535,7 @@ static const Suite11Case suite11_cases[] = {
     { "Suite11-SI100-DeviceNumber",      s11_si100_device_number },
     { "Suite11-SI100a-MemoryWriteDeviceNumber", s11_si100a_memory_write_device_number },
     { "Suite11-SI105-MemoryCommands",    s11_si105_memory_commands },
+    { "Suite11-SI107-SettingModes",      s11_si107_setting_modes },
     { "Suite11-SI021-LongNames",         s11_si021_long_names },
     { "Suite11-SI022-TooLong",           s11_si022_too_long },
     { "Suite11-SI016-SecondTerminator",  s11_si016_second_terminator },

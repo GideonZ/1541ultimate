@@ -1416,6 +1416,25 @@ device answers it; a program that treats any non-zero code as a refusal is unaff
 
 **SI-106 (out of scope).** `S-C`, the SCSI pass-through of HD 9-39, is out of scope.
 
+**SI-107.** The setting "IEC Drive" in "SoftIEC Drive Settings" has three values, which
+decide the bus and the UCI side of the drive separately:
+
+| Value | On the serial bus | UCI target (target 5) | `$DF1B`, the number a UCI KERNAL sends there |
+| --- | --- | --- | --- |
+| Enabled | answers | answers | the device number |
+| UCI Only | does not answer | answers | the device number |
+| Disabled | does not answer | answers every command with status `05`, module not loaded | 31 |
+
+UCI Only keeps a KERNAL or program that reaches the drive through the Command Interface
+working while a hardware fast loader has the bus to itself, and it shows whether a program
+uses UCI and not the bus. With Disabled, a UCI KERNAL finds no device of its own, sends
+every device to the bus, and meets `DEVICE NOT PRESENT` on the drive's number. `$DF1B`
+holds five bits, and 31 is no device a program opens. UCI Only is the first value and the
+default. The task menu's Turn On sets Enabled, and Turn Off sets UCI Only. Source: issue
+[#918](https://github.com/GideonZ/1541ultimate/issues/918), where the three values were
+proposed and agreed. Tests: `Suite11-SI107-SettingModes`, and `uci-targets`, which reads
+`$DF1B`, the drive list and the target's answer for each value.
+
 ---
 
 ## 11. Device identification
@@ -2650,6 +2669,7 @@ which section 1.3 allows and names.
 | SI-104 | Suite10, Suite11-SI030-UnknownSubcommand, parse |
 | SI-105 | Suite11-SI105-MemoryCommands, Suite11-SI105-UnreadReply, iec-dos-commands, parse |
 | SI-106 | parse |
+| SI-107 | Suite11-SI107-SettingModes, uci-targets |
 | SI-110 | Suite11-SI105-MemoryCommands, rel-copy |
 | SI-111 | Suite11-SI105-MemoryCommands |
 | SI-112 | Suite11-SI105-MemoryCommands, parse |
@@ -2676,7 +2696,7 @@ which section 1.3 allows and names.
 | SI-141 | Suite11-CommonBugs, Suite11-SI074-MoveChecks, parse |
 | SI-142 | Suite11-SI142-EscapedWildcards, Suite11-SI144c-RenameX00, parse |
 | SI-143 | Suite11-SI150-CreatedNameLength, parse |
-| SI-144 | Suite11-CommonBugs, Suite11-SI144-HeaderNameOnly, Suite11-SI144-ReadX00, Suite11-SI144-X00Paths, iec-dos-commands, prg-context-menu, softiec-soak |
+| SI-144 | Suite11-CommonBugs, Suite11-SI144-HeaderNameOnly, Suite11-SI144-ReadX00, Suite11-SI144-X00Paths, iec-dos-commands, prg-context-menu, softiec-soak, uci-targets |
 | SI-144c | Suite11-CommonBugs, Suite11-SI144c-RenameX00, iec-dos-commands, prg-context-menu |
 | SI-144a | Suite11-SI144-SharedHeader, prg-load-path-trim |
 | SI-144b | prg-context-menu, prg-load-path-trim |

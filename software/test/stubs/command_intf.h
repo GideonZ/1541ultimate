@@ -13,10 +13,12 @@ typedef struct _message
 class CommandInterface
 {
 public:
-	CommandInterface() {}
-    ~CommandInterface() {} 
-    
-    void set_kernal_device_id(uint8_t id) {} 
+	CommandInterface() : kernal_device_id(0) {}
+    ~CommandInterface() {}
+
+    // What the firmware would put at $DF1B for the KERNAL to compare with.
+    uint8_t kernal_device_id;
+    void set_kernal_device_id(uint8_t id) { kernal_device_id = id; }
 };
 
 extern CommandInterface cmd_if;

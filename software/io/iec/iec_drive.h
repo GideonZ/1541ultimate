@@ -33,6 +33,7 @@ class IecDrive : public IecSlave, SubSystem, ObjectWithMenu, ConfigurableObject
     bool write_protect;
     int64_t clock_offset;
     bool enable;
+    bool uci_enable; // whether the UCI target serves the drive (SI-107)
 
     FileManager *fm;
     IecChannel *channels[16];
@@ -47,6 +48,7 @@ class IecDrive : public IecSlave, SubSystem, ObjectWithMenu, ConfigurableObject
     IecFileSystem *vfs;
  
     static void set_iec_dir(IecSlave *obj, void *path);
+    void announce_kernal_device(void);
 
     struct {
         Action *turn_on;
@@ -83,6 +85,9 @@ public:
 
     // From IecSlave
     bool is_enabled(void) { return enable; }
+    // Whether the UCI target answers for the drive, which it does unless "IEC Drive" is
+    // Disabled (SI-107). is_enabled() says whether the drive is on the bus.
+    bool serves_uci(void) { return uci_enable; }
     uint8_t get_address(void) { return (uint8_t)my_bus_id; }
     uint8_t get_type(void) { return 0x0F; }
     const char *iec_identify(void) { return "IEC Drive"; }

@@ -20,6 +20,7 @@ SOURCES = {
     'tests/soak/io/iec/softiec_soak_test.py': 'softiec-soak',
     'tests/e2e/filemanager/prg_context_menu_test.py': 'prg-context-menu',
     'tests/e2e/api/prg_load_path_trim_test.py': 'prg-load-path-trim',
+    'tests/e2e/io/command_interface/uci_targets_test.py': 'uci-targets',
 }
 
 # A Python test can be a method of a class, so its def may be indented.

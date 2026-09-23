@@ -21,8 +21,20 @@
 #define CFG_IEC_PATH     0x53
 #define CFG_IEC_LOG      0x55
 
+// "IEC Drive" (SI-107). UCI Only takes the drive off the bus and leaves its UCI target
+// answering, for a KERNAL or program that reaches it that way; Disabled turns off both.
+// The values are in this order so that a stored setting keeps its meaning.
+#define IEC_MODE_UCI_ONLY    0
+#define IEC_MODE_ENABLED     1
+#define IEC_MODE_DISABLED    2
+static const char *iec_modes[] = { "UCI Only", "Enabled", "Disabled" };
+
+// The number the KERNAL is given at $DF1B when the drive is off altogether. It is 5 bits
+// wide, and 31 is no device a program opens, so the KERNAL sends everything to the bus.
+#define KERNAL_DEVICE_NONE   31
+
 static struct t_cfg_definition iec_config[] = {
-    { CFG_IEC_ENABLE,    CFG_TYPE_ENUM,   "IEC Drive",         "%s", en_dis, 0,  1, 0 },
+    { CFG_IEC_ENABLE,    CFG_TYPE_ENUM,   "IEC Drive",         "%s", iec_modes, 0,  2, 0 },
     { CFG_IEC_BUS_ID,    CFG_TYPE_VALUE,  "Soft Drive Bus ID", "%d", NULL,   8, 30, 11 },
     { CFG_IEC_LOG,       CFG_TYPE_ENUM,   "Log Every Operation", "%s", en_dis, 0, 1, 0 },
     { 0xFF, CFG_TYPE_END, "", "", NULL, 0, 0, 0 }
@@ -141,6 +153,7 @@ IecDrive :: IecDrive() : SubSystem(SUBSYSID_IEC)
     write_protect = false;
     clock_offset = 0;
     enable = false;
+    uci_enable = false;
     vfs = NULL; // registering the settings makes them take effect before this is built
 
     register_store(0x49454300, "SoftIEC Drive Settings", iec_config);
@@ -229,18 +242,24 @@ void IecDrive :: effectuate_settings(void)
 {
     IecDriveLock guard(this); // configure() holds the IEC processor in reset (CR-6)
     int bus_id = cfg->get_value(CFG_IEC_BUS_ID);
-    bool enabled = cfg->get_value(CFG_IEC_ENABLE) != 0;
+    int mode = cfg->get_value(CFG_IEC_ENABLE);
+    bool enabled = (mode == IEC_MODE_ENABLED);
+    bool uci = (mode != IEC_MODE_DISABLED);
     // Holding the processor in reset drops a transfer on the bus, so a change of Log Every
     // Operation alone, which is read where it is used, leaves the processor running. The
     // comparison is with the setting, not the live number, which U0> may have moved.
     bool reconfigure = (bus_id != applied_bus_id) || (enabled != enable);
+    bool announce = (bus_id != applied_bus_id) || (uci != uci_enable);
     if (bus_id != applied_bus_id) {
         my_bus_id = bus_id;
         applied_bus_id = bus_id;
-        cmd_if.set_kernal_device_id(my_bus_id);
     }
 
     enable = enabled;
+    uci_enable = uci;
+    if (announce) {
+        announce_kernal_device();
+    }
 
     if (reconfigure) {
         intf->configure();
@@ -291,7 +310,11 @@ SubsysResultCode_e IecDrive :: executeCommand(SubsysCommand *cmd)
 		case MENU_IEC_OFF: {
             IecDriveLock guard(this);
 			enable = (cmd->functionID == MENU_IEC_ON) ? 1 : 0;
-			cfg->set_value(CFG_IEC_ENABLE, enable);
+			cfg->set_value(CFG_IEC_ENABLE, enable ? IEC_MODE_ENABLED : IEC_MODE_UCI_ONLY);
+            if (!uci_enable) {
+                uci_enable = true;
+                announce_kernal_device();
+            }
             intf->configure();
 			break;
         }
@@ -339,7 +362,7 @@ void IecDrive :: reset(void)
     // The settings restart the IEC processor only for a new device number or enable
     // (SI-103b); a reset restarts it in any case, on the number the settings hold.
     my_bus_id = cfg->get_value(CFG_IEC_BUS_ID);
-    cmd_if.set_kernal_device_id(my_bus_id);
+    announce_kernal_device();
     intf->configure();
     for(int i=0; i < 16; i++) {
         channels[i]->reset();
@@ -419,6 +442,12 @@ bool IecDrive :: log_every_operation(void)
     return cfg->get_value(CFG_IEC_LOG) > 0;
 }
 
+// The number a KERNAL that reaches the drive over UCI sends there (SI-107).
+void IecDrive :: announce_kernal_device(void)
+{
+    cmd_if.set_kernal_device_id(uci_enable ? my_bus_id : KERNAL_DEVICE_NONE);
+}
+
 // The device number the settings hold, which S-D returns the drive to (SI-101).
 int IecDrive :: configured_device_number(void)
 {
@@ -430,7 +459,7 @@ int IecDrive :: configured_device_number(void)
 void IecDrive :: set_device_number(int dev)
 {
     my_bus_id = dev;
-    cmd_if.set_kernal_device_id(my_bus_id);
+    announce_kernal_device();
     intf->readdress(slot_id);
 }
 
