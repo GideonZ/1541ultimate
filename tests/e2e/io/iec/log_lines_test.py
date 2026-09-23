@@ -56,7 +56,11 @@ def log_source(api):
     if ip not in softiec_log.local_addresses(api.host):
         return None, f"the device logs to {ip}, which is not this host"
     source = softiec_log.UdpLogSource("", port)
-    source.start()
+    try:
+        source.start()
+    except OSError as exc:
+        # Another target's run of this suite has the port: each device logs here.
+        return None, f"UDP {port} is taken ({exc}); run this suite for one target at a time"
     return source, f"UDP {port}"
 
 
