@@ -127,6 +127,8 @@ void install_high_irq(int irqNr, uint8_t (*func)(void *), void *context);
 void deinstall_high_irq(int irqNr);
 
 extern void (*custom_outbyte)(int c);
+extern int outbyte_last;
+void console_outbyte(int c);
 
 #ifdef __cplusplus
 }

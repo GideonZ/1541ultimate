@@ -5,6 +5,11 @@
 #include "blockdev_file.h"
 #include "filesystem_d64.h"
 #include <stdlib.h>
+#ifndef RUNS_ON_PC
+#include "FreeRTOS.h"
+#include "task.h"
+#include "itu.h"
+#endif
 
 /* ------------------------------------------------------------------------------
  * The log (see iec_log.h): always one line for a command that leaves an error, an open
@@ -19,6 +24,37 @@ bool IecChannel::drive_failed(void)
 {
     return (drive->last_error_code >= 20) && (drive->last_error_code != ERR_DOS);
 }
+
+#ifndef RUNS_ON_PC
+// Other tasks print a character at a time, and a line of theirs printed into this one
+// would split it where the syslog breaks lines. So the line goes to the internal log and
+// the syslog with the scheduler suspended, starting a line of its own; both only write
+// memory. The serial console gets it afterwards, as a wait on the UART must not hold
+// every task.
+static void emit_log_line(const char *line)
+{
+    vTaskSuspendAll();
+    if (custom_outbyte) {
+        if (outbyte_last != '\n') {
+            custom_outbyte('\n');
+        }
+        for (const char *p = line; *p; p++) {
+            if (*p == '\n') {
+                custom_outbyte('\r');
+            }
+            custom_outbyte(*p);
+        }
+    }
+    outbyte_last = '\n';
+    xTaskResumeAll();
+    for (const char *p = line; *p; p++) {
+        if (*p == '\n') {
+            console_outbyte('\r');
+        }
+        console_outbyte(*p);
+    }
+}
+#endif
 
 // Writes one line: what happened, the current partition and its working directory, the
 // bytes involved, optionally a labelled second set of bytes, the error channel's answer and
@@ -53,10 +89,25 @@ void IecChannel::log_line(const char *what, const uint8_t *payload, int len,
     // The sequence number counts every line, so a reader can tell a line that was lost or
     // delivered twice on the way to the log from one the drive wrote twice.
     static unsigned sequence = 0;
-    printf(SOFTIEC_LOG_PREFIX "%s dev=%d chan=%d part=%d dir=\"%s\" len=%d txt=\"%s\"%s%s%s%s%s -> %s #%u\n",
-           what, (int)drive->get_address(), channel, part ? part->GetPartitionNumber() : 0, dir,
-           payload ? len : 0, txt, label ? " " : "", label ? label : "", label ? "=\"" : "",
-           label ? more : "", label ? "\"" : "", err, ++sequence);
+    // Three renderings and at most about 250 characters around them.
+    static char line[3 * SOFTIEC_LOG_TEXT_SIZE + 512];
+    snprintf(line, sizeof(line), SOFTIEC_LOG_PREFIX "%s dev=%d chan=%d part=%d dir=\"%s\" len=%d txt=\"%s\"%s%s%s%s%s -> %s #%u\n",
+             what, (int)drive->get_address(), channel, part ? part->GetPartitionNumber() : 0, dir,
+             payload ? len : 0, txt, label ? " " : "", label ? label : "", label ? "=\"" : "",
+             label ? more : "", label ? "\"" : "", err, ++sequence);
+    int end = strlen(line);
+    if ((end == 0) || (line[end - 1] != '\n')) { // cut short: it still ends the line
+        if (end > (int)sizeof(line) - 2) {
+            end = sizeof(line) - 2;
+        }
+        line[end] = '\n';
+        line[end + 1] = 0;
+    }
+#ifdef RUNS_ON_PC
+    fputs(line, stdout);
+#else
+    emit_log_line(line);
+#endif
 }
 
 // One line the first time a channel fails after it was opened, so a channel that fails

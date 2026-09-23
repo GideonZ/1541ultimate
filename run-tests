@@ -411,6 +411,11 @@ SUITES: Sequence[Suite] = (
     # rather than adding to it (#934), read back from the drive list.
     Suite("e2e", "iec-partition-file", "tests/e2e/filemanager/ipr_load_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@", profile=profiles.STANDARD),
+    # Every Software IEC log line reaches the device log whole while the HTTP task prints
+    # alongside it, read back from the syslog. Binds the syslog port, so only one target at
+    # a time can run it; with two, the second skips.
+    Suite("e2e", "softiec-log-lines", "tests/e2e/io/iec/log_lines_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@", profile=profiles.STANDARD),
     # Drives the UCI control and SoftIEC targets over $DF1B-$DF1F; reproduces #740.
     # A #740 regression leaves the interface stuck in Command Busy for every target
     # until the firmware restarts, so run it after the suites that drive the menu
