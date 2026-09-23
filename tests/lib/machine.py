@@ -53,9 +53,9 @@ after the behaviour a machine gains from it rather than after a date, and the
 machine kinds that do not have it yet. A fix every machine has is not in the
 table at all. A check declares what it depends on in one line:
 
-    LABEL = "a Telnet session survives a screen it cannot drain"
+    LABEL = "pressing D in the monitor opens nothing"
     if device.machine.skip_without_fix(
-            machine.TELNET_SEND_TOLERATES_SLOW_PEER, LABEL):
+            machine.MONITOR_D_KEY_RESERVED, LABEL):
         return
     with check(LABEL):
         ...
@@ -138,22 +138,6 @@ def _fix(name: str, behaviour: str, lacking: tuple[str, ...]) -> str:
     """Add one entry to the table and hand back its tag, for a named constant."""
     FIXES[name] = Fix(name=name, behaviour=behaviour, lacking=lacking)
     return name
-
-# What tests/e2e/network/telnet_sustained_input_test.py asserts, and an
-# outstanding defect rather than a lagging release: GideonZ/1541ultimate#820.
-# A screen that repaints on every keystroke outruns a slow link, SO_SNDTIMEO
-# expires, and SocketStream::transmit treats the resulting EAGAIN as fatal and
-# closes the session. Listed against the Ultimate II+ because that is the
-# machine on WiFi here, where the check measures something: it failed about 25
-# times across a soak with no passes. A wired machine drains faster than the
-# suite can send and passes without exercising the path, which is why the entry
-# does not list the others. Delete this entry when #820 is fixed and the check
-# runs again everywhere.
-TELNET_SEND_TOLERATES_SLOW_PEER = _fix(
-    "telnet-send-tolerates-slow-peer",
-    "a Telnet session survives a screen repainting faster than the link "
-    "drains, rather than being closed when the send buffer stays full",
-    (U2,))
 
 # The bench Ultimate II+L's flashed 3.15 predates this tree's monitor rework:
 # its help page names "Open monitor", "Close monitor" and "Leave edit" where

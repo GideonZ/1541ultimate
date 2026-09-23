@@ -3,25 +3,19 @@
 
 Holding a cursor key in the machine code monitor redraws the screen on every
 keystroke, about 1.3 KB each. Keys that arrive faster than the device redraws
-wait unread in the session's socket. On WiFi each received frame occupies one
-of the interface's twelve UART receive buffers for as long as it is unread, so
-that queue alone can take every buffer: the interface then receives nothing,
-not even the acknowledgements the device's own output is waiting for, and the
-session is lost together with everything else on that interface. Ethernet has
-enough receive buffers that one session cannot take them all, so over a wired
-link this check passes without exercising the path.
+wait unread in the session's socket. On WiFi that queue can hold more frames
+than the interface has UART receive buffers, which is why the WiFi driver hands
+the network stack a copy of each frame and keeps its buffer: a queue holding
+the buffers themselves leaves the interface unable to receive anything, the
+acknowledgements the session's own output is waiting for included. Ethernet
+has enough receive buffers that one session cannot take them all, so the check
+exercises that path only over WiFi.
 
 The keys go out faster than an Ultimate 64 Elite redraws, so the device always
 falls behind rather than only when something else keeps it busy. The session
 has to still answer afterwards. The check reads continuously while it sends,
 so a failure here is the device giving up rather than the test refusing to
 drain.
-
-The defect is open as GideonZ/1541ultimate#820, so the check is gated on
-machine.TELNET_SEND_TOLERATES_SLOW_PEER and skips on an Ultimate II+ rather
-than failing every run. Whoever fixes #820 should delete that entry, which
-turns this check back on everywhere; `--assume-fix telnet-send-tolerates-slow-peer`
-runs it without editing the table first.
 
     python3 tests/e2e/network/telnet_sustained_input_test.py -H u2@c64u
 """
@@ -42,8 +36,6 @@ sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
 import bootstrap  # noqa: E402,F401
 import cli  # noqa: E402
 
-import api as api_lib  # noqa: E402
-import machine as machine_lib  # noqa: E402
 import targets  # noqa: E402
 from report import Failure, check, check_ok, detail, suite_ok  # noqa: E402
 
@@ -95,13 +87,7 @@ def main() -> int:
     target = targets.parse(args.host)
     host = target.device
 
-    label = "a held cursor key does not drop the Telnet session"
-    if api_lib.identify_machine(args.host).skip_without_fix(
-            machine_lib.TELNET_SEND_TOLERATES_SLOW_PEER, label):
-        suite_ok(SUITE)
-        return 0
-
-    with check(label):
+    with check("a held cursor key does not drop the Telnet session"):
         sock = socket.create_connection((host, args.telnet_port), timeout=10)
         reader = Reader(sock)
         reader.start()
