@@ -1,12 +1,18 @@
-; What a CMD FD-2000 (DOS V1.40, $A57B-$A668) or CMD HD (boot ROM 2.80, $CEF3-$CFCA) sends
-; when its SWAP button hands its own number to the drive at 8 or 9, replayed from the C64
-; as bus master with the drive's timing (SI-100a, #933):
-;   ATN: LISTEN dev, $6F; data: "M-W" $77 $00 $02 <listen> <talk> (EOI); ATN: UNLISTEN.
-; Both drives run at 2 MHz, so their delay loops are halved here in cycles to keep them the
-; same in microseconds. The part that matters is the end: UNLISTEN raises ATN about 20 us
-; after the last byte is acknowledged, well inside the time the KERNAL at 1 MHz takes.
-; Mailbox: $c000 go, $c001 ready ($a5), $c002 device, $c003 listen byte, $c004 talk byte,
-; $c005 result: 0, or the handshake step that timed out or found no device.
+; A bus talker in the C64's own code, for timing that the KERNAL does not produce.
+; One transaction: ATN: LISTEN device, secondary; data bytes (EOI on the last one when
+; asked); a chosen pause; ATN: UNLISTEN. It follows what a CMD FD-2000 (DOS V1.40,
+; $A57B-$A668) and a CMD HD (boot ROM 2.80, $CEF3-$CFCA) send when SWAP is pressed:
+; their pause before UNLISTEN is about 40 us, and the KERNAL's is longer.
+;
+; Mailbox, all set before GO:
+;   $c000 GO (1), cleared when done     $c001 READY ($a5 once running)
+;   $c002 device                        $c003 secondary byte as sent ($6f, $f2, $62, $e2)
+;   $c004 data byte count (0-255)       $c005 flags: bit 7 EOI on the last byte,
+;                                                    bit 6 short bits (KERNAL-like)
+;   $c006 pause before UNLISTEN, in 5 us steps after the last acknowledgement
+;   $c007 result: 0, or the handshake step that timed out or found no device
+; Data bytes at $c100. The CMD drives run at 2 MHz, so their delay loops are halved here
+; in cycles to keep them the same in microseconds.
 * = $0801
     .word basic_end, 10
     .byte $9e
@@ -22,47 +28,66 @@ idle
     lda $c000
     beq idle
     lda #0
-    sta $c005
+    sta $c007
     sei
-    jsr swap
-    sta $c005
+    jsr transaction
+    sta $c007
     jsr release_all
     cli
     lda #0
     sta $c000
     jmp idle
 
-swap
+transaction
     lda $c002
     ora #$20                ; LISTEN, as $A5AE
     jsr atn_first
     bcs fail
-    lda #$6f                ; secondary: data to channel 15, no OPEN, as $A649
+    lda $c003               ; the secondary address, as $A649
     jsr atn_next
     bcs fail
     jsr atn_off             ; $A64E
     ldx #0
-cmd
-    lda template,x
+    stx last
+data
+    cpx $c004
+    beq unlisten
     stx save_x
+    inx
+    cpx $c004
+    bne not_last
+    lda #1
+    sta last
+    lda $c005
+    and #$80
+    sta eoi                 ; EOI on the last byte when asked, as $A599
+not_last
+    ldx save_x
+    lda $c100,x
     jsr send
     bcs fail
+    lda last
+    bne unlisten            ; straight on after the last byte, as the CMD drives do
     ldx save_x
     inx
-    cpx #6
-    bcc cmd
-    lda $c003
-    jsr send
-    bcs fail
-    lda #$80                ; EOI on the last byte, as $A599
-    sta eoi
-    lda $c004
-    jsr send
-    bcs fail
+    jmp data
+; From the last acknowledgement to ATN takes about 45 us here, about 40 us on a CMD FD
+; ($A65A-$A5BF at 2 MHz), and each pause step adds 5 us.
+unlisten
+    ldy $c006
+    beq atn_now
+pause
+    dey
+    bne pause
+atn_now
+    lda $dd00
+    and #$cf                ; CLK and DATA released
+    ora #$08                ; ATN asserted
+    sta $dd00
     lda #$3f                ; UNLISTEN, as $A633
-    jsr atn_first
+    jsr atn_next
     bcs fail
-    jsr atn_off             ; $A638: ATN off, 50 µs, CLK and DATA released
+    jsr atn_off             ; $A638: ATN off, 50 us, CLK and DATA released
     jsr d50
     lda #0
     rts
@@ -115,7 +140,7 @@ no_eoi
     jsr clk_lo
     ldx #8
 bit_loop
-    jsr d50
+    jsr bit_delay
     ror byte
     bcs one
     jsr data_lo
@@ -124,7 +149,7 @@ one
     jsr data_hi
 clock
     jsr clk_hi              ; data valid
-    jsr d50
+    jsr bit_delay
     lda $dd00
     and #$df                ; DATA released
     ora #$10                ; CLK low, in the same write, as $A61A
@@ -201,12 +226,22 @@ ok
     clc
     rts
 
-; 50 µs at 1 MHz, as the FD's LDA #$14 loop at 2 MHz.
+; Half a bit: 50 us as the CMD drives' LDA #$14 loop at 2 MHz, or about 20 us, the
+; KERNAL's pace, when flag bit 6 asks for short bits.
+bit_delay
+    bit $c005
+    bvs short_bit
 d50
     ldy #9
 d50l
     dey
     bne d50l
+    rts
+short_bit
+    ldy #2
+sbl
+    dey
+    bne sbl
     rts
 ; 1 ms, as the FD's $A668.
 d1ms
@@ -217,9 +252,9 @@ d1l
     bne d1l
     rts
 
-template .byte $4d, $2d, $57, $77, $00, $02
 byte    .byte 0
 eoi     .byte 0
 step    .byte 0
 count   .byte 0
 save_x  .byte 0
+last    .byte 0

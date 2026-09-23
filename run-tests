@@ -401,6 +401,12 @@ SUITES: Sequence[Suite] = (
     # already the IEC suite that costs real time.
     Suite("e2e", "iec-dos-commands", "tests/e2e/io/iec/dos_command_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ @KERNAL@", profile=profiles.STANDARD),
+    # What the Software IEC drive receives from a talker that raises ATN for UNLISTEN as
+    # soon as the last byte is acknowledged, as a CMD drive's SWAP does (#933): commands
+    # and files over every pause, bit pace and ending, sent by the C64's own code rather
+    # than the KERNAL, whose pause is always long enough.
+    Suite("e2e", "iec-listen-timing", "tests/e2e/io/iec/listen_timing_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@", profile=profiles.STANDARD),
     # Drives the UCI control and SoftIEC targets over $DF1B-$DF1F; reproduces #740.
     # A #740 regression leaves the interface stuck in Command Busy for every target
     # until the firmware restarts, so run it after the suites that drive the menu

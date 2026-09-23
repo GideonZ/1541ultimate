@@ -499,7 +499,7 @@ _normal_data
             WAIT UNTIL CLK=0 FOR Tv
             # A byte received without ATN goes to software before it is acknowledged, and
             # the end marker with the last one: the talker may raise ATN as soon as it sees
-            # the acknowledgement, and ATN restarts this code (a CMD drive does, after 20 us).
+            # the acknowledgement, and ATN restarts this code (a CMD drive does, after 40 us).
             IF NOT ATN THEN _ack
             PUSHD
             IF NOT EOI THEN _ack

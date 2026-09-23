@@ -60,30 +60,60 @@ def iec_drive(api):
     raise Failure("The drive list has no IEC Drive")
 
 
+class Talker:
+    """LISTEN transactions from the C64's own code, with timing the KERNAL does not have.
+
+    iec_talker.asm sends LISTEN, a secondary byte as given ($6F, $F2, $62, $E2), data with
+    EOI on its last byte when asked, and UNLISTEN after a chosen pause from the last
+    acknowledgement: a CMD drive pauses about 40 us, and the KERNAL longer. The
+    program replaces the agent, which has to be started again afterwards.
+    """
+
+    def __init__(self, api):
+        self.api = api
+
+    def start(self):
+        self.api.machine.close_menu_from_anywhere()
+        self.api.machine.writemem(0xc000, bytes(8))
+        self.api.runners.upload("run_prg", assemble(Path(__file__).with_name("iec_talker.asm")))
+        deadline = time.monotonic() + 15
+        while self.api.machine.readmem(0xc001, 1) != b"\xa5":
+            if time.monotonic() > deadline:
+                raise Failure("the talker program did not start")
+            time.sleep(.05)
+
+    def send(self, device, secondary, data=b"", eoi=True, short_bits=False, pause_steps=0):
+        """One transaction. `pause_steps` counts 5 us before UNLISTEN; `short_bits` sends at
+        about the KERNAL's pace instead of the CMD drives' 50 us per half bit."""
+        if len(data) > MAILBOX_CAPACITY:
+            raise ValueError("the talker sends at most one mailbox of data")
+        if data:
+            self.api.machine.writemem(0xc100, bytes(data))
+        flags = (0x80 if eoi else 0) | (0x40 if short_bits else 0)
+        self.api.machine.writemem(0xc002, bytes([device, secondary, len(data), flags, pause_steps]))
+        self.api.machine.writemem(0xc000, b"\x01")
+        # Waited blind: a memory read halts the C64 and would stretch the timing under test.
+        time.sleep(0.2 + len(data) * 0.0015)
+        state = self.api.machine.readmem(0xc000, 8)
+        if state[0]:
+            time.sleep(1.0)
+            state = self.api.machine.readmem(0xc000, 8)
+            if state[0]:
+                raise Failure("the talker did not finish its transaction")
+        if state[7]:
+            raise Failure(f"the talker stopped at handshake step {state[7]}")
+
+
 def cmd_swap(api, device, new):
     """Sends `device` what a CMD drive's SWAP button sends to give it the number `new`.
 
-    cmd_swap.asm replays the drive's bus sequence and timing from the C64 (SI-100a). It
-    replaces the agent, which has to be started again afterwards. Returns the device number
-    the drive list reports for the Software IEC drive.
+    The sequence and timing of a CMD FD or HD (SI-100a): M-W to $0077 on channel 15 with
+    the new listen and talk address, the last with EOI, and UNLISTEN at once. Returns the
+    device number the drive list reports for the Software IEC drive.
     """
-    api.machine.close_menu_from_anywhere()
-    api.machine.writemem(0xc000, bytes(7))
-    api.runners.upload("run_prg", assemble(Path(__file__).with_name("cmd_swap.asm")))
-    deadline = time.monotonic() + 15
-    while api.machine.readmem(0xc001, 1) != b"\xa5":
-        if time.monotonic() > deadline:
-            raise Failure("the CMD swap program did not start")
-        time.sleep(.05)
-    api.machine.writemem(0xc002, bytes([device, 0x20 | new, 0x40 | new]))
-    api.machine.writemem(0xc000, b"\x01")
-    # Waited blind: a memory read halts the C64 and would stretch the timing under test.
-    time.sleep(1.0)
-    state = api.machine.readmem(0xc000, 6)
-    if state[0]:
-        raise Failure("the CMD swap program did not finish within a second")
-    if state[5]:
-        raise Failure(f"the CMD swap sequence stopped at handshake step {state[5]}")
+    talker = Talker(api)
+    talker.start()
+    talker.send(device, 0x6F, b"M-W\x77\x00\x02" + bytes([0x20 | new, 0x40 | new]))
     return iec_drive(api)["bus_id"]
 
 

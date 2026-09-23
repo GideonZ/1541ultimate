@@ -518,8 +518,8 @@ def check_compatibility(agent, api, password, folder, root):
 
     def memory_write_device_cmd_timing():
         # SI-100a with a CMD drive's own timing (#933). A CMD FD or HD runs at 2 MHz and raises
-        # ATN for UNLISTEN about 20 us after the last byte is acknowledged; the KERNAL above
-        # takes over 100 us, so only this check sees a byte lost in that time.
+        # ATN for UNLISTEN about 40 us after the last byte is acknowledged; the KERNAL above
+        # leaves more time, so only this check sees a byte lost in between.
         old = agent.softiec_device
         try:
             moved = cmd_swap(api, old, 12)
