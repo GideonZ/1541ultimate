@@ -10,12 +10,15 @@ here, and every check reads back over FTP or the drive list what the drive made 
   - commands on channel 15, with every pause from none to 500 us and at both bit paces;
   - files written in one session, from 1 to 254 bytes, with and without a pause;
   - files written in several sessions, each ending with EOI and an immediate UNLISTEN;
-  - files written in sessions without EOI, which end with UNLISTEN alone.
+  - files written in sessions without EOI, which end with UNLISTEN alone;
+  - a CMD drive's SWAP sequence twenty times, there and back;
+  - sixty files of random length, pause and bit pace, from a seed the run prints.
 
 Needs Software IEC on device 11 with one partition, numbered 1, and a C64 with any KERNAL.
 """
 import argparse
 import io
+import random
 import sys
 import traceback
 import uuid
@@ -37,6 +40,8 @@ DEVICE = 11
 # takes, so no pause is about a CMD drive's own.
 PAUSES = (0, 2, 6, 12, 20, 40, 100)
 CHANNEL = 2
+SWAPS = 20
+RANDOM_FILES = 60
 
 
 def payload(size, seed):
@@ -173,6 +178,38 @@ def run(args):
                 lambda: several("M00", [payload(200, 40 + n) for n in range(3)], True))
         attempt("write 200 bytes in two sessions without EOI, ended by UNLISTEN at once",
                 lambda: several("M01", [payload(100, 50 + n) for n in range(2)], False))
+
+        section("repeated")
+
+        def swaps():
+            for turn in range(SWAPS):
+                for there, back in ((DEVICE, 12), (12, DEVICE)):
+                    talker.send(there, 0x6F, b"M-W\x77\x00\x02" + bytes([0x20 | back, 0x40 | back]))
+                    moved = iec_drive(api)["bus_id"]
+                    if moved != back:
+                        raise Failure(f"swap {turn + 1}: the drive is on device {moved}, not {back}")
+        attempt(f"a CMD drive's SWAP sequence {SWAPS} times, there and back", swaps)
+        if iec_drive(api)["bus_id"] != DEVICE:
+            # A failed swap leaves the drive elsewhere; U0> from the talker brings it home.
+            talker.send(iec_drive(api)["bus_id"], 0x6F, b"U0>" + bytes([DEVICE]), pause_steps=40)
+
+        seed = args.seed if args.seed is not None else random.randrange(1 << 30)
+        detail(f"random files from seed {seed}; rerun with --seed {seed}")
+        chooser = random.Random(seed)
+
+        def random_files():
+            for number in range(RANDOM_FILES):
+                size = chooser.randint(1, 254)
+                pause = chooser.choice((0, 0, 1, 2, 4, 8, 16, 40))
+                short_bits = chooser.random() < 0.5
+                name = f"R{number:02d}"
+                data = bytes(chooser.randrange(256) for _ in range(size))
+                write_file(talker, name, [data], short_bits=short_bits, pause_steps=pause)
+                with ftp.session(args.host, args.password) as client:
+                    require_equal(host_file(client, directory, name), data,
+                                  f"{name} ({size} bytes, pause {pause * 5} us, "
+                                  f"{'KERNAL' if short_bits else 'CMD'} bit pace)")
+        attempt(f"{RANDOM_FILES} files of random length, pause and bit pace", random_files)
         if failed:
             raise Failure(f"{len(failed)} checks failed: {'; '.join(failed)}")
         return True
@@ -212,6 +249,7 @@ def run(args):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     cli.add_device_arguments(parser)
+    parser.add_argument("--seed", type=int, help="seed for the random files, to repeat a run")
     args = parser.parse_args()
     try:
         run(args)
