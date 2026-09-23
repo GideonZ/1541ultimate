@@ -338,6 +338,8 @@ void test_added_commands(void)
     test_dispatch_text("R-H:NAME", 8, 0, "set header", "-1||NAME|");
     test_dispatch_text("R-H3//GAMES/:NAME,ID", 20, 0, "set header", "3|//GAMES/|NAME|ID");
     test_dispatch("R-H:", 4, ERR_NO_NAME, NULL);
+    // The name follows a colon, as for N (SI-064).
+    test_dispatch("R-H46NONAME", 11, ERR_NO_NAME, NULL);
     test_dispatch("R-H:N*", 6, ERR_ILLEGAL_NAME, NULL);
     test_dispatch("R-X:NAME", 8, ERR_SYNTAX, NULL);
     // A file rename still reaches the file rename.
@@ -363,6 +365,8 @@ void test_added_commands(void)
     test_dispatch("U0>\x0C", 4, 0, "device number", 12);
     test_dispatch("U0>\x1E\r", 5, 0, "device number", 30);
     test_dispatch("U0>\x0D\r", 5, 0, "device number", 13);
+    // The number byte is mandatory, so a 13 there is the number, not a terminator.
+    test_dispatch("U0>\x0D", 4, 0, "device number", 13);
     test_dispatch("U0>\x07", 4, 30, NULL);
     test_dispatch("U0>\x1F", 4, 30, NULL);
     test_dispatch("U0", 2, 30, NULL);
@@ -389,7 +393,7 @@ void test_added_commands(void)
 
 // SI-021, SI-022 and SI-016: the command buffer holds 254 bytes, a command that fills
 // it answers 32 and is not executed, and a carriage return second to last ends the
-// command, as the 1541 ROM does at $C2B3.
+// command only when a line feed follows it.
 void test_command_length_and_terminator(void)
 {
     char cmd[300];
@@ -418,6 +422,18 @@ void test_md_rd_grammar(void)
     test_command(34, (const uint8_t *)"RDNAME", 6);
     test_command( 0, (const uint8_t *)"RD:NAME", 7);
     test_command( 0, (const uint8_t *)"RD12:NAME\r", 10);
+    // A slash anywhere is refused, also behind the colon.
+    test_command(34, (const uint8_t *)"RD:A/B", 6);
+    // A colon with nothing after it is no name (SI-030), and a directory to be made
+    // cannot carry a wildcard.
+    test_command(34, (const uint8_t *)"MD:", 3);
+    test_command(34, (const uint8_t *)"RD:", 3);
+    test_command(33, (const uint8_t *)"MD:A*", 5);
+    test_command(33, (const uint8_t *)"MD:B?C", 6);
+    // A name ending in a dot or a space cannot be found again on a FAT host, which
+    // drops that byte from the name it creates (SI-141).
+    test_command(33, (const uint8_t *)"MD:TRAIL.", 9);
+    test_command(33, (const uint8_t *)"MD:SPACE ", 9);
 }
 
 // SI-147 and SI-142: the PETSCII to host name mapping shared with sd2iec's extension mode
@@ -461,6 +477,32 @@ void test_name_mapping(void)
     check_fat_name("braces bound", "ABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOP.PRG", 48,
                    "ABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOP.PRG");
     check_fat_name("braces", "GAME.PRG", 48, "GAME.PRG{}");
+
+    // SI-141: a name a host reserves, a byte a host cannot carry, and a run of bytes above
+    // 127, each escaped so that the name maps back unchanged.
+    static const struct { const char *what; const char *pet; const char *fat; } rules[] = {
+        { "reserved name",           "CON",        "{}CON" },
+        { "reserved name, extension", "CON.TXT",   "{}CON.TXT" },
+        { "reserved prefix only",    "CONX",       "CONX" },
+        { "reserved device number",  "COM1",       "{}COM1" },
+        { "reserved, type extension", "LPT9.PRG",  "{}LPT9.PRG{}" },
+        { "a run above 127",         "\xC1\xC2\xC3", "{C1C2C3}" },
+        { "separators",              "A:B/C\\D\"E<F>G", "A{3A}B{2F}C{5C}D{22}E{3C}F{3E}G" },
+        { "leading dot",             ".HIDDEN",    "{2E}HIDDEN" },
+        { "braces",                  "X{Y}Z",      "X{7B}Y{7D}Z" },
+    };
+    for (size_t i = 0; i < sizeof(rules) / sizeof(rules[0]); i++) {
+        check_fat_name(rules[i].what, rules[i].pet, 51, rules[i].fat);
+        char back[40];
+        memset(back, 0, sizeof(back));
+        fat_to_petscii(rules[i].fat, false, back, sizeof(back) - 1, true);
+        if (strcmp(back, rules[i].pet)) {
+            printf("Name %s maps back to '%s', expected '%s'\n", rules[i].what, back, rules[i].pet);
+            failures++;
+        } else {
+            printf("Name %s maps back => OK!\n", rules[i].what);
+        }
+    }
 }
 
 // SI-076: L toggles the lock of one entry.
@@ -664,6 +706,15 @@ void test_clock_commands(void)
     test_dispatch("T-WX", 4, ERR_SYNTAX, NULL);
     test_dispatch("T-W", 3, ERR_SYNTAX, NULL);
 
+    // A marker that is not AM or PM, and anything after the last field, answer 30: a PM
+    // typed shifted would otherwise be lost and the clock twelve hours wrong (SI-123).
+    test_dispatch("T-WA" "SAT. 09/12/26 01:02:03 PX", 29, ERR_SYNTAX, NULL);
+    test_dispatch("T-WA" "SAT. 09/12/26 01:02:03XPM", 29, ERR_SYNTAX, NULL);
+    test_dispatch("T-WA" "SAT. 09/12/26 01:02:03 \xD0\xCD", 29, ERR_SYNTAX, NULL);
+    test_dispatch("T-WA" "SAT. 09/12/26 01:02:03 ", 27, ERR_SYNTAX, NULL);
+    test_dispatch("T-WI2026-09-12T13:02:03GARBAGE", 30, ERR_SYNTAX, NULL);
+    test_dispatch("T-WI2026-09-12T13:02:03X", 24, ERR_SYNTAX, NULL);
+
     // The ASCII form without its AM or PM marker is a 24 hour time, and a twelve hour
     // field of 12 with the marker is midnight or noon (SD parse_timewrite()).
     test_dispatch(elsewhere, 23, 0, NULL);
@@ -711,6 +762,14 @@ void test_block_positions_and_lengths(void)
         printf("B-W was not dispatched as a write with the length byte: '%s'\n", last_stub_call.text);
         failures++;
     }
+    // The spellings the 1541 manual prints: the ROM takes the letter after the dash.
+    test_dispatch("BLOCK-READ:2,0,18,1", 19, 0, "block read", 2, 0, 18, 1);
+    test_dispatch("BLOCK-WRITE:2,0,18,2", 20, 0, "block write", 2, 0, 18, 2);
+    test_dispatch("BUFFER-POINTER:2,144", 20, 0, "buffer position", 2, 144);
+    test_dispatch("BLOCK-ALLOCATE:0,18,3", 21, 0, "block allocate", 0, 18, 3);
+    test_dispatch("BLOCK-FREE:0,18,3", 17, 0, "block free", 0, 18, 3);
+    test_dispatch("BLOCK-EXECUTE:2,0,18,1", 22, 30, NULL);
+    test_dispatch("BX:2,0,18,1", 11, 30, NULL);
 }
 
 void test_error_codes(void)
@@ -910,8 +969,53 @@ void test_pattern_match(void)
     printf("Pattern match: %d comparisons with the reference, forty stars => OK!\n", compared);
 }
 
+// SI-080: the record length is the byte after ",L,", whatever byte that is, so a comma
+// or a colon there is a length and not a separator.
+static void check_rel_open(const char *name, int len, const char *file, int record_size)
+{
+    char buf[40];
+    memcpy(buf, name, len);
+    buf[len] = 0;
+    open_t o;
+    int err = parse_open(buf, o);
+    if (!err && (o.filetype == e_rel) && (o.file.filename == file) && (o.record_size == record_size)) {
+        printf("Relative open '%s' length %d => OK!\n", file, record_size);
+        return;
+    }
+    printf("Relative open '%s': error %d, type %d, name '%s', length %d, expected '%s' and %d\n",
+           file, err, (int)o.filetype, o.file.filename.c_str(), o.record_size, file, record_size);
+    failures++;
+}
+
+void test_rel_record_length_bytes(void)
+{
+    check_rel_open("RL44,L,\x2C", 8, "RL44", 44);
+    check_rel_open("RL58,L,\x3A", 8, "RL58", 58);
+    check_rel_open("0:RL58,L,\x3A", 10, "RL58", 58);
+    check_rel_open("RL42,L,\x2A", 8, "RL42", 42);
+    check_rel_open("RL61,L,\x3D", 8, "RL61", 61);
+    check_rel_open("RL13,L,\x0D", 8, "RL13", 13);
+}
+
+// SI-135: a time stamp filter is MM/DD/YY HH:MM xM with x either A or P, and a field out
+// of its range is refused rather than carried into the bits of its neighbour.
+void test_stamp_filter_forms(void)
+{
+    open_t o;
+    const char *bad[] = {
+        "$=T:*=>13/02/25 03:04 PM", "$=T:*=>00/02/25 03:04 PM", "$=T:*=>01/32/25 03:04 PM",
+        "$=T:*=>01/00/25 03:04 PM", "$=T:*=>01/02/25 13:04 PM", "$=T:*=>01/02/25 00:04 PM",
+        "$=T:*=>01/02/25 03:60 PM", "$=T:*=>01/02/25 03:04 XM", "$=T:*=>01/02/25 03:04 PX",
+    };
+    for (size_t i = 0; i < sizeof(bad) / sizeof(bad[0]); i++) {
+        d_parse_open(bad[i], o, ERR_SYNTAX);
+    }
+}
+
 int main(int argc, const char *argv[])
 {
+    test_rel_record_length_bytes();
+    test_stamp_filter_forms();
     test_log_formatters();
     test_pattern_match();
 
@@ -1181,7 +1285,7 @@ int main(int argc, const char *argv[])
     test_command( 0, (const uint8_t *)"MD1:TEMP", 8);
     test_command( 0, (const uint8_t *)"MD1//:TEMP", 10);
     test_command( 0, (const uint8_t *)"MD1//TEMP/:TEMP2", 16);
-    test_command( 0, (const uint8_t *)"MD:", 3);
+    test_command(34, (const uint8_t *)"MD:", 3);               // no name (SI-030)
     test_command(34, (const uint8_t *)"MD", 2);                // MD needs a colon (SI-060)
     test_command(34, (const uint8_t *)"MD/PATH\xC1\xC2", 9);
     test_command( 0, (const uint8_t *)"MD:PATH\xC1\xC2", 9);

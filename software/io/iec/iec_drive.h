@@ -29,6 +29,7 @@ class IecDrive : public IecSlave, SubSystem, ObjectWithMenu, ConfigurableObject
     int slot_id;
 
     int my_bus_id;
+    int applied_bus_id; // the configured number the processor last took (SI-103b)
     bool write_protect;
     int64_t clock_offset;
     bool enable;

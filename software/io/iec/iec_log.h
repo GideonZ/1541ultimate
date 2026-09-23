@@ -24,8 +24,10 @@
 #define SOFTIEC_LOG_PREFIX "SoftIEC: "
 
 // The command buffer and a file name hold up to 254 bytes, more than a log line should
-// carry, so a payload is rendered up to this many bytes; a longer one is cut, the cut is
-// marked with "..", and the line still reports the real length (SI-152).
+// carry, so a payload is rendered into a buffer of four characters for each of this many
+// bytes: all of a command of printable text fits, and at least this many bytes of any
+// other. A longer one is cut, the cut is marked with "..", and the line still reports the
+// real length (SI-152).
 #define SOFTIEC_LOG_MAX_BYTES 64
 
 // Room a caller has to provide for the rendering of SOFTIEC_LOG_MAX_BYTES.

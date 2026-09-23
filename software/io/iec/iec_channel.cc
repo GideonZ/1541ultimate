@@ -89,6 +89,7 @@ IecChannel::IecChannel(IecDrive *dr, int ch)
     partition = NULL;
     flags = 0;
     recordSize = 0;
+    recordMissing = false;
     recordOffset = 0;
     dataOffset = 0;
     recordDirty = false;
@@ -228,13 +229,7 @@ t_channel_retval IecChannel::pop_more(int pop_size)
     case e_record:
         pointer += pop_size;
         if (pointer > last_byte) {
-            recordOffset += recordSize;
-            if (!read_record(0)) {
-                return IEC_OK;
-            } else {
-                state = e_complete;
-                return IEC_NO_FILE;
-            }
+            return pop_record();
         }
         break;
     case e_buffer:
@@ -277,13 +272,7 @@ t_channel_retval IecChannel::pop_data(void)
         break;
     case e_record:
         if (pointer >= last_byte) {
-            recordOffset += recordSize;
-            if (!read_record(0)) {
-                return IEC_OK;
-            } else {
-                state = e_complete;
-                return IEC_NO_FILE;
-            }
+            return pop_record();
         }
         break;
     case e_buffer:
@@ -454,10 +443,44 @@ t_channel_retval IecChannel::push_command(uint8_t b)
     return IEC_OK;
 }
 
+// The last byte of a record went out. A record that is there is followed by the next
+// one; one past the end of the file answers 50 and stays where it is, so reading it
+// again answers the same (SI-080, SD fat_file_seek()).
+t_channel_retval IecChannel::pop_record(void)
+{
+    if (recordMissing) {
+        drive->get_command_channel()->set_error(ERR_RECORD_NOT_PRESENT, 0, 0);
+        pointer = 0;
+        prefetch = 0;
+        return IEC_OK;
+    }
+    recordOffset += recordSize;
+    if (!read_record(0)) {
+        return IEC_OK;
+    }
+    state = e_complete;
+    return IEC_NO_FILE;
+}
+
+// A record past the end of the file reads as one byte of 255, and nothing is written for
+// it until a record is (SI-080).
+void IecChannel::set_missing_record(void)
+{
+    recordMissing = true;
+    memset(buffer, 0, recordSize);
+    buffer[0] = 0xFF;
+    last_byte = 0;
+    pointer = 0;
+    prefetch = 0;
+    prefetch_max = 1;
+    recordDirty = false;
+    state = e_record;
+}
+
 t_channel_retval IecChannel::read_record(int offset)
 {
     FRESULT res = FR_DENIED;
-    uint32_t bytes;
+    uint32_t bytes = 0;
     if (f) {
         res = f->read(buffer, recordSize, &bytes);
 #if IECDEBUG > 2
@@ -465,20 +488,26 @@ t_channel_retval IecChannel::read_record(int offset)
         dump_hex_relative(buffer, bytes);
 #endif
     }
-    last_byte = 0; // recordSize - 1;
+    if (res != FR_OK) {
+        printf("%s!\n", FileSystem::get_error_string(res));
+        state = e_error;
+        return IEC_READ_ERROR;
+    }
+    if (bytes == 0) {
+        set_missing_record();
+        return IEC_OK;
+    }
+    if (bytes < recordSize) { // the last record of a file that ends inside it
+        memset(buffer + bytes, 0, recordSize - bytes);
+    }
+    recordMissing = false;
+    last_byte = 0;
     for (int i = recordSize - 1; i > 0; i--) {
         if (buffer[i] != 0) {
             last_byte = i;
             break;
         }
     }
-    if (res != FR_OK) {
-        printf("%s!\n", FileSystem::get_error_string(res));
-        state = e_error;
-        return IEC_READ_ERROR;
-    }
-    if (bytes == 0)
-        state = e_complete; // end should have triggered already
 
     pointer = offset;
     prefetch = offset;
@@ -486,6 +515,33 @@ t_channel_retval IecChannel::read_record(int offset)
     recordDirty = false;
     state = e_record;
     return IEC_OK;
+}
+
+// Before a record is written past the end of the file, the file is filled up to it: a
+// last record that ends early is completed, and every record between that and the one
+// written is an empty record, whose first byte is 255 as on a 1541.
+FRESULT IecChannel::grow_to_record(void)
+{
+    uint32_t size = f->get_size();
+    if (size >= recordOffset) {
+        return FR_OK;
+    }
+    FRESULT res = f->seek(size);
+    uint8_t *block = new uint8_t[recordSize];
+    uint32_t tr = 0;
+    memset(block, 0, recordSize);
+    uint32_t partial = (size > dataOffset) ? ((size - dataOffset) % recordSize) : 0;
+    if ((res == FR_OK) && partial) {
+        res = f->write(block, recordSize - partial, &tr);
+        size += recordSize - partial;
+    }
+    block[0] = 0xFF;
+    while ((res == FR_OK) && (size + recordSize <= recordOffset)) {
+        res = f->write(block, recordSize, &tr);
+        size += recordSize;
+    }
+    delete[] block;
+    return res;
 }
 
 t_channel_retval IecChannel::write_record(void)
@@ -511,8 +567,10 @@ t_channel_retval IecChannel::write_record(void)
                 buffer[0] = 0xFF;
             }
         }
-        // if everything went well, we are on a record boundary already by the last 'seek' operation
-        res = f->seek(recordOffset);
+        res = grow_to_record();
+        if (res == FR_OK) {
+            res = f->seek(recordOffset);
+        }
         if (res == FR_OK) {
 #if IECDEBUG > 2
             printf("Writing record to position %d:\n", recordOffset);
@@ -524,12 +582,6 @@ t_channel_retval IecChannel::write_record(void)
                 //res = f->sync();
             }
         }
-        // If the file pointer was aligned on a record boundary, it will still be on a record boundary.
-        // The file pointer will be on the next record. Should we read it and seek back to the beginning of the record?
-
-        // FIXME: On real drives, the file size does not grow by just writing; only by seeking; so we may want to
-        // check the current position against the size and issue "Record does not exist" error when the
-        // file boundary would be exceeded here.
     }
 
     if (res != FR_OK) {
@@ -667,6 +719,14 @@ bool iec_x00_probe(FileManager *fm, const char *path, char *cbm_name, filetype_t
     filetype_t found;
     if (!x00_type_of_name(path, &found) || !x00_read_header(fm, path, cbm_name, record_length)) {
         return false;
+    }
+    // A trailing run of shifted spaces is padding, as some programs write it (SI-148,
+    // SD fatops.c).
+    if (cbm_name) {
+        int n = strlen(cbm_name);
+        while ((n > 0) && ((uint8_t)cbm_name[n - 1] == 0xA0)) {
+            cbm_name[--n] = 0;
+        }
     }
     if (type) {
         *type = found;
@@ -1322,12 +1382,10 @@ int IecChannel :: setup_directory_read()
             buffer[8 + i] = cbm_name[i];
         }
     } else {
+        // The first sixteen characters of the name, as the partition directory and G-P
+        // show it (SI-051).
         const char *pp = partition->GetName();
         int pos = 8;
-        int len = strlen(pp);
-        if (len > 16) {
-            pp += (len - 16);
-        }
         while ((pos < 24) && (*pp))
             buffer[pos++] = toupper(*(pp++));
     }
@@ -1340,13 +1398,55 @@ void print_file(filename_t& file)
         file.partition, file.path.c_str(), file.filename.c_str(), file.has_wildcard?"true":"false" );
 }
 
+// The record length of an open relative file and the offset of its first record. An R00
+// file has both in its header, which x00_skip_header() has already read (`data_offset` is
+// then not 0). Otherwise the record length is the first byte of the file, in this
+// firmware's two byte layout or sd2iec's one byte layout (SI-084): a non-zero second byte
+// can only be the one byte layout, and otherwise the size leaves 2 mod r over for the one
+// and 1 mod r for the other. A record length of 1 leaves both the same and is read as the
+// two byte layout. A disk image always presents the two byte layout, whatever its size.
+static FRESULT rel_layout(File *f, uint8_t wrapped_length, uint32_t& data_offset, int& length)
+{
+    length = wrapped_length;
+    if (data_offset) {
+        return FR_OK;
+    }
+    uint8_t head[2] = { 0, 0 };
+    uint32_t head_bytes = 0;
+    FRESULT fres = f->read(head, 2, &head_bytes);
+    length = head[0];
+    uint32_t size = f->get_size();
+    bool in_image = f->get_file_system() && f->get_file_system()->supports_direct_sector_access();
+    data_offset = 2;
+    if (in_image) {
+        // the two byte layout
+    } else if ((head_bytes >= 2) && head[1]) {
+        data_offset = 1;
+    } else if ((length > 1) && ((size % length) != (2 % length)) && ((size % length) == (1 % length))) {
+        data_offset = 1;
+    }
+    return fres;
+}
+
 int IecChannel :: setup_file_access()
 {
     drive->set_error(0, 0, 0);
     state = e_error;
 
-    if (name_to_open.access == e_not_set) {
-        name_to_open.access = (channel == 1) ? e_write : e_read;
+    // Secondary address 0 reads and 1 writes, whatever the name asks for (SI-070, SD
+    // file_open()).
+    if (channel == 0) {
+        name_to_open.access = e_read;
+    } else if (channel == 1) {
+        name_to_open.access = e_write;
+    } else if (name_to_open.access == e_not_set) {
+        name_to_open.access = e_read;
+    }
+    // A name a file is created under has sixteen characters at most, as on a 1541, so no
+    // two new files list under one name (SI-150).
+    if (((name_to_open.access == e_write) || name_to_open.record_size) &&
+        (name_to_open.file.filename.length() > 16)) {
+        name_to_open.file.filename = mstring(name_to_open.file.filename.c_str(), 0, 15);
     }
 
     if (name_to_open.filetype == e_any) {
@@ -1412,6 +1512,14 @@ int IecChannel :: setup_file_access()
                                              false, true, true, work, &info);
         } else if (fres == FR_OK) {
             use_found_name(work, info);
+            // An x00 file answers to the name in its header, not to its host name (SI-144).
+            char header_name[24];
+            if (iec_x00_probe(fm, work.c_str(), header_name, NULL, NULL) &&
+                strcmp(header_name, name_to_open.file.filename.c_str())) {
+                GETPARTITION(name_to_open.file.partition, partition, 0);
+                fres = resolve_existing_iec_path(fm, partition, name_to_open.file, e_any,
+                                                 false, true, true, work, &info);
+            }
         }
         full_path = work.c_str();
         if (fres != FR_OK) {
@@ -1424,21 +1532,33 @@ int IecChannel :: setup_file_access()
         }
     }
 
-    // A name that an x00 file carries is taken, as in SD file_open(): without @ the answer is
-    // 63, and with @ the x00 file makes way for the new file.
+    // A name belongs to one entry, whatever its type (SI-035, SD file_open()). Without @ an
+    // entry of that name answers 63. With @, one of another type answers 64, as the 1541 ROM
+    // does at $D8F5, and an x00 file of the same type makes way for the new file.
     if ((name_to_open.access == e_write) && !name_to_open.file.has_wildcard) {
         GETPARTITION(name_to_open.file.partition, partition, 0);
-        FileInfo existing(4);
-        mstring wrapped;
+        FileInfo existing(INFO_SIZE);
+        mstring found_path;
         if ((fm->fstat(full_path, existing) == FR_NO_FILE) &&
-            (resolve_existing_iec_path(fm, partition, name_to_open.file, name_to_open.filetype,
-                                       false, true, false, wrapped) == FR_OK) &&
-            iec_x00_probe(fm, wrapped.c_str(), NULL, NULL, NULL)) {
+            (resolve_existing_iec_path(fm, partition, name_to_open.file, e_any,
+                                       false, true, false, found_path, &existing) == FR_OK)) {
+            char cbm_name[24];
+            filetype_t found_type = e_any;
+            bool wrapped = iec_x00_probe(fm, found_path.c_str(), cbm_name, &found_type, NULL);
+            if (!wrapped) {
+                IecPartition::CreateIecName(&existing, cbm_name, found_type);
+            }
             if (!name_to_open.replace) {
                 drive->set_error(ERR_FILE_EXISTS, 0, 0);
                 return 0;
             }
-            fm->delete_file(wrapped.c_str());
+            if (found_type != name_to_open.filetype) {
+                drive->set_error(ERR_FILE_TYPE_MISMATCH, 0, 0);
+                return 0;
+            }
+            if (wrapped) {
+                fm->delete_file(found_path.c_str());
+            }
         }
     }
 
@@ -1471,7 +1591,7 @@ int IecChannel :: setup_file_access()
     // opens a relative file for reading only (SI-102).
     if (drive->is_write_protected()) {
         if (name_to_open.filetype == e_rel) {
-            flags = FA_READ;
+            flags = FA_READ | (flags & FA_OPEN_FROM_CBM);
         } else if (flags & FA_WRITE) {
             drive->set_error(ERR_WRITE_PROTECT_ON, 0, 0);
             return 0;
@@ -1500,9 +1620,23 @@ int IecChannel :: setup_file_access()
         if (fres == FR_OK) {
             full_path = work.c_str();
             DBGIECV("Directory-assisted open resolved to %s\n", full_path);
+        } else if ((fres == FR_NO_FILE) && (name_to_open.filetype != e_rel)) {
+            // An existing relative file opened as another type is a type mismatch (SI-035).
+            mstring rel;
+            if (resolve_existing_iec_path(fm, partition, name_to_open.file, e_rel,
+                                          false, true, true, rel) == FR_OK) {
+                drive->set_error(ERR_FILE_TYPE_MISMATCH, 0, 0);
+                return 0;
+            }
         }
     }
     if (fres != FR_OK) {
+        // A relative file that is not there would be created, which W-1 refuses (SI-102).
+        if ((fres == FR_NO_FILE) && (name_to_open.filetype == e_rel) && name_to_open.record_size &&
+            drive->is_write_protected()) {
+            drive->set_error(ERR_WRITE_PROTECT_ON, 0, 0);
+            return 0;
+        }
         drive->set_error_fres(fres);
         return 0;
     }
@@ -1518,7 +1652,6 @@ int IecChannel :: setup_file_access()
     if (name_to_open.access != e_write) {
         dataOffset = x00_skip_header(f, full_path, &wrapped_length);
     }
-    bool wrapped = (dataOffset != 0);
 
     if (name_to_open.filetype == e_rel) {
         uint32_t tr;
@@ -1530,33 +1663,11 @@ int IecChannel :: setup_file_access()
                 recordSize = name_to_open.record_size;
                 dataOffset = 2;
                 recordOffset = 2; // First record follows the REL header, also on a reused channel.
-                state = e_record;
+                set_missing_record(); // a new file has no first record until one is written
             }
         } else { // file already exists
-            // The record length is at offset 25 of an R00 header, or the first byte of a
-            // plain file, which is this firmware's two byte layout or sd2iec's one byte
-            // layout (SI-084): a non-zero second byte can only be the one byte layout, and
-            // otherwise the size leaves 2 mod r over for the one and 1 mod r for the other.
-            // A record length of 1 leaves both the same and is read as the two byte layout.
-            // A disk image always presents the two byte layout, whatever its size.
-            int length = wrapped_length;
-            fres = FR_OK;
-            if (!wrapped) {
-                uint8_t head[2] = { 0, 0 };
-                uint32_t head_bytes = 0;
-                fres = f->read(head, 2, &head_bytes);
-                length = head[0];
-                uint32_t size = f->get_size();
-                bool in_image = f->get_file_system() && f->get_file_system()->supports_direct_sector_access();
-                dataOffset = 2;
-                if (in_image) {
-                    // the two byte layout
-                } else if ((head_bytes >= 2) && head[1]) {
-                    dataOffset = 1;
-                } else if ((length > 1) && ((size % length) != (2 % length)) && ((size % length) == (1 % length))) {
-                    dataOffset = 1;
-                }
-            }
+            int length;
+            fres = rel_layout(f, wrapped_length, dataOffset, length);
             if ((fres != FR_OK) || (length == 0)) {
                 DBGIECV("WARNING: Illegal record size in .rel file...Is it a REL file at all? (%d)\n", length);
                 state = e_error;
@@ -1733,53 +1844,25 @@ int IecChannel::seek_record(int recordNumber, int offset)
         return ERR_FILE_TYPE_MISMATCH;
     }
 
-    uint32_t targetPosition = c_header + (recordNumber * recordSize); // + offset; // reserve 2 bytes for control (record Size)
+    uint32_t targetPosition = c_header + (recordNumber * recordSize);
     recordOffset = targetPosition;
-    uint32_t minimumFileSize = targetPosition + recordSize; // Fileshould be at least one record larger than the begin position of the one requested
-    uint32_t currentSize = f->get_size();
-    FRESULT fres;
     int err = ERR_ALL_OK;
-    if (currentSize < minimumFileSize) { // append with additional records that are 'FF's, followed by zeros.
-        // Reaching a record past the end grows the file, which a write protected drive
-        // does not do; the record really is not there (SI-102).
-        if (drive->is_write_protected()) {
-            return ERR_RECORD_NOT_PRESENT;
-        }
-        fres = f->seek(currentSize);
-
-        uint8_t *block = new uint8_t[512];
-        uint32_t tr = 0;
-        memset(block, 0x00, 512);
-        uint32_t partialRecord = (currentSize - c_header) % recordSize;
-
-        if (partialRecord) {
-            printf("Current file size should be a multiple of record size.. This should not happen.\n");
-            fres = f->write(block, partialRecord, &tr);
-            currentSize += partialRecord;
-        }
-
-        DBGIECV("Append REL file until size %d (was %d)\n", minimumFileSize, currentSize);
-        uint32_t remain = minimumFileSize - currentSize;
-        block[0] = 0xFF;
-        while (remain >= recordSize) {
-            fres = f->write(block, recordSize, &tr);
-            remain -= recordSize;
-        }
-        delete[] block;
-        err = ERR_RECORD_NOT_PRESENT;
-    }
-
-    fres = f->seek(targetPosition);
-    if (fres != FR_OK) {
-        drive->set_error_fres(fres);
-        return 0;
-    }
-
     if (offset > recordSize - 1) {
         offset = recordSize - 1;
         err = ERR_OVERFLOW_IN_RECORD;
     }
-
+    // A record past the end is not there, which is not an error when the next thing is
+    // to write it; the write grows the file (SI-080). The file position is left alone,
+    // because a seek past the end of a writable file would extend it.
+    if (f->get_size() < targetPosition + recordSize) {
+        set_missing_record();
+        return err ? err : ERR_RECORD_NOT_PRESENT;
+    }
+    FRESULT fres = f->seek(targetPosition);
+    if (fres != FR_OK) {
+        drive->set_error_fres(fres);
+        return 0;
+    }
     t_channel_retval ret = read_record(offset);
     if (ret != IEC_OK) {
         err = ERR_READ_ERROR;
@@ -1883,8 +1966,12 @@ const char *IecChannel :: ConstructPath(mstring& work, filename_t& name, filetyp
     petscii_to_fat(name.filename.c_str(), fatname, 52);
     // printf("After petscii_to_fat: '%s'\n", fatname);
     const char *ext = types[(int)ftype];
-    if (((acc == e_read) || (ftype != e_any)) && // for reads, .??? is allowed, but for writes it is not
-        !iec_name_is_raw(name.filename.c_str())) {
+    // A name with a disk image extension is written under exactly that name when it is a
+    // PRG, and gets its type extension like any other name otherwise (SI-072, SD
+    // fat_open(), `type == TYPE_PRG && should_save_raw()`).
+    bool raw = iec_name_is_raw(name.filename.c_str()) &&
+               ((acc != e_write) || (ftype == e_prg) || (ftype == e_folder));
+    if (((acc == e_read) || (ftype != e_any)) && !raw) { // .??? is for reads only
         add_extension(fatname, ext, 48);
     }
 
@@ -2058,7 +2145,13 @@ int IecCommandChannel::do_remove_dir(filename_t& dest)
     const char *fullpath = ConstructPath(work, dest, e_folder, e_read);
     if (fullpath) {
         DBGIECV("Directory to remove: %s\n", fullpath);
-        FRESULT fres = fm->delete_file(fullpath);
+        // RD removes a directory and nothing else: a host file reached by the same name,
+        // a disk image or a file without an extension, is not one (SI-063).
+        FileInfo info(INFO_SIZE);
+        FRESULT fres = fm->fstat(fullpath, info);
+        if (fres == FR_OK) {
+            fres = (info.attrib & AM_DIR) ? fm->delete_file(fullpath) : FR_NO_FILE;
+        }
         if (fres == FR_NO_FILE || fres == FR_NO_PATH) {
             // A pattern names the first directory that matches it; its host name escapes
             // the wildcards, so only the directory scan can find it (SI-142).
@@ -2112,6 +2205,35 @@ int IecCommandChannel::do_copy(filename_t& dest, filename_t sources[], int n)
     }
     // ftype is now set to the type of the first original file.
 
+    // A relative file copies its records under one record length, so it goes with relative
+    // files only, as SD parse_copy() has it (SI-075). Every source is checked before the
+    // target exists, so that a refused copy leaves nothing behind.
+    for (int i = 1; i < n; i++) {
+        mstring other;
+        FileInfo other_info(INFO_SIZE);
+        const char *path = ConstructPath(other, sources[i], e_any, e_read);
+        FRESULT found = path ? fm->fstat(path, other_info) : FR_NO_PATH;
+        if (found == FR_OK) {
+            use_found_name(other, other_info);
+        } else {
+            IecPartition *partition = drive->vfs->GetPartition(sources[i].partition);
+            found = partition ? resolve_existing_iec_path(fm, partition, sources[i], e_any, false, true,
+                                                          sources[i].has_wildcard, other, &other_info)
+                              : FR_NO_PATH;
+        }
+        if (found != FR_OK) {
+            continue; // reported where the copy reaches it
+        }
+        char other_name[24];
+        filetype_t other_type = e_any;
+        if (!iec_x00_probe(fm, other.c_str(), other_name, &other_type, NULL)) {
+            IecPartition::CreateIecName(&other_info, other_name, other_type);
+        }
+        if ((other_type == e_rel) != (ftype == e_rel)) {
+            return ERR_FILE_TYPE_MISMATCH;
+        }
+    }
+
     // Now the real copy action can begin
     File *fi, *fo;
     const char *destpath = ConstructPath(work, dest, ftype, e_write);    
@@ -2127,6 +2249,7 @@ int IecCommandChannel::do_copy(filename_t& dest, filename_t sources[], int n)
     }
     // Output file is now open, let's copy data into it
     uint8_t *databuf = new uint8_t[32768];
+    int rel_length = 0;
 
     for(int i=0;i<n;i++) {
         const char *frompath = ConstructPath(work, sources[i], e_any, e_read);
@@ -2161,7 +2284,32 @@ int IecCommandChannel::do_copy(filename_t& dest, filename_t sources[], int n)
             drive->set_error_fres(fres);
             break;
         }
-        x00_skip_header(fi, frompath, NULL); // an x00 file copies its data, not its header
+        uint8_t wrapped_length = 0;
+        uint32_t data_offset = x00_skip_header(fi, frompath, &wrapped_length); // data, not header
+        if (ftype == e_rel) {
+            // The target has one record length, written once; each source adds its records.
+            int length = 0;
+            fres = rel_layout(fi, wrapped_length, data_offset, length);
+            if ((fres == FR_OK) && (i == 0)) {
+                rel_length = length;
+                uint16_t wrd = (uint16_t)length;
+                uint32_t written;
+                fres = fo->write(&wrd, 2, &written);
+            }
+            if ((fres == FR_OK) && ((length == 0) || (length != rel_length))) {
+                set_error(ERR_FILE_TYPE_MISMATCH);
+                fm->fclose(fi);
+                break;
+            }
+            if (fres == FR_OK) {
+                fres = fi->seek(data_offset);
+            }
+            if (fres != FR_OK) {
+                drive->set_error_fres(fres);
+                fm->fclose(fi);
+                break;
+            }
+        }
         uint32_t bytes_read, bytes_written;
         do {
             fres = fi->read(databuf, 32768, &bytes_read);
@@ -2396,15 +2544,33 @@ int IecCommandChannel::do_rename(filename_t &src, filename_t &dest)
         IecPartition::CreateIecName(&info, cbm_name, ftype);
     }
     // ftype is now set to the type of the original file.
-    
+
+    // A directory takes its name without a type extension, so a FAT host would drop a
+    // trailing dot or space from it and the directory could not be found again (SI-141).
+    int new_len = dest.filename.length();
+    if ((info.attrib & AM_DIR) && new_len &&
+        ((dest.filename.c_str()[new_len - 1] == '.') || (dest.filename.c_str()[new_len - 1] == ' '))) {
+        return ERR_SYNTAX_ERROR_NAME;
+    }
+
     // The new name must not be taken by an entry of any type, unless it is the old name
     // spelled in another case (SI-074).
     GETPARTITION(dest.partition, dest_partition, 0);
     mstring dest_dir;
     if (resolve_directory_path(fm, dest_partition, dest.path, dest_dir) != FR_OK) {
-        return ERR_PARTITION_ERROR;
+        drive->set_error(ERR_DIRECTORY_ERROR, dest_partition->GetPartitionNumber(), 0);
+        return 0;
     }
-    if (strcasecmp(cbm_name, dest.filename.c_str()) != 0) {
+    // Only a rename in place can keep the name; a move meets the names of another
+    // directory.
+    const char *slash = strrchr(src_path, '/');
+    int src_dir_len = slash ? (int)(slash - src_path) : 0;
+    int dest_dir_len = dest_dir.length();
+    while ((dest_dir_len > 0) && (dest_dir.c_str()[dest_dir_len - 1] == '/')) {
+        dest_dir_len--;
+    }
+    bool in_place = (src_dir_len == dest_dir_len) && !strncasecmp(src_path, dest_dir.c_str(), src_dir_len);
+    if (!in_place || (strcasecmp(cbm_name, dest.filename.c_str()) != 0)) {
         mstring taken;
         if (find_rendered_iec_child(fm, dest_dir.c_str(), dest.filename.c_str(), e_any,
                                     true, true, false, taken, NULL) == FR_OK) {
@@ -2570,17 +2736,21 @@ int IecCommandChannel::do_set_position(int chan, uint32_t pos, int recnr, int re
     if (chan >= 19) {
         chan &= 0x0F;
     }
+    // A byte that names no data channel, or a channel with nothing open on it, is
+    // answered as the ROM at $E207 and SD parse_position() answer it (SI-081).
     if ((chan < 0) || (chan > 14)) {
-        return ERR_SYNTAX_ERROR_CMD;
+        return ERR_NO_CHANNEL;
     }
     IecChannel *channel = drive->get_data_channel(chan);
+    if (channel->state == e_buffer) {
+        return do_buffer_position(chan, pos);
+    }
     if (!channel->f) {
-        return ERR_FILE_NOT_OPEN;
+        return ERR_NO_CHANNEL;
     }
     FRESULT fres;
     switch(channel->state) {
-    case e_buffer:
-        return do_buffer_position(chan, pos);
+    case e_complete: // a file read to its end is still open (SI-082)
     case e_file:
         if ((channel->name_to_open.access == e_write) || (channel->name_to_open.access == e_append)) {
             // A channel that writes (SI-083): what it holds goes out at the old position,
@@ -2615,6 +2785,7 @@ int IecCommandChannel::do_set_position(int chan, uint32_t pos, int recnr, int re
             drive->set_error_fres(fres);
             return 0;
         }
+        channel->state = e_file;
         channel->curblk->valid_bytes = 0;
         channel->nxtblk->valid_bytes = 0;
         fres = channel->f->read(channel->nxtblk->bufdata, 512, &channel->nxtblk->valid_bytes);
@@ -2671,7 +2842,10 @@ int IecCommandChannel::do_get_partition_info(int part)
         info.lfname[info.lfsize - 1] = 0;
         IecPartition::CreateIecName(&info, cbm_name, ftype);
 
-        strncpy((char *)(buffer+3), cbm_name, 16);
+        // Padded with shifted spaces, as a CMD partition directory and SD
+        // parse_getpartition() pad it (SI-041).
+        memset(buffer + 3, 0xA0, 16);
+        memcpy(buffer + 3, cbm_name, (strlen(cbm_name) < 16) ? strlen(cbm_name) : 16);
 
         // Bytes 27 to 29, the size in 512 byte blocks, as the HD counts them, clamped to
         // 24 bits: the image file for a partition rooted in a disk image, the volume for
@@ -2894,7 +3068,12 @@ int IecCommandChannel::do_set_header(filename_t& name, const char *id)
         rel_len--;
     }
     if (rel_len == 0) {
-        partition->SetName(name.filename.c_str());
+        // The partition's name, which keeps its first sixteen characters as R-P does
+        // (SI-051).
+        char cut_name[17];
+        strncpy(cut_name, name.filename.c_str(), 16);
+        cut_name[16] = 0;
+        partition->SetName(cut_name);
         return 0;
     }
     char fat_name[52];
@@ -2986,8 +3165,10 @@ int IecCommandChannel::do_restore_device_number()
 
 int IecCommandChannel::ext_open_file(const char *filenameOrCommand)
 {
-    strncpy((char *) wr_buffer, filenameOrCommand, CBMDOS_COMMAND_BUFFER_SIZE - 1);
-    wr_buffer[CBMDOS_COMMAND_BUFFER_SIZE - 1] = 0;
+    // A whole buffer's worth, so that a command too long for it reaches the length check
+    // and is refused rather than executed cut short (SI-022).
+    strncpy((char *) wr_buffer, filenameOrCommand, CBMDOS_COMMAND_BUFFER_SIZE);
+    wr_buffer[CBMDOS_COMMAND_BUFFER_SIZE] = 0;
     wr_pointer = strlen((char *) wr_buffer);
     push_command(0x60);
     return push_command(0x00);
@@ -3015,6 +3196,7 @@ t_channel_retval IecCommandChannel::push_command(uint8_t b)
         wr_buffer[wr_pointer] = 0;
         if (wr_pointer) {
             drive->set_error(0, 0, 0);
+            state = e_idle; // a reply nobody read belongs to the command before this one
             err = parser->execute_command(wr_buffer, wr_pointer);
             if (err) set_error(err);
             if (drive_failed()) {

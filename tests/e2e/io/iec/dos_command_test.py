@@ -864,7 +864,9 @@ def check_partition_commands(agent):
             raise Failure(f"G-P reports type {info[0]} in byte 0 and {info[1]} in the reserved byte 1, expected 1 and 0")
         if info[2] != 1:
             raise Failure(f"G-P reports partition {info[2]}, expected 1")
-        name = info[3:19].rstrip(b"\0").decode("ascii", "replace")
+        name = info[3:19].rstrip(b"\xa0").decode("ascii", "replace")
+        if b"\0" in info[3:19]:
+            raise Failure(f"G-P pads the partition name with zero bytes, not shifted spaces: {info[3:19]!r}")
         if name.startswith("/"):
             raise Failure(f"G-P names the partition by its path, {name!r}")
 

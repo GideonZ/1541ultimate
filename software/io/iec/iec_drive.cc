@@ -137,6 +137,7 @@ IecDrive :: IecDrive() : SubSystem(SUBSYSID_IEC)
     intf = IecInterface :: get_iec_interface();
 	fm = FileManager :: getFileManager();
     my_bus_id = 0;
+    applied_bus_id = -1;
     write_protect = false;
     clock_offset = 0;
     enable = false;
@@ -230,10 +231,14 @@ void IecDrive :: effectuate_settings(void)
     int bus_id = cfg->get_value(CFG_IEC_BUS_ID);
     bool enabled = cfg->get_value(CFG_IEC_ENABLE) != 0;
     // Holding the processor in reset drops a transfer on the bus, so a change of Log Every
-    // Operation alone, which is read where it is used, leaves the processor running.
-    bool reconfigure = (bus_id != my_bus_id) || (enabled != enable);
-    my_bus_id = bus_id;
-    cmd_if.set_kernal_device_id(my_bus_id);
+    // Operation alone, which is read where it is used, leaves the processor running. The
+    // comparison is with the setting, not the live number, which U0> may have moved.
+    bool reconfigure = (bus_id != applied_bus_id) || (enabled != enable);
+    if (bus_id != applied_bus_id) {
+        my_bus_id = bus_id;
+        applied_bus_id = bus_id;
+        cmd_if.set_kernal_device_id(my_bus_id);
+    }
 
     enable = enabled;
 
@@ -332,7 +337,9 @@ void IecDrive :: reset(void)
     IecDriveLock guard(this);
     effectuate_registered_settings();
     // The settings restart the IEC processor only for a new device number or enable
-    // (SI-103b); a reset restarts it in any case.
+    // (SI-103b); a reset restarts it in any case, on the number the settings hold.
+    my_bus_id = cfg->get_value(CFG_IEC_BUS_ID);
+    cmd_if.set_kernal_device_id(my_bus_id);
     intf->configure();
     for(int i=0; i < 16; i++) {
         channels[i]->reset();

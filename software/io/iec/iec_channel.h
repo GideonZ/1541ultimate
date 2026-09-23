@@ -328,6 +328,8 @@ class IecChannel {
     // of a relative file in one of its layouts (SI-084).
     uint32_t dataOffset;
     bool recordDirty;
+    // The record at recordOffset is past the end of the file (SI-080).
+    bool recordMissing;
 
     // A direct access channel (#): the partition that was current when it was opened, which
     // its block commands use (SI-093).
@@ -363,6 +365,9 @@ private:
     int read_block(void);
     t_channel_retval read_record(int offset);
     t_channel_retval write_record(void);
+    void set_missing_record(void);
+    FRESULT grow_to_record(void);
+    t_channel_retval pop_record(void);
 
     const char *ConstructPath(mstring& work, filename_t& name, filetype_t ftype, fileaccess_t acc);
 

@@ -94,6 +94,9 @@ int parse_full_path(const char *buf, filename_t& name, bool *replace = NULL, boo
             while(isdigit(buf[idx])) {
                 name.partition *= 10;
                 name.partition += (buf[idx++] - '0');
+                if (name.partition > 0xFFFF) { // no partition number is that large
+                    name.partition = 0xFFFF;
+                }
             }
         }
         // Skip whitespace after partition number
@@ -143,8 +146,16 @@ int parse_dir_option(const char *buf, dir_options_t &opt)
     case '>':
         // MM/DD/YY HH:MM xM, with x either A or P, as in $:*=>01/02/25 03:04 PM.
         n = sscanf(buf+1, "%d/%d/%d %d:%d %c", &M, &d, &y, &h12, &m, &ampm);
-        if (n != 6)
-            return ERR_SYNTAX;
+        if ((n != 6) || ((ampm != 'A') && (ampm != 'P')) || (M < 1) || (M > 12) ||
+            (d < 1) || (d > 31) || (h12 < 1) || (h12 > 12) || (m < 0) || (m > 59)) {
+            return ERR_SYNTAX; // a field out of range would run into its neighbour's bits
+        }
+        {
+            const char *mark = strchr(buf + 1, ampm);
+            if (!mark || (mark[1] != 'M')) {
+                return ERR_SYNTAX;
+            }
+        }
         y += (y < 80) ? 2000 : 1900;
         h = (h12 % 12) + (ampm == 'P' ? 12:0);
         datetime = make_fat_time(y, M, d, h, m, 0);
@@ -188,6 +199,7 @@ int parse_open(const char *buf, open_t& fn)
     fn.buffers = 0;
 
     int err = 0;
+    bool record_length_given = false;
     if (buf[0] == '#') {
         fn.dir_opt.stream = e_stream_buffer;
         // "##n", exactly three characters, asks for n chained buffers with the pointer at
@@ -211,7 +223,18 @@ int parse_open(const char *buf, open_t& fn)
             err = parse_full_path(buf+1, fn.file, &fn.replace, true);
         }
     } else {
-        err = parse_full_path(buf, fn.file, &fn.replace);
+        // The record length of a relative file is the byte after ",L,", whatever byte
+        // that is, so it is taken off before a comma or a colon in it is read as syntax
+        // (SI-080, SD file_open()).
+        const char *rel = strstr(buf, ",L,");
+        if (rel && rel[3] && !rel[4]) {
+            mstring name(buf, 0, (int)(rel - buf) - 1);
+            fn.record_size = (uint8_t)rel[3];
+            record_length_given = true;
+            err = parse_full_path(name.c_str(), fn.file, &fn.replace);
+        } else {
+            err = parse_full_path(buf, fn.file, &fn.replace);
+        }
     }
     if (err) {
         return err;
@@ -240,7 +263,12 @@ int parse_open(const char *buf, open_t& fn)
 
     // check for file access modifiers
     const char *modifiers[3] = { NULL };
-    int m = fn.file.filename.split(',', modifiers, 3);
+    int m = 0;
+    if (record_length_given) {
+        fn.filetype = e_rel;
+    } else {
+        m = fn.file.filename.split(',', modifiers, 3);
+    }
     for(int i=1; i < m; i++) {
         switch (modifiers[i][0]) {
         case 'R': fn.access = e_read; break;
@@ -321,15 +349,26 @@ static int parse_block_parameters(const uint8_t *buffer, int len, int *values, i
 
 int IecParser :: block_command(const uint8_t *buffer, int len)
 {
-    if (buffer[1] != '-') {
+    // B-R and BLOCK-READ are one command: the letter after the dash names it, as the
+    // 1541 ROM and SD parse_block() read it (SI-091).
+    int dash = 1;
+    while ((dash < len) && isalpha(buffer[dash])) {
+        dash++;
+    }
+    if ((dash >= len - 1) || (buffer[dash] != '-')) {
         return ERR_SYNTAX;
+    }
+    uint8_t letter = buffer[dash + 1];
+    int start = dash + 2;
+    while ((start < len) && isalpha(buffer[start])) {
+        start++;
     }
     int n;
     int p[4];
-    const uint8_t *params = buffer + 3;
-    int param_len = (len > 3) ? (len - 3) : 0;
+    const uint8_t *params = buffer + start;
+    int param_len = len - start;
 
-    switch(buffer[2]) {
+    switch(letter) {
     case 'R':
         n = parse_block_parameters(params, param_len, p, 4);
         if (n != 4) return ERR_SYNTAX;
@@ -353,7 +392,7 @@ int IecParser :: block_command(const uint8_t *buffer, int len)
         // reader would have collected and the command would then have ignored.
         n = parse_block_parameters(params, param_len, p, 4);
         if (n < 3) return ERR_SYNTAX;
-        return exec->do_block_allocate(p[0], p[1], p[2], buffer[2] == 'A');
+        return exec->do_block_allocate(p[0], p[1], p[2], letter == 'A');
     default:
         return ERR_SYNTAX;
     }
@@ -409,6 +448,20 @@ int IecParser :: dir_command(const uint8_t *buffer, int len)
     if (err) {
         return err;
     }
+    if (buffer[0] != 'C') {
+        // A colon with nothing after it is no name (SI-030).
+        int nlen = dest.filename.length();
+        if (!nlen) {
+            return ERR_NO_NAME;
+        }
+        // A directory to be made cannot carry a wildcard, and a FAT host drops a
+        // trailing dot or space from the name it creates, which could then not be
+        // found again (SI-141).
+        char last = dest.filename.c_str()[nlen - 1];
+        if ((buffer[0] == 'M') && (dest.has_wildcard || (last == '.') || (last == ' '))) {
+            return ERR_ILLEGAL_NAME;
+        }
+    }
     switch (buffer[0]) {
     case 'C': return exec->do_change_dir(dest);
     case 'M': return exec->do_make_dir(dest);
@@ -418,6 +471,8 @@ int IecParser :: dir_command(const uint8_t *buffer, int len)
     }
     return 0;
 }
+
+static int parse_name_list(const char *buf, filename_t *&names, int *count);
 
 int IecParser :: copy_command(const uint8_t *buffer, int len)
 {
@@ -440,17 +495,14 @@ int IecParser :: copy_command(const uint8_t *buffer, int len)
     if (dest.has_wildcard)
         return ERR_ILLEGAL_NAME;
 
-    filename_t source_list[8];
-    const char *sources[8] = { NULL };
-    mstring src(remaining);
-    int n = src.split(',', sources, 8);
-    for(int i = 0; i < n; i ++) {
-        err = parse_full_path(sources[i], source_list[i]);
-        if (err) {
-            return err;
-        }
+    filename_t *source_list = NULL;
+    int n = 0;
+    err = parse_name_list(remaining, source_list, &n);
+    if (!err) {
+        err = IecParser :: exec->do_copy(dest, source_list, n);
     }
-    return IecParser :: exec->do_copy(dest, source_list, n);
+    delete[] source_list;
+    return err;
 }
 
 int IecParser :: get_command(const uint8_t *buffer, int len)
@@ -603,24 +655,28 @@ int IecParser :: rename_dashed_command(const uint8_t *buffer, int len)
     }
 }
 
-// A comma separated list of names, each of the form [[n][path]:]pattern, as scratch and
-// the sd2iec attribute commands take it.
-static int parse_name_list(const char *buf, filename_t names[], int max, int *count)
+// A comma separated list of names, each of the form [[n][path]:]pattern, as scratch, copy
+// and the sd2iec attribute commands take it. The list is as long as the command makes it
+// (SI-150), so it is allocated here, and the caller deletes it whatever the answer.
+static int parse_name_list(const char *buf, filename_t *&names, int *count)
 {
-    mstring cmd(buf);
-    const char *parts[8] = { NULL };
-    int n = cmd.split(',', parts, (max < 8) ? max : 8);
-    if (n < 1) {
-        return ERR_NO_NAME; // a command that carries no name at all
-    }
-    for (int i = 0; i < n; i++) {
-        int err = parse_full_path(parts[i], names[i], NULL);
-        if (err) {
-            return err;
+    int n = 1;
+    for (const char *p = buf; *p; p++) {
+        if (*p == ',') {
+            n++;
         }
     }
+    mstring cmd(buf);
+    const char **parts = new const char *[n];
+    n = cmd.split(',', parts, n);
+    names = new filename_t[n];
+    int err = 0;
+    for (int i = 0; (i < n) && !err; i++) {
+        err = parse_full_path(parts[i], names[i], NULL);
+    }
+    delete[] parts;
     *count = n;
-    return 0;
+    return err;
 }
 
 int IecParser :: scratch_command(const uint8_t *buffer, int len)
@@ -630,13 +686,14 @@ int IecParser :: scratch_command(const uint8_t *buffer, int len)
         len--;
     }
     mstring cmd((const char *)buffer, 0, len-1);
-    filename_t filenames[8];
+    filename_t *filenames = NULL;
     int n = 0;
-    int err = parse_name_list(cmd.c_str(), filenames, 8, &n);
-    if (err) {
-        return err;
+    int err = parse_name_list(cmd.c_str(), filenames, &n);
+    if (!err) {
+        err = exec->do_scratch(filenames, n);
     }
-    return exec->do_scratch(filenames, n);
+    delete[] filenames;
+    return err;
 }
 
 // S-8, S-9 and S-D, exactly three characters, change the device number to 8, to 9 and
@@ -669,6 +726,9 @@ int IecParser :: lock_command(const uint8_t *buffer, int len)
 // R-H (SI-064) and the sd2iec spellings EH, XH and D (SI-077).
 int IecParser :: header_command(const char *arg)
 {
+    if (!strchr(arg, ':')) {
+        return ERR_NO_NAME; // the name follows a colon, as for N
+    }
     filename_t dest;
     const char *id;
     int err = name_and_id(arg, dest, id);
@@ -691,7 +751,7 @@ int IecParser :: attribute_command(const uint8_t *buffer, int len)
 {
     mstring cmd((const char *)buffer, 0, len-1);
     const char *arg2 = cmd.c_str() + 2; // behind a two character command word
-    filename_t names[8];
+    filename_t *names = NULL;
     int n = 0;
     int err;
 
@@ -716,12 +776,13 @@ int IecParser :: attribute_command(const uint8_t *buffer, int len)
                 default: return ERR_SYNTAX;
                 }
             }
-            err = parse_name_list(rest, names, 8, &n);
-            if (err) {
-                return err;
+            err = parse_name_list(rest, names, &n);
+            if (!err) {
+                err = exec->do_set_attributes(names, n, attrib,
+                                              IEC_ATTR_LOCKED | IEC_ATTR_HIDDEN | IEC_ATTR_ARCHIVE);
             }
-            return exec->do_set_attributes(names, n, attrib,
-                                           IEC_ATTR_LOCKED | IEC_ATTR_HIDDEN | IEC_ATTR_ARCHIVE);
+            delete[] names;
+            return err;
         }
     case 'D':
         if (buffer[1] != ':') {
@@ -733,13 +794,14 @@ int IecParser :: attribute_command(const uint8_t *buffer, int len)
         switch (buffer[1]) {
         case 'L':
         case 'U':
-            err = parse_name_list(arg2, names, 8, &n);
-            if (err) {
-                return err;
+            err = parse_name_list(arg2, names, &n);
+            if (!err) {
+                err = exec->do_set_attributes(names, n,
+                                              (buffer[1] == 'L') ? IEC_ATTR_LOCKED : 0,
+                                              IEC_ATTR_LOCKED);
             }
-            return exec->do_set_attributes(names, n,
-                                           (buffer[1] == 'L') ? IEC_ATTR_LOCKED : 0,
-                                           IEC_ATTR_LOCKED);
+            delete[] names;
+            return err;
         case 'H': {
             if (buffer[0] == 'X') {
                 // XH+ and XH- are the setting that adds hidden files to every listing.
@@ -927,8 +989,8 @@ static void clock_from_seconds(int64_t seconds, clock_time_t& t)
 }
 
 // T-W in the four forms of SI-120, each laid out exactly as the matching T-R answers
-// it. The A, B and D forms carry the day of week and it is stored as sent, as a CMD
-// drive stores it; the I form has none and it is derived from the date.
+// it. The A, B and D forms carry a day of week, which is checked for its range and not
+// kept (SI-121): a read derives it from the date, as it does for the I form.
 static int parse_clock_write(const uint8_t *buffer, int len, clock_time_t& t)
 {
     const uint8_t *p = buffer + 4;
@@ -937,7 +999,7 @@ static int parse_clock_write(const uint8_t *buffer, int len, clock_time_t& t)
     switch (buffer[3]) {
     case 'A':
         // "dow. mo/da/yr hr:mi:se xM", with the marker and the space before it optional.
-        if (len < 26) {
+        if ((len != 26) && (len != 29)) {
             return ERR_SYNTAX;
         }
         for (t.wd = 0; t.wd < 7; t.wd++) {
@@ -961,14 +1023,15 @@ static int parse_clock_write(const uint8_t *buffer, int len, clock_time_t& t)
         }
         t.year = clock_year_of(year2);
         // Without the marker the hour is already a 24 hour time.
-        if ((len >= 29) && (p[22] == ' ') && (p[24] == 'M')) {
+        if (len == 29) {
+            if ((p[22] != ' ') || (p[24] != 'M') || ((p[23] != 'A') && (p[23] != 'P'))) {
+                return ERR_SYNTAX;
+            }
             if (t.hour == 12) {
                 t.hour = 0;
             }
             if (p[23] == 'P') {
                 t.hour += 12;
-            } else if (p[23] != 'A') {
-                return ERR_SYNTAX;
             }
         }
         break;
@@ -1010,7 +1073,7 @@ static int parse_clock_write(const uint8_t *buffer, int len, clock_time_t& t)
 
     case 'I':
         // "YYYY-MM-DDThh:mm:ss", with the day of week a T-RI answer ends in ignored.
-        if (len < 23) {
+        if ((len != 23) && ((len != 27) || (p[19] != ' '))) {
             return ERR_SYNTAX;
         }
         if ((p[4] != '-') || (p[7] != '-') || (p[10] != 'T') || (p[13] != ':') || (p[16] != ':')) {
@@ -1192,6 +1255,10 @@ int IecParser :: user_command(const uint8_t *buffer, int len)
 static int strip_terminator(const uint8_t *buffer, int len)
 {
     if ((len > 1) && (buffer[0] == 'C') && (buffer[1] == 0xD0)) {
+        return len;
+    }
+    // U0> is not complete without its number byte, so a 13 there is device 13 (SI-100).
+    if ((len == 4) && (memcmp(buffer, "U0>", 3) == 0)) {
         return len;
     }
     if (len && (buffer[len - 1] == 0x0D)) {
