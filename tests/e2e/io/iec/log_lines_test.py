@@ -10,8 +10,11 @@ while a REST client keeps the HTTP task printing its own lines. Then every line 
 carries this run's marker has to be a whole Software IEC line, starting its syslog line and
 ending in its sequence number.
 
-Lines lost on the way (UDP) are reported and tolerated up to a tenth; a line that arrives
-in pieces is a failure.
+Lines lost on the way (UDP) are reported and tolerated up to a tenth, and so is a line
+that arrives twice with the same text: measured on an Ultimate II+L over WiFi, one line in
+three hundred came twice, although the firmware sends each datagram once, as the soak's
+log correlation also allows. A line that arrives in pieces, or one number with two texts,
+is a failure.
 
 Needs Software IEC on device 11 and the device's "Log to Syslog Server" set to this host.
 """
@@ -100,21 +103,29 @@ def run(args):
         detail(f"{COMMANDS} commands, {requests[0]} REST requests alongside")
 
         with check("every Software IEC line reaches the log whole"):
-            texts = [text for _ip, text in source.entries() if nonce in text]
+            marked = [(ip, text) for ip, text in source.entries() if nonce in text]
+            texts = [text for _ip, text in marked]
             fragments = [t for t in texts
                          if not t.startswith(softiec_log.LOG_PREFIX)
                          or softiec_log.parse_line(t) is None]
-            whole = len(texts) - len(fragments)
-            detail(f"{len(texts)} lines carry the marker, {whole} whole, {len(fragments)} in pieces")
+            detail(f"{len(texts)} lines carry the marker, {len(fragments)} of them in pieces")
             for text in fragments[:5]:
                 detail(f"  in pieces: {text[:160]!r}")
             if fragments:
                 raise Failure(f"{len(fragments)} Software IEC lines arrived in pieces")
+            seen = {}
+            for ip, text in marked:
+                seen.setdefault(softiec_log.parse_line(text).seq, []).append((ip, text))
+            twice = {n: copies for n, copies in seen.items() if len(copies) > 1}
+            differ = {n: copies for n, copies in twice.items() if len({t for _ip, t in copies}) > 1}
+            detail(f"{len(twice)} lines delivered twice")
+            for n, copies in list(differ.items())[:3]:
+                detail(f"  #{n} arrived with different texts: {copies!r}"[:400])
+            if differ:
+                raise Failure(f"{len(differ)} sequence numbers arrived with different texts")
+            whole = len(seen)
             if whole < COMMANDS * 9 // 10:
                 raise Failure(f"only {whole} of {COMMANDS} lines arrived, too few to judge")
-            numbers = sorted(softiec_log.parse_line(t).seq for t in texts)
-            if len(set(numbers)) != len(numbers):
-                raise Failure("a sequence number arrived twice")
             detail(f"{COMMANDS - whole} lines lost on the way")
     finally:
         stop.set()
