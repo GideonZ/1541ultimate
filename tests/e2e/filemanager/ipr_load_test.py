@@ -73,7 +73,8 @@ def main() -> int:
         with check("Save Partitions writes the drive's list to /Temp"):
             browser.go_to_directory("Temp")
             browser.invoke_task_action("Software IEC", "Save Partitions")
-            browser.fill_edit_field(SAVED)
+            # The box offers "default", which would save to the drive's startup file.
+            browser.fill_edit_field(SAVED, clear_taps=len("default"))
             with ftp_lib.session(args.host, args.password) as client:
                 text = ftp_lib.retrieve(client, f"/Temp/{SAVED}.ipr").decode("utf-8")
             saved = True
