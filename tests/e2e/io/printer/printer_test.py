@@ -101,6 +101,11 @@ POLL_INTERVAL_SECONDS = 0.5
 MENU_SETTLE_SECONDS = pacing.MENU_TOGGLE_SETTLE_SECONDS
 # The menu toggle is observable, so it is waited for rather than slept on.
 MENU_CLOSE_TIMEOUT_SECONDS = 5.0
+# Flush/Eject shows this progress dialog while the printer task compresses the page and
+# writes the file, and the menu takes no key until it closes (iec_printer.cc,
+# MENU_PRINTER_FLUSH). Measured on an Ultimate 64 Elite: about 5 s for a bitmap page.
+FLUSH_PROGRESS_TEXT = "Flushing/Ejecting page..."
+FLUSH_TIMEOUT_SECONDS = 120.0
 # Enough Back presses to climb out of the deepest screen a launcher leads to,
 # and one descent into the browser; and deeper than the launcher's own list,
 # so Back reaches its first entry. See enter_file_browser.
@@ -452,6 +457,11 @@ def enter_file_browser(client, settle):
         time.sleep(settle)
 
 
+def flush_in_progress(client):
+    screen = client.get_menu_screen()
+    return screen is not None and any(FLUSH_PROGRESS_TEXT in row for row in menu_screen_text(screen))
+
+
 def flush_via_menu(client, assertions_enabled, settle=MENU_SETTLE_SECONDS):
     """Drive the Ultimate on-screen Tasks menu to trigger Printer > Flush/Eject."""
     if client.get_menu_screen() is not None:
@@ -533,6 +543,10 @@ def flush_via_menu(client, assertions_enabled, settle=MENU_SETTLE_SECONDS):
     time.sleep(settle)
     client.tap_key("return")  # trigger it
     time.sleep(1.0)
+    took = wait.wait_until(lambda: not flush_in_progress(client),
+                           "the Flush/Eject progress dialog to close",
+                           timeout=FLUSH_TIMEOUT_SECONDS)
+    detail(f"the flush held the menu for {took + 1.0:.1f}s")
 
     # Close what this function opened, so the caller's teardown does not have to
     # tap its way out with RETURN, which activates the entry under the cursor.
