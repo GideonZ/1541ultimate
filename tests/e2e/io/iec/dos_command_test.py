@@ -56,7 +56,7 @@ import ftp  # noqa: E402
 import kernal  # noqa: E402
 from api import UltimateApi  # noqa: E402
 from config_snapshot import Snapshot  # noqa: E402
-from iec_agent import CLOSE, MAILBOX_CAPACITY, OPEN, READ_COUNT, STATUS_BYTES, WRITE, Agent, iec_drive, restorable_path  # noqa: E402
+from iec_agent import CLOSE, MAILBOX_CAPACITY, OPEN, READ_COUNT, STATUS_BYTES, WRITE, Agent, cmd_swap, iec_drive, restorable_path  # noqa: E402
 from report import Failure, check, detail, section, suite_fail, suite_ok, teardown_step  # noqa: E402
 
 SUITE = "iec_dos_command_test"
@@ -516,6 +516,25 @@ def check_compatibility(agent, api, password, folder, root):
             raise Failure(f"M-W $0077 left the drive at device {back}")
         agent.status((0,))
 
+    def memory_write_device_cmd_timing():
+        # SI-100a with a CMD drive's own timing (#933). A CMD FD or HD runs at 2 MHz and raises
+        # ATN for UNLISTEN about 20 us after the last byte is acknowledged; the KERNAL above
+        # takes over 100 us, so only this check sees a byte lost in that time.
+        old = agent.softiec_device
+        try:
+            moved = cmd_swap(api, old, 12)
+            detail(f"after a CMD drive's SWAP sequence with $2C $4C the drive list reports device {moved}")
+            if moved != 12:
+                raise Failure(f"the drive stayed at device {moved}")
+            back = cmd_swap(api, 12, old)
+            detail(f"after the sequence back the drive list reports device {back}")
+            if back != old:
+                raise Failure(f"the sequence back left the drive at device {back}")
+        finally:
+            agent.start()
+            agent.call(OPEN, channel=15, device=agent.softiec_device)
+        agent.status((0,))
+
     def clock_write():
         # SI-120 on the device: a write sets the drive's own clock, an offset from the
         # system clock, which it leaves alone; UJ returns the drive to the system clock.
@@ -807,7 +826,8 @@ def check_compatibility(agent, api, password, folder, root):
             ("SI-045, SI-046, SI-130: the partition directory", partition_directory),
             ("SI-100: U0> moves the drive to device 12 on the bus, and U0> moves it back", device_number),
             ("SI-101: S-9 and S-D move the drive on the bus", device_aliases),
-            ("SI-100a: M-W to $0077, as a CMD drive's SWAP button sends it, moves the drive on the bus", memory_write_device),
+            ("SI-100a: M-W to $0077 from the KERNAL moves the drive on the bus", memory_write_device),
+            ("SI-100a: a CMD drive's SWAP sequence, with its bus timing, moves the drive", memory_write_device_cmd_timing),
             ("SI-120: T-W sets the drive's own clock and UJ returns it to the system clock", clock_write),
             ("SI-102: W-1 refuses every command that changes a medium", write_protect),
             ("SI-014: a left arrow between slashes is a directory name", left_arrow),

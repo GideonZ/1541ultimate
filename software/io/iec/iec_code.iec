@@ -182,13 +182,14 @@ _atn_end
 
 
 DO_LISTEN
-            SUB RECEIVE_BYTE
-            PUSHD
+            SUB RECEIVE_BYTE # Pushes the byte, and the end marker after the last one
             IF NOT EOI THEN DO_LISTEN
+            JUMP _end_of_listen
 _end_of_rx
             # If end flag was received, push end marker to software
             LOAD CTRL_EOI
             PUSHC
+_end_of_listen
             SET LISTENER=0
             WAIT FOR 40 us
             JUMP RELEASE
@@ -496,6 +497,15 @@ _normal_data
             IN   DATABIT7=DATA
             IF TIMEOUT THEN _error2
             WAIT UNTIL CLK=0 FOR Tv
+            # A byte received without ATN goes to software before it is acknowledged, and
+            # the end marker with the last one: the talker may raise ATN as soon as it sees
+            # the acknowledgement, and ATN restarts this code (a CMD drive does, after 20 us).
+            IF NOT ATN THEN _ack
+            PUSHD
+            IF NOT EOI THEN _ack
+            LOAD CTRL_EOI
+            PUSHC
+_ack
             WAIT FOR 5 us
             SET DATA=0
             WAIT FOR 50 us

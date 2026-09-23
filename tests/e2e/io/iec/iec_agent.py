@@ -60,6 +60,33 @@ def iec_drive(api):
     raise Failure("The drive list has no IEC Drive")
 
 
+def cmd_swap(api, device, new):
+    """Sends `device` what a CMD drive's SWAP button sends to give it the number `new`.
+
+    cmd_swap.asm replays the drive's bus sequence and timing from the C64 (SI-100a). It
+    replaces the agent, which has to be started again afterwards. Returns the device number
+    the drive list reports for the Software IEC drive.
+    """
+    api.machine.close_menu_from_anywhere()
+    api.machine.writemem(0xc000, bytes(7))
+    api.runners.upload("run_prg", assemble(Path(__file__).with_name("cmd_swap.asm")))
+    deadline = time.monotonic() + 15
+    while api.machine.readmem(0xc001, 1) != b"\xa5":
+        if time.monotonic() > deadline:
+            raise Failure("the CMD swap program did not start")
+        time.sleep(.05)
+    api.machine.writemem(0xc002, bytes([device, 0x20 | new, 0x40 | new]))
+    api.machine.writemem(0xc000, b"\x01")
+    # Waited blind: a memory read halts the C64 and would stretch the timing under test.
+    time.sleep(1.0)
+    state = api.machine.readmem(0xc000, 6)
+    if state[0]:
+        raise Failure("the CMD swap program did not finish within a second")
+    if state[5]:
+        raise Failure(f"the CMD swap sequence stopped at handshake step {state[5]}")
+    return iec_drive(api)["bus_id"]
+
+
 def restorable_path(api, path, root):
     """The directory to put the drive back into: `path`, or `root` when `path` is gone.
 
