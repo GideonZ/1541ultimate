@@ -291,6 +291,7 @@ e2e:
   ftp-server                        x      x      x      x      x
   ident-service-switch              .      .      x      x      x
   iec-dos-commands                  .      .      x      x      x
+  iec-partition-file                .      .      x      x      x
   iec-listen-timing                 .      .      x      x      x
   input                             x      x      x      x      x
   input-batching                    x      x      x      x      x

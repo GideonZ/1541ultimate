@@ -3267,6 +3267,9 @@ FRESULT IecFileSystem :: SavePartitions(const char *path, const char *filename)
     return fres;
 }
 
+// A partition list replaces the one the drive has: a partition the file does not name is
+// removed (#934). A file with no usable entry leaves the list alone, so the drive is never
+// left without a partition.
 void IecFileSystem :: LoadPartitions(File *f)
 {
     uint32_t size = f->get_size();
@@ -3284,6 +3287,8 @@ void IecFileSystem :: LoadPartitions(File *f)
         JSON *servers_json = ((JSON_Object *)root_json)->get("partitions");
         if (servers_json && (servers_json->type() == eList)) {
             JSON_List *servers = (JSON_List *)servers_json;
+            bool named[MAX_PARTITIONS] = { false };
+            int loaded = 0;
             for (int i=0; i < servers->get_num_elements(); i++) {
                 JSON *entry_json = (*servers)[i];
                 if (!entry_json || (entry_json->type() != eObject)) {
@@ -3302,6 +3307,21 @@ void IecFileSystem :: LoadPartitions(File *f)
                     partitions[part]->SetName(name);
                 } else {
                     add_partition(part, path, name);
+                }
+                named[part] = true;
+                loaded++;
+            }
+            for (int i = 1; (i < MAX_PARTITIONS) && loaded; i++) {
+                if (partitions[i] && !named[i]) {
+                    RemovePartition(i);
+                }
+            }
+            if (loaded && !partitions[currentPartition]) {
+                for (int i = 1; i < MAX_PARTITIONS; i++) {
+                    if (partitions[i]) {
+                        currentPartition = i;
+                        break;
+                    }
                 }
             }
         }

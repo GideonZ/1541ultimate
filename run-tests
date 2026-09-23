@@ -407,6 +407,10 @@ SUITES: Sequence[Suite] = (
     # than the KERNAL, whose pause is always long enough.
     Suite("e2e", "iec-listen-timing", "tests/e2e/io/iec/listen_timing_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@", profile=profiles.STANDARD),
+    # Loading an .IPR file through the browser replaces the Software IEC partition list
+    # rather than adding to it (#934), read back from the drive list.
+    Suite("e2e", "iec-partition-file", "tests/e2e/filemanager/ipr_load_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@", profile=profiles.STANDARD),
     # Drives the UCI control and SoftIEC targets over $DF1B-$DF1F; reproduces #740.
     # A #740 regression leaves the interface stuck in Command Busy for every target
     # until the firmware restarts, so run it after the suites that drive the menu

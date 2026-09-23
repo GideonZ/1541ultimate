@@ -4914,6 +4914,48 @@ static void s11_operation_log_no_reconfigure(FileManager *fm, IecDrive *dr)
     expect_command_status_prefix(testname, dr, "UI\r", "73,");
 }
 
+// Loading a partition list replaces the one the drive has (#934): a partition the file does
+// not name is removed, and the current partition moves to one that exists. A file with no
+// usable entry leaves the list alone, so the drive is never left without a partition.
+static void s11_load_partitions_replaces(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite11-LoadPartitionsReplaces";
+    IecFileSystem *vfs = dr->get_file_system();
+    dr->add_partition(2, "/Temp", "TWO");
+    dr->add_partition(3, "/Temp", "THREE");
+    // What the earlier cases set up, so the ones after this find it again.
+    int before = vfs->CountPartitions();
+    mstring saved_root[MAX_PARTITIONS], saved_name[MAX_PARTITIONS];
+    for (int i = 1; i < MAX_PARTITIONS; i++) {
+        if (vfs->GetPartition(i)) {
+            saved_root[i] = vfs->GetPartitionPath(i, true);
+            saved_name[i] = vfs->GetPartition(i)->GetName();
+        }
+    }
+    expect_command_response(testname, dr, "CP3\r", "02,PARTITION SELECTED,03,00\r");
+    save_fixture_file(fm, "/Temp", "EMPTY.IPR", "{ \"version\": 1, \"partitions\": [ ] }");
+    dr->load_partitions("/Temp", "EMPTY.IPR");
+    printf("%s: %d partitions, and %d after an empty list\n", testname, before, vfs->CountPartitions());
+    REQUIRE(vfs->CountPartitions() == before);
+    save_fixture_file(fm, "/Temp", "ONE.IPR",
+        "{ \"version\": 1, \"partitions\": [ { \"number\": 1, \"path\": \"/Temp/\", \"name\": \"ONE\" } ] }");
+    dr->load_partitions("/Temp", "ONE.IPR");
+    printf("%s: after a list of one, %d partitions, current %d\n", testname,
+           vfs->CountPartitions(), vfs->GetTargetPartitionNumber(0));
+    REQUIRE(vfs->CountPartitions() == 1);
+    REQUIRE(vfs->GetPartition(2) == NULL);
+    REQUIRE(vfs->GetPartition(3) == NULL);
+    REQUIRE(strcmp(vfs->GetPartition(1)->GetName(), "ONE") == 0);
+    REQUIRE(vfs->GetTargetPartitionNumber(0) == 1);
+    expect_command_response(testname, dr, "CP2\r", "77,SELECTED PARTITION ILLEGAL,02,00\r");
+    for (int i = 1; i < MAX_PARTITIONS; i++) {
+        if (saved_root[i].length()) {
+            dr->add_partition(i, saved_root[i].c_str(), saved_name[i].c_str());
+        }
+    }
+    REQUIRE(vfs->CountPartitions() == before);
+}
+
 // SI-107: "IEC Drive" puts the drive on the bus and gives a UCI KERNAL its number at $DF1B
 // when Enabled, keeps only the UCI side when UCI Only, and turns off both when Disabled, where
 // the KERNAL is given 31, no device a program opens.
@@ -6536,6 +6578,7 @@ static const Suite11Case suite11_cases[] = {
     { "Suite11-SI100a-MemoryWriteDeviceNumber", s11_si100a_memory_write_device_number },
     { "Suite11-SI105-MemoryCommands",    s11_si105_memory_commands },
     { "Suite11-SI107-SettingModes",      s11_si107_setting_modes },
+    { "Suite11-LoadPartitionsReplaces",  s11_load_partitions_replaces },
     { "Suite11-SI021-LongNames",         s11_si021_long_names },
     { "Suite11-SI022-TooLong",           s11_si022_too_long },
     { "Suite11-SI016-SecondTerminator",  s11_si016_second_terminator },
