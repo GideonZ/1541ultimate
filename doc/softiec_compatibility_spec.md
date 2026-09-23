@@ -116,6 +116,7 @@ in `roms/1541.bin` rather than any manual.
 | **1541** | [*1541-II Disk Drive User's Guide*](https://www.zimmers.net/anonftp/pub/cbm/manuals/drives/1541-II_Users_Guide.pdf), DOS error message list. Where a point needs a Commodore drive other than the 1541, the *1571* and *1581 User's Guides* are cited by name. |
 | **917** | Issue [#917](https://github.com/GideonZ/1541ultimate/issues/917), "More SoftIEC compatibility issues", opened by the reporter on 18 September 2026. It carries Greg Nacu's measurements of a CMD HD and an sd2iec against this drive, and photographs of the two BASIC programs he used. The programs are transcribed in appendix C. |
 | **FD** | [*CMD FD-Series Disk Drives User's Manual*](https://archive.org/details/CMD_FD_Series_Disk_Drive_Users_Manual_1993-10_Creative_Micro_Designs). |
+| **FDROM** | The CMD FD-2000 DOS V1.40 ROM, 32768 bytes mapping to `$8000..$FFFF`, SHA-256 `e6b9c7562cc51ebe5577840db29d10fb0a1b8540f7cd5fbee6cc2e15f49a9f72`. It is not in this repository. Quoted addresses are from a disassembly of that image. |
 | **GAP** | Greg Nacu, ["Gaps in Software IEC"](https://c64os.com/post/softwareiecgap), 10 January 2023. The canonical statement of why C64 OS does not support this drive. Written against firmware 3.10a; several of its items are already fixed. |
 | **GFN** | Greg Nacu, ["Understanding SD2IEC Filenaming"](https://c64os.com/post/sd2iecfilenames). |
 | **GSD** | Greg Nacu, ["SD2IEC User's Manual" v1.3](https://c64os.com/post/sd2iecdocumentation). |
@@ -1258,6 +1259,36 @@ on the bus, and it is not written to the configuration. The number byte is manda
 a 13 in its place is device 13 with or without a terminator after it (SI-017). Tests:
 `Suite11-SI100-DeviceNumber`, `Suite11-SI103b-SettingAfterU0`.
 
+**SI-100a.** `M-W`+`CHR$(119)`+`CHR$(0)`+`CHR$(n)`+data, a memory write to `$0077` with
+`n` at least 1, changes the device number to the low five bits of the first data byte,
+for a number in 8 to 30, as `U0>` does (SI-100). The number is not written to the
+settings. A number outside 8 to 30 answers `30` and leaves the device number unchanged.
+
+A 1541 listens on the address in `$0077` and talks on the address in `$0078`. Its reset
+stores `$48` plus the device jumpers in `$78` and that value EOR `$60` in `$77` (ROM
+`$EB45` and `$EB49`), and its ATN handler compares a command byte with `$78` at `$E89B`
+and with `$77` at `$E8A9`. Writing both cells is therefore the software way to change a
+1541's device number, and it is what the SWAP button of a CMD drive sends to the drive
+whose number it takes. The CMD FD asserts ATN itself and sends that drive LISTEN,
+secondary address `$6F`, and then `M-W` `$77 $00 $02` followed by the FD's own listen
+address and talk address, the last byte with EOI, and UNLISTEN (FDROM `$A57B` to
+`$A5A6`, with the command bytes in a table at `$A5A8`). The swap back sends the same
+command to the swapped number with the other drive's original addresses. HD 3-1
+describes the SWAP buttons exchanging the HD's number with a 1541 at device 8. Issue
+[#933](https://github.com/GideonZ/1541ultimate/issues/933) asks for Software IEC to take
+part in that exchange. Sources: ROM as above; FDROM; `SD handle_memwrite()`, which
+treats address 119 as "Change device address, 1541 style" and takes
+`command_buffer[6] & 0x1f`.
+
+Difference from the 1541 and sd2iec. The talk address in the second byte is not read:
+the drive has one number, and the listen address gives it. A 1541 stores each byte where
+it is written, so a write of `$0077` alone leaves it talking on its old number, where
+here the whole drive moves. A number outside 8 to 30 answers `30`, the range of SI-100,
+where `SD handle_memwrite()` takes any value. A write to `$0078` alone is an `M-W` like
+any other and answers `30` (SI-105). Tests: `Suite11-SI100a-MemoryWriteDeviceNumber`,
+which sends the FD's bytes on channel 15 without an OPEN, and `iec-dos-commands`, which
+sends them over the bus from the C64 and addresses the drive on its new number.
+
 **SI-101.** `S-8`, `S-9` and `S-D` are the typed aliases for swapping to device 8,
 device 9 and back to the configured default. Sources: HD 9-34; IDE 15.4.1. On this drive
 there is one drive behind the number, so `S-8` and `S-9` set the device number to 8 and
@@ -1352,7 +1383,8 @@ implemented; they answer `30`, for the same reason as SI-095. Source: HD 9-51.
   shorter than six bytes) and `SD handle_memread()` ("Read 1 Byte if no explicit
   length was provided") for the absent count. HD does not describe the absent case.
 * `M-W`+`CHR$(lo)`+`CHR$(hi)`+`CHR$(n)`+data answers `30` and keeps nothing; the reason
-  is below. Source for the syntax: HD 9-47.
+  is below. The exception is a write to `$0077`, which changes the device number
+  (SI-100a). Source for the syntax: HD 9-47.
 * `M-E`+`CHR$(lo)`+`CHR$(hi)` answers `98,UNKNOWN DRIVE CODE` and runs nothing; the reason
   is below. Source for the syntax: HD 9-48.
 
@@ -1372,7 +1404,9 @@ code is in place and running. An `00, OK` means the work was done, which is also
 clock write of a date that does not exist answers `30` (SI-122). The reporter's request
 was for `M-R`, which C64 OS sends four times at boot (TRACE).
 
-`M-W` answers `30`: the command is recognised and its bytes are not taken. `M-E` answers
+`M-W` answers `30`: the command is recognised and its bytes are not taken. A write to
+`$0077` is not drive code: it asks for a change this drive can make, so it makes it and
+answers `00, OK` (SI-100a). `M-E` answers
 `98,UNKNOWN DRIVE CODE`, which says what is true here and is the answer sd2iec gives when
 the code it was sent matches no fast loader it implements: `SD run_loader()` sets
 `ERROR_UNKNOWN_DRIVECODE`, code 98, when it reaches the end of its handler table. No
@@ -2240,7 +2274,7 @@ answer given here, so a later implementation has to change a test on purpose.
 | Requirement | Why it is not implemented | What the drive answers |
 | --- | --- | --- |
 | SI-054 `V` | Validating means rebuilding the block map of an image from every directory, side sector chain and GEOS record chain in it, and a walk that misses one marks live blocks free; an OK without the walk would claim a check that did not happen | `31`, as sd2iec answers |
-| SI-105 `M-W`, `M-E` | Nothing written is kept and nothing is run, so an OK would tell a fast loader its drive code runs; no drive code is ever known, which is what `M-E` answers | `30` for `M-W`, `98,UNKNOWN DRIVE CODE` for `M-E`, as SD answers for a code it does not know |
+| SI-105 `M-W`, `M-E` | Nothing written is kept and nothing is run, so an OK would tell a fast loader its drive code runs; no drive code is ever known, which is what `M-E` answers | `30` for `M-W` to any address but `$0077`, which changes the device number (SI-100a); `98,UNKNOWN DRIVE CODE` for `M-E`, as SD answers for a code it does not know |
 | SI-137 raw directory | Every program that reads a listing byte by byte opens `$` on a data channel, and the UCI target opens it on whatever channel its client sends; on a host file system the sectors would have to be synthesised from the listing in any case | the listing |
 | SI-145 writing x00 files | A user setting that no report asks for; reading them (SI-144) already gives the interchange | new files are written plain |
 | SI-146 creating R00 files | Follows from SI-145; a plain relative file keeps its two byte layout, which SI-084 reads on both devices | a new relative file is written in the plain two byte layout |
@@ -2264,6 +2298,7 @@ differently from one of its sources, for a reason given below the requirement.
 | SI-064 | `R-H` takes an optional id and sets it, as `SDM parse_set_header()` does, where HD 9-15 gives `R-H` a new name only |
 | SI-074 | A rename into another directory or partition moves the entry, where `SD parse_rename()` answers `62` |
 | SI-077 | `EL`, `EU` and `A` act on every entry a name matches, directories included, where SDM skips directories and `A` takes the first match. SDU has none of these commands |
+| SI-100a | An `M-W` to `$0077` moves the whole drive to the number in the low five bits of its first byte and does not read the talk address, where a 1541 stores each byte it is sent; a number outside 8 to 30 answers `30`, where `SD handle_memwrite()` takes any value |
 | SI-103 | The resets over the bus keep the write protect of `W-1` and the device number of `U0>`, where `U`+shifted J on sd2iec restarts the device and loses both |
 | SI-120 | A write sets the drive's own clock, an offset from the system clock that a reset clears, where a CMD drive and sd2iec set their clock chip; the day of week a write carries is not kept; a write is refused when the day is not a day of that month, which `SD parse_timewrite()` does not check, and every field is read at its documented width |
 | SI-123 | A clock write is exactly as long as its form and its marker is `AM` or `PM`, where `SD parse_timewrite()` ignores what it does not recognise |
@@ -2395,7 +2430,7 @@ further rule of the requirement it follows and is numbered that way so that the 
 already cited elsewhere keep their meaning.
 
 Section 18.1 is the index of the five deliberately unsupported requirements and of the
-twenty that are in force and answer differently from one of their sources. Everything else
+twenty-one that are in force and answer differently from one of their sources. Everything else
 in sections 2 to 15 is in force as written. Section 19 is what is out of scope, which is
 a different thing: those are capabilities this drive does not have rather than commands
 it declines to implement.
@@ -2507,9 +2542,9 @@ row.
 | Device management: firmware update, hot swapping, card detection, sleep mode | Section 19, which names all four as sd2iec hardware |
 | Device management: device detection and the `UI` identifier | SI-110, SI-111, SI-113, SI-114 |
 | Device management: warm, cold and hard reset | SI-103, SI-103a |
-| Device management: memory access, `M-R`, `M-W`, `M-E` | SI-105, SI-112, SI-115 |
+| Device management: memory access, `M-R`, `M-W`, `M-E` | SI-105, SI-100a, SI-112, SI-115 |
 | Device management: user commands `U1` to `UJ` | SI-091, SI-103, SI-104 |
-| Device management: the device address, `U0>` and `S-8`/`S-9`/`S-D` | SI-100, SI-101 |
+| Device management: the device address, `U0>` and `S-8`/`S-9`/`S-D` | SI-100, SI-100a, SI-101 |
 | Device management: the bus protocol setting | SI-103: `UI+` and `UI-` answer `00, OK` |
 | Direct access: buffers and large buffers | SI-090 |
 | Direct access: reading and writing data, `B-R`, `B-W`, `U1`, `U2` | SI-093, SI-094 |
@@ -2605,6 +2640,7 @@ which section 1.3 allows and names.
 | SI-095 | Suite11-SI030-UnknownSubcommand, parse |
 | SI-096 | parse |
 | SI-100 | Suite11-SI100-DeviceNumber, Suite11-SI103b-SettingAfterU0, iec-dos-commands, parse, softiec-soak |
+| SI-100a | Suite11-SI100a-MemoryWriteDeviceNumber, iec-dos-commands, parse |
 | SI-101 | iec-dos-commands, parse, softiec-soak |
 | SI-102 | Suite11-SI102-WriteProtect, iec-dos-commands, parse |
 | SI-102a | Suite11-SI102-WriteProtect, Suite11-SI102a-NewRelative |

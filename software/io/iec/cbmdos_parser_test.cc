@@ -382,6 +382,17 @@ void test_added_commands(void)
     test_dispatch("M-R\xF0\x00\x20", 6, 0, "command response", 16);
     test_dispatch("M-R\xA4", 4, 30, NULL);
     test_dispatch("M-W\x00\x05\x01\xEA", 7, 30, NULL);
+    // SI-100a: M-W to $0077 is the 1541 way of changing the device number, which a CMD
+    // drive's SWAP button sends. The listen address in the first byte gives the number.
+    test_dispatch("M-W\x77\x00\x02\x2C\x4C", 8, 0, "device number", 12);
+    test_dispatch("M-W\x77\x00\x02\x28\x48\r", 9, 0, "device number", 8);
+    test_dispatch("M-W\x77\x00\x01\x3E", 7, 0, "device number", 30);
+    test_dispatch("M-W\x77\x00\x02\x24\x44", 8, 30, NULL);
+    test_dispatch("M-W\x77\x00\x02\x3F\x5F", 8, 30, NULL);
+    test_dispatch("M-W\x77\x00\x02", 6, 30, NULL);
+    test_dispatch("M-W\x77\x00\x00\x2C", 7, 30, NULL);
+    test_dispatch("M-W\x78\x00\x01\x4C", 7, 30, NULL);
+    test_dispatch("M-W\x77\x01\x02\x2C\x4C", 8, 30, NULL);
     test_dispatch("M-E\x00\x05", 5, ERR_UNKNOWN_DRIVECODE, NULL);
     test_dispatch("M-X", 3, 30, NULL);
     // SI-120: T-W sets the drive's clock, and a form the clock cannot hold answers 30.

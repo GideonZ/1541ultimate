@@ -492,6 +492,30 @@ def check_compatibility(agent, api, password, folder, root):
             raise Failure(f"S-D left the drive at device {back}")
         agent.status((0,))
 
+    def memory_write_device():
+        # SI-100a: an M-W to $0077 moves the drive to the number of the listen address it
+        # writes. These are the bytes a CMD drive's SWAP button sends, without a
+        # terminator, and the swap back goes to the number the drive moved to.
+        def swap_to(device):
+            return b"M-W" + bytes([0x77, 0x00, 0x02, 0x20 | device, 0x40 | device])
+
+        moved = agent.move_drive(12, command=swap_to(12))
+        detail(f"after M-W $0077 with $2C $4C the drive list reports device {moved}")
+        if moved != 12:
+            agent.status((0,))
+            raise Failure(f"the drive stayed at device {moved}")
+        try:
+            reply = agent.call(3, 15, device=12, expect=STATUS_BYTES).decode("ascii").strip()
+            detail(f"device 12 answered {reply!r}")
+            if not reply.startswith("00,"):
+                raise Failure(f"device 12 answered {reply!r}")
+        finally:
+            back = agent.move_drive(11, command=swap_to(11))
+            detail(f"after M-W $0077 with $2B $4B the drive list reports device {back}")
+        if back != 11:
+            raise Failure(f"M-W $0077 left the drive at device {back}")
+        agent.status((0,))
+
     def clock_write():
         # SI-120 on the device: a write sets the drive's own clock, an offset from the
         # system clock, which it leaves alone; UJ returns the drive to the system clock.
@@ -783,6 +807,7 @@ def check_compatibility(agent, api, password, folder, root):
             ("SI-045, SI-046, SI-130: the partition directory", partition_directory),
             ("SI-100: U0> moves the drive to device 12 on the bus, and U0> moves it back", device_number),
             ("SI-101: S-9 and S-D move the drive on the bus", device_aliases),
+            ("SI-100a: M-W to $0077, as a CMD drive's SWAP button sends it, moves the drive on the bus", memory_write_device),
             ("SI-120: T-W sets the drive's own clock and UJ returns it to the system clock", clock_write),
             ("SI-102: W-1 refuses every command that changes a medium", write_protect),
             ("SI-014: a left arrow between slashes is a directory name", left_arrow),

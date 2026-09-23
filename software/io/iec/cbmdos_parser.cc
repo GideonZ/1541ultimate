@@ -842,7 +842,8 @@ int IecParser :: attribute_command(const uint8_t *buffer, int len)
 
 // M-R (SI-105). This drive has no drive memory, so M-R answers the number of bytes
 // asked for, every one of them $00, which is no drive's signature (SI-112). M-W and M-E
-// are refused: answering OK would tell a program that its drive code is in place.
+// are refused: answering OK would tell a program that its drive code is in place. The
+// exception is an M-W to the listen address, which changes the device number (SI-100a).
 int IecParser :: memory_command(const uint8_t *buffer, int len)
 {
     switch(buffer[2]) {
@@ -867,6 +868,16 @@ int IecParser :: memory_command(const uint8_t *buffer, int len)
         // No drive code runs here, so every address holds a code this drive does not
         // know, which is what sd2iec answers when it recognises none (SI-105).
         return ERR_UNKNOWN_DRIVECODE;
+    case 'W':
+        // The 1541 keeps its listen address at $0077, and a CMD drive's SWAP button
+        // writes it to move the other drive; its low five bits are the number.
+        if ((len >= 7) && (buffer[3] == 0x77) && (buffer[4] == 0x00) && (buffer[5] != 0)) {
+            int dev = buffer[6] & 0x1F;
+            if ((dev >= 8) && (dev <= 30)) {
+                return exec->do_set_device_number(dev);
+            }
+        }
+        return ERR_SYNTAX;
     default:
         return ERR_SYNTAX;
     }

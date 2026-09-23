@@ -2582,6 +2582,29 @@ static void s11_si100_device_number(FileManager *fm, IecDrive *dr)
     REQUIRE(dr->get_address() == configured);
 }
 
+// SI-100a: M-W to $0077 moves the drive, as the 1541 takes it. The commands are the bytes a
+// CMD FD's SWAP 8 button sends on channel 15 without an OPEN, and then its swap back.
+static void s11_si100a_memory_write_device_number(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite11-SI100a-MemoryWriteDeviceNumber";
+    s11_partition(fm, dr, "si100a");
+    int configured = dr->get_address();
+    const uint8_t to_12[8] = { 'M', '-', 'W', 0x77, 0x00, 0x02, 0x2C, 0x4C };
+    expect_command_data_response(testname, dr, to_12, sizeof(to_12), "00, OK,00,00\r");
+    printf("%s: device number now %d, configured %d\n", testname, dr->get_address(), configured);
+    REQUIRE(dr->get_address() == 12);
+    expect_command_response(testname, dr, "UI\r", "73,U64HD ULTIMATE DOS V2.0,00,00\r");
+    // A number outside 8 to 30 and any other address leave the drive where it is.
+    const uint8_t to_4[8] = { 'M', '-', 'W', 0x77, 0x00, 0x02, 0x24, 0x44 };
+    expect_command_data_response(testname, dr, to_4, sizeof(to_4), "30,SYNTAX ERROR,00,00\r");
+    const uint8_t talk_only[7] = { 'M', '-', 'W', 0x78, 0x00, 0x01, 0x48 };
+    expect_command_data_response(testname, dr, talk_only, sizeof(talk_only), "30,SYNTAX ERROR,00,00\r");
+    REQUIRE(dr->get_address() == 12);
+    const uint8_t back[8] = { 'M', '-', 'W', 0x77, 0x00, 0x02, (uint8_t)(0x20 | configured), (uint8_t)(0x40 | configured) };
+    expect_command_data_response(testname, dr, back, sizeof(back), "00, OK,00,00\r");
+    REQUIRE(dr->get_address() == configured);
+}
+
 // SI-105 and SI-112: M-R answers the number of bytes asked for, all zero, and does not
 // read past the end of the page; M-W is refused and M-E answers 98, because no drive code
 // runs here.
@@ -6481,6 +6504,7 @@ static const Suite11Case suite11_cases[] = {
     { "Suite11-SI045-PartitionDirectory", s11_si045_partition_directory },
     { "Suite11-SI046-PartitionCount",    s11_si046_partition_count },
     { "Suite11-SI100-DeviceNumber",      s11_si100_device_number },
+    { "Suite11-SI100a-MemoryWriteDeviceNumber", s11_si100a_memory_write_device_number },
     { "Suite11-SI105-MemoryCommands",    s11_si105_memory_commands },
     { "Suite11-SI021-LongNames",         s11_si021_long_names },
     { "Suite11-SI022-TooLong",           s11_si022_too_long },
