@@ -392,6 +392,80 @@ class Browser:
                 return matches(self.selected_text())
         return False
 
+    def menu_frame(self) -> tuple[int, int, int, int]:
+        """The frame of the list the cursor keys move, for a menu drawn in a frame.
+
+        A popup is the only framed list on screen, but a C64 Ultimate draws its
+        settings in the middle one of three framed panels, beside a device list with a
+        highlight of its own. There the list is the one whose highlight a cursor key
+        moves, so one key is pressed to find it, and pressed back.
+        """
+        before = self._framed_selections()
+        if len(before) == 1:
+            return next(iter(before))
+        for key, back in (("DOWN", "UP"), ("UP", "DOWN")):
+            self.press(key)
+            after = self._framed_selections()
+            moved = [frame for frame in after if frame in before and after[frame] != before[frame]]
+            if moved:
+                self.press(back)
+                if len(moved) == 1:
+                    return moved[0]
+                break
+        raise Failure(f"cannot tell which of {len(before)} framed lists the cursor moves; "
+                      f"screen was:\n{self.screen()}")
+
+    def _framed_selections(self, frame: tuple[int, int, int, int] | None = None,
+                           timeout: float = 5.0) -> dict:
+        """framed_selections once a highlighted list (the one in `frame`) is drawn.
+
+        The screen goes quiet between the parts of a redraw when the device is busy, so a
+        read can land before the highlight has been drawn.
+        """
+        deadline = time.monotonic() + timeout
+        while True:
+            selections = self.backend.framed_selections()
+            if (frame in selections) if frame is not None else selections:
+                return selections
+            if time.monotonic() >= deadline:
+                return selections
+            time.sleep(0.25)
+
+    def framed_selection(self, frame: tuple[int, int, int, int]) -> tuple[int, str, list[str]]:
+        """The highlighted entry of the list in `frame`: (index, text, entries)."""
+        selections = self._framed_selections(frame)
+        if frame not in selections:
+            raise Failure(f"no highlighted list in the frame {frame}; screen was:\n{self.screen()}")
+        return selections[frame]
+
+    def select_framed_entry(self, label: str, max_steps: int = 64) -> tuple[tuple[int, int, int, int], str]:
+        """Put the cursor of the menu on the entry starting with `label`: (frame, entry).
+
+        A list longer than its frame scrolls, and only the cells inside the frame say
+        which entry is highlighted, so the cursor is walked one row at a time and read
+        back after every key: down to the end, then up to the top. The entry is the
+        whole text, a value column included.
+        """
+        frame = self.menu_frame()
+        for direction in ("DOWN", "UP"):
+            previous = None
+            for _ in range(max_steps):
+                _index, text, _entries = self.framed_selection(frame)
+                if text.startswith(label):
+                    return frame, text
+                if text == previous:
+                    # The key moved nothing, so this end of the list is reached, unless
+                    # the redraw was late: read once more before deciding.
+                    time.sleep(0.5)
+                    if self.framed_selection(frame)[1] == previous:
+                        break
+                    text = self.framed_selection(frame)[1]
+                    if text.startswith(label):
+                        return frame, text
+                previous = text
+                self.press(direction)
+        raise Failure(f"no entry starting with {label!r} in the menu; screen was:\n{self.screen()}")
+
     def enter(self) -> None:
         self.press("RIGHT")
 

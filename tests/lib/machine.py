@@ -464,6 +464,27 @@ class Machine:
         return "F7" if self.kind == C64U else "F3"
 
     @property
+    def settings_key(self) -> str:
+        """The key that opens the settings menu over the file browser.
+
+        F2 on every machine: each keymap of UserInterface::keymapper turns KEY_F2
+        into KEY_CONFIG, the C64 Ultimate's as well as the others'
+        (software/userinterface/userinterface.cc). Asked for here, beside the
+        other function keys, so no caller pins it.
+        """
+        return "F2"
+
+    @property
+    def has_data_streams(self) -> bool:
+        """Whether the machine serves the VIC, audio and debug streams.
+
+        socket_dma.cc builds the stream commands, and the debug register that
+        selects what the debug stream carries, only under `#ifdef U64`, which the
+        C64 Ultimate is built with as well. A cartridge leaves them unanswered.
+        """
+        return self.kind != U2
+
+    @property
     def described(self) -> str:
         """The machine and its firmware, for a reason someone has to act on."""
         return f"{self.product} {self.firmware}".strip()

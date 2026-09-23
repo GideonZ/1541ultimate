@@ -51,6 +51,9 @@ class RuntimeSettings:
     victim_ip: str = ""
     session_slots: int = 4
     reap_timeout_s: float = 75.0
+    # Whether the machine serves the VIC, audio and debug streams and the debug register;
+    # see Machine.has_data_streams.
+    data_streams: bool = True
 
 
 @dataclass(frozen=True)
@@ -155,7 +158,10 @@ def is_retryable_surface_error(error: Exception) -> bool:
     if isinstance(error, ftplib.Error):
         detail = str(error).strip()
         if len(detail) >= 3 and detail[:3].isdigit():
-            return int(detail[:3]) in {425, 450, 550}
+            # 421 is the session cap refusing. The stress profile keeps the cap's four
+            # sessions busy, and ftpd frees a slot only when the session's task has ended,
+            # after the client's close, so a reconnect can arrive before it does.
+            return int(detail[:3]) in {421, 425, 450, 550}
     if isinstance(error, (ConnectionResetError, BrokenPipeError, TimeoutError, socket.timeout)):
         return True
     if isinstance(error, (http.client.IncompleteRead, http.client.RemoteDisconnected, http.client.ResponseNotReady)):
@@ -167,7 +173,7 @@ def is_retryable_surface_error(error: Exception) -> bool:
         return (
             "empty telnet text" in detail
             or "timed out" in detail
-            or "missing audio mixer write value" in detail
+            or "missing setting value" in detail
             or "missing telnet text" in detail
             or "verification mismatch" in detail
         )

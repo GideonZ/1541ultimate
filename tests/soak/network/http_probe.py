@@ -10,6 +10,7 @@ import urllib.parse
 from contextlib import nullcontext
 from typing import Any
 
+import machine
 from connection_runtime import (
     ProbeCorrectness,
     ProbeExecutionContext,
@@ -22,16 +23,22 @@ from connection_runtime import (
 )
 
 
-HTTP_AUDIO_MIXER_CATEGORY_PATH = "/v1/configs/Audio%20Mixer"
-HTTP_VOLUME_ULTISID_1_PATH = f"{HTTP_AUDIO_MIXER_CATEGORY_PATH}/Vol%20UltiSid%201"
-AUDIO_MIXER_WRITE_ITEM = "Vol UltiSid 1"
-AUDIO_MIXER_WRITE_TARGET_VALUES = ("0 dB", "+1 dB")
-AUDIO_MIXER_SHARED_STATE_KEY = "u64.audio_mixer.vol_ultisid_1"
-AUDIO_MIXER_TENTATIVE_STATE_KEY = "u64.audio_mixer.vol_ultisid_1.tentative"
+# The setting the HTTP and Telnet probes read and change. Every machine has the printer
+# emulation, and its ink density changes nothing but the look of a page not being printed.
+SETTING_CATEGORY = "Printer Settings"
+SETTING_ITEM = "Ink density"
+SETTING_TARGET_VALUES = ("Medium", "High")
+HTTP_SETTING_CATEGORY_PATH = f"/v1/configs/{urllib.parse.quote(SETTING_CATEGORY)}"
+HTTP_SETTING_PATH = f"{HTTP_SETTING_CATEGORY_PATH}/{urllib.parse.quote(SETTING_ITEM)}"
+SETTING_SHARED_STATE_KEY = "setting.printer.ink_density"
+SETTING_TENTATIVE_STATE_KEY = "setting.printer.ink_density.tentative"
 # Keep probe write slots in the small unused page-3 ranges so readwrite probes
 # avoid both visible screen RAM and the datasette buffer.
 PROBE_WRITE_ADDRESSES = tuple(range(0x0334, 0x033C)) + tuple(range(0x03FC, 0x0400))
-PROBE_WRITE_RUNNER_SLOT_COUNT = len(PROBE_WRITE_ADDRESSES)
+# The HTTP and the DMA probe of one runner write and read back a byte at the same time,
+# so each has half of the slots.
+PROBE_WRITE_LANES = ("http", "dma")
+PROBE_WRITE_RUNNER_SLOT_COUNT = len(PROBE_WRITE_ADDRESSES) // len(PROBE_WRITE_LANES)
 STATE_VERIFY_RETRY_DELAYS_S = (0.05, 0.10, 0.20)
 
 
@@ -136,125 +143,154 @@ def extract_first_byte(payload: object) -> int | None:
     return None
 
 
+def identify_machine(settings: RuntimeSettings) -> machine.Machine:
+    """The machine at the host, asked of it once (machine.identify keeps the answer)."""
+    def fetch() -> tuple[str, str]:
+        _status, info, _body_bytes = json_request(settings, "GET", "/v1/info")
+        return str(info.get("product", "")), str(info.get("firmware_version", ""))
+    return machine.identify(settings.host, fetch)
+
+
 def generic_read(settings: RuntimeSettings, path: str) -> str:
     return safe_read(settings, path)
 
 
-def normalize_audio_mixer_value(value: str) -> str:
+def normalize_setting_value(value: str) -> str:
     return " ".join(value.split())
 
 
-def resolve_audio_mixer_value(values: tuple[str, ...], target: str) -> str:
-    normalized_target = normalize_audio_mixer_value(target)
+def resolve_setting_value(values: tuple[str, ...], target: str) -> str:
+    normalized_target = normalize_setting_value(target)
     for value in values:
-        if normalize_audio_mixer_value(value) == normalized_target:
+        if normalize_setting_value(value) == normalized_target:
             return value
     raise RuntimeError(f"unsupported target value: {target}")
 
 
-def audio_mixer_shared_lock(shared_state: Any | None):
+def setting_shared_lock(shared_state: Any | None):
     if shared_state is None or not hasattr(shared_state, "shared_resource_lock_for"):
         return nullcontext()
-    return shared_state.shared_resource_lock_for(AUDIO_MIXER_SHARED_STATE_KEY)
+    return shared_state.shared_resource_lock_for(SETTING_SHARED_STATE_KEY)
 
 
-def remember_audio_mixer_value(shared_state: Any | None, value: str) -> str:
-    normalized = normalize_audio_mixer_value(value)
+def remember_setting_value(shared_state: Any | None, value: str) -> str:
+    normalized = normalize_setting_value(value)
     if shared_state is not None and hasattr(shared_state, "set_shared_resource_value"):
-        shared_state.set_shared_resource_value(AUDIO_MIXER_SHARED_STATE_KEY, normalized)
+        shared_state.set_shared_resource_value(SETTING_SHARED_STATE_KEY, normalized)
     return normalized
 
 
-def stage_audio_mixer_value(shared_state: Any | None, value: str) -> str:
-    normalized = normalize_audio_mixer_value(value)
+def stage_setting_value(shared_state: Any | None, value: str) -> str:
+    normalized = normalize_setting_value(value)
     if shared_state is not None and hasattr(shared_state, "set_shared_resource_value"):
-        shared_state.set_shared_resource_value(AUDIO_MIXER_TENTATIVE_STATE_KEY, normalized)
+        shared_state.set_shared_resource_value(SETTING_TENTATIVE_STATE_KEY, normalized)
     return normalized
 
 
-def clear_audio_mixer_tentative(shared_state: Any | None) -> None:
+def clear_setting_tentative(shared_state: Any | None) -> None:
     if shared_state is None or not hasattr(shared_state, "set_shared_resource_value"):
         return
-    shared_state.set_shared_resource_value(AUDIO_MIXER_TENTATIVE_STATE_KEY, None)
+    shared_state.set_shared_resource_value(SETTING_TENTATIVE_STATE_KEY, None)
 
 
-def confirm_audio_mixer_value(shared_state: Any | None, value: str) -> str:
-    normalized = remember_audio_mixer_value(shared_state, value)
-    clear_audio_mixer_tentative(shared_state)
+def confirm_setting_value(shared_state: Any | None, value: str) -> str:
+    normalized = remember_setting_value(shared_state, value)
+    clear_setting_tentative(shared_state)
     return normalized
 
 
-def latest_audio_mixer_value(shared_state: Any | None, *, include_tentative: bool = False) -> str | None:
+def latest_setting_value(shared_state: Any | None, *, include_tentative: bool = False) -> str | None:
     if shared_state is None or not hasattr(shared_state, "get_shared_resource_value"):
         return None
     if include_tentative:
-        tentative = shared_state.get_shared_resource_value(AUDIO_MIXER_TENTATIVE_STATE_KEY)
+        tentative = shared_state.get_shared_resource_value(SETTING_TENTATIVE_STATE_KEY)
         if isinstance(tentative, str) and tentative.strip():
-            return normalize_audio_mixer_value(tentative)
-    value = shared_state.get_shared_resource_value(AUDIO_MIXER_SHARED_STATE_KEY)
+            return normalize_setting_value(tentative)
+    value = shared_state.get_shared_resource_value(SETTING_SHARED_STATE_KEY)
     if not isinstance(value, str) or not value.strip():
         return None
-    return normalize_audio_mixer_value(value)
+    return normalize_setting_value(value)
 
 
-def verify_audio_mixer_value(settings: RuntimeSettings, expected: str, *, shared_state: Any | None = None) -> str:
-    normalized_target = normalize_audio_mixer_value(expected)
+def verify_setting_value(settings: RuntimeSettings, expected: str, *, shared_state: Any | None = None) -> str:
+    normalized_target = normalize_setting_value(expected)
     observed = "unknown"
     attempts = len(STATE_VERIFY_RETRY_DELAYS_S) + 1
     for attempt in range(attempts):
-        current, _values, _body_bytes = audio_mixer_item_state(settings)
-        observed = remember_audio_mixer_value(shared_state, current)
+        current, _values, _body_bytes = setting_item_state(settings)
+        observed = remember_setting_value(shared_state, current)
         if observed == normalized_target:
-            return confirm_audio_mixer_value(shared_state, observed)
+            return confirm_setting_value(shared_state, observed)
         if attempt + 1 < attempts:
             time.sleep(STATE_VERIFY_RETRY_DELAYS_S[attempt])
-    clear_audio_mixer_tentative(shared_state)
+    clear_setting_tentative(shared_state)
     raise RuntimeError(
-        f"verification mismatch expected={normalized_target} got={observed} latest_known={latest_audio_mixer_value(shared_state) or 'unknown'}"
+        f"verification mismatch expected={normalized_target} got={observed} latest_known={latest_setting_value(shared_state) or 'unknown'}"
     )
 
 
-def audio_mixer_item_state(settings: RuntimeSettings) -> tuple[str, tuple[str, ...], int]:
-    _status, payload, body_bytes = json_request(settings, "GET", HTTP_VOLUME_ULTISID_1_PATH)
-    category_payload = payload.get("Audio Mixer") if isinstance(payload, dict) else None
+def setting_item_state(settings: RuntimeSettings) -> tuple[str, tuple[str, ...], int]:
+    _status, payload, body_bytes = json_request(settings, "GET", HTTP_SETTING_PATH)
+    category_payload = payload.get(SETTING_CATEGORY) if isinstance(payload, dict) else None
     if not isinstance(category_payload, dict):
-        raise RuntimeError("missing Audio Mixer payload")
-    item_payload = category_payload.get(AUDIO_MIXER_WRITE_ITEM)
+        raise RuntimeError(f"missing {SETTING_CATEGORY} payload")
+    item_payload = category_payload.get(SETTING_ITEM)
     if not isinstance(item_payload, dict):
-        raise RuntimeError("missing Audio Mixer write payload")
+        raise RuntimeError(f"missing {SETTING_ITEM} payload")
     current = item_payload.get("current")
     values = item_payload.get("values")
     if not isinstance(current, str) or not current.strip():
-        raise RuntimeError("missing Audio Mixer write current value")
+        raise RuntimeError(f"missing {SETTING_ITEM} current value")
     if not isinstance(values, list) or not values:
-        raise RuntimeError("missing Audio Mixer write values")
+        raise RuntimeError(f"missing {SETTING_ITEM} values")
     normalized_values = tuple(str(value) for value in values if str(value).strip())
     if not normalized_values:
-        raise RuntimeError("empty Audio Mixer write values")
+        raise RuntimeError(f"empty {SETTING_ITEM} values")
     return current, normalized_values, body_bytes
 
 
-def read_audio_mixer_item(settings: RuntimeSettings, *, shared_state: Any | None = None) -> str:
-    with audio_mixer_shared_lock(shared_state):
-        current, values, body_bytes = audio_mixer_item_state(settings)
-        normalized_current = confirm_audio_mixer_value(shared_state, current)
+def read_setting_item(settings: RuntimeSettings, *, shared_state: Any | None = None) -> str:
+    with setting_shared_lock(shared_state):
+        current, values, body_bytes = setting_item_state(settings)
+        normalized_current = confirm_setting_value(shared_state, current)
         return f"body_bytes={body_bytes} current={normalized_current} options={len(values)}"
 
 
-def write_audio_mixer_item(settings: RuntimeSettings, target: str, *, shared_state: Any | None = None) -> str:
-    with audio_mixer_shared_lock(shared_state):
-        current, values, _body_bytes = audio_mixer_item_state(settings)
-        normalized_current = remember_audio_mixer_value(shared_state, current)
-        resolved_target = resolve_audio_mixer_value(values, target)
-        normalized_target = normalize_audio_mixer_value(resolved_target)
+def write_setting_item(settings: RuntimeSettings, target: str, *, shared_state: Any | None = None) -> str:
+    with setting_shared_lock(shared_state):
+        current, values, _body_bytes = setting_item_state(settings)
+        normalized_current = remember_setting_value(shared_state, current)
+        resolved_target = resolve_setting_value(values, target)
+        normalized_target = normalize_setting_value(resolved_target)
         if normalized_current != normalized_target:
             encoded_target = urllib.parse.quote(resolved_target, safe="")
-            status, _body, _headers = request_bytes(settings, "PUT", f"{HTTP_VOLUME_ULTISID_1_PATH}?value={encoded_target}")
+            status, _body, _headers = request_bytes(settings, "PUT", f"{HTTP_SETTING_PATH}?value={encoded_target}")
             if not 200 <= status < 300:
                 raise RuntimeError(f"expected HTTP 2xx, got {status}")
-            stage_audio_mixer_value(shared_state, normalized_target)
-        normalized_updated = verify_audio_mixer_value(settings, normalized_target, shared_state=shared_state)
+            stage_setting_value(shared_state, normalized_target)
+        normalized_updated = verify_setting_value(settings, normalized_target, shared_state=shared_state)
         return f"from={normalized_current} to={normalized_updated}"
+
+
+def restore_setting(settings: RuntimeSettings, original: str) -> str:
+    """Put the setting back as the run found it, in memory and in flash.
+
+    Reloading the category from flash withdraws the offer to save it, which would otherwise
+    meet the next person to leave the settings menu. The Telnet probe declines that offer,
+    but a machine whose Auto Save Config is Yes saves on leaving without asking, and then
+    the value the run found is written back to flash.
+    """
+    def put(action: str) -> None:
+        status, _body, _headers = request_bytes(settings, "PUT", f"{HTTP_SETTING_CATEGORY_PATH}:{action}")
+        if not 200 <= status < 300:
+            raise RuntimeError(f"{action} answered HTTP {status}")
+    put("load_from_flash")
+    in_flash = normalize_setting_value(setting_item_state(settings)[0])
+    if in_flash == normalize_setting_value(original):
+        return f"{SETTING_ITEM} reloaded from flash as {in_flash}"
+    write_setting_item(settings, original)
+    put("save_to_flash")
+    return f"{SETTING_ITEM} written back to flash as {original} over {in_flash}"
 
 
 def memory_read(settings: RuntimeSettings, address: str, length: int) -> str:
@@ -269,25 +305,28 @@ def memory_read(settings: RuntimeSettings, address: str, length: int) -> str:
     return f"http_status={status} body_bytes={len(body)} byte=0x{body[0]:02X}"
 
 
-def memory_write_verify(settings: RuntimeSettings, address: str, data_hex: str) -> str:
-    write_status, _body, _headers = request_bytes(settings, "PUT", f"/v1/machine:writemem?address={address}&data={data_hex}")
-    if not 200 <= write_status < 300:
-        raise RuntimeError(f"expected HTTP 2xx, got {write_status}")
+def memory_write_readback(settings: RuntimeSettings, address: str, expected: int) -> str:
     read_status, read_body, _headers = request_bytes(settings, "GET", f"/v1/machine:readmem?address={address}&length=1")
     if not 200 <= read_status < 300:
         raise RuntimeError(f"expected HTTP 2xx, got {read_status}")
     if len(read_body) < 1:
         raise RuntimeError("empty write verification body")
     value = read_body[0]
-    expected = int(data_hex, 16)
     if value != expected:
         raise RuntimeError(f"verification mismatch expected=0x{expected:02X} got=0x{value:02X}")
-    return f"http_status={write_status} verified=0x{value:02X}"
+    return f"verified=0x{value:02X}"
 
 
-def _runner_probe_write_address(runner_id: int) -> str:
+def memory_write_verify(settings: RuntimeSettings, address: str, data_hex: str) -> str:
+    write_status, _body, _headers = request_bytes(settings, "PUT", f"/v1/machine:writemem?address={address}&data={data_hex}")
+    if not 200 <= write_status < 300:
+        raise RuntimeError(f"expected HTTP 2xx, got {write_status}")
+    return f"http_status={write_status} {memory_write_readback(settings, address, int(data_hex, 16))}"
+
+
+def probe_write_address(runner_id: int, lane: str) -> int:
     slot = (runner_id - 1) % PROBE_WRITE_RUNNER_SLOT_COUNT
-    return f"{PROBE_WRITE_ADDRESSES[slot]:04X}"
+    return PROBE_WRITE_ADDRESSES[PROBE_WRITE_LANES.index(lane) * PROBE_WRITE_RUNNER_SLOT_COUNT + slot]
 
 
 def surface_operations(
@@ -301,8 +340,8 @@ def surface_operations(
         ("get_version", lambda settings: generic_read(settings, "/v1/version")),
         ("get_info", lambda settings: generic_read(settings, "/v1/info")),
         ("get_configs", lambda settings: generic_read(settings, "/v1/configs")),
-        ("get_config_audio_mixer", lambda settings: generic_read(settings, HTTP_AUDIO_MIXER_CATEGORY_PATH)),
-        ("get_vol_ultisid_1", lambda settings: read_audio_mixer_item(settings, shared_state=shared_state)),
+        ("get_setting_category", lambda settings: generic_read(settings, HTTP_SETTING_CATEGORY_PATH)),
+        ("get_setting", lambda settings: read_setting_item(settings, shared_state=shared_state)),
         ("get_drives", lambda settings: generic_read(settings, "/v1/drives")),
         ("get_files_temp", lambda settings: generic_read(settings, "/v1/files?path=/Temp")),
         ("mem_read_zero_page", lambda settings: memory_read(settings, "0000", 16)),
@@ -314,13 +353,14 @@ def surface_operations(
         return (("get_version_smoke", lambda settings: generic_read(settings, "/v1/version")),)
     if surface == ProbeSurface.READ:
         return read_operations
-    probe_write_address = _runner_probe_write_address(runner_id)
+    write_address = f"{probe_write_address(runner_id, 'http'):04X}"
     operations = (
         *read_operations,
-        ("mem_write_probe_a5", lambda settings: memory_write_verify(settings, probe_write_address, "A5")),
-        ("mem_write_probe_5a", lambda settings: memory_write_verify(settings, probe_write_address, "5A")),
-        ("set_vol_ultisid_1_0_db", lambda settings: write_audio_mixer_item(settings, "0 dB", shared_state=shared_state)),
-        ("set_vol_ultisid_1_plus_1_db", lambda settings: write_audio_mixer_item(settings, "+1 dB", shared_state=shared_state)),
+        ("mem_write_probe_a5", lambda settings: memory_write_verify(settings, write_address, "A5")),
+        ("mem_write_probe_5a", lambda settings: memory_write_verify(settings, write_address, "5A")),
+        *((f"set_setting_{value.lower()}",
+           lambda settings, value=value: write_setting_item(settings, value, shared_state=shared_state))
+          for value in SETTING_TARGET_VALUES),
     )
     return operations
 

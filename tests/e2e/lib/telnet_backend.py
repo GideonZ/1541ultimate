@@ -19,6 +19,7 @@ from collections.abc import Sequence
 import interactions
 import pacing
 import screens as screen_spool
+import re
 import select
 import socket
 import time
@@ -63,6 +64,7 @@ TELNET_KEY_BYTES: dict[str, bytes] = {
     # value, so 11 is KEY_F1, 13 KEY_F3, 15 KEY_F5 and 19 KEY_F8. F1 is here
     # because a C64 Ultimate puts the task menu on it; see tests/lib/machine.py.
     "F1": b"\x1b[11~",
+    "F2": b"\x1b[12~",
     "F5": b"\x1b[15~",
     "F3": b"\x1b[13~",
     # 18, not 17: keyboard_vt100.cc skips 16 and puts KEY_F6 at 17.
@@ -112,6 +114,35 @@ TELNET_KEY_BYTES: dict[str, bytes] = {
     "SELECT_ALL": b"\x01",
     "SHIFT_DEL": b"\x1b[2~",
 }
+
+
+# A lookahead, so two boxes side by side that share a corner are both found.
+FRAME_EDGE = re.compile(r"(?=(\+-{2,}\+))")
+
+Frame = tuple[int, int, int, int]
+
+
+def innermost_frames(rows: Sequence[str]) -> list[Frame]:
+    """(top, bottom, left, right) of every box drawn with + and - that holds no other box.
+
+    The alternate character set draws a window's corners and edges, which
+    ALT_CHARSET_MAP turns into + and -. A popup is drawn over the browser's frame,
+    so it is the one box inside it; a C64 Ultimate draws three panels side by side
+    and puts its settings list in the middle one.
+    """
+    boxes: list[Frame] = []
+    for top, row in enumerate(rows):
+        for edge in FRAME_EDGE.finditer(row):
+            left, right = edge.start(), edge.start() + len(edge.group(1)) - 1
+            for bottom in range(top + 1, len(rows)):
+                below = rows[bottom]
+                if len(below) > right and below[left] == "+" and below[right] == "+" \
+                        and set(below[left + 1:right]) == {"-"}:
+                    boxes.append((top, bottom, left, right))
+                    break
+    return [box for box in boxes if not any(
+        other != box and box[0] <= other[0] and other[1] <= box[1]
+        and box[2] <= other[2] and other[3] <= box[3] for other in boxes)]
 
 
 class VT100Screen:
@@ -280,6 +311,7 @@ class TelnetBackend(Backend):
         # The colour this machine's browser marks its cursor row with, once a
         # listing has shown it unambiguously; see _marked_row.
         self._selected_sgr: str | None = None
+        self._framed_sgr: str | None = None
         self.sock = self._connect_with_retry(host, port, timeout)
         self.sock.setblocking(False)
         self.timeout = timeout
@@ -427,6 +459,39 @@ class TelnetBackend(Backend):
         self._drain_until_idle(timeout=self.timeout)
         rows = self.screen.rows()
         return strip_frame(rows[self._marked_row(entry_rows, rows)])
+
+    def framed_selections(self) -> dict[Frame, tuple[int, str, list[str]]]:
+        """The highlighted entry of each framed list: {frame: (index, text, entries)}.
+
+        Only the cells inside a frame are read, by the rule _marked_row applies to a
+        listing: the entry drawn in a colour of its own is the highlighted one. A frame
+        with no such entry, such as a column of status words, is left out. Section
+        headers ("-- Peripherals --") and blank rows are not entries.
+        """
+        self._drain_until_idle(timeout=self.timeout)
+        rows = self.screen.rows()
+        found: dict[Frame, tuple[int, str, list[str]]] = {}
+        for frame in innermost_frames(rows):
+            top, bottom, left, right = frame
+            entries: list[tuple[str, str]] = []
+            for row in range(top + 1, bottom):
+                inner = rows[row][left + 1:right]
+                text = inner.strip()
+                if not text or text.startswith("--"):
+                    continue
+                column = left + 1 + len(inner) - len(inner.lstrip())
+                entries.append((text, self.screen.colours[row][column]))
+            tally: dict[str, int] = {}
+            for _text, sgr in entries:
+                tally[sgr] = tally.get(sgr, 0) + 1
+            odd = [index for index, (_text, sgr) in enumerate(entries) if tally[sgr] == 1]
+            if len(odd) != 1 and self._framed_sgr is not None:
+                # A tie, as in a two-entry list: the colour a highlight was seen in before.
+                odd = [index for index, (_text, sgr) in enumerate(entries) if sgr == self._framed_sgr]
+            if len(odd) == 1 and len(entries) > 1:
+                self._framed_sgr = entries[odd[0]][1]
+                found[frame] = (odd[0], entries[odd[0]][0], [text for text, _sgr in entries])
+        return found
 
     def selection_and_rows(
         self, entry_rows: Sequence[int] | None = None

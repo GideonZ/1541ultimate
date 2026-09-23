@@ -20,7 +20,10 @@ machine it was measured on:
   - a framed context menu drawn beside the browser row it was opened on, where
     the browser's own highlight has more marked cells than the menu item;
   - a form that marks a ten-cell field rather than a row;
-  - a repaint that leaves no row marked at all, where a blank row used to win.
+  - a repaint that leaves no row marked at all, where a blank row used to win;
+  - over Telnet, a settings popup drawn over the browser's frame, and the C64
+    Ultimate's three framed panels side by side, where the settings list is the
+    middle one and the device list beside it has a highlight of its own.
 
 Needs no device.
 """
@@ -34,6 +37,7 @@ sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
 import bootstrap  # noqa: E402,F401
 import cli  # noqa: E402
 import ui_backend  # noqa: E402
+from telnet_backend import TelnetBackend, VT100Screen, innermost_frames  # noqa: E402
 from report import Failure, check, detail, suite_fail, suite_ok  # noqa: E402
 from selftest import expect  # noqa: E402
 
@@ -204,6 +208,57 @@ def run_checks() -> None:
         screen = listing({2: "Ftp", 3: "Temp"})
         screen.reverse(3, column=1, width=30)
         expect("the reversed row", screen.selected(), 3)
+
+
+    with check("over Telnet, a popup is the one frame inside the browser's"):
+        backend = telnet_screen([
+            (2, 0, "+" + "-" * 58 + "+", PLAIN),
+            *[(row, 0, "|" + " " * 58 + "|", PLAIN) for row in range(3, 21)],
+            (21, 0, "+" + "-" * 58 + "+", PLAIN),
+            (4, 1, "Flash", MARKED), (5, 1, "Temp", PLAIN), (6, 1, "USB0", PLAIN),
+            (3, 10, "+" + "-" * 30 + "+", PLAIN),
+            *[(row, 10, "|" + " " * 30 + "|", PLAIN) for row in range(4, 9)],
+            (9, 10, "+" + "-" * 30 + "+", PLAIN),
+            (4, 11, "-- Peripherals --", PLAIN),
+            (5, 11, "Drive A Settings", PLAIN), (6, 11, "Tape Settings", MARKED),
+            (7, 11, "Printer Settings", PLAIN),
+        ])
+        expect("the frames found", innermost_frames(backend.screen.rows()), [(3, 9, 10, 41)])
+        expect("the popup's highlight, headers skipped", backend.framed_selections(),
+               {(3, 9, 10, 41): (1, "Tape Settings",
+                                 ["Drive A Settings", "Tape Settings", "Printer Settings"])})
+
+    with check("over Telnet, panels side by side are each a frame, and a column of one colour has no highlight"):
+        backend = telnet_screen([
+            (2, 0, "+--------+------------------------+--------+", PLAIN),
+            *[(row, 0, "|        |                        |        |", PLAIN) for row in range(3, 7)],
+            (7, 0, "+--------+------------------------+--------+", PLAIN),
+            (3, 1, "SD", MARKED), (4, 1, "Flash", PLAIN), (5, 1, "Temp", PLAIN),
+            (3, 10, "Video Configuration", MARKED), (4, 10, "Audio Mixer", PLAIN),
+            (5, 10, "Printer Settings", PLAIN),
+            (3, 35, "Ready", PLAIN), (4, 35, "Ready", PLAIN),
+        ])
+        found = backend.framed_selections()
+        expect("the device list and the settings list", sorted(found),
+               [(2, 7, 0, 9), (2, 7, 9, 34)])
+        expect("the settings list's highlight", found[(2, 7, 9, 34)][1], "Video Configuration")
+
+
+PLAIN = "0;31;2"
+MARKED = "0;37;1"
+
+
+def telnet_screen(cells: list[tuple[int, int, str, str]]) -> TelnetBackend:
+    """A Telnet backend whose screen shows `cells`: (row, column, text, SGR) each."""
+    # Built without __init__, which would open a Telnet session.
+    backend = TelnetBackend.__new__(TelnetBackend)
+    backend.screen = VT100Screen()
+    backend.timeout = 0.1
+    backend._framed_sgr = None
+    backend._drain_until_idle = lambda timeout: None
+    backend.screen.feed(b"".join(f"\x1b[{row + 1};{column + 1}H\x1b[{sgr}m{text}".encode()
+                                 for row, column, text, sgr in cells))
+    return backend
 
 
 def frame(screen: Screen, rows: range, first: int, last: int) -> None:
