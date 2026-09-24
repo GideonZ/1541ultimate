@@ -87,6 +87,19 @@ def main() -> int:
                 out.write(f"1758700001.250 {READ_RESET_LINE}\n1758700001.300 SoftIEC: com")
             expect("entries", source.entries(), [("192.168.1.74", READ_RESET_LINE)])
 
+    with check("a line goes to the operation that needs it, not to an optional one before it"):
+        # The REST lane reset the drive during the first L:LK2's status read, so that one
+        # is optional; the second answered 62 and wrote the line (Ultimate 64 Elite,
+        # 2026-09-24).
+        line = ('SoftIEC: command failed dev=11 chan=15 part=1 dir="/" len=5 txt="L:LK2" '
+                '-> 62,FILE NOT FOUND,00,00 #1465')
+        events = [softiec_log.Event(op="command", chan=15, txt=b"L:LK2", status=None,
+                                    optional=True),
+                  softiec_log.Event(op="command", chan=15, txt=b"L:LK2", status=62)]
+        result = softiec_log.correlate(events, [line], logging_on=False, label="optional")
+        expect("missing", result.missing, [])
+        expect("matched", result.matched, 1)
+
     suite_ok("softiec_log_test")
     return 0
 

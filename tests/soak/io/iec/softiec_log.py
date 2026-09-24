@@ -540,7 +540,8 @@ def _deduplicate(lines: list[LogLine], result: Correlation,
 
 
 def _align(events: list[Event], lines: list[LogLine], pairs) -> list[tuple[str, Event | None, LogLine | None]]:
-    """The events and the lines in one order-keeping alignment with the most pairs, as a
+    """The events and the lines in one order-keeping alignment with the most pairs, a pair
+    with an operation that has to write its line counting twice one with an optional one, as a
     list of ("pair", event, line), ("event", event, None) and ("line", None, line).
 
     A longest common subsequence rather than a greedy walk: the same command, open or close
@@ -572,18 +573,22 @@ def _align(events: list[Event], lines: list[LogLine], pairs) -> list[tuple[str, 
         move[row] = 2
         if low > 1:
             move[row + low - 1] = 2
+        # A line is worth more to an operation that has to write one than to an optional
+        # one with the same text: the drive reset during an optional command's status read,
+        # and the same command sent again, must not leave the second without its line.
+        gain = 1 if ev.optional else 2
         for j in range(low, high + 1):
             best = score[above + j]
             step = 2
             if score[row + j - 1] > best:
                 best = score[row + j - 1]
                 step = 3
-            if (score[above + j - 1] + 1 > best) and (
+            if (score[above + j - 1] + gain > best) and (
                     event_keys[i - 1] == line_keys[j - 1]
                     or ((event_keys[i - 1][:2] == line_keys[j - 1][:2])
                         and (len(line_keys[j - 1][2]) >= len(event_keys[i - 1][2]) + MIN_INTERLEAVED)
                         and pairs(ev, lines[j - 1]))):
-                best = score[above + j - 1] + 1
+                best = score[above + j - 1] + gain
                 step = 1
             score[row + j] = best
             move[row + j] = step
