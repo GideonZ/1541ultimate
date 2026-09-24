@@ -228,8 +228,18 @@ def check_pause_and_resume(browser) -> None:
 
 def check_tape_plays_to_its_end(browser) -> None:
     fast, slow = tap_seconds(SHORT_TAP_PULSES)
+    started = time.monotonic()
     played = start_tape(browser, SHORT_TAP_NAME)
-    expect_actions(browser, (PAUSE_ACTION,), "with the short tape playing")
+    offered = player_actions(browser)
+    # The C64, and with it the tape, runs until the menu is up again. A reading held up
+    # for as long as the tape plays finds it closed already, which is its own end.
+    held_up = time.monotonic() - started
+    if not offered and held_up >= fast * END_EARLY_FRACTION:
+        detail(f"the menu was read {held_up:.1f}s after the start, and the tape had closed itself")
+        return
+    if offered != [PAUSE_ACTION]:
+        raise Failure(f"with the short tape playing: the Tape menu offers {offered}, "
+                      f"expected {[PAUSE_ACTION]}")
     deadline = slow + END_SLACK_SECONDS
     while True:
         played += play_with_the_menu_closed(browser, END_PLAY_SECONDS)

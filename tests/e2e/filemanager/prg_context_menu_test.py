@@ -495,18 +495,21 @@ class Machine:
             except Failure:
                 return
             rows = [strip_frame(row) for row in raw]
+            # Listing rows only: the title row carries the product name, and the "+"
+            # in "Ultimate II+L" would read as an overlay border.
+            listing = [rows[index] for index in self.browser.entry_rows if index < len(rows)]
             fields = raw[self.browser.status_row].split()
             path = fields[0] if fields else ""
             if "Yes  No" in rows:
                 self.browser.press_popup_button("n")
             elif "Ok" in rows:
                 self.browser.press_popup_button("o")
-            elif (telnet and not _has_overlay(rows)
+            elif (telnet and not _has_overlay(listing)
                     and path.startswith("/") and path != "/"):
                 # RUNSTOP peels an interaction layer and never leaves a
                 # directory; LEFT is the way out of one.
                 self.browser.press("LEFT")
-            elif telnet and _at_plain_root(rows, path):
+            elif telnet and _at_plain_root(listing, path):
                 # Nothing left to close over Telnet: its remote session never
                 # closes on its own, so without this check the loop would keep
                 # pressing F8 at the plain root forever. Pressing F8 there is
