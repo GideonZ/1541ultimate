@@ -406,6 +406,12 @@ t_channel_retval IecChannel::push_data(uint8_t b)
         // the actual writing does not happen here, because it is initiated by EOI
 
     case e_file:
+        // A file opened for writing before W-1 changes no more once it is set (SI-102).
+        if (drive->is_write_protected() &&
+            ((name_to_open.access == e_write) || (name_to_open.access == e_append))) {
+            drive->get_command_channel()->set_error(ERR_WRITE_PROTECT_ON, 0, 0);
+            return IEC_BYTE_LOST;
+        }
         buffer[pointer++] = b;
         if (pointer == 512) {
             FRESULT res = FR_DENIED;
@@ -450,7 +456,9 @@ t_channel_retval IecChannel::push_command(uint8_t b)
         }
         if ((name_to_open.access == e_write) || (name_to_open.access == e_append)) {
             if (f) {
-                if (pointer > 0) {
+                if ((pointer > 0) && drive->is_write_protected()) {
+                    drive->get_command_channel()->set_error(ERR_WRITE_PROTECT_ON, 0, 0);
+                } else if (pointer > 0) {
                     uint32_t dummy;
                     FRESULT res = f->write(buffer, pointer, &dummy);
                     if (res != FR_OK) {
@@ -3140,6 +3148,24 @@ int IecCommandChannel::do_set_header(filename_t& name, const char *id)
         cut--;
     }
     renamed.copy(work.c_str(), 0, cut - 1);
+    // What R refuses for a directory: a name ending in a dot or a space, which a FAT host
+    // drops (SI-141), and a name another entry of the parent lists under (SI-074).
+    const char *wanted = name.filename.c_str();
+    int wanted_len = strlen(wanted);
+    if (wanted_len && ((wanted[wanted_len - 1] == '.') || (wanted[wanted_len - 1] == ' '))) {
+        return ERR_SYNTAX_ERROR_NAME;
+    }
+    const char *own = work.c_str() + cut;
+    int own_len = strlen(own);
+    while ((own_len > 0) && (own[own_len - 1] == '/')) {
+        own_len--;
+    }
+    mstring taken;
+    if ((find_rendered_iec_child(fm, renamed.c_str(), wanted, e_any, true, true, false,
+                                 taken, NULL) == FR_OK) &&
+        ((taken.length() != own_len) || strncasecmp(taken.c_str(), own, own_len))) {
+        return ERR_FILE_EXISTS;
+    }
     append_path_component(renamed, fat_name);
     fres = fm->rename(work.c_str(), renamed.c_str());
     if (fres != FR_OK) {

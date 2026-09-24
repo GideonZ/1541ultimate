@@ -3619,8 +3619,21 @@ static void s11_si102_write_protect(FileManager *fm, IecDrive *dr)
     close_file(dr, 2);
     create_formatted_image(fm, "/Fat/s11_si102.d64", "PROTECT", 683, e_image_d64);
     dr->add_partition(44, "/Fat/s11_si102.d64", "PROTECT");
+    // A file opened for writing before the protection is set.
+    open_file(dr, 4, "OPENED,S,W");
+    get_status(dr);
+    expect_status_ok(testname, "OPENED,S,W");
+    send_channel_data(dr, 4, (const uint8_t *)"before", 6);
 
     expect_command_ok(testname, dr, "W-1\r");
+
+    // That channel writes nothing more, not even what it held when the protection was set.
+    send_channel_data(dr, 4, (const uint8_t *)"after", 5);
+    get_status(dr);
+    expect_current_status(testname, "a write to a channel opened before W-1", protect);
+    close_file(dr, 4);
+    uint8_t opened[16];
+    REQUIRE(s11_read_host_file(fm, path, "OPENED.seq", opened, sizeof(opened)) == 0);
 
     // The commands that change a medium.
     expect_command_response(testname, dr, "MD:NEWDIR\r", protect);
@@ -3703,6 +3716,12 @@ static void s11_si077_attribute_commands(FileManager *fm, IecDrive *dr)
     bool present;
     expect_iec_write_ok(testname, dr, 1, "ONE", "1");
     expect_iec_write_ok(testname, dr, 1, "TWO", "2");
+
+    // SDM's XL and XU are settings commands, out of scope (section 19), and lock nothing.
+    expect_command_response(testname, dr, "XL:ONE\r", "30,SYNTAX ERROR,00,00\r");
+    expect_command_response(testname, dr, "XU:*\r", "30,SYNTAX ERROR,00,00\r");
+    s11_listing_type(dr, testname, "$", "ONE", type, &present);
+    REQUIRE(present && !strcmp(type, "PRG "));
 
     // EL locks every entry each name matches, and a listing marks a locked entry.
     expect_command_ok(testname, dr, "EL:ONE,TWO\r");
@@ -3827,6 +3846,14 @@ static void s11_si064_rename_header(FileManager *fm, IecDrive *dr)
     expect_command_ok(testname, dr, "R-H:ACTION\r"); // no path: the current directory
     read_directory_stream(testname, dr, "$", listing, sizeof(listing));
     REQUIRE(memcmp(listing + 8, "ACTION          ", 16) == 0);
+    expect_command_ok(testname, dr, "CD//\r");
+    // A directory takes no name ending in a dot or a space (SI-141), and no name another
+    // entry lists under (SI-074), so the directory keeps the name it has.
+    expect_command_ok(testname, dr, "MD:KEEPDIR\r");
+    expect_iec_write_ok(testname, dr, 1, "TAKEN", "x");
+    expect_command_response(testname, dr, "R-H/KEEPDIR/:NEWDIR.\r", "33,SYNTAX ERROR,00,00\r");
+    expect_command_response(testname, dr, "R-H/KEEPDIR/:TAKEN\r", "63,FILE EXISTS,00,00\r");
+    expect_command_ok(testname, dr, "CD//KEEPDIR\r");
     expect_command_ok(testname, dr, "CD//\r");
 
     // The root of a partition, whose header is the partition name.

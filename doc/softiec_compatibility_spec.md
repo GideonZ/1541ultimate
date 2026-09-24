@@ -802,7 +802,9 @@ follows a colon, as for `N`: without one the answer is `34`, so a command whose 
 digits would otherwise become part of the name renames nothing. An empty
 name answers `34`, a name with a wildcard `33`, and a path that is not there
 `71,DIRECTORY ERROR`. A name longer than sixteen characters keeps its first sixteen
-wherever a header shows it.
+wherever a header shows it. A directory on a host file system is renamed, and so is refused
+what `R` refuses a directory: a name ending in a dot or a space answers `33` (SI-141), and a
+name another entry lists under `63` (SI-074).
 
 **Difference from the CMD manuals.** The id is an sd2iec extension. HD 9-15 gives the
 syntax as `R-H[n][path]:newname` and names three arguments, the partition, the path and
@@ -1074,6 +1076,11 @@ byte is 255, as a 1541 fills them, and the record written follows. A write prote
 (SI-102) grows nothing because it writes nothing. Tests: `Suite11-SI080-PastTheLastRecord`,
 `Suite11-SI080-RecordLengthBytes`.
 
+A byte offset given with a record past the end is not kept, so the record written there
+starts at its first byte, and an offset past the record length answers `51` whether or not
+the record is there. `SD fat_file_seek()` clamps the position to the empty record it
+returns, and `SD parse_position()` checks the offset before it seeks.
+
 **SI-081.** The channel byte of `P` is masked to its low four bits from 19 up, so both
 the documented BASIC form `PRINT#15,"P"CHR$(96+ch)` and the bare byte reach the same
 channel, while a byte just outside the channel range is still refused. A byte that names
@@ -1319,6 +1326,7 @@ the bus to a medium.
 | --- | --- |
 | the twelve command handlers that change a medium | `MD`, `RD`, `C`, `N`, `R`, `S`, `R-H`, `R-P`, `L`, `EL`, `EU`, `EH`, `A`, `U2`, `B-W`, `B-A`, `B-F` |
 | the file open | a write, an append and a replace, which answer `26` and open nothing |
+| the sequential write | a channel opened for writing before `W-1` takes no more bytes and writes nothing more when it closes, and answers `26` |
 | the relative file | it opens for reading, and the record write answers `26`, drops the record and leaves the channel open, because the file can still be read |
 | the record seek | a record past the end of the file is not created; the answer is `50,RECORD NOT PRESENT` |
 

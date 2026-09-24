@@ -794,6 +794,9 @@ int IecParser :: attribute_command(const uint8_t *buffer, int len)
         switch (buffer[1]) {
         case 'L':
         case 'U':
+            if (buffer[0] == 'X') {
+                return ERR_SYNTAX; // SDM's XL and XU are settings, out of scope (section 19)
+            }
             err = parse_name_list(arg2, names, &n);
             if (!err) {
                 err = exec->do_set_attributes(names, n,
