@@ -1219,7 +1219,9 @@ high byte of the buffer position, For example, 'B-P 9 4 1' positions to byte 260
 "The Buffer Pointer". With two parameters the position is the 1541's eight bit one, which
 keeps the low byte of what it is given, so `B-P:2,300` positions to byte 44. With three,
 the position is sixteen bits, and one past the end of a 256 byte buffer (SI-090) names no
-byte the drive can give out and answers `30`.
+byte the drive can give out and answers `30`. So does `P` on a buffer channel whose
+32-bit position (SI-082) is past that end, and the pointer stays where it was. Test:
+`Suite11-SI090-BufferPointer`.
 
 **SI-093.** The partition parameter of a direct access command is ignored; the
 channel uses the partition that was current when it was opened. Source: HD 9-8 and

@@ -130,8 +130,10 @@ FRESULT x00_rename(FileManager *fm, const char *path, const char *dir, const cha
         if (!x00_host_name(path, dir, cbm_name, i, candidate)) {
             break; // no host name can be built, so the file keeps the one it has
         }
-        if (!strcasecmp(candidate.c_str(), path) ||
-            (fm->fstat(candidate.c_str(), info) != FR_OK)) {
+        if (!strcasecmp(candidate.c_str(), path)) {
+            break; // the name it has; the file system matches names without regard to case
+        }
+        if (fm->fstat(candidate.c_str(), info) != FR_OK) {
             target = candidate;
             break;
         }

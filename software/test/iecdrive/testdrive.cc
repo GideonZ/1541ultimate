@@ -3597,6 +3597,10 @@ static void s11_si076_lock(FileManager *fm, IecDrive *dr)
     expect_command_response(testname, dr, "S47:INIMAGE\r", "01, FILES SCRATCHED,00,00\r");
 }
 
+static void s11_host_file(FileManager *fm, const char *dir, const char *host, const char *cbm_name,
+                          uint8_t record_length, const uint8_t *data, int len);
+static int s11_read_host_file(FileManager *fm, const char *dir, const char *host, uint8_t *out, int size);
+
 // SI-102, SI-102a: while the write protect is set, every command and every open that
 // would change a medium answers 26 and changes nothing, and everything that only reads
 // still works. One check per gate the drive guards, so a gate that is left out is a
@@ -3605,8 +3609,9 @@ static void s11_si102_write_protect(FileManager *fm, IecDrive *dr)
 {
     const char *testname = "Suite11-SI102-WriteProtect";
     const char *protect = "26,WRITE PROTECT ON,00,00\r";
-    s11_partition(fm, dr, "si102");
+    const char *path = s11_partition(fm, dr, "si102");
     expect_iec_write_ok(testname, dr, 1, "KEEP", "keep");
+    s11_host_file(fm, path, "WRAP.S00", "WRAPPED", 0, (const uint8_t *)"wrapped", 7);
     expect_command_ok(testname, dr, "MD:SUB\r");
     expect_rel_open(testname, dr, 2, "RECORDS", 8);
     expect_rel_position_status(testname, dr, 2, 1, 1, "50,RECORD NOT PRESENT,00,00\r");
@@ -3649,6 +3654,10 @@ static void s11_si102_write_protect(FileManager *fm, IecDrive *dr)
     expect_iec_open_status_prefix(testname, dr, 1, "NEWFILE", "26,");
     expect_iec_open_status_prefix(testname, dr, 1, "@KEEP", "26,");
     expect_iec_open_status_prefix(testname, dr, 2, "KEEP,S,A", "26,");
+    // A replace of a file in an x00 wrapper is refused before the old file is removed.
+    expect_iec_open_status_prefix(testname, dr, 1, "@:WRAPPED,S,W", "26,");
+    uint8_t raw[40];
+    REQUIRE(s11_read_host_file(fm, path, "WRAP.S00", raw, sizeof(raw)) == 33);
     // The record that is there is read; the one past the end is not created, and a
     // write to either is refused.
     expect_rel_open(testname, dr, 2, "RECORDS", 8);
@@ -3917,6 +3926,9 @@ static void s11_si090_buffer_pointer(FileManager *fm, IecDrive *dr)
     REQUIRE(memcmp(sector, "XYZ", 3) == 0);
     // A position a high byte puts past the end of a 256 byte buffer names no byte.
     expect_command_response(testname, dr, "B-P 2 4 1\r", "30,SYNTAX ERROR,00,00\r");
+    // So does P with a top position byte of $80 or more, which leaves the pointer where it is.
+    static const uint8_t far[] = { 'P', 0x62, 0x00, 0x00, 0x00, 0x80, '\r' };
+    expect_command_data_response(testname, dr, far, sizeof(far), "30,SYNTAX ERROR,00,00\r");
     expect_command_ok(testname, dr, "B-P 2 4 0\r");
     close_file(dr, 2);
 
@@ -4222,6 +4234,12 @@ static void s11_si144c_rename_x00(FileManager *fm, IecDrive *dr)
     REQUIRE((got == 33) && (memcmp(raw + 8, "SAME", 5) == 0));
     s11_listing_type(dr, testname, "$", "SAME", type, &present);
     REQUIRE(present && !strcmp(type, "PRG "));
+    // The same when the host name differs from that rendering in case only, which the file
+    // system does not tell apart.
+    s11_host_file(fm, path, "lower.p00", "OTHER LOWER", 0, (const uint8_t *)"payload", 7);
+    expect_command_ok(testname, dr, "R:LOWER=OTHER LOWER\r");
+    got = s11_read_host_file(fm, path, "lower.p00", raw, sizeof(raw));
+    REQUIRE((got == 33) && (memcmp(raw + 8, "LOWER", 6) == 0));
 
     // A name the file system cannot take is rendered as the drive renders it for a new
     // file, so the CBM name is found again although the host name spells it differently.

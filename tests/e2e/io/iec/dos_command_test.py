@@ -187,6 +187,17 @@ def check_block_commands(agent, api, password, folder, image_path):
             agent.command("B-P: 2  144 \r")
             if agent.read_exact(16, channel=2) != expected[144:160]:
                 raise Failure("The buffer pointer did not move to offset 144")
+
+        with check("P with four position bytes past a buffer's end answers 30 (SI-090, SI-092)"):
+            # The top byte makes the position negative as a signed number. Nothing is read
+            # after an OK, because the pointer would then be outside the buffer.
+            response = agent.command(b"P" + bytes([0x62, 0xFF, 0xFF, 0xFF, 0xFF]), allowed=range(100))
+            detail(f"P to $FFFFFFFF answered {response!r}")
+            if not response.startswith("30,"):
+                raise Failure(f"P to $FFFFFFFF answered {response!r}")
+            agent.command("B-P: 2  160 \r")
+            if agent.read_exact(16, channel=2) != expected[160:176]:
+                raise Failure("The channel did not read on at offset 160")
     finally:
         agent.call(4, channel=2)
     agent.command("CD_")
@@ -654,12 +665,26 @@ def check_compatibility(agent, api, password, folder, root):
 
     def write_protect():
         # SI-102 over the real bus: while W-1 is set nothing that changes a medium runs.
+        with ftp.session(api.host, password) as client:
+            ftp.store(client, f"{directory}/WRAP.S00", x00_header(b"WRAPPED") + b"text")
         agent.command(b"CD//" + here + b"\r")
         agent.command(b"W-1\r", allowed=(0,))
         try:
             for command in (b"MD:PROTECTED\r", b"S:*\r", b"R:X=Y\r"):
                 response = agent.command(command, allowed=(26,))
                 detail(f"{command!r} answers {response!r}")
+            # A replace of a file in an x00 wrapper is refused and leaves the file.
+            agent.call(1, channel=3, data=b"@:WRAPPED,S,W")
+            try:
+                response = agent.status(allowed=range(100))
+            finally:
+                agent.call(4, channel=3)
+            with ftp.session(api.host, password) as client:
+                names = ftp.names(client, directory)
+            detail(f"@:WRAPPED,S,W answers {response!r}; WRAP.S00 is "
+                   f"{'still there' if 'WRAP.S00' in names else 'gone'}")
+            if not response.startswith("26,") or "WRAP.S00" not in names:
+                raise Failure(f"@:WRAPPED,S,W answered {response!r} and left {sorted(names)}")
             listing = listing_of(agent, f"$//{folder.upper()}")
             if b"PROTECTED" in listing:
                 raise Failure("a directory was created while the drive was write protected")
@@ -667,6 +692,7 @@ def check_compatibility(agent, api, password, folder, root):
             agent.command(b"W-0\r", allowed=(0,))
         agent.command(b"MD:PROTECTED\r", allowed=(0,))
         agent.command(b"RD:PROTECTED\r", allowed=(0,))
+        agent.command(b"S:WRAPPED\r", allowed=(1,))
         agent.command(b"CD//\r")
 
     def left_arrow():
@@ -801,6 +827,24 @@ def check_compatibility(agent, api, password, folder, root):
         with ftp.session(api.host, password) as client:
             ftp.delete_quietly(client, f"{directory}/OCCUPIED.S00")
 
+    def x00_rename_case():
+        # A new name whose host spelling differs from the file's host name in case only
+        # writes the header and keeps that one host file (SI-144c).
+        with ftp.session(api.host, password) as client:
+            ftp.store(client, f"{directory}/lower.p00", x00_header(b"OTHER LOWER") + b"PAYLOAD")
+        response = agent.command(b"R//" + here + b"/:LOWER=//" + here + b"/:OTHER LOWER\r",
+                                 allowed=range(100))
+        with ftp.session(api.host, password) as client:
+            names = [n for n in ftp.names(client, directory) if n.lower() == "lower.p00"]
+            header = ftp.retrieve(client, f"{directory}/{names[0]}")[:26] if names else b""
+        detail(f"R:LOWER=OTHER LOWER answered {response!r}; host files {names}, "
+               f"header names {header[8:24]!r}")
+        if not response.startswith("00"):
+            raise Failure(f"R:LOWER=OTHER LOWER answered {response!r}")
+        if len(names) != 1 or header != x00_header(b"LOWER"):
+            raise Failure(f"the rename left {names} with the header {header!r}")
+        agent.command(b"S//" + here + b"/:LOWER\r", allowed=(1,))
+
     def rel_layouts():
         # sd2iec's layout: the record length in one byte, then records of three bytes.
         with ftp.session(api.host, password) as client:
@@ -837,6 +881,7 @@ def check_compatibility(agent, api, password, folder, root):
             ("SI-103: UJ closes the channels and U+shifted J returns to the root, and the drive still answers", resets),
             ("SI-074: R renames a subdirectory", rename_directory),
             ("SI-144, SI-144c: a P00 file lists, loads, renames with its host file and scratches under the name in its header", x00_read),
+            ("SI-144c: a rename to a host name that differs in case only keeps the host file", x00_rename_case),
             ("SI-084: a relative file in sd2iec's one byte layout reads its records", rel_layouts),
     ):
         try:

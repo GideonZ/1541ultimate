@@ -1607,7 +1607,8 @@ int IecChannel :: setup_file_access()
                 drive->set_error(ERR_FILE_TYPE_MISMATCH, 0, 0);
                 return 0;
             }
-            if (wrapped) {
+            // The write protect refuses the open below, and must leave the old file.
+            if (wrapped && !drive->is_write_protected()) {
                 fm->delete_file(found_path.c_str());
             }
         }
@@ -2123,8 +2124,9 @@ int IecCommandChannel :: do_buffer_position(int chan, int pos)
         return 0;
     }
     // A buffer is 256 bytes, so a position a high byte puts past its end names no byte
-    // this drive can give out (SI-090, SI-092).
-    if (pos > 255) {
+    // this drive can give out (SI-090, SI-092). P passes four bytes, so the top one can
+    // make the number negative.
+    if ((pos < 0) || (pos > 255)) {
         return ERR_SYNTAX_ERROR_GEN;
     }
     channel->pointer = pos;
