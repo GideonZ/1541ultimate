@@ -3601,6 +3601,44 @@ static void s11_host_file(FileManager *fm, const char *dir, const char *host, co
                           uint8_t record_length, const uint8_t *data, int len);
 static int s11_read_host_file(FileManager *fm, const char *dir, const char *host, uint8_t *out, int size);
 
+// A file the drive has open for writing is deleted by another client, as FTP does, and
+// its directory slot is taken by a new directory before the drive closes the file. The
+// close must not write the file's entry over the directory's, which would leave the new
+// directory pointing at the start cluster of an empty file: cluster 0, the volume root.
+static void s11_delete_open_file(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite11-DeleteOpenFile";
+    const char *path = s11_partition(fm, dr, "delopen");
+    open_file(dr, 2, "C0,S,W");
+    get_status(dr);
+    expect_status_ok(testname, "C0,S,W");
+    char name[80];
+    snprintf(name, sizeof(name), "%s/C0.seq", path);
+    FRESULT deleted = fm->delete_file(name);
+    // A rename of it would move the entry away from the slot the close writes back into.
+    char other[80];
+    snprintf(other, sizeof(other), "%s/C9.seq", path);
+    REQUIRE(fm->rename(name, other) == FR_LOCKED);
+    snprintf(name, sizeof(name), "%s/SUBX", path);
+    REQUIRE(fm->create_dir(name) == FR_OK);
+    close_file(dr, 2);
+
+    Directory *dir = NULL;
+    REQUIRE(fm->open_directory(name, &dir) == FR_OK);
+    FileInfo info(INFO_SIZE);
+    int entries = 0;
+    while (dir->get_entry(info) == FR_OK) {
+        if (strcmp(info.lfname, ".") && strcmp(info.lfname, "..")) {
+            printf("%s: the new directory lists '%s'\n", testname, info.lfname);
+            entries++;
+        }
+    }
+    delete dir;
+    printf("%s: deleting the open file answered %d; the new directory holds %d entries\n",
+           testname, (int)deleted, entries);
+    REQUIRE(entries == 0);
+}
+
 // SI-102, SI-102a: while the write protect is set, every command and every open that
 // would change a medium answers 26 and changes nothing, and everything that only reads
 // still works. One check per gate the drive guards, so a gate that is left out is a
@@ -6654,6 +6692,7 @@ static const Suite11Case suite11_cases[] = {
     { "Suite11-SI051-RenamePartition",   s11_si051_rename_partition },
     { "Suite11-SI064-RenameHeader",      s11_si064_rename_header },
     { "Suite11-SI102-WriteProtect",      s11_si102_write_protect },
+    { "Suite11-DeleteOpenFile",          s11_delete_open_file },
     { "Suite11-SI090-BufferPointer",     s11_si090_buffer_pointer },
     { "Suite11-SI093-BoundPartition",    s11_si093_bound_partition },
     { "Suite11-SI094-BlockLength",       s11_si094_block_length },

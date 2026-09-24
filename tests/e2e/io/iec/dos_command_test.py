@@ -891,6 +891,29 @@ def check_compatibility(agent, api, password, folder, root):
             if not response.startswith("30,"):
                 raise Failure(f"{command!r} answered {response!r}")
 
+    def delete_open_file():
+        # A file the drive holds open for writing is not deleted from FTP: a new directory
+        # would take its slot, and the close would then write the file's entry over it.
+        agent.call(1, channel=5, data=b"//" + here + b"/:OPENDEL,S,W")
+        try:
+            agent.status()
+            with ftp.session(api.host, password) as client:
+                try:
+                    client.delete(f"{directory}/OPENDEL.seq")
+                    deleted = "deleted"
+                except ftplib.all_errors as exc:
+                    deleted = str(exc)
+                ftp.quietly(lambda: client.mkd(f"{directory}/OPENSUB"))
+        finally:
+            agent.call(4, channel=5)
+        with ftp.session(api.host, password) as client:
+            inside = ftp.names(client, f"{directory}/OPENSUB")
+            ftp.quietly(lambda: client.rmd(f"{directory}/OPENSUB"))
+        agent.command(b"S//" + here + b"/:OPENDEL\r", allowed=(0, 1))
+        detail(f"FTP DELE of the open file: {deleted}; the new directory lists {inside}")
+        if inside:
+            raise Failure(f"a directory made after the delete lists {inside[:6]}")
+
     def x00_rename_case():
         # A new name whose host spelling differs from the file's host name in case only
         # writes the header and keeps that one host file (SI-144c).
@@ -946,6 +969,7 @@ def check_compatibility(agent, api, password, folder, root):
             ("SI-074: R renames a subdirectory", rename_directory),
             ("SI-144, SI-144c: a P00 file lists, loads, renames with its host file and scratches under the name in its header", x00_read),
             ("SI-144c: a rename to a host name that differs in case only keeps the host file", x00_rename_case),
+            ("a file open for writing is not deleted from under the drive", delete_open_file),
             ("SI-102a: a file opened for writing before W-1 writes nothing more", write_protect_open_channel),
             ("SI-064: R-H refuses a directory a trailing dot and a taken name", rename_header_checks),
             ("SI-077: XL and XU lock and unlock nothing", settings_x_lock),

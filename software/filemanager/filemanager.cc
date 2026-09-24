@@ -1134,6 +1134,22 @@ void FileManager::discard_mounts_of_file(const char *path)
     }
 }
 
+// Whether a file is open for writing, after any mount the cache holds of it has been let
+// go of. Closing such a file writes its directory entry back into the slot the entry had,
+// so the file must not be deleted or renamed while it is open: a new entry in that slot
+// would be overwritten, a directory's with the start cluster of an empty file, 0, the root.
+bool FileManager::in_use_for_writing(const char *path)
+{
+    discard_mounts_of_file(path);
+    for (int i = 0; i < open_file_list.get_elements(); i++) {
+        File *f = open_file_list[i];
+        if (f && f->write_intent && !strcasecmp(f->get_path(), path)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 MountPoint *FileManager::add_mount_point(SubPath *path, File *file, FileSystemInFile *emb)
 {
     printf("FileManager :: add_mount_point: (FS=%p, path='%s')\n", file->get_file_system(), path->get_path());
@@ -1195,6 +1211,10 @@ FRESULT FileManager::delete_file_impl(PathInfo &pathInfo)
     FRESULT fres = find_pathentry(pathInfo, false);
     if (fres != FR_OK) {
         return fres;
+    }
+    mstring open_path;
+    if (in_use_for_writing(pathInfo.workPath.getTail(0, open_path))) {
+        return FR_LOCKED;
     }
     FileSystem *fs = pathInfo.getLastInfo()->fs;
     fres = fs->file_delete(pathInfo.getPathFromLastFS());
@@ -1359,6 +1379,11 @@ FRESULT FileManager::rename_impl(PathInfo &from, PathInfo &to)
     if (fres != FR_OK) {
         unlock();
         return fres;
+    }
+    mstring open_path;
+    if (in_use_for_writing(from.workPath.getTail(0, open_path))) {
+        unlock();
+        return FR_LOCKED;
     }
 
     // source file was found
