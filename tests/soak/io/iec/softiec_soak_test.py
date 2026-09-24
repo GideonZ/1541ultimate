@@ -360,7 +360,8 @@ class RecordingAgent:
             raise
         if is_status_read:
             if self._pending is not None:
-                self._finish_pending(result, now)
+                # Ends when the read does: a reset sent during the read changes what it reads.
+                self._finish_pending(result, time.monotonic())
         elif (op == WRITE) and (channel == 15) and data:
             self._pending = ("command", bytes(data), device, now, 15)
         elif op == OPEN:
