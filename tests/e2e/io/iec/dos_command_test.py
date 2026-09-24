@@ -827,6 +827,62 @@ def check_compatibility(agent, api, password, folder, root):
         with ftp.session(api.host, password) as client:
             ftp.delete_quietly(client, f"{directory}/OCCUPIED.S00")
 
+    def write_protect_open_channel():
+        # A file opened for writing before W-1 takes no more bytes once it is set, and its
+        # close writes nothing (SI-102a).
+        agent.call(1, channel=4, data=b"//" + here + b"/:OPENWRITE,S,W")
+        try:
+            agent.status()
+            agent.call(WRITE, channel=4, data=b"before")
+            agent.command(b"W-1\r", allowed=(0,))
+            try:
+                agent.call(WRITE, channel=4, data=b"after")
+                response = agent.status(allowed=range(100))
+            finally:
+                agent.call(4, channel=4)
+                agent.command(b"W-0\r", allowed=(0,))
+        except Failure:
+            agent.command(b"W-0\r", allowed=(0,))
+            raise
+        with ftp.session(api.host, password) as client:
+            names = {n.lower(): n for n in ftp.names(client, directory)}
+            held = ftp.retrieve(client, f"{directory}/{names['openwrite.seq']}") \
+                if "openwrite.seq" in names else None
+        detail(f"a write after W-1 answered {response!r}; the file holds {held!r}")
+        agent.command(b"S//" + here + b"/:OPENWRITE\r", allowed=(1,))
+        if not response.startswith("26,") or held != b"":
+            raise Failure(f"a write after W-1 answered {response!r} and the file holds {held!r}")
+
+    def rename_header_checks():
+        # R-H on a host directory refuses what R refuses a directory (SI-064, SI-141, SI-074).
+        agent.command(b"CD//" + here + b"\r")
+        agent.command(b"MD:HEADDIR\r")
+        agent.command(b"MD:HEADDIR2\r")
+        agent.call(1, channel=3, data=b"HEADTAKEN,P,W")
+        agent.status()
+        agent.call(4, channel=3)
+        try:
+            # One directory each, so a rename the first probe makes does not move the second.
+            dot = agent.command(b"R-H/HEADDIR/:NEWNAME.\r", allowed=range(100))
+            taken = agent.command(b"R-H/HEADDIR2/:HEADTAKEN\r", allowed=range(100))
+            detail(f"R-H to NEWNAME. answered {dot!r}, to HEADTAKEN {taken!r}")
+            if not dot.startswith("33,") or not taken.startswith("63,"):
+                raise Failure(f"R-H answered {dot!r} for a trailing dot and {taken!r} for a taken name")
+        finally:
+            agent.command(b"CD//" + here + b"\r")
+            for name in (b"HEADDIR", b"HEADDIR2", b"NEWNAME", b"HEADTAKEN"):
+                agent.command(b"RD:" + name + b"\r", allowed=range(100))
+            agent.command(b"S:HEADTAKEN\r", allowed=range(100))
+            agent.command(b"CD//\r")
+
+    def settings_x_lock():
+        # SDM's XL and XU are settings commands, out of scope, so they lock nothing (SI-077).
+        for command in (b"XL:*\r", b"XU:*\r"):
+            response = agent.command(command, allowed=range(100))
+            detail(f"{command!r} answered {response!r}")
+            if not response.startswith("30,"):
+                raise Failure(f"{command!r} answered {response!r}")
+
     def x00_rename_case():
         # A new name whose host spelling differs from the file's host name in case only
         # writes the header and keeps that one host file (SI-144c).
@@ -882,6 +938,9 @@ def check_compatibility(agent, api, password, folder, root):
             ("SI-074: R renames a subdirectory", rename_directory),
             ("SI-144, SI-144c: a P00 file lists, loads, renames with its host file and scratches under the name in its header", x00_read),
             ("SI-144c: a rename to a host name that differs in case only keeps the host file", x00_rename_case),
+            ("SI-102a: a file opened for writing before W-1 writes nothing more", write_protect_open_channel),
+            ("SI-064: R-H refuses a directory a trailing dot and a taken name", rename_header_checks),
+            ("SI-077: XL and XU lock and unlock nothing", settings_x_lock),
             ("SI-084: a relative file in sd2iec's one byte layout reads its records", rel_layouts),
     ):
         try:
