@@ -56,7 +56,7 @@ import ftp  # noqa: E402
 import kernal  # noqa: E402
 from api import UltimateApi  # noqa: E402
 from config_snapshot import Snapshot  # noqa: E402
-from iec_agent import CLOSE, MAILBOX_CAPACITY, OPEN, READ_COUNT, STATUS_BYTES, WRITE, Agent, cmd_swap, iec_drive, restorable_path  # noqa: E402
+from iec_agent import CLOSE, MAILBOX_CAPACITY, OPEN, READ_COUNT, STATUS_BYTES, WRITE, Agent, Talker, cmd_swap, iec_drive, restorable_path  # noqa: E402
 from report import Failure, check, detail, section, suite_fail, suite_ok, teardown_step  # noqa: E402
 
 SUITE = "iec_dos_command_test"
@@ -918,6 +918,23 @@ def check_compatibility(agent, api, password, folder, root):
         if inside:
             raise Failure(f"a directory made beside the open file lists {inside[:6]}")
 
+    def reset_drops_partial_command():
+        # SI-103b: the drive's own Reset drops a command that was still being received. The
+        # talker sends two command bytes without EOI, so the command has not ended, and the
+        # REST reset follows. Reopening channel 15 without a name sends nothing on the bus.
+        talker = Talker(api)
+        try:
+            talker.start()
+            talker.send(agent.softiec_device, 0x6F, b"XY", eoi=False)
+            api.rest.request("PUT", "/v1/drives/softiec:reset")
+        finally:
+            agent.start()
+            agent.call(OPEN, channel=15, device=agent.softiec_device)
+        response = agent.command(b"CD//\r", allowed=range(100))
+        detail(f"CD// after a reset that cut a command short answered {response!r}")
+        if not response.startswith("00"):
+            raise Failure(f"CD// after a reset that cut a command short answered {response!r}")
+
     def x00_rename_case():
         # A new name whose host spelling differs from the file's host name in case only
         # writes the header and keeps that one host file (SI-144c).
@@ -974,6 +991,7 @@ def check_compatibility(agent, api, password, folder, root):
             ("SI-144, SI-144c: a P00 file lists, loads, renames with its host file and scratches under the name in its header", x00_read),
             ("SI-144c: a rename to a host name that differs in case only keeps the host file", x00_rename_case),
             ("a file open for writing is not deleted from under the drive", delete_open_file),
+            ("SI-103b: a reset drops a command that was still being received", reset_drops_partial_command),
             ("SI-102a: a file opened for writing before W-1 writes nothing more", write_protect_open_channel),
             ("SI-064: R-H refuses a directory a trailing dot and a taken name", rename_header_checks),
             ("SI-077: XL and XU lock and unlock nothing", settings_x_lock),

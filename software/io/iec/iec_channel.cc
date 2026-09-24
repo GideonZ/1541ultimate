@@ -1949,6 +1949,7 @@ IecCommandChannel::~IecCommandChannel()
 void IecCommandChannel::reset(void)
 {
     IecChannel::reset();
+    wr_pointer = 0; // a command still being received when the drive resets is dropped
     set_error(ERR_DOS);
 }
 

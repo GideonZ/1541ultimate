@@ -4056,6 +4056,20 @@ static void s11_si094_block_length(FileManager *fm, IecDrive *dr)
 
 extern int iec_interface_configure_calls; // counted by the interface stub
 
+// SI-103b: the drive's own Reset drops a command that was still being received. Its bytes
+// came without the end of the command, and they must not become the start of the next one.
+static void s11_reset_drops_partial_command(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite11-SI103b-ResetDropsPartialCommand";
+    s11_partition(fm, dr, "si103p");
+    dr->push_ctrl(SLAVE_CMD_ATN);
+    dr->push_ctrl(0x6F);
+    dr->push_data('X');
+    dr->push_data('Y');
+    dr->reset();
+    expect_command_ok(testname, dr, "CD//\r");
+}
+
 // SI-103, SI-103a: UJ closes the data channels, keeping the partition and its directory, and
 // U+shifted J also returns every partition to its root and selects partition 1. Both
 // answer 73. Neither may reconfigure the IEC interface, which on the device holds the
@@ -6736,6 +6750,7 @@ static const Suite11Case suite11_cases[] = {
     { "Suite11-SI082-PositionAfterEnd",  s11_si082_position_after_end },
     { "Suite11-SI081-PositionChannel",   s11_si081_position_channel },
     { "Suite11-SI103b-SettingAfterU0",   s11_si103b_setting_after_u0 },
+    { "Suite11-SI103b-ResetDropsPartialCommand", s11_reset_drops_partial_command },
     { "Suite11-SI075-CopyRelative",      s11_si075_copy_relative },
     { "Suite11-SI105-UnreadReply",       s11_si105_unread_reply },
     { "Suite11-SI070-SecondaryForcesMode", s11_si070_secondary_forces_mode },
