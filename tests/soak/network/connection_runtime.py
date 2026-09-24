@@ -73,7 +73,11 @@ class ProbeExecutionContext:
 
 
 Operation = Callable[[RuntimeSettings], str]
-SURFACE_OPERATION_RETRY_DELAYS_S = (0.10, 0.25, 0.50, 1.00)
+# The stress profile holds more connections than the network stack has sockets (16,
+# MEMP_NUM_NETCONN), so a listener's accept fails for as long as they are all taken:
+# measured on an Ultimate II+L, DMA connections were reset for over two seconds. A
+# refusal that clears within the last delays is the cap working; one that does not fails.
+SURFACE_OPERATION_RETRY_DELAYS_S = (0.10, 0.25, 0.50, 1.00, 2.00, 4.00)
 
 
 class RunProbe(Protocol):
