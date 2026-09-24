@@ -16,7 +16,10 @@ three hundred came twice, although the firmware sends each datagram once, as the
 log correlation also allows. A line that arrives in pieces, or one number with two texts,
 is a failure.
 
-Needs Software IEC on device 11 and the device's "Log to Syslog Server" set to this host.
+Needs Software IEC on device 11 and the device's "Log to Syslog Server" set to this host. Under
+run-tests --syslog it reads the log the runner collects, so every target of a run is covered;
+otherwise it binds the device's syslog port itself, and a second target run at the same time
+skips.
 """
 import argparse
 import sys
@@ -46,7 +49,12 @@ REQUEST_INTERVAL_S = 0.02
 
 
 def log_source(api):
-    """The UDP collector for the log this device sends here, or None and why not."""
+    """Where this device's log is read from, or None and why not: the runner's collected log
+    when run-tests --syslog collects it, otherwise a UDP socket on the port it sends to."""
+    collected = softiec_log.CollectedLogSource.from_environment(api.host)
+    if collected is not None:
+        collected.mark()
+        return collected, f"the run's collected log {collected.path}"
     if "Network Settings" not in api.configs.category_names():
         return None, "this device has no Network Settings"
     parsed = softiec_log.parse_syslog_server(str(api.configs.get("Network Settings", "Log to Syslog Server")))
@@ -59,8 +67,8 @@ def log_source(api):
     try:
         source.start()
     except OSError as exc:
-        # Another target's run of this suite has the port: each device logs here.
-        return None, f"UDP {port} is taken ({exc}); run this suite for one target at a time"
+        # Another process holds the port, such as this suite for a second target.
+        return None, f"UDP {port} is taken ({exc}); run with run-tests --syslog to read the collected log"
     return source, f"UDP {port}"
 
 

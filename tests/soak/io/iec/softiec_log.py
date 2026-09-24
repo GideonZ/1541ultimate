@@ -40,6 +40,7 @@ Losses this correlation accounts for rather than hides:
 
 from __future__ import annotations
 
+import os
 import re
 import socket
 import threading
@@ -842,6 +843,52 @@ def select_window(entries: list[tuple[str, str]], start_nonce: str, end_nonce: s
     else:
         finish = len(device_texts)
     return device_ip, device_texts[begin:finish]
+
+
+# Where run-tests --syslog puts this target's collected log; see SYSLOG_FILE_ENV there.
+COLLECTED_LOG_ENV = "E2E_SYSLOG_FILE"
+
+
+class CollectedLogSource:
+    """The device log that the runner's collector writes for this target, one
+    "<receive time> <text>" line per log line (tests/lib/syslog_collector.py). The runner holds
+    the syslog port for every target of a run, so a suite reads its target's file instead of
+    binding the port. The file holds this device's lines only, so every entry carries `device`
+    as its address. mark() remembers where the file ends, and entries() reads from there."""
+
+    def __init__(self, path: str, device: str) -> None:
+        self.path = path
+        self.device = device
+        self.offset = 0
+
+    @classmethod
+    def from_environment(cls, device: str) -> CollectedLogSource | None:
+        path = os.environ.get(COLLECTED_LOG_ENV)
+        return cls(path, device) if path else None
+
+    def mark(self) -> None:
+        try:
+            self.offset = os.path.getsize(self.path)
+        except OSError:
+            self.offset = 0
+
+    def entries(self) -> list[tuple[str, str]]:
+        try:
+            with open(self.path, "rb") as raw:
+                raw.seek(self.offset)
+                data = raw.read()
+        except OSError:
+            return []
+        out = []
+        # A last line without its newline is still being written, so it is left for next time.
+        for line in data.decode("utf-8", errors="replace").split("\n")[:-1]:
+            stamp, _, text = line.rstrip("\r").partition(" ")
+            if re.fullmatch(r"\d+\.\d+", stamp):
+                out.append((self.device, text))
+        return out
+
+    def stop(self) -> None:
+        pass
 
 
 class UdpLogSource:

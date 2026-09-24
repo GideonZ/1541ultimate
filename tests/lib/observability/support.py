@@ -219,7 +219,8 @@ def free_udp_port() -> int:
 # see `no_runner_variable_escapes_the_scrubbing_list` for why.
 INHERITED_VARIABLES = {
     "E2E_ATTEMPT", "E2E_INTERACTIONS", "E2E_JSONL", "E2E_SCREENS", "E2E_SUITE",
-    "E2E_SYSLOG_OWNED", "E2E_SYSLOG_PORT", "E2E_SYSLOG_PORTS", "E2E_TARGET",
+    "E2E_SYSLOG_FILE", "E2E_SYSLOG_FILES", "E2E_SYSLOG_OWNED", "E2E_SYSLOG_PORT",
+    "E2E_SYSLOG_PORTS", "E2E_TARGET",
     # Not a runner variable but a suite one: --assume-fix reaches every suite
     # through it, so a scripted run would otherwise inherit the gate's
     # assumptions.

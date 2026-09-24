@@ -9,7 +9,9 @@ the bench, so what is checked is the correlation of those lines, not of lines
 written to suit it.
 """
 
+import os
 import sys
+import tempfile
 import time
 import types
 from pathlib import Path
@@ -72,6 +74,18 @@ def main() -> int:
         result = softiec_log.correlate(events, [READ_RESET_LINE], logging_on=False, label="reset")
         expect("unexpected well-formed lines", result.unexpected_bad, [])
         expect("matched", result.matched, 1)
+
+    with check("the run's collected log gives this device's whole lines after the mark"):
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "syslog.txt")
+            with open(path, "w", encoding="utf-8") as out:
+                out.write("1758700000.100 before the mark\n")
+            source = softiec_log.CollectedLogSource(path, "192.168.1.74")
+            source.mark()
+            with open(path, "a", encoding="utf-8") as out:
+                # The collector's own format, then a line it has not finished writing.
+                out.write(f"1758700001.250 {READ_RESET_LINE}\n1758700001.300 SoftIEC: com")
+            expect("entries", source.entries(), [("192.168.1.74", READ_RESET_LINE)])
 
     suite_ok("softiec_log_test")
     return 0

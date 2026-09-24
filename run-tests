@@ -412,8 +412,8 @@ SUITES: Sequence[Suite] = (
     Suite("e2e", "iec-partition-file", "tests/e2e/filemanager/ipr_load_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@", profile=profiles.STANDARD),
     # Every Software IEC log line reaches the device log whole while the HTTP task prints
-    # alongside it, read back from the syslog. Binds the syslog port, so only one target at
-    # a time can run it; with two, the second skips.
+    # alongside it, read back from the syslog. With --syslog it reads each target's collected
+    # log; without, it binds the syslog port itself, and a second target run alongside skips.
     Suite("e2e", "softiec-log-lines", "tests/e2e/io/iec/log_lines_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@", profile=profiles.STANDARD),
     # Drives the UCI control and SoftIEC targets over $DF1B-$DF1F; reproduces #740.
@@ -1014,6 +1014,12 @@ SYSLOG_PORT_ENV = "E2E_SYSLOG_PORT"
 # name, so the check needs the whole set rather than the default.
 SYSLOG_PORTS_ENV = "E2E_SYSLOG_PORTS"
 
+# Each target's collected log file, as JSON from target token to path. A suite that reads
+# device log lines is given its own target's path as SYSLOG_FILE_ENV, because the collector
+# holds the port and a second socket on it would take an arbitrary share of the lines.
+SYSLOG_FILES_ENV = "E2E_SYSLOG_FILES"
+SYSLOG_FILE_ENV = "E2E_SYSLOG_FILE"
+
 # How long the parent waits for a device to say which port it logs to. This
 # runs before the first suite and a device that does not answer costs the run
 # nothing but attribution by source address, so it is short.
@@ -1117,6 +1123,10 @@ def start_syslog(args: argparse.Namespace,
     os.environ[SYSLOG_PORT_ENV] = str(collector.port)
     os.environ[SYSLOG_PORTS_ENV] = ",".join(str(port)
                                             for port in collector.ports())
+    # The device under test's own file; a cartridge's computer logs to a second one.
+    os.environ[SYSLOG_FILES_ENV] = json.dumps(
+        {token: path for token, path in collector.files()
+         if os.path.basename(path) == "syslog.txt"})
     for token, path in collector.files():
         report.log_result(token, os.path.relpath(path, root),
                           collector.started, collector.port,
@@ -2167,6 +2177,11 @@ def run_one_attempt(suite: Suite, device: Device, options: Options, mode: str,
     # identifier of its own. Both are values this function already holds.
     environment["E2E_TARGET"] = options.host
     environment["E2E_ATTEMPT"] = str(attempt)
+    syslog_file = json.loads(os.environ.get(SYSLOG_FILES_ENV) or "{}").get(options.host)
+    if syslog_file:
+        environment[SYSLOG_FILE_ENV] = syslog_file
+    else:
+        environment.pop(SYSLOG_FILE_ENV, None)
     if options.output_dir and options.screens:
         # Every distinct screen the suite reads, published from the fetches it
         # was making anyway. One file per target, appended to by every suite,

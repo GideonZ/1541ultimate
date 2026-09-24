@@ -2022,11 +2022,15 @@ def plan_phases(args):
 
 def setup_syslog_source(session, api, args):
     """Where this phase's device log comes from, and a note for the report. A spool file when
-    --syslog-spool is given; otherwise the UDP port the device's syslog setting names, when
+    --syslog-spool is given; the runner's collected log for this target when run-tests
+    --syslog collects it; otherwise the UDP port the device's syslog setting names, when
     that address is one of this host's; otherwise None with the reason, which leaves the
     phases running with the log verdict skipped rather than failing the run."""
     if args.syslog_spool:
         return SpoolSource(args.syslog_spool), f"reading the spool {args.syslog_spool}"
+    collected = softiec_log.CollectedLogSource.from_environment(api.host)
+    if collected is not None:
+        return collected, f"reading the run's collected log {collected.path}"
     if SYSLOG_CATEGORY not in api.configs.category_names():
         return None, "this device has no Network Settings; pass --syslog-spool"
     parsed = softiec_log.parse_syslog_server(str(api.configs.get(SYSLOG_CATEGORY, SYSLOG_ITEM)))
