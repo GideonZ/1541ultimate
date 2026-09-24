@@ -900,9 +900,13 @@ def check_compatibility(agent, api, password, folder, root):
             with ftp.session(api.host, password) as client:
                 try:
                     client.delete(f"{directory}/OPENDEL.seq")
-                    deleted = "deleted"
+                    deleted = True
                 except ftplib.all_errors as exc:
-                    deleted = str(exc)
+                    deleted = False
+                    detail(f"FTP DELE of the open file answered {exc}")
+                if deleted:
+                    # No directory is made in the freed slot, which the close would damage.
+                    raise Failure("FTP deleted a file the drive has open for writing")
                 ftp.quietly(lambda: client.mkd(f"{directory}/OPENSUB"))
         finally:
             agent.call(4, channel=5)
@@ -910,9 +914,9 @@ def check_compatibility(agent, api, password, folder, root):
             inside = ftp.names(client, f"{directory}/OPENSUB")
             ftp.quietly(lambda: client.rmd(f"{directory}/OPENSUB"))
         agent.command(b"S//" + here + b"/:OPENDEL\r", allowed=(0, 1))
-        detail(f"FTP DELE of the open file: {deleted}; the new directory lists {inside}")
+        detail(f"a directory made beside the open file lists {inside}")
         if inside:
-            raise Failure(f"a directory made after the delete lists {inside[:6]}")
+            raise Failure(f"a directory made beside the open file lists {inside[:6]}")
 
     def x00_rename_case():
         # A new name whose host spelling differs from the file's host name in case only
