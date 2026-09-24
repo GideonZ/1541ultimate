@@ -228,6 +228,27 @@ def run_checks() -> None:
                {(3, 9, 10, 41): (1, "Tape Settings",
                                  ["Drive A Settings", "Tape Settings", "Printer Settings"])})
 
+    with check("over Telnet, a disk image's volume row is never taken for the cursor"):
+        # The colours an Ultimate II+L draws: the cursor, other entries, a D64's volume row.
+        cursor, entry, volume = "0;32;1", "0;37;2", "0;31;2"
+        rows = range(2, 23)
+        backend = telnet_screen([(2, 0, "Flash", cursor), (3, 0, "Temp", entry),
+                                 (4, 0, "USB0", entry)])
+        backend._selected_sgr = None
+        expect("the root listing's cursor", backend.selected_row(rows), 2)
+        # A D64 listing with a context menu open: the menu's own cursor wears the cursor
+        # colour too, so the volume row is the one row of a colour of its own.
+        backend.screen.feed(b"\x1b[2J" + b"".join(
+            f"\x1b[{row + 1};1H\x1b[{sgr}m{text}".encode() for row, text, sgr in (
+                (2, "DMATEST           64 2A", volume), (3, "DMATESTPROGRAM01", cursor),
+                (4, "Run", cursor), (5, "Load", entry), (6, "View", entry))))
+        backend.selected_row(rows)
+        # The listing alone: two rows, each of a colour of its own.
+        backend.screen.feed(b"\x1b[2J" + b"".join(
+            f"\x1b[{row + 1};1H\x1b[{sgr}m{text}".encode() for row, text, sgr in (
+                (2, "DMATEST           64 2A", volume), (3, "DMATESTPROGRAM01", cursor))))
+        expect("the program row of a D64 with one program", backend.selected_row(rows), 3)
+
     with check("over Telnet, panels side by side are each a frame, and a column of one colour has no highlight"):
         backend = telnet_screen([
             (2, 0, "+--------+------------------------+--------+", PLAIN),

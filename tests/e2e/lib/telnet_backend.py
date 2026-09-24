@@ -436,7 +436,10 @@ class TelnetBackend(Backend):
             tally[sgr] = tally.get(sgr, 0) + 1
         odd = [row for row, sgr in drawn.items() if tally[sgr] == 1]
         if len(odd) == 1:
-            self._selected_sgr = drawn[odd[0]]
+            # Learnt only once: a context menu's own cursor wears the colour too, and
+            # leaves a disk image's volume row as the one odd row on that screen.
+            if self._selected_sgr is None:
+                self._selected_sgr = drawn[odd[0]]
             return odd[0]
         if self._selected_sgr is not None:
             wearing = [row for row, sgr in drawn.items() if sgr == self._selected_sgr]
