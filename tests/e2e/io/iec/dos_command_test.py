@@ -559,10 +559,15 @@ def check_compatibility(agent, api, password, folder, root):
             fields = [int(f) for f in stamp.groups()[:6]]
             return datetime.datetime(*fields), stamp.group(7)
 
-        def near(answer, wanted, what, seconds=10):
+        # How far a clock may read past the moment it was given: the time that has passed
+        # since, which a stalled request lengthens, and a second either side of the moment.
+        def allowed(since):
+            return time.monotonic() - since + 2
+
+        def near(answer, wanted, what, since):
             when, _ = parsed(answer, what)
             drift = (when - wanted).total_seconds()
-            if not 0 <= drift <= seconds:
+            if not 0 <= drift <= allowed(since):
                 raise Failure(f"{what} answered {answer!r}, which is {drift:.0f} seconds "
                               f"from the {wanted.isoformat()} that was written")
             return when
@@ -575,6 +580,7 @@ def check_compatibility(agent, api, password, folder, root):
         try:
             written = datetime.datetime(2026, 9, 12, 13, 2, 3)
             agent.command(b"T-WI2026-09-12T13:02:03\r", allowed=(0,))
+            wrote_at = time.monotonic()
             iso = agent.command_reply(b"T-RI\r", 24).decode("ascii").strip()
             ascii_form = agent.command_reply(b"T-RA\r", 26).decode("ascii").strip()
             decimal = agent.command_reply(b"T-RD\r", 9)
@@ -582,7 +588,7 @@ def check_compatibility(agent, api, password, folder, root):
             detail(f"after T-WI the clock reads {iso!r}, {ascii_form!r}, "
                    f"{decimal.hex()}, {bcd.hex()}")
             days = ("SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT")
-            when = near(iso, written, "T-RI")
+            when = near(iso, written, "T-RI", wrote_at)
             if not iso.endswith(" " + days[(when.weekday() + 1) % 7]):
                 raise Failure(f"T-RI answered {iso!r}, whose day of week is not its date's")
 
@@ -614,7 +620,7 @@ def check_compatibility(agent, api, password, folder, root):
                               ("T-RD", binary_moment(decimal, False, "T-RD")),
                               ("T-RB", binary_moment(bcd, True, "T-RB"))):
                 drift = (got - written).total_seconds()
-                if not 0 <= drift <= 10:
+                if not 0 <= drift <= allowed(wrote_at):
                     raise Failure(f"{what} read {got.isoformat()}, {drift:.0f} seconds from "
                                   f"the {written.isoformat()} that was written")
             # The other three write forms set the same clock. Each is written from a
@@ -631,9 +637,10 @@ def check_compatibility(agent, api, password, folder, root):
                      datetime.datetime(2022, 7, 19, 21, 15, 0), "TUE"),
             ):
                 agent.command(command, allowed=(0,))
+                wrote_at = time.monotonic()
                 answer = agent.command_reply(b"T-RI\r", 24).decode("ascii").strip()
                 detail(f"{form} then T-RI reads {answer!r}")
-                near(answer, moment, f"T-RI after {form}")
+                near(answer, moment, f"T-RI after {form}", wrote_at)
                 if not answer.endswith(" " + day):
                     raise Failure(f"{form} wrote a {day} and T-RI answered {answer!r}")
 
@@ -641,7 +648,7 @@ def check_compatibility(agent, api, password, folder, root):
             agent.command(b"T-WI2026-02-30T00:00:00\r", allowed=(30,))
             near(agent.command_reply(b"T-RI\r", 24).decode("ascii").strip(),
                  datetime.datetime(2022, 7, 19, 21, 15, 0),
-                 "T-RI after a refused write", seconds=30)
+                 "T-RI after a refused write", wrote_at)
             # The system clock did not move: a file written over FTP after the clock write
             # carries the system clock's date in its time stamp, not the written one.
             with ftp.session(api.host, password) as client:
@@ -656,10 +663,11 @@ def check_compatibility(agent, api, password, folder, root):
         finally:
             # UJ resets the drive, which returns it to the system clock.
             agent.command(b"UJ\r", allowed=(73,))
-            back = before + datetime.timedelta(seconds=round(time.monotonic() - started))
+            back_at = time.monotonic()
+            back = before + datetime.timedelta(seconds=round(back_at - started))
             restored = agent.command_reply(b"T-RI\r", 24).decode("ascii").strip()
             detail(f"after UJ the clock reads {restored!r}, from {before_answer!r}")
-        near(restored, back, "the clock after UJ", seconds=30)
+        near(restored, back, "the clock after UJ", back_at)
         if not restored.endswith(" " + before_day):
             raise Failure(f"after UJ the clock reads {restored!r}, not a {before_day}")
 
