@@ -67,6 +67,10 @@ public:
 };
 
 #define CAPAB_EEPROM 0x00400000
+// The memory the REU uses, which is where a Magic Desk Plus keeps its store.
+// Defined by the test, so that both it and the loader see the same bytes.
+extern uint8_t host_reu_memory[256 * 1024];
+#define REU_MEMORY_BASE host_reu_memory
 extern uint32_t host_fpga_capabilities;
 extern uint32_t host_cart_max_rom;
 static inline uint32_t getFpgaCapabilities(void) { return host_fpga_capabilities; }

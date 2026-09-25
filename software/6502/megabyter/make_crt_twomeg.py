@@ -11,15 +11,16 @@ one 64-byte CRT header followed by one CHIP packet per bank, each with the
 correct bank number, $8000 load address, and 16 KiB size. The bank count
 is taken from the input file's actual size, not hardcoded.
 
-IMPORTANT - CRT_TYPE_TWOMEGABYTER below is a LOCAL PLACEHOLDER, not an
-officially assigned VICE/1541-Ultimate cartridge type. As of this writing
-TwoMegabyter is not registered in this repository's CRT loader
-(software/io/c64/c64_crt.cc has no TwoMegabyter entry) and its hardware is
-new enough that no confirmed VICE cartridge-type ID was available to check
-against. The raw .bin is the artifact to actually flash onto real hardware
-(e.g. via Protovision's own Flash API, see twomeg.pdf appendix A.1); treat
-the .crt this script produces as best-effort, for once a loader exists,
-and update CRT_TYPE_TWOMEGABYTER to match whatever ID is actually assigned.
+IMPORTANT - CRT_TYPE_TWOMEGABYTER below is still a LOCAL PLACEHOLDER, not an
+officially assigned VICE/1541-Ultimate cartridge type. It was 87 until VICE
+assigned that number to Magic Desk Plus (CARTRIDGE_MAGIC_DESK_PLUS, also its
+CARTRIDGE_LAST), which every released Magic Desk Plus image carries; holding
+87 here would have made those images load as a TwoMegabyter. It now takes the
+next free number instead, in anticipation of getting it. The raw .bin is the
+artifact to actually flash onto real hardware (e.g. via Protovision's own
+Flash API, see twomeg.pdf appendix A.1); treat the .crt this script produces
+as best-effort, and update CRT_TYPE_TWOMEGABYTER again if VICE assigns
+something else.
 
 Note this is purely a *CRT container* / C++ loader gap, not a register-
 semantics one: fpga/cart_slot/vhdl_source/all_carts_v5.vhd's c_megabyter
@@ -50,7 +51,7 @@ CRT_SIGNATURE   = b"C64 CARTRIDGE   "   # 16 bytes, fixed
 CRT_HEADER_LEN  = 0x40                  # standard 64-byte CRT header
 CRT_VERSION_HI  = 1
 CRT_VERSION_LO  = 0
-CRT_TYPE_TWOMEGABYTER = 87              # PLACEHOLDER - not yet registered, see module docstring
+CRT_TYPE_TWOMEGABYTER = 88              # PLACEHOLDER - not yet registered, see module docstring
 CRT_EXROM       = 0                     # EXROM low at power-on (Standard 16 KiB mode)
 CRT_GAME        = 0                     # GAME low at power-on (Standard 16 KiB mode)
 CRT_SUBTYPE     = 0

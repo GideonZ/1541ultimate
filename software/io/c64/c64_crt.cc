@@ -94,7 +94,12 @@ const struct C64_CRT::t_cart C64_CRT::c_recognized_c64_carts[] = {
     { 84, 0xFF, CART_NOT_IMPL,  "Profi-DOS" },
     { 85, 0xFF, CART_NOT_IMPL,  "Magic Desk 16" },
     { 86, 0xFF, CART_MEGABYTER, "Protovision Megabyter" },
-    { 87, 0xFF, CART_TWOMEGABYTER, "Protovision TwoMegabyter" },
+    // VICE assigns 87 to Magic Desk Plus (CARTRIDGE_MAGIC_DESK_PLUS, and its
+    // CARTRIDGE_LAST), and every released Magic Desk Plus image carries it.
+    // TwoMegabyter has no assigned id at all, so it moves off the one it was
+    // borrowing and takes the next free number in anticipation of getting it.
+    { 87, 0xFF, CART_MDPLUS,    "Magic Desk Plus" },
+    { 88, 0xFF, CART_TWOMEGABYTER, "Protovision TwoMegabyter" },
 
     { 0xFFFF, 0xFF, CART_NOT_IMPL, "" } };
 
@@ -141,6 +146,8 @@ void C64_CRT::initialize(uint8_t *mem, uint32_t max_size)
     max_bank = 0xFF;
     highest_bank = 0;
     a000_seen = false;
+    mdp_sram_parts = 0;
+    mdp_eeprom_size = 0;
     bank_multiplier = 16 * 1024;
 }
 
@@ -210,6 +217,15 @@ SubsysResultCode_e C64_CRT::check_header(File *f, cart_def *def)
                 printf("%s - Not implemented\n", cart_list->cart_name);
                 return SSRET_NOT_IMPLEMENTED;
             }
+            if (local_type == CART_MDPLUS) {
+                // The revision byte is what says which parts this cart has, so
+                // one the format does not define leaves nothing to fit.
+                if (crt_header[CRTHDR_SUBTYPE] > MDPLUS_REV_MAX) {
+                    printf("Magic Desk Plus revision %d; it must be 0 to %d.\n",
+                           crt_header[CRTHDR_SUBTYPE], MDPLUS_REV_MAX);
+                    return SSRET_ERROR_IN_FILE_FORMAT;
+                }
+            }
             if (local_type == CART_GMOD2) {
                 if (!(getFpgaCapabilities() & CAPAB_EEPROM)) {
                     printf("GMOD2 EEPROM Not implemented.\n", cart_list->cart_name);
@@ -251,11 +267,6 @@ SubsysResultCode_e C64_CRT::read_chip_packet(File *f, t_crt_chip_chunk *chunk)
     uint16_t size = get_word(chip_header + CRTCHP_SIZE);
     uint16_t type = get_word(chip_header + CRTCHP_TYPE);
 
-    // Detect C128 mode carts
-    if ((load == 0xC000) || (size == 0x8000)) {
-        bank_multiplier = 32 * 1024;
-    }
-
     // Detect E2PROM
     if (load == 0xDE00) {
         printf("Reading EEPROM data, size $%4x.\n", size);
@@ -286,6 +297,74 @@ SubsysResultCode_e C64_CRT::read_chip_packet(File *f, t_crt_chip_chunk *chunk)
 
     if (load == 0xA000) {
         a000_seen = true; // an Ocean CRT with $A000 chips needs 16K mode
+    }
+
+    // Magic Desk Plus keeps its EEPROM and its 128K of battery-backed SRAM in
+    // the file. Both are reached through the same DF00 window on the machine,
+    // so that is the load address the chunks carry, and the bank field says
+    // which piece a chunk is. It has to: the size field of a CHIP header is 16
+    // bits, so 128K cannot be one chunk, and it travels in four quarters.
+    //
+    // Bank 0 is the EEPROM, and its size chooses the page mask exactly as it
+    // does in VICE, which accepts an EEPROM image only at 8K or 32K. Banks 1
+    // to 4 are the SRAM in address order.
+    //
+    // A released image need not carry any of it, and the ones built for VICE do
+    // not: this is how the Ultimate writes the store back with Save Cartridge,
+    // so that a saved game survives the next load.
+    if (load == 0xDF00) {
+        uint8_t *store = (uint8_t *)REU_MEMORY_BASE;
+
+        if (bank == MDPLUS_BANK_EEPROM) {
+            if ((size != MDPLUS_EEPROM_8K) && (size != MDPLUS_EEPROM_32K)) {
+                printf("Magic Desk Plus EEPROM is $%4x bytes; it must be 8K or 32K.\n", size);
+                return SSRET_ERROR_IN_FILE_FORMAT;
+            }
+            if (mdp_eeprom_size) {
+                printf("Magic Desk Plus EEPROM already read!\n");
+                return SSRET_EEPROM_ALREADY_DEFINED;
+            }
+            printf("Reading Magic Desk Plus EEPROM, size $%4x.\n", size);
+            memset(store, 0xFF, MDPLUS_EEPROM_32K);
+            mdp_eeprom_size = size;
+        } else if (bank <= MDPLUS_SRAM_CHUNKS) {
+            if (size != MDPLUS_SRAM_CHUNK) {
+                printf("Magic Desk Plus SRAM chunk %d is $%4x bytes; it must be $8000.\n",
+                       bank, size);
+                return SSRET_ERROR_IN_FILE_FORMAT;
+            }
+            if (mdp_sram_parts & (1 << (bank - 1))) {
+                printf("Magic Desk Plus SRAM chunk %d already read!\n", bank);
+                return SSRET_EEPROM_ALREADY_DEFINED;
+            }
+            printf("Reading Magic Desk Plus SRAM chunk %d.\n", bank);
+            if (!mdp_sram_parts) {
+                memset(store + MDPLUS_SRAM_OFFSET, 0xFF,
+                       MDPLUS_SRAM_CHUNK * MDPLUS_SRAM_CHUNKS);
+            }
+            store += MDPLUS_SRAM_OFFSET + (uint32_t(bank) - 1) * MDPLUS_SRAM_CHUNK;
+            mdp_sram_parts |= (1 << (bank - 1));
+        } else {
+            printf("Magic Desk Plus store has no bank %d.\n", bank);
+            return SSRET_ERROR_IN_FILE_FORMAT;
+        }
+
+        // The cartridge logic addresses this through g_georam_base, which is
+        // where the REU lives. That is why this cart prohibits the REU.
+        chunk->ram_location = store;
+        res = f->read(store, size, &bytes_read);
+        if (res != FR_OK) {
+            return SSRET_FILE_READ_FAILED;
+        }
+        return SSRET_OK;
+    }
+
+    // Detect C128 mode carts. This asks the ROM chunks only, which is why it
+    // comes after the two stores above: a Magic Desk Plus SRAM chunk is $8000
+    // bytes as well, and read first it would turn every ROM bank into a 32K
+    // one.
+    if ((load == 0xC000) || (size == 0x8000)) {
+        bank_multiplier = 32 * 1024;
     }
 
     // if ((load == 0xA000) && !a000_seen) {
@@ -476,6 +555,25 @@ void C64_CRT::configure_cart(cart_def *def)
 {
     printf("Total ROM size read: %6x bytes.\n", total_read);
 
+    // A Magic Desk Plus file need not carry its store: VICE keeps the SRAM and
+    // the EEPROM in files beside the image rather than in it, and the Murder on
+    // the Mississippi Remastered release is 32 ROM banks and nothing else. What
+    // it does not bring has to read as an erased device, because the store
+    // lives in the memory the REU uses and would otherwise be whatever the
+    // cartridge before it left there.
+    if (local_type == CART_MDPLUS) {
+        uint8_t *store = (uint8_t *)REU_MEMORY_BASE;
+        if (!mdp_eeprom_size) {
+            printf("Magic Desk Plus without an EEPROM image; erasing it.\n");
+            memset(store, 0xFF, MDPLUS_EEPROM_32K);
+        }
+        if (!mdp_sram_parts) {
+            printf("Magic Desk Plus without an SRAM image; erasing it.\n");
+            memset(store + MDPLUS_SRAM_OFFSET, 0xFF,
+                   MDPLUS_SRAM_CHUNK * MDPLUS_SRAM_CHUNKS);
+        }
+    }
+
     uint16_t cart_type = CART_TYPE_NONE;
     uint16_t require = 0;
     uint16_t prohibit = 0;
@@ -501,6 +599,32 @@ void C64_CRT::configure_cart(cart_def *def)
         case CART_DOMARK:
             cart_type = CART_TYPE_DOMARK;
             prohibit = CART_PROHIBIT_DEXX;
+            break;
+        case CART_MDPLUS:
+            // 128 banks of 8K instead of 64, a page register at DE01, a control
+            // register at DE03 and a 256 byte window at DF00. The window lives
+            // in the memory the REU uses, so the two cannot both be on.
+            //
+            // The header's revision byte says which parts are fitted, and with
+            // them the page mask: a 32K EEPROM has 128 pages and masks the page
+            // register to 0x7F, an 8K one has 32 and masks it to 0x1F. Reading
+            // it from the EEPROM chunk instead would get a released image wrong,
+            // because a released image carries no store and still has both parts
+            // -- Murder on the Mississippi Remastered is revision 0, 32 ROM
+            // banks and nothing else, with its store in files beside the image.
+            //
+            // A revision that fits no EEPROM leaves the mask with nothing to
+            // choose, so it takes the 0x1F one and never uses it.
+            cart_type = CART_TYPE_MDPLUS;
+            if ((crt_header[CRTHDR_SUBTYPE] == MDPLUS_REV_SRAM_EEPROM_32K) ||
+                (crt_header[CRTHDR_SUBTYPE] == MDPLUS_REV_EEPROM_32K)) {
+                cart_type |= VARIANT_1;
+            }
+            // The window is the whole of DF00..DFFF and the registers sit at
+            // DE00..DE03, so nothing else may have either page: that rules out
+            // the UCI at DF1C, the sampler, an ACIA at either address, and the
+            // REU, whose memory this cart borrows.
+            prohibit = CART_PROHIBIT_IO;
             break;
         case CART_OCEAN_8K:
             prohibit = CART_PROHIBIT_DEXX;
