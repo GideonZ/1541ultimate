@@ -695,8 +695,13 @@ def menu_addresses(target: targets_lib.Target, password: str | None,
     addresses = set()
     try:
         body, rows = read()
-        deadline = time.monotonic() + 5.0
+        deadline = time.monotonic() + 10.0
+        settled = time.monotonic() + 1.0
         while not _menu_ready(rows) and time.monotonic() < deadline:
+            if time.monotonic() > settled:
+                # The menu reopens in the directory it was left in; LEFT goes up to the root.
+                tap(["left_shift", "cursor_left_right"])
+                settled = time.monotonic() + 0.5
             time.sleep(0.05)
             body, rows = read()
         addresses.update(_active_addresses(rows))
