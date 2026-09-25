@@ -107,8 +107,7 @@ public:
     // Local Functions
     void set_device_number(int dev);
     int configured_device_number(void);
-    // The software write protect of W-1 and W-0 (SI-102). It lasts as long as the drive
-    // runs, as the device number of U0> does.
+    // The software write protect of W-1 and W-0 (SI-102), which lasts as long as the drive runs.
     bool is_write_protected(void) { return write_protect; }
     void set_write_protect(bool on) { write_protect = on; }
     // The drive's own clock, as seconds ahead of the system clock (SI-120).

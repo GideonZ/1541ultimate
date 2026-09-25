@@ -303,15 +303,11 @@ class C64 : public GenericHost, ConfigurableObject
 
     void setup_config_menu();
     bool isFrozen;
-    // Set once freeze() has taken the program's I/O state and set the CIA up
-    // for the cartridge, cleared before unfreeze() puts that state back. The
-    // keyboard is scanned from a timer on a cartridge (Keyboard_C64), so the
-    // window in which it may touch CIA1 has to be explicit.
+    // Set while freeze() has the CIA set up for the cartridge. The keyboard is scanned from a
+    // timer on a cartridge (Keyboard_C64), so the window in which it may touch CIA1 is explicit.
     bool keyboardScanAllowed;
-    // Non-zero while peek(), poke() or dma_transfer_frozen() has put the
-    // machine back in the program's own mode to reach memory the freezer's
-    // Ultimax cart hides. A program that banked I/O out has RAM at the CIA
-    // address then, so a keyboard scan would read "no key" mid-tap.
+    // Non-zero while peek(), poke() or dma_transfer_frozen() runs in the program's own banking;
+    // a program that banked I/O out has RAM at the CIA then, so a scan would read "no key".
     volatile int dmaModeWindow;
     void determine_d012(void);
     void goUltimax(void);

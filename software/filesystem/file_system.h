@@ -66,9 +66,8 @@ public:
     virtual FRESULT file_rename(const char *old_name, const char *new_name);  // Renames a file
 	virtual FRESULT file_delete(const char *path); // deletes a file
     virtual FRESULT file_attrib(const char *path, uint8_t attrib, uint8_t mask) { return FR_NOT_ENABLED; } // sets the attribute bits in mask to those in attrib
-    // Sets the label a directory carries inside the file system itself, where it has one
-    // that is separate from the name its parent holds. An empty id leaves the one that
-    // is there. A file system whose directories have no such label answers FR_NOT_ENABLED.
+    // Sets the label a directory carries inside the file system, apart from its name in the parent.
+    // An empty id keeps the current one. FR_NOT_ENABLED where directories have no such label.
     virtual FRESULT dir_set_label(const char *path, const char *name, const char *id) { return FR_NOT_ENABLED; }
     // Sets or clears a write lock the medium itself records, which every writer then
     // obeys. A file system whose medium records none answers FR_NOT_ENABLED.

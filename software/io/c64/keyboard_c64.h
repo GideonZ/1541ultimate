@@ -4,13 +4,8 @@
 #include "keyboard.h"
 #include "host.h"
 
-// A cartridge reads the keyboard off the host computer's CIA through the
-// expansion port, and a key tapped into that matrix by the computer itself
-// (machine:input on a C64 Ultimate) is down for about 40 ms with a 20 ms
-// release. The user interface task's getch() is away for 40 to 115 ms
-// whenever it stops the machine to read memory or redraw, which would miss
-// such a tap or its release, so on these builds the scan runs from a timer at
-// this period in ticks and getch() only drains the buffer.
+// getch() is away 40 to 115 ms whenever the UI stops the machine, long enough to miss a 40 ms
+// machine:input tap or its release, so these builds scan from a timer at this period in ticks.
 #if !U64 && !RECOVERYAPP && !defined(NO_FILE_ACCESS)
 #define KEYBOARD_C64_TIMER_SCAN 1
 #define KEYBOARD_C64_SCAN_PERIOD_TICKS 2

@@ -346,9 +346,8 @@ void WiFi :: RunModeThread()
                     printf("In %d\n", pkt->len);
                     dump_hex_relative(&pkt->data, 64);
 #endif
-                    // A copy, because a socket nobody reads holds what it received,
-                    // and one connection can queue more segments than the UART
-                    // has receive buffers: holding them all stops the interface.
+                    // A copy: an unread socket holds its segments, and one connection can queue
+                    // more of them than the UART has receive buffers, which stops the interface.
                     netstack->input_copy((uint8_t*)&pkt->data, pkt->len);
                 } else {
                     puts("Packet received, but no net stack!");

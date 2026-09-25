@@ -36,9 +36,8 @@
 // T-RI -> "YYYY-MM-DDThh:mm:ss dow\r"
 // T-RD -> "{WD}{Y}{M}{D}{h}{m}{s}{am/pm}\r"  Documentation says it's decimal, but it is actually binary h in 12 hour format, Y+1900
 // T-RB -> "{WD}{Y}{M}{D}{h}{m}{s}{am/pm}\r"  BCD format Y<80:+2000, else+1900, also 12 hour format for some strange reason
-// T-WA, T-WB, T-WD, T-WI -> set the drive's own clock from the same layout the matching
-//   read answers with, as an offset from the system clock; the system clock is not
-//   written (SI-120).
+// T-WA, T-WB, T-WD, T-WI -> set the drive's own clock, in the layout the matching read answers,
+//   as an offset from the system clock, which is not written (SI-120).
 
 // Directories
 // $ [=T] [[n][path]:] [= commalist([TP|OPTION])], OPTION = { L, N, <stamp, >stamp }, stamp = MM/DD/YY HH:MM xM, x = {A | P}
@@ -51,16 +50,12 @@
 // methods should work.
 
 #include "cbmdos_parser.h"
-#include "current_time.h"
 
-// A build with no real time clock driver, which is every host test build, reads a
-// fixed system clock, so that the clock commands can still be exercised end to end.
 extern "C" {
     void get_current_time(int& wd, int& year, int& month, int& day, int& hour, int& min, int& sec) __attribute__((weak));
     void get_current_time(int& wd, int& year, int& month, int& day, int& hour, int& min, int& sec)
     {
-        wd = 3; year = 2025; month = 6; day = 26;
-        hour = 0; min = 41; sec = 1;
+        wd = 3; year = 2025; month = 6; day = 26; hour = 0; min = 41; sec = 1;
     }
 }
 int parse_full_path(const char *buf, filename_t& name, bool *replace = NULL, bool path_only = false)
@@ -202,9 +197,8 @@ int parse_open(const char *buf, open_t& fn)
     bool record_length_given = false;
     if (buf[0] == '#') {
         fn.dir_opt.stream = e_stream_buffer;
-        // "##n", exactly three characters, asks for n chained buffers with the pointer at
-        // byte 0; any other name after the # is a standard buffer, whose pointer starts
-        // at byte 1 (SI-090, SD open_buffer()).
+        // "##n", exactly three characters, is n chained buffers with the pointer at byte 0; any
+        // other name is a standard buffer, its pointer at byte 1 (SI-090, SD open_buffer()).
         if ((buf[1] == '#') && isdigit(buf[2]) && !buf[3]) {
             fn.buffers = (uint8_t)(buf[2] - '0');
         }
@@ -223,9 +217,8 @@ int parse_open(const char *buf, open_t& fn)
             err = parse_full_path(buf+1, fn.file, &fn.replace, true);
         }
     } else {
-        // The record length of a relative file is the byte after ",L,", whatever byte
-        // that is, so it is taken off before a comma or a colon in it is read as syntax
-        // (SI-080, SD file_open()).
+        // The record length is whatever byte follows ",L,", so it is taken off before a comma or
+        // colon in it can be read as syntax (SI-080, SD file_open()).
         const char *rel = strstr(buf, ",L,");
         if (rel && rel[3] && !rel[4]) {
             mstring name(buf, 0, (int)(rel - buf) - 1);
@@ -380,9 +373,8 @@ int IecParser :: block_command(const uint8_t *buffer, int len)
     case 'P':
         n = parse_block_parameters(params, param_len, p, 3);
         if (n < 2) return ERR_SYNTAX;
-        // Two numbers are the 1541's eight bit position, which keeps the low byte of
-        // what it is given. A third is the high byte of a sixteen bit position
-        // (SI-092, SD README).
+        // Two numbers are the 1541's eight bit position, which keeps the low byte; a third is the
+        // high byte of a sixteen bit position (SI-092, SD README).
         return exec->do_buffer_position(p[0], (n >= 3) ? (p[1] + (p[2] << 8)) : (p[1] & 0xFF));
     case 'A':
     case 'F':
@@ -454,9 +446,8 @@ int IecParser :: dir_command(const uint8_t *buffer, int len)
         if (!nlen) {
             return ERR_NO_NAME;
         }
-        // A directory to be made cannot carry a wildcard, and a FAT host drops a
-        // trailing dot or space from the name it creates, which could then not be
-        // found again (SI-141).
+        // No wildcard, and no trailing dot or space: a FAT host drops those from the name it
+        // creates, which could then not be found again (SI-141).
         char last = dest.filename.c_str()[nlen - 1];
         if ((buffer[0] == 'M') && (dest.has_wildcard || (last == '.') || (last == ' '))) {
             return ERR_ILLEGAL_NAME;
@@ -536,9 +527,8 @@ int IecParser :: initialize_command(const uint8_t *buffer, int len)
     return exec->do_initialize_buffers();
 }
 
-// The name and the optional id of a command that names a directory header or an image:
-// [n][path]:name[,id]. The id is whatever follows the first comma, and a name of no
-// characters is no name at all.
+// [n][path]:name[,id] of a directory header or an image: the id is whatever follows the first
+// comma, and a name of no characters is no name at all.
 int IecParser :: name_and_id(const char *arg, filename_t& dest, const char *&id)
 {
     id = "";
@@ -627,9 +617,8 @@ int IecParser :: rename_command(const uint8_t *buffer, int len)
     return exec->do_rename(src, dest);
 }
 
-// R-P:newname=oldname renames a partition and R-H[n][path]:newname[,id] renames the
-// header of a directory (SI-051, SI-064). SD parse_doscommand() finds both the same
-// way, by the dash in the second character, before it falls through to a file rename.
+// R-P:newname=oldname and R-H[n][path]:newname[,id] (SI-051, SI-064), told from a file rename
+// by the dash in the second character, as SD parse_doscommand() does.
 int IecParser :: rename_dashed_command(const uint8_t *buffer, int len)
 {
     mstring cmd((const char *)buffer, 3, len-1);
@@ -655,9 +644,8 @@ int IecParser :: rename_dashed_command(const uint8_t *buffer, int len)
     }
 }
 
-// A comma separated list of names, each of the form [[n][path]:]pattern, as scratch, copy
-// and the sd2iec attribute commands take it. The list is as long as the command makes it
-// (SI-150), so it is allocated here, and the caller deletes it whatever the answer.
+// A comma separated list of [[n][path]:]pattern. It has no length limit (SI-150), so it is
+// allocated here, and the caller deletes it whatever the answer.
 static int parse_name_list(const char *buf, filename_t *&names, int *count)
 {
     int n = 1;
@@ -696,10 +684,8 @@ int IecParser :: scratch_command(const uint8_t *buffer, int len)
     return err;
 }
 
-// S-8, S-9 and S-D, exactly three characters, change the device number to 8, to 9 and
-// back to the configured one (SI-101, HD 9-34). On a CMD device they swap the drive the
-// number addresses; here there is one drive, so they move that drive's number. Any other
-// name after the S is a scratch, so a file named "-8" is scratched as S:-8.
+// S-8, S-9 and S-D, exactly three characters, set the device number to 8, 9 or the configured
+// one (SI-101, HD 9-34). Any longer name after the S is a scratch, so S:-8 scratches "-8".
 int IecParser :: swap_command(const uint8_t *buffer, int len)
 {
     switch (buffer[2]) {
@@ -741,12 +727,8 @@ int IecParser :: header_command(const char *arg)
     return exec->do_set_header(dest, id);
 }
 
-// The sd2iec attribute commands (SI-077). EL and EU set and clear the lock on every
-// entry each name matches, EH turns the hidden flag of one entry over, and
-// A:[R][H][A]=name sets exactly the attributes named. The header forms EH with a colon
-// straight after the partition, XH and D are the same command as R-H.
-// Sources: SD parse_elock(), parse_eunlock(), parse_ehide(), parse_attr(),
-// parse_set_header() and the dispatch in parse_doscommand().
+// The sd2iec attribute commands EL, EU, EH and A, with EH:, XH and D as forms of R-H (SI-077).
+// Sources: SD parse_elock(), parse_eunlock(), parse_ehide(), parse_attr(), parse_set_header().
 int IecParser :: attribute_command(const uint8_t *buffer, int len)
 {
     mstring cmd((const char *)buffer, 0, len-1);
@@ -807,9 +789,8 @@ int IecParser :: attribute_command(const uint8_t *buffer, int len)
             return err;
         case 'H': {
             if (buffer[0] == 'X') {
-                // XH+ and XH- are the setting that adds hidden files to every listing.
-                // This drive keeps its settings in the Ultimate configuration and takes
-                // the request per listing instead, as =H (SI-134).
+                // XH+ and XH- change a stored setting; this drive keeps settings in the Ultimate
+                // configuration and takes the request per listing instead, as =H (SI-134).
                 if (len == 3) {
                     return ERR_SYNTAX;
                 }
@@ -909,10 +890,8 @@ typedef struct {
     int wd, year, month, day, hour, min, sec;
 } clock_time_t;
 
-// A field of decimal digits at a fixed place in a clock command, or -1 when it is not
-// digits. The formats place every field and every separator at a fixed offset, and the
-// A format's AM or PM marker is at a fixed offset even in SD parse_timewrite(), so a
-// field of another width could not be read consistently and is refused.
+// A field of decimal digits, or -1. Every field sits at a fixed offset, even the A format's
+// AM or PM marker in SD parse_timewrite(), so a field of another width is refused.
 static int clock_field(const uint8_t *p, int digits)
 {
     int value = 0;
@@ -1002,9 +981,8 @@ static void clock_from_seconds(int64_t seconds, clock_time_t& t)
     t.wd = clock_day_of_week(t.year, t.month, t.day);
 }
 
-// T-W in the four forms of SI-120, each laid out exactly as the matching T-R answers
-// it. The A, B and D forms carry a day of week, which is checked for its range and not
-// kept (SI-121): a read derives it from the date, as it does for the I form.
+// T-W in the four forms of SI-120, each laid out as the matching T-R answers it. The day of
+// week of the A, B and D forms is range checked and not kept, as a read derives it (SI-121).
 static int parse_clock_write(const uint8_t *buffer, int len, clock_time_t& t)
 {
     const uint8_t *p = buffer + 4;

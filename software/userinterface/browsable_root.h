@@ -76,9 +76,8 @@ class BrowsableDirEntry : public Browsable
 	FileInfo *info;
 	FileType *type;
 	char *fatname;
-	// The name a P00, S00, U00 or R00 file carries in its header, which is the name the
-	// C64 sees and the drive lists; NULL for every other file. Read once, because the
-	// host name of such a file is an 8.3 rendering that does not identify it (SI-144).
+	// The name a P00, S00, U00 or R00 file carries in its header; NULL for other files. Read
+	// once, because the host name of such a file does not identify it (SI-144).
 	char *cbm_name;
 	bool cbm_probed;
 	Path *path;
@@ -265,9 +264,8 @@ public:
                 sprintf(buffer, "\eR%#s\er VOLUME", display_space + extra, tmp_buffer);
             } else {
                 size_to_string_bytes(info->size, sizebuf);
-                // A wrapper shows the name it carries, because its host name is an 8.3
-                // rendering that does not identify it; the extension still says P00
-                // (SI-144).
+                // A wrapper shows the name it carries, as its host name does not identify it; the
+                // extension still says P00 (SI-144).
                 const char *shown = wrappedName();
                 extra = squeezeToDisplayString(shown ? shown : info->lfname, tmp_buffer,
                                                display_space, squeeze_option);

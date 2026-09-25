@@ -144,10 +144,8 @@ SubsysResultCode_e FileTypePRG :: execute_st(SubsysCommand *cmd)
     const char *name = cmd->filename.c_str();
     printf("DMA Load.. %s\n", name);
     FileManager *fm = FileManager :: getFileManager();
-    // The file is opened here only to tell a missing file from a load that will run.
-    // The C64 subsystem opens it again to perform the DMA load, and moves it past an
-    // x00 header itself, so a P00 file loads what it wraps and a file that only has
-    // such a name loads as the ordinary file it is (SI-144).
+    // Opened only to tell a missing file from a load that will run. The C64 subsystem opens it
+    // again for the DMA load and skips an x00 header itself (SI-144).
     FRESULT fres = fm->fopen(cmd->path.c_str(), name, FA_READ, &file);
     if (file) {
         fm->fclose(file);

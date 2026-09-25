@@ -319,10 +319,8 @@ FRESULT FileSystemCBM::dir_open(const char *path, Directory **dir) // Opens dire
     return res;
 }
 
-// The header a directory carries in the file system itself: the volume name in the BAM
-// of the root, and the header block of a subdirectory. The disk id and the DOS version
-// keep what they hold unless an id is given, because a rename of the header is not a
-// format (SI-064).
+// The volume name in the root's BAM, or a subdirectory's header block. The disk id and DOS
+// version stay unless an id is given, because renaming the header is not a format (SI-064).
 FRESULT FileSystemCBM::dir_set_label(const char *path, const char *name, const char *id)
 {
     if (!is_writable()) {

@@ -14,10 +14,9 @@ class CommandInterface
 {
 public:
 	CommandInterface() : kernal_device_id(0) {}
-    ~CommandInterface() {}
-
-    // What the firmware would put at $DF1B for the KERNAL to compare with.
-    uint8_t kernal_device_id;
+    ~CommandInterface() {} 
+    
+    uint8_t kernal_device_id; // what the firmware would put at $DF1B
     void set_kernal_device_id(uint8_t id) { kernal_device_id = id; }
 };
 

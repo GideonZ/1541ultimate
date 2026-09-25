@@ -7,19 +7,13 @@
 
 class FileManager;
 
-// A CBM file inside a host file, the format PC64 and its descendants write: the host name
-// ends in P, S, U or R and two digits, the file starts with "C64File" and a zero, the CBM
-// name is the 16 bytes at offset 8, a relative file's record length is at offset 25, and
-// the data follows the header. Sources: SD fatops.c; SD README under "P00 files".
-//
-// Both the Software IEC drive and the C64 loader read these files, so the header lives
-// here and neither of them carries its own copy.
+// A CBM file in a PC64 host file: "C64File" and a zero, the CBM name at offset 8, a relative
+// file's record length at 25, then the data. Sources: SD fatops.c; SD README, "P00 files".
 
 #define X00_HEADER_SIZE 26
 
-// The CBM file type an x00 extension announces, as the letter 'P', 'S', 'U' or 'R', and
-// false for any other extension. `x00_name` takes a whole path and reads the extension of
-// its last component. A name alone does not make a wrapper; the header has to be read too.
+// The type letter 'P', 'S', 'U' or 'R' an x00 extension announces; `x00_name` takes a whole path.
+// A name alone does not make a wrapper; the header has to be read too.
 bool x00_extension(const char *ext, char *type_letter);
 bool x00_name(const char *path, char *type_letter);
 
@@ -29,24 +23,17 @@ bool x00_header(const uint8_t *header, uint32_t length, char *cbm_name, uint8_t 
 // Opens the file at `path` and reads its header, when the path has an x00 name.
 bool x00_read_header(FileManager *fm, const char *path, char *cbm_name, uint8_t *record_length);
 
-// Cuts a header name to what a user is shown: up to its first shifted space or control
-// byte, the rule the CBM image reader applies to a directory entry. A control byte left
-// in would reach the screen, which reads $1B as the start of an escape sequence. Answers
-// the length that is left; 0 means there is nothing to show.
+// Cuts a header name at its first shifted space or control byte, as the CBM image reader does,
+// because the screen reads $1B as an escape. Answers the length left; 0 means nothing to show.
 int x00_shown_name(char *cbm_name);
 
-// Gives the CBM file in an x00 wrapper a new name. The name goes into the header, and the
-// host file is renamed to that name rendered for the file system, carrying the type letter
-// of the wrapper and two digits that count up while another host file holds the spelling.
-// `dir` is the directory the file ends up in, which is the one it is in for a rename in
-// place. The host name is left as it is when none of the hundred spellings is free, so the
-// header still carries the new name. `renamed`, when given, receives the resulting path.
+// Writes the new name into the header and renames the host file after it into `dir`, counting
+// the two digits up past taken spellings; with all hundred taken only the header changes.
 FRESULT x00_rename(FileManager *fm, const char *path, const char *dir, const char *cbm_name,
                    mstring *renamed = NULL);
 
-// Moves an open file past its header and answers the size of the header, or leaves the
-// file at the start and answers 0 when it carries none. The path is needed for the name.
-// cbm_name, when given, takes 17 bytes and receives the name out of the header.
+// Moves an open file past its header and answers the header size, or 0 with the file left at the
+// start. The path is needed for the name; cbm_name, when given, takes 17 bytes.
 uint32_t x00_skip_header(File *f, const char *path, uint8_t *record_length, char *cbm_name = NULL);
 
 #endif /* X00_WRAPPER_H */

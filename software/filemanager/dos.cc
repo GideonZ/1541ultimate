@@ -3,7 +3,6 @@
 #include "home_directory.h"
 #include "endianness.h"
 #include "rtc.h"
-#include "current_time.h"
 #include <string.h>
 #include "c64.h"
 
@@ -558,7 +557,9 @@ void Dos::parse_command(Message *command, Message **reply, Message **status) {
                 wdz = wdz % 7;
                 if (wdz < 0)
                     wdz += 7;
-                set_current_time(wdz, command->message[2] + 1900, M, D, h, m, s);
+                int corr = rtc.get_correction();
+                rtc.set_time(y, M, D, wdz, h, m, s);
+                rtc.set_time_in_chip(corr, y, M, D, wdz, h, m, s);
                 rtc.get_time(y, M, D, wd, h, m, s);
                 sprintf((char*) data_message.message,
                         "%s %4d/%02d/%02d %02d:%02d:%02d", wdnames[wd],

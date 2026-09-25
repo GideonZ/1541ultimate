@@ -63,10 +63,8 @@ static const char *format_bootcrt_display_name(const char *name, char *trimmed)
     return trimmed;
 }
 
-// The name the boot cart prints while it loads. A P00 file and its kin hold the C64 file
-// behind a header, so the name the C64 shows comes out of that header and not out of the
-// 8.3 host name the wrapper lives under; it is rendered the way a host name spells a CBM
-// name, because CbmFileName reads it back that way (SI-144b).
+// The boot cart prints the name out of the x00 header, as the host name does not identify the
+// file, rendered as a host name spells a CBM name because CbmFileName reads it back (SI-144b).
 static const char *x00_load_name(File *f, const char *host_name, char *rendered, int size)
 {
     char cbm_name[17];

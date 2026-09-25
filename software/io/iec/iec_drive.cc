@@ -21,9 +21,8 @@
 #define CFG_IEC_PATH     0x53
 #define CFG_IEC_LOG      0x55
 
-// "IEC Drive" (SI-107). UCI Only takes the drive off the bus and leaves its UCI target
-// answering, for a KERNAL or program that reaches it that way; Disabled turns off both.
-// The values are in this order so that a stored setting keeps its meaning.
+// "IEC Drive" (SI-107): UCI Only takes the drive off the bus and keeps its UCI target;
+// Disabled turns off both. The order of the values keeps a stored setting's meaning.
 #define IEC_MODE_UCI_ONLY    0
 #define IEC_MODE_ENABLED     1
 #define IEC_MODE_DISABLED    2

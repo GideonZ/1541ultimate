@@ -1142,9 +1142,8 @@ void C64::unfreeze()
     if (!isFrozen)
         return;
 
-    // From here the CIA belongs to the program again: restore_io() writes
-    // its registers back, and a scan landing between that and resume() would
-    // leave the keyboard column select as the scan left it.
+    // restore_io() hands the CIA back to the program, and a scan before resume() would leave
+    // the keyboard column select as the scan set it.
     keyboardScanAllowed = false;
 
     if (!backupIsValid) {

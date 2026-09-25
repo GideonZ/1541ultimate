@@ -112,9 +112,7 @@ Keyboard_C64 :: Keyboard_C64(GenericHost *h, volatile uint8_t *row, volatile uin
     scan_paused = 0;
     scan_timer = 0;
 #if KEYBOARD_C64_TIMER_SCAN
-    // The repeat delays count scans. getch() scanned every 4 ticks; this
-    // scans every KEYBOARD_C64_SCAN_PERIOD_TICKS, so scale them to keep the
-    // same repeat rate in wall-clock time.
+    // The delays count scans; scale them to this timer's period.
     repeat_speed = (repeat_speed * 4) / KEYBOARD_C64_SCAN_PERIOD_TICKS;
     first_delay = (first_delay * 4) / KEYBOARD_C64_SCAN_PERIOD_TICKS;
     scan_timer = xTimerCreate("KbScan", KEYBOARD_C64_SCAN_PERIOD_TICKS, pdTRUE, this,
@@ -137,10 +135,8 @@ Keyboard_C64 :: ~Keyboard_C64()
 #endif
 }
 
-// Runs in the timer service task, above the network tasks, so a request being
-// served does not hold the scan off either. The host says whether the CIA may
-// be touched at all: only while the machine is stopped and its I/O is the
-// cartridge's, never between restore_io() and resume().
+// Runs in the timer service task, above the network tasks, so a request cannot hold the scan
+// off. The CIA is touched only while the host has the machine stopped with cartridge I/O.
 void Keyboard_C64 :: scan_timer_callback(void *timer)
 {
 #if KEYBOARD_C64_TIMER_SCAN

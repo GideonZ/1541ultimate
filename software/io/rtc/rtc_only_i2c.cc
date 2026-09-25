@@ -1,7 +1,6 @@
 #include <stdio.h>
 #include "rtc_only.h"
 #include "rtc_epoch.h"
-#include "current_time_driver.h"
 #include "i2c_drv.h"
 #include "itu.h"
 
@@ -223,6 +222,11 @@ uint32_t get_fattime (void)	/* 31-25: Year(0-127 org.1980), 24-21: Month(1-12), 
 	return rtc.get_fat_time();
 }
 
+extern "C" void get_current_time(int& wd, int& year, int& month, int& day, int& hour, int& min, int& sec)
+{
+    rtc.get_time(year, month, day, wd, hour, min, sec);
+    year += RTC_EPOCH_YEAR; // get_time() counts years from the epoch, callers do not
+}
 
 
 Rtc rtc; // global
