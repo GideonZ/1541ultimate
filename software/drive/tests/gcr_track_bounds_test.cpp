@@ -54,6 +54,22 @@ TEST(ValidatedLength, IgnoresTheFlagBitsAboveTheLength)
     EXPECT_EQ(gcr_validated_track_length(0x8000 | 0x1E0C, 0x2000, kMaxSize, kMaxTrackLen), 0x1E0C);
 }
 
+TEST(ValidatedLength, ReadsBitFourteenAsLengthAndRejectsWhatItMakes)
+{
+    // Nothing gives bit 14 a meaning, and the writer sets neither a mask nor a
+    // flag there, so it is part of the length. Masking it away turned 0x4123
+    // into 291 -- a plausible track that passes every check and gets
+    // programmed. Read as length it is 16675, above the format maximum, and
+    // the track is refused instead.
+    EXPECT_EQ(gcr_validated_track_length(0x4123, 0x2000, kMaxSize, kMaxTrackLen), 0);
+}
+
+TEST(ValidatedLength, ReadsBitFourteenAsLengthWithTheMfmMarkerSet)
+{
+    // Both flag positions at once: the marker is stripped, the rest is length.
+    EXPECT_EQ(gcr_validated_track_length(0x8000 | 0x4123, 0x2000, kMaxSize, kMaxTrackLen), 0);
+}
+
 TEST(ValidatedLength, RejectsALengthAboveTheFormatMaximum)
 {
     // 14 bits admit 16383, more than twice the longest real track. Before the

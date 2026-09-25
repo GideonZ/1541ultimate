@@ -48,13 +48,27 @@ static inline bool gcr_track_header_is_readable(uint32_t offset, uint32_t bytes_
  * offset + 2 + length <= bytes_read, written as subtractions so that no sum
  * can wrap.
  *
- * The masked field holds 14 bits, so it also admits lengths more than twice
- * the longest legitimate track. Rejected here rather than programmed.
+ * The length is taken from fifteen bits, not fourteen. Bit 15 is the MFM
+ * marker this firmware writes and Denise reads; nothing gives bit 14 a
+ * meaning, so it belongs to the length. write_track() and save() already
+ * write the length unmasked and set bit 15 on top of it, so reading fourteen
+ * bits meant the image could not be read back as it was written: a declared
+ * 0x4123 came out as 0x0123, small enough to pass every check below and be
+ * programmed as a 291 byte track.
+ *
+ * The width is not arbitrary -- the drive's own parameter field is fourteen
+ * bits -- but the file and the engine are two different things, and masking
+ * at parse time conflates them. The drive engine's own ceiling is 16383:
+ * max_offset in floppy_param_mem.vhd is fourteen bits wide, and
+ * floppy_mem.vhd wraps offset_count at it for reads and writes alike. That
+ * ceiling never comes into play here, because max_length -- 7928 for a G64,
+ * GCRIMAGE_MAXTRACKLEN -- is less than half of it and is checked below. So
+ * the parse stays faithful to the file and the bound does the rejecting.
  */
 static inline int gcr_validated_track_length(uint16_t declared, uint32_t offset,
                                              uint32_t bytes_read, int max_length)
 {
-    int length = (int)(declared & 0x3FFF);
+    int length = (int)(declared & 0x7FFF);
 
     if (length <= 0 || length > max_length) {
         return 0;   /* zero would also divide by zero in insert_disk() */

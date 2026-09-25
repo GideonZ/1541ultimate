@@ -725,7 +725,7 @@ bool GcrImage :: load(File *f)
     	int length = gcr_validated_track_length(w, offset, bytes_read, GCRIMAGE_MAXTRACKLEN);
     	if(!length) {
     		printf("Track %d: declared length %d was not delivered by the file. Track skipped.\n",
-    		       i, (int)(w & 0x3FFF));
+    		       i, (int)(w & 0x7FFF));
     		continue; // invalidate() left this entry unused; leave it that way
     	}
     	tracks[i].track_address = tr + 2;
