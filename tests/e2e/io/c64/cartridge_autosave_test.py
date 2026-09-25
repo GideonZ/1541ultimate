@@ -247,17 +247,17 @@ class Device:
         while a save is still running returns the previous file rather than a
         torn one. Waiting for the byte is therefore waiting for the rename.
         """
-        deadline = time.monotonic() + SAVE_TIMEOUT_SECONDS
-        while True:
-            saved = self.retrieve(path)
-            roml, _ = saved_bank0(saved)
-            if roml[offset] == value:
-                return saved
-            if time.monotonic() >= deadline:
-                raise Failure(f"the byte at ${offset:04X} of bank 0 reads "
-                              f"${roml[offset]:02X} in the saved file after "
-                              f"{SAVE_TIMEOUT_SECONDS:.0f} s, expected ${value:02X}")
-            time.sleep(2.0)
+        saved = [b""]
+
+        def carries_value() -> bool:
+            saved[0] = self.retrieve(path)
+            return saved_bank0(saved[0])[0][offset] == value
+
+        wait.wait_until(carries_value,
+                        f"${value:02X} at ${offset:04X} of bank 0 in the saved file",
+                        timeout=SAVE_TIMEOUT_SECONDS, interval=2.0,
+                        detail=lambda: f"it reads ${saved_bank0(saved[0])[0][offset]:02X}")
+        return saved[0]
 
     def exists(self, path: str) -> bool:
         with self.ftp() as client:
