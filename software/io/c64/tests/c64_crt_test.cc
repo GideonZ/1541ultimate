@@ -447,8 +447,8 @@ static void test_change_detection(void)
     *beyond ^= 0xFF;
 }
 
-// Saving must not disturb the cartridge the C64 is running, and the file must
-// carry the EAPI it came with, not the one the firmware patched in.
+// Saving must leave the cartridge the C64 is running alone, and the file must
+// carry the EAPI the cartridge came with, not the one the firmware patched in.
 static void test_save_keeps_memory(void)
 {
     for (int i = 0; i < 768; i++) {
@@ -483,6 +483,7 @@ static void test_save_keeps_memory(void)
     if (chip && (size == 0x2000)) {
         CHECK(!memcmp(chip + 0x1800, original_eapi.data(), 768), "the saved file carries the patched EAPI, not the original");
         CHECK(!memcmp(chip, r.at(0x2000), 0x1800), "the bytes before the EAPI are not the ones in memory");
+        CHECK(!memcmp(chip + 0x1B00, r.at(0x3B00), 0x2000 - 0x1B00), "the bytes after the EAPI are not the ones in memory");
     }
 
     // After a save the file and the image agree again.
