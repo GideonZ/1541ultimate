@@ -23,7 +23,7 @@ import kernal  # noqa: E402
 from api import UltimateApi  # noqa: E402
 from config_snapshot import Snapshot  # noqa: E402
 from iec_agent import Agent, restorable_path  # noqa: E402
-from report import Failure, check, detail, section, suite_fail, suite_ok, teardown_step  # noqa: E402
+from report import Failure, check, detail, section, suite_fail, suite_ok, teardown_step, warn  # noqa: E402
 
 SUITE = "rel_copy_test"
 
@@ -68,10 +68,11 @@ def run(args):
         agent.start()
         started = True
         agent.call(1, 15)
-        # Writing a setting to the value it already has leaves the drive alone
-        # (SI-103b), so the error channel can still hold the last error an
-        # earlier suite provoked. UI resets the drive and answers 73 (SI-110),
-        # which is a known state rather than whatever was left behind.
+        # An unchanged setting leaves the drive alone (SI-103b), so the error channel can hold
+        # an earlier suite's last error; it is reported, then UI gives a known state (SI-110).
+        left = agent.status(tuple(range(100)))
+        if int(left.split(",", 1)[0]) not in (0, 73):
+            warn(f"the drive's status was {left} before this suite")
         agent.command("UI", allowed=(73,))
         agent.command("CD//")
         current = api.rest.json("/v1/drives")

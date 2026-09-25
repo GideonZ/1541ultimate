@@ -78,6 +78,8 @@ Operation = Callable[[RuntimeSettings], str]
 # measured on an Ultimate II+L, DMA connections were reset for over two seconds. A
 # refusal that clears within the last delays is the cap working; one that does not fails.
 SURFACE_OPERATION_RETRY_DELAYS_S = (0.10, 0.25, 0.50, 1.00, 2.00, 4.00)
+# A written value that reads back wrong is not the cap, so it gets only the first delays.
+MISMATCH_RETRIES = 4
 
 
 class RunProbe(Protocol):
@@ -210,6 +212,8 @@ def run_surface_operation(
             if on_error is not None:
                 on_error(error)
             if not is_retryable_surface_error(error) or attempt + 1 >= attempts:
+                raise
+            if attempt + 1 >= MISMATCH_RETRIES and "verification mismatch" in str(error).lower():
                 raise
             time.sleep(SURFACE_OPERATION_RETRY_DELAYS_S[attempt])
     raise RuntimeError(f"{protocol} surface operation failed without error") from last_error

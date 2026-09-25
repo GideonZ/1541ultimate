@@ -16,6 +16,7 @@ import argparse
 import ftplib
 import io
 import os
+import sys
 from contextlib import contextmanager
 
 import ftp
@@ -148,14 +149,22 @@ def selected(api, args, password=None):
             detail(f"Command Interface enabled on {api.host}")
         yield
     finally:
-        for key, value in saved_device.items():
-            api.configs.set(CATEGORY, key, value)
-        for key, value in saved_kernal.items():
-            computer.configs.set(CATEGORY, key, value)
-        if saved_kernal:
-            _boot(computer)
-        if uploaded:
+        def remove_upload():
             with ftp.session(computer.host, password) as client:
                 if not ftp.delete_quietly(client, f"{ROMS_DIRECTORY}/{uploaded}"):
                     warn(f"{ROMS_DIRECTORY}/{uploaded} was uploaded to {computer.host} for the "
                          "run and could not be removed")
+        # Each step runs even when one before it failed, so one refusal does not leave the rest.
+        errors = []
+        for step in ([lambda k=k, v=v: api.configs.set(CATEGORY, k, v) for k, v in saved_device.items()]
+                     + [lambda k=k, v=v: computer.configs.set(CATEGORY, k, v) for k, v in saved_kernal.items()]
+                     + ([lambda: _boot(computer)] if saved_kernal else [])
+                     + ([remove_upload] if uploaded else [])):
+            try:
+                step()
+            except Exception as exc:  # noqa: BLE001
+                errors.append(exc)
+        if errors and sys.exc_info()[0] is None:
+            raise Failure(f"restoring the KERNAL settings failed: {errors[0]}") from errors[0]
+        for exc in errors:
+            warn(f"restoring the KERNAL settings failed: {exc}")

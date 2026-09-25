@@ -2478,14 +2478,13 @@ def run_menu_keyboard_tests(session: RestInputSession, selected: list[str] | Non
                     raise Failure(f"Expected a repeated run of 'c' ended by the "
                                   f"marker 'z', got {value!r}.")
 
-        cursor_repeat = "menu editor repeats a held cursor control and stops on release"
         if wants_test(selected, "menu-repeat-cursor"):
             # The same question for a control key, which takes a different path
             # through the decoder. A single tap is the control: the held one has
             # to move the cursor further than it did, and the two markers have
             # to end up adjacent, which says the repeat had stopped before the
             # first of them.
-            with check(cursor_repeat):
+            with check("menu editor repeats a held cursor control and stops on release"):
                 editor()
                 type_into_rename_field(session, "ABCD", "ABCD")
                 menu_keyboard_tap(session, ["left_shift", "cursor_left_right"], 0.0)

@@ -1650,7 +1650,8 @@ class Session:
                 try:
                     action(self)
                 except Corruption as exc:
-                    if self.drive_reset_at >= started:
+                    raised = time.monotonic()
+                    if any(sent <= raised and done >= started for sent, done in self.drive_resets):
                         # The step's own transfer was dropped by the lane's reset.
                         self.anomaly(f"{label} across a drive reset", exc)
                     else:

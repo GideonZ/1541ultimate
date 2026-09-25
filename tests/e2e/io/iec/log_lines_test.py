@@ -22,6 +22,7 @@ otherwise it binds the device's syslog port itself, and a second target run at t
 skips.
 """
 import argparse
+import re
 import sys
 import threading
 import time
@@ -46,6 +47,8 @@ COMMANDS = 300
 # The REST client's pace: each request prints two lines, and the syslog task sends about
 # 200 lines a second, so this keeps it busy without overflowing its buffer.
 REQUEST_INTERVAL_S = 0.02
+# The end of a Software IEC line: its answer and sequence number.
+LINE_TAIL = re.compile(r" -> \d\d,.*,\d\d,\d\d #\d+$")
 
 
 def log_source(api):
@@ -113,13 +116,20 @@ def run(args):
         client.join(timeout=5)
         time.sleep(4)  # the syslog task sends at a limited rate
         detail(f"{COMMANDS} commands, {requests[0]} REST requests alongside")
+        if requests[0] < COMMANDS:
+            raise Failure(f"only {requests[0]} REST requests were answered alongside the commands")
 
         with check("every Software IEC line reaches the log whole"):
-            marked = [(ip, text) for ip, text in source.entries() if nonce in text]
+            entries = source.entries()
+            marked = [(ip, text) for ip, text in entries if nonce in text]
             texts = [text for _ip, text in marked]
             fragments = [t for t in texts
                          if not t.startswith(softiec_log.LOG_PREFIX)
                          or softiec_log.parse_line(t) is None]
+            # A line split inside the nonce leaves it whole in neither piece.
+            fragments += [t for _ip, t in entries if nonce not in t and (
+                (t.startswith(softiec_log.LOG_PREFIX) and softiec_log.parse_line(t) is None)
+                or (not t.startswith(softiec_log.LOG_PREFIX) and LINE_TAIL.search(t)))]
             detail(f"{len(texts)} lines carry the marker, {len(fragments)} of them in pieces")
             for text in fragments[:5]:
                 detail(f"  in pieces: {text[:160]!r}")

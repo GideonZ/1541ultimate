@@ -17,7 +17,6 @@ here, and every check reads back over FTP or the drive list what the drive made 
 Needs Software IEC on device 11 with one partition, numbered 1, and a C64 with any KERNAL.
 """
 import argparse
-import io
 import random
 import sys
 import traceback
@@ -41,6 +40,7 @@ DEVICE = 11
 PAUSES = (0, 2, 6, 12, 20, 40, 100)
 CHANNEL = 2
 SWAPS = 20
+SWAP_DEVICE = 12  # the number the swaps move the drive to and back from
 RANDOM_FILES = 60
 
 
@@ -55,9 +55,7 @@ def host_file(client, directory, name):
                if n.lower() == name.lower() or n.lower().startswith(name.lower() + ".")]
     if len(matches) != 1:
         raise Failure(f"{directory} holds {matches} for {name!r}, expected one file")
-    out = io.BytesIO()
-    client.retrbinary(f"RETR {directory}/{matches[0]}", out.write)
-    return out.getvalue()
+    return ftp.retrieve(client, f"{directory}/{matches[0]}")
 
 
 def require_equal(actual, expected, context):
@@ -98,9 +96,10 @@ def run(args):
     agent = Agent(api)
     drives = {name: value for entry in api.rest.json("/v1/drives")["drives"]
               for name, value in entry.items()}
-    if any(d.get("enabled") and d.get("bus_id") == DEVICE
-           for name, d in drives.items() if name != "IEC Drive"):
-        raise Failure(f"Device {DEVICE} is already in use")
+    busy = [d.get("bus_id") for name, d in drives.items()
+            if name != "IEC Drive" and d.get("enabled") and d.get("bus_id") in (DEVICE, SWAP_DEVICE)]
+    if busy:
+        raise Failure(f"Device {busy[0]} is already in use")
     partitions = drives["IEC Drive"]["partitions"]
     if len(partitions) != 1 or partitions[0]["id"] != 1:
         raise Failure("This test requires one Software IEC partition, numbered 1")
@@ -183,7 +182,7 @@ def run(args):
 
         def swaps():
             for turn in range(SWAPS):
-                for there, back in ((DEVICE, 12), (12, DEVICE)):
+                for there, back in ((DEVICE, SWAP_DEVICE), (SWAP_DEVICE, DEVICE)):
                     talker.send(there, 0x6F, b"M-W\x77\x00\x02" + bytes([0x20 | back, 0x40 | back]))
                     moved = iec_drive(api)["bus_id"]
                     if moved != back:

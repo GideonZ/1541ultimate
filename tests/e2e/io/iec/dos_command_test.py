@@ -358,12 +358,16 @@ def check_image_lock(agent, api, password, folder, image_path):
             with ftp.session(api.host, password) as client:
                 try:
                     client.storbinary(f"STOR {image_path}/ftpfile.prg", io.BytesIO(b"\x01\x08"))
-                except ftplib.all_errors as exc:
+                except (ftplib.error_perm, ftplib.error_temp) as exc:
                     detail(f"FTP answered: {exc}")
                 else:
                     raise Failure("FTP stored a file in a locked image")
     finally:
         agent.command("EU:$")
+    with check("SI-077a: FTP stores a file in the image once EU:$ lifts the lock"):
+        with ftp.session(api.host, password) as client:
+            client.storbinary(f"STOR {image_path}/ftpfile.prg", io.BytesIO(b"\x01\x08"))
+            client.delete(f"{image_path}/ftpfile.prg")
     with check("SI-077a: EU:$ puts the DOS version back and a save works again"):
         version = header_version()
         if version != 0x41:
@@ -846,6 +850,8 @@ def check_compatibility(agent, api, password, folder, root):
             try:
                 agent.call(WRITE, channel=4, data=b"after")
                 response = agent.status(allowed=range(100))
+                # P would write what the channel holds and move past the end of the file.
+                positioned = agent.command(bytes([ord("P"), 96 + 4, 0, 1, 0, 0]), allowed=range(100))
             finally:
                 agent.call(4, channel=4)
                 agent.command(b"W-0\r", allowed=(0,))
@@ -856,10 +862,67 @@ def check_compatibility(agent, api, password, folder, root):
             names = {n.lower(): n for n in ftp.names(client, directory)}
             held = ftp.retrieve(client, f"{directory}/{names['openwrite.seq']}") \
                 if "openwrite.seq" in names else None
-        detail(f"a write after W-1 answered {response!r}; the file holds {held!r}")
+        detail(f"a write after W-1 answered {response!r}, a P {positioned!r}; the file holds {held!r}")
         agent.command(b"S//" + here + b"/:OPENWRITE\r", allowed=(1,))
-        if not response.startswith("26,") or held != b"":
-            raise Failure(f"a write after W-1 answered {response!r} and the file holds {held!r}")
+        if not response.startswith("26,") or not positioned.startswith("26,") or held != b"":
+            raise Failure(f"a write after W-1 answered {response!r}, a P {positioned!r}, "
+                          f"and the file holds {held!r}")
+
+    def copy_record_lengths():
+        # Relative files of two record lengths answer 64 and leave no target (SI-075).
+        with ftp.session(api.host, password) as client:
+            ftp.store(client, f"{directory}/RTEN.R00", x00_header(b"RTEN", 10) + b"T" * 10)
+            ftp.store(client, f"{directory}/RFIVE.R00", x00_header(b"RFIVE", 5) + b"F" * 5)
+        try:
+            response = agent.command(b"C//" + here + b"/:RBOTH=//" + here + b"/:RTEN,//" + here + b"/:RFIVE\r",
+                                     allowed=range(100))
+            with ftp.session(api.host, password) as client:
+                left = [n for n in ftp.names(client, directory) if n.lower().startswith("rboth")]
+        finally:
+            with ftp.session(api.host, password) as client:
+                for name in ("RTEN.R00", "RFIVE.R00", "RBOTH.rel"):
+                    ftp.delete_quietly(client, f"{directory}/{name}")
+        detail(f"the copy answered {response!r} and left {left}")
+        if not response.startswith("64,") or left:
+            raise Failure(f"the copy answered {response!r} and left {left}")
+
+    def delete_open_image():
+        # A file open for writing inside a disk image keeps the image from being deleted.
+        agent.command(b"N//" + here + b"/:OPENIMG.D64,OI\r")
+        agent.call(1, channel=5, data=b"//" + here + b"/OPENIMG.D64/:INSIDE,S,W")
+        try:
+            agent.status()
+            with ftp.session(api.host, password) as client:
+                try:
+                    client.delete(f"{directory}/OPENIMG.D64")
+                except (ftplib.error_perm, ftplib.error_temp) as exc:
+                    detail(f"FTP DELE of the image answered {exc}")
+                else:
+                    raise Failure("FTP deleted a disk image with a file open for writing inside it")
+        finally:
+            agent.call(4, channel=5)
+        with ftp.session(api.host, password) as client:
+            ftp.delete_quietly(client, f"{directory}/OPENIMG.D64")
+
+    def x00_rename_open():
+        # A rename refused because the file is open for writing leaves its header (SI-144c).
+        with ftp.session(api.host, password) as client:
+            ftp.store(client, f"{directory}/WOPEN.S00", x00_header(b"WRAPOPEN") + b"text")
+        agent.call(1, channel=5, data=b"//" + here + b"/:WRAPOPEN,S,A")
+        try:
+            agent.status()
+            response = agent.command(b"R//" + here + b"/:RENAMEDOPEN=//" + here + b"/:WRAPOPEN\r",
+                                     allowed=range(100))
+        finally:
+            agent.call(4, channel=5)
+        with ftp.session(api.host, password) as client:
+            names = [n for n in ftp.names(client, directory) if n.lower().endswith(".s00")]
+            header = ftp.retrieve(client, f"{directory}/WOPEN.S00")[:26] if "WOPEN.S00" in names else b""
+            for name in names:
+                ftp.delete_quietly(client, f"{directory}/{name}")
+        detail(f"the rename answered {response!r}; host files {names}, header {header[8:24]!r}")
+        if not response.startswith("60,") or header != x00_header(b"WRAPOPEN"):
+            raise Failure(f"the rename answered {response!r} and left {names} with the header {header!r}")
 
     def rename_header_checks():
         # R-H on a host directory refuses what R refuses a directory (SI-064, SI-141, SI-074).
@@ -993,6 +1056,9 @@ def check_compatibility(agent, api, password, folder, root):
             ("a file open for writing is not deleted from under the drive", delete_open_file),
             ("SI-103b: a reset drops a command that was still being received", reset_drops_partial_command),
             ("SI-102a: a file opened for writing before W-1 writes nothing more", write_protect_open_channel),
+            ("SI-075: relative files of two record lengths are not copied", copy_record_lengths),
+            ("a disk image with a file open for writing inside is not deleted", delete_open_image),
+            ("SI-144c: a refused rename of a wrapped file leaves its header", x00_rename_open),
             ("SI-064: R-H refuses a directory a trailing dot and a taken name", rename_header_checks),
             ("SI-077: XL and XU lock and unlock nothing", settings_x_lock),
             ("SI-084: a relative file in sd2iec's one byte layout reads its records", rel_layouts),

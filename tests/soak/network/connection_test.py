@@ -25,6 +25,7 @@ sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
 import bootstrap  # noqa: E402,F401
 sys.path.insert(0, bootstrap.directory("soak", "network"))
 
+import health  # noqa: E402
 import report  # noqa: E402
 import targets  # noqa: E402
 
@@ -825,7 +826,7 @@ def run_runner_loop(
 # close by a moment; a slot still taken after this long was never freed.
 SESSION_RELEASE_TIMEOUT_S = 30.0
 # What each capped listener sends instead of its greeting when every slot is taken.
-SESSION_CAP_REFUSALS = {"telnet": b"Too many connections", "ftp": b"421 "}
+SESSION_CAP_REFUSALS = {"telnet": health.TELNET_BUSY, "ftp": b"421 "}
 
 
 def session_slot_free(settings: RuntimeSettings, protocol: str) -> bool:
@@ -973,7 +974,8 @@ def main(argv: list[str]) -> int:
         try:
             log("http", "INFO", http_probe.restore_setting(settings, original_setting))
         except Exception as error:  # noqa: BLE001
-            log("http", "WARN", f"could not put {http_probe.SETTING_ITEM} back to {original_setting}: {error}")
+            log("http", "FAIL", f"could not put {http_probe.SETTING_ITEM} back to {original_setting}: {error}")
+            raise
 
 
 if __name__ == "__main__":
