@@ -295,6 +295,13 @@ SUITES: Sequence[Suite] = (
     # oversized D81 and proves the bounded layout leaves the device usable.
     Suite("e2e", "d81-track-bounds", "tests/e2e/drive/d81_track_bounds_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --test all", profile=profiles.QUICK),
+    # Mounts a G71 whose MFM-marked track is malformed -- one declaring a
+    # single byte where the metadata area alone is 162, and one declaring
+    # 0x4123, which is 16675 read as a length and 291 read as fourteen bits --
+    # and proves the GCR side of the same disk still reads afterwards. The
+    # first exercise of the mixed GCR/MFM path on real hardware.
+    Suite("e2e", "g71-mfm-bounds", "tests/e2e/drive/g71_mfm_bounds_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@", profile=profiles.QUICK),
     # Calls every endpoint the firmware registers, and fails when one is
     # neither probed nor excluded with a reason. The lockup that prompted it
     # shipped because no suite called that route at all, so the gate matters
