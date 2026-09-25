@@ -512,6 +512,16 @@ SUITES: Sequence[Suite] = (
     # cartridge.
     Suite("e2e", "cartridge-autosave", "tests/e2e/io/c64/cartridge_autosave_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
+    # A GMod2 game's save lives in the cartridge's serial EEPROM, and the
+    # hardware flag that says it changed used to be cleared by reading it. Any
+    # screen that looked first took the save with it: System Info reads the flag
+    # to print the EEPROM's state, and a Save Cartridge afterwards wrote the
+    # EEPROM as it was when the cartridge was loaded. The suite builds a type 60
+    # CRT, has it write one EEPROM word from RAM with the repository's own
+    # runtime, and opens System Info twice. It reboots the machine afterwards to
+    # remove the cartridge, and reports SKIP where the FPGA build has no EEPROM.
+    Suite("e2e", "gmod2-eeprom-dirty", "tests/e2e/io/c64/gmod2_eeprom_dirty_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
     # RoboCop 2 and Shadow of the Beast read Ocean banks 16 to 31 at $A000, but
     # every type 5 CRT was started in 8K mode, where $A000 never shows the
     # cartridge, so they started to a black screen. The suite builds a 32-bank
