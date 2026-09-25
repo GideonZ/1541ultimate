@@ -1134,13 +1134,17 @@ void FileManager::discard_mounts_of_file(const char *path)
     }
 }
 
-// Whether a file is open for writing, after any mount the cache holds of it has been let
-// go of. Closing such a file writes its directory entry back into the slot the entry had,
-// so the file must not be deleted or renamed while it is open: a new entry in that slot
-// would be overwritten, a directory's with the start cluster of an empty file, 0, the root.
+// A file open for writing writes its entry back into the entry's old slot when it closes, so it
+// must not be deleted or renamed meanwhile. A mount still held has a file open inside the image.
 bool FileManager::in_use_for_writing(const char *path)
 {
     discard_mounts_of_file(path);
+    for (int i = 0; i < mount_points.get_elements(); i++) {
+        MountPoint *mp = mount_points[i];
+        if (mp && mp->get_file() && !strcasecmp(mp->get_file()->get_path(), path)) {
+            return true; // its handle is open for reading and writing
+        }
+    }
     for (int i = 0; i < open_file_list.get_elements(); i++) {
         File *f = open_file_list[i];
         if (f && f->write_intent && !strcasecmp(f->get_path(), path)) {
@@ -1399,9 +1403,8 @@ FRESULT FileManager::rename_impl(PathInfo &from, PathInfo &to)
             unlock();
             return FR_INVALID_DRIVE;
         }
-        // A directory cannot move inside itself: its entry would then be reachable only
-        // through the directory, and the whole tree would be lost with it. FAT does
-        // not check this, and it matches names without regard to case.
+        // A directory cannot move inside itself, or its tree would become unreachable. FAT does not
+        // check this, and it matches names without regard to case.
         const char *src = from.getPathFromLastFS();
         const char *dst = to.getPathFromLastFS();
         int n = strlen(src);

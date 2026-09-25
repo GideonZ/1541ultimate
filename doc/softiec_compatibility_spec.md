@@ -966,8 +966,8 @@ source, and the list is as long as the command makes it (SI-150). The target tak
 file type of the first source. A relative file copies its records: the target has the
 record length of the first source, written once, and each source adds its records
 without its own header, whatever its layout (SI-084). Relative files mixed with other
-types, or relative files of different record lengths, answer `64,FILE TYPE MISMATCH`, and
-a mix of types is refused before the target is created. Sources: HD 9-28, which caps the
+types, or relative files of different record lengths, answer `64,FILE TYPE MISMATCH`
+and leave no target. Sources: HD 9-28, which caps the
 sources at five; SD README under `C:`, which has no cap; `SD parse_copy()`, whose
 `savedtype` takes the type from the first source (the README does not state the type
 rule), which copies a relative file through `open_rel()` record by record and refuses to
@@ -1326,7 +1326,7 @@ the bus to a medium.
 | --- | --- |
 | the twelve command handlers that change a medium | `MD`, `RD`, `C`, `N`, `R`, `S`, `R-H`, `R-P`, `L`, `EL`, `EU`, `EH`, `A`, `U2`, `B-W`, `B-A`, `B-F` |
 | the file open | a write, an append and a replace, which answer `26` and open nothing |
-| the sequential write | a channel opened for writing before `W-1` takes no more bytes and writes nothing more when it closes, and answers `26` |
+| the sequential write | a channel opened for writing before `W-1` takes no more bytes, writes nothing more when it closes or is positioned with `P`, and answers `26` |
 | the relative file | it opens for reading, and the record write answers `26`, drops the record and leaves the channel open, because the file can still be read |
 | the record seek | a record past the end of the file is not created; the answer is `50,RECORD NOT PRESENT` |
 
@@ -1347,7 +1347,7 @@ None of the three clears the write protect of `W-1` (SI-102) or returns the devi
 `U0>`, `S-8` or `S-9` set (SI-100, SI-101): both last as long as the drive runs, and a
 reset over the bus is not the drive stopping. `U`+shifted J on sd2iec is
 `system_reset()`, which restarts the device and so loses both; here the drive's own Reset
-does that (SI-103b). Sources: HD 9-51; SD README under `UI/UJ` and `U<Shift-J>`; GSD
+returns the device number and keeps the write protect (SI-103b). Sources: HD 9-51; SD README under `UI/UJ` and `U<Shift-J>`; GSD
 "Warm, Cold and Hard Reset".
 
 **SI-103a. None of the three reconfigures the IEC interface.** A reset answers the

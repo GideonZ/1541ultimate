@@ -4,7 +4,7 @@
 #include "file_device.h"
 #include "filesystem_fat.h"
 #include "macros.h"
-#include "current_time.h"
+extern "C" void get_current_time(int& wd, int& year, int& month, int& day, int& hour, int& min, int& sec);
 #include <unistd.h>
 #include <string.h>
 
@@ -2326,6 +2326,7 @@ void execute_suite10(FileManager *fm, IecDrive *dr)
 
 #include "iec_channel.h"
 #include "iec_log.h"
+#include "x00_wrapper.h"
 
 // A fresh directory on the FAT file, mounted as partition 40, selected, and entered at
 // its root. SI-003: a partition roots at a host directory here and at a mounted image in
@@ -3636,7 +3637,47 @@ static void s11_delete_open_file(FileManager *fm, IecDrive *dr)
     delete dir;
     printf("%s: deleting the open file answered %d; the new directory holds %d entries\n",
            testname, (int)deleted, entries);
+    REQUIRE(deleted == FR_LOCKED);
     REQUIRE(entries == 0);
+
+    // A file open for writing inside a disk image keeps the image open for writing.
+    create_formatted_image(fm, "/Fat/s11_delopen.d64", "DELOPEN", 683, e_image_d64);
+    dr->add_partition(48, "/Fat/s11_delopen.d64", "DELOPEN");
+    open_file(dr, 3, "48:INIMAGE,S,W");
+    get_status(dr);
+    expect_status_ok(testname, "48:INIMAGE,S,W");
+    FRESULT image_deleted = fm->delete_file("/Fat/s11_delopen.d64");
+    FRESULT image_renamed = fm->rename("/Fat/s11_delopen.d64", "/Fat/s11_delopen2.d64");
+    close_file(dr, 3);
+    printf("%s: with a file open inside it, deleting the image answered %d, renaming it %d\n",
+           testname, (int)image_deleted, (int)image_renamed);
+    REQUIRE(image_deleted == FR_LOCKED);
+    REQUIRE(image_renamed == FR_LOCKED);
+    dr->get_file_system()->RemovePartition(48);
+}
+
+// SI-144c: a rename that the file manager refuses leaves the wrapper's header as it was,
+// so the name the drive shows does not change on a failed command.
+static void s11_si144c_rename_open_wrapper(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite11-SI144c-RenameOpenWrapper";
+    const char *path = s11_partition(fm, dr, "si144o");
+    s11_host_file(fm, path, "WRAP.S00", "WRAPPED", 0, (const uint8_t *)"data", 4);
+    open_file(dr, 3, "WRAPPED,S,A");
+    get_status(dr);
+    expect_status_ok(testname, "WRAPPED,S,A");
+    char full[80];
+    snprintf(full, sizeof(full), "%s/WRAP.S00", path);
+    FRESULT fres = x00_rename(fm, full, path, "RENAMED");
+    close_file(dr, 3);
+    uint8_t raw[40];
+    REQUIRE(s11_read_host_file(fm, path, "WRAP.S00", raw, sizeof(raw)) >= 26);
+    char header[8];
+    memcpy(header, raw + 8, 7);
+    header[7] = 0;
+    printf("%s: the rename answered %d; the header names '%s'\n", testname, (int)fres, header);
+    REQUIRE(fres == FR_LOCKED);
+    REQUIRE(!memcmp(raw + 8, "WRAPPED", 7));
 }
 
 // SI-102, SI-102a: while the write protect is set, every command and every open that
@@ -3669,6 +3710,8 @@ static void s11_si102_write_protect(FileManager *fm, IecDrive *dr)
     send_channel_data(dr, 4, (const uint8_t *)"after", 5);
     get_status(dr);
     expect_current_status(testname, "a write to a channel opened before W-1", protect);
+    const uint8_t position[6] = { 'P', 4, 0, 1, 0, 0 };
+    expect_command_data_response(testname, dr, position, sizeof(position), protect);
     close_file(dr, 4);
     uint8_t opened[16];
     REQUIRE(s11_read_host_file(fm, path, "OPENED.seq", opened, sizeof(opened)) == 0);
@@ -6559,6 +6602,10 @@ static void s11_si075_copy_relative(FileManager *fm, IecDrive *dr)
     expect_command_response(testname, dr, "C:MIXED=R1,PLAIN\r", "64,FILE TYPE MISMATCH,00,00\r");
     expect_command_response(testname, dr, "C:MIXED=PLAIN,R1\r", "64,FILE TYPE MISMATCH,00,00\r");
     expect_iec_file_missing(testname, dr, 2, "MIXED");
+    static const uint8_t fives[] = { 'F', 'F', 'F', 'F', 'F', 0, 0, 0, 0, 0 };
+    s11_host_file(fm, path, "FIVE.R00", "FIVE", 5, fives, sizeof(fives));
+    expect_command_response(testname, dr, "C:LENGTHS=R1,FIVE\r", "64,FILE TYPE MISMATCH,00,00\r");
+    expect_iec_file_missing(testname, dr, 2, "LENGTHS");
 }
 
 // SI-105 and SI-154: a reply belongs to the command that asked for it. One that was not
@@ -6707,6 +6754,7 @@ static const Suite11Case suite11_cases[] = {
     { "Suite11-SI064-RenameHeader",      s11_si064_rename_header },
     { "Suite11-SI102-WriteProtect",      s11_si102_write_protect },
     { "Suite11-DeleteOpenFile",          s11_delete_open_file },
+    { "Suite11-SI144c-RenameOpenWrapper", s11_si144c_rename_open_wrapper },
     { "Suite11-SI090-BufferPointer",     s11_si090_buffer_pointer },
     { "Suite11-SI093-BoundPartition",    s11_si093_bound_partition },
     { "Suite11-SI094-BlockLength",       s11_si094_block_length },

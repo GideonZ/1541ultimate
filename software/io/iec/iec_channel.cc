@@ -26,11 +26,8 @@ bool IecChannel::drive_failed(void)
 }
 
 #ifndef RUNS_ON_PC
-// Other tasks print a character at a time, and a line of theirs printed into this one
-// would split it where the syslog breaks lines. So the line goes to the internal log and
-// the syslog with the scheduler suspended, starting a line of its own; both only write
-// memory. The serial console gets it afterwards, as a wait on the UART must not hold
-// every task.
+// Other tasks print a character at a time, so the line goes to the log and syslog with the
+// scheduler suspended. The UART gets it afterwards, as a wait on it must not hold every task.
 static void emit_log_line(const char *line)
 {
     vTaskSuspendAll();
@@ -502,9 +499,8 @@ t_channel_retval IecChannel::push_command(uint8_t b)
     return IEC_OK;
 }
 
-// The last byte of a record went out. A record that is there is followed by the next
-// one; one past the end of the file answers 50 and stays where it is, so reading it
-// again answers the same (SI-080, SD fat_file_seek()).
+// The last byte of a record went out. One past the end of the file answers 50 and stays
+// there, so reading it again answers the same (SI-080, SD fat_file_seek()).
 t_channel_retval IecChannel::pop_record(void)
 {
     if (recordMissing) {
@@ -576,9 +572,8 @@ t_channel_retval IecChannel::read_record(int offset)
     return IEC_OK;
 }
 
-// Before a record is written past the end of the file, the file is filled up to it: a
-// last record that ends early is completed, and every record between that and the one
-// written is an empty record, whose first byte is 255 as on a 1541.
+// Writing past the end completes a short last record and fills the gap with empty records,
+// whose first byte is 255 as on a 1541.
 FRESULT IecChannel::grow_to_record(void)
 {
     uint32_t size = f->get_size();
@@ -611,9 +606,8 @@ t_channel_retval IecChannel::write_record(void)
     if (!recordDirty) {
         return IEC_OK; // do nothing; no data was received
     }
-    // A relative file opens for reading whatever the command asks for while the drive is
-    // write protected, so the record write is where the protection answers (SI-102). The
-    // record is dropped and the channel stays open, because the file can still be read.
+    // A relative file opens for reading on a write protected drive, so the record write refuses
+    // (SI-102); the record is dropped and the channel stays open, because the file can be read.
     if (drive->is_write_protected()) {
         drive->get_command_channel()->set_error(ERR_WRITE_PROTECT_ON, 0, 0);
         recordDirty = false;
@@ -657,8 +651,7 @@ t_channel_retval IecChannel::write_record(void)
         return reterr; \
     }
 
-// W-1 and W-0 (SI-102, HD 9-35). Every gate that changes a medium asks the drive, and
-// `Suite11-SI102-WriteProtect` sends one command through each of them.
+// W-1 and W-0 (SI-102, HD 9-35). Every gate that changes a medium asks the drive.
 #define REFUSE_WHEN_WRITE_PROTECTED() \
     if (drive->is_write_protected()) { \
         return ERR_WRITE_PROTECT_ON; \
@@ -746,8 +739,7 @@ static void append_path_component(mstring& path, const char *component)
 }
 
 // The CBM file type an x00 name announces, in the drive's own vocabulary (SI-144). The
-// header itself is read by software/filetypes/x00_wrapper.cc, which the C64 loader uses
-// as well.
+// header is read by software/filetypes/x00_wrapper.cc, which the C64 loader shares.
 static bool x00_type_of_letter(char letter, filetype_t *type)
 {
     switch (letter) {
@@ -850,9 +842,8 @@ static FRESULT find_rendered_iec_child(FileManager *fm, const char *full_dir,
     FileInfo info(INFO_SIZE);
     while (dir->get_entry(info) == FR_OK) {
         bool is_dir = (info.attrib & AM_DIR) != 0;
-        // A hidden entry is left out of a listing (SI-134) and still answers to its
-        // name, as SD passes FLAG_HIDDEN to first_match() and next_match() for every
-        // command that names a file.
+        // A hidden entry is left out of a listing (SI-134) but answers to its name, as SD passes
+        // FLAG_HIDDEN to first_match() and next_match() for every command that names a file.
         if ((info.attrib & AM_VOL) || !info.lfname[0]) {
             continue;
         }
@@ -1295,9 +1286,8 @@ int IecChannel::read_dir_entry(void)
     if (!partition_type && (info.attrib & AM_RDO)) {
         buffer[30 - chars] = '<'; // locked (SI-132)
     }
-    // A hidden entry lists only when the filter asks for it, and then it carries an H
-    // behind the lock mark, which is the one place a listing reports the attribute
-    // (SI-132).
+    // A hidden entry lists only when the filter asks for it, with an H behind the lock mark,
+    // the one place a listing reports the attribute (SI-132).
     if (!partition_type && (info.attrib & AM_HID)) {
         buffer[31 - chars] = 'H';
     }
@@ -1457,13 +1447,8 @@ void print_file(filename_t& file)
         file.partition, file.path.c_str(), file.filename.c_str(), file.has_wildcard?"true":"false" );
 }
 
-// The record length of an open relative file and the offset of its first record. An R00
-// file has both in its header, which x00_skip_header() has already read (`data_offset` is
-// then not 0). Otherwise the record length is the first byte of the file, in this
-// firmware's two byte layout or sd2iec's one byte layout (SI-084): a non-zero second byte
-// can only be the one byte layout, and otherwise the size leaves 2 mod r over for the one
-// and 1 mod r for the other. A record length of 1 leaves both the same and is read as the
-// two byte layout. A disk image always presents the two byte layout, whatever its size.
+// An R00 header gives the record length (`data_offset` is then set); otherwise it is the first
+// byte, in this firmware's two byte or sd2iec's one byte layout (SI-084), told apart by size.
 static FRESULT rel_layout(File *f, uint8_t wrapped_length, uint32_t& data_offset, int& length)
 {
     length = wrapped_length;
@@ -1591,9 +1576,8 @@ int IecChannel :: setup_file_access()
         }
     }
 
-    // A name belongs to one entry, whatever its type (SI-035, SD file_open()). Without @ an
-    // entry of that name answers 63. With @, one of another type answers 64, as the 1541 ROM
-    // does at $D8F5, and an x00 file of the same type makes way for the new file.
+    // A name belongs to one entry, whatever its type (SI-035, SD file_open()): without @ it
+    // answers 63, with @ another type answers 64 as the 1541 ROM does at $D8F5.
     if ((name_to_open.access == e_write) && !name_to_open.file.has_wildcard) {
         GETPARTITION(name_to_open.file.partition, partition, 0);
         FileInfo existing(INFO_SIZE);
@@ -1775,9 +1759,8 @@ int IecChannel :: setup_file_access()
 // keeps the partition that is current now (SI-093).
 int IecChannel::setup_buffer_access(void)
 {
-    // A buffer here is 256 bytes, the sector size of every disk image this drive serves,
-    // so a chain of more than one cannot be given out (SI-090). The chain form asking for
-    // one is the same buffer with its pointer at byte 0.
+    // A buffer is 256 bytes, the sector size of every image this drive serves, so a chain of more
+    // than one cannot be given out (SI-090); a chain of one is the buffer with its pointer at 0.
     if (name_to_open.buffers > 1) {
         state = e_error;
         drive->set_error(ERR_NO_CHANNEL, 0, 0);
@@ -1911,9 +1894,8 @@ int IecChannel::seek_record(int recordNumber, int offset)
         offset = recordSize - 1;
         err = ERR_OVERFLOW_IN_RECORD;
     }
-    // A record past the end is not there, which is not an error when the next thing is
-    // to write it; the write grows the file (SI-080). The file position is left alone,
-    // because a seek past the end of a writable file would extend it.
+    // A missing record is no error when it is written next, which grows the file (SI-080). The
+    // position stays, as a seek past the end of a writable file would extend it.
     if (f->get_size() < targetPosition + recordSize) {
         set_missing_record();
         return err ? err : ERR_RECORD_NOT_PRESENT;
@@ -2027,9 +2009,8 @@ const char *IecChannel :: ConstructPath(mstring& work, filename_t& name, filetyp
     petscii_to_fat(name.filename.c_str(), fatname, 52);
     // printf("After petscii_to_fat: '%s'\n", fatname);
     const char *ext = types[(int)ftype];
-    // A name with a disk image extension is written under exactly that name when it is a
-    // PRG, and gets its type extension like any other name otherwise (SI-072, SD
-    // fat_open(), `type == TYPE_PRG && should_save_raw()`).
+    // A name with a disk image extension is kept exactly only for a PRG (SI-072, SD fat_open(),
+    // `type == TYPE_PRG && should_save_raw()`).
     bool raw = iec_name_is_raw(name.filename.c_str()) &&
                ((acc != e_write) || (ftype == e_prg) || (ftype == e_folder));
     if (((acc == e_read) || (ftype != e_any)) && !raw) { // .??? is for reads only
@@ -2132,9 +2113,8 @@ int IecCommandChannel :: do_buffer_position(int chan, int pos)
     if (!channel) {
         return 0;
     }
-    // A buffer is 256 bytes, so a position a high byte puts past its end names no byte
-    // this drive can give out (SI-090, SI-092). P passes four bytes, so the top one can
-    // make the number negative.
+    // A buffer is 256 bytes, so a higher position names no byte (SI-090, SI-092). P passes four
+    // bytes, so the top one can make the number negative.
     if ((pos < 0) || (pos > 255)) {
         return ERR_SYNTAX_ERROR_GEN;
     }
@@ -2267,9 +2247,8 @@ int IecCommandChannel::do_copy(filename_t& dest, filename_t sources[], int n)
     }
     // ftype is now set to the type of the first original file.
 
-    // A relative file copies its records under one record length, so it goes with relative
-    // files only, as SD parse_copy() has it (SI-075). Every source is checked before the
-    // target exists, so that a refused copy leaves nothing behind.
+    // A relative file copies only with relative files, under one record length (SI-075, SD
+    // parse_copy()). Every source is checked first, so a refused copy leaves nothing behind.
     for (int i = 1; i < n; i++) {
         mstring other;
         FileInfo other_info(INFO_SIZE);
@@ -2312,6 +2291,8 @@ int IecCommandChannel::do_copy(filename_t& dest, filename_t sources[], int n)
     // Output file is now open, let's copy data into it
     uint8_t *databuf = new uint8_t[32768];
     int rel_length = 0;
+    bool refused = false;
+    mstring target(destpath); // `work` is reused for each source
 
     for(int i=0;i<n;i++) {
         const char *frompath = ConstructPath(work, sources[i], e_any, e_read);
@@ -2361,6 +2342,7 @@ int IecCommandChannel::do_copy(filename_t& dest, filename_t sources[], int n)
             if ((fres == FR_OK) && ((length == 0) || (length != rel_length))) {
                 set_error(ERR_FILE_TYPE_MISMATCH);
                 fm->fclose(fi);
+                refused = true;
                 break;
             }
             if (fres == FR_OK) {
@@ -2390,6 +2372,9 @@ int IecCommandChannel::do_copy(filename_t& dest, filename_t sources[], int n)
     }
     delete[] databuf;
     fm->fclose(fo);
+    if (refused) {
+        fm->delete_file(target.c_str()); // record lengths are known only once each source is open
+    }
     return 0;
 }
 
@@ -2447,10 +2432,8 @@ int IecCommandChannel::do_format(filename_t& dest, const char *id)
         return 0;
     }
 
-    // Inside a disk image, N formats that image rather than creating an image inside it,
-    // which is what a program formatting its disk asks for (SI-071, SD parse_new()). The
-    // format goes through the file system that has the image open, so the block map and
-    // the directory it holds are the ones that are rewritten.
+    // Inside a disk image, N formats that image through the file system that has it open,
+    // rather than creating an image inside it (SI-071, SD parse_new()).
     FileInfo dir_info(4);
     Directory *probe = NULL;
     if (fm->open_directory(dir.c_str(), &probe, &dir_info) == FR_OK) {
@@ -2820,6 +2803,7 @@ int IecCommandChannel::do_set_position(int chan, uint32_t pos, int recnr, int re
             // the next byte lands there. Nothing is read back, because the file is not open
             // for reading. A medium that cannot put the file there is full, 72, which CBM
             // DOS names, rather than 69 (SI-036).
+            REFUSE_WHEN_WRITE_PROTECTED(); // the gate of a channel opened before W-1 (SI-102a)
             if (channel->pointer > 0) {
                 uint32_t written;
                 fres = channel->f->write(channel->buffer, channel->pointer, &written);
@@ -3011,9 +2995,8 @@ int IecCommandChannel::do_toggle_attributes(filename_t& name, uint8_t bits)
     return 0;
 }
 
-// Sets the attributes in `mask` to those in `attrib` on every entry a name matches, as
-// the directory shows it. Directories are included, because L already locks one
-// (SI-076) and a lock that EL and L disagreed about would be two locks.
+// Sets the attributes in `mask` to `attrib` on every entry a name matches, directories too,
+// because L already locks one and EL must not disagree with it (SI-076).
 static int set_attributes_matching(FileManager *fm, const char *dir_path, const char *pattern,
                                    uint8_t attrib, uint8_t mask, FRESULT *last_error)
 {
@@ -3101,10 +3084,8 @@ int IecCommandChannel::do_set_attributes(filename_t names[], int n, uint8_t attr
     return 0;
 }
 
-// R-H (SI-064). A directory's header is what a listing of it shows (SI-065): the disk
-// name inside a CBM image, which the file system holds; the directory's own name on a
-// host file system, where the name in the parent is all there is; and the partition's
-// name at the root of a partition.
+// R-H (SI-064) sets what a listing shows as the header (SI-065): the disk name in a CBM image,
+// the directory's own name on a host file system, the partition name at a partition root.
 int IecCommandChannel::do_set_header(filename_t& name, const char *id)
 {
     REFUSE_WHEN_WRITE_PROTECTED();
@@ -3194,9 +3175,8 @@ int IecCommandChannel::do_set_header(filename_t& name, const char *id)
     return 0;
 }
 
-// R-P (SI-051). The old name is the name a partition carries, not a path, so the
-// partition list is searched for it. A partition name is sixteen characters, as on
-// the CMD devices, so every place that shows it shows the same name.
+// R-P (SI-051). The old name is a partition name, not a path, so the list is searched. A
+// partition name is sixteen characters, as on the CMD devices, wherever it is shown.
 int IecCommandChannel::do_rename_partition(const char *newname, const char *oldname)
 {
     REFUSE_WHEN_WRITE_PROTECTED();
@@ -3347,9 +3327,8 @@ FRESULT IecFileSystem :: SavePartitions(const char *path, const char *filename)
     return fres;
 }
 
-// A partition list replaces the one the drive has: a partition the file does not name is
-// removed (#934). A file with no usable entry leaves the list alone, so the drive is never
-// left without a partition.
+// A partition list replaces the drive's (#934), but a file with no usable entry leaves it
+// alone, so the drive is never left without a partition.
 void IecFileSystem :: LoadPartitions(File *f)
 {
     uint32_t size = f->get_size();

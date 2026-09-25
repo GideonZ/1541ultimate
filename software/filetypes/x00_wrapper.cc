@@ -106,23 +106,7 @@ static bool x00_host_name(const char *path, const char *dir, const char *cbm_nam
 FRESULT x00_rename(FileManager *fm, const char *path, const char *dir, const char *cbm_name,
                    mstring *renamed)
 {
-    File *f = NULL;
-    FRESULT fres = fm->fopen(path, FA_READ | FA_WRITE, &f);
-    if (fres != FR_OK) {
-        return fres;
-    }
-    char name[16];
-    uint32_t written;
-    memset(name, 0, sizeof(name));
-    strncpy(name, cbm_name, sizeof(name));
-    fres = f->seek(8);
-    if (fres == FR_OK) {
-        fres = f->write(name, sizeof(name), &written);
-    }
-    fm->fclose(f);
-    if (fres != FR_OK) {
-        return fres;
-    }
+    FRESULT fres = FR_OK;
     mstring target(path);
     for (int i = 0; i < 100; i++) {
         mstring candidate;
@@ -138,9 +122,27 @@ FRESULT x00_rename(FileManager *fm, const char *path, const char *dir, const cha
             break;
         }
     }
+    // The host rename goes first: it is the step the file manager can refuse (FR_LOCKED).
     if (strcmp(target.c_str(), path)) {
         fres = fm->rename(path, target.c_str());
+        if (fres != FR_OK) {
+            return fres;
+        }
     }
+    File *f = NULL;
+    fres = fm->fopen(target.c_str(), FA_READ | FA_WRITE, &f);
+    if (fres != FR_OK) {
+        return fres;
+    }
+    char name[16];
+    uint32_t written;
+    memset(name, 0, sizeof(name));
+    strncpy(name, cbm_name, sizeof(name));
+    fres = f->seek(8);
+    if (fres == FR_OK) {
+        fres = f->write(name, sizeof(name), &written);
+    }
+    fm->fclose(f);
     if (renamed && (fres == FR_OK)) {
         *renamed = target;
     }
