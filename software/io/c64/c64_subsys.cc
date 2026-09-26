@@ -9,6 +9,7 @@
 #include "c64_crt.h"
 #include "c64_subsys.h"
 #include <ctype.h>
+#include <strings.h>
 #include "init_function.h"
 #include "userinterface.h"
 #include "u64.h"
@@ -75,6 +76,139 @@ static void initBootCart(void *object, void *param)
 }
 InitFunction bootCart_initializer("Boot Cart", initBootCart, NULL, NULL);
 
+// --- Cartridge auto-save ---------------------------------------------------------------------
+// C64_CRT knows what the image holds and whether it changed. The decision, the dialog and the
+// file juggling live here, where the user interface and the machine are in scope, so that the
+// cartridge file code stays free of them and remains testable on the host.
+
+static bool crt_source_is_writable(void)
+{
+    const char *src = C64_CRT :: get_source();
+    const char *slash = strrchr(src, '/');
+    if (!slash || (slash == src)) {
+        return false; // no file, or directly in the root, which is not a drive
+    }
+    // Uploads land in /Temp. The internal flash is small and should not take a write per save.
+    if ((strncasecmp(src, "/Temp/", 6) == 0) || (strncasecmp(src, "/Flash/", 7) == 0)) {
+        return false;
+    }
+    char dir[256];
+    int len = slash - src;
+    if (len >= (int)sizeof(dir)) {
+        return false;
+    }
+    memcpy(dir, src, len);
+    dir[len] = 0;
+    Path path(dir);
+    return FileManager :: getFileManager()->is_path_writable(&path);
+}
+
+// NAME.tmp first. The file as first loaded is kept once, as NAME.bak (not .crt, so it does not
+// look like a cartridge to load). Then NAME.tmp becomes NAME. Returns NULL or an error message.
+static const char *crt_save_in_place(UserInterface *ui)
+{
+    FileManager *fm = FileManager :: getFileManager();
+    C64 *c64 = C64 :: getMachine();
+    mstring target(C64_CRT :: get_source());
+    mstring temp(target);
+    mstring backup(target);
+    temp += ".tmp";
+    backup += ".bak";
+
+    File *f = NULL;
+    FRESULT res = fm->fopen(temp.c_str(), FA_WRITE | FA_CREATE_ALWAYS, &f);
+    if (res != FR_OK) {
+        return FileSystem :: get_error_string(res);
+    }
+    ui->show_progress("Saving cartridge..", 1);
+    uint32_t previous = C64_CRT :: get_baseline(); // save_crt() moves it; put back if NAME survives
+    bool stopped = c64->begin_stopped_session();
+    SubsysResultCode_e ret = C64_CRT :: save_crt(f);
+    c64->end_stopped_session(stopped);
+    fm->fclose(f);
+    ui->hide_progress();
+
+    if (ret != SSRET_OK) {
+        fm->delete_file(temp.c_str());
+        C64_CRT :: set_baseline(previous);
+        printf("[CRT] save failed: %s\n", target.c_str());
+        return "Writing the cartridge failed.";
+    }
+
+    File *existing = NULL;
+    if (fm->fopen(backup.c_str(), FA_READ, &existing) == FR_OK) {
+        fm->fclose(existing);
+        res = fm->delete_file(target.c_str());
+        if (res == FR_NO_FILE) {
+            // An earlier attempt got this far and then failed to rename, leaving the saved
+            // state in NAME.tmp and no NAME at all. Taking that as a failure here would
+            // delete NAME.tmp below, so the only copy left would be NAME.bak, and every
+            // later attempt would end the same way. The rename that follows puts NAME back.
+            res = FR_OK;
+        }
+    } else {
+        res = fm->rename(target.c_str(), backup.c_str());
+    }
+    if (res != FR_OK) {
+        fm->delete_file(temp.c_str());
+        C64_CRT :: set_baseline(previous);
+        printf("[CRT] save failed: cannot replace %s\n", target.c_str());
+        return FileSystem :: get_error_string(res);
+    }
+    res = fm->rename(temp.c_str(), target.c_str());
+    if (res != FR_OK) {
+        C64_CRT :: set_baseline(previous);
+        printf("[CRT] save failed: new state left in %s\n", temp.c_str());
+        return "Saved, but renaming the .tmp\nfile failed. Check the folder.";
+    }
+    printf("[CRT] saved %s\n", target.c_str());
+    return NULL;
+}
+
+// Hooked into UserInterface::run_once(). From the overlay the C64 is still running: the hash is
+// taken without stopping it, the save runs stopped. A torn read only means an extra save now or a
+// change found at the next menu open.
+static void crt_autosave_menu_hook(UserInterface *ui)
+{
+    int mode = C64 :: getMachine()->get_cfg_value(CFG_C64_CRT_AUTOSAVE);
+    if ((mode == CRT_AUTOSAVE_OFF) || !C64_CRT :: is_valid()) {
+        return;
+    }
+
+    TickType_t start = xTaskGetTickCount();
+    uint32_t hash = C64_CRT :: current_hash();
+    int ms = (int)((xTaskGetTickCount() - start) * 1000 / configTICK_RATE_HZ);
+    printf("[CRT] hash %8x, baseline %8x, %d ms\n", hash, C64_CRT :: get_baseline(), ms);
+    if (hash == C64_CRT :: get_baseline()) {
+        return;
+    }
+
+    if (!crt_source_is_writable()) {
+        ui->popup("Cartridge changed, but its file\ncannot be written back. Use\nSave Cartridge to keep it.", BUTTON_OK);
+        C64_CRT :: set_baseline(hash); // told once per change
+        return;
+    }
+
+    if (mode == CRT_AUTOSAVE_ASK) {
+        const char *name = strrchr(C64_CRT :: get_source(), '/') + 1; // writable implies a slash
+        char msg[80];
+        strcpy(msg, "Cartridge changed. Save it to\n");
+        int len = strlen(msg);
+        strncpy(msg + len, name, 28);
+        msg[len + 28] = 0;
+        strcat(msg, "?");
+        if (ui->popup(msg, BUTTON_YES | BUTTON_NO) != BUTTON_YES) {
+            C64_CRT :: set_baseline(hash); // declined: ask again only after the next change
+            return;
+        }
+    }
+
+    const char *error = crt_save_in_place(ui);
+    if (error) {
+        ui->popup(error, BUTTON_OK); // baseline kept, so this comes back at the next menu open
+    }
+}
+
 C64_Subsys::C64_Subsys(C64 *machine)  : SubSystem(SUBSYSID_C64)
 {
 	taskHandle = 0;
@@ -83,6 +217,7 @@ C64_Subsys::C64_Subsys(C64 *machine)  : SubSystem(SUBSYSID_C64)
 	taskHandle = 0;
 
 	taskCategory = TasksCollection :: getCategory("C64 Machine", SORT_ORDER_C64);
+	UserInterface :: set_menu_enter_hook(crt_autosave_menu_hook);
 }
 
 C64_Subsys::~C64_Subsys() {
@@ -363,10 +498,15 @@ SubsysResultCode_e C64_Subsys::executeCommand(SubsysCommand *cmd)
 
                 res = create_file_ask_if_exists(fm, cmd->user_interface, cmd->path.c_str(), buffer, &f);
                 if (res == FR_OK) {
+                    // Overlay and REST get here with the C64 running; stopped, the file is one image.
+                    bool stopped = c64->begin_stopped_session();
                     SubsysResultCode_e retval = C64_CRT::save_crt(f);
+                    c64->end_stopped_session(stopped);
                     fm->fclose(f);
                     if (retval != SSRET_OK) {
                         cmd->user_interface->popup(SubsysCommand::error_string(retval), BUTTON_OK);
+                    } else {
+                        C64_CRT::set_source(cmd->path.c_str(), buffer); // the cartridge now belongs to this file
                     }
                 }
             }

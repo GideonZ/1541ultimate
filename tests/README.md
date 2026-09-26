@@ -272,6 +272,7 @@ e2e:
   browser-filesystem-refresh        .      .      x      x      x
   browser-long-filename             .      x      x      x      x
   c64gs-cartridge                   .      .      x      x      x
+  cartridge-autosave                .      .      x      x      x
   cfg-loader-log                    x      x      x      x      x
   cfg-partial-effectuate            .      .      .      x      x
   cfg-single-group                  .      x      x      x      x

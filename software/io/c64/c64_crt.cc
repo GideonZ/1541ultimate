@@ -142,6 +142,8 @@ void C64_CRT::initialize(uint8_t *mem, uint32_t max_size)
     highest_bank = 0;
     a000_seen = false;
     bank_multiplier = 16 * 1024;
+    source = "";
+    baseline_hash = 0;
 }
 
 void C64_CRT::cleanup()
@@ -412,18 +414,6 @@ void C64_CRT::patch_easyflash_eapi()
     }
 }
 
-void C64_CRT::unpatch_easyflash_eapi()
-{
-    if (!original_eapi)
-        return;
-    if (local_type != CART_EASYFLASH)
-        return;
-
-    uint8_t* eapi = cart_memory + 0x3800;
-    memcpy(eapi, original_eapi, 768);
-    printf("EAPI successfully un-patched!\n");
-}
-
 SubsysResultCode_e C64_CRT::read_crt(File *file, cart_def *def)
 {
     clear_cart_mem();
@@ -468,6 +458,9 @@ SubsysResultCode_e C64_CRT::read_crt(File *file, cart_def *def)
     auto_mirror();
     regenerate_easyflash_chunks();
     configure_cart(def);
+
+    // The state the C64 starts from, EAPI patch and mirrors included.
+    baseline_hash = content_hash();
 
     return SSRET_OK;
 }
@@ -682,8 +675,95 @@ SubsysResultCode_e C64_CRT::load_crt(const char *path, const char *filename, car
 
     if (retval != SSRET_OK) {
         work->initialize(NULL, 0); // clear remaining stuff if not successful
+    } else {
+        set_source(path, filename);
     }
     return { retval };
+}
+
+// REST passes an empty path and a full pathname as filename.
+void C64_CRT::set_source(const char *path, const char *filename)
+{
+    C64_CRT *crt = get_instance();
+    crt->source = path;
+    int len = crt->source.length();
+    if (len && (path[len - 1] != '/')) {
+        crt->source += "/";
+    }
+    crt->source += filename;
+}
+
+const char *C64_CRT::get_source(void)
+{
+    return get_instance()->source.c_str();
+}
+
+// Over exactly the bytes save_crt() writes. Each step is a bijection in h for a fixed word, so two
+// images that differ in one word always hash differently. No multiply: the U64 firmware is built
+// with -mno-hw-mul, so one would be a library call.
+// Whether the C64 can change this chunk, which is what the hash has to cover.
+//
+// EasyFlash is the only cartridge whose ROM image the machine writes: in all_carts_v5.vhd it is
+// the one type with allow_write set while addr_map is ROM, reached by arming $DE09 the way the
+// EAPI does. GMod2 changes only through its EEPROM; its ROM cannot be written, so 512 KiB of it
+// need not be read on every menu open. The write paths of Action Replay, Retro Replay, KCS, SS5,
+// Pagefox and the C128 cartridges all target memory outside these chunks.
+//
+// The Protovision Megabyter carries flash that a game programs on the real cartridge, but the
+// Ultimate emulates its bank register only, so nothing of it can change here yet.
+static bool chunk_is_writable_by_c64(uint8_t local_type, uint16_t load, uint16_t size)
+{
+    switch (local_type) {
+    case CART_EASYFLASH:
+        return true;
+    case CART_GMOD2:
+        return (load == 0xDE00) && (size == 0x800);
+    default:
+        return false;
+    }
+}
+
+uint32_t C64_CRT::content_hash(void)
+{
+    uint32_t h = 0x811C9DC5;
+    for (int i = 0; i < chip_chunks.get_elements(); i++) {
+        t_crt_chip_chunk *cc = chip_chunks[i];
+        uint16_t size = get_word(cc->header + CRTCHP_SIZE);
+        uint16_t load = get_word(cc->header + CRTCHP_LOAD);
+
+        if (!chunk_is_writable_by_c64(local_type, load, size)) {
+            continue;
+        }
+
+        // A pending EEPROM change goes into its buffer first, so the hash covers it.
+        if ((load == 0xDE00) && (size == 0x800) && (getFpgaCapabilities() & CAPAB_EEPROM)) {
+            if (C64 :: get_eeprom_dirty()) {
+                C64 :: get_eeprom_data(cc->ram_location);
+            }
+        }
+
+        const uint32_t *w = (const uint32_t *)cc->ram_location;
+        for (int n = 0; n < size / 4; n++) {
+            h ^= w[n];
+            h = ((h << 5) | (h >> 27)) + 0x9E3779B9;
+        }
+    }
+    return h;
+}
+
+uint32_t C64_CRT::current_hash(void)
+{
+    return get_instance()->content_hash();
+}
+
+uint32_t C64_CRT::get_baseline(void)
+{
+    return get_instance()->baseline_hash;
+}
+
+void C64_CRT::set_baseline(uint32_t hash)
+{
+    get_instance()->baseline_hash = hash;
 }
 
 SubsysResultCode_e C64_CRT::save_crt(File *fo)
@@ -695,13 +775,20 @@ SubsysResultCode_e C64_CRT::save_crt(File *fo)
     }
 
     uint32_t written;
+    uint32_t hash = crt->content_hash(); // callers stop the C64, so this is what the file receives
 
     FRESULT res = fo->write(crt->crt_header, 0x40, &written);
     if (res != FR_OK) {
         return SSRET_DISK_ERROR;
     }
 
-    crt->unpatch_easyflash_eapi();
+    // Memory holds our EAPI; the file gets the one it came with. Written from the saved copy, because
+    // restoring it in place would change code that a running C64 may be executing.
+    uint8_t *eapi = NULL;
+    if (crt->original_eapi && (crt->local_type == CART_EASYFLASH)) {
+        eapi = crt->cart_memory + 0x3800;
+    }
+
     for (int i=0; i<crt->chip_chunks.get_elements(); i++) {
         t_crt_chip_chunk *cc = crt->chip_chunks[i];
         uint16_t size = get_word(cc->header + CRTCHP_SIZE);
@@ -737,14 +824,26 @@ SubsysResultCode_e C64_CRT::save_crt(File *fo)
             break;
         }
 
-        res = fo->write(cc->ram_location, size, &written);
+        uint8_t *data = cc->ram_location;
+        if (eapi && (eapi >= data) && (eapi + 768 <= data + size)) {
+            uint32_t before = eapi - data;
+            res = fo->write(data, before, &written);
+            if (res == FR_OK) {
+                res = fo->write(crt->original_eapi, 768, &written);
+            }
+            if (res == FR_OK) {
+                res = fo->write(eapi + 768, size - before - 768, &written);
+            }
+        } else {
+            res = fo->write(data, size, &written);
+        }
         if (res != FR_OK) {
             break;
         }
     }
-    crt->patch_easyflash_eapi();
 
     if (res == FR_OK) {
+        crt->baseline_hash = hash; // memory and file agree again, whichever file it was
         return SSRET_OK;
     } else {
         return SSRET_DISK_ERROR;

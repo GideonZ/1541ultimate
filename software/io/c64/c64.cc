@@ -68,9 +68,11 @@ static const char *bus_modes[] = { "Quiet", "Writes", "Dynamic", "Dyn. & Writes"
 static const uint8_t bus_mode_values[] = { 0x00, 0x01, 0x02, 0x03, 0x05 }; // Compatibility has write also enabled
 static const char *bus_sharing[] = { "Internal", "External", "Both" };
 static const char *en_dis_geo[] = { "Disabled", "Enabled", "GeoRAM Mode" };
+static const char *crt_autosave[] = { "Off", "Ask", "Auto" };
 
 struct t_cfg_definition c64_config[] = {
     { CFG_C64_CART_CRT,    CFG_TYPE_STRFUNC,"Cartridge",                  "%s", (const char **)C64 :: list_crts,  0, 30, (int)"" },
+    { CFG_C64_CRT_AUTOSAVE,CFG_TYPE_ENUM,   "Save Changed Cartridge",     "%s", crt_autosave, 0,  2, CRT_AUTOSAVE_ASK },
 #if U64
     { CFG_C64_CART_PREF,   CFG_TYPE_ENUM, "Cartridge Preference",         "%s", cartmodes,  0,  3, 0 },
     { CFG_BUS_MODE,        CFG_TYPE_ENUM, "Bus Operation Mode",           "%s", bus_modes,    0,  4, 0 },
@@ -1253,10 +1255,17 @@ void C64::set_cartridge(cart_def *cart)
         const char *crt = cfg->get_string(CFG_C64_CART_CRT);
         if (strlen(crt)) {
             C64_CRT :: load_crt(CARTS_DIRECTORY, crt, &current_cart_def, cart_mem);
-        } else if (cfg->get_value(CFG_C64_REU_EN) == 2) { // GeoRAM
-            current_cart_def.type = CART_TYPE_GEORAM;
-            current_cart_def.name = "GeoRAM Cartridge";
-            current_cart_def.prohibit = CART_PROHIBIT_ALL_BUT_REU;
+        } else {
+            // Nothing is running any more, and the line above has just written into the image of
+            // whatever was: byte 5 is $8005, inside a CBM80 signature. Drop the image, its source
+            // and its baseline together with the cartridge, so that neither Save Cartridge nor the
+            // auto-save is offered for a cartridge the machine no longer has.
+            C64_CRT :: clear_crt();
+            if (cfg->get_value(CFG_C64_REU_EN) == 2) { // GeoRAM
+                current_cart_def.type = CART_TYPE_GEORAM;
+                current_cart_def.name = "GeoRAM Cartridge";
+                current_cart_def.prohibit = CART_PROHIBIT_ALL_BUT_REU;
+            }
         }
 #endif
     } else {
@@ -1640,7 +1649,7 @@ int C64 :: getSizeOfMP3NativeRamdrive(int devNo)
 void C64 :: get_eeprom_data(uint8_t *buffer)
 {
     volatile uint8_t *eeprom = (volatile uint8_t *)(EEPROM_BASE);
-    *eeprom = 1; // clear dirty flag
+    *eeprom = 1; // clear dirty flag before the copy, so a write during it is not lost
     memcpy(buffer, (void *)(eeprom + 2048), 2048);
 }
 
@@ -1869,6 +1878,7 @@ void C64 :: setup_config_menu(void)
     grp->append(cfg->find_item(CFG_C64_CHARFILE)->set_item_altname("Character ROM"));
 #endif
     grp->append(cfg->find_item(CFG_C64_CART_CRT));
+    grp->append(cfg->find_item(CFG_C64_CRT_AUTOSAVE));
     grp->append(ConfigItem :: separator());
     grp->append(cfg->find_item(CFG_C64_REU_EN));
     grp->append(cfg->find_item(CFG_C64_REU_SIZE)->set_item_altname("Size"));
