@@ -155,7 +155,10 @@ also runs in the build workflow. The workflow runs the six portable suites
 both normally and under ASan/UBSan, with sanitizer findings treated as failures,
 and runs the shared HTTP/HTTPS UCI compatibility test under sanitizers. Real TLS
 tests still require the separately documented Mbed TLS host dependency.
-Remote CI execution itself has not been verified.
+The separate HTTPS host workflow also runs the real loopback TLS and retail
+recipe suites on a standard GitHub runner. Consult the pull request checks for
+the result at a specific source revision; the full firmware/FPGA build still
+requires its dedicated runner.
 
 The ESP32 cache manifest includes the shared TLS sources/headers, their component
 definition and shared UART buffer sources. A regression test reproduces the

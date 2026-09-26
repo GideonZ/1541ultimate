@@ -82,7 +82,7 @@ reproduce the old leaks before checking the fixes.
 | Wi-Fi recovery | Manual disconnect/reconnect followed by exact-byte HTTP/HTTPS recovery without intermediate reset | Overlap with active TLS was not proven |
 | Runtime memory | v14 management allocation constant across 151 two-hour samples; separate single-plus-five menu cycles showed zero growth after recovery | Final ESP32 idle free was eight bytes lower; exact allocation ownership, earlier retention attribution and longer-term behavior remain open |
 | Menu ownership | Host tests reproduce leaked states, page/item wrappers and windows; v14 single-plus-five device cycles passed after recovery | First v14 attempt lacks a post-cycle sample after zero IPv4; cause remains unresolved |
-| Build/distribution | Pinned source manifest, RV32I inspection, embedded-image and recovery comparisons | Remote CI has not been observed; final source/package pairing requires review |
+| Build/distribution | Pinned source manifest, RV32I inspection, embedded-image and recovery comparisons; v14 source/package hashes independently matched | Full firmware CI requires its dedicated runner; see PR checks for hosted results at each revision |
 
 The original intermittent v9 503 remains unexplained. A deliberately induced
 503, a passing repeat, and a generic status match do not establish its cause.
