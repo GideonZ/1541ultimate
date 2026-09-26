@@ -150,7 +150,8 @@ class Suite:
     """One registered suite.
 
     `args` is a template: @HOST@, @PASS@, @TIMEOUT@, @MODE@ and @SOAKPROFILE@
-    are substituted before the suite is started. @MODE@ appears only in the
+    are substituted before the suite is started, and @KERNAL@ becomes the
+    --kernal and --command-interface the run was given, or nothing. @MODE@ appears only in the
     argument string of suites that accept --mode: whether a suite can drive the
     on-device UI through Telnet as well as REST/Freeze/Overlay, or only works
     one way, is a per-suite call documented next to its entry below.
@@ -240,6 +241,9 @@ SUITES: Sequence[Suite] = (
     # than weeks later when somebody opens the artifact to diagnose something
     # else and finds an empty document.
     Suite("e2e", "observability", "tests/lib/observability_test.py", ""),
+    # Also needs no device: the SoftIEC soak's log correlation, against lines the device
+    # wrote on the bench. A wrong verdict there reads as a firmware defect.
+    Suite("e2e", "softiec-log", "tests/soak/io/iec/softiec_log_test.py", "", profile=profiles.QUICK),
     # Also needs no device: which keys go out for a machine that reads 'w',
     # 'a', 's' and 'd' as cursor keys is decided before anything reaches the
     # device. A C64 Ultimate ships with that reading, and getting it wrong
@@ -252,6 +256,11 @@ SUITES: Sequence[Suite] = (
     # device run, and a wrong answer showed up as a suite picking the entry
     # two places past the one it named.
     Suite("e2e", "ui-backend-parse", "tests/e2e/lib/ui_backend_parse_test.py",
+          "", profile=profiles.SMOKE),
+    # Also needs no device: the string boxes and popup keys every browser suite
+    # sends are read back, against backends that drop the keys each case names,
+    # because a device loses a key only now and then.
+    Suite("e2e", "keystroke-read-back", "tests/e2e/lib/keystroke_read_back_test.py",
           "", profile=profiles.SMOKE),
     # Also needs no device: the Telnet backend decides a redraw is over by
     # watching the stream go quiet, and the three waits that do that cannot be
@@ -381,7 +390,7 @@ SUITES: Sequence[Suite] = (
           "tests/e2e/io/usb/bulk_out_integrity_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@", manual=True),
     Suite("e2e", "rel-copy", "tests/e2e/io/iec/rel_copy_test.py",
-          "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ @KERNAL@"),
     # The IEC command channel defects of #875, #876 and #877, driven from the C64 so
     # that the bytes on the bus are the ones PRINT# puts there: the carriage return
     # that ends a command, and the spaces BASIC prints around a number. A harness
@@ -391,6 +400,21 @@ SUITES: Sequence[Suite] = (
     # against the run a person makes before pushing, and rel-copy beside it is
     # already the IEC suite that costs real time.
     Suite("e2e", "iec-dos-commands", "tests/e2e/io/iec/dos_command_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ @KERNAL@", profile=profiles.STANDARD),
+    # What the Software IEC drive receives from a talker that raises ATN for UNLISTEN as
+    # soon as the last byte is acknowledged, as a CMD drive's SWAP does (#933): commands
+    # and files over every pause, bit pace and ending, sent by the C64's own code rather
+    # than the KERNAL, whose pause is always long enough.
+    Suite("e2e", "iec-listen-timing", "tests/e2e/io/iec/listen_timing_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@", profile=profiles.STANDARD),
+    # Loading an .IPR file through the browser replaces the Software IEC partition list
+    # rather than adding to it (#934), read back from the drive list.
+    Suite("e2e", "iec-partition-file", "tests/e2e/filemanager/ipr_load_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@", profile=profiles.STANDARD),
+    # Every Software IEC log line reaches the device log whole while the HTTP task prints
+    # alongside it, read back from the syslog. With --syslog it reads each target's collected
+    # log; without, it binds the syslog port itself, and a second target run alongside skips.
+    Suite("e2e", "softiec-log-lines", "tests/e2e/io/iec/log_lines_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@", profile=profiles.STANDARD),
     # Drives the UCI control and SoftIEC targets over $DF1B-$DF1F; reproduces #740.
     # A #740 regression leaves the interface stuck in Command Busy for every target
@@ -667,7 +691,7 @@ SUITES: Sequence[Suite] = (
     # minutes, the soak profile runs the soak mode for four hours. See --help and
     # tests/soak/README.md for --mode and the per-phase durations.
     Suite("soak", "softiec-soak", "tests/soak/io/iec/softiec_soak_test.py",
-          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --profile @SOAKPROFILE@"),
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --profile @SOAKPROFILE@ @KERNAL@"),
 )
 
 
@@ -709,6 +733,10 @@ class Options:
     # Whether the suites spool the screens they read. Defaulted, because it is
     # the only option here a caller can reasonably leave alone.
     screens: bool = True
+    # The KERNAL the Software IEC suites run under, and whether they enable the
+    # Command Interface for it; see tests/lib/kernal.py.
+    kernal: str = ""
+    command_interface: bool = False
 
 
 def git_answer(*arguments: str) -> str | None:
@@ -1002,6 +1030,12 @@ SYSLOG_PORT_ENV = "E2E_SYSLOG_PORT"
 # name, so the check needs the whole set rather than the default.
 SYSLOG_PORTS_ENV = "E2E_SYSLOG_PORTS"
 
+# Each target's collected log file, as JSON from target token to path. A suite that reads
+# device log lines is given its own target's path as SYSLOG_FILE_ENV, because the collector
+# holds the port and a second socket on it would take an arbitrary share of the lines.
+SYSLOG_FILES_ENV = "E2E_SYSLOG_FILES"
+SYSLOG_FILE_ENV = "E2E_SYSLOG_FILE"
+
 # How long the parent waits for a device to say which port it logs to. This
 # runs before the first suite and a device that does not answer costs the run
 # nothing but attribution by source address, so it is short.
@@ -1105,6 +1139,10 @@ def start_syslog(args: argparse.Namespace,
     os.environ[SYSLOG_PORT_ENV] = str(collector.port)
     os.environ[SYSLOG_PORTS_ENV] = ",".join(str(port)
                                             for port in collector.ports())
+    # The device under test's own file; a cartridge's computer logs to a second one.
+    os.environ[SYSLOG_FILES_ENV] = json.dumps(
+        {token: path for token, path in collector.files()
+         if os.path.basename(path) == "syslog.txt"})
     for token, path in collector.files():
         report.log_result(token, os.path.relpath(path, root),
                           collector.started, collector.port,
@@ -1928,6 +1966,10 @@ def build_command(suite: Suite, options: Options, mode: str) -> list[str]:
         if token == "@PASS@":
             command.append(options.password)
             continue
+        if token == "@KERNAL@":
+            command += ["--kernal", options.kernal] if options.kernal else []
+            command += ["--command-interface"] if options.command_interface else []
+            continue
         token = token.replace("@HOST@", options.host)
         token = token.replace("@TIMEOUT@", options.timeout)
         token = token.replace("@MODE@", mode)
@@ -2151,6 +2193,11 @@ def run_one_attempt(suite: Suite, device: Device, options: Options, mode: str,
     # identifier of its own. Both are values this function already holds.
     environment["E2E_TARGET"] = options.host
     environment["E2E_ATTEMPT"] = str(attempt)
+    syslog_file = json.loads(os.environ.get(SYSLOG_FILES_ENV) or "{}").get(options.host)
+    if syslog_file:
+        environment[SYSLOG_FILE_ENV] = syslog_file
+    else:
+        environment.pop(SYSLOG_FILE_ENV, None)
     if options.output_dir and options.screens:
         # Every distinct screen the suite reads, published from the fetches it
         # was making anyway. One file per target, appended to by every suite,
@@ -2688,6 +2735,16 @@ def build_parser() -> argparse.ArgumentParser:
                             "suites an ordinary run leaves out are included. "
                             "-s names a suite whatever the profile says, and "
                             "-m overrides the transports it would sweep.")
+    e2e.add_argument("--kernal", default="", metavar="IMAGE",
+                     help="Run the Software IEC suites (rel-copy, "
+                          "iec-dos-commands, softiec-soak) under this KERNAL: a "
+                          "file name in the device's ROM directory, or a local "
+                          "file uploaded there for the run (default: the "
+                          "device's own).")
+    e2e.add_argument("--command-interface", action="store_true",
+                     help="Enable the Command Interface for the Software IEC "
+                          "suites, which the UCI (hyperspeed) KERNAL needs to "
+                          "reach the drive.")
     e2e.add_argument("--soak-duration", "--soak-profile", dest="soak_profile",
                      choices=("stress", "soak"), default="stress",
                      help="Set how long the network soak runs: stress takes "
@@ -3149,13 +3206,14 @@ def apply_colour_choice(choice: str) -> None:
 # neither: an option silently dropped here would make a multi-target run quietly
 # different from the single-target run it is supposed to repeat.
 CHILD_FORWARDED_FLAGS = ("e2e", "perf", "soak", "all", "manual", "syslog",
-                         "record")
+                         "record", "command_interface")
 CHILD_FORWARDED_VALUES = (
     ("profile", "--profile"),
     ("modes", "--mode"),
     ("password", "--password"),
     ("timeout", "--timeout"),
     ("soak_profile", "--soak-profile"),
+    ("kernal", "--kernal"),
     ("recover_command", "--recover-command"),
     ("recover_max_per_suite", "--recover-max-per-suite"),
     ("recover_max_total", "--recover-max-total"),
@@ -3588,6 +3646,9 @@ def main(argv: list[str]) -> int:
                       output_dir=args.output_dir, stop_on_fail=args.stop_on_fail,
                       health_check=args.health_check, attempts=args.attempts,
                       screens=args.screens,
+                      kernal=(os.path.abspath(args.kernal) if os.path.isfile(args.kernal)
+                              else args.kernal),
+                      command_interface=args.command_interface,
                       recover_command=args.recover_command,
                       recover_max_per_suite=args.recover_max_per_suite,
                       recover_max_total=args.recover_max_total,
@@ -3604,6 +3665,11 @@ def main(argv: list[str]) -> int:
         report.detail(f"modes:      {', '.join(modes) if modes else 'none'}")
     if "soak" in categories:
         report.detail(f"soak:       {options.soak_profile} profile")
+    if options.kernal or options.command_interface:
+        kernal = options.kernal or "the device's own"
+        report.detail(f"kernal:     {kernal}"
+                      + (", Command Interface enabled" if options.command_interface else "")
+                      + " (Software IEC suites)")
     report.detail(f"timeout:    {options.timeout}s")
     report.detail(f"on failure: {'stop at the first one' if options.stop_on_fail else 'continue'}")
     report.detail("health:    "

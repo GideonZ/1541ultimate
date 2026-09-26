@@ -36,7 +36,9 @@ class RecordingBackend(ui_backend.Backend):
     """A Backend that records what was sent instead of driving a device.
 
     `selected` is what selected_text() answers, so a caller can make a seek
-    look as though it landed or as though it did not.
+    look as though it landed or as though it did not. Row 1 of the screen
+    shows everything sent so far, as a device's screen answers a key, so a
+    caller that reads the screen back sees its keys arrive.
     """
 
     def __init__(self, style: str, selected: str = "") -> None:
@@ -49,8 +51,9 @@ class RecordingBackend(ui_backend.Backend):
         return self._navigation
 
     def capture(self) -> ui_backend.Snapshot:
-        return ui_backend.Snapshot(lines=[""] * 25, reverse_cells=[],
-                                   last_command="")
+        lines = [""] * 25
+        lines[1] = "".join(self.sent)
+        return ui_backend.Snapshot(lines=lines, reverse_cells=[], last_command="")
 
     def send_key(self, key, *, settle=False, expect_redraw=True):
         self.sent.append(f"<{key}>")

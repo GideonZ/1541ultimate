@@ -51,6 +51,7 @@ SRCS_CC	 =  small_printf.cc \
 			config.cc \
 			iec_drive.cc \
 			iec_channel.cc \
+			x00_wrapper.cc \
 			iec_interface.cc \
 			cbmdos_parser.cc \
 			json.cc \

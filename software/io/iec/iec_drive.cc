@@ -12,9 +12,6 @@
 #define FS_ROOT "/USB0/"
 #endif
 
-#define MENU_IEC_ON          0xCA0E
-#define MENU_IEC_OFF         0xCA0F
-#define MENU_IEC_RESET       0xCA10
 #define MENU_IEC_SET_DIR     0xCA17
 #define MENU_IEC_SAVE_PAR    0xCA18
 #define MENU_IEC_SHOW_PARTS  0xCA19
@@ -24,8 +21,19 @@
 #define CFG_IEC_PATH     0x53
 #define CFG_IEC_LOG      0x55
 
+// "IEC Drive" (SI-107): UCI Only takes the drive off the bus and keeps its UCI target;
+// Disabled turns off both. The order of the values keeps a stored setting's meaning.
+#define IEC_MODE_UCI_ONLY    0
+#define IEC_MODE_ENABLED     1
+#define IEC_MODE_DISABLED    2
+static const char *iec_modes[] = { "UCI Only", "Enabled", "Disabled" };
+
+// The number the KERNAL is given at $DF1B when the drive is off altogether. It is 5 bits
+// wide, and 31 is no device a program opens, so the KERNAL sends everything to the bus.
+#define KERNAL_DEVICE_NONE   31
+
 static struct t_cfg_definition iec_config[] = {
-    { CFG_IEC_ENABLE,    CFG_TYPE_ENUM,   "IEC Drive",         "%s", en_dis, 0,  1, 0 },
+    { CFG_IEC_ENABLE,    CFG_TYPE_ENUM,   "IEC Drive",         "%s", iec_modes, 0,  2, 0 },
     { CFG_IEC_BUS_ID,    CFG_TYPE_VALUE,  "Soft Drive Bus ID", "%d", NULL,   8, 30, 11 },
     { CFG_IEC_LOG,       CFG_TYPE_ENUM,   "Log Every Operation", "%s", en_dis, 0, 1, 0 },
     { 0xFF, CFG_TYPE_END, "", "", NULL, 0, 0, 0 }
@@ -81,6 +89,7 @@ const char msg72[] = "DISK FULL";				//72
 const char msg73[] = "U64HD ULTIMATE DOS V2.0"  ;//73 DOS MISMATCH(Returns DOS Version)
 const char msg74[] = "DRIVE NOT READY";			//74
 const char msg77[] = "SELECTED PARTITION ILLEGAL"; //77
+const char msg98[] = "UNKNOWN DRIVE CODE";      //98, as sd2iec answers (SI-105)
 const char msg_c1[] = "BAD COMMAND";			//custom
 const char msg_c2[] = "NOT IMPLEMENTED";		//custom
 const char msg_c3[] = "BLOCK ACCESS DENIED";    //custom
@@ -123,6 +132,7 @@ const IEC_ERROR_MSG last_error_msgs[] = {
 		{ 73, msg73, NR_OF_EL(msg73) - 1 },
 		{ 74, msg74, NR_OF_EL(msg74) - 1 },
         { 77, msg77, NR_OF_EL(msg77) - 1 },
+        { 98, msg98, NR_OF_EL(msg98) - 1 },
 
 		{ 75, msg_c1, NR_OF_EL(msg_c1) - 1 },
 		{ 76, msg_c2, NR_OF_EL(msg_c2) - 1 },
@@ -138,7 +148,11 @@ IecDrive :: IecDrive() : SubSystem(SUBSYSID_IEC)
     intf = IecInterface :: get_iec_interface();
 	fm = FileManager :: getFileManager();
     my_bus_id = 0;
+    applied_bus_id = -1;
+    write_protect = false;
+    clock_offset = 0;
     enable = false;
+    uci_enable = false;
     vfs = NULL; // registering the settings makes them take effect before this is built
 
     register_store(0x49454300, "SoftIEC Drive Settings", iec_config);
@@ -227,14 +241,24 @@ void IecDrive :: effectuate_settings(void)
 {
     IecDriveLock guard(this); // configure() holds the IEC processor in reset (CR-6)
     int bus_id = cfg->get_value(CFG_IEC_BUS_ID);
-    bool enabled = cfg->get_value(CFG_IEC_ENABLE) != 0;
+    int mode = cfg->get_value(CFG_IEC_ENABLE);
+    bool enabled = (mode == IEC_MODE_ENABLED);
+    bool uci = (mode != IEC_MODE_DISABLED);
     // Holding the processor in reset drops a transfer on the bus, so a change of Log Every
-    // Operation alone, which is read where it is used, leaves the processor running.
-    bool reconfigure = (bus_id != my_bus_id) || (enabled != enable);
-    my_bus_id = bus_id;
-    cmd_if.set_kernal_device_id(my_bus_id);
+    // Operation alone, which is read where it is used, leaves the processor running. The
+    // comparison is with the setting, not the live number, which U0> may have moved.
+    bool reconfigure = (bus_id != applied_bus_id) || (enabled != enable);
+    bool announce = (bus_id != applied_bus_id) || (uci != uci_enable);
+    if (bus_id != applied_bus_id) {
+        my_bus_id = bus_id;
+        applied_bus_id = bus_id;
+    }
 
     enable = enabled;
+    uci_enable = uci;
+    if (announce) {
+        announce_kernal_device();
+    }
 
     if (reconfigure) {
         intf->configure();
@@ -285,7 +309,11 @@ SubsysResultCode_e IecDrive :: executeCommand(SubsysCommand *cmd)
 		case MENU_IEC_OFF: {
             IecDriveLock guard(this);
 			enable = (cmd->functionID == MENU_IEC_ON) ? 1 : 0;
-			cfg->set_value(CFG_IEC_ENABLE, enable);
+			cfg->set_value(CFG_IEC_ENABLE, enable ? IEC_MODE_ENABLED : IEC_MODE_UCI_ONLY);
+            if (!uci_enable) {
+                uci_enable = true;
+                announce_kernal_device();
+            }
             intf->configure();
 			break;
         }
@@ -330,6 +358,11 @@ void IecDrive :: reset(void)
 {
     IecDriveLock guard(this);
     effectuate_registered_settings();
+    // The settings restart the IEC processor only for a new device number or enable
+    // (SI-103b); a reset restarts it in any case, on the number the settings hold.
+    my_bus_id = cfg->get_value(CFG_IEC_BUS_ID);
+    announce_kernal_device();
+    intf->configure();
     for(int i=0; i < 16; i++) {
         channels[i]->reset();
     }
@@ -340,6 +373,7 @@ void IecDrive :: reset(void)
         }
     }
     vfs->SetCurrentPartition(1);
+    clock_offset = 0;
     last_error_code = ERR_DOS;
     last_error_track = 0;
     last_error_sector = 0;
@@ -407,12 +441,24 @@ bool IecDrive :: log_every_operation(void)
     return cfg->get_value(CFG_IEC_LOG) > 0;
 }
 
+// The number a KERNAL that reaches the drive over UCI sends there (SI-107).
+void IecDrive :: announce_kernal_device(void)
+{
+    cmd_if.set_kernal_device_id(uci_enable ? my_bus_id : KERNAL_DEVICE_NONE);
+}
+
+// The device number the settings hold, which S-D returns the drive to (SI-101).
+int IecDrive :: configured_device_number(void)
+{
+    return cfg->get_value(CFG_IEC_BUS_ID);
+}
+
 // The device number for as long as the drive runs, from U0> (SI-100). It is not written to
 // the configuration: HD 9-49 describes the change as temporary.
 void IecDrive :: set_device_number(int dev)
 {
     my_bus_id = dev;
-    cmd_if.set_kernal_device_id(my_bus_id);
+    announce_kernal_device();
     intf->readdress(slot_id);
 }
 

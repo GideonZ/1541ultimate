@@ -45,7 +45,7 @@ import bootstrap  # noqa: E402,F401
 
 from backend import Backend, Snapshot, strip_frame  # noqa: E402
 from menu import wait_until  # noqa: E402
-from report import Failure  # noqa: E402
+from report import Failure, warn  # noqa: E402
 
 # The submit row, as BrowsableQueryField::getDisplayString writes it for the
 # "$" field. Firmware text, identical on every machine and for every service.
@@ -81,6 +81,10 @@ OPEN_ATTEMPTS = 2
 # More "-" presses than any preset list is long. updown() clamps at zero, so
 # the extra presses are no-ops and the field lands on the first entry.
 PRESET_REWIND = 40
+# How often enter_text types a term before it gives up, and how long it waits
+# for the edit field to show one typing.
+ENTER_ATTEMPTS = 3
+ENTER_ECHO_SECONDS = 2.0
 
 
 class Unreachable(RuntimeError):
@@ -206,6 +210,38 @@ class SearchForm:
 
     def type_text(self, text: str) -> None:
         self.backend.send_text(text, f"type {text}")
+
+    def enter_text(self, text: str) -> None:
+        """Type `text` into the open edit field, reading it back before it is kept.
+
+        A doubled letter is the likeliest key to be lost: a release missed
+        between two taps of one key makes the second read as still held.
+        Measured on a U2+L, "turrican" arrived as "turican". A field that does
+        not show the text is emptied and typed again, and each retype is
+        reported as a warning.
+        """
+        for attempt in range(ENTER_ATTEMPTS):
+            if attempt:
+                clear = self.backend.clear_field_key
+                if clear:
+                    self.press(clear)
+                else:
+                    self.press_many("BACKSPACE", len(text) + 4)
+            before = self.rows() or []
+            self.type_text(text)
+            if wait_until(lambda: self._shows_typed(before, text), ENTER_ECHO_SECONDS):
+                return
+            warn(f"the edit field did not show {text!r} after it was typed, so a "
+                 f"keystroke was lost; typing it again (attempt {attempt + 2})")
+        raise Failure(f"the edit field never showed {text!r} after {ENTER_ATTEMPTS} "
+                      f"attempts; screen was:\n{self.describe_screen()}")
+
+    def _shows_typed(self, before: list[str], text: str) -> bool:
+        """Whether a row the typing changed now carries `text`."""
+        after = self.rows() or []
+        wanted = text.lower()
+        return any(wanted in row.lower() for index, row in enumerate(after)
+                   if index >= len(before) or row != before[index])
 
     # -------------------------------------------------------- opening it --
     def open(self, attempts: int = OPEN_ATTEMPTS,

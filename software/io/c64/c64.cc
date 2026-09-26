@@ -147,6 +147,8 @@ C64::C64()
     C64_STOP_MODE = STOP_COND_FORCE;
     C64_MODE = MODE_NORMAL;
     isFrozen = false;
+    keyboardScanAllowed = false;
+    dmaModeWindow = 0;
     frozen_mode = MODE_NORMAL;
     backupIsValid = false;
     frozen_cia2_porta_changed = false;
@@ -238,6 +240,7 @@ void C64 :: init_poll_task(void *a)
 C64::~C64()
 {
     if (isFrozen) {
+        keyboardScanAllowed = false;
         restore_io();
         resume();
         isFrozen = false;
@@ -655,6 +658,7 @@ uint8_t C64::peek(uint16_t address)
         if (isFrozen && address >= 0x1000 && (address < 0xD000 || address >= 0xE000)) {
             saved_mode = C64_MODE;
             if ((saved_mode & C64_MODE_ULTIMAX) && (saved_mode != frozen_mode)) {
+                dmaModeWindow++;
                 C64_MODE = frozen_mode;
                 restore_mode = true;
                 // The mode write has to reach the machine before the read it
@@ -669,6 +673,8 @@ uint8_t C64::peek(uint16_t address)
         value = ram[address];
         if (restore_mode) {
             C64_MODE = saved_mode;
+            wait_10us(2);
+            dmaModeWindow--;
         }
     }
 
@@ -701,6 +707,7 @@ void C64::poke(uint16_t address, uint8_t value)
         if (isFrozen && address >= 0x1000 && (address < 0xD000 || address >= 0xE000)) {
             saved_mode = C64_MODE;
             if ((saved_mode & C64_MODE_ULTIMAX) && (saved_mode != frozen_mode)) {
+                dmaModeWindow++;
                 C64_MODE = frozen_mode;
                 restore_mode = true;
                 (void)ram[address];
@@ -714,6 +721,8 @@ void C64::poke(uint16_t address, uint8_t value)
             // read holds the mode until the write has been taken.
             (void)ram[address];
             C64_MODE = saved_mode;
+            wait_10us(2);
+            dmaModeWindow--;
         }
     }
 
@@ -748,6 +757,7 @@ void C64::dma_transfer_frozen(uint16_t offset, uint8_t *buffer, int length, int 
             uint8_t saved_mode = C64_MODE;
             bool restore_mode = (saved_mode & C64_MODE_ULTIMAX) && (saved_mode != frozen_mode);
             if (restore_mode) {
+                dmaModeWindow++;
                 C64_MODE = frozen_mode;
             }
             C64_DMA_MEMONLY = 0;
@@ -777,6 +787,10 @@ void C64::dma_transfer_frozen(uint16_t offset, uint8_t *buffer, int length, int 
             C64_DMA_MEMONLY = 1;
             if (restore_mode) {
                 C64_MODE = saved_mode;
+                // The mode change reaches the C64's decoding with a delay, so
+                // the window closes only after it.
+                wait_10us(2);
+                dmaModeWindow--;
             }
         } else if ((addr >= 0x0800) && (addr < 0x1000)) {
             // The freezer menu uses this 2KB as its own scratch RAM, so serve
@@ -1005,6 +1019,7 @@ void C64::freeze(void)
     init_io();
 
     isFrozen = true;
+    keyboardScanAllowed = true;
 }
 
 /*
@@ -1127,6 +1142,10 @@ void C64::unfreeze()
     if (!isFrozen)
         return;
 
+    // restore_io() hands the CIA back to the program, and a scan before resume() would leave
+    // the keyboard column select as the scan set it.
+    keyboardScanAllowed = false;
+
     if (!backupIsValid) {
         // Nothing left to put back: something else already restored it
         // while isFrozen stayed set. A reset issued with the menu open
@@ -1220,6 +1239,7 @@ void C64 :: start_cartridge(void *vdef)
     C64_MODE = C64_MODE_UNRESET;
 
     isFrozen = false;
+    keyboardScanAllowed = false;
     backupIsValid = false;
 }
 
@@ -1232,6 +1252,18 @@ Screen *C64::getScreen(void)
 bool C64::is_accessible(void)
 {
     return isFrozen;
+}
+
+bool C64::keyboard_scan_allowed(void)
+{
+    // The same window the user interface's own scan had, freeze() to
+    // unfreeze(), minus the restore at its end.
+    return keyboardScanAllowed && isFrozen;
+}
+
+bool C64::keyboard_scan_deferred(void)
+{
+    return dmaModeWindow != 0;
 }
 
 Keyboard *C64::getKeyboard(void)

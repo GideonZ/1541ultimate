@@ -50,9 +50,10 @@ typedef struct {
     uint32_t max_datetime;
     uint8_t filetypes; // P,S,U,R, B/D
     uint8_t partition_types; // one bit per CMD partition type; zero means all of them
+    bool show_hidden; // =H, which adds the hidden entries to the listing (SI-134)
 } dir_options_t;
 
-const dir_options_t c_dir_options_init = { e_stream_file, e_stamp_none, 0, 0, 0x00, 0x00 };
+const dir_options_t c_dir_options_init = { e_stream_file, e_stamp_none, 0, 0, 0x00, 0x00, false };
 
 typedef struct {
     filename_t file;
@@ -61,6 +62,9 @@ typedef struct {
     fileaccess_t access;
     dir_options_t dir_opt;
     uint16_t record_size;
+    // The chained 256 byte buffers the three character form `##n` asks for, and zero for
+    // the standard buffer of `#`, whose pointer starts at byte 1 rather than 0 (SI-090).
+    uint8_t buffers;
 } open_t;
 
 // The syntax errors of CBM and CMD DOS (HD B-2, 1541 User's Guide).
@@ -70,6 +74,13 @@ typedef struct {
 #define ERR_ILLEGAL_NAME  33 // a wildcard or a character a name cannot carry
 #define ERR_NO_NAME       34 // no name, or a colon with nothing after it
 #define ERR_REPLACE_TYPE  64 // FILE TYPE MISMATCH: @ names nothing that can be replaced
+#define ERR_UNKNOWN_DRIVECODE 98 // M-E: the drive code to run is not one this drive knows
+
+// The attributes the attribute commands address (SI-076, SI-077). The drive maps them
+// to whatever the medium holds, so the parser carries no file system constants.
+#define IEC_ATTR_LOCKED   0x01
+#define IEC_ATTR_HIDDEN   0x02
+#define IEC_ATTR_ARCHIVE  0x04
 
 // The command buffer holds 254 bytes, as on the CMD HD (HD 4-6) and on sd2iec's uIEC
 // (CONFIG_COMMAND_BUFFER_SIZE). A command that fills it is refused, because whether
@@ -103,7 +114,20 @@ public:
     virtual int do_pwd_command() { return 0; }
     virtual int do_get_partition_info(int part) { return 0; }
     virtual int do_set_device_number(int dev) { return 0; }
-    virtual int do_lock(filename_t& name) { return 0; } // L: toggles the lock of one entry
+    virtual int do_restore_device_number() { return 0; } // S-D, back to the configured number
+    virtual int do_set_write_protect(bool on) { return 0; } // W-1 and W-0 (SI-102)
+    // The drive's own clock is the system clock plus this many seconds, which T-W sets
+    // and a reset of the drive clears (SI-120).
+    virtual int64_t get_clock_offset(void) { return 0; }
+    virtual void set_clock_offset(int64_t seconds) { }
+    // L and EH turn one attribute of one entry over; EL, EU and A set the attributes in
+    // mask to those in attrib on every entry each name matches (SI-076, SI-077).
+    virtual int do_toggle_attributes(filename_t& name, uint8_t bits) { return 0; }
+    virtual int do_set_attributes(filename_t names[], int n, uint8_t attrib, uint8_t mask) { return 0; }
+    // R-H sets the header of the directory the name's path points at, and R-P renames
+    // the partition that carries a name (SI-064, SI-051).
+    virtual int do_set_header(filename_t& dest, const char *id) { return 0; }
+    virtual int do_rename_partition(const char *newname, const char *oldname) { return 0; }
 };
 
 class IecParser
@@ -115,16 +139,20 @@ class IecParser
     int dir_command(const uint8_t *buffer, int len);
     int copy_command(const uint8_t *buffer, int len);
     int initialize_command(const uint8_t *buffer, int len);
+    int name_and_id(const char *arg, filename_t& dest, const char *&id);
     int format_command(const uint8_t *buffer, int len);
     int position_command(const uint8_t *buffer, int len, int stripped_len);
     int rename_command(const uint8_t *buffer, int len);
     int scratch_command(const uint8_t *buffer, int len);
     int time_command(const uint8_t *buffer, int len);
     int user_command(const uint8_t *buffer, int len);
-    int extended_command(const uint8_t *buffer, int len);
     int get_command(const uint8_t *buffer, int len);
     int memory_command(const uint8_t *buffer, int len);
     int lock_command(const uint8_t *buffer, int len);
+    int swap_command(const uint8_t *buffer, int len);
+    int rename_dashed_command(const uint8_t *buffer, int len);
+    int attribute_command(const uint8_t *buffer, int len);
+    int header_command(const char *arg);
 
 public:
     IecParser(IecCommandExecuter *e) : exec(e) { }

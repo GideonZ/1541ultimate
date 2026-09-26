@@ -7,6 +7,7 @@ import hashlib
 import math
 import os
 import random
+import socket
 import sys
 import threading
 import time
@@ -24,7 +25,9 @@ sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
 import bootstrap  # noqa: E402,F401
 sys.path.insert(0, bootstrap.directory("soak", "network"))
 
+import health  # noqa: E402
 import report  # noqa: E402
+import targets  # noqa: E402
 
 import ftp_probe  # noqa: E402
 import http_probe  # noqa: E402
@@ -490,7 +493,9 @@ def sleep_ms(value: int) -> None:
 def build_runtime_settings(args: argparse.Namespace) -> RuntimeSettings:
     shared_network_password = args.network_password or args.ftp_pass
     return RuntimeSettings(
-        host=args.host,
+        # A cartridge target names its host as well (u2@c64u); every probe here talks to
+        # the cartridge's own address.
+        host=targets.parse(args.host).device,
         http_path=args.http_path,
         http_port=args.http_port,
         telnet_port=args.telnet_port,
@@ -816,6 +821,49 @@ def run_runner_loop(
     return iteration
 
 
+# How long a session slot may stay taken after the run's last connection closed. ftpd and
+# the Telnet server free a slot when the session's task ends, which follows the client's
+# close by a moment; a slot still taken after this long was never freed.
+SESSION_RELEASE_TIMEOUT_S = 30.0
+# What each capped listener sends instead of its greeting when every slot is taken.
+SESSION_CAP_REFUSALS = {"telnet": health.TELNET_BUSY, "ftp": b"421 "}
+
+
+def session_slot_free(settings: RuntimeSettings, protocol: str) -> bool:
+    port = settings.telnet_port if protocol == "telnet" else settings.ftp_port
+    with socket.create_connection((settings.host, port), timeout=3) as sock:
+        sock.settimeout(1.5)
+        try:
+            greeting = sock.recv(256)
+        except TimeoutError:
+            greeting = b""
+    return SESSION_CAP_REFUSALS[protocol] not in greeting
+
+
+def wait_for_released_sessions(settings: RuntimeSettings, config: ExecutionConfig) -> str | None:
+    """Wait until the device accepts a Telnet and an FTP session again; say which it did not.
+
+    The stress profile keeps every slot of both servers busy until its last moment, and a
+    slot is free again only once its session's task has ended, so a health check made
+    straight after the run can find the slots still taken.
+    """
+    started = time.monotonic()
+    for protocol in SESSION_CAP_REFUSALS:
+        if protocol not in config.probes:
+            continue
+        while True:
+            try:
+                if session_slot_free(settings, protocol):
+                    break
+            except OSError:
+                pass
+            if time.monotonic() - started > SESSION_RELEASE_TIMEOUT_S:
+                return f"{protocol} still refused a session {SESSION_RELEASE_TIMEOUT_S:.0f}s after the run"
+            time.sleep(1.0)
+    log("sessions", "INFO", f"telnet and ftp accept a session {time.monotonic() - started:.1f}s after the run")
+    return None
+
+
 def run_extended(config: ExecutionConfig, settings: RuntimeSettings) -> int:
     should_prime_ftp_temp_dir = "ftp" in config.probes and config.probe_surfaces.get("ftp", ProbeSurface.SMOKE) in (
         ProbeSurface.READ,
@@ -871,6 +919,10 @@ def run_extended(config: ExecutionConfig, settings: RuntimeSettings) -> int:
             active_stream_monitor.stop()
         if final_stream_snapshots and any(snapshot.status == "FAIL" or snapshot.packets_received == 0 for snapshot in final_stream_snapshots):
             result = 1
+        unreleased = wait_for_released_sessions(settings, config)
+        if unreleased:
+            log("sessions", "FAIL", unreleased)
+            state.failure_count += 1
         if state.failure_count:
             result = 1
     # The closing line every suite in this tree reports, so this one's own
@@ -893,6 +945,16 @@ def apply_profile_runtime_defaults(settings: RuntimeSettings, config: ExecutionC
     return replace(settings, host=DEFAULT_PROFILE_HOST)
 
 
+def fit_to_machine(settings: RuntimeSettings, config: ExecutionConfig) -> tuple[RuntimeSettings, ExecutionConfig]:
+    """Leave out what the machine does not serve, so its absence does not read as a network fault."""
+    device = http_probe.identify_machine(settings)
+    settings = replace(settings, data_streams=device.has_data_streams)
+    if config.streams and not device.has_data_streams:
+        log("config", "INFO", f"{device.described} serves no data streams; streams=off")
+        config = replace(config, streams=())
+    return settings, config
+
+
 def main(argv: list[str]) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -903,8 +965,17 @@ def main(argv: list[str]) -> int:
     except ValueError as error:
         parser.error(str(error))
     settings = apply_profile_runtime_defaults(settings, config, argv)
+    settings, config = fit_to_machine(settings, config)
     log_resolved_startup(settings, config)
-    return run_extended(config, settings)
+    original_setting = http_probe.setting_item_state(settings)[0]
+    try:
+        return run_extended(config, settings)
+    finally:
+        try:
+            log("http", "INFO", http_probe.restore_setting(settings, original_setting))
+        except Exception as error:  # noqa: BLE001
+            log("http", "FAIL", f"could not put {http_probe.SETTING_ITEM} back to {original_setting}: {error}")
+            raise
 
 
 if __name__ == "__main__":

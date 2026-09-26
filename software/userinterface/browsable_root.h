@@ -11,6 +11,7 @@
 #include "browsable.h"
 #include "filemanager.h"
 #include "filetypes.h"
+#include "x00_wrapper.h"
 #include "size_str.h"
 #include "user_file_interaction.h"
 #include "network_interface.h"
@@ -75,8 +76,39 @@ class BrowsableDirEntry : public Browsable
 	FileInfo *info;
 	FileType *type;
 	char *fatname;
+	// The name a P00, S00, U00 or R00 file carries in its header; NULL for other files. Read
+	// once, because the host name of such a file does not identify it (SI-144).
+	char *cbm_name;
+	bool cbm_probed;
 	Path *path;
 	Path *parent_path;
+
+	// The CBM name inside an x00 wrapper, or NULL. The file is opened once per entry;
+	// the drive's own listing reads the same header for the same reason (SI-144).
+	const char *wrappedName(void) {
+		if (cbm_probed) {
+			return cbm_name;
+		}
+		cbm_probed = true;
+		char letter = 0;
+		if (!info || (info->attrib & (AM_DIR | AM_VOL)) ||
+		    !x00_extension(info->extension, &letter)) {
+			return NULL;
+		}
+		mstring full(parent_path->get_path());
+		if (full[-1] != '/') {
+			full += "/";
+		}
+		full += info->lfname;
+		char name[17];
+		if (!x00_read_header(FileManager::getFileManager(), full.c_str(), name, NULL) ||
+		    !x00_shown_name(name)) {
+			return NULL; // nothing to show, so the row keeps the host name
+		}
+		cbm_name = new char[strlen(name) + 1];
+		strcpy(cbm_name, name);
+		return cbm_name;
+	}
 
 	void setPath(void) {
 		if (!path) {
@@ -94,6 +126,8 @@ public:
 		this->parent = parent;
 		this->parent_path = pp;
 		this->fatname = NULL;
+		this->cbm_name = NULL;
+		this->cbm_probed = false;
 	}
 
 	virtual ~BrowsableDirEntry() {
@@ -103,6 +137,8 @@ public:
 			delete info;
 		if (fatname)
 		    delete fatname;
+		if (cbm_name)
+		    delete[] cbm_name;
 		if (path)
 			FileManager :: getFileManager() -> release_path(path);
 	}
@@ -176,7 +212,12 @@ public:
         return fatname;
     }
 
-    int squeezeToDisplayString(char *string_to_squeeze, char *squeezed_string, int max_width, int squeeze_quarter = 0)
+    virtual const char *getDisplayName() {
+        const char *shown = wrappedName();
+        return shown ? shown : getName();
+    }
+
+    int squeezeToDisplayString(const char *string_to_squeeze, char *squeezed_string, int max_width, int squeeze_quarter = 0)
     {
         int len = strlen(string_to_squeeze);
 
@@ -223,7 +264,11 @@ public:
                 sprintf(buffer, "\eR%#s\er VOLUME", display_space + extra, tmp_buffer);
             } else {
                 size_to_string_bytes(info->size, sizebuf);
-                extra = squeezeToDisplayString(info->lfname, tmp_buffer, display_space, squeeze_option);
+                // A wrapper shows the name it carries, as its host name does not identify it; the
+                // extension still says P00 (SI-144).
+                const char *shown = wrappedName();
+                extra = squeezeToDisplayString(shown ? shown : info->lfname, tmp_buffer,
+                                               display_space, squeeze_option);
                 sprintf(buffer, "%#s\e7 %3s%c%s", display_space + extra, tmp_buffer,
                         info->extension, sel, sizebuf);
             }

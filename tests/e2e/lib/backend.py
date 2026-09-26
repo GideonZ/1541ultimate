@@ -343,6 +343,10 @@ class Backend:
         """
         pass
 
+    def framed_selections(self) -> dict[tuple[int, int, int, int], tuple[int, str, list[str]]]:
+        """The highlighted entry of each framed list: {frame: (index, text, entries)}."""
+        raise Failure(f"{type(self).__name__} cannot read the selection of a framed list")
+
     def selected_row(self, entry_rows: Sequence[int] | None = None) -> int:
         """Row index the on-device UI currently marks as selected/highlighted.
 

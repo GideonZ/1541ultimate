@@ -96,12 +96,13 @@ sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
 import bootstrap  # noqa: E402,F401
 import cli  # noqa: E402
 import ftp  # noqa: E402
+import kernal  # noqa: E402
 from api import UltimateApi  # noqa: E402
 from config_snapshot import Snapshot  # noqa: E402
 from report import Failure, check, detail, section, suite_fail, suite_ok, teardown_step  # noqa: E402
 
 sys.path.insert(0, bootstrap.directory("e2e", "io", "iec"))
-from iec_agent import CLOSE, OPEN, READ_COUNT, READ_TO_EOI, STATUS_BYTES, WRITE, Agent, iec_drive  # noqa: E402
+from iec_agent import CLOSE, OPEN, READ_COUNT, READ_TO_EOI, STATUS_BYTES, WRITE, Agent, iec_drive, restorable_path  # noqa: E402
 
 import softiec_log  # noqa: E402
 
@@ -359,7 +360,8 @@ class RecordingAgent:
             raise
         if is_status_read:
             if self._pending is not None:
-                self._finish_pending(result, now)
+                # Ends when the read does: a reset sent during the read changes what it reads.
+                self._finish_pending(result, time.monotonic())
         elif (op == WRITE) and (channel == 15) and data:
             self._pending = ("command", bytes(data), device, now, 15)
         elif op == OPEN:
@@ -396,6 +398,11 @@ class Session:
         self.statuses = {}
         self.lane_errors = []
         self.lane_counts = {"rest": 0, "ftp": 0}
+        # When the REST lane last reset the drive, as time.monotonic(): a reset drops the
+        # transfer that is on the bus, so what a step read across it proves nothing.
+        self.drive_reset_at = 0.0
+        # Every reset of this phase as (request sent, answer received), for the correlation.
+        self.drive_resets = []
         self.heap_before = None
         self.heap_after = None
         self.stop = threading.Event()
@@ -426,6 +433,7 @@ class Session:
         self.heap_before = None
         self.heap_after = None
         self.log_events = []
+        self.drive_resets = []
         self.flips = []
 
     # -- the C64 lane: shared helpers ------------------------------------------------
@@ -731,10 +739,11 @@ class Session:
         # The commands a session sends now and then, and the ones a person tries by mistake.
         # XPWD answers the working directory as data; I and UJ close channels; the rest are
         # the deliberately-unimplemented forms of section 18.1 (V is 31, E and X other than
-        # XPWD are 30, S-8/S-9/S-D are 31, T-W is 30).
+        # XPWD are 30, T-W is 30). S-8 and S-9 move the drive (SI-101) onto a number another
+        # drive may hold, so they stay with iec-dos-commands, which frees it first.
         for text, allowed in (("I", (0,)), ("I0", (0,)), ("UJ", (73,)), ("U9", (73,)),
                               ("UI+", (0,)), ("UI-", (0,)), ("Z9", (31,)), ("E", (30,)),
-                              ("XYZ", (30,)), ("V", (31,)), ("S-8", (31,)), ("T-W", (30,))):
+                              ("XYZ", (30,)), ("V", (31,)), ("T-W", (30,))):
             if self.random.randrange(2):
                 continue
             self.command(text, allowed=allowed)
@@ -1320,22 +1329,36 @@ class Session:
             self.status()
         except Failure:
             try:
-                self.recover_quietly()
+                self.recover()
                 self.status()
-            except Failure as exc:
-                if self.alive():
-                    raise Dead(f"the drive stopped answering a status read after iteration "
-                               f"{self.iteration} while REST answers: {exc}") from exc
-                raise
+            except Failure:
+                # The agent is driven over REST, and the lanes can starve those requests: a
+                # cartridge's server resets connections under their load. The drive is dead
+                # only if it also fails to answer with the network left to it.
+                self.quiet.set()
+                try:
+                    time.sleep(LIVENESS_RETRY_SECONDS)
+                    self.recover()
+                    self.status()
+                except Failure as exc:
+                    if self.alive():
+                        raise Dead(f"the drive stopped answering a status read after iteration "
+                                   f"{self.iteration} while REST answers: {exc}") from exc
+                    raise
+                finally:
+                    self.quiet.clear()
         if self.iteration % 3 == 0:
-            try:
-                self.close(6)
-                self.partition()
-                self.expect_file(6, f"//{self.here}/OS/SETTINGS/:CONFIG.T", "OS/SETTINGS/CONFIG.T.seq")
-            except Corruption:
-                raise
-            except Failure as exc:
-                self.anomaly("checkpoint fixture", exc)
+            self.check_fixture()
+
+    def check_fixture(self):
+        try:
+            self.close(6)
+            self.partition()
+            self.expect_file(6, f"//{self.here}/OS/SETTINGS/:CONFIG.T", "OS/SETTINGS/CONFIG.T.seq")
+        except Corruption:
+            raise
+        except Failure as exc:
+            self.anomaly("checkpoint fixture", exc)
 
     # -- the PC lanes ----------------------------------------------------------------
 
@@ -1389,8 +1412,10 @@ class Session:
                 if self.policy.rest_reset and (time.monotonic() - last_reset > 20):
                     # The drives helper knows only the emulated slots a and b, so the softiec
                     # slot is reset through the route directly.
+                    sent = time.monotonic()
                     api.rest.request("PUT", "/v1/drives/softiec:reset")
-                    last_reset = time.monotonic()
+                    last_reset = self.drive_reset_at = time.monotonic()
+                    self.drive_resets.append((sent, last_reset))
             except Exception as exc:  # the main lane decides whether this is a death
                 self.lane_errors.append(f"rest at iteration {self.iteration}: {exc}")
 
@@ -1557,13 +1582,14 @@ class Session:
             return None, ("the start marker was not found in the syslog; it may have been "
                           "split or dropped, or the device does not log to this collector")
         self.dump_log_window(device_ip, texts)
+        events = softiec_log.across_resets(self.log_events, list(self.drive_resets))
         if self.log_mode == "toggle":
             with self.flip_lock:
                 flips = list(self.flips)
-            result = softiec_log.correlate_toggle(self.log_events, texts, flips, initial_on=False,
+            result = softiec_log.correlate_toggle(events, texts, flips, initial_on=False,
                                                   label=f"toggle from {device_ip}")
         else:
-            result = softiec_log.correlate(self.log_events, texts, logging_on=self.log_on,
+            result = softiec_log.correlate(events, texts, logging_on=self.log_on,
                                           label=f"logging {'on' if self.log_on else 'off'} "
                                                 f"from {device_ip}")
         return result, None
@@ -1620,10 +1646,16 @@ class Session:
                 label, action = policy.choose(self.random)
                 self.counts[label] = self.counts.get(label, 0) + 1
                 self.note(f"begin {label}")
+                started = time.monotonic()
                 try:
                     action(self)
                 except Corruption as exc:
-                    failures.append(f"iteration {self.iteration} ({label}): {exc}")
+                    raised = time.monotonic()
+                    if any(sent <= raised and done >= started for sent, done in self.drive_resets):
+                        # The step's own transfer was dropped by the lane's reset.
+                        self.anomaly(f"{label} across a drive reset", exc)
+                    else:
+                        failures.append(f"iteration {self.iteration} ({label}): {exc}")
                     self.recover_quietly()
                     if len(failures) > 5:
                         break
@@ -1647,12 +1679,21 @@ class Session:
                         if len(failures) > 5:
                             break
                 if policy.checkpoint:
+                    started = time.monotonic()
                     try:
                         self.checkpoint()
                     except Corruption as exc:
-                        failures.append(f"iteration {self.iteration} checkpoint: {exc}")
-                        if len(failures) > 5:
-                            break
+                        try:
+                            if self.drive_reset_at < started:
+                                raise
+                            # A read cut by the lane's reset is read again: a fixture that
+                            # still differs is damaged, one that now matches was not.
+                            self.anomaly("checkpoint read across a drive reset", exc)
+                            self.check_fixture()
+                        except Corruption as damaged:
+                            failures.append(f"iteration {self.iteration} checkpoint: {damaged}")
+                            if len(failures) > 5:
+                                break
                 if self.iteration >= WARMUP_ITERATIONS:
                     heap.append(self.api.machine.heap_free())
                 if self.iteration % 10 == 0:
@@ -1982,18 +2023,22 @@ def plan_phases(args):
 
 def setup_syslog_source(session, api, args):
     """Where this phase's device log comes from, and a note for the report. A spool file when
-    --syslog-spool is given; otherwise the UDP port the device's syslog setting names, when
+    --syslog-spool is given; the runner's collected log for this target when run-tests
+    --syslog collects it; otherwise the UDP port the device's syslog setting names, when
     that address is one of this host's; otherwise None with the reason, which leaves the
     phases running with the log verdict skipped rather than failing the run."""
     if args.syslog_spool:
         return SpoolSource(args.syslog_spool), f"reading the spool {args.syslog_spool}"
+    collected = softiec_log.CollectedLogSource.from_environment(api.host)
+    if collected is not None:
+        return collected, f"reading the run's collected log {collected.path}"
     if SYSLOG_CATEGORY not in api.configs.category_names():
         return None, "this device has no Network Settings; pass --syslog-spool"
     parsed = softiec_log.parse_syslog_server(str(api.configs.get(SYSLOG_CATEGORY, SYSLOG_ITEM)))
     if parsed is None:
         return None, "the device's 'Log to Syslog Server' setting is empty; pass --syslog-spool"
     ip, port = parsed
-    if ip not in softiec_log.local_addresses():
+    if ip not in softiec_log.local_addresses(api.host):
         return None, (f"the device logs to {ip}, which is not this host; run the collector "
                       f"there and pass --syslog-spool")
     try:
@@ -2037,6 +2082,7 @@ def main():
     parser.add_argument("--log-dump",
                         help="a directory to write each phase's recorded operations and the "
                              "device log lines of its window to, for checking a verdict by hand.")
+    kernal.add_arguments(parser)
     args = parser.parse_args()
     phases = plan_phases(args)
     session = Session(args)
@@ -2063,7 +2109,9 @@ def main():
             snapshot[CMD_IF_CATEGORY] = cmd_if_snapshot
         saved = Snapshot(args.host, snapshot)
         started = created = False
+        kernal_run = contextlib.ExitStack()
         try:
+            kernal_run.enter_context(kernal.selected(api, args, args.password))
             with check("start the IEC agent and build the fixture"):
                 api.configs.set(LOG_CATEGORY, "Soft Drive Bus ID", 11)
                 api.configs.set(LOG_CATEGORY, "IEC Drive", "Enabled")
@@ -2073,6 +2121,7 @@ def main():
                 session.status()
                 session.command("CD//")
                 session.root = iec_drive(api)["partitions"][0]["path"]
+                original_path = restorable_path(api, original_path, session.root)
                 session.fixture()
                 created = True
             with check("set up the device log source and the UCI target"):
@@ -2115,6 +2164,7 @@ def main():
                                   ("restore the Software IEC and Command Interface settings",
                                    lambda: saved.restore(api)),
                                   ("remove this run's directory", remove_fixture),
+                                  ("restore the KERNAL", kernal_run.close),
                                   ("return the C64 to BASIC", lambda: api.machine.reset(force=True))):
                 ok = teardown_step(label, action) and ok
     except Exception as exc:

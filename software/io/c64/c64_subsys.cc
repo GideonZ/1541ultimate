@@ -6,6 +6,8 @@
  */
 
 #include "c64.h"
+#include "x00_wrapper.h"
+#include "pattern.h"
 #include "c64_crt.h"
 #include "c64_subsys.h"
 #include <ctype.h>
@@ -59,6 +61,18 @@ static const char *format_bootcrt_display_name(const char *name, char *trimmed)
     memcpy(trimmed + 3, name + length - kTrimmedTailChars, kTrimmedTailChars);
     trimmed[kDisplayChars] = 0;
     return trimmed;
+}
+
+// The boot cart prints the name out of the x00 header, as the host name does not identify the
+// file, rendered as a host name spells a CBM name because CbmFileName reads it back (SI-144b).
+static const char *x00_load_name(File *f, const char *host_name, char *rendered, int size)
+{
+    char cbm_name[17];
+    if (!x00_skip_header(f, host_name, NULL, cbm_name) || !x00_shown_name(cbm_name)) {
+        return host_name;
+    }
+    petscii_to_fat(cbm_name, rendered, size);
+    return rendered;
 }
 
 cart_def boot_cart; // static => initialized with all zeros.
@@ -404,7 +418,9 @@ SubsysResultCode_e C64_Subsys::executeCommand(SubsysCommand *cmd)
         case C64_DMA_LOAD:
             res = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ, &f);
             if (res == FR_OK) {
-                dma_load(f, NULL, 0, cmd->filename.c_str(), cmd->mode, c64->cfg->get_value(CFG_C64_DMA_ID));
+                char shown[52];
+                const char *name = x00_load_name(f, cmd->filename.c_str(), shown, sizeof(shown));
+                dma_load(f, NULL, 0, name, cmd->mode, c64->cfg->get_value(CFG_C64_DMA_ID));
                 fm->fclose(f);
             } else {
                 result = SSRET_CANNOT_OPEN_FILE;
@@ -415,7 +431,9 @@ SubsysResultCode_e C64_Subsys::executeCommand(SubsysCommand *cmd)
         case C64_DMA_LOAD_MNT:
             res = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ, &f);
             if (res == FR_OK) {
-                dma_load(f, NULL, 0, cmd->filename.c_str(), cmd->mode, c1541_A->get_current_iec_address());
+                char shown[52];
+                const char *name = x00_load_name(f, cmd->filename.c_str(), shown, sizeof(shown));
+                dma_load(f, NULL, 0, name, cmd->mode, c1541_A->get_current_iec_address());
                 fm->fclose(f);
             } else {
                 result = SSRET_CANNOT_OPEN_FILE;
@@ -425,6 +443,9 @@ SubsysResultCode_e C64_Subsys::executeCommand(SubsysCommand *cmd)
         case C64_DMA_LOAD_RAW:
             res = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ, &f);
             if (res == FR_OK) {
+                // A raw load has no name to print; the header is still skipped, because
+                // the C64 file is what follows it.
+                x00_skip_header(f, cmd->filename.c_str(), NULL);
                 dma_load_raw(f);
                 fm->fclose(f);
             } else {

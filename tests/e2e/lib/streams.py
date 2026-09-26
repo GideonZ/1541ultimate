@@ -42,6 +42,7 @@ import select
 import socket
 import struct
 import sys
+import threading
 import time
 from array import array
 from dataclasses import dataclass
@@ -54,6 +55,7 @@ sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
 import bootstrap  # noqa: E402,F401
 
 import targets as targets_lib  # noqa: E402
+from api import UltimateApi  # noqa: E402
 from report import Failure  # noqa: E402
 
 import screens as screen_spool  # noqa: E402
@@ -63,6 +65,10 @@ VIDEO_GROUP = targets_lib.VIDEO_GROUP
 VIDEO_PORT = targets_lib.VIDEO_PORT
 AUDIO_GROUP = targets_lib.AUDIO_GROUP
 AUDIO_PORT = targets_lib.AUDIO_PORT
+
+# Long enough for a device on the LAN to answer, short enough that asking an
+# unknown sender does not stall a capture that is already receiving.
+UNIQUE_ID_TIMEOUT_SECONDS = 2.0
 
 
 def stream_socket(group: str, port: int, timeout: float | None = 2.0) -> socket.socket:
@@ -104,7 +110,69 @@ def is_multicast(address: str) -> bool:
     return 224 <= first <= 239
 
 
-def source_addresses(host) -> set[str]:
+def _unique_id(address: str) -> str | None:
+    """The unique id `address` reports for itself, or None when it does not say."""
+    try:
+        info = UltimateApi(address, None, UNIQUE_ID_TIMEOUT_SECONDS).info()
+    except (Failure, OSError):
+        return None
+    value = info.extra.get("unique_id")
+    return value if isinstance(value, str) and value else None
+
+
+class DeviceAddresses:
+    """The addresses one device sends from, which can be more than the one it
+    was addressed on.
+
+    An Ultimate with Ethernet and Wi-Fi both up on one subnet streams from
+    whichever interface its routing picks. Measured on the bench, a u64
+    addressed over Ethernet at .70 streamed from its Wi-Fi at .13, and a filter
+    holding only .70 dropped every packet, so a capture waited forever. A
+    sender outside the known set is asked once for its unique id and belongs to
+    this device when the id matches; another Ultimate on the group reports its
+    own id and stays foreign, which is the case source_addresses() guards.
+    """
+
+    def __init__(self, host: str, known: set[str]) -> None:
+        self._known = set(known)
+        self._foreign: set[str] = set()
+        self._asked: set[str] = set()
+        self._unique_id = _unique_id(host)
+
+    def __contains__(self, address: object) -> bool:
+        """Whether `address` is this device's, never waiting to find out.
+
+        A caller asks this for every packet, so asking a sender over REST here would
+        stop the capture while the answer came: measured with a u64 and a C64 Ultimate
+        streaming at once, a Wi-Fi sender slow to answer stalled the u64's capture until
+        its socket overflowed and the frame it assembled was black. A new sender is
+        asked in the background and counts as foreign until it has answered; the few
+        packets that costs are packets a capture can do without.
+        """
+        if address in self._known:
+            return True
+        if (not isinstance(address, str) or address in self._foreign
+                or self._unique_id is None):
+            return False
+        if address not in self._asked:
+            self._asked.add(address)
+            threading.Thread(target=self._identify, args=(address,), daemon=True).start()
+        return False
+
+    def _identify(self, address: str) -> None:
+        if _unique_id(address) == self._unique_id:
+            self._known.add(address)
+        else:
+            self._foreign.add(address)
+
+    def __iter__(self):
+        return iter(sorted(self._known))
+
+    def __len__(self) -> int:
+        return len(self._known)
+
+
+def source_addresses(host) -> DeviceAddresses:
     """Every address whose packets count as this device's.
 
     A second machine streaming into the same group is indistinguishable from
@@ -120,8 +188,8 @@ def source_addresses(host) -> set[str]:
     try:
         found = socket.getaddrinfo(name, 0, socket.AF_INET, socket.SOCK_DGRAM)
     except OSError:
-        return set()
-    return {entry[4][0] for entry in found}
+        found = []
+    return DeviceAddresses(name, {entry[4][0] for entry in found})
 
 
 class Arming:

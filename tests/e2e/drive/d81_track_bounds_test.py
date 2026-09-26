@@ -45,7 +45,11 @@ RESULT_BYTES = 4
 RESULT_DATA = 0xc100
 STATUS_DONE = 1
 READY_MARK = 0xa5
-POLL_SECONDS = 0.05
+# machine:readmem halts the C64 for its DMA, and one landing inside the
+# reader's serial transfer can hang it, so the first read waits for the
+# reader to be done: it takes 2.3 s on both a U64 and a U2+L.
+PROGRAM_SECONDS = 3.0
+POLL_SECONDS = 0.5
 PROGRAM_TIMEOUT_SECONDS = 10.0
 LIVENESS_TIMEOUT_SECONDS = 10.0
 
@@ -100,6 +104,7 @@ class SuiteRunner:
 
     def await_program(self) -> bytes:
         deadline = time.monotonic() + PROGRAM_TIMEOUT_SECONDS
+        time.sleep(PROGRAM_SECONDS)
         while True:
             result = self.api.machine.readmem(RESULT_STATUS, RESULT_BYTES)
             if result[1] == READY_MARK and result[0] != 0:

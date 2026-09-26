@@ -35,6 +35,9 @@ public:
 	static void reset(void) {
         for(int i=0; i < 8; i++) {
             ioWrite8(VOICE_CONTROL(i), 0);
+            // A stopped voice keeps sending its last sample, so only a zero
+            // volume takes it out of the mix.
+            ioWrite8(VOICE_VOLUME(i), 0);
         }
     }
 };

@@ -1134,6 +1134,26 @@ void FileManager::discard_mounts_of_file(const char *path)
     }
 }
 
+// A file open for writing writes its entry back into the entry's old slot when it closes, so it
+// must not be deleted or renamed meanwhile. A mount still held has a file open inside the image.
+bool FileManager::in_use_for_writing(const char *path)
+{
+    discard_mounts_of_file(path);
+    for (int i = 0; i < mount_points.get_elements(); i++) {
+        MountPoint *mp = mount_points[i];
+        if (mp && mp->get_file() && !strcasecmp(mp->get_file()->get_path(), path)) {
+            return true; // its handle is open for reading and writing
+        }
+    }
+    for (int i = 0; i < open_file_list.get_elements(); i++) {
+        File *f = open_file_list[i];
+        if (f && f->write_intent && !strcasecmp(f->get_path(), path)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 MountPoint *FileManager::add_mount_point(SubPath *path, File *file, FileSystemInFile *emb)
 {
     printf("FileManager :: add_mount_point: (FS=%p, path='%s')\n", file->get_file_system(), path->get_path());
@@ -1196,6 +1216,10 @@ FRESULT FileManager::delete_file_impl(PathInfo &pathInfo)
     if (fres != FR_OK) {
         return fres;
     }
+    mstring open_path;
+    if (in_use_for_writing(pathInfo.workPath.getTail(0, open_path))) {
+        return FR_LOCKED;
+    }
     FileSystem *fs = pathInfo.getLastInfo()->fs;
     fres = fs->file_delete(pathInfo.getPathFromLastFS());
     if (fres == FR_OK) {
@@ -1229,6 +1253,52 @@ FRESULT FileManager::set_attributes(const char *pathname, uint8_t attrib, uint8_
     FRESULT fres = find_pathentry(pathInfo, false);
     if (fres == FR_OK) {
         fres = pathInfo.getLastInfo()->fs->file_attrib(pathInfo.getPathFromLastFS(), attrib, mask);
+        if (fres == FR_OK) {
+            mstring work;
+            sendEventToObservers(eRefreshDirectory, pathInfo.getFullPath(work, -1), "");
+        }
+    }
+    unlock();
+    return fres;
+}
+
+// The label the file system itself holds for a directory, where it has one (SI-064).
+FRESULT FileManager::set_dir_label(const char *pathname, const char *name, const char *id)
+{
+    PathInfo pathInfo(rootfs);
+    pathInfo.init(pathname);
+    lock();
+    // A mount point is entered, as open_directory() does, so the label of a directory
+    // inside a mounted image is the one the command reaches.
+    FRESULT fres = find_pathentry(pathInfo, true);
+    FileInfo *inf = pathInfo.getLastInfo();
+    if ((fres == FR_OK) && (!inf || !inf->fs)) {
+        fres = FR_NO_FILESYSTEM; // as get_free() answers the same path
+    }
+    if (fres == FR_OK) {
+        fres = inf->fs->dir_set_label(pathInfo.getPathFromLastFS(), name, id);
+        if (fres == FR_OK) {
+            mstring work;
+            sendEventToObservers(eRefreshDirectory, pathInfo.getFullPath(work, -1), "");
+        }
+    }
+    unlock();
+    return fres;
+}
+
+// The write lock of the medium the path is on, where the medium records one.
+FRESULT FileManager::set_write_lock(const char *pathname, bool locked)
+{
+    PathInfo pathInfo(rootfs);
+    pathInfo.init(pathname);
+    lock();
+    FRESULT fres = find_pathentry(pathInfo, true);
+    FileInfo *inf = pathInfo.getLastInfo();
+    if ((fres == FR_OK) && (!inf || !inf->fs)) {
+        fres = FR_NO_FILESYSTEM;
+    }
+    if (fres == FR_OK) {
+        fres = inf->fs->set_write_lock(locked);
         if (fres == FR_OK) {
             mstring work;
             sendEventToObservers(eRefreshDirectory, pathInfo.getFullPath(work, -1), "");
@@ -1314,6 +1384,11 @@ FRESULT FileManager::rename_impl(PathInfo &from, PathInfo &to)
         unlock();
         return fres;
     }
+    mstring open_path;
+    if (in_use_for_writing(from.workPath.getTail(0, open_path))) {
+        unlock();
+        return FR_LOCKED;
+    }
 
     // source file was found
     fres = find_pathentry(to, false);
@@ -1328,7 +1403,19 @@ FRESULT FileManager::rename_impl(PathInfo &from, PathInfo &to)
             unlock();
             return FR_INVALID_DRIVE;
         }
-        fres = from.getLastInfo()->fs->file_rename(from.getPathFromLastFS(), to.getPathFromLastFS());
+        // A directory cannot move inside itself, or its tree would become unreachable. FAT does not
+        // check this, and it matches names without regard to case.
+        const char *src = from.getPathFromLastFS();
+        const char *dst = to.getPathFromLastFS();
+        int n = strlen(src);
+        while ((n > 0) && (src[n - 1] == '/')) {
+            n--;
+        }
+        if ((n > 0) && !strncasecmp(src, dst, n) && (dst[n] == '/')) {
+            unlock();
+            return FR_DENIED;
+        }
+        fres = from.getLastInfo()->fs->file_rename(src, dst);
         if (fres == FR_OK) {
             mstring from_file_path, to_file_path;
             mstring from_dir_path, to_dir_path;

@@ -48,7 +48,8 @@ sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
 import bootstrap  # noqa: E402,F401
 import cli  # noqa: E402
 import ftp as ftp_lib
-from report import (Failure, check, detail, format_exception, section,
+import targets
+from report import (Failure, check, check_skip, detail, format_exception, section,
                     suite_fail, suite_ok, suite_skip, teardown_step)
 from ui_backend import MODE_OVERLAY, close_host_menu, make_browser
 
@@ -228,7 +229,17 @@ def check_pause_and_resume(browser) -> None:
 def check_tape_plays_to_its_end(browser) -> None:
     fast, slow = tap_seconds(SHORT_TAP_PULSES)
     played = start_tape(browser, SHORT_TAP_NAME)
-    expect_actions(browser, (PAUSE_ACTION,), "with the short tape playing")
+    started = time.monotonic()
+    offered = player_actions(browser)
+    # The C64, and with it the tape, runs until the menu is up again. A reading held up
+    # for as long as the tape plays finds it closed already, which is its own end.
+    held_up = played + time.monotonic() - started
+    if not offered and held_up >= fast * END_EARLY_FRACTION:
+        detail(f"the menu was read {held_up:.1f}s after the start, and the tape had closed itself")
+        return
+    if offered != [PAUSE_ACTION]:
+        raise Failure(f"with the short tape playing: the Tape menu offers {offered}, "
+                      f"expected {[PAUSE_ACTION]}")
     deadline = slow + END_SLACK_SECONDS
     while True:
         played += play_with_the_menu_closed(browser, END_PLAY_SECONDS)
@@ -286,7 +297,14 @@ def main() -> int:
             expect_actions(browser, (), "after Stop Tape Playback")
 
         with check("a tape plays to its end and then closes itself"):
-            check_tape_plays_to_its_end(browser)
+            if targets.is_cartridge(args.host):
+                # The tape clock runs only while the cassette motor is on
+                # (tape_speed_control.vhd). A cartridge sees the computer's motor
+                # line only through the tape adapter on the cassette port.
+                check_skip("a cartridge's tape advances only with the tape adapter "
+                           "on the computer's cassette port, which carries the motor line")
+            else:
+                check_tape_plays_to_its_end(browser)
 
         suite_ok(SUITE)
         return 0

@@ -77,6 +77,7 @@ CFG_REU_OFFSET = "REU Preload Offset"
 # Everything the suite writes, captured before the first change and put back at the end.
 OWNED_SETTINGS = (CFG_CMD_IF, CFG_REU_ENABLE, CFG_REU_IMAGE, CFG_REU_SIZE, CFG_REU_OFFSET)
 
+REG_KERNAL_DEVICE = 0xDF1B
 REG_CONTROL = 0xDF1C
 REG_COMMAND = 0xDF1D
 REG_RESPONSE = 0xDF1E
@@ -209,6 +210,7 @@ TESTS = [
     "save-reu-disabled",
     "softiec-single-part-reply",
     "softiec-x00-name",
+    "softiec-setting-modes",
     "interface-usable-after",
 ]
 
@@ -896,6 +898,61 @@ def run_softiec_x00_name(ftp: "FtpFixture", uci: Uci) -> bool:
     return True
 
 
+SOFTIEC_CATEGORY = "SoftIEC Drive Settings"
+SOFTIEC_ENABLE = "IEC Drive"
+SOFTIEC_BUS_ID = "Soft Drive Bus ID"
+# The number $DF1B holds while the drive is off altogether, which no program opens.
+KERNAL_DEVICE_NONE = 31
+
+
+def softiec_on_bus(session: RestSession) -> bool:
+    status, body = session.request("GET", "/v1/drives", repeatable=True)
+    if status != 200:
+        raise Failure(f"GET /v1/drives failed with HTTP {status}: {body[:200]!r}")
+    for entry in json.loads(body.decode("utf-8"))["drives"]:
+        if "IEC Drive" in entry:
+            return bool(entry["IEC Drive"]["enabled"])
+    raise Failure("/v1/drives lists no IEC Drive")
+
+
+def run_softiec_setting_modes(session: RestSession, uci: Uci) -> bool:
+    """"IEC Drive" decides the bus and the UCI side of the drive separately (SI-107, #918).
+
+    Enabled puts the drive on the bus and gives a UCI KERNAL its number at $DF1B. UCI Only
+    takes it off the bus and keeps the UCI target answering, which is how a program is shown
+    to use UCI and not the bus. Disabled turns off both: the target answers "not loaded" and
+    $DF1B holds 31, so the KERNAL sends everything to the bus, where the drive is not.
+    """
+    scenario = "softiec-setting-modes"
+    settings = session.get_config(SOFTIEC_CATEGORY)
+    original = str(settings[SOFTIEC_ENABLE])
+    device = int(settings[SOFTIEC_BUS_ID])
+    modes = (
+        ("Enabled", True, True, device),
+        ("Disabled", False, False, KERNAL_DEVICE_NONE),
+        ("UCI Only", False, True, device),
+    )
+    try:
+        for value, on_bus, serves_uci, kernal_device in modes:
+            with check(f"{scenario}: {SOFTIEC_ENABLE} {value}: on the bus {on_bus}, "
+                       f"UCI {serves_uci}, $DF1B {kernal_device}"):
+                session.set_config(SOFTIEC_CATEGORY, SOFTIEC_ENABLE, value)
+                seen_bus = softiec_on_bus(session)
+                seen_device = session.peek(REG_KERNAL_DEVICE, repeatable=True) & 0x1F
+                _reply, text = uci.transact(bytes([TARGET_SOFTIEC, SOFTIEC_CMD_IDENTIFY]))
+                detail(f"on the bus {seen_bus}, $DF1B {seen_device}, IDENTIFY status {text!r}")
+                if seen_bus != on_bus:
+                    raise Failure(f"the drive list says on the bus {seen_bus}, expected {on_bus}")
+                if seen_device != kernal_device:
+                    raise Failure(f"$DF1B holds {seen_device}, expected {kernal_device}")
+                wanted = STATUS_OK if serves_uci else SOFTIEC_NOT_LOADED
+                if text != wanted:
+                    raise Failure(f"IDENTIFY answered status {text!r}, expected {wanted!r}")
+    finally:
+        session.set_config(SOFTIEC_CATEGORY, SOFTIEC_ENABLE, original)
+    return True
+
+
 def run_interface_usable_after(uci: Uci) -> bool:
     expect(uci, "interface-usable-after: the control target still answers IDENTIFY",
            bytes([TARGET_CONTROL, CTRL_CMD_IDENTIFY]), STATUS_OK, reply_prefix=b"CONTROL TARGET")
@@ -1027,6 +1084,7 @@ def main() -> int:
         run("save-reu-disabled", run_reu_disabled, session, uci, CTRL_CMD_SAVE_REU, "save-reu-disabled")
         run("softiec-single-part-reply", run_softiec_single_part_reply, uci)
         run("softiec-x00-name", run_softiec_x00_name, ftp, uci)
+        run("softiec-setting-modes", run_softiec_setting_modes, session, uci)
         run("interface-usable-after", run_interface_usable_after, uci)
 
     except Failure as exc:

@@ -631,6 +631,37 @@ def run_output_dir_option_checks(runner):
             raise Failure(f"the child was not given --output-dir: {command}")
 
 
+def run_kernal_option_checks(runner):
+    """--kernal and --command-interface reach the Software IEC suites, and only when given."""
+    suite = next(s for s in runner.SUITES if s.name == "iec-dos-commands")
+
+    def command(**kwargs):
+        options = runner.Options(host="device.invalid", password="", timeout="1.0",
+                                 soak_profile="stress", output_dir="", stop_on_fail=False,
+                                 health_check=False, attempts=1, recover_command="",
+                                 recover_max_per_suite=0, recover_max_total=0,
+                                 recover_timeout=1.0, **kwargs)
+        return runner.build_command(suite, options, "rest")
+
+    with check("a run without --kernal starts the suite without one"):
+        started = command()
+        if "--kernal" in started or "--command-interface" in started or "@KERNAL@" in started:
+            raise Failure(f"the suite was given a KERNAL it was not asked for: {started}")
+
+    with check("--kernal and --command-interface are passed to the suite"):
+        started = command(kernal="jiffydos_c64.bin", command_interface=True)
+        if started[-3:] != ["--kernal", "jiffydos_c64.bin", "--command-interface"]:
+            raise Failure(f"the suite was not given the KERNAL options: {started}")
+
+    with check("a child run is given the same KERNAL options"):
+        args = runner.build_parser().parse_args(
+            ["--kernal", "jiffydos_c64.bin", "--command-interface", "u64", "u2@c64u"])
+        child = runner.child_command(args, targets.parse("u64"), "runs/u64")
+        if "--command-interface" not in child or \
+                child[child.index("--kernal") + 1] != "jiffydos_c64.bin":
+            raise Failure(f"the child was not given the KERNAL options: {child}")
+
+
 def run_reset_guard_checks():
     """A reset that cannot change anything is not sent.
 
@@ -1714,6 +1745,7 @@ def main():
             run_recovery_limit_checks(runner)
             run_degraded_recovery_checks(runner)
             run_output_dir_option_checks(runner)
+            run_kernal_option_checks(runner)
             run_reset_guard_checks()
             run_retry_checks(runner, tmpdir)
             run_jsonl_contract_checks(runner, tmpdir)

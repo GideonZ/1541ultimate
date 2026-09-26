@@ -49,9 +49,8 @@ from menu_screen_test import Failure, MenuScreenInfo, RestSession, check
 from api import ConfigsApi, DRIVE_ENABLE_ITEM, DRIVE_ENABLED, DRIVE_STORES
 import ftp as ftp_lib
 import pacing
-import targets
 from report import (check_skip, detail, section, suite_fail, suite_ok,
-                    suite_skip, teardown_step)
+                    teardown_step)
 from ui_backend import Browser, TelnetBackend, add_mode_argument, make_browser, strip_frame
 
 
@@ -147,6 +146,16 @@ PRG_BYTES = bytes(
         0x60,                          # rts
     ]
 ) + SIGNATURE + MESSAGE.encode("ascii") + bytes([0x0D, 0x00])
+
+# The CBM name inside the x00 fixture. It carries a space and is longer than the 8.3
+# host name the wrapper lives under, so a browser row that shows it can only have come
+# from the header (SI-144).
+P00_CBM_NAME = "WRAPPED PROGRAM"
+P00_HEADER = (b"C64File\0" + P00_CBM_NAME.encode("ascii").ljust(16, b"\0")
+              + b"\0" + bytes([0]))
+P00_BYTES = P00_HEADER + PRG_BYTES
+# How long a typed quick-seek may take to move the cursor on screen.
+SEEK_SECONDS = 5.0
 
 SECTORS_PER_TRACK = [21] * 17 + [19] * 7 + [18] * 6 + [17] * 5
 D64_SIZE = 174848
@@ -486,18 +495,21 @@ class Machine:
             except Failure:
                 return
             rows = [strip_frame(row) for row in raw]
+            # Listing rows only: the title row carries the product name, and the "+"
+            # in "Ultimate II+L" would read as an overlay border.
+            listing = [rows[index] for index in self.browser.entry_rows if index < len(rows)]
             fields = raw[self.browser.status_row].split()
             path = fields[0] if fields else ""
             if "Yes  No" in rows:
                 self.browser.press_popup_button("n")
             elif "Ok" in rows:
                 self.browser.press_popup_button("o")
-            elif (telnet and not _has_overlay(rows)
+            elif (telnet and not _has_overlay(listing)
                     and path.startswith("/") and path != "/"):
                 # RUNSTOP peels an interaction layer and never leaves a
                 # directory; LEFT is the way out of one.
                 self.browser.press("LEFT")
-            elif telnet and _at_plain_root(rows, path):
+            elif telnet and _at_plain_root(listing, path):
                 # Nothing left to close over Telnet: its remote session never
                 # closes on its own, so without this check the loop would keep
                 # pressing F8 at the plain root forever. Pressing F8 there is
@@ -650,6 +662,9 @@ class Fixtures:
         self.token = token
         self.prg = f"{FIXTURE_PREFIX}{token}.prg"
         self.d64 = f"{FIXTURE_PREFIX}{token}.d64"
+        # The same program behind a P00 header, under a host name that says nothing
+        # about what it holds.
+        self.p00 = f"{FIXTURE_PREFIX}{token}w.p00"
         self.target_dir = f"{FIXTURE_PREFIX}{token}tgt"
         self.disk_serial = 0
         # A name far beyond the 16 characters the boot cart can display. The
@@ -668,6 +683,7 @@ class Fixtures:
         payload = {
             self.prg: PRG_BYTES,
             self.long_prg: PRG_BYTES,
+            self.p00: P00_BYTES,
             self.d64: build_d64(DISK_NAME, CBM_FILE_NAME, PRG_BYTES),
         }
         with ftp_lib.session(host, password, timeout=30) as ftp:
@@ -691,6 +707,10 @@ class Fixtures:
         with ftp_lib.session(host, password, timeout=30) as ftp:
             self._store(ftp, self.prg, PRG_BYTES)
 
+    def reseed_p00(self, host: str, password: str) -> None:
+        with ftp_lib.session(host, password, timeout=30) as ftp:
+            self._store(ftp, self.p00, P00_BYTES)
+
     def new_disk(self, host: str, password: str) -> None:
         """A fresh image name: the browser caches a disk directory per path."""
         self.disk_serial += 1
@@ -713,7 +733,7 @@ class Fixtures:
             with ftp_lib.session(host, password, timeout=30) as ftp:
                 for directory in (f"{self.target_dir}/", ""):
                     for name in ftp_lib.names(ftp, f"{TEMP_PATH}{directory}"):
-                        if not name.startswith(FIXTURE_PREFIX) and directory == "":
+                        if not name.lower().startswith(FIXTURE_PREFIX) and directory == "":
                             continue
                         ftp_lib.delete_quietly(ftp, f"{TEMP_PATH}{directory}{name}")
                 ftp_lib.delete_quietly(ftp, f"{TEMP_PATH}{self.target_dir}")
@@ -766,6 +786,31 @@ def open_plain_prg(machine: Machine, fixtures: Fixtures) -> None:
 def open_long_name_prg(machine: Machine, fixtures: Fixtures) -> None:
     machine.open_temp()
     machine.select_entry(fixtures.long_prefix)
+
+
+def open_wrapped_prg(machine: Machine, fixtures: Fixtures) -> None:
+    machine.open_temp()
+    # By the name in the header, not by the host name: the browser shows a wrapper
+    # under the name the C64 sees.
+    machine.select_entry(P00_CBM_NAME)
+
+
+def seek_wrapped_by_shown_name(machine: Machine) -> str:
+    """Type the first word of the name a P00 row shows, and return the row the cursor lands on.
+
+    The row shows the name in the header, so that is what a user types to jump
+    to it; the host name says nothing (SI-144).
+    """
+    machine.open_temp()
+    machine.browser.go_to_top()
+    for character in P00_CBM_NAME.split()[0]:
+        machine.browser.type_menu_char(character.lower())
+    deadline = time.monotonic() + SEEK_SECONDS
+    while True:
+        shown = machine.browser.selected_text()
+        if P00_CBM_NAME in shown or time.monotonic() >= deadline:
+            return shown
+        time.sleep(pacing.POLL_INTERVAL_SECONDS)
 
 
 def open_disk_prg(machine: Machine, fixtures: Fixtures) -> None:
@@ -871,6 +916,20 @@ class PlainLocation:
     def entry_name(self, fixtures: Fixtures) -> str:
         return fixtures.prg
 
+    def host_name(self, fixtures: Fixtures) -> str:
+        """The name on the medium, which is the browser's row for everything but a
+        wrapper, whose row carries the name in its header instead."""
+        return self.entry_name(fixtures)
+
+    def file_bytes(self) -> bytes:
+        return PRG_BYTES
+
+    def hex_first_line(self) -> str:
+        return HEX_VIEW_FIRST_LINE
+
+    def hex_marker(self) -> str:
+        return "U64PRG"
+
     def renamed_to(self, fixtures: Fixtures) -> str:
         return f"{FIXTURE_PREFIX}{fixtures.token}ren.prg"
 
@@ -904,8 +963,79 @@ class DiskLocation:
     def refresh(self, host: str, password: str, fixtures: Fixtures) -> None:
         fixtures.new_disk(host, password)
 
+    def host_name(self, fixtures: Fixtures) -> str:
+        return self.entry_name(fixtures)
+
+    def file_bytes(self) -> bytes:
+        return PRG_BYTES
+
+    def hex_first_line(self) -> str:
+        return HEX_VIEW_FIRST_LINE
+
+    def hex_marker(self) -> str:
+        return "U64PRG"
+
     def forbidden_actions(self) -> tuple[str, ...]:
         return ()
+
+
+class WrappedLocation:
+    """The same PRG behind a P00 header, as an ordinary file in /Temp.
+
+    Everything the browser offers a plain PRG it has to offer this file too, and every
+    action has to act on the program inside rather than on the header in front of it
+    (SI-144, SI-144b). The browser row carries the name from the header, which is how this
+    location tells the two apart.
+    """
+
+    label = "a PRG in a P00 wrapper"
+
+    def open(self, machine: Machine, fixtures: Fixtures) -> None:
+        open_wrapped_prg(machine, fixtures)
+
+    def entry_name(self, _fixtures: Fixtures) -> str:
+        return P00_CBM_NAME
+
+    def host_name(self, fixtures: Fixtures) -> str:
+        return fixtures.p00
+
+    def file_bytes(self) -> bytes:
+        return P00_BYTES
+
+    def hex_first_line(self) -> str:
+        # Hex View shows the file, and the file starts with its header.
+        return "0000 43 36 34 46"
+
+    def hex_marker(self) -> str:
+        # The header pushes the payload 26 bytes along, so the dump breaks the
+        # signature over two rows. The name in the header is on one row and names
+        # this fixture just as well.
+        return "WRAPPED"
+
+    def rename_input(self, fixtures: Fixtures) -> str:
+        # The row carries the name from the header, so that is the name the rename edits.
+        return f"{FIXTURE_PREFIX}{fixtures.token}wren".upper()
+
+    def renamed_to(self, fixtures: Fixtures) -> str:
+        # The host file takes the same name, with the extension of the wrapper (SI-144c).
+        return f"{self.rename_input(fixtures)}.P00"
+
+    def check_renamed(self, host: str, password: str, fixtures: Fixtures) -> None:
+        content = fetch_temp_file(host, password, self.renamed_to(fixtures))
+        name = content[8:24].rstrip(b"\0")
+        if name != self.rename_input(fixtures).encode("ascii"):
+            raise Failure(f"the header of the renamed wrapper names {name!r}")
+        if content[26:] != PRG_BYTES:
+            raise Failure("the rename changed the program inside the wrapper")
+
+    def listing(self, host: str, password: str, fixtures: Fixtures) -> list[str]:
+        return fixtures.temp_listing(host, password)
+
+    def refresh(self, host: str, password: str, fixtures: Fixtures) -> None:
+        fixtures.reseed_p00(host, password)
+
+    def forbidden_actions(self) -> tuple[str, ...]:
+        return ("Mount & Run", "Real Run")
 
 
 def assert_present(names: list[str], wanted: str, what: str) -> None:
@@ -931,8 +1061,8 @@ def action_view(machine: Machine, fixtures: Fixtures, location, _host: str, _pas
 def action_hex_view(machine: Machine, fixtures: Fixtures, location, _host: str, _password: str) -> None:
     location.open(machine, fixtures)
     machine.invoke_context_action("Hex View")
-    screen = machine.wait_for_text(HEX_VIEW_FIRST_LINE)
-    if "U64PRG" not in screen:
+    screen = machine.wait_for_text(location.hex_first_line())
+    if location.hex_marker() not in screen:
         raise Failure(f"hex view is not showing the fixture:\n{screen}")
     machine.leave_nested_screen()
     machine.select_entry(location.entry_name(fixtures))
@@ -977,10 +1107,11 @@ def action_copy_to(machine: Machine, fixtures: Fixtures, location, host: str, pa
     copied = fixtures.temp_listing(host, password, f"{fixtures.target_dir}/")
     if len(copied) != 1:
         raise Failure(f"expected exactly one copy in the target directory, got {copied}")
-    if fetch_temp_file(host, password, f"{fixtures.target_dir}/{copied[0]}")[:len(PRG_BYTES)] != PRG_BYTES:
+    wanted = location.file_bytes()
+    if fetch_temp_file(host, password, f"{fixtures.target_dir}/{copied[0]}")[:len(wanted)] != wanted:
         raise Failure(f"the copy {copied[0]!r} does not hold the fixture bytes")
     assert_present(location.listing(host, password, fixtures),
-                   location.entry_name(fixtures), "Copy to... removed the original")
+                   location.host_name(fixtures), "Copy to... removed the original")
 
 
 def action_move_to(machine: Machine, fixtures: Fixtures, location, host: str, password: str) -> None:
@@ -997,27 +1128,31 @@ def action_move_to(machine: Machine, fixtures: Fixtures, location, host: str, pa
     if len(moved) != 1:
         raise Failure(f"expected exactly one moved file in the target directory, got {moved}")
     assert_absent(location.listing(host, password, fixtures),
-                  location.entry_name(fixtures), "Move to... left the original behind")
+                  location.host_name(fixtures), "Move to... left the original behind")
 
 
 def action_rename(machine: Machine, fixtures: Fixtures, location, host: str, password: str) -> None:
     location.refresh(host, password, fixtures)
     location.open(machine, fixtures)
-    original = location.entry_name(fixtures)
+    original = location.host_name(fixtures)
     renamed = location.renamed_to(fixtures)
+    typed = getattr(location, "rename_input", location.renamed_to)(fixtures)
     machine.invoke_context_action("Rename")
     machine.wait_for_text("Give a new name..")
-    machine.replace_edit_field(renamed)
+    machine.replace_edit_field(typed)
 
     names = location.listing(host, password, fixtures)
     assert_present(names, renamed, "Rename did not create the new name")
     assert_absent(names, original, "Rename left the old name behind")
+    check = getattr(location, "check_renamed", None)
+    if check:
+        check(host, password, fixtures)
 
 
 def action_delete(machine: Machine, fixtures: Fixtures, location, host: str, password: str) -> None:
     location.refresh(host, password, fixtures)
     location.open(machine, fixtures)
-    original = location.entry_name(fixtures)
+    original = location.host_name(fixtures)
     machine.invoke_context_action("Delete")
     machine.wait_for_text("Are you sure?")
     machine.press_popup_button("y")
@@ -1209,25 +1344,6 @@ def main() -> int:
     add_mode_argument(parser)
     args = parser.parse_args()
 
-    if targets.is_cartridge(args.host):
-        # Measured on u2@c64u, 2026-09-04: every action that hands the C64 a
-        # program through its own load path - Run, Load, Mount & Run, Real Run -
-        # leaves the machine at a clean BASIC prompt with nothing at $C000,
-        # while DMA, which checks the same signature, passes.
-        #
-        # It is not the device. The same Run driven by hand against the same
-        # target starts the program, and so does this suite's own --repeat mode.
-        # It is therefore something this suite does in matrix order, not yet
-        # found. Skipped rather than left failing so the gate says what is not
-        # covered on this target instead of reporting a device fault.
-        suite_skip(
-            "prg_context_menu_test",
-            "the load and run actions do not start a program when this suite "
-            "drives a cartridge inside a computer, though the same actions "
-            "work by hand and under --repeat on the same target; the cause is "
-            "in this suite and is not yet found")
-        return 0
-
     rest_host = args.rest_host or args.host
     session = RestSession(rest_host, args.password or None, args.timeout)
     browser = make_browser(
@@ -1253,7 +1369,7 @@ def main() -> int:
     machine = Machine(session, browser)
     fixtures = Fixtures(args.fixture_token)
 
-    locations = [PlainLocation(), DiskLocation()]
+    locations = [PlainLocation(), WrappedLocation(), DiskLocation()]
 
     failures: list[tuple[str, str]] = []
     total = 0
@@ -1276,7 +1392,8 @@ def main() -> int:
             machine.close_menu()
             machine.reset()
 
-        with check(f"seed /Temp with {fixtures.prg}, {fixtures.d64} and a long-named PRG"):
+        with check(f"seed /Temp with {fixtures.prg}, {fixtures.p00}, {fixtures.d64} "
+                   f"and a long-named PRG"):
             fixtures.seed(rest_host, args.password)
 
         # Real Run is the only action here that reaches the C64 over the IEC
@@ -1297,6 +1414,13 @@ def main() -> int:
                         f"{DRIVE_STORES[0]}/{DRIVE_ENABLE_ITEM} stayed at {now!r} "
                         f"after it was set to {DRIVE_ENABLED!r}; Real Run has no "
                         f"drive to load from")
+
+        with check("typing the name a P00 row shows moves the cursor to that row"):
+            shown = seek_wrapped_by_shown_name(machine)
+            detail(f"the cursor is on {shown.strip()!r}")
+            if P00_CBM_NAME not in shown:
+                raise Failure(f"typing {P00_CBM_NAME.split()[0]!r} left the cursor on "
+                              f"{shown.strip()!r}, not on the row that shows {P00_CBM_NAME!r}")
 
         if args.repeat > 0:
             names = args.scenario or [name for name, _, _, _ in SCENARIOS]

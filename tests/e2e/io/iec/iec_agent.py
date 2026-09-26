@@ -14,9 +14,9 @@ sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
                           if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
 import bootstrap  # noqa: E402,F401
 from assembler import assemble  # noqa: E402
-from report import Failure  # noqa: E402
+from report import Failure, warn  # noqa: E402
 
-OPEN, WRITE, READ_TO_EOI, CLOSE, READ_COUNT = 1, 2, 3, 4, 5
+OPEN, WRITE, READ_TO_EOI, CLOSE, READ_COUNT, LOAD = 1, 2, 3, 4, 5, 6
 
 # The mailbox holds at most 254 bytes, and the agent counts them in one byte.
 MAILBOX_CAPACITY = 254
@@ -34,7 +34,8 @@ MAILBOX_CAPACITY = 254
 # also the work the drive does for the command it was just given, which runs after
 # the unlisten and delays the transfer that follows.
 SECONDS_PER_BYTE = 0.0018
-FIXED_SECONDS = {OPEN: 0.18, WRITE: 0.08, READ_TO_EOI: 0.22, CLOSE: 0.15, READ_COUNT: 0.18}
+FIXED_SECONDS = {OPEN: 0.18, WRITE: 0.08, READ_TO_EOI: 0.22, CLOSE: 0.15, READ_COUNT: 0.18,
+                 LOAD: 0.4}
 
 # What a read that ends at EOI is assumed to carry when the caller says nothing.
 STATUS_BYTES = 64
@@ -57,6 +58,76 @@ def iec_drive(api):
         if "IEC Drive" in entry:
             return entry["IEC Drive"]
     raise Failure("The drive list has no IEC Drive")
+
+
+class Talker:
+    """LISTEN transactions from the C64's own code, with timing the KERNAL does not have.
+
+    iec_talker.asm sends LISTEN, a secondary byte as given ($6F, $F2, $62, $E2), data with
+    EOI on its last byte when asked, and UNLISTEN after a chosen pause from the last
+    acknowledgement: a CMD drive pauses about 40 us, and the KERNAL longer. The
+    program replaces the agent, which has to be started again afterwards.
+    """
+
+    def __init__(self, api):
+        self.api = api
+
+    def start(self):
+        self.api.machine.close_menu_from_anywhere()
+        self.api.machine.writemem(0xc000, bytes(8))
+        self.api.runners.upload("run_prg", assemble(Path(__file__).with_name("iec_talker.asm")))
+        deadline = time.monotonic() + 15
+        while self.api.machine.readmem(0xc001, 1) != b"\xa5":
+            if time.monotonic() > deadline:
+                raise Failure("the talker program did not start")
+            time.sleep(.05)
+
+    def send(self, device, secondary, data=b"", eoi=True, short_bits=False, pause_steps=0):
+        """One transaction. `pause_steps` counts 5 us before UNLISTEN; `short_bits` sends at
+        about the KERNAL's pace instead of the CMD drives' 50 us per half bit."""
+        if len(data) > MAILBOX_CAPACITY:
+            raise ValueError("the talker sends at most one mailbox of data")
+        if data:
+            self.api.machine.writemem(0xc100, bytes(data))
+        flags = (0x80 if eoi else 0) | (0x40 if short_bits else 0)
+        self.api.machine.writemem(0xc002, bytes([device, secondary, len(data), flags, pause_steps]))
+        self.api.machine.writemem(0xc000, b"\x01")
+        # Waited blind: a memory read halts the C64 and would stretch the timing under test.
+        time.sleep(0.2 + len(data) * 0.0015)
+        state = self.api.machine.readmem(0xc000, 8)
+        if state[0]:
+            time.sleep(1.0)
+            state = self.api.machine.readmem(0xc000, 8)
+            if state[0]:
+                raise Failure("the talker did not finish its transaction")
+        if state[7]:
+            raise Failure(f"the talker stopped at handshake step {state[7]}")
+
+
+def cmd_swap(api, device, new):
+    """Sends `device` what a CMD drive's SWAP button sends to give it the number `new`.
+
+    The sequence and timing of a CMD FD or HD (SI-100a): M-W to $0077 on channel 15 with
+    the new listen and talk address, the last with EOI, and UNLISTEN at once. Returns the
+    device number the drive list reports for the Software IEC drive.
+    """
+    talker = Talker(api)
+    talker.start()
+    talker.send(device, 0x6F, b"M-W\x77\x00\x02" + bytes([0x20 | new, 0x40 | new]))
+    return iec_drive(api)["bus_id"]
+
+
+def restorable_path(api, path, root):
+    """The directory to put the drive back into: `path`, or `root` when `path` is gone.
+
+    The drive keeps the directory it was last in. A suite whose teardown could
+    not move it back and then removed its fixtures leaves it in a directory that
+    no longer exists, where a CD answers 71 and every later suite's restore fails.
+    """
+    if path.rstrip("/").casefold() == root.rstrip("/").casefold() or api.files.exists(path.rstrip("/")):
+        return path
+    warn(f"the Software IEC drive was left in {path}, which no longer exists; it goes back to {root}")
+    return root
 
 
 def transfer_seconds(op, carried):
@@ -98,9 +169,10 @@ class Agent:
     def call(self, op, channel=5, data=b"", device=11, count=None, secondary=None, expect=None):
         """One mailbox operation, and the bytes it read.
 
-        `data` is what WRITE sends, `count` what READ_COUNT asks for, `secondary` the
-        secondary address OPEN uses, and `expect` roughly how much READ_TO_EOI will
-        bring back, which only sizes the wait.
+        `data` is what WRITE sends and the name OPEN and LOAD use, `count` what
+        READ_COUNT asks for, `secondary` the secondary address OPEN uses, and `expect`
+        roughly how much READ_TO_EOI or LOAD will bring back, which only sizes the wait.
+        LOAD answers the end address the KERNAL returned, low byte first.
         """
         requested = len(data) if count is None else count
         if requested > MAILBOX_CAPACITY:
@@ -122,6 +194,8 @@ class Agent:
         carried = requested
         if op == READ_TO_EOI:
             carried = MAILBOX_CAPACITY if expect is None else expect
+        if op == LOAD:
+            carried = expect
         budget = transfer_seconds(op, carried)
         if device != self.softiec_device:
             budget += EMULATED_DRIVE_SECONDS
@@ -148,12 +222,22 @@ class Agent:
             if status != 64:
                 raise Failure(f"IEC read ended without EOI: ST={status}")
             return self.api.machine.readmem(0xc100, returned)
+        if op == LOAD:
+            return bytes(state[3:5])
         if op == READ_COUNT:
             # Fewer bytes than asked for is the end of the stream, and only that.
             if (returned < requested) and (status == 0):
                 raise Failure(f"IEC read stopped after {returned} of {requested} bytes: ST={status}")
             return self.api.machine.readmem(0xc100, returned) if returned else b""
         return b""
+
+    def load(self, name, size, channel=5, device=11):
+        """LOAD `name`, a file of `size` bytes, to its own load address.
+
+        Returns the address after the last byte loaded, as the KERNAL reports it.
+        """
+        end = self.call(LOAD, channel, name.encode("ascii"), device=device, expect=size)
+        return int.from_bytes(end, "little")
 
     def read_exact(self, count, channel=5, device=11):
         """Read exactly count bytes, for a channel that signals EOI only at the end."""
@@ -190,9 +274,10 @@ class Agent:
         self.call(WRITE, 15, command)
         return self.call(READ_TO_EOI, 15, expect=size)
 
-    def move_drive(self, device):
-        """Moves the Software IEC drive to `device` with U0>, and returns the device number
-        the drive list reports afterwards.
+    def move_drive(self, device, command=None):
+        """Moves the Software IEC drive to `device` and returns the device number the drive
+        list reports afterwards. The default command is U0>, and `command` sends another
+        form, such as the S-8 of SI-101.
 
         The drive list says where the drive went without addressing a device that may not
         be there: a KERNAL open of an absent device leaves the agent busy past its budget.
@@ -200,7 +285,7 @@ class Agent:
         the new one, and later calls address the new number.
         """
         old = self.softiec_device
-        self.call(WRITE, 15, b"U0>" + bytes([device]) + b"\r", device=old)
+        self.call(WRITE, 15, command or (b"U0>" + bytes([device]) + b"\r"), device=old)
         moved = iec_drive(self.api)["bus_id"]
         if (moved == device) and (device != old):
             try:

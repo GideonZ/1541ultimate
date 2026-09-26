@@ -12,6 +12,8 @@
 #include "c64.h"
 
 #include "home_directory.h"
+#include "x00_wrapper.h"
+#include "pattern.h"
 #include "subsys.h"
 #include "editor.h"
 
@@ -113,12 +115,37 @@ SubsysResultCode_e UserFileInteraction::S_rename(SubsysCommand *cmd)
     Path *p = fm->get_new_path("S_rename");
     p->cd(cmd->path.c_str());
 
-    strncpy(buffer, cmd->filename.c_str(), 64);
-    buffer[63] = 0;
+    // An x00 file is renamed under the name it carries, which is the name the row shows
+    // and the name the drive lists; the host file follows it (SI-144c).
+    mstring full(cmd->path.c_str());
+    if (full[-1] != '/') {
+        full += "/";
+    }
+    full += cmd->filename.c_str();
+    char header[17];
+    bool wrapped = x00_read_header(fm, full.c_str(), header, NULL) && x00_shown_name(header);
+    if (wrapped) {
+        petscii_to_fat(header, buffer, sizeof(buffer));
+    } else {
+        strncpy(buffer, cmd->filename.c_str(), 64);
+        buffer[63] = 0;
+    }
 
     res = cmd->user_interface->string_box("Give a new name..", buffer, 63);
     if ((res > 0) && (*buffer)) {
-        fres = fm->rename(p, cmd->filename.c_str(), buffer);
+        if (wrapped) {
+            char petscii[17];
+            mstring renamed;
+            fat_to_petscii(buffer, false, petscii, 16, true);
+            fres = x00_rename(fm, full.c_str(), cmd->path.c_str(), petscii, &renamed);
+            // A new name that renders to the host name the file already has changes the
+            // header alone, which no rename reports, so the listing is asked to refresh.
+            if ((fres == FR_OK) && !strcmp(renamed.c_str(), full.c_str())) {
+                fm->sendEventToObservers(eRefreshDirectory, cmd->path.c_str(), "");
+            }
+        } else {
+            fres = fm->rename(p, cmd->filename.c_str(), buffer);
+        }
         if (fres != FR_OK) {
             sprintf(buffer, "Error: %s", FileSystem::get_error_string(fres));
             cmd->user_interface->popup(buffer, BUTTON_OK);

@@ -303,6 +303,12 @@ class C64 : public GenericHost, ConfigurableObject
 
     void setup_config_menu();
     bool isFrozen;
+    // Set while freeze() has the CIA set up for the cartridge. The keyboard is scanned from a
+    // timer on a cartridge (Keyboard_C64), so the window in which it may touch CIA1 is explicit.
+    bool keyboardScanAllowed;
+    // Non-zero while peek(), poke() or dma_transfer_frozen() runs in the program's own banking;
+    // a program that banked I/O out has RAM at the CIA then, so a scan would read "no key".
+    volatile int dmaModeWindow;
     void determine_d012(void);
     void goUltimax(void);
     void backup_io(void);
@@ -373,6 +379,8 @@ public:
     bool is_stopped(void);
     bool begin_stopped_session(void);
     void end_stopped_session(bool stopped_it);
+    bool keyboard_scan_allowed(void);
+    bool keyboard_scan_deferred(void);
     uint8_t get_frozen_cia2_porta(void) const { return cia_backup[1]; }
     void set_frozen_cia2_porta(uint8_t value) {
         cia_backup[1] = value;
