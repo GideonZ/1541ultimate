@@ -10,6 +10,15 @@ jobs:
     if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-22.04
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - idf: '5.3.1'
+            mbedtls: 72aa687352a469044cbb946f3fdb261430e41ce1
+          - idf: '5.3.6'
+            mbedtls: 2b96dd8eebe880f304c69976b3c2fa0c5100cbb6
+    name: HTTPS tests (IDF ${{ matrix.idf }} TLS)
     steps:
       - name: Checkout source and pinned dependencies
         uses: actions/checkout@v7
@@ -18,11 +27,11 @@ jobs:
           submodules: recursive
           persist-credentials: false
 
-      - name: Checkout the ESP-IDF 5.3.6 Mbed TLS revision
+      - name: Checkout the pinned ESP-IDF Mbed TLS revision
         uses: actions/checkout@v7
         with:
           repository: espressif/mbedtls
-          ref: 2b96dd8eebe880f304c69976b3c2fa0c5100cbb6
+          ref: ${{ matrix.mbedtls }}
           path: .ci-deps/mbedtls
           submodules: recursive
           persist-credentials: false
@@ -33,7 +42,7 @@ jobs:
           git -C software/httpd fetch --no-tags origin ad73d3217bb0e1b3f37e0dbba595309b942aea17
           git -C software/lwip fetch --no-tags origin 26a22151f4b7ebb2925523192edc83fa7f31cba9
           python3 -m venv "$RUNNER_TEMP/https-env"
-          "$RUNNER_TEMP/https-env/bin/pip" install cryptography==46.0.5 py65==1.2.0 -r tests/requirements-lint.txt
+          "$RUNNER_TEMP/https-env/bin/pip" install cryptography==46.0.5 py65==1.2.0 PyYAML==6.0.3 -r tests/requirements-lint.txt
           echo "$RUNNER_TEMP/https-env/bin" >> "$GITHUB_PATH"
           make -C tools -j2
           python3 tools/c64u_https/httpd_patch.py
@@ -61,3 +70,58 @@ jobs:
           python3 tests/lib/esp_depends_test.py
           make openapi_test openapi_check
           python3 tests/lib/lint_test.py
+
+  upstream-software:
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
+    name: U64-II software (upstream toolchain)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    steps:
+      - name: Checkout source and pinned dependencies
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          submodules: recursive
+          persist-credentials: false
+
+      # Match docker/Dockerfile's IDF and RISC-V compiler versions. This builds
+      # ordinary upstream software; the full Build workflow owns FPGA/updaters.
+      - name: Build the ESP32-S3 controller with ESP-IDF 5.3.1
+        run: |
+          docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp \
+            -e IDF_GIT_SAFE_DIR=/project \
+            -v "$GITHUB_WORKSPACE:/project" -w /project/software/u64ctrl \
+            espressif/idf:v5.3.1@sha256:55ab243e87584859c9af3acc124b0b9423a9d8b44fc99a5d5055d7bd7312722d \
+            idf.py build
+
+      - name: Install the pinned xPack RISC-V compiler
+        run: |
+          curl --fail --location --retry 3 \
+            https://github.com/xpack-dev-tools/riscv-none-elf-gcc-xpack/releases/download/v11.3.0-1/xpack-riscv-none-elf-gcc-11.3.0-1-linux-x64.tar.gz \
+            --output "$RUNNER_TEMP/riscv.tar.gz"
+          echo "1c99fb1573ff2ed5deffce64cb96bb9272f351f054684c49dfd5ad41c6dd804d  $RUNNER_TEMP/riscv.tar.gz" | sha256sum --check
+          mkdir "$RUNNER_TEMP/riscv"
+          tar -xzf "$RUNNER_TEMP/riscv.tar.gz" --strip-components=1 -C "$RUNNER_TEMP/riscv"
+
+      - name: Build the ordinary U64-II management application
+        run: |
+          python3 tools/c64u_https/httpd_patch.py
+          make -C tools -j2
+          mkdir -p target/libs/riscv/lwip/{output,result} target/u64ii/riscv/ultimate/{output,result}
+          make -C target/libs/riscv/lwip -j2 CROSS="$RUNNER_TEMP/riscv/bin/riscv-none-elf-"
+          make -C target/u64ii/riscv/ultimate -j2 CROSS="$RUNNER_TEMP/riscv/bin/riscv-none-elf-"
+          python3 tools/app_space.py measure u64e2_50t
+          python3 tools/app_space.py measure u64e2_100t
+          python3 -c 'import sys; sys.path.insert(0, "tools"); from app_space import read_report; sys.exit(max(read_report(v).exit_status for v in ("u64e2_50t", "u64e2_100t")))'
+
+      - name: Preserve build maps and configuration for review
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: upstream-software-build-evidence
+          if-no-files-found: warn
+          path: |
+            software/u64ctrl/build/u64ctrl.map
+            software/u64ctrl/build/config/sdkconfig.h
+            target/u64ii/riscv/ultimate/result/*.map
+            target/u64ii/riscv/ultimate/output/*.map
