@@ -1,0 +1,60 @@
+name: HTTPS host validation
+
+on: [push, pull_request]
+
+permissions:
+  contents: read
+
+jobs:
+  https-host:
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout source and pinned dependencies
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Checkout the ESP-IDF 5.3.6 Mbed TLS revision
+        uses: actions/checkout@v7
+        with:
+          repository: espressif/mbedtls
+          ref: 2b96dd8eebe880f304c69976b3c2fa0c5100cbb6
+          path: .ci-deps/mbedtls
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Prepare host tools
+        run: |
+          python3 -m venv "$RUNNER_TEMP/https-env"
+          "$RUNNER_TEMP/https-env/bin/pip" install cryptography==46.0.5 py65==1.2.0 -r tests/requirements-lint.txt
+          echo "$RUNNER_TEMP/https-env/bin" >> "$GITHUB_PATH"
+          make -C tools -j2
+          python3 tools/c64u_https/httpd_patch.py
+          cmake -S .ci-deps/mbedtls -B "$RUNNER_TEMP/mbedtls-build" -DENABLE_TESTING=OFF -DENABLE_PROGRAMS=OFF
+          cmake --build "$RUNNER_TEMP/mbedtls-build" -j2
+
+      - name: Test portable core, framing, UART and deadlines
+        run: |
+          make -C software/network/https/tests test sanitize framing deadlines
+          python3 software/io/uart/tests/check_rx_rearm.py
+
+      - name: Test real TLS and native HTTP compatibility on loopback
+        run: |
+          make -C software/network/https/tests tls MBEDTLS_SOURCE="$GITHUB_WORKSPACE/.ci-deps/mbedtls" MBEDTLS_BUILD="$RUNNER_TEMP/mbedtls-build"
+          make -B -C target/pc/linux/test_http_target test-real-tls MBEDTLS_SOURCE="$GITHUB_WORKSPACE/.ci-deps/mbedtls" MBEDTLS_BUILD="$RUNNER_TEMP/mbedtls-build"
+          make -B -C target/pc/linux/test_http_target test-secure-exchange test-body-removal test-integer-widths
+
+      - name: Test retail recipe, menu lifetimes and native repetition
+        run: |
+          python3 -m unittest discover -s tools/c64u_https -v
+          python3 tools/c64u_https/check_native_repeat.py
+
+      - name: Check cache inputs, API documents and test lint
+        run: |
+          python3 tests/lib/esp_depends_test.py
+          make openapi_test openapi_check
+          python3 tests/lib/lint_test.py

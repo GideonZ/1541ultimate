@@ -90,6 +90,13 @@ Other outstanding device cases include independent processor restart, sustained
 UART queue pressure, cold/stale clock injection and actual flash power loss.
 Keep these limitations attached to any experimental review or package.
 
+The separate `HTTPS host validation` workflow runs portable sanitizer, framing,
+UART/deadline, real loopback TLS/UCI, retail recipe/menu lifetime, native
+repetition, cache, API and lint checks on a standard GitHub runner. It pins the
+Mbed TLS revision used by ESP-IDF 5.3.6. The existing full firmware/FPGA workflow
+still needs its self-hosted build environment. Host CI does not flash a device
+or replace the recorded retail hardware evidence.
+
 ## Reproduction and publication preparation
 
 Build instructions, toolchain versions and recipe tests are in
