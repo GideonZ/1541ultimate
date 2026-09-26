@@ -159,7 +159,7 @@ Remote CI execution itself has not been verified.
 
 The ESP32 cache manifest includes the shared TLS sources/headers, their component
 definition and shared UART buffer sources. A regression test reproduces the
-missing-input bug, verifies edits to all 11 required shared inputs and a removal
+missing-input bug, verifies edits to all 12 required shared inputs and a removal
 invalidate the cache, excludes generated build output, and rejects missing
 source directories. This prevents an unchanged controller cache from concealing
 a TLS source change. `python3 tests/lib/esp_depends_test.py` runs locally and in CI.

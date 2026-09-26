@@ -29,6 +29,9 @@ jobs:
 
       - name: Prepare host tools
         run: |
+          git fetch --no-tags https://github.com/GideonZ/1541ultimate.git 7b628eb166872965ea59d66f90ffd9bcf7d71d8a
+          git -C software/httpd fetch --no-tags origin ad73d3217bb0e1b3f37e0dbba595309b942aea17
+          git -C software/lwip fetch --no-tags origin 26a22151f4b7ebb2925523192edc83fa7f31cba9
           python3 -m venv "$RUNNER_TEMP/https-env"
           "$RUNNER_TEMP/https-env/bin/pip" install cryptography==46.0.5 py65==1.2.0 -r tests/requirements-lint.txt
           echo "$RUNNER_TEMP/https-env/bin" >> "$GITHUB_PATH"

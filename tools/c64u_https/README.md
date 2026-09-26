@@ -20,6 +20,17 @@ test dependencies described in `software/network/https/tests/README.md`.
 Initialize the `software/lwip` and `software/httpd` submodules. The local Git
 object stores must contain the full revisions pinned in `prepare.py`.
 
+The retail baseline is not an ancestor of every fork's default branch, so a
+full clone of that branch alone may omit it. Fetch the pinned inputs once
+before offline preparation or recipe tests; these commands do not check out
+files or change the current branch:
+
+```sh
+git fetch --no-tags https://github.com/GideonZ/1541ultimate.git 7b628eb166872965ea59d66f90ffd9bcf7d71d8a
+git -C software/httpd fetch --no-tags origin ad73d3217bb0e1b3f37e0dbba595309b942aea17
+git -C software/lwip fetch --no-tags origin 26a22151f4b7ebb2925523192edc83fa7f31cba9
+```
+
 The HTTPD dependency needs the tracked `httpd-response.patch` until an upstream
 revision includes the fix. For host tests or ordinary builds, first run
 `python3 tools/c64u_https/httpd_patch.py`. This refuses conflicting edits and
