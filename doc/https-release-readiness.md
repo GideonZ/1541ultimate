@@ -82,7 +82,7 @@ reproduce the old leaks before checking the fixes.
 | Wi-Fi recovery | Manual disconnect/reconnect followed by exact-byte HTTP/HTTPS recovery without intermediate reset | Overlap with active TLS was not proven |
 | Runtime memory | v14 management allocation constant across 151 two-hour samples; separate single-plus-five menu cycles showed zero growth after recovery | Final ESP32 idle free was eight bytes lower; exact allocation ownership, earlier retention attribution and longer-term behavior remain open |
 | Menu ownership | Host tests reproduce leaked states, page/item wrappers and windows; v14 single-plus-five device cycles passed after recovery | First v14 attempt lacks a post-cycle sample after zero IPv4; cause remains unresolved |
-| Build/distribution | Pinned source manifest, RV32I inspection, embedded-image and recovery comparisons; v14 source/package hashes independently matched | Full firmware CI requires its dedicated runner; see PR checks for hosted results at each revision |
+| Build/distribution | Pinned retail manifest and v14 package checks; merged upstream controller built with IDF 5.3.1 and management with GCC 11.3.0, both U64-II application-space limits passed | Hosted software checks supplement the full multi-board/FPGA Build; neither proves hardware behavior of the merged source |
 
 The original intermittent v9 503 remains unexplained. A deliberately induced
 503, a passing repeat, and a generic status match do not establish its cause.
@@ -93,9 +93,14 @@ Keep these limitations attached to any experimental review or package.
 The separate `HTTPS host validation` workflow runs portable sanitizer, framing,
 UART/deadline, real loopback TLS/UCI, retail recipe/menu lifetime, native
 repetition, cache, API and lint checks on a standard GitHub runner. It pins the
-Mbed TLS revision used by ESP-IDF 5.3.6. The existing full firmware/FPGA workflow
-still needs its self-hosted build environment. Host CI does not flash a device
-or replace the recorded retail hardware evidence.
+Mbed TLS revisions used by ESP-IDF 5.3.1 and 5.3.6. A separate job builds the
+ordinary upstream ESP32-S3 controller and U64-II management application with
+the versions declared in upstream's Dockerfile. It pins the official IDF 5.3.1
+container digest and verifies the xPack 11.3.0-1 archive checksum; application
+limits come from the existing upstream size checker. It publishes maps and
+configuration, not an installation package. The existing full firmware/FPGA
+workflow still needs its self-hosted build environment. Host CI does not flash
+a device or replace the recorded retail hardware evidence.
 
 ## Reproduction and publication preparation
 
@@ -118,9 +123,9 @@ The destination is `GideonZ/1541ultimate:master`, reviewed at
 [`araxis/1541ultimate#1`](https://github.com/araxis/1541ultimate/pull/1)
 targets the fork's own `master`; it is preparation for review, not an upstream
 submission. The feature branch at `d107caed596185377455c3e7ffb20503cba9408b`
-has four unique commits; upstream has eight unique commits, including two
-merges. A Git merge-tree check succeeded without conflicts. That checks textual
-integration only: the branch has not been updated or tested at the combined tree.
+had four unique commits; upstream had eight unique commits, including two
+merges. Upstream was subsequently merged without conflicts or rewriting the
+published feature history, at `4938e182c1ade1cc15442ea50d56d69c5c559f18`.
 
 The upstream tree has no project contribution guide, CODEOWNERS file or PR
 template. Its [test guidance](https://github.com/GideonZ/1541ultimate/blob/d4c1f544ef4cc3c1d460229eb197e3e1e7504ef1/tests/README.md)
@@ -152,21 +157,46 @@ intact. The proposed Build changes add HTTPD patch application and HTTPS tests;
 the separate hosted workflow supplies portable checks for forks. It supplements
 the upstream build rather than replacing it or bypassing merge requirements.
 
-There is an outstanding toolchain compatibility check: upstream's checked-in
+The toolchain compatibility review used upstream's checked-in
 [Dockerfile](https://github.com/GideonZ/1541ultimate/blob/d4c1f544ef4cc3c1d460229eb197e3e1e7504ef1/docker/Dockerfile)
-selects ESP-IDF 5.3.1, while the tested retail firmware and hosted TLS dependency
-use 5.3.6. The Dockerfile alone does not prove which image is installed on the
-live runner. The retail recipe deliberately requires 5.3.6 and is separate from
-the ordinary upstream build. Its successful build cannot establish compatibility
-with 5.3.1 or all other supported boards.
+which selects ESP-IDF 5.3.1, while the tested retail firmware uses 5.3.6.
+The Dockerfile alone does not prove which image is installed on the live runner.
+The retail recipe deliberately requires 5.3.6 and remains separate from the
+ordinary upstream build.
 
-Before upstream submission:
+An exported source tree at the merge commit built successfully with ESP-IDF
+5.3.1 (`c8fc5f643b7a7b0d3b182d3df610844e3dc9bd74`) and xPack RISC-V GCC
+11.3.0. The controller image was 972,448 bytes; the management application was
+1,246,948 bytes. The existing size checker passed both U64E2 partitions, leaving
+702.3 KiB for 50T and 574.3 KiB for 100T. The effective controller configuration
+enabled certificate bundles and certificate-date verification. Local tests with
+the 5.3.1 Mbed TLS revision passed 16 TLS and 54 UCI/TLS integration cases;
+portable sanitizer/framing/deadline/UART, 40 recipe tests and six native CPU
+repetition cases also passed. This was a software build, not an FPGA build,
+complete updater package or device installation.
 
-1. Integrate the current upstream branch without rewriting published history,
-   then repeat relevant host and regression checks against the combined source.
-2. Verify the shared controller and management build with the declared upstream
-   toolchain, including TLS configuration and size limits. Keep any proposed
-   toolchain upgrade explicit and separate from an assumed prerequisite.
+The [hosted validation run](https://github.com/araxis/1541ultimate/actions/runs/36270246976)
+passed at `c4d2bae5ae7faa67c4e28665247afa971de05edf`: both TLS matrix jobs and
+the upstream software build completed successfully. All 191 OpenAPI tests ran
+without skips. The hosted management build left 702.2 KiB and 574.2 KiB in the
+50T and 100T partitions respectively; build maps and controller configuration
+were retained as artifacts. These figures belong to the hosted build, not the
+separate local build above. The original full Build remains a separate check.
+
+The upstream merge changed `software/components/pattern.cc`, one of the 65
+shared inputs recorded for v14. The other 64 inputs and the historical manifest
+remain unchanged. The v14 hardware result belongs to its original source and
+binary; it does not establish hardware qualification of the merged source or
+a newly prepared retail image.
+
+Upstream review requirements:
+
+1. Check the hosted results for the final contribution revision. The upstream
+   merge and local controller/management compatibility builds are complete;
+   these do not replace the full upstream build or hardware gate.
+2. Keep any proposed toolchain upgrade explicit and separate from an assumed
+   prerequisite. The contribution does not change upstream's Dockerfile,
+   runner labels, existing build targets or E2E scheduling.
 3. Review test placement and shared reporting for hardware cases. Retain the
    pinned retail recipe and exact v14 evidence as supplementary reproduction
    material, with historical failures and untested hardware cases visible.

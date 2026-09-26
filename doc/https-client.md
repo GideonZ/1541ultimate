@@ -155,10 +155,12 @@ also runs in the build workflow. The workflow runs the six portable suites
 both normally and under ASan/UBSan, with sanitizer findings treated as failures,
 and runs the shared HTTP/HTTPS UCI compatibility test under sanitizers. Real TLS
 tests still require the separately documented Mbed TLS host dependency.
-The separate HTTPS host workflow also runs the real loopback TLS and retail
-recipe suites on a standard GitHub runner. Consult the pull request checks for
-the result at a specific source revision; the full firmware/FPGA build still
-requires its dedicated runner.
+The separate HTTPS host workflow runs real loopback TLS and retail recipe
+suites with the pinned Mbed TLS revisions from both ESP-IDF 5.3.1 and 5.3.6.
+Another job builds the ordinary upstream controller and U64-II management
+software with IDF 5.3.1 and RISC-V GCC 11.3.0, then checks application space.
+Consult the pull request checks for the result at a specific source revision;
+the full multi-board firmware/FPGA build still uses its dedicated runner.
 
 The ESP32 cache manifest includes the shared TLS sources/headers, their component
 definition and shared UART buffer sources. A regression test reproduces the
@@ -168,8 +170,9 @@ source directories. This prevents an unchanged controller cache from concealing
 a TLS source change. `python3 tests/lib/esp_depends_test.py` runs locally and in CI.
 The controller configuration enables MBEDTLS_HAVE_TIME_DATE; the TLS source
 refuses to compile when certificate date verification is disabled. A complete
-controller build has passed with ESP-IDF 5.3.6, including compilation of the TLS
-and wire components. The TLS worker is now linked into the controller image;
+controller build has passed with ESP-IDF 5.3.6 for the retail recipe and 5.3.1
+for the merged upstream source, including the TLS and wire components. The
+TLS worker is now linked into the controller image;
 this build does not establish hardware correctness or peak runtime memory use.
 The complete u64ii management firmware also links with the RISC-V 11.3.0
 toolchain, including the UART-backed HttpConnection provider.
