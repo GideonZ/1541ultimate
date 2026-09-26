@@ -51,6 +51,14 @@ EMULATED_DRIVE_SECONDS = 1.2
 GRACE_SECONDS = 2.0
 
 
+def iec_drive(api):
+    """The Software IEC drive's entry in the drive list."""
+    for entry in api.rest.json("/v1/drives")["drives"]:
+        if "IEC Drive" in entry:
+            return entry["IEC Drive"]
+    raise Failure("The drive list has no IEC Drive")
+
+
 def transfer_seconds(op, carried):
     """How long to leave the C64 alone for one mailbox operation."""
     return FIXED_SECONDS[op] + (carried * SECONDS_PER_BYTE)
@@ -68,6 +76,10 @@ class Agent:
         self.overruns = 0
         # The KERNAL status of the last transaction. Bit 6 is end of file.
         self.last_status = 0
+        # Read the mailbox back after writing it, before the agent is told to act. A REST
+        # upload that could not be stored (a full RAM disk) has been seen to answer success and
+        # leave the old bytes in place, which the agent would then put on the bus.
+        self.verify_writes = False
 
     def start(self):
         self.api.machine.close_menu_from_anywhere()
@@ -99,6 +111,9 @@ class Agent:
             raise ValueError("READ_COUNT needs at least one byte")
         if data:
             self.api.machine.writemem(0xc100, data)
+            if self.verify_writes and (self.api.machine.readmem(0xc100, len(data)) != bytes(data)):
+                raise Failure(f"the agent's mailbox does not hold the {len(data)} bytes just "
+                              f"written to it over REST")
         # The KERNAL refuses logical file number zero, so a directory, which needs
         # secondary address zero, is opened on a different logical file number.
         self.api.machine.writemem(0xc002, bytes(
@@ -168,4 +183,32 @@ class Agent:
 
     def command(self, command, allowed=(0,)):
         self.call(WRITE, 15, command if isinstance(command, bytes) else command.encode("ascii"))
-        self.status(allowed)
+        return self.status(allowed)
+
+    def command_reply(self, command, size):
+        """A command whose answer is data rather than a status line, such as G-P."""
+        self.call(WRITE, 15, command)
+        return self.call(READ_TO_EOI, 15, expect=size)
+
+    def move_drive(self, device):
+        """Moves the Software IEC drive to `device` with U0>, and returns the device number
+        the drive list reports afterwards.
+
+        The drive list says where the drive went without addressing a device that may not
+        be there: a KERNAL open of an absent device leaves the agent busy past its budget.
+        When the drive moved, the command channel is closed on the old number and opened on
+        the new one, and later calls address the new number.
+        """
+        old = self.softiec_device
+        self.call(WRITE, 15, b"U0>" + bytes([device]) + b"\r", device=old)
+        moved = iec_drive(self.api)["bus_id"]
+        if (moved == device) and (device != old):
+            try:
+                # Closing addresses the device the file was opened on, which is not present
+                # any more; the KERNAL says so in ST and closes the file all the same.
+                self.call(CLOSE, channel=15, device=old)
+            except Failure:
+                pass
+            self.softiec_device = device
+            self.call(OPEN, channel=15, device=device)
+        return moved

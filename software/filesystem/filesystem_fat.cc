@@ -48,6 +48,18 @@ FRESULT FileSystemFAT :: get_free (uint32_t *e, uint32_t *cs)
 #endif
 }
 
+// The data clusters of the volume: FatFs numbers them from 2 to n_fatent - 1.
+FRESULT FileSystemFAT :: get_total (uint32_t *e, uint32_t *cs)
+{
+    *e = fatfs.n_fatent - 2;
+#if FF_MAX_SS != FF_MIN_SS
+    *cs = fatfs.ssize * fatfs.csize;
+#else
+    *cs = FF_MAX_SS * fatfs.csize;
+#endif
+    return FR_OK;
+}
+
 bool    FileSystemFAT :: is_writable()
 {
 #if FF_FS_READONLY
@@ -161,6 +173,17 @@ FRESULT FileSystemFAT :: file_delete(const TCHAR *path)
     mstring prefixedPath(prefix);
     prefixedPath += path;
     return f_unlink(prefixedPath.c_str());
+#endif
+}
+
+FRESULT FileSystemFAT :: file_attrib(const TCHAR *path, uint8_t attrib, uint8_t mask)
+{
+#if	(FF_FS_MINIMIZE >= 1) || (FF_USE_CHMOD == 0)
+	return FR_NOT_ENABLED;
+#else
+    mstring prefixedPath(prefix);
+    prefixedPath += path;
+    return f_chmod(prefixedPath.c_str(), attrib, mask);
 #endif
 }
 

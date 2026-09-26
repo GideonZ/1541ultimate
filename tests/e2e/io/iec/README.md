@@ -24,7 +24,13 @@ catch them: it built its command strings by hand.
   colon, so the colon became the channel number and every value moved one place.
   The track number arrived as the partition number.
 * The partition directory showed the path a partition is rooted at instead of its
-  name, and typed every partition `DIR`.
+  name, and typed every partition `DIR`. `G-P`, which answers the same question to a
+  program rather than to a listing, had the same two defects and reported its type in
+  the reserved byte.
+* A command whose last parameter is a byte can carry a 13, which is the terminator
+  byte. `C` followed by a shifted P selects a partition that way, so it keeps its
+  parameter; the commands whose last parameter is optional behave as CMD DOS
+  documents, which is that the terminator has to be sent as well.
 
 Two of its checks exist only here, because they cannot fail on a host build. The
 device uses the firmware's own `sscanf` in `software/system/small_printf.cc`, which

@@ -363,7 +363,10 @@ SubsysResultCode_e C64_Subsys::executeCommand(SubsysCommand *cmd)
 
                 res = create_file_ask_if_exists(fm, cmd->user_interface, cmd->path.c_str(), buffer, &f);
                 if (res == FR_OK) {
+                    // Overlay and REST get here with the C64 running; stopped, the file is one image.
+                    bool stopped = c64->begin_stopped_session();
                     SubsysResultCode_e retval = C64_CRT::save_crt(f);
+                    c64->end_stopped_session(stopped);
                     fm->fclose(f);
                     if (retval != SSRET_OK) {
                         cmd->user_interface->popup(SubsysCommand::error_string(retval), BUTTON_OK);

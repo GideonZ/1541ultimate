@@ -59,6 +59,7 @@ public:
     uint16_t  lfsize;
     uint8_t   attrib;  /* Attribute */
     uint8_t   name_format;
+    uint8_t   cbm_filetype; /* the CBM directory type bits, 0 when the file system has none */
     char   *lfname;
 	char    extension[4];
 
@@ -105,6 +106,7 @@ public:
         attrib = i->attrib;
         extension[0] = 0;
         name_format = i->name_format;
+        cbm_filetype = i->cbm_filetype;
     }
 
 	~FileInfo()
@@ -124,6 +126,7 @@ public:
         attrib = i->attrib;
         extension[3] = 0;
         name_format = i->name_format;
+        cbm_filetype = i->cbm_filetype;
 	}
 
 	bool is_directory(void) {
