@@ -120,6 +120,9 @@ use UTC with a separately checked synchronization freshness policy.
 
 ## Native usage
 
+See [Using HTTP and HTTPS](https-usage.md) for command bytes, response examples
+and a host-driven C64 demonstration.
+
 Create a header with the existing HEADER_CREATE command, specifying an
 `https://` URL instead of `http://`. Add headers and a body with the existing
 commands, then use DO_EXCHANGE_RAW (0x32) or DO_EXCHANGE_OBJ (0x31). Read raw
