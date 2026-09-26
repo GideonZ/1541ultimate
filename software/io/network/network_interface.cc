@@ -440,6 +440,13 @@ void NetworkInterface :: getMacAddr(uint8_t *buf)
 	memcpy(buf, &my_net_if.hwaddr, 6);
 }
 
+// The name netif_find() looks up, and so the one SO_BINDTODEVICE takes:
+// the interface's two letters followed by its number.
+void NetworkInterface :: getNetifName(char *name, int size)
+{
+	snprintf(name, size, "%c%c%u", my_net_if.name[0], my_net_if.name[1], my_net_if.num);
+}
+
 void NetworkInterface :: setIpAddr(uint8_t *buf)
 {
 	memcpy(&my_ip.addr, &buf[0], 4);

@@ -8,6 +8,7 @@
 #include "network_interface.h"
 #include "socket.h"
 #include "netdb.h"
+#include "u64_config.h"
 #include "userinterface.h"
 #include "profiler.h"
 #include "init_function.h"
@@ -38,6 +39,11 @@ struct t_cfg_definition stream_cfg[] = {
 DataStreamer :: DataStreamer()
 {
     my_ip = 0;
+    palette_stream_requested = false;
+    palette_task_handle = NULL;
+    palette_socket = -1;
+    palette_socket_dest_ip = 0;
+    palette_socket_dest_port = 0;
     memset(streams, 0, 4*sizeof(stream_config_t));
 
     cfg = ConfigManager :: getConfigManager()->register_store(0x44617461, "Data Streams", stream_cfg, NULL);
@@ -47,12 +53,17 @@ DataStreamer :: DataStreamer()
     for (int i=0; i < 4; i++) {
         timers[i] = xTimerCreate("StreamTimer", 100, pdFALSE, (void *)i, DataStreamer :: S_timer);
     }
+    if (xTaskCreate(DataStreamer :: S_palette_task, "VIC Palette", configMINIMAL_STACK_SIZE,
+                    this, PRIO_NETSERVICE, &palette_task_handle) != pdPASS) {
+        palette_task_handle = NULL;
+        puts("Could not create VIC palette stream task");
+    }
 }
 
 // This should never be called
 DataStreamer :: ~DataStreamer()
 {
-
+    closePaletteSocket();
 }
 
 DataStreamer *dataStreamer;
@@ -82,8 +93,17 @@ void DataStreamer :: S_timer(TimerHandle_t a)
     if ((streamID >= 0) && (streamID <= 3)) {
         stream_config_t *stream = &(dataStreamer->streams[streamID]);
         stream->enable = 0;
+        if (streamID == 0) {
+            dataStreamer->palette_stream_requested = false;
+            dataStreamer->wakePaletteTask();
+        }
         dataStreamer->calculate_udp_headers(streamID);
     }
+}
+
+void DataStreamer :: S_palette_task(void *context)
+{
+    ((DataStreamer *)context)->paletteTask();
 }
 
 SubsysResultCode_e DataStreamer :: startStream(SubsysCommand *cmd)
@@ -98,12 +118,16 @@ SubsysResultCode_e DataStreamer :: startStream(SubsysCommand *cmd)
         return SSRET_NO_NETWORK; // shouldn't happen
     }
 
-    int streamID = cmd->mode;
+    int streamID = cmd->mode & 0xFF;
     if ((streamID < 0) || (streamID > 3)) {
         if (cmd->user_interface) cmd->user_interface->popup("Invalid Stream ID", BUTTON_OK);
         return SSRET_INVALID_PARAMETER;
     }
+    const bool palette = (streamID == 0) && (cmd->mode & STREAM_MODE_PALETTE);
     stream_config_t *stream = &streams[streamID];
+    // Resolve into a copy. Until this start succeeds, the running stream and
+    // the palette task keep the destination they have.
+    stream_config_t next = *stream;
 
     union {
         uint32_t ipaddr32[3];
@@ -112,11 +136,12 @@ SubsysResultCode_e DataStreamer :: startStream(SubsysCommand *cmd)
 
     uint8_t his_mac[6];
     memset(his_mac, 0, 6);
+    uint8_t source_mac[6];
     intf->getIpAddr(ip.ipaddr);
-    intf->getMacAddr(my_mac);
-    my_ip = ip.ipaddr32[0];
+    intf->getMacAddr(source_mac);
+    const uint32_t source_ip = ip.ipaddr32[0];
 
-    if (!(intf->is_link_up()) || (my_ip == 0)) {
+    if (!(intf->is_link_up()) || (source_ip == 0)) {
         if (cmd->user_interface) cmd->user_interface->popup("No (valid) link", BUTTON_OK);
         return SSRET_NO_NETWORK;
     }
@@ -170,11 +195,11 @@ SubsysResultCode_e DataStreamer :: startStream(SubsysCommand *cmd)
     }
     uint32_t *addrs = (uint32_t *)*(ret_host->h_addr_list);
 
-    stream->dest_ip = addrs[0];
+    next.dest_ip = addrs[0];
 
-    uint32_t query_ip = stream->dest_ip;
-    if ((stream->dest_ip & ip.ipaddr32[1]) != (ip.ipaddr32[2] & ip.ipaddr32[1])) {
-        printf("You requested an external IP address (%08X)\n", stream->dest_ip);
+    uint32_t query_ip = next.dest_ip;
+    if ((next.dest_ip & ip.ipaddr32[1]) != (ip.ipaddr32[2] & ip.ipaddr32[1])) {
+        printf("You requested an external IP address (%08X)\n", next.dest_ip);
         query_ip = ip.ipaddr32[2];
     }
 
@@ -184,39 +209,52 @@ SubsysResultCode_e DataStreamer :: startStream(SubsysCommand *cmd)
     vic_dest_ip = vic_dest.addr;
 */
 
-    stream->dest_port = 11000 + streamID;
+    next.dest_port = 11000 + streamID;
     if (behind_colon) {
-        sscanf(behind_colon, "%d", &stream->dest_port);
+        sscanf(behind_colon, "%d", &next.dest_port);
     }
-    if (!stream->dest_port) {
+    if (!next.dest_port) {
         if (cmd->user_interface) cmd->user_interface->popup("Destination Port cannot be 0.", BUTTON_OK);
         return SSRET_INVALID_PARAMETER;
     }
 
     // destination mac
-    if ((stream->dest_ip & 0x000000F8) == 0x000000E8) {
+    if ((next.dest_ip & 0x000000F0) == 0x000000E0) {
         printf("** User requested Multicast stream\n");
-    } else if (stream->dest_ip == 0xFFFFFFFF) {
+    } else if (next.dest_ip == 0xFFFFFFFF) {
         printf("** User requested Broadcast stream\n");
     } else {
         bool ok = false;
         for(int i=0;i<10;i++) {
-            send_udp_packet(query_ip, stream->dest_port);
+            send_udp_packet(query_ip, next.dest_port);
             vTaskDelay(20);
-            if (intf->peekArpTable(query_ip, stream->dest_mac)) {
+            if (intf->peekArpTable(query_ip, next.dest_mac)) {
                 ok = true;
                 break;
             }
         }
         if (ok) {
-            printf("** Your MAC address is %b:%b:%b:%b:%b:%b. Got ya!\n", stream->dest_mac[0], stream->dest_mac[1], stream->dest_mac[2],
-                    stream->dest_mac[3], stream->dest_mac[4], stream->dest_mac[5]);
+            printf("** Your MAC address is %b:%b:%b:%b:%b:%b. Got ya!\n", next.dest_mac[0], next.dest_mac[1], next.dest_mac[2],
+                    next.dest_mac[3], next.dest_mac[4], next.dest_mac[5]);
         } else {
             if (cmd->user_interface) cmd->user_interface->popup("Cannot find MAC of specified host.", BUTTON_OK);
             return SSRET_NETWORK_RESOLVE_ERROR;
         }
     }
-    stream->enable = 1;
+    // All of it resolved, so commit it in one step: the palette task reads
+    // the destination, the enable and the opt-in together.
+    next.enable = 1;
+    taskENTER_CRITICAL();
+    my_ip = source_ip;
+    memcpy(my_mac, source_mac, 6);
+    *stream = next;
+    if (streamID == 0) {
+        palette_stream_requested = palette;
+    }
+    taskEXIT_CRITICAL();
+    if (streamID == 0) {
+        wakePaletteTask();
+    }
 
     // start stream!
     calculate_udp_headers(streamID);
@@ -245,6 +283,10 @@ SubsysResultCode_e DataStreamer :: stopStream(SubsysCommand *cmd)
     }
     stream_config_t *stream = &streams[streamID];
     stream->enable = 0;
+    if (streamID == 0) {
+        palette_stream_requested = false;
+        wakePaletteTask();
+    }
     calculate_udp_headers(streamID);
     return SSRET_OK;
 }
@@ -282,7 +324,7 @@ void DataStreamer :: update_task_items(bool writablePath)
 void DataStreamer :: send_udp_packet(uint32_t ip, uint16_t port)
 {
     int sockfd;
-    static struct sockaddr_in server;
+    struct sockaddr_in server;
 
     sockfd = socket(AF_INET, SOCK_DGRAM, 0);
     if (sockfd < 0)
@@ -303,6 +345,142 @@ void DataStreamer :: send_udp_packet(uint32_t ip, uint16_t port)
     }
     // close the socket again
     lwip_close(sockfd);
+}
+
+bool DataStreamer :: openPaletteSocket()
+{
+    NetworkInterface *intf = NetworkInterface :: getInterface(0);
+    if (!intf) {
+        return false;
+    }
+    int sock = socket(AF_INET, SOCK_DGRAM, 0);
+    if (sock < 0) {
+        return false;
+    }
+    // Leave through the interface the FPGA VIC stream uses, from its source
+    // port, so palette and video arrive from one address and port. Left to
+    // itself, lwIP would route unicast over whichever interface it prefers.
+    struct ifreq iface;
+    memset(&iface, 0, sizeof(iface));
+    intf->getNetifName(iface.ifr_name, sizeof(iface.ifr_name));
+    struct sockaddr_in local;
+    memset(&local, 0, sizeof(local));
+    local.sin_family = AF_INET;
+    local.sin_addr.s_addr = INADDR_ANY;
+    local.sin_port = htons(53248);
+    if ((setsockopt(sock, SOL_SOCKET, SO_BINDTODEVICE, &iface, sizeof(iface)) < 0) ||
+        (bind(sock, (const struct sockaddr *)&local, sizeof(local)) < 0)) {
+        lwip_close(sock);
+        return false;
+    }
+    palette_socket = sock;
+    palette_socket_dest_ip = 0;
+    palette_socket_dest_port = 0;
+    return true;
+}
+
+void DataStreamer :: closePaletteSocket()
+{
+    if (palette_socket >= 0) {
+        lwip_close(palette_socket);
+        palette_socket = -1;
+    }
+}
+
+// Returns whether a send was attempted, so that failed attempts are paced too.
+bool DataStreamer :: sendVicPalette()
+{
+    taskENTER_CRITICAL();
+    const bool requested = palette_stream_requested && streams[0].enable;
+    const uint32_t dest_ip = streams[0].dest_ip;
+    const int dest_port = streams[0].dest_port;
+    taskEXIT_CRITICAL();
+
+    if (!requested) {
+        closePaletteSocket();
+        return false;
+    }
+    if ((palette_socket < 0) && !openPaletteSocket()) {
+        return true;
+    }
+    // Connected, so lwIP accepts datagrams only from the destination, and
+    // drained below, so not even those can pin its few netbufs.
+    if ((palette_socket_dest_ip != dest_ip) || (palette_socket_dest_port != dest_port)) {
+        struct sockaddr_in destination;
+        memset(&destination, 0, sizeof(destination));
+        destination.sin_family = AF_INET;
+        destination.sin_addr.s_addr = dest_ip;
+        destination.sin_port = htons(dest_port);
+        if (connect(palette_socket, (const struct sockaddr *)&destination, sizeof(destination)) < 0) {
+            closePaletteSocket();
+            return true;
+        }
+        palette_socket_dest_ip = dest_ip;
+        palette_socket_dest_port = dest_port;
+    }
+
+    uint8_t packet[60] = { 0 };
+    uint8_t rgb[16][3];
+    const uint16_t generation = U64Config::get_palette_rgb(rgb);
+    packet[0] = (uint8_t)generation;
+    packet[1] = (uint8_t)(generation >> 8);
+    packet[4] = 239;  // reserved line number
+    packet[6] = 0x80; // 384 pixels per line, little endian
+    packet[7] = 0x01;
+    packet[8] = 1;    // one palette
+    packet[9] = 4;    // four bits per VIC color index
+    packet[10] = 1;   // palette packet type indicator
+    memcpy(packet + 12, rgb, sizeof(rgb));
+
+    // A failed send leaves nothing behind on a UDP socket; the next wake
+    // simply tries again.
+    send(palette_socket, packet, sizeof(packet), 0);
+
+    uint8_t discard[16];
+    while (recv(palette_socket, discard, sizeof(discard), MSG_DONTWAIT) > 0)
+        ;
+    return true;
+}
+
+void DataStreamer :: wakePaletteTask()
+{
+    if (palette_task_handle) {
+        xTaskNotifyGive(palette_task_handle);
+    }
+}
+
+void DataStreamer :: vicPaletteChanged()
+{
+    if (palette_stream_requested) {
+        wakePaletteTask();
+    }
+}
+
+void DataStreamer :: paletteTask()
+{
+    const TickType_t repeat_ticks = pdMS_TO_TICKS(1000);
+    // A send happens partway through a tick, so counting whole ticks takes one
+    // more than 20 ms to keep two packets out of one PAL or NTSC frame.
+    const TickType_t minimum_ticks = pdMS_TO_TICKS(20) + 1;
+    TickType_t last_send = 0;
+    bool sent = false;
+
+    while (true) {
+        // Notifications latch: a start between this read and the wait still
+        // ends the wait at once.
+        const TickType_t wait = palette_stream_requested ? repeat_ticks : portMAX_DELAY;
+        const uint32_t notified = ulTaskNotifyTake(pdTRUE, wait);
+        if (notified && sent) {
+            const TickType_t elapsed = xTaskGetTickCount() - last_send;
+            if (elapsed < minimum_ticks) {
+                vTaskDelay(minimum_ticks - elapsed);
+            }
+        }
+        if (sendVicPalette()) {
+            last_send = xTaskGetTickCount();
+            sent = true;
+        }
+    }
 }
 
 
@@ -369,7 +547,7 @@ void DataStreamer :: calculate_udp_headers(int id)
     header[30] = (uint8_t)(stream->dest_ip >> 0);
 
     // destination mac
-    if ((stream->dest_ip & 0x000000F8) == 0x000000E8) {
+    if ((stream->dest_ip & 0x000000F0) == 0x000000E0) {
         header[3] = header[31] & 0x7F;
         header[4] = header[32];
         header[5] = header[33];
