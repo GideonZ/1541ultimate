@@ -1653,10 +1653,11 @@ void C64 :: set_eeprom_data(uint8_t *buffer)
 
 bool C64 :: get_eeprom_dirty(void)
 {
+    // Reading does not clear: the flag stays set until the contents are taken, in
+    // get_eeprom_data() or set_eeprom_data(). Clearing it here lost the change to
+    // whoever looked at it first, which System Info does.
     volatile uint8_t *eeprom = (volatile uint8_t *)(EEPROM_BASE);
-    bool dirty = (*eeprom != 0) ? true : false;
-    *eeprom = 1; // clear dirty flag
-    return dirty;
+    return (*eeprom != 0);
 }
 
 void C64 :: list_crts(ConfigItem *it, IndexedList<char *>& strings)
