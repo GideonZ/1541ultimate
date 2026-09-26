@@ -7,10 +7,12 @@ extern "C" {
     #include "multipart.h"
 }
 #include "json.h"
+#include "http_connection.h"
 
 typedef struct {
     int offset;
     int size;
+    bool overflow;
     uint8_t buffer[16384];
 } t_BufferedBody;
 
@@ -27,13 +29,23 @@ class HttpRequest
     t_BufferedBody *body;
     HTTPReqMessage response;
     int socket_fd;
+    HttpConnection *secure_connection;
+    int fail(const char *stage, int code) {
+        if (secure_connection) secure_connection->failure(stage, code, response.protocol_state);
+        return -1;
+    }
 public:
     HttpRequest() {
         InitReqMessage(&response);
         body = NULL;
         socket_fd = -1;
+        secure_connection = NULL;
     }
     ~HttpRequest() {
+        if (response.BodyCB) {
+            response.BodyCB(response.BodyContext, NULL, -1);
+        }
+        delete secure_connection;
         if(socket_fd >= 0) {
             close(socket_fd);
         }
@@ -42,9 +54,9 @@ public:
             delete body;
         }
     }
-    int connect_to_server(const char *hostname, uint16_t hostport);
+    int connect_to_server(const char *hostname, uint16_t hostport, bool secure = false);
     int send_request(StreamRamFile *req);
-    void recv_response(void);
+    int recv_response(void);
 
     HTTPReqHeader *get_header(void) {
         return &response.Header;

@@ -4,6 +4,9 @@
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
+#include <assert.h>
+#include <netinet/in.h>
+#include <sys/wait.h>
 
 // these globals will be filled in by the clients
 CommandTarget *command_targets[CMD_IF_MAX_TARGET+1];
@@ -563,9 +566,176 @@ static void run_network_smoke(HttpTarget *target)
     printf("object exchange status: %.*s\n", status->length, status->message);
 }
 
+static char secure_sent[1024];
+static size_t secure_sent_length;
+static int secure_created, secure_destroyed;
+static bool secure_open_fail, secure_truncate, secure_write_zero;
+static bool secure_long_response;
+static const char *secure_failure_stage;
+static int secure_failure_code;
+
+class TestSecureConnection : public HttpConnection
+{
+    size_t cursor;
+public:
+    TestSecureConnection() : cursor(0) { ++secure_created; secure_failure_stage=NULL; }
+    ~TestSecureConnection() { ++secure_destroyed; }
+    void failure(const char *stage,int code,int) override {
+        secure_failure_stage=stage; secure_failure_code=code;
+    }
+    int open(const char *host, uint16_t port) override {
+        assert(!strcmp(host, "example.test") && port == 443);
+        secure_sent_length = 0;
+        secure_sent[0] = 0;
+        return secure_open_fail ? -1 : 0;
+    }
+    int write(const void *data, int size) override {
+        if (secure_write_zero) return 0;
+        int n = size > 3 ? 3 : size;
+        assert(secure_sent_length + n < sizeof secure_sent);
+        memcpy(secure_sent + secure_sent_length, data, n);
+        secure_sent_length += n;
+        secure_sent[secure_sent_length] = 0;
+        return n;
+    }
+    int read(void *data, int size) override {
+        if (secure_long_response) {
+            static const char header[] = "HTTP/1.1 200 OK\r\nContent-Length: 1024\r\n\r\n";
+            size_t total = sizeof(header)-1+1024;
+            size_t n = total-cursor;
+            if(n>(size_t)size)n=(size_t)size;
+            for(size_t i=0;i<n;i++) {
+                ((char *)data)[i]=cursor<sizeof(header)-1 ? header[cursor] : 'x';
+                ++cursor;
+            }
+            return (int)n;
+        }
+        static const char wire[] = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 7\r\n\r\n{\"x\":1}";
+        size_t length = sizeof(wire) - 1 - (secure_truncate ? 2 : 0);
+        size_t n = length - cursor;
+        if (n > (size_t)size) n = size;
+        if (n > 5) n = 5;
+        memcpy(data, wire + cursor, n);
+        cursor += n;
+        return (int)n;
+    }
+};
+
+static HttpConnection *test_secure_factory() { return new TestSecureConnection(); }
+
+static void test_secure_exchange(HttpTarget *target)
+{
+    Message *reply, *status;
+    target->parse_command(&c_cmd_free_all, &reply, &status);
+    uint8_t create[] = "\x06\x11\x01" "https://example.test/data";
+    Message command = { (int)sizeof(create), true, create };
+    target->parse_command(&command, &reply, &status);
+    assert(reply->length == 1 && reply->message[0] == 0);
+    http_set_secure_connection_factory(NULL);
+    target->parse_command(&c_exchange_raw, &reply, &status);
+    expect_text("no secure provider", "status", status, "503 SERVICE UNAVAILABLE");
+    http_set_secure_connection_factory(test_secure_factory);
+    target->parse_command(&c_exchange_raw, &reply, &status);
+    expect_text("secure raw", "reply", reply, "{\"x\":1}");
+    assert(!secure_failure_stage);
+    assert(!strcmp(secure_sent, "GET /data HTTP/1.1\r\nHost: example.test\r\n\r\n"));
+    assert(secure_created == secure_destroyed);
+    target->parse_command(&c_exchange, &reply, &status);
+    assert(reply->length == 2);
+    uint8_t query[] = {6, HTTP_CMD_BODY_QUERY, reply->message[1], 'x', 0};
+    Message query_command = {sizeof(query), true, query};
+    target->parse_command(&query_command, &reply, &status);
+    const uint8_t expected[] = {HTTP_DATA_INTEGER, 1, 0, 0, 0};
+    expect_bytes("secure object query", "reply", reply, expected, sizeof(expected));
+    assert(secure_created == secure_destroyed);
+    secure_open_fail = true;
+    target->parse_command(&c_exchange_raw, &reply, &status);
+    expect_text("secure open failure", "status", status, "503 SERVICE UNAVAILABLE");
+    assert(!secure_sent_length && secure_created == secure_destroyed);
+    secure_open_fail = false;
+    secure_truncate = true;
+    target->parse_command(&c_exchange_raw, &reply, &status);
+    expect_text("secure truncated response", "status", status, "503 SERVICE UNAVAILABLE");
+    expect_empty("secure truncated response", "reply", reply);
+    assert(secure_failure_stage && !strcmp(secure_failure_stage,"http_read") && secure_failure_code==0);
+    assert(secure_created == secure_destroyed);
+    secure_truncate = false;
+    secure_write_zero = true;
+    target->parse_command(&c_exchange_raw, &reply, &status);
+    expect_text("secure stalled write", "status", status, "503 SERVICE UNAVAILABLE");
+    assert(secure_failure_stage && !strcmp(secure_failure_stage,"http_write") && secure_failure_code==0);
+    assert(secure_created == secure_destroyed);
+    secure_write_zero = false;
+    secure_long_response = true;
+    target->parse_command(&c_exchange_raw, &reply, &status);
+    assert(!reply->last_part && secure_created == secure_destroyed + 1);
+    target->c64_reset();
+    assert(secure_created == secure_destroyed);
+    target->parse_command(&command, &reply, &status);
+    target->parse_command(&c_exchange_raw, &reply, &status);
+    assert(!reply->last_part && secure_created == secure_destroyed + 1);
+    target->parse_command(&c_cmd_free_all, &reply, &status);
+    assert(secure_created == secure_destroyed);
+    secure_long_response = false;
+    http_set_secure_connection_factory(NULL);
+    target->parse_command(&c_cmd_free_all, &reply, &status);
+}
+
+static void test_plain_exchange(HttpTarget *target)
+{
+    int server = socket(AF_INET, SOCK_STREAM, 0);
+    assert(server >= 0);
+    sockaddr_in address = {};
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    assert(bind(server, (sockaddr *)&address, sizeof address) == 0);
+    socklen_t length = sizeof address;
+    assert(getsockname(server, (sockaddr *)&address, &length) == 0);
+    assert(listen(server, 1) == 0);
+    pid_t child = fork();
+    assert(child >= 0);
+    if (!child) {
+        alarm(5);
+        int client = accept(server, NULL, NULL);
+        assert(client >= 0);
+        char request[1024] = {};
+        int used = 0;
+        while (!strstr(request, "\r\n\r\n")) {
+            int n = recv(client, request + used, sizeof(request) - 1 - used, 0);
+            assert(n > 0); used += n;
+        }
+        assert(!strcmp(request, "GET /data HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n"));
+        const char response[] = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 7\r\n\r\n{\"x\":1}";
+        assert(send(client, response, sizeof(response) - 1, 0) == sizeof(response) - 1);
+        close(client); close(server); _exit(0);
+    }
+    Message *reply, *status;
+    uint8_t create[128] = {6, HTTP_CMD_HEADER_CREATE, 1};
+    snprintf((char *)create + 3, sizeof(create) - 3, "http://127.0.0.1:%u/data", ntohs(address.sin_port));
+    Message command = {(int)strlen((char *)create + 3) + 4, true, create};
+    http_set_secure_connection_factory(test_secure_factory);
+    int before = secure_created;
+    target->parse_command(&command, &reply, &status);
+    target->parse_command(&c_exchange_raw, &reply, &status);
+    expect_text("plain HTTP raw", "reply", reply, "{\"x\":1}");
+    assert(secure_created == before);
+    target->parse_command(&c_cmd_free_all, &reply, &status);
+    http_set_secure_connection_factory(NULL);
+    close(server);
+    int child_status;
+    assert(waitpid(child, &child_status, 0) == child);
+    assert(WIFEXITED(child_status) && WEXITSTATUS(child_status) == 0);
+}
+
 int main(int argc, char **argv)
 {
     HttpTarget *target = (HttpTarget *)command_targets[6];
+#ifdef TEST_HTTP_REAL_TLS
+    if(target && argc>1 && !strcmp(argv[1],"--real-tls")) {
+        extern int test_real_tls_uci(HttpTarget *,int,char **);
+        return test_real_tls_uci(target,argc,argv);
+    }
+#endif
     if (target && (argc > 1) && (strcmp(argv[1], "--integer-widths") == 0)) {
         test_integer_widths(target);
         printf("Integer widths: %d checks, %d failures\n", checks, failures);
@@ -574,6 +744,13 @@ int main(int argc, char **argv)
     if (!target) {
         printf("FAIL target 6 was not registered\n");
         return 1;
+    }
+
+    if ((argc > 1) && (strcmp(argv[1], "--secure-exchange") == 0)) {
+        test_secure_exchange(target);
+        test_plain_exchange(target);
+        printf("Secure exchange: %d checks, %d failures\n", checks, failures);
+        return failures ? 1 : 0;
     }
 
     if ((argc > 1) && (strcmp(argv[1], "--body-removal") == 0)) {

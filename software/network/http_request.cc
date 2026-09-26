@@ -2,18 +2,32 @@
 #include "http_request.h"
 #include "netdb.h"
 
-int HttpRequest :: connect_to_server(const char *hostname, uint16_t hostport)
+static HttpSecureConnectionFactory secure_factory = NULL;
+
+void http_set_secure_connection_factory(HttpSecureConnectionFactory factory)
+{
+    secure_factory = factory;
+}
+
+int HttpRequest :: connect_to_server(const char *hostname, uint16_t hostport, bool secure)
 {
     int error;
-    struct hostent my_host, *ret_host;
+    struct hostent my_host, *ret_host = NULL;
     struct sockaddr_in serv_addr;
     char buffer[1024];
 
     printf("Connect to %s:%d\n", hostname, hostport);
 
-    this->socket_fd = -1;
+    if (socket_fd >= 0 || secure_connection) return -1;
     InitReqMessage(&this->response);
-    this->response.usedAsResponseFromServer = 1;
+    this->response.usedAsResponseFromServer = HTTP_RESPONSE_STRICT;
+
+    if (secure) {
+        if (!secure_factory) return -1;
+        secure_connection = secure_factory();
+        if (!secure_connection) return -1;
+        return secure_connection->open(hostname, hostport);
+    }
 
     // setup the connection
     int result = gethostbyname_r(hostname, &my_host, buffer, 1024, &ret_host, &error);
@@ -39,6 +53,7 @@ int HttpRequest :: connect_to_server(const char *hostname, uint16_t hostport)
 
     if (connect(sock_fd, (struct sockaddr *)&serv_addr,sizeof(serv_addr)) < 0) {
         printf("Connection failed.\n");
+        close(sock_fd);
         return -1;
     }
     // printf("Connection succeeded.\n");
@@ -54,20 +69,43 @@ int HttpRequest :: send_request(StreamRamFile *s)
     do {
         n = s->read(buffer, 128);
         if (n) {
-            r = send(socket_fd, buffer, n, MSG_DONTWAIT);
-            if (r < 0) {
-                return r;
+            int sent = 0;
+            while (sent < n) {
+                r = secure_connection ? secure_connection->write(buffer + sent, n - sent)
+                                      : send(socket_fd, buffer + sent, n - sent, MSG_DONTWAIT);
+                if (r <= 0 || r > n - sent) return fail("http_write", r);
+                sent += r;
             }
         }
     } while(n);
     return 0;
 }
 
-void HttpRequest :: recv_response(void)
+int HttpRequest :: recv_response(void)
 {
-    get_response(this->socket_fd, collect_in_buffer, response);
-    this->body = (t_BufferedBody *)response.userContext;
-    this->body->offset = 0;
+    uint8_t state = READING_SOCKET;
+    while (state < WRITING_SOCKET) {
+        int space = HTTP_BUFFER_SIZE - response._valid;
+        if (space <= 0) return fail("http_buffer_full", space);
+        int n = secure_connection ? secure_connection->read(response._buf + response._valid, space)
+                                  : recv(socket_fd, response._buf + response._valid, space, 0);
+        if (n == 0 && body && response.protocol_state == eReq_Body &&
+            response.bodyType == eUntilDisconnect && response.BodyCB) {
+            response.BodyCB(response.BodyContext, NULL, 0);
+            response.BodyCB = NULL;
+            response.BodyContext = NULL;
+            break;
+        }
+        if (n <= 0 || n > space) return fail("http_read", n);
+        response._valid += n;
+        state = ProcessClientData(&response, NULL, collect_in_buffer);
+        body = (t_BufferedBody *)response.userContext;
+        if (body && body->overflow) return fail("http_body_overflow", body->size);
+    }
+    if (!body || body->overflow || response.protocol_state == eReq_HeaderTooBig ||
+        (response.BodyCB && response.bodyType != eNoBody)) return fail("http_framing", state);
+    body->offset = 0;
+    return 0;
 }
 
 void attachment_to_buffer(BodyDataBlock_t *block)
@@ -98,6 +136,7 @@ void attachment_to_buffer(BodyDataBlock_t *block)
                 body->offset += block->length;
                 body->size += block->length;
             } else {
+                body->overflow = true;
                 printf("-> Ditched, buffer full.\n");
             }
             break;
@@ -115,9 +154,12 @@ void collect_in_buffer(HTTPReqMessage *req, HTTPRespMessage *resp)
 {
     t_BufferedBody *body = new t_BufferedBody;
     req->userContext = body;
+    if (!body) return;
     body->offset = 0;
     body->size = 0;
+    body->overflow = false;
     setup_multipart(req, &attachment_to_buffer, body);
+    if (!req->BodyCB) body->overflow = true; // allocation failure must not look like an empty response
 }
 
 int read_socket(int socket_fd, HTTPReqMessage& response)

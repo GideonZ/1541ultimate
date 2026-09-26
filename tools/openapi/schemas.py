@@ -239,6 +239,83 @@ SCHEMAS = {
                         ),
                     },
                     "total": {"type": "integer", "description": "Size of the heap."},
+                    "esp32": {
+                        "type": "object",
+                        "description": (
+                            "Optional HTTPS controller telemetry. Available only with bridge 1.17 or later. "
+                            "Stale or absent samples contain available=false and no numeric measurements. "
+                            "Heap minima are allocator-wide since boot; largest blocks are sampled, not minima."
+                        ),
+                        "required": ["available"],
+                        "properties": {
+                            "available": {"type": "boolean"},
+                            "sample_age_ms": {"type": "integer", "minimum": 0, "maximum": 30000},
+                            "boot_id": {"type": "string", "pattern": "^[0-9a-f]{8}$"},
+                            "sample_sequence": {"type": "string", "pattern": "^[0-9a-f]{8}$"},
+                            "last_tls_failure": {
+                                "type": "object",
+                                "description": (
+                                    "Bridge 1.18 telemetry v2: last TLS worker failure since controller boot. "
+                                    "Latched across successful requests; count=0 means none. Correlate epoch/session "
+                                    "with https_bridge.last_failure; stale telemetry is not current failure evidence. "
+                                    "Stage: 0 validate, 1 time, 2 random, 3 config, 4 trust, 5 setup, "
+                                    "6 hostname, 7 TCP open, 8 handshake, 9 read, 10 write. "
+                                    "Code is the original Mbed TLS/trust return value; zero if unavailable. "
+                                    "Verify flags are the Mbed TLS certificate verification bitmask."
+                                ),
+                                "properties": {
+                                    "count": {"type": "integer", "minimum": 0},
+                                    "epoch": {"type": "string", "pattern": "^[0-9a-f]{16}$"},
+                                    "session": {"type": "string", "pattern": "^[0-9a-f]{8}$"},
+                                    "stage": {"type": "integer", "minimum": 0, "maximum": 10},
+                                    "status": {"type": "integer", "minimum": 0, "maximum": 9},
+                                    "code": {"type": "integer"},
+                                    "verify_flags": {"type": "string", "pattern": "^[0-9a-f]{8}$"},
+                                },
+                            },
+                            **{name: {"type": "integer", "minimum": 0} for name in (
+                                "internal_free", "internal_min_ever_free", "internal_largest_free_block",
+                                "free_8bit", "min_ever_free_8bit", "largest_free_block_8bit",
+                                "tls_stack_min_free_bytes", "uptime_seconds",
+                            )},
+                        },
+                    },
+                    "https_bridge": {
+                        "type": "object",
+                        "description": "Optional management-side HTTPS startup diagnostics; not ESP32 memory measurements.",
+                        "properties": {
+                            **{name: {"type": "integer", "minimum": 0} for name in (
+                                "controller_major", "controller_minor", "metrics_received", "metrics_accepted")},
+                            **{name: {"type": "boolean"} for name in (
+                                "controller_compatible", "socket_worker_ready", "clock_synchronized")},
+                            "last_connection_state": {
+                                "type": "string",
+                                "enum": ["not_requested", "controller_unavailable", "worker_unavailable",
+                                         "busy", "epoch_storage_failed", "allocation_failed", "created"],
+                                "description": "Connection allocation state. Created does not mean TLS authenticated successfully.",
+                            },
+                            "last_failure": {
+                                "type": "object",
+                                "description": (
+                                    "First observed management failure in the latest failed epoch, latched across "
+                                    "successes. No URLs, headers or body data. Count=0 means none. Stage identifies "
+                                    "DNS, TCP, UART, remote TLS status or HTTP parsing. Code is stage-specific: "
+                                    "lwIP errno for socket errors, err_t for dns_queue, negative https_status for "
+                                    "tls_reply, transfer count/parser state for HTTP errors, otherwise zero. "
+                                    "Detail is the UART operation, TCP wait direction (1 write, 0 read), "
+                                    "or HTTP parser protocol state."
+                                ),
+                                "properties": {
+                                    "count": {"type": "integer", "minimum": 0},
+                                    "epoch": {"type": "string", "pattern": "^[0-9a-f]{16}$"},
+                                    "session": {"type": "string", "pattern": "^[0-9a-f]{8}$"},
+                                    "stage": {"type": "string"},
+                                    "code": {"type": "integer"},
+                                    "detail": {"type": "integer"},
+                                },
+                            },
+                        },
+                    },
                 },
             },
         ]

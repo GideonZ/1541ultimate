@@ -313,6 +313,7 @@ void HttpTarget::parse_command(Message *command, Message **reply, Message **stat
             break;
 
         case HTTP_CMD_FREE_ALL:
+            reset_responses();
             for(int i=0; i<MAX_HTTP_HANDLES; i++) {
                 if (headers[i]) { delete headers[i]; headers[i] = NULL; }
                 if (bodies[i])  { delete bodies[i];  bodies[i]  = NULL; }
@@ -506,8 +507,8 @@ void HttpTarget::cmd_header_query(Message *command, Message **reply, Message **s
         rend = j->render();
     }
     int len_out = strlen(rend);
-    if (len_out > CMD_MAX_REPLY_LEN)
-        len_out = CMD_MAX_REPLY_LEN;
+    if (len_out > HTTP_MAX_REPLY_BYTES)
+        len_out = HTTP_MAX_REPLY_BYTES;
     data_message.length = len_out;
     data_message.last_part = true;
     memcpy(data_message.message, rend, len_out);
@@ -874,21 +875,25 @@ void HttpTarget::cmd_exchange(Message *command, Message **reply, Message **statu
         hdr->render(&req);
     }
 
-    hdr->dump();
-
     reset_responses();
 
     exch = new HttpRequest();
-    if (exch->connect_to_server(hdr->get_host(), hdr->get_port()) >= 0) {
+    if (exch->connect_to_server(hdr->get_host(), hdr->get_port(), hdr->is_secure()) >= 0) {
         if (!exch->send_request(&req)) {
             if (raw) {
                 HTTPReqHeader *hdr = exch->get_header();
                 if (hdr) {
                     hdr->RawCopy = status_message.message;
-                    hdr->RawCopySize = CMD_MAX_STATUS_LEN;
+                    hdr->RawCopySize = HTTP_MAX_STATUS_BYTES;
                 }
             }
-            exch->recv_response();
+            if (exch->recv_response() < 0) {
+                delete exch;
+                exch = NULL;
+                *reply = &c_message_empty;
+                *status = &c_status_not_available;
+                return;
+            }
         } else {
             printf("Failed to send request\n");
             delete exch;
@@ -910,9 +915,9 @@ void HttpTarget::cmd_exchange(Message *command, Message **reply, Message **statu
     if(raw) {
         // Return raw data in data channel [cite: 264]
         *reply = &data_message;
-        data_message.length = exch->read_response_data(CMD_MAX_REPLY_LEN, data_message.message);
-        data_message.last_part = (data_message.length != CMD_MAX_REPLY_LEN);
-        // Copy at most CMD_MAX_STATUS_LEN bytes into the status. Note that parse header will insert
+        data_message.length = exch->read_response_data(HTTP_MAX_REPLY_BYTES, data_message.message);
+        data_message.last_part = (data_message.length != HTTP_MAX_REPLY_BYTES);
+        // Copy at most HTTP_MAX_STATUS_BYTES bytes into the status. Note that parse header will insert
         // zeros at string boundaries
         HTTPReqHeader *hdr = exch->get_header();
         *status = &status_message;
@@ -980,7 +985,13 @@ void HttpTarget::cmd_exchange(Message *command, Message **reply, Message **statu
         HTTPReqHeader *hdr = exch->get_header();
         if (hdr->Response) {
             *status = &status_message;
-            status_message.length = snprintf((char *)status_message.message, CMD_MAX_STATUS_LEN, "%s", hdr->Response);
+            // Message carries a length, so it needs no terminating NUL. Clamp
+            // the reported length as well as the copy: snprintf returns the
+            // untruncated size, which could expose bytes beyond this buffer.
+            size_t length = strlen(hdr->Response);
+            if (length > HTTP_MAX_STATUS_BYTES) length = HTTP_MAX_STATUS_BYTES;
+            memcpy(status_message.message, hdr->Response, length);
+            status_message.length = (int)length;
             hdr->Response = NULL;
         } else {
             *status = &c_status_http_ok;
@@ -996,8 +1007,8 @@ void HttpTarget::get_more_data(Message **reply, Message **status)
 {
     if (response_data) {
         *reply = &data_message;
-        data_message.length = response_data->read((char *)data_message.message, CMD_MAX_REPLY_LEN);
-        data_message.last_part = (data_message.length != CMD_MAX_REPLY_LEN);
+        data_message.length = response_data->read((char *)data_message.message, HTTP_MAX_REPLY_BYTES);
+        data_message.last_part = (data_message.length != HTTP_MAX_REPLY_BYTES);
         *status = &c_status_http_ok; 
         if (data_message.last_part) {
             delete response_data;
@@ -1005,8 +1016,8 @@ void HttpTarget::get_more_data(Message **reply, Message **status)
         }
     } else if (exch) {
         *reply = &data_message;
-        data_message.length = exch->read_response_data(CMD_MAX_REPLY_LEN, data_message.message);
-        data_message.last_part = (data_message.length != CMD_MAX_REPLY_LEN);
+        data_message.length = exch->read_response_data(HTTP_MAX_REPLY_BYTES, data_message.message);
+        data_message.last_part = (data_message.length != HTTP_MAX_REPLY_BYTES);
         if (data_message.last_part) {
             delete exch;
             exch = NULL;
@@ -1022,6 +1033,15 @@ void HttpTarget::abort(int a)
 {
     // Reset any pending exchange state
     reset_responses();
+}
+
+void HttpTarget::c64_reset(void)
+{
+    reset_responses();
+    for(int i=0;i<MAX_HTTP_HANDLES;i++) {
+        delete headers[i];headers[i]=NULL;
+        delete bodies[i];bodies[i]=NULL;
+    }
 }
 
 int HttpTarget::create_body_from_json(char *body, int size, uint8_t *handle)

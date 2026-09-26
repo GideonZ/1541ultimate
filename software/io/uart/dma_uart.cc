@@ -215,8 +215,12 @@ uint8_t DmaUART::DmaUartInterrupt(void *context)
                 if (u->isr_rx_callback(u->packets, rxb, &HPTaskAwoken) != pdTRUE) {
                     // Packet could not be queued, so we need to drop it, But now it's free again
                     cmd_buffer_free_isr(u->packets, rxb, &HPTaskAwoken);
-                    u->uart->ictrl = DMAUART_BufReq_EN;
                 }
+                // A successful callback may consume/free the buffer in this
+                // ISR (TLS and telemetry), rather than queue it for a task.
+                // BufInterrupt may already have disabled requests above when
+                // the pool was empty. Recheck after either callback outcome.
+                u->uart->ictrl = DMAUART_BufReq_EN;
             } else {
                 ioWrite8(UART_DATA, '!');
             }
@@ -271,6 +275,16 @@ BaseType_t DmaUART :: TransmitPacket(command_buf_t *buf, uint16_t *ms)
     }
 
     printf("Transmit packet failed; transmit queue full\n");
+    cmd_buffer_free(packets, buf);
+    return pdFALSE;
+}
+
+BaseType_t DmaUART :: TryTransmitPacket(command_buf_t *buf)
+{
+    if (xQueueSend(packets->transmitQueue, &buf, 0) == pdTRUE) {
+        uart->ictrl = DMAUART_TxIRQ_EN;
+        return pdTRUE;
+    }
     cmd_buffer_free(packets, buf);
     return pdFALSE;
 }

@@ -1,5 +1,8 @@
 #include "wifi_cmd.h"
 #include "dump_hex.h"
+#if defined(ULTIMATE_HTTPS)
+#include "https_management.h"
+#endif
 
 /// C like functions to 'talk' with the WiFi Module
 uint16_t sequence_nr = 0;
@@ -14,6 +17,9 @@ void hex(uint8_t h)
 
 BaseType_t wifi_rx_isr(command_buf_context_t *context, command_buf_t *buf, BaseType_t *w)
 {
+#if defined(ULTIMATE_HTTPS)
+    if(https_management_rx(context,buf,w))return pdTRUE;
+#endif
     rpc_header_t *hdr = (rpc_header_t *)buf->data;
     BaseType_t res;
 
@@ -31,6 +37,9 @@ BaseType_t wifi_rx_isr(command_buf_context_t *context, command_buf_t *buf, BaseT
 
 void wifi_command_init(void)
 {
+#if defined(ULTIMATE_HTTPS)
+    https_management_init();
+#endif
 #if (CLOCK_FREQ == 66666667)
     esp32.uart->SetBaudRate(6666666);
 #else
@@ -72,6 +81,9 @@ int wifi_setbaud(int baudrate, uint8_t flowctrl)
 
 BaseType_t wifi_detect(uint16_t *major, uint16_t *minor, char *str, int maxlen)
 {
+#if defined(ULTIMATE_HTTPS)
+    https_management_version(0,0);
+#endif
     BUFARGS(identify, CMD_IDENTIFY);
 
     esp32.uart->TransmitPacket(buf);
@@ -84,6 +96,9 @@ BaseType_t wifi_detect(uint16_t *major, uint16_t *minor, char *str, int maxlen)
         rpc_identify_resp *result = (rpc_identify_resp *)buf->data;
         *major = result->major;
         *minor = result->minor;
+#if defined(ULTIMATE_HTTPS)
+        https_management_version(*major,*minor);
+#endif
         strncpy(str, &result->string, maxlen);
         str[maxlen-1] = 0;
         printf("Identify: %s\n", str);

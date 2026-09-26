@@ -208,6 +208,10 @@ typedef struct {
 #define CMD_SET_WAKE_ON_WIFI  0x18
 #define CMD_GET_WAKE_ON_WIFI  0x19
 
+/* Experimental internal TLS stream transport; allocation requires upstream review. */
+#define CMD_TLS_STREAM        0x30
+#define CMD_TLS_METRICS       0x31 /* Experimental read-only telemetry, version 1. */
+
 #define EVENT_CONNECTED     0x40
 #define EVENT_GOTIP         0x41
 #define EVENT_DISCONNECTED  0x42

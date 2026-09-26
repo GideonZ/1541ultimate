@@ -14,14 +14,18 @@ raw_u64 file was ever hashed while raw_u64's bridge.bin was being cached. A
 misspelling was enough because `glob()` on a missing directory returns an empty
 list and says nothing about it.
 
-Neither check here needs a device, so this runs at the start of the gate beside
-check_transport_usage.py and costs nothing.
+Shared TLS and UART sources also live outside the cached controller project.
+Their contents and component definition must affect the same key. Disposable
+source-tree mutation checks exercise that dependency without changing the repo.
+
+These checks need no device and run at the start of the gate and in build CI.
 """
 
 import os
 import re
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 # The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
@@ -72,22 +76,68 @@ def cached_projects():
     return projects
 
 
-def hashed_projects():
-    """The projects esp_depends.py actually contributes files for."""
-    result = subprocess.run([sys.executable, DEPENDS_SCRIPT], cwd=SOFTWARE_DIR,
+def hashed_files(directory=SOFTWARE_DIR):
+    """The manifest used as the ESP32 cache key, including shared inputs."""
+    result = subprocess.run([sys.executable, DEPENDS_SCRIPT], cwd=directory,
                             capture_output=True, text=True, check=False)
     if result.returncode != 0:
         raise Failure(f"esp_depends.py failed: {result.stderr.strip() or result.returncode}")
 
-    # Each line is "<path>: <md5>", with the path relative to software/.
+    return dict(line.rsplit(": ", 1) for line in result.stdout.splitlines())
+
+
+def hashed_projects():
+    """The projects esp_depends.py actually contributes files for."""
     seen = {}
-    for line in result.stdout.splitlines():
-        path = line.split(":", 1)[0]
+    for path in hashed_files():
         # Longest project prefix wins: raw_u64/main files belong to raw_u64.
         parts = path.split("/")
         for depth in range(1, len(parts)):
             seen["/".join(parts[:depth])] = seen.get("/".join(parts[:depth]), 0) + 1
     return seen
+
+
+def run_shared_inputs_check():
+    # These compile into the controller but live outside its main directory.
+    # A component definition must invalidate the cache just as its sources do.
+    required = [f"network/https/{name}.{suffix}"
+                for name in ("https_client", "tls_stream", "tls_wire", "tls_service")
+                for suffix in ("c", "h")]
+    required += ["u64ctrl/components/https_tls/CMakeLists.txt",
+                 "network/https/tls_metrics.h",
+                 "io/uart/cmd_buffer.c", "io/uart/cmd_buffer.h"]
+    with check("controller shared TLS and UART inputs contribute to the cache key"):
+        manifest = hashed_files()
+        missing = [path for path in required if path not in manifest]
+        if missing:
+            raise Failure("compiled controller inputs absent from cache key: " + ", ".join(missing))
+
+    with check("shared input edits invalidate the cache; generated output does not"):
+        script = Path(DEPENDS_SCRIPT).read_text(encoding="utf-8")
+        # Exercise the actual script in a disposable source tree. Do not mutate
+        # production inputs or rely on their timestamps to change the digest.
+        with tempfile.TemporaryDirectory(prefix="esp-cache-inputs-") as temporary:
+            root = Path(temporary)
+            for directory in listed_directories(script):
+                (root / directory).mkdir(parents=True, exist_ok=True)
+            for path in required:
+                (root / path).write_text("original input\n", encoding="utf-8")
+            before = hashed_files(temporary)
+            for path in required:
+                (root / path).write_text("modified input\n", encoding="utf-8")
+                after = hashed_files(temporary)
+                if after == before or after.get(path) == before.get(path):
+                    raise Failure(f"editing {path} did not invalidate the cache")
+                (root / path).write_text("original input\n", encoding="utf-8")
+            generated = root / "u64ctrl/build/CMakeLists.txt"
+            generated.parent.mkdir(parents=True)
+            generated.write_text("generated build artifact\n", encoding="utf-8")
+            if hashed_files(temporary) != before:
+                raise Failure("generated build output affected the source cache key")
+            (root / required[0]).unlink()
+            if hashed_files(temporary) == before:
+                raise Failure("removing a shared input did not invalidate the cache")
+        detail(f"{len(required)} shared input edits and one removal invalidate the cache")
 
 
 def run_coverage_check():
@@ -169,6 +219,7 @@ def main():
             return 1
     try:
         run_coverage_check()
+        run_shared_inputs_check()
         run_missing_directory_check()
     except Failure as exc:
         suite_fail("esp_depends_test", str(exc))

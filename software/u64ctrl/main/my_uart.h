@@ -20,6 +20,8 @@
 esp_err_t  my_uart_init(command_buf_context_t *buffers, uint8_t uart_num);
 BaseType_t my_uart_get_buffer(uint8_t uart_num, command_buf_t **buf, TickType_t ticks);
 BaseType_t my_uart_transmit_packet(uint8_t uart_num, command_buf_t *buf);
+/* Transfers ownership even when the transmit queue is full. Never waits. */
+BaseType_t my_uart_try_transmit_packet(uint8_t uart_num, command_buf_t *buf);
 BaseType_t my_uart_receive_packet(uint8_t uart_num, command_buf_t **buf, TickType_t ticks);
 BaseType_t my_uart_free_buffer(uint8_t uart_num, command_buf_t *buf);
 
