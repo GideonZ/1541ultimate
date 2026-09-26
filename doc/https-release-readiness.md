@@ -111,6 +111,69 @@ reviewed; no top-level contribution guide or pull-request template was found.
 The contribution guide under `neorv32` belongs to that dependency. Preserve the
 repository license and third-party notices.
 
+### Upstream integration review (2026-09-26)
+
+The destination is `GideonZ/1541ultimate:master`, reviewed at
+`d4c1f544ef4cc3c1d460229eb197e3e1e7504ef1`. The existing draft
+[`araxis/1541ultimate#1`](https://github.com/araxis/1541ultimate/pull/1)
+targets the fork's own `master`; it is preparation for review, not an upstream
+submission. The feature branch at `d107caed596185377455c3e7ffb20503cba9408b`
+has four unique commits; upstream has eight unique commits, including two
+merges. A Git merge-tree check succeeded without conflicts. That checks textual
+integration only: the branch has not been updated or tested at the combined tree.
+
+The upstream tree has no project contribution guide, CODEOWNERS file or PR
+template. Its [test guidance](https://github.com/GideonZ/1541ultimate/blob/d4c1f544ef4cc3c1d460229eb197e3e1e7504ef1/tests/README.md)
+keeps isolated tests beside their component; device, duration and measurement
+tests belong in the corresponding E2E, soak and performance categories. Tests
+under `tests/` use Python and the shared reporting library. These are documented
+test conventions, not a verified list of required branch-protection checks.
+The public ruleset query returned no entries; branch-protection inspection
+required authentication, so the exact administrative merge requirements remain
+unverified.
+
+The existing [Build workflow](https://github.com/GideonZ/1541ultimate/blob/d4c1f544ef4cc3c1d460229eb197e3e1e7504ef1/.github/workflows/build.yml)
+runs on pushes and external pull requests with a self-hosted runner,
+`my_docker_image`, `/opt/build-tools`, and a configured Docker network. It tests
+host components, builds several firmware/FPGA targets, checks application space
+and uploads artifacts. A runner in the upstream repository is not available to
+the fork merely because the workflow was copied. Upstream has successful PR
+builds, but its two most recent push builds were also queued at inspection time;
+upstream runner availability must not be promised.
+
+The [hardware E2E workflow](https://github.com/GideonZ/1541ultimate/blob/d4c1f544ef4cc3c1d460229eb197e3e1e7504ef1/.github/workflows/e2e.yml)
+is manually dispatched, uses the additional `e2e` runner label, serializes
+access to devices, preserves reports on failure, and currently has its nightly
+schedule disabled. The HTTPS soak evidence is supplementary; it does not prove
+that this broader hardware gate passed.
+
+Keep the existing build targets, artifacts, runner selection and E2E scheduling
+intact. The proposed Build changes add HTTPD patch application and HTTPS tests;
+the separate hosted workflow supplies portable checks for forks. It supplements
+the upstream build rather than replacing it or bypassing merge requirements.
+
+There is an outstanding toolchain compatibility check: upstream's checked-in
+[Dockerfile](https://github.com/GideonZ/1541ultimate/blob/d4c1f544ef4cc3c1d460229eb197e3e1e7504ef1/docker/Dockerfile)
+selects ESP-IDF 5.3.1, while the tested retail firmware and hosted TLS dependency
+use 5.3.6. The Dockerfile alone does not prove which image is installed on the
+live runner. The retail recipe deliberately requires 5.3.6 and is separate from
+the ordinary upstream build. Its successful build cannot establish compatibility
+with 5.3.1 or all other supported boards.
+
+Before upstream submission:
+
+1. Integrate the current upstream branch without rewriting published history,
+   then repeat relevant host and regression checks against the combined source.
+2. Verify the shared controller and management build with the declared upstream
+   toolchain, including TLS configuration and size limits. Keep any proposed
+   toolchain upgrade explicit and separate from an assumed prerequisite.
+3. Review test placement and shared reporting for hardware cases. Retain the
+   pinned retail recipe and exact v14 evidence as supplementary reproduction
+   material, with historical failures and untested hardware cases visible.
+4. Prepare an external PR from the fork's feature branch to upstream `master`.
+   Record the actual upstream checks and any maintainer-controlled execution
+   approval; neither a queued build nor hosted-only success is a full build pass.
+
 Before public submission, review the complete proposed source diff, dependency
 patch and source manifest; run the recorded host gates; and attach the current
 hardware report. Exclude device configuration backups, credentials, private
