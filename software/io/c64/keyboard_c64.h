@@ -32,6 +32,10 @@ class Keyboard_C64 : public Keyboard
 
     int  delay_count;
 
+    // False after ignore_held_input() until a scan sees no key and no joystick.
+    // Anything held when the menu opens is ignored until it is released.
+    bool armed;
+
     int key_buffer[KEY_BUFFER_SIZE];
     volatile int  key_head;
     volatile int  key_tail;
@@ -56,6 +60,7 @@ public:
     void push_head(int);
     void wait_free(void);
     void clear_buffer(void);
+    void ignore_held_input(void);
 };
 
 #endif

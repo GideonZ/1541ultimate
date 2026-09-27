@@ -45,6 +45,7 @@ TEST_CHOICES = (
     "keyboard-echo-ab-20hz",
     "keyboard-echo-ab-5hz",
     "menu",
+    "menu-held-input",
     "menu-open",
     "menu-shift",
     "menu-repeat-printable",
@@ -57,7 +58,7 @@ TEST_CHOICES = (
 # echo and repeat sweeps, which take seconds each, wait for deep.
 PROFILE_TESTS = {
     profiles.SMOKE: ("contract", "joystick"),
-    profiles.QUICK: ("keyboard", "mouse"),
+    profiles.QUICK: ("keyboard", "mouse", "menu-held-input"),
     profiles.STANDARD: ("menu",),
     profiles.DEEP: ("keyboard-echo-alphabet", "keyboard-echo-ab-20hz", "keyboard-echo-ab-5hz",
                     "menu-open", "menu-shift", "menu-repeat-printable", "menu-repeat-cursor"),
@@ -214,7 +215,8 @@ def wants_test(selected: list[str] | None, name: str) -> bool:
 
 
 def wants_menu_tests(selected: list[str] | None) -> bool:
-    return wants_test(selected, "menu") or any(item.startswith("menu-") for item in selected or [])
+    return wants_test(selected, "menu") or any(item.startswith("menu-") and item != "menu-held-input"
+                                               for item in selected or [])
 
 
 def wants_keyboard_echo_tests(selected: list[str] | None) -> bool:
@@ -2807,6 +2809,89 @@ def run_joystick_checks(session: RestInputSession) -> None:
         assert_state_empty(session)
 
 
+# Longer than the menu's first key-repeat delay (16 scans of 20 ms) plus a few
+# repeats, so a held input the menu wrongly accepts moves the cursor visibly.
+MENU_HELD_INPUT_SECONDS = 1.0
+
+
+def run_menu_held_input_tests(session: RestInputSession) -> None:
+    """Input already held as the menu opens is ignored until released (#935).
+
+    After the C64 had been running, the menu could open with a line low on
+    joystick port 2 and step the cursor once, without any key being pressed.
+    The menu now ignores whatever is held as it opens until it has been
+    released once. Only the joystick reaches Keyboard_C64::scan() from here:
+    keys held through this API bypass the matrix scan (restMatrixActive) and
+    arrive through the USB queue, so a held-key check would pass either way.
+    """
+    down = [{"kind": "keyboard", "inputs": ["cursor_up_down"], "transition": "tap"}]
+    up = [{"kind": "keyboard", "inputs": ["left_shift", "cursor_up_down"], "transition": "tap"}]
+
+    def park_on_top_entry() -> tuple[int, str]:
+        """Leave the menu closed with the highlight on the first entry.
+
+        The menu keeps its position between opens. A check that holds Down
+        with the highlight already on the last entry would pass without
+        measuring anything, so every check starts from the top with room to
+        move, and the list must have a second entry.
+        """
+        session.close_menu_from_anywhere()
+        session.post_events([{"kind": "release_all"}])
+        open_menu(session)
+        _, current = wait_for_menu_selection(session, "the menu's highlighted entry")
+        while True:
+            session.post_events(up)
+            moved = wait_for_menu_selection_change(session, current)
+            if moved is None:
+                break
+            current = moved
+        session.post_events(down)
+        second = wait_for_menu_selection_change(session, current)
+        if second is None:
+            raise Failure("the menu list has no second entry, so a held Down cannot be measured")
+        session.post_events(up)
+        if wait_for_menu_selection_change(session, second) != current:
+            raise Failure("the highlight did not return to the first entry")
+        session.close_menu_from_anywhere()
+        return current
+
+    def held_while_opening(label: str, inputs: list[dict[str, Any]], release: list[dict[str, Any]]) -> None:
+        with check(label):
+            try:
+                before = park_on_top_entry()
+                session.post_events(inputs)
+                open_menu(session)
+                _, opened = wait_for_menu_selection(session, "the menu's highlighted entry")
+                if opened != before:
+                    raise Failure(f"the menu opened with the highlight on {opened} instead of "
+                                  f"{before}: the held input moved it as the menu opened")
+                time.sleep(MENU_HELD_INPUT_SECONDS)
+                screen = read_menu_screen(session)
+                held = None if screen is None else menu_selection(*screen)
+                if held != before:
+                    raise Failure(f"the highlight moved from {before} to {held} while the input "
+                                  f"held since the menu opened was still held")
+                session.post_events(release)
+                if wait_for_menu_selection_change(session, before) is not None:
+                    raise Failure("the highlight moved when the held input was released")
+                # Control: the menu still takes a fresh press, and there is room
+                # for it, so the checks above measured something.
+                session.post_events(down)
+                if wait_for_menu_selection_change(session, before) is None:
+                    raise Failure("the highlight did not move for a fresh cursor key after "
+                                  "the held input was released")
+            finally:
+                teardown_step("release injected input",
+                              lambda: session.post_events([{"kind": "release_all"}]))
+                teardown_step("close the menu", session.close_menu_from_anywhere)
+
+    session.post_events([{"kind": "release_all"}])
+    held_while_opening(
+        "a joystick held as the menu opens is ignored until released",
+        [{"kind": "joystick", "port": 2, "inputs": ["down"], "transition": "press"}],
+        [{"kind": "joystick", "port": 2, "inputs": ["down"], "transition": "release"}])
+
+
 def run_tests(session: RestInputSession, soak_duration_seconds: float | None = None, selected: list[str] | None = None) -> int:
     wait_for_input_ready(session, timeout=15.0)
     reset_to_basic(session)
@@ -2824,6 +2909,8 @@ def run_tests(session: RestInputSession, soak_duration_seconds: float | None = N
         run_mouse_tests(session)
     if wants_keyboard_echo_tests(selected):
         run_keyboard_echo_tests(session, selected=selected)
+    if wants_test(selected, "menu-held-input"):
+        run_menu_held_input_tests(session)
     if wants_menu_tests(selected):
         menu_selected = selected if selected and "menu" not in selected and "all" not in selected else None
         if wants_test(menu_selected, "menu-open"):
