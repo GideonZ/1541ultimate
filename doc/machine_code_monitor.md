@@ -961,8 +961,6 @@ There is one boundary worth knowing. A program that runs with KERNAL mapped and 
 
 `F3` or `?` shows the Debug help screen while Debug is active.
 
-It uses the same layout as the ordinary help screen: three blocks separated by one blank row, with no headings. The Debug commands come first, then the monitor commands that still reach a handler while Debug is active, then the keys that need `C=` or a named key. The paging row is the window's own last row and sits on the same columns as the block above it.
-
 ```text
 D Step Over  T Step Into  U Step Out
 G Continue   K Cont Crsr  RET Follow
@@ -983,10 +981,6 @@ RSTOP/<-  Back
 F1/SH+SPC Page Up  F7/SPACE Page Down
 ```
 
-The screen lists only keys that reach a handler while Debug is active. `D`, `T`, `U`, `G` and `P` are shown as the Debug commands they run in this mode, not as the Debug-entry key, Transfer, the undocumented-opcode toggle, Go and Poll that the same keys run outside Debug. The rest of the grid is the commands that still fall through to the ordinary monitor.
-
-The whole page is one header row, at most 17 text rows and the paging row, which is what the 24-row Telnet session can draw without clipping. No line exceeds the window's 38 usable columns. The two grids are fixed: command cells start at columns 0, 13 and 26, and the lower block puts its key at 0, its action at 10, its second key at 19 and its second action at 28.
-
 ### Hardware support
 
 The monitor is built into the Ultimate II+, the Ultimate II+L, the Ultimate 64 and the Ultimate 64 II. The original Ultimate II does not carry it.
@@ -1003,5 +997,3 @@ The monitor is built into the Ultimate II+, the Ultimate II+L, the Ultimate 64 a
 | Monitor-side VIC bank selection (`SH+O`)          | Yes                               | Yes                                                    |
 | Freeze toggle (`Z`)                               | Yes                               | Not available                                          |
 | REST `/v1/machine` memory API                     | Yes                               | Yes                                                    |
-
-On the cartridge, the debugger launches a step by pulsing the cartridge NMI line. The cartridge asserts that line correctly, so stepping works in a host that passes it to the 6510. A U2+L plugged into a C64 Ultimate host does not step, because that host forwards cartridge DMA and reset but not the cartridge NMI, and no bus-operation-mode or interrupt-sharing setting changes it.
