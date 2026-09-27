@@ -317,6 +317,15 @@ SUITES: Sequence[Suite] = (
     # first exercise of the mixed GCR/MFM path on real hardware.
     Suite("e2e", "g71-mfm-bounds", "tests/e2e/drive/g71_mfm_bounds_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@", profile=profiles.QUICK),
+    # Formats three MFM cylinders of a G71 through the 1571's burst format
+    # command, sent from the C64: one with room for nine 512-byte sectors, the
+    # control; one of 4000 bytes, too short for them; and one of 100 bytes,
+    # with no room at all. The two refused ones have to stay as they were in
+    # the image file, and the drive has to answer (#921). Mounts the image
+    # read/write in /Temp, discards its changes and deletes it, and puts the
+    # drive back to the model and power state it had.
+    Suite("e2e", "g71-mfm-format-refused", "tests/e2e/drive/g71_mfm_format_refused_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
     # Calls every endpoint the firmware registers, and fails when one is
     # neither probed nor excluded with a reason. The lockup that prompted it
     # shipped because no suite called that route at all, so the gate matters
