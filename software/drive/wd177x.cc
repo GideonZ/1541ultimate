@@ -50,7 +50,7 @@ static uint8_t my_irq(void *context)
 void WD177x :: init(void)
 {
     printf("Init WD177x...\n");
-    wd177x->command = 3; // enable index pulse; inverted
+    wd177x->command = 7; // enable index pulse; inverted; acknowledge write completions
     
 	// xTaskCreate( WD177x :: run, "WD177x", configMINIMAL_STACK_SIZE, this, PRIO_FLOPPY, &taskHandle );
     // Runs from the drive task now
@@ -61,6 +61,19 @@ void WD177x :: init(void)
 	}
 
 	install_high_irq(irqNr, my_irq, this);
+}
+
+// The drive CPU reads the status register as soon as busy drops, so a write that
+// could not be stored has to be reported before the bit is given back. The block
+// waits for this as long as bit 2 of register 0 is set; see init().
+void WD177x :: complete_write(bool stored)
+{
+    if (!stored) {
+        // Lost data is the status the WD177x defines for a write it could not
+        // complete. Record not found belongs to the read commands.
+        wd177x->status_set = WD_STATUS_LOST;
+    }
+    wd177x->status_clear = WD_STATUS_BUSY;
 }
 
 void WD177x :: wait_head_settle(void)
@@ -387,6 +400,7 @@ void WD177x :: handle_wd177x_completion(t_wd177x_cmd& cmd)
     uint32_t dummy;
     FRESULT res;
     MfmTrack newTrack;
+    bool stored = false;
 
     switch ((cmd >> 4) & 0x0F) {
     case WD_CMD_WRITE_SECTOR:
@@ -400,6 +414,7 @@ void WD177x :: handle_wd177x_completion(t_wd177x_cmd& cmd)
             if (res == FR_OK) {
                 res = mount_file->write(buffer, sectSize, &dummy);
                 if (res == FR_OK) {
+                    stored = true;
                     printf("Sector write OK. %d/%d bytes written to offset %6x.\n", dummy, sectSize, offset);
                 } else {
                     printf("-> Image write error.\n");
@@ -415,6 +430,7 @@ void WD177x :: handle_wd177x_completion(t_wd177x_cmd& cmd)
         if(track_updater) {
             track_updater(track_update_object, drive->track, drive->side, NULL);
         }
+        complete_write(stored);
         break;
 
     case WD_CMD_WRITE_TRACK:
@@ -431,6 +447,7 @@ void WD177x :: handle_wd177x_completion(t_wd177x_cmd& cmd)
             if (res == FR_OK) {
                 res = mount_file->write(binbuf, newTrack.actualDataSize, &dummy);
                 if (res == FR_OK) {
+                    stored = true;
                     printf("Track format OK.\n");
                 } else {
                     printf("-> Image write error.\n");
@@ -446,6 +463,7 @@ void WD177x :: handle_wd177x_completion(t_wd177x_cmd& cmd)
             track_updater(track_update_object, drive->track, drive->side, &newTrack);
         }
         wd177x->dma_mode = 0;
+        complete_write(stored);
         break;
     default:
         printf("Unrecognized completion..\n");

@@ -135,6 +135,7 @@ architecture behavioral of wd177x is
     signal command_fifo_valid   : std_logic;
     signal completion           : std_logic;
     signal write_delay_cnt      : unsigned(7 downto 0);
+    signal ack_writes           : std_logic := '0';
     
     -- Stepper
     signal goto_track       : unsigned(6 downto 0);
@@ -225,6 +226,7 @@ begin
                 when X"0" =>
                     index_enable <= io_req.data(0);
                     index_polarity <= io_req.data(1);
+                    ack_writes <= io_req.data(2);
 
                 when X"1" =>
                     track <= io_req.data;
@@ -370,7 +372,22 @@ begin
                 end if;
 
             when write_delay =>
-                if write_delay_cnt = 0 then
+                -- An application that asked to acknowledge write completions clears
+                -- the busy bit itself, once it knows whether the write succeeded, so
+                -- that the status it reports is still read by the drive CPU. The
+                -- counter then only limits how long a silent application is waited
+                -- for, and counts milliseconds instead of the 4 MHz ticks that time
+                -- the fixed delay.
+                if ack_writes = '1' then
+                    if st_busy = '0' then         -- the application acknowledged
+                        dma_state <= idle;
+                    elsif write_delay_cnt = 0 then -- it stayed silent: release anyway
+                        st_busy <= '0';
+                        dma_state <= idle;
+                    elsif tick_1kHz = '1' then    -- count the wait in milliseconds
+                        write_delay_cnt <= write_delay_cnt - 1;
+                    end if;
+                elsif write_delay_cnt = 0 then    -- no acknowledge asked for: as before
                     st_busy <= '0';
                     dma_state <= idle;
                 elsif tick_4MHz = '1' then
@@ -395,6 +412,7 @@ begin
                 completion <= '0';
                 goto_track <= to_unsigned(0, goto_track'length);
                 write_delay_cnt <= X"00";
+                ack_writes <= '0';
             end if;
         end if;
     end process;

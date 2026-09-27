@@ -90,6 +90,7 @@ class WD177x
     void do_step(t_wd177x_cmd cmd);
     void wait_head_settle(void);
     void handle_wd177x_completion(t_wd177x_cmd& cmd); // called from within
+    void complete_write(bool stored);
 public:
     WD177x(volatile uint8_t *wd, volatile uint8_t *drv, int irq);
     ~WD177x();
