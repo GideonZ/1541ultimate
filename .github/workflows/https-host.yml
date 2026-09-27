@@ -36,6 +36,12 @@ jobs:
           submodules: recursive
           persist-credentials: false
 
+      # The upstream test tree uses Python 3.12 syntax (tests/ruff.toml).
+      - name: Use the upstream test Python version
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+
       - name: Prepare host tools
         run: |
           git fetch --no-tags https://github.com/GideonZ/1541ultimate.git 7b628eb166872965ea59d66f90ffd9bcf7d71d8a

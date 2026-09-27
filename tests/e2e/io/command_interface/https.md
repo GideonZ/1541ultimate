@@ -7,7 +7,7 @@ Firmware preparation and host menu-lifetime fixtures remain in `tools/c64u_https
 
 ## Prerequisites and selection
 
-Use Linux/WSL, Python 3.10 or newer and `64tass`, with the device reachable
+Use Linux/WSL, Python 3.12 or newer and `64tass`, with the device reachable
 through its REST API. Tests replace the running C64 program and RAM. Close the
 Ultimate menu and stop other native-UCI tests first. Use a single device target:
 `cartridge@computer` cannot identify the intended interface from native code and
