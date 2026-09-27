@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
-from wifi_loss_native import GO, READY, SEQ, execute, wait_for_operator
+from https_wifi_loss_test import GO, READY, SEQ, execute, wait_for_operator
 
 
 class ManualWifiTests(unittest.TestCase):
@@ -12,7 +12,7 @@ class ManualWifiTests(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         root = Path(self.temporary.name)
-        self.args = SimpleNamespace(host='device', stall_url='https://fixture:8766/',
+        self.args = SimpleNamespace(host='device', password='secret', timeout=7, stall_url='https://fixture:8766/',
                                     output=root/'evidence', start_file=root/'start',
                                     armed_file=root/'armed', finish_file=root/'finished',
                                     cancel_file=root/'cancel')
@@ -24,7 +24,9 @@ class ManualWifiTests(unittest.TestCase):
     def marker(self, path, **fields):
         path.write_text(json.dumps(fields))
 
-    def factory(self, host, output):
+    def factory(self, host, output, *, password, timeout):
+        self.assertEqual(password, self.args.password)
+        self.assertEqual(timeout, self.args.timeout)
         self.calls.append('start')
         self.assertTrue(self.args.start_file.exists())
         self.assertFalse(self.args.finish_file.exists())

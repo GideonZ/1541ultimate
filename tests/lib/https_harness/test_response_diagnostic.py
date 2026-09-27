@@ -1,7 +1,7 @@
 import copy
 import unittest
 
-from response_diagnostic import verify_response_failure
+from https_response_test import verify_response_failure
 from test_long_soak import sample
 
 

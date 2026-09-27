@@ -1,5 +1,19 @@
 # HTTPS experimental review readiness
 
+## Maintainer review follow-up (2026-09-27)
+
+Functional hardware tests now use `tests/e2e/io/command_interface`, duration
+tests use `tests/soak/io/command_interface`, and every suite is registered in
+`run-tests`. Shared CLI, reporting and cleanup are used. The moved harness has
+device-free regression coverage; it has not been newly qualified on hardware.
+
+The only recorded physical target is the retail **Commodore 64 Ultimate**.
+**Ultimate 64** E2E coverage requested by the reviewer, and ideally **Ultimate II
+cartridge** coverage, are outstanding. Passing hosted tests or the historical
+retail v14 soak do not fill these gaps. Keep the PR as a draft until the required
+device coverage and maintainer review are addressed.
+
+
 Updated 2026-09-26. Intended scope: review of the HTTPS integration and an
 experimental retail Commodore 64 Ultimate package. Stable-release qualification
 is incomplete. Nothing in this document asserts that a package was published.

@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from long_soak import checked_metrics, exercise
+from https_timed_test import checked_metrics, exercise
 
 
 def sample():

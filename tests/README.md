@@ -290,6 +290,12 @@ e2e:
   ftp-client                        .      x      x      x      x
   ftp-server                        x      x      x      x      x
   gmod2-eeprom-dirty                .      .      x      x      x
+  https-diagnostic                  .      .      .      x      x
+  https-harness                     .      x      x      x      x
+  https-lifecycle                   .      .      .      x      x
+  https-response                    .      .      .      x      x
+  https-smoke                       .      .      .      x      x
+  https-wifi-loss                   .      .      .      x      x
   ident-service-switch              .      .      x      x      x
   iec-dos-commands                  .      .      x      x      x
   input                             x      x      x      x      x
@@ -315,6 +321,7 @@ e2e:
   reu-turbo                         .      .      x      x      x
   runner-policy                     .      x      x      x      x
   stale-gates                       .      x      x      x      x
+  tape-playback                     .      .      x      x      x
   telnet-drain                      .      x      x      x      x
   telnet-stale-session              .      .      .      x      x
   telnet-sustained-input            .      .      .      x      x
@@ -342,17 +349,20 @@ soak:
   assembly-search-leak              .      .      x      x      x
   browser-refresh-leak              .      .      x      x      x
   heap-leak                         .      .      x      x      x
+  https-repetition                  .      .      .      x      x
+  https-timed                       .      .      .      x      x
   ident-leak                        .      .      x      x      x
   listener-soak                     .      .      x      x      x
   menu-navigation                   .      .      x      x      x
   mount-cache-leak                  .      .      x      x      x
   network-connection                .      .      x      x      x
   prg-context-menu-leak             .      .      x      x      x
+  softiec-soak                      .      .      x      x      x
   usb-keyboard-repeat               .      .      .      x      x
 
                                ------ ------ ------ ------ ------
-  suites                           14     29     64     78     78
-  suite runs                       14     29     64    156    234
+  suites                           14     30     67     88     88
+  suite runs                       14     30     67    176    264
 
 Scenario and check counts, and durations, are not shown here:
 the registry does not know them. They depend on the machine and are

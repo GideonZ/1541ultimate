@@ -5,7 +5,7 @@ from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from soak import HardwareRun
+from https_native import HardwareRun
 
 
 class FailureEvidenceTests(unittest.TestCase):
@@ -20,7 +20,7 @@ class FailureEvidenceTests(unittest.TestCase):
                 data=b'', status_text=b'503 SERVICE UNAVAILABLE', elapsed=2.1,
                 blocks=[SimpleNamespace(data=b'')])))
             run.sample_heap = Mock(side_effect=TimeoutError('read-only diagnostic unavailable'))
-            with patch('soak.time.sleep') as sleep:
+            with patch('https_native.time.sleep') as sleep:
                 record = run.exchange('unexpected failure', 'https://fixture.test/', b'expected')
             self.assertFalse(record['passed'])
             run.uci.transact.assert_called_once()

@@ -7,13 +7,16 @@ firmware. URLs must be disposable, credential-free GET test endpoints.
 
 import argparse
 import json
-import os
 import sys
 import time
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2]
-sys.path[:0] = [str(ROOT / "tests/lib"), str(ROOT / "tests/e2e/lib")]
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
+import cli  # noqa: E402
+import report  # noqa: E402
+from https_native import evidence_path, run_suite  # noqa: E402
 
 from api import MachineApi, RunnersApi
 from rest import RestClient
@@ -22,8 +25,8 @@ from uci_native import NativeUci
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--host", required=True)
-    parser.add_argument("--url", action="append", default=[])
+    cli.add_device_arguments(parser)
+    parser.add_argument("--url", action="append", required=True)
     parser.add_argument("--raw", action="store_true")
     expected = parser.add_mutually_exclusive_group()
     expected.add_argument("--expect-hex", help="Exact raw body or encoded object-query bytes")
@@ -31,14 +34,21 @@ def main():
     parser.add_argument("--expect-blocks", help="Exact comma-separated exchange block lengths")
     parser.add_argument("--expect-unavailable", action="store_true",
                         help="Require TLS failure with no returned body")
-    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--output", type=Path, default=evidence_path('https_smoke_test'))
     args = parser.parse_args()
+    report.apply_colour(args.color)
+    if args.output.exists():
+        parser.error("Use a new evidence file")
+    if "@" in args.host:
+        parser.error("Native UCI requires a single device")
     expected_bytes = (args.expect_file.read_bytes() if args.expect_file is not None else
                       bytes.fromhex(args.expect_hex) if args.expect_hex is not None else None)
-    rest = RestClient(args.host, password=os.environ.get("ULTIMATE_PASSWORD"), timeout=10)
-    uci = NativeUci(MachineApi(rest), RunnersApi(rest), busy_timeout=40, wait_wraps=32,
+    rest = RestClient(args.host, password=args.password, timeout=args.timeout)
+    machine = MachineApi(rest)
+    uci = NativeUci(machine, RunnersApi(rest), busy_timeout=40, wait_wraps=32,
                     first_status_only=True)
     records = []
+    started = False
 
     def command(label, payload, multiple=False):
         try:
@@ -50,11 +60,12 @@ def main():
                       "status": result.status_text.decode("ascii", errors="backslashreplace"),
                       "blocks": [len(b.data) for b in result.blocks], "elapsed": result.elapsed}
         records.append(record)
-        print(json.dumps(record), flush=True)
+        report.detail(json.dumps(record))
         return result
 
     try:
-        print(rest.expect("GET", "/v1/info").decode(), flush=True)
+        report.detail(rest.expect("GET", "/v1/info").decode())
+        started = True
         uci.start()
         identified = command("identify", bytes([6, 1]))
         assert identified.data.rstrip(b"\0") == b"ULTIMATE HTTP TARGET V1.0", identified.data
@@ -90,9 +101,13 @@ def main():
         records.append({"error": str(exc)})
         raise
     finally:
-        args.output.parent.mkdir(parents=True, exist_ok=True)
-        args.output.write_text(json.dumps({"time": time.time(), "records": records}, indent=2) + "\n")
+        try:
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            args.output.write_text(json.dumps({"time": time.time(), "records": records}, indent=2) + "\n")
+        finally:
+            if started:
+                machine.reset(force=True, wait=False)
 
 
 if __name__ == "__main__":
-    main()
+    run_suite("https-smoke", main)

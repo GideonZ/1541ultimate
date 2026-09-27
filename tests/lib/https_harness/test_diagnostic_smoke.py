@@ -2,12 +2,12 @@ import copy
 import unittest
 from datetime import datetime
 
-from diagnostic_smoke import (
+from https_diagnostic_test import (
     verify_failure,
     verify_handshake_close,
     verify_silent_deadline,
 )
-from fault_server import receive_client_hello
+from https_fault_server import receive_client_hello
 from test_long_soak import sample
 
 

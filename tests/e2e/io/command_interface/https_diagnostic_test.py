@@ -6,14 +6,21 @@ installation or trust/configuration change. Start an optional LAN silent fixture
 separately. Every unexpected result terminates the run and preserves evidence.
 """
 import argparse
+import sys
 import json
-import os
 import time
 from datetime import datetime
 from pathlib import Path
 
-from long_soak import checked_metrics
-from soak import HardwareRun, RestClient
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
+import cli  # noqa: E402
+import report  # noqa: E402
+from https_native import evidence_path, run_suite  # noqa: E402
+
+from https_native import checked_metrics
+from https_native import HardwareRun, RestClient
 
 
 def verify_failure(before, after, *, stages, statuses, certificate=False):
@@ -86,14 +93,15 @@ def verify_handshake_close(evidence, exchange, server_records, mode):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--host', required=True)
-    parser.add_argument('--output', type=Path, required=True)
+    cli.add_device_arguments(parser)
+    parser.add_argument('--output', type=Path, default=evidence_path('https_diagnostic_test'))
     parser.add_argument('--stall-url', help='HTTPS URL of the LAN silent TCP fixture')
     parser.add_argument('--stall-log', type=Path, help='JSONL log from that controlled silent fixture')
     parser.add_argument('--close-url', help='LAN HTTPS listener closing after ClientHello')
     parser.add_argument('--reset-url', help='LAN HTTPS listener resetting after ClientHello')
     parser.add_argument('--close-log', type=Path, help='JSONL evidence for close/reset listeners')
     args = parser.parse_args()
+    report.apply_colour(args.color)
     if args.output.exists():
         parser.error('Use a new output directory; previous evidence is never overwritten')
     if args.stall_url and not args.stall_url.startswith('https://'):
@@ -105,12 +113,12 @@ def main():
     if any(url and not url.startswith('https://') for url in (args.close_url, args.reset_url)):
         parser.error('Close/reset URLs must use HTTPS')
     # Read-only preflight before replacing any C64 RAM.
-    rest = RestClient(args.host, password=os.environ.get('ULTIMATE_PASSWORD'), timeout=10)
+    rest = RestClient(args.host, password=args.password, timeout=args.timeout)
     heap = json.loads(rest.expect('GET', '/v1/machine:heap'))
     checked_metrics({'values': heap})
     if 'last_tls_failure' not in heap['esp32'] or 'last_failure' not in heap['https_bridge']:
         parser.error('Install the diagnostic bridge 1.18 candidate first')
-    run = HardwareRun(args.host, args.output)
+    run = HardwareRun(args.host, args.output, password=args.password, timeout=args.timeout)
     (args.output/'diagnostic-runner.py').write_bytes(Path(__file__).read_bytes())
     checks = []
     outcome = {'passed': False, 'checks': checks}
@@ -170,10 +178,10 @@ def main():
             outcome['passed'] = False
             outcome['cleanup_error'] = str(error)
         (args.output/'diagnostic-result.json').write_text(json.dumps(outcome, indent=2)+'\n')
-    print(json.dumps(outcome), flush=True)
+    report.detail(json.dumps(outcome))
     if not outcome['passed']:
         raise SystemExit(1)
 
 
 if __name__ == '__main__':
-    main()
+    run_suite("https-diagnostic", main)

@@ -1,5 +1,38 @@
 # HTTPS device validation
 
+## Test layout and device coverage after review (2026-09-27)
+
+Hardware entry points now live under `tests/e2e/io/command_interface`, with
+repetition and elapsed-duration suites under `tests/soak/io/command_interface`.
+They are registered in `run-tests`, use its shared device arguments and reporting,
+and share evidence/cleanup helpers in `tests/lib/https_native.py`. The
+[test guide](../tests/e2e/io/command_interface/https.md) maps selectors to cases.
+
+The relocated harness has not yet been rerun on hardware. Previous results
+below remain attached to their original scripts and firmware packages. In
+particular, the retail Commodore 64 Ultimate is not an Ultimate 64 board or
+an Ultimate II cartridge. No standard upstream E2E profile has been run on
+either of those devices for this contribution.
+
+| Physical device / source | Actually recorded validation | Limit |
+| --- | --- | --- |
+| Commodore 64 Ultimate, Slimline BASIC Beige, retail v14 candidate | Ten native HTTP/HTTPS smoke exchanges: binary data, typed JSON, 895/896/2048-byte bodies; all passed | Pinned retail source/package, not the current merged upstream build |
+| Same device and v14 candidate | 2,966/2,966 paired HTTP/HTTPS exchanges over 7,202.503 seconds; configuration and controller boot preserved, no new diagnostic failures | Historical native harness, not a run of the newly registered suites |
+| Ultimate 64 | No physical run | Required coverage still outstanding |
+| Ultimate II cartridge | No physical run | Additional requested coverage still outstanding |
+
+Device-free checks cover the relocated harness, argument registration, common
+transport usage and test-tree lint. They do not substitute for hardware E2E.
+Local verification passed 31 harness regression cases, 16 retail recipe tests,
+six CPU-executed native-agent cases, all registry/transport/lint gates and the
+generated profile documentation check. All seven hardware entry points passed
+`--help` without contacting a device; both workflow files passed YAML and shell
+syntax checks. No firmware source or device setting changed in this follow-up.
+Historical intentional-fault and recovery experiments remain documented below,
+with their exact versions and limitations. The earlier v9 unexpected empty
+HTTPS 503 remains unexplained; later passing runs do not establish its cause.
+
+
 Current status (2026-09-26): v13 is operator-confirmed installed, with a new
 controller boot and fresh bridge 1.18 telemetry. Its ten-exchange HTTP/HTTPS
 smoke run passed; the owned-page repair's local menu measurements are pending.

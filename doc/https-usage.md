@@ -87,7 +87,7 @@ not a new public C64 library.
 
 ## Running the example from a host computer
 
-[`smoke.py`](../tools/c64u_https/smoke.py) runs a small 6502 program on the C64;
+[`https_smoke_test.py`](../tests/e2e/io/command_interface/https_smoke_test.py) runs a small 6502 program on the C64;
 the commands originate on the C64, while host Python controls the run and
 records results. It replaces the current C64 program and part of its RAM. It
 does not install firmware. The test program remains in RAM afterwards; use a
@@ -97,7 +97,7 @@ From the repository root on Linux or WSL, replace `DEVICE_IP` with the device's
 address:
 
 ```sh
-python3 tools/c64u_https/smoke.py --host DEVICE_IP --url http://httpbingo.org/base64/eyJvayI6dHJ1ZX0= --url https://httpbingo.org/base64/eyJvayI6dHJ1ZX0= --expect-hex 0401026f6b0201 --output /tmp/demo-http-https.json
+python3 tests/e2e/io/command_interface/https_smoke_test.py --host DEVICE_IP --url http://httpbingo.org/base64/eyJvayI6dHJ1ZX0= --url https://httpbingo.org/base64/eyJvayI6dHJ1ZX0= --expect-hex 0401026f6b0201 --output /tmp/demo-http-https.json
 ```
 
 This checks the same expected typed data for both protocols. To receive raw

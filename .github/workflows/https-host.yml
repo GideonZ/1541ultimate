@@ -63,6 +63,10 @@ jobs:
       - name: Test retail recipe, menu lifetimes and native repetition
         run: |
           python3 -m unittest discover -s tools/c64u_https -v
+          python3 tests/lib/https_harness_test.py
+          python3 tests/lib/registry_test.py
+          python3 tests/lib/check_transport_usage.py
+          python3 tools/docs/update_test_docs.py --check
           python3 tools/c64u_https/check_native_repeat.py
 
       - name: Check cache inputs, API documents and test lint

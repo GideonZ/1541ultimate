@@ -5,17 +5,23 @@ Replaces C64 RAM. No firmware, network configuration or trust-store changes.
 Public fixture behavior is checked separately; it is not a device packet trace.
 """
 import argparse
+import sys
 import hashlib
 import http.client
 import json
-import os
 import time
 import urllib.request
-from datetime import datetime, timezone
 from pathlib import Path
 
-from long_soak import checked_metrics
-from soak import HardwareRun, RestClient
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
+import cli  # noqa: E402
+import report  # noqa: E402
+from https_native import evidence_path, run_suite  # noqa: E402
+
+from https_native import checked_metrics, utc_now
+from https_native import HardwareRun, RestClient
 
 SHORT_URL = 'https://httpbingo.org/response-headers?Content-Length=2048'
 FAST_URL = 'https://httpbin.org/drip?duration=1&delay=0&numbytes=20&code=200'
@@ -67,9 +73,10 @@ def verify_response_failure(before, after, mode, seconds):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--host', required=True)
-    parser.add_argument('--output', type=Path, required=True)
+    cli.add_device_arguments(parser)
+    parser.add_argument('--output', type=Path, default=evidence_path('https_response_test'))
     args = parser.parse_args()
+    report.apply_colour(args.color)
     if args.output.exists():
         parser.error('Use a new evidence directory')
     args.output.mkdir(parents=True)
@@ -83,7 +90,7 @@ def main():
                 incomplete = False
             except http.client.IncompleteRead as error:
                 body, incomplete = error.partial, True
-            probe = {'observed_at': datetime.now(timezone.utc).isoformat(), 'url': SHORT_URL,
+            probe = {'observed_at': utc_now(), 'url': SHORT_URL,
                      'status': response.status, 'declared': int(response.headers['Content-Length']),
                      'received': len(body), 'incomplete': incomplete, 'body_sha256': hashlib.sha256(body).hexdigest()}
         (args.output/'public-fixture-check.json').write_text(json.dumps(probe, indent=2)+'\n')
@@ -92,18 +99,18 @@ def main():
         started = time.monotonic()
         with urllib.request.urlopen(SLOW_URL, timeout=25) as response:
             slow_body = response.read()
-            slow_probe = {'observed_at': datetime.now(timezone.utc).isoformat(), 'url': SLOW_URL,
+            slow_probe = {'observed_at': utc_now(), 'url': SLOW_URL,
                           'status': response.status, 'seconds': time.monotonic()-started,
                           'received': len(slow_body), 'body_sha256': hashlib.sha256(slow_body).hexdigest()}
         (args.output/'slow-fixture-check.json').write_text(json.dumps(slow_probe, indent=2)+'\n')
         if not (slow_probe['status'] == 200 and slow_body == b'*'*20 and 17 <= slow_probe['seconds'] < 30):
             raise ValueError('Public slow-body fixture is not behaving as required')
-        rest = RestClient(args.host, password=os.environ.get('ULTIMATE_PASSWORD'), timeout=10)
+        rest = RestClient(args.host, password=args.password, timeout=args.timeout)
         heap = json.loads(rest.expect('GET', '/v1/machine:heap'))
         checked_metrics({'values': heap})
         if heap['https_bridge']['controller_minor'] != 18:
             raise ValueError('Requires diagnostic bridge 1.18')
-        run = HardwareRun(args.host, args.output)
+        run = HardwareRun(args.host, args.output, password=args.password, timeout=args.timeout)
         (args.output/'response-runner.py').write_bytes(Path(__file__).read_bytes())
 
         def exchange(label, url, expected, **options):
@@ -142,10 +149,10 @@ def main():
                 outcome['passed'] = False
                 outcome['cleanup_error'] = str(error)
         (args.output/'response-result.json').write_text(json.dumps(outcome, indent=2)+'\n')
-    print(json.dumps(outcome), flush=True)
+    report.detail(json.dumps(outcome))
     if not outcome['passed']:
         raise SystemExit(1)
 
 
 if __name__ == '__main__':
-    main()
+    run_suite("https-response", main)

@@ -63,7 +63,7 @@ jobs:
           git -C software/httpd fetch --no-tags origin ad73d3217bb0e1b3f37e0dbba595309b942aea17
           git -C software/lwip fetch --no-tags origin 26a22151f4b7ebb2925523192edc83fa7f31cba9
           docker run --rm \
-          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && python3 -m unittest discover -s tools/c64u_https -v"
+          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && python3 -m unittest discover -s tools/c64u_https -v && python3 tests/lib/https_harness_test.py"
 
       - name: Test CRT Loader
         run: |

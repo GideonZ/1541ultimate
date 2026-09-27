@@ -1,52 +1,67 @@
-#!/usr/bin/env python3
-"""Bounded native-UCI HTTP/HTTPS repetition, with individual handle cleanup.
-
-Replaces the C64 program/RAM. No firmware or configuration changes. Public,
-credential-free GET fixtures only; host-side REST transport may retry reads,
-but an HTTP target exchange is never silently retried. Stops on UCI failure.
-"""
-import argparse
+"""Native target-6 transport and evidence shared by E2E and soak suites."""
 import hashlib
+import re
 import json
 import os
 import statistics
-import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2]
-sys.path[:0] = [str(ROOT / 'tests/lib'), str(ROOT / 'tests/e2e/lib')]
-import uci_native
+import bootstrap  # noqa: F401
+import report
 from api import MachineApi, RunnersApi
 from rest import RestClient
 from uci_native import NativeUci
 
 
+def utc_now():
+    # Upstream's Ubuntu 22.04 build container supplies Python 3.10.
+    return datetime.now(timezone.utc).isoformat()  # noqa: UP017
+
+
 class HardwareRun:
-    def __init__(self, host, output):
+    def __init__(self, host, output, *, password=None, timeout=10):
+        if '@' in host:
+            raise ValueError('Native UCI requires a single device; cartridge@computer would test the host interface')
         self.output = output
         output.mkdir(parents=True, exist_ok=True)
-        self.rest = RestClient(host, password=os.environ.get('ULTIMATE_PASSWORD'), timeout=10)
-        self.uci = NativeUci(MachineApi(self.rest), RunnersApi(self.rest),
+        self.rest = RestClient(host, password=password, timeout=timeout)
+        self.machine = MachineApi(self.rest)
+        self.uci = NativeUci(self.machine, RunnersApi(self.rest),
                              busy_timeout=40, wait_wraps=32, first_status_only=True)
         self.records = []
         self.heap_samples = []
         self.started = time.monotonic()
-        self.started_at = datetime.now(timezone.utc).isoformat()
+        self.started_at = utc_now()
         self.original_configs = self.rest.expect('GET', '/v1/configs/*')
-        (output / 'configs-before.json').write_bytes(self.original_configs)
+        self.save_config_digest('configs-before.json', self.original_configs)
         # Available in newer upstream firmware, optional on the retail baseline.
         code, _, heap = self.rest.request('GET', '/v1/machine:heap')
         self.heap_available = code == 200
         (output / 'heap-before.json').write_text(json.dumps(
             {'http_status': code, 'body': heap.decode(errors='replace')}))
-        uci_native.detail = lambda message: None
-        self.uci.start()
-        self.ok(bytes([6, 0x10]))
-        ident = self.uci.transact(bytes([6, 1]))
-        assert ident.data.rstrip(b'\0') == b'ULTIMATE HTTP TARGET V1.0'
-        self.sample_heap('agent ready')
+        try:
+            self.uci.start()
+            self.ok(bytes([6, 0x10]))
+            ident = self.uci.transact(bytes([6, 1]))
+            assert ident.data.rstrip(b'\0') == b'ULTIMATE HTTP TARGET V1.0'
+            self.sample_heap('agent ready')
+        except BaseException:
+            # Preparation may already have replaced C64 RAM. Preserve the primary
+            # error while making one bounded attempt to stop the program.
+            try:
+                self.stop_program()
+            except Exception as error:
+                (output / 'cleanup-error.txt').write_text(str(error))
+            raise
+
+    def save_config_digest(self, name, raw):
+        canonical = json.dumps(json.loads(raw), sort_keys=True).encode()
+        (self.output / name).write_text(json.dumps({'sha256': hashlib.sha256(canonical).hexdigest()})+'\n')
+
+    def stop_program(self):
+        self.machine.reset(force=True, wait=False)
 
     def sample_heap(self, label):
         if not self.heap_available:
@@ -55,7 +70,7 @@ class HardwareRun:
         if code != 200:
             raise RuntimeError(f'Heap diagnostic stopped responding: HTTP {code}')
         sample = {'label': label, 'exchange': len(self.records), 'values': json.loads(data),
-                      'observed_at': datetime.now(timezone.utc).isoformat()}
+                      'observed_at': utc_now()}
         self.heap_samples.append(sample)
         with (self.output / 'heap-samples.jsonl').open('a') as file:
             file.write(json.dumps(sample)+'\n')
@@ -68,7 +83,7 @@ class HardwareRun:
 
     def exchange(self, label, url, expected, *, object_mode=False,
                  status_prefix=b'HTTP/1.1 200 ', unavailable=False, time_bounds=None):
-        started_at = datetime.now(timezone.utc).isoformat()
+        started_at = utc_now()
         # Preserve attempts that stop before a complete exchange can be recorded.
         # UTC timestamps let device results be compared with independent network logs.
         with (self.output / 'attempts.jsonl').open('a') as file:
@@ -112,15 +127,16 @@ class HardwareRun:
             errors.append('exchange outside expected deadline window')
         self.ok(bytes([6, 0x12, handle]))
         record = {'index': len(self.records)+1, 'label': label, 'url': url, 'passed': not errors,
-            'started_at': started_at, 'finished_at': datetime.now(timezone.utc).isoformat(),
+            'started_at': started_at, 'finished_at': utc_now(),
             'errors': errors, 'seconds': round(result.elapsed, 3), 'status': result.status_text.decode(errors='replace'),
             'bytes': len(data), 'sha256': hashlib.sha256(data).hexdigest(),
             'blocks': [len(b.data) for b in result.blocks], 'request_handle': handle}
         self.records.append(record)
         with (self.output / 'exchanges.jsonl').open('a') as file:
             file.write(json.dumps(record)+'\n')
-        print(f"{record['index']:03} {'PASS' if record['passed'] else 'FAIL'} {label} "
-              f"{record['seconds']:.2f}s {errors}", flush=True)
+        report.check_start(label)
+        (report.check_fail if errors else report.check_ok)("; ".join(errors))
+        report.detail(f"{label}: {record['seconds']:.2f}s; status={record['status']}; errors={errors}")
         if errors and self.heap_available:
             # Preserve the exchange first. Give the nonblocking one-second
             # telemetry publisher a bounded chance to expose its latched fault.
@@ -134,21 +150,22 @@ class HardwareRun:
         return record
 
     def finish(self):
-        self.sample_heap('before final C64 reset')
-        after = self.rest.expect('GET', '/v1/configs/*')
-        (self.output / 'configs-after.json').write_bytes(after)
-        unchanged = json.loads(after) == json.loads(self.original_configs)
-        heap_after = None
-        if self.heap_available:
-            code, _, body = self.rest.request('GET', '/v1/machine:heap')
-            heap_after = {'http_status': code, 'body': body.decode(errors='replace')}
-        code, _, body = self.rest.request('PUT', '/v1/machine:reset')
-        assert code == 200, (code, body)
+        try:
+            self.sample_heap('before final C64 reset')
+            after = self.rest.expect('GET', '/v1/configs/*')
+            self.save_config_digest('configs-after.json', after)
+            unchanged = json.loads(after) == json.loads(self.original_configs)
+            heap_after = None
+            if self.heap_available:
+                code, _, body = self.rest.request('GET', '/v1/machine:heap')
+                heap_after = {'http_status': code, 'body': body.decode(errors='replace')}
+        finally:
+            self.stop_program()
         info = json.loads(self.rest.expect('GET', '/v1/info'))
         failure_file = self.output / 'fatal.json'
         fatal_error = json.loads(failure_file.read_text()).get('error') if failure_file.exists() else None
         summary = {'exchanges': len(self.records), 'failed': sum(not r['passed'] for r in self.records),
-            'started_at': self.started_at, 'finished_at': datetime.now(timezone.utc).isoformat(),
+            'started_at': self.started_at, 'finished_at': utc_now(),
             'completed_without_exception': not failure_file.exists(), 'fatal_error': fatal_error,
             'wall_seconds': round(time.monotonic()-self.started, 1), 'configuration_unchanged': unchanged,
             'heap_available': self.heap_available, 'heap_after': heap_after, 'final_info': info,
@@ -159,80 +176,53 @@ class HardwareRun:
             if times:
                 summary['timings'][scheme] = {'count': len(times), 'median': statistics.median(times), 'max': max(times)}
         (self.output / 'summary.json').write_text(json.dumps(summary, indent=2)+'\n')
-        print(json.dumps(summary), flush=True)
+        report.detail(f"Evidence: {self.output}; {summary['exchanges']} exchanges")
         assert unchanged, 'Configuration changed during test'
         return summary
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--host', required=True)
-    parser.add_argument('--output', type=Path, required=True)
-    parser.add_argument('--rounds', type=int, default=40, help='Two exchanges per round; max 500')
-    parser.add_argument('--faults', action='store_true', help='Known bad certificates followed by recovery')
-    parser.add_argument('--dns-failure', action='store_true', help='Unresolvable reserved .invalid name')
-    parser.add_argument('--http-fixtures', help='URL of the paired LAN fault_server.py HTTP listener')
-    parser.add_argument('--framing-fixtures', help='LAN fault_server.py URL; requires the response framing fix')
-    parser.add_argument('--stall-url', help='HTTPS URL of a controlled TCP peer silent for over 20 seconds')
-    args = parser.parse_args()
-    if not 1 <= args.rounds <= 500:
-        parser.error('rounds must be 1..500')
-    if args.output.exists():
-        parser.error('output directory must be new, to preserve earlier evidence')
-    run = HardwareRun(args.host, args.output)
-    (args.output / 'runner.py').write_bytes(Path(__file__).read_bytes())
+
+def checked_metrics(sample, boot_id=None):
+    metrics = sample.get('values', {}).get('esp32', {})
+    if metrics.get('available') is not True:
+        raise ValueError('Fresh ESP32 telemetry unavailable; install the metrics build first')
+    for name in ('internal_free', 'internal_min_ever_free', 'internal_largest_free_block',
+                 'free_8bit', 'min_ever_free_8bit', 'largest_free_block_8bit',
+                 'tls_stack_min_free_bytes', 'uptime_seconds', 'sample_age_ms'):
+        value = metrics.get(name)
+        if type(value) is not int or value < 0:
+            raise ValueError('Invalid ESP32 measurement: '+name)
+    if metrics['sample_age_ms'] > 30000 or metrics['tls_stack_min_free_bytes'] == 0:
+        raise ValueError('ESP32 sample stale or TLS stack exhausted')
+    for name in ('boot_id', 'sample_sequence'):
+        if not isinstance(metrics.get(name), str) or not re.fullmatch('[0-9a-f]{8}', metrics[name]):
+            raise ValueError('Invalid ESP32 identity: '+name)
+    if boot_id is not None and metrics['boot_id'] != boot_id:
+        raise ValueError('ESP32 restarted during the soak')
+    return metrics
+
+
+
+def evidence_path(name):
+    """Separate evidence directory for each invocation, beside runner JSONL."""
+    import tempfile
+    import uuid
+    destination = os.environ.get('E2E_JSONL')
+    base = Path(destination).parent if destination else Path(tempfile.gettempdir())
+    return base / f"{name}-{uuid.uuid4().hex[:12]}"
+
+
+def run_suite(name, main):
+    """Use the same console/JSONL verdicts for standalone and registered runs."""
     try:
-        for round_number in range(args.rounds):
-            for scheme in ('http', 'https'):
-                if round_number % 4 == 0:
-                    run.exchange(f'{scheme} JSON {round_number+1}',
-                        scheme+'://httpbingo.org/base64/eyJvayI6dHJ1ZX0=',
-                        bytes.fromhex('0401026f6b0201'), object_mode=True)
-                else:
-                    n = (894, 895, 896, 1024, 1790, 2048)[round_number % 6]
-                    run.exchange(f'{scheme} raw {n} round {round_number+1}',
-                        f'{scheme}://httpbingo.org/range/{n}', bytes(97+i%26 for i in range(n)))
-            time.sleep(0.5)
-            if (round_number + 1) % 10 == 0:
-                run.sample_heap(f'round {round_number+1}')
-        if args.faults:
-            for name in ('expired', 'wrong.host', 'self-signed'):
-                run.exchange(name, f'https://{name}.badssl.com/', b'', unavailable=True)
-                run.exchange('recovery after '+name, 'https://httpbingo.org/base64/QQBCfw==', b'A\0B\x7f')
-        if args.dns_failure:
-            run.exchange('unresolvable name', 'https://ultimate-https-test.invalid/',
-                         b'', unavailable=True, time_bounds=(0, 19))
-            run.exchange('recovery after DNS failure', 'https://httpbingo.org/base64/QQBCfw==', b'A\0B\x7f')
-        if args.http_fixtures:
-            base = args.http_fixtures.rstrip('/')
-            run.exchange('LAN baseline', base+'/ok', b'{"ok":true}')
-            run.exchange('fragmented chunked binary', base+'/chunked', b'A\0BCDEF')
-            run.exchange('HTTP error is a response', base+'/error', b'{"error":"maintenance"}',
-                         status_prefix=b'HTTP/1.1 503 ')
-            run.exchange('redirect is not followed', base+'/redirect', b'', status_prefix=b'HTTP/1.1 302 ')
-            for path in ('drop', 'truncated', 'slow-close'):
-                run.exchange('connection fault '+path, base+'/'+path, b'', unavailable=True, time_bounds=(0, 8))
-                run.exchange('LAN recovery after '+path, base+'/ok', b'{"ok":true}')
-        if args.stall_url:
-            run.exchange('silent peer handshake deadline', args.stall_url,
-                         b'', unavailable=True, time_bounds=(12, 19))
-            run.exchange('recovery after deadline', 'https://httpbingo.org/base64/QQBCfw==', b'A\0B\x7f')
-        if args.framing_fixtures:
-            base = args.framing_fixtures.rstrip('/')
-            for path in ('negative-length', 'length-suffix', 'duplicate-length', 'invalid-chunk',
-                         'chunk-suffix', 'missing-final-crlf', 'missing-chunk-crlf', 'ambiguous-framing'):
-                run.exchange('malformed '+path, base+'/'+path, b'', unavailable=True, time_bounds=(0, 8))
-                run.exchange('recovery after '+path, base+'/ok', b'{"ok":true}')
-            for path in ('chunked-trailer', 'close-delimited'):
-                run.exchange('valid '+path, base+'/'+path, b'{"ok":true}')
-    except Exception as error:
-        (args.output / 'fatal.json').write_text(json.dumps({'error': str(error)})+'\n')
+        main()
+    except SystemExit as error:
+        if error.code in (None, 0):
+            return
+        report.suite_fail(name, f'Exited with status {error.code}; see evidence')
         raise
-    finally:
-        summary = run.finish()
-    if summary['failed']:
-        raise SystemExit(1)
-
-
-if __name__ == '__main__':
-    main()
+    except (Exception, KeyboardInterrupt) as error:
+        report.suite_fail(name, str(error) or 'Interrupted')
+        raise SystemExit(1) from error
+    else:
+        report.suite_ok(name)

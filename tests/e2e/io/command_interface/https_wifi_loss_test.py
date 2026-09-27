@@ -7,11 +7,20 @@ explicit reconnection/menu-exit confirmation and recover without reset/FREE_ALL.
 Independent evidence must establish that physical loss overlapped a handshake.
 """
 import argparse
+import os
+import sys
 import json
 import time
 from pathlib import Path
 
-from soak import HardwareRun
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
+import cli  # noqa: E402
+import report  # noqa: E402
+from https_native import evidence_path, run_suite  # noqa: E402
+
+from https_native import HardwareRun
 from uci_native import (
     CMDBUF,
     CMDLEN,
@@ -58,11 +67,11 @@ def execute(args, *, run_factory=HardwareRun, sleep=time.sleep, monotonic=time.m
 
     try:
         state('waiting_for_start_without_deadline')
-        print('WAITING: no device test starts until the operator confirms readiness outside the menu.', flush=True)
+        report.detail('Waiting for operator readiness outside the menu; no deadline.')
         wait_for_operator(args.start_file, args.cancel_file, ('ready', 'menu_exited'), sleep=sleep)
         state('preparing_native_test')
         preparation_started = True
-        run = run_factory(args.host, args.output)
+        run = run_factory(args.host, args.output, password=args.password, timeout=args.timeout)
         machine = run.uci.machine
         safe_to_cleanup = True
         control = run.exchange('HTTPS before interruption',
@@ -86,8 +95,8 @@ def execute(args, *, run_factory=HardwareRun, sleep=time.sleep, monotonic=time.m
         machine.writemem(GO, b'\1')
         args.armed_file.write_text(json.dumps({'started': started})+'\n')
         state('waiting_for_reconnection_without_deadline')
-        print('ARMED: disconnect/reconnect at your own pace; exit the menu before confirming. '
-              'No operator timeout. Native attempts remain bounded; active-request overlap is not guaranteed.', flush=True)
+        report.detail('ARMED: disconnect/reconnect at your own pace; exit the menu before confirming. '
+              'No operator timeout. Native attempts remain bounded; active-request overlap is not guaranteed.')
         wait_for_operator(args.finish_file, args.cancel_file, ('reconnected', 'menu_exited'), sleep=sleep)
         safe_to_cleanup = True
         state('collecting_after_menu_exit')
@@ -153,24 +162,31 @@ def execute(args, *, run_factory=HardwareRun, sleep=time.sleep, monotonic=time.m
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--host', required=True)
-    parser.add_argument('--stall-url', required=True)
-    parser.add_argument('--output', required=True, type=Path)
-    parser.add_argument('--start-file', required=True, type=Path)
-    parser.add_argument('--armed-file', required=True, type=Path)
-    parser.add_argument('--finish-file', required=True, type=Path)
-    parser.add_argument('--cancel-file', required=True, type=Path)
+    cli.add_device_arguments(parser)
+    parser.add_argument('--stall-url', default=os.environ.get('UCI_HTTPS_STALL_URL'))
+    parser.add_argument('--output', type=Path, default=evidence_path('https_wifi_loss_test'))
+    parser.add_argument('--start-file', type=Path)
+    parser.add_argument('--armed-file', type=Path)
+    parser.add_argument('--finish-file', type=Path)
+    parser.add_argument('--cancel-file', type=Path)
     args = parser.parse_args()
+    report.apply_colour(args.color)
+    if not args.stall_url or not args.stall_url.startswith('https://'):
+        parser.error('Provide --stall-url or UCI_HTTPS_STALL_URL for the controlled HTTPS listener')
+    for name in ('start', 'armed', 'finish', 'cancel'):
+        if getattr(args, name+'_file') is None:
+            setattr(args, name+'_file', args.output.with_name(args.output.name+'.'+name+'.json'))
+        report.detail(f'{name} marker: {getattr(args, name+"_file")}')
     paths = [args.output, args.start_file, args.armed_file, args.finish_file, args.cancel_file]
     if len({path.resolve() for path in paths}) != len(paths) or any(path.exists() for path in paths):
         parser.error('Use distinct, new output and marker paths')
     args.output.mkdir(parents=True)
     (args.output/'runner.py').write_bytes(Path(__file__).read_bytes())
     outcome = execute(args)
-    print(json.dumps(outcome), flush=True)
+    report.detail(json.dumps(outcome))
     if not outcome['completed']:
         raise SystemExit(2 if outcome.get('incomplete') else 1)
 
 
 if __name__ == '__main__':
-    main()
+    run_suite("https-wifi-loss", main)
