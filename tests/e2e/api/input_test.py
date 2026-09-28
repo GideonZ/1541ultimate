@@ -232,6 +232,22 @@ class RestInputSession:
         self.api = UltimateApi(host, password, timeout)
 
     @property
+    def input_machine(self) -> machine_lib.Machine:
+        """The machine whose hardware answers the events this suite posts.
+
+        `machine` describes the device under test. REST input is compiled only
+        into the U64-class firmware, so on a cartridge target the events are
+        served by the computer the cartridge sits in, and what the joystick
+        lines do is that firmware's behaviour rather than the cartridge's.
+        """
+        host = self.target.input_host
+        if host == self.host:
+            return self.machine
+        info = UltimateApi(host, self.password, self.timeout).info()
+        return machine_lib.identify(
+            host, lambda: (info.product, info.firmware_version))
+
+    @property
     def machine(self) -> machine_lib.Machine:
         """Which machine this is, asked once of the device.
 
@@ -243,13 +259,14 @@ class RestInputSession:
         return machine_lib.identify(
             self.host, lambda: (info.product, info.firmware_version))
 
-    def url(self, path: str, params: dict[str, Any] | None = None) -> str:
+    def url(self, path: str, params: dict[str, Any] | None = None, observe: bool = False) -> str:
         query = ""
         if params:
             query = "?" + urllib.parse.urlencode(params)
         # Keyboard injection belongs to the C64-side computer on a cartridge
-        # target; see tests/lib/targets.py.
-        return f"http://{self.target.host_for(path)}{path}{query}"
+        # target; see tests/lib/targets.py. `observe` sends a memory access
+        # there too, for the reason read_memory gives.
+        return f"http://{self.target.input_host if observe else self.target.host_for(path)}{path}{query}"
 
     def request(
         self,
@@ -258,13 +275,15 @@ class RestInputSession:
         params: dict[str, Any] | None = None,
         body: bytes | None = None,
         content_type: str | None = "application/json",
+        observe: bool = False,
     ) -> bytes:
         headers = {}
         if self.password:
             headers["X-Password"] = self.password
         if body is not None and content_type is not None:
             headers["Content-Type"] = content_type
-        request = urllib.request.Request(self.url(path, params), data=body, headers=headers, method=method)
+        request = urllib.request.Request(self.url(path, params, observe), data=body, headers=headers,
+                                         method=method)
         # Transport and retry policy come from tests/lib/rest.py; see
         # rest.may_retry, which this suite's own policy became.
         #
@@ -368,12 +387,18 @@ class RestInputSession:
         self.put("resume")
 
     def read_memory(self, address: int, length: int) -> bytes:
-        return self.request("GET", "/v1/machine:readmem", params={"address": f"{address:04X}", "length": length})
+        # Through the machine the keys go to. A cartridge serves readmem by
+        # halting the C64 for a DMA, and a tap that lands in the halt is lost,
+        # so reading the screen that way disturbs what these checks measure;
+        # the computer reads its own RAM without stopping it.
+        return self.request("GET", "/v1/machine:readmem", observe=True,
+                            params={"address": f"{address:04X}", "length": length})
 
     def write_memory(self, address: int, data: bytes) -> None:
         if not data:
             raise Failure("write_memory requires at least one byte")
-        self.request("PUT", "/v1/machine:writemem", params={"address": f"{address:04X}", "data": data.hex().upper()})
+        self.request("PUT", "/v1/machine:writemem", observe=True,
+                     params={"address": f"{address:04X}", "data": data.hex().upper()})
 
 
 class FrameText:
@@ -516,6 +541,21 @@ def wait_for_input_ready(session: RestInputSession, timeout: float) -> None:
     raise TimeoutError(f"Timed out waiting for /v1/machine:input on {session.host}")
 
 
+def screen_text(row: bytes) -> str:
+    """A row of screen memory as text, for a failure message: letters, digits and
+    punctuation as themselves, reverse video as normal, anything else as a dot."""
+    text = []
+    for code in row:
+        code &= 0x7F
+        if 1 <= code <= 26:
+            text.append(chr(ord("A") + code - 1))
+        elif code == 0 or 32 <= code <= 63:
+            text.append("@" if code == 0 else chr(code))
+        else:
+            text.append(".")
+    return "".join(text)
+
+
 def wait_for_basic_ready(session: RestInputSession) -> None:
     deadline = time.time() + 6.0
     while time.time() < deadline:
@@ -523,7 +563,13 @@ def wait_for_basic_ready(session: RestInputSession) -> None:
         if READY_SCREEN_CODES in screen:
             return
         time.sleep(0.25)
-    raise Failure("BASIC READY prompt not visible; device may be running a cartridge")
+    # The whole screen, so a failure says where the prompt went rather than
+    # only that it was not in the first rows.
+    screen = session.read_memory(0x0400, 1000)
+    rows = [screen_text(screen[row * 40:(row + 1) * 40]).rstrip() for row in range(25)]
+    shown = "\n".join(f"  {row:2d}|{text}" for row, text in enumerate(rows) if text)
+    raise Failure("BASIC READY prompt not visible in the first 256 bytes of screen "
+                  f"memory; device may be running a cartridge. The screen:\n{shown}")
 
 
 def reset_to_basic(session: RestInputSession) -> None:
@@ -1001,9 +1047,11 @@ def start_keyboard_echo_program(session: RestInputSession) -> int:
 
 
 def prepare_keyboard_echo_program(session: RestInputSession) -> int:
-    session.post_events([{"kind": "keyboard", "inputs": ["return"], "transition": "tap"}])
-    time.sleep(0.5)
-    wait_for_basic_ready(session)
+    # A reset rather than a RETURN on the line the previous scenario left under
+    # the cursor: after the keyboard scenario that line prints no READY in the
+    # rows the wait reads, and these checks must not depend on which scenario
+    # ran before them.
+    reset_to_basic(session)
     return start_keyboard_echo_program(session)
 
 
@@ -1678,6 +1726,9 @@ def run_mouse_tests(session: RestInputSession) -> None:
 
     What a mouse event does on the C64 is checked by tests/e2e/io/usb/mouse_test.py.
     """
+    if session.input_machine.skip_without_fix(machine_lib.REST_MOUSE_INPUT,
+                                              "the REST mouse contract"):
+        return
     with check("mouse state is detached and empty after release_all"):
         body = session.post_events([{"kind": "release_all"}])
         if body.get("mouse") != EMPTY_MOUSE:
@@ -1967,6 +2018,10 @@ RENAME_DIALOG_TITLE = "Give a new name.."
 LAUNCHER_DESCENT_STEPS = 24
 # Deeper than any directory this suite enters, which is one.
 BROWSER_ROOT_STEPS = 8
+# RUN/STOP closes the rename dialog within a second of reaching the menu, so a
+# dialog still up after this long did not see the key.
+RENAME_CLOSE_ATTEMPTS = 3
+RENAME_CLOSE_WAIT_SECONDS = 3.0
 # A file of this suite's own, in the RAM disk, renamed and then not renamed.
 # A drive entry was used first and it did open the dialog, but renaming a drive
 # is not what the dialog is for and a drive with no media does not offer it at
@@ -2289,11 +2344,24 @@ def clear_rename_field(session: RestInputSession) -> None:
 
 
 def close_rename_editor(session: RestInputSession) -> None:
-    """Abandon the rename. Nothing is renamed and nothing needs restoring."""
-    menu_keyboard_tap(session, ["run_stop"], 0.0)
-    wait_for_menu(session,
-                  lambda rows, colours: (rename_dialog_title_row(rows) is None) or None,
-                  f"the {RENAME_DIALOG_TITLE!r} dialog to close")
+    """Abandon the rename. Nothing is renamed and nothing needs restoring.
+
+    RUN/STOP is pressed again while the dialog stays up: a dialog left open
+    takes every key the teardown sends after it into its text field.
+    """
+    for attempt in range(RENAME_CLOSE_ATTEMPTS):
+        menu_keyboard_tap(session, ["run_stop"], 0.0)
+        try:
+            wait_for_menu(session,
+                          lambda rows, colours: (rename_dialog_title_row(rows) is None) or None,
+                          f"the {RENAME_DIALOG_TITLE!r} dialog to close",
+                          timeout=RENAME_CLOSE_WAIT_SECONDS)
+            break
+        except Failure:
+            if attempt == RENAME_CLOSE_ATTEMPTS - 1:
+                raise
+            warn(f"the {RENAME_DIALOG_TITLE!r} dialog stayed open after RUN/STOP, so "
+                 f"the key was lost; pressing it again (attempt {attempt + 2})")
     session.post_events([{"kind": "release_all"}])
 
 
@@ -2449,21 +2517,13 @@ def run_menu_keyboard_tests(session: RestInputSession, selected: list[str] | Non
         # Nothing to restore: the rename is abandoned with RUN/STOP, so no name
         # was changed and no configuration item was written.
         if opened:
-            # Two attempts, not one: sharing a try meant that when closing the
-            # dialog raised, the browser was never put back and the next suite
-            # started inside the RAM disk. browser-long-filename then could not
-            # find its fixture directory, whose path it builds from the root,
-            # and ftp-client could not find "Remote FTP Servers", which lives
-            # there. Restoring the root is what the next suite depends on, so
-            # it runs whether or not the dialog closed cleanly.
-            try:
-                close_rename_editor(session)
-            except Failure:
-                pass
-            try:
-                go_to_browser_root(session)
-            except Failure:
-                pass
+            # Two steps, so the root is restored whether or not the dialog
+            # closed. The next suite depends on the root: browser-long-filename
+            # builds its fixture path from it, and ftp-client looks for "Remote
+            # FTP Servers" there.
+            teardown_step("close the rename dialog", lambda: close_rename_editor(session))
+            teardown_step("return the browser to the root",
+                          lambda: go_to_browser_root(session))
         session.close_menu_from_anywhere()
         teardown_step("remove the rename fixture",
                     lambda: remove_rename_fixture(session.host))
@@ -2552,6 +2612,8 @@ def run_joystick_checks(session: RestInputSession) -> None:
         ("fire2", True, False),
         ("fire3", False, True),
     )
+    isolation = machine_lib.JOYSTICK_EXTRA_BUTTONS_STAY_ON_THEIR_PORT
+    input_machine = session.input_machine
     for own_port in (1, 2):
         other_port = 2 if own_port == 1 else 1
         for input_name, fire2_expected, fire3_expected in ANYKEY_ISOLATION_CASES:
@@ -2561,22 +2623,26 @@ def run_joystick_checks(session: RestInputSession) -> None:
                 button = "2" if input_name == "fire2" else "3"
                 label = (f"joystick port {own_port} {input_name} lights only Anykey button {button}, "
                           f"only on port {own_port}")
+            if input_name != "fire" and input_machine.skip_without_fix(isolation, label):
+                continue
             with check(label):
                 session.post_events([{"kind": "release_all"}])
                 session.post_events(
                     [{"kind": "joystick", "port": own_port, "inputs": [input_name], "transition": "press"}])
                 assert_extra_buttons({own_port: (fire2_expected, fire3_expected), other_port: (False, False)})
 
-    with check("joystick fire2 on one port and fire3 on the other stay independent"):
-        # Both ports held at once with different extra-button state.
-        session.post_events([{"kind": "release_all"}])
-        session.post_events(
-            [
-                {"kind": "joystick", "port": 1, "inputs": ["fire2"], "transition": "press"},
-                {"kind": "joystick", "port": 2, "inputs": ["fire3"], "transition": "press"},
-            ]
-        )
-        assert_extra_buttons({1: (True, False), 2: (False, True)})
+    independent = "joystick fire2 on one port and fire3 on the other stay independent"
+    if not input_machine.skip_without_fix(isolation, independent):
+        with check(independent):
+            # Both ports held at once with different extra-button state.
+            session.post_events([{"kind": "release_all"}])
+            session.post_events(
+                [
+                    {"kind": "joystick", "port": 1, "inputs": ["fire2"], "transition": "press"},
+                    {"kind": "joystick", "port": 2, "inputs": ["fire3"], "transition": "press"},
+                ]
+            )
+            assert_extra_buttons({1: (True, False), 2: (False, True)})
 
     with check("joystick fire2/fire3 tap auto-releases the POT hardware state"):
         session.post_events([{"kind": "release_all"}])
@@ -2625,22 +2691,37 @@ def run_joystick_checks(session: RestInputSession) -> None:
         session.post_events([{"kind": "joystick", "port": 2, "inputs": ["fire", "fire2", "fire3"], "transition": "press"}])
         assert_joystick_ports(session, 0x1F, 0x0F)
         assert_input_state(session, [], [], ["fire", "fire2", "fire3"])
-        assert_extra_buttons({2: (True, True), 1: (False, False)})
+        assert_extra_buttons({2: (True, True)})
         session.post_events([{"kind": "joystick", "port": 2, "inputs": ["fire2"], "transition": "release"}])
         assert_joystick_ports(session, 0x1F, 0x0F)
         assert_input_state(session, [], [], ["fire", "fire3"])
-        assert_extra_buttons({2: (False, True), 1: (False, False)})
+        assert_extra_buttons({2: (False, True)})
 
-    with check("joystick release in the same batch as a tap on the same input wins"):
-        session.post_events([{"kind": "release_all"}])
-        response = session.post_events(
-            [
-                {"kind": "joystick", "port": 2, "inputs": ["fire2"], "transition": "tap"},
-                {"kind": "joystick", "port": 2, "inputs": ["fire2"], "transition": "release"},
-            ]
-        )
-        if response["joysticks"][1]["inputs"] != []:
-            raise Failure(f"Expected port 2 empty right after the batch, got {response}")
+    # The same press seen from the other port, which is the #879 isolation and
+    # so depends on the input machine carrying #880.
+    held = "joystick fire2/fire3 held on port 2 leave port 1's Anykey buttons released"
+    if not input_machine.skip_without_fix(isolation, held):
+        with check(held):
+            session.post_events([{"kind": "release_all"}])
+            session.post_events(
+                [{"kind": "joystick", "port": 2, "inputs": ["fire", "fire2", "fire3"], "transition": "press"}])
+            assert_extra_buttons({2: (True, True), 1: (False, False)})
+            session.post_events([{"kind": "joystick", "port": 2, "inputs": ["fire2"], "transition": "release"}])
+            assert_extra_buttons({2: (False, True), 1: (False, False)})
+
+    release_wins = "joystick release in the same batch as a tap on the same input wins"
+    if not input_machine.skip_without_fix(
+            machine_lib.JOYSTICK_RELEASE_AFTER_TAP_IN_ONE_BATCH_WINS, release_wins):
+        with check(release_wins):
+            session.post_events([{"kind": "release_all"}])
+            response = session.post_events(
+                [
+                    {"kind": "joystick", "port": 2, "inputs": ["fire2"], "transition": "tap"},
+                    {"kind": "joystick", "port": 2, "inputs": ["fire2"], "transition": "release"},
+                ]
+            )
+            if response["joysticks"][1]["inputs"] != []:
+                raise Failure(f"Expected port 2 empty right after the batch, got {response}")
 
     with check("joystick release_all then press in same batch is visible on CIA reads"):
         session.post_events(

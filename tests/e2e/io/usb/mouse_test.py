@@ -128,7 +128,7 @@ import profiles  # noqa: E402
 from api import UltimateApi  # noqa: E402
 from mouse import MouseListener, MouseState, PicoMouse, RestMouse  # noqa: E402
 from pico_hid import Pico, discover_pico  # noqa: E402
-from report import Failure, check, check_skip, detail, format_exception, suite_fail, suite_ok  # noqa: E402
+from report import Failure, check, check_skip, detail, format_exception, suite_fail, suite_ok, suite_skip  # noqa: E402
 
 SUITE = "mouse_test"
 CATEGORY = "U64 Specific Settings"
@@ -216,7 +216,8 @@ def park(listener: MouseListener, mouse: PicoMouse | RestMouse) -> None:
     A 1351 driver reads only those 7 bits, where the released joystick value
     $80 reads as 0. A check that started from a position of 0 could not see the
     firmware write $80 over the mouse position (issue #909). A pointer count is
-    two POT counts, so the move is half the distance on the lines.
+    two POT counts, so the move is half the distance on the lines, and a line
+    that starts an odd distance away stops one count short of PARKED_POT.
     """
     state = listener.state()
     # POTX follows the mouse's x; POTY moves against it.
@@ -1206,7 +1207,8 @@ def test_rest_joystick(api, listener, mouse) -> None:
         held = listener.wait_until(lambda s: (s.potx, s.poty) == (0x00, 0x80))
         detail(f"held: {held}")
         api.machine.send_input([{"kind": "joystick", "port": 1, "inputs": ["fire2"], "transition": "release"}])
-        released = listener.wait_until(lambda s: (s.potx & 0x7F, s.poty & 0x7F) == (PARKED_POT, PARKED_POT))
+        parked = (before.potx & 0x7F, before.poty & 0x7F)
+        released = listener.wait_until(lambda s: (s.potx & 0x7F, s.poty & 0x7F) == parked)
         detail(f"before: {before}; released: {released}")
 
 
@@ -1396,9 +1398,21 @@ def main() -> int:
     # The scenarios that do more in a deeper profile read it back from here.
     os.environ[profiles.ENV] = args.profile
     api = UltimateApi(args.host, args.password, args.timeout)
+    # Every scenario below reads and writes the mouse items of CATEGORY, which
+    # only the U64-class firmware serves. A machine without that category has no
+    # mouse to configure, so there is nothing here for it to fail.
+    if CATEGORY not in api.configs.category_names():
+        suite_skip(SUITE, f"this machine serves no {CATEGORY!r}, so it has none of "
+                          "the mouse settings every scenario here drives")
+        return 0
     pico = None
     if args.backend == "pico":
-        pico = Pico(args.pico_host or discover_pico())
+        fixture = args.pico_host or discover_pico(optional=True)
+        if fixture is None:
+            suite_skip(SUITE, "no Pico HID fixture answers on this network; name one "
+                              "with --pico-host, or run --backend rest")
+            return 0
+        pico = Pico(fixture)
         with check("the Pico fixture offers a USB mouse"):
             pico.require_mouse()
         mouse = PicoMouse(pico)

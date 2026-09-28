@@ -67,6 +67,7 @@ SRCS_CC	 =  u2pl_init.cc \
 			c64.cc \
 			c64_crt.cc \
 			c64_subsys.cc \
+			x00_wrapper.cc \
 			screen.cc \
 			keyboard_c64.cc \
 			disk_image.cc \

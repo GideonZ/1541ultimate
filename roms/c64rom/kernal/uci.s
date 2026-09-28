@@ -368,7 +368,14 @@ _my_chkin   sta dfltn
             ; Same secondary address?
             lda SECADDR
             cmp UCI_LAST_SA
-            beq _chkin_cont ; Yes? Just do nothing
+            bne _chkin_su
+            ; Continue only while data is pending; a stream that has ended is talked to
+            ; again, as a drive on the serial bus is, so the error channel reads anew.
+            lda CMD_IF_CONTROL
+            bmi _chkin_cont ; data left in the current buffer
+            and #CMD_STATE_BITS
+            cmp #CMD_STATE_MORE_DATA
+            beq _chkin_cont ; another buffer follows
 
 _chkin_su   jsr uci_setup_cmd
             jsr uci_execute

@@ -25,6 +25,7 @@ Ultimate II+L as "Audio Output Settings". See ConfigsApi.find_padded_enum.
 import argparse
 import os
 import sys
+import time
 from pathlib import Path
 
 # The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
@@ -76,9 +77,23 @@ def load_cfg(browser) -> None:
     cfg_fixture.load(browser, CFG_NAME, log_name=LOG_NAME)
 
 
-def debug_log(host: str, password: str) -> str:
-    with ftp_lib.session(host, password, timeout=20) as ftp:
-        return ftp_lib.retrieve(ftp, f"/Temp/{LOG_NAME}").decode("ascii", "replace")
+def debug_log(host: str, password: str, seconds: float = 10.0) -> str:
+    """The log the firmware wrote, waited for rather than demanded at once.
+
+    The load that produces it returns before the file is on the medium, so a
+    retrieve that comes straight after can be answered with 550 for a name that
+    is about to exist. Waiting turns that race into what it is, a delay, and a
+    log that truly never appears still fails on the last attempt.
+    """
+    deadline = time.monotonic() + seconds
+    while True:
+        try:
+            with ftp_lib.session(host, password, timeout=20) as ftp:
+                return ftp_lib.retrieve(ftp, f"/Temp/{LOG_NAME}").decode("ascii", "replace")
+        except Exception:
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(0.5)
 
 
 def require_in_log(log: str, needles: list[str], what: str) -> None:

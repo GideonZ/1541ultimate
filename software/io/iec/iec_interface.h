@@ -125,6 +125,10 @@ public:
     virtual t_channel_retval pop_data(void) { return IEC_OK; }
     virtual t_channel_retval pop_more(int) { return IEC_OK; }
     virtual void talk(void) { }
+    // Held by the IEC task while it serves the bus, so a slave shared with other tasks can
+    // exclude them (CR-6).
+    virtual void lock(void) { }
+    virtual void unlock(void) { }
 };
 
 typedef void (*iec_callback_t)(IecSlave *obj, void *data);
@@ -171,6 +175,7 @@ public:
     void unregister_slave(int slot);
     void configure(void);
     void reset(void);
+    void readdress(int slot);
 
     // Slave Info
     static void info(StreamTextLog &b);

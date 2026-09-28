@@ -277,18 +277,26 @@ void uart_put_byte(BYTE c)
 
 void (*custom_outbyte)(int c) = 0;
 
+// The character outbyte() wrote last, so a writer can tell whether the log is mid-line.
+int outbyte_last = '\n';
+
+// The serial console alone, without the logs custom_outbyte feeds.
+void console_outbyte(int c)
+{
+    // Wait for space in FIFO
+    while (ioRead8(UART_FLAGS) & UART_TxFifoFull);
+    ioWrite8(UART_DATA, c);
+}
+
 // void outbyte(int c) __attribute__ ((weak));
 
 void outbyte(int c)
 {
+    outbyte_last = c;
     if (custom_outbyte) {
         custom_outbyte(c);
     }
-//    else {
-        // Wait for space in FIFO
-        while (ioRead8(UART_FLAGS) & UART_TxFifoFull);
-        ioWrite8(UART_DATA, c);
-//    }
+    console_outbyte(c);
 }
 
 #ifdef RUNS_ON_PC

@@ -5,6 +5,7 @@
 #include "iec_interface.h"
 #include "attachment_writer.h"
 #include "route_drives.h"
+#include "iec_drive.h"
 
 extern C1541 *c1541_A;
 extern C1541 *c1541_B;
@@ -160,6 +161,19 @@ API_CALL(POST, drives, mount, &attachment_writer, ARRAY({ { "type", P_OPTIONAL }
 //#define MENU_1541_BLANK     0x1505
 //#define MENU_1541_SWAP      0x1514
 
+// The Software IEC drive has its own reset, on and off commands.
+static int drive_command(int subsys_id, int command)
+{
+    if (subsys_id == SUBSYSID_IEC) {
+        switch (command) {
+            case MENU_1541_RESET:   return MENU_IEC_RESET;
+            case MENU_1541_TURNON:  return MENU_IEC_ON;
+            case MENU_1541_TURNOFF: return MENU_IEC_OFF;
+        }
+    }
+    return command;
+}
+
 static void simple_drive_command(ArgsURI& args, ResponseWrapper *resp, int command)
 {
     const char *drive = args.get_path(0);
@@ -169,6 +183,7 @@ static void simple_drive_command(ArgsURI& args, ResponseWrapper *resp, int comma
         resp->json_response(HTTP_BAD_REQUEST);
         return;
     }
+    command = drive_command(subsys_id, command);
 
     SubsysCommand *cmd = new SubsysCommand(NULL, subsys_id, command, 0, "", args.get_or("file", ""));
     SubsysResultCode_t retval = cmd->execute();

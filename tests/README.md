@@ -289,8 +289,12 @@ e2e:
   freezer-audio                     .      x      x      x      x
   ftp-client                        .      x      x      x      x
   ftp-server                        x      x      x      x      x
+  gmod2-eeprom-dirty                .      .      x      x      x
   ident-service-switch              .      .      x      x      x
   iec-dos-commands                  .      .      x      x      x
+  iec-partition-file                .      .      x      x      x
+  softiec-log-lines                 .      .      x      x      x
+  iec-listen-timing                 .      .      x      x      x
   input                             x      x      x      x      x
   input-batching                    x      x      x      x      x
   key-injection                     .      .      x      x      x
@@ -350,8 +354,8 @@ soak:
   usb-keyboard-repeat               .      .      .      x      x
 
                                ------ ------ ------ ------ ------
-  suites                           14     29     63     77     77
-  suite runs                       14     29     63    154    231
+  suites                           14     29     64     78     78
+  suite runs                       14     29     64    156    234
 
 Scenario and check counts, and durations, are not shown here:
 the registry does not know them. They depend on the machine and are

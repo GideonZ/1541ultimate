@@ -55,7 +55,7 @@ NAME = "registry_test"
 # What run-tests substitutes into a suite's argument template before starting
 # it. A token outside this set would reach the suite as a literal.
 TOKENS = {"@HOST@", "@DEVICE@", "@COMPUTER@", "@PASS@", "@TIMEOUT@",
-          "@MODE@", "@SOAKPROFILE@"}
+          "@MODE@", "@SOAKPROFILE@", "@KERNAL@"}
 
 # Files ending in _test.py that no profile should select, each with its reason.
 # A file that is not a suite belongs here rather than in the registry, so that
