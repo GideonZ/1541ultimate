@@ -47,7 +47,7 @@ from api import UltimateApi  # noqa: E402
 from assembler import assemble  # noqa: E402
 from mouse import PicoMouse  # noqa: E402
 from pico_hid import Pico, discover_pico  # noqa: E402
-from report import Failure, check, detail, format_exception, suite_fail, suite_ok  # noqa: E402
+from report import Failure, check, detail, format_exception, suite_fail, suite_ok, suite_skip  # noqa: E402
 
 SUITE = "micromys_wheel_test"
 PROGRAM = Path(__file__).resolve().parents[4] / "tools" / "c64" / "micromys-wheel.asm"
@@ -127,7 +127,13 @@ def main() -> int:
                         "forward broadcast between the wired test host and the Wi-Fi client")
     args = parser.parse_args()
     api = UltimateApi(args.host, args.password, args.timeout)
-    pico = Pico(args.pico_host or discover_pico())
+    fixture = args.pico_host or discover_pico(optional=True)
+    if fixture is None:
+        suite_skip(SUITE, "no Pico HID fixture answers on this network, and the wheel "
+                          "is a real USB device rather than something REST can report; "
+                          "name one with --pico-host to run this")
+        return 0
+    pico = Pico(fixture)
     with check("the Pico fixture offers a USB mouse"):
         pico.require_mouse()
     saved = {item: api.configs.item(CATEGORY, item).get("current") for item in SETTINGS}

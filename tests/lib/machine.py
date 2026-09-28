@@ -53,9 +53,9 @@ after the behaviour a machine gains from it rather than after a date, and the
 machine kinds that do not have it yet. A fix every machine has is not in the
 table at all. A check declares what it depends on in one line:
 
-    LABEL = "a Telnet session survives a screen it cannot drain"
+    LABEL = "pressing D in the monitor opens nothing"
     if device.machine.skip_without_fix(
-            machine.TELNET_SEND_TOLERATES_SLOW_PEER, LABEL):
+            machine.MONITOR_D_KEY_RESERVED, LABEL):
         return
     with check(LABEL):
         ...
@@ -139,22 +139,6 @@ def _fix(name: str, behaviour: str, lacking: tuple[str, ...]) -> str:
     FIXES[name] = Fix(name=name, behaviour=behaviour, lacking=lacking)
     return name
 
-# What tests/e2e/network/telnet_sustained_input_test.py asserts, and an
-# outstanding defect rather than a lagging release: GideonZ/1541ultimate#820.
-# A screen that repaints on every keystroke outruns a slow link, SO_SNDTIMEO
-# expires, and SocketStream::transmit treats the resulting EAGAIN as fatal and
-# closes the session. Listed against the Ultimate II+ because that is the
-# machine on WiFi here, where the check measures something: it failed about 25
-# times across a soak with no passes. A wired machine drains faster than the
-# suite can send and passes without exercising the path, which is why the entry
-# does not list the others. Delete this entry when #820 is fixed and the check
-# runs again everywhere.
-TELNET_SEND_TOLERATES_SLOW_PEER = _fix(
-    "telnet-send-tolerates-slow-peer",
-    "a Telnet session survives a screen repainting faster than the link "
-    "drains, rather than being closed when the send buffer stays full",
-    (U2,))
-
 # The bench Ultimate II+L's flashed 3.15 predates this tree's monitor rework:
 # its help page names "Open monitor", "Close monitor" and "Leave edit" where
 # this one names "Back a level", "Copy/Paste" and "Follow/Return". Goes when
@@ -174,6 +158,37 @@ IDENT_SWITCHES_LIVE = _fix(
     "the ident service starts answering when it is switched on, without a "
     "firmware restart",
     (U2,))
+
+# What the #879 regression block of tests/e2e/api/input_test.py asserts, and
+# a lagging release rather than an open defect: c72a9cd2 "Stop REST fire2/fire3
+# leaking onto the other joystick port (#880)" is in master and the u64 passes
+# the block, while the C64 Ultimate lineage has not taken it. The joystick lines
+# belong to whichever machine serves the input route, so a cartridge target
+# reports the host's gap; tag the block with the input machine, not the device
+# under test. Delete this entry once the C64 Ultimate carries the commit.
+JOYSTICK_EXTRA_BUTTONS_STAY_ON_THEIR_PORT = _fix(
+    "joystick-extra-buttons-stay-on-their-port",
+    "a REST fire2 or fire3 press reaches only the POT lines of the port it names, leaving the other port's buttons released",
+    (C64U,))
+
+# The same commit, c72a9cd2 (#880), also made a tap and a release of one input
+# in a single machine:input batch end released, which is the order the batch
+# gives them. Like the entry above it is served by the input machine, and the
+# C64 Ultimate lineage leaves the input held. Delete with the entry above.
+JOYSTICK_RELEASE_AFTER_TAP_IN_ONE_BATCH_WINS = _fix(
+    "joystick-release-after-tap-in-one-batch-wins",
+    "a tap followed by a release of the same joystick input in one batch leaves that input released",
+    (C64U,))
+
+# The REST mouse events of faff2fa5, which arrived with #914, and which the
+# mouse scenario of tests/e2e/api/input_test.py asserts. The machine:input route
+# of the C64 Ultimate lineage answers with no mouse state at all, so the first
+# check of the scenario fails and every later one would too. Served by the input
+# machine, like the two entries above. Delete once the C64 Ultimate carries it.
+REST_MOUSE_INPUT = _fix(
+    "rest-mouse-input",
+    "machine:input accepts mouse events and reports the mouse's state",
+    (C64U,))
 
 # UCI_COMPLETES_AN_REU_COMMAND (issue #740) is closed: measured on an
 # Ultimate II+L on c8b7551a, uci_targets_test passes all 37 checks ungated.
@@ -447,6 +462,27 @@ class Machine:
     @property
     def help_key(self) -> str:
         return "F7" if self.kind == C64U else "F3"
+
+    @property
+    def settings_key(self) -> str:
+        """The key that opens the settings menu over the file browser.
+
+        F2 on every machine: each keymap of UserInterface::keymapper turns KEY_F2
+        into KEY_CONFIG, the C64 Ultimate's as well as the others'
+        (software/userinterface/userinterface.cc). Asked for here, beside the
+        other function keys, so no caller pins it.
+        """
+        return "F2"
+
+    @property
+    def has_data_streams(self) -> bool:
+        """Whether the machine serves the VIC, audio and debug streams.
+
+        socket_dma.cc builds the stream commands, and the debug register that
+        selects what the debug stream carries, only under `#ifdef U64`, which the
+        C64 Ultimate is built with as well. A cartridge leaves them unanswered.
+        """
+        return self.kind != U2
 
     @property
     def described(self) -> str:

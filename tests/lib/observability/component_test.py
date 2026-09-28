@@ -990,7 +990,7 @@ def a_still_is_the_frame_the_recording_holds_at_that_position() -> str:
                         f"the {entry['kind']} still and frame "
                         f"{entry['frame']} of the recording differ inside the "
                         f"picture area {box}, and nothing was lost on the way "
-                        f"in: {counts}")
+                        f"in: {counts}, {capture.get('frames_shed')} frames shed")
                 read.append(screen_text_of(still, geometry))
     # And the ones that carry the scrolled screen still read as that screen,
     # at the columns the machine put it in, out of the written file rather

@@ -8,6 +8,7 @@
 #include "filemanager.h"
 #include "mystring.h"
 #include "cbmdos_parser.h"
+#include "x00_wrapper.h"
 
 typedef enum _t_channel_state {
     e_idle, e_filename, e_file, e_dir, e_partlist, e_record, e_buffer, e_complete, e_error, e_status
@@ -26,7 +27,6 @@ class IecCommandChannel;
 #define MAX_PARTITIONS 256
 
 // x00 wrappers (SI-144): the header in front of the data of a P00, S00, U00 or R00 file.
-#define X00_HEADER_SIZE 26
 bool iec_x00_probe(FileManager *fm, const char *path, char *cbm_name, filetype_t *type, uint8_t *record_length);
 int iec_entry_name(FileManager *fm, const char *dir_path, FileInfo *info, char *cbm_name, filetype_t& type);
 
@@ -328,6 +328,8 @@ class IecChannel {
     // of a relative file in one of its layouts (SI-084).
     uint32_t dataOffset;
     bool recordDirty;
+    // The record at recordOffset is past the end of the file (SI-080).
+    bool recordMissing;
 
     // A direct access channel (#): the partition that was current when it was opened, which
     // its block commands use (SI-093).
@@ -363,6 +365,9 @@ private:
     int read_block(void);
     t_channel_retval read_record(int offset);
     t_channel_retval write_record(void);
+    void set_missing_record(void);
+    FRESULT grow_to_record(void);
+    t_channel_retval pop_record(void);
 
     const char *ConstructPath(mstring& work, filename_t& name, filetype_t ftype, fileaccess_t acc);
 
@@ -424,7 +429,14 @@ class IecCommandChannel: public IecChannel, public IecCommandExecuter {
     int do_pwd_command();
     int do_get_partition_info(int part);
     int do_set_device_number(int dev);
-    int do_lock(filename_t& name);
+    int do_restore_device_number();
+    int do_set_write_protect(bool on);
+    int64_t get_clock_offset(void);
+    void set_clock_offset(int64_t seconds);
+    int do_toggle_attributes(filename_t& name, uint8_t bits);
+    int do_set_attributes(filename_t names[], int n, uint8_t attrib, uint8_t mask);
+    int do_set_header(filename_t& dest, const char *id);
+    int do_rename_partition(const char *newname, const char *oldname);
 public:
     IecCommandChannel(IecDrive *dr, int ch);
     virtual ~IecCommandChannel();

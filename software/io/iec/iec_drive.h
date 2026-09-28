@@ -12,6 +12,10 @@
 
 #define IEC_PARTITION_CONFIG "iec_partitions.ipr"
 
+#define MENU_IEC_ON          0xCA0E
+#define MENU_IEC_OFF         0xCA0F
+#define MENU_IEC_RESET       0xCA10
+
 class IecChannel;
 class IecCommandChannel;
 class IecFileSystem;
@@ -25,7 +29,11 @@ class IecDrive : public IecSlave, SubSystem, ObjectWithMenu, ConfigurableObject
     int slot_id;
 
     int my_bus_id;
+    int applied_bus_id; // the configured number the processor last took (SI-103b)
+    bool write_protect;
+    int64_t clock_offset;
     bool enable;
+    bool uci_enable; // whether the UCI target serves the drive (SI-107)
 
     FileManager *fm;
     IecChannel *channels[16];
@@ -40,6 +48,7 @@ class IecDrive : public IecSlave, SubSystem, ObjectWithMenu, ConfigurableObject
     IecFileSystem *vfs;
  
     static void set_iec_dir(IecSlave *obj, void *path);
+    void announce_kernal_device(void);
 
     struct {
         Action *turn_on;
@@ -76,6 +85,9 @@ public:
 
     // From IecSlave
     bool is_enabled(void) { return enable; }
+    // Whether the UCI target answers for the drive, which it does unless "IEC Drive" is
+    // Disabled (SI-107). is_enabled() says whether the drive is on the bus.
+    bool serves_uci(void) { return uci_enable; }
     uint8_t get_address(void) { return (uint8_t)my_bus_id; }
     uint8_t get_type(void) { return 0x0F; }
     const char *iec_identify(void) { return "IEC Drive"; }
@@ -94,6 +106,13 @@ public:
 
     // Local Functions
     void set_device_number(int dev);
+    int configured_device_number(void);
+    // The software write protect of W-1 and W-0 (SI-102), which lasts as long as the drive runs.
+    bool is_write_protected(void) { return write_protect; }
+    void set_write_protect(bool on) { write_protect = on; }
+    // The drive's own clock, as seconds ahead of the system clock (SI-120).
+    int64_t get_clock_offset(void) { return clock_offset; }
+    void set_clock_offset(int64_t seconds) { clock_offset = seconds; }
     bool log_every_operation(void);
     void set_error(int err, int track, int sector);
     void set_error_fres(FRESULT fres);
