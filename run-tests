@@ -3738,6 +3738,18 @@ def main(argv: list[str]) -> int:
             else:
                 report.check_ok(restored or "already set")
 
+            # A cartridge fitted in this machine answers on the same IEC bus
+            # and bus IDs, so the machine's IEC suites would talk to both.
+            report.step_start("the cartridges fitted here are off the IEC bus")
+            try:
+                silenced = api_lib.ensure_cartridge_drives_off(
+                    target, options.password, float(options.timeout))
+            except DEVICE_ERRORS as exc:
+                report.check_fail(str(exc))
+                return EXIT_SUITE_FAILED
+            else:
+                report.check_ok(silenced or "none declared or already off")
+
         # Before any suite, because a cartridge whose computer has not handed
         # its bus over fails later in ways that name neither the setting nor
         # the computer. A no-op on a target that is its own computer.
