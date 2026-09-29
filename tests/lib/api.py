@@ -1175,6 +1175,38 @@ DRIVE_DISABLED = "Disabled"
 # the end of a run cannot.
 DRIVE_ENABLED = "Enabled"
 
+# Every device a machine puts on the IEC bus, as (store, item). The Software IEC
+# drive of both machines defaults to bus ID 11: measured on a C64 Ultimate with
+# an Ultimate II+L fitted, rel-copy and iec-dos-commands timed out on channel 15
+# until the cartridge's one was switched off.
+IEC_DEVICE_SWITCHES = (*((store, DRIVE_ENABLE_ITEM) for store in DRIVE_STORES),
+                       ("SoftIEC Drive Settings", "IEC Drive"))
+
+
+def _silence_iec_devices(api: UltimateApi, name: str) -> list[str]:
+    """Switch off every IEC device of the machine `api` talks to, without saving.
+
+    Answers the stores it changed. A store the machine does not serve is passed
+    over, because a machine without that device has nothing to silence.
+    """
+    silenced = []
+    for store, item in IEC_DEVICE_SWITCHES:
+        try:
+            current = api.configs.current(store, item)
+        except Failure:
+            continue
+        if current == DRIVE_DISABLED:
+            continue
+        api.configs.set(store, item, DRIVE_DISABLED)
+        now = api.configs.current(store, item)
+        if now != DRIVE_DISABLED:
+            raise Failure(
+                f"{name} kept {store}/{item} at {now!r} after it was set to "
+                f"{DRIVE_DISABLED!r}; it will answer on the IEC bus alongside "
+                f"the device under test")
+        silenced.append(store)
+    return silenced
+
 
 def identify_machine(target, password: str | None = None,
                      timeout: float = DEFAULT_TIMEOUT) -> machine.Machine:
@@ -1249,30 +1281,33 @@ def ensure_host_drives_off(target, password: str | None = None,
     Answers what it did, or None when there was nothing to do: the target is
     its own computer, or the computer's drives are already off.
 
-    Like the cartridge preference, the change is not saved to flash. A store
-    the computer does not serve is passed over rather than reported, because a
-    computer without drives is a computer with nothing to silence.
+    Like the cartridge preference, the change is not saved to flash.
     """
     handle = targets.resolve(target)
     if not handle.split:
         return None
     computer = UltimateApi(handle.computer, password, timeout)
-    silenced = []
-    for store in DRIVE_STORES:
-        try:
-            current = computer.configs.current(store, DRIVE_ENABLE_ITEM)
-        except Failure:
-            continue
-        if current == DRIVE_DISABLED:
-            continue
-        computer.configs.set(store, DRIVE_ENABLE_ITEM, DRIVE_DISABLED)
-        now = computer.configs.current(store, DRIVE_ENABLE_ITEM)
-        if now != DRIVE_DISABLED:
-            raise Failure(
-                f"{handle.computer} kept {store}/{DRIVE_ENABLE_ITEM} at "
-                f"{now!r} after it was set to {DRIVE_DISABLED!r}; it will "
-                f"answer on the IEC bus alongside the cartridge")
-        silenced.append(store)
+    silenced = _silence_iec_devices(computer, handle.computer)
     if not silenced:
         return None
     return f"{handle.computer}: {', '.join(silenced)} -> {DRIVE_DISABLED!r}"
+
+
+def ensure_cartridge_drives_off(target, password: str | None = None,
+                                timeout: float = DEFAULT_TIMEOUT) -> str | None:
+    """Silence the drives of a cartridge fitted in the target, so the target owns the bus.
+
+    The other direction of ensure_host_drives_off. Which cartridges are fitted
+    comes from U64_COMPUTERS, the same declaration a cartridge target is read
+    from. Answers what it did, or None when there was nothing to do. Not saved
+    to flash either.
+    """
+    handle = targets.resolve(target)
+    if handle.split:
+        return None
+    done = []
+    for cartridge in targets.declared_cartridges(handle.device):
+        silenced = _silence_iec_devices(UltimateApi(cartridge, password, timeout), cartridge)
+        if silenced:
+            done.append(f"{cartridge}: {', '.join(silenced)} -> {DRIVE_DISABLED!r}")
+    return "; ".join(done) or None
