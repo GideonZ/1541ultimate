@@ -28,9 +28,9 @@ An EasyFlash requires the UCI at $DE1C (c64_crt.cc, configure_cart) and
 prohibits it at $DF1C, where its RAM is. The prohibition switched off the one
 at $DE1C as well, so only a CRT with subtype 1 had it. The CRT here has
 subtype 0, as practically every EasyFlash image does. Its routine sends the
-control target's IDENTIFY through $DE1C and copies the first byte of the
-answer to RAM; waits are bounded, so a missing UCI leaves the byte blank
-rather than stopping the routine.
+control target's IDENTIFY through $DE1C (easyflash_uci.asm) and copies the
+first byte of the answer to RAM; waits are bounded, so a missing UCI leaves
+the byte blank rather than stopping the routine.
 """
 
 from __future__ import annotations
@@ -47,6 +47,7 @@ import bootstrap  # noqa: E402,F401
 
 import cli                                                      # noqa: E402
 from api import UltimateApi                                     # noqa: E402
+from assembler import assemble                                  # noqa: E402
 from report import (Failure, check, detail, format_exception,   # noqa: E402
                     suite_fail, suite_ok, teardown_step)
 
@@ -62,6 +63,7 @@ UCI_ANSWER = ord("C")       # "CONTROL TARGET V1.1" (control_target.cc)
 BLANK = 0xA0                # not a marker value, so a byte the routine never wrote cannot pass
 ROUTINE_ADDRESS = 0x0800    # RAM that Ultimax mode also maps
 ROUTINE_OFFSET = 0x20       # of the routine in bank 0's ROMH chip
+UCI_SOURCE = Path(__file__).with_name("easyflash_uci.asm")
 
 
 def select_loop(upper_bits: int, row: int) -> bytes:
@@ -78,28 +80,9 @@ def select_loop(upper_bits: int, row: int) -> bytes:
     ])
 
 
-def uci_identify() -> bytes:
-    """IDENTIFY to the control target through the UCI at $DE1C; first answer byte to UCI_ID.
-
-    Both waits give up after 65536 reads, so without a UCI the routine goes on.
-    """
-    def wait(mask: int, until_set: bool) -> bytes:
-        # LDX #0 / LDY #0 / loop: LDA $DE1C, AND #mask, B?? out, DEX, BNE loop, DEY, BNE loop, JMP give-up
-        return bytes([0xA2, 0x00, 0xA0, 0x00,
-                      0xAD, 0x1C, 0xDE, 0x29, mask,
-                      0xD0 if until_set else 0xF0, 0x09,          # out: past DEX..JMP
-                      0xCA, 0xD0, 0xF6, 0x88, 0xD0, 0xF3])        # + JMP added by the caller
-
-    request = bytes([0xA9, 0x04, 0x8D, 0x1D, 0xDE,   # LDA #$04  STA $DE1D   control target
-                     0xA9, 0x01, 0x8D, 0x1D, 0xDE,   # LDA #$01  STA $DE1D   IDENTIFY
-                     0xA9, 0x01, 0x8D, 0x1C, 0xDE])  # LDA #$01  STA $DE1C   push
-    answer = bytes([0xAD, 0x1E, 0xDE,                # LDA $DE1E              first data byte
-                    0x8D, UCI_ID & 0xFF, UCI_ID >> 8,
-                    0xA9, 0x02, 0x8D, 0x1C, 0xDE])   # LDA #$02  STA $DE1C    acknowledge
-    idle, data = wait(0x35, False), wait(0x20, True)
-    # Each wait ends in a JMP to the end when it gives up; the address is only known at the end.
-    size = len(idle) + 3 + len(request) + len(data) + 3 + len(answer)
-    return size, idle, request, data, answer
+def uci_identify(address: int) -> bytes:
+    """IDENTIFY through the UCI at $DE1C (easyflash_uci.asm), assembled to run at `address`."""
+    return assemble(UCI_SOURCE, {"START_ADDRESS": address, "UCI_ID": UCI_ID})[2:]
 
 
 def routine() -> bytes:
@@ -109,10 +92,7 @@ def routine() -> bytes:
     ])
     for index, upper_bits in enumerate(UPPER_BITS):
         code += select_loop(upper_bits, FIRST_ROW + index * BANKS)
-    size, idle, request, data, answer = uci_identify()
-    give_up = ROUTINE_ADDRESS + len(code) + size
-    jmp = bytes([0x4C, give_up & 0xFF, give_up >> 8])
-    code += idle + jmp + request + data + jmp + answer
+    code += uci_identify(ROUTINE_ADDRESS + len(code))
     end = ROUTINE_ADDRESS + len(code) + 5
     code += bytes([
         0xA9, 0x01,             # LDA #$01
