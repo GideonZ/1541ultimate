@@ -20,6 +20,17 @@ row reads 00 to 3f when every write reaches the bank in its low six bits.
 A product with 1 MB of cartridge memory decodes 20 address bits, which drops
 bits 6 and 7 of the bank number, so the suite passes there without the
 repeated image.
+
+The same cartridge also checks that it has the UCI at $DE1C. The firmware's
+EAPI erases a sector through it when it answers there; without it the EAPI
+erases on its own and the firmware never learns that the cartridge changed.
+An EasyFlash requires the UCI at $DE1C (c64_crt.cc, configure_cart) and
+prohibits it at $DF1C, where its RAM is. The prohibition switched off the one
+at $DE1C as well, so only a CRT with subtype 1 had it. The CRT here has
+subtype 0, as practically every EasyFlash image does. Its routine sends the
+control target's IDENTIFY through $DE1C and copies the first byte of the
+answer to RAM; waits are bounded, so a missing UCI leaves the byte blank
+rather than stopping the routine.
 """
 
 from __future__ import annotations
@@ -46,6 +57,8 @@ MARKER = 0x1FF0             # $9FF0 in each bank's ROML chip
 UPPER_BITS = (0x00, 0x40, 0x80, 0xC0)
 FIRST_ROW = 0x0400          # screen RAM, one 64-byte row per value in UPPER_BITS
 DONE = 0x0500               # set to $01 when the routine ran
+UCI_ID = 0x0501             # the first byte of the UCI's answer to IDENTIFY
+UCI_ANSWER = ord("C")       # "CONTROL TARGET V1.1" (control_target.cc)
 BLANK = 0xA0                # not a marker value, so a byte the routine never wrote cannot pass
 ROUTINE_ADDRESS = 0x0800    # RAM that Ultimax mode also maps
 ROUTINE_OFFSET = 0x20       # of the routine in bank 0's ROMH chip
@@ -65,6 +78,30 @@ def select_loop(upper_bits: int, row: int) -> bytes:
     ])
 
 
+def uci_identify() -> bytes:
+    """IDENTIFY to the control target through the UCI at $DE1C; first answer byte to UCI_ID.
+
+    Both waits give up after 65536 reads, so without a UCI the routine goes on.
+    """
+    def wait(mask: int, until_set: bool) -> bytes:
+        # LDX #0 / LDY #0 / loop: LDA $DE1C, AND #mask, B?? out, DEX, BNE loop, DEY, BNE loop, JMP give-up
+        return bytes([0xA2, 0x00, 0xA0, 0x00,
+                      0xAD, 0x1C, 0xDE, 0x29, mask,
+                      0xD0 if until_set else 0xF0, 0x09,          # out: past DEX..JMP
+                      0xCA, 0xD0, 0xF6, 0x88, 0xD0, 0xF3])        # + JMP added by the caller
+
+    request = bytes([0xA9, 0x04, 0x8D, 0x1D, 0xDE,   # LDA #$04  STA $DE1D   control target
+                     0xA9, 0x01, 0x8D, 0x1D, 0xDE,   # LDA #$01  STA $DE1D   IDENTIFY
+                     0xA9, 0x01, 0x8D, 0x1C, 0xDE])  # LDA #$01  STA $DE1C   push
+    answer = bytes([0xAD, 0x1E, 0xDE,                # LDA $DE1E              first data byte
+                    0x8D, UCI_ID & 0xFF, UCI_ID >> 8,
+                    0xA9, 0x02, 0x8D, 0x1C, 0xDE])   # LDA #$02  STA $DE1C    acknowledge
+    idle, data = wait(0x35, False), wait(0x20, True)
+    # Each wait ends in a JMP to the end when it gives up; the address is only known at the end.
+    size = len(idle) + 3 + len(request) + len(data) + 3 + len(answer)
+    return size, idle, request, data, answer
+
+
 def routine() -> bytes:
     code = bytes([
         0xA9, 0x07,             # LDA #$07
@@ -72,6 +109,10 @@ def routine() -> bytes:
     ])
     for index, upper_bits in enumerate(UPPER_BITS):
         code += select_loop(upper_bits, FIRST_ROW + index * BANKS)
+    size, idle, request, data, answer = uci_identify()
+    give_up = ROUTINE_ADDRESS + len(code) + size
+    jmp = bytes([0x4C, give_up & 0xFF, give_up >> 8])
+    code += idle + jmp + request + data + jmp + answer
     end = ROUTINE_ADDRESS + len(code) + 5
     code += bytes([
         0xA9, 0x01,             # LDA #$01
@@ -88,11 +129,11 @@ def boot(length: int) -> bytes:
         0xA2, 0xFF,             # E001  LDX #$FF
         0x9A,                   # E003  TXS
         0xD8,                   # E004  CLD
-        0xA2, length - 1,       # E005  LDX #len-1
-        0xBD, ROUTINE_OFFSET, 0xE0,     # E007  LDA $E020,X
-        0x9D, ROUTINE_ADDRESS & 0xFF, ROUTINE_ADDRESS >> 8,  # E00A  STA $0800,X
+        0xA2, length,           # E005  LDX #len          up to 255 bytes
+        0xBD, ROUTINE_OFFSET - 1, 0xE0,     # E007  LDA $E01F,X
+        0x9D, (ROUTINE_ADDRESS - 1) & 0xFF, (ROUTINE_ADDRESS - 1) >> 8,  # E00A  STA $07FF,X
         0xCA,                   # E00D  DEX
-        0x10, 0xF7,             # E00E  BPL $E007
+        0xD0, 0xF7,             # E00E  BNE $E007
         0x4C, ROUTINE_ADDRESS & 0xFF, ROUTINE_ADDRESS >> 8,  # E010  JMP $0800
         0x40,                   # E013  RTI        NMI and IRQ vectors
     ])
@@ -137,7 +178,7 @@ def run(args) -> None:
     try:
         with check("the generated EasyFlash cartridge starts and runs its routine"):
             # Blank the rows and the done flag first, so bytes left by an earlier run cannot pass.
-            device.machine.writemem(FIRST_ROW, bytes([BLANK]) * (DONE + 1 - FIRST_ROW))
+            device.machine.writemem(FIRST_ROW, bytes([BLANK]) * (UCI_ID + 1 - FIRST_ROW))
             device.runners.upload("run_crt", easyflash_crt())
             deadline = time.monotonic() + 10.0
             while device.machine.readmem(DONE, 1)[0] != 0x01:
@@ -145,6 +186,7 @@ def run(args) -> None:
                     raise Failure("the routine copied from bank 0 did not finish within 10 s")
                 time.sleep(0.25)
             rows = device.machine.readmem(FIRST_ROW, BANKS * len(UPPER_BITS))
+            uci = device.machine.readmem(UCI_ID, 1)[0]
         # Each row is reported, so a failure says which upper bits are wrong.
         failures = []
         for index, upper_bits in enumerate(UPPER_BITS):
@@ -162,6 +204,13 @@ def run(args) -> None:
                         raise Failure(f"a write of ${upper_bits:02X} + n did not select bank n")
             except Failure as exc:
                 failures.append(exc)
+        try:
+            with check("an EasyFlash of subtype 0 has the UCI at $DE1C"):
+                if uci != UCI_ANSWER:
+                    raise Failure(f"IDENTIFY through $DE1C answered ${uci:02X}, "
+                                  f"not ${UCI_ANSWER:02X} ('C' of CONTROL TARGET)")
+        except Failure as exc:
+            failures.append(exc)
         if failures:
             raise failures[0]
     finally:
