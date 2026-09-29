@@ -1382,7 +1382,12 @@ void C64::set_cartridge(cart_def *cart)
         }
         C64_REU_ENABLE = 0;
     }
-    if(def->prohibit & (CART_UCI | CART_UCI_DFFC | CART_UCI_DE1C)) {
+    // A cartridge that requires the UCI has had it moved above to an address it leaves free. What
+    // it prohibits is the UCI where it would collide: the EasyFlash requires it at $DE1C and
+    // prohibits it at $DF1C, inside its RAM. Switching it off here left every EasyFlash but
+    // subtype 1 without it, and the firmware's EAPI then erases without the firmware seeing it.
+    if((def->prohibit & (CART_UCI | CART_UCI_DFFC | CART_UCI_DE1C)) &&
+       !(def->require & (CART_UCI | CART_UCI_DFFC | CART_UCI_DE1C))) {
         if (getFpgaCapabilities() & CAPAB_COMMAND_INTF) {
             if (CMD_IF_SLOT_ENABLE) {
                 def->disabled |= CART_UCI;
