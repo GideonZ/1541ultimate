@@ -520,8 +520,10 @@ SUITES: Sequence[Suite] = (
     # memory those banks lie above 1 MB, which read $FF unless the image repeats
     # up to the end of the cartridge memory (#899). The suite builds a 64-bank
     # type 32 CRT in code, selects every bank with $00, $40, $80 and $C0 in the
-    # upper bits, and reads each bank's marker back from screen RAM. It reboots
-    # the machine afterwards to remove the cartridge.
+    # upper bits, and reads each bank's marker back from screen RAM. The same
+    # CRT, subtype 0 like practically every EasyFlash image, sends IDENTIFY
+    # through the UCI at $DE1C, which its prohibition of the UCI at $DF1C used
+    # to switch off. It reboots the machine afterwards to remove the cartridge.
     Suite("e2e", "easyflash-cartridge", "tests/e2e/io/c64/easyflash_cartridge_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
     # A GMod2 game's save lives in the cartridge's serial EEPROM, and the
