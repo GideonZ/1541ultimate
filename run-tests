@@ -1901,6 +1901,25 @@ def health_entry(check: "health.Check") -> dict[str, object]:
     return entry
 
 
+def keep_iec_bus_to_target(target, options: Options, after: str) -> None:
+    """Switch the other machine's drives off again when a suite brought them back.
+
+    The run switches them off once, in RAM. A suite that powers the machine off,
+    such as wake-on-wifi, also restarts a fitted cartridge, which then answers on
+    the same IEC bus IDs from its stored settings until it is switched off again.
+    """
+    ensure = (api_lib.ensure_host_drives_off if target.split
+              else api_lib.ensure_cartridge_drives_off)
+    try:
+        silenced = ensure(target, options.password, float(options.timeout))
+    except DEVICE_ERRORS as exc:
+        report.warn(f"after {after}: the other machine's drives could not be checked: {exc}")
+        return
+    if silenced:
+        report.warn(f"after {after}: drives were back on the IEC bus and are off again "
+                    f"({silenced})")
+
+
 def reset_to_clean_slate(device: Device, phase: str) -> bool:
     for label, action in (
         (f"{phase}: release input", device.release_input),
@@ -3813,6 +3832,8 @@ def main(argv: list[str]) -> int:
                 for suite in suites:
                     result = run_suite(suite, device, options, mode or DEFAULT_MODE, mode or category)
                     results.append(result)
+                    if category == "e2e" and not result.device_unhealthy:
+                        keep_iec_bus_to_target(target, options, suite.name)
                     if result.device_unhealthy:
                         print()
                         report.detail("the device could not be made healthy; abandoning the "
