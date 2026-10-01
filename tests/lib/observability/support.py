@@ -1223,7 +1223,8 @@ def canonicalize_document(text: str) -> str:
 
 # The wall clock and offset that open each timeline line, which e2e_report
 # writes as "-" when it has no start time to measure from. One event per line
-# is what lets two branches that each add events merge without a conflict.
+# lets two branches that add events at different places merge without a
+# conflict.
 _TIMELINE_CLOCK_RE = re.compile(r"(?m)^\d\d:\d\d:\d\d (?:\+\d+:\d\d|-)  ")
 _TIMELINE_CLOCK = "00:00:00 +00:00  "
 

@@ -3558,4 +3558,16 @@ def the_canonical_timeline_keeps_its_events_and_order() -> str:
             "00:00:00 +00:00  a GET /v1/version",
             "00:00:00 +00:00  12:00:00 +00:01  looks like a clock"])
     expect("a second pass", canonicalize_document(once), once)
-    return "3 events, idempotent"
+    # The collector's port is ephemeral; the device's own port, named where the
+    # address is wrong rather than the port, is a real setting and stays.
+    ports = canonicalize_document(
+        "collects on 43915, so none of it will arrive; set 'Log to Syslog "
+        "Server' to '192.168.1.2:43915' and reboot\n"
+        "this run collects at 192.168.1.2, so none of it will arrive; set "
+        "'Log to Syslog Server' to '192.168.1.2:5514' and reboot\n")
+    expect("only the collector's port", ports.split("\n")[:2],
+           ["collects on 0, so none of it will arrive; set 'Log to Syslog "
+            "Server' to '192.168.1.2:0' and reboot",
+            "this run collects at 192.168.1.2, so none of it will arrive; set "
+            "'Log to Syslog Server' to '192.168.1.2:5514' and reboot"])
+    return "3 events, idempotent, one port"
