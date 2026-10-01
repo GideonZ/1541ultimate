@@ -65,6 +65,7 @@ import cli  # noqa: E402
 from api import UltimateApi  # noqa: E402
 import ftp as ftp_lib
 import rest as rest_lib
+import machine as machine_lib
 import streams as stream_lib
 import targets
 from report import (
@@ -269,6 +270,16 @@ class RestSession:
         self.register_host = self.target.computer
         self.password = password
         self.timeout = timeout
+
+    def machine(self) -> machine_lib.Machine:
+        """Which machine this is, asked once of the device's /v1/info."""
+        def fetch() -> tuple[str, str]:
+            status, body = self.request("GET", "/v1/info", repeatable=True)
+            if status != 200:
+                raise Failure(f"GET /v1/info returned HTTP {status}: {body[:200]!r}")
+            info = json.loads(body)
+            return info.get("product", ""), info.get("firmware_version", "")
+        return machine_lib.identify(self.host, fetch)
 
     def request(self, method: str, path: str, params: dict[str, object] | None = None,
                 repeatable: bool = False, host: str | None = None,
@@ -836,6 +847,12 @@ class VicListener:
                           f"did not ask for them")
 
 
+# More opted-in start/stop cycles than lwIP has UDP sockets (MEMP_NUM_UDP_PCB 8).
+PALETTE_SOCKET_CYCLES = 20
+# A multicast group in 224-231, which #871 moved from unicast to multicast.
+PALETTE_LOW_MULTICAST_GROUP = "230.0.1.64"
+
+
 def expected_burst_color(index: int) -> bytes:
     """Color 6 after the burst fixture's `index`th change, counting from 0."""
     return bytes(((13 * index) & 0xFF, (85 + 29 * index) & 0xFF, (170 + 47 * index) & 0xFF))
@@ -858,16 +875,21 @@ def run_palette_stream(session: RestSession, uci: Uci) -> bool:
         raise Failure(f"{scenario}: GET_PALETTE returned {len(original)} bytes, status {text!r}")
 
     video_address = f"{session.target.video_group}:{session.target.video_port}"
-    # The rejected value doubles as the capability probe: firmware without
-    # palette streams refuses the unknown parameter in its own words.
-    status, body = session.request("PUT", "/v1/streams/video:start",
-                                   params={"ip": video_address, "palette": 2})
-    if status == 400 and b"Palette must be 0 or 1" not in body:
-        check_start(f"{scenario}: the firmware offers palette streams")
-        check_skip(f"video:start does not take a palette parameter: {body[:120]!r}")
+    machine = session.machine()
+    if not machine.has_data_streams:
+        check_start(f"{scenario}: the machine serves the VIC stream")
+        check_skip(f"{machine.described} has no VIC stream")
         return True
-    if status != 400:
-        raise Failure(f"{scenario}: video:start with palette=2 returned HTTP {status}: {body[:200]!r}")
+    # Declared, not probed: a probe would skip exactly when the feature broke.
+    offered = f"{scenario}: the firmware offers palette streams"
+    if machine.skip_without_fix(machine_lib.VIC_PALETTE_STREAM, offered):
+        return True
+    with check(offered):
+        status, body = session.request("PUT", "/v1/streams/video:start",
+                                       params={"ip": video_address, "palette": 2})
+        if status != 400 or b"Palette must be 0 or 1" not in body:
+            raise Failure(f"video:start with palette=2 returned HTTP {status}: {body[:200]!r}; "
+                          f"expected 400 'Palette must be 0 or 1'")
 
     api = UltimateApi(session.target, session.password)
     arming = stream_lib.Arming(api, session.target)
@@ -1070,6 +1092,45 @@ def run_palette_stream(session: RestSession, uci: Uci) -> bool:
             if not arming.start("video"):
                 raise Failure(f"video:start failed: {arming.failures.get('video')}")
             listener.expect_no_palette()
+
+        with check(f"{scenario}: palette packets still arrive after "
+                   f"{PALETTE_SOCKET_CYCLES} opted-in starts and stops"):
+            # Each opted-in start opens the palette socket and each stop closes
+            # it. lwIP has 8 UDP sockets in all, so a socket that is not given
+            # back runs the pool dry well within these cycles.
+            for cycle in range(1, PALETTE_SOCKET_CYCLES + 1):
+                arming.stop("video")
+                time.sleep(0.2)
+                requested = time.monotonic()
+                if not arming.start("video", palette=1):
+                    raise Failure(f"cycle {cycle}: video:start with palette=1 failed: "
+                                  f"{arming.failures.get('video')}")
+                try:
+                    listener.wait_palette(requested)
+                except Failure as exc:
+                    raise Failure(f"cycle {cycle}: {exc}") from exc
+            arming.stop("video")
+
+        low_group = PALETTE_LOW_MULTICAST_GROUP
+        with check(f"{scenario}: a stream to {low_group}, below 232.0.0.0, is sent as multicast"):
+            # #871 widened the multicast test from 232-239 to all of 224.0.0.0/4.
+            # Treated as unicast, a group in 224-231 has no ARP answer.
+            port = session.target.video_port
+            low_sock = stream_lib.stream_socket(low_group, port)
+            try:
+                status, body = session.request("PUT", "/v1/streams/video:start",
+                                               params={"ip": f"{low_group}:{port}"})
+                if status != 200:
+                    raise Failure(f"video:start to {low_group} returned HTTP {status}: "
+                                  f"{body[:200]!r}")
+                tuple(stream_lib.receive([low_sock], addresses, 0.1))
+                arrived = sum(1 for _, _, mine in
+                              stream_lib.receive([low_sock], addresses, 1.0) if mine)
+                if arrived < 100:
+                    raise Failure(f"{arrived} video packets reached {low_group} in 1 s")
+            finally:
+                session.request("PUT", "/v1/streams/video:stop")
+                low_sock.close()
     finally:
         try:
             if fixture_loaded and not fixture_released:
