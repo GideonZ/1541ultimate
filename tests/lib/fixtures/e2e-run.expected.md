@@ -1066,228 +1066,228 @@ Reaching one of these from a build page is a download and an unzip: GitHub serve
 
 Each line opens with the wall-clock time on the host that ran the gate, then the offset from the start of the run.
 
-127.0.0.1 warning: device log: this device is not configured to send its log anywhere (at the start of the run)
-127.0.0.1 GET /v1/configs/C64%20and%20Cartridge%20Settings/Fast%20Reset -> 404: `{"errors": ["no such category"]}`
-127.0.0.1 GET /v1/configs/C64%20and%20Cartridge%20Settings/Cartridge%20Preference -> 404: `{"errors": ["no such category"]}`
-127.0.0.1 GET /v1/machine:menu_screen -> 404: `Menu screen unavailable.`  (this request is made 38 times in this run and is shown twice)
-127.0.0.1 sweep held: OK
-127.0.0.1/overlay/held/1 started
-127.0.0.1/overlay/held/1 OK
-127.0.0.1 GET /v1/machine:menu_screen -> 404: `Menu screen unavailable.`  (this request is made 38 times in this run and is shown twice)
-127.0.0.1 sweep broken: OK
-127.0.0.1/overlay/broken/1 started
-127.0.0.1/overlay/broken/1/1 FAIL the row survives a redraw
-127.0.0.1/overlay/broken/1 FAIL
-127.0.0.1/overlay/broken/1 device state captured
-127.0.0.1 sweep broken: after failure,: OK
-127.0.0.1 sweep broken: OK
-127.0.0.1/overlay/broken/2 started
-127.0.0.1/overlay/broken/2/1 FAIL the row survives a redraw
-127.0.0.1/overlay/broken/2 FAIL
-127.0.0.1/overlay/broken/2 device state captured
-127.0.0.1 sweep broken: after failure,: OK
-127.0.0.1 sweep broken: OK
-127.0.0.1/overlay/broken/3 started
-127.0.0.1/overlay/broken/3/1 FAIL the row survives a redraw
-127.0.0.1/overlay/broken/3 FAIL
-127.0.0.1/overlay/broken/3 device state captured
-127.0.0.1 sweep broken: after the last attempt,: OK
-127.0.0.1 sweep raised: OK
-127.0.0.1/overlay/raised/1 started
-127.0.0.1/overlay/raised/1 FAIL
-127.0.0.1/overlay/raised/1 device state captured
-127.0.0.1 sweep raised: after failure,: OK
-127.0.0.1 sweep raised: OK
-127.0.0.1/overlay/raised/2 started
-127.0.0.1/overlay/raised/2 FAIL
-127.0.0.1/overlay/raised/2 device state captured
-127.0.0.1 sweep raised: after failure,: OK
-127.0.0.1 sweep raised: OK
-127.0.0.1/overlay/raised/3 started
-127.0.0.1/overlay/raised/3 FAIL
-127.0.0.1/overlay/raised/3 device state captured
-127.0.0.1 sweep raised: after the last attempt,: OK
-127.0.0.1 sweep flaky: OK
-127.0.0.1/overlay/flaky/1 started
-127.0.0.1/overlay/flaky/1/1 FAIL the device is well
-127.0.0.1/overlay/flaky/1 FAIL
-127.0.0.1/overlay/flaky/1 device state captured
-127.0.0.1 sweep flaky: after failure,: DEGRADED
-127.0.0.1 sweep flaky: after failure, after recovery,: OK
-127.0.0.1 sweep flaky: OK
-127.0.0.1/overlay/flaky/2 started
-127.0.0.1 was recovered 1 time(s) around flaky
-127.0.0.1/overlay/flaky/2 OK
-127.0.0.1 sweep noisy: OK
-127.0.0.1/overlay/noisy/1 started
-127.0.0.1 restarted, seen in its own log
-127.0.0.1/overlay/noisy/1/1 FAIL the drive answers
-127.0.0.1/overlay/noisy/1 FAIL
-127.0.0.1/overlay/noisy/1 device state captured
-127.0.0.1 sweep noisy: after failure,: OK
-127.0.0.1 sweep noisy: OK
-127.0.0.1/overlay/noisy/2 started
-127.0.0.1 restarted, seen in its own log
-127.0.0.1/overlay/noisy/2/1 FAIL the drive answers
-127.0.0.1/overlay/noisy/2 FAIL
-127.0.0.1/overlay/noisy/2 device state captured
-127.0.0.1 sweep noisy: after failure,: OK
-127.0.0.1 sweep noisy: OK
-127.0.0.1/overlay/noisy/3 started
-127.0.0.1 restarted, seen in its own log
-127.0.0.1/overlay/noisy/3/1 FAIL the drive answers
-127.0.0.1/overlay/noisy/3 FAIL
-127.0.0.1/overlay/noisy/3 device state captured
-127.0.0.1 sweep noisy: after the last attempt,: OK
-127.0.0.1 sweep browse: OK
-127.0.0.1/overlay/browse/1 started
-127.0.0.1/overlay/browse/1 POST /v1/machine:input
-127.0.0.1/overlay/browse/1 OK
-127.0.0.1 sweep menu-left-open: OK
-127.0.0.1/overlay/menu-left-open/1 started
-127.0.0.1/overlay/menu-left-open/1 OK
-127.0.0.1 sweep menu-closed-again: OK
-127.0.0.1/overlay/menu-closed-again/1 started
-127.0.0.1/overlay/menu-closed-again/1 OK
-127.0.0.1 sweep leaves-things-behind: OK
-127.0.0.1/overlay/leaves-things-behind/1 started
-127.0.0.1/overlay/leaves-things-behind/1 PUT /v1/drives/a:mount {"image": "/Usb0/game.d64"}
-127.0.0.1/overlay/leaves-things-behind/1 PUT /v1/configs/Network%20Settings/Log%20to%20Syslog%20Server {"value": "192.168.1.2:5514"}
-127.0.0.1/overlay/leaves-things-behind/1 OK
-127.0.0.1/overlay/missing-file/1 started
-127.0.0.1/overlay/missing-file/1 SKIP: missing /FIXTURE/suites/missing_file.py
-127.0.0.1 sweep cut-short: OK
-127.0.0.1/overlay/cut-short/1 started
-127.0.0.1/overlay/cut-short/1 OK
-127.0.0.1/perf/a-benchmark/1 started
-127.0.0.1/perf/a-benchmark/1 OK
-127.0.0.1 warning: device log: this device sends its log to port 5514 and this run collects on 0, so none of it will arrive; set 'Log to Syslog Server' to '192.168.1.2:0' and reboot the device (at the end of the run)
-127.0.0.1 PUT /v1/configs/Network%20Settings/Log%20to%20Syslog%20Server {"value": ""}
-127.0.0.1 restarted, seen in its own log
-127.0.0.1 restarted, seen in its own log
-127.0.0.1 restarted, seen in its own log
-127.0.0.1@localhost warning: device log: this device is not configured to send its log anywhere (at the start of the run)
-127.0.0.1@localhost sweep held: OK
-127.0.0.1@localhost/overlay/held/1 started
-127.0.0.1@localhost/overlay/held/1 OK
-127.0.0.1@localhost sweep broken: OK
-127.0.0.1@localhost/overlay/broken/1 started
-127.0.0.1@localhost/overlay/broken/1/1 FAIL the row survives a redraw
-127.0.0.1@localhost/overlay/broken/1 FAIL
-127.0.0.1@localhost/overlay/broken/1 device state captured
-127.0.0.1@localhost GET /v1/machine:menu_screen -> 404: `Menu screen unavailable.`  (this request is made 36 times in this run and is shown twice)
-127.0.0.1@localhost GET /v1/machine:menu_screen -> 404: `Menu screen unavailable.`  (this request is made 36 times in this run and is shown twice)
-127.0.0.1@localhost sweep broken: after failure,: OK
-127.0.0.1@localhost sweep broken: OK
-127.0.0.1@localhost/overlay/broken/2 started
-127.0.0.1@localhost/overlay/broken/2/1 FAIL the row survives a redraw
-127.0.0.1@localhost/overlay/broken/2 FAIL
-127.0.0.1@localhost/overlay/broken/2 device state captured
-127.0.0.1@localhost sweep broken: after failure,: OK
-127.0.0.1@localhost sweep broken: OK
-127.0.0.1@localhost/overlay/broken/3 started
-127.0.0.1@localhost/overlay/broken/3/1 FAIL the row survives a redraw
-127.0.0.1@localhost/overlay/broken/3 FAIL
-127.0.0.1@localhost/overlay/broken/3 device state captured
-127.0.0.1@localhost sweep broken: after the last attempt,: OK
-127.0.0.1@localhost sweep raised: OK
-127.0.0.1@localhost/overlay/raised/1 started
-127.0.0.1@localhost/overlay/raised/1 FAIL
-127.0.0.1@localhost/overlay/raised/1 device state captured
-127.0.0.1@localhost sweep raised: after failure,: OK
-127.0.0.1@localhost sweep raised: OK
-127.0.0.1@localhost/overlay/raised/2 started
-127.0.0.1@localhost/overlay/raised/2 FAIL
-127.0.0.1@localhost/overlay/raised/2 device state captured
-127.0.0.1@localhost sweep raised: after failure,: OK
-127.0.0.1@localhost sweep raised: OK
-127.0.0.1@localhost/overlay/raised/3 started
-127.0.0.1@localhost/overlay/raised/3 FAIL
-127.0.0.1@localhost/overlay/raised/3 device state captured
-127.0.0.1@localhost sweep raised: after the last attempt,: OK
-127.0.0.1@localhost sweep flaky: OK
-127.0.0.1@localhost/overlay/flaky/1 started
-127.0.0.1@localhost/overlay/flaky/1/1 FAIL the device is well
-127.0.0.1@localhost/overlay/flaky/1 FAIL
-127.0.0.1@localhost/overlay/flaky/1 device state captured
-127.0.0.1@localhost sweep flaky: after failure,: DEGRADED
-127.0.0.1@localhost sweep flaky: after failure, after recovery,: OK
-127.0.0.1@localhost sweep flaky: OK
-127.0.0.1@localhost/overlay/flaky/2 started
-127.0.0.1@localhost was recovered 1 time(s) around flaky
-127.0.0.1@localhost/overlay/flaky/2 OK
-127.0.0.1@localhost sweep noisy: OK
-127.0.0.1@localhost/overlay/noisy/1 started
-127.0.0.1@localhost/overlay/noisy/1/1 FAIL the drive answers
-127.0.0.1@localhost/overlay/noisy/1 FAIL
-127.0.0.1@localhost/overlay/noisy/1 device state captured
-127.0.0.1@localhost sweep noisy: after failure,: OK
-127.0.0.1@localhost sweep noisy: OK
-127.0.0.1@localhost/overlay/noisy/2 started
-127.0.0.1@localhost/overlay/noisy/2/1 FAIL the drive answers
-127.0.0.1@localhost/overlay/noisy/2 FAIL
-127.0.0.1@localhost/overlay/noisy/2 device state captured
-127.0.0.1@localhost sweep noisy: after failure,: OK
-127.0.0.1@localhost sweep noisy: OK
-127.0.0.1@localhost/overlay/noisy/3 started
-127.0.0.1@localhost/overlay/noisy/3/1 FAIL the drive answers
-127.0.0.1@localhost/overlay/noisy/3 FAIL
-127.0.0.1@localhost/overlay/noisy/3 device state captured
-127.0.0.1@localhost sweep noisy: after the last attempt,: OK
-127.0.0.1@localhost sweep browse: OK
-127.0.0.1@localhost/overlay/browse/1 started
-127.0.0.1@localhost/overlay/browse/1 PUT /v1/machine:menu_button
-127.0.0.1@localhost/overlay/browse/1 FAIL
-127.0.0.1@localhost/overlay/browse/1 device state captured
-127.0.0.1@localhost sweep browse: after failure,: OK
-127.0.0.1@localhost sweep browse: OK
-127.0.0.1@localhost/overlay/browse/2 started
-127.0.0.1@localhost/overlay/browse/2 PUT /v1/machine:menu_button
-127.0.0.1@localhost/overlay/browse/2 FAIL
-127.0.0.1@localhost/overlay/browse/2 device state captured
-127.0.0.1@localhost sweep browse: after failure,: OK
-127.0.0.1@localhost sweep browse: OK
-127.0.0.1@localhost/overlay/browse/3 started
-127.0.0.1@localhost/overlay/browse/3 PUT /v1/machine:menu_button
-127.0.0.1@localhost/overlay/browse/3 FAIL
-127.0.0.1@localhost/overlay/browse/3 device state captured
-127.0.0.1@localhost sweep browse: after the last attempt,: OK
-127.0.0.1@localhost GET /v1/configs/Drive%20A%20Settings/Drive -> 404: `{"errors": ["no such category"]}`  (this request is made 11 times in this run and is shown twice)
-127.0.0.1@localhost GET /v1/configs/Drive%20B%20Settings/Drive -> 404: `{"errors": ["no such category"]}`  (this request is made 11 times in this run and is shown twice)
-127.0.0.1@localhost GET /v1/configs/SoftIEC%20Drive%20Settings/IEC%20Drive -> 404: `{"errors": ["no such category"]}`  (this request is made 11 times in this run and is shown twice)
-127.0.0.1@localhost sweep menu-left-open: OK
-127.0.0.1@localhost/overlay/menu-left-open/1 started
-127.0.0.1@localhost/overlay/menu-left-open/1 OK
-127.0.0.1@localhost GET /v1/configs/Drive%20A%20Settings/Drive -> 404: `{"errors": ["no such category"]}`  (this request is made 11 times in this run and is shown twice)
-127.0.0.1@localhost GET /v1/configs/Drive%20B%20Settings/Drive -> 404: `{"errors": ["no such category"]}`  (this request is made 11 times in this run and is shown twice)
-127.0.0.1@localhost GET /v1/configs/SoftIEC%20Drive%20Settings/IEC%20Drive -> 404: `{"errors": ["no such category"]}`  (this request is made 11 times in this run and is shown twice)
-127.0.0.1@localhost sweep menu-closed-again: OK
-127.0.0.1@localhost/overlay/menu-closed-again/1 started
-127.0.0.1@localhost/overlay/menu-closed-again/1 OK
-127.0.0.1@localhost sweep leaves-things-behind: OK
-127.0.0.1@localhost/overlay/leaves-things-behind/1 started
-127.0.0.1@localhost/overlay/leaves-things-behind/1 PUT /v1/drives/a:mount {"image": "/Usb0/game.d64"}
-127.0.0.1@localhost/overlay/leaves-things-behind/1 PUT /v1/configs/Network%20Settings/Log%20to%20Syslog%20Server {"value": "192.168.1.2:5514"}
-127.0.0.1@localhost/overlay/leaves-things-behind/1 OK
-127.0.0.1@localhost/overlay/missing-file/1 started
-127.0.0.1@localhost/overlay/missing-file/1 SKIP: missing /FIXTURE/suites/missing_file.py
-127.0.0.1@localhost sweep cut-short: OK
-127.0.0.1@localhost/overlay/cut-short/1 started
-127.0.0.1@localhost/overlay/cut-short/1 incomplete
-4 device requests (GET)
-4 device requests (GET)
-4 device requests (GET)
-4 device requests (GET)
-4 device requests (GET)
-4 device requests (GET)
-4 device requests (GET)
-5 device requests (GET, POST, PUT)
-7 device requests (GET)
-the run warned: device log: localhost and 127.0.0.1 are both 127.0.0.1, so a datagram from it is attributed to 127.0.0.1 unless the port it arrived on says otherwise
-the run warned: device log: localhost resolves only to addresses another machine already claims and shares its syslog port, so its lines cannot be attributed and land in syslog-unknown-sender.txt
-the run warned: device log: 127.0.0.1 sent nothing when this run asked it for /v1/version, so its log is not reaching the collector on UDP 0
-the run warned: device log: localhost sent nothing when this run asked it for /v1/version, so its log is not reaching the collector on UDP 0
-the run warned: device log: 127.0.0.1@localhost sent no line at all during this run, so its log is empty; the collector received 498 line(s) in total on UDP 0, and this run expected its lines from no address. The setting this run read at both ends, and whether anything reached syslog-unknown-sender.txt, are the facts that tell one silence from another; nothing here says whether the device sent lines that never arrived
+00:00:00 +00:00  the run warned: device log: localhost and 127.0.0.1 are both 127.0.0.1, so a datagram from it is attributed to 127.0.0.1 unless the port it arrived on says otherwise
+00:00:00 +00:00  the run warned: device log: localhost resolves only to addresses another machine already claims and shares its syslog port, so its lines cannot be attributed and land in syslog-unknown-sender.txt
+00:00:00 +00:00  the run warned: device log: 127.0.0.1 sent nothing when this run asked it for /v1/version, so its log is not reaching the collector on UDP 0
+00:00:00 +00:00  the run warned: device log: localhost sent nothing when this run asked it for /v1/version, so its log is not reaching the collector on UDP 0
+00:00:00 +00:00  127.0.0.1 warning: device log: this device is not configured to send its log anywhere (at the start of the run)
+00:00:00 +00:00  127.0.0.1 GET /v1/configs/C64%20and%20Cartridge%20Settings/Fast%20Reset -> 404: `{"errors": ["no such category"]}`
+00:00:00 +00:00  127.0.0.1 GET /v1/configs/C64%20and%20Cartridge%20Settings/Cartridge%20Preference -> 404: `{"errors": ["no such category"]}`
+00:00:00 +00:00  127.0.0.1 GET /v1/machine:menu_screen -> 404: `Menu screen unavailable.`  (this request is made 38 times in this run and is shown twice)
+00:00:00 +00:00  127.0.0.1 sweep held: OK
+00:00:00 +00:00  127.0.0.1/overlay/held/1 started
+00:00:00 +00:00  127.0.0.1/overlay/held/1 OK
+00:00:00 +00:00  127.0.0.1 GET /v1/machine:menu_screen -> 404: `Menu screen unavailable.`  (this request is made 38 times in this run and is shown twice)
+00:00:00 +00:00  127.0.0.1 sweep broken: OK
+00:00:00 +00:00  127.0.0.1/overlay/broken/1 started
+00:00:00 +00:00  127.0.0.1/overlay/broken/1/1 FAIL the row survives a redraw
+00:00:00 +00:00  127.0.0.1/overlay/broken/1 FAIL
+00:00:00 +00:00  127.0.0.1/overlay/broken/1 device state captured
+00:00:00 +00:00  127.0.0.1 sweep broken: after failure,: OK
+00:00:00 +00:00  127.0.0.1 sweep broken: OK
+00:00:00 +00:00  127.0.0.1/overlay/broken/2 started
+00:00:00 +00:00  127.0.0.1/overlay/broken/2/1 FAIL the row survives a redraw
+00:00:00 +00:00  127.0.0.1/overlay/broken/2 FAIL
+00:00:00 +00:00  127.0.0.1/overlay/broken/2 device state captured
+00:00:00 +00:00  127.0.0.1 sweep broken: after failure,: OK
+00:00:00 +00:00  127.0.0.1 sweep broken: OK
+00:00:00 +00:00  127.0.0.1/overlay/broken/3 started
+00:00:00 +00:00  127.0.0.1/overlay/broken/3/1 FAIL the row survives a redraw
+00:00:00 +00:00  127.0.0.1/overlay/broken/3 FAIL
+00:00:00 +00:00  127.0.0.1/overlay/broken/3 device state captured
+00:00:00 +00:00  127.0.0.1 sweep broken: after the last attempt,: OK
+00:00:00 +00:00  127.0.0.1 sweep raised: OK
+00:00:00 +00:00  127.0.0.1/overlay/raised/1 started
+00:00:00 +00:00  127.0.0.1/overlay/raised/1 FAIL
+00:00:00 +00:00  127.0.0.1/overlay/raised/1 device state captured
+00:00:00 +00:00  127.0.0.1 sweep raised: after failure,: OK
+00:00:00 +00:00  127.0.0.1 sweep raised: OK
+00:00:00 +00:00  127.0.0.1/overlay/raised/2 started
+00:00:00 +00:00  127.0.0.1/overlay/raised/2 FAIL
+00:00:00 +00:00  127.0.0.1/overlay/raised/2 device state captured
+00:00:00 +00:00  127.0.0.1 sweep raised: after failure,: OK
+00:00:00 +00:00  127.0.0.1 sweep raised: OK
+00:00:00 +00:00  127.0.0.1/overlay/raised/3 started
+00:00:00 +00:00  127.0.0.1/overlay/raised/3 FAIL
+00:00:00 +00:00  127.0.0.1/overlay/raised/3 device state captured
+00:00:00 +00:00  127.0.0.1 sweep raised: after the last attempt,: OK
+00:00:00 +00:00  127.0.0.1 sweep flaky: OK
+00:00:00 +00:00  127.0.0.1/overlay/flaky/1 started
+00:00:00 +00:00  127.0.0.1/overlay/flaky/1/1 FAIL the device is well
+00:00:00 +00:00  127.0.0.1/overlay/flaky/1 FAIL
+00:00:00 +00:00  127.0.0.1/overlay/flaky/1 device state captured
+00:00:00 +00:00  127.0.0.1 sweep flaky: after failure,: DEGRADED
+00:00:00 +00:00  127.0.0.1 sweep flaky: after failure, after recovery,: OK
+00:00:00 +00:00  127.0.0.1 sweep flaky: OK
+00:00:00 +00:00  127.0.0.1/overlay/flaky/2 started
+00:00:00 +00:00  127.0.0.1 was recovered 1 time(s) around flaky
+00:00:00 +00:00  127.0.0.1/overlay/flaky/2 OK
+00:00:00 +00:00  127.0.0.1 sweep noisy: OK
+00:00:00 +00:00  127.0.0.1/overlay/noisy/1 started
+00:00:00 +00:00  127.0.0.1 restarted, seen in its own log
+00:00:00 +00:00  127.0.0.1/overlay/noisy/1/1 FAIL the drive answers
+00:00:00 +00:00  127.0.0.1/overlay/noisy/1 FAIL
+00:00:00 +00:00  127.0.0.1/overlay/noisy/1 device state captured
+00:00:00 +00:00  127.0.0.1 sweep noisy: after failure,: OK
+00:00:00 +00:00  127.0.0.1 sweep noisy: OK
+00:00:00 +00:00  127.0.0.1/overlay/noisy/2 started
+00:00:00 +00:00  127.0.0.1 restarted, seen in its own log
+00:00:00 +00:00  127.0.0.1/overlay/noisy/2/1 FAIL the drive answers
+00:00:00 +00:00  127.0.0.1/overlay/noisy/2 FAIL
+00:00:00 +00:00  127.0.0.1/overlay/noisy/2 device state captured
+00:00:00 +00:00  127.0.0.1 sweep noisy: after failure,: OK
+00:00:00 +00:00  127.0.0.1 sweep noisy: OK
+00:00:00 +00:00  127.0.0.1/overlay/noisy/3 started
+00:00:00 +00:00  127.0.0.1 restarted, seen in its own log
+00:00:00 +00:00  127.0.0.1/overlay/noisy/3/1 FAIL the drive answers
+00:00:00 +00:00  127.0.0.1/overlay/noisy/3 FAIL
+00:00:00 +00:00  127.0.0.1/overlay/noisy/3 device state captured
+00:00:00 +00:00  127.0.0.1 sweep noisy: after the last attempt,: OK
+00:00:00 +00:00  127.0.0.1 sweep browse: OK
+00:00:00 +00:00  127.0.0.1/overlay/browse/1 started
+00:00:00 +00:00  127.0.0.1/overlay/browse/1 POST /v1/machine:input
+00:00:00 +00:00  127.0.0.1/overlay/browse/1 OK
+00:00:00 +00:00  127.0.0.1 sweep menu-left-open: OK
+00:00:00 +00:00  127.0.0.1/overlay/menu-left-open/1 started
+00:00:00 +00:00  127.0.0.1/overlay/menu-left-open/1 OK
+00:00:00 +00:00  127.0.0.1 sweep menu-closed-again: OK
+00:00:00 +00:00  127.0.0.1/overlay/menu-closed-again/1 started
+00:00:00 +00:00  127.0.0.1/overlay/menu-closed-again/1 OK
+00:00:00 +00:00  127.0.0.1 sweep leaves-things-behind: OK
+00:00:00 +00:00  127.0.0.1/overlay/leaves-things-behind/1 started
+00:00:00 +00:00  127.0.0.1/overlay/leaves-things-behind/1 PUT /v1/drives/a:mount {"image": "/Usb0/game.d64"}
+00:00:00 +00:00  127.0.0.1/overlay/leaves-things-behind/1 PUT /v1/configs/Network%20Settings/Log%20to%20Syslog%20Server {"value": "192.168.1.2:5514"}
+00:00:00 +00:00  127.0.0.1/overlay/leaves-things-behind/1 OK
+00:00:00 +00:00  127.0.0.1/overlay/missing-file/1 started
+00:00:00 +00:00  127.0.0.1/overlay/missing-file/1 SKIP: missing /FIXTURE/suites/missing_file.py
+00:00:00 +00:00  127.0.0.1 sweep cut-short: OK
+00:00:00 +00:00  127.0.0.1/overlay/cut-short/1 started
+00:00:00 +00:00  127.0.0.1/overlay/cut-short/1 OK
+00:00:00 +00:00  5 device requests (GET, POST, PUT)
+00:00:00 +00:00  127.0.0.1/perf/a-benchmark/1 started
+00:00:00 +00:00  127.0.0.1/perf/a-benchmark/1 OK
+00:00:00 +00:00  127.0.0.1 warning: device log: this device sends its log to port 5514 and this run collects on 0, so none of it will arrive; set 'Log to Syslog Server' to '192.168.1.2:0' and reboot the device (at the end of the run)
+00:00:00 +00:00  127.0.0.1 PUT /v1/configs/Network%20Settings/Log%20to%20Syslog%20Server {"value": ""}
+00:00:00 +00:00  127.0.0.1@localhost warning: device log: this device is not configured to send its log anywhere (at the start of the run)
+00:00:00 +00:00  7 device requests (GET)
+00:00:00 +00:00  127.0.0.1@localhost sweep held: OK
+00:00:00 +00:00  127.0.0.1@localhost/overlay/held/1 started
+00:00:00 +00:00  127.0.0.1@localhost/overlay/held/1 OK
+00:00:00 +00:00  4 device requests (GET)
+00:00:00 +00:00  127.0.0.1@localhost sweep broken: OK
+00:00:00 +00:00  127.0.0.1@localhost/overlay/broken/1 started
+00:00:00 +00:00  127.0.0.1@localhost/overlay/broken/1/1 FAIL the row survives a redraw
+00:00:00 +00:00  127.0.0.1@localhost/overlay/broken/1 FAIL
+00:00:00 +00:00  127.0.0.1@localhost/overlay/broken/1 device state captured
+00:00:00 +00:00  127.0.0.1@localhost GET /v1/machine:menu_screen -> 404: `Menu screen unavailable.`  (this request is made 36 times in this run and is shown twice)
+00:00:00 +00:00  127.0.0.1@localhost GET /v1/machine:menu_screen -> 404: `Menu screen unavailable.`  (this request is made 36 times in this run and is shown twice)
+00:00:00 +00:00  127.0.0.1@localhost sweep broken: after failure,: OK
+00:00:00 +00:00  127.0.0.1@localhost sweep broken: OK
+00:00:00 +00:00  127.0.0.1@localhost/overlay/broken/2 started
+00:00:00 +00:00  127.0.0.1@localhost/overlay/broken/2/1 FAIL the row survives a redraw
+00:00:00 +00:00  127.0.0.1@localhost/overlay/broken/2 FAIL
+00:00:00 +00:00  127.0.0.1@localhost/overlay/broken/2 device state captured
+00:00:00 +00:00  127.0.0.1@localhost sweep broken: after failure,: OK
+00:00:00 +00:00  127.0.0.1@localhost sweep broken: OK
+00:00:00 +00:00  127.0.0.1@localhost/overlay/broken/3 started
+00:00:00 +00:00  127.0.0.1@localhost/overlay/broken/3/1 FAIL the row survives a redraw
+00:00:00 +00:00  127.0.0.1@localhost/overlay/broken/3 FAIL
+00:00:00 +00:00  127.0.0.1@localhost/overlay/broken/3 device state captured
+00:00:00 +00:00  127.0.0.1@localhost sweep broken: after the last attempt,: OK
+00:00:00 +00:00  4 device requests (GET)
+00:00:00 +00:00  127.0.0.1@localhost sweep raised: OK
+00:00:00 +00:00  127.0.0.1@localhost/overlay/raised/1 started
+00:00:00 +00:00  127.0.0.1@localhost/overlay/raised/1 FAIL
+00:00:00 +00:00  127.0.0.1@localhost/overlay/raised/1 device state captured
+00:00:00 +00:00  127.0.0.1@localhost sweep raised: after failure,: OK
+00:00:00 +00:00  127.0.0.1@localhost sweep raised: OK
+00:00:00 +00:00  127.0.0.1@localhost/overlay/raised/2 started
+00:00:00 +00:00  127.0.0.1@localhost/overlay/raised/2 FAIL
+00:00:00 +00:00  127.0.0.1@localhost/overlay/raised/2 device state captured
+00:00:00 +00:00  127.0.0.1@localhost sweep raised: after failure,: OK
+00:00:00 +00:00  127.0.0.1@localhost sweep raised: OK
+00:00:00 +00:00  127.0.0.1@localhost/overlay/raised/3 started
+00:00:00 +00:00  127.0.0.1@localhost/overlay/raised/3 FAIL
+00:00:00 +00:00  127.0.0.1@localhost/overlay/raised/3 device state captured
+00:00:00 +00:00  127.0.0.1@localhost sweep raised: after the last attempt,: OK
+00:00:00 +00:00  4 device requests (GET)
+00:00:00 +00:00  127.0.0.1@localhost sweep flaky: OK
+00:00:00 +00:00  127.0.0.1@localhost/overlay/flaky/1 started
+00:00:00 +00:00  127.0.0.1@localhost/overlay/flaky/1/1 FAIL the device is well
+00:00:00 +00:00  127.0.0.1@localhost/overlay/flaky/1 FAIL
+00:00:00 +00:00  127.0.0.1@localhost/overlay/flaky/1 device state captured
+00:00:00 +00:00  127.0.0.1@localhost sweep flaky: after failure,: DEGRADED
+00:00:00 +00:00  127.0.0.1@localhost sweep flaky: after failure, after recovery,: OK
+00:00:00 +00:00  127.0.0.1@localhost sweep flaky: OK
+00:00:00 +00:00  127.0.0.1@localhost/overlay/flaky/2 started
+00:00:00 +00:00  127.0.0.1@localhost was recovered 1 time(s) around flaky
+00:00:00 +00:00  127.0.0.1@localhost/overlay/flaky/2 OK
+00:00:00 +00:00  4 device requests (GET)
+00:00:00 +00:00  127.0.0.1@localhost sweep noisy: OK
+00:00:00 +00:00  127.0.0.1@localhost/overlay/noisy/1 started
+00:00:00 +00:00  127.0.0.1 restarted, seen in its own log
+00:00:00 +00:00  127.0.0.1@localhost/overlay/noisy/1/1 FAIL the drive answers
+00:00:00 +00:00  127.0.0.1@localhost/overlay/noisy/1 FAIL
+00:00:00 +00:00  127.0.0.1@localhost/overlay/noisy/1 device state captured
+00:00:00 +00:00  127.0.0.1@localhost sweep noisy: after failure,: OK
+00:00:00 +00:00  127.0.0.1@localhost sweep noisy: OK
+00:00:00 +00:00  127.0.0.1@localhost/overlay/noisy/2 started
+00:00:00 +00:00  127.0.0.1 restarted, seen in its own log
+00:00:00 +00:00  127.0.0.1@localhost/overlay/noisy/2/1 FAIL the drive answers
+00:00:00 +00:00  127.0.0.1@localhost/overlay/noisy/2 FAIL
+00:00:00 +00:00  127.0.0.1@localhost/overlay/noisy/2 device state captured
+00:00:00 +00:00  127.0.0.1@localhost sweep noisy: after failure,: OK
+00:00:00 +00:00  127.0.0.1@localhost sweep noisy: OK
+00:00:00 +00:00  127.0.0.1@localhost/overlay/noisy/3 started
+00:00:00 +00:00  127.0.0.1 restarted, seen in its own log
+00:00:00 +00:00  127.0.0.1@localhost/overlay/noisy/3/1 FAIL the drive answers
+00:00:00 +00:00  127.0.0.1@localhost/overlay/noisy/3 FAIL
+00:00:00 +00:00  127.0.0.1@localhost/overlay/noisy/3 device state captured
+00:00:00 +00:00  127.0.0.1@localhost sweep noisy: after the last attempt,: OK
+00:00:00 +00:00  4 device requests (GET)
+00:00:00 +00:00  127.0.0.1@localhost sweep browse: OK
+00:00:00 +00:00  127.0.0.1@localhost/overlay/browse/1 started
+00:00:00 +00:00  127.0.0.1@localhost/overlay/browse/1 PUT /v1/machine:menu_button
+00:00:00 +00:00  127.0.0.1@localhost/overlay/browse/1 FAIL
+00:00:00 +00:00  127.0.0.1@localhost/overlay/browse/1 device state captured
+00:00:00 +00:00  127.0.0.1@localhost sweep browse: after failure,: OK
+00:00:00 +00:00  127.0.0.1@localhost sweep browse: OK
+00:00:00 +00:00  127.0.0.1@localhost/overlay/browse/2 started
+00:00:00 +00:00  127.0.0.1@localhost/overlay/browse/2 PUT /v1/machine:menu_button
+00:00:00 +00:00  127.0.0.1@localhost/overlay/browse/2 FAIL
+00:00:00 +00:00  127.0.0.1@localhost/overlay/browse/2 device state captured
+00:00:00 +00:00  127.0.0.1@localhost sweep browse: after failure,: OK
+00:00:00 +00:00  127.0.0.1@localhost sweep browse: OK
+00:00:00 +00:00  127.0.0.1@localhost/overlay/browse/3 started
+00:00:00 +00:00  127.0.0.1@localhost/overlay/browse/3 PUT /v1/machine:menu_button
+00:00:00 +00:00  127.0.0.1@localhost/overlay/browse/3 FAIL
+00:00:00 +00:00  127.0.0.1@localhost/overlay/browse/3 device state captured
+00:00:00 +00:00  127.0.0.1@localhost sweep browse: after the last attempt,: OK
+00:00:00 +00:00  127.0.0.1@localhost GET /v1/configs/Drive%20A%20Settings/Drive -> 404: `{"errors": ["no such category"]}`  (this request is made 11 times in this run and is shown twice)
+00:00:00 +00:00  127.0.0.1@localhost GET /v1/configs/Drive%20B%20Settings/Drive -> 404: `{"errors": ["no such category"]}`  (this request is made 11 times in this run and is shown twice)
+00:00:00 +00:00  127.0.0.1@localhost GET /v1/configs/SoftIEC%20Drive%20Settings/IEC%20Drive -> 404: `{"errors": ["no such category"]}`  (this request is made 11 times in this run and is shown twice)
+00:00:00 +00:00  127.0.0.1@localhost sweep menu-left-open: OK
+00:00:00 +00:00  127.0.0.1@localhost/overlay/menu-left-open/1 started
+00:00:00 +00:00  127.0.0.1@localhost/overlay/menu-left-open/1 OK
+00:00:00 +00:00  127.0.0.1@localhost GET /v1/configs/Drive%20A%20Settings/Drive -> 404: `{"errors": ["no such category"]}`  (this request is made 11 times in this run and is shown twice)
+00:00:00 +00:00  127.0.0.1@localhost GET /v1/configs/Drive%20B%20Settings/Drive -> 404: `{"errors": ["no such category"]}`  (this request is made 11 times in this run and is shown twice)
+00:00:00 +00:00  127.0.0.1@localhost GET /v1/configs/SoftIEC%20Drive%20Settings/IEC%20Drive -> 404: `{"errors": ["no such category"]}`  (this request is made 11 times in this run and is shown twice)
+00:00:00 +00:00  127.0.0.1@localhost sweep menu-closed-again: OK
+00:00:00 +00:00  127.0.0.1@localhost/overlay/menu-closed-again/1 started
+00:00:00 +00:00  127.0.0.1@localhost/overlay/menu-closed-again/1 OK
+00:00:00 +00:00  4 device requests (GET)
+00:00:00 +00:00  127.0.0.1@localhost sweep leaves-things-behind: OK
+00:00:00 +00:00  127.0.0.1@localhost/overlay/leaves-things-behind/1 started
+00:00:00 +00:00  127.0.0.1@localhost/overlay/leaves-things-behind/1 PUT /v1/drives/a:mount {"image": "/Usb0/game.d64"}
+00:00:00 +00:00  127.0.0.1@localhost/overlay/leaves-things-behind/1 PUT /v1/configs/Network%20Settings/Log%20to%20Syslog%20Server {"value": "192.168.1.2:5514"}
+00:00:00 +00:00  127.0.0.1@localhost/overlay/leaves-things-behind/1 OK
+00:00:00 +00:00  127.0.0.1@localhost/overlay/missing-file/1 started
+00:00:00 +00:00  127.0.0.1@localhost/overlay/missing-file/1 SKIP: missing /FIXTURE/suites/missing_file.py
+00:00:00 +00:00  4 device requests (GET)
+00:00:00 +00:00  127.0.0.1@localhost sweep cut-short: OK
+00:00:00 +00:00  127.0.0.1@localhost/overlay/cut-short/1 started
+00:00:00 +00:00  127.0.0.1@localhost/overlay/cut-short/1 incomplete
+00:00:00 +00:00  the run warned: device log: 127.0.0.1@localhost sent no line at all during this run, so its log is empty; the collector received 498 line(s) in total on UDP 0, and this run expected its lines from no address. The setting this run read at both ends, and whether anything reached syslog-unknown-sender.txt, are the facts that tell one silence from another; nothing here says whether the device sent lines that never arrived
 
 ## Checks
 

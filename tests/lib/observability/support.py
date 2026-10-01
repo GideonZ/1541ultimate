@@ -1147,12 +1147,12 @@ def canonicalize_document(text: str) -> str:
     or either side of a rounded second boundary. None of that is what this
     tier proves; it proves the renderer's wording, structure and alignment,
     so both this document and the checked-in one are put through the same
-    substitutions before they are compared. The timeline keeps every event
-    but loses its clock and the interleaving between sources, which is the
-    part of it that races; `the_timeline_is_the_whole_run_in_order` proves the
-    clock order directly against a live document. The slow-check summary is
-    reduced to its length, because `the_time_section_names_the_slow_ones`
-    already proves its content the same way. Table padding is collapsed
+    substitutions before they are compared. The timeline keeps every event in
+    its order and loses only its clock; `the_timeline_is_the_whole_run_in_order`
+    proves the clock order directly against a live document. The slow-check
+    summary is reduced to its length, because
+    `the_time_section_names_the_slow_ones` already proves its content the
+    same way. Table padding is collapsed
     everywhere rather than reasoned about column by column, because a
     placeholder is rarely the same width as the real value it replaces;
     `every_table_is_padded` is what proves alignment, not this.
@@ -1172,8 +1172,9 @@ def canonicalize_document(text: str) -> str:
     # The collector binds an ephemeral port in a fixture, so the number it got
     # is whatever the kernel had free at that moment.
     text = re.sub(r"(?<=UDP )\d{4,5}\b", "0", text)
-    text = re.sub(r"(?<=collects on )\d{4,5}(?:, \d{4,5})*", "0", text)
-    text = re.sub(r"(?<=:)\d{4,5}(?=' and reboot)", "0", text)
+    text = re.sub(r"(collects on )\d{4,5}(?:, \d{4,5})*(, so none of it will "
+                  r"arrive; set '[^']+' to '[^']+:)\d{4,5}'", r"\g<1>0\g<2>0'",
+                  text)
     text = re.sub(r"`(\d{4,5})`", "`0`", text)
     text = re.sub(r"\d+\.\d+s\b", "0.000s", text)
     text = re.sub(r"(?<=[=\s])\d+ms\b", "0ms", text)
@@ -1212,43 +1213,19 @@ def canonicalize_document(text: str) -> str:
                       r"\1N\2", m.group(2)),
                   text)
     text = re.sub(r"(?ms)^## Timeline\n.*?(?=\n## Checks)",
-                  lambda m: _timeline_by_source(m.group(0)), text)
+                  lambda m: _TIMELINE_CLOCK_RE.sub(_TIMELINE_CLOCK, m.group(0)),
+                  text)
     text = re.sub(r"(?ms)^## Where the time went\n.*?(?=\n## Device log)",
                   lambda m: _section_length(m.group(0), "## Where the time went"),
                   text)
     return text
 
 
-_TIMELINE_CLOCK_RE = re.compile(r"^\d\d:\d\d:\d\d \+\d+:\d\d  ")
-
-
-def _timeline_by_source(section: str) -> str:
-    """The timeline's events without their clock, grouped by source.
-
-    The source is the event's first word up to its first `/`: a target, or a
-    run-level line such as "the run warned". Events of one source keep their
-    order, which is deterministic. The order between sources is not, because
-    the targets run concurrently and syslog arrives on its own schedule, so
-    the groups are sorted by name. One line per event is also what lets two
-    branches that each add events merge without a conflict, where a count
-    would have both edit the same line.
-
-    A section without a clock is already canonical and is returned unchanged,
-    which keeps canonicalize_document idempotent.
-    """
-    lines = section.rstrip("\n").split("\n")
-    first = next((i for i, line in enumerate(lines)
-                  if _TIMELINE_CLOCK_RE.match(line)), None)
-    if first is None:
-        return section if section.endswith("\n") else section + "\n"
-    groups: dict[str, list[str]] = {}
-    for line in lines[first:]:
-        if not line.strip():
-            continue
-        event = _TIMELINE_CLOCK_RE.sub("", line)
-        groups.setdefault(event.split(" ", 1)[0].split("/", 1)[0], []).append(event)
-    events = [event for source in sorted(groups) for event in groups[source]]
-    return "\n".join(lines[:first] + events) + "\n"
+# The wall clock and offset that open each timeline line, which e2e_report
+# writes as "-" when it has no start time to measure from. One event per line
+# is what lets two branches that each add events merge without a conflict.
+_TIMELINE_CLOCK_RE = re.compile(r"(?m)^\d\d:\d\d:\d\d (?:\+\d+:\d\d|-)  ")
+_TIMELINE_CLOCK = "00:00:00 +00:00  "
 
 
 _REDUCED_SECTION_RE = re.compile(

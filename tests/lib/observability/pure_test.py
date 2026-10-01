@@ -31,7 +31,7 @@ import time
 from support import (CASES, FOREIGN_VARIABLES, INHERITED_VARIABLES,
     KEPT_VARIABLES, REPORT_TOOL,
     ROOT, RUNNER_PATH, Skipped, UNTESTED_REQUIREMENTS, _harness_hash_edit,
-    case, composed_pair, exclusive, free_udp_port, glyph_columns,
+    canonicalize_document, case, composed_pair, exclusive, free_udp_port, glyph_columns,
     interaction_log, load_report_tool, load_runner, logged_interactions,
     occupied_span, packets_of, parse_srt, runner_variables,
     specified_requirements, synthetic_run, vic_frame, video_stream,
@@ -3535,3 +3535,27 @@ def the_job_summary_step_does_nothing_outside_ci() -> str:
         if previous is not None:
             os.environ["GITHUB_STEP_SUMMARY"] = previous
     return "silent and zero"
+
+
+@case(1)
+def the_canonical_timeline_keeps_its_events_and_order() -> str:
+    """Only the clock goes, and a second pass changes nothing.
+
+    The golden comparison canonicalizes the checked-in document again, so the
+    canonical form has to be a fixed point, including for an event whose own
+    text opens with something clock-like and for the "-" offset written when
+    there is no start time.
+    """
+    document = ("## Timeline\n\nEach line opens with the clock.\n\n"
+                "12:00:01 +00:00  b/overlay/x/1 started\n"
+                "12:00:02 +00:01  a GET /v1/version\n"
+                "01:00:00 -  12:00:00 +00:01  looks like a clock\n"
+                "\n## Checks\n")
+    once = canonicalize_document(document)
+    expect("the events in their order, without the clock",
+           once.split("\n")[4:7],
+           ["00:00:00 +00:00  b/overlay/x/1 started",
+            "00:00:00 +00:00  a GET /v1/version",
+            "00:00:00 +00:00  12:00:00 +00:01  looks like a clock"])
+    expect("a second pass", canonicalize_document(once), once)
+    return "3 events, idempotent"
