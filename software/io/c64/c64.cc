@@ -1382,7 +1382,10 @@ void C64::set_cartridge(cart_def *cart)
         }
         C64_REU_ENABLE = 0;
     }
-    if(def->prohibit & (CART_UCI | CART_UCI_DFFC | CART_UCI_DE1C)) {
+    // A cartridge that requires the UCI has it at the address selected above; its prohibition
+    // only rules out the other addresses (EasyFlash: required at $DE1C, prohibited at $DF1C).
+    if((def->prohibit & (CART_UCI | CART_UCI_DFFC | CART_UCI_DE1C)) &&
+       !(def->require & (CART_UCI | CART_UCI_DFFC | CART_UCI_DE1C))) {
         if (getFpgaCapabilities() & CAPAB_COMMAND_INTF) {
             if (CMD_IF_SLOT_ENABLE) {
                 def->disabled |= CART_UCI;

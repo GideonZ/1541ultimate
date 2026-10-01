@@ -520,8 +520,10 @@ SUITES: Sequence[Suite] = (
     # memory those banks lie above 1 MB, which read $FF unless the image repeats
     # up to the end of the cartridge memory (#899). The suite builds a 64-bank
     # type 32 CRT in code, selects every bank with $00, $40, $80 and $C0 in the
-    # upper bits, and reads each bank's marker back from screen RAM. It reboots
-    # the machine afterwards to remove the cartridge.
+    # upper bits, and reads each bank's marker back from screen RAM. The same
+    # CRT, subtype 0 like practically every EasyFlash image, sends IDENTIFY
+    # through the UCI at $DE1C, which its prohibition of the UCI at $DF1C used
+    # to switch off. It reboots the machine afterwards to remove the cartridge.
     Suite("e2e", "easyflash-cartridge", "tests/e2e/io/c64/easyflash_cartridge_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
     # A GMod2 game's save lives in the cartridge's serial EEPROM, and the
@@ -1897,6 +1899,25 @@ def health_entry(check: "health.Check") -> dict[str, object]:
     if check.figures:
         entry["figures"] = dict(check.figures)
     return entry
+
+
+def keep_iec_bus_to_target(target, options: Options, after: str) -> None:
+    """Switch the other machine's drives off again when a suite brought them back.
+
+    The run switches them off once, in RAM. A suite that powers the machine off,
+    such as wake-on-wifi, also restarts a fitted cartridge, which then answers on
+    the same IEC bus IDs from its stored settings until it is switched off again.
+    """
+    ensure = (api_lib.ensure_host_drives_off if target.split
+              else api_lib.ensure_cartridge_drives_off)
+    try:
+        silenced = ensure(target, options.password, float(options.timeout))
+    except DEVICE_ERRORS as exc:
+        report.warn(f"after {after}: the other machine's drives could not be checked: {exc}")
+        return
+    if silenced:
+        report.warn(f"after {after}: drives were back on the IEC bus and are off again "
+                    f"({silenced})")
 
 
 def reset_to_clean_slate(device: Device, phase: str) -> bool:
@@ -3738,6 +3759,18 @@ def main(argv: list[str]) -> int:
             else:
                 report.check_ok(restored or "already set")
 
+            # A cartridge fitted in this machine answers on the same IEC bus
+            # and bus IDs, so the machine's IEC suites would talk to both.
+            report.step_start("the cartridges fitted here are off the IEC bus")
+            try:
+                silenced = api_lib.ensure_cartridge_drives_off(
+                    target, options.password, float(options.timeout))
+            except DEVICE_ERRORS as exc:
+                report.check_fail(str(exc))
+                return EXIT_SUITE_FAILED
+            else:
+                report.check_ok(silenced or "none declared or already off")
+
         # Before any suite, because a cartridge whose computer has not handed
         # its bus over fails later in ways that name neither the setting nor
         # the computer. A no-op on a target that is its own computer.
@@ -3799,6 +3832,8 @@ def main(argv: list[str]) -> int:
                 for suite in suites:
                     result = run_suite(suite, device, options, mode or DEFAULT_MODE, mode or category)
                     results.append(result)
+                    if category == "e2e" and not result.device_unhealthy:
+                        keep_iec_bus_to_target(target, options, suite.name)
                     if result.device_unhealthy:
                         print()
                         report.detail("the device could not be made healthy; abandoning the "
