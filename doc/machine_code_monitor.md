@@ -765,197 +765,219 @@ Default slots are aimed at common C64 locations:
 
 ## Debug Mode
 
-Debug is a modal state layered on the Assembly view. It adds breakpoints, single stepping, and a CPU register footer.
+Debug mode runs your program on the C64's own 6510 under your control. You can execute it one instruction at a time, stop it at addresses you choose (breakpoints), and see the CPU registers after every stop. Debug works in the Assembly view, and the rest of the monitor stays available, so you can look at and change memory between steps.
 
-### Starting and ending a Debug session
+The 6510 has no built-in breakpoint support. To stop a program, the debugger writes a temporary `BRK` instruction at each address where execution should stop, lets the CPU run, and puts the original bytes back when it stops. You never see these `BRK` bytes in the monitor.
 
-Press `D` outside Debug. The monitor switches to Assembly view, shows `Dbg` in the header, and reserves the bottom two rows for the CPU footer. Poll mode is turned off, because `P` is the breakpoint key inside Debug and a parked machine changes only where a step changes it.
+Because of this, a breakpoint needs memory the debugger can write to. That is RAM on every device, and on the Ultimate 64 also BASIC, KERNAL and character ROM (see [Hardware support](#hardware-support)). The debugger also borrows part of the cassette buffer while a session is active (see [Memory the debugger uses](#memory-the-debugger-uses)).
 
-Entering Debug executes nothing and does not stop the C64. There is no captured CPU state yet, so the footer is blank and the first execution command starts at the Assembly cursor address, not at the address the C64 is currently executing. To attach to running code, use breakpoint+Go: set a breakpoint and press `G`.
+### Quick start
 
-To end the session:
+This example uses a short program at `$C000`:
 
-| Key                 | Effect                                                                                                     |
-| ------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `C=+D`              | Leave Debug, stay in the monitor                                                                           |
-| `RUN/STOP` or `ESC` | Leave Debug, stay in the monitor. With Edit also active, the first press leaves Edit and the second Debug   |
-| `C=+O`              | Leave Debug and close the monitor                                                                          |
-| `C=+R`              | Reset the machine. Debug is re-entered afterwards with no captured context                                 |
+```text
+C000  LDA #$2A
+C002  LDX #$05
+C004  LDY #$03
+C006  JSR $C020
+C009  NOP
+C00A  JMP $C000
+...
+C020  INX
+C021  RTS
+```
 
-Debug is available in UI Freeze, UI Overlay, and Telnet mode. Only one Debug session can be active at a time across all front ends. If another front end already owns the debugger, entering Debug shows `DEBUG IN USE`. An owner that has not been seen for 3 seconds is cleaned up and its ownership taken over.
+1. Open the monitor and press `D`. The monitor switches to the Assembly view and shows `Dbg` in the header.
+2. Press `J`, type `C000` and press `RETURN`. The cursor is now on the first instruction.
+3. Press `T`. The 6510 executes `LDA #$2A` and stops. The two rows above the footer now show the CPU registers, and the next instruction is marked `>LDX #$05<`.
+4. Press `T` twice more to execute `LDX` and `LDY`. The program now stops on the `JSR`.
+5. Press `T` to follow the `JSR` into the subroutine at `$C020`, or press `D` to run the whole subroutine and stop at `$C009` after it returns. After `T`, press `U` to run the rest of the subroutine and stop at the caller.
+6. To skip ahead, move the cursor to a later instruction and press `P` to set a breakpoint there, then press `G` to run until the program reaches it. `K` runs to the cursor without setting a breakpoint.
+7. Press `RUN/STOP` to leave Debug and stay in the monitor.
+
+### Starting and leaving Debug
+
+Press `D` to start Debug. Poll mode is switched off while Debug is active, because `P` sets breakpoints.
+
+Starting Debug does not stop or change the C64. Until the program stops for the first time, the debugger does not know the CPU registers, so the register rows are blank. The first `T`, `D`, `G` or `K` therefore starts executing at the Assembly cursor address, much like `SYS`. It does not continue from where the C64 happened to be running when you opened the monitor. Once the program has stopped, at a breakpoint or after a step, every command continues from that point.
+
+| Key                 | Effect                                                                                                  |
+| ------------------- | ------------------------------------------------------------------------------------------------------- |
+| `C=+D`              | Leave Debug and stay in the monitor.                                                                    |
+| `RUN/STOP` or `ESC` | Leave Debug and stay in the monitor. If Edit mode is also on, the first press leaves Edit and the second leaves Debug. |
+| `C=+O`              | Leave Debug and close the monitor.                                                                      |
+| `C=+R`              | Reset the C64. Debug stays on, with blank registers, as when you first press `D`.                       |
+
+When you leave Debug, the program continues from where it stopped. See [Leaving Debug](#leaving-debug).
+
+Debug is available in UI Freeze, UI Overlay and Telnet mode, but only one Debug session can run at a time. If another session already has the debugger, pressing `D` shows `DEBUG IN USE`. A session that has not responded for 3 seconds is taken over.
 
 ### Debug keys
 
-| Key           | Outside Debug                            | Inside Debug                   |
-| ------------- | ---------------------------------------- | ------------------------------ |
-| `D`           | Enter Debug, no execution                | Step Over                      |
-| `T`           | Transfer memory                          | Step Into                      |
-| `U`           | Undoc / Case toggle                      | Step Out                       |
-| `G`           | Go / execute                             | Continue                       |
-| `K`           | (unassigned)                             | Continue To Cursor             |
-| `R`           | Range mode                               | Range mode                     |
-| `P`           | Poll                                     | Toggle breakpoint at the cursor |
-| `C=+P`        | Breakpoint list, if any breakpoint exists | Breakpoint list                |
-| `C=+D`        | (unassigned)                             | Leave Debug                    |
-| `RUN/STOP`    | Close the monitor                        | Leave Edit first, then Debug   |
-| `C=+O`        | Close the monitor                        | Close the monitor              |
-| `C=+R`        | Reset / break the machine                | Reset / break the machine      |
-| `O`           | CPU bank cycle                           | CPU bank cycle                 |
-| `RETURN`      | Assembly follow / return                 | Assembly follow / return       |
+| Key        | Command            | What it does                                                                   |
+| ---------- | ------------------ | ------------------------------------------------------------------------------ |
+| `T`        | Step Into          | Execute one instruction. On a `JSR`, stop at the first instruction of the subroutine. |
+| `D`        | Step Over          | Execute one instruction. On a `JSR`, run the whole subroutine and stop at the instruction after the `JSR`. |
+| `U`        | Step Out           | Run until the current subroutine returns, and stop at the caller.              |
+| `G`        | Continue           | Run until the program reaches an enabled breakpoint.                           |
+| `K`        | Continue To Cursor | Run until the program reaches the Assembly cursor address.                     |
+| `P`        | Breakpoint         | Set or clear a breakpoint at the Assembly cursor address.                      |
+| `C=+P`     | Breakpoint list    | Open the list of all breakpoints.                                              |
+| `RETURN`   | Follow / Return    | Show the target of a `JSR`, `JMP` or branch, or go back. Nothing is executed.  |
+| `F3` / `?` | Help               | Show the Debug help screen.                                                    |
 
-Every key Debug does not own keeps working, so you can navigate, switch views, use bookmarks, and edit memory with Debug active. `B` still selects Binary view and `C=+B` still opens the bookmark list.
+Outside Debug, `T`, `U`, `G` and `P` are Transfer, the undocumented-opcode toggle, Go and Poll. All other keys keep their normal meaning in Debug, so you can switch views, use bookmarks and edit memory between steps.
 
-`RETURN` and `T`/`U` are different kinds of navigation. `RETURN` follows a `JSR`/`JMP` target, or returns from one, without executing anything. `T` and `U` move the real CPU.
+`RETURN` only moves the view. `T`, `D`, `U`, `G` and `K` move the real CPU.
 
-Inside Debug, `U` is Step Out instead of the Assembly-view undocumented-opcode toggle. `O` still cycles the monitor view bank, but it never changes which instruction stream the CPU executes.
+### Reading the screen
 
-### The Assembly view in Debug
+While the program is stopped, the next instruction to execute is marked with brackets, for example `>LDA $07<`. The marker stays on that instruction while you scroll elsewhere.
 
-While Debug holds a captured CPU context, the instruction that will run next is bracketed, for example `>LDA $07<`. The bracket is independent of the movable cursor, so you can scroll away and still see what runs next.
+- For a `JSR`, an absolute `JMP` and a branch that will be taken, the target address is shown in the accent color.
+- An `RTS` row shows the address it will return to, read from the stack, for example `RTS $E5D2`. With an empty stack it shows `RTS $????`.
+- Enabled breakpoints are shown in the accent color.
 
-- For `JSR`, absolute `JMP`, and a branch that will be taken, the target operand is drawn in the accent color.
-- For `RTS`, the row shows the return address read from the live stack, for example `RTS $E5D2`, also in the accent color. With an empty stack (SP `$FF`) it shows `RTS $????`.
-- The instruction bytes, the memory source tag, and the temporary step breakpoints follow the live CPU bank from `$0001`, not the inspection bank selected with `O`.
-- Enabled breakpoints are drawn in the accent color while Debug is active. Disabled breakpoints, and any breakpoint shown while Debug is off, use the regular foreground color.
+After each step, the view follows the program counter. If the program jumped elsewhere, the new instruction is shown three rows from the top.
 
-After each step the cursor follows the new program counter, the view bank is synced to the live CPU bank, and the view scrolls so the program counter stays visible. A step that jumps somewhere else leaves the program counter three rows from the top.
-
-### CPU footer
-
-The bottom two rows of the monitor hold a fixed-position CPU state table while Debug is active:
+The two rows above the footer show the CPU state:
 
 ```text
 PC   AC XR YR SP NV-BDIZC IRQ  NMI
-C003 01 00 FF F7 00100100 C123 EA31
+C006 2A 05 03 F3 00110100 EA31 FE47
 ```
 
-| Field              | Meaning                                                 |
-| ------------------ | ------------------------------------------------------- |
-| `PC`               | Program counter from the captured debug context         |
-| `AC` / `XR` / `YR` | Accumulator and index registers                         |
-| `SP`               | Stack pointer                                           |
-| `NV-BDIZC`         | Status register bits 7..0 as an 8-character binary string |
-| `IRQ`              | RAM IRQ vector at `$0314/$0315`, when valid             |
-| `NMI`              | RAM NMI vector at `$0318/$0319`, when valid             |
+| Field              | Meaning                                                                         |
+| ------------------ | ------------------------------------------------------------------------------- |
+| `PC`               | Program counter: the address of the next instruction                            |
+| `AC` / `XR` / `YR` | Accumulator, X register and Y register                                          |
+| `SP`               | Stack pointer. The stack is at `$0100` + `SP`                                   |
+| `NV-BDIZC`         | Status register, one digit per flag from bit 7 to bit 0                         |
+| `IRQ`              | IRQ vector in RAM at `$0314/$0315`                                              |
+| `NMI`              | NMI vector in RAM at `$0318/$0319`                                              |
 
-The program counter through the status register are highlighted in the same color as the `Dbg` and `Edit` header flags. In the header row, the name of each set status flag is highlighted too.
+In the example, `NV-BDIZC` is `00110100`. The `-` bit always reads as 1, `B` is 1 because the debugger stops the program with a `BRK`, and `I` is 1 because interrupts are disabled. All other flags are clear. The names of the set flags are also highlighted in the label row.
 
-Unknown values render as blank spaces in their reserved fixed-width columns. They never appear as zeros, `?`, or placeholder text, and field positions stay put when values become known.
+A value the debugger does not know yet is left blank. It is never shown as `00`.
 
-### Breakpoints
+### Stepping and running
 
-There are 10 breakpoint slots, numbered `0` to `9`.
+The CPU always executes from the memory that is banked in through `$01`, not from the bank you selected with `O` for viewing. After each stop, the view switches to the bank the CPU is using.
 
-- `P` toggles a breakpoint at the Assembly cursor address, in the memory source selected with `O`. With all 10 slots in use, `P` reports `NO FREE BRK SLOT`.
-- A breakpoint is an address plus a memory source, so `$E000 KRN` and `$E000 RAM` are distinct breakpoints and can coexist.
-- Rows with a breakpoint show `[BRKn]` immediately before the memory source tag, for example `[BRK0][BAS]`. A slot with a label shows the label instead, for example `[LOOP][BAS]`.
-- Only enabled breakpoints stop execution. `G`, `K`, Step Over, Step Into, and Step Out all honour them. A disabled slot is remembered but inert.
-- Breakpoints are held in volatile RAM. They survive a `C=+R` reset, leaving Debug, and closing and reopening the monitor. Powering the device off clears them.
-- At most 16 breakpoint patches can be armed at once. That covers the 10 user slots plus the temporary landing patches a step installs.
+`T` (Step Into) executes exactly one instruction.
 
-Two address ranges cannot hold a breakpoint:
+`D` (Step Over) treats a `JSR` as one step: the subroutine runs at full speed and the program stops at the instruction after the `JSR`. This also works for calls into KERNAL or BASIC. For any other instruction, `D` does the same as `T`.
 
-| Range           | Used for                                                            |
-| --------------- | ------------------------------------------------------------------- |
-| `$0314`-`$0319` | RAM IRQ, BRK, and NMI vectors, redirected to the debugger            |
-| `$035D`-`$03FB` | Debug handler, trampolines, and register store in the cassette buffer |
+`U` (Step Out) runs until the current subroutine returns. It works after `T` and also when the program stopped inside a subroutine because of a breakpoint or `K`, and it works at any nesting depth. To find the caller, the debugger uses the `JSR` instructions it stepped into, or the return address on the stack. If neither shows that the CPU is inside a subroutine, for example because the code was reached with `JMP`, Step Out shows `NOT IN SUBROUTINE`. In that case, set a breakpoint at the return address and use `G` instead. The return address is shown on the `RTS` row.
 
-A breakpoint or a step landing in either range is refused with `PATCH FAILED`. `$03FC`-`$03FF` is left alone. `$0340` upwards is the scratch area for single instructions executed from RAM, so do not keep data you care about there while debugging.
+`G` (Continue) runs the program until it reaches an enabled breakpoint. If the program is stopped on a breakpoint, `G` first executes that instruction, so the same breakpoint does not stop it again straight away. If no breakpoint is enabled, `G` lets the program run at full speed and ends Debug. On the C64 screen the monitor closes; a Telnet session stays open.
 
-A breakpoint can be valid but invisible to the CPU. Setting one where the live banking does not map that source shows `BRK <target>, CPU <current>; not mapped now`. The breakpoint is in `<target>`, and the running program has to bank `<target>` in before it can be hit. `<current>` reflects the machine's last known banking, taken at a reset or at the latest Debug stop, so a free-running program that changes `$01` afterwards is only picked up at its next stop.
+`K` (Continue To Cursor) runs until the program reaches the Assembly cursor address. An enabled breakpoint on the way stops it earlier.
 
-On the Ultimate 64, breakpoints in BASIC, KERNAL, and character ROM are patched into the volatile U64 ROM image, so ROM code is step-capable without copying ROMs into C64 RAM or writing flash. The patched bytes are restored when the breakpoint is removed and when the session ends. RAM-under-KERNAL breakpoints work when KERNAL is banked out. On an Ultimate II+ cartridge, C64 ROM is read-only. An armed breakpoint in visible ROM blocks the session, reported as `BRK $xxxx IN ROM BLOCKS DEBUG`, or as `A BRK IN ROM BLOCKS DEBUG` where the address is not known. A step whose own landing site falls in ROM is refused with `DEBUG NOT SUPPORTED`.
+A step gives the same result as running the program normally: the same registers, flags, stack pointer and memory. For example, a `JSR` lowers `SP` by 2 and the matching `RTS` raises it by 2, so a Step Over of a `JSR` leaves `SP` where it was.
 
-`C=+P` opens the breakpoint list. The popup help row uses the abbreviations in parentheses to fit the line:
-
-| Key                  | Action                                              |
-| -------------------- | --------------------------------------------------- |
-| `Up` / `Down`        | Select slot                                         |
-| `Return`             | Jump to the selected slot                           |
-| `0`-`9`              | Jump directly to a slot (`Jmp`)                     |
-| `S`                  | Store the current address into the selected slot (`Set`) |
-| `L`                  | Change the label, up to 4 chars (`Lbl`)             |
-| `E`                  | Toggle slot enable / disable (`Enbl`)               |
-| `DEL`                | Clear the selected slot (`Res`)                     |
-| `RUN/STOP` or `C=+P` | Close the popup                                     |
-
-A digit and `Return` do the same thing: both move the view to the slot's address and restore the CPU view bank the breakpoint was set in. Neither disturbs the captured CPU state, so a Continue afterwards resumes the stop the debugger is holding rather than restarting at the address you were looking at.
-
-### What each Debug command does
-
-| Command       | Key | Behavior                                                                                                                                                                                                                       |
-| ------------- | --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Step Over     | `D` | Executes the instruction at the program counter. For a `JSR` it plants a breakpoint at the return site and lets the whole subroutine run, so a call into ROM or RAM under ROM completes without any manual breakpoint. Any other instruction is a single step, exactly like Step Into. |
-| Step Into     | `T` | Executes exactly one instruction. A `JSR` lands on the first instruction of the callee.                                                                                                                                        |
-| Step Out      | `U` | Runs to the caller of the current subroutine and stops there.                                                                                                                                                                  |
-| Continue      | `G` | Resumes the program. With at least one enabled breakpoint it stops at the first one hit and Debug stays open. With no enabled breakpoint the CPU is handed back to full-speed execution; the local UI closes the monitor as it does so, while a Telnet session stays open on the running machine. |
-| Continue To Cursor | `K` | Plants a temporary breakpoint at the Assembly cursor address and runs until it is reached. Enabled breakpoints on the way still stop the run.                                                                                   |
-
-All five follow the live CPU bank from `$0001`.
-
-`G` pressed while stopped on a breakpoint steps past that breakpoint first, so the same one does not fire again immediately. Other enabled breakpoints still apply.
-
-A run that does not reach a breakpoint gives up after 5 seconds and reports `DEBUG TIMEOUT`. The budget is 900 ms when a ROM-image patch is armed. While a run is in progress, `RUN/STOP`, `ESC`, `C=+D`, or `C=+O` abandons it with `DEBUG CANCELLED`, and `C=+R` resets the machine.
-
-Step Out returns to the caller of the frame the CPU is really in, so it works both after a Step Into and after arriving inside a subroutine with `G` or `K`. Two sources describe that frame: the frames Step Into recorded, and the return address on the live `$0100` stack. The live stack is only trusted when a `JSR` really sits three bytes before what its top two bytes point at. When neither source yields an active frame, Step Out reports `NOT IN SUBROUTINE`. The disassembler still shows the live `RTS` target for that row, so you can set a breakpoint there and use `G` instead.
-
-Step Out is not limited to shallow nesting. It tracks the full hardware call depth up to the 128-frame limit of the `$0100` stack.
-
-The live stack pointer stays coherent with an undebugged run. A `JSR` moves SP down by exactly 2 and the matching `RTS` up by 2, and a Step Over of a `JSR` returns with SP net unchanged.
+If the program does not reach a breakpoint within 5 seconds, the debugger stops waiting and shows `DEBUG TIMEOUT`. The program keeps running. The limit is 900 ms while any breakpoint is in `$A000`-`$BFFF` or `$E000`-`$FFFF`. While the debugger is waiting, `RUN/STOP`, `ESC`, `C=+D` or `C=+O` stops waiting and shows `DEBUG CANCELLED`, and `C=+R` resets the C64.
 
 ### Where you can step
 
-Every step lands on the architecturally correct next instruction, with the registers, flags, stack pointer, and memory side effects an undebugged run would have produced. What is available depends on where the program counter is, and on whether the debugger already holds a captured CPU context.
+Plain RAM and I/O space can be stepped at any time. Code in ROM, or in the RAM underneath a ROM, can only be stepped once the debugger knows the CPU registers, which means once the program has stopped at least once:
 
-| Program counter is in | Without a captured context                                                             | With a captured context |
-| --------------------- | -------------------------------------------------------------------------------------- | ----------------------- |
-| Plain RAM             | All commands                                                                             | All commands            |
-| I/O space             | All commands. A byte in I/O space stepped as code behaves like RAM                       | All commands            |
-| RAM under a ROM window | Step Into stops with `Step Into: run to a breakpoint 1st`. Step Over is available        | All commands            |
-| Visible BASIC / KERNAL / character ROM | Step Into, and Step Over of anything that is not a `JSR`, stop with `run to a breakpoint 1st` | All commands |
+| Program counter is in                  | Before the first stop                                    | After the first stop |
+| -------------------------------------- | -------------------------------------------------------- | -------------------- |
+| RAM or I/O space                       | All commands                                             | All commands         |
+| RAM under BASIC, KERNAL or I/O         | All commands except Step Into                            | All commands         |
+| BASIC, KERNAL or character ROM         | All commands except Step Into, and Step Over of anything but a `JSR` | All commands |
 
-To obtain a context, set a breakpoint and press `G`, or Step Over a `JSR`. From then on every command works in every region.
+A command that is not available yet shows `Step Into: run to a breakpoint 1st` or `Step Over: run to a breakpoint 1st`. To get the first stop, set a breakpoint and press `G`, or Step Over a `JSR`.
 
-Two side effects are worth knowing when a step is completed while the CPU is parked, which is what happens for RAM under ROM and visible ROM:
+When the debugger steps ROM code, or code in RAM under ROM, it completes the instruction itself while the CPU waits. This differs from a real run only when the instruction accesses I/O:
 
-- A data access to I/O is performed as one clean read or write. The NMOS bus quirks (the double write of a read-modify-write instruction, the dummy read on an indexed page cross) are not replayed.
-- Code that flips `$01` still changes banking exactly as an undebugged run would, because such an instruction runs on the real 6510.
+- An I/O access happens once. A read-modify-write instruction such as `INC $D019` writes the I/O register once instead of twice, and an indexed read that crosses a page does not make the extra dummy read.
+- An instruction that writes `$01` still changes the banking, because it runs on the real 6510.
 
-In UI Freeze mode a Step Over of a `JSR` into visible ROM, and a Step Out out of visible ROM, are completed instruction by instruction while the CPU stays parked rather than free-running the frozen machine. The walk stops early, reporting the context it actually reached, if it hits an enabled breakpoint, an instruction it cannot step (`BRK` or an undocumented opcode), or its budget of 8192 instructions. Press Step Over, Step Out, or `G` again to continue.
+In UI Freeze mode, a Step Over of a `JSR` into ROM and a Step Out from ROM are completed one instruction at a time while the machine stays frozen. This stops early at an enabled breakpoint, at an instruction the debugger cannot step (`BRK` or an undocumented opcode), or after 8192 instructions. Press the same key, or `G`, to continue.
 
-On an Ultimate II+ cartridge, `BRK` breakpoints and steps only work where the code is in writable RAM. Stepping visible ROM code is not available. See [Hardware support](#hardware-support).
+On an Ultimate II+ or II+L cartridge, the debugger can only stop and step code in RAM. See [Hardware support](#hardware-support).
+
+### Breakpoints
+
+There are 10 breakpoints, numbered `0` to `9`.
+
+- `P` sets a breakpoint at the Assembly cursor address, or clears the one that is there. If all 10 are in use, `P` shows `NO FREE BRK SLOT`.
+- An Assembly row with a breakpoint shows `[BRKn]` before its memory tag, for example `[BRK0][BAS]`. If you have given the breakpoint a label, the label is shown instead, for example `[LOOP][BAS]`.
+- Only enabled breakpoints stop the program. A disabled breakpoint keeps its address but has no effect. All execution commands obey enabled breakpoints.
+- Breakpoints stay set when you reset the C64 with `C=+R`, leave Debug or close the monitor. They are cleared when the device is switched off.
+
+#### Breakpoints under ROM and I/O
+
+At `$A000`-`$BFFF`, `$D000`-`$DFFF` and `$E000`-`$FFFF`, RAM and ROM or I/O share the same addresses. A breakpoint there belongs to the memory selected with `O` when you set it, as shown by the memory tag. `$E000` in KERNAL and `$E000` in RAM are two separate breakpoints, and both can be set at once. A breakpoint only stops the program when the program has that memory banked in. If it does not have it banked in when you set the breakpoint, the monitor shows `BRK <memory>, CPU <banking>; not mapped now`. The breakpoint is still set, and it stops the program once the program banks that memory in. `<banking>` is the banking the monitor last saw, at a reset or at the last stop.
+
+#### Breakpoints in ROM
+
+Breakpoints in ROM work on the Ultimate 64. The debugger patches its working copy of the ROM in the device's memory, never the flash, and puts the original bytes back when the breakpoint is removed or the session ends. On an Ultimate II+ or II+L cartridge the C64's ROM cannot be changed. If an enabled breakpoint is in ROM that is banked in, the debugger refuses to run and shows `BRK $xxxx IN ROM BLOCKS DEBUG`. Clear the breakpoint, or set it in RAM instead.
+
+#### Breakpoint list
+
+`C=+P` opens the breakpoint list. The help row at the bottom uses the short names shown in brackets.
+
+| Key                  | Action                                                     |
+| -------------------- | ---------------------------------------------------------- |
+| `Up` / `Down`        | Select a breakpoint                                        |
+| `RETURN`             | Show the selected breakpoint's address (`Jmp`)             |
+| `0`-`9`              | Show that breakpoint's address (`Jmp`)                     |
+| `S`                  | Set the selected breakpoint to the cursor address (`Set`)  |
+| `L`                  | Give the breakpoint a label of up to 4 characters (`Lbl`)  |
+| `E`                  | Enable or disable the breakpoint (`Enbl`)                  |
+| `DEL`                | Clear the breakpoint (`Res`)                               |
+| `RUN/STOP` or `C=+P` | Close the list                                             |
+
+Jumping to a breakpoint only moves the view, and selects the memory bank the breakpoint was set in. The program stays stopped where it was, so `G` afterwards continues from there and not from the breakpoint address.
+
+### Memory the debugger uses
+
+While Debug is active, the debugger needs some low memory:
+
+| Range           | Used for                                                                         |
+| --------------- | -------------------------------------------------------------------------------- |
+| `$0314`-`$0319` | IRQ, BRK and NMI vectors. The debugger points them at its own code.              |
+| `$0340`-`$035C` | Work area for executing single instructions.                                     |
+| `$035D`-`$03FB` | The debugger's own code and the saved CPU registers.                             |
+
+These ranges are in the cassette buffer and the vector table. The debugger puts back the vectors and its code area when the session ends. Do not keep data you need in `$0340`-`$03FB` while you debug. A breakpoint, or a step that would stop, in `$0314`-`$0319` or `$035D`-`$03FB` is refused with `PATCH FAILED`. `$03FC`-`$03FF` is not used.
+
+At most 16 addresses can be patched with `BRK` at once: your 10 breakpoints plus the temporary ones a step needs. If all 16 are in use, the step fails with `PATCH FAILED`.
 
 ### Debug messages
 
-Messages fit within 38 characters. The two that offer guidance appear on the bottom status row; the rest are popups.
+The two messages that start with `Step` appear on the bottom row. All others appear in a popup.
 
-| Message                             | Meaning and what to do                                                                                                      |
-| ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `Step Into: run to a breakpoint 1st` | The program counter is in RAM under ROM or visible ROM and no CPU context is captured. Set a breakpoint and press `G`, or Step Over a `JSR`. |
-| `Step Over: run to a breakpoint 1st` | Same situation in visible ROM, for an instruction that is not a `JSR`.                                                      |
-| `UNSUPPORTED OPCODE`                | The instruction to step is an undocumented opcode. Set a breakpoint past it and use `G`.                                     |
-| `UNSAFE TARGET`                     | The instruction at the program counter is a `BRK`. Move the program counter past it, or set a breakpoint past it and use `G`. |
-| `PATCH FAILED`                      | A breakpoint or step landing site falls in `$0314`-`$0319` or `$035D`-`$03FB`, or all 16 patch slots are in use.             |
-| `NOT IN SUBROUTINE`                 | Step Out found no active call frame. Set a breakpoint at the `RTS` target shown on the row and use `G`.                      |
-| `RETURN NOT REACHED`                | The Step Out run did not stop at the caller. Set a breakpoint at the return address and use `G` instead.                     |
-| `DEBUG TIMEOUT`                     | No breakpoint was reached within the run budget. The program was released and the debugger stopped waiting for it.           |
-| `DEBUG CANCELLED`                   | A run was abandoned from the keyboard.                                                                                       |
-| `DEBUG NOT SUPPORTED`               | The hardware cannot do this, for example a step whose landing site is in visible ROM on an Ultimate II+ cartridge.            |
-| `BRK $xxxx IN ROM BLOCKS DEBUG`     | An armed breakpoint sits in visible ROM, which the cartridge cannot patch. Clear it, or move it into RAM. `A BRK IN ROM BLOCKS DEBUG` is the same message where the address is not known. |
-| `DEBUG IN USE`                      | Another front end owns the debugger. Close its session, or wait 3 seconds if it is unresponsive.                             |
-| `NO FREE BRK SLOT`                  | All 10 breakpoint slots are used. Clear one with `P` or from the `C=+P` list.                                                |
-| `BRK <target>, CPU <current>; not mapped now` | The breakpoint is set in a memory source the live banking does not map. It only fires once the program banks `<target>` in. |
+| Message                                      | Meaning and what to do                                                                                     |
+| -------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `Step Into: run to a breakpoint 1st`         | The program is in ROM or in RAM under ROM and has not stopped yet. Set a breakpoint and press `G`, or Step Over a `JSR`. |
+| `Step Over: run to a breakpoint 1st`         | The same, for an instruction in ROM that is not a `JSR`.                                                   |
+| `UNSUPPORTED OPCODE`                         | The next instruction is an undocumented opcode, which cannot be stepped. Set a breakpoint after it and press `G`. |
+| `UNSAFE TARGET`                              | The next instruction is a `BRK`. Set a breakpoint after it and press `G`.                                  |
+| `NOT IN SUBROUTINE`                          | Step Out could not find a caller. Set a breakpoint at the return address shown on the `RTS` row and press `G`. |
+| `RETURN NOT REACHED`                         | Step Out did not stop at the caller. Set a breakpoint at the return address and press `G`.                 |
+| `PATCH FAILED`                               | The address is in `$0314`-`$0319` or `$035D`-`$03FB`, or all 16 patch places are in use.                   |
+| `NO FREE BRK SLOT`                           | All 10 breakpoints are in use. Clear one with `P` or in the `C=+P` list.                                   |
+| `BRK <memory>, CPU <banking>; not mapped now` | The breakpoint is set in memory the program does not have banked in. It stops the program once that memory is banked in. |
+| `DEBUG TIMEOUT`                              | The program did not reach a breakpoint in time. It keeps running.                                          |
+| `DEBUG CANCELLED`                            | You stopped waiting for the program with a key.                                                            |
+| `DEBUG NOT SUPPORTED`                        | This device cannot do it, for example stepping ROM code on an Ultimate II+ cartridge.                      |
+| `BRK $xxxx IN ROM BLOCKS DEBUG`              | An enabled breakpoint is in ROM, which a cartridge cannot change. Clear it or set it in RAM. `A BRK IN ROM BLOCKS DEBUG` means the same when the address is not known. |
+| `DEBUG IN USE`                               | Another session has the debugger. Close it there, or wait 3 seconds if it no longer responds.               |
 
-### Leaving Debug and interrupt state
+### Leaving Debug
 
-Leaving Debug always hands the CPU back to a live runtime. The debugger restores everything it patched: `BRK` opcodes in RAM and in the volatile U64 ROM image, the BRK, IRQ, and NMI vectors, the `$00`/`$01` banking registers, and the cassette-buffer region used by the handler and trampolines. Outside `$035D`-`$03FB` and the `$0340` scratch area, a session leaves C64 RAM as it found it.
+When you leave Debug, the program continues from where it stopped. The debugger first removes every `BRK` it wrote and restores the vectors, `$00`/`$01` and its code area.
 
-Interrupt state on resume follows the banking of the resumed program:
+Whether interrupts are enabled when the program continues depends on its banking:
 
-- A program running with KERNAL mapped resumes with interrupts enabled, so the jiffy clock, cursor, and keyboard stay alive.
-- A program running with KERNAL banked out (`$01` HIRAM clear) resumes with interrupts left masked, because there is no KERNAL IRQ handler at `$FFFE` and forcing interrupts on would wedge it. Liveness for such a program shows as program progress, not as a running jiffy clock.
+- With KERNAL banked in, interrupts are enabled, so the cursor, keyboard and jiffy clock keep working.
+- With KERNAL banked out (bit 1 of `$01` clear), interrupts stay disabled, because the KERNAL interrupt handler is not there to serve them.
 
-There is one boundary worth knowing. A program that runs with KERNAL mapped and intentionally keeps interrupts disabled, for example a raster effect that has executed `SEI` and has not yet reached its `CLI`, resumes with interrupts enabled if you leave the debugger inside that window. The machine stays live and never needs a power cycle. To preserve a disabled-interrupt state across a resume, set a breakpoint past the critical section and use `G` rather than leaving the debugger inside it.
+If you leave Debug while a program that runs with KERNAL banked in has interrupts disabled on purpose, for example between `SEI` and `CLI` in a raster routine, it continues with interrupts enabled. To keep interrupts disabled, set a breakpoint after the `CLI` and press `G` instead of leaving Debug at that point.
 
 ### Help screen
 
@@ -983,17 +1005,18 @@ F1/SH+SPC Page Up  F7/SPACE Page Down
 
 ### Hardware support
 
-The monitor is built into the Ultimate II+, the Ultimate II+L, the Ultimate 64 and the Ultimate 64 II. The original Ultimate II does not carry it.
+The monitor is built into the Ultimate II+, the Ultimate II+L, the Ultimate 64 and the Ultimate 64 II. The original Ultimate II does not have it.
 
-| Capability                                        | U64 (Elite)                       | U2+ / U2+L cartridge                                  |
-| ------------------------------------------------- | --------------------------------- | ------------------------------------------------------ |
-| Memory view, edit, fill, compare                  | Yes                               | Yes                                                    |
-| `G` jump to address                               | Yes                               | Yes                                                    |
-| BRK-based step / over / into / out                | Yes                               | Yes, in writable RAM                                   |
-| Breakpoints in C64 RAM                            | Yes                               | Yes                                                    |
-| Breakpoints in BASIC / KERNAL / CHAR ROM          | Yes, volatile U64 ROM-image patch | Not available, C64 ROM is read-only from the cartridge  |
-| Per-row memory source tag (`[KRN]`, `[RAM]`, ...) | Yes                               | Yes, once the live CPU port is known; `[CPU]` until then |
-| Monitor-side CPU bank selection (`O`)             | Yes                               | Not available; the footer reports the live CPU port instead |
-| Monitor-side VIC bank selection (`SH+O`)          | Yes                               | Yes                                                    |
-| Freeze toggle (`Z`)                               | Yes                               | Not available                                          |
-| REST `/v1/machine` memory API                     | Yes                               | Yes                                                    |
+| Capability                                        | U64 (Elite)                    | U2+ / U2+L cartridge                                         |
+| ------------------------------------------------- | ------------------------------ | ------------------------------------------------------------ |
+| Memory view, edit, fill, compare                  | Yes                            | Yes                                                          |
+| `G` jump to address                               | Yes                            | Yes                                                          |
+| Stepping and breakpoints in C64 RAM               | Yes                            | Yes                                                          |
+| Stepping and breakpoints in BASIC / KERNAL / character ROM | Yes                   | No, the cartridge cannot change the C64's ROM                |
+| Memory tag per row (`[KRN]`, `[RAM]`, ...)        | Yes                            | Yes, once the monitor has read `$01`; `[CPU]` until then      |
+| CPU bank selection with `O`                       | Yes                            | No; the footer shows the CPU's banking instead               |
+| VIC bank selection with `SH+O`                    | Yes                            | Yes                                                          |
+| Freeze toggle (`Z`)                               | Yes                            | No                                                           |
+| REST `/v1/machine` memory API                     | Yes                            | Yes                                                          |
+
+On a cartridge, the debugger starts each run through the cartridge's NMI line. In a C64 Ultimate, set `C64 and Cartridge Settings` > `Cartridge Preference` to `External` and restart the C64 Ultimate; otherwise it does not pass the cartridge's NMI to the 6510, and steps do not start.
