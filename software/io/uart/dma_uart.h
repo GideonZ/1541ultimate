@@ -61,6 +61,9 @@ class DmaUART
 public:
     static uint8_t DmaUartInterrupt(void *context);
     bool txDebug;
+    // Counts the resets of the buffer pool. A buffer handed out before the
+    // last one has been put back in the pool by it, and is not to be freed.
+    volatile uint32_t generation;
 
     DmaUART(void *registers, int irq, void *sem, command_buf_context_t *pkts)
     {
@@ -70,6 +73,7 @@ public:
         rxSemaphore = sem;
         slipMode = false;
         txDebug = false;
+        generation = 0;
         current_tx_buf = NULL;
         uint16_t rate = (((uint16_t)uart->rate_h) << 8) | uart->rate_l;
         uart->flowctrl = DMAUART_RESET;
