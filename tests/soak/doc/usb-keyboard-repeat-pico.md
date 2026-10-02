@@ -2,8 +2,13 @@
 
 This fixture is the real-hardware regression test for issue #797 and PR #796.
 It uses a Raspberry Pi Pico 2 W as one conventional USB boot keyboard and
-controls it over Wi-Fi. It is deliberately narrow: the Pico can send only a
-small set of navigation keys and cannot execute arbitrary commands.
+controls it over Wi-Fi. It is deliberately narrow: the Pico can send only keys
+from a fixed table and mouse reports, and cannot execute arbitrary commands.
+
+The same USB device also offers a wheel mouse with three buttons and a
+horizontal wheel. The `usb-mouse` and `micromys-wheel` suites use it; see
+[USB mouse](#usb-mouse) below. The host side of the fixture, shared by all of
+these suites, is `tests/lib/pico_hid.py`.
 
 The setup command flashes **only the Pico 2 W**. It never flashes an Ultimate
 64, C64 Ultimate, or any other device. The pinned official MicroPython UF2 and
@@ -29,8 +34,14 @@ command line or in a tracked file:
 ```sh
 PICO_WIFI_SSID='your-network' \
 PICO_WIFI_PASSWORD='your-password' \
-tests/soak/io/usb/usb_keyboard_repeat_soak_test.py --setup-pico
+tests/lib/pico_hid.py setup
 ```
+
+`usb_keyboard_repeat_soak_test.py --setup-pico` runs the same setup. When
+more than one MicroPython board is connected, pass
+`--port /dev/serial/by-id/...` to `tests/lib/pico_hid.py setup`. To update
+the fixture on a Pico that is already provisioned, without handing over Wi-Fi
+credentials again, run `tests/lib/pico_hid.py setup --keep-wifi-config`.
 
 Setup logs each download, copy, and reset without printing the password. It
 also performs a Linux-side HID self-test: the fixture emits a benign **F13**
@@ -44,11 +55,10 @@ through the `input` group). Where it is not, setup falls back to `xinput` on an
 X11 session, which needs no extra privilege. If neither is available, setup
 fails rather than claiming a self-test it could not observe.
 
-Setup deliberately copies `boot.py` **last** and runs nothing after it. Every
-`mpremote` command soft resets the board, and once `boot.py` exists that reset
-configures the HID interface during early boot. Copying `boot.py` earlier
-removes the CDC serial port that the remaining copies depend on, which leaves
-the board reachable only through BOOTSEL.
+Setup copies every file in one `mpremote` session started with `resume`, so
+the board is not soft reset between copies, and copies `boot.py` **last**. A
+soft reset runs `boot.py`, which re-enumerates USB with the HID interfaces and
+drops the CDC serial port the remaining copies depend on.
 
 Setup also accepts a board that already runs MicroPython and still exposes its
 CDC serial port: it re-provisions over that port and skips the UF2 flash. Only
@@ -57,9 +67,12 @@ a board with no serial port needs BOOTSEL.
 If BOOTSEL does not enumerate, stop firmware work. Try a known data cable and
 one direct computer USB port, holding BOOTSEL for every reconnect.
 
-Setup validates only what Linux can prove: that the HID interface is open and
-that a single F13 press and release arrive. The idle rate reported at this
-point is whatever Linux negotiated, which is 0. Only the Ultimate 64 sets 25.
+Setup validates only what Linux can prove: that the HID interface is open,
+that a single F13 press and release arrive, and that the mouse moves one count
+right and back. Buttons and wheels are not tried on Linux, because they would
+click or scroll whatever is under the desktop pointer. The idle rate reported
+at this point is whatever Linux negotiated, which is 0. Only the Ultimate 64
+sets 25.
 
 ## 2. Move to the Ultimate 64
 
@@ -221,3 +234,32 @@ otherwise report the previous selection and fail a check the firmware passed.
 The runner uses `try/finally` to request `release_all`, verify the key state,
 and close the U64 menu. Preserve its output and the printed seed when reporting
 a failure.
+
+## USB mouse
+
+The fixture's second HID interface is a wheel mouse: three buttons, relative X
+and Y, a vertical wheel and a horizontal wheel (AC Pan), one byte each. The
+Ultimate reads it through its report descriptor parser, as it reads most wheel
+mice. `tests/lib/pico_hid.py` drives it with `mouse_move`, `mouse_report`,
+`mouse_stream` (reports back to back at the host's poll rate, optionally with
+a key held), `mouse_buttons` and `mouse_wheel`; `tests/e2e/lib/mouse.py` wraps
+those for the suites.
+
+On the C64 side the suites run `tools/c64/mouse-listener.asm`, which follows
+control port 1 as a 1351 driver with Micromys wheel support does. It keeps the
+position, the held buttons, the presses and the wheel pulses in a RAM block at
+`$C000`, which the suites read over REST, and shows the same values on screen.
+It is also useful by hand: load it and move a real mouse.
+
+```sh
+./run-tests -s usb-mouse u64
+./run-tests -s micromys-wheel u64
+```
+
+Both set the mouse settings they need and put them back. `micromys-wheel` runs
+`tools/c64/micromys-wheel.asm` unchanged and reads its verdict lines off the
+screen.
+
+While the fixture is attached, a USB mouse is on port 1, so the port 1 POT
+lines carry its position. The `input` suite notices that and leaves out the
+checks that port 1's extra buttons read released.

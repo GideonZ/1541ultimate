@@ -65,18 +65,20 @@ void Syslog::charout(int c)
     if (c == '\r') {
         return;
     }
+    // Tasks print concurrently, so the position is tested and used inside one safe section;
+    // tested outside it, another writer could move it past the end between test and store.
+    ENTER_SAFE_SECTION;
     if (bufpos < bufsize) {
         buf[bufpos] = (char)c;
-        ENTER_SAFE_SECTION;
         if (c == '\n') {
             newlinepos = bufpos;
         }
         ++bufpos;
-        LEAVE_SAFE_SECTION;
     }
     else {
         overflow = true;
     }
+    LEAVE_SAFE_SECTION;
 }
 
 void Syslog::syslogTask(void *arg)

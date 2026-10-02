@@ -177,18 +177,6 @@ def seed_long_fixture(host: str, password: str, test_dir: str) -> str:
     return candidates[0]
 
 
-def type_editor_text(browser: Browser, text: str) -> None:
-    """Type into the rename editor through the shared batched path.
-
-    Lowercased because a bare letter key types uppercase in the firmware's
-    default character set, which is what the per-character loop this replaced
-    did too. Browser.type_text uses the shared character mapping and splits the
-    string into requests the firmware will accept, so an 85-character name goes
-    in two rather than eighty-five.
-    """
-    browser.type_text(text.lower())
-
-
 def open_fixture_directory(browser: Browser, test_dir: str) -> None:
     browser.go_to_directory(f"Temp/{test_dir}")
 
@@ -240,8 +228,9 @@ def run_rename_test(host: str, password: str, browser: Browser, test_dir: str) -
         raise Failure("Rename prompt did not appear")
 
     clear_rename_field(browser)
-    type_editor_text(browser, RENAMED_NAME)
-    browser.press("ENTER")
+    # Read back before it is committed: a key lost on the way leaves a name the
+    # lookups below cannot find, which reads as the rename having failed.
+    browser.fill_edit_field(RENAMED_NAME.lower())
 
     try:
         rest_json(host, password, "GET", f"/v1/files/Temp/{test_dir}/{REQUESTED_NAME}:info")

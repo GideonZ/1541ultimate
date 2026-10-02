@@ -66,6 +66,9 @@ private:
     bool initialized;
     bool doBreak;
     bool available;
+    // A menu on a network stream (Telnet). It has its own keyboard, so it does
+    // not count as a menu the USB keyboard and mouse, or REST, are driving.
+    bool remote;
     mstring title;
     UIObject *ui_objects[MAX_UI_OBJECTS];
     UIStatusBox *status_box;

@@ -27,7 +27,7 @@ import machine as machine_lib
 import targets
 from api import UltimateApi
 from av_stream import AvStreamCapture, assert_frames_differ, assert_not_black, video_frames
-from report import Failure, check, check_skip, detail, format_exception, section, suite_fail, suite_ok
+from report import Failure, check, check_skip, detail, format_exception, section, suite_fail, suite_ok, warn
 from ui_backend import (
     Backend,
     Browser,
@@ -213,8 +213,8 @@ class MonitorSession:
                 except Failure:
                     if press == retypes:
                         raise
-                    detail(f"{title}: the {key} key did not open the prompt, "
-                           f"pressing it again")
+                    warn(f"{title}: the {key} key did not open the prompt, "
+                         f"pressing it again")
             # Not every prompt opens on a template that the first printable
             # key replaces wholesale. Hunt keeps its default range and takes
             # the needle after it, so typing into it appends; that one has to

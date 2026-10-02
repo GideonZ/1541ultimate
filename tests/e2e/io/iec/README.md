@@ -6,6 +6,28 @@ so the bytes on the serial bus are the bytes a Commodore puts there. REST only
 fills the agent's mailbox and reads its results back. `iec_agent.py` holds the
 host side of that mailbox and is shared by both suites.
 
+## Other KERNALs
+
+Both suites, and `softiec-soak`, take `--kernal` and `--command-interface`, and
+`run-tests` passes its own options of those names to them. `--kernal` names an
+image in the device's `/Flash/roms`, or a local file, which is uploaded there for
+the run and removed afterwards. The suite reboots into it and compares the image
+with the C64's memory at `$E000` before it starts, so a run cannot pass under a
+KERNAL it did not get. The UCI ("hyperspeed") KERNAL built by `make` in
+`roms/c64rom` reaches the drive through the Command Interface, so it runs with
+`--command-interface`; without it that KERNAL uses the serial bus. Give it a name
+of its own, because `kernal.bin` is the name the firmware's KERNAL setting defaults
+to.
+
+```sh
+./run-tests u64 u2@c64u -s iec-dos-commands -s rel-copy --kernal jiffydos_c64.bin
+cp roms/c64rom/kernal.bin uci_kernal.bin
+./run-tests u64 -s iec-dos-commands --kernal uci_kernal.bin --command-interface
+```
+
+A KERNAL whose name is already on the device with other contents is refused
+rather than replaced.
+
 ## Command channel, block commands and partition directory (#875, #876, #877)
 
 ```sh
@@ -24,7 +46,13 @@ catch them: it built its command strings by hand.
   colon, so the colon became the channel number and every value moved one place.
   The track number arrived as the partition number.
 * The partition directory showed the path a partition is rooted at instead of its
-  name, and typed every partition `DIR`.
+  name, and typed every partition `DIR`. `G-P`, which answers the same question to a
+  program rather than to a listing, had the same two defects and reported its type in
+  the reserved byte.
+* A command whose last parameter is a byte can carry a 13, which is the terminator
+  byte. `C` followed by a shifted P selects a partition that way, so it keeps its
+  parameter; the commands whose last parameter is optional behave as CMD DOS
+  documents, which is that the terminator has to be sent as well.
 
 Two of its checks exist only here, because they cannot fail on a host build. The
 device uses the firmware's own `sscanf` in `software/system/small_printf.cc`, which

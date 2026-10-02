@@ -393,6 +393,18 @@ class MenuDriver:
         self.s.key_events += len(text)
         self.browser.type_text(text)
 
+    def enter_text(self, text, clear_taps=0):
+        """Type `text` into an open string box and commit it, read back first.
+
+        Browser.fill_edit_field types it, reads the box back and types it again
+        when a key was lost, which a cartridge target does now and then: a name
+        typed blind and committed is a name nobody asked for.
+        """
+        self.last_input = f"enter {text!r}"
+        self.s.key_events += len(text)
+        self.browser.fill_edit_field(text, clear_taps=clear_taps)
+        time.sleep(MENU_SETTLE_SECONDS)
+
     # -- menu open/close ---------------------------------------------------
     def menu_is_open(self):
         return self.s.get_menu_screen() is not None
@@ -1337,8 +1349,7 @@ def create_remote_dir(ctx, alias, dirname):
     d.select_task_action("Create")
     d.select_context_action("Directory", max_steps=24)
     # string_box prompt for the new directory name.
-    d.type_text(dirname)
-    d.tap(K_RETURN, settle=MENU_SETTLE_SECONDS)
+    d.enter_text(dirname)
     ctx.ensure_alive("after MKD")
     mkd = server.wait_for_command("MKD", since, timeout=8.0, arg_substr=dirname)
     if mkd and ctx.server.exists(dirname):
@@ -1426,10 +1437,7 @@ def rename_remote_file(ctx, alias):
         d.tap(K_RUNSTOP)
         return ("UNSUPPORTED_BY_UI", src, "Rename action absent from context menu")
     # string_box prefilled with current name: clear it, then type the new name.
-    for _ in range(len(src) + 2):
-        d.tap(K_DEL)
-    d.type_text(dst)
-    d.tap(K_RETURN, settle=MENU_SETTLE_SECONDS)
+    d.enter_text(dst, clear_taps=len(src) + 2)
     ctx.ensure_alive("after rename")
     rnfr = server.wait_for_command("RNFR", since, timeout=8.0)
     rnto = server.wait_for_command("RNTO", since, timeout=8.0)

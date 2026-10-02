@@ -1323,6 +1323,9 @@ class Encoder:
     rather than by synchronisation afterwards.
     """
 
+    # The part of a frame the encoder has not taken yet, which the next write sends first.
+    _rest: memoryview | None = None
+
     def __init__(self, path: str, command: Sequence[str]) -> None:
         self.path = path
         self.frames = 0
@@ -1361,13 +1364,39 @@ class Encoder:
         # however much budget was left. Non-blocking, the same write returns
         # what it could take and the loop re-checks the deadline.
         self._unblock(stream)
-        view = memoryview(payload)
         deadline = time.monotonic() + budget
+        # A frame the encoder took only part of goes first. It reads frames of a fixed
+        # size, so a frame left short would shift every frame after it.
+        if self._rest is not None:
+            self._rest = self._push(stream, self._rest, deadline)
+            if self._rest is None:
+                return False
+            if self._rest:
+                self.shed += 1
+                return False
+            self._rest = None
+            self.frames += 1
+        view = self._push(stream, memoryview(payload), deadline)
+        if view is None:
+            return False
+        if len(view) == len(payload):
+            self.shed += 1
+            return False
+        if view:
+            # In the file once the rest follows, which the next write sees to.
+            self._rest = view
+            self.shed += 1
+            return False
+        self.frames += 1
+        return True
+
+    def _push(self, stream, view: memoryview, deadline: float) -> memoryview | None:
+        """Write what the encoder takes of `view` before `deadline`, and answer what is
+        left, or None when the encoder has stopped."""
         while view:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
-                self.shed += 1
-                return False
+                return view
             ready = select.select((), (stream,), (), remaining)[1]
             if not ready:
                 continue
@@ -1383,11 +1412,10 @@ class Encoder:
                 # the slot loop: a dead encoder must cost the loop nothing.
                 # The finishing pass reaps it.
                 self.close(wait=False)
-                return False
+                return None
             if written:
                 view = view[written:]
-        self.frames += 1
-        return True
+        return view
 
     @staticmethod
     def _unblock(stream) -> None:
@@ -2268,6 +2296,8 @@ class Recorder:
         stale = bool(self._spool.last_at
                      and now - self._spool.last_at > STALE_AFTER_SECONDS)
         kind, rows, raw, age, live = self._surface(now)
+        # Where each file took this frame: a frame shed earlier moves every later one.
+        written: dict[str, int] = {}
         for name, encoder in self._encoders.items():
             if recompose or name not in self._last_canvas:
                 composer = self._composers[name]
@@ -2281,25 +2311,25 @@ class Recorder:
             # One per encoder per slot, so a separate layout counts two for a
             # slot neither file took. Whether the encoder was slow or has
             # died is in `problems`, which is where the difference is.
-            if not encoder.write(self._last_canvas[name], budget=budget):
+            if encoder.write(self._last_canvas[name], budget=budget):
+                written[name] = encoder.frames - 1
+            else:
                 self.shed += 1
-        # The slot this frame was written into, which is what its position was
-        # computed from above and what a still taken from it carries.
-        frame = self.slots
         self.slots += 1
         if recompose:
-            self._offer_still(state, frame, position)
+            self._offer_still(state, written)
 
-    def _offer_still(self, state: RunState, frame: int, position: float) -> None:
+    def _offer_still(self, state: RunState, written: dict[str, int]) -> None:
         """Give the current frame to the suite run's still picker.
 
         A suite boundary closes the set and writes it, so a suite that failed
         has its first and last frames beside its failing checks in the report
         without anybody opening the recording.
 
-        `frame` and `position` are where this canvas went in the file, passed
-        in rather than read back, so a still that is kept carries the position
-        of the frame it is and not of the suite it belongs to.
+        `written` says where this canvas went in each file, passed in rather
+        than read back, so a still that is kept carries the position of the
+        frame it is and not of the suite it belongs to. A frame the still's own
+        file shed is in no file there, so it is not offered.
         """
         key = state.stem
         if key != self._picking:
@@ -2313,8 +2343,10 @@ class Recorder:
         if not key:
             return
         name = self._still_pane()
-        if not name:
+        if not name or name not in written:
             return
+        frame = written[name]
+        position = stamp_position(frame, self.options.fps)
         ranked = (self._sources.frame[2] if self._sources.frame
                   else "\n".join(self._spool.rows or []).encode())
         # The frame without the stamp, the edge and the bar. A still is what

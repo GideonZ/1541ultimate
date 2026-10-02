@@ -500,6 +500,28 @@ void FileManager::get_display_string(Path *p, const char *filename, char *buffer
     n->get_display_string(buffer, width);
 }
 
+// A directory handed out by open_directory(). Its file system is listed in
+// open_directory_fs until the directory is deleted, so the mount cache does not release
+// a disk image that a directory is still being read from: the Software IEC keeps a
+// listing's directory open across bus reads, while other channels enter other images.
+class ManagedDirectory : public Directory
+{
+    FileManager *fm;
+    FileSystem *fs;
+    Directory *dir;
+public:
+    ManagedDirectory(FileManager *m, FileSystem *f, Directory *d) : fm(m), fs(f), dir(d) {
+        fm->open_directory_fs.append(fs); // open_directory() holds the lock
+    }
+    ~ManagedDirectory() {
+        fm->lock();
+        delete dir;
+        fm->open_directory_fs.remove(fs);
+        fm->unlock();
+    }
+    FRESULT get_entry(FileInfo &info) { return dir->get_entry(info); }
+};
+
 FRESULT FileManager::open_directory(const char *path, Directory **dir, FileInfo *info)
 {
     *dir = NULL;
@@ -518,6 +540,9 @@ FRESULT FileManager::open_directory(const char *path, Directory **dir, FileInfo 
     }
     FileSystem *fs = pathInfo.getLastInfo()->fs;
     res = fs->dir_open(pathInfo.getPathFromLastFS(), dir);
+    if ((res == FR_OK) && *dir) {
+        *dir = new ManagedDirectory(this, fs, *dir);
+    }
     unlock();
     return res;
 }
@@ -742,6 +767,9 @@ FRESULT FileManager::fopen_impl(PathInfo &pathInfo, uint8_t flags, File **file)
         open_file_list.append(*file);
         (*file)->write_intent = ((flags & FA_WRITE) != 0);
         pathInfo.workPath.getTail(0, (*file)->get_path_reference());
+        if ((*file)->write_intent) {
+            discard_mounts_of_file((*file)->get_path());
+        }
         note_managed_temp_open(*file);
         if (create) {
             const char *pathstring = pathInfo.getFullPath(workpath, -1);
@@ -772,23 +800,51 @@ FRESULT FileManager::get_free(Path *path, uint32_t &free, uint32_t &cluster_size
     return fres;
 }
 
-FRESULT FileManager::fs_read_sector(Path *path, uint8_t *buffer, int track, int sector)
+FRESULT FileManager::get_total(Path *path, uint32_t &total, uint32_t &cluster_size)
 {
     PathInfo pathInfo(rootfs);
     pathInfo.init(path);
+    lock();
     FRESULT fres = find_pathentry(pathInfo, true);
     if (fres != FR_OK) {
+        unlock();
         return fres;
     }
     FileInfo *inf = pathInfo.getLastInfo();
     if (!inf || !(inf->fs)) {
+        unlock();
+        return FR_NO_FILESYSTEM;
+    }
+    fres = inf->fs->get_total(&total, &cluster_size);
+
+    unlock();
+    return fres;
+}
+
+// The sector functions take the lock like every other entry point: find_pathentry() can
+// mount and evict disk images, which changes mount_points under another task.
+FRESULT FileManager::fs_read_sector(Path *path, uint8_t *buffer, int track, int sector)
+{
+    PathInfo pathInfo(rootfs);
+    pathInfo.init(path);
+    lock();
+    FRESULT fres = find_pathentry(pathInfo, true);
+    if (fres != FR_OK) {
+        unlock();
+        return fres;
+    }
+    FileInfo *inf = pathInfo.getLastInfo();
+    if (!inf || !(inf->fs)) {
+        unlock();
         return FR_NO_FILESYSTEM;
     }
     fres = inf->fs->sync();
     if (fres != FR_OK) {
+        unlock();
         return fres;
     }
     fres = inf->fs->read_sector(buffer, track, sector);
+    unlock();
     return fres;
 }
 
@@ -796,38 +852,47 @@ FRESULT FileManager::fs_write_sector(Path *path, uint8_t *buffer, int track, int
 {
     PathInfo pathInfo(rootfs);
     pathInfo.init(path);
+    lock();
     FRESULT fres = find_pathentry(pathInfo, true);
     if (fres != FR_OK) {
+        unlock();
         return fres;
     }
     FileInfo *inf = pathInfo.getLastInfo();
     if (!inf || !(inf->fs)) {
+        unlock();
         return FR_NO_FILESYSTEM;
     }
     fres = inf->fs->sync();
     if (fres != FR_OK) {
+        unlock();
         return fres;
     }
     fres = inf->fs->write_sector(buffer, track, sector);
+    unlock();
     return fres;
 }
 
-FRESULT FileManager::fs_allocate_sector(Path *path, int track, int sector, bool alloc)
+FRESULT FileManager::fs_allocate_sector(Path *path, int &track, int &sector, bool alloc)
 {
     PathInfo pathInfo(rootfs);
     pathInfo.init(path);
+    lock();
     FRESULT fres = find_pathentry(pathInfo, true);
     if (fres != FR_OK) {
+        unlock();
         return fres;
     }
     FileInfo *inf = pathInfo.getLastInfo();
     if (!inf || !(inf->fs)) {
+        unlock();
         return FR_NO_FILESYSTEM;
     }
     fres = inf->fs->allocate_sector(track, sector, alloc);
     if (fres == FR_OK) {
         fres = inf->fs->sync();
     }
+    unlock();
     return fres;
 }
 
@@ -918,6 +983,9 @@ void FileManager::fclose(File *f)
             }
         }
     }
+    if (f->write_intent) {
+        discard_mounts_of_file(path);
+    }
     open_file_list.remove(f);
     f->close();
     if (publish_dir) {
@@ -978,6 +1046,11 @@ bool FileManager::is_mount_evictable(MountPoint *mp)
             return false;
         }
     }
+    for (int i = 0; i < open_directory_fs.get_elements(); i++) {
+        if (open_directory_fs[i] == fs) {
+            return false;
+        }
+    }
     for (int i = 0; i < mount_points.get_elements(); i++) {
         MountPoint *other = mount_points[i];
         if (other && (other != mp) && other->get_file() &&
@@ -1024,6 +1097,62 @@ void FileManager::evict_mount_points(void)
     }
 }
 
+
+// A mounted image holds that image's BAM and directory in memory. A write to
+// the image file through any other handle leaves that copy describing an image
+// that no longer exists, so the next allocation through the mount hands out
+// blocks the other writer has already used. Drop the mount when such a handle
+// is opened and again when it is closed; the next access to the image mounts it
+// from the file as it now stands.
+void FileManager::discard_mounts_of_file(const char *path)
+{
+    if (!path) {
+        return;
+    }
+    bool removed = false;
+    for (int i = 0; i < mount_points.get_elements(); i++) {
+        MountPoint *mp = mount_points[i];
+        if (!mp || !mp->get_file()) {
+            continue;
+        }
+        if (strcmp(mp->get_file()->get_path(), path) != 0) {
+            continue;
+        }
+        if (!is_mount_evictable(mp)) {
+            // A file is open inside the image. Releasing the mount would free
+            // the file system under that file.
+            printf("FileManager: '%s' is written through another handle while in use.\n", path);
+            continue;
+        }
+        printf("FileManager: dropping mount of '%s'; the file is written through another handle.\n", path);
+        release_mount_point(mp);
+        mount_points.mark_for_removal(i);
+        removed = true;
+    }
+    if (removed) {
+        mount_points.purge_list();
+    }
+}
+
+// A file open for writing writes its entry back into the entry's old slot when it closes, so it
+// must not be deleted or renamed meanwhile. A mount still held has a file open inside the image.
+bool FileManager::in_use_for_writing(const char *path)
+{
+    discard_mounts_of_file(path);
+    for (int i = 0; i < mount_points.get_elements(); i++) {
+        MountPoint *mp = mount_points[i];
+        if (mp && mp->get_file() && !strcasecmp(mp->get_file()->get_path(), path)) {
+            return true; // its handle is open for reading and writing
+        }
+    }
+    for (int i = 0; i < open_file_list.get_elements(); i++) {
+        File *f = open_file_list[i];
+        if (f && f->write_intent && !strcasecmp(f->get_path(), path)) {
+            return true;
+        }
+    }
+    return false;
+}
 
 MountPoint *FileManager::add_mount_point(SubPath *path, File *file, FileSystemInFile *emb)
 {
@@ -1087,6 +1216,10 @@ FRESULT FileManager::delete_file_impl(PathInfo &pathInfo)
     if (fres != FR_OK) {
         return fres;
     }
+    mstring open_path;
+    if (in_use_for_writing(pathInfo.workPath.getTail(0, open_path))) {
+        return FR_LOCKED;
+    }
     FileSystem *fs = pathInfo.getLastInfo()->fs;
     fres = fs->file_delete(pathInfo.getPathFromLastFS());
     if (fres == FR_OK) {
@@ -1107,6 +1240,70 @@ FRESULT FileManager::delete_file(const char *pathname)
     pathInfo.init(pathname);
     lock();
     FRESULT fres = delete_file_impl(pathInfo);
+    unlock();
+    return fres;
+}
+
+// Sets the attribute bits in mask to those in attrib, for the file systems that keep any.
+FRESULT FileManager::set_attributes(const char *pathname, uint8_t attrib, uint8_t mask)
+{
+    PathInfo pathInfo(rootfs);
+    pathInfo.init(pathname);
+    lock();
+    FRESULT fres = find_pathentry(pathInfo, false);
+    if (fres == FR_OK) {
+        fres = pathInfo.getLastInfo()->fs->file_attrib(pathInfo.getPathFromLastFS(), attrib, mask);
+        if (fres == FR_OK) {
+            mstring work;
+            sendEventToObservers(eRefreshDirectory, pathInfo.getFullPath(work, -1), "");
+        }
+    }
+    unlock();
+    return fres;
+}
+
+// The label the file system itself holds for a directory, where it has one (SI-064).
+FRESULT FileManager::set_dir_label(const char *pathname, const char *name, const char *id)
+{
+    PathInfo pathInfo(rootfs);
+    pathInfo.init(pathname);
+    lock();
+    // A mount point is entered, as open_directory() does, so the label of a directory
+    // inside a mounted image is the one the command reaches.
+    FRESULT fres = find_pathentry(pathInfo, true);
+    FileInfo *inf = pathInfo.getLastInfo();
+    if ((fres == FR_OK) && (!inf || !inf->fs)) {
+        fres = FR_NO_FILESYSTEM; // as get_free() answers the same path
+    }
+    if (fres == FR_OK) {
+        fres = inf->fs->dir_set_label(pathInfo.getPathFromLastFS(), name, id);
+        if (fres == FR_OK) {
+            mstring work;
+            sendEventToObservers(eRefreshDirectory, pathInfo.getFullPath(work, -1), "");
+        }
+    }
+    unlock();
+    return fres;
+}
+
+// The write lock of the medium the path is on, where the medium records one.
+FRESULT FileManager::set_write_lock(const char *pathname, bool locked)
+{
+    PathInfo pathInfo(rootfs);
+    pathInfo.init(pathname);
+    lock();
+    FRESULT fres = find_pathentry(pathInfo, true);
+    FileInfo *inf = pathInfo.getLastInfo();
+    if ((fres == FR_OK) && (!inf || !inf->fs)) {
+        fres = FR_NO_FILESYSTEM;
+    }
+    if (fres == FR_OK) {
+        fres = inf->fs->set_write_lock(locked);
+        if (fres == FR_OK) {
+            mstring work;
+            sendEventToObservers(eRefreshDirectory, pathInfo.getFullPath(work, -1), "");
+        }
+    }
     unlock();
     return fres;
 }
@@ -1187,6 +1384,11 @@ FRESULT FileManager::rename_impl(PathInfo &from, PathInfo &to)
         unlock();
         return fres;
     }
+    mstring open_path;
+    if (in_use_for_writing(from.workPath.getTail(0, open_path))) {
+        unlock();
+        return FR_LOCKED;
+    }
 
     // source file was found
     fres = find_pathentry(to, false);
@@ -1201,7 +1403,19 @@ FRESULT FileManager::rename_impl(PathInfo &from, PathInfo &to)
             unlock();
             return FR_INVALID_DRIVE;
         }
-        fres = from.getLastInfo()->fs->file_rename(from.getPathFromLastFS(), to.getPathFromLastFS());
+        // A directory cannot move inside itself, or its tree would become unreachable. FAT does not
+        // check this, and it matches names without regard to case.
+        const char *src = from.getPathFromLastFS();
+        const char *dst = to.getPathFromLastFS();
+        int n = strlen(src);
+        while ((n > 0) && (src[n - 1] == '/')) {
+            n--;
+        }
+        if ((n > 0) && !strncasecmp(src, dst, n) && (dst[n] == '/')) {
+            unlock();
+            return FR_DENIED;
+        }
+        fres = from.getLastInfo()->fs->file_rename(src, dst);
         if (fres == FR_OK) {
             mstring from_file_path, to_file_path;
             mstring from_dir_path, to_dir_path;

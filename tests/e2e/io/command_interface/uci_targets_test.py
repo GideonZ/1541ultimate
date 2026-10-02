@@ -77,6 +77,7 @@ CFG_REU_OFFSET = "REU Preload Offset"
 # Everything the suite writes, captured before the first change and put back at the end.
 OWNED_SETTINGS = (CFG_CMD_IF, CFG_REU_ENABLE, CFG_REU_IMAGE, CFG_REU_SIZE, CFG_REU_OFFSET)
 
+REG_KERNAL_DEVICE = 0xDF1B
 REG_CONTROL = 0xDF1C
 REG_COMMAND = 0xDF1D
 REG_RESPONSE = 0xDF1E
@@ -126,6 +127,7 @@ SOFTIEC_CMD_GET_FATNAME = 0x22
 DRVINFO_ENTRY_BYTES = 3
 DRVINFO_CURRENT_BUS_ID = 0x00
 DRVINFO_SLAVE_TYPES = {"IEC Drive": 0x0F, "Printer Emulation": 0x50}
+SOFTIEC_CMD_GET_IECNAME = 0x23
 # No target implements $7F, so it reaches the unknown-command path.
 CMD_UNIMPLEMENTED = 0x7F
 
@@ -180,6 +182,17 @@ FATNAME_BUFFER_REPLY = b"/buffer"
 # secondary address, verify flag, load address and end address from bytes 2 to 7
 # and starts the name at byte 8, so all six have to be present before the name.
 LOAD_SU_MISSING = bytes(6) + b"NOSUCHFILE"
+# GET_IECNAME answers a type byte and the CBM name of a host file. An x00 file carries
+# its CBM name in a 26 byte header that starts "C64File" and a zero (SI-144). Both files
+# go to the RAM disk for the run: one with the header, and one named the same way
+# without it.
+X00_WRAPPED = "/Temp/UCIGAME.P00"
+X00_PLAIN = "/Temp/UCIPLAIN.P00"
+X00_CBM_NAME = b"MY GAME"
+X00_HEADER = b"C64File\0" + X00_CBM_NAME.ljust(16, b"\0") + b"\0\0"
+# The first reply byte is the drive's file type: 0 for a name without a CBM type, 1 PRG.
+IEC_TYPE_ANY = 0
+IEC_TYPE_PRG = 1
 
 BUSY_TIMEOUT_SECONDS = 15.0
 BUSY_POLL_SECONDS = 0.05
@@ -203,6 +216,8 @@ TESTS = [
     "save-reu-disabled",
     "softiec-single-part-reply",
     "get-drvinfo",
+    "softiec-x00-name",
+    "softiec-setting-modes",
     "interface-usable-after",
 ]
 
@@ -917,6 +932,86 @@ def run_get_drvinfo(session: RestSession, uci: Uci) -> bool:
     return True
 
 
+def run_softiec_x00_name(ftp: "FtpFixture", uci: Uci) -> bool:
+    """GET_IECNAME names an x00 file by the CBM name in its header (SI-144).
+
+    Given a full path, the target reads the header of a file whose extension is P, S, U
+    or R and two digits, so a program that lists a directory through the target sees
+    the names the drive lists on the bus. Given a name without a directory there is no
+    file to read, and the answer comes from the host name. A file that has such an
+    extension but no signature is an ordinary file.
+    """
+    scenario = "softiec-x00-name"
+    with check(f"{scenario}: put a P00 file, and a file named like one, on the RAM disk"):
+        ftp.upload(X00_WRAPPED, X00_HEADER + b"PAYLOAD")
+        ftp.upload(X00_PLAIN, b"not wrapped")
+    expect(uci, f"{scenario}: a full path to a P00 file answers the name in its header and PRG",
+           bytes([TARGET_SOFTIEC, SOFTIEC_CMD_GET_IECNAME]) + X00_WRAPPED.encode("ascii"),
+           SOFTIEC_OK, reply=bytes([IEC_TYPE_PRG]) + X00_CBM_NAME)
+    expect(uci, f"{scenario}: the same file without its directory answers the host name",
+           bytes([TARGET_SOFTIEC, SOFTIEC_CMD_GET_IECNAME]) + b"UCIGAME.P00",
+           SOFTIEC_OK, reply=bytes([IEC_TYPE_ANY]) + b"UCIGAME.P00")
+    expect(uci, f"{scenario}: a file without the signature answers its host name",
+           bytes([TARGET_SOFTIEC, SOFTIEC_CMD_GET_IECNAME]) + X00_PLAIN.encode("ascii"),
+           SOFTIEC_OK, reply=bytes([IEC_TYPE_ANY]) + b"UCIPLAIN.P00")
+    return True
+
+
+SOFTIEC_CATEGORY = "SoftIEC Drive Settings"
+SOFTIEC_ENABLE = "IEC Drive"
+SOFTIEC_BUS_ID = "Soft Drive Bus ID"
+# The number $DF1B holds while the drive is off altogether, which no program opens.
+KERNAL_DEVICE_NONE = 31
+
+
+def softiec_on_bus(session: RestSession) -> bool:
+    status, body = session.request("GET", "/v1/drives", repeatable=True)
+    if status != 200:
+        raise Failure(f"GET /v1/drives failed with HTTP {status}: {body[:200]!r}")
+    for entry in json.loads(body.decode("utf-8"))["drives"]:
+        if "IEC Drive" in entry:
+            return bool(entry["IEC Drive"]["enabled"])
+    raise Failure("/v1/drives lists no IEC Drive")
+
+
+def run_softiec_setting_modes(session: RestSession, uci: Uci) -> bool:
+    """"IEC Drive" decides the bus and the UCI side of the drive separately (SI-107, #918).
+
+    Enabled puts the drive on the bus and gives a UCI KERNAL its number at $DF1B. UCI Only
+    takes it off the bus and keeps the UCI target answering, which is how a program is shown
+    to use UCI and not the bus. Disabled turns off both: the target answers "not loaded" and
+    $DF1B holds 31, so the KERNAL sends everything to the bus, where the drive is not.
+    """
+    scenario = "softiec-setting-modes"
+    settings = session.get_config(SOFTIEC_CATEGORY)
+    original = str(settings[SOFTIEC_ENABLE])
+    device = int(settings[SOFTIEC_BUS_ID])
+    modes = (
+        ("Enabled", True, True, device),
+        ("Disabled", False, False, KERNAL_DEVICE_NONE),
+        ("UCI Only", False, True, device),
+    )
+    try:
+        for value, on_bus, serves_uci, kernal_device in modes:
+            with check(f"{scenario}: {SOFTIEC_ENABLE} {value}: on the bus {on_bus}, "
+                       f"UCI {serves_uci}, $DF1B {kernal_device}"):
+                session.set_config(SOFTIEC_CATEGORY, SOFTIEC_ENABLE, value)
+                seen_bus = softiec_on_bus(session)
+                seen_device = session.peek(REG_KERNAL_DEVICE, repeatable=True) & 0x1F
+                _reply, text = uci.transact(bytes([TARGET_SOFTIEC, SOFTIEC_CMD_IDENTIFY]))
+                detail(f"on the bus {seen_bus}, $DF1B {seen_device}, IDENTIFY status {text!r}")
+                if seen_bus != on_bus:
+                    raise Failure(f"the drive list says on the bus {seen_bus}, expected {on_bus}")
+                if seen_device != kernal_device:
+                    raise Failure(f"$DF1B holds {seen_device}, expected {kernal_device}")
+                wanted = STATUS_OK if serves_uci else SOFTIEC_NOT_LOADED
+                if text != wanted:
+                    raise Failure(f"IDENTIFY answered status {text!r}, expected {wanted!r}")
+    finally:
+        session.set_config(SOFTIEC_CATEGORY, SOFTIEC_ENABLE, original)
+    return True
+
+
 def run_interface_usable_after(uci: Uci) -> bool:
     expect(uci, "interface-usable-after: the control target still answers IDENTIFY",
            bytes([TARGET_CONTROL, CTRL_CMD_IDENTIFY]), STATUS_OK, reply_prefix=b"CONTROL TARGET")
@@ -1048,6 +1143,8 @@ def main() -> int:
         run("save-reu-disabled", run_reu_disabled, session, uci, CTRL_CMD_SAVE_REU, "save-reu-disabled")
         run("softiec-single-part-reply", run_softiec_single_part_reply, uci)
         run("get-drvinfo", run_get_drvinfo, session, uci)
+        run("softiec-x00-name", run_softiec_x00_name, ftp, uci)
+        run("softiec-setting-modes", run_softiec_setting_modes, session, uci)
         run("interface-usable-after", run_interface_usable_after, uci)
 
     except Failure as exc:

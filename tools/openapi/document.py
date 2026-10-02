@@ -19,6 +19,7 @@ HTTP_REASON = {
     "415": "Unsupported media type",
     "423": "Locked",
     "424": "Failed dependency",
+    "429": "Too many requests",
     "500": "Internal server error",
     "501": "Not implemented",
     "503": "Service unavailable",
