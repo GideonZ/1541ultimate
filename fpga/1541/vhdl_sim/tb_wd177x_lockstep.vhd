@@ -17,8 +17,10 @@
 -- g_negative_control gives the reference a write delay one tick shorter. Then
 -- the run must find a difference, which shows the comparison can see one.
 --
---   ghdl -r --std=08 --ieee=synopsys tb_wd177x_lockstep
---   ghdl -r --std=08 --ieee=synopsys tb_wd177x_lockstep -gg_negative_control=true
+-- Run under nvc, after analysing mem_bus_pkg, io_bus_pkg, sync_fifo, stepper,
+-- wd177x, wd177x_ref and this file with --std=2008 --relaxed:
+--   nvc -e tb_wd177x_lockstep -r
+--   nvc -e -gg_negative_control=true tb_wd177x_lockstep -r
 --------------------------------------------------------------------------------
 library ieee;
 use ieee.std_logic_1164.all;
