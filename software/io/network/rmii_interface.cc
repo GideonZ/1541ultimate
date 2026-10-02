@@ -322,14 +322,9 @@ err_t RmiiInterface :: output_packet(uint8_t *buffer, int pkt_len)
 #endif
 	//printf("Rmii Out Packet: %p %4x\n", buffer, pkt_len);
 	//dump_hex_relative(buffer, (pkt_len > 64)?64:pkt_len);
-	// The engine transmits as many bytes as the length register names, and
-	// Ethernet's minimum frame is 60. Padding only the length made it read past
-	// a short frame and put whatever follows it in memory on the wire; with
-	// MEM_LIBC_MALLOC the pbufs come from pvPortMalloc, so that is the
-	// neighbouring heap block. A 42 byte ARP request leaked 18 such bytes.
-	// Pad the data as well, in a buffer this driver owns. Transmission is
-	// asynchronous, but the RMII_TX_BUSY test above means the previous frame
-	// has left before this buffer is filled again.
+	// The engine sends as many bytes as RMII_TX_LENGTH names, so a short frame
+	// is padded in memory, not just in the length. RMII_TX_BUSY above clears
+	// once the engine has copied the previous frame, so the pad buffer is free.
 	if (!eth_tx_frame_to_send(buffer, pkt_len, tx_pad_buffer, ETH_MIN_FRAME_LEN,
 	                          &buffer, &pkt_len)) {
 		return ERR_ARG;

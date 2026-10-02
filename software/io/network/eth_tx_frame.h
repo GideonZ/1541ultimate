@@ -1,16 +1,11 @@
 /*
- * eth_tx_frame.h -- what a driver hands the hardware on transmit, checked.
+ * eth_tx_frame.h -- transmit framing that must stay inside the caller's buffer.
  *
- * Two transmit paths take a buffer from the network stack and have to give the
- * hardware something else: the RMII engine sends exactly as many bytes as its
- * length register names, so a frame shorter than Ethernet's 60 byte minimum has
- * to be padded in memory and not only in the number, and the AX88772 wants a
- * four byte length header immediately in front of the frame, which cannot be
- * written in front of a buffer the stack owns.
- *
- * Both were getting that wrong by reaching outside the caller's buffer. The
- * decisions are free functions over plain integers so they can be pinned down
- * on a build host; see software/io/network/tests/.
+ * The RMII engine sends exactly as many bytes as its length register names, so
+ * a frame below Ethernet's 60 byte minimum has to be padded in memory. The
+ * AX88772 wants a four byte length header in front of the frame, and a buffer
+ * owned by the network stack has no room for it. Free functions, so the host
+ * tests in software/io/network/tests/ can call them.
  */
 #ifndef IO_NETWORK_ETH_TX_FRAME_H
 #define IO_NETWORK_ETH_TX_FRAME_H
@@ -24,17 +19,10 @@
 /* The AX88772 prefixes every frame with a four byte length header. */
 #define AX_HEADER_LEN     4
 
-/* Chooses the buffer and length to transmit.
- *
- * A frame of ETH_MIN_FRAME_LEN or more goes out of the caller's buffer
- * untouched, which is every frame carrying real payload. A shorter one is
- * copied into pad and zero filled to the minimum, because padding the length
- * alone makes the engine read past the frame and put whatever follows it in
- * memory on the wire -- an ARP request is 42 bytes, so 18 bytes of the
- * neighbouring heap block left the device on every one of them.
- *
- * Returns false when the frame cannot be transmitted at all, in which case
- * neither output is written.
+/* Chooses the buffer and length to transmit. A frame of ETH_MIN_FRAME_LEN or
+ * more goes out of the caller's buffer untouched. A shorter one is copied into
+ * pad and zero filled, so the engine never reads the memory behind it.
+ * Returns false, writing neither output, when the frame cannot be sent.
  */
 static inline bool eth_tx_frame_to_send(uint8_t *frame, int pkt_len,
                                         uint8_t *pad, int pad_size,
@@ -59,12 +47,7 @@ static inline bool eth_tx_frame_to_send(uint8_t *frame, int pkt_len,
 }
 
 /* Assembles the AX88772 length header and the frame in a buffer the driver
- * owns, and returns how many bytes to send, or -1 when the frame does not fit.
- *
- * The header used to be written at frame - 4. That is only inside an
- * allocation for a buffer from this driver's own receive pool; the buffers the
- * stack supplies on transmit have no headroom, so the write landed in whatever
- * preceded them.
+ * owns. Returns how many bytes to send, or -1 when the frame does not fit.
  */
 static inline int ax88772_tx_block(const uint8_t *frame, int pkt_len,
                                    uint8_t *tx, int tx_size)

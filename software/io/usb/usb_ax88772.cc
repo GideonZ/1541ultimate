@@ -611,16 +611,9 @@ err_t UsbAx88772Driver :: output_packet(uint8_t *buffer, int pkt_len)
 	//dump_hex(buffer, 32);
 
 
-	// The adapter wants a four byte length header immediately in front of the
-	// frame. Writing it at buffer - 4 only works for a buffer that came back
-	// from this driver's own receive pool, which keeps four bytes of headroom
-	// because the receive path hands the stack usb_buffer + 4. Neither buffer
-	// the stack supplies on transmit has any: the chained-pbuf path passes a
-	// static array, so the write lands in whatever precedes it in .bss, and the
-	// single-pbuf path passes pbuf->payload, where ETH_PAD_SIZE is 0 and
-	// PBUF_LINK_ENCAPSULATION_HLEN is left at its default, so it lands in the
-	// pbuf's own metadata or the neighbouring pool entry. Assemble header and
-	// frame in a buffer this driver owns instead.
+	// The adapter wants a four byte length header in front of the frame, and
+	// the buffers lwIP passes here have no headroom for it (ETH_PAD_SIZE is 0).
+	// bulk_out() returns only when the transfer is done, so one buffer is enough.
 	int to_send = ax88772_tx_block(buffer, pkt_len, txBuffer,
 	                               AX_HEADER_LEN + AX_MAX_PACKET_LEN);
 	if (to_send < 0) {
