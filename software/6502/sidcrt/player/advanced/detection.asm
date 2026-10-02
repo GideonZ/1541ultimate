@@ -39,25 +39,38 @@ detectC64Clock
 ; detectSidModel
 ;   input: none
 ;   output:
+;   - AC: SID model of the SID at $D400
+;       00 = 8580
+;       01 = 6581
+;       02 = unknown
+detectSidModel  ldx #$00
+
+; detectSidModelAt
+;   input:
+;   - XR: offset of the SID from $D400 ($00-$E0)
+;   output:
 ;   - AC: SID model
 ;       00 = 8580
 ;       01 = 6581
 ;       02 = unknown
-detectSidModel  lda #$ff        ; make sure the check is not done on a bad line
+;   Indexed stores take one cycle more than absolute ones, but they write in their last cycle,
+;   so the reads of $D41B still come exactly 4 and 10 cycles after the sawtooth is started.
+detectSidModelAt
+                lda #$ff        ; make sure the check is not done on a bad line
 -               cmp $d012
                 bne -
                 lda #$48        ; test bit should be set
-                sta $d412
-                sta $d40f
+                sta $d412,x
+                sta $d40f,x
                 lsr             ; activate sawtooth waveform
-                sta $d412
-                lda $d41b
-                tax
+                sta $d412,x
+                lda $d41b,x
+                tay
                 and #$fe
                 bne unknownSid  ; unknown SID chip, most likely emulated or no SID in socket
-                lda $d41b       ; try to read another time where the value should always be $03 on a real SID for all SID models
+                lda $d41b,x     ; try to read another time where the value should always be $03 on a real SID for all SID models
                 cmp #$03
                 beq +
-unknownSid      ldx #$02
-+               txa
+unknownSid      ldy #$02
++               tya
                 rts             ; output 0 = 8580, 1 = 6581, 2 = unknown

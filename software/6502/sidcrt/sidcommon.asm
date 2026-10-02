@@ -863,7 +863,8 @@ printSingleSidInfo
 checkVersion    txa                 ; check if system info needs to be printed
                 bne checkSidHeader1
                 ; print system info
-                lda SID_MODEL
+                pla                 ; detected SID model
+                pha
                 beq print8580
                 cmp #$01
                 beq print6581
@@ -1054,6 +1055,54 @@ setupScreen     jsr copyChars
                 sta $f8
                 rts
 
+; writeSystemLabel
+;   input:
+;   - YR: offset of an extra SID address in the SID header ($7a or $7b)
+;   writes a system label for that SID, if the SID header defines it
+writeSystemLabel
+                jsr readHeader
+                beq +
+                lda #<screenData4
+                ldy #>screenData4
+                jmp writeScreenData
++               rts
+
+; printSystemSidInfo
+;   input:
+;   - YR: offset of an extra SID address in the SID header ($7a or $7b)
+;   prints address and detected model of that SID on its system line, if the SID header defines it
+printSystemSidInfo
+                jsr readHeader
+                beq ++
+                pha
+
+                lda $fe
+                clc
+                adc #10
+                sta $fe
+
+                pla
+                pha
+                jsr printHex        ; overwrite the $D400 of the label
+
+                pla
+                tay
+                and #$f0
+                cmp #$40            ; only a SID in $D400-$D4FF can be detected
+                bne +
+                tya
+                asl
+                asl
+                asl
+                asl
+                tax                 ; offset from $D400
+                jsr extraPlayer.codeStart + extraPlayer.detection.detectSidModelAt
+                .byte $2c           ; skip the next instruction
++               lda #$02            ; unknown
+                ldx #$00            ; 0 indicates that system info is presented
+                jmp printSingleSidInfo
++               rts
+
 printSidInfo    lda $f7             ; restore sid header address
                 sta SID_HEADER_LO
 
@@ -1067,8 +1116,14 @@ printSidInfo    lda $f7             ; restore sid header address
                 sty SID_MODEL
                 stx SIDFX_DETECTED
 
+                tya
                 ldx #$00            ; 0 indicates that system info is presented
                 jsr printSingleSidInfo
+
+                ldy #$7a            ; system info of the second SID
+                jsr printSystemSidInfo
+                ldy #$7b            ; system info of the third SID
+                jsr printSystemSidInfo
 
                 ldy #$77
                 jsr readHeader

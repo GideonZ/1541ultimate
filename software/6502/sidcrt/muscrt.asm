@@ -480,6 +480,11 @@ skipInfoDisplay lda #<screenData2
                 ldy #>screenData4
                 jsr writeScreenData
 
+                ldy #$7a            ; system label for the second SID
+                jsr writeSystemLabel
+                ldy #$7b            ; system label for the third SID
+                jsr writeSystemLabel
+
                 ; write SID label
                 lda #<screenData5
                 ldy #>screenData5
