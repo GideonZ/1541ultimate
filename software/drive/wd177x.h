@@ -40,7 +40,10 @@
 typedef struct _wd {
 	uint8_t command;
 	uint8_t track;
-	uint8_t sector;
+	union {
+		uint8_t sector;    // read: the sector the drive CPU asked for
+		uint8_t write_ack; // write: end a write command, bit 2 = lost data
+	};
 	uint8_t datareg;
 	uint8_t status_clear;
 	uint8_t status_set;

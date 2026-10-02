@@ -125,6 +125,18 @@ begin
             io_req.write <= '0';
         end procedure;
 
+        -- The application acknowledges a finished write the way the firmware
+        -- does: through register 2, with lost data in bit 2 if it could not
+        -- store it.
+        procedure app_acknowledge(lost : boolean) is
+        begin
+            if lost then
+                app_write(X"2", X"04");
+            else
+                app_write(X"2", X"00");
+            end if;
+        end procedure;
+
         procedure feed_two_bytes is
         begin
             app_write(X"8", X"00");      -- transfer address
@@ -162,8 +174,7 @@ begin
         wait for 2 ms;
         cpu_status(st);
         assert st(0) = '1' report "case 2: busy should still be set, nothing acknowledged" severity failure;
-        app_write(X"5", X"04");          -- status set: lost data
-        app_write(X"4", X"01");          -- status clear: busy
+        app_acknowledge(true);
         wait for 10 us;
         cpu_status(st);
         assert st(0) = '0' report "case 2: busy should be clear after the acknowledge" severity failure;
@@ -180,6 +191,20 @@ begin
         wait for 200 ms;
         cpu_status(st);
         assert st(0) = '0' report "case 3: the fallback should have ended the command" severity failure;
+
+        ---------------------------------------------------------------------
+        report "case 4: the fallback fired, a new command started, then the late acknowledge";
+        -- Case 3 ended on the fallback. The drive CPU now issues its next
+        -- command, and only then does the application's acknowledge for the
+        -- write arrive. It belongs to the finished write and must not end the
+        -- new command.
+        cpu_write("00", X"88");          -- read sector
+        cpu_status(st);
+        assert st(0) = '1' report "case 4: busy should be set for the new command" severity failure;
+        app_acknowledge(false);
+        wait for 10 us;
+        cpu_status(st);
+        assert st(0) = '1' report "case 4: a late acknowledge ended the next command" severity failure;
 
         report "all cases passed";
         stop <= true;

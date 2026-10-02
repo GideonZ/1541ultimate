@@ -65,15 +65,15 @@ void WD177x :: init(void)
 
 // The drive CPU reads the status register as soon as busy drops, so a write that
 // could not be stored has to be reported before the bit is given back. The block
-// waits for this as long as bit 2 of register 0 is set; see init().
+// waits for this as long as bit 2 of register 0 is set; see init(). The
+// acknowledge only counts while the block waits for it, and a core without it
+// ignores the register, so this never touches a command the drive CPU has
+// issued since.
 void WD177x :: complete_write(bool stored)
 {
-    if (!stored) {
-        // Lost data is the status the WD177x defines for a write it could not
-        // complete. Record not found belongs to the read commands.
-        wd177x->status_set = WD_STATUS_LOST;
-    }
-    wd177x->status_clear = WD_STATUS_BUSY;
+    // Lost data is the status the WD177x defines for a write it could not
+    // complete. Record not found belongs to the read commands.
+    wd177x->write_ack = stored ? 0 : WD_STATUS_LOST;
 }
 
 void WD177x :: wait_head_settle(void)
