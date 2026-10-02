@@ -1147,9 +1147,10 @@ def canonicalize_document(text: str) -> str:
     or either side of a rounded second boundary. None of that is what this
     tier proves; it proves the renderer's wording, structure and alignment,
     so both this document and the checked-in one are put through the same
-    substitutions before they are compared. The timeline keeps every event in
-    its order and loses only its clock; `the_timeline_is_the_whole_run_in_order`
-    proves the clock order directly against a live document. The slow-check
+    substitutions before they are compared. The timeline is reduced to the
+    events whose wording does not depend on that race, sorted; see
+    _timeline_events. `the_timeline_is_the_whole_run_in_order` proves the
+    order and the requests directly against a live document. The slow-check
     summary is reduced to its length, because
     `the_time_section_names_the_slow_ones` already proves its content the
     same way. Table padding is collapsed
@@ -1213,8 +1214,7 @@ def canonicalize_document(text: str) -> str:
                       r"\1N\2", m.group(2)),
                   text)
     text = re.sub(r"(?ms)^## Timeline\n.*?(?=\n## Checks)",
-                  lambda m: _TIMELINE_CLOCK_RE.sub(_TIMELINE_CLOCK, m.group(0)),
-                  text)
+                  lambda m: _timeline_events(m.group(0)), text)
     text = re.sub(r"(?ms)^## Where the time went\n.*?(?=\n## Device log)",
                   lambda m: _section_length(m.group(0), "## Where the time went"),
                   text)
@@ -1222,11 +1222,40 @@ def canonicalize_document(text: str) -> str:
 
 
 # The wall clock and offset that open each timeline line, which e2e_report
-# writes as "-" when it has no start time to measure from. One event per line
-# lets two branches that add events at different places merge without a
-# conflict.
-_TIMELINE_CLOCK_RE = re.compile(r"(?m)^\d\d:\d\d:\d\d (?:\+\d+:\d\d|-)  ")
+# writes as "-" when it has no start time to measure from.
+_TIMELINE_CLOCK_RE = re.compile(r"^\d\d:\d\d:\d\d (?:\+\d+:\d\d|-)  ")
 _TIMELINE_CLOCK = "00:00:00 +00:00  "
+# A device request as describe_action writes it, or a run of them collapsed
+# into one line by timeline_section.
+_TIMELINE_REQUEST_RE = re.compile(
+    r"^\S+ (?:GET|PUT|POST|DELETE|PATCH|HEAD|OPTIONS) /|^\d+ device requests \(")
+
+
+def _timeline_events(section: str) -> str:
+    """The timeline's events, without their clock or the device requests, sorted.
+
+    The events come from several processes, each stamped with its own clock,
+    so their order shifts with how the machine scheduled them: a skew of 10 ms
+    between the runner's records and a suite's reorders the section. Request
+    lines also change their wording with that order, because a run of them
+    collapses into a count or is listed in full depending on what lies beside
+    it. Every other event is written whatever the order, so those lines,
+    sorted, are the part of the section a build reproduces. One line per
+    event is also what lets two branches that add different events merge
+    without a conflict.
+
+    The clock is kept as a fixed stand-in so that a second pass finds the
+    same lines again, which keeps canonicalize_document idempotent.
+    """
+    lines = section.rstrip("\n").split("\n")
+    first = next((i for i, line in enumerate(lines)
+                  if _TIMELINE_CLOCK_RE.match(line)), len(lines))
+    events = []
+    for line in lines[first:]:
+        event = _TIMELINE_CLOCK_RE.sub("", line)
+        if event.strip() and not _TIMELINE_REQUEST_RE.match(event):
+            events.append(_TIMELINE_CLOCK + event)
+    return "\n".join(lines[:first] + sorted(events)) + "\n"
 
 
 _REDUCED_SECTION_RE = re.compile(

@@ -3538,26 +3538,34 @@ def the_job_summary_step_does_nothing_outside_ci() -> str:
 
 
 @case(1)
-def the_canonical_timeline_keeps_its_events_and_order() -> str:
-    """Only the clock goes, and a second pass changes nothing.
+def the_canonical_timeline_is_its_events_sorted() -> str:
+    """The events without clock or requests, sorted; a second pass changes nothing.
 
     The golden comparison canonicalizes the checked-in document again, so the
     canonical form has to be a fixed point, including for an event whose own
     text opens with something clock-like and for the "-" offset written when
-    there is no start time.
+    there is no start time. The same events in another order are the same
+    timeline, because the order is the part a slower machine changes.
     """
-    document = ("## Timeline\n\nEach line opens with the clock.\n\n"
-                "12:00:01 +00:00  b/overlay/x/1 started\n"
-                "12:00:02 +00:01  a GET /v1/version\n"
-                "01:00:00 -  12:00:00 +00:01  looks like a clock\n"
-                "\n## Checks\n")
-    once = canonicalize_document(document)
-    expect("the events in their order, without the clock",
-           once.split("\n")[4:7],
-           ["00:00:00 +00:00  b/overlay/x/1 started",
-            "00:00:00 +00:00  a GET /v1/version",
-            "00:00:00 +00:00  12:00:00 +00:01  looks like a clock"])
+    events = ["12:00:01 +00:00  b/overlay/x/1 started",
+              "12:00:02 +00:01  a GET /v1/version",
+              "12:00:02 +00:01  4 device requests (GET, PUT)",
+              "01:00:00 -  12:00:00 +00:01  looks like a clock",
+              "12:00:03 +00:02  a sweep x: OK"]
+
+    def timeline(order):
+        return ("## Timeline\n\nEach line opens with the clock.\n\n"
+                + "\n".join(order) + "\n\n## Checks\n")
+
+    once = canonicalize_document(timeline(events))
+    expect("the events sorted, without the clock or the requests",
+           once.split("\n")[4:8],
+           ["00:00:00 +00:00  12:00:00 +00:01  looks like a clock",
+            "00:00:00 +00:00  a sweep x: OK",
+            "00:00:00 +00:00  b/overlay/x/1 started",
+            ""])
     expect("a second pass", canonicalize_document(once), once)
+    expect("another order", canonicalize_document(timeline(events[::-1])), once)
     # The collector's port is ephemeral; the device's own port, named where the
     # address is wrong rather than the port, is a real setting and stays.
     ports = canonicalize_document(
@@ -3570,4 +3578,4 @@ def the_canonical_timeline_keeps_its_events_and_order() -> str:
             "Server' to '192.168.1.2:0' and reboot",
             "this run collects at 192.168.1.2, so none of it will arrive; set "
             "'Log to Syslog Server' to '192.168.1.2:5514' and reboot"])
-    return "3 events, idempotent, one port"
+    return "3 events, idempotent, order-free, one port"
