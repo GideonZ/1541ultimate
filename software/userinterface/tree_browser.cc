@@ -614,7 +614,7 @@ bool TreeBrowser :: perform_quick_seek(void)
     int num_el = state->children->get_elements();
     for(int i=0;i<num_el;i++) {
     	Browsable *t = (*state->children)[i];
-        if(t && pattern_match(quick_seek_string, t->getName(), false)) {
+        if(t && pattern_match(quick_seek_string, t->getDisplayName(), false)) {
 			state->move_to_index(i);
 			return true;
 		}

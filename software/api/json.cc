@@ -137,7 +137,7 @@ int convert_text_to_json_objects(char *text, size_t text_size, size_t max_tokens
     }
     jsmntok_t *tokens = (jsmntok_t *)malloc(sizeof(jsmntok_t) * max_tokens);
     if (!tokens) {
-        return JSMN_ERROR_NOMEM;
+        return JSON_ALLOC_FAILED;
     }
     // memset(tokens, 0, max_tokens * sizeof(jsmntok_t)); // not necessary?
     int tokens_used = parse_json(text, text_size, tokens, max_tokens);

@@ -507,7 +507,7 @@ def scenario_query_returns_results(device: Device) -> None:
         ):
             raise Failure("the edit field did not open")
     with check("the typed term lands in the first field"):
-        device.form.type_text(SEARCH_TERM)
+        device.form.enter_text(SEARCH_TERM)
         device.form.confirm()
         shown = device.form.field(first.label).value
         if SEARCH_TERM not in shown.lower():
@@ -578,7 +578,7 @@ def scenario_dropdown_preserves_fields(device: Device) -> None:
         expected: dict[str, str] = {}
         for index, field in enumerate(texts):
             form.edit(field)
-            form.type_text(field_term(index, field))
+            form.enter_text(field_term(index, field))
             form.confirm()
         expected = form.values()
         for index, field in enumerate(texts):
@@ -745,7 +745,7 @@ def scenario_key_mashing(device: Device) -> None:
     with check("submit a query and hammer keys while it runs"):
         device.form.open()
         device.form.edit(device.form.first_field())
-        device.form.type_text(SEARCH_TERM)
+        device.form.enter_text(SEARCH_TERM)
         device.form.confirm()
         device.form.submit()
         # Deliberately not this machine's task-menu key. These presses are

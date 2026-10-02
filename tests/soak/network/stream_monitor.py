@@ -10,6 +10,8 @@ from dataclasses import dataclass
 from collections.abc import Callable, Sequence
 
 import dma_probe
+import streams
+import targets
 
 
 DEFAULT_CONTROL_PORT = 64
@@ -47,6 +49,15 @@ STREAM_IDS = {
     StreamKind.VIDEO: 0,
     StreamKind.AUDIO: 1,
     StreamKind.DEBUG: 2,
+}
+# Where the video and audio go: the group and port every suite streams to, which a
+# multicast receiver shares and tells devices apart in by the sender (see targets.py).
+# A unicast stream to this host would need the device's Ethernet ARP table to hold this
+# host, and a device with its WiFi on the same subnet answers this host over WiFi, so
+# that entry ages out and the stream never starts. The debug stream has no such group.
+STREAM_GROUPS = {
+    StreamKind.VIDEO: (targets.VIDEO_GROUP, targets.VIDEO_PORT),
+    StreamKind.AUDIO: (targets.AUDIO_GROUP, targets.AUDIO_PORT),
 }
 STREAM_PACKET_SIZES = {
     StreamKind.VIDEO: VIDEO_PACKET_SIZE,
@@ -401,7 +412,8 @@ class StreamPacketTracker:
 
 
 class _StreamReceiver(threading.Thread):
-    def __init__(self, sock: socket.socket, tracker: StreamPacketTracker, stop_event: threading.Event, allowed_sources: set[str]) -> None:
+    def __init__(self, sock: socket.socket, tracker: StreamPacketTracker, stop_event: threading.Event,
+                 allowed_sources: streams.DeviceAddresses) -> None:
         super().__init__(daemon=True)
         self.sock = sock
         self.tracker = tracker
@@ -442,6 +454,9 @@ class StreamMonitor:
         self._trackers: dict[StreamKind, StreamPacketTracker] = {}
 
     def _destination_for(self, kind: StreamKind) -> str:
+        if kind in STREAM_GROUPS:
+            group, port = STREAM_GROUPS[kind]
+            return f"{group}:{port}"
         return f"{self.local_ip}:{self._sockets[kind].getsockname()[1]}"
 
     def _enable_stream(self, kind: StreamKind, *, retry: bool = False) -> None:
@@ -463,21 +478,29 @@ class StreamMonitor:
 
     def start(self) -> None:
         for kind in self.streams:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, self.settings.receive_buffer_bytes)
-            sock.settimeout(min(self.settings.packet_timeout_s / 2.0, 0.25))
-            sock.bind((self.local_ip, 0))
+            timeout = min(self.settings.packet_timeout_s / 2.0, 0.25)
+            if kind in STREAM_GROUPS:
+                sock = streams.stream_socket(*STREAM_GROUPS[kind], timeout=timeout)
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, self.settings.receive_buffer_bytes)
+            else:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, self.settings.receive_buffer_bytes)
+                sock.settimeout(timeout)
+                sock.bind((self.local_ip, 0))
             tracker = StreamPacketTracker(
                 kind,
                 packet_timeout_s=self.settings.packet_timeout_s,
                 startup_grace_s=self.settings.startup_grace_s,
                 logger=self.logger,
             )
-            receiver = _StreamReceiver(sock, tracker, self._stop_event, set(self.peer_ips))
+            # A machine on two interfaces streams from whichever its routing picks, which
+            # need not be the address it was reached on; see streams.DeviceAddresses.
+            receiver = _StreamReceiver(sock, tracker, self._stop_event,
+                                       streams.DeviceAddresses(self.settings.host, set(self.peer_ips)))
             self._sockets[kind] = sock
             self._trackers[kind] = tracker
             self._threads[kind] = receiver
-            self.logger("stream", "INFO", f"kind={kind.value} listening={self.local_ip}:{sock.getsockname()[1]} expected_sources={','.join(self.peer_ips)}")
+            self.logger("stream", "INFO", f"kind={kind.value} listening={self._destination_for(kind)} expected_sources={','.join(self.peer_ips)}")
             receiver.start()
         try:
             for kind in self.streams:

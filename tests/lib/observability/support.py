@@ -219,7 +219,8 @@ def free_udp_port() -> int:
 # see `no_runner_variable_escapes_the_scrubbing_list` for why.
 INHERITED_VARIABLES = {
     "E2E_ATTEMPT", "E2E_INTERACTIONS", "E2E_JSONL", "E2E_SCREENS", "E2E_SUITE",
-    "E2E_SYSLOG_OWNED", "E2E_SYSLOG_PORT", "E2E_SYSLOG_PORTS", "E2E_TARGET",
+    "E2E_SYSLOG_FILE", "E2E_SYSLOG_FILES", "E2E_SYSLOG_OWNED", "E2E_SYSLOG_PORT",
+    "E2E_SYSLOG_PORTS", "E2E_TARGET",
     # Not a runner variable but a suite one: --assume-fix reaches every suite
     # through it, so a scripted run would otherwise inherit the gate's
     # assumptions.
@@ -1146,15 +1147,16 @@ def canonicalize_document(text: str) -> str:
     or either side of a rounded second boundary. None of that is what this
     tier proves; it proves the renderer's wording, structure and alignment,
     so both this document and the checked-in one are put through the same
-    substitutions before they are compared. The two sections built entirely
-    from that race, the timeline and the slow-check summary, are reduced to
-    their length: `the_timeline_is_the_whole_run_in_order` and
-    `the_time_section_names_the_slow_ones` already prove their content and
-    order directly against a live document, so nothing is lost by not also
-    diffing them here. Table padding is collapsed everywhere rather than
-    reasoned about column by column, because a placeholder is rarely the same
-    width as the real value it replaces; `every_table_is_padded` is what
-    proves alignment, not this.
+    substitutions before they are compared. The timeline is reduced to the
+    events whose wording does not depend on that race, sorted; see
+    _timeline_events. `the_timeline_is_the_whole_run_in_order` proves the
+    order and the requests directly against a live document. The slow-check
+    summary is reduced to its length, because
+    `the_time_section_names_the_slow_ones` already proves its content the
+    same way. Table padding is collapsed
+    everywhere rather than reasoned about column by column, because a
+    placeholder is rarely the same width as the real value it replaces;
+    `every_table_is_padded` is what proves alignment, not this.
     """
 
     text = re.sub(r"[ \t]+\|", " |", text)
@@ -1171,6 +1173,9 @@ def canonicalize_document(text: str) -> str:
     # The collector binds an ephemeral port in a fixture, so the number it got
     # is whatever the kernel had free at that moment.
     text = re.sub(r"(?<=UDP )\d{4,5}\b", "0", text)
+    text = re.sub(r"(collects on )\d{4,5}(?:, \d{4,5})*(, so none of it will "
+                  r"arrive; set '[^']+' to '[^']+:)\d{4,5}'", r"\g<1>0\g<2>0'",
+                  text)
     text = re.sub(r"`(\d{4,5})`", "`0`", text)
     text = re.sub(r"\d+\.\d+s\b", "0.000s", text)
     text = re.sub(r"(?<=[=\s])\d+ms\b", "0ms", text)
@@ -1209,11 +1214,48 @@ def canonicalize_document(text: str) -> str:
                       r"\1N\2", m.group(2)),
                   text)
     text = re.sub(r"(?ms)^## Timeline\n.*?(?=\n## Checks)",
-                  lambda m: _section_length(m.group(0), "## Timeline"), text)
+                  lambda m: _timeline_events(m.group(0)), text)
     text = re.sub(r"(?ms)^## Where the time went\n.*?(?=\n## Device log)",
                   lambda m: _section_length(m.group(0), "## Where the time went"),
                   text)
     return text
+
+
+# The wall clock and offset that open each timeline line, which e2e_report
+# writes as "-" when it has no start time to measure from.
+_TIMELINE_CLOCK_RE = re.compile(r"^\d\d:\d\d:\d\d (?:\+\d+:\d\d|-)  ")
+_TIMELINE_CLOCK = "00:00:00 +00:00  "
+# A device request as describe_action writes it, or a run of them collapsed
+# into one line by timeline_section.
+_TIMELINE_REQUEST_RE = re.compile(
+    r"^\S+ (?:GET|PUT|POST|DELETE|PATCH|HEAD|OPTIONS) /|^\d+ device requests \(")
+
+
+def _timeline_events(section: str) -> str:
+    """The timeline's events, without their clock or the device requests, sorted.
+
+    The events come from several processes, each stamped with its own clock,
+    so their order shifts with how the machine scheduled them: a skew of 10 ms
+    between the runner's records and a suite's reorders the section. Request
+    lines also change their wording with that order, because a run of them
+    collapses into a count or is listed in full depending on what lies beside
+    it. Every other event is written whatever the order, so those lines,
+    sorted, are the part of the section a build reproduces. One line per
+    event is also what lets two branches that add different events merge
+    without a conflict.
+
+    The clock is kept as a fixed stand-in so that a second pass finds the
+    same lines again, which keeps canonicalize_document idempotent.
+    """
+    lines = section.rstrip("\n").split("\n")
+    first = next((i for i, line in enumerate(lines)
+                  if _TIMELINE_CLOCK_RE.match(line)), len(lines))
+    events = []
+    for line in lines[first:]:
+        event = _TIMELINE_CLOCK_RE.sub("", line)
+        if event.strip() and not _TIMELINE_REQUEST_RE.match(event):
+            events.append(_TIMELINE_CLOCK + event)
+    return "\n".join(lines[:first] + sorted(events)) + "\n"
 
 
 _REDUCED_SECTION_RE = re.compile(

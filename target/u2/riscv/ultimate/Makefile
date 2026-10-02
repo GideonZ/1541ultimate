@@ -60,6 +60,7 @@ SRCS_CC	 =	small_printf.cc \
 			c64.cc \
 			c64_crt.cc \
 			c64_subsys.cc \
+			x00_wrapper.cc \
 			screen.cc \
 			keyboard_c64.cc \
 			disk_image.cc \

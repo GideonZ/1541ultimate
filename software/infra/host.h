@@ -18,6 +18,12 @@ public:
 
     virtual bool exists(void) { return false; }
     virtual bool is_accessible(void) { return false; }
+    // Whether a keyboard scan may drive the machine's CIA right now, from any
+    // task: the host holds the bus and is not restoring the program's I/O.
+    virtual bool keyboard_scan_allowed(void) { return is_accessible(); }
+    // Whether an allowed scan should wait a tick: the host briefly drives the bus in the program's
+    // own banking, so the CIA may not be at its address. A deferred scan keeps its key state.
+    virtual bool keyboard_scan_deferred(void) { return false; }
     virtual bool is_permanent(void) { return false; }
 
     //    virtual void reset(void) { }

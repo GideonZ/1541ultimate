@@ -32,7 +32,8 @@ class UsbHidDriver : public UsbDriver
     bool mouse;
     bool descriptor_keyboard;
     bool descriptor_mouse;
-    int16_t mouse_x, mouse_y;
+    bool rest_source;
+    static int16_t mouse_x, mouse_y;
     uint8_t mouse_joy;
     int native_wheel_delta_queue[8];
     uint8_t native_wheel_queue_head;
@@ -78,12 +79,16 @@ class UsbHidDriver : public UsbDriver
     int wheel_pulse_burst_direction;
     uint8_t wheel_pulse_burst_count;
     int pointer_sensitivity_setting;
+    int cursor_motion_x_remainder;      // motion not yet worth a cursor key
+    int cursor_motion_y_remainder;
     int pointer_sensitivity_remainder_x;
     int pointer_sensitivity_remainder_y;
     int adaptive_accel_ema_x16;
     int adaptive_accel_scale_factor;
     static void S_wheel_pulse_timer(TimerHandle_t a);
     void service_native_wheel_timer(void);
+    void set_joy1_output(uint8_t active_low_mask);
+    bool process_mouse_report(const uint8_t *data, int data_len);
 
 public:
 	static UsbDriver *test_driver(UsbInterface *intf);
@@ -102,6 +107,17 @@ public:
 	void pipe_error(int pipe);
 
     void interrupt_handler();
+
+    // A wheel mouse with no USB device behind it, whose reports go through the
+    // same handling as a USB mouse's; NULL if it cannot be built. Its buttons and
+    // wheel pulses are their own port 1 source. Call only from one task.
+    static UsbHidDriver *restMouse(void);
+    static UsbHidDriver *restMouseIfBuilt(void);    // NULL until restMouse() built it
+    bool restMouseAttached(void) const;
+    void restMouseAttach(void);
+    void restMouseDetach(void);
+    void restMouseReport(uint8_t buttons, int dx, int dy, int wheel, int pan);
+    uint8_t restMouseButtons(void) const;   // HID order: left 1, right 2, middle 4
 };
 
 #endif

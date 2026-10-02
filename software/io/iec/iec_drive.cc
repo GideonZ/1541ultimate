@@ -12,9 +12,6 @@
 #define FS_ROOT "/USB0/"
 #endif
 
-#define MENU_IEC_ON          0xCA0E
-#define MENU_IEC_OFF         0xCA0F
-#define MENU_IEC_RESET       0xCA10
 #define MENU_IEC_SET_DIR     0xCA17
 #define MENU_IEC_SAVE_PAR    0xCA18
 #define MENU_IEC_SHOW_PARTS  0xCA19
@@ -22,10 +19,23 @@
 #define CFG_IEC_ENABLE   0x51
 #define CFG_IEC_BUS_ID   0x52
 #define CFG_IEC_PATH     0x53
+#define CFG_IEC_LOG      0x55
+
+// "IEC Drive" (SI-107): UCI Only takes the drive off the bus and keeps its UCI target;
+// Disabled turns off both. The order of the values keeps a stored setting's meaning.
+#define IEC_MODE_UCI_ONLY    0
+#define IEC_MODE_ENABLED     1
+#define IEC_MODE_DISABLED    2
+static const char *iec_modes[] = { "UCI Only", "Enabled", "Disabled" };
+
+// The number the KERNAL is given at $DF1B when the drive is off altogether. It is 5 bits
+// wide, and 31 is no device a program opens, so the KERNAL sends everything to the bus.
+#define KERNAL_DEVICE_NONE   31
 
 static struct t_cfg_definition iec_config[] = {
-    { CFG_IEC_ENABLE,    CFG_TYPE_ENUM,   "IEC Drive",         "%s", en_dis, 0,  1, 0 },
+    { CFG_IEC_ENABLE,    CFG_TYPE_ENUM,   "IEC Drive",         "%s", iec_modes, 0,  2, 0 },
     { CFG_IEC_BUS_ID,    CFG_TYPE_VALUE,  "Soft Drive Bus ID", "%d", NULL,   8, 30, 11 },
+    { CFG_IEC_LOG,       CFG_TYPE_ENUM,   "Log Every Operation", "%s", en_dis, 0, 1, 0 },
     { 0xFF, CFG_TYPE_END, "", "", NULL, 0, 0, 0 }
 };
 
@@ -69,8 +79,8 @@ const char msg61[] = "FILE NOT OPEN";			//61
 const char msg62[] = "FILE NOT FOUND";			//62
 const char msg63[] = "FILE EXISTS";				//63
 const char msg64[] = "FILE TYPE MISMATCH";		//64
-//const char msg65[] = "NO BLOCK";				//65
-//const char msg66[] = "ILLEGAL TRACK AND SECTOR";//66
+const char msg65[] = "NO BLOCK";				//65
+const char msg66[] = "ILLEGAL TRACK OR SECTOR"; //66, as sd2iec and the 1541 ROM print it
 //const char msg67[] = "ILLEGAL SYSTEM T OR S";	//67
 const char msg69[] = "FILESYSTEM ERROR";        //69
 const char msg70[] = "NO CHANNEL";	            //70
@@ -79,6 +89,7 @@ const char msg72[] = "DISK FULL";				//72
 const char msg73[] = "U64HD ULTIMATE DOS V2.0"  ;//73 DOS MISMATCH(Returns DOS Version)
 const char msg74[] = "DRIVE NOT READY";			//74
 const char msg77[] = "SELECTED PARTITION ILLEGAL"; //77
+const char msg98[] = "UNKNOWN DRIVE CODE";      //98, as sd2iec answers (SI-105)
 const char msg_c1[] = "BAD COMMAND";			//custom
 const char msg_c2[] = "NOT IMPLEMENTED";		//custom
 const char msg_c3[] = "BLOCK ACCESS DENIED";    //custom
@@ -111,8 +122,8 @@ const IEC_ERROR_MSG last_error_msgs[] = {
 		{ 62, msg62, NR_OF_EL(msg62) - 1 },
 		{ 63, msg63, NR_OF_EL(msg63) - 1 },
 		{ 64, msg64, NR_OF_EL(msg64) - 1 },
-//		{ 65, msg65, NR_OF_EL(msg65) - 1 },
-//		{ 66, msg66, NR_OF_EL(msg66) - 1 },
+		{ 65, msg65, NR_OF_EL(msg65) - 1 },
+		{ 66, msg66, NR_OF_EL(msg66) - 1 },
 //		{ 67, msg67, NR_OF_EL(msg67) - 1 },
         { 69, msg69, NR_OF_EL(msg69) - 1 },
 		{ 70, msg70, NR_OF_EL(msg70) - 1 },
@@ -121,6 +132,7 @@ const IEC_ERROR_MSG last_error_msgs[] = {
 		{ 73, msg73, NR_OF_EL(msg73) - 1 },
 		{ 74, msg74, NR_OF_EL(msg74) - 1 },
         { 77, msg77, NR_OF_EL(msg77) - 1 },
+        { 98, msg98, NR_OF_EL(msg98) - 1 },
 
 		{ 75, msg_c1, NR_OF_EL(msg_c1) - 1 },
 		{ 76, msg_c2, NR_OF_EL(msg_c2) - 1 },
@@ -129,9 +141,19 @@ const IEC_ERROR_MSG last_error_msgs[] = {
 
 IecDrive :: IecDrive() : SubSystem(SUBSYSID_IEC)
 {
+#ifndef RUNS_ON_PC
+    mutex = xSemaphoreCreateRecursiveMutex();
+#endif
+    lock_depth = 0;
     intf = IecInterface :: get_iec_interface();
 	fm = FileManager :: getFileManager();
     my_bus_id = 0;
+    applied_bus_id = -1;
+    write_protect = false;
+    clock_offset = 0;
+    enable = false;
+    uci_enable = false;
+    vfs = NULL; // registering the settings makes them take effect before this is built
 
     register_store(0x49454300, "SoftIEC Drive Settings", iec_config);
     cfg->set_sort_order(SORT_ORDER_CFG_SOFTIEC);
@@ -183,6 +205,28 @@ IecDrive :: ~IecDrive()
     intf->unregister_slave(slot_id);
 }
 
+void IecDrive :: lock(void)
+{
+#ifndef RUNS_ON_PC
+    xSemaphoreTakeRecursive(mutex, portMAX_DELAY);
+#endif
+    lock_depth++;
+}
+
+void IecDrive :: unlock(void)
+{
+    lock_depth--;
+#ifndef RUNS_ON_PC
+    xSemaphoreGiveRecursive(mutex);
+#endif
+}
+
+// How deep the holder of the drive's lock is, 0 when nobody holds it; for the tests.
+int iec_drive_lock_depth(IecDrive *drive)
+{
+    return drive->lock_depth;
+}
+
 IecCommandChannel *IecDrive :: get_command_channel(void)
 {
     return (IecCommandChannel *)channels[15];
@@ -195,12 +239,30 @@ IecChannel *IecDrive :: get_data_channel(int chan)
 
 void IecDrive :: effectuate_settings(void)
 {
-    my_bus_id = cfg->get_value(CFG_IEC_BUS_ID);
-    cmd_if.set_kernal_device_id(my_bus_id);
-    
-    enable = uint8_t(cfg->get_value(CFG_IEC_ENABLE));
+    IecDriveLock guard(this); // configure() holds the IEC processor in reset (CR-6)
+    int bus_id = cfg->get_value(CFG_IEC_BUS_ID);
+    int mode = cfg->get_value(CFG_IEC_ENABLE);
+    bool enabled = (mode == IEC_MODE_ENABLED);
+    bool uci = (mode != IEC_MODE_DISABLED);
+    // Holding the processor in reset drops a transfer on the bus, so a change of Log Every
+    // Operation alone, which is read where it is used, leaves the processor running. The
+    // comparison is with the setting, not the live number, which U0> may have moved.
+    bool reconfigure = (bus_id != applied_bus_id) || (enabled != enable);
+    bool announce = (bus_id != applied_bus_id) || (uci != uci_enable);
+    if (bus_id != applied_bus_id) {
+        my_bus_id = bus_id;
+        applied_bus_id = bus_id;
+    }
 
-    intf->configure();
+    enable = enabled;
+    uci_enable = uci;
+    if (announce) {
+        announce_kernal_device();
+    }
+
+    if (reconfigure) {
+        intf->configure();
+    }
 }
 
 void IecDrive :: create_task_items(void)
@@ -244,15 +306,17 @@ SubsysResultCode_e IecDrive :: executeCommand(SubsysCommand *cmd)
 
 	switch(cmd->functionID) {
 		case MENU_IEC_ON:
-			enable = 1;
-			cfg->set_value(CFG_IEC_ENABLE, enable);
+		case MENU_IEC_OFF: {
+            IecDriveLock guard(this);
+			enable = (cmd->functionID == MENU_IEC_ON) ? 1 : 0;
+			cfg->set_value(CFG_IEC_ENABLE, enable ? IEC_MODE_ENABLED : IEC_MODE_UCI_ONLY);
+            if (!uci_enable) {
+                uci_enable = true;
+                announce_kernal_device();
+            }
             intf->configure();
 			break;
-		case MENU_IEC_OFF:
-			enable = 0;
-			cfg->set_value(CFG_IEC_ENABLE, enable);
-            intf->configure();
-			break;
+        }
 		case MENU_IEC_RESET:
             reset();
 			break;
@@ -262,6 +326,7 @@ SubsysResultCode_e IecDrive :: executeCommand(SubsysCommand *cmd)
 
             form_fields->set("Path", cmd->path.c_str());
             form_fields->set("Number", vfs->GetUnusedPartition());
+            // The form waits for the user, so the lock is only taken for the change itself.
             if (form_new_partition(cmd->user_interface, form_fields) == MENU_DONE) {
                 vfs->add_partition(form_fields->int_or("Number", 99), form_fields->string_or("Path", "/"), form_fields->string_or("Name", "NO NAME"));
             }
@@ -291,7 +356,13 @@ SubsysResultCode_e IecDrive :: executeCommand(SubsysCommand *cmd)
 
 void IecDrive :: reset(void)
 {
+    IecDriveLock guard(this);
     effectuate_registered_settings();
+    // The settings restart the IEC processor only for a new device number or enable
+    // (SI-103b); a reset restarts it in any case, on the number the settings hold.
+    my_bus_id = cfg->get_value(CFG_IEC_BUS_ID);
+    announce_kernal_device();
+    intf->configure();
     for(int i=0; i < 16; i++) {
         channels[i]->reset();
     }
@@ -302,6 +373,7 @@ void IecDrive :: reset(void)
         }
     }
     vfs->SetCurrentPartition(1);
+    clock_offset = 0;
     last_error_code = ERR_DOS;
     last_error_track = 0;
     last_error_sector = 0;
@@ -310,16 +382,19 @@ void IecDrive :: reset(void)
 
 t_channel_retval IecDrive :: prefetch_data(uint8_t& data)
 {
+    IecDriveLock guard(this);
     return channels[current_channel]->prefetch_data(data);
 }
 
 t_channel_retval IecDrive :: prefetch_more(int bufsize, uint8_t*&pointer, int &available)
 {
+    IecDriveLock guard(this);
     return channels[current_channel]->prefetch_more(bufsize, pointer, available);
 }
 
 t_channel_retval IecDrive :: push_ctrl(uint16_t ctrl)
 {
+    IecDriveLock guard(this);
     switch(ctrl) {
         case SLAVE_CMD_ATN:
             current_channel = 0;
@@ -338,22 +413,53 @@ t_channel_retval IecDrive :: push_ctrl(uint16_t ctrl)
 
 t_channel_retval IecDrive :: push_data(uint8_t data)
 {
+    IecDriveLock guard(this);
     return channels[current_channel]->push_data(data);
 }
 
 t_channel_retval IecDrive :: pop_data(void)
 {
+    IecDriveLock guard(this);
     return channels[current_channel]->pop_data();
 }
 
 t_channel_retval IecDrive :: pop_more(int byte_count)
 {
+    IecDriveLock guard(this);
     return channels[current_channel]->pop_more(byte_count);
 }
 
 void IecDrive :: talk(void)
 {
+    IecDriveLock guard(this);
     channels[current_channel]->talk();
+}
+
+// Whether every command, open and close is logged, and not only the failures (iec_log.h).
+bool IecDrive :: log_every_operation(void)
+{
+    return cfg->get_value(CFG_IEC_LOG) > 0;
+}
+
+// The number a KERNAL that reaches the drive over UCI sends there (SI-107).
+void IecDrive :: announce_kernal_device(void)
+{
+    cmd_if.set_kernal_device_id(uci_enable ? my_bus_id : KERNAL_DEVICE_NONE);
+}
+
+// The device number the settings hold, which S-D returns the drive to (SI-101).
+int IecDrive :: configured_device_number(void)
+{
+    return cfg->get_value(CFG_IEC_BUS_ID);
+}
+
+// The device number for as long as the drive runs, from U0> (SI-100). It is not written to
+// the configuration: HD 9-49 describes the change as temporary.
+void IecDrive :: set_device_number(int dev)
+{
+    my_bus_id = dev;
+    announce_kernal_device();
+    intf->readdress(slot_id);
 }
 
 // called from IEC task, statically
@@ -361,6 +467,7 @@ void IecDrive :: set_iec_dir(IecSlave *sl, void *data)
 {
     IecDrive *drive = (IecDrive *)sl;
     struct set_part_t *pd = (struct set_part_t *)data;
+    IecDriveLock guard(drive);
     IecPartition *p = drive->vfs->GetPartition(pd->partition);
     if (!p) {
         drive->vfs->add_partition(pd->partition, pd->path, pd->name);
@@ -381,6 +488,7 @@ const char *IecDrive :: get_partition_dir(int p)
                 
 void IecDrive :: add_partition(int p, const char *path, const char *name)
 {
+    IecDriveLock guard(this);
     vfs->add_partition(p, path, name);
 }
 
@@ -462,6 +570,7 @@ int IecDrive ::get_error_string(char *buffer)
     
 void IecDrive :: info(StreamTextLog &b)
 {
+    IecDriveLock guard(this);
     char buffer[64];
     if(enable) {
         iec_drive->get_error_string(buffer);
@@ -478,6 +587,7 @@ void IecDrive :: info(StreamTextLog &b)
 
 void IecDrive :: info(JSON_Object *obj)
 {
+    IecDriveLock guard(this);
     char buffer[64];
     int len = iec_drive->get_error_string(buffer);
     if (len) {
@@ -499,6 +609,7 @@ void IecDrive :: info(JSON_Object *obj)
 
 void IecDrive :: load_partitions(const char *p, const char *f)
 {
+    IecDriveLock guard(this);
     vfs->LoadPartitions(p, f);
 }
 
