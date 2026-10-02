@@ -31,7 +31,7 @@ import time
 from support import (CASES, FOREIGN_VARIABLES, INHERITED_VARIABLES,
     KEPT_VARIABLES, REPORT_TOOL,
     ROOT, RUNNER_PATH, Skipped, UNTESTED_REQUIREMENTS, _harness_hash_edit,
-    case, composed_pair, exclusive, free_udp_port, glyph_columns,
+    canonicalize_document, case, composed_pair, exclusive, free_udp_port, glyph_columns,
     interaction_log, load_report_tool, load_runner, logged_interactions,
     occupied_span, packets_of, parse_srt, runner_variables,
     specified_requirements, synthetic_run, vic_frame, video_stream,
@@ -3535,3 +3535,47 @@ def the_job_summary_step_does_nothing_outside_ci() -> str:
         if previous is not None:
             os.environ["GITHUB_STEP_SUMMARY"] = previous
     return "silent and zero"
+
+
+@case(1)
+def the_canonical_timeline_is_its_events_sorted() -> str:
+    """The events without clock or requests, sorted; a second pass changes nothing.
+
+    The golden comparison canonicalizes the checked-in document again, so the
+    canonical form has to be a fixed point, including for an event whose own
+    text opens with something clock-like and for the "-" offset written when
+    there is no start time. The same events in another order are the same
+    timeline, because the order is the part a slower machine changes.
+    """
+    events = ["12:00:01 +00:00  b/overlay/x/1 started",
+              "12:00:02 +00:01  a GET /v1/version",
+              "12:00:02 +00:01  4 device requests (GET, PUT)",
+              "01:00:00 -  12:00:00 +00:01  looks like a clock",
+              "12:00:03 +00:02  a sweep x: OK"]
+
+    def timeline(order):
+        return ("## Timeline\n\nEach line opens with the clock.\n\n"
+                + "\n".join(order) + "\n\n## Checks\n")
+
+    once = canonicalize_document(timeline(events))
+    expect("the events sorted, without the clock or the requests",
+           once.split("\n")[4:8],
+           ["00:00:00 +00:00  12:00:00 +00:01  looks like a clock",
+            "00:00:00 +00:00  a sweep x: OK",
+            "00:00:00 +00:00  b/overlay/x/1 started",
+            ""])
+    expect("a second pass", canonicalize_document(once), once)
+    expect("another order", canonicalize_document(timeline(events[::-1])), once)
+    # The collector's port is ephemeral; the device's own port, named where the
+    # address is wrong rather than the port, is a real setting and stays.
+    ports = canonicalize_document(
+        "collects on 43915, so none of it will arrive; set 'Log to Syslog "
+        "Server' to '192.168.1.2:43915' and reboot\n"
+        "this run collects at 192.168.1.2, so none of it will arrive; set "
+        "'Log to Syslog Server' to '192.168.1.2:5514' and reboot\n")
+    expect("only the collector's port", ports.split("\n")[:2],
+           ["collects on 0, so none of it will arrive; set 'Log to Syslog "
+            "Server' to '192.168.1.2:0' and reboot",
+            "this run collects at 192.168.1.2, so none of it will arrive; set "
+            "'Log to Syslog Server' to '192.168.1.2:5514' and reboot"])
+    return "3 events, idempotent, order-free, one port"

@@ -430,7 +430,7 @@ void IecInterface :: info(Message& msg, int& offs)
             msg.message[offs++] = iec_if->slaves[i]->get_address();
             msg.message[offs++] = iec_if->slaves[i]->is_enabled() ? 1 : 0;
             msg.message[0] ++;
-            offs+= 3;
+            msg.length += 3;
         }            
     }
 }

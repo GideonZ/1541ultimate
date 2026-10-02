@@ -319,6 +319,11 @@ void UserInterface :: run_once(void)
     }
 
     host->take_ownership(this);
+    // Whatever is on the keyboard or joystick port as the menu opens was not
+    // meant for the menu; a single stale sample there moved the cursor (#935).
+    if (keyboard) {
+        keyboard->ignore_held_input();
+    }
     if (!host->is_permanent()) {
         appear();
     }

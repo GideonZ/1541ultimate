@@ -40,11 +40,12 @@ Losses this correlation accounts for rather than hides:
 
 from __future__ import annotations
 
+import os
 import re
 import socket
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 # The prefix every line carries (SOFTIEC_LOG_PREFIX in iec_log.h). Grep key in a device log.
 LOG_PREFIX = "SoftIEC: "
@@ -179,6 +180,22 @@ class Event:
         # carry no text, and without it one lost close would pair every later one with its
         # neighbour's line.
         return (self.cls, self.chan, render_text(self.txt))
+
+
+def across_resets(events: list[Event], resets: list[tuple[float, float]]) -> list[Event]:
+    """The events, with each one a drive reset overlapped made optional and its status unknown.
+
+    `resets` holds each reset as (request sent, answer received) on the same clock as the
+    events. A reset replaces the error channel, so the status the C64 read after it is not
+    the answer the drive logged, and a failure line may or may not have been written before
+    it. The line that does appear is still verified against the event's text and channel."""
+    out = []
+    for ev in events:
+        if (ev.t0 is not None) and (ev.t1 is not None) and \
+                any((sent <= ev.t1) and (answered >= ev.t0) for sent, answered in resets):
+            ev = replace(ev, status=None, optional=True)
+        out.append(ev)
+    return out
 
 
 @dataclass
@@ -523,7 +540,8 @@ def _deduplicate(lines: list[LogLine], result: Correlation,
 
 
 def _align(events: list[Event], lines: list[LogLine], pairs) -> list[tuple[str, Event | None, LogLine | None]]:
-    """The events and the lines in one order-keeping alignment with the most pairs, as a
+    """The events and the lines in one order-keeping alignment with the most pairs, a pair
+    with an operation that has to write its line counting twice one with an optional one, as a
     list of ("pair", event, line), ("event", event, None) and ("line", None, line).
 
     A longest common subsequence rather than a greedy walk: the same command, open or close
@@ -555,18 +573,22 @@ def _align(events: list[Event], lines: list[LogLine], pairs) -> list[tuple[str, 
         move[row] = 2
         if low > 1:
             move[row + low - 1] = 2
+        # A line is worth more to an operation that has to write one than to an optional
+        # one with the same text: the drive reset during an optional command's status read,
+        # and the same command sent again, must not leave the second without its line.
+        gain = 1 if ev.optional else 2
         for j in range(low, high + 1):
             best = score[above + j]
             step = 2
             if score[row + j - 1] > best:
                 best = score[row + j - 1]
                 step = 3
-            if (score[above + j - 1] + 1 > best) and (
+            if (score[above + j - 1] + gain > best) and (
                     event_keys[i - 1] == line_keys[j - 1]
                     or ((event_keys[i - 1][:2] == line_keys[j - 1][:2])
                         and (len(line_keys[j - 1][2]) >= len(event_keys[i - 1][2]) + MIN_INTERLEAVED)
                         and pairs(ev, lines[j - 1]))):
-                best = score[above + j - 1] + 1
+                best = score[above + j - 1] + gain
                 step = 1
             score[row + j] = best
             move[row + j] = step
@@ -828,6 +850,52 @@ def select_window(entries: list[tuple[str, str]], start_nonce: str, end_nonce: s
     return device_ip, device_texts[begin:finish]
 
 
+# Where run-tests --syslog puts this target's collected log; see SYSLOG_FILE_ENV there.
+COLLECTED_LOG_ENV = "E2E_SYSLOG_FILE"
+
+
+class CollectedLogSource:
+    """The device log that the runner's collector writes for this target, one
+    "<receive time> <text>" line per log line (tests/lib/syslog_collector.py). The runner holds
+    the syslog port for every target of a run, so a suite reads its target's file instead of
+    binding the port. The file holds this device's lines only, so every entry carries `device`
+    as its address. mark() remembers where the file ends, and entries() reads from there."""
+
+    def __init__(self, path: str, device: str) -> None:
+        self.path = path
+        self.device = device
+        self.offset = 0
+
+    @classmethod
+    def from_environment(cls, device: str) -> CollectedLogSource | None:
+        path = os.environ.get(COLLECTED_LOG_ENV)
+        return cls(path, device) if path else None
+
+    def mark(self) -> None:
+        try:
+            self.offset = os.path.getsize(self.path)
+        except OSError:
+            self.offset = 0
+
+    def entries(self) -> list[tuple[str, str]]:
+        try:
+            with open(self.path, "rb") as raw:
+                raw.seek(self.offset)
+                data = raw.read()
+        except OSError:
+            return []
+        out = []
+        # A last line without its newline is still being written, so it is left for next time.
+        for line in data.decode("utf-8", errors="replace").split("\n")[:-1]:
+            stamp, _, text = line.rstrip("\r").partition(" ")
+            if re.fullmatch(r"\d+\.\d+", stamp):
+                out.append((self.device, text))
+        return out
+
+    def stop(self) -> None:
+        pass
+
+
 class UdpLogSource:
     """A UDP sink bound to one address and port, for a run that owns the syslog port. It
     keeps (source ip, text) in arrival order, the same shape read_spool returns, so a phase
@@ -896,12 +964,24 @@ def parse_syslog_server(value: str) -> tuple[str, int] | None:
     return ip, 514
 
 
-def local_addresses() -> set[str]:
-    """This host's IPv4 addresses, so the suite can tell whether the device logs here."""
+def local_addresses(peer: str | None = None) -> set[str]:
+    """This host's IPv4 addresses, so the suite can tell whether the device logs here.
+
+    The host name resolves to 127.0.1.1 on a Debian host, so the address this host sends
+    to `peer` from is asked of the routing table as well: connecting a UDP socket sends
+    nothing and picks the interface a reply would come in on.
+    """
     found = {"127.0.0.1", "0.0.0.0"}
     try:
         for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
             found.add(info[4][0])
     except OSError:
         pass
+    if peer:
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+                probe.connect((peer, 9))
+                found.add(probe.getsockname()[0])
+        except OSError:
+            pass
     return found

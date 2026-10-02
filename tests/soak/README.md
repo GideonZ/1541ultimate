@@ -129,10 +129,21 @@ tests/soak/network/connection_test.py --profile stress -H u64 2>&1 \
 
 Run against a dedicated test device. These are active tests, whichever
 duration they are given: they create and remove `u64test_*` files under `/Temp`, write reserved C64
-page-3 bytes, change the `Vol UltiSid 1` setting between `0 dB` and `+1 dB`,
-open incomplete or malformed sessions, and enable network streams. Normal
-shutdown disables streams and cleans up tracked FTP files, but an abrupt host
-or device failure can interrupt cleanup.
+page-3 bytes, change the `Printer Settings` `Ink density` between `Medium` and
+`High` over HTTP and through the Telnet settings menu, open incomplete or
+malformed sessions, and enable network streams on a machine that serves them.
+The Telnet probe answers No when leaving the menu offers to save to flash; a
+machine whose `Auto Save Config` is `Yes` saves without asking, so a long run
+there writes the settings flash on every pass through the menu. Normal
+shutdown disables streams, puts `Ink density` back in memory and in flash, and
+cleans up tracked FTP files, but an abrupt host or device failure can interrupt
+cleanup.
+
+The probes adapt to the machine `/v1/info` names: the DMA debug register and
+the streams exist only on the Ultimate 64 family and the C64 Ultimate, so a
+run against an Ultimate II+ leaves them out. The streams go to the multicast
+groups the E2E stream suites use (`tests/lib/targets.py`), so a run points the
+device's streams there and stops them when it ends.
 
 The Telnet `vanish` mode is more invasive. It fills the device's Telnet session
 table and temporarily changes a host network alias; it needs an unused LAN
