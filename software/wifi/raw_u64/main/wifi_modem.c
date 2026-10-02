@@ -69,6 +69,16 @@ void wifi_note_user_disconnect(void)
     user_disconnected = true;
 }
 
+/* What feeds the RNG: esp_fill_random() is only truly random while the radio runs
+ * (esp_random.h). Dispatch starts only after esp_wifi_start() succeeded, so this is
+ * a second guard. Set once, by wifi_init(); this application never stops the radio. */
+static volatile entropy_source_t entropy = ENTROPY_NONE;
+
+entropy_source_t entropy_source(void)
+{
+    return entropy;
+}
+
 // Allocate some buffers to work with
 command_buf_context_t work_buffers;
 
@@ -252,7 +262,11 @@ static void wifi_init()
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_NONE));
-    ESP_ERROR_CHECK(esp_wifi_start());
+    esp_err_t err = esp_wifi_start();
+    ESP_ERROR_CHECK(err);
+    if (err == ESP_OK) {
+        entropy = ENTROPY_RADIO;
+    }
 
     ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT,
                                                         ESP_EVENT_ANY_ID,
