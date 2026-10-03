@@ -312,8 +312,12 @@ int FileTypeSID ::createMusHeader(void)
     sid_header[0x77] = 0x29; // default flags set for 8580, NTSC and MUS data only
 
     if (sid_header[0x16] == 0) {
-        // set filename as title
+        // set filename as title, without the path runners:sidplay passes in
         const char *filename = file_string.c_str();
+        const char *slash = strrchr(filename, '/');
+        if (slash) {
+            filename = slash + 1;
+        }
         int size = strlen(filename);
 
         // truncate filename where extension begins
