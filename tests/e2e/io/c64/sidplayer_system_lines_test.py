@@ -52,6 +52,7 @@ them back.
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 import re
 import struct
 import sys
@@ -174,6 +175,22 @@ def screen_address(device: UltimateApi) -> int:
     bank = 3 - (device.machine.readmem(CIA2_PORT_A, 1)[0] & 0x03)
     offset = (device.machine.readmem(VIC_MEMORY, 1)[0] >> 4) * 0x400
     return bank * 0x4000 + offset
+
+
+# Checks that failed, so that a red run on master still reaches every check
+# after the first: a red/green comparison needs the controls run on both.
+FAILED: list[str] = []
+
+
+@contextmanager
+def checked(label: str):
+    """check(), but a Failure is reported and noted rather than ending the
+    suite; anything else still ends it."""
+    try:
+        with check(label):
+            yield
+    except Failure:
+        FAILED.append(label)
 
 
 def fields(rest: str) -> tuple[str | None, str | None, str | None]:
@@ -322,7 +339,7 @@ def test_real_chips(device: UltimateApi) -> None:
     settings = Settings(device)
     try:
         for n, model in chips:
-            with check(f"[control] the real {model} in socket {n}, alone at $D400, "
+            with checked(f"[control] the real {model} in socket {n}, alone at $D400, "
                        f"is measured as {model}"):
                 settings.set(SOCKET_STORE, f"SID Socket {n}", "Enabled")
                 settings.alone_at_d400(f"SID Socket {n} Address")
@@ -340,7 +357,7 @@ def test_ultisid_model(device: UltimateApi) -> None:
     try:
         settings.alone_at_d400(ULTISID1_ADDRESS)
         for model, kind in (("6581", "control"), ("8580", "wrong on master")):
-            with check(f"[{kind}] UltiSID 1 set to {model}, alone at $D400, "
+            with checked(f"[{kind}] UltiSID 1 set to {model}, alone at $D400, "
                        f"is measured as {model}"):
                 settings.set(ULTISID_STORE, WAVES_ITEM, model)
                 settings.set(ULTISID_STORE, FILTER_ITEM, FILTER_FOR[model])
@@ -354,20 +371,20 @@ def test_ultisid_model(device: UltimateApi) -> None:
 def test_inherited(device: UltimateApi) -> None:
     for first, expected, kind in ((MODEL_6581, "6581", "wrong on master"),
                                   (MODEL_UNKNOWN, "UNKNOWN", "control")):
-        with check(f"[{kind}] SID #2 with its model left open shows {expected}"
+        with checked(f"[{kind}] SID #2 with its model left open shows {expected}"
                    + (", SID #1's model" if first != MODEL_UNKNOWN else
                       ", as SID #1 is open too")):
             _, requested = sid_lines(play_and_read(device, psid(
                 b"MODEL LEFT OPEN", [(0xD400, first), (0xD420, MODEL_UNKNOWN)])))
             expect("SID #2's model", requested.get("2", (None, None))[1], expected)
-    with check("[control] SID #3 with its model left open copies SID #1, not SID #2"):
+    with checked("[control] SID #3 with its model left open copies SID #1, not SID #2"):
         _, requested = sid_lines(play_and_read(device, psid(b"THIRD LEFT OPEN", [
             (0xD400, MODEL_6581), (0xD420, MODEL_8580), (0xD440, MODEL_UNKNOWN)])))
         expect("SID #3's model", requested.get("3", (None, None))[1], "6581")
 
 
 def test_lines(device: UltimateApi) -> None:
-    with check("[new] a three-SID tune gets a measured line for each of its addresses"):
+    with checked("[new] a three-SID tune gets a measured line for each of its addresses"):
         measured, _ = sid_lines(play_and_read(device, psid(b"THREE SIDS", [
             (0xD400, MODEL_8580), (0xD420, MODEL_8580), (0xD440, MODEL_8580)])))
         expect("the measured addresses", sorted(measured) or None, ["D400", "D420", "D440"])
@@ -382,7 +399,7 @@ def test_mirror(device: UltimateApi) -> None:
             for item in ADDRESS_ITEMS:
                 if configured(device, ADDRESS_STORE, item) in ("$D420", "$D440"):
                     settings.set(ADDRESS_STORE, item, UNMAPPED)
-        with check(label):
+        with checked(label):
             measured, _ = sid_lines(play_and_read(device, psid(b"NOTHING THERE", [
                 (0xD400, MODEL_6581), (0xD420, MODEL_8580), (0xD440, MODEL_8580)])))
             for address in ("D420", "D440"):
@@ -394,15 +411,15 @@ def test_mirror(device: UltimateApi) -> None:
 def test_irq(device: UltimateApi) -> None:
     sids = [(0xD400, MODEL_6581)]
     for speed, expected in ((0, "VBI"), (1, "CIA")):
-        with check(f"[new] speed flag {speed} shows {expected}"):
+        with checked(f"[new] speed flag {speed} shows {expected}"):
             _, requested = sid_lines(play_and_read(device, psid(b"SPEED", sids, speed=speed)))
             expect("the interrupt", requested.get("1", (None,) * 4)[3], expected)
     for song, expected in ((1, "VBI"), (2, "CIA")):
-        with check(f"[new] a tune whose song 2 has the speed flag shows {expected} for song {song}"):
+        with checked(f"[new] a tune whose song 2 has the speed flag shows {expected} for song {song}"):
             _, requested = sid_lines(play_and_read(
                 device, psid(b"TWO SPEEDS", sids, songs=2, speed=0b10), song))
             expect("the interrupt", requested.get("1", (None,) * 4)[3], expected)
-    with check("[new] an RSID tune shows RSID, as it sets up its own interrupt"):
+    with checked("[new] an RSID tune shows RSID, as it sets up its own interrupt"):
         _, requested = sid_lines(play_and_read(
             device, psid(b"RSID", sids, magic=b"RSID", play=0)))
         expect("the interrupt", requested.get("1", (None,) * 4)[3], "RSID")
@@ -410,7 +427,7 @@ def test_irq(device: UltimateApi) -> None:
 
 def test_any(device: UltimateApi) -> None:
     for clock, video in ((CLOCK_ANY, "ANY"), (CLOCK_UNKNOWN, "UNKNOWN")):
-        with check(f"[control] a tune for both models shows ANY and video {video}"):
+        with checked(f"[control] a tune for both models shows ANY and video {video}"):
             _, requested = sid_lines(play_and_read(
                 device, psid(b"ANY MODEL", [(0xD400, MODEL_ANY)], clock=clock)))
             first = requested.get("1", (None,) * 4)
@@ -438,7 +455,7 @@ def mus_screen(device: UltimateApi) -> list[str]:
 
 def test_mus(device: UltimateApi) -> None:
     lines: list[str] = []
-    with check("[control] an uploaded .mus plays with the MUS player and asks for 8580 and NTSC"):
+    with checked("[control] an uploaded .mus plays with the MUS player and asks for 8580 and NTSC"):
         status, _, body = device.runners.upload_file("sidplay", "E2E_MONO.mus",
                                                      mus(b"E2E MONO"))
         if status != 200:
@@ -452,7 +469,7 @@ def test_mus(device: UltimateApi) -> None:
         expect("the video standard", first[2], "NTSC")
         if "2" in requested:
             raise Failure("a mono song shows a second SID")
-    with check("[new] the MUS player names its CIA interrupt"):
+    with checked("[new] the MUS player names its CIA interrupt"):
         if not lines:
             raise Failure("the MUS player did not start")
         _, requested = sid_lines(lines)
@@ -466,14 +483,14 @@ def test_mus_stereo(device: UltimateApi, host: str, password: str | None) -> Non
         ftp_lib.store(client, paths[0], mus(b"E2E STEREO LEFT"))
         ftp_lib.store(client, paths[1], mus(b"E2E STEREO RIGHT"))
     try:
-        with check("[control] a .mus with its .str asks for a second SID at $D500"):
+        with checked("[control] a .mus with its .str asks for a second SID at $D500"):
             device.runners.sidplay(paths[0])
             lines = mus_screen(device)
             _, requested = sid_lines(lines)
             second = requested.get("2", (None,) * 4)
             expect("SID #2's address", second[0], "D500")
             expect("SID #2's model", second[1], "8580")
-        with check("[new] the second SID at $D500 gets a measured line"):
+        with checked("[new] the second SID at $D500 gets a measured line"):
             if not lines:
                 raise Failure("the MUS player did not start")
             measured, _ = sid_lines(lines)
@@ -501,6 +518,8 @@ def run(args) -> None:
              "mus-stereo": lambda d: test_mus_stereo(d, args.host, args.password or None)}[name](device)
     finally:
         teardown_step("stop the tune", lambda: device.machine.reset(force=True))
+    if FAILED:
+        raise Failure(f"{len(FAILED)} checks failed: " + "; ".join(FAILED))
 
 
 def main() -> int:
