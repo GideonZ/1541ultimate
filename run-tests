@@ -591,14 +591,16 @@ SUITES: Sequence[Suite] = (
     # It reads the streams without taking them, so it runs under --record too.
     Suite("e2e", "freezer-audio", "tests/e2e/io/c64/freezer_audio_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@", profile=profiles.QUICK),
-    # The SID player's info screen: a FOUND line for every SID a tune names
-    # (#949), SID #1's model on the NEEDS2 line when the tune leaves its model
-    # open, as the SID file format defines it, an UltiSID's FOUND line
-    # following its configured model, and Compute's Sidplayer files on the MUS
-    # player, mono by a named upload and stereo by FTP with the .str beside. A
-    # cartridge skips the UltiSID test, since it cannot answer reads at $D4xx. It changes the
-    # SID addressing, the UltiSID settings and SID Player Autoconfig, and puts
-    # them back.
+    # What the SID player's info screen says about each SID (#949), read in
+    # master's layout as well as #949's, so it runs red/green: the model
+    # measured for real chips and for an UltiSID set to 6581 or 8580, SID #1's
+    # model for a SID the tune leaves open, a line per address, UNKNOWN for a
+    # mirror, the interrupt, and Compute's Sidplayer files on the MUS player,
+    # mono by a named upload and stereo by FTP with the .str beside. Each check
+    # says whether master gets it wrong, right, or does not show it. Tests that
+    # map SIDs skip where the machine cannot. It changes the SID addressing,
+    # the sockets, the UltiSID settings and SID Player Autoconfig, each after a
+    # reset, and puts them back.
     Suite("e2e", "sidplayer-system-lines", "tests/e2e/io/c64/sidplayer_system_lines_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --test all"),
     # Reproduces #733: with the FPGA decoder fix in the core, "mirroring off" is

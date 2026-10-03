@@ -1,55 +1,52 @@
 #!/usr/bin/env python3
-"""E2E: the SID player's info screen names every SID a tune uses, and the model
-of each: FOUND lines for what is measured at each address, NEEDS lines for what
-the file asks for; the lines for a second and third SID are numbered.
+"""E2E: what the SID player's info screen says about each SID a tune uses: the
+model measured at each address, and the model, video standard and interrupt the
+file asks for.
 
-The tests build their tunes here rather than shipping them, because what
-matters about each is a handful of header bytes:
+The checks state facts and read them from the screen whatever its layout.
+Master shows one measured line, "SYSTEM: $D400 : 6581 / PAL", and the requested
+ones as "SID #2: $D420 : 8580"; #949 shows "FOUND : $D400 : 6581    : PAL" and
+"NEEDS2: $D420 : 8580". So every check runs on both, and on master it fails only
+where master shows a wrong value or none. Each check says which:
 
-  lines           a three-SID tune at $D400/$D420/$D440 gets three FOUND lines,
-                  one per address. The screen showed only $D400 before.
-  inherited       a two-SID tune that leaves SID #2's model open shows SID #1's
-                  model on the NEEDS2 line, as the SID file format defines it
-                  ("the second SID will be set to the same SID model as the
-                  first SID"), and UNKNOWN when SID #1 is open too. A three-SID
-                  tune 6581, 8580, open shows 6581 for SID #3: it copies SID #1,
-                  not the SID before it.
-  mirror          a three-SID tune on a machine with nothing at $D420 and
-                  $D440 shows UNKNOWN there. A SID decodes five address lines,
-                  so a C64's own SID answers at both; the detection used to
-                  measure it again and report two chips that are not there.
-                  On a cartridge that is always the case; on a C64 Ultimate
-                  or U64 the suite unmaps whatever sits at those addresses.
-  speed           the first NEEDS line ends in the song's interrupt: VBI without
-                  the speed flag, CIA with it. A two-song tune whose second
-                  song has the flag shows VBI for song 1 and CIA for song 2.
-                  An RSID tune, which sets up its own interrupt, shows RSID.
-  any             a tune made for both models and both clocks shows ANY for
-                  each; with the clock left open, ANY and UNKNOWN, and the
-                  interrupt still fits on the line.
+  [wrong on master]  master shows the value, and it is wrong
+  [control]          both show the right value
+  [new]              master does not show it
+
+  real-chips      [control] each socket's real chip, alone at $D400, is
+                  measured as the model its socket detected.
+  ultisid-model   UltiSID 1 alone at $D400, set to 6581 [control] and to 8580
+                  [wrong on master]: the timing check calls every UltiSID a
+                  6581; #949 tells the 8580 by its combined waveforms.
+  inherited       SID #2 with its model left open shows SID #1's model, as the
+                  SID file format defines it [wrong on master: UNKNOWN]; UNKNOWN
+                  when SID #1 is open too [control]; SID #3 left open copies
+                  SID #1, not SID #2 [control].
+  lines           [new] a three-SID tune gets a measured line for $D400, $D420
+                  and $D440.
+  mirror          [new] with nothing at $D420 and $D440 they show UNKNOWN: a
+                  SID decodes five address lines, so the SID at $D400 answers
+                  there too, and must not be measured twice.
+  irq             [new] the first requested line names the song's interrupt:
+                  VBI without the speed flag, CIA with it, per song, and RSID
+                  for an RSID tune, which sets up its own.
+  any             [control] a tune for both models and both clocks is shown as
+                  for both: ANY, or master's "6581 / 8580" and "PAL / NTSC".
   mus             a Compute's Sidplayer file, uploaded under its name, plays
-                  with the MUS player: the file name as title, one SID, and the
-                  model, clock and speed the device's made-up header asks for.
-  mus-stereo      the same with a .str file next to the .mus, both copied to
-                  the device by FTP: a second SID at $D500, with a FOUND2 and
-                  a NEEDS2 line for it. What FOUND2 says depends on the
-                  machine: the model of a SID mapped there, or UNKNOWN on a C64
-                  whose only SID answers at $D500 as a mirror.
-  ultisid-model   an UltiSID alone at $D420, set to 6581 and then to 8580, shows
-                  that model on its FOUND line. The timing check alone calls
-                  every UltiSID a 6581; the 8580 is told by its combined
-                  waveforms.
+                  with the MUS player and asks for an 8580 and NTSC, as the
+                  device's made-up header does [control], on a CIA [new].
+  mus-stereo      the same with a .str beside it, copied by FTP: a second
+                  requested SID at $D500 [control], and a measured line for it
+                  [new].
 
-The player places its screen wherever the tune leaves room, not at $0400:
-for these tunes, loading at $1000, it was $8C00 in VICE. The zero-page cell it
-keeps the page in ($FD, SCREEN_LOCATION in sidcommon.asm) is only valid while it
-sets up. So the suite asks the VIC where the screen is: the bank from $DD00,
-the offset from $D018.
+The player places its screen wherever the tune leaves room, not at $0400, so
+the suite asks the VIC where it is: the bank from $DD00, the offset from $D018.
 
-ultisid-model needs an UltiSID the C64 can read back, which a cartridge cannot
-offer: on an Ultimate II+ the CPU reads $D4xx from its own SID. It changes the
-SID addressing, the UltiSID's waveforms and filter curve, and turns SID Player
-Autoconfig off, and puts every one of them back.
+real-chips, ultisid-model and mirror need a machine whose SIDs can be mapped,
+a U64 or C64 Ultimate; a cartridge skips them where it cannot. They turn SID
+Player Autoconfig off, change the SID addressing, the sockets and the UltiSID's
+waveforms and filter, each with the machine reset first, and put every one of
+them back.
 """
 
 from __future__ import annotations
@@ -74,7 +71,8 @@ from report import (Failure, check, check_skip, detail,          # noqa: E402
 
 SUITE = "sidplayer_system_lines_test"
 
-TESTS = ("lines", "inherited", "mirror", "speed", "any", "mus", "mus-stereo", "ultisid-model")
+TESTS = ("real-chips", "ultisid-model", "inherited", "lines", "mirror", "irq", "any", "mus",
+         "mus-stereo")
 
 # The PSID container: version 4 carries a second and a third SID address.
 PSID_HEADER_BYTES = 0x7C
@@ -101,10 +99,14 @@ SCREEN_ROWS = 25
 SCREEN_TIMEOUT_SECONDS = 10.0
 POLL_SECONDS = 0.3
 
-# "FOUND :" and "NEEDS :" for the first SID, "FOUND2:" and "NEEDS2:" and so on
-# for the others.
-FOUND_LINE = re.compile(r"FOUND[ 23]: \$(D[0-9A-F]{3}) : (\S+)")
-NEEDS_LINE = re.compile(r"NEEDS([ 23]): \$(D[0-9A-F]{3}) : (\S+)")
+# A measured line: master's "SYSTEM:", or "FOUND :", "FOUND2:", "FOUND3:".
+MEASURED = re.compile(r"^(SYSTEM|FOUND[ 23]): \$(D[0-9A-F]{3}) : (.*)$")
+# A requested line: master's "SID   :" or "SID #n:", or "NEEDS :", "NEEDS2:", ...
+REQUESTED = re.compile(r"^(SID   |SID #[123]|NEEDS[ 23]): \$(D[0-9A-F]{3}) : (.*)$")
+# The advanced player's clock, once it runs: the screen is complete.
+CLOCK = re.compile(r"^\d\d:\d\d")
+MODELS = ("6581", "8580")
+VIDEO = ("PAL", "NTSC")
 
 U64_STORE = "U64 Specific Settings"
 AUTOCONFIG_ITEM = "SID Player Autoconfig"
@@ -117,6 +119,8 @@ WAVES_ITEM = "UltiSID 1 Combined Waveforms"
 FILTER_ITEM = "UltiSID 1 Filter Curve"
 UNMAPPED = "Unmapped"
 FILTER_FOR = {"8580": "8580 Lo", "6581": "6581"}
+SOCKET_STORE = "SID Sockets Configuration"
+MODEL_CODE = {"6581": MODEL_6581, "8580": MODEL_8580}
 
 
 def psid(name: bytes, sids: list[tuple[int, int]], clock: int = PAL,
@@ -172,13 +176,65 @@ def screen_address(device: UltimateApi) -> int:
     return bank * 0x4000 + offset
 
 
+def fields(rest: str) -> tuple[str | None, str | None, str | None]:
+    """Model, video standard and interrupt from what follows the address.
+
+    #949 puts ":" between the columns. Master puts "/" both between the fields
+    and between the two values of one, "6581 / 8580 / PAL / NTSC", so its
+    tokens are sorted by what they are: a second UNKNOWN is the video standard.
+    Both values of a field read as ANY, as #949 writes them.
+    """
+    if ":" in rest:
+        parts = [part.strip() for part in rest.split(":")] + [None, None]
+        return parts[0], parts[1] or None, parts[2] or None
+    models: list[str] = []
+    video: list[str] = []
+    for token in (token.strip() for token in rest.split("/")):
+        if token in MODELS or (token == "UNKNOWN" and not models):
+            models.append(token)
+        elif token in VIDEO or token == "UNKNOWN":
+            video.append(token)
+    model = "ANY" if set(models) == set(MODELS) else (models[0] if models else None)
+    clock = "ANY" if set(video) == set(VIDEO) else (video[0] if video else None)
+    return model, clock, None
+
+
+def sid_lines(lines: list[str]) -> tuple[dict[str, tuple], dict[str, tuple]]:
+    """Measured: address -> (model, video, irq). Requested: SID number ->
+    (address, model, video, irq)."""
+    measured: dict[str, tuple] = {}
+    requested: dict[str, tuple] = {}
+    for line in lines:
+        match = MEASURED.match(line)
+        if match:
+            measured[match.group(2)] = fields(match.group(3))
+            continue
+        match = REQUESTED.match(line)
+        if match:
+            number = match.group(1)[-1] if match.group(1)[-1] in "123" else "1"
+            requested[number] = (match.group(2), *fields(match.group(3)))
+    return measured, requested
+
+
 def drawn(lines: list[str]) -> bool:
-    """Whether the player has finished the screen: the cartridge writes the
-    FOUND and NEEDS lines, then the advanced player ends the first NEEDS line in
-    the song's speed."""
-    return (any(FOUND_LINE.search(line) for line in lines)
-            and any(NEEDS_LINE.search(line) and line.endswith(("VBI", "CIA", "RSID"))
-                    for line in lines))
+    """Whether the player has finished the screen: the cartridge writes the SID
+    lines, then the advanced player starts its clock and rewrites the first
+    measured line."""
+    measured, requested = sid_lines(lines)
+    return bool(measured and requested and any(CLOCK.match(line) for line in lines[20:]))
+
+
+def read_screen(device: UltimateApi, extra=lambda lines: True) -> list[str]:
+    deadline = time.monotonic() + SCREEN_TIMEOUT_SECONDS
+    lines: list[str] = []
+    while time.monotonic() < deadline:
+        lines = decode(device.machine.readmem(screen_address(device),
+                                              SCREEN_COLUMNS * SCREEN_ROWS))
+        if drawn(lines) and extra(lines):
+            return lines
+        time.sleep(POLL_SECONDS)
+    raise Failure("the player's screen was not complete within "
+                  f"{SCREEN_TIMEOUT_SECONDS:.0f}s; last screen: {lines!r}")
 
 
 def play_and_read(device: UltimateApi, tune: bytes,
@@ -192,134 +248,174 @@ def play_and_read(device: UltimateApi, tune: bytes,
     device.machine.reset(force=True)
     device.runners.upload("sidplay", tune,
                           params={"songnr": song} if song is not None else None)
-    deadline = time.monotonic() + SCREEN_TIMEOUT_SECONDS
-    lines: list[str] = []
-    while time.monotonic() < deadline:
-        lines = decode(device.machine.readmem(screen_address(device),
-                                              SCREEN_COLUMNS * SCREEN_ROWS))
-        if drawn(lines):
-            return lines
-        time.sleep(POLL_SECONDS)
-    raise Failure("the player's screen was not complete within "
-                  f"{SCREEN_TIMEOUT_SECONDS:.0f}s; last screen: {lines!r}")
+    lines = read_screen(device)
+    detail("\n".join(line for line in lines if MEASURED.match(line) or REQUESTED.match(line)))
+    return lines
 
 
-def found_lines(lines: list[str]) -> dict[str, str]:
-    """Address -> model, from the FOUND lines."""
-    return {m.group(1): m.group(2)
-            for m in (FOUND_LINE.search(line) for line in lines) if m}
+def expect(what: str, shown, wanted) -> None:
+    if shown is None:
+        raise Failure(f"{what} is not shown, expected {wanted}")
+    if shown != wanted:
+        raise Failure(f"{what} is {shown!r}, expected {wanted}")
 
 
-def test_lines(device: UltimateApi) -> None:
-    sids = [(0xD400, MODEL_8580), (0xD420, MODEL_8580), (0xD440, MODEL_8580)]
-    with check("a three-SID tune gets a FOUND line for each of its addresses"):
-        lines = play_and_read(device, psid(b"THREE SIDS", sids))
-        found = found_lines(lines)
-        detail(f"FOUND lines: {found}")
-        wanted = {"D400", "D420", "D440"}
-        if set(found) != wanted:
-            raise Failure(f"FOUND lines for {sorted(found)}, "
-                          f"expected {sorted(wanted)}")
+def configured(device: UltimateApi, store: str, item: str) -> str:
+    """One setting's value, or "" where this machine does not serve it."""
+    try:
+        return device.configs.current(store, item)
+    except Failure:
+        return ""
 
 
-def sid_line_models(lines: list[str]) -> dict[str, str]:
-    """SID number -> model, from the NEEDS lines; the first one is unnumbered."""
-    return {m.group(1).strip() or "1": m.group(3)
-            for m in (NEEDS_LINE.search(line) for line in lines) if m}
+class Settings:
+    """Change settings with the machine reset first, and put them all back.
+
+    A SID player running while the SID addressing changes has hung a C64
+    Ultimate; the reset stops it.
+    """
+
+    def __init__(self, device: UltimateApi):
+        self.device = device
+        self.saved: dict[tuple[str, str], str] = {}
+
+    def set(self, store: str, item: str, value: str) -> None:
+        if (store, item) not in self.saved:
+            self.saved[(store, item)] = configured(self.device, store, item)
+        self.device.machine.reset(force=True)
+        self.device.configs.set(store, item, value)
+
+    def alone_at_d400(self, item: str) -> None:
+        """`item`'s SID at $D400, nothing else mapped, autoconfig off."""
+        self.set(U64_STORE, AUTOCONFIG_ITEM, "Disabled")
+        for other in ADDRESS_ITEMS:
+            if other != item:
+                self.set(ADDRESS_STORE, other, UNMAPPED)
+        self.set(ADDRESS_STORE, item, "$D400")
+
+    def restore(self) -> None:
+        self.device.machine.reset(force=True)
+        for (store, item), value in self.saved.items():
+            if value:
+                teardown_step(f"restore {item} to {value!r}",
+                              lambda s=store, i=item, v=value: self.device.configs.set(s, i, v))
+
+
+def mappable(device: UltimateApi, label: str) -> bool:
+    if configured(device, ADDRESS_STORE, ULTISID1_ADDRESS):
+        return True
+    with check(label):
+        check_skip("this machine cannot map its SIDs")
+    return False
+
+
+def test_real_chips(device: UltimateApi) -> None:
+    label = "[control] a real chip alone at $D400 is measured as its model"
+    if not mappable(device, label):
+        return
+    chips = [(n, configured(device, SOCKET_STORE, f"SID Detected Socket {n}")) for n in (1, 2)]
+    chips = [(n, model) for n, model in chips if model in MODELS]
+    if not chips:
+        with check(label):
+            check_skip("no 6581 or 8580 detected in a socket")
+        return
+    settings = Settings(device)
+    try:
+        for n, model in chips:
+            with check(f"[control] the real {model} in socket {n}, alone at $D400, "
+                       f"is measured as {model}"):
+                settings.set(SOCKET_STORE, f"SID Socket {n}", "Enabled")
+                settings.alone_at_d400(f"SID Socket {n} Address")
+                measured, _ = sid_lines(play_and_read(
+                    device, psid(b"REAL CHIP", [(0xD400, MODEL_CODE[model])])))
+                expect("$D400", measured.get("D400", (None,))[0], model)
+    finally:
+        settings.restore()
+
+
+def test_ultisid_model(device: UltimateApi) -> None:
+    if not mappable(device, "an UltiSID is measured as the model it is set to"):
+        return
+    settings = Settings(device)
+    try:
+        settings.alone_at_d400(ULTISID1_ADDRESS)
+        for model, kind in (("6581", "control"), ("8580", "wrong on master")):
+            with check(f"[{kind}] UltiSID 1 set to {model}, alone at $D400, "
+                       f"is measured as {model}"):
+                settings.set(ULTISID_STORE, WAVES_ITEM, model)
+                settings.set(ULTISID_STORE, FILTER_ITEM, FILTER_FOR[model])
+                measured, _ = sid_lines(play_and_read(
+                    device, psid(b"ULTISID MODEL", [(0xD400, MODEL_CODE[model])])))
+                expect("$D400", measured.get("D400", (None,))[0], model)
+    finally:
+        settings.restore()
 
 
 def test_inherited(device: UltimateApi) -> None:
-    for first, expected in ((MODEL_6581, "6581"), (MODEL_UNKNOWN, "UNKNOWN")):
-        label = (f"SID #2 with its model left open shows {expected}"
-                 + (", SID #1's model" if first != MODEL_UNKNOWN else
-                    ", as SID #1 is open too"))
-        with check(label):
-            sids = [(0xD400, first), (0xD420, MODEL_UNKNOWN)]
-            models = sid_line_models(play_and_read(device, psid(b"MODEL LEFT OPEN", sids)))
-            detail(f"NEEDS lines: {models}")
-            if models.get("2") != expected:
-                raise Failure(f"the NEEDS2 line says {models.get('2')!r}, "
-                              f"expected {expected}")
-    with check("SID #3 with its model left open copies SID #1, not SID #2"):
-        sids = [(0xD400, MODEL_6581), (0xD420, MODEL_8580), (0xD440, MODEL_UNKNOWN)]
-        models = sid_line_models(play_and_read(device, psid(b"THIRD LEFT OPEN", sids)))
-        detail(f"NEEDS lines: {models}")
-        if models.get("3") != "6581":
-            raise Failure(f"the NEEDS3 line says {models.get('3')!r}, "
-                          "expected 6581 from SID #1")
+    for first, expected, kind in ((MODEL_6581, "6581", "wrong on master"),
+                                  (MODEL_UNKNOWN, "UNKNOWN", "control")):
+        with check(f"[{kind}] SID #2 with its model left open shows {expected}"
+                   + (", SID #1's model" if first != MODEL_UNKNOWN else
+                      ", as SID #1 is open too")):
+            _, requested = sid_lines(play_and_read(device, psid(
+                b"MODEL LEFT OPEN", [(0xD400, first), (0xD420, MODEL_UNKNOWN)])))
+            expect("SID #2's model", requested.get("2", (None, None))[1], expected)
+    with check("[control] SID #3 with its model left open copies SID #1, not SID #2"):
+        _, requested = sid_lines(play_and_read(device, psid(b"THIRD LEFT OPEN", [
+            (0xD400, MODEL_6581), (0xD420, MODEL_8580), (0xD440, MODEL_UNKNOWN)])))
+        expect("SID #3's model", requested.get("3", (None, None))[1], "6581")
+
+
+def test_lines(device: UltimateApi) -> None:
+    with check("[new] a three-SID tune gets a measured line for each of its addresses"):
+        measured, _ = sid_lines(play_and_read(device, psid(b"THREE SIDS", [
+            (0xD400, MODEL_8580), (0xD420, MODEL_8580), (0xD440, MODEL_8580)])))
+        expect("the measured addresses", sorted(measured) or None, ["D400", "D420", "D440"])
 
 
 def test_mirror(device: UltimateApi) -> None:
-    label = "a three-SID tune with nothing at $D420 and $D440 shows UNKNOWN there"
-    sids = [(0xD400, MODEL_6581), (0xD420, MODEL_8580), (0xD440, MODEL_8580)]
-    addressable = bool(configured(device, ADDRESS_STORE, ULTISID1_ADDRESS))
-    saved = {}
-    if addressable:
-        saved[(U64_STORE, AUTOCONFIG_ITEM)] = configured(device, U64_STORE, AUTOCONFIG_ITEM)
-        for item in ADDRESS_ITEMS:
-            saved[(ADDRESS_STORE, item)] = configured(device, ADDRESS_STORE, item)
+    label = "[new] a three-SID tune with nothing at $D420 and $D440 shows UNKNOWN there"
+    settings = Settings(device)
     try:
-        if addressable:
-            # Autoconfig would map SIDs to the tune's addresses again.
-            device.configs.set(U64_STORE, AUTOCONFIG_ITEM, "Disabled")
+        if configured(device, ADDRESS_STORE, ULTISID1_ADDRESS):
+            settings.set(U64_STORE, AUTOCONFIG_ITEM, "Disabled")
             for item in ADDRESS_ITEMS:
-                if saved[(ADDRESS_STORE, item)] in ("$D420", "$D440"):
-                    device.configs.set(ADDRESS_STORE, item, UNMAPPED)
+                if configured(device, ADDRESS_STORE, item) in ("$D420", "$D440"):
+                    settings.set(ADDRESS_STORE, item, UNMAPPED)
         with check(label):
-            found = found_lines(play_and_read(device, psid(b"NOTHING THERE", sids)))
-            detail(f"FOUND lines: {found}")
+            measured, _ = sid_lines(play_and_read(device, psid(b"NOTHING THERE", [
+                (0xD400, MODEL_6581), (0xD420, MODEL_8580), (0xD440, MODEL_8580)])))
             for address in ("D420", "D440"):
-                if found.get(address) != "UNKNOWN":
-                    raise Failure(f"${address} shows {found.get(address)!r}, "
-                                  "expected UNKNOWN")
+                expect(f"${address}", measured.get(address, (None,))[0], "UNKNOWN")
     finally:
-        for (store, item), value in saved.items():
-            if value:
-                teardown_step(f"restore {item} to {value!r}",
-                              lambda s=store, i=item, v=value: device.configs.set(s, i, v))
+        settings.restore()
 
 
-def first_want_line(lines: list[str]) -> str:
-    """The unnumbered NEEDS line, the one that carries the clock and speed."""
-    for line in lines:
-        match = NEEDS_LINE.search(line)
-        if match and match.group(1) == " ":
-            return line
-    raise Failure(f"no NEEDS line on the screen: {lines!r}")
-
-
-def test_speed(device: UltimateApi) -> None:
+def test_irq(device: UltimateApi) -> None:
     sids = [(0xD400, MODEL_6581)]
-    for speed, expected in ((0, "6581    : PAL     : VBI"), (1, "6581    : PAL     : CIA")):
-        with check(f"speed flag {speed} shows {expected.split()[-1]}"):
-            line = first_want_line(play_and_read(device, psid(b"SPEED", sids, speed=speed)))
-            detail(line)
-            if not line.endswith(expected):
-                raise Failure(f"{line!r} does not end in {expected!r}")
-    for song, expected in ((1, ": VBI"), (2, ": CIA")):
-        with check(f"a tune whose song 2 has the speed flag shows {expected} for song {song}"):
-            line = first_want_line(play_and_read(
+    for speed, expected in ((0, "VBI"), (1, "CIA")):
+        with check(f"[new] speed flag {speed} shows {expected}"):
+            _, requested = sid_lines(play_and_read(device, psid(b"SPEED", sids, speed=speed)))
+            expect("the interrupt", requested.get("1", (None,) * 4)[3], expected)
+    for song, expected in ((1, "VBI"), (2, "CIA")):
+        with check(f"[new] a tune whose song 2 has the speed flag shows {expected} for song {song}"):
+            _, requested = sid_lines(play_and_read(
                 device, psid(b"TWO SPEEDS", sids, songs=2, speed=0b10), song))
-            detail(line)
-            if not line.endswith(expected):
-                raise Failure(f"{line!r} does not end in {expected!r}")
-    with check("an RSID tune shows RSID, as it sets up its own interrupt"):
-        line = first_want_line(play_and_read(
+            expect("the interrupt", requested.get("1", (None,) * 4)[3], expected)
+    with check("[new] an RSID tune shows RSID, as it sets up its own interrupt"):
+        _, requested = sid_lines(play_and_read(
             device, psid(b"RSID", sids, magic=b"RSID", play=0)))
-        detail(line)
-        if not line.endswith(": RSID"):
-            raise Failure(f"{line!r} does not end in ': RSID'")
+        expect("the interrupt", requested.get("1", (None,) * 4)[3], "RSID")
 
 
 def test_any(device: UltimateApi) -> None:
-    for clock, expected in ((CLOCK_ANY, "ANY     : ANY     : VBI"),
-                            (CLOCK_UNKNOWN, "ANY     : UNKNOWN : VBI")):
-        with check(f"a tune for both models shows {expected}"):
-            line = first_want_line(play_and_read(
+    for clock, video in ((CLOCK_ANY, "ANY"), (CLOCK_UNKNOWN, "UNKNOWN")):
+        with check(f"[control] a tune for both models shows ANY and video {video}"):
+            _, requested = sid_lines(play_and_read(
                 device, psid(b"ANY MODEL", [(0xD400, MODEL_ANY)], clock=clock)))
-            detail(line)
-            if not line.endswith(expected):
-                raise Failure(f"{line!r} does not end in {expected!r}")
+            first = requested.get("1", (None,) * 4)
+            expect("the model", first[1], "ANY")
+            expect("the video standard", first[2], video)
 
 
 def mus(text: bytes) -> bytes:
@@ -333,101 +429,60 @@ def mus(text: bytes) -> bytes:
     return b"\x00\x10" + bytes((2, 0, 2, 0, 2, 0)) + voices + text + b"\r\x00"
 
 
-# The header the device makes up for MUS data asks for an 8580, NTSC and CIA
-# speed.
-MUS_NEEDS = "NEEDS : $D400 : 8580    : NTSC    : CIA"
-
-
 def mus_screen(device: UltimateApi) -> list[str]:
     """The info screen once the MUS player has drawn it."""
-    deadline = time.monotonic() + SCREEN_TIMEOUT_SECONDS
-    lines: list[str] = []
-    while time.monotonic() < deadline:
-        lines = decode(device.machine.readmem(screen_address(device),
-                                              SCREEN_COLUMNS * SCREEN_ROWS))
-        if any("MUS PLAYER" in line for line in lines) and drawn(lines):
-            return lines
-        time.sleep(POLL_SECONDS)
-    raise Failure("no MUS player screen within "
-                  f"{SCREEN_TIMEOUT_SECONDS:.0f}s; last screen: {lines!r}")
+    lines = read_screen(device, lambda lines: any("MUS PLAYER" in line for line in lines))
+    detail("\n".join(line for line in lines if line.strip()))
+    return lines
 
 
 def test_mus(device: UltimateApi) -> None:
-    with check("an uploaded .mus plays with the MUS player"):
+    lines: list[str] = []
+    with check("[control] an uploaded .mus plays with the MUS player and asks for 8580 and NTSC"):
         status, _, body = device.runners.upload_file("sidplay", "E2E_MONO.mus",
                                                      mus(b"E2E MONO"))
         if status != 200:
             raise Failure(f"sidplay returned HTTP {status}: {body[:160]!r}")
         lines = mus_screen(device)
-        detail("\n".join(line for line in lines if line.strip()))
         if not any("TITLE : E2E MONO" in line for line in lines):
             raise Failure("the title is not the file name")
-        if not any(MUS_NEEDS in line for line in lines):
-            raise Failure(f"no line {MUS_NEEDS!r}")
-        if any(line.startswith("NEEDS2") for line in lines):
+        _, requested = sid_lines(lines)
+        first = requested.get("1", (None,) * 4)
+        expect("the model", first[1], "8580")
+        expect("the video standard", first[2], "NTSC")
+        if "2" in requested:
             raise Failure("a mono song shows a second SID")
+    with check("[new] the MUS player names its CIA interrupt"):
+        if not lines:
+            raise Failure("the MUS player did not start")
+        _, requested = sid_lines(lines)
+        expect("the interrupt", requested.get("1", (None,) * 4)[3], "CIA")
 
 
 def test_mus_stereo(device: UltimateApi, host: str, password: str | None) -> None:
     paths = ("/Temp/E2E_STEREO.mus", "/Temp/E2E_STEREO.str")
-    with check("a .mus with its .str plays on two SIDs, the second at $D500"):
-        with ftp_lib.session(host, password) as client:
-            ftp_lib.store(client, paths[0], mus(b"E2E STEREO LEFT"))
-            ftp_lib.store(client, paths[1], mus(b"E2E STEREO RIGHT"))
-        try:
+    lines: list[str] = []
+    with ftp_lib.session(host, password) as client:
+        ftp_lib.store(client, paths[0], mus(b"E2E STEREO LEFT"))
+        ftp_lib.store(client, paths[1], mus(b"E2E STEREO RIGHT"))
+    try:
+        with check("[control] a .mus with its .str asks for a second SID at $D500"):
             device.runners.sidplay(paths[0])
             lines = mus_screen(device)
-            detail("\n".join(line for line in lines if line.strip()))
-            for wanted in ("FOUND2: $D500 : ", "NEEDS2: $D500 : 8580"):
-                if not any(wanted in line for line in lines):
-                    raise Failure(f"no line {wanted!r}")
-        finally:
-            with ftp_lib.session(host, password) as client:
-                for path in paths:
-                    ftp_lib.delete_quietly(client, path)
-
-
-def configured(device: UltimateApi, store: str, item: str) -> str:
-    """One setting's value, or "" where this machine does not serve it."""
-    try:
-        return device.configs.current(store, item)
-    except Failure:
-        return ""
-
-
-def test_ultisid_model(device: UltimateApi) -> None:
-    if not configured(device, ADDRESS_STORE, ULTISID1_ADDRESS):
-        with check("an UltiSID's FOUND line follows its configured model"):
-            check_skip("no UltiSID the C64 can read back on this machine")
-        return
-
-    saved = {(U64_STORE, AUTOCONFIG_ITEM): configured(device, U64_STORE, AUTOCONFIG_ITEM),
-             (ULTISID_STORE, WAVES_ITEM): configured(device, ULTISID_STORE, WAVES_ITEM),
-             (ULTISID_STORE, FILTER_ITEM): configured(device, ULTISID_STORE, FILTER_ITEM)}
-    for item in ADDRESS_ITEMS:
-        saved[(ADDRESS_STORE, item)] = configured(device, ADDRESS_STORE, item)
-    try:
-        # UltiSID 1 alone at $D420: nothing else may answer there.
-        device.configs.set(U64_STORE, AUTOCONFIG_ITEM, "Disabled")
-        for item in ADDRESS_ITEMS:
-            if item != ULTISID1_ADDRESS and saved[(ADDRESS_STORE, item)] == "$D420":
-                device.configs.set(ADDRESS_STORE, item, UNMAPPED)
-        device.configs.set(ADDRESS_STORE, ULTISID1_ADDRESS, "$D420")
-
-        for model, code in (("6581", MODEL_6581), ("8580", MODEL_8580)):
-            with check(f"an UltiSID set to {model} shows {model} on its FOUND line"):
-                device.configs.set(ULTISID_STORE, WAVES_ITEM, model)
-                device.configs.set(ULTISID_STORE, FILTER_ITEM, FILTER_FOR[model])
-                sids = [(0xD400, code), (0xD420, code)]
-                found = found_lines(play_and_read(device, psid(b"ULTISID MODEL", sids)))
-                detail(f"FOUND lines: {found}")
-                if found.get("D420") != model:
-                    raise Failure(f"$D420 shows {found.get('D420')!r}, expected {model}")
+            _, requested = sid_lines(lines)
+            second = requested.get("2", (None,) * 4)
+            expect("SID #2's address", second[0], "D500")
+            expect("SID #2's model", second[1], "8580")
+        with check("[new] the second SID at $D500 gets a measured line"):
+            if not lines:
+                raise Failure("the MUS player did not start")
+            measured, _ = sid_lines(lines)
+            if "D500" not in measured:
+                raise Failure("no measured line for $D500")
     finally:
-        for (store, item), value in saved.items():
-            if value:
-                teardown_step(f"restore {item} to {value!r}",
-                              lambda s=store, i=item, v=value: device.configs.set(s, i, v))
+        with ftp_lib.session(host, password) as client:
+            for path in paths:
+                ftp_lib.delete_quietly(client, path)
 
 
 def run(args) -> None:
@@ -435,21 +490,22 @@ def run(args) -> None:
     tests = TESTS if args.test == "all" else (args.test,)
     try:
         for name in tests:
-            {"lines": test_lines,
+            {"real-chips": test_real_chips,
+             "ultisid-model": test_ultisid_model,
              "inherited": test_inherited,
+             "lines": test_lines,
              "mirror": test_mirror,
-             "speed": test_speed,
+             "irq": test_irq,
              "any": test_any,
              "mus": test_mus,
-             "mus-stereo": lambda d: test_mus_stereo(d, args.host, args.password or None),
-             "ultisid-model": test_ultisid_model}[name](device)
+             "mus-stereo": lambda d: test_mus_stereo(d, args.host, args.password or None)}[name](device)
     finally:
         teardown_step("stop the tune", lambda: device.machine.reset(force=True))
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Check the FOUND and NEEDS lines on the SID player's info screen.")
+        description="Check what the SID player's info screen says about each SID.")
     cli.add_device_arguments(parser)
     parser.add_argument("--test", choices=("all", *TESTS), default="all")
     args = parser.parse_args()
