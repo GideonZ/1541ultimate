@@ -14,6 +14,12 @@ matters about each is a handful of header bytes:
                   first SID"), and UNKNOWN when SID #1 is open too. A three-SID
                   tune 6581, 8580, open shows 6581 for SID #3: it copies SID #1,
                   not the SID before it.
+  mirror          a three-SID tune on a machine with nothing at $D420 and
+                  $D440 shows UNKNOWN there. A SID decodes five address lines,
+                  so a C64's own SID answers at both; the detection used to
+                  measure it again and report two chips that are not there.
+                  On a cartridge that is always the case; on a C64 Ultimate
+                  or U64 the suite unmaps whatever sits at those addresses.
   speed           the first WANT line ends in the song's speed: (VBI) without
                   the speed flag, (CIA) with it. A two-song tune whose second
                   song has the flag shows (VBI) for song 1 and (CIA) for song 2.
@@ -24,8 +30,10 @@ matters about each is a handful of header bytes:
                   with the MUS player: the file name as title, one SID, and the
                   model, clock and speed the device's made-up header asks for.
   mus-stereo      the same with a .str file next to the .mus, both copied to
-                  the device by FTP: a second SID at $D500, where the model
-                  cannot be measured, so FOUND2 says UNKNOWN.
+                  the device by FTP: a second SID at $D500, with a FOUND2 and
+                  a WANT 2 line for it. What FOUND2 says depends on the
+                  machine: the model of a SID mapped there, or UNKNOWN on a C64
+                  whose only SID answers at $D500 as a mirror.
   ultisid-model   an UltiSID alone at $D420, set to 8580 and then to 6581, shows
                   that model on its FOUND line. The 6581 half passes on every
                   core; the 8580 half needs the core change proposed in #951 and
@@ -66,7 +74,7 @@ from report import (Failure, check, check_skip, detail,          # noqa: E402
 
 SUITE = "sidplayer_system_lines_test"
 
-TESTS = ("lines", "inherited", "speed", "any", "mus", "mus-stereo", "ultisid-model")
+TESTS = ("lines", "inherited", "mirror", "speed", "any", "mus", "mus-stereo", "ultisid-model")
 
 # The PSID container: version 4 carries a second and a third SID address.
 PSID_HEADER_BYTES = 0x7C
@@ -163,10 +171,18 @@ def screen_address(device: UltimateApi) -> int:
     return bank * 0x4000 + offset
 
 
+def drawn(lines: list[str]) -> bool:
+    """Whether the player has finished the screen: the cartridge writes the
+    FOUND and WANT lines, then the advanced player ends the first WANT line in
+    the song's speed."""
+    return (any(FOUND_LINE.search(line) for line in lines)
+            and any(WANT_LINE.search(line) and line.endswith(")") for line in lines))
+
+
 def play_and_read(device: UltimateApi, tune: bytes,
                   song: int | None = None) -> list[str]:
-    """Start `tune`, at `song` if given, and return the info screen once its
-    FOUND line is there."""
+    """Start `tune`, at `song` if given, and return the info screen once the
+    player has drawn it."""
     device.runners.upload("sidplay", tune,
                           params={"songnr": song} if song is not None else None)
     deadline = time.monotonic() + SCREEN_TIMEOUT_SECONDS
@@ -174,10 +190,10 @@ def play_and_read(device: UltimateApi, tune: bytes,
     while time.monotonic() < deadline:
         lines = decode(device.machine.readmem(screen_address(device),
                                               SCREEN_COLUMNS * SCREEN_ROWS))
-        if any(FOUND_LINE.search(line) for line in lines):
+        if drawn(lines):
             return lines
         time.sleep(POLL_SECONDS)
-    raise Failure("no FOUND line on the player's screen within "
+    raise Failure("the player's screen was not complete within "
                   f"{SCREEN_TIMEOUT_SECONDS:.0f}s; last screen: {lines!r}")
 
 
@@ -224,6 +240,36 @@ def test_inherited(device: UltimateApi) -> None:
         if models.get("3") != "6581":
             raise Failure(f"the WANT 3 line says {models.get('3')!r}, "
                           "expected 6581 from SID #1")
+
+
+def test_mirror(device: UltimateApi) -> None:
+    label = "a three-SID tune with nothing at $D420 and $D440 shows UNKNOWN there"
+    sids = [(0xD400, MODEL_6581), (0xD420, MODEL_8580), (0xD440, MODEL_8580)]
+    addressable = bool(configured(device, ADDRESS_STORE, ULTISID1_ADDRESS))
+    saved = {}
+    if addressable:
+        saved[(U64_STORE, AUTOCONFIG_ITEM)] = configured(device, U64_STORE, AUTOCONFIG_ITEM)
+        for item in ADDRESS_ITEMS:
+            saved[(ADDRESS_STORE, item)] = configured(device, ADDRESS_STORE, item)
+    try:
+        if addressable:
+            # Autoconfig would map SIDs to the tune's addresses again.
+            device.configs.set(U64_STORE, AUTOCONFIG_ITEM, "Disabled")
+            for item in ADDRESS_ITEMS:
+                if saved[(ADDRESS_STORE, item)] in ("$D420", "$D440"):
+                    device.configs.set(ADDRESS_STORE, item, UNMAPPED)
+        with check(label):
+            found = found_lines(play_and_read(device, psid(b"NOTHING THERE", sids)))
+            detail(f"FOUND lines: {found}")
+            for address in ("D420", "D440"):
+                if found.get(address) != "UNKNOWN":
+                    raise Failure(f"${address} shows {found.get(address)!r}, "
+                                  "expected UNKNOWN")
+    finally:
+        for (store, item), value in saved.items():
+            if value:
+                teardown_step(f"restore {item} to {value!r}",
+                              lambda s=store, i=item, v=value: device.configs.set(s, i, v))
 
 
 def first_want_line(lines: list[str]) -> str:
@@ -286,8 +332,7 @@ def mus_screen(device: UltimateApi) -> list[str]:
     while time.monotonic() < deadline:
         lines = decode(device.machine.readmem(screen_address(device),
                                               SCREEN_COLUMNS * SCREEN_ROWS))
-        if any("MUS PLAYER" in line for line in lines) and \
-                any(FOUND_LINE.search(line) for line in lines):
+        if any("MUS PLAYER" in line for line in lines) and drawn(lines):
             return lines
         time.sleep(POLL_SECONDS)
     raise Failure("no MUS player screen within "
@@ -320,7 +365,7 @@ def test_mus_stereo(device: UltimateApi, host: str, password: str | None) -> Non
             device.runners.sidplay(paths[0])
             lines = mus_screen(device)
             detail("\n".join(line for line in lines if line.strip()))
-            for wanted in ("FOUND2: $D500 : UNKNOWN", "WANT 2: $D500 : 8580"):
+            for wanted in ("FOUND2: $D500 : ", "WANT 2: $D500 : 8580"):
                 if not any(wanted in line for line in lines):
                     raise Failure(f"no line {wanted!r}")
         finally:
@@ -383,6 +428,7 @@ def run(args) -> None:
         for name in tests:
             {"lines": test_lines,
              "inherited": test_inherited,
+             "mirror": test_mirror,
              "speed": test_speed,
              "any": test_any,
              "mus": test_mus,

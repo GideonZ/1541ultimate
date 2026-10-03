@@ -281,6 +281,16 @@ noExtraPlayer   lda #$ea            ; NOP
                 jsr writeNextAddress
                 jmp writeNextAddress
 
+; setValueAt
+;   input:
+;   - AC: the value
+;   - XR: offset in the advanced player's header of the word that holds the offset to write the value to
+setValueAt      ldy extraPlayer,x
+                pha
+                lda extraPlayer + 1,x
+                tax
+                pla
+
 setValue        pha
                 tya
                 sta $aa
@@ -802,27 +812,13 @@ setCurrentLinePosition
                 rts
 
 writeSidChipCount
-                pha
-                lda $f7
-                sec
-                sbc #$23            ; column 5 of the line just written
-                sta $f7
-                bcs +
-                dec $f8
-+
-                ldy #$00
-                pla
                 clc
                 adc #$30
+                dec $f8
+                ldy #$100 - $23     ; column 5 of the line just written, $23 before $f7/$f8
                 sta ($f7),y
-
-                lda $f7
-                clc
-                adc #$23
-                sta $f7
-                bcc +
                 inc $f8
-+               rts
+                rts
 
 ; printSingleSidInfo
 ;   input:
@@ -1069,7 +1065,7 @@ writeSystemLabel
 ;   prints address and detected model of that SID on its system line, if the SID header defines it
 printSystemSidInfo
                 jsr readHeader
-                beq ++
+                beq +
                 pha
 
                 lda $fe
@@ -1082,22 +1078,68 @@ printSystemSidInfo
                 jsr printHex        ; overwrite the $D400 of the label
 
                 pla
-                tay
-                and #$f0
-                cmp #$40            ; only a SID in $D400-$D4FF can be detected
-                bne +
-                tya
-                asl
-                asl
-                asl
-                asl
-                tax                 ; offset from $D400
-                jsr extraPlayer.codeStart + extraPlayer.detection.detectSidModelAt
-                .byte $2c           ; skip the next instruction
-+               lda #$02            ; unknown
+                jsr detectSidModelAt
                 ldx #$04            ; system info, the clock is on the first system line
                 jmp printSingleSidInfo
 +               rts
+
+; detectSidModelAt
+;   input:
+;   - AC: address of the SID as the SID header stores it, $Dxx0 >> 4
+;   output:
+;   - AC: SID model, 00 = 8580, 01 = 6581, 02 = unknown or no SID there
+;   The detection of the SID at $D400, done through a pointer so that it reaches
+;   any address. The read through the pointer comes 7 cycles after the sawtooth
+;   starts, not 4, so the frequency is $2800 rather than $4800: a 6581 has then
+;   just made its first step, while an 8580, one cycle behind, has not. Where
+;   no SID answers, or only a mirror of the one at $D400, it returns unknown.
+detectSidModelAt
+                pha
+                asl
+                asl
+                asl
+                asl
+                sta $aa
+                pla
+                lsr
+                lsr
+                lsr
+                lsr
+                ora #$d0
+                sta $ab
+
+                lda #$ff            ; make sure the check is not done on a bad line
+-               cmp $d012
+                bne -
+                lda #$28            ; sawtooth with the test bit, and the frequency
+                ldy #$12
+                sta ($aa),y
+                ldy #$0f
+                sta ($aa),y
+                lda #$20            ; release the test bit: the sawtooth starts
+                ldy #$12
+                sta ($aa),y
+                ldy #$1b
+                lda ($aa),y         ; 7 cycles later: 1 on a 6581, 0 on an 8580
+                tax
+                and #$fe
+                bne unknownSidAt
+                lda ($aa),y         ; 18 cycles later: 2 on both
+                cmp #$02
+                bne unknownSidAt
+
+                lda #$00            ; stop oscillator 3 at $D400: a mirror of it stands
+                sta $d40e           ; still, a SID of its own counts on, at least one
+                sta $d40f           ; step in the 7 cycles between the next two reads
+                lda ($aa),y
+                nop
+                eor ($aa),y
+                beq unknownSidAt
+                txa
+                rts
+
+unknownSidAt    lda #$02
+                rts
 
 printSidInfo    lda $f7             ; restore sid header address
                 sta SID_HEADER_LO
@@ -1192,25 +1234,21 @@ setExtraPlayerVars
                 sta relocator.BASE_ADDRESS
 
                 jsr getScreenLocationLastHi
-                ldy extraPlayer.clockLoc
-                ldx extraPlayer.clockLoc + 1
-                jsr setValue
+                ldx #extraPlayer.clockLoc - extraPlayer
+                jsr setValueAt
 
-                ldy extraPlayer.songLenLoc1
-                ldx extraPlayer.songLenLoc1 + 1
-                jsr setValue
+                ldx #extraPlayer.songLenLoc1 - extraPlayer
+                jsr setValueAt
 
-                ldy extraPlayer.songLenLoc2
-                ldx extraPlayer.songLenLoc2 + 1
-                jsr setValue
+                ldx #extraPlayer.songLenLoc2 - extraPlayer
+                jsr setValueAt
 
                 ldy #OFFSET_SONG_SCREEN_LOCATION
                 jsr getVariableWord
                 pha
                 txa
-                ldy extraPlayer.songNumLoc
-                ldx extraPlayer.songNumLoc + 1
-                jsr setValue
+                ldx #extraPlayer.songNumLoc - extraPlayer
+                jsr setValueAt
                 pla
                 jsr writeNextAddress
 
@@ -1218,9 +1256,8 @@ setExtraPlayerVars
                 jsr getVariableWord
                 pha
                 txa
-                ldy extraPlayer.sidModelLoc
-                ldx extraPlayer.sidModelLoc + 1
-                jsr setValue
+                ldx #extraPlayer.sidModelLoc - extraPlayer
+                jsr setValueAt
                 pla
                 jsr writeNextAddress
 
@@ -1228,9 +1265,8 @@ setExtraPlayerVars
                 jsr getVariableWord
                 pha
                 txa
-                ldy extraPlayer.c64ModelLoc
-                ldx extraPlayer.c64ModelLoc + 1
-                jsr setValue
+                ldx #extraPlayer.c64ModelLoc - extraPlayer
+                jsr setValueAt
                 pla
                 jsr writeNextAddress
 
@@ -1238,51 +1274,44 @@ setExtraPlayerVars
                 jsr getVariableWord
                 pha
                 txa
-                ldy extraPlayer.speedLoc
-                ldx extraPlayer.speedLoc + 1
-                jsr setValue
+                ldx #extraPlayer.speedLoc - extraPlayer
+                jsr setValueAt
                 pla
                 jsr writeNextAddress
 
                 lda player.offSongNr
-                ldy extraPlayer.songNumSet
-                ldx extraPlayer.songNumSet + 1
-                jsr setValue
+                ldx #extraPlayer.songNumSet - extraPlayer
+                jsr setValueAt
                 lda player.offSongNr + 1
                 jsr writeAtPlayerLocation
 
                 lda #$80
-                ldy extraPlayer.spriteLoc
-                ldx extraPlayer.spriteLoc + 1
-                jsr setValue
+                ldx #extraPlayer.spriteLoc - extraPlayer
+                jsr setValueAt
                 jsr getScreenLocationLastHi
                 jsr writeNextAddress
 
                 lda player.offPlayLoop
-                ldy extraPlayer.playerLoopLoc
-                ldx extraPlayer.playerLoopLoc + 1
-                jsr setValue
+                ldx #extraPlayer.playerLoopLoc - extraPlayer
+                jsr setValueAt
                 lda player.offPlayLoop + 1
                 jsr writeAtPlayerLocation
 
                 lda player.offExtraPlay1
-                ldy extraPlayer.epCallLoc
-                ldx extraPlayer.epCallLoc + 1
-                jsr setValue
+                ldx #extraPlayer.epCallLoc - extraPlayer
+                jsr setValueAt
                 lda player.offExtraPlay1 + 1
                 jsr writeAtPlayerLocation
 
                 lda player.offFastForw
-                ldy extraPlayer.fastFwd
-                ldx extraPlayer.fastFwd + 1
-                jsr setValue
+                ldx #extraPlayer.fastFwd - extraPlayer
+                jsr setValueAt
                 lda player.offFastForw + 1
                 jsr writeAtPlayerLocation
 
                 lda player.offPause
-                ldy extraPlayer.pauseKey
-                ldx extraPlayer.pauseKey + 1
-                jsr setValue
+                ldx #extraPlayer.pauseKey - extraPlayer
+                jsr setValueAt
                 lda player.offPause + 1
                 jsr writeAtPlayerLocation
 
@@ -1294,23 +1323,20 @@ setExtraPlayerVars
                 jsr setValue
 
                 lda player.offSpeed1
-                ldy extraPlayer.hdrSpeedFlag1
-                ldx extraPlayer.hdrSpeedFlag1 + 1
-                jsr setValue
+                ldx #extraPlayer.hdrSpeedFlag1 - extraPlayer
+                jsr setValueAt
                 lda player.offSpeed1 + 1
                 jsr writeAtPlayerLocation
 
                 lda player.offSpeed2
-                ldy extraPlayer.hdrSpeedFlag2
-                ldx extraPlayer.hdrSpeedFlag2 + 1
-                jsr setValue
+                ldx #extraPlayer.hdrSpeedFlag2 - extraPlayer
+                jsr setValueAt
                 lda player.offSpeed2 + 1
                 jsr writeAtPlayerLocation
 
                 lda player.offSpeed3
-                ldy extraPlayer.hdrSpeedFlag3
-                ldx extraPlayer.hdrSpeedFlag3 + 1
-                jsr setValue
+                ldx #extraPlayer.hdrSpeedFlag3 - extraPlayer
+                jsr setValueAt
                 lda player.offSpeed3 + 1
                 jsr writeAtPlayerLocation
 
@@ -1328,9 +1354,8 @@ setExtraPlayerVars
 
 +               ldy #$12            ; byte 4 of speed flags
                 jsr readHeader
-                ldy extraPlayer.hdrSpeedFlags
-                ldx extraPlayer.hdrSpeedFlags + 1
-                jsr setValue
+                ldx #extraPlayer.hdrSpeedFlags - extraPlayer
+                jsr setValueAt
                 ldy #$13            ; byte 3 of speed flags
                 jsr readHeader
                 ldy #$01
@@ -1345,9 +1370,8 @@ setExtraPlayerVars
                 jsr writeAddress
 
                 lda #<player.playerMain
-                ldy extraPlayer.playerLoc
-                ldx extraPlayer.playerLoc + 1
-                jsr setValue
+                ldx #extraPlayer.playerLoc - extraPlayer
+                jsr setValueAt
                 lda PLAYER_LOCATION
                 jsr writeNextAddress
 
@@ -1361,32 +1385,27 @@ setExtraPlayerVars
                 bne +               ; when PAL flag is set then always write 0 (therefore jump to lsr)
                 txa
 +               lsr                 ; value is 1 for NTSC, otherwise 0 for PAL / UNKNOWN clock. If PAL is set then value is always 0.
-                ldy extraPlayer.c64ModelFlag
-                ldx extraPlayer.c64ModelFlag + 1
-                jsr setValue
+                ldx #extraPlayer.c64ModelFlag - extraPlayer
+                jsr setValueAt
 
                 lda SIDFX_DETECTED
-                ldy extraPlayer.sidFxFound
-                ldx extraPlayer.sidFxFound + 1
-                jsr setValue
+                ldx #extraPlayer.sidFxFound - extraPlayer
+                jsr setValueAt
 
                 lda SID_MODEL
-                ldy extraPlayer.sidModelFound
-                ldx extraPlayer.sidModelFound + 1
-                jsr setValue
+                ldx #extraPlayer.sidModelFound - extraPlayer
+                jsr setValueAt
 
                 lda SONG_TO_PLAY
-                ldy extraPlayer.songNum
-                ldx extraPlayer.songNum + 1
-                jmp setValue
+                ldx #extraPlayer.songNum - extraPlayer
+                jmp setValueAt
 
 setupSldb       ldy #$0e            ; get number of songs
                 jsr readHeader
                 sec
                 sbc #$01
-                ldy extraPlayer.maxSongLoc
-                ldx extraPlayer.maxSongLoc + 1
-                jsr setValue
+                ldx #extraPlayer.maxSongLoc - extraPlayer
+                jsr setValueAt
 
                 tax                 ; XR = number of songs
 
@@ -1611,7 +1630,7 @@ continueInitPlayer
 +               jmp enableExtraPlayerCalls
 
                 .enc 'screen'
-                .if (* & $ff) > $100 - 39 ; the 39 bytes of labels below must share one page
+                .if (* & $ff) >= $de - 38 ; the 39 bytes of labels below must share one page and stay below $DE, see the checks
                 .align $100
                 .fi
 PALLbl          .text '/ PAL', 0
@@ -1623,7 +1642,10 @@ S8580Lbl        .text '8580', 0
 UnknownLbl      .text '/ '
 SUnknownLbl     .text 'UNKNOWN', 0
                 .cerror (PALLbl >> 8) != (SUnknownLbl >> 8), 'the model and clock labels must share one page'
-                .cerror (PALLbl & $ff) < $e0 && (SUnknownLbl & $ff) >= $d0, 'a skipped lda #<label must not make the BIT read I/O'
+                ; a .byte $2c above turns lda #<label into BIT $xxA9, xx the label's low byte: for $D0-$DD
+                ; that reads a VIC, SID, colour RAM or CIA register (9, TOD seconds) without side effects,
+                ; but $DE and $DF would read the cartridge's I/O
+                .cerror (PALLbl & $ff) <= $df && (SUnknownLbl & $ff) >= $de, 'a skipped lda #<label must not make the BIT read cartridge I/O'
 
                 ;     'ÀÁÂÃÄÅÆàáâãäåæÈÉÊËèéêëÌÍÎÏìíîïÒÓÔÕÖØòóôõöøÙÚÛÜùúûüÇçÑñÝŸýÿß'
 PETSCII         .text 'AAAAAAAAAAAAAAEEEEEEEEIIIIIIIIOOOOOOOOOOOOUUUUUUUUCCNNYYYYB'
