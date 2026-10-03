@@ -14,6 +14,12 @@ about it is a handful of header bytes:
                   first SID"), and UNKNOWN when SID #1 is open too. A three-SID
                   tune 6581, 8580, open shows 6581 for SID #3: it copies SID #1,
                   not the SID before it.
+  mus             a Compute's Sidplayer file, uploaded under its name, plays
+                  with the MUS player: the file name as title, one SID, and the
+                  model and clock the device's made-up header asks for.
+  mus-stereo      the same with a .str file next to the .mus, both copied to
+                  the device by FTP: a second SID at $D500, where the model
+                  cannot be measured, so FOUND2 says UNKNOWN.
   ultisid-model   an UltiSID alone at $D420, set to 8580 and then to 6581, shows
                   that model on its FOUND line. The 6581 half passes on every
                   core; the 8580 half needs the core change proposed in #951 and
@@ -46,6 +52,7 @@ sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
 import bootstrap  # noqa: E402,F401
 
 import cli                                                       # noqa: E402
+import ftp as ftp_lib                                            # noqa: E402
 import machine                                                   # noqa: E402
 from api import UltimateApi                                      # noqa: E402
 from report import (Failure, check, check_skip, detail,          # noqa: E402
@@ -53,7 +60,7 @@ from report import (Failure, check, check_skip, detail,          # noqa: E402
 
 SUITE = "sidplayer_system_lines_test"
 
-TESTS = ("lines", "inherited", "ultisid-model")
+TESTS = ("lines", "inherited", "mus", "mus-stereo", "ultisid-model")
 
 # The PSID container: version 4 carries a second and a third SID address.
 PSID_HEADER_BYTES = 0x7C
@@ -201,6 +208,71 @@ def test_inherited(device: UltimateApi) -> None:
                           "expected 6581 from SID #1")
 
 
+def mus(text: bytes) -> bytes:
+    """Compute's Sidplayer data whose three voices only halt.
+
+    A load address, the three voice lengths, each voice the two-byte halt
+    command, and the text, ended by a zero: what FileTypeSID reads, and all
+    the info screen needs.
+    """
+    voices = bytes((0x01, 0x4F)) * 3
+    return b"\x00\x10" + bytes((2, 0, 2, 0, 2, 0)) + voices + text + b"\r\x00"
+
+
+# The header the device makes up for MUS data asks for an 8580 and NTSC.
+MUS_WANT = "WANT  : $D400 : 8580 / NTSC"
+
+
+def mus_screen(device: UltimateApi) -> list[str]:
+    """The info screen once the MUS player has drawn it."""
+    deadline = time.monotonic() + SCREEN_TIMEOUT_SECONDS
+    lines: list[str] = []
+    while time.monotonic() < deadline:
+        lines = decode(device.machine.readmem(screen_address(device),
+                                              SCREEN_COLUMNS * SCREEN_ROWS))
+        if any("MUS PLAYER" in line for line in lines) and \
+                any(FOUND_LINE.search(line) for line in lines):
+            return lines
+        time.sleep(POLL_SECONDS)
+    raise Failure("no MUS player screen within "
+                  f"{SCREEN_TIMEOUT_SECONDS:.0f}s; last screen: {lines!r}")
+
+
+def test_mus(device: UltimateApi) -> None:
+    with check("an uploaded .mus plays with the MUS player"):
+        status, _, body = device.runners.upload_file("sidplay", "E2E_MONO.mus",
+                                                     mus(b"E2E MONO"))
+        if status != 200:
+            raise Failure(f"sidplay returned HTTP {status}: {body[:160]!r}")
+        lines = mus_screen(device)
+        detail("\n".join(line for line in lines if line.strip()))
+        if not any("TITLE : E2E MONO" in line for line in lines):
+            raise Failure("the title is not the file name")
+        if not any(MUS_WANT in line for line in lines):
+            raise Failure(f"no line {MUS_WANT!r}")
+        if any(line.startswith("WANT 2") for line in lines):
+            raise Failure("a mono song shows a second SID")
+
+
+def test_mus_stereo(device: UltimateApi, host: str, password: str | None) -> None:
+    paths = ("/Temp/E2E_STEREO.mus", "/Temp/E2E_STEREO.str")
+    with check("a .mus with its .str plays on two SIDs, the second at $D500"):
+        with ftp_lib.session(host, password) as client:
+            ftp_lib.store(client, paths[0], mus(b"E2E STEREO LEFT"))
+            ftp_lib.store(client, paths[1], mus(b"E2E STEREO RIGHT"))
+        try:
+            device.runners.sidplay(paths[0])
+            lines = mus_screen(device)
+            detail("\n".join(line for line in lines if line.strip()))
+            for wanted in ("FOUND2: $D500 : UNKNOWN", "WANT 2: $D500 : 8580"):
+                if not any(wanted in line for line in lines):
+                    raise Failure(f"no line {wanted!r}")
+        finally:
+            with ftp_lib.session(host, password) as client:
+                for path in paths:
+                    ftp_lib.delete_quietly(client, path)
+
+
 def configured(device: UltimateApi, store: str, item: str) -> str:
     """One setting's value, or "" where this machine does not serve it."""
     try:
@@ -255,6 +327,8 @@ def run(args) -> None:
         for name in tests:
             {"lines": test_lines,
              "inherited": test_inherited,
+             "mus": test_mus,
+             "mus-stereo": lambda d: test_mus_stereo(d, args.host, args.password or None),
              "ultisid-model": test_ultisid_model}[name](device)
     finally:
         teardown_step("stop the tune", lambda: device.machine.reset(force=True))
