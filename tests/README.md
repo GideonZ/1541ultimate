@@ -292,12 +292,12 @@ e2e:
   gmod2-eeprom-dirty                .      .      x      x      x
   ident-service-switch              .      .      x      x      x
   iec-dos-commands                  .      .      x      x      x
-  iec-partition-file                .      .      x      x      x
-  softiec-log-lines                 .      .      x      x      x
   iec-listen-timing                 .      .      x      x      x
+  iec-partition-file                .      .      x      x      x
   input                             x      x      x      x      x
   input-batching                    x      x      x      x      x
   key-injection                     .      .      x      x      x
+  keystroke-read-back               x      x      x      x      x
   lint                              x      x      x      x      x
   machine-code-monitor              .      .      .      x      x
   menu-screen                       x      x      x      x      x
@@ -317,7 +317,11 @@ e2e:
   rest-api-coverage                 .      x      x      x      x
   reu-turbo                         .      .      x      x      x
   runner-policy                     .      x      x      x      x
+  sidplayer-system-lines            .      .      x      x      x
+  softiec-log                       .      x      x      x      x
+  softiec-log-lines                 .      .      x      x      x
   stale-gates                       .      x      x      x      x
+  tape-playback                     .      .      x      x      x
   telnet-drain                      .      x      x      x      x
   telnet-stale-session              .      .      .      x      x
   telnet-sustained-input            .      .      .      x      x
@@ -351,11 +355,12 @@ soak:
   mount-cache-leak                  .      .      x      x      x
   network-connection                .      .      x      x      x
   prg-context-menu-leak             .      .      x      x      x
+  softiec-soak                      .      .      x      x      x
   usb-keyboard-repeat               .      .      .      x      x
 
                                ------ ------ ------ ------ ------
-  suites                           14     29     64     78     78
-  suite runs                       14     29     64    156    234
+  suites                           15     31     72     86     86
+  suite runs                       15     31     72    172    258
 
 Scenario and check counts, and durations, are not shown here:
 the registry does not know them. They depend on the machine and are

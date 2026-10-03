@@ -883,6 +883,20 @@ class RunnersApi:
             "POST", f"/v1/runners:{action}", params=params, body=payload,
             headers={"Content-Type": "application/octet-stream"}, timeout=timeout)
 
+    def upload_file(self, action: str, filename: str, payload: bytes,
+                    params: dict[str, object] | None = None,
+                    timeout: float | None = None) -> Response:
+        """POST a file to a runner as a named multipart upload.
+
+        The device keeps an uploaded file under the name it was sent with, so
+        its extension still tells the runner the file type: sidplay plays a
+        `.mus` with the MUS player, where a raw upload is taken as a SID file.
+        """
+        body, content_type = multipart_body("file", filename, payload)
+        return self._rest.request(
+            "POST", f"/v1/runners:{action}", params=params, body=body,
+            headers={"Content-Type": content_type}, timeout=timeout)
+
 
 class StreamsApi:
     """/v1/streams/<stream>:start|stop - the device's video and audio streams."""

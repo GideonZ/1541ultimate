@@ -17,6 +17,7 @@ DMA_MODE = $ab
 
 OFFSET_SYSTEM_SCREEN_LOCATION = $ec       ; location at screen + $0300 -> $03ec
 OFFSET_SONG_SCREEN_LOCATION = $ee         ; location at screen + $0300 -> $03ee
+OFFSET_SPEED_SCREEN_LOCATION = $f0        ; location at screen + $0300 -> $03f0
 
 SYSTEM_SCREEN_LOCATION = $b4
 SONG_SCREEN_LOCATION = $b5
@@ -279,6 +280,16 @@ noExtraPlayer   lda #$ea            ; NOP
                 jsr setValue
                 jsr writeNextAddress
                 jmp writeNextAddress
+
+; setValueAt
+;   input:
+;   - AC: the value
+;   - XR: offset in the advanced player's header of the word that holds the offset to write the value to
+setValueAt      ldy extraPlayer,x
+                pha
+                lda extraPlayer + 1,x
+                tax
+                pla
 
 setValue        pha
                 tya
@@ -597,35 +608,15 @@ printData       lda SID_HEADER_LO
                 adc SID_HEADER_LO
                 sta SID_HEADER_LO
 
-                lda #<ASCII
-                sta $a9
-                lda #>ASCII
-                sta $aa
-                lda #<PETSCII
-                sta $a7
-                lda #>PETSCII
-                sta $a8
-
                 ldy #$00
-fillData        jsr readHeader
+fillData        jsr readHeader      ; the firmware has turned accented letters into plain ones
                 beq stopPrintData
 
-                ; ascii special character to petscii conversion
                 sta $a6
-                sty $a5             ; save index
-
-                ldy #$00
-charConvLoop    lda ($a9),y
-                beq conversionEnd
-                cmp $a6
-                bne checkNextChar
-
-                lda ($a7),y
-                sta $a6
+                cmp #'_'            ; the C64 has no underscore: a line at the bottom of the cell
+                bne conversionEnd
+                lda #$64
                 bne writeToScreen
-
-checkNextChar   iny
-                bne charConvLoop
 
 conversionEnd   lda $a6
                 and #$40
@@ -637,8 +628,7 @@ conversionEnd   lda $a6
 
 +               lda $a6
                 and #$1f
-writeToScreen   ldy $a5
-                jsr screenWrite
+writeToScreen   jsr screenWrite
 
                 iny
                 dex
@@ -801,69 +791,47 @@ setCurrentLinePosition
                 rts
 
 writeSidChipCount
-                pha
-                lda $f7
-                sec
-                sbc #$24
-                sta $f7
-                bcs +
-                dec $f8
-+
-                lda #'#'
-                ldy #$00
-                sta ($f7),y
-                iny
-
-                pla
                 clc
                 adc #$30
+                dec $f8
+                ldy #$100 - $23     ; column 5 of the line just written, $23 before $f7/$f8
                 sta ($f7),y
-
-                lda $f7
-                clc
-                adc #$24
-                sta $f7
-                bcc +
                 inc $f8
-+               rts
+                rts
 
+; printSingleSidInfo
+;   input:
+;   - AC: SID model
+;   - XR: 0 = system info, 4 = system info without the clock,
+;         1-3 = SID #1-#3 of the SID header
+;   the clock is printed on the first line of each block only
 printSingleSidInfo
+                stx $ac             ; the kind of line, for the IRQ column below
                 pha
+                cpx #$02
+                bcc checkVersion
+                cpx #$04
+                bcs checkVersion
+
+                lda $fe
+                clc
+                adc #10
+                sta $fe
+
+                ; print SID address for second or third SID ($7a or $7b)
                 txa
-                ; check for which SID number to print the info
-                beq checkVersion
-                cmp #$01
-                beq checkVersion
-
-                cmp #$02
-                bne +
-
-                lda $fe
                 clc
-                adc #10
-                sta $fe
-
-                ; print SID address for second SID
-                jsr getSecondSidAddress
-                jsr printHex
-                jmp checkVersion
-
-+               cmp #$03
-                bne checkVersion
-
-                lda $fe
-                clc
-                adc #10
-                sta $fe
-
-                ; print SID address for third SID
-                jsr getThirdSidAddress
+                adc #$78
+                tay
+                jsr readHeader
                 jsr printHex
 
 checkVersion    txa                 ; check if system info needs to be printed
+                and #$03
                 bne checkSidHeader1
                 ; print system info
-                lda SID_MODEL
+                pla                 ; detected SID model
+                pha
                 beq print8580
                 cmp #$01
                 beq print6581
@@ -883,21 +851,15 @@ checkSidHeader1 ldy #$04            ; check version
                 cmp #$02
                 beq print8580
 
-                lda #<S65818580Lbl  ; print '6581 / 8580'
-                ldy #>S65818580Lbl
-                jmp printModel
-
+                lda #<AnyLbl        ; print 'ANY', the tune plays on 6581 and 8580
+                .byte $2c           ; skip the next instruction
 print6581       lda #<S6581Lbl
-                ldy #>S6581Lbl
-                jmp printModel
-
+                .byte $2c           ; skip the next instruction
 print8580       lda #<S8580Lbl
-                ldy #>S8580Lbl
-                jmp printModel
-
+                .byte $2c           ; skip the next instruction
 printUnknownModel
                 lda #<SUnknownLbl
-                ldy #>SUnknownLbl
+                ldy #>SUnknownLbl   ; all labels share one page
 printModel      sta $aa
                 sty $ab
                 pla
@@ -913,9 +875,6 @@ printModel      sta $aa
 +
                 jsr writeString
 
-                iny
-                sty $ac
-
                 ; print Clock info
                 pla                 ; check if system info needs to be printed
                 bne checkSidHeader2
@@ -925,7 +884,9 @@ printModel      sta $aa
                 beq printPal
                 jmp printNtsc
 
-checkSidHeader2 ldy #$04            ; check version
+checkSidHeader2 cmp #$02            ; SID #2 and #3 share the clock of SID #1
+                bcs clockDone
+                ldy #$04            ; check version
                 jsr readHeader
                 cmp #$01
                 beq printUnknownClock
@@ -935,40 +896,44 @@ checkSidHeader2 ldy #$04            ; check version
                 lsr
                 lsr
                 and #$03
-                cmp #$00
                 beq printUnknownClock
                 cmp #$01
                 beq printPal
                 cmp #$02
                 beq printNtsc
 
-                lda #<PALNTSCLbl    ; print 'PAL / NTSC'
-                ldy #>PALNTSCLbl
-                jmp printClock
-
+                lda #<AnyClockLbl   ; print '/ ANY', the tune plays on PAL and NTSC
+                .byte $2c           ; skip the next instruction
 printPal        lda #<PALLbl
-                ldy #>PALLbl
-                jmp printClock
-
+                .byte $2c           ; skip the next instruction
 printNtsc       lda #<NTSCLbl
-                ldy #>NTSCLbl
-                jmp printClock
-
+                .byte $2c           ; skip the next instruction
 printUnknownClock
                 lda #<UnknownLbl
-                ldy #>UnknownLbl
+                ldy #>UnknownLbl    ; all labels share one page
 printClock      sta $aa
                 sty $ab
                 lda $fe
                 clc
-                adc $ac
+                adc #8              ; ': ' in column 24, the video standard in column 26
                 sta $fe
                 bcc +
                 inc $ff
 +
                 jsr writeString
 
-                inc CURRENT_LINE
+                lda $ac             ; the IRQ only on the first NEEDS line
+                beq clockDone
+                lda $fe             ; ': ' in column 34, the IRQ in column 36
+                clc
+                adc #10
+                ldx $ff
+                bcc +
+                inx
++               ldy #OFFSET_SPEED_SCREEN_LOCATION
+                jsr setVariableWord
+
+clockDone       inc CURRENT_LINE
                 jmp setCurrentLinePosition
 
 writeString     ldy #$00
@@ -1054,6 +1019,139 @@ setupScreen     jsr copyChars
                 sta $f8
                 rts
 
+; writeSystemLabel
+;   input:
+;   - YR: offset of an extra SID address in the SID header ($7a or $7b)
+;   writes a numbered system label for that SID, if the SID header defines it
+writeSystemLabel
+                tya
+                pha
+                jsr readHeader
+                beq +
+                lda #<screenDataFound
+                ldy #>screenDataFound
+                jsr writeScreenData
+                pla
+                sec
+                sbc #$78            ; $7a -> 2, $7b -> 3
+                jmp writeSidChipCount
++               pla
+                rts
+
+; printSystemSidInfo
+;   input:
+;   - YR: offset of an extra SID address in the SID header ($7a or $7b)
+;   prints address and detected model of that SID on its system line, if the SID header defines it
+printSystemSidInfo
+                jsr readHeader
+                beq +
+                pha
+
+                lda $fe
+                clc
+                adc #10
+                sta $fe
+
+                pla
+                pha
+                jsr printHex        ; overwrite the $D400 of the label
+
+                pla
+                jsr detectSidModelAt
+                ldx #$04            ; system info, the clock is on the first system line
+                jmp printSingleSidInfo
++               rts
+
+; detectSidModelAt
+;   input:
+;   - AC: address of the SID as the SID header stores it, $Dxx0 >> 4
+;   output:
+;   - AC: SID model, 00 = 8580, 01 = 6581, 02 = unknown or no SID there
+;   The detection of the SID at $D400, done through a pointer so that it reaches
+;   any address. The read through the pointer comes 7 cycles after the sawtooth
+;   starts, not 4, so the frequency is $2800 rather than $4800: a 6581 has then
+;   just made its first step, while an 8580, one cycle behind, has not. Where
+;   no SID answers, or only a mirror of the one at $D400, it returns unknown.
+detectSidModelAt
+                pha
+                asl
+                asl
+                asl
+                asl
+                sta $aa
+                pla
+                lsr
+                lsr
+                lsr
+                lsr
+                ora #$d0
+                sta $ab
+
+                lda #$ff            ; make sure the check is not done on a bad line
+-               cmp $d012
+                bne -
+                lda #$28            ; sawtooth with the test bit, and the frequency
+                ldy #$12
+                sta ($aa),y
+                ldy #$0f
+                sta ($aa),y
+                lda #$20            ; release the test bit: the sawtooth starts
+                ldy #$12
+                sta ($aa),y
+                ldy #$1b
+                lda ($aa),y         ; 7 cycles later: 1 on a 6581, 0 on an 8580
+                tax
+                and #$fe
+                bne unknownSidAt
+                lda ($aa),y         ; 18 cycles later: 2 on both
+                cmp #$02
+                bne unknownSidAt
+
+                lda #$00            ; stop oscillator 3 at $D400: a mirror of it stands
+                sta $d40e           ; still, a SID of its own counts on, at least one
+                sta $d40f           ; step in the 7 cycles between the next two reads
+                lda ($aa),y
+                nop
+                eor ($aa),y
+                beq unknownSidAt
+                txa
+                beq +               ; an 8580 by its timing
+                jsr checkCombined   ; a 6581 by its timing, but an UltiSID set to 8580 is one too
++               rts
+
+unknownSidAt    lda #$02
+                rts
+
+; checkCombined
+;   input:
+;   - $aa/$ab: base address of a SID that its timing calls a 6581
+;   output:
+;   - AC: 00 = 8580, 01 = 6581
+;   Sums 256 reads of OSC3 with triangle and sawtooth combined, at the frequency the
+;   timing check left. On a 6581 the two nearly cancel, on an 8580 they do not, and an
+;   UltiSID follows its "Combined Waveforms" setting. Measured on a C64 Ultimate, 3 x 256
+;   reads each: real 6581 409-544, UltiSID as 6581 54-148, real 8580 5383-6094,
+;   UltiSID as 8580 14835-15991. The combined waveforms are analog side effects and vary
+;   from chip to chip, so this only ever turns a 6581 into an 8580, never back.
+checkCombined
+                ldy #$12
+                lda #$30            ; triangle and sawtooth, gate off
+                sta ($aa),y
+                ldy #$1b
+                lda #$00            ; AC = low byte of the sum, TEMP the high byte
+                sta TEMP
+                tax
+-               adc ($aa),y         ; a carry from the low byte adds one more, too little to matter
+                bcc +
+                inc TEMP
++               dex
+                bne -
+                lda #$07            ; a high byte of 8 or more, 2048 or more, is an 8580
+                cmp TEMP
+                lda #$00
+                rol
+                rts
+
 printSidInfo    lda $f7             ; restore sid header address
                 sta SID_HEADER_LO
 
@@ -1061,14 +1159,6 @@ printSidInfo    lda $f7             ; restore sid header address
                 sta SID_HEADER_HI
 
                 jsr setCurrentLinePosition
-
-                jsr detection.detectSystem
-                sta C64_CLOCK
-                sty SID_MODEL
-                stx SIDFX_DETECTED
-
-                ldx #$00            ; 0 indicates that system info is presented
-                jsr printSingleSidInfo
 
                 ldy #$77
                 jsr readHeader
@@ -1088,7 +1178,7 @@ printSidInfo    lda $f7             ; restore sid header address
                 rol
                 rol
                 rol
-                cmp #$00
+                and #$03            ; bits 7-6 of the flags, the model of the second SID
                 bne +
                 lda TEMP            ; unknown SID model for second SID so use the info of first SID
 +               ldx #$02            ; second SID
@@ -1100,12 +1190,45 @@ printSidInfo    lda $f7             ; restore sid header address
 
                 ldy #$76
                 jsr readHeader
-                cmp #$00
+                and #$03            ; bits 9-8 of the flags, the model of the third SID
                 bne +
                 lda TEMP            ; unknown SID model for third SID so use the info of first SID
 +               ldx #$03            ; third SID
                 jsr printSingleSidInfo
 noMoreSids2
+                inc CURRENT_LINE    ; the empty line between the two blocks
+                jsr setCurrentLinePosition
+
+                lda $fe             ; the first FOUND line, column 16: the advanced player rewrites it
+                clc
+                adc #16
+                ldx $ff
+                bcc +
+                inx
++               ldy #OFFSET_SYSTEM_SCREEN_LOCATION
+                jsr setVariableWord
+
+                jsr detection.detectSystem
+                sta C64_CLOCK
+                stx SIDFX_DETECTED
+                cpy #$01            ; a 6581 by its timing: check its combined waveforms
+                bne +
+                lda #$00
+                sta $aa
+                lda #$d4
+                sta $ab
+                jsr checkCombined
+                tay
++               sty SID_MODEL
+
+                tya
+                ldx #$00            ; 0 indicates that system info is presented
+                jsr printSingleSidInfo
+
+                ldy #$7a            ; system info of the second SID
+                jsr printSystemSidInfo
+                ldy #$7b            ; system info of the third SID
+                jsr printSystemSidInfo
                 ; print number of songs
                 inc CURRENT_LINE
                 jsr setCurrentLinePosition
@@ -1138,25 +1261,21 @@ setExtraPlayerVars
                 sta relocator.BASE_ADDRESS
 
                 jsr getScreenLocationLastHi
-                ldy extraPlayer.clockLoc
-                ldx extraPlayer.clockLoc + 1
-                jsr setValue
+                ldx #extraPlayer.clockLoc - extraPlayer
+                jsr setValueAt
 
-                ldy extraPlayer.songLenLoc1
-                ldx extraPlayer.songLenLoc1 + 1
-                jsr setValue
+                ldx #extraPlayer.songLenLoc1 - extraPlayer
+                jsr setValueAt
 
-                ldy extraPlayer.songLenLoc2
-                ldx extraPlayer.songLenLoc2 + 1
-                jsr setValue
+                ldx #extraPlayer.songLenLoc2 - extraPlayer
+                jsr setValueAt
 
                 ldy #OFFSET_SONG_SCREEN_LOCATION
                 jsr getVariableWord
                 pha
                 txa
-                ldy extraPlayer.songNumLoc
-                ldx extraPlayer.songNumLoc + 1
-                jsr setValue
+                ldx #extraPlayer.songNumLoc - extraPlayer
+                jsr setValueAt
                 pla
                 jsr writeNextAddress
 
@@ -1164,9 +1283,8 @@ setExtraPlayerVars
                 jsr getVariableWord
                 pha
                 txa
-                ldy extraPlayer.sidModelLoc
-                ldx extraPlayer.sidModelLoc + 1
-                jsr setValue
+                ldx #extraPlayer.sidModelLoc - extraPlayer
+                jsr setValueAt
                 pla
                 jsr writeNextAddress
 
@@ -1174,51 +1292,69 @@ setExtraPlayerVars
                 jsr getVariableWord
                 pha
                 txa
-                ldy extraPlayer.c64ModelLoc
-                ldx extraPlayer.c64ModelLoc + 1
-                jsr setValue
+                ldx #extraPlayer.c64ModelLoc - extraPlayer
+                jsr setValueAt
                 pla
+                jsr writeNextAddress
+
+                ldy #OFFSET_SPEED_SCREEN_LOCATION
+                jsr getVariableWord
+                pha
+                txa
+                ldx #extraPlayer.speedLoc - extraPlayer
+                jsr setValueAt
+                pla
+                jsr writeNextAddress
+
+                ldy #OFFSET_SPEED_SCREEN_LOCATION
+                jsr getVariableWord ; XR/AC: the first NEEDS line, column 34
+                sec
+                sbc SCREEN_LOCATION
+                ora #$d8            ; the same place in colour RAM
+                sta TEMP
+                txa
+                sec
+                sbc #40 + 34        ; the headings are the row above it, from column 0
+                bcs +
+                dec TEMP
++               ldx #extraPlayer.headingsLoc - extraPlayer
+                jsr setValueAt
+                lda TEMP
                 jsr writeNextAddress
 
                 lda player.offSongNr
-                ldy extraPlayer.songNumSet
-                ldx extraPlayer.songNumSet + 1
-                jsr setValue
+                ldx #extraPlayer.songNumSet - extraPlayer
+                jsr setValueAt
                 lda player.offSongNr + 1
                 jsr writeAtPlayerLocation
 
                 lda #$80
-                ldy extraPlayer.spriteLoc
-                ldx extraPlayer.spriteLoc + 1
-                jsr setValue
+                ldx #extraPlayer.spriteLoc - extraPlayer
+                jsr setValueAt
                 jsr getScreenLocationLastHi
                 jsr writeNextAddress
 
                 lda player.offPlayLoop
-                ldy extraPlayer.playerLoopLoc
-                ldx extraPlayer.playerLoopLoc + 1
-                jsr setValue
+                ldx #extraPlayer.playerLoopLoc - extraPlayer
+                jsr setValueAt
                 lda player.offPlayLoop + 1
                 jsr writeAtPlayerLocation
 
                 lda player.offExtraPlay1
-                ldy extraPlayer.epCallLoc
-                ldx extraPlayer.epCallLoc + 1
-                jsr setValue
+                ldx #extraPlayer.epCallLoc - extraPlayer
+                jsr setValueAt
                 lda player.offExtraPlay1 + 1
                 jsr writeAtPlayerLocation
 
                 lda player.offFastForw
-                ldy extraPlayer.fastFwd
-                ldx extraPlayer.fastFwd + 1
-                jsr setValue
+                ldx #extraPlayer.fastFwd - extraPlayer
+                jsr setValueAt
                 lda player.offFastForw + 1
                 jsr writeAtPlayerLocation
 
                 lda player.offPause
-                ldy extraPlayer.pauseKey
-                ldx extraPlayer.pauseKey + 1
-                jsr setValue
+                ldx #extraPlayer.pauseKey - extraPlayer
+                jsr setValueAt
                 lda player.offPause + 1
                 jsr writeAtPlayerLocation
 
@@ -1230,23 +1366,20 @@ setExtraPlayerVars
                 jsr setValue
 
                 lda player.offSpeed1
-                ldy extraPlayer.hdrSpeedFlag1
-                ldx extraPlayer.hdrSpeedFlag1 + 1
-                jsr setValue
+                ldx #extraPlayer.hdrSpeedFlag1 - extraPlayer
+                jsr setValueAt
                 lda player.offSpeed1 + 1
                 jsr writeAtPlayerLocation
 
                 lda player.offSpeed2
-                ldy extraPlayer.hdrSpeedFlag2
-                ldx extraPlayer.hdrSpeedFlag2 + 1
-                jsr setValue
+                ldx #extraPlayer.hdrSpeedFlag2 - extraPlayer
+                jsr setValueAt
                 lda player.offSpeed2 + 1
                 jsr writeAtPlayerLocation
 
                 lda player.offSpeed3
-                ldy extraPlayer.hdrSpeedFlag3
-                ldx extraPlayer.hdrSpeedFlag3 + 1
-                jsr setValue
+                ldx #extraPlayer.hdrSpeedFlag3 - extraPlayer
+                jsr setValueAt
                 lda player.offSpeed3 + 1
                 jsr writeAtPlayerLocation
 
@@ -1264,9 +1397,8 @@ setExtraPlayerVars
 
 +               ldy #$12            ; byte 4 of speed flags
                 jsr readHeader
-                ldy extraPlayer.hdrSpeedFlags
-                ldx extraPlayer.hdrSpeedFlags + 1
-                jsr setValue
+                ldx #extraPlayer.hdrSpeedFlags - extraPlayer
+                jsr setValueAt
                 ldy #$13            ; byte 3 of speed flags
                 jsr readHeader
                 ldy #$01
@@ -1281,9 +1413,8 @@ setExtraPlayerVars
                 jsr writeAddress
 
                 lda #<player.playerMain
-                ldy extraPlayer.playerLoc
-                ldx extraPlayer.playerLoc + 1
-                jsr setValue
+                ldx #extraPlayer.playerLoc - extraPlayer
+                jsr setValueAt
                 lda PLAYER_LOCATION
                 jsr writeNextAddress
 
@@ -1297,32 +1428,27 @@ setExtraPlayerVars
                 bne +               ; when PAL flag is set then always write 0 (therefore jump to lsr)
                 txa
 +               lsr                 ; value is 1 for NTSC, otherwise 0 for PAL / UNKNOWN clock. If PAL is set then value is always 0.
-                ldy extraPlayer.c64ModelFlag
-                ldx extraPlayer.c64ModelFlag + 1
-                jsr setValue
+                ldx #extraPlayer.c64ModelFlag - extraPlayer
+                jsr setValueAt
 
-                lda SIDFX_DETECTED
-                ldy extraPlayer.sidFxFound
-                ldx extraPlayer.sidFxFound + 1
-                jsr setValue
+                jsr isRsid          ; an RSID tune sets up its own interrupt
+                ldx #extraPlayer.rsidFound - extraPlayer
+                jsr setValueAt
 
                 lda SID_MODEL
-                ldy extraPlayer.sidModelFound
-                ldx extraPlayer.sidModelFound + 1
-                jsr setValue
+                ldx #extraPlayer.sidModelFound - extraPlayer
+                jsr setValueAt
 
                 lda SONG_TO_PLAY
-                ldy extraPlayer.songNum
-                ldx extraPlayer.songNum + 1
-                jmp setValue
+                ldx #extraPlayer.songNum - extraPlayer
+                jmp setValueAt
 
 setupSldb       ldy #$0e            ; get number of songs
                 jsr readHeader
                 sec
                 sbc #$01
-                ldy extraPlayer.maxSongLoc
-                ldx extraPlayer.maxSongLoc + 1
-                jsr setValue
+                ldx #extraPlayer.maxSongLoc - extraPlayer
+                jsr setValueAt
 
                 tax                 ; XR = number of songs
 
@@ -1547,40 +1673,24 @@ continueInitPlayer
 +               jmp enableExtraPlayerCalls
 
                 .enc 'screen'
-PALLbl          .text '/ PAL', 0
-NTSCLbl         .text '/ NTSC', 0
-PALNTSCLbl      .text '/ PAL / NTSC', 0
-UnknownLbl      .text '/ UNKNOWN', 0
+                .if (* & $ff) >= $de - 38 ; the 39 bytes of labels below must share one page and stay below $DE, see the checks
+                .align $100
+                .fi
+PALLbl          .text ': PAL', 0
+NTSCLbl         .text ': NTSC', 0
+AnyClockLbl     .text ': '
+AnyLbl          .text 'ANY', 0
 S6581Lbl        .text '6581', 0
 S8580Lbl        .text '8580', 0
-S65818580Lbl    .text '6581 / 8580', 0
+UnknownLbl      .text ': '
 SUnknownLbl     .text 'UNKNOWN', 0
+                .cerror (PALLbl >> 8) != (SUnknownLbl >> 8), 'the model and clock labels must share one page'
+                ; a .byte $2c above turns lda #<label into BIT $xxA9, xx the label's low byte: for $D0-$DD
+                ; that reads a VIC, SID, colour RAM or CIA register (9, TOD seconds) without side effects,
+                ; but $DE and $DF would read the cartridge's I/O
+                .cerror (PALLbl & $ff) <= $df && (SUnknownLbl & $ff) >= $de, 'a skipped lda #<label must not make the BIT read cartridge I/O'
 
-                ;     'ÀÁÂÃÄÅÆàáâãäåæÈÉÊËèéêëÌÍÎÏìíîïÒÓÔÕÖØòóôõöøÙÚÛÜùúûüÇçÑñÝŸýÿß'
-PETSCII         .text 'AAAAAAAAAAAAAAEEEEEEEEIIIIIIIIOOOOOOOOOOOOUUUUUUUUCCNNYYYYB'
-                .byte $64   ; PETSCII underscore
-                .byte 0
                 .enc 'none'
 
 SIDMagic        .text 'SID'
 
-ASCII           .byte $c0, $c1, $c2, $c3, $c4, $c5, $c6             ; all A variants
-                .byte $e0, $e1, $e2, $e3, $e4, $e5, $e6             ; all a variants
-                .byte $c8, $c9, $ca, $cb                            ; all E variants
-                .byte $e8, $e9, $ea, $eb                            ; all e variants
-                .byte $cc, $cd, $ce, $cf                            ; all I variants
-                .byte $ec, $ed, $ee, $ef                            ; all i variants
-                .byte $d2, $d3, $d4, $d5, $d6, $d8                  ; all O variants
-                .byte $f2, $f3, $f4, $f5, $f6, $f8                  ; all o variants
-                .byte $d9, $da, $db, $dc                            ; all U variants
-                .byte $f9, $fa, $fb, $fc                            ; all u variants
-                .byte $c7, $e7, $d1, $f1, $dd, $9f, $fd, $ff, $df   ; other chars
-                .byte '_'
-                .byte 0
-
-                ;examples special characters:
-                ; /HVSC/C64Music/MUSICIANS/W/Walt/Maelkeboetten.sid (Mæclkebøtten)
-                ; /HVSC/C64Music/MUSICIANS/A/Ass_It/Lasst_Uns_Froh.sid (Laßt Uns Froh)
-                ; /HVSC/C64Music/GAMES/A-F/Captain_Blood.sid (by François Lionet)
-                ; /HVSC/C64Music/MUSICIANS/D/Da_Blondie/Brain_Damage.sid (by Attila Szõke)
-                ; etc.

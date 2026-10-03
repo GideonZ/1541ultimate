@@ -58,8 +58,10 @@ musTuneFlag     .word musTune + 1                   ; offset of flag indicating 
 musColorsLoc    .word musColors                     ; offset of address where the colors are stored when the tune is a MUS file
 numColorsLoc    .word numOfColors + 1               ; offset of number of colors to write
 
-sidFxFound      .word sidFxDetected + 1             ; offset of address of flag that indicated if SIDFX was found
+rsidFound       .word rsidTune + 1                  ; offset of the flag that tells an RSID tune, which sets up its own interrupt
 sidModelFound   .word sidModel                      ; offset of address of detected SID model
+speedLoc        .word speedWrite + 1                ; offset of address of screen location for the speed of the song
+headingsLoc     .word headingRow + 1                ; offset of the colour RAM address of the row with the column headings
 headerEnd
 
 codeStart
@@ -134,7 +136,12 @@ playerCall      sta @w $0000
 playerLoop      sta @w $0000
                 rts
 
-afterInit       jmp timebar.afterInit
+afterInit       ldy #$27
+                lda #$07            ; the column headings are yellow like the labels, now that the player
+headingRow      sta $d800,y         ; has coloured the screen; the cartridge sets the address of their row
+                dey
+                bpl headingRow
+                jmp timebar.afterInit
 
 extraPlayer     lda afterInitDone
                 bne +
@@ -241,6 +248,22 @@ songDigit       sta $05c0,y
 +               cpy #$09
                 bne -
 
+                ldx #$02            ; ': RSID', the tune sets up its own interrupt
+rsidTune        lda #$00            ; set by the cartridge for an RSID tune
+                bne +
+                lda currentSong     ; ': VBI' or ': CIA', the interrupt the song is played from
+                jsr calcSpeedFlag
+                tax
++               ldy #$00
+-               lda speedTexts,x
+speedWrite      sta $05c0,y
+                inx
+                inx
+                inx
+                iny
+                cpy #$06
+                bne -
+
 displaySongLength
                 lda currentSong
                 asl
@@ -280,10 +303,9 @@ songLengthDigit2
                 bpl -
                 rts
 
-detectSidModel
-sidFxDetected   lda #$00            ; was SIDFX detected?
-                beq noSidFx
-                lda sidModel        ; return detected SIDFX model
+; the cartridge measured the SID at $D400 just before the tune started, the same chip
+; answers the same, and its answer includes the check of the combined waveforms
+detectSidModel  lda sidModel        ; return the model the cartridge detected
                 rts
 
 noSidFx         jmp detection.detectSidModel
@@ -305,8 +327,8 @@ sidModelWrite   sta $0570,y
                 lda palntsc
                 and #$03
                 beq +
-                ldx #$07
-+
+                ldx #$06
++               ldy #$08            ; ': PAL' or ': NTSC' in column 24, as the cartridge wrote it
 -               lda c64ModelDesc,x
                 beq +
 c64ModelWrite   sta $0570,y
@@ -378,8 +400,9 @@ sidModel        .byte ?   ; 0 = 8580, 1 = 6581, 2 = unknown
 sidC64Model     .byte 0   ; 0 = PAL, 1 = NTSC
 
                 .enc 'screen'
-c64ModelDesc    .text ' / PAL', 0, ' / NTSC', 0
+c64ModelDesc    .text ': PAL', 0, ': NTSC', 0
 sidModelDesc    .text '8580', 0, '6581', 0, 'UNKNOWN'  ; not needed to end with zero, since sidModelIndex starts with a zero
+speedTexts      .text ':::   VCRBISIAI  D'          ; ': VBI ', ': CIA ' and ': RSID', interleaved
                 .enc 'none'
 sidModelIndex   .byte 0, 5, 10
 

@@ -588,6 +588,20 @@ SUITES: Sequence[Suite] = (
     # It reads the streams without taking them, so it runs under --record too.
     Suite("e2e", "freezer-audio", "tests/e2e/io/c64/freezer_audio_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@", profile=profiles.QUICK),
+    # What the SID player's info screen says about each SID (#949), read in
+    # master's layout as well as #949's, so it runs red/green: the model
+    # measured for real chips and for an UltiSID set to 6581 or 8580, the model
+    # the player gives the UltiSIDs it maps (only with its permission), SID #1's
+    # model for a SID the tune leaves open, a line per address, UNKNOWN for a
+    # mirror, the interrupt, and Compute's Sidplayer files on the MUS player,
+    # mono by a named upload and stereo by FTP with the .str beside. Each check
+    # says whether master gets it wrong, right, or does not show it. Tests that
+    # map SIDs skip where the machine cannot. It changes the SID addressing,
+    # the sockets, the UltiSID settings and SID Player Autoconfig with its
+    # UltiSID permission, each after a reset or with the CPU halted, and puts
+    # them back.
+    Suite("e2e", "sidplayer-system-lines", "tests/e2e/io/c64/sidplayer_system_lines_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --test all"),
     # Reproduces #733: with the FPGA decoder fix in the core, "mirroring off" is
     # the regression guard. Runs last, because a device whose core predates that
     # fix stalls the whole Nios on this scenario and needs a JTAG recovery.

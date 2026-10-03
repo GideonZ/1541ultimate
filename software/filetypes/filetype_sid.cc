@@ -312,8 +312,12 @@ int FileTypeSID ::createMusHeader(void)
     sid_header[0x77] = 0x29; // default flags set for 8580, NTSC and MUS data only
 
     if (sid_header[0x16] == 0) {
-        // set filename as title
+        // set filename as title, without the path runners:sidplay passes in
         const char *filename = file_string.c_str();
+        const char *slash = strrchr(filename, '/');
+        if (slash) {
+            filename = slash + 1;
+        }
         int size = strlen(filename);
 
         // truncate filename where extension begins
@@ -779,6 +783,18 @@ void FileTypeSID ::load(void)
     // copy sid header into C64 memory
     memcpy((void *)(C64_MEMORY_BASE + header_location), sid_header, 0x80);
 
+    // the player shows title, author and released with the C64's letters only: turn accented
+    // ones into their plain form here, with the table showInfo() uses
+    uint8_t *strings = (uint8_t *)(C64_MEMORY_BASE + header_location);
+    for (int i = string_offsets[0]; i < string_offsets[3]; i++) {
+        for (int j = 0; j < sizeof(ascii); j++) {
+            if (strings[i] == ascii[j]) {
+                strings[i] = petscii[j];
+                break;
+            }
+        }
+    }
+
     C64_POKE(0x0164, header_location);
     C64_POKE(0x0165, header_location >> 8);
 
@@ -899,7 +915,7 @@ void FileTypeSID ::configureMusEnv(int offsetLoadEnd)
 SubsysResultCode_e FileTypeSID ::play_file(const char *filename, const char *ssl_file, int song)
 {
     char ext[4];
-    get_extension(filename, ext);
+    get_extension(filename, ext, true); // in capitals, as the file browser has it
     bool mus = (strcmp(ext, "MUS") == 0) || (strcmp(ext, "STR") == 0);
     Path *ssl_path = NULL;
     FileTypeSID *sid;
