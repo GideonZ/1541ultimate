@@ -779,6 +779,18 @@ void FileTypeSID ::load(void)
     // copy sid header into C64 memory
     memcpy((void *)(C64_MEMORY_BASE + header_location), sid_header, 0x80);
 
+    // the player shows title, author and released with the C64's letters only: turn accented
+    // ones into their plain form here, with the table showInfo() uses
+    uint8_t *strings = (uint8_t *)(C64_MEMORY_BASE + header_location);
+    for (int i = string_offsets[0]; i < string_offsets[3]; i++) {
+        for (int j = 0; j < sizeof(ascii); j++) {
+            if (strings[i] == ascii[j]) {
+                strings[i] = petscii[j];
+                break;
+            }
+        }
+    }
+
     C64_POKE(0x0164, header_location);
     C64_POKE(0x0165, header_location >> 8);
 

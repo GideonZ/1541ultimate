@@ -608,35 +608,15 @@ printData       lda SID_HEADER_LO
                 adc SID_HEADER_LO
                 sta SID_HEADER_LO
 
-                lda #<ASCII
-                sta $a9
-                lda #>ASCII
-                sta $aa
-                lda #<PETSCII
-                sta $a7
-                lda #>PETSCII
-                sta $a8
-
                 ldy #$00
-fillData        jsr readHeader
+fillData        jsr readHeader      ; the firmware has turned accented letters into plain ones
                 beq stopPrintData
 
-                ; ascii special character to petscii conversion
                 sta $a6
-                sty $a5             ; save index
-
-                ldy #$00
-charConvLoop    lda ($a9),y
-                beq conversionEnd
-                cmp $a6
-                bne checkNextChar
-
-                lda ($a7),y
-                sta $a6
+                cmp #'_'            ; the C64 has no underscore: a line at the bottom of the cell
+                bne conversionEnd
+                lda #$64
                 bne writeToScreen
-
-checkNextChar   iny
-                bne charConvLoop
 
 conversionEnd   lda $a6
                 and #$40
@@ -648,8 +628,7 @@ conversionEnd   lda $a6
 
 +               lda $a6
                 and #$1f
-writeToScreen   ldy $a5
-                jsr screenWrite
+writeToScreen   jsr screenWrite
 
                 iny
                 dex
@@ -827,6 +806,7 @@ writeSidChipCount
 ;         1-3 = SID #1-#3 of the SID header
 ;   the clock is printed on the first line of each block only
 printSingleSidInfo
+                stx $ac             ; the kind of line, for the IRQ column below
                 pha
                 cpx #$02
                 bcc checkVersion
@@ -895,9 +875,6 @@ printModel      sta $aa
 +
                 jsr writeString
 
-                iny
-                sty $ac
-
                 ; print Clock info
                 pla                 ; check if system info needs to be printed
                 bne checkSidHeader2
@@ -938,16 +915,18 @@ printClock      sta $aa
                 sty $ab
                 lda $fe
                 clc
-                adc $ac
+                adc #8              ; ': ' in column 24, the video standard in column 26
                 sta $fe
                 bcc +
                 inc $ff
 +
                 jsr writeString
 
-                tya                 ; the speed goes one column after the clock
-                sec
-                adc $fe
+                lda $ac             ; the IRQ only on the first NEEDS line
+                beq clockDone
+                lda $fe             ; ': ' in column 34, the IRQ in column 36
+                clc
+                adc #10
                 ldx $ff
                 bcc +
                 inx
@@ -1049,8 +1028,8 @@ writeSystemLabel
                 pha
                 jsr readHeader
                 beq +
-                lda #<screenData4
-                ldy #>screenData4
+                lda #<screenDataFound
+                ldy #>screenDataFound
                 jsr writeScreenData
                 pla
                 sec
@@ -1181,31 +1160,6 @@ printSidInfo    lda $f7             ; restore sid header address
 
                 jsr setCurrentLinePosition
 
-                jsr detection.detectSystem
-                sta C64_CLOCK
-                stx SIDFX_DETECTED
-                cpy #$01            ; a 6581 by its timing: check its combined waveforms
-                bne +
-                lda #$00
-                sta $aa
-                lda #$d4
-                sta $ab
-                jsr checkCombined
-                tay
-+               sty SID_MODEL
-
-                tya
-                ldx #$00            ; 0 indicates that system info is presented
-                jsr printSingleSidInfo
-
-                ldy #$7a            ; system info of the second SID
-                jsr printSystemSidInfo
-                ldy #$7b            ; system info of the third SID
-                jsr printSystemSidInfo
-
-                inc CURRENT_LINE    ; the empty line between the two blocks
-                jsr setCurrentLinePosition
-
                 ldy #$77
                 jsr readHeader
                 lsr
@@ -1242,6 +1196,39 @@ printSidInfo    lda $f7             ; restore sid header address
 +               ldx #$03            ; third SID
                 jsr printSingleSidInfo
 noMoreSids2
+                inc CURRENT_LINE    ; the empty line between the two blocks
+                jsr setCurrentLinePosition
+
+                lda $fe             ; the first FOUND line, column 16: the advanced player rewrites it
+                clc
+                adc #16
+                ldx $ff
+                bcc +
+                inx
++               ldy #OFFSET_SYSTEM_SCREEN_LOCATION
+                jsr setVariableWord
+
+                jsr detection.detectSystem
+                sta C64_CLOCK
+                stx SIDFX_DETECTED
+                cpy #$01            ; a 6581 by its timing: check its combined waveforms
+                bne +
+                lda #$00
+                sta $aa
+                lda #$d4
+                sta $ab
+                jsr checkCombined
+                tay
++               sty SID_MODEL
+
+                tya
+                ldx #$00            ; 0 indicates that system info is presented
+                jsr printSingleSidInfo
+
+                ldy #$7a            ; system info of the second SID
+                jsr printSystemSidInfo
+                ldy #$7b            ; system info of the third SID
+                jsr printSystemSidInfo
                 ; print number of songs
                 inc CURRENT_LINE
                 jsr setCurrentLinePosition
@@ -1317,6 +1304,22 @@ setExtraPlayerVars
                 ldx #extraPlayer.speedLoc - extraPlayer
                 jsr setValueAt
                 pla
+                jsr writeNextAddress
+
+                ldy #OFFSET_SPEED_SCREEN_LOCATION
+                jsr getVariableWord ; XR/AC: the first NEEDS line, column 34
+                sec
+                sbc SCREEN_LOCATION
+                ora #$d8            ; the same place in colour RAM
+                sta TEMP
+                txa
+                sec
+                sbc #40 + 34        ; the headings are the row above it, from column 0
+                bcs +
+                dec TEMP
++               ldx #extraPlayer.headingsLoc - extraPlayer
+                jsr setValueAt
+                lda TEMP
                 jsr writeNextAddress
 
                 lda player.offSongNr
@@ -1428,8 +1431,8 @@ setExtraPlayerVars
                 ldx #extraPlayer.c64ModelFlag - extraPlayer
                 jsr setValueAt
 
-                lda SIDFX_DETECTED
-                ldx #extraPlayer.sidFxFound - extraPlayer
+                jsr isRsid          ; an RSID tune sets up its own interrupt
+                ldx #extraPlayer.rsidFound - extraPlayer
                 jsr setValueAt
 
                 lda SID_MODEL
@@ -1673,13 +1676,13 @@ continueInitPlayer
                 .if (* & $ff) >= $de - 38 ; the 39 bytes of labels below must share one page and stay below $DE, see the checks
                 .align $100
                 .fi
-PALLbl          .text '/ PAL', 0
-NTSCLbl         .text '/ NTSC', 0
-AnyClockLbl     .text '/ '
+PALLbl          .text ': PAL', 0
+NTSCLbl         .text ': NTSC', 0
+AnyClockLbl     .text ': '
 AnyLbl          .text 'ANY', 0
 S6581Lbl        .text '6581', 0
 S8580Lbl        .text '8580', 0
-UnknownLbl      .text '/ '
+UnknownLbl      .text ': '
 SUnknownLbl     .text 'UNKNOWN', 0
                 .cerror (PALLbl >> 8) != (SUnknownLbl >> 8), 'the model and clock labels must share one page'
                 ; a .byte $2c above turns lda #<label into BIT $xxA9, xx the label's low byte: for $D0-$DD
@@ -1687,31 +1690,7 @@ SUnknownLbl     .text 'UNKNOWN', 0
                 ; but $DE and $DF would read the cartridge's I/O
                 .cerror (PALLbl & $ff) <= $df && (SUnknownLbl & $ff) >= $de, 'a skipped lda #<label must not make the BIT read cartridge I/O'
 
-                ;     'ÀÁÂÃÄÅÆàáâãäåæÈÉÊËèéêëÌÍÎÏìíîïÒÓÔÕÖØòóôõöøÙÚÛÜùúûüÇçÑñÝŸýÿß'
-PETSCII         .text 'AAAAAAAAAAAAAAEEEEEEEEIIIIIIIIOOOOOOOOOOOOUUUUUUUUCCNNYYYYB'
-                .byte $64   ; PETSCII underscore
-                .byte 0
                 .enc 'none'
 
 SIDMagic        .text 'SID'
 
-ASCII           .byte $c0, $c1, $c2, $c3, $c4, $c5, $c6             ; all A variants
-                .byte $e0, $e1, $e2, $e3, $e4, $e5, $e6             ; all a variants
-                .byte $c8, $c9, $ca, $cb                            ; all E variants
-                .byte $e8, $e9, $ea, $eb                            ; all e variants
-                .byte $cc, $cd, $ce, $cf                            ; all I variants
-                .byte $ec, $ed, $ee, $ef                            ; all i variants
-                .byte $d2, $d3, $d4, $d5, $d6, $d8                  ; all O variants
-                .byte $f2, $f3, $f4, $f5, $f6, $f8                  ; all o variants
-                .byte $d9, $da, $db, $dc                            ; all U variants
-                .byte $f9, $fa, $fb, $fc                            ; all u variants
-                .byte $c7, $e7, $d1, $f1, $dd, $9f, $fd, $ff, $df   ; other chars
-                .byte '_'
-                .byte 0
-
-                ;examples special characters:
-                ; /HVSC/C64Music/MUSICIANS/W/Walt/Maelkeboetten.sid (Mæclkebøtten)
-                ; /HVSC/C64Music/MUSICIANS/A/Ass_It/Lasst_Uns_Froh.sid (Laßt Uns Froh)
-                ; /HVSC/C64Music/GAMES/A-F/Captain_Blood.sid (by François Lionet)
-                ; /HVSC/C64Music/MUSICIANS/D/Da_Blondie/Brain_Damage.sid (by Attila Szõke)
-                ; etc.

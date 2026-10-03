@@ -26,8 +26,6 @@
 ;
 ;-----------------------------------------------------------------------
 
-CURRENT_LINE_CALC_LO =  $0ffb
-CURRENT_LINE_CALC_HI =  $0ffc
 
 MUS_NUMBER_OF_LINES = $0ffd
 MUS_INFO_LOCATION_LO = $b0
@@ -475,25 +473,15 @@ skipInfoDisplay lda #<screenData2
                 ldy #>screenData3
                 jsr writeScreenData
 
-                ; write system label
+                ; write the column headings and the first NEEDS label
                 lda #<screenData4
                 ldy #>screenData4
-                jsr writeScreenData
-
-                ldy #$7a            ; system label for the second SID
-                jsr writeSystemLabel
-                ldy #$7b            ; system label for the third SID
-                jsr writeSystemLabel
-
-                ; write an empty line and the SID label
-                lda #<screenData5Gap
-                ldy #>screenData5Gap
                 jsr writeScreenData
 
                 jsr getSecondSidAddress ; is second SID address defined?
                 beq noMoreSids
 
-                ; write SID label
+                ; write NEEDS label
                 lda #<screenData5
                 ldy #>screenData5
                 jsr writeScreenData
@@ -504,7 +492,7 @@ skipInfoDisplay lda #<screenData2
                 jsr getThirdSidAddress ; is third SID address defined?
                 beq noMoreSids
 
-                ; write SID label
+                ; write NEEDS label
                 lda #<screenData5
                 ldy #>screenData5
                 jsr writeScreenData
@@ -512,6 +500,15 @@ skipInfoDisplay lda #<screenData2
                 lda #3
                 jsr writeSidChipCount
 noMoreSids
+                ; write an empty line and the first FOUND label
+                lda #<screenData5Gap
+                ldy #>screenData5Gap
+                jsr writeScreenData
+
+                ldy #$7a            ; FOUND label for the second SID
+                jsr writeSystemLabel
+                ldy #$7b            ; FOUND label for the third SID
+                jsr writeSystemLabel
                 ; write SONG label
                 lda #<screenData6
                 ldy #>screenData6
@@ -553,25 +550,6 @@ noMoreSids
                 adc MUS_NUMBER_OF_LINES
                 sta CURRENT_LINE
 
-                lda #(16 + 40 * 5)
-                ldy MUS_NUMBER_OF_LINES
-                beq +
--               clc
-                adc #40
-+               sta CURRENT_LINE_CALC_LO
-                bcc +
-                inc CURRENT_LINE_CALC_HI
-+               dey
-                bpl -
-
-                lda CURRENT_LINE_CALC_HI
-                clc
-                adc SCREEN_LOCATION
-                tax
-                lda CURRENT_LINE_CALC_LO
-                ldy #OFFSET_SYSTEM_SCREEN_LOCATION
-                jsr setVariableWord
-
                 jsr setCurrentLinePosition
 
                 lda $fe
@@ -585,6 +563,7 @@ noMoreSids
 
                 inc CURRENT_LINE
                 inc CURRENT_LINE
+                inc CURRENT_LINE    ; the column headings
 
                 jmp printSidInfo
 
@@ -617,12 +596,20 @@ screenData2     .text 'TITLE :'
                 .byte $ff, $20, 33
                 .byte $00 ;end
 
-screenData4     .text 'FOUND : $D400 :'
+screenData4     .byte $ff, $20, 8   ; the column headings above the FOUND and NEEDS lines
+                .text 'ADDR'
+                .byte $ff, $20, 4
+                .text 'MODEL'
+                .byte $ff, $20, 5
+                .text 'VIDEO'
+                .byte $ff, $20, 5
+                .text 'IRQ '
+screenData5     .text 'NEEDS : $D400 :'   ; again for the second and third SID
                 .byte $ff, $20, 25
                 .byte $00 ;end
 
-screenData5Gap  .byte $ff, $20, 40  ; empty line, then the first SID label
-screenData5     .text 'NEEDS : $D400 :'
+screenData5Gap  .byte $ff, $20, 40  ; empty line, then the first FOUND label
+screenDataFound .text 'FOUND : $D400 :'   ; again for the second and third SID
                 .byte $ff, $20, 25
                 .byte $00 ;end
 

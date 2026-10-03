@@ -20,12 +20,13 @@ matters about each is a handful of header bytes:
                   measure it again and report two chips that are not there.
                   On a cartridge that is always the case; on a C64 Ultimate
                   or U64 the suite unmaps whatever sits at those addresses.
-  speed           the first NEEDS line ends in the song's speed: (VBI) without
-                  the speed flag, (CIA) with it. A two-song tune whose second
-                  song has the flag shows (VBI) for song 1 and (CIA) for song 2.
+  speed           the first NEEDS line ends in the song's interrupt: VBI without
+                  the speed flag, CIA with it. A two-song tune whose second
+                  song has the flag shows VBI for song 1 and CIA for song 2.
+                  An RSID tune, which sets up its own interrupt, shows RSID.
   any             a tune made for both models and both clocks shows ANY for
-                  each; with the clock left open, ANY / UNKNOWN, and the speed
-                  still fits on the line.
+                  each; with the clock left open, ANY and UNKNOWN, and the
+                  interrupt still fits on the line.
   mus             a Compute's Sidplayer file, uploaded under its name, plays
                   with the MUS player: the file name as title, one SID, and the
                   model, clock and speed the device's made-up header asks for.
@@ -119,18 +120,19 @@ FILTER_FOR = {"8580": "8580 Lo", "6581": "6581"}
 
 
 def psid(name: bytes, sids: list[tuple[int, int]], clock: int = PAL,
-         songs: int = 1, speed: int = 0) -> bytes:
+         songs: int = 1, speed: int = 0, magic: bytes = b"PSID",
+         play: int = PLAY_ADDRESS) -> bytes:
     """A PSID v4 for `sids`, a list of (address, model) for SID #1 to #3.
 
     `speed` is the header's speed flags, bit 0 for song 1: a set bit means
     the song runs on a CIA timer, a clear one on the 50/60 Hz default.
     """
     header = bytearray(PSID_HEADER_BYTES)
-    header[:4] = b"PSID"
+    header[:4] = magic
     # Big-endian: version, data offset, load address (0: taken from the data),
     # init, play, `songs` songs, starting at one, and the speed flags.
     struct.pack_into(">7HI", header, 4, 4, PSID_HEADER_BYTES, 0,
-                     INIT_ADDRESS, PLAY_ADDRESS, songs, 1, speed)
+                     INIT_ADDRESS, play, songs, 1, speed)
     for offset, text in ((0x16, name), (0x36, b"E2E"), (0x56, b"2026")):
         header[offset:offset + 0x20] = text.ljust(0x20, b"\0")
     flags = clock << 2
@@ -175,7 +177,8 @@ def drawn(lines: list[str]) -> bool:
     FOUND and NEEDS lines, then the advanced player ends the first NEEDS line in
     the song's speed."""
     return (any(FOUND_LINE.search(line) for line in lines)
-            and any(NEEDS_LINE.search(line) and line.endswith(")") for line in lines))
+            and any(NEEDS_LINE.search(line) and line.endswith(("VBI", "CIA", "RSID"))
+                    for line in lines))
 
 
 def play_and_read(device: UltimateApi, tune: bytes,
@@ -287,24 +290,30 @@ def first_want_line(lines: list[str]) -> str:
 
 def test_speed(device: UltimateApi) -> None:
     sids = [(0xD400, MODEL_6581)]
-    for speed, expected in ((0, "6581 / PAL (VBI)"), (1, "6581 / PAL (CIA)")):
+    for speed, expected in ((0, "6581    : PAL     : VBI"), (1, "6581    : PAL     : CIA")):
         with check(f"speed flag {speed} shows {expected.split()[-1]}"):
             line = first_want_line(play_and_read(device, psid(b"SPEED", sids, speed=speed)))
             detail(line)
             if not line.endswith(expected):
                 raise Failure(f"{line!r} does not end in {expected!r}")
-    for song, expected in ((1, "(VBI)"), (2, "(CIA)")):
+    for song, expected in ((1, ": VBI"), (2, ": CIA")):
         with check(f"a tune whose song 2 has the speed flag shows {expected} for song {song}"):
             line = first_want_line(play_and_read(
                 device, psid(b"TWO SPEEDS", sids, songs=2, speed=0b10), song))
             detail(line)
             if not line.endswith(expected):
                 raise Failure(f"{line!r} does not end in {expected!r}")
+    with check("an RSID tune shows RSID, as it sets up its own interrupt"):
+        line = first_want_line(play_and_read(
+            device, psid(b"RSID", sids, magic=b"RSID", play=0)))
+        detail(line)
+        if not line.endswith(": RSID"):
+            raise Failure(f"{line!r} does not end in ': RSID'")
 
 
 def test_any(device: UltimateApi) -> None:
-    for clock, expected in ((CLOCK_ANY, "ANY / ANY (VBI)"),
-                            (CLOCK_UNKNOWN, "ANY / UNKNOWN (VBI)")):
+    for clock, expected in ((CLOCK_ANY, "ANY     : ANY     : VBI"),
+                            (CLOCK_UNKNOWN, "ANY     : UNKNOWN : VBI")):
         with check(f"a tune for both models shows {expected}"):
             line = first_want_line(play_and_read(
                 device, psid(b"ANY MODEL", [(0xD400, MODEL_ANY)], clock=clock)))
@@ -326,7 +335,7 @@ def mus(text: bytes) -> bytes:
 
 # The header the device makes up for MUS data asks for an 8580, NTSC and CIA
 # speed.
-MUS_NEEDS = "NEEDS : $D400 : 8580 / NTSC (CIA)"
+MUS_NEEDS = "NEEDS : $D400 : 8580    : NTSC    : CIA"
 
 
 def mus_screen(device: UltimateApi) -> list[str]:
