@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """E2E: the SID player's info screen names every SID a tune uses, and the model
 of each: FOUND lines for what is measured at each address, WANT lines for what
-the file asks for, numbered when the tune has more than one SID.
+the file asks for; the lines for a second and third SID are numbered.
 
 Three tests, each a tune built here rather than shipped, because what matters
 about it is a handful of header bytes:
@@ -76,9 +76,10 @@ SCREEN_ROWS = 25
 SCREEN_TIMEOUT_SECONDS = 10.0
 POLL_SECONDS = 0.3
 
-# "FOUND :" and "WANT  :" for one SID, "FOUND1:" and "WANT 1:" for several.
-FOUND_LINE = re.compile(r"FOUND[ 1-3]: \$(D[0-9A-F]{3}) : (\S+)")
-WANT_LINE = re.compile(r"WANT ([ 1-3]): \$(D[0-9A-F]{3}) : (\S+)")
+# "FOUND :" and "WANT  :" for the first SID, "FOUND2:" and "WANT 2:" and so on
+# for the others.
+FOUND_LINE = re.compile(r"FOUND[ 23]: \$(D[0-9A-F]{3}) : (\S+)")
+WANT_LINE = re.compile(r"WANT ([ 23]): \$(D[0-9A-F]{3}) : (\S+)")
 
 U64_STORE = "U64 Specific Settings"
 AUTOCONFIG_ITEM = "SID Player Autoconfig"
@@ -174,8 +175,8 @@ def test_lines(device: UltimateApi) -> None:
 
 
 def sid_line_models(lines: list[str]) -> dict[str, str]:
-    """SID number -> model, from the WANT lines."""
-    return {m.group(1): m.group(3)
+    """SID number -> model, from the WANT lines; the first one is unnumbered."""
+    return {m.group(1).strip() or "1": m.group(3)
             for m in (WANT_LINE.search(line) for line in lines) if m}
 
 

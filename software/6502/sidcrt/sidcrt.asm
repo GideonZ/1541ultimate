@@ -148,11 +148,6 @@ writeScreenLabels
                 ldy #>screenData4
                 jsr writeScreenData
 
-                jsr getSecondSidAddress ; several SIDs: number the first one
-                beq +
-                lda #1
-                jsr writeSidChipCount
-+
                 ldy #$7a            ; system label for the second SID
                 jsr writeSystemLabel
                 ldy #$7b            ; system label for the third SID
@@ -165,9 +160,6 @@ writeScreenLabels
 
                 jsr getSecondSidAddress ; is second SID address defined?
                 beq noMoreSids
-
-                lda #1
-                jsr writeSidChipCount
 
                 ; write SID label
                 lda #<screenData5

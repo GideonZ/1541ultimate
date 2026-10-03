@@ -823,40 +823,34 @@ writeSidChipCount
                 inc $f8
 +               rts
 
+; printSingleSidInfo
+;   input:
+;   - AC: SID model
+;   - XR: 0 = system info, 4 = system info without the clock,
+;         1-3 = SID #1-#3 of the SID header
+;   the clock is printed on the first line of each block only
 printSingleSidInfo
                 pha
+                cpx #$02
+                bcc checkVersion
+                cpx #$04
+                bcs checkVersion
+
+                lda $fe
+                clc
+                adc #10
+                sta $fe
+
+                ; print SID address for second or third SID ($7a or $7b)
                 txa
-                ; check for which SID number to print the info
-                beq checkVersion
-                cmp #$01
-                beq checkVersion
-
-                cmp #$02
-                bne +
-
-                lda $fe
                 clc
-                adc #10
-                sta $fe
-
-                ; print SID address for second SID
-                jsr getSecondSidAddress
-                jsr printHex
-                jmp checkVersion
-
-+               cmp #$03
-                bne checkVersion
-
-                lda $fe
-                clc
-                adc #10
-                sta $fe
-
-                ; print SID address for third SID
-                jsr getThirdSidAddress
+                adc #$78
+                tay
+                jsr readHeader
                 jsr printHex
 
 checkVersion    txa                 ; check if system info needs to be printed
+                and #$03
                 bne checkSidHeader1
                 ; print system info
                 pla                 ; detected SID model
@@ -922,7 +916,9 @@ printModel      sta $aa
                 beq printPal
                 jmp printNtsc
 
-checkSidHeader2 ldy #$04            ; check version
+checkSidHeader2 cmp #$02            ; SID #2 and #3 share the clock of SID #1
+                bcs clockDone
+                ldy #$04            ; check version
                 jsr readHeader
                 cmp #$01
                 beq printUnknownClock
@@ -965,7 +961,7 @@ printClock      sta $aa
 +
                 jsr writeString
 
-                inc CURRENT_LINE
+clockDone       inc CURRENT_LINE
                 jmp setCurrentLinePosition
 
 writeString     ldy #$00
@@ -1102,7 +1098,7 @@ printSystemSidInfo
                 jsr extraPlayer.codeStart + extraPlayer.detection.detectSidModelAt
                 .byte $2c           ; skip the next instruction
 +               lda #$02            ; unknown
-                ldx #$00            ; 0 indicates that system info is presented
+                ldx #$04            ; system info, the clock is on the first system line
                 jmp printSingleSidInfo
 +               rts
 
