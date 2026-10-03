@@ -18,7 +18,15 @@ where master shows a wrong value or none. Each check says which:
   ultisid-model   UltiSID 1 alone at $D400, set to 6581 [control] and to 8580
                   [wrong on master]: the timing check calls every UltiSID a
                   6581; #949 tells the 8580 by its combined waveforms.
-  inherited       SID #2 with its model left open shows SID #1's model, as the
+  ultisid-follows the player makes the UltiSIDs it maps the model the tune
+                  asks for. Both sockets off, both UltiSIDs set to 6581, a tune
+                  for two 8580s: they play as 8580s [wrong on master: master
+                  leaves them at 6581]. The next tune, with autoconfig off and
+                  UltiSID 1 alone at $D400, measures what was left in it,
+                  since its start reset keeps the SID setup: 8580 [wrong on
+                  master]; 6581 without "Allow Autoconfig uses UltiSid", with
+                  SID Player Autoconfig off, or after a reset [control].
+  inherited      SID #2 with its model left open shows SID #1's model, as the
                   SID file format defines it [wrong on master: UNKNOWN]; UNKNOWN
                   when SID #1 is open too [control]; SID #3 left open copies
                   SID #1, not SID #2 [control].
@@ -42,11 +50,11 @@ where master shows a wrong value or none. Each check says which:
 The player places its screen wherever the tune leaves room, not at $0400, so
 the suite asks the VIC where it is: the bank from $DD00, the offset from $D018.
 
-real-chips, ultisid-model and mirror need a machine whose SIDs can be mapped,
-a U64 or C64 Ultimate; a cartridge skips them where it cannot. They turn SID
-Player Autoconfig off, change the SID addressing, the sockets and the UltiSID's
-waveforms and filter, each with the machine reset first, and put every one of
-them back.
+real-chips, ultisid-model, ultisid-follows and mirror need a machine whose
+SIDs can be mapped, a U64 or C64 Ultimate; a cartridge skips them where it
+cannot. They change SID Player Autoconfig and its UltiSID permission, the SID
+addressing, the sockets and the UltiSIDs' waveforms and filters, each with the
+machine reset first or halted, and put every one of them back.
 """
 
 from __future__ import annotations
@@ -72,8 +80,8 @@ from report import (Failure, check, check_skip, detail,          # noqa: E402
 
 SUITE = "sidplayer_system_lines_test"
 
-TESTS = ("real-chips", "ultisid-model", "inherited", "lines", "mirror", "irq", "any", "mus",
-         "mus-stereo")
+TESTS = ("real-chips", "ultisid-model", "ultisid-follows", "inherited", "lines", "mirror", "irq",
+         "any", "mus", "mus-stereo")
 
 # The PSID container: version 4 carries a second and a third SID address.
 PSID_HEADER_BYTES = 0x7C
@@ -111,6 +119,7 @@ VIDEO = ("PAL", "NTSC")
 
 U64_STORE = "U64 Specific Settings"
 AUTOCONFIG_ITEM = "SID Player Autoconfig"
+ALLOW_ULTISID_ITEM = "Allow Autoconfig uses UltiSid"
 ADDRESS_STORE = "SID Addressing"
 ULTISID_STORE = "UltiSID Configuration"
 ULTISID1_ADDRESS = "UltiSID 1 Address"
@@ -310,6 +319,17 @@ class Settings:
                 self.set(ADDRESS_STORE, other, UNMAPPED)
         self.set(ADDRESS_STORE, item, "$D400")
 
+    def alone_at_d400_halted(self, item: str) -> None:
+        """alone_at_d400(), with the CPU halted instead of a reset: a reset
+        would put the SIDs back as the settings have them."""
+        self.device.machine.pause()
+        for store, other, value in ([(U64_STORE, AUTOCONFIG_ITEM, "Disabled")]
+                                    + [(ADDRESS_STORE, a, "$D400" if a == item else UNMAPPED)
+                                       for a in ADDRESS_ITEMS]):
+            if (store, other) not in self.saved:
+                self.saved[(store, other)] = configured(self.device, store, other)
+            self.device.configs.set(store, other, value)
+
     def restore(self) -> None:
         self.device.machine.reset(force=True)
         for (store, item), value in self.saved.items():
@@ -364,6 +384,47 @@ def test_ultisid_model(device: UltimateApi) -> None:
                 measured, _ = sid_lines(play_and_read(
                     device, psid(b"ULTISID MODEL", [(0xD400, MODEL_CODE[model])])))
                 expect("$D400", measured.get("D400", (None,))[0], model)
+    finally:
+        settings.restore()
+
+
+def test_ultisid_follows(device: UltimateApi) -> None:
+    if not mappable(device, "the player makes the UltiSIDs it maps the model asked for"):
+        return
+    two_8580s = psid(b"TWO 8580S", [(0xD400, MODEL_8580), (0xD420, MODEL_8580)])
+    afterwards = psid(b"ULTISID AFTERWARDS", [(0xD400, MODEL_6581)])
+    # allow, autoconfig, reset before the next tune, what it measures, kind
+    cases = (("Yes", "Enabled", False, "8580", "wrong on master"),
+             ("No", "Enabled", False, "6581", "control"),
+             ("Yes", "Disabled", False, "6581", "control"),
+             ("Yes", "Enabled", True, "6581", "control"))
+    settings = Settings(device)
+    try:
+        for allow, autoconfig, reset, left, kind in cases:
+            settings.set(U64_STORE, AUTOCONFIG_ITEM, autoconfig)
+            settings.set(U64_STORE, ALLOW_ULTISID_ITEM, allow)
+            for n in (1, 2):
+                if configured(device, SOCKET_STORE, f"SID Socket {n}"):
+                    settings.set(SOCKET_STORE, f"SID Socket {n}", "Disabled")
+                settings.set(ULTISID_STORE, f"UltiSID {n} Combined Waveforms", "6581")
+                settings.set(ULTISID_STORE, f"UltiSID {n} Filter Curve", FILTER_FOR["6581"])
+            setup = f"autoconfig {autoconfig.lower()}, UltiSID permission {allow.lower()}"
+            measured, _ = sid_lines(play_and_read(device, two_8580s))
+            if (allow, autoconfig) == ("Yes", "Enabled") and not reset:
+                with checked("[wrong on master] a tune for two 8580s, with only UltiSIDs set "
+                             "to 6581 to play it, gets an 8580 at $D400"):
+                    expect("$D400", measured.get("D400", (None,))[0], "8580")
+            settings.alone_at_d400_halted(ULTISID1_ADDRESS)
+            if reset:
+                device.machine.reset(force=True)
+            else:
+                device.machine.resume()
+            with checked(f"[{kind}] after that tune ({setup}"
+                         f"{', then a reset' if reset else ''}), "
+                         f"UltiSID 1 alone at $D400 is measured as {left}"):
+                device.runners.upload("sidplay", afterwards)
+                measured, _ = sid_lines(read_screen(device))
+                expect("$D400", measured.get("D400", (None,))[0], left)
     finally:
         settings.restore()
 
@@ -509,6 +570,7 @@ def run(args) -> None:
         for name in tests:
             {"real-chips": test_real_chips,
              "ultisid-model": test_ultisid_model,
+             "ultisid-follows": test_ultisid_follows,
              "inherited": test_inherited,
              "lines": test_lines,
              "mirror": test_mirror,

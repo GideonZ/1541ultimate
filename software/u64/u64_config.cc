@@ -1254,16 +1254,17 @@ void U64Config :: fix_splits(uint8_t *base, uint8_t *mask, uint8_t *split)
     }
 }
 
-int U64Config :: setFilter(ConfigItem *it)
+// Loads filter curve 'curve' (an index into filter_sel) into UltiSID 'emu' (0 or 1)
+static void set_ultisid_filter(int emu, int curve)
 {
     volatile uint8_t *base = (volatile uint8_t *)(C64_SID_BASE + 0x1000);
-    if (it->definition->id == CFG_EMUSID2_FILTER) {
+    if (emu) {
         base += 0x800;
     }
     const uint16_t *coef = sid8580_filter_coefficients;
     int mul = 1;
     int div = 4;
-    switch(it->getValue()) {
+    switch(curve) {
     case 0:
         coef = sid8580_filter_coefficients;
         mul = 7;
@@ -1296,6 +1297,11 @@ int U64Config :: setFilter(ConfigItem *it)
         break;
     }
     set_sid_coefficients(base, coef, mul, div);
+}
+
+int U64Config :: setFilter(ConfigItem *it)
+{
+    set_ultisid_filter((it->definition->id == CFG_EMUSID2_FILTER) ? 1 : 0, it->getValue());
     return 0;
 }
 
@@ -1945,6 +1951,17 @@ void U64Config :: SetSidType(int slot, uint8_t sidType)
             dev->SetSidType(sidType);
         } else {
             printf("Null pointer.\n");
+        }
+    } else if ((sidType == 1) || (sidType == 2)) {
+        // An UltiSID counts as either model, so make it the one that was asked for: the filter curve
+        // and the combined waveforms of that chip. Slots 2 and 6 are UltiSID 1, slots 3 and 7 UltiSID 2.
+        // The next reset puts the user's UltiSID settings back, as it does for the socket devices.
+        int emu = slot & 1;
+        set_ultisid_filter(emu, (sidType == 1) ? 2 : 0); // "6581" or "8580 Lo"
+        if (emu) {
+            C64_EMUSID2_WAVES = (sidType == 2) ? 1 : 0;
+        } else {
+            C64_EMUSID1_WAVES = (sidType == 2) ? 1 : 0;
         }
     }
 }
