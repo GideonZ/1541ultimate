@@ -135,6 +135,9 @@ architecture behavioral of wd177x is
     signal command_fifo_valid   : std_logic;
     signal completion           : std_logic;
     signal write_delay_cnt      : unsigned(7 downto 0);
+    signal ack_writes           : std_logic := '0';
+    signal write_ack            : std_logic := '0';
+    signal write_ack_lost       : std_logic := '0';
     
     -- Stepper
     signal goto_track       : unsigned(6 downto 0);
@@ -174,6 +177,7 @@ begin
         if rising_edge(clock) then
             command_fifo_push <= '0';
             command_fifo_pop  <= '0';
+            write_ack <= '0';
             mem_dack_r <= mem_dack;
             mem_data_r <= mem_resp.data;
 
@@ -225,10 +229,22 @@ begin
                 when X"0" =>
                     index_enable <= io_req.data(0);
                     index_polarity <= io_req.data(1);
+                    ack_writes <= io_req.data(2);
 
                 when X"1" =>
                     track <= io_req.data;
-                
+
+                -- Acknowledges a finished write. It only counts while the block
+                -- waits for one, so a late acknowledge, after the fallback has
+                -- already ended the command, cannot touch the drive CPU's next
+                -- command. Bit 2 reports lost data with it. Older cores ignore
+                -- this address.
+                when X"2" =>
+                    if dma_state = write_delay then
+                        write_ack <= '1';
+                        write_ack_lost <= io_req.data(2);
+                    end if;
+
                 when X"4" =>
                     status <= status and not io_req.data;
 
@@ -370,7 +386,26 @@ begin
                 end if;
 
             when write_delay =>
-                if write_delay_cnt = 0 then
+                -- An application that asked to acknowledge write completions ends
+                -- the command itself, through register 2, once it knows whether the
+                -- write succeeded, so that the status it reports is still read by
+                -- the drive CPU. The counter then only limits how long a silent
+                -- application is waited for, and counts milliseconds instead of the
+                -- 4 MHz ticks that time the fixed delay.
+                if ack_writes = '1' then
+                    if write_ack = '1' then       -- the application acknowledged
+                        st_lost_data <= st_lost_data or write_ack_lost;
+                        st_busy <= '0';
+                        dma_state <= idle;
+                    elsif st_busy = '0' then      -- busy was cleared directly
+                        dma_state <= idle;
+                    elsif write_delay_cnt = 0 then -- it stayed silent: release anyway
+                        st_busy <= '0';
+                        dma_state <= idle;
+                    elsif tick_1kHz = '1' then    -- count the wait in milliseconds
+                        write_delay_cnt <= write_delay_cnt - 1;
+                    end if;
+                elsif write_delay_cnt = 0 then    -- no acknowledge asked for: as before
                     st_busy <= '0';
                     dma_state <= idle;
                 elsif tick_4MHz = '1' then
@@ -395,6 +430,9 @@ begin
                 completion <= '0';
                 goto_track <= to_unsigned(0, goto_track'length);
                 write_delay_cnt <= X"00";
+                ack_writes <= '0';
+                write_ack <= '0';
+                write_ack_lost <= '0';
             end if;
         end if;
     end process;

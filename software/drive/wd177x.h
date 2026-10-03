@@ -40,7 +40,10 @@
 typedef struct _wd {
 	uint8_t command;
 	uint8_t track;
-	uint8_t sector;
+	union {
+		uint8_t sector;    // read: the sector the drive CPU asked for
+		uint8_t write_ack; // write: end a write command, bit 2 = lost data
+	};
 	uint8_t datareg;
 	uint8_t status_clear;
 	uint8_t status_set;
@@ -90,6 +93,7 @@ class WD177x
     void do_step(t_wd177x_cmd cmd);
     void wait_head_settle(void);
     void handle_wd177x_completion(t_wd177x_cmd& cmd); // called from within
+    void complete_write(bool stored);
 public:
     WD177x(volatile uint8_t *wd, volatile uint8_t *drv, int irq);
     ~WD177x();
