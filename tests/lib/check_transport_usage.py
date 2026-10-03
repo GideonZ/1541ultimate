@@ -36,6 +36,10 @@ LIBRARY = os.path.join(TESTS, "lib", "rest.py")
 # Suites whose subject *is* the transport, so they must reach it directly. Each
 # needs a reason, because "it was easier" is how the copies got here.
 EXEMPT = {
+    # These two fixed public-service probes measure intentionally truncated and
+    # delayed responses before involving hardware. Device calls still use rest.
+    os.path.join(TESTS, "e2e", "io", "command_interface", "https_response_test.py"):
+        "probes public response-fault fixtures without retrying away their failure",
     # Measures how the device behaves when connections are abandoned or half
     # open, so retrying would paper over exactly what it is checking.
     os.path.join(TESTS, "e2e", "network", "telnet_stale_session_test.py"):

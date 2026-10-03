@@ -207,6 +207,8 @@ SUITES: Sequence[Suite] = (
     # way, and each was found only when a transient timeout failed a whole run.
     # First, so that lands as a clear message rather than as a flaky suite.
     Suite("e2e", "transport-usage", "tests/lib/check_transport_usage.py", "", profile=profiles.SMOKE),
+    # No device: evidence validation, timed-stop and operator-handshake regressions.
+    Suite("e2e", "https-harness", "tests/lib/https_harness_test.py", "", profile=profiles.QUICK),
     # Needs no device either: CI skips the ESP32 build on a cache hit, so a
     # project missing from the cache key gets its previous binary handed back
     # forever. raw_u64 was, for a misspelling, and the firmware change that
@@ -417,6 +419,24 @@ SUITES: Sequence[Suite] = (
     Suite("e2e", "softiec-log-lines", "tests/e2e/io/iec/log_lines_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@", profile=profiles.STANDARD),
     # Drives the UCI control and SoftIEC targets over $DF1B-$DF1F; reproduces #740.
+    # Explicit opt-in: native HTTPS requires configured trust/time, a compatible
+    # TLS controller and Internet access to the public fixture services. These
+    # suites replace C64 RAM; do not run alongside another native-UCI test.
+    Suite("e2e", "https-smoke", "tests/e2e/io/command_interface/https_smoke_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ "
+          "--url http://httpbingo.org/base64/eyJvayI6dHJ1ZX0= "
+          "--url https://httpbingo.org/base64/eyJvayI6dHJ1ZX0= --expect-hex 0401026f6b0201",
+          manual=True),
+    Suite("e2e", "https-lifecycle", "tests/e2e/io/command_interface/https_lifecycle_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@", manual=True),
+    Suite("e2e", "https-diagnostic", "tests/e2e/io/command_interface/https_diagnostic_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@", manual=True),
+    Suite("e2e", "https-response", "tests/e2e/io/command_interface/https_response_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@", manual=True),
+    # Requires an operator, marker confirmations and UCI_HTTPS_STALL_URL pointing
+    # at a controlled silent listener. Never starts a timed operator countdown.
+    Suite("e2e", "https-wifi-loss", "tests/e2e/io/command_interface/https_wifi_loss_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@", manual=True),
     # A #740 regression leaves the interface stuck in Command Busy for every target
     # until the firmware restarts, so run it after the suites that drive the menu
     # and the file system.
@@ -633,6 +653,11 @@ SUITES: Sequence[Suite] = (
           "tests/perf/telnet_key_latency_perf_test.py", "-H @HOST@ -p @PASS@"),
 
     # --------------------------------------------------------------- soak --
+    # Same Internet/controller prerequisites, plus an explicitly chosen long run.
+    Suite("soak", "https-repetition", "tests/soak/io/command_interface/https_repetition_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@", manual=True),
+    Suite("soak", "https-timed", "tests/soak/io/command_interface/https_timed_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@", manual=True),
     # Creates disk images to measure whether the heap comes back, so it needs a
     # writable directory. Skips entirely on firmware without machine:heap.
     Suite("soak", "heap-leak", "tests/soak/api/heap_leak_test.py",

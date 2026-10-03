@@ -1,0 +1,248 @@
+diff --git a/c-version/lib/http_protocol.c b/c-version/lib/http_protocol.c
+index e3bd7af..1b6b134 100644
+--- a/c-version/lib/http_protocol.c
++++ b/c-version/lib/http_protocol.c
+@@ -1,5 +1,6 @@
+ #include "server.h"
+ #include <string.h>
++#include <limits.h>
+ 
+ HTTPMethod HaveMethod(char *method)
+ {
+@@ -67,7 +68,7 @@ char *GetLineFromBuffer(HTTPReqMessage *req)
+         if ((HTTP_BUFFER_SIZE - req->_valid) < 256) {
+             int avail = req->_valid - req->_used;
+             DebugMsg("Moving %d bytes (%p -> %p)\n", avail, p, req->_buf);
+-            memcpy(req->_buf, p, avail);
++            memmove(req->_buf, p, avail);
+             req->_used = 0;
+             req->_valid = avail;
+         }
+@@ -90,6 +91,175 @@ int _IsTransferEncoding(const char *key)
+     return !strcasecmp(key, "transfer-encoding");
+ }
+ 
++/* Client responses are untrusted. Keep the legacy request parser's contract,
++ * but never turn malformed response framing into a successful empty body. */
++static int response_token(unsigned char c)
++{
++    return (c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') ||
++           (c >= 'a' && c <= 'z') || (c && strchr("!#$%&'*+-.^_`|~", c));
++}
++
++static void skip_ows(const char **p)
++{
++    while (**p == ' ' || **p == '\t') ++*p;
++}
++
++static int response_number(const char **p, unsigned base, size_t *value)
++{
++    const char *start = *p;
++    *value = 0;
++    for (;;) {
++        unsigned char c = **p;
++        unsigned digit = c >= '0' && c <= '9' ? c - '0' :
++                         c >= 'a' && c <= 'f' ? c - 'a' + 10 :
++                         c >= 'A' && c <= 'F' ? c - 'A' + 10 : base;
++        if (digit >= base) break;
++        /* Downstream callbacks use int even on hosts with a wider size_t. */
++        if (*value > ((size_t)INT_MAX - digit) / base) return 0;
++        *value = *value * base + digit;
++        ++*p;
++    }
++    return *p != start;
++}
++
++static int response_field(char *line, char **value)
++{
++    char *p = line;
++    while (response_token((unsigned char)*p)) ++p;
++    if (p == line || *p != ':') return 0;
++    *p++ = 0;
++    while (*p == ' ' || *p == '\t') ++p;
++    *value = p;
++    for (; *p; ++p)
++        if (((unsigned char)*p < 32 && *p != '\t') || *p == 127) return 0;
++    while (p > *value && (p[-1] == ' ' || p[-1] == '\t')) --p;
++    *p = 0;
++    return 1;
++}
++
++static int parse_response_header(HTTPReqMessage *req)
++{
++    HTTPReqHeader *hdr = &req->Header;
++    char *line = hdr->_buffer;
++    char *end = strstr(line, "\r\n");
++    if (!end) return 0;
++    *end = 0;
++    if (strlen(line) < 13 ||
++        (memcmp(line, "HTTP/1.1 ", 9) && memcmp(line, "HTTP/1.0 ", 9)) ||
++        line[9] < '2' || line[9] > '5' || line[10] < '0' || line[10] > '9' ||
++        line[11] < '0' || line[11] > '9' || line[12] != ' ') return 0;
++    for (char *p = line + 13; *p; ++p)
++        if (((unsigned char)*p < 32 && *p != '\t') || *p == 127) return 0;
++    hdr->Response = line + 9;
++    line[8] = 0;
++    hdr->Version = line;
++    hdr->FieldCount = 0;
++    req->ContentType = NULL;
++    req->BodyCB = NULL;
++    req->BodyContext = NULL;
++    req->bodyType = eUntilDisconnect;
++    req->bodySize = 0;
++    int length_seen = 0, transfer_seen = 0;
++    line = end + 2;
++    while (*line != '\r') {
++        end = strstr(line, "\r\n");
++        if (!end || hdr->FieldCount == MAX_HEADER_FIELDS) return 0;
++        *end = 0;
++        char *value;
++        if (!response_field(line, &value)) return 0;
++        hdr->Fields[hdr->FieldCount].key = line;
++        hdr->Fields[hdr->FieldCount++].value = value;
++        if (_IsLengthHeader(line)) {
++            const char *p = value;
++            /* Reject duplicates, including equal ones: no need to choose a
++             * framing interpretation for this one-request connection. */
++            if (length_seen++ || !response_number(&p, 10, &req->bodySize) || *p) return 0;
++            req->bodyType = req->bodySize ? eTotalSize : eNoBody;
++        } else if (_IsTransferEncoding(line)) {
++            if (transfer_seen++ || strcasecmp(value, "chunked")) return 0;
++        } else if (_IsTypeField(line)) req->ContentType = value;
++        line = end + 2;
++    }
++    if (length_seen && transfer_seen) return 0;
++    if (transfer_seen) {
++        req->bodyType = eChunked;
++        req->chunkState = eChunkHeader;
++        req->bodySize = 0; /* bounded trailer bytes */
++    }
++    if (!strncmp(hdr->Response, "204 ", 4) || !strncmp(hdr->Response, "304 ", 4))
++        req->bodyType = eNoBody;
++    return 1;
++}
++
++static int response_chunk_size(const char *p, size_t *size)
++{
++    if (!response_number(&p, 16, size)) return 0;
++    while (*p) {
++        skip_ows(&p);
++        if (*p++ != ';') return 0;
++        skip_ows(&p);
++        const char *start = p;
++        while (response_token((unsigned char)*p)) ++p;
++        if (p == start) return 0;
++        skip_ows(&p);
++        if (*p != '=') continue;
++        ++p;
++        skip_ows(&p);
++        if (*p == '"') {
++            ++p;
++            while (*p && *p != '"') {
++                if (*p == '\\') {
++                    ++p;
++                    if (!*p) return 0;
++                }
++                if (((unsigned char)*p < 32 && *p != '\t') || *p == 127) return 0;
++                ++p;
++            }
++            if (*p++ != '"') return 0;
++        } else {
++            start = p;
++            while (response_token((unsigned char)*p)) ++p;
++            if (p == start) return 0;
++        }
++    }
++    return 1;
++}
++
++static int handle_response_chunked(HTTPReqMessage *req)
++{
++    for (;;) {
++        if (req->chunkState == eChunkBody) {
++            int available = req->_valid - req->_used;
++            if (!available) return 1;
++            if ((size_t)available > req->chunkRemain) available = (int)req->chunkRemain;
++            if (req->BodyCB) req->BodyCB(req->BodyContext, req->_buf + req->_used, available);
++            req->_used += available;
++            req->chunkRemain -= available;
++            if (!req->chunkRemain) req->chunkState = eChunkTrailer;
++            if (req->_used == req->_valid) {
++                req->_used = req->_valid = 0;
++                return 1;
++            }
++        } else {
++            char *line = GetLineFromBuffer(req);
++            if (!line) return 1;
++            if (req->chunkState == eChunkHeader) {
++                if (!response_chunk_size(line, &req->chunkRemain)) return -1;
++                req->chunkState = req->chunkRemain ? eChunkBody : eChunkFinalTrailers;
++            } else if (req->chunkState == eChunkTrailer) {
++                if (*line) return -1;
++                req->chunkState = eChunkHeader;
++            } else {
++                req->bodySize += strlen(line) + 2;
++                if (req->bodySize > HTTP_MAX_HEADER_SIZE) return -1;
++                if (!*line) return 0;
++                char *value;
++                if (!response_field(line, &value) || _IsLengthHeader(line) || _IsTransferEncoding(line)) return -1;
++            }
++        }
++    }
++}
++
+ void _ParseHeader(HTTPReqMessage *req)
+ {
+     char *lines[32];
+@@ -292,7 +462,16 @@ int _GetBody(HTTPReqMessage *req)
+ {
+     switch(req->bodyType) {
+         case eChunked:
++            if (req->usedAsResponseFromServer == HTTP_RESPONSE_STRICT) return handle_response_chunked(req);
+             return _HandleChunked(req);
++        case eUntilDisconnect:
++            if (req->usedAsResponseFromServer == HTTP_RESPONSE_STRICT) {
++                int n = req->_valid - req->_used;
++                if (n > 0 && req->BodyCB) req->BodyCB(req->BodyContext, req->_buf + req->_used, n);
++                req->_used = req->_valid = 0;
++                return 1; /* caller terminates only on a clean EOF */
++            }
++            break;
+         case eTotalSize:
+             return _HandleContentSize(req);
+         default:
+@@ -343,7 +522,12 @@ int _GetHeader(HTTPReqMessage *req)
+             memcpy(hdr->RawCopy, hdr->_buffer, hdr->RawCopyLength);
+         }
+ 
+-        _ParseHeader(req); // Do we actually NEED to parse everything??
++        if (req->usedAsResponseFromServer == HTTP_RESPONSE_STRICT) {
++            if (!parse_response_header(req)) {
++                req->protocol_state = eReq_HeaderTooBig;
++                return 0;
++            }
++        } else _ParseHeader(req);
+         new_bytes_used = until - valid; // old valid!
+         req->protocol_state = eReq_HeaderDone;
+     } else {
+diff --git a/c-version/lib/server.h b/c-version/lib/server.h
+index 0daf824..fae8e34 100644
+--- a/c-version/lib/server.h
++++ b/c-version/lib/server.h
+@@ -11,6 +11,8 @@
+ 
+ #define HTTP_MAX_HEADER_SIZE (2048)
+ #define HTTP_BUFFER_SIZE (1024)
++/* Opt in from the shared UCI HTTP/HTTPS client; legacy clients retain mode 1. */
++#define HTTP_RESPONSE_STRICT 2
+ 
+ #ifndef MHS_PORT
+ #define MHS_PORT 80
+@@ -102,6 +104,7 @@ typedef enum {
+     eChunkHeader,
+     eChunkBody,
+     eChunkTrailer,
++    eChunkFinalTrailers,
+ } t_ChunkState;
+ 
+ typedef struct _HTTPReqMessage

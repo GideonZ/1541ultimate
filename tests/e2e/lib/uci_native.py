@@ -36,6 +36,8 @@ OPT_MAXB = 0xC005
 OPT_CAP = 0xC006
 READY = 0xC008
 OPT_ABRT = 0xC009
+OPT_SFIRST = 0xC00A
+OPT_REPEAT = 0xC00B
 CMDBUF = 0xC010
 
 RESULT_BASE = 0xC400
@@ -77,19 +79,24 @@ class NativeUci:
     """The command interface as the C64 sees it, driven by the resident agent."""
 
     def __init__(self, machine, runners,
-                 busy_timeout: float = BUSY_TIMEOUT_SECONDS) -> None:
+                 busy_timeout: float = BUSY_TIMEOUT_SECONDS, wait_wraps: int = 8,
+                 first_status_only: bool = False) -> None:
         # `machine` and `runners` are tests/lib/api.py MachineApi and RunnersApi
         # for the machine whose bus the registers are on.
         self.machine = machine
         self.runners = runners
         self.busy_timeout = busy_timeout
+        if not 1 <= wait_wraps <= 255:
+            raise ValueError("wait_wraps must fit a nonzero byte")
+        self.wait_wraps = wait_wraps
+        self.first_status_only = first_status_only
         self._sequence = 0
 
     # -- lifecycle ----------------------------------------------------------
 
     def start(self) -> None:
         """Assemble the agent, run it, and wait for it to say it is alive."""
-        prg = assemble(AGENT_SOURCE)
+        prg = assemble(AGENT_SOURCE, defines={"WAIT_WRAPS": self.wait_wraps})
         detail(f"assembled uci_agent.asm: {len(prg)} bytes, load address "
                f"${int.from_bytes(prg[:2], 'little'):04X}")
         status, _, body = self.runners.upload("run_prg", prg)
@@ -123,6 +130,8 @@ class NativeUci:
         # Outside the option block above, so it is written every time rather
         # than left over from the previous transaction.
         self.machine.writemem(OPT_ABRT, bytes([0x01 if abort_first else 0x00]))
+        self.machine.writemem(OPT_SFIRST, bytes([int(self.first_status_only)]))
+        self.machine.writemem(OPT_REPEAT, b'\x00')
         self.machine.writemem(GO, bytes([0x01]))
 
         deadline = time.monotonic() + self.busy_timeout
@@ -197,8 +206,9 @@ class NativeUci:
         for index in range(count):
             cumulative = int.from_bytes(self._at(block, R_BLEN + index * 2, 2), "little")
             status_byte = self._byte(block, R_BSTAT + index)
-            # The agent appends every block's status text to one buffer, so the
-            # whole text belongs to the transaction rather than to a block. It
+            # By default the agent appends every block's status to one buffer;
+            # first_status_only retains the first block instead. In either
+            # mode the text belongs to the transaction rather than a block. It
             # is reported on the last one, which is where uci.Transaction reads
             # a command's result from.
             last = index == count - 1

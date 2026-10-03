@@ -5,6 +5,9 @@
 #include "c64.h"
 #include "c64_subsys.h"
 #include "userinterface.h"
+#if defined(ULTIMATE_HTTPS)
+#include "https_management.h"
+#endif
 #if U64
 #include "keyboard_usb.h"
 #include "joystick_output.h"
@@ -645,7 +648,11 @@ API_DOC(GET, machine, heap,
                 "`free` is the number to diff: sample it, do a body of work, sample it again, and "
                 "a difference that does not come back is a leak. `min_ever_free` is the low water "
                 "mark since boot. It never recovers, so it shows how much headroom there has ever "
-                "been but cannot tell a leak from a transient peak.")
+                "been but cannot tell a leak from a transient peak.\n"
+                "\n"
+                "HTTPS builds with controller bridge 1.17 or later also report optional `esp32` "
+                "telemetry: allocator-wide heap bytes, sampled largest blocks and the TLS worker's "
+                "minimum free stack in bytes. Stale or absent controller samples have `available=false`.")
     PATH("/v1/machine:heap", "getHeapStatistics", "")
     RESPONSE("200", "application/json", "HeapResponse", "The state of the heap.", "")
     RESPONSE_EXAMPLE("200", "Heap", "{\n  \"free\" : 1583280,\n  \"min_ever_free\" : 1502864,\n  \"total\" : 2097152,\n  \"errors\" : []\n}", "")
@@ -655,5 +662,8 @@ API_CALL(GET, machine, heap, NULL, ARRAY( {  }))
     resp->json->add("free", (int)xPortGetFreeHeapSize());
     resp->json->add("min_ever_free", (int)xPortGetMinimumEverFreeHeapSize());
     resp->json->add("total", (int)configTOTAL_HEAP_SIZE);
+#if defined(ULTIMATE_HTTPS)
+    https_management_add_metrics(resp->json);
+#endif
     resp->json_response(HTTP_OK);
 }

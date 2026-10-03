@@ -23,7 +23,10 @@
 ;   OPT_ABRT    abandon the reply after the first block, which is what a
 ;               client does when it gives up part way through a Data More
 ;               reply
-;   $C00A-$C00F and $C440-$C4FF are reserved for further options and results.
+;   OPT_SFIRST keep only the first block's status (e.g. raw HTTP headers)
+;   OPT_REPEAT repeat a command locally, keeping bounded result history while
+;              host connectivity is unavailable; zero retains one-shot behavior.
+;   $C00E-$C00F and $C440-$C4FF are reserved for further options and results.
 ; New behaviour, as opposed to a new value, belongs in a reserved option byte,
 ; where zero has to keep meaning what the agent does today: the host writes the
 ; whole option block at once, so an older host leaves zeroes there.
@@ -67,7 +70,12 @@ OPT_CAP  = $C006                ; 16 bit cap on the data drain
 READY    = $C008                ; agent writes $A5 here once it is running
 OPT_ABRT = $C009                ; non-zero: abandon the reply after the first
                                 ; block by writing the abort bit
-;          $C00A-$C00F          ; reserved for further options
+OPT_SFIRST = $C00A             ; non-zero: retain only first block's status
+OPT_REPEAT = $C00B             ; transactions remaining; zero is one-shot
+R_REPEATS = $C00C              ; completed history entries, at most 32
+R_REPEAT_BAD = $C00D           ; a native wait/drain error stopped repetition
+HISTORY = $C600                ; 32 entries of 32 bytes, through $C9FF
+;          $C00E-$C00F          ; reserved for further options
 CMDBUF   = $C010                ; command bytes, up to 896
 
 ; ------------------------------------------------------------- result block --
@@ -95,8 +103,11 @@ zstat   = $0B                   ; CTRL as the current block arrived
 
 ; The wait gives up after this many wraps of a 16 bit counter. Each pass is
 ; about a dozen cycles, so $08 is roughly six seconds on a 1 MHz 6510: longer
-; than any command takes, shorter than the host's own timeout.
+; than local commands take. Network suites can override this when assembling
+; to cover the transport deadline while retaining a bounded C64-side wait.
+        .weak
 WAIT_WRAPS = $08
+        .endweak
 
         * = $0801
 
@@ -115,16 +126,81 @@ start
         sta GO
         sta SEQ
         sta OPT_ABRT            ; so a host that never sets it gets the default
+        sta OPT_REPEAT
+        sta R_REPEATS
+        sta R_REPEAT_BAD
         lda #$A5
         sta READY
 main_wait
         lda GO
         beq main_wait
         jsr transact
+        inc SEQ
+        lda OPT_REPEAT
+        beq repeat_done
+        jsr save_history
+        lda R_FLAGS
+        bne repeat_failed
+        lda R_REPEATS
+        cmp #32
+        bcs repeat_done
+        dec OPT_REPEAT
+        bne main_wait
+repeat_done
         lda #$00
         sta GO
-        inc SEQ
+        sta OPT_REPEAT
         jmp main_wait
+repeat_failed
+        sta R_REPEAT_BAD
+        jmp repeat_done
+
+; Retain native outcomes without REST reads while the Ultimate menu is active.
+; Entry: flags, data length low/high, final state, status length, 27 status bytes.
+save_history
+        lda R_REPEATS
+        cmp #32
+        bcs history_done
+        asl a
+        asl a
+        asl a
+        asl a
+        asl a
+        sta zsrc
+        lda R_REPEATS
+        lsr a
+        lsr a
+        lsr a
+        clc
+        adc #>HISTORY
+        sta zsrc+1
+        ldy #0
+        lda R_FLAGS
+        sta (zsrc),y
+        iny
+        lda R_DLEN
+        sta (zsrc),y
+        iny
+        lda R_DLEN+1
+        sta (zsrc),y
+        iny
+        lda R_FINAL
+        sta (zsrc),y
+        iny
+        lda R_SLEN
+        sta (zsrc),y
+        iny
+        ldx #0
+history_status
+        lda STATBUF,x
+        sta (zsrc),y
+        iny
+        inx
+        cpx #27
+        bne history_status
+        inc R_REPEATS
+history_done
+        rts
 
 ; ---------------------------------------------------------------- transact ---
 ; Runs one command end to end and fills the result block.
@@ -407,6 +483,14 @@ overrun_done
 ; Appends this block's status text. Stops storing at 255 bytes and records that
 ; in bit 2 of R_FLAGS; the DATA_ACC that ends the transaction resets the queue.
 drain_status
+        ; DATA_ACC also clears unread status. This opt-in mode preserves the
+        ; complete first header without appending later "000 OK" messages.
+        lda OPT_SFIRST
+        beq status_append
+        lda zblk
+        beq status_append
+        rts
+status_append
         ldx R_SLEN
 status_loop
         lda CTRL

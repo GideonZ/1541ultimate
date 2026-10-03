@@ -21,6 +21,7 @@
 #include "button_handler.h"
 #include "wifi_modem.h"
 #include "sntp.h"
+#include "tls_uart.h"
 
 // not officially supported
 #include "../lwip/esp_netif_lwip_internal.h"
@@ -423,6 +424,9 @@ void dispatch(void *ct)
 #endif
         hdr = (rpc_header_t *)(pbuffer->data);
         switch(hdr->command) {
+        case CMD_TLS_STREAM:
+            tls_uart_receive(pbuffer);
+            break;
         case CMD_SEND_PACKET:
             cmd_send_eth_packet(pbuffer);
             break;
@@ -505,6 +509,7 @@ void dispatch(void *ct)
 
 void start_dispatch(QueueHandle_t queue)
 {
+    tls_uart_start();
     xTaskCreate( dispatch, "Dispatch Task", DISPATCHER_STACK, queue, tskIDLE_PRIORITY + 1, NULL );
 }
 
