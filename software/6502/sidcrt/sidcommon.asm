@@ -1136,9 +1136,41 @@ detectSidModelAt
                 eor ($aa),y
                 beq unknownSidAt
                 txa
-                rts
+                beq +               ; an 8580 by its timing
+                jsr checkCombined   ; a 6581 by its timing, but an UltiSID set to 8580 is one too
++               rts
 
 unknownSidAt    lda #$02
+                rts
+
+; checkCombined
+;   input:
+;   - $aa/$ab: base address of a SID that its timing calls a 6581
+;   output:
+;   - AC: 00 = 8580, 01 = 6581
+;   Sums 256 reads of OSC3 with triangle and sawtooth combined, at the frequency the
+;   timing check left. On a 6581 the two nearly cancel, on an 8580 they do not, and an
+;   UltiSID follows its "Combined Waveforms" setting. Measured on a C64 Ultimate, 3 x 256
+;   reads each: real 6581 409-544, UltiSID as 6581 54-148, real 8580 5383-6094,
+;   UltiSID as 8580 14835-15991. The combined waveforms are analog side effects and vary
+;   from chip to chip, so this only ever turns a 6581 into an 8580, never back.
+checkCombined
+                ldy #$12
+                lda #$30            ; triangle and sawtooth, gate off
+                sta ($aa),y
+                ldy #$1b
+                lda #$00            ; AC = low byte of the sum, TEMP the high byte
+                sta TEMP
+                tax
+-               adc ($aa),y         ; a carry from the low byte adds one more, too little to matter
+                bcc +
+                inc TEMP
++               dex
+                bne -
+                lda #$07            ; a high byte of 8 or more, 2048 or more, is an 8580
+                cmp TEMP
+                lda #$00
+                rol
                 rts
 
 printSidInfo    lda $f7             ; restore sid header address
@@ -1151,8 +1183,16 @@ printSidInfo    lda $f7             ; restore sid header address
 
                 jsr detection.detectSystem
                 sta C64_CLOCK
-                sty SID_MODEL
                 stx SIDFX_DETECTED
+                cpy #$01            ; a 6581 by its timing: check its combined waveforms
+                bne +
+                lda #$00
+                sta $aa
+                lda #$d4
+                sta $ab
+                jsr checkCombined
+                tay
++               sty SID_MODEL
 
                 tya
                 ldx #$00            ; 0 indicates that system info is presented

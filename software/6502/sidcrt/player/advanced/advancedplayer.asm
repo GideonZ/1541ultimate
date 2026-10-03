@@ -293,10 +293,11 @@ songLengthDigit2
                 bpl -
                 rts
 
+; the cartridge measured the SID at $D400 just before the tune started, the same chip
+; answers the same, and its answer includes the check of the combined waveforms
 detectSidModel
-sidFxDetected   lda #$00            ; was SIDFX detected?
-                beq noSidFx
-                lda sidModel        ; return detected SIDFX model
+sidFxDetected   lda #$00            ; was SIDFX detected? (set by the cartridge, no longer needed)
+                lda sidModel        ; return the model the cartridge detected
                 rts
 
 noSidFx         jmp detection.detectSidModel
