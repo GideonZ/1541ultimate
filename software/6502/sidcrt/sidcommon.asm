@@ -17,6 +17,7 @@ DMA_MODE = $ab
 
 OFFSET_SYSTEM_SCREEN_LOCATION = $ec       ; location at screen + $0300 -> $03ec
 OFFSET_SONG_SCREEN_LOCATION = $ee         ; location at screen + $0300 -> $03ee
+OFFSET_SPEED_SCREEN_LOCATION = $f0        ; location at screen + $0300 -> $03f0
 
 SYSTEM_SCREEN_LOCATION = $b4
 SONG_SCREEN_LOCATION = $b5
@@ -874,21 +875,15 @@ checkSidHeader1 ldy #$04            ; check version
                 cmp #$02
                 beq print8580
 
-                lda #<S65818580Lbl  ; print '6581 / 8580'
-                ldy #>S65818580Lbl
-                jmp printModel
-
+                lda #<AnyLbl        ; print 'ANY', the tune plays on 6581 and 8580
+                .byte $2c           ; skip the next instruction
 print6581       lda #<S6581Lbl
-                ldy #>S6581Lbl
-                jmp printModel
-
+                .byte $2c           ; skip the next instruction
 print8580       lda #<S8580Lbl
-                ldy #>S8580Lbl
-                jmp printModel
-
+                .byte $2c           ; skip the next instruction
 printUnknownModel
                 lda #<SUnknownLbl
-                ldy #>SUnknownLbl
+                ldy #>SUnknownLbl   ; all labels share one page
 printModel      sta $aa
                 sty $ab
                 pla
@@ -928,28 +923,21 @@ checkSidHeader2 cmp #$02            ; SID #2 and #3 share the clock of SID #1
                 lsr
                 lsr
                 and #$03
-                cmp #$00
                 beq printUnknownClock
                 cmp #$01
                 beq printPal
                 cmp #$02
                 beq printNtsc
 
-                lda #<PALNTSCLbl    ; print 'PAL / NTSC'
-                ldy #>PALNTSCLbl
-                jmp printClock
-
+                lda #<AnyClockLbl   ; print '/ ANY', the tune plays on PAL and NTSC
+                .byte $2c           ; skip the next instruction
 printPal        lda #<PALLbl
-                ldy #>PALLbl
-                jmp printClock
-
+                .byte $2c           ; skip the next instruction
 printNtsc       lda #<NTSCLbl
-                ldy #>NTSCLbl
-                jmp printClock
-
+                .byte $2c           ; skip the next instruction
 printUnknownClock
                 lda #<UnknownLbl
-                ldy #>UnknownLbl
+                ldy #>UnknownLbl    ; all labels share one page
 printClock      sta $aa
                 sty $ab
                 lda $fe
@@ -960,6 +948,15 @@ printClock      sta $aa
                 inc $ff
 +
                 jsr writeString
+
+                tya                 ; the speed goes one column after the clock
+                sec
+                adc $fe
+                ldx $ff
+                bcc +
+                inx
++               ldy #OFFSET_SPEED_SCREEN_LOCATION
+                jsr setVariableWord
 
 clockDone       inc CURRENT_LINE
                 jmp setCurrentLinePosition
@@ -1233,6 +1230,16 @@ setExtraPlayerVars
                 txa
                 ldy extraPlayer.c64ModelLoc
                 ldx extraPlayer.c64ModelLoc + 1
+                jsr setValue
+                pla
+                jsr writeNextAddress
+
+                ldy #OFFSET_SPEED_SCREEN_LOCATION
+                jsr getVariableWord
+                pha
+                txa
+                ldy extraPlayer.speedLoc
+                ldx extraPlayer.speedLoc + 1
                 jsr setValue
                 pla
                 jsr writeNextAddress
@@ -1604,14 +1611,19 @@ continueInitPlayer
 +               jmp enableExtraPlayerCalls
 
                 .enc 'screen'
+                .if (* & $ff) > $100 - 39 ; the 39 bytes of labels below must share one page
+                .align $100
+                .fi
 PALLbl          .text '/ PAL', 0
 NTSCLbl         .text '/ NTSC', 0
-PALNTSCLbl      .text '/ PAL / NTSC', 0
-UnknownLbl      .text '/ UNKNOWN', 0
+AnyClockLbl     .text '/ '
+AnyLbl          .text 'ANY', 0
 S6581Lbl        .text '6581', 0
 S8580Lbl        .text '8580', 0
-S65818580Lbl    .text '6581 / 8580', 0
+UnknownLbl      .text '/ '
 SUnknownLbl     .text 'UNKNOWN', 0
+                .cerror (PALLbl >> 8) != (SUnknownLbl >> 8), 'the model and clock labels must share one page'
+                .cerror (PALLbl & $ff) < $e0 && (SUnknownLbl & $ff) >= $d0, 'a skipped lda #<label must not make the BIT read I/O'
 
                 ;     'ÀÁÂÃÄÅÆàáâãäåæÈÉÊËèéêëÌÍÎÏìíîïÒÓÔÕÖØòóôõöøÙÚÛÜùúûüÇçÑñÝŸýÿß'
 PETSCII         .text 'AAAAAAAAAAAAAAEEEEEEEEIIIIIIIIOOOOOOOOOOOOUUUUUUUUCCNNYYYYB'

@@ -60,6 +60,7 @@ numColorsLoc    .word numOfColors + 1               ; offset of number of colors
 
 sidFxFound      .word sidFxDetected + 1             ; offset of address of flag that indicated if SIDFX was found
 sidModelFound   .word sidModel                      ; offset of address of detected SID model
+speedLoc        .word speedWrite + 1                ; offset of address of screen location for the speed of the song
 headerEnd
 
 codeStart
@@ -241,6 +242,18 @@ songDigit       sta $05c0,y
 +               cpy #$09
                 bne -
 
+                lda currentSong     ; '(VBI)' or '(CIA)', the speed of the song
+                jsr calcSpeedFlag
+                tax
+                ldy #$00
+-               lda speedTexts,x
+speedWrite      sta $05c0,y
+                inx
+                inx
+                iny
+                cpy #$05
+                bne -
+
 displaySongLength
                 lda currentSong
                 asl
@@ -380,6 +393,7 @@ sidC64Model     .byte 0   ; 0 = PAL, 1 = NTSC
                 .enc 'screen'
 c64ModelDesc    .text ' / PAL', 0, ' / NTSC', 0
 sidModelDesc    .text '8580', 0, '6581', 0, 'UNKNOWN'  ; not needed to end with zero, since sidModelIndex starts with a zero
+speedTexts      .text '((VCBIIA))'                  ; '(VBI)' and '(CIA)', interleaved
                 .enc 'none'
 sidModelIndex   .byte 0, 5, 10
 

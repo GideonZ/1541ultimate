@@ -3,8 +3,8 @@
 of each: FOUND lines for what is measured at each address, WANT lines for what
 the file asks for; the lines for a second and third SID are numbered.
 
-Three tests, each a tune built here rather than shipped, because what matters
-about it is a handful of header bytes:
+The tests build their tunes here rather than shipping them, because what
+matters about each is a handful of header bytes:
 
   lines           a three-SID tune at $D400/$D420/$D440 gets three FOUND lines,
                   one per address. The screen showed only $D400 before.
@@ -14,9 +14,15 @@ about it is a handful of header bytes:
                   first SID"), and UNKNOWN when SID #1 is open too. A three-SID
                   tune 6581, 8580, open shows 6581 for SID #3: it copies SID #1,
                   not the SID before it.
+  speed           the first WANT line ends in the song's speed: (VBI) without
+                  the speed flag, (CIA) with it. A two-song tune whose second
+                  song has the flag shows (VBI) for song 1 and (CIA) for song 2.
+  any             a tune made for both models and both clocks shows ANY for
+                  each; with the clock left open, ANY / UNKNOWN, and the speed
+                  still fits on the line.
   mus             a Compute's Sidplayer file, uploaded under its name, plays
                   with the MUS player: the file name as title, one SID, and the
-                  model and clock the device's made-up header asks for.
+                  model, clock and speed the device's made-up header asks for.
   mus-stereo      the same with a .str file next to the .mus, both copied to
                   the device by FTP: a second SID at $D500, where the model
                   cannot be measured, so FOUND2 says UNKNOWN.
@@ -60,7 +66,7 @@ from report import (Failure, check, check_skip, detail,          # noqa: E402
 
 SUITE = "sidplayer_system_lines_test"
 
-TESTS = ("lines", "inherited", "mus", "mus-stereo", "ultisid-model")
+TESTS = ("lines", "inherited", "speed", "any", "mus", "mus-stereo", "ultisid-model")
 
 # The PSID container: version 4 carries a second and a third SID address.
 PSID_HEADER_BYTES = 0x7C
@@ -73,7 +79,11 @@ CODE = bytes((0x60, 0x60))          # init: RTS, play: RTS
 MODEL_UNKNOWN = 0b00
 MODEL_6581 = 0b01
 MODEL_8580 = 0b10
+MODEL_ANY = 0b11
+# Clock codes, bits 2-3 of the flags.
+CLOCK_UNKNOWN = 0b00
 PAL = 0b01
+CLOCK_ANY = 0b11
 
 # Where the VIC takes the screen from; see the module docstring.
 CIA2_PORT_A = 0xDD00
@@ -101,17 +111,22 @@ UNMAPPED = "Unmapped"
 FILTER_FOR = {"8580": "8580 Lo", "6581": "6581"}
 
 
-def psid(name: bytes, sids: list[tuple[int, int]]) -> bytes:
-    """A PSID v4 for `sids`, a list of (address, model) for SID #1 to #3."""
+def psid(name: bytes, sids: list[tuple[int, int]], clock: int = PAL,
+         songs: int = 1, speed: int = 0) -> bytes:
+    """A PSID v4 for `sids`, a list of (address, model) for SID #1 to #3.
+
+    `speed` is the header's speed flags, bit 0 for song 1: a set bit means
+    the song runs on a CIA timer, a clear one on the 50/60 Hz default.
+    """
     header = bytearray(PSID_HEADER_BYTES)
     header[:4] = b"PSID"
     # Big-endian: version, data offset, load address (0: taken from the data),
-    # init, play, one song, starting at one.
-    struct.pack_into(">7H", header, 4, 4, PSID_HEADER_BYTES, 0,
-                     INIT_ADDRESS, PLAY_ADDRESS, 1, 1)
+    # init, play, `songs` songs, starting at one, and the speed flags.
+    struct.pack_into(">7HI", header, 4, 4, PSID_HEADER_BYTES, 0,
+                     INIT_ADDRESS, PLAY_ADDRESS, songs, 1, speed)
     for offset, text in ((0x16, name), (0x36, b"E2E"), (0x56, b"2026")):
         header[offset:offset + 0x20] = text.ljust(0x20, b"\0")
-    flags = PAL << 2
+    flags = clock << 2
     for index, (_, model) in enumerate(sids):
         flags |= model << (4 + 2 * index)
     struct.pack_into(">H", header, 0x76, flags)
@@ -148,9 +163,12 @@ def screen_address(device: UltimateApi) -> int:
     return bank * 0x4000 + offset
 
 
-def play_and_read(device: UltimateApi, tune: bytes) -> list[str]:
-    """Start `tune` and return the info screen once its FOUND line is there."""
-    device.runners.upload("sidplay", tune)
+def play_and_read(device: UltimateApi, tune: bytes,
+                  song: int | None = None) -> list[str]:
+    """Start `tune`, at `song` if given, and return the info screen once its
+    FOUND line is there."""
+    device.runners.upload("sidplay", tune,
+                          params={"songnr": song} if song is not None else None)
     deadline = time.monotonic() + SCREEN_TIMEOUT_SECONDS
     lines: list[str] = []
     while time.monotonic() < deadline:
@@ -208,6 +226,43 @@ def test_inherited(device: UltimateApi) -> None:
                           "expected 6581 from SID #1")
 
 
+def first_want_line(lines: list[str]) -> str:
+    """The unnumbered WANT line, the one that carries the clock and speed."""
+    for line in lines:
+        match = WANT_LINE.search(line)
+        if match and match.group(1) == " ":
+            return line
+    raise Failure(f"no WANT line on the screen: {lines!r}")
+
+
+def test_speed(device: UltimateApi) -> None:
+    sids = [(0xD400, MODEL_6581)]
+    for speed, expected in ((0, "6581 / PAL (VBI)"), (1, "6581 / PAL (CIA)")):
+        with check(f"speed flag {speed} shows {expected.split()[-1]}"):
+            line = first_want_line(play_and_read(device, psid(b"SPEED", sids, speed=speed)))
+            detail(line)
+            if not line.endswith(expected):
+                raise Failure(f"{line!r} does not end in {expected!r}")
+    for song, expected in ((1, "(VBI)"), (2, "(CIA)")):
+        with check(f"a tune whose song 2 has the speed flag shows {expected} for song {song}"):
+            line = first_want_line(play_and_read(
+                device, psid(b"TWO SPEEDS", sids, songs=2, speed=0b10), song))
+            detail(line)
+            if not line.endswith(expected):
+                raise Failure(f"{line!r} does not end in {expected!r}")
+
+
+def test_any(device: UltimateApi) -> None:
+    for clock, expected in ((CLOCK_ANY, "ANY / ANY (VBI)"),
+                            (CLOCK_UNKNOWN, "ANY / UNKNOWN (VBI)")):
+        with check(f"a tune for both models shows {expected}"):
+            line = first_want_line(play_and_read(
+                device, psid(b"ANY MODEL", [(0xD400, MODEL_ANY)], clock=clock)))
+            detail(line)
+            if not line.endswith(expected):
+                raise Failure(f"{line!r} does not end in {expected!r}")
+
+
 def mus(text: bytes) -> bytes:
     """Compute's Sidplayer data whose three voices only halt.
 
@@ -219,8 +274,9 @@ def mus(text: bytes) -> bytes:
     return b"\x00\x10" + bytes((2, 0, 2, 0, 2, 0)) + voices + text + b"\r\x00"
 
 
-# The header the device makes up for MUS data asks for an 8580 and NTSC.
-MUS_WANT = "WANT  : $D400 : 8580 / NTSC"
+# The header the device makes up for MUS data asks for an 8580, NTSC and CIA
+# speed.
+MUS_WANT = "WANT  : $D400 : 8580 / NTSC (CIA)"
 
 
 def mus_screen(device: UltimateApi) -> list[str]:
@@ -327,6 +383,8 @@ def run(args) -> None:
         for name in tests:
             {"lines": test_lines,
              "inherited": test_inherited,
+             "speed": test_speed,
+             "any": test_any,
              "mus": test_mus,
              "mus-stereo": lambda d: test_mus_stereo(d, args.host, args.password or None),
              "ultisid-model": test_ultisid_model}[name](device)
