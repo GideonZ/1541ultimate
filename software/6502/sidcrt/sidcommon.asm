@@ -804,16 +804,12 @@ writeSidChipCount
                 pha
                 lda $f7
                 sec
-                sbc #$24
+                sbc #$23            ; column 5 of the line just written
                 sta $f7
                 bcs +
                 dec $f8
 +
-                lda #'#'
                 ldy #$00
-                sta ($f7),y
-                iny
-
                 pla
                 clc
                 adc #$30
@@ -821,7 +817,7 @@ writeSidChipCount
 
                 lda $f7
                 clc
-                adc #$24
+                adc #$23
                 sta $f7
                 bcc +
                 inc $f8
@@ -1058,14 +1054,21 @@ setupScreen     jsr copyChars
 ; writeSystemLabel
 ;   input:
 ;   - YR: offset of an extra SID address in the SID header ($7a or $7b)
-;   writes a system label for that SID, if the SID header defines it
+;   writes a numbered system label for that SID, if the SID header defines it
 writeSystemLabel
+                tya
+                pha
                 jsr readHeader
                 beq +
                 lda #<screenData4
                 ldy #>screenData4
-                jmp writeScreenData
-+               rts
+                jsr writeScreenData
+                pla
+                sec
+                sbc #$78            ; $7a -> 2, $7b -> 3
+                jmp writeSidChipCount
++               pla
+                rts
 
 ; printSystemSidInfo
 ;   input:
@@ -1124,6 +1127,9 @@ printSidInfo    lda $f7             ; restore sid header address
                 jsr printSystemSidInfo
                 ldy #$7b            ; system info of the third SID
                 jsr printSystemSidInfo
+
+                inc CURRENT_LINE    ; the empty line between the two blocks
+                jsr setCurrentLinePosition
 
                 ldy #$77
                 jsr readHeader

@@ -1,20 +1,21 @@
 #!/usr/bin/env python3
 """E2E: the SID player's info screen names every SID a tune uses, and the model
-of each.
+of each: FOUND lines for what is measured at each address, WANT lines for what
+the file asks for, numbered when the tune has more than one SID.
 
 Three tests, each a tune built here rather than shipped, because what matters
 about it is a handful of header bytes:
 
-  lines           a three-SID tune at $D400/$D420/$D440 gets three SYSTEM lines,
+  lines           a three-SID tune at $D400/$D420/$D440 gets three FOUND lines,
                   one per address. The screen showed only $D400 before.
   inherited       a two-SID tune that leaves SID #2's model open shows SID #1's
-                  model on the SID #2 line, as the SID file format defines it
+                  model on the WANT 2 line, as the SID file format defines it
                   ("the second SID will be set to the same SID model as the
                   first SID"), and UNKNOWN when SID #1 is open too. A three-SID
                   tune 6581, 8580, open shows 6581 for SID #3: it copies SID #1,
                   not the SID before it.
   ultisid-model   an UltiSID alone at $D420, set to 8580 and then to 6581, shows
-                  that model on its SYSTEM line. The 6581 half passes on every
+                  that model on its FOUND line. The 6581 half passes on every
                   core; the 8580 half needs the core change proposed in #951 and
                   is gated on machine.ULTISID_8580_OSC3_DELAY until then.
 
@@ -75,8 +76,9 @@ SCREEN_ROWS = 25
 SCREEN_TIMEOUT_SECONDS = 10.0
 POLL_SECONDS = 0.3
 
-SYSTEM_LINE = re.compile(r"SYSTEM: \$(D[0-9A-F]{3}) : (\S+)")
-SID_LINE = re.compile(r"SID #(\d): \$(D[0-9A-F]{3}) : (\S+)")
+# "FOUND :" and "WANT  :" for one SID, "FOUND1:" and "WANT 1:" for several.
+FOUND_LINE = re.compile(r"FOUND[ 1-3]: \$(D[0-9A-F]{3}) : (\S+)")
+WANT_LINE = re.compile(r"WANT ([ 1-3]): \$(D[0-9A-F]{3}) : (\S+)")
 
 U64_STORE = "U64 Specific Settings"
 AUTOCONFIG_ITEM = "SID Player Autoconfig"
@@ -139,42 +141,42 @@ def screen_address(device: UltimateApi) -> int:
 
 
 def play_and_read(device: UltimateApi, tune: bytes) -> list[str]:
-    """Start `tune` and return the info screen once its SYSTEM line is there."""
+    """Start `tune` and return the info screen once its FOUND line is there."""
     device.runners.upload("sidplay", tune)
     deadline = time.monotonic() + SCREEN_TIMEOUT_SECONDS
     lines: list[str] = []
     while time.monotonic() < deadline:
         lines = decode(device.machine.readmem(screen_address(device),
                                               SCREEN_COLUMNS * SCREEN_ROWS))
-        if any(SYSTEM_LINE.search(line) for line in lines):
+        if any(FOUND_LINE.search(line) for line in lines):
             return lines
         time.sleep(POLL_SECONDS)
-    raise Failure("no SYSTEM line on the player's screen within "
+    raise Failure("no FOUND line on the player's screen within "
                   f"{SCREEN_TIMEOUT_SECONDS:.0f}s; last screen: {lines!r}")
 
 
-def system_lines(lines: list[str]) -> dict[str, str]:
-    """Address -> model, from the SYSTEM lines."""
+def found_lines(lines: list[str]) -> dict[str, str]:
+    """Address -> model, from the FOUND lines."""
     return {m.group(1): m.group(2)
-            for m in (SYSTEM_LINE.search(line) for line in lines) if m}
+            for m in (FOUND_LINE.search(line) for line in lines) if m}
 
 
 def test_lines(device: UltimateApi) -> None:
     sids = [(0xD400, MODEL_8580), (0xD420, MODEL_8580), (0xD440, MODEL_8580)]
-    with check("a three-SID tune gets a SYSTEM line for each of its addresses"):
+    with check("a three-SID tune gets a FOUND line for each of its addresses"):
         lines = play_and_read(device, psid(b"THREE SIDS", sids))
-        found = system_lines(lines)
-        detail(f"SYSTEM lines: {found}")
+        found = found_lines(lines)
+        detail(f"FOUND lines: {found}")
         wanted = {"D400", "D420", "D440"}
         if set(found) != wanted:
-            raise Failure(f"SYSTEM lines for {sorted(found)}, "
+            raise Failure(f"FOUND lines for {sorted(found)}, "
                           f"expected {sorted(wanted)}")
 
 
 def sid_line_models(lines: list[str]) -> dict[str, str]:
-    """SID number -> model, from the SID #n lines."""
+    """SID number -> model, from the WANT lines."""
     return {m.group(1): m.group(3)
-            for m in (SID_LINE.search(line) for line in lines) if m}
+            for m in (WANT_LINE.search(line) for line in lines) if m}
 
 
 def test_inherited(device: UltimateApi) -> None:
@@ -185,16 +187,16 @@ def test_inherited(device: UltimateApi) -> None:
         with check(label):
             sids = [(0xD400, first), (0xD420, MODEL_UNKNOWN)]
             models = sid_line_models(play_and_read(device, psid(b"MODEL LEFT OPEN", sids)))
-            detail(f"SID lines: {models}")
+            detail(f"WANT lines: {models}")
             if models.get("2") != expected:
-                raise Failure(f"the SID #2 line says {models.get('2')!r}, "
+                raise Failure(f"the WANT 2 line says {models.get('2')!r}, "
                               f"expected {expected}")
     with check("SID #3 with its model left open copies SID #1, not SID #2"):
         sids = [(0xD400, MODEL_6581), (0xD420, MODEL_8580), (0xD440, MODEL_UNKNOWN)]
         models = sid_line_models(play_and_read(device, psid(b"THIRD LEFT OPEN", sids)))
-        detail(f"SID lines: {models}")
+        detail(f"WANT lines: {models}")
         if models.get("3") != "6581":
-            raise Failure(f"the SID #3 line says {models.get('3')!r}, "
+            raise Failure(f"the WANT 3 line says {models.get('3')!r}, "
                           "expected 6581 from SID #1")
 
 
@@ -208,7 +210,7 @@ def configured(device: UltimateApi, store: str, item: str) -> str:
 
 def test_ultisid_model(device: UltimateApi) -> None:
     if not configured(device, ADDRESS_STORE, ULTISID1_ADDRESS):
-        with check("an UltiSID's SYSTEM line follows its configured model"):
+        with check("an UltiSID's FOUND line follows its configured model"):
             check_skip("no UltiSID the C64 can read back on this machine")
         return
 
@@ -226,7 +228,7 @@ def test_ultisid_model(device: UltimateApi) -> None:
         device.configs.set(ADDRESS_STORE, ULTISID1_ADDRESS, "$D420")
 
         for model, code in (("6581", MODEL_6581), ("8580", MODEL_8580)):
-            label = f"an UltiSID set to {model} shows {model} on its SYSTEM line"
+            label = f"an UltiSID set to {model} shows {model} on its FOUND line"
             if model == "8580" and device.machine.skip_without_fix(
                     machine.ULTISID_8580_OSC3_DELAY, label):
                 continue
@@ -234,8 +236,8 @@ def test_ultisid_model(device: UltimateApi) -> None:
                 device.configs.set(ULTISID_STORE, WAVES_ITEM, model)
                 device.configs.set(ULTISID_STORE, FILTER_ITEM, FILTER_FOR[model])
                 sids = [(0xD400, code), (0xD420, code)]
-                found = system_lines(play_and_read(device, psid(b"ULTISID MODEL", sids)))
-                detail(f"SYSTEM lines: {found}")
+                found = found_lines(play_and_read(device, psid(b"ULTISID MODEL", sids)))
+                detail(f"FOUND lines: {found}")
                 if found.get("D420") != model:
                     raise Failure(f"$D420 shows {found.get('D420')!r}, expected {model}")
     finally:
@@ -259,7 +261,7 @@ def run(args) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Check the SYSTEM and SID lines on the SID player's info screen.")
+        description="Check the FOUND and WANT lines on the SID player's info screen.")
     cli.add_device_arguments(parser)
     parser.add_argument("--test", choices=("all", *TESTS), default="all")
     args = parser.parse_args()

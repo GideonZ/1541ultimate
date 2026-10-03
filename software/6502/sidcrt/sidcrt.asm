@@ -148,14 +148,19 @@ writeScreenLabels
                 ldy #>screenData4
                 jsr writeScreenData
 
+                jsr getSecondSidAddress ; several SIDs: number the first one
+                beq +
+                lda #1
+                jsr writeSidChipCount
++
                 ldy #$7a            ; system label for the second SID
                 jsr writeSystemLabel
                 ldy #$7b            ; system label for the third SID
                 jsr writeSystemLabel
 
-                ; write SID label
-                lda #<screenData5
-                ldy #>screenData5
+                ; write an empty line and the SID label
+                lda #<screenData5Gap
+                ldy #>screenData5Gap
                 jsr writeScreenData
 
                 jsr getSecondSidAddress ; is second SID address defined?
@@ -341,11 +346,12 @@ screenData2     .text 'YEAR  :'
 screenData3     .byte $ff, $20, 40  ; empty line
                 .byte $00 ;end
 
-screenData4     .text 'SYSTEM: $D400 :'
+screenData4     .text 'FOUND : $D400 :'
                 .byte $ff, $20, 25
                 .byte $00 ;end
 
-screenData5     .text 'SID   : $D400 :'
+screenData5Gap  .byte $ff, $20, 40  ; empty line, then the first SID label
+screenData5     .text 'WANT  : $D400 :'
                 .byte $ff, $20, 25
                 .byte $00 ;end
 

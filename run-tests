@@ -591,9 +591,9 @@ SUITES: Sequence[Suite] = (
     # It reads the streams without taking them, so it runs under --record too.
     Suite("e2e", "freezer-audio", "tests/e2e/io/c64/freezer_audio_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@", profile=profiles.QUICK),
-    # The SID player's info screen: a SYSTEM line for every SID a tune names
-    # (#949), SID #1's model on the SID #2 line when the tune leaves its model
-    # open, as the SID file format defines it, and an UltiSID's SYSTEM line
+    # The SID player's info screen: a FOUND line for every SID a tune names
+    # (#949), SID #1's model on the WANT 2 line when the tune leaves its model
+    # open, as the SID file format defines it, and an UltiSID's FOUND line
     # following its configured model. The 8580 half
     # of that last test is gated on machine.ULTISID_8580_OSC3_DELAY (#951); a
     # cartridge skips it, since it cannot answer reads at $D4xx. It changes the
