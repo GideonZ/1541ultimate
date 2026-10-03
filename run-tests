@@ -592,7 +592,7 @@ SUITES: Sequence[Suite] = (
     Suite("e2e", "freezer-audio", "tests/e2e/io/c64/freezer_audio_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@", profile=profiles.QUICK),
     # The SID player's info screen: a FOUND line for every SID a tune names
-    # (#949), SID #1's model on the WANT 2 line when the tune leaves its model
+    # (#949), SID #1's model on the NEEDS2 line when the tune leaves its model
     # open, as the SID file format defines it, an UltiSID's FOUND line
     # following its configured model, and Compute's Sidplayer files on the MUS
     # player, mono by a named upload and stereo by FTP with the .str beside. The 8580 half

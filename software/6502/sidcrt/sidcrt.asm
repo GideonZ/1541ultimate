@@ -343,7 +343,7 @@ screenData4     .text 'FOUND : $D400 :'
                 .byte $00 ;end
 
 screenData5Gap  .byte $ff, $20, 40  ; empty line, then the first SID label
-screenData5     .text 'WANT  : $D400 :'
+screenData5     .text 'NEEDS : $D400 :'
                 .byte $ff, $20, 25
                 .byte $00 ;end
 

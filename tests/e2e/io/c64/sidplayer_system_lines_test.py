@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """E2E: the SID player's info screen names every SID a tune uses, and the model
-of each: FOUND lines for what is measured at each address, WANT lines for what
+of each: FOUND lines for what is measured at each address, NEEDS lines for what
 the file asks for; the lines for a second and third SID are numbered.
 
 The tests build their tunes here rather than shipping them, because what
@@ -9,7 +9,7 @@ matters about each is a handful of header bytes:
   lines           a three-SID tune at $D400/$D420/$D440 gets three FOUND lines,
                   one per address. The screen showed only $D400 before.
   inherited       a two-SID tune that leaves SID #2's model open shows SID #1's
-                  model on the WANT 2 line, as the SID file format defines it
+                  model on the NEEDS2 line, as the SID file format defines it
                   ("the second SID will be set to the same SID model as the
                   first SID"), and UNKNOWN when SID #1 is open too. A three-SID
                   tune 6581, 8580, open shows 6581 for SID #3: it copies SID #1,
@@ -20,7 +20,7 @@ matters about each is a handful of header bytes:
                   measure it again and report two chips that are not there.
                   On a cartridge that is always the case; on a C64 Ultimate
                   or U64 the suite unmaps whatever sits at those addresses.
-  speed           the first WANT line ends in the song's speed: (VBI) without
+  speed           the first NEEDS line ends in the song's speed: (VBI) without
                   the speed flag, (CIA) with it. A two-song tune whose second
                   song has the flag shows (VBI) for song 1 and (CIA) for song 2.
   any             a tune made for both models and both clocks shows ANY for
@@ -31,7 +31,7 @@ matters about each is a handful of header bytes:
                   model, clock and speed the device's made-up header asks for.
   mus-stereo      the same with a .str file next to the .mus, both copied to
                   the device by FTP: a second SID at $D500, with a FOUND2 and
-                  a WANT 2 line for it. What FOUND2 says depends on the
+                  a NEEDS2 line for it. What FOUND2 says depends on the
                   machine: the model of a SID mapped there, or UNKNOWN on a C64
                   whose only SID answers at $D500 as a mirror.
   ultisid-model   an UltiSID alone at $D420, set to 8580 and then to 6581, shows
@@ -101,10 +101,10 @@ SCREEN_ROWS = 25
 SCREEN_TIMEOUT_SECONDS = 10.0
 POLL_SECONDS = 0.3
 
-# "FOUND :" and "WANT  :" for the first SID, "FOUND2:" and "WANT 2:" and so on
+# "FOUND :" and "NEEDS :" for the first SID, "FOUND2:" and "NEEDS2:" and so on
 # for the others.
 FOUND_LINE = re.compile(r"FOUND[ 23]: \$(D[0-9A-F]{3}) : (\S+)")
-WANT_LINE = re.compile(r"WANT ([ 23]): \$(D[0-9A-F]{3}) : (\S+)")
+NEEDS_LINE = re.compile(r"NEEDS([ 23]): \$(D[0-9A-F]{3}) : (\S+)")
 
 U64_STORE = "U64 Specific Settings"
 AUTOCONFIG_ITEM = "SID Player Autoconfig"
@@ -173,10 +173,10 @@ def screen_address(device: UltimateApi) -> int:
 
 def drawn(lines: list[str]) -> bool:
     """Whether the player has finished the screen: the cartridge writes the
-    FOUND and WANT lines, then the advanced player ends the first WANT line in
+    FOUND and NEEDS lines, then the advanced player ends the first NEEDS line in
     the song's speed."""
     return (any(FOUND_LINE.search(line) for line in lines)
-            and any(WANT_LINE.search(line) and line.endswith(")") for line in lines))
+            and any(NEEDS_LINE.search(line) and line.endswith(")") for line in lines))
 
 
 def play_and_read(device: UltimateApi, tune: bytes,
@@ -216,9 +216,9 @@ def test_lines(device: UltimateApi) -> None:
 
 
 def sid_line_models(lines: list[str]) -> dict[str, str]:
-    """SID number -> model, from the WANT lines; the first one is unnumbered."""
+    """SID number -> model, from the NEEDS lines; the first one is unnumbered."""
     return {m.group(1).strip() or "1": m.group(3)
-            for m in (WANT_LINE.search(line) for line in lines) if m}
+            for m in (NEEDS_LINE.search(line) for line in lines) if m}
 
 
 def test_inherited(device: UltimateApi) -> None:
@@ -229,16 +229,16 @@ def test_inherited(device: UltimateApi) -> None:
         with check(label):
             sids = [(0xD400, first), (0xD420, MODEL_UNKNOWN)]
             models = sid_line_models(play_and_read(device, psid(b"MODEL LEFT OPEN", sids)))
-            detail(f"WANT lines: {models}")
+            detail(f"NEEDS lines: {models}")
             if models.get("2") != expected:
-                raise Failure(f"the WANT 2 line says {models.get('2')!r}, "
+                raise Failure(f"the NEEDS2 line says {models.get('2')!r}, "
                               f"expected {expected}")
     with check("SID #3 with its model left open copies SID #1, not SID #2"):
         sids = [(0xD400, MODEL_6581), (0xD420, MODEL_8580), (0xD440, MODEL_UNKNOWN)]
         models = sid_line_models(play_and_read(device, psid(b"THIRD LEFT OPEN", sids)))
-        detail(f"WANT lines: {models}")
+        detail(f"NEEDS lines: {models}")
         if models.get("3") != "6581":
-            raise Failure(f"the WANT 3 line says {models.get('3')!r}, "
+            raise Failure(f"the NEEDS3 line says {models.get('3')!r}, "
                           "expected 6581 from SID #1")
 
 
@@ -273,12 +273,12 @@ def test_mirror(device: UltimateApi) -> None:
 
 
 def first_want_line(lines: list[str]) -> str:
-    """The unnumbered WANT line, the one that carries the clock and speed."""
+    """The unnumbered NEEDS line, the one that carries the clock and speed."""
     for line in lines:
-        match = WANT_LINE.search(line)
+        match = NEEDS_LINE.search(line)
         if match and match.group(1) == " ":
             return line
-    raise Failure(f"no WANT line on the screen: {lines!r}")
+    raise Failure(f"no NEEDS line on the screen: {lines!r}")
 
 
 def test_speed(device: UltimateApi) -> None:
@@ -322,7 +322,7 @@ def mus(text: bytes) -> bytes:
 
 # The header the device makes up for MUS data asks for an 8580, NTSC and CIA
 # speed.
-MUS_WANT = "WANT  : $D400 : 8580 / NTSC (CIA)"
+MUS_NEEDS = "NEEDS : $D400 : 8580 / NTSC (CIA)"
 
 
 def mus_screen(device: UltimateApi) -> list[str]:
@@ -349,9 +349,9 @@ def test_mus(device: UltimateApi) -> None:
         detail("\n".join(line for line in lines if line.strip()))
         if not any("TITLE : E2E MONO" in line for line in lines):
             raise Failure("the title is not the file name")
-        if not any(MUS_WANT in line for line in lines):
-            raise Failure(f"no line {MUS_WANT!r}")
-        if any(line.startswith("WANT 2") for line in lines):
+        if not any(MUS_NEEDS in line for line in lines):
+            raise Failure(f"no line {MUS_NEEDS!r}")
+        if any(line.startswith("NEEDS2") for line in lines):
             raise Failure("a mono song shows a second SID")
 
 
@@ -365,7 +365,7 @@ def test_mus_stereo(device: UltimateApi, host: str, password: str | None) -> Non
             device.runners.sidplay(paths[0])
             lines = mus_screen(device)
             detail("\n".join(line for line in lines if line.strip()))
-            for wanted in ("FOUND2: $D500 : ", "WANT 2: $D500 : 8580"):
+            for wanted in ("FOUND2: $D500 : ", "NEEDS2: $D500 : 8580"):
                 if not any(wanted in line for line in lines):
                     raise Failure(f"no line {wanted!r}")
         finally:
@@ -440,7 +440,7 @@ def run(args) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Check the FOUND and WANT lines on the SID player's info screen.")
+        description="Check the FOUND and NEEDS lines on the SID player's info screen.")
     cli.add_device_arguments(parser)
     parser.add_argument("--test", choices=("all", *TESTS), default="all")
     args = parser.parse_args()
