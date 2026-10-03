@@ -290,19 +290,6 @@ COMAL80_CARTRIDGE_OFF_BIT = _fix(
     "than leaving it mapped",
     (U64, U2))
 
-# What the ultisid-model test of tests/e2e/io/c64/sidplayer_system_lines_test.py
-# asserts for 8580: a real 8580 presents a new waveform on OSC3 one cycle later
-# than a 6581, which is what the SID player's model detection measures, and an
-# UltiSID set to 8580 does not do that yet, so it is detected as a 6581. The
-# core change is proposed in #951; the U64 and C64 Ultimate images are built
-# outside this repository. A cartridge cannot be read back at $D4xx at all, so
-# the Ultimate II family skips the test on capability instead.
-ULTISID_8580_OSC3_DELAY = _fix(
-    "ultisid-8580-osc3-delay",
-    "an UltiSID set to 8580 presents its OSC3 readback one cycle later, as a "
-    "real 8580 does, so the SID player detects it as an 8580",
-    (U64, C64U))
-
 # Every fix at once, for a sweep that asks whether the lagging line has caught
 # up rather than about one behaviour.
 ASSUME_ALL = "all"

@@ -34,10 +34,10 @@ matters about each is a handful of header bytes:
                   a NEEDS2 line for it. What FOUND2 says depends on the
                   machine: the model of a SID mapped there, or UNKNOWN on a C64
                   whose only SID answers at $D500 as a mirror.
-  ultisid-model   an UltiSID alone at $D420, set to 8580 and then to 6581, shows
-                  that model on its FOUND line. The 6581 half passes on every
-                  core; the 8580 half needs the core change proposed in #951 and
-                  is gated on machine.ULTISID_8580_OSC3_DELAY until then.
+  ultisid-model   an UltiSID alone at $D420, set to 6581 and then to 8580, shows
+                  that model on its FOUND line. The timing check alone calls
+                  every UltiSID a 6581; the 8580 is told by its combined
+                  waveforms.
 
 The player places its screen wherever the tune leaves room, not at $0400:
 for these tunes, loading at $1000, it was $8C00 in VICE. The zero-page cell it
@@ -67,7 +67,6 @@ import bootstrap  # noqa: E402,F401
 
 import cli                                                       # noqa: E402
 import ftp as ftp_lib                                            # noqa: E402
-import machine                                                   # noqa: E402
 from api import UltimateApi                                      # noqa: E402
 from report import (Failure, check, check_skip, detail,          # noqa: E402
                     format_exception, suite_fail, suite_ok, teardown_step)
@@ -183,6 +182,11 @@ def play_and_read(device: UltimateApi, tune: bytes,
                   song: int | None = None) -> list[str]:
     """Start `tune`, at `song` if given, and return the info screen once the
     player has drawn it."""
+    # Every play tells the firmware to keep the SID mapping over the next reset
+    # (SidAutoConfig() sets skipReset, even with autoconfig off). If that next
+    # reset is the one that starts this tune, the SIDs stay where the previous
+    # tune put them, not where the settings say. This reset uses it up.
+    device.machine.reset(force=True)
     device.runners.upload("sidplay", tune,
                           params={"songnr": song} if song is not None else None)
     deadline = time.monotonic() + SCREEN_TIMEOUT_SECONDS
@@ -402,11 +406,7 @@ def test_ultisid_model(device: UltimateApi) -> None:
         device.configs.set(ADDRESS_STORE, ULTISID1_ADDRESS, "$D420")
 
         for model, code in (("6581", MODEL_6581), ("8580", MODEL_8580)):
-            label = f"an UltiSID set to {model} shows {model} on its FOUND line"
-            if model == "8580" and device.machine.skip_without_fix(
-                    machine.ULTISID_8580_OSC3_DELAY, label):
-                continue
-            with check(label):
+            with check(f"an UltiSID set to {model} shows {model} on its FOUND line"):
                 device.configs.set(ULTISID_STORE, WAVES_ITEM, model)
                 device.configs.set(ULTISID_STORE, FILTER_ITEM, FILTER_FOR[model])
                 sids = [(0xD400, code), (0xD420, code)]
