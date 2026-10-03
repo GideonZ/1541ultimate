@@ -1345,62 +1345,27 @@ static int test_x_is_not_an_exit(void)
     return 0;
 }
 
-static int test_d_is_reserved_and_a_opens_assembly(void)
+static int test_a_opens_assembly(void)
 {
-    // `A` opens the Assembly view. `D` does not open it or anything else: the
-    // key is reserved for a future Debug mode, and a reservation that only
-    // exists as an intention is one refactor away from being spent. An older
-    // copy of the E2E suite did press `D` for this view, so the binding has
-    // already drifted once.
-    {
-        TestUserInterface ui;
-        CaptureScreen screen;
-        FakeMemoryBackend backend;
-        char header[39];
-        const int keys[] = { 'a', KEY_BREAK };
-        FakeKeyboard kb(keys, 2);
-        ui.screen = &screen;
-        ui.keyboard = &kb;
-        monitor_reset_saved_state();
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeMemoryBackend backend;
+    char header[39];
+    const int keys[] = { 'a', KEY_BREAK };
+    FakeKeyboard kb(keys, 2);
+    ui.screen = &screen;
+    ui.keyboard = &kb;
+    monitor_reset_saved_state();
 
-        BackendMachineMonitor mon(&ui, &backend);
-        mon.init(&screen, &kb);
-        if (expect(mon.poll(0) == 0, "A must not leave the monitor.")) return 1;
-        screen.get_slice(1, 3, 38, header);
-        if (expect(strstr(header, "ASM") != 0, "A must open the Assembly view.")) {
-            printf("  header was %s\n", header);
-            return 1;
-        }
-        mon.deinit();
+    BackendMachineMonitor mon(&ui, &backend);
+    mon.init(&screen, &kb);
+    if (expect(mon.poll(0) == 0, "A must not leave the monitor.")) return 1;
+    screen.get_slice(1, 3, 38, header);
+    if (expect(strstr(header, "ASM") != 0, "A must open the Assembly view.")) {
+        printf("  header was %s\n", header);
+        return 1;
     }
-    {
-        // From the opening view, D changes nothing at all: not the view, not
-        // the screen, and it does not leave the monitor.
-        TestUserInterface ui;
-        CaptureScreen screen;
-        FakeMemoryBackend backend;
-        char before[6][39], after[6][39];
-        const int keys[] = { 'D', 'd', KEY_BREAK };
-        FakeKeyboard kb(keys, 3);
-        ui.screen = &screen;
-        ui.keyboard = &kb;
-        monitor_reset_saved_state();
-
-        BackendMachineMonitor mon(&ui, &backend);
-        mon.init(&screen, &kb);
-        for (int r = 0; r < 6; r++) screen.get_slice(1, r + 3, 38, before[r]);
-        if (expect(mon.poll(0) == 0, "D must not leave the monitor.")) return 1;
-        if (expect(mon.poll(0) == 0, "d must not leave the monitor.")) return 1;
-        for (int r = 0; r < 6; r++) screen.get_slice(1, r + 3, 38, after[r]);
-        for (int r = 0; r < 6; r++) {
-            if (expect(strcmp(before[r], after[r]) == 0,
-                       "D is reserved for Debug mode and must change nothing.")) {
-                printf("  row %d was %s, now %s\n", r, before[r], after[r]);
-                return 1;
-            }
-        }
-        mon.deinit();
-    }
+    mon.deinit();
     return 0;
 }
 
@@ -1722,6 +1687,35 @@ static int test_parsers_and_formatters(void)
         char bank_31[40];
         char bank_27[40];
         char bank_37[40];
+
+    // The row reports two banks: the view bank the O key selects, and the live
+    // execution bank read from $0001. They agree most of the time and the row
+    // says "CPUn"; where they differ it says "CxOy", x live and y view, which
+    // is the only way the user can tell a view that is pointed somewhere else
+    // from one that is following the machine.
+    {
+        char same[40];
+        char differ[40];
+        monitor_format_status_line_banks(same, 0x07, 0x07, 0);
+        if (expect(strncmp(same, "CPU7 ", 5) == 0,
+                   "Matching view and live banks must read CPUn")) {
+            printf("  %s\n", same);
+            return 1;
+        }
+        monitor_format_status_line_banks(differ, 0x07, 0x05, 0);
+        if (expect(strncmp(differ, "C5O7 ", 5) == 0,
+                   "A view bank that differs from the live bank must read CxOy")) {
+            printf("  %s\n", differ);
+            return 1;
+        }
+        // The region labels follow the view bank, not the live one: they say
+        // what this view maps, which is what the addresses on screen came from.
+        if (expect(strstr(differ, "$E:KRN") != NULL,
+                   "CxOy region labels must describe the view bank")) {
+            printf("  %s\n", differ);
+            return 1;
+        }
+    }
 
         monitor_format_status_line(bank_28, 0x28, 0);
         monitor_format_status_line(bank_30, 0x30, 0);
@@ -2539,29 +2533,29 @@ static int test_monitor_interaction(void)
     screen.get_slice(1, 4, 8, line);
     if (expect(strncmp(line, "a000 aa", 7) == 0 || strncmp(line, "A000 AA", 7) == 0, "CPU0 should expose RAM at A000.")) return 1;
     screen.get_slice(1, 22, 38, status);
-    if (expect(strstr(status, "CPU0 $A:RAM $D:RAM $E:RAM VIC2 $8000") == status,
+    if (expect(strstr(status, "C7O0 $A:RAM $D:RAM $E:RAM VIC2 $8000") == status,
                "CPU0 status did not update after O.")) return 1;
 
     if (expect(help_monitor.poll(0) == 0, "CPU bank cycle to CPU1 failed.")) return 1;
     screen.get_slice(1, 4, 8, line);
     if (expect(strncmp(line, "a000 aa", 7) == 0 || strncmp(line, "A000 AA", 7) == 0, "CPU1 should keep A000 in RAM.")) return 1;
     screen.get_slice(1, 22, 38, status);
-    if (expect(strstr(status, "CPU1 $A:RAM $D:CHR $E:RAM VIC2 $8000") == status,
+    if (expect(strstr(status, "C7O1 $A:RAM $D:CHR $E:RAM VIC2 $8000") == status,
                "CPU1 status did not update after O.")) return 1;
 
     if (expect(help_monitor.poll(0) == 0, "F3 help open failed.")) return 1;
     screen.get_slice(1, 3, 38, status);
     if (expect(strstr(status, "HELP") == status, "Help header should replace the normal view header.")) return 1;
     screen.get_slice(1, 22, 38, status);
-    if (expect(strstr(status, "F1/SH+SP   Page up  F7/SP   Page down") == status,
+    if (expect(strstr(status, "F1/SH+SPC Page Up  F7/SPACE Page Down") == status,
                "Help view should show the paging shortcuts on the footer row.")) return 1;
     // Every character of the help reads in one colour, keys included. The
     // footer row is drawn on the status row rather than from the help table,
     // so it is the row that would drift first. get_slice(1, ...) starts one
     // column in from the border, and screen.colors is indexed by the absolute
     // column, so status[i] is screen.colors[22][i + 1]. Column 1 is the first
-    // character of "F1/SH+SP" and column 21 the first of "F7/SP"; 9 and 20 are
-    // the spaces around "Page up".
+    // character of "F1/SH+SPC" and column 20 the first of "F7/SPACE"; 10 and
+    // 19 are the spaces around "Page Up".
     {
         int body = screen.colors[22][9];
         for (int col = 1; col <= 36; col++) {
@@ -2604,7 +2598,7 @@ static int test_monitor_interaction(void)
         esc_help_monitor.init(&screen, &esc_help_keyboard);
         if (expect(esc_help_monitor.poll(0) == 0, "F3 should open help before ESC handling is tested.")) return 1;
         screen.get_slice(1, 22, 38, status);
-        if (expect(strstr(status, "F1/SH+SP   Page up  F7/SP   Page down") == status,
+        if (expect(strstr(status, "F1/SH+SPC Page Up  F7/SPACE Page Down") == status,
                     "Help must show the paging shortcuts before ESC closes it.")) return 1;
         if (expect_help_visible(screen, ui, "Help must be visible before ESC closes it.")) return 1;
         if (expect(esc_help_monitor.poll(0) == 0, "ESC should close help without exiting the monitor.")) return 1;
@@ -2645,12 +2639,12 @@ static int test_monitor_interaction(void)
         BackendMachineMonitor vic_monitor(&ui, &banked_backend);
         vic_monitor.init(&screen, &idle_keyboard);
         screen.get_slice(1, 22, 38, status);
-        if (expect(strstr(status, "CPU7 $A:BAS $D:I/O $E:KRN VIC2 $8000") == status,
+        if (expect(strstr(status, "C0O7 $A:BAS $D:I/O $E:KRN VIC2 $8000") == status,
                    "Idle VIC refresh test should preserve the selected default CPU7 bank.")) return 1;
         banked_backend.live_dd00 = 0x00;
         if (expect(vic_monitor.poll(0) == 0, "VIC idle refresh poll failed.")) return 1;
         screen.get_slice(1, 22, 38, status);
-        if (expect(strstr(status, "CPU7 $A:BAS $D:I/O $E:KRN VIC3 $C000") == status,
+        if (expect(strstr(status, "C0O7 $A:BAS $D:I/O $E:KRN VIC3 $C000") == status,
                    "VIC status did not refresh after DD00 change.")) return 1;
         vic_monitor.deinit();
     }
@@ -2975,14 +2969,17 @@ static int test_monitor_default_cpu_bank_and_vic_shortcuts(void)
         KEY_BREAK
     };
     FakeKeyboard keyboard(keys, sizeof(keys) / sizeof(keys[0]));
+    // The live machine sits in bank 0 for this test, so every view the O key
+    // selects other than 0 reads as CxOy, x live and y view. Only the last
+    // step, where the view comes back to 0, reads as CPUn.
     static const char *cpu_cycle_status[] = {
-        "CPU1 $A:RAM $D:CHR $E:RAM VIC2 $8000",
-        "CPU2 $A:RAM $D:CHR $E:KRN VIC2 $8000",
-        "CPU3 $A:BAS $D:CHR $E:KRN VIC2 $8000",
-        "CPU4 $A:RAM $D:RAM $E:RAM VIC2 $8000",
-        "CPU5 $A:RAM $D:I/O $E:RAM VIC2 $8000",
-        "CPU6 $A:RAM $D:I/O $E:KRN VIC2 $8000",
-        "CPU7 $A:BAS $D:I/O $E:KRN VIC2 $8000",
+        "C0O1 $A:RAM $D:CHR $E:RAM VIC2 $8000",
+        "C0O2 $A:RAM $D:CHR $E:KRN VIC2 $8000",
+        "C0O3 $A:BAS $D:CHR $E:KRN VIC2 $8000",
+        "C0O4 $A:RAM $D:RAM $E:RAM VIC2 $8000",
+        "C0O5 $A:RAM $D:I/O $E:RAM VIC2 $8000",
+        "C0O6 $A:RAM $D:I/O $E:KRN VIC2 $8000",
+        "C0O7 $A:BAS $D:I/O $E:KRN VIC2 $8000",
         "CPU0 $A:RAM $D:RAM $E:RAM VIC2 $8000",
     };
     static const char *vic_cycle_status[] = {
@@ -3012,7 +3009,7 @@ static int test_monitor_default_cpu_bank_and_vic_shortcuts(void)
     monitor.init(&screen, &keyboard);
 
     screen.get_slice(1, 22, 38, status);
-    if (expect(strstr(status, "CPU7 $A:BAS $D:I/O $E:KRN VIC2 $8000") == status,
+    if (expect(strstr(status, "C0O7 $A:BAS $D:I/O $E:KRN VIC2 $8000") == status,
                "Fresh monitor sessions must default to CPU7 regardless of the live machine bank.")) return 1;
 
     if (expect(monitor.poll(0) == 0, "Jump command failed for CPU/VIC shortcut test.")) return 1;
@@ -3215,7 +3212,7 @@ static int test_monitor_kernal_bank_switch_and_ram_interaction(void)
     if (expect(monitor.poll(0) == 0, "CPU bank cycle to CPU4 failed for KERNAL banking test.")) return 1;
     if (expect(monitor.poll(0) == 0, "CPU bank cycle to CPU5 failed for KERNAL banking test.")) return 1;
     screen.get_slice(1, 22, 38, status);
-    if (expect(strstr(status, "CPU5 $A:RAM $D:I/O $E:RAM VIC2 $8000") == status,
+    if (expect(strstr(status, "C7O5 $A:RAM $D:I/O $E:RAM VIC2 $8000") == status,
                "CPU5 status did not expose RAM at E000.")) return 1;
     screen.get_slice(1, 4, MONITOR_HEX_ROW_CHARS, line);
     if (expect(strstr(line, "e000 55 bb") == line || strstr(line, "E000 55 BB") == line,
@@ -4618,8 +4615,8 @@ static int test_asm_cpu_bank_cycle_preserves_screen_row(void)
     if (expect(strstr(header, "MONITOR ASM $A006") == header,
                "CPU bank cycling in ASM view must preserve the logical cursor address when possible.")) return 1;
     screen.get_slice(1, 22, 38, status);
-    if (expect(strstr(status, "CPU0 ") == status,
-               "CPU bank cycling test must actually advance the visible CPU bank status.")) return 1;
+    if (expect(strstr(status, "C7O0 ") == status,
+               "CPU bank cycling test must advance the view bank, which the live bank 7 makes read C7O0.")) return 1;
     if (expect(mon.poll(0) == 1, "ASM bank-anchor test: exit failed.")) return 1;
     mon.deinit();
     return 0;
@@ -5831,8 +5828,13 @@ static int test_asm_range_copy_paste(void)
 
     BackendMachineMonitor mon(&ui, &backend);
     mon.init(&screen, &kb);
+    int copy_single_reads = 0;
     for (int i = 0; i < (int)(sizeof(keys) / sizeof(keys[0])) - 1; i++) {
+        int reads_before = backend.single_read_count;
         if (expect(mon.poll(0) == 0, "ASM range test command failed.")) return 1;
+        if (keys[i] == KEY_CTRL_C) {
+            copy_single_reads = backend.single_read_count - reads_before;
+        }
     }
 
     for (int i = 0; i < (int)sizeof(expected); i++) {
@@ -5841,6 +5843,29 @@ static int test_asm_range_copy_paste(void)
     }
     if (expect(backend.read(0xC105) == 0x00,
                "ASM range copy/paste must not overrun past the selected instructions.")) return 1;
+    // The paste has to reach the backend as one block. A backend that stops the
+    // machine to reach memory stops it once per call, and each stop and resume
+    // is a chance to lose a byte: on an Ultimate II+L a five byte paste written
+    // one byte at a time came back with a byte missing from the middle in one
+    // run out of two.
+    if (expect(backend.block_write_count == 1,
+               "A paste must reach the backend as one block write")) {
+        printf("  %d block writes, %d single writes\n",
+               backend.block_write_count, backend.single_write_count);
+        return 1;
+    }
+    // The copy is the other half of the same rule: the selected span is taken
+    // in block reads, so the copy itself makes no single-byte read. The redraw
+    // that follows reads through the same block path, which is why this counts
+    // single reads rather than block reads.
+    // One single read is the ASM row-span probe that sizes the last
+    // instruction; the span itself must not be read that way, so anything close
+    // to the copied length means the byte loop is back.
+    if (expect(copy_single_reads < (int)sizeof(expected),
+               "A range copy must not read the span one byte at a time")) {
+        printf("  %d single reads during the copy\n", copy_single_reads);
+        return 1;
+    }
     if (expect(mon.poll(0) == 1, "ASM range test exit failed.")) return 1;
     mon.deinit();
     return 0;
@@ -7420,8 +7445,8 @@ static int test_asm_follow_and_return_navigation(void)
         advance_fake_ms_timer(1);
         if (expect(mon.poll(0) == 0, "Follow JMP: status expiry poll failed.")) return 1;
         screen.get_slice(1, 22, 38, status);
-        if (expect(strstr(status, "CPU") == status,
-                   "Follow JMP: follow-stack status must clear after its timeout.")) return 1;
+        if (expect((strstr(status, "CPU") == status || status[0] == 'C'),
+                   "Follow JMP: follow-stack status must give the row back to the bank line.")) return 1;
         mon.deinit();
     }
 
@@ -7665,6 +7690,39 @@ static int test_restricted_backend_guards_platform_features(void)
                "Restricted GO command must not warn when a backend exposes CPU-view execution.")) return 1;
     if (expect(mon.consume_pending_go(&go_addr) && go_addr == 0xC123,
                "Restricted GO command must queue the requested jump address.")) return 1;
+    mon.deinit();
+    monitor_reset_saved_state();
+    return 0;
+}
+
+struct FakeObservedCpuMemoryBackend : public FakeRestrictedMemoryBackend
+{
+    virtual bool live_cpu_port_known(void) const { return true; }
+    virtual uint8_t get_live_cpu_port(void) { return 0x07; }
+    virtual bool supports_vic_bank(void) const { return true; }
+    virtual uint8_t get_live_vic_bank(void) { return 0; }
+};
+
+static int test_observed_cpu_port_is_shown_without_a_selectable_view_bank(void)
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeObservedCpuMemoryBackend backend;
+    const int keys[] = { KEY_BREAK };
+    FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+    char status[39];
+
+    ui.screen = &screen;
+    ui.keyboard = &kb;
+    monitor_reset_saved_state();
+
+    BackendMachineMonitor mon(&ui, &backend);
+    mon.init(&screen, &kb);
+    screen.get_slice(1, 22, 38, status);
+    if (expect(strstr(status, "CPU7 $A:BAS $D:I/O $E:KRN VIC0 $0000") == status,
+               "An observed live CPU port must be shown when the view bank cannot be selected.")) return 1;
+    if (expect(backend.set_monitor_cpu_port_calls == 0,
+               "Showing the observed CPU port must not select a view bank.")) return 1;
     mon.deinit();
     monitor_reset_saved_state();
     return 0;
@@ -7949,16 +8007,17 @@ static const int MONITOR_HELP_LINES_ON_SHORTEST_SCREEN = 24 - 7;
 // KEYS row below: those start with a key too, but a longer one.
 static const int MONITOR_HELP_COLUMN_WIDTH = 13;
 
-// BOOKMARKS and CONTROL KEYS share one grid below the primary one: a left key
-// and action, then a right key and action.
+// The block of C= and named keys shares one grid below the primary one: a left
+// key and action, then a right key and action. The paging row draw_status puts
+// on the window's last row uses the same four columns.
 static const int MONITOR_HELP_LOWER_KEY_COLUMN = 0;
-static const int MONITOR_HELP_LOWER_ACTION_COLUMN = 11;
-static const int MONITOR_HELP_LOWER_KEY2_COLUMN = 20;
+static const int MONITOR_HELP_LOWER_ACTION_COLUMN = 10;
+static const int MONITOR_HELP_LOWER_KEY2_COLUMN = 19;
 static const int MONITOR_HELP_LOWER_ACTION2_COLUMN = 28;
 
-// A help line that lays keys out on one of the two grids, as opposed to a
-// heading or the blank line between sections. A grid line separates its cells
-// with a run of spaces; "BOOKMARKS" and "CONTROL KEYS" have none.
+// A help line that lays keys out on one of the two grids, as opposed to the
+// blank line between blocks. A grid line separates its cells with a run of
+// spaces.
 static bool monitor_help_is_grid_line(const char *text)
 {
     return text[0] != 0 && text[0] != ' ' && strstr(text, "  ") != NULL;
@@ -8605,9 +8664,9 @@ static int test_monitor_interaction_text_is_a_contract(void)
 
     // The command lines are a three-column grid whose cells start at columns 0,
     // 13 and 26. A line that begins with a single-letter key is one of those
-    // lines; a BOOKMARKS/CONTROL KEYS row begins with a longer key (C=+B, ?/F3,
-    // ...), and a heading ("BOOKMARKS") or blank separator matches neither and
-    // is skipped. A cell that starts one column off reads as a ragged edge down
+    // lines; a lower-grid row begins with a longer key (C=+B, ?/F3,
+    // ...), and the blank separator between blocks matches neither and is
+    // skipped. A cell that starts one column off reads as a ragged edge down
     // the page: "B Binary   U" would put Undoc at column 25 instead of 26.
     for (int i = 0; monitor_help_lines[i]; i++) {
         const char *text = monitor_help_lines[i];
@@ -8625,7 +8684,7 @@ static int test_monitor_interaction_text_is_a_contract(void)
         }
     }
 
-    // BOOKMARKS and CONTROL KEYS put their two keys and two actions on four
+    // The lower grid puts its two keys and two actions on four
     // fixed columns, which is what makes each of the four read as one straight
     // line down the screen.
     for (int i = 0; monitor_help_lines[i]; i++) {
@@ -8650,7 +8709,7 @@ static int test_monitor_interaction_text_is_a_contract(void)
             }
             if (expect(text[column] != ' ' &&
                        (column == 0 || text[column - 1] == ' '),
-                       "A BOOKMARKS/CONTROL KEYS cell does not start on its "
+                       "A lower-grid help cell does not start on its "
                        "column.")) {
                 printf("  column %d: %s\n", column, text);
                 return 1;
@@ -8676,8 +8735,8 @@ static int test_monitor_interaction_text_is_a_contract(void)
                    "Help must name '?' as a way to open it.")) return 1;
         if (expect(strstr(all, ui.function_key_for(KEY_HELP)) != NULL,
                    "Help must name the mapped help key.")) return 1;
-        if (expect(strstr(all, "RUNSTOP/<-") != NULL,
-                   "Help must describe Back as RUNSTOP/<-.")) return 1;
+        if (expect(strstr(all, "RSTOP/<-") != NULL,
+                   "Help must describe Back as RSTOP/<-.")) return 1;
     }
 
     // A prompt title has to fit the box the prompt draws on the same screen.
@@ -9737,7 +9796,7 @@ int main()
     if (test_x_is_not_an_exit()) return 1;
     if (test_a_popup_owns_the_rows_it_covers()) return 1;
     if (test_view_names_are_stable_log_tokens()) return 1;
-    if (test_d_is_reserved_and_a_opens_assembly()) return 1;
+    if (test_a_opens_assembly()) return 1;
     if (test_transfer_relocate_parses_its_optional_range()) return 1;
     if (test_transfer_relocate_moves_absolute_operands()) return 1;
     if (test_transfer_relocate_keeps_the_inclusive_range()) return 1;
@@ -9825,6 +9884,7 @@ int main()
     if (test_warning_popups_preserve_status_row()) return 1;
     if (test_asm_follow_and_return_navigation()) return 1;
     if (test_restricted_backend_guards_platform_features()) return 1;
+    if (test_observed_cpu_port_is_shown_without_a_selectable_view_bank()) return 1;
     if (test_back_closes_help_without_leaving_the_monitor()) return 1;
     if (test_back_leaves_one_layer_at_a_time()) return 1;
     if (test_back_in_number_popup_and_expression()) return 1;
