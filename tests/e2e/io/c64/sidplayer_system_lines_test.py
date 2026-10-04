@@ -35,6 +35,9 @@ where master shows a wrong value or none. Each check says which:
   mirror          [new] with nothing at $D420 and $D440 they show UNKNOWN: a
                   SID decodes five address lines, so the SID at $D400 answers
                   there too, and must not be measured twice.
+  no-sid          [new] with no SID mapped at all, $D400 shows UNKNOWN and
+                  its video standard, and the FOUND2 line below it stays
+                  intact. An ARMSID at $D400 reads UNKNOWN the same way.
   irq             [new] the first requested line names the song's interrupt:
                   VBI without the speed flag, CIA with it, per song, and RSID
                   for an RSID tune, which sets up its own.
@@ -50,7 +53,7 @@ where master shows a wrong value or none. Each check says which:
 The player places its screen wherever the tune leaves room, not at $0400, so
 the suite asks the VIC where it is: the bank from $DD00, the offset from $D018.
 
-real-chips, ultisid-model, ultisid-follows and mirror need a machine whose
+real-chips, ultisid-model, ultisid-follows, mirror and no-sid need a machine whose
 SIDs can be mapped, a U64 or C64 Ultimate; a cartridge skips them where it
 cannot. They change SID Player Autoconfig and its UltiSID permission, the SID
 addressing, the sockets and the UltiSIDs' waveforms and filters, each with the
@@ -80,8 +83,8 @@ from report import (Failure, check, check_skip, detail,          # noqa: E402
 
 SUITE = "sidplayer_system_lines_test"
 
-TESTS = ("real-chips", "ultisid-model", "ultisid-follows", "inherited", "lines", "mirror", "irq",
-         "any", "mus", "mus-stereo")
+TESTS = ("real-chips", "ultisid-model", "ultisid-follows", "inherited", "lines", "mirror", "no-sid",
+         "irq", "any", "mus", "mus-stereo")
 
 # The PSID container: version 4 carries a second and a third SID address.
 PSID_HEADER_BYTES = 0x7C
@@ -469,6 +472,28 @@ def test_mirror(device: UltimateApi) -> None:
         settings.restore()
 
 
+def test_no_sid(device: UltimateApi) -> None:
+    label = ("[new] with no SID mapped, $D400 shows UNKNOWN and its video standard, "
+             "and the line below stays intact")
+    if not mappable(device, label):
+        return
+    settings = Settings(device)
+    try:
+        settings.set(U64_STORE, AUTOCONFIG_ITEM, "Disabled")
+        for item in ADDRESS_ITEMS:
+            settings.set(ADDRESS_STORE, item, UNMAPPED)
+        with checked(label):
+            measured, _ = sid_lines(play_and_read(device, psid(b"NO SID", [
+                (0xD400, MODEL_6581), (0xD420, MODEL_8580)])))
+            model, video, _ = measured.get("D400", (None, None, None))
+            expect("$D400", model, "UNKNOWN")
+            if video not in VIDEO:
+                raise Failure(f"$D400's video standard is {video!r}, expected PAL or NTSC")
+            expect("the measured addresses", sorted(measured) or None, ["D400", "D420"])
+    finally:
+        settings.restore()
+
+
 def test_irq(device: UltimateApi) -> None:
     sids = [(0xD400, MODEL_6581)]
     for speed, expected in ((0, "VBI"), (1, "CIA")):
@@ -574,6 +599,7 @@ def run(args) -> None:
              "inherited": test_inherited,
              "lines": test_lines,
              "mirror": test_mirror,
+             "no-sid": test_no_sid,
              "irq": test_irq,
              "any": test_any,
              "mus": test_mus,
