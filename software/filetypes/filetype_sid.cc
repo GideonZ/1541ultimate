@@ -782,6 +782,11 @@ void FileTypeSID ::load(void)
 
     ConfigSIDs();
 
+    // only version 4 has a third SID; before that, $7B is reserved
+    if (header_version < 4) {
+        sid_header[0x7B] = 0;
+    }
+
     // copy sid header into C64 memory
     memcpy((void *)(C64_MEMORY_BASE + header_location), sid_header, 0x80);
 
