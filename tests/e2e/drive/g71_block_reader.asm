@@ -54,6 +54,9 @@ start:
     jsr OPEN
     bcs io_error
 
+    ; initialise first: it frees every buffer, so a "#" opened before it is gone
+    jsr init_drive
+
     ; buffer channel on "#"
     lda #2
     ldx #DEVICE
@@ -66,7 +69,6 @@ start:
     jsr OPEN
     bcs io_error
 
-    jsr init_drive
     jsr send_u1
     jsr read_block
     jsr read_error_channel
@@ -164,10 +166,12 @@ read_error_channel:
 buffer_name:
     .text "#"
 
+; Upper case: 64tass passes .text through as ASCII, and the DOS knows its
+; commands only as the PETSCII $49 "I" and $55 "U"; "i0" is error 31.
 init_command:
-    .text "i0"
+    .text "I0"
 init_command_end:
 
 u1_command:
-    .text "u1 2 0 ", format("%d", TRACK), " ", format("%d", SECTOR)
+    .text "U1 2 0 ", format("%d", TRACK), " ", format("%d", SECTOR)
 u1_command_end:
