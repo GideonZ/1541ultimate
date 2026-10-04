@@ -888,7 +888,12 @@ void HttpTarget::cmd_exchange(Message *command, Message **reply, Message **statu
                     hdr->RawCopySize = CMD_MAX_STATUS_LEN;
                 }
             }
-            exch->recv_response();
+            if (!exch->recv_response()) {
+                delete exch;
+                exch = NULL;
+                *status = &c_status_not_available;
+                return;
+            }
         } else {
             printf("Failed to send request\n");
             delete exch;
