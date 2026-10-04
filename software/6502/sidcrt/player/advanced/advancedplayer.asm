@@ -400,9 +400,9 @@ sidModel        .byte ?   ; 0 = 8580, 1 = 6581, 2 = unknown
 sidC64Model     .byte 0   ; 0 = PAL, 1 = NTSC
 
                 .enc 'screen'
+speedTexts      .text ':::   VCRBISIAI  D'          ; ': VBI ', ': CIA ' and ': RSID', interleaved
 c64ModelDesc    .text ': PAL', 0, ': NTSC', 0
 sidModelDesc    .text '8580', 0, '6581', 0, 'UNKNOWN'  ; not needed to end with zero, since sidModelIndex starts with a zero
-speedTexts      .text ':::   VCRBISIAI  D'          ; ': VBI ', ': CIA ' and ': RSID', interleaved
                 .enc 'none'
 sidModelIndex   .byte 0, 5, 10
 
