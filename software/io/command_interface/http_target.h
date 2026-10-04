@@ -663,6 +663,7 @@ class HttpTarget : public CommandTarget {
 
     void express(JSON *j);
     void reset_responses();
+    void release_all();
 public:
     HttpTarget(int id);
     virtual ~HttpTarget();
@@ -670,6 +671,7 @@ public:
     void parse_command(Message *command, Message **reply, Message **status) override;
     void get_more_data(Message **reply, Message **status) override;
     void abort(int) override;
+    void c64_reset(void) override;
 
     int create_body_from_json(char *body, int size, uint8_t *handle);
 };

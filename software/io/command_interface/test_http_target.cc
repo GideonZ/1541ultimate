@@ -913,6 +913,57 @@ static void test_response_boundaries(HttpTarget *target)
     }
 }
 
+static void test_response_cleanup(HttpTarget *target)
+{
+    int baseline = open_descriptor_count();
+    for (int reset = 0; reset <= 1; ++reset) {
+        for (int repeat = 0; repeat < 4; ++repeat) {
+            char response[1200];
+            int header = snprintf(response, sizeof(response),
+                                  "HTTP/1.1 200 OK\r\nContent-Length: 1024\r\n\r\n");
+            memset(response + header, 'x', 1024);
+            {
+                ResponsePeer peer(response, header + 1024);
+                checks++;
+                if (!peer.port()) {
+                    failures++;
+                    printf("FAIL cleanup peer setup\n");
+                    return;
+                }
+                run_expect_empty(target, "reset cleanup fixture", &c_cmd_free_all, status_ok);
+                const uint8_t handle[] = { 0 };
+                run_expect(target, "create owned body", &c_cmd_body_create, handle, 1, status_ok);
+                Message *reply, *status;
+                begin_raw_response(target, peer, &reply, &status);
+                expect_last("unread response before cleanup", reply, false);
+                checks++;
+                if (!peer.completed()) {
+                    failures++;
+                    printf("FAIL cleanup peer did not finish\n");
+                }
+                // The peer's listening socket stays owned by the fixture.
+                if (reset) {
+                    target->c64_reset();
+                    target->c64_reset();
+                } else {
+                    run_expect_empty(target, "free pending exchange", &c_cmd_free_all, status_ok);
+                    run_expect_empty(target, "free twice", &c_cmd_free_all, status_ok);
+                }
+                expect_descriptor_count("cleanup closes pending socket", baseline + 1);
+                run_more_expect(target, "cleanup discards unread bytes", (const uint8_t *)"", 0, status_no_more);
+                run_expect_empty(target, "old header invalid", &c_cmd_header_query, status_bad_cmd);
+                run_expect_empty(target, "old body invalid", &c_cmd_body_queryall1, status_bad_req);
+                run_expect(target, "reuse body slot zero", &c_cmd_body_create, handle, 1, status_ok);
+                run_expect(target, "reuse header slot zero", &c_cmd_header_create, handle, 1, status_ok);
+                // Also release state when running the regression against the broken baseline.
+                target->abort(0);
+                run_expect_empty(target, "release cleanup fixture", &c_cmd_free_all, status_ok);
+            }
+            expect_descriptor_count("cleanup fixture releases sockets", baseline);
+        }
+    }
+}
+
 int main(int argc, char **argv)
 {
     if ((argc > 1) && (strcmp(argv[1], "--connect-cleanup") == 0)) {
@@ -940,6 +991,12 @@ int main(int argc, char **argv)
     if ((argc > 1) && (strcmp(argv[1], "--response-boundaries") == 0)) {
         test_response_boundaries(target);
         printf("Response boundaries: %d checks, %d failures\n", checks, failures);
+        return failures ? 1 : 0;
+    }
+
+    if ((argc > 1) && (strcmp(argv[1], "--response-cleanup") == 0)) {
+        test_response_cleanup(target);
+        printf("Response cleanup: %d checks, %d failures\n", checks, failures);
         return failures ? 1 : 0;
     }
 
