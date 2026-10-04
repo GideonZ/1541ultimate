@@ -308,8 +308,6 @@ songLengthDigit2
 detectSidModel  lda sidModel        ; return the model the cartridge detected
                 rts
 
-noSidFx         jmp detection.detectSidModel
-
 displaySysInfo  jsr setBankAllRam
 
                 ldy sidModel
