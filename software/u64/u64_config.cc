@@ -1952,11 +1952,12 @@ void U64Config :: SetSidType(int slot, uint8_t sidType)
         } else {
             printf("Null pointer.\n");
         }
-    } else if ((sidType == 1) || (sidType == 2)) {
+    } else if ((UltiSidModels::ultisidOf(slot) >= 0) && ((sidType == 1) || (sidType == 2))) {
         // An UltiSID counts as either model, so make it the one that was asked for: the filter curve
-        // and the combined waveforms of that chip. Slots 2 and 6 are UltiSID 1, slots 3 and 7 UltiSID 2.
+        // and the combined waveforms of that chip. Slots 2 and 6 are UltiSID 1, slots 3 and 7 UltiSID 2;
+        // slots 4 and 5 are the second SIDs of the socket devices and have no model to set here.
         // The next reset puts the user's UltiSID settings back, as it does for the socket devices.
-        int emu = slot & 1;
+        int emu = UltiSidModels::ultisidOf(slot);
         set_ultisid_filter(emu, (sidType == 1) ? 2 : 0); // "6581" or "8580 Lo"
         if (emu) {
             C64_EMUSID2_WAVES = (sidType == 2) ? 1 : 0;
@@ -1983,6 +1984,9 @@ bool U64Config :: MapSid(int index, int totalCount, uint16_t& mappedSids, uint8_
             continue;
         }
         uint8_t actualType = GetSidType(i);
+        if (!any && !ultisidModels.fits(i, requested->sidType)) {
+            continue; // the other SID of this UltiSID already has the other model
+        }
         if ((actualType & requested->sidType) || (any && actualType)) { //  bit mask != 0
             if (SetSidAddress(i, (totalCount == 1), actualType, requested->baseAddress)) {
                 mappedSids |= (1 << i);
@@ -1991,7 +1995,9 @@ bool U64Config :: MapSid(int index, int totalCount, uint16_t& mappedSids, uint8_
                         sidTypes[requested->sidType & 3], i, sidTypes[actualType], requested->baseAddress);
                 found = true;
                 if (actualType == 3) {
-                    SetSidType(i, requested->sidType);
+                    if ((UltiSidModels::ultisidOf(i) < 0) || ultisidModels.claim(i, requested->sidType)) {
+                        SetSidType(i, requested->sidType);
+                    }
                 }
                 break;
             }
@@ -2077,6 +2083,7 @@ bool U64Config :: SidAutoConfig(int count, t_sid_definition *requested)
     unmapAllSids();
     memset(mappedOnSlot, 0, 8);
     mappedSids = 0;
+    ultisidModels.clear();
     bool failed = false;
 
     for (int i=0; i < count; i++) {
@@ -2088,6 +2095,7 @@ bool U64Config :: SidAutoConfig(int count, t_sid_definition *requested)
         unmapAllSids();
         mappedSids = 0;
         memset(mappedOnSlot, 0, 8);
+        ultisidModels.clear();
         failed = false;
         for (int i=count-1; i >= 0; i--) {
             if (!MapSid(i, count, mappedSids, mappedOnSlot, &requested[i], false)) {
@@ -2099,6 +2107,7 @@ bool U64Config :: SidAutoConfig(int count, t_sid_definition *requested)
         unmapAllSids();
         mappedSids = 0;
         memset(mappedOnSlot, 0, 8);
+        ultisidModels.clear();
         failed = false;
         for (int i=0; i < count; i++) {
             if (!MapSid(i, count, mappedSids, mappedOnSlot, &requested[i], true)) {

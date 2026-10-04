@@ -17,6 +17,7 @@
 #include "u64.h"
 #include "filetype_vpl.h"
 #include "overlay.h"
+#include "ultisid_models.h"
 
 #define DATA_DIRECTORY "/flash/data"
 
@@ -98,6 +99,7 @@ class U64Config : public ConfigurableObject, ObjectWithMenu, SubSystem
     U64SidSockets sockets;
     U64UltiSids ultisids;
     U64SidAddressing sidaddressing;
+    UltiSidModels ultisidModels;
 
     uint8_t edid[1024];
     int edid_size;
