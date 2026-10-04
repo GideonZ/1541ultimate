@@ -885,7 +885,7 @@ void HttpTarget::cmd_exchange(Message *command, Message **reply, Message **statu
                 HTTPReqHeader *hdr = exch->get_header();
                 if (hdr) {
                     hdr->RawCopy = status_message.message;
-                    hdr->RawCopySize = CMD_MAX_STATUS_LEN;
+                    hdr->RawCopySize = HTTP_MAX_STATUS_BYTES;
                 }
             }
             if (!exch->recv_response()) {
@@ -915,9 +915,9 @@ void HttpTarget::cmd_exchange(Message *command, Message **reply, Message **statu
     if(raw) {
         // Return raw data in data channel [cite: 264]
         *reply = &data_message;
-        data_message.length = exch->read_response_data(CMD_MAX_REPLY_LEN, data_message.message);
-        data_message.last_part = (data_message.length != CMD_MAX_REPLY_LEN);
-        // Copy at most CMD_MAX_STATUS_LEN bytes into the status. Note that parse header will insert
+        data_message.length = exch->read_response_data(HTTP_MAX_REPLY_BYTES, data_message.message);
+        data_message.last_part = (data_message.length != HTTP_MAX_REPLY_BYTES);
+        // Copy at most HTTP_MAX_STATUS_BYTES bytes into the status. Note that parse header will insert
         // zeros at string boundaries
         HTTPReqHeader *hdr = exch->get_header();
         *status = &status_message;
@@ -1001,8 +1001,8 @@ void HttpTarget::get_more_data(Message **reply, Message **status)
 {
     if (response_data) {
         *reply = &data_message;
-        data_message.length = response_data->read((char *)data_message.message, CMD_MAX_REPLY_LEN);
-        data_message.last_part = (data_message.length != CMD_MAX_REPLY_LEN);
+        data_message.length = response_data->read((char *)data_message.message, HTTP_MAX_REPLY_BYTES);
+        data_message.last_part = (data_message.length != HTTP_MAX_REPLY_BYTES);
         *status = &c_status_http_ok; 
         if (data_message.last_part) {
             delete response_data;
@@ -1010,8 +1010,8 @@ void HttpTarget::get_more_data(Message **reply, Message **status)
         }
     } else if (exch) {
         *reply = &data_message;
-        data_message.length = exch->read_response_data(CMD_MAX_REPLY_LEN, data_message.message);
-        data_message.last_part = (data_message.length != CMD_MAX_REPLY_LEN);
+        data_message.length = exch->read_response_data(HTTP_MAX_REPLY_BYTES, data_message.message);
+        data_message.last_part = (data_message.length != HTTP_MAX_REPLY_BYTES);
         if (data_message.last_part) {
             delete exch;
             exch = NULL;
