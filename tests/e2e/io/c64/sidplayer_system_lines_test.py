@@ -27,14 +27,17 @@ where master shows a wrong value or none. Each check says which:
                   master]; 6581 without "Allow Autoconfig uses UltiSid", with
                   SID Player Autoconfig off, or after a reset [control].
   inherited      SID #2 with its model left open shows SID #1's model, as the
-                  SID file format defines it [wrong on master: UNKNOWN]; UNKNOWN
-                  when SID #1 is open too [control]; SID #3 left open copies
-                  SID #1, not SID #2 [control].
+                  SID file format defines it [wrong on master: UNKNOWN]; a model
+                  for SID #3 without its address adds no SID #3 [control];
+                  SID #2 and #3 show UNKNOWN when SID #1 is open too [control];
+                  SID #3 left open copies SID #1, not SID #2 [control].
   lines           [new] a three-SID tune gets a measured line for $D400, $D420
-                  and $D440.
+                  and $D440. Its SID #2 and #3, left open, show SID #1's 8580
+                  [wrong on master for SID #2, control for SID #3].
   mirror          [new] with nothing at $D420 and $D440 they show UNKNOWN: a
                   SID decodes five address lines, so the SID at $D400 answers
-                  there too, and must not be measured twice.
+                  there too, and must not be measured twice. The tune's 6581,
+                  8580 and ANY are shown as given [control].
   no-sid          [new] with no SID mapped at all, $D400 shows UNKNOWN and
                   its video standard, and the FOUND2 line below it stays
                   intact. An ARMSID at $D400 reads UNKNOWN the same way.
@@ -43,6 +46,16 @@ where master shows a wrong value or none. Each check says which:
                   for an RSID tune, which sets up its own.
   any             [control] a tune for both models and both clocks is shown as
                   for both: ANY, or master's "6581 / 8580" and "PAL / NTSC".
+                  Its SID #2 and #3, left open, show ANY too [wrong on master
+                  for SID #2, control for SID #3].
+  versions        what each header version can ask for. Version 1 has no flags
+                  and its data starts at $76: one SID, model and video standard
+                  UNKNOWN [control]. Version 2 reserves the bytes later versions
+                  use for SID #2 and #3: one SID [control], 8580 and NTSC as
+                  its flags say. Version 3 has SID #2, explicitly ANY [control],
+                  but not SID #3 [wrong on master]. Version 4 has SID #2 and #3,
+                  here at $D4E0 and $D5A0, whose hex letters the other tunes'
+                  addresses lack: shown as asked [control], and measured [new].
   mus             a Compute's Sidplayer file, uploaded under its name, plays
                   with the MUS player and asks for an 8580 and NTSC, as the
                   device's made-up header does [control], on a CIA [new].
@@ -84,10 +97,12 @@ from report import (Failure, check, check_skip, detail,          # noqa: E402
 SUITE = "sidplayer_system_lines_test"
 
 TESTS = ("real-chips", "ultisid-model", "ultisid-follows", "inherited", "lines", "mirror", "no-sid",
-         "irq", "any", "mus", "mus-stereo")
+         "irq", "any", "versions", "mus", "mus-stereo")
 
 # The PSID container: version 4 carries a second and a third SID address.
 PSID_HEADER_BYTES = 0x7C
+# Version 1 ends where version 2 starts its flags: its data starts at $76.
+PSID_V1_HEADER_BYTES = 0x76
 LOAD_ADDRESS = 0x1000
 INIT_ADDRESS = 0x1000
 PLAY_ADDRESS = 0x1001
@@ -101,6 +116,7 @@ MODEL_ANY = 0b11
 # Clock codes, bits 2-3 of the flags.
 CLOCK_UNKNOWN = 0b00
 PAL = 0b01
+NTSC = 0b10
 CLOCK_ANY = 0b11
 
 # Where the VIC takes the screen from; see the module docstring.
@@ -138,31 +154,37 @@ MODEL_CODE = {"6581": MODEL_6581, "8580": MODEL_8580}
 
 def psid(name: bytes, sids: list[tuple[int, int]], clock: int = PAL,
          songs: int = 1, speed: int = 0, magic: bytes = b"PSID",
-         play: int = PLAY_ADDRESS) -> bytes:
-    """A PSID v4 for `sids`, a list of (address, model) for SID #1 to #3.
+         play: int = PLAY_ADDRESS, version: int = 4) -> bytes:
+    """A PSID for `sids`, a list of (address, model) for SID #1 to #3.
 
     `speed` is the header's speed flags, bit 0 for song 1: a set bit means
     the song runs on a CIA timer, a clear one on the 50/60 Hz default.
+
+    The models and the addresses are written as given, whatever the `version`:
+    address 0 leaves a SID's model in the flags without its address, and a
+    version 2 or 3 file gets them in the bytes its format reserves. Version 1
+    has neither the flags nor the addresses, so it takes no `sids` or `clock`.
     """
-    header = bytearray(PSID_HEADER_BYTES)
+    size = PSID_HEADER_BYTES if version > 1 else PSID_V1_HEADER_BYTES
+    header = bytearray(size)
     header[:4] = magic
     # Big-endian: version, data offset, load address (0: taken from the data),
     # init, play, `songs` songs, starting at one, and the speed flags.
-    struct.pack_into(">7HI", header, 4, 4, PSID_HEADER_BYTES, 0,
+    struct.pack_into(">7HI", header, 4, version, size, 0,
                      INIT_ADDRESS, play, songs, 1, speed)
     for offset, text in ((0x16, name), (0x36, b"E2E"), (0x56, b"2026")):
         header[offset:offset + 0x20] = text.ljust(0x20, b"\0")
-    flags = clock << 2
-    for index, (_, model) in enumerate(sids):
-        flags |= model << (4 + 2 * index)
-    struct.pack_into(">H", header, 0x76, flags)
-    # The second and third SID's addresses are stored as $Dxx0 >> 4.
-    for index, (address, _) in enumerate(sids[1:]):
-        header[0x7A + index] = (address >> 4) & 0xFF
-    if len(header) != PSID_HEADER_BYTES:
+    if version > 1:
+        flags = clock << 2
+        for index, (_, model) in enumerate(sids):
+            flags |= model << (4 + 2 * index)
+        struct.pack_into(">H", header, 0x76, flags)
+        # The second and third SID's addresses are stored as $Dxx0 >> 4.
+        for index, (address, _) in enumerate(sids[1:]):
+            header[0x7A + index] = (address >> 4) & 0xFF
+    if len(header) != size:
         # A wrong-width slice grows a bytearray instead of failing.
-        raise Failure(f"the PSID header is {len(header)} bytes, not "
-                      f"{PSID_HEADER_BYTES}")
+        raise Failure(f"the PSID header is {len(header)} bytes, not {size}")
     return bytes(header) + LOAD_ADDRESS.to_bytes(2, "little") + CODE
 
 
@@ -211,7 +233,8 @@ def fields(rest: str) -> tuple[str | None, str | None, str | None]:
     #949 puts ":" between the columns. Master puts "/" both between the fields
     and between the two values of one, "6581 / 8580 / PAL / NTSC", so its
     tokens are sorted by what they are: a second UNKNOWN is the video standard.
-    Both values of a field read as ANY, as #949 writes them.
+    Both values of a field read as ANY, as #949 writes them. #949's lines for
+    SID #2 and #3 have the model alone, so no ":", and it may be ANY.
     """
     if ":" in rest:
         parts = [part.strip() for part in rest.split(":")] + [None, None]
@@ -219,7 +242,7 @@ def fields(rest: str) -> tuple[str | None, str | None, str | None]:
     models: list[str] = []
     video: list[str] = []
     for token in (token.strip() for token in rest.split("/")):
-        if token in MODELS or (token == "UNKNOWN" and not models):
+        if token in MODELS or (token in ("UNKNOWN", "ANY") and not models):
             models.append(token)
         elif token in VIDEO or token == "UNKNOWN":
             video.append(token)
@@ -287,6 +310,29 @@ def expect(what: str, shown, wanted) -> None:
         raise Failure(f"{what} is not shown, expected {wanted}")
     if shown != wanted:
         raise Failure(f"{what} is {shown!r}, expected {wanted}")
+
+
+def shown(lines: list[str]) -> tuple[dict[str, tuple], dict[str, tuple]]:
+    """sid_lines() of the screen an earlier check of the same tune read."""
+    if not lines:
+        raise Failure("the player did not start")
+    return sid_lines(lines)
+
+
+def expect_models(requested: dict[str, tuple], models: dict[str, str]) -> None:
+    """The model each requested SID shows, by SID number."""
+    for number, model in models.items():
+        expect(f"SID #{number}'s model", requested.get(number, (None, None))[1], model)
+
+
+def expect_no_sid_beyond(measured: dict[str, tuple], requested: dict[str, tuple],
+                         addresses: tuple[str, ...]) -> None:
+    """No requested line past the file's SIDs, at `addresses`, and no measured
+    line anywhere else. Master shows no measured line for an extra SID at all."""
+    extra = ([f"SID #{n}" for n in sorted(requested) if int(n) > len(addresses)]
+             + [f"${a}" for a in sorted(set(measured) - set(addresses))])
+    if extra:
+        raise Failure(f"shown beyond the file's SIDs: {', '.join(extra)}")
 
 
 def configured(device: UltimateApi, store: str, item: str) -> str:
@@ -433,25 +479,37 @@ def test_ultisid_follows(device: UltimateApi) -> None:
 
 
 def test_inherited(device: UltimateApi) -> None:
-    for first, expected, kind in ((MODEL_6581, "6581", "wrong on master"),
-                                  (MODEL_UNKNOWN, "UNKNOWN", "control")):
-        with checked(f"[{kind}] SID #2 with its model left open shows {expected}"
-                   + (", SID #1's model" if first != MODEL_UNKNOWN else
-                      ", as SID #1 is open too")):
-            _, requested = sid_lines(play_and_read(device, psid(
-                b"MODEL LEFT OPEN", [(0xD400, first), (0xD420, MODEL_UNKNOWN)])))
-            expect("SID #2's model", requested.get("2", (None, None))[1], expected)
+    lines: list[str] = []
+    with checked("[wrong on master] SID #2 with its model left open shows 6581, SID #1's model"):
+        # SID #3 has a model in the flags, but no address
+        lines = play_and_read(device, psid(b"MODEL LEFT OPEN", [
+            (0xD400, MODEL_6581), (0xD420, MODEL_UNKNOWN), (0, MODEL_8580)]))
+        expect_models(sid_lines(lines)[1], {"2": "6581"})
+    with checked("[control] a model for SID #3 without its address asks for no SID #3"):
+        expect_no_sid_beyond(*shown(lines), ("D400", "D420"))
+    with checked("[control] SID #2 with its model left open shows UNKNOWN, as SID #1 is open too"):
+        lines = play_and_read(device, psid(b"MODEL LEFT OPEN", [
+            (0xD400, MODEL_UNKNOWN), (0xD420, MODEL_UNKNOWN), (0xD440, MODEL_UNKNOWN)]))
+        expect_models(sid_lines(lines)[1], {"2": "UNKNOWN"})
+    with checked("[control] SID #3 with its model left open shows UNKNOWN, as SID #1 is open too"):
+        expect_models(shown(lines)[1], {"3": "UNKNOWN"})
     with checked("[control] SID #3 with its model left open copies SID #1, not SID #2"):
         _, requested = sid_lines(play_and_read(device, psid(b"THIRD LEFT OPEN", [
             (0xD400, MODEL_6581), (0xD420, MODEL_8580), (0xD440, MODEL_UNKNOWN)])))
-        expect("SID #3's model", requested.get("3", (None, None))[1], "6581")
+        expect_models(requested, {"2": "8580", "3": "6581"})
 
 
 def test_lines(device: UltimateApi) -> None:
+    lines: list[str] = []
     with checked("[new] a three-SID tune gets a measured line for each of its addresses"):
-        measured, _ = sid_lines(play_and_read(device, psid(b"THREE SIDS", [
-            (0xD400, MODEL_8580), (0xD420, MODEL_8580), (0xD440, MODEL_8580)])))
+        lines = play_and_read(device, psid(b"THREE SIDS", [
+            (0xD400, MODEL_8580), (0xD420, MODEL_UNKNOWN), (0xD440, MODEL_UNKNOWN)]))
+        measured, _ = sid_lines(lines)
         expect("the measured addresses", sorted(measured) or None, ["D400", "D420", "D440"])
+    with checked("[wrong on master] SID #2 with its model left open shows 8580, SID #1's model"):
+        expect_models(shown(lines)[1], {"2": "8580"})
+    with checked("[control] SID #3 with its model left open shows 8580, SID #1's model"):
+        expect_models(shown(lines)[1], {"3": "8580"})
 
 
 def test_mirror(device: UltimateApi) -> None:
@@ -463,11 +521,15 @@ def test_mirror(device: UltimateApi) -> None:
             for item in ADDRESS_ITEMS:
                 if configured(device, ADDRESS_STORE, item) in ("$D420", "$D440"):
                     settings.set(ADDRESS_STORE, item, UNMAPPED)
+        lines: list[str] = []
         with checked(label):
-            measured, _ = sid_lines(play_and_read(device, psid(b"NOTHING THERE", [
-                (0xD400, MODEL_6581), (0xD420, MODEL_8580), (0xD440, MODEL_8580)])))
+            lines = play_and_read(device, psid(b"NOTHING THERE", [
+                (0xD400, MODEL_6581), (0xD420, MODEL_8580), (0xD440, MODEL_ANY)]))
+            measured, _ = sid_lines(lines)
             for address in ("D420", "D440"):
                 expect(f"${address}", measured.get(address, (None,))[0], "UNKNOWN")
+        with checked("[control] a three-SID tune asks for the model given for each SID, ANY included"):
+            expect_models(shown(lines)[1], {"1": "6581", "2": "8580", "3": "ANY"})
     finally:
         settings.restore()
 
@@ -512,13 +574,61 @@ def test_irq(device: UltimateApi) -> None:
 
 
 def test_any(device: UltimateApi) -> None:
+    lines: list[str] = []
     for clock, video in ((CLOCK_ANY, "ANY"), (CLOCK_UNKNOWN, "UNKNOWN")):
         with checked(f"[control] a tune for both models shows ANY and video {video}"):
-            _, requested = sid_lines(play_and_read(
-                device, psid(b"ANY MODEL", [(0xD400, MODEL_ANY)], clock=clock)))
-            first = requested.get("1", (None,) * 4)
+            lines = play_and_read(device, psid(b"ANY MODEL", [
+                (0xD400, MODEL_ANY), (0xD420, MODEL_UNKNOWN), (0xD440, MODEL_UNKNOWN)], clock=clock))
+            first = sid_lines(lines)[1].get("1", (None,) * 4)
             expect("the model", first[1], "ANY")
             expect("the video standard", first[2], video)
+    with checked("[wrong on master] SID #2 with its model left open shows ANY, SID #1's model"):
+        expect_models(shown(lines)[1], {"2": "ANY"})
+    with checked("[control] SID #3 with its model left open shows ANY, SID #1's model"):
+        expect_models(shown(lines)[1], {"3": "ANY"})
+
+
+def test_versions(device: UltimateApi) -> None:
+    lines: list[str] = []
+    with checked("[control] a version 1 tune asks for one SID of unknown model and video "
+                 "standard, though its data is where later versions have those"):
+        # The load address $1000 at $76 reads as a 6581 in the flags of a later
+        # version, and the two bytes after the code as SIDs at $D420 and $D440.
+        lines = play_and_read(device, psid(b"VERSION 1", [], version=1) + bytes((0x42, 0x44)))
+        measured, requested = sid_lines(lines)
+        first = requested.get("1", (None,) * 4)
+        expect("the model", first[1], "UNKNOWN")
+        expect("the video standard", first[2], "UNKNOWN")
+        expect_no_sid_beyond(measured, requested, ("D400",))
+    with checked("[control] a version 2 tune asks for one SID, whatever the bytes that "
+                 "version 3 and 4 use for SID #2 and #3 hold"):
+        lines = play_and_read(device, psid(b"VERSION 2", [
+            (0xD400, MODEL_8580), (0xD420, MODEL_6581), (0xD440, MODEL_6581)],
+            clock=NTSC, version=2))
+        measured, requested = sid_lines(lines)
+        first = requested.get("1", (None,) * 4)
+        expect("the model", first[1], "8580")
+        expect("the video standard", first[2], "NTSC")
+        expect_no_sid_beyond(measured, requested, ("D400",))
+    with checked("[control] a version 3 tune's SID #2 asks for ANY, not SID #1's 8580"):
+        lines = play_and_read(device, psid(b"VERSION 3", [
+            (0xD400, MODEL_8580), (0xD420, MODEL_ANY), (0xD440, MODEL_6581)], version=3))
+        _, requested = sid_lines(lines)
+        expect("SID #2's address", requested.get("2", (None,))[0], "D420")
+        expect_models(requested, {"2": "ANY"})
+    with checked("[wrong on master] a version 3 tune asks for no SID #3, whatever the byte "
+                 "that version 4 uses for its address holds"):
+        expect_no_sid_beyond(*shown(lines), ("D400", "D420"))
+    with checked("[control] a version 4 tune asks for SIDs at $D4E0 and $D5A0 of the models given"):
+        lines = play_and_read(device, psid(b"VERSION 4", [
+            (0xD400, MODEL_8580), (0xD4E0, MODEL_6581), (0xD5A0, MODEL_ANY)]))
+        _, requested = sid_lines(lines)
+        expect("the requested addresses",
+               [requested.get(n, (None,))[0] for n in "123"], ["D400", "D4E0", "D5A0"])
+        expect_models(requested, {"1": "8580", "2": "6581", "3": "ANY"})
+    with checked("[new] a version 4 tune gets a measured line at $D4E0 and $D5A0"):
+        measured, _ = shown(lines)
+        expect("the measured addresses", sorted(measured) or None, ["D400", "D4E0", "D5A0"])
 
 
 def mus(text: bytes) -> bytes:
@@ -602,6 +712,7 @@ def run(args) -> None:
              "no-sid": test_no_sid,
              "irq": test_irq,
              "any": test_any,
+             "versions": test_versions,
              "mus": test_mus,
              "mus-stereo": lambda d: test_mus_stereo(d, args.host, args.password or None)}[name](device)
     finally:
