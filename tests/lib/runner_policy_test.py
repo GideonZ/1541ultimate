@@ -323,10 +323,10 @@ def run_degraded_recovery_checks(runner):
     with check("a computer's run also captures the settings of the cartridge fitted in it"):
         class _Snapshot:
             item_count = 0
-            settings = {}
 
             def __init__(self, machine):
                 self.machine = machine
+                self.settings = {}
 
         real = runner.config_snapshot.capture
         runner.config_snapshot.capture = lambda host, api: _Snapshot(host)

@@ -27,7 +27,6 @@ import json
 import os
 import secrets
 import socket
-import urllib.request
 from collections.abc import Callable, Sequence
 
 import machine as machine_lib
@@ -123,9 +122,10 @@ SWEEP_TIMEOUT_SECONDS = 0.6
 def _info_product(address: str) -> str | None:
     """The `product` of whatever answers /v1/info at `address`, or None."""
     try:
-        with urllib.request.urlopen(f"http://{targets.device_of(address)}/v1/info",
-                                    timeout=SWEEP_TIMEOUT_SECONDS) as answer:
-            return str(json.load(answer).get("product", ""))
+        api = _api(address, None, SWEEP_TIMEOUT_SECONDS)
+        code, _, body = api.rest.request("GET", "/v1/info", retries=1,
+                                         idempotent=True)
+        return str(json.loads(body).get("product", "")) if code == 200 else None
     except Exception:       # noqa: BLE001  nothing, or something else, answers
         return None
 
