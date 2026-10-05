@@ -362,6 +362,18 @@ def run_degraded_recovery_checks(runner):
         expect("recovered", made.ensure_healthy('fixture:', patient=False), True)
         expect("recoveries", made.recoveries, 1)
 
+    with check("other firmware after the last attempt does not end the run"):
+        master = ("Ultimate 64-II", "3.15", "0f4084aef")
+        flashed = ("C64 Ultimate", "1.2.1RC", "4269f084")
+        made = with_sweeps([healthy])
+        identities = [master, flashed]
+        made.firmware_identity = lambda: identities.pop(0)
+        made.firmware_problem()
+        expect("no problem is reported", made.health_problem(
+            'fixture:', budget=0.0, firmware=False), "")
+        expect("the next precondition still sees it",
+               made.health_problem('fixture:', budget=0.0) != "", True)
+
     with check("a device that cannot be asked for its firmware is not blamed for it"):
         made = with_sweeps([healthy])
         made.firmware_identity = lambda: None
@@ -516,7 +528,7 @@ def run_retry_checks(runner, tmpdir):
         asked = []
         made = device_that([(True, False)] * 5)
 
-        def health_problem(label, patient=True, extra=None, budget=None):
+        def health_problem(label, patient=True, extra=None, budget=None, firmware=True):
             asked.append(budget)
             return "gone"
         made.health_problem = health_problem

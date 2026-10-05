@@ -1750,7 +1750,7 @@ class Device:
 
     def health_problem(self, label: str, patient: bool = True,
                   extra: Callable[[], str] | None = None,
-                  budget: float | None = None) -> str:
+                  budget: float | None = None, firmware: bool = True) -> str:
         """Why the device is not healthy enough to test on, or "" when it is.
 
         Health is the runner's one notion of a usable device, and everything
@@ -1801,7 +1801,7 @@ class Device:
         sweep = self.sweep_health(label)
         if not sweep.ok:
             return "it is degraded: " + ", ".join(sweep.failed)
-        return self.firmware_problem()
+        return self.firmware_problem() if firmware else ""
 
     def ensure_healthy(self, label: str, patient: bool = True,
                  extra: Callable[[], str] | None = None) -> bool:
@@ -2460,9 +2460,12 @@ def run_suite(suite: Suite, device: Device, options: Options, mode: str,
             # full recovery budget is the other extreme, and spending 60
             # seconds on a classification the next suite's own precondition
             # will redo is a minute per failed suite for nothing.
+            # Other firmware is not a reason to abandon the run: the next
+            # suite's precondition recovers it, as it recovers any device that
+            # needs it, so only a device that does not answer ends the run.
             problem = device.health_problem(
                 f"{suite.name}: after the last attempt,",
-                budget=LAST_ATTEMPT_HEALTH_BUDGET_SECONDS,
+                budget=LAST_ATTEMPT_HEALTH_BUDGET_SECONDS, firmware=False,
                 extra=(lambda: ui_state_ready(options, suite.name))
                 if suite.category == "e2e" else None)
             return Result(suite.category, mode, suite.name, report.FAIL, elapsed,
