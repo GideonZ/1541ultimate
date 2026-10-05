@@ -101,7 +101,7 @@ void ConfigBrowserState :: change(void)
 
     switch(it->definition->type) {
         case CFG_TYPE_ENUM:
-            browser->context(it->getValue() - it->definition->min);
+            browser->context(it->listPosition(it->getValue()));
             break;
         case CFG_TYPE_STRFUNC:
             browser->context(0);
