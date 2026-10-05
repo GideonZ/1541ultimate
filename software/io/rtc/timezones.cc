@@ -1,4 +1,5 @@
 #include <stdint.h>
+#include <ctype.h>
 
 typedef struct {
     const char *timezone;
@@ -151,11 +152,44 @@ const char *zone_names[] = {
     "Fiji",
 };
 
-// The menu lists the zones by UTC offset; the index stays the stored value.
-const uint8_t zone_order[] = {
-    0, 1, 2, 3, 37, 38, 4, 39, 5, 40, 6, 7, 8, 41, 42, 9,
-    43, 44, 45, 46, 47, 11, 10, 48, 12, 49, 13, 50, 14, 15, 51, 16,
-    52, 17, 53, 54, 55, 56, 57, 58, 59, 19, 18, 60, 20, 21, 22, 23,
-    24, 25, 26, 27, 61, 28, 29, 62, 30, 63, 31, 32, 64, 33, 65, 34,
-    35, 36,
-};
+// The menu lists the zones by standard UTC offset, ties in index order;
+// the index stays the stored value.
+uint8_t zone_order[sizeof(zones) / sizeof(zones[0])];
+
+// Minutes east of UTC in standard time: the offset after the first name of a
+// POSIX rule, which counts west as positive.
+static int zone_standard_offset(const char *posix)
+{
+    const char *p = posix;
+    while (isalpha((unsigned char)*p)) {
+        p++;
+    }
+    int sign = (*p == '-') ? 1 : -1;
+    if (*p == '-' || *p == '+') {
+        p++;
+    }
+    int hours = 0, minutes = 0;
+    while (isdigit((unsigned char)*p)) {
+        hours = 10 * hours + (*p++ - '0');
+    }
+    if (*p == ':') {
+        p++;
+        while (isdigit((unsigned char)*p)) {
+            minutes = 10 * minutes + (*p++ - '0');
+        }
+    }
+    return sign * (60 * hours + minutes);
+}
+
+// A stable insertion sort; it rebuilds the whole order on every call.
+void sort_zone_order(void)
+{
+    for (unsigned i = 0; i < sizeof(zone_order); i++) {
+        int offset = zone_standard_offset(zones[i].posix);
+        unsigned j = i;
+        for (; j > 0 && zone_standard_offset(zones[zone_order[j - 1]].posix) > offset; j--) {
+            zone_order[j] = zone_order[j - 1];
+        }
+        zone_order[j] = i;
+    }
+}

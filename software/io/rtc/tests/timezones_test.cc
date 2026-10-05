@@ -245,9 +245,12 @@ int main(void)
             }
         }
     }
-    // zone_order lists every index once, by standard UTC offset
+    // zone_order lists every index once, by standard UTC offset, ties in index order;
+    // sorting twice gives the same order
+    sort_zone_order();
+    sort_zone_order();
     unsigned listed[EXPECTED_COUNT + 1] = { 0 };
-    int previous = -24 * 60;
+    int previous = -24 * 60, previous_index = -1;
     if (sizeof(zone_order) != ZONE_COUNT) {
         printf("FAIL zone_order has %u entries for %u zones\n", (unsigned)sizeof(zone_order), (unsigned)ZONE_COUNT);
         failures++;
@@ -263,8 +266,11 @@ int main(void)
         tzset();
         int jan = offset_at(utc("2026-01-01 00:00")), jul = offset_at(utc("2026-07-01 00:00"));
         int standard = jan < jul ? jan : jul;
-        check(standard >= previous, i, "zone_order is not sorted by standard offset");
+        check(zone_standard_offset(zones[i].posix) == standard, i, "standard offset read from the rule differs from newlib");
+        check(standard > previous || (standard == previous && i > previous_index), i,
+              "zone_order is not sorted by standard offset, then index");
         previous = standard;
+        previous_index = i;
     }
 
     if (failures) {
