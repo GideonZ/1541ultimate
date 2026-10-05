@@ -567,6 +567,10 @@ isBankBasic     jsr readHeader
                 cmp #$a0
                 beq bankBasic
                 bcs bankBasic
+                cpy #$7f            ; a load end page of $00 is the end at $10000 stored in 16 bits
+                bne bankDefault
+                cmp #$00
+                beq bankBasic
 
 bankDefault     lda #$37
                 rts

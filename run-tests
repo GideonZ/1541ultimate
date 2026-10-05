@@ -588,6 +588,12 @@ SUITES: Sequence[Suite] = (
     # It reads the streams without taking them, so it runs under --record too.
     Suite("e2e", "freezer-audio", "tests/e2e/io/c64/freezer_audio_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@", profile=profiles.QUICK),
+    # A SID tune that reaches the last page of memory has to play with its
+    # memory intact. Its end is $10000 when its last byte is $FFFF, which the
+    # 16-bit end address cannot hold. Three synthetic PSIDs, the first ending
+    # below the last page as the control.
+    Suite("e2e", "sid-top-of-memory", "tests/e2e/io/c64/sid_top_of_memory_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
     # Reproduces #733: with the FPGA decoder fix in the core, "mirroring off" is
     # the regression guard. Runs last, because a device whose core predates that
     # fix stalls the whole Nios on this scenario and needs a JTAG recovery.
