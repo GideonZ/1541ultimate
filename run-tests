@@ -1721,17 +1721,24 @@ class Device:
         report.step_start(f"recovery: {self.recover_command}")
         self.recoveries += 1
         self.suite_recoveries += 1
+        # Its own process group, so a command that outlives the timeout is
+        # stopped with everything it started: killing only the shell leaves the
+        # tool running, holding this process's output open.
         try:
-            completed = subprocess.run(self.recover_command, shell=True,
-                                       timeout=self.recover_timeout, check=False)
-        except subprocess.TimeoutExpired:
-            report.check_fail(f"no answer within {self.recover_timeout:g}s")
-            return False
+            process = subprocess.Popen(self.recover_command, shell=True,
+                                       start_new_session=True)
         except OSError as exc:
             report.check_fail(f"could not be started: {exc}")
             return False
-        if completed.returncode != 0:
-            report.check_warn(f"exited {completed.returncode}; probing anyway")
+        try:
+            returncode = process.wait(timeout=self.recover_timeout)
+        except subprocess.TimeoutExpired:
+            os.killpg(process.pid, signal.SIGKILL)
+            process.wait()
+            report.check_fail(f"no answer within {self.recover_timeout:g}s")
+            return False
+        if returncode != 0:
+            report.check_warn(f"exited {returncode}; probing anyway")
         else:
             report.check_ok()
         report.step_start("recovery: device answers again")
