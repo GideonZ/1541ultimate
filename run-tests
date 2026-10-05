@@ -726,6 +726,8 @@ class Result:
     # is a suite that failed and was run again, whatever made it fail, and it
     # is what the retried exit status and the report's retry section read.
     attempts: int = 1
+    # What a WARN verdict is about, when it is not the UI state.
+    note: str = ""
 
 
 @dataclass
@@ -2435,9 +2437,20 @@ def run_suite(suite: Suite, device: Device, options: Options, mode: str,
         if verdict != report.FAIL and device.health_check:
             changed = device.firmware_problem()
             if changed:
-                # A pass on other firmware says nothing about the one under test.
-                report.detail(f"{suite.name}: {changed}")
-                verdict = report.FAIL
+                # A suite that restarts the whole device (wake-on-wifi, a power
+                # cycle) ends on the flashed firmware when the one under test
+                # was installed for the run. Running it again would end the
+                # same way, so it is not failed and not repeated: it is
+                # reported with what held, and the firmware is installed again
+                # before the next suite.
+                note = (f"{changed}; what it checked after the change ran on "
+                        "that firmware")
+                report.warn(f"{suite.name}: {note}")
+                device.ensure_healthy(f"{suite.name}: after the suite,")
+                recoveries = device.recoveries - recoveries_before
+                return Result(suite.category, mode, suite.name, report.WARN,
+                              elapsed, recoveries=recoveries, attempts=attempt,
+                              note=note)
         if verdict != report.FAIL:
             return Result(suite.category, mode, suite.name, verdict, elapsed,
                           recoveries=recoveries, attempts=attempt)
@@ -3155,7 +3168,8 @@ def summarise(results: list[Result], started: float, recoveries: int,
     for result in results:
         if result.verdict in (report.FAIL, report.WARN, report.SKIP):
             note = {report.FAIL: "failed",
-                    report.WARN: "left the device UI outside the documented state",
+                    report.WARN: result.note
+                    or "left the device UI outside the documented state",
                     report.SKIP: "skipped"}[result.verdict]
             if result.device_unhealthy:
                 note = "failed; the device could not be made healthy"

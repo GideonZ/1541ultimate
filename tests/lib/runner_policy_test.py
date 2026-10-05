@@ -491,6 +491,29 @@ def run_retry_checks(runner, tmpdir):
         expect("attempts on the result", result.attempts, 3)
         expect("verdict", result.verdict, runner.report.FAIL)
 
+    with check("a passing suite that restarts the device onto other firmware is a warning"):
+        # wake-on-wifi and the power cycle end on the flashed firmware when the
+        # one under test was installed over JTAG. Repeating them would end the
+        # same way, so they are run once, reported, and the firmware put back.
+        passing = os.path.join(tmpdir, "passes.py")
+        with open(passing, "w", encoding="utf-8") as handle:
+            handle.write(f"open({counter!r}, 'a').write('x')\n")
+        restarting = runner.Suite("perf", "fixture-suite",
+                                  os.path.relpath(passing, runner.ROOT), "")
+        reset()
+        made = device_that([(True, True)], health_check=True)
+        identities = [("Ultimate 64-II", "3.15", "0f4084aef"),
+                      ("C64 Ultimate", "1.2.1RC", "4269f084")]
+        made.firmware_identity = lambda: identities.pop(0)
+        made.firmware_problem()
+        result = quietly(lambda: runner.run_suite(restarting, made, options(),
+                                                  "", "fixture"))
+        expect("executions", executions(), 1)
+        expect("verdict", result.verdict, runner.report.WARN)
+        expect("recoveries", made.recoveries, 1)
+        if "different firmware" not in result.note:
+            raise Failure(f"the note does not say what happened: {result.note!r}")
+
     with check("--attempts counts executions, so 2 runs it twice"):
         result, made = run(attempts=2)
         expect("executions", executions(), 2)
