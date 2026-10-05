@@ -111,6 +111,7 @@ static const uint8_t listed_order[] = { 2, 0, 3, 1 };
 
 static t_cfg_definition order_defs[] = {
     { 0x01, CFG_TYPE_ENUM,  "Listed", "%s", listed, 0, 3, 0 },
+    { 0x02, CFG_TYPE_ENUM,  "From One", "%s", listed, 1, 3, 1 },
     { CFG_TYPE_END, CFG_TYPE_END, "", "", NULL, 0, 0, 0 } };
 
 /* Real ARMSID enum labels. They carry leading spaces so the menu can right
@@ -304,6 +305,22 @@ int main(int argc, char **argv)
     item->setValue(1);
     item->next(1);
     check(item->getValue() == 2, "without a list order, + still steps in value order");
+
+    /* An enum whose values start at 1 and that has no list order: listed,
+       stepped and positioned exactly as by value. */
+    ConfigItem *from_one = ordered->find_item(0x02);
+    IndexedList<ConfigSetting *> plain(4, NULL);
+    from_one->fetch_possible_settings(plain);
+    check(plain.get_elements() == 3 && plain[0]->setting_index == 1 && plain[2]->setting_index == 3 &&
+          !strcmp(plain[0]->setting_name.c_str(), "One"),
+          "an enum from 1 without a list order lists its values in value order");
+    check(from_one->listPosition(1) == 0 && from_one->listPosition(3) == 2,
+          "its positions count from its minimum");
+    from_one->setValue(3);
+    from_one->next(1);
+    check(from_one->getValue() == 1, "+ wraps from its maximum to its minimum");
+    from_one->previous(1);
+    check(from_one->getValue() == 3, "- wraps from its minimum to its maximum");
 
     printf("\n%d checks, %d failed\n", checks, failures);
     return failures ? 1 : 0;
