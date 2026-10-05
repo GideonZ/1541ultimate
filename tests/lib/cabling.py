@@ -182,8 +182,12 @@ def establish(tokens: Sequence[str], password: str | None, timeout: float,
         return []
     os.environ[SETTLED_ENV] = "1"
     sweep = seams.pop("sweep", sweep_cartridges)
+    # A cartridge also named on its own is being tested as a device of its own
+    # as well, so the pair is not stated for it: declaring it would turn the
+    # bare token into the same target as the split one.
+    bare = {t.lower() for t in tokens if targets.SEPARATOR not in t}
     explicit = [tuple(t.split(targets.SEPARATOR, 1)) for t in tokens
-                if targets.SEPARATOR in t]
+                if targets.SEPARATOR in t and t.split(targets.SEPARATOR, 1)[0].lower() not in bare]
     added = declare([(c, m) for c, m in explicit])
     unpaired = [t for t in tokens if targets.SEPARATOR not in t
                 and not targets.parse(t).split]

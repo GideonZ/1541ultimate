@@ -1096,6 +1096,13 @@ def run_cabling_checks():
             expect("added", establish(["u2@c64u", "c64u"], Ram({})), [("u2", "c64u")])
             expect("cartridges of c64u", targets.declared_cartridges("c64u"), ["u2"])
 
+    with check("a cartridge named both bare and paired is not declared"):
+        # The fixture and any bench that tests a device alone and in a computer
+        # name both; declaring the pair would merge the two targets into one.
+        with fresh_environment():
+            expect("added", establish(["127.0.0.1", "127.0.0.1@localhost"], Ram({})), [])
+            expect("declared", os.environ.get(targets.COMPUTERS_ENV), None)
+
     with check("a cartridge nobody named is found on the computer's network"):
         with fresh_environment():
             ram = Ram({"192.168.1.74": "c64u"})
