@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <ctype.h>
 #include <time.h>
 
@@ -209,9 +210,9 @@ int main(void)
 
         check(strcmp(zone_names[i], e->location) == 0, i, "name moved; the index is the stored setting");
         check(strcmp(zones[i].location, zone_names[i]) == 0, i, "zones[] and zone_names[] disagree");
-        // .cfg files and REST select the zone by label, first match wins
+        // .cfg files and REST select the zone by label, first match wins; REST ignores case
         for (unsigned j = 0; j < i; j++)
-            check(strcmp(zone_names[j], zone_names[i]) != 0, i, "label used twice");
+            check(strcasecmp(zone_names[j], zone_names[i]) != 0, i, "label used twice");
         // the longest label in use, checked whole on the U64 settings menu
         check(strlen(zone_names[i]) <= 20, i, "label longer than 20 characters");
         check(newlib_parses(zones[i].posix), i, "not in the TZ subset newlib parses");
