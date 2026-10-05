@@ -369,10 +369,11 @@ def run_degraded_recovery_checks(runner):
         identities = [master, flashed]
         made.firmware_identity = lambda: identities.pop(0)
         made.firmware_problem()
-        expect("no problem is reported", made.health_problem(
-            'fixture:', budget=0.0, firmware=False), "")
+        problem = isolating(made.health_problem)
+        expect("no problem is reported",
+               problem('fixture:', budget=0.0, firmware=False), "")
         expect("the next precondition still sees it",
-               made.health_problem('fixture:', budget=0.0) != "", True)
+               problem('fixture:', budget=0.0) != "", True)
 
     with check("a device that cannot be asked for its firmware is not blamed for it"):
         made = with_sweeps([healthy])
