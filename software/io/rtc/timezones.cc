@@ -1,3 +1,5 @@
+#include <stdint.h>
+
 typedef struct {
     const char *timezone;
     const char *utc;
@@ -5,7 +7,8 @@ typedef struct {
     const char *posix;
 } timezone_entry_t;
 
-// The index is the stored setting, so new zones are appended, never inserted.
+// The index is the stored setting, so new zones are appended, never inserted;
+// zone_order below gives the order the menu and REST list them in.
 // Rules follow IANA tzdb 2026e, written in the POSIX TZ subset newlib parses:
 // alphabetic names only and no negative times.
 const timezone_entry_t zones[] = {
@@ -146,4 +149,13 @@ const char *zone_names[] = {
     "Queensland",
     "Norfolk Island",
     "Fiji",
+};
+
+// The menu lists the zones by UTC offset; the index stays the stored value.
+const uint8_t zone_order[] = {
+    0, 1, 2, 3, 37, 38, 4, 39, 5, 40, 6, 7, 8, 41, 42, 9,
+    43, 44, 45, 46, 47, 11, 10, 48, 12, 49, 13, 50, 14, 15, 51, 16,
+    52, 17, 53, 54, 55, 56, 57, 58, 59, 19, 18, 60, 20, 21, 22, 23,
+    24, 25, 26, 27, 61, 28, 29, 62, 30, 63, 31, 32, 64, 33, 65, 34,
+    35, 36,
 };

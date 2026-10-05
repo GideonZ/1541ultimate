@@ -120,6 +120,7 @@ class ConfigItem
 	t_change_hook hook;
 	bool enabled;
     int  value;
+    const uint8_t *order; // enum values in the order they are listed, or NULL for value order
     char *string;
 
     int setChanged(void);
@@ -142,6 +143,9 @@ public:
     int  fetch_possible_settings(IndexedList<ConfigSetting *> &list);
     void execute(int sel);
     void setChangeHook(t_change_hook hook) { this->hook = hook; }
+    void setListOrder(const uint8_t *o) { order = o; }
+    int  listedValue(int pos) { return order ? order[pos] : definition->min + pos; }
+    int  listPosition(int v);
     bool isEnabled(void) { return enabled; }
     void setEnabled(bool en) { enabled = en; }
 

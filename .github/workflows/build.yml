@@ -135,6 +135,12 @@ jobs:
           -v /opt/build-tools:/mnt/build-tools:ro \
           -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make -C software/io/rtc/tests"
 
+      - name: Test Config Files and List Order
+        run: |
+          docker run --rm \
+          -v /opt/build-tools:/mnt/build-tools:ro \
+          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make -C target/pc/linux/configiotest test"
+
       - name: Cache U2 FPGA
         id: cache-u2
         uses: actions/cache@v6

@@ -31,8 +31,10 @@ void emit_store(ConfigStore *st, JSON_Object *pobj, ArgsURI &args)
                 if (i->definition->type == CFG_TYPE_ENUM) {
                     JSON_List *list = JSON::List();
                     ob->add("values", list);
+                    // the list starts at 0 even when min is higher; from min on it follows the item's list order
                     for(int j=0;j <= i->definition->max; j++) {
-                        list->add(i->definition->items[j]);
+                        int v = (j >= i->definition->min) ? i->listedValue(j - i->definition->min) : j;
+                        list->add(i->definition->items[v]);
                     }
                     ob->add("default", i->definition->items[i->definition->def]);
                 } else if (i->definition->type == CFG_TYPE_VALUE) {

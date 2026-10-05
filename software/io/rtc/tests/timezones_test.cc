@@ -1,5 +1,6 @@
 // Host test of the time zone table: every POSIX rule must be one that newlib
-// parses, and must give the UTC offsets of its IANA tzdb zone in 2026-2027.
+// parses, and must give the UTC offsets of its IANA tzdb zone in 2026-2027;
+// zone_order must list every zone once, by standard UTC offset.
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -244,6 +245,28 @@ int main(void)
             }
         }
     }
+    // zone_order lists every index once, by standard UTC offset
+    unsigned listed[EXPECTED_COUNT + 1] = { 0 };
+    int previous = -24 * 60;
+    if (sizeof(zone_order) != ZONE_COUNT) {
+        printf("FAIL zone_order has %u entries for %u zones\n", (unsigned)sizeof(zone_order), (unsigned)ZONE_COUNT);
+        failures++;
+    }
+    for (unsigned p = 0; p < sizeof(zone_order) && p < ZONE_COUNT; p++) {
+        int i = zone_order[p];
+        if (i >= (int)ZONE_COUNT || listed[i]++) {
+            printf("FAIL zone_order position %u: index %d out of range or repeated\n", p, i);
+            failures++;
+            continue;
+        }
+        setenv("TZ", zones[i].posix, 1);
+        tzset();
+        int jan = offset_at(utc("2026-01-01 00:00")), jul = offset_at(utc("2026-07-01 00:00"));
+        int standard = jan < jul ? jan : jul;
+        check(standard >= previous, i, "zone_order is not sorted by standard offset");
+        previous = standard;
+    }
+
     if (failures) {
         printf("%d failures\n", failures);
         return 1;

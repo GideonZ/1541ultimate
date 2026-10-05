@@ -601,6 +601,7 @@ void ConfigStore :: check_bounds(void)
 ConfigItem :: ConfigItem(ConfigStore *s, t_cfg_definition *d)
 {
 	hook = NULL;
+	order = NULL;
 	definition = d;
     store = s;
     if ((d->type == CFG_TYPE_STRING)||(d->type == CFG_TYPE_INFO)||(d->type == CFG_TYPE_STRFUNC)||(d->type == CFG_TYPE_STRPASS)) {
@@ -825,9 +826,10 @@ int   ConfigItem :: fetch_possible_settings(IndexedList<ConfigSetting *> &list)
             ret = definition->max - definition->min + 1;
             break;
         case CFG_TYPE_ENUM:
-            for(i=definition->min;i<=definition->max;i++) {
-                sprintf(buf, definition->item_format, definition->items[i]);
-                list.append(new ConfigSetting(i, this, buf));
+            for(i=0;i<=definition->max-definition->min;i++) {
+                int v = listedValue(i);
+                sprintf(buf, definition->item_format, definition->items[v]);
+                list.append(new ConfigSetting(v, this, buf));
             }
             ret = definition->max - definition->min + 1;
             break;
@@ -862,6 +864,10 @@ int ConfigItem :: next(int a)
 {
     int value = getValue();
     int ret = 0;
+    if (order && definition->type == CFG_TYPE_ENUM) {
+        int n = 1 + definition->max - definition->min;
+        return setValue(order[(listPosition(value) + a) % n]);
+    }
     switch(definition->type) {
         case CFG_TYPE_ENUM:
         case CFG_TYPE_VALUE:
@@ -883,6 +889,10 @@ int ConfigItem :: previous(int a)
 {
     int value = getValue();
     int ret = 0;
+    if (order && definition->type == CFG_TYPE_ENUM) {
+        int n = 1 + definition->max - definition->min;
+        return setValue(order[(listPosition(value) + n - a % n) % n]);
+    }
     switch(definition->type) {
         case CFG_TYPE_ENUM:
         case CFG_TYPE_VALUE:
@@ -897,6 +907,19 @@ int ConfigItem :: previous(int a)
             break;
     }
     return ret;
+}
+
+int ConfigItem :: listPosition(int v)
+{
+    if (!order) {
+        return v - definition->min;
+    }
+    for (int pos = 0; pos <= definition->max - definition->min; pos++) {
+        if (order[pos] == v) {
+            return pos;
+        }
+    }
+    return 0;
 }
 
 int ConfigItem :: setChanged()
