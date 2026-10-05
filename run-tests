@@ -309,6 +309,13 @@ SUITES: Sequence[Suite] = (
     # oversized D81 and proves the bounded layout leaves the device usable.
     Suite("e2e", "d81-track-bounds", "tests/e2e/drive/d81_track_bounds_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --test all", profile=profiles.QUICK),
+    # Mounts a G71 whose MFM-marked track is malformed -- one declaring a
+    # single byte where the metadata area alone is 162, and one declaring
+    # 0x4123, which is 16675 read as a length and 291 read as fourteen bits --
+    # and proves the GCR side of the same disk still reads afterwards. The
+    # first exercise of the mixed GCR/MFM path on real hardware.
+    Suite("e2e", "g71-mfm-bounds", "tests/e2e/drive/g71_mfm_bounds_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@", profile=profiles.QUICK),
     # Calls every endpoint the firmware registers, and fails when one is
     # neither probed nor excluded with a reason. The lockup that prompted it
     # shipped because no suite called that route at all, so the gate matters
@@ -510,8 +517,7 @@ SUITES: Sequence[Suite] = (
     # 1 MB, so it started to a blank screen (#899). The suite builds four-bank
     # type 21 CRTs in code and reads each bank's marker bytes back from screen
     # RAM. It also checks that bit 6 switches the cartridge off
-    # (ultimate_releases#49), gated on comal80-cartridge-off-bit because that
-    # fix is in the FPGA image, and that a grey (subtype 1) CRT keeps the
+    # (ultimate_releases#49), and that a grey (subtype 1) CRT keeps the
     # cartridge on. It reboots the machine afterwards to remove the cartridge.
     Suite("e2e", "comal80-cartridge", "tests/e2e/io/c64/comal80_cartridge_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
@@ -554,9 +560,7 @@ SUITES: Sequence[Suite] = (
     # access; the FPGA latched the data byte, so every game on the C64GS 4-in-1
     # crashed on start. The suite builds a 64-bank type 15 CRT in code and reads
     # each bank's marker back from screen RAM, and reboots afterwards to remove
-    # the cartridge. The fix is in the FPGA image, and the Ultimate 64 images are
-    # prebuilt, so it is gated on machine.C64GS_BANK_FROM_ADDRESS and reports
-    # SKIP until the table says a machine has it.
+    # the cartridge.
     Suite("e2e", "c64gs-cartridge", "tests/e2e/io/c64/c64gs_cartridge_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
     # Guards #925: a .TAP kept playing across the menu being opened and closed,
@@ -605,6 +609,12 @@ SUITES: Sequence[Suite] = (
     # them back.
     Suite("e2e", "sidplayer-system-lines", "tests/e2e/io/c64/sidplayer_system_lines_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --test all"),
+    # A SID tune that reaches the last page of memory has to play with its
+    # memory intact. Its end is $10000 when its last byte is $FFFF, which the
+    # 16-bit end address cannot hold. Three synthetic PSIDs, the first ending
+    # below the last page as the control.
+    Suite("e2e", "sid-top-of-memory", "tests/e2e/io/c64/sid_top_of_memory_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
     # Reproduces #733: with the FPGA decoder fix in the core, "mirroring off" is
     # the regression guard. Runs last, because a device whose core predates that
     # fix stalls the whole Nios on this scenario and needs a JTAG recovery.

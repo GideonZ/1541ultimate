@@ -660,14 +660,16 @@ SubsysResultCode_e FileTypeSID ::prepare(bool use_default)
     sid_header[0x7e] = uint8_t(end & 0xFF);
     sid_header[0x7f] = uint8_t(end >> 8);
 
-    if (end < start) {
+    // Wider than 'end', which holds $10000 as $0000 for a tune whose last byte is $FFFF.
+    int load_end = start + length;
+    if (load_end < start || load_end > 0x10000) {
         printf("Wrap around $0000!\n");
         return SSRET_SID_ROLLOVER;
     }
 
     if (start >= 0x03c0) {
         header_location = 0x0340;
-    } else if (end < 0xff70) {
+    } else if (load_end < 0xff70) {
         header_location = 0xff70;
     } else {
         printf("Space for header too small.\n");

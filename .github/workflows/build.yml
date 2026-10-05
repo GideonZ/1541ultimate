@@ -111,6 +111,12 @@ jobs:
           -v /opt/build-tools:/mnt/build-tools:ro \
           -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make -B -C target/pc/linux/test_http_target test-integer-widths"
 
+      - name: Test G64 track bounds
+        run: |
+          docker run --rm \
+          -v /opt/build-tools:/mnt/build-tools:ro \
+          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make -C software/drive/tests"
+
       - name: Test UCI Palette Commands
         run: |
           docker run --rm \
@@ -122,6 +128,24 @@ jobs:
           docker run --rm \
           -v /opt/build-tools:/mnt/build-tools:ro \
           -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make -B -C target/pc/linux/test_http_target test-body-removal"
+
+      - name: Test Ethernet Transmit Framing
+        run: |
+          docker run --rm \
+          -v /opt/build-tools:/mnt/build-tools:ro \
+          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make -C software/io/network/tests"
+
+      - name: Test Time Zones
+        run: |
+          docker run --rm \
+          -v /opt/build-tools:/mnt/build-tools:ro \
+          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make -C software/io/rtc/tests"
+
+      - name: Test Config Files and List Order
+        run: |
+          docker run --rm \
+          -v /opt/build-tools:/mnt/build-tools:ro \
+          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make -C target/pc/linux/configiotest test"
 
       - name: Cache U2 FPGA
         id: cache-u2
