@@ -320,6 +320,27 @@ def run_degraded_recovery_checks(runner):
         expect("blocked second time", made.ensure_healthy('fixture:', patient=False), False)
         expect("recoveries", made.recoveries, 1)
 
+    with check("a computer's run also captures the settings of the cartridge fitted in it"):
+        class _Snapshot:
+            item_count = 0
+            settings = {}
+
+            def __init__(self, machine):
+                self.machine = machine
+
+        real = runner.config_snapshot.capture
+        runner.config_snapshot.capture = lambda host, api: _Snapshot(host)
+        try:
+            with declared_computers("u2@c64u"):
+                hosts = lambda target: [snap.machine for _, snap in  # noqa: E731
+                                        runner.capture_settings(targets.parse(target), "")]
+                expect("the computer", hosts("c64u"), ["c64u", "u2"])
+                expect("the cartridge, whose computer is already there",
+                       hosts("u2@c64u"), ["u2", "c64u"])
+                expect("an unrelated machine", hosts("u64"), ["u64"])
+        finally:
+            runner.config_snapshot.capture = real
+
     with check("a device that comes back on other firmware is recovered"):
         # A RAM-loaded image falls back to the flashed one on a reboot, and the
         # suites that follow would then test firmware nobody asked about.

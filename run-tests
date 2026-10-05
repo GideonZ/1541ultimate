@@ -1871,7 +1871,13 @@ def capture_settings(target: targets_lib.Target, password: str
     twenty-odd stores before the first suite started.
     """
     captured: list[tuple[UltimateApi, config_snapshot.Snapshot]] = []
-    for host in target.resources:
+    # A computer's run also switches off the drives of the cartridge fitted in
+    # it, so that machine's settings are put back too, or the next target that
+    # runs on the cartridge starts with its drives off.
+    fitted = [] if target.split else [
+        c for c in targets_lib.declared_cartridges(target.device)
+        if c not in target.resources]
+    for host in [*target.resources, *fitted]:
         report.step_start(f"settings: capture {host}")
         api = UltimateApi(host, password, DEVICE_RECOVERY_PROBE_TIMEOUT_SECONDS)
         try:
