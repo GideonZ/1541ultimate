@@ -44,6 +44,7 @@ sys.path.insert(0, os.path.join(ROOT, "tools"))
 import coverage  # noqa: E402  (needs tests/lib on sys.path first)
 import health  # noqa: E402  (needs tests/lib on sys.path first)
 import interactions  # noqa: E402
+import cabling  # noqa: E402  (needs tests/lib first)
 import machine as machine_lib  # noqa: E402  (needs tests/lib first)
 import openapi_contract  # noqa: E402
 import pacing  # noqa: E402
@@ -1605,6 +1606,32 @@ class Device:
         self.recover_timeout = recover_timeout
         self.recoveries = 0
         self.suite_recoveries = 0
+        # What the device reported when the run first looked, so a reboot into
+        # other firmware (a RAM-loaded image falls back to the flashed one) is
+        # found instead of being tested.
+        self.firmware: tuple[str, str, str] | None = None
+
+    def firmware_identity(self) -> tuple[str, str, str] | None:
+        """The product, version and commit the device reports, or None."""
+        try:
+            info = self.probe.info()
+        except Failure:
+            return None
+        return (info.product, info.firmware_version,
+                str(info.extra.get("git_commit_hash", "")))
+
+    def firmware_problem(self) -> str:
+        """Why this is not the firmware the run started on, or "" when it is."""
+        now = self.firmware_identity()
+        if now is None:
+            return ""
+        if self.firmware is None:
+            self.firmware = now
+            return ""
+        if now == self.firmware:
+            return ""
+        return ("it runs different firmware: started on "
+                f"{' '.join(self.firmware)}, now {' '.join(now)}")
 
     def start_suite(self) -> None:
         """Reset the per-suite recovery budget. Called once per suite run."""
@@ -1765,9 +1792,9 @@ class Device:
         if not self.health_check:
             return ""
         sweep = self.sweep_health(label)
-        if sweep.ok:
-            return ""
-        return "it is degraded: " + ", ".join(sweep.failed)
+        if not sweep.ok:
+            return "it is degraded: " + ", ".join(sweep.failed)
+        return self.firmware_problem()
 
     def ensure_healthy(self, label: str, patient: bool = True,
                  extra: Callable[[], str] | None = None) -> bool:
@@ -2392,6 +2419,12 @@ def run_suite(suite: Suite, device: Device, options: Options, mode: str,
             return Result(suite.category, mode, suite.name, verdict, elapsed,
                           device_unhealthy=True, recoveries=recoveries,
                           attempts=attempt)
+        if verdict != report.FAIL and device.health_check:
+            changed = device.firmware_problem()
+            if changed:
+                # A pass on other firmware says nothing about the one under test.
+                report.detail(f"{suite.name}: {changed}")
+                verdict = report.FAIL
         if verdict != report.FAIL:
             return Result(suite.category, mode, suite.name, verdict, elapsed,
                           recoveries=recoveries, attempts=attempt)
@@ -3544,6 +3577,8 @@ def resolve_targets(args: argparse.Namespace) -> list[targets_lib.Target]:
     The first spelling is the one kept, and the run says which one it dropped.
     """
     tokens = list(args.targets) or [args.host]
+    for cartridge, computer in cabling.establish(tokens, args.password, args.timeout):
+        report.detail(f"cabling: {cartridge} is plugged into {computer}")
     resolved: list[targets_lib.Target] = []
     for token in tokens:
         try:
