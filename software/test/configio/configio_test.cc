@@ -279,6 +279,15 @@ int main(int argc, char **argv)
     check(item->getValue() == 2, "+ on the last listed value wraps to the first");
     item->previous(1);
     check(item->getValue() == 1, "- on the first listed value wraps to the last");
+    item->setValue(2);
+    item->next(5);
+    check(item->getValue() == 0, "a step larger than the list wraps around it");
+    item->setValue(2);
+    item->previous(5);
+    check(item->getValue() == 1, "a large step back wraps around it too");
+    item->setValue(2);
+    item->next(-1);
+    check(item->getValue() == 1, "a negative step moves back in the list order");
 
     item->setValue(3);
     MemFile listed_out;

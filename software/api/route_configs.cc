@@ -169,7 +169,7 @@ API_DOC(GET, configs, none,
                 "no path it lists the category names. With a category it gives the current value "
                 "of every item in it. With a category and an item it describes each matching item "
                 "in full: the current value, the default, and either the accepted values of an "
-                "enumeration or the range and format of a number.\n"
+                "enumeration, in the order the menu lists them, or the range and format of a number.\n"
                 "\n"
                 "Both path elements are patterns, so `drive*` selects every category whose name "
                 "starts with `drive` and `*bus*` selects every item with `bus` in its name. "

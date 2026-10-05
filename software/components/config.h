@@ -120,7 +120,7 @@ class ConfigItem
 	t_change_hook hook;
 	bool enabled;
     int  value;
-    const uint8_t *order; // enum values in the order they are listed, or NULL for value order
+    const uint8_t *order; // each enum value from min to max once, in list order; NULL lists by value
     char *string;
 
     int setChanged(void);

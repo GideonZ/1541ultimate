@@ -866,7 +866,7 @@ int ConfigItem :: next(int a)
     int ret = 0;
     if (order && definition->type == CFG_TYPE_ENUM) {
         int n = 1 + definition->max - definition->min;
-        return setValue(order[(listPosition(value) + a) % n]);
+        return setValue(order[((listPosition(value) + a) % n + n) % n]);
     }
     switch(definition->type) {
         case CFG_TYPE_ENUM:
@@ -891,7 +891,7 @@ int ConfigItem :: previous(int a)
     int ret = 0;
     if (order && definition->type == CFG_TYPE_ENUM) {
         int n = 1 + definition->max - definition->min;
-        return setValue(order[(listPosition(value) + n - a % n) % n]);
+        return setValue(order[((listPosition(value) - a) % n + n) % n]);
     }
     switch(definition->type) {
         case CFG_TYPE_ENUM:
