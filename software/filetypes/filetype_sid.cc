@@ -657,8 +657,8 @@ SubsysResultCode_e FileTypeSID ::prepare(bool use_default)
     sid_header[0x7f] = uint8_t(end >> 8);
 
     // Wider than 'end', which holds $10000 as $0000 for a tune whose last byte is $FFFF.
-    uint32_t load_end = uint32_t(start) + length;
-    if (load_end > 0x10000) {
+    int load_end = start + length;
+    if (load_end < start || load_end > 0x10000) {
         printf("Wrap around $0000!\n");
         return SSRET_SID_ROLLOVER;
     }

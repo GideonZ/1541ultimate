@@ -1,32 +1,36 @@
 #!/usr/bin/env python3
 """E2E: a SID tune that reaches the last page of memory plays, and is left intact.
 
-The SID player handles the end of the load image in two places, and both
-wrapped at $10000:
+A load image whose last byte is $FFFF ends at $10000, which does not fit in the
+16-bit end address. Three places in the SID player use that end:
 
-- `FileTypeSID::prepare()` refused a tune whose last byte is $FFFF with "SID
-  File Memory Rollover", because the 16-bit end address wrapped to $0000.
-- The cartridge's `readLoadAddresses` rounds the end up to a page. For a tune
-  ending in $FF01-$FFFF, that rounding wrapped to page $00. The cartridge then
-  saw a tune that ends below $8000, and put its screen at $8C00 and its player
-  at $9E00, inside the tune.
+- `FileTypeSID::prepare()` refuses an image that does not fit below $10000.
+- The cartridge's `readLoadAddresses` rounds the end up to a page, and the
+  cartridge places its screen and player outside the image.
+- The cartridge calls a PSID's init with BASIC ROM switched out when the image
+  reaches $A000.
 
-HVSC #85 has 7 tunes of the first kind and 36 of the second.
+HVSC #85 has 7 tunes whose last byte is $FFFF, and 36 that load below $A000 and
+whose last byte is in $FF00-$FFFE.
 
 Each case is a PSID that loads at $1000 and ends at a chosen byte. The image is
-filled with seeded random bytes around a play routine that counts its calls.
-The image ending at $FEFF is the control: it ends below the last page, so
-neither wrap applies to it.
+filled with seeded random bytes around an init that records $01 and a play
+routine that counts its calls. The image ending at $FEFF is the control: it
+ends below the last page.
 
-For each image, the suite checks four things:
+For each image, the suite checks five things:
 
 - the device accepts the image;
+- init is called with BASIC ROM switched out;
 - the play routine is being called;
 - every RAM byte of the image reads back as it was loaded;
 - the player's info screen shows the title, and sits outside the image.
 
 $A000-$BFFF and $D000-$FFFF are left out of the comparison. A read through the
 6510's memory map returns ROM and I/O there, not the RAM underneath.
+
+The suite also checks that a PSID whose file stops before its data is refused.
+Its end lies below its start, so nothing would be loaded at the init address.
 """
 
 from __future__ import annotations
@@ -59,6 +63,7 @@ LOAD_ADDRESS = 0x1000
 INIT_ADDRESS = 0x1000
 PLAY_ADDRESS = 0x1040
 CALLS_ADDRESS = 0x1080
+BANK_ADDRESS = 0x1082
 # The page holding init, play and the call counter; the rest is filler.
 CODE_END = 0x1100
 
@@ -79,6 +84,10 @@ CALL_WINDOW_SECONDS = 1.0
 MIN_CALLS_PER_WINDOW = 20
 
 SCREEN_BYTES = 1000
+
+# $01 with BASIC ROM switched out, I/O and the KERNAL in. Every image here
+# reaches $A000, so init must not see BASIC ROM over its data.
+INIT_BANK = 0x36
 
 
 def title_for(last: int) -> str:
@@ -108,6 +117,13 @@ def image(last: int) -> bytes:
     if len(header) != PSID_HEADER_BYTES:
         raise Failure(f"the PSID header is {len(header)} bytes, not {PSID_HEADER_BYTES}")
     return bytes(header) + LOAD_ADDRESS.to_bytes(2, "little") + bytes(body)
+
+
+def header_only() -> bytes:
+    """A PSID that names $1000 as its load address and has no data after the header."""
+    header = bytearray(image(LAST_BYTES[0])[:PSID_HEADER_BYTES])
+    struct.pack_into(">H", header, 8, LOAD_ADDRESS)
+    return bytes(header)
 
 
 def calls(device: UltimateApi) -> int:
@@ -189,6 +205,11 @@ def check_image(device: UltimateApi, last: int) -> None:
     except Failure as exc:
         problems.append(str(exc))
 
+    bank = device.machine.readmem(BANK_ADDRESS, 1)[0]
+    detail(f"init called with $01 = ${bank:02X}")
+    if bank != INIT_BANK:
+        problems.append(f"init was called with $01 = ${bank:02X}, not ${INIT_BANK:02X}")
+
     damaged = damaged_ranges(device, last, data)
     if damaged:
         shown = ", ".join(f"${a:04X}-${b:04X}" for a, b in damaged[:6])
@@ -222,6 +243,13 @@ def run(args) -> None:
                     check_image(device, last)
             except Failure as exc:
                 failures.append(exc)
+        try:
+            with check("a PSID whose file stops before its data is refused"):
+                code, _, _ = device.runners.upload("sidplay", header_only())
+                if code == 200:
+                    raise Failure("the device accepted a PSID that has no data")
+        except Failure as exc:
+            failures.append(exc)
         if failures:
             raise failures[0]
     finally:

@@ -589,9 +589,8 @@ SUITES: Sequence[Suite] = (
     Suite("e2e", "freezer-audio", "tests/e2e/io/c64/freezer_audio_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@", profile=profiles.QUICK),
     # A SID tune that reaches the last page of memory has to play with its
-    # memory intact: the player's end address wrapped at $10000, which refused
-    # tunes ending at $FFFF and put the cartridge's screen and player inside
-    # tunes ending in $FF01-$FFFF. Three synthetic PSIDs, the first ending
+    # memory intact. Its end is $10000 when its last byte is $FFFF, which the
+    # 16-bit end address cannot hold. Three synthetic PSIDs, the first ending
     # below the last page as the control.
     Suite("e2e", "sid-top-of-memory", "tests/e2e/io/c64/sid_top_of_memory_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
