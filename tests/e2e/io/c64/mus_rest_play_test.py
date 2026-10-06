@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """E2E: a Compute's Sidplayer file started over REST plays on the MUS player.
 
-`runners:sidplay` tells a .mus or .str from a SID file by its extension. Each
+`runners:sidplay` tells a .mus or .str from a SID file by its extension, and
+names a .mus after its file, since the format has no title of its own. Each
 tune is copied to /Temp by FTP and started by its path.
 
   control     /Temp/E2EUPPER.MUS, with /Temp/E2EUPPER.STR beside it, plays on
@@ -12,6 +13,9 @@ tune is copied to /Temp by FTP and started by its path.
               for a SID file and refused it, "Error detected in file format".
   str         /Temp/e2elower.str started itself plays the pair the same way:
               the player loads the .mus first. Master refused it likewise.
+  title       the info screen titles /Temp/E2EUPPER.MUS "E2EUPPER". Master
+              took the title from the whole path it was given, "/TEMP/E2EUPPER";
+              the file browser passes the name alone, so only REST showed it.
 
 Every check runs, so a red run on master still reports the control.
 """
@@ -40,6 +44,7 @@ UPPER = "/Temp/E2EUPPER.MUS"
 UPPER_STR = "/Temp/E2EUPPER.STR"
 LOWER = "/Temp/e2elower.mus"
 LOWER_STR = "/Temp/e2elower.str"
+TITLE = "E2EUPPER"
 # The address the device gives a .str's voices.
 SECOND_SID = "$D500"
 
@@ -123,6 +128,7 @@ def expect_stereo(lines: list[str]) -> None:
 def run(args) -> None:
     device = UltimateApi(args.host, args.password or None, args.timeout)
     failures = []
+    upper: list[str] = []
     with ftp_lib.session(args.host, args.password or None) as client:
         ftp_lib.store(client, UPPER, mus(b"E2E UPPER LEFT"))
         ftp_lib.store(client, UPPER_STR, mus(b"E2E UPPER RIGHT"))
@@ -131,7 +137,8 @@ def run(args) -> None:
     try:
         try:
             with check(f"[control] {UPPER} plays in stereo with its .str"):
-                expect_stereo(play(device, UPPER))
+                upper = play(device, UPPER)
+                expect_stereo(upper)
         except Failure as exc:
             failures.append(exc)
         try:
@@ -142,6 +149,15 @@ def run(args) -> None:
         try:
             with check(f"[wrong on master] {LOWER_STR} plays the same pair"):
                 expect_stereo(play(device, LOWER_STR))
+        except Failure as exc:
+            failures.append(exc)
+        try:
+            with check(f"[wrong on master] {UPPER} is titled {TITLE!r}, not by its path"):
+                if not upper:
+                    raise Failure(f"{UPPER} did not play")
+                shown = (title_line(upper) or "")[len(TITLE_LABEL):].strip()
+                if shown != TITLE:
+                    raise Failure(f"the title is {shown!r}")
         except Failure as exc:
             failures.append(exc)
         if failures:
@@ -156,8 +172,8 @@ def run(args) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Check that a .mus or .str started over REST plays on the "
-                    "MUS player.")
+        description="Check that a .mus started over REST plays on the MUS player "
+                    "and is titled by its name.")
     cli.add_device_arguments(parser)
     args = parser.parse_args()
     try:
