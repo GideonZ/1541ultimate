@@ -67,11 +67,10 @@ merged.
 Changes to the overall architecture, and all FPGA (VHDL) code, go through the
 maintainer, @GideonZ.
 
-The people below know particular areas well and are happy to help. If your
+The people below have done significant work in particular areas. If your
 change touches one of their areas, mention them in your issue or pull request,
 and agree the plan with them before you start on anything bigger than a small
-fix. Each person wrote much of the code in their area or has worked on it
-recently. Areas are in alphabetical order.
+fix. Areas are in alphabetical order.
 
 | Area | Main paths | Contact |
 | --- | --- | --- |
