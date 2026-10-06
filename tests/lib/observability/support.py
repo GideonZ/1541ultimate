@@ -554,6 +554,26 @@ SCRIPTED_PACING = {
 }
 
 
+# The runner's own waits for a device to come back, shortened for a double that
+# either answers at once or is gone for good. The cases assert which status a
+# run reaches, never how long it waited, so a shorter wait covers the same
+# paths; a hardware run keeps the real values.
+SCRIPTED_RUNNER_CONSTANTS = {
+    "LAST_ATTEMPT_HEALTH_BUDGET_SECONDS": 1.0,
+    "DEVICE_RECOVERY_BUDGET_SECONDS": 2.0,
+    "POST_RECOVERY_BUDGET_SECONDS": 3.0,
+    "DEVICE_RECOVERY_PROBE_TIMEOUT_SECONDS": 1.0,
+    # How long a run listens for the device's own log; a double sends none.
+    "SYSLOG_READY_SECONDS": 0.3,
+    # How often a run asks a device that is not answering whether it is back,
+    # and how long a health probe waits for a listener that has no banner.
+    "DEVICE_RECOVERY_POLL_SECONDS": 0.1,
+    "health.SOCKET_TIMEOUT_SECONDS": 0.5,
+    # What the REST client pauses between attempts at a device that has gone.
+    "rest.TRANSPORT_RETRY_PAUSE_SECONDS": 0.02,
+}
+
+
 WRAPPER = '''\
 """Run the real `run-tests` over a scripted registry against the double."""
 import importlib.machinery
@@ -567,6 +587,14 @@ loader = importlib.machinery.SourceFileLoader("run_tests_scripted",
 spec = importlib.util.spec_from_loader("run_tests_scripted", loader)
 runner = importlib.util.module_from_spec(spec)
 loader.exec_module(runner)
+
+for name, value in json.loads(os.environ["OBS_RUNNER_CONSTANTS"]).items():
+    # "module.NAME" names a constant of a library the runner imported.
+    owner, _, constant = name.rpartition(".")
+    holder = importlib.import_module(owner) if owner else runner
+    if not hasattr(holder, constant):
+        raise SystemExit(f"{owner or 'the runner'} has no constant {constant}")
+    setattr(holder, constant, value)
 
 with open(os.environ["OBS_REGISTRY"], encoding="utf-8") as handle:
     # The shallowest profile, so a scripted registry is never filtered by the
@@ -707,6 +735,7 @@ def scripted_run(double: DeviceDouble, stubs: Sequence[Stub],
     output = os.path.join(workspace, "run")
     environment = dict(os.environ, OBS_RUNNER=RUNNER_PATH,
                        OBS_REGISTRY=registry_path, OBS_WORKSPACE=workspace,
+                       OBS_RUNNER_CONSTANTS=json.dumps(SCRIPTED_RUNNER_CONSTANTS),
                        NO_COLOR="1")
     environment.update(double.environment())
     environment.update(SCRIPTED_PACING)

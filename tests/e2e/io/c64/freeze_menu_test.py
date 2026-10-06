@@ -552,10 +552,26 @@ def run_menu_button_in_form(session: RestSession) -> None:
     open_menu(session)
     with check(f"put the cursor on {session.machine.search_menu_entry!r}"):
         open_search_entry(session)
+    unavailable = False
     with check(f"open the {title}"):
         wedge_aware(session, "opening the query form", lambda: session.tap("return"))
         if not session.wait_form_title(title, FORM_OPEN_TIMEOUT_SECONDS):
-            raise Failure(f"{title!r} did not appear")
+            rows = menu_rows(session) or []
+            if not any("Could not connect" in row for row in rows):
+                raise Failure(f"{title!r} did not appear")
+            # The form is fetched from a third-party server, and a build for the
+            # Ultimate 64-II family connects only when the machine allows it.
+            # What this scenario is about is the menu button inside the form,
+            # which cannot be reached without it.
+            session.tap("return")
+            unavailable = True
+            check_skip(f"the {title} cannot connect to its service from this machine")
+    if unavailable:
+        if session.menu_is_open():
+            close_menu(session)
+        else:
+            require_machine_running(session, "C64 resumed after the menu closed")
+        return
     with check("enter the form's first edit field"):
         wedge_aware(session, "entering the edit field", lambda: session.tap("return"))
         if not session.menu_is_open():
