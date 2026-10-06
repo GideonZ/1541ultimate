@@ -252,6 +252,12 @@ def a_reset_part_way_through_a_body_is_not_retried() -> str:
                 raise Failure("a PUT to a closed port should not have succeeded")
             elapsed = time.monotonic() - started
     finally:
+        # close() alone leaves the thread blocked in accept(), so the join
+        # below would wait out its whole timeout.
+        try:
+            listener.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
         listener.close()
         server.join(timeout=5)
 

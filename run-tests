@@ -44,6 +44,7 @@ sys.path.insert(0, os.path.join(ROOT, "tools"))
 import coverage  # noqa: E402  (needs tests/lib on sys.path first)
 import health  # noqa: E402  (needs tests/lib on sys.path first)
 import interactions  # noqa: E402
+import cabling  # noqa: E402  (needs tests/lib first)
 import machine as machine_lib  # noqa: E402  (needs tests/lib first)
 import openapi_contract  # noqa: E402
 import pacing  # noqa: E402
@@ -725,6 +726,8 @@ class Result:
     # is a suite that failed and was run again, whatever made it fail, and it
     # is what the retried exit status and the report's retry section read.
     attempts: int = 1
+    # What a WARN verdict is about, when it is not the UI state.
+    note: str = ""
 
 
 @dataclass
@@ -1605,6 +1608,32 @@ class Device:
         self.recover_timeout = recover_timeout
         self.recoveries = 0
         self.suite_recoveries = 0
+        # What the device reported when the run first looked, so a reboot into
+        # other firmware (a RAM-loaded image falls back to the flashed one) is
+        # found instead of being tested.
+        self.firmware: tuple[str, str, str] | None = None
+
+    def firmware_identity(self) -> tuple[str, str, str] | None:
+        """The product, version and commit the device reports, or None."""
+        try:
+            info = self.probe.info()
+        except Failure:
+            return None
+        return (info.product, info.firmware_version,
+                str(info.extra.get("git_commit_hash", "")))
+
+    def firmware_problem(self) -> str:
+        """Why this is not the firmware the run started on, or "" when it is."""
+        now = self.firmware_identity()
+        if now is None:
+            return ""
+        if self.firmware is None:
+            self.firmware = now
+            return ""
+        if now == self.firmware:
+            return ""
+        return ("it runs different firmware: started on "
+                f"{' '.join(self.firmware)}, now {' '.join(now)}")
 
     def start_suite(self) -> None:
         """Reset the per-suite recovery budget. Called once per suite run."""
@@ -1694,17 +1723,24 @@ class Device:
         report.step_start(f"recovery: {self.recover_command}")
         self.recoveries += 1
         self.suite_recoveries += 1
+        # Its own process group, so a command that outlives the timeout is
+        # stopped with everything it started: killing only the shell leaves the
+        # tool running, holding this process's output open.
         try:
-            completed = subprocess.run(self.recover_command, shell=True,
-                                       timeout=self.recover_timeout, check=False)
-        except subprocess.TimeoutExpired:
-            report.check_fail(f"no answer within {self.recover_timeout:g}s")
-            return False
+            process = subprocess.Popen(self.recover_command, shell=True,
+                                       start_new_session=True)
         except OSError as exc:
             report.check_fail(f"could not be started: {exc}")
             return False
-        if completed.returncode != 0:
-            report.check_warn(f"exited {completed.returncode}; probing anyway")
+        try:
+            returncode = process.wait(timeout=self.recover_timeout)
+        except subprocess.TimeoutExpired:
+            os.killpg(process.pid, signal.SIGKILL)
+            process.wait()
+            report.check_fail(f"no answer within {self.recover_timeout:g}s")
+            return False
+        if returncode != 0:
+            report.check_warn(f"exited {returncode}; probing anyway")
         else:
             report.check_ok()
         report.step_start("recovery: device answers again")
@@ -1716,7 +1752,7 @@ class Device:
 
     def health_problem(self, label: str, patient: bool = True,
                   extra: Callable[[], str] | None = None,
-                  budget: float | None = None) -> str:
+                  budget: float | None = None, firmware: bool = True) -> str:
         """Why the device is not healthy enough to test on, or "" when it is.
 
         Health is the runner's one notion of a usable device, and everything
@@ -1765,9 +1801,9 @@ class Device:
         if not self.health_check:
             return ""
         sweep = self.sweep_health(label)
-        if sweep.ok:
-            return ""
-        return "it is degraded: " + ", ".join(sweep.failed)
+        if not sweep.ok:
+            return "it is degraded: " + ", ".join(sweep.failed)
+        return self.firmware_problem() if firmware else ""
 
     def ensure_healthy(self, label: str, patient: bool = True,
                  extra: Callable[[], str] | None = None) -> bool:
@@ -1837,7 +1873,13 @@ def capture_settings(target: targets_lib.Target, password: str
     twenty-odd stores before the first suite started.
     """
     captured: list[tuple[UltimateApi, config_snapshot.Snapshot]] = []
-    for host in target.resources:
+    # A computer's run also switches off the drives of the cartridge fitted in
+    # it, so that machine's settings are put back too, or the next target that
+    # runs on the cartridge starts with its drives off.
+    fitted = [] if target.split else [
+        c for c in targets_lib.declared_cartridges(target.device)
+        if c not in target.resources]
+    for host in [*target.resources, *fitted]:
         report.step_start(f"settings: capture {host}")
         api = UltimateApi(host, password, DEVICE_RECOVERY_PROBE_TIMEOUT_SECONDS)
         try:
@@ -2392,6 +2434,23 @@ def run_suite(suite: Suite, device: Device, options: Options, mode: str,
             return Result(suite.category, mode, suite.name, verdict, elapsed,
                           device_unhealthy=True, recoveries=recoveries,
                           attempts=attempt)
+        if verdict != report.FAIL and device.health_check:
+            changed = device.firmware_problem()
+            if changed:
+                # A suite that restarts the whole device (wake-on-wifi, a power
+                # cycle) ends on the flashed firmware when the one under test
+                # was installed for the run. Running it again would end the
+                # same way, so it is not failed and not repeated: it is
+                # reported with what held, and the firmware is installed again
+                # before the next suite.
+                note = (f"{changed}; what it checked after the change ran on "
+                        "that firmware")
+                report.warn(f"{suite.name}: {note}")
+                device.ensure_healthy(f"{suite.name}: after the suite,")
+                recoveries = device.recoveries - recoveries_before
+                return Result(suite.category, mode, suite.name, report.WARN,
+                              elapsed, recoveries=recoveries, attempts=attempt,
+                              note=note)
         if verdict != report.FAIL:
             return Result(suite.category, mode, suite.name, verdict, elapsed,
                           recoveries=recoveries, attempts=attempt)
@@ -2414,9 +2473,12 @@ def run_suite(suite: Suite, device: Device, options: Options, mode: str,
             # full recovery budget is the other extreme, and spending 60
             # seconds on a classification the next suite's own precondition
             # will redo is a minute per failed suite for nothing.
+            # Other firmware is not a reason to abandon the run: the next
+            # suite's precondition recovers it, as it recovers any device that
+            # needs it, so only a device that does not answer ends the run.
             problem = device.health_problem(
                 f"{suite.name}: after the last attempt,",
-                budget=LAST_ATTEMPT_HEALTH_BUDGET_SECONDS,
+                budget=LAST_ATTEMPT_HEALTH_BUDGET_SECONDS, firmware=False,
                 extra=(lambda: ui_state_ready(options, suite.name))
                 if suite.category == "e2e" else None)
             return Result(suite.category, mode, suite.name, report.FAIL, elapsed,
@@ -3106,7 +3168,8 @@ def summarise(results: list[Result], started: float, recoveries: int,
     for result in results:
         if result.verdict in (report.FAIL, report.WARN, report.SKIP):
             note = {report.FAIL: "failed",
-                    report.WARN: "left the device UI outside the documented state",
+                    report.WARN: result.note
+                    or "left the device UI outside the documented state",
                     report.SKIP: "skipped"}[result.verdict]
             if result.device_unhealthy:
                 note = "failed; the device could not be made healthy"
@@ -3544,6 +3607,8 @@ def resolve_targets(args: argparse.Namespace) -> list[targets_lib.Target]:
     The first spelling is the one kept, and the run says which one it dropped.
     """
     tokens = list(args.targets) or [args.host]
+    for cartridge, computer in cabling.establish(tokens, args.password, args.timeout):
+        report.detail(f"cabling: {cartridge} is plugged into {computer}")
     resolved: list[targets_lib.Target] = []
     for token in tokens:
         try:
