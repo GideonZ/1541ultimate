@@ -36,7 +36,7 @@ jobs:
       # needs no device and no network beyond loopback, and it runs before the
       # firmware builds because it costs seconds and a broken report generator
       # is better reported now than after an hour of building.
-      - name: Check Observability Harness
+      - name: Test Observability Harness
         run: |
           docker run --rm \
           -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make observability_test"
@@ -49,7 +49,7 @@ jobs:
       # OpenAPI validation step below gives: the build image has neither pip nor
       # ensurepip, so it cannot install a host package. The ruff version is
       # pinned in tests/requirements-lint.txt.
-      - name: Check Tests Lint
+      - name: Test Lint of the Tests Tree
         run: |
           docker run --rm -v $GITHUB_WORKSPACE:/mnt/project:rw --workdir /mnt/project \
           --user $(id -u):$(id -g) -e HOME=/tmp python:3.12-slim /bin/sh -c \
@@ -57,14 +57,14 @@ jobs:
              --target /tmp/lint-packages -r tests/requirements-lint.txt && \
            PYTHONPATH=/tmp/lint-packages python3 tests/lib/lint_test.py"
 
-      - name: Check D81 track bounds
+      - name: Test D81 track bounds
         run: |
           docker run --rm \
           -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make d81_tracks_test"
 
       # Also the gate that catches an endpoint whose documentation was not
       # updated with it. Runs before the firmware builds because it costs seconds.
-      - name: Check OpenAPI Specification
+      - name: Test OpenAPI Generator and Documents Are Up To Date
         run: |
           docker run --rm \
           -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make openapi_test && make openapi_check"
@@ -84,7 +84,7 @@ jobs:
       # The documents to check come from `generate.py paths`, the same list
       # `make openapi_validate` uses, so this cannot drift to a different set of
       # files. tools/openapi/test_ci.py holds the two invocations to each other.
-      - name: Validate OpenAPI Specification
+      - name: Test OpenAPI Documents Against The Schema
         run: |
           docker run --rm -v $GITHUB_WORKSPACE:/mnt/project:rw --workdir /mnt/project \
           --user $(id -u):$(id -g) -e HOME=/tmp python:3.12-slim /bin/sh -c \
@@ -260,7 +260,7 @@ jobs:
           -v /opt/build-tools:/mnt/build-tools:ro \
           -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make u64ii_no_esp && mv update.ue2 update_${{ env.GIT_VERSION }}.ue2 && mv update.cfw update_${{ env.GIT_VERSION }}.cfw"
 
-      - name: Check Firmware Application Space
+      - name: Test Firmware Application Space
         if: always()
         run: |
           docker run --rm -e GITHUB_ACTIONS -e GITHUB_STEP_SUMMARY \
