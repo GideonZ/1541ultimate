@@ -253,7 +253,10 @@ def run(args) -> None:
         if failures:
             raise failures[0]
     finally:
-        teardown_step("stop the tune", lambda: device.machine.reset(force=True))
+        # A reboot removes the player's cartridge. A reset would boot straight
+        # back into it, leaving the machine in the player with its interrupts
+        # off for whatever suite runs next.
+        teardown_step("stop the tune", device.machine.reboot)
 
 
 def main() -> int:
