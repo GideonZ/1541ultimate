@@ -72,6 +72,9 @@ class ScriptedProbe:
     def reachable(self):
         return self.answers.pop(0) if self.answers else False
 
+    def info(self):
+        raise Failure("a scripted probe has no /v1/info")
+
 
 # Where a fixture's own records go. The runner code under test reports through
 # the same module this suite reports through, so a fixture device that is
@@ -317,6 +320,66 @@ def run_degraded_recovery_checks(runner):
         expect("blocked second time", made.ensure_healthy('fixture:', patient=False), False)
         expect("recoveries", made.recoveries, 1)
 
+    with check("a computer's run also captures the settings of the cartridge fitted in it"):
+        class _Snapshot:
+            item_count = 0
+
+            def __init__(self, machine):
+                self.machine = machine
+                self.settings = {}
+
+        real = runner.config_snapshot.capture
+        runner.config_snapshot.capture = lambda host, api: _Snapshot(host)
+        try:
+            with declared_computers("u2@c64u"):
+                hosts = lambda target: [snap.machine for _, snap in  # noqa: E731
+                                        runner.capture_settings(targets.parse(target), "")]
+                expect("the computer", hosts("c64u"), ["c64u", "u2"])
+                expect("the cartridge, whose computer is already there",
+                       hosts("u2@c64u"), ["u2", "c64u"])
+                expect("an unrelated machine", hosts("u64"), ["u64"])
+        finally:
+            runner.config_snapshot.capture = real
+
+    with check("a device that comes back on other firmware is recovered"):
+        # A RAM-loaded image falls back to the flashed one on a reboot, and the
+        # suites that follow would then test firmware nobody asked about.
+        master = ("Ultimate 64-II", "3.15", "0f4084aef")
+        flashed = ("C64 Ultimate", "1.2.1RC", "4269f084")
+        made = with_sweeps([healthy, healthy])
+        identities = [master, master, flashed]
+        made.firmware_identity = lambda: identities.pop(0)
+        expect("first look sets the baseline", made.firmware_problem(), "")
+        expect("same firmware", made.firmware_problem(), "")
+        problem = made.firmware_problem()
+        if "different firmware" not in problem or "C64 Ultimate 1.2.1RC" not in problem:
+            raise Failure(f"the other firmware was not named: {problem!r}")
+
+        made = with_sweeps([healthy, healthy, healthy])
+        identities = [master, flashed, master]
+        made.firmware_identity = lambda: identities.pop(0)
+        made.firmware_problem()
+        expect("recovered", made.ensure_healthy('fixture:', patient=False), True)
+        expect("recoveries", made.recoveries, 1)
+
+    with check("other firmware after the last attempt does not end the run"):
+        master = ("Ultimate 64-II", "3.15", "0f4084aef")
+        flashed = ("C64 Ultimate", "1.2.1RC", "4269f084")
+        made = with_sweeps([healthy])
+        identities = [master, flashed]
+        made.firmware_identity = lambda: identities.pop(0)
+        made.firmware_problem()
+        problem = isolating(made.health_problem)
+        expect("no problem is reported",
+               problem('fixture:', budget=0.0, firmware=False), "")
+        expect("the next precondition still sees it",
+               problem('fixture:', budget=0.0) != "", True)
+
+    with check("a device that cannot be asked for its firmware is not blamed for it"):
+        made = with_sweeps([healthy])
+        made.firmware_identity = lambda: None
+        expect("no verdict", made.firmware_problem(), "")
+
     with check("--no-health-check takes the sweep out of the decision"):
         # Without a sweep there is nothing to judge the device by, so it is
         # taken as healthy and recovery is left to the unreachable path. A
@@ -428,6 +491,29 @@ def run_retry_checks(runner, tmpdir):
         expect("attempts on the result", result.attempts, 3)
         expect("verdict", result.verdict, runner.report.FAIL)
 
+    with check("a passing suite that restarts the device onto other firmware is a warning"):
+        # wake-on-wifi and the power cycle end on the flashed firmware when the
+        # one under test was installed over JTAG. Repeating them would end the
+        # same way, so they are run once, reported, and the firmware put back.
+        passing = os.path.join(tmpdir, "passes.py")
+        with open(passing, "w", encoding="utf-8") as handle:
+            handle.write(f"open({counter!r}, 'a').write('x')\n")
+        restarting = runner.Suite("perf", "fixture-suite",
+                                  os.path.relpath(passing, runner.ROOT), "")
+        reset()
+        made = device_that([(True, True)], health_check=True)
+        identities = [("Ultimate 64-II", "3.15", "0f4084aef"),
+                      ("C64 Ultimate", "1.2.1RC", "4269f084")]
+        made.firmware_identity = lambda: identities.pop(0)
+        made.firmware_problem()
+        result = quietly(lambda: runner.run_suite(restarting, made, options(),
+                                                  "", "fixture"))
+        expect("executions", executions(), 1)
+        expect("verdict", result.verdict, runner.report.WARN)
+        expect("recoveries", made.recoveries, 1)
+        if "different firmware" not in result.note:
+            raise Failure(f"the note does not say what happened: {result.note!r}")
+
     with check("--attempts counts executions, so 2 runs it twice"):
         result, made = run(attempts=2)
         expect("executions", executions(), 2)
@@ -466,7 +552,7 @@ def run_retry_checks(runner, tmpdir):
         asked = []
         made = device_that([(True, False)] * 5)
 
-        def health_problem(label, patient=True, extra=None, budget=None):
+        def health_problem(label, patient=True, extra=None, budget=None, firmware=True):
             asked.append(budget)
             return "gone"
         made.health_problem = health_problem
@@ -1005,6 +1091,100 @@ def declared_computers(value):
             os.environ.pop(targets.COMPUTERS_ENV, None)
         else:
             os.environ[targets.COMPUTERS_ENV] = before
+
+
+def run_cabling_checks():
+    """The cabling of a run is found by asking the machines, with no variable set."""
+    import cabling
+    import machine
+
+    class Ram:
+        """Machines whose RAM is a dict, and which cartridge sits in which computer."""
+
+        def __init__(self, fitted):
+            self.fitted = fitted            # cartridge -> computer
+            self.memory = {}
+
+        def read(self, host, address, length):
+            if host in self.fitted:
+                host = self.fitted[host]
+                if host is None:
+                    raise Failure("no C64 behind this cartridge")
+            return self.memory.get((host, address), bytes(length))
+
+        def write(self, host, address, data):
+            self.memory[(host, address)] = data
+
+    kinds = {"u2": machine.U2, "c64u": machine.C64U, "u64": machine.U64,
+             "192.168.1.74": machine.U2, "127.0.0.1": machine.U64,
+             "localhost": machine.C64U}
+
+    @contextlib.contextmanager
+    def fresh_environment():
+        saved = {k: os.environ.pop(k, None)
+                 for k in (targets.COMPUTERS_ENV, cabling.SETTLED_ENV)}
+        try:
+            yield
+        finally:
+            for key, value in saved.items():
+                os.environ.pop(key, None)
+                if value is not None:
+                    os.environ[key] = value
+
+    def establish(tokens, ram, sweep=lambda computer: []):
+        return cabling.establish(tokens, None, 1.0, kind_of=kinds.get,
+                                 read=ram.read, write=ram.write, sweep=sweep)
+
+    with check("a cartridge named beside its computer is found without a variable"):
+        with fresh_environment():
+            ram = Ram({"u2": "c64u"})
+            expect("added", establish(["c64u", "u64", "u2"], ram), [("u2", "c64u")])
+            expect("declared", os.environ.get(targets.COMPUTERS_ENV), "u2@c64u")
+            expect("u2 resolves to its computer", targets.parse("u2").computer, "c64u")
+            expect("the computer's RAM was put back", ram.memory[("c64u", 0x340)], bytes(8))
+
+    with check("a cartridge in no named computer is left unpaired"):
+        with fresh_environment():
+            ram = Ram({"u2": None})
+            expect("added", establish(["c64u", "u64", "u2"], ram), [])
+            expect("declared", os.environ.get(targets.COMPUTERS_ENV), None)
+
+    with check("an explicit cartridge@computer token is declared"):
+        with fresh_environment():
+            expect("added", establish(["u2@c64u", "c64u"], Ram({})), [("u2", "c64u")])
+            expect("cartridges of c64u", targets.declared_cartridges("c64u"), ["u2"])
+
+    with check("a cartridge named both bare and paired is not declared"):
+        # The fixture and any bench that tests a device alone and in a computer
+        # name both; declaring the pair would merge the two targets into one.
+        with fresh_environment():
+            expect("added", establish(["127.0.0.1", "127.0.0.1@localhost"], Ram({})), [])
+            expect("declared", os.environ.get(targets.COMPUTERS_ENV), None)
+
+    with check("the runner's timeout, which arrives as text, is accepted"):
+        # run-tests hands over --timeout as given; a float() was missing and the
+        # lookup failed quietly, so a cartridge nobody named was never searched for.
+        expect("an api for a text timeout", cabling._api("c64u", None, "30.0").host, "c64u")
+
+    with check("a cartridge nobody named is found on the computer's network"):
+        with fresh_environment():
+            ram = Ram({"192.168.1.74": "c64u"})
+            added = establish(["c64u", "u64"], ram,
+                              sweep=lambda computer: ["192.168.1.74"] if computer == "c64u" else [])
+            expect("added", added, [("192.168.1.74", "c64u")])
+            expect("cartridges of c64u", targets.declared_cartridges("c64u"),
+                   ["192.168.1.74"])
+
+    with check("an exported declaration outranks a measurement"):
+        with fresh_environment():
+            os.environ[targets.COMPUTERS_ENV] = "u2@u64"
+            expect("added", establish(["c64u", "u64", "u2"], Ram({"u2": "c64u"})), [])
+            expect("declared", os.environ[targets.COMPUTERS_ENV], "u2@u64")
+
+    with check("the suite processes of a run do not measure again"):
+        with fresh_environment():
+            establish(["c64u", "u2"], Ram({"u2": "c64u"}))
+            expect("second call", establish(["c64u", "u64", "u2"], Ram({"u2": "u64"})), [])
 
 
 def run_move_rows_checks():
@@ -1731,6 +1911,7 @@ def main():
             set_fixture_records(os.path.join(tmpdir, "fixture-records.jsonl"))
             run_target_grammar_checks()
             run_bench_topology_checks(runner)
+            run_cabling_checks()
             run_settings_restore_checks()
             run_profile_checks(runner)
             run_move_rows_checks()

@@ -52,7 +52,7 @@ UI-state gate around each one:
 `observability_test.py` also runs as `make observability_test` and as a step in
 `.github/workflows/build.yml`. One implementation, invoked three ways. It needs
 no device and no network beyond loopback. `lint_test.py` is wired the same way,
-as `make lint_test` and as the `Check Tests Lint` step.
+as `make lint_test` and as the `Test Lint of the Tests Tree` step.
 
 ## The lint
 
