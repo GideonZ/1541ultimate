@@ -1116,7 +1116,8 @@ def run_cabling_checks():
             self.memory[(host, address)] = data
 
     kinds = {"u2": machine.U2, "c64u": machine.C64U, "u64": machine.U64,
-             "192.168.1.74": machine.U2}
+             "192.168.1.74": machine.U2, "127.0.0.1": machine.U64,
+             "localhost": machine.C64U}
 
     @contextlib.contextmanager
     def fresh_environment():
