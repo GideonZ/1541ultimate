@@ -1,6 +1,7 @@
 # The validator that checks doc/api/rest_api_openapi_*.yaml against the OpenAPI
-# 3.1 specification. `make openapi_validate` and the CI step of the same name run
-# it; the firmware build and `make openapi` need nothing from here.
+# 3.1 specification. `make openapi_validate` and the CI step `Test OpenAPI
+# Documents Against The Schema` run it; the firmware build and `make openapi`
+# need nothing from here.
 #
 #   python3 -m pip install -r tools/openapi/requirements.txt
 #

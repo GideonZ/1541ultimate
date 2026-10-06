@@ -260,6 +260,13 @@ class SearchForm:
                 # learnt describes values this one does not hold.
                 self.forget_classification()
                 return
+            # The device says outright that it could not reach the service. A
+            # second attempt would only find that popup in the way of the menu.
+            if any("Could not connect" in row for row in self.rows() or []):
+                self.press("ENTER")
+                raise Unreachable(
+                    f"{self.title!r} did not appear: the device reported "
+                    "'Could not connect.' to its service")
         raise Unreachable(
             f"{self.title!r} did not appear within {timeout:.0f}s on "
             f"{attempts} attempts; the service is most likely unreachable "
