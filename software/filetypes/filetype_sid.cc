@@ -901,7 +901,7 @@ void FileTypeSID ::configureMusEnv(int offsetLoadEnd)
 SubsysResultCode_e FileTypeSID ::play_file(const char *filename, const char *ssl_file, int song)
 {
     char ext[4];
-    get_extension(filename, ext);
+    get_extension(filename, ext, true); // in capitals, as the file browser has it
     bool mus = (strcmp(ext, "MUS") == 0) || (strcmp(ext, "STR") == 0);
     Path *ssl_path = NULL;
     FileTypeSID *sid;
