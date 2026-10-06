@@ -31,6 +31,7 @@ from collections.abc import Callable, Sequence
 
 import machine as machine_lib
 import targets
+from report import warn
 
 # $0340 is in the cassette buffer, which nothing uses while a run is going.
 FINGERPRINT_ADDRESS = 0x0340
@@ -56,7 +57,8 @@ def _own_machine(host: str) -> targets.Target:
 
 def _api(host: str, password: str | None, timeout: float):
     from api import UltimateApi
-    return UltimateApi(_own_machine(host), password, timeout)
+    # The runner passes its --timeout through as the text it was given.
+    return UltimateApi(_own_machine(host), password, float(timeout))
 
 
 def product_kind(host: str, password: str | None, timeout: float) -> str | None:
@@ -197,7 +199,12 @@ def establish(tokens: Sequence[str], password: str | None, timeout: float,
     # run does not name, and it would share the computer's IEC bus.
     kind_of = seams.get("kind_of") or (lambda host: product_kind(host, password, timeout))
     for computer in (t.partition(targets.SEPARATOR)[2] or t for t in tokens):
-        if kind_of(computer) in (None, machine_lib.U2) or targets.declared_cartridges(computer):
+        kind = kind_of(computer)
+        if kind is None:
+            warn(f"cabling: {computer} could not be asked what it is, so no "
+                 "cartridge fitted in it was looked for")
+            continue
+        if kind == machine_lib.U2 or targets.declared_cartridges(computer):
             continue
         for address in sweep(computer):
             added += declare(detect([address, computer], password, timeout, **seams))

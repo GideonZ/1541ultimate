@@ -1160,6 +1160,11 @@ def run_cabling_checks():
             expect("added", establish(["127.0.0.1", "127.0.0.1@localhost"], Ram({})), [])
             expect("declared", os.environ.get(targets.COMPUTERS_ENV), None)
 
+    with check("the runner's timeout, which arrives as text, is accepted"):
+        # run-tests hands over --timeout as given; a float() was missing and the
+        # lookup failed quietly, so a cartridge nobody named was never searched for.
+        expect("an api for a text timeout", cabling._api("c64u", None, "30.0").host, "c64u")
+
     with check("a cartridge nobody named is found on the computer's network"):
         with fresh_environment():
             ram = Ram({"192.168.1.74": "c64u"})
