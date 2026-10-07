@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import contextlib
 import fcntl
+import glob
 import json
 import os
 import re
@@ -48,6 +49,7 @@ import bootstrap  # noqa: E402,F401
 # rather than shared library code, so they live beside the suites that use them.
 
 import report  # noqa: E402
+import runtests.identity as identity_lib  # noqa: E402
 import targets  # noqa: E402
 from device_double import DeviceDouble  # noqa: E402
 from report import Failure  # noqa: E402
@@ -244,11 +246,16 @@ FOREIGN_VARIABLES = {
 
 
 def runner_variables() -> set:
-    """Every `E2E_` variable name the runner's own source mentions."""
+    """Every `E2E_` variable name the runner's own source mentions.
 
-    with open(RUNNER_PATH, encoding="utf-8") as handle:
-        source = handle.read()
-    return set(re.findall(r'"(E2E_[A-Z0-9_]+)"', source))
+    The runner is `run-tests` and the modules in `tests/lib/runtests/`.
+    """
+
+    names: set = set()
+    for path in (RUNNER_PATH, *glob.glob(os.path.join(bootstrap.LIB, "runtests", "*.py"))):
+        with open(path, encoding="utf-8") as handle:
+            names |= set(re.findall(r'"(E2E_[A-Z0-9_]+)"', handle.read()))
+    return names
 
 
 # The variables a scripted run may keep, with the reason each is harmless.
@@ -292,29 +299,29 @@ def _harness_hash_edit(runner) -> str:
     # from one a dead run left.
     removed = _remove_edit_marker(victim)
 
-    before = runner.harness_hash()
+    before = identity_lib.harness_hash()
     if not before:
         raise Skipped("git does not answer in this checkout")
-    expect("the same tree hashes the same twice", runner.harness_hash(), before)
+    expect("the same tree hashes the same twice", identity_lib.harness_hash(), before)
     with tempfile.TemporaryDirectory() as scratch:
         keep = os.path.join(scratch, "report.py")
         shutil.copy2(victim, keep)
         try:
             with open(victim, "a", encoding="utf-8") as handle:
                 handle.write(_EDIT_MARKER)
-            after = runner.harness_hash()
+            after = identity_lib.harness_hash()
             if after == before:
                 raise Failure("an edited harness file hashed the same, so a "
                               "run edited under itself would report nothing")
             # And `git status --porcelain` says the same thing before and
             # after, which is why it cannot stand in for this.
-            dirty = runner.git_answer("status", "--porcelain")
+            dirty = identity_lib.git_answer("status", "--porcelain")
             if dirty is not None and victim.replace(ROOT, "") not in "".join(
                     line[3:] for line in dirty.splitlines()):
                 pass  # the file may have been modified already, which is the point
         finally:
             shutil.copy2(keep, victim)
-    expect("and the restored tree hashes as it did", runner.harness_hash(),
+    expect("and the restored tree hashes as it did", identity_lib.harness_hash(),
            before)
     left = f", {removed} stale marker(s) cleaned first" if removed else ""
     return f"{before} changed and came back{left}"
@@ -559,15 +566,15 @@ SCRIPTED_PACING = {
 # run reaches, never how long it waited, so a shorter wait covers the same
 # paths; a hardware run keeps the real values.
 SCRIPTED_RUNNER_CONSTANTS = {
-    "LAST_ATTEMPT_HEALTH_BUDGET_SECONDS": 1.0,
-    "DEVICE_RECOVERY_BUDGET_SECONDS": 2.0,
-    "POST_RECOVERY_BUDGET_SECONDS": 3.0,
-    "DEVICE_RECOVERY_PROBE_TIMEOUT_SECONDS": 1.0,
+    "runtests.device.LAST_ATTEMPT_HEALTH_BUDGET_SECONDS": 1.0,
+    "runtests.device.DEVICE_RECOVERY_BUDGET_SECONDS": 2.0,
+    "runtests.device.POST_RECOVERY_BUDGET_SECONDS": 3.0,
+    "runtests.device.DEVICE_RECOVERY_PROBE_TIMEOUT_SECONDS": 1.0,
     # How long a run listens for the device's own log; a double sends none.
-    "SYSLOG_READY_SECONDS": 0.3,
+    "runtests.syslog.SYSLOG_READY_SECONDS": 0.3,
     # How often a run asks a device that is not answering whether it is back,
     # and how long a health probe waits for a listener that has no banner.
-    "DEVICE_RECOVERY_POLL_SECONDS": 0.1,
+    "runtests.device.DEVICE_RECOVERY_POLL_SECONDS": 0.1,
     "health.SOCKET_TIMEOUT_SECONDS": 0.5,
     # What the REST client pauses between attempts at a device that has gone.
     "rest.TRANSPORT_RETRY_PAUSE_SECONDS": 0.02,
