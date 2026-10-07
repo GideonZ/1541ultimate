@@ -608,6 +608,12 @@ SUITES: Sequence[Suite] = (
     # .mus/.str pairs to /Temp by FTP and deletes them again.
     Suite("e2e", "mus-rest-play", "tests/e2e/io/c64/mus_rest_play_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
+    # A SID header before version 4 gives no third SID: byte $7B is reserved
+    # there, and the player must not take it for an address. Two synthetic
+    # PSIDs, the version 4 one as the control, copied to /Temp by FTP and
+    # deleted again.
+    Suite("e2e", "sid-reserved-third-sid", "tests/e2e/io/c64/sid_reserved_third_sid_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
     # Reproduces #733: with the FPGA decoder fix in the core, "mirroring off" is
     # the regression guard. Runs last, because a device whose core predates that
     # fix stalls the whole Nios on this scenario and needs a JTAG recovery.
