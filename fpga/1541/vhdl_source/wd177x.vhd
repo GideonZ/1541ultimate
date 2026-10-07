@@ -142,20 +142,6 @@ architecture behavioral of wd177x is
     signal write_ack            : std_logic := '0';
     signal write_ack_lost       : std_logic := '0';
     signal cpu_pc_high          : std_logic_vector(7 downto 0) := X"00";
-
-    -- DEBUG (to be reverted): trace of the drive CPU's program counter
-    type t_trace is array (0 to 4095) of std_logic_vector(15 downto 0);
-    signal trace_ram            : t_trace;
-    signal trace_wr             : unsigned(11 downto 0) := (others => '0');
-    signal trace_rd             : unsigned(11 downto 0) := (others => '0');
-    signal trace_q              : std_logic_vector(15 downto 0) := (others => '0');
-    signal trace_last           : std_logic_vector(15 downto 0) := (others => '0');
-    signal trace_armed          : std_logic := '0';
-    signal trace_frozen         : std_logic := '0';
-    signal trace_hi             : std_logic := '0';
-    signal trace_step           : std_logic := '0';
-    signal trace_arm            : std_logic := '0';
-    signal trace_rewind         : std_logic := '0';
     
     -- Stepper
     signal goto_track       : unsigned(6 downto 0);
@@ -196,9 +182,6 @@ begin
             command_fifo_push <= '0';
             command_fifo_pop  <= '0';
             write_ack <= '0';
-            trace_step <= '0';
-            trace_arm <= '0';
-            trace_rewind <= '0';
             mem_dack_r <= mem_dack;
             mem_data_r <= mem_resp.data;
 
@@ -312,12 +295,6 @@ begin
                     transfer_addr(15 downto 8) <= unsigned(io_req.data);
                 when X"A" =>
                     transfer_addr(23 downto 16) <= unsigned(io_req.data);
-                when X"B" => -- DEBUG (to be reverted): bit 0 arms the PC trace, bit 1 rewinds the read side
-                    trace_arm <= io_req.data(0);
-                    trace_rewind <= io_req.data(1);
-                    if io_req.data(1) = '1' then
-                        trace_hi <= '0';
-                    end if;
                 when X"C" =>
                     transfer_len(7 downto 0) <= unsigned(io_req.data);
                 when X"D" =>
@@ -365,22 +342,6 @@ begin
                     cpu_pc_high <= cpu_pc(15 downto 8);
                 when X"9" =>
                     io_resp.data <= cpu_pc_high;
-
-                -- DEBUG (to be reverted): the PC trace, oldest entry first, low
-                -- byte then high byte; and its state.
-                when X"A" =>
-                    if trace_armed = '0' then
-                        null; -- reads as on master until the trace is armed
-                    elsif trace_hi = '0' then
-                        io_resp.data <= trace_q(7 downto 0);
-                    else
-                        io_resp.data <= trace_q(15 downto 8);
-                        trace_step <= '1';
-                    end if;
-                    trace_hi <= not trace_hi;
-                when X"B" =>
-                    io_resp.data(0) <= trace_frozen and trace_armed;
-                    io_resp.data(1) <= trace_armed;
                                                         
 --                when X"8" =>
 --                    io_resp.data <= std_logic_vector(transfer_addr(7 downto 0));
@@ -519,34 +480,6 @@ begin
         end if;
     end process;
     
-    -- DEBUG (to be reverted): records every new value of the drive CPU's
-    -- program counter into a ring once armed, and stops at the first PC in
-    -- $2000-$7FFF, where the 1581 never runs code. The application reads it
-    -- out through registers A and B.
-    process(clock)
-    begin
-        if rising_edge(clock) then
-            if trace_arm = '1' then
-                trace_armed <= '1';
-                trace_frozen <= '0';
-            end if;
-            if trace_armed = '1' and trace_frozen = '0' and cpu_pc /= trace_last then
-                trace_ram(to_integer(trace_wr)) <= cpu_pc;
-                trace_wr <= trace_wr + 1;
-                trace_last <= cpu_pc;
-                if cpu_pc(15) = '0' and cpu_pc(14 downto 13) /= "00" then
-                    trace_frozen <= '1';
-                end if;
-            end if;
-            trace_q <= trace_ram(to_integer(trace_rd));
-            if trace_rewind = '1' then
-                trace_rd <= trace_wr;
-            elsif trace_step = '1' then
-                trace_rd <= trace_rd + 1;
-            end if;
-        end if;
-    end process;
-
     i_cmd_fifo: entity work.sync_fifo
     generic map (
         g_depth        => 7,
