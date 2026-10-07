@@ -719,6 +719,11 @@ def run_output_dir_option_checks(runner):
         if "--output-dir" not in command:
             raise Failure(f"the child was not given --output-dir: {command}")
 
+    with check("a child runs run-tests itself"):
+        command = runner.child_command(args, targets.parse("u64"), "runs/u64")
+        if not os.path.exists(command[1]) or not os.path.samefile(command[1], RUNNER_PATH):
+            raise Failure(f"the child would run {command[1]}, not {RUNNER_PATH}")
+
 
 def run_kernal_option_checks(runner):
     """--kernal and --command-interface reach the Software IEC suites, and only when given."""

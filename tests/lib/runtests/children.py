@@ -6,6 +6,7 @@ import sys
 from collections.abc import Sequence
 
 import targets as targets_lib
+from runtests.constants import ROOT
 
 
 # ---------------------------------------------------------------------------
@@ -72,7 +73,7 @@ CHILD_EXCLUDED_OPTIONS = ("host", "targets", "output_dir", "stop_on_fail", "list
 def child_command(args: argparse.Namespace, target: targets_lib.Target,
                   output_dir: str) -> list[str]:
     """The command that runs `target` on its own, with this run's options."""
-    command = [sys.executable, os.path.abspath(__file__)]
+    command = [sys.executable, os.path.join(ROOT, "run-tests")]
     for name in CHILD_FORWARDED_FLAGS:
         if getattr(args, name):
             command.append("--" + name.replace("_", "-"))
