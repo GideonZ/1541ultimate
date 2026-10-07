@@ -41,9 +41,9 @@ import profiles  # noqa: E402
 import report  # noqa: E402
 import targets as targets_lib  # noqa: E402
 
-# The machinery behind this file lives in tests/lib/runtests/. What stays here
-# is the suite registry, which is the part that changes whenever a suite is
-# added, and the orchestration that runs it.
+# This file holds the suite registry and the orchestration that runs it. The
+# code the orchestration calls is in tests/lib/runtests/, one module per
+# concern; tests/lib/README.md says which one to edit for which change.
 import runtests.device as device_lib  # noqa: E402
 from report import Failure  # noqa: E402
 from runtests.capture import (  # noqa: E402

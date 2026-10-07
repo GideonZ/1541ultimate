@@ -54,33 +54,41 @@ UI-state gate around each one:
 no device and no network beyond loopback. `lint_test.py` is wired the same way,
 as `make lint_test` and as the `Test Lint of the Tests Tree` step.
 
-## The runner's modules
+## Where the runner's code is
 
-`run-tests` keeps what changes whenever a suite is added, the `Suite` class and
-the `SUITES` registry, together with the orchestration that runs them:
-`run_one_attempt`, `run_suite`, `run_targets`, `main` and the UI-state gate.
-Everything those call lives in the `runtests/` package here, one concern per
-module. Imports run from the leaves up, so no module imports one that imports it.
+`run-tests` is the entry point. It holds the two things most changes touch: the
+`SUITES` registry, where a suite is registered (see
+[tests/e2e/README.md](../e2e/README.md)), and the orchestration that runs it,
+which is `run_one_attempt`, `run_suite`, `run_targets`, `main` and the UI-state
+gate. Everything the orchestration calls is in the `tests/lib/runtests/`
+package, one module per concern:
 
-| Module | Holds |
+| To change | Edit |
 | --- | --- |
-| `runtests/constants.py` | The repository root, the categories and the modes |
-| `runtests/model.py` | `Result` and `Options`, what a run is made of |
-| `runtests/exits.py` | The exit statuses, how a run's results map to one, and `die` |
-| `runtests/identity.py` | Which checkout, host and harness files a run was made from |
-| `runtests/console.py` | The console capture that writes each suite's output to a log |
-| `runtests/device.py` | `Device`, the recovery budgets, and capturing and restoring the settings a run changes |
-| `runtests/syslog.py` | Collecting the device's own log, and checking where the device sends it |
-| `runtests/recording.py` | The screen recorder's options and its start and stop |
-| `runtests/capture.py` | The per-attempt output directories and the screen capture taken when a suite fails |
-| `runtests/cli.py` | The argument parser and help page, and resolving targets and modes from them |
-| `runtests/summary.py` | The end-of-run summary and its stale-gate report |
-| `runtests/children.py` | How a multi-target run starts and stops one child run per target |
+| A command-line option, the help page, or how targets and modes are read from them | `runtests/cli.py` |
+| Whether a new option is passed on to the child run of each target | `runtests/children.py`; `runner_policy_test.py` fails when an option is in neither the forwarded nor the excluded list |
+| How a multi-target run starts, schedules and stops its children | `runtests/children.py` |
+| An exit status, or how a run's results become one | `runtests/exits.py` |
+| What a suite result or a run's options contain | `runtests/model.py` |
+| How the device is probed, recovered, and how its settings are captured and restored | `runtests/device.py` |
+| How the device's own log is collected and checked | `runtests/syslog.py` |
+| The screen recorder's options, start and stop | `runtests/recording.py` |
+| Where a failed attempt's capture and per-attempt files are written | `runtests/capture.py` |
+| Where each suite's console output is logged | `runtests/console.py` |
+| What a run records about the checkout, host and harness files | `runtests/identity.py` |
+| The end-of-run summary and its stale-gate report | `runtests/summary.py` |
+| The repository root, the categories and the modes | `runtests/constants.py` |
 
-A constant that a test shortens belongs to the module that reads it, because
-setting it on `run-tests` would not reach the code in the package. The
-observability suite names these as `runtests.device.NAME` in
-`SCRIPTED_RUNNER_CONSTANTS`.
+A module imports only from modules earlier in this order: `constants`,
+`model`, `exits`, `identity`, `console`, `device`, then the rest.
+
+A timing constant is read by the module that defines it, for example
+`runtests.device.DEVICE_RECOVERY_POLL_SECONDS` or
+`runtests.syslog.SYSLOG_READY_SECONDS`. A test that shortens one assigns it on
+that module, as `SCRIPTED_RUNNER_CONSTANTS` in `observability/support.py` does.
+A test that replaces a function the orchestration calls, such as
+`ui_state_gate` or `child_command`, assigns it on the loaded `run-tests`
+module, because the orchestration looks it up there.
 
 ## The lint
 

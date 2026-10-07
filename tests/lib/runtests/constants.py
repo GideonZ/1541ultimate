@@ -2,7 +2,7 @@ import os
 
 import bootstrap
 
-# The repository root, which run-tests also derives from its own location.
+# The repository root.
 ROOT = os.path.dirname(bootstrap.TESTS)
 
 CATEGORIES = ("e2e", "perf", "soak")

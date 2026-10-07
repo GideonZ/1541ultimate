@@ -1,8 +1,6 @@
-"""The machinery behind the repository-root `run-tests` runner.
+"""The code behind the repository-root `run-tests` runner, one module per concern.
 
-`run-tests` keeps the suite registry and the orchestration that runs it. The
-modules here hold what that orchestration calls, one concern per module.
-Imports run from the leaves up: `constants`, `model` and `exits` depend on
-nothing else here, `device` and `identity` on those, and every other module on
-some of them.
+`run-tests` holds the suite registry and the orchestration that runs it. See
+"Where the runner's code is" in tests/lib/README.md for which module to edit
+for which change.
 """
