@@ -59,6 +59,7 @@ SCREEN_TIMEOUT_SECONDS = 10.0
 POLL_SECONDS = 0.3
 PLAYER_BANNER = "MUS PLAYER"
 TITLE_LABEL = "TITLE :"
+SONG_LINE = "SONG  : 1 / 1"
 
 
 def mus(text: bytes) -> bytes:
@@ -112,7 +113,8 @@ def play(device: UltimateApi, path: str) -> list[str]:
     lines: list[str] = []
     while time.monotonic() < deadline:
         lines = screen_lines(device.machine.readmem(screen_address(device), SCREEN_BYTES))
-        if any(PLAYER_BANNER in line for line in lines) and title_line(lines) is not None:
+        # Song numbers are printed after the title and SID addresses.
+        if any(PLAYER_BANNER in line for line in lines) and SONG_LINE in lines:
             detail("\n".join(line for line in lines if line.strip()))
             return lines
         time.sleep(POLL_SECONDS)
