@@ -602,6 +602,12 @@ SUITES: Sequence[Suite] = (
     # below the last page as the control.
     Suite("e2e", "sid-top-of-memory", "tests/e2e/io/c64/sid_top_of_memory_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
+    # A Compute's Sidplayer file started over REST by its path plays on the MUS
+    # player whatever the case of its extension, the .mus or its .str, in
+    # stereo, and is titled by its name, not by the path. It copies two
+    # .mus/.str pairs to /Temp by FTP and deletes them again.
+    Suite("e2e", "mus-rest-play", "tests/e2e/io/c64/mus_rest_play_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
     # Reproduces #733: with the FPGA decoder fix in the core, "mirroring off" is
     # the regression guard. Runs last, because a device whose core predates that
     # fix stalls the whole Nios on this scenario and needs a JTAG recovery.
