@@ -263,33 +263,6 @@ MEMORY_API_REJECTS_INVALID_ADDRESS = _fix(
     "hexadecimal, rather than parsing it as $0000 and acting there",
     (C64U, U2))
 
-# What tests/e2e/io/c64/c64gs_cartridge_test.py asserts. The fix is in the
-# cartridge logic of the FPGA image, not in the application. The Ultimate 64
-# images ship prebuilt in external/, so an Ultimate 64 lacks it until they are
-# rebuilt. Measured there only, with locally built cores that differ in that
-# one change. The Ultimate II family's images are built from fpga/ with the
-# firmware, so it is listed until it is measured. The C64 Ultimate carries the
-# fix from FPGA version 126 (external/u64e2_*.bit).
-# Delete a kind once `--assume-fix` passes on it.
-C64GS_BANK_FROM_ADDRESS = _fix(
-    "c64gs-bank-from-address",
-    "a C64 Game System cartridge selects the bank named by the address of an "
-    "IO1 read or write, rather than the byte on the data bus",
-    (U64, U2))
-
-# What the bit 6 check in tests/e2e/io/c64/comal80_cartridge_test.py asserts.
-# The fix is in the cartridge logic of the FPGA image, not in the application.
-# The Ultimate 64 images ship prebuilt in external/, so an Ultimate 64 lacks it
-# until they are rebuilt. The Ultimate II family's images are built from fpga/
-# with the firmware, so it is listed until it is measured. The C64 Ultimate
-# carries the fix from FPGA version 126 (external/u64e2_*.bit).
-# Delete a kind once `--assume-fix` passes on it.
-COMAL80_CARTRIDGE_OFF_BIT = _fix(
-    "comal80-cartridge-off-bit",
-    "a $DE00 write with bit 6 set switches a COMAL 80 cartridge off, rather "
-    "than leaving it mapped",
-    (U64, U2))
-
 # What tests/e2e/io/c64/magicdesk_plus_cartridge_test.py asserts. Magic Desk
 # Plus is new cartridge logic in the FPGA image rather than a fix in the
 # application, so no shipped image has it: the Ultimate 64 and C64 Ultimate

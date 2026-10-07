@@ -39,6 +39,7 @@ int HttpRequest :: connect_to_server(const char *hostname, uint16_t hostport)
 
     if (connect(sock_fd, (struct sockaddr *)&serv_addr,sizeof(serv_addr)) < 0) {
         printf("Connection failed.\n");
+        close(sock_fd);
         return -1;
     }
     // printf("Connection succeeded.\n");
