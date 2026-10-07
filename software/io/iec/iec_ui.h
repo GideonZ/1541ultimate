@@ -53,6 +53,7 @@ public:
     void setBrowser(TreeBrowser *tb) { browser = tb; }
 	IndexedList<Browsable *> *getSubItems(int &error) {
         error = 0;
+        IecDriveLock guard(vfs->get_drive()); // the names are copied under the drive's lock (CR-6)
         for(int i=1; i<MAX_PARTITIONS; i++) {
             IecPartition *p = vfs->GetPartition(i);
             if (p) {

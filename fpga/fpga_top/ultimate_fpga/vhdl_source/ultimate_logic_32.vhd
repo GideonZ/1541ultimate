@@ -10,7 +10,7 @@ use work.dma_bus_pkg.all;
 
 entity ultimate_logic_32 is
 generic (
-    g_version		: unsigned(7 downto 0) := X"25";
+    g_version		: unsigned(7 downto 0) := X"26";
     g_simulation    : boolean := true;
     g_ultimate2plus : boolean := false;
     g_ultimate_64   : boolean := false;

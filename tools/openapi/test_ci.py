@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Tests that the build gate and the make target check the same thing.
 
-`make openapi_validate` is what a developer runs; the `Validate OpenAPI
-Specification` step is what CI runs. They cannot be the same command, because the
+`make openapi_validate` is what a developer runs; the `Test OpenAPI Documents
+Against The Schema` step is what CI runs. They cannot be the same command, because the
 build image has no pip and so cannot install the validator, and the image that
 can does not carry make. Two invocations of one check is exactly the arrangement
 that drifts, so these tests hold them to each other: same validator, same
@@ -25,7 +25,7 @@ MODULE = "openapi_spec_validator"
 STRICTNESS = "--validation-errors all"
 PATH_SOURCE = "tools/openapi/generate.py paths"
 
-_STEP = re.compile(r"- name: Validate OpenAPI Specification\n(.*?)(?=\n      - name:|\Z)", re.S)
+_STEP = re.compile(r"- name: Test OpenAPI Documents Against The Schema\n(.*?)(?=\n      - name:|\Z)", re.S)
 _TARGET = re.compile(r"^openapi_validate:\r?\n((?:\t.*\r?\n)+)", re.M)
 _VARIABLE = re.compile(r"^([A-Z_]+)\s*[:?]?=\s*(.*?)\r?$", re.M)
 
@@ -59,7 +59,7 @@ class ValidationGateTest(unittest.TestCase):
 
     def test_both_exist(self):
         """Otherwise every test below would pass by describing nothing."""
-        self.assertIsNotNone(self.step, "the workflow has no Validate OpenAPI Specification step")
+        self.assertIsNotNone(self.step, "the workflow has no Test OpenAPI Documents Against The Schema step")
         self.assertIsNotNone(self.recipe, "the Makefile has no openapi_validate target")
 
     def test_both_run_the_same_validator(self):

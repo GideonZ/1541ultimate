@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import contextlib
 import fcntl
+import glob
 import json
 import os
 import re
@@ -48,6 +49,7 @@ import bootstrap  # noqa: E402,F401
 # rather than shared library code, so they live beside the suites that use them.
 
 import report  # noqa: E402
+import runtests.identity as identity_lib  # noqa: E402
 import targets  # noqa: E402
 from device_double import DeviceDouble  # noqa: E402
 from report import Failure  # noqa: E402
@@ -219,7 +221,8 @@ def free_udp_port() -> int:
 # see `no_runner_variable_escapes_the_scrubbing_list` for why.
 INHERITED_VARIABLES = {
     "E2E_ATTEMPT", "E2E_INTERACTIONS", "E2E_JSONL", "E2E_SCREENS", "E2E_SUITE",
-    "E2E_SYSLOG_OWNED", "E2E_SYSLOG_PORT", "E2E_SYSLOG_PORTS", "E2E_TARGET",
+    "E2E_SYSLOG_FILE", "E2E_SYSLOG_FILES", "E2E_SYSLOG_OWNED", "E2E_SYSLOG_PORT",
+    "E2E_SYSLOG_PORTS", "E2E_TARGET",
     # Not a runner variable but a suite one: --assume-fix reaches every suite
     # through it, so a scripted run would otherwise inherit the gate's
     # assumptions.
@@ -243,11 +246,16 @@ FOREIGN_VARIABLES = {
 
 
 def runner_variables() -> set:
-    """Every `E2E_` variable name the runner's own source mentions."""
+    """Every `E2E_` variable name the runner's own source mentions.
 
-    with open(RUNNER_PATH, encoding="utf-8") as handle:
-        source = handle.read()
-    return set(re.findall(r'"(E2E_[A-Z0-9_]+)"', source))
+    The runner is `run-tests` and the modules in `tests/lib/runtests/`.
+    """
+
+    names: set = set()
+    for path in (RUNNER_PATH, *glob.glob(os.path.join(bootstrap.LIB, "runtests", "*.py"))):
+        with open(path, encoding="utf-8") as handle:
+            names |= set(re.findall(r'"(E2E_[A-Z0-9_]+)"', handle.read()))
+    return names
 
 
 # The variables a scripted run may keep, with the reason each is harmless.
@@ -291,29 +299,29 @@ def _harness_hash_edit(runner) -> str:
     # from one a dead run left.
     removed = _remove_edit_marker(victim)
 
-    before = runner.harness_hash()
+    before = identity_lib.harness_hash()
     if not before:
         raise Skipped("git does not answer in this checkout")
-    expect("the same tree hashes the same twice", runner.harness_hash(), before)
+    expect("the same tree hashes the same twice", identity_lib.harness_hash(), before)
     with tempfile.TemporaryDirectory() as scratch:
         keep = os.path.join(scratch, "report.py")
         shutil.copy2(victim, keep)
         try:
             with open(victim, "a", encoding="utf-8") as handle:
                 handle.write(_EDIT_MARKER)
-            after = runner.harness_hash()
+            after = identity_lib.harness_hash()
             if after == before:
                 raise Failure("an edited harness file hashed the same, so a "
                               "run edited under itself would report nothing")
             # And `git status --porcelain` says the same thing before and
             # after, which is why it cannot stand in for this.
-            dirty = runner.git_answer("status", "--porcelain")
+            dirty = identity_lib.git_answer("status", "--porcelain")
             if dirty is not None and victim.replace(ROOT, "") not in "".join(
                     line[3:] for line in dirty.splitlines()):
                 pass  # the file may have been modified already, which is the point
         finally:
             shutil.copy2(keep, victim)
-    expect("and the restored tree hashes as it did", runner.harness_hash(),
+    expect("and the restored tree hashes as it did", identity_lib.harness_hash(),
            before)
     left = f", {removed} stale marker(s) cleaned first" if removed else ""
     return f"{before} changed and came back{left}"
@@ -553,6 +561,26 @@ SCRIPTED_PACING = {
 }
 
 
+# The runner's own waits for a device to come back, shortened for a double that
+# either answers at once or is gone for good. The cases assert which status a
+# run reaches, never how long it waited, so a shorter wait covers the same
+# paths; a hardware run keeps the real values.
+SCRIPTED_RUNNER_CONSTANTS = {
+    "runtests.device.LAST_ATTEMPT_HEALTH_BUDGET_SECONDS": 1.0,
+    "runtests.device.DEVICE_RECOVERY_BUDGET_SECONDS": 2.0,
+    "runtests.device.POST_RECOVERY_BUDGET_SECONDS": 3.0,
+    "runtests.device.DEVICE_RECOVERY_PROBE_TIMEOUT_SECONDS": 1.0,
+    # How long a run listens for the device's own log; a double sends none.
+    "runtests.syslog.SYSLOG_READY_SECONDS": 0.3,
+    # How often a run asks a device that is not answering whether it is back,
+    # and how long a health probe waits for a listener that has no banner.
+    "runtests.device.DEVICE_RECOVERY_POLL_SECONDS": 0.1,
+    "health.SOCKET_TIMEOUT_SECONDS": 0.5,
+    # What the REST client pauses between attempts at a device that has gone.
+    "rest.TRANSPORT_RETRY_PAUSE_SECONDS": 0.02,
+}
+
+
 WRAPPER = '''\
 """Run the real `run-tests` over a scripted registry against the double."""
 import importlib.machinery
@@ -566,6 +594,14 @@ loader = importlib.machinery.SourceFileLoader("run_tests_scripted",
 spec = importlib.util.spec_from_loader("run_tests_scripted", loader)
 runner = importlib.util.module_from_spec(spec)
 loader.exec_module(runner)
+
+for name, value in json.loads(os.environ["OBS_RUNNER_CONSTANTS"]).items():
+    # "module.NAME" names a constant of a library the runner imported.
+    owner, _, constant = name.rpartition(".")
+    holder = importlib.import_module(owner) if owner else runner
+    if not hasattr(holder, constant):
+        raise SystemExit(f"{owner or 'the runner'} has no constant {constant}")
+    setattr(holder, constant, value)
 
 with open(os.environ["OBS_REGISTRY"], encoding="utf-8") as handle:
     # The shallowest profile, so a scripted registry is never filtered by the
@@ -706,6 +742,7 @@ def scripted_run(double: DeviceDouble, stubs: Sequence[Stub],
     output = os.path.join(workspace, "run")
     environment = dict(os.environ, OBS_RUNNER=RUNNER_PATH,
                        OBS_REGISTRY=registry_path, OBS_WORKSPACE=workspace,
+                       OBS_RUNNER_CONSTANTS=json.dumps(SCRIPTED_RUNNER_CONSTANTS),
                        NO_COLOR="1")
     environment.update(double.environment())
     environment.update(SCRIPTED_PACING)
@@ -1146,15 +1183,16 @@ def canonicalize_document(text: str) -> str:
     or either side of a rounded second boundary. None of that is what this
     tier proves; it proves the renderer's wording, structure and alignment,
     so both this document and the checked-in one are put through the same
-    substitutions before they are compared. The two sections built entirely
-    from that race, the timeline and the slow-check summary, are reduced to
-    their length: `the_timeline_is_the_whole_run_in_order` and
-    `the_time_section_names_the_slow_ones` already prove their content and
-    order directly against a live document, so nothing is lost by not also
-    diffing them here. Table padding is collapsed everywhere rather than
-    reasoned about column by column, because a placeholder is rarely the same
-    width as the real value it replaces; `every_table_is_padded` is what
-    proves alignment, not this.
+    substitutions before they are compared. The timeline is reduced to the
+    events whose wording does not depend on that race, sorted; see
+    _timeline_events. `the_timeline_is_the_whole_run_in_order` proves the
+    order and the requests directly against a live document. The slow-check
+    summary is reduced to its length, because
+    `the_time_section_names_the_slow_ones` already proves its content the
+    same way. Table padding is collapsed
+    everywhere rather than reasoned about column by column, because a
+    placeholder is rarely the same width as the real value it replaces;
+    `every_table_is_padded` is what proves alignment, not this.
     """
 
     text = re.sub(r"[ \t]+\|", " |", text)
@@ -1171,6 +1209,9 @@ def canonicalize_document(text: str) -> str:
     # The collector binds an ephemeral port in a fixture, so the number it got
     # is whatever the kernel had free at that moment.
     text = re.sub(r"(?<=UDP )\d{4,5}\b", "0", text)
+    text = re.sub(r"(collects on )\d{4,5}(?:, \d{4,5})*(, so none of it will "
+                  r"arrive; set '[^']+' to '[^']+:)\d{4,5}'", r"\g<1>0\g<2>0'",
+                  text)
     text = re.sub(r"`(\d{4,5})`", "`0`", text)
     text = re.sub(r"\d+\.\d+s\b", "0.000s", text)
     text = re.sub(r"(?<=[=\s])\d+ms\b", "0ms", text)
@@ -1209,11 +1250,48 @@ def canonicalize_document(text: str) -> str:
                       r"\1N\2", m.group(2)),
                   text)
     text = re.sub(r"(?ms)^## Timeline\n.*?(?=\n## Checks)",
-                  lambda m: _section_length(m.group(0), "## Timeline"), text)
+                  lambda m: _timeline_events(m.group(0)), text)
     text = re.sub(r"(?ms)^## Where the time went\n.*?(?=\n## Device log)",
                   lambda m: _section_length(m.group(0), "## Where the time went"),
                   text)
     return text
+
+
+# The wall clock and offset that open each timeline line, which e2e_report
+# writes as "-" when it has no start time to measure from.
+_TIMELINE_CLOCK_RE = re.compile(r"^\d\d:\d\d:\d\d (?:\+\d+:\d\d|-)  ")
+_TIMELINE_CLOCK = "00:00:00 +00:00  "
+# A device request as describe_action writes it, or a run of them collapsed
+# into one line by timeline_section.
+_TIMELINE_REQUEST_RE = re.compile(
+    r"^\S+ (?:GET|PUT|POST|DELETE|PATCH|HEAD|OPTIONS) /|^\d+ device requests \(")
+
+
+def _timeline_events(section: str) -> str:
+    """The timeline's events, without their clock or the device requests, sorted.
+
+    The events come from several processes, each stamped with its own clock,
+    so their order shifts with how the machine scheduled them: a skew of 10 ms
+    between the runner's records and a suite's reorders the section. Request
+    lines also change their wording with that order, because a run of them
+    collapses into a count or is listed in full depending on what lies beside
+    it. Every other event is written whatever the order, so those lines,
+    sorted, are the part of the section a build reproduces. One line per
+    event is also what lets two branches that add different events merge
+    without a conflict.
+
+    The clock is kept as a fixed stand-in so that a second pass finds the
+    same lines again, which keeps canonicalize_document idempotent.
+    """
+    lines = section.rstrip("\n").split("\n")
+    first = next((i for i, line in enumerate(lines)
+                  if _TIMELINE_CLOCK_RE.match(line)), len(lines))
+    events = []
+    for line in lines[first:]:
+        event = _TIMELINE_CLOCK_RE.sub("", line)
+        if event.strip() and not _TIMELINE_REQUEST_RE.match(event):
+            events.append(_TIMELINE_CLOCK + event)
+    return "\n".join(lines[:first] + sorted(events)) + "\n"
 
 
 _REDUCED_SECTION_RE = re.compile(

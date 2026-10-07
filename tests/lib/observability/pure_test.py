@@ -21,6 +21,9 @@ import json
 import os
 import re
 import report
+import runtests.capture as capture_lib
+import runtests.exits as exits_lib
+import runtests.syslog as syslog_lib
 import socket
 import struct
 import sys
@@ -31,7 +34,7 @@ import time
 from support import (CASES, FOREIGN_VARIABLES, INHERITED_VARIABLES,
     KEPT_VARIABLES, REPORT_TOOL,
     ROOT, RUNNER_PATH, Skipped, UNTESTED_REQUIREMENTS, _harness_hash_edit,
-    case, composed_pair, exclusive, free_udp_port, glyph_columns,
+    canonicalize_document, case, composed_pair, exclusive, free_udp_port, glyph_columns,
     interaction_log, load_report_tool, load_runner, logged_interactions,
     occupied_span, packets_of, parse_srt, runner_variables,
     specified_requirements, synthetic_run, vic_frame, video_stream,
@@ -252,6 +255,12 @@ def a_reset_part_way_through_a_body_is_not_retried() -> str:
                 raise Failure("a PUT to a closed port should not have succeeded")
             elapsed = time.monotonic() - started
     finally:
+        # close() alone leaves the thread blocked in accept(), so the join
+        # below would wait out its whole timeout.
+        try:
+            listener.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
         listener.close()
         server.join(timeout=5)
 
@@ -968,17 +977,17 @@ def the_report_says_what_the_runner_says_about_each_exit_status() -> str:
     # way the runner writes them.
     for status in sorted(stated):
         record = {"kind": "run", "suites": 1, "passed": 1,
-                  "recoveries": 1 if status == runner.EXIT_RECOVERED else 0,
-                  "retried": 1 if status == runner.EXIT_RETRIED else 0,
-                  "failed": 1 if status == runner.EXIT_SUITE_FAILED else 0}
+                  "recoveries": 1 if status == exits_lib.EXIT_RECOVERED else 0,
+                  "retried": 1 if status == exits_lib.EXIT_RETRIED else 0,
+                  "failed": 1 if status == exits_lib.EXIT_SUITE_FAILED else 0}
         run = generator.Run(directory="runs",
                             parent={"kind": "run", "exit_code": status},
                             targets=[generator.TargetRun(
                                 token="u64", slug="u64", run=record)])
         verdict = generator.overall_verdict(run)
-        if status > runner.EXIT_RECOVERED:
+        if status > exits_lib.EXIT_RECOVERED:
             wanted = "FAIL"
-        elif status == runner.EXIT_OK:
+        elif status == exits_lib.EXIT_OK:
             wanted = "OK"
         else:
             # A retry and a recovery are one state: passed, with a caveat.
@@ -1410,32 +1419,31 @@ def a_device_pointed_at_another_port_is_named() -> str:
     `syslog.txt` empty, no warning anywhere, and a report that says the device
     said nothing, which is what a device that had stopped also looks like.
     """
-    runner = load_runner()
     # Both variables, because this case runs inside the gate as a registered
     # suite and the gate's own collector exports them. Reading whichever one
     # the environment happened to carry is how this case came to compare a
     # fixture against the four ports a live run was collecting on.
-    names = (runner.SYSLOG_PORT_ENV, runner.SYSLOG_PORTS_ENV)
+    names = (syslog_lib.SYSLOG_PORT_ENV, syslog_lib.SYSLOG_PORTS_ENV)
     saved = {name: os.environ.get(name) for name in names}
-    os.environ[runner.SYSLOG_PORT_ENV] = "5514"
-    os.environ[runner.SYSLOG_PORTS_ENV] = "5514"
+    os.environ[syslog_lib.SYSLOG_PORT_ENV] = "5514"
+    os.environ[syslog_lib.SYSLOG_PORTS_ENV] = "5514"
     try:
         expect("the right port is no problem",
-               runner.syslog_setting_problem("192.168.1.185:5514"), "")
-        bare = runner.syslog_setting_problem("192.168.1.185")
+               syslog_lib.syslog_setting_problem("192.168.1.185:5514"), "")
+        bare = syslog_lib.syslog_setting_problem("192.168.1.185")
         if "port 514" not in bare or "5514" not in bare:
             raise Failure(f"a bare address is not named: {bare!r}")
         if "192.168.1.185:5514" not in bare:
             raise Failure(f"the warning does not say what to set: {bare!r}")
-        wrong = runner.syslog_setting_problem("192.168.1.185:9999")
+        wrong = syslog_lib.syslog_setting_problem("192.168.1.185:9999")
         if "port 9999" not in wrong:
             raise Failure(f"another port is not named: {wrong!r}")
         # Several ports, which is a bench that gives each machine one. A
         # device sending to any of them is collected.
-        os.environ[runner.SYSLOG_PORTS_ENV] = "5514,5515,5516"
+        os.environ[syslog_lib.SYSLOG_PORTS_ENV] = "5514,5515,5516"
         expect("a port this run collects on is no problem",
-               runner.syslog_setting_problem("192.168.1.185:5516"), "")
-        outside = runner.syslog_setting_problem("192.168.1.185:5599")
+               syslog_lib.syslog_setting_problem("192.168.1.185:5516"), "")
+        outside = syslog_lib.syslog_setting_problem("192.168.1.185:5599")
         if "port 5599" not in outside or "5514, 5515, 5516" not in outside:
             raise Failure(f"a port outside the set is not named: {outside!r}")
         # A run with no collector compares nothing: the setting is then the
@@ -1443,7 +1451,7 @@ def a_device_pointed_at_another_port_is_named() -> str:
         for name in names:
             os.environ.pop(name, None)
         expect("and with no collector there is nothing to compare",
-               runner.syslog_setting_problem("192.168.1.185"), "")
+               syslog_lib.syslog_setting_problem("192.168.1.185"), "")
     finally:
         for name, value in saved.items():
             if value is None:
@@ -2105,14 +2113,13 @@ def the_gate_workflow_is_the_one_described() -> str:
     # on a retry would cancel the point of retrying, because a flake would
     # still fail the gate; what keeps a retried pass from being ignored is
     # that it is loud rather than that it is red.
-    runner = load_runner()
     decide = text.split("Decide on the gate's own status", 1)[1]
-    for status in (runner.EXIT_OK, runner.EXIT_RETRIED, runner.EXIT_RECOVERED):
+    for status in (exits_lib.EXIT_OK, exits_lib.EXIT_RETRIED, exits_lib.EXIT_RECOVERED):
         if f"\n            {status})" not in decide:
             raise Failure(f"the workflow does not tolerate exit {status}, "
                           f"which means every suite passed")
-    for status in (runner.EXIT_SUITE_FAILED, runner.EXIT_DEVICE_UNHEALTHY,
-                   runner.EXIT_USAGE):
+    for status in (exits_lib.EXIT_SUITE_FAILED, exits_lib.EXIT_DEVICE_UNHEALTHY,
+                   exits_lib.EXIT_USAGE):
         if f"\n            {status})" in decide:
             raise Failure(f"the workflow tolerates exit {status}, which is an "
                           f"outcome rather than a caveat")
@@ -3164,8 +3171,7 @@ def the_c64_screen_is_decoded_as_screen_codes() -> str:
     The menu plane is literal printable ASCII and this one is not, and the two
     must not share a decode path.
     """
-    runner = load_runner()
-    rows = runner.c64_screen_rows(
+    rows = capture_lib.c64_screen_rows(
         bytes([0x12, 0x05, 0x01, 0x04, 0x19, 0x2E])      # READY.
         + bytes([0x92, 0x85, 0x81])                      # the same, reversed
         + bytes([0x00, 0x1B, 0x1E])                      # @ [ up arrow
@@ -3535,3 +3541,47 @@ def the_job_summary_step_does_nothing_outside_ci() -> str:
         if previous is not None:
             os.environ["GITHUB_STEP_SUMMARY"] = previous
     return "silent and zero"
+
+
+@case(1)
+def the_canonical_timeline_is_its_events_sorted() -> str:
+    """The events without clock or requests, sorted; a second pass changes nothing.
+
+    The golden comparison canonicalizes the checked-in document again, so the
+    canonical form has to be a fixed point, including for an event whose own
+    text opens with something clock-like and for the "-" offset written when
+    there is no start time. The same events in another order are the same
+    timeline, because the order is the part a slower machine changes.
+    """
+    events = ["12:00:01 +00:00  b/overlay/x/1 started",
+              "12:00:02 +00:01  a GET /v1/version",
+              "12:00:02 +00:01  4 device requests (GET, PUT)",
+              "01:00:00 -  12:00:00 +00:01  looks like a clock",
+              "12:00:03 +00:02  a sweep x: OK"]
+
+    def timeline(order):
+        return ("## Timeline\n\nEach line opens with the clock.\n\n"
+                + "\n".join(order) + "\n\n## Checks\n")
+
+    once = canonicalize_document(timeline(events))
+    expect("the events sorted, without the clock or the requests",
+           once.split("\n")[4:8],
+           ["00:00:00 +00:00  12:00:00 +00:01  looks like a clock",
+            "00:00:00 +00:00  a sweep x: OK",
+            "00:00:00 +00:00  b/overlay/x/1 started",
+            ""])
+    expect("a second pass", canonicalize_document(once), once)
+    expect("another order", canonicalize_document(timeline(events[::-1])), once)
+    # The collector's port is ephemeral; the device's own port, named where the
+    # address is wrong rather than the port, is a real setting and stays.
+    ports = canonicalize_document(
+        "collects on 43915, so none of it will arrive; set 'Log to Syslog "
+        "Server' to '192.168.1.2:43915' and reboot\n"
+        "this run collects at 192.168.1.2, so none of it will arrive; set "
+        "'Log to Syslog Server' to '192.168.1.2:5514' and reboot\n")
+    expect("only the collector's port", ports.split("\n")[:2],
+           ["collects on 0, so none of it will arrive; set 'Log to Syslog "
+            "Server' to '192.168.1.2:0' and reboot",
+            "this run collects at 192.168.1.2, so none of it will arrive; set "
+            "'Log to Syslog Server' to '192.168.1.2:5514' and reboot"])
+    return "3 events, idempotent, order-free, one port"

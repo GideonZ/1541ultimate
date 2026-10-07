@@ -60,15 +60,6 @@ FileTypeTap :: FileTypeTap(BrowsableDirEntry *node) : tapIndices(4, NULL)
 	indexValid = false;
 }
 
-FileTypeTap :: ~FileTypeTap()
-{
-    printf("Destructor of FileTypeTap.\n");
-    if (tape_controller) {
-        tape_controller->stop();
-        tape_controller->close();
-    }
-}
-
 void FileTypeTap :: readIndexFile(void)
 {
     FileManager *fm = FileManager :: getFileManager();

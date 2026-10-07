@@ -71,5 +71,5 @@ $(RESULT)/$(PRJ): $(OBJS_C) $(OBJS_CC) $(OBJS_ASM) $(OBJS_6502) $(OBJS_BIN) $(OB
 	@echo Linking...
 	$(CPP) $(ALL_OBJS) $(LLIB) -o $(RESULT)/$(PRJ) $(LIBS)
 
-test: $(RESULT)/$(PRJ)
+test: all
 	@$(RESULT)/$(PRJ)
