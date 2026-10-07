@@ -88,7 +88,10 @@ port (
     -- I/O interface from application CPU
     io_req          : in  t_io_req;
     io_resp         : out t_io_resp;
-    io_irq          : out std_logic );
+    io_irq          : out std_logic;
+
+    -- Debug: the drive CPU's program counter, readable by the application
+    cpu_pc          : in  std_logic_vector(15 downto 0) := (others => '0') );
 
 end entity;
 
@@ -138,6 +141,7 @@ architecture behavioral of wd177x is
     signal ack_writes           : std_logic := '0';
     signal write_ack            : std_logic := '0';
     signal write_ack_lost       : std_logic := '0';
+    signal cpu_pc_high          : std_logic_vector(7 downto 0) := X"00";
     
     -- Stepper
     signal goto_track       : unsigned(6 downto 0);
@@ -190,6 +194,34 @@ begin
                         completion <= '0';
                         command_fifo_push  <= '1';
                         disk_wdata_valid <= '0';
+                        -- A WD177x clears the status bits a command reports when it
+                        -- takes the command (data sheet flowcharts: Type I resets
+                        -- CRC, seek error and DRQ; Type II DRQ, lost data, record
+                        -- not found and bits 5 and 6; Type III DRQ, lost data and
+                        -- bits 4 and 5). Done here only for an application that
+                        -- acknowledges its writes, so that an older one, which
+                        -- clears what it needs itself, sees the block unchanged.
+                        if ack_writes = '1' then
+                            case wdata(7 downto 6) is
+                            when "00" | "01" =>             -- Type I
+                                st_data_request   <= '0';
+                                st_crc_error      <= '0';
+                                st_rec_not_found  <= '0';
+                            when "10" =>                    -- Type II
+                                st_data_request   <= '0';
+                                st_lost_data      <= '0';
+                                st_rec_not_found  <= '0';
+                                st_rectype_spinup <= '0';
+                                st_write_prot     <= '0';
+                            when others =>
+                                if wdata(5 downto 4) /= "01" then -- Type III, not Force Interrupt
+                                    st_data_request   <= '0';
+                                    st_lost_data      <= '0';
+                                    st_rec_not_found  <= '0';
+                                    st_rectype_spinup <= '0';
+                                end if;
+                            end case;
+                        end if;
                     end if;
                 
                 when "01" =>
@@ -302,6 +334,14 @@ begin
                 
                 when X"7" =>
                     io_resp.data(1 downto 0) <= dma_mode;
+
+                -- Debug: the drive CPU's program counter. Reading the low byte
+                -- latches the high byte, so the two belong to the same moment.
+                when X"8" =>
+                    io_resp.data <= cpu_pc(7 downto 0);
+                    cpu_pc_high <= cpu_pc(15 downto 8);
+                when X"9" =>
+                    io_resp.data <= cpu_pc_high;
                                                         
 --                when X"8" =>
 --                    io_resp.data <= std_logic_vector(transfer_addr(7 downto 0));
@@ -430,7 +470,10 @@ begin
                 completion <= '0';
                 goto_track <= to_unsigned(0, goto_track'length);
                 write_delay_cnt <= X"00";
-                ack_writes <= '0';
+                -- ack_writes is the application's setting, like index_enable and
+                -- index_polarity, and survives a drive reset: the drive is reset
+                -- after the application has set it up, and again with every
+                -- reset of the computer.
                 write_ack <= '0';
                 write_ack_lost <= '0';
             end if;
