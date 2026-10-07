@@ -4,6 +4,9 @@
 #include <time.h>
 #include "network_config.h"
 #include "rtc.h"
+#if defined(ULTIMATE_HTTPS)
+#include "https_management.h"
+#endif
 
 extern "C" {
     #include "lwip/apps/sntp.h"
@@ -12,6 +15,9 @@ extern "C" {
     {
         printf("--> Time Received: %u  (current TZ = %s)\n", sec, getenv("TZ"));
         rtc.set_time_utc(sec);
+#if defined(ULTIMATE_HTTPS)
+        https_management_time(sec);
+#endif
     }
 }
 

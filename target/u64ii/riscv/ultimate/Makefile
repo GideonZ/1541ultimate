@@ -229,6 +229,9 @@ VPATH +=	$(PATH_SW)/6502/sidcrt/target
 VPATH +=	$(PATH_SW)/u64ii
 VPATH +=	$(PATH_SW)/u64
 VPATH +=	$(PATH_SW)/u64ctrl/main
+VPATH += $(PATH_SW)/network/https
+SRCS_C += https_client.c tls_wire.c tls_epoch.c
+SRCS_CC += https_management.cc
 
 SRCS_ASM =
 
@@ -245,6 +248,7 @@ SRCS_NANO = nano_minimal.nan
 PATH_INC =  $(addprefix -I, $(VPATH))
 OPTIONS  = -march=$(MARCH) -mabi=$(MABI) $(EFFORT) -ffunction-sections -fdata-sections -nostartfiles -mno-div
 OPTIONS += -gdwarf-2 -Os -DRISCV -DU64=2 -DUSB2513 -DOS -DIOBASE=0x10000000 -DU2P_IO_BASE=0x10100000 -DCLOCK_FREQ=100000000 -Wno-write-strings -DFP_SUPPORT=1
+OPTIONS += -DULTIMATE_HTTPS
 COPTIONS = $(OPTIONS) -std=gnu99
 CPPOPT   = $(OPTIONS) -std=gnu++11 -fno-exceptions -fno-rtti -fno-threadsafe-statics -fpermissive
 LINK 	 = linker.x

@@ -17,14 +17,53 @@ jobs:
           submodules: recursive
           fetch-depth: 0
 
+      - name: Apply Reviewed HTTP Response Parser Fix
+        run: python3 tools/c64u_https/httpd_patch.py
+
       - name: Test JSON Replacement
         run: |
           docker run --rm \
           -v /opt/build-tools:/mnt/build-tools:ro \
           -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make -C software/api/tests"
 
+      - name: Test HTTP Response Framing and Fragmentation
+        run: |
+          docker run --rm \
+          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make -C software/network/https/tests framing"
+
       - name: Generate Version String
         run: echo "GIT_VERSION=$(git describe --tags --always)" >>$GITHUB_ENV
+
+      # Host core tests require no device or external endpoint.
+      # TLS integration tests have additional documented host dependencies.
+      - name: Test HTTPS Core, Wire Format and Restart Handling
+        run: |
+          docker run --rm \
+          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make -C software/network/https/tests test sanitize deadlines"
+
+      - name: Test UART Receive Recovery
+        run: |
+          docker run --rm \
+          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && python3 software/io/uart/tests/check_rx_rearm.py"
+
+      - name: Test HTTP and HTTPS UCI Compatibility
+        run: |
+          docker run --rm \
+          -v /opt/build-tools:/mnt/build-tools:ro \
+          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make -B -C target/pc/linux/test_http_target test-secure-exchange"
+
+      - name: Test ESP32 Cache Inputs
+        run: |
+          docker run --rm \
+          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && python3 tests/lib/esp_depends_test.py"
+
+      - name: Test C64 Ultimate HTTPS Build Recipe
+        run: |
+          git fetch --no-tags https://github.com/GideonZ/1541ultimate.git 7b628eb166872965ea59d66f90ffd9bcf7d71d8a
+          git -C software/httpd fetch --no-tags origin ad73d3217bb0e1b3f37e0dbba595309b942aea17
+          git -C software/lwip fetch --no-tags origin 26a22151f4b7ebb2925523192edc83fa7f31cba9
+          docker run --rm \
+          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && python3 -m unittest discover -s tools/c64u_https -v && python3 tests/lib/https_harness_test.py"
 
       - name: Test CRT Loader
         run: |
