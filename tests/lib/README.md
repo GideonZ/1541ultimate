@@ -54,6 +54,34 @@ UI-state gate around each one:
 no device and no network beyond loopback. `lint_test.py` is wired the same way,
 as `make lint_test` and as the `Test Lint of the Tests Tree` step.
 
+## The runner's modules
+
+`run-tests` keeps what changes whenever a suite is added, the `Suite` class and
+the `SUITES` registry, together with the orchestration that runs them:
+`run_one_attempt`, `run_suite`, `run_targets`, `main` and the UI-state gate.
+Everything those call lives in the `runtests/` package here, one concern per
+module. Imports run from the leaves up, so no module imports one that imports it.
+
+| Module | Holds |
+| --- | --- |
+| `runtests/constants.py` | The repository root, the categories and the modes |
+| `runtests/model.py` | `Result` and `Options`, what a run is made of |
+| `runtests/exits.py` | The exit statuses, how a run's results map to one, and `die` |
+| `runtests/identity.py` | Which checkout, host and harness files a run was made from |
+| `runtests/console.py` | The console capture that writes each suite's output to a log |
+| `runtests/device.py` | `Device`, the recovery budgets, and capturing and restoring the settings a run changes |
+| `runtests/syslog.py` | Collecting the device's own log, and checking where the device sends it |
+| `runtests/recording.py` | The screen recorder's options and its start and stop |
+| `runtests/capture.py` | The per-attempt output directories and the screen capture taken when a suite fails |
+| `runtests/cli.py` | The argument parser and help page, and resolving targets and modes from them |
+| `runtests/summary.py` | The end-of-run summary and its stale-gate report |
+| `runtests/children.py` | How a multi-target run starts and stops one child run per target |
+
+A constant that a test shortens belongs to the module that reads it, because
+setting it on `run-tests` would not reach the code in the package. The
+observability suite names these as `runtests.device.NAME` in
+`SCRIPTED_RUNNER_CONSTANTS`.
+
 ## The lint
 
 `tests/ruff.toml` selects the `F`, `E`, `W`, `B`, `UP`, `SIM`, `RUF`, `PLW` and

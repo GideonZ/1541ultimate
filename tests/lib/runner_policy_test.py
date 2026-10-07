@@ -40,6 +40,9 @@ import profiles  # noqa: E402
 import health  # noqa: E402
 import interactions  # noqa: E402
 import targets  # noqa: E402
+import runtests.children as children_lib  # noqa: E402
+import runtests.device as device_lib  # noqa: E402
+import runtests.exits as exits_lib  # noqa: E402
 from report import Failure, check, detail, suite_fail, suite_ok  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -58,8 +61,8 @@ def load_runner():
     spec = importlib.util.spec_from_loader("run_tests_harness", loader)
     module = importlib.util.module_from_spec(spec)
     loader.exec_module(module)
-    module.DEVICE_RECOVERY_POLL_SECONDS = FAST_POLL_SECONDS
-    module.POST_RECOVERY_BUDGET_SECONDS = FAST_POST_RECOVERY_BUDGET_SECONDS
+    device_lib.DEVICE_RECOVERY_POLL_SECONDS = FAST_POLL_SECONDS
+    device_lib.POST_RECOVERY_BUDGET_SECONDS = FAST_POST_RECOVERY_BUDGET_SECONDS
     return module
 
 
@@ -166,36 +169,36 @@ def run_exit_status_checks(runner):
                             attempts=2)
 
     with check("a clean run exits 0"):
-        expect("clean", runner.exit_code_for([passed], 0), runner.EXIT_OK)
+        expect("clean", exits_lib.exit_code_for([passed], 0), exits_lib.EXIT_OK)
 
     with check("a suite that needed a second attempt exits EXIT_RETRIED"):
-        expect("retried", runner.exit_code_for([passed, retried], 0),
-               runner.EXIT_RETRIED)
+        expect("retried", exits_lib.exit_code_for([passed, retried], 0),
+               exits_lib.EXIT_RETRIED)
 
     with check("a failed suite exits EXIT_SUITE_FAILED"):
-        expect("failure", runner.exit_code_for([passed, failed], 0),
-               runner.EXIT_SUITE_FAILED)
+        expect("failure", exits_lib.exit_code_for([passed, failed], 0),
+               exits_lib.EXIT_SUITE_FAILED)
 
     with check("a recovery with no failure exits EXIT_RECOVERED"):
-        expect("recovered", runner.exit_code_for([passed], 1), runner.EXIT_RECOVERED)
+        expect("recovered", exits_lib.exit_code_for([passed], 1), exits_lib.EXIT_RECOVERED)
 
     with check("a recovery outranks a retry"):
-        expect("recovery and retry", runner.exit_code_for([retried], 1),
-               runner.EXIT_RECOVERED)
+        expect("recovery and retry", exits_lib.exit_code_for([retried], 1),
+               exits_lib.EXIT_RECOVERED)
 
     with check("a failure outranks a recovery"):
-        expect("failure and recovery", runner.exit_code_for([passed, failed], 1),
-               runner.EXIT_SUITE_FAILED)
+        expect("failure and recovery", exits_lib.exit_code_for([passed, failed], 1),
+               exits_lib.EXIT_SUITE_FAILED)
 
     with check("a device that cannot be made healthy outranks a failure"):
-        expect("unhealthy", runner.exit_code_for([failed, unhealthy], 1), runner.EXIT_DEVICE_UNHEALTHY)
+        expect("unhealthy", exits_lib.exit_code_for([failed, unhealthy], 1), exits_lib.EXIT_DEVICE_UNHEALTHY)
 
     with check("the statuses are a scale, in severity order"):
-        ladder = [runner.EXIT_OK, runner.EXIT_RETRIED, runner.EXIT_RECOVERED,
-                  runner.EXIT_SUITE_FAILED, runner.EXIT_DEVICE_UNHEALTHY]
+        ladder = [exits_lib.EXIT_OK, exits_lib.EXIT_RETRIED, exits_lib.EXIT_RECOVERED,
+                  exits_lib.EXIT_SUITE_FAILED, exits_lib.EXIT_DEVICE_UNHEALTHY]
         if ladder != sorted(ladder):
             raise Failure(f"the statuses are not in severity order: {ladder}")
-        if runner.EXIT_USAGE in ladder:
+        if exits_lib.EXIT_USAGE in ladder:
             raise Failure("a usage error is on the scale, so a threshold "
                           "comparison reaches it")
 
@@ -328,8 +331,8 @@ def run_degraded_recovery_checks(runner):
                 self.machine = machine
                 self.settings = {}
 
-        real = runner.config_snapshot.capture
-        runner.config_snapshot.capture = lambda host, api: _Snapshot(host)
+        real = config_snapshot.capture
+        config_snapshot.capture = lambda host, api: _Snapshot(host)
         try:
             with declared_computers("u2@c64u"):
                 hosts = lambda target: [snap.machine for _, snap in  # noqa: E731
@@ -339,7 +342,7 @@ def run_degraded_recovery_checks(runner):
                        hosts("u2@c64u"), ["u2", "c64u"])
                 expect("an unrelated machine", hosts("u64"), ["u64"])
         finally:
-            runner.config_snapshot.capture = real
+            config_snapshot.capture = real
 
     with check("a device that comes back on other firmware is recovered"):
         # A RAM-loaded image falls back to the flashed one on a reboot, and the
@@ -564,12 +567,12 @@ def run_retry_checks(runner, tmpdir):
         # was merely busy end a gate; the full recovery budget would spend a
         # minute per failed suite on a classification the next suite redoes.
         expect("one check, with a bounded budget", asked,
-               [runner.LAST_ATTEMPT_HEALTH_BUDGET_SECONDS])
-        if not 0 < runner.LAST_ATTEMPT_HEALTH_BUDGET_SECONDS \
-                < runner.DEVICE_RECOVERY_BUDGET_SECONDS:
+               [device_lib.LAST_ATTEMPT_HEALTH_BUDGET_SECONDS])
+        if not 0 < device_lib.LAST_ATTEMPT_HEALTH_BUDGET_SECONDS \
+                < device_lib.DEVICE_RECOVERY_BUDGET_SECONDS:
             raise Failure(
                 f"the budget is not between asking once and waiting out the "
-                f"recovery budget: {runner.LAST_ATTEMPT_HEALTH_BUDGET_SECONDS}")
+                f"recovery budget: {device_lib.LAST_ATTEMPT_HEALTH_BUDGET_SECONDS}")
 
     with check("a device that cannot be made healthy ends the run"):
         result, made = run([(False, True)])
@@ -623,7 +626,7 @@ def run_jsonl_contract_checks(runner, tmpdir):
                                recoveries=1)
         report_module.run_result(verdict="OK", suites=1, passed=1, failed=0,
                                  skipped=0, dirty=0, seconds=1.5, recoveries=1,
-                                 exit_code=runner.EXIT_RECOVERED)
+                                 exit_code=exits_lib.EXIT_RECOVERED)
         with open(path, encoding="utf-8") as handle:
             records = [json.loads(line) for line in handle]
     finally:
@@ -656,7 +659,7 @@ def run_jsonl_contract_checks(runner, tmpdir):
         # A caller that reads only the JSONL must reach the same verdict as one
         # that reads only $?, so the two are written from the same numbers.
         expect("exit code matches a recovered run", run["exit_code"],
-               runner.EXIT_RECOVERED)
+               exits_lib.EXIT_RECOVERED)
 
 
 def run_output_dir_option_checks(runner):
@@ -685,7 +688,7 @@ def run_output_dir_option_checks(runner):
                 try:
                     parser.parse_args([spelling, "runs", "u64"])
                 except SystemExit as exc:
-                    expect("exit status", exc.code, runner.EXIT_USAGE)
+                    expect("exit status", exc.code, exits_lib.EXIT_USAGE)
                 else:
                     raise Failure(f"{spelling} was accepted")
 
@@ -1449,10 +1452,10 @@ def run_multi_target_checks(runner):
         # multi-target run quietly different from the single-target run it is
         # meant to repeat, which is exactly the failure this cannot detect
         # from its output.
-        forwarded = set(runner.CHILD_FORWARDED_FLAGS)
-        forwarded |= {name for name, _ in runner.CHILD_FORWARDED_VALUES}
-        forwarded |= {name for name, _ in runner.CHILD_FORWARDED_NEGATIVE}
-        forwarded |= set(runner.CHILD_EXCLUDED_OPTIONS)
+        forwarded = set(children_lib.CHILD_FORWARDED_FLAGS)
+        forwarded |= {name for name, _ in children_lib.CHILD_FORWARDED_VALUES}
+        forwarded |= {name for name, _ in children_lib.CHILD_FORWARDED_NEGATIVE}
+        forwarded |= set(children_lib.CHILD_EXCLUDED_OPTIONS)
         forwarded |= {"suite", "stop_on_fail"}
         known = {action.dest for action in parser._actions
                  if action.dest not in ("help",)}
@@ -1532,27 +1535,27 @@ def run_multi_target_checks(runner):
         # The statuses are a severity scale, so the worst of a run's children
         # is the largest of them and the combination is a maximum rather than
         # a ladder of conditions that can disagree with the scale.
-        expect("all clean", runner.combine_exit_codes([0, 0]), runner.EXIT_OK)
+        expect("all clean", runner.combine_exit_codes([0, 0]), exits_lib.EXIT_OK)
         expect("a failure", runner.combine_exit_codes(
-            [runner.EXIT_OK, runner.EXIT_SUITE_FAILED]), runner.EXIT_SUITE_FAILED)
+            [exits_lib.EXIT_OK, exits_lib.EXIT_SUITE_FAILED]), exits_lib.EXIT_SUITE_FAILED)
         expect("a retry", runner.combine_exit_codes(
-            [runner.EXIT_OK, runner.EXIT_RETRIED]), runner.EXIT_RETRIED)
+            [exits_lib.EXIT_OK, exits_lib.EXIT_RETRIED]), exits_lib.EXIT_RETRIED)
         expect("a recovery", runner.combine_exit_codes(
-            [runner.EXIT_OK, runner.EXIT_RECOVERED]), runner.EXIT_RECOVERED)
+            [exits_lib.EXIT_OK, exits_lib.EXIT_RECOVERED]), exits_lib.EXIT_RECOVERED)
         expect("a recovery outranks a retry", runner.combine_exit_codes(
-            [runner.EXIT_RETRIED, runner.EXIT_RECOVERED]),
-            runner.EXIT_RECOVERED)
+            [exits_lib.EXIT_RETRIED, exits_lib.EXIT_RECOVERED]),
+            exits_lib.EXIT_RECOVERED)
         expect("a failure outranks a recovery", runner.combine_exit_codes(
-            [runner.EXIT_RECOVERED, runner.EXIT_SUITE_FAILED]),
-            runner.EXIT_SUITE_FAILED)
+            [exits_lib.EXIT_RECOVERED, exits_lib.EXIT_SUITE_FAILED]),
+            exits_lib.EXIT_SUITE_FAILED)
         expect("an unhealthy device outranks a failure",
                runner.combine_exit_codes(
-                   [runner.EXIT_SUITE_FAILED, runner.EXIT_DEVICE_UNHEALTHY]),
-               runner.EXIT_DEVICE_UNHEALTHY)
+                   [exits_lib.EXIT_SUITE_FAILED, exits_lib.EXIT_DEVICE_UNHEALTHY]),
+               exits_lib.EXIT_DEVICE_UNHEALTHY)
         expect("a status this runner never produces is a failure",
-               runner.combine_exit_codes([0, runner.EXIT_USAGE]),
-               runner.EXIT_SUITE_FAILED)
-        expect("no children", runner.combine_exit_codes([]), runner.EXIT_OK)
+               runner.combine_exit_codes([0, exits_lib.EXIT_USAGE]),
+               exits_lib.EXIT_SUITE_FAILED)
+        expect("no children", runner.combine_exit_codes([]), exits_lib.EXIT_OK)
 
 
 # Routing markers: every one of these asks tests/lib/targets.py which machine
