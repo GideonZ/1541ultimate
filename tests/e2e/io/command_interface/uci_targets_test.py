@@ -77,6 +77,7 @@ CFG_REU_OFFSET = "REU Preload Offset"
 # Everything the suite writes, captured before the first change and put back at the end.
 OWNED_SETTINGS = (CFG_CMD_IF, CFG_REU_ENABLE, CFG_REU_IMAGE, CFG_REU_SIZE, CFG_REU_OFFSET)
 
+REG_KERNAL_DEVICE = 0xDF1B
 REG_CONTROL = 0xDF1C
 REG_COMMAND = 0xDF1D
 REG_RESPONSE = 0xDF1E
@@ -113,6 +114,7 @@ CTRL_CMD_IDENTIFY = 0x01
 CTRL_CMD_LOAD_REU = 0x08
 CTRL_CMD_SAVE_REU = 0x09
 CTRL_CMD_GET_HWINFO = 0x28
+CTRL_CMD_GET_DRVINFO = 0x29
 CTRL_CMD_GET_PALETTE = 0x51
 CTRL_CMD_SET_PALETTE = 0x52
 CTRL_CMD_SET_PALETTE_COLOR = 0x53
@@ -120,6 +122,11 @@ CTRL_CMD_RESET_PALETTE = 0x54
 SOFTIEC_CMD_IDENTIFY = 0x01
 SOFTIEC_CMD_LOAD_SU = 0x10
 SOFTIEC_CMD_GET_FATNAME = 0x22
+# GET_DRVINFO reports one three-byte entry (type, bus id, powered) per device. The
+# Software IEC drive and the printer are IEC slaves and carry their own type byte.
+DRVINFO_ENTRY_BYTES = 3
+DRVINFO_CURRENT_BUS_ID = 0x00
+DRVINFO_SLAVE_TYPES = {"IEC Drive": 0x0F, "Printer Emulation": 0x50}
 SOFTIEC_CMD_GET_IECNAME = 0x23
 # No target implements $7F, so it reaches the unknown-command path.
 CMD_UNIMPLEMENTED = 0x7F
@@ -208,7 +215,9 @@ TESTS = [
     "load-reu-disabled",
     "save-reu-disabled",
     "softiec-single-part-reply",
+    "get-drvinfo",
     "softiec-x00-name",
+    "softiec-setting-modes",
     "interface-usable-after",
 ]
 
@@ -871,6 +880,58 @@ def run_softiec_single_part_reply(uci: Uci) -> bool:
     return True
 
 
+def run_get_drvinfo(session: RestSession, uci: Uci) -> bool:
+    """GET_DRVINFO must send every device it counts, and the same devices as /v1/drives.
+
+    The REST drive list is the reference: it names each device the firmware has
+    (drive A and B, then the IEC slaves) with its bus id and whether it is on.
+    /v1/drives reports the drives' current bus id, which the command selects with
+    a parameter of 0; without a parameter it reports the effective bus id, which
+    differs when the device ID is overridden.
+    """
+    scenario = "get-drvinfo"
+    status, body = session.request("GET", "/v1/drives", repeatable=True)
+    if status != 200:
+        raise Failure(f"{scenario}: GET /v1/drives failed with HTTP {status}: {body[:200]!r}")
+    expected = []
+    for entry in json.loads(body.decode("utf-8"))["drives"]:
+        (name, info), = entry.items()
+        expected.append((name, int(info["bus_id"]), bool(info["enabled"])))
+    if not any(name in DRVINFO_SLAVE_TYPES for name, _, _ in expected):
+        raise Failure(f"{scenario}: /v1/drives lists no IEC slave, so this check cannot run")
+    detail(f"{scenario}: /v1/drives lists {expected}")
+
+    default_reply = expect(uci, f"{scenario}: GET_DRVINFO completes",
+                           bytes([TARGET_CONTROL, CTRL_CMD_GET_DRVINFO]), STATUS_OK)
+    reply = expect(uci, f"{scenario}: GET_DRVINFO with the current bus ids completes",
+                   bytes([TARGET_CONTROL, CTRL_CMD_GET_DRVINFO, DRVINFO_CURRENT_BUS_ID]), STATUS_OK)
+    with check(f"{scenario}: both forms send the same number of bytes"):
+        if len(default_reply) != len(reply):
+            raise Failure(f"{scenario}: {len(default_reply)} bytes by default, "
+                          f"{len(reply)} with the current bus ids")
+    with check(f"{scenario}: the device count matches the bytes sent"):
+        if not reply:
+            raise Failure(f"{scenario}: empty reply")
+        sent = (len(reply) - 1) // DRVINFO_ENTRY_BYTES
+        if reply[0] != sent or len(reply) != 1 + DRVINFO_ENTRY_BYTES * sent:
+            raise Failure(f"{scenario}: the reply counts {reply[0]} devices but holds "
+                          f"{len(reply) - 1} bytes after the count: {reply.hex(' ')}")
+    with check(f"{scenario}: every device in /v1/drives has an entry"):
+        entries = [(reply[1 + i * 3], reply[2 + i * 3], bool(reply[3 + i * 3]))
+                   for i in range(len(reply) // DRVINFO_ENTRY_BYTES)]
+        if len(entries) != len(expected):
+            raise Failure(f"{scenario}: /v1/drives lists {len(expected)} devices, "
+                          f"the reply has {len(entries)}: {reply.hex(' ')}")
+        for (name, bus_id, enabled), (kind, address, powered) in zip(expected, entries):
+            if (address, powered) != (bus_id, enabled):
+                raise Failure(f"{scenario}: {name} is bus id {bus_id}, enabled {enabled}, "
+                              f"the entry says {address}, {powered}")
+            if name in DRVINFO_SLAVE_TYPES and kind != DRVINFO_SLAVE_TYPES[name]:
+                raise Failure(f"{scenario}: {name} has type ${kind:02X}, "
+                              f"expected ${DRVINFO_SLAVE_TYPES[name]:02X}")
+    return True
+
+
 def run_softiec_x00_name(ftp: "FtpFixture", uci: Uci) -> bool:
     """GET_IECNAME names an x00 file by the CBM name in its header (SI-144).
 
@@ -893,6 +954,61 @@ def run_softiec_x00_name(ftp: "FtpFixture", uci: Uci) -> bool:
     expect(uci, f"{scenario}: a file without the signature answers its host name",
            bytes([TARGET_SOFTIEC, SOFTIEC_CMD_GET_IECNAME]) + X00_PLAIN.encode("ascii"),
            SOFTIEC_OK, reply=bytes([IEC_TYPE_ANY]) + b"UCIPLAIN.P00")
+    return True
+
+
+SOFTIEC_CATEGORY = "SoftIEC Drive Settings"
+SOFTIEC_ENABLE = "IEC Drive"
+SOFTIEC_BUS_ID = "Soft Drive Bus ID"
+# The number $DF1B holds while the drive is off altogether, which no program opens.
+KERNAL_DEVICE_NONE = 31
+
+
+def softiec_on_bus(session: RestSession) -> bool:
+    status, body = session.request("GET", "/v1/drives", repeatable=True)
+    if status != 200:
+        raise Failure(f"GET /v1/drives failed with HTTP {status}: {body[:200]!r}")
+    for entry in json.loads(body.decode("utf-8"))["drives"]:
+        if "IEC Drive" in entry:
+            return bool(entry["IEC Drive"]["enabled"])
+    raise Failure("/v1/drives lists no IEC Drive")
+
+
+def run_softiec_setting_modes(session: RestSession, uci: Uci) -> bool:
+    """"IEC Drive" decides the bus and the UCI side of the drive separately (SI-107, #918).
+
+    Enabled puts the drive on the bus and gives a UCI KERNAL its number at $DF1B. UCI Only
+    takes it off the bus and keeps the UCI target answering, which is how a program is shown
+    to use UCI and not the bus. Disabled turns off both: the target answers "not loaded" and
+    $DF1B holds 31, so the KERNAL sends everything to the bus, where the drive is not.
+    """
+    scenario = "softiec-setting-modes"
+    settings = session.get_config(SOFTIEC_CATEGORY)
+    original = str(settings[SOFTIEC_ENABLE])
+    device = int(settings[SOFTIEC_BUS_ID])
+    modes = (
+        ("Enabled", True, True, device),
+        ("Disabled", False, False, KERNAL_DEVICE_NONE),
+        ("UCI Only", False, True, device),
+    )
+    try:
+        for value, on_bus, serves_uci, kernal_device in modes:
+            with check(f"{scenario}: {SOFTIEC_ENABLE} {value}: on the bus {on_bus}, "
+                       f"UCI {serves_uci}, $DF1B {kernal_device}"):
+                session.set_config(SOFTIEC_CATEGORY, SOFTIEC_ENABLE, value)
+                seen_bus = softiec_on_bus(session)
+                seen_device = session.peek(REG_KERNAL_DEVICE, repeatable=True) & 0x1F
+                _reply, text = uci.transact(bytes([TARGET_SOFTIEC, SOFTIEC_CMD_IDENTIFY]))
+                detail(f"on the bus {seen_bus}, $DF1B {seen_device}, IDENTIFY status {text!r}")
+                if seen_bus != on_bus:
+                    raise Failure(f"the drive list says on the bus {seen_bus}, expected {on_bus}")
+                if seen_device != kernal_device:
+                    raise Failure(f"$DF1B holds {seen_device}, expected {kernal_device}")
+                wanted = STATUS_OK if serves_uci else SOFTIEC_NOT_LOADED
+                if text != wanted:
+                    raise Failure(f"IDENTIFY answered status {text!r}, expected {wanted!r}")
+    finally:
+        session.set_config(SOFTIEC_CATEGORY, SOFTIEC_ENABLE, original)
     return True
 
 
@@ -969,6 +1085,8 @@ def main() -> int:
     # $DF1C only belongs to the command interface once the setting is on; before
     # that the address is the REU's, so the suite must not write to it.
     interface_enabled = False
+    # The SoftIEC drive as the device had it, when this suite switched it on.
+    softiec_original: str | None = None
 
     def run(name: str, fn, *fn_args) -> None:
         if name not in selected:
@@ -1018,6 +1136,16 @@ def main() -> int:
                     f"identification $C9 (or $49 while an interrupt is pending)"
                 )
 
+        # The SoftIEC scenarios need the drive loaded. A machine that ships with
+        # it off (an Ultimate II+L does) would otherwise fail them for a setting
+        # this suite never looked at.
+        with check("the SoftIEC drive is switched on for the SoftIEC scenarios"):
+            current = str(session.get_config(SOFTIEC_CATEGORY)[SOFTIEC_ENABLE])
+            if current != "Enabled":
+                session.set_config(SOFTIEC_CATEGORY, SOFTIEC_ENABLE, "Enabled")
+                softiec_original = current
+            detail(f"{SOFTIEC_ENABLE}: {current}")
+
         run("transport", run_transport, uci)
         run("control-target", run_control_target, uci)
         run("palette", run_palette, uci)
@@ -1026,7 +1154,9 @@ def main() -> int:
         run("load-reu-disabled", run_reu_disabled, session, uci, CTRL_CMD_LOAD_REU, "load-reu-disabled")
         run("save-reu-disabled", run_reu_disabled, session, uci, CTRL_CMD_SAVE_REU, "save-reu-disabled")
         run("softiec-single-part-reply", run_softiec_single_part_reply, uci)
+        run("get-drvinfo", run_get_drvinfo, session, uci)
         run("softiec-x00-name", run_softiec_x00_name, ftp, uci)
+        run("softiec-setting-modes", run_softiec_setting_modes, session, uci)
         run("interface-usable-after", run_interface_usable_after, uci)
 
     except Failure as exc:
@@ -1037,6 +1167,12 @@ def main() -> int:
         # both run even if the first one fails.
         released = release_interface(uci) if interface_enabled else True
         restored = restore_settings(session, original, args.keep_config)
+        if softiec_original is not None and not args.keep_config:
+            try:
+                session.set_config(SOFTIEC_CATEGORY, SOFTIEC_ENABLE, softiec_original)
+            except Failure as exc:
+                detail(f"could not put {SOFTIEC_ENABLE} back to {softiec_original}: {exc}")
+                restored = False
         removed = ftp.cleanup()
         cleanup_ok = released and restored and removed
 

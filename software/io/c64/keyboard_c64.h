@@ -4,6 +4,15 @@
 #include "keyboard.h"
 #include "host.h"
 
+// getch() is away 40 to 115 ms whenever the UI stops the machine, long enough to miss a 40 ms
+// machine:input tap or its release, so these builds scan from a timer at this period in ticks.
+#if !U64 && !RECOVERYAPP && !defined(NO_FILE_ACCESS)
+#define KEYBOARD_C64_TIMER_SCAN 1
+#define KEYBOARD_C64_SCAN_PERIOD_TICKS 2
+#else
+#define KEYBOARD_C64_TIMER_SCAN 0
+#endif
+
 #define KEY_BUFFER_SIZE 16
 
 class GenericHost;
@@ -23,9 +32,19 @@ class Keyboard_C64 : public Keyboard
 
     int  delay_count;
 
+    // False after ignore_held_input() until a scan sees no key and no joystick.
+    // Anything held when the menu opens is ignored until it is released.
+    bool armed;
+
     int key_buffer[KEY_BUFFER_SIZE];
-    int  key_head;
-    int  key_tail;
+    volatile int  key_head;
+    volatile int  key_tail;
+    // Held by the user interface task while it drives the CIA itself
+    // (wait_free), so the timer scan keeps its hands off the column select.
+    volatile int  scan_paused;
+    void *scan_timer;
+    static void scan_timer_callback(void *timer);
+    void push_key(int key);
 public:
     Keyboard_C64(GenericHost *, volatile uint8_t *r, volatile uint8_t *c, volatile uint8_t *j);
     ~Keyboard_C64();
@@ -41,6 +60,7 @@ public:
     void push_head(int);
     void wait_free(void);
     void clear_buffer(void);
+    void ignore_held_input(void);
 };
 
 #endif

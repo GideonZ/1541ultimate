@@ -194,6 +194,10 @@ readLoadAddresses
                 beq +
                 inc LOAD_END_ADDRESS
     +
+                lda LOAD_END_ADDRESS ; page $00 here means the tune reaches $FFxx: the end wrapped at $10000
+                bne +
+                dec LOAD_END_ADDRESS
++
                 ldy #$7d            ; read hi byte of load address
                 jsr readHeader
                 sta LOAD_ADDRESS

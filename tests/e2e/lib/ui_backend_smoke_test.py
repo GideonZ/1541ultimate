@@ -36,7 +36,7 @@ import profiles  # noqa: E402
 import rest as rest_lib
 import targets
 from report import (Failure, check, detail, format_exception, section,
-                    suite_fail, suite_ok)
+                    suite_fail, suite_ok, warn)
 from ui_backend import (BOX_BOTTOM_LEFT, BOX_BOTTOM_RIGHT, BOX_HORIZONTAL,
                         BOX_TOP_LEFT, BOX_TOP_RIGHT, BOX_VERTICAL,
                         SCREEN_CELLS, SCREEN_WIDTH, Backend, RestBackend,
@@ -891,6 +891,28 @@ def seek_to(backend: Backend, entry_rows: Sequence[int], character: str,
         snapshot = backend.capture()
 
 
+def move_to_path(backend: Backend, key: str, arrived) -> str:
+    """Press `key` and return the browser path once `arrived` accepts it.
+
+    A key injected into a cartridge target reaches it through the host's
+    keyboard matrix, some time after the request returns. The key is pressed
+    again, once, only when the path has not changed within
+    SEEK_TIMEOUT_SECONDS, and that is reported as a warning.
+    """
+    start = path_row(backend.capture())
+    path = path_row(backend.send_key(key))
+    for attempt in range(2):
+        deadline = time.monotonic() + SEEK_TIMEOUT_SECONDS
+        while not arrived(path) and path == start and time.monotonic() < deadline:
+            time.sleep(pacing.POLL_INTERVAL_SECONDS)
+            path = path_row(backend.capture())
+        if arrived(path) or path != start or attempt:
+            return path
+        warn(f"{key} left the path at {start!r}; pressing it again")
+        path = path_row(backend.send_key(key))
+    return path
+
+
 def run_backend_smoke(backend: Backend, entry_rows: Sequence[int]) -> None:
     with check("root browser is visible on connect"):
         snapshot = backend.capture()
@@ -949,10 +971,10 @@ def run_backend_smoke(backend: Backend, entry_rows: Sequence[int]) -> None:
         # already appears as a row label at the root, so this checks the
         # browser's own path indicator rather than screen content generally.
         seek_to(backend, entry_rows, "t", "Temp")
-        entered_path = path_row(backend.send_key("RIGHT"))
+        entered_path = move_to_path(backend, "RIGHT", lambda path: path.startswith("/Temp"))
         if not entered_path.startswith("/Temp"):
             raise Failure(f"quick-seek on 't' + RIGHT did not enter /Temp: path was {entered_path!r}")
-        left_path = path_row(backend.send_key("LEFT"))
+        left_path = move_to_path(backend, "LEFT", lambda path: path == "/")
         if left_path != "/":
             raise Failure(f"LEFT did not return to the root path: {left_path!r}")
 

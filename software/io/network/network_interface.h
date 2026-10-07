@@ -124,6 +124,7 @@ public:
     bool is_link_up() { return if_up; }
     void set_mac_address(uint8_t *mac);
     bool input(void *raw_buffer, uint8_t *payload, int pkt_size);
+    bool input_copy(uint8_t *payload, int pkt_size);
 
     void init_callback();
 

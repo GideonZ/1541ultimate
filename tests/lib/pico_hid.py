@@ -192,7 +192,15 @@ class Pico:
         return status
 
 
-def discover_pico(timeout: float = 4.0) -> str:
+def discover_pico(timeout: float = 4.0, optional: bool = False) -> str | None:
+    """The fixture's address, or None when `optional` and none answers.
+
+    A bench without the fixture is a bench where the suites that drive real
+    USB HID cannot run at all, which is a different thing from a fixture that
+    is present and misbehaving. `optional` lets a caller tell the two apart and
+    skip rather than report a failure nobody can act on. Finding more than one
+    stays a failure either way: which of them to drive is not for this to guess.
+    """
     request = json.dumps({"service": MAGIC, "protocol_version": PROTOCOL_VERSION}).encode()
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
@@ -227,6 +235,8 @@ def discover_pico(timeout: float = 4.0) -> str:
         sock.close()
     if not found:
         found = sweep_for_pico()
+    if not found and optional:
+        return None
     if len(found) != 1:
         raise Failure("expected exactly one Pico fixture, found %r. Pass --pico-host with the "
                       "fixture's IP address if this network does not forward broadcast between "

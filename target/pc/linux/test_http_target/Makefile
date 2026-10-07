@@ -97,3 +97,11 @@ test-body-removal:
 	    CPP="$(CPP) -fsanitize=address,undefined -fno-sanitize-recover=all" all
 	# ASan must precede any libraries preloaded by the build environment.
 	@LD_PRELOAD="$$($(CPP) -print-file-name=libasan.so)$${LD_PRELOAD:+:$$LD_PRELOAD}" result/body-removal/$(PRJ) --body-removal
+
+# Exercise real refused connections on loopback without an external service.
+.PHONY: test-connect-cleanup
+test-connect-cleanup:
+	@$(MAKE) OUTPUT=output/connect-cleanup RESULT=result/connect-cleanup \
+	    CC="$(CC) -fsanitize=address,undefined -fno-sanitize-recover=all" \
+	    CPP="$(CPP) -fsanitize=address,undefined -fno-sanitize-recover=all" all
+	@timeout 30s env LD_PRELOAD="$$($(CPP) -print-file-name=libasan.so)$${LD_PRELOAD:+:$$LD_PRELOAD}" result/connect-cleanup/$(PRJ) --connect-cleanup

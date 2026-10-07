@@ -335,7 +335,9 @@ def scenario_menu_button_reopen(api: UltimateApi) -> None:
         # The menu has to be up first, and getting it there is setup, so it
         # may take more than one press.
         open_menu(api)
-        if not api.machine.menu_open():
+        # Waited for, not read once: the overlay can take longer than the press
+        # to appear, and this is setup, not the sequence under test.
+        if not wait_menu(api, True, MENU_TIMEOUT):
             raise Failure("the menu would not open, so the reopen cannot be "
                           "measured")
         # From here the sequence is the one under test and nothing is added to

@@ -141,6 +141,7 @@ class FileManager
 	FRESULT delete_file_impl(PathInfo &pathInfo);
 	void release_mount_point(MountPoint *mp);
 	void discard_mounts_of_file(const char *path);
+	bool in_use_for_writing(const char *path);
 	void get_temp_directory_path(const char *category, mstring &directory_out);
 	FRESULT build_temp_path(const char *category, const char *suggested_name, uint32_t seq, bool unique_name, uint32_t suffix,
 	        bool create_dirs, mstring &canonical_path_out);
@@ -234,6 +235,8 @@ public:
     FRESULT get_free(Path *path, uint32_t &free, uint32_t &cluster_size);
     FRESULT get_total(Path *path, uint32_t &total, uint32_t &cluster_size);
     FRESULT set_attributes(const char *pathname, uint8_t attrib, uint8_t mask);
+    FRESULT set_dir_label(const char *pathname, const char *name, const char *id);
+    FRESULT set_write_lock(const char *pathname, bool locked);
     FRESULT fs_read_sector(Path *path, uint8_t *buffer, int track, int sector);
     FRESULT fs_write_sector(Path *path, uint8_t *buffer, int track, int sector);
     FRESULT fs_allocate_sector(Path *path, int &track, int &sector, bool alloc);

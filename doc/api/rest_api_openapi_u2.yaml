@@ -95,7 +95,7 @@ paths:
         - Configuration
       summary: List the configuration categories
       description: |2-
-        Reads the same settings the menu shows, at one of three levels of detail. With no path it lists the category names. With a category it gives the current value of every item in it. With a category and an item it describes each matching item in full: the current value, the default, and either the accepted values of an enumeration or the range and format of a number.
+        Reads the same settings the menu shows, at one of three levels of detail. With no path it lists the category names. With a category it gives the current value of every item in it. With a category and an item it describes each matching item in full: the current value, the default, and either the accepted values of an enumeration, in the order the menu lists them, or the range and format of a number.
 
         Both path elements are patterns, so `drive*` selects every category whose name starts with `drive` and `*bus*` selects every item with `bus` in its name. Category and item names contain spaces and must be URL encoded.
 
@@ -184,7 +184,7 @@ paths:
         - Configuration
       summary: Read the values in a category
       description: |2-
-        Reads the same settings the menu shows, at one of three levels of detail. With no path it lists the category names. With a category it gives the current value of every item in it. With a category and an item it describes each matching item in full: the current value, the default, and either the accepted values of an enumeration or the range and format of a number.
+        Reads the same settings the menu shows, at one of three levels of detail. With no path it lists the category names. With a category it gives the current value of every item in it. With a category and an item it describes each matching item in full: the current value, the default, and either the accepted values of an enumeration, in the order the menu lists them, or the range and format of a number.
 
         Both path elements are patterns, so `drive*` selects every category whose name starts with `drive` and `*bus*` selects every item with `bus` in its name. Category and item names contain spaces and must be URL encoded.
 
@@ -232,7 +232,7 @@ paths:
         - Configuration
       summary: Read a setting in full
       description: |2-
-        Reads the same settings the menu shows, at one of three levels of detail. With no path it lists the category names. With a category it gives the current value of every item in it. With a category and an item it describes each matching item in full: the current value, the default, and either the accepted values of an enumeration or the range and format of a number.
+        Reads the same settings the menu shows, at one of three levels of detail. With no path it lists the category names. With a category it gives the current value of every item in it. With a category and an item it describes each matching item in full: the current value, the default, and either the accepted values of an enumeration, in the order the menu lists them, or the range and format of a number.
 
         Both path elements are patterns, so `drive*` selects every category whose name starts with `drive` and `*bus*` selects every item with `bus` in its name. Category and item names contain spaces and must be URL encoded.
 

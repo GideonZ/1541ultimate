@@ -1,11 +1,12 @@
 #include "http_target.h"
 #include "dump_hex.h"
+#include <dirent.h>
 #include <fcntl.h>
+#include <netinet/in.h>
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
 #include <assert.h>
-#include <netinet/in.h>
 #include <sys/wait.h>
 
 // these globals will be filled in by the clients
@@ -727,8 +728,149 @@ static void test_plain_exchange(HttpTarget *target)
     assert(WIFEXITED(child_status) && WEXITSTATUS(child_status) == 0);
 }
 
+
+class LoopbackEndpoint
+{
+    int socket_fd;
+    uint16_t bound_port;
+
+    LoopbackEndpoint(const LoopbackEndpoint&);
+    LoopbackEndpoint& operator=(const LoopbackEndpoint&);
+public:
+    LoopbackEndpoint() : socket_fd(socket(AF_INET, SOCK_STREAM, 0)), bound_port(0)
+    {
+        struct sockaddr_in address = {};
+        address.sin_family = AF_INET;
+        address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        socklen_t length = sizeof(address);
+        if (socket_fd >= 0 && bind(socket_fd, (struct sockaddr *)&address, length) == 0 &&
+            getsockname(socket_fd, (struct sockaddr *)&address, &length) == 0) {
+            bound_port = ntohs(address.sin_port);
+        }
+    }
+
+    ~LoopbackEndpoint()
+    {
+        if (socket_fd >= 0) {
+            close(socket_fd);
+        }
+    }
+
+    uint16_t port() const { return bound_port; }
+    bool start_listening() { return listen(socket_fd, 1) == 0; }
+};
+
+static int open_descriptor_count(void)
+{
+    DIR *directory = opendir("/proc/self/fd");
+    if (!directory) {
+        return -1;
+    }
+    int count = 0;
+    struct dirent *entry;
+    while ((entry = readdir(directory)) != NULL) {
+        if (entry->d_name[0] != '.') {
+            count++;
+        }
+    }
+    closedir(directory);
+    return count;
+}
+
+static void expect_descriptor_count(const char *label, int expected)
+{
+    int actual = open_descriptor_count();
+    checks++;
+    if (actual < 0 || actual != expected) {
+        failures++;
+        printf("FAIL %s: expected %d descriptors, got %d\n", label, expected, actual);
+    }
+}
+
+static void test_connect_cleanup(void)
+{
+    // Keep the port bound but not listening: no other process can claim it.
+    LoopbackEndpoint endpoint;
+    int baseline = open_descriptor_count();
+    checks++;
+    if (!endpoint.port() || baseline < 0) {
+        failures++;
+        printf("FAIL connect cleanup: cannot prepare loopback port or count descriptors\n");
+        return;
+    }
+
+    for (int attempt = 0; attempt < 64; ++attempt) {
+        {
+            HttpRequest request;
+            quiet_begin();
+            int result = request.connect_to_server("127.0.0.1", endpoint.port());
+            quiet_end();
+            checks++;
+            if (result != -1) {
+                failures++;
+                printf("FAIL refused connection %d: expected -1, got %d\n", attempt, result);
+            }
+            expect_descriptor_count("refused connection releases socket immediately", baseline);
+        }
+        expect_descriptor_count("failed request destruction leaves no socket", baseline);
+    }
+
+    // A closed descriptor can be reused before request destruction. Keep a new
+    // descriptor alive across that destruction to catch stale socket ownership.
+    int guard_fd = -1;
+    {
+        HttpRequest request;
+        int result = request.connect_to_server("127.0.0.1", endpoint.port());
+        checks++;
+        if (result != -1) {
+            failures++;
+            printf("FAIL descriptor reuse: expected a refused connection\n");
+        }
+        guard_fd = open("/dev/null", O_RDONLY);
+        checks++;
+        if (guard_fd < 0) {
+            failures++;
+            printf("FAIL descriptor reuse: cannot open guard descriptor\n");
+        }
+    }
+    checks++;
+    if (guard_fd < 0 || fcntl(guard_fd, F_GETFD) < 0) {
+        failures++;
+        printf("FAIL failed request destruction closed an unrelated descriptor\n");
+    }
+    if (guard_fd >= 0) {
+        close(guard_fd);
+    }
+    expect_descriptor_count("descriptor reuse leaves no socket", baseline);
+
+    checks++;
+    if (!endpoint.start_listening()) {
+        failures++;
+        printf("FAIL connect cleanup: cannot listen on loopback port\n");
+        return;
+    }
+    {
+        HttpRequest request;
+        quiet_begin();
+        int connected = request.connect_to_server("127.0.0.1", endpoint.port());
+        quiet_end();
+        checks++;
+        if (connected < 0 || fcntl(connected, F_GETFD) < 0) {
+            failures++;
+            printf("FAIL successful connection must retain an open socket\n");
+        }
+        expect_descriptor_count("successful request owns one socket", baseline + 1);
+    }
+    expect_descriptor_count("successful request destruction releases socket", baseline);
+}
+
 int main(int argc, char **argv)
 {
+    if ((argc > 1) && (strcmp(argv[1], "--connect-cleanup") == 0)) {
+        test_connect_cleanup();
+        printf("Connect cleanup: %d checks, %d failures\n", checks, failures);
+        return failures ? 1 : 0;
+    }
     HttpTarget *target = (HttpTarget *)command_targets[6];
 #ifdef TEST_HTTP_REAL_TLS
     if(target && argc>1 && !strcmp(argv[1],"--real-tls")) {
