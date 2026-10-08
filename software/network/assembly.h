@@ -12,7 +12,7 @@ class Assembly
 
     int   connect_to_server(void);
     void  close_connection(void);
-    JSON *take_response_json(void);
+    JSON *receive_json(void);
 public:
     Assembly() {
         presets = NULL;
