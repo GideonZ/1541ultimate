@@ -19,7 +19,7 @@ void collect_in_buffer(HTTPReqMessage *req, HTTPRespMessage *resp);
 //void write_to_temp(HTTPReqMessage *req, HTTPRespMessage *resp);
 
 int   read_socket(int socket_fd, HTTPReqMessage& response);
-void  get_response(int socket_fd, HTTPREQ_CALLBACK callback, HTTPReqMessage& response);
+bool  get_response(int socket_fd, HTTPREQ_CALLBACK callback, HTTPReqMessage& response);
 JSON *convert_buffer_to_json(t_BufferedBody *body);
 
 class HttpRequest
@@ -44,7 +44,7 @@ public:
     }
     int connect_to_server(const char *hostname, uint16_t hostport);
     int send_request(StreamRamFile *req);
-    void recv_response(void);
+    bool recv_response(void);
 
     HTTPReqHeader *get_header(void) {
         return &response.Header;

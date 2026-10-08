@@ -1,6 +1,7 @@
 //#include "attachment_writer.h"
 #include "http_request.h"
 #include "netdb.h"
+#include <errno.h>
 
 int HttpRequest :: connect_to_server(const char *hostname, uint16_t hostport)
 {
@@ -64,11 +65,18 @@ int HttpRequest :: send_request(StreamRamFile *s)
     return 0;
 }
 
-void HttpRequest :: recv_response(void)
+bool HttpRequest :: recv_response(void)
 {
-    get_response(this->socket_fd, collect_in_buffer, response);
+    bool complete = get_response(this->socket_fd, collect_in_buffer, response);
     this->body = (t_BufferedBody *)response.userContext;
+    if (!complete || !this->body) {
+        delete this->body;
+        this->body = NULL;
+        response.userContext = NULL;
+        return false;
+    }
     this->body->offset = 0;
+    return true;
 }
 
 void attachment_to_buffer(BodyDataBlock_t *block)
@@ -134,16 +142,29 @@ int read_socket(int socket_fd, HTTPReqMessage& response)
     return n;
 }
 
-void get_response(int socket_fd, HTTPREQ_CALLBACK callback, HTTPReqMessage& response)
+bool get_response(int socket_fd, HTTPREQ_CALLBACK callback, HTTPReqMessage& response)
 {
-    uint8_t state = WRITING_SOCKET;
-    
+    uint8_t state = READING_SOCKET;
+
     do {
         int n = read_socket(socket_fd, response);
-        if (n) {
-            state = ProcessClientData(&response, NULL, callback);
+        if (n < 0 && errno == EINTR) {
+            continue;
         }
+        if (n <= 0) {
+            break;
+        }
+        state = ProcessClientData(&response, NULL, callback);
     } while(state < WRITING_SOCKET);
+
+    // Completed bodies release their absorber in ProcessClientData. Abort any
+    // remaining absorber on early EOF, read failure, or a bodyless response.
+    if (response.BodyCB) {
+        response.BodyCB(response.BodyContext, NULL, -1);
+        response.BodyCB = NULL;
+        response.BodyContext = NULL;
+    }
+    return state >= WRITING_SOCKET && response.protocol_state != eReq_HeaderTooBig;
 }
 
 JSON *convert_buffer_to_json(t_BufferedBody *body)
