@@ -88,7 +88,10 @@ port (
     -- I/O interface from application CPU
     io_req          : in  t_io_req;
     io_resp         : out t_io_resp;
-    io_irq          : out std_logic );
+    io_irq          : out std_logic;
+
+    -- Debug: the drive CPU's program counter, readable by the application
+    cpu_pc          : in  std_logic_vector(15 downto 0) := (others => '0') );
 
 end entity;
 
@@ -135,6 +138,10 @@ architecture behavioral of wd177x is
     signal command_fifo_valid   : std_logic;
     signal completion           : std_logic;
     signal write_delay_cnt      : unsigned(7 downto 0);
+    signal ack_writes           : std_logic := '0';
+    signal write_ack            : std_logic := '0';
+    signal write_ack_lost       : std_logic := '0';
+    signal cpu_pc_high          : std_logic_vector(7 downto 0) := X"00";
     
     -- Stepper
     signal goto_track       : unsigned(6 downto 0);
@@ -174,6 +181,7 @@ begin
         if rising_edge(clock) then
             command_fifo_push <= '0';
             command_fifo_pop  <= '0';
+            write_ack <= '0';
             mem_dack_r <= mem_dack;
             mem_data_r <= mem_resp.data;
 
@@ -186,6 +194,34 @@ begin
                         completion <= '0';
                         command_fifo_push  <= '1';
                         disk_wdata_valid <= '0';
+                        -- A WD177x clears the status bits a command reports when it
+                        -- takes the command (data sheet flowcharts: Type I resets
+                        -- CRC, seek error and DRQ; Type II DRQ, lost data, record
+                        -- not found and bits 5 and 6; Type III DRQ, lost data and
+                        -- bits 4 and 5). Done here only for an application that
+                        -- acknowledges its writes, so that an older one, which
+                        -- clears what it needs itself, sees the block unchanged.
+                        if ack_writes = '1' then
+                            case wdata(7 downto 6) is
+                            when "00" | "01" =>             -- Type I
+                                st_data_request   <= '0';
+                                st_crc_error      <= '0';
+                                st_rec_not_found  <= '0';
+                            when "10" =>                    -- Type II
+                                st_data_request   <= '0';
+                                st_lost_data      <= '0';
+                                st_rec_not_found  <= '0';
+                                st_rectype_spinup <= '0';
+                                st_write_prot     <= '0';
+                            when others =>
+                                if wdata(5 downto 4) /= "01" then -- Type III, not Force Interrupt
+                                    st_data_request   <= '0';
+                                    st_lost_data      <= '0';
+                                    st_rec_not_found  <= '0';
+                                    st_rectype_spinup <= '0';
+                                end if;
+                            end case;
+                        end if;
                     end if;
                 
                 when "01" =>
@@ -225,10 +261,22 @@ begin
                 when X"0" =>
                     index_enable <= io_req.data(0);
                     index_polarity <= io_req.data(1);
+                    ack_writes <= io_req.data(2);
 
                 when X"1" =>
                     track <= io_req.data;
-                
+
+                -- Acknowledges a finished write. It only counts while the block
+                -- waits for one, so a late acknowledge, after the fallback has
+                -- already ended the command, cannot touch the drive CPU's next
+                -- command. Bit 2 reports lost data with it. Older cores ignore
+                -- this address.
+                when X"2" =>
+                    if dma_state = write_delay then
+                        write_ack <= '1';
+                        write_ack_lost <= io_req.data(2);
+                    end if;
+
                 when X"4" =>
                     status <= status and not io_req.data;
 
@@ -286,6 +334,14 @@ begin
                 
                 when X"7" =>
                     io_resp.data(1 downto 0) <= dma_mode;
+
+                -- Debug: the drive CPU's program counter. Reading the low byte
+                -- latches the high byte, so the two belong to the same moment.
+                when X"8" =>
+                    io_resp.data <= cpu_pc(7 downto 0);
+                    cpu_pc_high <= cpu_pc(15 downto 8);
+                when X"9" =>
+                    io_resp.data <= cpu_pc_high;
                                                         
 --                when X"8" =>
 --                    io_resp.data <= std_logic_vector(transfer_addr(7 downto 0));
@@ -370,7 +426,26 @@ begin
                 end if;
 
             when write_delay =>
-                if write_delay_cnt = 0 then
+                -- An application that asked to acknowledge write completions ends
+                -- the command itself, through register 2, once it knows whether the
+                -- write succeeded, so that the status it reports is still read by
+                -- the drive CPU. The counter then only limits how long a silent
+                -- application is waited for, and counts milliseconds instead of the
+                -- 4 MHz ticks that time the fixed delay.
+                if ack_writes = '1' then
+                    if write_ack = '1' then       -- the application acknowledged
+                        st_lost_data <= st_lost_data or write_ack_lost;
+                        st_busy <= '0';
+                        dma_state <= idle;
+                    elsif st_busy = '0' then      -- busy was cleared directly
+                        dma_state <= idle;
+                    elsif write_delay_cnt = 0 then -- it stayed silent: release anyway
+                        st_busy <= '0';
+                        dma_state <= idle;
+                    elsif tick_1kHz = '1' then    -- count the wait in milliseconds
+                        write_delay_cnt <= write_delay_cnt - 1;
+                    end if;
+                elsif write_delay_cnt = 0 then    -- no acknowledge asked for: as before
                     st_busy <= '0';
                     dma_state <= idle;
                 elsif tick_4MHz = '1' then
@@ -395,6 +470,12 @@ begin
                 completion <= '0';
                 goto_track <= to_unsigned(0, goto_track'length);
                 write_delay_cnt <= X"00";
+                -- ack_writes is the application's setting, like index_enable and
+                -- index_polarity, and survives a drive reset: the drive is reset
+                -- after the application has set it up, and again with every
+                -- reset of the computer.
+                write_ack <= '0';
+                write_ack_lost <= '0';
             end if;
         end if;
     end process;
