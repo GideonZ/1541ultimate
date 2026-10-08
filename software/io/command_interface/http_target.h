@@ -36,6 +36,11 @@
 
 #define MAX_HTTP_HANDLES 16
 
+// The FPGA read pointer saturates at the last byte; leave one byte unused
+// so DATA_AV can clear. The status-length register cannot represent 256.
+#define HTTP_MAX_REPLY_BYTES  (CMD_MAX_REPLY_LEN - 1)
+#define HTTP_MAX_STATUS_BYTES (CMD_MAX_STATUS_LEN - 1)
+
 #define HTTP_TYPE_BINARY      0x01
 #define HTTP_TYPE_JSON_OBJ    0x02
 #define HTTP_TYPE_JSON_ARRAY  0x03
@@ -658,6 +663,7 @@ class HttpTarget : public CommandTarget {
 
     void express(JSON *j);
     void reset_responses();
+    void release_all();
 public:
     HttpTarget(int id);
     virtual ~HttpTarget();
@@ -665,6 +671,7 @@ public:
     void parse_command(Message *command, Message **reply, Message **status) override;
     void get_more_data(Message **reply, Message **status) override;
     void abort(int) override;
+    void c64_reset(void) override;
 
     int create_body_from_json(char *body, int size, uint8_t *handle);
 };

@@ -32,19 +32,26 @@ HttpTarget::HttpTarget(int id)
 
 HttpTarget::~HttpTarget()
 {
+    release_all();
+    delete[] data_message.message;
+    delete[] status_message.message;
+}
+
+void HttpTarget::release_all()
+{
+    reset_responses();
     for(int i=0; i<MAX_HTTP_HANDLES; i++) {
         if (headers[i]) {
             delete headers[i];
+            headers[i] = NULL;
         }
     }
     for(int i=0; i<MAX_HTTP_HANDLES; i++) {
         if (bodies[i]) {
             delete bodies[i];
+            bodies[i] = NULL;
         }
     }
-    delete[] data_message.message;
-    delete[] status_message.message;
-    reset_responses();
 }
 
 void HttpTarget::reset_responses()
@@ -313,10 +320,7 @@ void HttpTarget::parse_command(Message *command, Message **reply, Message **stat
             break;
 
         case HTTP_CMD_FREE_ALL:
-            for(int i=0; i<MAX_HTTP_HANDLES; i++) {
-                if (headers[i]) { delete headers[i]; headers[i] = NULL; }
-                if (bodies[i])  { delete bodies[i];  bodies[i]  = NULL; }
-            }
+            release_all();
             *status = &c_status_http_ok;
             break;
 
@@ -885,10 +889,15 @@ void HttpTarget::cmd_exchange(Message *command, Message **reply, Message **statu
                 HTTPReqHeader *hdr = exch->get_header();
                 if (hdr) {
                     hdr->RawCopy = status_message.message;
-                    hdr->RawCopySize = CMD_MAX_STATUS_LEN;
+                    hdr->RawCopySize = HTTP_MAX_STATUS_BYTES;
                 }
             }
-            exch->recv_response();
+            if (!exch->recv_response()) {
+                delete exch;
+                exch = NULL;
+                *status = &c_status_not_available;
+                return;
+            }
         } else {
             printf("Failed to send request\n");
             delete exch;
@@ -910,9 +919,9 @@ void HttpTarget::cmd_exchange(Message *command, Message **reply, Message **statu
     if(raw) {
         // Return raw data in data channel [cite: 264]
         *reply = &data_message;
-        data_message.length = exch->read_response_data(CMD_MAX_REPLY_LEN, data_message.message);
-        data_message.last_part = (data_message.length != CMD_MAX_REPLY_LEN);
-        // Copy at most CMD_MAX_STATUS_LEN bytes into the status. Note that parse header will insert
+        data_message.length = exch->read_response_data(HTTP_MAX_REPLY_BYTES, data_message.message);
+        data_message.last_part = (data_message.length != HTTP_MAX_REPLY_BYTES);
+        // Copy at most HTTP_MAX_STATUS_BYTES bytes into the status. Note that parse header will insert
         // zeros at string boundaries
         HTTPReqHeader *hdr = exch->get_header();
         *status = &status_message;
@@ -996,8 +1005,8 @@ void HttpTarget::get_more_data(Message **reply, Message **status)
 {
     if (response_data) {
         *reply = &data_message;
-        data_message.length = response_data->read((char *)data_message.message, CMD_MAX_REPLY_LEN);
-        data_message.last_part = (data_message.length != CMD_MAX_REPLY_LEN);
+        data_message.length = response_data->read((char *)data_message.message, HTTP_MAX_REPLY_BYTES);
+        data_message.last_part = (data_message.length != HTTP_MAX_REPLY_BYTES);
         *status = &c_status_http_ok; 
         if (data_message.last_part) {
             delete response_data;
@@ -1005,8 +1014,8 @@ void HttpTarget::get_more_data(Message **reply, Message **status)
         }
     } else if (exch) {
         *reply = &data_message;
-        data_message.length = exch->read_response_data(CMD_MAX_REPLY_LEN, data_message.message);
-        data_message.last_part = (data_message.length != CMD_MAX_REPLY_LEN);
+        data_message.length = exch->read_response_data(HTTP_MAX_REPLY_BYTES, data_message.message);
+        data_message.last_part = (data_message.length != HTTP_MAX_REPLY_BYTES);
         if (data_message.last_part) {
             delete exch;
             exch = NULL;
@@ -1022,6 +1031,11 @@ void HttpTarget::abort(int a)
 {
     // Reset any pending exchange state
     reset_responses();
+}
+
+void HttpTarget::c64_reset(void)
+{
+    release_all();
 }
 
 int HttpTarget::create_body_from_json(char *body, int size, uint8_t *handle)
