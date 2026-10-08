@@ -74,6 +74,7 @@ host_tests:
 	@$(MAKE) -C target/pc/linux/configiotest test
 	@$(MAKE) -C target/pc/linux/powerstate test
 	@$(MAKE) -C target/pc/linux/wolmagic test
+	@$(MAKE) -C target/pc/linux/ultisidmodels test
 
 esp32: esp32_raw_u64 esp32_raw_c3 esp32_u64ctrl
 
