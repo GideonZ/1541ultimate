@@ -80,11 +80,9 @@ public:
 // changes nothing for the many fields that do not want it.
 struct UIStringEditPolicy
 {
-    // Whether the buffer, as it would read after a printable key has been
-    // inserted at the cursor, may be typed. Returning false rejects the key
-    // outright: nothing is inserted, the cursor does not move, an untouched
-    // template is not cleared, and nothing is redrawn. NULL accepts every
-    // printable character, which is what an ordinary field wants.
+    // Whether the buffer, after a printable key is inserted at the cursor,
+    // may be typed; false rejects it outright (nothing inserted/moved/
+    // redrawn). NULL accepts every character, for an ordinary field.
     bool (*accepts)(const char *candidate);
     // Rewrites a printable key before it is validated and inserted, given the
     // current buffer and the cursor position it would be inserted at. Used

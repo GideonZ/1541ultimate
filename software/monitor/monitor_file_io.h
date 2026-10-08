@@ -5,6 +5,7 @@
 
 class UserInterface;
 class MemoryBackend;
+struct DebugContext;
 
 // Glue layer between the machine code monitor and shared infrastructure
 // (TreeBrowser, FileManager, SubsysCommand). These helpers exist so that
@@ -47,6 +48,10 @@ const char *save_from_memory(UserInterface *ui, const char *path, const char *na
 // Start execution at `address` after the monitor and freezer have closed.
 // The NMI trampoline restores the system NMI vector before jumping.
 void jump_to(uint16_t address);
+void resume_to_context(const DebugContext &context);
+bool stage_jump_to(uint16_t address);
+bool stage_resume_to_context(const DebugContext &context);
+void pulse_staged_nmi(void);
 
 } // namespace monitor_io
 
