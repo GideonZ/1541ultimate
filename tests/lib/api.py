@@ -72,8 +72,10 @@ SCREEN_CELLS = SCREEN_COLS * SCREEN_ROWS
 # doing, so this works with the menu open or closed.
 SCREEN_RAM = 0x0400
 READY_SCREEN_CODES = bytes((0x12, 0x05, 0x01, 0x04, 0x19, 0x2E))
+# The rows searched for it. The boot banner puts it on row 5.
+READY_WINDOW = 400
 # How long the machine gets to reach the BASIC prompt, and how often to look.
-# Measured on a U64 Elite: a reset reaches READY in about 34ms, so the budget
+# Measured on a U64 Elite: a reset reaches READY in about 250ms, so the budget
 # is generous and is only ever paid in full by a machine that is not going to
 # get there, such as one resetting into a cartridge.
 READY_TIMEOUT_SECONDS = 6.0
@@ -231,7 +233,7 @@ class MachineApi:
         """
         deadline = time.monotonic() + timeout
         while True:
-            if READY_SCREEN_CODES in self.readmem(SCREEN_RAM, 400):
+            if READY_SCREEN_CODES in self.readmem(SCREEN_RAM, READY_WINDOW):
                 return True
             if time.monotonic() >= deadline:
                 return False
@@ -256,7 +258,7 @@ class MachineApi:
         """Reset the C64, unless nothing has happened that a reset would clear.
 
         Waits for the BASIC prompt by polling rather than sleeping for a fixed
-        time: measured at about 34ms on a U64 Elite, against the 1 to 3 second
+        time: measured at 230 to 310ms on a U64 Elite, against the 1 to 3 second
         sleeps this replaces. Pass wait=False for a machine that is not
         expected to reach the prompt, such as one resetting into a cartridge.
 
@@ -279,11 +281,16 @@ class MachineApi:
         """
         if not force and self._reset_at == self._counts():
             return True
-        # Blank the top of the screen first, so the READY left by the previous
-        # boot cannot be mistaken for this one. Without it the wait returns
-        # immediately and proves nothing.
+        # Blank every row the wait searches, so the READY left by the previous
+        # boot cannot be mistaken for this one. Left on screen, it is found
+        # before the reset takes effect, and the KERNAL then clears the screen
+        # under whatever the caller wrote next.
+        # The menu is closed first: while it holds the machine frozen, firmware
+        # before #978 writes $0400-$07FF into the menu's screen, not the C64's.
         if wait:
-            self.writemem(SCREEN_RAM, bytes([0x20]) * len(READY_SCREEN_CODES))
+            if self.menu_open():
+                self.close_menu_from_anywhere()
+            self.writemem(SCREEN_RAM, bytes([0x20]) * READY_WINDOW)
         self._act("reset")
         self._reset_at = self._counts()
         if not wait:

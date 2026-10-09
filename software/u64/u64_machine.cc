@@ -77,7 +77,7 @@ static void write_visible_byte(volatile uint8_t *ram, bool freezerMenu, uint32_t
 }
 
 static uint8_t read_cpu_mapped_byte(volatile uint8_t *ram, bool freezerMenu, uint32_t address, uint8_t cpu_port,
-                                    uint32_t *screen_backup, uint32_t *ram_backup)
+                                    uint32_t *screen_backup, uint32_t *ram_backup, uint32_t *color_backup)
 {
     uint8_t raw = read_frozen_byte(ram, freezerMenu, address, screen_backup, ram_backup);
 
@@ -98,6 +98,10 @@ static uint8_t read_cpu_mapped_byte(volatile uint8_t *ram, bool freezerMenu, uin
             return raw;
         }
         if (cpu_port & 0x04) {
+            // While frozen the colour RAM holds the menu's colours; the C64's are in the backup.
+            if (freezerMenu && address >= 0xD800 && address < 0xDC00) {
+                return ((uint8_t *)color_backup)[address - 0xD800];
+            }
             return read_visible_byte(ram, freezerMenu, address, screen_backup, ram_backup);
         }
         return ((volatile uint8_t *)U64_CHARROM_BASE)[address - 0xD000];
@@ -112,9 +116,13 @@ static uint8_t read_cpu_mapped_byte(volatile uint8_t *ram, bool freezerMenu, uin
 }
 
 static void write_cpu_mapped_byte(volatile uint8_t *ram, bool freezerMenu, uint32_t address, uint8_t value, uint8_t cpu_port,
-                                  uint32_t *screen_backup, uint32_t *ram_backup)
+                                  uint32_t *screen_backup, uint32_t *ram_backup, uint32_t *color_backup)
 {
     if (address >= 0xD000 && address <= 0xDFFF && (cpu_port & 0x03) != 0x00 && (cpu_port & 0x04)) {
+        if (freezerMenu && address >= 0xD800 && address < 0xDC00) {
+            ((uint8_t *)color_backup)[address - 0xD800] = value;
+            return;
+        }
         write_visible_byte(ram, freezerMenu, address, value, screen_backup, ram_backup);
         return;
     }
@@ -205,7 +213,7 @@ void U64Machine :: read_cpu_block(uint16_t address, uint8_t *dst, uint32_t len, 
 
     C64_SERVE_CONTROL = saved_serve | SERVE_WHILE_STOPPED;
     for (uint32_t offset = 0; offset < len; offset++) {
-        dst[offset] = read_cpu_mapped_byte(ram, freezerMenu, (uint16_t)(address + offset), cpu_port, screen_backup, ram_backup);
+        dst[offset] = read_cpu_mapped_byte(ram, freezerMenu, (uint16_t)(address + offset), cpu_port, screen_backup, ram_backup, color_backup);
     }
     C64_SERVE_CONTROL = saved_serve;
     after_memory_access(0, freezerMenu, stopped_it);
@@ -325,7 +333,7 @@ void U64Machine :: poke_cpu(uint16_t address, uint8_t byte, uint8_t cpu_port)
     uint8_t saved_serve = C64_SERVE_CONTROL;
 
     C64_SERVE_CONTROL = saved_serve | SERVE_WHILE_STOPPED;
-    write_cpu_mapped_byte(ram, freezerMenu, address, byte, cpu_port, screen_backup, ram_backup);
+    write_cpu_mapped_byte(ram, freezerMenu, address, byte, cpu_port, screen_backup, ram_backup, color_backup);
     C64_SERVE_CONTROL = saved_serve;
     after_memory_access(0, freezerMenu, stopped_it);
 }

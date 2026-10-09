@@ -792,14 +792,16 @@ void C64::dma_transfer_frozen(uint16_t offset, uint8_t *buffer, int length, int 
                 wait_10us(2);
                 dmaModeWindow--;
             }
-        } else if ((addr >= 0x0800) && (addr < 0x1000)) {
-            // The freezer menu uses this 2KB as its own scratch RAM, so serve
-            // reads/writes from the backup taken at freeze time instead: it is
+        } else if ((addr >= 0x0400) && (addr < 0x1000)) {
+            // The freezer menu uses $0400-$0FFF for its own screen and charset, so serve
+            // reads/writes from the backups taken at freeze time instead: they are
             // restored to real RAM on unfreeze, unlike the live (bypassed) range.
-            if ((0x1000 - addr) < chunk) {
-                chunk = 0x1000 - addr;
+            int region_end = (addr < 0x0800) ? 0x0800 : 0x1000;
+            if ((region_end - addr) < chunk) {
+                chunk = region_end - addr;
             }
-            uint8_t *backup = ((uint8_t *)ram_backup) + (addr - 0x0800);
+            uint8_t *backup = (addr < 0x0800) ? ((uint8_t *)screen_backup) + (addr - 0x0400)
+                                              : ((uint8_t *)ram_backup) + (addr - 0x0800);
             if (rw) {
                 memcpy(buffer + pos, backup, chunk);
             } else {
@@ -818,8 +820,8 @@ void C64::dma_transfer_frozen(uint16_t offset, uint8_t *buffer, int length, int 
             }
         } else {
             int next_boundary;
-            if (addr < 0x0800) {
-                next_boundary = 0x0800;
+            if (addr < 0x0400) {
+                next_boundary = 0x0400;
             } else if (addr < 0x8000) {
                 next_boundary = 0x8000;
             } else if (addr < 0xD800) {
