@@ -1996,6 +1996,27 @@ def run_binary_bookmark_width_test(session: MonitorSession, rest_host: str) -> N
     screen.find_line_containing("MONITOR BIN $C400")
 
 
+# show_navigation_status() keeps the "F0 JMP/RET $xxxx" footer for 2000ms.
+NAVIGATION_FOOTER_SECONDS = 2.0
+
+
+def follow_key(session: MonitorSession, header: str, footer: str) -> Snapshot:
+    """Press RETURN, require the view it lands on, and the footer if it can still be up.
+
+    A capture later than the footer's lifetime shows the status line instead,
+    which says nothing about whether the footer was drawn.
+    """
+    sent = time.monotonic()
+    screen = session.send_key("ENTER")
+    elapsed = time.monotonic() - sent
+    screen.find_line_containing(header)
+    if elapsed < NAVIGATION_FOOTER_SECONDS:
+        screen.find_line_containing(footer)
+    else:
+        detail(f"{footer!r} not checked: the screen came back after {elapsed:.1f}s")
+    return screen
+
+
 def run_follow_return_test(session: MonitorSession, rest_host: str) -> None:
     # ASM view test data:
     #   $3340: JSR $3360   20 60 33 / NOP EA
@@ -2009,29 +2030,21 @@ def run_follow_return_test(session: MonitorSession, rest_host: str) -> None:
     screen = ensure_view(session, "ASM ")
     screen.find_line_containing("JSR $3360")
     # ENTER follows JSR; ENTER at the non-followable target returns
-    screen = session.send_key("ENTER")
-    screen.find_line_containing("MONITOR ASM $3360")
-    screen.find_line_containing("F0 JMP $3360")
-    screen = session.send_key("ENTER")
-    screen.find_line_containing("MONITOR ASM $3340")
-    screen.find_line_containing("F0 RET $3340")
+    follow_key(session, "MONITOR ASM $3360", "F0 JMP $3360")
+    follow_key(session, "MONITOR ASM $3340", "F0 RET $3340")
 
     # BNE branch follow; ENTER in HEX must not trigger Back
     screen = session.goto("3350")
     screen = ensure_view(session, "ASM ")
     screen.find_line_containing("BNE $3354")
-    screen = session.send_key("ENTER")
-    screen.find_line_containing("MONITOR ASM $3354")
-    screen.find_line_containing("F0 JMP $3354")
+    follow_key(session, "MONITOR ASM $3354", "F0 JMP $3354")
     screen = ensure_view(session, "HEX ")
     screen.find_line_containing("MONITOR HEX $3354")
     screen = session.send_key("ENTER")
     screen.find_line_containing("MONITOR HEX $3354")
     screen = ensure_view(session, "ASM ")
     screen.find_line_containing("MONITOR ASM $3354")
-    screen = session.send_key("ENTER")
-    screen.find_line_containing("MONITOR ASM $3350")
-    screen.find_line_containing("F0 RET $3350")
+    follow_key(session, "MONITOR ASM $3350", "F0 RET $3350")
 
     # RTS is not a static follow target
     screen = session.goto("3360")
