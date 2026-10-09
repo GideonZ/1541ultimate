@@ -36,9 +36,8 @@
 
 #define MAX_HTTP_HANDLES 16
 
-// The FPGA read pointer saturates at the last byte; leave one byte unused
-// so DATA_AV can clear. The status-length register cannot represent 256.
-#define HTTP_MAX_REPLY_BYTES  (CMD_MAX_REPLY_LEN - 1)
+#define HTTP_MAX_REPLY_BYTES  CMD_MAX_REPLY_BLOCK
+// The status-length register cannot represent 256.
 #define HTTP_MAX_STATUS_BYTES (CMD_MAX_STATUS_LEN - 1)
 
 #define HTTP_TYPE_BINARY      0x01

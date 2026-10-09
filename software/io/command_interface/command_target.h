@@ -57,4 +57,8 @@ extern CommandTarget *command_targets[];
 #define CMD_MAX_STATUS_LEN  256
 #endif
 
+// The FPGA response pointer stops at the last buffer byte while DATA_AV stays
+// set, so a reply block must leave one byte unused. See command_protocol.vhd.
+#define CMD_MAX_REPLY_BLOCK (CMD_MAX_REPLY_LEN - 1)
+
 #endif

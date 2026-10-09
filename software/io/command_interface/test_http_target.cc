@@ -855,6 +855,63 @@ static void begin_raw_response(HttpTarget *target, ResponsePeer& peer, Message *
     quiet_end();
 }
 
+static void test_header_boundaries(HttpTarget *target)
+{
+    const int sizes[] = { 32, 894, 895, 896, 1000 };
+    int baseline = open_descriptor_count();
+    for (unsigned i = 0; i < sizeof(sizes) / sizeof(sizes[0]); ++i) {
+        char value[1001];
+        for (int j = 0; j < sizes[i]; ++j) {
+            value[j] = 'a' + j % 26;
+        }
+        value[sizes[i]] = 0;
+        char response[1200], listed[1100];
+        snprintf(response, sizeof(response),
+                 "HTTP/1.1 200 OK\r\nX-Long: %s\r\nContent-Length: 2\r\n\r\n{}", value);
+        {
+            ResponsePeer peer(response);
+            checks++;
+            if (!peer.port()) {
+                failures++;
+                printf("FAIL header boundary peer setup\n");
+                return;
+            }
+            run_expect_empty(target, "reset header fixture", &c_cmd_free_all, status_ok);
+            uint8_t create[128] = { 6, HTTP_CMD_HEADER_CREATE, 1 };
+            int length = snprintf((char *)create + 3, sizeof(create) - 3,
+                                  "http://127.0.0.1:%u/", peer.port());
+            Message command = make_msg(create, length + 3);
+            const uint8_t handle[] = { 0 }, handles[] = { 1, 0 };
+            run_expect(target, "create header fixture", &command, handle, 1, status_ok);
+            run_expect(target, "exchange header fixture", &c_exchange, handles, 2, "200 OK");
+
+            uint8_t query[] = { 6, HTTP_CMD_HEADER_QUERY, 1, 'X', '-', 'L', 'o', 'n', 'g' };
+            command = make_msg(query, sizeof(query));
+            char label[64];
+            snprintf(label, sizeof(label), "query %d-byte header", sizes[i]);
+            run_expect(target, label, &command, (const uint8_t *)value,
+                       sizes[i] < 895 ? sizes[i] : 895, status_ok);
+
+            for (int index = 0; index <= 1; ++index) {
+                int count = snprintf(listed, sizeof(listed), "X-Long: %s\r%s", value,
+                                     index ? "" : "Content-Length: 2\r");
+                uint8_t list[] = { 6, HTTP_CMD_HEADER_LIST, 1, (uint8_t)index };
+                command = make_msg(list, sizeof(list));
+                // Listing reads one existing 800-byte stream block.
+                run_expect(target, index ? "list one long header" : "list all long headers",
+                           &command, (const uint8_t *)listed, count < 800 ? count : 800, status_ok);
+            }
+            checks++;
+            if (!peer.completed()) {
+                failures++;
+                printf("FAIL header boundary peer did not finish\n");
+            }
+            run_expect_empty(target, "release header fixture", &c_cmd_free_all, status_ok);
+        }
+        expect_descriptor_count("header boundary sockets released", baseline);
+    }
+}
+
 static void test_response_boundaries(HttpTarget *target)
 {
     const int sizes[] = { 894, 895, 896, 1790, 2048 };
@@ -939,6 +996,7 @@ int main(int argc, char **argv)
 
     if ((argc > 1) && (strcmp(argv[1], "--response-boundaries") == 0)) {
         test_response_boundaries(target);
+        test_header_boundaries(target);
         printf("Response boundaries: %d checks, %d failures\n", checks, failures);
         return failures ? 1 : 0;
     }

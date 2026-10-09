@@ -506,8 +506,8 @@ void HttpTarget::cmd_header_query(Message *command, Message **reply, Message **s
         rend = j->render();
     }
     int len_out = strlen(rend);
-    if (len_out > CMD_MAX_REPLY_LEN)
-        len_out = CMD_MAX_REPLY_LEN;
+    if (len_out > HTTP_MAX_REPLY_BYTES)
+        len_out = HTTP_MAX_REPLY_BYTES;
     data_message.length = len_out;
     data_message.last_part = true;
     memcpy(data_message.message, rend, len_out);
@@ -564,7 +564,7 @@ void HttpTarget::cmd_header_list(Message *command, Message **reply, Message **st
     }
 
     *reply = &data_message;
-    data_message.length = s.read((char *)data_message.message, 895);
+    data_message.length = s.read((char *)data_message.message, HTTP_MAX_REPLY_BYTES);
     data_message.last_part = true;
 
     *status = &c_status_http_ok;
