@@ -13,7 +13,8 @@ Two views of memory are on offer, and each reader is held to the one it claims:
 With the menu open under Freeze or Overlay the machine is frozen, and the menu
 uses $0400-$0FFF and the colour RAM for its own screen. Every reader has to
 show the C64's contents there, which the firmware keeps in its freeze backups,
-and not the menu's. Under Telnet the machine keeps running.
+and not the menu's. Whether the machine runs while the UI is up is measured:
+Telnet leaves it running, and so does Overlay with an HDMI display connected.
 
 The suite writes a screen row, a colour row and a RAM pattern at the READY
 prompt, opens the UI with --mode, saves the memory through the task menu and
@@ -52,9 +53,9 @@ import machine as machine_lib  # noqa: E402
 import monitor_test as mon  # noqa: E402
 import save_memory_test as savemem  # noqa: E402
 from api import UltimateApi, identify_machine  # noqa: E402
-from report import (Failure, check, format_exception,  # noqa: E402
+from report import (Failure, check, detail, format_exception,  # noqa: E402
                     suite_fail, suite_ok, teardown_step)
-from ui_backend import MODE_TELNET, add_mode_argument, make_browser  # noqa: E402
+from ui_backend import add_mode_argument, make_browser  # noqa: E402
 
 SUITE = "memory_views_test"
 SEED = 0x3C
@@ -71,6 +72,8 @@ VIEWS_DIFFER = ((0xA000, 0xC000), (0xD000, RAM_SIZE))
 # while the monitor shows the port of the bank it is set to.
 REGISTERS = ((0x0000, 0x0002), (0xD000, 0xD800), (0xDC00, 0xE000))
 COLOR_RAM = ((0xD800, 0xDC00),)
+FIXTURE_RANGES = ((SCREEN_ROW, SCREEN_ROW + len(SCREEN_TEXT)), (COLOR_ROW, COLOR_ROW + len(COLOR_VALUES)),
+                  *savemem.PATTERN_RANGES)
 
 # One monitor page per path: screen backup, RAM backup, BASIC, colour RAM, KERNAL.
 MONITOR_PAGES = (SCREEN_ROW, 0x0900, 0xA000, COLOR_ROW, 0xFF80)
@@ -150,7 +153,7 @@ def main() -> int:
     device = identify_machine(args.host, args.password or None, args.timeout)
     # A cartridge reaches memory through the 6510's own $01 mapping, so every
     # reader there shows the CPU view, and its monitor has no bank to select.
-    cartridge = device.kind == machine_lib.U2
+    cartridge = not device.reaches_ram_under_rom
     if device.skip_without_fix(machine_lib.MEMORY_VIEWS_AGREE, "compare the memory views"):
         suite_ok(SUITE)
         return 0
@@ -166,7 +169,9 @@ def main() -> int:
             api.machine.writemem(COLOR_ROW, COLOR_VALUES)
             savemem.write_pattern(api, SEED)
             written = fixtures(cpu_view=True)
-            require_same(written, api.machine.readmem(0, RAM_SIZE), written, cpu_view=True)
+            for start, end in FIXTURE_RANGES:
+                got = dict(enumerate(api.machine.readmem(start, end - start), start))
+                require_same(got, got, written, cpu_view=True)
 
         # Opened after the fixture is written, because a REST backend opens the menu.
         browser = make_browser(
@@ -180,9 +185,10 @@ def main() -> int:
             saved = savemem.fetch(args.host, args.password)
             rest = api.machine.readmem(0, RAM_SIZE)
 
-        # Telnet leaves the machine running, so the KERNAL's workspace and the
-        # cursor move between the two reads.
-        differ = (() if cartridge else VIEWS_DIFFER) + (((0x0002, 0x0800),) if args.mode == MODE_TELNET else ())
+        # A running machine moves its KERNAL workspace and cursor between the two reads.
+        machine_runs = api.machine.cpu_runs()
+        detail(f"the 6510 {'runs' if machine_runs else 'is stopped'} while this user interface is up")
+        differ = (() if cartridge else VIEWS_DIFFER) + (((0x0002, 0x0800),) if machine_runs else ())
         for label, view, cpu_view in (("Save C64 Memory", saved, cartridge),
                                       ("REST readmem", rest, True)):
             want = fixtures(cpu_view)

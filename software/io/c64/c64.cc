@@ -732,17 +732,23 @@ void C64::poke(uint16_t address, uint8_t value)
 }
 
 // A cartridge reaches C64 memory through the 6510's own $01 mapping, so this is
-// the CPU view: what machine:readmem returns (C64_Subsys::dma_load_raw_buffer).
+// the CPU view, read as machine:readmem reads it. The I/O registers are left at
+// $FF rather than read: a read acknowledges CIA flags and switches some carts.
 void C64::get_all_memory(uint8_t *pb)
 {
+    static const uint16_t spans[][2] = { { 0x0000, 0xD000 }, { 0xD800, 0x0400 }, { 0xE000, 0x2000 } };
     bool stopped_it = !is_stopped();
     if (stopped_it) {
         stop(false);
     }
-    if (isFrozen) {
-        dma_transfer_frozen(0, pb, 0x10000, 1);
-    } else {
-        memcpy(pb, (const void *)C64_MEMORY_BASE, 0x10000);
+    memset(pb + 0xD000, 0xFF, 0x1000);
+    for (int i = 0; i < 3; i++) {
+        uint16_t start = spans[i][0];
+        if (isFrozen) {
+            dma_transfer_frozen(start, pb + start, spans[i][1], 1);
+        } else {
+            memcpy(pb + start, (const void *)(C64_MEMORY_BASE + start), spans[i][1]);
+        }
     }
     if (stopped_it) {
         resume();
@@ -752,8 +758,11 @@ void C64::get_all_memory(uint8_t *pb)
 void C64::dma_transfer_frozen(uint16_t offset, uint8_t *buffer, int length, int rw)
 {
     volatile uint8_t *ram = (volatile uint8_t *)C64_MEMORY_BASE;
+#if U64
+    // A U64 register; on a cartridge this address belongs to other hardware.
     uint8_t saved_memonly = C64_DMA_MEMONLY;
     C64_DMA_MEMONLY = 1;
+#endif
 
     int pos = 0;
     while (pos < length) {
@@ -778,7 +787,9 @@ void C64::dma_transfer_frozen(uint16_t offset, uint8_t *buffer, int length, int 
                 dmaModeWindow++;
                 C64_MODE = frozen_mode;
             }
+#if U64
             C64_DMA_MEMONLY = 0;
+#endif
             // Both registers above re-decode the C64 bus, and that has to
             // reach the machine before the transfer is issued. Reading the
             // registers back does not achieve it: they are on this side and
@@ -802,7 +813,9 @@ void C64::dma_transfer_frozen(uint16_t offset, uint8_t *buffer, int length, int 
                 // length landed its first two bytes and nothing after them.
                 (void)ram[addr];
             }
+#if U64
             C64_DMA_MEMONLY = 1;
+#endif
             if (restore_mode) {
                 C64_MODE = saved_mode;
                 // The mode change reaches the C64's decoding with a delay, so
@@ -859,7 +872,9 @@ void C64::dma_transfer_frozen(uint16_t offset, uint8_t *buffer, int length, int 
         pos += chunk;
     }
 
+#if U64
     C64_DMA_MEMONLY = saved_memonly;
+#endif
 }
 
 #if U64

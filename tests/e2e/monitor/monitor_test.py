@@ -60,6 +60,9 @@ REST_TIMEOUT_SECONDS = 5.0
 # the subject. Two spare attempts, because the loss this covers is one
 # keystroke in several hundred on the one transport that has it.
 PROMPT_RETYPES = 2
+# How long typed text may take to show in a prompt field. Generous because the
+# field is polled and a correct one ends the wait; only a lost key pays it all.
+PROMPT_READ_BACK_SECONDS = 15.0
 
 # The Transfer prompt states its optional fourth field, so its title is long
 # enough to be worth naming once.
@@ -225,7 +228,7 @@ class MonitorSession:
                 self.empty_open_prompt(title)
             # Unsettled: the field is read back below, which is the wait that matters.
             self.send_text(text, f"{key} {text}", settle=False)
-            snapshot = wait_until(self, typed)
+            snapshot = wait_until(self, typed, timeout=PROMPT_READ_BACK_SECONDS)
             try:
                 shown = prompt_field(snapshot, title)
             except Failure:
@@ -262,7 +265,7 @@ class MonitorSession:
                 except Failure:
                     return False  # the prompt is mid-redraw
 
-            snapshot = wait_until(self, field_reads)
+            snapshot = wait_until(self, field_reads, timeout=PROMPT_READ_BACK_SECONDS)
             try:
                 shown = prompt_field(snapshot, title)
             except Failure:

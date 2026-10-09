@@ -270,6 +270,14 @@ FROZEN_SCREEN_DMA = _fix(
     "the menu has the machine frozen, not the screen the menu draws",
     (C64U,))
 
+# Also #978: machine:pause and machine:resume leave a machine the menu holds
+# stopped, in the C64_Subsys every target shares.
+FROZEN_PAUSE_RESUME = _fix(
+    "frozen-pause-resume",
+    "machine:pause and machine:resume do nothing while the on-device menu holds "
+    "the machine, rather than running the 6510 under the menu",
+    (C64U,))
+
 # The rest of #978: Save C64 Memory saves what each machine can reach (RAM on
 # an Ultimate 64, the CPU view on a cartridge), and it, REST readmem and the
 # monitor agree while frozen. The cartridge half is in shared c64.cc.
@@ -470,6 +478,15 @@ class Machine:
         socket_dma.cc builds the stream commands, and the debug register that
         selects what the debug stream carries, only under `#ifdef U64`, which the
         C64 Ultimate is built with as well. A cartridge leaves them unanswered.
+        """
+        return self.kind != U2
+
+    @property
+    def reaches_ram_under_rom(self) -> bool:
+        """Whether its DMA can read the C64 RAM that BASIC, I/O and KERNAL cover.
+
+        An Ultimate 64 reads RAM directly. A cartridge reaches memory through the
+        6510's own $01 mapping, so it sees the ROMs where the CPU sees them.
         """
         return self.kind != U2
 

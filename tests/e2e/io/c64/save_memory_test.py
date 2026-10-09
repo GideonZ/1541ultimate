@@ -1,25 +1,25 @@
 #!/usr/bin/env python3
 # E2E: "Save C64 Memory" writes the C64's RAM, not what the bus shows (#978).
 
-"""The task menu's "Save C64 Memory" saves the 64 KB of C64 RAM.
+"""The task menu's "Save C64 Memory" saves the C64's memory, and changes nothing.
 
 The suite writes a known pattern into RAM the idle BASIC prompt does not use,
 saves the memory through the menu into /Temp, fetches the file over FTP and
-compares it with the pattern. It also reads the BASIC and KERNAL ROMs through
-the CPU's view, and requires the file to hold the RAM under them instead.
+compares it with the pattern. On an Ultimate 64 the file must hold the RAM
+under the BASIC and KERNAL ROMs, which the suite reads through the CPU's view
+to tell apart. A cartridge reaches memory through the 6510's own $01 mapping,
+so there the file must hold the ROMs as machine:readmem shows them.
 
-The dump has to read RAM directly. While the menu is open the machine is frozen
-with the freezer's Ultimax cartridge banked in, which decodes nothing at
-$1000-$7FFF and $A000-$CFFF, so a read through the bus returns $FF there. From
-Telnet the machine is running, and the same read returns the ROMs instead of
-the RAM beneath them. Run it with each --mode: freeze and overlay freeze the
-machine, telnet does not. Under telnet a second save is taken with the machine
-paused through REST, which stops it without freezing it, so the backups the
-menu keeps of $0400-$0FFF are stale and must stay out of the file.
+Saving must not read the I/O registers, because some reads change the machine:
+a read of $DD0D acknowledges CIA 2's interrupt flags. The suite latches CIA 2's
+timer A flag before the save and requires it to be set afterwards.
 
-On an Ultimate II+ cartridge the file is the CPU view instead: the cartridge
-reaches memory through the 6510's own $01 mapping, so it holds the ROMs where
-the CPU sees them, as machine:readmem does.
+Run it with each --mode. Whether the 6510 keeps running while the user
+interface is up is measured: Telnet leaves it running, Freeze stops it, and
+Overlay stops it unless an HDMI display is connected. With it running, a
+second save is taken with the machine paused through REST, which stops it
+without freezing it, so the backups the menu keeps of $0400-$0FFF are stale
+and must stay out of the file.
 """
 
 from __future__ import annotations
@@ -40,7 +40,7 @@ import ftp as ftp_lib
 import machine as machine_lib
 from report import (Failure, check, detail, format_exception,
                     suite_fail, suite_ok, teardown_step)
-from ui_backend import MODE_TELNET, add_mode_argument, make_browser
+from ui_backend import add_mode_argument, make_browser
 
 SUITE = "save_memory_test"
 
@@ -53,6 +53,11 @@ SECOND_SEED = 0xA5
 # Free at the READY prompt: past the empty program's end markers, and $C000.
 PATTERN_RANGES = ((0x0810, 0xA000), (0xC000, 0xD000))
 ROM_RANGES = (("BASIC", 0xA000, 0xC000), ("KERNAL", 0xE000, 0x10000))
+
+CIA2_TIMER_A = 0xDD04
+CIA2_ICR = 0xDD0D
+CIA2_CONTROL_A = 0xDD0E
+CIA_START_ONE_SHOT = 0x19  # start, one-shot, force load
 
 ENTRY_ROWS = range(2, 24)
 STATUS_ROW = 24
@@ -125,6 +130,20 @@ def check_pattern(saved: bytes, seed: int) -> None:
             raise Failure(f"the saved RAM differs from what was written\n{report}")
 
 
+def arm_cia_flag(api) -> None:
+    """Start CIA 2's timer A as a one-shot, so its interrupt flag latches.
+
+    The KERNAL leaves CIA 2's NMI masked, so nothing reads $DD0D and the flag
+    stays set until something does: a read through the bus clears it.
+    """
+    api.machine.writemem(CIA2_TIMER_A, bytes((0x10, 0x00)))
+    api.machine.writemem(CIA2_CONTROL_A, bytes((CIA_START_ONE_SHOT,)))
+
+
+def cia_flag_set(api) -> bool:
+    return bool(api.machine.readmem(CIA2_ICR, 1)[0] & 0x01)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     cli.add_device_arguments(parser, timeout=10.0)
@@ -135,46 +154,58 @@ def main() -> int:
 
     api = UltimateApi(args.host, args.password or None, args.timeout)
     device = identify_machine(args.host, args.password or None, args.timeout)
-    # A cartridge reaches memory through the 6510's own $01 mapping, so its file
-    # holds the CPU view, ROMs included, the same bytes machine:readmem returns.
-    cartridge = device.kind == machine_lib.U2
     if device.skip_without_fix(machine_lib.MEMORY_VIEWS_AGREE, "save C64 memory through the task menu"):
         suite_ok(SUITE)
         return 0
 
-    browser = make_browser(
-        args.mode, args.host, args.password or None, args.timeout,
-        entry_rows=ENTRY_ROWS, status_row=STATUS_ROW,
-        telnet_port=args.telnet_port,
-        telnet_entry_rows=TELNET_ENTRY_ROWS, telnet_status_row=TELNET_STATUS_ROW,
-    )
+    browser = None
+    machine_runs = False
     try:
-        with check("write the RAM pattern at the READY prompt"):
+        with check("write the RAM pattern at the READY prompt and latch a CIA flag"):
             remove(args.host, args.password)
             if not api.machine.reset(force=True):
                 raise Failure("the machine did not reach READY after a reset")
+            arm_cia_flag(api)
+            if not cia_flag_set(api):
+                raise Failure("CIA 2's timer A flag did not latch, so the side-effect check cannot fail")
+            arm_cia_flag(api)
             write_pattern(api, FIRST_SEED)
             roms = {name: api.machine.readmem(start, end - start)
                     for name, start, end in ROM_RANGES}
 
+        # Opened after the fixture is written, because a REST backend opens the menu.
+        browser = make_browser(
+            args.mode, args.host, args.password or None, args.timeout,
+            entry_rows=ENTRY_ROWS, status_row=STATUS_ROW,
+            telnet_port=args.telnet_port,
+            telnet_entry_rows=TELNET_ENTRY_ROWS, telnet_status_row=TELNET_STATUS_ROW,
+        )
         saved = save_and_fetch(browser, args, f"save C64 memory through the {args.mode} task menu")
+        machine_runs = api.machine.cpu_runs()
+        detail(f"the 6510 {'runs' if machine_runs else 'is stopped'} while this user interface is up")
         check_pattern(saved, FIRST_SEED)
 
-        if cartridge:
-            with check("the file holds the ROMs the CPU sees, as readmem does"):
-                differ = [name for name, start, end in ROM_RANGES
-                          if saved[start:end] != roms[name]]
-                if differ:
-                    raise Failure(f"the file does not hold the {' and '.join(differ)} ROM image")
-        else:
+        if device.reaches_ram_under_rom:
             with check("the file holds the RAM under the ROMs, not the ROMs"):
                 shadowed = [name for name, start, end in ROM_RANGES
                             if saved[start:end] == roms[name]]
                 if shadowed:
                     raise Failure(f"the file holds the {' and '.join(shadowed)} ROM image")
-                detail("$A000-$BFFF and $E000-$FFFF differ from the ROMs the CPU sees")
+        else:
+            with check("the file holds the ROMs the CPU sees, as readmem does"):
+                differ = [name for name, start, end in ROM_RANGES
+                          if saved[start:end] != roms[name]]
+                if differ:
+                    raise Failure(f"the file does not hold the {' and '.join(differ)} ROM image")
 
-        if args.mode == MODE_TELNET:
+        with check("saving left the I/O registers alone: CIA 2's interrupt flag is still set"):
+            # Read with the menu closed: while it holds the machine, readmem of I/O
+            # does not reach the CIA on every machine.
+            api.machine.close_menu_from_anywhere()
+            if not cia_flag_set(api):
+                raise Failure("$DD0D read back clear: the save read the CIA and acknowledged its flag")
+
+        if machine_runs:
             # Stopped but not frozen: the menu's RAM backups are stale and must not be used.
             with check("pause the machine through REST with a second pattern"):
                 remove(args.host, args.password)
@@ -190,9 +221,10 @@ def main() -> int:
         return 1
     finally:
         teardown_step("close the menu", api.machine.close_menu_from_anywhere)
-        if args.mode == MODE_TELNET:
+        if machine_runs:
             teardown_step("resume the machine", api.machine.resume)
-        teardown_step("close the browser session", browser.close)
+        if browser is not None:
+            teardown_step("close the browser session", browser.close)
         teardown_step("remove the saved file", lambda: remove(args.host, args.password))
         teardown_step("reset the machine", lambda: api.machine.reset(force=True))
 

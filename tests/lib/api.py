@@ -80,6 +80,10 @@ READY_WINDOW = 400
 # get there, such as one resetting into a cartridge.
 READY_TIMEOUT_SECONDS = 6.0
 READY_POLL_SECONDS = 0.01
+# The low byte of the KERNAL's jiffy clock, and how long it may stand still on a
+# running machine: one tick is 17ms, and health.py measures 21-62ms to the first.
+JIFFY_CLOCK = 0x00A2
+CPU_RUN_TIMEOUT_SECONDS = 0.5
 
 # config_menu.cc asks this before it leaves a config page with unsaved changes.
 SAVE_TO_FLASH_PROMPT = "Save changes to Flash?"
@@ -285,8 +289,9 @@ class MachineApi:
         # boot cannot be mistaken for this one. Left on screen, it is found
         # before the reset takes effect, and the KERNAL then clears the screen
         # under whatever the caller wrote next.
-        # The menu is closed first: while it holds the machine frozen, firmware
-        # before #978 writes $0400-$07FF into the menu's screen, not the C64's.
+        # The menu is closed first: while it holds the machine, firmware without
+        # the frozen-screen-dma fix writes $0400-$07FF into the menu's screen.
+        # With wait=False nothing is blanked, so the menu is left as it is.
         if wait:
             if self.menu_open():
                 self.close_menu_from_anywhere()
@@ -300,6 +305,21 @@ class MachineApi:
         # bookkeeping is restored to "reset, and untouched since".
         self._reset_at = self._counts()
         return ready
+
+    def cpu_runs(self, timeout: float = CPU_RUN_TIMEOUT_SECONDS) -> bool:
+        """Whether the 6510 is executing: the KERNAL's jiffy clock at $00A2 moves 60 times a second.
+
+        Measured rather than inferred from the user interface: an Ultimate 64
+        draws its overlay only while a display asserts HDMI hot-plug detect, and
+        then leaves the machine running; without one it freezes it.
+        """
+        first = self.readmem(JIFFY_CLOCK, 1)
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            time.sleep(READY_POLL_SECONDS)
+            if self.readmem(JIFFY_CLOCK, 1) != first:
+                return True
+        return False
 
     @property
     def was_just_reset(self) -> bool:

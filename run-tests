@@ -428,8 +428,8 @@ SUITES: Sequence[Suite] = (
     # back the wrong bytes. Measured red on core 1.4E and green on 1.4F.
     Suite("e2e", "reu-turbo", "tests/e2e/io/c64/reu_turbo_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
-    # "Save C64 Memory" has to save RAM. Read through the bus, a machine frozen
-    # by the menu gave $FF across most of it, and a running one gave the ROMs (#978).
+    # "Save C64 Memory" saves RAM on an Ultimate 64 and the CPU view on a
+    # cartridge, without reading the I/O registers (#978).
     Suite("e2e", "save-c64-memory", "tests/e2e/io/c64/save_memory_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@"),
     # REST readmem (and so the web Live Monitor), the monitor's CPU7 and CPU0

@@ -3,15 +3,17 @@
 
 """writemem followed by readmem returns the bytes written, whatever the machine is doing.
 
-The machine is taken through four states: running at the READY prompt, paused
-through REST, and frozen by the menu under each Interface Type. In each one the
+The machine is taken through running at the READY prompt, paused through REST,
+and the menu open under each Interface Type the machine offers, one on a
+cartridge. Whether the open menu stops the machine is measured: Overlay leaves
+it running when an HDMI display is connected. In each state the
 suite writes and reads back fixed windows that straddle the boundaries where
 the frozen transfer is split into regions ($0400, $0800, $1000, $8000, $D000
 and the colour RAM), then a seeded run of random windows across the RAM the
 idle prompt leaves alone. The areas touched are saved before each state and
 written back after it, so the C64 is unchanged at the end.
 
-While the menu has the machine frozen, machine:pause and machine:resume must
+While the menu holds the machine stopped, machine:pause and machine:resume must
 leave it stopped: the menu has its own screen, charset and cartridge in place
 until it closes, and every frozen transfer assumes the 6510 is not running.
 
@@ -27,7 +29,6 @@ from __future__ import annotations
 import argparse
 import random
 import sys
-import time
 from pathlib import Path
 
 # The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
@@ -38,9 +39,8 @@ import bootstrap  # noqa: E402,F401
 sys.path.insert(0, bootstrap.directory("e2e", "lib"))
 import cli  # noqa: E402
 import machine as machine_lib  # noqa: E402
-import pacing  # noqa: E402
 from api import UltimateApi, identify_machine  # noqa: E402
-from rest_backend import OVERLAY_MODE  # noqa: E402
+from ui_backend import MODE_FREEZE, MODE_OVERLAY, make_backend  # noqa: E402
 from report import (Failure, check, detail,  # noqa: E402
                     format_exception, suite_fail, suite_ok, teardown_step)
 
@@ -56,8 +56,6 @@ RANDOM_WINDOWS = 100
 MAX_WINDOW = 600
 COLOR_RAM = (0xD800, 0xDC00)
 SCREEN = (0x0400, 0x0800)
-JIFFY_CLOCK = 0x00A0
-JIFFY_WATCH_SECONDS = 0.2
 
 
 def masked(start: int, data: bytes) -> bytes:
@@ -111,29 +109,6 @@ def round_trips(api: UltimateApi, rng: random.Random, screen: bool) -> list[str]
     return lost
 
 
-def jiffy_advances(api: UltimateApi) -> bool:
-    """Whether the KERNAL's jiffy clock at $A0-$A2 moves, which it does 60 times a second."""
-    before = api.machine.readmem(JIFFY_CLOCK, 3)
-    time.sleep(JIFFY_WATCH_SECONDS)
-    return api.machine.readmem(JIFFY_CLOCK, 3) != before
-
-
-def interface_type(api: UltimateApi) -> str | None:
-    """The Interface Type setting, or None on a machine that has none."""
-    try:
-        return api.configs.current(UI_STORE, UI_ITEM)
-    except Failure:
-        return None
-
-
-def wait_for_menu(api: UltimateApi, want_open: bool) -> None:
-    deadline = time.monotonic() + pacing.MENU_TOGGLE_SETTLE_SECONDS * 10
-    while api.machine.menu_open() != want_open:
-        if time.monotonic() > deadline:
-            raise Failure(f"the menu did not {'open' if want_open else 'close'}")
-        time.sleep(0.05)
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     cli.add_device_arguments(parser, timeout=10.0)
@@ -144,20 +119,19 @@ def main() -> int:
     seed = args.seed if args.seed is not None else random.randrange(1 << 32)
     api = UltimateApi(args.host, args.password or None, args.timeout)
     device = identify_machine(args.host, args.password or None, args.timeout)
-    interface = interface_type(api)
     # Without the fix, REST reaches the menu's screen while frozen; see machine.py.
     frozen_screen = device.has_fix(machine_lib.FROZEN_SCREEN_DMA)
+    # A machine without the setting, a cartridge, has one menu and it freezes.
+    modes = ((MODE_FREEZE, MODE_OVERLAY) if UI_ITEM in api.configs.category(UI_STORE)
+             else (MODE_FREEZE,))
     failed = []
 
-    def state(label: str, enter, leave, screen: bool = True) -> None:
+    def round_trip_check(label: str, screen: bool = True) -> None:
         try:
             with check(f"every window reads back as written: {label}"):
-                rng = random.Random(f"{seed}-{label}")
-                enter()
-                try:
-                    lost = round_trips(api, rng, screen)
-                finally:
-                    leave()
+                if not screen:
+                    detail("screen windows left out: this firmware serves the menu's screen while frozen")
+                lost = round_trips(api, random.Random(f"{seed}-{label}"), screen)
                 if lost:
                     raise Failure(f"{len(lost)} windows lost bytes\n" + "\n".join(lost[:10]))
         except Failure:
@@ -170,32 +144,36 @@ def main() -> int:
             if not api.machine.reset(force=True):
                 raise Failure("the machine did not reach READY after a reset")
 
-        state("running", lambda: None, lambda: None)
-        state("paused through REST", api.machine.pause, api.machine.resume)
-        # A machine without the setting, a cartridge, always freezes for its menu.
-        offered = api.configs.item(UI_STORE, UI_ITEM).get("values", []) if interface else ["Freeze"]
-        for kind in [k for k in ("Freeze", OVERLAY_MODE) if k in offered]:
-            def enter(kind=kind) -> None:
-                if interface:
-                    api.configs.set(UI_STORE, UI_ITEM, kind)
-                api.machine.menu_button()
-                wait_for_menu(api, True)
+        round_trip_check("running")
+        api.machine.pause()
+        try:
+            round_trip_check("paused through REST")
+        finally:
+            api.machine.resume()
 
-            def leave() -> None:
-                api.machine.close_menu_from_anywhere()
-            state(f"frozen by the menu ({kind})", enter, leave, screen=frozen_screen)
+        for mode in modes:
+            # The backend switches Interface Type with the menu closed and puts it back.
+            backend = make_backend(mode, args.host, args.password or None, args.timeout)
             try:
-                with check(f"pause and resume leave the frozen machine stopped ({kind})"):
-                    enter()
+                backend.ensure_ready()
+                frozen = not api.machine.cpu_runs()
+                label = f"menu open ({mode}, machine {'stopped' if frozen else 'running'})"
+                round_trip_check(label, screen=frozen_screen or not frozen)
+                if not frozen:
+                    detail(f"{mode}: the menu leaves the machine running, so pause and resume "
+                           "are not checked against it")
+                elif not device.skip_without_fix(machine_lib.FROZEN_PAUSE_RESUME,
+                                                 f"pause and resume leave the frozen machine stopped ({mode})"):
                     try:
-                        api.machine.pause()
-                        api.machine.resume()
-                        if jiffy_advances(api):
-                            raise Failure("the 6510 runs under the open menu after machine:resume")
-                    finally:
-                        leave()
-            except Failure:
-                failed.append(f"pause and resume while frozen ({kind})")
+                        with check(f"pause and resume leave the frozen machine stopped ({mode})"):
+                            api.machine.pause()
+                            api.machine.resume()
+                            if api.machine.cpu_runs():
+                                raise Failure("the 6510 runs under the open menu after machine:resume")
+                    except Failure:
+                        failed.append(f"pause and resume while frozen ({mode})")
+            finally:
+                teardown_step(f"close the {mode} session", backend.close)
 
         if failed:
             raise Failure(f"{len(failed)} checks failed: {', '.join(failed)}")
@@ -206,9 +184,6 @@ def main() -> int:
         return 1
     finally:
         teardown_step("close the menu", api.machine.close_menu_from_anywhere)
-        if interface:
-            teardown_step(f"put Interface Type back to {interface}",
-                          lambda: api.configs.set(UI_STORE, UI_ITEM, interface))
 
 
 if __name__ == "__main__":

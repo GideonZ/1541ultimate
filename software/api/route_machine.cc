@@ -146,7 +146,8 @@ API_DOC(PUT, machine, pause,
                 "being drawn and the machine stays halted until `machine:resume`. Memory can "
                 "still be read and written while paused, which is what makes this useful before "
                 "a large `machine:readmem`. While the on-device menu holds the machine, it is "
-                "halted already and this does nothing.")
+                "halted already and this does nothing; the machine runs again when the menu "
+                "closes, so pause after that to keep it halted.")
     PATH("/v1/machine:pause", "pauseMachine", "")
     RESPONSE("200", "application/json", "ErrorResponse", "The CPU is halted.", "")
     RESPONSE_ERROR("423", "Could not obtain lock of subsystem", "")
