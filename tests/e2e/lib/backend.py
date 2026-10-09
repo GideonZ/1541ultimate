@@ -232,7 +232,8 @@ class Backend:
                   expect_redraw: bool = True) -> Snapshot:
         raise NotImplementedError
 
-    def send_text(self, text: str, label: str) -> Snapshot:
+    def send_text(self, text: str, label: str, *, settle: bool = True) -> Snapshot:
+        """`settle=False` is for a caller that polls for the state it wants next."""
         snapshot = self.capture()
         for ch in text:
             snapshot = self.send_char(ch)

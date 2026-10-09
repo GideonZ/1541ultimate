@@ -562,7 +562,8 @@ class RestBackend(Backend):
         self.last_command = ch
         return self.send_combo(char_to_combo(ch))
 
-    def send_text(self, text: str, label: str) -> Snapshot:
+    def send_text(self, text: str, label: str, *, settle: bool = True) -> Snapshot:
+        # REST settles on the screen changing, which costs nothing extra; `settle` is Telnet's.
         self.last_command = label
         before = self._menu_screen_body()
         events = [{"kind": "keyboard", "inputs": char_to_combo(ch), "transition": "tap"} for ch in text]

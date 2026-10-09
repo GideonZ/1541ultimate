@@ -147,8 +147,8 @@ class MonitorSession:
                   expect_redraw: bool = True) -> Snapshot:
         return self.backend.send_char(ch, settle=settle, expect_redraw=expect_redraw)
 
-    def send_text(self, text: str, label: str) -> Snapshot:
-        return self.backend.send_text(text, label)
+    def send_text(self, text: str, label: str, *, settle: bool = True) -> Snapshot:
+        return self.backend.send_text(text, label, settle=settle)
 
     def empty_open_prompt(self, title: str) -> None:
         """Delete what a non-template prompt is showing, so the field is empty.
@@ -223,7 +223,8 @@ class MonitorSession:
             # the template_mode flag on their MonitorCommandInput.
             if not template:
                 self.empty_open_prompt(title)
-            self.send_text(text, f"{key} {text}")
+            # Unsettled: the field is read back below, which is the wait that matters.
+            self.send_text(text, f"{key} {text}", settle=False)
             snapshot = wait_until(self, typed)
             try:
                 shown = prompt_field(snapshot, title)
@@ -254,7 +255,7 @@ class MonitorSession:
         """
         shown = None
         for attempt in range(retypes + 1):
-            self.send_text(text, f"{title} {text}")
+            self.send_text(text, f"{title} {text}", settle=False)
             def field_reads(screen: Snapshot) -> bool:
                 try:
                     return prompt_field(screen, title) == text
