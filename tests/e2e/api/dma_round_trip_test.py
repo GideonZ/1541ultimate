@@ -118,6 +118,14 @@ def jiffy_advances(api: UltimateApi) -> bool:
     return api.machine.readmem(JIFFY_CLOCK, 3) != before
 
 
+def interface_type(api: UltimateApi) -> str | None:
+    """The Interface Type setting, or None on a machine that has none."""
+    try:
+        return api.configs.current(UI_STORE, UI_ITEM)
+    except Failure:
+        return None
+
+
 def wait_for_menu(api: UltimateApi, want_open: bool) -> None:
     deadline = time.monotonic() + pacing.MENU_TOGGLE_SETTLE_SECONDS * 10
     while api.machine.menu_open() != want_open:
@@ -136,7 +144,7 @@ def main() -> int:
     seed = args.seed if args.seed is not None else random.randrange(1 << 32)
     api = UltimateApi(args.host, args.password or None, args.timeout)
     device = identify_machine(args.host, args.password or None, args.timeout)
-    interface = api.configs.current(UI_STORE, UI_ITEM)
+    interface = interface_type(api)
     # Without the fix, REST reaches the menu's screen while frozen; see machine.py.
     frozen_screen = device.has_fix(machine_lib.FROZEN_SCREEN_DMA)
     failed = []
@@ -164,10 +172,12 @@ def main() -> int:
 
         state("running", lambda: None, lambda: None)
         state("paused through REST", api.machine.pause, api.machine.resume)
-        offered = api.configs.item(UI_STORE, UI_ITEM).get("values", [])
+        # A machine without the setting, a cartridge, always freezes for its menu.
+        offered = api.configs.item(UI_STORE, UI_ITEM).get("values", []) if interface else ["Freeze"]
         for kind in [k for k in ("Freeze", OVERLAY_MODE) if k in offered]:
             def enter(kind=kind) -> None:
-                api.configs.set(UI_STORE, UI_ITEM, kind)
+                if interface:
+                    api.configs.set(UI_STORE, UI_ITEM, kind)
                 api.machine.menu_button()
                 wait_for_menu(api, True)
 
@@ -196,8 +206,9 @@ def main() -> int:
         return 1
     finally:
         teardown_step("close the menu", api.machine.close_menu_from_anywhere)
-        teardown_step(f"put Interface Type back to {interface}",
-                      lambda: api.configs.set(UI_STORE, UI_ITEM, interface))
+        if interface:
+            teardown_step(f"put Interface Type back to {interface}",
+                          lambda: api.configs.set(UI_STORE, UI_ITEM, interface))
 
 
 if __name__ == "__main__":
