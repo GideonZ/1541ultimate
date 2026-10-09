@@ -271,13 +271,14 @@ FROZEN_SCREEN_DMA = _fix(
     "the menu has the machine frozen, not the screen the menu draws",
     (C64U, U2))
 
-# The rest of #978, in U64-only code: Save C64 Memory saves RAM, and the
-# monitor's CPU view shows the C64's colour RAM while frozen.
+# The rest of #978: Save C64 Memory saves what each machine can reach (RAM on
+# an Ultimate 64, the CPU view on a cartridge), and it, REST readmem and the
+# monitor agree while frozen. The cartridge half is in shared c64.cc.
 MEMORY_VIEWS_AGREE = _fix(
     "memory-views-agree",
-    "Save C64 Memory saves the C64's RAM, and it, REST readmem and the machine "
-    "code monitor show the same bytes with the menu open or closed",
-    (C64U,))
+    "Save C64 Memory is offered, and it, REST readmem and the machine code "
+    "monitor show the same bytes with the menu open or closed",
+    (C64U, U2))
 
 # Every fix at once, for a sweep that asks whether the lagging line has caught
 # up rather than about one behaviour.

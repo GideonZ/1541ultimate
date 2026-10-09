@@ -27,8 +27,10 @@ are left out: the 6510's port at $00/$01, which DMA cannot see, and the I/O at
 $D000-$D7FF and $DC00-$DFFF, where reading has side effects and a frozen
 machine shows the menu's hardware.
 
-Ultimate 64 family only: the Ultimate II+ monitor has no CPU bank selection
-and those products have no "Save C64 Memory".
+On an Ultimate II+ cartridge every reader shows the CPU view, because the
+cartridge reaches memory through the 6510's own $01 mapping and cannot see
+the RAM under the ROMs. There the saved file, REST and the monitor's CPU VIEW
+are all compared with each other.
 """
 
 from __future__ import annotations
@@ -50,7 +52,7 @@ import machine as machine_lib  # noqa: E402
 import monitor_test as mon  # noqa: E402
 import save_memory_test as savemem  # noqa: E402
 from api import UltimateApi, identify_machine  # noqa: E402
-from report import (Failure, check, check_skip, check_start, format_exception,  # noqa: E402
+from report import (Failure, check, format_exception,  # noqa: E402
                     suite_fail, suite_ok, teardown_step)
 from ui_backend import MODE_TELNET, add_mode_argument, make_browser  # noqa: E402
 
@@ -146,11 +148,9 @@ def main() -> int:
 
     api = UltimateApi(args.host, args.password or None, args.timeout)
     device = identify_machine(args.host, args.password or None, args.timeout)
-    if device.kind == machine_lib.U2:
-        check_start("compare the memory views")
-        check_skip(f"{device.described} has no CPU bank in its monitor and no Save C64 Memory")
-        suite_ok(SUITE)
-        return 0
+    # A cartridge reaches memory through the 6510's own $01 mapping, so every
+    # reader there shows the CPU view, and its monitor has no bank to select.
+    cartridge = device.kind == machine_lib.U2
     if device.skip_without_fix(machine_lib.MEMORY_VIEWS_AGREE, "compare the memory views"):
         suite_ok(SUITE)
         return 0
@@ -182,8 +182,8 @@ def main() -> int:
 
         # Telnet leaves the machine running, so the KERNAL's workspace and the
         # cursor move between the two reads.
-        differ = VIEWS_DIFFER + (((0x0002, 0x0800),) if args.mode == MODE_TELNET else ())
-        for label, view, cpu_view in (("Save C64 Memory", saved, False),
+        differ = (() if cartridge else VIEWS_DIFFER) + (((0x0002, 0x0800),) if args.mode == MODE_TELNET else ())
+        for label, view, cpu_view in (("Save C64 Memory", saved, cartridge),
                                       ("REST readmem", rest, True)):
             want = fixtures(cpu_view)
             compare.run(f"{label} shows what was written",
@@ -191,13 +191,17 @@ def main() -> int:
                         require_same(want, view, want, cpu_view))
         compare.run("REST readmem and Save C64 Memory agree wherever the views coincide",
                     lambda: require_same([a for a in range(RAM_SIZE) if not inside(a, differ)],
-                                         rest, saved, cpu_view=False))
+                                         rest, saved, cpu_view=cartridge))
 
         session = mon.MonitorSession(browser.backend)
         mon.ensure_hex_width(session, 8)
-        for status, reference, cpu_view, name in ((CPU_VIEW, rest, True, "CPU7 matches REST readmem"),
-                                                  (RAM_VIEW, saved, False, "CPU0 matches Save C64 Memory")):
-            mon.ensure_status(session, status)
+        # On a cartridge the file was compared with REST in full above.
+        views = (((None, rest, True, "CPU VIEW matches REST readmem"),) if cartridge else
+                 ((CPU_VIEW, rest, True, "CPU7 matches REST readmem"),
+                  (RAM_VIEW, saved, False, "CPU0 matches Save C64 Memory")))
+        for status, reference, cpu_view, name in views:
+            if status:
+                mon.ensure_status(session, status)
             for address in MONITOR_PAGES:
                 def same_page(address=address, reference=reference, cpu_view=cpu_view) -> None:
                     page = monitor_page(session, address)
@@ -212,8 +216,9 @@ def main() -> int:
         suite_fail(SUITE, format_exception(exc))
         return 1
     finally:
-        if session is not None:
+        if session is not None and not cartridge:
             teardown_step("put the monitor back on CPU7", lambda: mon.ensure_status(session, CPU_VIEW))
+        if session is not None:
             teardown_step("leave the monitor", lambda: mon.leave_monitor_fully(session))
         teardown_step("close the menu", api.machine.close_menu_from_anywhere)
         if browser is not None:

@@ -17,7 +17,9 @@ machine, telnet does not. Under telnet a second save is taken with the machine
 paused through REST, which stops it without freezing it, so the backups the
 menu keeps of $0400-$0FFF are stale and must stay out of the file.
 
-Ultimate 64 family only; the action is compiled for U64 targets alone.
+On an Ultimate II+ cartridge the file is the CPU view instead: the cartridge
+reaches memory through the 6510's own $01 mapping, so it holds the ROMs where
+the CPU sees them, as machine:readmem does.
 """
 
 from __future__ import annotations
@@ -36,7 +38,7 @@ import cli  # noqa: E402
 from api import UltimateApi, identify_machine
 import ftp as ftp_lib
 import machine as machine_lib
-from report import (Failure, check, check_skip, check_start, detail, format_exception,
+from report import (Failure, check, detail, format_exception,
                     suite_fail, suite_ok, teardown_step)
 from ui_backend import MODE_TELNET, add_mode_argument, make_browser
 
@@ -133,11 +135,9 @@ def main() -> int:
 
     api = UltimateApi(args.host, args.password or None, args.timeout)
     device = identify_machine(args.host, args.password or None, args.timeout)
-    if device.kind == machine_lib.U2:
-        check_start("save C64 memory through the task menu")
-        check_skip(f"{device.described} has no Save C64 Memory action")
-        suite_ok(SUITE)
-        return 0
+    # A cartridge reaches memory through the 6510's own $01 mapping, so its file
+    # holds the CPU view, ROMs included, the same bytes machine:readmem returns.
+    cartridge = device.kind == machine_lib.U2
     if device.skip_without_fix(machine_lib.MEMORY_VIEWS_AGREE, "save C64 memory through the task menu"):
         suite_ok(SUITE)
         return 0
@@ -160,12 +160,19 @@ def main() -> int:
         saved = save_and_fetch(browser, args, f"save C64 memory through the {args.mode} task menu")
         check_pattern(saved, FIRST_SEED)
 
-        with check("the file holds the RAM under the ROMs, not the ROMs"):
-            shadowed = [name for name, start, end in ROM_RANGES
-                        if saved[start:end] == roms[name]]
-            if shadowed:
-                raise Failure(f"the file holds the {' and '.join(shadowed)} ROM image")
-            detail("$A000-$BFFF and $E000-$FFFF differ from the ROMs the CPU sees")
+        if cartridge:
+            with check("the file holds the ROMs the CPU sees, as readmem does"):
+                differ = [name for name, start, end in ROM_RANGES
+                          if saved[start:end] != roms[name]]
+                if differ:
+                    raise Failure(f"the file does not hold the {' and '.join(differ)} ROM image")
+        else:
+            with check("the file holds the RAM under the ROMs, not the ROMs"):
+                shadowed = [name for name, start, end in ROM_RANGES
+                            if saved[start:end] == roms[name]]
+                if shadowed:
+                    raise Failure(f"the file holds the {' and '.join(shadowed)} ROM image")
+                detail("$A000-$BFFF and $E000-$FFFF differ from the ROMs the CPU sees")
 
         if args.mode == MODE_TELNET:
             # Stopped but not frozen: the menu's RAM backups are stale and must not be used.

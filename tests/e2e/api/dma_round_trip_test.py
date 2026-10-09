@@ -41,7 +41,7 @@ import machine as machine_lib  # noqa: E402
 import pacing  # noqa: E402
 from api import UltimateApi, identify_machine  # noqa: E402
 from rest_backend import OVERLAY_MODE  # noqa: E402
-from report import (Failure, check, check_skip, check_start, detail,  # noqa: E402
+from report import (Failure, check, detail,  # noqa: E402
                     format_exception, suite_fail, suite_ok, teardown_step)
 
 SUITE = "dma_round_trip_test"
@@ -164,12 +164,8 @@ def main() -> int:
 
         state("running", lambda: None, lambda: None)
         state("paused through REST", api.machine.pause, api.machine.resume)
-        if device.kind == machine_lib.U2:
-            # A cartridge's computer stops answering DMA for part of its RAM while
-            # frozen; readmem_writemem_test.frozen_dma_blind_spots measures it.
-            check_start("every window reads back as written: frozen by the menu")
-            check_skip("the frozen windows a cartridge cannot reach are not probed here yet")
-        for kind in ("Freeze", OVERLAY_MODE) if device.kind != machine_lib.U2 else ():
+        offered = api.configs.item(UI_STORE, UI_ITEM).get("values", [])
+        for kind in [k for k in ("Freeze", OVERLAY_MODE) if k in offered]:
             def enter(kind=kind) -> None:
                 api.configs.set(UI_STORE, UI_ITEM, kind)
                 api.machine.menu_button()

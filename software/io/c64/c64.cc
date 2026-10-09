@@ -731,6 +731,24 @@ void C64::poke(uint16_t address, uint8_t value)
     }
 }
 
+// A cartridge reaches C64 memory through the 6510's own $01 mapping, so this is
+// the CPU view: what machine:readmem returns (C64_Subsys::dma_load_raw_buffer).
+void C64::get_all_memory(uint8_t *pb)
+{
+    bool stopped_it = !is_stopped();
+    if (stopped_it) {
+        stop(false);
+    }
+    if (isFrozen) {
+        dma_transfer_frozen(0, pb, 0x10000, 1);
+    } else {
+        memcpy(pb, (const void *)C64_MEMORY_BASE, 0x10000);
+    }
+    if (stopped_it) {
+        resume();
+    }
+}
+
 void C64::dma_transfer_frozen(uint16_t offset, uint8_t *buffer, int length, int rw)
 {
     volatile uint8_t *ram = (volatile uint8_t *)C64_MEMORY_BASE;
