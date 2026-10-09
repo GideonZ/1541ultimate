@@ -263,6 +263,19 @@ MEMORY_API_REJECTS_INVALID_ADDRESS = _fix(
     "hexadecimal, rather than parsing it as $0000 and acting there",
     (C64U, U2))
 
+# What tests/e2e/io/c64/magicdesk_plus_cartridge_test.py asserts. Magic Desk
+# Plus is new cartridge logic in the FPGA image rather than a fix in the
+# application, so no shipped image has it: the Ultimate 64 and C64 Ultimate
+# images are prebuilt in external/ and come from another tree, and an Ultimate
+# II+ has it only once fpga/ is rebuilt from this branch. All three kinds are
+# listed so the suite cannot fail a routine run on a machine that cannot have
+# the mapper. Delete a kind once `--assume-fix` passes on it.
+MAGIC_DESK_PLUS_MAPPER = _fix(
+    "magic-desk-plus-mapper",
+    "a Magic Desk Plus cartridge banks with seven bits at $DE00 and serves its "
+    "store through the $DF00 window, rather than behaving as a plain Magic Desk",
+    (U64, U2, C64U))
+
 # Every fix at once, for a sweep that asks whether the lagging line has caught
 # up rather than about one behaviour.
 ASSUME_ALL = "all"

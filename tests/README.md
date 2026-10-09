@@ -309,6 +309,7 @@ e2e:
   key-injection                     .      .      x      x      x
   lint                              x      x      x      x      x
   machine-code-monitor              .      .      .      x      x
+  magicdesk-plus-cartridge          .      .      x      x      x
   menu-screen                       x      x      x      x      x
   micromys-wheel                    .      .      .      x      x
   navigation-keys                   x      x      x      x      x
