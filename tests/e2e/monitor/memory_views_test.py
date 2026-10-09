@@ -49,7 +49,7 @@ import cli  # noqa: E402
 import machine as machine_lib  # noqa: E402
 import monitor_test as mon  # noqa: E402
 import save_memory_test as savemem  # noqa: E402
-from api import UltimateApi  # noqa: E402
+from api import UltimateApi, identify_machine  # noqa: E402
 from report import (Failure, check, check_skip, check_start, format_exception,  # noqa: E402
                     suite_fail, suite_ok, teardown_step)
 from ui_backend import MODE_TELNET, add_mode_argument, make_browser  # noqa: E402
@@ -145,10 +145,13 @@ def main() -> int:
     args = parser.parse_args()
 
     api = UltimateApi(args.host, args.password or None, args.timeout)
-    product = api.info().product
-    if machine_lib.classify(product).kind == machine_lib.U2:
+    device = identify_machine(args.host, args.password or None, args.timeout)
+    if device.kind == machine_lib.U2:
         check_start("compare the memory views")
-        check_skip(f"{product} has no CPU bank in its monitor and no Save C64 Memory")
+        check_skip(f"{device.described} has no CPU bank in its monitor and no Save C64 Memory")
+        suite_ok(SUITE)
+        return 0
+    if device.skip_without_fix(machine_lib.MEMORY_VIEWS_AGREE, "compare the memory views"):
         suite_ok(SUITE)
         return 0
 

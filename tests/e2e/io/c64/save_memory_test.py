@@ -33,7 +33,7 @@ sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
 import bootstrap  # noqa: E402,F401
 import cli  # noqa: E402
 
-from api import UltimateApi
+from api import UltimateApi, identify_machine
 import ftp as ftp_lib
 import machine as machine_lib
 from report import (Failure, check, check_skip, check_start, detail, format_exception,
@@ -132,10 +132,13 @@ def main() -> int:
     args = parser.parse_args()
 
     api = UltimateApi(args.host, args.password or None, args.timeout)
-    product = api.info().product
-    if machine_lib.classify(product).kind == machine_lib.U2:
+    device = identify_machine(args.host, args.password or None, args.timeout)
+    if device.kind == machine_lib.U2:
         check_start("save C64 memory through the task menu")
-        check_skip(f"{product} has no Save C64 Memory action")
+        check_skip(f"{device.described} has no Save C64 Memory action")
+        suite_ok(SUITE)
+        return 0
+    if device.skip_without_fix(machine_lib.MEMORY_VIEWS_AGREE, "save C64 memory through the task menu"):
         suite_ok(SUITE)
         return 0
 

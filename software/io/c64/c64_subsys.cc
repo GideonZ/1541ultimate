@@ -238,11 +238,17 @@ SubsysResultCode_e C64_Subsys::executeCommand(SubsysCommand *cmd)
             break;
 
         case MENU_C64_PAUSE:
-            c64->stop(false);
+            // A frozen machine is stopped already, and unfreeze() needs the stop mode freeze() set.
+            if (!c64->isFrozen) {
+                c64->stop(false);
+            }
             break;
 
         case MENU_C64_RESUME:
-            c64->resume();
+            // Only unfreeze() may release a machine the menu holds: its screen and cart are still in.
+            if (!c64->isFrozen) {
+                c64->resume();
+            }
             break;
 
         case MENU_C64_CLEARMEM:

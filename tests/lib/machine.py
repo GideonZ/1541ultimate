@@ -263,6 +263,22 @@ MEMORY_API_REJECTS_INVALID_ADDRESS = _fix(
     "hexadecimal, rather than parsing it as $0000 and acting there",
     (C64U, U2))
 
+# GideonZ/1541ultimate#978. C64::dma_transfer_frozen is shared, so the bench
+# Ultimate II+L's flashed 3.15 lacks it as well as the C64 Ultimate lineage.
+FROZEN_SCREEN_DMA = _fix(
+    "frozen-screen-dma",
+    "REST readmem and writemem of $0400-$07FF reach the C64's own screen while "
+    "the menu has the machine frozen, not the screen the menu draws",
+    (C64U, U2))
+
+# The rest of #978, in U64-only code: Save C64 Memory saves RAM, and the
+# monitor's CPU view shows the C64's colour RAM while frozen.
+MEMORY_VIEWS_AGREE = _fix(
+    "memory-views-agree",
+    "Save C64 Memory saves the C64's RAM, and it, REST readmem and the machine "
+    "code monitor show the same bytes with the menu open or closed",
+    (C64U,))
+
 # Every fix at once, for a sweep that asks whether the lagging line has caught
 # up rather than about one behaviour.
 ASSUME_ALL = "all"

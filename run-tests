@@ -217,6 +217,10 @@ SUITES: Sequence[Suite] = (
     # suite ignore the profile entirely.
     Suite("e2e", "readmem-writemem", "tests/e2e/api/readmem_writemem_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@", profile=profiles.SMOKE),
+    # writemem then readmem in every machine state, across each region split of
+    # the frozen transfer and a seeded run of random windows; leaves RAM as found.
+    Suite("e2e", "dma-round-trip", "tests/e2e/api/dma_round_trip_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@", profile=profiles.QUICK),
     Suite("e2e", "menu-screen", "tests/e2e/api/menu_screen_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --test all", profile=profiles.SMOKE),
     # Keyboard, joystick and mouse injection over REST, checked against what the
