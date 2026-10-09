@@ -169,7 +169,7 @@ void U64Machine :: after_memory_access(uint8_t *pb, bool freezerMenu, bool stopp
     portEXIT_CRITICAL();
     if (!freezerMenu && stopped_it) {
         resume();
-    } else if (pb) {
+    } else if (pb && freezerMenu) {
         // if we were in freezer menu, the backup of the 1K-4K RAM should be used to restore memory
         memcpy(pb + 1024, screen_backup, 1024);
         memcpy(pb + 2048, ram_backup, 2048);
@@ -178,9 +178,9 @@ void U64Machine :: after_memory_access(uint8_t *pb, bool freezerMenu, bool stopp
 
 void U64Machine :: get_all_memory(uint8_t *pb)
 {
-    // Match the REST C64_DMA_RAW_READ path: stop the machine and read the visible C64 aperture directly.
+    // RAM only: through the bus a frozen machine shows the freezer's Ultimax cart, a running one its ROMs and I/O.
     bool stopped_it = false;
-    bool freezerMenu = before_memory_access(false, &stopped_it);
+    bool freezerMenu = before_memory_access(true, &stopped_it);
     memcpy(pb, (uint8_t *)C64_MEMORY_BASE, 65536);
     after_memory_access(pb, freezerMenu, stopped_it);
 }
