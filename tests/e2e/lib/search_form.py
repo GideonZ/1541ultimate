@@ -381,22 +381,27 @@ class SearchForm:
         return target
 
     def edit(self, field: Field) -> Field:
-        """Focus a field and press RETURN, which opens its editor or dropdown.
+        """Focus a field and press RETURN, which opens its editor or dropdown."""
+        target = self.focus(field)
+        self.press("ENTER")
+        return target
 
-        Opening either one redraws the form, so a RETURN that changed nothing
-        within the settle timeout did not arrive. On a cartridge every key
-        crosses the host's keyboard matrix, where one can be lost, and a lost
-        RETURN leaves the dropdown closed, so the RUN/STOP meant for it leaves
-        the form. The key is pressed once more, with a warning, only after
-        that full wait.
+    def open_dropdown(self, field: Field) -> Field:
+        """Focus a preset field and press RETURN, which opens its dropdown.
+
+        The dropdown is an overlay of its presets, so a RETURN that left the
+        screen text as it was within the settle timeout did not arrive. On a
+        cartridge every key crosses the host's keyboard matrix, where one can
+        be lost, and with no dropdown open the RUN/STOP meant for it leaves the
+        form. The key is pressed once more, with a warning, after that wait.
+        A text field's editor changes only the cursor, so `edit` cannot do this.
         """
         target = self.focus(field)
         before = self.backend.capture().text()
         self.press("ENTER")
-        opened = wait_until(lambda: self.backend.capture().text() != before,
-                            timeout=pacing.SETTLE_TIMEOUT_SECONDS)
-        if not opened:
-            warn(f"RETURN on {target.label!r} changed nothing; pressing it again")
+        if not wait_until(lambda: self.backend.capture().text() != before,
+                          timeout=pacing.SETTLE_TIMEOUT_SECONDS):
+            warn(f"RETURN on {target.label!r} opened no dropdown; pressing it again")
             self.press("ENTER")
         return target
 
