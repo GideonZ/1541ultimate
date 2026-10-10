@@ -259,6 +259,8 @@ SUITES: Sequence[Suite] = (
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@"),
     Suite("e2e", "browser-long-filename", "tests/e2e/filemanager/browser_long_filename_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@", profile=profiles.QUICK),
+    Suite("e2e", "browser-cbm-names", "tests/e2e/filemanager/browser_cbm_names_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@", profile=profiles.QUICK),
     # Drives the menu, a Telnet session and FTP at once to check they converge
     # on the same filesystem state, so it is not mode-switchable by design.
     Suite("e2e", "browser-filesystem-refresh",

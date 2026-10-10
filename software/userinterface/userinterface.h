@@ -86,6 +86,7 @@ public:
     int color_status, color_inactive, color_configitem;
 
     int config_save, filename_overflow_squeeze, navmode;
+    bool cbm_names; // the browser shows names as the C64 lists them, in its lower/upper case set
     bool logo;
     GenericHost *host;
     Keyboard *keyboard;

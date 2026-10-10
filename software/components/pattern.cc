@@ -534,6 +534,99 @@ void fat_to_petscii(const char *fat, bool cutExt, char *pet, int len, bool term)
     }
 }
 
+// The character the lower/upper case set shows for a PETSCII byte, or 0 for a graphic, a
+// control code, the pound sign and the second code of each shifted letter, which no single
+// character of the menu font or keyboard gives back unambiguously.
+static char petscii_text_char(uint8_t p)
+{
+    if ((p >= 0x41) && (p <= 0x5A)) {
+        return (char)(p + 0x20);
+    }
+    if ((p >= 0xC1) && (p <= 0xDA)) {
+        return (char)(p - 0x80);
+    }
+    if ((p >= 0x20) && (p <= 0x5F) && (p != 0x5C)) {
+        return (char)p;
+    }
+    return 0;
+}
+
+bool petscii_to_text(const char *pet, char *text, int len)
+{
+    const char *hex = "0123456789ABCDEF";
+    bool escape = false;
+    int i = 0;
+
+    for (; *pet; pet++) {
+        if (i + 5 > len) { // three characters, a closing brace and the terminator
+            break;
+        }
+        uint8_t p = (uint8_t)*pet;
+        char c = petscii_text_char(p);
+        if (c) {
+            if (escape) {
+                text[i++] = '}';
+                escape = false;
+            }
+            text[i++] = c;
+        } else {
+            if (!escape) {
+                text[i++] = '{';
+                escape = true;
+            }
+            text[i++] = hex[p >> 4];
+            text[i++] = hex[p & 15];
+        }
+    }
+    if (escape) {
+        text[i++] = '}';
+    }
+    text[i] = 0;
+    return !*pet;
+}
+
+int text_to_petscii(const char *text, char *pet, int len)
+{
+    int i = 0;
+
+    while (*text) {
+        uint8_t p;
+        if (*text == '{') {
+            text++;
+            do {
+                uint8_t h, l;
+                if (!hex2bin(text[0], h) || !hex2bin(text[1], l)) {
+                    return -1;
+                }
+                p = (h << 4) | l;
+                if (!p || (i >= len - 1)) {
+                    return -1;
+                }
+                pet[i++] = (char)p;
+                text += 2;
+            } while (*text != '}');
+            text++;
+            continue;
+        }
+        uint8_t c = (uint8_t)*(text++);
+        if ((c >= 'a') && (c <= 'z')) {
+            p = c - 0x20;
+        } else if ((c >= 'A') && (c <= 'Z')) {
+            p = c + 0x80;
+        } else if (petscii_text_char(c) == (char)c) {
+            p = c;
+        } else {
+            return -1;
+        }
+        if (i >= len - 1) {
+            return -1;
+        }
+        pet[i++] = (char)p;
+    }
+    pet[i] = 0;
+    return i;
+}
+
 int read_line(const char *buffer, int index, char *out, int outlen)
 {
     int i = 0;

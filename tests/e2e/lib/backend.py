@@ -455,6 +455,8 @@ KEY_ALIASES: dict[str, list[str]] = {
     # Unlike C=+R it is not the monitor's alone: the file browser and the
     # settings menu answer it too.
     "CBM_I": ["commodore", "i"],
+    # C=+U toggles the file browser's CBM names view (KEY_CTRL_U, keymap_control).
+    "CBM_U": ["commodore", "u"],
 }
 
 

@@ -104,6 +104,69 @@ SubsysResultCode_e UserFileInteraction::S_enter(SubsysCommand *cmd)
     return SSRET_NO_USER_INTERFACE;
 }
 
+// Whether a file of this host name is listed under the CBM name pet; see FileInfo::get_cbm_name.
+static bool stores_cbm_name(const char *host, bool dir, const char *pet)
+{
+    FileInfo info(host);
+    info.attrib = dir ? AM_DIR : 0;
+    char back[17];
+    return info.get_cbm_name(back) && !strcmp(back, pet);
+}
+
+// The browser's CBM names view edits the name the IEC drive lists, as its row shows it, and
+// stores the result the way the drive stores a CBM name, keeping the type extension (issue
+// 976). Leaves the new host name in buffer, or for a wrapper its new CBM name in pet; buffer
+// is empty when the name is unchanged, cancelled or refused. False when the entry has no CBM
+// name that a host name can carry, so it is renamed by its host name.
+static bool edit_cbm_name(SubsysCommand *cmd, Path *p, const char *header, char *buffer, int len, char *pet)
+{
+    char shown[4 * 17 + 1];
+    char host[64];
+    const char *ext = "";
+    bool dir = false;
+
+    if (header) {
+        strcpy(pet, header);
+    } else {
+        FileInfo info(INFO_SIZE);
+        if ((FileManager::getFileManager()->fstat(p, cmd->filename.c_str(), info) != FR_OK) ||
+            !info.get_cbm_name(pet)) {
+            return false;
+        }
+        dir = info.is_directory();
+        if (!stores_cbm_name(cmd->filename.c_str(), dir, pet)) {
+            return false; // a type the host name cannot carry, such as DEL inside a disk image
+        }
+        petscii_to_fat(pet, host, sizeof(host));
+        ext = cmd->filename.c_str() + strlen(host);
+    }
+    petscii_to_text(pet, shown, sizeof(shown));
+    strcpy(buffer, shown);
+    if ((cmd->user_interface->string_box("New CBM name (L/U)..", buffer, len - 1) <= 0) ||
+        !*buffer || !strcmp(buffer, shown)) {
+        *buffer = 0;
+        return true;
+    }
+    // The new name has to read back as typed: the drive drops trailing shifted spaces, and
+    // a header name ends at its first shifted space or control code.
+    bool stored = (text_to_petscii(buffer, pet, 17) > 0);
+    if (stored && header) {
+        char back[17];
+        strcpy(back, pet);
+        stored = (x00_shown_name(back) == (int)strlen(pet));
+    } else if (stored) {
+        petscii_to_fat(pet, host, sizeof(host));
+        strcpy(buffer, host);
+        strcat(buffer, ext);
+        stored = stores_cbm_name(buffer, dir, pet);
+    }
+    if (!stored) {
+        cmd->user_interface->popup("Not a CBM name: use {XX}", BUTTON_OK);
+        *buffer = 0;
+    }
+    return true;
+}
+
 SubsysResultCode_e UserFileInteraction::S_rename(SubsysCommand *cmd)
 {
     int res;
@@ -124,19 +187,26 @@ SubsysResultCode_e UserFileInteraction::S_rename(SubsysCommand *cmd)
     full += cmd->filename.c_str();
     char header[17];
     bool wrapped = x00_read_header(fm, full.c_str(), header, NULL) && x00_shown_name(header);
-    if (wrapped) {
-        petscii_to_fat(header, buffer, sizeof(buffer));
+    char petscii[17];
+    bool as_cbm = cmd->user_interface->cbm_names &&
+                  edit_cbm_name(cmd, p, wrapped ? header : NULL, buffer, sizeof(buffer), petscii);
+    if (as_cbm) {
+        res = 1;
     } else {
-        strncpy(buffer, cmd->filename.c_str(), 64);
-        buffer[63] = 0;
+        if (wrapped) {
+            petscii_to_fat(header, buffer, sizeof(buffer));
+        } else {
+            strncpy(buffer, cmd->filename.c_str(), 64);
+            buffer[63] = 0;
+        }
+        res = cmd->user_interface->string_box("Give a new name..", buffer, 63);
     }
-
-    res = cmd->user_interface->string_box("Give a new name..", buffer, 63);
     if ((res > 0) && (*buffer)) {
         if (wrapped) {
-            char petscii[17];
             mstring renamed;
-            fat_to_petscii(buffer, false, petscii, 16, true);
+            if (!as_cbm) {
+                fat_to_petscii(buffer, false, petscii, 16, true);
+            }
             fres = x00_rename(fm, full.c_str(), cmd->path.c_str(), petscii, &renamed);
             // A new name that renders to the host name the file already has changes the
             // header alone, which no rename reports, so the listing is asked to refresh.

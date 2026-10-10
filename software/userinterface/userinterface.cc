@@ -92,6 +92,7 @@ static const char *helptext =
         "HOME:       Enter home directory\n"
         "C= HOME:    Set current dir as home\n"
         "INST:       Delete selected files\n"
+        "C= U:       Toggle CBM names (L/U)\n"
         "\n"  
 		"Quick seek: Use the keyboard to type\n"
 		"            the name to search for:\n"
@@ -152,6 +153,7 @@ UserInterface :: UserInterface(const char *title, bool use_logo) : title(title)
     remote = false;
     color_sel_bg = 0;
     filename_overflow_squeeze = 0;
+    cbm_names = false;
     menu_response_to_action = MENU_NOP;
     logo = use_logo;
     register_store(CFG_USERIF_STORE_ID, "User Interface Settings", user_if_config);
