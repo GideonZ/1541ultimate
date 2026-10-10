@@ -94,6 +94,8 @@ TELNET_KEY_BYTES: dict[str, bytes] = {
     "CBM_X": b"\x18",
     # KEY_CTRL_I is $09, which the VT100 driver also passes through as itself.
     "CBM_I": b"\x09",
+    # KEY_CTRL_U is $15, passed through as itself: the browser's CBM names view.
+    "CBM_U": b"\x15",
     # A bare ESC, as a terminal sends for the ESC key; the VT100 driver delivers
     # it after VT100_ESCAPE_ALONE_MS with nothing following (keyboard_vt100.cc
     # getch()). A trailing byte would now arrive as its own keystroke.

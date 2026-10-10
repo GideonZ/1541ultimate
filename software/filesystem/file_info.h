@@ -163,6 +163,35 @@ public:
         return buffer;
     }
 
+    // The CBM name the IEC drive lists this entry under, as 17 bytes: its own on a CBM file
+    // system, or the one its host name stores, which petscii_to_fat turns back into the same
+    // host name, letter case aside. False when the host name stores none, as when it is longer
+    // than 16 characters or has a brace that opens no escape, and for a GEOS .cvt file, which
+    // the drive lists by its host name.
+    bool get_cbm_name(char *pet)
+    {
+        if (name_format & NAME_FORMAT_CBM) {
+            strncpy(pet, lfname, 16);
+            pet[16] = 0;
+            return pet[0] != 0;
+        }
+        CbmFileName cbm;
+        if (is_directory()) {
+            cbm.init_dir(lfname);
+        } else {
+            cbm.init(lfname);
+        }
+        strcpy(pet, cbm.getName());
+        char host[64];
+        petscii_to_fat(pet, host, sizeof(host));
+        int len = strlen(host);
+        const char *ext = lfname + len;
+        if (!pet[0] || (cbm.getType() == 7) || strncasecmp(host, lfname, len)) {
+            return false;
+        }
+        return cbm.hadExtension() ? ((ext[0] == '.') && (strlen(ext) == 4)) : !*ext;
+    }
+
     // bool match_to_pattern(CbmFileName &cbm)
     // {
     //     bool match_name = pattern_match_escaped(cbm.getName(), lfname);

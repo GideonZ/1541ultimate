@@ -563,6 +563,11 @@ int TreeBrowser :: handle_key(int c)
         case KEY_CTRL_J: // joyswap
             ret = swap_joystick();
             break;
+        case KEY_CTRL_U: // CBM names, toggled with U like the case in the monitor
+            reset_quick_seek();
+            user_interface->cbm_names = !user_interface->cbm_names;
+            state->refresh = true;
+            break;
         case KEY_RETURN: // CR = select
             reset_quick_seek();
             context(0);
@@ -614,7 +619,7 @@ bool TreeBrowser :: perform_quick_seek(void)
     int num_el = state->children->get_elements();
     for(int i=0;i<num_el;i++) {
     	Browsable *t = (*state->children)[i];
-        if(t && pattern_match(quick_seek_string, t->getDisplayName(), false)) {
+        if(t && pattern_match(quick_seek_string, t->getDisplayName(user_interface), false)) {
 			state->move_to_index(i);
 			return true;
 		}
