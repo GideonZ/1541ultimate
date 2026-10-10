@@ -607,7 +607,7 @@ class ResponsePeer
     ResponsePeer(const ResponsePeer&);
     ResponsePeer& operator=(const ResponsePeer&);
 public:
-    ResponsePeer(const char *response) : child(-1)
+    ResponsePeer(const char *response, int response_length = -1) : child(-1)
     {
         if (!endpoint.port() || !endpoint.start_listening()) {
             return;
@@ -629,7 +629,7 @@ public:
             if (client < 0 || !strstr(request, "\r\n\r\n")) {
                 _exit(3);
             }
-            size_t sent = 0, length = strlen(response);
+            size_t sent = 0, length = response_length < 0 ? strlen(response) : response_length;
             while (sent < length) {
                 int n = send(client, response + sent, length - sent, MSG_NOSIGNAL);
                 if (n <= 0) {
@@ -842,6 +842,134 @@ static void test_response_completion(HttpTarget *target, int selected)
     }
 }
 
+static void begin_raw_response(HttpTarget *target, ResponsePeer& peer, Message **reply, Message **status)
+{
+    uint8_t create[128] = { 6, HTTP_CMD_HEADER_CREATE, 1 };
+    int length = snprintf((char *)create + 3, sizeof(create) - 3,
+                          "http://127.0.0.1:%u/", peer.port());
+    Message command = make_msg(create, length + 3);
+    const uint8_t handle[] = { 0 };
+    run_expect(target, "create loopback header", &command, handle, 1, status_ok);
+    quiet_begin();
+    target->parse_command(&c_exchange_raw, reply, status);
+    quiet_end();
+}
+
+static void test_header_boundaries(HttpTarget *target)
+{
+    const int sizes[] = { 32, 894, 895, 896, 1000 };
+    int baseline = open_descriptor_count();
+    for (unsigned i = 0; i < sizeof(sizes) / sizeof(sizes[0]); ++i) {
+        char value[1001];
+        for (int j = 0; j < sizes[i]; ++j) {
+            value[j] = 'a' + j % 26;
+        }
+        value[sizes[i]] = 0;
+        char response[1200], listed[1100];
+        snprintf(response, sizeof(response),
+                 "HTTP/1.1 200 OK\r\nX-Long: %s\r\nContent-Length: 2\r\n\r\n{}", value);
+        {
+            ResponsePeer peer(response);
+            checks++;
+            if (!peer.port()) {
+                failures++;
+                printf("FAIL header boundary peer setup\n");
+                return;
+            }
+            run_expect_empty(target, "reset header fixture", &c_cmd_free_all, status_ok);
+            uint8_t create[128] = { 6, HTTP_CMD_HEADER_CREATE, 1 };
+            int length = snprintf((char *)create + 3, sizeof(create) - 3,
+                                  "http://127.0.0.1:%u/", peer.port());
+            Message command = make_msg(create, length + 3);
+            const uint8_t handle[] = { 0 }, handles[] = { 1, 0 };
+            run_expect(target, "create header fixture", &command, handle, 1, status_ok);
+            run_expect(target, "exchange header fixture", &c_exchange, handles, 2, "200 OK");
+
+            uint8_t query[] = { 6, HTTP_CMD_HEADER_QUERY, 1, 'X', '-', 'L', 'o', 'n', 'g' };
+            command = make_msg(query, sizeof(query));
+            char label[64];
+            snprintf(label, sizeof(label), "query %d-byte header", sizes[i]);
+            run_expect(target, label, &command, (const uint8_t *)value,
+                       sizes[i] < 895 ? sizes[i] : 895, status_ok);
+
+            for (int index = 0; index <= 1; ++index) {
+                int count = snprintf(listed, sizeof(listed), "X-Long: %s\r%s", value,
+                                     index ? "" : "Content-Length: 2\r");
+                uint8_t list[] = { 6, HTTP_CMD_HEADER_LIST, 1, (uint8_t)index };
+                command = make_msg(list, sizeof(list));
+                // Listing reads one existing 800-byte stream block.
+                run_expect(target, index ? "list one long header" : "list all long headers",
+                           &command, (const uint8_t *)listed, count < 800 ? count : 800, status_ok);
+            }
+            checks++;
+            if (!peer.completed()) {
+                failures++;
+                printf("FAIL header boundary peer did not finish\n");
+            }
+            run_expect_empty(target, "release header fixture", &c_cmd_free_all, status_ok);
+        }
+        expect_descriptor_count("header boundary sockets released", baseline);
+    }
+}
+
+static void test_response_boundaries(HttpTarget *target)
+{
+    const int sizes[] = { 894, 895, 896, 1790, 2048 };
+    int baseline = open_descriptor_count();
+    for (unsigned i = 0; i < sizeof(sizes) / sizeof(sizes[0]); ++i) {
+        for (int header_size = 254; header_size <= 256; ++header_size) {
+            char response[4096];
+            int prefix = snprintf(response, sizeof(response),
+                                  "HTTP/1.1 200 OK\r\nContent-Length: %d\r\nX-Pad: ", sizes[i]);
+            memset(response + prefix, 'p', header_size - prefix - 4);
+            memcpy(response + header_size - 4, "\r\n\r\n", 4);
+            for (int j = 0; j < sizes[i]; ++j) {
+                response[header_size + j] = (char)(j & 255);
+            }
+            {
+                ResponsePeer peer(response, header_size + sizes[i]);
+                checks++;
+                if (!peer.port()) {
+                    failures++;
+                    printf("FAIL boundary peer setup\n");
+                    return;
+                }
+                run_expect_empty(target, "reset boundary fixture", &c_cmd_free_all, status_ok);
+                Message *reply, *status;
+                begin_raw_response(target, peer, &reply, &status);
+                expect_bytes("raw header boundary", "status", status,
+                             (const uint8_t *)response, header_size < 255 ? header_size : 255);
+                int received = 0;
+                for (int block = 0; block < 5; ++block) {
+                    int count = sizes[i] - received;
+                    if (count > 895) {
+                        count = 895;
+                    }
+                    expect_bytes("raw body boundary", "reply", reply,
+                                 (const uint8_t *)response + header_size + received, count);
+                    expect_last("raw boundary continuation", reply, count < 895);
+                    received += count;
+                    if (count < 895) {
+                        break;
+                    }
+                    quiet_begin();
+                    target->get_more_data(&reply, &status);
+                    quiet_end();
+                    expect_text("continuation status", "status", status, status_ok);
+                }
+                run_more_expect(target, "boundary exhausted", (const uint8_t *)"", 0, status_no_more);
+                checks++;
+                if (!peer.completed()) {
+                    failures++;
+                    printf("FAIL boundary peer did not finish\n");
+                }
+                run_expect_empty(target, "release boundary fixture", &c_cmd_free_all, status_ok);
+            }
+            expect_descriptor_count("boundary sockets released", baseline);
+        }
+    }
+}
+
 int main(int argc, char **argv)
 {
     if ((argc > 1) && (strcmp(argv[1], "--connect-cleanup") == 0)) {
@@ -863,6 +991,13 @@ int main(int argc, char **argv)
     if ((argc > 1) && (strcmp(argv[1], "--response-completion") == 0)) {
         test_response_completion(target, argc > 2 ? atoi(argv[2]) : -1);
         printf("Response completion: %d checks, %d failures\n", checks, failures);
+        return failures ? 1 : 0;
+    }
+
+    if ((argc > 1) && (strcmp(argv[1], "--response-boundaries") == 0)) {
+        test_response_boundaries(target);
+        test_header_boundaries(target);
+        printf("Response boundaries: %d checks, %d failures\n", checks, failures);
         return failures ? 1 : 0;
     }
 
