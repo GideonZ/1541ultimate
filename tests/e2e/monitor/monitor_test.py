@@ -60,6 +60,9 @@ REST_TIMEOUT_SECONDS = 5.0
 # the subject. Two spare attempts, because the loss this covers is one
 # keystroke in several hundred on the one transport that has it.
 PROMPT_RETYPES = 2
+# How long typed text may take to show in a prompt field. Generous because the
+# field is polled and a correct one ends the wait; only a lost key pays it all.
+PROMPT_READ_BACK_SECONDS = 15.0
 
 # The Transfer prompt states its optional fourth field, so its title is long
 # enough to be worth naming once.
@@ -147,8 +150,8 @@ class MonitorSession:
                   expect_redraw: bool = True) -> Snapshot:
         return self.backend.send_char(ch, settle=settle, expect_redraw=expect_redraw)
 
-    def send_text(self, text: str, label: str) -> Snapshot:
-        return self.backend.send_text(text, label)
+    def send_text(self, text: str, label: str, *, settle: bool = True) -> Snapshot:
+        return self.backend.send_text(text, label, settle=settle)
 
     def empty_open_prompt(self, title: str) -> None:
         """Delete what a non-template prompt is showing, so the field is empty.
@@ -223,8 +226,9 @@ class MonitorSession:
             # the template_mode flag on their MonitorCommandInput.
             if not template:
                 self.empty_open_prompt(title)
-            self.send_text(text, f"{key} {text}")
-            snapshot = wait_until(self, typed)
+            # Unsettled: the field is read back below, which is the wait that matters.
+            self.send_text(text, f"{key} {text}", settle=False)
+            snapshot = wait_until(self, typed, timeout=PROMPT_READ_BACK_SECONDS)
             try:
                 shown = prompt_field(snapshot, title)
             except Failure:
@@ -254,14 +258,14 @@ class MonitorSession:
         """
         shown = None
         for attempt in range(retypes + 1):
-            self.send_text(text, f"{title} {text}")
+            self.send_text(text, f"{title} {text}", settle=False)
             def field_reads(screen: Snapshot) -> bool:
                 try:
                     return prompt_field(screen, title) == text
                 except Failure:
                     return False  # the prompt is mid-redraw
 
-            snapshot = wait_until(self, field_reads)
+            snapshot = wait_until(self, field_reads, timeout=PROMPT_READ_BACK_SECONDS)
             try:
                 shown = prompt_field(snapshot, title)
             except Failure:
@@ -1995,6 +1999,27 @@ def run_binary_bookmark_width_test(session: MonitorSession, rest_host: str) -> N
     screen.find_line_containing("MONITOR BIN $C400")
 
 
+# show_navigation_status() keeps the "F0 JMP/RET $xxxx" footer for 2000ms.
+NAVIGATION_FOOTER_SECONDS = 2.0
+
+
+def follow_key(session: MonitorSession, header: str, footer: str) -> Snapshot:
+    """Press RETURN, require the view it lands on, and the footer if it can still be up.
+
+    A capture later than the footer's lifetime shows the status line instead,
+    which says nothing about whether the footer was drawn.
+    """
+    sent = time.monotonic()
+    screen = session.send_key("ENTER")
+    elapsed = time.monotonic() - sent
+    screen.find_line_containing(header)
+    if elapsed < NAVIGATION_FOOTER_SECONDS:
+        screen.find_line_containing(footer)
+    else:
+        detail(f"{footer!r} not checked: the screen came back after {elapsed:.1f}s")
+    return screen
+
+
 def run_follow_return_test(session: MonitorSession, rest_host: str) -> None:
     # ASM view test data:
     #   $3340: JSR $3360   20 60 33 / NOP EA
@@ -2008,29 +2033,21 @@ def run_follow_return_test(session: MonitorSession, rest_host: str) -> None:
     screen = ensure_view(session, "ASM ")
     screen.find_line_containing("JSR $3360")
     # ENTER follows JSR; ENTER at the non-followable target returns
-    screen = session.send_key("ENTER")
-    screen.find_line_containing("MONITOR ASM $3360")
-    screen.find_line_containing("F0 JMP $3360")
-    screen = session.send_key("ENTER")
-    screen.find_line_containing("MONITOR ASM $3340")
-    screen.find_line_containing("F0 RET $3340")
+    follow_key(session, "MONITOR ASM $3360", "F0 JMP $3360")
+    follow_key(session, "MONITOR ASM $3340", "F0 RET $3340")
 
     # BNE branch follow; ENTER in HEX must not trigger Back
     screen = session.goto("3350")
     screen = ensure_view(session, "ASM ")
     screen.find_line_containing("BNE $3354")
-    screen = session.send_key("ENTER")
-    screen.find_line_containing("MONITOR ASM $3354")
-    screen.find_line_containing("F0 JMP $3354")
+    follow_key(session, "MONITOR ASM $3354", "F0 JMP $3354")
     screen = ensure_view(session, "HEX ")
     screen.find_line_containing("MONITOR HEX $3354")
     screen = session.send_key("ENTER")
     screen.find_line_containing("MONITOR HEX $3354")
     screen = ensure_view(session, "ASM ")
     screen.find_line_containing("MONITOR ASM $3354")
-    screen = session.send_key("ENTER")
-    screen.find_line_containing("MONITOR ASM $3350")
-    screen.find_line_containing("F0 RET $3350")
+    follow_key(session, "MONITOR ASM $3350", "F0 RET $3350")
 
     # RTS is not a static follow target
     screen = session.goto("3360")

@@ -545,10 +545,12 @@ class TelnetBackend(Backend):
         self._send(ch.encode("ascii"), ch)
         return self.capture()
 
-    def send_text(self, text: str, label: str) -> Snapshot:
+    def send_text(self, text: str, label: str, *, settle: bool = True) -> Snapshot:
+        # Settling waits TELNET_SETTLE_GAP_SECONDS of silence, which only a
+        # command that commits needs; text typed into a field redraws once.
         self.last_command = label
         self._expect_redraw = True
-        self._expect_settle = True
+        self._expect_settle = settle
         self._send(text.encode("ascii"), label)
         return self.capture()
 

@@ -731,11 +731,38 @@ void C64::poke(uint16_t address, uint8_t value)
     }
 }
 
+// A cartridge reaches C64 memory through the 6510's own $01 mapping, so this is
+// the CPU view, read as machine:readmem reads it. The I/O registers are left at
+// $FF rather than read: a read acknowledges CIA flags and switches some carts.
+void C64::get_all_memory(uint8_t *pb)
+{
+    static const uint16_t spans[][2] = { { 0x0000, 0xD000 }, { 0xD800, 0x0400 }, { 0xE000, 0x2000 } };
+    bool stopped_it = !is_stopped();
+    if (stopped_it) {
+        stop(false);
+    }
+    memset(pb + 0xD000, 0xFF, 0x1000);
+    for (int i = 0; i < 3; i++) {
+        uint16_t start = spans[i][0];
+        if (isFrozen) {
+            dma_transfer_frozen(start, pb + start, spans[i][1], 1);
+        } else {
+            memcpy(pb + start, (const void *)(C64_MEMORY_BASE + start), spans[i][1]);
+        }
+    }
+    if (stopped_it) {
+        resume();
+    }
+}
+
 void C64::dma_transfer_frozen(uint16_t offset, uint8_t *buffer, int length, int rw)
 {
     volatile uint8_t *ram = (volatile uint8_t *)C64_MEMORY_BASE;
+#if U64
+    // A U64 register; on a cartridge this address belongs to other hardware.
     uint8_t saved_memonly = C64_DMA_MEMONLY;
     C64_DMA_MEMONLY = 1;
+#endif
 
     int pos = 0;
     while (pos < length) {
@@ -760,7 +787,9 @@ void C64::dma_transfer_frozen(uint16_t offset, uint8_t *buffer, int length, int 
                 dmaModeWindow++;
                 C64_MODE = frozen_mode;
             }
+#if U64
             C64_DMA_MEMONLY = 0;
+#endif
             // Both registers above re-decode the C64 bus, and that has to
             // reach the machine before the transfer is issued. Reading the
             // registers back does not achieve it: they are on this side and
@@ -784,7 +813,9 @@ void C64::dma_transfer_frozen(uint16_t offset, uint8_t *buffer, int length, int 
                 // length landed its first two bytes and nothing after them.
                 (void)ram[addr];
             }
+#if U64
             C64_DMA_MEMONLY = 1;
+#endif
             if (restore_mode) {
                 C64_MODE = saved_mode;
                 // The mode change reaches the C64's decoding with a delay, so
@@ -792,14 +823,16 @@ void C64::dma_transfer_frozen(uint16_t offset, uint8_t *buffer, int length, int 
                 wait_10us(2);
                 dmaModeWindow--;
             }
-        } else if ((addr >= 0x0800) && (addr < 0x1000)) {
-            // The freezer menu uses this 2KB as its own scratch RAM, so serve
-            // reads/writes from the backup taken at freeze time instead: it is
+        } else if ((addr >= 0x0400) && (addr < 0x1000)) {
+            // The freezer menu uses $0400-$0FFF for its own screen and charset, so serve
+            // reads/writes from the backups taken at freeze time instead: they are
             // restored to real RAM on unfreeze, unlike the live (bypassed) range.
-            if ((0x1000 - addr) < chunk) {
-                chunk = 0x1000 - addr;
+            int region_end = (addr < 0x0800) ? 0x0800 : 0x1000;
+            if ((region_end - addr) < chunk) {
+                chunk = region_end - addr;
             }
-            uint8_t *backup = ((uint8_t *)ram_backup) + (addr - 0x0800);
+            uint8_t *backup = (addr < 0x0800) ? ((uint8_t *)screen_backup) + (addr - 0x0400)
+                                              : ((uint8_t *)ram_backup) + (addr - 0x0800);
             if (rw) {
                 memcpy(buffer + pos, backup, chunk);
             } else {
@@ -818,8 +851,8 @@ void C64::dma_transfer_frozen(uint16_t offset, uint8_t *buffer, int length, int 
             }
         } else {
             int next_boundary;
-            if (addr < 0x0800) {
-                next_boundary = 0x0800;
+            if (addr < 0x0400) {
+                next_boundary = 0x0400;
             } else if (addr < 0x8000) {
                 next_boundary = 0x8000;
             } else if (addr < 0xD800) {
@@ -839,7 +872,9 @@ void C64::dma_transfer_frozen(uint16_t offset, uint8_t *buffer, int length, int 
         pos += chunk;
     }
 
+#if U64
     C64_DMA_MEMONLY = saved_memonly;
+#endif
 }
 
 #if U64

@@ -234,17 +234,15 @@ def describe_mismatch(actual: bytes, expected: bytes) -> str:
     show up as the first differing position plus the offset the bytes there
     actually came from, because pattern() makes every byte name its own offset.
     """
-    if len(actual) != len(expected):
-        return (f"got {len(actual)} bytes, expected {len(expected)}"
-                + (f"; the bytes it does have start at offset {run_offset(actual)}"
-                   if run_offset(actual) is not None else ""))
+    size = (f"got {len(actual)} bytes, expected {len(expected)}; "
+            if len(actual) != len(expected) else "")
     for index, (got, want) in enumerate(zip(actual, expected)):
         if got != want:
             tail = actual[index:index + 16]
-            return (f"first difference at offset {index}: got ${got:02X}, expected "
+            return (f"{size}first difference at offset {index}: got ${got:02X}, expected "
                     f"${want:02X}; the run starting there came from offset "
-                    f"{run_offset(tail)}")
-    return "identical"
+                    f"{run_offset(tail)}; around it: {actual[max(0, index - 8):index + 8].hex(' ')}")
+    return f"{size}the shorter one is a prefix of the other" if size else "identical"
 
 
 class Net:

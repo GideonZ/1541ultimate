@@ -30,7 +30,7 @@ from collections.abc import Sequence
 import machine
 import pacing
 import targets
-from report import Failure
+from report import Failure, warn
 import rest
 from rest import DEFAULT_TIMEOUT, RestClient, Response, multipart_body
 
@@ -72,12 +72,18 @@ SCREEN_CELLS = SCREEN_COLS * SCREEN_ROWS
 # doing, so this works with the menu open or closed.
 SCREEN_RAM = 0x0400
 READY_SCREEN_CODES = bytes((0x12, 0x05, 0x01, 0x04, 0x19, 0x2E))
+# The rows searched for it. The boot banner puts it on row 5.
+READY_WINDOW = 400
 # How long the machine gets to reach the BASIC prompt, and how often to look.
-# Measured on a U64 Elite: a reset reaches READY in about 34ms, so the budget
+# Measured on a U64 Elite: a reset reaches READY in about 250ms, so the budget
 # is generous and is only ever paid in full by a machine that is not going to
 # get there, such as one resetting into a cartridge.
 READY_TIMEOUT_SECONDS = 6.0
 READY_POLL_SECONDS = 0.01
+# The low byte of the KERNAL's jiffy clock, and how long it may stand still on a
+# running machine: one tick is 17ms, and health.py measures 21-62ms to the first.
+JIFFY_CLOCK = 0x00A2
+CPU_RUN_TIMEOUT_SECONDS = 0.5
 
 # config_menu.cc asks this before it leaves a config page with unsaved changes.
 SAVE_TO_FLASH_PROMPT = "Save changes to Flash?"
@@ -231,7 +237,7 @@ class MachineApi:
         """
         deadline = time.monotonic() + timeout
         while True:
-            if READY_SCREEN_CODES in self.readmem(SCREEN_RAM, 400):
+            if READY_SCREEN_CODES in self.readmem(SCREEN_RAM, READY_WINDOW):
                 return True
             if time.monotonic() >= deadline:
                 return False
@@ -256,7 +262,7 @@ class MachineApi:
         """Reset the C64, unless nothing has happened that a reset would clear.
 
         Waits for the BASIC prompt by polling rather than sleeping for a fixed
-        time: measured at about 34ms on a U64 Elite, against the 1 to 3 second
+        time: measured at 230 to 310ms on a U64 Elite, against the 1 to 3 second
         sleeps this replaces. Pass wait=False for a machine that is not
         expected to reach the prompt, such as one resetting into a cartridge.
 
@@ -279,11 +285,16 @@ class MachineApi:
         """
         if not force and self._reset_at == self._counts():
             return True
-        # Blank the top of the screen first, so the READY left by the previous
-        # boot cannot be mistaken for this one. Without it the wait returns
-        # immediately and proves nothing.
+        # Blank every row the wait searches, or the previous boot's READY is found
+        # before the reset takes effect. With the menu open the write can reach
+        # its screen instead (frozen-screen-dma), so it is closed first if it will.
         if wait:
-            self.writemem(SCREEN_RAM, bytes([0x20]) * len(READY_SCREEN_CODES))
+            if self.menu_open():
+                try:
+                    self.close_menu_from_anywhere()
+                except Failure as exc:
+                    warn(f"reset: the menu did not close ({exc}); resetting anyway")
+            self.writemem(SCREEN_RAM, bytes([0x20]) * READY_WINDOW)
         self._act("reset")
         self._reset_at = self._counts()
         if not wait:
@@ -293,6 +304,21 @@ class MachineApi:
         # bookkeeping is restored to "reset, and untouched since".
         self._reset_at = self._counts()
         return ready
+
+    def cpu_runs(self, timeout: float = CPU_RUN_TIMEOUT_SECONDS) -> bool:
+        """Whether the KERNAL's interrupt runs, so the 6510 does: the jiffy clock at $00A2 moves 60 times a second.
+
+        Measured rather than inferred from the user interface: an Ultimate 64
+        draws its overlay only while a display asserts HDMI hot-plug detect, and
+        then leaves the machine running; without one it freezes it.
+        """
+        first = self.readmem(JIFFY_CLOCK, 1)
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            time.sleep(READY_POLL_SECONDS)
+            if self.readmem(JIFFY_CLOCK, 1) != first:
+                return True
+        return False
 
     @property
     def was_just_reset(self) -> bool:

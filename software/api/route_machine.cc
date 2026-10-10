@@ -145,7 +145,9 @@ API_DOC(PUT, machine, pause,
     DESCRIPTION("Halts the 6510 by holding DMA. The video output freezes on the frame that was "
                 "being drawn and the machine stays halted until `machine:resume`. Memory can "
                 "still be read and written while paused, which is what makes this useful before "
-                "a large `machine:readmem`.")
+                "a large `machine:readmem`. While the on-device menu holds the machine, it is "
+                "halted already and this does nothing; the machine runs again when the menu "
+                "closes, so pause after that to keep it halted.")
     PATH("/v1/machine:pause", "pauseMachine", "")
     RESPONSE("200", "application/json", "ErrorResponse", "The CPU is halted.", "")
     RESPONSE_ERROR("423", "Could not obtain lock of subsystem", "")
@@ -163,7 +165,8 @@ API_DOC(PUT, machine, resume,
     TAG("Machine")
     SUMMARY("Resume the CPU")
     DESCRIPTION("Releases the DMA hold that `machine:pause` applied. Calling it on a machine that "
-                "is not paused does nothing and is not an error.")
+                "is not paused does nothing and is not an error. While the on-device menu holds the "
+                "machine it stays halted, and runs again when the menu closes.")
     PATH("/v1/machine:resume", "resumeMachine", "")
     RESPONSE("200", "application/json", "ErrorResponse", "The CPU is running.", "")
     RESPONSE_ERROR("423", "Could not obtain lock of subsystem", "")

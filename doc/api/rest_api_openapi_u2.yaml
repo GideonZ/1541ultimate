@@ -2066,7 +2066,7 @@ paths:
         - Machine
       summary: Pause the CPU
       description: |2-
-        Halts the 6510 by holding DMA. The video output freezes on the frame that was being drawn and the machine stays halted until `machine:resume`. Memory can still be read and written while paused, which is what makes this useful before a large `machine:readmem`.
+        Halts the 6510 by holding DMA. The video output freezes on the frame that was being drawn and the machine stays halted until `machine:resume`. Memory can still be read and written while paused, which is what makes this useful before a large `machine:readmem`. While the on-device menu holds the machine, it is halted already and this does nothing; the machine runs again when the menu closes, so pause after that to keep it halted.
 
         **Caution (machine-state):** The machine stays halted until machine:resume. A client that stops without resuming leaves it frozen.
       operationId: pauseMachine
@@ -2293,7 +2293,7 @@ paths:
       tags:
         - Machine
       summary: Resume the CPU
-      description: 'Releases the DMA hold that `machine:pause` applied. Calling it on a machine that is not paused does nothing and is not an error.'
+      description: 'Releases the DMA hold that `machine:pause` applied. Calling it on a machine that is not paused does nothing and is not an error. While the on-device menu holds the machine it stays halted, and runs again when the menu closes.'
       operationId: resumeMachine
       responses:
         '200':
