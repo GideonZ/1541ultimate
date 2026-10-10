@@ -26,5 +26,6 @@ esp_err_t wifi_clear_aps(void);
 void enable_hook();
 void disable_hook();
 uint8_t wifi_get_connection();
+entropy_source_t entropy_source(void);
 
 #endif
