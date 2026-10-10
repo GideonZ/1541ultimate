@@ -234,7 +234,14 @@ def open_menu(api: UltimateApi, presses: int = MENU_OPEN_PRESSES) -> str:
     scenario_rest_routes asserts directly and which c64u fails. This is the
     setup for a different assertion, so it retries rather than carrying that
     defect into every check that has to get the menu up first.
+
+    A menu that a deferred action is still hiding reads as open for a moment
+    after BASIC is back, so the press waits for it to read closed. Measured on
+    c64u, overlay: a press 15ms after C= + R reached BASIC saw the menu screen
+    once and then 404, and the check that followed found no menu.
     """
+    if not wait_menu(api, False, MENU_CLOSE_TIMEOUT):
+        return "PUT /v1/machine:menu_button"
     for attempt in range(presses):
         api.machine.menu_button()
         if wait_menu(api, True, MENU_TIMEOUT):
