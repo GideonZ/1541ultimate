@@ -112,7 +112,13 @@ static CpuRegionMapping cpu_region_mapping(uint16_t address, uint8_t cpu_port)
 
 static bool uses_live_mapping_for_address(uint16_t address, uint8_t live_cpu_port, uint8_t monitor_cpu_port)
 {
-    return cpu_region_mapping(address, live_cpu_port) == cpu_region_mapping(address, monitor_cpu_port);
+    CpuRegionMapping selected = cpu_region_mapping(address, monitor_cpu_port);
+    // RAM the selected bank maps under a ROM or I/O window is read directly. The
+    // live port comes from the RAM at $0000/$0001, which the 6510 does not write.
+    if (selected == MAP_RAM && address >= 0xA000 && (address < 0xC000 || address >= 0xD000)) {
+        return false;
+    }
+    return cpu_region_mapping(address, live_cpu_port) == selected;
 }
 
 bool U64MemoryBackend :: freeze_available(void) const

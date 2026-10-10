@@ -303,6 +303,10 @@ class RestBackend(Backend):
         deadline = time.monotonic() + SETTLE_TIMEOUT_SECONDS
         while time.monotonic() < deadline:
             if self._menu_open():
+                # The first reads can still hold the frame the menu last drew,
+                # until its task runs and redraws. Measured on a C64 Ultimate: a
+                # monitor frame for 40ms after a reopen that drew the browser.
+                wait_screen_settled(self._menu_screen_body, timeout=SETTLE_TIMEOUT_SECONDS)
                 return
             time.sleep(POLL_INTERVAL_SECONDS)
         raise Failure("the on-device menu did not open")

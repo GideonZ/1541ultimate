@@ -17,8 +17,10 @@ and not the menu's. Whether the machine runs while the UI is up is measured:
 Telnet leaves it running, and so does Overlay with an HDMI display connected.
 
 The suite writes a screen row, a colour row and a RAM pattern at the READY
-prompt, opens the UI with --mode, saves the memory through the task menu and
-reads all 64 KB over REST. Where the two views coincide, the file and REST are
+prompt, and values in the RAM under the CPU port that disagree with the live
+port, as a program or a DMA write can leave them there. It then opens the UI
+with --mode, saves the memory through the task menu and reads all 64 KB over
+REST. Where the two views coincide, the file and REST are
 compared byte for byte. The monitor is then read at one page per distinct
 path: the screen and RAM backups, BASIC, colour RAM and KERNAL. Every
 comparison is its own check, so one run reports every disagreement.
@@ -72,6 +74,11 @@ VIEWS_DIFFER = ((0xA000, 0xC000), (0xD000, RAM_SIZE))
 # while the monitor shows the port of the bank it is set to.
 REGISTERS = ((0x0000, 0x0002), (0xD000, 0xD800), (0xDC00, 0xE000))
 COLOR_RAM = ((0xD800, 0xDC00),)
+# DMA reads the RAM beneath the 6510's port, which the CPU never writes, so it
+# holds whatever a program or a DMA write left there. These values decode to
+# port 0, all RAM, while the KERNAL's live port maps BASIC and KERNAL.
+PORT_MIRROR = 0x0000
+PORT_MIRROR_VALUES = bytes((0x2F, 0x30))
 FIXTURE_RANGES = ((SCREEN_ROW, SCREEN_ROW + len(SCREEN_TEXT)), (COLOR_ROW, COLOR_ROW + len(COLOR_VALUES)),
                   *savemem.PATTERN_RANGES)
 
@@ -160,11 +167,14 @@ def main() -> int:
 
     compare = Comparisons()
     browser = session = None
+    mirror = None
     try:
         with check("write the screen row, colour row and RAM pattern at READY"):
             savemem.remove(args.host, args.password)
             if not api.machine.reset(force=True):
                 raise Failure("the machine did not reach READY after a reset")
+            mirror = api.machine.readmem(PORT_MIRROR, len(PORT_MIRROR_VALUES))
+            api.machine.writemem(PORT_MIRROR, PORT_MIRROR_VALUES)
             api.machine.writemem(SCREEN_ROW, SCREEN_TEXT)
             api.machine.writemem(COLOR_ROW, COLOR_VALUES)
             savemem.write_pattern(api, SEED)
@@ -230,6 +240,9 @@ def main() -> int:
         if browser is not None:
             teardown_step("close the browser session", browser.close)
         teardown_step("remove the saved file", lambda: savemem.remove(args.host, args.password))
+        if mirror is not None:
+            teardown_step("put the RAM under the CPU port back",
+                          lambda: api.machine.writemem(PORT_MIRROR, mirror))
         teardown_step("reset the machine", lambda: api.machine.reset(force=True))
 
 
