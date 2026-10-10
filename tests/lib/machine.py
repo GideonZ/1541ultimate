@@ -508,6 +508,15 @@ class Machine:
         return (ASSUME_ALL in _assumed or name in _assumed
                 or self.kind not in entry.lacking)
 
+    def lacks_fix(self, name: str) -> bool:
+        """Whether a check has to leave out what `name` fixes, for one that narrows instead of skipping.
+
+        Tags the next check, as skip_without_fix does, when the fix is only assumed.
+        """
+        if self.assumed_fix(name):
+            note_assumed_fix(name, self.kind)
+        return not self.has_fix(name)
+
     def missing_fix(self, name: str) -> str | None:
         """Why a check tagged `name` cannot run here, or None when it can."""
         if self.has_fix(name):

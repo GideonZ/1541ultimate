@@ -110,15 +110,11 @@ static CpuRegionMapping cpu_region_mapping(uint16_t address, uint8_t cpu_port)
     return MAP_RAM;
 }
 
-static bool uses_live_mapping_for_address(uint16_t address, uint8_t live_cpu_port, uint8_t monitor_cpu_port)
+// Outside the banked windows the live bus is used, so cartridge ROM shows. Inside them
+// the monitor's bank decides: DMA cannot read the 6510's port, only the RAM beneath it.
+static bool uses_live_mapping_for_address(uint16_t address)
 {
-    CpuRegionMapping selected = cpu_region_mapping(address, monitor_cpu_port);
-    // RAM the selected bank maps under a ROM or I/O window is read directly. The
-    // live port comes from the RAM at $0000/$0001, which the 6510 does not write.
-    if (selected == MAP_RAM && address >= 0xA000 && (address < 0xC000 || address >= 0xD000)) {
-        return false;
-    }
-    return cpu_region_mapping(address, live_cpu_port) == selected;
+    return address < 0xA000 || (address >= 0xC000 && address < 0xD000);
 }
 
 bool U64MemoryBackend :: freeze_available(void) const
@@ -182,18 +178,12 @@ uint8_t U64MemoryBackend :: read(uint16_t address)
     }
 
     uint8_t cpu_port = get_monitor_cpu_port();
-    uint8_t live_cpu_port = machine->get_cpu_port();
     uint8_t rom_value = 0;
-    bool use_cached_rom = machine->is_accessible() || is_frozen() ||
-            !uses_live_mapping_for_address(address, live_cpu_port, cpu_port);
 
-    if (read_monitor_rom_byte(address, cpu_port, &rom_value) && use_cached_rom) {
+    if (read_monitor_rom_byte(address, cpu_port, &rom_value)) {
         return rom_value;
     }
-    if (machine->is_accessible()) {
-        return machine->peek_cpu(address, cpu_port);
-    }
-    if (!uses_live_mapping_for_address(address, live_cpu_port, cpu_port)) {
+    if (machine->is_accessible() || !uses_live_mapping_for_address(address)) {
         return machine->peek_cpu(address, cpu_port);
     }
     return machine->peek(address);
@@ -206,13 +196,8 @@ void U64MemoryBackend :: write(uint16_t address, uint8_t value)
     }
 
     uint8_t cpu_port = get_monitor_cpu_port();
-    uint8_t live_cpu_port = machine->get_cpu_port();
 
-    if (machine->is_accessible()) {
-        machine->poke_cpu(address, value, cpu_port);
-        return;
-    }
-    if (!uses_live_mapping_for_address(address, live_cpu_port, cpu_port)) {
+    if (machine->is_accessible() || !uses_live_mapping_for_address(address)) {
         machine->poke_cpu(address, value, cpu_port);
         return;
     }

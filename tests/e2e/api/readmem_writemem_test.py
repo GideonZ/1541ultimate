@@ -411,7 +411,7 @@ def compare(
 
 def screen_is_menu_owned(session: "RestSession") -> bool:
     """Whether REST reaches the menu's screen, not the C64's, while frozen."""
-    return not identify_machine(session.host).has_fix(machine_lib.FROZEN_SCREEN_DMA)
+    return identify_machine(session.host).lacks_fix(machine_lib.FROZEN_SCREEN_DMA)
 
 
 def run_selfcheck(

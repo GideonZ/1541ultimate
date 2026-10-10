@@ -30,7 +30,7 @@ from collections.abc import Sequence
 import machine
 import pacing
 import targets
-from report import Failure
+from report import Failure, warn
 import rest
 from rest import DEFAULT_TIMEOUT, RestClient, Response, multipart_body
 
@@ -285,16 +285,15 @@ class MachineApi:
         """
         if not force and self._reset_at == self._counts():
             return True
-        # Blank every row the wait searches, so the READY left by the previous
-        # boot cannot be mistaken for this one. Left on screen, it is found
-        # before the reset takes effect, and the KERNAL then clears the screen
-        # under whatever the caller wrote next.
-        # The menu is closed first: while it holds the machine, firmware without
-        # the frozen-screen-dma fix writes $0400-$07FF into the menu's screen.
-        # With wait=False nothing is blanked, so the menu is left as it is.
+        # Blank every row the wait searches, or the previous boot's READY is found
+        # before the reset takes effect. With the menu open the write can reach
+        # its screen instead (frozen-screen-dma), so it is closed first if it will.
         if wait:
             if self.menu_open():
-                self.close_menu_from_anywhere()
+                try:
+                    self.close_menu_from_anywhere()
+                except Failure as exc:
+                    warn(f"reset: the menu did not close ({exc}); resetting anyway")
             self.writemem(SCREEN_RAM, bytes([0x20]) * READY_WINDOW)
         self._act("reset")
         self._reset_at = self._counts()
@@ -307,7 +306,7 @@ class MachineApi:
         return ready
 
     def cpu_runs(self, timeout: float = CPU_RUN_TIMEOUT_SECONDS) -> bool:
-        """Whether the 6510 is executing: the KERNAL's jiffy clock at $00A2 moves 60 times a second.
+        """Whether the KERNAL's interrupt runs, so the 6510 does: the jiffy clock at $00A2 moves 60 times a second.
 
         Measured rather than inferred from the user interface: an Ultimate 64
         draws its overlay only while a display asserts HDMI hot-plug detect, and

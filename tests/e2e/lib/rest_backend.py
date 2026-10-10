@@ -14,7 +14,7 @@ from pathlib import Path
 # The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
 sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
                             if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
-from report import Failure
+from report import Failure, warn
 from collections.abc import Sequence
 import api as api_lib
 import json
@@ -306,7 +306,9 @@ class RestBackend(Backend):
                 # The first reads can still hold the frame the menu last drew,
                 # until its task runs and redraws. Measured on a C64 Ultimate: a
                 # monitor frame for 40ms after a reopen that drew the browser.
-                wait_screen_settled(self._menu_screen_body, timeout=SETTLE_TIMEOUT_SECONDS)
+                settled, _ = wait_screen_settled(self._menu_screen_body, timeout=SETTLE_TIMEOUT_SECONDS)
+                if not settled:
+                    warn(f"the menu screen was still changing {SETTLE_TIMEOUT_SECONDS:g}s after it opened")
                 return
             time.sleep(POLL_INTERVAL_SECONDS)
         raise Failure("the on-device menu did not open")

@@ -20,8 +20,12 @@ until it closes, and every frozen transfer assumes the 6510 is not running.
 Colour RAM is four bits wide and compared on the low nibble. The ROM and I/O
 windows are not written: readmem shows ROM and I/O where $01 maps them, so a
 write there does not read back by design. Screen and colour RAM are written
-at random only in rows 10 to 20: the KERNAL rewrites the cursor's cell and its
+at random only in rows 10 to 19: the KERNAL rewrites the cursor's cell and its
 colour while the cursor blinks on row 6.
+
+A frozen transfer that sends a write and its read back to the same wrong place
+reads back correctly, so with the menu holding the machine the boundary
+windows are also written, and read once the menu has closed.
 """
 
 from __future__ import annotations
@@ -50,7 +54,7 @@ UI_STORE, UI_ITEM = "User Interface Settings", "Interface Type"
 # (start, end) windows across each split point of the frozen transfer.
 BOUNDARIES = ((0x03F0, 0x0420), (0x07E0, 0x0820), (0x0FF0, 0x1010),
               (0x7FF0, 0x8010), (0xCFE0, 0xD000), (0xD800, 0xD828), (0xDBD8, 0xDC00))
-# Where random windows go: screen and colour rows 10-20, free BASIC RAM and $C000.
+# Where random windows go: screen and colour rows 10-19, free BASIC RAM and $C000.
 RANDOM_AREAS = ((0x0590, 0x0720), (0x0810, 0xA000), (0xC000, 0xD000), (0xD990, 0xDB20))
 RANDOM_WINDOWS = 100
 MAX_WINDOW = 600
@@ -64,15 +68,17 @@ def masked(start: int, data: bytes) -> bytes:
                  for i, b in enumerate(data))
 
 
+def allowed(start: int, end: int, screen: bool) -> bool:
+    return screen or end <= SCREEN[0] or start >= SCREEN[1]
+
+
 def windows(rng: random.Random, screen: bool) -> list[tuple[int, int]]:
-    def allowed(start: int, end: int) -> bool:
-        return screen or end <= SCREEN[0] or start >= SCREEN[1]
-    chosen = [w for w in BOUNDARIES if allowed(*w)]
+    chosen = [w for w in BOUNDARIES if allowed(*w, screen)]
     while len(chosen) < len(BOUNDARIES) + RANDOM_WINDOWS:
         lo, hi = rng.choice(RANDOM_AREAS)
         start = rng.randrange(lo, hi)
         window = (start, min(hi, start + rng.randint(1, MAX_WINDOW)))
-        if allowed(*window):
+        if allowed(*window, screen):
             chosen.append(window)
     return chosen
 
@@ -109,6 +115,26 @@ def round_trips(api: UltimateApi, rng: random.Random, screen: bool) -> list[str]
     return lost
 
 
+def reach_the_c64(api: UltimateApi, rng: random.Random, screen: bool) -> list[str]:
+    """Boundary windows written while the menu holds the machine that the C64 does not hold once it closes."""
+    chosen = [w for w in BOUNDARIES if allowed(*w, screen)]
+    saved = [(lo, api.machine.readmem(lo, hi - lo)) for lo, hi in chosen]
+    written = [(lo, hi, rng.randbytes(hi - lo)) for lo, hi in chosen]
+    lost = []
+    try:
+        for lo, _, data in written:
+            api.machine.writemem(lo, data)
+        api.machine.close_menu_from_anywhere()
+        for lo, hi, data in written:
+            got = api.machine.readmem(lo, hi - lo)
+            if masked(lo, got) != masked(lo, data):
+                lost.append(f"${lo:04X}-${hi - 1:04X}")
+    finally:
+        for lo, original in saved:
+            api.machine.writemem(lo, original)
+    return lost
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     cli.add_device_arguments(parser, timeout=10.0)
@@ -119,8 +145,6 @@ def main() -> int:
     seed = args.seed if args.seed is not None else random.randrange(1 << 32)
     api = UltimateApi(args.host, args.password or None, args.timeout)
     device = identify_machine(args.host, args.password or None, args.timeout)
-    # Without the fix, REST reaches the menu's screen while frozen; see machine.py.
-    frozen_screen = device.has_fix(machine_lib.FROZEN_SCREEN_DMA)
     # A machine without the setting, a cartridge, has one menu and it freezes.
     modes = ((MODE_FREEZE, MODE_OVERLAY) if UI_ITEM in api.configs.category(UI_STORE)
              else (MODE_FREEZE,))
@@ -158,7 +182,9 @@ def main() -> int:
                 backend.ensure_ready()
                 frozen = not api.machine.cpu_runs()
                 label = f"menu open ({mode}, machine {'stopped' if frozen else 'running'})"
-                round_trip_check(label, screen=frozen_screen or not frozen)
+                # Without the fix, REST reaches the menu's screen while frozen; see machine.py.
+                frozen_screen = not frozen or not device.lacks_fix(machine_lib.FROZEN_SCREEN_DMA)
+                round_trip_check(label, screen=frozen_screen)
                 if not frozen:
                     detail(f"{mode}: the menu leaves the machine running, so pause and resume "
                            "are not checked against it")
@@ -172,6 +198,15 @@ def main() -> int:
                                 raise Failure("the 6510 runs under the open menu after machine:resume")
                     except Failure:
                         failed.append(f"pause and resume while frozen ({mode})")
+                if frozen:
+                    try:
+                        with check(f"windows written with the menu open are in the C64 once it closes ({mode})"):
+                            lost = reach_the_c64(api, random.Random(f"{seed}-{mode}-close"),
+                                                 frozen_screen)
+                            if lost:
+                                raise Failure(f"{len(lost)} windows differ: {', '.join(lost)}")
+                    except Failure:
+                        failed.append(f"writes reach the C64 ({mode})")
             finally:
                 teardown_step(f"close the {mode} session", backend.close)
 

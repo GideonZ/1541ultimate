@@ -18,8 +18,12 @@ Run it with each --mode. Whether the 6510 keeps running while the user
 interface is up is measured: Telnet leaves it running, Freeze stops it, and
 Overlay stops it unless an HDMI display is connected. With it running, a
 second save is taken with the machine paused through REST, which stops it
-without freezing it, so the backups the menu keeps of $0400-$0FFF are stale
-and must stay out of the file.
+without freezing it, so the backups the menu keeps of $0400-$0FFF and of the
+colour RAM are stale and must stay out of the file. A screen row is written
+for that save, and on a cartridge a colour row.
+
+The file's RAM under the ROMs is only told apart from the ROM images here;
+memory_views_test compares it with the monitor's RAM view.
 """
 
 from __future__ import annotations
@@ -53,6 +57,9 @@ SECOND_SEED = 0xA5
 # Free at the READY prompt: past the empty program's end markers, and $C000.
 PATTERN_RANGES = ((0x0810, 0xA000), (0xC000, 0xD000))
 ROM_RANGES = (("BASIC", 0xA000, 0xC000), ("KERNAL", 0xE000, 0x10000))
+# Row 10 of the screen and of colour RAM, clear of the cursor on row 6.
+SCREEN_ROW = (0x0590, 0x05B8)
+COLOR_ROW = (0xD990, 0xD9B8)
 
 CIA2_TIMER_A = 0xDD04
 CIA2_ICR = 0xDD0D
@@ -206,13 +213,25 @@ def main() -> int:
                 raise Failure("$DD0D read back clear: the save read the CIA and acknowledged its flag")
 
         if machine_runs:
-            # Stopped but not frozen: the menu's RAM backups are stale and must not be used.
-            with check("pause the machine through REST with a second pattern"):
+            # Stopped but not frozen: the menu's backups are stale and must not be used.
+            # Colour RAM is in the file only where it holds the CPU view.
+            rows = (SCREEN_ROW,) + (() if device.reaches_ram_under_rom else (COLOR_ROW,))
+            with check("pause the machine through REST with a second pattern and screen row"):
                 remove(args.host, args.password)
                 write_pattern(api, SECOND_SEED)
+                for start, end in rows:
+                    api.machine.writemem(start, pattern(start, end, SECOND_SEED))
                 api.machine.pause()
             saved = save_and_fetch(browser, args, "save C64 memory while the machine is paused")
             check_pattern(saved, SECOND_SEED)
+            with check("the file holds the screen row written while paused, not the menu's backup"):
+                for start, end in rows:
+                    nibble = 0x0F if start == COLOR_ROW[0] else 0xFF
+                    want = bytes(b & nibble for b in pattern(start, end, SECOND_SEED))
+                    got = bytes(b & nibble for b in saved[start:end])
+                    if got != want:
+                        raise Failure(f"${start:04X}-${end - 1:04X} holds {got[:8].hex(' ')}..., "
+                                      f"written {want[:8].hex(' ')}...")
 
         suite_ok(SUITE)
         return 0

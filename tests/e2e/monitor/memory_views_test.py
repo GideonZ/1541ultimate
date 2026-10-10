@@ -10,11 +10,11 @@ Two views of memory are on offer, and each reader is held to the one it claims:
     the monitor at CPU7;
   - the RAM view, the 64 KB alone: "Save C64 Memory" and the monitor at CPU0.
 
-With the menu open under Freeze or Overlay the machine is frozen, and the menu
-uses $0400-$0FFF and the colour RAM for its own screen. Every reader has to
-show the C64's contents there, which the firmware keeps in its freeze backups,
-and not the menu's. Whether the machine runs while the UI is up is measured:
-Telnet leaves it running, and so does Overlay with an HDMI display connected.
+A menu that freezes the machine uses $0400-$0FFF and the colour RAM for its
+own screen. Every reader has to show the C64's contents there, which the
+firmware keeps in its freeze backups, and not the menu's. Whether the machine
+runs while the UI is up is measured: Freeze stops it, Telnet leaves it
+running, and Overlay stops it unless an HDMI display is connected.
 
 The suite writes a screen row, a colour row and a RAM pattern at the READY
 prompt, and values in the RAM under the CPU port that disagree with the live
@@ -22,8 +22,10 @@ port, as a program or a DMA write can leave them there. It then opens the UI
 with --mode, saves the memory through the task menu and reads all 64 KB over
 REST. Where the two views coincide, the file and REST are
 compared byte for byte. The monitor is then read at one page per distinct
-path: the screen and RAM backups, BASIC, colour RAM and KERNAL. Every
-comparison is its own check, so one run reports every disagreement.
+path: the screen and RAM backups, BASIC, colour RAM and KERNAL. Last, on an
+Ultimate 64, a program banks BASIC and KERNAL out, and the monitor at CPU7 has
+to show BASIC still, as it does on a frozen machine. Every comparison is its
+own check, so one run reports every disagreement.
 
 Colour RAM is four bits wide, so it is compared on the low nibble. Registers
 are left out: the 6510's port at $00/$01, which DMA cannot see, and the I/O at
@@ -58,6 +60,7 @@ from api import UltimateApi, identify_machine  # noqa: E402
 from report import (Failure, check, detail, format_exception,  # noqa: E402
                     suite_fail, suite_ok, teardown_step)
 from ui_backend import add_mode_argument, make_browser  # noqa: E402
+from wait import wait_until  # noqa: E402
 
 SUITE = "memory_views_test"
 SEED = 0x3C
@@ -79,6 +82,12 @@ COLOR_RAM = ((0xD800, 0xDC00),)
 # port 0, all RAM, while the KERNAL's live port maps BASIC and KERNAL.
 PORT_MIRROR = 0x0000
 PORT_MIRROR_VALUES = bytes((0x2F, 0x30))
+# The KERNAL's own values, port 7, while a program has banked BASIC and KERNAL out:
+# 10 SYS2061, then SEI / LDA #$35 / STA $01 / JMP *.
+PORT_MIRROR_CPU7 = bytes((0x2F, 0x37))
+BANK_OUT_PRG = bytes((0x01, 0x08, 0x0B, 0x08, 0x0A, 0x00, 0x9E, 0x32, 0x30, 0x36, 0x31, 0x00, 0x00, 0x00,
+                      0x78, 0xA9, 0x35, 0x85, 0x01, 0x4C, 0x12, 0x08))
+BANKED_PAGE = 0xA000
 FIXTURE_RANGES = ((SCREEN_ROW, SCREEN_ROW + len(SCREEN_TEXT)), (COLOR_ROW, COLOR_ROW + len(COLOR_VALUES)),
                   *savemem.PATTERN_RANGES)
 
@@ -183,17 +192,22 @@ def main() -> int:
                 got = dict(enumerate(api.machine.readmem(start, end - start), start))
                 require_same(got, got, written, cpu_view=True)
 
+        def open_ui():
+            return make_browser(
+                args.mode, args.host, args.password or None, args.timeout,
+                entry_rows=savemem.ENTRY_ROWS, status_row=savemem.STATUS_ROW,
+                telnet_port=args.telnet_port,
+                telnet_entry_rows=savemem.TELNET_ENTRY_ROWS, telnet_status_row=savemem.TELNET_STATUS_ROW,
+            )
+
         # Opened after the fixture is written, because a REST backend opens the menu.
-        browser = make_browser(
-            args.mode, args.host, args.password or None, args.timeout,
-            entry_rows=savemem.ENTRY_ROWS, status_row=savemem.STATUS_ROW,
-            telnet_port=args.telnet_port,
-            telnet_entry_rows=savemem.TELNET_ENTRY_ROWS, telnet_status_row=savemem.TELNET_STATUS_ROW,
-        )
+        browser = open_ui()
         with check(f"save C64 memory through the {args.mode} task menu, and read 64 KB over REST"):
             savemem.save_through_menu(browser, browser.backend.machine.machine_task_category)
             saved = savemem.fetch(args.host, args.password)
             rest = api.machine.readmem(0, RAM_SIZE)
+            if len(saved) != RAM_SIZE or len(rest) != RAM_SIZE:
+                raise Failure(f"the file holds {len(saved)} bytes and REST returned {len(rest)}, not {RAM_SIZE}")
 
         # A running machine moves its KERNAL workspace and cursor between the two reads.
         machine_runs = api.machine.cpu_runs()
@@ -223,6 +237,37 @@ def main() -> int:
                     page = monitor_page(session, address)
                     require_same(page, page, reference, cpu_view)
                 compare.run(f"monitor {name} at ${address:04X}", same_page)
+
+        if not cartridge:
+            # A ROM window shows what the monitor's bank maps, whatever the program's
+            # $01, even with the RAM beneath the port claiming the monitor's bank.
+            mon.ensure_status(session, CPU_VIEW)
+            mon.leave_monitor_fully(session)
+            session = None
+            api.machine.close_menu_from_anywhere()
+            browser.close()
+            browser = None
+            under = bytes(b ^ 0xFF for b in rest[BANKED_PAGE:BANKED_PAGE + 0x100])
+            with check("start a program that banks BASIC and KERNAL out"):
+                status, _, body = api.runners.upload("run_prg", BANK_OUT_PRG)
+                if status != 200:
+                    raise Failure(f"runners:run_prg returned HTTP {status}: {body[:160]!r}")
+                api.machine.writemem(PORT_MIRROR, PORT_MIRROR_CPU7)
+
+                def banked_out() -> bool:
+                    api.machine.writemem(BANKED_PAGE, under)
+                    return api.machine.readmem(BANKED_PAGE, len(under)) == under
+                wait_until(banked_out, f"REST to read the RAM at ${BANKED_PAGE:04X}")
+            browser = open_ui()
+            session = mon.MonitorSession(browser.backend)
+            mon.ensure_hex_width(session, 8)
+            mon.ensure_status(session, CPU_VIEW)
+
+            def basic_page() -> None:
+                page = monitor_page(session, BANKED_PAGE)
+                require_same(page, page, rest, cpu_view=True)
+            compare.run(f"monitor CPU7 shows BASIC at ${BANKED_PAGE:04X} while a program has it banked out",
+                        basic_page)
 
         if compare.failed:
             raise Failure(f"{len(compare.failed)} comparisons failed")
