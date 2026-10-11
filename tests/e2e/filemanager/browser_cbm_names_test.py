@@ -66,7 +66,7 @@ TELNET_STATUS_ROW = 23
 TELNET_WIDTH = 60
 TELNET_HEIGHT = 24
 
-ROW_RE = re.compile(r"^(?:[=@?] )?(?P<name>.+?)\s{2,}(?:PRG|SEQ|USR|CVT)\b")
+ROW_RE = re.compile(r"^(?P<name>.+?)\s{2,}(?:PRG|SEQ|USR|CVT)\b")
 
 
 def host_names(host: str, password: str, test_dir: str) -> set[str]:
@@ -98,14 +98,22 @@ def cleanup(host: str, password: str, test_dir: str) -> None:
         ftp_lib.close(ftp)
 
 
+def row_name(row: str, petscii: bool) -> str | None:
+    row = strip_frame(row).strip()
+    if petscii and row[:2] in ("D ", "N ", "S "):
+        row = row[2:]
+    match = ROW_RE.match(row)
+    return match.group("name") if match else None
+
+
 def listed(browser: Browser) -> list[str]:
     rows = browser.rows()
     names = []
     for index in browser.entry_rows:
         if index < len(rows):
-            match = ROW_RE.match(strip_frame(rows[index]).strip())
-            if match:
-                names.append(match.group("name"))
+            name = row_name(rows[index], STATUS_TAG in rows[browser.status_row])
+            if name is not None:
+                names.append(name)
     return names
 
 
@@ -129,12 +137,11 @@ def wait_for_listing(browser: Browser, expected: set[str], tagged: bool, what: s
 
 
 def selected_name(browser: Browser) -> str:
-    match = ROW_RE.match(strip_frame(browser.selected_text()).strip())
-    return match.group("name") if match else ""
+    return row_name(browser.selected_text(), STATUS_TAG in status(browser)) or ""
 
 
-def open_rename(browser: Browser, name: str, title: str, marker: str = "=") -> None:
-    prefix = ("? " if title == HOST_TITLE else marker + " ") if STATUS_TAG in status(browser) else ""
+def open_rename(browser: Browser, name: str, title: str, marker: str = "D") -> None:
+    prefix = ("S " if title == HOST_TITLE else marker + " ") if STATUS_TAG in status(browser) else ""
     browser.select_entry(prefix + name)
     if selected_name(browser) != name:
         raise Failure(f"expected {name!r} selected, got {browser.selected_text()!r}")
@@ -226,11 +233,15 @@ def run_host_name_fallback(browser: Browser) -> None:
 def run_help(browser: Browser) -> None:
     browser.press(browser.backend.machine.help_key)
     try:
+        missing = {HELP_LINE, "D: Decoded from stored filename",
+                   "N: Disk directory or x00 header", "S: Stored filename shown as-is"}
         for _ in range(6):
-            if HELP_LINE in browser.screen():
+            screen = browser.screen()
+            missing = {line for line in missing if line not in screen}
+            if not missing:
                 return
             browser.press("F7")
-        raise Failure(f"help never showed {HELP_LINE!r}; last screen was:\n{browser.screen()}")
+        raise Failure(f"help never showed {sorted(missing)!r}; last screen was:\n{browser.screen()}")
     finally:
         browser.press("RUNSTOP")
 
@@ -248,7 +259,7 @@ def run_exact_prefill(host: str, password: str, browser: Browser, test_dir: str,
 
 
 def run_markers(browser: Browser) -> None:
-    for name, marker in (("FOO", "="), ("MY{X}.prg", "?")):
+    for name, marker in (("FOO", "D"), ("MY{X}.prg", "S")):
         browser.select_entry(marker + " " + name)
         row = strip_frame(browser.selected_text()).strip()
         if not row.startswith(marker + " "):
@@ -292,7 +303,7 @@ def run_modal_shortcut(host: str, password: str, browser: Browser, test_dir: str
         browser.press("CBM_P")
     if host_names(host, password, test_dir) != before:
         raise Failure("a cancelled modal rename changed the stored files")
-    browser.select_entry("= bar")
+    browser.select_entry("D bar")
     browser.open_context_menu()
     browser.backend.send_key("CBM_P", expect_redraw=False)
     browser.wait_for_text("Rename PETSCII name")
@@ -341,7 +352,7 @@ def run_identical_labels(host: str, password: str, browser: Browser, test_dir: s
             raise Failure("rename with identical labels selected the wrong file contents")
     finally:
         ftp_lib.close(ftp)
-    browser.select_entry("= unique")
+    browser.select_entry("D unique")
     browser.choose_overlay_item(browser.open_context_menu(), "Delete")
     browser.wait_for_text("Are you sure?")
     browser.press_popup_button("y")
@@ -371,10 +382,10 @@ def run_official_geos(host: str, password: str, browser: Browser, test_dir: str,
     browser.go_to_directory(f"Temp/{test_dir}/GEOS64.D64")
     browser.press("CBM_P")
     wait_for_listing(browser, expected, True, "official GEOS disk entries")
-    browser.select_entry("@ ALARM CLOCK")
-    if not strip_frame(browser.selected_text()).strip().startswith("@ "):
+    browser.select_entry("N ALARM CLOCK")
+    if not strip_frame(browser.selected_text()).strip().startswith("N "):
         raise Failure("the CBM disk entry has no authoritative-name marker")
-    open_rename(browser, "ALARM CLOCK", CBM_TITLE, "@")
+    open_rename(browser, "ALARM CLOCK", CBM_TITLE, "N")
     if field_text(browser, CBM_TITLE) != "{616C61726D} {636C6F636B}":
         raise Failure("the native GEOS rename prefill lost alternate letter bytes")
     browser.press("ENTER")
@@ -426,6 +437,9 @@ def main() -> int:
         SEED["{C1}{C2}.seq"] = "AB"
     if args.case == "all":
         SEED["A.seq"] = "a"
+        # These are literal filename characters in Stored names, not row markers.
+        for marker in "DNS":
+            SEED[f"{marker} SAMPLE.prg"] = f"{marker.lower()} sample"
 
     with check("reset the machine to a clean starting state"):
         UltimateApi(args.host, args.password).machine.reset(force=True, wait=False)

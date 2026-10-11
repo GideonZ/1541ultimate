@@ -290,7 +290,7 @@ public:
             const char *cbm = ui->cbm_names ? cbmText() : NULL;
             const char *prefix = "";
             if (ui->cbm_names && !(info->attrib & AM_VOL)) {
-                prefix = !cbm ? "? " : ((wrappedName() || (info->name_format & NAME_FORMAT_CBM)) ? "@ " : "= ");
+                prefix = !cbm ? "S " : ((wrappedName() || (info->name_format & NAME_FORMAT_CBM)) ? "N " : "D ");
                 display_space -= 2;
             }
             if (info->is_directory()) {
