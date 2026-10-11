@@ -66,7 +66,7 @@ TELNET_STATUS_ROW = 23
 TELNET_WIDTH = 60
 TELNET_HEIGHT = 24
 
-ROW_RE = re.compile(r"^(?P<name>.+?)\s{2,}(?:PRG|SEQ|USR|CVT)\b")
+ROW_RE = re.compile(r"^(?P<name>.+?)\s{2,}(?:(?P<source>[DNS]) )?(?P<type>PRG|SEQ|USR|CVT)\b")
 
 
 def host_names(host: str, password: str, test_dir: str) -> set[str]:
@@ -98,11 +98,8 @@ def cleanup(host: str, password: str, test_dir: str) -> None:
         ftp_lib.close(ftp)
 
 
-def row_name(row: str, petscii: bool) -> str | None:
-    row = strip_frame(row).strip()
-    if petscii and row[:2] in ("D ", "N ", "S "):
-        row = row[2:]
-    match = ROW_RE.match(row)
+def row_name(row: str) -> str | None:
+    match = ROW_RE.match(strip_frame(row).strip())
     return match.group("name") if match else None
 
 
@@ -111,7 +108,7 @@ def listed(browser: Browser) -> list[str]:
     names = []
     for index in browser.entry_rows:
         if index < len(rows):
-            name = row_name(rows[index], STATUS_TAG in rows[browser.status_row])
+            name = row_name(rows[index])
             if name is not None:
                 names.append(name)
     return names
@@ -137,12 +134,16 @@ def wait_for_listing(browser: Browser, expected: set[str], tagged: bool, what: s
 
 
 def selected_name(browser: Browser) -> str:
-    return row_name(browser.selected_text(), STATUS_TAG in status(browser)) or ""
+    return row_name(browser.selected_text()) or ""
 
 
 def open_rename(browser: Browser, name: str, title: str, marker: str = "D") -> None:
-    prefix = ("S " if title == HOST_TITLE else marker + " ") if STATUS_TAG in status(browser) else ""
-    browser.select_entry(prefix + name)
+    browser.select_entry(name)
+    if STATUS_TAG in status(browser):
+        expected = "S" if title == HOST_TITLE else marker
+        match = ROW_RE.match(strip_frame(browser.selected_text()).strip())
+        if not match or match.group("source") != expected:
+            raise Failure(f"expected source {expected!r}, got {browser.selected_text()!r}")
     if selected_name(browser) != name:
         raise Failure(f"expected {name!r} selected, got {browser.selected_text()!r}")
     action = "Rename PETSCII name" if title == CBM_TITLE else "Rename"
@@ -258,12 +259,22 @@ def run_exact_prefill(host: str, password: str, browser: Browser, test_dir: str,
         raise Failure("accepting the exact prefill changed the stored names")
 
 
-def run_markers(browser: Browser) -> None:
+def run_markers(browser: Browser, api: UltimateApi | None = None) -> None:
     for name, marker in (("FOO", "D"), ("MY{X}.prg", "S")):
-        browser.select_entry(marker + " " + name)
+        browser.select_entry(name)
         row = strip_frame(browser.selected_text()).strip()
-        if not row.startswith(marker + " "):
+        match = ROW_RE.match(row)
+        if not match or match.group("source") != marker:
             raise Failure(f"source marker {marker!r} missing from {row!r}")
+        if api is not None:
+            body = api.machine.menu_screen()
+            raw_row = browser.rows()[browser.selected_row()]
+            column = raw_row.rfind(marker + " " + match.group("type"))
+            if body is None or len(body) != 2000 or column < 0:
+                raise Failure("cannot verify the source column's rendered metadata color")
+            offset = 1000 + browser.selected_row() * 40 + column
+            if body[offset] != body[offset + 2]:
+                raise Failure("the source marker does not use the adjacent file-type color")
 
 
 def run_rename_guards(host: str, password: str, browser: Browser, test_dir: str) -> None:
@@ -303,7 +314,7 @@ def run_modal_shortcut(host: str, password: str, browser: Browser, test_dir: str
         browser.press("CBM_P")
     if host_names(host, password, test_dir) != before:
         raise Failure("a cancelled modal rename changed the stored files")
-    browser.select_entry("D bar")
+    browser.select_entry("bar")
     browser.open_context_menu()
     browser.backend.send_key("CBM_P", expect_redraw=False)
     browser.wait_for_text("Rename PETSCII name")
@@ -352,7 +363,7 @@ def run_identical_labels(host: str, password: str, browser: Browser, test_dir: s
             raise Failure("rename with identical labels selected the wrong file contents")
     finally:
         ftp_lib.close(ftp)
-    browser.select_entry("D unique")
+    browser.select_entry("unique")
     browser.choose_overlay_item(browser.open_context_menu(), "Delete")
     browser.wait_for_text("Are you sure?")
     browser.press_popup_button("y")
@@ -382,9 +393,10 @@ def run_official_geos(host: str, password: str, browser: Browser, test_dir: str,
     browser.go_to_directory(f"Temp/{test_dir}/GEOS64.D64")
     browser.press("CBM_P")
     wait_for_listing(browser, expected, True, "official GEOS disk entries")
-    browser.select_entry("N ALARM CLOCK")
-    if not strip_frame(browser.selected_text()).strip().startswith("N "):
-        raise Failure("the CBM disk entry has no authoritative-name marker")
+    browser.select_entry("ALARM CLOCK")
+    match = ROW_RE.match(strip_frame(browser.selected_text()).strip())
+    if not match or match.group("source") != "N":
+        raise Failure("the CBM disk entry has no native-name marker")
     open_rename(browser, "ALARM CLOCK", CBM_TITLE, "N")
     if field_text(browser, CBM_TITLE) != "{616C61726D} {636C6F636B}":
         raise Failure("the native GEOS rename prefill lost alternate letter bytes")
@@ -469,8 +481,8 @@ def main() -> int:
                 run_exact_prefill(args.host, args.password, browser, args.test_dir, "a", "a")
                 run_exact_prefill(args.host, args.password, browser, args.test_dir, "AB", "AB")
         if args.case in ("all", "markers"):
-            with check("each row distinguishes decoded and host names"):
-                run_markers(browser)
+            with check("source markers occupy the metadata column and use its color"):
+                run_markers(browser, api if args.mode != "telnet" else None)
         with check("the hotkey updates the filename preference"):
             value = api.configs.current("User Interface Settings", "Filename view")
             if value != "PETSCII names":

@@ -288,14 +288,14 @@ public:
 
             char sel = getSelection() ? '\x13' : ' ';
             const char *cbm = ui->cbm_names ? cbmText() : NULL;
-            const char *prefix = "";
+            const char *source = "";
             if (ui->cbm_names && !(info->attrib & AM_VOL)) {
-                prefix = !cbm ? "S " : ((wrappedName() || (info->name_format & NAME_FORMAT_CBM)) ? "N " : "D ");
+                source = !cbm ? "S " : ((wrappedName() || (info->name_format & NAME_FORMAT_CBM)) ? "N " : "D ");
                 display_space -= 2;
             }
             if (info->is_directory()) {
                 extra = squeezeToDisplayString(cbm ? cbm : info->lfname, tmp_buffer, display_space, squeeze_option);
-                sprintf(buffer, "%s%#s\eJ DIR%c", prefix, display_space + extra, tmp_buffer, sel);
+                sprintf(buffer, "%#s\eJ %sDIR%c", display_space + extra, tmp_buffer, source, sel);
             } else if (info->attrib & AM_VOL) {
                 extra = squeezeToDisplayString(info->lfname, tmp_buffer, display_space, squeeze_option);
                 sprintf(buffer, "\eR%#s\er VOLUME", display_space + extra, tmp_buffer);
@@ -306,7 +306,7 @@ public:
                 const char *shown = cbm ? cbm : wrappedName();
                 extra = squeezeToDisplayString(shown ? shown : info->lfname, tmp_buffer,
                                                display_space, squeeze_option);
-                sprintf(buffer, "%s%#s\e7 %3s%c%s", prefix, display_space + extra, tmp_buffer,
+                sprintf(buffer, "%#s\e7 %s%3s%c%s", display_space + extra, tmp_buffer, source,
                         info->extension, sel, sizebuf);
             }
         }
