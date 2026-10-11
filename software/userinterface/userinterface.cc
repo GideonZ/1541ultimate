@@ -92,7 +92,13 @@ static const char *helptext =
         "HOME:       Enter home directory\n"
         "C= HOME:    Set current dir as home\n"
         "INST:       Delete selected files\n"
-        "C= U:       Toggle CBM names (L/U)\n"
+        "C= P:       Toggle PETSCII names\n"
+        "Stored names: filesystem spelling\n"
+        "PETSCII names: decoded filename text\n"
+        "Letters use lower/upper case\n"
+        "Name source: = decoded stored name\n"
+        "             @ disk/header, ? stored\n"
+        "Rename keeps alternate bytes as {XX}\n"
         "\n"  
 		"Quick seek: Use the keyboard to type\n"
 		"            the name to search for:\n"
@@ -118,6 +124,7 @@ static const char *filename_overflow_squeeze[] = { "None", "Beginning", "Middle"
 static const char *itype[]      = { "Freeze", "Overlay on HDMI" };
 static const char *cfg_save[]   = { "No", "Ask", "Yes" };
 static const char *navstyles[] = { "Quick Search", "WASD Cursors" };
+static const char *filename_views[] = { "Stored names", "PETSCII names" };
 
 struct t_cfg_definition user_if_config[] = {
 #if U64
@@ -133,6 +140,7 @@ struct t_cfg_definition user_if_config[] = {
     { CFG_USERIF_CFG_SAVE,   CFG_TYPE_ENUM,   "Auto Save Config",      "%s", cfg_save, 0, 2, 1 },
     { CFG_USERIF_ULTICOPY_NAME, CFG_TYPE_ENUM, "Ulticopy Uses disk name", "%s", en_dis, 0, 1, 1 },
     { CFG_USERIF_FILENAME_OVERFLOW_SQUEEZE, CFG_TYPE_ENUM, "Filename overflow squeeze", "%s", filename_overflow_squeeze, 0, 3, 0 },
+    { CFG_USERIF_CBM_NAMES, CFG_TYPE_ENUM, "Browser Filenames", "%s", filename_views, 0, 1, 0 },
     { 0xFE, CFG_TYPE_SEP, "", "", NULL, 0, 0, 0 },
     { 0xFE, CFG_TYPE_SEP, "Temp Folder", "", NULL, 0, 0, 0 },
     { CFG_USERIF_TEMP_AUTO_CLEANUP, CFG_TYPE_ENUM, "Temp Auto Cleanup", "%s", en_dis, 0, 1, 1 },
@@ -231,6 +239,7 @@ void UserInterface :: effectuate_settings(void)
 #endif
     config_save  = cfg->get_value(CFG_USERIF_CFG_SAVE);
     filename_overflow_squeeze = cfg->get_value(CFG_USERIF_FILENAME_OVERFLOW_SQUEEZE);
+    cbm_names   = cfg->get_value(CFG_USERIF_CBM_NAMES) == 1;
     navmode      = cfg->get_value(CFG_USERIF_NAVIGATION);
 
 #ifndef NO_FILE_ACCESS

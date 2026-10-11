@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-# E2E: Verifies the file browser's CBM names view (C=+U) and renaming in it.
+# E2E: Verifies the file browser's PETSCII names view (C=+P) and renaming in it.
 
-"""Validate the browser's CBM names view through the real menu UI (issue 976).
+"""Validate the browser's PETSCII names view through the real menu UI (issue 976).
 
 A file the IEC drive stores under a shifted name has a host name such as
-{C6CFCF}.prg. C=+U switches the browser between those host names and the
-names the drive lists, shown in the lower/upper case set, and the status line
-says "CBM L/U" while the view is on. This suite checks, on real firmware:
+{C6CFCF}.prg. C=+P switches between stored spelling and decoded PETSCII
+text, shown in the lower/upper case set, and the status line
+says "PETSCII" while the view is on. This suite checks, on real firmware:
 
 - the rows and the status line in both views, including an entry whose host
   name stores no CBM name and so keeps its host name;
@@ -14,12 +14,15 @@ says "CBM L/U" while the view is on. This suite checks, on real firmware:
 - that Rename in the view edits the CBM name and stores it the way the drive
   does, leaves an unchanged name alone and refuses text that is no CBM name;
 - that the help screen lists the shortcut.
+- that modal dialogs keep their interpretation and ambiguous labels keep their target;
+- optional official GEOS disk entries and browser-created CVT filenames.
 
 Drives the on-device browser through tests/e2e/lib/ui_backend.py's Browser,
 so --mode selects telnet, freeze or overlay.
 """
 
 import argparse
+import hashlib
 import io
 import os
 import re
@@ -35,12 +38,12 @@ import cli  # noqa: E402
 import ftp as ftp_lib
 from api import UltimateApi
 from report import Failure, teardown_step, check, format_exception, suite_fail, suite_ok
-from ui_backend import Browser, add_mode_argument, make_browser, strip_frame
+from ui_backend import Browser, TelnetBackend, add_mode_argument, make_browser, strip_frame
 
 TEST_DIR_PREFIX = "zcbm-"
 PRG = b"\x01\x08\x00\x00"
 
-# Host name -> the name the CBM names view shows for it.
+# Host name -> the name the PETSCII names view shows for it.
 SEED = {
     "{C6CFCF}.prg": "FOO",      # shifted letters, as saved in lower/upper case mode
     "{C2C1C4}.prg": "BAD",
@@ -49,11 +52,11 @@ SEED = {
 }
 RENAMED_TEXT = "Hello World"
 RENAMED_HOST = "{C8}ELLO {D7}ORLD.prg"
-STATUS_TAG = "CBM L/U"
-CBM_TITLE = "New CBM name (L/U).."
+STATUS_TAG = "PETSCII"
+CBM_TITLE = "New PETSCII name.."
 HOST_TITLE = "Give a new name.."
-REFUSED_POPUP = "Not a CBM name"
-HELP_LINE = "C= U:       Toggle CBM names (L/U)"
+REFUSED_POPUP = "Invalid PETSCII name"
+HELP_LINE = "C= P:       Toggle PETSCII names"
 
 # The same listing geometry browser_long_filename_test.py uses.
 ENTRY_ROWS = range(2, 24)
@@ -63,7 +66,7 @@ TELNET_STATUS_ROW = 23
 TELNET_WIDTH = 60
 TELNET_HEIGHT = 24
 
-ROW_RE = re.compile(r"^(?P<name>.+?)\s{2,}PRG\b")
+ROW_RE = re.compile(r"^(?:[=@?] )?(?P<name>.+?)\s{2,}(?:PRG|SEQ|USR|CVT)\b")
 
 
 def host_names(host: str, password: str, test_dir: str) -> set[str]:
@@ -79,7 +82,7 @@ def seed(host: str, password: str, test_dir: str) -> None:
     try:
         ftp_lib.quietly(lambda: ftp.mkd(f"/Temp/{test_dir}"))
         for name in SEED:
-            ftp.storbinary(f"STOR /Temp/{test_dir}/{name}", io.BytesIO(PRG))
+            ftp.storbinary(f"STOR /Temp/{test_dir}/{name}", io.BytesIO(PRG + name.encode("ascii")))
     finally:
         ftp_lib.close(ftp)
     found = host_names(host, password, test_dir)
@@ -90,9 +93,7 @@ def seed(host: str, password: str, test_dir: str) -> None:
 def cleanup(host: str, password: str, test_dir: str) -> None:
     ftp = ftp_lib.connect(host, password, timeout=20)
     try:
-        for name in ftp_lib.names(ftp, f"/Temp/{test_dir}"):
-            ftp_lib.delete_quietly(ftp, f"/Temp/{test_dir}/{name}")
-        ftp_lib.delete_quietly(ftp, f"/Temp/{test_dir}")
+        ftp_lib.remove_tree(ftp, f"/Temp/{test_dir}")
     finally:
         ftp_lib.close(ftp)
 
@@ -132,11 +133,13 @@ def selected_name(browser: Browser) -> str:
     return match.group("name") if match else ""
 
 
-def open_rename(browser: Browser, name: str, title: str) -> None:
-    browser.select_entry(name)
+def open_rename(browser: Browser, name: str, title: str, marker: str = "=") -> None:
+    prefix = ("? " if title == HOST_TITLE else marker + " ") if STATUS_TAG in status(browser) else ""
+    browser.select_entry(prefix + name)
     if selected_name(browser) != name:
         raise Failure(f"expected {name!r} selected, got {browser.selected_text()!r}")
-    browser.choose_overlay_item(browser.open_context_menu(), "Rename")
+    action = "Rename PETSCII name" if title == CBM_TITLE else "Rename"
+    browser.choose_overlay_item(browser.open_context_menu(), action)
     browser.wait_for_text(title)
 
 
@@ -151,11 +154,11 @@ def run_views(browser: Browser, test_dir: str) -> None:
     wait_for_listing(browser, set(SEED), False, "host names view")
     browser.select_entry("{C6CFCF}.prg")
     row = browser.selected_row()
-    browser.press("CBM_U")
-    wait_for_listing(browser, set(SEED.values()), True, "CBM names view")
+    browser.press("CBM_P")
+    wait_for_listing(browser, set(SEED.values()), True, "PETSCII names view")
     # Switching views keeps the cursor on the entry it was on.
     if (selected_name(browser) != "FOO") or (browser.selected_row() != row):
-        raise Failure(f"after C=+U the cursor is on {browser.selected_text()!r} at row "
+        raise Failure(f"after C=+P the cursor is on {browser.selected_text()!r} at row "
                       f"{browser.selected_row()}, expected FOO at row {row}")
 
 
@@ -184,7 +187,7 @@ def run_rename(host: str, password: str, browser: Browser, test_dir: str) -> Non
                           f"{sorted(host_names(host, password, test_dir))}, expected {sorted(expected)}")
         time.sleep(0.25)
     wait_for_listing(browser, (set(SEED.values()) - {"BAD"}) | {RENAMED_TEXT}, True,
-                     "CBM names view after rename")
+                     "PETSCII names view after rename")
 
 
 def run_unchanged_rename(host: str, password: str, browser: Browser, test_dir: str) -> None:
@@ -232,8 +235,170 @@ def run_help(browser: Browser) -> None:
         browser.press("RUNSTOP")
 
 
+def run_exact_prefill(host: str, password: str, browser: Browser, test_dir: str,
+                      label: str, exact: str) -> None:
+    before = host_names(host, password, test_dir)
+    open_rename(browser, label, CBM_TITLE)
+    if field_text(browser, CBM_TITLE) != exact:
+        raise Failure(f"rename field is {field_text(browser, CBM_TITLE)!r}, expected {exact!r}")
+    browser.press("ENTER")
+    browser.wait_until_gone(CBM_TITLE)
+    if host_names(host, password, test_dir) != before:
+        raise Failure("accepting the exact prefill changed the stored names")
+
+
+def run_markers(browser: Browser) -> None:
+    for name, marker in (("FOO", "="), ("MY{X}.prg", "?")):
+        browser.select_entry(marker + " " + name)
+        row = strip_frame(browser.selected_text()).strip()
+        if not row.startswith(marker + " "):
+            raise Failure(f"source marker {marker!r} missing from {row!r}")
+
+
+def run_rename_guards(host: str, password: str, browser: Browser, test_dir: str) -> None:
+    before = host_names(host, password, test_dir)
+    open_rename(browser, "bar", CBM_TITLE)
+    browser.press("BACKSPACE")
+    browser.press("RUNSTOP")
+    browser.wait_until_gone(CBM_TITLE)
+    edits = [("FOO", "Error:")]
+    # The C64 matrix has no brace keys; Telnet can type explicit byte escapes.
+    if isinstance(browser.backend, TelnetBackend):
+        edits += [("{00}", REFUSED_POPUP), ("{C}", REFUSED_POPUP), ("a{A0}", REFUSED_POPUP)]
+    for text, message in edits:
+        open_rename(browser, "bar", CBM_TITLE)
+        browser.fill_edit_field(text, clear_taps=8)
+        browser.wait_for_text(message)
+        browser.press_popup_button("o")
+        browser.wait_until_gone(message)
+        if host_names(host, password, test_dir) != before:
+            raise Failure(f"cancelled, colliding or invalid rename {text!r} changed the stored names")
+
+
+def run_modal_shortcut(host: str, password: str, browser: Browser, test_dir: str) -> None:
+    api = UltimateApi(host, password)
+    before = host_names(host, password, test_dir)
+    for title, view in ((CBM_TITLE, "PETSCII names"), (HOST_TITLE, "Stored names")):
+        open_rename(browser, "bar" if title == CBM_TITLE else "bar.prg", title)
+        browser.press("BACKSPACE")
+        edited = field_text(browser, title)
+        browser.backend.send_key("CBM_P", expect_redraw=False)
+        if field_text(browser, title) != edited:
+            raise Failure("C=+P changed the open rename field")
+        if api.configs.current("User Interface Settings", "Browser Filenames") != view:
+            raise Failure("C=+P changed interpretation inside the rename dialog")
+        browser.press("RUNSTOP")
+        browser.wait_until_gone(title)
+        browser.press("CBM_P")
+    if host_names(host, password, test_dir) != before:
+        raise Failure("a cancelled modal rename changed the stored files")
+    browser.select_entry("= bar")
+    browser.open_context_menu()
+    browser.backend.send_key("CBM_P", expect_redraw=False)
+    browser.wait_for_text("Rename PETSCII name")
+    if api.configs.current("User Interface Settings", "Browser Filenames") != "PETSCII names":
+        raise Failure("C=+P changed the filename view while the context menu was open")
+    browser.press("RUNSTOP")
+
+
+def run_rename_boundaries(host: str, password: str, browser: Browser, test_dir: str) -> None:
+    before = host_names(host, password, test_dir)
+    open_rename(browser, RENAMED_TEXT, CBM_TITLE)
+    browser.press_many("BACKSPACE", 20)
+    if field_text(browser, CBM_TITLE):
+        raise Failure("the empty-name check did not clear the edit field")
+    browser.press("ENTER")
+    if host_names(host, password, test_dir) != before:
+        raise Failure("an empty rename changed the stored files")
+    boundary = "abcdefghijklmnop"
+    open_rename(browser, RENAMED_TEXT, CBM_TITLE)
+    browser.fill_edit_field(boundary, clear_taps=20)
+    expected = (before - {RENAMED_HOST}) | {boundary.upper() + ".prg"}
+    if host_names(host, password, test_dir) != expected:
+        raise Failure("a valid 16-byte rename did not preserve the file type")
+    open_rename(browser, boundary, CBM_TITLE)
+    browser.fill_edit_field(RENAMED_TEXT, clear_taps=20)
+    if host_names(host, password, test_dir) != before:
+        raise Failure("renaming back from the 16-byte boundary changed other files")
+
+
+def run_identical_labels(host: str, password: str, browser: Browser, test_dir: str) -> None:
+    browser.select_entry("{41}.seq")
+    browser.press("CBM_P")
+    if selected_name(browser) != "a" or listed(browser).count("a") != 2:
+        raise Failure("the two byte-equivalent stored spellings did not display the same label")
+    browser.choose_overlay_item(browser.open_context_menu(), "Rename PETSCII name")
+    browser.wait_for_text(CBM_TITLE)
+    browser.fill_edit_field("unique", clear_taps=8)
+    files = host_names(host, password, test_dir)
+    if "A.seq" not in files or "{41}.seq" in files or "UNIQUE.seq" not in files:
+        raise Failure(f"rename with identical labels acted on the wrong entry: {sorted(files)}")
+    ftp = ftp_lib.connect(host, password, timeout=20)
+    try:
+        payload = io.BytesIO()
+        ftp.retrbinary(f"RETR /Temp/{test_dir}/UNIQUE.seq", payload.write)
+        if payload.getvalue() != PRG + b"{41}.seq":
+            raise Failure("rename with identical labels selected the wrong file contents")
+    finally:
+        ftp_lib.close(ftp)
+    browser.select_entry("= unique")
+    browser.choose_overlay_item(browser.open_context_menu(), "Delete")
+    browser.wait_for_text("Are you sure?")
+    browser.press_popup_button("y")
+    browser.wait_until_gone("Are you sure?")
+    files = host_names(host, password, test_dir)
+    if "A.seq" not in files or "UNIQUE.seq" in files:
+        raise Failure(f"delete acted on the wrong entry: {sorted(files)}")
+    browser.press("CBM_P")
+
+
+def run_official_geos(host: str, password: str, browser: Browser, test_dir: str, disk: Path) -> None:
+    # Maurice Randall's GEOS64.D64 from Click Here Software's GEOS64.ZIP:
+    # https://cbmfiles.com/geos/geos-13.php . Download locally; do not redistribute it.
+    payload = disk.read_bytes()
+    digest = hashlib.sha256(payload).hexdigest()
+    if digest != "3074c3b4e66f13466b1bb3d9d9021a14c7608f99e7c69b19bf34faf614bde08c":
+        raise Failure(f"GEOS fixture is not the verified official GEOS64.D64: {digest}")
+    expected = {"geos", "geoboot", "configure", "desk top", "joystick", "mps-803",
+                "PREFERENCE MGR", "PAD COLOR MGR", "ALARM CLOCK", "paint drivers", "rboot",
+                "sTAR nl-10(COM)", "ascii oNLY", "comm 1351", "comm 1351(A)", "convert"}
+    ftp = ftp_lib.connect(host, password, timeout=20)
+    try:
+        ftp.storbinary(f"STOR /Temp/{test_dir}/GEOS64.D64", io.BytesIO(payload))
+        ftp.mkd(f"/Temp/{test_dir}/copied")
+    finally:
+        ftp_lib.close(ftp)
+    browser.go_to_directory(f"Temp/{test_dir}/GEOS64.D64")
+    browser.press("CBM_P")
+    wait_for_listing(browser, expected, True, "official GEOS disk entries")
+    browser.select_entry("@ ALARM CLOCK")
+    if not strip_frame(browser.selected_text()).strip().startswith("@ "):
+        raise Failure("the CBM disk entry has no authoritative-name marker")
+    open_rename(browser, "ALARM CLOCK", CBM_TITLE, "@")
+    if field_text(browser, CBM_TITLE) != "{616C61726D} {636C6F636B}":
+        raise Failure("the native GEOS rename prefill lost alternate letter bytes")
+    browser.press("ENTER")
+    browser.wait_until_gone(CBM_TITLE)
+    browser.press("SELECT_ALL")
+    browser.press("COPY")
+    browser.wait_for_text("clipboard")
+    browser.press_popup_button("o")
+    browser.press("CBM_P")
+    browser.go_to_directory(f"Temp/{test_dir}/copied")
+    browser.press("PASTE")
+    browser.wait_until_gone("Copying...")
+    browser.press("CBM_P")
+    wait_for_listing(browser, expected, True, "official GEOS files copied to host storage", timeout=30)
+    run_exact_prefill(host, password, browser, test_dir + "/copied", "ALARM CLOCK",
+                      "{616C61726D} {636C6F636B}")
+    browser.press("CBM_P")
+    files = host_names(host, password, test_dir + "/copied")
+    if len(files) != len(expected) or not any(name.lower().endswith(".cvt") for name in files):
+        raise Failure(f"official GEOS copy did not produce the expected files: {sorted(files)}")
+
+
 def run_back_to_host_names(browser: Browser) -> None:
-    browser.press("CBM_U")
+    browser.press("CBM_P")
     wait_for_listing(browser, (set(SEED) - {"{C2C1C4}.prg"}) | {RENAMED_HOST}, False,
                      "host names view again")
 
@@ -242,21 +407,34 @@ def leave_host_names_view(browser: Browser) -> None:
     # The view belongs to the user interface, which outlives this session on
     # the freeze and overlay transports.
     if STATUS_TAG in status(browser):
-        browser.press("CBM_U")
+        browser.press("CBM_P")
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Validate the browser's CBM names view on real firmware.")
-    cli.add_device_arguments(parser, timeout=5.0, colour=False)
+    parser = argparse.ArgumentParser(description="Validate the browser's PETSCII names view on real firmware.")
+    cli.add_device_arguments(parser, timeout=12.0, colour=False)
     parser.add_argument("--telnet-port", type=int, default=int(os.environ.get("U64_TELNET_PORT", "23")))
-    parser.add_argument("--test-dir", default=f"{TEST_DIR_PREFIX}{int(time.time())}-{os.getpid()}")
+    parser.add_argument("--test-dir", default=f"{TEST_DIR_PREFIX}{time.time_ns() & 0xffffff:06x}")
+    parser.add_argument("--case", choices=("all", "basic", "geos", "noncanonical", "markers"), default="all")
+    parser.add_argument("--geos-disk", type=Path, help="Official cbmfiles.com GEOS64.D64; checked by SHA-256")
     add_mode_argument(parser)
     args = parser.parse_args()
+    if args.case in ("all", "geos"):
+        SEED["{67}EOS.cvt"] = "Geos"
+    if args.case in ("all", "noncanonical"):
+        SEED["{41}.seq"] = "a"
+        SEED["{C1}{C2}.seq"] = "AB"
+    if args.case == "all":
+        SEED["A.seq"] = "a"
 
     with check("reset the machine to a clean starting state"):
         UltimateApi(args.host, args.password).machine.reset(force=True, wait=False)
         time.sleep(0.5)
 
+    api = UltimateApi(args.host, args.password)
+    original_view = api.configs.current("User Interface Settings", "Browser Filenames")
+    if original_view:
+        api.configs.set("User Interface Settings", "Browser Filenames", "Stored names")
     browser = make_browser(
         args.mode, args.host, args.password or None, args.timeout,
         entry_rows=ENTRY_ROWS, status_row=STATUS_ROW,
@@ -267,8 +445,22 @@ def main() -> int:
     try:
         with check("seed host names"):
             seed(args.host, args.password, args.test_dir)
-        with check("C=+U switches the rows and the status line"):
+        with check("C=+P switches the rows and the status line"):
             run_views(browser, args.test_dir)
+        if args.case in ("all", "geos"):
+            with check("GEOS duplicate letters display readably and edit exactly"):
+                run_exact_prefill(args.host, args.password, browser, args.test_dir, "Geos", "{67}eos")
+        if args.case in ("all", "noncanonical"):
+            with check("noncanonical names display readably and accepting them changes nothing"):
+                run_exact_prefill(args.host, args.password, browser, args.test_dir, "a", "a")
+                run_exact_prefill(args.host, args.password, browser, args.test_dir, "AB", "AB")
+        if args.case in ("all", "markers"):
+            with check("each row distinguishes decoded and host names"):
+                run_markers(browser)
+        with check("the hotkey updates the filename preference"):
+            value = api.configs.current("User Interface Settings", "Browser Filenames")
+            if value != "PETSCII names":
+                raise Failure(f"Browser Filenames is {value!r}, expected 'PETSCII names'")
         with check("quick seek matches the CBM name"):
             run_quick_seek(browser)
         with check("rename edits and stores the CBM name"):
@@ -279,10 +471,22 @@ def main() -> int:
             run_refused_rename(args.host, args.password, browser, args.test_dir)
         with check("an entry without a CBM name is renamed by its host name"):
             run_host_name_fallback(browser)
-        with check("help lists C=+U"):
+        with check("C=+P leaves open rename dialogs and context menus unchanged"):
+            run_modal_shortcut(args.host, args.password, browser, args.test_dir)
+        with check("Cancel, collisions and malformed byte edits leave files intact"):
+            run_rename_guards(args.host, args.password, browser, args.test_dir)
+        with check("empty edits are harmless and exactly 16 bytes retain the file type"):
+            run_rename_boundaries(args.host, args.password, browser, args.test_dir)
+        with check("help lists C=+P"):
             run_help(browser)
-        with check("C=+U switches back to host names"):
+        with check("C=+P switches back to host names"):
             run_back_to_host_names(browser)
+        if args.case == "all":
+            with check("identical labels retain the correct rename and delete target"):
+                run_identical_labels(args.host, args.password, browser, args.test_dir)
+        if args.geos_disk:
+            with check("official GEOS disk and browser-created CVT names display readably"):
+                run_official_geos(args.host, args.password, browser, args.test_dir, args.geos_disk)
         suite_ok("browser_cbm_names_test")
         return 0
     except Exception as exc:  # noqa: BLE001
@@ -291,6 +495,9 @@ def main() -> int:
     finally:
         teardown_step("leave the host names view", lambda: leave_host_names_view(browser))
         teardown_step("close the browser session", browser.close)
+        if original_view:
+            teardown_step("restore the filename preference", lambda: api.configs.set(
+                "User Interface Settings", "Browser Filenames", original_view))
         teardown_step("remove the fixture directory", lambda: cleanup(args.host, args.password, args.test_dir))
 
 

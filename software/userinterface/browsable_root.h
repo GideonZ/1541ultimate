@@ -80,8 +80,7 @@ class BrowsableDirEntry : public Browsable
 	// once, because the host name of such a file does not identify it (SI-144).
 	char *cbm_name;
 	bool cbm_probed;
-	// The name the IEC drive lists, as the browser's CBM names view shows it; NULL when the
-	// host name stores no CBM name, so the row keeps the host name.
+	// Readable PETSCII text from the filename or authoritative name; NULL uses stored text.
 	char *cbm_text;
 	bool cbm_text_probed;
 	Path *path;
@@ -126,11 +125,11 @@ class BrowsableDirEntry : public Browsable
 		const char *wrapped = wrappedName();
 		if (wrapped) {
 			strcpy(pet, wrapped);
-		} else if (!info->get_cbm_name(pet)) {
+		} else if (!info->get_cbm_name(pet, false)) {
 			return NULL;
 		}
 		char text[4 * sizeof(pet) + 1];
-		petscii_to_text(pet, text, sizeof(text));
+		petscii_to_text(pet, text, sizeof(text), false);
 		cbm_text = new char[strlen(text) + 1];
 		strcpy(cbm_text, text);
 		return cbm_text;
@@ -176,6 +175,8 @@ public:
 	FileInfo *getInfo(void) {
 		return this->info;
 	}
+
+    bool hasCbmName(void) { return cbmText() != NULL; }
 
     FileInfo *getFileInfo()
     {
@@ -287,9 +288,14 @@ public:
 
             char sel = getSelection() ? '\x13' : ' ';
             const char *cbm = ui->cbm_names ? cbmText() : NULL;
+            const char *prefix = "";
+            if (ui->cbm_names && !(info->attrib & AM_VOL)) {
+                prefix = !cbm ? "? " : ((wrappedName() || (info->name_format & NAME_FORMAT_CBM)) ? "@ " : "= ");
+                display_space -= 2;
+            }
             if (info->is_directory()) {
                 extra = squeezeToDisplayString(cbm ? cbm : info->lfname, tmp_buffer, display_space, squeeze_option);
-                sprintf(buffer, "%#s\eJ DIR%c", display_space + extra, tmp_buffer, sel);
+                sprintf(buffer, "%s%#s\eJ DIR%c", prefix, display_space + extra, tmp_buffer, sel);
             } else if (info->attrib & AM_VOL) {
                 extra = squeezeToDisplayString(info->lfname, tmp_buffer, display_space, squeeze_option);
                 sprintf(buffer, "\eR%#s\er VOLUME", display_space + extra, tmp_buffer);
@@ -300,7 +306,7 @@ public:
                 const char *shown = cbm ? cbm : wrappedName();
                 extra = squeezeToDisplayString(shown ? shown : info->lfname, tmp_buffer,
                                                display_space, squeeze_option);
-                sprintf(buffer, "%#s\e7 %3s%c%s", display_space + extra, tmp_buffer,
+                sprintf(buffer, "%s%#s\e7 %3s%c%s", prefix, display_space + extra, tmp_buffer,
                         info->extension, sel, sizebuf);
             }
         }

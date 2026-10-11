@@ -507,7 +507,7 @@ void fat_to_petscii(const char *fat, bool cutExt, char *pet, int len, bool term)
         }
         if (escape) {
             char h = fat[k+0];
-            char l = fat[k+1];
+            char l = h ? fat[k+1] : 0;
             if (!h || !l) {
                 break;
             }
@@ -551,8 +551,11 @@ static char petscii_text_char(uint8_t p)
     return 0;
 }
 
-bool petscii_to_text(const char *pet, char *text, int len)
+bool petscii_to_text(const char *pet, char *text, int len, bool lossless)
 {
+    if (len <= 0) {
+        return false;
+    }
     const char *hex = "0123456789ABCDEF";
     bool escape = false;
     int i = 0;
@@ -563,6 +566,9 @@ bool petscii_to_text(const char *pet, char *text, int len)
         }
         uint8_t p = (uint8_t)*pet;
         char c = petscii_text_char(p);
+        if (!lossless && (p >= 0x61) && (p <= 0x7A)) {
+            c = (char)(p - 0x20); // GEOS uses the duplicate uppercase letters.
+        }
         if (c) {
             if (escape) {
                 text[i++] = '}';
@@ -587,6 +593,9 @@ bool petscii_to_text(const char *pet, char *text, int len)
 
 int text_to_petscii(const char *text, char *pet, int len)
 {
+    if (len <= 0) {
+        return -1;
+    }
     int i = 0;
 
     while (*text) {

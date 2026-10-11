@@ -54,6 +54,18 @@ std::string host_of(const std::string& pet, const char *suffix)
     return std::string(host) + suffix;
 }
 
+std::string displayed_as(const char *host, bool dir = false)
+{
+    FileInfo info(host);
+    info.attrib = dir ? AM_DIR : 0;
+    char pet[17], text[80];
+    if (!info.get_cbm_name(pet, false)) {
+        return REFUSED;
+    }
+    EXPECT_TRUE(petscii_to_text(pet, text, sizeof(text), false));
+    return text;
+}
+
 } // namespace
 
 TEST(CbmNameText, LettersFollowTheLowerUpperCaseSet)
@@ -242,11 +254,57 @@ TEST(CbmNameOfEntry, HostNameThatStoresNoCbmNameIsRefused)
     EXPECT_EQ(listed_as("ABCDEFGHIJKLMNOP.prg"), std::string("abcdefghijklmnop"));
 }
 
-TEST(CbmNameOfEntry, GeosFileKeepsItsHostName)
+TEST(CbmNameOfEntry, GeosHostNamesUseTheExistingCbmMapping)
 {
-    // CbmFileName reads .cvt as a type, but the drive lists such a file by its host name.
-    EXPECT_EQ(listed_as("GEOS.cvt"), std::string(REFUSED));
-    EXPECT_EQ(listed_as("{C7}EOS.CVT"), std::string(REFUSED));
+    EXPECT_EQ(listed_as("GEOS.cvt"), std::string("geos"));
+    EXPECT_EQ(listed_as("{C7}EOS.CVT"), std::string("Geos"));
+    EXPECT_EQ(displayed_as("{67}EOS.cvt"), std::string("Geos"));
+    EXPECT_EQ(listed_as("{67}EOS.cvt"), std::string("{67}eos"));
+    EXPECT_EQ(displayed_as("{67656F}W{72697465}.cvt"), std::string("GEOwRITE"));
+}
+
+TEST(CbmNameOfEntry, PresentationAcceptsCompleteNoncanonicalSpellings)
+{
+    EXPECT_EQ(displayed_as("{41}.seq"), std::string("a"));
+    EXPECT_EQ(displayed_as("{C1}{C2}.prg"), std::string("AB"));
+    EXPECT_EQ(displayed_as("CON.prg"), std::string("con"));
+    EXPECT_EQ(displayed_as("GAMES.PRG", true), std::string("games.prg"));
+    EXPECT_EQ(displayed_as("A~B.seq"), std::string("a{7E}b"));
+    EXPECT_EQ(displayed_as("{20202020202020202020202020202020}.seq"), std::string(16, ' '));
+    const char *invalid[] = { "MY{X}.prg", "{", "{C1", "{C}", "{C1C}", "A}B", "{00}A",
+        "{4100}", ".prg", "{}", "ABCDEFGHIJKLMNOPQ.prg", "A.PRGX", "{4141414141414141414141414141414141}" };
+    for (auto name : invalid) {
+        EXPECT_EQ(displayed_as(name), std::string(REFUSED));
+    }
+}
+
+TEST(CbmNameText, DuplicateLettersAreReadableOnlyInPresentation)
+{
+    for (int p = 0x61; p <= 0x7A; p++) {
+        char pet[] = { (char)p, 0 }, text[8];
+        EXPECT_TRUE(petscii_to_text(pet, text, sizeof(text), false));
+        EXPECT_EQ(std::string(text), std::string(1, (char)(p - 0x20)));
+        EXPECT_EQ(parsed(text_of(pet).c_str()), std::string(pet));
+    }
+}
+
+TEST(CbmNameText, EmptyDestinationIsNotWritten)
+{
+    char sentinel = 'x';
+    EXPECT_FALSE(petscii_to_text("", &sentinel, 0));
+    EXPECT_EQ(sentinel, 'x');
+    EXPECT_EQ(text_to_petscii("", &sentinel, 0), -1);
+    EXPECT_EQ(sentinel, 'x');
+}
+
+TEST(CbmNameOfEntry, EveryExplicitNonzeroByteCanBePresented)
+{
+    for (int p = 1; p < 256; p++) {
+        char host[24], pet[] = { (char)p, 0 }, text[16];
+        sprintf(host, "XY-{%02X}.seq", p);
+        EXPECT_TRUE(petscii_to_text(pet, text, sizeof(text), false));
+        EXPECT_EQ(displayed_as(host), std::string("xy-") + text);
+    }
 }
 
 TEST(CbmNameOfEntry, CbmFileSystemEntryIsListedUnderItsOwnName)

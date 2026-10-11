@@ -19,6 +19,32 @@
 
 #define MAX_FILE_SIZE_TO_VIEW 262144
 
+// Require a canonical round trip for newly stored names, including their file type.
+static bool stores_cbm_name(const char *host, bool dir, const char *pet)
+{
+    FileInfo info(host);
+    info.attrib = dir ? AM_DIR : 0;
+    char back[17];
+    return info.get_cbm_name(back) && !strcmp(back, pet);
+}
+
+class FileRenameAction : public Action
+{
+    BrowsableDirEntry *entry;
+public:
+    FileRenameAction(BrowsableDirEntry *entry) : Action("Rename", UserFileInteraction::S_rename, 0), entry(entry) { }
+    const char *getDisplayName(UserInterface *ui)
+    {
+        FileInfo *info = entry->getFileInfo();
+        char pet[17];
+        bool editable = entry->hasCbmName();
+        if (editable && (info->name_format & NAME_FORMAT_CBM)) {
+            editable = info->get_cbm_name(pet) && stores_cbm_name(entry->getName(), info->is_directory(), pet);
+        }
+        return (ui->cbm_names && editable) ? "Rename PETSCII name" : getName();
+    }
+};
+
 // member
 int UserFileInteraction::fetch_context_items(BrowsableDirEntry *br, IndexedList<Action *> &list)
 {
@@ -51,7 +77,7 @@ int UserFileInteraction::fetch_context_items(BrowsableDirEntry *br, IndexedList<
     }
 #endif
     if (info->is_writable() && !(info->attrib & AM_VOL)) {
-        list.append(new Action("Rename", UserFileInteraction::S_rename, 0));
+        list.append(new FileRenameAction(br));
         list.append(new Action("Delete", UserFileInteraction::S_delete, 0));
         count += 2;
     }
@@ -104,20 +130,8 @@ SubsysResultCode_e UserFileInteraction::S_enter(SubsysCommand *cmd)
     return SSRET_NO_USER_INTERFACE;
 }
 
-// Whether a file of this host name is listed under the CBM name pet; see FileInfo::get_cbm_name.
-static bool stores_cbm_name(const char *host, bool dir, const char *pet)
-{
-    FileInfo info(host);
-    info.attrib = dir ? AM_DIR : 0;
-    char back[17];
-    return info.get_cbm_name(back) && !strcmp(back, pet);
-}
-
-// The browser's CBM names view edits the name the IEC drive lists, as its row shows it, and
-// stores the result the way the drive stores a CBM name, keeping the type extension (issue
-// 976). Leaves the new host name in buffer, or for a wrapper its new CBM name in pet; buffer
-// is empty when the name is unchanged, cancelled or refused. False when the entry has no CBM
-// name that a host name can carry, so it is renamed by its host name.
+// Edit the decoded filename or x00 header with reversible text, preserving the file type.
+// An empty buffer means no change; false selects the existing stored-name editor.
 static bool edit_cbm_name(SubsysCommand *cmd, Path *p, const char *header, char *buffer, int len, char *pet)
 {
     char shown[4 * 17 + 1];
@@ -130,19 +144,25 @@ static bool edit_cbm_name(SubsysCommand *cmd, Path *p, const char *header, char 
     } else {
         FileInfo info(INFO_SIZE);
         if ((FileManager::getFileManager()->fstat(p, cmd->filename.c_str(), info) != FR_OK) ||
-            !info.get_cbm_name(pet)) {
+            !info.get_cbm_name(pet, false)) {
             return false;
         }
         dir = info.is_directory();
-        if (!stores_cbm_name(cmd->filename.c_str(), dir, pet)) {
+        if ((info.name_format & NAME_FORMAT_CBM) && !stores_cbm_name(cmd->filename.c_str(), dir, pet)) {
             return false; // a type the host name cannot carry, such as DEL inside a disk image
         }
-        petscii_to_fat(pet, host, sizeof(host));
-        ext = cmd->filename.c_str() + strlen(host);
+        CbmFileName cbm;
+        if (!dir) {
+            cbm.init(cmd->filename.c_str());
+            if (cbm.hadExtension()) {
+                char type[4];
+                ext = cmd->filename.c_str() + get_extension(cmd->filename.c_str(), type);
+            }
+        }
     }
     petscii_to_text(pet, shown, sizeof(shown));
     strcpy(buffer, shown);
-    if ((cmd->user_interface->string_box("New CBM name (L/U)..", buffer, len - 1) <= 0) ||
+    if ((cmd->user_interface->string_box("New PETSCII name..", buffer, len - 1) <= 0) ||
         !*buffer || !strcmp(buffer, shown)) {
         *buffer = 0;
         return true;
@@ -161,7 +181,7 @@ static bool edit_cbm_name(SubsysCommand *cmd, Path *p, const char *header, char 
         stored = stores_cbm_name(buffer, dir, pet);
     }
     if (!stored) {
-        cmd->user_interface->popup("Not a CBM name: use {XX}", BUTTON_OK);
+        cmd->user_interface->popup("Invalid PETSCII name: use {XX}", BUTTON_OK);
         *buffer = 0;
     }
     return true;

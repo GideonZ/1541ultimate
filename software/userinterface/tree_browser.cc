@@ -563,9 +563,10 @@ int TreeBrowser :: handle_key(int c)
         case KEY_CTRL_J: // joyswap
             ret = swap_joystick();
             break;
-        case KEY_CTRL_U: // CBM names, toggled with U like the case in the monitor
+        case KEY_CTRL_P: // PETSCII filename presentation
             reset_quick_seek();
-            user_interface->cbm_names = !user_interface->cbm_names;
+            user_interface->cfg->set_value(CFG_USERIF_CBM_NAMES, !user_interface->cbm_names);
+            user_interface->cfg->effectuate();
             state->refresh = true;
             break;
         case KEY_RETURN: // CR = select

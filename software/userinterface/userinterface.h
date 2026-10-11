@@ -44,6 +44,7 @@
 #define CFG_USERIF_COLORSCHEME 0x0E
 #define CFG_USERIF_TEMP_AUTO_CLEANUP 0x0F
 #define CFG_USERIF_TEMP_USE_CACHE_SUBFOLDER 0x10
+#define CFG_USERIF_CBM_NAMES   0x11
 
 typedef enum {
     e_keymap_default,
@@ -86,7 +87,7 @@ public:
     int color_status, color_inactive, color_configitem;
 
     int config_save, filename_overflow_squeeze, navmode;
-    bool cbm_names; // the browser shows names as the C64 lists them, in its lower/upper case set
+    bool cbm_names; // PETSCII filename presentation in the lower/upper case set
     bool logo;
     GenericHost *host;
     Keyboard *keyboard;

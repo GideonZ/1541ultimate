@@ -120,8 +120,7 @@ void TreeBrowserState :: draw()
         char line[128];
         int width = scr->get_size_x() - 17; // the tag, and set_status leaves room for F3=HELP
         if (browser->user_interface->cbm_names && (width > 0) && (width < 120)) {
-            // Named like the monitor's lower/upper case screen view, SCR L/U.
-            sprintf(line, "%#s CBM L/U", width, status);
+            sprintf(line, "%#s PETSCII", width, status);
             status = line;
         }
         scr->set_status(status, browser->user_interface->color_status);
