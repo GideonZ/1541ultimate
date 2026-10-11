@@ -81,6 +81,7 @@ private:
     void peel_off(void);
     bool buttonDownFor(uint32_t ms);
     void run_editor(Editor *);
+    static void (*menu_enter_hook)(UserInterface *ui);
 public:
     int color_border, color_bg, color_fg, color_sel, color_sel_bg, reverse_sel;
     int color_status, color_inactive, color_configitem;
@@ -139,6 +140,9 @@ public:
     void swapDisk(void);
     void send_keystroke(int key);
     static bool anyMenuActive(void);
+    // run_once() calls this each time the menu comes up, so a subsystem can react to the
+    // user entering the menu without this class depending on it.
+    static void set_menu_enter_hook(void (*hook)(UserInterface *ui));
     enum {
         ACTIVE_SCREEN_MATRIX_WIDTH = 40,
         ACTIVE_SCREEN_MATRIX_HEIGHT = 25,

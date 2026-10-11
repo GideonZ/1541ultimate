@@ -375,6 +375,78 @@ static const uint8_t *saved_chip(const std::vector<uint8_t> &file, uint16_t bank
     return NULL;
 }
 
+// Where a cartridge came from, so that a changed image can be written back to
+// the file it was loaded from.
+static void test_source(void)
+{
+    Crt crt(32);
+    crt.header(1, 0, 0).chip(0, 0x8000, 0x2000).chip(0, 0xA000, 0x2000);
+    load(crt, MB);
+    CHECK(!strcmp(C64_CRT::get_source(), "/test.crt"), "source after loading is '%s'", C64_CRT::get_source());
+
+    // REST passes the whole pathname as the name, with an empty path.
+    FileManager::getFileManager()->files["/Usb0/game.crt"] = crt.bytes();
+    cart_def def;
+    std::vector<uint8_t> mem(MB, 0xFF);
+    host_cart_max_rom = MB;
+    C64_CRT::load_crt("", "/Usb0/game.crt", &def, mem.data());
+    CHECK(!strcmp(C64_CRT::get_source(), "/Usb0/game.crt"), "source from an empty path is '%s'", C64_CRT::get_source());
+
+    C64_CRT::set_source("/Usb0", "saved.crt");
+    CHECK(!strcmp(C64_CRT::get_source(), "/Usb0/saved.crt"), "source after saving as is '%s'", C64_CRT::get_source());
+    C64_CRT::set_source("/Usb0/", "saved.crt");
+    CHECK(!strcmp(C64_CRT::get_source(), "/Usb0/saved.crt"), "a path ending in a slash gives '%s'", C64_CRT::get_source());
+
+    // A file that cannot be opened leaves the cartridge that is loaded alone,
+    // source included: it is still the one the C64 is running.
+    C64_CRT::load_crt("/", "absent.crt", &def, mem.data());
+    CHECK(!strcmp(C64_CRT::get_source(), "/Usb0/saved.crt"),
+          "a load that could not open its file moved the source to '%s'", C64_CRT::get_source());
+
+    // A file that is not a cartridge drops the image, and with it the source.
+    FileManager::getFileManager()->files["junk.crt"] = std::vector<uint8_t>(0x80, 0x11);
+    C64_CRT::load_crt("/", "junk.crt", &def, mem.data());
+    CHECK(!*C64_CRT::get_source(), "a refused file left the source at '%s'", C64_CRT::get_source());
+    CHECK(!C64_CRT::is_valid(), "a refused file left a cartridge loaded");
+}
+
+// The hash that tells a cartridge the C64 wrote to from one it did not.
+static void test_change_detection(void)
+{
+    Crt crt(32);
+    crt.header(1, 0, 0);
+    for (int b = 0; b < 4; b++) {
+        crt.chip(b, 0x8000, 0x2000).chip(b, 0xA000, 0x2000);
+    }
+    Loaded r = load(crt, 4 * MB);
+    CHECK(r.rc == SSRET_OK, "EasyFlash: load returned %d", r.rc);
+
+    const uint32_t base = C64_CRT::get_baseline();
+    CHECK(C64_CRT::current_hash() == base, "an untouched image does not hash to its baseline");
+
+    // One flipped bit anywhere in the 64 banks an EasyFlash describes is seen.
+    int missed = 0;
+    uint32_t first_missed = 0;
+    for (uint32_t offset : { 0u, 0x1FFFu, 0x2000u, 0x3800u, 16 * K, 63 * 16 * K, 64 * 16 * K - 1 }) {
+        uint8_t *p = (uint8_t *)r.at(offset);
+        *p ^= 0x01;
+        if (C64_CRT::current_hash() == base) {
+            if (!missed++) {
+                first_missed = offset;
+            }
+        }
+        *p ^= 0x01;
+    }
+    CHECK(!missed, "%d single-bit changes went unnoticed, first at offset %6x", missed, first_missed);
+    CHECK(C64_CRT::current_hash() == base, "undoing the change did not restore the hash");
+
+    // Above those banks the image is only mirrored, and not part of the file.
+    uint8_t *beyond = (uint8_t *)r.at(64 * 16 * K);
+    *beyond ^= 0xFF;
+    CHECK(C64_CRT::current_hash() == base, "a change above the described banks changed the hash");
+    *beyond ^= 0xFF;
+}
+
 // Saving must leave the cartridge the C64 is running alone, and the file must
 // carry the EAPI the cartridge came with, not the one the firmware patched in.
 static void test_save_keeps_memory(void)
@@ -413,6 +485,14 @@ static void test_save_keeps_memory(void)
         CHECK(!memcmp(chip, r.at(0x2000), 0x1800), "the bytes before the EAPI are not the ones in memory");
         CHECK(!memcmp(chip + 0x1B00, r.at(0x3B00), 0x2000 - 0x1B00), "the bytes after the EAPI are not the ones in memory");
     }
+
+    // After a save the file and the image agree again.
+    CHECK(C64_CRT::get_baseline() == C64_CRT::current_hash(), "the baseline was not renewed by the save");
+
+    uint8_t *p = (uint8_t *)r.at(0x1000);
+    *p ^= 0x55;
+    CHECK(C64_CRT::current_hash() != C64_CRT::get_baseline(), "a write after the save is not seen");
+    *p ^= 0x55;
 }
 
 int main()
@@ -422,6 +502,8 @@ int main()
     test_packets();
     test_chip_placement();
     test_mirroring();
+    test_source();
+    test_change_detection();
     test_save_keeps_memory();
     fprintf(stderr, "c64_crt_test: %s (%d checks, %d failed)\n", failures ? "FAIL" : "OK", checks, failures);
     return failures ? 1 : 0;
