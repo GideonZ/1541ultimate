@@ -285,7 +285,7 @@ def run_modal_shortcut(host: str, password: str, browser: Browser, test_dir: str
         browser.backend.send_key("CBM_P", expect_redraw=False)
         if field_text(browser, title) != edited:
             raise Failure("C=+P changed the open rename field")
-        if api.configs.current("User Interface Settings", "Browser Filenames") != view:
+        if api.configs.current("User Interface Settings", "Filename view") != view:
             raise Failure("C=+P changed interpretation inside the rename dialog")
         browser.press("RUNSTOP")
         browser.wait_until_gone(title)
@@ -296,7 +296,7 @@ def run_modal_shortcut(host: str, password: str, browser: Browser, test_dir: str
     browser.open_context_menu()
     browser.backend.send_key("CBM_P", expect_redraw=False)
     browser.wait_for_text("Rename PETSCII name")
-    if api.configs.current("User Interface Settings", "Browser Filenames") != "PETSCII names":
+    if api.configs.current("User Interface Settings", "Filename view") != "PETSCII names":
         raise Failure("C=+P changed the filename view while the context menu was open")
     browser.press("RUNSTOP")
 
@@ -432,9 +432,9 @@ def main() -> int:
         time.sleep(0.5)
 
     api = UltimateApi(args.host, args.password)
-    original_view = api.configs.current("User Interface Settings", "Browser Filenames")
+    original_view = api.configs.current("User Interface Settings", "Filename view")
     if original_view:
-        api.configs.set("User Interface Settings", "Browser Filenames", "Stored names")
+        api.configs.set("User Interface Settings", "Filename view", "Stored names")
     browser = make_browser(
         args.mode, args.host, args.password or None, args.timeout,
         entry_rows=ENTRY_ROWS, status_row=STATUS_ROW,
@@ -458,9 +458,9 @@ def main() -> int:
             with check("each row distinguishes decoded and host names"):
                 run_markers(browser)
         with check("the hotkey updates the filename preference"):
-            value = api.configs.current("User Interface Settings", "Browser Filenames")
+            value = api.configs.current("User Interface Settings", "Filename view")
             if value != "PETSCII names":
-                raise Failure(f"Browser Filenames is {value!r}, expected 'PETSCII names'")
+                raise Failure(f"Filename view is {value!r}, expected 'PETSCII names'")
         with check("quick seek matches the CBM name"):
             run_quick_seek(browser)
         with check("rename edits and stores the CBM name"):
@@ -497,7 +497,7 @@ def main() -> int:
         teardown_step("close the browser session", browser.close)
         if original_view:
             teardown_step("restore the filename preference", lambda: api.configs.set(
-                "User Interface Settings", "Browser Filenames", original_view))
+                "User Interface Settings", "Filename view", original_view))
         teardown_step("remove the fixture directory", lambda: cleanup(args.host, args.password, args.test_dir))
 
 

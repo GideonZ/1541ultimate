@@ -140,7 +140,7 @@ struct t_cfg_definition user_if_config[] = {
     { CFG_USERIF_CFG_SAVE,   CFG_TYPE_ENUM,   "Auto Save Config",      "%s", cfg_save, 0, 2, 1 },
     { CFG_USERIF_ULTICOPY_NAME, CFG_TYPE_ENUM, "Ulticopy Uses disk name", "%s", en_dis, 0, 1, 1 },
     { CFG_USERIF_FILENAME_OVERFLOW_SQUEEZE, CFG_TYPE_ENUM, "Filename overflow squeeze", "%s", filename_overflow_squeeze, 0, 3, 0 },
-    { CFG_USERIF_CBM_NAMES, CFG_TYPE_ENUM, "Browser Filenames", "%s", filename_views, 0, 1, 0 },
+    { CFG_USERIF_CBM_NAMES, CFG_TYPE_ENUM, "Filename view", "%s", filename_views, 0, 1, 0 },
     { 0xFE, CFG_TYPE_SEP, "", "", NULL, 0, 0, 0 },
     { 0xFE, CFG_TYPE_SEP, "Temp Folder", "", NULL, 0, 0, 0 },
     { CFG_USERIF_TEMP_AUTO_CLEANUP, CFG_TYPE_ENUM, "Temp Auto Cleanup", "%s", en_dis, 0, 1, 1 },
