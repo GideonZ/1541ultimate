@@ -782,6 +782,10 @@ void FileTypeSID ::load(void)
 
     ConfigSIDs();
 
+    // only version 3 and later have a second SID; before that, $7A is reserved
+    if (header_version < 3) {
+        sid_header[0x7A] = 0;
+    }
     // only version 4 has a third SID; before that, $7B is reserved
     if (header_version < 4) {
         sid_header[0x7B] = 0;

@@ -12,6 +12,12 @@ $7B = $50, copied to /Temp by FTP and started by its path.
   version 3   the same header as version 3: the info screen shows no third
               SID. Master showed "SID #3: $D500".
 
+  version 2   a version 2 header with a SONGLENGTHS/<name>.ssl file next to
+              it: $7A and $7B are reserved there too, and the song length
+              fallback that clears them only runs without the .ssl file. The
+              player must neither show a SID, nor patch a volume write for
+              $D438 or $D518.
+
 Every check runs, so a red run on master still reports the control.
 """
 
@@ -38,11 +44,19 @@ SUITE = "sid_reserved_third_sid_test"
 
 V4 = "/Temp/E2ERSV4.SID"
 V3 = "/Temp/E2ERSV3.SID"
+V2 = "/Temp/E2ERSV2.SID"
+V2_SSL_DIR = "/Temp/SONGLENGTHS"
+V2_SSL = V2_SSL_DIR + "/E2ERSV2.ssl"
 SECOND_SID_BYTE = 0x42          # $D420
 RESERVED_BYTE = 0x50            # $D500, if it were read as an address
 SECOND_SID_LINE = "SID #2: $D420"
 THIRD_SID_LABEL = "SID #3:"
 THIRD_SID_LINE = "SID #3: $D500"
+
+# The player patches the operand of `sta $D4xx` (8D lo hi) for each extra SID.
+SID2_VOLUME_STORE = bytes((0x8D, 0x38, 0xD4))      # SID 2 at $D420
+SID3_VOLUME_STORE = bytes((0x8D, 0x18, 0xD5))      # SID 3 at $D500
+READ_CHUNK = 0x4000
 
 LOAD_ADDRESS = 0x1000
 HEADER_SIZE = 0x7C
@@ -120,6 +134,11 @@ def play(device: UltimateApi, path: str) -> list[str]:
                   f"{SCREEN_TIMEOUT_SECONDS:.0f}s; last screen: {lines!r}")
 
 
+def c64_memory(device: UltimateApi) -> bytes:
+    return b"".join(device.machine.readmem(address, READ_CHUNK)
+                    for address in range(0, 0x10000, READ_CHUNK))
+
+
 def sid_lines(lines: list[str]) -> list[str]:
     return [line for line in lines if line.startswith("SID #")]
 
@@ -130,6 +149,9 @@ def run(args) -> None:
     with ftp_lib.session(args.host, args.password or None) as client:
         ftp_lib.store(client, V4, psid(4, b"E2E RESERVED V4"))
         ftp_lib.store(client, V3, psid(3, b"E2E RESERVED V3"))
+        ftp_lib.store(client, V2, psid(2, b"E2E RESERVED V2"))
+        ftp_lib.make_dir(client, V2_SSL_DIR)
+        ftp_lib.store(client, V2_SSL, bytes(512))
     try:
         try:
             with check(f"[control] {V4} shows a third SID at $D500"):
@@ -148,14 +170,33 @@ def run(args) -> None:
                     raise Failure(f"the reserved byte $7B was taken for a third SID: {third[0]!r}")
         except Failure as exc:
             failures.append(exc)
+        try:
+            with check(f"[wrong on master] {V2} with a .ssl file shows no extra SID"):
+                lines = play(device, V2)
+                problems = []
+                extra = [line for line in lines if line.startswith(THIRD_SID_LABEL)
+                         or line.startswith("SID #2:")]
+                if extra:
+                    problems.append(f"the reserved bytes $7A/$7B were taken for SIDs: {extra!r}")
+                memory = c64_memory(device)
+                stores = [name for name, pattern in (("$D438", SID2_VOLUME_STORE),
+                                                     ("$D518", SID3_VOLUME_STORE))
+                          if pattern in memory]
+                if stores:
+                    problems.append(f"the player patched volume writes for {stores!r}")
+                if problems:
+                    raise Failure("; ".join(problems))
+        except Failure as exc:
+            failures.append(exc)
         if failures:
             raise failures[0]
     finally:
         # A reboot removes the player's cartridge, as a reset would not.
         teardown_step("stop the tune", device.machine.reboot)
         with ftp_lib.session(args.host, args.password or None) as client:
-            for path in (V4, V3):
+            for path in (V4, V3, V2, V2_SSL):
                 ftp_lib.delete_quietly(client, path)
+            ftp_lib.quietly(lambda: client.rmd(V2_SSL_DIR))
 
 
 def main() -> int:
