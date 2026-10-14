@@ -20,6 +20,7 @@
 #endif
 #include "init_function.h"
 #include "wifi_dedicated.h"
+#include "wifi_tls.h"
 
 #define DEBUG_INPUT  0
 #define EVENT_START  0xF1
@@ -27,6 +28,9 @@
 
 WiFi wifi;
 ultimate_ap_records_t wifi_aps;
+// What the module application said it is, for TLS_INFO; 0 before it answered.
+static uint16_t module_major;
+static uint16_t module_minor;
 InitFunction wifi_init("WiFi Application", WiFi::Init, NULL, NULL, 52); // after LWIP
 
 WiFi :: WiFi()
@@ -288,6 +292,8 @@ void WiFi :: RunModeThread()
         case eWifi_ModuleDetected:
             uart->txDebug = false;
             if (wifi_detect(&major, &minor, moduleName, 32)) {
+                module_major = major;
+                module_minor = minor;
                 state = eWifi_AppDetected;
 
 #if U64 == 2
@@ -642,6 +648,19 @@ void wifi_free(void *driver, void *buffer)
 bool wifi_module_ready(void)
 {
     return wifi.getState() >= eWifi_AppDetected;
+}
+
+// The application answers while its radio is off too; the module then refuses
+// an OPEN itself, for want of entropy.
+bool wifi_tls_module_available(void)
+{
+    return wifi_module_ready();
+}
+
+void wifi_tls_module_version(uint16_t *major, uint16_t *minor)
+{
+    *major = module_major;
+    *minor = module_minor;
 }
 #endif
 

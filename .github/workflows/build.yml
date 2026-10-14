@@ -184,6 +184,15 @@ jobs:
           docker run --rm --user $(id -u):$(id -g) -e HOME=/tmp \
           -v $GITHUB_WORKSPACE:/mnt/project:rw --workdir /mnt/project $IDF6_IMAGE make host_tests_idf6
 
+      # The UCI TLS commands against stand-ins for FreeRTOS, the UART, lwIP and the
+      # WiFi module: the module calls, the dedicated channel and the network target
+      # (network_target.cc, network_target_tls.cc) itself. Needs no device and no network beyond loopback.
+      - name: Test UCI TLS Sockets
+        run: |
+          docker run --rm \
+          -v /opt/build-tools:/mnt/build-tools:ro \
+          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make -C target/pc/linux/wifitls test"
+
       # The checks on the vendored root store the ESP32 bridge builds its certificate
       # bundle from, and on the tool that refreshes it. Standard library only; in a
       # stock Python image for the same reason as the lint step above.

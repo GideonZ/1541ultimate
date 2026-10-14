@@ -98,4 +98,7 @@ public:
 
 extern ultimate_ap_records_t wifi_aps;
 
+// What wifi.cc keeps of the module's version, for the TLS calls
+static __attribute__((unused)) uint16_t module_major, module_minor;
+
 #endif /* WIFI_TASK_ENV_H_ */

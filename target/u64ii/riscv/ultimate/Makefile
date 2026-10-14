@@ -154,6 +154,7 @@ SRCS_CC	 =  u64ii_init.cc \
 			command_intf.cc \
 			dos.cc \
 			network_target.cc \
+			network_target_tls.cc \
 			control_target.cc \
 			filetype_tap.cc \
 			socket_stream.cc \

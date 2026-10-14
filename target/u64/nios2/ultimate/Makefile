@@ -149,6 +149,7 @@ SRCS_CC	 =  u2p_init.cc \
 			command_intf.cc \
 			dos.cc \
 			network_target.cc \
+			network_target_tls.cc \
 			control_target.cc \
 			filetype_tap.cc \
 			socket_stream.cc \
@@ -166,6 +167,7 @@ SRCS_CC	 =  u2p_init.cc \
 			wifi_cmd.cc \
 			wifi_random.cc \
 			wifi_dedicated.cc \
+			wifi_tls.cc \
 			acia.cc \
 			modem.cc \
 			listener_socket.cc \

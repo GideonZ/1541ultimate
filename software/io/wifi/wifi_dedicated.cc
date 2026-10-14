@@ -1,9 +1,10 @@
-// wifi_dedicated.cc: the one waiter for replies on WIFI_DEDICATED_THREAD, and
-// GET_RANDOM, its first user. Not in wifi_cmd.cc, which the updater compiles.
+// wifi_dedicated.cc: the one waiter for replies on WIFI_DEDICATED_THREAD, and GET_RANDOM, its
+// first user. Not in wifi_cmd.cc, which the updater compiles without wifi.cc.
 
 #include <stddef.h>
 #include "wifi_cmd.h"
 #include "wifi_dedicated.h"
+#include "wifi_tls.h"
 #include "wifi_random.h"
 
 static_assert(WIFI_RANDOM_BUSY == DEDICATED_BUSY, "codes differ");
@@ -12,9 +13,9 @@ static_assert(WIFI_RANDOM_FOREIGN == DEDICATED_FOREIGN, "codes differ");
 // The log reads esp_err where every reply that has one keeps it.
 static_assert(sizeof(rpc_espcmd_resp) == offsetof(rpc_get_random_resp, source), "rpc_espcmd_resp changed");
 
-// Hands a queued reply to take, then frees it. One queued before the last pool
-// reset is dropped unread, as its buffer may be someone else's by now; the
-// scheduler stays suspended so that no reset comes in between. check false: free only.
+// Checks a queued reply against the request, lets take have it if it is the answer, and frees it. A reply queued
+// before the last buffer pool reset is dropped unread: its buffer may since belong to someone else. The scheduler
+// stays suspended from the check until the free, so no reset (only tasks do one) gets in between. check false: free.
 static int take_dedicated_reply(const dedicated_call_t *call, dedicated_reply_t *reply, bool check, uint16_t sequence)
 {
     int retval = DEDICATED_FOREIGN;
@@ -43,11 +44,13 @@ static int take_dedicated_reply(const dedicated_call_t *call, dedicated_reply_t 
     return retval;
 }
 
-// Unlike wifi_cmd.cc, neither waits forever nor trusts the reply: take decides.
-// Between calls dedicated_waiting is clear and dedicated_replies is empty.
+// Unlike the calls in wifi_cmd.cc this neither waits for the module forever nor trusts what comes back: take decides
+// what the answer is. Between calls dedicated_waiting is clear and dedicated_replies is empty, so no reply is left
+// over for the next one.
 int wifi_dedicated_call(const dedicated_call_t *call)
 {
-    // Without the module application nothing can answer; fail now, not on a timeout.
+    // Without the module application nothing can answer, so fail at once
+    // rather than on a timeout.
     if (!wifi_module_ready() || !dedicated_replies) {
         return DEDICATED_NO_MODULE;
     }
@@ -58,10 +61,12 @@ int wifi_dedicated_call(const dedicated_call_t *call)
     dedicated_waiting = true;
     LEAVE_SAFE_SECTION;
     if (busy) {
-        return DEDICATED_BUSY;
+        return DEDICATED_UNSENT;
     }
 
     int retval = DEDICATED_BUSY;
+    bool sent = false;
+    bool cancelled = false;
     uint16_t sequence = sequence_nr++;
     dedicated_reply_t reply;
     command_buf_t *packet;
@@ -75,16 +80,34 @@ int wifi_dedicated_call(const dedicated_call_t *call)
         packet->size = call->fill(packet->data, call->context);
 
         if (esp32.uart->TransmitPacket(packet) == pdTRUE) {
-            // A late reply to an earlier request is skipped, within the same timeout.
+            // A late reply to an earlier request is skipped, within the same
+            // timeout.
+            sent = true;
             const TickType_t timeout = pdMS_TO_TICKS(call->timeout_ms);
+            const TickType_t slice = pdMS_TO_TICKS(DEDICATED_SLICE_MS);
             TickType_t start = xTaskGetTickCount();
             retval = DEDICATED_FOREIGN;
             while (retval == DEDICATED_FOREIGN) {
                 TickType_t spent = xTaskGetTickCount() - start;
-                if ((spent >= timeout) ||
-                        (xQueueReceive(dedicated_replies, &reply, timeout - spent) == pdFALSE)) {
+                if (spent >= timeout) {
                     retval = DEDICATED_BUSY;
                     break;
+                }
+                TickType_t wait = timeout - spent;
+                if (call->cancel && (wait > slice)) {
+                    wait = slice;
+                }
+                if (xQueueReceive(dedicated_replies, &reply, wait) == pdFALSE) {
+                    if (call->cancel && call->cancel(call->cancel_context)) {
+                        cancelled = true;
+                        retval = DEDICATED_BUSY;
+                        break;
+                    }
+                    if (!call->cancel) {
+                        retval = DEDICATED_BUSY;
+                        break;
+                    }
+                    continue;
                 }
                 retval = take_dedicated_reply(call, &reply, true, sequence);
             }
@@ -95,7 +118,7 @@ int wifi_dedicated_call(const dedicated_call_t *call)
     // After a timeout that can still be our reply.
     dedicated_waiting = false;
     while (xQueueReceive(dedicated_replies, &reply, 0) == pdTRUE) {
-        if (retval == DEDICATED_BUSY) {
+        if ((retval == DEDICATED_BUSY) && !cancelled) {
             retval = take_dedicated_reply(call, &reply, true, sequence);
             if (retval == DEDICATED_FOREIGN) {
                 retval = DEDICATED_BUSY;
@@ -104,10 +127,20 @@ int wifi_dedicated_call(const dedicated_call_t *call)
             take_dedicated_reply(call, &reply, false, 0);
         }
     }
-    if (retval == DEDICATED_BUSY) {
+    if (cancelled) {
+        printf("%s: cancelled.\n", call->name);
+    } else if (retval == DEDICATED_BUSY) {
         printf("%s: no reply.\n", call->name);
+        if (!sent) {
+            retval = DEDICATED_UNSENT;
+        }
     }
     return retval;
+}
+
+uint32_t wifi_tls_generation(void)
+{
+    return esp32.uart->generation;
 }
 
 typedef struct {
@@ -136,5 +169,7 @@ int wifi_get_random(uint8_t *buf, uint16_t len)
     // About 1 ms on the wire; far longer only while the module's dispatcher is
     // blocked handing a scan or connect to its connector, which is worth a retry.
     const dedicated_call_t call = { "Get Random", CMD_GET_RANDOM, 200, fill_random, take_random, &args };
-    return wifi_dedicated_call(&call);
+    int r = wifi_dedicated_call(&call);
+    // The channel was taken or there was no buffer: nothing was sent, which a caller of GET_RANDOM reads as busy
+    return (r == DEDICATED_UNSENT) ? WIFI_RANDOM_BUSY : r;
 }
