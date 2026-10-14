@@ -492,6 +492,16 @@ bool NetworkInterface :: peekArpTable(uint32_t ipToQuery, uint8_t *mac)
     return ret;
 }
 
+void NetworkInterface :: sendArpRequest(uint32_t ipToQuery)
+{
+    ip4_addr_t query_ip;
+    query_ip.addr = ipToQuery;
+
+    LOCK_TCPIP_CORE();
+    etharp_request(&my_net_if, &query_ip);
+    UNLOCK_TCPIP_CORE();
+}
+
 void NetworkInterface :: on_edit()
 {
     uint8_t mac[8];

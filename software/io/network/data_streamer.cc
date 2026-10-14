@@ -202,7 +202,9 @@ SubsysResultCode_e DataStreamer :: startStream(SubsysCommand *cmd)
     } else {
         bool ok = false;
         for(int i=0;i<10;i++) {
-            send_udp_packet(query_ip, stream->dest_port);
+            // Ask on the wired port itself: lwIP routes by destination, which picks WiFi
+            // on a unit that has both, and the answer would land in WiFi's ARP table.
+            intf->sendArpRequest(query_ip);
             vTaskDelay(20);
             if (intf->peekArpTable(query_ip, stream->dest_mac)) {
                 ok = true;
@@ -278,32 +280,6 @@ void DataStreamer :: update_task_items(bool writablePath)
     myActions.stopAud->setHidden(streams[1].enable == 0);
     myActions.startDbg->setHidden(streams[2].enable != 0);
     myActions.stopDbg->setHidden(streams[2].enable == 0);
-}
-
-void DataStreamer :: send_udp_packet(uint32_t ip, uint16_t port)
-{
-    int sockfd;
-    static struct sockaddr_in server;
-
-    sockfd = socket(AF_INET, SOCK_DGRAM, 0);
-    if (sockfd < 0)
-    {
-        printf("Error opening socket to send UDP packet\n");
-        return;
-    }
-
-    memset((char*)&server, 0, sizeof(server));
-    server.sin_family = AF_INET;
-    server.sin_addr.s_addr = ip;
-    server.sin_port = htons(port);
-
-    uint8_t buffer[2] = { 0, 0 };
-    printf("Send UDP data...\n");
-    if (sendto(sockfd, buffer, 2, 0, (const struct sockaddr*)&server, sizeof(server)) < 0) {
-        printf("Error in sendto()\n");
-    }
-    // close the socket again
-    lwip_close(sockfd);
 }
 
 
