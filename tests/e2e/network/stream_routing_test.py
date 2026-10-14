@@ -10,11 +10,10 @@ answers on only one address runs the one pairing it has and skips the rest.
 
 A unicast start needs the destination's hardware address on the wired port.
 The wired address is found from a multicast start, which needs no ARP, and the
-pairings started over WiFi run first. A lookup sent through WiFi shows in one
-of two ways. When the wired port has not resolved this host, which is the case
-after the device starts and until this host next addresses the wired port, the
-start fails with 404. When it has, the probe the lookup sends arrives on the
-receiving port from the WiFi address.
+pairings started over WiFi run first. After the device starts, the wired port
+has no ARP entry for this host until this host sends it an ARP request, so the
+first unicast start depends on the lookup going out through the wired port;
+one sent through WiFi fails it with 404.
 
     ./run-tests --suite stream-routing u64
 """
