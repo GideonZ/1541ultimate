@@ -411,8 +411,9 @@ SUITES: Sequence[Suite] = (
     # surface and takes no password or timeout.
     Suite("e2e", "av-stream", "tests/e2e/av/stream_test.py", "-H @HOST@"),
     # A start over WiFi while the Ethernet port has no address is refused with
-    # an error naming the wired link (#989). Manual because it gives the wired
-    # port a static address until the next restart.
+    # an error naming the wired link (#989). Manual because, until the next
+    # restart, the wired port gives up its DHCP lease and keeps its address as
+    # a static one, and the device uses the "Static DNS" server.
     Suite("e2e", "stream-wired-link", "tests/e2e/network/stream_wired_link_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@", manual=True),
     # Drives the machine's online file search (Assembly 64, or CommoServe on a

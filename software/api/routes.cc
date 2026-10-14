@@ -185,10 +185,9 @@ API_DOC(GET, info, none,
                 "device sends its magic packet to `wifi_mac`, which carries a MAC and not an IP "
                 "address; the wired interface does not wake the device.\n"
                 "\n"
-                "The same information, except `git_commit_hash` and the MAC addresses, is also "
-                "available without HTTP, from the Ultimate Ident Service on UDP port 64, which "
-                "answers a broadcast and so can be used to find a device whose address is not "
-                "known.")
+                "Most of this information is also available without HTTP, from the Ultimate Ident "
+                "Service on UDP port 64, which answers a broadcast and so can be used to find a "
+                "device whose address is not known.")
     PATH("/v1/info", "getInfo", "")
     RESPONSE("200", "application/json", "InfoResponse", "What the device is and what it is running.", "")
     RESPONSE_EXAMPLE("200", "Ultimate 64 Elite", "{\n  \"product\" : \"Ultimate 64 Elite (V1.49) 3.14d\",\n  \"firmware_version\" : \"3.14d\",\n  \"git_commit_hash\" : \"5ee21b65\",\n  \"fpga_version\" : \"122\",\n  \"core_version\" : \"1.49\",\n  \"hostname\" : \"Ultimate-64-Elite-C89085\",\n  \"unique_id\" : \"D09B96\",\n  \"ethernet_mac\" : \"02:15:41:C8:90:85\",\n  \"wifi_mac\" : \"24:0A:C4:1A:2B:3C\",\n  \"errors\" : []\n}", "")
