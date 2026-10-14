@@ -113,7 +113,8 @@ def routing(apis: dict[str, UltimateApi], wired: str, wireless: set[str],
                         "PUT", f"/v1/streams/{stream}:start",
                         params={"ip": f"{group or local}:{port}"})
                     if code != 200:
-                        raise Failure(f"start returned HTTP {code}: {body[:160]!r}")
+                        raise Failure(f"start returned HTTP {code}: "
+                                      f"{' '.join(body.decode('utf-8', 'replace').split())}")
                     detail(expect_stream(collect(sock, LISTEN_SECONDS), stream,
                                          wired, wireless))
                     apis[via_stop].streams.stop(stream)
