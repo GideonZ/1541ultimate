@@ -159,6 +159,7 @@ public:
             "Invalid Song Number Requested",
             "No Operational Network Interface",
             "Network Host Resolve Error",
+            "Wired Ethernet link is down or has no IP address",
         };
         return error_strings[(int)resultCode];
     }
@@ -195,6 +196,7 @@ public:
             HTTP_BAD_REQUEST, //  SSRET_INVALID_SONGNR,
             HTTP_INTERNAL_SERVER_ERROR, // NO NETWORK (should never happen)
             HTTP_NOT_FOUND, // NETWORK RESOLVE ERROR
+            HTTP_INTERNAL_SERVER_ERROR, // NO ETHERNET LINK
         }; 
         return codes[(int)resultCode];
     }

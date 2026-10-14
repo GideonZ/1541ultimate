@@ -185,8 +185,8 @@ API_DOC(GET, info, none,
                 "device sends its magic packet to `wifi_mac`, which carries a MAC and not an IP "
                 "address; the wired interface does not wake the device.\n"
                 "\n"
-                "The same information is also available without HTTP, from the Ultimate Ident "
-                "Service on UDP port 64, which answers a broadcast and so can be used to find a "
+                "The same information, except `git_commit_hash` and the MAC addresses, is also "
+                "available without HTTP, from the Ultimate Ident Service on UDP port 64, which answers a broadcast and so can be used to find a "
                 "device whose address is not known.")
     PATH("/v1/info", "getInfo", "")
     RESPONSE("200", "application/json", "InfoResponse", "What the device is and what it is running.", "")

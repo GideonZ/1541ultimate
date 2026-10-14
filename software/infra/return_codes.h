@@ -35,6 +35,7 @@ typedef enum {
     SSRET_INVALID_SONGNR,
     SSRET_NO_NETWORK,
     SSRET_NETWORK_RESOLVE_ERROR,
+    SSRET_NO_ETHERNET_LINK,
 } SubsysResultCode_e;
 
 /*
