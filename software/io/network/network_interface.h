@@ -139,7 +139,6 @@ public:
 	void setIpAddr(uint8_t *a);
 	char *getIpAddrString(char *buf, int buflen);
 	bool peekArpTable(uint32_t ipToQuery, uint8_t *mac);
-	void sendArpRequest(uint32_t ipToQuery);
 
 	// callbacks
 	static void statusCallback(struct netif *);
