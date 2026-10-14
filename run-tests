@@ -416,6 +416,11 @@ SUITES: Sequence[Suite] = (
     # a static one, and the device uses the "Static DNS" server.
     Suite("e2e", "stream-wired-link", "tests/e2e/network/stream_wired_link_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@", manual=True),
+    # Streams leave through the wired port whichever interface asked for them:
+    # every pairing of the interface that starts a stream with the one that
+    # stops it, unicast and multicast.
+    Suite("e2e", "stream-routing", "tests/e2e/network/stream_routing_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
     # Drives the machine's online file search (Assembly 64, or CommoServe on a
     # C64 Ultimate), mostly with negative cases. Skips when it is unreachable.
     Suite("e2e", "assembly64", "tests/e2e/io/c64/assembly64_test.py",
