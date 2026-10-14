@@ -3352,9 +3352,9 @@ paths:
       description: |2-
         Sends the named stream to a listening host over UDP. `video` carries the VIC output, `audio` the sound, and `debug` a trace of the cartridge bus.
 
-        `ip` may be an address or a host name, and may carry a port as `address:port`. Without a port the stream goes to 11000 for video, 11001 for audio and 11002 for debug. A multicast group from 232.0.0.0 to 239.255.255.255 is accepted in place of a single host, in which case every listener that joined the group receives the stream. An empty `ip` sends the stream to the destination set for it in the Data Streams settings.
+        `ip` may be an address or a host name, and may carry a port as `address:port`. Without a port the stream goes to 11000 for video, 11001 for audio and 11002 for debug. A multicast group from 232.0.0.0 to 239.255.255.255 is accepted in place of a single host, in which case every listener that joined the group receives the stream.
 
-        For a single host the device needs its hardware address, or the gateway's when the host is on another subnet. When the name cannot be resolved or that address does not answer, the call fails with 404.
+        To send to a single host the device looks up that host's hardware address, or the gateway's when the host is on another subnet. When the name cannot be resolved, or that address does not answer, the call fails with 404.
 
         Video and debug share hardware and cannot both run, so starting video stops debug first.
 
@@ -3386,17 +3386,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-        '400':
-          description: Bad request
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-              examples:
-                Invalid Parameter:
-                  value:
-                    errors:
-                      - Invalid Parameter
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
