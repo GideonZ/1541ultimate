@@ -74,6 +74,7 @@ host_tests:
 	@$(MAKE) -C target/pc/linux/configiotest test
 	@$(MAKE) -C target/pc/linux/powerstate test
 	@$(MAKE) -C target/pc/linux/wolmagic test
+	@$(MAKE) -C target/pc/linux/wifitls test
 
 # The Mozilla root store the ESP32 bridge (raw_u64) builds its certificate bundle from
 # (software/wifi/ca_store). Its build checks the store at every configure; these are the
