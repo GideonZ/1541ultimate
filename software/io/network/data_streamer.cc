@@ -202,8 +202,8 @@ SubsysResultCode_e DataStreamer :: startStream(SubsysCommand *cmd)
     } else {
         bool ok = false;
         for(int i=0;i<10;i++) {
-            // Ask on the wired port itself: lwIP routes by destination, which picks WiFi
-            // on a unit that has both, and the answer would land in WiFi's ARP table.
+            // Ask on the wired port itself. lwIP sends by the first netif on the destination's
+            // subnet, which is WiFi when both share one, and the answer would land in its table.
             intf->sendArpRequest(query_ip);
             vTaskDelay(20);
             if (intf->peekArpTable(query_ip, stream->dest_mac)) {

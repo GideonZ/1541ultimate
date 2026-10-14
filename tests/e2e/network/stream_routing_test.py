@@ -9,10 +9,12 @@ the WiFi address, and each stopped stream has to fall silent. A device that
 answers on only one address runs the one pairing it has and skips the rest.
 
 A unicast start needs the destination's hardware address on the wired port.
-The pairings started over WiFi run first, and the wired address is found from
-a multicast start, which needs no ARP, so the first unicast check meets a wired
-port that has not resolved this host since it booted or since this host last
-addressed it. A lookup routed through WiFi fails that check with 404.
+The wired address is found from a multicast start, which needs no ARP, and the
+pairings started over WiFi run first. A lookup sent through WiFi shows in one
+of two ways. When the wired port has not resolved this host, which is the case
+after the device starts and until this host next addresses the wired port, the
+start fails with 404. When it has, the probe the lookup sends arrives on the
+receiving port from the WiFi address.
 
     ./run-tests --suite stream-routing u64
 """
@@ -38,9 +40,9 @@ from api import UltimateApi  # noqa: E402
 from report import (Failure, check, check_skip, check_start, detail,  # noqa: E402
                     format_exception, suite_fail, suite_ok, suite_skip,
                     teardown_step)
-from stream_wired_link_test import (collect, expect_refusal, ident_addresses,  # noqa: E402
-                                    local_address, senders_on_groups, start_video,
-                                    stream_sender)
+from stream_wired_link_test import (collect, expect_refusal, local_address,  # noqa: E402
+                                    senders_on_groups, standard_groups, start_video,
+                                    stream_sender, wireless_address)
 
 SUITE = "stream_routing_test"
 
@@ -56,22 +58,23 @@ DRAIN_SECONDS = 0.3
 
 
 def receiver(group: str | None) -> tuple[socket.socket, int]:
-    """A socket on a free unicast port, or on the video group's port."""
-    if group is None:
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        sock.bind(("", 0))
-        sock.settimeout(0.1)
-        return sock, sock.getsockname()[1]
-    return streams.stream_socket(group, streams.VIDEO_PORT, timeout=0.1), streams.VIDEO_PORT
+    """A socket on a free port, joined to `group` when one is given."""
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.bind(("", 0))
+    if group is not None:
+        sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP,
+                        socket.inet_aton(group) + socket.inet_aton("0.0.0.0"))
+    sock.settimeout(0.1)
+    return sock, sock.getsockname()[1]
 
 
-def expect_stream(seen: Counter, stream: str, wired: str, wireless: set[str]) -> str:
-    """Raise unless `stream` arrived from the wired address and none of it
-    from the wireless one. Another device on the group is ignored."""
+def expect_stream(seen: Counter, stream: str, wired: str, wireless: str | None) -> str:
+    """Raise unless `stream` arrived from the wired address, and nothing from
+    the wireless one."""
     port, size = STREAM_SOURCE[stream]
     ours = sum(n for (sender, sport, length), n in seen.items()
                if sender == wired and sport == port and length == size)
-    stray = {key: n for key, n in seen.items() if key[0] in wireless}
+    stray = {key: n for key, n in seen.items() if key[0] == wireless}
     if stray:
         raise Failure(f"packets from the wireless address: {stray}")
     if ours < MIN_PACKETS[stream]:
@@ -96,22 +99,21 @@ def expect_silence(sock: socket.socket, wired: str) -> None:
         raise Failure(f"{late} packets from {wired} after the stop")
 
 
-def routing(apis: dict[str, UltimateApi], wired: str, wireless: set[str],
-            local: str) -> None:
+def routing(apis: dict[str, UltimateApi], wired: str, wireless: str | None,
+            local: str, group: str) -> None:
     # WiFi first, so the first unicast start meets a wired port that has not
     # resolved this host.
-    names = sorted(apis, reverse=True)
+    names = [name for name in ("WiFi", "Ethernet") if name in apis]
     pairs = [(a, b) for a in names for b in names]
-    for stream, group in (("video", None), ("audio", None),
-                          ("video", streams.VIDEO_GROUP)):
-        where = "multicast" if group else "unicast"
+    for stream, joined in (("video", None), ("audio", None), ("video", group)):
+        where = "multicast" if joined else "unicast"
         for via_start, via_stop in pairs:
-            sock, port = receiver(group)
+            sock, port = receiver(joined)
             try:
                 with check(f"{stream} {where}: start over {via_start}, stop over {via_stop}"):
                     code, _, body = apis[via_start].rest.request(
                         "PUT", f"/v1/streams/{stream}:start",
-                        params={"ip": f"{group or local}:{port}"})
+                        params={"ip": f"{joined or local}:{port}"})
                     if code != 200:
                         raise Failure(f"start returned HTTP {code}: "
                                       f"{' '.join(body.decode('utf-8', 'replace').split())}")
@@ -134,11 +136,11 @@ def main() -> int:
     args = parser.parse_args()
     password = args.password or None
 
-    host = targets.device_of(args.host)
+    target = targets.resolve(args.host)
     api = UltimateApi(args.host, password, args.timeout)
     info = api.info()
-    machine = machine_lib.identify(host, lambda: (str(info.product),
-                                                  str(info.firmware_version)))
+    machine = machine_lib.identify(target.device, lambda: (str(info.product),
+                                                           str(info.firmware_version)))
     if not machine.has_data_streams:
         suite_skip(SUITE, f"{machine.described} has no data streams")
         return 0
@@ -146,23 +148,26 @@ def main() -> int:
     failure = ""
     running: set[str] = set()
     try:
-        before = senders_on_groups()
-        code, body, seen = start_video(api)
+        before = senders_on_groups(target)
+        code, body, seen = start_video(api, target.video_group)
         if code != 200:
             expect_refusal(code, body)
             suite_skip(SUITE, "the device has no wired address, which the streams need")
             return 0
-        api.streams.stop("video")
-        wired = stream_sender(seen, before["video"])
+        try:
+            wired = stream_sender(seen)
+        except Failure:
+            api.streams.stop("video")
+            raise
         running = {name for name, senders in before.items() if wired in senders}
-        local = local_address(socket.gethostbyname(host))
-        found = ident_addresses(str(info.extra.get("unique_id", "")), local)
-        wireless = (found | {socket.gethostbyname(host)}) - {wired}
-        detail(f"wired {wired}, wireless {sorted(wireless) or 'none'}, this host {local}")
+        api.streams.stop("video")
+        local = local_address(socket.gethostbyname(target.device))
+        wireless = wireless_address(api, info, wired, local)
+        detail(f"wired {wired}, wireless {wireless or 'none'}, this host {local}")
         apis = {"Ethernet": UltimateApi(wired, password, args.timeout)}
         if wireless:
-            apis["WiFi"] = UltimateApi(min(wireless), password, args.timeout)
-        routing(apis, wired, wireless, local)
+            apis["WiFi"] = UltimateApi(wireless, password, args.timeout)
+        routing(apis, wired, wireless, local, target.video_group)
     except Failure as exc:
         failure = str(exc)
     except Exception as exc:  # noqa: BLE001
@@ -170,8 +175,9 @@ def main() -> int:
     finally:
         # Leave the standard streams as they were found, for a recorder.
         for name in sorted(running):
-            teardown_step(f"restart {name}", lambda name=name: api.streams.start(
-                name, ip=streams.Arming(api, args.host).address(name)))
+            group_port = standard_groups(target)[name]
+            teardown_step(f"restart {name}", lambda name=name, group_port=group_port:
+                          api.streams.start(name, ip=f"{group_port[0]}:{group_port[1]}"))
 
     if failure:
         suite_fail(SUITE, failure)
