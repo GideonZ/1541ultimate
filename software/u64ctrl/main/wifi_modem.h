@@ -26,6 +26,8 @@ void enable_hook();
 void disable_hook();
 void wake_on_wifi_update(int machine_on);
 uint8_t wifi_get_connection();
+entropy_source_t entropy_source(void);
+uint32_t entropy_epoch(void);
 void wifi_send_connected_event();
 
 void show_buffer_status();

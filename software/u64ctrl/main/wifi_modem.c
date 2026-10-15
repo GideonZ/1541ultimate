@@ -81,6 +81,24 @@ uint16_t ap_count = 0;
 uint16_t connected_g = 0;
 uint16_t disabled_g = 0;
 
+/* What feeds the RNG: esp_fill_random() is only truly random while the radio runs
+ * (esp_random.h). Unlike the U64's module this one stops the radio on request, so
+ * this follows every start and stop. Written by the connector task, read by the
+ * dispatcher task. It goes false before esp_wifi_stop() is called, and the epoch
+ * counts those stops, so that a stop and a start within one draw are noticed. */
+static volatile bool radio_running = false;
+static volatile uint32_t radio_epoch = 0;
+
+uint32_t entropy_epoch(void)
+{
+    return radio_epoch;
+}
+
+entropy_source_t entropy_source(void)
+{
+    return radio_running ? ENTROPY_RADIO : ENTROPY_NONE;
+}
+
 esp_netif_t *my_sta_netif = NULL;
 netif_input_fn default_input;
 netif_output_fn default_output;
@@ -357,6 +375,7 @@ static void wifi_init()
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_NONE));
     ESP_ERROR_CHECK(esp_wifi_start());
+    radio_running = true;
 
     ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT,
                                                         ESP_EVENT_ANY_ID,
@@ -734,6 +753,7 @@ esp_err_t enable_wifi_if_needed(ConnectState_t state)
         ESP_LOGI(TAG, "Starting WiFi.");
         esp_err_t err = esp_wifi_start();
         if (err == ESP_OK) {
+            radio_running = true;
             send_event(EVENT_DISCONNECTED);
             disabled_g = 0;
         } else {
@@ -763,6 +783,8 @@ int handle_connect_command(ConnectCommand_t *cmd, ConnectState_t *state)
                 }
             }
             ESP_LOGI(TAG, "Stopping WiFi.");
+            radio_epoch++;
+            radio_running = false;
             err = esp_wifi_stop();
             if (err == ESP_OK) {
                 send_event(EVENT_DISABLED);
@@ -770,6 +792,7 @@ int handle_connect_command(ConnectCommand_t *cmd, ConnectState_t *state)
                 disabled_g = 1;
                 return 1;
             } else {
+                radio_running = true;
                 ESP_LOGW(TAG, "Failed to stop WiFi: %d", err);
             }
             break;
@@ -778,6 +801,7 @@ int handle_connect_command(ConnectCommand_t *cmd, ConnectState_t *state)
                 ESP_LOGI(TAG, "Starting WiFi.");
                 err = esp_wifi_start();
                 if (err == ESP_OK) {
+                    radio_running = true;
                     send_event(EVENT_DISCONNECTED);
                     *state = LastAP;
                     disabled_g = 0;
