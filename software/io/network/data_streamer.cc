@@ -116,9 +116,10 @@ SubsysResultCode_e DataStreamer :: startStream(SubsysCommand *cmd)
     intf->getMacAddr(my_mac);
     my_ip = ip.ipaddr32[0];
 
+    // The FPGA stream generators send only through interface 0, the wired port, so WiFi cannot stand in.
     if (!(intf->is_link_up()) || (my_ip == 0)) {
         if (cmd->user_interface) cmd->user_interface->popup("No (valid) link", BUTTON_OK);
-        return SSRET_NO_NETWORK;
+        return SSRET_NO_ETHERNET_LINK;
     }
 
 /*
