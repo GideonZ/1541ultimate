@@ -48,12 +48,17 @@ entropy source is behind them, since the output of a post-processed RNG looks
 the same either way. Whether bytes are owed at all is taken from the device's
 own report, not from GET_RANDOM's answer: an Ultimate 64 or Ultimate 64
 Elite owes them, once "WiFi Enabled" is set and it reports a wifi_mac in
-/v1/info. Any other product has to refuse.
+/v1/info. An Ultimate 64-II or C64 Ultimate (the Elite II and the C64 Ultimate) owes them while
+its radio is on, which it is after a boot and when it reports a wifi_mac; it
+has no "WiFi Enabled" setting, so the suite cannot turn the radio on and fails,
+with the menu's Enable as the remedy, if it was switched off there. Any other
+product has to refuse.
 
 Supported on any Ultimate whose FPGA provides the command interface. The suite
 enables the "Command Interface" setting and restores it on exit. On an Ultimate
 64 or Ultimate 64 Elite it also sets "WiFi Enabled" and restores the stored
 setting on exit; the module it started keeps running until the next reboot.
+An Ultimate 64-II is left as it is.
 """
 
 import argparse
@@ -179,8 +184,20 @@ RESET_CYCLES = 3
 
 # The /v1/info products that draw GET_RANDOM bytes on the ESP32 (U64 == 1 in
 # product.cc), matched exactly since "Ultimate 64-II" starts with "Ultimate 64".
-# Every other product answers 87, even with a wifi_mac: its ESP32 runs other code.
 U64_MK1_PRODUCTS = ("Ultimate 64", "Ultimate 64 Elite")
+# U64 == 2, the Ultimate 64 Elite II and the C64 Ultimate. It draws them too, but
+# has no "WiFi Enabled" setting: its radio is on from boot and the menu's Enable
+# and Disable are actions. Two names, because the name is not the build's:
+#  - "Ultimate 64-II" is the only one this source tree has (product_name[6],
+#    product.cc:18, chosen by getProductId() for U64 == 2 at product.cc:96-97). The
+#    Elite II reports it, and so does a C64 Ultimate running a build of this tree.
+#  - "C64 Ultimate" is what the Commodore-branded release firmware reports in
+#    /v1/info (read from a C64 Ultimate on 1.1.0, 2026-10-15). Nothing in this tree
+#    produces it; it is listed so that such a unit is not taken to be a product
+#    that must refuse.
+U64_MK2_PRODUCTS = ("Ultimate 64-II", "C64 Ultimate")
+# Every other product answers 87, even with a wifi_mac: its ESP32 runs other code.
+GET_RANDOM_PRODUCTS = U64_MK1_PRODUCTS + U64_MK2_PRODUCTS
 # The setting that starts the module there, by the store's exact name (the answer
 # is keyed by it). Set for the run; writing Disabled back restores the setting but
 # does not stop the module (network_esp32.cc, effectuate_settings).
@@ -1304,7 +1321,8 @@ def require_random(result, length: int) -> bytes:
                       f"{RANDOM_BUSY_DELAY_SECONDS:.1f}s apart")
     if result.status_text.startswith(STATUS_NO_ENTROPY_PREFIX):
         raise Failure(f"GET_RANDOM of {length} bytes answered {result.status_text!r}, expected "
-                      f"{STATUS_OK!r}; if WiFi was disabled from the menu, enable it there or "
+                      f"{STATUS_OK!r}; if WiFi was disabled from the menu (an Ultimate 64-II "
+                      f"refuses with its radio off), enable it there or "
                       f"reboot, then run the suite again")
     if result.status_text != STATUS_OK:
         raise Failure(f"GET_RANDOM of {length} bytes answered {result.status_text!r}, "
@@ -1321,7 +1339,7 @@ def read_wifi_setting(device, info) -> object:
     """CFG_WIFI_ENABLED as the device reports it, or None where it has none.
 
     Asked only of the products that can owe bytes: the others either have no
-    such store or, on an Elite II, one whose Wi-Fi items are actions.
+    such store or, on an Ultimate 64-II, one whose Wi-Fi items are actions.
     """
     if info.product not in U64_MK1_PRODUCTS:
         return None
@@ -1348,7 +1366,8 @@ def read_duty(device, wifi_original: dict[str, str]) -> "RandomDuty":
     """What GET_RANDOM owes on this device, from its report.
 
     On an Ultimate 64 or Ultimate 64 Elite "WiFi Enabled" is set first, and its
-    stored value kept in `wifi_original` for the restore. A device that then cannot
+    stored value kept in `wifi_original` for the restore. An Ultimate 64-II has
+    no such setting and is taken as it is, radio on. A device that then cannot
     owe bytes fails this check, and the Failure is passed on for the
     GET_RANDOM scenarios to fail with.
     """
@@ -1362,7 +1381,7 @@ def read_duty(device, wifi_original: dict[str, str]) -> "RandomDuty":
             wifi_original[CFG_WIFI_ENABLED] = str(wifi_setting)
             device.configs.set(CFG_WIFI_CATEGORY, CFG_WIFI_ENABLED, "Enabled")
             wifi_setting = "Enabled"
-        if wifi_setting == "Enabled":
+        if wifi_setting == "Enabled" or info.product in U64_MK2_PRODUCTS:
             info = wait_for_wifi_mac(device, info)
         duty = random_duty(info)
         expected = ("has to hand out bytes" if duty.owed else "has to refuse with 87")
@@ -1383,15 +1402,17 @@ class RandomDuty(NamedTuple):
 def random_duty(info) -> RandomDuty:
     """What a device with "WiFi Enabled" set has to answer to GET_RANDOM.
 
-    Only an Ultimate 64 or Ultimate 64 Elite draws bytes at all, so on any
-    other product a reply with bytes in it came from somewhere else, which
+    Only an Ultimate 64, Ultimate 64 Elite or Ultimate 64-II draws bytes at all,
+    so on any other product a reply with bytes in it came from somewhere else, which
     is the fallback the command must never have. On those two the bytes are
     owed, and one whose module never reported a wifi_mac fails rather than
     skips; otherwise a firmware that always refuses would pass.
     """
-    owed = info.product in U64_MK1_PRODUCTS
+    owed = info.product in GET_RANDOM_PRODUCTS
     if owed and not reports_wifi_mac(info):
-        raise Failure(f"this {info.product} has {CFG_WIFI_ENABLED!r} set but reported no "
+        enabled = (f"has {CFG_WIFI_ENABLED!r} set" if info.product in U64_MK1_PRODUCTS
+                   else "is taken as having its radio on")
+        raise Failure(f"this {info.product} {enabled} but reported no "
                       f"wifi_mac in /v1/info within {WIFI_MAC_SECONDS:g}s, so its WiFi module "
                       f"did not start. Check that the WiFi module is fitted and starts, "
                       f"then run the suite again")
@@ -1415,7 +1436,7 @@ def random_expected(net: Net, duty: RandomDuty) -> bool:
         with check(f"GET_RANDOM on this {duty.product} refuses rather than hand out bytes"):
             raise Failure(f"GET_RANDOM answered {STATUS_OK!r} with {len(probe.data)} bytes on "
                           f"this {duty.product}, which has no source to draw them from: only an "
-                          f"{' or '.join(U64_MK1_PRODUCTS)} does. The only correct answer "
+                          f"{' or '.join(GET_RANDOM_PRODUCTS)} does. The only correct answer "
                           f"here is {STATUS_NO_ENTROPY!r}, with no data")
     if not probe.status_text.startswith(STATUS_NO_ENTROPY_PREFIX):
         return True
@@ -1424,7 +1445,7 @@ def random_expected(net: Net, duty: RandomDuty) -> bool:
             raise Failure(f"expected {STATUS_NO_ENTROPY!r}, got {probe.status_text!r}")
     check_start("GET_RANDOM hands out random bytes")
     check_skip(f"GET_RANDOM answered {probe.status_text[:2].decode()} on a device that owes "
-               f"no bytes: only an {' or '.join(U64_MK1_PRODUCTS)} serves them")
+               f"no bytes: only an {' or '.join(GET_RANDOM_PRODUCTS)} serves them")
     return False
 
 

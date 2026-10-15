@@ -12,7 +12,7 @@
 #include "netdb.h"
 #include <errno.h>
 #include <stdio.h>
-#if U64 == 1
+#if U64 >= 1
 #include "wifi_random.h"
 #endif
 
@@ -432,7 +432,8 @@ void NetworkTarget :: get_random(Message *command, Message **reply, Message **st
     // The bytes come from the WiFi module's hardware generator and from
     // nowhere else, so without that module there are none.
     *status = &c_status_no_entropy;
-#if U64 == 1
+#if U64 >= 1
+    static_assert(NET_MAX_RANDOM == WIFI_RANDOM_MAX_BYTES, "the module's limit and the UCI's differ");
     // The reply stays empty unless the result may carry data, and 87 stays
     // for any status not handled here.
     int result = wifi_get_random(data_message.message, length);

@@ -6,6 +6,8 @@
 #include "rpc_calls.h"
 #include "wifi_random.h"
 
+static_assert(WIFI_RANDOM_MAX_BYTES == RANDOM_MAX_BYTES, "the module's limit changed");
+
 int wifi_random_take_reply(const uint8_t *reply, int size, uint16_t sequence,
                            uint8_t *buf, uint16_t len)
 {

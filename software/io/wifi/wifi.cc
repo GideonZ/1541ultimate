@@ -479,7 +479,7 @@ void wifi_free(void *driver, void *buffer)
     w->freeBuffer((command_buf_t *)buffer);
 }
 
-#if U64 == 1
+#if U64 >= 1
 bool wifi_module_ready(void)
 {
     return wifi.getState() >= eWifi_AppDetected;

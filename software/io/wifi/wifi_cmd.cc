@@ -4,7 +4,7 @@
 /// C like functions to 'talk' with the WiFi Module
 uint16_t sequence_nr = 0;
 TaskHandle_t tasksWaitingForReply[NUM_TX_BUFFERS];
-#if U64 == 1
+#if U64 >= 1
 QueueHandle_t dedicated_replies = NULL;
 volatile bool dedicated_waiting = false;
 #endif
@@ -21,7 +21,7 @@ BaseType_t wifi_rx_isr(command_buf_context_t *context, command_buf_t *buf, BaseT
     rpc_header_t *hdr = (rpc_header_t *)buf->data;
     BaseType_t res;
 
-#if U64 == 1
+#if U64 >= 1
     if (hdr->thread == WIFI_DEDICATED_THREAD) {
         // pdFALSE makes the interrupt handler free the buffer.
         if (!dedicated_waiting) {
@@ -53,7 +53,7 @@ void wifi_command_init(void)
     esp32.uart->FlowControl(true);
     esp32.uart->ClearRxBuffer();
     esp32.uart->EnableSlip(true);
-#if U64 == 1
+#if U64 >= 1
     if (!dedicated_replies) {
         dedicated_replies = xQueueCreate(4, sizeof(dedicated_reply_t));
     }

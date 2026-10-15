@@ -67,7 +67,7 @@ extern TaskHandle_t tasksWaitingForReply[NUM_TX_BUFFERS];
 // dedicated_waiting is set, the receive interrupt queues its replies in
 // dedicated_replies, tagged with the buffer generation; otherwise it drops them.
 #define WIFI_DEDICATED_THREAD NUM_TX_BUFFERS
-#if U64 == 1
+#if U64 >= 1
 typedef struct {
     command_buf_t *buf;
     uint32_t generation;
