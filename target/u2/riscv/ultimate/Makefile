@@ -119,6 +119,7 @@ SRCS_CC	 =	small_printf.cc \
 			usb_scsi.cc \
 			usb_hub.cc \
 			usb_ax88772.cc \
+			usb_ax88179.cc \
 			usb_hid.cc \
 			usb_ms_cbi.cc \
 			keyboard_usb.cc \
