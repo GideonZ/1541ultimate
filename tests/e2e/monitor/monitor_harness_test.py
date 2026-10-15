@@ -436,7 +436,7 @@ class AlertScopeContractTest(unittest.TestCase):
         self.assertTrue(any("DbX" in p for p in problems))
 
     def test_manual_text_requires_dbg_and_breakpoint_go(self) -> None:
-        good = "Dbg breakpoint+Go RAM under ROM"
+        good = "Dbg Set a breakpoint and press `G` RAM under ROM"
         self.assertEqual(gate.validate_manual_text(good), [])
         missing = "Dbg only"
         self.assertTrue(gate.validate_manual_text(missing))
