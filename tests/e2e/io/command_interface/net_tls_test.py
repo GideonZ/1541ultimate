@@ -79,7 +79,7 @@ HOSTS_FILE = HERE / "internet_hosts.json"
 HOSTS_ENV = "NET_TLS_INTERNET_HOSTS"
 
 # What the runner sets, and whether it puts it back afterwards. WiFi Enabled is
-# one-way on the U64 (network_esp32.cc:134-136: the disable branch is commented
+# one-way on the U64 (network_esp32.cc:143-146: the disable branch is commented
 # out), so writing it back would record a restore that did not happen.
 SETTINGS = (
     ("C64 and Cartridge Settings", "Command Interface", "Enabled", True),
