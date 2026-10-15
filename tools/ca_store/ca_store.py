@@ -52,6 +52,9 @@ PIN_KEYS = ("CA_SOURCE_URL", "CA_MOZILLA_DATE", "CA_SHA256", "CA_MAX_AGE_DAYS", 
 # ESP-IDF 5.3's bundle, which looks up only the issuer of the topmost certificate a server
 # sends, so they would need hand-kept anchor roots; they keep ESP-IDF's own bundle.
 PROJECTS = ("software/wifi/raw_u64",)
+# Source directories a project builds that are not under its own main/, relative to the project. The TLS
+# engine, which attaches the bundle, is shared by the module firmware that carry it (software/wifi/tls).
+SHARED_SOURCES = {"software/wifi/raw_u64": ("../tls",)}
 
 DATE_PREFIX = "## Certificate data from Mozilla as of: "
 BEGIN = "-----BEGIN CERTIFICATE-----"
@@ -289,11 +292,20 @@ def projects(repo_root, effective=None):
 
 
 def attaching(project):
-    """Whether a project's own sources (under main/, not ESP-IDF's) attach the bundle."""
-    for path in sorted((pathlib.Path(project) / "main").rglob("*")):
-        if (path.suffix in (".c", ".cc", ".cpp", ".h")
-                and ATTACH in path.read_text(errors="replace")):
-            return True
+    """Whether a project's own sources (under main/, and its SHARED_SOURCES, not ESP-IDF's) attach
+    the bundle."""
+    project = pathlib.Path(project)
+    roots = [project / "main"]
+    for name, shared in SHARED_SOURCES.items():
+        if project.resolve().as_posix().endswith("/" + name):
+            roots += [project / directory for directory in shared]
+    for root in roots:
+        if not root.is_dir():
+            raise StoreError("%s: no %s, but it is one of the project's sources" % (project, root))
+        for path in sorted(root.rglob("*")):
+            if (path.suffix in (".c", ".cc", ".cpp", ".h")
+                    and ATTACH in path.read_text(errors="replace")):
+                return True
     return False
 
 

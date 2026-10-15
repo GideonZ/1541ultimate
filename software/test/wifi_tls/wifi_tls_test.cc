@@ -315,7 +315,7 @@ static void test_take_others(void)
     r = wifi_tls_take_open(reply.bytes, sizeof(rpc_tls_open_resp), SEQUENCE, 1, &esp_err, &reason);
     check((r == WIFI_TLS_REFUSED) && (esp_err == 0x103) && (reason == WIFI_TLS_REASON_NO_CUSTOM_CA),
           "OPEN: refused, with reason 3 NO_CUSTOM_CA");
-    // The refusal as the ESP32 sends it, slot 0xFF (rpc_dispatch.c cmd_tls_open).
+    // The refusal as the ESP32 sends it, slot 0xFF (tls_rpc.c cmd_tls_open).
     ((rpc_tls_open_resp *)reply.bytes)->slot = 0xFF;
     ((rpc_tls_open_resp *)reply.bytes)->reason = TLS_OPEN_REASON_NO_TIME;
     r = wifi_tls_take_open(reply.bytes, sizeof(rpc_tls_open_resp), SEQUENCE, 1, &esp_err, &reason);

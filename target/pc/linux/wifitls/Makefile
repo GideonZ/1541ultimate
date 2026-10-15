@@ -7,7 +7,7 @@ OUTPUT  = output
 PATH_SW = ../../../../software
 TEST    = $(PATH_SW)/test/wifi_tls
 
-VPATH   = $(TEST)/stub $(TEST) $(PATH_SW)/io/wifi $(PATH_SW)/io/uart $(PATH_SW)/wifi/raw_u64/main
+VPATH   = $(TEST)/stub $(TEST) $(PATH_SW)/io/wifi $(PATH_SW)/io/uart $(PATH_SW)/wifi/raw_u64/main $(PATH_SW)/wifi/tls
 
 CXX     = g++
 CPPOPTIONS = -std=gnu++11 -g -O0 -Wall -Wextra -Wno-unused-parameter -DNIOS=1 -DU64=1 \
