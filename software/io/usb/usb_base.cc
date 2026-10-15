@@ -682,7 +682,9 @@ int UsbBase :: control_write(struct t_pipe *pipe, void *setup_out, int setup_len
 
 	result = complete_command(500);
 
-    if ((result & URES_RESULT_MSK) != URES_ACK) {
+    // A high speed device answers NYET to an OUT packet it accepted but cannot take another of yet.
+    // The status stage that follows is an IN, so no ping is needed.
+    if (((result & URES_RESULT_MSK) != URES_ACK) && ((result & URES_RESULT_MSK) != URES_NYET)) {
         printf("%s Setup Out Result: %04x\n", pipe->name, result);
         xSemaphoreGive(mutex);
         return -2;
