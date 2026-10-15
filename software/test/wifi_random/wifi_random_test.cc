@@ -8,7 +8,7 @@
 #include "rpc_calls.h"
 #include "wifi_random.h"
 
-// The layout both sides agree on is asserted in wifi_random.cc itself.
+// The layout both sides agree on is asserted in rpc_shared.h itself.
 
 #define SEQUENCE 0x1234
 #define HEADER   12

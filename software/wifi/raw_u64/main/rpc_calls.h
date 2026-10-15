@@ -20,6 +20,8 @@ typedef struct {
     uint16_t sequence;
 } rpc_header_t;
 
+#include "rpc_shared.h"
+
 typedef struct {
     rpc_header_t hdr;
     int esp_err; // to be casted to esp_err_t
@@ -123,28 +125,6 @@ typedef struct {
 } rpc_get_time_resp;
 
 //----------------------------------
-// hardware random bytes
-#define RANDOM_MAX_BYTES 512
-
-typedef enum {
-    ENTROPY_NONE  = 0, // RNG not fed by a live entropy source; no bytes are returned
-    ENTROPY_RADIO = 1, // Wi-Fi is running, so the RNG gives true random numbers
-} entropy_source_t;
-
-typedef struct {
-    rpc_header_t hdr;
-    uint16_t length;
-} rpc_get_random_req;
-
-typedef struct {
-    rpc_header_t hdr;
-    int esp_err; // to be casted to esp_err_t
-    uint8_t source; // to be casted to entropy_source_t
-    uint16_t length;
-    uint8_t data[]; // sizeof() excludes it, so it is exactly the header size
-} rpc_get_random_resp;
-
-//----------------------------------
 // send raw packet
 typedef struct {
     rpc_header_t hdr;
@@ -188,7 +168,7 @@ typedef struct {
 #define CMD_GET_TIME          0x10
 #define CMD_CLEAR_APS         0x11
 #define CMD_WIFI_AUTOCONNECT  0x12
-#define CMD_GET_RANDOM        0x1A // 0x13-0x19 are u64ctrl's; kept apart so the maps agree
+// 0x13-0x19 are u64ctrl's; 0x1A is CMD_GET_RANDOM, in rpc_shared.h
 
 /*
 #define CMD_SOCKET          0x11

@@ -6,16 +6,6 @@
 #include "rpc_calls.h"
 #include "wifi_random.h"
 
-// The layout the module sends and this code reads. Checked here so that the
-// firmware build itself, not only the host test, fails if it ever changes.
-static_assert(sizeof(rpc_get_random_req) == 6, "rpc_get_random_req changed");
-static_assert(offsetof(rpc_get_random_req, length) == 4, "rpc_get_random_req changed");
-static_assert(sizeof(rpc_get_random_resp) == 12, "rpc_get_random_resp changed");
-static_assert(offsetof(rpc_get_random_resp, esp_err) == 4, "rpc_get_random_resp changed");
-static_assert(offsetof(rpc_get_random_resp, source) == 8, "rpc_get_random_resp changed");
-static_assert(offsetof(rpc_get_random_resp, length) == 10, "rpc_get_random_resp changed");
-static_assert(offsetof(rpc_get_random_resp, data) == 12, "rpc_get_random_resp changed");
-
 int wifi_random_take_reply(const uint8_t *reply, int size, uint16_t sequence,
                            uint8_t *buf, uint16_t len)
 {
