@@ -163,6 +163,73 @@ public:
         return buffer;
     }
 
+    // Decode a complete CBM name into 17 bytes, using the CBM filesystem's own name or
+    // CbmFileName's host mapping (including CVT). Lossless also requires canonical storage,
+    // ignoring host letter case; presentation may accept other well-formed spellings.
+    bool get_cbm_name(char *pet, bool lossless = true)
+    {
+        if (name_format & NAME_FORMAT_CBM) {
+            strncpy(pet, lfname, 16);
+            pet[16] = 0;
+            return pet[0] != 0;
+        }
+        CbmFileName cbm;
+        if (is_directory()) {
+            cbm.init_dir(lfname);
+        } else {
+            cbm.init(lfname);
+        }
+        strcpy(pet, cbm.getName());
+        if (!lossless) {
+            int end = strlen(lfname);
+            if (cbm.hadExtension()) {
+                char ext[4];
+                int base = get_extension(lfname, ext);
+                if (end - base != 4) {
+                    return false;
+                }
+                end = base;
+            }
+            // Validate before using the permissive legacy decoder: no partial escapes,
+            // embedded zero or silently truncated name may become an editable label.
+            int bytes = 0;
+            for (int i = 0; i < end;) {
+                if (lfname[i] == '{') {
+                    int start = ++i;
+                    while ((i < end) && (lfname[i] != '}')) {
+                        if ((i + 1 >= end) ||
+                            !strchr("0123456789abcdefABCDEF", lfname[i]) ||
+                            !strchr("0123456789abcdefABCDEF", lfname[i + 1]) ||
+                            ((lfname[i] == '0') && (lfname[i + 1] == '0'))) {
+                            return false;
+                        }
+                        i += 2;
+                    }
+                    if (i == end) {
+                        return false;
+                    }
+                    bytes += (i - start) / 2;
+                    i++;
+                } else {
+                    if ((lfname[i] == '}') || ((uint8_t)lfname[i] < 32) || ((uint8_t)lfname[i] >= 127)) {
+                        return false;
+                    }
+                    bytes++;
+                    i++;
+                }
+            }
+            return (bytes > 0) && (bytes <= 16) && ((int)strlen(pet) == bytes);
+        }
+        char host[64];
+        petscii_to_fat(pet, host, sizeof(host));
+        int len = strlen(host);
+        const char *ext = lfname + len;
+        if (!pet[0] || strncasecmp(host, lfname, len)) {
+            return false;
+        }
+        return cbm.hadExtension() ? ((ext[0] == '.') && (strlen(ext) == 4)) : !*ext;
+    }
+
     // bool match_to_pattern(CbmFileName &cbm)
     // {
     //     bool match_name = pattern_match_escaped(cbm.getName(), lfname);

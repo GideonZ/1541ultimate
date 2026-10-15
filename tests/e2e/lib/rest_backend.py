@@ -14,7 +14,7 @@ from pathlib import Path
 # The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
 sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
                             if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
-from report import Failure
+from report import Failure, warn
 from collections.abc import Sequence
 import api as api_lib
 import json
@@ -304,18 +304,14 @@ class RestBackend(Backend):
         while time.monotonic() < deadline:
             screen = self._menu_screen_body()
             if screen is not None:
-                # The menu answers the moment it opens, before the browser has
-                # drawn: on an Ultimate 64 in Overlay mode the character matrix
-                # still holds what the previous UI left there, and the browser
-                # paints over it row by row during the next few tens of
-                # milliseconds. Observed as a monitor status line from a closed
-                # session being read as "the monitor is up", so the key that
-                # would have opened it was never sent. Opening the menu is a
-                # redraw like any other, so it gets the same wait every keypress
-                # gets: the screen has to hold still before it is anyone's to
-                # read.
-                wait_screen_settled(self._menu_screen_body,
-                                    timeout=SETTLE_TIMEOUT_SECONDS, known=screen)
+                # The first reads can still hold the frame the menu last drew,
+                # until its task runs and redraws. Measured on a C64 Ultimate: a
+                # monitor frame for 40ms after a reopen that drew the browser.
+                # The settle starts from the screen just read.
+                settled, _ = wait_screen_settled(self._menu_screen_body, timeout=SETTLE_TIMEOUT_SECONDS,
+                                                 known=screen)
+                if not settled:
+                    warn(f"the menu screen was still changing {SETTLE_TIMEOUT_SECONDS:g}s after it opened")
                 return
             time.sleep(POLL_INTERVAL_SECONDS)
         raise Failure("the on-device menu did not open")
@@ -614,7 +610,8 @@ class RestBackend(Backend):
         self.last_command = ch
         return self.send_combo(char_to_combo(ch))
 
-    def send_text(self, text: str, label: str) -> Snapshot:
+    def send_text(self, text: str, label: str, *, settle: bool = True) -> Snapshot:
+        # REST settles on the screen changing, which costs nothing extra; `settle` is Telnet's.
         self.last_command = label
         before = self._menu_screen_body()
         events = [{"kind": "keyboard", "inputs": char_to_combo(ch), "transition": "tap"} for ch in text]

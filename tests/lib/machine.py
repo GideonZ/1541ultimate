@@ -263,32 +263,29 @@ MEMORY_API_REJECTS_INVALID_ADDRESS = _fix(
     "hexadecimal, rather than parsing it as $0000 and acting there",
     (C64U, U2))
 
-# What tests/e2e/io/c64/c64gs_cartridge_test.py asserts. The fix is in the
-# cartridge logic of the FPGA image, not in the application. The Ultimate 64
-# images ship prebuilt in external/, so an Ultimate 64 lacks it until they are
-# rebuilt. Measured there only, with locally built cores that differ in that
-# one change. The Ultimate II family's images are built from fpga/ with the
-# firmware, so it is listed until it is measured. The C64 Ultimate carries the
-# fix from FPGA version 126 (external/u64e2_*.bit).
-# Delete a kind once `--assume-fix` passes on it.
-C64GS_BANK_FROM_ADDRESS = _fix(
-    "c64gs-bank-from-address",
-    "a C64 Game System cartridge selects the bank named by the address of an "
-    "IO1 read or write, rather than the byte on the data bus",
-    (U64, U2))
+# GideonZ/1541ultimate#978, in the C64::dma_transfer_frozen every target shares.
+FROZEN_SCREEN_DMA = _fix(
+    "frozen-screen-dma",
+    "REST readmem and writemem of $0400-$07FF reach the C64's own screen while "
+    "the menu has the machine frozen, not the screen the menu draws",
+    (C64U,))
 
-# What the bit 6 check in tests/e2e/io/c64/comal80_cartridge_test.py asserts.
-# The fix is in the cartridge logic of the FPGA image, not in the application.
-# The Ultimate 64 images ship prebuilt in external/, so an Ultimate 64 lacks it
-# until they are rebuilt. The Ultimate II family's images are built from fpga/
-# with the firmware, so it is listed until it is measured. The C64 Ultimate
-# carries the fix from FPGA version 126 (external/u64e2_*.bit).
-# Delete a kind once `--assume-fix` passes on it.
-COMAL80_CARTRIDGE_OFF_BIT = _fix(
-    "comal80-cartridge-off-bit",
-    "a $DE00 write with bit 6 set switches a COMAL 80 cartridge off, rather "
-    "than leaving it mapped",
-    (U64, U2))
+# Also #978: machine:pause and machine:resume leave a machine the menu holds
+# stopped, in the C64_Subsys every target shares.
+FROZEN_PAUSE_RESUME = _fix(
+    "frozen-pause-resume",
+    "machine:pause and machine:resume do nothing while the on-device menu holds "
+    "the machine, rather than running the 6510 under the menu",
+    (C64U,))
+
+# The rest of #978: Save C64 Memory saves what each machine can reach (RAM on
+# an Ultimate 64, the CPU view on a cartridge), and it, REST readmem and the
+# monitor agree while frozen. The cartridge half is in shared c64.cc.
+MEMORY_VIEWS_AGREE = _fix(
+    "memory-views-agree",
+    "Save C64 Memory is offered, and it, REST readmem and the machine code "
+    "monitor show the same bytes with the menu open or closed",
+    (C64U,))
 
 # Every fix at once, for a sweep that asks whether the lagging line has caught
 # up rather than about one behaviour.
@@ -485,6 +482,15 @@ class Machine:
         return self.kind != U2
 
     @property
+    def reaches_ram_under_rom(self) -> bool:
+        """Whether its DMA can read the C64 RAM that BASIC, I/O and KERNAL cover.
+
+        An Ultimate 64 reads RAM directly. A cartridge reaches memory through the
+        6510's own $01 mapping, so it sees the ROMs where the CPU sees them.
+        """
+        return self.kind != U2
+
+    @property
     def described(self) -> str:
         """The machine and its firmware, for a reason someone has to act on."""
         return f"{self.product} {self.firmware}".strip()
@@ -501,6 +507,15 @@ class Machine:
             return True
         return (ASSUME_ALL in _assumed or name in _assumed
                 or self.kind not in entry.lacking)
+
+    def lacks_fix(self, name: str) -> bool:
+        """Whether a check has to leave out what `name` fixes, for one that narrows instead of skipping.
+
+        Tags the next check, as skip_without_fix does, when the fix is only assumed.
+        """
+        if self.assumed_fix(name):
+            note_assumed_fix(name, self.kind)
+        return not self.has_fix(name)
 
     def missing_fix(self, name: str) -> str | None:
         """Why a check tagged `name` cannot run here, or None when it can."""

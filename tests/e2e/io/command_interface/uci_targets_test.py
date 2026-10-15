@@ -1085,6 +1085,8 @@ def main() -> int:
     # $DF1C only belongs to the command interface once the setting is on; before
     # that the address is the REU's, so the suite must not write to it.
     interface_enabled = False
+    # The SoftIEC drive as the device had it, when this suite switched it on.
+    softiec_original: str | None = None
 
     def run(name: str, fn, *fn_args) -> None:
         if name not in selected:
@@ -1134,6 +1136,16 @@ def main() -> int:
                     f"identification $C9 (or $49 while an interrupt is pending)"
                 )
 
+        # The SoftIEC scenarios need the drive loaded. A machine that ships with
+        # it off (an Ultimate II+L does) would otherwise fail them for a setting
+        # this suite never looked at.
+        with check("the SoftIEC drive is switched on for the SoftIEC scenarios"):
+            current = str(session.get_config(SOFTIEC_CATEGORY)[SOFTIEC_ENABLE])
+            if current != "Enabled":
+                session.set_config(SOFTIEC_CATEGORY, SOFTIEC_ENABLE, "Enabled")
+                softiec_original = current
+            detail(f"{SOFTIEC_ENABLE}: {current}")
+
         run("transport", run_transport, uci)
         run("control-target", run_control_target, uci)
         run("palette", run_palette, uci)
@@ -1155,6 +1167,12 @@ def main() -> int:
         # both run even if the first one fails.
         released = release_interface(uci) if interface_enabled else True
         restored = restore_settings(session, original, args.keep_config)
+        if softiec_original is not None and not args.keep_config:
+            try:
+                session.set_config(SOFTIEC_CATEGORY, SOFTIEC_ENABLE, softiec_original)
+            except Failure as exc:
+                detail(f"could not put {SOFTIEC_ENABLE} back to {softiec_original}: {exc}")
+                restored = False
         removed = ftp.cleanup()
         cleanup_ok = released and restored and removed
 

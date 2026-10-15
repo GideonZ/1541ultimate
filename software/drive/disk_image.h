@@ -10,6 +10,7 @@
 #include "menu.h"
 #include "filemanager.h"
 #include "subsys.h"
+#include "mfmdisk.h"   // WD_MAX_SECTORS_PER_TRACK, used by MFM_TRACK_HEADER_SIZE below
 
 #define GCR_DECODER_GCR_IN   (*(volatile uint8_t *)(GCR_CODER_BASE + 0x00))
 #define GCR_DECODER_BIN_OUT0 (*(volatile uint8_t *)(GCR_CODER_BASE + 0x00))
@@ -48,7 +49,14 @@
 #define C1541_MIN_D71_SIZE           (2*C1541_MAX_D64_35_NO_ERRORS)
 #define C1541_D71_SIZE_WITH_ERRORS   (C1541_MIN_D71_SIZE + 1366)
 
-#define MFM_TRACK_HEADER_SIZE        2 + (WD_MAX_SECTORS_PER_TRACK * 5)
+/* Parenthesised because it is subtracted: without the outer brackets
+ * "x - MFM_TRACK_HEADER_SIZE" expanded to "x - 2 + 160", which is x + 158
+ * rather than x - 162, and map_gcr_image_to_mfm() reserved 320 bytes more
+ * than the track had. The static_assert below fails if they are lost again;
+ * comparing the macro against 162 would not, since 2 + 160 equals 162. */
+#define MFM_TRACK_HEADER_SIZE        (2 + (WD_MAX_SECTORS_PER_TRACK * 5))
+static_assert(0 - MFM_TRACK_HEADER_SIZE == -162,
+              "MFM_TRACK_HEADER_SIZE must survive being subtracted");
 
 class BinImage;
 

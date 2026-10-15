@@ -144,7 +144,13 @@ class Device:
                         timeout=ROUTINE_TIMEOUT_SECONDS)
 
     def write_eeprom(self) -> None:
-        """Have the C64 write one word into the EEPROM, and wait for it."""
+        """Have the C64 write one word into the EEPROM, and wait for it.
+
+        The menu is closed first: an open menu holds the C64, so the routine
+        would never see the request while System Info from the last reading
+        is still up.
+        """
+        self.close_menu()
         self.api.machine.writemem(GO, bytes([0x01]))
         wait.wait_until(lambda: self.api.machine.readmem(DONE, 1)[0] == 0x01,
                         "the cartridge finishes writing the EEPROM",

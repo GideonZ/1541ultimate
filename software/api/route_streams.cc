@@ -22,18 +22,23 @@ API_DOC(PUT, streams, start,
                 "\n"
                 "`ip` may be an address or a host name, and may carry a port as `address:port`. "
                 "Without a port the stream goes to 11000 for video, 11001 for audio and 11002 for "
-                "debug. A multicast group is accepted in place of a single host, in which case "
-                "every listener that joined the group receives the stream.\n"
+                "debug. A multicast group from 232.0.0.0 to 239.255.255.255 is accepted in place "
+                "of a single host, in which case every listener that joined the group receives "
+                "the stream.\n"
                 "\n"
                 "Video and debug share hardware and cannot both run, so starting video stops "
-                "debug first.")
+                "debug first.\n"
+                "\n"
+                "The streams leave through the wired Ethernet port only, whichever interface "
+                "carried this request. Without an Ethernet link that has an IP address the call "
+                "fails, even when WiFi is connected.")
     PATH("/v1/streams/{stream}:start", "startStream", "")
     PATH_PARAM("stream", "string", "Which stream to act on.", "video")
     PATH_PARAM_ENUM("stream", "video,audio,debug")
     PARAM("ip", "string", "Where to send the stream. An address, optionally followed by a port.", "", "192.168.1.10:11000")
     RESPONSE("200", "application/json", "ErrorResponse", "The stream is running.", "")
     RESPONSE_ERROR("404", "Unrecognized stream name 'screen'", "")
-    RESPONSE_ERROR("500", "No Operational Network Interface", "")
+    RESPONSE_ERROR("500", "Wired Ethernet link is down or has no IP address", "")
 )
 API_CALL(PUT, streams, start, NULL, ARRAY ( { { "ip", P_REQUIRED } }))
 {

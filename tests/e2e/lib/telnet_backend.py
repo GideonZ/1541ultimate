@@ -98,6 +98,8 @@ TELNET_KEY_BYTES: dict[str, bytes] = {
     "CBM_X": b"\x18",
     # KEY_CTRL_I is $09, which the VT100 driver also passes through as itself.
     "CBM_I": b"\x09",
+    # KEY_CTRL_P is $10, passed through as itself: PETSCII filename presentation.
+    "CBM_P": b"\x10",
     # A bare ESC, as a terminal sends for the ESC key; the VT100 driver delivers
     # it after VT100_ESCAPE_ALONE_MS with nothing following (keyboard_vt100.cc
     # getch()). A trailing byte would now arrive as its own keystroke.
@@ -563,10 +565,12 @@ class TelnetBackend(Backend):
         self._send(ch.encode("ascii"), ch)
         return self.capture()
 
-    def send_text(self, text: str, label: str) -> Snapshot:
+    def send_text(self, text: str, label: str, *, settle: bool = True) -> Snapshot:
+        # Settling waits TELNET_SETTLE_GAP_SECONDS of silence, which only a
+        # command that commits needs; text typed into a field redraws once.
         self.last_command = label
         self._expect_redraw = True
-        self._expect_settle = True
+        self._expect_settle = settle
         self._send(text.encode("ascii"), label)
         return self.capture()
 

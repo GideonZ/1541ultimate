@@ -71,6 +71,10 @@ def _stable_part(block: bytes) -> bytes:
     return block[0x02:0x06]
 
 
+_COUNTER_NAMES = ("x", "y", "presses", "wheel_up", "wheel_down", "port2_presses",
+                  "cursor", "key_counts")
+
+
 def _counters(state: MouseState) -> tuple:
     return (state.x, state.y, tuple(state.presses.values()), state.wheel_up, state.wheel_down,
             tuple(state.port2_presses.values()), tuple(state.cursor.values()), state.key_counts)
@@ -214,7 +218,13 @@ class MouseListener:
             elif time.monotonic() - since >= hold:
                 return state
             if time.monotonic() > deadline:
-                raise Failure(f"the mouse listener did not go quiet within {timeout}s: {state}")
+                # What was still moving is the evidence: the state alone does not
+                # say whether a counter kept changing or something was held.
+                moving = [name for name, was, now in zip(_COUNTER_NAMES, _counters(last),
+                                                         _counters(state)) if was != now]
+                raise Failure(f"the mouse listener did not go quiet within {timeout}s "
+                              f"(idle={idle}, changing on the last poll: {moving or 'none'}): "
+                              f"{state}")
 
     def wait_until(self, condition: Callable[[MouseState], bool], timeout: float = 3.0) -> MouseState:
         """Poll until `condition` holds; raise with the last state if it never does."""

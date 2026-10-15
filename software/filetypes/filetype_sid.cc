@@ -312,8 +312,12 @@ int FileTypeSID ::createMusHeader(void)
     sid_header[0x77] = 0x29; // default flags set for 8580, NTSC and MUS data only
 
     if (sid_header[0x16] == 0) {
-        // set filename as title
+        // set filename as title, without the path runners:sidplay passes in
         const char *filename = file_string.c_str();
+        const char *slash = strrchr(filename, '/');
+        if (slash) {
+            filename = slash + 1;
+        }
         int size = strlen(filename);
 
         // truncate filename where extension begins
@@ -656,14 +660,16 @@ SubsysResultCode_e FileTypeSID ::prepare(bool use_default)
     sid_header[0x7e] = uint8_t(end & 0xFF);
     sid_header[0x7f] = uint8_t(end >> 8);
 
-    if (end < start) {
+    // Wider than 'end', which holds $10000 as $0000 for a tune whose last byte is $FFFF.
+    int load_end = start + length;
+    if (load_end < start || load_end > 0x10000) {
         printf("Wrap around $0000!\n");
         return SSRET_SID_ROLLOVER;
     }
 
     if (start >= 0x03c0) {
         header_location = 0x0340;
-    } else if (end < 0xff70) {
+    } else if (load_end < 0xff70) {
         header_location = 0xff70;
     } else {
         printf("Space for header too small.\n");
@@ -899,7 +905,7 @@ void FileTypeSID ::configureMusEnv(int offsetLoadEnd)
 SubsysResultCode_e FileTypeSID ::play_file(const char *filename, const char *ssl_file, int song)
 {
     char ext[4];
-    get_extension(filename, ext);
+    get_extension(filename, ext, true); // in capitals, as the file browser has it
     bool mus = (strcmp(ext, "MUS") == 0) || (strcmp(ext, "STR") == 0);
     Path *ssl_path = NULL;
     FileTypeSID *sid;

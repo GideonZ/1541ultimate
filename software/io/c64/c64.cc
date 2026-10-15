@@ -829,6 +829,30 @@ void C64::end_stopped_session(bool stopped_it)
     }
 }
 
+// A cartridge reaches C64 memory through the 6510's own $01 mapping, so this is
+// the CPU view, read as machine:readmem reads it. The I/O registers are left at
+// $FF rather than read: a read acknowledges CIA flags and switches some carts.
+void C64::get_all_memory(uint8_t *pb)
+{
+    static const uint16_t spans[][2] = { { 0x0000, 0xD000 }, { 0xD800, 0x0400 }, { 0xE000, 0x2000 } };
+    bool stopped_it = !is_stopped();
+    if (stopped_it) {
+        stop(false);
+    }
+    memset(pb + 0xD000, 0xFF, 0x1000);
+    for (int i = 0; i < 3; i++) {
+        uint16_t start = spans[i][0];
+        if (isFrozen) {
+            dma_transfer_frozen(start, pb + start, spans[i][1], 1);
+        } else {
+            memcpy(pb + start, (const void *)(C64_MEMORY_BASE + start), spans[i][1]);
+        }
+    }
+    if (stopped_it) {
+        resume();
+    }
+}
+
 // While the freezer's menu is up it owns screen RAM, the 2KB above it and
 // color RAM, so a frozen access to any of the three is served from the copy
 // taken at freeze time, which restore_io() puts back on unfreeze. Returns
@@ -898,6 +922,14 @@ void C64::dma_transfer_frozen(uint16_t offset, uint8_t *buffer, int length, int 
 #if U64
             C64_DMA_MEMONLY = 0;
 #endif
+            // Both registers above re-decode the C64 bus, and that has to
+            // reach the machine before the transfer is issued. Reading the
+            // registers back does not achieve it: they are on this side and
+            // the read never becomes a C64 bus cycle. One discarded read
+            // through the C64 memory aperture is that cycle. resume() takes
+            // the same kind of dummy cycle after its own C64_MODE write. This
+            // range never contains I/O, so the read has no side effect.
+            (void)ram[addr];
             if (rw) {
                 memcpy(buffer + pos, (const void *)(ram + addr), chunk);
             } else {
