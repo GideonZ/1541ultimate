@@ -743,7 +743,11 @@ def scripted_run(double: DeviceDouble, stubs: Sequence[Stub],
     environment = dict(os.environ, OBS_RUNNER=RUNNER_PATH,
                        OBS_REGISTRY=registry_path, OBS_WORKSPACE=workspace,
                        OBS_RUNNER_CONSTANTS=json.dumps(SCRIPTED_RUNNER_CONSTANTS),
-                       NO_COLOR="1")
+                       NO_COLOR="1",
+                       # Python 3.11+ add `~~^^` marker lines under a frame and
+                       # 3.13 prints every line of a multi-line statement; this
+                       # turns both off, so a traceback reads as it does on 3.10.
+                       PYTHONNODEBUGRANGES="1")
     environment.update(double.environment())
     environment.update(SCRIPTED_PACING)
     environment.update(extra_environment or {})
@@ -1217,8 +1221,10 @@ def canonicalize_document(text: str) -> str:
     text = re.sub(r"(?<=[=\s])\d+ms\b", "0ms", text)
     text = re.sub(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}", "0000-00-00 00:00:00",
                   text)
-    text = re.sub(r"/tmp/e2e-observability-fixture-\S+?(?=[\s`'\"/])", "/FIXTURE",
-                  text)
+    # Wherever tempfile put it: /tmp on Linux, /var/folders/.../T on macOS,
+    # or any other absolute POSIX path without whitespace in it.
+    text = re.sub(r"(?:/[^\s`'\"/]+)*/e2e-observability-fixture-\S+?(?=[\s`'\"/])",
+                  "/FIXTURE", text)
     # Where this checkout lives on disk, wherever a real traceback names one
     # of its own files, and which line of it the frame landed on. The file and
     # the function are what the frame says; the line number moves whenever
