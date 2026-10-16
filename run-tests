@@ -351,6 +351,11 @@ SUITES: Sequence[Suite] = (
     # rather than adding to it (#934), read back from the drive list.
     Suite("e2e", "iec-partition-file", "tests/e2e/filemanager/ipr_load_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@", profile=profiles.STANDARD),
+    # The Partition config file setting (#982): a .cfg profile selects its .ipr through
+    # Reboot C64, a 255-character path survives Save to File and Load Settings, and
+    # manual loads survive unrelated settings.
+    Suite("e2e", "iec-partition-config", "tests/e2e/io/iec/partition_config_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@", profile=profiles.STANDARD),
     # Every Software IEC log line reaches the device log whole while the HTTP task prints
     # alongside it, read back from the syslog. With --syslog it reads each target's collected
     # log; without, it binds the syslog port itself, and a second target run alongside skips.
