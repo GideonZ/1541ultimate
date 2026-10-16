@@ -804,7 +804,8 @@ name answers `34`, a name with a wildcard `33`, and a path that is not there
 `71,DIRECTORY ERROR`. A name longer than sixteen characters keeps its first sixteen
 wherever a header shows it. A directory on a host file system is renamed, and so is refused
 what `R` refuses a directory: a name ending in a dot or a space answers `33` (SI-141), and a
-name another entry lists under `63` (SI-074).
+name another entry lists under `63` (SI-074). Setting the header to its existing name
+succeeds; the directory does not collide with itself.
 
 **Difference from the CMD manuals.** The id is an sd2iec extension. HD 9-15 gives the
 syntax as `R-H[n][path]:newname` and names three arguments, the partition, the path and
