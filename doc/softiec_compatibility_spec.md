@@ -302,8 +302,10 @@ settings in Flash and in `.cfg` profiles. The file is loaded at firmware startup
 and when a different path is applied, including through **Load Settings**; its
 layout is therefore active when the user selects **Reboot C64**. A missing file
 or a file with no usable partition entry leaves the active layout intact.
-An unavailable startup file is retried for up to ten seconds while USB volumes
-mount. A subsequent application of the settings also retries an unopened file.
+A configured file that does not load at startup is retried for up to ten
+seconds while USB volumes mount, and again on each later application of the
+settings until it loads. The default file is read only at startup and when the
+path is cleared.
 Manual `.ipr` loads and partition edits remain active until another configured
 path is applied or the firmware starts. **Save Partitions** with the name
 `default` writes `/Flash/config/iec_partitions.ipr`. These are Ultimate UI

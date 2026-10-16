@@ -352,8 +352,8 @@ SUITES: Sequence[Suite] = (
     Suite("e2e", "iec-partition-file", "tests/e2e/filemanager/ipr_load_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@", profile=profiles.STANDARD),
     # The Partition config file setting (#982): a .cfg profile selects its .ipr through
-    # Reboot C64, a 255-character path survives Save to File and Load Settings, and
-    # manual loads survive unrelated settings.
+    # Reboot C64, a 255-character path survives the settings menu, Save to File and Load
+    # Settings, and manual loads survive unrelated settings.
     Suite("e2e", "iec-partition-config", "tests/e2e/io/iec/partition_config_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@", profile=profiles.STANDARD),
     # Every Software IEC log line reaches the device log whole while the HTTP task prints

@@ -3283,16 +3283,17 @@ bool IecPartition::IsValid()
     return fm->is_path_valid(GetFullPath());
 }
 
-FRESULT IecFileSystem :: LoadPartitions(const char *path, const char *file)
+bool IecFileSystem :: LoadPartitions(const char *path, const char *file)
 {
     IecDriveLock guard(drive);
     File *fi;
+    bool loaded = false;
     FRESULT fres = fm->fopen(path, file, FA_READ, &fi);
     if (fres == FR_OK) {
-        LoadPartitions(fi);
+        loaded = LoadPartitions(fi);
         fm->fclose(fi);
     }
-    return fres;
+    return loaded;
 }
 
 FRESULT IecFileSystem :: SavePartitions(const char *path, const char *filename)
@@ -3333,11 +3334,11 @@ FRESULT IecFileSystem :: SavePartitions(const char *path, const char *filename)
 
 // A partition list replaces the drive's (#934), but a file with no usable entry leaves it
 // alone, so the drive is never left without a partition.
-void IecFileSystem :: LoadPartitions(File *f)
+bool IecFileSystem :: LoadPartitions(File *f)
 {
     uint32_t size = f->get_size();
     if ((size > 12288) || (size < 8)) { // max 12K partition paths file
-        return;
+        return false;
     }
     char *buffer = new char[size+1];
     uint32_t transferred;
@@ -3345,13 +3346,13 @@ void IecFileSystem :: LoadPartitions(File *f)
     buffer[transferred] = 0;
 
     JSON *root_json = NULL;
+    int loaded = 0;
     int tokens = convert_text_to_json_objects(buffer, transferred, 2048, &root_json);
     if ((tokens > 0) && root_json && (root_json->type() == eObject)) {
         JSON *servers_json = ((JSON_Object *)root_json)->get("partitions");
         if (servers_json && (servers_json->type() == eList)) {
             JSON_List *servers = (JSON_List *)servers_json;
             bool named[MAX_PARTITIONS] = { false };
-            int loaded = 0;
             for (int i=0; i < servers->get_num_elements(); i++) {
                 JSON *entry_json = (*servers)[i];
                 if (!entry_json || (entry_json->type() != eObject)) {
@@ -3391,4 +3392,5 @@ void IecFileSystem :: LoadPartitions(File *f)
     }
     delete root_json;
     delete[] buffer;
+    return loaded > 0;
 }

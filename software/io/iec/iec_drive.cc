@@ -206,8 +206,11 @@ IecDrive :: IecDrive() : SubSystem(SUBSYSID_IEC)
 IecDrive :: ~IecDrive()
 {
 #ifndef RUNS_ON_PC
-    if (partition_config_task) {
-        vTaskDelete(partition_config_task);
+    {
+        IecDriveLock guard(this); // the task must not be deleted while it holds the lock
+        if (partition_config_task) {
+            vTaskDelete(partition_config_task);
+        }
     }
 #endif
     for(int i=0;i<16;i++)
@@ -277,8 +280,10 @@ void IecDrive :: effectuate_settings(void)
     if (reconfigure) {
         intf->configure();
     }
-    if (vfs && (!partition_config_loaded ||
-                strcmp(cfg->get_string(CFG_IEC_PARTITIONS), applied_partition_config.c_str()))) {
+    // Only a configured file is retried; the default file is read at startup alone.
+    const char *partition_config = cfg->get_string(CFG_IEC_PARTITIONS);
+    if (vfs && ((!partition_config_loaded && partition_config[0]) ||
+                strcmp(partition_config, applied_partition_config.c_str()))) {
         load_partition_config();
     }
 }
@@ -287,7 +292,7 @@ void IecDrive :: load_partition_config(void)
 {
     // A settings writer can replace the string while the startup task waits on I/O.
     mstring path(cfg->get_string(CFG_IEC_PARTITIONS));
-    partition_config_loaded = (vfs->LoadPartitions("/", path.length() ? path.c_str() : CFG_FILEPATH "/" IEC_PARTITION_CONFIG) == FR_OK);
+    partition_config_loaded = vfs->LoadPartitions("/", path.length() ? path.c_str() : CFG_FILEPATH "/" IEC_PARTITION_CONFIG);
     // Reapplying unrelated settings must preserve manual partition changes (SI-103b).
     applied_partition_config = path;
 }
@@ -299,12 +304,15 @@ void IecDrive :: load_partition_config_task(void *obj)
     for (int i = 0; i < 40; i++) {
         vTaskDelay(250 / portTICK_PERIOD_MS);
         IecDriveLock guard(drive);
-        if (drive->partition_config_loaded) {
+        if (drive->partition_config_loaded || !drive->cfg->get_string(CFG_IEC_PARTITIONS)[0]) {
             break;
         }
         drive->load_partition_config();
     }
-    drive->partition_config_task = NULL;
+    {
+        IecDriveLock guard(drive);
+        drive->partition_config_task = NULL;
+    }
     vTaskDelete(NULL);
 }
 #endif
@@ -654,7 +662,7 @@ void IecDrive :: info(JSON_Object *obj)
 void IecDrive :: load_partitions(const char *p, const char *f)
 {
     IecDriveLock guard(this);
-    if (vfs->LoadPartitions(p, f) == FR_OK) {
+    if (vfs->LoadPartitions(p, f)) {
         partition_config_loaded = true; // a manual load supersedes a pending startup load
     }
 }

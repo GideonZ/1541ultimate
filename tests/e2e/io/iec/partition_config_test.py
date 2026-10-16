@@ -4,6 +4,7 @@
 import argparse
 import json
 import sys
+import time
 import uuid
 from pathlib import Path
 
@@ -14,13 +15,14 @@ sys.path.insert(0, bootstrap.directory("e2e", "filemanager"))
 import cfg_fixture  # noqa: E402
 import cli  # noqa: E402
 import ftp  # noqa: E402
-from api import UltimateApi  # noqa: E402
-from report import Failure, check, suite_fail, suite_ok  # noqa: E402
+from api import UltimateApi, identify_machine  # noqa: E402
+from report import Failure, check, suite_fail, suite_ok, warn  # noqa: E402
 from ui_backend import add_mode_argument  # noqa: E402
 
 STORE = "SoftIEC Drive Settings"
 ITEM = "Partition config file"
 DEFAULT = "/Flash/config/iec_partitions.ipr"
+SAVE_TO_FLASH_QUESTION = "Save changes to Flash?"
 
 
 def partitions(api):
@@ -72,6 +74,52 @@ def main():
         browser.fill_edit_field(name, clear_taps=7 if action == "Save Partitions" else 0)
         browser.wait_until_gone("Give filename")
 
+    def press_and_wait_for_redraw(key, send=None):
+        """Press `key` until the screen changes, then wait for the redraw to finish.
+
+        A key is pressed again only while the screen is exactly as it was, so a key
+        that took effect is never repeated. `send` types it instead of `press`.
+        """
+        for _ in range(3):
+            before = browser.rows()
+            (send or browser.press)(key)
+            deadline = time.monotonic() + 3
+            while browser.rows() == before and time.monotonic() < deadline:
+                time.sleep(0.15)
+            if browser.rows() != before:
+                settled = browser.rows()
+                time.sleep(0.5)
+                while browser.rows() != settled:
+                    settled = browser.rows()
+                    time.sleep(0.5)
+                return
+            warn(f"{key} changed nothing on screen; pressing it again")
+        raise Failure(f"{key} changed nothing on screen:\n{browser.screen()}")
+
+    def replace_setting_tail_in_menu(item, old, new):
+        """Replace the last characters of `item` in the settings menu's string editor.
+
+        The editor opens with its cursor at the end of the value. A Telnet screen
+        is not repainted when the editor closes, so the result is read over REST.
+        """
+        browser.press(identify_machine(args.host, args.password or None, args.timeout).settings_key)
+        browser.select_framed_entry(STORE)
+        press_and_wait_for_redraw("RIGHT")
+        browser.select_framed_entry(item)
+        press_and_wait_for_redraw("ENTER")
+        for _ in old:
+            press_and_wait_for_redraw("BACKSPACE")
+        for character in new:
+            press_and_wait_for_redraw(character, browser.type_char)
+        browser.press("ENTER")
+        browser.press("LEFT")
+        browser.press("LEFT")
+        try:
+            browser.wait_for_text(SAVE_TO_FLASH_QUESTION, timeout=3)
+        except Failure:
+            return  # Auto Save Config is on, so nothing asks
+        browser.press_popup_button("n")
+
     try:
         with check("SoftIEC exposes the persistent partition file setting"):
             original = api.configs.category(STORE)
@@ -82,9 +130,11 @@ def main():
         names.extend([restore, saved_cfg])
         save_file("Software IEC", "Save Partitions", restore)
         saved_partitions = True
-        # Short FTP commands create a path longer than the CFG reader's small lines.
-        long_dirs = [tag, "a" * 60, "b" * 60]
-        long_ipr = "/".join(long_dirs + ["layout.ipr"])
+        # Short FTP commands build a path of the setting's maximum length, 255 characters.
+        long_dirs = [tag, "a" * 60, "b" * 60, "c" * 60, "d" * 45]
+        long_ipr = "/".join([*long_dirs, "layout.ipr"])
+        if len("/Temp/" + long_ipr) != 255:
+            raise Failure(f"long path fixture is {len('/Temp/' + long_ipr)} characters, not 255")
         short_ipr = tag + "b.ipr"
         with ftp.session(args.host, args.password) as client:
             client.cwd("/Temp")
@@ -123,6 +173,12 @@ def main():
             api.machine.reboot()
             expect_layout(api, "/Temp")
 
+        with check("the settings menu edits a 255-character path without truncating it"):
+            replace_setting_tail_in_menu(ITEM, "ipr", "cfg")
+            value = api.configs.get(STORE, ITEM)
+            if value != "/Temp/" + long_ipr[:-3] + "cfg":
+                raise Failure(f"the menu stored {len(value)} characters: {value!r}")
+
         with check("unrelated settings and drive resets preserve manual IPR loads"):
             load_ipr(short_ipr)
             api.configs.set(STORE, "Log Every Operation", "Enabled")
@@ -139,15 +195,31 @@ def main():
             api.configs.set(STORE, ITEM, "/Temp/" + invalid)
             expect_layout(api, "/Flash")
 
+        with check("a configured file that did not load is read once it is usable"):
+            with ftp.session(args.host, args.password) as client:
+                ftp.store(client, "/Temp/" + invalid, json.dumps({"version": 1, "partitions": [
+                    {"number": 1, "path": "/Temp", "name": "REPAIRED"}]}).encode("ascii"))
+            api.configs.set(STORE, "Log Every Operation", "Disabled")
+            expect_layout(api, "/Temp")
+
         with check("an empty path selects the standard partition file"):
             with ftp.session(args.host, args.password) as client:
                 if api.files.info(DEFAULT) is not None:
                     default_contents = ftp.retrieve(client, DEFAULT)
-                default_touched = True
-                ftp.store(client, DEFAULT, json.dumps({"version": 1, "partitions": [
-                    {"number": 1, "path": "/Temp", "name": "DEFAULT"}]}).encode("ascii"))
+                    default_touched = True
+                    client.delete(DEFAULT)
             api.configs.set(STORE, ITEM, "")
             expect_layout(api, "/Temp")
+            with ftp.session(args.host, args.password) as client:
+                default_touched = True
+                ftp.store(client, DEFAULT, json.dumps({"version": 1, "partitions": [
+                    {"number": 1, "path": "/Flash", "name": "DEFAULT"}]}).encode("ascii"))
+            # The standard file is read when the path is cleared, not by unrelated settings.
+            api.configs.set(STORE, "Log Every Operation", "Enabled")
+            expect_layout(api, "/Temp")
+            api.configs.set(STORE, ITEM, "/Temp/" + invalid)
+            api.configs.set(STORE, ITEM, "")
+            expect_layout(api, "/Flash")
 
         suite_ok("partition_config_test")
         return 0

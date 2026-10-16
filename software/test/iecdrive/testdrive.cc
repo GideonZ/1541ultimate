@@ -4989,6 +4989,13 @@ static void s11_partition_config_file(FileManager *fm, IecDrive *dr)
     cfg->set_string(0x56, "/Temp/invalid.ipr");
     dr->effectuate_settings();
     REQUIRE(vfs->CountPartitions() == 2);
+    // A file that held no usable entry is read again once it does.
+    REQUIRE(fm->delete_file("/Temp/invalid.ipr") == FR_OK);
+    save_fixture_file(fm, "/Temp", "invalid.ipr",
+        "{\"partitions\":[{\"number\":1,\"path\":\"/Flash\",\"name\":\"REPAIRED\"}]}");
+    dr->effectuate_settings();
+    REQUIRE(vfs->CountPartitions() == 1);
+    REQUIRE(!strcmp(vfs->GetPartition(1)->GetName(), "REPAIRED"));
 
     cfg->set_string(0x56, "/Temp/late.ipr");
     dr->effectuate_settings();
@@ -5012,10 +5019,19 @@ static void s11_partition_config_file(FileManager *fm, IecDrive *dr)
     REQUIRE(!strcmp(boot->get_file_system()->GetPartition(1)->GetName(), "PROFILE"));
     delete boot;
 
+    // A default file that appears later is not read by an unrelated settings change.
+    cfg->set_string(0x56, "");
+    dr->effectuate_settings();
+    REQUIRE(!strcmp(vfs->GetPartition(1)->GetName(), "PROFILE"));
     FRESULT fres = fm->create_dir(CFG_FILEPATH);
     REQUIRE(fres == FR_OK || fres == FR_EXIST);
     save_fixture_file(fm, CFG_FILEPATH, IEC_PARTITION_CONFIG,
         "{\"partitions\":[{\"number\":1,\"path\":\"/Flash\",\"name\":\"DEFAULT\"}]}");
+    dr->effectuate_settings();
+    REQUIRE(!strcmp(vfs->GetPartition(1)->GetName(), "PROFILE"));
+
+    cfg->set_string(0x56, "/Temp/profile.ipr");
+    dr->effectuate_settings();
     cfg->set_string(0x56, "");
     dr->effectuate_settings();
     REQUIRE(vfs->CountPartitions() == 1);

@@ -343,6 +343,23 @@ int main(int argc, char **argv)
     check(ConfigIO::S_read_from_file(&path_in, &path_log), "a long path .cfg loads");
     check(!strcmp(paths->get_string(0x01), path), "a 255-character path survives a .cfg round trip");
 
+    // The menu draws a 38-column row into a 96-byte buffer; guard the bytes around it.
+    char row[96 + 2 * 64];
+    memset(row, 'G', sizeof(row));
+    paths->find_item(0x01)->get_display_string(row + 64, 38, 1, 2);
+    bool guarded = true;
+    for (int i = 0; i < 64; i++) {
+        guarded = guarded && (row[i] == 'G') && (row[64 + 96 + i] == 'G');
+    }
+    check(guarded, "a 255-character value is drawn inside the row buffer");
+    check(!strncmp(row + 64, "Partition config file ", 22), "the item name stays readable beside a long value");
+    check(contains(row + 64, "/USB0/xxxxxxx...") && (strlen(row + 64) == 40),
+          "a long value is cut to the row and ends in \"...\"");
+
+    // The allocator hands this block back as the fresh item's string, so its last byte is not 0.
+    char *used = new char[256];
+    memset(used, 'x', 256);
+    delete[] used;
     ConfigStore *fresh_paths = new ConfigStore(NULL, "FreshPaths", path_defs, NULL);
     cm->add_custom_store(fresh_paths);
     char fresh_text[320];
@@ -359,6 +376,22 @@ int main(int argc, char **argv)
     oversized_in.load(oversized);
     check(!ConfigIO::S_read_from_file(&oversized_in, &path_log), "an oversized CFG line is rejected");
     check(!strcmp(paths->get_string(0x01), "/Temp/ok.ipr"), "the line after an oversized CFG line is read intact");
+
+    char oversized_header[512];
+    strcpy(oversized_header, "[Paths]\nPartition config file=/Temp/kept.ipr\n[");
+    memset(oversized_header + strlen(oversized_header), 'x', 400);
+    strcpy(oversized_header + 446, "]\nPartition config file=/Temp/other.ipr\n");
+    MemFile oversized_header_in;
+    oversized_header_in.load(oversized_header);
+    check(!ConfigIO::S_read_from_file(&oversized_header_in, &path_log), "an oversized store header is rejected");
+    check(!strcmp(paths->get_string(0x01), "/Temp/kept.ipr"), "items after an oversized store header stay out of the previous store");
+
+    StreamTextLog name_log(4096);
+    MemFile long_name_in;
+    long_name_in.load("[Paths]\nyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\n");
+    check(!ConfigIO::S_read_from_file(&long_name_in, &name_log), "a long line without '=' is rejected");
+    check(contains(name_log.getText(), "item 'yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy'."),
+          "and the item name in the log stops at 40 characters");
 
     printf("\n%d checks, %d failed\n", checks, failures);
     return failures ? 1 : 0;

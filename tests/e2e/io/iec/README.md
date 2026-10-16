@@ -7,11 +7,12 @@ python3 tests/e2e/io/iec/partition_config_test.py -H u64 --mode telnet
 python3 tests/e2e/io/iec/partition_config_test.py -H u2@c64u --mode telnet
 ```
 
-The checks load profiles through the file browser, select Reboot C64, round-trip
-a long path through Save to File, and verify the active partitions over REST.
-They also cover manual loads, unrelated settings, drive resets, unusable files,
-and the empty-path default. The suite restores the running settings, partition
-list and default partition file, and removes its fixtures.
+The checks load profiles through the file browser, select Reboot C64, take a
+255-character path through Save to File and the settings menu's string editor,
+and verify the active partitions over REST. They also cover manual loads,
+unrelated settings, drive resets, unusable files and their later repair, and the
+empty-path default. The suite restores the running settings, partition list and
+default partition file, and removes its fixtures.
 
 Two suites live here. Both drive the C64 through `iec_agent.asm`, a small KERNAL
 program that performs the OPEN, CHKOUT/CHROUT, CHKIN/CHRIN and CLOSE calls itself,

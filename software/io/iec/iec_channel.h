@@ -289,8 +289,9 @@ public:
     }
 
     FRESULT SavePartitions(const char *path, const char *filename);
-    FRESULT LoadPartitions(const char *path, const char *name);
-    void LoadPartitions(File *fi);
+    // True when the file held a usable partition entry, so its layout replaced the active one.
+    bool LoadPartitions(const char *path, const char *name);
+    bool LoadPartitions(File *fi);
 };
 
 typedef struct {

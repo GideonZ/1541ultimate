@@ -763,10 +763,16 @@ int ConfigItem :: pack(uint8_t *buffer, int len)
 const char *ConfigItem :: get_display_string(char *buffer, int width, int act, int inact)
 {
 	static char buf[32];
+    const char *src = altname.length() ? altname.c_str() : definition->item_text;
+    int room = width - (int)strlen(src) - 1;
+    if (room > (int)sizeof(buf) - 1) {
+        room = sizeof(buf) - 1;
+    }
+    int keep;
 
     memset(buffer, ' ', width+2);
     buffer[width+2] = '\0';
-    
+
     switch(definition->type) {
         case CFG_TYPE_VALUE:
             sprintf(buf, definition->item_format, value);
@@ -777,7 +783,14 @@ const char *ConfigItem :: get_display_string(char *buffer, int width, int act, i
         case CFG_TYPE_STRING:
         case CFG_TYPE_STRFUNC:
         case CFG_TYPE_INFO:
-            sprintf(buf, definition->item_format, string);
+            if ((int)strlen(string) <= room) {
+                sprintf(buf, definition->item_format, string);
+                break;
+            }
+            // Cut a string that does not fit beside the name, and say so.
+            keep = (room > 3) ? room - 3 : 0;
+            strncpy(buf, string, keep);
+            strcpy(buf + keep, "...");
             break;
         case CFG_TYPE_STRPASS:
             if (*string)
@@ -795,10 +808,8 @@ const char *ConfigItem :: get_display_string(char *buffer, int width, int act, i
 
     int len = strlen(buf);
 
-    const char *src;
     char *dst;
     // left align copy
-    src = altname.length() ? altname.c_str() : definition->item_text;
     dst = buffer;
     while(*src) {
         *(dst++) = *(src++);

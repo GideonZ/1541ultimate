@@ -264,6 +264,10 @@ bool ConfigIO :: S_read_from_file(File *f, StreamTextLog *log)
         if (overflow) {
             log->format("Line %d: Line too long.\n", linenr);
             allOK = false;
+            if (line[0] == '[') { // the items that follow belong to a store that was not read
+                store = NULL;
+                in_unknown_store = true;
+            }
             continue;
         }
         if ((line[0] == '#') || (line[0] == ';')) {
@@ -344,7 +348,7 @@ static bool equal_ignoring_outer_space(const char *a, const char *b)
 
 t_cfg_line_result ConfigIO :: S_read_store_element(ConfigStore *st, const char *line, int linenr, StreamTextLog *log)
 {
-    char itemname[40];
+    char itemname[41] = { 0 }; // terminated when no '=' falls within the first 40 characters
     const char *valuestr = 0;
     // first look for the first occurrence of '='
     int len = strlen(line);
