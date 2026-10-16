@@ -289,7 +289,7 @@ void IecDrive :: load_partition_config(void)
 {
     // A settings writer can replace the string while the startup task waits on I/O.
     mstring path(cfg->get_string(CFG_IEC_PARTITIONS));
-    partition_config_loaded = vfs->LoadPartitions("/", path.length() ? path.c_str() : CFG_FILEPATH "/" IEC_PARTITION_CONFIG);
+    partition_config_loaded = (vfs->LoadPartitions("/", path.length() ? path.c_str() : CFG_FILEPATH "/" IEC_PARTITION_CONFIG) == FR_OK);
     // Reapplying unrelated settings must preserve manual partition changes (SI-103b).
     applied_partition_config = path;
 }
@@ -659,7 +659,7 @@ void IecDrive :: info(JSON_Object *obj)
 void IecDrive :: load_partitions(const char *p, const char *f)
 {
     IecDriveLock guard(this);
-    if (vfs->LoadPartitions(p, f)) {
+    if (vfs->LoadPartitions(p, f) == FR_OK) {
         partition_config_loaded = true; // a manual load supersedes a pending startup load
     }
 }
