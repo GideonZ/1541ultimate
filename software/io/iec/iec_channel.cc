@@ -864,9 +864,9 @@ static FRESULT find_rendered_iec_child(FileManager *fm, const char *full_dir,
             continue;
         }
 
-        // Inside a disk image a file is found again by its name with the type extension;
-        // on a host file system, and for any directory, by the name itself.
-        if (!is_dir && (info.name_format & NAME_FORMAT_CBM)) {
+        // CBM entries use the host mapping even for directories (for example a leading
+        // dot is escaped); files also carry their type extension.
+        if (info.name_format & NAME_FORMAT_CBM) {
             char entry[80];
             actual_name = info.generate_fat_name(entry, sizeof(entry));
         } else {
@@ -3144,9 +3144,12 @@ int IecCommandChannel::do_set_header(filename_t& name, const char *id)
     }
     mstring taken;
     if ((find_rendered_iec_child(fm, renamed.c_str(), wanted, e_any, true, true, false,
-                                 taken, NULL) == FR_OK) &&
-        ((taken.length() != own_len) || strncasecmp(taken.c_str(), own, own_len))) {
-        return ERR_FILE_EXISTS;
+                                 taken, NULL) == FR_OK)) {
+        if ((taken.length() != own_len) || strncasecmp(taken.c_str(), own, own_len)) {
+            return ERR_FILE_EXISTS;
+        }
+        // A host directory's header already has this name; renaming it to itself fails.
+        return 0;
     }
     append_path_component(renamed, fat_name);
     fres = fm->rename(work.c_str(), renamed.c_str());

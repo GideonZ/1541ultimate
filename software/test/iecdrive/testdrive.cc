@@ -3924,6 +3924,7 @@ static void s11_si064_rename_header(FileManager *fm, IecDrive *dr)
     printf("%s: header of $/ARCADE/ is '%s'\n", testname, header);
     REQUIRE(memcmp(listing + 8, "ARCADE          ", 16) == 0);
     expect_command_ok(testname, dr, "CD//ARCADE\r");
+    expect_command_ok(testname, dr, "R-H:ARCADE\r");
     expect_command_ok(testname, dr, "R-H:ACTION\r"); // no path: the current directory
     read_directory_stream(testname, dr, "$", listing, sizeof(listing));
     REQUIRE(memcmp(listing + 8, "ACTION          ", 16) == 0);
@@ -6522,6 +6523,33 @@ static void s11_si074_move_checks(FileManager *fm, IecDrive *dr)
     expect_command_response(testname, dr, "R:SUB =SUB\r", "33,SYNTAX ERROR,00,00\r");
 }
 
+// #999: C64 OS renames a Native Mode subdirectory through a temporary name.
+static void s11_si074_native_directory(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite11-SI074-NativeDirectory";
+    create_formatted_image(fm, "/Fat/s11_si074.dnp", "NATIVE", 4 * 256, e_image_dnp);
+    dr->add_partition(43, "/Fat/s11_si074.dnp", "NATIVEPART");
+    expect_command_status_prefix(testname, dr, "CP43\r", "02,");
+    expect_command_ok(testname, dr, "MD:NEW DIRECTORY\r");
+    expect_iec_write_ok(testname, dr, 2, "/NEW DIRECTORY/:KEEP,S,W", "payload");
+    expect_command_ok(testname, dr, "R:.^RNAME^=NEW DIRECTORY\r");
+    expect_command_ok(testname, dr, "CD:.^RNAME^\r");
+    expect_iec_file(testname, dr, 2, "KEEP,S,R", "payload");
+    expect_command_ok(testname, dr, "CD_\r");
+    expect_command_ok(testname, dr, "MD:NEW DIRECTORY\r");
+    expect_command_response(testname, dr, "R:.^RNAME^=NEW DIRECTORY\r", "63,FILE EXISTS,00,00\r");
+    expect_command_ok(testname, dr, "RD:NEW DIRECTORY\r");
+    expect_command_ok(testname, dr, "R:NEW NAME=.^RNAME^\r");
+    expect_command_ok(testname, dr, "CD:NEW NAME\r");
+    expect_command_ok(testname, dr, "R-H:NEW NAME\r");
+    expect_iec_file(testname, dr, 2, "KEEP,S,R", "payload");
+    uint8_t listing[8192];
+    read_directory_stream(testname, dr, "$", listing, sizeof(listing));
+    REQUIRE(memcmp(listing + 8, "NEW NAME        ", 16) == 0);
+    expect_command_ok(testname, dr, "CD//\r");
+    dr->get_file_system()->RemovePartition(43);
+}
+
 // SI-082: a plain file read to its end is still open, and P positions it again.
 static void s11_si082_position_after_end(FileManager *fm, IecDrive *dr)
 {
@@ -6794,6 +6822,7 @@ static const Suite11Case suite11_cases[] = {
     { "Suite11-SI150-NameLists",         s11_si150_name_lists },
     { "Suite11-SI080-PastTheLastRecord", s11_si080_past_the_last_record },
     { "Suite11-SI080-RecordLengthBytes", s11_si080_record_length_bytes },
+    { "Suite11-SI074-NativeDirectory",   s11_si074_native_directory },
     { "Suite11-SI074-MoveChecks",        s11_si074_move_checks },
     { "Suite11-SI082-PositionAfterEnd",  s11_si082_position_after_end },
     { "Suite11-SI081-PositionChannel",   s11_si081_position_channel },
