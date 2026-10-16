@@ -1209,6 +1209,8 @@ def canonicalize_document(text: str) -> str:
     # The collector binds an ephemeral port in a fixture, so the number it got
     # is whatever the kernel had free at that moment.
     text = re.sub(r"(?<=UDP )\d{4,5}\b", "0", text)
+    # Device-double REST errors include the ephemeral loopback listener port.
+    text = re.sub(r"(http://(?:localhost|127\.0\.0\.1):)\d+(?=/)", r"\g<1>0", text)
     text = re.sub(r"(collects on )\d{4,5}(?:, \d{4,5})*(, so none of it will "
                   r"arrive; set '[^']+' to '[^']+:)\d{4,5}'", r"\g<1>0\g<2>0'",
                   text)
