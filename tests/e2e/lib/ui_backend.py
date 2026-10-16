@@ -189,6 +189,14 @@ def _ensure_cartridge_host(host: str, telnet_host: str | None,
             continue
         _CARTRIDGE_HOSTS_READY.add(handle.computer)
         try:
+            # ensure_cartridge_preference reboots the computer even when the
+            # value is already External, which clears the RAM a suite has
+            # written before it opens its first session. run-tests has already
+            # done that once for the run, so only act when the value is wrong.
+            computer = api_lib.UltimateApi(handle.computer, password, max(5.0, timeout))
+            if (computer.configs.current(api_lib.CARTRIDGE_STORE, api_lib.CARTRIDGE_PREFERENCE_ITEM)
+                    == api_lib.CARTRIDGE_PREFERENCE_EXTERNAL):
+                continue
             changed = api_lib.ensure_cartridge_preference(
                 handle, password, max(5.0, timeout))
         except Exception as exc:                              # noqa: BLE001
