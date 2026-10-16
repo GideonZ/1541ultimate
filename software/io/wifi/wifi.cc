@@ -454,7 +454,7 @@ err_t wifi_tx_packet(void *driver, void *buffer, int length)
         return ERR_CONN;
     }
     
-    BUFARGS(send_eth, CMD_SEND_PACKET);
+    BUFARGS_NOREPLY(send_eth, CMD_SEND_PACKET); // the module does not answer frames
 
     uint32_t chunkSize = length;
     if (chunkSize > CMD_BUF_PAYLOAD) {

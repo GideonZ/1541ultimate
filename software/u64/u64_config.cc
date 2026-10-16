@@ -1423,7 +1423,8 @@ int U64Config :: setLedSelector(ConfigItem *it)
 
 #if U64 == 2
 // A starved TX buffer makes BUFARGS answer 0, which is also what success
-// returns, so what the module holds is the only evidence a call arrived. A
+// returns, so what the module holds is the only evidence a call arrived. (A
+// call without a reply slot or without a reply in time answers -1.) A
 // second attempt separates a busy buffer from a module without the command.
 #define MODULE_ATTEMPTS 2
 
@@ -1447,7 +1448,8 @@ static bool writePowerOnMode(uint8_t mode)
         int retval = wifi_set_power_mode(mode);
         if (retval) {
             printf("Setting the power on behavior failed with error %d.\n", retval);
-            // An error is the module's own answer, not a call that went missing.
+            // An error is the module's own answer, or a call that got no reply in time
+            // or no reply slot; neither is helped by sending it again.
             return false;
         }
         uint8_t stored = 0xFF;
