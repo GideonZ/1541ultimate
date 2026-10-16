@@ -139,7 +139,12 @@ def the_document_is_byte_identical_to_the_expected_one() -> str:
 
         diff = list(difflib.unified_diff(wanted.splitlines(), made.splitlines(),
                                          "expected", "generated", lineterm=""))
-        raise Failure("the document changed: " + " | ".join(diff[:6]))
+        # The changed lines, not only the hunk header and its context: the
+        # first few lines of a diff say where, never what.
+        changed = [line for line in diff[2:] if line[:1] in "+-"]
+        detail = " | ".join(diff[:6]) or "only whitespace at the end differs"
+        raise Failure(f"the document changed: {detail} | {len(changed)} "
+                      "changed line(s): " + " | ".join(changed[:12]))
     return f"{len(wanted.splitlines())} lines"
 
 
