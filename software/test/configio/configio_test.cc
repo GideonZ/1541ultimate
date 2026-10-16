@@ -322,6 +322,44 @@ int main(int argc, char **argv)
     from_one->previous(1);
     check(from_one->getValue() == 3, "- wraps from its minimum to its maximum");
 
+    static t_cfg_definition path_defs[] = {
+        { 0x01, CFG_TYPE_STRING, "Partition config file", "%s", NULL, 0, 255, (long int)"" },
+        { CFG_TYPE_END, CFG_TYPE_END, "", "", NULL, 0, 0, 0 }
+    };
+    ConfigStore *paths = new ConfigStore(NULL, "Paths", path_defs, NULL);
+    cm->add_custom_store(paths);
+    char path[256];
+    memset(path, 'x', sizeof(path) - 1);
+    memcpy(path, "/USB0/", 6);
+    memcpy(path + 251, ".ipr", 5);
+    paths->set_string(0x01, path);
+    MemFile path_out;
+    ConfigIO::S_write_to_file(&path_out);
+    check(contains(path_out.text(), path), "a 255-character path is saved intact");
+    paths->set_string(0x01, "");
+    MemFile path_in;
+    path_in.load(path_out.text());
+    StreamTextLog path_log(4096);
+    check(ConfigIO::S_read_from_file(&path_in, &path_log), "a long path .cfg loads");
+    check(!strcmp(paths->get_string(0x01), path), "a 255-character path survives a .cfg round trip");
+
+    ConfigStore *fresh_paths = new ConfigStore(NULL, "FreshPaths", path_defs, NULL);
+    cm->add_custom_store(fresh_paths);
+    char fresh_text[320];
+    sprintf(fresh_text, "[FreshPaths]\nPartition config file=%s\n", path);
+    MemFile fresh_in;
+    fresh_in.load(fresh_text);
+    check(ConfigIO::S_read_from_file(&fresh_in, &path_log), "a maximum-length path loads into a fresh store");
+    check(!strcmp(fresh_paths->get_string(0x01), path), "a maximum-length path is null-terminated");
+
+    char oversized[512];
+    memset(oversized, 'x', 400);
+    strcpy(oversized + 400, "\n[Paths]\nPartition config file=/Temp/ok.ipr\n");
+    MemFile oversized_in;
+    oversized_in.load(oversized);
+    check(!ConfigIO::S_read_from_file(&oversized_in, &path_log), "an oversized CFG line is rejected");
+    check(!strcmp(paths->get_string(0x01), "/Temp/ok.ipr"), "the line after an oversized CFG line is read intact");
+
     printf("\n%d checks, %d failed\n", checks, failures);
     return failures ? 1 : 0;
 }
