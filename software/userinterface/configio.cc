@@ -252,13 +252,16 @@ bool ConfigIO :: S_read_from_file(File *f, StreamTextLog *log)
                     linenr++;
                     break;
                 }
-                if (length < sizeof(line) - 1) {
+                if (length < (int)sizeof(line) - 1) {
                     line[length++] = c;
                 } else {
                     overflow = true;
                 }
             } else {
-                return allOK;
+                if (overflow) { // a last line without a line end
+                    log->format("Line %d: Line too long.\n", linenr + 1);
+                }
+                return allOK && !overflow;
             }
         }
         if (overflow) {

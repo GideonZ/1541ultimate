@@ -767,6 +767,8 @@ const char *ConfigItem :: get_display_string(char *buffer, int width, int act, i
     int room = width - (int)strlen(src) - 1;
     if (room > (int)sizeof(buf) - 1) {
         room = sizeof(buf) - 1;
+    } else if (room < 0) {
+        room = 0;
     }
     int keep;
 

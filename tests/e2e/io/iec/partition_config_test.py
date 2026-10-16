@@ -180,7 +180,11 @@ def main():
                 raise Failure(f"the menu stored {len(value)} characters: {value!r}")
 
         with check("unrelated settings and drive resets preserve manual IPR loads"):
+            # Start from a path that loads, so a reload of it would show.
+            api.configs.set(STORE, ITEM, "/Temp/" + long_ipr)
+            expect_layout(api, "/Temp")
             load_ipr(short_ipr)
+            expect_layout(api, "/Flash")
             api.configs.set(STORE, "Log Every Operation", "Enabled")
             code, _, body = api.rest.request("PUT", "/v1/drives/softiec:reset")
             if code != 200:
@@ -195,11 +199,14 @@ def main():
             api.configs.set(STORE, ITEM, "/Temp/" + invalid)
             expect_layout(api, "/Flash")
 
-        with check("a configured file that did not load is read once it is usable"):
+        with check("a repaired file is read when its path is applied again, not by other settings"):
             with ftp.session(args.host, args.password) as client:
                 ftp.store(client, "/Temp/" + invalid, json.dumps({"version": 1, "partitions": [
                     {"number": 1, "path": "/Temp", "name": "REPAIRED"}]}).encode("ascii"))
             api.configs.set(STORE, "Log Every Operation", "Disabled")
+            expect_layout(api, "/Flash")
+            api.configs.set(STORE, ITEM, "/Temp/" + tag + "missing.ipr")
+            api.configs.set(STORE, ITEM, "/Temp/" + invalid)
             expect_layout(api, "/Temp")
 
         with check("an empty path selects the standard partition file"):

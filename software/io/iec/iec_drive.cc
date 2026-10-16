@@ -280,10 +280,7 @@ void IecDrive :: effectuate_settings(void)
     if (reconfigure) {
         intf->configure();
     }
-    // Only a configured file is retried; the default file is read at startup alone.
-    const char *partition_config = cfg->get_string(CFG_IEC_PARTITIONS);
-    if (vfs && ((!partition_config_loaded && partition_config[0]) ||
-                strcmp(partition_config, applied_partition_config.c_str()))) {
+    if (vfs && strcmp(cfg->get_string(CFG_IEC_PARTITIONS), applied_partition_config.c_str())) {
         load_partition_config();
     }
 }

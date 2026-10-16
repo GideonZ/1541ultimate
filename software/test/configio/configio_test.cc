@@ -355,6 +355,10 @@ int main(int argc, char **argv)
     check(!strncmp(row + 64, "Partition config file ", 22), "the item name stays readable beside a long value");
     check(contains(row + 64, "/USB0/xxxxxxx...") && (strlen(row + 64) == 40),
           "a long value is cut to the row and ends in \"...\"");
+    paths->set_string(0x01, "");
+    memset(row, 'G', sizeof(row));
+    check(!contains(paths->find_item(0x01)->get_display_string(row + 64, 21, 1, 2), "..."),
+          "an empty value is not shown as cut when the name fills the row");
 
     // The allocator hands this block back as the fresh item's string, so its last byte is not 0.
     char *used = new char[256];
@@ -376,6 +380,14 @@ int main(int argc, char **argv)
     oversized_in.load(oversized);
     check(!ConfigIO::S_read_from_file(&oversized_in, &path_log), "an oversized CFG line is rejected");
     check(!strcmp(paths->get_string(0x01), "/Temp/ok.ipr"), "the line after an oversized CFG line is read intact");
+
+    char oversized_last[512];
+    strcpy(oversized_last, "[Paths]\n");
+    memset(oversized_last + 8, 'x', 400);
+    oversized_last[408] = 0;
+    MemFile oversized_last_in;
+    oversized_last_in.load(oversized_last);
+    check(!ConfigIO::S_read_from_file(&oversized_last_in, &path_log), "an oversized last line without a line end is rejected");
 
     char oversized_header[512];
     strcpy(oversized_header, "[Paths]\nPartition config file=/Temp/kept.ipr\n[");

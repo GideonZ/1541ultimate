@@ -4989,28 +4989,25 @@ static void s11_partition_config_file(FileManager *fm, IecDrive *dr)
     cfg->set_string(0x56, "/Temp/invalid.ipr");
     dr->effectuate_settings();
     REQUIRE(vfs->CountPartitions() == 2);
-    // A file that held no usable entry is read again once it does.
+    // A file that did not load is read when a path is applied again, not by unrelated
+    // settings, which would replace partition edits made since.
+    dr->add_partition(3, "/Temp", "EDITED");
     REQUIRE(fm->delete_file("/Temp/invalid.ipr") == FR_OK);
     save_fixture_file(fm, "/Temp", "invalid.ipr",
         "{\"partitions\":[{\"number\":1,\"path\":\"/Flash\",\"name\":\"REPAIRED\"}]}");
+    cfg->set_value(0x55, 1);
+    dr->effectuate_settings();
+    cfg->set_value(0x55, 0);
+    dr->effectuate_settings();
+    REQUIRE(vfs->CountPartitions() == 3);
+    REQUIRE(!strcmp(vfs->GetPartition(3)->GetName(), "EDITED"));
+    cfg->set_string(0x56, "/Temp/missing.ipr");
+    dr->effectuate_settings();
+    cfg->set_string(0x56, "/Temp/invalid.ipr");
     dr->effectuate_settings();
     REQUIRE(vfs->CountPartitions() == 1);
     REQUIRE(!strcmp(vfs->GetPartition(1)->GetName(), "REPAIRED"));
-
-    cfg->set_string(0x56, "/Temp/late.ipr");
-    dr->effectuate_settings();
-    save_fixture_file(fm, "/Temp", "late.ipr",
-        "{\"partitions\":[{\"number\":1,\"path\":\"/Flash\",\"name\":\"LATE\"}]}");
-    dr->effectuate_settings();
-    REQUIRE(vfs->CountPartitions() == 1);
-    REQUIRE(!strcmp(vfs->GetPartition(1)->GetName(), "LATE"));
-    cfg->set_string(0x56, "/Temp/manual.ipr");
-    dr->effectuate_settings();
     dr->load_partitions("/Temp", "profile.ipr");
-    save_fixture_file(fm, "/Temp", "manual.ipr",
-        "{\"partitions\":[{\"number\":1,\"path\":\"/Flash\",\"name\":\"PENDING\"}]}");
-    dr->effectuate_settings();
-    REQUIRE(!strcmp(vfs->GetPartition(1)->GetName(), "PROFILE"));
 
     // A drive constructed with a configured path loads it at startup.
     cfg->set_string(0x56, "/Temp/profile.ipr");
