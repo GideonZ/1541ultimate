@@ -292,6 +292,13 @@ void DataStreamer :: send_udp_packet(uint32_t ip, uint16_t port)
         return;
     }
 
+    // The FPGA uses the wired port, regardless of lwIP's default route.
+    if (!NetworkInterface::getInterface(0)->bindSocket(sockfd)) {
+        printf("Error binding stream socket to wired interface\n");
+        lwip_close(sockfd);
+        return;
+    }
+
     memset((char*)&server, 0, sizeof(server));
     server.sin_family = AF_INET;
     server.sin_addr.s_addr = ip;
