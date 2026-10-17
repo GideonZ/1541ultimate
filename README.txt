@@ -40,7 +40,7 @@ In this file, you need to set the location of your Xilinx ISE toolchain.
 
 Building targets
 ================
-ALL targets can be built by just typing 'make' in the root of the repository.
+ALL targets can be built by just typing 'make' in the root of the repository (see the U64 note below).
 
 In order to build for U2 only, use the 'u2_rv' target in the top level makefile. This will build the FPGAs as well
 as the RiscV based software, including all updaters. 
@@ -53,6 +53,8 @@ target 'niosapps'. This target will only succeed if you have already successfull
 For the U2+L, you can build the 'u2pl' target.
 
 The U64 firmware can be built by typing 'make u64'.
+Its WiFi module firmware (software/wifi/raw_u64) needs ESP-IDF 6, so 'make' and 'make u64' stop there
+unless IDF_PATH is an ESP-IDF 6; software/wifi/raw_u64/README.md shows how to build it and then 'make u64_no_esp'.
 
 The U64E-II firmware can be built by typing 'make u64ii'
 
