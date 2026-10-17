@@ -10,10 +10,10 @@ answers on only one address runs the one pairing it has and skips the rest.
 
 A unicast start needs the destination's hardware address on the wired port.
 The wired address is found from a multicast start, which needs no ARP, and the
-pairings started over WiFi run first. After the device starts, the wired port
-has no ARP entry for this host until this host sends it an ARP request, so the
-first unicast start depends on the lookup going out through the wired port;
-one sent through WiFi fails it with 404.
+pairings started over WiFi run first. To exercise an uncached lookup, run after
+a fresh device boot and address the suite to WiFi, without prior traffic to
+the wired address. A successful start with a warm wired ARP entry does not by
+itself prove that an uncached lookup uses the wired port.
 
     ./run-tests --suite stream-routing u64
 """
@@ -21,7 +21,6 @@ one sent through WiFi fails it with 404.
 import argparse
 import socket
 import sys
-import time
 from collections import Counter
 from pathlib import Path
 
@@ -84,15 +83,8 @@ def expect_stream(seen: Counter, stream: str, wired: str, wireless: str | None) 
 
 
 def expect_silence(sock: socket.socket, wired: str) -> None:
-    time.sleep(DRAIN_SECONDS)
-    sock.setblocking(False)
-    try:
-        while True:
-            sock.recvfrom(2048)
-    except OSError:
-        pass
-    finally:
-        sock.settimeout(0.1)
+    # Bound the drain even when a broken stop leaves the stream running.
+    collect(sock, DRAIN_SECONDS)
     late = sum(n for key, n in collect(sock, LISTEN_SECONDS).items() if key[0] == wired)
     if late:
         raise Failure(f"{late} packets from {wired} after the stop")
@@ -100,8 +92,7 @@ def expect_silence(sock: socket.socket, wired: str) -> None:
 
 def routing(apis: dict[str, UltimateApi], wired: str, wireless: str | None,
             local: str, group: str) -> None:
-    # WiFi first, so the first unicast start meets a wired port that has not
-    # resolved this host.
+    # WiFi first to avoid warming the wired ARP entry through a REST connection.
     names = [name for name in ("WiFi", "Ethernet") if name in apis]
     pairs = [(a, b) for a in names for b in names]
     for stream, joined in (("video", None), ("audio", None), ("video", group)):
