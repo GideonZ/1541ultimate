@@ -456,6 +456,8 @@ KEY_ALIASES: dict[str, list[str]] = {
     # Unlike C=+R it is not the monitor's alone: the file browser and the
     # settings menu answer it too.
     "CBM_I": ["commodore", "i"],
+    # C=+P toggles PETSCII filename presentation (KEY_CTRL_P, keymap_control).
+    "CBM_P": ["commodore", "p"],
 }
 
 

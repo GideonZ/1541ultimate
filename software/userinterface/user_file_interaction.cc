@@ -19,6 +19,32 @@
 
 #define MAX_FILE_SIZE_TO_VIEW 262144
 
+// Require a canonical round trip for newly stored names, including their file type.
+static bool stores_cbm_name(const char *host, bool dir, const char *pet)
+{
+    FileInfo info(host);
+    info.attrib = dir ? AM_DIR : 0;
+    char back[17];
+    return info.get_cbm_name(back) && !strcmp(back, pet);
+}
+
+class FileRenameAction : public Action
+{
+    BrowsableDirEntry *entry;
+public:
+    FileRenameAction(BrowsableDirEntry *entry) : Action("Rename", UserFileInteraction::S_rename, 0), entry(entry) { }
+    const char *getDisplayName(UserInterface *ui)
+    {
+        FileInfo *info = entry->getFileInfo();
+        char pet[17];
+        bool editable = entry->hasCbmName();
+        if (editable && (info->name_format & NAME_FORMAT_CBM)) {
+            editable = info->get_cbm_name(pet) && stores_cbm_name(entry->getName(), info->is_directory(), pet);
+        }
+        return (ui->cbm_names && editable) ? "Rename PETSCII name" : getName();
+    }
+};
+
 // member
 int UserFileInteraction::fetch_context_items(BrowsableDirEntry *br, IndexedList<Action *> &list)
 {
@@ -51,7 +77,7 @@ int UserFileInteraction::fetch_context_items(BrowsableDirEntry *br, IndexedList<
     }
 #endif
     if (info->is_writable() && !(info->attrib & AM_VOL)) {
-        list.append(new Action("Rename", UserFileInteraction::S_rename, 0));
+        list.append(new FileRenameAction(br));
         list.append(new Action("Delete", UserFileInteraction::S_delete, 0));
         count += 2;
     }
@@ -104,6 +130,63 @@ SubsysResultCode_e UserFileInteraction::S_enter(SubsysCommand *cmd)
     return SSRET_NO_USER_INTERFACE;
 }
 
+// Edit the decoded filename or x00 header with reversible text, preserving the file type.
+// An empty buffer means no change; false selects the existing stored-name editor.
+static bool edit_cbm_name(SubsysCommand *cmd, Path *p, const char *header, char *buffer, int len, char *pet)
+{
+    char shown[4 * 17 + 1];
+    char host[64];
+    const char *ext = "";
+    bool dir = false;
+
+    if (header) {
+        strcpy(pet, header);
+    } else {
+        FileInfo info(INFO_SIZE);
+        if ((FileManager::getFileManager()->fstat(p, cmd->filename.c_str(), info) != FR_OK) ||
+            !info.get_cbm_name(pet, false)) {
+            return false;
+        }
+        dir = info.is_directory();
+        if ((info.name_format & NAME_FORMAT_CBM) && !stores_cbm_name(cmd->filename.c_str(), dir, pet)) {
+            return false; // a type the host name cannot carry, such as DEL inside a disk image
+        }
+        CbmFileName cbm;
+        if (!dir) {
+            cbm.init(cmd->filename.c_str());
+            if (cbm.hadExtension()) {
+                char type[4];
+                ext = cmd->filename.c_str() + get_extension(cmd->filename.c_str(), type);
+            }
+        }
+    }
+    petscii_to_text(pet, shown, sizeof(shown));
+    strcpy(buffer, shown);
+    if ((cmd->user_interface->string_box("New PETSCII name..", buffer, len - 1) <= 0) ||
+        !*buffer || !strcmp(buffer, shown)) {
+        *buffer = 0;
+        return true;
+    }
+    // The new name has to read back as typed: the drive drops trailing shifted spaces, and
+    // a header name ends at its first shifted space or control code.
+    bool stored = (text_to_petscii(buffer, pet, 17) > 0);
+    if (stored && header) {
+        char back[17];
+        strcpy(back, pet);
+        stored = (x00_shown_name(back) == (int)strlen(pet));
+    } else if (stored) {
+        petscii_to_fat(pet, host, sizeof(host));
+        strcpy(buffer, host);
+        strcat(buffer, ext);
+        stored = stores_cbm_name(buffer, dir, pet);
+    }
+    if (!stored) {
+        cmd->user_interface->popup("Invalid PETSCII name: use {XX}", BUTTON_OK);
+        *buffer = 0;
+    }
+    return true;
+}
+
 SubsysResultCode_e UserFileInteraction::S_rename(SubsysCommand *cmd)
 {
     int res;
@@ -124,19 +207,26 @@ SubsysResultCode_e UserFileInteraction::S_rename(SubsysCommand *cmd)
     full += cmd->filename.c_str();
     char header[17];
     bool wrapped = x00_read_header(fm, full.c_str(), header, NULL) && x00_shown_name(header);
-    if (wrapped) {
-        petscii_to_fat(header, buffer, sizeof(buffer));
+    char petscii[17];
+    bool as_cbm = cmd->user_interface->cbm_names &&
+                  edit_cbm_name(cmd, p, wrapped ? header : NULL, buffer, sizeof(buffer), petscii);
+    if (as_cbm) {
+        res = 1;
     } else {
-        strncpy(buffer, cmd->filename.c_str(), 64);
-        buffer[63] = 0;
+        if (wrapped) {
+            petscii_to_fat(header, buffer, sizeof(buffer));
+        } else {
+            strncpy(buffer, cmd->filename.c_str(), 64);
+            buffer[63] = 0;
+        }
+        res = cmd->user_interface->string_box("Give a new name..", buffer, 63);
     }
-
-    res = cmd->user_interface->string_box("Give a new name..", buffer, 63);
     if ((res > 0) && (*buffer)) {
         if (wrapped) {
-            char petscii[17];
             mstring renamed;
-            fat_to_petscii(buffer, false, petscii, 16, true);
+            if (!as_cbm) {
+                fat_to_petscii(buffer, false, petscii, 16, true);
+            }
             fres = x00_rename(fm, full.c_str(), cmd->path.c_str(), petscii, &renamed);
             // A new name that renders to the host name the file already has changes the
             // header alone, which no rename reports, so the listing is asked to refresh.
