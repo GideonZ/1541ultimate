@@ -52,6 +52,7 @@ class DataStreamer : public ObjectWithMenu
     SubsysResultCode_e stopStream(SubsysCommand *cmd);
 
     void calculate_udp_headers(int id);
+    void send_udp_packet(uint32_t ip, uint16_t port);
 public:
     DataStreamer();
     virtual ~DataStreamer();
