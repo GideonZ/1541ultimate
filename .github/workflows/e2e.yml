@@ -41,11 +41,13 @@ on:
         type: boolean
         required: false
         default: true
-  schedule:
-    # The devices are physical and shared, so the gate runs on a timer rather
-    # than per push: a push trigger would queue a run per commit against
-    # hardware that can serve one at a time.
-    - cron: "0 3 * * *"
+  # The nightly schedule is disabled because every scheduled run currently
+  # times out. Restore it by uncommenting the schedule block below.
+  # The devices are physical and shared, so the gate runs on a timer rather
+  # than per push: a push trigger would queue a run per commit against
+  # hardware that can serve one at a time.
+  # schedule:
+  #   - cron: "0 3 * * *"
 
 # Two runs of the gate would drive the same devices at once. The running one is
 # not cancelled, because cancelling mid-suite leaves a device in an unknown

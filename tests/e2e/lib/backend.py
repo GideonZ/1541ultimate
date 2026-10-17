@@ -232,7 +232,8 @@ class Backend:
                   expect_redraw: bool = True) -> Snapshot:
         raise NotImplementedError
 
-    def send_text(self, text: str, label: str) -> Snapshot:
+    def send_text(self, text: str, label: str, *, settle: bool = True) -> Snapshot:
+        """`settle=False` is for a caller that polls for the state it wants next."""
         snapshot = self.capture()
         for ch in text:
             snapshot = self.send_char(ch)
@@ -343,6 +344,10 @@ class Backend:
         """
         pass
 
+    def framed_selections(self) -> dict[tuple[int, int, int, int], tuple[int, str, list[str]]]:
+        """The highlighted entry of each framed list: {frame: (index, text, entries)}."""
+        raise Failure(f"{type(self).__name__} cannot read the selection of a framed list")
+
     def selected_row(self, entry_rows: Sequence[int] | None = None) -> int:
         """Row index the on-device UI currently marks as selected/highlighted.
 
@@ -451,6 +456,8 @@ KEY_ALIASES: dict[str, list[str]] = {
     # Unlike C=+R it is not the monitor's alone: the file browser and the
     # settings menu answer it too.
     "CBM_I": ["commodore", "i"],
+    # C=+P toggles PETSCII filename presentation (KEY_CTRL_P, keymap_control).
+    "CBM_P": ["commodore", "p"],
 }
 
 

@@ -52,6 +52,11 @@ FREE_CONFIRM_BYTES = 64  # larger than any busy reply; excess with no marker = b
 IP_CMD = ["sudo", "-n", "ip"]  # only ip needs root
 VICTIM_SEARCH_DEPTH = 16  # highest host addresses of the subnet to consider
 FALLBACK_PREFIX_LEN = 24  # only used when detection failed and both overrides were given
+# A victim refused as busy is opened again after longer than a brief probe by
+# another client keeps its session, for up to this many attempts.
+VICTIM_RETRY_SECONDS = 2.0
+VICTIM_ATTEMPTS = 8
+BASELINE_SETTLE_SECONDS = 12.0
 
 
 def log(msg: str) -> None:
@@ -275,15 +280,45 @@ def del_ip_alias(iface: str, victim_ip: str, prefix_len: int) -> bool:
     return result.returncode == 0
 
 
+def _answer(s: socket.socket, seconds: float = 1.0) -> bytes:
+    """What the listener sends first: the start of a session, or the busy reply."""
+    deadline = time.time() + seconds
+    buf = b""
+    while time.time() < deadline and len(buf) < FREE_CONFIRM_BYTES:
+        s.settimeout(max(0.05, deadline - time.time()))
+        try:
+            chunk = s.recv(256)
+        except OSError:
+            break
+        if not chunk:
+            break
+        buf += chunk
+        if BUSY_MARKER in buf:
+            break
+    return buf
+
+
 def open_half_open_victims(host: str, victim_ip: str, count: int) -> list[socket.socket]:
+    """Fill every session slot from `victim_ip`.
+
+    A connect always succeeds, so each victim's first answer is read: a busy
+    reply means another client, such as a status monitor probing the bench,
+    held a slot for a moment. That victim holds nothing, so it is opened again
+    once the other client has had time to leave.
+    """
     victims = []
     for i in range(count):
-        s = _connect(host, source_ip=victim_ip)
-        try:
-            s.settimeout(1.0)
-            s.recv(64)  # drain banner so the session is fully live
-        except OSError:
-            pass
+        for attempt in range(VICTIM_ATTEMPTS):
+            s = _connect(host, source_ip=victim_ip)
+            if BUSY_MARKER not in _answer(s):
+                break
+            s.close()
+            warn(f"victim {i + 1} was refused as busy: another Telnet client held a "
+                 f"slot; opening it again (attempt {attempt + 2})")
+            time.sleep(VICTIM_RETRY_SECONDS)
+        else:
+            raise RuntimeError(f"victim {i + 1} stayed busy: another Telnet client "
+                               f"keeps a session open")
         victims.append(s)
         log(f"  opened half-open victim {i + 1}/{count} from {victim_ip}")
         time.sleep(0.2)
@@ -350,6 +385,13 @@ def main() -> int:
 
         # Table must be fully free at baseline, else another client is using it.
         free = measure_capacity(args.host, args.sessions)
+        settle = time.time() + BASELINE_SETTLE_SECONDS
+        while free < args.sessions and time.time() < settle:
+            # A client that probes now and then, such as a status monitor, holds
+            # a slot for a moment; one that stays connected is still reported.
+            warn(f"baseline found {free}/{args.sessions} slots free; measuring again")
+            time.sleep(VICTIM_RETRY_SECONDS)
+            free = measure_capacity(args.host, args.sessions)
         log(f"baseline free session slots: {free} (expected {args.sessions})")
         if free < args.sessions:
             suite_fail(SUITE, "listener not fully free at baseline; another telnet client is connected")
@@ -359,7 +401,11 @@ def main() -> int:
         add_ip_alias(iface, victim_ip, prefix_len)
         alias_added = True
         log(f"added victim IP alias {victim_ip}/{prefix_len} on {iface}")
-        victims = open_half_open_victims(args.host, victim_ip, args.sessions)
+        try:
+            victims = open_half_open_victims(args.host, victim_ip, args.sessions)
+        except RuntimeError as exc:
+            suite_fail(SUITE, str(exc))
+            return 4
 
         time.sleep(1.0)
         if probe_is_free(args.host):

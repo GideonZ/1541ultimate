@@ -101,6 +101,8 @@ TELNET_STATUS_ROW = 23
 PICKER_TITLE = "Select Path"
 PICKER_SELECT_ENTRY = "<< Select Current Dir >>"
 EMPTY_DIRECTORY_MARKER = "< No Items >"
+TAP_HEADER = b"C64-TAPE-RAW\x01\x00\x00\x00\x00\x00\x00\x00"
+TAP_INDEX = b"0x000014 intro\n0x000020 finale\n"
 
 # Box glyphs: the C64 screen draws them below 0x20 so the menu snapshot renders
 # them as spaces, while Screen_VT100 draws them in the alternate character set,
@@ -938,6 +940,23 @@ def row_paste_browser(ctx: Context, browser: FilesystemRefreshBrowser, origin: s
     ftp_try(lambda: ctx.ftp_driver.delete(f"{ctx.source_path}/{name}"))
 
 
+def row_enter_tap_index(ctx: Context, browser: FilesystemRefreshBrowser, stem: str) -> None:
+    """Enter (index) must survive the context action's listing refresh."""
+    assert ctx.ftp_driver is not None
+    tap_name = f"{stem}.tap"
+    idx_name = f"{stem}.idx"
+    names = [tap_name, idx_name]
+    ftp_store(ctx.ftp_driver, f"{ctx.fixture_path}/{tap_name}", TAP_HEADER)
+    ftp_store(ctx.ftp_driver, f"{ctx.fixture_path}/{idx_name}", TAP_INDEX)
+    ctx.baseline(expected_snapshot([(tap_name, len(TAP_HEADER)), (idx_name, len(TAP_INDEX))]), names)
+
+    browser.select_entry(tap_name)
+    browser.invoke_context_action("Enter (index)")
+    browser.select_entry("intro")
+    browser.select_entry("finale")
+    browser.recover_to(f"Temp/{ctx.test_dir}")
+
+
 # ---- failure paths -------------------------------------------------------
 
 
@@ -1111,6 +1130,11 @@ def build_rows(ctx: "Context") -> list[tuple[str, Callable[[], None], Sequence[s
          lambda: row_paste_browser(ctx, ctx.menu, "Menu", "vmenu1.tst"), ["vmenu1.tst"]),
         ("paste into the watched directory from Telnet",
          lambda: row_paste_browser(ctx, ctx.telnet, "Telnet", "vtel1.tst"), ["vtel1.tst"]),
+
+        ("enter a TAP index from the Menu",
+         lambda: row_enter_tap_index(ctx, ctx.menu, "imenu1"), ["imenu1.tap", "imenu1.idx"]),
+        ("enter a TAP index from Telnet",
+         lambda: row_enter_tap_index(ctx, ctx.telnet, "itel1"), ["itel1.tap", "itel1.idx"]),
 
         ("failed rename shows nothing",
          lambda: row_failed_rename(ctx, "frn1.tst", "frn2.tst"), ["frn1.tst", "frn2.tst"]),

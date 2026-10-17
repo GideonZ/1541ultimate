@@ -355,7 +355,7 @@ class BuildIntegrationTest(unittest.TestCase):
         self.assertEqual(recipe.strip(), "@$(APP_SPACE) report")
 
     def test_ci_runs_the_report_as_a_dedicated_final_step(self):
-        step = self.workflow.split("- name: Check Firmware Application Space", 1)[1]
+        step = self.workflow.split("- name: Test Firmware Application Space", 1)[1]
         step = step.split("- name:", 1)[0]
 
         self.assertIn("if: always()", step)

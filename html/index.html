@@ -798,7 +798,7 @@ $(document).ready(async function () {
 
                 if(result == true) {
                     
-                    let params = { 'address': '0', 'length': '65535' };
+                    let params = { 'address': '0', 'length': '65536' };
                     let [status_code, content] = await make_binary_get_request("http://" + serverIP + "/v1/machine:readmem", params);
 
                     if (status_code === 200) {

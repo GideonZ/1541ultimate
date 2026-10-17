@@ -54,7 +54,7 @@ NAME = "registry_test"
 
 # What run-tests substitutes into a suite's argument template before starting
 # it. A token outside this set would reach the suite as a literal.
-TOKENS = {"@HOST@", "@PASS@", "@TIMEOUT@", "@MODE@", "@SOAKPROFILE@"}
+TOKENS = {"@HOST@", "@PASS@", "@TIMEOUT@", "@MODE@", "@SOAKPROFILE@", "@KERNAL@"}
 
 # Files ending in _test.py that no profile should select, each with its reason.
 # A file that is not a suite belongs here rather than in the registry, so that
@@ -83,6 +83,9 @@ BOOTSTRAP_SHAPES = ("Path(__file__).resolve().parents", "bootstrap.directory(")
 # run does rather than only how the file reads.
 OWN_DEVICE_ARGUMENTS = {
     "tests/lib/cli.py": "defines them",
+    "tests/lib/runtests/cli.py":
+        "the runner's own, where -H names a target to schedule and the "
+        "defaults are $U64_HOST, $U64_PASS and a 30 second timeout",
     "tests/e2e/api/openapi_contract_test.py": "-H is required, with no default",
     "tests/e2e/lib/ui_state.py": "-H is required, with no default",
     "tests/e2e/io/printer/verify_printer_output.py":

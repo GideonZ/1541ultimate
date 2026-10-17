@@ -9,6 +9,7 @@
 #include "keyboard_usb.h"
 #include "joystick_output.h"
 extern "C" void route_input_note_menu_button(void);
+extern "C" void route_input_release_rest_mouse(void);
 extern "C" bool push_active_menu_button(void) __attribute__((weak));
 #endif
 
@@ -85,8 +86,8 @@ API_DOC(PUT, machine, reset,
                 "which is not the same as starting from cold; use `machine:reboot` for that.\n"
                 "\n"
                 "On Ultimate 64 hardware every key and joystick direction the input API is "
-                "holding is released as part of the reset, so a reset cannot leave an injected "
-                "key stuck down.")
+                "holding is released as part of the reset, and its mouse is detached, so a reset "
+                "cannot leave an injected input stuck down.")
     PATH("/v1/machine:reset", "resetMachine", "")
     RESPONSE("200", "application/json", "ErrorResponse", "The machine was reset.", "")
     RESPONSE_ERROR("423", "Could not obtain lock of subsystem", "")
@@ -100,6 +101,7 @@ API_CALL(PUT, machine, reset, NULL, ARRAY( {  }))
 #if U64
         system_usb_keyboard.restReleaseAll();
         JoystickOutput::instance().releaseAllRest();
+        route_input_release_rest_mouse();
 #endif
     }
     resp->error(SubsysCommand::error_string(retval.status));
@@ -115,7 +117,7 @@ API_DOC(PUT, machine, reboot,
                 "cartridge has to start from scratch.\n"
                 "\n"
                 "On Ultimate 64 hardware every key and joystick direction the input API is "
-                "holding is released as part of the reboot.")
+                "holding is released as part of the reboot, and its mouse is detached.")
     PATH("/v1/machine:reboot", "rebootMachine", "")
     RESPONSE("200", "application/json", "ErrorResponse", "The machine was rebooted.", "")
     RESPONSE_ERROR("423", "Could not obtain lock of subsystem", "")
@@ -129,6 +131,7 @@ API_CALL(PUT, machine, reboot, NULL, ARRAY( {  }))
 #if U64
         system_usb_keyboard.restReleaseAll();
         JoystickOutput::instance().releaseAllRest();
+        route_input_release_rest_mouse();
 #endif
     }
     resp->error(SubsysCommand::error_string(retval.status));
@@ -142,7 +145,9 @@ API_DOC(PUT, machine, pause,
     DESCRIPTION("Halts the 6510 by holding DMA. The video output freezes on the frame that was "
                 "being drawn and the machine stays halted until `machine:resume`. Memory can "
                 "still be read and written while paused, which is what makes this useful before "
-                "a large `machine:readmem`.")
+                "a large `machine:readmem`. While the on-device menu holds the machine, it is "
+                "halted already and this does nothing; the machine runs again when the menu "
+                "closes, so pause after that to keep it halted.")
     PATH("/v1/machine:pause", "pauseMachine", "")
     RESPONSE("200", "application/json", "ErrorResponse", "The CPU is halted.", "")
     RESPONSE_ERROR("423", "Could not obtain lock of subsystem", "")
@@ -160,7 +165,8 @@ API_DOC(PUT, machine, resume,
     TAG("Machine")
     SUMMARY("Resume the CPU")
     DESCRIPTION("Releases the DMA hold that `machine:pause` applied. Calling it on a machine that "
-                "is not paused does nothing and is not an error.")
+                "is not paused does nothing and is not an error. While the on-device menu holds the "
+                "machine it stays halted, and runs again when the menu closes.")
     PATH("/v1/machine:resume", "resumeMachine", "")
     RESPONSE("200", "application/json", "ErrorResponse", "The CPU is running.", "")
     RESPONSE_ERROR("423", "Could not obtain lock of subsystem", "")

@@ -4,6 +4,7 @@
 
 #include "cbmdos_parser.h"
 #include "pattern.h"
+#include "iec_log.h"
 
 typedef struct {
     int partition;
@@ -18,12 +19,23 @@ typedef struct {
     uint32_t min_time;
     uint32_t max_time;
     uint8_t filetypes;
+    uint8_t partition_types;
 } open_result_t;
 
 const open_result_t c_open_result_init = { 0, "", "", false, false, e_any, e_not_set,
-                                            e_stream_file, e_stamp_none, 0x0, 0x0, 0x00 };
+                                            e_stream_file, e_stamp_none, 0x0, 0x0, 0x00, 0x00 };
 
 #include "cbmdos_stubs.cc"
+
+// The system clock this binary runs against. The drive never writes it; a case moves it
+// to show that the drive's clock follows it.
+static int test_clock[7] = { 3, 2025, 6, 26, 0, 41, 1 };
+
+extern "C" void get_current_time(int& wd, int& year, int& month, int& day, int& hour, int& min, int& sec)
+{
+    wd = test_clock[0]; year = test_clock[1]; month = test_clock[2]; day = test_clock[3];
+    hour = test_clock[4]; min = test_clock[5]; sec = test_clock[6];
+}
 IecCommandExecuterStubs exec;
 IecParser parser(&exec);
 
@@ -52,6 +64,7 @@ void print_open(open_t& o)
         const char *fmt[] = { "None", "Short", "Long "};
         printf("  Stamp Format: %s\n", fmt[(int)o.dir_opt.timefmt] );
         printf("  File Types: %02x\n", o.dir_opt.filetypes);
+        printf("  Partition Types: %02x\n", o.dir_opt.partition_types);
         if (o.dir_opt.min_datetime) {
             printf("  From Time: %s (%08x)\n", cbmdos_time(o.dir_opt.min_datetime, buf, true), o.dir_opt.min_datetime);
         }
@@ -80,6 +93,7 @@ void d_parse_open(const char *buf, open_t& o, int expected_retval = 0, open_resu
         ok &= (o.dir_opt.stream == result.stream);
         ok &= (o.dir_opt.timefmt == result.timefmt);
         ok &= (o.dir_opt.filetypes == result.filetypes);
+        ok &= (o.dir_opt.partition_types == result.partition_types);
         ok &= (o.dir_opt.min_datetime == result.min_time);
         ok &= (o.dir_opt.max_datetime == result.max_time);
     }
@@ -136,7 +150,8 @@ void test_dispatch(const char *cmd, int len, int exp_retval,
     failures++;
 }
 
-// The separators CBM DOS accepts between the parameters of a block command, and
+// SI-019, SI-020, SI-091: the separators CBM DOS accepts between the parameters of a
+// block command, and
 // the aliases its user commands answer to. The 1541 ROM parses these parameters at
 // $CC6F, skipping a run of space, comma or cursor right before each number, and
 // skipping one colon between the command word and the first parameter. Its user
@@ -158,8 +173,15 @@ void test_block_command_forms(void)
     test_dispatch("U1:2, 0 ,18,\x1D""0", 14, 0, "block read", 2, 0, 18, 0);
     test_dispatch("B-R:2,0,18,1", 12, 0, "block read", 2, 0, 18, 1);
     test_dispatch("B-W: 2  0  18  2 ", 17, 0, "block write", 2, 0, 18, 2);
-    test_dispatch("B-A:2,0,16,3", 12, 0, "block allocate", 2, 0, 16, 3);
-    test_dispatch("B-F:2,0,16,4", 12, 0, "block free", 2, 0, 16, 4);
+    // Allocate and free take three numbers, the partition, the track and the sector,
+    // as both the 1541 and the CMD manuals write them. This is what CHECK DISK on
+    // the 1541 TEST/DEMO disk sends, as PRINT#15,"B-A:"D$;T;S. A fourth number is
+    // ignored, which is what the drive does with a parameter it never reads.
+    test_dispatch("B-A:0,17,1", 10, 0, "block allocate", 0, 17, 1);
+    test_dispatch("B-F:0,17,1", 10, 0, "block free", 0, 17, 1);
+    test_dispatch("B-A: 0  17  1 ", 14, 0, "block allocate", 0, 17, 1);
+    test_dispatch("B-A:2,0,16,3", 12, 0, "block allocate", 2, 0, 16);
+    test_dispatch("B-A:0,17", 8, ERR_SYNTAX, NULL);
     test_dispatch("B-P: 2  0 ", 10, 0, "buffer position", 2, 0);
 
     // U1 and UA are the same command, and so are U2 and UB.
@@ -175,19 +197,26 @@ void test_block_command_forms(void)
 
     // A multi digit parameter, and one long enough to overflow a smaller accumulator.
     test_dispatch("B-P:12,255", 10, 0, "buffer position", 12, 255);
-    test_dispatch("B-P:2,99999999999", 17, 0, "buffer position", 2, 0xFFFF);
+    // Two numbers keep the low byte of the position, as the 1541 does, so a parameter
+    // that fills sixteen bits arrives as 255.
+    test_dispatch("B-P:2,99999999999", 17, 0, "buffer position", 2, 0xFF);
 
     // U9 and UI reset the drive, and so do U: and UJ. UI+ and UI- only select the
     // serial bus timing, so they must not reset anything.
     test_dispatch("UI", 2, 73, "initialize");
     test_dispatch("U9", 2, 73, "initialize");
-    test_dispatch("UJ", 2, 73, "initialize");
-    test_dispatch("U:", 2, 73, "initialize");
+    // UJ and U: close the data channels; U+shifted J also returns every partition to its
+    // root (SI-103). Both answer with the DOS version.
+    test_dispatch("UJ", 2, 73, "reset", 0);
+    test_dispatch("U:", 2, 73, "reset", 0);
+    test_dispatch("U\xCA", 2, 73, "reset", 1);
+    test_dispatch("UJ\r", 3, 73, "reset", 0);
     test_dispatch("UI+", 3, 0, NULL);
     test_dispatch("UI-", 3, 0, NULL);
     test_dispatch("U9+", 3, 0, NULL);
-    // U3 to U8 jump into a drive buffer, which has no equivalent here.
-    test_dispatch("U3:2,0,18,0", 11, ERR_UNKNOWN_CMD, NULL);
+    // U3 to U8 jump into a drive buffer, which has no equivalent here. U is a command
+    // letter, so only the sub-command is unknown: 30, not 31 (SI-104).
+    test_dispatch("U3:2,0,18,0", 11, 30, NULL);
 
     // The position command takes the secondary address either on its own or with 96
     // added to it, which is the form the manuals document. Three parameter bytes are
@@ -195,10 +224,812 @@ void test_block_command_forms(void)
     // which of the two it uses from the state of the channel.
     test_dispatch("P\x02\x01\x00\x01", 5, 0, "set position", 2, 0x10001, 1, 1);
     test_dispatch("P\x62\x01\x00\x01", 5, 0, "set position", 0x62, 0x10001, 1, 1);
+    // A record number without an offset, sent without a terminator, as a machine language
+    // caller sends it: the 1541 ROM takes the record from both bytes.
+    test_dispatch("P\x62\x05\x01", 4, 0, "set position", 0x62, 0x105, 0x105, 0);
+    // The documented BASIC form with one position byte: the carriage return behind it is
+    // not the next byte of the position (GSD "Positioning (seeking) Within a File"). A
+    // relative file would read it as the record's high byte, as the ROM does.
+    test_dispatch("P\x02\x64\r", 4, 0, "set position", 2, 100, 0xD64, 0);
+}
+
+// What happens to the carriage return BASIC's PRINT# appends, and to the commands
+// whose last parameter can be that same byte. CBM DOS drops one carriage return
+// from the end of the command before reading it; the 1541 ROM does that at $C2B3.
+// Where the last parameter is optional this leaves an ambiguity, and the CMD hard
+// disk manual answers it for G-P: "To avoid problems with reading information from
+// Partition 13, the G-P command should always be sent with a trailing carriage
+// return (CHR$(13))." Change Partition in its binary form is the one command whose
+// last parameter is mandatory, so it keeps a parameter of 13.
+void test_command_terminator(void)
+{
+    // A lone carriage return is not a command the drive knows: 31, as the ROM answers.
+    test_dispatch("\r", 1, 31, NULL);
+
+    // C<shift-P> selects a partition by a byte, so 13 is a partition number whether
+    // or not a terminator followed it. This is the regression reported against the
+    // first version of this fix.
+    test_dispatch("C\xD0\x0D", 3, 0, "select partition", 13);
+    test_dispatch("C\xD0\x0D\x0D", 4, 0, "select partition", 13);
+    test_dispatch("C\xD0\x04", 3, 0, "select partition", 4);
+    test_dispatch("C\xD0\x04\x0D", 4, 0, "select partition", 4);
+    test_dispatch("C\xD0", 2, ERR_SYNTAX, NULL);
+    // CPn takes the same number in ASCII, where no byte is ambiguous.
+    test_dispatch("CP4", 3, 0, "select partition", 4);
+    test_dispatch("CP13\r", 5, 0, "select partition", 13);
+    // Partition 0 means the one already selected, which is also what no number asks
+    // for.
+    test_dispatch("CP\r", 3, 0, "select partition", 0);
+
+    // G-P without a number, and with 255, both ask about the current partition, which
+    // the parser passes on as -1. 0 asks about the system partition, a different
+    // question (SI-041).
+    test_dispatch("G-P", 3, 0, "partition info", -1);
+    test_dispatch("G-P\r", 4, 0, "partition info", -1);
+    test_dispatch("G-P\xFF", 4, 0, "partition info", -1);
+    test_dispatch("G-P\x00", 4, 0, "partition info", 0);
+    test_dispatch("G-P\x04", 4, 0, "partition info", 4);
+    test_dispatch("G-P\x04\r", 5, 0, "partition info", 4);
+    // Partition 13 needs the terminator the manual asks for, exactly as on a CMD
+    // drive.
+    test_dispatch("G-P\x0D\x0D", 5, 0, "partition info", 13);
+
+    // The position command is exempt from the terminator rule, because its last
+    // parameter byte is data (SI-018, SD parse_position() restores the length from
+    // before the strip): an offset of 13 arrives with or without a terminator, and a
+    // terminator behind the parameters is ignored.
+    test_dispatch("P\x02\x0A\x00\x0D\x0D", 6, 0, "set position", 2, 0xD000A, 10, 13);
+    test_dispatch("P\x02\x0A\x00\x0D", 5, 0, "set position", 2, 0xA, 10, 13);
+
+    // A command whose parameters are text loses the terminator rather than reading
+    // it as a value.
+    test_dispatch("B-P:2,13\r", 9, 0, "buffer position", 2, 13);
+}
+
+// The error numbers of doc/softiec_compatibility_spec.md SI-030, one case per return
+// site whose number differs from 30. The numbers are written out rather than taken
+// from the constants, so a constant with the wrong value cannot pass.
+//   30 the command was recognised and its arguments were not
+//   31 the first character is not a command letter
+//   33 a wildcard or a character a name cannot carry
+//   34 no name, or a colon with nothing after it
+// Like test_dispatch, and also compares the names the command carried, as the stub
+// recorded them.
+void test_dispatch_text(const char *cmd, int len, int exp_retval, const char *what,
+                        const char *text, int a = 0)
+{
+    last_stub_call.command = NULL;
+    last_stub_call.text[0] = 0;
+    int retval = parser.execute_command((const uint8_t *)cmd, len);
+    bool ok = (retval == exp_retval) && last_stub_call.command &&
+              (strcmp(last_stub_call.command, what) == 0) &&
+              (strcmp(last_stub_call.text, text) == 0) && (last_stub_call.a == a);
+    if (ok) {
+        printf("Dispatch '%s' => OK!\n", cmd);
+        return;
+    }
+    printf("Dispatch '%s' returned %d (expected %d) and called %s(%d,'%s'), expected %s(%d,'%s')\n",
+           cmd, retval, exp_retval,
+           last_stub_call.command ? last_stub_call.command : "nothing",
+           last_stub_call.a, last_stub_call.text, what, a, text);
+    failures++;
+}
+
+// The commands phase 3 of the specification adds, and the routing that has to find
+// them before it falls through to rename and scratch.
+void test_added_commands(void)
+{
+    // SI-101: S-8, S-9 and S-D move the device number to 8, to 9 and back to the
+    // configured one. Exactly three characters, so S:-8 is still a scratch of "-8"
+    // (SD parse_doscommand()).
+    test_dispatch("S-8", 3, 0, "device number", 8);
+    test_dispatch("S-9\r", 4, 0, "device number", 9);
+    test_dispatch("S-D\r", 4, 0, "restore device number");
+    test_dispatch("S-C", 3, ERR_SYNTAX, NULL); // the SCSI pass-through, out of scope (SI-106)
+    test_dispatch_text("S:-8", 4, 0, "scratch", "-1||-8", 1);
+    test_dispatch_text("S-88", 4, 0, "scratch", "-1||-88", 1);
+    // SI-051 and SI-064: the dash after the R finds the partition rename and the header
+    // rename before a file rename (SD parse_doscommand()).
+    test_dispatch_text("R-P:NEW=OLD", 11, 0, "rename partition", "NEW|OLD");
+    test_dispatch_text("R-P:NEW=OLD\r", 12, 0, "rename partition", "NEW|OLD");
+    test_dispatch("R-P:NEW", 7, ERR_SYNTAX, NULL);
+    test_dispatch("R-P:=OLD", 8, ERR_NO_NAME, NULL);
+    test_dispatch("R-P:NEW=", 8, ERR_NO_NAME, NULL);
+    test_dispatch_text("R-H:NAME", 8, 0, "set header", "-1||NAME|");
+    test_dispatch_text("R-H3//GAMES/:NAME,ID", 20, 0, "set header", "3|//GAMES/|NAME|ID");
+    test_dispatch("R-H:", 4, ERR_NO_NAME, NULL);
+    // The name follows a colon, as for N (SI-064).
+    test_dispatch("R-H46NONAME", 11, ERR_NO_NAME, NULL);
+    test_dispatch("R-H:N*", 6, ERR_ILLEGAL_NAME, NULL);
+    test_dispatch("R-X:NAME", 8, ERR_SYNTAX, NULL);
+    // A file rename still reaches the file rename.
+    test_dispatch("R:NEW=OLD", 9, 0, NULL);
+
+    // The commands section 18.1 marks deliberately unsupported answer what it says, so a
+    // later implementation has to change a test on purpose. SI-054 `V` is not a command
+    // letter, as it is not one in SD parse_doscommand(); SI-105 `M-W` and `M-E` are
+    // refused arguments of a command letter that is one.
+    test_dispatch("V", 1, ERR_UNKNOWN_CMD, NULL);
+    test_dispatch("V:", 2, ERR_UNKNOWN_CMD, NULL);
+    test_dispatch("V1:\r", 4, ERR_UNKNOWN_CMD, NULL);
+
+    // SI-102: W-1 sets the software write protect and W-0 clears it, in exactly three
+    // characters. W is a command letter only for those two.
+    test_dispatch("W-1", 3, 0, "write protect", 1);
+    test_dispatch("W-0\r", 4, 0, "write protect", 0);
+    test_dispatch("W-2", 3, ERR_SYNTAX, NULL);
+    test_dispatch("W-1X", 4, ERR_SYNTAX, NULL);
+    test_dispatch("W", 1, ERR_SYNTAX, NULL);
+
+    // SI-100: U0> followed by the device number as a byte.
+    test_dispatch("U0>\x0C", 4, 0, "device number", 12);
+    test_dispatch("U0>\x1E\r", 5, 0, "device number", 30);
+    test_dispatch("U0>\x0D\r", 5, 0, "device number", 13);
+    // The number byte is mandatory, so a 13 there is the number, not a terminator.
+    test_dispatch("U0>\x0D", 4, 0, "device number", 13);
+    test_dispatch("U0>\x07", 4, 30, NULL);
+    test_dispatch("U0>\x1F", 4, 30, NULL);
+    test_dispatch("U0", 2, 30, NULL);
+    test_dispatch("U0+", 3, 30, NULL);
+
+    // SI-105 and SI-112: M-R answers the number of bytes asked for, every one of them
+    // zero; no count means one, a count of zero means 256, and it stops at the end of
+    // the page. M-W is refused and M-E answers 98, because this drive runs no drive code.
+    test_dispatch("M-R\xA4\xFE\x02", 6, 0, "command response", 2);
+    test_dispatch("M-R\x02\x00\x02\r", 7, 0, "command response", 2);
+    test_dispatch("M-R\xA4\xFE", 5, 0, "command response", 1);
+    test_dispatch("M-R\x00\xFE\x00", 6, 0, "command response", 256);
+    test_dispatch("M-R\xF0\x00\x20", 6, 0, "command response", 16);
+    test_dispatch("M-R\xA4", 4, 30, NULL);
+    test_dispatch("M-W\x00\x05\x01\xEA", 7, 30, NULL);
+    // SI-100a: M-W to $0077 is the 1541 way of changing the device number, which a CMD
+    // drive's SWAP button sends. The listen address in the first byte gives the number.
+    test_dispatch("M-W\x77\x00\x02\x2C\x4C", 8, 0, "device number", 12);
+    test_dispatch("M-W\x77\x00\x02\x28\x48\r", 9, 0, "device number", 8);
+    test_dispatch("M-W\x77\x00\x01\x3E", 7, 0, "device number", 30);
+    test_dispatch("M-W\x77\x00\x02\x24\x44", 8, 30, NULL);
+    test_dispatch("M-W\x77\x00\x02\x3F\x5F", 8, 30, NULL);
+    test_dispatch("M-W\x77\x00\x02", 6, 30, NULL);
+    test_dispatch("M-W\x77\x00\x00\x2C", 7, 30, NULL);
+    test_dispatch("M-W\x78\x00\x01\x4C", 7, 30, NULL);
+    test_dispatch("M-W\x77\x01\x02\x2C\x4C", 8, 30, NULL);
+    test_dispatch("M-E\x00\x05", 5, ERR_UNKNOWN_DRIVECODE, NULL);
+    test_dispatch("M-X", 3, 30, NULL);
+    // SI-120: T-W sets the drive's clock, and a form the clock cannot hold answers 30.
+    // The four formats are checked in test_clock_commands().
+    test_dispatch("T-WI2026-09-12T13:02:03", 23, 0, NULL);
+    test_dispatch("T-WI2026-13-12T13:02:03", 23, 30, NULL);
+    test_dispatch("MD:DIR", 6, 0, NULL); // still a directory command
+}
+
+// SI-021, SI-022 and SI-016: the command buffer holds 254 bytes, a command that fills
+// it answers 32 and is not executed, and a carriage return second to last ends the
+// command only when a line feed follows it.
+void test_command_length_and_terminator(void)
+{
+    char cmd[300];
+    memset(cmd, ' ', sizeof(cmd));
+    memcpy(cmd, "B-P:2,144", 9);
+    test_dispatch(cmd, 253, 0, "buffer position", 2, 144);
+    test_dispatch(cmd, 254, 32, NULL);
+    test_dispatch(cmd, 255, 32, NULL);
+
+    test_dispatch("B-P:2,144\r\n", 11, 0, "buffer position", 2, 144);
+    // Only a carriage return and a line feed end a command early: a 13 second to last is a
+    // binary parameter, here the high byte of an M-R address, and the count behind it
+    // stays.
+    test_dispatch("M-R\x00\x0D\x05", 6, 0, "command response", 5);
+}
+
+// SI-060 and SI-063: MD requires a colon and refuses a name that is a shifted space;
+// RD takes a name behind a colon and no path.
+void test_md_rd_grammar(void)
+{
+    test_command(34, (const uint8_t *)"MD NOCOLON", 10);
+    test_command(34, (const uint8_t *)"MD:\xA0", 4);
+    test_command( 0, (const uint8_t *)"MD//SUB/:NAME", 13);
+    test_command(34, (const uint8_t *)"RD/PROBEDIR", 11);
+    test_command(34, (const uint8_t *)"RD//SUB/:NAME", 13);
+    test_command(34, (const uint8_t *)"RDNAME", 6);
+    test_command( 0, (const uint8_t *)"RD:NAME", 7);
+    test_command( 0, (const uint8_t *)"RD12:NAME\r", 10);
+    // A slash anywhere is refused, also behind the colon.
+    test_command(34, (const uint8_t *)"RD:A/B", 6);
+    // A colon with nothing after it is no name (SI-030), and a directory to be made
+    // cannot carry a wildcard.
+    test_command(34, (const uint8_t *)"MD:", 3);
+    test_command(34, (const uint8_t *)"RD:", 3);
+    test_command(33, (const uint8_t *)"MD:A*", 5);
+    test_command(33, (const uint8_t *)"MD:B?C", 6);
+    // A name ending in a dot or a space cannot be found again on a FAT host, which
+    // drops that byte from the name it creates (SI-141).
+    test_command(33, (const uint8_t *)"MD:TRAIL.", 9);
+    test_command(33, (const uint8_t *)"MD:SPACE ", 9);
+}
+
+// SI-147 and SI-142: the PETSCII to host name mapping shared with sd2iec's extension mode
+// 5. A trailing run of shifted spaces is padding and is dropped; a shifted space inside a
+// name is escaped; * and ? are escaped; and the braces a type extension gets stay inside the
+// buffer. This suite is
+// also built with -funsigned-char (target/pc/linux/parse_unsigned), because the shifted
+// space rule depended on the signedness of char.
+static void check_fat_name(const char *what, const char *pet, int maxlen, const char *expected)
+{
+    char fat[64];
+    memset(fat, 'X', sizeof(fat));
+    fat[sizeof(fat) - 1] = 0;
+    petscii_to_fat(pet, fat, maxlen);
+    if (strcmp(fat, expected) == 0) {
+        printf("Name %s => OK!\n", what);
+        return;
+    }
+    printf("Name %s mapped to '%s', expected '%s' (char is %s)\n", what, fat, expected,
+           ((char)0xA0 < 0) ? "signed" : "unsigned");
+    failures++;
+}
+
+// SI-140, SI-141, SI-142, SI-143: the mapping between a CBM name and a host name.
+void test_name_mapping(void)
+{
+    // Each name is followed by a byte that is not zero, so a test that reads past the
+    // terminator sees something other than the end of the string.
+    const char trailing[] = { 'A', 'B', (char)0xA0, 0, 'Z' };
+    check_fat_name("AB+$A0", trailing, 51, "AB");
+    const char trailing_run[] = { 'A', (char)0xA0, (char)0xA0, 0, 'Z' };
+    check_fat_name("A+$A0$A0", trailing_run, 51, "A");
+    const char interior[] = { 'A', (char)0xA0, 'B', 0, 'Z' };
+    check_fat_name("A+$A0+B", interior, 51, "A{A0}B");
+    const char interior_run[] = { 'A', (char)0xA0, (char)0xA0, 'B', 0, 'Z' };
+    check_fat_name("A+$A0$A0+B", interior_run, 51, "A{A0A0}B");
+    check_fat_name("star", "FOO*", 51, "FOO{2A}");
+    check_fat_name("question mark", "WHAT?", 51, "WHAT{3F}");
+    // A name that fills the buffer and ends in .PRG gets no braces, which would not fit:
+    // with a 48 byte buffer, 46 characters and the terminator are all there is room for.
+    check_fat_name("braces bound", "ABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOP.PRG", 48,
+                   "ABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOP.PRG");
+    check_fat_name("braces", "GAME.PRG", 48, "GAME.PRG{}");
+
+    // SI-141: a name a host reserves, a byte a host cannot carry, and a run of bytes above
+    // 127, each escaped so that the name maps back unchanged.
+    static const struct { const char *what; const char *pet; const char *fat; } rules[] = {
+        { "reserved name",           "CON",        "{}CON" },
+        { "reserved name, extension", "CON.TXT",   "{}CON.TXT" },
+        { "reserved prefix only",    "CONX",       "CONX" },
+        { "reserved device number",  "COM1",       "{}COM1" },
+        { "reserved, type extension", "LPT9.PRG",  "{}LPT9.PRG{}" },
+        { "a run above 127",         "\xC1\xC2\xC3", "{C1C2C3}" },
+        { "separators",              "A:B/C\\D\"E<F>G", "A{3A}B{2F}C{5C}D{22}E{3C}F{3E}G" },
+        { "leading dot",             ".HIDDEN",    "{2E}HIDDEN" },
+        { "braces",                  "X{Y}Z",      "X{7B}Y{7D}Z" },
+    };
+    for (size_t i = 0; i < sizeof(rules) / sizeof(rules[0]); i++) {
+        check_fat_name(rules[i].what, rules[i].pet, 51, rules[i].fat);
+        char back[40];
+        memset(back, 0, sizeof(back));
+        fat_to_petscii(rules[i].fat, false, back, sizeof(back) - 1, true);
+        if (strcmp(back, rules[i].pet)) {
+            printf("Name %s maps back to '%s', expected '%s'\n", rules[i].what, back, rules[i].pet);
+            failures++;
+        } else {
+            printf("Name %s maps back => OK!\n", rules[i].what);
+        }
+    }
+}
+
+// SI-076: L toggles the lock of one entry.
+// SI-076 and SI-077: the commands that change an attribute. L and EH turn one bit of
+// one entry over; EL, EU and A set the bits they name on every entry a name matches.
+// SI-090: "##n", exactly three characters, asks for n chained buffers; any other name
+// after the # is the standard buffer.
+void test_buffer_open_forms(void)
+{
+    open_t o;
+    open_result_t r = c_open_result_init;
+    r.stream = e_stream_buffer;
+    r.partition = -1;
+    d_parse_open("#", o, 0, r);
+    if (o.buffers != 0) { printf("'#' asked for %d chained buffers\n", o.buffers); failures++; }
+    d_parse_open("##1", o, 0, r);
+    if (o.buffers != 1) { printf("'##1' asked for %d chained buffers\n", o.buffers); failures++; }
+    d_parse_open("##4", o, 0, r);
+    if (o.buffers != 4) { printf("'##4' asked for %d chained buffers\n", o.buffers); failures++; }
+    d_parse_open("##", o, 0, r);
+    if (o.buffers != 0) { printf("'##' asked for %d chained buffers\n", o.buffers); failures++; }
+    d_parse_open("##12", o, 0, r);
+    if (o.buffers != 0) { printf("'##12' asked for %d chained buffers\n", o.buffers); failures++; }
+}
+
+void test_attribute_commands(void)
+{
+    test_dispatch_text("L:TEST", 6, 0, "toggle attributes", "-1||TEST", IEC_ATTR_LOCKED);
+    test_dispatch_text("L1//:TEST\r", 10, 0, "toggle attributes", "1|//|TEST", IEC_ATTR_LOCKED);
+    test_dispatch("L:", 2, 34, NULL);
+
+    test_dispatch_text("EHTEST", 6, 0, "toggle attributes", "-1||TEST", IEC_ATTR_HIDDEN);
+    test_dispatch_text("EH/DIR/:TEST", 12, 0, "toggle attributes", "-1|/DIR/|TEST", IEC_ATTR_HIDDEN);
+
+    test_dispatch("EL:A,B", 6, 0, "set attributes", IEC_ATTR_LOCKED, IEC_ATTR_LOCKED, 2);
+    test_dispatch("EU:A", 4, 0, "set attributes", 0, IEC_ATTR_LOCKED, 1);
+    test_dispatch("EL1//:*\r", 8, 0, "set attributes", IEC_ATTR_LOCKED, IEC_ATTR_LOCKED, 1);
+
+    // A names every attribute the entry is to carry, so the ones it leaves out go.
+    const int all = IEC_ATTR_LOCKED | IEC_ATTR_HIDDEN | IEC_ATTR_ARCHIVE;
+    test_dispatch("A:RH=FOO", 8, 0, "set attributes", IEC_ATTR_LOCKED | IEC_ATTR_HIDDEN, all, 1);
+    test_dispatch("A:=FOO", 6, 0, "set attributes", 0, all, 1);
+    test_dispatch("A:RHA=FOO,BAR", 13, 0, "set attributes", all, all, 2);
+    test_dispatch("A:Z=FOO", 7, ERR_SYNTAX, NULL);
+    test_dispatch("A:FOO", 5, ERR_UNKNOWN_CMD, NULL); // no =, as SD parse_attr() has it
+    test_dispatch("A", 1, ERR_UNKNOWN_CMD, NULL);
+
+    // The three sd2iec spellings of a directory header, which is R-H (SI-064).
+    test_dispatch_text("EH:NAME", 7, 0, "set header", "-1||NAME|");
+    test_dispatch_text("EH3:NAME,ID", 11, 0, "set header", "3||NAME|ID");
+    test_dispatch_text("XH:NAME", 7, 0, "set header", "-1||NAME|");
+    test_dispatch_text("XH/DIR/:NAME", 12, 0, "set header", "-1|/DIR/|NAME|");
+    test_dispatch_text("D:NAME,ID", 9, 0, "set header", "-1||NAME|ID");
+    test_dispatch("XPWD", 4, 0, NULL);
+    test_dispatch("XH+", 3, ERR_SYNTAX, NULL); // a setting, which this drive keeps its own way
+    test_dispatch("DI", 2, ERR_SYNTAX, NULL);  // the direct sector commands (SI-096)
+    test_dispatch("DR", 2, ERR_SYNTAX, NULL);
+    test_dispatch("DW", 2, ERR_SYNTAX, NULL);
+    test_dispatch("EQ:NAME", 7, ERR_SYNTAX, NULL);
+    // A command that carries no name at all, which must not reach the executer with an
+    // empty list.
+    test_dispatch("EL:", 3, ERR_NO_NAME, NULL);
+    test_dispatch("EL", 2, ERR_NO_NAME, NULL);
+    test_dispatch("EU:", 3, ERR_NO_NAME, NULL);
+    test_dispatch("A:=", 3, ERR_NO_NAME, NULL);
+    test_dispatch("A:R=", 4, ERR_NO_NAME, NULL);
+    test_dispatch("EH", 2, ERR_NO_NAME, NULL);
+}
+
+// Sends a command and compares the bytes it answered with, so a clock write can be
+// checked by reading the clock back through each of the four read forms.
+static void test_reply(const char *cmd, int len, int exp_retval, const char *label,
+                       const uint8_t *expected, int exp_len)
+{
+    last_stub_call.command = NULL;
+    last_stub_call.reply_len = 0;
+    int retval = parser.execute_command((const uint8_t *)cmd, len);
+    bool ok = (retval == exp_retval) && (last_stub_call.reply_len == exp_len) &&
+              (memcmp(last_stub_call.reply, expected, exp_len) == 0);
+    if (ok) {
+        printf("Reply '%s' => OK!\n", label);
+        return;
+    }
+    printf("Reply '%s' returned %d (expected %d) and answered %d bytes:\n",
+           label, retval, exp_retval, last_stub_call.reply_len);
+    dump_hex(last_stub_call.reply, last_stub_call.reply_len);
+    printf("  expected %d bytes:\n", exp_len);
+    dump_hex(expected, exp_len);
+    failures++;
+}
+
+static void test_reply_text(const char *cmd, int len, const char *label, const char *expected)
+{
+    test_reply(cmd, len, 0, label, (const uint8_t *)expected, strlen(expected));
+}
+
+// SI-120, SI-121, SI-122, SI-123. The four write forms set the drive's clock, and the four read forms then
+// answer with the time that was written. The formats and the validation follow
+// SD parse_timewrite(): the day of week of the A, B and D forms must be 0 to 6, a twelve
+// hour field of 12 means midnight or noon, and a year below 80 is in this century. A read
+// derives the day of week from the date, because the drive keeps only an offset.
+void test_clock_commands(void)
+{
+    // 2026-09-12 13:02:03, a Saturday, written in each of the four forms and read back
+    // in each of the four forms.
+    static const uint8_t t_rd[] = { 6, 126, 9, 12, 1, 2, 3, 1, 0x0d };
+    static const uint8_t t_rb[] = { 6, 0x26, 0x09, 0x12, 0x01, 0x02, 0x03, 1, 0x0d };
+    static const uint8_t t_wd[] = { 'T','-','W','D', 6, 126, 9, 12, 1, 2, 3, 1 };
+    static const uint8_t t_wb[] = { 'T','-','W','B', 6, 0x26, 0x09, 0x12, 0x01, 0x02, 0x03, 1 };
+    const char *iso = "2026-09-12T13:02:03 SAT\r";
+    const char *ascii = "SAT. 09/12/26 01:02:03 PM\r";
+    // Written between two checks, so that the next write has something to change.
+    const char *elsewhere = "T-WI1999-01-01T01:01:01";
+
+    test_dispatch("T-WI2026-09-12T13:02:03", 23, 0, NULL);
+    test_reply_text("T-RI", 4, "T-WI then T-RI", iso);
+    test_reply_text("T-RA", 4, "T-WI then T-RA", ascii);
+    test_reply("T-RD", 4, 0, "T-WI then T-RD", t_rd, sizeof(t_rd));
+    test_reply("T-RB", 4, 0, "T-WI then T-RB", t_rb, sizeof(t_rb));
+
+    // The ISO form derives the day of week from the date, so the three characters a
+    // T-RI answer ends in are accepted and ignored when they are sent back.
+    test_dispatch(elsewhere, 23, 0, NULL);
+    test_dispatch("T-WI2026-09-12T13:02:03 SAT\r", 28, 0, NULL);
+    test_reply_text("T-RI", 4, "a T-RI answer sent back", iso);
+
+    // Each of the other three forms writes the same moment.
+    test_dispatch(elsewhere, 23, 0, NULL);
+    test_dispatch("T-WA" "SAT. 09/12/26 01:02:03 PM", 29, 0, NULL);
+    test_reply_text("T-RI", 4, "T-WA then T-RI", iso);
+
+    test_dispatch(elsewhere, 23, 0, NULL);
+    test_dispatch((const char *)t_wd, sizeof(t_wd), 0, NULL);
+    test_reply_text("T-RI", 4, "T-WD then T-RI", iso);
+
+    test_dispatch(elsewhere, 23, 0, NULL);
+    test_dispatch((const char *)t_wb, sizeof(t_wb), 0, NULL);
+    test_reply_text("T-RI", 4, "T-WB then T-RI", iso);
+
+    // The terminator BASIC appends is dropped, and a 13 inside the binary data is data:
+    // 11:13:13 on Sunday 13 September 2026 in the decimal form, sent with a terminator.
+    static const uint8_t t_wd13[] = { 'T','-','W','D', 0, 126, 9, 13, 11, 13, 13, 0, 0x0d };
+    test_dispatch((const char *)t_wd13, sizeof(t_wd13), 0, NULL);
+    test_reply_text("T-RI", 4, "a 13 inside the data", "2026-09-13T11:13:13 SUN\r");
+
+    // The drive's clock is an offset from the system clock, so the day of week a read
+    // answers is the one the date has, whatever the A, B or D form carried.
+    static const uint8_t t_wd_dow[] = { 'T','-','W','D', 0, 126, 9, 12, 1, 2, 3, 1 };
+    test_dispatch((const char *)t_wd_dow, sizeof(t_wd_dow), 0, NULL);
+    test_reply_text("T-RI", 4, "the day of week of the date", "2026-09-12T13:02:03 SAT\r");
+
+    // A write leaves the system clock alone, and the drive's clock runs with it.
+    int before[7];
+    memcpy(before, test_clock, sizeof(before));
+    test_dispatch("T-WI2026-09-12T13:02:03", 23, 0, NULL);
+    if (memcmp(before, test_clock, sizeof(before))) {
+        printf("T-W changed the system clock\n");
+        failures++;
+    }
+    test_clock[6] += 10;
+    test_reply_text("T-RI", 4, "ten seconds later", "2026-09-12T13:02:13 SAT\r");
+    test_clock[6] -= 10;
+    // Across midnight at the end of a year, from a system clock far from the written time.
+    test_dispatch("T-WI2079-12-31T23:59:59", 23, 0, NULL);
+    test_clock[6] += 1;
+    test_reply_text("T-RI", 4, "a second after the last second of 2079", "2080-01-01T00:00:00 MON\r");
+    test_clock[6] -= 1;
+
+    // The leap day of a leap year is a date; the same day in 2021 is not, and a refused
+    // write leaves the clock alone.
+    test_dispatch("T-WI2020-02-29T00:00:00", 23, 0, NULL);
+    test_reply_text("T-RI", 4, "the leap day of 2020", "2020-02-29T00:00:00 SAT\r");
+    test_dispatch("T-WI2021-02-29T00:00:00", 23, ERR_SYNTAX, NULL);
+    test_reply_text("T-RI", 4, "the clock after a refused write", "2020-02-29T00:00:00 SAT\r");
+
+    // The ranges a write refuses, each of which would otherwise reach the clock chip.
+    test_dispatch("T-WI2026-13-01T00:00:00", 23, ERR_SYNTAX, NULL);
+    test_dispatch("T-WI2026-00-01T00:00:00", 23, ERR_SYNTAX, NULL);
+    test_dispatch("T-WI2026-04-31T00:00:00", 23, ERR_SYNTAX, NULL);
+    test_dispatch("T-WI2026-09-00T00:00:00", 23, ERR_SYNTAX, NULL);
+    test_dispatch("T-WI2026-09-12T24:00:00", 23, ERR_SYNTAX, NULL);
+    test_dispatch("T-WI2026-09-12T00:60:00", 23, ERR_SYNTAX, NULL);
+    test_dispatch("T-WI2026-09-12T00:00:60", 23, ERR_SYNTAX, NULL);
+    // The clock chip holds two digits of year from 1980, so nothing outside that.
+    test_dispatch("T-WI1979-12-31T23:59:59", 23, ERR_SYNTAX, NULL);
+    test_dispatch("T-WI2080-01-01T00:00:00", 23, ERR_SYNTAX, NULL);
+    // A day of week of 7, and a BCD field whose low nibble is not a digit.
+    static const uint8_t t_wd_bad_dow[] = { 'T','-','W','D', 7, 126, 9, 12, 1, 2, 3, 1 };
+    test_dispatch((const char *)t_wd_bad_dow, sizeof(t_wd_bad_dow), ERR_SYNTAX, NULL);
+    static const uint8_t t_wb_bad_bcd[] = { 'T','-','W','B', 6, 0x26, 0x0A, 0x12, 0x01, 0x02, 0x03, 1 };
+    test_dispatch((const char *)t_wb_bad_bcd, sizeof(t_wb_bad_bcd), ERR_SYNTAX, NULL);
+    // A command that stops before the last field it needs.
+    test_dispatch("T-WI2026-09-12T13:02", 20, ERR_SYNTAX, NULL);
+    test_dispatch("T-WA" "SAT. 09/12/26 01:02", 23, ERR_SYNTAX, NULL);
+    static const uint8_t t_wd_short[] = { 'T','-','W','D', 6, 126, 9, 12, 1, 2, 3 };
+    test_dispatch((const char *)t_wd_short, sizeof(t_wd_short), ERR_SYNTAX, NULL);
+    // A day of week name no drive prints, and a field that is not a number.
+    test_dispatch("T-WA" "XYZ. 09/12/26 01:02:03 PM", 29, ERR_SYNTAX, NULL);
+    test_dispatch("T-WI2026-XX-12T13:02:03", 23, ERR_SYNTAX, NULL);
+    // An unknown format letter, as for a read (SI-030).
+    test_dispatch("T-WX", 4, ERR_SYNTAX, NULL);
+    test_dispatch("T-W", 3, ERR_SYNTAX, NULL);
+
+    // A marker that is not AM or PM, and anything after the last field, answer 30: a PM
+    // typed shifted would otherwise be lost and the clock twelve hours wrong (SI-123).
+    test_dispatch("T-WA" "SAT. 09/12/26 01:02:03 PX", 29, ERR_SYNTAX, NULL);
+    test_dispatch("T-WA" "SAT. 09/12/26 01:02:03XPM", 29, ERR_SYNTAX, NULL);
+    test_dispatch("T-WA" "SAT. 09/12/26 01:02:03 \xD0\xCD", 29, ERR_SYNTAX, NULL);
+    test_dispatch("T-WA" "SAT. 09/12/26 01:02:03 ", 27, ERR_SYNTAX, NULL);
+    test_dispatch("T-WI2026-09-12T13:02:03GARBAGE", 30, ERR_SYNTAX, NULL);
+    test_dispatch("T-WI2026-09-12T13:02:03X", 24, ERR_SYNTAX, NULL);
+
+    // The ASCII form without its AM or PM marker is a 24 hour time, and a twelve hour
+    // field of 12 with the marker is midnight or noon (SD parse_timewrite()).
+    test_dispatch(elsewhere, 23, 0, NULL);
+    test_dispatch("T-WA" "SAT. 09/12/26 13:02:03", 26, 0, NULL);
+    test_reply_text("T-RI", 4, "an ASCII write without a marker", iso);
+    test_dispatch("T-WA" "SAT. 09/12/26 12:02:03 AM", 29, 0, NULL);
+    test_reply_text("T-RI", 4, "twelve AM is midnight", "2026-09-12T00:02:03 SAT\r");
+    test_dispatch("T-WA" "SAT. 09/12/26 12:02:03 PM", 29, 0, NULL);
+    test_reply_text("T-RI", 4, "twelve PM is noon", "2026-09-12T12:02:03 SAT\r");
+
+    // A year below 80 is in this century, as the Y2K fix in SD parse_timewrite() has it.
+    static const uint8_t t_wd_y2k[] = { 'T','-','W','D', 5, 5, 3, 4, 2, 0, 0, 0 };
+    test_dispatch((const char *)t_wd_y2k, sizeof(t_wd_y2k), 0, NULL);
+    test_reply_text("T-RI", 4, "a year below 80 is this century", "2005-03-04T02:00:00 FRI\r");
+
+    // Without an offset, which a reset of the drive leaves, a read is the system clock as
+    // it reads, day of week included, even one the date does not have.
+    exec.set_clock_offset(0);
+    test_reply_text("T-RI", 4, "the system clock", "2025-06-26T00:41:01 WED\r");
+}
+
+// B-P positions within a buffer, and a third number is the high byte of that position
+// (SI-092). SI-094: B-R and B-W use the first byte of the block as a length, U1 and U2
+// do not.
+void test_block_positions_and_lengths(void)
+{
+    test_dispatch("B-P 9 4 1", 9, 0, "buffer position", 9, 260);
+    test_dispatch("B-P 9 4 0", 9, 0, "buffer position", 9, 4);
+    // Two numbers keep the low byte, as the 1541 does.
+    test_dispatch("B-P:2,300", 9, 0, "buffer position", 2, 44);
+    test_dispatch("B-P:2,144", 9, 0, "buffer position", 2, 144);
+    test_dispatch("B-R:2,0,18,1", 12, 0, "block read", 2, 0, 18, 1);
+    test_dispatch("U1:2,0,18,1", 11, 0, "block read", 2, 0, 18, 1);
+    if (!last_stub_call.text[0] || strcmp(last_stub_call.text, "no length")) {
+        printf("U1 was not dispatched as a read without the length byte: '%s'\n", last_stub_call.text);
+        failures++;
+    }
+    test_dispatch("B-R:2,0,18,1", 12, 0, "block read", 2, 0, 18, 1);
+    if (strcmp(last_stub_call.text, "length")) {
+        printf("B-R was not dispatched as a read with the length byte: '%s'\n", last_stub_call.text);
+        failures++;
+    }
+    test_dispatch("B-W:2,0,18,1", 12, 0, "block write", 2, 0, 18, 1);
+    if (strcmp(last_stub_call.text, "length")) {
+        printf("B-W was not dispatched as a write with the length byte: '%s'\n", last_stub_call.text);
+        failures++;
+    }
+    // The spellings the 1541 manual prints: the ROM takes the letter after the dash.
+    test_dispatch("BLOCK-READ:2,0,18,1", 19, 0, "block read", 2, 0, 18, 1);
+    test_dispatch("BLOCK-WRITE:2,0,18,2", 20, 0, "block write", 2, 0, 18, 2);
+    test_dispatch("BUFFER-POINTER:2,144", 20, 0, "buffer position", 2, 144);
+    test_dispatch("BLOCK-ALLOCATE:0,18,3", 21, 0, "block allocate", 0, 18, 3);
+    test_dispatch("BLOCK-FREE:0,18,3", 17, 0, "block free", 0, 18, 3);
+    test_dispatch("BLOCK-EXECUTE:2,0,18,1", 22, 30, NULL);
+    test_dispatch("BX:2,0,18,1", 11, 30, NULL);
+}
+
+void test_error_codes(void)
+{
+    // SI-031: not a command letter. CHR$(0) and A are what the reporter measured on
+    // #877; Z and Q never become commands.
+    test_dispatch("\0", 1, 31, NULL);
+    test_dispatch("A", 1, 31, NULL);
+    test_dispatch("Z", 1, 31, NULL);
+    test_dispatch("Q\r", 2, 31, NULL);
+    // A colon with nothing after it.
+    test_dispatch("C99:EMPTY=", 10, 34, NULL);
+    test_dispatch("R:NEW=", 6, 34, NULL);
+    // A wildcard in the target of a copy or a rename.
+    test_dispatch("C:NEW*=OLD", 10, 33, NULL);
+    test_dispatch("R:NEW?=OLD", 10, 33, NULL);
+    // A command letter followed by a sub-command that does not exist.
+    test_dispatch("B-X:1,2,3", 9, 30, NULL);
+    test_dispatch("B-E:2,0,18,0", 12, 30, NULL); // SI-095: no drive memory to run code in
+    test_dispatch("MX", 2, 30, NULL);
+    test_dispatch("G-X", 3, 30, NULL);
+    test_dispatch("UZ", 2, 30, NULL);
+    test_dispatch("T-X", 3, 30, NULL);
+    test_dispatch("XFOO", 4, 30, NULL);
+    test_dispatch("EFOO", 4, 30, NULL);
+
+    // SI-053: I is a command of its own. It releases the channels a program left open and
+    // answers OK; UI is the reset that answers with the DOS version.
+    test_dispatch("I", 1, 0, "initialize buffers");
+    test_dispatch("I0:\r", 4, 0, "initialize buffers");
+    test_dispatch("UI", 2, 73, "initialize");
+
+    // An open name carrying a character a name cannot carry.
+    open_t o;
+    d_parse_open("FILE=X", o, 33);
+    d_parse_open("@345:", o, 34);
+}
+
+// The byte formatter of the Software IEC failure log. It takes a length and
+// must never read the payload as a string, because an IEC payload can carry an
+// embedded zero, a carriage return that is a parameter rather than a terminator, and
+// shifted PETSCII bytes above 0x7F.
+void test_log_render(const char *what, const uint8_t *data, int len, const char *exp_text)
+{
+    char txt[SOFTIEC_LOG_TEXT_SIZE];
+    int txt_len = softiec_log_text(data, len, txt, sizeof(txt));
+    if ((strcmp(txt, exp_text) == 0) && (txt_len == (int)strlen(exp_text))) {
+        printf("Log %s => OK!\n", what);
+        return;
+    }
+    printf("Log %s rendered \"%s\", expected \"%s\"\n", what, txt, exp_text);
+    failures++;
+}
+
+// A rendering that does not fit has to say so rather than look like a short payload.
+void test_log_truncation(void)
+{
+    const uint8_t data[] = { 0x41, 0x42, 0x43, 0x44 };
+    char txt[6];
+    softiec_log_text(data, 4, txt, sizeof(txt));
+    if (strcmp(txt, "ABC..") == 0) {
+        printf("Log truncation => OK!\n");
+        return;
+    }
+    printf("Log truncation rendered \"%s\", expected \"ABC..\"\n", txt);
+    failures++;
+}
+
+void test_log_formatters(void)
+{
+    const uint8_t empty[1] = { 0 };
+    test_log_render("empty payload", empty, 0, "");
+
+    // The command that started #881: C, shifted P, and partition 13 as a byte.
+    const uint8_t change_partition[] = { 'C', 0xD0, 0x0D };
+    test_log_render("binary change partition", change_partition, 3, "C\\xD0\\r");
+
+    // A text command with the carriage return PRINT# appends behind it.
+    const uint8_t text_command[] = { 'G', '-', 'P', 0x0D };
+    test_log_render("text command with terminator", text_command, 4, "G-P\\r");
+
+    // An embedded zero is a payload byte here, not the end of the payload.
+    const uint8_t with_zero[] = { 'A', 0x00, 'B' };
+    test_log_render("embedded zero", with_zero, 3, "A\\0B");
+
+    // Quotes and backslashes have to survive the quoted rendering.
+    const uint8_t quoting[] = { '"', '\\', 0x0A };
+    test_log_render("quoting", quoting, 3, "\\\"\\\\\\n");
+
+    test_log_truncation();
+}
+
+// The recursive pattern_match() the iterative one replaced, as the reference its results
+// are compared with, with the one defect corrected: at the end of the fixed string only
+// stars may be left of the pattern, where the recursion accepted anything after a star.
+static bool reference_pattern_match(const char *p, const char *f, bool case_sensitive)
+{
+    do {
+        if (!(*f)) {
+            while (*p == '*') {
+                p++;
+            }
+            return (*p == '\0');
+        }
+        if (!(*p)) {
+            return false;
+        }
+        if (*p == '*') {
+            p++;
+            if (!(*p)) {
+                return true;
+            }
+            while (*f) {
+                if (reference_pattern_match(p, f, case_sensitive)) {
+                    return true;
+                }
+                f++;
+            }
+            return false;
+        } else if (*p != '?') {
+            char cp = case_sensitive ? *p : toupper(*p);
+            char cf = case_sensitive ? *f : toupper(*f);
+            if (cf != cp) {
+                return false;
+            }
+        }
+        f++;
+        p++;
+    } while (true);
+}
+
+static int build_string(char *out, const char *alphabet, int base, int length, int index)
+{
+    for (int i = 0; i < length; i++) {
+        out[i] = alphabet[index % base];
+        index /= base;
+    }
+    out[length] = 0;
+    return length;
+}
+
+// Every pattern of up to five characters from A, b, * and ? against every name of up to
+// five characters from a and B, both case modes, gives the reference's answer; and a
+// pattern of forty stars that does not match returns at once, where the recursion took
+// time exponential in the number of stars.
+// SI-136: the wildcard matcher, including the second star this drive allows.
+void test_pattern_match(void)
+{
+    char pattern[8], fixed[8];
+    int compared = 0;
+    for (int plen = 0; plen <= 5; plen++) {
+        int pcount = 1;
+        for (int i = 0; i < plen; i++) pcount *= 4;
+        for (int pi = 0; pi < pcount; pi++) {
+            build_string(pattern, "Ab*?", 4, plen, pi);
+            for (int flen = 0; flen <= 5; flen++) {
+                for (int fi = 0; fi < (1 << flen); fi++) {
+                    build_string(fixed, "aB", 2, flen, fi);
+                    for (int cs = 0; cs < 2; cs++) {
+                        bool want = reference_pattern_match(pattern, fixed, cs);
+                        if (pattern_match(pattern, fixed, cs) != want) {
+                            printf("pattern_match('%s', '%s', %d) differs from the reference, which says %d\n",
+                                   pattern, fixed, cs, want);
+                            failures++;
+                            return;
+                        }
+                        compared++;
+                    }
+                }
+            }
+        }
+    }
+    // The defect the recursion had: a name that ends where the pattern has a star.
+    if (pattern_match("FOO*X", "FOO", false) || !pattern_match("FOO*", "FOO", false) ||
+        pattern_match("*.D64", "", false) || !pattern_match("*", "", false)) {
+        printf("FOO*X matched FOO, FOO* did not match FOO, *.D64 matched nothing or * did not\n");
+        failures++;
+        return;
+    }
+    // A star matches anywhere, as a shell glob does: characters after it meet the end of
+    // the name (SI-136).
+    if (!pattern_match("*ED", "WALKED", false) || !pattern_match("*ed", "moved", false) ||
+        pattern_match("*ED", "EDIT", false) || !pattern_match("W*D", "WALKED", false) ||
+        !pattern_match("*A*E*", "WALKED", false)) {
+        printf("*ED, W*D or *A*E* did not match as a glob\n");
+        failures++;
+        return;
+    }
+    char stars[64];
+    memset(stars, '*', 40);
+    strcpy(stars + 40, "Q");
+    if (pattern_match(stars, "ABCDEFGHIJKLMNOP", false) || !pattern_match(stars, "ABCDEFGHIJKLMNOQ", false)) {
+        printf("forty stars and Q matched wrongly\n");
+        failures++;
+        return;
+    }
+    printf("Pattern match: %d comparisons with the reference, forty stars => OK!\n", compared);
+}
+
+// SI-080: the record length is the byte after ",L,", whatever byte that is, so a comma
+// or a colon there is a length and not a separator.
+static void check_rel_open(const char *name, int len, const char *file, int record_size)
+{
+    char buf[40];
+    memcpy(buf, name, len);
+    buf[len] = 0;
+    open_t o;
+    int err = parse_open(buf, o);
+    if (!err && (o.filetype == e_rel) && (o.file.filename == file) && (o.record_size == record_size)) {
+        printf("Relative open '%s' length %d => OK!\n", file, record_size);
+        return;
+    }
+    printf("Relative open '%s': error %d, type %d, name '%s', length %d, expected '%s' and %d\n",
+           file, err, (int)o.filetype, o.file.filename.c_str(), o.record_size, file, record_size);
+    failures++;
+}
+
+void test_rel_record_length_bytes(void)
+{
+    check_rel_open("RL44,L,\x2C", 8, "RL44", 44);
+    check_rel_open("RL58,L,\x3A", 8, "RL58", 58);
+    check_rel_open("0:RL58,L,\x3A", 10, "RL58", 58);
+    check_rel_open("RL42,L,\x2A", 8, "RL42", 42);
+    check_rel_open("RL61,L,\x3D", 8, "RL61", 61);
+    check_rel_open("RL13,L,\x0D", 8, "RL13", 13);
+}
+
+// SI-135: a time stamp filter is MM/DD/YY HH:MM xM with x either A or P, and a field out
+// of its range is refused rather than carried into the bits of its neighbour.
+void test_stamp_filter_forms(void)
+{
+    open_t o;
+    const char *bad[] = {
+        "$=T:*=>13/02/25 03:04 PM", "$=T:*=>00/02/25 03:04 PM", "$=T:*=>01/32/25 03:04 PM",
+        "$=T:*=>01/00/25 03:04 PM", "$=T:*=>01/02/25 13:04 PM", "$=T:*=>01/02/25 00:04 PM",
+        "$=T:*=>01/02/25 03:60 PM", "$=T:*=>01/02/25 03:04 XM", "$=T:*=>01/02/25 03:04 PX",
+    };
+    for (size_t i = 0; i < sizeof(bad) / sizeof(bad[0]); i++) {
+        d_parse_open(bad[i], o, ERR_SYNTAX);
+    }
 }
 
 int main(int argc, const char *argv[])
 {
+    test_rel_record_length_bytes();
+    test_stamp_filter_forms();
+    test_log_formatters();
+    test_pattern_match();
+
     open_t o;
     d_parse_open("JUSTFILE", o,     0,
                 { -1, "", "JUSTFILE", false, false, e_any, e_not_set,
@@ -252,7 +1083,12 @@ int main(int argc, const char *argv[])
                 { -1, "//FROMROOT/DEEPER", "BLAH", false, false, e_seq, e_read,
                   e_stream_file, e_stamp_none, 0x0, 0x0, 0x00});
 
-    d_parse_open("@345:", o, ERR_ILLEGAL_NAME);
+    // SI-070: ,M opens for reading, which is what a modify is here.
+    d_parse_open("BLAH,S,M", o, 0,
+                { -1, "", "BLAH", false, false, e_seq, e_read,
+                  e_stream_file, e_stamp_none, 0x0, 0x0, 0x00});
+
+    d_parse_open("@345:", o, 34); // no name after the colon
 
     d_parse_open(",", o, ERR_SYNTAX);
 
@@ -339,6 +1175,43 @@ int main(int argc, const char *argv[])
                 { 69, "", "", false, false, e_any, e_not_set,
                   e_stream_partitions, e_stamp_none, 0x0, 0x00, 0x00 });
 
+    // The partition directory filters by partition type, where a directory of files
+    // takes its own options. LOAD"$=P:*=tp" with tp one of N, 4, 7, 8 or C.
+    d_parse_open("$=P:*=N", o, 0,
+                { -1, "", "*", true, false, e_any, e_not_set,
+                  e_stream_partitions, e_stamp_none, 0x0, 0x00, 0x00, 0x02 });
+
+    d_parse_open("$=P:*=4", o, 0,
+                { -1, "", "*", true, false, e_any, e_not_set,
+                  e_stream_partitions, e_stamp_none, 0x0, 0x00, 0x00, 0x04 });
+
+    d_parse_open("$=P:*=7", o, 0,
+                { -1, "", "*", true, false, e_any, e_not_set,
+                  e_stream_partitions, e_stamp_none, 0x0, 0x00, 0x00, 0x08 });
+
+    d_parse_open("$=P:*=8", o, 0,
+                { -1, "", "*", true, false, e_any, e_not_set,
+                  e_stream_partitions, e_stamp_none, 0x0, 0x00, 0x00, 0x10 });
+
+    d_parse_open("$=P:*=C", o, 0,
+                { -1, "", "*", true, false, e_any, e_not_set,
+                  e_stream_partitions, e_stamp_none, 0x0, 0x00, 0x00, 0x20 });
+
+    d_parse_open("$=P:*=4,8", o, 0,
+                { -1, "", "*", true, false, e_any, e_not_set,
+                  e_stream_partitions, e_stamp_none, 0x0, 0x00, 0x00, 0x14 });
+
+    d_parse_open("$=P:*=X", o, ERR_SYNTAX);
+
+    // SI-134: H is not a file type but asks for hidden files, which are listed anyway, so
+    // it must not set a type bit: $:*=H lists what $:* lists.
+    d_parse_open("$:*=H", o, 0,
+                { -1, "", "*", true, false, e_any, e_not_set,
+                  e_stream_dir, e_stamp_none, 0x0, 0x00, 0x00 });
+    d_parse_open("$:*=P,H", o, 0,
+                { -1, "", "*", true, false, e_any, e_not_set,
+                  e_stream_dir, e_stamp_none, 0x0, 0x00, 0x02 });
+
     d_parse_open("$//", o, 0,
                 { -1, "//", "", false, false, e_any, e_not_set,
                   e_stream_dir, e_stamp_none, 0x0, 0x00, 0x00 });
@@ -369,7 +1242,17 @@ int main(int argc, const char *argv[])
     test_command( 0, (const uint8_t *)"U2 2 0 18 4\r", 12);
     test_command( 0, (const uint8_t *)"B-P 2 234\r", 10);
     test_block_command_forms();
-    test_command(32, (const uint8_t *)"C99:EMPTY=", 10);
+    test_command_terminator();
+    test_error_codes();
+    test_added_commands();
+    test_command_length_and_terminator();
+    test_md_rd_grammar();
+    test_name_mapping();
+    test_attribute_commands();
+    test_buffer_open_forms();
+    test_clock_commands();
+    test_block_positions_and_lengths();
+    test_command(34, (const uint8_t *)"C99:EMPTY=", 10);
     test_command( 0, (const uint8_t *)"C1:FCOPY=3:FCOPY", 16);
     test_command( 0, (const uint8_t *)"C:FULLSTATS=STAT1,3:STAT3", 25);
     test_command( 0, (const uint8_t *)"C2:MCOPY=1/COPIERS/:MCOPY", 25);
@@ -383,39 +1266,39 @@ int main(int argc, const char *argv[])
     test_command( 0, (const uint8_t *)"P\x02\xC8\0", 4);
     test_command( 0, (const uint8_t *)"P\x02\x2C\x01\0", 5);
     test_command( 0, (const uint8_t *)"P\x02\x90\x01\0\0", 6);
-    // A position is at most four bytes wide, so five parameter bytes is a syntax error.
-    test_command(ERR_SYNTAX, (const uint8_t *)"P\x02\xF4\x01\0\0\0", 7);
+    // A position is at most four bytes wide; what follows them, which from BASIC is the
+    // terminator, is ignored (SI-018).
+    test_dispatch("P\x02\xF4\x01\0\0\r", 7, 0, "set position", 2, 0x1F4, 500, 0);
     test_command( 0, (const uint8_t *)"CD:TEMP", 7);
     test_command( 0, (const uint8_t *)"CD1//TEMP", 9);
     test_command( 0, (const uint8_t *)"CD1//TEMP/TEMP2", 15);
     test_command( 0, (const uint8_t *)"CD1_", 4);
-    test_command( 0, (const uint8_t *)"RD33_/BLAH", 10);
+    test_command(34, (const uint8_t *)"RD33_/BLAH", 10); // RD takes no path (SI-063)
     test_command( 0, (const uint8_t *)"CD/TEMP/TEMP2", 13);
     test_command( 0, (const uint8_t *)"T-RA", 4);
     test_command( 0, (const uint8_t *)"T-RI", 4);
     test_command( 0, (const uint8_t *)"T-RD", 4);
     test_command( 0, (const uint8_t *)"T-RB", 4);
-    test_command( 0, (const uint8_t *)"T-WASUN. 13/07/25 09:34:13 PM", 29);
     test_command( 0, (const uint8_t *)"CP", 2);
     test_command( 0, (const uint8_t *)"CP1", 3);
     test_command( 0, (const uint8_t *)"CP12", 4);
     test_command( 0, (const uint8_t *)"CP123", 5);
     test_command( 0, (const uint8_t *)"CP1234", 6);
     test_command( 0, (const uint8_t *)"C\xD0\x1F", 3);
-    test_command( 0, (const uint8_t *)"N3/INSOMEDIR:HELL/HEAVEN=D64,NAME OF DISK,XX", 44);
-    test_command( 0, (const uint8_t *)"N:HELLO,123", 11);
-    test_command( 0, (const uint8_t *)"N:HELLO,23", 10);
-    test_command( 0, (const uint8_t *)"N:HELLO,A", 9);
-    test_command( 0, (const uint8_t *)"N:HELLO,", 8);
-    test_command( 0, (const uint8_t *)"N:HELLO", 7);
-    test_command( 0, (const uint8_t *)"N:", 2);
+    // N[n][path]:name[,id] (SI-071): the parser passes the name and the id on.
+    test_dispatch_text("N3//DISKS/:HELLO.D64,AB", 23, 0, "format", "3|//DISKS/|HELLO.D64|AB");
+    test_dispatch_text("N:HELLO,123\r", 12, 0, "format", "-1||HELLO|123");
+    test_dispatch_text("N:HELLO", 7, 0, "format", "-1||HELLO|");
+    test_dispatch("N:", 2, 34, NULL);
+    test_dispatch("N:,AB", 5, 34, NULL);
+    test_dispatch("NHELLO,AB", 9, 34, NULL);
     test_command( 0, (const uint8_t *)"MD:TEMP", 7);
     test_command( 0, (const uint8_t *)"MD1:TEMP", 8);
     test_command( 0, (const uint8_t *)"MD1//:TEMP", 10);
     test_command( 0, (const uint8_t *)"MD1//TEMP/:TEMP2", 16);
-    test_command( 0, (const uint8_t *)"MD:", 3);
-    test_command( 0, (const uint8_t *)"MD", 2);
-    test_command( 0, (const uint8_t *)"MD/PATH\xC1\xC2", 9);
+    test_command(34, (const uint8_t *)"MD:", 3);               // no name (SI-030)
+    test_command(34, (const uint8_t *)"MD", 2);                // MD needs a colon (SI-060)
+    test_command(34, (const uint8_t *)"MD/PATH\xC1\xC2", 9);
     test_command( 0, (const uint8_t *)"MD:PATH\xC1\xC2", 9);
     test_command( 0, (const uint8_t *)"XPWD", 4);
 

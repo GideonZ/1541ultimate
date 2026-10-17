@@ -115,7 +115,15 @@ void TreeBrowserState :: draw()
     browser->window->set_background(0);
     browser->window->reverse_mode(0);
     if (browser->has_path) {
-        browser->window->getScreen()->set_status(browser->path->get_path(), browser->user_interface->color_status);
+        Screen *scr = browser->window->getScreen();
+        const char *status = browser->path->get_path();
+        char line[128];
+        int width = scr->get_size_x() - 17; // the tag, and set_status leaves room for F3=HELP
+        if (browser->user_interface->cbm_names && (width > 0) && (width < 120)) {
+            sprintf(line, "%#s PETSCII", width, status);
+            status = line;
+        }
+        scr->set_status(status, browser->user_interface->color_status);
     }
 
     if(children->get_elements() == 0) {

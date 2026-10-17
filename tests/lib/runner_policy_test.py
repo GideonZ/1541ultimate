@@ -40,6 +40,9 @@ import profiles  # noqa: E402
 import health  # noqa: E402
 import interactions  # noqa: E402
 import targets  # noqa: E402
+import runtests.children as children_lib  # noqa: E402
+import runtests.device as device_lib  # noqa: E402
+import runtests.exits as exits_lib  # noqa: E402
 from report import Failure, check, detail, suite_fail, suite_ok  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -58,8 +61,8 @@ def load_runner():
     spec = importlib.util.spec_from_loader("run_tests_harness", loader)
     module = importlib.util.module_from_spec(spec)
     loader.exec_module(module)
-    module.DEVICE_RECOVERY_POLL_SECONDS = FAST_POLL_SECONDS
-    module.POST_RECOVERY_BUDGET_SECONDS = FAST_POST_RECOVERY_BUDGET_SECONDS
+    device_lib.DEVICE_RECOVERY_POLL_SECONDS = FAST_POLL_SECONDS
+    device_lib.POST_RECOVERY_BUDGET_SECONDS = FAST_POST_RECOVERY_BUDGET_SECONDS
     return module
 
 
@@ -71,6 +74,9 @@ class ScriptedProbe:
 
     def reachable(self):
         return self.answers.pop(0) if self.answers else False
+
+    def info(self):
+        raise Failure("a scripted probe has no /v1/info")
 
 
 # Where a fixture's own records go. The runner code under test reports through
@@ -163,36 +169,36 @@ def run_exit_status_checks(runner):
                             attempts=2)
 
     with check("a clean run exits 0"):
-        expect("clean", runner.exit_code_for([passed], 0), runner.EXIT_OK)
+        expect("clean", exits_lib.exit_code_for([passed], 0), exits_lib.EXIT_OK)
 
     with check("a suite that needed a second attempt exits EXIT_RETRIED"):
-        expect("retried", runner.exit_code_for([passed, retried], 0),
-               runner.EXIT_RETRIED)
+        expect("retried", exits_lib.exit_code_for([passed, retried], 0),
+               exits_lib.EXIT_RETRIED)
 
     with check("a failed suite exits EXIT_SUITE_FAILED"):
-        expect("failure", runner.exit_code_for([passed, failed], 0),
-               runner.EXIT_SUITE_FAILED)
+        expect("failure", exits_lib.exit_code_for([passed, failed], 0),
+               exits_lib.EXIT_SUITE_FAILED)
 
     with check("a recovery with no failure exits EXIT_RECOVERED"):
-        expect("recovered", runner.exit_code_for([passed], 1), runner.EXIT_RECOVERED)
+        expect("recovered", exits_lib.exit_code_for([passed], 1), exits_lib.EXIT_RECOVERED)
 
     with check("a recovery outranks a retry"):
-        expect("recovery and retry", runner.exit_code_for([retried], 1),
-               runner.EXIT_RECOVERED)
+        expect("recovery and retry", exits_lib.exit_code_for([retried], 1),
+               exits_lib.EXIT_RECOVERED)
 
     with check("a failure outranks a recovery"):
-        expect("failure and recovery", runner.exit_code_for([passed, failed], 1),
-               runner.EXIT_SUITE_FAILED)
+        expect("failure and recovery", exits_lib.exit_code_for([passed, failed], 1),
+               exits_lib.EXIT_SUITE_FAILED)
 
     with check("a device that cannot be made healthy outranks a failure"):
-        expect("unhealthy", runner.exit_code_for([failed, unhealthy], 1), runner.EXIT_DEVICE_UNHEALTHY)
+        expect("unhealthy", exits_lib.exit_code_for([failed, unhealthy], 1), exits_lib.EXIT_DEVICE_UNHEALTHY)
 
     with check("the statuses are a scale, in severity order"):
-        ladder = [runner.EXIT_OK, runner.EXIT_RETRIED, runner.EXIT_RECOVERED,
-                  runner.EXIT_SUITE_FAILED, runner.EXIT_DEVICE_UNHEALTHY]
+        ladder = [exits_lib.EXIT_OK, exits_lib.EXIT_RETRIED, exits_lib.EXIT_RECOVERED,
+                  exits_lib.EXIT_SUITE_FAILED, exits_lib.EXIT_DEVICE_UNHEALTHY]
         if ladder != sorted(ladder):
             raise Failure(f"the statuses are not in severity order: {ladder}")
-        if runner.EXIT_USAGE in ladder:
+        if exits_lib.EXIT_USAGE in ladder:
             raise Failure("a usage error is on the scale, so a threshold "
                           "comparison reaches it")
 
@@ -317,6 +323,66 @@ def run_degraded_recovery_checks(runner):
         expect("blocked second time", made.ensure_healthy('fixture:', patient=False), False)
         expect("recoveries", made.recoveries, 1)
 
+    with check("a computer's run also captures the settings of the cartridge fitted in it"):
+        class _Snapshot:
+            item_count = 0
+
+            def __init__(self, machine):
+                self.machine = machine
+                self.settings = {}
+
+        real = config_snapshot.capture
+        config_snapshot.capture = lambda host, api: _Snapshot(host)
+        try:
+            with declared_computers("u2@c64u"):
+                hosts = lambda target: [snap.machine for _, snap in  # noqa: E731
+                                        runner.capture_settings(targets.parse(target), "")]
+                expect("the computer", hosts("c64u"), ["c64u", "u2"])
+                expect("the cartridge, whose computer is already there",
+                       hosts("u2@c64u"), ["u2", "c64u"])
+                expect("an unrelated machine", hosts("u64"), ["u64"])
+        finally:
+            config_snapshot.capture = real
+
+    with check("a device that comes back on other firmware is recovered"):
+        # A RAM-loaded image falls back to the flashed one on a reboot, and the
+        # suites that follow would then test firmware nobody asked about.
+        master = ("Ultimate 64-II", "3.15", "0f4084aef")
+        flashed = ("C64 Ultimate", "1.2.1RC", "4269f084")
+        made = with_sweeps([healthy, healthy])
+        identities = [master, master, flashed]
+        made.firmware_identity = lambda: identities.pop(0)
+        expect("first look sets the baseline", made.firmware_problem(), "")
+        expect("same firmware", made.firmware_problem(), "")
+        problem = made.firmware_problem()
+        if "different firmware" not in problem or "C64 Ultimate 1.2.1RC" not in problem:
+            raise Failure(f"the other firmware was not named: {problem!r}")
+
+        made = with_sweeps([healthy, healthy, healthy])
+        identities = [master, flashed, master]
+        made.firmware_identity = lambda: identities.pop(0)
+        made.firmware_problem()
+        expect("recovered", made.ensure_healthy('fixture:', patient=False), True)
+        expect("recoveries", made.recoveries, 1)
+
+    with check("other firmware after the last attempt does not end the run"):
+        master = ("Ultimate 64-II", "3.15", "0f4084aef")
+        flashed = ("C64 Ultimate", "1.2.1RC", "4269f084")
+        made = with_sweeps([healthy])
+        identities = [master, flashed]
+        made.firmware_identity = lambda: identities.pop(0)
+        made.firmware_problem()
+        problem = isolating(made.health_problem)
+        expect("no problem is reported",
+               problem('fixture:', budget=0.0, firmware=False), "")
+        expect("the next precondition still sees it",
+               problem('fixture:', budget=0.0) != "", True)
+
+    with check("a device that cannot be asked for its firmware is not blamed for it"):
+        made = with_sweeps([healthy])
+        made.firmware_identity = lambda: None
+        expect("no verdict", made.firmware_problem(), "")
+
     with check("--no-health-check takes the sweep out of the decision"):
         # Without a sweep there is nothing to judge the device by, so it is
         # taken as healthy and recovery is left to the unreachable path. A
@@ -428,6 +494,29 @@ def run_retry_checks(runner, tmpdir):
         expect("attempts on the result", result.attempts, 3)
         expect("verdict", result.verdict, runner.report.FAIL)
 
+    with check("a passing suite that restarts the device onto other firmware is a warning"):
+        # wake-on-wifi and the power cycle end on the flashed firmware when the
+        # one under test was installed over JTAG. Repeating them would end the
+        # same way, so they are run once, reported, and the firmware put back.
+        passing = os.path.join(tmpdir, "passes.py")
+        with open(passing, "w", encoding="utf-8") as handle:
+            handle.write(f"open({counter!r}, 'a').write('x')\n")
+        restarting = runner.Suite("perf", "fixture-suite",
+                                  os.path.relpath(passing, runner.ROOT), "")
+        reset()
+        made = device_that([(True, True)], health_check=True)
+        identities = [("Ultimate 64-II", "3.15", "0f4084aef"),
+                      ("C64 Ultimate", "1.2.1RC", "4269f084")]
+        made.firmware_identity = lambda: identities.pop(0)
+        made.firmware_problem()
+        result = quietly(lambda: runner.run_suite(restarting, made, options(),
+                                                  "", "fixture"))
+        expect("executions", executions(), 1)
+        expect("verdict", result.verdict, runner.report.WARN)
+        expect("recoveries", made.recoveries, 1)
+        if "different firmware" not in result.note:
+            raise Failure(f"the note does not say what happened: {result.note!r}")
+
     with check("--attempts counts executions, so 2 runs it twice"):
         result, made = run(attempts=2)
         expect("executions", executions(), 2)
@@ -466,7 +555,7 @@ def run_retry_checks(runner, tmpdir):
         asked = []
         made = device_that([(True, False)] * 5)
 
-        def health_problem(label, patient=True, extra=None, budget=None):
+        def health_problem(label, patient=True, extra=None, budget=None, firmware=True):
             asked.append(budget)
             return "gone"
         made.health_problem = health_problem
@@ -478,12 +567,12 @@ def run_retry_checks(runner, tmpdir):
         # was merely busy end a gate; the full recovery budget would spend a
         # minute per failed suite on a classification the next suite redoes.
         expect("one check, with a bounded budget", asked,
-               [runner.LAST_ATTEMPT_HEALTH_BUDGET_SECONDS])
-        if not 0 < runner.LAST_ATTEMPT_HEALTH_BUDGET_SECONDS \
-                < runner.DEVICE_RECOVERY_BUDGET_SECONDS:
+               [device_lib.LAST_ATTEMPT_HEALTH_BUDGET_SECONDS])
+        if not 0 < device_lib.LAST_ATTEMPT_HEALTH_BUDGET_SECONDS \
+                < device_lib.DEVICE_RECOVERY_BUDGET_SECONDS:
             raise Failure(
                 f"the budget is not between asking once and waiting out the "
-                f"recovery budget: {runner.LAST_ATTEMPT_HEALTH_BUDGET_SECONDS}")
+                f"recovery budget: {device_lib.LAST_ATTEMPT_HEALTH_BUDGET_SECONDS}")
 
     with check("a device that cannot be made healthy ends the run"):
         result, made = run([(False, True)])
@@ -537,7 +626,7 @@ def run_jsonl_contract_checks(runner, tmpdir):
                                recoveries=1)
         report_module.run_result(verdict="OK", suites=1, passed=1, failed=0,
                                  skipped=0, dirty=0, seconds=1.5, recoveries=1,
-                                 exit_code=runner.EXIT_RECOVERED)
+                                 exit_code=exits_lib.EXIT_RECOVERED)
         with open(path, encoding="utf-8") as handle:
             records = [json.loads(line) for line in handle]
     finally:
@@ -570,7 +659,7 @@ def run_jsonl_contract_checks(runner, tmpdir):
         # A caller that reads only the JSONL must reach the same verdict as one
         # that reads only $?, so the two are written from the same numbers.
         expect("exit code matches a recovered run", run["exit_code"],
-               runner.EXIT_RECOVERED)
+               exits_lib.EXIT_RECOVERED)
 
 
 def run_output_dir_option_checks(runner):
@@ -599,7 +688,7 @@ def run_output_dir_option_checks(runner):
                 try:
                     parser.parse_args([spelling, "runs", "u64"])
                 except SystemExit as exc:
-                    expect("exit status", exc.code, runner.EXIT_USAGE)
+                    expect("exit status", exc.code, exits_lib.EXIT_USAGE)
                 else:
                     raise Failure(f"{spelling} was accepted")
 
@@ -629,6 +718,42 @@ def run_output_dir_option_checks(runner):
         command = runner.child_command(args, targets.parse("u64"), "runs/u64")
         if "--output-dir" not in command:
             raise Failure(f"the child was not given --output-dir: {command}")
+
+    with check("a child runs run-tests itself"):
+        command = runner.child_command(args, targets.parse("u64"), "runs/u64")
+        if not os.path.exists(command[1]) or not os.path.samefile(command[1], RUNNER_PATH):
+            raise Failure(f"the child would run {command[1]}, not {RUNNER_PATH}")
+
+
+def run_kernal_option_checks(runner):
+    """--kernal and --command-interface reach the Software IEC suites, and only when given."""
+    suite = next(s for s in runner.SUITES if s.name == "iec-dos-commands")
+
+    def command(**kwargs):
+        options = runner.Options(host="device.invalid", password="", timeout="1.0",
+                                 soak_profile="stress", output_dir="", stop_on_fail=False,
+                                 health_check=False, attempts=1, recover_command="",
+                                 recover_max_per_suite=0, recover_max_total=0,
+                                 recover_timeout=1.0, **kwargs)
+        return runner.build_command(suite, options, "rest")
+
+    with check("a run without --kernal starts the suite without one"):
+        started = command()
+        if "--kernal" in started or "--command-interface" in started or "@KERNAL@" in started:
+            raise Failure(f"the suite was given a KERNAL it was not asked for: {started}")
+
+    with check("--kernal and --command-interface are passed to the suite"):
+        started = command(kernal="jiffydos_c64.bin", command_interface=True)
+        if started[-3:] != ["--kernal", "jiffydos_c64.bin", "--command-interface"]:
+            raise Failure(f"the suite was not given the KERNAL options: {started}")
+
+    with check("a child run is given the same KERNAL options"):
+        args = runner.build_parser().parse_args(
+            ["--kernal", "jiffydos_c64.bin", "--command-interface", "u64", "u2@c64u"])
+        child = runner.child_command(args, targets.parse("u64"), "runs/u64")
+        if "--command-interface" not in child or \
+                child[child.index("--kernal") + 1] != "jiffydos_c64.bin":
+            raise Failure(f"the child was not given the KERNAL options: {child}")
 
 
 def run_reset_guard_checks():
@@ -976,6 +1101,100 @@ def declared_computers(value):
             os.environ[targets.COMPUTERS_ENV] = before
 
 
+def run_cabling_checks():
+    """The cabling of a run is found by asking the machines, with no variable set."""
+    import cabling
+    import machine
+
+    class Ram:
+        """Machines whose RAM is a dict, and which cartridge sits in which computer."""
+
+        def __init__(self, fitted):
+            self.fitted = fitted            # cartridge -> computer
+            self.memory = {}
+
+        def read(self, host, address, length):
+            if host in self.fitted:
+                host = self.fitted[host]
+                if host is None:
+                    raise Failure("no C64 behind this cartridge")
+            return self.memory.get((host, address), bytes(length))
+
+        def write(self, host, address, data):
+            self.memory[(host, address)] = data
+
+    kinds = {"u2": machine.U2, "c64u": machine.C64U, "u64": machine.U64,
+             "192.168.1.74": machine.U2, "127.0.0.1": machine.U64,
+             "localhost": machine.C64U}
+
+    @contextlib.contextmanager
+    def fresh_environment():
+        saved = {k: os.environ.pop(k, None)
+                 for k in (targets.COMPUTERS_ENV, cabling.SETTLED_ENV)}
+        try:
+            yield
+        finally:
+            for key, value in saved.items():
+                os.environ.pop(key, None)
+                if value is not None:
+                    os.environ[key] = value
+
+    def establish(tokens, ram, sweep=lambda computer: []):
+        return cabling.establish(tokens, None, 1.0, kind_of=kinds.get,
+                                 read=ram.read, write=ram.write, sweep=sweep)
+
+    with check("a cartridge named beside its computer is found without a variable"):
+        with fresh_environment():
+            ram = Ram({"u2": "c64u"})
+            expect("added", establish(["c64u", "u64", "u2"], ram), [("u2", "c64u")])
+            expect("declared", os.environ.get(targets.COMPUTERS_ENV), "u2@c64u")
+            expect("u2 resolves to its computer", targets.parse("u2").computer, "c64u")
+            expect("the computer's RAM was put back", ram.memory[("c64u", 0x340)], bytes(8))
+
+    with check("a cartridge in no named computer is left unpaired"):
+        with fresh_environment():
+            ram = Ram({"u2": None})
+            expect("added", establish(["c64u", "u64", "u2"], ram), [])
+            expect("declared", os.environ.get(targets.COMPUTERS_ENV), None)
+
+    with check("an explicit cartridge@computer token is declared"):
+        with fresh_environment():
+            expect("added", establish(["u2@c64u", "c64u"], Ram({})), [("u2", "c64u")])
+            expect("cartridges of c64u", targets.declared_cartridges("c64u"), ["u2"])
+
+    with check("a cartridge named both bare and paired is not declared"):
+        # The fixture and any bench that tests a device alone and in a computer
+        # name both; declaring the pair would merge the two targets into one.
+        with fresh_environment():
+            expect("added", establish(["127.0.0.1", "127.0.0.1@localhost"], Ram({})), [])
+            expect("declared", os.environ.get(targets.COMPUTERS_ENV), None)
+
+    with check("the runner's timeout, which arrives as text, is accepted"):
+        # run-tests hands over --timeout as given; a float() was missing and the
+        # lookup failed quietly, so a cartridge nobody named was never searched for.
+        expect("an api for a text timeout", cabling._api("c64u", None, "30.0").host, "c64u")
+
+    with check("a cartridge nobody named is found on the computer's network"):
+        with fresh_environment():
+            ram = Ram({"192.168.1.74": "c64u"})
+            added = establish(["c64u", "u64"], ram,
+                              sweep=lambda computer: ["192.168.1.74"] if computer == "c64u" else [])
+            expect("added", added, [("192.168.1.74", "c64u")])
+            expect("cartridges of c64u", targets.declared_cartridges("c64u"),
+                   ["192.168.1.74"])
+
+    with check("an exported declaration outranks a measurement"):
+        with fresh_environment():
+            os.environ[targets.COMPUTERS_ENV] = "u2@u64"
+            expect("added", establish(["c64u", "u64", "u2"], Ram({"u2": "c64u"})), [])
+            expect("declared", os.environ[targets.COMPUTERS_ENV], "u2@u64")
+
+    with check("the suite processes of a run do not measure again"):
+        with fresh_environment():
+            establish(["c64u", "u2"], Ram({"u2": "c64u"}))
+            expect("second call", establish(["c64u", "u64", "u2"], Ram({"u2": "u64"})), [])
+
+
 def run_move_rows_checks():
     """The page-key decomposition, over every remainder, without a device.
 
@@ -1238,10 +1457,10 @@ def run_multi_target_checks(runner):
         # multi-target run quietly different from the single-target run it is
         # meant to repeat, which is exactly the failure this cannot detect
         # from its output.
-        forwarded = set(runner.CHILD_FORWARDED_FLAGS)
-        forwarded |= {name for name, _ in runner.CHILD_FORWARDED_VALUES}
-        forwarded |= {name for name, _ in runner.CHILD_FORWARDED_NEGATIVE}
-        forwarded |= set(runner.CHILD_EXCLUDED_OPTIONS)
+        forwarded = set(children_lib.CHILD_FORWARDED_FLAGS)
+        forwarded |= {name for name, _ in children_lib.CHILD_FORWARDED_VALUES}
+        forwarded |= {name for name, _ in children_lib.CHILD_FORWARDED_NEGATIVE}
+        forwarded |= set(children_lib.CHILD_EXCLUDED_OPTIONS)
         forwarded |= {"suite", "stop_on_fail"}
         known = {action.dest for action in parser._actions
                  if action.dest not in ("help",)}
@@ -1321,27 +1540,27 @@ def run_multi_target_checks(runner):
         # The statuses are a severity scale, so the worst of a run's children
         # is the largest of them and the combination is a maximum rather than
         # a ladder of conditions that can disagree with the scale.
-        expect("all clean", runner.combine_exit_codes([0, 0]), runner.EXIT_OK)
+        expect("all clean", runner.combine_exit_codes([0, 0]), exits_lib.EXIT_OK)
         expect("a failure", runner.combine_exit_codes(
-            [runner.EXIT_OK, runner.EXIT_SUITE_FAILED]), runner.EXIT_SUITE_FAILED)
+            [exits_lib.EXIT_OK, exits_lib.EXIT_SUITE_FAILED]), exits_lib.EXIT_SUITE_FAILED)
         expect("a retry", runner.combine_exit_codes(
-            [runner.EXIT_OK, runner.EXIT_RETRIED]), runner.EXIT_RETRIED)
+            [exits_lib.EXIT_OK, exits_lib.EXIT_RETRIED]), exits_lib.EXIT_RETRIED)
         expect("a recovery", runner.combine_exit_codes(
-            [runner.EXIT_OK, runner.EXIT_RECOVERED]), runner.EXIT_RECOVERED)
+            [exits_lib.EXIT_OK, exits_lib.EXIT_RECOVERED]), exits_lib.EXIT_RECOVERED)
         expect("a recovery outranks a retry", runner.combine_exit_codes(
-            [runner.EXIT_RETRIED, runner.EXIT_RECOVERED]),
-            runner.EXIT_RECOVERED)
+            [exits_lib.EXIT_RETRIED, exits_lib.EXIT_RECOVERED]),
+            exits_lib.EXIT_RECOVERED)
         expect("a failure outranks a recovery", runner.combine_exit_codes(
-            [runner.EXIT_RECOVERED, runner.EXIT_SUITE_FAILED]),
-            runner.EXIT_SUITE_FAILED)
+            [exits_lib.EXIT_RECOVERED, exits_lib.EXIT_SUITE_FAILED]),
+            exits_lib.EXIT_SUITE_FAILED)
         expect("an unhealthy device outranks a failure",
                runner.combine_exit_codes(
-                   [runner.EXIT_SUITE_FAILED, runner.EXIT_DEVICE_UNHEALTHY]),
-               runner.EXIT_DEVICE_UNHEALTHY)
+                   [exits_lib.EXIT_SUITE_FAILED, exits_lib.EXIT_DEVICE_UNHEALTHY]),
+               exits_lib.EXIT_DEVICE_UNHEALTHY)
         expect("a status this runner never produces is a failure",
-               runner.combine_exit_codes([0, runner.EXIT_USAGE]),
-               runner.EXIT_SUITE_FAILED)
-        expect("no children", runner.combine_exit_codes([]), runner.EXIT_OK)
+               runner.combine_exit_codes([0, exits_lib.EXIT_USAGE]),
+               exits_lib.EXIT_SUITE_FAILED)
+        expect("no children", runner.combine_exit_codes([]), exits_lib.EXIT_OK)
 
 
 # Routing markers: every one of these asks tests/lib/targets.py which machine
@@ -1700,6 +1919,7 @@ def main():
             set_fixture_records(os.path.join(tmpdir, "fixture-records.jsonl"))
             run_target_grammar_checks()
             run_bench_topology_checks(runner)
+            run_cabling_checks()
             run_settings_restore_checks()
             run_profile_checks(runner)
             run_move_rows_checks()
@@ -1714,6 +1934,7 @@ def main():
             run_recovery_limit_checks(runner)
             run_degraded_recovery_checks(runner)
             run_output_dir_option_checks(runner)
+            run_kernal_option_checks(runner)
             run_reset_guard_checks()
             run_retry_checks(runner, tmpdir)
             run_jsonl_contract_checks(runner, tmpdir)

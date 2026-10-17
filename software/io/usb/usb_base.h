@@ -77,6 +77,7 @@ class UsbBase
     int get_device_slot(void);
     void deinstall_device(UsbDevice *dev);
     void doPing(struct t_pipe *);
+    int  control_exchange_locked(struct t_pipe *pipe, void *out, int outlen, void *in, int inlen);
 public:
     int max_current;
     int remaining_current;

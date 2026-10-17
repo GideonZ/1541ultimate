@@ -82,13 +82,22 @@ from. A target occupies the machines it names, and two targets that share one
 never run at the same time: `u64` and `u2@c64u` run together, while `c64u` and
 `u2@c64u` take turns. `-o DIR` gives each target a subdirectory of its own.
 
-A bench where a cartridge is permanently in one computer can say so once
-instead of spelling it out on every command line:
+The runner finds which cartridge is in which computer, and nothing has to be
+set. Before it starts, it takes the pairs written as `cartridge@computer`. It
+then checks every cartridge named beside other hosts: the computer writes a
+random 8-byte fingerprint into its own RAM at `$0340`, and the cartridge
+reads that address through its own DMA, so only the computer it is plugged
+into returns the same bytes. A computer that has no cartridge declared is
+also searched for one on its /24 network, because a cartridge nobody named
+still shares that computer's IEC bus. The result is reported as a `cabling:`
+line and exported as `U64_COMPUTERS`.
 
 ```sh
-export U64_COMPUTERS=u2@c64u
-./run-tests u2 c64u          # u2 means the u2 in the c64u, so these take turns
+./run-tests u2 c64u          # u2 is found to be in the c64u, so these take turns
 ```
+
+`U64_COMPUTERS=u2@c64u` states the cabling instead of measuring it, and wins
+over a measurement.
 
 Two tokens that name the same pair of machines are one target: with that
 variable set, `./run-tests u2@c64u c64u u2` runs two targets and says it
@@ -187,7 +196,7 @@ when a suite is started by hand. One name each, used by every suite:
 | `U64_TELNET_PORT` | Telnet port for the UI transport | `23` |
 | `U64_DMA_PORT` | DMA control port | `64` |
 | `U64_MODE` | Default UI mode: `overlay`, `freeze` or `telnet` | `overlay` |
-| `U64_COMPUTERS` | Which computer each cartridge is plugged into, as `u2@c64u[,...]` | none |
+| `U64_COMPUTERS` | Which computer each cartridge is plugged into, as `u2@c64u[,...]`. Optional: the runner measures it when unset | measured |
 
 `tests/lib/pacing.py` documents the `U64_UI_*` variables that change how fast
 the suites drive the on-device UI.
@@ -271,29 +280,40 @@ e2e:
   av-stream                         .      .      x      x      x
   browser-filesystem-refresh        .      .      x      x      x
   browser-long-filename             .      x      x      x      x
+  c64gs-cartridge                   .      .      x      x      x
   cfg-loader-log                    x      x      x      x      x
   cfg-partial-effectuate            .      .      .      x      x
   cfg-single-group                  .      x      x      x      x
   cfg-unknown-items                 .      .      x      x      x
   cfg-whitespace                    .      .      x      x      x
+  comal80-cartridge                 .      .      x      x      x
   create-disk-image                 .      x      x      x      x
+  d81-track-bounds                  .      x      x      x      x
   deferred-machine-actions          .      .      x      x      x
   doom-release                      .      .      .      x      x
+  easyflash-cartridge               .      .      x      x      x
   esp-depends                       x      x      x      x      x
   fast-reset                        .      .      x      x      x
   freeze-menu                       .      .      x      x      x
+  freezer-audio                     .      x      x      x      x
   ftp-client                        .      x      x      x      x
   ftp-server                        x      x      x      x      x
+  gmod2-eeprom-dirty                .      .      x      x      x
   ident-service-switch              .      .      x      x      x
   iec-dos-commands                  .      .      x      x      x
-  input                             .      x      x      x      x
+  iec-partition-file                .      .      x      x      x
+  softiec-log-lines                 .      .      x      x      x
+  iec-listen-timing                 .      .      x      x      x
+  input                             x      x      x      x      x
   input-batching                    x      x      x      x      x
   key-injection                     .      .      x      x      x
   lint                              x      x      x      x      x
   machine-code-monitor              .      .      .      x      x
   menu-screen                       x      x      x      x      x
+  micromys-wheel                    .      .      .      x      x
   navigation-keys                   x      x      x      x      x
   observability                     .      .      x      x      x
+  ocean-cartridge                   .      .      x      x      x
   openapi-contract                  .      x      x      x      x
   openapi-validator                 .      x      x      x      x
   power-cycle                       .      .      .      x      x
@@ -318,6 +338,8 @@ e2e:
   ui-backend-smoke                  x      x      x      x      x
   ultimax-cartridge                 .      .      x      x      x
   usb-bulk-out-integrity            .      .      .      x      x
+  usb-mouse                         x      x      x      x      x
+  usb-mouse-pico                    .      .      .      x      x
   wake-on-wifi                      .      .      .      x      x
   web-index                         .      .      .      x      x
   web-theme                         .      .      .      x      x
@@ -341,8 +363,8 @@ soak:
   usb-keyboard-repeat               .      .      .      x      x
 
                                ------ ------ ------ ------ ------
-  suites                           12     26     56     68     68
-  suite runs                       12     26     56    136    204
+  suites                           14     29     64     78     78
+  suite runs                       14     29     64    156    234
 
 Scenario and check counts, and durations, are not shown here:
 the registry does not know them. They depend on the machine and are

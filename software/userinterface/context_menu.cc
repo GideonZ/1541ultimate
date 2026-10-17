@@ -95,7 +95,7 @@ void ContextMenu :: init(Window *parwin, Keyboard *key)
         max_len = 0;
         for(int i=0;i<actions.get_elements();i++) {
         	Action *it = actions[i];
-            len = strlen(it->getName());
+            len = strlen(it->getDisplayName(user_interface));
             if (len == 0) {
                 len = 8;   // "" will be transformed to "- None -"
             }
@@ -353,7 +353,7 @@ bool ContextMenu :: perform_quick_seek(void)
     int num_el = this->actions.get_elements();
     for(int i=0;i<num_el;i++) {
     	Action *t = actions[i];
-		if(pattern_match(quick_seek_string, t->getName(), false)) {
+		if(pattern_match(quick_seek_string, t->getDisplayName(user_interface), false)) {
 			item_index = i;
 			return true;
 		}
@@ -417,7 +417,7 @@ void ContextMenu :: draw()
 	        window->set_background(0);
 		}
 		if (t) {
-			const char *string = t->getName();
+			const char *string = t->getDisplayName(user_interface);
 			window->output_line(*string ? string : "- None -", indent);  // Action name or "- None -"
 		} else {
 			window->output_line("");

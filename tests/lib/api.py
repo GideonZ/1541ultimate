@@ -30,7 +30,7 @@ from collections.abc import Sequence
 import machine
 import pacing
 import targets
-from report import Failure
+from report import Failure, warn
 import rest
 from rest import DEFAULT_TIMEOUT, RestClient, Response, multipart_body
 
@@ -72,12 +72,18 @@ SCREEN_CELLS = SCREEN_COLS * SCREEN_ROWS
 # doing, so this works with the menu open or closed.
 SCREEN_RAM = 0x0400
 READY_SCREEN_CODES = bytes((0x12, 0x05, 0x01, 0x04, 0x19, 0x2E))
+# The rows searched for it. The boot banner puts it on row 5.
+READY_WINDOW = 400
 # How long the machine gets to reach the BASIC prompt, and how often to look.
-# Measured on a U64 Elite: a reset reaches READY in about 34ms, so the budget
+# Measured on a U64 Elite: a reset reaches READY in about 250ms, so the budget
 # is generous and is only ever paid in full by a machine that is not going to
 # get there, such as one resetting into a cartridge.
 READY_TIMEOUT_SECONDS = 6.0
 READY_POLL_SECONDS = 0.01
+# The low byte of the KERNAL's jiffy clock, and how long it may stand still on a
+# running machine: one tick is 17ms, and health.py measures 21-62ms to the first.
+JIFFY_CLOCK = 0x00A2
+CPU_RUN_TIMEOUT_SECONDS = 0.5
 
 # config_menu.cc asks this before it leaves a config page with unsaved changes.
 SAVE_TO_FLASH_PROMPT = "Save changes to Flash?"
@@ -231,7 +237,7 @@ class MachineApi:
         """
         deadline = time.monotonic() + timeout
         while True:
-            if READY_SCREEN_CODES in self.readmem(SCREEN_RAM, 400):
+            if READY_SCREEN_CODES in self.readmem(SCREEN_RAM, READY_WINDOW):
                 return True
             if time.monotonic() >= deadline:
                 return False
@@ -256,7 +262,7 @@ class MachineApi:
         """Reset the C64, unless nothing has happened that a reset would clear.
 
         Waits for the BASIC prompt by polling rather than sleeping for a fixed
-        time: measured at about 34ms on a U64 Elite, against the 1 to 3 second
+        time: measured at 230 to 310ms on a U64 Elite, against the 1 to 3 second
         sleeps this replaces. Pass wait=False for a machine that is not
         expected to reach the prompt, such as one resetting into a cartridge.
 
@@ -279,11 +285,16 @@ class MachineApi:
         """
         if not force and self._reset_at == self._counts():
             return True
-        # Blank the top of the screen first, so the READY left by the previous
-        # boot cannot be mistaken for this one. Without it the wait returns
-        # immediately and proves nothing.
+        # Blank every row the wait searches, or the previous boot's READY is found
+        # before the reset takes effect. With the menu open the write can reach
+        # its screen instead (frozen-screen-dma), so it is closed first if it will.
         if wait:
-            self.writemem(SCREEN_RAM, bytes([0x20]) * len(READY_SCREEN_CODES))
+            if self.menu_open():
+                try:
+                    self.close_menu_from_anywhere()
+                except Failure as exc:
+                    warn(f"reset: the menu did not close ({exc}); resetting anyway")
+            self.writemem(SCREEN_RAM, bytes([0x20]) * READY_WINDOW)
         self._act("reset")
         self._reset_at = self._counts()
         if not wait:
@@ -293,6 +304,21 @@ class MachineApi:
         # bookkeeping is restored to "reset, and untouched since".
         self._reset_at = self._counts()
         return ready
+
+    def cpu_runs(self, timeout: float = CPU_RUN_TIMEOUT_SECONDS) -> bool:
+        """Whether the KERNAL's interrupt runs, so the 6510 does: the jiffy clock at $00A2 moves 60 times a second.
+
+        Measured rather than inferred from the user interface: an Ultimate 64
+        draws its overlay only while a display asserts HDMI hot-plug detect, and
+        then leaves the machine running; without one it freezes it.
+        """
+        first = self.readmem(JIFFY_CLOCK, 1)
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            time.sleep(READY_POLL_SECONDS)
+            if self.readmem(JIFFY_CLOCK, 1) != first:
+                return True
+        return False
 
     @property
     def was_just_reset(self) -> bool:
@@ -1035,6 +1061,10 @@ def _in_range(name: str, value: int, bounds: tuple[int, int]) -> None:
 CARTRIDGE_STORE = "C64 and Cartridge Settings"
 CARTRIDGE_PREFERENCE_ITEM = "Cartridge Preference"
 CARTRIDGE_PREFERENCE_EXTERNAL = "External"
+# How long the computer gets to reach the BASIC prompt after the reboot that
+# makes the preference reach the running bus. A reboot restarts the whole
+# machine, so this is longer than READY_TIMEOUT_SECONDS, which covers a reset.
+CARTRIDGE_REBOOT_TIMEOUT_SECONDS = 30.0
 
 
 class CartridgePreferenceUnavailable(Failure):
@@ -1055,16 +1085,20 @@ def ensure_cartridge_preference(target, password: str | None = None,
 
     Answers what it did, for a caller that reports it:
 
-      None            nothing to do - the target is its own computer, or the
-                      computer already prefers the external cartridge
-      a description   the value it changed, and from what
+      None            nothing to do - the target is its own computer
+      a description   the config state and that the computer was rebooted
 
     Raises `CartridgePreferenceUnavailable` when the computer cannot be asked,
     and `Failure` when it serves the setting and will not take it.
 
-    The change is not saved to flash. It takes effect through the item's own
-    change hook, and leaving flash alone keeps a test run from deciding what a
-    machine boots with.
+    The config write is not saved to flash, which keeps a test run from
+    deciding what a machine boots with. The value alone does not reach the
+    running bus: the computer routes the cartridge port only when it boots and
+    initialises its cartridge, so the item's change hook updates the stored
+    value without re-routing the bus that is already running. For a split
+    target this therefore reboots the computer and waits for it to come back,
+    unconditionally - including when the value already read External, because
+    the stored value does not prove the running bus is routed to the cartridge.
     """
     handle = targets.resolve(target)
     if not handle.split:
@@ -1081,18 +1115,31 @@ def ensure_cartridge_preference(target, password: str | None = None,
         raise CartridgePreferenceUnavailable(
             f"{handle.computer} did not answer for "
             f"'{CARTRIDGE_PREFERENCE_ITEM}': {reason}") from exc
-    if current == CARTRIDGE_PREFERENCE_EXTERNAL:
-        return None
-    computer.configs.set(CARTRIDGE_STORE, CARTRIDGE_PREFERENCE_ITEM,
-                         CARTRIDGE_PREFERENCE_EXTERNAL)
-    now = computer.configs.current(CARTRIDGE_STORE, CARTRIDGE_PREFERENCE_ITEM)
-    if now != CARTRIDGE_PREFERENCE_EXTERNAL:
-        raise Failure(
-            f"{handle.computer} kept '{CARTRIDGE_PREFERENCE_ITEM}' at {now!r} "
-            f"after it was set to {CARTRIDGE_PREFERENCE_EXTERNAL!r}; the "
-            f"cartridge in its port will not own the bus")
-    return (f"{handle.computer}: {CARTRIDGE_PREFERENCE_ITEM} "
-            f"{current!r} -> {CARTRIDGE_PREFERENCE_EXTERNAL!r}")
+    if current != CARTRIDGE_PREFERENCE_EXTERNAL:
+        computer.configs.set(CARTRIDGE_STORE, CARTRIDGE_PREFERENCE_ITEM,
+                             CARTRIDGE_PREFERENCE_EXTERNAL)
+        now = computer.configs.current(CARTRIDGE_STORE, CARTRIDGE_PREFERENCE_ITEM)
+        if now != CARTRIDGE_PREFERENCE_EXTERNAL:
+            raise Failure(
+                f"{handle.computer} kept '{CARTRIDGE_PREFERENCE_ITEM}' at {now!r} "
+                f"after it was set to {CARTRIDGE_PREFERENCE_EXTERNAL!r}; the "
+                f"cartridge in its port will not own the bus")
+    # The reboot is what makes the value reach the running bus. Blank the top
+    # of screen RAM first, the same way reset() does: without it,
+    # wait_until_ready() can match the READY prompt the computer was already
+    # showing before the reboot took the machine down, and return before the
+    # machine has actually restarted.
+    computer.machine.writemem(SCREEN_RAM, bytes([0x20]) * len(READY_SCREEN_CODES))
+    computer.machine.reboot()
+    ready = computer.machine.wait_until_ready(CARTRIDGE_REBOOT_TIMEOUT_SECONDS)
+    reached = "reached the BASIC prompt" if ready else (
+        f"did not reach the BASIC prompt within "
+        f"{CARTRIDGE_REBOOT_TIMEOUT_SECONDS:.0f}s")
+    from_state = (f"{current!r} -> {CARTRIDGE_PREFERENCE_EXTERNAL!r}"
+                  if current != CARTRIDGE_PREFERENCE_EXTERNAL
+                  else f"already {CARTRIDGE_PREFERENCE_EXTERNAL!r}")
+    return (f"{handle.computer}: {CARTRIDGE_PREFERENCE_ITEM} {from_state}, "
+            f"rebooted so the cartridge owns the bus ({reached})")
 
 
 # "External" sets internal=0 in C64::ConfigureU64SystemBus, bit 0x08 of which
@@ -1153,6 +1200,38 @@ DRIVE_DISABLED = "Disabled"
 # run, and can reach flash through ConfigBrowser::on_exit while the restore at
 # the end of a run cannot.
 DRIVE_ENABLED = "Enabled"
+
+# Every device a machine puts on the IEC bus, as (store, item). The Software IEC
+# drive of both machines defaults to bus ID 11: measured on a C64 Ultimate with
+# an Ultimate II+L fitted, rel-copy and iec-dos-commands timed out on channel 15
+# until the cartridge's one was switched off.
+IEC_DEVICE_SWITCHES = (*((store, DRIVE_ENABLE_ITEM) for store in DRIVE_STORES),
+                       ("SoftIEC Drive Settings", "IEC Drive"))
+
+
+def _silence_iec_devices(api: UltimateApi, name: str) -> list[str]:
+    """Switch off every IEC device of the machine `api` talks to, without saving.
+
+    Answers the stores it changed. A store the machine does not serve is passed
+    over, because a machine without that device has nothing to silence.
+    """
+    silenced = []
+    for store, item in IEC_DEVICE_SWITCHES:
+        try:
+            current = api.configs.current(store, item)
+        except Failure:
+            continue
+        if current == DRIVE_DISABLED:
+            continue
+        api.configs.set(store, item, DRIVE_DISABLED)
+        now = api.configs.current(store, item)
+        if now != DRIVE_DISABLED:
+            raise Failure(
+                f"{name} kept {store}/{item} at {now!r} after it was set to "
+                f"{DRIVE_DISABLED!r}; it will answer on the IEC bus alongside "
+                f"the device under test")
+        silenced.append(store)
+    return silenced
 
 
 def identify_machine(target, password: str | None = None,
@@ -1228,30 +1307,33 @@ def ensure_host_drives_off(target, password: str | None = None,
     Answers what it did, or None when there was nothing to do: the target is
     its own computer, or the computer's drives are already off.
 
-    Like the cartridge preference, the change is not saved to flash. A store
-    the computer does not serve is passed over rather than reported, because a
-    computer without drives is a computer with nothing to silence.
+    Like the cartridge preference, the change is not saved to flash.
     """
     handle = targets.resolve(target)
     if not handle.split:
         return None
     computer = UltimateApi(handle.computer, password, timeout)
-    silenced = []
-    for store in DRIVE_STORES:
-        try:
-            current = computer.configs.current(store, DRIVE_ENABLE_ITEM)
-        except Failure:
-            continue
-        if current == DRIVE_DISABLED:
-            continue
-        computer.configs.set(store, DRIVE_ENABLE_ITEM, DRIVE_DISABLED)
-        now = computer.configs.current(store, DRIVE_ENABLE_ITEM)
-        if now != DRIVE_DISABLED:
-            raise Failure(
-                f"{handle.computer} kept {store}/{DRIVE_ENABLE_ITEM} at "
-                f"{now!r} after it was set to {DRIVE_DISABLED!r}; it will "
-                f"answer on the IEC bus alongside the cartridge")
-        silenced.append(store)
+    silenced = _silence_iec_devices(computer, handle.computer)
     if not silenced:
         return None
     return f"{handle.computer}: {', '.join(silenced)} -> {DRIVE_DISABLED!r}"
+
+
+def ensure_cartridge_drives_off(target, password: str | None = None,
+                                timeout: float = DEFAULT_TIMEOUT) -> str | None:
+    """Silence the drives of a cartridge fitted in the target, so the target owns the bus.
+
+    The other direction of ensure_host_drives_off. Which cartridges are fitted
+    comes from U64_COMPUTERS, the same declaration a cartridge target is read
+    from. Answers what it did, or None when there was nothing to do. Not saved
+    to flash either.
+    """
+    handle = targets.resolve(target)
+    if handle.split:
+        return None
+    done = []
+    for cartridge in targets.declared_cartridges(handle.device):
+        silenced = _silence_iec_devices(UltimateApi(cartridge, password, timeout), cartridge)
+        if silenced:
+            done.append(f"{cartridge}: {', '.join(silenced)} -> {DRIVE_DISABLED!r}")
+    return "; ".join(done) or None

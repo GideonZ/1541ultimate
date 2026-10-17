@@ -654,9 +654,9 @@ void HttpTarget::cmd_body_add_primitive(Message *command, Message **reply, Messa
                 // clunky way to sign extend
                 for(int i=len_int-1; i >= 0; i--) {
                     if(i == len_int-1) {
-                        value_int = (char)command->message[pos_val + i];
+                        value_int = (int8_t)command->message[pos_val + i];
                     } else {
-                        value_int <<= 8;
+                        value_int *= 256;
                         value_int |= command->message[pos_val + i];
                     }
                 }
@@ -888,7 +888,12 @@ void HttpTarget::cmd_exchange(Message *command, Message **reply, Message **statu
                     hdr->RawCopySize = CMD_MAX_STATUS_LEN;
                 }
             }
-            exch->recv_response();
+            if (!exch->recv_response()) {
+                delete exch;
+                exch = NULL;
+                *status = &c_status_not_available;
+                return;
+            }
         } else {
             printf("Failed to send request\n");
             delete exch;

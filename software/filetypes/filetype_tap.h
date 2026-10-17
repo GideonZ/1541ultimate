@@ -21,7 +21,6 @@ class FileTypeTap : public FileType
 	IndexedList<TapIndexEntry *> tapIndices;
 public:
     FileTypeTap(BrowsableDirEntry *par);
-    ~FileTypeTap();
 
     int   fetch_context_items(IndexedList<Action *> &list);
     static FileType *test_type(BrowsableDirEntry *obj);
