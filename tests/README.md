@@ -302,6 +302,7 @@ e2e:
   ident-service-switch              .      .      x      x      x
   iec-dos-commands                  .      .      x      x      x
   iec-partition-file                .      .      x      x      x
+  iec-partition-config              .      .      x      x      x
   softiec-log-lines                 .      .      x      x      x
   iec-listen-timing                 .      .      x      x      x
   input                             x      x      x      x      x
