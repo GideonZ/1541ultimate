@@ -12,6 +12,8 @@
 #include "netdb.h"
 #include <errno.h>
 #include <stdio.h>
+#include <stddef.h>
+#include <string.h>
 
 NetworkTarget net(3);
 
@@ -32,6 +34,9 @@ NetworkTarget::NetworkTarget(int id)
     status_message.message = new uint8_t[CMD_MAX_STATUS_LEN];
     socket_count = 0;
     discard_read_reply();
+#if NET_TLS
+    tls_init();
+#endif
 }
 
 NetworkTarget::~NetworkTarget()
@@ -51,6 +56,10 @@ void NetworkTarget :: parse_command(Message *command, Message **reply, Message *
     // one. Dropping it here as well means no path into this target can hand a
     // client bytes left over from an earlier read.
     discard_read_reply();
+
+#if NET_TLS
+    tls_before_command(command);
+#endif
 
     switch(command->message[1]) {
         case NET_CMD_IDENTIFY:
@@ -175,6 +184,21 @@ void NetworkTarget :: parse_command(Message *command, Message **reply, Message *
         case NET_CMD_WRITE_SOCKET:
         	write_socket(command, reply, status);
         	break;
+        case NET_CMD_OPEN_TLS:
+            open_tls(command, reply, status);
+            break;
+        case NET_CMD_TLS_TRUST_CA:
+            trust_ca(command, reply, status);
+            break;
+        case NET_CMD_TLS_INFO:
+            tls_info(command, reply, status);
+            break;
+        case NET_CMD_START_TLS:
+            start_tls(command, reply, status);
+            break;
+        case NET_CMD_TLS_RELEASE:
+            tls_release(command, reply, status);
+            break;
         default:
             *reply  = &c_message_empty;
             *status = &c_status_unknown_command;
@@ -254,6 +278,14 @@ void NetworkTarget :: read_socket(Message *command, Message **reply, Message **s
 {
 	uint8_t socketnr = command->message[2];
 	uint32_t length = ((uint32_t)command->message[3]) | (((uint32_t)command->message[4]) << 8);
+
+#if NET_TLS
+    TlsSocket *session = tls_find(socketnr);
+    if (session) {
+        tls_read(session, length, reply, status);
+        return;
+    }
+#endif
 
     // A complete unfragmented IPv4 UDP datagram is the most this command can
     // ever return, so that is what it accepts. Anything larger cannot arrive.
@@ -363,6 +395,13 @@ void NetworkTarget :: write_socket(Message *command, Message **reply, Message **
 
     int length = command->length - 3;
     int ret;
+#if NET_TLS
+    TlsSocket *session = (command->length >= 3) ? tls_find(socketnr) : NULL;
+    if (session) {
+        tls_write(session, src, length, reply, status);
+        return;
+    }
+#endif
     if (owns_socket(socketnr)) {
         ret = lwip_send(socketnr, src, length, 0);
     } else {
@@ -391,6 +430,16 @@ void NetworkTarget :: close_socket(Message *command, Message **reply, Message **
 {
     uint8_t socketnr = command->message[2];
     int result = -1;
+#if NET_TLS
+    // Always OK: the session goes, whatever state it is in.
+    TlsSocket *session = tls_find(socketnr);
+    if (session) {
+        tls_close_entry(session, true);
+        *reply = &c_message_empty;
+        *status = &c_status_ok;
+        return;
+    }
+#endif
     if (owns_socket(socketnr)) {
         untrack_socket(socketnr);
         result = lwip_close(socketnr);
@@ -461,6 +510,9 @@ void NetworkTarget :: c64_reset(void)
     // what is left of the previous one's read over Data More.
     discard_read_reply();
     close_all_sockets();
+#if NET_TLS
+    tls_reset();
+#endif
 }
 
 void NetworkTarget :: get_more_data(Message **reply, Message **status)

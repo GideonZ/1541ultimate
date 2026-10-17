@@ -23,7 +23,9 @@
 ;   OPT_ABRT    abandon the reply after the first block, which is what a
 ;               client does when it gives up part way through a Data More
 ;               reply
-;   $C00A-$C00F and $C440-$C4FF are reserved for further options and results.
+;   OPT_WAIT    how long a wait may last, for a command that legitimately
+;               runs longer than the default (an OPEN_TLS can take 41 s)
+;   $C00B-$C00F and $C440-$C4FF are reserved for further options and results.
 ; New behaviour, as opposed to a new value, belongs in a reserved option byte,
 ; where zero has to keep meaning what the agent does today: the host writes the
 ; whole option block at once, so an older host leaves zeroes there.
@@ -67,7 +69,8 @@ OPT_CAP  = $C006                ; 16 bit cap on the data drain
 READY    = $C008                ; agent writes $A5 here once it is running
 OPT_ABRT = $C009                ; non-zero: abandon the reply after the first
                                 ; block by writing the abort bit
-;          $C00A-$C00F          ; reserved for further options
+OPT_WAIT = $C00A                ; wraps a wait may take; zero means WAIT_WRAPS
+;          $C00B-$C00F          ; reserved for further options
 CMDBUF   = $C010                ; command bytes, up to 896
 
 ; ------------------------------------------------------------- result block --
@@ -92,10 +95,12 @@ zcap    = $05                   ; 16 bit remaining drain allowance
 ztmo    = $07                   ; 24 bit wait counter
 zblk    = $0A                   ; block index
 zstat   = $0B                   ; CTRL as the current block arrived
+zwrap   = $0C                   ; wraps this transaction's waits may take
 
 ; The wait gives up after this many wraps of a 16 bit counter. Each pass is
-; about a dozen cycles, so $08 is roughly six seconds on a 1 MHz 6510: longer
-; than any command takes, shorter than the host's own timeout.
+; 25 cycles, so a wrap is about 1.7 s and $08 about 14 s on a 1 MHz 6510
+; (counted, not measured): longer than any plain command takes. A host that
+; sends a longer command (a TLS open) raises it through OPT_WAIT.
 WAIT_WRAPS = $08
 
         * = $0801
@@ -115,6 +120,7 @@ start
         sta GO
         sta SEQ
         sta OPT_ABRT            ; so a host that never sets it gets the default
+        sta OPT_WAIT
         lda #$A5
         sta READY
 main_wait
@@ -129,6 +135,11 @@ main_wait
 ; ---------------------------------------------------------------- transact ---
 ; Runs one command end to end and fills the result block.
 transact
+        lda OPT_WAIT
+        bne transact_wrap
+        lda #WAIT_WRAPS
+transact_wrap
+        sta zwrap
         lda #$00
         sta R_FLAGS
         sta R_BLOCKS
@@ -303,7 +314,7 @@ idle_loop
         bne idle_loop
         inc ztmo+2
         lda ztmo+2
-        cmp #WAIT_WRAPS
+        cmp zwrap
         bne idle_loop
         lda R_FLAGS
         ora #$01
@@ -334,7 +345,7 @@ wait_loop
         bne wait_loop
         inc ztmo+2
         lda ztmo+2
-        cmp #WAIT_WRAPS
+        cmp zwrap
         bne wait_loop
         lda R_FLAGS
         ora #$01

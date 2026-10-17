@@ -62,6 +62,19 @@ int wifi_get_wake_on_wifi(uint8_t *enabled);
 
 extern uint16_t sequence_nr;
 extern TaskHandle_t tasksWaitingForReply[NUM_TX_BUFFERS];
+
+// Requests sent by wifi_dedicated_call carry this thread number, which no transmit buffer has, and their replies
+// bypass tasksWaitingForReply: while dedicated_waiting is set, the receive interrupt queues them in dedicated_replies,
+// tagged with the UART's buffer generation; otherwise it drops them.
+#define WIFI_DEDICATED_THREAD NUM_TX_BUFFERS
+#if U64 == 1
+typedef struct {
+    command_buf_t *buf;
+    uint32_t generation;
+} dedicated_reply_t;
+extern QueueHandle_t dedicated_replies;
+extern volatile bool dedicated_waiting;
+#endif
 extern "C" { void print_uart_status(); }
 extern const char *no_wifi_buf;
 

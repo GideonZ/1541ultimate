@@ -113,11 +113,17 @@ void DmaUART::ModuleCtrl(uint8_t mode)
 
 void DmaUART::ClearRxBuffer(void)
 {
+    // No other task may run until the pool is refilled and the generation counts the reset, or it could free a
+    // buffer it held into the half filled pool, which the reset then fills with that buffer a second time.
+    // Nothing below blocks: queue resets and zero tick sends only.
+    vTaskSuspendAll();
     // uart->ictrl = DMAUART_RxIRQ_DIS | DMAUART_TxIRQ_DIS |DMAUART_BufReq_DIS; // disable interrupts
     uart->flowctrl = uart->flowctrl | DMAUART_RESET; // reset pulse; will also disable interrupts
     xQueueGenericReset(rx_bufs, pdFALSE);
     uart->flowctrl = uart->flowctrl | DMAUART_RESET; // reset pulse; will also disable interrupts
     cmd_buffer_reset(packets);
+    generation++; // after the reset, so that any doubt ends in a leak, not a double free
+    xTaskResumeAll();
 }
 
 int DmaUART::Read(uint8_t *buffer, int bufsize)

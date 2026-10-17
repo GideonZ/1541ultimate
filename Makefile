@@ -9,7 +9,7 @@ OPENAPI = python3 tools/openapi/generate.py
 #   make openapi_validate PYTHON=/path/to/venv/bin/python
 PYTHON ?= python3
 
-.PHONY: all app_space app_space_test d81_tracks_test observability_test lint_test host_tests openapi openapi_check openapi_test openapi_validate
+.PHONY: all app_space app_space_test d81_tracks_test observability_test lint_test host_tests openapi openapi_check openapi_test openapi_validate ca_store_test
 
 all: esp32 u2_rv u2plus u2pl u64 u64ii
 	@$(APP_SPACE) report
@@ -74,6 +74,13 @@ host_tests:
 	@$(MAKE) -C target/pc/linux/configiotest test
 	@$(MAKE) -C target/pc/linux/powerstate test
 	@$(MAKE) -C target/pc/linux/wolmagic test
+	@$(MAKE) -C target/pc/linux/wifitls test
+
+# The Mozilla root store the ESP32 bridge (raw_u64) builds its certificate bundle from
+# (software/wifi/ca_store). Its build checks the store at every configure; these are the
+# tests of that check and of tools/ca_store/refresh.py. See software/wifi/raw_u64/README.md.
+ca_store_test:
+	@python3 -m unittest discover -s tools/ca_store -p "test_*.py"
 
 esp32: esp32_raw_u64 esp32_raw_c3 esp32_u64ctrl
 

@@ -123,6 +123,17 @@ typedef struct {
 } rpc_get_time_resp;
 
 //----------------------------------
+// What feeds the hardware RNG, which the TLS engine's entropy gate and TLS_STATS report
+typedef enum {
+    ENTROPY_NONE  = 0, // RNG not fed by a live entropy source; no TLS session may open
+    ENTROPY_RADIO = 1, // Wi-Fi is running, so the RNG gives true random numbers
+    ENTROPY_ADC   = 2, // reserved
+} entropy_source_t;
+
+//----------------------------------
+#include "rpc_tls.h" // CMD_TLS_* opcodes and the TLS session layouts, software/wifi/tls
+
+//----------------------------------
 // send raw packet
 typedef struct {
     rpc_header_t hdr;
@@ -166,6 +177,7 @@ typedef struct {
 #define CMD_GET_TIME          0x10
 #define CMD_CLEAR_APS         0x11
 #define CMD_WIFI_AUTOCONNECT  0x12
+// CMD_TLS_OPEN .. CMD_TLS_SET_CA (0x30-0x35): rpc_tls.h
 
 /*
 #define CMD_SOCKET          0x11
