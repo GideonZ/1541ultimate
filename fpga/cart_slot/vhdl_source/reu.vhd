@@ -283,20 +283,11 @@ begin
                         verify_error <= '0';
                         trans_done   <= '0';
                         command.execute <= '0';
-                        -- patch 2026-05-07:
-                        -- Even when g_extended is false; one cycle should be inserted. 
-                        -- start_delay is 1 when g_extended is false, so going to the delay
-                        -- state will insert one cycle of delay
-                        if g_extended or true then
-                            if g_no_dma_delay then
-                                -- 2026-08-27: Setting DMA immedately will stop the CPU, avoiding execution of program code at higher speeds than 1 MHz
-                                -- Only applies to U64/U64E2
-                                reu_dma_n <= '0'; 
-                            end if;
-                            state <= delay;
-                        else
+                        if g_no_dma_delay then
                             dispatch;
                             reu_dma_n <= '0';
+                        else
+                            state <= delay;
                         end if;
                     end if;
                 end if;
