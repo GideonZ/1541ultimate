@@ -4,6 +4,10 @@
 /// C like functions to 'talk' with the WiFi Module
 uint16_t sequence_nr = 0;
 TaskHandle_t tasksWaitingForReply[NUM_TX_BUFFERS];
+#if U64 == 1
+QueueHandle_t dedicated_replies = NULL;
+volatile bool dedicated_waiting = false;
+#endif
 
 void hex(uint8_t h)
 {
@@ -17,6 +21,16 @@ BaseType_t wifi_rx_isr(command_buf_context_t *context, command_buf_t *buf, BaseT
     rpc_header_t *hdr = (rpc_header_t *)buf->data;
     BaseType_t res;
 
+#if U64 == 1
+    if (hdr->thread == WIFI_DEDICATED_THREAD) {
+        // pdFALSE makes the interrupt handler free the buffer.
+        if (!dedicated_waiting) {
+            return pdFALSE;
+        }
+        dedicated_reply_t reply = { buf, esp32.uart->generation };
+        return xQueueSendFromISR(dedicated_replies, &reply, w);
+    }
+#endif
     if ((hdr->thread < NUM_TX_BUFFERS) && (tasksWaitingForReply[hdr->thread])) {
         TaskHandle_t thread = tasksWaitingForReply[hdr->thread];
         tasksWaitingForReply[hdr->thread] = NULL;
@@ -39,6 +53,11 @@ void wifi_command_init(void)
     esp32.uart->FlowControl(true);
     esp32.uart->ClearRxBuffer();
     esp32.uart->EnableSlip(true);
+#if U64 == 1
+    if (!dedicated_replies) {
+        dedicated_replies = xQueueCreate(4, sizeof(dedicated_reply_t));
+    }
+#endif
     esp32.uart->SetReceiveCallback(wifi_rx_isr);
     esp32.uart->EnableIRQ(true);
 }

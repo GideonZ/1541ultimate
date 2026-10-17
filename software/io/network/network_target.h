@@ -21,6 +21,7 @@
 #define NET_CMD_CLOSE_SOCKET        0x09
 #define NET_CMD_READ_SOCKET         0x10
 #define NET_CMD_WRITE_SOCKET        0x11
+#define NET_CMD_GET_RANDOM          0x20
 
 #define NET_CMD_BUFSIZE 2048
 
@@ -47,8 +48,16 @@
 // Payload bytes in the first block, which also carries the two byte header.
 #define NET_FIRST_BLOCK_PAYLOAD (NET_MAX_REPLY_BLOCK - 2)
 
+// The most random bytes GET_RANDOM returns at once, which is what the WiFi
+// module hands out per request (RANDOM_MAX_BYTES in its rpc_calls.h).
+#define NET_MAX_RANDOM 512
+
 #if NET_MAX_SOCKET_READ > NET_CMD_BUFSIZE
 #error "the socket read buffer cannot hold the largest accepted read"
+#endif
+
+#if NET_MAX_RANDOM > NET_MAX_REPLY_BLOCK
+#error "random bytes must fit a single reply block"
 #endif
 
 class NetworkTarget : public CommandTarget {
@@ -84,6 +93,7 @@ class NetworkTarget : public CommandTarget {
     void read_socket(Message *command, Message **reply, Message **status);
     void write_socket(Message *command, Message **reply, Message **status);
     void close_socket(Message *command, Message **reply, Message **status);
+    void get_random(Message *command, Message **reply, Message **status);
     void start_read_reply(int payload_length, Message *result, Message **reply, Message **status);
     void discard_read_reply(void);
 public:

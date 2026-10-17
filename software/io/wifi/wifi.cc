@@ -18,6 +18,7 @@
 #include "u64_config.h"
 #endif
 #include "init_function.h"
+#include "wifi_dedicated.h"
 
 #define DEBUG_INPUT  0
 #define EVENT_START  0xF1
@@ -477,6 +478,13 @@ void wifi_free(void *driver, void *buffer)
     WiFi *w = (WiFi *)driver;
     w->freeBuffer((command_buf_t *)buffer);
 }
+
+#if U64 == 1
+bool wifi_module_ready(void)
+{
+    return wifi.getState() >= eWifi_AppDetected;
+}
+#endif
 
 extern "C" {
     void print_uart_status()
