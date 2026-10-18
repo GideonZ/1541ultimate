@@ -153,6 +153,8 @@ public:
     static void pushPowerOnMode(void);
     static int setWakeOnWifi(ConfigItem *it);
     static void pushWakeOnWifi(void);
+    static int setRecoveryUrl(ConfigItem *it);
+    static void pushRecoveryUrl(void);
 #endif
     static int setCpuSpeed(ConfigItem *it);
 
