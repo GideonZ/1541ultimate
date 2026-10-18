@@ -1185,7 +1185,16 @@ MountPoint *FileManager::find_mount_point(SubPath *path, FileInfo *info)
     if (fr == FR_OK) {
         path->get_root_path(file->get_path_reference());
         note_managed_temp_open(file);
-        emb = FileSystemInFile::getEmbeddedFileSystemFactory()->create(info);
+        FileInfo embedded_info(*info);
+        for (int i = 0; i < open_file_list.get_elements(); i++) {
+            File *other = open_file_list[i];
+            if (other && other->write_intent && !strcasecmp(other->get_path(), file->get_path())) {
+                // Another writer can change the allocation map independently of this filesystem.
+                embedded_info.attrib |= AM_RDO;
+                break;
+            }
+        }
+        emb = FileSystemInFile::getEmbeddedFileSystemFactory()->create(&embedded_info);
         if (emb) {
             emb->init(file);
             if (emb->getFileSystem()) {

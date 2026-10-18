@@ -261,6 +261,9 @@ SUITES: Sequence[Suite] = (
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@", profile=profiles.QUICK),
     Suite("e2e", "prg-context-menu", "tests/e2e/filemanager/prg_context_menu_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@"),
+    # Real HDMI copy/paste, disk allocation and Leave Menu on Mount (#145).
+    Suite("e2e", "image-copy", "tests/e2e/filemanager/image_copy_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
     Suite("e2e", "browser-long-filename", "tests/e2e/filemanager/browser_long_filename_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@", profile=profiles.QUICK),
     Suite("e2e", "browser-cbm-names", "tests/e2e/filemanager/browser_cbm_names_test.py",

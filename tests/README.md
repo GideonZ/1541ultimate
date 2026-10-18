@@ -318,6 +318,7 @@ e2e:
   openapi-validator                 .      x      x      x      x
   power-cycle                       .      .      .      x      x
   prg-context-menu                  .      .      x      x      x
+  image-copy                        .      .      x      x      x
   prg-load-path-trim                .      x      x      x      x
   printer                           .      x      x      x      x
   readmem-writemem                  x      x      x      x      x
@@ -389,6 +390,11 @@ matrix above is aligned text whichever format is asked for.
 
 By default the run continues through every selected suite, so one failure does
 not hide the rest. `-x/--stop-on-fail` stops at the first one.
+
+`image-copy` uses the HDMI overlay to check multi-file copy/paste of dotted CBM
+names into a D64 and host storage, mixed emulated-1541/browser writes with BAM
+and payload verification, and the Leave Menu on Mount setting. It uses generated
+fixtures and restores the drive settings. Drive A must be empty.
 
 Everything else the runner does when things go badly follows from one idea.
 

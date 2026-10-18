@@ -200,13 +200,12 @@ static void drive_holds_image(FileManager *fm)
     printf("[%s] passed\n", testname);
 }
 
-// The browser enters the image, the drive then mounts it and writes, and the
-// browser copies into the image while the drive still holds it: the image is
-// never ejected.
+// A second writer owns the image. The browser may read it, but cannot allocate
+// from a cached BAM until that writer closes its handle.
 static void no_eject(FileManager *fm)
 {
     const char *testname = "Suite12-NoEject";
-    printf("\n[%s] Browser writes the image while a second handle still holds it\n", testname);
+    printf("\n[%s] Browser refuses writes while a second handle holds the image\n", testname);
 
     const char *image = "/Fat/stale3.d64";
     create_iec_d64_fixture("output/stale3.d64");
@@ -216,6 +215,8 @@ static void no_eject(FileManager *fm)
 
     File *drive = NULL;
     REQUIRE(fm->fopen(image, FA_READ | FA_WRITE, &drive) == FR_OK);
+
+    list_image(testname, fm, image);
 
     FileSystemInFile_D64 emb(0, true);
     emb.init(drive);
@@ -236,11 +237,15 @@ static void no_eject(FileManager *fm)
 
     uint8_t *other = new uint8_t[PAYLOAD_SIZE];
     fill_pattern(other, PAYLOAD_SIZE, 0x96);
-    write_through_mount(testname, fm, "/Fat/stale3.d64/BROWSERC", other, PAYLOAD_SIZE);
+    File *browser = NULL;
+    REQUIRE(fm->fopen("/Fat/stale3.d64/BROWSERC", FA_WRITE | FA_CREATE_NEW, &browser) == FR_WRITE_PROTECTED);
+    REQUIRE(browser == NULL);
 
     check_payload_survived(testname, fm, image, payload, "DRIVEC");
 
     fm->fclose(drive);
+    write_through_mount(testname, fm, "/Fat/stale3.d64/BROWSERC", other, PAYLOAD_SIZE);
+    check_payload_survived(testname, fm, image, payload, "DRIVEC");
     delete[] payload;
     delete[] other;
     printf("[%s] passed\n", testname);
