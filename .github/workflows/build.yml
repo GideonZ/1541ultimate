@@ -70,7 +70,7 @@ jobs:
            mkdir -p target/pc/linux/iecdrive/{output,result} && \
            make -C target/pc/linux/iecdrive CC='gcc -fsanitize=address' CPP='g++ -fsanitize=address' && \
            cd target/pc/linux/iecdrive && \
-           (ASAN_OPTIONS=detect_leaks=0 ./result/testdrive > image-mount-tests.log 2>&1 || \
+           (env -u LD_PRELOAD ASAN_OPTIONS=detect_leaks=0 ./result/testdrive > image-mount-tests.log 2>&1 || \
             { tail -100 image-mount-tests.log; exit 1; })"
 
       # Also the gate that catches an endpoint whose documentation was not
