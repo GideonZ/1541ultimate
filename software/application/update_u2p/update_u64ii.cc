@@ -46,6 +46,28 @@ static void status_callback(void *user)
     ui->update_progress(NULL, 1);
 }
 
+#if UPDATE_FPGA_TYPE
+#include "color_timings.h"
+#include "hdmi_scan.h"
+
+extern "C" void SetVideoPll(t_video_mode mode, int ppm);
+extern "C" void ResetHdmiPll(void);
+
+// Network recovery starts this updater straight from the bootloader, so no
+// application has set up the video output. NTSC, because HDMI then runs at
+// 640x480, which every display takes. The steps are those of
+// U64Config::effectuate_settings() for that mode.
+static void init_video(void)
+{
+    const t_video_color_timing *ct = color_timings[(int)e_NTSC_60];
+    C64_PHASE_INCR = ct->phase_inc;
+    SetVideoPll(e_NTSC_60, 0);
+    C64_VIDEOFORMAT = ct->mode_bits;
+    SetVideoMode1080p(e_NTSC_60, e_480p_576p);
+    ResetHdmiPll();
+}
+#endif
+
 void update_esp32_impl(void)
 {
     if (esp32.Download() == 0) {
@@ -103,6 +125,9 @@ void update_esp32(void)
 
 void do_update(void)
 {
+#if UPDATE_FPGA_TYPE
+    init_video();
+#endif
     setup("\033\025** Ultimate 64 Elite-II Updater **\n\033\037");
     usb2.initHardware();
 
@@ -120,8 +145,11 @@ void do_update(void)
 
     console_print(screen, "\033\027Checking checksums of loaded images..\n");
 
+    // An updater that carries one image falls through to default on the other
+    // FPGA, and flashes nothing.
     console_print(screen, "\033\037Checksum of FPGA image:   ");
     switch(fpgatype_id) {
+#if UPDATE_FPGA_TYPE != 3
     case 2:
         if(calc_checksum((uint8_t *)&_u64e2_50t_swp_start, (uint8_t *)&_u64e2_50t_swp_end) == CHK_u64e2_50t_swp) {
             console_print(screen, check_ok);
@@ -130,6 +158,8 @@ void do_update(void)
             while(1);
         }
         break;
+#endif
+#if UPDATE_FPGA_TYPE != 2
     case 3:
         if(calc_checksum((uint8_t *)&_u64e2_100t_swp_start, (uint8_t *)&_u64e2_100t_swp_end) == CHK_u64e2_100t_swp) {
             console_print(screen, check_ok);
@@ -138,6 +168,7 @@ void do_update(void)
             while(1);
         }
         break;
+#endif
     default:
         user_interface->popup("FPGA Type not supported.", BUTTON_OK);
         goto off;
@@ -174,16 +205,20 @@ void do_update(void)
 
         flash2->protect_disable();
         switch(fpgatype_id) {
+#if UPDATE_FPGA_TYPE != 3
         case 2:
             flash_buffer_at(flash2, screen, 0x000000, false, &_u64e2_50t_swp_start, &_u64e2_50t_swp_end,   "V1.0", "Runtime FPGA");
             flash_buffer_at(flash2, screen, 0x220000, false, &_ultimate_app_start,  &_ultimate_app_end,  "V1.0", "Ultimate Application");
             write_protect(flash2, 4096);
             break;
+#endif
+#if UPDATE_FPGA_TYPE != 2
         case 3:
             flash_buffer_at(flash2, screen, 0x000000, false, &_u64e2_100t_swp_start, &_u64e2_100t_swp_end,   "V1.0", "Runtime FPGA");
             flash_buffer_at(flash2, screen, 0x3C0000, false, &_ultimate_app_start,  &_ultimate_app_end,  "V1.0", "Ultimate Application");
             write_protect(flash2, 4096); // cannot protect just 5.5 MB... :-(
             break;
+#endif
         default:
             user_interface->popup("FPGA Type not supported.", BUTTON_OK);
             goto off;
