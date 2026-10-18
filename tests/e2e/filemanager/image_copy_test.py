@@ -291,7 +291,7 @@ def run(args):
                     try:
                         client.storbinary("STOR " + path + "/LONGCA~1.D64", io.BytesIO(b"overwrite"))
                     except (ftplib.error_temp, ftplib.error_perm) as exc:
-                        if str(exc)[:3] not in ("450", "550"):
+                        if str(exc)[:3] != "452":
                             raise
                     else:
                         raise Failure("short-name upload was not refused; use a FAT --root")
