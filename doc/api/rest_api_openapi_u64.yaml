@@ -2521,6 +2521,82 @@ paths:
                   value:
                     errors:
                       - SubSystem does not exist
+  '/v1/machine:screenshot':
+    get:
+      tags:
+        - Machine
+      summary: Capture a screenshot of the C64 screen
+      description: |2-
+        Returns a single-frame screenshot of the screen as a 16-colour BMP image (384x272 PAL frame with borders). If the Ultimate menu is active, the menu screen is captured; otherwise, the running C64 screen (character, multicolor, or bitmap mode) and active VIC-II hardware sprites are rendered.
+
+        If `format=raw` is specified, returns the raw 4-bpp palette-indexed pixel buffer (52224 bytes).
+      operationId: getScreenshot
+      parameters:
+        - name: format
+          in: query
+          required: false
+          description: 'Image format: ''bmp'' (default) or ''raw''.'
+          schema:
+            type: string
+            enum:
+              - bmp
+              - raw
+            default: bmp
+          example: bmp
+      responses:
+        '200':
+          description: A 16-colour BMP image of the screen (or raw bytes if format=raw).
+          content:
+            image/bmp:
+              schema:
+                type: string
+                format: binary
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                Invalid format:
+                  value:
+                    errors:
+                      - Invalid format
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '423':
+          description: Locked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                Could not obtain lock of subsystem:
+                  value:
+                    errors:
+                      - Could not obtain lock of subsystem
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                Out of memory:
+                  value:
+                    errors:
+                      - Out of memory
+        '503':
+          description: Service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                SubSystem does not exist:
+                  value:
+                    errors:
+                      - SubSystem does not exist
   '/v1/machine:writemem':
     post:
       tags:

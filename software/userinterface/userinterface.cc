@@ -571,7 +571,7 @@ static bool active_screen_read_safe(UserInterface *ui)
     return true;
 }
 
-bool UserInterface :: copy_active_screen_matrix(uint8_t *dest, int dest_len)
+bool UserInterface :: copy_active_screen_matrix(uint8_t *dest, int dest_len, int *border, int *bg)
 {
     bool copied = false;
     if (!dest || (dest_len < ACTIVE_SCREEN_MATRIX_BYTES)) {
@@ -597,6 +597,12 @@ bool UserInterface :: copy_active_screen_matrix(uint8_t *dest, int dest_len)
         if ((screen_width != ACTIVE_SCREEN_MATRIX_WIDTH) ||
                 (screen_height != ACTIVE_SCREEN_MATRIX_HEIGHT)) {
             continue;
+        }
+        if (border) {
+            *border = ui->color_border;
+        }
+        if (bg) {
+            *bg = ui->color_bg;
         }
         copied = true;
         break;

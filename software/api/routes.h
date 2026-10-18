@@ -105,15 +105,16 @@ public:
         delete hdr; // no longer needed
     }
 
-    void binary_response(void)
+    void binary_response(const char *content_type = "application/octet-stream", const char *filename = NULL)
     {
         StreamTextLog *hdr = new StreamTextLog(HTTP_BUFFER_SIZE, (char *)resp->_buf);
         if (attachment) {
             hdr->format("HTTP/1.1 200 OK\r\n");
-            hdr->format("Content-Type: application/octet-stream\r\n");
-            const char *fn = attachment->getFileName();
+            hdr->format("Content-Type: %s\r\n", content_type);
+            hdr->format("Cache-Control: no-store, no-cache, must-revalidate\r\n");
+            const char *fn = filename ? filename : attachment->getFileName();
             if (fn) {
-                hdr->format("Content-Disposition: attachment; filename=\"%s\"\r\n", fn);
+                hdr->format("Content-Disposition: inline; filename=\"%s\"\r\n", fn);
             } else {
                 hdr->format("Content-Disposition: attachment\r\n");
             }

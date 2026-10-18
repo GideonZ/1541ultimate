@@ -87,6 +87,9 @@ $(document).ready(async function () {
     async function doReset() {
         let params = {};
         let [status_code, content] = await make_put_request("http://" + serverIP + "/v1/machine:reset", params);
+        if ($('#screenshot').is(':visible')) {
+            setTimeout(refreshScreenshot, 300);
+        }
     };
 
     async function doPowerOff() {
@@ -109,6 +112,9 @@ $(document).ready(async function () {
     async function doReboot() {
         let params = {};
         let [status_code, content] = await make_put_request("http://" + serverIP + "/v1/machine:reboot", params);
+        if ($('#screenshot').is(':visible')) {
+            setTimeout(refreshScreenshot, 500);
+        }
     };
 
     $('#domenubutton').click(function(event){
@@ -119,6 +125,9 @@ $(document).ready(async function () {
     async function doMenuButton() {
         let params = {};
         let [status_code, content] = await make_put_request("http://" + serverIP + "/v1/machine:menu_button", params);
+        if ($('#screenshot').is(':visible')) {
+            setTimeout(refreshScreenshot, 200);
+        }
     };
 
     $('#showterminal').click(function(event){
@@ -131,6 +140,85 @@ $(document).ready(async function () {
             event.preventDefault(); // Prevents the default action of the anchor tag
             $(".page").hide();
             $('#welcome').show();
+    });
+
+    var screenshotTimer = null;
+    var screenshotObjectUrl = null;
+    var screenshotBusy = false;
+    var screenshotPending = false;
+
+    function scheduleNextScreenshot() {
+        if (screenshotTimer) {
+            clearTimeout(screenshotTimer);
+            screenshotTimer = null;
+        }
+        if ($('#autoscreenshot').is(':checked') && $('#screenshot').is(':visible')) {
+            screenshotTimer = setTimeout(refreshScreenshot, 2000);
+        }
+    }
+
+    async function refreshScreenshot() {
+        if (screenshotBusy) {
+            screenshotPending = true;
+            return;
+        }
+        screenshotBusy = true;
+        if (screenshotTimer) {
+            clearTimeout(screenshotTimer);
+            screenshotTimer = null;
+        }
+
+        let url = "http://" + serverIP + "/v1/machine:screenshot";
+        let headers = {};
+        if (apiPassword != "") {
+            headers["X-Password"] = apiPassword;
+        }
+        let controller = new AbortController();
+        let timeoutId = setTimeout(() => controller.abort(), 5000);
+        try {
+            let resp = await fetch(url, { cache: "no-store", headers: headers, signal: controller.signal });
+            if (resp.ok) {
+                let blob = await resp.blob();
+                let nextUrl = URL.createObjectURL(blob);
+                $('#screenshot-img').attr('src', nextUrl);
+                $('#downloadscreenshot').attr('href', nextUrl).attr('download', 'screenshot.bmp').show();
+                if (screenshotObjectUrl) {
+                    URL.revokeObjectURL(screenshotObjectUrl);
+                }
+                screenshotObjectUrl = nextUrl;
+            }
+        } catch (e) {
+            console.error("Failed to fetch screenshot:", e);
+        } finally {
+            clearTimeout(timeoutId);
+            screenshotBusy = false;
+            if (screenshotPending) {
+                screenshotPending = false;
+                setTimeout(refreshScreenshot, 100);
+            } else {
+                scheduleNextScreenshot();
+            }
+        }
+    }
+
+    $('#showscreenshot').click(function(event){
+        event.preventDefault();
+        $(".page").hide();
+        $('#screenshot').show();
+        refreshScreenshot();
+    });
+
+    $('#takescreenshot').click(function(event){
+        refreshScreenshot();
+    });
+
+    $('#autoscreenshot').change(function(){
+        if (this.checked) {
+            refreshScreenshot();
+        } else if (screenshotTimer) {
+            clearTimeout(screenshotTimer);
+            screenshotTimer = null;
+        }
     });
 
     // SID page event handlers
@@ -1543,7 +1631,7 @@ function disassembler(startInt, byteArray) {
         width: 800px;
         display: none;
     }
-    div#livemon, div#sidplay, div#runner, div#tokenizer {
+    div#livemon, div#sidplay, div#runner, div#tokenizer, div#screenshot {
         flex-grow: 1;
         padding: 20px;
         display:none;
@@ -1759,6 +1847,7 @@ div#left-nav a.darkmode {
                 <li><a id="showrunner" href="#">Run PRG / CRT / Disk</a></li>
                 <li><a id="showterminal"  href="#">Live Monitor</a></li>
                 <li><a id="showtokenizer"  href="#">BASIC Editor</a></li>
+                <li><a id="showscreenshot" href="#" title="Capture screen snapshot...">Screen Snapshot</a></li>
             </ul>
             <ul>
                 <li><a id="doreset" href="#" title="Reset the C64...">Reset Machine</a></li>
@@ -1887,6 +1976,21 @@ div#left-nav a.darkmode {
             <div><b>Special characters:</b></div>
             <div id="tableContainer"></div>
 
+        </div>
+
+        <div id="screenshot" class="page">
+            <h1>Screen Snapshot</h1>
+            <p>Capture the current screen of your Ultimate 64 as an image.</p>
+            <div style="margin: 15px 0;">
+                <input type="button" id="takescreenshot" value="Take Snapshot" title="Fetch a new screenshot">
+                <label style="margin-left: 15px; cursor: pointer;">
+                    <input type="checkbox" id="autoscreenshot"> Auto-refresh (every 2s)
+                </label>
+                <a id="downloadscreenshot" href="#" download="screenshot.bmp" style="margin-left: 20px; color: #5c62d6; text-decoration: underline; display: none;">Download BMP</a>
+            </div>
+            <div style="margin-top: 15px; display: inline-block; background: #000; padding: 10px; border-radius: 6px; box-shadow: 0 4px 8px rgba(0,0,0,0.4);">
+                <img id="screenshot-img" src="" alt="Screen Snapshot" style="display: block; width: 768px; height: 544px; image-rendering: pixelated; border: 1px solid #333;">
+            </div>
         </div>
     </div>
 </body>
