@@ -25,13 +25,18 @@ class MountPoint
     File *file;
 	FileSystemInFile *emb;
 	uint32_t last_used;   // for LRU eviction; larger is more recent
+	bool stale;
 public:
 	MountPoint(SubPath *p, File *f, FileSystemInFile *e) {
 		path = p->get_new_path();
 	    file = f;
 		emb = e;
 		last_used = 0;
+		stale = false;
 	}
+
+	void mark_stale(void) { stale = true; }
+	bool is_stale(void) { return stale; }
 
 	void touch(uint32_t seq) { last_used = seq; }
 	uint32_t get_last_used(void) { return last_used; }
@@ -140,6 +145,7 @@ class FileManager
 	FRESULT rename_impl(PathInfo &from, PathInfo &to);
 	FRESULT delete_file_impl(PathInfo &pathInfo);
 	void release_mount_point(MountPoint *mp);
+	bool discard_mount_tree(MountPoint *mp);
 	void discard_mounts_of_file(const char *path);
 	bool in_use_for_writing(const char *path);
 	void get_temp_directory_path(const char *category, mstring &directory_out);

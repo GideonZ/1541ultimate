@@ -762,14 +762,25 @@ FRESULT FileManager::fopen_impl(PathInfo &pathInfo, uint8_t flags, File **file)
     FileInfo *relativeDir = 0;
     mstring workpath;
 
+    if (flags & (FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS | FA_OPEN_ALWAYS)) {
+        mstring full_path;
+        pathInfo.workPath.getTail(0, full_path);
+        discard_mounts_of_file(full_path.c_str());
+        for (int i = 0; i < mount_points.get_elements(); i++) {
+            MountPoint *mp = mount_points[i];
+            if (mp && mp->get_file() &&
+                !strcasecmp(mp->get_file()->get_path(), full_path.c_str()) && !is_mount_evictable(mp)) {
+                // Reject before opening: CREATE_ALWAYS can truncate the backing image.
+                return FR_LOCKED;
+            }
+        }
+    }
+
     fres = fs->file_open(pathInfo.getPathFromLastFS(), flags, file);
     if (fres == FR_OK) {
         open_file_list.append(*file);
         (*file)->write_intent = ((flags & FA_WRITE) != 0);
         pathInfo.workPath.getTail(0, (*file)->get_path_reference());
-        if ((*file)->write_intent) {
-            discard_mounts_of_file((*file)->get_path());
-        }
         note_managed_temp_open(*file);
         if (create) {
             const char *pathstring = pathInfo.getFullPath(workpath, -1);
@@ -1104,33 +1115,41 @@ void FileManager::evict_mount_points(void)
 // blocks the other writer has already used. Drop the mount when such a handle
 // is opened and again when it is closed; the next access to the image mounts it
 // from the file as it now stands.
+// Release descendants before their parent; cached children hold backing files
+// open too, but only live files/directories should prevent a refresh.
+bool FileManager::discard_mount_tree(MountPoint *mp)
+{
+    mp->mark_stale();
+    FileSystem *fs = mp->get_embedded()->getFileSystem();
+    for (int i = 0; i < mount_points.get_elements();) {
+        MountPoint *child = mount_points[i];
+        int count = mount_points.get_elements();
+        if (child && child != mp && child->get_file()->get_file_system() == fs) {
+            discard_mount_tree(child);
+        }
+        i = (count == mount_points.get_elements()) ? i + 1 : 0;
+    }
+    if (!is_mount_evictable(mp)) {
+        return false;
+    }
+    mount_points.remove(mp);
+    release_mount_point(mp);
+    return true;
+}
+
 void FileManager::discard_mounts_of_file(const char *path)
 {
     if (!path) {
         return;
     }
-    bool removed = false;
-    for (int i = 0; i < mount_points.get_elements(); i++) {
+    mstring backing_path(path); // Releasing a mount can also close the file owning path.
+    for (int i = 0; i < mount_points.get_elements();) {
         MountPoint *mp = mount_points[i];
-        if (!mp || !mp->get_file()) {
-            continue;
+        int count = mount_points.get_elements();
+        if (mp && mp->get_file() && !strcasecmp(mp->get_file()->get_path(), backing_path.c_str())) {
+            discard_mount_tree(mp);
         }
-        if (strcmp(mp->get_file()->get_path(), path) != 0) {
-            continue;
-        }
-        if (!is_mount_evictable(mp)) {
-            // A file is open inside the image. Releasing the mount would free
-            // the file system under that file.
-            printf("FileManager: '%s' is written through another handle while in use.\n", path);
-            continue;
-        }
-        printf("FileManager: dropping mount of '%s'; the file is written through another handle.\n", path);
-        release_mount_point(mp);
-        mount_points.mark_for_removal(i);
-        removed = true;
-    }
-    if (removed) {
-        mount_points.purge_list();
+        i = (count == mount_points.get_elements()) ? i + 1 : 0;
     }
 }
 
@@ -1167,11 +1186,14 @@ MountPoint *FileManager::find_mount_point(SubPath *path, FileInfo *info)
     //printf("FileManager :: find_mount_point: '%s' (FS=%p, Path='%s')\n", info->lfname, info->fs, path->get_path());
     lock();
     for (int i = 0; i < mount_points.get_elements(); i++) {
-        if (mount_points[i]->match(info->fs, path)) {
-            //printf("Found!\n");
-            mount_points[i]->touch(++mount_use_seq);
+        MountPoint *cached = mount_points[i];
+        if (cached->match(info->fs, path)) {
+            if (cached->is_stale() && discard_mount_tree(cached)) {
+                break;
+            }
+            cached->touch(++mount_use_seq);
             unlock();
-            return mount_points[i];
+            return cached;
         }
     }
 
@@ -1179,7 +1201,7 @@ MountPoint *FileManager::find_mount_point(SubPath *path, FileInfo *info)
     FileSystemInFile *emb = 0;
     MountPoint *mp = 0;
 
-    uint8_t flags = (info->attrib & AM_RDO) ? FA_READ : FA_READ | FA_WRITE;
+    uint8_t flags = info->is_writable() ? FA_READ | FA_WRITE : FA_READ;
 
     FRESULT fr = info->fs->file_open(path->get_path(), flags, &file);
     if (fr == FR_OK) {

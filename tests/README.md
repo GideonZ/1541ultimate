@@ -319,6 +319,7 @@ e2e:
   power-cycle                       .      .      .      x      x
   prg-context-menu                  .      .      x      x      x
   image-copy                        .      .      x      x      x
+  image-copy-oracle                 .      x      x      x      x
   prg-load-path-trim                .      x      x      x      x
   printer                           .      x      x      x      x
   readmem-writemem                  x      x      x      x      x
@@ -394,7 +395,13 @@ not hide the rest. `-x/--stop-on-fail` stops at the first one.
 `image-copy` uses the HDMI overlay to check multi-file copy/paste of dotted CBM
 names into a D64 and host storage, mixed emulated-1541/browser writes with BAM
 and payload verification, and the Leave Menu on Mount setting. It uses generated
-fixtures and restores the drive settings. Drive A must be empty.
+fixtures and restores the drive settings. Drive A must be empty. Both browser-first
+and drive-first access orders are checked. Refused paste, rename and delete must
+leave the image byte-for-byte unchanged; after eject/paste/remount, the C64 reads
+the original multi-sector file and the pasted file over IEC. Dotted-name copies
+preserve an existing file and are repeated after deletion and re-entry.
+`image-copy-oracle` checks that malformed directory/file chains and BAMs fail the
+independent image verifier.
 
 Everything else the runner does when things go badly follows from one idea.
 

@@ -44,8 +44,6 @@ void FileSystemInFile_ISO :: init(File *f)
     if(fs) {
         if(!fs->init()) {
             delete fs;
-			delete prt;
-			delete blk;
             fs = NULL;
         }
     }
