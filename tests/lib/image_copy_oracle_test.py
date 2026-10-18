@@ -6,6 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "e2e" / "filemanager"))
 from image_copy_test import Failure, PAYLOADS, image_files, sector_offset, source_image
+from report import suite_fail, suite_ok
 
 
 class ImageCopyOracleTest(unittest.TestCase):
@@ -51,4 +52,9 @@ class ImageCopyOracleTest(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    result = unittest.main(exit=False).result
+    if result.wasSuccessful():
+        suite_ok("image_copy_oracle_test")
+    else:
+        suite_fail("image_copy_oracle_test", "verifier regressions failed")
+    raise SystemExit(not result.wasSuccessful())
