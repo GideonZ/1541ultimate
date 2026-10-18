@@ -191,7 +191,7 @@ U64_MK1_PRODUCTS = ("Ultimate 64", "Ultimate 64 Elite")
 #  - "Ultimate 64-II" is the only one this source tree has (product_name[6],
 #    product.cc:18, chosen by getProductId() for U64 == 2 at product.cc:96-97). The
 #    Elite II reports it, and so does a C64 Ultimate running a build of this tree.
-#  - "C64 Ultimate" is what the Commodore-branded release firmware reports in
+#  - "C64 Ultimate" is what the C64 Ultimate's release firmware reports in
 #    /v1/info (read from a C64 Ultimate on 1.1.0, 2026-10-15). Nothing in this tree
 #    produces it; it is listed so that such a unit is not taken to be a product
 #    that must refuse.
