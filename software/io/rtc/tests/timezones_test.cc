@@ -223,7 +223,7 @@ int main(void)
 
         int now = e->offset;
         time_t start = utc("2026-01-01 00:00");
-        sprintf(what, "offset %d on 2026-01-01, expected %d", offset_at(start), now);
+        snprintf(what, sizeof(what), "offset %d on 2026-01-01, expected %d", offset_at(start), now);
         check(offset_at(start) == now, i, what);
 
         int n = 0;
@@ -231,16 +231,16 @@ int main(void)
             time_t t = utc(e->changes[n]);
             int next = (now == e->offset) ? e->offset_alt : e->offset;
             int slack = tolerance(e->location);
-            sprintf(what, "offset %d before %s, expected %d", offset_at(t - 1), e->changes[n], now);
+            snprintf(what, sizeof(what), "offset %d before %s, expected %d", offset_at(t - 1), e->changes[n], now);
             check(offset_at(t - 1) == now, i, what);
-            sprintf(what, "offset %d after %s, expected %d", offset_at(t + slack), e->changes[n], next);
+            snprintf(what, sizeof(what), "offset %d after %s, expected %d", offset_at(t + slack), e->changes[n], next);
             check(offset_at(t + slack) == next, i, what);
             now = next;
         }
         if (n == 0) {
             const char *probes[] = { "2026-07-01 00:00", "2027-01-01 00:00", "2027-07-01 00:00" };
             for (int k = 0; k < 3; k++) {
-                sprintf(what, "offset %d on %s, expected %d", offset_at(utc(probes[k])), probes[k], now);
+                snprintf(what, sizeof(what), "offset %d on %s, expected %d", offset_at(utc(probes[k])), probes[k], now);
                 check(offset_at(utc(probes[k])) == now, i, what);
             }
         }

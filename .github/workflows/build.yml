@@ -147,11 +147,11 @@ jobs:
           -v /opt/build-tools:/mnt/build-tools:ro \
           -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make -C software/components/tests"
 
-      - name: Test Config Files and List Order
+      - name: Test Temp Cleanup, USB Input, Config Files, Power State, and Wake-on-LAN
         run: |
           docker run --rm \
           -v /opt/build-tools:/mnt/build-tools:ro \
-          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make -C target/pc/linux/configiotest test"
+          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make host_tests"
 
       - name: Cache U2 FPGA
         id: cache-u2
