@@ -758,6 +758,11 @@ FRESULT FileManager::fopen_impl(PathInfo &pathInfo, uint8_t flags, File **file)
     if ((fres != FR_OK) && (!create))
         return fres;
 
+    if (fres == FR_NO_FILE) {
+        // An unresolved alias must not turn creation into an unchecked overwrite.
+        flags = (flags & ~(FA_CREATE_ALWAYS | FA_OPEN_ALWAYS)) | FA_CREATE_NEW;
+    }
+
     FileSystem *fs = pathInfo.getLastInfo()->fs;
     FileInfo *relativeDir = 0;
     mstring workpath;

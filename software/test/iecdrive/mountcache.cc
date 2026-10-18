@@ -644,8 +644,47 @@ static void pinned_mount(FileManager *fm)
     printf("[%s] passed\n", testname);
 }
 
+static void short_name_alias(FileManager *fm)
+{
+    const char *testname = "Suite12-ShortNameAlias";
+    create_iec_d64_fixture("output/longname.d64");
+    REQUIRE(copy_to("output/longname.d64", "/Fat/longcachedimage.d64") == FR_OK);
+    File *image = NULL, *alias = NULL;
+    REQUIRE(fm->fopen("/Fat/longcachedimage.d64", FA_READ, &image) == FR_OK);
+    REQUIRE(image->get_file_system()->file_open("/LONGCA~1.D64", FA_READ, &alias) == FR_OK);
+    REQUIRE(image->get_inode() != 0 && image->get_inode() == alias->get_inode());
+    alias->close();
+    fm->fclose(image);
+    const uint8_t payload[] = {1, 8, 77};
+    write_through_mount(testname, fm, "/Fat/longcachedimage.d64/KEEP.prg", payload, sizeof(payload));
+    File *reader = NULL, *writer = NULL;
+    REQUIRE(fm->fopen("/Fat/longcachedimage.d64/KEEP.prg", FA_READ, &reader) == FR_OK);
+    uint8_t *before = new uint8_t[D64_SIZE];
+    uint8_t *after = new uint8_t[D64_SIZE];
+    read_image(testname, fm, "/Fat/longcachedimage.d64", before);
+    const uint8_t modes[] = {FA_CREATE_ALWAYS, FA_OPEN_ALWAYS, FA_CREATE_NEW};
+    for (int i = 0; i < 3; i++) {
+        REQUIRE(fm->fopen("/Fat/LONGCA~1.D64", FA_WRITE | modes[i], &writer) == FR_EXIST);
+        REQUIRE(writer == NULL);
+    }
+    REQUIRE(fm->fopen("/Fat/LONGCA~1.D64", FA_READ | FA_WRITE, &writer) == FR_NO_FILE);
+    REQUIRE(writer == NULL);
+    read_image(testname, fm, "/Fat/longcachedimage.d64", after);
+    REQUIRE(memcmp(before, after, D64_SIZE) == 0);
+    delete[] before;
+    delete[] after;
+    uint8_t data[sizeof(payload)];
+    uint32_t transferred;
+    REQUIRE(reader->read(data, sizeof(data), &transferred) == FR_OK);
+    REQUIRE(transferred == sizeof(data));
+    REQUIRE(memcmp(data, payload, sizeof(data)) == 0);
+    fm->fclose(reader);
+    printf("[%s] passed\n", testname);
+}
+
 void execute_suite12(FileManager *fm)
 {
+    short_name_alias(fm);
     short_transfers();
     valid_iso(fm);
     malformed_images(fm);

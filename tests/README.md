@@ -400,6 +400,9 @@ and drive-first access orders are checked. Refused paste, rename and delete must
 leave the image byte-for-byte unchanged; after eject/paste/remount, the C64 reads
 the original multi-sector file and the pasted file over IEC. Dotted-name copies
 preserve an existing file and are repeated after deletion and re-entry.
+Use `--root /USB2` (or the device's actual USB/SD volume) to run the fixtures on
+FAT storage and additionally prove that an 8.3 alias cannot overwrite a held
+long-name image. The default root is `/Temp`.
 `image-copy-oracle` checks that malformed directory/file chains and BAMs fail the
 independent image verifier.
 

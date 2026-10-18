@@ -161,8 +161,9 @@ def run(args):
         raise Failure("Drive A must be empty")
     saved = api.configs.category("Drive A Settings")
     folder = "c145" + uuid.uuid4().hex[:4]
-    path = "/Temp/" + folder
+    path = args.root.rstrip("/") + "/" + folder
     browser = None
+    created = False
 
     def fetch(name):
         with ftp.session(args.host, args.password) as client:
@@ -175,6 +176,7 @@ def run(args):
         time.sleep(.5)
         with ftp.session(args.host, args.password) as client:
             client.mkd(path)
+            created = True
             client.mkd(path + "/host")
             client.mkd(path + "/s")
             client.storbinary("STOR " + path + "/s/s.d64", io.BytesIO(source_image()))
@@ -189,7 +191,7 @@ def run(args):
             api.files.create_d64(path + "/target.d64")
         browser = make_browser("overlay", args.host, args.password, args.timeout,
                                entry_rows=range(2, 24), status_row=24)
-        relative = "Temp/" + folder
+        relative = path.strip("/")
         if args.case in ("names-image", "names-host"):
             destination = relative + ("/target.d64" if args.case == "names-image" else "/host")
             with check(args.case + ": multi-selection preserves dotted names and distinct payloads"):
@@ -278,6 +280,24 @@ def run(args):
                     agent.call(4, device=8)
                     if actual != expected:
                         raise Failure(f"C64 read of {name}: {actual!r}; expected {expected!r}")
+        elif args.case == "short-alias":
+            with check("FAT short-name upload cannot overwrite a held long-name image"):
+                original = build_d64("ALIAS TEST", "KEEP", PAYLOADS["DREHER"])
+                with ftp.session(args.host, args.password) as client:
+                    client.storbinary("STOR " + path + "/longcachedimage.d64", io.BytesIO(original))
+                api.drives.on("a")
+                api.drives.mount("a", path + "/longcachedimage.d64", type="d64", mode="readwrite")
+                with ftp.session(args.host, args.password) as client:
+                    try:
+                        client.storbinary("STOR " + path + "/LONGCA~1.D64", io.BytesIO(b"overwrite"))
+                    except (ftplib.error_temp, ftplib.error_perm) as exc:
+                        if str(exc)[:3] not in ("450", "550"):
+                            raise
+                    else:
+                        raise Failure("short-name upload was not refused; use a FAT --root")
+                if fetch("longcachedimage.d64") != original:
+                    raise Failure("short-name upload changed the held image")
+                require_files(image_files(original), {"KEEP": PAYLOADS["DREHER"]})
         elif args.case == "overlay":
             for leave, filename in (("No", "target.d64"), ("Yes", "run.d64")):
                 with check(f"Mount Disk obeys Leave Menu on Mount={leave}"):
@@ -312,7 +332,8 @@ def run(args):
         def cleanup():
             with ftp.session(args.host, args.password) as client:
                 ftp.remove_tree(client, path)
-        cleaned.append(teardown_step("remove generated fixtures", cleanup))
+        if created:
+            cleaned.append(teardown_step("remove generated fixtures", cleanup))
         if not all(cleaned) and sys.exc_info()[0] is None:
             raise Failure("fixture or device restoration failed; see teardown details")
 
@@ -320,11 +341,14 @@ def run(args):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     cli.add_device_arguments(parser, timeout=12, colour=False)
-    parser.add_argument("--case", choices=("all", "names-image", "names-host", "mixed", "mixed-browser-first", "overlay"), default="all")
+    parser.add_argument("--case", choices=("all", "names-image", "names-host", "mixed", "mixed-browser-first", "overlay", "short-alias"), default="all")
+    parser.add_argument("--root", default="/Temp", help="Existing fixture volume/directory; USB/SD roots also test FAT short-name aliases")
     parser.add_argument("--evidence-dir", type=Path, default=Path("/tmp/image-copy-evidence"))
     args = parser.parse_args()
     try:
         cases = ("names-image", "names-host", "mixed", "mixed-browser-first", "overlay") if args.case == "all" else (args.case,)
+        if args.case == "all" and args.root.upper().startswith(("/USB", "/SD")):
+            cases += ("short-alias",)
         for case in cases:
             args.case = case
             args.evidence_dir = args.evidence_dir / case
