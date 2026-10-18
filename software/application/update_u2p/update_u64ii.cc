@@ -86,10 +86,14 @@ void update_esp32(void)
         console_print(screen, "WiFi module detected: %s (%d.%d)\n", moduleName, major, minor);
         
         // if(user_interface->popup("Want to update the WiFi Module?", BUTTON_YES | BUTTON_NO) == BUTTON_YES) {
-        if ((major != IDENT_MAJOR) || (minor != IDENT_MINOR)) {
+        // Only ever upgrade: installing an older release must not take away
+        // what a newer module does, such as network recovery.
+        if ((major < IDENT_MAJOR) || ((major == IDENT_MAJOR) && (minor < IDENT_MINOR))) {
             update_esp32_impl();
-        } else {
+        } else if ((major == IDENT_MAJOR) && (minor == IDENT_MINOR)) {
             console_print(screen, "No WiFi module update needed!\n");
+        } else {
+            console_print(screen, "Newer than this package's %d.%d; kept.\n", IDENT_MAJOR, IDENT_MINOR);
         }
     } else {
         console_print(screen, "WiFi module version not detected.\n");
