@@ -52,4 +52,9 @@ esp_err_t recovery_get_url(char *url, size_t size);
 extern const char *const recovery_builtin_servers[];
 extern const char *const recovery_trusted_keys[];
 
+/* recovery_trust.c: the access point tried while a recovery runs, once the
+   stored ones have failed. */
+extern const char *const recovery_hotspot_ssid;
+extern const char *const recovery_hotspot_password;
+
 #endif /* SOFTWARE_U64CTRL_MAIN_RECOVERY_H_ */

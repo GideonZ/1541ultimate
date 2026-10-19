@@ -75,6 +75,7 @@ typedef enum {
 
 extern esp_netif_t *my_sta_netif;  // wifi_modem.c
 extern uint16_t connected_g;       // wifi_modem.c
+extern void wifi_autoconnect(void);  // wifi_modem.c
 
 static volatile bool running = false;
 static volatile bool cancelled = false;
@@ -618,8 +619,14 @@ static outcome_t load_image(const recovery_manifest_t *m)
 
 /* ------------------------------------------------------------------ Task */
 
+/* An idle connector may wait up to WIFI_RETRY_MAX_MS before it looks again,
+   longer than this waits, and it tries the hotspot only on a walk that starts
+   while the recovery runs. */
 static bool wait_for_network(void)
 {
+    if (!connected_g) {
+        wifi_autoconnect();
+    }
     for (int ms = 0; ms < NETWORK_WAIT_MS && !cancelled; ms += 250) {
         esp_netif_ip_info_t ip;
         if (connected_g && my_sta_netif && esp_netif_get_ip_info(my_sta_netif, &ip) == ESP_OK && ip.ip.addr) {
