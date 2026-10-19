@@ -400,6 +400,13 @@ and drive-first access orders are checked. Refused paste, rename and delete must
 leave the image byte-for-byte unchanged; after eject/paste/remount, the C64 reads
 the original multi-sector file and the pasted file over IEC. Dotted-name copies
 preserve an existing file and are repeated after deletion and re-entry.
+The `messages` case supports `--mode overlay`, `freeze` and `telnet`. It checks
+single/batch paste and delete refusal, hidden Delete/Rename actions, in-use
+errors for deleting/renaming an image, and first/last-file errors. Yes must process
+the next file; No must stop. A write-locked image also refuses edits while allowing
+reads; a recursive copy into it reports WRITE PROTECTED. Refused operations leave
+the image unchanged.
+Other cases exercise the HDMI overlay.
 Use `--root /USB2` (or the device's actual USB/SD volume) to run the fixtures on
 FAT storage and additionally prove that an 8.3 alias cannot overwrite a held
 long-name image. The default root is `/Temp`.

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Copy/paste names, mixed drive/browser writes and overlay exit (issue 145)."""
+"""Copy/paste names, image ownership messages and overlay exit (issue 145)."""
 
 import argparse
 import ftplib
@@ -16,8 +16,8 @@ import bootstrap  # noqa: E402,F401
 import cli  # noqa: E402
 import ftp  # noqa: E402
 from api import UltimateApi  # noqa: E402
-from report import Failure, check, suite_fail, suite_ok, teardown_step  # noqa: E402
-from ui_backend import make_browser, plan_overlay_navigation  # noqa: E402
+from report import Failure, check, detail, suite_fail, suite_ok, teardown_step  # noqa: E402
+from ui_backend import add_mode_argument, make_browser, plan_overlay_navigation  # noqa: E402
 from prg_context_menu_test import build_d64, sector_offset, SECTORS_PER_TRACK, D64_SIZE  # noqa: E402
 
 sys.path.insert(0, bootstrap.directory("e2e", "io", "iec"))
@@ -143,8 +143,9 @@ def copy(browser, source, destination, names, allow_refusal=False):
         time.sleep(.1)
     if "Copying..." in browser.screen():
         raise Failure("copy/paste did not finish within 20 seconds")
-    if "Copy error" in browser.screen():
-        browser.press_popup_button("n")
+    screen = browser.screen()
+    if "Mount not writable" in screen or "Copy error" in screen or "Continue?" in screen:
+        browser.press_popup_button("n" if "Continue?" in screen else "o")
         if allow_refusal:
             return False
         raise Failure("copy/paste reported a copy error")
@@ -182,17 +183,173 @@ def run(args):
             client.storbinary("STOR " + path + "/s/s.d64", io.BytesIO(source_image()))
             client.storbinary("STOR " + path + "/empty.prg", io.BytesIO(EMPTY_PRG))
             client.storbinary("STOR " + path + "/run.d64",
-                              io.BytesIO(build_d64("RUN TEST", "EMPTY", EMPTY_PRG)))
+                              io.BytesIO(source_image() if args.case == "messages" else
+                                         build_d64("RUN TEST", "EMPTY", EMPTY_PRG)))
         if args.case == "names-image":
             with ftp.session(args.host, args.password) as client:
                 client.storbinary("STOR " + path + "/target.d64",
                                   io.BytesIO(build_d64("POPULATED", "EXISTING", b"existing payload")))
         else:
             api.files.create_d64(path + "/target.d64")
-        browser = make_browser("overlay", args.host, args.password, args.timeout,
+        browser = make_browser(args.mode if args.case == "messages" else "overlay",
+                               args.host, args.password, args.timeout,
                                entry_rows=range(2, 24), status_row=24)
         relative = path.strip("/")
-        if args.case in ("names-image", "names-host"):
+        if args.case == "messages":
+            api.drives.mount("a", path + "/run.d64", type="d64", mode="readwrite")
+            failures = []
+
+            def expect_popup(name, lines, proceed=True):
+                deadline = time.monotonic() + 8
+                while True:
+                    screen = browser.screen()
+                    if any(text in screen for text in ("Continue?", "Mount not writable", "Error:", lines[0])):
+                        break
+                    if time.monotonic() >= deadline:
+                        raise Failure(f"{name}: no error popup: {screen}")
+                    time.sleep(.1)
+                (evidence / (name + ".txt")).write_text(screen)
+                detail(f"{name}: {' / '.join(lines)}")
+                if (not all(line in screen for line in lines) or
+                        (("Continue?" in screen) != ("Continue?" in lines)) or
+                        (("Aborted." in screen) != ("Aborted." in lines)) or
+                        not all(button in screen for button in
+                                (("Yes", "No") if "Continue?" in lines else ("Ok",)))):
+                    failures.append(f"{name}: expected {lines!r}, got:\n{screen}")
+                browser.press_popup_button(("y" if "Continue?" in lines and proceed else "n")
+                                           if "Continue?" in screen else "o")
+
+            def paste(names, destination):
+                browser.go_to_directory(relative + "/s/s.d64")
+                for name in names:
+                    browser.select_entry(name)
+                    browser.type_char(" ")
+                browser.press("COPY")
+                browser.wait_for_text("clipboard")
+                browser.press_popup_button("o")
+                browser.go_to_directory(destination)
+                browser.press("PASTE")
+
+            with check(f"single/batch paste, delete and in-use messages in {args.mode} mode"):
+                for names, label in ((["DREHER"], "paste-single"),
+                                     (["DREHER", "DREHER.INFO"], "paste-batch")):
+                    paste(names, relative + "/run.d64")
+                    expect_popup(label, ["Mount not writable.", "Aborted."] if len(names) > 1
+                                 else ["Mount not writable"])
+                browser.select_entry("DREHER")
+                actions = browser.open_context_menu()
+                if any(action == "Delete" or action.startswith("Rename") for action in actions):
+                    failures.append("Delete or Rename is exposed inside a non-writable mount")
+                browser.press("ESC")
+                for names, label in ((("DREHER",), "delete-selected-single"),
+                                     (("DREHER", "DREHER.INFO"), "delete-selected-batch")):
+                    browser.go_to_directory(relative + "/run.d64")
+                    for name in names:
+                        browser.select_entry(name)
+                        browser.type_char(" ")
+                    browser.press("SHIFT_DEL")
+                    expect_popup(label, ["Mount not writable"])
+                    browser.press("COPY")
+                    browser.wait_for_text(f"{len(names)} files placed on clipboard")
+                    browser.press_popup_button("o")
+                browser.go_to_directory(relative)
+                browser.select_entry("run.d64")
+                browser.invoke_context_action("Delete")
+                browser.wait_for_text("Are you sure?")
+                browser.press_popup_button("y")
+                expect_popup("delete-image", ["Error: FILE IS IN USE"])
+                browser.select_entry("run.d64")
+                browser.invoke_context_action("Rename")
+                browser.wait_for_text("Give a new name")
+                browser.fill_edit_field("renamed.d64", clear_taps=64)
+                expect_popup("rename-image", ["Error: FILE IS IN USE"])
+                original = source_image()
+                if fetch("run.d64") != original:
+                    failures.append("Refused operations changed the mounted image")
+                readonly = bytearray(original)
+                readonly[sector_offset(18, 0) + 2] = 0x3C  # D64's on-disk DOS write lock.
+                with ftp.session(args.host, args.password) as client:
+                    client.storbinary("STOR " + path + "/readonly.d64", io.BytesIO(readonly))
+                paste(["DREHER"], relative + "/readonly.d64")
+                expect_popup("readonly-paste", ["Mount not writable"])
+                browser.select_entry("DREHER")
+                browser.type_char(" ")
+                browser.press("SHIFT_DEL")
+                expect_popup("readonly-delete", ["Mount not writable"])
+                browser.press("COPY")
+                browser.wait_for_text("1 files placed on clipboard")
+                browser.press_popup_button("o")
+                copy(browser, relative + "/readonly.d64", relative + "/host", ["A.B.C"])
+                if fetch("host/A.B.C.prg") != PAYLOADS["A.B.C"]:
+                    failures.append("Reading from a non-writable mount failed")
+                if fetch("readonly.d64") != readonly:
+                    failures.append("Refused operations changed a write-locked image")
+                with ftp.session(args.host, args.password) as client:
+                    client.mkd(path + "/nested")
+                    client.mkd(path + "/nested/readonly.d64")
+                    client.storbinary("STOR " + path + "/nested/readonly.d64/NEW.prg", io.BytesIO(EMPTY_PRG))
+                    client.storbinary("STOR " + path + "/host/readonly.d64", io.BytesIO(readonly))
+                browser.go_to_directory(relative + "/nested")
+                browser.select_entry("readonly.d64")
+                browser.press("COPY")
+                browser.wait_for_text("1 files placed on clipboard")
+                browser.press_popup_button("o")
+                browser.go_to_directory(relative + "/host")
+                browser.press("PASTE")
+                expect_popup("nested-write-protected", ["WRITE PROTECTED"])
+                if fetch("host/readonly.d64") != readonly:
+                    failures.append("A recursive copy changed a write-locked image")
+                with ftp.session(args.host, args.password) as client:
+                    client.storbinary("STOR " + path + "/host/DREHER.prg",
+                                      io.BytesIO(PAYLOADS["DREHER"]))
+                paste(["DREHER"], relative + "/host")
+                expect_popup("copy-single-file-error", ["FILE EXISTS"])
+                paste(["DREHER", "DREHER.INFO"], relative + "/host")
+                expect_popup("copy-first-file-stop", ["FILE EXISTS", "Continue?"], proceed=False)
+                with ftp.session(args.host, args.password) as client:
+                    if "DREHER.INFO.prg" in ftp.names(client, path + "/host"):
+                        failures.append("No did not stop the remaining copy")
+                paste(["DREHER", "DREHER.INFO"], relative + "/host")
+                expect_popup("copy-first-file-error", ["FILE EXISTS", "Continue?"])
+                browser.wait_until_gone("Copying...")
+                with ftp.session(args.host, args.password) as client:
+                    if ftp.retrieve(client, path + "/host/DREHER.INFO.prg") != PAYLOADS["DREHER.INFO"]:
+                        failures.append("Continuing after a file error did not copy the next file")
+                    client.delete(path + "/host/DREHER.prg")
+                paste(["DREHER", "DREHER.INFO"], relative + "/host")
+                expect_popup("copy-last-file-error", ["FILE EXISTS"])
+                for label, names, proceed in (
+                        ("single", ("run.d64",), True),
+                        ("batch-stop", ("run.d64", "zextra.prg"), False),
+                        ("batch-continue", ("run.d64", "zextra.prg"), True),
+                        ("batch-last", ("empty.prg", "run.d64"), True)):
+                    if label == "batch-stop":
+                        with ftp.session(args.host, args.password) as client:
+                            client.storbinary("STOR " + path + "/zextra.prg", io.BytesIO(EMPTY_PRG))
+                    browser.go_to_directory(relative)
+                    for name in names:
+                        browser.select_entry(name)
+                        browser.type_char(" ")
+                    browser.press("SHIFT_DEL")
+                    browser.wait_for_text("Delete 2 files?" if len(names) > 1 else "Delete 1 file?")
+                    browser.press_popup_button("y")
+                    more = label in ("batch-stop", "batch-continue")
+                    expect_popup("delete-in-use-" + label,
+                                 ["FILE IS IN USE", "Continue?"] if more else ["FILE IS IN USE"], proceed)
+                    browser.wait_until_gone("Deleting...")
+                    with ftp.session(args.host, args.password) as client:
+                        remaining = ftp.names(client, path)
+                        if label == "batch-stop" and "zextra.prg" not in remaining:
+                            failures.append("No did not stop the remaining delete")
+                        if label == "batch-continue" and "zextra.prg" in remaining:
+                            failures.append("Yes did not continue the remaining delete")
+                        if label == "batch-last" and "empty.prg" in remaining:
+                            failures.append("Delete did not process the file preceding the error")
+                if fetch("run.d64") != original:
+                    failures.append("In-use errors changed the mounted image")
+                if failures:
+                    raise Failure("\n".join(failures))
+        elif args.case in ("names-image", "names-host"):
             destination = relative + ("/target.d64" if args.case == "names-image" else "/host")
             with check(args.case + ": multi-selection preserves dotted names and distinct payloads"):
                 copy(browser, relative + "/s/s.d64", destination, list(PAYLOADS))
@@ -341,12 +498,13 @@ def run(args):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     cli.add_device_arguments(parser, timeout=12, colour=False)
-    parser.add_argument("--case", choices=("all", "names-image", "names-host", "mixed", "mixed-browser-first", "overlay", "short-alias"), default="all")
+    add_mode_argument(parser, default="overlay")
+    parser.add_argument("--case", choices=("all", "names-image", "names-host", "mixed", "mixed-browser-first", "overlay", "short-alias", "messages"), default="all")
     parser.add_argument("--root", default="/Temp", help="Existing fixture volume/directory; USB/SD roots also test FAT short-name aliases")
     parser.add_argument("--evidence-dir", type=Path, default=Path("/tmp/image-copy-evidence"))
     args = parser.parse_args()
     try:
-        cases = ("names-image", "names-host", "mixed", "mixed-browser-first", "overlay") if args.case == "all" else (args.case,)
+        cases = ("names-image", "names-host", "mixed", "mixed-browser-first", "overlay", "messages") if args.case == "all" else (args.case,)
         if args.case == "all" and args.root.upper().startswith(("/USB", "/SD")):
             cases += ("short-alias",)
         for case in cases:

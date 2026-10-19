@@ -69,7 +69,7 @@ const char *FileSystem :: get_error_string(FRESULT res)
 		case FR_LOOP_DETECTED:
 		    return "LOOP DETECTED";
 		case FR_LOCKED:
-		    return "LOCKED";
+		    return "FILE IS IN USE";
 		default:
 			return "UNKNOWN ERROR";
 	}
