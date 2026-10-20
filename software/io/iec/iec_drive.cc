@@ -20,6 +20,7 @@
 #define CFG_IEC_BUS_ID   0x52
 #define CFG_IEC_PATH     0x53
 #define CFG_IEC_LOG      0x55
+#define CFG_IEC_PARTITIONS 0x56
 
 // "IEC Drive" (SI-107): UCI Only takes the drive off the bus and keeps its UCI target;
 // Disabled turns off both. The order of the values keeps a stored setting's meaning.
@@ -35,6 +36,7 @@ static const char *iec_modes[] = { "UCI Only", "Enabled", "Disabled" };
 static struct t_cfg_definition iec_config[] = {
     { CFG_IEC_ENABLE,    CFG_TYPE_ENUM,   "IEC Drive",         "%s", iec_modes, 0,  2, 0 },
     { CFG_IEC_BUS_ID,    CFG_TYPE_VALUE,  "Soft Drive Bus ID", "%d", NULL,   8, 30, 11 },
+    { CFG_IEC_PARTITIONS, CFG_TYPE_STRING, "Partition config file", "%s", NULL, 0, 255, (long int)"" },
     { CFG_IEC_LOG,       CFG_TYPE_ENUM,   "Log Every Operation", "%s", en_dis, 0, 1, 0 },
     { 0xFF, CFG_TYPE_END, "", "", NULL, 0, 0, 0 }
 };
@@ -143,6 +145,7 @@ IecDrive :: IecDrive() : SubSystem(SUBSYSID_IEC)
 {
 #ifndef RUNS_ON_PC
     mutex = xSemaphoreCreateRecursiveMutex();
+    partition_config_task = NULL;
 #endif
     lock_depth = 0;
     intf = IecInterface :: get_iec_interface();
@@ -154,6 +157,7 @@ IecDrive :: IecDrive() : SubSystem(SUBSYSID_IEC)
     enable = false;
     uci_enable = false;
     vfs = NULL; // registering the settings makes them take effect before this is built
+    partition_config_loaded = false;
 
     register_store(0x49454300, "SoftIEC Drive Settings", iec_config);
     cfg->set_sort_order(SORT_ORDER_CFG_SOFTIEC);
@@ -185,17 +189,30 @@ IecDrive :: IecDrive() : SubSystem(SUBSYSID_IEC)
     add_partition(1, "/Temp", "RAMDISK");
     vfs->SetCurrentPartition(1);
 
-    // Attempt to load default config
-    // Note: Flash file system should exist, because of register_store
-    vfs->LoadPartitions(CFG_FILEPATH, IEC_PARTITION_CONFIG);
+    load_partition_config();
 
     // Register and configure the processor
     slot_id = intf->register_slave(this);
     intf->configure();
+#ifndef RUNS_ON_PC
+    // USB volumes mount after the drive is initialized; allow them the boot window.
+    if (!partition_config_loaded && cfg->get_string(CFG_IEC_PARTITIONS)[0]) {
+        xTaskCreate(load_partition_config_task, "IEC Partitions", configMINIMAL_STACK_SIZE,
+                    this, PRIO_BACKGROUND, &partition_config_task);
+    }
+#endif
 }
 
 IecDrive :: ~IecDrive()
 {
+#ifndef RUNS_ON_PC
+    {
+        IecDriveLock guard(this); // the task must not be deleted while it holds the lock
+        if (partition_config_task) {
+            vTaskDelete(partition_config_task);
+        }
+    }
+#endif
     for(int i=0;i<16;i++)
         delete channels[i];
 
@@ -263,7 +280,39 @@ void IecDrive :: effectuate_settings(void)
     if (reconfigure) {
         intf->configure();
     }
+    if (vfs && strcmp(cfg->get_string(CFG_IEC_PARTITIONS), applied_partition_config.c_str())) {
+        load_partition_config();
+    }
 }
+
+void IecDrive :: load_partition_config(void)
+{
+    // A settings writer can replace the string while the startup task waits on I/O.
+    mstring path(cfg->get_string(CFG_IEC_PARTITIONS));
+    partition_config_loaded = (vfs->LoadPartitions("/", path.length() ? path.c_str() : CFG_FILEPATH "/" IEC_PARTITION_CONFIG) == FR_OK);
+    // Reapplying unrelated settings must preserve manual partition changes (SI-103b).
+    applied_partition_config = path;
+}
+
+#ifndef RUNS_ON_PC
+void IecDrive :: load_partition_config_task(void *obj)
+{
+    IecDrive *drive = (IecDrive *)obj;
+    for (int i = 0; i < 40; i++) {
+        vTaskDelay(250 / portTICK_PERIOD_MS);
+        IecDriveLock guard(drive);
+        if (drive->partition_config_loaded || !drive->cfg->get_string(CFG_IEC_PARTITIONS)[0]) {
+            break;
+        }
+        drive->load_partition_config();
+    }
+    {
+        IecDriveLock guard(drive);
+        drive->partition_config_task = NULL;
+    }
+    vTaskDelete(NULL);
+}
+#endif
 
 void IecDrive :: create_task_items(void)
 {
@@ -610,7 +659,9 @@ void IecDrive :: info(JSON_Object *obj)
 void IecDrive :: load_partitions(const char *p, const char *f)
 {
     IecDriveLock guard(this);
-    vfs->LoadPartitions(p, f);
+    if (vfs->LoadPartitions(p, f) == FR_OK) {
+        partition_config_loaded = true; // a manual load supersedes a pending startup load
+    }
 }
 
 #ifndef RUNS_ON_PC
