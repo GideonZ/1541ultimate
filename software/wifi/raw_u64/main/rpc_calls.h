@@ -168,7 +168,7 @@ typedef struct {
 #define CMD_GET_TIME          0x10
 #define CMD_CLEAR_APS         0x11
 #define CMD_WIFI_AUTOCONNECT  0x12
-// 0x13-0x19 are u64ctrl's; 0x1A is CMD_GET_RANDOM, in rpc_shared.h
+// 0x13-0x1F are u64ctrl's; 0x20 is CMD_GET_RANDOM, in rpc_shared.h
 
 /*
 #define CMD_SOCKET          0x11

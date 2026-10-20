@@ -26,7 +26,7 @@
 
 //----------------------------------
 // hardware random bytes
-#define CMD_GET_RANDOM        0x1A // 0x13-0x19 are u64ctrl's; kept apart so the maps agree
+#define CMD_GET_RANDOM        0x20 // u64ctrl's own commands run from 0x13 and may reach 0x1F; kept apart so the maps agree
 #define RANDOM_MAX_BYTES 512
 
 typedef enum {
