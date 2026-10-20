@@ -44,6 +44,7 @@
 #define CFG_USERIF_COLORSCHEME 0x0E
 #define CFG_USERIF_TEMP_AUTO_CLEANUP 0x0F
 #define CFG_USERIF_TEMP_USE_CACHE_SUBFOLDER 0x10
+#define CFG_USERIF_CBM_NAMES   0x11
 
 typedef enum {
     e_keymap_default,
@@ -66,6 +67,9 @@ private:
     bool initialized;
     bool doBreak;
     bool available;
+    // A menu on a network stream (Telnet). It has its own keyboard, so it does
+    // not count as a menu the USB keyboard and mouse, or REST, are driving.
+    bool remote;
     mstring title;
     UIObject *ui_objects[MAX_UI_OBJECTS];
     UIStatusBox *status_box;
@@ -80,9 +84,10 @@ private:
     void run_editor(Editor *);
 public:
     int color_border, color_bg, color_fg, color_sel, color_sel_bg, reverse_sel;
-    int color_status, color_inactive;
+    int color_status, color_inactive, color_configitem;
 
     int config_save, filename_overflow_squeeze, navmode;
+    bool cbm_names; // PETSCII filename presentation in the lower/upper case set
     bool logo;
     GenericHost *host;
     Keyboard *keyboard;

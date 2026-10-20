@@ -45,7 +45,7 @@ const char *getBoardRevision(void)
 
     switch (rev) {
     case 0x10:
-        return "U64 Prototype";
+        return "U64 V2.5 (TI HDMI)";
     case 0x11:
         return "U64 V1.1 (Null Series)";
     case 0x12:
@@ -66,6 +66,13 @@ const char *getBoardRevision(void)
 
 bool isEliteBoard(void)
 {
+#if U64 == 2
+    // Every MK2 board is an Elite, so the revision does not enter into it. What
+    // this function gates -- the SID socket shunts and the joystick swapper --
+    // is not revision dependent there, while the test below excludes one entry
+    // of the revision table outright: 0x10, the TI HDMI board. See #819.
+    return true;
+#else
     uint8_t rev = (U2PIO_BOARDREV >> 3);
     if (rev == 0x13 || (rev >= 0x15 && rev <= 0x17)) {
         return true;
@@ -78,6 +85,7 @@ bool isEliteBoard(void)
         return false;
     }
     return false;
+#endif
 }
 #endif
 

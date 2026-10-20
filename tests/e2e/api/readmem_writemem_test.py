@@ -21,14 +21,15 @@ import pacing  # noqa: E402  (needs tests/lib on sys.path first)
 import profiles  # noqa: E402  (needs tests/lib on sys.path first)
 import rest as rest_lib  # noqa: E402  (needs tests/lib on sys.path first)
 import targets  # noqa: E402  (needs tests/lib on sys.path first)
-from api import UltimateApi  # noqa: E402  (needs tests/lib on sys.path first)
+from api import UltimateApi, identify_machine  # noqa: E402  (needs tests/lib on sys.path first)
 from report import (
-    FAIL, OK, SKIP, Failure, check, detail, format_exception, section, suite_fail,
-    suite_ok, warn)
+    FAIL, OK, SKIP, Failure, check, check_skip, check_start, detail,
+    format_exception, section, suite_fail, suite_ok, warn)
 
 MENU_SCREEN_PATH = "/v1/machine:menu_screen"
 MENU_BUTTON_PATH = "/v1/machine:menu_button"
 READMEM_PATH = "/v1/machine:readmem"
+DEBUGREG_PATH = "/v1/machine:debugreg"
 WRITEMEM_PATH = "/v1/machine:writemem"
 MEASURE_PATH = "/v1/machine:measure"
 RESET_PATH = "/v1/machine:reset"
@@ -45,9 +46,10 @@ RESET_SETTLE_SECONDS = 5.0
 MEM_SIZE = 65536
 MAX_POST_CHUNK = 65536
 
-# Screen RAM ($0400-$07FF) is deliberately repurposed by the freezer menu for its
-# own display while frozen, so it is excluded from cross-mode "does the byte you
-# wrote survive" comparisons -- this is the one documented, accepted exception.
+# Screen RAM ($0400-$07FF) is where the freezer menu draws while frozen. REST
+# serves it from the C64's backup on firmware with the frozen-screen-dma fix;
+# on firmware without it REST reaches the menu's screen, and the range is not
+# compared while frozen. See screen_is_menu_owned.
 SCREEN_RANGE = (0x0400, 0x0800)
 # Color RAM is physically 4 bits wide; the upper nibble is not connected to
 # anything meaningful and reads back differently depending on the access path
@@ -120,13 +122,6 @@ class RestSession:
         # For the calls this suite makes no assertion about, so that the menu
         # teardown has one implementation across the tree.
         self.api = UltimateApi(host, password, timeout)
-
-    @property
-    def machine(self) -> machine_lib.Machine:
-        """Which machine this is, for the checks that need a firmware fix."""
-        info = self.api.info()
-        return machine_lib.identify(self.host, lambda: (info.product,
-                                                        info.firmware_version))
 
     def url(self, path: str, params: dict[str, object] | None = None) -> str:
         query = ""
@@ -414,6 +409,11 @@ def compare(
     return ok
 
 
+def screen_is_menu_owned(session: "RestSession") -> bool:
+    """Whether REST reaches the menu's screen, not the C64's, while frozen."""
+    return identify_machine(session.host).lacks_fix(machine_lib.FROZEN_SCREEN_DMA)
+
+
 def run_selfcheck(
     session: RestSession, interface: str, xor_value: int, noise_addrs: set[int], interface_selectable: bool = True
 ) -> bool:
@@ -473,17 +473,10 @@ def run_selfcheck(
         if not session.menu_screen_open():
             raise Failure("menu closed unexpectedly during self-check read/write")
 
-    # The on-device browser repaints its entry rows into the C64 screen while
-    # the menu is open, on its own drive-status refresh rather than in response
-    # to a keypress. Measured during a failing Overlay round trip: the read-back
-    # of $0400-$07FF held the browser listing from $0450 to $07DE, which is row 2
-    # onward, while rows 0 and 1 still held the written pattern. That is true in
-    # Overlay as well as Freeze, so the screen range is not comparable while the
-    # menu is open in either mode. run_screen_round_trip below asserts it with
-    # the menu closed, where nothing else draws.
-    allow_screen_mismatch = True
-    section(f"{label}: write and read both happen in {interface} "
-          f"(screen RAM excluded, the menu redraws its entry rows while open)")
+    allow_screen_mismatch = screen_is_menu_owned(session)
+    section(f"{label}: write and read both happen in {interface}"
+            + (" (screen RAM excluded, this firmware serves the menu's screen)"
+               if allow_screen_mismatch else ""))
     # Freeze already halts the CPU. Overlay normally keeps it running (verified by
     # the live-noise probe), so pause it explicitly around this multi-request
     # transaction. Otherwise the CPU can legitimately mutate RAM between the
@@ -565,9 +558,12 @@ def run_cross_mode(
         if not session.menu_screen_open():
             raise Failure("menu closed unexpectedly during cross-mode read")
 
-    section(f"{label}: bytes written while {write_interface} must read back the same while {read_interface}, "
-          f"except screen RAM (menu-owned while frozen)")
-    ok = compare(ground_truth, actual, label=label, allow_screen_mismatch=True, noise_addrs=noise_addrs, session=session)
+    allow_screen_mismatch = screen_is_menu_owned(session)
+    section(f"{label}: bytes written while {write_interface} must read back the same while {read_interface}"
+            + (", except screen RAM, which this firmware serves from the menu's screen"
+               if allow_screen_mismatch else ""))
+    ok = compare(ground_truth, actual, label=label, allow_screen_mismatch=allow_screen_mismatch,
+                 noise_addrs=noise_addrs, session=session)
 
     with check(f"close menu ({read_interface})"):
         session.set_menu_open(False)
@@ -598,21 +594,16 @@ def run_reset(session: RestSession) -> None:
 # has to be able to fail: `operator new` PANICs and spins forever on OOM
 # (software/system/memory_wrap.cc), which takes the device down with no reset, so
 # the handler uses malloc and reports HTTP 500 instead.
-# Each entry is (params, label, fix). `fix` names the firmware fix the
-# rejection needs, or None where every machine under test has always refused
-# the request. A tagged entry is skipped on a machine that lacks the fix
-# rather than failed, because the scenario below raises on the first
-# unexpected answer and would otherwise take the whole suite with it.
+# Each entry is (params, label). Every machine under test refuses all of them.
 BAD_READ_REQUESTS = [
-    ({"address": "0000", "length": 0}, "zero length",
-     machine_lib.READMEM_REJECTS_ZERO_LENGTH),
-    ({"address": "0000", "length": -1}, "negative length", None),
-    ({"address": "0000", "length": 65537}, "length one past the 64KB cap", None),
-    ({"address": "0000", "length": 16 * 1024 * 1024}, "length far past the cap", None),
-    ({"address": "0000", "length": "99999999999999999999"}, "length that overflows a long", None),
-    ({"address": "ff00", "length": 65536}, "read running past $FFFF", None),
-    ({"address": "10000", "length": 1}, "address above $FFFF", None),
-    ({"address": "-1", "length": 1}, "negative address", None),
+    ({"address": "0000", "length": 0}, "zero length"),
+    ({"address": "0000", "length": -1}, "negative length"),
+    ({"address": "0000", "length": 65537}, "length one past the 64KB cap"),
+    ({"address": "0000", "length": 16 * 1024 * 1024}, "length far past the cap"),
+    ({"address": "0000", "length": "99999999999999999999"}, "length that overflows a long"),
+    ({"address": "ff00", "length": 65536}, "read running past $FFFF"),
+    ({"address": "10000", "length": 1}, "address above $FFFF"),
+    ({"address": "-1", "length": 1}, "negative address"),
 ]
 # Repeats chosen so a 64KB-per-call leak is a few megabytes without making the
 # suite slow. This is a smoke check, not proof of a leak-free heap: nothing over
@@ -635,10 +626,7 @@ def run_bounds(session: RestSession) -> bool:
     section("bounds: readmem rejects out-of-range parameters before allocating, "
             "and max-size reads do not degrade the device")
 
-    for params, label, fix in BAD_READ_REQUESTS:
-        if fix is not None and session.machine.skip_without_fix(
-                fix, f"readmem rejects {label}"):
-            continue
+    for params, label in BAD_READ_REQUESTS:
         with check(f"readmem rejects {label}"):
             status, _, body = session.request("GET", READMEM_PATH, params=params)
             if status != 400:
@@ -656,13 +644,6 @@ def run_bounds(session: RestSession) -> bool:
     # devices the leaking path is the only path this endpoint ever takes.
     measure_label = (f"{MEASURE_LEAK_REPEATS} unsupported machine:measure "
                      "calls leave readmem working")
-    if session.machine.skip_without_fix(
-            machine_lib.MEASURE_FREES_ITS_BUFFER, measure_label):
-        # Not a check this machine merely fails: without the fix the 25 calls
-        # leak 1.6MB, which exhausts a C64 Ultimate's heap and takes it off the
-        # network until someone power cycles it by hand.
-        return True
-
     status, _, _ = session.request("GET", MEASURE_PATH)
     if status == 501:
         with check(measure_label):
@@ -674,6 +655,110 @@ def run_bounds(session: RestSession) -> bool:
                "a real bus measurement is intrusive and the leak was on the 501 path only")
     else:
         warn(f"machine:measure returned unexpected HTTP {status}; leak check not applicable")
+
+    return True
+
+
+# Addresses outside the documented grammar, which is hex digits and nothing
+# else. strtol() accepts every one of them: it yields 0 for the first three,
+# takes the sign on "-0" and "+1", and stops at the first unusable character on
+# "12GG", so an unguarded parse passes the range check and the endpoint acts on
+# an address. For writemem that is a destructive write answered with HTTP 200.
+BAD_ADDRESSES = ["ZZZZ", "0xZZZZ", "gggg", "-0", "+1", "12GG"]
+
+
+def run_bad_address(session: RestSession) -> bool:
+    """Reject an address that is not valid hex, on every endpoint that parses one.
+
+    The status code is the whole assertion. $0000 is the 6510 processor port
+    rather than plain RAM, so reading it back is not a reliable witness to the
+    clobber this rejects, and a memory compare there could pass either way.
+    """
+    label = "readmem and writemem reject a malformed address"
+    if identify_machine(session.host).skip_without_fix(
+            machine_lib.MEMORY_API_REJECTS_INVALID_ADDRESS, label):
+        return True
+
+    section("bad-address: readmem and writemem reject an address that is not valid hex")
+
+    for bad in BAD_ADDRESSES:
+        with check(f"readmem rejects address={bad!r}"):
+            status, _, body = session.request(
+                "GET", READMEM_PATH, params={"address": bad, "length": 1})
+            if status != 400:
+                raise Failure(f"readmem(address={bad!r}) returned HTTP {status}, "
+                              f"expected 400: {body[:200]!r}")
+
+        # data= is sent so the request reaches the address parse at all: a
+        # missing required parameter is refused before it, which would pass this
+        # check for a reason that has nothing to do with the address.
+        with check(f"writemem PUT rejects address={bad!r}"):
+            status, _, body = session.request(
+                "PUT", WRITEMEM_PATH, params={"address": bad, "data": "00"})
+            if status != 400:
+                raise Failure(f"writemem PUT(address={bad!r}) returned HTTP {status}, "
+                              f"expected 400: {body[:200]!r}")
+
+        # A body is sent for the same reason: an empty one is refused with 412
+        # before the address is parsed. session.request rather than
+        # session.writemem, which raises on any non-200.
+        with check(f"writemem POST rejects address={bad!r}"):
+            raw_body, content_type = build_multipart("file", "data.bin", b"\x00")
+            status, _, body = session.request(
+                "POST", WRITEMEM_PATH, params={"address": bad},
+                raw_body=raw_body, content_type=content_type)
+            if status != 400:
+                raise Failure(f"writemem POST(address={bad!r}) returned HTTP {status}, "
+                              f"expected 400: {body[:200]!r}")
+
+    return True
+
+
+# Values outside the documented grammar for machine:debugreg, which is two hex
+# digits. strtol() yields 0 for the first two, takes the sign on "-0", stops at
+# the first unusable character on "1G", and truncates "1FF" to FF, so an
+# unguarded parse writes a byte the caller never asked for.
+BAD_DEBUGREG_VALUES = ["ZZ", "0xZZ", "-0", "1G", "1FF"]
+
+
+def run_bad_debugreg(session: RestSession) -> bool:
+    """Reject a debug register value that is not two hex digits, and write nothing.
+
+    The register is readable, so "wrote nothing" is asserted directly: the GET
+    before and after each refused write has to answer the same byte.
+    """
+    label = "machine:debugreg rejects a malformed value"
+    if identify_machine(session.host).skip_without_fix(
+            machine_lib.DEBUGREG_REJECTS_INVALID_VALUE, label):
+        return True
+
+    api = session.api
+    before = api.machine.debugreg()
+    if before is None:
+        # Both debugreg routes sit inside `#if U64`; elsewhere they are not in
+        # the route table at all.
+        check_start(label)
+        check_skip("this machine does not serve machine:debugreg")
+        return True
+
+    section("bad-debugreg: machine:debugreg rejects a value that is not two hex digits")
+
+    for bad in BAD_DEBUGREG_VALUES:
+        with check(f"debugreg rejects value={bad!r}"):
+            status, _, body = session.request(
+                "PUT", DEBUGREG_PATH, params={"value": bad})
+            if status != 400:
+                raise Failure(f"debugreg(value={bad!r}) returned HTTP {status}, "
+                              f"expected 400: {body[:200]!r}")
+            after = api.machine.debugreg()
+            if after != before:
+                raise Failure(f"debugreg(value={bad!r}) changed the register "
+                              f"from {before!r} to {after!r}")
+
+    with check("debugreg still takes a valid value without changing it"):
+        after = api.machine.set_debugreg(before)
+        if after != before:
+            raise Failure(f"wrote back {before!r}, reads {after!r}")
 
     return True
 
@@ -700,8 +785,9 @@ NOISE_DEPENDENT_TESTS = ["selfcheck-overlay", "screen-round-trip",
 
 
 def expand_tests(selected: list[str] | None) -> list[str]:
-    all_tests = ["bounds", "selfcheck-freeze", "selfcheck-overlay", "screen-round-trip",
-                 "overlay-to-freeze", "freeze-to-overlay"]
+    all_tests = ["bounds", "bad-address", "bad-debugreg", "selfcheck-freeze",
+                 "selfcheck-overlay", "screen-round-trip", "overlay-to-freeze",
+                 "freeze-to-overlay"]
     if not selected:
         if not profiles.includes(profiles.QUICK):
             return list(SMOKE_TESTS)
@@ -725,8 +811,9 @@ def main() -> int:
     parser.add_argument(
         "--test",
         action="append",
-        choices=("all", "bounds", "selfcheck-freeze", "selfcheck-overlay", "screen-round-trip",
-                 "overlay-to-freeze", "freeze-to-overlay"),
+        choices=("all", "bounds", "bad-address", "bad-debugreg", "selfcheck-freeze",
+                 "selfcheck-overlay", "screen-round-trip", "overlay-to-freeze",
+                 "freeze-to-overlay"),
     )
     parser.add_argument(
         "--keep-config",
@@ -792,6 +879,17 @@ def main() -> int:
         # if readmem mishandles its own parameters, everything after it is noise.
         if "bounds" in tests:
             results["bounds"] = run_bounds(session)
+
+        # Same reasoning as bounds, and equally cheap: an address the firmware
+        # mis-parses is acted on at $0000, so prove it is refused before any
+        # stage writes memory in earnest.
+        if "bad-address" in tests:
+            results["bad-address"] = run_bad_address(session)
+
+        # Same defect in the one other hexadecimal parameter this file's
+        # endpoints take; see GideonZ/1541ultimate#885.
+        if "bad-debugreg" in tests:
+            results["bad-debugreg"] = run_bad_debugreg(session)
 
         noise_addrs: set[int] = set()
         # Eight full 64KB reads, so it is only worth paying where a stage

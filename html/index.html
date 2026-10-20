@@ -44,7 +44,12 @@ $(document).ready(async function () {
             // Power off reaches hardware on the Ultimate 64 family only; a
             // cartridge answers 501. These are the names /v1/info reports for
             // that family, from product_name[] in software/system/product.cc.
-            const ProductsWithPwrCtrl = ["Ultimate 64", "Ultimate 64 Elite", "Ultimate 64-II"];
+            // That array is conditional on COMMODORE, which renames the last
+            // two entries, so both namings of the same hardware are listed
+            // here: leaving either out hides the item on machines that can
+            // power off.
+            const ProductsWithPwrCtrl = ["Ultimate 64", "Ultimate 64 Elite", "Ultimate 64-II",
+                                         "C64 Ultimate (MK1)", "C64 Ultimate"];
             if (ProductsWithPwrCtrl.includes(product))
                 $("#menu-power").show();
 
@@ -793,7 +798,7 @@ $(document).ready(async function () {
 
                 if(result == true) {
                     
-                    let params = { 'address': '0', 'length': '65535' };
+                    let params = { 'address': '0', 'length': '65536' };
                     let [status_code, content] = await make_binary_get_request("http://" + serverIP + "/v1/machine:readmem", params);
 
                     if (status_code === 200) {

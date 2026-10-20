@@ -41,7 +41,6 @@
 
 #include "FreeRTOS.h"
 #include "task.h"
-#include <atomic>
 #include "config.h"
 //#include "semphr.h"
 #include "indexed_list.h"
@@ -52,7 +51,7 @@
 class FTPDaemon : public ConfigurableObject
 {
 	static void ftp_listen_task(void *a);
-	std::atomic<bool> enabled;
+	volatile bool enabled;
 public:
 	TaskHandle_t listenTaskHandle;
 

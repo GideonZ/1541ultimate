@@ -29,7 +29,6 @@ from av_stream import (
     packet_sequence,
     video_frames,
 )
-import targets
 from report import (Failure, check, detail, suite_fail, suite_ok,
                     suite_skip)
 
@@ -244,6 +243,14 @@ def run_key_pop(device: UltimateApi) -> None:
             raise Failure(f"key-triggered A/V marker offset is {offset * 1000:.1f}ms")
 
 
+def system_mode(device: UltimateApi) -> str | None:
+    """The machine's System Mode, or None where it does not serve the item."""
+    try:
+        return device.configs.current("U64 Specific Settings", "System Mode")
+    except Failure:
+        return None
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     # -H is the stream source rather than the device under test, so
@@ -256,20 +263,25 @@ def main() -> int:
                         help=f"REST password (default: ${cli.DEFAULT_PASSWORD_ENV})")
     parser.add_argument("--case", choices=("all", "ladder", "pop"), default="all")
     args = parser.parse_args()
-    if targets.is_cartridge(args.host):
-        # Measured on u2@c64u, 2026-09-04: the tone ladder is detected one note
-        # out (146.8Hz expected, 130.8Hz seen), on every attempt. The ladder is
-        # a PRG the suite runs on the C64, so this belongs with the load and run
-        # actions skipped on this target in prg_context_menu_test rather than
-        # being a fault in the anchor, which this branch fixed and which passes
-        # on u64.
+    device = UltimateApi(args.host, args.password or None)
+    # The ladder's constants are PAL throughout: PAL_AUDIO_RATE, a 50Hz frame
+    # rate in the slot arithmetic, and note frequencies derived from both. On a
+    # machine in NTSC the tones and the slot boundaries are neither, and what
+    # the suite reports is a wrong note rather than the wrong system mode.
+    # Measured on an Ultimate 64 Elite in NTSC, three attempts of three: note 2
+    # came back 174.6Hz against an expected 164.8Hz, exactly one semitone high,
+    # with no packet missing or reordered. The same machine's C64 Ultimate
+    # neighbour is in PAL and passes. Declared here rather than left to look
+    # like a stream fault; making the suite mode-aware needs the NTSC audio
+    # rate measured on the device, which is work of its own.
+    mode = system_mode(device)
+    if mode is not None and mode != "PAL":
         suite_skip(
             "stream_test",
-            "the tone ladder is detected one note out when this suite runs "
-            "against a cartridge inside a computer; see the same skip in "
-            "prg_context_menu_test")
+            f"the tone ladder is PAL throughout, from its {PAL_AUDIO_RATE:.1f}Hz "
+            f"audio rate to the 50Hz frame rate its slot timing counts in, and "
+            f"this machine is in {mode}")
         return 0
-    device = UltimateApi(args.host, args.password or None)
     try:
         if args.case in ("all", "ladder"):
             with check("tone ladder reaches audio and video streams"):

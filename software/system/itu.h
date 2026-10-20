@@ -43,6 +43,7 @@ extern "C" {
 #define ITU_IRQHIGH_WIFI     3
 #define ITU_IRQHIGH_BLING    4
 #define ITU_IRQHIGH_HDMI     5
+#define ITU_IRQHIGH_UNLOCK   6
 #define ITU_IRQHIGH_GURU     7
 
 #define CAPAB_UART          0x00000001
@@ -126,6 +127,8 @@ void install_high_irq(int irqNr, uint8_t (*func)(void *), void *context);
 void deinstall_high_irq(int irqNr);
 
 extern void (*custom_outbyte)(int c);
+extern int outbyte_last;
+void console_outbyte(int c);
 
 #ifdef __cplusplus
 }

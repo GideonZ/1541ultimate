@@ -588,7 +588,9 @@ int Modem :: ExecuteCommand(ModemCommand_t *cmd)
     char *c;
     const char *response;
     char responseBuffer[16];
-    int registerValue, temp;
+    // A missing number reads as zero, which is what the AT commands below have
+    // always taken it to be.
+    int registerValue = 0, temp = 0;
     bool doesResponse = true;
 
     response = (verbose==TRUE ? responseText[RESP_OK] : responseCode[RESP_OK]);

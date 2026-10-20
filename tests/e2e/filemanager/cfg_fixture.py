@@ -88,6 +88,7 @@ def load(browser, name: str, log_name: str | None = None) -> None:
     if log_name:
         browser.invoke_task_action("Developer", "Save Debug Log")
         browser.fill_edit_field(log_name)
+        browser.wait_until_gone("Give filename..")
 
 
 def cleanup(host: str, password: str, *names: str) -> None:

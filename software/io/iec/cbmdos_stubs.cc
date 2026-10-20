@@ -4,12 +4,42 @@
 // temporary
 void print_file(filename_t& name);
 
+// The command the parser dispatched last, and the parameters it passed on, so a
+// test can check what was parsed rather than only that parsing returned no error.
+typedef struct {
+    const char *command;
+    int a, b, c, d;
+    char text[96]; // the names a command carried, where it carried any
+    uint8_t reply[64]; // the bytes a command answered with
+    int reply_len;
+} stub_call_t;
+
+stub_call_t last_stub_call = { NULL, 0, 0, 0, 0, "", { 0 }, 0 };
+
+static void record_stub_call(const char *command, int a = 0, int b = 0, int c = 0, int d = 0)
+{
+    last_stub_call.command = command;
+    last_stub_call.a = a;
+    last_stub_call.b = b;
+    last_stub_call.c = c;
+    last_stub_call.d = d;
+    last_stub_call.text[0] = 0;
+    last_stub_call.reply_len = 0;
+}
+
+// A file name as partition, path and name, for a test to compare as one string.
+static void record_stub_name(filename_t& name)
+{
+    snprintf(last_stub_call.text, sizeof(last_stub_call.text), "%d|%s|%s",
+             name.partition, name.path.c_str(), name.filename.c_str());
+}
+
 class IecCommandExecuterStubs : public IecCommandExecuter
 {
 public:
-    int do_block_read(int chan, int part, int track, int sector);
-    int do_block_write(int chan, int part, int track, int sector);
-    int do_block_allocate(int chan, int part, int track, int sector, bool allocate);
+    int do_block_read(int chan, int part, int track, int sector, bool length_byte);
+    int do_block_write(int chan, int part, int track, int sector, bool length_byte);
+    int do_block_allocate(int part, int track, int sector, bool allocate);
     int do_buffer_position(int chan, int pos);
     int do_set_current_partition(int part);
     int do_change_dir(filename_t& dest);
@@ -17,42 +47,61 @@ public:
     int do_remove_dir(filename_t& dest);
     int do_copy(filename_t& dest, filename_t sources[], int n);
     int do_initialize();
-    int do_format(uint8_t *name, uint8_t id1, uint8_t id2);
+    int do_initialize_buffers();
+    int do_reset(bool cold);
+    int do_format(filename_t& dest, const char *id);
     int do_rename(filename_t &src, filename_t &dest);
     int do_scratch(filename_t filenames[], int n);
     int do_cmd_response(uint8_t *data, int len);
     int do_set_position(int chan, uint32_t pos, int recnr, int recoffset);
     int do_pwd_command();
     int do_get_partition_info(int part);
+    int do_set_device_number(int dev);
+    int do_restore_device_number();
+    int do_set_write_protect(bool on);
+    int64_t clock_offset = 0;
+    int64_t get_clock_offset(void) { return clock_offset; }
+    void set_clock_offset(int64_t seconds) { clock_offset = seconds; }
+    int do_set_header(filename_t& dest, const char *id);
+    int do_rename_partition(const char *newname, const char *oldname);
+    int do_toggle_attributes(filename_t& name, uint8_t bits);
+    int do_set_attributes(filename_t names[], int n, uint8_t attrib, uint8_t mask);
 };
 
 
-int IecCommandExecuterStubs::do_block_read(int chan, int part, int track, int sector)
+int IecCommandExecuterStubs::do_block_read(int chan, int part, int track, int sector, bool length_byte)
 {
+    record_stub_call("block read", chan, part, track, sector);
+    strcpy(last_stub_call.text, length_byte ? "length" : "no length");
     printf("Block read: Channel %d, Partition %d, T/S %d/%d\n", chan, part, track, sector);
     return 0;
 }
 
-int IecCommandExecuterStubs::do_block_write(int chan, int part, int track, int sector)
+int IecCommandExecuterStubs::do_block_write(int chan, int part, int track, int sector, bool length_byte)
 {
+    record_stub_call("block write", chan, part, track, sector);
+    strcpy(last_stub_call.text, length_byte ? "length" : "no length");
     printf("Block write: Channel %d, Partition %d, T/S %d/%d\n", chan, part, track, sector);
     return 0;
 }
 
-int IecCommandExecuterStubs::do_block_allocate(int chan, int part, int track, int sector, bool allocate)
+int IecCommandExecuterStubs::do_block_allocate(int part, int track, int sector, bool allocate)
 {
-    printf("Block %s: Channel %d, Partition %d, T/S %d/%d\n", allocate ? "allocate" : "free", chan, part, track, sector);
+    record_stub_call(allocate ? "block allocate" : "block free", part, track, sector);
+    printf("Block %s: Partition %d, T/S %d/%d\n", allocate ? "allocate" : "free", part, track, sector);
     return 0;
 }
 
 int IecCommandExecuterStubs::do_buffer_position(int chan, int pos)
 {
+    record_stub_call("buffer position", chan, pos);
     printf("Position in buffer: Chan %d: %d\n", chan, pos);
     return 0;
 }
 
 int IecCommandExecuterStubs::do_set_current_partition(int part)
 {
+    record_stub_call("select partition", part);
     printf("Change to partition %d\n", part);
     return 0;
 }
@@ -88,12 +137,27 @@ int IecCommandExecuterStubs::do_copy(filename_t& dest, filename_t sources[], int
 
 int IecCommandExecuterStubs::do_initialize()
 {
+    record_stub_call("initialize");
     return 73;
 }
 
-int IecCommandExecuterStubs::do_format(uint8_t *name, uint8_t id1, uint8_t id2)
+int IecCommandExecuterStubs::do_reset(bool cold)
 {
-    printf("Format: %s %02x %02x\n", name, id1, id2);
+    record_stub_call("reset", cold ? 1 : 0);
+    return 73;
+}
+
+int IecCommandExecuterStubs::do_initialize_buffers()
+{
+    record_stub_call("initialize buffers");
+    return 0;
+}
+
+int IecCommandExecuterStubs::do_format(filename_t& dest, const char *id)
+{
+    record_stub_call("format");
+    snprintf(last_stub_call.text, sizeof(last_stub_call.text), "%d|%s|%s|%s",
+             dest.partition, dest.path.c_str(), dest.filename.c_str(), id);
     return 0;
 }
 
@@ -108,6 +172,8 @@ int IecCommandExecuterStubs::do_rename(filename_t &src, filename_t &dest)
 
 int IecCommandExecuterStubs::do_scratch(filename_t filenames[], int n)
 {
+    record_stub_call("scratch", n);
+    record_stub_name(filenames[0]);
     printf("Scratch %d files:\n", n);
     for(int i=0;i<n;i++) {
         printf("  %d. ", i);
@@ -118,12 +184,68 @@ int IecCommandExecuterStubs::do_scratch(filename_t filenames[], int n)
 
 int IecCommandExecuterStubs::do_cmd_response(uint8_t *data, int len)
 {
-    dump_hex_relative(data, len);
+    record_stub_call("command response", len);
+    int nonzero = 0;
+    for (int i = 0; i < len; i++) {
+        nonzero += (data[i] != 0);
+    }
+    last_stub_call.b = nonzero;
+    last_stub_call.reply_len = (len < (int)sizeof(last_stub_call.reply))
+                             ? len : (int)sizeof(last_stub_call.reply);
+    memcpy(last_stub_call.reply, data, last_stub_call.reply_len);
+    return 0;
+}
+
+int IecCommandExecuterStubs::do_set_device_number(int dev)
+{
+    record_stub_call("device number", dev);
+    return 0;
+}
+
+int IecCommandExecuterStubs::do_set_write_protect(bool on)
+{
+    record_stub_call("write protect", on ? 1 : 0);
+    return 0;
+}
+
+int IecCommandExecuterStubs::do_restore_device_number()
+{
+    record_stub_call("restore device number");
+    return 0;
+}
+
+int IecCommandExecuterStubs::do_set_header(filename_t& dest, const char *id)
+{
+    record_stub_call("set header");
+    snprintf(last_stub_call.text, sizeof(last_stub_call.text), "%d|%s|%s|%s",
+             dest.partition, dest.path.c_str(), dest.filename.c_str(), id);
+    return 0;
+}
+
+int IecCommandExecuterStubs::do_rename_partition(const char *newname, const char *oldname)
+{
+    record_stub_call("rename partition");
+    snprintf(last_stub_call.text, sizeof(last_stub_call.text), "%s|%s", newname, oldname);
+    return 0;
+}
+
+int IecCommandExecuterStubs::do_toggle_attributes(filename_t& name, uint8_t bits)
+{
+    record_stub_call("toggle attributes", (int)bits);
+    record_stub_name(name);
+    return 0;
+}
+
+int IecCommandExecuterStubs::do_set_attributes(filename_t names[], int n, uint8_t attrib, uint8_t mask)
+{
+    record_stub_call("set attributes", (int)attrib, (int)mask, n);
+    record_stub_name(names[0]);
     return 0;
 }
 
 int IecCommandExecuterStubs::do_set_position(int chan, uint32_t pos, int recnr, int recoffset)
 {
+    record_stub_call("set position", chan, (int)pos, recnr, recoffset);
     printf("Set File position to %lu on chan %d (or record #%d:%d)\n", pos, chan, recnr, recoffset);
     return 0;
 }
@@ -136,6 +258,7 @@ int IecCommandExecuterStubs::do_pwd_command()
 
 int IecCommandExecuterStubs :: do_get_partition_info(int part)
 {
+    record_stub_call("partition info", part);
     printf("Partition Info command\n");
     return 0;
 }

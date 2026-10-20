@@ -17,8 +17,8 @@ import cli  # noqa: E402
 import machine as machine_lib
 import targets
 from api import UltimateApi
-from report import (Failure, check, check_count, format_exception, suite_fail,
-                    suite_ok, suite_skip)
+from report import (Failure, check, check_count, format_exception,
+                    note_assumed_fix, suite_fail, suite_ok, suite_skip)
 
 STORE = "Network Settings"
 ITEM = "Ultimate Ident Service"
@@ -87,6 +87,10 @@ def main() -> int:
     if absent:
         suite_skip("ident_service_switch_test", absent)
         return 0
+    # A whole-suite gate, so skip_without_fix (one check per gate) cannot be
+    # used; tag the first check below instead.
+    if machine.assumed_fix(machine_lib.IDENT_SWITCHES_LIVE):
+        note_assumed_fix(machine_lib.IDENT_SWITCHES_LIVE, machine.kind)
 
     failure = ""
     try:
@@ -102,15 +106,12 @@ def main() -> int:
             "ident stops answering when disabled",
             "ident answers again when re-enabled",
         ]
-        if not any([machine.skip_without_fix(
-                machine_lib.SERVICE_SWITCHES_APPLY_LIVE, label)
-                    for label in live_checks]):
-            with check(live_checks[0]):
-                api.configs.set(STORE, ITEM, "Disabled")
-                wait_disabled(args.host)
-            with check(live_checks[1]):
-                api.configs.set(STORE, ITEM, "Enabled")
-                wait_enabled(args.host)
+        with check(live_checks[0]):
+            api.configs.set(STORE, ITEM, "Disabled")
+            wait_disabled(args.host)
+        with check(live_checks[1]):
+            api.configs.set(STORE, ITEM, "Enabled")
+            wait_enabled(args.host)
     except Failure as exc:
         failure = str(exc)
     except Exception as exc:  # noqa: BLE001

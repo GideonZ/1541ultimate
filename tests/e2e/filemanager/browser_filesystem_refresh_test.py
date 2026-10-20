@@ -44,7 +44,6 @@ sys.path.insert(0, bootstrap.directory("e2e", "api"))
 # holds the shared UI backend.
 
 import ftp as ftp_lib
-import machine as machine_lib
 import rest as rest_lib
 import targets
 from report import teardown_step, detail, suite_fail, suite_ok
@@ -102,6 +101,8 @@ TELNET_STATUS_ROW = 23
 PICKER_TITLE = "Select Path"
 PICKER_SELECT_ENTRY = "<< Select Current Dir >>"
 EMPTY_DIRECTORY_MARKER = "< No Items >"
+TAP_HEADER = b"C64-TAPE-RAW\x01\x00\x00\x00\x00\x00\x00\x00"
+TAP_INDEX = b"0x000014 intro\n0x000020 finale\n"
 
 # Box glyphs: the C64 screen draws them below 0x20 so the menu snapshot renders
 # them as spaces, while Screen_VT100 draws them in the alternate character set,
@@ -409,14 +410,6 @@ class Context:
         self.ftp_observer: FtpObserver | None = None
         self.ftp_driver: ftplib.FTP | None = None
         self.oracle = RestOracle(self.host, self.password, f"Temp/{self.test_dir}")
-
-    @property
-    def machine(self) -> machine_lib.Machine:
-        """Which machine this is, for the rows that need a firmware fix."""
-        return machine_lib.identify(
-            targets.device_of(self.host),
-            lambda: ui_backend.fetch_product(self.host, self.password or None,
-                                             self.timeout))
 
     def observers(self, exclude: Sequence[str] = ()) -> list[object]:
         assert self.menu is not None and self.telnet is not None
@@ -947,6 +940,23 @@ def row_paste_browser(ctx: Context, browser: FilesystemRefreshBrowser, origin: s
     ftp_try(lambda: ctx.ftp_driver.delete(f"{ctx.source_path}/{name}"))
 
 
+def row_enter_tap_index(ctx: Context, browser: FilesystemRefreshBrowser, stem: str) -> None:
+    """Enter (index) must survive the context action's listing refresh."""
+    assert ctx.ftp_driver is not None
+    tap_name = f"{stem}.tap"
+    idx_name = f"{stem}.idx"
+    names = [tap_name, idx_name]
+    ftp_store(ctx.ftp_driver, f"{ctx.fixture_path}/{tap_name}", TAP_HEADER)
+    ftp_store(ctx.ftp_driver, f"{ctx.fixture_path}/{idx_name}", TAP_INDEX)
+    ctx.baseline(expected_snapshot([(tap_name, len(TAP_HEADER)), (idx_name, len(TAP_INDEX))]), names)
+
+    browser.select_entry(tap_name)
+    browser.invoke_context_action("Enter (index)")
+    browser.select_entry("intro")
+    browser.select_entry("finale")
+    browser.recover_to(f"Temp/{ctx.test_dir}")
+
+
 # ---- failure paths -------------------------------------------------------
 
 
@@ -1032,47 +1042,6 @@ def row_short_write(ctx: Context, name: str) -> None:
 # --------------------------------------------------------------------------
 # Setup and teardown
 # --------------------------------------------------------------------------
-
-
-# The rows that cannot converge without a given firmware fix. Kept beside the
-# rows themselves so a label renamed below is renamed here too.
-ROWS_NEEDING_FIX = {
-    # These three hold the FTP data connection open on purpose and look through
-    # every observer while it is open, because the create notification fires
-    # when the file is opened and the size only when it is closed. That needs a
-    # fourth socket: the Telnet session, the FTP control, the FTP data
-    # connection, and then whatever the observer looks through. A C64 Ultimate
-    # serves three across Telnet and FTP, and the observer's own read is what
-    # the device resets. See machine.SERVES_FOUR_TELNET_FTP_SOCKETS.
-    machine_lib.SERVES_FOUR_TELNET_FTP_SOCKETS: (
-        "create from FTP",
-        "write from FTP",
-        "short write commits consistently",
-    ),
-    machine_lib.BROWSER_REFRESH_AFTER_QUEUE_OVERFLOW: (
-        "rename under observer-queue pressure from the Menu",
-        "rename under observer-queue pressure from Telnet",
-    ),
-    machine_lib.BROWSER_REFRESH_ON_DIRECTORY_CHANGE: (
-        "rename a directory from the Menu",
-        "rename a directory from Telnet",
-        "delete a non-empty directory from the Menu",
-        "delete a non-empty directory from Telnet",
-        "remove a directory from FTP",
-        "create from FTP (mkd)",
-        "failed write creates nothing",
-    ),
-    machine_lib.BROWSER_REFRESH_FROM_TELNET_WRITER: (
-        "write from Telnet",
-        "copy over an existing file from Telnet",
-        "paste into the watched directory from Telnet",
-    ),
-    machine_lib.BROWSER_REFRESH_FROM_MENU_WRITER: (
-        "write from the Menu",
-        "copy over an existing file from the Menu",
-        "paste into the watched directory from the Menu",
-    ),
-}
 
 
 def build_rows(ctx: "Context") -> list[tuple[str, Callable[[], None], Sequence[str]]]:
@@ -1161,6 +1130,11 @@ def build_rows(ctx: "Context") -> list[tuple[str, Callable[[], None], Sequence[s
          lambda: row_paste_browser(ctx, ctx.menu, "Menu", "vmenu1.tst"), ["vmenu1.tst"]),
         ("paste into the watched directory from Telnet",
          lambda: row_paste_browser(ctx, ctx.telnet, "Telnet", "vtel1.tst"), ["vtel1.tst"]),
+
+        ("enter a TAP index from the Menu",
+         lambda: row_enter_tap_index(ctx, ctx.menu, "imenu1"), ["imenu1.tap", "imenu1.idx"]),
+        ("enter a TAP index from Telnet",
+         lambda: row_enter_tap_index(ctx, ctx.telnet, "itel1"), ["itel1.tap", "itel1.idx"]),
 
         ("failed rename shows nothing",
          lambda: row_failed_rename(ctx, "frn1.tst", "frn2.tst"), ["frn1.tst", "frn2.tst"]),
@@ -1272,20 +1246,7 @@ def open_observers(ctx: Context) -> None:
     ctx.telnet.go_to_directory(f"Temp/{ctx.test_dir}")
 
     ctx.ftp_driver = ftp_connect(ctx.host, ctx.password)
-    if ctx.machine.missing_fix(machine_lib.SERVES_FOUR_TELNET_FTP_SOCKETS):
-        # Three sockets is exactly what a Telnet session and one FTP transfer
-        # need, so watching the directory over FTP as well leaves no margin:
-        # any socket the device has not finished releasing makes the next one
-        # the fourth, and it is reset. The rows still run and are still
-        # checked, by the Menu, by Telnet and by the REST oracle, which is the
-        # one that says what actually committed. What is lost on this machine
-        # is the FTP column of the matrix, not the rows.
-        ctx.ftp_observer = None
-        detail(f"not watching over FTP: {ctx.machine.kind} serves three "
-               "concurrent Telnet and FTP sockets, and a Telnet session plus "
-               "one transfer already needs all three")
-    else:
-        ctx.ftp_observer = FtpObserver(ctx.host, ctx.password, ctx.fixture_path)
+    ctx.ftp_observer = FtpObserver(ctx.host, ctx.password, ctx.fixture_path)
 
 
 def close_observers(ctx: Context) -> None:
@@ -1338,24 +1299,6 @@ def main() -> int:
         assert ctx.telnet is not None
 
         rows = build_rows(ctx)
-
-        # A row whose browser cannot recover from a dropped event leaves that
-        # browser stale for the rest of the run, so every later row compares
-        # against a listing that never caught up. Skipped rather than failed
-        # where the firmware lacks the fix, because one failure there costs
-        # twelve.
-        # Named one by one rather than matched on the label, because the row
-        # that needs a fix is not always the row that says so: "failed write
-        # creates nothing" blocks its STOR with a directory it creates first,
-        # so it needs the directory notification like the rows that say
-        # "directory" in their name.
-        for fix, labels in ROWS_NEEDING_FIX.items():
-            if not ctx.machine.missing_fix(fix):
-                continue
-            for label in labels:
-                if any(row[0] == label for row in rows):
-                    ctx.machine.skip_without_fix(fix, label)
-            rows = [row for row in rows if row[0] not in labels]
 
         if args.row:
             wanted = [text.lower() for text in args.row]

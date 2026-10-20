@@ -6,6 +6,7 @@
 #include <ctype.h>
 #include "lwip/dhcp.h"
 #include "lwip/dns.h"
+#include "lwip/sockets.h"
 #include "lwip/apps/mdns.h"
 #include "filemanager.h"
 
@@ -329,6 +330,25 @@ bool NetworkInterface :: input(void *raw_buffer, uint8_t *payload, int pkt_size)
 	return true;
 }
 
+// Hands lwIP its own copy of a frame, so the caller keeps its buffer.
+bool NetworkInterface :: input_copy(uint8_t *payload, int pkt_size)
+{
+	// Two bytes ahead of the frame put its IP header on a word boundary, as the
+	// drivers' own buffers do.
+	struct pbuf *pbuf = pbuf_alloc(PBUF_RAW, pkt_size + 2, PBUF_RAM);
+	if (!pbuf) {
+		return false;
+	}
+	pbuf_remove_header(pbuf, 2);
+	memcpy(pbuf->payload, payload, pkt_size);
+
+	if (my_net_if.input(pbuf, &my_net_if)!=ERR_OK) {
+		pbuf_free(pbuf);
+		return false;
+	}
+	return true;
+}
+
 void NetworkInterface :: link_up()
 {
     // Enable the network interface
@@ -471,6 +491,19 @@ bool NetworkInterface :: peekArpTable(uint32_t ipToQuery, uint8_t *mac)
     portEXIT_CRITICAL();
 
     return ret;
+}
+
+bool NetworkInterface :: bindSocket(int socket)
+{
+    struct ifreq request;
+    memset(&request, 0, sizeof(request));
+
+    LOCK_TCPIP_CORE();
+    char *name = netif_index_to_name(netif_get_index(&my_net_if), request.ifr_name);
+    UNLOCK_TCPIP_CORE();
+
+    return name && lwip_setsockopt(socket, SOL_SOCKET, SO_BINDTODEVICE,
+                                  &request, sizeof(request)) == 0;
 }
 
 void NetworkInterface :: on_edit()

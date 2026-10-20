@@ -59,6 +59,7 @@ import bootstrap  # noqa: E402,F401
 import menu as menu_lib  # noqa: E402
 import ftp as ftp_lib  # noqa: E402
 import cli  # noqa: E402
+import leak  # noqa: E402
 
 import pacing  # noqa: E402  (needs tests/lib on sys.path first)
 import rest as rest_lib
@@ -69,7 +70,7 @@ from ui_backend import (  # noqa: E402  (needs tests/e2e/lib first)
     find_selected_row_rest, measure_cursor_colour)
 from api import UltimateApi  # noqa: E402  (needs tests/lib on sys.path first)
 from report import (  assert_or_warn, # noqa: E402  (needs tests/lib on sys.path first)
-    Failure, teardown_step, check_count, check_fail, check_ok, check_start, check_warn, detail, last_label,
+    Failure, teardown_step, check_count, check_fail, check_ok, check_skip, check_start, check_warn, detail, last_label,
     section, suite_fail, suite_ok, warn)
 
 
@@ -391,6 +392,18 @@ class MenuDriver:
         self.last_input = f"type {text!r}"
         self.s.key_events += len(text)
         self.browser.type_text(text)
+
+    def enter_text(self, text, clear_taps=0):
+        """Type `text` into an open string box and commit it, read back first.
+
+        Browser.fill_edit_field types it, reads the box back and types it again
+        when a key was lost, which a cartridge target does now and then: a name
+        typed blind and committed is a name nobody asked for.
+        """
+        self.last_input = f"enter {text!r}"
+        self.s.key_events += len(text)
+        self.browser.fill_edit_field(text, clear_taps=clear_taps)
+        time.sleep(MENU_SETTLE_SECONDS)
 
     # -- menu open/close ---------------------------------------------------
     def menu_is_open(self):
@@ -1336,8 +1349,7 @@ def create_remote_dir(ctx, alias, dirname):
     d.select_task_action("Create")
     d.select_context_action("Directory", max_steps=24)
     # string_box prompt for the new directory name.
-    d.type_text(dirname)
-    d.tap(K_RETURN, settle=MENU_SETTLE_SECONDS)
+    d.enter_text(dirname)
     ctx.ensure_alive("after MKD")
     mkd = server.wait_for_command("MKD", since, timeout=8.0, arg_substr=dirname)
     if mkd and ctx.server.exists(dirname):
@@ -1425,10 +1437,7 @@ def rename_remote_file(ctx, alias):
         d.tap(K_RUNSTOP)
         return ("UNSUPPORTED_BY_UI", src, "Rename action absent from context menu")
     # string_box prefilled with current name: clear it, then type the new name.
-    for _ in range(len(src) + 2):
-        d.tap(K_DEL)
-    d.type_text(dst)
-    d.tap(K_RETURN, settle=MENU_SETTLE_SECONDS)
+    d.enter_text(dst, clear_taps=len(src) + 2)
     ctx.ensure_alive("after rename")
     rnfr = server.wait_for_command("RNFR", since, timeout=8.0)
     rnto = server.wait_for_command("RNTO", since, timeout=8.0)
@@ -1878,6 +1887,25 @@ SOAK_OPS = [soak_browse, soak_read, soak_edit, soak_mkdir, soak_upload,
             soak_rename, soak_recreate]
 
 
+def stage_heap(ctx):
+    machine = ctx.s.api.machine
+    if machine.heap() is None:
+        check_start("FTP form heap stability")
+        check_skip("firmware has no machine:heap endpoint")
+        ctx.record("heap", "host form cleanup", "SKIP")
+        return
+    if ctx.alias is None:
+        ctx.alias = safe_name(ctx.args.alias_prefix)
+        create_host(ctx, ctx.alias)
+    measured = leak.slope(
+        once=lambda: soak_recreate(ctx, 0), heap=machine.heap_free,
+        warmup=2, iterations=8, tolerance_bytes_per_op=32,
+        unit="host recreation", settle_seconds=3,
+        title="FTP host forms release queued filesystem events")
+    ctx.record("heap", "host form cleanup", "OK",
+               notes=measured.one_line(32))
+
+
 def stage_soak(ctx):
     section("stage: soak")
     s, server = ctx.s, ctx.server
@@ -2019,7 +2047,7 @@ def print_failure_diagnostics(ctx, exc):
 # ---------------------------------------------------------------------------
 # CLI + main
 # ---------------------------------------------------------------------------
-STAGE_ORDER = ["smoke", "core", "edge", "matrix", "negative", "soak"]
+STAGE_ORDER = ["smoke", "core", "edge", "matrix", "negative", "heap", "soak"]
 
 
 def parse_ports(text):
@@ -2098,7 +2126,7 @@ def infer_advertised_host(device_host):
 
 def stages_for(args):
     if args.stage == "all":
-        return ["smoke", "core", "edge", "matrix", "negative", "soak"]
+        return ["smoke", "core", "edge", "matrix", "negative", "heap", "soak"]
     if args.stage == "smoke":
         return ["smoke"]
     # any explicit non-smoke stage implies smoke setup first for a clean host
@@ -2158,7 +2186,7 @@ def main(argv=None):
             for stage in run:
                 {"smoke": stage_smoke, "core": stage_core, "edge": stage_edge,
                  "matrix": stage_matrix, "negative": stage_negative,
-                 "soak": stage_soak}[stage](ctx)
+                 "heap": stage_heap, "soak": stage_soak}[stage](ctx)
             if args.run_prg:
                 stage_prg(ctx)
         except HardCrash as exc:

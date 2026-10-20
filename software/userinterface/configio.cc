@@ -210,7 +210,10 @@ void ConfigIO :: S_write_store_to_file(ConfigStore *st, File *f)
         i = st->items[n];
         len = 0;
         if ((i->definition->type == CFG_TYPE_STRING) || (i->definition->type == CFG_TYPE_STRFUNC) || (i->definition->type == CFG_TYPE_STRPASS)) {
-            len = sprintf(buffer, "%s=%s\n", i->definition->item_text, i->string);
+            len = sprintf(buffer, "%s=", i->definition->item_text);
+            f->write(buffer, len, &tr);
+            f->write(i->string, strlen(i->string), &tr);
+            len = sprintf(buffer, "\n");
         } else if(i->definition->type == CFG_TYPE_ENUM) {
             len = sprintf(buffer, "%s=%s\n", i->definition->item_text, i->definition->items[i->getValue()]);
         } else if(i->definition->type == CFG_TYPE_VALUE) {
@@ -227,7 +230,7 @@ void ConfigIO :: S_write_store_to_file(ConfigStore *st, File *f)
 bool ConfigIO :: S_read_from_file(File *f, StreamTextLog *log)
 {
     char c;
-    char line[128];
+    char line[320]; // an item name, '=', and a configuration string of up to 255 bytes
     uint32_t tr;
     bool allOK = true;
     ConfigStore *store = NULL;
@@ -236,21 +239,39 @@ bool ConfigIO :: S_read_from_file(File *f, StreamTextLog *log)
     int linenr = 0;
 
     while(1) {
-        for(int i=0;i<128;) {
+        int length = 0;
+        bool overflow = false;
+        while (1) {
             FRESULT fres = f->read(&c, 1, &tr);
             if ((fres == FR_OK) && tr) {
                 if (c == 0x0D) {
                     continue;
                 }
                 if (c == 0x0A) {
-                    line[i] = 0;
+                    line[length] = 0;
                     linenr++;
                     break;
                 }
-                line[i++] = c;
+                if (length < (int)sizeof(line) - 1) {
+                    line[length++] = c;
+                } else {
+                    overflow = true;
+                }
             } else {
-                return allOK;
+                if (overflow) { // a last line without a line end
+                    log->format("Line %d: Line too long.\n", linenr + 1);
+                }
+                return allOK && !overflow;
             }
+        }
+        if (overflow) {
+            log->format("Line %d: Line too long.\n", linenr);
+            allOK = false;
+            if (line[0] == '[') { // the items that follow belong to a store that was not read
+                store = NULL;
+                in_unknown_store = true;
+            }
+            continue;
         }
         if ((line[0] == '#') || (line[0] == ';')) {
             continue;
@@ -258,7 +279,7 @@ bool ConfigIO :: S_read_from_file(File *f, StreamTextLog *log)
         if (line[0] == '[') {
             store = NULL;
             in_unknown_store = false;
-            for(int i=1;i<128;i++) {
+            for(int i=1;i<length;i++) {
                 if (line[i] == ']') {
                     line[i] = 0;
                     store = cm->find_store(line + 1);
@@ -330,7 +351,7 @@ static bool equal_ignoring_outer_space(const char *a, const char *b)
 
 t_cfg_line_result ConfigIO :: S_read_store_element(ConfigStore *st, const char *line, int linenr, StreamTextLog *log)
 {
-    char itemname[40];
+    char itemname[41] = { 0 }; // terminated when no '=' falls within the first 40 characters
     const char *valuestr = 0;
     // first look for the first occurrence of '='
     int len = strlen(line);
@@ -370,9 +391,11 @@ t_cfg_line_result ConfigIO :: S_read_store_element(ConfigStore *st, const char *
 
     // now we know what item should be configured, and how to 'read' the string
     bool found = false;
-    int value;
+    int value = 0;
     if (item->definition->type == CFG_TYPE_VALUE) {
-        sscanf(valuestr, "%d", &value);
+        if (sscanf(valuestr, "%d", &value) != 1) {
+            return CFG_LINE_MALFORMED;
+        }
         if (value != item->value) {
             item->value = value;
             st->staleEffect = true;
@@ -385,6 +408,7 @@ t_cfg_line_result ConfigIO :: S_read_store_element(ConfigStore *st, const char *
         // the same choice.
         if (strncmp(item->string, valuestr, item->definition->max) != 0) {
             strncpy(item->string, valuestr, item->definition->max);
+            item->string[item->definition->max] = 0;
             st->staleEffect = true;
             st->staleFlash = true;
         }

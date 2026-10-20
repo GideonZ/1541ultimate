@@ -44,8 +44,6 @@ import cfg_fixture  # noqa: E402
 import cli  # noqa: E402
 
 from api import UltimateApi
-import machine as machine_lib
-import targets
 from report import (Failure, teardown_step, check, check_skip, check_start, detail,
                     format_exception, section, suite_fail, suite_ok)
 from ui_backend import add_mode_argument
@@ -95,14 +93,6 @@ def main() -> int:
     args = parser.parse_args()
 
     api = UltimateApi(args.host, args.password or None, args.timeout)
-    info = api.info()
-    device = machine_lib.identify(
-        targets.device_of(args.host),
-        lambda: (info.product, info.firmware_version))
-    if device.skip_without_fix(machine_lib.CFG_LOADS_UNKNOWN_AND_PADDED,
-                               "a CFG written the way a person would loads and applies"):
-        suite_ok("cfg_whitespace_test")
-        return 0
     chosen = api.configs.find_padded_enum()
     if chosen is None:
         check_start("a CFG written the way a person would loads and applies")

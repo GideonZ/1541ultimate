@@ -238,6 +238,10 @@ SubsysResultCode_e C64_CRT::read_chip_packet(File *f, t_crt_chip_chunk *chunk)
         return SSRET_OK; // stop, no error
     }
     if (strncmp((char*)chip_header, "CHIP", 4)) {
+        if (chip_chunks.get_elements()) { // data after the last packet, e.g. transfer padding
+            chunk->last = true;
+            return SSRET_OK; // stop, no error
+        }
         return SSRET_ERROR_IN_FILE_FORMAT; // stop, error
     }
 
@@ -278,6 +282,10 @@ SubsysResultCode_e C64_CRT::read_chip_packet(File *f, t_crt_chip_chunk *chunk)
         } else {
             return SSRET_OK; // OK
         }
+    }
+
+    if (load == 0xA000) {
+        a000_seen = true; // an Ocean CRT with $A000 chips needs 16K mode
     }
 
     // if ((load == 0xA000) && !a000_seen) {
@@ -348,8 +356,9 @@ void C64_CRT::auto_mirror(void)
     while (size <= highest_bank) {
         size <<= 1;
     }
-    // we support 1MB of cart memory, so max 64 banks
-    while(size < 64) {
+    // mirror up to the end of the cart memory, which is what the FPGA can address
+    int max_banks = max_cart / bank_multiplier;
+    while(size < max_banks) {
         // mirror the data
         printf("Mirroring %6x bytes from %p to %p.\n", size * bank_multiplier, cart_memory, cart_memory + size * bank_multiplier);
         memcpy(cart_memory + size * bank_multiplier, cart_memory, size * bank_multiplier);
@@ -401,18 +410,6 @@ void C64_CRT::patch_easyflash_eapi()
             printf("EAPI successfully patched!\n");
         }
     }
-}
-
-void C64_CRT::unpatch_easyflash_eapi()
-{
-    if (!original_eapi)
-        return;
-    if (local_type != CART_EASYFLASH)
-        return;
-
-    uint8_t* eapi = cart_memory + 0x3800;
-    memcpy(eapi, original_eapi, 768);
-    printf("EAPI successfully un-patched!\n");
 }
 
 SubsysResultCode_e C64_CRT::read_crt(File *file, cart_def *def)
@@ -553,7 +550,9 @@ void C64_CRT::configure_cart(cart_def *def)
             prohibit = CART_PROHIBIT_IO;
             break;
         case CART_COMAL80:
-            if (total_read > 65536) {
+            if (crt_header[CRTHDR_SUBTYPE] == 1) {
+                cart_type = CART_TYPE_OCEAN_16K | VARIANT_2; // Grey Comal 80: bit 6 does not switch the cartridge off
+            } else if (total_read > 65536) {
                 cart_type = CART_TYPE_OCEAN_16K | VARIANT_1; // Comal 80 Pakma // V5: Type = Ocean_16K, Variant = 1
             } else {
                 cart_type = CART_TYPE_OCEAN_16K; // Comal 80 // V5: Type = Ocean_16K, Variant = 0
@@ -690,7 +689,13 @@ SubsysResultCode_e C64_CRT::save_crt(File *fo)
         return SSRET_DISK_ERROR;
     }
 
-    crt->unpatch_easyflash_eapi();
+    // Memory holds our EAPI; the file gets the one it came with. Written from the saved copy, because
+    // restoring it in place would change code that a running C64 may be executing.
+    uint8_t *eapi = NULL;
+    if (crt->original_eapi && (crt->local_type == CART_EASYFLASH)) {
+        eapi = crt->cart_memory + 0x3800;
+    }
+
     for (int i=0; i<crt->chip_chunks.get_elements(); i++) {
         t_crt_chip_chunk *cc = crt->chip_chunks[i];
         uint16_t size = get_word(cc->header + CRTCHP_SIZE);
@@ -726,12 +731,23 @@ SubsysResultCode_e C64_CRT::save_crt(File *fo)
             break;
         }
 
-        res = fo->write(cc->ram_location, size, &written);
+        uint8_t *data = cc->ram_location;
+        if (eapi && (eapi >= data) && (eapi + 768 <= data + size)) {
+            uint32_t before = eapi - data;
+            res = fo->write(data, before, &written);
+            if (res == FR_OK) {
+                res = fo->write(crt->original_eapi, 768, &written);
+            }
+            if (res == FR_OK) {
+                res = fo->write(eapi + 768, size - before - 768, &written);
+            }
+        } else {
+            res = fo->write(data, size, &written);
+        }
         if (res != FR_OK) {
             break;
         }
     }
-    crt->patch_easyflash_eapi();
 
     if (res == FR_OK) {
         return SSRET_OK;

@@ -280,6 +280,17 @@ def _declared_computer(device: str) -> str:
     return ""
 
 
+def declared_cartridges(computer: str) -> list[str]:
+    """The cartridges `U64_COMPUTERS` says are plugged into `computer`."""
+    found = []
+    for entry in (os.environ.get(COMPUTERS_ENV) or "").split(","):
+        cartridge, separator, host = entry.strip().partition(SEPARATOR)
+        if (separator and cartridge and host.lower() == computer.lower()
+                and cartridge.lower() != host.lower()):
+            found.append(cartridge)
+    return found
+
+
 def _address(variable: str, default: str) -> str:
     """One stream address, honouring its environment override."""
     raw = (os.environ.get(variable) or "").strip()

@@ -82,13 +82,22 @@ from. A target occupies the machines it names, and two targets that share one
 never run at the same time: `u64` and `u2@c64u` run together, while `c64u` and
 `u2@c64u` take turns. `-o DIR` gives each target a subdirectory of its own.
 
-A bench where a cartridge is permanently in one computer can say so once
-instead of spelling it out on every command line:
+The runner finds which cartridge is in which computer, and nothing has to be
+set. Before it starts, it takes the pairs written as `cartridge@computer`. It
+then checks every cartridge named beside other hosts: the computer writes a
+random 8-byte fingerprint into its own RAM at `$0340`, and the cartridge
+reads that address through its own DMA, so only the computer it is plugged
+into returns the same bytes. A computer that has no cartridge declared is
+also searched for one on its /24 network, because a cartridge nobody named
+still shares that computer's IEC bus. The result is reported as a `cabling:`
+line and exported as `U64_COMPUTERS`.
 
 ```sh
-export U64_COMPUTERS=u2@c64u
-./run-tests u2 c64u          # u2 means the u2 in the c64u, so these take turns
+./run-tests u2 c64u          # u2 is found to be in the c64u, so these take turns
 ```
+
+`U64_COMPUTERS=u2@c64u` states the cabling instead of measuring it, and wins
+over a measurement.
 
 Two tokens that name the same pair of machines are one target: with that
 variable set, `./run-tests u2@c64u c64u u2` runs two targets and says it
@@ -118,7 +127,7 @@ pip install -r tests/requirements.txt
 | `openapi-python-client` | `e2e/api/openapi_contract_test.py`, generates a client from the OpenAPI document |
 | `openapi-schema-validator` | `tests/lib/openapi_contract.py`, checks device answers against the document |
 | `openapi-spec-validator` | `e2e/api/openapi_contract_test.py`, and `make openapi_validate`, which check the documents themselves against OpenAPI 3.1. Pinned in `tools/openapi/requirements.txt`, which this file includes, because the make target is a build gate |
-| `Pillow` | `e2e/api/input_test.py`, `e2e/io/printer/printer_test.py` |
+| `Pillow` | `e2e/api/input_test.py`, `e2e/io/c64/ultimax_cartridge_test.py`, `e2e/io/printer/printer_test.py` |
 | `PyYAML` | `tests/lib/openapi_contract.py`, reads `doc/api/rest_api_openapi_*.yaml` |
 | `pyftpdlib` | `e2e/filesystem/ftp_client_test.py` |
 | `selenium` | `e2e/web/theme_test.py`, `e2e/web/index_test.py`. Also needs an installed Chrome or Firefox with its WebDriver on PATH, and a route to the CDN `html/index.html` loads jQuery from; whatever is missing is reported as a skip |
@@ -187,7 +196,7 @@ when a suite is started by hand. One name each, used by every suite:
 | `U64_TELNET_PORT` | Telnet port for the UI transport | `23` |
 | `U64_DMA_PORT` | DMA control port | `64` |
 | `U64_MODE` | Default UI mode: `overlay`, `freeze` or `telnet` | `overlay` |
-| `U64_COMPUTERS` | Which computer each cartridge is plugged into, as `u2@c64u[,...]` | none |
+| `U64_COMPUTERS` | Which computer each cartridge is plugged into, as `u2@c64u[,...]`. Optional: the runner measures it when unset | measured |
 
 `tests/lib/pacing.py` documents the `U64_UI_*` variables that change how fast
 the suites drive the on-device UI.
@@ -268,43 +277,72 @@ Profiles, shallowest first. A suite runs from its own profile up.
 
 e2e:
   assembly64                        .      x      x      x      x
+  av-stream                         .      .      x      x      x
   browser-filesystem-refresh        .      .      x      x      x
   browser-long-filename             .      x      x      x      x
+  c64gs-cartridge                   .      .      x      x      x
+  cfg-loader-log                    x      x      x      x      x
   cfg-partial-effectuate            .      .      .      x      x
   cfg-single-group                  .      x      x      x      x
   cfg-unknown-items                 .      .      x      x      x
   cfg-whitespace                    .      .      x      x      x
+  comal80-cartridge                 .      .      x      x      x
   create-disk-image                 .      x      x      x      x
+  d81-track-bounds                  .      x      x      x      x
+  deferred-machine-actions          .      .      x      x      x
   doom-release                      .      .      .      x      x
+  easyflash-cartridge               .      .      x      x      x
   esp-depends                       x      x      x      x      x
+  fast-reset                        .      .      x      x      x
   freeze-menu                       .      .      x      x      x
+  freezer-audio                     .      x      x      x      x
   ftp-client                        .      x      x      x      x
   ftp-server                        x      x      x      x      x
-  input                             .      x      x      x      x
+  gmod2-eeprom-dirty                .      .      x      x      x
+  ident-service-switch              .      .      x      x      x
+  iec-dos-commands                  .      .      x      x      x
+  iec-partition-file                .      .      x      x      x
+  iec-partition-config              .      .      x      x      x
+  softiec-log-lines                 .      .      x      x      x
+  iec-listen-timing                 .      .      x      x      x
+  input                             x      x      x      x      x
   input-batching                    x      x      x      x      x
   key-injection                     .      .      x      x      x
+  lint                              x      x      x      x      x
   machine-code-monitor              .      .      .      x      x
   menu-screen                       x      x      x      x      x
+  micromys-wheel                    .      .      .      x      x
   navigation-keys                   x      x      x      x      x
   observability                     .      .      x      x      x
+  ocean-cartridge                   .      .      x      x      x
   openapi-contract                  .      x      x      x      x
   openapi-validator                 .      x      x      x      x
   power-cycle                       .      .      .      x      x
   prg-context-menu                  .      .      x      x      x
+  image-copy                        .      .      x      x      x
+  image-copy-oracle                 .      x      x      x      x
   prg-load-path-trim                .      x      x      x      x
   printer                           .      x      x      x      x
   readmem-writemem                  x      x      x      x      x
+  registry                          x      x      x      x      x
+  rel-copy                          .      .      x      x      x
   rest-api-coverage                 .      x      x      x      x
   reu-turbo                         .      .      x      x      x
   runner-policy                     .      x      x      x      x
+  stale-gates                       .      x      x      x      x
   telnet-drain                      .      x      x      x      x
   telnet-stale-session              .      .      .      x      x
+  telnet-sustained-input            .      .      .      x      x
   temp-auto-cleanup                 .      .      x      x      x
   transport-usage                   x      x      x      x      x
   uci-net-target                    .      .      .      x      x
   uci-targets                       .      .      x      x      x
+  ui-backend-parse                  x      x      x      x      x
   ui-backend-smoke                  x      x      x      x      x
+  ultimax-cartridge                 .      .      x      x      x
   usb-bulk-out-integrity            .      .      .      x      x
+  usb-mouse                         x      x      x      x      x
+  usb-mouse-pico                    .      .      .      x      x
   wake-on-wifi                      .      .      .      x      x
   web-index                         .      .      .      x      x
   web-theme                         .      .      .      x      x
@@ -319,6 +357,7 @@ soak:
   assembly-search-leak              .      .      x      x      x
   browser-refresh-leak              .      .      x      x      x
   heap-leak                         .      .      x      x      x
+  ident-leak                        .      .      x      x      x
   listener-soak                     .      .      x      x      x
   menu-navigation                   .      .      x      x      x
   mount-cache-leak                  .      .      x      x      x
@@ -327,8 +366,8 @@ soak:
   usb-keyboard-repeat               .      .      .      x      x
 
                                ------ ------ ------ ------ ------
-  suites                            8     21     43     52     52
-  suite runs                        8     21     43    104    156
+  suites                           14     29     64     78     78
+  suite runs                       14     29     64    156    234
 
 Scenario and check counts, and durations, are not shown here:
 the registry does not know them. They depend on the machine and are
@@ -353,6 +392,27 @@ matrix above is aligned text whichever format is asked for.
 
 By default the run continues through every selected suite, so one failure does
 not hide the rest. `-x/--stop-on-fail` stops at the first one.
+
+`image-copy` uses the HDMI overlay to check multi-file copy/paste of dotted CBM
+names into a D64 and host storage, mixed emulated-1541/browser writes with BAM
+and payload verification, and the Leave Menu on Mount setting. It uses generated
+fixtures and restores the drive settings. Drive A must be empty. Both browser-first
+and drive-first access orders are checked. Refused paste, rename and delete must
+leave the image byte-for-byte unchanged; after eject/paste/remount, the C64 reads
+the original multi-sector file and the pasted file over IEC. Dotted-name copies
+preserve an existing file and are repeated after deletion and re-entry.
+The `messages` case supports `--mode overlay`, `freeze` and `telnet`. It checks
+single/batch paste and delete refusal, hidden Delete/Rename actions, in-use
+errors for deleting/renaming an image, and first/last-file errors. Yes must process
+the next file; No must stop. A write-locked image also refuses edits while allowing
+reads; a recursive copy into it reports WRITE PROTECTED. Refused operations leave
+the image unchanged.
+Other cases exercise the HDMI overlay.
+Use `--root /USB2` (or the device's actual USB/SD volume) to run the fixtures on
+FAT storage and additionally prove that an 8.3 alias cannot overwrite a held
+long-name image. The default root is `/Temp`.
+`image-copy-oracle` checks that malformed directory/file chains and BAMs fail the
+independent image verifier.
 
 Everything else the runner does when things go badly follows from one idea.
 

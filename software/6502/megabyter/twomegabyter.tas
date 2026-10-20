@@ -406,6 +406,14 @@ uci_pre_ok:
                 lda #UCI_UNLOCK_KEY2_VAL
                 sta UCI_UNLOCK_KEY2_REG
 
+                ;; Wait for the software to enable the UCI
+                ldx #0
+                ldy #0
+-               iny
+                bne -
+                inx
+                bne -
+
 ; ---- Step 6: verify the UCI is now visible ---------------------------------
                 lda UCI_ID_REG
                 cmp #UCI_ID_VALUE
@@ -674,7 +682,6 @@ print_failure_ram .proc
                 lda DIAG_SUBCODE
                 sec
                 sbc #1
-                asl
                 tay
                 lda subcode_name_lo,y
                 sta ZP_SUM_LO

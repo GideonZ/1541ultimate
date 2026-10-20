@@ -25,13 +25,18 @@ class MountPoint
     File *file;
 	FileSystemInFile *emb;
 	uint32_t last_used;   // for LRU eviction; larger is more recent
+	bool stale;
 public:
 	MountPoint(SubPath *p, File *f, FileSystemInFile *e) {
 		path = p->get_new_path();
 	    file = f;
 		emb = e;
 		last_used = 0;
+		stale = false;
 	}
+
+	void mark_stale(void) { stale = true; }
+	bool is_stale(void) { return stale; }
 
 	void touch(uint32_t seq) { last_used = seq; }
 	uint32_t get_last_used(void) { return last_used; }
@@ -93,6 +98,7 @@ class FileManager
 #endif
 	IndexedList<MountPoint *>mount_points;
     IndexedList<File *>open_file_list;
+    IndexedList<FileSystem *>open_directory_fs; // one entry per directory open_directory() handed out
 	IndexedList<ManagedTempEntry *>managed_temp_entries;
 	uint32_t next_temp_seq;
 	bool temp_auto_cleanup_enabled;
@@ -102,7 +108,7 @@ class FileManager
 	CachedTreeNode *root;
 	FileSystem *rootfs;
 
-    FileManager() : mount_points(8, NULL), open_file_list(16, NULL), managed_temp_entries(16, NULL), next_temp_seq(0), mount_use_seq(0), temp_auto_cleanup_enabled(true), temp_use_cache_subfolder_enabled(true), /*used_paths(8, NULL), */observers(4, NULL) {
+    FileManager() : mount_points(8, NULL), open_file_list(16, NULL), open_directory_fs(4, NULL), managed_temp_entries(16, NULL), next_temp_seq(0), mount_use_seq(0), temp_auto_cleanup_enabled(true), temp_use_cache_subfolder_enabled(true), /*used_paths(8, NULL), */observers(4, NULL) {
         root = new CachedTreeNode(NULL, "RootNode");
         root->get_file_info()->attrib = AM_DIR;
         rootfs = new FileSystem_Root(root);
@@ -139,6 +145,9 @@ class FileManager
 	FRESULT rename_impl(PathInfo &from, PathInfo &to);
 	FRESULT delete_file_impl(PathInfo &pathInfo);
 	void release_mount_point(MountPoint *mp);
+	bool discard_mount_tree(MountPoint *mp);
+	void discard_mounts_of_file(const char *path);
+	bool in_use_for_writing(const char *path);
 	void get_temp_directory_path(const char *category, mstring &directory_out);
 	FRESULT build_temp_path(const char *category, const char *suggested_name, uint32_t seq, bool unique_name, uint32_t suffix,
 	        bool create_dirs, mstring &canonical_path_out);
@@ -150,6 +159,7 @@ class FileManager
 	void enforce_temp_limits(void);
 
 //	friend class FileDirEntry;
+    friend class ManagedDirectory;
 
     void lock() {
 #ifdef OS
@@ -229,9 +239,13 @@ public:
     void  get_display_string(Path *p, const char *filename, char *buffer, int width);
 
     FRESULT get_free(Path *path, uint32_t &free, uint32_t &cluster_size);
+    FRESULT get_total(Path *path, uint32_t &total, uint32_t &cluster_size);
+    FRESULT set_attributes(const char *pathname, uint8_t attrib, uint8_t mask);
+    FRESULT set_dir_label(const char *pathname, const char *name, const char *id);
+    FRESULT set_write_lock(const char *pathname, bool locked);
     FRESULT fs_read_sector(Path *path, uint8_t *buffer, int track, int sector);
     FRESULT fs_write_sector(Path *path, uint8_t *buffer, int track, int sector);
-    FRESULT fs_allocate_sector(Path *path, int track, int sector, bool alloc);
+    FRESULT fs_allocate_sector(Path *path, int &track, int &sector, bool alloc);
 
     FRESULT fstat(Path *path, const char *filename, FileInfo &info);
     FRESULT fstat(const char *path, const char *name, FileInfo &info);
@@ -276,6 +290,11 @@ public:
     }
     void deregisterObserver(ObserverQueue *q) {
     	observers.remove(q);
+        // Unsubscribed observers will never consume their pending events.
+        FileManagerEvent *event;
+        while ((event = (FileManagerEvent *)q->waitForEvent(0))) {
+            delete event;
+        }
     }
     void sendEventToObservers(eFileManagerEventType e, const char *p, const char *n="") {
         // printf("Sending FM event to %d observers: %d %s %s\n", observers.get_elements(), e, p, n);

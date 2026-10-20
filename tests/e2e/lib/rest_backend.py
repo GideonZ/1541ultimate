@@ -14,7 +14,7 @@ from pathlib import Path
 # The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
 sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
                             if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
-from report import Failure
+from report import Failure, warn
 from collections.abc import Sequence
 import api as api_lib
 import json
@@ -288,9 +288,14 @@ class RestBackend(Backend):
     def ensure_ready(self) -> None:
         self._open_menu()
 
-    def _open_menu(self) -> None:
+    def _raise_menu(self) -> None:
+        """Get the on-device menu up, without descending into the browser.
+
+        Split out of _open_menu so enter_file_browser can put a menu back that
+        its own Back key closed, without calling _open_menu and recursing into
+        itself.
+        """
         if self._menu_open():
-            self.enter_file_browser()
             return
         status, body = self._request("PUT", MENU_BUTTON_PATH)
         if status != 200:
@@ -298,19 +303,30 @@ class RestBackend(Backend):
         deadline = time.monotonic() + SETTLE_TIMEOUT_SECONDS
         while time.monotonic() < deadline:
             if self._menu_open():
-                self.enter_file_browser()
+                # The first reads can still hold the frame the menu last drew,
+                # until its task runs and redraws. Measured on a C64 Ultimate: a
+                # monitor frame for 40ms after a reopen that drew the browser.
+                settled, _ = wait_screen_settled(self._menu_screen_body, timeout=SETTLE_TIMEOUT_SECONDS)
+                if not settled:
+                    warn(f"the menu screen was still changing {SETTLE_TIMEOUT_SECONDS:g}s after it opened")
                 return
             time.sleep(POLL_INTERVAL_SECONDS)
         raise Failure("the on-device menu did not open")
 
-    def _in_file_browser(self) -> bool:
-        """Whether the screen showing is the file browser.
+    def _open_menu(self) -> None:
+        self._raise_menu()
+        self.enter_file_browser()
 
-        The browser puts the directory it is showing on the status row and
-        nothing else does, so a leading "/" is what identifies it. True on
-        every machine; the rest of this method only ever runs where it can be
-        false.
-        """
+    reopens_menu = True
+
+    def reopen_menu_on_browser(self) -> None:
+        """See Backend.reopen_menu_on_browser."""
+        self._close_menu()
+        self._open_menu()
+
+    def _in_file_browser(self) -> bool:
+        """Whether a path is on the status row. The launcher shows key hints
+        there; a C64 Ultimate settings screen keeps the browser's path."""
         rows = self._decode(self._body()).lines
         return rows[SCREEN_HEIGHT - 1].lstrip().startswith("/")
 
@@ -343,7 +359,16 @@ class RestBackend(Backend):
             cursor, rows = self.selection_and_rows(LAUNCHER_ENTRY_ROWS)
             row = next((n for n, text in enumerate(rows) if entry in text), None)
             if row is None:
-                self.send_key("LEFT")
+                try:
+                    self.send_key("LEFT")
+                except Failure as exc:
+                    # Back at the top of the launcher closes the whole menu,
+                    # the side effect browser.py documents for LEFT at the root
+                    # of the browser. That is a step in the descent, not a lost
+                    # device, so put the menu back and read where it landed.
+                    if not str(exc).startswith("menu screen unavailable after"):
+                        raise
+                    self._raise_menu()
                 continue
             if row != cursor:
                 self.send_key_repeat("UP" if row < cursor else "DOWN",
@@ -543,7 +568,8 @@ class RestBackend(Backend):
         self.last_command = ch
         return self.send_combo(char_to_combo(ch))
 
-    def send_text(self, text: str, label: str) -> Snapshot:
+    def send_text(self, text: str, label: str, *, settle: bool = True) -> Snapshot:
+        # REST settles on the screen changing, which costs nothing extra; `settle` is Telnet's.
         self.last_command = label
         before = self._menu_screen_body()
         events = [{"kind": "keyboard", "inputs": char_to_combo(ch), "transition": "tap"} for ch in text]

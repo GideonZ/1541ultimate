@@ -601,7 +601,6 @@ void SocketDMA::identThread(void *a)
 
             if (strncmp(client_message, "json", 4) == 0) {
                 client_message[36] = 0;
-                JSON_Bool password_protected(*password ? 1 : 0);
                 JSON *obj = JSON::Obj()
                     ->add("product", product)
                     ->add("firmware_version", APPL_VERSION_ASCII)
@@ -616,7 +615,7 @@ void SocketDMA::identThread(void *a)
                 // Current Assembly64 ignores responses with booleans so we only send this if passwords
                 // are active, in which case Assembly won't work anyway.
                 if (*password) {
-                    ((JSON_Object *)obj)->add("password_protected", &password_protected);
+                    ((JSON_Object *)obj)->add("password_protected", true);
                 }
 
                 // Add unique id if configured
@@ -632,6 +631,7 @@ void SocketDMA::identThread(void *a)
                 const char *msg = obj->render();
                 n = sendto(sockfd, msg, strlen(msg), 0, (struct sockaddr *)&cli_addr,
                         client_struct_length);
+                delete obj;
 
             } else {
                 // Respond to client:

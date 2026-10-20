@@ -49,6 +49,8 @@ void NetworkConfig :: init()
     strcpy(default_hostname, hostname ? hostname : "Small Buffer");
     cfg = ConfigManager :: getConfigManager()->register_store(0x4E455400, "Network Settings", network_config, this);
     cfg->set_sort_order(SORT_ORDER_CFG_SERVICES);
+    sort_zone_order();
+    cfg->find_item(CFG_NETWORK_NTP_ZONE)->setListOrder(zone_order);
     // Network status starts SNTP once an interface is usable.
     cfg->set_effectuated();
 }
@@ -81,3 +83,4 @@ void NetworkConfig :: effectuate_settings(void)
 #include "init_function.h"
 NetworkConfig networkConfig;
 InitFunction init_netcfg("Network Config", [](void *_obj, void *_param) { networkConfig.init(); }, NULL, NULL, 20);
+

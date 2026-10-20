@@ -60,12 +60,11 @@ def load_stale_gates():
 
 stale_gates = load_stale_gates()
 
-# A real entry this branch added (see machine.py and PR #845), used rather
-# than an invented name so this exercises the table this run will actually
-# read, not a fixture that happens to look like it.
-FIX = machine.INFO_REPORTS_INTERFACES
-FIX_MACHINE = machine.C64U
-LABEL = "GET /v1/info reports each interface's MAC address"
+# A real entry, used rather than an invented name so this exercises the table
+# this run will actually read, not a fixture that happens to look like it.
+FIX = machine.MONITOR_D_KEY_RESERVED
+FIX_MACHINE = machine.U2
+LABEL = "the monitor opens nothing with D"
 
 
 @contextlib.contextmanager
@@ -128,6 +127,24 @@ def main() -> int:
                 for needle in (FIX, FIX_MACHINE, LABEL):
                     if needle not in line:
                         raise Failure(f"{needle!r} missing from rendered line {line!r}")
+        finally:
+            machine.forget_assumptions()
+
+    with check("a tag in a per-suite file is found; run.jsonl alone would miss it"):
+        # The real output-dir layout: run.jsonl beside the per-suite files,
+        # with the tag in the suite's own file.
+        machine.assume(FIX)
+        try:
+            with tempfile.TemporaryDirectory() as d:
+                with synthetic_run(os.path.join(d, "run.jsonl")):
+                    with check("an orchestrator-level check, unrelated to any fix"):
+                        pass
+                with synthetic_run(os.path.join(d, "overlay-some-suite.jsonl")):
+                    ran = gated_check(FIX, FIX_MACHINE, LABEL, passes=True)
+                expect("the check ran rather than skipped", ran, True)
+                stale = stale_gates.find_stale(stale_gates.load_run_directory(d))
+                expect("one entry reported stale", len(stale), 1)
+                expect("names the entry", stale[0].fix, FIX)
         finally:
             machine.forget_assumptions()
 

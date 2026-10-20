@@ -46,12 +46,8 @@
 // sockets are held to it too, having no framing for chunking to preserve.
 #define NET_MAX_SOCKET_WRITE 1472
 
-// The largest reply block the transport can deliver. The FPGA stops the
-// response pointer on the last byte of the response buffer while it still
-// reports data available, so a block of exactly CMD_MAX_REPLY_LEN never ends
-// and a client that reads on that flag never stops. See
-// fpga/io/command_interface/vhdl_source/command_protocol.vhd.
-#define NET_MAX_REPLY_BLOCK (CMD_MAX_REPLY_LEN - 1)
+// The largest reply block the command transport can deliver.
+#define NET_MAX_REPLY_BLOCK CMD_MAX_REPLY_BLOCK
 
 // Payload bytes in the first block, which also carries the two byte header.
 #define NET_FIRST_BLOCK_PAYLOAD (NET_MAX_REPLY_BLOCK - 2)
@@ -97,6 +93,7 @@ class NetworkTarget : public CommandTarget {
 
     bool track_socket(int socketnr);
     void untrack_socket(int socketnr);
+    bool is_datagram_socket(int socketnr);
     bool owns_socket(int socketnr);
     void close_all_sockets(void);
 

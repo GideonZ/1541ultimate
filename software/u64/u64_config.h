@@ -52,6 +52,7 @@ class U64Config : public ConfigurableObject, ObjectWithMenu, SubSystem
     SemaphoreHandle_t hpd_monitor_sem;
     static uint8_t hpd_monitor_irq(void *a);
     static void hpd_monitor_task(void *a);
+    static uint8_t unlock_irq(void *a);
 
     class U64Mixer : public ConfigurableObject
     {

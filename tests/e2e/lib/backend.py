@@ -232,7 +232,8 @@ class Backend:
                   expect_redraw: bool = True) -> Snapshot:
         raise NotImplementedError
 
-    def send_text(self, text: str, label: str) -> Snapshot:
+    def send_text(self, text: str, label: str, *, settle: bool = True) -> Snapshot:
+        """`settle=False` is for a caller that polls for the state it wants next."""
         snapshot = self.capture()
         for ch in text:
             snapshot = self.send_char(ch)
@@ -323,6 +324,13 @@ class Backend:
         than doing nothing. See RestBackend.enter_file_browser.
         """
 
+    # Only REST can: the Telnet UI is the session itself.
+    reopens_menu = False
+
+    def reopen_menu_on_browser(self) -> None:
+        """Close the on-device menu and open it again on the file browser."""
+        raise NotImplementedError
+
     def ensure_ready(self) -> None:
         """Make the UI reachable again if the last action tore it down.
 
@@ -335,6 +343,10 @@ class Backend:
         when nothing needs doing.
         """
         pass
+
+    def framed_selections(self) -> dict[tuple[int, int, int, int], tuple[int, str, list[str]]]:
+        """The highlighted entry of each framed list: {frame: (index, text, entries)}."""
+        raise Failure(f"{type(self).__name__} cannot read the selection of a framed list")
 
     def selected_row(self, entry_rows: Sequence[int] | None = None) -> int:
         """Row index the on-device UI currently marks as selected/highlighted.
@@ -381,19 +393,14 @@ class Backend:
 # Symbolic action -> C64 keyboard matrix combo (software/api/input_api.h
 # INPUT_API_KEYBOARD_MAP is the authoritative name list). Two physical keys
 # (cursor_up_down, cursor_left_right) carry both directions, reversed by
-# shift; PGUP/PGDN reuse the F1/F7 remap every UI context applies
-# (UserInterface::keymapper in software/userinterface/userinterface.cc).
+# shift. Function keys are named for themselves: which one pages, opens the
+# task menu or help depends on the machine (Machine.page_up_key and friends).
 KEY_ALIASES: dict[str, list[str]] = {
     "UP": ["left_shift", "cursor_up_down"],
     "DOWN": ["cursor_up_down"],
     "LEFT": ["left_shift", "cursor_left_right"],
     "RIGHT": ["cursor_left_right"],
-    # The physical key, named for itself because what it does depends on the
-    # machine: PGUP on an Ultimate 64 and an Ultimate II+, the task menu on a
-    # C64 Ultimate. Callers ask Machine which key plays which role.
     "F1": ["f1"],
-    "PGUP": ["f1"],
-    "PGDN": ["f7"],
     "F5": ["f5"],
     # The C64 keyboard has no F8 key; the KERNAL produces KEY_F8 from Shift+F7
     # instead (software/io/c64/keyboard.h). Telnet's VT100 handler accepts the
@@ -425,8 +432,9 @@ KEY_ALIASES: dict[str, list[str]] = {
     # alias for RUN/STOP: the two are the same Back only where the monitor
     # says so, and a test that cannot tell them apart cannot prove that.
     "ARROW_LEFT": ["arrow_left"],
-    # The key the application key mapper turns into KEY_HELP.
+    # Machine.help_key says which of these is KEY_HELP.
     "F3": ["f3"],
+    "F7": ["f7"],
     "COPY": ["ctrl", "c"],
     "PASTE": ["ctrl", "v"],
     "SELECT_ALL": ["ctrl", "a"],
@@ -448,6 +456,8 @@ KEY_ALIASES: dict[str, list[str]] = {
     # Unlike C=+R it is not the monitor's alone: the file browser and the
     # settings menu answer it too.
     "CBM_I": ["commodore", "i"],
+    # C=+P toggles PETSCII filename presentation (KEY_CTRL_P, keymap_control).
+    "CBM_P": ["commodore", "p"],
 }
 
 

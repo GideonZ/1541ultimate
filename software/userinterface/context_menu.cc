@@ -3,7 +3,6 @@
 #include <string.h>
 #include "tree_browser.h"
 #include "tree_browser_state.h"
-#include "mdio.h"
 
 ContextMenu :: ContextMenu(UserInterface *ui, TreeBrowserState *state, int initial, int y, int when_done, int ind) : UIObject(ui), actions(2, 0)
 {
@@ -96,7 +95,7 @@ void ContextMenu :: init(Window *parwin, Keyboard *key)
         max_len = 0;
         for(int i=0;i<actions.get_elements();i++) {
         	Action *it = actions[i];
-            len = strlen(it->getName());
+            len = strlen(it->getDisplayName(user_interface));
             if (len == 0) {
                 len = 8;   // "" will be transformed to "- None -"
             }
@@ -290,10 +289,7 @@ int ContextMenu :: handle_key(int c)
 {
     int ret = 0;
     Action *a;
-    char buf[20];
-    int addr, reg, value, n;
-    buf[0] = 0;
-
+    
     switch(c) {
         case KEY_LEFT:  // left
         case KEY_BREAK: // runstop
@@ -338,25 +334,6 @@ int ContextMenu :: handle_key(int c)
             }
             break;
 
-#if DEVELOPER > 0
-        case KEY_F4: // C= R
-            user_interface->string_box("MDIO Read", buf, 16);
-            n = sscanf(buf, "%x %x", &addr, &reg);
-            if (n == 1) {
-                for(uint8_t i=0;i<32;i++) {
-                    printf("MDIO Register %b: %04x\n", i, mdio_read(i, (uint8_t)addr));
-                }
-            } else {
-                printf("MDIO Register %b: %04x\n", reg, mdio_read((uint8_t)reg, (uint8_t)addr));
-            }
-            break;
-
-        case KEY_F6: // C= W
-            user_interface->string_box("MDIO Write", buf, 16);
-            n = sscanf(buf, "%x %x %x", &addr, &reg, &value);
-            mdio_write((uint8_t)reg, (uint16_t)value, (uint8_t)addr);
-            break;
-#endif
         default:
             if ((c >= '!') && (c < 0x80)) {
                 seek_char(c);
@@ -376,7 +353,7 @@ bool ContextMenu :: perform_quick_seek(void)
     int num_el = this->actions.get_elements();
     for(int i=0;i<num_el;i++) {
     	Action *t = actions[i];
-		if(pattern_match(quick_seek_string, t->getName(), false)) {
+		if(pattern_match(quick_seek_string, t->getDisplayName(user_interface), false)) {
 			item_index = i;
 			return true;
 		}
@@ -440,7 +417,7 @@ void ContextMenu :: draw()
 	        window->set_background(0);
 		}
 		if (t) {
-			const char *string = t->getName();
+			const char *string = t->getDisplayName(user_interface);
 			window->output_line(*string ? string : "- None -", indent);  // Action name or "- None -"
 		} else {
 			window->output_line("");

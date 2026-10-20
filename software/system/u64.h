@@ -50,6 +50,7 @@
 #define C64_PALETTE  (U2P_IO_BASE + 0x80800)
 #define C64_PLD_ACC  (U2P_IO_BASE + 0x81000)
 #define C64_IO_DEBUG (U2P_IO_BASE + 0x81800)
+#define C64_GLYPH    (U2P_IO_BASE + 0x82000)
 
 #define C64_SID_BASE     (U2P_IO_BASE + 0x84000)
 #define U64_ROMS_BASE    (U2P_IO_BASE + 0x88000)
@@ -151,6 +152,13 @@
 #define C64_PLD_JOYCTRL   (*(volatile uint8_t *)(C64_PLD_ACC + 0x1E))
 
 #define C64_VOICE_ADSR(x) (*(volatile uint8_t *)(C64_IO_BASE + 0x80 + x))
+
+#define C64_GLYPH_DATA    ((volatile uint8_t *)(C64_GLYPH))
+#define C64_GLYPH_XPOS    (*(volatile uint16_t *)(C64_GLYPH + 504))
+#define C64_GLYPH_YPOS    (*(volatile uint16_t *)(C64_GLYPH + 506))
+#define C64_GLYPH_XSIZE   (*(volatile uint8_t *)(C64_GLYPH + 508))
+#define C64_GLYPH_YSIZE   (*(volatile uint8_t *)(C64_GLYPH + 509))
+#define C64_GLYPH_ENABLE  (*(volatile uint8_t *)(C64_GLYPH + 511))
 
 #define VIDEO_FMT_NTSC_ENCODING 0x01
 #define VIDEO_FMT_60_HZ         0x02

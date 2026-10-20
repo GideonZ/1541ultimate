@@ -91,13 +91,16 @@ void TapeController :: create_task_items(void)
 
 void TapeController :: update_task_items(bool writablePath)
 {
-    if(!file)
-        return;
-	if(!file->isValid()) {
-    	close();
+	// The tape task closes the file and deletes it, under this lock; so read it
+	// under the lock as well, rather than from the menu's own task.
+	if(!lock("tape menu")) {
 		return;
 	}
-	if(paused) {
+	if(!file || !file->isValid()) {
+	    myActions.pause->hide();
+	    myActions.resume->hide();
+	    myActions.stop->hide();
+	} else if(paused) {
 	    myActions.pause->hide();
 	    myActions.resume->show();
 	    myActions.stop->show();
@@ -106,6 +109,7 @@ void TapeController :: update_task_items(bool writablePath)
         myActions.resume->hide();
         myActions.stop->hide();
 	}
+	unlock();
 }
 
 void TapeController :: stop()
@@ -167,8 +171,7 @@ void TapeController :: read_block()
 		return;
 	}
 	if(!file->isValid()) {
-		state = 1;
-    	close();
+		state = 1; // poll() ends playback on an invalidated file
         return;
     }
 
@@ -202,6 +205,7 @@ void TapeController :: poll()
 
 	if(!file->isValid()) {
     	close();
+    	stop(); // the medium is gone, so end playback as the end of a tape does
         return;
     }
 	
