@@ -135,3 +135,23 @@ rare corrupted read.
 
 `iec-dos-commands` takes about 24 s and `rel-copy` about 3 minutes. Both are tagged
 `standard`, so they run in the merge gate and not in the default `run-tests` run.
+
+## Directory renaming (#999)
+
+`directory_rename_test.py` runs the C64 OS sequence `MD:NEW DIRECTORY`,
+`R:.^RNAME^=NEW DIRECTORY`, `R:NEW NAME=.^RNAME^`, `CD:NEW NAME`,
+`R-H:NEW NAME`, `CD_` against a fresh host folder and a fresh DNP image.
+It also checks that a file survives the rename and that the final directory header
+has the requested name. Commands go through the running KERNAL over IEC, with
+Command Interface disabled. Fixtures and settings are restored on exit.
+
+```sh
+python3 tests/e2e/io/iec/directory_rename_test.py -H u64 --kernal kernal.901227-03.bin
+python3 tests/e2e/io/iec/directory_rename_test.py -H u64 --kernal jiffydos_c64.bin
+python3 tests/e2e/io/iec/directory_rename_test.py -H u2@c64u --kernal /path/to/jiffydos_c64.bin
+```
+
+The cartridge form temporarily selects External cartridge preference on its
+computer. As with the DOS command suite, one Software IEC partition numbered 1
+is required. `Suite11-SI074-NativeDirectory` and `Suite11-SI064-RenameHeader`
+provide the corresponding host regressions, including destination collisions.

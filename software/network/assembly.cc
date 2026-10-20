@@ -94,10 +94,7 @@ JSON *Assembly :: get_presets(void)
     }
     if (connect_to_server() >= 0) {
         send(this->socket_fd, request, strlen(request), MSG_DONTWAIT);
-        get_response(this->socket_fd, collect_in_buffer, response);
-        close_connection();
-
-        presets = take_response_json();
+        presets = receive_json();
         return presets;
     }
     return NULL;
@@ -106,14 +103,16 @@ JSON *Assembly :: get_presets(void)
 // The JSON tree copies every key and value out of the response buffer, so the
 // 16 KB body has no owner once the tree is built. Freeing it here keeps that
 // out of every caller; only request_binary() hands its user context onwards.
-JSON *Assembly :: take_response_json(void)
+JSON *Assembly :: receive_json(void)
 {
+    bool complete = get_response(socket_fd, collect_in_buffer, response);
+    close_connection();
     t_BufferedBody *body = (t_BufferedBody *) response.userContext;
+    response.userContext = NULL;
     if (!body) {
         return NULL;
     }
-    JSON *json = convert_buffer_to_json(body);
-    response.userContext = NULL;
+    JSON *json = complete ? convert_buffer_to_json(body) : NULL;
     delete body;
     return json;
 }
@@ -135,10 +134,7 @@ JSON *Assembly :: send_query(const char *query)
 
     if (connect_to_server() >= 0) {
         send(this->socket_fd, request.c_str(), request.length(), MSG_DONTWAIT);
-        get_response(socket_fd, collect_in_buffer, response);
-        close_connection();
-
-        return take_response_json();
+        return receive_json();
     }
     return NULL;
 }
@@ -185,10 +181,7 @@ JSON *Assembly :: request_entries(const char *id, int cat)
 
     if (connect_to_server() >= 0) {
         send(this->socket_fd, request.c_str(), request.length(), MSG_DONTWAIT);
-        get_response(this->socket_fd, collect_in_buffer, response);
-        close_connection();
-
-        return take_response_json();
+        return receive_json();
     }
     return NULL;
 }
@@ -232,8 +225,18 @@ void Assembly :: request_binary(const char *path, const char *filename)
 
     if (connect_to_server() >= 0) { // resets userContext to NULL
         send(this->socket_fd, request.c_str(), request.length(), MSG_DONTWAIT);
-        get_response(this->socket_fd, write_to_temp_a64, response);
+        bool complete = get_response(this->socket_fd, write_to_temp_a64, response);
         close_connection();
+        if (!complete) {
+            // get_response has already aborted collection and closed the file.
+            // Do not hand a partial download to the caller's cache path.
+            TempfileWriter *writer = (TempfileWriter *)response.userContext;
+            response.userContext = NULL;
+            if (writer) {
+                writer->remove_files();
+                delete writer;
+            }
+        }
     }
  }
 

@@ -141,9 +141,7 @@ void C64_Subsys :: create_task_items(void)
     taskCategory->append(myActions.resume);
     taskCategory->append(myActions.measure);
 #endif
-#if U64
     taskCategory->append(myActions.savemem);
-#endif
     taskCategory->append(myActions.savereu);
     taskCategory->append(myActions.save_crt);
     taskCategory->append(myActions.savemp3a);
@@ -166,9 +164,7 @@ void C64_Subsys :: update_task_items(bool writablePath)
     }
 
     if (writablePath) {
-#if U64
         myActions.savemem  ->enable();
-#endif
         myActions.savereu  ->enable();
         myActions.save_crt ->enable();
         myActions.savemp3a ->enable();
@@ -176,9 +172,7 @@ void C64_Subsys :: update_task_items(bool writablePath)
         myActions.savemp3c ->enable();
         myActions.savemp3d ->enable();
     } else {
-#if U64
         myActions.savemem  ->disable();
-#endif
         myActions.savereu  ->disable();
         myActions.save_crt ->disable();
         myActions.savemp3a ->disable();
@@ -238,11 +232,17 @@ SubsysResultCode_e C64_Subsys::executeCommand(SubsysCommand *cmd)
             break;
 
         case MENU_C64_PAUSE:
-            c64->stop(false);
+            // A frozen machine is stopped already, and unfreeze() needs the stop mode freeze() set.
+            if (!c64->isFrozen) {
+                c64->stop(false);
+            }
             break;
 
         case MENU_C64_RESUME:
-            c64->resume();
+            // Only unfreeze() may release a machine the menu holds: its screen and cart are still in.
+            if (!c64->isFrozen) {
+                c64->resume();
+            }
             break;
 
         case MENU_C64_CLEARMEM:

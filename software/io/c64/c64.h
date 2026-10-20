@@ -284,7 +284,7 @@ class C64 : public GenericHost, ConfigurableObject
     uint8_t *char_set; //[CHARSET_SIZE];
     uint8_t vic_backup[NUM_VICREGS];
     uint32_t ram_backup[BACKUP_SIZE/4];
-    uint32_t screen_backup[COLOR_SIZE/4]; // only used now for vic state write
+    uint32_t screen_backup[COLOR_SIZE/4]; // $0400-$07FF while frozen
     uint32_t color_backup[COLOR_SIZE/4];
     uint8_t cia_backup[8];
     uint8_t stop_mode;
@@ -324,7 +324,7 @@ class C64 : public GenericHost, ConfigurableObject
     void resume(void);
     void freeze(void);
     void measure_timing(uint8_t *buffer);
-    virtual void get_all_memory(uint8_t *) { /* NOT YET IMPLEMENTED */ };
+    virtual void get_all_memory(uint8_t *);
     virtual void clear_ram(void) { /* NOT YET IMPLEMENTED */ };
     static uint8_t get_exrom_game(void) {
         return (C64_CLOCK_DETECT & 0x0C) >> 2;

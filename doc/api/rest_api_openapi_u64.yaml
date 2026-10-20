@@ -1819,7 +1819,7 @@ paths:
 
         `ethernet_mac` and `wifi_mac` are the addresses of the wired and the wireless interface. Each is left out when the device has no such interface, or when that interface has not started and its address is therefore not known yet, and only the first interface of each kind is reported. A caller that wants to wake the device sends its magic packet to `wifi_mac`, which carries a MAC and not an IP address; the wired interface does not wake the device.
 
-        The same information is also available without HTTP, from the Ultimate Ident Service on UDP port 64, which answers a broadcast and so can be used to find a device whose address is not known.
+        Most of this information is also available without HTTP, from the Ultimate Ident Service on UDP port 64, which answers a broadcast and so can be used to find a device whose address is not known.
       operationId: getInfo
       responses:
         '200':
@@ -2237,7 +2237,7 @@ paths:
         - Machine
       summary: Pause the CPU
       description: |2-
-        Halts the 6510 by holding DMA. The video output freezes on the frame that was being drawn and the machine stays halted until `machine:resume`. Memory can still be read and written while paused, which is what makes this useful before a large `machine:readmem`.
+        Halts the 6510 by holding DMA. The video output freezes on the frame that was being drawn and the machine stays halted until `machine:resume`. Memory can still be read and written while paused, which is what makes this useful before a large `machine:readmem`. While the on-device menu holds the machine, it is halted already and this does nothing; the machine runs again when the menu closes, so pause after that to keep it halted.
 
         **Caution (machine-state):** The machine stays halted until machine:resume. A client that stops without resuming leaves it frozen.
       operationId: pauseMachine
@@ -2488,7 +2488,7 @@ paths:
       tags:
         - Machine
       summary: Resume the CPU
-      description: 'Releases the DMA hold that `machine:pause` applied. Calling it on a machine that is not paused does nothing and is not an error.'
+      description: 'Releases the DMA hold that `machine:pause` applied. Calling it on a machine that is not paused does nothing and is not an error. While the on-device menu holds the machine it stays halted, and runs again when the menu closes.'
       operationId: resumeMachine
       responses:
         '200':
@@ -3352,9 +3352,13 @@ paths:
       description: |2-
         Sends the named stream to a listening host over UDP. `video` carries the VIC output, `audio` the sound, and `debug` a trace of the cartridge bus.
 
-        `ip` may be an address or a host name, and may carry a port as `address:port`. Without a port the stream goes to 11000 for video, 11001 for audio and 11002 for debug. A multicast group is accepted in place of a single host, in which case every listener that joined the group receives the stream.
+        `ip` may be an address or a host name, and may carry a port as `address:port`. Without a port the stream goes to 11000 for video, 11001 for audio and 11002 for debug. A multicast group from 232.0.0.0 to 239.255.255.255 is accepted in place of a single host, in which case every listener that joined the group receives the stream.
+
+        To send to a single host the device looks up that host's hardware address on the wired port, or the gateway's when the host is on another subnet. When name resolution or the hardware-address lookup fails, the call fails with 404.
 
         Video and debug share hardware and cannot both run, so starting video stops debug first.
+
+        The streams leave through the wired Ethernet port only, whichever interface carried this request. Without an Ethernet link that has an IP address the call fails, even when WiFi is connected.
       operationId: startStream
       parameters:
         - name: stream
@@ -3395,6 +3399,10 @@ paths:
                   value:
                     errors:
                       - 'Unrecognized stream name ''screen'''
+                Network Host Resolve Error:
+                  value:
+                    errors:
+                      - Network Host Resolve Error
         '500':
           description: Internal server error
           content:
@@ -3402,10 +3410,10 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
-                No Operational Network Interface:
+                Wired Ethernet link is down or has no IP address:
                   value:
                     errors:
-                      - No Operational Network Interface
+                      - Wired Ethernet link is down or has no IP address
   '/v1/streams/{stream}:stop':
     put:
       tags:

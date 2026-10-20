@@ -312,8 +312,12 @@ int FileTypeSID ::createMusHeader(void)
     sid_header[0x77] = 0x29; // default flags set for 8580, NTSC and MUS data only
 
     if (sid_header[0x16] == 0) {
-        // set filename as title
+        // set filename as title, without the path runners:sidplay passes in
         const char *filename = file_string.c_str();
+        const char *slash = strrchr(filename, '/');
+        if (slash) {
+            filename = slash + 1;
+        }
         int size = strlen(filename);
 
         // truncate filename where extension begins
@@ -901,7 +905,7 @@ void FileTypeSID ::configureMusEnv(int offsetLoadEnd)
 SubsysResultCode_e FileTypeSID ::play_file(const char *filename, const char *ssl_file, int song)
 {
     char ext[4];
-    get_extension(filename, ext);
+    get_extension(filename, ext, true); // in capitals, as the file browser has it
     bool mus = (strcmp(ext, "MUS") == 0) || (strcmp(ext, "STR") == 0);
     Path *ssl_path = NULL;
     FileTypeSID *sid;

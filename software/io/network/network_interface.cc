@@ -6,6 +6,7 @@
 #include <ctype.h>
 #include "lwip/dhcp.h"
 #include "lwip/dns.h"
+#include "lwip/sockets.h"
 #include "lwip/apps/mdns.h"
 #include "filemanager.h"
 
@@ -490,6 +491,19 @@ bool NetworkInterface :: peekArpTable(uint32_t ipToQuery, uint8_t *mac)
     portEXIT_CRITICAL();
 
     return ret;
+}
+
+bool NetworkInterface :: bindSocket(int socket)
+{
+    struct ifreq request;
+    memset(&request, 0, sizeof(request));
+
+    LOCK_TCPIP_CORE();
+    char *name = netif_index_to_name(netif_get_index(&my_net_if), request.ifr_name);
+    UNLOCK_TCPIP_CORE();
+
+    return name && lwip_setsockopt(socket, SOL_SOCKET, SO_BINDTODEVICE,
+                                  &request, sizeof(request)) == 0;
 }
 
 void NetworkInterface :: on_edit()

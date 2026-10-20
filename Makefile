@@ -71,6 +71,8 @@ openapi_validate:
 # the firmware targets deliberately: those build with a cross compiler, and
 # these need a host g++.
 host_tests:
+	@$(MAKE) -C software/filemanager/tests
+	@$(MAKE) -C software/io/usb/tests
 	@$(MAKE) -C target/pc/linux/configiotest test
 	@$(MAKE) -C target/pc/linux/powerstate test
 	@$(MAKE) -C target/pc/linux/wolmagic test

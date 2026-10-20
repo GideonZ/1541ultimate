@@ -174,6 +174,7 @@ Keyboard_USB :: Keyboard_USB()
 	injected_tail = 0;
 	injected_matrix_hold = 0;
 	injected_matrix_gap = 0;
+	injected_cursor_key = 0;
 
     repeat_speed = 4;
     first_delay = 16;
@@ -261,6 +262,7 @@ void Keyboard_USB :: clearInjectedMatrixState(void)
 		return;
 	}
 	injected_matrix_hold = 0;
+	injected_cursor_key = 0;
 	memset(injected_matrix_state, 0, sizeof(injected_matrix_state));
 	applyMatrixState();
 }
@@ -338,26 +340,29 @@ void Keyboard_USB :: startRestTap(const RestTapEntry& entry)
 void Keyboard_USB :: setInjectedMatrixKey(int key)
 {
 	memset(injected_matrix_state, 0, sizeof(injected_matrix_state));
+	injected_cursor_key = 0;
 	switch (key) {
 	case KEY_RIGHT:
 		injected_matrix_state[0] = (1 << 2);
 		break;
 	case KEY_LEFT:
-		injected_matrix_state[0] = (1 << 2);
+		injected_cursor_key = (1 << 2);
 		injected_matrix_state[6] = (1 << 4);
 		break;
 	case KEY_DOWN:
 		injected_matrix_state[0] = (1 << 7);
 		break;
 	case KEY_UP:
-		injected_matrix_state[0] = (1 << 7);
+		injected_cursor_key = (1 << 7);
 		injected_matrix_state[6] = (1 << 4);
 		break;
 	default:
 		injected_matrix_hold = 0;
 		return;
 	}
-	injected_matrix_hold = USB_INJECTED_MATRIX_HOLD_CALLS;
+	// SHIFT goes down one call before the cursor key: the matrix is written a
+	// column at a time, so a scan between the two writes could see it unshifted.
+	injected_matrix_hold = USB_INJECTED_MATRIX_HOLD_CALLS + (injected_cursor_key ? 1 : 0);
 	applyMatrixState();
 }
 
@@ -541,7 +546,11 @@ int  Keyboard_USB :: getch(void)
     bool injected_matrix_busy = false;
     if (injected_matrix_hold > 0) {
 		injected_matrix_hold--;
-		if (injected_matrix_hold == 0) {
+		if (injected_cursor_key) {
+			injected_matrix_state[0] |= injected_cursor_key;
+			injected_cursor_key = 0;
+			applyMatrixState();
+		} else if (injected_matrix_hold == 0) {
 			memset(injected_matrix_state, 0, sizeof(injected_matrix_state));
 			applyMatrixState();
 			injected_matrix_gap = USB_INJECTED_MATRIX_GAP_CALLS - 1;
@@ -996,6 +1005,7 @@ void Keyboard_USB :: setMatrix(volatile uint8_t *matrix)
 	memset(injected_matrix_state, 0, sizeof(injected_matrix_state));
 	injected_matrix_hold = 0;
 	injected_matrix_gap = 0;
+	injected_cursor_key = 0;
 
 	if (this->matrix) {
 		for (int i=0; i<8; i++) {

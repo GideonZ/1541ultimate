@@ -84,7 +84,7 @@ public:
 	virtual Browsable *getParent() { return 0; }
 	virtual const char *getName() { return "Browsable"; }
 	// The name the listing shows for this entry, which quick-seek matches.
-	virtual const char *getDisplayName() { return getName(); }
+	virtual const char *getDisplayName(UserInterface *ui) { return getName(); }
 	virtual void getDisplayString(char *buffer, int width, UserInterface *ui) { strncpy(buffer, getName(), width-1); }
 };
 

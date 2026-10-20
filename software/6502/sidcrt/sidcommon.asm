@@ -1092,7 +1092,7 @@ printSidInfo    lda $f7             ; restore sid header address
                 rol
                 rol
                 rol
-                cmp #$00
+                and #$03            ; bits 7-6 of the flags, the model of the second SID
                 bne +
                 lda TEMP            ; unknown SID model for second SID so use the info of first SID
 +               ldx #$02            ; second SID
@@ -1104,7 +1104,7 @@ printSidInfo    lda $f7             ; restore sid header address
 
                 ldy #$76
                 jsr readHeader
-                cmp #$00
+                and #$03            ; bits 9-8 of the flags, the model of the third SID
                 bne +
                 lda TEMP            ; unknown SID model for third SID so use the info of first SID
 +               ldx #$03            ; third SID

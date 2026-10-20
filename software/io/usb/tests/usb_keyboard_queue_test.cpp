@@ -121,20 +121,54 @@ TEST(KeyboardUsbQueueTest, InjectedCursorKeyPulsesMatrix)
 
 	keyboard.setMatrix(matrix);
 	keyboard.enableMatrix(true);
-	keyboard.push_head(KEY_UP);
+	keyboard.push_head(KEY_DOWN);
 
-	EXPECT_EQ(KEY_UP, keyboard.getch());
+	EXPECT_EQ(KEY_DOWN, keyboard.getch());
 	EXPECT_EQ(0x80, matrix[0]);
-	EXPECT_EQ(0x10, matrix[6]);
+	EXPECT_EQ(0x00, matrix[6]);
 
 	// Held for USB_INJECTED_MATRIX_HOLD_CALLS polls, then released.
 	EXPECT_EQ(-1, keyboard.getch());
 	EXPECT_EQ(0x80, matrix[0]);
-	EXPECT_EQ(0x10, matrix[6]);
 
 	EXPECT_EQ(-1, keyboard.getch());
 	EXPECT_EQ(0x00, matrix[0]);
-	EXPECT_EQ(0x00, matrix[6]);
+}
+
+// The matrix is written a column at a time, CRSR in column 0 before SHIFT in
+// column 6, so a C64 scan between the two writes would read a shifted cursor
+// key unshifted. SHIFT has to be down on an earlier poll than the key.
+TEST(KeyboardUsbQueueTest, InjectedShiftedCursorKeyHasShiftDownFirst)
+{
+	const int keys[] = { KEY_UP, KEY_LEFT };
+	const uint8_t bits[] = { 0x80, 0x04 };
+	for (int k = 0; k < 2; k++) {
+		Keyboard_USB keyboard;
+		uint8_t matrix[11] = { 0 };
+
+		keyboard.setMatrix(matrix);
+		keyboard.enableMatrix(true);
+		keyboard.push_head(keys[k]);
+
+		int shift_poll = -1, key_poll = -1, key_polls = 0;
+		for (int poll = 0; poll < 8; poll++) {
+			keyboard.getch();
+			if ((matrix[6] & 0x10) && shift_poll < 0) {
+				shift_poll = poll;
+			}
+			if (matrix[0] & bits[k]) {
+				if (key_poll < 0) {
+					key_poll = poll;
+				}
+				key_polls++;
+				EXPECT_EQ(0x10, matrix[6] & 0x10);
+			}
+		}
+		EXPECT_TRUE(shift_poll >= 0 && key_poll > shift_poll);
+		EXPECT_EQ(USB_INJECTED_MATRIX_HOLD_CALLS, key_polls);
+		EXPECT_EQ(0x00, matrix[0]);
+		EXPECT_EQ(0x00, matrix[6]);
+	}
 }
 
 // USB HID usage 0x2C (space) maps to C64 matrix row 7, column 4.
@@ -247,6 +281,8 @@ TEST(KeyboardUsbMatrixTest, CursorKeysQueuedWhileMatrixEnabledStillReachTheMatri
 	keyboard.push_head(KEY_UP); // mouse cursor mode drives the C64 this way
 
 	EXPECT_EQ(KEY_UP, keyboard.getch());
+	EXPECT_EQ(0x10, matrix[6]);
+	keyboard.getch(); // SHIFT leads by one poll
 	EXPECT_EQ(0x80, matrix[0]);
 	EXPECT_EQ(0x10, matrix[6]);
 }
