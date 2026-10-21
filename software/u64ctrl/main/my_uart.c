@@ -36,6 +36,8 @@
 #include "dump_hex.h"
 #include "my_uart.h"
 #include "pinout.h"
+#include "esp_brownout.h"
+#include "hal/uart_ll.h"
 
 #if CONFIG_IDF_TARGET_ESP32
 #include "esp32/clk.h"
@@ -391,6 +393,15 @@ void my_uart_connect_pins(void)
     ESP_ERROR_CHECK( uart_set_pin(UART_NUM_1, IO_UART_TXD, IO_UART_RXD, IO_UART_RTS, IO_UART_CTS) );
 }
 
+// ESP-IDF 6's brownout interrupt waits for every enabled UART's transmitter to drain before it resets
+// (5.3.1 reset at once). With CTS held high by its pull-up, because the FPGA lost power with the
+// machine, bytes in the UART1 FIFO would never leave and the wait would last until the interrupt
+// watchdog. Runs in the brownout ISR, ahead of that wait: stop honouring CTS so the FIFO drains.
+static IRAM_ATTR void uart1_brownout_callback(void)
+{
+    uart_ll_set_hw_flow_ctrl(UART_LL_GET_HW(UART_NUM_1), UART_HW_FLOWCTRL_DISABLE, 0);
+}
+
 esp_err_t my_uart_init(command_buf_context_t *buffers, uint8_t uart_num)
 {
     UART_CHECK((uart_num < UART_NUM_MAX), "uart_num error", ESP_FAIL);
@@ -420,6 +431,12 @@ esp_err_t my_uart_init(command_buf_context_t *buffers, uint8_t uart_num)
         .flow_ctrl = UART_HW_FLOWCTRL_INIT,
         .rx_flow_ctrl_thresh = 122,
     };
+
+    // Not worth stopping the boot over: without it a brownout resets after the interrupt watchdog.
+    esp_err_t bo = esp_brownout_register_callback(uart1_brownout_callback);
+    if (bo != ESP_OK) {
+        ESP_LOGW(UART_TAG, "brownout callback not registered: %s", esp_err_to_name(bo));
+    }
 
     // Configure UART parameters
     esp_err_t ret = uart_param_config(uart_num, &uart_config);
