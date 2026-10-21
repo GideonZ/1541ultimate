@@ -10,6 +10,9 @@ jobs:
     # commit twice, without restricting which branches build on push.
     if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: self-hosted
+    env:
+      # u64ctrl needs ESP-IDF 6, so it builds here; raw_u64 and raw_c3 stay on my_docker_image's 5.3.1
+      IDF6_IMAGE: espressif/idf:v6.0.3@sha256:54278f2c01e6e759502e2f04c9103589c17528923426f4d63193490c7a08f555
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -174,6 +177,13 @@ jobs:
           -v /opt/build-tools:/mnt/build-tools:ro \
           -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make host_tests"
 
+      # In the ESP-IDF 6 image, because the control module's signature check is
+      # built against the crypto library that image ships.
+      - name: Test Recovery Manifest Signature Check
+        run: |
+          docker run --rm --user $(id -u):$(id -g) -e HOME=/tmp \
+          -v $GITHUB_WORKSPACE:/mnt/project:rw --workdir /mnt/project $IDF6_IMAGE make host_tests_idf6
+
       - name: Cache U2 FPGA
         id: cache-u2
         uses: actions/cache@v6
@@ -208,6 +218,13 @@ jobs:
             restore-keys: |
                 ${{ runner.os }}-u2pl-${{ hashFiles('target/fpga/depends/u2pl.txt') }}
 
+      # The ESP32 cache key names both build images, so a rebuilt my_docker_image misses too
+      - name: Identify ESP32 Build Images
+        run: |
+          image_id=$(docker image inspect --format '{{.Id}}' my_docker_image)
+          test -n "$image_id"
+          echo "ESP32_IMAGE_ID=$image_id" >> $GITHUB_ENV
+
       - name: Cache ESP32 Targets
         id: cache-esp32
         uses: actions/cache@v6
@@ -222,16 +239,18 @@ jobs:
                 software/wifi/raw_u64/build/bridge.bin
                 software/wifi/raw_u64/build/bootloader/bootloader.bin
                 software/wifi/raw_u64/build/partition_table/partition-table.bin
-            key: ${{ runner.os }}-esp32-${{ hashFiles('software/esp_depends.txt') }}
+            key: ${{ runner.os }}-esp32-${{ env.ESP32_IMAGE_ID }}-${{ env.IDF6_IMAGE }}-${{ hashFiles('software/esp_depends.txt') }}
             restore-keys: |
-                ${{ runner.os }}-esp32-${{ hashFiles('software/esp_depends.txt') }}
+                ${{ runner.os }}-esp32-${{ env.ESP32_IMAGE_ID }}-${{ env.IDF6_IMAGE }}-${{ hashFiles('software/esp_depends.txt') }}
 
       - if: steps.cache-esp32.outputs.cache-hit != 'true'
         name: Build ESP32 Software (skipped if available in cache)
         run: |
           docker run --rm --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
           -v /opt/build-tools:/mnt/build-tools:ro \
-          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make esp32"
+          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make esp32_raw_u64 esp32_raw_c3"
+          docker run --rm --user $(id -u):$(id -g) -e HOME=/tmp \
+          -v $GITHUB_WORKSPACE:/mnt/project:rw --workdir /mnt/project/software/u64ctrl $IDF6_IMAGE idf.py build
 
       - if: steps.cache-u2.outputs.cache-hit != 'true'
         name: Build U2 including FPGAs
