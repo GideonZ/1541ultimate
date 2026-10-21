@@ -35,6 +35,7 @@
 #include "rpc_dispatch.h"
 #include "dump_hex.h"
 #include "my_uart.h"
+#include "pinout.h"
 
 #if CONFIG_IDF_TARGET_ESP32
 #include "esp32/clk.h"
@@ -376,6 +377,18 @@ esp_err_t uart_isr_register(uart_port_t uart_num, void (*fn)(void *), void *arg,
     ret = esp_intr_alloc(uart_periph_signal[uart_num].irq, intr_alloc_flags, fn, arg, handle);
     UART_EXIT_CRITICAL(&(uart_context[uart_num].spinlock));
     return ret;
+}
+
+void my_uart_connect_pins(void)
+{
+    // ESP-IDF 5.3.1's uart_set_pin() put a pull-up on RX and CTS before connecting them, replacing
+    // the pull-downs left by check_fpga() and the power-off path; ESP-IDF 6 never touches pulls, so
+    // do it here, ahead of the routing, as 5.3.1 did. While the machine is off RX and CTS stay routed
+    // to UART1 and pulled down; a boot that stays off has the pull-ups on for about 100 ms, until
+    // regulator_enable(0), the same as on 5.3.1.
+    ESP_ERROR_CHECK( gpio_set_pull_mode(IO_UART_RXD, GPIO_PULLUP_ONLY) );
+    ESP_ERROR_CHECK( gpio_set_pull_mode(IO_UART_CTS, GPIO_PULLUP_ONLY) );
+    ESP_ERROR_CHECK( uart_set_pin(UART_NUM_1, IO_UART_TXD, IO_UART_RXD, IO_UART_RTS, IO_UART_CTS) );
 }
 
 esp_err_t my_uart_init(command_buf_context_t *buffers, uint8_t uart_num)
