@@ -75,7 +75,7 @@ fix. Areas are in alphabetical order.
 | Area | Main paths | Contact |
 | --- | --- | --- |
 | Command interface (UCI), GitHub Actions workflows | `software/io/command_interface`, `.github/workflows` | @barryw |
-| Ethernet drivers, G64 and G71 track parsing | `software/io/network`, `software/drive` | @enver-haase |
+| G64 and G71 track parsing, 1581 disk controller (WD177x) | `software/drive/disk_image.cc`, `software/drive/mfmdisk.cc`, `software/drive/wd177x.cc` | @enver-haase |
 | Hyperspeed Kernal | `roms/c64rom/kernal` | @bvl1999 |
 | Machine code monitor, REST API, test suites, USB keyboard and mouse | `software/monitor`, `software/api`, `tests/`, `software/io/usb` | @chrisgleissner |
 | Modem emulation | `software/io/acia` | @xlar54 |
