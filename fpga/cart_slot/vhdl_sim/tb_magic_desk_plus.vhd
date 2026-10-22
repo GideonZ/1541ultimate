@@ -226,6 +226,9 @@ begin
         io_wr(X"DE03", X"01"); -- bit 5 clear: back to the EEPROM
         bus_at(X"DF00");
         check(mem_addr(17) = '0', "bit 5 clear must select the EEPROM");
+        -- Bit 0 picks the SRAM portion only; with the EEPROM selected it is
+        -- ignored, as in VICE's magicdeskplus.c.
+        check(mem_addr(16) = '0', "bit 0 must not move the EEPROM window");
 
         ------------------------------------------------------------------
         report "the EEPROM answers only inside its own size" severity note;
