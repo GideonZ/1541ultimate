@@ -4,9 +4,10 @@
  * Network recovery: with the machine powered by the button handler, this asks
  * a recovery server which package fits the board, streams the runtime FPGA
  * bitstream into the FPGA and the update image into its memory, and starts the
- * updater. Nothing is started that fails a check: a bitstream whose hash is
- * wrong never leaves the configuration logic, and an image whose hash is wrong
- * is never jumped to. On any failure the machine is switched off again and the
+ * updater. A bitstream damaged in transit never leaves the configuration logic,
+ * though one crafted with an early START can (see FPGA_HOLDBACK in recovery.c),
+ * and an image whose hash is wrong is never jumped to. On any failure the
+ * machine is switched off again and the
  * red LED blinks the number of the step that failed:
  *
  *   1  no Wi-Fi connection

@@ -48,7 +48,9 @@ static const char *TAG = "recovery";
 /* The last bytes of a bitstream carry the START command, about 1640 bytes from
    the end of every shipped bitstream; the recovery server's manifest.py
    refuses one where it is further back. Holding these back until the hash is checked means
-   no bitstream that fails its check can start, whatever its startup clock. */
+   a bitstream damaged in transit cannot start, whatever its startup clock. It does not stop
+   one crafted to carry its own START earlier: those bytes are shifted before the hash is
+   known, so a server or a path that can swap the file can start a design of its choosing. */
 #define FPGA_HOLDBACK   4096
 
 /* recover.py writes memory in blocks of 16 KiB, each followed by 8 bytes of
