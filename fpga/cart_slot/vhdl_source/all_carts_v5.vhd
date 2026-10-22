@@ -840,9 +840,10 @@ begin
             -- Shares the region the REU and GeoRAM use, so no target needs a
             -- memory area of its own for this. The EEPROM occupies the first
             -- 128K of it and the SRAM the second, which keeps both inside the
-            -- 256K every target has there.
+            -- 256K every target has there. DE03 bit 0 picks the SRAM half
+            -- only; the EEPROM ignores it.
             mem_addr_i <= g_georam_base(27 downto 24) & "000000" & mdp_sram &
-                          mdp_half & mdp_page_m & slot_addr(7 downto 0);
+                          (mdp_half and mdp_sram) & mdp_page_m & slot_addr(7 downto 0);
         when others =>        
             mem_addr_i <= rom_addr;
         end case;                

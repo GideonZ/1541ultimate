@@ -22,12 +22,14 @@ the ROM it would otherwise be executing. The routine then:
   screen RAM, so the row read back says which bank every selection reached
 - writes $80 to $DE00 and reads $9FF0 again, which has to come from the RAM
   under the cartridge once the ROM is off
-- points the window at six places and copies the first two bytes of each to
+- points the window at seven places and copies the first two bytes of each to
   screen RAM. Every page of the store carries its own page number in byte 0
   and a tag for its area in byte 1, so those two bytes say which page of which
-  area the window reached. One of the six asks for page $85 of a 32K EEPROM,
+  area the window reached. One of the seven asks for page $85 of a 32K EEPROM,
   which has 128 pages: the page register is masked to $7F there, so it has to
-  arrive at page $05
+  arrive at page $05. The last selects the EEPROM with bit 0 of $DE03 still
+  set from the SRAM's second half: bit 0 picks the SRAM half only, so it has
+  to reach the same EEPROM page as with bit 0 clear
 - writes a byte into the window, reads it back, and reads the same page of the
   other SRAM half to show the write did not land in both
 - does a window read and a window write with the ROM switched off, which is
@@ -81,8 +83,8 @@ HALF1 = 0x01                # $DE03 bit 0: the second 64K of it
 
 # Where the routine leaves its answers, all of them in screen RAM.
 BANK_ROW = 0x0400           # 128 bytes: the marker each bank selection reached
-PAGE_ROW = 0x0480           # six bytes: the page number each probe read
-TAG_ROW = 0x0490            # six bytes: the area tag each probe read
+PAGE_ROW = 0x0480           # seven bytes: the page number each probe read
+TAG_ROW = 0x0490            # seven bytes: the area tag each probe read
 PROBE_ROW = 0x04A0          # five bytes: the write and ROM-off probes
 DONE = 0x04F0               # set to $01 when the routine has run
 BLANK = 0xA0                # no marker, tag or probe result is this byte
@@ -93,8 +95,9 @@ ROM_OFF_WRITE = 0x5A        # written into the window with the ROM off
 PROBE_PAGE = 0x10           # the page the write probes use
 ROM_OFF_PAGE = 0x05         # the page the ROM-off probes use
 
-# What the six window probes ask for: the $DE03 value, the page, and the page
-# and tag they have to arrive at. The second asks a 32K EEPROM for page $85.
+# What the seven window probes ask for: the $DE03 value, the page, and the page
+# and tag they have to arrive at. The second asks a 32K EEPROM for page $85;
+# the last goes from SRAM half 1 to the EEPROM by clearing only bit 5.
 PROBES = (
     ("the EEPROM at page $05", 0x00, 0x05, 0x05, EEPROM_TAG),
     ("the EEPROM at page $85, masked to $05", 0x00, 0x85, 0x05, EEPROM_TAG),
@@ -102,6 +105,7 @@ PROBES = (
     ("SRAM half 0 at page $85", SRAM, 0x85, 0x85, SRAM_TAG[0]),
     ("SRAM half 1 at page $05", SRAM | HALF1, 0x05, 0x05, SRAM_TAG[1]),
     ("SRAM half 1 at page $85", SRAM | HALF1, 0x85, 0x85, SRAM_TAG[1]),
+    ("the EEPROM at page $05 with bit 0 set", HALF1, 0x05, 0x05, EEPROM_TAG),
 )
 
 # What the five probes after them have to read, in order.
