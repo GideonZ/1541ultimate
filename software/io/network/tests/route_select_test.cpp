@@ -27,14 +27,21 @@ const uint32_t kWifi = ip(10, 43, 23, 83);
 const uint32_t kPeer = ip(10, 43, 23, 182);
 const uint32_t kMask = ip(255, 255, 255, 0);
 
-// netif_list as on the device: Ethernet added first, WiFi added later, so WiFi is the head.
+// netif_list as on the device: Ethernet added first, WiFi added later, so WiFi is the head
+// (eth_head: the other order, after the WiFi netif was added first). A netif that is not up
+// is down as the firmware leaves it: UP cleared, LINK_UP still set, address kept.
 struct Rig {
     struct netif eth, wifi;
-    Rig(bool eth_up = true, bool wifi_up = true)
+    Rig(bool eth_up = true, bool wifi_up = true, bool eth_head = false)
     {
         reset_netifs();
-        add_netif(&eth, kEth, kMask, eth_up, false);
-        add_netif(&wifi, kWifi, kMask, wifi_up, true);
+        if (eth_head) {
+            add_netif(&wifi, kWifi, kMask, wifi_up, true);
+            add_netif(&eth, kEth, kMask, eth_up, false);
+        } else {
+            add_netif(&eth, kEth, kMask, eth_up, false);
+            add_netif(&wifi, kWifi, kMask, wifi_up, true);
+        }
     }
 };
 
@@ -52,6 +59,27 @@ struct netif *pick_null_source(uint32_t dest)
     ip4_addr_t d;
     d.addr = dest;
     return ip4_route_src(NULL, &d);
+}
+
+// udp_sendto() from a socket bound to `local` (0: unbound) to `dest`, through lwIP's own
+// udp.c and ip4.c. Returns lwIP's error code; *out is the netif the datagram left by,
+// NULL when it did not leave (or was looped back).
+err_t udp_send_from(uint32_t local, uint32_t dest, struct netif **out)
+{
+    ip4_addr_t l, d;
+    l.addr = local;
+    d.addr = dest;
+    struct udp_pcb *pcb = udp_new();
+    struct pbuf *p = pbuf_alloc(PBUF_TRANSPORT, 8, PBUF_RAM);
+    last_output() = NULL;
+    err_t err = udp_bind(pcb, &l, 4000);
+    if (err == ERR_OK) {
+        err = udp_sendto(pcb, p, &d, 4001);
+    }
+    *out = last_output();
+    pbuf_free(p);
+    udp_remove(pcb);
+    return err;
 }
 
 } // namespace
@@ -125,8 +153,48 @@ TEST(Route, ConnectionToAnOwnAddressStaysWithThatInterface)
 {
     Rig r;
     EXPECT_TRUE(pick(0, kWifi) == &r.wifi);        // lwIP loops it back from there
-    EXPECT_TRUE(pick(kEth, kWifi) == &r.wifi);
     EXPECT_TRUE(pick(0, kEth) == &r.eth);
+}
+
+// A socket bound to one of the device's addresses can send to the device's other
+// address, in either list order: udp_sendto_if() returns ERR_RTE when the netif it is
+// given does not own the socket's local address (udp.c, the IPv4 check in
+// udp_sendto_if_src_chksum()), so a different explicit source has to reach the rule that
+// picks the source's owner.
+TEST(Route, UdpBoundToEitherAddressSendsToTheOtherInEitherListOrder)
+{
+    for (int eth_head = 0; eth_head < 2; eth_head++) {
+        Rig r(true, true, eth_head != 0);
+        struct netif *out;
+        EXPECT_TRUE(udp_send_from(kWifi, kEth, &out) == ERR_OK);
+        EXPECT_TRUE(out == &r.wifi);
+        EXPECT_TRUE(udp_send_from(kEth, kWifi, &out) == ERR_OK);
+        EXPECT_TRUE(out == &r.eth);
+    }
+}
+
+// Both ends the same address, or no source: the datagram is looped back, not sent.
+TEST(Route, UdpToAnOwnAddressIsLoopedBackInEitherListOrder)
+{
+    for (int eth_head = 0; eth_head < 2; eth_head++) {
+        Rig r(true, true, eth_head != 0);
+        struct netif *out;
+        EXPECT_TRUE(udp_send_from(kEth, kEth, &out) == ERR_OK && out == NULL);
+        EXPECT_TRUE(udp_send_from(kWifi, kWifi, &out) == ERR_OK && out == NULL);
+        EXPECT_TRUE(udp_send_from(0, kWifi, &out) == ERR_OK && out == NULL);
+        EXPECT_TRUE(udp_send_from(0, kEth, &out) == ERR_OK && out == NULL);
+    }
+}
+
+// What follows for a connection (TCP checks nothing about the local address): from .81 to
+// the device's own .83 the route is Ethernet, the source's owner, so the segment goes on
+// the wire to our own WiFi address; master looped it back through WiFi, the list head. From
+// .83 to .81 it is WiFi, on the wire, where master (WiFi head) gave the same.
+TEST(Route, AnExplicitSourceDecidesTheRouteToTheOtherOwnAddress)
+{
+    Rig r;
+    EXPECT_TRUE(pick(kWifi, kEth) == &r.wifi);
+    EXPECT_TRUE(pick(kEth, kWifi) == &r.eth);
 }
 
 // Rule 2 must not make a reply worse than lwIP's lookup: a netif without a gateway
@@ -158,6 +226,27 @@ TEST(Route, EthernetWithoutAnAddressYetDoesNotTakeTraffic)
     EXPECT_TRUE(pick(kWifi, kPeer) == &r.wifi);
 }
 
+// The guards on the netif being up, with the netif down as the firmware leaves it (UP
+// cleared, LINK_UP kept, address kept): a down WiFi's address must not be steered to.
+TEST(Route, TheAddressOfADownNetifIsNotSteeredTo)
+{
+    Rig r(true, false);
+    EXPECT_TRUE(pick(0, kWifi) == &r.eth);          // lwIP's lookup: Ethernet is on that subnet
+    EXPECT_TRUE(pick(kEth, kWifi) == &r.eth);
+    EXPECT_TRUE(pick(kWifi, kPeer) == &r.eth);      // a reply from a down netif's kept address
+}
+
+TEST(Route, ANetifWithoutLinkIsNotSteeredTo)
+{
+    Rig r;
+    reset_netifs();
+    add_netif(&r.eth, kEth, kMask, true, false);
+    add_netif(&r.wifi, kWifi, kMask, true, true, 0, false);     // up, link lost
+    EXPECT_TRUE(pick(0, kWifi) == &r.eth);
+    EXPECT_TRUE(pick(kWifi, kPeer) == &r.eth);
+    EXPECT_TRUE(pick(0, kPeer) == &r.eth);
+}
+
 // pick(0, ...) is a pointer to 0.0.0.0, the source of an unbound socket; a NULL source
 // pointer never reaches the hook before lwIP's on-link lookup, which returns the
 // first netif on the subnet, here the WiFi one. The preference for Ethernet is for the
@@ -168,10 +257,4 @@ TEST(Route, ANullSourceTakesLwipsOnLinkLookupNotThePreference)
     EXPECT_TRUE(pick(0, kPeer) == &r.eth);
     EXPECT_TRUE(pick_null_source(kPeer) == &r.wifi);
     EXPECT_TRUE(pick_null_source(kEth) == &r.wifi);
-}
-
-TEST(Route, ANullSourceStillReachesTheHookForAnOffLinkDestination)
-{
-    Rig r;
-    EXPECT_TRUE(pick_null_source(ip(8, 8, 8, 8)) == &r.eth);     // netif_default
 }

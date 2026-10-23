@@ -11,8 +11,11 @@
 // newest netif at the head, so with Ethernet and WiFi on one subnet the WiFi
 // netif, whose netif_add() comes after the wired one's, takes everything.
 //
-//  - A destination that is the address of an up netif: that netif, so a connection
-//    to the device's own WiFi address still loops back instead of going on the wire.
+//  - A destination that is the address of an up netif, with no source or that same
+//    address as source: that netif, so a connection to the device's own WiFi address
+//    still loops back instead of going on the wire. An explicit different source goes on
+//    to the next rule: a UDP socket bound to one address and sent to the other must get
+//    the netif that owns its local address, or udp_sendto_if() returns ERR_RTE.
 //  - A source address that belongs to an up netif: that netif. A reply to a
 //    connection that came in on .81 leaves from .81 and does not change interface.
 //    Only when the destination is on that netif's subnet or the netif has a gateway.
@@ -31,7 +34,7 @@ static inline struct netif *route_select(const ip4_addr_t *src, const ip4_addr_t
 
     NETIF_FOREACH(n) {
         if (netif_is_up(n) && netif_is_link_up(n) && !ip4_addr_isany_val(*netif_ip4_addr(n)) &&
-            ip4_addr_eq(dest, netif_ip4_addr(n))) {
+            ip4_addr_eq(dest, netif_ip4_addr(n)) && (!have_src || ip4_addr_eq(src, dest))) {
             return n;
         }
     }
