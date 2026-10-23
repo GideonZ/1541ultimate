@@ -76,6 +76,9 @@ host_tests:
 	@$(MAKE) -C target/pc/linux/configiotest test
 	@$(MAKE) -C target/pc/linux/powerstate test
 	@$(MAKE) -C target/pc/linux/wolmagic test
+	@$(MAKE) -C target/pc/linux/recoverymanifest test
+	@$(MAKE) -C target/pc/linux/recoveryimage test
+	@$(MAKE) -C target/pc/linux/recoveryurl test
 
 esp32: esp32_raw_u64 esp32_raw_c3 esp32_u64ctrl
 
@@ -379,6 +382,10 @@ u64ii: app_space_test openapi_check esp32_u64ctrl
 	@cp software/u64ctrl/build/u64ctrl.bin u64ii
 	@cp target/u64ii/riscv/update/result/update.app ./update.ue2
 	@cp target/u64ii/riscv/update/result/update.cfw ./update.cfw
+	@$(MAKE) -C target/u64ii/riscv/update UPDATE_FPGA=50t
+	@$(MAKE) -C target/u64ii/riscv/update UPDATE_FPGA=100t
+	@cp target/u64ii/riscv/update/result/50t/update.cfw ./recovery_50t.cfw
+	@cp target/u64ii/riscv/update/result/100t/update.cfw ./recovery_100t.cfw
 
 u64ii_no_esp:: app_space_test openapi_check
 	@mkdir -p u64ii
@@ -396,6 +403,10 @@ u64ii_no_esp:: app_space_test openapi_check
 	@cp software/u64ctrl/build/u64ctrl.bin u64ii
 	@cp target/u64ii/riscv/update/result/update.app ./update.ue2
 	@cp target/u64ii/riscv/update/result/update.cfw ./update.cfw
+	@$(MAKE) -C target/u64ii/riscv/update UPDATE_FPGA=50t
+	@$(MAKE) -C target/u64ii/riscv/update UPDATE_FPGA=100t
+	@cp target/u64ii/riscv/update/result/50t/update.cfw ./recovery_50t.cfw
+	@cp target/u64ii/riscv/update/result/100t/update.cfw ./recovery_100t.cfw
 
 u2pl: app_space_test openapi_check esp32_raw_c3
 	@$(MAKE) -C tools

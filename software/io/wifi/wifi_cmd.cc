@@ -183,6 +183,29 @@ int wifi_get_wake_on_wifi(uint8_t *enabled)
     }
     RETURN_ESP;
 }
+
+int wifi_set_recovery_url(const char *url)
+{
+    BUFARGS(set_recovery_url, CMD_SET_RECOVERY_URL);
+    strncpy(args->url, url, RPC_RECOVERY_URL_LEN - 1);
+    args->url[RPC_RECOVERY_URL_LEN - 1] = 0;
+    TRANSMIT(espcmd);
+    RETURN_ESP;
+}
+
+int wifi_get_recovery_url(char *url, int maxlen)
+{
+    BUFARGS(identify, CMD_GET_RECOVERY_URL);
+    TRANSMIT(get_recovery_url);
+    if (result->esp_err == 0) {
+        strncpy(url, result->url, maxlen - 1);
+        url[maxlen - 1] = 0;
+    } else {
+        url[0] = 0;
+        printf("Get Recovery URL returned %d as error code.\n", result->esp_err);
+    }
+    RETURN_ESP;
+}
 #endif
 
 int wifi_is_connected(uint8_t &status)
