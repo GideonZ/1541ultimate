@@ -335,6 +335,8 @@ e2e:
   telnet-sustained-input            .      .      .      x      x
   temp-auto-cleanup                 .      .      x      x      x
   transport-usage                   x      x      x      x      x
+  uci-net-route                     .      .      .      x      x
+  uci-net-route-precondition        .      x      x      x      x
   uci-net-target                    .      .      .      x      x
   uci-targets                       .      .      x      x      x
   ui-backend-parse                  x      x      x      x      x
@@ -349,6 +351,7 @@ e2e:
 
 perf:
   rest-latency                      .      .      x      x      x
+  rest-path-latency                 .      .      x      x      x
   telnet-key-latency                .      .      x      x      x
   temp-auto-cleanup-perf            .      .      x      x      x
   typing-speed                      .      .      x      x      x
@@ -387,6 +390,13 @@ matrix above is aligned text whichever format is asked for.
 ./run-tests --profile quick -o runs/quick u64
 ./run-tests --list-profiles quick --measured quick=runs/quick
 ```
+
+`uci-net-route` checks that connections and datagrams the device starts leave from its
+Ethernet address when WiFi is joined on the same subnet. This host is the network peer,
+so it needs two device interfaces with an address on this host's subnet and a link up on
+both, and the device's menu at its root. It reads the link state from the menu, which it
+opens and closes again; in Freeze mode that stops the C64 while the menu is open. It skips,
+with the reason printed, when any of that is missing.
 
 ## When a run goes wrong
 

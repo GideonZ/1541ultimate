@@ -329,6 +329,15 @@
 #define IP_FORWARD                      0
 
 /**
+ * With Ethernet and WiFi on the same subnet, lwIP's own route lookup returns the
+ * netif added last, which is the WiFi one. The hook answers a connection on the
+ * interface that owns its source address, and sends a connection with no source
+ * yet out of the wired interface. See io/network/route_select.h.
+ */
+#define LWIP_HOOK_FILENAME              "lwip_hooks.h"
+#define LWIP_HOOK_IP4_ROUTE_SRC(src, dest) ultimate_ip4_route_src(src, dest)
+
+/**
  * IP_OPTIONS_ALLOWED: Defines the behavior for IP options.
  *      IP_OPTIONS_ALLOWED==0: All packets with IP options are dropped.
  *      IP_OPTIONS_ALLOWED==1: IP options are allowed (but not parsed).
