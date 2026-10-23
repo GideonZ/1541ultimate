@@ -155,6 +155,18 @@ class _TrackingHandler(urllib.request.HTTPHandler):
 _OPENER = urllib.request.build_opener(_TrackingHandler())
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Hands a 3xx back as the answer instead of requesting its Location."""
+
+    def redirect_request(self, *args, **kwargs):
+        return None
+
+
+# For a probe of an address nobody vouched for: whatever such a host redirects
+# to is not part of what was asked, and must not be requested.
+_OPENER_NO_REDIRECT = urllib.request.build_opener(_TrackingHandler(), _NoRedirect())
+
+
 def may_retry(method: str, request_sent: bool, idempotent: bool = False) -> bool:
     """Whether a failed attempt may be repeated. The only copy of this rule.
 
@@ -509,7 +521,8 @@ class RestClient:
                 use_password: bool = True,
                 idempotent: bool = False,
                 timeout: float | None = None,
-                retries: int | None = None) -> Response:
+                retries: int | None = None,
+                follow_redirects: bool = True) -> Response:
         """One request, with the transport's retry rule applied.
 
         `retries` is for a caller that must bound how long one call can take
@@ -517,6 +530,11 @@ class RestClient:
         loop that has to keep draining sockets, so it asks for one attempt and
         treats a failure as an answer. Everything else takes the default,
         which is the transport rule the rest of the harness relies on.
+
+        A redirect is followed unless `follow_redirects` is False, in which
+        case the 3xx itself is the answer and its Location is never requested.
+        The device does not redirect, so only a probe of an address that may
+        not be one has a reason to ask for that.
         """
         if payload is not None and body is not None:
             raise Failure("request takes payload or body, not both")
@@ -560,7 +578,7 @@ class RestClient:
                                       params=as_text(params) if params else None,
                                       sent=outbound, connection="new")
             try:
-                with _OPENER.open(
+                with (_OPENER if follow_redirects else _OPENER_NO_REDIRECT).open(
                         request, timeout=self.timeout if timeout is None else timeout) as response:
                     answer = (response.status, dict(response.headers.items()),
                               response.read())
@@ -592,7 +610,10 @@ class RestClient:
                           sent=outbound,
                           received=message_bytes(f"HTTP/1.1 {answer[0]}",
                                                  answer[1], answer[2]))
-            self._check_contract(method, path, answer)
+            # A probe that refuses redirects is not a device call: checking its
+            # answer would resolve the contract with a request that follows them.
+            if follow_redirects:
+                self._check_contract(method, path, answer)
             return answer
         raise Failure(f"{method} {target} failed: {format_exception(last_exc)}") from last_exc
 

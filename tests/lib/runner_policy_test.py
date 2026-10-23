@@ -1130,7 +1130,7 @@ def run_cabling_checks():
     @contextlib.contextmanager
     def fresh_environment():
         saved = {k: os.environ.pop(k, None)
-                 for k in (targets.COMPUTERS_ENV, cabling.SETTLED_ENV)}
+                 for k in (targets.COMPUTERS_ENV, cabling.SETTLED_ENV, cabling.SWEEP_ENV)}
         try:
             yield
         finally:
@@ -1174,8 +1174,9 @@ def run_cabling_checks():
         # lookup failed quietly, so a cartridge nobody named was never searched for.
         expect("an api for a text timeout", cabling._api("c64u", None, "30.0").host, "c64u")
 
-    with check("a cartridge nobody named is found on the computer's network"):
+    with check("a cartridge nobody named is found on the computer's network, when asked"):
         with fresh_environment():
+            os.environ[cabling.SWEEP_ENV] = "1"
             ram = Ram({"192.168.1.74": "c64u"})
             added = establish(["c64u", "u64"], ram,
                               sweep=lambda computer: ["192.168.1.74"] if computer == "c64u" else [])
@@ -1193,6 +1194,101 @@ def run_cabling_checks():
         with fresh_environment():
             establish(["c64u", "u2"], Ram({"u2": "c64u"}))
             expect("second call", establish(["c64u", "u64", "u2"], Ram({"u2": "u64"})), [])
+
+    def sweeps_seen(tokens, sweep_env=None):
+        """The computers swept and the warnings given for one run of `tokens`."""
+        swept, warnings = [], []
+        real_warn, cabling.warn = cabling.warn, warnings.append
+        try:
+            with fresh_environment():
+                if sweep_env is not None:
+                    os.environ[cabling.SWEEP_ENV] = sweep_env
+                establish(tokens, Ram({}), sweep=lambda c: swept.append(c) or [])
+        finally:
+            cabling.warn = real_warn
+        return swept, warnings
+
+    with check("the subnet sweep does not run unless asked for"):
+        swept, _ = sweeps_seen(["c64u"])
+        expect("swept", swept, [])
+
+    with check("only U64_CABLING_SWEEP=1 turns the sweep on"):
+        expect("1", sweeps_seen(["c64u"], "1")[0], ["c64u"])
+        for value in ("0", "", "false", "no", "yes", "true"):
+            expect(f"{value!r}", sweeps_seen(["c64u"], value)[0], [])
+
+    with check("without the sweep, one warning names every computer left unsearched"):
+        swept, warnings = sweeps_seen(["c64u", "u64"])
+        expect("warnings", len(warnings), 1)
+        for name in ("c64u", "u64", cabling.SWEEP_ENV):
+            expect(f"names {name}", name in warnings[0], True)
+
+    with check("no warning when nothing would have been swept"):
+        expect("opted in", sweeps_seen(["c64u"], "1")[1], [])
+        expect("cartridge declared", sweeps_seen(["u2@c64u"])[1], [])
+        expect("only a cartridge", sweeps_seen(["u2"])[1], [])
+
+    def probe_hits(validate_openapi):
+        """Requests reaching a redirecting host and the host it points at."""
+        import http.server
+        import threading
+
+        def serve(reply):
+            hits = []
+
+            class Handler(http.server.BaseHTTPRequestHandler):
+                def do_GET(self):
+                    hits.append(self.path)
+                    reply(self)
+
+                def log_message(self, *args):
+                    pass
+
+            httpd = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+            threading.Thread(target=httpd.serve_forever, daemon=True).start()
+            return httpd, hits
+
+        def answer(handler):
+            handler.send_response(200)
+            handler.send_header("Content-Type", "application/json")
+            handler.end_headers()
+            handler.wfile.write(b'{"product": "Ultimate II+"}')
+
+        elsewhere, elsewhere_hits = serve(answer)
+
+        def redirect(handler):
+            handler.send_response(302)
+            handler.send_header(
+                "Location", f"http://127.0.0.1:{elsewhere.server_address[1]}/v1/info")
+            handler.end_headers()
+
+        redirecting, redirecting_hits = serve(redirect)
+        saved = {k: os.environ.get(k) for k in (targets.REST_PORT_ENV, "ULTIMATE_VALIDATE_OPENAPI")}
+        try:
+            os.environ[targets.REST_PORT_ENV] = str(redirecting.server_address[1])
+            os.environ["ULTIMATE_VALIDATE_OPENAPI"] = "1" if validate_openapi else "0"
+            product = cabling._info_product("127.0.0.1")
+            return product, redirecting_hits, elsewhere_hits
+        finally:
+            for key, value in saved.items():
+                os.environ.pop(key, None)
+                if value is not None:
+                    os.environ[key] = value
+            for server in (redirecting, elsewhere):
+                server.shutdown()
+                server.server_close()
+
+    with check("the sweep probe treats a redirect as not an Ultimate and never follows it"):
+        product, redirecting_hits, elsewhere_hits = probe_hits(False)
+        expect("product", product, None)
+        expect("asked", redirecting_hits, ["/v1/info"])
+        expect("followed", elsewhere_hits, [])
+
+    with check("--validate-openapi does not make the sweep probe follow a redirect"):
+        product, redirecting_hits, elsewhere_hits = probe_hits(True)
+        expect("product", product, None)
+        expect("asked", redirecting_hits, ["/v1/info"])
+        expect("followed", elsewhere_hits, [])
 
 
 def run_move_rows_checks():

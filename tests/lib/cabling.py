@@ -120,13 +120,23 @@ def detect(hosts: Sequence[str], password: str | None, timeout: float,
 
 SWEEP_TIMEOUT_SECONDS = 0.6
 
+# Looking for a cartridge nobody named means asking every address of the
+# computer's /24 for /v1/info, which on a shared network is a probe of devices
+# that are not ours. It happens only when this is set to exactly "1"; "0", empty
+# and anything else leave it off.
+SWEEP_ENV = "U64_CABLING_SWEEP"
+
 
 def _info_product(address: str) -> str | None:
-    """The `product` of whatever answers /v1/info at `address`, or None."""
+    """The `product` of whatever answers /v1/info at `address`, or None.
+
+    Only a 200 counts. A host that redirects is not an Ultimate, and where it
+    points is not asked.
+    """
     try:
         api = _api(address, None, SWEEP_TIMEOUT_SECONDS)
         code, _, body = api.rest.request("GET", "/v1/info", retries=1,
-                                         idempotent=True)
+                                         idempotent=True, follow_redirects=False)
         return str(json.loads(body).get("product", "")) if code == 200 else None
     except Exception:       # noqa: BLE001  nothing, or something else, answers
         return None
@@ -138,7 +148,7 @@ def sweep_cartridges(computer: str,
     """Addresses on `computer`'s /24 that answer as an Ultimate II.
 
     A cartridge nobody named on the command line is still on the computer's
-    bus, so the runner looks for it rather than trusting that there is none.
+    bus. Only called when the operator opted in with U64_CABLING_SWEEP=1.
     """
     try:
         own = resolve(computer)
@@ -196,7 +206,10 @@ def establish(tokens: Sequence[str], password: str | None, timeout: float,
     if len(unpaired) > 1:
         added += declare(detect(unpaired, password, timeout, **seams))
     # A computer with no cartridge declared may still have one fitted that the
-    # run does not name, and it would share the computer's IEC bus.
+    # run does not name, and it would share the computer's IEC bus. Finding it
+    # probes the whole /24, so it is only done when asked for.
+    sweeping = os.environ.get(SWEEP_ENV) == "1"
+    unlooked: list[str] = []
     kind_of = seams.get("kind_of") or (lambda host: product_kind(host, password, timeout))
     for computer in (t.partition(targets.SEPARATOR)[2] or t for t in tokens):
         kind = kind_of(computer)
@@ -206,6 +219,13 @@ def establish(tokens: Sequence[str], password: str | None, timeout: float,
             continue
         if kind == machine_lib.U2 or targets.declared_cartridges(computer):
             continue
+        if not sweeping:
+            unlooked.append(computer)
+            continue
         for address in sweep(computer):
             added += declare(detect([address, computer], password, timeout, **seams))
+    if unlooked:
+        warn(f"cabling: a cartridge fitted to {', '.join(dict.fromkeys(unlooked))} "
+             f"but not named will not be looked for; set {SWEEP_ENV}=1 to probe "
+             "the computer's /24 for one")
     return added
