@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-# E2E: Verifies UCI network target socket reads: length handling and datagram delivery.
+# E2E: Verifies UCI network target socket reads (length handling, datagram delivery) and OPEN_UDP_LOCAL.
 
-"""End-to-end check of the UCI network target's READ_SOCKET command.
+"""End-to-end check of the UCI network target's READ_SOCKET and OPEN_UDP_LOCAL commands.
 
 Regression guard for GideonZ/1541ultimate#802, reported as "a maxlen above 512
 silently returns no data". Everything here was measured on real hardware
@@ -45,6 +45,7 @@ enables the "Command Interface" setting and restores it on exit.
 """
 
 import argparse
+import random
 import socket
 import sys
 import time
@@ -74,11 +75,17 @@ NET_CMD_GET_IPADDR = 0x05
 NET_CMD_OPEN_TCP = 0x07
 NET_CMD_OPEN_UDP = 0x08
 NET_CMD_CLOSE_SOCKET = 0x09
+NET_CMD_OPEN_UDP_LOCAL = 0x0A
 NET_CMD_READ_SOCKET = 0x10
 NET_CMD_WRITE_SOCKET = 0x11
 
 STATUS_OK = b"00,OK"
 STATUS_OUT_OF_RANGE = b"82,PARAMETER(S) OUT OF RANGE"
+STATUS_INVALID_PARAMS = b"81,INVALID PARAMS"
+STATUS_UNRESOLVED_HOST = b"84,UNRESOLVED HOST"
+STATUS_NO_SOCKET = b"85,ERROR OPENING SOCKET"
+STATUS_PORT_IN_USE = b"89,PORT IN USE"
+STATUS_UNKNOWN_COMMAND = b"21,UNKNOWN COMMAND"
 # Not in the network target document, but what the firmware answers when
 # lwip_recv returns -1. The number is the errno: 9 is EBADF for a handle that
 # was never opened, 11 is EAGAIN for an open socket with nothing pending.
@@ -137,6 +144,8 @@ OVERRUN_LIMIT = REPLY_QUEUE_BYTES + 128
 # that is already queued and does not wait for one in flight.
 DELIVERY_SETTLE_SECONDS = 0.4
 PEER_TIMEOUT_SECONDS = 10.0
+# How long one WRITE of write_reaches_peer is given before it is sent again.
+WRITE_WAIT_SECONDS = 3.0
 # How often a lost probe datagram is resent before the socket is judged
 # unreachable.
 PROBE_ATTEMPTS = 3
@@ -147,6 +156,15 @@ PROBE_ATTEMPTS = 3
 # again after the reset says they were released rather than merely forgotten.
 SOCKETS_LEFT_OPEN_AT_RESET = 4
 RESET_CYCLES = 3
+
+# Device ports for OPEN_UDP_LOCAL are picked below 49152, where lwip hands out
+# ephemeral ports, so an ephemeral open can never take the one under test.
+LOCAL_PORT_RANGE = (20000, 40000)
+# More opens than the device has UDP pcbs or sockets, so one must be refused.
+EXHAUSTION_ATTEMPTS = 17
+# More refused opens than the device has descriptors (16), so a leak shows.
+REFUSED_OPENS = 20
+EPHEMERAL_PORT_MIN = 49152
 
 # The two ways of reaching the registers, described at the top of this file.
 ROUTES = ["rest", "native"]
@@ -162,6 +180,15 @@ TESTS = [
     "oversize-request-keeps-the-datagram",
     "empty-datagram-keeps-udp-open",
     "multi-block-state-does-not-leak",
+    "udp-local-fixed-port-echo",
+    "udp-local-port-zero",
+    "udp-local-port-in-use",
+    "udp-local-tcp-port-not-a-clash",
+    "udp-local-bad-params",
+    "udp-local-bad-host-keeps-port-free",
+    "udp-local-support-probe",
+    "udp-local-pcb-exhaustion",
+    "udp-local-reset-frees-port",
     "reset-closes-uci-sockets",
 ]
 
@@ -275,6 +302,27 @@ class Net:
 
     def open_tcp(self, ip: str, port: int) -> int:
         return self._open(NET_CMD_OPEN_TCP, ip, port, "OPEN_TCP")
+
+    def open_udp_local_command(self, host: bytes, remote_port: int, local_port: int) -> bytes:
+        return bytes([TARGET_NETWORK, NET_CMD_OPEN_UDP_LOCAL,
+                      remote_port & 0xFF, (remote_port >> 8) & 0xFF,
+                      local_port & 0xFF, (local_port >> 8) & 0xFF]) + host
+
+    def try_open_udp_local(self, ip: str, remote_port: int, local_port: int):
+        """OPEN_UDP_LOCAL, with whatever it answers."""
+        return self.uci.transact(
+            self.open_udp_local_command(ip.encode("ascii") + b"\x00", remote_port, local_port))
+
+    def open_udp_local(self, ip: str, remote_port: int, local_port: int) -> tuple[int, int]:
+        """OPEN_UDP_LOCAL that has to succeed: the handle and the bound port."""
+        result = self.try_open_udp_local(ip, remote_port, local_port)
+        if result.status_text == STATUS_UNKNOWN_COMMAND:
+            raise Failure("firmware lacks OPEN_UDP_LOCAL (0x0A): it answers "
+                          f"{result.status_text!r}")
+        if result.status_text != STATUS_OK or len(result.data) != 3:
+            raise Failure(f"OPEN_UDP_LOCAL {ip}:{remote_port} from {local_port} answered "
+                          f"{result.status_text!r} with reply {result.data!r}")
+        return result.data[0], result.data[1] | (result.data[2] << 8)
 
     def write(self, handle: int, payload: bytes):
         return self.uci.transact(bytes([TARGET_NETWORK, NET_CMD_WRITE_SOCKET, handle]) + payload)
@@ -1136,6 +1184,333 @@ def run_empty_datagram_keeps_udp_open(net: Net, peer: Peer) -> bool:
     return ok
 
 
+def fresh_port() -> int:
+    """A device port for OPEN_UDP_LOCAL, different on every run."""
+    port = random.randrange(*LOCAL_PORT_RANGE)
+    detail(f"device port {port}")
+    return port
+
+
+def drain_udp(sock: socket.socket) -> None:
+    """Discard datagrams a previous scenario left queued."""
+    sock.setblocking(False)
+    try:
+        while True:
+            sock.recvfrom(2048)
+    except OSError:
+        pass
+    finally:
+        sock.setblocking(True)
+
+
+def write_reaches_peer(net: Net, peer: Peer, handle: int, payload: bytes) -> tuple[str, int]:
+    """WRITE `payload` until the host sees it, and return the source it came from.
+
+    Datagrams from the device can be lost, the first one more often than the
+    rest while the device resolves the host's address, so a lost one is sent
+    again rather than counted against the firmware, as learn_udp_peer does.
+    """
+    for attempt in range(PROBE_ATTEMPTS):
+        drain_udp(peer.udp)
+        sent = net.write(handle, payload)
+        if sent.status_text != STATUS_OK:
+            raise Failure(f"expected {STATUS_OK!r}, got {sent.status_text!r}")
+        peer.udp.settimeout(WRITE_WAIT_SECONDS)
+        try:
+            data, address = peer.udp.recvfrom(2048)
+        except TimeoutError:
+            detail(f"write {attempt + 1} of {PROBE_ATTEMPTS} did not arrive "
+                   f"within {WRITE_WAIT_SECONDS:.0f}s")
+            continue
+        if data != payload:
+            raise Failure(f"peer received {len(data)} bytes that differ from the write")
+        return address
+    raise Failure(f"the written datagram never reached the peer in {PROBE_ATTEMPTS} attempts")
+
+
+def run_udp_local_fixed_port_echo(net: Net, peer: Peer) -> bool:
+    """A datagram sent to the device's fixed port arrives, and replies leave from it.
+
+    The host sends to the device address and the fixed port, from the port the
+    device connected to. Needs no NAT between host and device, or the source
+    port the host sees is not the one the device bound.
+    """
+    section("udp-local-fixed-port-echo")
+    port = fresh_port()
+    device_ip = net.ip_address()
+    with check("GET_IPADDR gives the device's address"):
+        if not device_ip or device_ip == "0.0.0.0":
+            raise Failure(f"the device reported no usable IPv4 address ({device_ip!r})")
+        detail(f"device {device_ip}")
+    drain_udp(peer.udp)
+    handle, bound = net.open_udp_local(peer.ip, peer.udp_port, port)
+    try:
+        with check("the reply names the port that was asked for"):
+            detail(f"handle {handle}, bound port {bound}")
+            if bound != port:
+                raise Failure(f"asked for port {port}, the reply says {bound}")
+
+        payload = pattern(SMALL_READ, seed=5)
+        with check("a datagram sent to the fixed port is delivered"):
+            # UDP can be lost, so the host sends again until the device reads it.
+            received = None
+            for attempt in range(PROBE_ATTEMPTS):
+                peer.udp.sendto(payload, (device_ip, port))
+                time.sleep(DELIVERY_SETTLE_SECONDS)
+                got = net.read(handle, SMALL_READ)
+                detail(f"attempt {attempt + 1}: {got.describe()}")
+                if got.status_text == STATUS_OK:
+                    received = got
+                    break
+            if received is None:
+                raise Failure(f"no datagram reached the device in {PROBE_ATTEMPTS} attempts")
+            if received.payload != payload:
+                raise Failure(f"read {received.describe()}, expected the {len(payload)} "
+                              f"bytes that were sent")
+
+        outgoing = pattern(SMALL_READ, seed=6)
+        with check("a WRITE leaves from the fixed port"):
+            address = write_reaches_peer(net, peer, handle, outgoing)
+            detail(f"source {address[0]}:{address[1]}")
+            if address[1] != port:
+                raise Failure(f"the datagram came from port {address[1]}, not {port}")
+    finally:
+        close_quietly(net, [handle])
+    return True
+
+
+def run_udp_local_port_zero(net: Net, peer: Peer) -> bool:
+    """A local port of 0 is an ephemeral port, and the reply says which."""
+    section("udp-local-port-zero")
+    drain_udp(peer.udp)
+    handle, bound = net.open_udp_local(peer.ip, peer.udp_port, 0)
+    try:
+        with check("the reply carries an ephemeral port"):
+            detail(f"bound port {bound}")
+            if bound < EPHEMERAL_PORT_MIN:
+                raise Failure(f"port {bound} is below the ephemeral range {EPHEMERAL_PORT_MIN}")
+        with check("the datagrams leave from the port the reply named"):
+            _, source = peer.learn_udp_peer(net, handle)
+            detail(f"source port {source}")
+            if source != bound:
+                raise Failure(f"the reply says {bound}, the host saw {source}")
+        plain = net.open_udp(peer.ip, peer.udp_port)
+        try:
+            with check("a plain OPEN_UDP gets a port of the same kind"):
+                _, plain_source = peer.learn_udp_peer(net, plain)
+                detail(f"plain OPEN_UDP source port {plain_source}")
+                if plain_source < EPHEMERAL_PORT_MIN:
+                    raise Failure(f"port {plain_source} is below {EPHEMERAL_PORT_MIN}")
+        finally:
+            close_quietly(net, [plain])
+    finally:
+        close_quietly(net, [handle])
+    return True
+
+
+def run_udp_local_port_in_use(net: Net, peer: Peer) -> bool:
+    """A port that is taken answers 89 and leaves the owner alone."""
+    section("udp-local-port-in-use")
+    port = fresh_port()
+    handles: list[int] = []
+    try:
+        first, _ = net.open_udp_local(peer.ip, peer.udp_port, port)
+        handles.append(first)
+        with check("a second open on the same port answers 89 with no data"):
+            second = net.try_open_udp_local(peer.ip, peer.udp_port, port)
+            detail(f"status {second.status_text!r}, data {second.data!r}")
+            if second.status_text == STATUS_OK and len(second.data) == 3:
+                handles.append(second.data[0])
+            if second.status_text != STATUS_PORT_IN_USE or second.data:
+                raise Failure(f"expected {STATUS_PORT_IN_USE!r} and no data, got "
+                              f"{second.status_text!r} with {second.data!r}")
+        with check("the socket that owns the port still works"):
+            address = write_reaches_peer(net, peer, first, b"STILL HERE")
+            if address[1] != port:
+                raise Failure(f"the owner's datagram came from port {address[1]}, not {port}")
+
+        with check("a port taken by a plain OPEN_UDP answers 89"):
+            plain = net.open_udp(peer.ip, peer.udp_port)
+            handles.append(plain)
+            _, plain_source = peer.learn_udp_peer(net, plain)
+            taken = net.try_open_udp_local(peer.ip, peer.udp_port, plain_source)
+            detail(f"port {plain_source}: {taken.status_text!r}")
+            if taken.status_text == STATUS_OK and len(taken.data) == 3:
+                handles.append(taken.data[0])
+            if taken.status_text != STATUS_PORT_IN_USE:
+                raise Failure(f"expected {STATUS_PORT_IN_USE!r}, got {taken.status_text!r}")
+
+        with check("closing the owner frees the port"):
+            closed = net.close(first)
+            handles.remove(first)
+            if closed.status_text != STATUS_OK:
+                raise Failure(f"expected {STATUS_OK!r}, got {closed.status_text!r}")
+            again, bound = net.open_udp_local(peer.ip, peer.udp_port, port)
+            handles.append(again)
+            if bound != port:
+                raise Failure(f"asked for port {port}, the reply says {bound}")
+
+        with check("refused opens leak no descriptor"):
+            for _ in range(REFUSED_OPENS):
+                refused = net.try_open_udp_local(peer.ip, peer.udp_port, port)
+                if refused.status_text == STATUS_OK and len(refused.data) == 3:
+                    handles.append(refused.data[0])
+                if refused.status_text != STATUS_PORT_IN_USE:
+                    raise Failure(f"expected {STATUS_PORT_IN_USE!r}, got {refused.status_text!r}")
+            other, _ = net.open_udp_local(peer.ip, peer.udp_port, port + 1)
+            handles.append(other)
+    finally:
+        close_quietly(net, handles)
+    return True
+
+
+def run_udp_local_tcp_port_not_a_clash(net: Net, peer: Peer) -> bool:
+    """UDP and TCP ports are separate: a TCP socket's port is free for UDP."""
+    section("udp-local-tcp-port-not-a-clash")
+    handles: list[int] = []
+    conn = None
+    try:
+        tcp = net.open_tcp(peer.ip, peer.tcp_port)
+        handles.append(tcp)
+        conn = peer.accept_tcp()
+        tcp_port = conn.getpeername()[1]
+        detail(f"the device's TCP source port is {tcp_port}")
+        with check("OPEN_UDP_LOCAL on the port of an open TCP socket succeeds"):
+            handle, bound = net.open_udp_local(peer.ip, peer.udp_port, tcp_port)
+            handles.append(handle)
+            if bound != tcp_port:
+                raise Failure(f"asked for port {tcp_port}, the reply says {bound}")
+    finally:
+        close_quietly(net, handles)
+        if conn is not None:
+            conn.close()
+    return True
+
+
+def run_udp_local_bad_params(net: Net, peer: Peer) -> bool:
+    """Malformed commands are refused and leave nothing bound; the edges of the grammar open."""
+    section("udp-local-bad-params")
+    port = fresh_port()
+    remote = peer.udp_port
+    host = peer.ip.encode("ascii")
+    cases = [
+        ("length 6, no host", net.open_udp_local_command(b"", remote, port), STATUS_INVALID_PARAMS),
+        ("empty host", net.open_udp_local_command(b"\x00", remote, port), STATUS_INVALID_PARAMS),
+        ("bytes after the trailing NUL",
+         net.open_udp_local_command(host + b"\x00\x00", remote, port), STATUS_INVALID_PARAMS),
+        ("host of 254 bytes",
+         net.open_udp_local_command(b"a" * 254 + b"\x00", remote, port), STATUS_INVALID_PARAMS),
+        ("remote port 0", net.open_udp_local_command(host + b"\x00", 0, port),
+         STATUS_OUT_OF_RANGE),
+        # The grammar is checked before the remote port.
+        ("empty host and remote port 0", net.open_udp_local_command(b"\x00", 0, port),
+         STATUS_INVALID_PARAMS),
+        # Accepted forms: the host may end without a NUL, and 253 bytes is the longest.
+        ("host without a trailing NUL", net.open_udp_local_command(host, remote, port),
+         STATUS_OK),
+        # An IPv4 literal padded with spaces: lwip's address parser stops at
+        # whitespace, so no DNS lookup is needed.
+        ("host of 253 bytes",
+         net.open_udp_local_command(host.ljust(253) + b"\x00", remote, port), STATUS_OK),
+    ]
+    for name, command, expected in cases:
+        with check(f"{name} answers {expected.decode()}"):
+            result = net.uci.transact(command)
+            detail(f"status {result.status_text!r}, data {result.data!r}")
+            if result.status_text == STATUS_OK and result.data:
+                # Whether or not it was expected, nothing may stay bound.
+                close_quietly(net, [result.data[0]])
+            if expected == STATUS_OK:
+                if result.status_text != STATUS_OK or len(result.data) != 3:
+                    raise Failure(f"expected {STATUS_OK!r} and 3 bytes, got "
+                                  f"{result.status_text!r} with {result.data!r}")
+            elif result.status_text != expected or result.data:
+                raise Failure(f"expected {expected!r} and no data, got "
+                              f"{result.status_text!r} with {result.data!r}")
+    with check("none of them left the port bound"):
+        handle, _ = net.open_udp_local(peer.ip, peer.udp_port, port)
+        close_quietly(net, [handle])
+    return True
+
+
+def run_udp_local_bad_host_keeps_port_free(net: Net, peer: Peer) -> bool:
+    """The host is resolved before the port is bound, so a bad one binds nothing."""
+    section("udp-local-bad-host-keeps-port-free")
+    port = fresh_port()
+    with check("an unresolvable host answers 84"):
+        result = net.try_open_udp_local("nonexistent.invalid", peer.udp_port, port)
+        detail(f"status {result.status_text!r}, data {result.data!r}")
+        if result.status_text != STATUS_UNRESOLVED_HOST or result.data:
+            raise Failure(f"expected {STATUS_UNRESOLVED_HOST!r} and no data, got "
+                          f"{result.status_text!r} with {result.data!r}")
+    with check("the port is free afterwards"):
+        handle, _ = net.open_udp_local(peer.ip, peer.udp_port, port)
+        close_quietly(net, [handle])
+    return True
+
+
+def run_udp_local_support_probe(net: Net, peer: Peer) -> bool:
+    """Remote port 0 tells new firmware (82) from old (21) without opening anything."""
+    section("udp-local-support-probe")
+    with check("remote port 0 answers 82 and not 21"):
+        result = net.try_open_udp_local(peer.ip, 0, 0)
+        detail(f"status {result.status_text!r}, data {result.data!r}")
+        if result.status_text == STATUS_UNKNOWN_COMMAND:
+            raise Failure("firmware lacks OPEN_UDP_LOCAL (0x0A)")
+        if result.status_text != STATUS_OUT_OF_RANGE or result.data:
+            raise Failure(f"expected {STATUS_OUT_OF_RANGE!r} and no data, got "
+                          f"{result.status_text!r} with {result.data!r}")
+    return True
+
+
+def run_udp_local_pcb_exhaustion(net: Net, peer: Peer) -> bool:
+    """When lwip is out of UDP sockets the answer is 85, never 89 and never a hang.
+
+    The host is an IPv4 literal; a name would fail in the DNS lookup first. How
+    many opens succeed depends on what the firmware holds for itself, so the
+    count is not asserted.
+    """
+    section("udp-local-pcb-exhaustion")
+    port = fresh_port()
+    handles: list[int] = []
+    try:
+        with check("opening until the device runs out ends in 85"):
+            refusal = None
+            for n in range(EXHAUSTION_ATTEMPTS):
+                result = net.try_open_udp_local(peer.ip, peer.udp_port, port + n)
+                if result.status_text != STATUS_OK:
+                    refusal = result
+                    break
+                handles.append(result.data[0])
+            detail(f"{len(handles)} opened before the refusal")
+            if refusal is None:
+                raise Failure(f"{EXHAUSTION_ATTEMPTS} opens all succeeded")
+            if refusal.status_text != STATUS_NO_SOCKET or refusal.data:
+                raise Failure(f"expected {STATUS_NO_SOCKET!r} and no data, got "
+                              f"{refusal.status_text!r} with {refusal.data!r}")
+    finally:
+        close_quietly(net, handles)
+    with check("after closing them all the port opens"):
+        handle, _ = net.open_udp_local(peer.ip, peer.udp_port, port)
+        close_quietly(net, [handle])
+    return True
+
+
+def run_udp_local_reset_frees_port(net: Net, peer: Peer, reset) -> bool:
+    """A C64 reset closes a fixed-port socket, so the port can be opened again."""
+    section("udp-local-reset-frees-port")
+    port = fresh_port()
+    net.open_udp_local(peer.ip, peer.udp_port, port)
+    with check("reset the C64 with the port open"):
+        net = reset()
+    with check("the port opens again after the reset"):
+        handle, bound = net.open_udp_local(peer.ip, peer.udp_port, port)
+        close_quietly(net, [handle])
+        if bound != port:
+            raise Failure(f"asked for port {port}, the reply says {bound}")
+    return True
+
+
 def close_quietly(net: Net, handles: list[int]) -> None:
     """Close every handle a scenario opened; an error means it was already gone."""
     for handle in handles:
@@ -1232,7 +1607,8 @@ def build_driver(route: str, computer, busy_timeout: float):
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Verify how the UCI network target's READ_SOCKET handles the requested "
-                    "length and datagrams larger than it (GideonZ/1541ultimate#802)."
+                    "length and datagrams larger than it (GideonZ/1541ultimate#802), and "
+                    "OPEN_UDP_LOCAL."
     )
     cli.add_device_arguments(parser, password=None, timeout=30.0, colour=False)
     parser.add_argument("-b", "--busy-timeout", type=float, default=15.0,
@@ -1390,13 +1766,33 @@ def main() -> int:
                 run_multi_block_state_does_not_leak, net, peer)
 
             def reset_and_reopen(route=route):
-                """Reset the C64 and hand back a driver that reaches the target."""
-                nonlocal native_started
+                """Reset the C64 and hand back a driver that reaches the target.
+
+                Also replaces `net` for the scenarios that follow, because a
+                native reset ends the agent the old one wraps.
+                """
+                nonlocal native_started, net
                 computer.machine.reset(force=True)
                 if route == "native":
                     native_started = True
-                    return Net(build_driver(route, computer, args.busy_timeout))
-                return Net(rest_uci)
+                    net = Net(build_driver(route, computer, args.busy_timeout))
+                else:
+                    net = Net(rest_uci)
+                return net
+            run(route, "udp-local-fixed-port-echo", run_udp_local_fixed_port_echo, net, peer)
+            run(route, "udp-local-port-zero", run_udp_local_port_zero, net, peer)
+            run(route, "udp-local-port-in-use", run_udp_local_port_in_use, net, peer)
+            run(route, "udp-local-tcp-port-not-a-clash",
+                run_udp_local_tcp_port_not_a_clash, net, peer)
+            run(route, "udp-local-bad-params", run_udp_local_bad_params, net, peer)
+            run(route, "udp-local-bad-host-keeps-port-free",
+                run_udp_local_bad_host_keeps_port_free, net, peer)
+            run(route, "udp-local-support-probe", run_udp_local_support_probe, net, peer)
+            run(route, "udp-local-pcb-exhaustion", run_udp_local_pcb_exhaustion, net, peer)
+            # Resets, so the native agent ends here and reset_and_reopen hands
+            # `net` a new one for the scenario after it.
+            run(route, "udp-local-reset-frees-port",
+                run_udp_local_reset_frees_port, net, peer, reset_and_reopen)
             # Last on purpose: on the native route the reset inside it ends
             # the 6502 agent that `net` wraps, so nothing can follow it here.
             run(route, "reset-closes-uci-sockets",

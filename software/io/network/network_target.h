@@ -19,6 +19,7 @@
 #define NET_CMD_OPEN_TCP	        0x07
 #define NET_CMD_OPEN_UDP	        0x08
 #define NET_CMD_CLOSE_SOCKET        0x09
+#define NET_CMD_OPEN_UDP_LOCAL      0x0A
 #define NET_CMD_READ_SOCKET         0x10
 #define NET_CMD_WRITE_SOCKET        0x11
 
@@ -77,7 +78,7 @@ class NetworkTarget : public CommandTarget {
     bool owns_socket(int socketnr);
     void close_all_sockets(void);
 
-    void open_socket(Message *command, Message **reply, Message **status, int);
+    void open_socket(Message *command, Message **reply, Message **status, int, int host_offset = 4, int local_port = -1);
     void read_socket(Message *command, Message **reply, Message **status);
     void write_socket(Message *command, Message **reply, Message **status);
     void close_socket(Message *command, Message **reply, Message **status);

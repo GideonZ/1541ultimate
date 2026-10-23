@@ -24,6 +24,7 @@ Message c_status_no_socket           = { 23, true, (uint8_t *)"85,ERROR OPENING 
 Message c_status_socket_closed       = { 28, true, (uint8_t *)"01,CONNECTION CLOSED BY HOST" };
 Message c_status_net_no_data         = { 26, true, (uint8_t *)"03,MORE DATA NOT SUPPORTED" };
 Message c_status_internal_error      = { 17, true, (uint8_t *)"86,INTERNAL ERROR" };
+Message c_status_port_in_use         = { 14, true, (uint8_t *)"89,PORT IN USE" };
 
 NetworkTarget::NetworkTarget(int id)
 {
@@ -156,6 +157,34 @@ void NetworkTarget :: parse_command(Message *command, Message **reply, Message *
             }
         	open_socket(command, reply, status, SOCK_DGRAM);
         	break;
+        case NET_CMD_OPEN_UDP_LOCAL:
+            {
+                // Same layout as OPEN_UDP with the local port at 4..5 and the
+                // host at 6. One trailing $00 is allowed after the host.
+                int host_end = command->length;
+                if (host_end > 6 && command->message[host_end - 1] == 0) {
+                    host_end--;
+                }
+                int host_length = host_end - 6;
+                // A command that asks for no reply could never close the
+                // socket it gets, and the port would stay bound
+                if ((command->message[0] & CMD_IF_NO_REPLY) || (host_length < 1) || (host_length > 253) ||
+                    (memchr(&command->message[6], 0, host_length) != NULL)) {
+                    *reply = &c_message_empty;
+                    *status = &c_status_invalid_params;
+                    break;
+                }
+                // Remote port 0 is never valid, which also makes it the probe
+                // for whether this command exists
+                if (command->message[2] == 0 && command->message[3] == 0) {
+                    *reply = &c_message_empty;
+                    *status = &c_status_param_out_of_range;
+                    break;
+                }
+                int local_port = int(command->message[4]) | (int(command->message[5]) << 8);
+                open_socket(command, reply, status, SOCK_DGRAM, 6, local_port);
+            }
+            break;
         case NET_CMD_CLOSE_SOCKET:
             if (command->length != 3) { // 2 + 1
                 *reply = &c_message_empty;
@@ -181,7 +210,7 @@ void NetworkTarget :: parse_command(Message *command, Message **reply, Message *
     }
 }
 
-void NetworkTarget :: open_socket(Message *command, Message **reply, Message **status, int type)
+void NetworkTarget :: open_socket(Message *command, Message **reply, Message **status, int type, int host_offset, int local_port)
 {
 	*reply = &c_message_empty;
 	*status = &c_status_ok;
@@ -199,7 +228,7 @@ void NetworkTarget :: open_socket(Message *command, Message **reply, Message **s
 	struct hostent *hent_result;
 	int h_errno;
 
-	gethostbyname_r((const char *)&command->message[4], &hent, (char *)buffer, NET_CMD_BUFSIZE, &hent_result, &h_errno);
+	gethostbyname_r((const char *)&command->message[host_offset], &hent, (char *)buffer, NET_CMD_BUFSIZE, &hent_result, &h_errno);
 
 	if (hent_result) {
 		struct in_addr *s;
@@ -216,6 +245,21 @@ void NetworkTarget :: open_socket(Message *command, Message **reply, Message **s
 		return;
 	}
 
+	// local_port is -1 for the plain opens. 0 leaves the port to connect().
+	if (local_port > 0) {
+		struct sockaddr_in local;
+		memset(&local, 0, sizeof(local));
+		local.sin_len = sizeof(local);
+		local.sin_family = AF_INET;
+		local.sin_addr.s_addr = PP_HTONL(INADDR_ANY);
+		local.sin_port = PP_HTONS(local_port);
+		if (bind(socket, (struct sockaddr *)&local, sizeof(local)) < 0) {
+			*status = (errno == EADDRINUSE) ? &c_status_port_in_use : &c_status_no_socket;
+			lwip_close(socket);
+			return;
+		}
+	}
+
 	int ret = connect(socket, (struct sockaddr *)&addr, sizeof(addr));
 	if (ret < 0) {
 		*status = &status_message;
@@ -223,6 +267,20 @@ void NetworkTarget :: open_socket(Message *command, Message **reply, Message **s
 		this->status_message.length = strlen((char *)this->status_message.message);
 		lwip_close(socket);
 		return;
+	}
+
+	uint16_t bound_port = 0;
+	if (local_port >= 0) {
+		struct sockaddr_in name;
+		socklen_t name_length = sizeof(name);
+		if (getsockname(socket, (struct sockaddr *)&name, &name_length) == 0) {
+			bound_port = PP_NTOHS(name.sin_port);
+		}
+		if (bound_port == 0) {
+			*status = &c_status_internal_error;
+			lwip_close(socket);
+			return;
+		}
 	}
 
 	if (socket > 255) {
@@ -242,6 +300,11 @@ void NetworkTarget :: open_socket(Message *command, Message **reply, Message **s
 	*reply = &data_message;
 	this->data_message.message[0] = (uint8_t)socket;
 	this->data_message.length = 1;
+	if (local_port >= 0) {
+		this->data_message.message[1] = bound_port & 0xFF;
+		this->data_message.message[2] = bound_port >> 8;
+		this->data_message.length = 3;
+	}
 	data_message.last_part = true;
 
 	struct timeval tv;
