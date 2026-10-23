@@ -351,6 +351,7 @@ e2e:
 
 perf:
   rest-latency                      .      .      x      x      x
+  rest-path-latency                 .      .      x      x      x
   telnet-key-latency                .      .      x      x      x
   temp-auto-cleanup-perf            .      .      x      x      x
   typing-speed                      .      .      x      x      x

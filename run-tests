@@ -622,6 +622,11 @@ SUITES: Sequence[Suite] = (
     # name to measure a particular interface.
     Suite("perf", "rest-latency", "tests/perf/rest_latency_perf_test.py",
           "-H @HOST@ -p @PASS@"),
+    # The same routes on each address of a device, with every sample kept so two
+    # firmware builds can be compared (--compare). Run directly to give it a second
+    # --address; under the runner it measures the target's own address.
+    Suite("perf", "rest-path-latency", "tests/perf/rest_path_latency_perf_test.py",
+          "-H @HOST@ -p @PASS@"),
     # Reports one figure per kind of key, because a printable character, an
     # arrow key and a lone ESC are delivered at different points in the decoder.
     Suite("perf", "telnet-key-latency",
