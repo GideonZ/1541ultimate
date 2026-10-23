@@ -168,6 +168,13 @@ SUITES: Sequence[Suite] = (
     # than weeks later when somebody opens the artifact to diagnose something
     # else and finds an empty document.
     Suite("e2e", "observability", "tests/lib/observability_test.py", ""),
+    # Also needs no device: uci-net-route ends as skipped, with its setting restored,
+    # when a link is down (an address stays configured without one) or the command
+    # interface is not there (a C64 Ultimate reads the setting as Enabled with
+    # $DF1B-$DF1F at $FF), instead of passing vacuously or failing to reach Idle.
+    Suite("e2e", "uci-net-route-precondition",
+          "tests/e2e/io/command_interface/net_route_precondition_test.py", "",
+          profile=profiles.QUICK),
     # Also needs no device: the SoftIEC soak's log correlation, against lines the device
     # wrote on the bench. A wrong verdict there reads as a firmware defect.
     Suite("e2e", "softiec-log", "tests/soak/io/iec/softiec_log_test.py", "", profile=profiles.QUICK),
