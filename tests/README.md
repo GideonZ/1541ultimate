@@ -302,6 +302,7 @@ e2e:
   ident-service-switch              .      .      x      x      x
   iec-dos-commands                  .      .      x      x      x
   iec-partition-file                .      .      x      x      x
+  iec-partition-config              .      .      x      x      x
   softiec-log-lines                 .      .      x      x      x
   iec-listen-timing                 .      .      x      x      x
   input                             x      x      x      x      x
@@ -318,6 +319,8 @@ e2e:
   openapi-validator                 .      x      x      x      x
   power-cycle                       .      .      .      x      x
   prg-context-menu                  .      .      x      x      x
+  image-copy                        .      .      x      x      x
+  image-copy-oracle                 .      x      x      x      x
   prg-load-path-trim                .      x      x      x      x
   printer                           .      x      x      x      x
   readmem-writemem                  x      x      x      x      x
@@ -389,6 +392,27 @@ matrix above is aligned text whichever format is asked for.
 
 By default the run continues through every selected suite, so one failure does
 not hide the rest. `-x/--stop-on-fail` stops at the first one.
+
+`image-copy` uses the HDMI overlay to check multi-file copy/paste of dotted CBM
+names into a D64 and host storage, mixed emulated-1541/browser writes with BAM
+and payload verification, and the Leave Menu on Mount setting. It uses generated
+fixtures and restores the drive settings. Drive A must be empty. Both browser-first
+and drive-first access orders are checked. Refused paste, rename and delete must
+leave the image byte-for-byte unchanged; after eject/paste/remount, the C64 reads
+the original multi-sector file and the pasted file over IEC. Dotted-name copies
+preserve an existing file and are repeated after deletion and re-entry.
+The `messages` case supports `--mode overlay`, `freeze` and `telnet`. It checks
+single/batch paste and delete refusal, hidden Delete/Rename actions, in-use
+errors for deleting/renaming an image, and first/last-file errors. Yes must process
+the next file; No must stop. A write-locked image also refuses edits while allowing
+reads; a recursive copy into it reports WRITE PROTECTED. Refused operations leave
+the image unchanged.
+Other cases exercise the HDMI overlay.
+Use `--root /USB2` (or the device's actual USB/SD volume) to run the fixtures on
+FAT storage and additionally prove that an 8.3 alias cannot overwrite a held
+long-name image. The default root is `/Temp`.
+`image-copy-oracle` checks that malformed directory/file chains and BAMs fail the
+independent image verifier.
 
 Everything else the runner does when things go badly follows from one idea.
 

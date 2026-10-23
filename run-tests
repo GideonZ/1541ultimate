@@ -273,6 +273,12 @@ SUITES: Sequence[Suite] = (
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@", profile=profiles.QUICK),
     Suite("e2e", "prg-context-menu", "tests/e2e/filemanager/prg_context_menu_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@"),
+    # No device: reject corrupt images before trusting the image-copy E2E verdict.
+    Suite("e2e", "image-copy-oracle", "tests/lib/image_copy_oracle_test.py",
+          "", profile=profiles.QUICK),
+    # Real HDMI copy/paste, disk allocation and Leave Menu on Mount (#145).
+    Suite("e2e", "image-copy", "tests/e2e/filemanager/image_copy_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@"),
     Suite("e2e", "browser-long-filename", "tests/e2e/filemanager/browser_long_filename_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@", profile=profiles.QUICK),
     Suite("e2e", "browser-cbm-names", "tests/e2e/filemanager/browser_cbm_names_test.py",
@@ -362,6 +368,11 @@ SUITES: Sequence[Suite] = (
     # Loading an .IPR file through the browser replaces the Software IEC partition list
     # rather than adding to it (#934), read back from the drive list.
     Suite("e2e", "iec-partition-file", "tests/e2e/filemanager/ipr_load_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@", profile=profiles.STANDARD),
+    # The Partition config file setting (#982): a .cfg profile selects its .ipr through
+    # Reboot C64, a 255-character path survives the settings menu, Save to File and Load
+    # Settings, and manual loads survive unrelated settings.
+    Suite("e2e", "iec-partition-config", "tests/e2e/io/iec/partition_config_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@", profile=profiles.STANDARD),
     # Every Software IEC log line reaches the device log whole while the HTTP task prints
     # alongside it, read back from the syslog. With --syslog it reads each target's collected
@@ -467,6 +478,11 @@ SUITES: Sequence[Suite] = (
     # a static one, and the device uses the "Static DNS" server.
     Suite("e2e", "stream-wired-link", "tests/e2e/network/stream_wired_link_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@", manual=True),
+    # Streams leave through the wired port whichever interface asked for them:
+    # every pairing of the interface that starts a stream with the one that
+    # stops it, unicast and multicast.
+    Suite("e2e", "stream-routing", "tests/e2e/network/stream_routing_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
     # Drives the machine's online file search (Assembly 64, or CommoServe on a
     # C64 Ultimate), mostly with negative cases. Skips when it is unreachable.
     Suite("e2e", "assembly64", "tests/e2e/io/c64/assembly64_test.py",

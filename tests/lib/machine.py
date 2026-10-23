@@ -287,6 +287,17 @@ MEMORY_VIEWS_AGREE = _fix(
     "monitor show the same bytes with the menu open or closed",
     (C64U,))
 
+# What the palette-stream scenario in tests/e2e/io/command_interface/uci_targets_test.py
+# asserts (#850, #871). The C64 Ultimate's release firmware predates it. A
+# machine missing from `lacking` that refuses `palette` on video:start fails
+# the scenario rather than skipping it, so a regression cannot pass as "not
+# offered here".
+VIC_PALETTE_STREAM = _fix(
+    "vic-palette-stream",
+    "video:start takes palette=0 or 1, and a stream started with palette=1 "
+    "carries the runtime palette as packets beside the video",
+    (C64U,))
+
 # Every fix at once, for a sweep that asks whether the lagging line has caught
 # up rather than about one behaviour.
 ASSUME_ALL = "all"

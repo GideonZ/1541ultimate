@@ -2444,12 +2444,14 @@ FRESULT FileInCBM::write_header(uint8_t *src, int len, uint32_t& tr)
 
 FRESULT FileInCBM::write(const void *buffer, uint32_t len, uint32_t *transferred)
 {
+    *transferred = 0;
+    if (!fs->is_writable()) {
+        return FR_WRITE_PROTECTED;
+    }
     FRESULT res;
 
     uint8_t *src = (uint8_t *) buffer;
     uint32_t tr;
-
-    *transferred = 0;
 
     while (len) {
         switch (state) {

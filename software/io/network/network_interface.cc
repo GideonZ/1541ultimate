@@ -6,6 +6,7 @@
 #include <ctype.h>
 #include "lwip/dhcp.h"
 #include "lwip/dns.h"
+#include "lwip/sockets.h"
 #include "lwip/apps/mdns.h"
 #include "filemanager.h"
 
@@ -459,6 +460,13 @@ void NetworkInterface :: getMacAddr(uint8_t *buf)
 	memcpy(buf, &my_net_if.hwaddr, 6);
 }
 
+// The name netif_find() looks up, and so the one SO_BINDTODEVICE takes:
+// the interface's two letters followed by its number.
+void NetworkInterface :: getNetifName(char *name, int size)
+{
+	snprintf(name, size, "%c%c%u", my_net_if.name[0], my_net_if.name[1], my_net_if.num);
+}
+
 void NetworkInterface :: setIpAddr(uint8_t *buf)
 {
 	memcpy(&my_ip.addr, &buf[0], 4);
@@ -490,6 +498,19 @@ bool NetworkInterface :: peekArpTable(uint32_t ipToQuery, uint8_t *mac)
     portEXIT_CRITICAL();
 
     return ret;
+}
+
+bool NetworkInterface :: bindSocket(int socket)
+{
+    struct ifreq request;
+    memset(&request, 0, sizeof(request));
+
+    LOCK_TCPIP_CORE();
+    char *name = netif_index_to_name(netif_get_index(&my_net_if), request.ifr_name);
+    UNLOCK_TCPIP_CORE();
+
+    return name && lwip_setsockopt(socket, SOL_SOCKET, SO_BINDTODEVICE,
+                                  &request, sizeof(request)) == 0;
 }
 
 void NetworkInterface :: on_edit()

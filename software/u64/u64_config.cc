@@ -21,6 +21,7 @@ extern "C" {
 #include "product.h"
 #include "userinterface.h"
 #include "u64_config.h"
+#include "data_streamer.h"
 #include "audio_select.h"
 #include "fpll.h"
 #include "i2c_drv.h"
@@ -71,6 +72,7 @@ const uint8_t default_colors[16][3] = {
 
 static uint8_t active_palette[16][3];
 static bool active_palette_valid = false;
+static uint16_t active_palette_generation = 0;
 
 // static pointer
 U64Config *u64_configurator = NULL;
@@ -178,6 +180,7 @@ static SemaphoreHandle_t resetSemaphore;
 #define CFG_POWERON_MODE      0x5F
 // The first id clear of both ranges above.
 #define CFG_WAKE_ON_WIFI      0x64
+#define CFG_RECOVERY_URL      0x65
 
 #define CFG_SCAN_MODE_TEST    0xA8
 #define CFG_VIC_TEST          0xA9
@@ -395,6 +398,7 @@ struct t_cfg_definition u64_cfg[] = {
 #if U64 == 2
     { CFG_POWERON_MODE,         CFG_TYPE_ENUM, "Power On After Power Loss",    "%s", poweron_modes, 0, 2, 0 },
     { CFG_WAKE_ON_WIFI,         CFG_TYPE_ENUM, "Wake On Wi-Fi",                "%s", en_dis,       0,  1, 0 },
+    { CFG_RECOVERY_URL,         CFG_TYPE_STRING, "Recovery Server",            "%s", NULL,         0, 127, (long)"" },
 #endif
     { CFG_TYPE_END,             CFG_TYPE_END,  "",                             "",   NULL,         0,  0, 0 } };
 
@@ -927,6 +931,7 @@ U64Config :: U64Config() : SubSystem(SUBSYSID_U64)
 #if U64 == 2
         cfg->set_change_hook(CFG_POWERON_MODE, U64Config::setPowerOnMode);
         cfg->set_change_hook(CFG_WAKE_ON_WIFI, U64Config::setWakeOnWifi);
+        cfg->set_change_hook(CFG_RECOVERY_URL, U64Config::setRecoveryUrl);
 #endif
 
         if (!isEliteBoard()) {
@@ -1597,6 +1602,71 @@ void U64Config :: pushWakeOnWifi(void)
         return; // already in sync
     }
     setWakeOnWifi(it);
+}
+
+// The server the control module asks first when the firmware is recovered
+// over Wi-Fi; its own list follows. Also kept in its NVS, because a recovery
+// runs exactly when this firmware cannot.
+static bool readRecoveryUrl(char *url, int maxlen)
+{
+    for (int attempt = 0; attempt < MODULE_ATTEMPTS; attempt++) {
+        url[0] = 0;
+        if (wifi_get_recovery_url(url, maxlen) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool writeRecoveryUrl(const char *url)
+{
+    char stored[RPC_RECOVERY_URL_LEN];
+    for (int attempt = 0; attempt < MODULE_ATTEMPTS; attempt++) {
+        int retval = wifi_set_recovery_url(url);
+        if (retval) {
+            printf("Setting the recovery server failed with error %d.\n", retval);
+            return false;
+        }
+        if (readRecoveryUrl(stored, sizeof(stored)) && (strcmp(stored, url) == 0)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+int U64Config :: setRecoveryUrl(ConfigItem *it)
+{
+    if (!it || writeRecoveryUrl(it->getString())) {
+        return 0;
+    }
+    // The module refuses what is not an http:// or https:// URL. The item keeps
+    // the text, so it can be corrected; the module keeps what it had.
+    UserInterface :: postMessage("Recovery server not stored.");
+    return 0;
+}
+
+void U64Config :: pushRecoveryUrl(void)
+{
+    if (!u64_configurator || !u64_configurator->cfg) {
+        return;
+    }
+    ConfigItem *it = u64_configurator->cfg->find_item(CFG_RECOVERY_URL);
+    if (!it) {
+        return;
+    }
+    char stored[RPC_RECOVERY_URL_LEN];
+    if (!readRecoveryUrl(stored, sizeof(stored))) {
+        // A module without network recovery cannot use the setting.
+        printf("No answer about the recovery server from the control module; disabling the setting.\n");
+        u64_configurator->cfg->disable(CFG_RECOVERY_URL);
+        return;
+    }
+    printf("Recovery server of the control module: '%s'\n", stored);
+    u64_configurator->cfg->enable(CFG_RECOVERY_URL);
+    if (strcmp(stored, it->getString()) == 0) {
+        return; // already in sync
+    }
+    setRecoveryUrl(it);
 }
 #endif
 
@@ -2776,24 +2846,45 @@ static void program_palette_color(uint8_t index, const uint8_t rgb[3])
 
 void U64Config :: set_palette_rgb(const uint8_t rgb[16][3])
 {
+    // The registers are written inside the same critical section, so that
+    // what the VIC shows, GET_PALETTE and the streamed generation cannot
+    // disagree when two writers race. That is 16 colours of register writes
+    // and integer YUV conversion; nothing in it blocks.
+    taskENTER_CRITICAL();
     memcpy(active_palette, rgb, sizeof(active_palette));
     active_palette_valid = true;
+    active_palette_generation++;
     program_palette_rgb(rgb);
+    taskEXIT_CRITICAL();
+    if (dataStreamer) {
+        dataStreamer->vicPaletteChanged();
+    }
 }
 
-void U64Config :: get_palette_rgb(uint8_t rgb[16][3])
+uint16_t U64Config :: get_palette_rgb(uint8_t rgb[16][3])
 {
+    // Pair the generation and RGB bytes from one complete palette snapshot.
+    taskENTER_CRITICAL();
     memcpy(rgb, active_palette_valid ? active_palette : default_colors, sizeof(active_palette));
+    const uint16_t generation = active_palette_generation;
+    taskEXIT_CRITICAL();
+    return generation;
 }
 
 void U64Config :: set_palette_color(uint8_t index, const uint8_t rgb[3])
 {
+    taskENTER_CRITICAL();
     if (!active_palette_valid) {
         memcpy(active_palette, default_colors, sizeof(active_palette));
         active_palette_valid = true;
     }
     memcpy(active_palette[index], rgb, 3);
+    active_palette_generation++;
     program_palette_color(index, rgb);
+    taskEXIT_CRITICAL();
+    if (dataStreamer) {
+        dataStreamer->vicPaletteChanged();
+    }
 }
 
 void U64Config :: reset_palette()
@@ -2975,6 +3066,11 @@ void U64Config :: setup_config_menu(void)
     grp->append(ConfigItem :: heading("'Wake On Wi-Fi' switches it on when a"));
     grp->append(ConfigItem :: heading("magic packet arrives. Only Wi-Fi can:"));
     grp->append(ConfigItem :: heading("the wired jack is off with the machine."));
+    grp->append(ConfigItem :: separator());
+    grp->append(cfg->find_item(CFG_RECOVERY_URL));
+    grp->append(ConfigItem :: heading("Holding the switch down for 3 seconds"));
+    grp->append(ConfigItem :: heading("while off recovers the firmware over"));
+    grp->append(ConfigItem :: heading("Wi-Fi, asking this server first."));
 #endif
 
     grp = ConfigGroupCollection :: getGroup("SID Player Behavior", SORT_ORDER_CFG_SIDPLAY);

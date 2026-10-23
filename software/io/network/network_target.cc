@@ -299,13 +299,16 @@ void NetworkTarget :: read_socket(Message *command, Message **reply, Message **s
     data_message.message[1] = (copied & 0xFF00) >> 8;
 
     // printf("Reading %d bytes from socket %d resulted in %d\n", length, socketnr, ret);
-	if (ret == 0) {
+	// Zero bytes means the peer closed only on a stream. On a datagram socket
+	// it is an empty datagram, which is data: it is reported as a zero-length
+	// read with status OK, and the socket stays open.
+	if (ret == 0 && !is_datagram_socket(socketnr)) {
 		untrack_socket(socketnr);
 		lwip_close(socketnr);
 		*status = &c_status_socket_closed;
 		return;
 	}
-	if (ret > 0) {
+	if (ret >= 0) {
 		Message *result = &c_status_ok;
 		if (msg.msg_flags & MSG_TRUNC) {
 			// The datagram was longer than the caller asked for and the rest is
@@ -434,6 +437,13 @@ void NetworkTarget :: untrack_socket(int socketnr)
             return;
         }
     }
+}
+
+bool NetworkTarget :: is_datagram_socket(int socketnr)
+{
+    int type = 0;
+    socklen_t len = sizeof(type);
+    return (lwip_getsockopt(socketnr, SOL_SOCKET, SO_TYPE, &type, &len) == 0) && (type == SOCK_DGRAM);
 }
 
 bool NetworkTarget :: owns_socket(int socketnr)

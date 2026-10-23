@@ -3924,6 +3924,7 @@ static void s11_si064_rename_header(FileManager *fm, IecDrive *dr)
     printf("%s: header of $/ARCADE/ is '%s'\n", testname, header);
     REQUIRE(memcmp(listing + 8, "ARCADE          ", 16) == 0);
     expect_command_ok(testname, dr, "CD//ARCADE\r");
+    expect_command_ok(testname, dr, "R-H:ARCADE\r");
     expect_command_ok(testname, dr, "R-H:ACTION\r"); // no path: the current directory
     read_directory_stream(testname, dr, "$", listing, sizeof(listing));
     REQUIRE(memcmp(listing + 8, "ACTION          ", 16) == 0);
@@ -4951,6 +4952,92 @@ static ConfigStore *s11_softiec_settings(void)
     ConfigStore *cfg = ConfigManager::getConfigManager()->find_store((uint32_t)0x49454300);
     REQUIRE(cfg);
     return cfg;
+}
+
+// A profile selects its partition file without changing the bus configuration.
+static void s11_partition_config_file(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite11-PartitionConfigFile";
+    ConfigStore *cfg = s11_softiec_settings();
+    REQUIRE(cfg->find_item("Partition config file") != NULL);
+    REQUIRE(!strcmp(cfg->get_string(0x56), ""));
+    IecFileSystem *vfs = dr->get_file_system();
+    REQUIRE(vfs->SavePartitions("/Temp", "saved.ipr") == FR_OK);
+    save_fixture_file(fm, "/Temp", "profile.ipr",
+        "{\"partitions\":[{\"number\":1,\"path\":\"/Temp\",\"name\":\"PROFILE\"}]}");
+    int configured = iec_interface_configure_calls;
+    cfg->set_string(0x56, "/Temp/profile.ipr");
+    dr->effectuate_settings();
+    REQUIRE(vfs->CountPartitions() == 1);
+    REQUIRE(!strcmp(vfs->GetPartition(1)->GetName(), "PROFILE"));
+    REQUIRE(iec_interface_configure_calls == configured);
+
+    // Unrelated settings and drive resets keep manual partition edits.
+    dr->add_partition(2, "/Temp", "MANUAL");
+    cfg->set_value(0x55, 1);
+    dr->effectuate_settings();
+    cfg->set_value(0x55, 0);
+    dr->effectuate_settings();
+    dr->reset();
+    REQUIRE(vfs->CountPartitions() == 2);
+    REQUIRE(!strcmp(vfs->GetPartition(2)->GetName(), "MANUAL"));
+
+    cfg->set_string(0x56, "/Temp/missing.ipr");
+    dr->effectuate_settings();
+    REQUIRE(vfs->CountPartitions() == 2);
+    save_fixture_file(fm, "/Temp", "invalid.ipr", "{\"partitions\":[]}");
+    cfg->set_string(0x56, "/Temp/invalid.ipr");
+    dr->effectuate_settings();
+    REQUIRE(vfs->CountPartitions() == 2);
+    // A file that did not load is read when a path is applied again, not by unrelated
+    // settings, which would replace partition edits made since.
+    dr->add_partition(3, "/Temp", "EDITED");
+    REQUIRE(fm->delete_file("/Temp/invalid.ipr") == FR_OK);
+    save_fixture_file(fm, "/Temp", "invalid.ipr",
+        "{\"partitions\":[{\"number\":1,\"path\":\"/Flash\",\"name\":\"REPAIRED\"}]}");
+    cfg->set_value(0x55, 1);
+    dr->effectuate_settings();
+    cfg->set_value(0x55, 0);
+    dr->effectuate_settings();
+    REQUIRE(vfs->CountPartitions() == 3);
+    REQUIRE(!strcmp(vfs->GetPartition(3)->GetName(), "EDITED"));
+    cfg->set_string(0x56, "/Temp/missing.ipr");
+    dr->effectuate_settings();
+    cfg->set_string(0x56, "/Temp/invalid.ipr");
+    dr->effectuate_settings();
+    REQUIRE(vfs->CountPartitions() == 1);
+    REQUIRE(!strcmp(vfs->GetPartition(1)->GetName(), "REPAIRED"));
+    dr->load_partitions("/Temp", "profile.ipr");
+
+    // A drive constructed with a configured path loads it at startup.
+    cfg->set_string(0x56, "/Temp/profile.ipr");
+    IecDrive *boot = new IecDrive();
+    REQUIRE(boot->get_file_system()->CountPartitions() == 1);
+    REQUIRE(!strcmp(boot->get_file_system()->GetPartition(1)->GetName(), "PROFILE"));
+    delete boot;
+
+    // A default file that appears later is not read by an unrelated settings change.
+    cfg->set_string(0x56, "");
+    dr->effectuate_settings();
+    REQUIRE(!strcmp(vfs->GetPartition(1)->GetName(), "PROFILE"));
+    FRESULT fres = fm->create_dir(CFG_FILEPATH);
+    REQUIRE(fres == FR_OK || fres == FR_EXIST);
+    save_fixture_file(fm, CFG_FILEPATH, IEC_PARTITION_CONFIG,
+        "{\"partitions\":[{\"number\":1,\"path\":\"/Flash\",\"name\":\"DEFAULT\"}]}");
+    dr->effectuate_settings();
+    REQUIRE(!strcmp(vfs->GetPartition(1)->GetName(), "PROFILE"));
+
+    cfg->set_string(0x56, "/Temp/profile.ipr");
+    dr->effectuate_settings();
+    cfg->set_string(0x56, "");
+    dr->effectuate_settings();
+    REQUIRE(vfs->CountPartitions() == 1);
+    REQUIRE(!strcmp(vfs->GetPartition(1)->GetName(), "DEFAULT"));
+    boot = new IecDrive();
+    REQUIRE(!strcmp(boot->get_file_system()->GetPartition(1)->GetName(), "DEFAULT"));
+    delete boot;
+    REQUIRE(fm->delete_file(CFG_FILEPATH "/" IEC_PARTITION_CONFIG) == FR_OK);
+    dr->load_partitions("/Temp", "saved.ipr");
 }
 
 // With "Log Every Operation" on, every command, open and close writes a line with the
@@ -6522,6 +6609,33 @@ static void s11_si074_move_checks(FileManager *fm, IecDrive *dr)
     expect_command_response(testname, dr, "R:SUB =SUB\r", "33,SYNTAX ERROR,00,00\r");
 }
 
+// #999: C64 OS renames a Native Mode subdirectory through a temporary name.
+static void s11_si074_native_directory(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite11-SI074-NativeDirectory";
+    create_formatted_image(fm, "/Fat/s11_si074.dnp", "NATIVE", 4 * 256, e_image_dnp);
+    dr->add_partition(43, "/Fat/s11_si074.dnp", "NATIVEPART");
+    expect_command_status_prefix(testname, dr, "CP43\r", "02,");
+    expect_command_ok(testname, dr, "MD:NEW DIRECTORY\r");
+    expect_iec_write_ok(testname, dr, 2, "/NEW DIRECTORY/:KEEP,S,W", "payload");
+    expect_command_ok(testname, dr, "R:.^RNAME^=NEW DIRECTORY\r");
+    expect_command_ok(testname, dr, "CD:.^RNAME^\r");
+    expect_iec_file(testname, dr, 2, "KEEP,S,R", "payload");
+    expect_command_ok(testname, dr, "CD_\r");
+    expect_command_ok(testname, dr, "MD:NEW DIRECTORY\r");
+    expect_command_response(testname, dr, "R:.^RNAME^=NEW DIRECTORY\r", "63,FILE EXISTS,00,00\r");
+    expect_command_ok(testname, dr, "RD:NEW DIRECTORY\r");
+    expect_command_ok(testname, dr, "R:NEW NAME=.^RNAME^\r");
+    expect_command_ok(testname, dr, "CD:NEW NAME\r");
+    expect_command_ok(testname, dr, "R-H:NEW NAME\r");
+    expect_iec_file(testname, dr, 2, "KEEP,S,R", "payload");
+    uint8_t listing[8192];
+    read_directory_stream(testname, dr, "$", listing, sizeof(listing));
+    REQUIRE(memcmp(listing + 8, "NEW NAME        ", 16) == 0);
+    expect_command_ok(testname, dr, "CD//\r");
+    dr->get_file_system()->RemovePartition(43);
+}
+
 // SI-082: a plain file read to its end is still open, and P positions it again.
 static void s11_si082_position_after_end(FileManager *fm, IecDrive *dr)
 {
@@ -6709,6 +6823,7 @@ struct Suite11Case {
 };
 
 static const Suite11Case suite11_cases[] = {
+    { "Suite11-PartitionConfigFile",     s11_partition_config_file },
     { "Suite11-SI031-Unrecognised",      s11_si031_unrecognised },
     { "Suite11-SI030-UnknownSubcommand", s11_si030_unknown_subcommand },
     { "Suite11-SI030-MissingName",       s11_si030_missing_name },
@@ -6794,6 +6909,7 @@ static const Suite11Case suite11_cases[] = {
     { "Suite11-SI150-NameLists",         s11_si150_name_lists },
     { "Suite11-SI080-PastTheLastRecord", s11_si080_past_the_last_record },
     { "Suite11-SI080-RecordLengthBytes", s11_si080_record_length_bytes },
+    { "Suite11-SI074-NativeDirectory",   s11_si074_native_directory },
     { "Suite11-SI074-MoveChecks",        s11_si074_move_checks },
     { "Suite11-SI082-PositionAfterEnd",  s11_si082_position_after_end },
     { "Suite11-SI081-PositionChannel",   s11_si081_position_channel },
