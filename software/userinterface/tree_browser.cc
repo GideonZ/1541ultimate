@@ -660,8 +660,18 @@ void TreeBrowser::paste(void)
 {
     printf("Going to paste %d files from path %s\n", clipboard.getNumberOfFiles(), clipboard.getPath());
 
-    fm->deregisterObserver(observerQueue);
     int items = clipboard.getNumberOfFiles();
+    if (!items) {
+        return;
+    }
+    FileInfo info(128);
+    if (fm->is_path_valid(getPath(), &info) && info.fs && !info.fs->is_writable()) {
+        user_interface->popup(items > 1 ? "Mount not writable.\nAborted." : "Mount not writable", BUTTON_OK);
+        state->refresh = true;
+        return;
+    }
+
+    fm->deregisterObserver(observerQueue);
     user_interface->show_progress("Copying...", items);
     for (int i = 0; i < items; i++) {
         const char *fn = clipboard.getFileNameByIndex(i);
@@ -669,10 +679,13 @@ void TreeBrowser::paste(void)
         if (res != FR_OK) {
             user_interface->hide_progress(); // temporarily
             printf("Error while copying: %s %s to %s\n", FileSystem::get_error_string(res), fn, this->getPath());
-            int resp = user_interface->popup("Copy error occurred. Continue?", BUTTON_YES | BUTTON_NO);
+            char message[64];
+            bool more = (i + 1 < items);
+            sprintf(message, "%s%s", FileSystem::get_error_string(res), more ? "\nContinue?" : "");
+            int resp = user_interface->popup(message, more ? BUTTON_YES | BUTTON_NO : BUTTON_OK);
             user_interface->show_progress("Copying...", items); // show it again
             user_interface->update_progress(0, i); // set back to original fill
-            if (resp == BUTTON_NO)
+            if (resp != BUTTON_YES)
                 break;
         }
         user_interface->update_progress(0, 1);
@@ -698,6 +711,12 @@ void TreeBrowser::delete_selected(void)
     if (!items) {
         return;
     }
+    FileInfo info(128);
+    if (fm->is_path_valid(getPath(), &info) && info.fs && !info.fs->is_writable()) {
+        user_interface->popup("Mount not writable", BUTTON_OK);
+        state->refresh = true;
+        return;
+    }
     char buffer[40];
     sprintf(buffer, "Delete %d file%s?", items, (items > 1) ? "s" : "");
     int resp = user_interface->popup(buffer, BUTTON_YES | BUTTON_NO);
@@ -714,10 +733,12 @@ void TreeBrowser::delete_selected(void)
             FRESULT res = fm->delete_recursive(path, t->getName());
             if (res != FR_OK) {
                 user_interface->hide_progress(); // temporarily
-                int resp = user_interface->popup("Delete error occurred. Continue?", BUTTON_YES | BUTTON_NO);
+                bool more = (deleted + 1 < items);
+                sprintf(buffer, "%s%s", FileSystem::get_error_string(res), more ? "\nContinue?" : "");
+                int resp = user_interface->popup(buffer, more ? BUTTON_YES | BUTTON_NO : BUTTON_OK);
                 user_interface->show_progress("Deleting...", items); // show it again
                 user_interface->update_progress(0, deleted); // set back to original fill
-                if (resp == BUTTON_NO)
+                if (resp != BUTTON_YES)
                     break;
             }
             user_interface->update_progress(0, 1);

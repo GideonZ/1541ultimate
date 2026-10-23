@@ -136,9 +136,11 @@ public:
 
 	void getIpAddr(uint8_t *a);
 	void getMacAddr(uint8_t *a);
+	void getNetifName(char *name, int size);
 	void setIpAddr(uint8_t *a);
 	char *getIpAddrString(char *buf, int buflen);
 	bool peekArpTable(uint32_t ipToQuery, uint8_t *mac);
+	bool bindSocket(int socket);
 
 	// callbacks
 	static void statusCallback(struct netif *);

@@ -66,6 +66,11 @@ int wifi_reply_register(rpc_header_t *hdr);
 // Sends the request and waits for its reply; NULL if there is none in time
 command_buf_t *wifi_transmit(command_buf_t *buf, int timeout_ms);
 command_buf_t *wifi_wait_reply(rpc_header_t hdr, int timeout_ms);
+
+// The recovery server the control module asks first; "" for none.
+int wifi_set_recovery_url(const char *url);
+int wifi_get_recovery_url(char *url, int maxlen);
+
 extern "C" { void print_uart_status(); }
 extern const char *no_wifi_buf;
 extern const char *no_wifi_slot;

@@ -108,6 +108,20 @@ typedef struct {
     uint8_t enabled; // WAKE_ON_WIFI_* from power_state.h
 } rpc_get_wake_on_wifi_resp;
 
+// The recovery server tried before the built-in ones; "" for none.
+#define RPC_RECOVERY_URL_LEN 128 // including the NUL
+
+typedef struct {
+    rpc_header_t hdr;
+    char url[RPC_RECOVERY_URL_LEN];
+} rpc_set_recovery_url_req;
+
+typedef struct {
+    rpc_header_t hdr;
+    int esp_err;
+    char url[RPC_RECOVERY_URL_LEN];
+} rpc_get_recovery_url_resp;
+
 /* 42 byte AP record */
 typedef struct {
     uint8_t bssid[6];            // MAC address of AP
@@ -207,6 +221,8 @@ typedef struct {
 #define CMD_GET_POWER_MODE    0x17
 #define CMD_SET_WAKE_ON_WIFI  0x18
 #define CMD_GET_WAKE_ON_WIFI  0x19
+#define CMD_SET_RECOVERY_URL  0x1A
+#define CMD_GET_RECOVERY_URL  0x1B
 
 #define EVENT_CONNECTED     0x40
 #define EVENT_GOTIP         0x41

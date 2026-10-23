@@ -26,6 +26,10 @@ API_DOC(PUT, streams, start,
                 "of a single host, in which case every listener that joined the group receives "
                 "the stream.\n"
                 "\n"
+                "To send to a single host the device looks up that host's hardware address on the "
+                "wired port, or the gateway's when the host is on another subnet. When name "
+                "resolution or the hardware-address lookup fails, the call fails with 404.\n"
+                "\n"
                 "Video and debug share hardware and cannot both run, so starting video stops "
                 "debug first.\n"
                 "\n"
@@ -36,11 +40,14 @@ API_DOC(PUT, streams, start,
     PATH_PARAM("stream", "string", "Which stream to act on.", "video")
     PATH_PARAM_ENUM("stream", "video,audio,debug")
     PARAM("ip", "string", "Where to send the stream. An address, optionally followed by a port.", "", "192.168.1.10:11000")
+    PARAM("palette", "integer", "For video, request runtime VIC palette packets (0 or 1). The setting is device-wide: it applies to every receiver of the stream, and the most recent start sets it.", "", "0")
     RESPONSE("200", "application/json", "ErrorResponse", "The stream is running.", "")
+    RESPONSE_ERROR("400", "Palette must be 0 or 1 and is only valid for the video stream", "")
     RESPONSE_ERROR("404", "Unrecognized stream name 'screen'", "")
+    RESPONSE_ERROR("404", "Network Host Resolve Error", "")
     RESPONSE_ERROR("500", "Wired Ethernet link is down or has no IP address", "")
 )
-API_CALL(PUT, streams, start, NULL, ARRAY ( { { "ip", P_REQUIRED } }))
+API_CALL(PUT, streams, start, NULL, ARRAY ( { { "ip", P_REQUIRED }, { "palette", P_OPTIONAL } }))
 {
     const char *streamName = args.get_path(0);
     SubsysCommand *sys_command;
@@ -57,13 +64,23 @@ API_CALL(PUT, streams, start, NULL, ARRAY ( { { "ip", P_REQUIRED } }))
         return;
     }
 
+    // Checked before anything is stopped, so a rejected request changes nothing.
+    const char *paletteArg = args.get_or("palette", NULL);
+    const bool paletteRequested = paletteArg && strcmp(paletteArg, "1") == 0;
+    if (paletteArg && (streamIndex != 0 || (strcmp(paletteArg, "0") != 0 && !paletteRequested))) {
+        resp->error("Palette must be 0 or 1 and is only valid for the video stream");
+        resp->json_response(HTTP_BAD_REQUEST);
+        return;
+    }
+
     if (streamIndex == 0) { // video streams require debug to be off
         sys_command = new SubsysCommand(NULL, -1, (int)dataStreamer, 2, "", "");
         sys_command->direct_call = DataStreamer :: S_stopStream;
         sys_command->execute();
     }
 
-    sys_command = new SubsysCommand(NULL, -1, (int)dataStreamer, streamIndex, args["ip"], "");
+    const int mode = streamIndex | (paletteRequested ? STREAM_MODE_PALETTE : 0);
+    sys_command = new SubsysCommand(NULL, -1, (int)dataStreamer, mode, args["ip"], "");
     sys_command->direct_call = DataStreamer :: S_startStream;
     SubsysResultCode_t retval = sys_command->execute();
     resp->error(SubsysCommand::error_string(retval.status));

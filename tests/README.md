@@ -83,14 +83,20 @@ never run at the same time: `u64` and `u2@c64u` run together, while `c64u` and
 `u2@c64u` take turns. `-o DIR` gives each target a subdirectory of its own.
 
 The runner finds which cartridge is in which computer, and nothing has to be
-set. Before it starts, it takes the pairs written as `cartridge@computer`. It
-then checks every cartridge named beside other hosts: the computer writes a
-random 8-byte fingerprint into its own RAM at `$0340`, and the cartridge
-reads that address through its own DMA, so only the computer it is plugged
-into returns the same bytes. A computer that has no cartridge declared is
-also searched for one on its /24 network, because a cartridge nobody named
-still shares that computer's IEC bus. The result is reported as a `cabling:`
-line and exported as `U64_COMPUTERS`.
+set for cartridges it is told about. Before it starts, it takes the pairs
+written as `cartridge@computer`. It then checks every cartridge named beside
+other hosts: the computer writes a random 8-byte fingerprint into its own RAM
+at `$0340`, and the cartridge reads that address through its own DMA, so only
+the computer it is plugged into returns the same bytes. A computer that has no
+cartridge declared is not searched for one by default; the run warns once,
+naming those computers, that a cartridge fitted but not named is not looked
+for: its drives stay on the computer's IEC bus and its settings are not
+captured or restored.
+`U64_CABLING_SWEEP=1` (exactly `1`) opts in to asking the computer's /24 for
+`/v1/info`, which probes devices on that network that are not yours; the probe
+does not follow redirects, but a host that answers as an Ultimate II then
+receives `U64_PASS`. The result is reported as a `cabling:` line and exported
+as `U64_COMPUTERS`.
 
 ```sh
 ./run-tests u2 c64u          # u2 is found to be in the c64u, so these take turns
@@ -302,6 +308,7 @@ e2e:
   ident-service-switch              .      .      x      x      x
   iec-dos-commands                  .      .      x      x      x
   iec-partition-file                .      .      x      x      x
+  iec-partition-config              .      .      x      x      x
   softiec-log-lines                 .      .      x      x      x
   iec-listen-timing                 .      .      x      x      x
   input                             x      x      x      x      x
@@ -318,6 +325,8 @@ e2e:
   openapi-validator                 .      x      x      x      x
   power-cycle                       .      .      .      x      x
   prg-context-menu                  .      .      x      x      x
+  image-copy                        .      .      x      x      x
+  image-copy-oracle                 .      x      x      x      x
   prg-load-path-trim                .      x      x      x      x
   printer                           .      x      x      x      x
   readmem-writemem                  x      x      x      x      x
@@ -332,6 +341,8 @@ e2e:
   telnet-sustained-input            .      .      .      x      x
   temp-auto-cleanup                 .      .      x      x      x
   transport-usage                   x      x      x      x      x
+  uci-net-route                     .      .      .      x      x
+  uci-net-route-precondition        .      x      x      x      x
   uci-net-target                    .      .      .      x      x
   uci-targets                       .      .      x      x      x
   ui-backend-parse                  x      x      x      x      x
@@ -346,6 +357,7 @@ e2e:
 
 perf:
   rest-latency                      .      .      x      x      x
+  rest-path-latency                 .      .      x      x      x
   telnet-key-latency                .      .      x      x      x
   temp-auto-cleanup-perf            .      .      x      x      x
   typing-speed                      .      .      x      x      x
@@ -385,10 +397,38 @@ matrix above is aligned text whichever format is asked for.
 ./run-tests --list-profiles quick --measured quick=runs/quick
 ```
 
+`uci-net-route` checks that connections and datagrams the device starts leave from its
+Ethernet address when WiFi is joined on the same subnet. This host is the network peer,
+so it needs two device interfaces with an address on this host's subnet and a link up on
+both, and the device's menu at its root. It reads the link state from the menu, which it
+opens and closes again; in Freeze mode that stops the C64 while the menu is open. It skips,
+with the reason printed, when any of that is missing.
+
 ## When a run goes wrong
 
 By default the run continues through every selected suite, so one failure does
 not hide the rest. `-x/--stop-on-fail` stops at the first one.
+
+`image-copy` uses the HDMI overlay to check multi-file copy/paste of dotted CBM
+names into a D64 and host storage, mixed emulated-1541/browser writes with BAM
+and payload verification, and the Leave Menu on Mount setting. It uses generated
+fixtures and restores the drive settings. Drive A must be empty. Both browser-first
+and drive-first access orders are checked. Refused paste, rename and delete must
+leave the image byte-for-byte unchanged; after eject/paste/remount, the C64 reads
+the original multi-sector file and the pasted file over IEC. Dotted-name copies
+preserve an existing file and are repeated after deletion and re-entry.
+The `messages` case supports `--mode overlay`, `freeze` and `telnet`. It checks
+single/batch paste and delete refusal, hidden Delete/Rename actions, in-use
+errors for deleting/renaming an image, and first/last-file errors. Yes must process
+the next file; No must stop. A write-locked image also refuses edits while allowing
+reads; a recursive copy into it reports WRITE PROTECTED. Refused operations leave
+the image unchanged.
+Other cases exercise the HDMI overlay.
+Use `--root /USB2` (or the device's actual USB/SD volume) to run the fixtures on
+FAT storage and additionally prove that an 8.3 alias cannot overwrite a held
+long-name image. The default root is `/Temp`.
+`image-copy-oracle` checks that malformed directory/file chains and BAMs fail the
+independent image verifier.
 
 Everything else the runner does when things go badly follows from one idea.
 

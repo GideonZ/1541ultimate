@@ -30,6 +30,8 @@ class IecDrive : public IecSlave, SubSystem, ObjectWithMenu, ConfigurableObject
 
     int my_bus_id;
     int applied_bus_id; // the configured number the processor last took (SI-103b)
+    mstring applied_partition_config;
+    bool partition_config_loaded;
     bool write_protect;
     int64_t clock_offset;
     bool enable;
@@ -49,6 +51,11 @@ class IecDrive : public IecSlave, SubSystem, ObjectWithMenu, ConfigurableObject
  
     static void set_iec_dir(IecSlave *obj, void *path);
     void announce_kernal_device(void);
+    void load_partition_config(void);
+#ifndef RUNS_ON_PC
+    static void load_partition_config_task(void *obj);
+    TaskHandle_t partition_config_task;
+#endif
 
     struct {
         Action *turn_on;
