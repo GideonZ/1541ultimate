@@ -152,8 +152,12 @@ def main() -> int:
                             if wired_mac and interface_mac(net, i) == wired_mac), None)
         if wired_entry is None:
             check_start(label)
-            reason = (f"none of the interfaces on this subnet ({[str(a) for _, a in shared]}) "
-                      f"has the Ethernet MAC GET /v1/info reports ({wired_mac or 'none'})")
+            if not wired_mac:
+                reason = ("GET /v1/info reports no ethernet_mac, which firmware before v3.15a "
+                          "does not, so the wired interface cannot be told from the WiFi one")
+            else:
+                reason = (f"none of the interfaces on this subnet ({[str(a) for _, a in shared]}) "
+                          f"has the Ethernet MAC GET /v1/info reports ({wired_mac})")
             check_skip(reason)
             return finish(device, uci, original, interface_enabled, peer, failure, reason)
         wired = wired_entry[1]

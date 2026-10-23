@@ -133,3 +133,13 @@ TEST(Route, OffLinkReplyFromANetifWithAGatewayLeavesByIt)
     EXPECT_TRUE(pick(kWifi, ip(8, 8, 8, 8)) == &r.wifi);
     EXPECT_TRUE(pick(kEth, ip(8, 8, 8, 8)) == &r.eth);
 }
+
+TEST(Route, EthernetWithoutAnAddressYetDoesNotTakeTraffic)
+{
+    Rig r;
+    reset_netifs();
+    add_netif(&r.eth, 0, kMask, true, false);      // up, DHCP has not answered
+    add_netif(&r.wifi, kWifi, kMask, true, true);
+    EXPECT_TRUE(pick(0, kPeer) == &r.wifi);
+    EXPECT_TRUE(pick(kWifi, kPeer) == &r.wifi);
+}
