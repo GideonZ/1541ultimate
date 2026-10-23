@@ -58,7 +58,7 @@ import targets  # noqa: E402
 from api import UltimateApi  # noqa: E402
 from net_target_test import (CFG_CMD_IF, CONFIG_CATEGORY, STATUS_OK, Net, Peer,  # noqa: E402
                              local_address_towards, restore_settings)
-from report import (Failure, check, check_ok, check_skip, check_start, detail,  # noqa: E402
+from report import (Failure, check, check_skip, check_start, detail,  # noqa: E402
                     format_exception, suite_fail, suite_ok, suite_skip)
 from uci import TARGET_NETWORK, Uci, interface_present  # noqa: E402
 
@@ -216,8 +216,9 @@ def main() -> int:
     except Exception as exc:  # noqa: BLE001
         failure = format_exception(exc)
     finally:
-        # Also for KeyboardInterrupt and SIGTERM-style exits, which skip the handlers above.
-        failure = failure or hand_back(device, uci, run)
+        # Also for KeyboardInterrupt and SystemExit, which skip the handlers above.
+        cleanup = hand_back(device, uci, run)
+        failure = failure or cleanup
     if failure:
         suite_fail(SUITE, failure)
         return 1
@@ -289,9 +290,9 @@ def run_checks(target, device, uci, run: Run) -> str:
         return problem
     detail("the menu shows Link Up for both interfaces")
 
-    check_start("this host can act as the device's network peer")
-    run.peer = Peer(host)
-    check_ok(f"{run.peer.ip} UDP {run.peer.udp_port}, TCP {run.peer.tcp_port}")
+    with check("this host can act as the device's network peer"):
+        run.peer = Peer(host)
+        detail(f"{run.peer.ip} UDP {run.peer.udp_port}, TCP {run.peer.tcp_port}")
 
     with check(f"{CONNECTIONS} TCP connections the device opens come from its Ethernet address"):
         for _ in range(CONNECTIONS):
@@ -321,24 +322,29 @@ def hand_back(device, uci, run: Run) -> str:
     step runs whatever the one before it did. Returns the first problem, "" if none.
     """
     problems = []
+
+    def note(exc: BaseException) -> None:
+        problems.append(str(exc) if isinstance(exc, Failure) else format_exception(exc))
+
+    # Nested, so that an interrupt in one step still reaches the ones after it.
     try:
-        if run.peer is not None:
-            run.peer.close()
-    except Exception as exc:  # noqa: BLE001
-        problems.append(format_exception(exc))
-    # An interface that is not there cannot return to Idle: release() reads $FF as Data More.
-    try:
-        if run.present and not uci.release():
-            problems.append("the command interface did not return to Idle")
-    except Exception as exc:  # noqa: BLE001
-        problems.append(format_exception(exc))
+        try:
+            if run.peer is not None:
+                run.peer.close()
+        except Exception as exc:  # noqa: BLE001
+            note(exc)
+        finally:
+            # An interface that is not there cannot return to Idle: release() reads $FF as Data More.
+            try:
+                if run.present and not uci.release():
+                    problems.append("the command interface did not return to Idle")
+            except Exception as exc:  # noqa: BLE001
+                note(exc)
     finally:
         try:
             restore_settings(device, run.original, False)
-        except Failure as exc:
-            problems.append(str(exc))
         except Exception as exc:  # noqa: BLE001
-            problems.append(format_exception(exc))
+            note(exc)
     return problems[0] if problems else ""
 
 

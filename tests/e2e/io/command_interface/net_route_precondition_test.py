@@ -158,15 +158,38 @@ def case_a_menu_that_was_open_is_left_open() -> None:
         selftest.expect("no button press", len(double.calls("PUT", "/v1/machine:menu_button")), 0)
 
 
+class SlowDraw(DeviceDouble):
+    """The first frame after the menu opens has no interface rows yet."""
+
+    first_frame_served = False
+
+    def _menu_screen(self, params):
+        full = self.menu_rows
+        if self.menu_is_open and not self.first_frame_served:
+            self.first_frame_served = True
+            self.menu_rows = list(ROOT)
+        try:
+            return super()._menu_screen(params)
+        finally:
+            self.menu_rows = full
+
+
+def case_the_read_waits_for_the_interface_rows() -> None:
+    with toggling(SlowDraw(), NET_UP, WIFI_UP, open_now=False) as double:
+        selftest.expect("both links up once the rows are drawn",
+                        net_route_test.link_problem(read_rows(double), WIRED, [WIFI]), "")
+
+
 class UciDouble(DeviceDouble):
-    """A U64: the registers read $FF while the setting is off, and Idle once it is on."""
+    """A U64: $DF1C reads $FF while the setting is off (the other registers answer, as measured),
+    and Idle once it is on."""
 
     def _readmem(self, params):
         enabled = self.configs[CATEGORY][SETTING] == "Enabled"
         address = int(params.get("address", "0"), 16)
         length = int(params.get("length", "1"))
         body = bytes([0x00 if address == 0xDF1C else 0x02] * length) if enabled \
-            else bytes([0xFF]) * length
+            else bytes([0xFF if address == 0xDF1C else 0x02] * length)
         return 200, body, "application/octet-stream"
 
 
@@ -192,6 +215,65 @@ def case_a_link_down_ends_the_suite_as_skipped() -> None:
         # The registers are released while the setting is still Enabled, then it goes home.
         selftest.expect("the setting is restored", double.configs[CATEGORY][SETTING], "Disabled")
         selftest.expect("the menu is closed again", double.menu_is_open, False)
+        selftest.expect("released just before the setting goes home",
+                        released_before_restore(double), True)
+
+
+def is_control_write(request) -> bool:
+    return (request.method in ("PUT", "POST") and request.path == "/v1/machine:writemem"
+            and request.params.get("address", "").upper() == "DF1C")
+
+
+def control_writes(double: DeviceDouble) -> int:
+    return len([r for r in double.calls() if is_control_write(r)])
+
+
+def released_before_restore(double: DeviceDouble) -> bool:
+    """Whether the last request before the last config write, status reads aside, is a
+    write to $DF1C: release() writes the control register and reads the state back."""
+    calls = double.calls()
+    restore = max(i for i, r in enumerate(calls)
+                  if r.method == "PUT" and r.path.startswith("/v1/configs/"))
+    before = [r for r in calls[:restore] if r.path != "/v1/machine:readmem"]
+    return bool(before) and is_control_write(before[-1])
+
+
+def case_a_failed_run_still_hands_everything_back() -> None:
+    with toggling(UciDouble(), NET_UP, WIFI_UP, open_now=False) as double:
+        double.configs[CATEGORY] = {SETTING: "Disabled"}
+        routing = "a TCP connection came from 10.43.23.83 (the WiFi address)"
+        with mock.patch.object(net_route_test, "Peer", side_effect=Failure(routing)):
+            code, output, _ = run_with_two_interfaces(double)
+        selftest.expect("exit code", code, 1)
+        selftest.expect("the routing failure is the one reported", routing in output, True)
+        selftest.expect("not the cleanup", "did not return to Idle" in output, False)
+        selftest.expect("the setting is restored", double.configs[CATEGORY][SETTING], "Disabled")
+        selftest.expect("the interface is released just before the setting goes home",
+                        released_before_restore(double), True)
+
+
+def case_a_release_that_never_reaches_idle_fails_a_skip() -> None:
+    with toggling(UciDouble(), NET_UP, WIFI_DOWN, open_now=False) as double:
+        double.configs[CATEGORY] = {SETTING: "Disabled"}
+        with mock.patch.object(net_route_test.Uci, "release", side_effect=[True, False]):
+            code, output, _ = run_with_two_interfaces(double)
+        selftest.expect("exit code", code, 1)
+        selftest.expect("the cleanup problem is reported", "did not return to Idle" in output, True)
+        selftest.expect("not as a skip", "SKIP" in output.splitlines()[-1], False)
+        selftest.expect("the setting is still restored", double.configs[CATEGORY][SETTING], "Disabled")
+
+
+def case_the_runs_own_failure_wins_over_a_cleanup_problem() -> None:
+    with toggling(UciDouble(), NET_UP, WIFI_UP, open_now=False) as double:
+        double.configs[CATEGORY] = {SETTING: "Disabled"}
+        routing = "a TCP connection came from 10.43.23.83 (the WiFi address)"
+        with (mock.patch.object(net_route_test, "Peer", side_effect=Failure(routing)),
+              mock.patch.object(net_route_test.Uci, "release", side_effect=[True, False])):
+            code, output, _ = run_with_two_interfaces(double)
+        last = output.splitlines()[-1]
+        selftest.expect("exit code", code, 1)
+        selftest.expect("the routing failure is the verdict", routing in last, True)
+        selftest.expect("the cleanup problem does not replace it", "Idle" in last, False)
 
 
 def case_absent_interface_is_a_skip() -> None:
@@ -207,10 +289,7 @@ def case_absent_interface_is_a_skip() -> None:
         writes = [r.params.get("value") for r in double.calls("PUT")
                   if r.path.endswith(f"/{SETTING.replace(' ', '%20')}")]
         selftest.expect("the setting was enabled, then restored", writes, ["Enabled", "Disabled"])
-        control_writes = [r for r in double.calls("PUT", "/v1/machine:writemem")
-                          + double.calls("POST", "/v1/machine:writemem")
-                          if r.params.get("address", "").upper() == "DF1C"]
-        selftest.expect("no write to the control register", len(control_writes), 0)
+        selftest.expect("no write to the control register", control_writes(double), 0)
         if seconds >= RELEASE_WAIT_SECONDS:
             raise Failure(f"took {seconds:.1f}s, which is a wait for an interface that is absent")
 
@@ -224,7 +303,11 @@ def main() -> int:
                      case_the_menu_it_opened_is_closed_again,
                      case_the_menu_is_closed_when_the_rows_never_come,
                      case_a_menu_that_was_open_is_left_open,
-                     case_a_link_down_ends_the_suite_as_skipped):
+                     case_the_read_waits_for_the_interface_rows,
+                     case_a_link_down_ends_the_suite_as_skipped,
+                     case_a_failed_run_still_hands_everything_back,
+                     case_a_release_that_never_reaches_idle_fails_a_skip,
+                     case_the_runs_own_failure_wins_over_a_cleanup_problem):
             with check(case.__name__.removeprefix("case_").replace("_", " ")):
                 case()
         with check("an absent command interface ends the suite as skipped, setting restored"):
