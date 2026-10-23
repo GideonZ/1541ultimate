@@ -1,12 +1,15 @@
 CXX ?= g++
 CXXFLAGS := -std=c++14 -g -Wall -Wextra -I. -I.. -I../../usb/tests
+LWIP_INC := -Ilwip_host -I../../../lwip/src/include
 OUTPUT_DIR := output
 ETH_TX_FRAME_TEST := $(OUTPUT_DIR)/ethTxFrameTest
 ETH_TX_FRAME_RED := $(OUTPUT_DIR)/ethTxFrameTestLegacy
+ROUTE_SELECT_TEST := $(OUTPUT_DIR)/routeSelectTest
+ROUTE_SELECT_RED := $(OUTPUT_DIR)/routeSelectTestLegacy
 
-.PHONY: all eth-tx-frame eth-tx-frame-red clean
+.PHONY: all eth-tx-frame eth-tx-frame-red route-select route-select-red clean
 
-all: eth-tx-frame eth-tx-frame-red
+all: eth-tx-frame eth-tx-frame-red route-select route-select-red
 
 eth-tx-frame:
 	mkdir -p $(OUTPUT_DIR)
@@ -23,6 +26,22 @@ eth-tx-frame-red:
 		exit 1; \
 	else \
 		echo "eth-tx-frame-red: $$(tail -1 $(OUTPUT_DIR)/red.log) against the pre-fix behaviour, as required"; \
+	fi
+
+route-select:
+	mkdir -p $(OUTPUT_DIR)
+	$(CXX) $(CXXFLAGS) $(LWIP_INC) route_select_test.cpp ../../usb/tests/host_test_main.cpp -lpthread -o $(ROUTE_SELECT_TEST) && $(ROUTE_SELECT_TEST)
+
+# The same cases against a model of lwIP's lookup (first on-link netif in the list).
+# It has to fail, as for eth-tx-frame-red.
+route-select-red:
+	mkdir -p $(OUTPUT_DIR)
+	$(CXX) $(CXXFLAGS) $(LWIP_INC) -DROUTE_SELECT_LEGACY route_select_test.cpp ../../usb/tests/host_test_main.cpp -lpthread -o $(ROUTE_SELECT_RED)
+	@if $(ROUTE_SELECT_RED) > $(OUTPUT_DIR)/route-red.log 2>&1; then \
+		echo "route-select-red: the suite passed against the pre-fix behaviour -- it no longer catches the defect"; \
+		exit 1; \
+	else \
+		echo "route-select-red: $$(tail -1 $(OUTPUT_DIR)/route-red.log) against the pre-fix behaviour, as required"; \
 	fi
 
 clean:
