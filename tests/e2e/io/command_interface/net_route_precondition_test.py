@@ -130,6 +130,70 @@ def case_rows_read_over_rest() -> None:
                         "WiFi link is down" in reason, True)
 
 
+def toggling(double: DeviceDouble, *interface_rows: str, open_now: bool) -> DeviceDouble:
+    double.menu_button_toggles = True
+    double.menu_is_open = open_now
+    double.menu_rows = [*ROOT, *interface_rows]
+    return double
+
+
+def case_the_menu_it_opened_is_closed_again() -> None:
+    with toggling(DeviceDouble(), NET_UP, WIFI_UP, open_now=False) as double:
+        rows = read_rows(double)
+        selftest.expect("the rows were read", net_route_test.link_problem(rows, WIRED, [WIFI]), "")
+        selftest.expect("the menu is closed again", double.menu_is_open, False)
+
+
+def case_the_menu_is_closed_when_the_rows_never_come() -> None:
+    with toggling(DeviceDouble(), open_now=False) as double:
+        with mock.patch.object(net_route_test, "MENU_OPEN_SECONDS", 0.6):
+            selftest.expect("no interface rows", net_route_test.link_rows(read_rows(double)), [])
+        selftest.expect("the menu is closed again", double.menu_is_open, False)
+
+
+def case_a_menu_that_was_open_is_left_open() -> None:
+    with toggling(DeviceDouble(), NET_UP, WIFI_UP, open_now=True) as double:
+        read_rows(double)
+        selftest.expect("still open", double.menu_is_open, True)
+        selftest.expect("no button press", len(double.calls("PUT", "/v1/machine:menu_button")), 0)
+
+
+class UciDouble(DeviceDouble):
+    """A U64: the registers read $FF while the setting is off, and Idle once it is on."""
+
+    def _readmem(self, params):
+        enabled = self.configs[CATEGORY][SETTING] == "Enabled"
+        address = int(params.get("address", "0"), 16)
+        length = int(params.get("length", "1"))
+        body = bytes([0x00 if address == 0xDF1C else 0x02] * length) if enabled \
+            else bytes([0xFF]) * length
+        return 200, body, "application/octet-stream"
+
+
+def run_with_two_interfaces(double: DeviceDouble) -> tuple[int, str, float]:
+    """net_route_test.main() with the UCI network target's answers stood in for."""
+    double.ethernet_mac = MAC
+    addresses = [(0, ipaddress.IPv4Interface(f"{WIRED}/24")),
+                 (1, ipaddress.IPv4Interface(f"{WIFI}/24"))]
+    with (mock.patch.object(net_route_test, "interface_addresses", return_value=addresses),
+          mock.patch.object(net_route_test, "interface_mac",
+                            side_effect=lambda _net, index: MAC if index == 0 else "aa:bb:cc:dd:ee:ff"),
+          mock.patch.object(net_route_test, "local_address_towards", return_value="10.43.23.182")):
+        return run_suite(double)
+
+
+def case_a_link_down_ends_the_suite_as_skipped() -> None:
+    with toggling(UciDouble(), NET_UP, WIFI_DOWN, open_now=False) as double:
+        double.configs[CATEGORY] = {SETTING: "Disabled"}
+        code, output, _ = run_with_two_interfaces(double)
+        selftest.expect("exit code", code, 0)
+        selftest.expect("skipped for the WiFi link", "WiFi link is down" in output, True)
+        selftest.expect("not a failure", "FAIL" in output, False)
+        # The registers are released while the setting is still Enabled, then it goes home.
+        selftest.expect("the setting is restored", double.configs[CATEGORY][SETTING], "Disabled")
+        selftest.expect("the menu is closed again", double.menu_is_open, False)
+
+
 def case_absent_interface_is_a_skip() -> None:
     with AbsentInterface() as double:
         double.configs[CATEGORY] = {SETTING: "Disabled"}
@@ -156,7 +220,11 @@ def main() -> int:
         for case in (case_links_both_up, case_wifi_down_with_its_address_kept,
                      case_ethernet_down_with_its_address_kept,
                      case_wifi_not_connected_has_no_link_row, case_no_interface_rows,
-                     case_a_menu_that_will_not_open, case_rows_read_over_rest):
+                     case_a_menu_that_will_not_open, case_rows_read_over_rest,
+                     case_the_menu_it_opened_is_closed_again,
+                     case_the_menu_is_closed_when_the_rows_never_come,
+                     case_a_menu_that_was_open_is_left_open,
+                     case_a_link_down_ends_the_suite_as_skipped):
             with check(case.__name__.removeprefix("case_").replace("_", " ")):
                 case()
         with check("an absent command interface ends the suite as skipped, setting restored"):

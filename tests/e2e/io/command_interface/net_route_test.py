@@ -32,8 +32,11 @@ software/io/network/tests cover that selection, and the reply path on hardware
 is checked with a capture on this host's wired port.
 
 Supported on any Ultimate whose FPGA provides the command interface. The suite
-enables the "Command Interface" setting and restores it on exit. Nothing else
-on the device is changed.
+enables the "Command Interface" setting and restores it on exit. When the menu is
+closed it opens it to read the link rows (which stops the C64 while the menu is up in
+Freeze mode) and closes it again before any traffic. The menu has to be at its root,
+and it keeps its place across a close, so a run started with the browser inside a
+directory skips as unreadable. Nothing else on the device is changed.
 
     ./run-tests --suite uci-net-route u64
 """
@@ -154,9 +157,10 @@ def link_problem(rows: list[str], wired: ipaddress.IPv4Address,
 def read_link_rows(machine) -> list[str]:
     """The root menu's rows, opening the menu if it is closed and closing it again.
 
-    An empty list when the menu will not open. A menu that was already open is left open
-    and read where it is: if it is not at the root there are no interface rows, which the
-    caller reports as unreadable.
+    The menu is closed again, whatever happens while it is open, if this opened it. A menu
+    that was already open is left open and read where it is: the browser keeps its place
+    across a close, so a menu that is not at the root has no interface rows, which the
+    caller reports as unreadable. An empty list when the menu will not open.
     """
     rows = machine.menu_rows()
     if rows:
@@ -164,13 +168,17 @@ def read_link_rows(machine) -> list[str]:
     machine.menu_button()
     try:
         deadline = time.monotonic() + MENU_OPEN_SECONDS
-        while not rows and time.monotonic() < deadline:
+        # The first frame can be up before the browser has drawn its rows.
+        while not link_rows(rows) and time.monotonic() < deadline:
             time.sleep(pacing.MENU_TOGGLE_SETTLE_SECONDS)
             rows = machine.menu_rows()
         return rows
     finally:
-        if rows:
-            machine.close_menu_from_anywhere()
+        try:
+            if machine.menu_open():
+                machine.close_menu_from_anywhere()
+        except Exception as exc:  # noqa: BLE001
+            detail(f"the menu could not be closed again: {format_exception(exc)}")
 
 
 class Run:
@@ -306,27 +314,29 @@ def run_checks(target, device, uci, run: Run) -> str:
 
 
 def hand_back(device, uci, run: Run) -> str:
-    """Put the setting back first, then close the peer and hand the interface back.
+    """Close the peer, hand the interface back, then put the setting home.
 
-    Each step runs whatever the one before it did. Returns the first problem, "" if none.
+    In that order, as net_target_test.py does: a device whose setting was Disabled lets go
+    of the registers once it is restored, and release() could then never see Idle. Each
+    step runs whatever the one before it did. Returns the first problem, "" if none.
     """
     problems = []
     try:
-        restore_settings(device, run.original, False)
-    except Failure as exc:
-        problems.append(str(exc))
+        if run.peer is not None:
+            run.peer.close()
     except Exception as exc:  # noqa: BLE001
         problems.append(format_exception(exc))
-    if run.peer is not None:
-        try:
-            run.peer.close()
-        except Exception as exc:  # noqa: BLE001
-            problems.append(format_exception(exc))
     # An interface that is not there cannot return to Idle: release() reads $FF as Data More.
-    if run.present:
+    try:
+        if run.present and not uci.release():
+            problems.append("the command interface did not return to Idle")
+    except Exception as exc:  # noqa: BLE001
+        problems.append(format_exception(exc))
+    finally:
         try:
-            if not uci.release():
-                problems.append("the command interface did not return to Idle")
+            restore_settings(device, run.original, False)
+        except Failure as exc:
+            problems.append(str(exc))
         except Exception as exc:  # noqa: BLE001
             problems.append(format_exception(exc))
     return problems[0] if problems else ""

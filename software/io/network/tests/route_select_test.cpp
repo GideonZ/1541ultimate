@@ -186,15 +186,18 @@ TEST(Route, UdpToAnOwnAddressIsLoopedBackInEitherListOrder)
     }
 }
 
-// What follows for a connection (TCP checks nothing about the local address): from .81 to
-// the device's own .83 the route is Ethernet, the source's owner, so the segment goes on
-// the wire to our own WiFi address; master looped it back through WiFi, the list head. From
-// .83 to .81 it is WiFi, on the wire, where master (WiFi head) gave the same.
+// What follows for a connection (TCP checks nothing about the local address): between the
+// device's two addresses the route is the source's owner's netif, in either list order, and
+// the segment goes on the wire because the destination is not that netif's own address. On
+// master the route was the list head, which looped it back when the head owned the
+// destination (.81 to .83 with WiFi first, .83 to .81 with Ethernet first).
 TEST(Route, AnExplicitSourceDecidesTheRouteToTheOtherOwnAddress)
 {
-    Rig r;
-    EXPECT_TRUE(pick(kWifi, kEth) == &r.wifi);
-    EXPECT_TRUE(pick(kEth, kWifi) == &r.eth);
+    for (int eth_head = 0; eth_head < 2; eth_head++) {
+        Rig r(true, true, eth_head != 0);
+        EXPECT_TRUE(pick(kWifi, kEth) == &r.wifi);
+        EXPECT_TRUE(pick(kEth, kWifi) == &r.eth);
+    }
 }
 
 // Rule 2 must not make a reply worse than lwIP's lookup: a netif without a gateway
@@ -220,7 +223,7 @@ TEST(Route, EthernetWithoutAnAddressYetDoesNotTakeTraffic)
 {
     Rig r;
     reset_netifs();
-    add_netif(&r.eth, 0, kMask, true, false);      // up, DHCP has not answered
+    add_netif(&r.eth, 0, 0, true, false);          // up, DHCP has not answered: address and mask 0
     add_netif(&r.wifi, kWifi, kMask, true, true);
     EXPECT_TRUE(pick(0, kPeer) == &r.wifi);
     EXPECT_TRUE(pick(kWifi, kPeer) == &r.wifi);
