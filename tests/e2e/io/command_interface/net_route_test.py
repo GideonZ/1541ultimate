@@ -48,7 +48,7 @@ from api import UltimateApi  # noqa: E402
 from net_target_test import (CFG_CMD_IF, CONFIG_CATEGORY, STATUS_OK, Net, Peer,  # noqa: E402
                              local_address_towards, restore_settings)
 from report import (Failure, check, check_ok, check_skip, check_start, detail,  # noqa: E402
-                    format_exception, suite_fail, suite_ok)
+                    format_exception, suite_fail, suite_ok, suite_skip)
 from uci import TARGET_NETWORK, Uci, interface_present  # noqa: E402
 
 SUITE = "net_route_test"
@@ -120,8 +120,9 @@ def main() -> int:
         label = "the device originates traffic from its Ethernet address"
         if not interface_present(uci):
             check_start(label)
-            check_skip("$DF1B-$DF1F all read $FF, so no command interface is present")
-            return finish(device, uci, original, interface_enabled, peer, failure)
+            reason = "$DF1B-$DF1F all read $FF, so no command interface is present"
+            check_skip(reason)
+            return finish(device, uci, original, interface_enabled, peer, failure, reason)
 
         net = Net(uci)
         host = local_address_towards(target.device)
@@ -131,16 +132,18 @@ def main() -> int:
         shared = shared_subnet(addresses, host)
         if shared is None:
             check_start(label)
-            check_skip(f"needs two interfaces with an address on the subnet of this host "
-                       f"({host}); the device has {[str(a) for _, a in addresses]}")
-            return finish(device, uci, original, interface_enabled, peer, failure)
+            reason = (f"needs two interfaces with an address on the subnet of this host "
+                      f"({host}); the device has {[str(a) for _, a in addresses]}")
+            check_skip(reason)
+            return finish(device, uci, original, interface_enabled, peer, failure, reason)
 
         (wired_index, wired), *others = shared
         if wired_index != 0:
             check_start(label)
-            check_skip(f"interface 0, the default one, is not on this subnet: it is "
-                       f"{[str(a) for i, a in addresses if i == 0] or 'without an address'}")
-            return finish(device, uci, original, interface_enabled, peer, failure)
+            reason = (f"interface 0, the default one, is not on this subnet: it is "
+                      f"{[str(a) for i, a in addresses if i == 0] or 'without an address'}")
+            check_skip(reason)
+            return finish(device, uci, original, interface_enabled, peer, failure, reason)
         wireless = [a.ip for _, a in others]
         detail(f"Ethernet {wired.ip}, other {[str(a) for a in wireless]}, this host {host}")
 
@@ -172,8 +175,10 @@ def main() -> int:
     return finish(device, uci, original, interface_enabled, peer, failure)
 
 
-def finish(device, uci, original, interface_enabled, peer, failure: str) -> int:
-    """Hand the interface and the setting back, then report."""
+def finish(device, uci, original, interface_enabled, peer, failure: str,
+           skipped: str = "") -> int:
+    """Hand the interface and the setting back, then report. `skipped` is why the
+    suite could not run; it ends the suite as skipped, never as passed."""
     if peer is not None:
         peer.close()
     released = uci.release() if interface_enabled else True
@@ -186,6 +191,9 @@ def finish(device, uci, original, interface_enabled, peer, failure: str) -> int:
     if failure:
         suite_fail(SUITE, failure)
         return 1
+    if skipped:
+        suite_skip(SUITE, skipped)
+        return 0
     suite_ok(SUITE)
     return 0
 
