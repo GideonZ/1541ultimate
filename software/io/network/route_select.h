@@ -15,6 +15,7 @@
 //    to the device's own WiFi address still loops back instead of going on the wire.
 //  - A source address that belongs to an up netif: that netif. A reply to a
 //    connection that came in on .81 leaves from .81 and does not change interface.
+//    Only when the destination is on that netif's subnet or the netif has a gateway.
 //  - No source yet (an unbound connect or sendto): among the up netifs whose
 //    subnet contains the destination, a wired one before a wireless one.
 //
@@ -39,7 +40,11 @@ static inline struct netif *route_select(const ip4_addr_t *src, const ip4_addr_t
             continue;
         }
         if (have_src) {
-            if (ip4_addr_eq(src, netif_ip4_addr(n))) {
+            // An off-link destination needs a gateway on that netif; without one the
+            // packet would be dropped, so leave it to lwIP as before.
+            if (ip4_addr_eq(src, netif_ip4_addr(n)) &&
+                (ip4_addr_net_eq(dest, netif_ip4_addr(n), netif_ip4_netmask(n)) ||
+                 !ip4_addr_isany_val(*netif_ip4_gw(n)))) {
                 return n;
             }
             continue;

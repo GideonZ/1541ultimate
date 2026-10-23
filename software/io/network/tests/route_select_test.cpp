@@ -114,3 +114,22 @@ TEST(Route, ConnectionToAnOwnAddressStaysWithThatInterface)
     EXPECT_TRUE(pick(kEth, kWifi) == &r.wifi);
     EXPECT_TRUE(pick(0, kEth) == &r.eth);
 }
+
+// Rule 2 must not make a reply worse than lwIP's lookup: a netif without a gateway
+// cannot send to an off-link client (ARP has nobody to ask), while the default
+// netif can.
+TEST(Route, OffLinkReplyFromANetifWithoutGatewayStaysWithLwip)
+{
+    Rig r;
+    EXPECT_TRUE(pick(kWifi, ip(8, 8, 8, 8)) == &r.eth);        // netif_default, as before
+}
+
+TEST(Route, OffLinkReplyFromANetifWithAGatewayLeavesByIt)
+{
+    Rig r;
+    reset_netifs();
+    add_netif(&r.eth, kEth, kMask, true, false, ip(10, 43, 23, 1));
+    add_netif(&r.wifi, kWifi, kMask, true, true, ip(10, 43, 23, 1));
+    EXPECT_TRUE(pick(kWifi, ip(8, 8, 8, 8)) == &r.wifi);
+    EXPECT_TRUE(pick(kEth, ip(8, 8, 8, 8)) == &r.eth);
+}

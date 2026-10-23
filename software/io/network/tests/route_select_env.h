@@ -26,11 +26,13 @@ struct netif *netif_default;
 
 inline void reset_netifs() { netif_list = NULL; netif_default = NULL; }
 
-inline void add_netif(struct netif *n, uint32_t addr, uint32_t mask, bool up, bool wireless)
+inline void add_netif(struct netif *n, uint32_t addr, uint32_t mask, bool up, bool wireless,
+                      uint32_t gw = 0)
 {
     memset(n, 0, sizeof(*n));
     n->ip_addr.addr = addr;
     n->netmask.addr = mask;
+    n->gw.addr = gw;
     n->flags = (up ? (NETIF_FLAG_UP | NETIF_FLAG_LINK_UP) : 0);
     n->state = wireless ? (void *)1 : NULL;
     n->next = netif_list;          // netif_add() prepends
