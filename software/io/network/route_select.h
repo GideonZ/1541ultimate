@@ -25,6 +25,12 @@
 // Anything else returns NULL, and lwIP carries on as before: off-link
 // destinations still go to netif_default, and sockets bound with
 // SO_BINDTODEVICE never get here.
+// A netif that can carry traffic: up, with link and an address.
+static inline int route_usable(const struct netif *n)
+{
+    return netif_is_up(n) && netif_is_link_up(n) && !ip4_addr_isany_val(*netif_ip4_addr(n));
+}
+
 static inline struct netif *route_select(const ip4_addr_t *src, const ip4_addr_t *dest,
                                          int (*is_wireless)(const struct netif *))
 {
@@ -33,13 +39,13 @@ static inline struct netif *route_select(const ip4_addr_t *src, const ip4_addr_t
     struct netif *n;
 
     NETIF_FOREACH(n) {
-        if (netif_is_up(n) && netif_is_link_up(n) && !ip4_addr_isany_val(*netif_ip4_addr(n)) &&
-            ip4_addr_eq(dest, netif_ip4_addr(n)) && (!have_src || ip4_addr_eq(src, dest))) {
+        if (route_usable(n) && ip4_addr_eq(dest, netif_ip4_addr(n)) &&
+            (!have_src || ip4_addr_eq(src, dest))) {
             return n;
         }
     }
     NETIF_FOREACH(n) {
-        if (!netif_is_up(n) || !netif_is_link_up(n) || ip4_addr_isany_val(*netif_ip4_addr(n))) {
+        if (!route_usable(n)) {
             continue;
         }
         if (have_src) {

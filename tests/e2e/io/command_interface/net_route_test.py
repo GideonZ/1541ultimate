@@ -294,23 +294,34 @@ def run_checks(target, device, uci, run: Run) -> str:
         run.peer = Peer(host)
         detail(f"{run.peer.ip} UDP {run.peer.udp_port}, TCP {run.peer.tcp_port}")
 
-    with check(f"{CONNECTIONS} TCP connections the device opens come from its Ethernet address"):
-        for _ in range(CONNECTIONS):
-            handle = net.open_tcp(run.peer.ip, run.peer.tcp_port)
+    # TCP and UDP are routed separately, so a failing TCP check must not stop the UDP one.
+    failures: list[Failure] = []
+
+    try:
+        with check(f"{CONNECTIONS} TCP connections the device opens come from its Ethernet address"):
+            for _ in range(CONNECTIONS):
+                handle = net.open_tcp(run.peer.ip, run.peer.tcp_port)
+                try:
+                    conn = run.peer.accept_tcp()
+                    expect_origin("a TCP connection", conn.getpeername()[0], wired.ip, wireless)
+                    conn.close()
+                finally:
+                    net.close(handle)
+    except Failure as exc:
+        failures.append(exc)
+
+    try:
+        with check("a UDP datagram the device sends comes from its Ethernet address"):
+            handle = net.open_udp(run.peer.ip, run.peer.udp_port)
             try:
-                conn = run.peer.accept_tcp()
-                expect_origin("a TCP connection", conn.getpeername()[0], wired.ip, wireless)
-                conn.close()
+                source, _ = run.peer.learn_udp_peer(net, handle)
+                expect_origin("a UDP datagram", source, wired.ip, wireless)
             finally:
                 net.close(handle)
-
-    with check("a UDP datagram the device sends comes from its Ethernet address"):
-        handle = net.open_udp(run.peer.ip, run.peer.udp_port)
-        try:
-            source, _ = run.peer.learn_udp_peer(net, handle)
-            expect_origin("a UDP datagram", source, wired.ip, wireless)
-        finally:
-            net.close(handle)
+    except Failure as exc:
+        failures.append(exc)
+    if failures:
+        raise failures[0]
     return ""
 
 
