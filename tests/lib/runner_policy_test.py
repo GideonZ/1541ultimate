@@ -1222,6 +1222,8 @@ def run_cabling_checks():
         expect("warnings", len(warnings), 1)
         for name in ("c64u", "u64", cabling.SWEEP_ENV):
             expect(f"names {name}", name in warnings[0], True)
+        for consequence in ("drives stay on", "not captured or restored"):
+            expect(f"says {consequence}", consequence in " ".join(warnings[0].split()), True)
 
     with check("no warning when nothing would have been swept"):
         expect("opted in", sweeps_seen(["c64u"], "1")[1], [])

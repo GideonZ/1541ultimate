@@ -226,6 +226,8 @@ def establish(tokens: Sequence[str], password: str | None, timeout: float,
             added += declare(detect([address, computer], password, timeout, **seams))
     if unlooked:
         warn(f"cabling: a cartridge fitted to {', '.join(dict.fromkeys(unlooked))} "
-             f"but not named will not be looked for; set {SWEEP_ENV}=1 to probe "
-             "the computer's /24 for one")
+             "but not named is not looked for: its drives stay on the "
+             "computer's IEC bus and its settings are not captured or "
+             f"restored. Name it, or set {SWEEP_ENV}=1 to probe the "
+             "computer's /24 for one")
     return added

@@ -89,7 +89,9 @@ other hosts: the computer writes a random 8-byte fingerprint into its own RAM
 at `$0340`, and the cartridge reads that address through its own DMA, so only
 the computer it is plugged into returns the same bytes. A computer that has no
 cartridge declared is not searched for one by default; the run warns once,
-naming those computers, that a cartridge fitted but not named will be missed.
+naming those computers, that a cartridge fitted but not named is not looked
+for: its drives stay on the computer's IEC bus and its settings are not
+captured or restored.
 `U64_CABLING_SWEEP=1` (exactly `1`) opts in to asking the computer's /24 for
 `/v1/info`, which probes devices on that network that are not yours; the probe
 does not follow redirects, but a host that answers as an Ultimate II then
