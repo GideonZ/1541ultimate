@@ -116,11 +116,11 @@ int wifi_setbaud(int baudrate, uint8_t flowctrl)
 
 BaseType_t wifi_detect(uint16_t *major, uint16_t *minor, char *str, int maxlen)
 {
-    BUFARGS_NOREPLY(identify, CMD_IDENTIFY);
+    BUFARGS_NOREPLY(identify, CMD_IDENTIFY, pdFALSE); // the result is a success flag here
     if (!wifi_reply_register(&args->hdr)) {
         esp32.uart->FreeBuffer(buf);
         printf(no_wifi_slot);
-        return pdFALSE; // the result is a success flag here
+        return pdFALSE;
     }
 
     // now block thread for reply

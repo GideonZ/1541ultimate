@@ -78,17 +78,18 @@ extern const char *no_wifi_slot;
 #define WIFI_REPLY_TIMEOUT_MS   10000
 #define WIFI_SLOW_TIMEOUT_MS    60000 // scan and connect
 
-// For requests that are not answered, such as network frames
-#define BUFARGS_NOREPLY(x, cmd) command_buf_t *buf; \
+// For requests that are not answered, such as network frames. 'failed' is what
+// the caller returns when there is no TX buffer: not 0 where that reads as success.
+#define BUFARGS_NOREPLY(x, cmd, failed) command_buf_t *buf; \
                             BaseType_t gotbuf = esp32.uart->GetBuffer(&buf, 1000); \
-                            if (gotbuf == pdFALSE) { printf(no_wifi_buf); /*print_uart_status();*/ return pdFALSE; } \
+                            if (gotbuf == pdFALSE) { printf(no_wifi_buf); /*print_uart_status();*/ return failed; } \
                             rpc_ ## x ## _req *args = (rpc_ ## x ## _req *)buf->data; \
                             args->hdr.command = cmd; \
                             args->hdr.sequence = 0; \
                             args->hdr.thread = 0xFF; \
                             buf->size = sizeof(rpc_ ## x ## _req);
 
-#define BUFARGS(x, cmd)     BUFARGS_NOREPLY(x, cmd) \
+#define BUFARGS(x, cmd)     BUFARGS_NOREPLY(x, cmd, -1) \
                             if (!wifi_reply_register(&args->hdr)) { esp32.uart->FreeBuffer(buf); printf(no_wifi_slot); return -1; }
 
 #define TRANSMIT_T(x, ms)   buf = wifi_transmit(buf, ms); \

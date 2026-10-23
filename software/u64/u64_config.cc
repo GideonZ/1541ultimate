@@ -1427,10 +1427,9 @@ int U64Config :: setLedSelector(ConfigItem *it)
 }
 
 #if U64 == 2
-// A starved TX buffer makes BUFARGS answer 0, which is also what success
-// returns, so what the module holds is the only evidence a call arrived. (A
-// call without a reply slot or without a reply in time answers -1.) A
-// second attempt separates a busy buffer from a module without the command.
+// A call without a TX buffer, without a reply slot or without a reply in time
+// answers -1. A second attempt separates a busy buffer from a module without
+// the command.
 #define MODULE_ATTEMPTS 2
 
 // False when no answer carrying a known mode arrived, whatever the reason.
@@ -1446,15 +1445,15 @@ static bool readPowerOnMode(uint8_t &mode, uint8_t &last_state)
     return false;
 }
 
-// Reads back, because the write cannot report a starved buffer either.
+// Reads back, so that what the module holds is the evidence the write arrived.
 static bool writePowerOnMode(uint8_t mode)
 {
     for (int attempt = 0; attempt < MODULE_ATTEMPTS; attempt++) {
         int retval = wifi_set_power_mode(mode);
         if (retval) {
             printf("Setting the power on behavior failed with error %d.\n", retval);
-            // An error is the module's own answer, or a call that got no reply in time
-            // or no reply slot; neither is helped by sending it again.
+            // An error is the module's own answer, or a call that got no TX buffer,
+            // no reply slot or no reply in time; sending it again does not help.
             return false;
         }
         uint8_t stored = 0xFF;
@@ -1544,7 +1543,8 @@ static bool writeWakeOnWifi(uint8_t enabled)
         int retval = wifi_set_wake_on_wifi(enabled);
         if (retval) {
             printf("Setting wake on Wi-Fi failed with error %d.\n", retval);
-            // An error is the module's own answer, not a call that went missing.
+            // An error is the module's own answer, or a call that got no TX buffer,
+            // no reply slot or no reply in time; sending it again does not help.
             return false;
         }
         uint8_t stored = 0xFF;
