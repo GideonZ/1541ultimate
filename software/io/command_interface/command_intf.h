@@ -90,6 +90,10 @@ public:
     void dump_registers(void);
     const char *identify(void) { return "Command Interface"; }
     bool is_dma_active(void);
+    // Whether a C64 reset has come in that run_task has not yet handed to the
+    // targets. Only looks: a long command polls it to end early, and the reset
+    // is still delivered after the command returns.
+    bool reset_pending(void);
     void set_kernal_device_id(uint8_t id);
 };
 

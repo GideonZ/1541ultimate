@@ -149,6 +149,7 @@ SRCS_CC	 =  u2p_init.cc \
 			command_intf.cc \
 			dos.cc \
 			network_target.cc \
+			network_target_tls.cc \
 			control_target.cc \
 			filetype_tap.cc \
 			socket_stream.cc \
@@ -164,6 +165,8 @@ SRCS_CC	 =  u2p_init.cc \
 			esp32.cc \
 			wifi.cc \
 			wifi_cmd.cc \
+			wifi_dedicated.cc \
+			wifi_tls.cc \
 			acia.cc \
 			modem.cc \
 			listener_socket.cc \
@@ -229,6 +232,7 @@ VPATH +=	$(BSP)/HAL/inc
 VPATH +=	$(BSP)/drivers/inc
 VPATH +=	$(PATH_SW)/6502/sidcrt/target
 VPATH +=	$(PATH_SW)/wifi/raw_u64/main
+VPATH +=	$(PATH_SW)/wifi/tls
 
 #            sock_echo.c \
 #			sys_calls.cc \

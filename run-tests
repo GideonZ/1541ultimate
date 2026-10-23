@@ -379,6 +379,11 @@ SUITES: Sequence[Suite] = (
     # able to reach it; the scenarios that need that skip where it cannot.
     Suite("e2e", "uci-net-target", "tests/e2e/io/command_interface/net_target_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --test all", profile=profiles.DEEP),
+    # The UCI TLS suite against a simulated device; needs no device. The device
+    # suite itself, net_tls_test.py, is opt-in by name only and deliberately NOT
+    # registered: see tests/lib/registry_test.py NOT_SUITES.
+    Suite("e2e", "uci-net-tls-selftest", "tests/e2e/io/command_interface/net_tls_selftest.py",
+          "", profile=profiles.DEEP),
     # Two checks that are genuinely about the Telnet transport itself (a
     # concurrent poll-mode connection, per-keystroke output volume) only run
     # under --mode telnet.
