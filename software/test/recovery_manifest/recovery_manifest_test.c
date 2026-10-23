@@ -16,6 +16,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "mbedtls/pk.h"
 #include "psa/crypto.h"
 #include "recovery_manifest.h"
 #include "recovery_verify.h"
@@ -23,6 +24,9 @@
 #ifndef VECTORS_DIR
 #define VECTORS_DIR "vectors"
 #endif
+
+/* recovery_trust.c, the keys the board ships with. */
+extern const char *const recovery_trusted_keys[];
 
 static int failures;
 static int checks;
@@ -457,6 +461,50 @@ static void test_serial_patterns(void)
     free(text);
 }
 
+/* The keys the board ships with, main and spare: each must load as an EC public
+   key, no two may be the same (a spare pasted as a copy of the main key rotates
+   nothing), and a manifest must be verified by a key behind all of them. */
+static void test_shipped_keys(void)
+{
+    int n = 0;
+    while (recovery_trusted_keys[n]) {
+        mbedtls_pk_context pk;
+        mbedtls_pk_init(&pk);
+        check(psa_crypto_init() == PSA_SUCCESS, "the crypto library starts");
+        check(mbedtls_pk_parse_public_key(&pk, (const unsigned char *)recovery_trusted_keys[n],
+                                          strlen(recovery_trusted_keys[n]) + 1) == 0 &&
+              PSA_KEY_TYPE_IS_ECC_PUBLIC_KEY(mbedtls_pk_get_key_type(&pk)),
+              "a shipped key loads as an EC public key");
+        mbedtls_pk_free(&pk);
+        n++;
+    }
+    check(n >= 2, "a spare key ships next to the main key");
+    int distinct = 1;
+    for (int i = 0; i < n; i++) {
+        for (int j = i + 1; j < n; j++) {
+            distinct &= strcmp(recovery_trusted_keys[i], recovery_trusted_keys[j]) != 0;
+        }
+    }
+    check(distinct, "the shipped keys are all different");
+
+    size_t len;
+    char *text = read_file("valid.manifest", &len);
+    char *test_key = read_file("test_key.pub.pem", NULL);
+    const char *list[16];
+    int count = 0;
+    for (int i = 0; i < n && i < 15; i++) {
+        list[count++] = recovery_trusted_keys[i];
+    }
+    recovery_manifest_t m;
+    check_result(load(text, len, list, count, &m), RECOVERY_ERR_BAD_SIGNATURE,
+                 "a manifest signed by a test key is refused by the shipped keys");
+    list[count++] = test_key;
+    check_result(load(text, len, list, count, &m), RECOVERY_OK,
+                 "a manifest is verified by a key behind every shipped key");
+    free(text);
+    free(test_key);
+}
+
 int main(void)
 {
     test_signed_vectors();
@@ -465,6 +513,7 @@ int main(void)
     test_parse();
     test_board();
     test_serial_patterns();
+    test_shipped_keys();  // last: it starts the crypto library, which the tests above leave to the code under test
 
     printf("\n%d checks, %d failed\n", checks, failures);
     return failures ? 1 : 0;

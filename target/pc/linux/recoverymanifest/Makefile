@@ -22,9 +22,9 @@ VPATH   = $(PATH_SW)/u64ctrl/main $(PATH_SW)/test/recovery_manifest
 CC      = gcc
 COPTIONS = -std=c99 -g -O0 -Wall -Wextra -Wno-unused-parameter \
            -DVECTORS_DIR=\"$(abspath $(PATH_SW)/test/recovery_manifest/vectors)\" \
-           $(addprefix -I, $(VPATH)) -I$(TFPSA)/include -I$(TFPSA)/drivers/builtin/include
+           $(addprefix -I, $(VPATH)) -I$(PATH_SW)/test/stubs/esp -I$(TFPSA)/include -I$(TFPSA)/drivers/builtin/include
 
-SRCS_C  = recovery_manifest.c recovery_verify.c recovery_manifest_test.c
+SRCS_C  = recovery_manifest.c recovery_verify.c recovery_trust.c recovery_manifest_test.c
 OBJS    = $(addprefix $(OUTPUT)/, $(SRCS_C:%.c=%.o))
 
 .PHONY: all test clean
