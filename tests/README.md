@@ -335,6 +335,7 @@ e2e:
   telnet-sustained-input            .      .      .      x      x
   temp-auto-cleanup                 .      .      x      x      x
   transport-usage                   x      x      x      x      x
+  uci-net-route                     .      .      .      x      x
   uci-net-target                    .      .      .      x      x
   uci-targets                       .      .      x      x      x
   ui-backend-parse                  x      x      x      x      x
