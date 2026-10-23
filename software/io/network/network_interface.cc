@@ -9,6 +9,7 @@
 #include "lwip/sockets.h"
 #include "lwip/apps/mdns.h"
 #include "filemanager.h"
+#include "route_select.h"
 
 extern "C" {
 #include "dump_hex.h"
@@ -491,6 +492,17 @@ bool NetworkInterface :: peekArpTable(uint32_t ipToQuery, uint8_t *mac)
     portEXIT_CRITICAL();
 
     return ret;
+}
+
+static int netif_is_wireless(const struct netif *n)
+{
+    NetworkInterface *ni = (NetworkInterface *)n->state;
+    return ni && ni->is_wireless();
+}
+
+extern "C" struct netif *ultimate_ip4_route_src(const ip4_addr_t *src, const ip4_addr_t *dest)
+{
+    return route_select(src, dest, netif_is_wireless);
 }
 
 bool NetworkInterface :: bindSocket(int socket)
