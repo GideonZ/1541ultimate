@@ -14,9 +14,9 @@ through the UCI network target to ports this host binds, and the suite reads the
 address the device's packets come from. Both have to carry the Ethernet
 address. Unpatched firmware with WiFi joined sends both from the WiFi address.
 
-Which interface is which comes from the network target itself: it numbers the
-interfaces, and interface 0 is the default one, which is Ethernet whenever the
-device has it. The suite needs two interfaces with an address on one subnet
+Which interface is which comes from the device: the network target numbers its
+interfaces and reports each one's MAC, and GET /v1/info reports the Ethernet MAC
+as `ethernet_mac`. The suite needs two interfaces with an address on one subnet
 that also holds this host, or the route lookup is never ambiguous and a pass
 would prove nothing; it skips otherwise, so a device with WiFi off, or a host on
 another subnet, skips rather than passes.
@@ -53,6 +53,7 @@ from uci import TARGET_NETWORK, Uci, interface_present  # noqa: E402
 
 SUITE = "net_route_test"
 
+NET_CMD_GET_NETADDR = 0x04
 NET_CMD_GET_IPADDR = 0x05
 # The network target numbers its interfaces from 0; no device has more than a few.
 MAX_INTERFACES = 4
@@ -72,6 +73,15 @@ def interface_addresses(net: Net) -> list[tuple[int, ipaddress.IPv4Interface]]:
         if not address.is_unspecified:
             found.append((index, ipaddress.IPv4Interface(f"{address}/{netmask}")))
     return found
+
+
+def interface_mac(net: Net, index: int) -> str:
+    """The MAC of interface `index`, as GET /v1/info writes it."""
+    reply = net.uci.transact(bytes([TARGET_NETWORK, NET_CMD_GET_NETADDR, index]),
+                             single_part=False)
+    if reply.status_text != STATUS_OK or len(reply.data) < 6:
+        raise Failure(f"GET_NETADDR {index} answered {reply.status_text!r} with {reply.data!r}")
+    return ":".join(f"{b:02x}" for b in reply.data[:6])
 
 
 def shared_subnet(addresses, host: str) -> list[tuple[int, ipaddress.IPv4Interface]] | None:
@@ -137,13 +147,17 @@ def main() -> int:
             check_skip(reason)
             return finish(device, uci, original, interface_enabled, peer, failure, reason)
 
-        (wired_index, wired), *others = shared
-        if wired_index != 0:
+        wired_mac = str(device.info().extra.get("ethernet_mac", "")).lower()
+        wired_entry = next(((i, a) for i, a in shared
+                            if wired_mac and interface_mac(net, i) == wired_mac), None)
+        if wired_entry is None:
             check_start(label)
-            reason = (f"interface 0, the default one, is not on this subnet: it is "
-                      f"{[str(a) for i, a in addresses if i == 0] or 'without an address'}")
+            reason = (f"none of the interfaces on this subnet ({[str(a) for _, a in shared]}) "
+                      f"has the Ethernet MAC GET /v1/info reports ({wired_mac or 'none'})")
             check_skip(reason)
             return finish(device, uci, original, interface_enabled, peer, failure, reason)
+        wired = wired_entry[1]
+        others = [(i, a) for i, a in shared if i != wired_entry[0]]
         wireless = [a.ip for _, a in others]
         detail(f"Ethernet {wired.ip}, other {[str(a) for a in wireless]}, this host {host}")
 
