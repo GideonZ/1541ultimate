@@ -83,14 +83,20 @@ never run at the same time: `u64` and `u2@c64u` run together, while `c64u` and
 `u2@c64u` take turns. `-o DIR` gives each target a subdirectory of its own.
 
 The runner finds which cartridge is in which computer, and nothing has to be
-set. Before it starts, it takes the pairs written as `cartridge@computer`. It
-then checks every cartridge named beside other hosts: the computer writes a
-random 8-byte fingerprint into its own RAM at `$0340`, and the cartridge
-reads that address through its own DMA, so only the computer it is plugged
-into returns the same bytes. A computer that has no cartridge declared is
-also searched for one on its /24 network, because a cartridge nobody named
-still shares that computer's IEC bus. The result is reported as a `cabling:`
-line and exported as `U64_COMPUTERS`.
+set for cartridges it is told about. Before it starts, it takes the pairs
+written as `cartridge@computer`. It then checks every cartridge named beside
+other hosts: the computer writes a random 8-byte fingerprint into its own RAM
+at `$0340`, and the cartridge reads that address through its own DMA, so only
+the computer it is plugged into returns the same bytes. A computer that has no
+cartridge declared is not searched for one by default; the run warns once,
+naming those computers, that a cartridge fitted but not named is not looked
+for: its drives stay on the computer's IEC bus and its settings are not
+captured or restored.
+`U64_CABLING_SWEEP=1` (exactly `1`) opts in to asking the computer's /24 for
+`/v1/info`, which probes devices on that network that are not yours; the probe
+does not follow redirects, but a host that answers as an Ultimate II then
+receives `U64_PASS`. The result is reported as a `cabling:` line and exported
+as `U64_COMPUTERS`.
 
 ```sh
 ./run-tests u2 c64u          # u2 is found to be in the c64u, so these take turns

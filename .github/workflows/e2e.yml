@@ -102,6 +102,10 @@ jobs:
           RECORD: >-
             ${{ (github.event_name == 'schedule' || inputs.record)
                 && '--record' || '' }}
+          # The bench network is the one place probing a /24 is safe, and a
+          # cartridge nobody names there must still have its drives turned
+          # off and its settings captured.
+          U64_CABLING_SWEEP: '1'
         run: |
           set +e
           ./run-tests -o "$RUNNER_TEMP/e2e" \
