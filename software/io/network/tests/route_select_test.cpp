@@ -2,14 +2,20 @@
 // returns the first netif in netif_list whose subnet contains the destination,
 // and netif_add() puts the newest at the head, so the WiFi netif (added after
 // the wired one) took replies for the Ethernet address and every outbound
-// connect. Every case asserts the interface a packet finally leaves by, with
-// ip4_route_src() composed as in lwIP (route_select_env.h): the firmware's hook
-// first, then lwIP's lookup, then netif_default. The hook is the one
+// connect. Every case asserts the interface a packet finally leaves by, from lwIP's
+// own ip4_route_src() (ip4.c, built by the Makefile) with the hook that
 // software/network/config/lwipopts.h configures; the build stops if that file no
 // longer does.
 //
-// ROUTE_SELECT_LEGACY builds the same cases without the hook, which is the lookup
-// before the fix. It is lwIP's composition re-stated here, not lwIP's code.
+// ROUTE_SELECT_LEGACY builds the same cases against lwIP built without the hook,
+// which is the lookup before the fix.
+//
+// The hook is reached through ip4_route_src() only when the source is a pointer
+// (src != NULL), also when it points to 0.0.0.0. A socket with no local address
+// passes such a pointer (ip_route(&pcb->local_ip, ...)), and the "no source yet"
+// preference for Ethernet applies to those. A NULL source (a plain ip4_route(),
+// which lwIP itself calls only from etharp_add_static_entry()) takes lwIP's
+// on-link lookup first, which the hook does not change.
 
 #include "../../usb/tests/host_test/host_test.h"
 #include "route_select_env.h"
@@ -38,6 +44,14 @@ struct netif *pick(uint32_t src, uint32_t dest)
     s.addr = src;
     d.addr = dest;
     return route(&s, &d);
+}
+
+// A NULL source pointer, as ip4_route() callers pass it, as opposed to a pointer to 0.0.0.0.
+struct netif *pick_null_source(uint32_t dest)
+{
+    ip4_addr_t d;
+    d.addr = dest;
+    return ip4_route_src(NULL, &d);
 }
 
 } // namespace
@@ -142,4 +156,22 @@ TEST(Route, EthernetWithoutAnAddressYetDoesNotTakeTraffic)
     add_netif(&r.wifi, kWifi, kMask, true, true);
     EXPECT_TRUE(pick(0, kPeer) == &r.wifi);
     EXPECT_TRUE(pick(kWifi, kPeer) == &r.wifi);
+}
+
+// pick(0, ...) is a pointer to 0.0.0.0, the source of an unbound socket; a NULL source
+// pointer never reaches the hook before lwIP's on-link lookup, which returns the
+// first netif on the subnet, here the WiFi one. The preference for Ethernet is for the
+// former, which is where every UDP and TCP send of the device comes from.
+TEST(Route, ANullSourceTakesLwipsOnLinkLookupNotThePreference)
+{
+    Rig r;
+    EXPECT_TRUE(pick(0, kPeer) == &r.eth);
+    EXPECT_TRUE(pick_null_source(kPeer) == &r.wifi);
+    EXPECT_TRUE(pick_null_source(kEth) == &r.wifi);
+}
+
+TEST(Route, ANullSourceStillReachesTheHookForAnOffLinkDestination)
+{
+    Rig r;
+    EXPECT_TRUE(pick_null_source(ip(8, 8, 8, 8)) == &r.eth);     // netif_default
 }
