@@ -10,6 +10,7 @@
 #include "lwip/apps/mdns.h"
 #include "filemanager.h"
 #include "route_select.h"
+#include "lwip_hooks.h"
 
 extern "C" {
 #include "dump_hex.h"

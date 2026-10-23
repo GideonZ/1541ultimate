@@ -2,10 +2,14 @@
 // returns the first netif in netif_list whose subnet contains the destination,
 // and netif_add() puts the newest at the head, so the WiFi netif (added after
 // the wired one) took replies for the Ethernet address and every outbound
-// connect. route_select() is what lwIP now asks first.
+// connect. Every case asserts the interface a packet finally leaves by, with
+// ip4_route_src() composed as in lwIP (route_select_env.h): the firmware's hook
+// first, then lwIP's lookup, then netif_default. The hook is the one
+// software/network/config/lwipopts.h configures; the build stops if that file no
+// longer does.
 //
-// ROUTE_SELECT_LEGACY builds the same cases against a model of the old lookup.
-// It is a model (the first on-link netif in the list), not lwIP's code.
+// ROUTE_SELECT_LEGACY builds the same cases without the hook, which is the lookup
+// before the fix. It is lwIP's composition re-stated here, not lwIP's code.
 
 #include "../../usb/tests/host_test/host_test.h"
 #include "route_select_env.h"
@@ -90,17 +94,17 @@ TEST(Route, DifferentSubnetsStayOnTheirOwn)
     EXPECT_TRUE(pick(0, kPeer) == &r.eth);
 }
 
-TEST(Route, OffLinkAndUnknownSourceFallBackToLwip)
+TEST(Route, OffLinkAndUnknownSourceAreLeftToLwip)
 {
     Rig r;
-    EXPECT_TRUE(pick(0, ip(8, 8, 8, 8)) == NULL);              // lwIP picks netif_default
-    EXPECT_TRUE(pick(ip(10, 43, 23, 99), kPeer) == NULL);       // not our address
+    EXPECT_TRUE(pick(0, ip(8, 8, 8, 8)) == &r.eth);             // netif_default
+    EXPECT_TRUE(pick(ip(10, 43, 23, 99), kPeer) == &r.wifi);    // not our address: lwIP's lookup
 }
 
 TEST(Route, ReplyFromADownInterfaceIsNotSteered)
 {
     Rig r(false, true);
-    EXPECT_TRUE(pick(kEth, kPeer) == NULL);
+    EXPECT_TRUE(pick(kEth, kPeer) == &r.wifi);
 }
 
 TEST(Route, ConnectionToAnOwnAddressStaysWithThatInterface)

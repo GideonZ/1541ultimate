@@ -5,10 +5,11 @@
 #include "lwip/ip4_addr.h"
 
 // Source-based IPv4 route selection, called by lwIP's ip4_route_src() before its
-// own lookup (LWIP_HOOK_IP4_ROUTE_SRC). lwIP's lookup returns the first netif in
+// own lookup when there is a source, and again from ip4_route() when nothing
+// on-link matched (LWIP_HOOK_IP4_ROUTE_SRC). lwIP's lookup returns the first netif in
 // netif_list whose subnet contains the destination, and netif_add() puts the
 // newest netif at the head, so with Ethernet and WiFi on one subnet the WiFi
-// netif, which is added after the link-up of the wired one, takes everything.
+// netif, whose netif_add() comes after the wired one's, takes everything.
 //
 //  - A destination that is the address of an up netif: that netif, so a connection
 //    to the device's own WiFi address still loops back instead of going on the wire.
