@@ -143,6 +143,12 @@ BONZAI_SHA256 = "689983da1647f9f65b6003f826e12b7a7073cb6cf703b1eccb9a070cf2f3e19
 BONZAI_REMOTE = "i895-expand.d64"
 BONZAI_STARTUP_SECONDS = 12.0
 BONZAI_TIMEOUT_SECONDS = 45.0
+TIMING_URL = ("https://gitlab.com/camelot/reudiag/-/raw/"
+              "ea6b463ea51169c189be0e2b2452a4e150b2da02/reutiming/reutiming.prg")
+TIMING_SHA256 = "b96f3e62b2f352c56c9b67aeba4b69ff6373a44650ef37624423c7e53dc08f19"
+TIMING_REMOTE = "i906-reutiming.prg"
+# Published real-REU photo in reutiming/screen-reu-c64.png at the pinned commit.
+TIMING_EXPECTED = ("0A", "36", "37", "38", "39", "3A", "3B")
 
 
 def serves(api: UltimateApi, store: str, item: str) -> bool:
@@ -385,6 +391,66 @@ def run_bonzai(args) -> str | None:
     return None
 
 
+def timing_screen_text(row: bytes) -> str:
+    """Decode the diagnostic's letters and hex digits from C64 screen RAM."""
+    return "".join(chr(value + 64) if 1 <= value <= 26 else
+                   chr(value) if 32 <= value <= 126 else "?" for value in row)
+
+
+def run_timing(args) -> str | None:
+    """Compare Gideon's requested program with the published real-REU capture."""
+    api = UltimateApi(args.host, args.password or None, args.timeout)
+    info = api.info()
+    # shortcut: integrated-machine hosts only; add cartridge@host support with test hardware.
+    if not (serves(api, REU_STORE, REU_ITEM) and serves(api, U64_STORE, SPEED_ITEM)):
+        return f"{info.product} does not provide both an REU and a CPU speed setting"
+
+    request = urllib.request.Request(TIMING_URL, headers={"User-Agent": "1541ultimate-e2e"})
+    with retrying_urlopen(request, args.timeout, idempotent=True) as response:
+        program = response.read()
+    digest = hashlib.sha256(program).hexdigest()
+    if digest != TIMING_SHA256:
+        raise Failure(f"reutiming.prg has SHA-256 {digest}, expected {TIMING_SHA256}")
+
+    previous: dict[tuple[str, str], str] = {}
+    wanted = ((REU_STORE, REU_ITEM, "Enabled"),
+              (U64_STORE, "System Mode", "PAL"),
+              (U64_STORE, BADLINE_ITEM, "Enabled"),
+              (U64_STORE, TURBO_ITEM, TURBO_MANUAL),
+              (U64_STORE, SPEED_ITEM, SLOWEST_SPEED))
+    remote = f"/Temp/{TIMING_REMOTE}"
+    try:
+        with check("REU timing matches the published real-REU capture at 1 MHz"):
+            for store, item, value in wanted:
+                previous[(store, item)] = api.configs.current(store, item)
+                if previous[(store, item)] != value:
+                    api.configs.set(store, item, value)
+            with ftp_lib.session(args.host, args.password, timeout=args.timeout) as ftp:
+                ftp_lib.delete_quietly(ftp, remote)
+                ftp_lib.store(ftp, remote, program)
+            api.machine.reset(force=True)
+            api.runners.run_prg(remote)
+            time.sleep(5)
+            label = timing_screen_text(api.machine.readmem(0x0400 + 40, 40))
+            row = timing_screen_text(api.machine.readmem(0x0400 + 3 * 40, 40))
+            measured = tuple(row[column:column + 2] for column in range(10, 31, 3))
+            detail(f"REU label: {label.strip()}; timer cycles: {' '.join(measured)}")
+            if "REAL REU DETECTED" not in label:
+                raise Failure(f"REU-to-C64 timing differs from published capture: {label.strip()}")
+            if measured != TIMING_EXPECTED:
+                raise Failure(f"C64-to-REU bad-line cycles were {' '.join(measured)}, "
+                              f"published capture shows {' '.join(TIMING_EXPECTED)}")
+    finally:
+        teardown_step("reset the machine", lambda: api.machine.reset(force=True))
+        restore_settings(api, previous)
+
+        def remove_program() -> None:
+            with ftp_lib.session(args.host, args.password, timeout=args.timeout) as ftp:
+                ftp_lib.delete_quietly(ftp, remote)
+        teardown_step("remove the REU timing program", remove_program)
+    return None
+
+
 def run(args) -> str | None:
     """Run the suite, or answer why this machine could not run it.
 
@@ -473,14 +539,17 @@ def main() -> int:
     parser.add_argument("-H", "--host", default=os.environ.get("U64_HOST", "u64"))
     parser.add_argument("-p", "--password", default=os.environ.get("U64_PASS", ""))
     parser.add_argument("-t", "--timeout", type=float, default=30.0)
-    parser.add_argument("--bonzai", action="store_true",
-                        help="run issue #895's published Expand disk instead")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--bonzai", action="store_true",
+                      help="run issue #895's published Expand disk instead")
+    mode.add_argument("--timing", action="store_true",
+                      help="run the published REU cycle timing diagnostic instead")
     parser.add_argument("--bonzai-disk", default=os.environ.get("BONZAI_D64", ""),
                         help="use this Expand Disk1 D64 instead of the cached download")
     args = parser.parse_args()
-    suite = "reu_bonzai_test" if args.bonzai else SUITE
+    suite = "reu_timing_test" if args.timing else "reu_bonzai_test" if args.bonzai else SUITE
     try:
-        skipped = run_bonzai(args) if args.bonzai else run(args)
+        skipped = run_timing(args) if args.timing else run_bonzai(args) if args.bonzai else run(args)
         if skipped:
             suite_skip(suite, skipped)
             return 0

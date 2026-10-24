@@ -599,6 +599,10 @@ SUITES: Sequence[Suite] = (
     # covers the full loader, raster-timed REU-to-font DMA and rendered title.
     Suite("e2e", "reu-bonzai", "tests/e2e/io/c64/reu_turbo_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --bonzai", manual=True),
+    # Manual: Gideon's cycle-level REU program from camelot/reudiag compares
+    # both DMA directions with measured real-REU bad-line timing.
+    Suite("e2e", "reu-timing", "tests/e2e/io/c64/reu_turbo_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --timing", manual=True),
     # Manual: switches the machine off and wakes it with a packet, so it needs
     # the device on Wi-Fi and the harness in its broadcast domain. Actuators
     # and packet target may also come from U64_POWER_*_CMD and U64_WOL_*.

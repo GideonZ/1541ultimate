@@ -72,7 +72,8 @@ begin
         wait until reset = '0';
         wait until rising_edge(clock);
         slot_req.io_address <= X"DF01";
-        slot_req.data <= X"90";
+        -- Command used by reutiming.prg for its REU-to-C64 bad-line probes.
+        slot_req.data <= X"B1";
         slot_req.io_write <= '1';
 
         wait until rising_edge(clock);
@@ -83,10 +84,10 @@ begin
         assert direct_dma_n = '0'
             report "direct DMA did not stop the CPU when the command executed"
             severity failure;
-        assert direct_dma_req.request = '1'
+        assert direct_mem_req.request = '1'
             report "direct DMA waited for phi2 after the command executed"
             severity failure;
-        assert delayed_dma_n = '1' and delayed_dma_req.request = '0'
+        assert delayed_dma_n = '1' and delayed_mem_req.request = '0'
             report "cartridge DMA did not retain its initial phi2 delay"
             severity failure;
 
@@ -96,7 +97,7 @@ begin
         wait until rising_edge(clock);
         wait for 1 ns;
 
-        assert delayed_dma_n = '0' and delayed_dma_req.request = '1'
+        assert delayed_dma_n = '0' and delayed_mem_req.request = '1'
             report "cartridge DMA did not start after its initial phi2 delay"
             severity failure;
 
