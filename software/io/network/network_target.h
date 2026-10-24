@@ -71,10 +71,13 @@ class NetworkTarget : public CommandTarget {
     // opened for itself. Any command handing out a socket must track it here.
     int sockets[NET_MAX_SOCKETS];
     int socket_count;
+    // Set for a socket opened with remote 0.0.0.0, which can only receive.
+    bool receive_only_flags[NET_MAX_SOCKETS];
 
-    bool track_socket(int socketnr);
+    bool track_socket(int socketnr, bool receive_only = false);
     void untrack_socket(int socketnr);
     bool is_datagram_socket(int socketnr);
+    bool is_receive_only(int socketnr);
     bool owns_socket(int socketnr);
     void close_all_sockets(void);
 

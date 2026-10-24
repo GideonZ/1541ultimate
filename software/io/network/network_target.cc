@@ -292,7 +292,7 @@ void NetworkTarget :: open_socket(Message *command, Message **reply, Message **s
 	// The table has room for every socket lwip can create, so this cannot
 	// fail. Refusing rather than writing past the table keeps that a check
 	// instead of an assumption.
-	if (!track_socket(socket)) {
+	if (!track_socket(socket, local_port >= 0 && addr.sin_addr.s_addr == 0)) {
 		*status = &c_status_no_socket;
 		lwip_close(socket);
 		return;
@@ -429,7 +429,12 @@ void NetworkTarget :: write_socket(Message *command, Message **reply, Message **
 
     int length = command->length - 3;
     int ret;
-    if (owns_socket(socketnr)) {
+    if (is_receive_only(socketnr)) {
+        // Remote 0.0.0.0 only filters what the socket receives. Sending to it
+        // would put a broadcast frame addressed to 0.0.0.0 on the wire.
+        errno = EDESTADDRREQ;
+        ret = -1;
+    } else if (owns_socket(socketnr)) {
         ret = lwip_send(socketnr, src, length, 0);
     } else {
         errno = EBADF;
@@ -480,11 +485,12 @@ void NetworkTarget :: close_socket(Message *command, Message **reply, Message **
 static_assert(NET_MAX_SOCKETS >= MEMP_NUM_NETCONN,
               "the socket table is smaller than the number of lwip sockets");
 
-bool NetworkTarget :: track_socket(int socketnr)
+bool NetworkTarget :: track_socket(int socketnr, bool receive_only)
 {
     if (socket_count >= NET_MAX_SOCKETS) {
         return false;
     }
+    receive_only_flags[socket_count] = receive_only;
     sockets[socket_count++] = socketnr;
     return true;
 }
@@ -496,6 +502,7 @@ void NetworkTarget :: untrack_socket(int socketnr)
             socket_count--;
             for (; i < socket_count; i++) {
                 sockets[i] = sockets[i + 1];
+                receive_only_flags[i] = receive_only_flags[i + 1];
             }
             return;
         }
@@ -507,6 +514,16 @@ bool NetworkTarget :: is_datagram_socket(int socketnr)
     int type = 0;
     socklen_t len = sizeof(type);
     return (lwip_getsockopt(socketnr, SOL_SOCKET, SO_TYPE, &type, &len) == 0) && (type == SOCK_DGRAM);
+}
+
+bool NetworkTarget :: is_receive_only(int socketnr)
+{
+    for (int i = 0; i < socket_count; i++) {
+        if (sockets[i] == socketnr) {
+            return receive_only_flags[i];
+        }
+    }
+    return false;
 }
 
 bool NetworkTarget :: owns_socket(int socketnr)

@@ -85,6 +85,8 @@ STATUS_INVALID_PARAMS = b"81,INVALID PARAMS"
 STATUS_UNRESOLVED_HOST = b"84,UNRESOLVED HOST"
 STATUS_NO_SOCKET = b"85,ERROR OPENING SOCKET"
 STATUS_PORT_IN_USE = b"89,PORT IN USE"
+# 121 is newlib's EDESTADDRREQ; lwIP uses the C library errno.
+STATUS_SEND_ERROR_DESTINATION_REQUIRED = b"12,SEND ERROR: 121"
 STATUS_UNKNOWN_COMMAND = b"21,UNKNOWN COMMAND"
 # Not in the network target document, but what the firmware answers when
 # lwip_recv returns -1. The number is the errno: 9 is EBADF for a handle that
@@ -183,6 +185,7 @@ TESTS = [
     "udp-local-fixed-port-echo",
     "udp-local-port-zero",
     "udp-local-port-in-use",
+    "udp-local-any-host-is-receive-only",
     "udp-local-tcp-port-not-a-clash",
     "udp-local-bad-params",
     "udp-local-bad-host-keeps-port-free",
@@ -1279,6 +1282,64 @@ def run_udp_local_fixed_port_echo(net: Net, peer: Peer) -> bool:
     return True
 
 
+def run_udp_local_any_host_is_receive_only(net: Net, peer: Peer) -> bool:
+    """Remote 0.0.0.0 receives from any sender on the remote port, and sends nothing.
+
+    The device would otherwise broadcast to 0.0.0.0. The host socket that sends
+    to the device is bound to all addresses, so it can see such a broadcast, but
+    only on a host that delivers IP destination 0.0.0.0 (a Mac does; a Linux
+    host likely drops it as a martian). The status is the real assertion.
+    """
+    section("udp-local-any-host-is-receive-only")
+    port = fresh_port()
+    device_ip = net.ip_address()
+    host = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    handle = None
+    try:
+        host.bind(("", 0))
+        remote_port = host.getsockname()[1]
+        handle, _ = net.open_udp_local("0.0.0.0", remote_port, port)
+
+        payload = pattern(SMALL_READ, seed=7)
+        with check("a datagram from the remote port is delivered"):
+            received = None
+            for attempt in range(PROBE_ATTEMPTS):
+                host.sendto(payload, (device_ip, port))
+                time.sleep(DELIVERY_SETTLE_SECONDS)
+                got = net.read(handle, SMALL_READ)
+                detail(f"attempt {attempt + 1}: {got.describe()}")
+                if got.status_text == STATUS_OK:
+                    received = got
+                    break
+            if received is None:
+                raise Failure(f"no datagram reached the device in {PROBE_ATTEMPTS} attempts")
+            if received.payload != payload:
+                raise Failure(f"read {received.describe()}, expected the {len(payload)} "
+                              f"bytes that were sent")
+
+        with check("a WRITE is refused and sends nothing"):
+            drain_udp(host)
+            sent = net.write(handle, pattern(SMALL_READ, seed=8))
+            detail(f"status {sent.status_text!r}, data {sent.data!r}")
+            if sent.status_text != STATUS_SEND_ERROR_DESTINATION_REQUIRED:
+                raise Failure(f"expected {STATUS_SEND_ERROR_DESTINATION_REQUIRED!r}, "
+                              f"got {sent.status_text!r}")
+            if sent.data != b"\xff\xff":
+                raise Failure(f"expected the failed-write reply FF FF, got {sent.data!r}")
+            host.settimeout(WRITE_WAIT_SECONDS)
+            try:
+                data, address = host.recvfrom(2048)
+            except TimeoutError:
+                pass
+            else:
+                raise Failure(f"{len(data)} bytes left the device for {address}")
+    finally:
+        host.close()
+        if handle is not None:
+            close_quietly(net, [handle])
+    return True
+
+
 def run_udp_local_port_zero(net: Net, peer: Peer) -> bool:
     """A local port of 0 is an ephemeral port, and the reply says which."""
     section("udp-local-port-zero")
@@ -1782,6 +1843,8 @@ def main() -> int:
             run(route, "udp-local-fixed-port-echo", run_udp_local_fixed_port_echo, net, peer)
             run(route, "udp-local-port-zero", run_udp_local_port_zero, net, peer)
             run(route, "udp-local-port-in-use", run_udp_local_port_in_use, net, peer)
+            run(route, "udp-local-any-host-is-receive-only",
+                run_udp_local_any_host_is_receive_only, net, peer)
             run(route, "udp-local-tcp-port-not-a-clash",
                 run_udp_local_tcp_port_not_a_clash, net, peer)
             run(route, "udp-local-bad-params", run_udp_local_bad_params, net, peer)
