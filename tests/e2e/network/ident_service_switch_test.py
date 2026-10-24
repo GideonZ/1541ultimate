@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""E2E: disabling and re-enabling the ident listener takes effect live."""
+"""E2E: ident listener handles service switches and datagram boundaries."""
 
 import argparse
 import json
@@ -28,19 +28,21 @@ STATE_TIMEOUT = 3.0
 QUIET_SECONDS = 1.0
 
 
+def ident_response(host: str, request: bytes) -> bytes:
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+        sock.settimeout(PROBE_TIMEOUT)
+        sock.sendto(request, (host, PORT))
+        response, _ = sock.recvfrom(4096)
+        return response
+
+
 def identify(host: str) -> bool:
     nonce = f"switch-{time.monotonic_ns()}"
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.settimeout(PROBE_TIMEOUT)
     try:
-        sock.sendto(f"json{nonce}".encode("ascii"), (host, PORT))
-        payload, _ = sock.recvfrom(4096)
-        response = json.loads(payload.decode("utf-8"))
+        response = json.loads(ident_response(host, f"json{nonce}".encode("ascii")))
         return response.get("your_string") == nonce
     except (OSError, ValueError):
         return False
-    finally:
-        sock.close()
 
 
 def wait_enabled(host: str) -> None:
@@ -80,9 +82,8 @@ def main() -> int:
         targets.device_of(args.host),
         lambda: (str(info.product), str(info.firmware_version)))
 
-    # The whole suite is about the switch taking effect live, so a machine
-    # whose firmware does not do that yet has nothing here to measure. The
-    # table in tests/lib/machine.py names those machines and the wording.
+    # The suite needs the listener to start live before probing its datagrams.
+    # The table in tests/lib/machine.py names machines where that fails.
     absent = machine.missing_fix(machine_lib.IDENT_SWITCHES_LIVE)
     if absent:
         suite_skip("ident_service_switch_test", absent)
@@ -97,6 +98,18 @@ def main() -> int:
         with check("ident answers when enabled"):
             api.configs.set(STORE, ITEM, "Enabled")
             wait_enabled(args.host)
+        with check("empty ident datagram does not replay another client's request"):
+            nonce = f"replay-{time.monotonic_ns()}".encode("ascii")
+            first = json.loads(ident_response(args.host, b"json" + nonce))
+            if first.get("your_string") != nonce.decode("ascii"):
+                raise Failure(f"ident did not echo probe: {first!r}")
+            empty = ident_response(args.host, b"")
+            if not empty.startswith(b",") or nonce in empty:
+                raise Failure(f"empty datagram leaked previous request: {empty!r}")
+        with check("256-byte ident datagram returns only first 32 bytes"):
+            response = ident_response(args.host, b"X" * 256)
+            if not response.startswith(b"X" * 32 + b","):
+                raise Failure(f"unexpected response to 256-byte datagram: {response!r}")
         # Both of these need the listener to act on the switch while it runs.
         # Firmware without that reads the switch once, when the listener
         # starts, so the first would fail and the second would then prove
