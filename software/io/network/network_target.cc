@@ -9,6 +9,7 @@
 #include "network_interface.h"
 #include "socket.h"
 #include "lwip/opt.h"
+#include "lwip/prot/iana.h"
 #include "netdb.h"
 #include <errno.h>
 #include <stdio.h>
@@ -25,6 +26,14 @@ Message c_status_socket_closed       = { 28, true, (uint8_t *)"01,CONNECTION CLO
 Message c_status_net_no_data         = { 26, true, (uint8_t *)"03,MORE DATA NOT SUPPORTED" };
 Message c_status_internal_error      = { 17, true, (uint8_t *)"86,INTERNAL ERROR" };
 Message c_status_port_in_use         = { 14, true, (uint8_t *)"89,PORT IN USE" };
+
+// Local UDP ports that firmware services bind themselves, now or later. OPEN_UDP_LOCAL
+// refuses them whether or not the service is up, so it cannot hold one when the service starts.
+static const uint16_t reserved_udp_ports[] = {
+    64,    // ident service (socket_dma.cc, identThread)
+    LWIP_IANA_PORT_DHCP_CLIENT, // DHCP client (lwIP dhcp.c, one pcb for all interfaces)
+    53248, // VIC stream palette (data_streamer.cc on master, U64 family)
+};
 
 NetworkTarget::NetworkTarget(int id)
 {
@@ -182,6 +191,18 @@ void NetworkTarget :: parse_command(Message *command, Message **reply, Message *
                     break;
                 }
                 int local_port = int(command->message[4]) | (int(command->message[5]) << 8);
+                bool reserved = false;
+                for (unsigned i = 0; i < sizeof(reserved_udp_ports) / sizeof(reserved_udp_ports[0]); i++) {
+                    if (local_port == reserved_udp_ports[i]) {
+                        reserved = true;
+                        break;
+                    }
+                }
+                if (reserved) {
+                    *reply = &c_message_empty;
+                    *status = &c_status_port_in_use;
+                    break;
+                }
                 open_socket(command, reply, status, SOCK_DGRAM, 6, local_port);
             }
             break;

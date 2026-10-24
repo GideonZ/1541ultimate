@@ -68,6 +68,11 @@ from uci_native import NativeUci  # noqa: E402
 
 CONFIG_CATEGORY = "C64 and Cartridge Settings"
 CFG_CMD_IF = "Command Interface"
+IDENT_STORE = "Network Settings"
+IDENT_ITEM = "Ultimate Ident Service"
+IDENT_PORT = 64
+IDENT_RELEASE_SECONDS = 2.0
+PALETTE_PORT = 53248  # the VIC stream palette socket, U64 family; refused everywhere
 OWNED_SETTINGS = (CFG_CMD_IF,)
 
 NET_CMD_IDENTIFY = 0x01
@@ -185,6 +190,7 @@ TESTS = [
     "udp-local-fixed-port-echo",
     "udp-local-port-zero",
     "udp-local-port-in-use",
+    "udp-local-service-port-reserved",
     "udp-local-any-host-is-receive-only",
     "udp-local-tcp-port-not-a-clash",
     "udp-local-bad-params",
@@ -1425,6 +1431,42 @@ def run_udp_local_port_in_use(net: Net, peer: Peer) -> bool:
     return True
 
 
+def run_udp_local_service_port_reserved(net: Net, peer: Peer, device) -> bool:
+    """Ports the firmware binds itself are refused, even while that service is off.
+
+    Ident is switched off first, so nothing holds port 64 and the in-use check
+    alone would let it through. Port 68 is not tried: DHCP holds it, so the
+    in-use check answers 89 there with or without the reservation.
+    """
+    section("udp-local-service-port-reserved")
+    handles: list[int] = []
+    original = None
+    try:
+        with check("switch the ident service off, so nothing holds port 64"):
+            original = str(device.configs.current(IDENT_STORE, IDENT_ITEM)) or None
+            if original is None:
+                raise Failure(f"the device reports no value for {IDENT_ITEM!r}")
+            device.configs.set(IDENT_STORE, IDENT_ITEM, "Disabled")
+            # The ident thread's recvfrom times out after 1 s and it closes its
+            # socket only then (socket_dma.cc), so port 64 is held until it has.
+            time.sleep(IDENT_RELEASE_SECONDS)
+        for name, port in (("ident", IDENT_PORT), ("VIC stream palette", PALETTE_PORT)):
+            with check(f"OPEN_UDP_LOCAL on {name} port {port} answers 89 with no data"):
+                refused = net.try_open_udp_local(peer.ip, peer.udp_port, port)
+                detail(f"status {refused.status_text!r}, data {refused.data!r}")
+                if refused.status_text == STATUS_OK and len(refused.data) == 3:
+                    handles.append(refused.data[0])
+                if refused.status_text != STATUS_PORT_IN_USE or refused.data:
+                    raise Failure(f"expected {STATUS_PORT_IN_USE!r} and no data, got "
+                                  f"{refused.status_text!r} with {refused.data!r}")
+    finally:
+        close_quietly(net, handles)
+        if original is not None:
+            with check(f"restore {IDENT_ITEM!r} to {original!r}"):
+                device.configs.set(IDENT_STORE, IDENT_ITEM, original)
+    return True
+
+
 def run_udp_local_tcp_port_not_a_clash(net: Net, peer: Peer) -> bool:
     """UDP and TCP ports are separate: a TCP socket's port is free for UDP."""
     section("udp-local-tcp-port-not-a-clash")
@@ -1843,6 +1885,8 @@ def main() -> int:
             run(route, "udp-local-fixed-port-echo", run_udp_local_fixed_port_echo, net, peer)
             run(route, "udp-local-port-zero", run_udp_local_port_zero, net, peer)
             run(route, "udp-local-port-in-use", run_udp_local_port_in_use, net, peer)
+            run(route, "udp-local-service-port-reserved",
+                run_udp_local_service_port_reserved, net, peer, device)
             run(route, "udp-local-any-host-is-receive-only",
                 run_udp_local_any_host_is_receive_only, net, peer)
             run(route, "udp-local-tcp-port-not-a-clash",
