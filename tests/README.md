@@ -307,6 +307,7 @@ e2e:
   gmod2-eeprom-dirty                .      .      x      x      x
   ident-service-switch              .      .      x      x      x
   iec-dos-commands                  .      .      x      x      x
+  iec-directory-rename              .      .      x      x      x
   iec-partition-file                .      .      x      x      x
   iec-partition-config              .      .      x      x      x
   softiec-log-lines                 .      .      x      x      x
