@@ -25,6 +25,9 @@ static int reg(void *task, wifi_reply_tag_t *tag)
 }
 static void *deliver(const wifi_reply_tag_t *tag)
 {
+    if (tag->thread >= WIFI_REPLY_SLOTS) {  // the ISR checks thread < NUM_TX_BUFFERS
+        return NULL;
+    }
     void *task = slots[tag->thread].task;
     slots[tag->thread].task = NULL;
     return task;

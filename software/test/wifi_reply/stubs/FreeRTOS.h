@@ -17,6 +17,8 @@ typedef void *QueueHandle_t;
 #define pdTRUE  1
 #define portMAX_DELAY 0xFFFFFFFFUL
 #define pdMS_TO_TICKS(x) (x)
-#define ENTER_SAFE_SECTION
+// The test can let the ISR run just before a critical section
+extern "C" void enter_safe_section(void);
+#define ENTER_SAFE_SECTION enter_safe_section()
 #define LEAVE_SAFE_SECTION
 #endif
