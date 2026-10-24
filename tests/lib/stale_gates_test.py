@@ -62,9 +62,9 @@ stale_gates = load_stale_gates()
 
 # A real entry, used rather than an invented name so this exercises the table
 # this run will actually read, not a fixture that happens to look like it.
-FIX = machine.MONITOR_D_KEY_RESERVED
+FIX = machine.KEY_INJECTION_LOSES_NO_CHARACTER
 FIX_MACHINE = machine.U2
-LABEL = "the monitor opens nothing with D"
+LABEL = "every character of a typed argument reaches the monitor"
 
 
 @contextlib.contextmanager
