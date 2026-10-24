@@ -56,9 +56,12 @@ and written back, whatever the run does.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import os
 import sys
 import time
+import urllib.request
+from collections import Counter
 from pathlib import Path
 
 # The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
@@ -68,9 +71,14 @@ import bootstrap  # noqa: E402,F401
 
 from api import UltimateApi                                        # noqa: E402
 from assembler import assemble                                     # noqa: E402
+import ftp as ftp_lib                                               # noqa: E402
+from rest import retrying_urlopen                                   # noqa: E402
+import streams                                                      # noqa: E402
+import ui_backend                                                   # noqa: E402
 from report import (Failure, teardown_step, check, check_ok, check_skip,          # noqa: E402
                     check_start, detail, format_exception, section,
                     suite_fail, suite_ok, suite_skip)
+from vic_video import VicStreamCapture                              # noqa: E402
 
 SUITE = "reu_turbo_test"
 
@@ -128,6 +136,19 @@ START_TIMEOUT_SECONDS = 20.0
 SETTLE_TIMEOUT_SECONDS = 20.0
 RUN_TIMEOUT_SECONDS = 60.0
 POLL_SECONDS = 0.05
+
+BONZAI_URL = ("https://csdb.dk/getinternalfile.php/200795/"
+              "Expand%20by%20Bonzai%20-%20Disk1.D64")
+BONZAI_SHA256 = "689983da1647f9f65b6003f826e12b7a7073cb6cf703b1eccb9a070cf2f3e195"
+BONZAI_REMOTE = "i895-expand.d64"
+BONZAI_STARTUP_SECONDS = 12.0
+BONZAI_TIMEOUT_SECONDS = 45.0
+TIMING_URL = ("https://gitlab.com/camelot/reudiag/-/raw/"
+              "ea6b463ea51169c189be0e2b2452a4e150b2da02/reutiming/reutiming.prg")
+TIMING_SHA256 = "b96f3e62b2f352c56c9b67aeba4b69ff6373a44650ef37624423c7e53dc08f19"
+TIMING_REMOTE = "i906-reutiming.prg"
+# Published real-REU photo in reutiming/screen-reu-c64.png at the pinned commit.
+TIMING_EXPECTED = ("0A", "36", "37", "38", "39", "3A", "3B")
 
 
 def serves(api: UltimateApi, store: str, item: str) -> bool:
@@ -260,6 +281,176 @@ def report(result: Result, speed: str) -> None:
            f"{speed.strip()} MHz in {result.seconds:.2f}s")
 
 
+def bonzai_disk(path: str, timeout: float) -> bytes:
+    """Load the published reproducer, downloading and caching it if needed."""
+    local = Path(path) if path else Path(os.environ.get(
+        "XDG_CACHE_HOME", Path.home() / ".cache")) / "1541ultimate" / BONZAI_REMOTE
+    if local.exists():
+        data = local.read_bytes()
+    else:
+        local.parent.mkdir(parents=True, exist_ok=True)
+        request = urllib.request.Request(BONZAI_URL, headers={"User-Agent": "1541ultimate-e2e"})
+        with retrying_urlopen(request, timeout, idempotent=True) as response:
+            data = response.read()
+        local.write_bytes(data)
+        detail(f"downloaded {BONZAI_URL} to {local}")
+    digest = hashlib.sha256(data).hexdigest()
+    if digest != BONZAI_SHA256:
+        raise Failure(f"{local} has SHA-256 {digest}, expected {BONZAI_SHA256}")
+    return data
+
+
+def looks_like_bonzai_title(colors: Counter, pixels: int) -> bool:
+    """Recognise the black title with substantial non-black line art."""
+    return colors[0] > pixels * 0.50 and pixels - colors[0] > pixels * 0.10
+
+
+def await_bonzai_title(capture: VicStreamCapture) -> None:
+    """Require three consecutive title-like frames, skipping loader transients."""
+    started = time.monotonic()
+    deadline = started + BONZAI_STARTUP_SECONDS + BONZAI_TIMEOUT_SECONDS
+    consecutive = 0
+    last: Counter = Counter()
+    while time.monotonic() < deadline:
+        try:
+            image = capture.capture_image()
+        except Failure:
+            if not last:
+                raise
+            break
+        colors = Counter(image.tobytes())
+        last = colors
+        if time.monotonic() - started < BONZAI_STARTUP_SECONDS:
+            continue
+        pixels = image.width * image.height
+        consecutive = consecutive + 1 if looks_like_bonzai_title(colors, pixels) else 0
+        if consecutive == 3:
+            detail(f"Expand title reached with palette indices {dict(sorted(colors.items()))}")
+            return
+    raise Failure(f"Expand did not reach its title at 1 MHz; last frame used "
+                  f"{len(last)} colours: {dict(sorted(last.items()))}")
+
+
+def run_bonzai(args) -> str | None:
+    """Run issue #895's published disk through the emulated drive."""
+    api = UltimateApi(args.host, args.password or None, args.timeout)
+    info = api.info()
+    if not (serves(api, REU_STORE, REU_ITEM) and serves(api, U64_STORE, SPEED_ITEM)):
+        return f"{info.product} does not provide both an REU and a CPU speed setting"
+
+    data = bonzai_disk(args.bonzai_disk, args.timeout)
+    previous: dict[tuple[str, str], str] = {}
+    wanted = ((REU_STORE, REU_ITEM, "Enabled"),
+              (REU_STORE, "REU Size", "512 KB"),
+              (U64_STORE, "System Mode", "PAL"),
+              (U64_STORE, BADLINE_ITEM, "Enabled"),
+              (U64_STORE, TURBO_ITEM, TURBO_MANUAL),
+              (U64_STORE, SPEED_ITEM, SLOWEST_SPEED))
+    capture = VicStreamCapture(args.host)
+    try:
+        with check("Expand by Bonzai reaches its title at 1 MHz"):
+            for store, item, value in wanted:
+                previous[(store, item)] = api.configs.current(store, item)
+                if previous[(store, item)] != value:
+                    api.configs.set(store, item, value)
+            with ftp_lib.session(args.host, args.password, timeout=args.timeout) as ftp:
+                ftp_lib.delete_quietly(ftp, f"/Temp/{BONZAI_REMOTE}")
+                ftp_lib.store(ftp, f"/Temp/{BONZAI_REMOTE}", data)
+            api.drives.mount("a", f"/Temp/{BONZAI_REMOTE}", mode="readonly")
+            api.machine.reset(force=True)
+            api.machine.close_menu_from_anywhere()
+            api.machine.press(*ui_backend.KEY_ALIASES["CLEAR"])
+            time.sleep(0.25)
+
+            def type_line(line: str) -> None:
+                events = [{"kind": "keyboard", "inputs": ui_backend.char_to_combo(ch),
+                           "transition": "tap"} for ch in line]
+                events.append({"kind": "keyboard", "inputs": ["return"],
+                               "transition": "tap"})
+                api.machine.send_input(events)
+
+            type_line('LOAD"*",8,1')
+            if not api.machine.wait_until_ready(BONZAI_TIMEOUT_SECONDS):
+                raise Failure("Expand did not finish loading from drive A")
+            with streams.Arming(api, args.host) as arming:
+                if not arming.start("video"):
+                    raise Failure("the video stream could not be started: "
+                                  + arming.failures.get("video", "no reason given"))
+                type_line("RUN")
+                await_bonzai_title(capture)
+    finally:
+        capture.close()
+        teardown_step("unmount the Bonzai disk", lambda: api.drives.remove("a"))
+        restore_settings(api, previous)
+        teardown_step("reset the machine", lambda: api.machine.reset(force=True))
+
+        def remove_disk() -> None:
+            with ftp_lib.session(args.host, args.password, timeout=args.timeout) as ftp:
+                ftp_lib.delete_quietly(ftp, f"/Temp/{BONZAI_REMOTE}")
+        teardown_step("remove the Bonzai disk", remove_disk)
+    return None
+
+
+def timing_screen_text(row: bytes) -> str:
+    """Decode the diagnostic's letters and hex digits from C64 screen RAM."""
+    return "".join(chr(value + 64) if 1 <= value <= 26 else
+                   chr(value) if 32 <= value <= 126 else "?" for value in row)
+
+
+def run_timing(args) -> str | None:
+    """Compare Gideon's requested program with the published real-REU capture."""
+    api = UltimateApi(args.host, args.password or None, args.timeout)
+    info = api.info()
+    # shortcut: integrated-machine hosts only; add cartridge@host support with test hardware.
+    if not (serves(api, REU_STORE, REU_ITEM) and serves(api, U64_STORE, SPEED_ITEM)):
+        return f"{info.product} does not provide both an REU and a CPU speed setting"
+
+    request = urllib.request.Request(TIMING_URL, headers={"User-Agent": "1541ultimate-e2e"})
+    with retrying_urlopen(request, args.timeout, idempotent=True) as response:
+        program = response.read()
+    digest = hashlib.sha256(program).hexdigest()
+    if digest != TIMING_SHA256:
+        raise Failure(f"reutiming.prg has SHA-256 {digest}, expected {TIMING_SHA256}")
+
+    previous: dict[tuple[str, str], str] = {}
+    wanted = ((REU_STORE, REU_ITEM, "Enabled"),
+              (U64_STORE, "System Mode", "PAL"),
+              (U64_STORE, BADLINE_ITEM, "Enabled"),
+              (U64_STORE, TURBO_ITEM, TURBO_MANUAL),
+              (U64_STORE, SPEED_ITEM, SLOWEST_SPEED))
+    remote = f"/Temp/{TIMING_REMOTE}"
+    try:
+        with check("REU timing matches the published real-REU capture at 1 MHz"):
+            for store, item, value in wanted:
+                previous[(store, item)] = api.configs.current(store, item)
+                if previous[(store, item)] != value:
+                    api.configs.set(store, item, value)
+            with ftp_lib.session(args.host, args.password, timeout=args.timeout) as ftp:
+                ftp_lib.delete_quietly(ftp, remote)
+                ftp_lib.store(ftp, remote, program)
+            api.machine.reset(force=True)
+            api.runners.run_prg(remote)
+            time.sleep(5)
+            label = timing_screen_text(api.machine.readmem(0x0400 + 40, 40))
+            row = timing_screen_text(api.machine.readmem(0x0400 + 3 * 40, 40))
+            measured = tuple(row[column:column + 2] for column in range(10, 31, 3))
+            detail(f"REU label: {label.strip()}; timer cycles: {' '.join(measured)}")
+            if "REAL REU DETECTED" not in label:
+                raise Failure(f"REU-to-C64 timing differs from published capture: {label.strip()}")
+            if measured != TIMING_EXPECTED:
+                raise Failure(f"C64-to-REU bad-line cycles were {' '.join(measured)}, "
+                              f"published capture shows {' '.join(TIMING_EXPECTED)}")
+    finally:
+        teardown_step("reset the machine", lambda: api.machine.reset(force=True))
+        restore_settings(api, previous)
+
+        def remove_program() -> None:
+            with ftp_lib.session(args.host, args.password, timeout=args.timeout) as ftp:
+                ftp_lib.delete_quietly(ftp, remote)
+        teardown_step("remove the REU timing program", remove_program)
+    return None
+
+
 def run(args) -> str | None:
     """Run the suite, or answer why this machine could not run it.
 
@@ -348,16 +539,24 @@ def main() -> int:
     parser.add_argument("-H", "--host", default=os.environ.get("U64_HOST", "u64"))
     parser.add_argument("-p", "--password", default=os.environ.get("U64_PASS", ""))
     parser.add_argument("-t", "--timeout", type=float, default=30.0)
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--bonzai", action="store_true",
+                      help="run issue #895's published Expand disk instead")
+    mode.add_argument("--timing", action="store_true",
+                      help="run the published REU cycle timing diagnostic instead")
+    parser.add_argument("--bonzai-disk", default=os.environ.get("BONZAI_D64", ""),
+                        help="use this Expand Disk1 D64 instead of the cached download")
     args = parser.parse_args()
+    suite = "reu_timing_test" if args.timing else "reu_bonzai_test" if args.bonzai else SUITE
     try:
-        skipped = run(args)
+        skipped = run_timing(args) if args.timing else run_bonzai(args) if args.bonzai else run(args)
         if skipped:
-            suite_skip(SUITE, skipped)
+            suite_skip(suite, skipped)
             return 0
     except Exception as exc:            # noqa: BLE001
-        suite_fail(SUITE, format_exception(exc))
+        suite_fail(suite, format_exception(exc))
         return 1
-    suite_ok(SUITE)
+    suite_ok(suite)
     return 0
 
 
