@@ -354,6 +354,10 @@ SUITES: Sequence[Suite] = (
     # already the IEC suite that costs real time.
     Suite("e2e", "iec-dos-commands", "tests/e2e/io/iec/dos_command_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ @KERNAL@", profile=profiles.STANDARD),
+    # Replays C64 OS directory renames through the KERNAL on both host folders
+    # and DNP images (#999/#1000), including the renamed file and disk header.
+    Suite("e2e", "iec-directory-rename", "tests/e2e/io/iec/directory_rename_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ @KERNAL@", profile=profiles.STANDARD),
     # What the Software IEC drive receives from a talker that raises ATN for UNLISTEN as
     # soon as the last byte is acknowledged, as a CMD drive's SWAP does (#933): commands
     # and files over every pause, bit pace and ending, sent by the C64's own code rather
