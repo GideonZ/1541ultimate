@@ -243,11 +243,6 @@ void NetworkTarget :: open_socket(Message *command, Message **reply, Message **s
 	this->data_message.message[0] = (uint8_t)socket;
 	this->data_message.length = 1;
 	data_message.last_part = true;
-
-	struct timeval tv;
-	tv.tv_sec = 0;
-	tv.tv_usec = 40000; // 40 ms
-	setsockopt(socket, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv, sizeof(struct timeval));
 }
 
 void NetworkTarget :: read_socket(Message *command, Message **reply, Message **status)
@@ -282,7 +277,10 @@ void NetworkTarget :: read_socket(Message *command, Message **reply, Message **s
     msg.msg_iovlen = 1;
     int ret;
     if (owns_socket(socketnr)) {
-        ret = lwip_recvmsg(socketnr, &msg, 0);
+        // Never wait: an empty socket answers at once with -1/EWOULDBLOCK (reported
+        // as NO DATA below). MSG_DONTWAIT rather than O_NONBLOCK, which would
+        // also make TCP writes non-blocking.
+        ret = lwip_recvmsg(socketnr, &msg, MSG_DONTWAIT);
     } else {
         errno = EBADF;
         ret = -1;

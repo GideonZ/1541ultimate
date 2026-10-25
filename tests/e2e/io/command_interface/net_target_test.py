@@ -64,6 +64,7 @@ from uci import (  # noqa: E402
     MAX_BLOCK_BYTES, REPLY_QUEUE_BYTES, TARGET_NETWORK, Uci, Wedged,
     interface_present)
 from uci_native import NativeUci  # noqa: E402
+from assembler import assemble  # noqa: E402
 
 CONFIG_CATEGORY = "C64 and Cartridge Settings"
 CFG_CMD_IF = "Command Interface"
@@ -83,6 +84,12 @@ STATUS_OUT_OF_RANGE = b"82,PARAMETER(S) OUT OF RANGE"
 # lwip_recv returns -1. The number is the errno: 9 is EBADF for a handle that
 # was never opened, 11 is EAGAIN for an open socket with nothing pending.
 STATUS_NO_DATA_PREFIX = b"02,NO DATA"
+# What a READ on a handle the target does not own answers: the receive is
+# refused with EBADF (9), not the EWOULDBLOCK (11) an empty socket gives.
+STATUS_NO_DATA_BAD_HANDLE = b"02,NO DATA: 9"
+# What an empty socket gives: the receive would block.
+STATUS_NO_DATA_EMPTY = b"02,NO DATA: 11"
+STATUS_INVALID_PARAMS = b"81,INVALID PARAMS"
 
 # A handle no OPEN command ever returned, so the socket can never supply data
 # and the length in the command is the only variable.
@@ -133,8 +140,8 @@ TRUNCATED_DATAGRAM = 1200
 # longer block.
 OVERRUN_LIMIT = REPLY_QUEUE_BYTES + 128
 
-# The device's socket carries SO_RCVTIMEO of 40 ms, so a read finds a datagram
-# that is already queued and does not wait for one in flight.
+# A READ does not wait, so it finds a datagram that is already queued and does
+# not wait for one in flight.
 DELIVERY_SETTLE_SECONDS = 0.4
 PEER_TIMEOUT_SECONDS = 10.0
 # How often a lost probe datagram is resent before the socket is judged
@@ -162,6 +169,9 @@ TESTS = [
     "oversize-request-keeps-the-datagram",
     "empty-datagram-keeps-udp-open",
     "multi-block-state-does-not-leak",
+    "read-empty-answers-at-once",
+    "read-returns-waiting-data",
+    "read-sixth-byte-refused",
     "reset-closes-uci-sockets",
 ]
 
@@ -279,19 +289,20 @@ class Net:
     def write(self, handle: int, payload: bytes):
         return self.uci.transact(bytes([TARGET_NETWORK, NET_CMD_WRITE_SOCKET, handle]) + payload)
 
-    def read_command(self, handle: int, maxlen: int) -> bytes:
+    def read_command(self, handle: int, maxlen: int, option: bytes = b"") -> bytes:
         return bytes([TARGET_NETWORK, NET_CMD_READ_SOCKET, handle,
-                      maxlen & 0xFF, (maxlen >> 8) & 0xFF])
+                      maxlen & 0xFF, (maxlen >> 8) & 0xFF]) + option
 
     def read(self, handle: int, maxlen: int, overrun_reads: int = 0,
-             single_part: bool = True) -> ReadResult:
+             single_part: bool = True, option: bytes = b"") -> ReadResult:
         """One READ_SOCKET, followed through however many blocks it takes.
 
         `single_part` asserts that the reply arrives in one block, announced as
         Data Last, which is what every reply short enough to fit one has to do.
-        Pass False for a read whose payload cannot fit one block.
+        Pass False for a read whose payload cannot fit one block. `option` is the
+        optional sixth byte, which this firmware refuses.
         """
-        return ReadResult(self.uci.transact(self.read_command(handle, maxlen),
+        return ReadResult(self.uci.transact(self.read_command(handle, maxlen, option),
                                             single_part=single_part,
                                             overrun_reads=overrun_reads))
 
@@ -1136,6 +1147,242 @@ def run_empty_datagram_keeps_udp_open(net: Net, peer: Peer) -> bool:
     return ok
 
 
+# The READ does not wait on an empty socket. The host cannot time one: a READ
+# costs it 0.1-0.4 s of requests, which varies by more than a 40 ms wait would.
+# net_read_timing.asm issues the READs from the 6510 and counts PHI2 cycles on
+# the CIA2 timers; the host reads the totals back.
+TIMING_SOURCE = Path(__file__).resolve().parent / "net_read_timing.asm"
+T_GO, T_READY, T_DONE, T_HANDLE, T_UNOWNED, T_FLAGS = 0xC000, 0xC001, 0xC002, 0xC003, 0xC004, 0xC005
+T_BLOCKS = 0xC010
+T_STATUSES = 0xC100
+T_READS = 20          # READs in one block
+T_ROUNDS = 3
+T_KINDS = ("reference", "empty")  # unowned handle, empty socket; both 5 bytes
+T_SLOT = 16
+T_MARK = 0xA5
+T_START_SECONDS = 30.0
+T_RUN_SECONDS = 60.0
+T_POLL_SECONDS = 0.25
+PHI2_HZ = {"PAL": 985248.0, "NTSC": 1022727.0}
+SYSTEM_MODE = ("U64 Specific Settings", "System Mode")
+EMPTY_MAX_EXTRA_SECONDS = 0.005  # per READ, over the reference; a wait was 40 ms
+
+
+def phi2_hz(computer: UltimateApi) -> float:
+    """PHI2 of the machine the program runs on; PAL's when the device does not say.
+
+    PAL and NTSC differ by under 4 %, far inside the margins, so a device
+    without a System Mode setting is not a reason to skip the measurement.
+    """
+    try:
+        mode = str(computer.configs.get(*SYSTEM_MODE)).strip().upper()
+    except Exception as exc:  # noqa: BLE001 - any failure to read the setting means "not known"
+        detail(f"System Mode not readable ({format_exception(exc)}); assuming PAL")
+        return PHI2_HZ["PAL"]
+    detail(f"System Mode {mode!r}")
+    return PHI2_HZ.get(mode, PHI2_HZ["PAL"])
+
+
+def log_cpu_settings(computer: UltimateApi) -> None:
+    """The CPU Speed and Turbo Control the run had, read back. Cycles do not depend on them."""
+    for item in ("Turbo Control", "CPU Speed"):
+        try:
+            detail(f"{item}: {computer.configs.get('U64 Specific Settings', item)!s}")
+        except Exception as exc:  # noqa: BLE001 - a device without the setting is not a failure
+            detail(f"{item}: not readable ({format_exception(exc)})")
+
+
+class C64Timing:
+    """What net_read_timing.asm left in RAM."""
+
+    def __init__(self, blocks: bytes, statuses: bytes, flags: int, phi2: float) -> None:
+        cycles = [int.from_bytes(blocks[4 * i:4 * i + 4], "little")
+                  for i in range(T_ROUNDS * len(T_KINDS))]
+        self.seconds = {kind: sorted(cycles[r * len(T_KINDS) + k] / phi2 for r in range(T_ROUNDS))
+                        for k, kind in enumerate(T_KINDS)}
+        self.statuses = {kind: [] for kind in T_KINDS}
+        slots = T_ROUNDS * len(T_KINDS) * T_READS
+        for slot in range(slots):
+            kind = T_KINDS[(slot // T_READS) % len(T_KINDS)]
+            text = statuses[slot * T_SLOT:(slot + 1) * T_SLOT].split(b"\0")[0]
+            self.statuses[kind].append(text)
+        self.flags = flags
+
+    def median(self, kind: str) -> float:
+        return self.seconds[kind][len(self.seconds[kind]) // 2]
+
+    def describe(self) -> str:
+        return ", ".join(f"{kind} {self.median(kind) * 1000:.0f} ms" for kind in T_KINDS) + \
+            f" per {T_READS} READs (median of {T_ROUNDS})"
+
+
+def time_reads_on_c64(computer: UltimateApi, rest_uci: Uci, peer: Peer, kind: str):
+    """Open an empty socket, time READs on it from a 6502 program, return (Net, handle, result).
+
+    The machine is reset first: the program takes the CPU and the native agent
+    cannot share it. Loading the program resets the machine again, and a reset
+    closes every socket the target holds, so the socket is opened only once the
+    program is running and waiting for its go, through the REST route, which
+    needs no CPU. Nothing resets the machine between the open and the READs.
+    """
+    computer.machine.reset(force=True)
+    rest_uci.release()
+    net = Net(rest_uci)
+    prg = assemble(TIMING_SOURCE)
+    # A reset does not clear RAM, so the last run's READY and DONE would still
+    # read as set, and its GO would be there for the new program to find.
+    computer.machine.writemem(T_GO, bytes(3))
+    status, _, body = computer.runners.upload("run_prg", prg)
+    if status != 200:
+        raise Failure(f"runners:run_prg returned HTTP {status}: {body[:160]!r}")
+
+    def wait_for(address: int, seconds: float, what: str) -> None:
+        deadline = time.monotonic() + seconds
+        while computer.machine.readmem(address, 1)[0] != T_MARK:
+            if time.monotonic() > deadline:
+                raise Failure(f"{what}: ${address:04X} never became ${T_MARK:02X} "
+                              f"within {seconds:.0f}s")
+            time.sleep(T_POLL_SECONDS)
+
+    wait_for(T_READY, T_START_SECONDS, "the timing program did not start")
+    log_cpu_settings(computer)
+    rest_uci.release()
+    handle = open_empty(net, peer, kind)
+    try:
+        computer.machine.writemem(T_HANDLE, bytes([handle, NEVER_OPENED]))
+        patched = computer.machine.readmem(T_HANDLE, 2)
+        if patched != bytes([handle, NEVER_OPENED]):
+            raise Failure(f"the handles did not reach the program: wrote "
+                          f"{handle:02X} {NEVER_OPENED:02X}, read back {patched.hex(' ')}")
+        computer.machine.writemem(T_GO, bytes([1]))
+        wait_for(T_DONE, T_RUN_SECONDS, "the timing program did not finish")
+        blocks = computer.machine.readmem(T_BLOCKS, 4 * T_ROUNDS * len(T_KINDS))
+        size = T_ROUNDS * len(T_KINDS) * T_READS * T_SLOT
+        statuses = b"".join(computer.machine.readmem(T_STATUSES + off, min(1024, size - off))
+                            for off in range(0, size, 1024))
+        flags = computer.machine.readmem(T_FLAGS, 1)[0]
+        rest_uci.release()
+        timing = C64Timing(blocks, statuses, flags, phi2_hz(computer))
+    except Exception:
+        # The caller only gets the socket back from a run that completed.
+        try:
+            rest_uci.release()
+            net.close(handle)
+        except Exception as exc:  # noqa: BLE001 - the original failure is the one to report
+            detail(f"closing handle {handle} after the failure also failed: {format_exception(exc)}")
+        close_peer_stream(peer)
+        raise
+    return net, handle, timing
+
+
+def open_empty(net: Net, peer: Peer, kind: str) -> int:
+    """A UDP or TCP socket to the peer with nothing waiting on it."""
+    if kind == "udp":
+        handle = net.open_udp(peer.ip, peer.udp_port)
+        peer.learn_udp_peer(net, handle)
+        net.drain_socket(handle)
+    else:
+        handle = net.open_tcp(peer.ip, peer.tcp_port)
+        peer.accept_tcp()
+    return handle
+
+
+def close_peer_stream(peer: Peer) -> None:
+    if peer.tcp_conn is not None:
+        peer.tcp_conn.close()
+        peer.tcp_conn = None
+
+
+def check_timing_statuses(timing: C64Timing, what: str) -> None:
+    with check(f"{what}: every READ answered, and with the status it should"):
+        detail(f"flags {timing.flags}, distinct statuses "
+               + ", ".join(f"{k}: {sorted(set(v))!r}" for k, v in timing.statuses.items()))
+        if timing.flags:
+            raise Failure(f"the program reported flags {timing.flags}: bit 0 a READ never "
+                          f"answered, bit 1 the interface would not go Idle")
+        expected = {"reference": STATUS_NO_DATA_BAD_HANDLE, "empty": STATUS_NO_DATA_EMPTY}
+        for kind, want in expected.items():
+            if set(timing.statuses[kind]) != {want}:
+                raise Failure(f"{kind} READs: expected {want!r} every time, got "
+                              f"{sorted(set(timing.statuses[kind]))!r}")
+
+
+def run_read_empty_answers_at_once(peer: Peer, computer: UltimateApi, rest_uci: Uci) -> bool:
+    """A 5-byte READ on an empty socket answers at once, UDP and TCP."""
+    section("read-empty-answers-at-once")
+    for kind in ("udp", "tcp"):
+        rest, handle, timing = time_reads_on_c64(computer, rest_uci, peer, kind)
+        try:
+            detail(timing.describe())
+            check_timing_statuses(timing, kind)
+            with check(f"{kind}: the empty READ costs no more than one that returns at once"):
+                extra = timing.median("empty") - timing.median("reference")
+                detail(f"empty socket {extra * 1000:+.1f} ms over the reference per {T_READS} READs")
+                if extra > T_READS * EMPTY_MAX_EXTRA_SECONDS:
+                    raise Failure(f"{T_READS} READs on an empty socket took {extra * 1000:.0f} ms "
+                                  f"more than {T_READS} that return at once")
+            with check(f"{kind}: the socket is still open after the empty READs"):
+                again = rest.read(handle, SMALL_READ)
+                if again.status_text != STATUS_NO_DATA_EMPTY:
+                    raise Failure(f"expected {STATUS_NO_DATA_EMPTY!r}, got {again.status_text!r}")
+        finally:
+            closed = rest.close(handle)
+            close_peer_stream(peer)
+            with check(f"{kind}: CLOSE succeeds on the handle that was never closed"):
+                if closed.status_text != STATUS_OK:
+                    raise Failure(f"expected {STATUS_OK!r}, got {closed.status_text!r}")
+    return True
+
+
+def run_read_returns_waiting_data(net: Net, peer: Peer) -> bool:
+    """With data waiting, the READ returns it, UDP and TCP."""
+    section("read-returns-waiting-data")
+    for kind in ("udp", "tcp"):
+        handle = open_empty(net, peer, kind)
+        try:
+            payload = pattern(SMALL_READ, seed=5)
+            if kind == "udp":
+                peer.send_udp(payload)
+            else:
+                peer.tcp_conn.sendall(payload)
+            time.sleep(DELIVERY_SETTLE_SECONDS)
+            result = net.read(handle, SMALL_READ)
+            with check(f"{kind}: the waiting data comes back with status OK"):
+                detail(f"read: {result.describe()}")
+                if result.status_text != STATUS_OK or result.payload != payload:
+                    raise Failure(f"expected the {len(payload)} bytes sent, got {result.describe()}")
+        finally:
+            closed = net.close(handle)
+            close_peer_stream(peer)
+            with check(f"{kind}: CLOSE succeeds on the handle that was never closed"):
+                if closed.status_text != STATUS_OK:
+                    raise Failure(f"expected {STATUS_OK!r}, got {closed.status_text!r}")
+    return True
+
+
+def run_read_sixth_byte_refused(net: Net, peer: Peer) -> bool:
+    """A 6-byte READ answers 81 as it always did and touches nothing."""
+    section("read-sixth-byte-refused")
+    handle = open_empty(net, peer, "udp")
+    try:
+        payload = pattern(SMALL_READ, seed=7)
+        peer.send_udp(payload)
+        time.sleep(DELIVERY_SETTLE_SECONDS)
+        for option in (b"\x00", b"\x01", b"\xff"):
+            with check(f"sixth byte {option.hex()} answers 81"):
+                result = net.read(handle, SMALL_READ, option=option)
+                detail(f"status {result.status_text!r}")
+                if result.status_text != STATUS_INVALID_PARAMS or result.payload:
+                    raise Failure(f"expected {STATUS_INVALID_PARAMS!r}, got {result.describe()}")
+        with check("the refused READs consumed nothing: the datagram is still there"):
+            after = net.read(handle, SMALL_READ)
+            if after.status_text != STATUS_OK or after.payload != payload:
+                raise Failure(f"expected the datagram, got {after.describe()}")
+    finally:
+        net.close(handle)
+    return True
+
+
 def close_quietly(net: Net, handles: list[int]) -> None:
     """Close every handle a scenario opened; an error means it was already gone."""
     for handle in handles:
@@ -1388,6 +1635,8 @@ def main() -> int:
                 run_empty_datagram_keeps_udp_open, net, peer)
             run(route, "multi-block-state-does-not-leak",
                 run_multi_block_state_does_not_leak, net, peer)
+            run(route, "read-returns-waiting-data", run_read_returns_waiting_data, net, peer)
+            run(route, "read-sixth-byte-refused", run_read_sixth_byte_refused, net, peer)
 
             def reset_and_reopen(route=route):
                 """Reset the C64 and hand back a driver that reaches the target."""
@@ -1397,6 +1646,13 @@ def main() -> int:
                     native_started = True
                     return Net(build_driver(route, computer, args.busy_timeout))
                 return Net(rest_uci)
+            # This times READs from a 6502 program, which takes the machine: it
+            # resets it first, and the native agent is started again afterwards.
+            # The program does the timing, so the route changes nothing: once.
+            if "read-empty-answers-at-once" in selected and route == routes[0]:
+                run(route, "read-empty-answers-at-once", run_read_empty_answers_at_once,
+                    peer, computer, rest_uci)
+                net = reset_and_reopen()
             # Last on purpose: on the native route the reset inside it ends
             # the 6502 agent that `net` wraps, so nothing can follow it here.
             run(route, "reset-closes-uci-sockets",
