@@ -1,4 +1,5 @@
 #include "FreeRTOS.h"
+#include "heap_track.h"
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -32,6 +33,10 @@ void * get_mem(size_t size)
     //printf("New operator for size = %d, returned: \n", size);
     void *ret;
 	ret = pvPortMalloc(size ? size : 1);
+	// Every C++ allocation arrives here, so without this the tracker would
+	// attribute all of them to this function instead of to the code that
+	// asked.
+	heap_track_note_caller(ret, __builtin_return_address(0));
 
 	if (!ret) {
         printf("** PANIC **: Error allocating %p..\n", __builtin_return_address(0));
