@@ -33,6 +33,7 @@ SRCS_CC	 =  mystring.cc \
 			http_target.cc \
 			pattern.cc \
 			http_request.cc \
+			test_http_transport.cc \
 			test_http_target.cc
 
 
@@ -80,8 +81,8 @@ test-connect-cleanup:
 	    CPP="$(CPP) -fsanitize=address,undefined -fno-sanitize-recover=all" all
 	@timeout 30s env LD_PRELOAD="$$($(CPP) -print-file-name=libasan.so)$${LD_PRELOAD:+:$$LD_PRELOAD}" result/connect-cleanup/$(PRJ) --connect-cleanup
 
-.PHONY: test-response-completion test-response-boundaries test-response-cleanup
-test-response-completion test-response-boundaries test-response-cleanup:
+.PHONY: test-response-completion test-response-boundaries test-response-cleanup test-transport
+test-response-completion test-response-boundaries test-response-cleanup test-transport:
 	@$(MAKE) OUTPUT=output/response-completion RESULT=result/response-completion \
 	    CC="$(CC) -fsanitize=address,undefined -fno-sanitize-recover=all" \
 	    CPP="$(CPP) -fsanitize=address,undefined -fno-sanitize-recover=all" all
