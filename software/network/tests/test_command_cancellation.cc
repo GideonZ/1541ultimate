@@ -55,8 +55,17 @@ static void queue_event(uint8_t flags)
 struct Target : CommandTarget {
     OperationCancellation token;
     bool interrupt, restart;
+    bool reject;
+    int finalized;
     int parsed, aborted, resets, continued;
-    Target() : interrupt(false), restart(false), parsed(0), aborted(0), resets(0), continued(0) {}
+    Target() : interrupt(false), restart(false), reject(false), finalized(0), parsed(0), aborted(0), resets(0), continued(0) {}
+    void prepare_reply(Message **data, Message **status) override {
+        expect(critical > 0, "publication validation is atomic with copy");
+        if (reject) { *data = &c_message_empty; *status = &c_status_unknown_command; }
+    }
+    void finish_reply(bool) override {
+        expect(critical == 0, "publication cleanup outside interrupt mask"); ++finalized;
+    }
     void begin_command(const OperationCancellation& t) override { token = t; }
     void reply(Message **data, Message **status) {
         static Message result = {1, true, (uint8_t *)"X"};
@@ -89,6 +98,14 @@ int main()
     CMD_IF_COMMAND_LEN_H = 0;
     CMD_IF_RAM(0) = 6;
     CMD_IF_RAM(1) = 1;
+    {
+        Target target; command_targets[6] = &target; target.reject = true;
+        command_registers[0x800 + 896] = '?';
+        queue_event(CMD_NEW_COMMAND); drain();
+        expect(command_registers[0x800 + 896] == '?' && CMD_IF_RESPONSE_LEN_L == 0,
+               "target may reject success at final publication");
+        expect(target.finalized == 1, "owner finishes rejected publication");
+    }
     for (bool restart : {false, true}) for (bool dropped : {false, true}) for (bool more : {false, true}) {
         Target target;
         command_targets[6] = &target;

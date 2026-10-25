@@ -64,17 +64,22 @@ struct Provider : HttpSecureProvider {
     CancellationSource *interrupt;
     int signal_at;
     OperationCancellation cancellation;
-    Provider(Mode m = Good) : mode(m), created(0), opened(0), closed(0), destroyed(0), interrupt(NULL), signal_at(0) {}
+    CancellationSource epoch;
+    bool online;
+    Provider(Mode m = Good) : mode(m), created(0), opened(0), closed(0), destroyed(0), interrupt(NULL), signal_at(0), online(true) {}
+    bool available() const override { return online; }
+    OperationCancellation lifetime() const override { return epoch.token(); }
     class Connection : public HttpConnection {
         Provider& owner;
         bool live;
+        OperationCancellation lifetime;
     public:
-        Connection(Provider& p) : owner(p), live(false) {}
+        Connection(Provider& p) : owner(p), live(false), lifetime(p.lifetime()) {}
         ~Connection() { close_session(); ++owner.destroyed; }
         int open(const char *name, uint16_t port) {
             if (owner.signal_at == 1) owner.interrupt->signal();
             live = true; ++owner.opened; host = name; selected_port = port;
-            return owner.mode == OpenError || owner.cancellation.cancelled() ? -1 : 0;
+            return owner.mode == OpenError || owner.cancellation.cancelled() || lifetime.cancelled() ? -1 : 0;
         }
         int read(void *p, int n) {
             int result = owner.mode == ReadError ? -1 : deliver(p, n);
@@ -85,13 +90,14 @@ struct Provider : HttpSecureProvider {
         }
         int write(const void *p, int n) {
             if (owner.signal_at == 2) owner.interrupt->signal();
-            return owner.mode == WriteError || owner.cancellation.cancelled() ? -1 : collect(p, n);
+            return owner.mode == WriteError || owner.cancellation.cancelled() || lifetime.cancelled() ? -1 : collect(p, n);
         }
         void close_session() { if (live) { live = false; ++owner.closed; } }
     };
     HttpConnection *create_connection(const OperationCancellation& token) {
         cancellation = token;
         ++created;
+        if (signal_at == 4) epoch.signal();
         return mode == Missing ? NULL : new Connection(*this);
     }
 };
@@ -104,6 +110,7 @@ static void reset(const std::string& body, const char *status = "200 OK")
                std::to_string(body.size()) + "\r\n\r\n" + body;
 }
 struct Reply { std::string data, status; bool last; };
+static CancellationSource *before_publication;
 static Reply snapshot(Message *data, Message *status)
 {
     expect(data->length <= HTTP_MAX_REPLY_BYTES && status->length <= HTTP_MAX_STATUS_BYTES, "channel bounds");
@@ -114,7 +121,11 @@ static Reply command(HttpTarget& target, std::vector<uint8_t> bytes)
 {
     Message cmd = {int(bytes.size()), true, bytes.data()}, *data, *status;
     target.parse_command(&cmd, &data, &status);
-    return snapshot(data, status);
+    if (before_publication) { before_publication->signal(); before_publication = NULL; }
+    target.prepare_reply(&data, &status);
+    auto result = snapshot(data, status);
+    target.finish_reply(true);
+    return result;
 }
 static uint8_t header(HttpTarget& target, const std::string& url, int verb = 1)
 {
@@ -132,7 +143,11 @@ static Reply more(HttpTarget& target)
 {
     Message *data, *status;
     target.get_more_data(&data, &status);
-    return snapshot(data, status);
+    if (before_publication) { before_publication->signal(); before_publication = NULL; }
+    target.prepare_reply(&data, &status);
+    auto result = snapshot(data, status);
+    target.finish_reply(true);
+    return result;
 }
 static void failure_cases()
 {
@@ -295,9 +310,42 @@ static void interrupt_cases()
     target.abort(0); target.c64_reset();
     expect(provider.destroyed == 1 && provider.closed == 1, "continuation abort reset cleanup idempotent");
 }
+static void provider_restart_cases()
+{
+    for (bool raw : {false, true}) {
+        Provider provider; HttpTarget target(7, &provider);
+        auto hdr = header(target, "https://tls.lab.test/probe");
+        for (int i = 0; i < MAX_HTTP_HANDLES + 2; ++i) {
+            reset("{\"answer\":42}");
+            before_publication = &provider.epoch;
+            auto r = exchange(target, hdr, raw);
+            expect(r.data.empty() && r.status == "503 SERVICE UNAVAILABLE", "restart after parse rejected at publication");
+        }
+        reset("{\"answer\":42}");
+        expect(exchange(target, hdr, false).data.size() == 2, "unpublished response handles reclaimed");
+    }
+    for (bool raw : {false, true}) for (int phase = 0; phase <= 4; ++phase) {
+        reset("{\"answer\":42}"); Provider provider; HttpTarget target(7, &provider);
+        provider.interrupt = &provider.epoch; provider.signal_at = phase; provider.online = phase != 0;
+        auto hdr = header(target, "https://tls.lab.test/probe");
+        auto r = exchange(target, hdr, raw);
+        expect(r.data.empty() && r.status == "503 SERVICE UNAVAILABLE", "unavailable or restarted provider exposes no reply");
+        expect(provider.destroyed == provider.created && provider.opened == provider.closed && !socket_calls,
+               "provider restart released by owner without fallback");
+        if (phase == 4) expect(provider.opened == 0, "restart during factory call prevents open");
+        reset("{\"answer\":42}"); provider.online = true; provider.signal_at = 0;
+        expect(exchange(target, hdr, true).data == "{\"answer\":42}", "new provider lifetime permits explicit recovery");
+    }
+    reset(std::string(HTTP_MAX_REPLY_BYTES * 2, 'x'));
+    Provider provider; HttpTarget target(7, &provider);
+    expect(!exchange(target, header(target, "https://tls.lab.test/probe"), true).last, "provider retains buffered reply");
+    provider.epoch.signal();
+    expect(provider.destroyed == 0, "restart notification does not free owner connection");
+    expect(more(target).data.empty() && provider.destroyed == 1, "restarted provider cannot deliver buffered tail");
+}
 int main()
 {
-    failure_cases(); scheme_cases(); parity_and_cleanup(); interrupt_cases();
+    failure_cases(); scheme_cases(); parity_and_cleanup(); interrupt_cases(); provider_restart_cases();
     printf("HTTPS routing: %d checks, %d failures\n", checks, failures);
     return failures ? 1 : 0;
 }

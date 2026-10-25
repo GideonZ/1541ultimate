@@ -29,8 +29,16 @@ class HttpSecureProvider
 {
 public:
     virtual ~HttpSecureProvider() {}
+    // Availability includes the provider's own security/initialization gates.
+    // A changed lifetime invalidates existing sessions; it never frees them.
+    // These queries must be bounded, nonblocking and allocation-free: the
+    // dispatcher may query availability inside its publication critical section.
+    virtual bool available() const { return true; }
+    virtual OperationCancellation lifetime() const { return OperationCancellation(); }
     // Copy the token into the session context and poll it in all bounded waits
     // as well as the TLS cancellation callback. Never retain this reference.
+    // Capture/poll the provider lifetime too; a restart must terminate blocked
+    // I/O, not merely reject the next factory call.
     virtual HttpConnection *create_connection(const OperationCancellation& cancellation) = 0;
 };
 

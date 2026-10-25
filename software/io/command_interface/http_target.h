@@ -666,6 +666,9 @@ class HttpTarget : public CommandTarget {
     HttpConnection *secure_connection;
     OperationCancellation cancellation;
     OperationCancellation exchange_cancellation;
+    OperationCancellation provider_cancellation;
+    bool secure_reply, rejected_reply;
+    int pending_header, pending_body;
     StreamRamFile *response_data;
 
     // Helper methods for command processing
@@ -694,6 +697,8 @@ public:
     virtual ~HttpTarget();
 
     void begin_command(const OperationCancellation& token) override { cancellation = token; }
+    void prepare_reply(Message **reply, Message **status) override;
+    void finish_reply(bool published) override;
 
     void parse_command(Message *command, Message **reply, Message **status) override;
     void get_more_data(Message **reply, Message **status) override;

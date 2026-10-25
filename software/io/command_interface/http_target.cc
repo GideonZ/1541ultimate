@@ -30,6 +30,8 @@ HttpTarget::HttpTarget(int id, HttpSecureProvider *provider)
     secure_provider = provider;
     secure_connection = NULL;
     response_data = NULL;
+    secure_reply = rejected_reply = false;
+    pending_header = pending_body = -1;
 }
 
 HttpTarget::~HttpTarget()
@@ -69,6 +71,7 @@ void HttpTarget::release_exchange()
 
 void HttpTarget::reset_responses()
 {
+    secure_reply = rejected_reply = false;
     release_exchange();
     if (response_data) {
         delete response_data;
@@ -320,6 +323,8 @@ bool HttpBodySlot::add_encoded(const uint8_t *data, int length, char *error)
 
 void HttpTarget::parse_command(Message *command, Message **reply, Message **status)
 {
+    secure_reply = rejected_reply = false;
+    pending_header = pending_body = -1;
     *reply = &c_message_empty;
     *status = &c_status_bad_cmd;
 
@@ -897,13 +902,15 @@ void HttpTarget::cmd_exchange(Message *command, Message **reply, Message **statu
         return;
     }
     if (hdr->is_secure()) {
-        if (cancellation.cancelled()) {
+        if (cancellation.cancelled() || !secure_provider || !secure_provider->available()) {
             *status = &c_status_not_available;
             return;
         }
         exchange_cancellation = cancellation;
-        secure_connection = secure_provider ? secure_provider->create_connection(exchange_cancellation) : NULL;
-        if (!secure_connection) {
+        provider_cancellation = secure_provider->lifetime();
+        secure_connection = secure_provider->create_connection(exchange_cancellation);
+        if (!secure_connection || provider_cancellation.cancelled() || !secure_provider->available()) {
+            release_exchange();
             *status = &c_status_not_available;
             return;
         }
@@ -937,13 +944,14 @@ void HttpTarget::cmd_exchange(Message *command, Message **reply, Message **statu
     }
 
     // When we are here, the exch object exists and should contain the reply.
-    if (hdr->is_secure() && exchange_cancellation.cancelled()) {
+    if (hdr->is_secure() && (exchange_cancellation.cancelled() || provider_cancellation.cancelled() || !secure_provider->available())) {
         release_exchange();
         *status = &c_status_not_available;
         return;
     }
 
     int slot = -1;
+    secure_reply = hdr->is_secure();
     if(raw) {
         // Return raw data in data channel [cite: 264]
         *reply = &data_message;
@@ -1002,6 +1010,10 @@ void HttpTarget::cmd_exchange(Message *command, Message **reply, Message **statu
         hdr_handle = slot;
         headers[hdr_handle] = new HttpHeaderSlot(hdr);
         headers[hdr_handle]->convert_from_response(exch->get_header());
+        if (secure_reply) {
+            pending_header = hdr_handle;
+            pending_body = body_handle;
+        }
 
         // Create response objects and return two handles [cite: 258]
         data_message.message[0] = hdr_handle; // New Header Handle
@@ -1026,7 +1038,8 @@ void HttpTarget::cmd_exchange(Message *command, Message **reply, Message **statu
 
 void HttpTarget::get_more_data(Message **reply, Message **status)
 {
-    if (secure_connection && exchange_cancellation.cancelled()) {
+    secure_reply = secure_connection != NULL;
+    if (secure_connection && (exchange_cancellation.cancelled() || provider_cancellation.cancelled() || !secure_provider->available())) {
         reset_responses();
         *reply = &c_message_empty;
         *status = &c_status_not_available;
@@ -1053,6 +1066,27 @@ void HttpTarget::get_more_data(Message **reply, Message **status)
         *reply = &c_message_empty;
         *status = &c_status_no_more;
     }
+}
+
+void HttpTarget::prepare_reply(Message **reply, Message **status)
+{
+    if (secure_reply && (exchange_cancellation.cancelled() || provider_cancellation.cancelled() || !secure_provider->available())) {
+        rejected_reply = true;
+        *reply = &c_message_empty;
+        *status = &c_status_not_available;
+    }
+}
+
+void HttpTarget::finish_reply(bool published)
+{
+    if (secure_reply && (!published || rejected_reply)) {
+        if (pending_header >= 0) { delete headers[pending_header]; headers[pending_header] = NULL; }
+        if (pending_body >= 0) { delete bodies[pending_body]; bodies[pending_body] = NULL; }
+        reset_responses();
+    }
+    pending_header = pending_body = -1;
+    rejected_reply = false;
+    if (!exch) secure_reply = false;
 }
 
 void HttpTarget::abort(int a)

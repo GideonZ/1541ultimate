@@ -163,12 +163,16 @@ void CommandInterface :: run_task(void)
 		if(status_byte & CMD_DATA_ACCEPTED) {
 			if (target != CMD_TARGET_NONE) {
 				command_targets[target]->get_more_data(&data, &status);
+                bool published = false;
                 portENTER_CRITICAL();
                 if (!cancellation.cancelled()) {
+                    command_targets[target]->prepare_reply(&data, &status);
                     copy_result(data, status);
                     CMD_IF_HANDSHAKE_OUT = HANDSHAKE_ACCEPT_NEXTDATA;
+                    published = true;
                 }
                 portEXIT_CRITICAL();
+                command_targets[target]->finish_reply(published);
 			} else {
 				printf("CMDIF: Requested for more data, but target is not set!\n");
                 portENTER_CRITICAL();
@@ -194,16 +198,20 @@ void CommandInterface :: run_task(void)
 
                 // Serialize publication with the reset/abort ISR. Cleanup is
                 // still performed by this task when it drains the event.
+                bool published = false;
                 portENTER_CRITICAL();
                 if (!cancellation.cancelled()) {
                     CMD_IF_HANDSHAKE_OUT = HANDSHAKE_ACCEPT_COMMAND; // clears CMD_NEW_COMMAND
                     if (no_reply) {
                         CMD_IF_HANDSHAKE_OUT = HANDSHAKE_RESET; // forces state to 00
                     } else {
+                        command_targets[target]->prepare_reply(&data, &status);
                         copy_result(data, status); // sets state to 10 or 11
+                        published = true;
                     }
                 }
                 portEXIT_CRITICAL();
+                command_targets[target]->finish_reply(published);
             } else {
                 printf("Null command.\n");
                 portENTER_CRITICAL();

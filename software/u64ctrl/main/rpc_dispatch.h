@@ -26,7 +26,7 @@ void start_dispatch(QueueHandle_t queue);
 void send_button_event(uint8_t button);
 void send_keepalive();
 
-#define IDENT_STRING "ESP32 WiFi Bridge V1.14"
+#define IDENT_STRING "ESP32 WiFi Bridge V1.15"
 #define IDENT_MAJOR   1
 // 1.14: wakes the machine on a magic packet, and stores whether it should.
 // 1.13: the module stores the power on behavior after a loss of input power.
@@ -34,7 +34,8 @@ void send_keepalive();
 // Disconnected forever. The Ultimate's updater only reflashes the module
 // when this differs from what the module reports, so a module change that
 // does not bump it is silently never installed.
-#define IDENT_MINOR   14
+// 1.15: optional solicited boot identity; no TLS capability is advertised.
+#define IDENT_MINOR   15
 #define MULTITHREADED 0
 #define DISPATCHER_STACK 3072
 

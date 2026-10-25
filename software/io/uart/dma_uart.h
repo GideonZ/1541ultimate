@@ -111,6 +111,9 @@ public:
     int GetRxCount();
     BaseType_t SendSlipPacket(const uint8_t *buffer, int length);
     BaseType_t TransmitPacket(command_buf_t *buf, uint16_t *ms = NULL);
+    // Bounded timer-service submission. Consumes/frees the buffer on failure,
+    // just like TransmitPacket, but never waits for transmit queue capacity.
+    BaseType_t TryTransmitPacket(command_buf_t *buf);
     BaseType_t ReceivePacket(command_buf_t **buf, TickType_t ticks);
     BaseType_t FreeBuffer(command_buf_t *buf);
     BaseType_t GetBuffer(command_buf_t **buf, TickType_t ticks);

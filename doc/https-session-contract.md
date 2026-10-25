@@ -1,7 +1,7 @@
 # HTTPS session ownership proposal
 
-This is a local design with an executable host model. It does not allocate wire
-commands, install a production provider, or change target-6 HTTP commands,
+This is a local design with an executable host model and staged firmware work.
+It does not install a production TLS provider or change target-6 HTTP commands,
 handles, rendering, response blocks or status strings. The model lives under
 `software/network/tests` and is excluded from firmware builds.
 
@@ -126,3 +126,53 @@ orphan reclamation and admission control; qualify entropy/time/trust; prove UCI
 publication ordering and cancellation races on the chosen scheduler; then measure
 whole-device resources. Session identity is a freshness mechanism, not peer
 authentication or protection against a malicious local transport.
+
+## ESP32 identity and provider lifetime
+
+The U64-II controller adds an optional extension to UART `CMD_IDENTIFY` (0x02).
+Legacy four-byte requests retain the legacy response format. Extended requests
+are exactly 16 bytes: command 0x02, thread 0xff, zero sequence, ASCII `PID1`, then
+an eight-byte little-endian probe counter. The response retains the version and
+NUL-terminated name at offset 8, followed immediately by a 32-byte trailer:
+`PID1`, format version 1, three zero reserved bytes, echoed counter and a 16-byte
+boot identity. No padding or trailing bytes are permitted. Names are bounded to
+64 bytes including NUL. Identity format version is not a TLS capability version.
+
+The boot identity is created once at application startup using `esp_fill_random`
+while the ESP-IDF internal entropy source is enabled. That source is disabled
+before ADC/RF initialization. An all-zero identity disables the extension; it
+does not trigger a retry or a storage write. The controller version is bumped
+to 1.15 so the existing updater can distinguish this local candidate later.
+
+For U64-II only, a 100 ms software timer submits a probe at most every 5 seconds.
+Buffer acquisition and transmit queue submission have zero wait. Identity replies
+on thread 0xff are consumed and freed in the UART ISR, separately from legacy
+per-task notifications. The 1500 ms reply deadline is not extended by malformed,
+duplicate or stale packets. Timer-side updates and stop/disconnect notifications
+are serialized with the receive ISR using short critical sections. Timer/resource
+failure leaves the identity unavailable. No synchronous Wi-Fi RPC is called by
+this monitor. Physical scheduling latency has not been measured.
+
+A changed boot identity, timeout, submission failure or explicit invalidation
+retires the old provider lifetime. A valid same-boot heartbeat preserves it.
+Responses from retired probes cannot roll identity backwards. Stop/disconnect
+invalidates existing tokens without touching owner resources. HTTP factories can
+expose availability and a lifetime token; the target checks both around creation
+and before response delivery. A factory must also poll its captured lifetime in
+TLS callbacks and bounded waits. Recovery uses a fresh instance, never a replay.
+
+The dispatcher calls a nonblocking target publication hook with interrupts masked
+immediately before copying a reply. If the provider changed after HTTP parsing,
+the target substitutes the existing empty 503 response. After leaving the critical
+section, the owner releases buffered data and any newly created response handles
+that were never published. C64-aborted or no-reply secure commands also release
+those unpublished handles. Already committed responses are not retracted.
+
+This implements identity monitoring, not TLS capability negotiation or remote
+cleanup acknowledgement. The probe counter correlates replies within a management
+run; it is not a qualified controller incarnation across management reboots.
+Initial identity observation must not authorize remote session reuse. The monitor
+does not change the Wi-Fi connection state or recover legacy blocked RPCs. Older
+controllers and other product variants keep ordinary HTTP; they cannot satisfy
+this identity extension. The default secure factory remains absent. Production
+TLS admission still requires the boot-pair/capability/cleanup contract above.

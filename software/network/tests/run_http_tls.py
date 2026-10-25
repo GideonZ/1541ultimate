@@ -18,6 +18,7 @@ CASES = ['valid', 'clean-eof', 'hostname', 'untrusted', 'expired', 'future', 'no
          'write-timeout', 'write-cancel', 'truncated', 'close-clean', 'close-truncated', 'closed-before-open']
 ROUTING_CASES = [case for case in CASES if case not in ('clean-eof', 'allocation', 'write-timeout', 'write-cancel', 'closed-before-open')] + ['no-provider', 'no-create']
 ROUTING_CASES += ['command-pre-cancel', 'command-handshake-cancel', 'command-read-cancel']
+ROUTING_CASES += ['provider-handshake-cancel', 'provider-read-cancel']
 
 
 class Peer:
@@ -122,7 +123,7 @@ def main():
     make_dated_certificates(args.output)
     results = []
     for case in [args.case] if args.case else (ROUTING_CASES if args.routing else CASES):
-        peer_case = case.removeprefix('command-')
+        peer_case = case.removeprefix('command-').removeprefix('provider-')
         kind = peer_case if peer_case in ('expired', 'future', 'truncated', 'clean-eof', 'close-clean', 'close-truncated') else ('handshake' if peer_case.startswith('handshake-') else ('stall' if peer_case in ('read-timeout', 'total-timeout', 'read-cancel') else 'valid'))
         if case in ('write-timeout', 'write-cancel'):
             kind = 'write-stall'

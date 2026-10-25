@@ -16,6 +16,7 @@
 #include "tls_http_connection.h"
 #include "http_request.h"
 #include "http_target.h"
+#include "provider_lifecycle.h"
 #include "mbedtls/x509_crt.h"
 
 static int checks, failures;
@@ -75,6 +76,7 @@ struct Platform {
     bool ready, random_ready, block_write;
     std::atomic<bool> cancelled;
     OperationCancellation command_cancellation;
+    OperationCancellation provider_cancellation;
     mbedtls_x509_crt roots;
     Platform(const char *ca) : fd(-1), opens(0), closes(0), open_delay(0),
         ready(true), random_ready(true), block_write(false), cancelled(false)
@@ -89,7 +91,7 @@ static int64_t clock_read(void *) { return now_ms(); }
 static bool clock_ready(void *p) { return static_cast<Platform *>(p)->ready; }
 static bool cancelled(void *p) {
     Platform *platform = static_cast<Platform *>(p);
-    return platform->cancelled.load() || platform->command_cancellation.cancelled();
+    return platform->cancelled.load() || platform->command_cancellation.cancelled() || platform->provider_cancellation.cancelled();
 }
 static int entropy(void *p, unsigned char *bytes, size_t length)
 {
@@ -277,14 +279,28 @@ static void exchange(const char *mode, const char *ca, int port)
            mode, observed.status, observed.stage, observed.verify_flags, (int)elapsed, opens, closes, live_allocations);
 }
 
+static bool identify_provider(ProviderLifecycle& life, uint32_t now, uint8_t boot_id)
+{
+    uint8_t request[16], response[64] = {}, boot[16] = {};
+    if (!life.begin(now, request)) return false;
+    memcpy(response, request, 4); memcpy(response + 8, "ESP32", 6); boot[0] = boot_id;
+    size_t size = provider_identity_append(response, sizeof(response), 14, request + 8, boot);
+    return life.receive(response, size, now + 1);
+}
+
 struct TargetProvider : HttpSecureProvider {
+    ProviderLifecycle lifecycle;
     tls_stream_port callbacks;
     uint32_t timeout;
     bool unavailable;
     int created, destroyed;
     tls_stream_diagnostics last;
     TargetProvider(const tls_stream_port& port, uint32_t budget, bool missing) :
-        callbacks(port), timeout(budget), unavailable(missing), created(0), destroyed(0), last{} {}
+        callbacks(port), timeout(budget), unavailable(missing), created(0), destroyed(0), last{} {
+        expect(identify_provider(lifecycle, 0, 1), "initial provider identity");
+    }
+    bool available() const override { return lifecycle.identified(); }
+    OperationCancellation lifetime() const override { return lifecycle.token(); }
     class Connection : public TlsHttpConnection {
         TargetProvider& owner;
     public:
@@ -293,6 +309,7 @@ struct TargetProvider : HttpSecureProvider {
     };
     HttpConnection *create_connection(const OperationCancellation& token) {
         static_cast<Platform *>(callbacks.context)->command_cancellation = token;
+        static_cast<Platform *>(callbacks.context)->provider_cancellation = lifecycle.token();
         ++created;
         return unavailable ? NULL : new Connection(*this);
     }
@@ -306,6 +323,7 @@ static void routed_exchange(const char *mode, const char *ca, int port)
         CancellationSource command_events;
         OperationCancellation command_token = command_events.token();
         bool command_cancel = strncmp(mode, "command-", 8) == 0;
+        bool provider_cancel = strncmp(mode, "provider-", 9) == 0;
         bool command_pre_cancel = strcmp(mode, "command-pre-cancel") == 0;
         platform.ready = strcmp(mode, "no-time") != 0;
         platform.random_ready = strcmp(mode, "no-entropy") != 0;
@@ -320,10 +338,12 @@ static void routed_exchange(const char *mode, const char *ca, int port)
             entropy, trust, open_socket, read_socket, write_socket, close_socket };
         TargetProvider provider(callbacks, timeout ? 650 : 3000, no_create);
         std::thread canceller;
+        bool restart_observed = false;
         if (cancel && strcmp(mode, "pre-cancel") && !command_pre_cancel)
-            canceller = std::thread([&platform, &command_events, command_cancel] {
+            canceller = std::thread([&platform, &command_events, command_cancel, provider_cancel, &provider, &restart_observed] {
                 std::this_thread::sleep_for(std::chrono::milliseconds(150));
-                if (command_cancel) command_events.signal(); else platform.cancelled.store(true);
+                if (provider_cancel) restart_observed = identify_provider(provider.lifecycle, 5000, 2);
+                else if (command_cancel) command_events.signal(); else platform.cancelled.store(true);
             });
         int64_t begin = now_ms();
         {
@@ -346,6 +366,7 @@ static void routed_exchange(const char *mode, const char *ca, int port)
             uint8_t exchange[] = {6, HTTP_CMD_DO_EXCHANGE_RAW, handle, 255};
             command = {sizeof(exchange), true, exchange};
             target.parse_command(&command, &data, &status);
+            target.prepare_reply(&data, &status);
             if (success) {
                 expect(data->last_part && data->length == 8 && !memcmp(data->message, "tls-ok!\n", 8), "routed exact response");
                 expect(status->length >= 15 && !memcmp(status->message, "HTTP/1.1 200 OK", 15), "routed remote status");
@@ -353,11 +374,15 @@ static void routed_exchange(const char *mode, const char *ca, int port)
                 expect(data->last_part && data->length == 0, "routed failure has no body");
                 expect(status->length == 23 && !memcmp(status->message, "503 SERVICE UNAVAILABLE", 23), "routed local failure status");
             }
+            target.finish_reply(true);
             target.get_more_data(&data, &status);
+            target.prepare_reply(&data, &status);
             expect(data->length == 0 && data->last_part, "routed failure leaves no stale bytes");
+            target.finish_reply(true);
         }
         int64_t elapsed = now_ms() - begin;
         if (canceller.joinable()) canceller.join();
+        if (provider_cancel) expect(restart_observed, "changed boot detected during live TLS operation");
         expect(provider.created == (no_provider || command_pre_cancel ? 0 : 1) && provider.destroyed == (no_provider || no_create || command_pre_cancel ? 0 : 1), "routed provider ownership");
         expect(platform.opens == platform.closes && platform.opens <= 1, "routed transport cleanup");
         if (no_provider || no_create || command_pre_cancel) expect(platform.opens == 0, "unavailable or cancelled command opens no TLS transport");

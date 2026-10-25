@@ -255,6 +255,16 @@ BaseType_t DmaUART :: SendSlipPacket(const uint8_t *data, int len)
 }
 
 // Send routine without copy
+BaseType_t DmaUART :: TryTransmitPacket(command_buf_t *buf)
+{
+    if (xQueueSend(packets->transmitQueue, &buf, 0) != pdTRUE) {
+        cmd_buffer_free(packets, buf);
+        return pdFALSE;
+    }
+    uart->ictrl = DMAUART_TxIRQ_EN;
+    return pdTRUE;
+}
+
 BaseType_t DmaUART :: TransmitPacket(command_buf_t *buf, uint16_t *ms)
 {
     if (cmd_buffer_transmit(packets, buf) == pdTRUE) {

@@ -21,6 +21,8 @@
 #include "button_handler.h"
 #include "wifi_modem.h"
 #include "sntp.h"
+#include "provider_identity.h"
+#include "provider_boot.h"
 
 // not officially supported
 #include "../lwip/esp_netif_lwip_internal.h"
@@ -37,11 +39,18 @@ void cmd_echo(command_buf_t *buf)
 
 void cmd_identify(command_buf_t *buf)
 {
+    uint8_t cookie[8];
+    int extended = provider_probe_cookie(buf->data, buf->size, cookie);
     rpc_identify_resp *resp = (rpc_identify_resp *)buf->data;
     resp->major = IDENT_MAJOR;
     resp->minor = IDENT_MINOR;
     strcpy(&resp->string, IDENT_STRING);
     buf->size = sizeof(rpc_identify_resp) + strlen(&resp->string);
+    const uint8_t *boot = provider_boot_identity();
+    if (extended && boot) {
+        buf->size = provider_identity_append(buf->data, sizeof(buf->data),
+            (uint8_t *)&resp->string - buf->data + strlen(&resp->string) + 1, cookie, boot);
+    }
     my_uart_transmit_packet(UART_CHAN, buf);
 }
 

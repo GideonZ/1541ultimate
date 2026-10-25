@@ -30,6 +30,8 @@ InitFunction wifi_init("WiFi Application", WiFi::Init, NULL, NULL, 52); // after
 WiFi :: WiFi()
 {
     runModeTask = NULL;
+    provider_timer = NULL;
+    provider_monitor_enabled = false;
     state = eWifi_Off;
     bzero(my_mac, 6);
     wifi_aps.num_records  = 0;
@@ -83,11 +85,59 @@ void WiFi :: RadioOff()
 
 BaseType_t wifi_rx_isr(command_buf_context_t *context, command_buf_t *buf, BaseType_t *w);
 
+void WiFi::InvalidateProvider()
+{
+    portENTER_CRITICAL();
+    provider_lifecycle.invalidate();
+    portEXIT_CRITICAL();
+}
+
+void WiFi::PollProvider(TimerHandle_t timer)
+{
+    WiFi *self = static_cast<WiFi *>(pvTimerGetTimerID(timer));
+    // Serialize against receive IRQ and Terminate. Every queue operation here
+    // has a zero wait; the timer task never runs a synchronous Wi-Fi RPC.
+    portENTER_CRITICAL();
+    if (self->provider_monitor_enabled) {
+        uint32_t now = uint32_t(xTaskGetTickCount() * portTICK_PERIOD_MS);
+        uint8_t request[PROVIDER_PROBE_SIZE];
+        if (self->provider_lifecycle.begin(now, request)) {
+            command_buf_t *buf;
+            if (self->uart->GetBuffer(&buf, 0) == pdTRUE) {
+                memcpy(buf->data, request, sizeof(request));
+                buf->size = sizeof(request);
+                if (self->uart->TryTransmitPacket(buf) != pdTRUE) self->provider_lifecycle.invalidate();
+            } else {
+                self->provider_lifecycle.invalidate();
+            }
+        }
+    }
+    portEXIT_CRITICAL();
+}
+
+bool WiFi::ReceiveProviderIdentity(command_buf_t *buf)
+{
+    // Called only by the receive ISR. Normal per-task identify replies retain
+    // their existing route; this reserved thread has no task notification slot.
+    if (buf->size < 4 || buf->data[0] != CMD_IDENTIFY || buf->data[1] != 0xff) return false;
+    if (provider_monitor_enabled && buf->size <= int(sizeof(buf->data))) {
+        provider_lifecycle.receive(buf->data, buf->size,
+            uint32_t(xTaskGetTickCountFromISR() * portTICK_PERIOD_MS));
+    }
+    return true;
+}
+
 // From Esp32Application
 void WiFi :: Init(DmaUART *uart, command_buf_context_t *packets)
 {
     this->uart = uart;
     this->packets = packets;
+#if U64 == 2
+    if (!provider_timer) {
+        provider_timer = xTimerCreate("ESP Identity", pdMS_TO_TICKS(100), pdTRUE, this, PollProvider);
+        if (provider_timer) xTimerStart(provider_timer, 0);
+    }
+#endif
     wifi_command_init();
 }
 
@@ -98,11 +148,19 @@ void WiFi :: Start()
         return;
     }
     state = eWifi_NotDetected;
+    portENTER_CRITICAL();
+    provider_lifecycle.invalidate();
+    provider_monitor_enabled = true;
+    portEXIT_CRITICAL();
     xTaskCreate( WiFi :: RunModeTaskStart, "WiFi Command Task", configMINIMAL_STACK_SIZE, this, PRIO_DRIVER, &runModeTask );
 }
 
 void WiFi :: Terminate()
 {
+    portENTER_CRITICAL();
+    provider_monitor_enabled = false;
+    provider_lifecycle.invalidate();
+    portEXIT_CRITICAL();
     if (!runModeTask) {
         printf("** Trying to terminate Wifi Application, but task is not running?\n");
         return;
@@ -302,6 +360,7 @@ void WiFi :: RunModeThread()
 #endif
             switch(hdr->command) {
             case EVENT_RESCAN: // requested from user interface
+                InvalidateProvider();
                 uart->FreeBuffer(buf);
                 netstack->link_down();
                 state = eWifi_Scanning;
@@ -309,6 +368,7 @@ void WiFi :: RunModeThread()
                 break;
 
             case EVENT_DISABLED:
+                InvalidateProvider();
                 uart->FreeBuffer(buf);
                 state = eWifi_Disabled;
                 netstack->link_down();
@@ -331,6 +391,7 @@ void WiFi :: RunModeThread()
                 break;
 
             case EVENT_DISCONNECTED:
+                InvalidateProvider();
                 uart->FreeBuffer(buf);
                 state = eWifi_NotConnected;
                 if(netstack) {

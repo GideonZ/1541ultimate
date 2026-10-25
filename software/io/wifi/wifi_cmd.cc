@@ -1,4 +1,5 @@
 #include "wifi_cmd.h"
+#include "wifi.h"
 #include "dump_hex.h"
 
 /// C like functions to 'talk' with the WiFi Module
@@ -14,6 +15,9 @@ void hex(uint8_t h)
 
 BaseType_t wifi_rx_isr(command_buf_context_t *context, command_buf_t *buf, BaseType_t *w)
 {
+    if (buf->size < int(sizeof(rpc_header_t)) || wifi.ReceiveProviderIdentity(buf)) {
+        return cmd_buffer_free_isr(context, buf, w);
+    }
     rpc_header_t *hdr = (rpc_header_t *)buf->data;
     BaseType_t res;
 

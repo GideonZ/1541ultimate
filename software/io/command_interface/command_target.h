@@ -33,6 +33,10 @@ public:
     // Called by the owner before dispatch. The source outlives all targets;
     // interrupt handlers only signal it, never call a target or free a session.
     virtual void begin_command(const OperationCancellation&) { }
+    // Publication check runs with interrupts masked: no allocation, blocking,
+    // I/O or cleanup. finish_reply runs afterwards in the owning task.
+    virtual void prepare_reply(Message **, Message **) { }
+    virtual void finish_reply(bool) { }
 
     virtual void parse_command(Message *command, Message **reply, Message **status) {
         if(command->message[1] == CMD_IDENTIFY) {

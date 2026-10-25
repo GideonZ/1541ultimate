@@ -35,9 +35,13 @@ add_executable(test_command_cancellation ${SW}/network/tests/test_command_cancel
 target_include_directories(test_command_cancellation PRIVATE
     ${SW}/network/tests/command_stubs ${SW}/io/command_interface ${SW}/infra)
 target_compile_options(test_command_cancellation PRIVATE -Wall -Wextra -Wno-format)
+add_executable(test_provider_lifecycle ${SW}/network/tests/test_provider_lifecycle.cc)
+target_include_directories(test_provider_lifecycle PRIVATE ${SW}/io/wifi ${SW}/infra)
+add_executable(test_provider_boot ${SW}/network/tests/test_provider_boot.c ${SW}/u64ctrl/main/provider_boot.c)
+target_include_directories(test_provider_boot PRIVATE ${SW}/network/tests/command_stubs ${SW}/u64ctrl/main)
 foreach(test_target test_http_tls test_https_routing)
 target_include_directories(${test_target} PRIVATE
-    ${SW}/network ${SW}/api ${SW}/infra ${SW}/components ${SW}/io/stream ${SW}/system
+    ${SW}/network ${SW}/api ${SW}/infra ${SW}/components ${SW}/io/stream ${SW}/system ${SW}/io/wifi
     ${SW}/io/command_interface ${SW}/httpd/c-version/lib ${TLS_STREAM_ROOT}/include)
 target_compile_definitions(${test_target} PRIVATE RUNS_ON_PC MHS_PORT=8001 _DEFAULT_SOURCE)
 target_compile_options(${test_target} PRIVATE -Wall -Wextra -Wno-format -Wno-format-extra-args)
