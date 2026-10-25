@@ -176,3 +176,49 @@ does not change the Wi-Fi connection state or recover legacy blocked RPCs. Older
 controllers and other product variants keep ordinary HTTP; they cannot satisfy
 this identity extension. The default secure factory remains absent. Production
 TLS admission still requires the boot-pair/capability/cleanup contract above.
+
+## Provider-side initialization and reclamation engine
+
+`provider_session_owner` implements an allocation-free, single-owner engine for
+one remote resource at a time. It is compiled with the controller sources but is
+not instantiated or connected to UART commands. No capability is advertised and
+the default HTTP secure provider remains absent. Its typed interfaces are not a
+wire format or a claim of a deployed remote TLS service.
+
+Initialization uses the provider boot identity, a strictly increasing challenge
+and a nonzero manager incarnation supplied by the caller. A new offer invalidates
+the preceding grant immediately. Only the outstanding challenge can initialize,
+and only after previous resources have confirmed cleanup. The contract version
+and all required capabilities must match the backend configuration. Boot and
+manager identities must come from qualified freshness sources; checking nonzero
+bytes alone is not qualification. Obtaining the manager incarnation and validating
+solicited replies at the manager remain integration requirements.
+
+Resource admission and renewal sequences are strictly ordered within a grant.
+The engine takes ownership only on successful admission. Lease duration is not
+refreshed by ordinary work, partial progress, invalid or repeated renewals. The
+owner's TLS callback can test the ticket and absolute lease expiry without waiting
+for the owner loop to poll. A stale grant or session cannot close a replacement.
+Counter exhaustion fails closed rather than wrapping.
+
+Replacement, lease expiry and stop signal cancellation once. The owner then polls
+bounded cleanup progress and deletes the resource only after positive confirmation.
+Repeated initialization offers do not move the cleanup deadline. Late polling
+uses the original lease expiry to start the cleanup budget, not the observation
+time. A missed cleanup bound or backwards clock quarantines admission. Late
+cleanup may release memory but never clears quarantine. The first failure is
+retained; a successfully initialized new grant starts fresh diagnostics.
+
+All engine calls and resource callbacks are serialized on the owner task. Receive
+and timer paths must queue requests or signal a separately synchronized cancellation
+source; they must not call this engine concurrently. A future worker must bound
+its scheduling and callback latency. If cleanup never confirms, retain the owner
+and resource until a qualified processor restart; do not recycle or destroy them.
+Normal teardown requires stop and drain before destroying the owner.
+
+Limits are explicit constructor parameters. Host fixture values are acceptance
+conditions only, not production heap, admission or latency budgets. The real TLS
+fixture verifies owner replacement during handshake/read, lease loss during read,
+confirmed resource destruction and fresh initialization/recovery on the same
+engine. Physical UART delivery, worker scheduling, remote process crash recovery,
+manager identity generation and product resource qualification remain untested.

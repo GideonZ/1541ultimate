@@ -17,6 +17,7 @@
 #include "http_request.h"
 #include "http_target.h"
 #include "provider_lifecycle.h"
+#include "provider_session_owner.h"
 #include "mbedtls/x509_crt.h"
 
 static int checks, failures;
@@ -77,6 +78,10 @@ struct Platform {
     std::atomic<bool> cancelled;
     OperationCancellation command_cancellation;
     OperationCancellation provider_cancellation;
+    provider_session::Owner *session_owner = NULL;
+    provider_session::Ticket session_ticket = {};
+    provider_session::Challenge next_challenge = {};
+    int64_t restart_at = 0;
     mbedtls_x509_crt roots;
     Platform(const char *ca) : fd(-1), opens(0), closes(0), open_delay(0),
         ready(true), random_ready(true), block_write(false), cancelled(false)
@@ -91,6 +96,14 @@ static int64_t clock_read(void *) { return now_ms(); }
 static bool clock_ready(void *p) { return static_cast<Platform *>(p)->ready; }
 static bool cancelled(void *p) {
     Platform *platform = static_cast<Platform *>(p);
+    if (platform->session_owner) {
+        int64_t now = now_ms();
+        if (platform->restart_at && now >= platform->restart_at) {
+            platform->restart_at = 0;
+            platform->next_challenge = platform->session_owner->offer(now);
+        }
+        if (!platform->session_owner->current(platform->session_ticket, now)) return true;
+    }
     return platform->cancelled.load() || platform->command_cancellation.cancelled() || platform->provider_cancellation.cancelled();
 }
 static int entropy(void *p, unsigned char *bytes, size_t length)
@@ -398,8 +411,15 @@ static void routed_exchange(const char *mode, const char *ca, int port)
     expect(live_allocations == initial_allocations, "routed scoped allocation balance");
 }
 
+#include "test_provider_owner_tls.h"
+
 int main(int argc, char **argv)
 {
+    if (argc == 7 && strcmp(argv[6], "--owner") == 0) {
+        owner_exchange(argv[1], argv[2], atoi(argv[3]), atoi(argv[5]));
+        printf("TLS owner: %d checks, %d failures\n", checks, failures);
+        return failures ? 1 : 0;
+    }
     if (argc == 7 && strcmp(argv[6], "--routing") == 0) {
         routed_exchange(argv[1], argv[2], atoi(argv[3]));
         routed_exchange("recovery", argv[4], atoi(argv[5]));
