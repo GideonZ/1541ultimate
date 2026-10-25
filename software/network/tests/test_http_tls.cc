@@ -175,7 +175,7 @@ static void exchange(const char *mode, const char *ca, int port)
             entropy, trust, open_socket, read_socket, write_socket, close_socket };
         const bool timeout_case = strstr(mode, "timeout") != NULL;
         const bool cancel_case = strstr(mode, "cancel") != NULL;
-        const bool success = strcmp(mode, "valid") == 0 || strcmp(mode, "recovery") == 0 || strcmp(mode, "clean-eof") == 0;
+        const bool success = strcmp(mode, "valid") == 0 || strcmp(mode, "recovery") == 0 || strcmp(mode, "clean-eof") == 0 || strcmp(mode, "close-clean") == 0;
         const bool auth_error = strcmp(mode, "hostname") == 0 || strcmp(mode, "untrusted") == 0 ||
                                 strcmp(mode, "expired") == 0 || strcmp(mode, "future") == 0;
         const bool write_failure = strcmp(mode, "write-timeout") == 0 || strcmp(mode, "write-cancel") == 0;
@@ -194,7 +194,7 @@ static void exchange(const char *mode, const char *ca, int port)
                 if (strcmp(mode, "allocation") == 0) reject_allocation = true;
                 int opened = request.connect_to_server(strcmp(mode, "hostname") == 0 ? "wrong.lab.test" : "tls.lab.test", port);
                 bool should_open = success || write_failure || strcmp(mode, "read-timeout") == 0 || strcmp(mode, "total-timeout") == 0 ||
-                                   strcmp(mode, "read-cancel") == 0 || strcmp(mode, "truncated") == 0;
+                                   strcmp(mode, "read-cancel") == 0 || strcmp(mode, "truncated") == 0 || strcmp(mode, "close-truncated") == 0;
                 expect((opened >= 0) == should_open, "authenticated open result");
                 bool complete = false;
                 if (opened >= 0) {
@@ -218,6 +218,10 @@ static void exchange(const char *mode, const char *ca, int port)
                             expect(connection.read(&untouched, 1) == 0 && untouched == 0xA5,
                                    "authenticated EOF stays terminal");
                         }
+                    } else {
+                        uint8_t byte = 0xA5;
+                        expect(request.read_response_data(1, &byte) == 0 && byte == 0xA5,
+                               "failed HTTP exchange exposes no partial response");
                     }
                 }
                 expect(complete == success, "HTTP completion matches case");
@@ -237,7 +241,8 @@ static void exchange(const char *mode, const char *ca, int port)
             if (strcmp(mode, "no-time") == 0) expect(observed.status == TLS_TIME_UNAVAILABLE, "time fails closed");
             if (strcmp(mode, "no-entropy") == 0) expect(observed.status == TLS_ERROR && observed.stage == TLS_STAGE_RANDOM, "entropy fails closed");
             if (strcmp(mode, "allocation") == 0) expect(observed.status == TLS_ERROR && observed.code == MBEDTLS_ERR_SSL_ALLOC_FAILED, "allocation diagnostic");
-            if (strcmp(mode, "truncated") == 0) expect(observed.status == TLS_TRUNCATED, "unclean TLS EOF is not HTTP success");
+            if (strcmp(mode, "truncated") == 0 || strcmp(mode, "close-truncated") == 0)
+                expect(observed.status == TLS_TRUNCATED, "unclean TLS EOF is not HTTP success");
             int before = platform.closes;
             int64_t close_begin = now_ms();
             connection.close_session();
@@ -293,7 +298,7 @@ static void routed_exchange(const char *mode, const char *ca, int port)
         if (strcmp(mode, "total-timeout") == 0) platform.open_delay = 250;
         bool timeout = strstr(mode, "timeout") != NULL;
         bool cancel = strstr(mode, "cancel") != NULL;
-        bool success = strcmp(mode, "valid") == 0 || strcmp(mode, "recovery") == 0;
+        bool success = strcmp(mode, "valid") == 0 || strcmp(mode, "recovery") == 0 || strcmp(mode, "close-clean") == 0;
         bool no_provider = strcmp(mode, "no-provider") == 0;
         bool no_create = strcmp(mode, "no-create") == 0;
         tls_stream_port callbacks = { &platform, clock_read, clock_ready, cancelled,
@@ -339,6 +344,8 @@ static void routed_exchange(const char *mode, const char *ca, int port)
         if (timeout) expect(provider.last.status == TLS_TIMEOUT && elapsed >= 630 && elapsed <= 900, "routed original deadline");
         if (cancel) expect(provider.last.status == TLS_CANCELLED && elapsed <= 750, "routed cancellation");
         if (success) expect(provider.last.status == TLS_OK, "routed success diagnostics");
+        if (strcmp(mode, "close-truncated") == 0)
+            expect(provider.last.status == TLS_TRUNCATED, "routed unclean EOF remains a failure");
         printf("ROUTE %s status=%d flags=%u elapsed_ms=%d opens=%d closes=%d\n", mode,
                provider.last.status, provider.last.verify_flags, int(elapsed), platform.opens, platform.closes);
     }

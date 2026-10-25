@@ -109,9 +109,18 @@ int HttpRequest :: send_request(StreamRamFile *s)
     int n = 0;
     int r;
     char buffer[128];
+    int method_bytes = 0;
+    bool is_head = true;
+    response.responseToHead = 0;
     do {
         n = s->read(buffer, 128);
         if (n) {
+            // The request stream may split the method across storage blocks.
+            for (int i = 0; i < n && method_bytes < 5; ++i) {
+                if (buffer[i] != "HEAD "[method_bytes]) is_head = false;
+                ++method_bytes;
+            }
+            response.responseToHead = method_bytes == 5 && is_head;
             int sent = 0;
             while (sent < n) {
                 r = connection->write(buffer + sent, n - sent);
@@ -132,7 +141,7 @@ bool HttpRequest :: recv_response(void)
     }
     bool complete = get_response(*connection, collect_in_buffer, response);
     this->body = (t_BufferedBody *)response.userContext;
-    if (!complete || !this->body) {
+    if (!complete || !this->body || this->body->failed) {
         delete this->body;
         this->body = NULL;
         response.userContext = NULL;
@@ -166,12 +175,13 @@ void attachment_to_buffer(BodyDataBlock_t *block)
             break;
         case eDataBlock:
             // printf("--- Data (%d bytes)\n", block->length);
-            if (block->length < (16384 - body->offset)) {
+            if (block->length >= 0 && block->length <= (16384 - body->offset)) {
                 memcpy(body->buffer + body->offset, block->data, block->length);
                 body->offset += block->length;
                 body->size += block->length;
             } else {
-                printf("-> Ditched, buffer full.\n");
+                body->failed = true;
+                body->response->protocol_state = eReq_Error;
             }
             break;
         case eDataEnd:
@@ -190,7 +200,19 @@ void collect_in_buffer(HTTPReqMessage *req, HTTPRespMessage *resp)
     req->userContext = body;
     body->offset = 0;
     body->size = 0;
+    body->response = req;
+    body->failed = false;
+    if (req->bodyType == eTotalSize && req->bodySize > 16384) {
+        body->failed = true;
+        req->protocol_state = eReq_Error;
+        return;
+    }
+    if (req->bodyType == eNoBody) return;
     setup_multipart(req, &attachment_to_buffer, body);
+    if (!req->BodyCB) {
+        body->failed = true;
+        req->protocol_state = eReq_Error;
+    }
 }
 
 static int read_connection(HttpConnection& connection, HTTPReqMessage& response)
@@ -199,7 +221,7 @@ static int read_connection(HttpConnection& connection, HTTPReqMessage& response)
     p += response._valid;
     int space = HTTP_BUFFER_SIZE - response._valid;
     printf(".");
-    int n = space ? connection.read(p, space) : 0;
+    int n = space ? connection.read(p, space) : -1;
     if (n > space) {
         return -1;
     }
@@ -216,6 +238,7 @@ static bool get_response(HttpConnection& connection, HTTPREQ_CALLBACK callback, 
     do {
         int n = read_connection(connection, response);
         if (n <= 0) {
+            if (n == 0) FinishClientResponse(&response);
             break;
         }
         state = ProcessClientData(&response, NULL, callback);
@@ -228,7 +251,7 @@ static bool get_response(HttpConnection& connection, HTTPREQ_CALLBACK callback, 
         response.BodyCB = NULL;
         response.BodyContext = NULL;
     }
-    return state >= WRITING_SOCKET && response.protocol_state != eReq_HeaderTooBig;
+    return response.protocol_state == eReq_Complete;
 }
 
 // Assembly callers retain ownership of the descriptor passed to these helpers.

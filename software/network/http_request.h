@@ -12,7 +12,9 @@ extern "C" {
 typedef struct {
     int offset;
     int size;
-    uint8_t buffer[16384];
+    HTTPReqMessage *response;
+    bool failed;
+    uint8_t buffer[16384 + 1]; // Payload capacity plus a separate string terminator.
 } t_BufferedBody;
 
 // Callbacks
@@ -58,9 +60,6 @@ public:
     char *get_response_string(void) {
         if (!body) {
             return NULL;
-        }
-        if (body->size > 16383) {
-            body->size = 16383;
         }
         body->buffer[body->size] = 0;
         return (char *)body->buffer;

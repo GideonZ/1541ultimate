@@ -34,6 +34,7 @@ SRCS_CC	 =  mystring.cc \
 			pattern.cc \
 			http_request.cc \
 			test_http_transport.cc \
+			test_http_framing.cc \
 			test_http_target.cc
 
 
@@ -44,6 +45,7 @@ SRCS_IEC =
 SRCS_NANO = 
 
 PATH_INC =  $(addprefix -I, $(VPATH))
+VPATH += $(PATH_SW)/network/tests
 OPTIONS  = -g -ffunction-sections -O0 -DRUNS_ON_PC -Wno-format -Wno-format-extra-args -DENABLE_STATIC_FILE=1 -DMHS_PORT=8001 -DTEMP_FILE_PATH=\"./\"
 COPTIONS = $(OPTIONS) -std=c99 -D_DEFAULT_SOURCE
 CPPOPT   = $(OPTIONS) -fno-exceptions -fno-rtti -fno-threadsafe-statics

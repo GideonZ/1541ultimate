@@ -15,7 +15,7 @@ REQUEST = b'GET /probe HTTP/1.1\r\nHost: tls.lab.test\r\nConnection: close\r\n\r
 CASES = ['valid', 'clean-eof', 'hostname', 'untrusted', 'expired', 'future', 'no-time',
          'no-entropy', 'allocation', 'pre-cancel', 'handshake-timeout',
          'handshake-cancel', 'read-timeout', 'total-timeout', 'read-cancel',
-         'write-timeout', 'write-cancel', 'truncated']
+         'write-timeout', 'write-cancel', 'truncated', 'close-clean', 'close-truncated']
 ROUTING_CASES = [case for case in CASES if case not in ('clean-eof', 'allocation', 'write-timeout', 'write-cancel')] + ['no-provider', 'no-create']
 
 
@@ -71,14 +71,15 @@ class Peer:
                         while stream.recv(4096):
                             pass
                     else:
-                        response = b'HTTP/1.1 200 OK\r\nContent-Length: 8\r\nConnection: close\r\n\r\n' + (b'tls' if self.kind == 'truncated' else b'tls-ok!\n')
+                        framing = b'' if self.kind.startswith('close-') else b'Content-Length: 8\r\n'
+                        response = b'HTTP/1.1 200 OK\r\n' + framing + b'Connection: close\r\n\r\n' + (b'tls' if self.kind == 'truncated' else b'tls-ok!\n')
                         for offset in range(0, len(response), 7):
                             stream.sendall(response[offset:offset + 7])
                         self.events.append({'kind': 'response', 'bytes': len(response)})
-                        if self.kind == 'truncated':
+                        if self.kind in ('truncated', 'close-truncated'):
                             with socket.socket(fileno=stream.detach()) as raw:
                                 raw.shutdown(socket.SHUT_WR)
-                        elif self.kind == 'clean-eof':
+                        elif self.kind in ('clean-eof', 'close-clean'):
                             self.events.append({'kind': 'close-notify'})
                             stream.unwrap()
                         else:
@@ -120,7 +121,7 @@ def main():
     make_dated_certificates(args.output)
     results = []
     for case in [args.case] if args.case else (ROUTING_CASES if args.routing else CASES):
-        kind = case if case in ('expired', 'future', 'truncated', 'clean-eof') else ('handshake' if case.startswith('handshake-') else ('stall' if case in ('read-timeout', 'total-timeout', 'read-cancel') else 'valid'))
+        kind = case if case in ('expired', 'future', 'truncated', 'clean-eof', 'close-clean', 'close-truncated') else ('handshake' if case.startswith('handshake-') else ('stall' if case in ('read-timeout', 'total-timeout', 'read-cancel') else 'valid'))
         if case in ('write-timeout', 'write-cancel'):
             kind = 'write-stall'
         primary = Peer(args.output, kind, args.ecdsa)
@@ -141,7 +142,7 @@ def main():
         events = {'primary': primary.events, 'recovery': recovery.events}
         (args.output / (case + '-peers.json')).write_text(json.dumps(events, indent=2) + '\n')
         no_open = case in ('no-time', 'no-entropy', 'allocation', 'pre-cancel', 'no-provider', 'no-create')
-        application = case in ('valid', 'clean-eof', 'read-timeout', 'total-timeout', 'read-cancel', 'truncated')
+        application = case in ('valid', 'clean-eof', 'read-timeout', 'total-timeout', 'read-cancel', 'truncated', 'close-clean', 'close-truncated')
         peer_ok = True
         for name, expected_accepts, expected_request in [('primary', int(not no_open), application), ('recovery', 1, True)]:
             observed = events[name]
@@ -156,6 +157,8 @@ def main():
             peer_ok &= any(event['kind'] == 'client-hello' and event['tls_record'] for event in primary.events)
         if kind == 'write-stall':
             peer_ok &= any(event['kind'] == 'no-application-data' for event in primary.events)
+        if kind in ('clean-eof', 'close-clean'):
+            peer_ok &= sum(event['kind'] == 'close-notify' for event in primary.events) == 1
         summaries = re.findall(rb'TLS (?:adapter|routing): (\d+) checks, (\d+) failures', raw)
         passed = run.returncode == 0 and peer_ok and len(summaries) == 1 and summaries[0][1] == b'0'
         passed &= not re.search(rb'ERROR: (?:AddressSanitizer|LeakSanitizer)|runtime error:', raw)

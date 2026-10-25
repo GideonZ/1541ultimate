@@ -46,7 +46,9 @@ do not use these certificates for anything outside the fixture.
 Both certificate profiles cover authenticated HTTP, certificate chain/hostname/
 date rejection, unavailable trusted time and entropy, failed allocation,
 handshake/read/write deadlines and cancellation, cancellation before opening,
-clean TLS EOF, and truncated responses. Every case includes a fresh successful
+clean TLS EOF, and truncated responses. Close-delimited responses additionally
+require authenticated TLS shutdown: sending the complete body followed by a
+bare TCP close must fail and expose no partial body. Every case includes a fresh successful
 HTTP recovery exchange. HTTP parsing uses fragmented TLS transport reads/writes.
 Write-stall cases inject a cooperative blocking callback after authentication;
 they do not measure real network backpressure.
