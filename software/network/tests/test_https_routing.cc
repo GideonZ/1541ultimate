@@ -61,7 +61,10 @@ extern "C" int __wrap_close(int fd)
 struct Provider : HttpSecureProvider {
     enum Mode { Good, Missing, OpenError, WriteError, ReadError } mode;
     int created, opened, closed, destroyed;
-    Provider(Mode m = Good) : mode(m), created(0), opened(0), closed(0), destroyed(0) {}
+    CancellationSource *interrupt;
+    int signal_at;
+    OperationCancellation cancellation;
+    Provider(Mode m = Good) : mode(m), created(0), opened(0), closed(0), destroyed(0), interrupt(NULL), signal_at(0) {}
     class Connection : public HttpConnection {
         Provider& owner;
         bool live;
@@ -69,14 +72,25 @@ struct Provider : HttpSecureProvider {
         Connection(Provider& p) : owner(p), live(false) {}
         ~Connection() { close_session(); ++owner.destroyed; }
         int open(const char *name, uint16_t port) {
+            if (owner.signal_at == 1) owner.interrupt->signal();
             live = true; ++owner.opened; host = name; selected_port = port;
-            return owner.mode == OpenError ? -1 : 0;
+            return owner.mode == OpenError || owner.cancellation.cancelled() ? -1 : 0;
         }
-        int read(void *p, int n) { return owner.mode == ReadError ? -1 : deliver(p, n); }
-        int write(const void *p, int n) { return owner.mode == WriteError ? -1 : collect(p, n); }
+        int read(void *p, int n) {
+            int result = owner.mode == ReadError ? -1 : deliver(p, n);
+            // Deliberately return data despite cancellation to exercise the
+            // target's final check independently of a cooperative provider.
+            if (owner.signal_at == 3) owner.interrupt->signal();
+            return result;
+        }
+        int write(const void *p, int n) {
+            if (owner.signal_at == 2) owner.interrupt->signal();
+            return owner.mode == WriteError || owner.cancellation.cancelled() ? -1 : collect(p, n);
+        }
         void close_session() { if (live) { live = false; ++owner.closed; } }
     };
-    HttpConnection *create_connection() {
+    HttpConnection *create_connection(const OperationCancellation& token) {
+        cancellation = token;
         ++created;
         return mode == Missing ? NULL : new Connection(*this);
     }
@@ -235,9 +249,55 @@ static void parity_and_cleanup()
                "response header clone preserves secure routing");
     }
 }
+static void interrupt_cases()
+{
+    CancellationSource source;
+    auto old = source.token();
+    expect(!old.cancelled(), "initial token live");
+    source.signal();
+    expect(old.cancelled() && !source.token().cancelled(), "old token fenced; new command admitted");
+    CancellationSource exhausted(UINT32_MAX - 1);
+    auto final = exhausted.token();
+    exhausted.signal(); exhausted.signal();
+    expect(final.cancelled() && exhausted.token().cancelled(), "generation exhaustion fails closed");
+    CancellationSource other;
+    expect(!other.token().cancelled(), "independent source unaffected");
+    for (bool raw : {false, true}) for (int phase = 0; phase <= 3; ++phase) {
+        reset("{\"answer\":42}");
+        CancellationSource events;
+        Provider provider;
+        provider.interrupt = &events; provider.signal_at = phase;
+        HttpTarget target(7, &provider);
+        auto hdr = header(target, "https://tls.lab.test/probe");
+        target.begin_command(events.token());
+        if (!phase) events.signal();
+        auto r = exchange(target, hdr, raw);
+        expect(r.data.empty() && r.status == "503 SERVICE UNAVAILABLE", "interrupted exchange publishes no body or handles");
+        expect(provider.created == (phase ? 1 : 0) && provider.destroyed == provider.created,
+               "owner releases interrupted provider once");
+        expect(provider.opened == provider.closed && !socket_calls, "no open transport or plaintext fallback");
+        expect(more(target).data.empty(), "no interrupted tail");
+        reset("{\"answer\":42}"); provider.signal_at = 0;
+        target.begin_command(events.token());
+        expect(exchange(target, hdr, true).data == "{\"answer\":42}", "fresh explicit command recovers");
+    }
+    reset(std::string(HTTP_MAX_REPLY_BYTES * 2, 'x'));
+    CancellationSource events;
+    Provider provider; HttpTarget target(7, &provider);
+    auto hdr = header(target, "https://tls.lab.test/probe");
+    target.begin_command(events.token());
+    expect(!exchange(target, hdr, true).last, "retain secure body for continuation");
+    events.signal();
+    expect(provider.destroyed == 0, "signalling never destroys owner resources");
+    target.begin_command(events.token());
+    auto r = more(target);
+    expect(r.data.empty() && r.status == "503 SERVICE UNAVAILABLE", "cancelled continuation exposes no buffered bytes");
+    target.abort(0); target.c64_reset();
+    expect(provider.destroyed == 1 && provider.closed == 1, "continuation abort reset cleanup idempotent");
+}
 int main()
 {
-    failure_cases(); scheme_cases(); parity_and_cleanup();
+    failure_cases(); scheme_cases(); parity_and_cleanup(); interrupt_cases();
     printf("HTTPS routing: %d checks, %d failures\n", checks, failures);
     return failures ? 1 : 0;
 }

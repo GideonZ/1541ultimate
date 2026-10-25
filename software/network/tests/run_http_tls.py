@@ -17,6 +17,7 @@ CASES = ['valid', 'clean-eof', 'hostname', 'untrusted', 'expired', 'future', 'no
          'handshake-cancel', 'read-timeout', 'total-timeout', 'read-cancel',
          'write-timeout', 'write-cancel', 'truncated', 'close-clean', 'close-truncated', 'closed-before-open']
 ROUTING_CASES = [case for case in CASES if case not in ('clean-eof', 'allocation', 'write-timeout', 'write-cancel', 'closed-before-open')] + ['no-provider', 'no-create']
+ROUTING_CASES += ['command-pre-cancel', 'command-handshake-cancel', 'command-read-cancel']
 
 
 class Peer:
@@ -108,7 +109,7 @@ def main():
     parser.add_argument('--binary', type=Path, required=True)
     parser.add_argument('--tls-root', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
-    parser.add_argument('--case', choices=CASES + ['no-provider', 'no-create'])
+    parser.add_argument('--case', choices=CASES + ROUTING_CASES)
     parser.add_argument('--ecdsa', action='store_true')
     parser.add_argument('--routing', action='store_true')
     args = parser.parse_args()
@@ -121,7 +122,8 @@ def main():
     make_dated_certificates(args.output)
     results = []
     for case in [args.case] if args.case else (ROUTING_CASES if args.routing else CASES):
-        kind = case if case in ('expired', 'future', 'truncated', 'clean-eof', 'close-clean', 'close-truncated') else ('handshake' if case.startswith('handshake-') else ('stall' if case in ('read-timeout', 'total-timeout', 'read-cancel') else 'valid'))
+        peer_case = case.removeprefix('command-')
+        kind = peer_case if peer_case in ('expired', 'future', 'truncated', 'clean-eof', 'close-clean', 'close-truncated') else ('handshake' if peer_case.startswith('handshake-') else ('stall' if peer_case in ('read-timeout', 'total-timeout', 'read-cancel') else 'valid'))
         if case in ('write-timeout', 'write-cancel'):
             kind = 'write-stall'
         primary = Peer(args.output, kind, args.ecdsa)
@@ -141,8 +143,8 @@ def main():
         (args.output / (case + '.log')).write_bytes(raw)
         events = {'primary': primary.events, 'recovery': recovery.events}
         (args.output / (case + '-peers.json')).write_text(json.dumps(events, indent=2) + '\n')
-        no_open = case in ('no-time', 'no-entropy', 'allocation', 'pre-cancel', 'no-provider', 'no-create', 'closed-before-open')
-        application = case in ('valid', 'clean-eof', 'read-timeout', 'total-timeout', 'read-cancel', 'truncated', 'close-clean', 'close-truncated')
+        no_open = peer_case in ('no-time', 'no-entropy', 'allocation', 'pre-cancel', 'no-provider', 'no-create', 'closed-before-open')
+        application = peer_case in ('valid', 'clean-eof', 'read-timeout', 'total-timeout', 'read-cancel', 'truncated', 'close-clean', 'close-truncated')
         peer_ok = True
         for name, expected_accepts, expected_request in [('primary', int(not no_open), application), ('recovery', 1, True)]:
             observed = events[name]

@@ -664,6 +664,8 @@ class HttpTarget : public CommandTarget {
     HttpRequest *exch;
     HttpSecureProvider *secure_provider;
     HttpConnection *secure_connection;
+    OperationCancellation cancellation;
+    OperationCancellation exchange_cancellation;
     StreamRamFile *response_data;
 
     // Helper methods for command processing
@@ -690,6 +692,8 @@ public:
     // Provider is borrowed; it and its callback context outlive this target.
     HttpTarget(int id, HttpSecureProvider *provider = NULL);
     virtual ~HttpTarget();
+
+    void begin_command(const OperationCancellation& token) override { cancellation = token; }
 
     void parse_command(Message *command, Message **reply, Message **status) override;
     void get_more_data(Message **reply, Message **status) override;

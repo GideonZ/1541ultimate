@@ -93,7 +93,34 @@ Actual TLS tests separately exercise atomic cancellation during handshake/read/
 write, bounded cleanup, terminal adapters, exact peer bytes and recovery under
 RSA and ECDSA. They do not validate the proposed remote identity protocol.
 
-Before firmware integration: choose provider placement/product scope; specify
+The first firmware increment connects C64 reset and UCI abort interrupts to a
+lock-free cancellation source. Each queued event carries its admission token,
+so queued commands from before a reset cannot be admitted afterwards, even if
+the reset notification itself could not be queued. Sticky flags preserve owner
+cleanup. Reset/abort handlers only signal; the dispatcher and target retain
+ownership of destruction. A cancelled command or continuation cannot publish
+its reply: the dispatcher checks the token with interrupts disabled while copying
+the bounded reply and updating the handshake. The target also rejects cancelled
+secure exchanges before creation, after receiving and before buffered delivery.
+
+The optional secure factory receives a token by reference and must copy it into
+the session callback context. Poll it in bounded transport waits and the TLS
+cancellation callback. The existing adapter forwards that callback to the TLS
+core. The token for a buffered exchange remains separate from later command
+tokens. No HTTP command, handle layout or status text changes. The default
+firmware still has no secure provider and HTTPS remains unavailable.
+
+There is one serialized interrupt producer; this source is not a multi-producer
+event bus. Generation exhaustion fails closed until reboot, without wrapping.
+These in-memory generations detect local C64 resets/aborts only. They do not
+identify ESP32 boots, survive management restart or implement the remote lease
+protocol described above. Host dispatcher tests use real dispatcher/ISR code
+with fake registers/queues; they do not prove physical interrupt timing. The
+32-bit event grows from 1 to 12 bytes: the 16-entry queue adds 176 payload bytes.
+Two target tokens add 16 bytes and the static source/abort flag add 5 bytes before
+padding. No per-event heap allocation or persistent epoch storage is introduced.
+
+Before enabling a firmware provider: choose provider placement/product scope; specify
 message validation and queue bounds; implement owner routing, restart discovery,
 orphan reclamation and admission control; qualify entropy/time/trust; prove UCI
 publication ordering and cancellation races on the chosen scheduler; then measure

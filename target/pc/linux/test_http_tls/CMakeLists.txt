@@ -30,6 +30,11 @@ add_executable(test_http_tls ${HTTP_TEST_SOURCES}
     ${SW}/network/tls_http_connection.cc
     ${TLS_STREAM_ROOT}/src/tls_stream.c)
 add_executable(test_https_routing ${HTTP_TEST_SOURCES} ${SW}/network/tests/test_https_routing.cc)
+add_executable(test_command_cancellation ${SW}/network/tests/test_command_cancellation.cc
+    ${SW}/io/command_interface/command_intf.cc)
+target_include_directories(test_command_cancellation PRIVATE
+    ${SW}/network/tests/command_stubs ${SW}/io/command_interface ${SW}/infra)
+target_compile_options(test_command_cancellation PRIVATE -Wall -Wextra -Wno-format)
 foreach(test_target test_http_tls test_https_routing)
 target_include_directories(${test_target} PRIVATE
     ${SW}/network ${SW}/api ${SW}/infra ${SW}/components ${SW}/io/stream ${SW}/system

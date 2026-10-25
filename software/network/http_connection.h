@@ -2,6 +2,7 @@
 #define HTTP_CONNECTION_H
 
 #include <stdint.h>
+#include "operation_cancellation.h"
 
 // A byte stream below the HTTP renderer and parser. Short reads/writes are
 // valid; zero from read means EOF, while write must make progress or fail.
@@ -28,7 +29,9 @@ class HttpSecureProvider
 {
 public:
     virtual ~HttpSecureProvider() {}
-    virtual HttpConnection *create_connection() = 0;
+    // Copy the token into the session context and poll it in all bounded waits
+    // as well as the TLS cancellation callback. Never retain this reference.
+    virtual HttpConnection *create_connection(const OperationCancellation& cancellation) = 0;
 };
 
 // No heap allocation is needed for the default HTTP transport. A descriptor

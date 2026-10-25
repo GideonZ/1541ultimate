@@ -74,6 +74,7 @@ struct Platform {
     int fd, opens, closes, open_delay;
     bool ready, random_ready, block_write;
     std::atomic<bool> cancelled;
+    OperationCancellation command_cancellation;
     mbedtls_x509_crt roots;
     Platform(const char *ca) : fd(-1), opens(0), closes(0), open_delay(0),
         ready(true), random_ready(true), block_write(false), cancelled(false)
@@ -86,7 +87,10 @@ struct Platform {
 
 static int64_t clock_read(void *) { return now_ms(); }
 static bool clock_ready(void *p) { return static_cast<Platform *>(p)->ready; }
-static bool cancelled(void *p) { return static_cast<Platform *>(p)->cancelled.load(); }
+static bool cancelled(void *p) {
+    Platform *platform = static_cast<Platform *>(p);
+    return platform->cancelled.load() || platform->command_cancellation.cancelled();
+}
 static int entropy(void *p, unsigned char *bytes, size_t length)
 {
     if (!static_cast<Platform *>(p)->random_ready) return -1;
@@ -105,7 +109,7 @@ static int trust(void *p, mbedtls_ssl_config *config)
 }
 static int wait_for(Platform *p, short events, int64_t end)
 {
-    while (!p->cancelled.load()) {
+    while (!cancelled(p)) {
         int64_t left = end - now_ms();
         if (left <= 0) return -1;
         pollfd fd = { p->fd, events, 0 };
@@ -133,7 +137,7 @@ static int open_socket(void *context, const char *, uint16_t port, uint32_t time
         socklen_t size = sizeof(error);
         if (getsockopt(p->fd, SOL_SOCKET, SO_ERROR, &error, &size) || error) return -1;
     }
-    for (int i = 0; i < p->open_delay && now_ms() < end && !p->cancelled.load(); i += 10)
+    for (int i = 0; i < p->open_delay && now_ms() < end && !cancelled(p); i += 10)
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     return 0;
 }
@@ -148,7 +152,7 @@ static int write_socket(void *context, const uint8_t *bytes, size_t size, uint32
     Platform *p = static_cast<Platform *>(context);
     if (p->block_write) {
         int64_t end = now_ms() + timeout;
-        while (now_ms() < end && !p->cancelled.load())
+        while (now_ms() < end && !cancelled(p))
             std::this_thread::sleep_for(std::chrono::milliseconds(5));
         return -1;
     }
@@ -287,7 +291,8 @@ struct TargetProvider : HttpSecureProvider {
         Connection(TargetProvider& p) : TlsHttpConnection(p.callbacks, p.timeout), owner(p) {}
         ~Connection() { owner.last = diagnostic(); ++owner.destroyed; }
     };
-    HttpConnection *create_connection() {
+    HttpConnection *create_connection(const OperationCancellation& token) {
+        static_cast<Platform *>(callbacks.context)->command_cancellation = token;
         ++created;
         return unavailable ? NULL : new Connection(*this);
     }
@@ -298,6 +303,10 @@ static void routed_exchange(const char *mode, const char *ca, int port)
     int initial_allocations = live_allocations, initial_descriptors = descriptors();
     {
         Platform platform(ca);
+        CancellationSource command_events;
+        OperationCancellation command_token = command_events.token();
+        bool command_cancel = strncmp(mode, "command-", 8) == 0;
+        bool command_pre_cancel = strcmp(mode, "command-pre-cancel") == 0;
         platform.ready = strcmp(mode, "no-time") != 0;
         platform.random_ready = strcmp(mode, "no-entropy") != 0;
         if (strcmp(mode, "pre-cancel") == 0) platform.cancelled.store(true);
@@ -311,11 +320,16 @@ static void routed_exchange(const char *mode, const char *ca, int port)
             entropy, trust, open_socket, read_socket, write_socket, close_socket };
         TargetProvider provider(callbacks, timeout ? 650 : 3000, no_create);
         std::thread canceller;
-        if (cancel && strcmp(mode, "pre-cancel"))
-            canceller = std::thread([&platform] { std::this_thread::sleep_for(std::chrono::milliseconds(150)); platform.cancelled.store(true); });
+        if (cancel && strcmp(mode, "pre-cancel") && !command_pre_cancel)
+            canceller = std::thread([&platform, &command_events, command_cancel] {
+                std::this_thread::sleep_for(std::chrono::milliseconds(150));
+                if (command_cancel) command_events.signal(); else platform.cancelled.store(true);
+            });
         int64_t begin = now_ms();
         {
             HttpTarget target(7, no_provider ? NULL : &provider);
+            target.begin_command(command_token);
+            if (command_pre_cancel) command_events.signal();
             char url[128];
             snprintf(url, sizeof(url), "https://%s:%d/probe", strcmp(mode, "hostname") == 0 ? "wrong.lab.test" : "tls.lab.test", port);
             std::vector<uint8_t> create = {6, HTTP_CMD_HEADER_CREATE, 1};
@@ -344,11 +358,11 @@ static void routed_exchange(const char *mode, const char *ca, int port)
         }
         int64_t elapsed = now_ms() - begin;
         if (canceller.joinable()) canceller.join();
-        expect(provider.created == (no_provider ? 0 : 1) && provider.destroyed == (no_provider || no_create ? 0 : 1), "routed provider ownership");
+        expect(provider.created == (no_provider || command_pre_cancel ? 0 : 1) && provider.destroyed == (no_provider || no_create || command_pre_cancel ? 0 : 1), "routed provider ownership");
         expect(platform.opens == platform.closes && platform.opens <= 1, "routed transport cleanup");
-        if (no_provider || no_create) expect(platform.opens == 0, "unavailable provider opens no TLS transport");
+        if (no_provider || no_create || command_pre_cancel) expect(platform.opens == 0, "unavailable or cancelled command opens no TLS transport");
         if (timeout) expect(provider.last.status == TLS_TIMEOUT && elapsed >= 630 && elapsed <= 900, "routed original deadline");
-        if (cancel) expect(provider.last.status == TLS_CANCELLED && elapsed <= 750, "routed cancellation");
+        if (cancel) expect((command_pre_cancel || provider.last.status == TLS_CANCELLED) && elapsed <= 750, "routed cancellation");
         if (success) expect(provider.last.status == TLS_OK, "routed success diagnostics");
         if (strcmp(mode, "close-truncated") == 0)
             expect(provider.last.status == TLS_TRUNCATED, "routed unclean EOF remains a failure");

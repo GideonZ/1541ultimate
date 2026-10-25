@@ -897,7 +897,12 @@ void HttpTarget::cmd_exchange(Message *command, Message **reply, Message **statu
         return;
     }
     if (hdr->is_secure()) {
-        secure_connection = secure_provider ? secure_provider->create_connection() : NULL;
+        if (cancellation.cancelled()) {
+            *status = &c_status_not_available;
+            return;
+        }
+        exchange_cancellation = cancellation;
+        secure_connection = secure_provider ? secure_provider->create_connection(exchange_cancellation) : NULL;
         if (!secure_connection) {
             *status = &c_status_not_available;
             return;
@@ -932,6 +937,11 @@ void HttpTarget::cmd_exchange(Message *command, Message **reply, Message **statu
     }
 
     // When we are here, the exch object exists and should contain the reply.
+    if (hdr->is_secure() && exchange_cancellation.cancelled()) {
+        release_exchange();
+        *status = &c_status_not_available;
+        return;
+    }
 
     int slot = -1;
     if(raw) {
@@ -1016,6 +1026,12 @@ void HttpTarget::cmd_exchange(Message *command, Message **reply, Message **statu
 
 void HttpTarget::get_more_data(Message **reply, Message **status)
 {
+    if (secure_connection && exchange_cancellation.cancelled()) {
+        reset_responses();
+        *reply = &c_message_empty;
+        *status = &c_status_not_available;
+        return;
+    }
     if (response_data) {
         *reply = &data_message;
         data_message.length = response_data->read((char *)data_message.message, HTTP_MAX_REPLY_BYTES);

@@ -87,3 +87,12 @@ recovery, independent peer records and allocation/descriptor balance checks.
 The adapter-only `closed-before-open` case retires an unused adapter, then checks
 that open fails without a socket or application bytes. A fresh adapter must still
 complete its recovery exchange. Closing never makes a connection reusable.
+
+`test_command_cancellation` compiles the actual command dispatcher and ISR code
+against fake registers and queues. Run it directly from the build directory. It
+checks initial/continuation interruption, reset/abort, dropped notification with
+stale events still queued, owner cleanup and fresh-command recovery. This is not
+an FPGA or scheduler emulator. The routing suite separately tests token expiry,
+factory delivery, buffered-response fencing and generation exhaustion. The real
+TLS routing matrix adds `command-pre-cancel`, `command-handshake-cancel` and
+`command-read-cancel`, using the same token type and 750 ms cancellation bound.
