@@ -10,6 +10,7 @@ static provider_session::Identity id(unsigned n) { provider_session::Identity re
 static Frame request(unsigned opcode, uint64_t serial, Grant grant = {}, uint64_t counter = 0)
 {
     Frame frame = {}; frame.opcode = opcode; frame.request = serial; frame.grant = grant; frame.counter = counter;
+    if (opcode == Offer && !frame.grant.owner.valid()) frame.grant.owner = id(2);
     if (opcode == Initialize) frame.required = provider_session::Required;
     return frame;
 }
@@ -19,7 +20,7 @@ struct Session : provider_session::Resource {
     explicit Session(Counts& count) : c(count) {}
     void cancel() override { ++c.cancel; }
     bool cleanup() override {
-        if (c.interrupt) { Worker *w = c.interrupt; c.interrupt = NULL; control_submit(*w, request(Offer, 900)); }
+        if (c.interrupt) { Worker *w = c.interrupt; c.interrupt = NULL; Frame offer = request(Offer, 900); offer.grant.owner = id(8); control_submit(*w, offer); }
         return c.done;
     }
     ~Session() { ++c.released; }
@@ -34,7 +35,8 @@ static Frame reply(ControlTestPort& port)
 }
 static Grant initialize(Worker& worker, ControlTestPort& port, uint64_t now, unsigned manager = 2)
 {
-    expect(control_submit(worker, request(Offer, 1)), "offer queued"); worker.step(now);
+    Frame probe = request(Offer, 1); probe.grant.owner = id(manager);
+    expect(control_submit(worker, probe), "offer queued"); worker.step(now);
     Frame offer = reply(port); expect(offer.status == Ok && offer.request == 1, "solicited challenge");
     offer.grant.owner = id(manager);
     expect(control_submit(worker, request(Initialize, 2, offer.grant)), "initialize queued"); worker.step(now);
@@ -61,6 +63,7 @@ static void wire_cases()
         expect(!decode(bytes, FrameSize, decoded), "malformed framing rejected"); bytes[offset] = saved;
     }
     for (unsigned offset = 20; offset < 72; ++offset) {
+        if (offset >= 44 && offset < 60) continue;
         bytes[offset] = 1; expect(!decode(bytes, FrameSize, decoded), "offer cannot carry stale fields"); bytes[offset] = 0;
     }
     memset(bytes + 12, 0, 8); expect(!decode(bytes, FrameSize, decoded), "zero request rejected");
@@ -92,7 +95,8 @@ static void lifecycle_cases()
     Counts next; Ticket replacement = admit(worker, grant, next, 2, 4);
     expect(control_submit(worker, close) && worker.current(replacement, 4), "stale close cannot cancel reused slot");
     worker.step(4); expect(reply(port).status == Rejected, "stale close rejected");
-    expect(control_submit(worker, request(Offer, 4)), "restart queued");
+    Frame restart = request(Offer, 4); restart.grant.owner = id(3);
+    expect(control_submit(worker, restart), "restart queued");
     expect(!worker.current(replacement, 5) && next.released == 0, "new offer fences old callback at ingress");
     worker.step(5); Frame offer = reply(port); offer.grant.owner = id(3);
     control_submit(worker, request(Initialize, 5, offer.grant)); worker.step(6);

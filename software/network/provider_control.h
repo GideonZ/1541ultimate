@@ -48,6 +48,7 @@ private:
     CancellationSource delivery_;
     OperationCancellation resource_generation_;
     provider_session::Ticket last_;
+    provider_session::Identity offered_owner_ = {};
     bool active_, known_, stop_, close_, pending_;
     Event pending_event_;
     bool matches(const Frame&) const;

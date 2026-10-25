@@ -41,7 +41,7 @@ void send_keepalive();
 // 1.15: optional solicited boot identity; no TLS capability is advertised.
 #ifdef CONFIG_ULTIMATE_PROVIDER_CONTROL
 // 1.16: experimental control delivery; TLS initialization remains unavailable.
-#define IDENT_MINOR   16
+#define IDENT_MINOR   17
 #else
 #define IDENT_MINOR   15
 #endif

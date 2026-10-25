@@ -41,7 +41,10 @@ SRCS_C   =	itu.c \
 			cmd_buffer.c \
 			url.c
 
-SRCS_CC	 =  u64ii_init.cc \
+SRCS_CC	 =  provider_manager.cc \
+            provider_control.cc \
+            provider_session_owner.cc \
+            u64ii_init.cc \
 			color_timings.cc \
 			hdmi_scan.cc \
 			usb_hwinit.cc \

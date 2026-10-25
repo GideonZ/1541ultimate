@@ -45,6 +45,12 @@ add_executable(test_provider_control ${SW}/network/tests/test_provider_control.c
 target_include_directories(test_provider_control PRIVATE ${SW}/network ${SW}/infra)
 target_compile_options(test_provider_control PRIVATE -Wall -Wextra -Werror)
 target_link_libraries(test_provider_control PRIVATE pthread)
+add_executable(test_provider_manager ${SW}/network/tests/test_provider_manager.cc
+    ${SW}/network/provider_manager.cc ${SW}/network/provider_control.cc ${SW}/network/provider_session_owner.cc)
+target_include_directories(test_provider_manager PRIVATE ${SW}/network ${SW}/infra)
+target_compile_options(test_provider_manager PRIVATE -Wall -Wextra -Werror)
+target_link_libraries(test_provider_manager PRIVATE pthread)
+target_sources(test_http_tls PRIVATE ${SW}/network/provider_manager.cc)
 target_include_directories(test_provider_lifecycle PRIVATE ${SW}/io/wifi ${SW}/infra)
 add_executable(test_provider_boot ${SW}/network/tests/test_provider_boot.c ${SW}/u64ctrl/main/provider_boot.c)
 target_include_directories(test_provider_boot PRIVATE ${SW}/network/tests/command_stubs ${SW}/u64ctrl/main)

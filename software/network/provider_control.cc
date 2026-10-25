@@ -14,7 +14,7 @@ static void put64(uint8_t *p, uint64_t value)
 bool decode(const uint8_t *data, size_t size, Frame& result)
 {
     if (size != FrameSize || data[0] != 2 || data[1] != 0xfe || data[2] || data[3] ||
-        memcmp(data + 4, "PSN1", 4) || data[8] != 1 || data[9] < Offer || data[9] > Close ||
+        memcmp(data + 4, "PSN2", 4) || data[8] != 2 || data[9] < Offer || data[9] > Close ||
         data[11] > 1 || (data[11] ? (data[10] < Ok || data[10] > Unavailable) : data[10] != 0) ||
         data[72] || data[73] || data[74] || data[75]) return false;
     Frame frame = {};
@@ -29,7 +29,7 @@ bool decode(const uint8_t *data, size_t size, Frame& result)
     if (!frame.reply) {
         if (frame.opcode == Offer) {
             if (frame.grant.challenge.provider.valid() || frame.grant.challenge.epoch ||
-                frame.grant.owner.valid() || frame.counter || frame.required) return false;
+                !frame.grant.owner.valid() || frame.counter || frame.required) return false;
         } else {
             if (!frame.grant.challenge.provider.valid() || !frame.grant.challenge.epoch || !frame.grant.owner.valid()) return false;
             if (frame.opcode == Initialize ? frame.counter != 0 : (!frame.counter || frame.required)) return false;
@@ -41,8 +41,8 @@ bool decode(const uint8_t *data, size_t size, Frame& result)
 void encode(const Frame& frame, uint8_t data[FrameSize])
 {
     memset(data, 0, FrameSize);
-    data[0] = 2; data[1] = 0xfe; memcpy(data + 4, "PSN1", 4);
-    data[8] = 1; data[9] = frame.opcode; data[10] = frame.status; data[11] = frame.reply;
+    data[0] = 2; data[1] = 0xfe; memcpy(data + 4, "PSN2", 4);
+    data[8] = 2; data[9] = frame.opcode; data[10] = frame.status; data[11] = frame.reply;
     put64(data + 12, frame.request);
     memcpy(data + 20, frame.grant.challenge.provider.bytes, 16);
     put64(data + 36, frame.grant.challenge.epoch);
@@ -121,11 +121,14 @@ void Worker::step(uint64_t now)
     switch (frame.opcode) {
     case Offer:
         port_.lock(); known_ = false; port_.unlock();
+        offered_owner_ = frame.grant.owner;
         grant.challenge = owner_.offer(now);
+        grant.owner = offered_owner_;
         respond(event, grant.challenge.epoch ? Ok : Unavailable, &grant);
         break;
     case Initialize:
-        if (owner_.initialize(frame.grant.challenge, frame.grant.owner, 1, frame.required, now, grant)) respond(event, Ok, &grant);
+        if (!(frame.grant.owner == offered_owner_)) respond(event, Rejected);
+        else if (owner_.initialize(frame.grant.challenge, frame.grant.owner, 1, frame.required, now, grant)) respond(event, Ok, &grant);
         else respond(event, owner_.state() == provider_session::Owner::Quarantined ? Unavailable : owner_.occupied() ? Busy : Rejected);
         break;
     case Renew:

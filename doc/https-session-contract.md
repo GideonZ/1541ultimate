@@ -180,8 +180,8 @@ TLS admission still requires the boot-pair/capability/cleanup contract above.
 ## Provider-side initialization and reclamation engine
 
 `provider_session_owner` implements an allocation-free, single-owner engine for
-one remote resource at a time. It is compiled with the controller sources but is
-not instantiated or connected to UART commands. No capability is advertised and
+one remote resource at a time. The optional control worker below instantiates it;
+the default controller does not. No TLS capability is advertised and
 the default HTTP secure provider remains absent. Its typed interfaces are not a
 wire format or a claim of a deployed remote TLS service.
 
@@ -191,8 +191,9 @@ the preceding grant immediately. Only the outstanding challenge can initialize,
 and only after previous resources have confirmed cleanup. The contract version
 and all required capabilities must match the backend configuration. Boot and
 manager identities must come from qualified freshness sources; checking nonzero
-bytes alone is not qualification. Obtaining the manager incarnation and validating
-solicited replies at the manager remain integration requirements.
+bytes alone is not qualification. The manager client below validates solicited
+replies; obtaining its incarnation on the management processor remains an
+integration requirement.
 
 Resource admission and renewal sequences are strictly ordered within a grant.
 The engine takes ownership only on successful admission. Lease duration is not
@@ -211,7 +212,7 @@ retained; a successfully initialized new grant starts fresh diagnostics.
 
 All engine calls and resource callbacks are serialized on the owner task. Receive
 and timer paths must queue requests or signal a separately synchronized cancellation
-source; they must not call this engine concurrently. A future worker must bound
+source; they must not call this engine concurrently. The worker must bound
 its scheduling and callback latency. If cleanup never confirms, retain the owner
 and resource until a qualified processor restart; do not recycle or destroy them.
 Normal teardown requires stop and drain before destroying the owner.
@@ -232,7 +233,7 @@ extent, copies a decoded event with zero wait, and frees the receive buffer once
 It never runs resource cleanup. The worker uses a four-event queue and processes
 at most one command per iteration, polling cleanup before command processing.
 Reply acquisition and transmit enqueue have zero wait and consume their buffer
-on both success and failure. The enabled build identifies as controller 1.16;
+on both success and failure. The enabled build identifies as controller 1.17;
 the default build remains 1.15. Neither build installs a TLS backend.
 
 The local control envelope is exactly 76 bytes, with little-endian integers:
@@ -240,8 +241,8 @@ The local control envelope is exactly 76 bytes, with little-endian integers:
 | Offset | Field |
 | --- | --- |
 | 0 | Command 0x02, thread 0xfe, two zero sequence bytes |
-| 4 | ASCII PSN1 |
-| 8 | Version 1, opcode, status, direction (0 request, 1 reply) |
+| 4 | ASCII PSN2 |
+| 8 | Version 2, opcode, status, direction (0 request, 1 reply) |
 | 12 | Nonzero 64-bit request correlation |
 | 20 | 16-byte provider identity |
 | 36 | 64-bit challenge epoch |
@@ -252,7 +253,10 @@ The local control envelope is exactly 76 bytes, with little-endian integers:
 
 Opcodes are offer (1), initialize (2), renew (3) and close (4). Requests have zero
 status; replies use success (1), cleanup busy (2), rejected (3), or unavailable (4).
-An offer has zero grant/counter/features. Initialization has a complete grant and
+An offer carries a nonzero manager incarnation; its provider identity, epoch,
+counter and features are zero. Every offer reply echoes that incarnation. The
+provider accepts initialization only for the incarnation that requested its
+current offer. Initialization has a complete grant and
 zero counter; renew/close have a complete grant, nonzero counter and zero features.
 Unknown versions, directions, opcodes, reserved fields, lengths and noncanonical
 fields are rejected before enqueueing. This experimental extension is not a new
@@ -280,4 +284,50 @@ initialize a session. A backend cannot be enabled by an incoming feature mask.
 Host tests use the same decoder/worker with a mutex-backed bounded port, including
 real TLS cancellation and recovery. Both controller configurations are compiled;
 physical UART, enabled task scheduling, receive overflow/reset integration, manager
-incarnation/reply validation and the TLS open/read/write data plane remain gates.
+incarnation acquisition/delivery and the TLS open/read/write data plane remain gates.
+
+## Manager reply validation and restart identity
+
+`provider_manager` implements a serialized, allocation-free manager client. It is
+compiled for the management processor but is not instantiated or connected to its
+UART receiver. There is no production TLS admission. HTTP uses its existing
+interface and default transport.
+
+Construction requires an explicit source of a fresh 128-bit manager incarnation.
+The callback is invoked once; failure or all-zero output disables this instance.
+There is no clock, MAC, counter or persistent-storage fallback. Recreating the
+manager requires a new qualified incarnation even if request counters start again
+at one. The host fixture uses operating-system entropy; no management hardware
+entropy source is qualified by these tests.
+
+The PSN2 format replaces the earlier experimental PSN1 format, which could not
+bind an offer reply to a manager incarnation. Old formats are rejected. The client
+accepts only one outstanding request and checks exact framing, reply direction,
+request number, opcode, manager incarnation, observed provider boot, challenge,
+counter and required-feature echo. Invalid, unsolicited or duplicate replies do
+not consume the pending request or extend its deadline. A matching error retires
+the grant. Initial observation of a boot identity alone never authorizes TLS.
+
+Initialization and renewal leases start conservatively at request send, never at
+reply arrival. Both reply and lease deadlines expire at equality. An outstanding
+renewal cannot extend the previous lease until its exact reply is accepted. The
+local lease must not exceed the configured provider lease; these bounds are not
+negotiated on the wire yet. Backwards clocks and request/session/renewal exhaustion
+fail closed. A retired provider-lifetime token invalidates use before polling.
+
+Close retires the local publication token before transmitting. No next session
+is reserved until a successful matching cleanup reply arrives. Lost replies,
+failed request enqueue, failed remote admission or link loss require retirement
+and a new offer; operations are not retried or replayed. The remote owner still
+reclaims abandoned resources through its lease. A new offer retires all old work.
+
+All manager calls, including read-only ticket checks, belong to one owner task.
+Receive/interrupt paths must deliver bounded copied events to that task; they
+cannot call it concurrently. Only copied cancellation tokens support concurrent
+readers, and their sources must outlive them. The future UART binding must connect
+send failure, overflow, link loss and reboot events to this contract.
+
+Tests run complete encoded manager/worker exchanges, repeated counters after
+restart, malformed and stale replies, delayed renewals, cancellation, confirmed
+cleanup and real RSA/ECDSA TLS recovery. They do not qualify physical UART timing,
+management entropy, a negotiated production lease, or the TLS data plane.
