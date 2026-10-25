@@ -19,7 +19,7 @@ static Message c_status_no_more       = { 16, true, (uint8_t *)"500 NO MORE DATA
 static Message c_status_not_available = { 23, true, (uint8_t *)"503 SERVICE UNAVAILABLE" };
 static Message c_status_no_valid_json = { 17, true, (uint8_t *)"400 NO VALID JSON"};
 
-HttpTarget::HttpTarget(int id)
+HttpTarget::HttpTarget(int id, HttpSecureProvider *provider)
 {
     command_targets[id] = this;
     memset(headers, 0, sizeof(headers));
@@ -27,6 +27,8 @@ HttpTarget::HttpTarget(int id)
     data_message.message = new uint8_t[CMD_MAX_REPLY_LEN];
     status_message.message = new uint8_t[CMD_MAX_STATUS_LEN];
     exch = NULL;
+    secure_provider = provider;
+    secure_connection = NULL;
     response_data = NULL;
 }
 
@@ -54,12 +56,20 @@ void HttpTarget::release_all()
     }
 }
 
-void HttpTarget::reset_responses()
+void HttpTarget::release_exchange()
 {
     if (exch) {
         delete exch;
         exch = NULL;
     }
+    // HttpRequest borrows this connection; destroy it only after the request.
+    delete secure_connection;
+    secure_connection = NULL;
+}
+
+void HttpTarget::reset_responses()
+{
+    release_exchange();
     if (response_data) {
         delete response_data;
         response_data = NULL;
@@ -882,7 +892,18 @@ void HttpTarget::cmd_exchange(Message *command, Message **reply, Message **statu
 
     reset_responses();
 
-    exch = new HttpRequest();
+    if (!hdr->is_valid()) {
+        *status = &c_status_bad_format;
+        return;
+    }
+    if (hdr->is_secure()) {
+        secure_connection = secure_provider ? secure_provider->create_connection() : NULL;
+        if (!secure_connection) {
+            *status = &c_status_not_available;
+            return;
+        }
+    }
+    exch = new HttpRequest(secure_connection);
     if (exch->connect_to_server(hdr->get_host(), hdr->get_port()) >= 0) {
         if (!exch->send_request(&req)) {
             if (raw) {
@@ -893,22 +914,19 @@ void HttpTarget::cmd_exchange(Message *command, Message **reply, Message **statu
                 }
             }
             if (!exch->recv_response()) {
-                delete exch;
-                exch = NULL;
+                release_exchange();
                 *status = &c_status_not_available;
                 return;
             }
         } else {
             printf("Failed to send request\n");
-            delete exch;
-            exch = NULL;
+            release_exchange();
             *status = &c_status_not_available;
             return;
         }
     } else {
         printf("Failed to connect.\n");
-        delete exch;
-        exch = NULL;
+        release_exchange();
         *status = &c_status_not_available;
         return;
     }
@@ -928,16 +946,14 @@ void HttpTarget::cmd_exchange(Message *command, Message **reply, Message **statu
         status_message.length = hdr->RawCopyLength;
         // Clean up if this was the last message
         if (data_message.last_part) {
-            delete exch;
-            exch = NULL;
+            release_exchange();
         }
     } else {
         JSON *json = exch->get_json();
         if(!json) {
             *reply = &c_message_empty;
             *status = &c_status_no_valid_json;
-            delete exch;
-            exch = NULL;
+            release_exchange();
             return;
         }
         for(int i=0; i<MAX_HTTP_HANDLES; i++) {
@@ -950,8 +966,7 @@ void HttpTarget::cmd_exchange(Message *command, Message **reply, Message **statu
             *status = &c_status_no_data_slot;
             *reply = &c_message_empty;
             delete json;
-            delete exch;
-            exch = NULL;
+            release_exchange();
             return;
         }
         body_handle = slot;
@@ -970,8 +985,7 @@ void HttpTarget::cmd_exchange(Message *command, Message **reply, Message **statu
 
             delete bodies[body_handle]; // also deletes the json
             bodies[body_handle] = NULL;
-            delete exch;
-            exch = NULL;
+            release_exchange();
             return;
         }
 
@@ -996,8 +1010,7 @@ void HttpTarget::cmd_exchange(Message *command, Message **reply, Message **statu
         }
 
         // we should have taken all the data from the exchange
-        delete exch;
-        exch = NULL;
+        release_exchange();
     }
 }
 
@@ -1017,8 +1030,7 @@ void HttpTarget::get_more_data(Message **reply, Message **status)
         data_message.length = exch->read_response_data(HTTP_MAX_REPLY_BYTES, data_message.message);
         data_message.last_part = (data_message.length != HTTP_MAX_REPLY_BYTES);
         if (data_message.last_part) {
-            delete exch;
-            exch = NULL;
+            release_exchange();
         }
         *status = &c_status_http_ok;
     } else {

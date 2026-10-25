@@ -21,6 +21,16 @@ public:
     virtual void close_session() = 0;
 };
 
+// Optional secure-provider factory. The caller owns each returned connection;
+// NULL means unavailable. Implementations must return a fresh authenticated
+// transport, never a plain socket substitute. Context outlives every session.
+class HttpSecureProvider
+{
+public:
+    virtual ~HttpSecureProvider() {}
+    virtual HttpConnection *create_connection() = 0;
+};
+
 // No heap allocation is needed for the default HTTP transport. A descriptor
 // supplied to the constructor is borrowed by the legacy parser helpers.
 class HttpSocketConnection : public HttpConnection

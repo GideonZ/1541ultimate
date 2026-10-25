@@ -16,6 +16,7 @@ CASES = ['valid', 'clean-eof', 'hostname', 'untrusted', 'expired', 'future', 'no
          'no-entropy', 'allocation', 'pre-cancel', 'handshake-timeout',
          'handshake-cancel', 'read-timeout', 'total-timeout', 'read-cancel',
          'write-timeout', 'write-cancel', 'truncated']
+ROUTING_CASES = [case for case in CASES if case not in ('clean-eof', 'allocation', 'write-timeout', 'write-cancel')] + ['no-provider', 'no-create']
 
 
 class Peer:
@@ -106,8 +107,9 @@ def main():
     parser.add_argument('--binary', type=Path, required=True)
     parser.add_argument('--tls-root', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
-    parser.add_argument('--case', choices=CASES)
+    parser.add_argument('--case', choices=CASES + ['no-provider', 'no-create'])
     parser.add_argument('--ecdsa', action='store_true')
+    parser.add_argument('--routing', action='store_true')
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=False)
     sys.path.insert(0, str(args.tls_root / 'tests'))
@@ -117,7 +119,7 @@ def main():
     make_certificate(args.output, 'untrusted', args.ecdsa)
     make_dated_certificates(args.output)
     results = []
-    for case in [args.case] if args.case else CASES:
+    for case in [args.case] if args.case else (ROUTING_CASES if args.routing else CASES):
         kind = case if case in ('expired', 'future', 'truncated', 'clean-eof') else ('handshake' if case.startswith('handshake-') else ('stall' if case in ('read-timeout', 'total-timeout', 'read-cancel') else 'valid'))
         if case in ('write-timeout', 'write-cancel'):
             kind = 'write-stall'
@@ -126,6 +128,8 @@ def main():
         try:
             ca = args.output / ('untrusted-ca.pem' if case == 'untrusted' else 'trusted-ca.pem')
             command = [str(args.binary), case, str(ca), str(primary.port), str(args.output / 'trusted-ca.pem'), str(recovery.port)]
+            if args.routing:
+                command.append('--routing')
             begin = time.monotonic()
             run = subprocess.run(command, capture_output=True, timeout=12, env={**os.environ, 'ASAN_OPTIONS': 'detect_leaks=1:halt_on_error=1'})
             elapsed = time.monotonic() - begin
@@ -136,7 +140,7 @@ def main():
         (args.output / (case + '.log')).write_bytes(raw)
         events = {'primary': primary.events, 'recovery': recovery.events}
         (args.output / (case + '-peers.json')).write_text(json.dumps(events, indent=2) + '\n')
-        no_open = case in ('no-time', 'no-entropy', 'allocation', 'pre-cancel')
+        no_open = case in ('no-time', 'no-entropy', 'allocation', 'pre-cancel', 'no-provider', 'no-create')
         application = case in ('valid', 'clean-eof', 'read-timeout', 'total-timeout', 'read-cancel', 'truncated')
         peer_ok = True
         for name, expected_accepts, expected_request in [('primary', int(not no_open), application), ('recovery', 1, True)]:
@@ -152,7 +156,7 @@ def main():
             peer_ok &= any(event['kind'] == 'client-hello' and event['tls_record'] for event in primary.events)
         if kind == 'write-stall':
             peer_ok &= any(event['kind'] == 'no-application-data' for event in primary.events)
-        summaries = re.findall(rb'TLS adapter: (\d+) checks, (\d+) failures', raw)
+        summaries = re.findall(rb'TLS (?:adapter|routing): (\d+) checks, (\d+) failures', raw)
         passed = run.returncode == 0 and peer_ok and len(summaries) == 1 and summaries[0][1] == b'0'
         passed &= not re.search(rb'ERROR: (?:AddressSanitizer|LeakSanitizer)|runtime error:', raw)
         results.append({'case': case, 'returncode': run.returncode, 'checks': int(summaries[0][0]) if summaries else 0, 'peer_ok': bool(peer_ok), 'elapsed_seconds': elapsed, 'passed': bool(passed)})

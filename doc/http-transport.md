@@ -5,7 +5,8 @@ connection uses the existing socket implementation. Callers may supply a
 different byte-stream backend to the request constructor; the HTTP parser does
 not depend on a TLS library or interprocessor protocol.
 
-This boundary does not add HTTPS URL handling or a production TLS backend.
+Target 6 selects an optional secure provider for HTTPS URLs. A production TLS
+provider is not installed by default.
 Target-6 commands, response blocks, status strings and JSON handling are
 unchanged. Parser compatibility fixes remain separate work.
 
@@ -70,5 +71,34 @@ an unauthenticated transport EOF is an error. A failed write may have sent bytes
 and must not be replayed. Both the adapter and request are noncopyable.
 
 The adapter is currently built only by the host fixture described in
-[`test_http_tls`](../target/pc/linux/test_http_tls/README.md). It has not been wired
-into target-6 URL selection or a production firmware image.
+[`test_http_tls`](../target/pc/linux/test_http_tls/README.md). The fixture supplies
+it to target 6; a production firmware image still needs a qualified provider.
+
+## Scheme routing and failure behaviour
+
+The existing header-create and raw/object exchange commands accept the same
+request data. Ordinary HTTP and schemeless `host[:port]/path` continue to use the
+inline socket backend. HTTPS uses `HttpSecureProvider`, supplied to the target
+constructor; the default is no provider. Scheme matching is case-insensitive.
+The default secure port is 443, and explicit secure ports must be decimal 1–65535.
+Unsupported explicit schemes, malformed `https:` prefixes, empty secure hosts,
+userinfo and unsupported secure authority syntax are rejected before transport
+creation. Existing header rendering is shared by HTTP and HTTPS, including its
+Host-header formatting; this increment does not revise request syntax.
+
+The provider is a trusted implementation boundary. Its factory must return a
+fresh authenticated connection or null, never a plain socket substitute. The
+target owns that connection and destroys it after its borrowing `HttpRequest`.
+The factory and callback context must outlive the target. Completion, failure,
+abort, reset, free-all and exchange replacement release the owned connection.
+Pending raw response blocks retain ownership until drained or discarded.
+
+An absent provider, null factory result or secure open/I/O failure produces the
+existing `503 SERVICE UNAVAILABLE` status with an empty reply. It cannot trigger
+a DNS lookup or plaintext connection through the default HTTP backend. A later,
+explicit HTTP command can still succeed. Invalid URL routing uses the existing
+`500 BAD FORMAT` status at exchange time; it does not allocate response handles.
+Remote HTTP errors still return their genuine response bodies and status through
+the normal raw/object paths. No new TLS-specific command or numeric status is
+introduced; structured status text alone is not a new machine-readable TLS error
+taxonomy. Detailed TLS diagnostics remain a provider concern.

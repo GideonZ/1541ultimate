@@ -10,9 +10,12 @@
 #include <string.h>
 #include <sys/random.h>
 #include <thread>
+#include <vector>
+#include <string>
 #include <unistd.h>
 #include "tls_http_connection.h"
 #include "http_request.h"
+#include "http_target.h"
 #include "mbedtls/x509_crt.h"
 
 static int checks, failures;
@@ -259,8 +262,98 @@ static void exchange(const char *mode, const char *ca, int port)
            mode, observed.status, observed.stage, observed.verify_flags, (int)elapsed, opens, closes, live_allocations);
 }
 
+struct TargetProvider : HttpSecureProvider {
+    tls_stream_port callbacks;
+    uint32_t timeout;
+    bool unavailable;
+    int created, destroyed;
+    tls_stream_diagnostics last;
+    TargetProvider(const tls_stream_port& port, uint32_t budget, bool missing) :
+        callbacks(port), timeout(budget), unavailable(missing), created(0), destroyed(0), last{} {}
+    class Connection : public TlsHttpConnection {
+        TargetProvider& owner;
+    public:
+        Connection(TargetProvider& p) : TlsHttpConnection(p.callbacks, p.timeout), owner(p) {}
+        ~Connection() { owner.last = diagnostic(); ++owner.destroyed; }
+    };
+    HttpConnection *create_connection() {
+        ++created;
+        return unavailable ? NULL : new Connection(*this);
+    }
+};
+
+static void routed_exchange(const char *mode, const char *ca, int port)
+{
+    int initial_allocations = live_allocations, initial_descriptors = descriptors();
+    {
+        Platform platform(ca);
+        platform.ready = strcmp(mode, "no-time") != 0;
+        platform.random_ready = strcmp(mode, "no-entropy") != 0;
+        if (strcmp(mode, "pre-cancel") == 0) platform.cancelled.store(true);
+        if (strcmp(mode, "total-timeout") == 0) platform.open_delay = 250;
+        bool timeout = strstr(mode, "timeout") != NULL;
+        bool cancel = strstr(mode, "cancel") != NULL;
+        bool success = strcmp(mode, "valid") == 0 || strcmp(mode, "recovery") == 0;
+        bool no_provider = strcmp(mode, "no-provider") == 0;
+        bool no_create = strcmp(mode, "no-create") == 0;
+        tls_stream_port callbacks = { &platform, clock_read, clock_ready, cancelled,
+            entropy, trust, open_socket, read_socket, write_socket, close_socket };
+        TargetProvider provider(callbacks, timeout ? 650 : 3000, no_create);
+        std::thread canceller;
+        if (cancel && strcmp(mode, "pre-cancel"))
+            canceller = std::thread([&platform] { std::this_thread::sleep_for(std::chrono::milliseconds(150)); platform.cancelled.store(true); });
+        int64_t begin = now_ms();
+        {
+            HttpTarget target(7, no_provider ? NULL : &provider);
+            char url[128];
+            snprintf(url, sizeof(url), "https://%s:%d/probe", strcmp(mode, "hostname") == 0 ? "wrong.lab.test" : "tls.lab.test", port);
+            std::vector<uint8_t> create = {6, HTTP_CMD_HEADER_CREATE, 1};
+            create.insert(create.end(), url, url + strlen(url));
+            Message command = {int(create.size()), true, create.data()}, *data, *status;
+            target.parse_command(&command, &data, &status);
+            expect(data->length == 1, "routed header handle");
+            uint8_t handle = data->length ? data->message[0] : 0;
+            const char *line = "Connection: close";
+            std::vector<uint8_t> add = {6, HTTP_CMD_HEADER_ADD, handle};
+            add.insert(add.end(), line, line + strlen(line));
+            command = {int(add.size()), true, add.data()};
+            target.parse_command(&command, &data, &status);
+            uint8_t exchange[] = {6, HTTP_CMD_DO_EXCHANGE_RAW, handle, 255};
+            command = {sizeof(exchange), true, exchange};
+            target.parse_command(&command, &data, &status);
+            if (success) {
+                expect(data->last_part && data->length == 8 && !memcmp(data->message, "tls-ok!\n", 8), "routed exact response");
+                expect(status->length >= 15 && !memcmp(status->message, "HTTP/1.1 200 OK", 15), "routed remote status");
+            } else {
+                expect(data->last_part && data->length == 0, "routed failure has no body");
+                expect(status->length == 23 && !memcmp(status->message, "503 SERVICE UNAVAILABLE", 23), "routed local failure status");
+            }
+            target.get_more_data(&data, &status);
+            expect(data->length == 0 && data->last_part, "routed failure leaves no stale bytes");
+        }
+        int64_t elapsed = now_ms() - begin;
+        if (canceller.joinable()) canceller.join();
+        expect(provider.created == (no_provider ? 0 : 1) && provider.destroyed == (no_provider || no_create ? 0 : 1), "routed provider ownership");
+        expect(platform.opens == platform.closes && platform.opens <= 1, "routed transport cleanup");
+        if (no_provider || no_create) expect(platform.opens == 0, "unavailable provider opens no TLS transport");
+        if (timeout) expect(provider.last.status == TLS_TIMEOUT && elapsed >= 630 && elapsed <= 900, "routed original deadline");
+        if (cancel) expect(provider.last.status == TLS_CANCELLED && elapsed <= 750, "routed cancellation");
+        if (success) expect(provider.last.status == TLS_OK, "routed success diagnostics");
+        printf("ROUTE %s status=%d flags=%u elapsed_ms=%d opens=%d closes=%d\n", mode,
+               provider.last.status, provider.last.verify_flags, int(elapsed), platform.opens, platform.closes);
+    }
+    expect(descriptors() == initial_descriptors, "routed descriptor balance");
+    expect(live_allocations == initial_allocations, "routed scoped allocation balance");
+}
+
 int main(int argc, char **argv)
 {
+    if (argc == 7 && strcmp(argv[6], "--routing") == 0) {
+        routed_exchange(argv[1], argv[2], atoi(argv[3]));
+        routed_exchange("recovery", argv[4], atoi(argv[5]));
+        printf("TLS routing: %d checks, %d failures\n", checks, failures);
+        return failures ? 1 : 0;
+    }
     if (argc != 6) return 2;
     exchange(argv[1], argv[2], atoi(argv[3]));
     exchange("recovery", argv[4], atoi(argv[5]));

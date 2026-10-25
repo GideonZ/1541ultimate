@@ -16,20 +16,27 @@ set(ENABLE_TESTING OFF CACHE BOOL "" FORCE)
 set(ENABLE_PROGRAMS OFF CACHE BOOL "" FORCE)
 add_subdirectory(${TLS_STREAM_ROOT}/.deps/mbedtls mbedtls EXCLUDE_FROM_ALL)
 get_filename_component(SW "${CMAKE_CURRENT_SOURCE_DIR}/../../../../software" ABSOLUTE)
-add_executable(test_http_tls
-    ${SW}/network/tests/test_http_tls.cc
-    ${SW}/network/tls_http_connection.cc
+set(HTTP_TEST_SOURCES
+    ${SW}/network/tests/http_target_test_support.cc
+    ${SW}/io/command_interface/http_target.cc
     ${SW}/network/http_request.cc
     ${SW}/api/json.cc ${SW}/components/mystring.cc ${SW}/components/pattern.cc
     ${SW}/system/small_printf.cc
     ${SW}/httpd/c-version/lib/http_protocol.c
     ${SW}/httpd/c-version/lib/multipart.c
-    ${SW}/httpd/c-version/lib/url.c
+    ${SW}/httpd/c-version/lib/url.c)
+add_executable(test_http_tls ${HTTP_TEST_SOURCES}
+    ${SW}/network/tests/test_http_tls.cc
+    ${SW}/network/tls_http_connection.cc
     ${TLS_STREAM_ROOT}/src/tls_stream.c)
-target_include_directories(test_http_tls PRIVATE
+add_executable(test_https_routing ${HTTP_TEST_SOURCES} ${SW}/network/tests/test_https_routing.cc)
+foreach(test_target test_http_tls test_https_routing)
+target_include_directories(${test_target} PRIVATE
     ${SW}/network ${SW}/api ${SW}/infra ${SW}/components ${SW}/io/stream ${SW}/system
-    ${SW}/httpd/c-version/lib ${TLS_STREAM_ROOT}/include)
-target_compile_definitions(test_http_tls PRIVATE RUNS_ON_PC MHS_PORT=8001 _DEFAULT_SOURCE)
-target_compile_options(test_http_tls PRIVATE -Wall -Wextra -Wno-format -Wno-format-extra-args)
+    ${SW}/io/command_interface ${SW}/httpd/c-version/lib ${TLS_STREAM_ROOT}/include)
+target_compile_definitions(${test_target} PRIVATE RUNS_ON_PC MHS_PORT=8001 _DEFAULT_SOURCE)
+target_compile_options(${test_target} PRIVATE -Wall -Wextra -Wno-format -Wno-format-extra-args)
+endforeach()
 target_link_libraries(test_http_tls PRIVATE mbedtls mbedx509 mbedcrypto pthread)
 target_link_options(test_http_tls PRIVATE "LINKER:--wrap=calloc" "LINKER:--wrap=free")
+target_link_options(test_https_routing PRIVATE "LINKER:--wrap=gethostbyname_r,--wrap=socket,--wrap=connect,--wrap=send,--wrap=recv,--wrap=close")

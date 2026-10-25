@@ -1,8 +1,9 @@
 # HTTP over the standalone TLS adapter
 
 This host-only target exercises `HttpRequest` with `TlsHttpConnection` and real
-TLS 1.2 loopback peers. It does not enable HTTPS routing or add TLS to a firmware
-image. The existing HTTP interface and socket default remain unchanged.
+TLS 1.2 loopback peers. It also supplies the adapter to target-6 HTTPS routing.
+It does not install a TLS provider in production firmware. The existing HTTP
+commands, response formats and socket default remain unchanged.
 
 ## Dependencies and execution
 
@@ -20,12 +21,19 @@ From the repository root, with `TLS_ROOT` pointing to that checkout:
 cmake -S target/pc/linux/test_http_tls -B /tmp/http-tls-build -G Ninja \
   -DTLS_STREAM_ROOT="$TLS_ROOT"
 cmake --build /tmp/http-tls-build -j4
+/tmp/http-tls-build/test_https_routing
 python3 software/network/tests/run_http_tls.py \
   --binary /tmp/http-tls-build/test_http_tls --tls-root "$TLS_ROOT" \
   --output /tmp/http-tls-rsa
 python3 software/network/tests/run_http_tls.py \
   --binary /tmp/http-tls-build/test_http_tls --tls-root "$TLS_ROOT" \
   --output /tmp/http-tls-ecdsa --ecdsa
+python3 software/network/tests/run_http_tls.py \
+  --binary /tmp/http-tls-build/test_http_tls --tls-root "$TLS_ROOT" \
+  --output /tmp/https-target-rsa --routing
+python3 software/network/tests/run_http_tls.py \
+  --binary /tmp/http-tls-build/test_http_tls --tls-root "$TLS_ROOT" \
+  --output /tmp/https-target-ecdsa --routing --ecdsa
 ```
 
 Output directories must not exist. They retain raw subprocess logs, independent
@@ -60,3 +68,16 @@ callback deliberately maps fixture hostnames to loopback while TLS verifies the
 requested hostname. Production entropy, UTC qualification, trust storage,
 interprocessor integration, firmware resource limits and hardware validation
 remain separate work.
+
+`test_https_routing` uses observable link wrappers for the default HTTP socket
+path and a deterministic secure-provider double. It checks missing factories,
+null creation and failed open/write/read without any plaintext fallback, URL
+selection, binary POST rendering, raw/status/JSON parity, exact reply-block
+boundaries, response-header cloning, conversion/capacity failures and provider
+ownership through completion, abort, reset, free-all, replacement and destruction.
+These doubles establish routing behaviour, not TLS authentication.
+
+The `--routing` matrix separately runs real TLS through target-6 command messages,
+including certificate failures, unavailable providers, clock/entropy failures,
+cancellation, total deadlines and truncation. Each case has its own authenticated
+recovery, independent peer records and allocation/descriptor balance checks.
