@@ -5,7 +5,7 @@ connection uses the existing socket implementation. Callers may supply a
 different byte-stream backend to the request constructor; the HTTP parser does
 not depend on a TLS library or interprocessor protocol.
 
-This increment does not add HTTPS URL handling or a production TLS backend.
+This boundary does not add HTTPS URL handling or a production TLS backend.
 Target-6 commands, response blocks, status strings and JSON handling are
 unchanged. Parser compatibility fixes remain separate work.
 
@@ -46,3 +46,29 @@ single cleanup and the legacy borrowed-descriptor parser.
 Also run the existing HTTP suites and `make test` in
 `target/pc/linux/test_assembly` when changing this boundary. Host tests do not
 qualify cryptography, firmware deadlines or hardware behaviour.
+
+## Optional standalone TLS adapter
+
+`TlsHttpConnection` implements the same connection interface using the external
+standalone TLS stream. Only its adapter header depends on that provider;
+`HttpRequest`, its parser and its existing callers do not. Replacing this adapter
+with another authenticated byte-stream implementation does not change HTTP
+request construction or response handling.
+
+The adapter copies the platform callbacks and owns one TLS session. Its callback
+context and trust roots must outlive the adapter. Construct a fresh adapter for
+each exchange, then pass its address to `HttpRequest`. The configured timeout is
+one total exchange budget, starting at open; reads and writes do not reset it.
+Platform callbacks must honor the remaining budget and cancellation. Certificate
+chain, hostname and date checks are mandatory; unavailable qualified time or
+entropy fails closed. There is no plaintext fallback or automatic retry.
+
+Failure destroys the TLS session promptly and retains stage, status, library
+error and certificate verification flags through `diagnostic()`. Destruction and
+repeated `close_session()` are safe. Authenticated TLS EOF maps to a zero read;
+an unauthenticated transport EOF is an error. A failed write may have sent bytes
+and must not be replayed. Both the adapter and request are noncopyable.
+
+The adapter is currently built only by the host fixture described in
+[`test_http_tls`](../target/pc/linux/test_http_tls/README.md). It has not been wired
+into target-6 URL selection or a production firmware image.
