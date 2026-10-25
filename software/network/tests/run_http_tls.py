@@ -15,8 +15,8 @@ REQUEST = b'GET /probe HTTP/1.1\r\nHost: tls.lab.test\r\nConnection: close\r\n\r
 CASES = ['valid', 'clean-eof', 'hostname', 'untrusted', 'expired', 'future', 'no-time',
          'no-entropy', 'allocation', 'pre-cancel', 'handshake-timeout',
          'handshake-cancel', 'read-timeout', 'total-timeout', 'read-cancel',
-         'write-timeout', 'write-cancel', 'truncated', 'close-clean', 'close-truncated']
-ROUTING_CASES = [case for case in CASES if case not in ('clean-eof', 'allocation', 'write-timeout', 'write-cancel')] + ['no-provider', 'no-create']
+         'write-timeout', 'write-cancel', 'truncated', 'close-clean', 'close-truncated', 'closed-before-open']
+ROUTING_CASES = [case for case in CASES if case not in ('clean-eof', 'allocation', 'write-timeout', 'write-cancel', 'closed-before-open')] + ['no-provider', 'no-create']
 
 
 class Peer:
@@ -141,7 +141,7 @@ def main():
         (args.output / (case + '.log')).write_bytes(raw)
         events = {'primary': primary.events, 'recovery': recovery.events}
         (args.output / (case + '-peers.json')).write_text(json.dumps(events, indent=2) + '\n')
-        no_open = case in ('no-time', 'no-entropy', 'allocation', 'pre-cancel', 'no-provider', 'no-create')
+        no_open = case in ('no-time', 'no-entropy', 'allocation', 'pre-cancel', 'no-provider', 'no-create', 'closed-before-open')
         application = case in ('valid', 'clean-eof', 'read-timeout', 'total-timeout', 'read-cancel', 'truncated', 'close-clean', 'close-truncated')
         peer_ok = True
         for name, expected_accepts, expected_request in [('primary', int(not no_open), application), ('recovery', 1, True)]:

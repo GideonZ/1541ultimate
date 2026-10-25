@@ -83,3 +83,7 @@ The `--routing` matrix separately runs real TLS through target-6 command message
 including certificate failures, unavailable providers, clock/entropy failures,
 cancellation, total deadlines and truncation. Each case has its own authenticated
 recovery, independent peer records and allocation/descriptor balance checks.
+
+The adapter-only `closed-before-open` case retires an unused adapter, then checks
+that open fails without a socket or application bytes. A fresh adapter must still
+complete its recovery exchange. Closing never makes a connection reusable.

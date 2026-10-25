@@ -189,6 +189,10 @@ static void exchange(const char *mode, const char *ca, int port)
         int64_t begin = now_ms();
         {
             TlsHttpConnection connection(callbacks, timeout_case ? 650 : 3000);
+            if (strcmp(mode, "closed-before-open") == 0) {
+                connection.close_session();
+                connection.close_session();
+            }
             {
                 HttpRequest request(&connection);
                 if (strcmp(mode, "allocation") == 0) reject_allocation = true;
@@ -196,6 +200,8 @@ static void exchange(const char *mode, const char *ca, int port)
                 bool should_open = success || write_failure || strcmp(mode, "read-timeout") == 0 || strcmp(mode, "total-timeout") == 0 ||
                                    strcmp(mode, "read-cancel") == 0 || strcmp(mode, "truncated") == 0 || strcmp(mode, "close-truncated") == 0;
                 expect((opened >= 0) == should_open, "authenticated open result");
+                if (strcmp(mode, "closed-before-open") == 0)
+                    expect(platform.opens == 0 && platform.closes == 0, "closed adapter cannot start a transport");
                 bool complete = false;
                 if (opened >= 0) {
                     platform.block_write = write_failure;

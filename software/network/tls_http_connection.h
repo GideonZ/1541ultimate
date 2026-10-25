@@ -14,6 +14,7 @@ extern "C" {
 // The callback context outlives this connection. TLS state belongs to the
 // adapter; HttpRequest borrows the adapter and closes its session on failure.
 // One instance serves one exchange, including its original total deadline.
+// Close is terminal even before the first open; recovery needs a fresh instance.
 class TlsHttpConnection : public HttpConnection
 {
     tls_stream_port port;

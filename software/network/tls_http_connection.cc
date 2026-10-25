@@ -66,6 +66,7 @@ int TlsHttpConnection :: write(const void *buffer, int length)
 
 void TlsHttpConnection :: close_session()
 {
+    attempted = true; // Closing an unused adapter also retires it permanently.
     if (stream) {
         last = tls_stream_diagnostic(stream);
         tls_stream_destroy(stream);
