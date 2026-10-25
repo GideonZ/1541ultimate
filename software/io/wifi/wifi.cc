@@ -5,6 +5,9 @@
  *      Author: gideon
  */
 
+#if U64 == 2
+#include "provider_manager_uart.h"
+#endif
 #include "wifi.h"
 #include "socket.h"
 #include "u64.h"
@@ -32,6 +35,10 @@ WiFi :: WiFi()
     runModeTask = NULL;
     provider_timer = NULL;
     provider_monitor_enabled = false;
+#if U64 == 2
+    provider_manager = NULL;
+#endif
+    uart = NULL;
     state = eWifi_Off;
     bzero(my_mac, 6);
     wifi_aps.num_records  = 0;
@@ -88,8 +95,47 @@ BaseType_t wifi_rx_isr(command_buf_context_t *context, command_buf_t *buf, BaseT
 void WiFi::InvalidateProvider()
 {
     portENTER_CRITICAL();
-    provider_lifecycle.invalidate();
+    ProviderLinkLoss();
     portEXIT_CRITICAL();
+}
+
+void WiFi::ProviderLinkLoss()
+{
+    wifi.provider_lifecycle.invalidate();
+#if U64 == 2
+    if (wifi.provider_manager) wifi.provider_manager->delivery.invalidate_isr();
+#endif
+}
+
+#if U64 == 2
+bool WiFi::BindProviderManager(ProviderManagerUart& link)
+{
+    portENTER_CRITICAL();
+    bool accepted = !provider_manager && uart && link.bind_uart(uart);
+    if (accepted) provider_manager = &link;
+    portEXIT_CRITICAL();
+    return accepted;
+}
+
+bool WiFi::ProviderSnapshot(provider_session::Identity& boot, OperationCancellation& lifetime)
+{
+    portENTER_CRITICAL();
+    bool available = provider_lifecycle.snapshot(boot.bytes, lifetime);
+    portEXIT_CRITICAL();
+    return available;
+}
+#endif
+
+bool WiFi::ReceiveProviderControl(command_buf_t *buf)
+{
+#if U64 == 2
+    if (buf->size < 2 || buf->data[0] != CMD_IDENTIFY || buf->data[1] != 0xfe) return false;
+    if (provider_manager && buf->size <= int(sizeof(buf->data)))
+        provider_manager->receive_isr(buf->data, buf->size);
+    return true;
+#else
+    return false;
+#endif
 }
 
 void WiFi::PollProvider(TimerHandle_t timer)
@@ -133,6 +179,7 @@ void WiFi :: Init(DmaUART *uart, command_buf_context_t *packets)
     this->uart = uart;
     this->packets = packets;
 #if U64 == 2
+    uart->SetLossCallback(ProviderLinkLoss);
     if (!provider_timer) {
         provider_timer = xTimerCreate("ESP Identity", pdMS_TO_TICKS(100), pdTRUE, this, PollProvider);
         if (provider_timer) xTimerStart(provider_timer, 0);
@@ -149,7 +196,7 @@ void WiFi :: Start()
     }
     state = eWifi_NotDetected;
     portENTER_CRITICAL();
-    provider_lifecycle.invalidate();
+    ProviderLinkLoss();
     provider_monitor_enabled = true;
     portEXIT_CRITICAL();
     xTaskCreate( WiFi :: RunModeTaskStart, "WiFi Command Task", configMINIMAL_STACK_SIZE, this, PRIO_DRIVER, &runModeTask );
@@ -159,7 +206,7 @@ void WiFi :: Terminate()
 {
     portENTER_CRITICAL();
     provider_monitor_enabled = false;
-    provider_lifecycle.invalidate();
+    ProviderLinkLoss();
     portEXIT_CRITICAL();
     if (!runModeTask) {
         printf("** Trying to terminate Wifi Application, but task is not running?\n");

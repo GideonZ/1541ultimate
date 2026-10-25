@@ -49,6 +49,8 @@ static void lifecycle_cases()
     size_t size = reply(previous, request, 1);
     expect(life.receive(previous, size, 10) && life.identified() && before.cancelled(), "first identity creates fresh lifetime");
     auto first = life.token();
+    uint8_t copied[PROVIDER_ID_SIZE] = {}; OperationCancellation captured;
+    expect(life.snapshot(copied, captured) && copied[0] == 1 && !captured.cancelled(), "coherent boot and lifetime snapshot");
     expect(!life.receive(previous, size, 11) && !first.cancelled(), "duplicate reply cannot mutate lifetime");
     expect(life.begin(5000, request), "scheduled liveness probe");
     expect(!life.receive(previous, size, 5001) && !first.cancelled(), "old probe reply rejected without rolling boot backward");
@@ -57,6 +59,7 @@ static void lifecycle_cases()
     expect(life.begin(10000, request), "restart probe");
     size = reply(packet, request, 2);
     expect(life.receive(packet, size, 10001) && first.cancelled() && life.identified(), "changed ESP boot invalidates old session");
+    expect(captured.cancelled(), "snapshot lifetime retires with boot change");
     auto second = life.token();
     expect(!second.cancelled() && !life.receive(previous, size, 10002), "late old boot cannot revoke new session");
     expect(life.begin(15000, request), "timeout probe");
@@ -69,6 +72,8 @@ static void lifecycle_cases()
     expect(life.receive(packet, size, 20001), "same boot recovery still requires new response");
     auto recovered = life.token();
     life.invalidate(); life.invalidate();
+    memset(copied, 0xa5, sizeof(copied));
+    expect(!life.snapshot(copied, captured) && copied[0] == 0xa5, "unavailable snapshot preserves output");
     expect(recovered.cancelled() && !life.identified(), "stop and disconnect retire lifetime");
     ProviderLifecycle legacy;
     expect(legacy.begin(0, request), "old firmware probe");

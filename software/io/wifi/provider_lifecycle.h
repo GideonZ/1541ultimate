@@ -21,6 +21,11 @@ public:
     }
     bool identified() const { return __atomic_load_n(&online, __ATOMIC_ACQUIRE); }
     OperationCancellation token() const { return cancellation.token(); }
+    // Caller excludes receive ISR while copying identity and its lifetime.
+    bool snapshot(uint8_t boot[PROVIDER_ID_SIZE], OperationCancellation& lifetime) const {
+        if (!identified()) return false;
+        memcpy(boot, identity, sizeof(identity)); lifetime = token(); return true;
+    }
     void invalidate() {
         __atomic_store_n(&online, false, __ATOMIC_RELEASE);
         cancellation.signal();

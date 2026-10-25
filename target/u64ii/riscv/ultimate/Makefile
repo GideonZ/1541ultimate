@@ -42,6 +42,8 @@ SRCS_C   =	itu.c \
 			url.c
 
 SRCS_CC	 =  provider_manager.cc \
+            provider_manager_delivery.cc \
+            provider_manager_uart.cc \
             provider_control.cc \
             provider_session_owner.cc \
             u64ii_init.cc \

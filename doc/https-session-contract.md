@@ -331,3 +331,51 @@ Tests run complete encoded manager/worker exchanges, repeated counters after
 restart, malformed and stale replies, delayed renewals, cancellation, confirmed
 cleanup and real RSA/ECDSA TLS recovery. They do not qualify physical UART timing,
 management entropy, a negotiated production lease, or the TLS data plane.
+
+## Bounded manager UART delivery
+
+`provider_manager_delivery` owns a four-entry ring of copied 76-byte replies.
+Receive ingress validates framing and copies bytes only; it does not run Manager,
+allocate, wait, or release resources. The caller frees the original DMA buffer.
+The owner processes at most one reply per step using processing time, so a packet
+queued before its deadline cannot be accepted after that deadline has passed.
+
+Task critical sections exclude the UART ISR while manipulating the ring or
+manager state. Overflow and explicit link loss signal a cancellation generation,
+clear stale replies and retain a loss flag independently of queue capacity.
+An old session becomes unusable before the owner polls. A fresh offer discards
+earlier queued replies. Failed transmit-buffer acquisition or zero-wait enqueue
+retires the pending grant; enqueue retains its existing buffer-consumption rules.
+No failed request is silently retried.
+
+The management UART adapter can bind once after a qualified incarnation source
+has enabled the manager. On U64-II, WiFi provides a coherent observed-boot/token
+snapshot and routes reserved thread 0xfe into this adapter when bound. Other
+product variants retain their existing routes. Boot probes on 0xff remain separate.
+No production binding or manager task is created by default. The eventual owner
+must drive step/request methods with a monotonic clock and provide the qualified
+incarnation source; binding alone does not authorize TLS.
+
+DMA observed overflow, missing receive-buffer bookkeeping, failed receive enqueue,
+receive reset, soft reset and receiver handoff signal loss through an optional
+callback. The callback only invalidates lifetimes. Reset/handoff invalidation and
+the associated changes are serialized together so a task cannot renegotiate in
+between. WiFi disconnect/disabled/rescan events invalidate at receive ingress,
+before the ordinary event task handles network cleanup. The callback preserves
+existing diagnostics and buffer ownership. Hardware overflow observation is only
+as timely as the UART ISR; it is not a separately scheduled overflow monitor.
+
+Host tests exercise the actual send adapter with a synthetic DMA port and the
+actual DMA loss/reset handler with synthetic registers. They do not emulate all
+write-to-clear register behavior, qualify the failed-enqueue MMIO sequence,
+measure interrupt latency, or execute FreeRTOS on hardware. Critical-section
+duration, default object growth and the eventual task/ring budget require product
+qualification before enabling a provider.
+
+The source tree has no qualified management entropy implementation for this
+binding. A NEORV32 wrapper declares its TRNG disabled; that alone does not identify
+the active hardware's entropy capabilities. Boot-time clock values, MAC addresses
+and counters are not substitutes. A provider-issued identity would require a
+separately justified fresh-channel bootstrap to exclude buffered replies across
+management restart. Until one of those mechanisms is qualified, production
+manager activation remains closed.

@@ -15,10 +15,13 @@ void hex(uint8_t h)
 
 BaseType_t wifi_rx_isr(command_buf_context_t *context, command_buf_t *buf, BaseType_t *w)
 {
-    if (buf->size < int(sizeof(rpc_header_t)) || wifi.ReceiveProviderIdentity(buf)) {
+    if (buf->size < int(sizeof(rpc_header_t)) || buf->size > int(sizeof(buf->data)) ||
+        wifi.ReceiveProviderIdentity(buf) || wifi.ReceiveProviderControl(buf)) {
         return cmd_buffer_free_isr(context, buf, w);
     }
     rpc_header_t *hdr = (rpc_header_t *)buf->data;
+    if (hdr->command == EVENT_DISCONNECTED || hdr->command == EVENT_DISABLED || hdr->command == EVENT_RESCAN)
+        WiFi::ProviderLinkLoss();
     BaseType_t res;
 
     if ((hdr->thread < NUM_TX_BUFFERS) && (tasksWaitingForReply[hdr->thread])) {
