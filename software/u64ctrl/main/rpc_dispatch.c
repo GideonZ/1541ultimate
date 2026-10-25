@@ -23,6 +23,7 @@
 #include "sntp.h"
 #include "provider_identity.h"
 #include "provider_boot.h"
+#include "provider_control_task.h"
 
 // not officially supported
 #include "../lwip/esp_netif_lwip_internal.h"
@@ -427,6 +428,11 @@ void dispatch(void *ct)
         // }
         // gpio_set_level(IO_ESP_LED, 0); // ON!
         xQueueReceive(queue, &pbuffer, portMAX_DELAY); // No LED at all.
+        if (pbuffer->size < (int)sizeof(rpc_header_t) || pbuffer->size > (int)sizeof(pbuffer->data) ||
+            provider_control_receive(pbuffer->data, pbuffer->size)) {
+            my_uart_free_buffer(UART_CHAN, pbuffer);
+            continue;
+        }
 #if UART_DEBUG_RX
         printf("Received buffer %d with %d bytes.\n", pbuffer->bufnr, pbuffer->size);
 #endif
@@ -514,6 +520,7 @@ void dispatch(void *ct)
 
 void start_dispatch(QueueHandle_t queue)
 {
+    provider_control_start();
     xTaskCreate( dispatch, "Dispatch Task", DISPATCHER_STACK, queue, tskIDLE_PRIORITY + 1, NULL );
 }
 

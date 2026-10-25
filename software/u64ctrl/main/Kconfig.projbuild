@@ -1,3 +1,11 @@
+config ULTIMATE_PROVIDER_CONTROL
+    bool "Experimental provider control delivery"
+    default n
+    help
+        Build the optional bounded UART control worker for local validation.
+        No TLS backend is installed; initialization remains unavailable.
+        This does not enable HTTPS or change the C64 command interface.
+
 menu "Example Configuration"
 
     orsource "$IDF_PATH/examples/common_components/env_caps/$IDF_TARGET/Kconfig.env_caps"

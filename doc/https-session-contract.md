@@ -222,3 +222,62 @@ fixture verifies owner replacement during handshake/read, lease loss during read
 confirmed resource destruction and fresh initialization/recovery on the same
 engine. Physical UART delivery, worker scheduling, remote process crash recovery,
 manager identity generation and product resource qualification remain untested.
+
+## Optional UART control worker
+
+The default-off `ULTIMATE_PROVIDER_CONTROL` build option routes `CMD_IDENTIFY`
+on reserved thread 0xfe to a separate serialized owner task. Legacy identify and
+the 0xff boot monitor retain their routes. The dispatcher validates the buffer
+extent, copies a decoded event with zero wait, and frees the receive buffer once.
+It never runs resource cleanup. The worker uses a four-event queue and processes
+at most one command per iteration, polling cleanup before command processing.
+Reply acquisition and transmit enqueue have zero wait and consume their buffer
+on both success and failure. The enabled build identifies as controller 1.16;
+the default build remains 1.15. Neither build installs a TLS backend.
+
+The local control envelope is exactly 76 bytes, with little-endian integers:
+
+| Offset | Field |
+| --- | --- |
+| 0 | Command 0x02, thread 0xfe, two zero sequence bytes |
+| 4 | ASCII PSN1 |
+| 8 | Version 1, opcode, status, direction (0 request, 1 reply) |
+| 12 | Nonzero 64-bit request correlation |
+| 20 | 16-byte provider identity |
+| 36 | 64-bit challenge epoch |
+| 44 | 16-byte manager incarnation |
+| 60 | 64-bit renewal sequence or session number |
+| 68 | 32-bit required features |
+| 72 | Four zero reserved bytes |
+
+Opcodes are offer (1), initialize (2), renew (3) and close (4). Requests have zero
+status; replies use success (1), cleanup busy (2), rejected (3), or unavailable (4).
+An offer has zero grant/counter/features. Initialization has a complete grant and
+zero counter; renew/close have a complete grant, nonzero counter and zero features.
+Unknown versions, directions, opcodes, reserved fields, lengths and noncanonical
+fields are rejected before enqueueing. This experimental extension is not a new
+target-6 command or an upstream-assigned TLS protocol.
+
+Ingress signals a serialized atomic cancellation generation for a new offer or a
+close matching the active ticket. It cannot destroy resources. A stale close
+cannot cancel another session. Overflow or failed reply enqueue also signals
+cancellation and retains a stop flag independently of the queue. Old queued events
+and pending replies carry their generation and cannot revive a retired owner.
+Reply enqueue is serialized with ingress; already queued UART bytes cannot be
+retracted, so manager-side correlation and incarnation checks remain mandatory.
+
+The owner handles stop/close signals outside the ingress lock. A close reply waits
+for cleanup confirmation; timeout returns unavailable and preserves quarantine.
+Signals arriving during cleanup are consumed before the corresponding queued
+command, preventing them from invalidating a newly processed offer next iteration.
+No resource callbacks run under the ingress lock or from the receive task.
+
+The experimental FreeRTOS adapter creates a 4096-byte owner stack, a four-event
+queue and a nominal 10 ms poll. These are local validation settings, not measured
+production resource/latency budgets. Startup queue/task failure disables delivery.
+The backend feature mask is zero: enabled delivery reports unavailable and cannot
+initialize a session. A backend cannot be enabled by an incoming feature mask.
+Host tests use the same decoder/worker with a mutex-backed bounded port, including
+real TLS cancellation and recovery. Both controller configurations are compiled;
+physical UART, enabled task scheduling, receive overflow/reset integration, manager
+incarnation/reply validation and the TLS open/read/write data plane remain gates.

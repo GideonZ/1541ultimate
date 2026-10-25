@@ -13,6 +13,7 @@
 #include <vector>
 #include <string>
 #include <unistd.h>
+#include "provider_control_test_port.h"
 #include "tls_http_connection.h"
 #include "http_request.h"
 #include "http_target.h"
@@ -82,6 +83,8 @@ struct Platform {
     provider_session::Ticket session_ticket = {};
     provider_session::Challenge next_challenge = {};
     int64_t restart_at = 0;
+    void *worker_context = NULL;
+    bool (*worker_cancelled)(Platform*, int64_t) = NULL;
     mbedtls_x509_crt roots;
     Platform(const char *ca) : fd(-1), opens(0), closes(0), open_delay(0),
         ready(true), random_ready(true), block_write(false), cancelled(false)
@@ -96,6 +99,7 @@ static int64_t clock_read(void *) { return now_ms(); }
 static bool clock_ready(void *p) { return static_cast<Platform *>(p)->ready; }
 static bool cancelled(void *p) {
     Platform *platform = static_cast<Platform *>(p);
+    if (platform->worker_cancelled && platform->worker_cancelled(platform, now_ms())) return true;
     if (platform->session_owner) {
         int64_t now = now_ms();
         if (platform->restart_at && now >= platform->restart_at) {
@@ -412,9 +416,15 @@ static void routed_exchange(const char *mode, const char *ca, int port)
 }
 
 #include "test_provider_owner_tls.h"
+#include "test_provider_control_tls.h"
 
 int main(int argc, char **argv)
 {
+    if (argc == 7 && strcmp(argv[6], "--worker") == 0) {
+        worker_exchange(argv[1], argv[2], atoi(argv[3]), atoi(argv[5]));
+        printf("TLS worker: %d checks, %d failures\n", checks, failures);
+        return failures ? 1 : 0;
+    }
     if (argc == 7 && strcmp(argv[6], "--owner") == 0) {
         owner_exchange(argv[1], argv[2], atoi(argv[3]), atoi(argv[5]));
         printf("TLS owner: %d checks, %d failures\n", checks, failures);

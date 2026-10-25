@@ -26,7 +26,11 @@ void start_dispatch(QueueHandle_t queue);
 void send_button_event(uint8_t button);
 void send_keepalive();
 
+#ifdef CONFIG_ULTIMATE_PROVIDER_CONTROL
+#define IDENT_STRING "ESP32 WiFi Bridge V1.16"
+#else
 #define IDENT_STRING "ESP32 WiFi Bridge V1.15"
+#endif
 #define IDENT_MAJOR   1
 // 1.14: wakes the machine on a magic packet, and stores whether it should.
 // 1.13: the module stores the power on behavior after a loss of input power.
@@ -35,7 +39,12 @@ void send_keepalive();
 // when this differs from what the module reports, so a module change that
 // does not bump it is silently never installed.
 // 1.15: optional solicited boot identity; no TLS capability is advertised.
+#ifdef CONFIG_ULTIMATE_PROVIDER_CONTROL
+// 1.16: experimental control delivery; TLS initialization remains unavailable.
+#define IDENT_MINOR   16
+#else
 #define IDENT_MINOR   15
+#endif
 #define MULTITHREADED 0
 #define DISPATCHER_STACK 3072
 
