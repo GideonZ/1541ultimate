@@ -157,7 +157,7 @@ extern esp_netif_t *my_sta_netif;
 void cmd_send_eth_packet(command_buf_t *buf)
 {
     rpc_send_eth_req *param = (rpc_send_eth_req *)buf->data;
-    err_t _err = esp_netif_transmit(my_sta_netif, &param->data, param->length);
+    esp_netif_transmit(my_sta_netif, &param->data, param->length);
     my_uart_free_buffer(UART_CHAN, buf);
 }
 
