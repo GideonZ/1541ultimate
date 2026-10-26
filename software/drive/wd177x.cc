@@ -196,7 +196,6 @@ void WD177x :: handle_wd177x_command(t_wd177x_cmd& cmd)
 	uint32_t dummy;
 	FRESULT res;
 	MfmSector sectAddr;
-	MfmTrack *mfmTrack;
 	uint8_t t;
 
 	if(cmd & WD_CMD_DMA_DONE) {
@@ -372,18 +371,6 @@ void WD177x :: handle_wd177x_command(t_wd177x_cmd& cmd)
     case WD_CMD_WRITE_TRACK:
         // Write Track Command
         printf("Write track Pos: %d Reg: %d\n", drive->track, wd177x->track);
-        mfmTrack = disk.GetTrack(drive->track, drive->side);
-        if ((mfmTrack == NULL) || (mfmTrack->reservedSpace == 0)) {
-            // The image holds no data space for this track, so no format the drive sends
-            // can be stored, and that is known before the first byte arrives. Now is also
-            // the only moment at which the drive can be told: both the 1571 and the 1581
-            // leave their byte loop when busy drops and report the command as failed,
-            // while neither reads the status after a WRITE TRACK that ran to the end.
-            printf("-> No data space for track %d/%d. Refusing to format it.\n", drive->track, drive->side);
-            wd177x->status_set = WD_STATUS_LOST;
-            wd177x->status_clear = WD_STATUS_BUSY;
-            break;
-        }
         wd177x->dma_len = MFM_RAW_BYTES_BETWEEN_INDEX_PULSES;
         wd177x->dma_addr = (uint32_t)buffer;
         wd177x->dma_mode = 2; // write
@@ -402,6 +389,7 @@ void WD177x :: handle_wd177x_completion(t_wd177x_cmd& cmd)
     uint32_t dummy;
     FRESULT res;
     MfmTrack newTrack;
+    int refused;
 
     switch ((cmd >> 4) & 0x0F) {
     case WD_CMD_WRITE_SECTOR:
@@ -434,16 +422,20 @@ void WD177x :: handle_wd177x_completion(t_wd177x_cmd& cmd)
 
     case WD_CMD_WRITE_TRACK:
         decode_write_track(buffer, binbuf, newTrack);
+        // FIXME: Just continue when there was an error?
 
         wait_head_settle(); // late, but early enough
-        if (disk.UpdateTrack(drive->track, drive->side, newTrack, offset) != 0) {
+        refused = disk.UpdateTrack(drive->track, drive->side, newTrack, offset);
+        if (refused != 0) {
             // The track was refused, so 'offset' still holds what the previous command
             // left there. Writing now would land in another track of the image, which is
             // worse than not writing at all: the format the drive asked for is lost either
             // way, but the data that was there is not. The drive cannot be told at this
             // point, as it read the status when busy dropped; see #937.
-            printf("-> Track %d/%d refused: %d sectors, %04x bytes is more than the image reserved.\n",
-                   drive->track, drive->side, newTrack.numSectors, newTrack.actualDataSize);
+            // -1 is a track or side out of range, -2 a format larger than the track's space.
+            printf("-> Track %d/%d refused (%d): %d sectors need %04x bytes, the image has %04x.\n",
+                   drive->track, drive->side, refused, newTrack.numSectors, newTrack.actualDataSize,
+                   (refused == -2) ? disk.GetTrack(drive->track, drive->side)->reservedSpace : 0);
             wd177x->status_set = WD_STATUS_LOST;
             wd177x->dma_mode = 0;
             break;

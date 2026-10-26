@@ -20,19 +20,23 @@ track's metadata alone takes, so the image reserves no space for it at all.
   refused   cylinder 35 is formatted with fill byte $AA right after: its header
             in the image file has to stay as it was. Master marks it as an MFM
             track with nine sectors whose data was never stored.
-  no room   cylinder 37 is formatted the same way. With no space reserved, the
-            refusal is known before the transfer, and the drive is told at
-            once. The drive has to answer, the device has to stay reachable,
-            and the track has to stay as it was. Master marks it as MFM and
-            writes the refused fill byte into it.
-
-What this cannot see: master also writes the refused sectors at the stale file
-position, which after the control is cylinder 36. That lands in the drive's
-copy of the image and reaches the file only when the image is saved, and a C64
-can read MFM sectors back only through burst transfers, which need a C128.
+  no room   cylinder 37 is formatted the same way. With no space reserved at
+            all, it is refused like cylinder 35. The drive has to answer, the
+            device has to stay reachable, and the track has to stay as it was.
+            Master marks it as MFM and writes the refused fill byte into it.
+  stale     master also writes the refused sectors at the file position the
+            previous command left behind. That lands in the drive's copy of the
+            image, not in the file, so a second image shows it through the
+            drive: an MFM track on cylinder 0 with sector 1 filled with $11,
+            and cylinder 35 as above. A program reads sector 1, formats
+            cylinder 35 and reads sector 1 again; the second read has to find
+            $11 too. Master finds the refused format's fill byte there.
 
 Both formats are partial, one cylinder each, sent from the C64 over the slow
-serial bus; only the command travels, so no burst transfer is needed.
+serial bus; only the command travels, so no burst transfer is needed. The
+sector reads need none either: a burst READ that leaves out the data transfer
+puts the sector into the drive's buffer, and M-R fetches it over the slow bus
+(mfm_stale_write_probe.asm).
 """
 
 import argparse
@@ -64,7 +68,9 @@ from report import (  # noqa: E402
 
 SUITE = "g71_mfm_format_refused_test"
 SOURCE = SCRIPT_DIR / "mfm_format_command.asm"
+PROBE_SOURCE = SCRIPT_DIR / "mfm_stale_write_probe.asm"
 IMAGE_PATH = "/Temp/g71-mfm-format-refused.g71"
+STALE_IMAGE_PATH = "/Temp/g71-mfm-stale-write.g71"
 
 # Cylinders count from 0, half-track indices in a G71 from 0 for track 1.
 SHORT_CYLINDER = 35
@@ -87,6 +93,16 @@ SECTOR_BYTES = 512
 RESULT_STATUS = 0xc000
 RESULT_BYTES = 4
 RESULT_DATA = 0xc100
+
+# The probe's results: status, ready mark, KERNAL I/O status, and the drive's
+# answers to the inquire, the first read, the format and the second read as
+# BCD bytes; then four bytes of sector 1 before and after the format, and the
+# drive's answer to the format as text.
+PROBE_RESULT_BYTES = 7
+PROBE_SECTOR_BEFORE = 0xc100
+PROBE_SECTOR_AFTER = 0xc104
+PROBE_MESSAGE = 0xc110
+PROBE_SECTOR_FILL = 0x11
 MESSAGE_BYTES = 64
 STATUS_DONE = 0x01
 READY_MARK = 0xa5
@@ -103,6 +119,24 @@ def image() -> bytes:
     tracks[FULL_INDEX] = (g71.MAX_TRACK_SIZE, UNFORMATTED * g71.MAX_TRACK_SIZE)
     tracks[TINY_INDEX] = (TINY_TRACK_BYTES, UNFORMATTED * TINY_TRACK_BYTES)
     return g71.g71(tracks)
+
+
+def stale_image() -> bytes:
+    """Cylinder 0 as an MFM track whose sector 1 holds $11, cylinder 35 as above.
+
+    Cylinder 0 has to be MFM, as the burst INQUIRE that puts the drive into MFM
+    mode reads an ID there.
+    """
+    header = bytearray(g71.MFM_HEADER_SIZE)
+    header[0] = 2
+    header[2:7] = bytes((0, 0, 1, g71.MFM_SIZE_CODE, 0))
+    header[7:12] = bytes((0, 0, 2, g71.MFM_SIZE_CODE, 0))
+    data = (bytes((PROBE_SECTOR_FILL,)) * g71.MFM_SECTOR_BYTES
+            + b"\x22" * g71.MFM_SECTOR_BYTES)
+    track = bytes(header) + data
+    track += UNFORMATTED * (g71.MAX_TRACK_SIZE - len(track))
+    return g71.g71({0: (g71.MFM_MARKER | g71.MAX_TRACK_SIZE, track),
+                    SHORT_INDEX: (SHORT_TRACK_BYTES, UNFORMATTED * SHORT_TRACK_BYTES)})
 
 
 def track_at(data: bytes, index: int) -> tuple[int, bytes]:
@@ -164,6 +198,39 @@ class SuiteRunner:
         detail(f"cylinder {cylinder}: {answer}")
         return answer
 
+    def probe(self) -> tuple[bytes, bytes, bytes, str]:
+        """Read sector 1 of cylinder 0, format cylinder 35, read sector 1 again."""
+        prg = assemble(PROBE_SOURCE, {"DEVICE": self.bus_id, "CYLINDER": SHORT_CYLINDER,
+                                      "FILL": REFUSED_FILL})
+        self.api.machine.writemem(RESULT_STATUS, bytes(PROBE_RESULT_BYTES), idempotent=True)
+        self.api.machine.writemem(RESULT_DATA, bytes(MESSAGE_BYTES), idempotent=True)
+        status, _, body = self.api.runners.upload("run_prg", prg)
+        if status != 200:
+            raise Failure(f"run_prg returned HTTP {status}: {body[:160]!r}")
+        deadline = time.monotonic() + PROGRAM_TIMEOUT_SECONDS
+        while True:
+            result = self.api.machine.readmem(RESULT_STATUS, PROBE_RESULT_BYTES)
+            if result[1] == READY_MARK and result[0] != 0:
+                break
+            if time.monotonic() >= deadline:
+                raise Failure(f"the probe did not finish: result={result.hex(' ')}")
+            time.sleep(POLL_SECONDS)
+        if result[0] != STATUS_DONE:
+            raise Failure(f"the probe failed on the bus: result={result.hex(' ')}")
+        before = self.api.machine.readmem(PROBE_SECTOR_BEFORE, 4)
+        after = self.api.machine.readmem(PROBE_SECTOR_AFTER, 4)
+        message = self.api.machine.readmem(PROBE_MESSAGE, MESSAGE_BYTES).split(b"\r")[0]
+        answer = message.decode("ascii", "replace")
+        detail(f"cylinder {SHORT_CYLINDER}: {answer}")
+        return result, before, after, answer
+
+    def switch_to_stale_image(self) -> None:
+        self.api.drives.unlink(self.slot)
+        self.api.drives.remove(self.slot)
+        with ftp_lib.session(self.args.host, self.args.password or None) as client:
+            ftp_lib.store(client, STALE_IMAGE_PATH, stale_image())
+        self.api.drives.mount(self.slot, STALE_IMAGE_PATH, type="g71", mode="readwrite")
+
     def image_now(self) -> bytes:
         with ftp_lib.session(self.args.host, self.args.password or None) as client:
             return ftp_lib.retrieve(client, IMAGE_PATH)
@@ -214,6 +281,22 @@ class SuiteRunner:
         except Failure as exc:
             failures.append(exc)
 
+        try:
+            with check("[wrong on master] a refused format leaves the track the drive "
+                       "read last as it was"):
+                self.switch_to_stale_image()
+                result, before, after, _ = self.probe()
+                inquire, read1, _, read2 = result[3:7]
+                if inquire != 0 or read1 != 0 or before != bytes((PROBE_SECTOR_FILL,)) * 4:
+                    raise Failure(f"the first read of sector 1 did not work: inquire "
+                                  f"{inquire:02x}, read {read1:02x}, data {before.hex(' ')}")
+                if read2 != 0 or after != before:
+                    raise Failure(f"sector 1 of cylinder 0 now reads {after.hex(' ')} "
+                                  f"(answer {read2:02x}): the refused format was written "
+                                  f"over it")
+        except Failure as exc:
+            failures.append(exc)
+
         if failures:
             raise failures[0]
 
@@ -238,6 +321,7 @@ class SuiteRunner:
         try:
             with ftp_lib.session(self.args.host, self.args.password or None) as client:
                 ftp_lib.delete_quietly(client, IMAGE_PATH)
+                ftp_lib.delete_quietly(client, STALE_IMAGE_PATH)
         except Exception:
             pass
 
