@@ -5,6 +5,8 @@ entries:
     cmd_buffer (noflash)
     wifi_modem:hacked_recv (noflash)
     rpc_dispatch:dispatch (noflash)
+    rpc_dispatch:dispatch_command (noflash)
+    tls_rpc:tls_rpc_note_block (noflash)
 
 [mapping:raw_u64_netif]
 archive: libesp_netif.a
