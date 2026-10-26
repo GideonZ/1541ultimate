@@ -10,7 +10,7 @@ extern "C" {
 #include "wifi_dedicated.h"
 #include "wifi_tls.h"
 
-// The wire layouts of rpc_calls.h, byte for byte.
+// The wire layouts of rpc_tls.h, byte for byte.
 static_assert(sizeof(rpc_header_t) == 4, "rpc_header_t");
 static_assert(sizeof(rpc_espcmd_resp) == 8, "rpc_espcmd_resp");
 static_assert(offsetof(rpc_tls_open_req, trust) == 4, "open.trust");

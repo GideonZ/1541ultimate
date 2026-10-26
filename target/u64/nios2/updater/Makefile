@@ -102,6 +102,7 @@ VPATH +=    $(PATH_SW)/../html
 VPATH +=    $(PATH_SW)/../doc/api
 VPATH +=	$(PATH_SW)/wifi/raw_u64/main
 VPATH +=	$(PATH_SW)/wifi/common
+VPATH +=	$(PATH_SW)/wifi/tls
 VPATH +=	$(PATH_SW)/wifi/raw_u64/build/bootloader
 VPATH +=	$(PATH_SW)/wifi/raw_u64/build/partition_table
 VPATH +=	$(PATH_SW)/wifi/raw_u64/build

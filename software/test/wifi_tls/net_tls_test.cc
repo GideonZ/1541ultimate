@@ -1538,7 +1538,7 @@ static void test_edge_cases(void)
 
     // The STATS cache is cleared only on NO_MODULE, NOT_SUPPORTED or a new
     // generation. The ESP32 answers a STATS that finds the TLS queue full with a full-size reply,
-    // esp_err ESP_ERR_TIMEOUT (rpc_dispatch.c cmd_tls_busy), which take_stats makes REFUSED.
+    // esp_err ESP_ERR_TIMEOUT (tls_rpc.c cmd_tls_busy), which take_stats makes REFUSED.
     fresh();
     info(0xFF);
     world_module.stats_result = WIFI_TLS_REFUSED; // cmd_tls_busy's full-size reply

@@ -1,6 +1,6 @@
 // wifi_tls.h: TLS sessions run on the WiFi module (U64 only). It holds the keys and runs the protocol; this side moves
 // the ciphertext between a socket and the module, one step at a time, and the module never speaks unasked. Apart
-// from wifi_cmd.h; wifi_tls.cc asserts the values repeated here match rpc_calls.h's layout.
+// from wifi_cmd.h; wifi_tls.cc asserts the values repeated here match rpc_tls.h's layout.
 
 #ifndef WIFI_TLS_H_
 #define WIFI_TLS_H_

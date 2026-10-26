@@ -120,7 +120,10 @@ class Tree:
             % (ca_store.iso(date), hashlib.sha256(text.encode()).hexdigest(), OLD_REF,
                ca_store.bundle_set_sha256(ca_store.certificates(text))))
         self.bridge = self.project(BRIDGE, "../ca_store/cacert.pem", 6, max_certs)
-        (self.bridge / "main/tls.c").write_text(
+        # The engine that attaches the bundle is in the directory the module firmware share
+        self.shared = self.root / "software/wifi/tls"
+        self.shared.mkdir(parents=True)
+        (self.shared / "tls_engine.c").write_text(
             "void setup(void) { esp_crt_bundle_attach(&conf); }\n")
         self.sdkconfig = self.bridge / "sdkconfig"
         other = self.root / "software/u64ctrl"
@@ -436,6 +439,17 @@ class BundleSetTest(unittest.TestCase):
         self.assertTrue(ca_store.attaching(self.tree.bridge))
         self.assertFalse(ca_store.attaching(self.tree.root / "software/u64ctrl"))
 
+    def test_attaching_finds_the_engine_in_the_shared_directory_only_for_its_users(self):
+        (self.tree.shared / "tls_engine.c").write_text("void setup(void) {}\n")
+        self.assertFalse(ca_store.attaching(self.tree.bridge))
+        (self.tree.bridge / "main/own.c").write_text("esp_crt_bundle_attach(&conf);\n")
+        self.assertTrue(ca_store.attaching(self.tree.bridge))
+
+    def test_attaching_fails_when_a_shared_directory_is_missing(self):
+        shutil.rmtree(self.tree.shared)
+        with self.assertRaisesRegex(ca_store.StoreError, "no .*tls"):
+            ca_store.attaching(self.tree.bridge)
+
     def test_two_roots_with_one_subject_fail(self):
         store = ca_store.certificates(self.tree.pem.read_text())
         double = with_key(store[0], ca_store.subject_and_key(store[1])[1])
@@ -485,7 +499,16 @@ class CommittedStoreTest(unittest.TestCase):
             self.assertIn('%s"' % version, text)
 
     def test_the_bridge_cmake_runs_the_check_at_configure_and_at_every_build(self):
-        cmake = (REPO_ROOT / BRIDGE / "CMakeLists.txt").read_text()
+        project = (REPO_ROOT / BRIDGE / "CMakeLists.txt").read_text()
+        self.assertIn("ca_store/ca_store.cmake", project)
+        self.assertLess(project.index("project(bridge)"), project.index("ca_store.cmake"))
+        cmake = (REPO_ROOT / ca_store.STORE_DIR / "ca_store.cmake").read_text()
+        # Included from any project, at any depth: the store is found from this file's own directory,
+        # and the project being checked is the one that includes it
+        self.assertIn("set(CA_STORE ${CMAKE_CURRENT_LIST_DIR})", cmake)
+        self.assertIn("--project ${CMAKE_SOURCE_DIR}", cmake)
+        self.assertNotIn("--project ${CMAKE_CURRENT_LIST_DIR}", cmake)
+        self.assertNotIn("${CMAKE_SOURCE_DIR}/..", cmake)
         self.assertIn("tools/ca_store/ca_store.py", cmake)
         self.assertIn("FATAL_ERROR", cmake)
         self.assertIn("--sdkconfig-json", cmake)

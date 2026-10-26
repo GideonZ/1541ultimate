@@ -284,11 +284,18 @@ def refresh(repo_root, source=None, summary=None, now=None, regenerate=regenerat
     day = when.date().isoformat()
     carrying = ([project for project, _ in using if attaching(project)]
                 if new_set != pins["CA_BUNDLE_SET_SHA256"] else [])
-    if carrying and ident_minor is None:
+    # One number serves one project; with several carrying the bundle, each has its own IDENT series
+    names = [pathlib.Path(os.path.relpath(p, repo_root)).as_posix() for p in carrying]
+    minors = (ident_minor if isinstance(ident_minor, dict)
+              else {names[0]: ident_minor} if ident_minor is not None and len(names) == 1 else {})
+    missing = [name for name in names if minors.get(name) is None]
+    if missing:
         raise StoreError("the bundle's certificates changed, so %s needs a new IDENT_MINOR: pass "
-                         "--ident-minor N with a number allocated for this image"
-                         % ", ".join(os.path.relpath(p, repo_root) for p in carrying))
-    bumps = [bump_ident(project, day, ident_minor) for project in carrying]
+                         "--ident-minor N with a number allocated for this image%s"
+                         % (", ".join(missing),
+                            " (--ident-minor PROJECT=N for each, as they have separate versions)"
+                            if len(names) > 1 else ""))
+    bumps = [bump_ident(project, day, minors[name]) for project, name in zip(carrying, names)]
 
     write_atomically(pem_path, data)
     write_pins(pins_path, {"CA_MOZILLA_DATE": iso(date),
@@ -349,20 +356,37 @@ def describe(old_text, text, url, ref, ref_date, date, old_date, count, set_chan
     return "\n".join(lines) + "\n"
 
 
+def parse_ident_minors(values):
+    """--ident-minor values as refresh() takes them: None, one number, or {project: number}."""
+    if not values:
+        return None
+    try:
+        if all("=" not in value for value in values) and len(values) == 1:
+            return int(values[0])
+        pairs = [value.partition("=") for value in values]
+        if any(not sep for _, sep, _ in pairs):
+            raise ValueError
+        return {name: int(number) for name, _, number in pairs}
+    except ValueError:
+        raise StoreError("--ident-minor takes N, or PROJECT=N once for each project: %s"
+                         % " ".join(values))
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--repo-root", default=str(REPO_ROOT))
     parser.add_argument("--source", help="fetch from this URL instead of CA_SOURCE_URL "
                                          "(its sum from the same URL + .sha256)")
     parser.add_argument("--summary", help="write what changed to this file")
-    parser.add_argument("--ident-minor", type=int,
+    parser.add_argument("--ident-minor", action="append", metavar="[PROJECT=]N",
                         help="the IDENT_MINOR allocated for the image, needed when the "
-                             "certificates change")
+                             "certificates change. With more than one project carrying the "
+                             "bundle, once for each as PROJECT=N (PROJECT as in ca_store.PROJECTS)")
     arguments = parser.parse_args(argv)
     repo_root = pathlib.Path(arguments.repo_root)
     try:
         written = refresh(repo_root, arguments.source, arguments.summary,
-                          ident_minor=arguments.ident_minor)
+                          ident_minor=parse_ident_minors(arguments.ident_minor))
     except (StoreError, OSError) as error:
         print("refresh: %s" % error, file=sys.stderr)
         return 1

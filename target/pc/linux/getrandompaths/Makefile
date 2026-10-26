@@ -43,7 +43,7 @@ $(OUTPUT)/net.cc: $(SRC)/io/network/network_target.cc $(SRC)/io/command_interfac
 $(RESULT)/net_target: $(OUTPUT)/net.cc $(TESTDIR)/net_target_test.cc
 	@mkdir -p $(RESULT)
 	$(CXX) -std=gnu++11 -g -O0 $(WARN) -DU64=1 -I$(TESTDIR)/stub -I$(TESTDIR) -I$(SRC)/io/network -I$(SRC)/io/wifi \
-	    -I$(PATH_SW)/test/wifi_random -I$(SRC)/wifi/raw_u64/main -I$(SRC)/wifi/common \
+	    -I$(PATH_SW)/test/wifi_random -I$(SRC)/wifi/raw_u64/main -I$(SRC)/wifi/common -I$(SRC)/wifi/tls -I$(SRC)/io/uart \
 	    -o $@ $(OUTPUT)/net.cc $(TESTDIR)/net_target_test.cc $(SRC)/io/wifi/wifi_random.cc
 
 $(OUTPUT)/isr.cc: $(SRC)/io/wifi/wifi_cmd.cc $(SRC)/io/uart/dma_uart.cc
@@ -55,7 +55,7 @@ $(OUTPUT)/isr.cc: $(SRC)/io/wifi/wifi_cmd.cc $(SRC)/io/uart/dma_uart.cc
 
 $(RESULT)/isr: $(OUTPUT)/isr.cc $(TESTDIR)/isr_test.cc
 	@mkdir -p $(RESULT)
-	$(CXX) -std=gnu++11 -g -O0 $(WARN) -DU64=1 -I$(TESTDIR)/stub -I$(TESTDIR) -I$(SRC)/io/wifi -I$(SRC)/wifi/raw_u64/main -I$(SRC)/wifi/common \
+	$(CXX) -std=gnu++11 -g -O0 $(WARN) -DU64=1 -I$(TESTDIR)/stub -I$(TESTDIR) -I$(SRC)/io/wifi -I$(SRC)/wifi/raw_u64/main -I$(SRC)/wifi/common -I$(SRC)/wifi/tls -I$(SRC)/io/uart \
 	    -o $@ $(OUTPUT)/isr.cc $(TESTDIR)/isr_test.cc
 
 $(OUTPUT)/voltages_extract.c: $(SRC)/u64ctrl/main/rpc_dispatch.c

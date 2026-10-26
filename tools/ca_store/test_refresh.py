@@ -20,7 +20,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).parent))
 
 import ca_store
 import refresh
-from test_ca_store import (COMMITTED, HEADER, NEW_DATE, NEW_ISO, NEW_REF, NOW, OLD_DATE,
+from test_ca_store import (BRIDGE, COMMITTED, HEADER, NEW_DATE, NEW_ISO, NEW_REF, NOW, OLD_DATE,
                            OLD_ISO, OLD_REF, REPO_ROOT, Tree, der_length, pem, pem_block, rekeyed)
 
 REF_DATE = "2026-09-08T20:22:24Z"
@@ -207,6 +207,24 @@ class RefreshTest(unittest.TestCase):
         self.assertIn("sha256 mismatch", stderr.getvalue())
 
 
+    def test_a_version_given_for_the_project_by_name_bumps_it(self):
+        self.refresh(pem(NEW_DATE, first=5, count=30), ident_minor={BRIDGE: 9})
+        self.assertIn("#define IDENT_MINOR   9", (self.tree.bridge / "main/rpc_dispatch.h").read_text())
+
+    def test_a_version_for_another_project_is_not_one_for_the_bridge(self):
+        before = self.tree.snapshot()
+        with self.assertRaisesRegex(ca_store.StoreError, "software/wifi/raw_u64 needs a new IDENT_MINOR"):
+            self.refresh(pem(NEW_DATE, first=5, count=30), ident_minor={"software/u64ctrl": 9})
+        self.assertEqual(self.tree.snapshot(), before)
+
+    def test_the_command_line_takes_one_number_or_one_per_project(self):
+        self.assertIsNone(refresh.parse_ident_minors(None))
+        self.assertEqual(refresh.parse_ident_minors(["7"]), 7)
+        self.assertEqual(refresh.parse_ident_minors(["a/b=7", "c=8"]), {"a/b": 7, "c": 8})
+        for bad in (["7", "8"], ["a=x"], ["7", "c=8"]):
+            with self.assertRaises(ca_store.StoreError):
+                refresh.parse_ident_minors(bad)
+
     def test_changed_certificates_without_an_allocated_version_write_nothing(self):
         # The next minor is not necessarily free on a development line.
         before = self.tree.snapshot()
@@ -338,7 +356,7 @@ class RefreshTest(unittest.TestCase):
         self.assertEqual(self.tree.snapshot(), before)
 
     def test_no_module_attaching_the_bundle_means_no_bump(self):
-        (self.tree.bridge / "main/tls.c").unlink()
+        (self.tree.shared / "tls_engine.c").unlink()
         summary = pathlib.Path(self.tmp) / "summary.md"
         written = self.refresh(pem(NEW_DATE, first=5, count=30), summary=summary)
         self.assertEqual(written, [self.tree.pem, self.tree.pins])

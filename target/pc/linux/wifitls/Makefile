@@ -7,13 +7,13 @@ OUTPUT  = output
 PATH_SW = ../../../../software
 TEST    = $(PATH_SW)/test/wifi_tls
 
-VPATH   = $(TEST)/stub $(TEST) $(PATH_SW)/io/wifi $(PATH_SW)/io/uart $(PATH_SW)/wifi/raw_u64/main
+VPATH   = $(TEST)/stub $(TEST) $(PATH_SW)/io/wifi $(PATH_SW)/io/uart $(PATH_SW)/wifi/raw_u64/main $(PATH_SW)/wifi/common $(PATH_SW)/wifi/tls
 
 CXX     = g++
 CPPOPTIONS = -std=gnu++11 -g -O0 -Wall -Wextra -Wno-unused-parameter -DNIOS=1 -DU64=1 \
            $(addprefix -I, $(VPATH))
 
-TLS_SRCS   = wifi_tls_test.cc world.cc wifi_tls.cc wifi_dedicated.cc
+TLS_SRCS   = wifi_tls_test.cc world.cc wifi_tls.cc wifi_dedicated.cc wifi_random.cc
 TLS_OBJS   = $(addprefix $(OUTPUT)/tls/, $(TLS_SRCS:%.cc=%.o))
 
 # The network target's sources, which a red run can point at another tree.
@@ -21,7 +21,7 @@ NET_DIR  = $(PATH_SW)/io/network
 NET_PATH = $(TEST)/netstub $(TEST)/stub $(NET_DIR) $(PATH_SW)/io/wifi $(PATH_SW)/io/command_interface
 NET_OPTIONS = -std=gnu++11 -g -O0 -Wall -Wextra -Wno-unused-parameter -Wno-deprecated-declarations -DNIOS=1 -DU64=1 $(addprefix -I, $(NET_PATH))
 NET_SRCS = net_tls_test.cc net_world.cc ip4addr_aton.cc
-NET_OBJS = $(addprefix $(OUTPUT)/net/, $(NET_SRCS:%.cc=%.o)) $(OUTPUT)/net/network_target.o $(OUTPUT)/net/network_target_tls.o
+NET_OBJS = $(addprefix $(OUTPUT)/net/, $(NET_SRCS:%.cc=%.o)) $(OUTPUT)/net/network_target.o $(OUTPUT)/net/network_target_tls.o $(OUTPUT)/net/wifi_random.o
 
 .PHONY: all test clean
 
@@ -38,6 +38,10 @@ $(OUTPUT)/tls/wifi_dedicated.o: $(PATH_SW)/io/wifi/wifi_dedicated.cc
 	@mkdir -p $(OUTPUT)/tls
 	cp $< $(OUTPUT)/tls/wifi_dedicated.cc
 	$(CXX) $(CPPOPTIONS) -c -o $@ $(OUTPUT)/tls/wifi_dedicated.cc
+
+$(OUTPUT)/net/wifi_random.o: $(PATH_SW)/io/wifi/wifi_random.cc
+	@mkdir -p $(OUTPUT)/net
+	$(CXX) $(NET_OPTIONS) $(addprefix -I, $(PATH_SW)/wifi/raw_u64/main $(PATH_SW)/wifi/common $(PATH_SW)/wifi/tls $(PATH_SW)/io/uart) -c -o $@ $<
 
 $(OUTPUT)/net/%.o: $(TEST)/%.cc
 	@mkdir -p $(OUTPUT)/net

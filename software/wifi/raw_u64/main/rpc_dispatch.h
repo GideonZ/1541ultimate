@@ -23,7 +23,6 @@ typedef struct {
 void create_dispatchers(int stacksize, command_buf_context_t *bufs);
 void dispatch(void *ct);
 void dispatch_command(command_buf_t *buf);
-void tls_serve(command_buf_t *buf);
 void start_dispatch(QueueHandle_t queue);
 void send_button_event(uint8_t button);
 void send_keepalive();
@@ -49,7 +48,5 @@ void send_keepalive();
 #define IDENT_MINOR   11
 #define MULTITHREADED 0
 #define DISPATCHER_STACK 3072 // TLS runs on its own task, so this stays small
-#define TLS_TASK_STACK   8192 // twice the stack handshakes were measured to use on the dispatcher
-#define TLS_QUEUE_DEPTH  2    // one request outstanding, and a CLOSE behind a step that timed out
 
 #endif /* SOFTWARE_WIFI_SCAN_MAIN_RPC_DISPATCH_H_ */

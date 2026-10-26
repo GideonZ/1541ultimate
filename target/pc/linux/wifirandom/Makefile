@@ -16,7 +16,7 @@ RESULT  = result
 OUTPUT  = output
 endif
 
-VPATH   = $(PATH_SW)/io/wifi $(MODULE) $(PATH_SW)/wifi/common $(PATH_SW)/test/wifi_random
+VPATH   = $(PATH_SW)/io/wifi $(MODULE) $(PATH_SW)/wifi/common $(PATH_SW)/wifi/tls $(PATH_SW)/io/uart $(PATH_SW)/test/wifi_random
 
 CXX     = g++
 CPPOPTIONS = -std=gnu++11 -g -O0 -Wall -Wextra -Wno-unused-parameter -DU64=$(U64) \

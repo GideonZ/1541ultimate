@@ -234,6 +234,7 @@ VPATH +=	$(BSP)/drivers/inc
 VPATH +=	$(PATH_SW)/6502/sidcrt/target
 VPATH +=	$(PATH_SW)/wifi/raw_u64/main
 VPATH +=	$(PATH_SW)/wifi/common
+VPATH +=	$(PATH_SW)/wifi/tls
 
 #            sock_echo.c \
 #			sys_calls.cc \

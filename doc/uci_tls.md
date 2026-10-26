@@ -3,7 +3,7 @@
 Commands `$21`-`$25` of network target 3 open TLS client connections. The WiFi module (ESP32) runs the TLS
 sessions. The Ultimate keeps the TCP socket and carries the ciphertext between it and the module, so the C64 only ever
 sees plaintext. Implementation: `software/io/network/network_target_tls.cc` (Ultimate side),
-`software/wifi/raw_u64/main/tls_engine.c` (module side).
+`software/wifi/tls/tls_engine.c` and `tls_rpc.c` (module side; the directory is shared by module firmware).
 
 ## Conventions
 

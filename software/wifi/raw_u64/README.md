@@ -25,7 +25,7 @@ server that sends one, as OpenJDK's JSSE does, fails the handshake.
 
 ## Testing the TLS engine
 
-The engine (`main/tls_engine.c`, `main/rpc_dispatch.c`) is checked from the C64's side by the E2E
+The engine (`../tls/tls_engine.c`, `../tls/tls_rpc.c`; `software/wifi/tls` is shared by module firmware, and holds the RPC layout, `rpc_tls.h`) is checked from the C64's side by the E2E
 suite `tests/e2e/io/command_interface/net_tls_test.py` (against a device) and `net_tls_selftest.py`
 (against a simulated one), and the Ultimate's side of the module calls by
 `make -C target/pc/linux/wifitls test`. The engine can also be run on its own, on QEMU or an
@@ -46,7 +46,7 @@ and then: v6.0.3 ships Mozilla's data of 2025-12-02, with roots Mozilla has sinc
   so none of ESP-IDF's roots are merged in, and points `CONFIG_MBEDTLS_CUSTOM_CERTIFICATE_BUNDLE_PATH`
   at `../ca_store/cacert.pem`; ESP-IDF's `gen_crt_bundle.py` builds the bundle from that file and
   builds it again whenever the file changes.
-- **How the build verifies it.** `CMakeLists.txt` runs `python3 tools/ca_store/ca_store.py check`
+- **How the build verifies it.** `CMakeLists.txt` (through `../ca_store/ca_store.cmake`) runs `python3 tools/ca_store/ca_store.py check`
   at every configure (an edit to `cacert.pem`, `CA_PINS` or the checker configures again) and
   again at every build, before the bundle is made, so an already-configured tree cannot skip it.
   It checks the configuration the build really uses (its `config/sdkconfig.json`, which
@@ -63,7 +63,8 @@ and then: v6.0.3 ships Mozilla's data of 2025-12-02, with roots Mozilla has sinc
   pinned by commit and sha256, gives the same file from the newest `certdata.txt` on Firefox's
   release branch, which must descend from `CA_CERTDATA_REF`. It writes `cacert.pem` and `CA_PINS`.
   When the certificates changed it also sets `IDENT_MINOR` (and `IDENT_STRING`) in
-  `main/rpc_dispatch.h` to N, since the updater reflashes a module only for a new version. N must
+  `main/rpc_dispatch.h` to N (of every project whose own sources or `ca_store.SHARED_SOURCES` attach the
+  bundle; with more than one, `--ident-minor PROJECT=N` for each), since the updater reflashes a module only for a new version. N must
   be allocated for this image and above the current minor: the tool refuses a certificate change
   without `--ident-minor`, because on a development line the next number may already belong to
   another image. `--summary FILE` lists what changed by fingerprint, for review. Commit the
@@ -77,7 +78,7 @@ and then: v6.0.3 ships Mozilla's data of 2025-12-02, with roots Mozilla has sinc
   stops (it fails closed, as it would with ESP-IDF's own bundle, which holds the same roots).
 - **No anchors.** ESP-IDF 6 verifies cross-signed chains itself
   (`CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_CROSS_SIGNED_VERIFY`), so the store needs no hand-kept
-  roots: `sdkconfig` sets it explicitly, `main/tls_engine.c` refuses to build without it, and the
+  roots: `sdkconfig` sets it explicitly, `../tls/tls_engine.c` refuses to build without it, and the
   check refuses an anchor file. Only raw_u64 uses the store; raw_c3 and u64ctrl keep ESP-IDF's
   bundle.
 

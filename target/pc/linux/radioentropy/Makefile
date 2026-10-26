@@ -7,7 +7,7 @@ PATH_SW = ../../../../software
 
 # rpc_calls.h of raw_u64 needs lwIP's headers, which the wifi_random test stubs out
 VPATH   = $(PATH_SW)/wifi/common $(PATH_SW)/test/radio_entropy $(PATH_SW)/test/wifi_random \
-          $(PATH_SW)/wifi/raw_u64/main
+          $(PATH_SW)/wifi/raw_u64/main $(PATH_SW)/wifi/tls $(PATH_SW)/io/uart
 
 CC      = gcc
 CFLAGS  = -std=gnu11 -g -O0 -Wall -Wextra -Wno-unused-parameter -pthread \

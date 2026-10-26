@@ -28,7 +28,7 @@ DIR_raw_u64 := $(PATH_SW)/wifi/raw_u64/main
 DIR_raw_c3  := $(PATH_SW)/wifi/raw_c3/main
 DIR_u64ctrl := $(PATH_SW)/u64ctrl/main
 # The U64 and U2+L modules have the radio switch (radio_boot.h): only they see wifi/common
-INC_raw_u64 := -I$(PATH_SW)/wifi/common
+INC_raw_u64 := -I$(PATH_SW)/wifi/common -I$(PATH_SW)/wifi/tls
 INC_raw_c3  := -I$(PATH_SW)/wifi/common
 # u64ctrl's rpc_calls.h and wifi_modem.h include rpc_shared.h and radio_entropy.h from there. It has no radio
 # switch: module_env.h does not count it as one, although radio_boot.h is on its path now
@@ -38,7 +38,7 @@ HOSTTEST := $(PATH_SW)/io/usb/tests
 CASES    := $(wildcard module_*_test.cpp)
 RADIO    := $(wildcard radio_*test.cpp)
 # radio_entropy.h includes rpc_calls.h of raw_u64, which needs lwIP's headers; the wifi_random test stubs them out
-RADIO_INC := -I$(PATH_SW)/wifi/common -I$(PATH_SW)/wifi/raw_u64/main -I$(PATH_SW)/test/wifi_random
+RADIO_INC := -I$(PATH_SW)/wifi/common -I$(PATH_SW)/wifi/tls -I$(PATH_SW)/wifi/raw_u64/main -I$(PATH_SW)/test/wifi_random
 COMMON   := -g -O0 -Wall -Wno-unused-parameter -D_FORTIFY_SOURCE=0
 CFLAGS   := -std=gnu11 $(COMMON) -Wno-unused-variable -Wno-unused-function
 CXXFLAGS := -std=c++14 $(COMMON) -I$(HOSTTEST) -I. -Istub
