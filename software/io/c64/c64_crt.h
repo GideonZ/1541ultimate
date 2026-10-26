@@ -7,23 +7,21 @@
 
 #define CARTS_DIRECTORY "/flash/carts"
 
-// Magic Desk Plus keeps its non-volatile memory in the CRT file, in chunks at
-// DF00, the address of the window they are reached through. The bank field says
-// which piece a chunk is, because the size field cannot: it is 16 bits, so the
-// 128K of SRAM does not fit in one chunk and is carried in four.
-//
-//   bank 0      the EEPROM, 8K or 32K, the two sizes the format allows
-//   bank 1..4   the SRAM, in quarters, in address order
+// Magic Desk Plus keeps its non-volatile memory beside the CRT file, not in it,
+// as VICE does: the CRT format has no way to carry it yet, and VICE refuses an
+// image with anything but ROM chunks. Each part is a raw image named after the
+// CRT, so that Save Cartridge as GAME.CRT goes with GAME.SRAM and GAME.EEPROM,
+// the same bytes VICE reads and writes as its SRAM and EEPROM image files.
 //
 // The cartridge logic reaches the EEPROM in the first half of its area and the
 // SRAM in the second.
 #define MDPLUS_EEPROM_8K     0x2000
 #define MDPLUS_EEPROM_32K    0x8000
 #define MDPLUS_EEPROM_AREA   0x20000
-#define MDPLUS_SRAM_CHUNK    0x8000
-#define MDPLUS_SRAM_CHUNKS   4
+#define MDPLUS_SRAM_SIZE     0x20000
 #define MDPLUS_SRAM_OFFSET   0x20000
-#define MDPLUS_BANK_EEPROM   0
+#define MDPLUS_SRAM_EXT      ".sram"
+#define MDPLUS_EEPROM_EXT    ".eeprom"
 
 // Which parts a Magic Desk Plus has is declared in the CRT header's hardware
 // revision byte, not inferred from what the file happens to carry: a released
@@ -100,8 +98,6 @@ class C64_CRT
     int          bank_multiplier;
     int          machine; // 64 or 128
     bool         a000_seen;
-    uint8_t      mdp_sram_parts; // bit per Magic Desk Plus SRAM chunk seen
-    uint32_t     mdp_eeprom_size; // size of its EEPROM image, 0 when it has none
     e_known_cart local_type;
     uint8_t      max_bank;
     uint8_t      highest_bank;
@@ -131,9 +127,13 @@ class C64_CRT
     void configure_cart(cart_def *def);
     void find_eeprom(void);
     void auto_mirror(void);
+    bool mdp_has_sram(void);
+    uint32_t mdp_eeprom_size(void);
+    void load_mdp_store(const char *path, const char *filename);
 public:
     static SubsysResultCode_e load_crt(const char *path, const char *filename, cart_def *def, uint8_t *mem);
     static SubsysResultCode_e save_crt(File *f);
+    static SubsysResultCode_e save_store(const char *path, const char *filename);
     static int clear_crt(void);
     static bool is_valid(void);
 

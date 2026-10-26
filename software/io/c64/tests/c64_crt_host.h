@@ -31,6 +31,8 @@ typedef int FRESULT;
 #define FR_OK 0
 #define FR_NO_FILE 4
 #define FA_READ 0x01
+#define FA_WRITE 0x02
+#define FA_CREATE_ALWAYS 0x08
 
 class FileInfo {};
 
@@ -60,13 +62,22 @@ public:
         return FR_OK;
     }
     FRESULT seek(uint32_t offset) { pos = offset; return FR_OK; }
+    uint32_t get_size(void) { return (uint32_t)data.size(); }
 };
 
+// Files by name. Opening one for writing creates it empty, as FA_CREATE_ALWAYS
+// does, and what is written lands in the map for the test to inspect.
 class FileManager {
 public:
     std::map<std::string, std::vector<uint8_t>> files;
     static FileManager *getFileManager() { static FileManager fm; return &fm; }
-    FRESULT fopen(const char *, const char *name, int, File **f) {
+    FRESULT fopen(const char *, const char *name, int flags, File **f) {
+        if (flags & FA_CREATE_ALWAYS) {
+            std::vector<uint8_t> &out = files[name];
+            out.clear();
+            *f = new File(&out);
+            return FR_OK;
+        }
         auto it = files.find(name);
         if (it == files.end()) {
             return FR_NO_FILE;

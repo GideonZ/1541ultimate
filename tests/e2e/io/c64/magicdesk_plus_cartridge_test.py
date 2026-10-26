@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""E2E: a Magic Desk Plus cartridge banks with seven bits and serves its store.
+"""E2E: a Magic Desk Plus cartridge banks with seven bits, serves its store, and saves it.
 
 Magic Desk Plus (GideonZ/1541ultimate#727) is a Magic Desk with one more bank
 bit and a non-volatile store: 128 banks of 8K selected by $DE00 bits 0 to 6,
@@ -11,12 +11,12 @@ Remastered uses the format because the SRAM takes a note at a time, which is
 what Flash cannot do.
 
 The suite does not ship a ROM image. It builds a 128-bank type 87 CRT here —
-the id VICE assigns to Magic Desk Plus — with its store in CHIP chunks at
-$DF00, the address of the window, since the bank field is what says which
-piece a chunk is. A released image need not carry a store: this one does,
-because the window is what the suite measures. Bank 0 autostarts, copies a
-routine to $C000 and runs it from RAM, because the first $DE00 write replaces
-the ROM it would otherwise be executing. The routine then:
+the id VICE assigns to Magic Desk Plus — and the store as two raw images beside
+it, the way VICE keeps them: mdplus_e2e.crt goes with mdplus_e2e.sram and
+mdplus_e2e.eeprom. All three go to /Temp over FTP and the cartridge is started
+from there, so the firmware finds the store files by the CRT's name. Bank 0
+autostarts, copies a routine to $C000 and runs it from RAM, because the first
+$DE00 write replaces the ROM it would otherwise be executing. The routine then:
 
 - selects all 128 banks in turn and copies each one's marker at $9FF0 to
   screen RAM, so the row read back says which bank every selection reached
@@ -35,6 +35,11 @@ the ROM it would otherwise be executing. The routine then:
 - does a window read and a window write with the ROM switched off, which is
   what the cartridge does on hardware and what its file system relies on
 
+Then it saves the cartridge through the task menu's "Save Cartridge" into
+/Temp and fetches what was written: a CRT with the ROM banks alone, and beside
+it the SRAM with exactly the two bytes the routine wrote changed, and the
+EEPROM as it was loaded.
+
 The mapper is cartridge logic in the FPGA image rather than firmware, and no
 shipped image has it, so the suite is gated on
 `machine.MAGIC_DESK_PLUS_MAPPER` and reports SKIP until the table says a
@@ -45,6 +50,7 @@ machine whose image was built from this branch.
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 import time
 from pathlib import Path
@@ -55,11 +61,13 @@ sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
 import bootstrap  # noqa: E402,F401
 
 import cli                                                      # noqa: E402
+import ftp as ftp_lib                                           # noqa: E402
 import machine as machine_lib                                   # noqa: E402
 from api import UltimateApi, identify_machine                   # noqa: E402
 from report import (Failure, check, detail, format_exception,   # noqa: E402
                     note_assumed_fix, suite_fail, suite_ok, suite_skip,
                     teardown_step)
+from ui_backend import add_mode_argument, make_browser          # noqa: E402
 
 SUITE = "magicdesk_plus_cartridge_test"
 
@@ -71,9 +79,20 @@ ROM_DISABLE = 0x80          # $DE00 bit 7
 # 128K of SRAM above it, both in the memory the REU uses.
 EEPROM_SIZE = 0x8000        # 32K, so the page register is masked to $7F
 EEPROM_PAGES = EEPROM_SIZE // 0x100
-SRAM_CHUNK = 0x8000         # the size of one CHIP chunk of SRAM
-SRAM_CHUNKS = 4             # 128K in four quarters, in address order
+SRAM_SIZE = 0x20000         # 128K, in address order: half 0, then half 1
 PAGES_PER_HALF = 0x100      # the page register is eight bits
+
+# The cartridge and its store, loaded from /Temp, and the name it is saved as.
+DIRECTORY = "/Temp"
+LOADED = "mdplus_e2e"
+SAVED = "mdplus_saved"
+EXTENSIONS = (".crt", ".sram", ".eeprom")
+SAVE_TIMEOUT_SECONDS = 20.0
+
+ENTRY_ROWS = range(2, 24)
+STATUS_ROW = 24
+TELNET_ENTRY_ROWS = range(2, 23)
+TELNET_STATUS_ROW = 23
 
 EEPROM_TAG = 0xEE           # byte 1 of every page says which area it belongs to
 SRAM_TAG = (0x50, 0x51)     # SRAM half 0 and half 1
@@ -229,7 +248,7 @@ def chip(bank: int, load: int, data: bytes) -> bytes:
 
 
 def magicdesk_plus_crt() -> bytes:
-    """A type 87 CRT of 128 8K banks, a 32K EEPROM and 128K of SRAM."""
+    """A type 87 CRT of 128 8K banks; revision 0 says SRAM and a 32K EEPROM."""
     header = bytearray(0x40)
     header[0:16] = b"C64 CARTRIDGE   "
     header[0x10:0x14] = (0x40).to_bytes(4, "big")
@@ -248,16 +267,81 @@ def magicdesk_plus_crt() -> bytes:
             rom[ROUTINE_OFFSET:ROUTINE_OFFSET + len(code)] = code
         rom[MARKER] = bank
         image += chip(bank, 0x8000, bytes(rom))
-
-    # Bank 0 of the store is the EEPROM; banks 1 to 4 are the SRAM in address
-    # order, which is half 0 and then half 1, each in two quarters.
-    eeprom = b"".join(store_page(EEPROM_TAG, page) for page in range(EEPROM_PAGES))
-    image += chip(0, 0xDF00, eeprom)
-    sram = b"".join(store_page(SRAM_TAG[half], page)
-                    for half in (0, 1) for page in range(PAGES_PER_HALF))
-    for part in range(SRAM_CHUNKS):
-        image += chip(part + 1, 0xDF00, sram[part * SRAM_CHUNK:(part + 1) * SRAM_CHUNK])
     return image
+
+
+def sram_image() -> bytes:
+    """The SRAM file: half 0 and then half 1, every page tagged."""
+    return b"".join(store_page(SRAM_TAG[half], page)
+                    for half in (0, 1) for page in range(PAGES_PER_HALF))
+
+
+def eeprom_image() -> bytes:
+    """The EEPROM file, 32K, every page tagged."""
+    return b"".join(store_page(EEPROM_TAG, page) for page in range(EEPROM_PAGES))
+
+
+def sram_after_run() -> bytes:
+    """The SRAM as the routine leaves it: two bytes of half 0 written."""
+    sram = bytearray(sram_image())
+    sram[PROBE_PAGE * 0x100 + 0x80] = WINDOW_WRITE
+    sram[ROM_OFF_PAGE * 0x100 + 0x81] = ROM_OFF_WRITE
+    return bytes(sram)
+
+
+def first_difference(got: bytes, want: bytes) -> str:
+    if len(got) != len(want):
+        return f"{len(got)} bytes, want {len(want)}"
+    at = next(i for i in range(len(want)) if got[i] != want[i])
+    return f"offset ${at:05X} holds ${got[at]:02X}, want ${want[at]:02X}"
+
+
+def chunk_loads(image: bytes) -> list[int]:
+    """The load address of every CHIP chunk in a CRT."""
+    loads = []
+    offset = int.from_bytes(image[0x10:0x14], "big")
+    while offset + 0x10 <= len(image):
+        length = int.from_bytes(image[offset + 4:offset + 8], "big")
+        loads.append(int.from_bytes(image[offset + 0x0C:offset + 0x0E], "big"))
+        offset += max(length, 0x10)
+    return loads
+
+
+def store_files(name: str) -> list[str]:
+    return [f"{DIRECTORY}/{name}{ext}" for ext in EXTENSIONS]
+
+
+def remove_files(args) -> None:
+    with ftp_lib.session(args.host, args.password or None, timeout=20) as client:
+        for path in store_files(LOADED) + store_files(SAVED):
+            ftp_lib.delete_quietly(client, path)
+
+
+def save_through_menu(browser) -> None:
+    """Save Cartridge into /Temp; it shows no popup when it succeeds."""
+    browser.backend.ensure_ready()
+    browser.go_to_directory(DIRECTORY.strip("/"))
+    browser.invoke_task_action(browser.backend.machine.machine_task_category, "Save Cartridge")
+    browser.wait_for_text("Save Cartridge as..")
+    browser.fill_edit_field(SAVED)
+
+
+def fetch_saved(args) -> dict[str, bytes]:
+    """The three saved files, once the last of them is complete."""
+    crt, sram, eeprom = store_files(SAVED)
+    deadline = time.monotonic() + SAVE_TIMEOUT_SECONDS
+    while True:
+        try:
+            with ftp_lib.session(args.host, args.password or None, timeout=20) as client:
+                files = {path: ftp_lib.retrieve(client, path) for path in (crt, sram, eeprom)}
+            if len(files[eeprom]) == EEPROM_SIZE:
+                return files
+        except Exception as exc:        # noqa: BLE001
+            if time.monotonic() >= deadline:
+                raise Failure(f"the saved cartridge did not appear in {DIRECTORY}: {exc}") from exc
+        if time.monotonic() >= deadline:
+            raise Failure(f"{eeprom} is incomplete after {SAVE_TIMEOUT_SECONDS:.0f} s")
+        time.sleep(0.5)
 
 
 def report_banks(seen: bytes) -> None:
@@ -279,11 +363,20 @@ def run(args) -> bool:
     if machine.assumed_fix(machine_lib.MAGIC_DESK_PLUS_MAPPER):
         note_assumed_fix(machine_lib.MAGIC_DESK_PLUS_MAPPER, machine.kind)
 
+    browser = None
+    crt = magicdesk_plus_crt()
     try:
-        with check("the generated Magic Desk Plus cartridge starts and runs its routine"):
+        with check("the generated Magic Desk Plus cartridge starts from /Temp with its "
+                   "store files beside it, and runs its routine"):
+            remove_files(args)
+            loaded_crt, loaded_sram, loaded_eeprom = store_files(LOADED)
+            with ftp_lib.session(args.host, args.password or None, timeout=20) as client:
+                ftp_lib.store(client, loaded_crt, crt)
+                ftp_lib.store(client, loaded_sram, sram_image())
+                ftp_lib.store(client, loaded_eeprom, eeprom_image())
             # Blank every row first, so bytes left by an earlier run cannot pass.
             device.machine.writemem(BANK_ROW, bytes([BLANK]) * (DONE + 1 - BANK_ROW))
-            device.runners.upload("run_crt", magicdesk_plus_crt())
+            device.runners.run_crt(loaded_crt)
             deadline = time.monotonic() + 20.0
             while device.machine.readmem(DONE, 1)[0] != 0x01:
                 if time.monotonic() >= deadline:
@@ -330,7 +423,46 @@ def run(args) -> bool:
 
         if failures:
             raise failures[0]
+
+        browser = make_browser(
+            args.mode, args.host, args.password or None, args.timeout,
+            entry_rows=ENTRY_ROWS, status_row=STATUS_ROW,
+            telnet_port=args.telnet_port,
+            telnet_entry_rows=TELNET_ENTRY_ROWS, telnet_status_row=TELNET_STATUS_ROW,
+        )
+        with check(f"Save Cartridge through the {args.mode} task menu writes the CRT "
+                   "and its store files"):
+            save_through_menu(browser)
+            saved = fetch_saved(args)
+        saved_crt, saved_sram, saved_eeprom = (saved[path] for path in store_files(SAVED))
+
+        def crt_is_rom_only() -> None:
+            if saved_crt != crt:
+                stray = sorted({f"${load:04X}" for load in chunk_loads(saved_crt)} - {"$8000"})
+                detail(f"chunks at {', '.join(stray) or 'only $8000'}")
+                raise Failure(f"the saved CRT is not the ROM image it was loaded from: "
+                              f"{first_difference(saved_crt, crt)}")
+
+        def sram_saved() -> None:
+            if saved_sram != sram_after_run():
+                raise Failure(f"the saved SRAM is not the loaded one with the routine's two "
+                              f"writes: {first_difference(saved_sram, sram_after_run())}")
+
+        def eeprom_saved() -> None:
+            if saved_eeprom != eeprom_image():
+                raise Failure(f"the saved EEPROM is not the loaded one: "
+                              f"{first_difference(saved_eeprom, eeprom_image())}")
+
+        record("the saved CRT carries the ROM banks alone, no store", crt_is_rom_only)
+        record("the saved SRAM file holds what the cartridge wrote", sram_saved)
+        record("the saved EEPROM file holds the EEPROM as loaded", eeprom_saved)
+        if failures:
+            raise failures[0]
     finally:
+        teardown_step("close the menu", device.machine.close_menu_from_anywhere)
+        if browser is not None:
+            teardown_step("close the browser session", browser.close)
+        teardown_step("remove the cartridge files", lambda: remove_files(args))
         # A reboot removes the cartridge; a reset would boot straight back into it.
         teardown_step("restore the configured cartridge", device.machine.reboot)
     return True
@@ -338,9 +470,13 @@ def run(args) -> bool:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Check that a Magic Desk Plus cartridge banks with seven bits "
-                    "and serves its store through the $DF00 window.")
+        description="Check that a Magic Desk Plus cartridge banks with seven bits, "
+                    "serves its store through the $DF00 window, and saves it beside "
+                    "its CRT.")
     cli.add_device_arguments(parser)
+    parser.add_argument("--telnet-port", type=int,
+                        default=int(os.environ.get("U64_TELNET_PORT", "23")))
+    add_mode_argument(parser)
     args = parser.parse_args()
     try:
         ran = run(args)

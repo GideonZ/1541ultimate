@@ -146,8 +146,6 @@ void C64_CRT::initialize(uint8_t *mem, uint32_t max_size)
     max_bank = 0xFF;
     highest_bank = 0;
     a000_seen = false;
-    mdp_sram_parts = 0;
-    mdp_eeprom_size = 0;
     bank_multiplier = 16 * 1024;
 }
 
@@ -299,70 +297,17 @@ SubsysResultCode_e C64_CRT::read_chip_packet(File *f, t_crt_chip_chunk *chunk)
         a000_seen = true; // an Ocean CRT with $A000 chips needs 16K mode
     }
 
-    // Magic Desk Plus keeps its EEPROM and its 128K of battery-backed SRAM in
-    // the file. Both are reached through the same DF00 window on the machine,
-    // so that is the load address the chunks carry, and the bank field says
-    // which piece a chunk is. It has to: the size field of a CHIP header is 16
-    // bits, so 128K cannot be one chunk, and it travels in four quarters.
-    //
-    // Bank 0 is the EEPROM, and its size chooses the page mask exactly as it
-    // does in VICE, which accepts an EEPROM image only at 8K or 32K. Banks 1
-    // to 4 are the SRAM in address order.
-    //
-    // A released image need not carry any of it, and the ones built for VICE do
-    // not: this is how the Ultimate writes the store back with Save Cartridge,
-    // so that a saved game survives the next load.
-    if (load == 0xDF00) {
-        uint8_t *store = (uint8_t *)REU_MEMORY_BASE;
-
-        if (bank == MDPLUS_BANK_EEPROM) {
-            if ((size != MDPLUS_EEPROM_8K) && (size != MDPLUS_EEPROM_32K)) {
-                printf("Magic Desk Plus EEPROM is $%4x bytes; it must be 8K or 32K.\n", size);
-                return SSRET_ERROR_IN_FILE_FORMAT;
-            }
-            if (mdp_eeprom_size) {
-                printf("Magic Desk Plus EEPROM already read!\n");
-                return SSRET_EEPROM_ALREADY_DEFINED;
-            }
-            printf("Reading Magic Desk Plus EEPROM, size $%4x.\n", size);
-            memset(store, 0xFF, MDPLUS_EEPROM_32K);
-            mdp_eeprom_size = size;
-        } else if (bank <= MDPLUS_SRAM_CHUNKS) {
-            if (size != MDPLUS_SRAM_CHUNK) {
-                printf("Magic Desk Plus SRAM chunk %d is $%4x bytes; it must be $8000.\n",
-                       bank, size);
-                return SSRET_ERROR_IN_FILE_FORMAT;
-            }
-            if (mdp_sram_parts & (1 << (bank - 1))) {
-                printf("Magic Desk Plus SRAM chunk %d already read!\n", bank);
-                return SSRET_EEPROM_ALREADY_DEFINED;
-            }
-            printf("Reading Magic Desk Plus SRAM chunk %d.\n", bank);
-            if (!mdp_sram_parts) {
-                memset(store + MDPLUS_SRAM_OFFSET, 0xFF,
-                       MDPLUS_SRAM_CHUNK * MDPLUS_SRAM_CHUNKS);
-            }
-            store += MDPLUS_SRAM_OFFSET + (uint32_t(bank) - 1) * MDPLUS_SRAM_CHUNK;
-            mdp_sram_parts |= (1 << (bank - 1));
-        } else {
-            printf("Magic Desk Plus store has no bank %d.\n", bank);
-            return SSRET_ERROR_IN_FILE_FORMAT;
-        }
-
-        // The cartridge logic addresses this through g_georam_base, which is
-        // where the REU lives. That is why this cart prohibits the REU.
-        chunk->ram_location = store;
-        res = f->read(store, size, &bytes_read);
-        if (res != FR_OK) {
-            return SSRET_FILE_READ_FAILED;
-        }
-        return SSRET_OK;
+    // A Magic Desk Plus keeps its SRAM and EEPROM in files beside the image
+    // (load_mdp_store), so a chunk at its DF00 window is not one of its ROM
+    // banks and would land on one. VICE refuses such an image as well.
+    if ((local_type == CART_MDPLUS) && (load == 0xDF00)) {
+        printf("Magic Desk Plus store in the CRT; it belongs in %s and %s files beside it.\n",
+               MDPLUS_SRAM_EXT, MDPLUS_EEPROM_EXT);
+        return SSRET_ERROR_IN_FILE_FORMAT;
     }
 
     // Detect C128 mode carts. This asks the ROM chunks only, which is why it
-    // comes after the two stores above: a Magic Desk Plus SRAM chunk is $8000
-    // bytes as well, and read first it would turn every ROM bank into a 32K
-    // one.
+    // comes after the store above.
     if ((load == 0xC000) || (size == 0x8000)) {
         bank_multiplier = 32 * 1024;
     }
@@ -543,23 +488,13 @@ void C64_CRT::configure_cart(cart_def *def)
 {
     printf("Total ROM size read: %6x bytes.\n", total_read);
 
-    // A Magic Desk Plus file need not carry its store: VICE keeps the SRAM and
-    // the EEPROM in files beside the image rather than in it, and the Murder on
-    // the Mississippi Remastered release is 32 ROM banks and nothing else. What
-    // it does not bring has to read as an erased device, because the store
-    // lives in the memory the REU uses and would otherwise be whatever the
-    // cartridge before it left there.
+    // The store starts erased, because it lives in the memory the REU uses and
+    // would otherwise be whatever the cartridge before it left there. Whatever
+    // files beside the image bring is read over it after this (load_mdp_store).
     if (local_type == CART_MDPLUS) {
         uint8_t *store = (uint8_t *)REU_MEMORY_BASE;
-        if (!mdp_eeprom_size) {
-            printf("Magic Desk Plus without an EEPROM image; erasing it.\n");
-            memset(store, 0xFF, MDPLUS_EEPROM_32K);
-        }
-        if (!mdp_sram_parts) {
-            printf("Magic Desk Plus without an SRAM image; erasing it.\n");
-            memset(store + MDPLUS_SRAM_OFFSET, 0xFF,
-                   MDPLUS_SRAM_CHUNK * MDPLUS_SRAM_CHUNKS);
-        }
+        memset(store, 0xFF, MDPLUS_EEPROM_32K);
+        memset(store + MDPLUS_SRAM_OFFSET, 0xFF, MDPLUS_SRAM_SIZE);
     }
 
     uint16_t cart_type = CART_TYPE_NONE;
@@ -794,8 +729,121 @@ SubsysResultCode_e C64_CRT::load_crt(const char *path, const char *filename, car
 
     if (retval != SSRET_OK) {
         work->initialize(NULL, 0); // clear remaining stuff if not successful
+    } else if (work->local_type == CART_MDPLUS) {
+        work->load_mdp_store(path, filename);
     }
     return { retval };
+}
+
+// The parts a Magic Desk Plus has, as its header's revision byte declares them.
+bool C64_CRT::mdp_has_sram(void)
+{
+    uint8_t rev = crt_header[CRTHDR_SUBTYPE];
+    return (rev == MDPLUS_REV_SRAM_EEPROM_32K) || (rev == MDPLUS_REV_SRAM_EEPROM_8K) ||
+           (rev == MDPLUS_REV_SRAM);
+}
+
+uint32_t C64_CRT::mdp_eeprom_size(void)
+{
+    switch (crt_header[CRTHDR_SUBTYPE]) {
+        case MDPLUS_REV_SRAM_EEPROM_32K:
+        case MDPLUS_REV_EEPROM_32K:
+            return MDPLUS_EEPROM_32K;
+        case MDPLUS_REV_SRAM_EEPROM_8K:
+        case MDPLUS_REV_EEPROM_8K:
+            return MDPLUS_EEPROM_8K;
+        default:
+            return 0;
+    }
+}
+
+// The name of a store file: the CRT's name with its extension replaced.
+static char *mdp_store_name(const char *filename, const char *ext)
+{
+    int len = strlen(filename);
+    const char *dot = strrchr(filename, '.');
+    if (dot) {
+        len = dot - filename;
+    }
+    char *name = new char[len + strlen(ext) + 1];
+    memcpy(name, filename, len);
+    strcpy(name + len, ext);
+    return name;
+}
+
+static void mdp_read_part(const char *path, const char *filename, const char *ext,
+                          uint8_t *dest, uint32_t size)
+{
+    FileManager *fm = FileManager::getFileManager();
+    char *name = mdp_store_name(filename, ext);
+    File *f = 0;
+    if (fm->fopen(path, name, FA_READ, &f) != FR_OK) {
+        printf("Magic Desk Plus: no %s, starting erased.\n", name);
+    } else {
+        uint32_t file_size = f->get_size();
+        uint32_t bytes_read = 0;
+        if (file_size != size) {
+            printf("Magic Desk Plus: %s is %d bytes, want %d; starting erased.\n", name, file_size, size);
+        } else if ((f->read(dest, size, &bytes_read) != FR_OK) || (bytes_read != size)) {
+            printf("Magic Desk Plus: reading %s failed; starting erased.\n", name);
+            memset(dest, 0xFF, size);
+        } else {
+            printf("Magic Desk Plus: read %s.\n", name);
+        }
+        fm->fclose(f);
+    }
+    delete[] name;
+}
+
+// Read the SRAM and EEPROM a Magic Desk Plus left beside its image, over the
+// erased store configure_cart prepared. A part the revision does not fit is not
+// read, and a file of the wrong size is left alone rather than half applied.
+void C64_CRT::load_mdp_store(const char *path, const char *filename)
+{
+    uint8_t *store = (uint8_t *)REU_MEMORY_BASE;
+    if (mdp_has_sram()) {
+        mdp_read_part(path, filename, MDPLUS_SRAM_EXT, store + MDPLUS_SRAM_OFFSET, MDPLUS_SRAM_SIZE);
+    }
+    if (mdp_eeprom_size()) {
+        mdp_read_part(path, filename, MDPLUS_EEPROM_EXT, store, mdp_eeprom_size());
+    }
+}
+
+static FRESULT mdp_write_part(const char *path, const char *filename, const char *ext,
+                              const uint8_t *src, uint32_t size)
+{
+    FileManager *fm = FileManager::getFileManager();
+    char *name = mdp_store_name(filename, ext);
+    File *f = 0;
+    FRESULT res = fm->fopen(path, name, FA_WRITE | FA_CREATE_ALWAYS, &f);
+    if (res == FR_OK) {
+        uint32_t written = 0;
+        res = f->write(src, size, &written);
+        fm->fclose(f);
+        printf("Magic Desk Plus: wrote %s.\n", name);
+    }
+    delete[] name;
+    return res;
+}
+
+// Write the store of a loaded Magic Desk Plus beside the CRT that Save
+// Cartridge wrote as `filename`, one raw image per part it has. Any other
+// cartridge has nothing to write here.
+SubsysResultCode_e C64_CRT::save_store(const char *path, const char *filename)
+{
+    C64_CRT *crt = get_instance();
+    if (!crt->machine || (crt->local_type != CART_MDPLUS)) {
+        return SSRET_OK;
+    }
+    const uint8_t *store = (const uint8_t *)REU_MEMORY_BASE;
+    FRESULT res = FR_OK;
+    if (crt->mdp_has_sram()) {
+        res = mdp_write_part(path, filename, MDPLUS_SRAM_EXT, store + MDPLUS_SRAM_OFFSET, MDPLUS_SRAM_SIZE);
+    }
+    if ((res == FR_OK) && crt->mdp_eeprom_size()) {
+        res = mdp_write_part(path, filename, MDPLUS_EEPROM_EXT, store, crt->mdp_eeprom_size());
+    }
+    return (res == FR_OK) ? SSRET_OK : SSRET_DISK_ERROR;
 }
 
 SubsysResultCode_e C64_CRT::save_crt(File *fo)
