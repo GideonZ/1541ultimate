@@ -582,6 +582,7 @@ static void test_magic_desk_plus_save(void)
     const Row rows[] = {
         { "rev 0", MDPLUS_REV_SRAM_EEPROM_32K, MDPLUS_EEPROM_32K, true },
         { "rev 1", MDPLUS_REV_SRAM_EEPROM_8K,  MDPLUS_EEPROM_8K,  true },
+        { "rev 2", MDPLUS_REV_EEPROM_32K,      MDPLUS_EEPROM_32K, false },
         { "rev 3", MDPLUS_REV_EEPROM_8K,       MDPLUS_EEPROM_8K,  false },
         { "rev 4", MDPLUS_REV_SRAM,            0,                 true },
     };
@@ -645,6 +646,117 @@ static void test_magic_desk_plus_save(void)
     CHECK(C64_CRT::save_store("/", "other.crt") == SSRET_OK, "Magic Desk: save_store failed");
     CHECK(!files.count("other.sram") && !files.count("other.eeprom"),
           "a plain Magic Desk wrote store files");
+}
+
+// Load a Magic Desk Plus as `name` under `path`, as the file browser (a path and
+// a name) or REST (no path, the whole pathname as the name) passes it.
+static SubsysResultCode_e load_mdp_as(const char *path, const char *name, uint8_t rev = MDPLUS_REV_SRAM_EEPROM_32K)
+{
+    auto &files = FileManager::getFileManager()->files;
+    files[FileManager::key(path, name)] = mdplus(16, rev).bytes();
+    memset(host_reu_memory, 0x5A, sizeof(host_reu_memory));
+    host_cart_max_rom = 4 * MB;
+    std::vector<uint8_t> mem(4 * MB + GUARD, 0x5A);
+    cart_def def;
+    return C64_CRT::load_crt(path, name, &def, mem.data());
+}
+
+static void test_magic_desk_plus_store_files(void)
+{
+    auto &files = FileManager::getFileManager()->files;
+    auto &room = FileManager::getFileManager()->room;
+    const std::vector<uint8_t> sram = payload(7007, MDPLUS_SRAM_SIZE);
+    const std::vector<uint8_t> other = payload(7008, MDPLUS_SRAM_SIZE);
+
+    // The store files are named after the last component of the name only. REST
+    // passes the whole pathname, and a dot in a directory above is not the
+    // CRT's extension: /Usb0/games.v2/murder goes with murder.sram there, not
+    // with /Usb0/games.sram.
+    files.clear();
+    files["Usb0/games.v2/murder.sram"] = sram;
+    files["Usb0/games.sram"] = other;
+    SubsysResultCode_e rc = load_mdp_as("", "/Usb0/games.v2/murder");
+    CHECK(rc == SSRET_OK, "a CRT without an extension under a dotted directory: load returned %d", rc);
+    CHECK(!memcmp(host_reu_memory + MDPLUS_SRAM_OFFSET, sram.data(), MDPLUS_SRAM_SIZE),
+          "a dot in a directory name cut the store file's name short");
+
+    // The same file reached as a path and a name, as the file browser has it,
+    // and a name with more than one dot, where only the last one goes.
+    files.clear();
+    files["Usb0/games.v2/murder.v1.sram"] = sram;
+    rc = load_mdp_as("/Usb0/games.v2/", "murder.v1.crt");
+    CHECK(rc == SSRET_OK && !memcmp(host_reu_memory + MDPLUS_SRAM_OFFSET, sram.data(), MDPLUS_SRAM_SIZE),
+          "murder.v1.crt does not read murder.v1.sram");
+
+    // A save that fails part way leaves the previous save as it was, and no
+    // temporary file behind: first with the SRAM failing, then with the SRAM
+    // written and the EEPROM failing, which must not leave a new SRAM beside
+    // an old EEPROM.
+    const std::vector<uint8_t> old_sram = payload(8001, MDPLUS_SRAM_SIZE);
+    const std::vector<uint8_t> old_eeprom = payload(8002, MDPLUS_EEPROM_32K);
+    const char *full_part[] = { "saved.sram.tmp", "saved.eeprom.tmp" };
+    for (const char *full : full_part) {
+        files.clear();
+        room.clear();
+        rc = load_mdp_as("/", "game.crt");
+        CHECK(rc == SSRET_OK, "save over a full medium: load returned %d", rc);
+        memset(host_reu_memory, 0x11, sizeof(host_reu_memory));   // what the game wrote since
+        files["saved.sram"] = old_sram;
+        files["saved.eeprom"] = old_eeprom;
+        room[full] = 1000;
+        rc = C64_CRT::save_store("/", "saved.crt");
+        CHECK(rc == SSRET_DISK_ERROR, "%s full: save_store returned %d, want disk error", full, rc);
+        CHECK(files["saved.sram"] == old_sram, "%s full: the previous SRAM file was changed", full);
+        CHECK(files["saved.eeprom"] == old_eeprom, "%s full: the previous EEPROM file was changed", full);
+        CHECK(!files.count("saved.sram.tmp") && !files.count("saved.eeprom.tmp"),
+              "%s full: a temporary store file was left behind", full);
+    }
+
+    // With room to spare the same save replaces both files, and leaves no
+    // temporary file.
+    room.clear();
+    rc = C64_CRT::save_store("/", "saved.crt");
+    CHECK(rc == SSRET_OK, "save over a previous save: save_store returned %d", rc);
+    CHECK(files["saved.sram"] == std::vector<uint8_t>(MDPLUS_SRAM_SIZE, 0x11) &&
+          files["saved.eeprom"] == std::vector<uint8_t>(MDPLUS_EEPROM_32K, 0x11),
+          "a save over a previous one did not replace both store files");
+    CHECK(!files.count("saved.sram.tmp") && !files.count("saved.eeprom.tmp"),
+          "a successful save left a temporary store file");
+
+    // Save Cartridge asks before replacing store files that are there: it asks
+    // whether either of the parts this cart has exists.
+    files.clear();
+    rc = load_mdp_as("/", "game.crt", MDPLUS_REV_SRAM);
+    CHECK(!C64_CRT::store_exists("/", "new.crt"), "store_exists without any store file");
+    files["new.eeprom"] = old_eeprom;
+    CHECK(!C64_CRT::store_exists("/", "new.crt"), "store_exists for an EEPROM a rev 4 cart does not have");
+    files["new.sram"] = old_sram;
+    CHECK(C64_CRT::store_exists("/", "new.crt"), "store_exists missed an SRAM file");
+
+    // Once the cartridge is gone, as after a reboot into no cartridge, there is
+    // nothing of it left to save: the memory it used is the REU's again.
+    C64_CRT::clear_crt();
+    files.clear();
+    CHECK(!C64_CRT::is_valid(), "a cleared cartridge still reads as valid");
+    rc = C64_CRT::save_store("/", "after.crt");
+    CHECK(rc == SSRET_OK && files.empty(), "a cleared cartridge still wrote store files");
+    files["after.sram"] = old_sram;
+    CHECK(!C64_CRT::store_exists("/", "after.crt"), "a cleared cartridge still asks about store files");
+
+    // Flashing a cartridge as the default one takes its store files along,
+    // under the name it is flashed as, and removes one the source does not
+    // have, so that a cart flashed under an old name does not start with that
+    // one's save.
+    files.clear();
+    files["Usb1/motm/game.sram"] = sram;
+    files["flash/carts/game_shortened.eeprom"] = old_eeprom;
+    FRESULT fres = C64_CRT::copy_store("/Usb1/motm", "game.crt", "/flash/carts", "game_shortened.crt");
+    CHECK(fres == FR_OK, "copy_store returned %d", fres);
+    CHECK(files.count("flash/carts/game_shortened.sram") && (files["flash/carts/game_shortened.sram"] == sram),
+          "flashing did not take the SRAM file along under the flashed name");
+    CHECK(!files.count("flash/carts/game_shortened.eeprom"),
+          "flashing left an EEPROM file the source does not have");
+    CHECK(files.count("Usb1/motm/game.sram"), "flashing moved the source's SRAM file instead of copying it");
 }
 
 // The header of mdplustest.crt, byte for byte. The other tests here build their
@@ -729,6 +841,7 @@ int main()
     test_save_keeps_memory();
     test_magic_desk_plus();
     test_magic_desk_plus_save();
+    test_magic_desk_plus_store_files();
     test_magic_desk_plus_real_image();
     fprintf(stderr, "c64_crt_test: %s (%d checks, %d failed)\n", failures ? "FAIL" : "OK", checks, failures);
     return failures ? 1 : 0;

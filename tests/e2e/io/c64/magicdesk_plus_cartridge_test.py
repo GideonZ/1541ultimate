@@ -40,6 +40,13 @@ Then it saves the cartridge through the task menu's "Save Cartridge" into
 it the SRAM with exactly the two bytes the routine wrote changed, and the
 EEPROM as it was loaded.
 
+Two more things about saving follow. A save under a name whose store file is
+already there without its CRT has to ask first, and answered No it has to
+leave that file alone. And once the machine is rebooted into no cartridge,
+"Save Cartridge" must be gone from the task menu: the store lived in the
+memory the REU uses, and a save then would write the REU's contents as the
+game's. The configured cartridge is set to none for that and put back after.
+
 The mapper is cartridge logic in the FPGA image rather than firmware, and no
 shipped image has it, so the suite is gated on
 `machine.MAGIC_DESK_PLUS_MAPPER` and reports SKIP until the table says a
@@ -86,6 +93,10 @@ PAGES_PER_HALF = 0x100      # the page register is eight bits
 DIRECTORY = "/Temp"
 LOADED = "mdplus_e2e"
 SAVED = "mdplus_saved"
+ORPHAN = "mdplus_orphan"     # a store file whose CRT is not there
+ORPHAN_BYTES = b"\x42" * 0x1000
+CART_CATEGORY = "C64 and Cartridge Settings"
+CART_ITEM = "Cartridge"
 EXTENSIONS = (".crt", ".sram", ".eeprom")
 SAVE_TIMEOUT_SECONDS = 20.0
 
@@ -313,8 +324,59 @@ def store_files(name: str) -> list[str]:
 
 def remove_files(args) -> None:
     with ftp_lib.session(args.host, args.password or None, timeout=20) as client:
-        for path in store_files(LOADED) + store_files(SAVED):
+        for path in store_files(LOADED) + store_files(SAVED) + store_files(ORPHAN):
             ftp_lib.delete_quietly(client, path)
+
+
+def listing(args) -> list[str]:
+    with ftp_lib.session(args.host, args.password or None, timeout=20) as client:
+        return [name.rsplit("/", 1)[-1] for name in client.nlst(DIRECTORY)]
+
+
+def close_menu(device) -> None:
+    """Close the menu with its button, not a key: a cartridge in a real C64
+    takes no injected keys."""
+    if device.machine.menu_open():
+        device.machine.menu_button()
+
+
+def task_items(browser) -> list[str]:
+    """The entries of the machine's task menu category, which is left open."""
+    browser.backend.ensure_ready()
+    browser.go_to_directory(DIRECTORY.strip("/"))
+    categories = browser.open_task_menu()
+    if not categories:
+        raise Failure(f"no task menu appeared; screen was:\n{browser.screen()}")
+    before = browser.rows()
+    browser.choose_overlay_item(categories, browser.backend.machine.machine_task_category)
+    return browser.wait_for_overlay(before)
+
+
+def save_over_orphan(browser, args) -> None:
+    """Save as a name whose .sram is there without its CRT, and answer No."""
+    with ftp_lib.session(args.host, args.password or None, timeout=20) as client:
+        ftp_lib.store(client, f"{DIRECTORY}/{ORPHAN}.sram", ORPHAN_BYTES)
+    browser.backend.ensure_ready()
+    browser.go_to_directory(DIRECTORY.strip("/"))
+    browser.invoke_task_action(browser.backend.machine.machine_task_category, "Save Cartridge")
+    browser.wait_for_text("Save Cartridge as..")
+    browser.fill_edit_field(ORPHAN)
+    try:
+        browser.wait_for_text("Store files exist", timeout=SAVE_TIMEOUT_SECONDS / 2)
+    except Failure:
+        time.sleep(2)       # let a save that did not ask finish, so the listing shows it
+        names = listing(args)
+        raise Failure(f"no question before replacing {ORPHAN}.sram; {DIRECTORY} now holds "
+                      f"{sorted(n for n in names if n.startswith(ORPHAN))}") from None
+    browser.press_popup_button("n")
+    time.sleep(2)
+    with ftp_lib.session(args.host, args.password or None, timeout=20) as client:
+        kept = ftp_lib.retrieve(client, f"{DIRECTORY}/{ORPHAN}.sram")
+    names = listing(args)
+    if kept != ORPHAN_BYTES:
+        raise Failure(f"answered No, {ORPHAN}.sram was replaced anyway ({len(kept)} bytes)")
+    if f"{ORPHAN}.crt" in names:
+        raise Failure(f"answered No, {ORPHAN}.crt was written anyway")
 
 
 def save_through_menu(browser) -> None:
@@ -364,6 +426,7 @@ def run(args) -> bool:
         note_assumed_fix(machine_lib.MAGIC_DESK_PLUS_MAPPER, machine.kind)
 
     browser = None
+    configured = ""
     crt = magicdesk_plus_crt()
     try:
         with check("the generated Magic Desk Plus cartridge starts from /Temp with its "
@@ -456,13 +519,34 @@ def run(args) -> bool:
         record("the saved CRT carries the ROM banks alone, no store", crt_is_rom_only)
         record("the saved SRAM file holds what the cartridge wrote", sram_saved)
         record("the saved EEPROM file holds the EEPROM as loaded", eeprom_saved)
+        record("a save over a store file without its CRT asks first, and No leaves it alone",
+               lambda: save_over_orphan(browser, args))
+
+        def nothing_to_save_after_reboot() -> None:
+            nonlocal configured
+            configured = str(device.configs.current(CART_CATEGORY, CART_ITEM))
+            if configured:
+                device.configs.set(CART_CATEGORY, CART_ITEM, "")
+            close_menu(device)
+            device.machine.reboot()
+            time.sleep(3)
+            items = task_items(browser)
+            if "Save Cartridge" in items:
+                raise Failure(f"after a reboot into no cartridge the task menu still offers "
+                              f"Save Cartridge: {items}")
+
+        record("after a reboot into no cartridge there is nothing left to save",
+               nothing_to_save_after_reboot)
         if failures:
             raise failures[0]
     finally:
-        teardown_step("close the menu", device.machine.close_menu_from_anywhere)
+        teardown_step("close the menu", lambda: close_menu(device))
         if browser is not None:
             teardown_step("close the browser session", browser.close)
         teardown_step("remove the cartridge files", lambda: remove_files(args))
+        if configured:
+            teardown_step("put the configured cartridge back",
+                          lambda: device.configs.set(CART_CATEGORY, CART_ITEM, configured))
         # A reboot removes the cartridge; a reset would boot straight back into it.
         teardown_step("restore the configured cartridge", device.machine.reboot)
     return True

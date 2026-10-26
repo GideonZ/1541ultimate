@@ -757,11 +757,14 @@ uint32_t C64_CRT::mdp_eeprom_size(void)
     }
 }
 
-// The name of a store file: the CRT's name with its extension replaced.
+// The name of a store file: the CRT's name with its extension replaced. Only a
+// dot in the last component is an extension: REST passes the whole path as the
+// name, and a dot in a directory above must not cut it short.
 static char *mdp_store_name(const char *filename, const char *ext)
 {
     int len = strlen(filename);
-    const char *dot = strrchr(filename, '.');
+    const char *base = strrchr(filename, '/');
+    const char *dot = strrchr(base ? base + 1 : filename, '.');
     if (dot) {
         len = dot - filename;
     }
@@ -809,41 +812,158 @@ void C64_CRT::load_mdp_store(const char *path, const char *filename)
     }
 }
 
-static FRESULT mdp_write_part(const char *path, const char *filename, const char *ext,
-                              const uint8_t *src, uint32_t size)
+// The path and name as one pathname, for the calls that take only that.
+static void mdp_pathname(const char *path, const char *name, mstring &full)
+{
+    full = path;
+    int len = strlen(path);
+    if (len && (path[len - 1] != '/')) {
+        full += '/';
+    }
+    full += name;
+}
+
+static bool mdp_file_exists(const char *path, const char *name)
 {
     FileManager *fm = FileManager::getFileManager();
-    char *name = mdp_store_name(filename, ext);
+    File *f = 0;
+    if (fm->fopen(path, name, FA_READ, &f) != FR_OK) {
+        return false;
+    }
+    fm->fclose(f);
+    return true;
+}
+
+// The store files a save would write, as a list of extensions and sizes. A part
+// the revision does not fit has no file.
+struct mdp_part {
+    const char *ext;
+    const char *temp_ext;
+    uint32_t offset;
+    uint32_t size;
+};
+
+static int mdp_parts(bool has_sram, uint32_t eeprom_size, mdp_part *parts)
+{
+    int n = 0;
+    if (has_sram) {
+        parts[n++] = { MDPLUS_SRAM_EXT, MDPLUS_SRAM_EXT ".tmp", MDPLUS_SRAM_OFFSET, MDPLUS_SRAM_SIZE };
+    }
+    if (eeprom_size) {
+        parts[n++] = { MDPLUS_EEPROM_EXT, MDPLUS_EEPROM_EXT ".tmp", 0, eeprom_size };
+    }
+    return n;
+}
+
+static FRESULT mdp_write_file(const char *path, const char *name, const uint8_t *src, uint32_t size)
+{
+    FileManager *fm = FileManager::getFileManager();
     File *f = 0;
     FRESULT res = fm->fopen(path, name, FA_WRITE | FA_CREATE_ALWAYS, &f);
     if (res == FR_OK) {
         uint32_t written = 0;
         res = f->write(src, size, &written);
+        if ((res == FR_OK) && (written != size)) {
+            res = FR_DISK_FULL;
+        }
         fm->fclose(f);
-        printf("Magic Desk Plus: wrote %s.\n", name);
     }
-    delete[] name;
     return res;
+}
+
+// Whether a save as `filename` would replace store files that are already
+// there, so that the caller can ask before it does.
+bool C64_CRT::store_exists(const char *path, const char *filename)
+{
+    C64_CRT *crt = get_instance();
+    if (!crt->machine || (crt->local_type != CART_MDPLUS)) {
+        return false;
+    }
+    mdp_part parts[2];
+    int n = mdp_parts(crt->mdp_has_sram(), crt->mdp_eeprom_size(), parts);
+    bool found = false;
+    for (int i = 0; i < n; i++) {
+        char *name = mdp_store_name(filename, parts[i].ext);
+        found |= mdp_file_exists(path, name);
+        delete[] name;
+    }
+    return found;
 }
 
 // Write the store of a loaded Magic Desk Plus beside the CRT that Save
 // Cartridge wrote as `filename`, one raw image per part it has. Any other
 // cartridge has nothing to write here.
+//
+// Every part is written to a temporary file first, and the store files are
+// only replaced once all of them were written in full. A save that fails,
+// for want of space or because the medium went away, leaves the previous
+// save as it was rather than a truncated file the next load would discard.
 SubsysResultCode_e C64_CRT::save_store(const char *path, const char *filename)
 {
     C64_CRT *crt = get_instance();
     if (!crt->machine || (crt->local_type != CART_MDPLUS)) {
         return SSRET_OK;
     }
+    FileManager *fm = FileManager::getFileManager();
     const uint8_t *store = (const uint8_t *)REU_MEMORY_BASE;
+    mdp_part parts[2];
+    int n = mdp_parts(crt->mdp_has_sram(), crt->mdp_eeprom_size(), parts);
+
     FRESULT res = FR_OK;
-    if (crt->mdp_has_sram()) {
-        res = mdp_write_part(path, filename, MDPLUS_SRAM_EXT, store + MDPLUS_SRAM_OFFSET, MDPLUS_SRAM_SIZE);
+    int written = 0;
+    for (; (written < n) && (res == FR_OK); written++) {
+        char *temp = mdp_store_name(filename, parts[written].temp_ext);
+        res = mdp_write_file(path, temp, store + parts[written].offset, parts[written].size);
+        delete[] temp;
     }
-    if ((res == FR_OK) && crt->mdp_eeprom_size()) {
-        res = mdp_write_part(path, filename, MDPLUS_EEPROM_EXT, store, crt->mdp_eeprom_size());
+    for (int i = 0; i < n; i++) {
+        char *temp = mdp_store_name(filename, parts[i].temp_ext);
+        char *name = mdp_store_name(filename, parts[i].ext);
+        mstring temp_path;
+        mdp_pathname(path, temp, temp_path);
+        if (res != FR_OK) {
+            if (i < written) {
+                fm->delete_file(temp_path.c_str());
+            }
+        } else {
+            mstring name_path;
+            mdp_pathname(path, name, name_path);
+            fm->delete_file(name_path.c_str()); // the rename does not replace a file
+            res = fm->rename(temp_path.c_str(), name_path.c_str());
+            printf("Magic Desk Plus: wrote %s: %s\n", name, FileSystem::get_error_string(res));
+        }
+        delete[] temp;
+        delete[] name;
+    }
+    if (res != FR_OK) {
+        printf("Magic Desk Plus: saving the store failed: %s\n", FileSystem::get_error_string(res));
     }
     return (res == FR_OK) ? SSRET_OK : SSRET_DISK_ERROR;
+}
+
+// Copy the store files beside a CRT along with it, for a cartridge flashed as
+// the default one under a name of its own. A store file the source does not
+// have is removed at the destination, so that a cartridge flashed under a name
+// used before does not start with someone else's save.
+FRESULT C64_CRT::copy_store(const char *path, const char *filename, const char *dest, const char *dest_filename)
+{
+    FileManager *fm = FileManager::getFileManager();
+    const char *exts[] = { MDPLUS_SRAM_EXT, MDPLUS_EEPROM_EXT };
+    FRESULT res = FR_OK;
+    for (int i = 0; (i < 2) && (res == FR_OK); i++) {
+        char *name = mdp_store_name(filename, exts[i]);
+        char *dest_name = mdp_store_name(dest_filename, exts[i]);
+        if (mdp_file_exists(path, name)) {
+            res = fm->fcopy(path, name, dest, dest_name, true);
+        } else {
+            mstring dest_path;
+            mdp_pathname(dest, dest_name, dest_path);
+            fm->delete_file(dest_path.c_str());
+        }
+        delete[] name;
+        delete[] dest_name;
+    }
+    return res;
 }
 
 SubsysResultCode_e C64_CRT::save_crt(File *fo)

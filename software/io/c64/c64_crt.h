@@ -134,6 +134,8 @@ public:
     static SubsysResultCode_e load_crt(const char *path, const char *filename, cart_def *def, uint8_t *mem);
     static SubsysResultCode_e save_crt(File *f);
     static SubsysResultCode_e save_store(const char *path, const char *filename);
+    static bool store_exists(const char *path, const char *filename);
+    static FRESULT copy_store(const char *path, const char *filename, const char *dest, const char *dest_filename);
     static int clear_crt(void);
     static bool is_valid(void);
 
