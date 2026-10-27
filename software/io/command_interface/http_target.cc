@@ -32,19 +32,26 @@ HttpTarget::HttpTarget(int id)
 
 HttpTarget::~HttpTarget()
 {
+    release_all();
+    delete[] data_message.message;
+    delete[] status_message.message;
+}
+
+void HttpTarget::release_all()
+{
+    reset_responses();
     for(int i=0; i<MAX_HTTP_HANDLES; i++) {
         if (headers[i]) {
             delete headers[i];
+            headers[i] = NULL;
         }
     }
     for(int i=0; i<MAX_HTTP_HANDLES; i++) {
         if (bodies[i]) {
             delete bodies[i];
+            bodies[i] = NULL;
         }
     }
-    delete[] data_message.message;
-    delete[] status_message.message;
-    reset_responses();
 }
 
 void HttpTarget::reset_responses()
@@ -313,10 +320,7 @@ void HttpTarget::parse_command(Message *command, Message **reply, Message **stat
             break;
 
         case HTTP_CMD_FREE_ALL:
-            for(int i=0; i<MAX_HTTP_HANDLES; i++) {
-                if (headers[i]) { delete headers[i]; headers[i] = NULL; }
-                if (bodies[i])  { delete bodies[i];  bodies[i]  = NULL; }
-            }
+            release_all();
             *status = &c_status_http_ok;
             break;
 
@@ -1027,6 +1031,11 @@ void HttpTarget::abort(int a)
 {
     // Reset any pending exchange state
     reset_responses();
+}
+
+void HttpTarget::c64_reset(void)
+{
+    release_all();
 }
 
 int HttpTarget::create_body_from_json(char *body, int size, uint8_t *handle)
