@@ -112,7 +112,7 @@ BASIC_CODE = `!- Welcome to Ultimate BASIC Editor / Tokenizer
 
 !- colour setup
 91 print "{ct 1}black","{ct 2}white","{ct 3}red","{ct 4}cyan"
-92 print "{black}ctrl+1","{white}ctrl+2","{red}ctrl+3","{cyan}ctrl+4
+92 print "{black}ctrl+1","{white}ctrl+2","{red}ctrl+3","{cyan}ctrl+4"
 93 print "{white}"
 
 !- program end
