@@ -19,7 +19,8 @@
 // Both are idempotent: asking for the state the radio is in already does nothing and
 // returns 0. Otherwise they return 0 or the esp_err_t of the start or stop, and a failed
 // call leaves the state as it was. Called by one task at a time (the boot, then the
-// connector).
+// connector). They also return the radio_entropy.h gate's RE_ERR_BUSY or
+// RE_ERR_RECURSION, and change nothing then.
 int radio_start(void);
 int radio_stop(void);
 

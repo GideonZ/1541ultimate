@@ -37,6 +37,8 @@ INC_u64ctrl := -I$(PATH_SW)/wifi/common
 HOSTTEST := $(PATH_SW)/io/usb/tests
 CASES    := $(wildcard module_*_test.cpp)
 RADIO    := $(wildcard radio_*test.cpp)
+# radio_entropy.h includes rpc_calls.h of raw_u64, which needs lwIP's headers; the wifi_random test stubs them out
+RADIO_INC := -I$(PATH_SW)/wifi/common -I$(PATH_SW)/wifi/raw_u64/main -I$(PATH_SW)/test/wifi_random
 COMMON   := -g -O0 -Wall -Wno-unused-parameter -D_FORTIFY_SOURCE=0
 CFLAGS   := -std=gnu11 $(COMMON) -Wno-unused-variable -Wno-unused-function
 CXXFLAGS := -std=c++14 $(COMMON) -I$(HOSTTEST) -I. -Istub
@@ -154,9 +156,9 @@ run:
 
 radio:
 	@mkdir -p $(OUT)/radio
-	$(CC) -std=c99 $(COMMON) -I$(PATH_SW)/wifi/common -c -o $(OUT)/radio/wifi_radio.o $(PATH_SW)/wifi/common/wifi_radio.c
+	$(CC) -std=c99 $(COMMON) $(RADIO_INC) -c -o $(OUT)/radio/wifi_radio.o $(PATH_SW)/wifi/common/wifi_radio.c
 	$(CC) -std=c99 $(COMMON) -I$(PATH_SW)/wifi/common -c -o $(OUT)/radio/radio_boot.o $(PATH_SW)/wifi/common/radio_boot.c
-	$(CXX) $(CXXFLAGS) -I$(PATH_SW)/wifi/common -o $(OUT)/radio/wifi_radio_test $(RADIO) $(HOSTTEST)/host_test_main.cpp \
+	$(CXX) $(CXXFLAGS) $(RADIO_INC) -o $(OUT)/radio/wifi_radio_test $(RADIO) $(HOSTTEST)/host_test_main.cpp \
 	    $(OUT)/radio/wifi_radio.o $(OUT)/radio/radio_boot.o -lpthread
 	@echo "== radio"; $(OUT)/radio/wifi_radio_test
 

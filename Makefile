@@ -86,6 +86,7 @@ host_tests:
 	@$(MAKE) -C software/wifi/tests
 	@$(MAKE) -C target/pc/linux/recoveryimage test
 	@$(MAKE) -C target/pc/linux/recoveryurl test
+	@$(MAKE) -C target/pc/linux/radioentropy test
 	@$(MAKE) -C target/pc/linux/wifirandom test
 	@$(MAKE) -C target/pc/linux/wifidedicated test
 

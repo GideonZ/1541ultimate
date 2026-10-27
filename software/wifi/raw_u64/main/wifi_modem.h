@@ -2,6 +2,7 @@
 #define WIFI_MODEM_H
 
 #include "rpc_calls.h"
+#include "radio_entropy.h"
 
 extern QueueHandle_t connect_commands;
 extern SemaphoreHandle_t connect_semaphore;
@@ -30,7 +31,5 @@ void disable_hook();
 uint8_t wifi_get_connection();
 void wifi_report_disabled(void);
 void wifi_note_identify(void);
-entropy_source_t entropy_source(void);
-uint32_t entropy_epoch(void);
 
 #endif

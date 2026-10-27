@@ -251,36 +251,12 @@ void cmd_clear_aps(command_buf_t *buf)
     my_uart_transmit_packet(UART_CHAN, buf);
 }
 
+_Static_assert(RPC_ERR_ENTROPY_BUSY == ESP_ERR_TIMEOUT, "RPC_ERR_ENTROPY_BUSY is an esp_err_t");
+
 void cmd_get_random(command_buf_t *buf)
 {
-    rpc_get_random_req *req = (rpc_get_random_req *)buf->data;
-    rpc_get_random_resp *resp = (rpc_get_random_resp *)buf->data;
-
-    // The response overlays the request, so take what we need from it first
-    uint16_t length = (buf->size >= (int)sizeof(rpc_get_random_req)) ? req->length : 0;
-    uint32_t epoch = entropy_epoch();
-    entropy_source_t source = entropy_source();
-
-    // Clear the fixed part, padding included, so no stale buffer bytes go out
-    memset(&resp->esp_err, 0, sizeof(rpc_get_random_resp) - sizeof(rpc_header_t));
-    resp->source = source;
-    if ((length == 0) || (length > RANDOM_MAX_BYTES)) {
-        resp->esp_err = ESP_ERR_INVALID_ARG;
-    } else if (source == ENTROPY_NONE) {
-        resp->esp_err = ESP_ERR_INVALID_STATE;
-    } else {
-        esp_fill_random(resp->data, length);
-        // This module stops the radio on request: bytes drawn while it stopped, even if
-        // it has started again, are not sent
-        if ((entropy_source() == ENTROPY_NONE) || (entropy_epoch() != epoch)) {
-            resp->source = ENTROPY_NONE;
-            resp->esp_err = ESP_ERR_INVALID_STATE;
-        } else {
-            resp->esp_err = ESP_OK;
-            resp->length = length;
-        }
-    }
-    buf->size = sizeof(rpc_get_random_resp) + resp->length;
+    buf->size = radio_entropy_serve_get_random(buf->data, buf->size, (void (*)(void *, size_t))esp_fill_random);
+    // The gate is released: the answer is sent without it
     my_uart_transmit_packet(UART_CHAN, buf);
 }
 

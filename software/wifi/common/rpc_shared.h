@@ -32,7 +32,13 @@
 typedef enum {
     ENTROPY_NONE  = 0, // RNG not fed by a live entropy source; no bytes are returned
     ENTROPY_RADIO = 1, // Wi-Fi is running, so the RNG gives true random numbers
+    ENTROPY_ADC   = 2, // Wi-Fi is off, and the bootloader_random SAR ADC source feeds the RNG
 } entropy_source_t;
+
+// esp_err of a GET_RANDOM answer that was not given because a radio change, or a read of
+// the voltages, holds the entropy source. Nothing was drawn; asking again is safe. Equal
+// to ESP_ERR_TIMEOUT, which each module asserts.
+#define RPC_ERR_ENTROPY_BUSY 0x107
 
 typedef struct {
     rpc_header_t hdr;

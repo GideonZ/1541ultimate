@@ -28,7 +28,7 @@ void send_keepalive();
 
 #define IDENT_STRING "ESP32 WiFi Bridge V1.25"
 #define IDENT_MAJOR   1
-// 1.25: CMD_GET_RANDOM.
+// 1.25: CMD_GET_RANDOM, served with the radio off too, from the SAR ADC source.
 // 1.24: starts and stops the radio through the code it shares with the U64 module.
 // 1.23: a Disable or Autoconnect during the AP list walks is no longer lost, Enable
 // reconnects after a Disconnect, a Scan while Disabled is refused and a Connect leaves

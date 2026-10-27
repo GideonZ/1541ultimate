@@ -28,7 +28,7 @@ void send_keepalive();
 
 #define IDENT_STRING "ESP32 WiFi Bridge V1.10"
 #define IDENT_MAJOR   1
-// 1.10: CMD_GET_RANDOM.
+// 1.10: CMD_GET_RANDOM, served with the radio off too, from the SAR ADC source.
 // 1.9: turns its radio off and on when asked (CMD_WIFI_DISABLE / CMD_WIFI_ENABLE) and
 // starts with it off until the Ultimate sends Enable or Autoconnect (or, without the
 // switch, asks for the connection state); after a restart of its own it puts the radio

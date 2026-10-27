@@ -72,19 +72,6 @@ void wifi_note_user_disconnect(void)
     user_disconnected = true;
 }
 
-/* What feeds the RNG: esp_fill_random() is only truly random while the radio runs
- * (esp_random.h). The radio counts as off from the moment a stop begins, and the epoch
- * counts the stops, so that a stop and a start within one draw are noticed. */
-entropy_source_t entropy_source(void)
-{
-    return radio_is_on() ? ENTROPY_RADIO : ENTROPY_NONE;
-}
-
-uint32_t entropy_epoch(void)
-{
-    return radio_epoch();
-}
-
 // Allocate some buffers to work with
 command_buf_context_t work_buffers;
 
@@ -1108,6 +1095,8 @@ void setup_modem()
 
     ESP_LOGI(TAG, "wifi_init...");
     wifi_init();
+    radio_entropy_init();
+    radio_entropy_start_poll_task();
     ESP_LOGI(TAG, "start wifi connector...");
     // A restart that neither a power-up nor the Ultimate caused (the Ultimate drives the
     // module's enable pin, which reads as a power-up or an external reset)
