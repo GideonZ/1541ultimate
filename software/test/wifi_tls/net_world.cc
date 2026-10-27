@@ -833,6 +833,13 @@ int wifi_tls_step(uint8_t slot, uint16_t tag, wifi_tls_step_t *st, uint32_t time
         if (s.terminal && s.pt.empty()) {
             if (s.terminal == 'C') {
                 s.state = WIFI_TLS_CLOSED;
+                // The engine answers the peer's close_notify with ours, in the same step
+                bytes notify = record('C', 0);
+                if (ct + notify.size() <= st->ct_out_room) {
+                    memcpy(st->ct_out + ct, notify.data(), notify.size());
+                    ct += notify.size();
+                    st->ct_out_len = ct;
+                }
             } else if (pt == 0) {
                 s.state = WIFI_TLS_FAILED;
                 if (s.terminal == 'A') {

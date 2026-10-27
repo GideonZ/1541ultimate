@@ -53,6 +53,8 @@ ACCEPT_TIMEOUT = 60.0
 # took about 250 s to read S13's 16 KB record), yet still bound every wait;
 # TlsServer.close() ends whatever is still open.
 CONN_TIMEOUT = 600.0
+# How long the server waits for the client's answer to its close_notify.
+NOTIFY_REPLY_WAIT = 120.0
 
 
 def payload(seed: int, length: int) -> bytes:
@@ -236,12 +238,17 @@ class ConnLog:
     # How the client ended it: "close_notify", "fin", "reset", "open" (still
     # open when the server gave up), or "handshake" (it never completed).
     peer_end: str = "open"
+    # After the server's own close_notify ("close_notify" mode): whether the
+    # client answered with one before it closed (True), or ended without it
+    # (False). None when the server did not close that way.
+    notify_reply: bool | None = None
     error: str | None = None
     done: threading.Event = field(default_factory=threading.Event)
 
     def as_dict(self) -> dict:
         return {"peer": self.peer, "sni": self.sni, "version": self.version,
                 "cipher": self.cipher, "received": len(self.received),
+                "notify_reply": self.notify_reply,
                 "received_sha256": hashlib.sha256(self.received).hexdigest(),
                 "sent": self.sent, "peer_end": self.peer_end, "error": self.error}
 
@@ -349,10 +356,14 @@ class TlsServer:
                 # Let the device's reads be what ends the stream.
                 time.sleep(0.5)
                 if b.then == "close_notify":
+                    # SSL_shutdown sends ours and waits for the peer's. It returns only when the client's
+                    # close_notify arrived; a bare FIN or reset raises instead.
+                    tls.settimeout(NOTIFY_REPLY_WAIT)
                     try:
-                        tls.unwrap()   # close_notify, then the peer's, on the same socket
+                        tls.unwrap()
+                        log.notify_reply = True
                     except (ssl.SSLError, OSError):
-                        pass
+                        log.notify_reply = False
                 # SSLSocket.shutdown drops the TLS layer first, so after
                 # "fin" this is a bare FIN with no close_notify ahead of it.
                 tls.shutdown(socket.SHUT_WR)

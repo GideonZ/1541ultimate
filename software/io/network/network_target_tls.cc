@@ -1367,8 +1367,9 @@ void NetworkTarget :: tls_read(TlsSocket *e, uint32_t length, Message **reply, M
                 if (error < 0) {
                     break;
                 }
-                // After a receive error the peer is gone; its alert need not arrive.
-                if (error && !e->rx_err && (st.state != WIFI_TLS_FAILED)) {
+                // After a receive error the peer is gone; its alert need not arrive. Nor need our close_notify
+                // after the peer's: it may have closed the TCP connection behind it.
+                if (error && !e->rx_err && (st.state != WIFI_TLS_FAILED) && (st.state != WIFI_TLS_CLOSED)) {
                     char text[NET_TLS_STICKY_MAX];
                     put_dec(put_text(text, "12,SEND ERROR: "), error);
                     tls_fail(e, text);

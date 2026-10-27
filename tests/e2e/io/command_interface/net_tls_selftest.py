@@ -675,6 +675,8 @@ def main() -> int:
                               ("info-ff-claims", ["S0", "S19e", "S19e2b"])):
             outcomes = world.run(flavour, sids)
             ok &= judge_flavour(flavour, outcomes, {sid: "FAIL" for sid in sids[1:]})
+        outcomes = world.run("no-notify-reply", ["S0", "S6"])
+        ok &= judge_flavour("no-notify-reply", outcomes, {"S6": "FAIL"})
         outcomes = world.run("abort-shortens", ["S0", "S19e"])
         ok &= judge_flavour("abort-shortens", outcomes, {"S19e": "FAIL"})
         if not args.quick:

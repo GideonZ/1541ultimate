@@ -766,6 +766,13 @@ def s6_peer_close(ctx: Ctx, then: str = "close_notify") -> None:
     with check("the handle is GONE: a CLOSE answers 12,ERROR ON CLOSE: 9; INFO [2] = 0"):
         ctx.expect(ctx.close(reply.handle), STATUS_CLOSE_UNOWNED, "CLOSE after the end")
         ctx.entries(0, "after the end")
+    if then == "close_notify":
+        with check("the server saw OUR close_notify in answer to its own (RFC 8446 6.1, RFC 5246 7.2.1)"):
+            log = one_connection(server)
+            ctx.note("conn", log.as_dict())
+            if log.notify_reply is not True:
+                raise Failure(f"the client ended without answering close_notify (notify_reply {log.notify_reply}, "
+                              f"peer_end {log.peer_end})")
 
 
 def s7_truncation(ctx: Ctx) -> None:

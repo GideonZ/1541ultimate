@@ -692,6 +692,9 @@ int tls_step(uint8_t slot, uint16_t tag, uint8_t flags, const uint8_t *ct_in, in
             // connection closed, because tls_bio_recv() never reports end of input.
             continue;
         } else if (n == MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY) {
+            // RFC 8446 6.1 / RFC 5246 7.2.1: answer the peer's close_notify with our own. Best effort, as in
+            // tls_close(); it lands in out_buf and goes out with this step (TLS_ALERT_ROOM is kept free for it).
+            mbedtls_ssl_close_notify(&s->ssl);
             s->stats.state = TLS_STATE_CLOSED;
         } else {
             ret = n;

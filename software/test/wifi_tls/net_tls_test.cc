@@ -854,10 +854,20 @@ static void test_read(void)
     bytes got = read_all(h, 1472, &last);
     check(got == expected(5, 3000), "read: all 3000 B of one record, in order (%d)", (int)got.size());
     check(last == "01,CONNECTION CLOSED BY HOST" && !sock(h).open, "read: then $0000 + 01, handle GONE (S6)");
-    check(!sock(h).srv.saw_notify, "read: no close_notify of ours after the peer's (module freed it)");
+    check(sock(h).srv.saw_notify, "read: the peer's close_notify is answered with ours (RFC 8446 6.1)");
     check(close_cmd(h).status == "12,ERROR ON CLOSE: " + num(EBADF), "read: CLOSE afterwards -> 12,…: 9");
     r = read_cmd(h, 10);
     check(header(r) == 0xFFFF && r.status == "02,NO DATA: " + num(EBADF), "read: READ afterwards -> 02,NO DATA: 9");
+
+    // The peer closed TCP behind its close_notify: our answer finds a dead socket, which is not an error.
+    fresh();
+    h = open_ok();
+    server_push(h, EV_DATA, cat(record('D', 100, 7), record('C', 0)));
+    sock(h).srv.send_err_from = sock(h).send_calls + 1;
+    sock(h).srv.send_err_late = EPIPE;
+    got = read_all(h, 1472, &last);
+    check(got == expected(7, 100) && last == "01,CONNECTION CLOSED BY HOST",
+          "read: our close_notify refused by a closed peer -> all bytes, then 01 (%s)", last.c_str());
 
     fresh();
     h = open_ok();

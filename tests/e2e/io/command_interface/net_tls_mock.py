@@ -16,6 +16,7 @@ the self-test can show that scenario turning red:
   "release-noop"        $25 never closes anything (S19e must catch it)
   "group-zero"          the OPEN reply's group is 0 (S2 must catch it)
   "info-ff-claims"      `03 23 FF` claims every session (S19e2b must catch it)
+  "no-notify-reply"     the peer's close_notify is not answered with ours (S6 must catch it)
   "abort-shortens"      an ABORT ends PROCESSING early: bit 2 clears at the ABORT,
                         while the open still completes behind it (S19e must catch it)
 
@@ -46,7 +47,7 @@ except ImportError:  # pragma: no cover
     x509 = None
 
 MUTANTS = ("bundle-accepts-all", "release-noop", "group-zero", "info-ff-claims",
-           "abort-shortens")
+           "abort-shortens", "no-notify-reply")
 FLAVOURS = ("tls", "stock", *MUTANTS)
 MAX_TLS = 2
 
@@ -261,6 +262,12 @@ class MockDevice(Link):
             return b"\x00\x00", entry.sticky
         if not data:
             self.handles.pop(handle, None)
+            if entry.kind == "tls" and self.flavour != "no-notify-reply":
+                try:
+                    entry.sock.settimeout(0.5)
+                    entry.sock.unwrap()   # the answer to the peer's close_notify
+                except (OSError, ValueError, ssl.SSLError):
+                    pass
             entry.sock.close()
             return b"\x00\x00", status("01,CONNECTION CLOSED BY HOST")
         return len(data).to_bytes(2, "little") + data, STATUS_OK
