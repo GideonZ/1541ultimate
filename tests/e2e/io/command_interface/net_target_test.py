@@ -179,8 +179,20 @@ RESET_CYCLES = 3
 
 # The /v1/info products that draw GET_RANDOM bytes on the ESP32 (U64 == 1 in
 # product.cc), matched exactly since "Ultimate 64-II" starts with "Ultimate 64".
-# Every other product answers 87, even with a wifi_mac: its ESP32 runs other code.
 U64_MK1_PRODUCTS = ("Ultimate 64", "Ultimate 64 Elite")
+# U64 == 2, the Ultimate 64 Elite II and the C64 Ultimate. It draws them too, but
+# has no "WiFi Enabled" setting: its radio is on from boot and the menu's Enable
+# and Disable are actions. Two names, because the name is not the build's:
+#  - "Ultimate 64-II" is the only one this source tree has (product_name[6],
+#    product.cc:18, chosen by getProductId() for U64 == 2 at product.cc:96-97). The
+#    Elite II reports it, and so does a C64 Ultimate running a build of this tree.
+#  - "C64 Ultimate" is what the C64 Ultimate's release firmware reports in
+#    /v1/info (read from a C64 Ultimate on 1.1.0, 2026-10-15). Nothing in this tree
+#    produces it; it is listed so that such a unit is not taken to be a product
+#    that must refuse.
+U64_MK2_PRODUCTS = ("Ultimate 64-II", "C64 Ultimate")
+# Every other product answers 87, even with a wifi_mac: its ESP32 runs other code.
+GET_RANDOM_PRODUCTS = U64_MK1_PRODUCTS + U64_MK2_PRODUCTS
 # The setting that starts the module there, by the store's exact name (the answer
 # is keyed by it). Set for the run; writing Disabled back restores the setting but
 # does not stop the module (network_esp32.cc, effectuate_settings).
