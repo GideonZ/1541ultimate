@@ -81,7 +81,7 @@ extern uint16_t sequence_nr;
 // Not a reply slot (0 to WIFI_REPLY_SLOTS - 1), not 0xFF (no reply wanted), and not 0xFD to 0xFF, which
 // the HTTPS provider channels of CMD_IDENTIFY use (#936)
 #define WIFI_DEDICATED_THREAD 0xFC
-#if U64 == 1
+#if U64 >= 1
 typedef struct {
     command_buf_t *buf;
     uint32_t generation;

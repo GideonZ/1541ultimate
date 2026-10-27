@@ -8,8 +8,9 @@
 
 // Fills buf with len bytes from the module's hardware random number generator
 // and returns 0, or returns one of the codes below and leaves buf untouched.
-// U64 only.
+// U64 == 1 and U64 == 2 (the Ultimate 64 Elite II and the C64 Ultimate) only.
 int wifi_get_random(uint8_t *buf, uint16_t len);
+#define WIFI_RANDOM_MAX_BYTES 512 // the module's RANDOM_MAX_BYTES, asserted in wifi_random.cc
 #define WIFI_RANDOM_BUSY      1 // no answer in time; the module may be busy
 #define WIFI_RANDOM_REFUSED   2 // the module refused, or had no entropy source
 #define WIFI_RANDOM_INVALID   3 // the answer is not a well formed reply

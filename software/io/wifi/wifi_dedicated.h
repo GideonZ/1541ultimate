@@ -25,7 +25,7 @@ typedef struct {
     void *context;
 } dedicated_call_t;
 
-// Sends one request and waits for its answer. U64 only.
+// Sends one request and waits for its answer. U64 == 1 and U64 == 2 (the Ultimate 64 Elite II and the C64 Ultimate) only.
 int wifi_dedicated_call(const dedicated_call_t *call);
 
 // Whether the module application has been detected. In wifi.cc.

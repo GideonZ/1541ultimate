@@ -1412,7 +1412,7 @@ def read_wifi_setting(device, info) -> object:
     """CFG_WIFI_ENABLED as the device reports it, or None where it has none.
 
     Asked only of the products that can owe bytes: the others either have no
-    such store or, on an Elite II, one whose Wi-Fi items are actions.
+    such store or, on an Ultimate 64-II, one whose Wi-Fi items are actions.
     """
     if info.product not in U64_MK1_PRODUCTS:
         return None
@@ -1439,7 +1439,8 @@ def read_duty(device, wifi_original: dict[str, str]) -> "RandomDuty":
     """What GET_RANDOM owes on this device, from its report.
 
     On an Ultimate 64 or Ultimate 64 Elite "WiFi Enabled" is set first, and its
-    stored value kept in `wifi_original` for the restore. A device that then cannot
+    stored value kept in `wifi_original` for the restore. An Ultimate 64-II has
+    no such setting and is taken as it is, radio on. A device that then cannot
     owe bytes fails this check, and the Failure is passed on for the
     GET_RANDOM scenarios to fail with.
     """
@@ -1453,7 +1454,7 @@ def read_duty(device, wifi_original: dict[str, str]) -> "RandomDuty":
             wifi_original[CFG_WIFI_ENABLED] = str(wifi_setting)
             device.configs.set(CFG_WIFI_CATEGORY, CFG_WIFI_ENABLED, "Enabled")
             wifi_setting = "Enabled"
-        if wifi_setting == "Enabled":
+        if wifi_setting == "Enabled" or info.product in U64_MK2_PRODUCTS:
             info = wait_for_wifi_mac(device, info)
         duty = random_duty(info)
         expected = ("has to hand out bytes" if duty.owed else "has to refuse with 87")
@@ -1474,15 +1475,17 @@ class RandomDuty(NamedTuple):
 def random_duty(info) -> RandomDuty:
     """What a device with "WiFi Enabled" set has to answer to GET_RANDOM.
 
-    Only an Ultimate 64 or Ultimate 64 Elite draws bytes at all, so on any
-    other product a reply with bytes in it came from somewhere else, which
+    Only an Ultimate 64, Ultimate 64 Elite or Ultimate 64-II draws bytes at all,
+    so on any other product a reply with bytes in it came from somewhere else, which
     is the fallback the command must never have. On those two the bytes are
     owed, and one whose module never reported a wifi_mac fails rather than
     skips; otherwise a firmware that always refuses would pass.
     """
-    owed = info.product in U64_MK1_PRODUCTS
+    owed = info.product in GET_RANDOM_PRODUCTS
     if owed and not reports_wifi_mac(info):
-        raise Failure(f"this {info.product} has {CFG_WIFI_ENABLED!r} set but reported no "
+        enabled = (f"has {CFG_WIFI_ENABLED!r} set" if info.product in U64_MK1_PRODUCTS
+                   else "is taken as having its radio on")
+        raise Failure(f"this {info.product} {enabled} but reported no "
                       f"wifi_mac in /v1/info within {WIFI_MAC_SECONDS:g}s, so its WiFi module "
                       f"did not start. Check that the WiFi module is fitted and starts, "
                       f"then run the suite again")
@@ -1506,7 +1509,7 @@ def random_expected(net: Net, duty: RandomDuty) -> bool:
         with check(f"GET_RANDOM on this {duty.product} refuses rather than hand out bytes"):
             raise Failure(f"GET_RANDOM answered {STATUS_OK!r} with {len(probe.data)} bytes on "
                           f"this {duty.product}, which has no source to draw them from: only an "
-                          f"{' or '.join(U64_MK1_PRODUCTS)} does. The only correct answer "
+                          f"{' or '.join(GET_RANDOM_PRODUCTS)} does. The only correct answer "
                           f"here is {STATUS_NO_ENTROPY!r}, with no data")
     if not probe.status_text.startswith(STATUS_NO_ENTROPY_PREFIX):
         return True
@@ -1515,7 +1518,7 @@ def random_expected(net: Net, duty: RandomDuty) -> bool:
             raise Failure(f"expected {STATUS_NO_ENTROPY!r}, got {probe.status_text!r}")
     check_start("GET_RANDOM hands out random bytes")
     check_skip(f"GET_RANDOM answered {probe.status_text[:2].decode()} on a device that owes "
-               f"no bytes: only an {' or '.join(U64_MK1_PRODUCTS)} serves them")
+               f"no bytes: only an {' or '.join(GET_RANDOM_PRODUCTS)} serves them")
     return False
 
 

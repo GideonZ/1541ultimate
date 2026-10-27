@@ -45,7 +45,8 @@
 #define NET_FIRST_BLOCK_PAYLOAD (NET_MAX_REPLY_BLOCK - 2)
 
 // The most random bytes GET_RANDOM returns at once, which is what the WiFi
-// module hands out per request (RANDOM_MAX_BYTES in its rpc_calls.h).
+// module hands out per request (RANDOM_MAX_BYTES in software/wifi/common/rpc_shared.h;
+// network_target.cc and wifi_random.cc assert the three agree).
 #define NET_MAX_RANDOM 512
 
 #if NET_MAX_SOCKET_READ > NET_CMD_BUFSIZE
