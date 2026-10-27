@@ -433,7 +433,7 @@ void BrowsableWifiAP :: fetch_context_items(IndexedList<Action *>&items)
 
 SubsysResultCode_e BrowsableWifiAP :: connect_ap(SubsysCommand *cmd)
 {
-    char password[64] = { 0 };
+    char password[65] = { 0 }; // string_box takes 64 characters plus the terminator
     BrowsableWifiAP *bap = (BrowsableWifiAP *)cmd->functionID;
     if (bap->auth) {
         if(cmd->user_interface) {
