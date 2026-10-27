@@ -419,8 +419,8 @@ esp_err_t my_uart_init(command_buf_context_t *buffers, uint8_t uart_num)
     const uart_intr_config_t interrupt_config = {
             .intr_enable_mask  = UART_INTR_RXFIFO_TOUT | UART_INTR_RXFIFO_FULL,
             .rx_timeout_thresh = 2,
-            .txfifo_empty_intr_thresh = 10,
-            .rxfifo_full_thresh = 120,
+            .txfifo_empty_intr_thresh = 64,
+            .rxfifo_full_thresh = 64,
     };
 
     const uart_config_t uart_config = {
