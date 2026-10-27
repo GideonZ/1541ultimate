@@ -98,7 +98,6 @@ architecture structural of mm_drive_cpu is
     signal cpu_wdata        : std_logic_vector(7 downto 0);
     signal cpu_rdata        : std_logic_vector(7 downto 0);
     signal cpu_addr         : std_logic_vector(16 downto 0);
-    signal cpu_pc           : std_logic_vector(15 downto 0);
     signal cpu_irqn         : std_logic;
     signal ext_rdata        : std_logic_vector(7 downto 0) := X"00";
 
@@ -241,7 +240,6 @@ begin
         cpu_wdata   => cpu_wdata,
         cpu_rdata   => cpu_rdata,
         cpu_addr    => cpu_addr,
-        cpu_pc      => cpu_pc,
 
         IRQn        => cpu_irqn, -- IRQ interrupt (level sensitive)
         NMIn        => '1',
@@ -409,9 +407,7 @@ begin
 
         io_req       => io_req,
         io_resp      => io_resp,
-        io_irq       => io_irq,
-
-        cpu_pc       => cpu_pc
+        io_irq       => io_irq
     );
 
     cpu_clk_en <= falling;

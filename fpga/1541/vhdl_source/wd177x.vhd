@@ -88,10 +88,7 @@ port (
     -- I/O interface from application CPU
     io_req          : in  t_io_req;
     io_resp         : out t_io_resp;
-    io_irq          : out std_logic;
-
-    -- Debug: the drive CPU's program counter, readable by the application
-    cpu_pc          : in  std_logic_vector(15 downto 0) := (others => '0') );
+    io_irq          : out std_logic );
 
 end entity;
 
@@ -140,8 +137,6 @@ architecture behavioral of wd177x is
     signal write_delay_cnt      : unsigned(7 downto 0);
     signal ack_writes           : std_logic := '0';
     signal write_ack            : std_logic := '0';
-    signal write_ack_lost       : std_logic := '0';
-    signal cpu_pc_high          : std_logic_vector(7 downto 0) := X"00";
     
     -- Stepper
     signal goto_track       : unsigned(6 downto 0);
@@ -269,12 +264,11 @@ begin
                 -- Acknowledges a finished write. It only counts while the block
                 -- waits for one, so a late acknowledge, after the fallback has
                 -- already ended the command, cannot touch the drive CPU's next
-                -- command. Bit 2 reports lost data with it. Older cores ignore
-                -- this address.
+                -- command. A write that failed is reported through register 5
+                -- before. Older cores ignore this address.
                 when X"2" =>
                     if dma_state = write_delay then
                         write_ack <= '1';
-                        write_ack_lost <= io_req.data(2);
                     end if;
 
                 when X"4" =>
@@ -334,14 +328,6 @@ begin
                 
                 when X"7" =>
                     io_resp.data(1 downto 0) <= dma_mode;
-
-                -- Debug: the drive CPU's program counter. Reading the low byte
-                -- latches the high byte, so the two belong to the same moment.
-                when X"8" =>
-                    io_resp.data <= cpu_pc(7 downto 0);
-                    cpu_pc_high <= cpu_pc(15 downto 8);
-                when X"9" =>
-                    io_resp.data <= cpu_pc_high;
                                                         
 --                when X"8" =>
 --                    io_resp.data <= std_logic_vector(transfer_addr(7 downto 0));
@@ -434,7 +420,6 @@ begin
                 -- 4 MHz ticks that time the fixed delay.
                 if ack_writes = '1' then
                     if write_ack = '1' then       -- the application acknowledged
-                        st_lost_data <= st_lost_data or write_ack_lost;
                         st_busy <= '0';
                         dma_state <= idle;
                     elsif st_busy = '0' then      -- busy was cleared directly
@@ -475,7 +460,6 @@ begin
                 -- after the application has set it up, and again with every
                 -- reset of the computer.
                 write_ack <= '0';
-                write_ack_lost <= '0';
             end if;
         end if;
     end process;

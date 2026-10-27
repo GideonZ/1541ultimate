@@ -71,9 +71,15 @@ void WD177x :: init(void)
 // issued since.
 void WD177x :: complete_write(bool stored)
 {
-    // Lost data is the status the WD177x defines for a write it could not
-    // complete. Record not found belongs to the read commands.
-    wd177x->write_ack = stored ? 0 : WD_STATUS_LOST;
+    // A write that could not be stored is reported as record not found, which
+    // a WD177x also sets when it cannot write a sector. Both drive ROMs decode
+    // it. Lost data would be closer, but the 1571 ignores it, and the 1581's
+    // decoder at $CD3F leaves the flags it pushed on the stack when it sees it,
+    // so its RTS returns into the middle of the ROM.
+    if (!stored) {
+        wd177x->status_set = WD_STATUS_RNF;
+    }
+    wd177x->write_ack = 0;
 }
 
 void WD177x :: wait_head_settle(void)

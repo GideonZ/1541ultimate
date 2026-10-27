@@ -2,8 +2,7 @@
 -- Checks how the wd177x block ends a write command: the fixed delay it has
 -- always used, and the acknowledge the application can ask for instead; with
 -- the acknowledge, that a new command clears the status bits it reports, and
--- that the setting survives a drive reset; and the drive CPU's program counter
--- as the application reads it.
+-- that the setting survives a drive reset.
 --------------------------------------------------------------------------------
 library ieee;
 use ieee.std_logic_1164.all;
@@ -33,7 +32,6 @@ architecture tb of tb_wd177x_write_ack is
     signal io_req     : t_io_req := c_io_req_init;
     signal io_resp    : t_io_resp;
     signal io_irq     : std_logic;
-    signal cpu_pc     : std_logic_vector(15 downto 0) := X"0000";
     signal stop       : boolean := false;
 begin
     clock <= not clock after c_clock_period / 2 when not stop else '0';
@@ -97,8 +95,7 @@ begin
         do_track_in  => open,
         io_req       => io_req,
         io_resp      => io_resp,
-        io_irq       => io_irq,
-        cpu_pc       => cpu_pc );
+        io_irq       => io_irq );
 
     process
         -- The drive CPU side
@@ -130,27 +127,15 @@ begin
             io_req.write <= '0';
         end procedure;
 
-        procedure app_read(a : unsigned(3 downto 0); variable d : out std_logic_vector(7 downto 0)) is
-        begin
-            wait until rising_edge(clock);
-            io_req.address <= X"00000" & a;
-            io_req.read <= '1';
-            wait until rising_edge(clock);
-            io_req.read <= '0';
-            wait until rising_edge(clock);
-            d := io_resp.data;
-        end procedure;
-
         -- The application acknowledges a finished write the way the firmware
-        -- does: through register 2, with lost data in bit 2 if it could not
-        -- store it.
-        procedure app_acknowledge(lost : boolean) is
+        -- does: through register 2, after setting record not found through
+        -- register 5 if it could not store it.
+        procedure app_acknowledge(failed : boolean) is
         begin
-            if lost then
-                app_write(X"2", X"04");
-            else
-                app_write(X"2", X"00");
+            if failed then
+                app_write(X"5", X"10");
             end if;
+            app_write(X"2", X"00");
         end procedure;
 
         procedure feed_two_bytes is
@@ -167,8 +152,6 @@ begin
         end procedure;
 
         variable st : std_logic_vector(7 downto 0);
-        variable lo : std_logic_vector(7 downto 0);
-        variable hi : std_logic_vector(7 downto 0);
     begin
         wait for 200 ns;
         reset <= '0';
@@ -196,11 +179,11 @@ begin
         wait for 10 us;
         cpu_status(st);
         assert st(0) = '0' report "case 2: busy should be clear after the acknowledge" severity failure;
-        assert st(2) = '1' report "case 2: lost data should have survived until the drive read it" severity failure;
+        assert st(4) = '1' report "case 2: record not found should have survived until the drive read it" severity failure;
 
         ---------------------------------------------------------------------
         report "case 3: acknowledge asked for but never given, the fallback ends it";
-        app_write(X"4", X"04");          -- clear the lost data bit again
+        app_write(X"4", X"10");          -- clear record not found again
         cpu_write("00", X"F8");
         feed_two_bytes;
         wait for 100 ms;
@@ -233,11 +216,11 @@ begin
         app_acknowledge(true);
         wait for 10 us;
         cpu_status(st);
-        assert st(2) = '1' report "case 5: lost data should be set after the failed write" severity failure;
+        assert st(4) = '1' report "case 5: record not found should be set after the failed write" severity failure;
         cpu_write("00", X"A8");          -- write sector, Type II
         cpu_status(st);
         assert st(0) = '1' report "case 5: busy should be set for the write sector" severity failure;
-        assert st(2) = '0' report "case 5: a Type II command should clear lost data" severity failure;
+        assert st(4) = '0' report "case 5: a Type II command should clear record not found" severity failure;
         app_write(X"7", X"00");          -- the application gives the command up
         app_write(X"4", X"01");
         app_write(X"5", X"18");          -- record not found and CRC error, as a failed read leaves them
@@ -273,15 +256,7 @@ begin
         app_acknowledge(false);
         wait for 10 us;
         cpu_status(st);
-        assert st(0) = '0' and st(2) = '0' report "case 7: the acknowledge should end the write" severity failure;
-
-        ---------------------------------------------------------------------
-        report "case 8: the program counter, both bytes from the moment of the first read";
-        cpu_pc <= X"C544";
-        app_read(X"8", lo);
-        cpu_pc <= X"0300";               -- moves on before the high byte is read
-        app_read(X"9", hi);
-        assert hi & lo = X"C544" report "case 8: read " & to_hstring(hi & lo) & ", expected C544" severity failure;
+        assert st(0) = '0' and st(4) = '0' report "case 7: the acknowledge should end the write" severity failure;
 
         report "all cases passed";
         stop <= true;
