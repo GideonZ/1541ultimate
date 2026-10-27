@@ -1,0 +1,8 @@
+[mapping:u64ctrl_hot]
+archive: libmain.a
+entries:
+    my_uart (noflash)
+    cmd_buffer (noflash)
+    wifi_modem:hacked_recv (noflash)
+    rpc_dispatch:dispatch (noflash)
+    rpc_dispatch:cmd_send_eth_packet (noflash)

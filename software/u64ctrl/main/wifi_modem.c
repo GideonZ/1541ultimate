@@ -1045,6 +1045,18 @@ static void start_connector()
     xTaskCreate(connect_thread, "Connector", 4096, NULL, tskIDLE_PRIORITY + 1, NULL);
 }
 
+static SemaphoreHandle_t uart_init_done;
+static esp_err_t uart_init_result;
+
+// esp_intr_alloc() binds the interrupt to the core it is called on. The UART ISR must not share
+// core 0 with the WiFi task, so the init runs on core 1.
+static void uart_init_task(void *a)
+{
+    uart_init_result = my_uart_init(&work_buffers, UART_NUM_1);
+    xSemaphoreGive(uart_init_done);
+    vTaskDelete(NULL);
+}
+
 void setup_modem()
 {
 	// Initialize NVS
@@ -1069,7 +1081,11 @@ void setup_modem()
 #endif
     ESP_LOGI(TAG, "my_uart_init...");
     // Now install the driver for UART1.  We use our own buffer mechanism and interrupt routine
-    ESP_ERROR_CHECK(my_uart_init(&work_buffers, UART_NUM_1));
+    uart_init_done = xSemaphoreCreateBinary();
+    ESP_ERROR_CHECK(uart_init_done ? ESP_OK : ESP_ERR_NO_MEM);
+    ESP_ERROR_CHECK(xTaskCreatePinnedToCore(uart_init_task, "uart_init", 3072, NULL, tskIDLE_PRIORITY + 2, NULL, 1) == pdPASS ? ESP_OK : ESP_ERR_NO_MEM);
+    xSemaphoreTake(uart_init_done, portMAX_DELAY);
+    ESP_ERROR_CHECK(uart_init_result);
 
     ESP_LOGI(TAG, "wifi_init...");
     wifi_init();
