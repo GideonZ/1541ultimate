@@ -1,9 +1,13 @@
 #include "http_target.h"
 #include "dump_hex.h"
+#include <dirent.h>
 #include <fcntl.h>
+#include <netinet/in.h>
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
+#include <sys/wait.h>
+#include <signal.h>
 
 // these globals will be filled in by the clients
 CommandTarget *command_targets[CMD_IF_MAX_TARGET+1];
@@ -563,8 +567,416 @@ static void run_network_smoke(HttpTarget *target)
     printf("object exchange status: %.*s\n", status->length, status->message);
 }
 
+class LoopbackEndpoint
+{
+    int socket_fd;
+    uint16_t bound_port;
+
+    LoopbackEndpoint(const LoopbackEndpoint&);
+    LoopbackEndpoint& operator=(const LoopbackEndpoint&);
+public:
+    LoopbackEndpoint() : socket_fd(socket(AF_INET, SOCK_STREAM, 0)), bound_port(0)
+    {
+        struct sockaddr_in address = {};
+        address.sin_family = AF_INET;
+        address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        socklen_t length = sizeof(address);
+        if (socket_fd >= 0 && bind(socket_fd, (struct sockaddr *)&address, length) == 0 &&
+            getsockname(socket_fd, (struct sockaddr *)&address, &length) == 0) {
+            bound_port = ntohs(address.sin_port);
+        }
+    }
+
+    ~LoopbackEndpoint()
+    {
+        if (socket_fd >= 0) {
+            close(socket_fd);
+        }
+    }
+
+    uint16_t port() const { return bound_port; }
+    bool start_listening() { return listen(socket_fd, 1) == 0; }
+    int accept_connection() { return accept(socket_fd, NULL, NULL); }
+};
+
+class ResponsePeer
+{
+    LoopbackEndpoint endpoint;
+    pid_t child;
+
+    ResponsePeer(const ResponsePeer&);
+    ResponsePeer& operator=(const ResponsePeer&);
+public:
+    ResponsePeer(const char *response, int response_length = -1) : child(-1)
+    {
+        if (!endpoint.port() || !endpoint.start_listening()) {
+            return;
+        }
+        child = fork();
+        if (child == 0) {
+            alarm(5);
+            int client = endpoint.accept_connection();
+            char request[1024] = {};
+            int used = 0;
+            while (client >= 0 && used < (int)sizeof(request) - 1 &&
+                   !strstr(request, "\r\n\r\n")) {
+                int n = recv(client, request + used, sizeof(request) - 1 - used, 0);
+                if (n <= 0) {
+                    _exit(2);
+                }
+                used += n;
+            }
+            if (client < 0 || !strstr(request, "\r\n\r\n")) {
+                _exit(3);
+            }
+            size_t sent = 0, length = response_length < 0 ? strlen(response) : response_length;
+            while (sent < length) {
+                int n = send(client, response + sent, length - sent, MSG_NOSIGNAL);
+                if (n <= 0) {
+                    _exit(4);
+                }
+                sent += n;
+            }
+            shutdown(client, SHUT_WR);
+            close(client);
+            _exit(0);
+        }
+    }
+
+    ~ResponsePeer()
+    {
+        if (child > 0) {
+            kill(child, SIGKILL);
+            waitpid(child, NULL, 0);
+        }
+    }
+
+    uint16_t port() const { return child > 0 ? endpoint.port() : 0; }
+    bool completed()
+    {
+        if (child <= 0) {
+            return false;
+        }
+        int status;
+        pid_t result = waitpid(child, &status, 0);
+        if (result != child) {
+            return false;
+        }
+        child = -1;
+        return WIFEXITED(status) && WEXITSTATUS(status) == 0;
+    }
+};
+
+static int open_descriptor_count(void)
+{
+    DIR *directory = opendir("/proc/self/fd");
+    if (!directory) {
+        return -1;
+    }
+    int count = 0;
+    struct dirent *entry;
+    while ((entry = readdir(directory)) != NULL) {
+        if (entry->d_name[0] != '.') {
+            count++;
+        }
+    }
+    closedir(directory);
+    return count;
+}
+
+static void expect_descriptor_count(const char *label, int expected)
+{
+    int actual = open_descriptor_count();
+    checks++;
+    if (actual < 0 || actual != expected) {
+        failures++;
+        printf("FAIL %s: expected %d descriptors, got %d\n", label, expected, actual);
+    }
+}
+
+static void test_connect_cleanup(void)
+{
+    // Keep the port bound but not listening: no other process can claim it.
+    LoopbackEndpoint endpoint;
+    int baseline = open_descriptor_count();
+    checks++;
+    if (!endpoint.port() || baseline < 0) {
+        failures++;
+        printf("FAIL connect cleanup: cannot prepare loopback port or count descriptors\n");
+        return;
+    }
+
+    for (int attempt = 0; attempt < 64; ++attempt) {
+        {
+            HttpRequest request;
+            quiet_begin();
+            int result = request.connect_to_server("127.0.0.1", endpoint.port());
+            quiet_end();
+            checks++;
+            if (result != -1) {
+                failures++;
+                printf("FAIL refused connection %d: expected -1, got %d\n", attempt, result);
+            }
+            expect_descriptor_count("refused connection releases socket immediately", baseline);
+        }
+        expect_descriptor_count("failed request destruction leaves no socket", baseline);
+    }
+
+    // A closed descriptor can be reused before request destruction. Keep a new
+    // descriptor alive across that destruction to catch stale socket ownership.
+    int guard_fd = -1;
+    {
+        HttpRequest request;
+        int result = request.connect_to_server("127.0.0.1", endpoint.port());
+        checks++;
+        if (result != -1) {
+            failures++;
+            printf("FAIL descriptor reuse: expected a refused connection\n");
+        }
+        guard_fd = open("/dev/null", O_RDONLY);
+        checks++;
+        if (guard_fd < 0) {
+            failures++;
+            printf("FAIL descriptor reuse: cannot open guard descriptor\n");
+        }
+    }
+    checks++;
+    if (guard_fd < 0 || fcntl(guard_fd, F_GETFD) < 0) {
+        failures++;
+        printf("FAIL failed request destruction closed an unrelated descriptor\n");
+    }
+    if (guard_fd >= 0) {
+        close(guard_fd);
+    }
+    expect_descriptor_count("descriptor reuse leaves no socket", baseline);
+
+    checks++;
+    if (!endpoint.start_listening()) {
+        failures++;
+        printf("FAIL connect cleanup: cannot listen on loopback port\n");
+        return;
+    }
+    {
+        HttpRequest request;
+        quiet_begin();
+        int connected = request.connect_to_server("127.0.0.1", endpoint.port());
+        quiet_end();
+        checks++;
+        if (connected < 0 || fcntl(connected, F_GETFD) < 0) {
+            failures++;
+            printf("FAIL successful connection must retain an open socket\n");
+        }
+        expect_descriptor_count("successful request owns one socket", baseline + 1);
+    }
+    expect_descriptor_count("successful request destruction releases socket", baseline);
+}
+
+static void test_response_completion(HttpTarget *target, int selected)
+{
+    const char *responses[] = {
+        "",
+        "HTTP/1.1 200 OK\r\nContent-Len",
+        "HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nab",
+        "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nab",
+        "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK",
+        "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n",
+    };
+    int baseline = open_descriptor_count();
+    for (unsigned i = 0; i < sizeof(responses) / sizeof(responses[0]); ++i) {
+        if (selected >= 0 && (int)i != selected) {
+            continue;
+        }
+        // Exercise both target-6 exchange forms, followed by a successful recovery.
+        for (int raw = 0; raw <= 1; ++raw) {
+            for (int recovery = 0; recovery <= 1; ++recovery) {
+                const char *response = recovery ?
+                    "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}" : responses[i];
+                {
+                    ResponsePeer peer(response);
+                    checks++;
+                    if (!peer.port()) {
+                        failures++;
+                        printf("FAIL response peer setup\n");
+                        return;
+                    }
+                    run_expect_empty(target, "reset response fixture", &c_cmd_free_all, status_ok);
+                    uint8_t create[128] = { 6, HTTP_CMD_HEADER_CREATE, 1 };
+                    int length = snprintf((char *)create + 3, sizeof(create) - 3,
+                                          "http://127.0.0.1:%u/", peer.port());
+                    Message command = make_msg(create, length + 3);
+                    const uint8_t handle[] = { 0 };
+                    run_expect(target, "create response header", &command, handle, 1, status_ok);
+                    Message *reply, *status;
+                    quiet_begin();
+                    target->parse_command(raw ? &c_exchange_raw : &c_exchange, &reply, &status);
+                    quiet_end();
+                    char label[64];
+                    snprintf(label, sizeof(label), "response case %u raw=%d recovery=%d", i, raw, recovery);
+                    if (!recovery && i < 4) {
+                        expect_empty(label, "reply", reply);
+                        expect_text(label, "status", status, "503 SERVICE UNAVAILABLE");
+                    } else if (raw) {
+                        expect_bytes(label, "body", reply, (const uint8_t *)(recovery ? "{}" : i == 4 ? "OK" : ""),
+                                     recovery || i == 4 ? 2 : 0);
+                        int header_size = strstr(response, "\r\n\r\n") - response + 4;
+                        expect_bytes(label, "status", status, (const uint8_t *)response, header_size);
+                    } else if (recovery) {
+                        const uint8_t handles[] = { 1, 0 };
+                        expect_bytes(label, "handles", reply, handles, sizeof(handles));
+                        expect_text(label, "status", status, "200 OK");
+                    } else {
+                        expect_empty(label, "reply", reply);
+                        expect_text(label, "status", status, "400 NO VALID JSON");
+                    }
+                    expect_last(label, reply, true);
+                    checks++;
+                    if (!peer.completed()) {
+                        failures++;
+                        printf("FAIL %s peer did not finish\n", label);
+                    }
+                    run_expect_empty(target, "release response fixture", &c_cmd_free_all, status_ok);
+                }
+                expect_descriptor_count("response releases sockets", baseline);
+            }
+        }
+    }
+}
+
+static void begin_raw_response(HttpTarget *target, ResponsePeer& peer, Message **reply, Message **status)
+{
+    uint8_t create[128] = { 6, HTTP_CMD_HEADER_CREATE, 1 };
+    int length = snprintf((char *)create + 3, sizeof(create) - 3,
+                          "http://127.0.0.1:%u/", peer.port());
+    Message command = make_msg(create, length + 3);
+    const uint8_t handle[] = { 0 };
+    run_expect(target, "create loopback header", &command, handle, 1, status_ok);
+    quiet_begin();
+    target->parse_command(&c_exchange_raw, reply, status);
+    quiet_end();
+}
+
+static void test_header_boundaries(HttpTarget *target)
+{
+    const int sizes[] = { 32, 894, 895, 896, 1000 };
+    int baseline = open_descriptor_count();
+    for (unsigned i = 0; i < sizeof(sizes) / sizeof(sizes[0]); ++i) {
+        char value[1001];
+        for (int j = 0; j < sizes[i]; ++j) {
+            value[j] = 'a' + j % 26;
+        }
+        value[sizes[i]] = 0;
+        char response[1200], listed[1100];
+        snprintf(response, sizeof(response),
+                 "HTTP/1.1 200 OK\r\nX-Long: %s\r\nContent-Length: 2\r\n\r\n{}", value);
+        {
+            ResponsePeer peer(response);
+            checks++;
+            if (!peer.port()) {
+                failures++;
+                printf("FAIL header boundary peer setup\n");
+                return;
+            }
+            run_expect_empty(target, "reset header fixture", &c_cmd_free_all, status_ok);
+            uint8_t create[128] = { 6, HTTP_CMD_HEADER_CREATE, 1 };
+            int length = snprintf((char *)create + 3, sizeof(create) - 3,
+                                  "http://127.0.0.1:%u/", peer.port());
+            Message command = make_msg(create, length + 3);
+            const uint8_t handle[] = { 0 }, handles[] = { 1, 0 };
+            run_expect(target, "create header fixture", &command, handle, 1, status_ok);
+            run_expect(target, "exchange header fixture", &c_exchange, handles, 2, "200 OK");
+
+            uint8_t query[] = { 6, HTTP_CMD_HEADER_QUERY, 1, 'X', '-', 'L', 'o', 'n', 'g' };
+            command = make_msg(query, sizeof(query));
+            char label[64];
+            snprintf(label, sizeof(label), "query %d-byte header", sizes[i]);
+            run_expect(target, label, &command, (const uint8_t *)value,
+                       sizes[i] < 895 ? sizes[i] : 895, status_ok);
+
+            for (int index = 0; index <= 1; ++index) {
+                int count = snprintf(listed, sizeof(listed), "X-Long: %s\r%s", value,
+                                     index ? "" : "Content-Length: 2\r");
+                uint8_t list[] = { 6, HTTP_CMD_HEADER_LIST, 1, (uint8_t)index };
+                command = make_msg(list, sizeof(list));
+                // Listing reads one existing 800-byte stream block.
+                run_expect(target, index ? "list one long header" : "list all long headers",
+                           &command, (const uint8_t *)listed, count < 800 ? count : 800, status_ok);
+            }
+            checks++;
+            if (!peer.completed()) {
+                failures++;
+                printf("FAIL header boundary peer did not finish\n");
+            }
+            run_expect_empty(target, "release header fixture", &c_cmd_free_all, status_ok);
+        }
+        expect_descriptor_count("header boundary sockets released", baseline);
+    }
+}
+
+static void test_response_boundaries(HttpTarget *target)
+{
+    const int sizes[] = { 894, 895, 896, 1790, 2048 };
+    int baseline = open_descriptor_count();
+    for (unsigned i = 0; i < sizeof(sizes) / sizeof(sizes[0]); ++i) {
+        for (int header_size = 254; header_size <= 256; ++header_size) {
+            char response[4096];
+            int prefix = snprintf(response, sizeof(response),
+                                  "HTTP/1.1 200 OK\r\nContent-Length: %d\r\nX-Pad: ", sizes[i]);
+            memset(response + prefix, 'p', header_size - prefix - 4);
+            memcpy(response + header_size - 4, "\r\n\r\n", 4);
+            for (int j = 0; j < sizes[i]; ++j) {
+                response[header_size + j] = (char)(j & 255);
+            }
+            {
+                ResponsePeer peer(response, header_size + sizes[i]);
+                checks++;
+                if (!peer.port()) {
+                    failures++;
+                    printf("FAIL boundary peer setup\n");
+                    return;
+                }
+                run_expect_empty(target, "reset boundary fixture", &c_cmd_free_all, status_ok);
+                Message *reply, *status;
+                begin_raw_response(target, peer, &reply, &status);
+                expect_bytes("raw header boundary", "status", status,
+                             (const uint8_t *)response, header_size < 255 ? header_size : 255);
+                int received = 0;
+                for (int block = 0; block < 5; ++block) {
+                    int count = sizes[i] - received;
+                    if (count > 895) {
+                        count = 895;
+                    }
+                    expect_bytes("raw body boundary", "reply", reply,
+                                 (const uint8_t *)response + header_size + received, count);
+                    expect_last("raw boundary continuation", reply, count < 895);
+                    received += count;
+                    if (count < 895) {
+                        break;
+                    }
+                    quiet_begin();
+                    target->get_more_data(&reply, &status);
+                    quiet_end();
+                    expect_text("continuation status", "status", status, status_ok);
+                }
+                run_more_expect(target, "boundary exhausted", (const uint8_t *)"", 0, status_no_more);
+                checks++;
+                if (!peer.completed()) {
+                    failures++;
+                    printf("FAIL boundary peer did not finish\n");
+                }
+                run_expect_empty(target, "release boundary fixture", &c_cmd_free_all, status_ok);
+            }
+            expect_descriptor_count("boundary sockets released", baseline);
+        }
+    }
+}
+
 int main(int argc, char **argv)
 {
+    if ((argc > 1) && (strcmp(argv[1], "--connect-cleanup") == 0)) {
+        test_connect_cleanup();
+        printf("Connect cleanup: %d checks, %d failures\n", checks, failures);
+        return failures ? 1 : 0;
+    }
     HttpTarget *target = (HttpTarget *)command_targets[6];
     if (target && (argc > 1) && (strcmp(argv[1], "--integer-widths") == 0)) {
         test_integer_widths(target);
@@ -574,6 +986,19 @@ int main(int argc, char **argv)
     if (!target) {
         printf("FAIL target 6 was not registered\n");
         return 1;
+    }
+
+    if ((argc > 1) && (strcmp(argv[1], "--response-completion") == 0)) {
+        test_response_completion(target, argc > 2 ? atoi(argv[2]) : -1);
+        printf("Response completion: %d checks, %d failures\n", checks, failures);
+        return failures ? 1 : 0;
+    }
+
+    if ((argc > 1) && (strcmp(argv[1], "--response-boundaries") == 0)) {
+        test_response_boundaries(target);
+        test_header_boundaries(target);
+        printf("Response boundaries: %d checks, %d failures\n", checks, failures);
+        return failures ? 1 : 0;
     }
 
     if ((argc > 1) && (strcmp(argv[1], "--body-removal") == 0)) {

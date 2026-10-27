@@ -1,10 +1,46 @@
 # Software IEC hardware suites
 
+Partition file paths in configuration profiles (#982) are checked with:
+
+```sh
+python3 tests/e2e/io/iec/partition_config_test.py -H u64 --mode telnet
+python3 tests/e2e/io/iec/partition_config_test.py -H u2@c64u --mode telnet
+```
+
+The checks load profiles through the file browser, select Reboot C64, take a
+255-character path through Save to File and the settings menu's string editor,
+and verify the active partitions over REST. They also cover manual loads,
+unrelated settings, drive resets, unusable files and their later repair, and the
+empty-path default. The suite restores the running settings, partition list and
+default partition file, and removes its fixtures.
+
 Two suites live here. Both drive the C64 through `iec_agent.asm`, a small KERNAL
 program that performs the OPEN, CHKOUT/CHROUT, CHKIN/CHRIN and CLOSE calls itself,
 so the bytes on the serial bus are the bytes a Commodore puts there. REST only
 fills the agent's mailbox and reads its results back. `iec_agent.py` holds the
 host side of that mailbox and is shared by both suites.
+
+## Other KERNALs
+
+Both suites, and `softiec-soak`, take `--kernal` and `--command-interface`, and
+`run-tests` passes its own options of those names to them. `--kernal` names an
+image in the device's `/Flash/roms`, or a local file, which is uploaded there for
+the run and removed afterwards. The suite reboots into it and compares the image
+with the C64's memory at `$E000` before it starts, so a run cannot pass under a
+KERNAL it did not get. The UCI ("hyperspeed") KERNAL built by `make` in
+`roms/c64rom` reaches the drive through the Command Interface, so it runs with
+`--command-interface`; without it that KERNAL uses the serial bus. Give it a name
+of its own, because `kernal.bin` is the name the firmware's KERNAL setting defaults
+to.
+
+```sh
+./run-tests u64 u2@c64u -s iec-dos-commands -s rel-copy --kernal jiffydos_c64.bin
+cp roms/c64rom/kernal.bin uci_kernal.bin
+./run-tests u64 -s iec-dos-commands --kernal uci_kernal.bin --command-interface
+```
+
+A KERNAL whose name is already on the device with other contents is refused
+rather than replaced.
 
 ## Command channel, block commands and partition directory (#875, #876, #877)
 
@@ -24,7 +60,13 @@ catch them: it built its command strings by hand.
   colon, so the colon became the channel number and every value moved one place.
   The track number arrived as the partition number.
 * The partition directory showed the path a partition is rooted at instead of its
-  name, and typed every partition `DIR`.
+  name, and typed every partition `DIR`. `G-P`, which answers the same question to a
+  program rather than to a listing, had the same two defects and reported its type in
+  the reserved byte.
+* A command whose last parameter is a byte can carry a 13, which is the terminator
+  byte. `C` followed by a shifted P selects a partition that way, so it keeps its
+  parameter; the commands whose last parameter is optional behave as CMD DOS
+  documents, which is that the terminator has to be sent as well.
 
 Two of its checks exist only here, because they cannot fail on a host build. The
 device uses the firmware's own `sscanf` in `software/system/small_printf.cc`, which
@@ -107,3 +149,24 @@ rare corrupted read.
 
 `iec-dos-commands` takes about 24 s and `rel-copy` about 3 minutes. Both are tagged
 `standard`, so they run in the merge gate and not in the default `run-tests` run.
+
+## Directory renaming (#999)
+
+`directory_rename_test.py` runs as `iec-directory-rename` from the standard
+profile up. It replays the C64 OS sequence `MD:NEW DIRECTORY`,
+`R:.^RNAME^=NEW DIRECTORY`, `R:NEW NAME=.^RNAME^`, `CD:NEW NAME`,
+`R-H:NEW NAME`, `CD_` against a fresh host folder and a fresh DNP image.
+It also checks that a file survives the rename and that the final directory header
+has the requested name. Commands go through the running KERNAL over IEC, with
+Command Interface disabled. Fixtures and settings are restored on exit.
+
+```sh
+python3 tests/e2e/io/iec/directory_rename_test.py -H u64 --kernal kernal.901227-03.bin
+python3 tests/e2e/io/iec/directory_rename_test.py -H u64 --kernal jiffydos_c64.bin
+python3 tests/e2e/io/iec/directory_rename_test.py -H u2@c64u --kernal /path/to/jiffydos_c64.bin
+```
+
+The cartridge form temporarily selects External cartridge preference on its
+computer. As with the DOS command suite, one Software IEC partition numbered 1
+is required. `Suite11-SI074-NativeDirectory` and `Suite11-SI064-RenameHeader`
+provide the corresponding host regressions, including destination collisions.

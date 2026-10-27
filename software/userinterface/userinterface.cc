@@ -92,6 +92,16 @@ static const char *helptext =
         "HOME:       Enter home directory\n"
         "C= HOME:    Set current dir as home\n"
         "INST:       Delete selected files\n"
+        "C= P:       Toggle PETSCII names\n"
+        "Stored names: filesystem spelling\n"
+        "PETSCII names: readable PETSCII text\n"
+        "Letters use lower/upper case\n"
+        "Name markers in PETSCII view:\n"
+        "D: Decoded from stored filename\n"
+        "N: Disk directory or x00 header\n"
+        "S: Stored filename shown as-is\n"
+        "Markers are not part of filenames\n"
+        "Rename keeps alternate bytes as {XX}\n"
         "\n"  
 		"Quick seek: Use the keyboard to type\n"
 		"            the name to search for:\n"
@@ -117,6 +127,7 @@ static const char *filename_overflow_squeeze[] = { "None", "Beginning", "Middle"
 static const char *itype[]      = { "Freeze", "Overlay on HDMI" };
 static const char *cfg_save[]   = { "No", "Ask", "Yes" };
 static const char *navstyles[] = { "Quick Search", "WASD Cursors" };
+static const char *filename_views[] = { "Stored names", "PETSCII names" };
 
 struct t_cfg_definition user_if_config[] = {
 #if U64
@@ -132,6 +143,7 @@ struct t_cfg_definition user_if_config[] = {
     { CFG_USERIF_CFG_SAVE,   CFG_TYPE_ENUM,   "Auto Save Config",      "%s", cfg_save, 0, 2, 1 },
     { CFG_USERIF_ULTICOPY_NAME, CFG_TYPE_ENUM, "Ulticopy Uses disk name", "%s", en_dis, 0, 1, 1 },
     { CFG_USERIF_FILENAME_OVERFLOW_SQUEEZE, CFG_TYPE_ENUM, "Filename overflow squeeze", "%s", filename_overflow_squeeze, 0, 3, 0 },
+    { CFG_USERIF_CBM_NAMES, CFG_TYPE_ENUM, "Filename view", "%s", filename_views, 0, 1, 0 },
     { 0xFE, CFG_TYPE_SEP, "", "", NULL, 0, 0, 0 },
     { 0xFE, CFG_TYPE_SEP, "Temp Folder", "", NULL, 0, 0, 0 },
     { CFG_USERIF_TEMP_AUTO_CLEANUP, CFG_TYPE_ENUM, "Temp Auto Cleanup", "%s", en_dis, 0, 1, 1 },
@@ -149,8 +161,10 @@ UserInterface :: UserInterface(const char *title, bool use_logo) : title(title)
     screen = NULL;
     doBreak = false;
     available = false;
+    remote = false;
     color_sel_bg = 0;
     filename_overflow_squeeze = 0;
+    cbm_names = false;
     menu_response_to_action = MENU_NOP;
     logo = use_logo;
     register_store(CFG_USERIF_STORE_ID, "User Interface Settings", user_if_config);
@@ -179,6 +193,9 @@ void UserInterface :: set_available(bool enable)
         return;
     }
     available = enable;
+    if (remote) {
+        return;
+    }
     portENTER_CRITICAL();
     if (enable) {
         active_user_interface_count++;
@@ -225,6 +242,7 @@ void UserInterface :: effectuate_settings(void)
 #endif
     config_save  = cfg->get_value(CFG_USERIF_CFG_SAVE);
     filename_overflow_squeeze = cfg->get_value(CFG_USERIF_FILENAME_OVERFLOW_SQUEEZE);
+    cbm_names   = cfg->get_value(CFG_USERIF_CBM_NAMES) == 1;
     navmode      = cfg->get_value(CFG_USERIF_NAVIGATION);
 
 #ifndef NO_FILE_ACCESS
@@ -264,6 +282,7 @@ void UserInterface :: set_screen(Screen *s)
 
 void UserInterface :: run_remote(void)
 {
+    remote = true;
     host->take_ownership(this);
     appear();
     set_available(true);
@@ -314,6 +333,11 @@ void UserInterface :: run_once(void)
     }
 
     host->take_ownership(this);
+    // Whatever is on the keyboard or joystick port as the menu opens was not
+    // meant for the menu; a single stale sample there moved the cursor (#935).
+    if (keyboard) {
+        keyboard->ignore_held_input();
+    }
     if (!host->is_permanent()) {
         appear();
     }

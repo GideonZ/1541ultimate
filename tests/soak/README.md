@@ -18,6 +18,7 @@ and run only when `--soak` or `--all` asks for them.
 | `filemanager/prg_context_menu_leak_test.py` | The browser's PRG context-menu load actions, which go through a different code path from the REST launcher |
 | `filemanager/browser_refresh_leak_test.py` | The filesystem-refresh matrix, which needs a browser open on a directory while its contents change |
 | `filemanager/mount_cache_leak_test.py` | Entering one disk image after another, which mounts each one and holds the image file open |
+| `io/iec/softiec_soak_test.py` | The Software IEC drive driven from the C64 over the real bus while REST and FTP load the device (#877). `--mode` selects a realistic C64 OS soak, a hostile stress that edge-tests the command channel, OPEN names, x00 files, channels, transfers, direct access, the disk image types, the UCI target and the PC lanes racing the bus, or `both` in turn. `--log` runs each phase with logging off, on, both in turn, or toggled during the phase, and correlates the device's syslog against every command, open and close the suite made; `--syslog-spool` names a file an external collector writes, and without it the suite binds the UDP port the device's syslog setting names when it points at this host. Fails if the firmware stops answering, if fixture data read back differs, if the heap does not come back, or if the log contradicts what the suite did; `--profile stress` runs the stress mode for ten minutes and `--profile soak` runs the soak mode for four hours, both with logging off. The log rendering and correlation live in the sibling module `softiec_log.py` |
 
 The heap suites all read `GET /v1/machine:heap`. Firmware predating that
 endpoint answers 404 and their checks skip, so they are safe to run against any
@@ -27,7 +28,8 @@ rather than a single before-and-after reading; the reason is in
 
 `network/`'s `*_probe.py` modules, `stream_monitor.py` and
 `connection_runtime.py` are protocol drivers and shared runtime for
-`connection_test.py`.
+`connection_test.py`. `io/iec/softiec_log.py` is the device-log rendering and
+correlation module `io/iec/softiec_soak_test.py` imports.
 
 ## Running
 
@@ -127,10 +129,21 @@ tests/soak/network/connection_test.py --profile stress -H u64 2>&1 \
 
 Run against a dedicated test device. These are active tests, whichever
 duration they are given: they create and remove `u64test_*` files under `/Temp`, write reserved C64
-page-3 bytes, change the `Vol UltiSid 1` setting between `0 dB` and `+1 dB`,
-open incomplete or malformed sessions, and enable network streams. Normal
-shutdown disables streams and cleans up tracked FTP files, but an abrupt host
-or device failure can interrupt cleanup.
+page-3 bytes, change the `Printer Settings` `Ink density` between `Medium` and
+`High` over HTTP and through the Telnet settings menu, open incomplete or
+malformed sessions, and enable network streams on a machine that serves them.
+The Telnet probe answers No when leaving the menu offers to save to flash; a
+machine whose `Auto Save Config` is `Yes` saves without asking, so a long run
+there writes the settings flash on every pass through the menu. Normal
+shutdown disables streams, puts `Ink density` back in memory and in flash, and
+cleans up tracked FTP files, but an abrupt host or device failure can interrupt
+cleanup.
+
+The probes adapt to the machine `/v1/info` names: the DMA debug register and
+the streams exist only on the Ultimate 64 family and the C64 Ultimate, so a
+run against an Ultimate II+ leaves them out. The streams go to the multicast
+groups the E2E stream suites use (`tests/lib/targets.py`), so a run points the
+device's streams there and stops them when it ends.
 
 The Telnet `vanish` mode is more invasive. It fills the device's Telnet session
 table and temporarily changes a host network alias; it needs an unused LAN

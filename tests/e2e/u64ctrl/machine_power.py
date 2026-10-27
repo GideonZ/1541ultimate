@@ -26,6 +26,7 @@ import time
 
 from api import UltimateApi
 from report import Failure, detail
+from rest import looks_unreachable
 
 # A cold start has to load the FPGA before the application answers anything.
 DEFAULT_UP_TIMEOUT = 90.0
@@ -114,7 +115,14 @@ def stays_off(api: UltimateApi, seconds: float) -> bool:
 def switch_machine_off(api: UltimateApi, up_timeout: float) -> float:
     """Switch the machine off and answer how long it took to go quiet."""
     started = time.monotonic()
-    api.machine.poweroff()
+    try:
+        api.machine.poweroff()
+    except Failure as exc:
+        # The controller can cut the rail before the reply leaves, so a missing
+        # reply is not a failure: the machine going quiet below decides.
+        if not looks_unreachable(exc):
+            raise
+        detail(f"machine:poweroff got no reply ({exc})")
     if not wait_for_state(api, False, up_timeout):
         raise Failure("the machine still answered after machine:poweroff")
     took = time.monotonic() - started

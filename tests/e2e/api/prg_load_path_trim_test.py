@@ -27,11 +27,18 @@ from ui_backend import add_mode_argument
 
 SUITE = "prg_load_path_trim_test"
 
+# A program small enough to compare byte for byte after a load.
+PRG_BYTES = b"\x01\x08\x07\x08\x0a\x00\x80\x00\x00\x00"
+# The name inside the P00 fixture: longer than an 8.3 host name and with a space, so a
+# boot-cart display that shows it can only have come from the header (SI-144b).
+P00_CBM_NAME = "WRAPPED PROGRAM"
+
 
 class SuiteRunner(TempSettingsSuite):
     def __init__(self, args):
         super().__init__(args)
         self.local_prg = Path(tempfile.gettempdir()) / "prg_load_path_trim_test.prg"
+        self.local_p00 = Path(tempfile.gettempdir()) / "prg_load_path_trim_test.p00"
 
     @property
     def upload_root(self):
@@ -57,10 +64,52 @@ class SuiteRunner(TempSettingsSuite):
 
     def cleanup_remote_artifacts(self):
         self.cleanup_matching_names("/Temp", posixpath.basename(self.args.remote_file))
+        self.cleanup_matching_names("/Temp", posixpath.basename(self.args.remote_p00))
         self.cleanup_matching_names(self.upload_root, self.args.upload_name)
 
     def create_test_prg(self):
-        self.local_prg.write_bytes(b"\x01\x08\x07\x08\x0a\x00\x80\x00\x00\x00")
+        self.local_prg.write_bytes(PRG_BYTES)
+
+    def create_test_p00(self):
+        """The same program behind a P00 header, under a host name that does not name it."""
+        header = b"C64File\0" + P00_CBM_NAME.encode("ascii").ljust(16, b"\0") + b"\0" + bytes([0])
+        self.local_p00.write_bytes(header + PRG_BYTES)
+
+    def upload_p00_fixture(self):
+        check_start(f"upload P00 fixture {posixpath.basename(self.args.remote_p00)}")
+        self.cleanup_matching_names("/Temp", posixpath.basename(self.args.remote_p00))
+        try:
+            response = self.ftp(lambda client: ftp_lib.store(
+                client, self.args.remote_p00, self.local_p00.read_bytes()))
+        except (*ftplib.all_errors, Failure) as exc:
+            self.fail(f"Could not upload P00 fixture (FTP {exc})")
+            return
+        if response.startswith(("226", "200")):
+            check_ok()
+        else:
+            self.fail(f"Could not upload P00 fixture (FTP {response})")
+
+    def run_p00_case(self):
+        """SI-144a and SI-144b: the runner loads what the wrapper holds.
+
+        The load address and the data come from behind the 26 byte header, and the name
+        the boot cart prints is the one in the header rather than the 8.3 host name.
+        """
+        self.machine_reset()
+        check_start("exercise PUT runners:load_prg on a P00 wrapper")
+        try:
+            self.device.runners.load_prg(self.args.remote_p00)
+        except Failure as exc:
+            self.fail(f"PUT load_prg on a P00 failed: {exc}")
+            return
+        check_ok()
+        self.wait_for_expected_displays("P00 boot-cart name", [P00_CBM_NAME])
+        check_start("the program behind the header is what was loaded")
+        loaded = self.device.machine.readmem(0x0801, len(PRG_BYTES) - 2)
+        if loaded != PRG_BYTES[2:]:
+            self.fail(f"$0801 holds {loaded[:8].hex()}, expected {PRG_BYTES[2:10].hex()}")
+            return
+        check_ok()
 
     def upload_put_fixture(self):
         check_start(f"upload PUT fixture {posixpath.basename(self.args.remote_file)}")
@@ -175,11 +224,16 @@ class SuiteRunner(TempSettingsSuite):
         section("5. Validate POST Endpoints")
         self.run_post_case("load_prg", "POST load_prg")
         self.run_post_case("run_prg", "POST run_prg")
+        section("6. Validate a P00 wrapper through the same runner")
+        self.create_test_p00()
+        self.upload_p00_fixture()
+        self.run_p00_case()
         suite_ok(SUITE)
 
     def cleanup(self):
         self.cleanup_remote_artifacts()
         self.local_prg.unlink(missing_ok=True)
+        self.local_p00.unlink(missing_ok=True)
         self.restore_initial_config()
 
 
@@ -187,6 +241,7 @@ def main():
     parser = argparse.ArgumentParser(description="Validate PRG runner boot-cart path trimming.")
     cli.add_device_arguments(parser, colour=False, timeout=None)
     parser.add_argument("--remote-file", default="/Temp/rest-prg-path-trim-target-example.prg")
+    parser.add_argument("--remote-p00", default="/Temp/rest-prg-wrap.p00")
     parser.add_argument("--upload-name", default="rest-prg-path-trim-upload-example.prg")
     add_toggle_arguments(parser)
     add_mode_argument(parser)

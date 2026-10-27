@@ -110,9 +110,10 @@ public:
                 }
                 break;
             case CFG_TYPE_ENUM:
-                for (i = item->definition->min; i <= item->definition->max; i++) {
-                    sprintf(buf, item->definition->item_format, item->definition->items[i]);
-                    actions.append(new Action(buf, updateItem, (int)item, i));
+                for (i = 0; i <= item->definition->max - item->definition->min; i++) {
+                    int v = item->listedValue(i);
+                    sprintf(buf, item->definition->item_format, item->definition->items[v]);
+                    actions.append(new Action(buf, updateItem, (int)item, v));
                 }
                 break;
             case CFG_TYPE_STRFUNC: // drop down type

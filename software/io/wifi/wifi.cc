@@ -258,9 +258,10 @@ void WiFi :: RunModeThread()
                 if (voltages.vbus < 8500) {
                     UserInterface :: postMessage("Low input voltage.");
                 }
-                // Both settings live in the module's NVS; keep them in sync.
+                // These settings live in the module's NVS; keep them in sync.
                 U64Config :: pushPowerOnMode();
                 U64Config :: pushWakeOnWifi();
+                U64Config :: pushRecoveryUrl();
 #endif
                 RefreshRoot();
             }
@@ -346,12 +347,13 @@ void WiFi :: RunModeThread()
                     printf("In %d\n", pkt->len);
                     dump_hex_relative(&pkt->data, 64);
 #endif
-                    netstack->input(buf, (uint8_t*)&pkt->data, pkt->len);
+                    // A copy: an unread socket holds its segments, and one connection can queue
+                    // more of them than the UART has receive buffers, which stops the interface.
+                    netstack->input_copy((uint8_t*)&pkt->data, pkt->len);
                 } else {
                     puts("Packet received, but no net stack!");
-                    uart->FreeBuffer(buf);
                 }
-                // no free, as the packet needs to live on in the network stack
+                uart->FreeBuffer(buf);
                 break;
 
             case EVENT_GOTIP:

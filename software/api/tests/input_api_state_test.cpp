@@ -141,6 +141,8 @@ void add_key_to_matrix(uint8_t matrix[8], const char *name)
 void reset_joystick_output(void)
 {
     JoystickOutput::instance().setUsbPort1(0x1F);
+    JoystickOutput::instance().setRestMousePort1(0x1F);
+    JoystickOutput::instance().clearMousePosition();
     JoystickOutput::instance().releaseAllRest();
 }
 
@@ -870,4 +872,367 @@ TEST(RestJoystickStateTest, Fire2MapsToPotXAndFire3MapsToPotY)
     JoystickOutput::instance().outputSnapshot(port1, port2, pot1x, pot1y, pot2x, pot2y);
     EXPECT_EQ(0x80, pot2x);
     EXPECT_EQ(0x00, pot2y);
+}
+
+static void port1_pots(uint8_t &potx, uint8_t &poty)
+{
+    uint8_t port1, port2, pot2x, pot2y;
+    JoystickOutput::instance().outputSnapshot(port1, port2, potx, poty, pot2x, pot2y);
+}
+
+// Issue #909: in Mouse + Wheel mode the wheel pulses port 1's left and right
+// lines. A line update must keep the mouse position on the POT lines instead of
+// writing the released joystick value.
+TEST(MouseJoystickOutputTest, MousePositionSurvivesPort1LineUpdates)
+{
+    reset_joystick_output();
+    uint8_t potx = 0;
+    uint8_t poty = 0;
+    JoystickOutput::instance().setMousePosition(0x15, 0x2A);
+    JoystickOutput::instance().setUsbPort1(0x1B);
+    JoystickOutput::instance().setRestMousePort1(0x1E);
+    port1_pots(potx, poty);
+    EXPECT_EQ(0x15, potx);
+    EXPECT_EQ(0x2A, poty);
+}
+
+TEST(MouseJoystickOutputTest, RestExtraButtonOwnsThePotLinesWhileHeld)
+{
+    reset_joystick_output();
+    uint8_t potx = 0;
+    uint8_t poty = 0;
+    JoystickOutput::instance().setMousePosition(0x15, 0x2A);
+    JoystickOutput::instance().setRestPort1Persistent(0x5F);    // fire2 held
+    port1_pots(potx, poty);
+    EXPECT_EQ(0x00, potx);
+    EXPECT_EQ(0x80, poty);
+    JoystickOutput::instance().setRestPort1Persistent(0x7F);
+    port1_pots(potx, poty);
+    EXPECT_EQ(0x15, potx);
+    EXPECT_EQ(0x2A, poty);
+}
+
+TEST(MouseJoystickOutputTest, ClearingTheMouseRestoresTheReleasedPotValues)
+{
+    reset_joystick_output();
+    uint8_t potx = 0;
+    uint8_t poty = 0;
+    JoystickOutput::instance().setMousePosition(0x15, 0x2A);
+    JoystickOutput::instance().clearMousePosition();
+    port1_pots(potx, poty);
+    EXPECT_EQ(0x80, potx);
+    EXPECT_EQ(0x80, poty);
+}
+
+TEST(MouseJoystickOutputTest, RestMouseLinesAreASourceOfTheirOwn)
+{
+    reset_joystick_output();
+    uint8_t port1 = 0;
+    uint8_t port2 = 0;
+    JoystickOutput::instance().setRestMousePort1(0x0F);          // left button
+    JoystickOutput::instance().setUsbPort1(0x1E);
+    JoystickOutput::instance().setUsbPort1(0x1F);                // a USB mouse lets go
+    JoystickOutput::instance().snapshot(port1, port2);
+    EXPECT_EQ(0x7F, port1);                                      // REST joystick state only
+    uint8_t out1, out2, pot1x, pot1y, pot2x, pot2y;
+    JoystickOutput::instance().outputSnapshot(out1, out2, pot1x, pot1y, pot2x, pot2y);
+    EXPECT_EQ(0x0F, out1);
+}
+
+TEST(MousePotPacerTest, MovementThatFitsGoesOutAtOnce)
+{
+    MousePotPacer pacer;
+    pacer.reset(0, 0, 1000);
+    pacer.setTarget(30, -63);
+    EXPECT_TRUE(pacer.advance(1000 + MousePotPacer::WINDOW_MS));
+    EXPECT_EQ(30, pacer.potX());
+    EXPECT_EQ(0x7F & -63, pacer.potY());
+    EXPECT_FALSE(pacer.isBehind());
+}
+
+// The regression this guards against: a mouse reporting one count every 20ms
+// must move the lines by one count at each report, not by two counts half as
+// often.
+TEST(MousePotPacerTest, EverySmallMoveGoesOutInTheMillisecondItArrives)
+{
+    MousePotPacer pacer;
+    pacer.reset(0, 0, 0);
+    int position = 0;
+    for (int report = 1; report <= 50; report++) {
+        uint16_t now = (uint16_t)(MousePotPacer::WINDOW_MS + 20 * report);
+        uint8_t before = pacer.potX();
+        position++;
+        pacer.setTarget((int16_t)position, 0);
+        EXPECT_TRUE(pacer.advance(now));
+        EXPECT_EQ(1, (int)(uint8_t)(pacer.potX() - before));
+        EXPECT_FALSE(pacer.isBehind());
+    }
+}
+
+// Several small moves inside one window go out as they arrive, as long as they
+// add up to no more than one window's worth.
+TEST(MousePotPacerTest, SmallMovesInOneWindowAllGoOutAtOnce)
+{
+    MousePotPacer pacer;
+    pacer.reset(0, 0, 0);
+    int position = 0;
+    for (int report = 1; report <= 12; report++) {
+        position += 5;
+        pacer.setTarget((int16_t)position, 0);
+        EXPECT_TRUE(pacer.advance((uint16_t)(MousePotPacer::WINDOW_MS + report)));
+        EXPECT_EQ(5 * report, pacer.potX());
+    }
+    EXPECT_FALSE(pacer.isBehind());
+}
+
+TEST(MousePotPacerTest, WhatOverflowsTheWindowWaitsForRoomInIt)
+{
+    MousePotPacer pacer;
+    pacer.reset(0, 0, 0);
+    pacer.setTarget(100, 0);
+    EXPECT_FALSE(pacer.advance(1));                             // the reset spent the window
+    EXPECT_TRUE(pacer.advance(MousePotPacer::WINDOW_MS));
+    EXPECT_EQ(63, pacer.potX());                                // a window's worth of it
+    EXPECT_FALSE(pacer.advance(2 * MousePotPacer::WINDOW_MS - 1));
+    EXPECT_TRUE(pacer.advance(2 * MousePotPacer::WINDOW_MS));
+    EXPECT_EQ(100, pacer.potX());
+    EXPECT_FALSE(pacer.isBehind());
+}
+
+TEST(MousePotPacerTest, WaitingMovementIsCappedSoThePointerStopsSoon)
+{
+    MousePotPacer pacer;
+    pacer.reset(0, 0, 0);
+    pacer.setTarget(1000, -1000);
+    int changes = 0;
+    for (int now = MousePotPacer::WINDOW_MS; pacer.isBehind(); now += MousePotPacer::WINDOW_MS) {
+        EXPECT_TRUE(pacer.advance((uint16_t)now));
+        changes++;
+    }
+    EXPECT_EQ(MousePotPacer::MAX_BEHIND / MousePotPacer::MAX_STEP, changes);
+    EXPECT_EQ(MousePotPacer::MAX_BEHIND & 0x7F, pacer.potX());
+    EXPECT_EQ(0x7F & -MousePotPacer::MAX_BEHIND, pacer.potY());
+}
+
+TEST(MousePotPacerTest, AReversalCancelsMovementThatWaits)
+{
+    MousePotPacer pacer;
+    pacer.reset(0, 0, 0);
+    pacer.setTarget(90, 0);
+    pacer.setTarget(0, 0);
+    EXPECT_FALSE(pacer.isBehind());
+    EXPECT_FALSE(pacer.advance(1000));
+    EXPECT_EQ(0, pacer.potX());
+}
+
+TEST(MousePotPacerTest, TheClockWrapNeverLetsAChangeOutEarly)
+{
+    MousePotPacer pacer;
+    pacer.reset(0, 0, 65530);
+    pacer.setTarget(10, 0);
+    EXPECT_FALSE(pacer.advance((uint16_t)(65530 + MousePotPacer::WINDOW_MS - 1)));
+    EXPECT_TRUE(pacer.advance((uint16_t)(65530 + MousePotPacer::WINDOW_MS)));
+}
+
+TEST(MousePotPacerTest, ThePositionMayWrapPastInt16)
+{
+    MousePotPacer pacer;
+    pacer.reset(32760, 0, 0);
+    pacer.setTarget((int16_t)-32766, 0);                         // +10 counts
+    EXPECT_TRUE(pacer.advance(MousePotPacer::WINDOW_MS));
+    EXPECT_EQ((uint8_t)((32760 + 10) & 0x7F), pacer.potX());
+}
+
+namespace {
+
+// The firmware and a C64 mouse driver in microseconds. Reports come every 20ms
+// and are handled up to `handling_us` late; the pacing timer ticks every 5ms,
+// up to 2ms late; each report is handed to the pacer as the firmware does. The
+// driver reads the POT line once per frame, up to 0.52ms (SID) plus 2.5ms
+// (interrupt) late. A read is backward when the 7-bit change it sees is not the
+// change the pointer made since the previous read.
+struct PacedMouseRun {
+    unsigned seed;
+    int backward;
+    int dropped;
+    int longest_catch_up_ms;
+    int reports;
+    int largest_change;                                          // biggest single change of the line
+    int latest_report_ms;                                        // longest a report waited to be shown
+    int reads_that_moved;
+    int reads;
+    int reports_that_moved;
+
+    int random(int limit)
+    {
+        seed = seed * 1103515245u + 12345u;
+        return (int)((seed >> 8) % (unsigned)limit);
+    }
+
+    PacedMouseRun(unsigned run_seed, int gap_ms, int frame_us, int max_step, int handling_us, int seconds)
+        : seed(run_seed), backward(0), dropped(0), longest_catch_up_ms(0), reports(0),
+          largest_change(0), latest_report_ms(0), reads_that_moved(0), reads(0), reports_that_moved(0)
+    {
+        MousePotPacer pacer(gap_ms);
+        const int end_us = seconds * 1000000;
+        int position = 0;
+        int shown = 0;                                           // unwrapped position on the line
+        int last_seen = 0;
+        pacer.reset(0, 0, 0);
+        // The jump a reset makes spends its window, so reporting starts after it.
+        const int settle_us = MousePotPacer::WINDOW_MS * 1000;
+        int next_report = settle_us + 20000;
+        int report_count = 0;
+        int next_tick = 5000;
+        int next_read = random(frame_us) + random(3020);
+        int frame_start = next_read;
+        int last_report_us = 0;
+        int waiting_since_us = -1;                               // when the line fell behind
+        bool reporting = true;
+        for (int now_us = 0; now_us < end_us + 500000; now_us += 100) {
+            uint16_t now_ms = (uint16_t)(now_us / 1000);
+            bool changed = false;
+            uint8_t before = pacer.potX();
+            if (reporting && (now_us >= next_report)) {
+                int step = random(2 * max_step + 1) - max_step;
+                if (step) {
+                    reports_that_moved++;
+                }
+                position += step;
+                pacer.setTarget((int16_t)position, 0);
+                changed = pacer.advance(now_ms);
+                last_report_us = now_us;
+                if (pacer.isBehind() && (waiting_since_us < 0)) {
+                    waiting_since_us = now_us;
+                }
+                report_count++;
+                next_report = settle_us + 20000 * (report_count + 1) + random(handling_us + 1);
+                if (next_report >= end_us) {
+                    reporting = false;
+                }
+            }
+            if (now_us >= next_tick) {
+                changed |= pacer.advance(now_ms);
+                next_tick += 5000 + random(2001);
+            }
+            if (changed) {
+                int step = (int)(int8_t)((uint8_t)(pacer.potX() - before) << 1) >> 1;
+                shown += step;
+                int size = (step < 0) ? -step : step;
+                if (size > largest_change) {
+                    largest_change = size;
+                }
+                if (!pacer.isBehind() && (waiting_since_us >= 0)) {
+                    int waited_ms = (now_us - waiting_since_us) / 1000;
+                    if (waited_ms > latest_report_ms) {
+                        latest_report_ms = waited_ms;
+                    }
+                    waiting_since_us = -1;
+                }
+            }
+            if (now_us >= next_read) {
+                int seen = (int)(int8_t)((uint8_t)((shown - last_seen) & 0x7F) << 1) >> 1;
+                if (seen != shown - last_seen) {
+                    backward++;
+                }
+                reads++;
+                if (shown != last_seen) {
+                    reads_that_moved++;
+                }
+                last_seen = shown;
+                frame_start += frame_us;
+                next_read = frame_start + random(3020);
+            }
+            if (!reporting && !pacer.isBehind() && last_report_us) {
+                int catch_up_ms = (now_us - last_report_us) / 1000;
+                if (catch_up_ms > longest_catch_up_ms) {
+                    longest_catch_up_ms = catch_up_ms;
+                }
+                last_report_us = 0;
+            }
+        }
+        reports = report_count;
+        dropped = position - shown;
+        if (dropped < 0) {
+            dropped = -dropped;
+        }
+    }
+};
+
+const int PAL_FRAME_US = 19950;
+const int NTSC_FRAME_US = 16715;
+
+} // namespace
+
+TEST(MousePotPacerTest, NoDriverReadSeesThePointerMoveBackward)
+{
+    for (unsigned seed = 1; seed <= 40; seed++) {
+        for (int frame_us : { PAL_FRAME_US, NTSC_FRAME_US }) {
+            // Full-speed reports, bunched by late handling, with a wheel on top.
+            PacedMouseRun run(seed, MousePotPacer::WINDOW_MS, frame_us, 126, 15000, 10);
+            EXPECT_EQ(0, run.backward);
+            // What waits goes out in MAX_BEHIND / MAX_STEP changes, one per window.
+            EXPECT_TRUE(run.longest_catch_up_ms <=
+                (MousePotPacer::MAX_BEHIND / MousePotPacer::MAX_STEP + 1) * (MousePotPacer::WINDOW_MS + 6));
+        }
+    }
+}
+
+// The same runs with changes allowed closer together than a frame: the check
+// above would fail, so it can tell.
+TEST(MousePotPacerTest, AShorterGapLetsReadsSeeThePointerMoveBackward)
+{
+    int backward = 0;
+    for (unsigned seed = 1; seed <= 40; seed++) {
+        PacedMouseRun run(seed, 15, PAL_FRAME_US, 126, 15000, 10);
+        backward += run.backward;
+    }
+    EXPECT_TRUE(backward > 0);
+}
+
+TEST(MousePotPacerTest, HandMovementArrivesExactly)
+{
+    for (unsigned seed = 1; seed <= 40; seed++) {
+        for (int frame_us : { PAL_FRAME_US, NTSC_FRAME_US }) {
+            PacedMouseRun run(seed, MousePotPacer::WINDOW_MS, frame_us, 31, 15000, 10);
+            EXPECT_EQ(0, run.backward);
+            EXPECT_EQ(0, run.dropped);
+        }
+    }
+}
+
+// Slow and precise movement, the case a pointer is judged by: every report
+// reaches the lines in the millisecond it arrives, in the step the mouse made,
+// and nearly every frame a driver reads shows that step. A pacer that let the
+// lines change only once per window would bunch these into steps of two, half
+// as often.
+TEST(MousePotPacerTest, PreciseMovementIsShownStepForStep)
+{
+    for (unsigned seed = 1; seed <= 20; seed++) {
+        for (int frame_us : { PAL_FRAME_US, NTSC_FRAME_US }) {
+            for (int counts : { 1, 2 }) {
+                // Reports as the firmware hands them over, without bunching.
+                PacedMouseRun run(seed, MousePotPacer::WINDOW_MS, frame_us, counts, 2000, 10);
+                EXPECT_EQ(0, run.dropped);
+                EXPECT_EQ(0, run.backward);
+                EXPECT_EQ(0, run.latest_report_ms);
+                EXPECT_TRUE(run.largest_change <= counts);
+                EXPECT_TRUE(run.reads_that_moved * 10 >= run.reports_that_moved * 8);
+            }
+        }
+    }
+}
+
+// A minute of reports at the rate the lines carry, of which there are thousands:
+// every count arrives.
+TEST(MousePotPacerTest, NothingIsLostInALongRunWithinWhatTheLinesCarry)
+{
+    for (unsigned seed = 1; seed <= 10; seed++) {
+        for (int frame_us : { PAL_FRAME_US, NTSC_FRAME_US }) {
+            PacedMouseRun run(seed, MousePotPacer::WINDOW_MS, frame_us, 31, 15000, 60);
+            EXPECT_TRUE(run.reports >= 2500);
+            EXPECT_EQ(0, run.backward);
+            EXPECT_EQ(0, run.dropped);
+        }
+    }
 }

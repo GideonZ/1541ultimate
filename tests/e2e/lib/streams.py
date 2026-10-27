@@ -42,6 +42,7 @@ import select
 import socket
 import struct
 import sys
+import threading
 import time
 from array import array
 from dataclasses import dataclass
@@ -54,6 +55,7 @@ sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
 import bootstrap  # noqa: E402,F401
 
 import targets as targets_lib  # noqa: E402
+from api import UltimateApi  # noqa: E402
 from report import Failure  # noqa: E402
 
 import screens as screen_spool  # noqa: E402
@@ -63,6 +65,10 @@ VIDEO_GROUP = targets_lib.VIDEO_GROUP
 VIDEO_PORT = targets_lib.VIDEO_PORT
 AUDIO_GROUP = targets_lib.AUDIO_GROUP
 AUDIO_PORT = targets_lib.AUDIO_PORT
+
+# Long enough for a device on the LAN to answer, short enough that asking an
+# unknown sender does not stall a capture that is already receiving.
+UNIQUE_ID_TIMEOUT_SECONDS = 2.0
 
 
 def stream_socket(group: str, port: int, timeout: float | None = 2.0) -> socket.socket:
@@ -104,7 +110,69 @@ def is_multicast(address: str) -> bool:
     return 224 <= first <= 239
 
 
-def source_addresses(host) -> set[str]:
+def _unique_id(address: str) -> str | None:
+    """The unique id `address` reports for itself, or None when it does not say."""
+    try:
+        info = UltimateApi(address, None, UNIQUE_ID_TIMEOUT_SECONDS).info()
+    except (Failure, OSError):
+        return None
+    value = info.extra.get("unique_id")
+    return value if isinstance(value, str) and value else None
+
+
+class DeviceAddresses:
+    """The addresses one device sends from, which can be more than the one it
+    was addressed on.
+
+    An Ultimate with Ethernet and Wi-Fi both up on one subnet streams from
+    whichever interface its routing picks. Measured on the bench, a u64
+    addressed over Ethernet at .70 streamed from its Wi-Fi at .13, and a filter
+    holding only .70 dropped every packet, so a capture waited forever. A
+    sender outside the known set is asked once for its unique id and belongs to
+    this device when the id matches; another Ultimate on the group reports its
+    own id and stays foreign, which is the case source_addresses() guards.
+    """
+
+    def __init__(self, host: str, known: set[str]) -> None:
+        self._known = set(known)
+        self._foreign: set[str] = set()
+        self._asked: set[str] = set()
+        self._unique_id = _unique_id(host)
+
+    def __contains__(self, address: object) -> bool:
+        """Whether `address` is this device's, never waiting to find out.
+
+        A caller asks this for every packet, so asking a sender over REST here would
+        stop the capture while the answer came: measured with a u64 and a C64 Ultimate
+        streaming at once, a Wi-Fi sender slow to answer stalled the u64's capture until
+        its socket overflowed and the frame it assembled was black. A new sender is
+        asked in the background and counts as foreign until it has answered; the few
+        packets that costs are packets a capture can do without.
+        """
+        if address in self._known:
+            return True
+        if (not isinstance(address, str) or address in self._foreign
+                or self._unique_id is None):
+            return False
+        if address not in self._asked:
+            self._asked.add(address)
+            threading.Thread(target=self._identify, args=(address,), daemon=True).start()
+        return False
+
+    def _identify(self, address: str) -> None:
+        if _unique_id(address) == self._unique_id:
+            self._known.add(address)
+        else:
+            self._foreign.add(address)
+
+    def __iter__(self):
+        return iter(sorted(self._known))
+
+    def __len__(self) -> int:
+        return len(self._known)
+
+
+def source_addresses(host) -> DeviceAddresses:
     """Every address whose packets count as this device's.
 
     A second machine streaming into the same group is indistinguishable from
@@ -120,8 +188,8 @@ def source_addresses(host) -> set[str]:
     try:
         found = socket.getaddrinfo(name, 0, socket.AF_INET, socket.SOCK_DGRAM)
     except OSError:
-        return set()
-    return {entry[4][0] for entry in found}
+        found = []
+    return DeviceAddresses(name, {entry[4][0] for entry in found})
 
 
 class Arming:
@@ -154,14 +222,15 @@ class Arming:
 
     def start(self, stream: str, already_arriving: bool = False,
               timeout: float | None = None,
-              retries: int | None = None) -> bool:
+              retries: int | None = None, **params: object) -> bool:
         """Ask the device to send `stream`, unless it already is.
 
         `already_arriving` is the caller saying it has seen packets from its
         own device at the standard address. That is the one thing about a
         stream that is not free to ask for twice, so a caller that finds it
         running issues no request at all and, by not having started it, leaves
-        it running afterwards.
+        it running afterwards. `params` go on the start request as they are,
+        such as `palette=1`.
         """
         if already_arriving or stream in self.started:
             return False
@@ -170,7 +239,7 @@ class Arming:
             # keep draining sockets bounds this call; see
             # rest.RestClient.request.
             self.api.streams.start(stream, ip=self.address(stream),
-                                   timeout=timeout, retries=retries)
+                                   timeout=timeout, retries=retries, **params)
         except Failure as exc:
             self.failures[stream] = str(exc)
             self.publish("start-failed", stream)
@@ -277,6 +346,26 @@ ENCODING = 0
 BYTES_PER_LINE = PIXELS_PER_LINE // 2
 PAYLOAD_SIZE = LINES_PER_PACKET * BYTES_PER_LINE
 PACKET_SIZE = HEADER_SIZE + PAYLOAD_SIZE
+
+# The runtime palette packet (#850), sent on the video port only to a stream
+# started with palette=1: a video-style header on line 239, then the 16 RGB
+# colors. Its 60 bytes cannot be mistaken for a 780-byte video packet.
+PALETTE_PACKET_SIZE = HEADER_SIZE + 16 * 3
+PALETTE_LINE = 239
+_PALETTE_FORMAT = bytes([0x80, 0x01, 1, 4, 1, 0])
+
+
+def palette_packet(data: bytes) -> tuple[int, bytes] | None:
+    """`(generation, 48 RGB bytes)` for a palette packet, None for anything else.
+
+    A datagram of that size on line 239 with other format bytes raises: it is
+    neither video nor a palette a client could use.
+    """
+    if len(data) != PALETTE_PACKET_SIZE or int.from_bytes(data[4:6], "little") != PALETTE_LINE:
+        return None
+    if data[6:HEADER_SIZE] != _PALETTE_FORMAT:
+        raise Failure(f"palette packet has invalid format bytes {data[6:HEADER_SIZE].hex()}")
+    return int.from_bytes(data[:2], "little"), data[HEADER_SIZE:]
 
 # The two frame heights the hardware actually produces: PAL is 272 lines,
 # NTSC is 240. The last packet's declared height is clamped to this range

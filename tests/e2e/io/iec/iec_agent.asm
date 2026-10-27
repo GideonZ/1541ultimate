@@ -4,6 +4,9 @@
 ; Input/output bytes at $c100. The channel is the logical file number, which the
 ; KERNAL refuses to be zero, so OPEN takes the secondary address separately.
 ;
+; Operation 6 LOADs the file named at $c100 with secondary address 1, so to its own
+; load address, and leaves the end address KERNAL LOAD returns at $c003/$c004.
+;
 ; Operation 5 reads the number of bytes the host asked for and stops there, for
 ; channels that only signal EOI at the end of a fixed size block, such as the
 ; direct access buffer a block command fills. Operation 3 reads to EOI instead
@@ -37,6 +40,10 @@ wait
     beq do_read
     cmp #5
     beq do_readn
+    cmp #6
+    bne do_close
+    jmp do_load
+do_close
     lda $c003
     jsr $ffc3
     jmp done
@@ -111,6 +118,23 @@ finish
     lda #0
     sta $c000
     jmp wait
+do_load
+    lda $c004
+    ldx #<$c100
+    ldy #>$c100
+    jsr $ffbd
+    lda $c003
+    ldx $c002
+    ldy #1
+    jsr $ffba
+    lda #0
+    jsr $ffd5
+    bcs load_error
+    stx $c003
+    sty $c004
+    jmp done
+load_error
+    jmp error
 index .byte 0
 limit .byte 0
 capped .byte 0

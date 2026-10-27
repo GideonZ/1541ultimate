@@ -6,6 +6,8 @@
  */
 
 #include "c64.h"
+#include "x00_wrapper.h"
+#include "pattern.h"
 #include "c64_crt.h"
 #include "c64_subsys.h"
 #include <ctype.h>
@@ -59,6 +61,18 @@ static const char *format_bootcrt_display_name(const char *name, char *trimmed)
     memcpy(trimmed + 3, name + length - kTrimmedTailChars, kTrimmedTailChars);
     trimmed[kDisplayChars] = 0;
     return trimmed;
+}
+
+// The boot cart prints the name out of the x00 header, as the host name does not identify the
+// file, rendered as a host name spells a CBM name because CbmFileName reads it back (SI-144b).
+static const char *x00_load_name(File *f, const char *host_name, char *rendered, int size)
+{
+    char cbm_name[17];
+    if (!x00_skip_header(f, host_name, NULL, cbm_name) || !x00_shown_name(cbm_name)) {
+        return host_name;
+    }
+    petscii_to_fat(cbm_name, rendered, size);
+    return rendered;
 }
 
 cart_def boot_cart; // static => initialized with all zeros.
@@ -127,9 +141,7 @@ void C64_Subsys :: create_task_items(void)
     taskCategory->append(myActions.resume);
     taskCategory->append(myActions.measure);
 #endif
-#if U64
     taskCategory->append(myActions.savemem);
-#endif
     taskCategory->append(myActions.savereu);
     taskCategory->append(myActions.save_crt);
     taskCategory->append(myActions.savemp3a);
@@ -152,9 +164,7 @@ void C64_Subsys :: update_task_items(bool writablePath)
     }
 
     if (writablePath) {
-#if U64
         myActions.savemem  ->enable();
-#endif
         myActions.savereu  ->enable();
         myActions.save_crt ->enable();
         myActions.savemp3a ->enable();
@@ -162,9 +172,7 @@ void C64_Subsys :: update_task_items(bool writablePath)
         myActions.savemp3c ->enable();
         myActions.savemp3d ->enable();
     } else {
-#if U64
         myActions.savemem  ->disable();
-#endif
         myActions.savereu  ->disable();
         myActions.save_crt ->disable();
         myActions.savemp3a ->disable();
@@ -224,11 +232,17 @@ SubsysResultCode_e C64_Subsys::executeCommand(SubsysCommand *cmd)
             break;
 
         case MENU_C64_PAUSE:
-            c64->stop(false);
+            // A frozen machine is stopped already, and unfreeze() needs the stop mode freeze() set.
+            if (!c64->isFrozen) {
+                c64->stop(false);
+            }
             break;
 
         case MENU_C64_RESUME:
-            c64->resume();
+            // Only unfreeze() may release a machine the menu holds: its screen and cart are still in.
+            if (!c64->isFrozen) {
+                c64->resume();
+            }
             break;
 
         case MENU_C64_CLEARMEM:
@@ -363,7 +377,10 @@ SubsysResultCode_e C64_Subsys::executeCommand(SubsysCommand *cmd)
 
                 res = create_file_ask_if_exists(fm, cmd->user_interface, cmd->path.c_str(), buffer, &f);
                 if (res == FR_OK) {
+                    // Overlay and REST get here with the C64 running; stopped, the file is one image.
+                    bool stopped = c64->begin_stopped_session();
                     SubsysResultCode_e retval = C64_CRT::save_crt(f);
+                    c64->end_stopped_session(stopped);
                     fm->fclose(f);
                     if (retval != SSRET_OK) {
                         cmd->user_interface->popup(SubsysCommand::error_string(retval), BUTTON_OK);
@@ -401,7 +418,9 @@ SubsysResultCode_e C64_Subsys::executeCommand(SubsysCommand *cmd)
         case C64_DMA_LOAD:
             res = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ, &f);
             if (res == FR_OK) {
-                dma_load(f, NULL, 0, cmd->filename.c_str(), cmd->mode, c64->cfg->get_value(CFG_C64_DMA_ID));
+                char shown[52];
+                const char *name = x00_load_name(f, cmd->filename.c_str(), shown, sizeof(shown));
+                dma_load(f, NULL, 0, name, cmd->mode, c64->cfg->get_value(CFG_C64_DMA_ID));
                 fm->fclose(f);
             } else {
                 result = SSRET_CANNOT_OPEN_FILE;
@@ -412,7 +431,9 @@ SubsysResultCode_e C64_Subsys::executeCommand(SubsysCommand *cmd)
         case C64_DMA_LOAD_MNT:
             res = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ, &f);
             if (res == FR_OK) {
-                dma_load(f, NULL, 0, cmd->filename.c_str(), cmd->mode, c1541_A->get_current_iec_address());
+                char shown[52];
+                const char *name = x00_load_name(f, cmd->filename.c_str(), shown, sizeof(shown));
+                dma_load(f, NULL, 0, name, cmd->mode, c1541_A->get_current_iec_address());
                 fm->fclose(f);
             } else {
                 result = SSRET_CANNOT_OPEN_FILE;
@@ -422,6 +443,9 @@ SubsysResultCode_e C64_Subsys::executeCommand(SubsysCommand *cmd)
         case C64_DMA_LOAD_RAW:
             res = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ, &f);
             if (res == FR_OK) {
+                // A raw load has no name to print; the header is still skipped, because
+                // the C64 file is what follows it.
+                x00_skip_header(f, cmd->filename.c_str(), NULL);
                 dma_load_raw(f);
                 fm->fclose(f);
             } else {

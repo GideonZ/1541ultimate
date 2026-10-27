@@ -82,13 +82,28 @@ from. A target occupies the machines it names, and two targets that share one
 never run at the same time: `u64` and `u2@c64u` run together, while `c64u` and
 `u2@c64u` take turns. `-o DIR` gives each target a subdirectory of its own.
 
-A bench where a cartridge is permanently in one computer can say so once
-instead of spelling it out on every command line:
+The runner finds which cartridge is in which computer, and nothing has to be
+set for cartridges it is told about. Before it starts, it takes the pairs
+written as `cartridge@computer`. It then checks every cartridge named beside
+other hosts: the computer writes a random 8-byte fingerprint into its own RAM
+at `$0340`, and the cartridge reads that address through its own DMA, so only
+the computer it is plugged into returns the same bytes. A computer that has no
+cartridge declared is not searched for one by default; the run warns once,
+naming those computers, that a cartridge fitted but not named is not looked
+for: its drives stay on the computer's IEC bus and its settings are not
+captured or restored.
+`U64_CABLING_SWEEP=1` (exactly `1`) opts in to asking the computer's /24 for
+`/v1/info`, which probes devices on that network that are not yours; the probe
+does not follow redirects, but a host that answers as an Ultimate II then
+receives `U64_PASS`. The result is reported as a `cabling:` line and exported
+as `U64_COMPUTERS`.
 
 ```sh
-export U64_COMPUTERS=u2@c64u
-./run-tests u2 c64u          # u2 means the u2 in the c64u, so these take turns
+./run-tests u2 c64u          # u2 is found to be in the c64u, so these take turns
 ```
+
+`U64_COMPUTERS=u2@c64u` states the cabling instead of measuring it, and wins
+over a measurement.
 
 Two tokens that name the same pair of machines are one target: with that
 variable set, `./run-tests u2@c64u c64u u2` runs two targets and says it
@@ -187,7 +202,7 @@ when a suite is started by hand. One name each, used by every suite:
 | `U64_TELNET_PORT` | Telnet port for the UI transport | `23` |
 | `U64_DMA_PORT` | DMA control port | `64` |
 | `U64_MODE` | Default UI mode: `overlay`, `freeze` or `telnet` | `overlay` |
-| `U64_COMPUTERS` | Which computer each cartridge is plugged into, as `u2@c64u[,...]` | none |
+| `U64_COMPUTERS` | Which computer each cartridge is plugged into, as `u2@c64u[,...]`. Optional: the runner measures it when unset | measured |
 
 `tests/lib/pacing.py` documents the `U64_UI_*` variables that change how fast
 the suites drive the on-device UI.
@@ -269,6 +284,7 @@ Profiles, shallowest first. A suite runs from its own profile up.
 e2e:
   assembly64                        .      x      x      x      x
   av-stream                         .      .      x      x      x
+  browser-cbm-names                 .      x      x      x      x
   browser-filesystem-refresh        .      .      x      x      x
   browser-long-filename             .      x      x      x      x
   c64gs-cartridge                   .      .      x      x      x
@@ -279,22 +295,37 @@ e2e:
   cfg-whitespace                    .      .      x      x      x
   comal80-cartridge                 .      .      x      x      x
   create-disk-image                 .      x      x      x      x
+  d81-track-bounds                  .      x      x      x      x
   deferred-machine-actions          .      .      x      x      x
+  dma-round-trip                    .      x      x      x      x
   doom-release                      .      .      .      x      x
   easyflash-cartridge               .      .      x      x      x
   esp-depends                       x      x      x      x      x
   fast-reset                        .      .      x      x      x
   freeze-menu                       .      .      x      x      x
+  freezer-audio                     .      x      x      x      x
   ftp-client                        .      x      x      x      x
   ftp-server                        x      x      x      x      x
+  g71-mfm-bounds                    .      x      x      x      x
+  gmod2-eeprom-dirty                .      .      x      x      x
   ident-service-switch              .      .      x      x      x
+  iec-directory-rename              .      .      x      x      x
   iec-dos-commands                  .      .      x      x      x
-  input                             .      x      x      x      x
+  iec-listen-timing                 .      .      x      x      x
+  iec-partition-config              .      .      x      x      x
+  iec-partition-file                .      .      x      x      x
+  image-copy                        .      .      x      x      x
+  image-copy-oracle                 .      x      x      x      x
+  input                             x      x      x      x      x
   input-batching                    x      x      x      x      x
   key-injection                     .      .      x      x      x
+  keystroke-read-back               x      x      x      x      x
   lint                              x      x      x      x      x
   machine-code-monitor              .      .      .      x      x
+  memory-views                      .      .      x      x      x
   menu-screen                       x      x      x      x      x
+  micromys-wheel                    .      .      .      x      x
+  mus-rest-play                     .      .      x      x      x
   navigation-keys                   x      x      x      x      x
   observability                     .      .      x      x      x
   ocean-cartridge                   .      .      x      x      x
@@ -310,24 +341,36 @@ e2e:
   rest-api-coverage                 .      x      x      x      x
   reu-turbo                         .      .      x      x      x
   runner-policy                     .      x      x      x      x
+  save-c64-memory                   .      .      x      x      x
+  sid-top-of-memory                 .      .      x      x      x
+  softiec-log                       .      x      x      x      x
+  softiec-log-lines                 .      .      x      x      x
   stale-gates                       .      x      x      x      x
+  stream-routing                    .      .      x      x      x
+  stream-wired-link                 .      .      .      x      x
+  tape-playback                     .      .      x      x      x
   telnet-drain                      .      x      x      x      x
   telnet-stale-session              .      .      .      x      x
   telnet-sustained-input            .      .      .      x      x
   temp-auto-cleanup                 .      .      x      x      x
   transport-usage                   x      x      x      x      x
+  uci-net-route                     .      .      .      x      x
+  uci-net-route-precondition        .      x      x      x      x
   uci-net-target                    .      .      .      x      x
   uci-targets                       .      .      x      x      x
   ui-backend-parse                  x      x      x      x      x
   ui-backend-smoke                  x      x      x      x      x
   ultimax-cartridge                 .      .      x      x      x
   usb-bulk-out-integrity            .      .      .      x      x
+  usb-mouse                         x      x      x      x      x
+  usb-mouse-pico                    .      .      .      x      x
   wake-on-wifi                      .      .      .      x      x
   web-index                         .      .      .      x      x
   web-theme                         .      .      .      x      x
 
 perf:
   rest-latency                      .      .      x      x      x
+  rest-path-latency                 .      .      x      x      x
   telnet-key-latency                .      .      x      x      x
   temp-auto-cleanup-perf            .      .      x      x      x
   typing-speed                      .      .      x      x      x
@@ -342,11 +385,12 @@ soak:
   mount-cache-leak                  .      .      x      x      x
   network-connection                .      .      x      x      x
   prg-context-menu-leak             .      .      x      x      x
+  softiec-soak                      .      .      x      x      x
   usb-keyboard-repeat               .      .      .      x      x
 
                                ------ ------ ------ ------ ------
-  suites                           12     26     60     72     72
-  suite runs                       12     26     60    144    216
+  suites                           15     36     85    101    101
+  suite runs                       15     36     85    202    303
 
 Scenario and check counts, and durations, are not shown here:
 the registry does not know them. They depend on the machine and are
@@ -367,10 +411,38 @@ matrix above is aligned text whichever format is asked for.
 ./run-tests --list-profiles quick --measured quick=runs/quick
 ```
 
+`uci-net-route` checks that connections and datagrams the device starts leave from its
+Ethernet address when WiFi is joined on the same subnet. This host is the network peer,
+so it needs two device interfaces with an address on this host's subnet and a link up on
+both, and the device's menu at its root. It reads the link state from the menu, which it
+opens and closes again; in Freeze mode that stops the C64 while the menu is open. It skips,
+with the reason printed, when any of that is missing.
+
 ## When a run goes wrong
 
 By default the run continues through every selected suite, so one failure does
 not hide the rest. `-x/--stop-on-fail` stops at the first one.
+
+`image-copy` uses the HDMI overlay to check multi-file copy/paste of dotted CBM
+names into a D64 and host storage, mixed emulated-1541/browser writes with BAM
+and payload verification, and the Leave Menu on Mount setting. It uses generated
+fixtures and restores the drive settings. Drive A must be empty. Both browser-first
+and drive-first access orders are checked. Refused paste, rename and delete must
+leave the image byte-for-byte unchanged; after eject/paste/remount, the C64 reads
+the original multi-sector file and the pasted file over IEC. Dotted-name copies
+preserve an existing file and are repeated after deletion and re-entry.
+The `messages` case supports `--mode overlay`, `freeze` and `telnet`. It checks
+single/batch paste and delete refusal, hidden Delete/Rename actions, in-use
+errors for deleting/renaming an image, and first/last-file errors. Yes must process
+the next file; No must stop. A write-locked image also refuses edits while allowing
+reads; a recursive copy into it reports WRITE PROTECTED. Refused operations leave
+the image unchanged.
+Other cases exercise the HDMI overlay.
+Use `--root /USB2` (or the device's actual USB/SD volume) to run the fixtures on
+FAT storage and additionally prove that an 8.3 alias cannot overwrite a held
+long-name image. The default root is `/Temp`.
+`image-copy-oracle` checks that malformed directory/file chains and BAMs fail the
+independent image verifier.
 
 Everything else the runner does when things go badly follows from one idea.
 

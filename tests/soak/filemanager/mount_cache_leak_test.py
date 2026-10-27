@@ -80,7 +80,7 @@ def heap_free(rest) -> int:
     listings and zero a few seconds later.
     """
     time.sleep(SETTLE_SECONDS)
-    return int(api_lib.MachineApi(rest).heap()["free"])
+    return leak.steady(lambda: int(api_lib.MachineApi(rest).heap()["free"]))
 
 
 TOKEN = default_fixture_token()

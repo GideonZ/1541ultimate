@@ -32,6 +32,7 @@
 #include "power_state.h"
 #include "button_handler.h"
 #include "wol_magic.h"
+#include "recovery.h"
 
 #define NET_CMD_BUFSIZE 512
 
@@ -706,6 +707,17 @@ esp_err_t wifi_connect_to_stored(int index)
     return err;
 }
 
+// Not stored and never made the last AP: it is only for the recovery.
+esp_err_t wifi_connect_to_hotspot(void)
+{
+    memset(&last_connect, 0, sizeof(last_connect));
+    strncpy(last_connect.ssid, recovery_hotspot_ssid, sizeof(last_connect.ssid));
+    strncpy(last_connect.pw, recovery_hotspot_password, sizeof(last_connect.pw));
+    last_connect.auth_mode = WIFI_AUTH_WPA2_PSK;
+    last_connect.list_index = -1;
+    return attempt_connect(last_connect.ssid, last_connect.pw, last_connect.auth_mode);
+}
+
 esp_err_t wifi_connect_to_last()
 {
     nvs_handle_t handle;
@@ -726,6 +738,17 @@ esp_err_t wifi_connect_to_last()
         ESP_LOGW(TAG, "Last AP not set.");
     }
     return err;
+}
+
+// Walks the ladder now, instead of when the retry timer next runs out.
+void wifi_autoconnect(void)
+{
+    ConnectCommand_t cmd;
+    memset(&cmd, 0, sizeof(cmd));
+    cmd.command = CMD_WIFI_AUTOCONNECT;
+    if (xQueueSend(connect_commands, &cmd, 1000) == pdTRUE) {
+        xSemaphoreGive(connect_semaphore);
+    }
 }
 
 esp_err_t enable_wifi_if_needed(ConnectState_t state)
@@ -933,6 +956,15 @@ void connect_thread(void *a)
                             wifi_set_last_ap(i);
                             state = Connected;
                             break;
+                        }
+                    }
+                }
+                if ((state == StoredAPs) && recovery_running()) {
+                    err = wifi_connect_to_hotspot();
+                    if (err == ESP_OK) {
+                        xQueueReceive(connect_events, &connect_event, portMAX_DELAY);
+                        if (connect_event.event_code == EVENT_CONNECTED) {
+                            state = Connected;
                         }
                     }
                 }

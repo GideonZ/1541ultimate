@@ -91,7 +91,7 @@ void ConfigBrowserState :: level_up(void)
 void ConfigBrowserState :: change(void)
 {
     ConfigItem *it = ((BrowsableConfigItem *)under_cursor)->getItem();
-    char buffer[80];
+    char buffer[256]; // the longest string item, a 255-character path
     int max;
     t_cfg_func func;
 
@@ -101,7 +101,7 @@ void ConfigBrowserState :: change(void)
 
     switch(it->definition->type) {
         case CFG_TYPE_ENUM:
-            browser->context(it->getValue() - it->definition->min);
+            browser->context(it->listPosition(it->getValue()));
             break;
         case CFG_TYPE_STRFUNC:
             browser->context(0);
@@ -114,9 +114,10 @@ void ConfigBrowserState :: change(void)
         case CFG_TYPE_STRING:
         case CFG_TYPE_STRPASS:
             max = it->definition->max;
-            if (max > 79)
-                max = 79;
+            if (max > (int)sizeof(buffer) - 1)
+                max = sizeof(buffer) - 1;
             strncpy(buffer, it->getString(), max);
+            buffer[max] = 0;
             if(browser->user_interface->string_box(it->get_item_name(), buffer, max)) { // allow empty string
                 it->setString(buffer);
                 update_selected();

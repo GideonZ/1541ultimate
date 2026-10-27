@@ -205,22 +205,29 @@ def ping_command(host: str, platform: str = sys.platform) -> list[str]:
     return ["ping", "-c", "1", "-W", wait, host]
 
 
+# One echo can go unanswered on a device that is well: measured on an Ultimate 64 Elite
+# under a full run, whose REST, FTP, Telnet, ident and DMA all answered in the same sweep.
+# So the check fails only when no echo of several is answered.
+PING_ATTEMPTS = 3
+
+
 def _ping(host: str) -> Check:
     started = time.perf_counter()
-    try:
-        completed = subprocess.run(
-            ping_command(host),
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            timeout=PING_TIMEOUT_SECONDS + 2, check=False)
-    except FileNotFoundError:
-        # No ping binary. Not knowing is not the same as a bad answer.
-        return Check("ping", SKIP, 0.0, "no ping command")
-    except subprocess.TimeoutExpired:
-        return Check("ping", FAIL, (time.perf_counter() - started) * 1000.0, "timed out")
-    ms = (time.perf_counter() - started) * 1000.0
-    if completed.returncode != 0:
-        return Check("ping", FAIL, ms, f"ping exited {completed.returncode}")
-    return Check("ping", OK, ms)
+    for _ in range(PING_ATTEMPTS):
+        try:
+            completed = subprocess.run(
+                ping_command(host),
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                timeout=PING_TIMEOUT_SECONDS + 2, check=False)
+        except FileNotFoundError:
+            # No ping binary. Not knowing is not the same as a bad answer.
+            return Check("ping", SKIP, 0.0, "no ping command")
+        except subprocess.TimeoutExpired:
+            continue
+        if completed.returncode == 0:
+            return Check("ping", OK, (time.perf_counter() - started) * 1000.0)
+    return Check("ping", FAIL, (time.perf_counter() - started) * 1000.0,
+                 f"no answer to {PING_ATTEMPTS} pings")
 
 
 # What the Telnet listener answers once every session slot is taken; see

@@ -47,15 +47,19 @@ SRCS_CC	 =  small_printf.cc \
 			filesystem_iso9660.cc \
 			filemanager.cc \
 			embedded_d64.cc \
+			embedded_fat.cc \
+			embedded_iso.cc \
 			size_str.cc \
 			config.cc \
 			iec_drive.cc \
 			iec_channel.cc \
+			x00_wrapper.cc \
 			iec_interface.cc \
 			cbmdos_parser.cc \
 			json.cc \
 			init_function.cc \
 			d64.cc \
+			mountcache.cc \
 			d81.cc \
 			testdrive.cc
 
@@ -70,7 +74,7 @@ PATH_INC =  $(addprefix -I, $(VPATH))
 OPTIONS  = -g -ffunction-sections -O0 -DRUNS_ON_PC -DSAFEMODE -Wno-format -Wno-format-extra-args -fsigned-char
 COPTIONS = $(OPTIONS) -std=c99
 CPPOPT   = $(OPTIONS) -fno-exceptions -fno-rtti -fno-threadsafe-statics -fpermissive
-LIBS     =  -lgcc -lcurses
+LIBS     =  -lgcc
 LFLAGS   = --gc-sections 
 
 include ../../../common/rules.mk

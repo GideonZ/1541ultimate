@@ -17,6 +17,8 @@ public:
     virtual void push_head(int) { }
     virtual void wait_free(void) { }
     virtual void clear_buffer(void) { }
+    // Menu entry: drop anything already held until it has been released.
+    virtual void ignore_held_input(void) { }
 };
 
 #define KEY_BACK   0x08
@@ -42,6 +44,7 @@ public:
 #define KEY_CTRL_L 0x0C
 #define KEY_CTRL_N 0x0E
 #define KEY_CTRL_O 0x0F
+#define KEY_CTRL_P 0x10
 #define KEY_CTRL_V 0x16
 
 // Combinations that cannot use their ASCII control code, because that code is

@@ -23,11 +23,6 @@ to screen RAM each time:
 Each bank's marker is its own number, so the three rows read back say which
 bank every selection reached. A data latch shows the write rows reversed and
 the read row as whatever the bus held.
-
-The fix is in the FPGA image, and the Ultimate 64 images ship prebuilt, so the
-suite is gated on `machine.C64GS_BANK_FROM_ADDRESS` and reports SKIP on a
-machine the table lists. `run-tests --assume-fix c64gs-bank-from-address`
-runs it there.
 """
 
 from __future__ import annotations
@@ -43,11 +38,9 @@ sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
 import bootstrap  # noqa: E402,F401
 
 import cli                                                      # noqa: E402
-import machine as machine_lib                                   # noqa: E402
-from api import UltimateApi, identify_machine                   # noqa: E402
+from api import UltimateApi                                     # noqa: E402
 from report import (Failure, check, detail, format_exception,   # noqa: E402
-                    note_assumed_fix, suite_fail, suite_ok, suite_skip,
-                    teardown_step)
+                    suite_fail, suite_ok, teardown_step)
 
 SUITE = "c64gs_cartridge_test"
 
@@ -134,17 +127,8 @@ def report_row(name: str, seen: bytes) -> None:
                f"{seen[start:start + 16].hex(' ')}")
 
 
-def run(args) -> bool:
-    """Run the checks; False when the machine's FPGA image lacks the fix."""
+def run(args) -> None:
     device = UltimateApi(args.host, args.password or None, args.timeout)
-    machine = identify_machine(args.host, args.password or None, args.timeout)
-    absent = machine.missing_fix(machine_lib.C64GS_BANK_FROM_ADDRESS)
-    if absent:
-        suite_skip(SUITE, absent)
-        return False
-    if machine.assumed_fix(machine_lib.C64GS_BANK_FROM_ADDRESS):
-        note_assumed_fix(machine_lib.C64GS_BANK_FROM_ADDRESS, machine.kind)
-
     wanted = bytes(range(BANKS))
     try:
         with check("the generated C64GS cartridge starts and runs its routine"):
@@ -181,7 +165,6 @@ def run(args) -> bool:
     finally:
         # A reboot removes the cartridge; a reset would boot straight back into it.
         teardown_step("restore the configured cartridge", device.machine.reboot)
-    return True
 
 
 def main() -> int:
@@ -190,12 +173,11 @@ def main() -> int:
     cli.add_device_arguments(parser)
     args = parser.parse_args()
     try:
-        ran = run(args)
+        run(args)
     except Exception as exc:            # noqa: BLE001
         suite_fail(SUITE, format_exception(exc))
         return 1
-    if ran:
-        suite_ok(SUITE)
+    suite_ok(SUITE)
     return 0
 
 

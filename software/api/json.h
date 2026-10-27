@@ -373,6 +373,9 @@ public:
     }
 };
 
+// Returns the number of JSON values, or one of these, or another jsmn error.
+#define JSON_TOO_MANY_VALUES (-1)       // JSMN_ERROR_NOMEM: more than max_tokens
+#define JSON_ALLOC_FAILED (-10)         // the token array could not be allocated
 int convert_text_to_json_objects(char *text, size_t text_size, size_t max_tokens, JSON **out);
 
 #endif

@@ -1,22 +1,21 @@
 #!/usr/bin/env python3
-"""A held cursor key must not drop the Telnet session.
+"""A held cursor key must not stall or drop the Telnet session.
 
-Scrolling the monitor by holding a key emits about 680 bytes a keystroke, which
-fills the device's send buffer faster than a slow link drains it. SO_SNDTIMEO is
-5s (socket_gui.cc), so `send` then returns EAGAIN, and treating that as an error
-closed the connection: measured on an Ultimate II+L over WiFi, the session went
-silent after about 250 keys and the socket was closed from the device end.
+Holding a cursor key in the machine code monitor redraws the screen on every
+keystroke, about 1.3 KB each. Keys that arrive faster than the device redraws
+wait unread in the session's socket. On WiFi that queue can hold more frames
+than the interface has UART receive buffers, which is why the WiFi driver hands
+the network stack a copy of each frame and keeps its buffer: a queue holding
+the buffers themselves leaves the interface unable to receive anything, the
+acknowledgements the session's own output is waiting for included. Ethernet
+has enough receive buffers that one session cannot take them all, so the check
+exercises that path only over WiFi.
 
-A slow peer is not a gone peer. This drives the same burst a held key produces
-and requires the session to still answer afterwards. It reads continuously
-while it sends, so a failure here is the device giving up rather than the test
-refusing to drain.
-
-The defect is open as GideonZ/1541ultimate#820, so the check is gated on
-machine.TELNET_SEND_TOLERATES_SLOW_PEER and skips on an Ultimate II+ rather
-than failing every run. Whoever fixes #820 should delete that entry, which
-turns this check back on everywhere; `--assume-fix telnet-send-tolerates-slow-peer`
-runs it without editing the table first.
+The keys go out faster than an Ultimate 64 Elite redraws, so the device always
+falls behind rather than only when something else keeps it busy. The session
+has to still answer afterwards. The check reads continuously while it sends,
+so a failure here is the device giving up rather than the test refusing to
+drain.
 
     python3 tests/e2e/network/telnet_sustained_input_test.py -H u2@c64u
 """
@@ -37,18 +36,15 @@ sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
 import bootstrap  # noqa: E402,F401
 import cli  # noqa: E402
 
-import api as api_lib  # noqa: E402
-import machine as machine_lib  # noqa: E402
 import targets  # noqa: E402
 from report import Failure, check, check_ok, detail, suite_ok  # noqa: E402
 
 SUITE = "telnet_sustained_input_test"
 
-# Enough to have dropped the session before the fix, with margin. The observed
-# death was around 250; 600 keys at a terminal's repeat rate is a few seconds of
-# holding the key down, which is an ordinary thing to do.
+# 600 keys is twelve seconds of a held key. At 50 a second an Ultimate 64 Elite
+# draws about 890 bytes a key of the 1321 a full redraw takes, so it is behind.
 KEYS = 600
-KEY_INTERVAL_S = 0.033          # about 30 a second, a typical repeat rate
+KEY_INTERVAL_S = 0.02
 CURSOR_DOWN = b"\x1b[B"
 ENTER_MONITOR = b"\x0f"         # Ctrl+O
 
@@ -91,13 +87,7 @@ def main() -> int:
     target = targets.parse(args.host)
     host = target.device
 
-    label = "a held cursor key does not drop the Telnet session"
-    if api_lib.identify_machine(args.host).skip_without_fix(
-            machine_lib.TELNET_SEND_TOLERATES_SLOW_PEER, label):
-        suite_ok(SUITE)
-        return 0
-
-    with check(label):
+    with check("a held cursor key does not drop the Telnet session"):
         sock = socket.create_connection((host, args.telnet_port), timeout=10)
         reader = Reader(sock)
         reader.start()

@@ -19,6 +19,7 @@ from api import UltimateApi
 from report import Failure
 
 import streams
+import targets
 
 # The public names a suite already imports, answered by the one place that
 # knows them.
@@ -67,9 +68,13 @@ class AvStreamCapture:
         """`host` is a target token or a resolved handle; see targets.py."""
         self.device = UltimateApi(host, password)
         self.source_addresses = streams.source_addresses(host)
-        self.video_socket = streams.stream_socket(VIDEO_GROUP, VIDEO_PORT,
+        # The target's own groups and ports, as VicStreamCapture takes them. A
+        # unicast datagram to a port that several sockets share reaches only one
+        # of them, so a loopback stand-in needs a port of its own.
+        handle = targets.resolve(host)
+        self.video_socket = streams.stream_socket(handle.video_group, handle.video_port,
                                                   timeout=None)
-        self.audio_socket = streams.stream_socket(AUDIO_GROUP, AUDIO_PORT,
+        self.audio_socket = streams.stream_socket(handle.audio_group, handle.audio_port,
                                                   timeout=None)
         # Ask before arming, stop only what this started, and write down every
         # arm and stop so a reader can attribute a gap in a recording to the

@@ -160,6 +160,7 @@ TESTS = [
     "truncation-spans-reply-blocks",
     "tcp-read-is-lossless",
     "oversize-request-keeps-the-datagram",
+    "empty-datagram-keeps-udp-open",
     "multi-block-state-does-not-leak",
     "reset-closes-uci-sockets",
 ]
@@ -234,17 +235,15 @@ def describe_mismatch(actual: bytes, expected: bytes) -> str:
     show up as the first differing position plus the offset the bytes there
     actually came from, because pattern() makes every byte name its own offset.
     """
-    if len(actual) != len(expected):
-        return (f"got {len(actual)} bytes, expected {len(expected)}"
-                + (f"; the bytes it does have start at offset {run_offset(actual)}"
-                   if run_offset(actual) is not None else ""))
+    size = (f"got {len(actual)} bytes, expected {len(expected)}; "
+            if len(actual) != len(expected) else "")
     for index, (got, want) in enumerate(zip(actual, expected)):
         if got != want:
             tail = actual[index:index + 16]
-            return (f"first difference at offset {index}: got ${got:02X}, expected "
+            return (f"{size}first difference at offset {index}: got ${got:02X}, expected "
                     f"${want:02X}; the run starting there came from offset "
-                    f"{run_offset(tail)}")
-    return "identical"
+                    f"{run_offset(tail)}; around it: {actual[max(0, index - 8):index + 8].hex(' ')}")
+    return f"{size}the shorter one is a prefix of the other" if size else "identical"
 
 
 class Net:
@@ -1076,6 +1075,67 @@ def run_oversize_request_keeps_datagram(net: Net, peer: Peer) -> bool:
     return ok
 
 
+def run_empty_datagram_keeps_udp_open(net: Net, peer: Peer) -> bool:
+    """A 0-byte datagram is data on UDP, not the end of a connection.
+
+    recv() returning 0 means the peer closed only on a stream. The firmware once
+    applied that to every socket, so one empty datagram from the peer (or anyone spoofing its address) untracked
+    and closed a C64 program's UDP handle: the next READ said the connection was
+    closed by the host and WRITE and CLOSE failed with EBADF.
+    """
+    section("empty-datagram-keeps-udp-open")
+    ok = True
+    handle = net.open_udp(peer.ip, peer.udp_port)
+    try:
+        peer.learn_udp_peer(net, handle)
+        net.drain_socket(handle)
+        peer.send_udp(b"")
+        time.sleep(DELIVERY_SETTLE_SECONDS)
+
+        empty = net.read(handle, SMALL_READ)
+        with check("the empty datagram is a zero-length read with status OK"):
+            detail(f"empty read: {empty.describe()}")
+            if empty.status_text != STATUS_OK or empty.header != 0 or empty.payload:
+                raise Failure(f"expected header 0, no payload and {STATUS_OK!r}, got "
+                              f"{empty.describe()}")
+
+        nothing = net.read(handle, SMALL_READ)
+        with check("a read with nothing pending still reports no data"):
+            detail(f"next read: {nothing.describe()}")
+            if not nothing.status_text.startswith(STATUS_NO_DATA_PREFIX):
+                raise Failure(f"expected {STATUS_NO_DATA_PREFIX!r}, got {nothing.status_text!r}")
+            if nothing.status_text == empty.status_text:
+                raise Failure("an empty datagram and no data are not distinguishable")
+
+        peer.send_udp(pattern(SMALL_READ))
+        time.sleep(DELIVERY_SETTLE_SECONDS)
+        after = net.read(handle, SMALL_READ)
+        with check("a datagram sent after the empty one is still delivered"):
+            detail(f"read after: {after.describe()}")
+            if after.status_text != STATUS_OK or after.payload != pattern(SMALL_READ):
+                raise Failure(f"the handle did not survive: {after.describe()}")
+
+        outgoing = pattern(SMALL_READ, seed=3)
+        sent = net.write(handle, outgoing)
+        with check("WRITE still works and reaches the peer"):
+            detail(f"write status: {sent.status_text!r}")
+            if sent.status_text != STATUS_OK:
+                raise Failure(f"expected {STATUS_OK!r}, got {sent.status_text!r}")
+            peer.udp.settimeout(PEER_TIMEOUT_SECONDS)
+            try:
+                received, _ = peer.udp.recvfrom(2048)
+            except TimeoutError:
+                raise Failure("the written datagram never reached the peer") from None
+            if received != outgoing:
+                raise Failure(f"peer received {len(received)} bytes that differ from the write")
+    finally:
+        closed = net.close(handle)
+        with check("CLOSE succeeds on the handle that was never closed"):
+            if closed.status_text != STATUS_OK:
+                raise Failure(f"expected {STATUS_OK!r}, got {closed.status_text!r}")
+    return ok
+
+
 def close_quietly(net: Net, handles: list[int]) -> None:
     """Close every handle a scenario opened; an error means it was already gone."""
     for handle in handles:
@@ -1324,6 +1384,8 @@ def main() -> int:
             run(route, "tcp-read-is-lossless", run_tcp_lossless, net, peer)
             run(route, "oversize-request-keeps-the-datagram",
                 run_oversize_request_keeps_datagram, net, peer)
+            run(route, "empty-datagram-keeps-udp-open",
+                run_empty_datagram_keeps_udp_open, net, peer)
             run(route, "multi-block-state-does-not-leak",
                 run_multi_block_state_does_not_leak, net, peer)
 
