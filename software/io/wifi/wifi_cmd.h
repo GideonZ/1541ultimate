@@ -73,6 +73,22 @@ command_buf_t *wifi_wait_reply(rpc_header_t hdr, int timeout_ms);
 int wifi_set_recovery_url(const char *url);
 int wifi_get_recovery_url(char *url, int maxlen);
 
+extern uint16_t sequence_nr;
+
+// wifi_dedicated_call's thread number, which no transmit buffer has. While
+// dedicated_waiting is set, the receive interrupt queues its replies in
+// dedicated_replies, tagged with the buffer generation; otherwise it drops them.
+// Not a reply slot (0 to WIFI_REPLY_SLOTS - 1), not 0xFF (no reply wanted), and not 0xFD to 0xFF, which
+// the HTTPS provider channels of CMD_IDENTIFY use (#936)
+#define WIFI_DEDICATED_THREAD 0xFC
+#if U64 == 1
+typedef struct {
+    command_buf_t *buf;
+    uint32_t generation;
+} dedicated_reply_t;
+extern QueueHandle_t dedicated_replies;
+extern volatile bool dedicated_waiting;
+#endif
 extern "C" { void print_uart_status(); }
 extern const char *no_wifi_buf;
 extern const char *no_wifi_slot;
