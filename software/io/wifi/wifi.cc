@@ -294,7 +294,8 @@ void WiFi :: RunModeThread()
                 memset(&voltages, 0, sizeof(voltages));
                 result = wifi_get_voltages(&voltages);
                 printf("Result get voltages: %d %d %d %d %d %d %d %d\n", result, voltages.vbus, voltages.vaux, voltages.v50, voltages.v33, voltages.v18, voltages.v10, voltages.vusb);
-                if (voltages.vbus < 8500) {
+                // A module that has no reading to give says so; that is not a low voltage
+                if ((result == 0) && (voltages.vbus < 8500)) {
                     UserInterface :: postMessage("Low input voltage.");
                 }
                 // These settings live in the module's NVS; keep them in sync.
