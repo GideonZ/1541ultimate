@@ -72,6 +72,19 @@ void wifi_note_user_disconnect(void)
     user_disconnected = true;
 }
 
+/* What feeds the RNG: esp_fill_random() is only truly random while the radio runs
+ * (esp_random.h). The radio counts as off from the moment a stop begins, and the epoch
+ * counts the stops, so that a stop and a start within one draw are noticed. */
+entropy_source_t entropy_source(void)
+{
+    return radio_is_on() ? ENTROPY_RADIO : ENTROPY_NONE;
+}
+
+uint32_t entropy_epoch(void)
+{
+    return radio_epoch();
+}
+
 // Allocate some buffers to work with
 command_buf_context_t work_buffers;
 

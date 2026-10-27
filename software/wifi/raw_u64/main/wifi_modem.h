@@ -30,5 +30,7 @@ void disable_hook();
 uint8_t wifi_get_connection();
 void wifi_report_disabled(void);
 void wifi_note_identify(void);
+entropy_source_t entropy_source(void);
+uint32_t entropy_epoch(void);
 
 #endif

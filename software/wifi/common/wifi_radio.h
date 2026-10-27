@@ -14,6 +14,7 @@
 #define SOFTWARE_WIFI_COMMON_WIFI_RADIO_H_
 
 #include <stdbool.h>
+#include <stdint.h>
 
 // Both are idempotent: asking for the state the radio is in already does nothing and
 // returns 0. Otherwise they return 0 or the esp_err_t of the start or stop, and a failed
@@ -22,7 +23,11 @@
 int radio_start(void);
 int radio_stop(void);
 
-// True from a successful start until a successful stop
+// True from a successful start until a stop begins: while a stop runs the radio no
+// longer counts as on, and a stop that fails makes it count again
 bool radio_is_on(void);
+
+// The number of stops begun so far, so that a caller can tell the radio went off under it
+uint32_t radio_epoch(void);
 
 #endif /* SOFTWARE_WIFI_COMMON_WIFI_RADIO_H_ */
