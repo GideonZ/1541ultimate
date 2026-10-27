@@ -48,12 +48,20 @@ entropy source is behind them, since the output of a post-processed RNG looks
 the same either way. Whether bytes are owed at all is taken from the device's
 own report, not from GET_RANDOM's answer: an Ultimate 64 or Ultimate 64
 Elite owes them, once "WiFi Enabled" is set and it reports a wifi_mac in
-/v1/info. Any other product has to refuse.
+/v1/info. An Ultimate 64-II or C64 Ultimate (the Elite II and the C64 Ultimate) owes them as
+soon as its module reports a wifi_mac. Both owe them with the radio off too: the
+module then draws them from its SAR ADC entropy source. get-random-radio-off
+checks that on the products with the setting, by turning the radio off for the
+scenario and on again after it; the Ultimate 64-II has no setting the suite can
+switch (its menu's Enable and Disable are actions), so there it skips; it also
+skips where the suite reaches the device over WiFi. Any other product has to refuse.
 
 Supported on any Ultimate whose FPGA provides the command interface. The suite
 enables the "Command Interface" setting and restores it on exit. On an Ultimate
 64 or Ultimate 64 Elite it also sets "WiFi Enabled" and restores the stored
-setting on exit; the module it started keeps running until the next reboot.
+setting on exit; a change of the setting turns the module's radio on or off at
+once. An Ultimate 64-II is left as it is. The suite must reach the device over
+Ethernet: get-random-radio-off turns the WiFi radio off.
 """
 
 import argparse
@@ -85,6 +93,8 @@ CFG_CMD_IF = "Command Interface"
 OWNED_SETTINGS = (CFG_CMD_IF,)
 
 NET_CMD_IDENTIFY = 0x01
+NET_CMD_GET_INTERFACE_COUNT = 0x02
+NET_CMD_GET_NETADDR = 0x04
 NET_CMD_GET_IPADDR = 0x05
 NET_CMD_OPEN_TCP = 0x07
 NET_CMD_OPEN_UDP = 0x08
@@ -193,14 +203,21 @@ U64_MK1_PRODUCTS = ("Ultimate 64", "Ultimate 64 Elite")
 U64_MK2_PRODUCTS = ("Ultimate 64-II", "C64 Ultimate")
 # Every other product answers 87, even with a wifi_mac: its ESP32 runs other code.
 GET_RANDOM_PRODUCTS = U64_MK1_PRODUCTS + U64_MK2_PRODUCTS
-# The setting that starts the module there, by the store's exact name (the answer
-# is keyed by it). Set for the run; writing Disabled back restores the setting but
-# does not stop the module (network_esp32.cc, effectuate_settings).
+# The setting that switches the module's radio there, by the store's exact name (the
+# answer is keyed by it). Set for the run, and written back on exit; a change takes
+# effect at once (network_esp32.cc, wifi_enable_change).
 CFG_WIFI_CATEGORY = "WiFi settings"
 CFG_WIFI_ENABLED = "WiFi Enabled"
 # How long a device with Wi-Fi enabled gets to report its wifi_mac, which it
 # does once the module has started; this covers a device that has just booted.
 WIFI_MAC_SECONDS = 30.0
+# How long the module gets to stop its radio after "WiFi Enabled" goes to Disabled
+# (it takes the request between connect attempts, so this covers one attempt), and to
+# associate and get an address again after Enabled.
+RADIO_OFF_SECONDS = 30.0
+RADIO_ON_SECONDS = 60.0
+# How many draws get-random-radio-off makes with the radio off
+RADIO_OFF_DRAWS = 8
 
 # The most GET_RANDOM hands out in one command. 512 bytes fits one reply block,
 # so every GET_RANDOM reply arrives in one.
@@ -259,11 +276,12 @@ TESTS = [
     "get-random-bytes-vary",
     "get-random-refusals",
     "get-random-leaves-sockets-alone",
+    "get-random-radio-off",
     "reset-closes-uci-sockets",
 ]
 # The scenarios that need no network peer, because they open no socket.
 PEERLESS_TESTS = ("read-length-limit", "get-random-lengths", "get-random-bytes-vary",
-                  "get-random-refusals")
+                  "get-random-refusals", "get-random-radio-off")
 
 
 def pattern(size: int, seed: int = 0) -> bytes:
@@ -1376,8 +1394,9 @@ def require_random(result, length: int) -> bytes:
                       f"{RANDOM_BUSY_DELAY_SECONDS:.1f}s apart")
     if result.status_text.startswith(STATUS_NO_ENTROPY_PREFIX):
         raise Failure(f"GET_RANDOM of {length} bytes answered {result.status_text!r}, expected "
-                      f"{STATUS_OK!r}; if WiFi was disabled from the menu, enable it there or "
-                      f"reboot, then run the suite again")
+                      f"{STATUS_OK!r}: the module has bytes with its radio on and with it off, "
+                      f"so 87 means it has no entropy source at all (a module without "
+                      f"GET_RANDOM, or a SAR ADC source that failed its readback)")
     if result.status_text != STATUS_OK:
         raise Failure(f"GET_RANDOM of {length} bytes answered {result.status_text!r}, "
                       f"expected {STATUS_OK!r}")
@@ -1659,6 +1678,99 @@ def run_get_random_leaves_sockets_alone(net: Net, peer: Peer, duty: RandomDuty,
     return True
 
 
+def wifi_interface_address(net: Net, wifi_mac: str) -> str | None:
+    """The address of the network target's interface whose MAC is `wifi_mac`, or None.
+
+    The WiFi interface loses its address when its link goes down (dhcp_stop in
+    NetworkInterface::link_down), which is what the Ultimate does when the module
+    reports EVENT_DISABLED, so 0.0.0.0 here means the radio-off reached it. None
+    means no interface has that MAC.
+    """
+    count = net.uci.transact(bytes([TARGET_NETWORK, NET_CMD_GET_INTERFACE_COUNT])).data
+    want = bytes.fromhex(wifi_mac.replace(":", "").replace("-", ""))
+    for index in range(count[0] if count else 0):
+        mac = net.uci.transact(bytes([TARGET_NETWORK, NET_CMD_GET_NETADDR, index])).data
+        if bytes(mac[:6]) == want:
+            reply = net.uci.transact(bytes([TARGET_NETWORK, NET_CMD_GET_IPADDR, index])).data
+            return ".".join(str(b) for b in reply[:4]) if len(reply) >= 4 else None
+    return None
+
+
+def wait_for_wifi_address(net: Net, wifi_mac: str, gone: bool, seconds: float) -> str | None:
+    """Polls the WiFi interface's address until it is gone (0.0.0.0) or back, or the time is up."""
+    deadline = time.monotonic() + seconds
+    while True:
+        address = wifi_interface_address(net, wifi_mac)
+        if (address == "0.0.0.0") == gone or time.monotonic() >= deadline:
+            return address
+        time.sleep(1.0)
+
+
+def run_get_random_radio_off(net: Net, duty: RandomDuty, device, device_host: str) -> bool | None:
+    """GET_RANDOM hands out bytes with the WiFi radio off, from the SAR ADC source.
+
+    On an Ultimate 64 or Ultimate 64 Elite, "WiFi Enabled" goes to Disabled for the
+    scenario, which turns the module's radio off at once, and back to Enabled after
+    it. The off counts as done once the Ultimate's WiFi interface has lost its address,
+    which it does on the module's EVENT_DISABLED; if it keeps it, the radio did not go
+    off and the scenario fails rather than draw with the radio on. That the RF itself
+    is off is the bench sniffer's check, not this suite's. The draws then come from
+    the module's SAR ADC entropy source; one that meets the radio change may answer
+    88, which Net retries.
+
+    Skips where it cannot work: on the Ultimate 64-II, whose radio is switched only
+    from its menu; where the suite reaches the device over WiFi (turning it off would
+    cut the suite off); and where the WiFi interface has no address before the
+    scenario (with a static address, or no AP), so the off could not be seen.
+    """
+    section("get-random-radio-off")
+    if not random_expected(net, duty):
+        return None
+    check_start("GET_RANDOM hands out bytes with the radio off")
+    if duty.product not in U64_MK1_PRODUCTS:
+        check_skip(f"this {duty.product} has no {CFG_WIFI_ENABLED!r} setting to switch its "
+                   f"radio with; its menu's Disable is an action the suite cannot reach")
+        return None
+    info = device.info()
+    wifi_mac = info.extra.get("wifi_mac", "") if reports_wifi_mac(info) else ""
+    address = wifi_interface_address(net, wifi_mac) if wifi_mac else None
+    try:
+        host_address = socket.gethostbyname(device_host)
+    except OSError:
+        host_address = device_host
+    if address is not None and address == host_address:
+        check_skip(f"the suite reaches the device at {host_address}, its WiFi address; turning "
+                   f"the radio off would cut the suite off. Run it over Ethernet")
+        return None
+    if address in (None, "0.0.0.0"):
+        check_skip(f"the WiFi interface has no address before the scenario ({address!r}: no "
+                   f"AP, or a static address), so the radio going off could not be seen")
+        return None
+    with check(f"set {CFG_WIFI_ENABLED!r} to Disabled, and the WiFi interface loses its "
+               f"address {address} within {RADIO_OFF_SECONDS:g}s"):
+        device.configs.set(CFG_WIFI_CATEGORY, CFG_WIFI_ENABLED, "Disabled")
+        after = wait_for_wifi_address(net, wifi_mac, True, RADIO_OFF_SECONDS)
+        if after != "0.0.0.0":
+            raise Failure(f"the WiFi interface still has {after!r}: the radio did not go off")
+    try:
+        with check(f"{RADIO_OFF_DRAWS} GET_RANDOM of {RANDOM_TYPICAL} bytes with the radio off "
+                   f"answer {STATUS_OK.decode()} with the bytes"):
+            series = [require_random(net.get_random(RANDOM_TYPICAL), RANDOM_TYPICAL)
+                      for _ in range(RADIO_OFF_DRAWS)]
+            if len(set(series)) != len(series):
+                raise Failure("a reply with the radio off repeated an earlier one")
+    finally:
+        with check(f"set {CFG_WIFI_ENABLED!r} back to Enabled, and the WiFi interface gets "
+                   f"an address again within {RADIO_ON_SECONDS:g}s"):
+            device.configs.set(CFG_WIFI_CATEGORY, CFG_WIFI_ENABLED, "Enabled")
+            back = wait_for_wifi_address(net, wifi_mac, False, RADIO_ON_SECONDS)
+            if back in (None, "0.0.0.0"):
+                raise Failure(f"the WiFi interface has {back!r}: the radio did not come back")
+    with check("GET_RANDOM hands out bytes with the radio on again"):
+        require_random(net.get_random(RANDOM_TYPICAL), RANDOM_TYPICAL)
+    return True
+
+
 def close_quietly(net: Net, handles: list[int]) -> None:
     """Close every handle a scenario opened; an error means it was already gone."""
     for handle in handles:
@@ -1920,6 +2032,8 @@ def main() -> int:
             if route == "native":
                 run(route, "get-random-bytes-vary", run_get_random_bytes_vary, net, duty)
             run(route, "get-random-refusals", run_get_random_refusals, net, duty)
+            run(route, "get-random-radio-off", run_get_random_radio_off, net, duty, device,
+                target.device)
             if peer is None:
                 for name in needs_peer:
                     if duty_failure is not None and name.startswith("get-random-"):
