@@ -229,6 +229,7 @@ VPATH +=	$(PATH_SW)/6502/sidcrt/target
 VPATH +=	$(PATH_SW)/u64ii
 VPATH +=	$(PATH_SW)/u64
 VPATH +=	$(PATH_SW)/u64ctrl/main
+VPATH +=	$(PATH_SW)/wifi/common
 
 SRCS_ASM =
 

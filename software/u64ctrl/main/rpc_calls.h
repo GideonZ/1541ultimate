@@ -20,6 +20,8 @@ typedef struct {
     uint16_t sequence;
 } rpc_header_t;
 
+#include "rpc_shared.h"
+
 typedef struct {
     rpc_header_t hdr;
     int esp_err; // to be casted to esp_err_t

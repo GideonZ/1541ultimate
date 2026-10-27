@@ -94,7 +94,7 @@ typedef struct {
 } wifi_event_sta_disconnected_t;
 enum { WIFI_EVENT_STA_START, WIFI_EVENT_STA_CONNECTED, WIFI_EVENT_STA_DISCONNECTED };
 
-#if __has_include("radio_boot.h")
+#if !defined(MODULE_U64CTRL) && __has_include("radio_boot.h")
 #include "radio_boot.h" // the U64 and U2+L modules' restart record
 #define MODULE_HAS_SWITCH 1
 #endif

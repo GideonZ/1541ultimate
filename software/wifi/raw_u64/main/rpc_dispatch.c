@@ -251,16 +251,6 @@ void cmd_clear_aps(command_buf_t *buf)
     my_uart_transmit_packet(UART_CHAN, buf);
 }
 
-// The Ultimate decodes these by offset: a layout change must break the build, not the wire
-_Static_assert(sizeof(rpc_get_random_req) == 6, "rpc_get_random_req size");
-_Static_assert(offsetof(rpc_get_random_req, length) == 4, "rpc_get_random_req.length");
-_Static_assert(sizeof(rpc_get_random_resp) == 12, "rpc_get_random_resp size");
-_Static_assert(offsetof(rpc_get_random_resp, esp_err) == 4, "rpc_get_random_resp.esp_err");
-_Static_assert(offsetof(rpc_get_random_resp, source) == 8, "rpc_get_random_resp.source");
-_Static_assert(offsetof(rpc_get_random_resp, length) == 10, "rpc_get_random_resp.length");
-_Static_assert(offsetof(rpc_get_random_resp, data) == 12, "rpc_get_random_resp.data");
-_Static_assert(ENTROPY_NONE == 0, "ENTROPY_NONE");
-
 void cmd_get_random(command_buf_t *buf)
 {
     rpc_get_random_req *req = (rpc_get_random_req *)buf->data;

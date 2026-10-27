@@ -45,7 +45,7 @@ LEGACY := $(sort $(wildcard legacy/*.sed))
 CXXFLAGS := -std=c++14 -g -O0 -Wall -Wno-unused-parameter -Wno-unused-variable -Wno-unused-function -Wno-switch \
 	-Wno-format -Wno-unknown-warning-option -Wno-mismatched-tags -Wno-deprecated-declarations \
 	-fno-access-control -DRISCV=1 $(if $(filter 0,$(U64)),,-DU64=$(U64)) \
-	-I$(OUT) -Istubs -I. -I$(WIFI_DIR) -I$(UART) -I$(SW)/wifi/raw_u64/main
+	-I$(OUT) -Istubs -I. -I$(WIFI_DIR) -I$(UART) -I$(SW)/wifi/raw_u64/main -I$(SW)/wifi/common
 
 # Prints the function $(1) of file $(2), and stops when it is not there
 extract = out=$$(awk -v f="$(subst ~, ,$(1))" -f $(EXTRACT) $(2)); \

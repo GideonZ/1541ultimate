@@ -1,23 +1,33 @@
 # Host build of the check on the WiFi module's dedicated channel and GET_RANDOM,
 # its first user, against stand-ins. `make test` builds and runs it.
 PRJ     = wifidedicated
-RESULT  = result
-OUTPUT  = output
-
 PATH_SW = ../../../../software
 TEST    = $(PATH_SW)/test/wifi_dedicated
 
+# `make test` runs it against each module's headers: raw_u64 (the U64) and
+# u64ctrl (the C64 Ultimate, U64=2). `make U64=2 run` is the second alone.
+U64 ?= 1
+ifeq ($(U64),2)
+MODULE  = $(PATH_SW)/u64ctrl/main
+RESULT  = result/u64ctrl
+OUTPUT  = output/u64ctrl
+else
+MODULE  = $(PATH_SW)/wifi/raw_u64/main
+RESULT  = result
+OUTPUT  = output
+endif
+
 VPATH   = $(TEST)/stub $(TEST) $(PATH_SW)/test/wifi_random $(PATH_SW)/io/wifi $(PATH_SW)/io/uart \
-          $(PATH_SW)/wifi/raw_u64/main
+          $(MODULE) $(PATH_SW)/wifi/common
 
 CXX     = g++
-CPPOPTIONS = -std=gnu++11 -g -O0 -Wall -Wextra -Wno-unused-parameter -DNIOS=1 -DU64=1 \
+CPPOPTIONS = -std=gnu++11 -g -O0 -Wall -Wextra -Wno-unused-parameter -DNIOS=1 -DU64=$(U64) \
            $(addprefix -I, $(VPATH))
 
 SRCS_CC = wifi_dedicated_test.cc check.cc world.cc wifi_dedicated.cc wifi_random.cc
 OBJS    = $(addprefix $(OUTPUT)/, $(SRCS_CC:%.cc=%.o))
 
-.PHONY: all test clean
+.PHONY: all run test clean
 
 all: $(RESULT)/$(PRJ)
 
@@ -36,8 +46,12 @@ $(RESULT)/$(PRJ): $(OBJS)
 	@mkdir -p $(RESULT)
 	$(CXX) -o $@ $(OBJS)
 
-test: all
+run: all
 	@$(RESULT)/$(PRJ)
+
+test:
+	@$(MAKE) --no-print-directory run
+	@$(MAKE) --no-print-directory U64=2 run
 
 clean:
 	@rm -rf $(OUTPUT) $(RESULT)
