@@ -89,6 +89,7 @@ host_tests:
 	@$(MAKE) -C target/pc/linux/radioentropy test
 	@$(MAKE) -C target/pc/linux/wifirandom test
 	@$(MAKE) -C target/pc/linux/wifidedicated test
+	@$(MAKE) -C target/pc/linux/getrandompaths test
 
 esp32: esp32_raw_u64 esp32_raw_c3 esp32_u64ctrl
 
