@@ -375,13 +375,30 @@ SubsysResultCode_e C64_Subsys::executeCommand(SubsysCommand *cmd)
                 fix_filename(buffer);
                 set_extension(buffer, ".crt", 32);
 
+                // Overwriting the CRT is asked below, and its store files go with it. Store
+                // files without that CRT belong to something else, so those are asked here.
+                {
+                    File *probe = 0;
+                    bool crt_exists = (fm->fopen(cmd->path.c_str(), buffer, FA_READ, &probe) == FR_OK);
+                    if (crt_exists) {
+                        fm->fclose(probe);
+                    }
+                    if (!crt_exists && C64_CRT::store_exists(cmd->path.c_str(), buffer) &&
+                        (cmd->user_interface->popup("Store files exist. Overwrite?", BUTTON_YES | BUTTON_NO) != BUTTON_YES)) {
+                        break;
+                    }
+                }
+
                 res = create_file_ask_if_exists(fm, cmd->user_interface, cmd->path.c_str(), buffer, &f);
                 if (res == FR_OK) {
                     // Overlay and REST get here with the C64 running; stopped, the file is one image.
                     bool stopped = c64->begin_stopped_session();
                     SubsysResultCode_e retval = C64_CRT::save_crt(f);
-                    c64->end_stopped_session(stopped);
                     fm->fclose(f);
+                    if (retval == SSRET_OK) {
+                        retval = C64_CRT::save_store(cmd->path.c_str(), buffer);
+                    }
+                    c64->end_stopped_session(stopped);
                     if (retval != SSRET_OK) {
                         cmd->user_interface->popup(SubsysCommand::error_string(retval), BUTTON_OK);
                     }

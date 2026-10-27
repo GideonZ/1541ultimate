@@ -13,6 +13,7 @@
 uint8_t _eapi_65_start[768];
 uint32_t host_fpga_capabilities = CAPAB_EEPROM;
 uint32_t host_cart_max_rom = 0;
+uint8_t host_reu_memory[256 * 1024];
 
 static const uint32_t K = 1024;
 static const uint32_t MB = 1024 * K;
@@ -57,6 +58,10 @@ struct Crt {
     uint8_t subtype = 0;
     std::vector<Chip> chips;
     std::vector<uint8_t> trailer;
+    // A header a real tool wrote, used verbatim in place of the built one, so
+    // that a test can ask what the loader makes of an actual file rather than
+    // of this builder's idea of one.
+    std::vector<uint8_t> raw_header;
 
     Crt(uint16_t hw_type, int for_machine = 64) : machine(for_machine), hw(hw_type) {}
 
@@ -79,14 +84,18 @@ struct Crt {
 
     std::vector<uint8_t> bytes() const {
         std::vector<uint8_t> out(0x40, 0);
-        memcpy(out.data(), machine == 128 ? "C128 CARTRIDGE  " : "C64 CARTRIDGE   ", 16);
-        out[0x13] = 0x40;
-        out[0x14] = 1;
-        out[0x16] = hw >> 8;
-        out[0x17] = hw & 0xFF;
-        out[0x18] = exrom;
-        out[0x19] = game;
-        out[0x1A] = subtype;
+        if (raw_header.size() == 0x40) {
+            memcpy(out.data(), raw_header.data(), 0x40);
+        } else {
+            memcpy(out.data(), machine == 128 ? "C128 CARTRIDGE  " : "C64 CARTRIDGE   ", 16);
+            out[0x13] = 0x40;
+            out[0x14] = 1;
+            out[0x16] = hw >> 8;
+            out[0x17] = hw & 0xFF;
+            out[0x18] = exrom;
+            out[0x19] = game;
+            out[0x1A] = subtype;
+        }
         for (const Chip &c : chips) {
             uint32_t len = 0x10 + c.data.size();
             const uint8_t h[16] = { 'C', 'H', 'I', 'P', uint8_t(len >> 24), uint8_t(len >> 16), uint8_t(len >> 8), uint8_t(len),
@@ -193,7 +202,7 @@ static void test_cartridge_types(void)
         { "Blackbox V4",             Crt(66).banks(1, 0x8000, 0x4000),                    CART_TYPE_BLACKBOX_V4,     CART_PROHIBIT_IO, 0 },
         { "Blackbox V9",             Crt(71).banks(2, 0x8000, 0x4000),                    CART_TYPE_BLACKBOX_V9,     CART_PROHIBIT_DEXX, 0 },
         { "Megabyter",               Crt(86).banks(LARGE, 0x8000, 0x2000),                CART_TYPE_MEGABYTER,       CART_PROHIBIT_DEXX, 0 },
-        { "TwoMegabyter",            Crt(87).banks(LARGE, 0x8000, 0x4000),                CART_TYPE_MEGABYTER | VARIANT_1, CART_PROHIBIT_DEXX, 0 },
+        { "TwoMegabyter",            Crt(88).banks(LARGE, 0x8000, 0x4000),                CART_TYPE_MEGABYTER | VARIANT_1, CART_PROHIBIT_DEXX, 0 },
         { "C128",                    Crt(0, 128).banks(1, 0x8000, 0x8000),                CART_TYPE_128,             0, 0 },
         { "C128 with I/O",           Crt(1, 128).banks(1, 0x8000, 0x8000),                CART_TYPE_128 | VARIANT_3, CART_PROHIBIT_IO, 0 },
         { "C128 with I/O, subtype 1", Crt(1, 128).header(0, 0, 1).banks(1, 0x8000, 0x8000), CART_TYPE_128 | VARIANT_3, CART_PROHIBIT_ALL_BUT_REU, CART_UCI },
@@ -211,7 +220,7 @@ static void test_cartridge_types(void)
 // CRT types the firmware does not emulate, and files that are not CRT images.
 static void test_refused(void)
 {
-    const uint16_t accepted[] = { 0, 1, 2, 3, 4, 5, 8, 9, 10, 11, 13, 15, 18, 19, 20, 21, 32, 36, 44, 53, 54, 60, 64, 65, 66, 71, 86, 87 };
+    const uint16_t accepted[] = { 0, 1, 2, 3, 4, 5, 8, 9, 10, 11, 13, 15, 18, 19, 20, 21, 32, 36, 44, 53, 54, 60, 64, 65, 66, 71, 86, 87, 88 };
     for (uint16_t hw = 0; hw < 100; hw++) {
         if (std::find(std::begin(accepted), std::end(accepted), hw) != std::end(accepted)) {
             continue;
@@ -260,7 +269,7 @@ static void test_packets(void)
 // B * 32K for C128 images. Chips shorter than 8K repeat to 8K.
 static void test_chip_placement(void)
 {
-    const uint16_t types[] = { 0, 1, 2, 3, 4, 5, 8, 9, 10, 11, 13, 15, 19, 20, 21, 32, 36, 44, 53, 60, 64, 65, 66, 71, 86, 87 };
+    const uint16_t types[] = { 0, 1, 2, 3, 4, 5, 8, 9, 10, 11, 13, 15, 19, 20, 21, 32, 36, 44, 53, 60, 64, 65, 66, 71, 86, 87, 88 };
     for (uint16_t hw : types) {
         Crt crt(hw);
         for (int b = 0; b < 4; b++) {
@@ -415,6 +424,413 @@ static void test_save_keeps_memory(void)
     }
 }
 
+// Magic Desk Plus (GideonZ/1541ultimate#727) is CRT hardware type 87, the id
+// VICE assigns it. Its store does not travel in the CRT: VICE keeps the SRAM
+// and the EEPROM as raw images beside the cartridge and refuses a CRT with
+// anything but ROM chunks, so the firmware reads and writes them the same way,
+// named after the CRT -- test.crt goes with test.sram and test.eeprom. Both
+// land in the memory the REU uses, which is why this cart prohibits the REU.
+static Crt mdplus(int rom_banks, uint8_t revision = MDPLUS_REV_SRAM_EEPROM_32K)
+{
+    Crt crt(87);
+    crt.header(0, 1, revision);
+    crt.banks(rom_banks, 0x8000, 0x2000);
+    return crt;
+}
+
+static const char *SRAM_FILE = "test.sram";
+static const char *EEPROM_FILE = "test.eeprom";
+
+// Put the store files beside test.crt, or take them away when empty, and fill
+// the store with a byte neither the files nor an erased device bring, so a part
+// the loader did not place is visible as what the last cartridge left behind.
+static Loaded load_with_store(const Crt &crt, const std::vector<uint8_t> &sram = {},
+                              const std::vector<uint8_t> &eeprom = {}, uint32_t max_rom = 4 * MB)
+{
+    auto &files = FileManager::getFileManager()->files;
+    files.erase(SRAM_FILE);
+    files.erase(EEPROM_FILE);
+    if (!sram.empty()) {
+        files[SRAM_FILE] = sram;
+    }
+    if (!eeprom.empty()) {
+        files[EEPROM_FILE] = eeprom;
+    }
+    memset(host_reu_memory, 0x5A, sizeof(host_reu_memory));
+    return load(crt, max_rom);
+}
+
+static void test_magic_desk_plus(void)
+{
+    // Type 19 stays a plain Magic Desk, whatever it carries.
+    Loaded r = load_with_store(Crt(19).banks(16, 0x8000, 0x2000));
+    CHECK(r.rc == SSRET_OK && r.type == CART_TYPE_DOMARK && r.prohibit == CART_PROHIBIT_DEXX,
+          "Magic Desk: type $%02X and prohibit $%03X, want $%02X and $%03X",
+          r.type, r.prohibit, CART_TYPE_DOMARK, CART_PROHIBIT_DEXX);
+
+    // Without files beside it the store reads as an erased device rather than
+    // as what the last cartridge left in the REU.
+    r = load_with_store(mdplus(32));
+    CHECK(r.rc == SSRET_OK && r.type == (CART_TYPE_MDPLUS | VARIANT_1),
+          "Magic Desk Plus without store files: type $%02X, want $%02X",
+          r.type, CART_TYPE_MDPLUS | VARIANT_1);
+    CHECK(all_ff(host_reu_memory, MDPLUS_EEPROM_32K),
+          "a Magic Desk Plus without an EEPROM file does not find it erased");
+    CHECK(all_ff(host_reu_memory + MDPLUS_SRAM_OFFSET, MDPLUS_SRAM_SIZE),
+          "a Magic Desk Plus without an SRAM file does not find it erased");
+
+    // The revision byte says which parts are fitted, and with them the page
+    // mask: a 32K EEPROM has 128 pages and masks the page register to $7F, an
+    // 8K one has 32 and masks it to $1F. It also says which files are read: a
+    // part the cart does not have is not read even when its file is there.
+    // VICE r46239 settled the numbering.
+    struct Row { const char *what; uint8_t rev; uint32_t eeprom; bool sram; uint16_t type; };
+    const Row rows[] = {
+        { "Magic Desk Plus rev 0, SRAM and 32K EEPROM", MDPLUS_REV_SRAM_EEPROM_32K,
+          MDPLUS_EEPROM_32K, true,  CART_TYPE_MDPLUS | VARIANT_1 },
+        { "Magic Desk Plus rev 1, SRAM and 8K EEPROM",  MDPLUS_REV_SRAM_EEPROM_8K,
+          MDPLUS_EEPROM_8K,  true,  CART_TYPE_MDPLUS },
+        { "Magic Desk Plus rev 2, 32K EEPROM only",     MDPLUS_REV_EEPROM_32K,
+          MDPLUS_EEPROM_32K, false, CART_TYPE_MDPLUS | VARIANT_1 },
+        { "Magic Desk Plus rev 3, 8K EEPROM only",      MDPLUS_REV_EEPROM_8K,
+          MDPLUS_EEPROM_8K,  false, CART_TYPE_MDPLUS },
+        { "Magic Desk Plus rev 4, SRAM only",           MDPLUS_REV_SRAM,
+          0,                 true,  CART_TYPE_MDPLUS },
+    };
+    const std::vector<uint8_t> sram = payload(1001, MDPLUS_SRAM_SIZE);
+    for (const Row &row : rows) {
+        const std::vector<uint8_t> eeprom = payload(2002, row.eeprom ? row.eeprom : MDPLUS_EEPROM_8K);
+        r = load_with_store(mdplus(16, row.rev), sram, eeprom);
+        CHECK(r.rc == SSRET_OK, "%s: load returned %d", row.what, r.rc);
+        CHECK(r.type == row.type, "%s: cartridge type $%02X, want $%02X", row.what, r.type, row.type);
+        // The window is all of $DF00..$DFFF and the registers sit at $DE00 to
+        // $DE03, so nothing else may have either I/O page: not the UCI at
+        // $DF1C, not the sampler, not an ACIA, and not the REU whose memory
+        // this cart borrows.
+        CHECK(r.prohibit == CART_PROHIBIT_IO, "%s: prohibit $%03X, want $%03X",
+              row.what, r.prohibit, CART_PROHIBIT_IO);
+        CHECK(r.guard_intact, "%s: wrote past the cartridge region", row.what);
+        if (row.sram) {
+            CHECK(!memcmp(host_reu_memory + MDPLUS_SRAM_OFFSET, sram.data(), MDPLUS_SRAM_SIZE),
+                  "%s: the SRAM file is not in the store", row.what);
+        } else {
+            CHECK(all_ff(host_reu_memory + MDPLUS_SRAM_OFFSET, MDPLUS_SRAM_SIZE),
+                  "%s: an SRAM file was read for a cart without SRAM", row.what);
+        }
+        if (row.eeprom) {
+            CHECK(!memcmp(host_reu_memory, eeprom.data(), row.eeprom),
+                  "%s: the EEPROM file is not in the store", row.what);
+            CHECK(all_ff(host_reu_memory + row.eeprom, MDPLUS_EEPROM_32K - row.eeprom),
+                  "%s: the EEPROM area past the part is not erased", row.what);
+        } else {
+            CHECK(all_ff(host_reu_memory, MDPLUS_EEPROM_32K),
+                  "%s: an EEPROM file was read for a cart without EEPROM", row.what);
+        }
+    }
+
+    // A file of the wrong size is left alone rather than half applied, and the
+    // load still succeeds: the game runs with an erased part, as in VICE.
+    const uint32_t wrong_sizes[] = { MDPLUS_EEPROM_8K, MDPLUS_EEPROM_32K + 1, 0x4000 };
+    for (uint32_t size : wrong_sizes) {
+        r = load_with_store(mdplus(16, MDPLUS_REV_SRAM_EEPROM_32K), payload(3, MDPLUS_SRAM_SIZE - 1),
+                            payload(4, size));
+        CHECK(r.rc == SSRET_OK, "store files of the wrong size: load returned %d", r.rc);
+        CHECK(all_ff(host_reu_memory, MDPLUS_EEPROM_32K),
+              "a %d byte EEPROM file for a 32K part was read", size);
+        CHECK(all_ff(host_reu_memory + MDPLUS_SRAM_OFFSET, MDPLUS_SRAM_SIZE),
+              "an SRAM file one byte short was read");
+    }
+
+    // A store inside the CRT is refused, as VICE refuses it: a chunk at the
+    // DF00 window is not a ROM bank, and taken as one it would land on one.
+    Crt in_crt = mdplus(16);
+    in_crt.chip(0, 0xDF00, MDPLUS_EEPROM_32K);
+    r = load_with_store(in_crt);
+    CHECK(r.rc == SSRET_ERROR_IN_FILE_FORMAT,
+          "a Magic Desk Plus with a $DF00 chunk: load returned %d, want format error", r.rc);
+
+    // The ROM half is a Magic Desk with one more bank bit: 128 banks of 8K,
+    // and the cartridge logic reads bank N at N * 16K, as it does for every 8K
+    // banker.
+    Crt full = mdplus(128);
+    r = load_with_store(full);
+    CHECK(r.rc == SSRET_OK, "Magic Desk Plus with 128 banks: load returned %d", r.rc);
+    int wrong = 0;
+    uint16_t first_wrong = 0;
+    for (const Chip &c : full.chips) {
+        if (memcmp(r.at(c.bank * 16 * K), c.data.data(), c.data.size()) && !wrong++) {
+            first_wrong = c.bank;
+        }
+    }
+    CHECK(!wrong, "Magic Desk Plus: %d of 128 ROM banks are not at bank * 16K, first bank %d",
+          wrong, first_wrong);
+
+    // A revision the format does not define leaves nothing to fit.
+    r = load_with_store(mdplus(16, MDPLUS_REV_MAX + 1));
+    CHECK(r.rc == SSRET_ERROR_IN_FILE_FORMAT,
+          "Magic Desk Plus revision %d: load returned %d, want format error",
+          MDPLUS_REV_MAX + 1, r.rc);
+}
+
+// Save Cartridge writes the CRT with its ROM alone, and the store beside it
+// under the name the CRT was saved as, one raw image per part the cart has. A
+// load of what was saved gets the same store back.
+static void test_magic_desk_plus_save(void)
+{
+    auto &files = FileManager::getFileManager()->files;
+    struct Row { const char *what; uint8_t rev; uint32_t eeprom; bool sram; };
+    const Row rows[] = {
+        { "rev 0", MDPLUS_REV_SRAM_EEPROM_32K, MDPLUS_EEPROM_32K, true },
+        { "rev 1", MDPLUS_REV_SRAM_EEPROM_8K,  MDPLUS_EEPROM_8K,  true },
+        { "rev 2", MDPLUS_REV_EEPROM_32K,      MDPLUS_EEPROM_32K, false },
+        { "rev 3", MDPLUS_REV_EEPROM_8K,       MDPLUS_EEPROM_8K,  false },
+        { "rev 4", MDPLUS_REV_SRAM,            0,                 true },
+    };
+    for (const Row &row : rows) {
+        Crt crt = mdplus(16, row.rev);
+        Loaded r = load_with_store(crt);
+        CHECK(r.rc == SSRET_OK, "save %s: load returned %d", row.what, r.rc);
+
+        // What the game wrote while it ran.
+        const std::vector<uint8_t> sram = payload(5005, MDPLUS_SRAM_SIZE);
+        const std::vector<uint8_t> eeprom = payload(6006, MDPLUS_EEPROM_32K);
+        memcpy(host_reu_memory + MDPLUS_SRAM_OFFSET, sram.data(), MDPLUS_SRAM_SIZE);
+        memcpy(host_reu_memory, eeprom.data(), MDPLUS_EEPROM_32K);
+
+        files.erase("saved.sram");
+        files.erase("saved.eeprom");
+        std::vector<uint8_t> file;
+        File out(&file);
+        SubsysResultCode_e rc = C64_CRT::save_crt(&out);
+        CHECK(rc == SSRET_OK, "save %s: save_crt returned %d", row.what, rc);
+        CHECK(file == crt.bytes(), "save %s: the saved CRT is not the ROM image it was loaded from", row.what);
+        rc = C64_CRT::save_store("/", "saved.crt");
+        CHECK(rc == SSRET_OK, "save %s: save_store returned %d", row.what, rc);
+
+        if (row.sram) {
+            CHECK(files.count("saved.sram") && (files["saved.sram"] == sram),
+                  "save %s: saved.sram is not the SRAM", row.what);
+        } else {
+            CHECK(!files.count("saved.sram"), "save %s: wrote an SRAM file for a cart without SRAM", row.what);
+        }
+        if (row.eeprom) {
+            CHECK(files.count("saved.eeprom") &&
+                  (files["saved.eeprom"] == std::vector<uint8_t>(eeprom.begin(), eeprom.begin() + row.eeprom)),
+                  "save %s: saved.eeprom is not the %d bytes of the EEPROM", row.what, row.eeprom);
+        } else {
+            CHECK(!files.count("saved.eeprom"), "save %s: wrote an EEPROM file for a cart without EEPROM", row.what);
+        }
+
+        // Load what was saved, and the store comes back.
+        files["saved.crt"] = file;
+        memset(host_reu_memory, 0x5A, sizeof(host_reu_memory));
+        std::vector<uint8_t> mem(4 * MB + GUARD, 0x5A);
+        cart_def def;
+        rc = C64_CRT::load_crt("/", "saved.crt", &def, mem.data());
+        CHECK(rc == SSRET_OK, "save %s: loading the saved cartridge returned %d", row.what, rc);
+        if (row.sram) {
+            CHECK(!memcmp(host_reu_memory + MDPLUS_SRAM_OFFSET, sram.data(), MDPLUS_SRAM_SIZE),
+                  "save %s: the SRAM did not survive save and load", row.what);
+        }
+        if (row.eeprom) {
+            CHECK(!memcmp(host_reu_memory, eeprom.data(), row.eeprom),
+                  "save %s: the EEPROM did not survive save and load", row.what);
+        }
+    }
+
+    // Any other cartridge writes nothing beside its CRT.
+    files.erase("other.sram");
+    files.erase("other.eeprom");
+    Loaded r = load(Crt(19).banks(16, 0x8000, 0x2000), 4 * MB);
+    CHECK(r.rc == SSRET_OK, "Magic Desk: load returned %d", r.rc);
+    CHECK(C64_CRT::save_store("/", "other.crt") == SSRET_OK, "Magic Desk: save_store failed");
+    CHECK(!files.count("other.sram") && !files.count("other.eeprom"),
+          "a plain Magic Desk wrote store files");
+}
+
+// Load a Magic Desk Plus as `name` under `path`, as the file browser (a path and
+// a name) or REST (no path, the whole pathname as the name) passes it.
+static SubsysResultCode_e load_mdp_as(const char *path, const char *name, uint8_t rev = MDPLUS_REV_SRAM_EEPROM_32K)
+{
+    auto &files = FileManager::getFileManager()->files;
+    files[FileManager::key(path, name)] = mdplus(16, rev).bytes();
+    memset(host_reu_memory, 0x5A, sizeof(host_reu_memory));
+    host_cart_max_rom = 4 * MB;
+    std::vector<uint8_t> mem(4 * MB + GUARD, 0x5A);
+    cart_def def;
+    return C64_CRT::load_crt(path, name, &def, mem.data());
+}
+
+static void test_magic_desk_plus_store_files(void)
+{
+    auto &files = FileManager::getFileManager()->files;
+    auto &room = FileManager::getFileManager()->room;
+    const std::vector<uint8_t> sram = payload(7007, MDPLUS_SRAM_SIZE);
+    const std::vector<uint8_t> other = payload(7008, MDPLUS_SRAM_SIZE);
+
+    // The store files are named after the last component of the name only. REST
+    // passes the whole pathname, and a dot in a directory above is not the
+    // CRT's extension: /Usb0/games.v2/murder goes with murder.sram there, not
+    // with /Usb0/games.sram.
+    files.clear();
+    files["Usb0/games.v2/murder.sram"] = sram;
+    files["Usb0/games.sram"] = other;
+    SubsysResultCode_e rc = load_mdp_as("", "/Usb0/games.v2/murder");
+    CHECK(rc == SSRET_OK, "a CRT without an extension under a dotted directory: load returned %d", rc);
+    CHECK(!memcmp(host_reu_memory + MDPLUS_SRAM_OFFSET, sram.data(), MDPLUS_SRAM_SIZE),
+          "a dot in a directory name cut the store file's name short");
+
+    // The same file reached as a path and a name, as the file browser has it,
+    // and a name with more than one dot, where only the last one goes.
+    files.clear();
+    files["Usb0/games.v2/murder.v1.sram"] = sram;
+    rc = load_mdp_as("/Usb0/games.v2/", "murder.v1.crt");
+    CHECK(rc == SSRET_OK && !memcmp(host_reu_memory + MDPLUS_SRAM_OFFSET, sram.data(), MDPLUS_SRAM_SIZE),
+          "murder.v1.crt does not read murder.v1.sram");
+
+    // A save that fails part way leaves the previous save as it was, and no
+    // temporary file behind: first with the SRAM failing, then with the SRAM
+    // written and the EEPROM failing, which must not leave a new SRAM beside
+    // an old EEPROM.
+    const std::vector<uint8_t> old_sram = payload(8001, MDPLUS_SRAM_SIZE);
+    const std::vector<uint8_t> old_eeprom = payload(8002, MDPLUS_EEPROM_32K);
+    const char *full_part[] = { "saved.sram.tmp", "saved.eeprom.tmp" };
+    for (const char *full : full_part) {
+        files.clear();
+        room.clear();
+        rc = load_mdp_as("/", "game.crt");
+        CHECK(rc == SSRET_OK, "save over a full medium: load returned %d", rc);
+        memset(host_reu_memory, 0x11, sizeof(host_reu_memory));   // what the game wrote since
+        files["saved.sram"] = old_sram;
+        files["saved.eeprom"] = old_eeprom;
+        room[full] = 1000;
+        rc = C64_CRT::save_store("/", "saved.crt");
+        CHECK(rc == SSRET_DISK_ERROR, "%s full: save_store returned %d, want disk error", full, rc);
+        CHECK(files["saved.sram"] == old_sram, "%s full: the previous SRAM file was changed", full);
+        CHECK(files["saved.eeprom"] == old_eeprom, "%s full: the previous EEPROM file was changed", full);
+        CHECK(!files.count("saved.sram.tmp") && !files.count("saved.eeprom.tmp"),
+              "%s full: a temporary store file was left behind", full);
+    }
+
+    // With room to spare the same save replaces both files, and leaves no
+    // temporary file.
+    room.clear();
+    rc = C64_CRT::save_store("/", "saved.crt");
+    CHECK(rc == SSRET_OK, "save over a previous save: save_store returned %d", rc);
+    CHECK(files["saved.sram"] == std::vector<uint8_t>(MDPLUS_SRAM_SIZE, 0x11) &&
+          files["saved.eeprom"] == std::vector<uint8_t>(MDPLUS_EEPROM_32K, 0x11),
+          "a save over a previous one did not replace both store files");
+    CHECK(!files.count("saved.sram.tmp") && !files.count("saved.eeprom.tmp"),
+          "a successful save left a temporary store file");
+
+    // Save Cartridge asks before replacing store files that are there: it asks
+    // whether either of the parts this cart has exists.
+    files.clear();
+    rc = load_mdp_as("/", "game.crt", MDPLUS_REV_SRAM);
+    CHECK(!C64_CRT::store_exists("/", "new.crt"), "store_exists without any store file");
+    files["new.eeprom"] = old_eeprom;
+    CHECK(!C64_CRT::store_exists("/", "new.crt"), "store_exists for an EEPROM a rev 4 cart does not have");
+    files["new.sram"] = old_sram;
+    CHECK(C64_CRT::store_exists("/", "new.crt"), "store_exists missed an SRAM file");
+
+    // Once the cartridge is gone, as after a reboot into no cartridge, there is
+    // nothing of it left to save: the memory it used is the REU's again.
+    C64_CRT::clear_crt();
+    files.clear();
+    CHECK(!C64_CRT::is_valid(), "a cleared cartridge still reads as valid");
+    rc = C64_CRT::save_store("/", "after.crt");
+    CHECK(rc == SSRET_OK && files.empty(), "a cleared cartridge still wrote store files");
+    files["after.sram"] = old_sram;
+    CHECK(!C64_CRT::store_exists("/", "after.crt"), "a cleared cartridge still asks about store files");
+
+    // Flashing a cartridge as the default one takes its store files along,
+    // under the name it is flashed as, and removes one the source does not
+    // have, so that a cart flashed under an old name does not start with that
+    // one's save.
+    files.clear();
+    files["Usb1/motm/game.sram"] = sram;
+    files["flash/carts/game_shortened.eeprom"] = old_eeprom;
+    FRESULT fres = C64_CRT::copy_store("/Usb1/motm", "game.crt", "/flash/carts", "game_shortened.crt");
+    CHECK(fres == FR_OK, "copy_store returned %d", fres);
+    CHECK(files.count("flash/carts/game_shortened.sram") && (files["flash/carts/game_shortened.sram"] == sram),
+          "flashing did not take the SRAM file along under the flashed name");
+    CHECK(!files.count("flash/carts/game_shortened.eeprom"),
+          "flashing left an EEPROM file the source does not have");
+    CHECK(files.count("Usb1/motm/game.sram"), "flashing moved the source's SRAM file instead of copying it");
+}
+
+// The header of mdplustest.crt, byte for byte. The other tests here build their
+// own headers, so they agree with this file's idea of a CRT rather than with a
+// real one; this is the header a Magic Desk Plus actually arrives with.
+static const uint8_t mdplus_real_header[0x40] = {
+    0x43, 0x36, 0x34, 0x20, 0x43, 0x41, 0x52, 0x54,  // "C64 CART"
+    0x52, 0x49, 0x44, 0x47, 0x45, 0x20, 0x20, 0x20,  // "RIDGE   "
+    0x00, 0x00, 0x00, 0x40, 0x01, 0x00, 0x00, 0x57,  // header $40, v1.0, type 87
+    0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  // exrom 0, game 1: 8K mode
+    0x4D, 0x61, 0x67, 0x69, 0x63, 0x20, 0x44, 0x65,  // "Magic De"
+    0x73, 0x6B, 0x20, 0x50, 0x6C, 0x75, 0x73, 0x00,  // "sk Plus"
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+};
+
+// The shape of a Magic Desk Plus that exists, rather than one built to be
+// tested: crystalct's mdplustest.crt, the Magic Desk Plus Manager, offered in
+// GideonZ/1541ultimate#844 as the image to test the mapper with. It is 262720
+// bytes of 32 ROM banks at $8000 and nothing else -- no $DF00 chunk, no EEPROM,
+// no SRAM -- which is the released shape: the store is kept in files beside
+// the image, and this test puts none there.
+//
+// The bank payloads are this file's own, since what is regressed is the shape
+// and the header, not the manager's 6502. A store the image does not bring has
+// to read as an erased device: it lives in the memory the REU uses, and the
+// manager's own SRAM and EEPROM detection is what reads it first.
+//
+// https://github.com/crystalct/MagicDeskPlus/tree/main/CRT_TEST
+static void test_magic_desk_plus_real_image(void)
+{
+    Crt crt(87);
+    crt.raw_header.assign(mdplus_real_header, mdplus_real_header + 0x40);
+    crt.banks(32, 0x8000, 0x2000);
+
+    // 1 MB is what a cartridge region is unless a target asks for more, and the
+    // released shape has to load there: 32 banks at 16K each is 512K.
+    const uint32_t regions[] = { 1 * MB, 4 * MB };
+    for (uint32_t max_rom : regions) {
+        Loaded r = load_with_store(crt, {}, {}, max_rom);
+        CHECK(r.rc == SSRET_OK, "mdplustest.crt in %dK: load returned %d", max_rom / K, r.rc);
+
+        // Header byte $1A is 0, which fits a 32K EEPROM, so the page register
+        // masks to $7F. The file carries no EEPROM chunk at all: reading the
+        // size from the chunk rather than the header is exactly what would get
+        // this image wrong, and did until VICE r46239 settled the numbering.
+        CHECK(r.type == (CART_TYPE_MDPLUS | VARIANT_1),
+              "mdplustest.crt in %dK: cartridge type $%02X, want $%02X (revision 0, the 32K EEPROM mask)",
+              max_rom / K, r.type, CART_TYPE_MDPLUS | VARIANT_1);
+        CHECK(r.prohibit == CART_PROHIBIT_IO,
+              "mdplustest.crt in %dK: prohibit $%03X, want $%03X",
+              max_rom / K, r.prohibit, CART_PROHIBIT_IO);
+        CHECK(r.guard_intact, "mdplustest.crt in %dK: wrote past the cartridge region", max_rom / K);
+
+        // The cartridge logic reads bank N at N * 16K: $DE00 bits 0..6 land in
+        // bank_bits(21 downto 14), and bit 13 stays low in 8K mode, so only the
+        // low 8K of each 16K step is ever addressed.
+        int wrong = 0;
+        uint16_t first_wrong = 0;
+        for (const Chip &c : crt.chips) {
+            if (memcmp(r.at(c.bank * 16 * K), c.data.data(), c.data.size()) && !wrong++) {
+                first_wrong = c.bank;
+            }
+        }
+        CHECK(!wrong, "mdplustest.crt in %dK: %d of 32 ROM banks are not at bank * 16K, first bank %d",
+              max_rom / K, wrong, first_wrong);
+
+        CHECK(all_ff(host_reu_memory, MDPLUS_EEPROM_32K),
+              "mdplustest.crt in %dK: the EEPROM the image does not carry is not erased", max_rom / K);
+        CHECK(all_ff(host_reu_memory + MDPLUS_SRAM_OFFSET, MDPLUS_SRAM_SIZE),
+              "mdplustest.crt in %dK: the SRAM the image does not carry is not erased", max_rom / K);
+    }
+}
+
 int main()
 {
     test_cartridge_types();
@@ -423,6 +839,10 @@ int main()
     test_chip_placement();
     test_mirroring();
     test_save_keeps_memory();
+    test_magic_desk_plus();
+    test_magic_desk_plus_save();
+    test_magic_desk_plus_store_files();
+    test_magic_desk_plus_real_image();
     fprintf(stderr, "c64_crt_test: %s (%d checks, %d failed)\n", failures ? "FAIL" : "OK", checks, failures);
     return failures ? 1 : 0;
 }

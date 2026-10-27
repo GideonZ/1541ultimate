@@ -322,6 +322,7 @@ e2e:
   keystroke-read-back               x      x      x      x      x
   lint                              x      x      x      x      x
   machine-code-monitor              .      .      .      x      x
+  magicdesk-plus-cartridge          .      .      x      x      x
   memory-views                      .      .      x      x      x
   menu-screen                       x      x      x      x      x
   micromys-wheel                    .      .      .      x      x
