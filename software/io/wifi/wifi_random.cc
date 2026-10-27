@@ -20,6 +20,10 @@ int wifi_random_take_reply(const uint8_t *reply, int size, uint16_t sequence,
     if (size < with_error) {
         return WIFI_RANDOM_INVALID;
     }
+    // The module holds its entropy source for a moment: nothing was drawn, asking again is safe
+    if (result->esp_err == RPC_ERR_ENTROPY_BUSY) {
+        return WIFI_RANDOM_BUSY;
+    }
     if (result->esp_err != 0) {
         return WIFI_RANDOM_REFUSED;
     }

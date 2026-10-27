@@ -116,6 +116,35 @@ static void reply_cases(void)
     }
     check(only_ours, "of all 256 commands only CMD_GET_RANDOM is ours");
 
+    printf("The source behind the bytes\n");
+    size = build();
+    answer()->source = ENTROPY_ADC;
+    check(outcome(size, LEN, 0), "bytes from the ADC source, with the radio off, are handed out");
+
+    printf("The module is busy\n");
+    size = build();
+    answer()->esp_err = RPC_ERR_ENTROPY_BUSY;
+    answer()->source = ENTROPY_NONE;
+    answer()->length = 0;
+    check(outcome(HEADER, LEN, WIFI_RANDOM_BUSY), "busy with no bytes");
+    size = build();
+    answer()->esp_err = RPC_ERR_ENTROPY_BUSY;
+    check(outcome(size, LEN, WIFI_RANDOM_BUSY), "busy hands out nothing, even with len bytes behind it");
+    size = build();
+    answer()->esp_err = RPC_ERR_ENTROPY_BUSY;
+    check(outcome(8, LEN, WIFI_RANDOM_BUSY), "busy in the 8 byte form");
+    size = build();
+    answer()->esp_err = RPC_ERR_ENTROPY_BUSY + 1;
+    check(outcome(HEADER, LEN, WIFI_RANDOM_REFUSED), "the next error is a refusal");
+    size = build();
+    answer()->esp_err = RPC_ERR_ENTROPY_BUSY - 1;
+    check(outcome(HEADER, LEN, WIFI_RANDOM_REFUSED), "the error before it is a refusal");
+    size = build();
+    answer()->esp_err = RPC_ERR_ENTROPY_BUSY;
+    uint8_t sink[600];
+    check(wifi_random_status(wifi_random_take_reply(reply.bytes, size, SEQUENCE, sink, LEN)) == 88,
+          "a busy answer is UCI status 88");
+
     printf("A refusal\n");
     size = build();
     answer()->esp_err = 0x103; // ESP_ERR_INVALID_STATE
