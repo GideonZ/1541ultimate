@@ -83,6 +83,19 @@ uint16_t ap_count = 0;
 uint16_t connected_g = 0;
 uint16_t disabled_g = 0;
 
+/* What feeds the RNG: esp_fill_random() is only truly random while the radio runs
+ * (esp_random.h). The radio counts as off from the moment a stop begins, and the epoch
+ * counts the stops, so that a stop and a start within one draw are noticed. */
+entropy_source_t entropy_source(void)
+{
+    return radio_is_on() ? ENTROPY_RADIO : ENTROPY_NONE;
+}
+
+uint32_t entropy_epoch(void)
+{
+    return radio_epoch();
+}
+
 esp_netif_t *my_sta_netif = NULL;
 netif_input_fn default_input;
 netif_output_fn default_output;
