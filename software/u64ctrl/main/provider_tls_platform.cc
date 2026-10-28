@@ -10,29 +10,49 @@ extern "C" {
 #include <time.h>
 
 EspProviderTlsPlatform::EspProviderTlsPlatform() : socket_(-1),configured_(false),
-    clock_ready_(0),entropy_ready_(0),cancel_(0),cancel_context_(0) { mbedtls_x509_crt_init(&roots_); }
+    clock_ready_(0),entropy_ready_(0),cancel_(0),cancel_context_(0),policy_(0),policy_generation_(0) { mbedtls_x509_crt_init(&roots_); }
 EspProviderTlsPlatform::~EspProviderTlsPlatform() { close_socket(this); mbedtls_x509_crt_free(&roots_); }
 bool EspProviderTlsPlatform::configure(const unsigned char *pem,size_t length,bool (*clock_ready)(),bool (*entropy_ready)()) {
-    if (configured_ || !pem || !length || !clock_ready || !entropy_ready) return false;
+    if (!clock_ready || !entropy_ready || !parse_roots(pem,length)) return false;
+    clock_ready_ = clock_ready; entropy_ready_ = entropy_ready; configured_ = true; return true;
+}
+bool EspProviderTlsPlatform::parse_roots(const unsigned char *pem,size_t length) {
+    if (configured_ || !pem || !length || length > 65536) return false;
     if (mbedtls_x509_crt_parse(&roots_,pem,length)) {
         mbedtls_x509_crt_free(&roots_); mbedtls_x509_crt_init(&roots_); return false;
     }
-    clock_ready_ = clock_ready; entropy_ready_ = entropy_ready; configured_ = true; return true;
+    return true;
 }
-void EspProviderTlsPlatform::bind_cancel(bool (*predicate)(void*),void *context) { cancel_ = predicate; cancel_context_ = context; }
+bool EspProviderTlsPlatform::configure(const unsigned char *pem,size_t length,provider_data::TlsPolicy& policy) {
+    if (!parse_roots(pem,length)) return false;
+    policy_ = &policy; configured_ = true; return true;
+}
+void EspProviderTlsPlatform::bind_cancel(bool (*predicate)(void*),void *context) {
+    cancel_ = predicate; cancel_context_ = context;
+    policy_generation_ = predicate && policy_ ? policy_->generation() : 0;
+}
+bool EspProviderTlsPlatform::policy_ready() {
+    int64_t now = clock(0);
+    return now >= 0 && policy_->ready(policy_generation_,uint64_t(now),time(0));
+}
 int64_t EspProviderTlsPlatform::clock(void*) { return esp_timer_get_time()/1000; }
 bool EspProviderTlsPlatform::time_ready(void *context) {
     auto& self = *static_cast<EspProviderTlsPlatform*>(context);
-    return self.configured_ && self.clock_ready_() && time(0) >= 1577836800;
+    return self.configured_ && (self.policy_ ? self.policy_ready() : self.clock_ready_() && time(0) >= 1577836800);
 }
 bool EspProviderTlsPlatform::cancelled(void *context) {
     auto& self = *static_cast<EspProviderTlsPlatform*>(context);
-    return !time_ready(context) || !self.entropy_ready_() || !self.cancel_ || self.cancel_(self.cancel_context_);
+    return !time_ready(context) || (!self.policy_ && !self.entropy_ready_()) || !self.cancel_ || self.cancel_(self.cancel_context_);
 }
 int EspProviderTlsPlatform::entropy(void *context,unsigned char *bytes,size_t count) {
     auto& self = *static_cast<EspProviderTlsPlatform*>(context);
-    if (!self.configured_ || !self.entropy_ready_()) return -1;
-    esp_fill_random(bytes,count); return 0;
+    if (!self.configured_ || (self.policy_ ? !self.policy_ready() : !self.entropy_ready_())) return -1;
+    esp_fill_random(bytes,count);
+    // Discard output if qualification changed during generation.
+    if (self.policy_ ? !self.policy_ready() : !self.entropy_ready_()) {
+        memset(bytes,0,count); return -1;
+    }
+    return 0;
 }
 int EspProviderTlsPlatform::trust(void *context,mbedtls_ssl_config *config) {
     auto& self = *static_cast<EspProviderTlsPlatform*>(context);

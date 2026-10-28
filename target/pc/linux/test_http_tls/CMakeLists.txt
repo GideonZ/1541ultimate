@@ -49,6 +49,11 @@ target_compile_options(test_provider_control PRIVATE -Wall -Wextra -Werror)
 target_link_libraries(test_provider_control PRIVATE pthread)
 add_executable(test_provider_manager ${SW}/network/tests/test_provider_manager.cc
     ${SW}/network/provider_manager.cc ${SW}/network/provider_control.cc ${SW}/network/provider_session_owner.cc)
+add_executable(test_provider_provisioning ${SW}/network/tests/test_provider_provisioning.cc
+    ${SW}/network/provider_manager.cc ${SW}/network/provider_control.cc ${SW}/network/provider_session_owner.cc)
+target_include_directories(test_provider_provisioning PRIVATE ${SW}/network ${SW}/infra)
+target_compile_options(test_provider_provisioning PRIVATE -Wall -Wextra -Werror)
+target_link_libraries(test_provider_provisioning PRIVATE pthread)
 target_include_directories(test_provider_manager PRIVATE ${SW}/network ${SW}/infra)
 target_compile_options(test_provider_manager PRIVATE -Wall -Wextra -Werror)
 target_link_libraries(test_provider_manager PRIVATE pthread)

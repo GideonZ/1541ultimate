@@ -2,6 +2,7 @@
 #define PROVIDER_TLS_PLATFORM_H
 #include "provider_tls_backend.h"
 #include "mbedtls/x509_crt.h"
+#include "provider_tls_policy.h"
 
 // Explicit boot-time provisioning, before the UART owner starts. Readiness
 // predicates must qualify the UTC clock used by Mbed TLS and hardware entropy;
@@ -12,6 +13,7 @@ public:
     ~EspProviderTlsPlatform() override; // After the owner has released all sessions.
     bool configure(const unsigned char *roots, size_t length,
                    bool (*clock_ready)(), bool (*entropy_ready)());
+    bool configure(const unsigned char *roots, size_t length, provider_data::TlsPolicy&);
     bool configured() const { return configured_; }
     tls_stream_port callbacks() override;
     void bind_cancel(bool (*predicate)(void*), void *context) override;
@@ -21,6 +23,10 @@ private:
     bool configured_;
     bool (*clock_ready_)(), (*entropy_ready_)(), (*cancel_)(void*);
     void *cancel_context_;
+    provider_data::TlsPolicy *policy_;
+    uint32_t policy_generation_;
+    bool parse_roots(const unsigned char*, size_t);
+    bool policy_ready();
     static int64_t clock(void*);
     static bool time_ready(void*);
     static bool cancelled(void*);

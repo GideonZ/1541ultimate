@@ -61,6 +61,14 @@ bool provider_control_configure_tls(const unsigned char *roots,size_t size,bool 
     (void)roots; (void)size; (void)clock_ready; (void)entropy_ready; return false;
 #endif
 }
+bool provider_control_provision_tls(const unsigned char *roots,size_t size,provider_data::TlsPolicy& policy)
+{
+#ifdef CONFIG_ULTIMATE_PROVIDER_TLS
+    return !worker && !port.queue && tls_platform.configure(roots,size,policy);
+#else
+    (void)roots; (void)size; (void)policy; return false;
+#endif
+}
 void provider_control_start(void)
 {
     if (worker || port.queue) return;
@@ -95,6 +103,7 @@ bool provider_control_receive(const uint8_t *bytes, size_t size)
     return true;
 }
 #else
+bool provider_control_provision_tls(const unsigned char*,size_t,provider_data::TlsPolicy&) { return false; }
 void provider_control_start(void) {}
 bool provider_control_configure_tls(const unsigned char*,size_t,bool (*)(),bool (*)()) { return false; }
 bool provider_control_receive(const uint8_t*, size_t) { return false; }

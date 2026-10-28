@@ -38,7 +38,13 @@ def assess(text, peers, run, cipher, request):
     scheduling = len(schedule) == 1 and schedule[0][-1] == run and int(schedule[0][0]) > 0 and int(schedule[0][1]) <= 250 and int(schedule[0][2]) > 0 and schedule[0][3] == '0' and int(schedule[0][4]) >= 1024
     counts = re.findall(r'^TASK_COUNT before=(\d+) after=(\d+) run=(\S+)\r?$', text, re.M)
     scheduling &= len(counts) == 1 and counts[0][0] == counts[0][1] and int(counts[0][0]) > 0 and counts[0][2] == run
-    expected_labels = ['private emulator network ready', 'fixture UTC installed', 'boot trust configured',
+    policy_labels = ['policy rejects missing roots', 'policy rejects malformed roots', 'policy bounds trust input',
+                     'policy parses explicit roots', 'policy blocks unqualified session', 'policy requires entropy qualification',
+                     'policy permits qualified callbacks', 'policy retains entropy revocation across restore',
+                     'policy permits fresh session after requalification', 'policy clock update retires old session',
+                     'policy compares actual UTC with qualified anchor', 'policy has no entropy fallback',
+                     'policy trust is immutable after configuration']
+    expected_labels = ['private emulator network ready', 'fixture UTC installed'] + policy_labels + ['boot trust configured',
                        'live trust replacement refused', 'independent scheduling task started']
     for name in labels:
         expected_labels += ['no stale UART output', 'production task offered grant',
@@ -59,7 +65,7 @@ def assess(text, peers, run, cipher, request):
     expected_labels += ['scheduling task joined', 'UART ownership and copied replies intact', 'repeated start creates no duplicate task']
     # Five setup, three final and 24 scenario check blocks. Special cases add
     # deadline, lease or cancellation checks; certificate rejections skip I/O.
-    checks = 5 + 3 + 24*12 - 2*2 + 5 + 4
+    checks = 5 + 3 + 24*12 - 2*2 + 5 + 4 + len(policy_labels)
     passed = (complete and timing and peer_ok and scheduling and header == [(run, profile)] and
               text.count('main_task: Returned from app_main()') == 1 and
               summaries == [(str(checks), '0', run)] and

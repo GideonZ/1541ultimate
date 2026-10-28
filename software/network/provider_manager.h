@@ -4,7 +4,7 @@
 
 namespace provider_control {
 // A successful callback must supply a fresh, qualified 128-bit incarnation.
-// No clock/MAC/counter fallback. Failure or all-zero output disables the client.
+// No clock/MAC/volatile-counter fallback. Failure or zero output disables it.
 struct IncarnationSource { void *context; bool (*fresh)(void*, provider_session::Identity&); };
 struct ManagerLimits { uint32_t reply_ms, lease_ms; };
 // All calls, including current()/ready(), belong to one serialized owner task.

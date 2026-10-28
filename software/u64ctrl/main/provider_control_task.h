@@ -15,5 +15,7 @@ bool provider_control_configure_tls(const unsigned char*, size_t, bool (*clock_r
 bool provider_control_receive(const uint8_t*, size_t);
 #ifdef __cplusplus
 }
+namespace provider_data { class TlsPolicy; }
+bool provider_control_provision_tls(const unsigned char*, size_t, provider_data::TlsPolicy&);
 #endif
 #endif

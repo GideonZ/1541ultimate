@@ -2,6 +2,8 @@
 // fixture boundaries; control/data queues, scheduling and TLS are production.
 #include "provider_control_task.h"
 #include "provider_data.h"
+#include "provider_tls_policy.h"
+#include "provider_tls_platform.h"
 #include "fixture.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -30,7 +32,44 @@ uint32_t fault, uart_errors, sent, monitor_stop, monitor_ticks, monitor_gap;
 uint32_t load(uint32_t& n) { return __atomic_load_n(&n,__ATOMIC_ACQUIRE); }
 void store(uint32_t& n,uint32_t v) { __atomic_store_n(&n,v,__ATOMIC_RELEASE); }
 void uart_error() { __atomic_fetch_add(&uart_errors,1,__ATOMIC_RELAXED); }
-bool policy_ready() { return true; }
+struct ProvisioningLock : provider_data::PolicyLock {
+    portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
+    void lock() override { portENTER_CRITICAL(&mux); }
+    void unlock() override { portEXIT_CRITICAL(&mux); }
+};
+ProvisioningLock provisioning_lock;
+provider_data::TlsPolicy policy(provisioning_lock);
+void provisioning_checks() {
+    provider_data::TlsPolicy local(provisioning_lock);
+    EspProviderTlsPlatform platform;
+    const unsigned char bad[]="invalid root";
+    check(!platform.configure(0,0,local),"policy rejects missing roots");
+    check(!platform.configure(bad,sizeof(bad),local),"policy rejects malformed roots");
+    check(!platform.configure(lab_root,65537,local),"policy bounds trust input");
+    check(platform.configure(lab_root,sizeof(lab_root),local),"policy parses explicit roots");
+    auto port=platform.callbacks();
+    auto active=[](void*) { return false; };
+    platform.bind_cancel(active,0);
+    check(!port.time_ready(port.context) && port.cancelled(port.context),"policy blocks unqualified session");
+    local.qualify_clock(LAB_UTC_SECONDS,now_ms(),60000,2);
+    platform.bind_cancel(active,0);
+    check(!port.time_ready(port.context),"policy requires entropy qualification");
+    local.entropy_available(true); platform.bind_cancel(active,0);
+    unsigned char random[16];
+    check(port.time_ready(port.context) && !port.cancelled(port.context) &&
+        port.entropy(port.context,random,sizeof(random))==0,"policy permits qualified callbacks");
+    local.entropy_available(false); local.entropy_available(true);
+    check(port.cancelled(port.context) && port.entropy(port.context,random,sizeof(random))!=0,"policy retains entropy revocation across restore");
+    platform.bind_cancel(active,0);
+    check(!port.cancelled(port.context),"policy permits fresh session after requalification");
+    local.qualify_clock(LAB_UTC_SECONDS,now_ms(),60000,2);
+    check(port.cancelled(port.context),"policy clock update retires old session");
+    local.qualify_clock(LAB_UTC_SECONDS+100,now_ms(),60000,2); platform.bind_cancel(active,0);
+    check(!port.time_ready(port.context),"policy compares actual UTC with qualified anchor");
+    local.revoke(); platform.bind_cancel(active,0);
+    check(port.entropy(port.context,random,sizeof(random))!=0,"policy has no entropy fallback");
+    check(!platform.configure(lab_root,sizeof(lab_root),local),"policy trust is immutable after configuration");
+}
 void monitor(void *context) {
     uint64_t previous=now_ms();
     while (!load(monitor_stop)) {
@@ -72,7 +111,7 @@ enum Mode { Valid, Hostname, Untrusted, Timeout, Renewed, Missing, Close, Restar
 const char *names[]={"valid","hostname","untrusted","timeout","renewed","missing","close","restart","control-overflow","data-overflow","buffer-loss","send-loss"};
 struct Call {
     provider_session::Grant grant;
-    uint64_t control_id, renew_sequence, next_renew, signal_ms;
+    uint64_t control_id, renew_sequence, next_renew, signal_ms, deadline;
     unsigned renew_sent, renew_ok, max_ack_ms;
     uint64_t renew_at;
     bool terminal_ack;
@@ -104,7 +143,10 @@ bool exchange(provider_data::Frame& f,Call& call,Mode mode,bool reading) {
         }
         bool loss=mode==ControlOverflow || mode==DataOverflow || mode==BufferLoss || mode==SendLoss;
         if (reading && loss && now-start>=750) return false;
-        if (mode!=Missing && mode<Close && now>=call.next_renew) {
+        // A renewal needs its full reply margin before the original request
+        // deadline. Do not leave a new control request racing terminal cleanup.
+        if (mode!=Missing && mode<Close && now>=call.next_renew &&
+            now<call.deadline && call.deadline-now>250 && call.renew_sent==call.renew_ok) {
             provider_control::Frame renew={}; renew.opcode=provider_control::Renew;
             renew.request=++call.control_id; renew.grant=call.grant; renew.counter=++call.renew_sequence;
             send_control(renew); call.renew_at=now; ++call.renew_sent; call.next_renew=now+1000;
@@ -144,6 +186,7 @@ void attempt(Mode mode,unsigned ordinal,bool recovery) {
     const char *host=mode==Hostname ? "wrong.lab.test" : "tls.lab.test";
     f.length=strlen(host)+1; memcpy(f.payload,host,f.length);
     const uint64_t begin=now_ms(); unsigned ticks=load(monitor_ticks);
+    call.deadline=begin+budget;
     bool received=exchange(f,call,mode,false);
     bool reject=mode==Hostname || mode==Untrusted;
     check(received && f.status==(reject ? provider_data::Failed : provider_data::Ok),"authenticated open outcome");
@@ -193,6 +236,20 @@ void attempt(Mode mode,unsigned ordinal,bool recovery) {
         }
         check(call.terminal_ack,"control acknowledged after TLS unwind");
     } else {
+        // A successful data completion can precede a queued renewal reply.
+        // Account for it before sending Close, keeping the same 250 ms bound.
+        while (call.renew_ok<call.renew_sent && now_ms()-call.renew_at<=250) {
+            Packet pending;
+            if (xQueueReceive(output,&pending,pdMS_TO_TICKS(10))!=pdTRUE) continue;
+            provider_control::Frame reply;
+            if (!provider_control::decode(pending.bytes,pending.size,reply) || !reply.reply ||
+                reply.opcode!=provider_control::Renew || reply.request!=call.control_id ||
+                reply.counter!=call.renew_sequence || reply.status!=provider_control::Ok) { uart_error(); break; }
+            ++call.renew_ok;
+            unsigned delay=pending.ms-call.renew_at;
+            if (delay>call.max_ack_ms) call.max_ack_ms=delay;
+            printf("CONTROL opcode=%u request=%llu status=%u counter=%llu ms=%llu\n",unsigned(reply.opcode),static_cast<unsigned long long>(reply.request),unsigned(reply.status),static_cast<unsigned long long>(reply.counter),static_cast<unsigned long long>(pending.ms));
+        }
         c={}; c.opcode=provider_control::Close; c.request=++call.control_id; c.grant=call.grant; c.counter=1;
         check(control_exchange(c),"owner cleanup acknowledged");
     }
@@ -230,10 +287,13 @@ extern "C" void app_main(void) {
     printf("TASK_RUNTIME run=%s profile=%s\n",LAB_RUN_ID,LAB_ECDSA ? "ecdsa" : "rsa");
     check(provider_runtime_network(),"private emulator network ready");
     timeval utc={}; utc.tv_sec=LAB_UTC_SECONDS; check(settimeofday(&utc,0)==0,"fixture UTC installed");
+    provisioning_checks();
     output=xQueueCreate(8,sizeof(Packet)); configASSERT(output);
-    check(provider_control_configure_tls(lab_root,sizeof(lab_root),policy_ready,policy_ready),"boot trust configured");
+    policy.entropy_available(true); // Emulator fixture assertion, not physical RNG qualification.
+    check(policy.qualify_clock(LAB_UTC_SECONDS,now_ms(),600000,2) &&
+        provider_control_provision_tls(lab_root,sizeof(lab_root),policy),"boot trust configured");
     provider_control_start();
-    check(!provider_control_configure_tls(lab_root,sizeof(lab_root),policy_ready,policy_ready),"live trust replacement refused");
+    check(!provider_control_provision_tls(lab_root,sizeof(lab_root),policy),"live trust replacement refused");
     check(xTaskCreate(monitor,"Schedule probe",2048,xTaskGetCurrentTaskHandle(),tskIDLE_PRIORITY+2,0)==pdPASS,"independent scheduling task started");
     unsigned ordinal=0;
     for (unsigned mode=0;mode<=SendLoss;++mode) { attempt(Mode(mode),++ordinal,false); attempt(Valid,++ordinal,true); }
