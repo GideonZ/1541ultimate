@@ -65,8 +65,9 @@ def main():
     build = json.loads((directory / 'build.json').read_text())
     heap_check = build.get('heap_check', False)
     renewal_check = build.get('renewal_check', False)
-    if heap_check and renewal_check:
-        raise ValueError('Use separate fixed heap and renewal profiles')
+    task_check = build.get('task_check', False)
+    if sum(map(bool, (heap_check, renewal_check, task_check))) > 1:
+        raise ValueError('Use separate fixed heap, renewal and owner-task profiles')
     run_limit = 480 if heap_check else 150
     if not build['passed'] or abs(time.time() - build['utc']) > 3600 or (directory / 'result.json').exists():
         raise ValueError('Require a fresh, unused, successfully built fixture')
@@ -91,7 +92,7 @@ def main():
                 except socket.timeout:
                     continue
                 self.record(kind='accepted', server=name, mode=mode)
-                connection.settimeout(6)
+                connection.settimeout(10 if task_check else 6)
                 try:
                     if mode == 'handshake':
                         hello = connection.recv(4096)
@@ -115,7 +116,7 @@ def main():
                                 pass
                         else:
                             if mode == 'delayed':
-                                time.sleep(2.2)
+                                time.sleep(6 if task_check else 2.2)
                             for offset in range(0, len(self.response), 7):
                                 stream.sendall(self.response[offset:offset+7])
                             try:
@@ -150,7 +151,7 @@ def main():
                                  (8456, 'expired', 'normal'), (8457, 'future', 'normal'),
                                  (8446, 'trusted', 'handshake'), (8447, 'trusted', 'read')]:
             peers.listen(socket.SOCK_STREAM, port, peers.server, name, mode)
-        if renewal_check:
+        if renewal_check or task_check:
             peers.listen(socket.SOCK_STREAM, 8448, peers.server, 'trusted', 'delayed')
         process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                    stderr=subprocess.STDOUT, start_new_session=True)
@@ -193,6 +194,16 @@ def main():
     (directory / 'guest.log').write_bytes(output)
     (directory / 'peers.json').write_text(json.dumps(peers.events, indent=2) + '\n')
     text = output.decode(errors='replace')
+    if task_check:
+        from assess_provider_task import assess
+        result = assess(text, peers.events, directory.name, peers.cipher, REQUEST)
+        result.update(completed=completed, failure=failure, seconds=time.monotonic()-start,
+                      command=command, hardware_tested=False,
+                      qemu_sha256=hashlib.sha256(args.qemu.read_bytes()).hexdigest())
+        result['passed'] = result['passed'] and completed and not failure
+        (directory / 'result.json').write_text(json.dumps(result, indent=2) + '\n')
+        print(json.dumps(result, indent=2))
+        return 0 if result['passed'] else 1
     labels = [name for case in CASES for name in (case, 'recovery')]
     if heap_check:
         labels += ['repeat'] * 96

@@ -87,11 +87,25 @@ void Delivery::finish(OperationCancellation generation) {
     if (!generation.cancelled()) occupied_ = taken_ = false;
 }
 bool Delivery::send(const Frame& frame, OperationCancellation generation, OperationCancellation operation, OperationCancellation boot) {
+    return transmit(frame,generation,operation,boot,false);
+}
+bool Delivery::complete(const Frame& frame, OperationCancellation generation, OperationCancellation operation) {
+    return transmit(frame,generation,operation,{},true);
+}
+bool Delivery::transmit(const Frame& frame, OperationCancellation generation, OperationCancellation operation, OperationCancellation boot, bool complete) {
     uint8_t bytes[FrameSize];
     if (!encode(frame,bytes)) return false;
     Guard guard(port_);
-    if (generation.cancelled() || operation.cancelled() || boot.cancelled()) return false;
-    if (port_.send(bytes,FrameSize)) return true;
+    if (generation.cancelled()) return false;
+    if (complete && (replies_ || !frame.reply || !occupied_ || !taken_)) return false;
+    if (operation.cancelled() || boot.cancelled()) {
+        if (complete) occupied_ = taken_ = false;
+        return false;
+    }
+    if (port_.send(bytes,FrameSize)) {
+        if (complete) occupied_ = taken_ = false;
+        return true;
+    }
     invalidate_isr(); return false;
 }
 Owner::Owner(Delivery& delivery, provider_control::Worker& control, Backend *backend) :
@@ -122,7 +136,6 @@ void Owner::step(uint64_t now) {
     f.status = !backend_ ? Unavailable : accepted && current && result >= 0 ? Ok : Failed;
     f.count = f.status == Ok && f.opcode != Open ? uint16_t(result) : 0;
     f.length = f.opcode == Read ? f.count : 0;
-    if (!delivery_.send(f,event.generation,current ? control_.resource_lifetime() : OperationCancellation())) control_.disconnect();
-    delivery_.finish(event.generation);
+    if (!delivery_.complete(f,event.generation,current ? control_.resource_lifetime() : OperationCancellation())) control_.disconnect();
 }
 }

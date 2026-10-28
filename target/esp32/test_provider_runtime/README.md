@@ -4,8 +4,9 @@ This target runs the production `EspProviderTlsPlatform`, `TlsBackend` and
 control worker under ESP32-S3 QEMU with ESP-IDF 5.3.6. It uses a private OpenETH
 network (guest `192.0.2.2/30`, peer `192.0.2.1`, no gateway). It does not contact
 the Commodore, flash firmware, register an HTTP provider or change the HTTP API.
-The worker is driven directly; physical UART, the management processor and the
-product owner task are outside this fixture. Host tests cover their connections.
+The default profile drives the worker directly. The optional production-task
+profile below runs the ESP32 owner task itself. Physical UART and the management
+processor remain outside both embedded profiles; host tests cover their connections.
 
 ## Provisioning contract
 
@@ -131,3 +132,40 @@ overrun. Missing renewals cancel near 1500 ms and a replayed first renewal near
 profile, 37 peer connections must close and 30 exact requests authenticate.
 This validates the embedded callback/worker path, not physical UART timing or
 the complete native manager task's scheduling.
+
+## Production owner task and scheduling
+
+Build with `-D PROVIDER_TASK_PROBE=ON` and set `task_check: true` in the build
+record. Keep heap and renewal modes false. This selects a different application
+entry point and compiles the actual `provider_control_task.cc`, including its
+control queue, data delivery loop, TLS backend and production scheduling limits.
+Only the UART device functions and boot identity are substituted. UART ingress
+uses `provider_control_receive`; transmitted packets are copied to a fixture
+queue and source buffers are overwritten to check ownership. The test does not
+register the provider in the product or install trust/clock/entropy defaults.
+
+Each certificate profile requires 301 checks across 12 cases and 12 fresh
+recoveries: authenticated success, hostname and root rejection, original timeout,
+six-second success with renewals, missing renewal, close, new owner offer,
+control/data overflow, unavailable transmit buffer and failed transmit submission.
+The five-second production lease, four control slots, 10 ms loop and 12288-byte
+owner-task stack remain unchanged. A concurrent ingress task feeds renewals once
+per second while TLS blocks; an independent higher-priority task measures its own
+10 ms scheduling gaps. Both renewal acknowledgements and scheduling gaps must
+stay within 250 ms. Actual owner stack reserve must remain at least 1024 bytes.
+
+Timeout keeps its original 2000 ms budget with at most 250 ms overrun. Missing
+renewals expire within 5000..5250 ms of initialization. Close/restart must return
+failure within 250 ms of ingress and acknowledge cleanup after TLS unwinds.
+Overflow or transmit loss must fence replies and reject renewal of the affected
+grant before explicit close; silence alone is insufficient. Every fresh recovery
+must succeed. The peer must record 24 closed connections, 22 authenticated exact
+requests and two certificate alerts. `assess_provider_task.py` checks ordered raw
+case/check records, time bounds, task counts, stack observations and peer records.
+
+The temporary scheduling task is joined and given an idle cleanup interval before
+testing idempotent startup. The production owner task, root bundle and fixture
+UART queue intentionally retain firmware lifetime. Per-case global free heap is
+observational, not a new heap recovery or soak claim. These emulator measurements
+do not establish physical UART latency, native manager scheduling or product
+restart identity, trust, UTC and entropy qualification.

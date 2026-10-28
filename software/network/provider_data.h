@@ -42,6 +42,9 @@ public:
     void finish(OperationCancellation);
     bool send(const Frame&, OperationCancellation, OperationCancellation operation = {},
               OperationCancellation boot = {}); // Final fences under transmit lock.
+    // Owner reply: publish and release the taken slot under the same lock, so
+    // the caller can submit its next request as soon as the reply is visible.
+    bool complete(const Frame&, OperationCancellation, OperationCancellation operation = {});
     OperationCancellation lifetime() const { return generation_.token(); }
 private:
     Port& port_;
@@ -50,6 +53,7 @@ private:
     OperationCancellation queued_;
     uint32_t arrived_ms_;
     bool replies_, occupied_, taken_;
+    bool transmit(const Frame&, OperationCancellation, OperationCancellation, OperationCancellation, bool complete);
     Delivery(const Delivery&) = delete;
     Delivery& operator=(const Delivery&) = delete;
 };

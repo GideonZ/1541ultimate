@@ -18,8 +18,9 @@ struct TestPort : Port {
     std::vector<std::vector<uint8_t>> sent;
     bool transmit = true;
     std::function<void()> lock_hook = []{};
+    std::function<void()> unlock_hook = []{};
     void lock() override { mutex.lock(); lock_hook(); }
-    void unlock() override { mutex.unlock(); }
+    void unlock() override { mutex.unlock(); unlock_hook(); }
     bool send(const uint8_t *p,size_t n) override { if (!transmit) return false; sent.emplace_back(p,p+n); return true; }
 };
 static void codec() {
@@ -57,6 +58,13 @@ static void mailbox() {
     expect(d.receive_isr(bytes,sizeof(bytes),17),"new generation admitted");
     d.finish(e.generation); expect(d.take(other),"old finish cannot erase new request");
     d.finish(other.generation); expect(!d.take(e),"finish frees slot");
+    expect(d.receive_isr(bytes,sizeof(bytes)) && d.take(e),"completion test takes request");
+    Frame reply=f; reply.reply=true; reply.status=Ok; reply.budget_ms=reply.port=reply.length=0;
+    CancellationSource cancel; auto cancelled=cancel.token(); cancel.signal();
+    expect(!d.complete(reply,e.generation,cancelled) && p.sent.empty(),"cancelled completion publishes nothing");
+    expect(d.receive_isr(bytes,sizeof(bytes)) && d.take(e),"cancelled completion releases its slot");
+    expect(d.complete(reply,e.generation) && p.sent.size()==1,"live completion publishes once");
+    expect(!d.complete(reply,e.generation) && p.sent.size()==1,"duplicate completion rejected");
     generation = d.lifetime(); p.transmit = false;
     expect(!d.send(f,generation) && generation.cancelled(),"failed send retires generation");
     p.transmit = true; generation = d.lifetime(); bytes[0] = 0;
@@ -92,6 +100,28 @@ struct TestBackend : provider_data::Backend {
     }
 };
 static void owner() {
+    {
+        TestPort p; Delivery d(p,false); ControlTestPort control;
+        provider_control::Worker worker(control,id(1),provider_session::Required,{100,200,50});
+        TestBackend backend(worker); Owner owner(d,worker,&backend);
+        Frame f=request(); f.ticket.grant=initialize(worker,control);
+        uint8_t bytes[FrameSize]; encode(f,bytes); expect(d.receive_isr(bytes,sizeof(bytes)),"first pipelined operation admitted");
+        f.opcode=Read; f.request=2; f.port=f.length=0; f.count=3; encode(f,bytes);
+        bool injected=false,accepted=false;
+        p.unlock_hook=[&] {
+            if (!injected && p.sent.size()==1) {
+                injected=true;
+                p.lock(); accepted=d.receive_isr(bytes,sizeof(bytes)); p.unlock();
+            }
+        };
+        owner.step(0); p.unlock_hook=[]{};
+        expect(injected && accepted,"next request admitted immediately after reply publication");
+        owner.step(0);
+        expect(backend.calls==2 && p.sent.size()==2,"completion cannot erase next request");
+        Frame reply={};
+        expect(p.sent.size()==2 && decode(p.sent.back().data(),p.sent.back().size(),reply) && reply.status==Ok && reply.request==2,"immediate next request receives valid reply");
+        worker.disconnect(); worker.step(0); expect(!worker.occupied(),"pipelined owner cleanup");
+    }
     for (unsigned mode = 0; mode < 8; ++mode) {
         TestPort p; Delivery d(p,false); ControlTestPort control;
         provider_control::Worker worker(control,id(1),provider_session::Required,{100,200,50});
