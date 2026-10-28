@@ -6,6 +6,7 @@
  */
 
 
+#include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "esp_wifi.h"
@@ -24,6 +25,8 @@
 #include "provider_identity.h"
 #include "provider_boot.h"
 #include "provider_control_task.h"
+#include "recovery.h"
+#include "recovery_url.h"
 
 // not officially supported
 #include "../lwip/esp_netif_lwip_internal.h"
@@ -197,10 +200,15 @@ void cmd_reboot(command_buf_t *buf)
 void cmd_modem_on(command_buf_t *buf)
 {
     rpc_espcmd_resp *resp = (rpc_espcmd_resp *)buf->data;
-    resp->esp_err = ESP_OK;
+    // While a recovery downloads through the interface, the firmware it is
+    // replacing may still run; it must not take the interface over.
+    bool refused = recovery_running();
+    resp->esp_err = refused ? ESP_ERR_INVALID_STATE : ESP_OK;
     buf->size = sizeof(rpc_espcmd_resp);
     my_uart_transmit_packet(UART_CHAN, buf);
-    enable_hook();
+    if (!refused) {
+        enable_hook();
+    }
 }
 
 void cmd_modem_off(command_buf_t *buf)
@@ -373,6 +381,33 @@ void cmd_get_wake_on_wifi(command_buf_t *buf)
     my_uart_transmit_packet(UART_CHAN, buf);
 }
 
+_Static_assert(RPC_RECOVERY_URL_LEN == RECOVERY_URL_MAX + 1, "the RPC carries a whole recovery URL");
+
+void cmd_set_recovery_url(command_buf_t *buf)
+{
+    rpc_set_recovery_url_req *param = (rpc_set_recovery_url_req *)buf->data;
+    rpc_espcmd_resp *resp = (rpc_espcmd_resp *)buf->data;
+    char url[RPC_RECOVERY_URL_LEN];
+
+    if (buf->size < (int)sizeof(rpc_set_recovery_url_req) ||
+        memchr(param->url, 0, sizeof(param->url)) == NULL) {
+        resp->esp_err = ESP_ERR_INVALID_ARG;
+    } else {
+        strcpy(url, param->url); // before the response overwrites the request
+        resp->esp_err = recovery_set_url(url);
+    }
+    buf->size = sizeof(rpc_espcmd_resp);
+    my_uart_transmit_packet(UART_CHAN, buf);
+}
+
+void cmd_get_recovery_url(command_buf_t *buf)
+{
+    rpc_get_recovery_url_resp *resp = (rpc_get_recovery_url_resp *)buf->data;
+    resp->esp_err = recovery_get_url(resp->url, sizeof(resp->url));
+    buf->size = sizeof(rpc_get_recovery_url_resp);
+    my_uart_transmit_packet(UART_CHAN, buf);
+}
+
 void cmd_not_implemented(command_buf_t *buf)
 {
     rpc_espcmd_resp *resp = (rpc_espcmd_resp *)buf->data;
@@ -510,6 +545,12 @@ void dispatch(void *ct)
             break;
         case CMD_GET_WAKE_ON_WIFI:
             cmd_get_wake_on_wifi(pbuffer);
+            break;
+        case CMD_SET_RECOVERY_URL:
+            cmd_set_recovery_url(pbuffer);
+            break;
+        case CMD_GET_RECOVERY_URL:
+            cmd_get_recovery_url(pbuffer);
             break;
         default:
             cmd_not_implemented(pbuffer);

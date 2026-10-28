@@ -4954,6 +4954,92 @@ static ConfigStore *s11_softiec_settings(void)
     return cfg;
 }
 
+// A profile selects its partition file without changing the bus configuration.
+static void s11_partition_config_file(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite11-PartitionConfigFile";
+    ConfigStore *cfg = s11_softiec_settings();
+    REQUIRE(cfg->find_item("Partition config file") != NULL);
+    REQUIRE(!strcmp(cfg->get_string(0x56), ""));
+    IecFileSystem *vfs = dr->get_file_system();
+    REQUIRE(vfs->SavePartitions("/Temp", "saved.ipr") == FR_OK);
+    save_fixture_file(fm, "/Temp", "profile.ipr",
+        "{\"partitions\":[{\"number\":1,\"path\":\"/Temp\",\"name\":\"PROFILE\"}]}");
+    int configured = iec_interface_configure_calls;
+    cfg->set_string(0x56, "/Temp/profile.ipr");
+    dr->effectuate_settings();
+    REQUIRE(vfs->CountPartitions() == 1);
+    REQUIRE(!strcmp(vfs->GetPartition(1)->GetName(), "PROFILE"));
+    REQUIRE(iec_interface_configure_calls == configured);
+
+    // Unrelated settings and drive resets keep manual partition edits.
+    dr->add_partition(2, "/Temp", "MANUAL");
+    cfg->set_value(0x55, 1);
+    dr->effectuate_settings();
+    cfg->set_value(0x55, 0);
+    dr->effectuate_settings();
+    dr->reset();
+    REQUIRE(vfs->CountPartitions() == 2);
+    REQUIRE(!strcmp(vfs->GetPartition(2)->GetName(), "MANUAL"));
+
+    cfg->set_string(0x56, "/Temp/missing.ipr");
+    dr->effectuate_settings();
+    REQUIRE(vfs->CountPartitions() == 2);
+    save_fixture_file(fm, "/Temp", "invalid.ipr", "{\"partitions\":[]}");
+    cfg->set_string(0x56, "/Temp/invalid.ipr");
+    dr->effectuate_settings();
+    REQUIRE(vfs->CountPartitions() == 2);
+    // A file that did not load is read when a path is applied again, not by unrelated
+    // settings, which would replace partition edits made since.
+    dr->add_partition(3, "/Temp", "EDITED");
+    REQUIRE(fm->delete_file("/Temp/invalid.ipr") == FR_OK);
+    save_fixture_file(fm, "/Temp", "invalid.ipr",
+        "{\"partitions\":[{\"number\":1,\"path\":\"/Flash\",\"name\":\"REPAIRED\"}]}");
+    cfg->set_value(0x55, 1);
+    dr->effectuate_settings();
+    cfg->set_value(0x55, 0);
+    dr->effectuate_settings();
+    REQUIRE(vfs->CountPartitions() == 3);
+    REQUIRE(!strcmp(vfs->GetPartition(3)->GetName(), "EDITED"));
+    cfg->set_string(0x56, "/Temp/missing.ipr");
+    dr->effectuate_settings();
+    cfg->set_string(0x56, "/Temp/invalid.ipr");
+    dr->effectuate_settings();
+    REQUIRE(vfs->CountPartitions() == 1);
+    REQUIRE(!strcmp(vfs->GetPartition(1)->GetName(), "REPAIRED"));
+    dr->load_partitions("/Temp", "profile.ipr");
+
+    // A drive constructed with a configured path loads it at startup.
+    cfg->set_string(0x56, "/Temp/profile.ipr");
+    IecDrive *boot = new IecDrive();
+    REQUIRE(boot->get_file_system()->CountPartitions() == 1);
+    REQUIRE(!strcmp(boot->get_file_system()->GetPartition(1)->GetName(), "PROFILE"));
+    delete boot;
+
+    // A default file that appears later is not read by an unrelated settings change.
+    cfg->set_string(0x56, "");
+    dr->effectuate_settings();
+    REQUIRE(!strcmp(vfs->GetPartition(1)->GetName(), "PROFILE"));
+    FRESULT fres = fm->create_dir(CFG_FILEPATH);
+    REQUIRE(fres == FR_OK || fres == FR_EXIST);
+    save_fixture_file(fm, CFG_FILEPATH, IEC_PARTITION_CONFIG,
+        "{\"partitions\":[{\"number\":1,\"path\":\"/Flash\",\"name\":\"DEFAULT\"}]}");
+    dr->effectuate_settings();
+    REQUIRE(!strcmp(vfs->GetPartition(1)->GetName(), "PROFILE"));
+
+    cfg->set_string(0x56, "/Temp/profile.ipr");
+    dr->effectuate_settings();
+    cfg->set_string(0x56, "");
+    dr->effectuate_settings();
+    REQUIRE(vfs->CountPartitions() == 1);
+    REQUIRE(!strcmp(vfs->GetPartition(1)->GetName(), "DEFAULT"));
+    boot = new IecDrive();
+    REQUIRE(!strcmp(boot->get_file_system()->GetPartition(1)->GetName(), "DEFAULT"));
+    delete boot;
+    REQUIRE(fm->delete_file(CFG_FILEPATH "/" IEC_PARTITION_CONFIG) == FR_OK);
+    dr->load_partitions("/Temp", "saved.ipr");
+}
+
 // With "Log Every Operation" on, every command, open and close writes a line with the
 // current partition and directory, a command that answers with data adds its reply, an open
 // adds the host file or the first bytes of a listing, and a listing logs its last line.
@@ -6737,6 +6823,7 @@ struct Suite11Case {
 };
 
 static const Suite11Case suite11_cases[] = {
+    { "Suite11-PartitionConfigFile",     s11_partition_config_file },
     { "Suite11-SI031-Unrecognised",      s11_si031_unrecognised },
     { "Suite11-SI030-UnknownSubcommand", s11_si030_unknown_subcommand },
     { "Suite11-SI030-MissingName",       s11_si030_missing_name },

@@ -24,6 +24,7 @@
 #include "sntp.h"
 #include "power_state.h"
 #include "provider_boot.h"
+#include "recovery.h"
 
 static const char *TAG = "u64ctrl";
 
@@ -203,7 +204,9 @@ void app_main(void)
         read_adc_channels(adc_data_local);
         ESP_LOGI(TAG, "App Main Alive; 5V_GOOD: %d (Initial: %d). VBus = %d mV", gpio_get_level(IO_5V_GOOD), initial_state, adc_data_local[0]);
         // show_buffer_status();
-        if (adc_data_local[0] < 8000) {
+        if (recovery_owns_leds()) {
+            // a recovery shows its progress on them
+        } else if (adc_data_local[0] < 8000) {
             gpio_set_level(IO_ESP_LED_RED, 0);
         } else {
             gpio_set_level(IO_ESP_LED_RED, 1);
