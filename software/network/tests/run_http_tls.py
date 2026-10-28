@@ -21,6 +21,11 @@ ROUTING_CASES += ['command-pre-cancel', 'command-handshake-cancel', 'command-rea
 ROUTING_CASES += ['provider-handshake-cancel', 'provider-read-cancel']
 OWNER_CASES = ['owner-handshake-cancel', 'owner-read-cancel', 'owner-loss-read-cancel']
 WORKER_CASES = ['worker-handshake-cancel', 'worker-close-read-cancel', 'worker-loss-read-cancel']
+CONNECTED_CASES = ['valid', 'hostname', 'untrusted', 'expired', 'future',
+                   'handshake-timeout', 'read-timeout', 'total-timeout',
+                   'command-handshake-cancel', 'command-read-cancel',
+                   'provider-handshake-cancel', 'provider-read-cancel',
+                   'manager-handshake-cancel', 'manager-read-cancel']
 
 
 class Peer:
@@ -112,11 +117,12 @@ def main():
     parser.add_argument('--binary', type=Path, required=True)
     parser.add_argument('--tls-root', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
-    parser.add_argument('--case', choices=CASES + ROUTING_CASES + OWNER_CASES + WORKER_CASES)
+    parser.add_argument('--case', choices=CASES + ROUTING_CASES + OWNER_CASES + WORKER_CASES + CONNECTED_CASES)
     parser.add_argument('--ecdsa', action='store_true')
     parser.add_argument('--routing', action='store_true')
     parser.add_argument('--owner', action='store_true')
     parser.add_argument('--worker', action='store_true')
+    parser.add_argument('--connected', action='store_true')
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=False)
     sys.path.insert(0, str(args.tls_root / 'tests'))
@@ -126,8 +132,8 @@ def main():
     make_certificate(args.output, 'untrusted', args.ecdsa)
     make_dated_certificates(args.output)
     results = []
-    for case in [args.case] if args.case else (WORKER_CASES if args.worker else OWNER_CASES if args.owner else ROUTING_CASES if args.routing else CASES):
-        peer_case = case.removeprefix('command-').removeprefix('provider-').removeprefix('owner-').removeprefix('worker-').removeprefix('loss-')
+    for case in [args.case] if args.case else (CONNECTED_CASES if args.connected else WORKER_CASES if args.worker else OWNER_CASES if args.owner else ROUTING_CASES if args.routing else CASES):
+        peer_case = case.removeprefix('command-').removeprefix('provider-').removeprefix('owner-').removeprefix('worker-').removeprefix('loss-').removeprefix('manager-')
         if case.startswith('worker-close-'): peer_case = peer_case.removeprefix('close-')
         kind = peer_case if peer_case in ('expired', 'future', 'truncated', 'clean-eof', 'close-clean', 'close-truncated') else ('handshake' if peer_case.startswith('handshake-') else ('stall' if peer_case in ('read-timeout', 'total-timeout', 'read-cancel') else 'valid'))
         if case in ('write-timeout', 'write-cancel'):
@@ -143,6 +149,8 @@ def main():
                 command.append('--owner')
             if args.worker:
                 command.append('--worker')
+            if args.connected:
+                command.append('--connected')
             begin = time.monotonic()
             run = subprocess.run(command, capture_output=True, timeout=12, env={**os.environ, 'ASAN_OPTIONS': 'detect_leaks=1:halt_on_error=1'})
             elapsed = time.monotonic() - begin
@@ -171,7 +179,7 @@ def main():
             peer_ok &= any(event['kind'] == 'no-application-data' for event in primary.events)
         if kind in ('clean-eof', 'close-clean'):
             peer_ok &= sum(event['kind'] == 'close-notify' for event in primary.events) == 1
-        summaries = re.findall(rb'TLS (?:adapter|routing|owner|worker): (\d+) checks, (\d+) failures', raw)
+        summaries = re.findall(rb'TLS (?:adapter|routing|owner|worker|connected): (\d+) checks, (\d+) failures', raw)
         passed = run.returncode == 0 and peer_ok and len(summaries) == 1 and summaries[0][1] == b'0'
         passed &= not re.search(rb'ERROR: (?:AddressSanitizer|LeakSanitizer)|runtime error:', raw)
         results.append({'case': case, 'returncode': run.returncode, 'checks': int(summaries[0][0]) if summaries else 0, 'peer_ok': bool(peer_ok), 'elapsed_seconds': elapsed, 'passed': bool(passed)})

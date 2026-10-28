@@ -51,6 +51,7 @@ target_include_directories(test_provider_manager PRIVATE ${SW}/network ${SW}/inf
 target_compile_options(test_provider_manager PRIVATE -Wall -Wextra -Werror)
 target_link_libraries(test_provider_manager PRIVATE pthread)
 target_sources(test_http_tls PRIVATE ${SW}/network/provider_manager.cc)
+target_sources(test_http_tls PRIVATE ${SW}/network/provider_manager_delivery.cc ${SW}/network/provider_manager_runner.cc)
 add_executable(test_provider_delivery ${SW}/network/tests/test_provider_delivery.cc
     ${SW}/network/provider_manager_delivery.cc ${SW}/io/wifi/provider_manager_uart.cc
     ${SW}/network/provider_manager.cc ${SW}/network/provider_control.cc ${SW}/network/provider_session_owner.cc)

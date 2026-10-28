@@ -43,6 +43,28 @@ do not use these certificates for anything outside the fixture.
 
 ## Coverage and limits
 
+`run_http_tls.py --connected` exercises the existing C64 HTTP command interface
+through a proxy, copied data operations, ManagerDelivery/ManagerRunner, the
+provider Worker and real TlsHttpConnection/Mbed TLS. Run it once per RSA/ECDSA
+certificate profile. It includes successful HTTPS, hostname/chain/date failures,
+handshake/read/total deadlines, command cancellation and simulated provider or
+manager loss during handshake/read. Every case has a fresh successful recovery.
+Independent peers verify exact request bytes, authentication and connection close.
+
+The local data transport caps each copy at 256 bytes and checks session identity
+and request order before touching TLS. It fences replies after blocked work and
+requires control cleanup acknowledgement before healthy reuse. Manager loss uses
+a 350 ms provider lease; other cases use 1000 ms. Neither path fabricates a remote
+close after losing its owner. Existing 750 ms cancellation and 630-900 ms timeout
+bounds remain in force. The 256-byte choice is a test boundary, not a committed
+firmware buffer size or throughput claim.
+
+This fixture supplies the missing connection between components locally. Its
+copied synchronous transport is not a firmware UART data protocol, task queue or
+physical restart. Recovery constructs fresh owners and a new provider boot ID.
+Production owner-task data delivery, native restart identity, embedded TLS port
+qualification and actual device scheduling/resources still require integration.
+
 `test_provider_task` runs the optional management owner-task entry against
 deterministic scheduler and WiFi shims, using the actual UART adapter, manager
 and provider worker. It checks qualification gates, one-time identity sampling,
