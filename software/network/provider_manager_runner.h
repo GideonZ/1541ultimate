@@ -12,6 +12,10 @@ class ManagerRunner {
 public:
     enum State { Stopped, Negotiating, Active, Failed, Disabled };
     ManagerRunner(ManagerDelivery&, uint32_t renew_ms);
+    static bool valid_limits(ManagerLimits limits, uint32_t renew_ms) {
+        return limits.reply_ms && renew_ms && renew_ms < limits.lease_ms &&
+               limits.reply_ms < limits.lease_ms - renew_ms;
+    }
     bool start(const provider_session::Identity&, OperationCancellation, uint64_t now);
     void step(uint64_t now); // At most one queued reply and one outgoing control frame.
     bool reserve(uint64_t now, provider_session::Ticket&);

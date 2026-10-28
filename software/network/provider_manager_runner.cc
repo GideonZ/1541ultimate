@@ -14,8 +14,7 @@ bool ManagerRunner::start(const provider_session::Identity& boot, OperationCance
     Manager::Status status = delivery_.status(now);
     // Keep a whole reply window before lease expiry, with strictly positive
     // scheduling margin. Subtraction avoids overflow for large configured limits.
-    if (!renew_ms_ || renew_ms_ >= status.limits.lease_ms ||
-        status.limits.reply_ms >= status.limits.lease_ms - renew_ms_) {
+    if (!valid_limits(status.limits, renew_ms_)) {
         delivery_.disconnect(); state_ = Disabled; return false;
     }
     if (!delivery_.offer(boot, lifetime, now)) { fail(); return false; }

@@ -43,6 +43,29 @@ do not use these certificates for anything outside the fixture.
 
 ## Coverage and limits
 
+`test_provider_task` runs the optional management owner-task entry against
+deterministic scheduler and WiFi shims, using the actual UART adapter, manager
+and provider worker. It checks qualification gates, one-time identity sampling,
+creation/binding cleanup, the startup barrier, stale manager/provider identities,
+boot/reply deadlines, tick rollover and backwards time, send/loss failures and
+stop races. A copied boot snapshot never bypasses a concurrent stop request.
+
+No default task instance is installed. The management FPGA wrapper currently
+disables its random-number peripheral, so a native manager incarnation source
+remains unqualified. A nonzero test identity is not evidence of restart freshness.
+Activation requires an externally qualified source; MAC/time/counter fallbacks
+are not supported. The existing provider boot snapshot is only liveness evidence;
+the subsequent control exchange must also match manager incarnation and provider
+boot before becoming active. Replayed replies cannot satisfy that exchange.
+
+The owner uses the existing 1600-word minimum stack and driver priority, with a
+10 ms poll and 1500 ms boot wait. The task exits on failure or stop and cannot be
+restarted on the same object. The bound object must have firmware lifetime.
+These are configured bounds, not measured scheduler latency or stack high-water
+marks. Session data requests are not exposed across tasks until their bounded
+delivery path is implemented. HTTP commands and default provider activation are
+unchanged; the TLS data plane and physical qualification remain separate work.
+
 `test_provider_runner` exercises the serialized manager control driver through
 the UART adapter and real provider worker, with copied wire frames and controlled
 timestamps. It covers offer/initialize, conservative lease renewal, cleanup
