@@ -109,9 +109,27 @@ static void bounded_work()
     f.ingress(reply); f.link.delivery.step(3);
     expect(!f.link.delivery.initialize(3), "old reply cannot satisfy new request");
 }
+static void data_packets()
+{
+    Fixture f; Ticket ticket = f.initialize(0);
+    provider_data::Frame packet = {}; packet.opcode = provider_data::Read; packet.request = 1;
+    packet.ticket = ticket; packet.budget_ms = 100; packet.count = 256;
+    expect(f.link.data.send(packet,f.link.data.lifetime()),"bounded data packet transmitted");
+    expect(f.uart.sent.size() == 1 && f.uart.sent[0].size() == provider_data::FrameSize,"DMA owns whole data frame");
+    f.uart.sent.clear(); packet.reply = true; packet.status = provider_data::Ok; packet.budget_ms = 0; packet.length = 256;
+    memset(packet.payload,0x81,256); uint8_t bytes[provider_data::FrameSize]; provider_data::encode(packet,bytes);
+    portENTER_CRITICAL(); expect(f.link.receive_isr(bytes,sizeof(bytes)),"reserved data reply consumed"); portEXIT_CRITICAL();
+    memset(bytes,0,sizeof(bytes)); provider_data::Event event;
+    expect(f.link.data.take(event) && event.frame.payload[255] == 0x81,"DMA reuse cannot corrupt queued reply");
+    f.link.data.finish(event.generation);
+    auto generation = f.link.data.lifetime(), control = f.link.delivery.link_lifetime();
+    bytes[0] = 2; bytes[1] = 0xfd;
+    portENTER_CRITICAL(); f.link.receive_isr(bytes,sizeof(bytes)); portEXIT_CRITICAL();
+    expect(generation.cancelled() && control.cancelled(),"malformed data retires both channels");
+}
 int main()
 {
-    qualification_and_framing(); overflow_and_loss(); send_failures_and_deadlines(); bounded_work();
+    qualification_and_framing(); overflow_and_loss(); send_failures_and_deadlines(); bounded_work(); data_packets();
     expect(manager_critical_depth == 0, "balanced critical sections");
     printf("Provider delivery: %u checks, %u failures\n", checks, failures);
     return failures ? 1 : 0;

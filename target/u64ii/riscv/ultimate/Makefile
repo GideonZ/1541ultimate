@@ -42,6 +42,8 @@ SRCS_C   =	itu.c \
 			url.c
 
 SRCS_CC	 =  provider_manager.cc \
+               provider_data.cc \
+               provider_data_client.cc \
             provider_manager_runner.cc \
             provider_manager_task.cc \
             provider_manager_delivery.cc \

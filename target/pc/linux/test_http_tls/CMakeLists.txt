@@ -75,6 +75,18 @@ target_include_directories(test_provider_task PRIVATE ${SW}/network/tests/owner_
     ${SW}/network/tests/manager_stubs ${SW}/network ${SW}/infra ${SW}/io/wifi)
 target_compile_options(test_provider_task PRIVATE -Wall -Wextra -Werror)
 target_link_libraries(test_provider_task PRIVATE pthread)
+foreach(provider_target test_http_tls test_provider_delivery test_provider_runner test_provider_task)
+    target_sources(${provider_target} PRIVATE ${SW}/network/provider_data.cc)
+endforeach()
+foreach(provider_target test_http_tls test_provider_runner test_provider_task)
+    target_sources(${provider_target} PRIVATE ${SW}/network/provider_data_client.cc)
+endforeach()
+add_executable(test_provider_data ${SW}/network/tests/test_provider_data.cc ${SW}/network/provider_data.cc
+    ${SW}/network/provider_control.cc ${SW}/network/provider_session_owner.cc ${SW}/network/provider_data_client.cc
+    ${SW}/network/provider_manager.cc ${SW}/network/provider_manager_delivery.cc ${SW}/network/provider_manager_runner.cc)
+target_include_directories(test_provider_data PRIVATE ${SW}/network ${SW}/infra)
+target_compile_options(test_provider_data PRIVATE -Wall -Wextra -Werror)
+target_link_libraries(test_provider_data PRIVATE pthread)
 add_executable(test_uart_loss ${SW}/network/tests/test_uart_loss.cc ${SW}/io/uart/dma_uart.cc)
 target_include_directories(test_uart_loss PRIVATE ${SW}/network/tests/uart_stubs ${SW}/io/uart)
 target_compile_definitions(test_uart_loss PRIVATE RISCV=1)

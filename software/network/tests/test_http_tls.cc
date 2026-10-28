@@ -418,9 +418,16 @@ static void routed_exchange(const char *mode, const char *ca, int port)
 #include "test_provider_owner_tls.h"
 #include "test_provider_control_tls.h"
 #include "test_connected_tls.h"
+#include "test_uart_tls.h"
 
 int main(int argc, char **argv)
 {
+    if (argc == 7 && strcmp(argv[6], "--uart") == 0) {
+        uart_test::exchange(argv[1],argv[2],atoi(argv[3]));
+        uart_test::exchange("recovery",argv[4],atoi(argv[5]));
+        printf("TLS uart: %d checks, %d failures\n",checks,failures);
+        return failures ? 1 : 0;
+    }
     if (argc == 7 && strcmp(argv[6], "--connected") == 0) {
         connected_test::exchange(argv[1], argv[2], atoi(argv[3]));
         connected_test::exchange("recovery", argv[4], atoi(argv[5]));

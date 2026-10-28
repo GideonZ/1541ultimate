@@ -2,6 +2,7 @@
 #include "provider_control_task.h"
 #ifdef CONFIG_ULTIMATE_PROVIDER_CONTROL
 #include "../../network/provider_control.h"
+#include "../../network/provider_data.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
@@ -12,7 +13,7 @@ extern "C" {
 }
 
 namespace {
-class UartPort : public provider_control::Port {
+class UartPort : public provider_control::Port, public provider_data::Port {
     portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
 public:
     QueueHandle_t queue = NULL;
@@ -29,11 +30,15 @@ public:
 };
 UartPort port;
 provider_control::Worker *worker;
+provider_data::Delivery data(port,false);
 void run(void *context)
 {
     provider_control::Worker *self = static_cast<provider_control::Worker *>(context);
+    // No embedded TLS backend yet: reserved data requests fail unavailable.
+    provider_data::Owner data_owner(data,*self);
     for (;;) {
         self->step(uint64_t(esp_timer_get_time() / 1000));
+        data_owner.step(uint64_t(esp_timer_get_time() / 1000));
         vTaskDelay(pdMS_TO_TICKS(10) ? pdMS_TO_TICKS(10) : 1);
     }
 }
@@ -55,8 +60,15 @@ void provider_control_start(void)
 }
 bool provider_control_receive(const uint8_t *bytes, size_t size)
 {
-    if (size < 2 || bytes[0] != 2 || bytes[1] != 0xfe) return false;
-    if (worker) worker->submit(bytes, size);
+    if (size < 2 || bytes[0] != 2 || (bytes[1] != 0xfe && bytes[1] != 0xfd)) return false;
+    if (worker) {
+        if (bytes[1] == 0xfd) {
+            port.lock(); bool accepted = data.receive_isr(bytes,size,uint32_t(esp_timer_get_time()/1000)); port.unlock();
+            if (!accepted) worker->disconnect();
+        } else if (!worker->submit(bytes, size)) {
+            data.disconnect(); worker->disconnect();
+        }
+    }
     return true;
 }
 #else

@@ -40,6 +40,7 @@ public:
     bool admit(const provider_session::Grant&, uint64_t session, provider_session::Resource*, uint64_t now,
                provider_session::Ticket&);
     bool current(const provider_session::Ticket&, uint64_t now) const; // Owner TLS callback.
+    OperationCancellation resource_lifetime() const { return resource_generation_; } // Owner snapshot for final reply fence.
     void disconnect(); // Task ingress: retain cancellation even if queue is full.
     bool occupied() const { return owner_.occupied(); } // Owner task only.
 private:

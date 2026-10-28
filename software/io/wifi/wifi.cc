@@ -103,7 +103,7 @@ void WiFi::ProviderLinkLoss()
 {
     wifi.provider_lifecycle.invalidate();
 #if U64 == 2
-    if (wifi.provider_manager) wifi.provider_manager->delivery.invalidate_isr();
+    if (wifi.provider_manager) wifi.provider_manager->invalidate_isr();
 #endif
 }
 
@@ -129,7 +129,7 @@ bool WiFi::ProviderSnapshot(provider_session::Identity& boot, OperationCancellat
 bool WiFi::ReceiveProviderControl(command_buf_t *buf)
 {
 #if U64 == 2
-    if (buf->size < 2 || buf->data[0] != CMD_IDENTIFY || buf->data[1] != 0xfe) return false;
+    if (buf->size < 2 || buf->data[0] != CMD_IDENTIFY || (buf->data[1] != 0xfe && buf->data[1] != 0xfd)) return false;
     if (provider_manager && buf->size <= int(sizeof(buf->data)))
         provider_manager->receive_isr(buf->data, buf->size);
     return true;

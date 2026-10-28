@@ -6,7 +6,8 @@
 using provider_control::ManagerRunner;
 ProviderManagerTask::ProviderManagerTask(provider_control::IncarnationSource source,
     provider_control::ManagerLimits limits, uint32_t renew_ms) :
-    link_(source, limits), runner_(link_.delivery, renew_ms), wifi_(0), state_(Unstarted), stop_(0),
+    link_(source, limits), runner_(link_.delivery, renew_ms), requests_(link_.data_port(),link_.data,link_.delivery,runner_),
+    wifi_(0), state_(Unstarted), stop_(0),
     attempted_(false), valid_limits_(ManagerRunner::valid_limits(limits, renew_ms)) {}
 
 bool ProviderManagerTask::start(WiFi& wifi)
@@ -31,12 +32,18 @@ bool ProviderManagerTask::start(WiFi& wifi)
 void ProviderManagerTask::request_stop()
 {
     __atomic_store_n(&stop_, uint32_t(1), __ATOMIC_RELEASE);
-    portENTER_CRITICAL(); link_.delivery.invalidate_isr(); portEXIT_CRITICAL();
+    portENTER_CRITICAL(); link_.invalidate_isr(); portEXIT_CRITICAL();
 }
+bool ProviderManagerTask::submit_data(const provider_data::Frame& frame, OperationCancellation cancel)
+{
+    return state() == Active && requests_.submit(frame,cancel,uint32_t(xTaskGetTickCount())*portTICK_PERIOD_MS);
+}
+bool ProviderManagerTask::collect_data(provider_data::Frame& reply) { return requests_.collect(reply); }
 void ProviderManagerTask::entry(void *context)
 {
     while (!ulTaskNotifyTake(pdTRUE, portMAX_DELAY)) {}
     static_cast<ProviderManagerTask *>(context)->run();
+    static_cast<ProviderManagerTask *>(context)->requests_.stop();
     vTaskDelete(NULL);
     for (;;) {} // FreeRTOS must not return from self deletion.
 }
@@ -70,6 +77,7 @@ void ProviderManagerTask::run()
                 portEXIT_CRITICAL();
                 if (stopped) { runner_.stop(); publish(Stopped); return; }
                 if (!started) { publish(Failed); return; }
+                requests_.bind_lifetime(lifetime);
                 publish(Negotiating);
             }
         } else {
@@ -78,6 +86,8 @@ void ProviderManagerTask::run()
                 publish(Failed); return;
             }
             if (runner_.state() == ManagerRunner::Active) publish(Active);
+            requests_.step(now,uint32_t(tick)*portTICK_PERIOD_MS);
+            if (state() == Active && runner_.state() != ManagerRunner::Active) { publish(Failed); return; }
         }
         vTaskDelay(interval);
     }

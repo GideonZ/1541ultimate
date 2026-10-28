@@ -163,9 +163,44 @@ static void identity_and_deadlines()
     expect(racing.start(racing_wifi),"start before snapshot cancellation"); run_owner();
     expect(racing.state() == ProviderManagerTask::Stopped && racing_wifi.uart.gets == 0,"cancellation during snapshot prevents offer transmission");
 }
+static void owner_data_queue()
+{
+    for (unsigned stale = 0; stale < 2; ++stale) {
+        reset_scheduler(); Source source; WiFi wifi; Link remote;
+        ProviderManagerTask task({&source,fresh},{100,200},80);
+        provider_data::Frame f = {}; f.opcode = provider_data::Open; f.budget_ms = 100;
+        f.port = 443; f.length = 5; memcpy(f.payload,"host",5);
+        expect(!task.submit_data(f,{}),"inactive owner rejects data");
+        bool submitted = false, delivered = false, collected = false;
+        expect(task.start(wifi),"data owner starts");
+        delay_hook = [&] {
+            if (!wifi.uart.sent.empty() && wifi.uart.sent.front()[1] == 0xfd) {
+                auto bytes = wifi.uart.sent.front(); wifi.uart.sent.erase(wifi.uart.sent.begin());
+                provider_data::Frame reply;
+                expect(provider_data::decode(bytes.data(),bytes.size(),reply),"owner emits data wire frame");
+                expect(reply.payload[0] == 'h' && reply.request == 1 && reply.ticket.session,"owner copies and reserves session");
+                delivered = true; reply.reply = true; reply.status = provider_data::Ok;
+                reply.count = reply.length = reply.port = 0; reply.budget_ms = 0; reply.request += stale;
+                provider_data::encode(reply,bytes.data());
+                portENTER_CRITICAL(); wifi.bound->receive_isr(bytes.data(),bytes.size()); portEXIT_CRITICAL();
+            } else remote.exchange(wifi,uint64_t(ticks)*5);
+            if (!submitted && task.state() == ProviderManagerTask::Active) {
+                submitted = task.submit_data(f,{}); expect(submitted,"data queued for owner");
+                expect(!task.submit_data(f,{}),"one request only"); memset(f.payload,0xee,sizeof(f.payload));
+            }
+            provider_data::Frame result;
+            if (task.collect_data(result)) { collected = true; expect(result.status == provider_data::Ok,"matching data reply"); task.request_stop(); }
+        };
+        run_owner();
+        if (stale) { provider_data::Frame result; expect(task.collect_data(result) && result.status == provider_data::Failed,"stale reply fails queued caller"); }
+        expect(submitted && delivered && (collected != bool(stale)),"owner data queue exercised");
+        expect(task.state() == (stale ? ProviderManagerTask::Failed : ProviderManagerTask::Stopped),"data failure retires owner task");
+        expect(!task.submit_data(f,{}),"terminated owner refuses new data");
+    }
+}
 int main()
 {
-    startup_gates(); owner_lifecycle(); identity_and_deadlines();
+    startup_gates(); owner_lifecycle(); identity_and_deadlines(); owner_data_queue();
     expect(manager_critical_depth == 0,"all critical sections released");
     printf("Provider task: %u checks, %u failures\n",checks,failures);
     return failures ? 1 : 0;

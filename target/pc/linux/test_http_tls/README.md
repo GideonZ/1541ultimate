@@ -43,6 +43,30 @@ do not use these certificates for anything outside the fixture.
 
 ## Coverage and limits
 
+`run_http_tls.py --uart` uses the production `provider_data` wire codec,
+single-slot delivery queues, owner execution and manager request mailbox. It runs
+the same fourteen scenarios as `--connected`, with both certificate profiles.
+Copied packets are transferred by a host wire fixture; no physical UART timing
+or real FreeRTOS scheduler is emulated. `test_provider_data` covers malformed
+frames, padding, overflow, late completion, ticket/request validation, queue
+deadlines and unavailable backends. Owner-task and DMA-adapter tests separately
+exercise actual firmware routing, copied input storage and terminal task failure.
+
+Data frames use reserved command 2/subcommand 0xfd, magic PSD1/version 1, a fixed
+80-byte little-endian header and 256-byte zero-padded payload (336 bytes total).
+They carry provider boot/epoch, manager incarnation, session and request IDs.
+Open/read/write are data operations; close and cancellation retain the existing
+control protocol and require its cleanup acknowledgement. One pending operation
+is accepted; queue waiting consumes the original session budget. Malformed data,
+overflow and failed transmit retire the generation. No automatic retry is made.
+
+The production owner task exposes copied submit/collect APIs, but the product HTTP
+provider is not registered and the task remains uninstantiated. The experimental
+ESP32 owner has no embedded TLS backend and returns Unavailable, advertising no
+capability. The host fixture supplies the qualified TLS backend for these tests.
+Native identity, embedded TLS callbacks and physical resource/timing qualification
+are still required before activation. This is not a firmware-ready HTTPS claim.
+
 `run_http_tls.py --connected` exercises the existing C64 HTTP command interface
 through a proxy, copied data operations, ManagerDelivery/ManagerRunner, the
 provider Worker and real TlsHttpConnection/Mbed TLS. Run it once per RSA/ECDSA
