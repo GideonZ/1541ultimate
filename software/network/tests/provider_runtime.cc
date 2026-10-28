@@ -1,4 +1,5 @@
 #include "provider_tls_platform.h"
+#include "provider_runtime_metrics.h"
 #include "fixture.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -110,6 +111,31 @@ static void attempt(const char *name,unsigned port,bool good,unsigned action=0,b
     }
     printf("HEAP name=%s before=%u after=%u minimum=%u run=%s\n",name,unsigned(before),unsigned(heap_caps_get_free_size(MALLOC_CAP_8BIT)),unsigned(heap_caps_get_minimum_free_size(MALLOC_CAP_8BIT)),LAB_RUN_ID);
 }
+#if LAB_HEAP_CHECK
+static provider_runtime_metrics sample(const char *phase,unsigned batch) {
+    provider_runtime_metrics value = {};
+    configASSERT(provider_runtime_snapshot(&value));
+    printf("RESOURCE phase=%s batch=%u ms=%llu free=%u largest=%u tasks=%u active=%u time_wait=%u bound=%u pcb_size=%u pcb_limit=%u run=%s\n",
+        phase,batch,static_cast<unsigned long long>(now_ms()),unsigned(value.free_heap),unsigned(value.largest_block),
+        unsigned(value.tasks),unsigned(value.active),unsigned(value.time_wait),unsigned(value.bound),
+        unsigned(value.pcb_size),unsigned(value.pcb_limit),LAB_RUN_ID);
+    return value;
+}
+static provider_runtime_metrics settle(const char *phase) {
+    uint64_t start=now_ms();
+    auto value=sample(phase,0);
+    while ((value.active || value.time_wait || value.bound) && now_ms()-start<150000) {
+        vTaskDelay(pdMS_TO_TICKS(10000));
+        value=sample(phase,0);
+    }
+    check(!value.active && !value.time_wait && !value.bound,"TCP cleanup within 150 seconds");
+    // Give the idle task and deferred frees time to finish before comparison.
+    vTaskDelay(pdMS_TO_TICKS(2000));
+    value=sample(phase,1);
+    check(heap_caps_check_integrity_all(true),"settled heap integrity");
+    return value;
+}
+#endif
 extern "C" void app_main(void) {
     printf("RUNTIME run=%s profile=%s\n",LAB_RUN_ID,LAB_ECDSA ? "ecdsa" : "rsa");
     check(provider_runtime_network(),"private emulator network ready");
@@ -137,6 +163,9 @@ extern "C" void app_main(void) {
         { EspProviderTlsPlatform p; check(p.configure(lab_root,sizeof(lab_root),clock_ready,entropy_ready),"temporary trust configured"); }
         check(heap_caps_get_free_size(MALLOC_CAP_8BIT)==roots_baseline,"trust allocations released");
     }
+#if LAB_HEAP_CHECK
+    sample("cold",0);
+#endif
     const struct { const char *name; unsigned port,action; bool timeout; } cases[]={
         {"valid",8443,0,false},{"hostname",8443,0,false},{"untrusted",8445,0,false},
         {"expired",8456,0,false},{"future",8457,0,false},{"no-roots",8443,0,false},
@@ -148,5 +177,17 @@ extern "C" void app_main(void) {
         attempt(item.name,item.port,!strcmp(item.name,"valid"),item.action,item.timeout);
         attempt("recovery",8443,true);
     }
+#if LAB_HEAP_CHECK
+    auto baseline=settle("warmup-cleanup");
+    for (unsigned batch=1;batch<=3;++batch) {
+        for (unsigned request=0;request<32;++request) attempt("repeat",8443,true);
+        auto value=sample("batch",batch);
+        check(value.active+value.time_wait<=value.pcb_limit && !value.bound,"TCP retention within configured limit");
+        check(heap_caps_check_integrity_all(true),"batch heap integrity");
+    }
+    auto final=settle("repeat-cleanup");
+    check(final.free_heap>=baseline.free_heap && final.largest_block>=baseline.largest_block,"quiescent heap and largest block recovered");
+    check(final.tasks==baseline.tasks,"temporary tasks released");
+#endif
     printf("SUMMARY checks=%u failures=%u run=%s\n",checks,failures,LAB_RUN_ID);
 }

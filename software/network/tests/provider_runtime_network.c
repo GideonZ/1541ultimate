@@ -9,11 +9,50 @@
 #include "lwip/ip4_addr.h"
 #include "mbedtls/version.h"
 #include "lwip/dns.h"
+#include "lwip/tcpip.h"
+#include "lwip/priv/tcp_priv.h"
+#include "esp_heap_caps.h"
+#include "freertos/semphr.h"
+#include "provider_runtime_metrics.h"
 #include <stdio.h>
 #include <string.h>
 #include <sys/time.h>
 
 static EventGroupHandle_t events;
+static SemaphoreHandle_t metrics_ready;
+static struct tcpip_callback_msg *metrics_message;
+static struct provider_runtime_metrics metrics;
+
+/* Inspect TCP lists only on the TCP/IP thread. The fixed callback and semaphore
+ * are retained for the whole fixture, so sampling does not allocate per request.
+ * Only app_main calls this helper, with no overlapping samples. */
+static void sample_metrics(void *context)
+{
+    (void)context;
+    metrics.active = metrics.time_wait = metrics.bound = 0;
+    for (const struct tcp_pcb *p = tcp_active_pcbs; p; p = p->next) ++metrics.active;
+    for (const struct tcp_pcb *p = tcp_tw_pcbs; p; p = p->next) ++metrics.time_wait;
+    for (const struct tcp_pcb *p = tcp_bound_pcbs; p; p = p->next) ++metrics.bound;
+    metrics.pcb_size = sizeof(struct tcp_pcb);
+    metrics.pcb_limit = MEMP_NUM_TCP_PCB;
+    metrics.free_heap = heap_caps_get_free_size(MALLOC_CAP_8BIT);
+    metrics.largest_block = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+    metrics.tasks = uxTaskGetNumberOfTasks();
+    xSemaphoreGive(metrics_ready);
+}
+
+bool provider_runtime_snapshot(struct provider_runtime_metrics *result)
+{
+    if (!metrics_ready) {
+        metrics_ready = xSemaphoreCreateBinary();
+        metrics_message = tcpip_callbackmsg_new(sample_metrics, NULL);
+        configASSERT(metrics_ready && metrics_message);
+    }
+    if (tcpip_callbackmsg_trycallback(metrics_message) != ERR_OK ||
+        xSemaphoreTake(metrics_ready, pdMS_TO_TICKS(3000)) != pdTRUE) return false;
+    *result = metrics;
+    return true;
+}
 static void got_ip(void *context, esp_event_base_t base, int32_t id, void *data)
 {
     (void)context;

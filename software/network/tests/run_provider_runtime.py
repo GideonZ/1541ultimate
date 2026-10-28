@@ -19,6 +19,39 @@ CASES = ['valid', 'hostname', 'untrusted', 'expired', 'future', 'no-roots',
          'clock-handshake-revoke', 'entropy-read-revoke', 'handshake-cancel', 'read-cancel']
 
 
+def assess_resources(text, run):
+    fields = ('phase', 'batch', 'ms', 'free', 'largest', 'tasks', 'active',
+              'time_wait', 'bound', 'pcb_size', 'pcb_limit', 'run')
+    pattern = (r'^RESOURCE phase=(\S+) batch=(\d+) ms=(\d+) free=(\d+) largest=(\d+) '
+               r'tasks=(\d+) active=(\d+) time_wait=(\d+) bound=(\d+) pcb_size=(\d+) '
+               r'pcb_limit=(\d+) run=(\S+)\r?$')
+    rows = [dict(zip(fields, row)) for row in re.findall(pattern, text, re.M)]
+    for row in rows:
+        for field in fields[1:-1]:
+            row[field] = int(row[field])
+    def require(condition, message):
+        if not condition:
+            raise ValueError(message)
+    require(rows and all(r['run'] == run for r in rows), 'Missing or foreign resource records')
+    require([r['ms'] for r in rows] == sorted(r['ms'] for r in rows), 'Resource time went backwards')
+    require([r['phase'] for r in rows if r['phase'] not in ('warmup-cleanup', 'repeat-cleanup')]
+            == ['cold', 'batch', 'batch', 'batch'], 'Unexpected resource phases')
+    require([r['batch'] for r in rows if r['phase'] == 'batch'] == [1, 2, 3], 'Missing repetition batch')
+    settled = []
+    for phase in ('warmup-cleanup', 'repeat-cleanup'):
+        samples = [r for r in rows if r['phase'] == phase]
+        require(len(samples) >= 2 and [r['batch'] for r in samples] == [0]*(len(samples)-1)+[1], 'Incomplete cleanup samples')
+        last = samples[-1]
+        require(last['ms']-samples[0]['ms'] <= 152500, 'Cleanup exceeded its fixed limit')
+        require(last['active'] == last['time_wait'] == last['bound'] == 0, 'TCP objects retained after cleanup')
+        settled.append(last)
+    before, after = settled
+    require(after['free'] >= before['free'] and after['largest'] >= before['largest'], 'Quiescent memory did not recover')
+    require(after['tasks'] == before['tasks'], 'Temporary tasks remain')
+    require(all(r['active']+r['time_wait'] <= r['pcb_limit'] and not r['bound'] for r in rows), 'TCP retention exceeds limit')
+    return dict(passed=True, snapshots=rows, baseline=before, final=after)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--fixture', type=Path, required=True)
@@ -30,6 +63,8 @@ def main():
     if os.geteuid() != 0 or args.uid <= 0:
         parser.error('Private TAP setup requires root and a non-root guest uid')
     build = json.loads((directory / 'build.json').read_text())
+    heap_check = build.get('heap_check', False)
+    run_limit = 480 if heap_check else 150
     if not build['passed'] or abs(time.time() - build['utc']) > 3600 or (directory / 'result.json').exists():
         raise ValueError('Require a fresh, unused, successfully built fixture')
     for name, digest in build['artifacts'].items():
@@ -112,7 +147,7 @@ def main():
             peers.listen(socket.SOCK_STREAM, port, peers.server, name, mode)
         process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                    stderr=subprocess.STDOUT, start_new_session=True)
-        while time.monotonic() - start < 150:
+        while time.monotonic() - start < run_limit:
             if (directory / 'operator.stop').exists():
                 failure = 'Operator stopped incomplete run'
                 break
@@ -129,7 +164,7 @@ def main():
             if process.poll() is not None:
                 break
         if not completed and not failure:
-            failure = 'Guest did not complete within 150 seconds'
+            failure = f'Guest did not complete within {run_limit} seconds'
     except Exception as error:
         failure = repr(error)
     finally:
@@ -152,6 +187,8 @@ def main():
     (directory / 'peers.json').write_text(json.dumps(peers.events, indent=2) + '\n')
     text = output.decode(errors='replace')
     labels = [name for case in CASES for name in (case, 'recovery')]
+    if heap_check:
+        labels += ['repeat'] * 96
     attempts = re.findall(r'^ATTEMPT name=([\w-]+) run=(\S+)\r?$', text, re.M)
     rows = re.findall(r'^RESULT name=([\w-]+) status=(\d+) flags=(\d+) elapsed_ms=(\d+) cancel_return=(\d+) stack=(\d+) run=(\S+)\r?$', text, re.M)
     summaries = re.findall(r'^SUMMARY checks=(\d+) failures=(\d+) run=(\S+)\r?$', text, re.M)
@@ -163,7 +200,7 @@ def main():
     for name, status, flags, elapsed, cancel_return, stack, _ in rows:
         status, flags, elapsed, cancel_return, stack = map(int, (status, flags, elapsed, cancel_return, stack))
         timing &= stack >= 1024
-        if name in ('valid', 'recovery'):
+        if name in ('valid', 'recovery', 'repeat'):
             timing &= status == flags == 0
         elif name.endswith('timeout'):
             budget = 3000 if name.startswith('read') else 1500
@@ -175,20 +212,29 @@ def main():
         else:
             timing &= status == 5 and flags != 0
     kinds = Counter(e['kind'] for e in peers.events)
-    peer_ok = kinds['accepted'] == kinds['closed'] == 25 and kinds['request'] == kinds['authenticated'] == 18
+    extra = 96 if heap_check else 0
+    peer_ok = kinds['accepted'] == kinds['closed'] == 25+extra and kinds['request'] == kinds['authenticated'] == 18+extra
     peer_ok &= kinds['client-hello'] == 3 and all(e['tls_record'] for e in peers.events if e['kind'] == 'client-hello')
     peer_ok &= kinds['tls-alert'] == 4 and not kinds['fixture-error']
     peer_ok &= all(e['exact'] and bytes.fromhex(e['hex']) == REQUEST for e in peers.events if e['kind'] == 'request')
     peer_ok &= all(e['cipher'] == peers.cipher and e['protocol'] == 'TLSv1.2' for e in peers.events if e['kind'] == 'authenticated')
-    passed = (completed and not failure and complete and timing and peer_ok and len(summaries) == 1 and
-              summaries[0] == ('337', '0', directory.name) and
+    resources = None
+    if heap_check:
+        try:
+            resources = assess_resources(text, directory.name)
+        except ValueError as error:
+            resources = dict(passed=False, error=str(error))
+    expected_checks = 1405 if heap_check else 337
+    passed = (completed and not failure and complete and timing and peer_ok and
+              (not heap_check or resources['passed']) and len(summaries) == 1 and
+              summaries[0] == (str(expected_checks), '0', directory.name) and
               len(re.findall(r'^PASS ', text, re.M)) == int(summaries[0][0]) and
               text.count('ESP-ROM:esp32s3-20210327') == 1 and
               not re.search(r'^FAIL|Guru Meditation|assert failed|abort\(\) was called', text, re.M))
     result = dict(passed=bool(passed), completed=completed, failure=failure, complete_attempts=complete,
                   timing_passed=bool(timing), peer_accounting_passed=bool(peer_ok), peer_counts=dict(kinds),
                   checks=int(summaries[0][0]) if len(summaries) == 1 else None, observations=rows,
-                  seconds=time.monotonic()-start, command=command, hardware_tested=False,
+                  resources=resources, seconds=time.monotonic()-start, command=command, hardware_tested=False,
                   qemu_sha256=hashlib.sha256(args.qemu.read_bytes()).hexdigest())
     (directory / 'result.json').write_text(json.dumps(result, indent=2) + '\n')
     print(json.dumps(result, indent=2))

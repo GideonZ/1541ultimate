@@ -82,3 +82,28 @@ stack. Eight isolated trust configure/destroy cycles must return free heap to
 the warmed baseline. Per-request free/minimum heap is observational: TCP and
 deferred task cleanup make it different from scoped TLS allocation accounting.
 These bounds apply to this fixture, not physical scheduling guarantees or a soak.
+
+## Heap recovery investigation
+
+Define `LAB_HEAP_CHECK` as 1 in the generated fixture header and set `heap_check`
+to true in its build record to extend the run. The original fault/recovery cases
+are followed by a TCP cleanup barrier, three batches of 32 successful requests
+on the same boot, and another cleanup barrier. Each barrier allows 150 seconds
+for active, bound and TIME_WAIT TCP objects to disappear, followed by 2 seconds
+for deferred cleanup. The pinned lwIP uses a 60-second maximum segment lifetime
+and expires TIME_WAIT objects after twice that interval. Socket close does not
+necessarily free these objects immediately, even with zero linger.
+
+The fixture samples TCP lists on the TCP/IP thread, using a retained callback
+message and semaphore so repeated measurements do not allocate new objects.
+It records free heap, largest free block, task count, PCB size and retention
+limit. Do not traverse these TCP lists from the application task.
+
+This mode requires 124 complete attempts and 1405 successful checks per profile.
+All 121 peer connections must close, with 114 exact authenticated requests,
+three stalled handshakes and four certificate alerts. After the final cleanup,
+free heap and the largest free block must both reach or exceed the warmed
+baseline, and task count must match. Heap integrity must hold throughout; TCP
+retention cannot exceed its configured limit. The runner allows 480 seconds
+for this extended run and preserves operator-stop handling. A complete short
+run establishes recovery for these cases, not long-duration or hardware safety.
