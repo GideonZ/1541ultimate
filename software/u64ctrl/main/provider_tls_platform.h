@@ -9,6 +9,7 @@
 class EspProviderTlsPlatform : public provider_data::TlsPlatform {
 public:
     EspProviderTlsPlatform();
+    ~EspProviderTlsPlatform() override; // After the owner has released all sessions.
     bool configure(const unsigned char *roots, size_t length,
                    bool (*clock_ready)(), bool (*entropy_ready)());
     bool configured() const { return configured_; }

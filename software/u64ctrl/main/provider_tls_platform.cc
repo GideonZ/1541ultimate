@@ -11,6 +11,7 @@ extern "C" {
 
 EspProviderTlsPlatform::EspProviderTlsPlatform() : socket_(-1),configured_(false),
     clock_ready_(0),entropy_ready_(0),cancel_(0),cancel_context_(0) { mbedtls_x509_crt_init(&roots_); }
+EspProviderTlsPlatform::~EspProviderTlsPlatform() { close_socket(this); mbedtls_x509_crt_free(&roots_); }
 bool EspProviderTlsPlatform::configure(const unsigned char *pem,size_t length,bool (*clock_ready)(),bool (*entropy_ready)()) {
     if (configured_ || !pem || !length || !clock_ready || !entropy_ready) return false;
     if (mbedtls_x509_crt_parse(&roots_,pem,length)) {
