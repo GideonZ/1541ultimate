@@ -198,9 +198,148 @@ static void owner_data_queue()
         expect(!task.submit_data(f,{}),"terminated owner refuses new data");
     }
 }
+static void scheduling_boundaries()
+{
+    // The scheduler and ISR ingress are controlled independently: an on-time
+    // reply cannot revive a task which processes it at or after its deadline.
+    for (unsigned wrap=0;wrap<2;++wrap) for (unsigned age : {95u,100u,105u}) {
+        reset_scheduler(); Source source; WiFi wifi; Link remote;
+        ProviderManagerTask task({&source,fresh},{100,200},80);
+        ticks=wrap ? UINT32_MAX-8 : 0; uint32_t origin=ticks;
+        bool injected=false,active=false;
+        expect(task.start(wifi),"schedule deadline task starts");
+        delay_hook=[&] {
+            if (!injected) {
+                remote.exchange(wifi,10); // Reply arrives at 10 ms.
+                ticks=origin+age/5; injected=true; // Owner wakes later.
+            } else remote.exchange(wifi,uint64_t(uint32_t(ticks-origin))*5);
+            if (task.state()==ProviderManagerTask::Active) { active=true; task.request_stop(); }
+        };
+        run_owner();
+        expect(active==(age<100),"deadline tested at processing time across tick wrap");
+        expect(task.state()==(age<100 ? ProviderManagerTask::Stopped : ProviderManagerTask::Failed),"late wake fails closed");
+        expect(age<100 || (wifi.uart.gets==1 && delays==1),"expired offer never retries or initializes");
+        expect(deletes==1 && manager_critical_depth==0,"delayed task exits with balanced locks");
+        printf("SCHEDULE reply_age=%u wrap=%u active=%u sends=%u\n",age,wrap,unsigned(active),wifi.uart.gets);
+    }
+    for (unsigned mode=0;mode<4;++mode) {
+        reset_scheduler(); Source source; WiFi wifi; Link remote;
+        ProviderManagerTask task({&source,fresh},{100,200},80);
+        bool injected=false; unsigned before=0;
+        expect(task.start(wifi),"active scheduling task starts");
+        delay_hook=[&] {
+            remote.exchange(wifi,uint64_t(ticks)*5);
+            if (!injected && task.state()==ProviderManagerTask::Active) {
+                injected=true; before=wifi.uart.gets;
+                if (mode==0) ticks+=40; // Full lease without an owner wake.
+                if (mode==1) ticks+=UINT32_MAX/2+1; // Ambiguous clock gap.
+                if (mode==2) task.request_stop();
+                if (mode==3) wifi.lifetime.signal();
+                provider_data::Frame f={}; f.opcode=provider_data::Open; f.budget_ms=100;
+                f.port=443; f.length=5; memcpy(f.payload,"host",5);
+                if (mode==2) expect(!task.submit_data(f,{}),"stop rejects submissions before owner wakes");
+            }
+        };
+        run_owner();
+        expect(injected && task.state()==(mode==2 ? ProviderManagerTask::Stopped : ProviderManagerTask::Failed),"starvation stop or restart retires owner");
+        expect(wifi.uart.gets==before,"no catch-up renewal or data after retirement");
+        expect(deletes==1 && !task.ready(),"retired task exits once");
+        printf("SCHEDULE retirement=%u sends_after=%u state=%u\n",mode,wifi.uart.gets-before,unsigned(task.state()));
+    }
+}
+struct ScheduledResource : Resource {
+    unsigned& releases;
+    explicit ScheduledResource(unsigned& n):releases(n) {}
+    void cancel() override {}
+    bool cleanup() override { return true; }
+    ~ScheduledResource() { ++releases; }
+};
+static void pending_data_scheduling()
+{
+    for (unsigned mode=0;mode<8;++mode) {
+        reset_scheduler(); Source source; WiFi wifi; Link remote;
+        ProviderManagerTask task({&source,fresh},{100,200},80);
+        CancellationSource command;
+        ticks=mode==5 ? UINT32_MAX-8 : 0; const uint32_t origin=ticks;
+        unsigned releases=0, renewals=0, close_at=0, queued_at=0, reply_at=0, completed_at=0;
+        bool submitted=false, received=false, replied=false, collected=false, signalled=false;
+        provider_data::Frame pending={},result={};
+        Frame held={}; bool holding=false; unsigned release_at=0;
+        expect(task.start(wifi),"pending-data scheduler starts");
+        delay_hook=[&] {
+            unsigned now=uint32_t(ticks-origin)*5;
+            expect(wifi.uart.sent.size()<=2,"bounded control plus data work per wake");
+            while (!wifi.uart.sent.empty()) {
+                auto bytes=wifi.uart.sent.front(); wifi.uart.sent.erase(wifi.uart.sent.begin());
+                if (bytes[1]==0xfd) {
+                    expect(!received && provider_data::decode(bytes.data(),bytes.size(),pending),"one copied data operation reaches remote");
+                    received=true;
+                    expect(pending.budget_ms==(mode==2 ? 120u : 500u),"native queue preserves original budget");
+                    Ticket ticket; auto resource=new ScheduledResource(releases);
+                    bool admitted=remote.worker.admit(pending.ticket.grant,pending.ticket.session,resource,now,ticket);
+                    expect(admitted,"remote admits pending session"); if (!admitted) delete resource;
+                } else {
+                    Frame frame={}; expect(decode(bytes.data(),bytes.size(),frame),"scheduled control frame decoded");
+                    if (frame.opcode==Renew) ++renewals;
+                    if (frame.opcode==Close) {
+                        close_at=now;
+                        expect(!holding && now>=release_at,"close waits for outstanding renewal acknowledgement");
+                    }
+                    expect(remote.worker.submit(bytes.data(),bytes.size()),"scheduled control accepted"); remote.worker.step(now);
+                    expect(remote.port.replies.size()==1,"scheduled control answered once");
+                    if (!remote.port.replies.empty()) {
+                        Frame response=remote.port.replies.front(); remote.port.replies.pop_front();
+                        if ((mode==1 || mode==2) && frame.opcode==Renew && renewals==1) {
+                            held=response; holding=true; release_at=now+60;
+                        } else remote.receive(wifi,response);
+                    }
+                }
+            }
+            if (holding && now>=release_at) { remote.receive(wifi,held); holding=false; }
+            remote.worker.step(now);
+            if (!submitted && task.state()==ProviderManagerTask::Active) {
+                provider_data::Frame f={}; f.opcode=provider_data::Open; f.budget_ms=mode==2 ? 120 : 500;
+                f.port=443; f.length=5; memcpy(f.payload,"host",5);
+                submitted=task.submit_data(f,command.token()); queued_at=now;
+                expect(submitted,"pending data queued");
+            }
+            if (submitted && !signalled && now-queued_at>=100 && (mode==1 || mode==3 || mode==4)) {
+                signalled=true;
+                if (mode==1) command.signal();
+                if (mode==3) task.request_stop();
+                if (mode==4) wifi.lifetime.signal();
+            }
+            if (received && !replied && now-queued_at>=250) {
+                pending.reply=true; pending.status=provider_data::Ok; pending.count=pending.length=pending.port=0; pending.budget_ms=0;
+                uint8_t bytes[provider_data::FrameSize]; expect(provider_data::encode(pending,bytes),"delayed data reply encoded");
+                portENTER_CRITICAL(); wifi.bound->receive_isr(bytes,sizeof(bytes)); portEXIT_CRITICAL();
+                replied=true; reply_at=now;
+            }
+            if (replied && now>reply_at && !signalled && (mode==6 || mode==7)) {
+                signalled=true;
+                if (mode==6) command.signal(); else task.request_stop();
+            }
+            if (task.collect_data(result)) {
+                collected=true; completed_at=now; task.request_stop();
+            }
+        };
+        run_owner();
+        if (!collected) { collected=task.collect_data(result); completed_at=uint32_t(ticks-origin)*5; }
+        bool success=mode==0 || mode==5;
+        expect(submitted && received && collected,"pending caller always completes");
+        expect(result.status==(success ? provider_data::Ok : provider_data::Failed) && !result.count && !result.length,"cancellation deadline and restart cannot expose stale success");
+        if (success || mode>=6) expect(renewals>=3 && replied,"renewals continue while data is pending");
+        if (mode==1 || mode==2) expect(close_at && close_at>=release_at && completed_at-queued_at<=240,"cancel or deadline drains renewal then closes within bound");
+        if (mode==3 || mode==4) expect(completed_at-queued_at<=110 && !close_at,"stop or restart retires on next wake without extra send");
+        expect(deletes==1 && !task.ready() && wifi.uart.gets==wifi.uart.consumed,"pending owner exits once with no UART buffer debt");
+        remote.worker.disconnect(); remote.worker.step(uint64_t(uint32_t(ticks-origin))*5);
+        expect(releases==1 && !remote.worker.occupied(),"remote fixture resource released once");
+        printf("SCHEDULE_DATA mode=%u elapsed=%u renewals=%u close_at=%u reply_at=%u status=%u\n",mode,completed_at-queued_at,renewals,close_at,reply_at,unsigned(result.status));
+    }
+}
 int main()
 {
-    startup_gates(); owner_lifecycle(); identity_and_deadlines(); owner_data_queue();
+    startup_gates(); owner_lifecycle(); identity_and_deadlines(); owner_data_queue(); scheduling_boundaries(); pending_data_scheduling();
     expect(manager_critical_depth == 0,"all critical sections released");
     printf("Provider task: %u checks, %u failures\n",checks,failures);
     return failures ? 1 : 0;

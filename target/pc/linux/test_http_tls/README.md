@@ -210,8 +210,33 @@ explicitly call `provider_control_configure_tls` with roots and live predicates
 qualifying the actual UTC clock and hardware entropy. There is no automatic trust
 store, clock qualification or entropy fallback. An unprovisioned build advertises
 zero capabilities. Configuration is boot-time only and immutable after startup.
-The optional TLS worker reserves 12288 stack bytes; high-water is not measured.
+The optional TLS worker reserves 12288 stack bytes. The separate
+[embedded fixture](../../../esp32/test_provider_runtime/README.md) measures its
+emulated owner-task stack reserve and control servicing during long calls.
 
-Manager incarnation, trusted provisioning, lease/control servicing during long
-TLS calls and device resource/scheduling measurements remain activation gates.
+Manager incarnation, trusted provisioning and physical UART/native scheduling
+measurements remain activation gates.
 Default firmware does not enable this path or change HTTP commands.
+
+## Native manager scheduling contracts
+
+`test_provider_task` compiles the production `ProviderManagerTask`, runner,
+delivery and data client. Its controlled scheduler matches native configuration:
+200 Hz ticks, 10 ms owner polling, 1600 stack words and driver priority 1. It runs
+the production task entry point; scheduler calls and the WiFi/UART boundary are
+test substitutes. These tests establish behavior under specified wake schedules,
+not wall-clock timing, physical interrupt latency or native stack high-water.
+
+Eighteen scheduling scenarios supplement the lifecycle tests. They cover replies
+received at 10 ms but processed at 95/100/105 ms against a 100 ms deadline, both
+before and across tick wrap; lease starvation, ambiguous clock gaps, stop and
+restart before the next wake; and pending data with renewal, cancellation, timeout,
+tick wrap and late collection. Expiry is checked at processing time and never
+reset by a late reply. Missed deadlines retire the owner without catch-up sends.
+
+Pending data must allow renewals to continue. Cancellation and timeout drain an
+outstanding renewal before close, preserving the original request budget.
+Completed replies are checked again when collected, so cancellation or stop
+cannot expose stale success. Stop immediately rejects new submissions, even
+before the task wakes and publishes its terminal state. Tests also require a
+single task exit, balanced critical sections and consumption of all UART buffers.

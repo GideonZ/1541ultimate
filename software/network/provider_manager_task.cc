@@ -36,7 +36,7 @@ void ProviderManagerTask::request_stop()
 }
 bool ProviderManagerTask::submit_data(const provider_data::Frame& frame, OperationCancellation cancel)
 {
-    return state() == Active && requests_.submit(frame,cancel,uint32_t(xTaskGetTickCount())*portTICK_PERIOD_MS);
+    return ready() && requests_.submit(frame,cancel,uint32_t(xTaskGetTickCount())*portTICK_PERIOD_MS);
 }
 bool ProviderManagerTask::collect_data(provider_data::Frame& reply) { return requests_.collect(reply); }
 uint32_t ProviderManagerTask::now_ms() const { return uint32_t(xTaskGetTickCount())*portTICK_PERIOD_MS; }
