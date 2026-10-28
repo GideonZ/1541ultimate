@@ -28,6 +28,8 @@ public:
     void disconnect(); // Also required after failed request enqueue.
     OperationCancellation lifetime() const { return cancellation_.token(); }
     State state() const { return state_; }
+    struct Status { State state; bool pending; uint64_t lease_at; ManagerLimits limits; };
+    Status status() const { return {state_, pending_, lease_at_, limits_}; }
 private:
     provider_session::Identity incarnation_, boot_;
     provider_session::Grant grant_;

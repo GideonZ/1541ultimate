@@ -58,6 +58,14 @@ target_include_directories(test_provider_delivery PRIVATE ${SW}/network/tests/ma
     ${SW}/network ${SW}/infra ${SW}/io/wifi)
 target_compile_options(test_provider_delivery PRIVATE -Wall -Wextra -Werror)
 target_link_libraries(test_provider_delivery PRIVATE pthread)
+add_executable(test_provider_runner ${SW}/network/tests/test_provider_runner.cc
+    ${SW}/network/provider_manager_runner.cc ${SW}/network/provider_manager_delivery.cc
+    ${SW}/io/wifi/provider_manager_uart.cc ${SW}/network/provider_manager.cc
+    ${SW}/network/provider_control.cc ${SW}/network/provider_session_owner.cc)
+target_include_directories(test_provider_runner PRIVATE ${SW}/network/tests/manager_stubs
+    ${SW}/network ${SW}/infra ${SW}/io/wifi)
+target_compile_options(test_provider_runner PRIVATE -Wall -Wextra -Werror)
+target_link_libraries(test_provider_runner PRIVATE pthread)
 add_executable(test_uart_loss ${SW}/network/tests/test_uart_loss.cc ${SW}/io/uart/dma_uart.cc)
 target_include_directories(test_uart_loss PRIVATE ${SW}/network/tests/uart_stubs ${SW}/io/uart)
 target_compile_definitions(test_uart_loss PRIVATE RISCV=1)

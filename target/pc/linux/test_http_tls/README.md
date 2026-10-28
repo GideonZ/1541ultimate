@@ -43,6 +43,23 @@ do not use these certificates for anything outside the fixture.
 
 ## Coverage and limits
 
+`test_provider_runner` exercises the serialized manager control driver through
+the UART adapter and real provider worker, with copied wire frames and controlled
+timestamps. It covers offer/initialize, conservative lease renewal, cleanup
+acknowledgements, delayed and stale replies, send failures, exact deadlines,
+provider/link cancellation, queue overflow, explicit restart and terminal clock
+regression. An interrupted renewal retires the grant; unreachable remote
+resources are released by their lease rather than a fabricated acknowledgement.
+
+The driver consumes at most one reply and sends at most one control frame per
+step. Its owner must call it often enough to meet the configured reply and lease
+bounds. A missed deadline fails closed without retry. Session operations and
+driver calls must share one serialized owner; ISR ingress only copies replies
+or signals loss. The optional driver is compiled into the management build but
+not instantiated: qualified manager identity, task activation, the TLS data plane
+and hardware scheduling/resource validation remain required. These controlled
+timestamps do not establish real firmware latency.
+
 Both certificate profiles cover authenticated HTTP, certificate chain/hostname/
 date rejection, unavailable trusted time and entropy, failed allocation,
 handshake/read/write deadlines and cancellation, cancellation before opening,

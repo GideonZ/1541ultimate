@@ -27,6 +27,7 @@ public:
     bool reserve(uint64_t, provider_session::Ticket&);
     bool current(const provider_session::Ticket&, uint64_t);
     bool enabled();
+    Manager::Status status(uint64_t); // Poll and snapshot under the port lock; consumes no reply.
     void step(uint64_t); // At most one reply; deadlines use processing time.
     void disconnect();
     OperationCancellation link_lifetime() const { return invalidation_.token(); }

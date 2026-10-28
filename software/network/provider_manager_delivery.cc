@@ -71,6 +71,10 @@ bool ManagerDelivery::enabled()
 {
     Guard guard(port_); return manager_.state() != Manager::Disabled;
 }
+Manager::Status ManagerDelivery::status(uint64_t now)
+{
+    Guard guard(port_); synchronize(); manager_.poll(now); return manager_.status();
+}
 void ManagerDelivery::step(uint64_t now)
 {
     Guard guard(port_); synchronize(); manager_.poll(now);
