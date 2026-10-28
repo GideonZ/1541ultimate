@@ -3,6 +3,9 @@
 #ifdef CONFIG_ULTIMATE_PROVIDER_CONTROL
 #include "../../network/provider_control.h"
 #include "../../network/provider_data.h"
+#ifdef CONFIG_ULTIMATE_PROVIDER_TLS
+#include "provider_tls_platform.h"
+#endif
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
@@ -31,17 +34,32 @@ public:
 UartPort port;
 provider_control::Worker *worker;
 provider_data::Delivery data(port,false);
+#ifdef CONFIG_ULTIMATE_PROVIDER_TLS
+EspProviderTlsPlatform tls_platform;
+#endif
 void run(void *context)
 {
     provider_control::Worker *self = static_cast<provider_control::Worker *>(context);
-    // No embedded TLS backend yet: reserved data requests fail unavailable.
+#ifdef CONFIG_ULTIMATE_PROVIDER_TLS
+    provider_data::TlsBackend tls_backend(*self,tls_platform);
+    provider_data::Owner data_owner(data,*self,tls_platform.configured() ? &tls_backend : 0);
+#else
     provider_data::Owner data_owner(data,*self);
+#endif
     for (;;) {
         self->step(uint64_t(esp_timer_get_time() / 1000));
         data_owner.step(uint64_t(esp_timer_get_time() / 1000));
         vTaskDelay(pdMS_TO_TICKS(10) ? pdMS_TO_TICKS(10) : 1);
     }
 }
+}
+bool provider_control_configure_tls(const unsigned char *roots,size_t size,bool (*clock_ready)(),bool (*entropy_ready)())
+{
+#ifdef CONFIG_ULTIMATE_PROVIDER_TLS
+    return !worker && !port.queue && tls_platform.configure(roots,size,clock_ready,entropy_ready);
+#else
+    (void)roots; (void)size; (void)clock_ready; (void)entropy_ready; return false;
+#endif
 }
 void provider_control_start(void)
 {
@@ -51,9 +69,14 @@ void provider_control_start(void)
     provider_session::Identity identity; memcpy(identity.bytes, boot, sizeof(identity.bytes));
     port.queue = xQueueCreate(provider_control::QueueDepth, sizeof(provider_control::Event));
     if (!port.queue) return;
-    // Delivery validation only. No backend is installed or capability promised.
-    static provider_control::Worker instance(port, identity, 0, {1500, 5000, 1500});
-    if (xTaskCreate(run, "Provider control", 4096, &instance, tskIDLE_PRIORITY + 1, NULL) != pdPASS) {
+    unsigned features = 0;
+    unsigned stack_bytes = 4096;
+#ifdef CONFIG_ULTIMATE_PROVIDER_TLS
+    if (tls_platform.configured()) features = provider_session::Required;
+    stack_bytes = 12288; // Initial TLS budget; measure high-water before activation.
+#endif
+    static provider_control::Worker instance(port, identity, features, {1500, 5000, 1500});
+    if (xTaskCreate(run, "Provider control", stack_bytes, &instance, tskIDLE_PRIORITY + 1, NULL) != pdPASS) {
         vQueueDelete(port.queue); port.queue = NULL; return;
     }
     worker = &instance; // Published before the dispatcher starts; immutable thereafter.
@@ -73,5 +96,6 @@ bool provider_control_receive(const uint8_t *bytes, size_t size)
 }
 #else
 void provider_control_start(void) {}
+bool provider_control_configure_tls(const unsigned char*,size_t,bool (*)(),bool (*)()) { return false; }
 bool provider_control_receive(const uint8_t*, size_t) { return false; }
 #endif

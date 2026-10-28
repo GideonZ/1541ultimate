@@ -3,6 +3,7 @@
 #include "provider_manager_uart.h"
 #include "provider_manager_runner.h"
 #include "provider_data_client.h"
+#include "owner_http_provider.h"
 class WiFi;
 
 // Optional management task. No default instance or weak identity fallback.
@@ -10,7 +11,7 @@ class WiFi;
 // serialized control task. This object must have firmware lifetime: WiFi keeps
 // its UART binding even after the task exits. The fixed data mailbox copies
 // requests and completions; no caller may access the runner or UART directly.
-class ProviderManagerTask {
+class ProviderManagerTask : public HttpOwnerEndpoint {
 public:
     enum State { Unstarted, Disabled, Starting, WaitingForBoot, Negotiating, Active, Stopped, Failed };
     enum { PollMs = 10, BootstrapMs = 1500 };
@@ -19,6 +20,15 @@ public:
     void request_stop(); // Task context; invalidates delivery before the owner wakes.
     bool submit_data(const provider_data::Frame&, OperationCancellation);
     bool collect_data(provider_data::Frame&);
+    bool ready() const override { return state() == Active && !__atomic_load_n(&stop_, __ATOMIC_ACQUIRE); }
+    OperationCancellation lifetime() const override { return link_.data.lifetime(); }
+    bool submit(const provider_data::Frame& f, OperationCancellation c) override { return submit_data(f,c); }
+    bool collect(provider_data::Frame& f) override { return collect_data(f); }
+    uint32_t now_ms() const override;
+    void wait() override;
+    void retire() override { request_stop(); }
+    void lock() override;
+    void unlock() override;
     State state() const { return static_cast<State>(__atomic_load_n(&state_, __ATOMIC_ACQUIRE)); }
 private:
     ProviderManagerUart link_;

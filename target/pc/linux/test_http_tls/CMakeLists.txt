@@ -28,6 +28,8 @@ set(HTTP_TEST_SOURCES
 add_executable(test_http_tls ${HTTP_TEST_SOURCES}
     ${SW}/network/tests/test_http_tls.cc
     ${SW}/network/tls_http_connection.cc
+    ${SW}/network/owner_http_provider.cc
+    ${SW}/network/provider_tls_backend.cc
     ${TLS_STREAM_ROOT}/src/tls_stream.c)
 add_executable(test_https_routing ${HTTP_TEST_SOURCES} ${SW}/network/tests/test_https_routing.cc)
 add_executable(test_command_cancellation ${SW}/network/tests/test_command_cancellation.cc
@@ -87,6 +89,9 @@ add_executable(test_provider_data ${SW}/network/tests/test_provider_data.cc ${SW
 target_include_directories(test_provider_data PRIVATE ${SW}/network ${SW}/infra)
 target_compile_options(test_provider_data PRIVATE -Wall -Wextra -Werror)
 target_link_libraries(test_provider_data PRIVATE pthread)
+add_executable(test_owner_http ${SW}/network/tests/test_owner_http.cc ${SW}/network/owner_http_provider.cc)
+target_include_directories(test_owner_http PRIVATE ${SW}/network ${SW}/infra)
+target_compile_options(test_owner_http PRIVATE -Wall -Wextra -Werror)
 add_executable(test_uart_loss ${SW}/network/tests/test_uart_loss.cc ${SW}/io/uart/dma_uart.cc)
 target_include_directories(test_uart_loss PRIVATE ${SW}/network/tests/uart_stubs ${SW}/io/uart)
 target_compile_definitions(test_uart_loss PRIVATE RISCV=1)

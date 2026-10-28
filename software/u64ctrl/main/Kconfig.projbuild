@@ -3,8 +3,19 @@ config ULTIMATE_PROVIDER_CONTROL
     default n
     help
         Build the optional bounded UART control worker for local validation.
-        No TLS backend is installed; initialization remains unavailable.
+        TLS is unavailable without separate backend selection and provisioning.
         This does not enable HTTPS or change the C64 command interface.
+
+config ULTIMATE_PROVIDER_TLS
+    bool "Experimental owner TLS backend"
+    depends on ULTIMATE_PROVIDER_CONTROL
+    depends on !ESP_TIME_FUNCS_USE_NONE
+    select MBEDTLS_HAVE_TIME
+    select MBEDTLS_HAVE_TIME_DATE
+    default n
+    help
+        Requires an explicit TLS_STREAM_ROOT and boot-time roots, clock and
+        entropy policy. No default provisioning or automatic HTTP activation.
 
 menu "Example Configuration"
 

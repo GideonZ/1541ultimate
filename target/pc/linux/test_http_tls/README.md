@@ -182,3 +182,36 @@ an FPGA or scheduler emulator. The routing suite separately tests token expiry,
 factory delivery, buffered-response fencing and generation exhaustion. The real
 TLS routing matrix adds `command-pre-cancel`, `command-handshake-cancel` and
 `command-read-cancel`, using the same token type and 750 ms cancellation bound.
+
+### Owner queue binding and optional embedded backend
+
+`OwnerHttpProvider` implements the existing secure factory using a single
+`HttpOwnerEndpoint`. Use one factory per endpoint and retain both until every
+connection has been destroyed. `ProviderManagerTask` implements this endpoint;
+pass the factory to the existing `HttpTarget` provider injection point after
+qualified startup. It is not registered automatically. Only the owner task
+touches the data client/runner; command callers submit and collect copied frames.
+Short reads/writes are bounded at 256 bytes. One exchange deadline spans all
+operations. A stalled owner is retired after the exchange plus cleanup budget.
+
+`provider_data::TlsBackend` transfers a TLS resource to the control Worker before
+opening a socket. Its platform must poll the bound cancellation predicate during
+DNS, connect and every network wait. Cleanup is owner-only after TLS unwinds.
+The `--bound` RSA/ECDSA suites use these production classes and real Mbed TLS,
+with copied host packets and controlled host transport callbacks. They do not
+measure physical UART or FreeRTOS scheduling. `test_owner_http` covers mailbox
+exclusion, partial transfers, stopped owners, deadline wrap and late output.
+
+The ESP32 build optionally selects `ULTIMATE_PROVIDER_TLS` together with control
+delivery. Supply `TLS_STREAM_ROOT` from standalone revision
+`529b0450955611bd82db921db3bae10222203eba`; CMake verifies core/header/DNS hashes.
+The build requires certificate date verification. Before `provider_control_start`,
+explicitly call `provider_control_configure_tls` with roots and live predicates
+qualifying the actual UTC clock and hardware entropy. There is no automatic trust
+store, clock qualification or entropy fallback. An unprovisioned build advertises
+zero capabilities. Configuration is boot-time only and immutable after startup.
+The optional TLS worker reserves 12288 stack bytes; high-water is not measured.
+
+Manager incarnation, trusted provisioning, lease/control servicing during long
+TLS calls and device resource/scheduling measurements remain activation gates.
+Default firmware does not enable this path or change HTTP commands.
