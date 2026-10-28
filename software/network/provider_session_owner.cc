@@ -94,6 +94,15 @@ bool Owner::renew(const Grant& grant, uint64_t sequence, uint64_t now)
     return true;
 }
 
+bool Owner::renew_active(const Ticket& ticket, const Grant& grant, uint64_t sequence, uint64_t now)
+{
+    if (!current(ticket, now) || !matches(grant) || renew_sequence_ == UINT64_MAX ||
+        sequence != renew_sequence_ + 1) return false;
+    renew_sequence_ = sequence;
+    renewed_at_ = last_now_ = now;
+    return true;
+}
+
 bool Owner::admit(const Grant& grant, uint64_t session, Resource *resource, uint64_t now, Ticket& result)
 {
     if (!advance(now) || state_ != Ready || !matches(grant) || resource_ || !resource ||

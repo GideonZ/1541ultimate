@@ -157,4 +157,24 @@ bool Worker::current(const provider_session::Ticket& ticket, uint64_t now) const
 {
     return !resource_generation_.cancelled() && owner_.current(ticket, now);
 }
+bool Worker::service(const provider_session::Ticket& ticket, uint64_t now)
+{
+    Event event;
+    Status status = Rejected;
+    port_.lock();
+    if (!current(ticket, now)) { port_.unlock(); return false; }
+    bool received = port_.dequeue(event);
+    if (received && !event.generation.cancelled()) {
+        const Frame& frame = event.frame;
+        if (frame.opcode == Renew)
+            status = owner_.renew_active(ticket, frame.grant, frame.counter, now) ? Ok : Rejected;
+        else if (frame.opcode == Initialize && frame.grant.owner == offered_owner_)
+            status = Busy;
+        // Matching Close and any Offer already invalidate resource_generation_
+        // at ingress. A foreign Close cannot mutate the live session.
+    }
+    port_.unlock();
+    if (received) respond(event, status);
+    return current(ticket, now);
+}
 }

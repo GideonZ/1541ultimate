@@ -24,7 +24,7 @@ uint64_t TlsBackend::now_ms() {
 }
 bool TlsBackend::cancelled(void *context) {
     TlsBackend& self = *static_cast<TlsBackend*>(context);
-    return !self.resource_ || self.resource_->stopped || !self.worker_.current(self.ticket_,self.now_ms());
+    return !self.resource_ || self.resource_->stopped || !self.worker_.service(self.ticket_,self.now_ms());
 }
 int TlsBackend::execute(Frame& frame) {
     if (frame.opcode == Open) {

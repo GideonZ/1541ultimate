@@ -143,9 +143,64 @@ static void timeout_and_absent_backend()
     control_submit(disabled, request(Offer, 1)); disabled.step(0);
     expect(reply(absent).status == Unavailable, "firmware without backend cannot promise initialization");
 }
+static void long_call_servicing()
+{
+    ControlTestPort port; Worker worker(port, id(1), provider_session::Required, {100,200,50});
+    Grant grant = initialize(worker, port, 0); Counts c;
+    Ticket ticket = admit(worker, grant, c, 1, 0);
+    for (unsigned i=1;i<=20;++i) {
+        expect(control_submit(worker,request(Renew,10+i,grant,i)),"long-call renewal queued");
+        expect(worker.service(ticket,i*150),"live call renewed beyond original lease");
+        expect(reply(port).status==Ok,"in-call renewal acknowledged");
+        expect(c.cancel==0 && c.released==0,"servicing does not invoke resource callbacks");
+    }
+    expect(control_submit(worker,request(Renew,40,grant,20)),"replayed renewal queued");
+    expect(worker.service(ticket,3100) && reply(port).status==Rejected,"replay cannot extend lease");
+    Grant wrong=grant; wrong.owner=id(9);
+    control_submit(worker,request(Renew,41,wrong,21));
+    expect(worker.service(ticket,3150) && reply(port).status==Rejected,"foreign grant cannot renew live call");
+    control_submit(worker,request(Renew,42,grant,21));
+    expect(!worker.service(ticket,3200) && c.cancel==0 && c.released==0,"queued renewal cannot revive expired lease or tear down TLS");
+    c.done=true; worker.step(3200);
+    expect(c.cancel==1 && c.released==1 && reply(port).status==Rejected,"expired call cleaned up after unwind");
+}
+static void in_call_control_fences()
+{
+    for (unsigned mode=0;mode<5;++mode) {
+        ControlTestPort port; Worker worker(port,id(1),provider_session::Required,{100,200,50});
+        Grant grant=initialize(worker,port,0); Counts c; Ticket ticket=admit(worker,grant,c,1,0);
+        if (mode==0) control_submit(worker,request(Close,3,grant,1));
+        if (mode==1) control_submit(worker,request(Offer,3));
+        if (mode==2) worker.disconnect();
+        if (mode==3) {
+            for (unsigned i=1;i<=QueueDepth;++i) control_submit(worker,request(Renew,10+i,grant,i));
+            expect(!control_submit(worker,request(Renew,99,grant,5)),"in-call overflow rejected");
+        }
+        if (mode==4) {
+            port.transmit=false; control_submit(worker,request(Renew,3,grant,1));
+        }
+        expect(!worker.service(ticket,1),"control loss or close fences in-flight TLS");
+        expect(c.cancel==0 && c.released==0,"fence defers all resource callbacks");
+        c.done=true; worker.step(2);
+        expect(c.cancel==1 && c.released==1,"fenced resource released once after return");
+    }
+    ControlTestPort port; Worker worker(port,id(1),provider_session::Required,{100,200,50});
+    Grant grant=initialize(worker,port,0); Counts c; Ticket ticket=admit(worker,grant,c,1,0);
+    Grant foreign=grant; foreign.owner=id(9);
+    control_submit(worker,request(Close,3,foreign,1));
+    control_submit(worker,request(Initialize,4,grant));
+    control_submit(worker,request(Renew,5,grant,1));
+    expect(worker.service(ticket,100) && port.queue.size()==2 && reply(port).status==Rejected,"foreign close consumes one bounded event");
+    expect(worker.service(ticket,101) && port.queue.size()==1 && reply(port).status==Busy,"initialize cannot replace live resource");
+    expect(worker.service(ticket,102) && port.queue.empty() && reply(port).status==Ok,"renewal behind rejected controls is serviced");
+    expect(!worker.service(ticket,101) && c.cancel==0,"regressed clock rejects callback without resource calls");
+    c.done=true; worker.step(101);
+    expect(c.released==1,"regression quarantines and cleans only after unwind");
+}
 int main()
 {
     wire_cases(); lifecycle_cases(); delivery_failure_cases(); timeout_and_absent_backend();
+    long_call_servicing(); in_call_control_fences();
     printf("Provider control: %d checks, %d failures\n", checks, failures);
     return failures ? 1 : 0;
 }

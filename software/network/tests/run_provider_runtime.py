@@ -64,6 +64,9 @@ def main():
         parser.error('Private TAP setup requires root and a non-root guest uid')
     build = json.loads((directory / 'build.json').read_text())
     heap_check = build.get('heap_check', False)
+    renewal_check = build.get('renewal_check', False)
+    if heap_check and renewal_check:
+        raise ValueError('Use separate fixed heap and renewal profiles')
     run_limit = 480 if heap_check else 150
     if not build['passed'] or abs(time.time() - build['utc']) > 3600 or (directory / 'result.json').exists():
         raise ValueError('Require a fresh, unused, successfully built fixture')
@@ -111,6 +114,8 @@ def main():
                             while stream.recv(512):
                                 pass
                         else:
+                            if mode == 'delayed':
+                                time.sleep(2.2)
                             for offset in range(0, len(self.response), 7):
                                 stream.sendall(self.response[offset:offset+7])
                             try:
@@ -145,6 +150,8 @@ def main():
                                  (8456, 'expired', 'normal'), (8457, 'future', 'normal'),
                                  (8446, 'trusted', 'handshake'), (8447, 'trusted', 'read')]:
             peers.listen(socket.SOCK_STREAM, port, peers.server, name, mode)
+        if renewal_check:
+            peers.listen(socket.SOCK_STREAM, 8448, peers.server, 'trusted', 'delayed')
         process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                    stderr=subprocess.STDOUT, start_new_session=True)
         while time.monotonic() - start < run_limit:
@@ -189,6 +196,8 @@ def main():
     labels = [name for case in CASES for name in (case, 'recovery')]
     if heap_check:
         labels += ['repeat'] * 96
+    if renewal_check:
+        labels += ['recovery'] * 6
     attempts = re.findall(r'^ATTEMPT name=([\w-]+) run=(\S+)\r?$', text, re.M)
     rows = re.findall(r'^RESULT name=([\w-]+) status=(\d+) flags=(\d+) elapsed_ms=(\d+) cancel_return=(\d+) stack=(\d+) run=(\S+)\r?$', text, re.M)
     summaries = re.findall(r'^SUMMARY checks=(\d+) failures=(\d+) run=(\S+)\r?$', text, re.M)
@@ -212,7 +221,7 @@ def main():
         else:
             timing &= status == 5 and flags != 0
     kinds = Counter(e['kind'] for e in peers.events)
-    extra = 96 if heap_check else 0
+    extra = 96 if heap_check else 12 if renewal_check else 0
     peer_ok = kinds['accepted'] == kinds['closed'] == 25+extra and kinds['request'] == kinds['authenticated'] == 18+extra
     peer_ok &= kinds['client-hello'] == 3 and all(e['tls_record'] for e in peers.events if e['kind'] == 'client-hello')
     peer_ok &= kinds['tls-alert'] == 4 and not kinds['fixture-error']
@@ -224,7 +233,26 @@ def main():
             resources = assess_resources(text, directory.name)
         except ValueError as error:
             resources = dict(passed=False, error=str(error))
-    expected_checks = 1405 if heap_check else 337
+    long_results = []
+    if renewal_check:
+        long_results = re.findall(r'^LONG_RESULT name=(\S+) status=(\d+) elapsed_ms=(\d+) accepted=(\d+) rejected=(\d+) sent=(\d+) signal_return=(\d+) stack=(\d+) run=(\S+)\r?$', text, re.M)
+        names = ['renewed-read', 'renewed-timeout', 'missing-renewal', 'replayed-renewal', 'renewed-close', 'renewed-offer']
+        timing &= [r[0] for r in long_results] == names and all(r[-1] == directory.name for r in long_results)
+        timing &= re.findall(r'^LONG_ATTEMPT name=(\S+) run=(\S+)\r?$', text, re.M) == [(n, directory.name) for n in names]
+        for name, status, elapsed, accepted, rejected, sent, delay, stack, _ in long_results:
+            status, elapsed, accepted, rejected, sent, delay, stack = map(int, (status, elapsed, accepted, rejected, sent, delay, stack))
+            timing &= stack >= 1024
+            if name == 'renewed-read':
+                timing &= status == 0 and 2200 <= elapsed <= 4000 and accepted >= 4
+            elif name == 'renewed-timeout':
+                timing &= status == 3 and 3500 <= elapsed <= 3750 and accepted >= 6
+            elif name == 'missing-renewal':
+                timing &= status == 2 and 1450 <= elapsed <= 1750 and accepted == sent == 0
+            elif name == 'replayed-renewal':
+                timing &= status == 2 and 1950 <= elapsed <= 2250 and accepted == 1 and rejected >= 1
+            else:
+                timing &= status == 2 and delay <= 250 and accepted >= 2
+    expected_checks = 1405 if heap_check else 505 if renewal_check else 337
     passed = (completed and not failure and complete and timing and peer_ok and
               (not heap_check or resources['passed']) and len(summaries) == 1 and
               summaries[0] == (str(expected_checks), '0', directory.name) and
@@ -234,7 +262,7 @@ def main():
     result = dict(passed=bool(passed), completed=completed, failure=failure, complete_attempts=complete,
                   timing_passed=bool(timing), peer_accounting_passed=bool(peer_ok), peer_counts=dict(kinds),
                   checks=int(summaries[0][0]) if len(summaries) == 1 else None, observations=rows,
-                  resources=resources, seconds=time.monotonic()-start, command=command, hardware_tested=False,
+                  resources=resources, long_results=long_results, seconds=time.monotonic()-start, command=command, hardware_tested=False,
                   qemu_sha256=hashlib.sha256(args.qemu.read_bytes()).hexdigest())
     (directory / 'result.json').write_text(json.dumps(result, indent=2) + '\n')
     print(json.dumps(result, indent=2))

@@ -42,6 +42,8 @@ public:
     bool initialize(const Challenge&, const Identity& owner, unsigned version,
                     unsigned required, uint64_t now, Grant& result);
     bool renew(const Grant&, uint64_t sequence, uint64_t now);
+    // In-call renewal only: never cancel, clean up or replace the live resource.
+    bool renew_active(const Ticket&, const Grant&, uint64_t sequence, uint64_t now);
     bool admit(const Grant&, uint64_t session, Resource*, uint64_t now, Ticket& result);
     bool current(const Ticket&, uint64_t now) const;
     bool close(const Ticket&, uint64_t now);

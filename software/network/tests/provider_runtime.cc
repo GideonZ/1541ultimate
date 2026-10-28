@@ -136,6 +136,9 @@ static provider_runtime_metrics settle(const char *phase) {
     return value;
 }
 #endif
+#if LAB_RENEWAL_CHECK
+#include "provider_runtime_renewal.h"
+#endif
 extern "C" void app_main(void) {
     printf("RUNTIME run=%s profile=%s\n",LAB_RUN_ID,LAB_ECDSA ? "ecdsa" : "rsa");
     check(provider_runtime_network(),"private emulator network ready");
@@ -188,6 +191,12 @@ extern "C" void app_main(void) {
     auto final=settle("repeat-cleanup");
     check(final.free_heap>=baseline.free_heap && final.largest_block>=baseline.largest_block,"quiescent heap and largest block recovered");
     check(final.tasks==baseline.tasks,"temporary tasks released");
+#endif
+#if LAB_RENEWAL_CHECK
+    for (unsigned mode=0;mode<6;++mode) {
+        long_call(mode);
+        attempt("recovery",8443,true);
+    }
 #endif
     printf("SUMMARY checks=%u failures=%u run=%s\n",checks,failures,LAB_RUN_ID);
 }

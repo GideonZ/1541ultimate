@@ -40,6 +40,9 @@ public:
     bool admit(const provider_session::Grant&, uint64_t session, provider_session::Resource*, uint64_t now,
                provider_session::Ticket&);
     bool current(const provider_session::Ticket&, uint64_t now) const; // Owner TLS callback.
+    // Owner TLS callback: consume at most one control frame without resource
+    // callbacks. Stop/restart/close only fence the call; step cleans up afterward.
+    bool service(const provider_session::Ticket&, uint64_t now);
     OperationCancellation resource_lifetime() const { return resource_generation_; } // Owner snapshot for final reply fence.
     void disconnect(); // Task ingress: retain cancellation even if queue is full.
     bool occupied() const { return owner_.occupied(); } // Owner task only.

@@ -107,3 +107,27 @@ baseline, and task count must match. Heap integrity must hold throughout; TCP
 retention cannot exceed its configured limit. The runner allows 480 seconds
 for this extended run and preserves operator-stop handling. A complete short
 run establishes recovery for these cases, not long-duration or hardware safety.
+
+## Long-call renewal
+
+Use `LAB_RENEWAL_CHECK=1` in the fixture header and `renewal_check: true` in the
+build record for a separate 505-check profile. Do not combine this with heap
+mode. A second FreeRTOS task submits encoded control messages while the owner
+is inside a TLS read. Six cases exercise delayed success, the original request
+deadline despite renewals, missing renewals, replayed renewals, close and a new
+owner offer. Each is followed by a fresh successful recovery.
+
+The worker services at most one control event at each TLS cancellation check.
+Only a valid next-sequence renewal of the current unexpired grant extends its
+lease. This path cannot invoke resource cancellation, cleanup or deletion;
+normal owner stepping resumes after TLS unwinds. Close/restart/loss still fence
+the call at ingress, and close acknowledgement waits for completed cleanup.
+Renewals do not extend the HTTP request deadline or change the public interface.
+
+The fixture uses a 1500 ms lease and 500 ms renewals. Delayed success takes at
+least 2200 ms; a stalled request retains its 3500 ms budget with at most 250 ms
+overrun. Missing renewals cancel near 1500 ms and a replayed first renewal near
+2000 ms. Close and new-owner offers cancel within 250 ms of their signal. Per
+profile, 37 peer connections must close and 30 exact requests authenticate.
+This validates the embedded callback/worker path, not physical UART timing or
+the complete native manager task's scheduling.
