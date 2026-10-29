@@ -13,6 +13,6 @@ bool provider_journal_install_after_boot(Flash&, const char *fresh_domain_hex);
 HttpSecureProvider *provider_https_factory(); // Stable for the firmware lifetime.
 void provider_journal_prepare(Flash&);
 bool provider_journal_reserved_slot(Flash&, int slot);
-void provider_journal_start_owner(WiFi&);
+void provider_journal_start_owner(WiFi&); // Deferred until application transport is ready.
 void provider_journal_stop_owner();
 #endif

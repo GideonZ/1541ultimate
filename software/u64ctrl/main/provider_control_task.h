@@ -6,6 +6,8 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+// One attempt per boot, including identity/queue/task failure. Recovery requires
+// a fresh boot; provisioning is closed after this call even when startup fails.
 void provider_control_start(void);
 // Serialized boot-time provisioning only, before start. Returns false when the
 // optional backend is not built. No built-in roots or readiness fallback.

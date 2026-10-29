@@ -33,6 +33,7 @@ public:
 };
 UartPort port;
 provider_control::Worker *worker;
+bool startup_attempted;
 provider_data::Delivery data(port,false);
 #ifdef CONFIG_ULTIMATE_PROVIDER_TLS
 EspProviderTlsPlatform tls_platform;
@@ -56,7 +57,7 @@ void run(void *context)
 bool provider_control_configure_tls(const unsigned char *roots,size_t size,bool (*clock_ready)(),bool (*entropy_ready)())
 {
 #ifdef CONFIG_ULTIMATE_PROVIDER_TLS
-    return !worker && !port.queue && tls_platform.configure(roots,size,clock_ready,entropy_ready);
+    return !startup_attempted && tls_platform.configure(roots,size,clock_ready,entropy_ready);
 #else
     (void)roots; (void)size; (void)clock_ready; (void)entropy_ready; return false;
 #endif
@@ -64,14 +65,15 @@ bool provider_control_configure_tls(const unsigned char *roots,size_t size,bool 
 bool provider_control_provision_tls(const unsigned char *roots,size_t size,provider_data::TlsPolicy& policy)
 {
 #ifdef CONFIG_ULTIMATE_PROVIDER_TLS
-    return !worker && !port.queue && tls_platform.configure(roots,size,policy);
+    return !startup_attempted && tls_platform.configure(roots,size,policy);
 #else
     (void)roots; (void)size; (void)policy; return false;
 #endif
 }
 void provider_control_start(void)
 {
-    if (worker || port.queue) return;
+    if (startup_attempted) return;
+    startup_attempted = true; // Boot-serialized, including failed initialization.
     const uint8_t *boot = provider_boot_identity();
     if (!boot) return;
     provider_session::Identity identity; memcpy(identity.bytes, boot, sizeof(identity.bytes));
@@ -92,7 +94,7 @@ void provider_control_start(void)
 bool provider_control_provision_system_tls(provider_data::TlsPolicy& policy)
 {
 #ifdef CONFIG_ULTIMATE_PROVIDER_TLS
-    return !worker && !port.queue && tls_platform.configure_system_roots(policy);
+    return !startup_attempted && tls_platform.configure_system_roots(policy);
 #else
     (void)policy; return false;
 #endif

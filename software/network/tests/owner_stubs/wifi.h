@@ -9,7 +9,8 @@ public:
     ProviderManagerUart *bound = 0;
     provider_session::Identity boot = {};
     CancellationSource lifetime;
-    bool online = true, bind_ok = true;
+    bool online = true, bind_ok = true, transport_ready = true;
+    bool ProviderTransportReady() const { return transport_ready; }
     unsigned binds = 0, snapshots = 0;
     std::function<void()> snapshot_hook = []{};
     WiFi() { boot.bytes[0] = 1; }

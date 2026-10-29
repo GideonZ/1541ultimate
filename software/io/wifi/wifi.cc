@@ -127,6 +127,13 @@ bool WiFi::ProviderSnapshot(provider_session::Identity& boot, OperationCancellat
     portEXIT_CRITICAL();
     return available;
 }
+bool WiFi::ProviderTransportReady()
+{
+    portENTER_CRITICAL();
+    bool ready = provider_monitor_enabled;
+    portEXIT_CRITICAL();
+    return ready;
+}
 #endif
 
 bool WiFi::ReceiveProviderControl(command_buf_t *buf)
@@ -200,12 +207,9 @@ void WiFi :: Start()
     state = eWifi_NotDetected;
     portENTER_CRITICAL();
     ProviderLinkLoss();
-    provider_monitor_enabled = true;
+    provider_monitor_enabled = false;
     portEXIT_CRITICAL();
     xTaskCreate( WiFi :: RunModeTaskStart, "WiFi Command Task", configMINIMAL_STACK_SIZE, this, PRIO_DRIVER, &runModeTask );
-#ifdef ULTIMATE_PROVIDER_JOURNAL
-    if (runModeTask) provider_journal_start_owner(*this);
-#endif
 }
 
 void WiFi :: Terminate()
@@ -394,6 +398,16 @@ void WiFi :: RunModeThread()
                 }
             }
             RefreshRoot();
+#if U64 == 2
+            // Do not spend the provider identity deadline on application
+            // detection or initial synchronous Wi-Fi configuration requests.
+            portENTER_CRITICAL();
+            provider_monitor_enabled = true;
+            portEXIT_CRITICAL();
+#ifdef ULTIMATE_PROVIDER_JOURNAL
+            provider_journal_start_owner(*this);
+#endif
+#endif
             break;
 
         case eWifi_Scanning:

@@ -136,6 +136,13 @@ static void native_case(const char *mode) {
     else if (!missing && !late) { FlashIncarnationJournal seed(flash,0,1,17); check(seed.provision(),"prior boot storage seeded"); }
     if (foreign) { FlashIncarnationJournal seed(other,0,1,18); check(seed.provision(),"foreign flash contains a valid but different journal"); }
     if (early) provider_journal_start_owner(wifi);
+    bool delayed=!strcmp(mode,"delayed"),no_tls=!strcmp(mode,"no-tls"),no_identity=!strcmp(mode,"no-identity");
+    if (delayed) {
+        wifi.transport_ready=false;
+        provider_journal_start_owner(wifi);
+        ticks+=2000; // Ten seconds of application detection must not spend bootstrap time.
+        check(!creates && !factory->available(),"early transport cannot consume owner startup");
+    }
     if (corrupt) flash.memory[8192+8]^=1;
     provider_journal_prepare(foreign ? other : flash);
     check(!provider_journal_install(flash,18),"installation forbidden after configuration startup");
@@ -143,6 +150,12 @@ static void native_case(const char *mode) {
     provider_journal_prepare(flash);
     check(reads==flash.reads && writes==flash.writes && erases==flash.erases,"repeat startup never accesses storage");
     create_ok=!task_failure; wifi.bind_ok=!bind_failure;
+    if (delayed) {
+        provider_journal_start_owner(wifi);
+        check(!creates && !factory->available(),"prepared journal waits for application initialization");
+        wifi.transport_ready=true;
+    }
+    wifi.online=!no_identity;
     provider_journal_start_owner(wifi); provider_journal_start_owner(wifi);
     bool good=!(missing||late||early||corrupt||foreign);
     check(creates==unsigned(good),"owner created only for prepared storage and at most once");
@@ -150,9 +163,10 @@ static void native_case(const char *mode) {
     check(deletes==unsigned(good && bind_failure),"binding failure deletes unstarted task");
     check(reads==flash.reads && writes==flash.writes && erases==flash.erases,"owner construction and binding do not touch flash");
     check(!factory->available() && !factory->create_connection({}),"launched owner is not yet available");
-    if (good && !task_failure && !bind_failure) {
+    if (good && !task_failure && !bind_failure && task_function) {
         ControlTestPort port; provider_session::Identity boot={}; boot.bytes[0]=1;
-        Worker worker(port,boot,provider_session::Required,{250,5000,500});
+        Worker worker(port,boot,no_tls ? 0 : provider_session::Required,{1500,5000,1500});
+        const uint32_t began=ticks;
         bool active=false,in_request=false;
         OperationCancellation token;
         delay_hook=[&] {
@@ -184,11 +198,14 @@ static void native_case(const char *mode) {
                 }
                 wifi.lifetime.signal();
             }
-            if (ticks>100 && !active) { check(false,"native factory negotiation bounded"); provider_journal_stop_owner(); }
+            if ((ticks-began)*5>2000 && !active) { check(false,"native factory negotiation bounded"); provider_journal_stop_owner(); }
         };
         try { task_function(task_context); check(false,"owner task never returns"); } catch (const TaskFinished&) {}
         delay_hook=[]{};
-        check(active && token.cancelled() && !factory->available() && !factory->create_connection({}),"remote restart revokes factory and captured lifetime");
+        if (no_tls || no_identity) {
+            check(!active && !factory->available() && !factory->create_connection({}),"missing identity or security capability cannot publish ready factory");
+            if (no_identity) check((ticks-began)*5>=1500 && (ticks-began)*5<=1510,"identity timeout measured after owner start");
+        } else check(active && token.cancelled() && !factory->available() && !factory->create_connection({}),"remote restart revokes factory and captured lifetime");
     }
     auto lifetime=wifi.bound ? wifi.bound->data.lifetime() : OperationCancellation();
     provider_journal_stop_owner();

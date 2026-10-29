@@ -2,6 +2,7 @@
 #ifdef ULTIMATE_PROVIDER_JOURNAL
 #include "provider_journal_startup.h"
 #include "provider_manager_task.h"
+#include "wifi.h"
 #include "flash.h"
 #include <new>
 namespace {
@@ -83,7 +84,7 @@ bool provider_journal_reserved_slot(Flash& flash,int slot)
 }
 void provider_journal_start_owner(WiFi& wifi)
 {
-    if (owner_attempted) return;
+    if (owner_attempted || !wifi.ProviderTransportReady()) return;
     owner_attempted=true;
     if (!configuration_started || journal_startup().state()!=provider_control::JournalStartup::Prepared) return;
     // Construction consumes a prepared identity; no flash I/O in task creation,

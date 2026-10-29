@@ -109,6 +109,7 @@ public:
     bool ReceiveProviderControl(command_buf_t *buf);
 #if U64 == 2
     bool BindProviderManager(ProviderManagerUart&); // Static lifetime; qualified source required.
+    bool ProviderTransportReady(); // Application detection and initial RPCs finished.
     bool ProviderSnapshot(provider_session::Identity&, OperationCancellation&);
 #endif
     static void ProviderLinkLoss(); // ISR or interrupts masked; signal only.

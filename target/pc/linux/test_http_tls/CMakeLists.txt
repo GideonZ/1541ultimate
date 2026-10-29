@@ -131,6 +131,21 @@ target_compile_definitions(test_uart_loss PRIVATE RISCV=1)
 target_compile_options(test_uart_loss PRIVATE -Wall -Wextra -Wno-format -Wno-unused-variable)
 target_include_directories(test_provider_lifecycle PRIVATE ${SW}/io/wifi ${SW}/infra)
 add_executable(test_provider_boot ${SW}/network/tests/test_provider_boot.c ${SW}/u64ctrl/main/provider_boot.c)
+add_executable(test_provider_control_start ${SW}/network/tests/test_provider_control_start.cc
+    ${SW}/u64ctrl/main/provider_control_task.cc ${SW}/network/provider_control.cc
+    ${SW}/network/provider_session_owner.cc ${SW}/network/provider_data.cc)
+target_include_directories(test_provider_control_start PRIVATE ${SW}/network/tests/control_start_stubs
+    ${SW}/network ${SW}/infra ${SW}/u64ctrl/main ${SW}/io/uart)
+target_compile_options(test_provider_control_start PRIVATE -Wall -Wextra -Werror)
+add_executable(test_provider_tls_start ${SW}/network/tests/test_provider_control_start.cc
+    ${SW}/u64ctrl/main/provider_control_task.cc ${SW}/network/provider_control.cc
+    ${SW}/network/provider_session_owner.cc ${SW}/network/provider_data.cc
+    ${SW}/network/provider_tls_backend.cc ${SW}/network/tls_http_connection.cc ${TLS_STREAM_ROOT}/src/tls_stream.c)
+target_include_directories(test_provider_tls_start PRIVATE ${SW}/network/tests/control_start_stubs
+    ${SW}/network ${SW}/infra ${SW}/u64ctrl/main ${SW}/io/uart ${TLS_STREAM_ROOT}/include)
+target_compile_definitions(test_provider_tls_start PRIVATE CONFIG_ULTIMATE_PROVIDER_TLS=1)
+target_compile_options(test_provider_tls_start PRIVATE -Wall -Wextra -Werror)
+target_link_libraries(test_provider_tls_start PRIVATE mbedtls mbedx509 mbedcrypto)
 target_include_directories(test_provider_boot PRIVATE ${SW}/network/tests/command_stubs ${SW}/u64ctrl/main)
 foreach(test_target test_http_tls test_https_routing)
 target_include_directories(${test_target} PRIVATE
