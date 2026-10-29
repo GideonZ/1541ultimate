@@ -47,6 +47,7 @@ SRCS_CC	 =  provider_manager.cc \
                owner_http_provider.cc \
             provider_manager_runner.cc \
             provider_manager_task.cc \
+            provider_flash_journal.cc \
             provider_manager_delivery.cc \
             provider_manager_uart.cc \
             provider_control.cc \

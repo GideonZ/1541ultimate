@@ -25,6 +25,7 @@
 #include "soc/io_mux_reg.h"
 
 #include "sntp.h"
+#include "provider_sources.h"
 #include "rpc_calls.h"
 #include "rpc_dispatch.h"
 #include "wifi_modem.h"
@@ -33,6 +34,20 @@
 #include "button_handler.h"
 #include "wol_magic.h"
 #include "recovery.h"
+
+static esp_err_t provider_wifi_start(void)
+{
+    provider_sources_wifi_stopping();
+    esp_err_t result=esp_wifi_start();
+    provider_sources_wifi_started(result==ESP_OK);
+    return result;
+}
+
+static esp_err_t provider_wifi_stop(void)
+{
+    provider_sources_wifi_stopping();
+    return esp_wifi_stop();
+}
 
 #define NET_CMD_BUFSIZE 512
 
@@ -278,6 +293,9 @@ static void wifi_event_handler(void *esp_netif, esp_event_base_t base, int32_t e
 
     uint8_t evcode = 0;
     switch(event_id) {
+        case WIFI_EVENT_STA_STOP:
+            provider_sources_wifi_stopping();
+            break;
         case WIFI_EVENT_STA_START:
             // Attaching the lwIP netif resets netif->input, so a machine that
             // is off is watched again from here. One that is on is left alone:
@@ -357,7 +375,7 @@ static void wifi_init()
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_NONE));
-    ESP_ERROR_CHECK(esp_wifi_start());
+    ESP_ERROR_CHECK(provider_wifi_start());
 
     ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT,
                                                         ESP_EVENT_ANY_ID,
@@ -755,7 +773,7 @@ esp_err_t enable_wifi_if_needed(ConnectState_t state)
 {
     if (state == Disabled) {
         ESP_LOGI(TAG, "Starting WiFi.");
-        esp_err_t err = esp_wifi_start();
+        esp_err_t err = provider_wifi_start();
         if (err == ESP_OK) {
             send_event(EVENT_DISCONNECTED);
             disabled_g = 0;
@@ -786,7 +804,7 @@ int handle_connect_command(ConnectCommand_t *cmd, ConnectState_t *state)
                 }
             }
             ESP_LOGI(TAG, "Stopping WiFi.");
-            err = esp_wifi_stop();
+            err = provider_wifi_stop();
             if (err == ESP_OK) {
                 send_event(EVENT_DISABLED);
                 *state = Disabled;
@@ -799,7 +817,7 @@ int handle_connect_command(ConnectCommand_t *cmd, ConnectState_t *state)
         case CMD_WIFI_ENABLE:
             if (*state == Disabled) {
                 ESP_LOGI(TAG, "Starting WiFi.");
-                err = esp_wifi_start();
+                err = provider_wifi_start();
                 if (err == ESP_OK) {
                     send_event(EVENT_DISCONNECTED);
                     *state = LastAP;
@@ -1045,6 +1063,7 @@ static void start_connector()
 
 void setup_modem()
 {
+    provider_sources_init();
 	// Initialize NVS
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {

@@ -39,6 +39,33 @@ struct ProvisioningLock : provider_data::PolicyLock {
 };
 ProvisioningLock provisioning_lock;
 provider_data::TlsPolicy policy(provisioning_lock);
+#ifdef LAB_SOURCE_CHECK
+void system_trust_checks() {
+    printf("SOURCE_TRUST run=%s\n",LAB_RUN_ID);
+    EspProviderTlsPlatform platform;
+    check(platform.configure_system_roots(policy),"system trust bundle configured");
+    check(!platform.configure_system_roots(policy),"system trust replacement refused");
+    mbedtls_ssl_config config; mbedtls_ssl_config_init(&config);
+    auto port=platform.callbacks();
+    check(port.trust(port.context,&config)==0 && config.MBEDTLS_PRIVATE(f_vrfy),"system trust verifier attached");
+    mbedtls_x509_crt certificate; mbedtls_x509_crt_init(&certificate);
+    check(mbedtls_x509_crt_parse(&certificate,public_root,sizeof(public_root))==0,"pinned public root parsed");
+    uint32_t flags=0;
+    int result=mbedtls_x509_crt_verify(&certificate,config.MBEDTLS_PRIVATE(ca_chain),0,0,&flags,
+        config.MBEDTLS_PRIVATE(f_vrfy),config.MBEDTLS_PRIVATE(p_vrfy));
+    check(result==0 && flags==0,"pinned public root verified by system bundle");
+    flags=MBEDTLS_X509_BADCERT_NOT_TRUSTED | MBEDTLS_X509_BADCERT_EXPIRED;
+    config.MBEDTLS_PRIVATE(f_vrfy)(config.MBEDTLS_PRIVATE(p_vrfy),&certificate,0,&flags);
+    check((flags & MBEDTLS_X509_BADCERT_EXPIRED)!=0,"system verifier preserves expiry failure");
+    mbedtls_x509_crt_free(&certificate); mbedtls_x509_crt_init(&certificate);
+    check(mbedtls_x509_crt_parse(&certificate,lab_root,sizeof(lab_root))==0,"private fixture root parsed");
+    flags=0;
+    result=mbedtls_x509_crt_verify(&certificate,config.MBEDTLS_PRIVATE(ca_chain),0,0,&flags,
+        config.MBEDTLS_PRIVATE(f_vrfy),config.MBEDTLS_PRIVATE(p_vrfy));
+    check(result!=0 && (flags & MBEDTLS_X509_BADCERT_NOT_TRUSTED),"system bundle rejects private fixture root");
+    mbedtls_x509_crt_free(&certificate); mbedtls_ssl_config_free(&config);
+}
+#endif
 void provisioning_checks() {
     provider_data::TlsPolicy local(provisioning_lock);
     EspProviderTlsPlatform platform;
@@ -287,6 +314,9 @@ extern "C" void app_main(void) {
     printf("TASK_RUNTIME run=%s profile=%s\n",LAB_RUN_ID,LAB_ECDSA ? "ecdsa" : "rsa");
     check(provider_runtime_network(),"private emulator network ready");
     timeval utc={}; utc.tv_sec=LAB_UTC_SECONDS; check(settimeofday(&utc,0)==0,"fixture UTC installed");
+#ifdef LAB_SOURCE_CHECK
+    system_trust_checks();
+#endif
     provisioning_checks();
     output=xQueueCreate(8,sizeof(Packet)); configASSERT(output);
     policy.entropy_available(true); // Emulator fixture assertion, not physical RNG qualification.

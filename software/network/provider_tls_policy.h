@@ -39,6 +39,9 @@ public:
     void revoke() {
         Guard guard(lock_); advance(); clock_ = entropy_ = false;
     }
+    void revoke_clock() {
+        Guard guard(lock_); advance(); clock_ = false;
+    }
     uint32_t generation() {
         Guard guard(lock_); return exhausted_ ? 0 : generation_;
     }

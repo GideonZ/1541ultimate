@@ -14,6 +14,7 @@ public:
     bool configure(const unsigned char *roots, size_t length,
                    bool (*clock_ready)(), bool (*entropy_ready)());
     bool configure(const unsigned char *roots, size_t length, provider_data::TlsPolicy&);
+    bool configure_system_roots(provider_data::TlsPolicy&);
     bool configured() const { return configured_; }
     tls_stream_port callbacks() override;
     void bind_cancel(bool (*predicate)(void*), void *context) override;
@@ -21,6 +22,7 @@ private:
     int socket_;
     mbedtls_x509_crt roots_;
     bool configured_;
+    bool system_roots_;
     bool (*clock_ready_)(), (*entropy_ready_)(), (*cancel_)(void*);
     void *cancel_context_;
     provider_data::TlsPolicy *policy_;

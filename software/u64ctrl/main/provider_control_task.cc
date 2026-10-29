@@ -89,6 +89,14 @@ void provider_control_start(void)
     }
     worker = &instance; // Published before the dispatcher starts; immutable thereafter.
 }
+bool provider_control_provision_system_tls(provider_data::TlsPolicy& policy)
+{
+#ifdef CONFIG_ULTIMATE_PROVIDER_TLS
+    return !worker && !port.queue && tls_platform.configure_system_roots(policy);
+#else
+    (void)policy; return false;
+#endif
+}
 bool provider_control_receive(const uint8_t *bytes, size_t size)
 {
     if (size < 2 || bytes[0] != 2 || (bytes[1] != 0xfe && bytes[1] != 0xfd)) return false;
@@ -103,6 +111,7 @@ bool provider_control_receive(const uint8_t *bytes, size_t size)
     return true;
 }
 #else
+bool provider_control_provision_system_tls(provider_data::TlsPolicy&) { return false; }
 bool provider_control_provision_tls(const unsigned char*,size_t,provider_data::TlsPolicy&) { return false; }
 void provider_control_start(void) {}
 bool provider_control_configure_tls(const unsigned char*,size_t,bool (*)(),bool (*)()) { return false; }

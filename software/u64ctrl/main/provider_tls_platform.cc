@@ -8,8 +8,12 @@ extern "C" {
 #include "lwip/inet.h"
 #include <errno.h>
 #include <time.h>
+#include "sdkconfig.h"
+#ifdef CONFIG_ULTIMATE_PROVIDER_SOURCES
+#include "esp_crt_bundle.h"
+#endif
 
-EspProviderTlsPlatform::EspProviderTlsPlatform() : socket_(-1),configured_(false),
+EspProviderTlsPlatform::EspProviderTlsPlatform() : socket_(-1),configured_(false),system_roots_(false),
     clock_ready_(0),entropy_ready_(0),cancel_(0),cancel_context_(0),policy_(0),policy_generation_(0) { mbedtls_x509_crt_init(&roots_); }
 EspProviderTlsPlatform::~EspProviderTlsPlatform() { close_socket(this); mbedtls_x509_crt_free(&roots_); }
 bool EspProviderTlsPlatform::configure(const unsigned char *pem,size_t length,bool (*clock_ready)(),bool (*entropy_ready)()) {
@@ -26,6 +30,18 @@ bool EspProviderTlsPlatform::parse_roots(const unsigned char *pem,size_t length)
 bool EspProviderTlsPlatform::configure(const unsigned char *pem,size_t length,provider_data::TlsPolicy& policy) {
     if (!parse_roots(pem,length)) return false;
     policy_ = &policy; configured_ = true; return true;
+}
+bool EspProviderTlsPlatform::configure_system_roots(provider_data::TlsPolicy& policy) {
+#ifdef CONFIG_ULTIMATE_PROVIDER_SOURCES
+    if (configured_) return false;
+    mbedtls_ssl_config probe; mbedtls_ssl_config_init(&probe);
+    bool ok=esp_crt_bundle_attach(&probe)==0;
+    mbedtls_ssl_config_free(&probe);
+    if (!ok) return false;
+    policy_=&policy; system_roots_=configured_=true; return true;
+#else
+    (void)policy; return false;
+#endif
 }
 void EspProviderTlsPlatform::bind_cancel(bool (*predicate)(void*),void *context) {
     cancel_ = predicate; cancel_context_ = context;
@@ -57,6 +73,9 @@ int EspProviderTlsPlatform::entropy(void *context,unsigned char *bytes,size_t co
 int EspProviderTlsPlatform::trust(void *context,mbedtls_ssl_config *config) {
     auto& self = *static_cast<EspProviderTlsPlatform*>(context);
     if (!self.configured_) return -1;
+#ifdef CONFIG_ULTIMATE_PROVIDER_SOURCES
+    if (self.system_roots_) return esp_crt_bundle_attach(config)==0 ? 0 : -1;
+#endif
     mbedtls_ssl_conf_ca_chain(config,&self.roots_,0); return 0;
 }
 uint32_t EspProviderTlsPlatform::remaining(void *context) {

@@ -20,6 +20,9 @@ idf_component_register(SRCS ${PROBE_SOURCE}
         "${TLS_STREAM_ROOT}/include" "${TLS_STREAM_ROOT}/platform" "${FIXTURE_DIR}" "${SW}/io/uart"
     REQUIRES mbedtls esp_eth esp_netif esp_event esp_timer esp_hw_support lwip heap)
 target_compile_options(${COMPONENT_LIB} PRIVATE -Wall -Wextra -Werror)
+if(PROVIDER_SOURCE_PROBE)
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE CONFIG_ULTIMATE_PROVIDER_SOURCES=1)
+endif()
 if(PROVIDER_TASK_PROBE)
     target_compile_definitions(${COMPONENT_LIB} PRIVATE CONFIG_ULTIMATE_PROVIDER_CONTROL=1 CONFIG_ULTIMATE_PROVIDER_TLS=1)
 endif()

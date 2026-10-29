@@ -44,7 +44,14 @@ def assess(text, peers, run, cipher, request):
                      'policy permits fresh session after requalification', 'policy clock update retires old session',
                      'policy compares actual UTC with qualified anchor', 'policy has no entropy fallback',
                      'policy trust is immutable after configuration']
-    expected_labels = ['private emulator network ready', 'fixture UTC installed'] + policy_labels + ['boot trust configured',
+    source_markers = re.findall(r'^SOURCE_TRUST run=(\S+)\r?$', text, re.M)
+    source_labels = []
+    if source_markers:
+        source_labels = ['system trust bundle configured', 'system trust replacement refused',
+                         'system trust verifier attached', 'pinned public root parsed',
+                         'pinned public root verified by system bundle', 'system verifier preserves expiry failure',
+                         'private fixture root parsed', 'system bundle rejects private fixture root']
+    expected_labels = ['private emulator network ready', 'fixture UTC installed'] + source_labels + policy_labels + ['boot trust configured',
                        'live trust replacement refused', 'independent scheduling task started']
     for name in labels:
         expected_labels += ['no stale UART output', 'production task offered grant',
@@ -65,8 +72,9 @@ def assess(text, peers, run, cipher, request):
     expected_labels += ['scheduling task joined', 'UART ownership and copied replies intact', 'repeated start creates no duplicate task']
     # Five setup, three final and 24 scenario check blocks. Special cases add
     # deadline, lease or cancellation checks; certificate rejections skip I/O.
-    checks = 5 + 3 + 24*12 - 2*2 + 5 + 4 + len(policy_labels)
+    checks = 5 + 3 + 24*12 - 2*2 + 5 + 4 + len(policy_labels) + len(source_labels)
     passed = (complete and timing and peer_ok and scheduling and header == [(run, profile)] and
+              (not source_markers or source_markers == [run]) and
               text.count('main_task: Returned from app_main()') == 1 and
               summaries == [(str(checks), '0', run)] and
               re.findall(r'^PASS ([^\r\n]+)\r?$', text, re.M) == expected_labels and len(expected_labels) == checks and
