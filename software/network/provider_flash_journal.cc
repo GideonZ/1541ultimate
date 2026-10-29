@@ -40,24 +40,35 @@ bool FlashIncarnationJournal::geometry(unsigned pages[2]) {
     }
     return true;
 }
-bool FlashIncarnationJournal::read(unsigned page,uint64_t& epoch) {
-    uint8_t bytes[256]; memset(bytes,0,sizeof(bytes));
+bool FlashIncarnationJournal::read(unsigned page,uint64_t& epoch,uint64_t& domain) {
+    alignas(uint32_t) uint8_t bytes[256]; memset(bytes,0,sizeof(bytes));
     if (!flash_.read_page(page,bytes) || get(bytes,4)!=Magic || get(bytes+4,4)!=1 ||
-        get(bytes+8,8)!=domain_ || get(bytes+24,4)!=crc(bytes,24) || get(bytes+28,4)!=~uint32_t(get(bytes+24,4))) return false;
+        !get(bytes+8,8) || get(bytes+24,4)!=crc(bytes,24) || get(bytes+28,4)!=~uint32_t(get(bytes+24,4))) return false;
     for (unsigned i=32;i<256;++i) if (bytes[i]!=0xff) return false;
-    epoch=get(bytes+16,8); return true;
+    epoch=get(bytes+16,8); domain=get(bytes+8,8); return true;
 }
 bool FlashIncarnationJournal::write(unsigned page,uint64_t epoch,bool erase) {
-    uint8_t bytes[256]; memset(bytes,0xff,sizeof(bytes));
+    alignas(uint32_t) uint8_t bytes[256]; memset(bytes,0xff,sizeof(bytes));
     put(bytes,Magic,4); put(bytes+4,1,4); put(bytes+8,domain_,8); put(bytes+16,epoch,8);
     put(bytes+24,crc(bytes,24),4); put(bytes+28,~uint32_t(get(bytes+24,4)),4);
     if ((erase && !flash_.erase_sector(flash_.page_to_sector(page))) || !flash_.write_page(page,bytes)) return false;
-    uint64_t verify=0;
-    return read(page,verify) && verify==epoch;
+    uint64_t verify=0,domain=0;
+    return read(page,verify,domain) && verify==epoch && domain==domain_;
+}
+bool FlashIncarnationJournal::installed_domain(Flash& flash,unsigned a,unsigned b,uint64_t& domain) {
+    domain=0;
+    FlashIncarnationJournal probe(flash,a,b,1);
+    unsigned pages[2]; uint64_t epochs[2],domains[2];
+    if (!probe.geometry(pages) || !probe.read(pages[0],epochs[0],domains[0]) ||
+        !probe.read(pages[1],epochs[1],domains[1]) || domains[0]!=domains[1]) return false;
+    const uint64_t high=epochs[0]>epochs[1] ? epochs[0] : epochs[1];
+    const uint64_t low=epochs[0]>epochs[1] ? epochs[1] : epochs[0];
+    if (high==UINT64_MAX || high<=low || high-low!=1) return false;
+    domain=domains[0]; return true;
 }
 bool FlashIncarnationJournal::provision() {
     unsigned pages[2]; bool ok=geometry(pages);
-    uint8_t bytes[256];
+    alignas(uint32_t) uint8_t bytes[256];
     for (unsigned s=0;ok && s<2;++s) for (unsigned p=0;ok && p<16;++p) {
         memset(bytes,0,sizeof(bytes)); ok=flash_.read_page(pages[s]+p,bytes);
         for (unsigned b=0;ok && b<256;++b) ok=bytes[b]==0xff;
@@ -68,8 +79,9 @@ bool FlashIncarnationJournal::provision() {
 }
 bool FlashIncarnationJournal::reserve(void *context,uint64_t& result) {
     auto& self=*static_cast<FlashIncarnationJournal*>(context);
-    result=0; unsigned pages[2]; uint64_t epochs[2];
-    bool ok=self.geometry(pages) && self.read(pages[0],epochs[0]) && self.read(pages[1],epochs[1]);
+    result=0; unsigned pages[2]; uint64_t epochs[2],domains[2];
+    bool ok=self.geometry(pages) && self.read(pages[0],epochs[0],domains[0]) && self.read(pages[1],epochs[1],domains[1]) &&
+        domains[0]==self.domain_ && domains[1]==self.domain_;
     if (ok) {
         unsigned newer=epochs[1]>epochs[0] ? 1 : 0;
         uint64_t high=epochs[newer],low=epochs[1-newer];

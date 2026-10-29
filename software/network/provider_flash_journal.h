@@ -4,7 +4,7 @@
 class Flash;
 namespace provider_control {
 // Two explicitly reserved configuration sectors, serialized at startup before
-// ConfigManager can allocate them. No automatic allocation, erase or repair.
+// ConfigManager can allocate them. No automatic allocation or repair.
 // Ordinary settings reset/import must never recreate an erased journal domain.
 class FlashIncarnationJournal {
 public:
@@ -13,13 +13,16 @@ public:
     // Installer-only provisioning into two completely erased sectors. The
     // caller must supply a new qualified domain, never a restored old domain.
     bool provision();
+    // Read-only discovery. Both complete records must agree on a nonzero domain
+    // and have consecutive counters. Missing/corrupt records are never repaired.
+    static bool installed_domain(Flash&, unsigned slot_a, unsigned slot_b, uint64_t&);
 private:
     Flash& flash_;
     unsigned slots_[2];
     uint64_t domain_;
     bool failed_;
     bool geometry(unsigned pages[2]);
-    bool read(unsigned page, uint64_t& epoch);
+    bool read(unsigned page, uint64_t& epoch, uint64_t& domain);
     bool write(unsigned page, uint64_t epoch, bool erase);
     static bool reserve(void*, uint64_t&);
     FlashIncarnationJournal(const FlashIncarnationJournal&) = delete;

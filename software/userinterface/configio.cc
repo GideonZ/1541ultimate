@@ -159,6 +159,9 @@ SubsysResultCode_e ConfigIO :: S_reset(SubsysCommand *cmd)
     return SSRET_OK;
 }
 
+#ifdef ULTIMATE_PROVIDER_JOURNAL
+#include "provider_native_startup.h"
+#endif
 SubsysResultCode_e ConfigIO :: S_clear(SubsysCommand *cmd)
 {
     Flash *fl = get_flash();
@@ -170,6 +173,9 @@ SubsysResultCode_e ConfigIO :: S_clear(SubsysCommand *cmd)
         return SSRET_ABORTED_BY_USER;
     }
     int num = fl->get_number_of_config_pages();
+#ifdef ULTIMATE_PROVIDER_JOURNAL
+    provider_journal_stop_owner(); // Retire the cached identity before erasing it.
+#endif
     for (int i=0; i < num; i++) {
         fl->clear_config_page(i);
     }

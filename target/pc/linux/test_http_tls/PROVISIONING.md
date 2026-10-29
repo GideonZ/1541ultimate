@@ -89,6 +89,36 @@ Sources are optional and disabled by default, and do not activate the native HTT
 provider. The emulator's UTC and entropy assertions are fixture inputs, not
 hardware qualification.
 
+## Explicit installation and startup
+
+The native `PROVIDER_JOURNAL=1` build option enables journal startup hooks. It is
+off by default. A serialized installer must call `provider_journal_install` with
+a fresh externally qualified domain before ConfigManager initialization. This
+entry point only writes entirely erased sectors; it neither erases existing
+settings nor migrates them. There is no automatic installer or installation UI.
+The last two configuration slots are used. Existing settings in these slots stay
+readable and cause installation to fail; new settings are allocated elsewhere.
+
+ConfigManager initialization calls `provider_journal_prepare` once. Read-only
+discovery requires two valid records with matching domains and consecutive
+counters. Startup then commits one new epoch and caches the identity. The native
+owner is created once after the Wi-Fi command task starts, with a one-use identity
+source that performs no flash I/O. Task creation/binding failure burns the identity
+and cannot retry. A missing, invalid or partially installed journal never starts
+the owner. A completed installation whose final acknowledgment was lost can be
+opened on a later boot only if both records validate completely.
+
+Configuration clear retires the owner before erasing the slots. A subsequent
+empty boot stays unavailable; explicit reinstallation needs a new domain. An
+older firmware without these hooks may allocate or erase these slots, so booting
+back into this build must validate them again. Restoring a valid old journal is
+not detectable without an external anti-rollback mechanism.
+
+The optional owner startup does not publish the HTTPS factory to the HTTP target.
+That activation and a user-facing installer remain separate integration work.
+Installation/startup have only local host and cross-build evidence; no flash or
+physical device operation is implied by enabling a compile-time option.
+
 ## Validation
 
 `test_provider_provisioning` covers restart identity, ambiguous reservations,

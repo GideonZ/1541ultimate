@@ -7,6 +7,9 @@
 
 #if U64 == 2
 #include "provider_manager_uart.h"
+#ifdef ULTIMATE_PROVIDER_JOURNAL
+#include "provider_native_startup.h"
+#endif
 #endif
 #include "wifi.h"
 #include "socket.h"
@@ -200,6 +203,9 @@ void WiFi :: Start()
     provider_monitor_enabled = true;
     portEXIT_CRITICAL();
     xTaskCreate( WiFi :: RunModeTaskStart, "WiFi Command Task", configMINIMAL_STACK_SIZE, this, PRIO_DRIVER, &runModeTask );
+#ifdef ULTIMATE_PROVIDER_JOURNAL
+    if (runModeTask) provider_journal_start_owner(*this);
+#endif
 }
 
 void WiFi :: Terminate()
