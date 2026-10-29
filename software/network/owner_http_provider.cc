@@ -2,6 +2,7 @@
 #include "provider_data_client.h"
 #include <limits.h>
 #include <new>
+#include <stdlib.h>
 
 class OwnerHttpProvider::Connection : public HttpConnection {
     OwnerHttpProvider& provider_;
@@ -41,6 +42,10 @@ class OwnerHttpProvider::Connection : public HttpConnection {
         }
     }
 public:
+    // Match the firmware's wrapped malloc/free pair. Its ordinary new panics on
+    // exhaustion and its runtime has no std::nothrow overload.
+    static void *operator new(size_t bytes) noexcept { return malloc(bytes); }
+    static void operator delete(void *memory) noexcept { free(memory); }
     Connection(OwnerHttpProvider& p, OperationCancellation token) : provider_(p),command_(token),boot_(p.lifetime()),
         started_(0),attempted_(false),closed_(false),opened_(false) {}
     ~Connection() override { close_session(); provider_.endpoint_.lock(); provider_.occupied_ = false; provider_.endpoint_.unlock(); }
@@ -83,7 +88,7 @@ HttpConnection *OwnerHttpProvider::create_connection(const OperationCancellation
     bool occupied = occupied_; occupied_ = true;
     endpoint_.unlock();
     if (occupied) return 0;
-    Connection *connection = new(std::nothrow) Connection(*this,token);
+    Connection *connection = new Connection(*this,token);
     if (!connection) { endpoint_.lock(); occupied_ = false; endpoint_.unlock(); }
     return connection;
 }

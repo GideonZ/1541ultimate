@@ -50,6 +50,7 @@ SRCS_CC	 =  provider_manager.cc \
             provider_flash_journal.cc \
             provider_journal_startup.cc \
             provider_native_startup.cc \
+            https_installation.cc \
             provider_manager_delivery.cc \
             provider_manager_uart.cc \
             provider_control.cc \

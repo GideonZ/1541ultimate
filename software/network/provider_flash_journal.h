@@ -16,6 +16,7 @@ public:
     // Read-only discovery. Both complete records must agree on a nonzero domain
     // and have consecutive counters. Missing/corrupt records are never repaired.
     static bool installed_domain(Flash&, unsigned slot_a, unsigned slot_b, uint64_t&);
+    static bool erased(Flash&, unsigned slot_a, unsigned slot_b);
 private:
     Flash& flash_;
     unsigned slots_[2];

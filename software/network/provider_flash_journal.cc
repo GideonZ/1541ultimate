@@ -66,13 +66,18 @@ bool FlashIncarnationJournal::installed_domain(Flash& flash,unsigned a,unsigned 
     if (high==UINT64_MAX || high<=low || high-low!=1) return false;
     domain=domains[0]; return true;
 }
-bool FlashIncarnationJournal::provision() {
-    unsigned pages[2]; bool ok=geometry(pages);
+bool FlashIncarnationJournal::erased(Flash& flash,unsigned a,unsigned b) {
+    FlashIncarnationJournal probe(flash,a,b,1);
+    unsigned pages[2]; bool ok=probe.geometry(pages);
     alignas(uint32_t) uint8_t bytes[256];
     for (unsigned s=0;ok && s<2;++s) for (unsigned p=0;ok && p<16;++p) {
-        memset(bytes,0,sizeof(bytes)); ok=flash_.read_page(pages[s]+p,bytes);
+        memset(bytes,0,sizeof(bytes)); ok=flash.read_page(pages[s]+p,bytes);
         for (unsigned b=0;ok && b<256;++b) ok=bytes[b]==0xff;
     }
+    return ok;
+}
+bool FlashIncarnationJournal::provision() {
+    unsigned pages[2]; bool ok=geometry(pages) && erased(flash_,slots_[0],slots_[1]);
     if (ok) ok=write(pages[0],0,false) && write(pages[1],1,false);
     if (!ok) failed_=true;
     return ok;

@@ -21,8 +21,9 @@ reserved 4 KiB configuration sectors and 256-byte pages. Configuration slots are
 counted backwards from physical flash end, inside the advertised configuration
 image. Unsupported geometry is rejected before writes. Provisioning requires
 both entire sectors erased and a fresh externally supplied domain; it does not
-erase existing settings. Slot reservation and provisioning must happen before
-ConfigManager starts allocating configuration pages, with serialized access.
+erase existing settings. Slot reservation happens before ConfigManager allocates
+pages. Explicit provisioning may happen before startup, or through the serialized
+operator flow after a boot that observed both reserved sectors entirely empty.
 
 Both records must have valid format, CRC, domain and consecutive counters. Each
 reservation erases the older sector, programs its successor and verifies readback
@@ -31,8 +32,8 @@ journal rather than falling back to an older counter. A fully programmed write
 whose acknowledgment was lost burns that epoch on reconstruction. This favors
 uniqueness over availability after interrupted writes.
 
-The native FPGA configuration disables its TRNG. Sector allocation and unique
-domain installation remain explicit product work; no journal is automatically
+The native FPGA configuration disables its TRNG. Unique domain installation is
+an explicit operator action; no journal is automatically
 installed. A settings reset may erase these records and must require a new domain.
 Restoring or cloning two valid records cannot be detected by CRC. Host fault tests
 do not establish physical durability, endurance or rollback protection.
@@ -95,7 +96,7 @@ The native `PROVIDER_JOURNAL=1` build option enables journal startup hooks. It i
 off by default. A serialized installer must call `provider_journal_install` with
 a fresh externally qualified domain before ConfigManager initialization. This
 entry point only writes entirely erased sectors; it neither erases existing
-settings nor migrates them. There is no automatic installer or installation UI.
+settings nor migrates them. There is no automatic installer.
 The last two configuration slots are used. Existing settings in these slots stay
 readable and cause installation to fail; new settings are allocated elsewhere.
 
@@ -114,8 +115,29 @@ older firmware without these hooks may allocate or erase these slots, so booting
 back into this build must validate them again. Restoring a valid old journal is
 not detectable without an external anti-rollback mechanism.
 
-The optional owner startup does not publish the HTTPS factory to the HTTP target.
-That activation and a user-facing installer remain separate integration work.
+The same option adds **Developer > Install HTTPS Identity**. Generate a fresh
+nonzero 64-bit value on a trusted computer, for example with Python
+`secrets.token_hex(8)`, and enter its 16 hexadecimal digits. Generate another if
+all digits are zero. Never reuse an ID from a previous installation or another
+device. The firmware checks format, not global uniqueness. Confirm installation;
+a cancelled prompt performs no installation. This action is available only after
+startup observed two entirely erased reserved sectors, and rechecks both sectors
+before writing. Occupied/damaged storage is refused without migration or erase.
+After a successful write, cold boot explicitly: the running boot remains disabled.
+A failed write is terminal for that boot and may require separate recovery work;
+the UI never retries, clears storage or reboots automatically. Configuration clear
+also disables installation until a new boot.
+
+The production HTTP target captures a stable HTTPS factory during construction.
+The owner-backed provider is published only after task creation and UART binding;
+availability still requires the owner to negotiate successfully. Restart, stop or
+failed initialization leaves HTTPS unavailable without a plaintext fallback.
+The factory and owner live for the firmware lifetime; connections retain the
+existing single-owner cancellation and cleanup contract. The native provider uses
+a 30-second exchange budget and a 500 ms cleanup bound. These are software bounds,
+not physical scheduling measurements. HTTP commands, rendering and replies are
+unchanged. The ESP32 must separately enable its qualified TLS backend and sources.
+
 Installation/startup have only local host and cross-build evidence; no flash or
 physical device operation is implied by enabling a compile-time option.
 

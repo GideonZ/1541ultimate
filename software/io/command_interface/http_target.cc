@@ -3,7 +3,12 @@
 #include <stdio.h>
 
 // Register the target as ID $06 [cite: 117]
+#ifdef ULTIMATE_PROVIDER_JOURNAL
+#include "provider_native_startup.h"
+HttpTarget http_target(6, provider_https_factory());
+#else
 HttpTarget http_target(6);
+#endif
 
 static Message c_http_identification  = { 25, true, (uint8_t *)"ULTIMATE HTTP TARGET V1.0" };
 static Message c_status_http_ok       = {  6, true, (uint8_t *)"000 OK" };

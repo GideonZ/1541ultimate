@@ -3,6 +3,15 @@
 #include <stdio.h>
 #include <string.h>
 #include <initializer_list>
+static bool fail_allocation;
+static unsigned allocations,releases;
+extern "C" void *__real_malloc(size_t);
+extern "C" void __real_free(void*);
+extern "C" void *__wrap_malloc(size_t size) {
+    if (fail_allocation) return 0;
+    void *p=__real_malloc(size); if (p) ++allocations; return p;
+}
+extern "C" void __wrap_free(void *p) { if (p) ++releases; __real_free(p); }
 static unsigned checks,failures;
 static void check(bool ok,const char *label) { ++checks; if (!ok) { ++failures; printf("FAIL %s\n",label); } }
 struct Endpoint : HttpOwnerEndpoint {
@@ -34,6 +43,15 @@ struct Endpoint : HttpOwnerEndpoint {
     void unlock() override {}
 };
 int main() {
+    {
+        Endpoint endpoint; OwnerHttpProvider provider(endpoint,100,20);
+        fail_allocation=true;
+        check(!provider.create_connection({}) && !endpoint.submits,"allocation failure returns unavailable without owner request");
+        fail_allocation=false;
+        auto connection=provider.create_connection({});
+        check(connection!=0,"allocation failure releases the occupied slot"); delete connection;
+        check(allocations==releases,"connection uses matching allocation and release");
+    }
     {
         Endpoint endpoint; OwnerHttpProvider provider(endpoint,100,20);
         HttpConnection *a = provider.create_connection({}); check(a != 0,"factory ready");
@@ -79,5 +97,6 @@ int main() {
         endpoint.now = 100; unsigned char byte = 7;
         check(a->read(&byte,1) < 0 && byte == 7,"budget never restarts at read"); delete a;
     }
+    check(allocations==releases,"all connection storage released");
     printf("Owner HTTP: %u checks, %u failures\n",checks,failures); return failures ? 1 : 0;
 }

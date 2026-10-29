@@ -62,18 +62,22 @@ add_executable(test_provider_sources ${SW}/network/tests/test_provider_sources.c
 target_include_directories(test_provider_sources PRIVATE ${SW}/network/tests/source_stubs ${SW}/network ${SW}/u64ctrl/main)
 target_compile_options(test_provider_sources PRIVATE -Wall -Wextra -Werror)
 foreach(startup_target test_provider_startup test_provider_startup_disabled)
-    add_executable(${startup_target} ${SW}/network/tests/test_provider_startup.cc
+    add_executable(${startup_target} ${HTTP_TEST_SOURCES} ${SW}/network/tests/test_provider_startup.cc
         ${SW}/network/provider_journal_startup.cc ${SW}/network/provider_native_startup.cc
+        ${SW}/network/owner_http_provider.cc
+        ${SW}/userinterface/https_installation.cc
         ${SW}/network/provider_flash_journal.cc ${SW}/network/provider_manager_task.cc
         ${SW}/network/provider_manager_runner.cc ${SW}/network/provider_manager_delivery.cc
         ${SW}/io/wifi/provider_manager_uart.cc ${SW}/network/provider_manager.cc
         ${SW}/network/provider_data.cc ${SW}/network/provider_data_client.cc
         ${SW}/network/provider_control.cc ${SW}/network/provider_session_owner.cc)
-    target_include_directories(${startup_target} PRIVATE ${SW}/network/tests/owner_stubs
+    target_include_directories(${startup_target} PRIVATE ${SW}/network/tests/install_stubs ${SW}/network/tests/owner_stubs
         ${SW}/network/tests/manager_stubs ${SW}/network/tests ${SW}/network ${SW}/infra
-        ${SW}/io/wifi ${SW}/io/flash ${SW}/components ${SW}/system)
-    target_compile_definitions(${startup_target} PRIVATE ENTER_SAFE_SECTION= LEAVE_SAFE_SECTION=)
-    target_compile_options(${startup_target} PRIVATE -Wall -Wextra -Werror -Wno-unused-parameter)
+        ${SW}/io/wifi ${SW}/io/flash ${SW}/components ${SW}/system ${SW}/api
+        ${SW}/io/stream ${SW}/io/command_interface ${SW}/httpd/c-version/lib ${SW}/userinterface)
+    target_compile_definitions(${startup_target} PRIVATE ENTER_SAFE_SECTION= LEAVE_SAFE_SECTION= RUNS_ON_PC MHS_PORT=8001 _DEFAULT_SOURCE)
+    target_compile_options(${startup_target} PRIVATE -Wall -Wextra -Wno-format -Wno-format-extra-args -Wno-unused-parameter)
+    target_link_options(${startup_target} PRIVATE "LINKER:--wrap=socket")
     target_link_libraries(${startup_target} PRIVATE pthread)
 endforeach()
 target_compile_definitions(test_provider_startup PRIVATE ULTIMATE_PROVIDER_JOURNAL=1)
@@ -118,6 +122,7 @@ target_include_directories(test_provider_data PRIVATE ${SW}/network ${SW}/infra)
 target_compile_options(test_provider_data PRIVATE -Wall -Wextra -Werror)
 target_link_libraries(test_provider_data PRIVATE pthread)
 add_executable(test_owner_http ${SW}/network/tests/test_owner_http.cc ${SW}/network/owner_http_provider.cc)
+target_link_options(test_owner_http PRIVATE "LINKER:--wrap=malloc,--wrap=free")
 target_include_directories(test_owner_http PRIVATE ${SW}/network ${SW}/infra)
 target_compile_options(test_owner_http PRIVATE -Wall -Wextra -Werror)
 add_executable(test_uart_loss ${SW}/network/tests/test_uart_loss.cc ${SW}/io/uart/dma_uart.cc)
