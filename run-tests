@@ -139,6 +139,10 @@ SUITES: Sequence[Suite] = (
     # forever. raw_u64 was, for a misspelling, and the firmware change that
     # exposed it had already been merged before anyone noticed.
     Suite("e2e", "esp-depends", "tests/lib/esp_depends_test.py", "", profile=profiles.SMOKE),
+    # Needs no device either: u64ctrl's network recovery trusts a committed copy
+    # of Mozilla's root list, because ESP-IDF 5.3.1's own still holds three roots
+    # Mozilla removed. A regenerated sdkconfig would drop back to it without a word.
+    Suite("e2e", "u64ctrl-ca", "tests/lib/u64ctrl_ca_test.py", "", profile=profiles.SMOKE),
     # Needs no device either: machine:input has an event limit and a body-size
     # limit, and a request that breaks either is refused. Splitting on the
     # count alone sent a 64-keypress field clear as one 4110-byte request and

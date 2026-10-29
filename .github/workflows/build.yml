@@ -57,6 +57,16 @@ jobs:
              --target /tmp/lint-packages -r tests/requirements-lint.txt && \
            PYTHONPATH=/tmp/lint-packages python3 tests/lib/lint_test.py"
 
+      # Needs no device and no packages, so it runs here, before the firmware
+      # builds: u64ctrl's network recovery must trust the committed Mozilla root
+      # list in software/u64ctrl/ca, not ESP-IDF's own, and a refreshed list must
+      # change the ESP32 cache key. A stock Python image, as for the lint step.
+      - name: Test u64ctrl Recovery CA List
+        run: |
+          docker run --rm -v $GITHUB_WORKSPACE:/mnt/project:rw --workdir /mnt/project \
+          --user $(id -u):$(id -g) -e HOME=/tmp python:3.12-slim \
+          python3 tests/lib/u64ctrl_ca_test.py
+
       - name: Test D81 track bounds
         run: |
           docker run --rm \
@@ -276,6 +286,15 @@ jobs:
           docker run --rm -e GITHUB_ACTIONS --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
           -v /opt/build-tools:/mnt/build-tools:ro \
           -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make u64ii_no_esp && mv update.ue2 update_${{ env.GIT_VERSION }}.ue2 && mv update.cfw update_${{ env.GIT_VERSION }}.cfw"
+
+      # The same test again, now that the build output is there: the bundle the
+      # build embedded must hold exactly the roots of cacert.pem (it says so when
+      # a cache hit left no build output to look at).
+      - name: Test u64ctrl Recovery CA List In The Build
+        run: |
+          docker run --rm -v $GITHUB_WORKSPACE:/mnt/project:rw --workdir /mnt/project \
+          --user $(id -u):$(id -g) -e HOME=/tmp python:3.12-slim \
+          python3 tests/lib/u64ctrl_ca_test.py
 
       - name: Test Firmware Application Space
         if: always()
