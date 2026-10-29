@@ -1,5 +1,7 @@
 #include "wifi_cmd.h"
+#ifndef RECOVERYAPP
 #include "wifi.h"
+#endif
 #include "dump_hex.h"
 
 /// C like functions to 'talk' with the WiFi Module
@@ -15,13 +17,20 @@ void hex(uint8_t h)
 
 BaseType_t wifi_rx_isr(command_buf_context_t *context, command_buf_t *buf, BaseType_t *w)
 {
-    if (buf->size < int(sizeof(rpc_header_t)) || buf->size > int(sizeof(buf->data)) ||
-        wifi.ReceiveProviderIdentity(buf) || wifi.ReceiveProviderControl(buf)) {
+    if (buf->size < int(sizeof(rpc_header_t)) || buf->size > int(sizeof(buf->data))) {
         return cmd_buffer_free_isr(context, buf, w);
     }
+#ifndef RECOVERYAPP
+    // Recovery uses only the legacy RPC path; it has no application owner.
+    if (wifi.ReceiveProviderIdentity(buf) || wifi.ReceiveProviderControl(buf)) {
+        return cmd_buffer_free_isr(context, buf, w);
+    }
+#endif
     rpc_header_t *hdr = (rpc_header_t *)buf->data;
+#ifndef RECOVERYAPP
     if (hdr->command == EVENT_DISCONNECTED || hdr->command == EVENT_DISABLED || hdr->command == EVENT_RESCAN)
         WiFi::ProviderLinkLoss();
+#endif
     BaseType_t res;
 
     if ((hdr->thread < NUM_TX_BUFFERS) && (tasksWaitingForReply[hdr->thread])) {
