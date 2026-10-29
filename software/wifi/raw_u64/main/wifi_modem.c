@@ -369,8 +369,8 @@ esp_err_t wifi_store_ap(ConnectCommand_t *cmd)
         key[0] = 's';
         key[1] = 'a' + i;
         key[2] = '0'; // SSID sa, sb, sc, sd, ...
-        size_t len = 32;
-        char ssid_buf[32];
+        size_t len = 33;
+        char ssid_buf[33];
         // see if the ssid has been stored already
         err = nvs_get_str(handle, key, ssid_buf, &len);
         if (err != ESP_OK) { // nope, it doesn't exist
@@ -545,10 +545,10 @@ esp_err_t wifi_connect_to_scanned(int index)
     // now look up password
     err = ESP_OK;
     if (ap_info[index].authmode) {
-        err = wifi_find_password(ap_info[index].ssid, last_connect.pw, 64, &last_connect.list_index);
+        err = wifi_find_password(ap_info[index].ssid, last_connect.pw, sizeof(last_connect.pw), &last_connect.list_index);
     } else {
         // no authentication required. But make sure the user has configured this AP.
-        err = wifi_find_password(ap_info[index].ssid, last_connect.pw, 64, &last_connect.list_index);
+        err = wifi_find_password(ap_info[index].ssid, last_connect.pw, sizeof(last_connect.pw), &last_connect.list_index);
         if ((err == ESP_OK)&&(last_connect.pw[0] != 0)) {
             // AP is known and configured, however, with a password. Do not allow to connect.
             err = ESP_ERR_NOT_FOUND;
@@ -556,6 +556,7 @@ esp_err_t wifi_connect_to_scanned(int index)
     }
     if (err == ESP_OK) { // known AP found
         strncpy(last_connect.ssid, (const char *)(ap_info[index].ssid), 32);
+        last_connect.ssid[32] = 0;
         last_connect.auth_mode = ap_info[index].authmode;
         return attempt_connect(last_connect.ssid, last_connect.pw, last_connect.auth_mode);
     }
@@ -582,11 +583,11 @@ esp_err_t wifi_connect_to_stored(int index)
     key[1] = 'a' + index;
     key[2] = '0'; // SSID sa, sb, sc, sd, ...
 
-    size_t len = 32;    
+    size_t len = sizeof(last_connect.ssid);
     err = nvs_get_str(handle, key, last_connect.ssid, &len);
     if (err == ESP_OK) {
         key[0] = 'p'; // password pa, pb, pc, pd, ...
-        len = 64;
+        len = sizeof(last_connect.pw);
         err = nvs_get_str(handle, key, last_connect.pw, &len);
         if (err == ESP_OK) {
             key[0] = 'm'; // authmode ma, mb, mc, md, ...

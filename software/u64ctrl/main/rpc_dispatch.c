@@ -112,7 +112,9 @@ void cmd_wifi_connect(command_buf_t *buf)
     ev.command = CMD_WIFI_CONNECT;
     ev.auth_mode = param->auth_mode;
     memcpy(&ev.ssid, param->ssid, 32);
+    ev.ssid[32] = 0;
     memcpy(&ev.pw, param->password, 64);
+    ev.pw[64] = 0;
 
     if (xQueueSend(connect_commands, &ev, 1000) == pdFALSE) {
         resp->esp_err = ESP_ERR_NO_MEM;
