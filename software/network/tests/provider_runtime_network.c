@@ -98,4 +98,3 @@ bool provider_runtime_network(void)
     ip_addr_t dns; IP_ADDR4(&dns,192,0,2,1); dns_setserver(0,&dns);
     return connected;
 }
-

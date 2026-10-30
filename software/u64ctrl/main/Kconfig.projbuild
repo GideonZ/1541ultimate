@@ -23,7 +23,7 @@ config ULTIMATE_PROVIDER_SOURCES
     select MBEDTLS_CERTIFICATE_BUNDLE
     default n
     help
-        Select the pinned full SDK root bundle, configured ordinary SNTP with
+        Select the pinned repository root bundle, configured ordinary SNTP with
         expiry/jump checks and Wi-Fi RF entropy lifecycle notifications.
         SNTP is unauthenticated. This does not register the native HTTPS client.
 

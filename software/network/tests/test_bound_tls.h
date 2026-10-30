@@ -114,7 +114,7 @@ static void exchange(const char *mode,const char *ca,int port) {
         }
         if (canceller.joinable()) canceller.join();
         auto d = provider.backend.diagnostic(); int elapsed = int(now_ms()-begin);
-        
+
         expect(!provider.backend.occupied() && !provider.remote.worker.occupied(),"bound resource released");
         expect(platform.opens == 1 && platform.closes == 1 && platform.fd == -1,"BOUND socket balanced");
         if (timeout) expect(d.status == TLS_TIMEOUT && elapsed >= 630 && elapsed <= 900,"BOUND total timeout");
