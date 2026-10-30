@@ -81,7 +81,7 @@ def main():
     run("http-build", ["make", "-j1", "CC=gcc " + flags, "CPP=g++ " + flags, "all"], cwd=target)
     for mode in ("", "framing", "transport", "integer-widths", "body-removal", "connect-cleanup",
                  "response-completion", "response-boundaries", "response-cleanup"):
-        run("http-" + (mode or "general"), [target / "result/test_http"] + (["--" + mode] if mode else []), timeout=40)
+        run("http-" + (mode or "general"), [target / "result/test_http"] + (["--" + mode] if mode else []), cwd=target, timeout=40)
     model = output / "session-build"
     run("model-configure", ["cmake", "-S", root / "target/pc/linux/test_http_session", "-B", model])
     run("model-build", ["cmake", "--build", model, "-j4"])
