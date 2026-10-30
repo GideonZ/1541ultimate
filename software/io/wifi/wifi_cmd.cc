@@ -351,7 +351,6 @@ int wifi_forget_aps()
 }
 
 
-#if U64 == 2
 int wifi_enable()
 {
     BUFARGS(identify, CMD_WIFI_ENABLE);
@@ -366,6 +365,7 @@ int wifi_disable()
     RETURN_ESP;
 }
 
+#if U64 == 2
 int wifi_get_voltages(voltages_t *voltages)
 {
     BUFARGS(identify, CMD_GET_VOLTAGES);

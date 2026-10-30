@@ -43,6 +43,8 @@ int wifi_machine_off();
 int wifi_machine_reboot();
 void wifi_rx_packet();
 
+// The radio switch: 0 when the module queued the request, its error otherwise, or -1
+// when nothing reached the module (no buffer or slot, or no reply)
 int wifi_enable();
 int wifi_disable();
 int wifi_modem_enable(bool);
