@@ -26,8 +26,10 @@ def prepare(root):
         if value is not None:
             path = directory / name
             path.write_bytes(path.read_bytes().replace(b"\r\n", b"\n"))
-    subprocess.run(["git", "apply", "--check", str(patch)], cwd=directory, check=True)
-    subprocess.run(["git", "apply", str(patch)], cwd=directory, check=True)
+    # Run from the firmware root: Git otherwise interprets paths differently
+    # when this directory has no submodule metadata (for example a source export).
+    subprocess.run(["git", "apply", "--check", "--directory=software/httpd", str(patch)], cwd=root, check=True)
+    subprocess.run(["git", "apply", "--directory=software/httpd", str(patch)], cwd=root, check=True)
     if any(digest((directory / name).read_bytes().replace(b"\r\n", b"\n")) != value
            for name, value in manifest["after"].items()):
         raise RuntimeError("HTTP parser result hash mismatch")
