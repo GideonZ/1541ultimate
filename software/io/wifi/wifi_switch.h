@@ -12,6 +12,9 @@
  * event from it (a module that associated at boot after all) would put the WiFi
  * interface on the network while WiFi is off, so those events are dropped.
  *
+ * A Disable at runtime (the menu, the REST API, the setting) is confirmed the same way. The
+ * wait is timed by the application's next pass, which any event from the module starts.
+ *
  * The answer to the request only says that the module queued it. The application shows
  * Disabled when EVENT_DISABLED arrives, not before. If it does not arrive within
  * WIFI_SWITCH_CONFIRM_MS (the module could not stop its radio, or the request was lost),
@@ -24,7 +27,7 @@
  * Enable then starts the WiFi application again, which is what an Enable did before, and
  * that start does not apply the stored Disabled.
  *
- * Pure logic, so that the host test (target/pc/linux/wifiswitch) runs it.
+ * Pure logic, so that the host test (software/io/wifi/tests/wifi_switch_test.cpp) runs it.
  */
 
 #ifndef WIFI_SWITCH_H_
@@ -50,7 +53,6 @@ static inline bool wifi_switch_unsupported(int result)
 typedef struct {
     bool awaiting_off; // the radio off was asked for, and EVENT_DISABLED is not seen yet
     bool override_off; // the next start of the application ignores a stored Disabled
-    bool off_pending;  // a Disable came while the application was starting: its start applies it
     uint32_t deadline; // when the wait for EVENT_DISABLED ends, in the caller's time unit
 } wifi_switch_t;
 
@@ -58,9 +60,8 @@ typedef struct {
 // is to be turned off now. enabled is the stored "WiFi Enabled".
 static inline bool wifi_switch_wants_off(wifi_switch_t *sw, bool enabled)
 {
-    bool off = (!enabled || sw->off_pending) && !sw->override_off;
+    bool off = !enabled && !sw->override_off;
     sw->override_off = false;
-    sw->off_pending = false;
     sw->awaiting_off = false;
     return off;
 }
@@ -125,14 +126,6 @@ static inline void wifi_switch_on(wifi_switch_t *sw, bool app_running)
     if (!app_running) {
         sw->override_off = true;
     }
-}
-
-// A Disable (on false) or Enable (on true) while the application is still starting, before
-// it knows whether the module can switch its radio: the start applies it
-static inline void wifi_switch_later(wifi_switch_t *sw, bool on)
-{
-    sw->off_pending = !on;
-    sw->override_off = on;
 }
 
 #endif /* WIFI_SWITCH_H_ */

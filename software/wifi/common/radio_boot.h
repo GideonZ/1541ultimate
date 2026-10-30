@@ -11,7 +11,7 @@
  * Ultimate it restarted (EVENT_RESTARTED), so that one with "WiFi Enabled" Disabled asks
  * for the radio off again. Until it does, the radio is on.
  *
- * Pure logic, so that the host test (target/pc/linux/wifiradio) runs it.
+ * Pure logic, so that the host test (software/wifi/tests/radio_test.cpp) runs it.
  */
 
 #ifndef SOFTWARE_WIFI_COMMON_RADIO_BOOT_H_

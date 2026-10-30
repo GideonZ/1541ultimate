@@ -128,7 +128,9 @@ TEST(WifiConnectFeedbackTask, not_accepted)
     CHECK(waited == 0, "at once");
     world.connect_noreply = false;
     world.loopback_fails = true;
+    frees = 0;
     boot({ pick });
+    CHECK(frees == 2, "the connect reply's buffer and the one the event was built in go back to the UART");
     CHECK(strcmp(messages, "Could not connect to HomeNet\n") == 0, "told when the event is refused");
     CHECK(waited == 0, "at once");
 }
@@ -148,6 +150,20 @@ TEST(WifiConnectFeedbackTask, cancelled)
     CHECK(requests == 1, "a password is sent");
 }
 
+static void user_turns_off(void) { NetworkLWIP_WiFi :: disable(NULL); }
+
+// The user turns the radio off while a pick is under way: the module's own leave (reason
+// 8) and EVENT_DISABLED follow, and nothing is said about the pick 20 s later, while Disabled
+TEST(WifiConnectFeedbackTask, disable_ends_a_pending_pick)
+{
+    reset_world();
+    world.enabled = true;
+    boot({ pick, Step(user_turns_off), disconnected(8), EVENT_DISABLED,
+           late(Step(EVENT_DISCONNECTED), 25 * configTICK_RATE_HZ) });
+    CHECK(wifi.getState() == eWifi_Disabled || wifi.getState() == eWifi_NotConnected, "radio off");
+    CHECK(messages[0] == 0, "no message about the pick");
+}
+
 #if U64 != 2
 // A radio-off confirmation due in 10 s, and a connect outcome due in 20 s: the task wakes
 // when the radio-off one is due, then when the other is. The pick comes while the boot's
@@ -163,7 +179,9 @@ TEST(WifiConnectFeedbackTask, wakes_for_the_radio_off_deadline_first)
     CHECK(message_at == 1000 + (20 * configTICK_RATE_HZ), "exactly at its deadline, 20 s");
 }
 
-// The reverse: the radio off is asked again (the module restarted) when the connect outcome
+static void user_disable(void) { NetworkLWIP_WiFi :: disable(NULL); }
+
+// The reverse: the user turns the radio off (no confirmation comes) when the connect outcome
 // is almost due. The task wakes for the outcome, which is due first, not 10 s later.
 TEST(WifiConnectFeedbackTask, wakes_for_the_connect_deadline_first)
 {
@@ -171,10 +189,9 @@ TEST(WifiConnectFeedbackTask, wakes_for_the_connect_deadline_first)
     world.enabled = true;
     const TickType_t picked_at = 1000;
     boot({ pick,
-           late(Step(EVENT_DISABLED), 1000),
-           late(Step(EVENT_RESTARTED), (20 * configTICK_RATE_HZ) - 1500) });
-    // the pick at 1000 gives a deadline at 1000 + 4000; the restart comes at 4500
-    CHECK(strchr(rlog, 'O') != NULL, "the radio off is asked again");
+           late(Step(user_disable), (20 * configTICK_RATE_HZ) - 500) });
+    // the pick at 1000 gives a deadline at 1000 + 4000; the Disable comes at 4500
+    CHECK(strchr(rlog, 'O') != NULL, "the radio off is asked for");
     CHECK(strcmp(messages, "Could not connect to HomeNet\n") == 0, "the outcome is reported");
     CHECK(message_at == picked_at + (20 * configTICK_RATE_HZ), "at its deadline, not at the radio off one");
 }
