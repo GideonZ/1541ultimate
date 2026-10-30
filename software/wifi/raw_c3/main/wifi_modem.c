@@ -492,6 +492,12 @@ esp_err_t attempt_connect(const char *ssid, const char *passwd, uint8_t authmode
     memcpy(&wifi_config_auto.sta.password, passwd, 64);
     wifi_config_auto.sta.pmf_cfg.capable = true;
     wifi_config_auto.sta.pmf_cfg.required = false;
+    // One network often has several access points under the same SSID. The
+    // default fast scan joins the first of them it hears, going up from
+    // channel 1, however far away that one is. Scan all channels and take the
+    // one with the strongest signal; the others stay as fallbacks.
+    wifi_config_auto.sta.scan_method = WIFI_ALL_CHANNEL_SCAN;
+    wifi_config_auto.sta.sort_method = WIFI_CONNECT_AP_BY_SIGNAL;
 
     esp_err_t err = esp_wifi_set_config(WIFI_IF_STA, &wifi_config_auto);
     if (err == ESP_OK) {
