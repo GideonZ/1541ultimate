@@ -26,5 +26,7 @@ esp_err_t wifi_clear_aps(void);
 void enable_hook();
 void disable_hook();
 uint8_t wifi_get_connection();
+void wifi_report_disabled(void);
+void wifi_note_identify(void);
 
 #endif

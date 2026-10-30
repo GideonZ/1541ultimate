@@ -196,6 +196,7 @@ typedef struct {
 #define EVENT_RESCAN        0x44
 #define EVENT_KEEPALIVE     0x45
 #define EVENT_DISABLED      0x46
+#define EVENT_RESTARTED     0x47 // the module restarted on its own (radio_boot.h)
 
 #define EVENT_BUTTON        0x80
 #define EVENT_FREEZE        0x81

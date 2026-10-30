@@ -47,6 +47,9 @@ public:
     static SubsysResultCode_e disconnect(SubsysCommand *cmd);
     static SubsysResultCode_e rescan(SubsysCommand *cmd);
     static SubsysResultCode_e enable(SubsysCommand *cmd);
+#if U64 != 2
+    static void set_enabled(bool on);
+#endif
     static SubsysResultCode_e disable(SubsysCommand *cmd);
     static SubsysResultCode_e manual_connect(SubsysCommand *cmd);
     static SubsysResultCode_e auto_connect(SubsysCommand *cmd);
@@ -59,6 +62,10 @@ public:
     static void cfg_enable(UserInterface *intf, ConfigItem *it);
     static void cfg_disable(UserInterface *intf, ConfigItem *it);
     static void cfg_forget(UserInterface *intf, ConfigItem *it);
+#if U64 != 2
+    static int wifi_enable_change(ConfigItem *it);
+    bool enabled_in_config(void);
+#endif
 
     // from ConfigurableObject
     void effectuate_settings(void);
