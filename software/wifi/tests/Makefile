@@ -54,7 +54,7 @@ NEEDED      := send_event wifi_event_handler attempt_connect wifi_connect_to_sca
 # changed and puts back what was there before. Every one has to make the suite FAIL (a failing
 # check, not a build error); `make red` prints which checks failed. A fix that a module
 # does not have, or whose cases are not in this commit, has no entry.
-RED_FIXES := 1 2
+RED_FIXES := 1 2 4
 
 # 1  The radio switch (U64, U2+L): no Disable is served, and the radio goes on at boot, as
 #    on a module without the switch
@@ -71,6 +71,12 @@ LEGACY_2_u64ctrl := $(LEGACY_CONNECT) \
     -e 's/if (state == ScannedAPs) {/if (state != Connected) {/' -e 's/if (state == StoredAPs) {/if (state != Connected) {/' \
     -e '/^ *user_disconnected = false;$$/{' -e 'N' -e '/ESP_LOGI(TAG, "Starting WiFi.")/s/^.*\n//' -e '}' \
     -e '/if (\*state == Disabled) {$$/{' -e 'N' -e '/a scan does not turn it on/s/(\*state == Disabled)/(0)/' -e '}'
+
+# 4  The first AP of the SSID that answers is joined, not the strongest
+LEGACY_NOTSTRONGEST := -e '/sta.scan_method = WIFI_ALL_CHANNEL_SCAN;/d' -e '/sta.sort_method = WIFI_CONNECT_AP_BY_SIGNAL;/d'
+LEGACY_4_raw_u64 := $(LEGACY_NOTSTRONGEST)
+LEGACY_4_raw_c3  := $(LEGACY_NOTSTRONGEST)
+LEGACY_4_u64ctrl := $(LEGACY_NOTSTRONGEST)
 
 LEGACY = $(LEGACY_$(FIX)_$(M))
 
