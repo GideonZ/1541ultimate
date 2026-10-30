@@ -18,8 +18,18 @@ def prepare(root):
     if actual == manifest["after"]:
         print("HTTP response-framing patch already verified")
         return
-    if actual != manifest["before"]:
-        raise RuntimeError("HTTP parser differs from the public pin; preserve and inspect local changes")
+    # A reused submodule checkout restores tracked files but can leave files
+    # created by our patch. Keep only additions with the exact reviewed content;
+    # every tracked input must still match the public pin before applying it.
+    retained = []
+    for name, expected in manifest["before"].items():
+        if actual[name] == expected:
+            continue
+        if expected is None and actual[name] == manifest["after"][name]:
+            retained.append("--exclude=software/httpd/" + name)
+            continue
+        raise RuntimeError("HTTP parser differs from the public pin at " + name +
+                           "; preserve and inspect local changes")
     # Git for Windows may check these text files out as CRLF. Normalize only
     # after their complete contents have matched the reviewed source hashes.
     for name, value in manifest["before"].items():
@@ -28,8 +38,9 @@ def prepare(root):
             path.write_bytes(path.read_bytes().replace(b"\r\n", b"\n"))
     # Run from the firmware root: Git otherwise interprets paths differently
     # when this directory has no submodule metadata (for example a source export).
-    subprocess.run(["git", "apply", "--check", "--directory=software/httpd", str(patch)], cwd=root, check=True)
-    subprocess.run(["git", "apply", "--directory=software/httpd", str(patch)], cwd=root, check=True)
+    command = ["git", "apply", "--directory=software/httpd", *retained, str(patch)]
+    subprocess.run(command + ["--check"], cwd=root, check=True)
+    subprocess.run(command, cwd=root, check=True)
     if any(digest((directory / name).read_bytes().replace(b"\r\n", b"\n")) != value
            for name, value in manifest["after"].items()):
         raise RuntimeError("HTTP parser result hash mismatch")

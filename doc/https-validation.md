@@ -4,7 +4,7 @@ This is a draft review candidate, not an installation or hardware qualification.
 The initial host and cross-build snapshot is
 `fb8c76ab3141135f33aa74533ec068f608788d1f`. Documentation and explicit CI package
 declarations added after this snapshot do not change the tested firmware inputs.
-The subsequent factory-test correction and its local verification are recorded below.
+The subsequent factory-test and parser-preparation corrections are recorded below.
 
 ## Results
 
@@ -63,6 +63,32 @@ Local checks on the correction passed:
 Cross-builds used xPack RISC-V GCC 11.3.0. These results are local; the full hosted
 multi-board Build job has not been rerun with this correction. No firmware was
 installed or executed on a device. Previous hardware and installation gates remain.
+
+## Reused-checkout parser preparation
+
+The next [hosted Build run](https://github.com/GideonZ/1541ultimate/actions/runs/41031130807/job/123980867788)
+at `5953aaf` stopped before compilation: parser inputs did not match the complete
+before or after manifest. Its log shows a reused checkout with a top-level reset
+and forced submodule checkout. It does not include individual parser file hashes.
+
+A local regression reproduces the same error with that checkout sequence:
+tracked files return to the public pin, but the patch-created, untracked
+`response_test.cpp` survives. Preparation now retains that addition only when it
+matches the reviewed result hash and all tracked inputs match the public pin.
+It applies the remaining entries and verifies all result hashes. Unknown contents
+are still rejected, and no broad cleanup or reset was added to preparation.
+
+All 14 preparation tests pass, including three consecutive real submodule
+checkout/reset cycles, repeat application, source exports, LF/CRLF inputs and
+preservation of unrelated files. Negative tests check that modified or missing
+inputs, partial patches and changed patch contents fail without writing files.
+The local workflow changes add this regression to both jobs.
+
+The corrected preparation also passes the full 81-stage host suite (18,865 counted
+assertions, 37 parser tests and 184 TLS cases with recovery), the independent host
+evidence audit and all seven evidence rejection controls. Default U64-II application
+and factory cross-builds pass. The regression fails with the original helper.
+These are local results; hosted CI has not run with this preparation correction.
 
 ## Provenance and limits
 
