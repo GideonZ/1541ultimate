@@ -440,6 +440,21 @@ def build_parser() -> argparse.ArgumentParser:
                         help="Stop at the first failing suite instead of "
                              "running the rest.")
 
+    https = parser.add_argument_group(
+        "controlled HTTPS campaign",
+        "Use only with -s https-hardware and a new -o directory. No ordinary "
+        "device setup, retries or recovery commands run. The installation "
+        "record supplies the sole device address.")
+    https.add_argument("--https-action", choices=("prepare", "execute", "audit"),
+                       help="Default: prepare offline. Execute requires an "
+                            "installation record; audit reads saved evidence only.")
+    https.add_argument("--https-plan", metavar="JSON", help="Fixed 43-case plan.")
+    https.add_argument("--https-installation", metavar="JSON",
+                       help="Fresh installation record with hashed gate evidence.")
+    https.add_argument("--https-evidence", metavar="DIR",
+                       help="Completed campaign directory to audit offline.")
+    https.add_argument("--https-peer", action="append", default=[], metavar="JSONL",
+                       help="Complete, stopped peer log for audit (repeatable).")
     return parser
 
 

@@ -61,6 +61,7 @@ from runtests.exits import (  # noqa: E402
     EXIT_OK, EXIT_RECOVERED, EXIT_SUITE_FAILED, combine_exit_codes,
     describe_exit, die)
 from runtests.identity import run_identity  # noqa: E402
+from runtests.https import dispatch as dispatch_https  # noqa: E402
 from runtests.model import Options, Result  # noqa: E402
 from runtests.recording import (  # noqa: E402
     check_recording_options, start_recorder, stop_recorder)
@@ -87,6 +88,9 @@ class Suite:
     long wall-clock wait, or a device setting it changes, so it runs only from
     the deep profile up, or when named with -s.
 
+    `explicit_only` requires -s even under deep/exhaustive or --manual. Its
+    controlled dispatch must reject ordinary orchestration before device setup.
+
     `profile` is the shallowest profile that runs this suite, in the vocabulary
     of tests/lib/profiles.py. It is the suite's own tag: it says what the suite
     costs, and each profile decides what to do with that. A suite that does not
@@ -100,6 +104,8 @@ class Suite:
     args: str
     manual: bool = False
     profile: str = profiles.STANDARD
+    # Controlled campaigns are never selected by profiles, --all or --manual.
+    explicit_only: bool = False
 
     @property
     def needs_device(self) -> bool:
@@ -111,12 +117,18 @@ class Suite:
         dirty. Eight of the e2e suites are in that position, four of them in
         the smoke profile, where the gates were most of the run.
         """
-        return "@HOST@" in self.args
+        return self.explicit_only or "@HOST@" in self.args
 
 
 # Every executable test under tests/ is listed here; there is no exception.
 #   find tests -name '*_test.py' -not -path '*/__pycache__/*'
 SUITES: Sequence[Suite] = (
+    # Dispatched before ordinary device setup. Its installation record is the
+    # sole target authority; no health probes, settings writes or retries.
+    Suite("e2e", "https-hardware", "tests/lib/runtests/https.py", "",
+          manual=True, explicit_only=True),
+    Suite("e2e", "https-runner-policy", "tests/lib/https_runner_policy_test.py", "",
+          profile=profiles.QUICK),
     # ---------------------------------------------------------------- e2e --
     # Needs no device: it runs ruff over tests/ and this file with the
     # configuration in tests/ruff.toml. The tree had no lint configuration and
@@ -1057,6 +1069,8 @@ def selected_suites(category: str, names: list[str], manual: bool,
             if suite.name in names:
                 chosen.append(suite)
             continue
+        if suite.explicit_only:
+            continue
         if suite.manual and not wants_manual:
             continue
         if not profiles.includes(suite.profile, profile):
@@ -1085,6 +1099,8 @@ def plan_reason(suite: Suite, names: list[str], manual: bool,
         return PLAN_NOT_SELECTED
     if suite.category not in categories:
         return PLAN_CATEGORY
+    if suite.explicit_only:
+        return "explicit-only"
     if suite.manual and not manual:
         return PLAN_MANUAL
     return PLAN_CATEGORY
@@ -1144,6 +1160,7 @@ def print_listing() -> None:
             if suite.category == category:
                 print("  %-28s %-11s %-52s %s"
                       % (suite.name, suite.profile, suite.path,
+                         "explicit-only" if suite.explicit_only else
                          "manual" if suite.manual else "auto"))
 
 
@@ -1352,6 +1369,12 @@ def main(argv: list[str]) -> int:
     if args.list:
         print_listing()
         return 0
+
+    # Must precede target resolution, recorder startup, settings capture and
+    # every health/reset path. This campaign owns its evidence-gated execution.
+    controlled = dispatch_https(args, build_parser().parse_args([]), Path(ROOT))
+    if controlled is not None:
+        return controlled
 
     # Before anything is resolved or started, so a flag that would have done
     # nothing is a message rather than a run that quietly recorded nothing.
