@@ -44,6 +44,7 @@ class WiFi : public Esp32Application
     NetworkLWIP_WiFi *netstack;
 
     WifiState_t state;
+    WifiState_t state_before_scan; // the state a scan of the AP list returns to
     uint8_t event_when_enabled;    // an event of the user to send once the radio is on again (0: none)
     char    last_ap[32];
     char    moduleName[34];
