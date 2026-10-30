@@ -12,6 +12,8 @@
 
 extern "C" {
 esp_err_t air_attempt_connect(const char *ssid, const char *pw, uint8_t auth, const uint8_t *bssid, uint8_t channel);
+// The dispatcher takes a CMD_WIFI_CONNECT, then the connector handles it; true if it connected
+int air_connect_request(command_buf_t *request);
 }
 
 /* One network, three APs: the far one on channel 1, the near one on 6, one between on 11,

@@ -54,7 +54,7 @@ NEEDED      := send_event wifi_event_handler attempt_connect wifi_connect_to_sca
 # changed and puts back what was there before. Every one has to make the suite FAIL (a failing
 # check, not a build error); `make red` prints which checks failed. A fix that a module
 # does not have, or whose cases are not in this commit, has no entry.
-RED_FIXES := 1 2 4
+RED_FIXES := 1 2 4 5
 
 # 1  The radio switch (U64, U2+L): no Disable is served, and the radio goes on at boot, as
 #    on a module without the switch
@@ -77,6 +77,12 @@ LEGACY_NOTSTRONGEST := -e '/sta.scan_method = WIFI_ALL_CHANNEL_SCAN;/d' -e '/sta
 LEGACY_4_raw_u64 := $(LEGACY_NOTSTRONGEST)
 LEGACY_4_raw_c3  := $(LEGACY_NOTSTRONGEST)
 LEGACY_4_u64ctrl := $(LEGACY_NOTSTRONGEST)
+
+# 5  The AP picked from the list (BSSID, channel) is not honoured
+LEGACY_NOPICK := -e 's/if (bssid \&\& memcmp(bssid, "\\0\\0\\0\\0\\0\\0", 6)) {/if (0) {/'
+LEGACY_5_raw_u64 := $(LEGACY_NOPICK)
+LEGACY_5_raw_c3  := $(LEGACY_NOPICK)
+LEGACY_5_u64ctrl := $(LEGACY_NOPICK)
 
 LEGACY = $(LEGACY_$(FIX)_$(M))
 

@@ -575,7 +575,8 @@ int WiFi ::getAccessPointItems(Browsable *parent, IndexedList<Browsable *> &list
     }
     ENTER_SAFE_SECTION;
     for (int i = 0; i < aps->num_records; i++) {
-        list.append(new BrowsableWifiAP(parent, (char *)aps->aps[i].ssid, aps->aps[i].rssi, aps->aps[i].authmode));
+        list.append(new BrowsableWifiAP(parent, (char *)aps->aps[i].ssid, aps->aps[i].rssi, aps->aps[i].authmode,
+                                        aps->aps[i].bssid, aps->aps[i].channel));
     }
     LEAVE_SAFE_SECTION;
     return aps->num_records;
@@ -599,7 +600,8 @@ SubsysResultCode_e BrowsableWifiAP :: connect_ap(SubsysCommand *cmd)
             cmd->user_interface->string_box("Enter password", password, 64);
         }
     }
-    int result = wifi_wifi_connect(bap->ssid, password, bap->auth);
+    // The AP picked, not just any AP with its SSID
+    int result = wifi_wifi_connect(bap->ssid, password, bap->auth, bap->bssid, bap->channel);
     printf("Connect result: %d\n", result);
     if (result == 0) {
         //wifi.sendEvent(EVENT_CONNECTED);

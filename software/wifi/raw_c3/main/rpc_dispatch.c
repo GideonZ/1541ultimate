@@ -101,6 +101,8 @@ void cmd_wifi_connect(command_buf_t *buf)
         return;
 }
 
+    // An application that predates the BSSID sends the shorter request
+    int with_bssid = (buf->size >= (int)sizeof(rpc_wifi_connect_req));
     buf->size = sizeof(rpc_espcmd_resp);
     ConnectCommand_t ev;
     ev.buf = buf;
@@ -110,6 +112,12 @@ void cmd_wifi_connect(command_buf_t *buf)
     ev.ssid[32] = 0;
     memcpy(&ev.pw, param->password, 64);
     ev.pw[64] = 0;
+    memset(ev.bssid, 0, 6);
+    ev.channel = 0;
+    if (with_bssid) {
+        memcpy(ev.bssid, param->bssid, 6);
+        ev.channel = param->channel;
+    }
 
     if (xQueueSend(connect_commands, &ev, 1000) == pdFALSE) {
         resp->esp_err = ESP_ERR_NO_MEM;

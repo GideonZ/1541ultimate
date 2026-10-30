@@ -36,6 +36,9 @@ struct World {
     bool loopback_fails;  // the task's queue refuses an event of its own
     const char *pick_ssid; // the AP the user picks from the list (see pick())
     int pick_auth;         // and whether it wants a password
+    uint8_t pick_bssid[6]; // its BSSID and channel in the list
+    uint8_t pick_channel;
+    const char *password;  // what the user types in the password box
     int popup_answer;      // BUTTON_YES or BUTTON_NO, to "WiFi is disabled. Enable it?"
 };
 extern World world;

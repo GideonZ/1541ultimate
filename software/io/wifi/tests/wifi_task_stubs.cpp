@@ -20,6 +20,8 @@ const char *ended = "";
 TickType_t now;
 int first_wait_state;
 static jmp_buf done;
+static DmaUART uart;
+static command_buf_context_t packets;
 static int calls;
 static int waits;
 
@@ -74,8 +76,14 @@ void reset_world(void)
     saves = 0;
     saved_enabled = false;
     memset(&world, 0, sizeof(world));
+    esp32.uart = &uart; // for a request made outside a script
+    requests = 0;
     world.voltages_vbus = 12000; // above the low input voltage warning (U64=2)
     world.pick_ssid = "HomeNet";
+    static const uint8_t bssid[6] = { 0x02, 0x00, 0x00, 0x00, 0x00, 0x01 };
+    memcpy(world.pick_bssid, bssid, 6);
+    world.pick_channel = 6;
+    world.password = "";
     string_box_result = 1;
     world.popup_answer = BUTTON_YES;
     popups = 0;
@@ -113,7 +121,7 @@ BaseType_t DmaUART :: GetBuffer(command_buf_t **b, TickType_t t)
     if (world.no_tx_buffer) {
         return pdFALSE;
     }
-    memset(&txbuf, 0, sizeof(txbuf));
+    memset(&txbuf, 0xAA, sizeof(txbuf)); // a request has to set every field it sends
     *b = &txbuf;
     return pdTRUE;
 }
@@ -137,7 +145,11 @@ void UserInterface :: activate_uiobject(TreeBrowser *tb) { note('T'); }
 SubsysResultCode_e NetworkLWIP_WiFi :: manual_connect(SubsysCommand *cmd) { note('k'); return SSRET_OK; }
 int wifi_wifi_autoconnect() { note('a'); return 0; }
 
-int UserInterface :: string_box(const char *msg, char *buffer, int maxlen) { buffer[0] = 0; return string_box_result; }
+int UserInterface :: string_box(const char *msg, char *buffer, int maxlen)
+{
+    strncpy(buffer, world.password, maxlen);
+    return string_box_result;
+}
 void BrowsableWifiAP :: fetch_context_items(IndexedList<Action *> &items) {}
 
 // The request channel: wifi_wifi_connect (cut out of wifi_cmd.cc) sends through these. The
@@ -242,9 +254,6 @@ void WiFi :: RefreshAPs() {}
 void WiFi :: Start() {}
 void WiFi :: Terminate() {}
 
-static DmaUART uart;
-static command_buf_context_t packets;
-
 void boot(std::initializer_list<Step> steps)
 {
 #if U64 != 2
@@ -295,7 +304,7 @@ const char *after(char c)
 
 void pick(void)
 {
-    BrowsableWifiAP ap(NULL, (char *)world.pick_ssid, -50, world.pick_auth);
+    BrowsableWifiAP ap(NULL, (char *)world.pick_ssid, -50, world.pick_auth, world.pick_bssid, world.pick_channel);
     UserInterface ui;
     SubsysCommand cmd;
     cmd.functionID = (intptr_t)&ap;
