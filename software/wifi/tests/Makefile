@@ -54,12 +54,23 @@ NEEDED      := send_event wifi_event_handler attempt_connect wifi_connect_to_sca
 # changed and puts back what was there before. Every one has to make the suite FAIL (a failing
 # check, not a build error); `make red` prints which checks failed. A fix that a module
 # does not have, or whose cases are not in this commit, has no entry.
-RED_FIXES := 1
+RED_FIXES := 1 2
 
 # 1  The radio switch (U64, U2+L): no Disable is served, and the radio goes on at boot, as
 #    on a module without the switch
 LEGACY_1_raw_u64 := -e 's/case CMD_WIFI_DISABLE:/case 0x7F:/' -e 's/return Disabled;/return LastAP;/'
 LEGACY_1_raw_c3  := $(LEGACY_1_raw_u64)
+
+# 2  The control module: a Disable or Autoconnect taken in the AP walks is overwritten by the
+#    line after the loop, an Enable does not spend an earlier Disconnect, and a Scan in Disabled
+#    starts the radio. All three: a Connect only leaves Disabled for the retry, not Connected
+LEGACY_CONNECT := -e '/case CMD_WIFI_CONNECT:/,/last_connect = \*cmd;/s/if (err == ESP_OK) {/if ((err == ESP_OK) \&\& (*state == Disabled)) {/'
+LEGACY_2_raw_u64 := $(LEGACY_CONNECT)
+LEGACY_2_raw_c3  := $(LEGACY_CONNECT)
+LEGACY_2_u64ctrl := $(LEGACY_CONNECT) \
+    -e 's/if (state == ScannedAPs) {/if (state != Connected) {/' -e 's/if (state == StoredAPs) {/if (state != Connected) {/' \
+    -e '/^ *user_disconnected = false;$$/{' -e 'N' -e '/ESP_LOGI(TAG, "Starting WiFi.")/s/^.*\n//' -e '}' \
+    -e '/if (\*state == Disabled) {$$/{' -e 'N' -e '/a scan does not turn it on/s/(\*state == Disabled)/(0)/' -e '}'
 
 LEGACY = $(LEGACY_$(FIX)_$(M))
 

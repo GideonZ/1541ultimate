@@ -34,6 +34,16 @@ typedef int err_t;
 #endif
 #include "wifi_enable_default.h" // CFG_WIFI_ENABLE and the default of that setting, from network_esp32.cc / .h
 
+// The AP list's browser, as far as the menu uses it
+class BrowsableWifiAPList : public Browsable {};
+class TreeBrowser {
+public:
+    bool has_border, allow_exit, has_path;
+    TreeBrowser(UserInterface *intf, Browsable *root) {}
+    void init(void) {}
+    void setCleanup(void) {}
+};
+
 class ConfigItem;
 
 // The configuration store of the WiFi settings, as far as the menu uses it
@@ -67,6 +77,11 @@ public:
     static void cfg_enable(UserInterface *intf, ConfigItem *it);
     static void cfg_disable(UserInterface *intf, ConfigItem *it);
     static SubsysResultCode_e disable(SubsysCommand *cmd);
+    static SubsysResultCode_e manual_connect(SubsysCommand *cmd);
+    static bool ask_enable(UserInterface *intf);
+    static void cfg_show_aps(UserInterface *intf, ConfigItem *it);
+    static void cfg_enter_ap(UserInterface *intf, ConfigItem *it);
+    static void cfg_conn_last(UserInterface *intf, ConfigItem *it);
     static int wifi_enable_change(class ConfigItem *it);
 };
 

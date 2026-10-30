@@ -44,6 +44,7 @@ class WiFi : public Esp32Application
     NetworkLWIP_WiFi *netstack;
 
     WifiState_t state;
+    uint8_t event_when_enabled;    // an event of the user to send once the radio is on again (0: none)
     char    last_ap[32];
     char    moduleName[34];
     char    moduleType[24];
@@ -84,6 +85,7 @@ public:
 
     void sendEvent(uint8_t code);
     void sendConnectEvent(const char *ssid, const char *pass, uint8_t auth);
+    void sendEventWhenEnabled(uint8_t code) { event_when_enabled = code; } // after the radio is on again
     void freeBuffer(command_buf_t *buf);
     int  getAccessPointItems(Browsable *parent, IndexedList<Browsable *> &list);
 

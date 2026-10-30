@@ -31,6 +31,7 @@ WiFi :: WiFi()
 {
     runModeTask = NULL;
     state = eWifi_Off;
+    event_when_enabled = 0;
     bzero(my_mac, 6);
     wifi_aps.num_records  = 0;
     my_ip = 0;
@@ -427,13 +428,11 @@ void WiFi :: RunModeThread()
             switch(hdr->command) {
             case EVENT_RESCAN: // requested from user interface
                 uart->FreeBuffer(buf);
-#if U64 != 2
                 // Disabled means no RF, also while the radio off waits to be confirmed:
                 // the module does not scan with its radio off
-                if ((state == eWifi_Disabled) || radio_switch.awaiting_off) {
+                if ((state == eWifi_Disabled) || RadioOffAwaited()) {
                     break;
                 }
-#endif
                 netstack->link_down();
                 state = eWifi_Scanning;
                 RefreshRoot();
@@ -455,6 +454,8 @@ void WiFi :: RunModeThread()
             case EVENT_DISABLED:
                 uart->FreeBuffer(buf);
                 state = eWifi_Disabled;
+                event_when_enabled = 0;
+                wifi_aps.num_records = 0; // nothing to pick while the radio is off
                 netstack->link_down();
                 RefreshRoot();
                 break;
@@ -479,6 +480,10 @@ void WiFi :: RunModeThread()
                 state = eWifi_NotConnected;
                 if(netstack) {
                     netstack->link_down();
+                }
+                if (event_when_enabled) { // the radio is on again: what the user asked for
+                    sendEvent(event_when_enabled);
+                    event_when_enabled = 0;
                 }
                 RefreshRoot();
                 break;
@@ -579,6 +584,9 @@ SubsysResultCode_e BrowsableWifiAP :: connect_ap(SubsysCommand *cmd)
 {
     char password[65] = { 0 }; // string_box takes 64 characters plus the terminator
     BrowsableWifiAP *bap = (BrowsableWifiAP *)cmd->functionID;
+    if ((wifi.getState() == eWifi_Disabled) && !NetworkLWIP_WiFi :: ask_enable(cmd->user_interface)) {
+        return SSRET_OK;
+    }
     if (bap->auth) {
         if(cmd->user_interface) {
             cmd->user_interface->string_box("Enter password", password, 64);

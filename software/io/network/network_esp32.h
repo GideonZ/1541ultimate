@@ -47,6 +47,7 @@ public:
     static SubsysResultCode_e disconnect(SubsysCommand *cmd);
     static SubsysResultCode_e rescan(SubsysCommand *cmd);
     static SubsysResultCode_e enable(SubsysCommand *cmd);
+    static bool ask_enable(UserInterface *intf);
 #if U64 != 2
     static void set_enabled(bool on);
 #endif

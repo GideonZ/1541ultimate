@@ -315,11 +315,17 @@ SubsysResultCode_e NetworkLWIP_WiFi :: manual_connect(SubsysCommand *cmd)
 void NetworkLWIP_WiFi :: cfg_show_aps(UserInterface *intf, ConfigItem *it)
 {
     WifiState_t state = wifi.getState();
-    if ((state != eWifi_NotConnected) && (state != eWifi_Connected)) {
+    if (state == eWifi_Disabled) {
+        if (!ask_enable(intf)) {
+            return;
+        }
+        wifi.sendEventWhenEnabled(EVENT_RESCAN); // the radio is not on yet
+    } else if ((state != eWifi_NotConnected) && (state != eWifi_Connected)) {
         intf->popup("Can only show APs when active", BUTTON_OK);
         return;
+    } else {
+        wifi.sendEvent(EVENT_RESCAN);
     }
-    wifi.sendEvent(EVENT_RESCAN);
     BrowsableWifiAPList *broot = new BrowsableWifiAPList(); // new root!
     TreeBrowser *tb = new TreeBrowser(intf, broot);
     tb->has_border = true;
@@ -335,7 +341,10 @@ void NetworkLWIP_WiFi :: cfg_show_aps(UserInterface *intf, ConfigItem *it)
 void NetworkLWIP_WiFi :: cfg_enter_ap(UserInterface *intf, ConfigItem *it)
 {
     WifiState_t state = wifi.getState();
-    if ((state != eWifi_NotConnected) && (state != eWifi_Connected)) {
+    if ((state == eWifi_Disabled) && !ask_enable(intf)) {
+        return;
+    }
+    if ((state != eWifi_NotConnected) && (state != eWifi_Connected) && (state != eWifi_Disabled)) {
         intf->popup("Can only connect when active", BUTTON_OK);
         return;
     }
@@ -346,7 +355,10 @@ void NetworkLWIP_WiFi :: cfg_enter_ap(UserInterface *intf, ConfigItem *it)
 void NetworkLWIP_WiFi :: cfg_conn_last(UserInterface *intf, ConfigItem *it)
 {
     WifiState_t state = wifi.getState();
-    if ((state != eWifi_NotConnected) && (state != eWifi_Connected)) {
+    if ((state == eWifi_Disabled) && !ask_enable(intf)) {
+        return;
+    }
+    if ((state != eWifi_NotConnected) && (state != eWifi_Connected) && (state != eWifi_Disabled)) {
         intf->popup("Can only connect when active", BUTTON_OK);
         return;
     }
@@ -438,6 +450,17 @@ SubsysResultCode_e NetworkLWIP_WiFi :: enable(SubsysCommand *cmd)
     wifi.RadioOn();
 #endif
     return SSRET_OK;
+}
+
+// A scan or connect while WiFi is disabled: ask, and on Yes enable it. False: nothing is
+// enabled, and the action is dropped.
+bool NetworkLWIP_WiFi :: ask_enable(UserInterface *intf)
+{
+    if (!intf || (intf->popup("WiFi is disabled. Enable it?", BUTTON_YES|BUTTON_NO) != BUTTON_YES)) {
+        return false;
+    }
+    enable(NULL); // the Enable action
+    return true;
 }
 
 // Browsable APs
