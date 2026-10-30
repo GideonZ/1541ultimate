@@ -12,6 +12,7 @@
 #endif
 #endif
 #include "wifi.h"
+#include "provider_wifi_ingress.h"
 #include "socket.h"
 #include "u64.h"
 #include "dump_hex.h"
@@ -30,6 +31,14 @@
 #define EVENT_TERM   0xF2
 
 WiFi wifi;
+bool wifi_provider_receive(command_buf_t *buffer)
+{
+    if (wifi.ReceiveProviderIdentity(buffer) || wifi.ReceiveProviderControl(buffer)) return true;
+    const rpc_header_t *header = (const rpc_header_t *)buffer->data;
+    if (header->command == EVENT_DISCONNECTED || header->command == EVENT_DISABLED || header->command == EVENT_RESCAN)
+        WiFi::ProviderLinkLoss();
+    return false;
+}
 ultimate_ap_records_t wifi_aps;
 InitFunction wifi_init("WiFi Application", WiFi::Init, NULL, NULL, 52); // after LWIP
 

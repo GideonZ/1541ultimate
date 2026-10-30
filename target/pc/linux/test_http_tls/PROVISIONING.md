@@ -44,10 +44,10 @@ do not establish physical durability, endurance or rollback protection.
 `TlsPolicy` before owner startup. Parsing must succeed for the entire bundle;
 input is bounded to 64 KiB and live replacement is refused.
 
-The opt-in `ULTIMATE_PROVIDER_SOURCES` configuration instead selects the full
-certificate bundle in the pinned ESP-IDF 5.3.6 source. Its `cacrt_all.pem` SHA-256
-is `1794c1d4f7055b7d02c2170337b61b48a2ef6c90d77e95444fd2596f4cac609f`.
-Custom/deprecated root additions and changed bundle bytes fail the build. Roots
+The opt-in `ULTIMATE_PROVIDER_SOURCES` configuration instead selects the repository
+certificate bundle in `software/u64ctrl/ca/cacert.pem`, shared with recovery. Its
+SHA-256 is `796f1389bfea13c0ed78f663b765baaff54a508e5483786bd6ece73c5e3e3cbe`.
+SDK default roots, deprecated additions and changed bundle bytes fail the build. Roots
 are initialized before owner startup and updated through a reviewed firmware
 build, never downloaded at runtime. This does not establish secure firmware
 delivery or rollback protection; those require product-level qualification.
@@ -103,7 +103,7 @@ readable and cause installation to fail; new settings are allocated elsewhere.
 ConfigManager initialization calls `provider_journal_prepare` once. Read-only
 discovery requires two valid records with matching domains and consecutive
 counters. Startup then commits one new epoch and caches the identity. The native
-owner is created once after the Wi-Fi command task starts, with a one-use identity
+owner is created once after application identification and transport initialization, with a one-use identity
 source that performs no flash I/O. Task creation/binding failure burns the identity
 and cannot retry. A missing, invalid or partially installed journal never starts
 the owner. A completed installation whose final acknowledgment was lost can be

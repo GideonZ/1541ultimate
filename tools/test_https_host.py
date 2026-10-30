@@ -45,6 +45,9 @@ def main():
 
     save()
     run("parser-prepare", [sys.executable, root / "tools/prepare_http_parser.py"])
+    run("wifi-replies", ["make", "-C", root / "target/pc/linux/wifireply", "-j1", "test"])
+    run("parser-tests", ["make", "-C", root / "software/httpd/c-version/tests",
+                         "CXXFLAGS=-std=c++17 -g -fsanitize=address,undefined -fno-sanitize-recover=all", "all"])
     build = output / "tls-build"
     run("tls-configure", ["cmake", "-S", root / "target/pc/linux/test_http_tls",
                           "-B", build, "-G", "Ninja", "-DTLS_STREAM_ROOT=" + str(tls)])

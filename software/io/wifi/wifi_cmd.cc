@@ -1,6 +1,6 @@
 #include "wifi_cmd.h"
 #ifndef RECOVERYAPP
-#include "wifi.h"
+#include "provider_wifi_ingress.h"
 #endif
 #include "dump_hex.h"
 
@@ -19,16 +19,12 @@ BaseType_t wifi_rx_isr(command_buf_context_t *context, command_buf_t *buf, BaseT
 {
     if (buf->size < int(sizeof(rpc_header_t)) || buf->size > int(sizeof(buf->data))
 #ifndef RECOVERYAPP
-        || wifi.ReceiveProviderIdentity(buf) || wifi.ReceiveProviderControl(buf)
+        || wifi_provider_receive(buf)
 #endif
     ) {
         return cmd_buffer_free_isr(context, buf, w);
     }
     rpc_header_t *hdr = (rpc_header_t *)buf->data;
-#ifndef RECOVERYAPP
-    if (hdr->command == EVENT_DISCONNECTED || hdr->command == EVENT_DISABLED || hdr->command == EVENT_RESCAN)
-        WiFi::ProviderLinkLoss();
-#endif
     BaseType_t res;
 
     TaskHandle_t thread = (TaskHandle_t)wifi_reply_take(replySlots, hdr->thread, hdr->sequence);

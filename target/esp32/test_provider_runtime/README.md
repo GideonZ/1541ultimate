@@ -39,7 +39,9 @@ chain, hostname and validity checks are mandatory, with no plaintext fallback.
 The fixture supplies a freshly generated test CA and fixture UTC. It deliberately
 marks emulator entropy ready to test the integration path. This does **not**
 qualify physical RNG entropy, production clock provenance or root provisioning.
-Those product decisions remain open; this target must not supply product defaults.
+The selected product policy is documented in
+[PROVISIONING.md](../../pc/linux/test_http_tls/PROVISIONING.md); its physical
+qualification remains open. This target does not establish hardware readiness.
 
 ## Preparing and running
 
@@ -47,7 +49,7 @@ Use frozen source and the standalone TLS revision
 `529b0450955611bd82db921db3bae10222203eba`. The pinned ESP-IDF revision is
 `79e3454c68248bd7d881721c9b2e94561378a8ce`. Generate separate RSA and ECDSA test
 roots, a trusted leaf for `tls.lab.test`, an unrelated-root leaf, and expired and
-future leaves. The local peer utilities in that TLS revision generate these
+future leaves. The public peer utilities in `araxis/ultimate-tls-validation` at that revision generate these
 fixtures. Keep generated private keys local.
 
 Supply a per-run `fixture.h` defining `LAB_RUN_ID`, `LAB_UTC_SECONDS`,
@@ -169,3 +171,11 @@ UART queue intentionally retain firmware lifetime. Per-case global free heap is
 observational, not a new heap recovery or soak claim. These emulator measurements
 do not establish physical UART latency, native manager scheduling or product
 restart identity, trust, UTC and entropy qualification.
+
+## Current source fixture
+
+The source profile uses the same pinned repository CA list as product recovery,
+with SDK default roots disabled. It verifies ISRG Root X1, rejects the private
+fixture CA through the system bundle, and retains date rejection. Explicit private
+roots remain confined to the local fault-injection exchanges. The actual source
+adapter and factory are now implemented; physical qualification remains pending.
