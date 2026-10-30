@@ -32,7 +32,7 @@ jobs:
           submodules: recursive
           persist-credentials: false
       - name: Install host build tools
-        run: sudo apt-get update && sudo apt-get install -y ninja-build libgtest-dev
+        run: sudo apt-get update && sudo apt-get install -y cmake g++ make git openssl python3-cryptography ninja-build libgtest-dev
       - name: Run the device-free regression
         run: python3 tools/test_https_host.py --tls-root "$GITHUB_WORKSPACE/.ci-deps/tls" --output "$RUNNER_TEMP/https-host"
       - name: Retain logs and peer records
