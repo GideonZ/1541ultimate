@@ -12,6 +12,8 @@
 #include "product.h"
 #include "usb_base.h"
 #include "rpc_dispatch.h"
+#include "controller_probe.h"
+#include "../esp32_diagnostic/platform.h"
 
 extern uint32_t _u64e2_50t_swp_start;
 extern uint32_t _u64e2_50t_swp_end;
@@ -68,7 +70,7 @@ static void init_video(void)
 }
 #endif
 
-void update_esp32_impl(void)
+bool update_esp32_impl(void)
 {
     if (esp32.Download() == 0) {
         uint32_t total_size = (uint32_t)&_bootloader_bin_size + (uint32_t)&_partition_table_bin_size + (uint32_t)&_u64ctrl_bin_size;
@@ -89,38 +91,59 @@ void update_esp32_impl(void)
             user_interface->popup("Flashing ESP32 Failed!", BUTTON_OK);
         }
         esp32.EnableRunMode();
+        return status == 0;
     } else {
         user_interface->popup("Could not set ESP32 to download mode", BUTTON_OK);
+        return false;
     }
 }
 
-void update_esp32(void)
+// Runs before setup(): mounting an unformatted flash disk can itself write.
+// No UNKNOWN/equal/newer controller is silently combined with new native code.
+static bool controller_preflight(void)
 {
-    esp32.EnableRunMode();
-    wifi_command_init();
-
-    uint16_t major = 0, minor = 0;
-    char moduleName[32];
-    BaseType_t module_detected;
-    module_detected = wifi_detect(&major, &minor, moduleName, 32);
-    module_detected = wifi_detect(&major, &minor, moduleName, 32); // second time should pass
-    if (module_detected == pdTRUE) {
-        console_print(screen, "WiFi module detected: %s (%d.%d)\n", moduleName, major, minor);
-        
-        // if(user_interface->popup("Want to update the WiFi Module?", BUTTON_YES | BUTTON_NO) == BUTTON_YES) {
-        // Only ever upgrade: installing an older release must not take away
-        // what a newer module does, such as network recovery.
-        if ((major < IDENT_MAJOR) || ((major == IDENT_MAJOR) && (minor < IDENT_MINOR))) {
-            update_esp32_impl();
-        } else if ((major == IDENT_MAJOR) && (minor == IDENT_MINOR)) {
-            console_print(screen, "No WiFi module update needed!\n");
-        } else {
-            console_print(screen, "Newer than this package's %d.%d; kept.\n", IDENT_MAJOR, IDENT_MINOR);
-        }
-    } else {
-        console_print(screen, "WiFi module version not detected.\n");
-        update_esp32_impl();
+    static ControllerProbeHardware probe_hardware;
+    ControllerIdentity identity;
+    diagnostic_line(1, "COORDINATED UPDATE: PREFLIGHT");
+    diagnostic_line(2, "NO PERSISTENT WRITES BEFORE ACCEPTANCE");
+    const uint8_t board = getFpgaType();
+    if ((board != 2 && board != 3) ||
+        (UPDATE_FPGA_TYPE && board != UPDATE_FPGA_TYPE)) {
+        diagnostic_line(4, "STOP: UNSUPPORTED FPGA");
+        return false;
     }
+#if UPDATE_FPGA_TYPE != 3
+    if (board == 2 && calc_checksum((uint8_t *)&_u64e2_50t_swp_start, (uint8_t *)&_u64e2_50t_swp_end) != CHK_u64e2_50t_swp) return false;
+#endif
+#if UPDATE_FPGA_TYPE != 2
+    if (board == 3 && calc_checksum((uint8_t *)&_u64e2_100t_swp_start, (uint8_t *)&_u64e2_100t_swp_end) != CHK_u64e2_100t_swp) return false;
+#endif
+    if (calc_checksum((uint8_t *)&_ultimate_app_start, (uint8_t *)&_ultimate_app_end) != CHK_ultimate_app ||
+        calc_checksum((uint8_t *)&_bootloader_bin_start, (uint8_t *)&_bootloader_bin_start + (uintptr_t)&_bootloader_bin_size) != CHK_bootloader_bin ||
+        calc_checksum((uint8_t *)&_partition_table_bin_start, (uint8_t *)&_partition_table_bin_start + (uintptr_t)&_partition_table_bin_size) != CHK_partition_table_bin ||
+        calc_checksum((uint8_t *)&_u64ctrl_bin_start, (uint8_t *)&_u64ctrl_bin_start + (uintptr_t)&_u64ctrl_bin_size) != CHK_u64ctrl_bin) {
+        diagnostic_line(4, "STOP: BAD PACKAGE CHECKSUM");
+        return false;
+    }
+    // Updater constructors already own the UART. This is one planned module
+    // startup, not a read-only query; the standalone diagnostic never does this.
+    esp32.EnableRunMode();
+    vTaskDelay(pdMS_TO_TICKS(2000));
+    wifi_command_init();
+    esp32.uart->EnableIRQ(false);
+    portENTER_CRITICAL();
+    const ControllerProbeResult result = controller_probe(probe_hardware, identity);
+    portEXIT_CRITICAL();
+    const ControllerInstallDecision decision = controller_install_decision(
+        result == ControllerProbeResult::Identified, identity, IDENT_MAJOR, IDENT_MINOR);
+    diagnostic_line(5, identity.name);
+    if (decision != ControllerInstallDecision::Older) {
+        diagnostic_line(4, decision == ControllerInstallDecision::EqualUnverified ? "STOP: EQUAL VERSION, IMAGE UNVERIFIED" :
+            decision == ControllerInstallDecision::Newer ? "STOP: NEWER CONTROLLER - NO DOWNGRADE" : "STOP: CONTROLLER IDENTITY UNKNOWN");
+        return false;
+    }
+    diagnostic_line(4, "OLDER CONTROLLER: UPDATE ELIGIBLE");
+    return true;
 }
 
 void do_update(void)
@@ -136,7 +159,7 @@ void do_update(void)
 
     uint8_t fpgatype_id = getFpgaType();
     const char *fpga_types[] = { "5CEBA2", "5CEBA4", "XC7A50T", "XC7A100T" };
-    const char *fpgaType = fpga_types[fpgatype_id];
+    const char *fpgaType = fpgatype_id < 4 ? fpga_types[fpgatype_id] : "Unknown";
     console_print(screen, "Detected FPGA Type: %s.\nBoard Revision: %s\n\033\037\n", fpgaType, getBoardRevision());
 
     /* Extra check on the loaded images */
@@ -207,15 +230,21 @@ void do_update(void)
         switch(fpgatype_id) {
 #if UPDATE_FPGA_TYPE != 3
         case 2:
-            flash_buffer_at(flash2, screen, 0x000000, false, &_u64e2_50t_swp_start, &_u64e2_50t_swp_end,   "V1.0", "Runtime FPGA");
-            flash_buffer_at(flash2, screen, 0x220000, false, &_ultimate_app_start,  &_ultimate_app_end,  "V1.0", "Ultimate Application");
+            if (!flash_buffer_at(flash2, screen, 0x000000, false, &_u64e2_50t_swp_start, &_u64e2_50t_swp_end, "V1.0", "Runtime FPGA") ||
+                !flash_buffer_at(flash2, screen, 0x220000, false, &_ultimate_app_start, &_ultimate_app_end, "V1.0", "Ultimate Application")) {
+                flash2->protect_enable();
+                goto failed;
+            }
             write_protect(flash2, 4096);
             break;
 #endif
 #if UPDATE_FPGA_TYPE != 2
         case 3:
-            flash_buffer_at(flash2, screen, 0x000000, false, &_u64e2_100t_swp_start, &_u64e2_100t_swp_end,   "V1.0", "Runtime FPGA");
-            flash_buffer_at(flash2, screen, 0x3C0000, false, &_ultimate_app_start,  &_ultimate_app_end,  "V1.0", "Ultimate Application");
+            if (!flash_buffer_at(flash2, screen, 0x000000, false, &_u64e2_100t_swp_start, &_u64e2_100t_swp_end, "V1.0", "Runtime FPGA") ||
+                !flash_buffer_at(flash2, screen, 0x3C0000, false, &_ultimate_app_start, &_ultimate_app_end, "V1.0", "Ultimate Application")) {
+                flash2->protect_enable();
+                goto failed;
+            }
             write_protect(flash2, 4096); // cannot protect just 5.5 MB... :-(
             break;
 #endif
@@ -224,12 +253,16 @@ void do_update(void)
             goto off;
         }
 #ifndef NO_ESP
-        update_esp32();
+        if (!update_esp32_impl()) {
+            goto failed;
+        }
 #endif
+        reset_config(flash2);
     }
-
-    reset_config(flash2);
-
+    goto off;
+failed:
+    console_print(screen, "Coordinated update FAILED. Stop; preserve this result.\n");
+    for (;;) vTaskDelay(200);
 off:
     esp32.EnableRunMode();
     vTaskDelay(200);
@@ -239,6 +272,16 @@ off:
 
 extern "C" int ultimate_main(int argc, char *argv[])
 {
+#ifdef NO_ESP
+    // A coordinated candidate must never omit its required controller update.
+    diagnostic_line(4, "STOP: CONTROLLER PAYLOAD DISABLED");
+    for (;;) vTaskDelay(200);
+#else
+    if (!controller_preflight()) {
+        diagnostic_line(7, "NOT INSTALLED. NO AUTOMATIC RETRY.");
+        for (;;) vTaskDelay(200);
+    }
+#endif
     i2c->enable_scan(true, false);
     do_update();
     return 0;

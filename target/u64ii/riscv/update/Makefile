@@ -34,6 +34,9 @@ endif
 include ../../../common/environment.mk
 
 FPGA_PATH ?= $(PATH_SW)/../external
+# Optional exact management payload for a coordinated validation package.
+# When pinned, verify it rather than recursively rebuilding it with a new date.
+MANAGEMENT_SHA256 ?=
 
 PRJ      =  update
 FINAL    =  $(RESULT)/$(PRJ).cfw $(RESULT)/$(PRJ).app $(RESULT)/$(PRJ).elf $(OUTPUT)/$(PRJ).sim
@@ -187,7 +190,11 @@ ultimate.chk: ../ultimate/result/ultimate.app
 update_binaries_u64ii.o: $(FPGA_IMAGES:%=%.swp) ../ultimate/result/ultimate.app
 
 ../ultimate/result/ultimate.app::
+ifeq ($(strip $(MANAGEMENT_SHA256)),)
 	make -C ../ultimate
+else
+	@printf '%s  %s\n' '$(MANAGEMENT_SHA256)' '$@' | sha256sum --check
+endif
 
 update_u64ii.o: update_u64ii.cc $(INCLUDES) $(CHK_BIN) ultimate.chk $(FPGA_IMAGES:%=%.chk)
 	@echo "Compiling $(notdir $<)"
