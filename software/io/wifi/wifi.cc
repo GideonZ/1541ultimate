@@ -31,6 +31,7 @@ WiFi :: WiFi()
 {
     runModeTask = NULL;
     state = eWifi_Off;
+    state_before_scan = eWifi_NotConnected;
     event_when_enabled = 0;
     bzero(my_mac, 6);
     wifi_aps.num_records  = 0;
@@ -382,7 +383,10 @@ void WiFi :: RunModeThread()
         case eWifi_Scanning:
             wifi_aps.num_records = 0;
             wifi_scan(&wifi_aps);
-            state = eWifi_NotConnected;
+            // Back to where it was: a scan does not take the link down. Events the module
+            // sent while it scanned are taken next, from the queue (as many as the receive
+            // buffers hold while this task waits for the scan's answer).
+            state = state_before_scan;
             RefreshRoot();
             RefreshAPs();
             break;
@@ -433,7 +437,10 @@ void WiFi :: RunModeThread()
                 if ((state == eWifi_Disabled) || RadioOffAwaited()) {
                     break;
                 }
-                netstack->link_down();
+                // The module scans while it stays associated, so the interface stays up;
+                // no packet goes out until the scan is done (wifi_tx_packet sends only
+                // when Connected)
+                state_before_scan = state;
                 state = eWifi_Scanning;
                 RefreshRoot();
                 break;
