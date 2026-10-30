@@ -31,7 +31,7 @@ OUT := $(if $(LEG),output/red_$(basename $(notdir $(LEG)))_u64_$(U64),output/u64
 # Function names are given as written in the source (~ for a blank), so that the C++ method
 # of a class is found. Those of wifi_switch.h's users exist for the products other than the U64=2 only.
 WIFI_FUNCS := WiFi~::~WiFi WiFi~::~Init WiFi~::~Enable WiFi~::~Disable WiFi~::~RadioOn \
-	WiFi~::~RadioOff WiFi~::~RunModeThread WiFi~::~sendEvent WiFi~::~sendConnectEvent WiFi~::getAccessPointItems \
+	WiFi~::~RadioOff WiFi~::~RunModeThread WiFi~::~sendEvent WiFi~::~sendConnectPending WiFi~::getAccessPointItems \
 	BrowsableWifiAP~::~connect_ap
 WIFI_FUNCS_SWITCH := WiFi~::~TalksToModule
 NET_FUNCS := NetworkLWIP_WiFi~::~disable NetworkLWIP_WiFi~::~enable NetworkLWIP_WiFi~::~ask_enable \

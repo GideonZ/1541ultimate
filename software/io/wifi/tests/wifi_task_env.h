@@ -4,7 +4,7 @@
  * The world the Ultimate's WiFi application sees on the build host. The code under test is
  * cut out of wifi.cc, wifi_cmd.cc and network_esp32.cc as it is (by the Makefile, with
  * extract.awk) and put behind this header. The real wifi.h, esp32.h, wifi_cmd.h and
- * wifi_switch.h (and wifi_connect.h, where the tree has it) are used; the RTOS, the UART,
+ * wifi_switch.h and wifi_connect.h are used; the RTOS, the UART,
  * the browsable tree and the network interface are the stand-ins of stubs/ and below,
  * which record what is called (wifi_task_stubs.cpp).
  *
@@ -29,9 +29,7 @@ typedef int err_t;
 #include "browsable.h"
 #include "dump_hex.h"
 #include "wifi.h"
-#if __has_include("wifi_connect.h")
 #include "wifi_connect.h"
-#endif
 #include "wifi_enable_default.h" // CFG_WIFI_ENABLE and the default of that setting, from network_esp32.cc / .h
 
 // The AP list's browser, as far as the menu uses it

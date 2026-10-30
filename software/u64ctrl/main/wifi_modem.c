@@ -239,7 +239,8 @@ static void got_ip_event_handler(void *esp_netif, esp_event_base_t base, int32_t
     }
 }
 
-static void send_event(uint8_t evcode)
+// reason: what EVENT_DISCONNECTED says (0: unknown, as for a disconnect this module makes up)
+static void send_event(uint8_t evcode, uint8_t reason)
 {
     command_buf_t *reply;
     if (my_uart_get_buffer(UART_NUM_1, &reply, 100)) {
@@ -252,6 +253,9 @@ static void send_event(uint8_t evcode)
             event_pkt_connected *ev2 = (event_pkt_connected *)reply->data;
             memcpy(ev2->ssid, last_connect.ssid, 32);
             reply->size = sizeof(event_pkt_connected);
+        } else if (evcode == EVENT_DISCONNECTED) {
+            ((event_pkt_disconnected *)reply->data)->reason = reason;
+            reply->size = sizeof(event_pkt_disconnected);
         }
         ESP_LOGI(TAG, "Sending event %d to ultimate", evcode);
         if(my_uart_transmit_packet(UART_NUM_1, reply) == pdFALSE) {
@@ -265,9 +269,9 @@ static void send_event(uint8_t evcode)
 void wifi_send_connected_event(void)
 {
     if(connected_g) {
-        send_event(EVENT_CONNECTED);
+        send_event(EVENT_CONNECTED, 0);
     } else if(disabled_g) {
-        send_event(EVENT_DISABLED);
+        send_event(EVENT_DISABLED, 0);
     }
 }
 
@@ -277,6 +281,7 @@ static void wifi_event_handler(void *esp_netif, esp_event_base_t base, int32_t e
     ConnectEvent_t cev;
 
     uint8_t evcode = 0;
+    uint8_t disc_reason = 0;
     switch(event_id) {
         case WIFI_EVENT_STA_START:
             // Attaching the lwIP netif resets netif->input, so a machine that
@@ -288,6 +293,7 @@ static void wifi_event_handler(void *esp_netif, esp_event_base_t base, int32_t e
             break;
         case WIFI_EVENT_STA_DISCONNECTED:
             evcode = EVENT_DISCONNECTED;
+            disc_reason = data ? ((const wifi_event_sta_disconnected_t *)data)->reason : 0;
             cev.event_code = evcode;
             xQueueSend(connect_events, &cev, 10);
             xSemaphoreGive(connect_semaphore);
@@ -304,7 +310,7 @@ static void wifi_event_handler(void *esp_netif, esp_event_base_t base, int32_t e
             break;
     }
     if (evcode) {
-        send_event(evcode);
+        send_event(evcode, disc_reason);
     }
 }
     
@@ -773,7 +779,7 @@ esp_err_t enable_wifi_if_needed(ConnectState_t state)
         ESP_LOGI(TAG, "Starting WiFi.");
         esp_err_t err = esp_wifi_start();
         if (err == ESP_OK) {
-            send_event(EVENT_DISCONNECTED);
+            send_event(EVENT_DISCONNECTED, 0);
             disabled_g = 0;
         } else {
             ESP_LOGW(TAG, "Failed to start WiFi: %d", err);
@@ -804,7 +810,7 @@ int handle_connect_command(ConnectCommand_t *cmd, ConnectState_t *state)
             ESP_LOGI(TAG, "Stopping WiFi.");
             err = esp_wifi_stop();
             if (err == ESP_OK) {
-                send_event(EVENT_DISABLED);
+                send_event(EVENT_DISABLED, 0);
                 *state = Disabled;
                 disabled_g = 1;
                 return 1;
@@ -820,7 +826,7 @@ int handle_connect_command(ConnectCommand_t *cmd, ConnectState_t *state)
                 ESP_LOGI(TAG, "Starting WiFi.");
                 err = esp_wifi_start();
                 if (err == ESP_OK) {
-                    send_event(EVENT_DISCONNECTED);
+                    send_event(EVENT_DISCONNECTED, 0);
                     *state = LastAP;
                     disabled_g = 0;
                     return 1;

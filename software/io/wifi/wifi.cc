@@ -6,6 +6,7 @@
  */
 
 #include "wifi.h"
+#include "wifi_connect.h"
 #include "socket.h"
 #include "u64.h"
 #include "dump_hex.h"
@@ -250,6 +251,9 @@ void WiFi :: RunModeThread()
     state = eWifi_NotDetected;
     uint8_t conn;
     uint32_t ip;
+    WifiConnectFeedback feedback;
+    char feedback_msg[80];
+    TickType_t wait_ticks;
 
     RefreshRoot();
     static char boot_message[256];
@@ -394,9 +398,18 @@ void WiFi :: RunModeThread()
         case eWifi_NotConnected:
         case eWifi_Connected:
         case eWifi_Disabled:
+            if (feedback.onTick(xTaskGetTickCount(), feedback_msg, sizeof(feedback_msg))) {
+                UserInterface :: postMessage(feedback_msg);
+            }
+            wait_ticks = feedback.waitTicks(xTaskGetTickCount());
 #if U64 != 2
             wait = wifi_switch_wait(&radio_switch, xTaskGetTickCount());
-            if (cmd_buffer_received(packets, &buf, (wait < 0) ? portMAX_DELAY : (TickType_t)wait) != pdTRUE) {
+            if ((wait >= 0) && ((TickType_t)wait < wait_ticks)) {
+                wait_ticks = wait;
+            }
+#endif
+            if (cmd_buffer_received(packets, &buf, wait_ticks) != pdTRUE) {
+#if U64 != 2
                 // The radio off was not confirmed in time: take the link state from the
                 // module again
                 if (wifi_switch_expired(&radio_switch, xTaskGetTickCount())) {
@@ -414,11 +427,9 @@ void WiFi :: RunModeThread()
                     }
                     RefreshRoot();
                 }
-                break;
-            }
-#else
-            cmd_buffer_received(packets, &buf, portMAX_DELAY);
 #endif
+                break; // the wait for the outcome of a connect ran out; the next pass reports it
+            }
             hdr = (rpc_header_t *)(buf->data);
 #if DEBUG_INPUT
             printf("Pkt %d. Ev %b. Sz %d. Seq: %d\n", buf->bufnr, hdr->command, buf->size, hdr->sequence);
@@ -470,6 +481,7 @@ void WiFi :: RunModeThread()
             case EVENT_CONNECTED:
                 ev2 = (event_pkt_connected *)buf->data;
                 memcpy(last_ap, ev2->ssid, 32);
+                feedback.onConnected();
                 uart->FreeBuffer(buf);
                 if (state == eWifi_Connected) { // already connected!
                     netstack->link_down();
@@ -482,7 +494,17 @@ void WiFi :: RunModeThread()
                 RefreshRoot();
                 break;
 
+            case EVENT_CONNECT_PENDING: // the module accepted a connect from the AP list
+                ev2 = (event_pkt_connected *)buf->data;
+                feedback.begin(ev2->ssid, xTaskGetTickCount());
+                uart->FreeBuffer(buf);
+                break;
+
             case EVENT_DISCONNECTED:
+                // the reason is read before the buffer goes back to the UART, which may refill it
+                if (feedback.onDisconnected(wifi_disconnect_reason(buf->data, buf->size), feedback_msg, sizeof(feedback_msg))) {
+                    UserInterface :: postMessage(feedback_msg);
+                }
                 uart->FreeBuffer(buf);
                 state = eWifi_NotConnected;
                 if(netstack) {
@@ -542,22 +564,22 @@ void WiFi :: sendEvent(uint8_t code)
     cmd_buffer_loopback(packets, buf); // internal event
 }
 
-// This event also updates the configuration.
-void WiFi :: sendConnectEvent(const char *ssid, const char *pass, uint8_t auth)
+// The module accepted a connect request; its own event will tell the outcome.
+bool WiFi :: sendConnectPending(const char *ssid)
 {
     command_buf_t *buf;
     cmd_buffer_get(packets, &buf, portMAX_DELAY);
-    // reuse of the rpc structure; but of course it is not sent to the module
-    rpc_wifi_connect_req *args = (rpc_wifi_connect_req *)(buf->data);
-    args->hdr.command = EVENT_CONNECTED;
-    args->hdr.sequence = 0;
-    args->hdr.thread = 0xFF;
-    bzero(args->ssid, 32);
-    bzero(args->password, 64);
-    strncpy(args->ssid, ssid, 32);
-    strncpy(args->password, pass, 64);
-    args->auth_mode = auth;
-    cmd_buffer_loopback(packets, buf); // internal event
+    event_pkt_connected *ev = (event_pkt_connected *)(buf->data);
+    ev->hdr.command = EVENT_CONNECT_PENDING;
+    ev->hdr.sequence = 0;
+    ev->hdr.thread = 0xFF;
+    bzero(ev->ssid, 32);
+    strncpy((char *)ev->ssid, ssid, 32);
+    if (cmd_buffer_loopback(packets, buf) != pdTRUE) { // internal event
+        uart->FreeBuffer(buf);
+        return false;
+    }
+    return true;
 }
 
 void WiFi :: freeBuffer(command_buf_t *buf)
@@ -597,15 +619,18 @@ SubsysResultCode_e BrowsableWifiAP :: connect_ap(SubsysCommand *cmd)
     }
     if (bap->auth) {
         if(cmd->user_interface) {
-            cmd->user_interface->string_box("Enter password", password, 64);
+            if (cmd->user_interface->string_box("Enter password", password, 64) <= 0) {
+                return SSRET_OK; // cancelled: nothing to connect with
+            }
         }
     }
     // The AP picked, not just any AP with its SSID
     int result = wifi_wifi_connect(bap->ssid, password, bap->auth, bap->bssid, bap->channel);
     printf("Connect result: %d\n", result);
-    if (result == 0) {
-        //wifi.sendEvent(EVENT_CONNECTED);
-        wifi.sendConnectEvent(bap->ssid, password, bap->auth);
+    if (result != 0 || !wifi.sendConnectPending(bap->ssid)) {
+        char msg[64];
+        snprintf(msg, sizeof(msg), "Could not connect to %.32s", bap->ssid);
+        UserInterface :: postMessage(msg);
     }
     return SSRET_OK;
 }

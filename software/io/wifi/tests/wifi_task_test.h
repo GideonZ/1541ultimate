@@ -55,6 +55,9 @@ extern int first_wait_state; // the task's state when it first waits for an even
 extern TickType_t waited;  // the ticks the task waited for events that did not come
 extern WiFi wifi;
 extern NetworkLWIP_WiFi net;
+extern TickType_t timed_waits[8]; // the bounded waits the task asked for, in order
+extern int timed_waits_n;
+extern TickType_t message_at;     // the clock when the last message was posted
 extern int requests;       // requests that went to the module (connect)
 extern command_buf_t request; // the last one, as it went out
 extern int string_box_result; // what the password box returns: <= 0 is a cancel
@@ -66,10 +69,17 @@ struct Step {
     const char *ssid;
     int reason;
     void (*act)(void);
-    Step(int c) : code(c), ssid(NULL), reason(-1), act(NULL) {}
-    Step(int c, const char *s) : code(c), ssid(s), reason(-1), act(NULL) {}
-    Step(void (*a)(void)) : code(0), ssid(NULL), reason(-1), act(a) {}
+    TickType_t delay; // the ticks the task has waited when this one comes
+    Step(int c) : code(c), ssid(NULL), reason(-1), act(NULL), delay(0) {}
+    Step(int c, const char *s) : code(c), ssid(s), reason(-1), act(NULL), delay(0) {}
+    Step(void (*a)(void)) : code(0), ssid(NULL), reason(-1), act(a), delay(0) {}
 };
+// EVENT_DISCONNECTED with the reason (the module's wifi_event_sta_disconnected_t.reason);
+// Step(EVENT_DISCONNECTED) is the bare header of a module that does not tell
+static inline Step disconnected(int reason) { Step s(EVENT_DISCONNECTED); s.reason = reason; return s; }
+// The step comes only after the task has waited this long for an event; one that waits less
+// than that, gets nothing
+static inline Step late(Step s, TickType_t ticks) { s.delay = ticks; return s; }
 
 // Starts the WiFi task with the module found, and these steps in order
 void boot(std::initializer_list<Step> steps);

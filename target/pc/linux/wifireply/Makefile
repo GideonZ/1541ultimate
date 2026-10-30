@@ -1,6 +1,7 @@
 #
 # Host build of the reply table of the WiFi command channel, and of
-# wifi_cmd.cc against stubs of the UART and the RTOS.
+# wifi_cmd.cc against stubs of the UART and the RTOS, and of what wifi_connect.h
+# tells the user after a connect from the access point list.
 #
 #   make          build
 #   make test     build and run
@@ -27,10 +28,11 @@ SRCS_C  = wifi_reply_test.c
 OBJS    = $(addprefix $(OUTPUT)/, $(SRCS_C:%.c=%.o))
 CMD_SRC = $(PATH_SW)/io/wifi/wifi_cmd.cc $(PATH_SW)/test/wifi_reply/wifi_cmd_test.cc
 CMD_DEP = $(wildcard $(PATH_SW)/io/wifi/*.h $(STUBS)/*.h)
+CONN_SRC = $(PATH_SW)/test/wifi_reply/wifi_connect_test.cc
 
 .PHONY: all test legacy clean
 
-all: $(RESULT)/$(PRJ) $(RESULT)/wifi_cmd
+all: $(RESULT)/$(PRJ) $(RESULT)/wifi_cmd $(RESULT)/wifi_connect
 
 $(OUTPUT)/%.o: %.c wifi_reply.h
 	@mkdir -p $(OUTPUT)
@@ -44,11 +46,16 @@ $(RESULT)/wifi_cmd: $(CMD_SRC) $(CMD_DEP)
 	@mkdir -p $(RESULT)
 	$(CXX) $(CXXOPTIONS) -o $@ $(CMD_SRC)
 
+$(RESULT)/wifi_connect: $(CONN_SRC) $(CMD_DEP)
+	@mkdir -p $(RESULT)
+	$(CXX) $(CXXOPTIONS) -o $@ $(CONN_SRC)
+
 test: all
 	@$(RESULT)/$(PRJ)
 	@mkdir -p $(OUTPUT)
 	@$(RESULT)/wifi_cmd > $(OUTPUT)/wifi_cmd.log || { grep '^FAIL' $(OUTPUT)/wifi_cmd.log; tail -n 1 $(OUTPUT)/wifi_cmd.log; exit 1; }
 	@tail -n 1 $(OUTPUT)/wifi_cmd.log
+	@$(RESULT)/wifi_connect
 
 legacy:
 	@mkdir -p $(OUTPUT)

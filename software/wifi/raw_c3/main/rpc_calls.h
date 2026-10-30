@@ -153,6 +153,13 @@ typedef struct {
     uint8_t ssid[32];
 } event_pkt_connected;
 
+// EVENT_DISCONNECTED may carry the reason (wifi_event_sta_disconnected_t.reason)
+// after the header. 0 and a bare header both mean that it is not known.
+typedef struct {
+    rpc_header_t hdr;
+    uint8_t reason;
+} event_pkt_disconnected;
+
 #define CMD_ECHO              0x01
 #define CMD_IDENTIFY          0x02
 #define CMD_SET_BAUD          0x03
