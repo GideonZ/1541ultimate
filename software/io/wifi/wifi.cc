@@ -78,34 +78,12 @@ void WiFi :: Disable()
     esp32.StopApp();
 }
 
-#if U64 != 2
-// The states in which the WiFi application is running and the module answers it
-bool WiFi :: TalksToModule()
-{
-    switch (state) {
-    case eWifi_AppDetected:
-    case eWifi_Scanning:
-    case eWifi_NotConnected:
-    case eWifi_Connected:
-    case eWifi_Disabled:
-        return true;
-    default:
-        return false;
-    }
-}
-#endif
-
 void WiFi :: RadioOn()
 {
 #if U64 != 2
     if (state == eWifi_Off) {
         wifi_switch_on(&radio_switch, false);
         Enable();
-        return;
-    }
-    if (!TalksToModule()) {
-        // still starting: the start applies it
-        wifi_switch_later(&radio_switch, true);
         return;
     }
     // Ends a wait for a radio-off confirmation. A module without the switch is never
@@ -118,26 +96,18 @@ void WiFi :: RadioOn()
 void WiFi :: RadioOff()
 {
 #if U64 != 2
-    if (TalksToModule()) {
-        if (!wifi_switch_unsupported(wifi_disable())) {
-            return;
-        }
-        // A module known to lack the radio switch: stop the WiFi application, as Disable
-        // always did here, and hold the module off, as at boot, so that its radio is off too
-        Disable();
-        if (uart) {
-            uart->ModuleCtrl(ESP_MODE_OFF);
-        }
+    int result = wifi_disable();
+    if (!wifi_switch_unsupported(result)) {
+        // Disabled is shown when the module confirms, as at boot (wifi_switch.h)
+        wifi_switch_asked_off(&radio_switch, xTaskGetTickCount(), pdMS_TO_TICKS(WIFI_SWITCH_CONFIRM_MS));
         return;
     }
-    if ((state == eWifi_NotDetected) || (state == eWifi_ModuleDetected)) {
-        // Still starting, and whether the module can switch is not known yet: the start
-        // applies the Disable (a module with the switch keeps running, its radio off)
-        wifi_switch_later(&radio_switch, false);
-        return;
-    }
-    // Off already, or being flashed: stop the WiFi application, as Disable always did
+    // A module known to lack the radio switch: stop the WiFi application, as Disable
+    // always did here, and hold the module off, as at boot, so that its radio is off too
     Disable();
+    if (uart) {
+        uart->ModuleCtrl(ESP_MODE_OFF);
+    }
 #else
     wifi_disable();
 #endif
@@ -472,6 +442,7 @@ void WiFi :: RunModeThread()
             case EVENT_DISABLED:
                 uart->FreeBuffer(buf);
                 state = eWifi_Disabled;
+                feedback.cancel(); // a pick that was under way ends with the radio
                 event_when_enabled = 0;
                 wifi_aps.num_records = 0; // nothing to pick while the radio is off
                 netstack->link_down();

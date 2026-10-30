@@ -82,6 +82,9 @@ public:
     // The module reports the link up; the row going up is the user's signal
     void onConnected(void) { pending = false; }
 
+    // The user turned the radio off: nothing is to be reported for the pick any more
+    void cancel(void) { pending = false; }
+
     // The module reports the link down; reason is wifi_disconnect_reason of its packet
     bool onDisconnected(uint8_t reason, char *msg, int max)
     {

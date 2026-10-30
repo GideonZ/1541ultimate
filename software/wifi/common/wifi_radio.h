@@ -7,8 +7,7 @@
  * the AP.
  *
  * The logic is in wifi_radio.c, the chip side in wifi_radio_esp.c, and the host test
- * (target/pc/linux/wifiradio) replaces the latter. It also checks that nothing else in
- * the modules calls esp_wifi_start() or esp_wifi_stop().
+ * (software/wifi/tests/radio_test.cpp) replaces the latter.
  */
 
 #ifndef SOFTWARE_WIFI_COMMON_WIFI_RADIO_H_

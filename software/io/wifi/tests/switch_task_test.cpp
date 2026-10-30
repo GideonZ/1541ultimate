@@ -95,34 +95,6 @@ TEST(WifiSwitchTask, module_without_the_switch)
     CHECK(strcmp(ended, "suspended") == 0, "the application waits for an Enable");
 }
 
-// Disable while the application is still starting, before it knows whether the module
-// can switch: the module is not stopped nor held off, and the start turns its radio off,
-// although Enabled is stored; an Enable then undoes it. While flashing, Disable stops the
-// application as before.
-TEST(WifiSwitchTask, radio_off_while_starting)
-{
-    reset_world();
-    wifi.state = eWifi_NotDetected;
-    rlog[0] = 0;
-    wifi.RadioOff();
-    CHECK(rlog[0] == 0, "nothing stopped or held off yet");
-    world.keep_switch = true;
-    world.enabled = true;
-    boot({});
-    CHECK(strchr(rlog, 'O') != NULL && strchr(rlog, 'N') == NULL, "the start asks for the radio off");
-    CHECK(strpbrk(rlog, "AF") == NULL, "the module keeps running");
-    wifi.state = eWifi_ModuleDetected;
-    wifi.RadioOff();
-    wifi.RadioOn();
-    world.keep_switch = true;
-    boot({});
-    CHECK(strchr(rlog, 'N') != NULL && strchr(rlog, 'O') == NULL, "an Enable after it wins");
-    wifi.state = eWifi_Download;
-    rlog[0] = 0;
-    wifi.RadioOff();
-    CHECK(strcmp(rlog, "A") == 0, "while flashing, the application stops and the module is left alone");
-}
-
 // The boot's Disable never left (no transmit buffer): it is not taken for a module
 // without the switch, and when the confirmation is overdue it is asked for again before
 // the connection query, which the module would otherwise take as an old application's
@@ -257,16 +229,18 @@ TEST(WifiSwitchTask, menu_and_setting)
     it.value = 1;
     NetworkLWIP_WiFi :: wifi_enable_change(&it);
     CHECK(strcmp(rlog, "N") == 0, "the setting to Enabled turns it on");
-    // A setting that is the state already asks nothing
+    // A setting that is the state already is passed on all the same (the row can lag behind
+    // the module): the module takes it as a request it is in already
     wifi.state = eWifi_Connected;
     rlog[0] = 0;
     it.value = 1;
     NetworkLWIP_WiFi :: wifi_enable_change(&it);
-    CHECK(rlog[0] == 0, "Enabled while on: nothing to do");
+    CHECK(strcmp(rlog, "N") == 0, "Enabled while on: passed on");
     wifi.state = eWifi_Disabled;
+    rlog[0] = 0;
     it.value = 0;
     NetworkLWIP_WiFi :: wifi_enable_change(&it);
-    CHECK(rlog[0] == 0, "Disabled while off: nothing to do");
+    CHECK(strcmp(rlog, "O") == 0, "Disabled while off: passed on");
     wifi.state = eWifi_Off; // a module without the switch, held off
     rlog[0] = 0;
     it.value = 0;
@@ -391,5 +365,73 @@ TEST(WifiSwitchTask, menu_disable_old_module)
     rlog[0] = 0;
     NetworkLWIP_WiFi :: enable(NULL);
     CHECK(strcmp(rlog, "B") == 0, "Enable starts the application again");
+}
+#endif
+
+#if U64 != 2
+// Quick changes of "WiFi Enabled", faster than the module's events: each one reaches the
+// module, whatever the row shows, so the last setting wins. (The row followed the module's
+// events only: Enable then Disable from Disabled left the radio on and the link up with
+// the setting Disabled, and Disable then Enable from Connected left it off with Enabled.)
+static void enable_then_disable(void) { cfg_menu_enable(); cfg_menu_disable(); }
+static void disable_then_enable(void) { cfg_menu_disable(); cfg_menu_enable(); }
+
+TEST(WifiSwitchTask, quick_enable_then_disable_ends_off)
+{
+    reset_world();
+    world.enabled = false;
+    boot({ EVENT_DISABLED, Step(enable_then_disable),
+           EVENT_DISCONNECTED, EVENT_CONNECTED, EVENT_GOTIP, EVENT_DISABLED });
+    CHECK(strstr(after('s'), "NO") != NULL, "the Enable and the Disable both reach the module");
+    CHECK(wifi.getState() == eWifi_Disabled, "Disabled: the module's link events of the Enable are dropped");
+    CHECK(!world.enabled, "the setting reads Disabled");
+}
+
+TEST(WifiSwitchTask, quick_disable_then_enable_ends_on)
+{
+    reset_world();
+    world.enabled = true;
+    boot({ EVENT_CONNECTED, Step(disable_then_enable),
+           EVENT_DISABLED, EVENT_DISCONNECTED, EVENT_CONNECTED });
+    CHECK(strstr(after('U'), "ON") != NULL, "the Disable and the Enable both reach the module");
+    CHECK(wifi.getState() == eWifi_Connected, "Connected again");
+    CHECK(world.enabled, "the setting reads Enabled");
+}
+
+// A Disable at runtime is confirmed as the boot's is: Disabled is shown when the module
+// says so, its link events are dropped until then, and when it never says so, the radio
+// off is asked again and the link state is taken from the module again
+TEST(WifiSwitchTask, runtime_disable_is_confirmed)
+{
+    reset_world();
+    world.enabled = true;
+    boot({ EVENT_CONNECTED, Step(menu_disable), EVENT_DISCONNECTED, EVENT_GOTIP, EVENT_DISABLED });
+    CHECK(wifi.getState() == eWifi_Disabled, "Disabled once confirmed");
+    CHECK(strchr(after('O'), 'U') == NULL, "no link comes up after the Disable");
+}
+
+TEST(WifiSwitchTask, runtime_disable_unconfirmed)
+{
+    reset_world();
+    world.enabled = true;
+    world.link = 1;
+    // (the deadline is timed from the task's next pass, which the next event starts)
+    boot({ EVENT_CONNECTED, Step(menu_disable), EVENT_GOTIP });
+    CHECK(strstr(after('O'), "OQ") != NULL, "asked again at the deadline, then the link state is asked for");
+}
+#endif
+
+#if U64 != 2
+// While an AP list scan is under way the module is still talked to: a Disable reaches it
+// and the WiFi application keeps running
+TEST(WifiSwitchTask, disable_while_scanning_reaches_the_module)
+{
+    reset_world();
+    world.enabled = true;
+    boot({ EVENT_CONNECTED });
+    wifi.state = eWifi_Scanning;
+    rlog[0] = 0;
+    NetworkLWIP_WiFi :: disable(NULL);
+    CHECK(strcmp(rlog, "O") == 0, "the module is asked, the application not stopped");
 }
 #endif

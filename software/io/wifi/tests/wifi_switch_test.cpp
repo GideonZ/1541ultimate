@@ -227,20 +227,4 @@ TEST(WifiSwitch, confirmed_in_time)
     EXPECT_FALSE(wifi_switch_expired(&sw, 200));
 }
 
-// A Disable or Enable while the application starts, before it knows the module: the start
-// applies it, whatever is stored
-TEST(WifiSwitch, switched_while_starting)
-{
-    wifi_switch_t sw;
-    memset(&sw, 0, sizeof(sw));
-    wifi_switch_later(&sw, false);
-    EXPECT_TRUE(wifi_switch_wants_off(&sw, true)); // a Disable then: off, though Enabled is stored
-    EXPECT_FALSE(wifi_switch_wants_off(&sw, true)); // once only
-    wifi_switch_later(&sw, true);
-    EXPECT_FALSE(wifi_switch_wants_off(&sw, false)); // an Enable then: on, though Disabled is stored
-    wifi_switch_later(&sw, false);
-    wifi_switch_later(&sw, true);
-    EXPECT_FALSE(wifi_switch_wants_off(&sw, true)); // the last one counts
-}
-
 #endif

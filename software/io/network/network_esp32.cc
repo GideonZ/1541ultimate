@@ -133,18 +133,18 @@ bool NetworkLWIP_WiFi :: enabled_in_config(void)
 
 // A change of "WiFi Enabled" turns the radio off or on right away. While the WiFi
 // application is still looking for the module it does nothing: the application applies
-// the setting itself when it finds it.
+// the setting itself when it finds it. Every change is passed on, whatever the row shows:
+// the row follows the module's events, which can lag behind a quick Enable and Disable,
+// and both requests are harmless when the module is in that state already.
 int NetworkLWIP_WiFi :: wifi_enable_change(ConfigItem *it)
 {
     WifiState_t state = wifi.getState();
     if ((state == eWifi_Download) || (state == eWifi_NotDetected) || (state == eWifi_ModuleDetected)) {
         return 0;
     }
-    // Also while a radio off waits for its confirmation: an Enable then is not lost
-    bool off = (state == eWifi_Off) || (state == eWifi_Disabled) || wifi.RadioOffAwaited();
-    if (it->getValue() && off) {
+    if (it->getValue()) {
         wifi.RadioOn();
-    } else if (!it->getValue() && !off) {
+    } else if (state != eWifi_Off) { // the application is stopped (a module without the switch): off already
         wifi.RadioOff();
     }
     return 0;
@@ -316,10 +316,13 @@ void NetworkLWIP_WiFi :: cfg_show_aps(UserInterface *intf, ConfigItem *it)
 {
     WifiState_t state = wifi.getState();
     if (state == eWifi_Disabled) {
+        // Set before the Enable goes out: the module's event for it can reach the WiFi
+        // application before this function returns
+        wifi.sendEventWhenEnabled(EVENT_RESCAN); // the radio is not on yet
         if (!ask_enable(intf)) {
+            wifi.sendEventWhenEnabled(0);
             return;
         }
-        wifi.sendEventWhenEnabled(EVENT_RESCAN); // the radio is not on yet
     } else if ((state != eWifi_NotConnected) && (state != eWifi_Connected)) {
         intf->popup("Can only show APs when active", BUTTON_OK);
         return;

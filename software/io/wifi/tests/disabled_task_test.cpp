@@ -111,6 +111,7 @@ static void ask_case(const Action_t &a, bool yes)
         snprintf(what, sizeof(what), "%s: No sends nothing", a.name);
         CHECK(enable == NULL && !done && requests == 0 && strchr(asked, 'T') == NULL, what);
         CHECK(wifi.getState() == eWifi_Disabled, "and the state is unchanged");
+        CHECK(wifi.event_when_enabled == 0, "and no scan is left waiting for the radio");
     }
 }
 
