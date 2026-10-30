@@ -561,7 +561,7 @@ void BrowsableWifiAP :: fetch_context_items(IndexedList<Action *>&items)
 
 SubsysResultCode_e BrowsableWifiAP :: connect_ap(SubsysCommand *cmd)
 {
-    char password[64] = { 0 };
+    char password[65] = { 0 }; // string_box takes 64 characters plus the terminator
     BrowsableWifiAP *bap = (BrowsableWifiAP *)cmd->functionID;
     if (bap->auth) {
         if(cmd->user_interface) {
@@ -583,7 +583,7 @@ err_t wifi_tx_packet(void *driver, void *buffer, int length)
         return ERR_CONN;
     }
     
-    BUFARGS(send_eth, CMD_SEND_PACKET);
+    BUFARGS_NOREPLY(send_eth, CMD_SEND_PACKET, ERR_MEM); // the module does not answer frames
 
     uint32_t chunkSize = length;
     if (chunkSize > CMD_BUF_PAYLOAD) {

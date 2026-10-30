@@ -7,7 +7,7 @@ extern QueueHandle_t connect_commands;
 extern SemaphoreHandle_t connect_semaphore;
 
 typedef struct {
-    char ssid[32];
+    char ssid[33];   // 32 SSID bytes plus the terminator
     char pw[68];
     uint8_t auth_mode;
     uint8_t command;

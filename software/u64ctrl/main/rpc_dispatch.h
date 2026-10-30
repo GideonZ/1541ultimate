@@ -27,16 +27,19 @@ void send_button_event(uint8_t button);
 void send_keepalive();
 
 #ifdef CONFIG_ULTIMATE_PROVIDER_CONTROL
+#define IDENT_STRING "ESP32 WiFi Bridge V1.22"
+#define IDENT_MINOR   22
+#else
 #define IDENT_STRING "ESP32 WiFi Bridge V1.21"
 #define IDENT_MINOR   21
-#else
-#define IDENT_STRING "ESP32 WiFi Bridge V1.20"
-#define IDENT_MINOR   20
 #endif
 #define IDENT_MAJOR   1
-// Local development revisions; reconcile with upstream before publication.
-// 1.21: experimental control delivery; TLS initialization remains unavailable.
-// 1.20: optional solicited boot identity; no TLS capability is advertised.
+// 1.22: optional provider ownership protocol. TLS requires explicit negotiation;
+// the version number alone does not establish provider capability.
+// 1.21: a recovery trusts Mozilla's root list of 2026-10-20 (software/u64ctrl/ca), which
+// no longer holds the emSign roots G3, C1 and C3, instead of the one in ESP-IDF 5.3.1.
+// 1.20: terminates 32-character SSIDs and 64-character passwords, and reads
+// them back from NVS whole.
 // 1.19: a recovery also tries the my_hotspot access point after the stored ones.
 // 1.18: recovers the firmware over Wi-Fi when the switch is held down for three
 // seconds while off, and stores the recovery server the menu sets.
