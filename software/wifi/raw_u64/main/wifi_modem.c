@@ -189,7 +189,8 @@ static void got_ip_event_handler(void *esp_netif, esp_event_base_t base, int32_t
     }
 }
 
-static void send_event(uint8_t evcode)
+// reason: what EVENT_DISCONNECTED says (0: unknown, as for a disconnect this module makes up)
+static void send_event(uint8_t evcode, uint8_t reason)
 {
     command_buf_t *reply;
     if (my_uart_get_buffer(UART_NUM_1, &reply, 100)) {
@@ -202,6 +203,9 @@ static void send_event(uint8_t evcode)
             event_pkt_connected *ev2 = (event_pkt_connected *)reply->data;
             memcpy(ev2->ssid, last_connect.ssid, 32);
             reply->size = sizeof(event_pkt_connected);
+        } else if (evcode == EVENT_DISCONNECTED) {
+            ((event_pkt_disconnected *)reply->data)->reason = reason;
+            reply->size = sizeof(event_pkt_disconnected);
         }
         my_uart_transmit_packet(UART_NUM_1, reply);
     } else {
@@ -215,9 +219,13 @@ static void wifi_event_handler(void *esp_netif, esp_event_base_t base, int32_t e
     ConnectEvent_t cev;
 
     uint8_t evcode = 0;
+    uint8_t disc_reason = 0;
     switch(event_id) {
         case WIFI_EVENT_STA_DISCONNECTED:
             evcode = EVENT_DISCONNECTED;
+            if (data) {
+                disc_reason = ((const wifi_event_sta_disconnected_t *)data)->reason;
+            }
             cev.event_code = evcode;
             xQueueSend(connect_events, &cev, 10);
             xSemaphoreGive(connect_semaphore);
@@ -235,7 +243,7 @@ static void wifi_event_handler(void *esp_netif, esp_event_base_t base, int32_t e
     }
 
     if (evcode) {
-        send_event(evcode);
+        send_event(evcode, disc_reason);
     }
 }
 
@@ -701,7 +709,7 @@ esp_err_t enable_wifi_if_needed(ConnectState_t state)
         if (err == ESP_OK) {
             disabled_g = 0;
             radio_record_set(&radio_record, true);
-            send_event(EVENT_DISCONNECTED);
+            send_event(EVENT_DISCONNECTED, 0);
         } else {
             ESP_LOGW(TAG, "Failed to start WiFi: %d", err);
         }
@@ -732,7 +740,7 @@ int handle_connect_command(ConnectCommand_t *cmd, ConnectState_t *state)
             ESP_LOGI(TAG, "Stopping WiFi.");
             err = radio_stop();
             if (err == ESP_OK) {
-                send_event(EVENT_DISABLED);
+                send_event(EVENT_DISABLED, 0);
                 *state = Disabled;
                 disabled_g = 1;
                 radio_record_set(&radio_record, false);
@@ -751,7 +759,7 @@ int handle_connect_command(ConnectCommand_t *cmd, ConnectState_t *state)
                 if (err == ESP_OK) {
                     disabled_g = 0;
                     radio_record_set(&radio_record, true);
-                    send_event(EVENT_DISCONNECTED);
+                    send_event(EVENT_DISCONNECTED, 0);
                     *state = LastAP;
                     return 1;
                 } else {
@@ -774,14 +782,14 @@ int handle_connect_command(ConnectCommand_t *cmd, ConnectState_t *state)
                 if (err == ESP_OK) {
                     disabled_g = 0;
                     radio_record_set(&radio_record, true);
-                    send_event(EVENT_DISCONNECTED);
+                    send_event(EVENT_DISCONNECTED, 0);
                     *state = LastAP;
                     return 1;
                 }
                 ESP_LOGW(TAG, "Failed to start WiFi: %d", err);
             }
             if (*state == Disabled) {
-                send_event(EVENT_DISABLED);
+                send_event(EVENT_DISABLED, 0);
             }
             break;
         case CMD_WIFI_SCAN:
@@ -855,13 +863,13 @@ ConnectState_t connector_boot_state(void)
     if (boot_mode == RADIO_BOOT_WAIT) {
         return Disabled;
     }
-    send_event(EVENT_RESTARTED);
+    send_event(EVENT_RESTARTED, 0);
     if (boot_mode == RADIO_BOOT_ON) {
         ESP_LOGI(TAG, "Restarted: starting WiFi again.");
         if (radio_start() == ESP_OK) {
             disabled_g = 0;
             radio_record_set(&radio_record, true);
-            send_event(EVENT_DISCONNECTED);
+            send_event(EVENT_DISCONNECTED, 0);
             return LastAP;
         }
         ESP_LOGW(TAG, "Failed to start WiFi.");

@@ -85,8 +85,8 @@ public:
     char *getIpAddrString(char *buf, int max) { sprintf(buf, "%d.%d.%d.%d", (my_ip >> 0) & 0xff, (my_ip >> 8) & 0xff, (my_ip >> 16) & 0xff, (my_ip >> 24) & 0xff); return buf; }
 
     void sendEvent(uint8_t code);
-    void sendConnectEvent(const char *ssid, const char *pass, uint8_t auth);
     void sendEventWhenEnabled(uint8_t code) { event_when_enabled = code; } // after the radio is on again
+    bool sendConnectPending(const char *ssid);
     void freeBuffer(command_buf_t *buf);
     int  getAccessPointItems(Browsable *parent, IndexedList<Browsable *> &list);
 

@@ -54,7 +54,7 @@ NEEDED      := send_event wifi_event_handler attempt_connect wifi_connect_to_sca
 # changed and puts back what was there before. Every one has to make the suite FAIL (a failing
 # check, not a build error); `make red` prints which checks failed. A fix that a module
 # does not have, or whose cases are not in this commit, has no entry.
-RED_FIXES := 1 2 4 5
+RED_FIXES := 1 2 4 5 6
 
 # 1  The radio switch (U64, U2+L): no Disable is served, and the radio goes on at boot, as
 #    on a module without the switch
@@ -83,6 +83,12 @@ LEGACY_NOPICK := -e 's/if (bssid \&\& memcmp(bssid, "\\0\\0\\0\\0\\0\\0", 6)) {/
 LEGACY_5_raw_u64 := $(LEGACY_NOPICK)
 LEGACY_5_raw_c3  := $(LEGACY_NOPICK)
 LEGACY_5_u64ctrl := $(LEGACY_NOPICK)
+
+# 6  EVENT_DISCONNECTED does not carry the reason
+LEGACY_NOREASON := -e 's/->reason = reason;/->reason = 0;/'
+LEGACY_6_raw_u64 := $(LEGACY_NOREASON)
+LEGACY_6_raw_c3  := $(LEGACY_NOREASON)
+LEGACY_6_u64ctrl := $(LEGACY_NOREASON)
 
 LEGACY = $(LEGACY_$(FIX)_$(M))
 

@@ -103,6 +103,10 @@ static int queue_n, queue_i;
 static command_buf_t pool[8];
 static int pool_i;
 TickType_t waited;
+TickType_t timed_waits[8];
+int timed_waits_n;
+TickType_t message_at;
+static TickType_t queue_delay[16];
 int requests;
 command_buf_t request;
 int string_box_result = 1;
@@ -129,6 +133,7 @@ BaseType_t DmaUART :: GetBuffer(command_buf_t **b, TickType_t t)
 void UserInterface :: postMessage(const char *msg)
 {
     note('!');
+    message_at = now;
     strncat(messages, msg, sizeof(messages) - strlen(messages) - 2);
     strcat(messages, "\n");
 }
@@ -183,7 +188,9 @@ BaseType_t cmd_buffer_loopback(command_buf_context_t *context, command_buf_t *b)
         return pdFALSE;
     }
     memmove(&queue[queue_i + 1], &queue[queue_i], (queue_n - queue_i) * sizeof(queue[0]));
+    memmove(&queue_delay[queue_i + 1], &queue_delay[queue_i], (queue_n - queue_i) * sizeof(queue_delay[0]));
     queue[queue_i] = *b;
+    queue_delay[queue_i] = 0;
     queue_n++;
     return pdTRUE;
 }
@@ -198,9 +205,18 @@ BaseType_t cmd_buffer_received(command_buf_context_t *context, command_buf_t **b
         void (*act)(void) = (void (*)(void))queue[queue_i++].object;
         act();
     }
+    if (t != portMAX_DELAY && timed_waits_n < 8) {
+        timed_waits[timed_waits_n++] = t;
+    }
     if (queue_i < queue_n) {
-        *b = &queue[queue_i++];
-        return pdTRUE;
+        TickType_t d = queue_delay[queue_i];
+        if (d == 0 || t == portMAX_DELAY || d < t) {
+            now += d; // the time it waited for this one
+            waited += d;
+            *b = &queue[queue_i++];
+            return pdTRUE;
+        }
+        queue_delay[queue_i] -= t; // the wait ran out first
     }
     if (t == portMAX_DELAY) {
         stop("waiting for an event");
@@ -269,12 +285,15 @@ void boot(std::initializer_list<Step> steps)
     waits = 0;
     now = 1000;
     waited = 0;
+    timed_waits_n = 0;
+    message_at = 0;
     requests = 0;
     pool_i = 0;
     queue_n = queue_i = 0;
     for (std::initializer_list<Step>::const_iterator s = steps.begin(); s != steps.end(); ++s) {
         command_buf_t *b = &queue[queue_n++];
         memset(b, 0, sizeof(*b));
+        queue_delay[queue_n - 1] = s->delay;
         if (s->act) {
             b->bufnr = ACT;
             b->object = (void *)s->act;
@@ -285,6 +304,11 @@ void boot(std::initializer_list<Step> steps)
         if (s->code == EVENT_CONNECTED && s->ssid) {
             strncpy((char *)((event_pkt_connected *)b->data)->ssid, s->ssid, 32);
             b->size = sizeof(event_pkt_connected);
+        } else if (s->code == EVENT_DISCONNECTED && s->reason >= 0) {
+            ((event_pkt_disconnected *)b->data)->reason = s->reason;
+            b->size = sizeof(event_pkt_disconnected);
+        } else if (s->code == EVENT_DISCONNECTED) {
+            b->data[sizeof(rpc_header_t)] = 15; // a bare header: what follows it is no reason
         }
     }
     wifi.netstack = &net;
