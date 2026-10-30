@@ -1,4 +1,4 @@
-# Root list for u64ctrl's network recovery
+# Root list for u64ctrl's network recovery and the raw_u64 module's TLS
 
 `cacert.pem` is curl's copy of Mozilla's root list of 2026-10-20 (118 roots), unmodified; its sha256 is pinned in
 `tests/lib/u64ctrl_ca_test.py` (`CACERT_SHA256`, the value curl publishes next to the file). u64ctrl's recovery trusts it
@@ -22,7 +22,8 @@ unless the hash matches, the file is not older than the committed one, the file 
 including ISRG Root X1 and X2 and none in `REMOVED`, and both recovery servers verify against it. Then it replaces
 `cacert.pem`, updates `CACERT_SHA256` and the date above, and prints the roots added and removed. Review that output,
 add the removed roots to `REMOVED` in `tests/lib/u64ctrl_ca_test.py`, run that test (again after a firmware build),
-and bump `IDENT_MINOR` in `main/rpc_dispatch.h`. The test also fails when the list is more than a year old
+and bump `IDENT_MINOR` in `main/rpc_dispatch.h` and in `software/wifi/raw_u64/main/rpc_dispatch.h`, which builds
+its bundle from the same file. The test also fails when the list is more than a year old
 (`MAX_AGE_DAYS`), without needing the network.
 
 If the test fails only because the list is older than `MAX_AGE_DAYS` and `refresh.py` says "no change", Mozilla's data

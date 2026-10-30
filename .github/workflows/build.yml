@@ -193,15 +193,6 @@ jobs:
           -v /opt/build-tools:/mnt/build-tools:ro \
           -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make -C target/pc/linux/wifitls test"
 
-      # The checks on the vendored root store the ESP32 bridge builds its certificate
-      # bundle from, and on the tool that refreshes it. Standard library only; in a
-      # stock Python image for the same reason as the lint step above.
-      - name: Test CA Store
-        run: |
-          docker run --rm -v $GITHUB_WORKSPACE:/mnt/project:rw --workdir /mnt/project \
-          --user $(id -u):$(id -g) -e HOME=/tmp python:3.12-slim \
-          python3 -m unittest discover -s tools/ca_store -p "test_*.py"
-
       - name: Cache U2 FPGA
         id: cache-u2
         uses: actions/cache@v6

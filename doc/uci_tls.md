@@ -245,7 +245,7 @@ client matches on those.
 
 | Trust | Verifies against |
 |---|---|
-| 0 BUNDLE | the Mozilla root store built into the module (`software/wifi/ca_store`) |
+| 0 BUNDLE | the Mozilla root store built into the module (`software/u64ctrl/ca/cacert.pem`, the list the control module trusts too) |
 | 1 CUSTOM | the one CA uploaded with `$22`, and nothing else |
 | 2 PIN | the SHA-256 of the server leaf's SubjectPublicKeyInfo. The certificate chain and name are not checked; key usage and extended key usage still are |
 

@@ -7,5 +7,3 @@ if(IDF_VERSION_MAJOR LESS 6)
     message(FATAL_ERROR "raw_u64 needs ESP-IDF 6, not ${IDF_VERSION_MAJOR}.${IDF_VERSION_MINOR} (see software/wifi/raw_u64/README.md)")
 endif()
 project(bridge)
-
-include(${CMAKE_SOURCE_DIR}/../ca_store/ca_store.cmake)
