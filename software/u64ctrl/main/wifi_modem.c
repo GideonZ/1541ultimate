@@ -800,6 +800,9 @@ int handle_connect_command(ConnectCommand_t *cmd, ConnectState_t *state)
             break;
         case CMD_WIFI_ENABLE:
             if (*state == Disabled) {
+                // Like a connect request, an Enable means the user wants to be on the
+                // network again, so a Disconnect from before the Disable is spent
+                user_disconnected = false;
                 ESP_LOGI(TAG, "Starting WiFi.");
                 err = esp_wifi_start();
                 if (err == ESP_OK) {
@@ -816,13 +819,13 @@ int handle_connect_command(ConnectCommand_t *cmd, ConnectState_t *state)
             break;
         case CMD_WIFI_SCAN:
             {
-                err = enable_wifi_if_needed(*state);
                 rpc_scan_resp *resp = (rpc_scan_resp *)buf->data;
-                if (err == ESP_OK) {
-                    resp->esp_err = wifi_scan(&resp->rec);
-                } else {
-                    resp->esp_err = err;
+                if (*state == Disabled) {
+                    // Disabled means the radio is off; a scan does not turn it on, Enable does
+                    resp->esp_err = ESP_ERR_INVALID_STATE;
                     resp->rec.num_records = 0;
+                } else {
+                    resp->esp_err = wifi_scan(&resp->rec);
                 }
                 buf->size = sizeof(resp->hdr) + sizeof(resp->esp_err) + 2 + (resp->rec.num_records * sizeof(ultimate_ap_record_t));
                 my_uart_transmit_packet(UART_NUM_1, buf);
@@ -841,6 +844,12 @@ int handle_connect_command(ConnectCommand_t *cmd, ConnectState_t *state)
         case CMD_WIFI_CONNECT:
             user_disconnected = false;
             err = enable_wifi_if_needed(*state);
+            if (err == ESP_OK) {
+                // The radio is on: whatever the attempt gives, the connector goes on from
+                // here and retries, as after a dropped link, not idle in Connected or
+                // Disabled
+                *state = Disconnected;
+            }
             {
                 last_connect = *cmd;
                 last_connect.list_index = -1;
@@ -939,7 +948,9 @@ void connect_thread(void *a)
                         }
                     }
                 }
-                if (state != Connected) {
+                // A command handled in the walk has set the state already: a Disable
+                // or an Autoconnect must not be overwritten here
+                if (state == ScannedAPs) {
                     state = StoredAPs;
                 }
                 break;
@@ -970,7 +981,7 @@ void connect_thread(void *a)
                         }
                     }
                 }
-                if (state != Connected) {
+                if (state == StoredAPs) {
                     state = Disconnected;
                 }
                 break;

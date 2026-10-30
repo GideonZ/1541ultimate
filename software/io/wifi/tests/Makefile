@@ -18,6 +18,7 @@ HOST_TEST := ../../usb/tests
 WIFI_CC := $(WIFI_DIR)/wifi.cc
 NET_CC := ../../network/network_esp32.cc
 NET_H := ../../network/network_esp32.h
+CMD_CC := $(WIFI_DIR)/wifi_cmd.cc
 EXTRACT := extract.awk
 
 # 0 is the Ultimate II+L: it is built as the U2+L is, with U64 not defined at all
@@ -30,11 +31,14 @@ OUT := $(if $(LEG),output/red_$(basename $(notdir $(LEG)))_u64_$(U64),output/u64
 # Function names are given as written in the source (~ for a blank), so that the C++ method
 # of a class is found. Those of wifi_switch.h's users exist for the products other than the U64=2 only.
 WIFI_FUNCS := WiFi~::~WiFi WiFi~::~Init WiFi~::~Enable WiFi~::~Disable WiFi~::~RadioOn \
-	WiFi~::~RadioOff WiFi~::~RunModeThread
+	WiFi~::~RadioOff WiFi~::~RunModeThread WiFi~::~sendEvent WiFi~::~sendConnectEvent WiFi~::getAccessPointItems \
+	BrowsableWifiAP~::~connect_ap
 WIFI_FUNCS_SWITCH := WiFi~::~TalksToModule
-NET_FUNCS := NetworkLWIP_WiFi~::~disable NetworkLWIP_WiFi~::~enable
+NET_FUNCS := NetworkLWIP_WiFi~::~disable NetworkLWIP_WiFi~::~enable NetworkLWIP_WiFi~::~ask_enable \
+	NetworkLWIP_WiFi~::~cfg_show_aps NetworkLWIP_WiFi~::~cfg_enter_ap NetworkLWIP_WiFi~::~cfg_conn_last
 NET_FUNCS_SWITCH := NetworkLWIP_WiFi~::~wifi_enable_change NetworkLWIP_WiFi~::~set_enabled \
 	NetworkLWIP_WiFi~::~cfg_enable NetworkLWIP_WiFi~::~cfg_disable
+CMD_FUNCS := wifi_wifi_connect
 
 CASES := $(wildcard *_test.cpp)
 LEGACY := $(sort $(wildcard legacy/*.sed))
@@ -71,7 +75,7 @@ $(OUT)/wifi_enable_default.h: $(NET_CC) $(NET_H)
 	@grep -q WIFI_ENABLE_DEFAULT $@ || { echo "wifi_task_test: the CFG_WIFI_ENABLE row not found in $<" >&2; exit 1; }
 
 # The code under test, in the order of its files; for a legacy model, with its sed applied
-$(OUT)/task.cc: $(WIFI_CC) $(NET_CC) $(EXTRACT) $(LEG) wifi_task_env.h $(OUT)/wifi_enable_default.h
+$(OUT)/task.cc: Makefile $(WIFI_CC) $(NET_CC) $(CMD_CC) $(EXTRACT) $(LEG) wifi_task_env.h $(OUT)/wifi_enable_default.h
 	@mkdir -p $(OUT)
 	@{ echo '#include "wifi_task_env.h"'; \
 	   $(foreach f,$(WIFI_FUNCS),$(call extract,$(f),$(WIFI_CC));) \
@@ -81,7 +85,8 @@ $(OUT)/task.cc: $(WIFI_CC) $(NET_CC) $(EXTRACT) $(LEG) wifi_task_env.h $(OUT)/wi
 	   $(foreach f,$(NET_FUNCS),$(call extract,$(f),$(NET_CC));) \
 	   echo '#if U64 != 2'; \
 	   $(foreach f,$(NET_FUNCS_SWITCH),$(call extract,$(f),$(NET_CC));) \
-	   echo '#endif'; } | tr -d '\r' > $(OUT)/task.orig
+	   echo '#endif'; \
+	   $(foreach f,$(CMD_FUNCS),$(call extract,$(f),$(CMD_CC));) } | tr -d '\r' > $(OUT)/task.orig
 	@if [ -n "$(LEG)" ]; then \
 	   sed -f $(LEG) $(OUT)/task.orig > $@; \
 	   if cmp -s $@ $(OUT)/task.orig; then echo "wifi_task_test: $(LEG) changes nothing" >&2; exit 1; fi; \

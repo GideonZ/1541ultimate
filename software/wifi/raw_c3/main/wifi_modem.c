@@ -796,9 +796,10 @@ int handle_connect_command(ConnectCommand_t *cmd, ConnectState_t *state)
         case CMD_WIFI_CONNECT:
             user_disconnected = false;
             err = enable_wifi_if_needed(*state);
-            if ((err == ESP_OK) && (*state == Disabled)) {
-                // The radio is on again: whatever the attempt gives, the connector goes
-                // on from here and retries, as after a dropped link
+            if (err == ESP_OK) {
+                // The radio is on: whatever the attempt gives, the connector goes on from
+                // here and retries, as after a dropped link, not idle in Connected or
+                // Disabled
                 *state = Disconnected;
             }
             {

@@ -74,6 +74,11 @@ void reset_world(void)
     saves = 0;
     saved_enabled = false;
     memset(&world, 0, sizeof(world));
+    world.voltages_vbus = 12000; // above the low input voltage warning (U64=2)
+    world.pick_ssid = "HomeNet";
+    string_box_result = 1;
+    world.popup_answer = BUTTON_YES;
+    popups = 0;
 }
 
 void check_failed(const char *what, const char *file, int line)
@@ -84,8 +89,17 @@ void check_failed(const char *what, const char *file, int line)
 }
 
 // The queue of the task: the script, and what the task queues itself
+#define ACT 0x7777 // marks an action of the user in the queue (its bufnr)
 static command_buf_t queue[16];
 static int queue_n, queue_i;
+static command_buf_t pool[8];
+static int pool_i;
+TickType_t waited;
+int requests;
+command_buf_t request;
+int string_box_result = 1;
+int popups;
+static command_buf_t txbuf, replybuf;
 
 TickType_t xTaskGetTickCount(void) { return now; }
 void vTaskDelay(TickType_t t) { stop("delayed"); }
@@ -94,7 +108,15 @@ void vTaskSuspend(TaskHandle_t t) { stop("suspended"); }
 void DmaUART :: ModuleCtrl(int mode) { if (mode == ESP_MODE_OFF) note('F'); }
 // The UART refills a buffer that is given back, so a read after it finds anything
 void DmaUART :: FreeBuffer(command_buf_t *buf) { memset(buf->data, 0xA5, sizeof(buf->data)); buf->size = -1; }
-BaseType_t DmaUART :: GetBuffer(command_buf_t **b, TickType_t t) { return pdFALSE; }
+BaseType_t DmaUART :: GetBuffer(command_buf_t **b, TickType_t t)
+{
+    if (world.no_tx_buffer) {
+        return pdFALSE;
+    }
+    memset(&txbuf, 0, sizeof(txbuf));
+    *b = &txbuf;
+    return pdTRUE;
+}
 
 void UserInterface :: postMessage(const char *msg)
 {
@@ -103,11 +125,66 @@ void UserInterface :: postMessage(const char *msg)
     strcat(messages, "\n");
 }
 
+int UserInterface :: popup(const char *msg, uint8_t flags)
+{
+    note('?');
+    popups++;
+    return world.popup_answer;
+}
+
+void UserInterface :: activate_uiobject(TreeBrowser *tb) { note('T'); }
+
+SubsysResultCode_e NetworkLWIP_WiFi :: manual_connect(SubsysCommand *cmd) { note('k'); return SSRET_OK; }
+int wifi_wifi_autoconnect() { note('a'); return 0; }
+
+int UserInterface :: string_box(const char *msg, char *buffer, int maxlen) { buffer[0] = 0; return string_box_result; }
+void BrowsableWifiAP :: fetch_context_items(IndexedList<Action *> &items) {}
+
+// The request channel: wifi_wifi_connect (cut out of wifi_cmd.cc) sends through these. The
+// request is kept as it went out, and answered as the case says.
+const char *no_wifi_buf = "No buffer\n";
+const char *no_wifi_slot = "No slot\n";
+int wifi_reply_register(rpc_header_t *hdr) { return 1; }
+command_buf_t *wifi_transmit(command_buf_t *buf, int timeout_ms)
+{
+    requests++;
+    request = *buf;
+    if (world.connect_noreply) {
+        return NULL;
+    }
+    memset(&replybuf, 0, sizeof(replybuf));
+    ((rpc_espcmd_resp *)replybuf.data)->esp_err = world.connect_result;
+    return &replybuf;
+}
+
+// The next to be delivered; the others were queued before it
+BaseType_t cmd_buffer_get(command_buf_context_t *context, command_buf_t **b, TickType_t t)
+{
+    *b = &pool[pool_i++ % 8];
+    memset(*b, 0, sizeof(**b));
+    return pdTRUE;
+}
+
+BaseType_t cmd_buffer_loopback(command_buf_context_t *context, command_buf_t *b)
+{
+    if (world.loopback_fails) {
+        return pdFALSE;
+    }
+    memmove(&queue[queue_i + 1], &queue[queue_i], (queue_n - queue_i) * sizeof(queue[0]));
+    queue[queue_i] = *b;
+    queue_n++;
+    return pdTRUE;
+}
+
 BaseType_t cmd_buffer_received(command_buf_context_t *context, command_buf_t **b, TickType_t t)
 {
     count();
     if (++waits == 1) {
         first_wait_state = wifi.getState();
+    }
+    if (queue_i < queue_n && queue[queue_i].bufnr == ACT) {
+        void (*act)(void) = (void (*)(void))queue[queue_i++].object;
+        act();
     }
     if (queue_i < queue_n) {
         *b = &queue[queue_i++];
@@ -117,6 +194,7 @@ BaseType_t cmd_buffer_received(command_buf_context_t *context, command_buf_t **b
         stop("waiting for an event");
     }
     now += t; // the time it waited, with nothing coming
+    waited += t;
     return pdFALSE;
 }
 
@@ -181,10 +259,18 @@ void boot(std::initializer_list<Step> steps)
     calls = 0;
     waits = 0;
     now = 1000;
+    waited = 0;
+    requests = 0;
+    pool_i = 0;
     queue_n = queue_i = 0;
     for (std::initializer_list<Step>::const_iterator s = steps.begin(); s != steps.end(); ++s) {
         command_buf_t *b = &queue[queue_n++];
         memset(b, 0, sizeof(*b));
+        if (s->act) {
+            b->bufnr = ACT;
+            b->object = (void *)s->act;
+            continue;
+        }
         ((rpc_header_t *)b->data)->command = s->code;
         b->size = sizeof(rpc_header_t);
         if (s->code == EVENT_CONNECTED && s->ssid) {
@@ -205,4 +291,14 @@ const char *after(char c)
 {
     const char *p = strchr(rlog, c);
     return p ? p + 1 : "";
+}
+
+void pick(void)
+{
+    BrowsableWifiAP ap(NULL, (char *)world.pick_ssid, -50, world.pick_auth);
+    UserInterface ui;
+    SubsysCommand cmd;
+    cmd.functionID = (intptr_t)&ap;
+    cmd.user_interface = &ui;
+    BrowsableWifiAP :: connect_ap(&cmd);
 }
