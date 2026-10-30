@@ -24,8 +24,10 @@ void start_dispatch(QueueHandle_t queue);
 void send_button_event(uint8_t button);
 void send_keepalive();
 
-#define IDENT_STRING "ESP32 WiFi Bridge V1.9"
+#define IDENT_STRING "ESP32 WiFi Bridge V1.10"
 #define IDENT_MAJOR   1
+// 1.10: starts and stops the radio under the entropy gate of wifi_radio.c, which this module
+//       does not use (radio_entropy_none.c).
 // 1.9: turns its radio off and on when asked (CMD_WIFI_DISABLE / CMD_WIFI_ENABLE) and
 // starts with it off until the Ultimate sends Enable or Autoconnect (or, without the
 // switch, asks for the connection state); after a restart of its own it puts the radio
@@ -39,7 +41,7 @@ void send_keepalive();
 // Disconnected forever. The Ultimate's updater only reflashes the module
 // when this differs from what the module reports, so a module change that
 // does not bump it is silently never installed.
-#define IDENT_MINOR   9
+#define IDENT_MINOR   10
 #define MULTITHREADED 0
 #define DISPATCHER_STACK 3072
 

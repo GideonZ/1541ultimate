@@ -28,6 +28,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "rpc_calls.h"
+#include "rpc_shared.h" // entropy_source_t; the U2+L module's rpc_calls.h does not include it
 
 // Results; the values are those of the esp_err_t they are passed on as (asserted in
 // radio_entropy_esp.c)
@@ -52,8 +53,8 @@
 entropy_source_t entropy_source(void);
 uint32_t entropy_epoch(void);
 
-// Once, after the boot's radio start and before the first RPC is served. A boot that did
-// not start the radio enables the ADC source here.
+// Once, after wifi_init() and before the first RPC is served. The U64 module starts with
+// its radio off, so it enables the ADC source here; a boot that started the radio does not.
 void radio_entropy_init(void);
 
 // Around every radio start and stop, by wifi_radio.c only. begin takes the gate
