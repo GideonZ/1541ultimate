@@ -55,7 +55,6 @@ class WiFi : public Esp32Application
     uint32_t my_netmask;
 #if U64 != 2
     wifi_switch_t radio_switch;
-    bool TalksToModule(void);
 #endif
 
     bool RequestEcho(void);

@@ -29,11 +29,10 @@ LEG ?=
 OUT := $(if $(LEG),output/red_$(basename $(notdir $(LEG)))_u64_$(U64),output/u64_$(U64))
 
 # Function names are given as written in the source (~ for a blank), so that the C++ method
-# of a class is found. Those of wifi_switch.h's users exist for the products other than the U64=2 only.
+# of a class is found.
 WIFI_FUNCS := WiFi~::~WiFi WiFi~::~Init WiFi~::~Enable WiFi~::~Disable WiFi~::~RadioOn \
 	WiFi~::~RadioOff WiFi~::~RunModeThread WiFi~::~sendEvent WiFi~::~sendConnectPending WiFi~::getAccessPointItems \
 	BrowsableWifiAP~::~connect_ap
-WIFI_FUNCS_SWITCH := WiFi~::~TalksToModule
 NET_FUNCS := NetworkLWIP_WiFi~::~disable NetworkLWIP_WiFi~::~enable NetworkLWIP_WiFi~::~ask_enable \
 	NetworkLWIP_WiFi~::~cfg_show_aps NetworkLWIP_WiFi~::~cfg_enter_ap NetworkLWIP_WiFi~::~cfg_conn_last
 NET_FUNCS_SWITCH := NetworkLWIP_WiFi~::~wifi_enable_change NetworkLWIP_WiFi~::~set_enabled \
@@ -79,9 +78,6 @@ $(OUT)/task.cc: Makefile $(WIFI_CC) $(NET_CC) $(CMD_CC) $(EXTRACT) $(LEG) wifi_t
 	@mkdir -p $(OUT)
 	@{ echo '#include "wifi_task_env.h"'; \
 	   $(foreach f,$(WIFI_FUNCS),$(call extract,$(f),$(WIFI_CC));) \
-	   echo '#if U64 != 2'; \
-	   $(foreach f,$(WIFI_FUNCS_SWITCH),$(call extract,$(f),$(WIFI_CC));) \
-	   echo '#endif'; \
 	   $(foreach f,$(NET_FUNCS),$(call extract,$(f),$(NET_CC));) \
 	   echo '#if U64 != 2'; \
 	   $(foreach f,$(NET_FUNCS_SWITCH),$(call extract,$(f),$(NET_CC));) \

@@ -119,7 +119,8 @@ void vTaskSuspend(TaskHandle_t t) { stop("suspended"); }
 
 void DmaUART :: ModuleCtrl(int mode) { if (mode == ESP_MODE_OFF) note('F'); }
 // The UART refills a buffer that is given back, so a read after it finds anything
-void DmaUART :: FreeBuffer(command_buf_t *buf) { memset(buf->data, 0xA5, sizeof(buf->data)); buf->size = -1; }
+int frees; // buffers given back to the UART
+void DmaUART :: FreeBuffer(command_buf_t *buf) { frees++; memset(buf->data, 0xA5, sizeof(buf->data)); buf->size = -1; }
 BaseType_t DmaUART :: GetBuffer(command_buf_t **b, TickType_t t)
 {
     if (world.no_tx_buffer) {

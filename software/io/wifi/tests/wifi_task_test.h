@@ -47,6 +47,7 @@ void reset_world(void); // every case starts with it
 extern int saves;          // how often the WiFi settings were written
 extern bool saved_enabled; // "WiFi Enabled" as written
 extern char rlog[256];     // what the task did, one letter each
+extern int frees;          // buffers given back to the UART
 extern int popups;         // how often the user was asked
 extern char messages[256]; // what the user was told, one message per line
 extern const char *ended;  // why the task stopped running
