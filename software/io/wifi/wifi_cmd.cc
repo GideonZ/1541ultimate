@@ -299,7 +299,7 @@ int wifi_scan(void *a)
     RETURN_ESP;
 }
 
-int wifi_wifi_connect(const char *ssid, const char *password, uint8_t auth)
+int wifi_wifi_connect(const char *ssid, const char *password, uint8_t auth, const uint8_t *bssid, uint8_t channel)
 {
     BUFARGS(wifi_connect, CMD_WIFI_CONNECT);
 
@@ -308,6 +308,13 @@ int wifi_wifi_connect(const char *ssid, const char *password, uint8_t auth)
     strncpy(args->ssid, ssid, 32);
     strncpy(args->password, password, 64);
     args->auth_mode = auth;
+    // A module that predates these ignores them
+    bzero(args->bssid, 6);
+    args->channel = 0;
+    if (bssid) {
+        memcpy(args->bssid, bssid, 6);
+        args->channel = channel;
+    }
 
     TRANSMIT_T(scan, WIFI_SLOW_TIMEOUT_MS);
     RETURN_ESP;

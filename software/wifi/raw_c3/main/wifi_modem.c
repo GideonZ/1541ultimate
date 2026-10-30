@@ -460,7 +460,7 @@ esp_err_t wifi_set_last_ap(int index)
     return err;
 }
 
-esp_err_t attempt_connect(const char *ssid, const char *passwd, uint8_t authmode)
+esp_err_t attempt_connect(const char *ssid, const char *passwd, uint8_t authmode, const uint8_t *bssid, uint8_t channel)
 {
     if (connected_g) {
         esp_err_t err = esp_wifi_disconnect();
@@ -498,6 +498,15 @@ esp_err_t attempt_connect(const char *ssid, const char *passwd, uint8_t authmode
     // one with the strongest signal; the others stay as fallbacks.
     wifi_config_auto.sta.scan_method = WIFI_ALL_CHANNEL_SCAN;
     wifi_config_auto.sta.sort_method = WIFI_CONNECT_AP_BY_SIGNAL;
+    // Unless the user picked one of them from the list: then only that one,
+    // with its channel scanned first.
+    if (bssid && memcmp(bssid, "\0\0\0\0\0\0", 6)) {
+        wifi_config_auto.sta.bssid_set = true;
+        memcpy(wifi_config_auto.sta.bssid, bssid, 6);
+        if ((channel >= 1) && (channel <= 13)) {
+            wifi_config_auto.sta.channel = channel;
+        }
+    }
 
     esp_err_t err = esp_wifi_set_config(WIFI_IF_STA, &wifi_config_auto);
     if (err == ESP_OK) {
@@ -601,7 +610,7 @@ esp_err_t wifi_connect_to_scanned(int index)
         strncpy(last_connect.ssid, (const char *)(ap_info[index].ssid), 32);
         last_connect.ssid[32] = 0;
         last_connect.auth_mode = ap_info[index].authmode;
-        return attempt_connect(last_connect.ssid, last_connect.pw, last_connect.auth_mode);
+        return attempt_connect(last_connect.ssid, last_connect.pw, last_connect.auth_mode, NULL, 0);
     }
     return err;
 }
@@ -638,7 +647,7 @@ esp_err_t wifi_connect_to_stored(int index)
             if (err == ESP_OK) {
                 last_connect.list_index = index;
                 last_connect.buf = NULL;
-                err = attempt_connect(last_connect.ssid, last_connect.pw, last_connect.auth_mode);
+                err = attempt_connect(last_connect.ssid, last_connect.pw, last_connect.auth_mode, NULL, 0);
             }
         }
     }
@@ -813,7 +822,7 @@ int handle_connect_command(ConnectCommand_t *cmd, ConnectState_t *state)
                 last_connect.list_index = -1;
                 rpc_espcmd_resp *resp = (rpc_espcmd_resp *)buf->data;
                 if (err == ESP_OK) {
-                    err = attempt_connect(last_connect.ssid, last_connect.pw, last_connect.auth_mode);
+                    err = attempt_connect(last_connect.ssid, last_connect.pw, last_connect.auth_mode, last_connect.bssid, last_connect.channel);
                 }
                 resp->esp_err = err;
                 my_uart_transmit_packet(UART_NUM_1, cmd->buf);

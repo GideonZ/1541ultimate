@@ -115,12 +115,16 @@ class BrowsableWifiAP : public Browsable
     char ssid[32];
     int8_t dbm;
     uint8_t auth;
+    uint8_t bssid[6];
+    uint8_t channel;
 public:
-    BrowsableWifiAP(Browsable *parent, char *ssid, int8_t dbm, uint8_t auth) {
+    BrowsableWifiAP(Browsable *parent, char *ssid, int8_t dbm, uint8_t auth, const uint8_t *bssid, uint8_t channel) {
         this->parent = parent;
         strncpy(this->ssid, ssid, 32);
         this->dbm = dbm;
         this->auth = auth;
+        memcpy(this->bssid, bssid, 6);
+        this->channel = channel;
     }
 
     void getDisplayString(char *buffer, int width, UserInterface *ui) {
