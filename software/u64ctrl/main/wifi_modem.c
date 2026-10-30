@@ -33,6 +33,7 @@
 #include "button_handler.h"
 #include "wol_magic.h"
 #include "recovery.h"
+#include "wifi_radio.h"
 
 #define NET_CMD_BUFSIZE 512
 
@@ -364,7 +365,7 @@ static void wifi_init()
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_NONE));
-    ESP_ERROR_CHECK(esp_wifi_start());
+    ESP_ERROR_CHECK(radio_start());
 
     ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT,
                                                         ESP_EVENT_ANY_ID,
@@ -778,7 +779,7 @@ esp_err_t enable_wifi_if_needed(ConnectState_t state)
 {
     if (state == Disabled) {
         ESP_LOGI(TAG, "Starting WiFi.");
-        esp_err_t err = esp_wifi_start();
+        esp_err_t err = radio_start();
         if (err == ESP_OK) {
             send_event(EVENT_DISCONNECTED, 0);
             disabled_g = 0;
@@ -809,7 +810,7 @@ int handle_connect_command(ConnectCommand_t *cmd, ConnectState_t *state)
                 }
             }
             ESP_LOGI(TAG, "Stopping WiFi.");
-            err = esp_wifi_stop();
+            err = radio_stop();
             if (err == ESP_OK) {
                 send_event(EVENT_DISABLED, 0);
                 *state = Disabled;
@@ -825,7 +826,7 @@ int handle_connect_command(ConnectCommand_t *cmd, ConnectState_t *state)
                 // network again, so a Disconnect from before the Disable is spent
                 user_disconnected = false;
                 ESP_LOGI(TAG, "Starting WiFi.");
-                err = esp_wifi_start();
+                err = radio_start();
                 if (err == ESP_OK) {
                     send_event(EVENT_DISCONNECTED, 0);
                     *state = LastAP;
