@@ -46,7 +46,8 @@ Local verification:
 
 ## Coordinated updater changes
 
-The updater now checks board support, native/FPGA/controller payload checksums and
+The standard updater retains upstream behavior. A separate
+`COORDINATED_HTTPS_UPDATE=1` build selects `update_https_u64ii.cc`. It checks board support, native/FPGA/controller payload checksums and
 controller identity before `setup`, whose flash mount can otherwise format an
 uninitialized volume. It stops on unknown, equal-but-unverified or newer versions.
 Only an identified older controller is eligible. `NO_ESP` builds stop rather than
@@ -69,8 +70,11 @@ qualification remain unresolved. Transfer acknowledgements alone do not provide
 that proof. Neither the diagnostic build nor the revised updater is installation
 ready on the strength of the local tests alone.
 
-Coordinated updater builds can set `MANAGEMENT_SHA256` to the approved
+Coordinated updater builds must set `MANAGEMENT_SHA256` to the approved
 `../ultimate/result/ultimate.app` hash. This verifies the supplied file and prevents
-the recursive management build from silently changing the paired payload. Omit
-the option for the existing ordinary build behavior. All carried payloads still
-require the independent package/checksum audit.
+the recursive management build from silently changing the paired payload. They
+also require `CONTROLLER_SHA256`; the exact controller payload hash and its
+advertised provider version are checked before linking. The native updater uses
+the provider-enabled version branch for its preflight comparison. These build
+checks do not replace post-write verification. All carried payloads still require
+the independent package/checksum audit.

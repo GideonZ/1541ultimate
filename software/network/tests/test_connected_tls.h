@@ -37,6 +37,11 @@ struct Remote {
     uint64_t sequence = 0;
     const uint32_t lease;
     Remote(Platform& p, Identity boot, uint32_t lease_ms) : platform(p), worker(wire,boot,Required,{1000,lease_ms,250}),lease(lease_ms) {}
+    ~Remote() {
+        // Preserve failed assertions in the report rather than aborting in the
+        // owner's destructor with a fixture resource still attached.
+        if (resource) { worker.disconnect(); worker.step(now_ms()); }
+    }
     bool admit(const Ticket& requested, uint32_t timeout) {
         if (resource) return false;
         tls_stream_port callbacks = {&platform,clock_read,clock_ready,cancelled,entropy,trust,open_socket,read_socket,write_socket,close_socket};
@@ -101,6 +106,10 @@ struct Provider : HttpSecureProvider {
     }
     void pump() {
         ingress(); remote.worker.step(now_ms()); replies(); runner.step(now_ms());
+        // runner.step may just have emitted a renewal. Complete this synchronous
+        // fixture's delivery before entering another blocking TLS operation or
+        // testing whether terminal Close can be sent.
+        ingress(); remote.worker.step(now_ms()); replies(); delivery.step(now_ms());
     }
     void initialize() {
         expect(runner.start(boot,lifetime_events.token(),now_ms()),"connected explicit startup");
@@ -134,6 +143,7 @@ struct Provider : HttpSecureProvider {
         OperationCancellation cancellation, generation;
         bool attempted = false, closed = false;
         int transact(unsigned op, void *buffer, int length, uint16_t port = 0) {
+            owner.pump();
             if (closed || cancellation.cancelled() || generation.cancelled() || !owner.runner.current(owner.ticket,now_ms())) return -1;
             uint8_t bytes[Chunk] = {};
             if (length < 0) return -1;

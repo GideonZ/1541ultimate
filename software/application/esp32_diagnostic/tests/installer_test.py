@@ -10,7 +10,7 @@ import sys
 
 root, out = Path(sys.argv[1]), Path(sys.argv[2])
 out.mkdir(exist_ok=True)
-source = (root / 'software/application/update_u2p/update_u64ii.cc').read_text()
+source = (root / 'software/application/update_u2p/update_https_u64ii.cc').read_text()
 body = re.sub(r'^#include[^\n]*$', '', source, flags=re.M)
 symbols = re.findall(r'extern (?:uint32_t|uint8_t) (\w+);', body)
 arrays = re.findall(r'extern const char (\w+)\[[^]]*\];', body)
@@ -29,7 +29,7 @@ stub = r'''
 #endif
 #define SILENT 0
 #define IDENT_MAJOR 1
-#define IDENT_MINOR 21
+#define IDENT_MINOR 22
 #define pdMS_TO_TICKS(x) (x)
 #define portENTER_CRITICAL() ((void)0)
 #define portEXIT_CRITICAL() ((void)0)
@@ -39,7 +39,7 @@ stub = r'''
 #define ROMS_DIRECTORY "/flash/roms"
 #define CARTS_DIRECTORY "/flash/carts"
 static std::vector<std::string> events;
-static int board=2, minor=20, corrupt=0, checksum_calls=0, fail_native=0, native_calls=0, fail_esp=0, esp_calls=0;
+static int board=2, minor=IDENT_MINOR-1, corrupt=0, checksum_calls=0, fail_native=0, native_calls=0, fail_esp=0, esp_calls=0;
 static bool identified=true, accept=true, download=true;
 struct Halt {};
 struct Finished {};
@@ -110,7 +110,7 @@ stub += '\n'.join('extern const char '+x+'[1]={0};' for x in arrays) + '\n'
 tail = r'''
 static bool has(const char *s) { for(auto &e:events) if(e==s) return true; return false; }
 static void reset() {
-    events.clear(); stop_delays=0; board=2; minor=20; corrupt=checksum_calls=fail_native=native_calls=fail_esp=esp_calls=0;
+    events.clear(); stop_delays=0; board=2; minor=IDENT_MINOR-1; corrupt=checksum_calls=fail_native=native_calls=fail_esp=esp_calls=0;
     identified=accept=download=true;
 }
 static void run() { try { ultimate_main(0,nullptr); } catch(Halt&) {} catch(Finished&) {} }
@@ -124,7 +124,7 @@ int main() {
 #else
     for(int b : {0,1,4,255}) { reset(); board=b; run(); blocked(); assert(!has("identity")); ++count; }
     for(int n=1;n<=5;++n) { reset(); corrupt=n; run(); blocked(); assert(!has("identity")); ++count; }
-    for(int v : {21,22,65534}) { reset(); minor=v; run(); blocked(); ++count; }
+    for(int v : {IDENT_MINOR,IDENT_MINOR+1,65534}) { reset(); minor=v; run(); blocked(); ++count; }
     reset(); identified=false; run(); blocked(); ++count;
     for(int b : {2,3}) {
         reset(); board=b; run();

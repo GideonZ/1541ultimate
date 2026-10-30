@@ -12,16 +12,16 @@ cases = [
     ('controller-reset', 'software/io/wifi/controller_probe.h', 'flow | 128', 'flow | 128 | 0x30', 'binary'),
     ('wrong-command', 'software/io/wifi/controller_probe.h', 'request[0] = 2;', 'request[0] = 3;', 'binary'),
     ('accept-malformed', 'software/io/wifi/controller_probe.h', 'result = controller_identity_parse(data, length, 0xfe, sequence, id)', 'result = true', 'binary'),
-    ('bypass-identity-gate', 'software/application/update_u2p/update_u64ii.cc', 'if (!controller_preflight())', 'if (false && !controller_preflight())', 'installer'),
-    ('accept-equal-or-unknown', 'software/application/update_u2p/update_u64ii.cc', 'if (decision != ControllerInstallDecision::Older)', 'if (false)', 'installer'),
-    ('ignore-controller-write-failure', 'software/application/update_u2p/update_u64ii.cc', 'if (!update_esp32_impl())', 'if ((update_esp32_impl(), false))', 'installer'),
+    ('bypass-identity-gate', 'software/application/update_u2p/update_https_u64ii.cc', 'if (!controller_preflight())', 'if (false && !controller_preflight())', 'installer'),
+    ('accept-equal-or-unknown', 'software/application/update_u2p/update_https_u64ii.cc', 'if (decision != ControllerInstallDecision::Older)', 'if (false)', 'installer'),
+    ('ignore-controller-write-failure', 'software/application/update_u2p/update_https_u64ii.cc', 'if (!update_esp32_impl())', 'if ((update_esp32_impl(), false))', 'installer'),
 ]
 report = []
 for name, rel, old, new, kind in cases:
     work = out / name
     for directory in ('software/application/esp32_diagnostic', 'target/u64ii/riscv/esp32_diagnostic'):
         shutil.copytree(root/directory, work/directory, ignore=shutil.ignore_patterns('result','__pycache__'))
-    for file in ('software/io/wifi/controller_identity.h','software/io/wifi/controller_probe.h','software/application/update_u2p/update_u64ii.cc'):
+    for file in ('software/io/wifi/controller_identity.h','software/io/wifi/controller_probe.h','software/application/update_u2p/update_https_u64ii.cc'):
         dest = work/file; dest.parent.mkdir(parents=True,exist_ok=True); shutil.copyfile(root/file,dest)
     changed = work/rel
     content = changed.read_text(); assert old in content
