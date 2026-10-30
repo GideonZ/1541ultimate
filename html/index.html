@@ -24,6 +24,21 @@ $(document).ready(async function () {
 
     var basic_error = ""; // for error reports during parsing
 
+    // Tabs that may be restored after a page reload.
+    // Other tabs always return to Home.
+    const RESTORE_TABS = ['tokenizer'];
+    const TAB_STORAGE_KEY = 'activeTab';
+
+    function saveActiveTab(tab) {
+        try {
+            if (RESTORE_TABS.includes(tab))
+                sessionStorage.setItem(TAB_STORAGE_KEY, tab);
+            else
+                sessionStorage.removeItem(TAB_STORAGE_KEY);
+        } catch (e) {
+        }
+    }
+
     async function ensureLoggedIn() {
         // This also works with older firmware that do not support password protection (will get a 404 for /v1/info)
         let [status_code, content] = await make_get_request("http://" + serverIP + "/v1/info");
@@ -66,7 +81,14 @@ $(document).ready(async function () {
 
             $("#left-nav").css("visibility", "visible");
             $(".page").hide();
-            $("#welcome").show();
+            let tab = null;
+            try {
+                tab = sessionStorage.getItem(TAB_STORAGE_KEY);
+            } catch (e) {
+            }
+            if (!RESTORE_TABS.includes(tab))
+                tab = 'welcome';
+            $("#" + tab).show();
         }
     };
 
@@ -304,6 +326,11 @@ $(document).ready(async function () {
         await parseBASIC();
     });
 
+    // Track navigation without changing existing tab handlers.
+    $('#showwelcome, #showsidplay, #showrunner, #showterminal, #showtokenizer').on('click', function () {
+        saveActiveTab(this.id === 'showtokenizer' ? 'tokenizer' : null);
+    });
+
     $('#submitBASICAndRun').click(async function (event) {
         event.preventDefault(); // Prevents the default action of the anchor tag
         if (await parseBASIC() === true)
@@ -325,6 +352,23 @@ $(document).ready(async function () {
     });
     // browser may have cached the checkbox state on a page reload: synchronize the initially displayed state
     $("#basiceditor").toggleClass("uppercase", $('#uppercaseBASIC').prop('checked'));
+
+    // The checkbox controls whether BASIC instructions and examples from the
+    // loaded profile are displayed alongside the welcome text on page load.
+    // Changing it does not modify the current editor content, preventing
+    // accidental loss of BASIC code. The preference is saved for this tab.
+    try {
+        $('#showBASICcode').prop('checked', sessionStorage.getItem('showBASICcode') === 'true');
+    } catch (e) {
+        $('#showBASICcode').prop('checked', false);
+    }
+
+    $('#showBASICcode').on('change', function () {
+        try {
+            sessionStorage.setItem('showBASICcode', this.checked);
+        } catch (e) {
+        }
+    });
 
     // Custom modal handler to clear the editor without browser interference
     $('#clearBASIC').click(function (event) {
@@ -528,11 +572,18 @@ $(document).ready(async function () {
             initializeTokenizerUI();
         }
 
-        // 6. Inject predefined BASIC code into the editor
-        if (typeof window.BASIC_CODE !== 'undefined' && window.BASIC_CODE !== "") {
+        // 6. Show the welcome text and optionally include BASIC examples.
+        // Replace the initial error message only after the profile is ready.
+        // The checkbox preference is applied on page load, not when toggled.
+        if (window.CBM_SIGNATURE === "READY") {
             const editor = document.getElementById('basiceditor');
             if (editor) {
-                editor.value = window.BASIC_CODE;
+                const welcome = window.WELCOME_TEXT || "";
+                const basic = $('#showBASICcode').prop('checked')
+                    ? (window.BASIC_CODE || "")
+                    : "";
+
+                editor.value = welcome + basic;
                 editor.dispatchEvent(new Event('input'));
             }
         }
@@ -2041,6 +2092,7 @@ or your custom profile if modified.
                 <span class="padding-tr-5"><input type="button" id="stopBASIC" value="Stop" title="Send STOP command to the C64"></span>
                 <span class="padding-tr-5"><input type="button" id="clearBASIC" value="Clear" title="Clear the editor content"></span>
                 <input type="checkbox" id="uppercaseBASIC"><label for="uppercaseBASIC" title="Toggle uppercase/lowercase display of BASIC program text">Uppercase</label>
+                <input type="checkbox" id="showBASICcode"><label for="showBASICcode" title="Show BASIC instructions and examples from the loaded profile. Changes take effect after reloading the page (F5 or Ctrl+F5).">Show profile examples</label>
             </div>
 
             <div id="basicmsg">An error has occurred. Check for valid codes.</div>

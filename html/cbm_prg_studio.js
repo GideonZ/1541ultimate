@@ -9,9 +9,12 @@
 //    Assign data directly to variables to ensure global visibility.
 //
 // 2. Mandatory Data Sets:
-//    - BASIC_CODE: A backtick-quoted string (``). Content not starting with
-//      a line number is treated as informational text (instructions,
-//      welcome message), while the rest is handled as BASIC code.
+//    - WELCOME_TEXT: A backtick-quoted string (``) containing the welcome
+//      message and profile information. Always displayed in the editor
+//      after the profile is successfully loaded.
+//    - BASIC_CODE: A backtick-quoted string (``) containing instructions
+//      and example BASIC code. Displayed only when "Show profile examples"
+//      is enabled in the editor (disabled by default).
 //    - SPECIAL:    Mappings for special characters and structural commands
 //      translated into specific tokens within the 0x00-0xFF range.
 //    - TOKENS:     Complete set of BASIC Instructions and Commands. Each
@@ -27,11 +30,13 @@
 //    the main application that the data load is complete and safe to process.
 // ---------------------------------------------------------------------------
 //
-// Initial welcome message and code template displayed in the Tokenizer editor window
-BASIC_CODE = `!- Welcome to Ultimate BASIC Editor / Tokenizer
+// Welcome message and profile information (always displayed)
+WELCOME_TEXT = `!- Welcome to Ultimate BASIC Editor / Tokenizer
 !- ----------------------------------------------------------
 !- Current Profile: CBM prg Studio Mapping Standard Basic
-!-
+`;
+// Optional instructions and BASIC examples (controlled by "Show profile examples")
+BASIC_CODE = `!-
 !- QUICK TIPS:
 !- - Use uppercase or lowercase for BASIC commands (e.g. print, PRINT).
 !- - C64 BASIC keyword abbreviations are permitted,
