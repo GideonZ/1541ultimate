@@ -1,9 +1,10 @@
 # HTTPS validation snapshot — October 30, 2026
 
 This is a draft review candidate, not an installation or hardware qualification.
-The full host and cross-build snapshot is
+The initial host and cross-build snapshot is
 `fb8c76ab3141135f33aa74533ec068f608788d1f`. Documentation and explicit CI package
 declarations added after this snapshot do not change the tested firmware inputs.
+The subsequent factory-test correction and its local verification are recorded below.
 
 ## Results
 
@@ -24,13 +25,44 @@ declarations added after this snapshot do not change the tested firmware inputs.
 The host assertion total includes the session model's 1,354 checks and the assembly
 suite's 172 checks. Parser test counts and mutation checks are separate; they are
 not added to that assertion total. Wi-Fi reply-table and ingress tests also pass.
-The GitHub-hosted workflow has not run for this local revision.
+The published head `bf5c7b0` passed the hosted HTTPS host check, but its Build job
+failed in the factory-test link described below.
 
 Reproduce the host run using the public dependency pins and command in
 [the host test README](../target/pc/linux/test_http_tls/README.md). Complete raw
 logs, peer records, command results and independent audits are retained in the
 review evidence package. Its download link must be verified when it is published;
 no unpublished download URL is represented here as available.
+
+## Factory-test build correction
+
+The [hosted Build job](https://github.com/GideonZ/1541ultimate/actions/runs/41028507948/job/123972319735)
+failed because the U64-II factory tester links `wifi_cmd.cc` without the WiFi
+application that defines `wifi_provider_receive`. A fresh local cross-build of
+`bf5c7b0` reproduced that undefined reference.
+
+The factory target now selects `WIFI_COMMANDS_ONLY`, excluding the provider
+ingress hook while retaining frame-length checks and ordinary RPC reply handling.
+Normal firmware keeps the hook; recovery keeps its existing exclusion. No HTTP
+interface or provider protocol changes are involved.
+
+Local checks on the correction passed:
+
+- Factory application, ELF, simulation output and raw binary cross-build.
+- Default and journal-enabled U64-II application cross-builds.
+- Sanitized command tests for normal, factory and recovery configurations,
+  covering frame rejection, reply delivery, timeouts and late replies. Factory
+  and recovery tests supply no provider stub. The factory regression fails to
+  link with the original guard and passes with the correction.
+- Symbol checks: factory retains the receive ISR without the provider hook;
+  normal firmware retains the provider hook.
+- Complete host regression: 81 stages, 18,865 counted assertions, 37 parser tests
+  and 184 TLS cases with recovery. Independent evidence audit passed and all
+  seven missing or altered evidence controls were rejected.
+
+Cross-builds used xPack RISC-V GCC 11.3.0. These results are local; the full hosted
+multi-board Build job has not been rerun with this correction. No firmware was
+installed or executed on a device. Previous hardware and installation gates remain.
 
 ## Provenance and limits
 

@@ -1,5 +1,5 @@
 #include "wifi_cmd.h"
-#ifndef RECOVERYAPP
+#if !defined(RECOVERYAPP) && !defined(WIFI_COMMANDS_ONLY)
 #include "provider_wifi_ingress.h"
 #endif
 #include "dump_hex.h"
@@ -18,7 +18,7 @@ void hex(uint8_t h)
 BaseType_t wifi_rx_isr(command_buf_context_t *context, command_buf_t *buf, BaseType_t *w)
 {
     if (buf->size < int(sizeof(rpc_header_t)) || buf->size > int(sizeof(buf->data))
-#ifndef RECOVERYAPP
+#if !defined(RECOVERYAPP) && !defined(WIFI_COMMANDS_ONLY)
         || wifi_provider_receive(buf)
 #endif
     ) {

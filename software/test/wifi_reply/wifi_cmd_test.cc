@@ -20,7 +20,9 @@ static TickType_t first_wait;       // the ticks of the first wait of a request
 static int waits;
 static int provider_frames, freed;
 static bool provider_consumes;
+#if !defined(RECOVERYAPP) && !defined(WIFI_COMMANDS_ONLY)
 bool wifi_provider_receive(command_buf_t *) { ++provider_frames; return provider_consumes; }
+#endif
 extern "C" BaseType_t cmd_buffer_free_isr(command_buf_context_t *, command_buf_t *, BaseType_t *)
 { ++freed; return pdFALSE; }
 enum reply_time { NEVER, ON_TIME, AT_TIMEOUT, AFTER_RELEASE };
@@ -208,8 +210,13 @@ static void test_provider_ingress(void)
     wifi_rx_isr(NULL, &rxbuf, &wake);
     CHECK(freed == 2 && provider_frames == 0 && queued == 0 && !notify_pending);
     rxbuf.size = sizeof(rpc_header_t);
+    *(rpc_header_t *)rxbuf.data = {};
     wifi_rx_isr(NULL, &rxbuf, &wake);
+#if !defined(RECOVERYAPP) && !defined(WIFI_COMMANDS_ONLY)
     CHECK(freed == 3 && provider_frames == 1 && queued == 0 && !notify_pending);
+#else
+    CHECK(freed == 2 && provider_frames == 0 && queued == 1 && !notify_pending);
+#endif
     provider_consumes = false;
 }
 
