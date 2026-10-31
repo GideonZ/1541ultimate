@@ -97,8 +97,12 @@ uint8_t power_get_wifi_enabled(void)
 
 esp_err_t power_set_wifi_enabled(uint8_t enabled)
 {
+    enabled = enabled ? 1 : 0;
+    if (power_get_wifi_enabled() == enabled) {
+        return ESP_OK; // the Ultimate sends its setting at every handshake
+    }
     ESP_LOGI(TAG, "WiFi: %s", enabled ? "ENABLED" : "DISABLED");
-    return write_u8(NVS_KEY_WIFI, enabled ? 1 : 0);
+    return write_u8(NVS_KEY_WIFI, enabled);
 }
 
 uint8_t power_get_wake_on_wifi(void)

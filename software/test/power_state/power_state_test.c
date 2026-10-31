@@ -154,6 +154,37 @@ int main(void)
     (void)power_set_wake_on_wifi(WAKE_ON_WIFI_DISABLED);
     check(nvs_stub_commits() > 0, "a real change does touch the flash");
 
+    printf("WiFi Enabled on a module that never stored it (an upgrade)\n");
+    nvs_stub_erase_all();
+    check_eq(power_get_wifi_enabled(), 1, "reads as Enabled");
+
+    printf("A stored WiFi Enabled value that is out of range\n");
+    {
+        nvs_handle_t h;
+        check_eq(nvs_open("power", NVS_READWRITE, &h), ESP_OK, "namespace can be opened");
+        nvs_set_u8(h, "wifion", 42);
+        nvs_commit(h);
+        nvs_close(h);
+    }
+    check_eq(power_get_wifi_enabled(), 1, "is read as Enabled");
+
+    printf("Disabling WiFi, and the other settings\n");
+    given(POWERON_MODE_LAST_STATE, 1);
+    check_eq(power_set_wifi_enabled(0), ESP_OK, "disabling is accepted");
+    check_eq(power_get_wifi_enabled(), 0, "reads back as Disabled");
+    power_set_mode(POWERON_MODE_ON);
+    (void)power_set_wake_on_wifi(WAKE_ON_WIFI_ENABLED);
+    check_eq(power_get_wifi_enabled(), 0, "survives a mode and a wake write");
+    check_eq(power_get_mode(), POWERON_MODE_ON, "and does not change them");
+
+    printf("Writing a WiFi Enabled value that has not changed\n");
+    nvs_stub_reset_commits();
+    (void)power_set_wifi_enabled(0);
+    check_eq(nvs_stub_commits(), 0, "does not touch the flash");
+    (void)power_set_wifi_enabled(1);
+    check(nvs_stub_commits() > 0, "a real change does touch the flash");
+    check_eq(power_get_wifi_enabled(), 1, "and reads back as Enabled");
+
     printf("Arming the watcher for a magic packet\n");
     nvs_stub_erase_all();
     (void)power_set_wake_on_wifi(WAKE_ON_WIFI_ENABLED);
