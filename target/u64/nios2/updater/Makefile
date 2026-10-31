@@ -150,7 +150,7 @@ ultimate.chk: ../ultimate/result/ultimate.app
 update_binaries_u64.o: u64.swp ../ultimate/result/ultimate.app
 
 ../ultimate/result/ultimate.app::
-	make -C ../ultimate
+	+$(MAKE) -C ../ultimate
 
 update_u64.o: update_u64.cc $(INCLUDES) $(CHK_BIN) ultimate.chk u64.chk
 	@echo "Compiling $(notdir $<)"
