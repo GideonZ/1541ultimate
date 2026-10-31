@@ -239,7 +239,8 @@ static void got_ip_event_handler(void *esp_netif, esp_event_base_t base, int32_t
     }
 }
 
-static void send_event(uint8_t evcode)
+// reason: what EVENT_DISCONNECTED says (0: unknown, as for a disconnect this module makes up)
+static void send_event(uint8_t evcode, uint8_t reason)
 {
     command_buf_t *reply;
     if (my_uart_get_buffer(UART_NUM_1, &reply, 100)) {
@@ -252,6 +253,9 @@ static void send_event(uint8_t evcode)
             event_pkt_connected *ev2 = (event_pkt_connected *)reply->data;
             memcpy(ev2->ssid, last_connect.ssid, 32);
             reply->size = sizeof(event_pkt_connected);
+        } else if (evcode == EVENT_DISCONNECTED) {
+            ((event_pkt_disconnected *)reply->data)->reason = reason;
+            reply->size = sizeof(event_pkt_disconnected);
         }
         ESP_LOGI(TAG, "Sending event %d to ultimate", evcode);
         if(my_uart_transmit_packet(UART_NUM_1, reply) == pdFALSE) {
@@ -265,9 +269,9 @@ static void send_event(uint8_t evcode)
 void wifi_send_connected_event(void)
 {
     if(connected_g) {
-        send_event(EVENT_CONNECTED);
+        send_event(EVENT_CONNECTED, 0);
     } else if(disabled_g) {
-        send_event(EVENT_DISABLED);
+        send_event(EVENT_DISABLED, 0);
     }
 }
 
@@ -277,6 +281,7 @@ static void wifi_event_handler(void *esp_netif, esp_event_base_t base, int32_t e
     ConnectEvent_t cev;
 
     uint8_t evcode = 0;
+    uint8_t disc_reason = 0;
     switch(event_id) {
         case WIFI_EVENT_STA_START:
             // Attaching the lwIP netif resets netif->input, so a machine that
@@ -288,6 +293,7 @@ static void wifi_event_handler(void *esp_netif, esp_event_base_t base, int32_t e
             break;
         case WIFI_EVENT_STA_DISCONNECTED:
             evcode = EVENT_DISCONNECTED;
+            disc_reason = data ? ((const wifi_event_sta_disconnected_t *)data)->reason : 0;
             cev.event_code = evcode;
             xQueueSend(connect_events, &cev, 10);
             xSemaphoreGive(connect_semaphore);
@@ -304,7 +310,7 @@ static void wifi_event_handler(void *esp_netif, esp_event_base_t base, int32_t e
             break;
     }
     if (evcode) {
-        send_event(evcode);
+        send_event(evcode, disc_reason);
     }
 }
     
@@ -528,7 +534,7 @@ esp_err_t wifi_set_last_ap(int index)
     return err;
 }
 
-esp_err_t attempt_connect(const char *ssid, const char *passwd, uint8_t authmode)
+esp_err_t attempt_connect(const char *ssid, const char *passwd, uint8_t authmode, const uint8_t *bssid, uint8_t channel)
 {
     if (connected_g) {
         esp_err_t err = esp_wifi_disconnect();
@@ -560,6 +566,21 @@ esp_err_t attempt_connect(const char *ssid, const char *passwd, uint8_t authmode
     memcpy(&wifi_config_auto.sta.password, passwd, 64);
     wifi_config_auto.sta.pmf_cfg.capable = true;
     wifi_config_auto.sta.pmf_cfg.required = false;
+    // One network often has several access points under the same SSID. The
+    // default fast scan joins the first of them it hears, going up from
+    // channel 1, however far away that one is. Scan all channels and take the
+    // one with the strongest signal; the others stay as fallbacks.
+    wifi_config_auto.sta.scan_method = WIFI_ALL_CHANNEL_SCAN;
+    wifi_config_auto.sta.sort_method = WIFI_CONNECT_AP_BY_SIGNAL;
+    // Unless the user picked one of them from the list: then only that one,
+    // with its channel scanned first.
+    if (bssid && memcmp(bssid, "\0\0\0\0\0\0", 6)) {
+        wifi_config_auto.sta.bssid_set = true;
+        memcpy(wifi_config_auto.sta.bssid, bssid, 6);
+        if ((channel >= 1) && (channel <= 13)) {
+            wifi_config_auto.sta.channel = channel;
+        }
+    }
 
     esp_err_t err = esp_wifi_set_config(WIFI_IF_STA, &wifi_config_auto);
     if (err == ESP_OK) {
@@ -663,7 +684,7 @@ esp_err_t wifi_connect_to_scanned(int index)
         strncpy(last_connect.ssid, (const char *)(ap_info[index].ssid), 32);
         last_connect.ssid[32] = 0;
         last_connect.auth_mode = ap_info[index].authmode;
-        return attempt_connect(last_connect.ssid, last_connect.pw, last_connect.auth_mode);
+        return attempt_connect(last_connect.ssid, last_connect.pw, last_connect.auth_mode, NULL, 0);
     }
     return err;
 }
@@ -700,7 +721,7 @@ esp_err_t wifi_connect_to_stored(int index)
             if (err == ESP_OK) {
                 last_connect.list_index = index;
                 last_connect.buf = NULL;
-                err = attempt_connect(last_connect.ssid, last_connect.pw, last_connect.auth_mode);
+                err = attempt_connect(last_connect.ssid, last_connect.pw, last_connect.auth_mode, NULL, 0);
             }
         }
     }
@@ -716,7 +737,7 @@ esp_err_t wifi_connect_to_hotspot(void)
     strncpy(last_connect.pw, recovery_hotspot_password, sizeof(last_connect.pw));
     last_connect.auth_mode = WIFI_AUTH_WPA2_PSK;
     last_connect.list_index = -1;
-    return attempt_connect(last_connect.ssid, last_connect.pw, last_connect.auth_mode);
+    return attempt_connect(last_connect.ssid, last_connect.pw, last_connect.auth_mode, NULL, 0);
 }
 
 esp_err_t wifi_connect_to_last()
@@ -758,7 +779,7 @@ esp_err_t enable_wifi_if_needed(ConnectState_t state)
         ESP_LOGI(TAG, "Starting WiFi.");
         esp_err_t err = esp_wifi_start();
         if (err == ESP_OK) {
-            send_event(EVENT_DISCONNECTED);
+            send_event(EVENT_DISCONNECTED, 0);
             disabled_g = 0;
         } else {
             ESP_LOGW(TAG, "Failed to start WiFi: %d", err);
@@ -789,7 +810,7 @@ int handle_connect_command(ConnectCommand_t *cmd, ConnectState_t *state)
             ESP_LOGI(TAG, "Stopping WiFi.");
             err = esp_wifi_stop();
             if (err == ESP_OK) {
-                send_event(EVENT_DISABLED);
+                send_event(EVENT_DISABLED, 0);
                 *state = Disabled;
                 disabled_g = 1;
                 return 1;
@@ -799,10 +820,13 @@ int handle_connect_command(ConnectCommand_t *cmd, ConnectState_t *state)
             break;
         case CMD_WIFI_ENABLE:
             if (*state == Disabled) {
+                // Like a connect request, an Enable means the user wants to be on the
+                // network again, so a Disconnect from before the Disable is spent
+                user_disconnected = false;
                 ESP_LOGI(TAG, "Starting WiFi.");
                 err = esp_wifi_start();
                 if (err == ESP_OK) {
-                    send_event(EVENT_DISCONNECTED);
+                    send_event(EVENT_DISCONNECTED, 0);
                     *state = LastAP;
                     disabled_g = 0;
                     return 1;
@@ -815,13 +839,13 @@ int handle_connect_command(ConnectCommand_t *cmd, ConnectState_t *state)
             break;
         case CMD_WIFI_SCAN:
             {
-                err = enable_wifi_if_needed(*state);
                 rpc_scan_resp *resp = (rpc_scan_resp *)buf->data;
-                if (err == ESP_OK) {
-                    resp->esp_err = wifi_scan(&resp->rec);
-                } else {
-                    resp->esp_err = err;
+                if (*state == Disabled) {
+                    // Disabled means the radio is off; a scan does not turn it on, Enable does
+                    resp->esp_err = ESP_ERR_INVALID_STATE;
                     resp->rec.num_records = 0;
+                } else {
+                    resp->esp_err = wifi_scan(&resp->rec);
                 }
                 buf->size = sizeof(resp->hdr) + sizeof(resp->esp_err) + 2 + (resp->rec.num_records * sizeof(ultimate_ap_record_t));
                 my_uart_transmit_packet(UART_NUM_1, buf);
@@ -840,12 +864,18 @@ int handle_connect_command(ConnectCommand_t *cmd, ConnectState_t *state)
         case CMD_WIFI_CONNECT:
             user_disconnected = false;
             err = enable_wifi_if_needed(*state);
+            if (err == ESP_OK) {
+                // The radio is on: whatever the attempt gives, the connector goes on from
+                // here and retries, as after a dropped link, not idle in Connected or
+                // Disabled
+                *state = Disconnected;
+            }
             {
                 last_connect = *cmd;
                 last_connect.list_index = -1;
                 rpc_espcmd_resp *resp = (rpc_espcmd_resp *)buf->data;
                 if (err == ESP_OK) {
-                    err = attempt_connect(last_connect.ssid, last_connect.pw, last_connect.auth_mode);
+                    err = attempt_connect(last_connect.ssid, last_connect.pw, last_connect.auth_mode, last_connect.bssid, last_connect.channel);
                 }
                 resp->esp_err = err;
                 my_uart_transmit_packet(UART_NUM_1, cmd->buf);
@@ -938,7 +968,9 @@ void connect_thread(void *a)
                         }
                     }
                 }
-                if (state != Connected) {
+                // A command handled in the walk has set the state already: a Disable
+                // or an Autoconnect must not be overwritten here
+                if (state == ScannedAPs) {
                     state = StoredAPs;
                 }
                 break;
@@ -969,7 +1001,7 @@ void connect_thread(void *a)
                         }
                     }
                 }
-                if (state != Connected) {
+                if (state == StoredAPs) {
                     state = Disconnected;
                 }
                 break;

@@ -17,6 +17,9 @@
 #include "size_str.h"
 //#include "network_esp32.h"
 #include "wifi_cmd.h"
+#if U64 != 2
+#include "wifi_switch.h"
+#endif
 
 // This class provides an interface to the WiFi module, to manage and program it
 typedef enum {
@@ -41,6 +44,9 @@ class WiFi : public Esp32Application
     NetworkLWIP_WiFi *netstack;
 
     WifiState_t state;
+    WifiState_t state_before_scan; // the state a scan of the AP list returns to
+    volatile bool pick_cancelled;  // the user turned the radio off: a pick under way is not reported (RadioOff sets it, the task takes it)
+    uint8_t event_when_enabled;    // an event of the user to send once the radio is on again (0: none)
     char    last_ap[32];
     char    moduleName[34];
     char    moduleType[24];
@@ -48,6 +54,9 @@ class WiFi : public Esp32Application
     uint32_t my_ip;
     uint32_t my_gateway;
     uint32_t my_netmask;
+#if U64 != 2
+    wifi_switch_t radio_switch;
+#endif
 
     bool RequestEcho(void);
     void RxPacket(command_buf_t *);
@@ -63,6 +72,12 @@ public:
     BaseType_t doRequestEcho(void);
 
     WifiState_t getState(void) { return state; }
+    // A radio off is asked for and not confirmed yet (wifi_switch.h)
+#if U64 != 2
+    bool RadioOffAwaited(void) { return radio_switch.awaiting_off; }
+#else
+    bool RadioOffAwaited(void) { return false; }
+#endif
     const char *getLastAP(void) { return (state == eWifi_Connected) ? last_ap : "-"; }
     const char *getModuleName(void) { return moduleName; }
     const char *getModuleType(void) { return moduleType; }
@@ -70,7 +85,8 @@ public:
     char *getIpAddrString(char *buf, int max) { sprintf(buf, "%d.%d.%d.%d", (my_ip >> 0) & 0xff, (my_ip >> 8) & 0xff, (my_ip >> 16) & 0xff, (my_ip >> 24) & 0xff); return buf; }
 
     void sendEvent(uint8_t code);
-    void sendConnectEvent(const char *ssid, const char *pass, uint8_t auth);
+    void sendEventWhenEnabled(uint8_t code) { event_when_enabled = code; } // after the radio is on again
+    bool sendConnectPending(const char *ssid);
     void freeBuffer(command_buf_t *buf);
     int  getAccessPointItems(Browsable *parent, IndexedList<Browsable *> &list);
 
@@ -99,12 +115,16 @@ class BrowsableWifiAP : public Browsable
     char ssid[32];
     int8_t dbm;
     uint8_t auth;
+    uint8_t bssid[6];
+    uint8_t channel;
 public:
-    BrowsableWifiAP(Browsable *parent, char *ssid, int8_t dbm, uint8_t auth) {
+    BrowsableWifiAP(Browsable *parent, char *ssid, int8_t dbm, uint8_t auth, const uint8_t *bssid, uint8_t channel) {
         this->parent = parent;
         strncpy(this->ssid, ssid, 32);
         this->dbm = dbm;
         this->auth = auth;
+        memcpy(this->bssid, bssid, 6);
+        this->channel = channel;
     }
 
     void getDisplayString(char *buffer, int width, UserInterface *ui) {
