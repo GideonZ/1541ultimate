@@ -10,6 +10,9 @@ jobs:
     # commit twice, without restricting which branches build on push.
     if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: self-hosted
+    env:
+      # The ESP32 modules (raw_u64, raw_c3, u64ctrl) need ESP-IDF 6, so they build here, not in my_docker_image
+      IDF6_IMAGE: espressif/idf:v6.0.3@sha256:54278f2c01e6e759502e2f04c9103589c17528923426f4d63193490c7a08f555
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -174,6 +177,13 @@ jobs:
           -v /opt/build-tools:/mnt/build-tools:ro \
           -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make host_tests"
 
+      # In the ESP-IDF 6 image, because the control module's signature check is
+      # built against the crypto library that image ships.
+      - name: Test Recovery Manifest Signature Check
+        run: |
+          docker run --rm --user $(id -u):$(id -g) -e HOME=/tmp \
+          -v $GITHUB_WORKSPACE:/mnt/project:rw --workdir /mnt/project $IDF6_IMAGE make host_tests_idf6
+
       - name: Cache U2 FPGA
         id: cache-u2
         uses: actions/cache@v6
@@ -222,16 +232,15 @@ jobs:
                 software/wifi/raw_u64/build/bridge.bin
                 software/wifi/raw_u64/build/bootloader/bootloader.bin
                 software/wifi/raw_u64/build/partition_table/partition-table.bin
-            key: ${{ runner.os }}-esp32-${{ hashFiles('software/esp_depends.txt') }}
+            key: ${{ runner.os }}-esp32-${{ env.IDF6_IMAGE }}-${{ hashFiles('software/esp_depends.txt') }}
             restore-keys: |
-                ${{ runner.os }}-esp32-${{ hashFiles('software/esp_depends.txt') }}
+                ${{ runner.os }}-esp32-${{ env.IDF6_IMAGE }}-${{ hashFiles('software/esp_depends.txt') }}
 
       - if: steps.cache-esp32.outputs.cache-hit != 'true'
         name: Build ESP32 Software (skipped if available in cache)
         run: |
-          docker run --rm --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
-          -v /opt/build-tools:/mnt/build-tools:ro \
-          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make esp32"
+          docker run --rm --user $(id -u):$(id -g) -e HOME=/tmp \
+          -v $GITHUB_WORKSPACE:/mnt/project:rw --workdir /mnt/project $IDF6_IMAGE make esp32
 
       - if: steps.cache-u2.outputs.cache-hit != 'true'
         name: Build U2 including FPGAs

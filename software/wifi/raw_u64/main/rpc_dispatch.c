@@ -157,7 +157,7 @@ extern esp_netif_t *my_sta_netif;
 void cmd_send_eth_packet(command_buf_t *buf)
 {
     rpc_send_eth_req *param = (rpc_send_eth_req *)buf->data;
-    err_t _err = esp_netif_transmit(my_sta_netif, &param->data, param->length);
+    esp_netif_transmit(my_sta_netif, &param->data, param->length);
     my_uart_free_buffer(UART_CHAN, buf);
 }
 
@@ -335,7 +335,8 @@ void dispatch(void *ct)
 
 void start_dispatch(QueueHandle_t queue)
 {
-    xTaskCreate( dispatch, "Dispatch Task", DISPATCHER_STACK, queue, tskIDLE_PRIORITY + 1, NULL );
+    // Core 1, above the system tasks: the UART ISR that feeds this queue runs on core 1 too
+    xTaskCreatePinnedToCore( dispatch, "Dispatch Task", DISPATCHER_STACK, queue, 19, NULL, 1 );
 }
 
 #if MULTITHREADED
