@@ -9,6 +9,7 @@
 #include "network_interface.h"
 #include "socket.h"
 #include "lwip/opt.h"
+#include "lwip/prot/iana.h"
 #include "netdb.h"
 #include <errno.h>
 #include <stdio.h>
@@ -24,6 +25,15 @@ Message c_status_no_socket           = { 23, true, (uint8_t *)"85,ERROR OPENING 
 Message c_status_socket_closed       = { 28, true, (uint8_t *)"01,CONNECTION CLOSED BY HOST" };
 Message c_status_net_no_data         = { 26, true, (uint8_t *)"03,MORE DATA NOT SUPPORTED" };
 Message c_status_internal_error      = { 17, true, (uint8_t *)"86,INTERNAL ERROR" };
+Message c_status_port_in_use         = { 14, true, (uint8_t *)"89,PORT IN USE" };
+
+// Local UDP ports that firmware services bind themselves, now or later. OPEN_UDP_LOCAL
+// refuses them whether or not the service is up, so it cannot hold one when the service starts.
+static const uint16_t reserved_udp_ports[] = {
+    64,    // ident service (socket_dma.cc, identThread)
+    LWIP_IANA_PORT_DHCP_CLIENT, // DHCP client (lwIP dhcp.c, one pcb for all interfaces)
+    53248, // VIC stream palette (data_streamer.cc on master, U64 family)
+};
 
 NetworkTarget::NetworkTarget(int id)
 {
@@ -156,6 +166,46 @@ void NetworkTarget :: parse_command(Message *command, Message **reply, Message *
             }
         	open_socket(command, reply, status, SOCK_DGRAM);
         	break;
+        case NET_CMD_OPEN_UDP_LOCAL:
+            {
+                // Same layout as OPEN_UDP with the local port at 4..5 and the
+                // host at 6. One trailing $00 is allowed after the host.
+                int host_end = command->length;
+                if (host_end > 6 && command->message[host_end - 1] == 0) {
+                    host_end--;
+                }
+                int host_length = host_end - 6;
+                // A command that asks for no reply could never close the
+                // socket it gets, and the port would stay bound
+                if ((command->message[0] & CMD_IF_NO_REPLY) || (host_length < 1) || (host_length > 253) ||
+                    (memchr(&command->message[6], 0, host_length) != NULL)) {
+                    *reply = &c_message_empty;
+                    *status = &c_status_invalid_params;
+                    break;
+                }
+                // Remote port 0 is never valid, which also makes it the probe
+                // for whether this command exists
+                if (command->message[2] == 0 && command->message[3] == 0) {
+                    *reply = &c_message_empty;
+                    *status = &c_status_param_out_of_range;
+                    break;
+                }
+                int local_port = int(command->message[4]) | (int(command->message[5]) << 8);
+                bool reserved = false;
+                for (unsigned i = 0; i < sizeof(reserved_udp_ports) / sizeof(reserved_udp_ports[0]); i++) {
+                    if (local_port == reserved_udp_ports[i]) {
+                        reserved = true;
+                        break;
+                    }
+                }
+                if (reserved) {
+                    *reply = &c_message_empty;
+                    *status = &c_status_port_in_use;
+                    break;
+                }
+                open_socket(command, reply, status, SOCK_DGRAM, 6, local_port);
+            }
+            break;
         case NET_CMD_CLOSE_SOCKET:
             if (command->length != 3) { // 2 + 1
                 *reply = &c_message_empty;
@@ -181,7 +231,7 @@ void NetworkTarget :: parse_command(Message *command, Message **reply, Message *
     }
 }
 
-void NetworkTarget :: open_socket(Message *command, Message **reply, Message **status, int type)
+void NetworkTarget :: open_socket(Message *command, Message **reply, Message **status, int type, int host_offset, int local_port)
 {
 	*reply = &c_message_empty;
 	*status = &c_status_ok;
@@ -199,7 +249,7 @@ void NetworkTarget :: open_socket(Message *command, Message **reply, Message **s
 	struct hostent *hent_result;
 	int h_errno;
 
-	gethostbyname_r((const char *)&command->message[4], &hent, (char *)buffer, NET_CMD_BUFSIZE, &hent_result, &h_errno);
+	gethostbyname_r((const char *)&command->message[host_offset], &hent, (char *)buffer, NET_CMD_BUFSIZE, &hent_result, &h_errno);
 
 	if (hent_result) {
 		struct in_addr *s;
@@ -216,6 +266,21 @@ void NetworkTarget :: open_socket(Message *command, Message **reply, Message **s
 		return;
 	}
 
+	// local_port is -1 for the plain opens. 0 leaves the port to connect().
+	if (local_port > 0) {
+		struct sockaddr_in local;
+		memset(&local, 0, sizeof(local));
+		local.sin_len = sizeof(local);
+		local.sin_family = AF_INET;
+		local.sin_addr.s_addr = PP_HTONL(INADDR_ANY);
+		local.sin_port = PP_HTONS(local_port);
+		if (bind(socket, (struct sockaddr *)&local, sizeof(local)) < 0) {
+			*status = (errno == EADDRINUSE) ? &c_status_port_in_use : &c_status_no_socket;
+			lwip_close(socket);
+			return;
+		}
+	}
+
 	int ret = connect(socket, (struct sockaddr *)&addr, sizeof(addr));
 	if (ret < 0) {
 		*status = &status_message;
@@ -223,6 +288,20 @@ void NetworkTarget :: open_socket(Message *command, Message **reply, Message **s
 		this->status_message.length = strlen((char *)this->status_message.message);
 		lwip_close(socket);
 		return;
+	}
+
+	uint16_t bound_port = 0;
+	if (local_port >= 0) {
+		struct sockaddr_in name;
+		socklen_t name_length = sizeof(name);
+		if (getsockname(socket, (struct sockaddr *)&name, &name_length) == 0) {
+			bound_port = PP_NTOHS(name.sin_port);
+		}
+		if (bound_port == 0) {
+			*status = &c_status_internal_error;
+			lwip_close(socket);
+			return;
+		}
 	}
 
 	if (socket > 255) {
@@ -234,7 +313,7 @@ void NetworkTarget :: open_socket(Message *command, Message **reply, Message **s
 	// The table has room for every socket lwip can create, so this cannot
 	// fail. Refusing rather than writing past the table keeps that a check
 	// instead of an assumption.
-	if (!track_socket(socket)) {
+	if (!track_socket(socket, local_port >= 0 && addr.sin_addr.s_addr == 0)) {
 		*status = &c_status_no_socket;
 		lwip_close(socket);
 		return;
@@ -242,6 +321,11 @@ void NetworkTarget :: open_socket(Message *command, Message **reply, Message **s
 	*reply = &data_message;
 	this->data_message.message[0] = (uint8_t)socket;
 	this->data_message.length = 1;
+	if (local_port >= 0) {
+		this->data_message.message[1] = bound_port & 0xFF;
+		this->data_message.message[2] = bound_port >> 8;
+		this->data_message.length = 3;
+	}
 	data_message.last_part = true;
 
 	struct timeval tv;
@@ -366,7 +450,12 @@ void NetworkTarget :: write_socket(Message *command, Message **reply, Message **
 
     int length = command->length - 3;
     int ret;
-    if (owns_socket(socketnr)) {
+    if (is_receive_only(socketnr)) {
+        // Remote 0.0.0.0 only filters what the socket receives. Sending to it
+        // would put a broadcast frame addressed to 0.0.0.0 on the wire.
+        errno = EDESTADDRREQ;
+        ret = -1;
+    } else if (owns_socket(socketnr)) {
         ret = lwip_send(socketnr, src, length, 0);
     } else {
         errno = EBADF;
@@ -417,11 +506,12 @@ void NetworkTarget :: close_socket(Message *command, Message **reply, Message **
 static_assert(NET_MAX_SOCKETS >= MEMP_NUM_NETCONN,
               "the socket table is smaller than the number of lwip sockets");
 
-bool NetworkTarget :: track_socket(int socketnr)
+bool NetworkTarget :: track_socket(int socketnr, bool receive_only)
 {
     if (socket_count >= NET_MAX_SOCKETS) {
         return false;
     }
+    receive_only_flags[socket_count] = receive_only;
     sockets[socket_count++] = socketnr;
     return true;
 }
@@ -433,6 +523,7 @@ void NetworkTarget :: untrack_socket(int socketnr)
             socket_count--;
             for (; i < socket_count; i++) {
                 sockets[i] = sockets[i + 1];
+                receive_only_flags[i] = receive_only_flags[i + 1];
             }
             return;
         }
@@ -444,6 +535,16 @@ bool NetworkTarget :: is_datagram_socket(int socketnr)
     int type = 0;
     socklen_t len = sizeof(type);
     return (lwip_getsockopt(socketnr, SOL_SOCKET, SO_TYPE, &type, &len) == 0) && (type == SOCK_DGRAM);
+}
+
+bool NetworkTarget :: is_receive_only(int socketnr)
+{
+    for (int i = 0; i < socket_count; i++) {
+        if (sockets[i] == socketnr) {
+            return receive_only_flags[i];
+        }
+    }
+    return false;
 }
 
 bool NetworkTarget :: owns_socket(int socketnr)

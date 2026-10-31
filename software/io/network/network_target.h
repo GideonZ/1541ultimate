@@ -19,6 +19,7 @@
 #define NET_CMD_OPEN_TCP	        0x07
 #define NET_CMD_OPEN_UDP	        0x08
 #define NET_CMD_CLOSE_SOCKET        0x09
+#define NET_CMD_OPEN_UDP_LOCAL      0x0A
 #define NET_CMD_READ_SOCKET         0x10
 #define NET_CMD_WRITE_SOCKET        0x11
 
@@ -70,14 +71,17 @@ class NetworkTarget : public CommandTarget {
     // opened for itself. Any command handing out a socket must track it here.
     int sockets[NET_MAX_SOCKETS];
     int socket_count;
+    // Set for a socket opened with remote 0.0.0.0, which can only receive.
+    bool receive_only_flags[NET_MAX_SOCKETS];
 
-    bool track_socket(int socketnr);
+    bool track_socket(int socketnr, bool receive_only = false);
     void untrack_socket(int socketnr);
     bool is_datagram_socket(int socketnr);
+    bool is_receive_only(int socketnr);
     bool owns_socket(int socketnr);
     void close_all_sockets(void);
 
-    void open_socket(Message *command, Message **reply, Message **status, int);
+    void open_socket(Message *command, Message **reply, Message **status, int, int host_offset = 4, int local_port = -1);
     void read_socket(Message *command, Message **reply, Message **status);
     void write_socket(Message *command, Message **reply, Message **status);
     void close_socket(Message *command, Message **reply, Message **status);
