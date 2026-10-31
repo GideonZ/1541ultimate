@@ -326,9 +326,15 @@ $(document).ready(async function () {
         await parseBASIC();
     });
 
-    // Track navigation without changing existing tab handlers.
+    // Track navigation and close BASIC editor dialogs when switching tabs.
     $('#showwelcome, #showsidplay, #showrunner, #showterminal, #showtokenizer').on('click', function () {
         saveActiveTab(this.id === 'showtokenizer' ? 'tokenizer' : null);
+        $("#customModalOverlay, #reloadModalOverlay").hide();
+    });
+
+    // Return to Home after navigating back from API Explorer.
+    $('a[href="api.html"]').on('click', function () {
+        saveActiveTab(null);
     });
 
     $('#submitBASICAndRun').click(async function (event) {
@@ -368,12 +374,21 @@ $(document).ready(async function () {
             sessionStorage.setItem('showBASICcode', this.checked);
         } catch (e) {
         }
+        // Notify the user that the new preference requires a page reload.
+        $("#customModalOverlay").hide();
+        $("#reloadModalOverlay").show(); // Show the reload notice
+    });
+
+    // Close the reload notice without modifying the editor content.
+    $('#reloadModalClose').click(function () {
+        $("#reloadModalOverlay").hide();
     });
 
     // Custom modal handler to clear the editor without browser interference
     $('#clearBASIC').click(function (event) {
         event.preventDefault(); // Prevents the default action of the button
-        $("#customModalOverlay").show(); // Shows the custom modal
+        $("#reloadModalOverlay").hide();
+        $("#customModalOverlay").show(); // Show the Clear BASIC confirmation dialog
     });
 
     // Action when "Yes" is clicked in the custom modal
@@ -2104,8 +2119,8 @@ or your custom profile if modified.
         </div>
     </div>
     <style>
-        /* Small floating window centered on the screen */
-        #customModalOverlay {
+        /* Small floating windows centered on the screen */
+        #customModalOverlay, #reloadModalOverlay {
             display: none;
             position: fixed;
             top: 50%;
@@ -2113,7 +2128,7 @@ or your custom profile if modified.
             transform: translate(-50%, -50%); /* Perfect centering */
             z-index: 1000;
         }
-        #customModal {
+        #customModal, #reloadModal {
             background: #333; /* Dark background matching the terminal */
             color: #fff;      /* White text */
             padding: 20px;
@@ -2140,6 +2155,15 @@ or your custom profile if modified.
             <div class="modal-btns">
                 <button id="modalYes">Yes</button>
                 <button id="modalNo">No</button>
+            </div>
+        </div>
+    </div>
+    <!-- Reload notice shown only when the profile examples checkbox changes. -->
+    <div id="reloadModalOverlay">
+        <div id="reloadModal">
+            <p>Changes will take effect after reloading the page (F5/Ctrl+F5).</p>
+            <div class="modal-btns">
+                <button id="reloadModalClose">Close</button>
             </div>
         </div>
     </div>
