@@ -11,7 +11,7 @@ def get_hash(path="", hash_type='md5'):
     return func.hexdigest()
 
 # Find dependencies
-dirs = [ 'wifi/raw_c3/main', 'wifi/raw_c3', 'wifi/raw_u64/main', 'wifi/raw_u64', 'u64ctrl', 'u64ctrl/main', 'u64ctrl/ca' ]
+dirs = [ 'wifi/raw_c3/main', 'wifi/raw_c3', 'wifi/raw_u64/main', 'wifi/raw_u64', 'wifi/tls', 'u64ctrl', 'u64ctrl/main', 'u64ctrl/ca', 'wifi/common' ]
 ptrns = [ '*.c', '*.h', '*.mk', '*.txt', '*.pem', 'sdkconfig']
 fns = [ ]
 for d in dirs:

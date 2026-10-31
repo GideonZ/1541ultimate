@@ -29,6 +29,9 @@
 #include "rpc_dispatch.h"
 #include "wifi_modem.h"
 #include "pinout.h"
+#include "wifi_radio.h"
+#include "radio_boot.h"
+#include "esp_attr.h"
 
 #define NET_CMD_BUFSIZE 512
 
@@ -76,6 +79,32 @@ command_buf_context_t work_buffers;
 wifi_ap_record_t ap_info[DEFAULT_SCAN_LIST_SIZE];
 uint16_t ap_count = 0;
 uint16_t connected_g = 0;
+// The module starts with its radio off, in Disabled, until the Ultimate asks for it
+uint16_t disabled_g = 1;
+
+/* Set when the Ultimate asks for the radio off (Disable), and cleared when an Ultimate
+ * application starts and identifies the module (CMD_IDENTIFY). A compatibility rule for an
+ * application that does not know the radio switch, not a timing assumption: such an
+ * application never sends Enable or Disable, and asks for the connection state
+ * (CMD_WIFI_IS_CONNECTED) right after it finds the module. One that knows the switch sends
+ * Enable or Disable before it ever asks. So a connection query that finds the radio off
+ * with no Disable since the application identified the module starts the radio, as the
+ * module always did at boot; after a Disable it never does. Enable, Autoconnect and
+ * Connect leave it alone: they ask for the radio on, so a query after a start that failed
+ * tries again. */
+volatile bool off_asked = false;
+
+// An Ultimate application identified the module (rpc_dispatch.c): it starts afresh
+void wifi_note_identify(void)
+{
+    off_asked = false;
+}
+
+/* The radio's last state, for a restart of the module that the Ultimate did not cause:
+ * RTC memory, which such a reset leaves alone (radio_boot.h). boot_mode is what
+ * setup_modem() made of it and of the reset reason, before the connector starts. */
+RTC_NOINIT_ATTR radio_record_t radio_record;
+radio_boot_t boot_mode = RADIO_BOOT_WAIT;
 
 esp_netif_t *my_sta_netif = NULL;
 netif_input_fn default_input;
@@ -87,8 +116,9 @@ QueueHandle_t connect_events;
 ConnectCommand_t last_connect;
 
 typedef enum {
-    LastAP, Scanning, ScannedAPs, StoredAPs, Connected, Disconnected,
+    LastAP, Scanning, ScannedAPs, StoredAPs, Connected, Disconnected, Disabled,
 } ConnectState_t;
+static const char *states[] = { "LastAP", "Scanning", "ScannedAPs", "StoredAPs", "Connected", "Disconnected", "Disabled" }; 
 
 // typedef err_t (*netif_input_fn)(struct pbuf *p, struct netif *inp);
 
@@ -112,7 +142,8 @@ static err_t hacked_recv(struct pbuf *p, struct netif *inp)
             return ERR_OK;
         } else {
             ESP_LOGW(TAG, "No buffer to send packet.");
-            return ERR_BUF;
+            pbuf_free(p); // dropped, and reported as handled
+            return ERR_OK;
         }
     } else { // dropped, wrong mac and no broadcast
         pbuf_free(p);
@@ -158,16 +189,43 @@ static void got_ip_event_handler(void *esp_netif, esp_event_base_t base, int32_t
     }
 }
 
+// reason: what EVENT_DISCONNECTED says (0: unknown, as for a disconnect this module makes up)
+static void send_event(uint8_t evcode, uint8_t reason)
+{
+    command_buf_t *reply;
+    if (my_uart_get_buffer(UART_NUM_1, &reply, 100)) {
+        rpc_header_t *ev = (rpc_header_t *)reply->data;
+        ev->command = evcode;
+        ev->thread = 0xFF;
+        ev->sequence = 0;
+        reply->size = sizeof(rpc_header_t);
+        if (evcode == EVENT_CONNECTED) {
+            event_pkt_connected *ev2 = (event_pkt_connected *)reply->data;
+            memcpy(ev2->ssid, last_connect.ssid, 32);
+            reply->size = sizeof(event_pkt_connected);
+        } else if (evcode == EVENT_DISCONNECTED) {
+            ((event_pkt_disconnected *)reply->data)->reason = reason;
+            reply->size = sizeof(event_pkt_disconnected);
+        }
+        my_uart_transmit_packet(UART_NUM_1, reply);
+    } else {
+        ESP_LOGW(TAG, "No buffer to send event.");
+    }
+}
+
 static void wifi_event_handler(void *esp_netif, esp_event_base_t base, int32_t event_id, void *data)
 {
     ESP_LOGW(TAG, "WiFi Event %ld, data %p", event_id, data);
     ConnectEvent_t cev;
-    command_buf_t *reply;
 
     uint8_t evcode = 0;
+    uint8_t disc_reason = 0;
     switch(event_id) {
         case WIFI_EVENT_STA_DISCONNECTED:
             evcode = EVENT_DISCONNECTED;
+            if (data) {
+                disc_reason = ((const wifi_event_sta_disconnected_t *)data)->reason;
+            }
             cev.event_code = evcode;
             xQueueSend(connect_events, &cev, 10);
             xSemaphoreGive(connect_semaphore);
@@ -185,21 +243,7 @@ static void wifi_event_handler(void *esp_netif, esp_event_base_t base, int32_t e
     }
 
     if (evcode) {
-        if (my_uart_get_buffer(UART_NUM_1, &reply, 100)) {
-            rpc_header_t *ev = (rpc_header_t *)reply->data;
-            ev->command = evcode;
-            ev->thread = 0xFF;
-            ev->sequence = 0;
-            reply->size = sizeof(rpc_header_t);
-            if (evcode == EVENT_CONNECTED) {
-                event_pkt_connected *ev2 = (event_pkt_connected *)reply->data;
-                memcpy(ev2->ssid, last_connect.ssid, 32);
-                reply->size = sizeof(event_pkt_connected);
-            }
-            my_uart_transmit_packet(UART_NUM_1, reply);
-        } else {
-            ESP_LOGW(TAG, "No buffer to send event.");
-        }
+        send_event(evcode, disc_reason);
     }
 }
 
@@ -207,6 +251,12 @@ void enable_hook()
 {
     struct netif *lw = ((struct esp_netif_obj *)my_sta_netif)->lwip_netif;
     if (lw) {
+        // The interface's own handlers exist only once the radio has started, and a
+        // restart of the radio installs them again, so they are taken here
+        if (lw->input && (lw->input != hacked_recv)) {
+            default_input = lw->input;
+            default_output = lw->output;
+        }
         lw->input = hacked_recv;
         lw->output = hacked_tx;
     }
@@ -215,7 +265,7 @@ void enable_hook()
 void disable_hook()
 {
     struct netif *lw = ((struct esp_netif_obj *)my_sta_netif)->lwip_netif;
-    if(lw) {
+    if (lw && default_input) {
         lw->input = default_input;
         lw->output = default_output;
     }
@@ -252,7 +302,8 @@ static void wifi_init()
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_NONE));
-    ESP_ERROR_CHECK(esp_wifi_start());
+    // The radio stays off here: the connector starts it on the Ultimate's Enable or
+    // Autoconnect, so that a stored "WiFi Enabled" = Disabled never puts it on the air
 
     ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT,
                                                         ESP_EVENT_ANY_ID,
@@ -265,12 +316,6 @@ static void wifi_init()
                                                         &got_ip_event_handler,
                                                         NULL,
                                                         NULL));
-
-    struct netif *lw = ((struct esp_netif_obj *)my_sta_netif)->lwip_netif;
-    if (lw) {
-        default_input = lw->input;
-        default_output = lw->output;
-    }
 }
 
 uint8_t wifi_get_connection()
@@ -423,7 +468,7 @@ esp_err_t wifi_set_last_ap(int index)
     return err;
 }
 
-esp_err_t attempt_connect(const char *ssid, const char *passwd, uint8_t authmode)
+esp_err_t attempt_connect(const char *ssid, const char *passwd, uint8_t authmode, const uint8_t *bssid, uint8_t channel)
 {
     if (connected_g) {
         esp_err_t err = esp_wifi_disconnect();
@@ -455,6 +500,21 @@ esp_err_t attempt_connect(const char *ssid, const char *passwd, uint8_t authmode
     memcpy(&wifi_config_auto.sta.password, passwd, 64);
     wifi_config_auto.sta.pmf_cfg.capable = true;
     wifi_config_auto.sta.pmf_cfg.required = false;
+    // One network often has several access points under the same SSID. The
+    // default fast scan joins the first of them it hears, going up from
+    // channel 1, however far away that one is. Scan all channels and take the
+    // one with the strongest signal; the others stay as fallbacks.
+    wifi_config_auto.sta.scan_method = WIFI_ALL_CHANNEL_SCAN;
+    wifi_config_auto.sta.sort_method = WIFI_CONNECT_AP_BY_SIGNAL;
+    // Unless the user picked one of them from the list: then only that one,
+    // with its channel scanned first.
+    if (bssid && memcmp(bssid, "\0\0\0\0\0\0", 6)) {
+        wifi_config_auto.sta.bssid_set = true;
+        memcpy(wifi_config_auto.sta.bssid, bssid, 6);
+        if ((channel >= 1) && (channel <= 13)) {
+            wifi_config_auto.sta.channel = channel;
+        }
+    }
 
     esp_err_t err = esp_wifi_set_config(WIFI_IF_STA, &wifi_config_auto);
     if (err == ESP_OK) {
@@ -558,7 +618,7 @@ esp_err_t wifi_connect_to_scanned(int index)
         strncpy(last_connect.ssid, (const char *)(ap_info[index].ssid), 32);
         last_connect.ssid[32] = 0;
         last_connect.auth_mode = ap_info[index].authmode;
-        return attempt_connect(last_connect.ssid, last_connect.pw, last_connect.auth_mode);
+        return attempt_connect(last_connect.ssid, last_connect.pw, last_connect.auth_mode, NULL, 0);
     }
     return err;
 }
@@ -595,7 +655,7 @@ esp_err_t wifi_connect_to_stored(int index)
             if (err == ESP_OK) {
                 last_connect.list_index = index;
                 last_connect.buf = NULL;
-                err = attempt_connect(last_connect.ssid, last_connect.pw, last_connect.auth_mode);
+                err = attempt_connect(last_connect.ssid, last_connect.pw, last_connect.auth_mode, NULL, 0);
             }
         }
     }
@@ -625,6 +685,39 @@ esp_err_t wifi_connect_to_last()
     return err;
 }
 
+// Has the connector replay EVENT_DISABLED if its radio is off when it gets to this. A
+// command for it, not a send from here, so that it goes out in order with the Disable or
+// Enable queued before it.
+void wifi_report_disabled(void)
+{
+    ConnectCommand_t cmd;
+    if (!disabled_g) {
+        return;
+    }
+    memset(&cmd, 0, sizeof(cmd));
+    cmd.command = CMD_WIFI_IS_CONNECTED;
+    if (xQueueSend(connect_commands, &cmd, 0) == pdTRUE) {
+        xSemaphoreGive(connect_semaphore);
+    }
+}
+
+esp_err_t enable_wifi_if_needed(ConnectState_t state)
+{
+    if (state == Disabled) {
+        ESP_LOGI(TAG, "Starting WiFi.");
+        esp_err_t err = radio_start();
+        if (err == ESP_OK) {
+            disabled_g = 0;
+            radio_record_set(&radio_record, true);
+            send_event(EVENT_DISCONNECTED, 0);
+        } else {
+            ESP_LOGW(TAG, "Failed to start WiFi: %d", err);
+        }
+        return err;
+    }
+    return ESP_OK;
+}
+
 int handle_connect_command(ConnectCommand_t *cmd, ConnectState_t *state)
 {
     ConnectEvent_t connect_event;
@@ -632,10 +725,83 @@ int handle_connect_command(ConnectCommand_t *cmd, ConnectState_t *state)
     esp_err_t err;
 
     switch(cmd->command) {
+        case CMD_WIFI_DISABLE:
+            off_asked = true;
+            if (*state == Connected) {
+                ESP_LOGI(TAG, "Disconnecting from WiFi.");
+                err = esp_wifi_disconnect();
+                if (err == ESP_OK) {
+                    xQueueReceive(connect_events, &connect_event, portMAX_DELAY);
+                    if (connect_event.event_code == EVENT_DISCONNECTED) {
+                        *state = Disconnected;
+                    }
+                }
+            }
+            ESP_LOGI(TAG, "Stopping WiFi.");
+            err = radio_stop();
+            if (err == ESP_OK) {
+                send_event(EVENT_DISABLED, 0);
+                *state = Disabled;
+                disabled_g = 1;
+                radio_record_set(&radio_record, false);
+                return 1;
+            } else {
+                ESP_LOGW(TAG, "Failed to stop WiFi: %d", err);
+            }
+            break;
+        case CMD_WIFI_ENABLE:
+            if (*state == Disabled) {
+                // Like a connect request, an Enable means the user wants to be on the
+                // network again, so a Disconnect from before the Disable is spent
+                user_disconnected = false;
+                ESP_LOGI(TAG, "Starting WiFi.");
+                err = radio_start();
+                if (err == ESP_OK) {
+                    disabled_g = 0;
+                    radio_record_set(&radio_record, true);
+                    send_event(EVENT_DISCONNECTED, 0);
+                    *state = LastAP;
+                    return 1;
+                } else {
+                    ESP_LOGW(TAG, "Failed to start WiFi: %d", err);
+                }
+            } else {
+                ESP_LOGE(TAG, "Enabling WiFi is not possible in state %s.", states[*state]);
+            } // else, do nothing, not supported
+            break;
+        // The Ultimate asked for the connection state (cmd_get_connection). A WiFi
+        // application that starts while the radio is off is told so. Sent from here, in
+        // order with the Disable and Enable before it, so that it cannot overtake them.
+        // Asked with the radio off and no Disable since the application identified the
+        // module, it is an application without the radio switch (see off_asked): the radio
+        // starts, as it did at boot.
+        case CMD_WIFI_IS_CONNECTED:
+            if ((*state == Disabled) && !off_asked) {
+                ESP_LOGI(TAG, "Starting WiFi for an Ultimate without the radio switch.");
+                err = radio_start();
+                if (err == ESP_OK) {
+                    disabled_g = 0;
+                    radio_record_set(&radio_record, true);
+                    send_event(EVENT_DISCONNECTED, 0);
+                    *state = LastAP;
+                    return 1;
+                }
+                ESP_LOGW(TAG, "Failed to start WiFi: %d", err);
+            }
+            if (*state == Disabled) {
+                send_event(EVENT_DISABLED, 0);
+            }
+            break;
         case CMD_WIFI_SCAN:
             {
                 rpc_scan_resp *resp = (rpc_scan_resp *)buf->data;
-                resp->esp_err = wifi_scan(&resp->rec);
+                if (*state == Disabled) {
+                    // Disabled means the radio is off; a scan does not turn it on, Enable does
+                    resp->esp_err = ESP_ERR_INVALID_STATE;
+                    resp->rec.num_records = 0;
+                } else {
+                    resp->esp_err = wifi_scan(&resp->rec);
+                }
                 buf->size = sizeof(resp->hdr) + sizeof(resp->esp_err) + 2 + (resp->rec.num_records * sizeof(ultimate_ap_record_t));
                 my_uart_transmit_packet(UART_NUM_1, buf);
             }
@@ -645,15 +811,27 @@ int handle_connect_command(ConnectCommand_t *cmd, ConnectState_t *state)
         // disconnect is spent. Scanning is not such a request and leaves it be.
         case CMD_WIFI_AUTOCONNECT:
             user_disconnected = false;
-            *state = LastAP;
+            err = enable_wifi_if_needed(*state);
+            if (err == ESP_OK) {
+                *state = LastAP;
+            }
             return 1;
         case CMD_WIFI_CONNECT:
+            user_disconnected = false;
+            err = enable_wifi_if_needed(*state);
+            if (err == ESP_OK) {
+                // The radio is on: whatever the attempt gives, the connector goes on from
+                // here and retries, as after a dropped link, not idle in Connected or
+                // Disabled
+                *state = Disconnected;
+            }
             {
-                user_disconnected = false;
                 last_connect = *cmd;
                 last_connect.list_index = -1;
                 rpc_espcmd_resp *resp = (rpc_espcmd_resp *)buf->data;
-                err = attempt_connect(last_connect.ssid, last_connect.pw, last_connect.auth_mode);
+                if (err == ESP_OK) {
+                    err = attempt_connect(last_connect.ssid, last_connect.pw, last_connect.auth_mode, last_connect.bssid, last_connect.channel);
+                }
                 resp->esp_err = err;
                 my_uart_transmit_packet(UART_NUM_1, cmd->buf);
 
@@ -677,15 +855,43 @@ int handle_connect_command(ConnectCommand_t *cmd, ConnectState_t *state)
     return 0; // not connected
 }
 
+// The connector's first state (radio_boot.h): Disabled with the radio off after a power-up
+// or a reset by the Ultimate; after a restart of its own, the radio as it was, and the
+// Ultimate is told
+ConnectState_t connector_boot_state(void)
+{
+    if (boot_mode == RADIO_BOOT_WAIT) {
+        return Disabled;
+    }
+    send_event(EVENT_RESTARTED, 0);
+    if (boot_mode == RADIO_BOOT_ON) {
+        ESP_LOGI(TAG, "Restarted: starting WiFi again.");
+        if (radio_start() == ESP_OK) {
+            disabled_g = 0;
+            radio_record_set(&radio_record, true);
+            send_event(EVENT_DISCONNECTED, 0);
+            return LastAP;
+        }
+        ESP_LOGW(TAG, "Failed to start WiFi.");
+        return Disabled;
+    }
+    // Off before the restart: the Ultimate had asked for that, and a later connection
+    // query must not start it
+    off_asked = true;
+    return Disabled;
+}
+
 void connect_thread(void *a)
 {
     ConnectEvent_t connect_event;
     ConnectCommand_t connect_command;
-    ConnectState_t state = LastAP;
-    ConnectState_t prev = LastAP;
+    // Radio off until the Ultimate sends Enable or Autoconnect, or asks for the connection
+    // state without knowing the radio switch (disabled_g starts set; see off_asked),
+    // except after a restart of the module's own (connector_boot_state)
+    ConnectState_t state = connector_boot_state();
+    ConnectState_t prev = state;
     int retry_delay_ms = WIFI_RETRY_MIN_MS;
     esp_err_t err;
-    static const char *states[] = { "LastAP", "Scanning", "ScannedAPs", "StoredAPs", "Connected", "Disconnected" }; 
 
     while(1) {
         // A disconnect the user asked for can arrive while the ladder is
@@ -698,8 +904,9 @@ void connect_thread(void *a)
         // So check here, between states, which is the one point the ladder
         // passes through with nothing in flight. An attempt that landed in the
         // meantime has to be undone rather than prevented; it had already been
-        // accepted by the time the request arrived.
-        if (user_disconnected && (state != Disconnected)) {
+        // accepted by the time the request arrived. Disabled is left alone:
+        // the radio is off, so there is nothing to undo or to retry.
+        if (user_disconnected && (state != Disconnected) && (state != Disabled)) {
             if (connected_g) {
                 ESP_LOGI(TAG, "Disconnect requested while reconnecting; undoing.");
                 esp_wifi_disconnect();
@@ -745,7 +952,9 @@ void connect_thread(void *a)
                         }
                     }
                 }
-                if (state != Connected) {
+                // A command handled in the walk has set the state already: a Disable
+                // or an Autoconnect must not be overwritten here
+                if (state == ScannedAPs) {
                     state = StoredAPs;
                 }
                 break;
@@ -767,7 +976,7 @@ void connect_thread(void *a)
                         }
                     }
                 }
-                if (state != Connected) {
+                if (state == StoredAPs) {
                     state = Disconnected;
                 }
                 break;
@@ -784,7 +993,8 @@ void connect_thread(void *a)
                 // Connected waits indefinitely, because something else has to
                 // happen first. Disconnected does not: nothing is coming unless
                 // we go and ask, so the wait is bounded and a timeout means it
-                // is time to try again.
+                // is time to try again. Disabled has its own case below and is
+                // left alone -- the radio is off, so there is nothing to retry.
                 if (state == Connected) {
                     retry_delay_ms = WIFI_RETRY_MIN_MS;
                 }
@@ -815,6 +1025,13 @@ void connect_thread(void *a)
                     }
                 }
                 break;
+
+            case Disabled:
+                // The only way to wake up the WiFi again is to send a connect command
+                xQueueReceive(connect_commands, &connect_command, portMAX_DELAY);
+                handle_connect_command(&connect_command, &state);
+                break;
+
             default:
                 state = LastAP;                        
         }
@@ -863,10 +1080,19 @@ void setup_modem()
     ESP_LOGI(TAG, "wifi_init...");
     wifi_init();
     ESP_LOGI(TAG, "start wifi connector...");
-    start_connector();
+    // A restart that neither a power-up nor the Ultimate caused (the Ultimate drives the
+    // module's enable pin, which reads as a power-up or an external reset)
+    esp_reset_reason_t why = esp_reset_reason();
+    bool self_restart = (why == ESP_RST_PANIC) || (why == ESP_RST_INT_WDT) || (why == ESP_RST_TASK_WDT) ||
+                        (why == ESP_RST_WDT) || (why == ESP_RST_SW) || (why == ESP_RST_BROWNOUT);
+    boot_mode = radio_boot_decision(self_restart, &radio_record);
+    ESP_LOGI(TAG, "Reset reason %d, radio at boot %d", (int)why, (int)boot_mode);
 
     ESP_LOGI(TAG, "dispatch... switching UART pins!");
     vTaskDelay(100 / portTICK_PERIOD_MS);
     ESP_ERROR_CHECK( uart_set_pin(UART_NUM_1, IO_UART_TXD, IO_UART_RXD, IO_UART_RTS, IO_UART_CTS));
+    // The connector may send events from its first state on (EVENT_RESTARTED), so it starts
+    // once the UART is on its pins; the dispatcher, which queues commands for it, after it
+    start_connector();
     start_dispatch(work_buffers.receivedQueue);
 }

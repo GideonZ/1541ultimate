@@ -1,0 +1,17 @@
+{
+  "comment": "The default real hosts for the BUNDLE scenario that talks to the Internet; \"required\" hosts must answer. recorded_top is the topmost certificate each host sent when it was added, with its issuer and fingerprint. NET_TLS_INTERNET_HOSTS=h1,h2,... replaces this list for a run.",
+  "hosts": [
+    {"id": "H1", "host": "www.google.com", "required": true,
+     "recorded_top": "CN=GTS Root R4,O=Google Trust Services LLC,C=US",
+     "recorded_top_issuer": "CN=GlobalSign Root CA,OU=Root CA,O=GlobalSign nv-sa,C=BE",
+     "recorded_top_fp": "76b27b80a58027dc3cf1da68dac17010ed93997d0b603e2fadbe85012493b5a7"},
+    {"id": "H2", "host": "wikipedia.org", "required": true,
+     "recorded_top": "CN=ISRG Root X2,O=Internet Security Research Group,C=US",
+     "recorded_top_issuer": "CN=ISRG Root X1,O=Internet Security Research Group,C=US",
+     "recorded_top_fp": "ee5f7abd6981bb0255632cd8f49283451b4b18844d12040b44ee00f07b8fe2c6"},
+    {"id": "H3", "host": "example.com", "required": false,
+     "recorded_top": "CN=SSL.com TLS ECC Root CA 2022,O=SSL Corporation,C=US",
+     "recorded_top_issuer": "CN=AAA Certificate Services,O=Comodo CA Limited,L=Salford,ST=Greater Manchester,C=GB",
+     "recorded_top_fp": "ba06d3d3e348fce7478cc84b422d0e638e9e221ef1a0b53adc14cc70e04b8ab8"}
+  ]
+}

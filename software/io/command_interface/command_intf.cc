@@ -205,6 +205,11 @@ void CommandInterface :: copy_result(Message *data, Message *status)
     }    
 }
 
+bool CommandInterface :: reset_pending(void)
+{
+    return c64_reset_pending;
+}
+
 bool CommandInterface :: is_dma_active(void)
 {
     return ((CMD_IF_HANDSHAKE_OUT & CMD_HS_DMA_ACTIVE) != 0);

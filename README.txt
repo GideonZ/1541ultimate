@@ -18,15 +18,15 @@ U2+:
 U2+L:
 - Lattice Diamond 3.13 with a (free) generated license
 - RiscV GNU C/C++ Compiler (for RV32I), same as for U2/RiscV.
-- Espressif IDF 5.x
+- Espressif IDF 6.x
 
 U64:
 - Altera Quartus (tested with 18.1 Lite Edition)  - for the Nios-II compiler only.
-- Espressif IDF 5.x
+- Espressif IDF 6.x
 
 U64E-II:
 - RiscV GNU C/C++ Compiler (for RV32I), same as for U2/RiscV.
-- Espressif IDF 5.x
+- Espressif IDF 6.x
 
 
 Environment variables
@@ -40,7 +40,7 @@ In this file, you need to set the location of your Xilinx ISE toolchain.
 
 Building targets
 ================
-ALL targets can be built by just typing 'make' in the root of the repository.
+ALL targets can be built by just typing 'make' in the root of the repository (see the ESP32 note below).
 
 In order to build for U2 only, use the 'u2_rv' target in the top level makefile. This will build the FPGAs as well
 as the RiscV based software, including all updaters. 
@@ -53,8 +53,13 @@ target 'niosapps'. This target will only succeed if you have already successfull
 For the U2+L, you can build the 'u2pl' target.
 
 The U64 firmware can be built by typing 'make u64'.
-
 The U64E-II firmware can be built by typing 'make u64ii'
+The ESP32 module firmware (software/wifi/raw_u64 for the U64, software/wifi/raw_c3 for the U2+L and
+software/u64ctrl for the U64E-II) needs ESP-IDF 6, so IDF_PATH has to be an ESP-IDF 6 for 'make', 'make esp32',
+'make u64', 'make u64ii', 'make u2pl' and 'make clean'. The Dockerfile in docker/ still installs ESP-IDF 5.3.1; CI
+builds the modules in the espressif/idf:v6.0.3 image (see .github/workflows/build.yml) and then packs them with
+'make u64_no_esp', 'make u64ii_no_esp' and 'make u2pl_no_esp'. The README.md in each module directory shows the
+command.
 
 ==> When using the top level makefile, the results are copied into the root of the project.
 

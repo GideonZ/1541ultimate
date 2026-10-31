@@ -2,8 +2,12 @@
 #include "dump_hex.h"
 
 /// C like functions to 'talk' with the WiFi Module
-static uint16_t sequence_nr = 0;
+uint16_t sequence_nr = 0;
 static wifi_reply_slot_t replySlots[WIFI_REPLY_SLOTS];
+#if U64 >= 1
+QueueHandle_t dedicated_replies = NULL;
+volatile bool dedicated_waiting = false;
+#endif
 
 void hex(uint8_t h)
 {
@@ -17,6 +21,16 @@ BaseType_t wifi_rx_isr(command_buf_context_t *context, command_buf_t *buf, BaseT
     rpc_header_t *hdr = (rpc_header_t *)buf->data;
     BaseType_t res;
 
+#if U64 >= 1
+    if (hdr->thread == WIFI_DEDICATED_THREAD) {
+        // pdFALSE makes the interrupt handler free the buffer.
+        if (!dedicated_waiting) {
+            return pdFALSE;
+        }
+        dedicated_reply_t reply = { buf, esp32.uart->generation };
+        return xQueueSendFromISR(dedicated_replies, &reply, w);
+    }
+#endif
     TaskHandle_t thread = (TaskHandle_t)wifi_reply_take(replySlots, hdr->thread, hdr->sequence);
     if (thread) {
         ioWrite8(UART_DATA, 'N');
@@ -82,6 +96,11 @@ void wifi_command_init(void)
     esp32.uart->FlowControl(true);
     esp32.uart->ClearRxBuffer();
     esp32.uart->EnableSlip(true);
+#if U64 >= 1
+    if (!dedicated_replies) {
+        dedicated_replies = xQueueCreate(4, sizeof(dedicated_reply_t));
+    }
+#endif
     esp32.uart->SetReceiveCallback(wifi_rx_isr);
     esp32.uart->EnableIRQ(true);
 }
@@ -299,7 +318,7 @@ int wifi_scan(void *a)
     RETURN_ESP;
 }
 
-int wifi_wifi_connect(const char *ssid, const char *password, uint8_t auth)
+int wifi_wifi_connect(const char *ssid, const char *password, uint8_t auth, const uint8_t *bssid, uint8_t channel)
 {
     BUFARGS(wifi_connect, CMD_WIFI_CONNECT);
 
@@ -308,6 +327,13 @@ int wifi_wifi_connect(const char *ssid, const char *password, uint8_t auth)
     strncpy(args->ssid, ssid, 32);
     strncpy(args->password, password, 64);
     args->auth_mode = auth;
+    // A module that predates these ignores them
+    bzero(args->bssid, 6);
+    args->channel = 0;
+    if (bssid) {
+        memcpy(args->bssid, bssid, 6);
+        args->channel = channel;
+    }
 
     TRANSMIT_T(scan, WIFI_SLOW_TIMEOUT_MS);
     RETURN_ESP;
@@ -351,7 +377,6 @@ int wifi_forget_aps()
 }
 
 
-#if U64 == 2
 int wifi_enable()
 {
     BUFARGS(identify, CMD_WIFI_ENABLE);
@@ -366,6 +391,7 @@ int wifi_disable()
     RETURN_ESP;
 }
 
+#if U64 == 2
 int wifi_get_voltages(voltages_t *voltages)
 {
     BUFARGS(identify, CMD_GET_VOLTAGES);

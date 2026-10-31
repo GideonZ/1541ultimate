@@ -8,15 +8,25 @@
  * is the code that runs on the board. The signed manifests and the serial
  * patterns in vectors/ were written by the recovery server's manifest.py and
  * Python's fnmatch; see make_vectors.py.
+ *
+ * The library is linked with --wrap=psa_crypto_init, --wrap=psa_hash_update and
+ * --wrap=psa_hash_finish, so a test can make the crypto library's start-up or a
+ * hash fail; see the __wrap_ functions below.
  */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "mbedtls/pk.h"
+#include "psa/crypto.h"
 #include "recovery_manifest.h"
+#include "recovery_verify.h"
 
 #ifndef VECTORS_DIR
 #define VECTORS_DIR "vectors"
 #endif
+
+/* recovery_trust.c, the keys the board ships with. */
+extern const char *const recovery_trusted_keys[];
 
 static int failures;
 static int checks;
@@ -171,6 +181,179 @@ static void test_signed_vectors(void)
     free(other_key);
 }
 
+/* A failing psa_crypto_init() on demand, for the checks that the verifier says
+   so rather than calling the manifest badly signed. The Makefile links with
+   --wrap=psa_crypto_init, so the calls recovery_verify.c makes land here. */
+psa_status_t __real_psa_crypto_init(void);
+psa_status_t __real_psa_hash_update(psa_hash_operation_t *operation, const uint8_t *input, size_t input_length);
+psa_status_t __real_psa_hash_finish(psa_hash_operation_t *operation, uint8_t *hash, size_t hash_size,
+                                    size_t *hash_length);
+static psa_status_t crypto_init_forced = PSA_SUCCESS;
+static psa_status_t hash_update_forced = PSA_SUCCESS;
+static psa_status_t hash_finish_forced = PSA_SUCCESS;
+static int crypto_init_calls;
+
+psa_status_t __wrap_psa_hash_update(psa_hash_operation_t *operation, const uint8_t *input, size_t input_length)
+{
+    if (hash_update_forced != PSA_SUCCESS) {
+        return hash_update_forced;
+    }
+    return __real_psa_hash_update(operation, input, input_length);
+}
+
+psa_status_t __wrap_psa_hash_finish(psa_hash_operation_t *operation, uint8_t *hash, size_t hash_size,
+                                    size_t *hash_length)
+{
+    if (hash_finish_forced != PSA_SUCCESS) {
+        return hash_finish_forced;
+    }
+    return __real_psa_hash_finish(operation, hash, hash_size, hash_length);
+}
+
+psa_status_t __wrap_psa_crypto_init(void)
+{
+    crypto_init_calls++;
+    if (crypto_init_forced != PSA_SUCCESS) {
+        return crypto_init_forced;
+    }
+    return __real_psa_crypto_init();
+}
+
+/* Each way a manifest or an image is refused, by the name it logs. */
+static void test_refusals_by_name(void)
+{
+    size_t len, fpga_len, image_len;
+    char *text = read_file("valid.manifest", &len);
+    char *test_key = read_file("test_key.pub.pem", NULL);
+    char *other_key = read_file("other_key.pub.pem", NULL);
+    char *fpga = read_file("fake.bit", &fpga_len);
+    char *image = read_file("fake.ue2", &image_len);
+    const char *trusted[] = { test_key };
+    const char *untrusted[] = { other_key };
+    recovery_manifest_t m;
+    recovery_signature_t sig;
+    recovery_result_t r;
+
+    printf("Refusals, by the error they name\n");
+    r = load(text, len, trusted, 1, &m);
+    check(r == RECOVERY_OK && strcmp(recovery_result_name(r), "ok") == 0, "a valid manifest is accepted");
+    r = load(text, len, untrusted, 1, &m);
+    check(r == RECOVERY_ERR_BAD_SIGNATURE && strcmp(recovery_result_name(r), "bad signature") == 0,
+          "a wrong key is refused as a bad signature");
+    recovery_manifest_split(text, len, &sig);
+    char *at = strstr(text, "test-1.0");
+    check(at != NULL && at < text + sig.signed_len, "the package line is in the signed text");
+    *at ^= 0x01;
+    r = load(text, len, trusted, 1, &m);
+    check(r == RECOVERY_ERR_BAD_SIGNATURE && strcmp(recovery_result_name(r), "bad signature") == 0,
+          "a tampered manifest is refused as a bad signature");
+    *at ^= 0x01;
+
+    // The hashes the manifest holds were made from these files.
+    recovery_manifest_t good;
+    check_result(load(text, len, trusted, 1, &good), RECOVERY_OK, "the manifest verifies again once restored");
+    const struct { const recovery_file_t *file; char *data; size_t len; const char *what; } files[] = {
+        { &good.image, image, image_len, "image" },
+        { &good.fpga, fpga, fpga_len, "bitstream" },
+    };
+    for (int i = 0; i < 2; i++) {
+        char what[96];
+        recovery_hash_t h;
+        snprintf(what, sizeof(what), "the %s hashes to what its manifest says", files[i].what);
+        check(files[i].len == files[i].file->size, "the vector is the size its manifest says");
+        check(recovery_hash_start(&h) == RECOVERY_OK, "a hash starts");
+        // In three pieces, as the download hands it over.
+        size_t a = files[i].len / 3, b = 2 * files[i].len / 3;
+        recovery_hash_update(&h, (const uint8_t *)files[i].data, a);
+        recovery_hash_update(&h, (const uint8_t *)files[i].data + a, b - a);
+        recovery_hash_update(&h, (const uint8_t *)files[i].data + b, files[i].len - b);
+        check_result(recovery_hash_finish(&h, files[i].file), RECOVERY_OK, what);
+
+        snprintf(what, sizeof(what), "a changed byte in the %s is refused as a hash mismatch", files[i].what);
+        files[i].data[files[i].len / 2] ^= 0x01;
+        recovery_hash_start(&h);
+        recovery_hash_update(&h, (const uint8_t *)files[i].data, files[i].len);
+        r = recovery_hash_finish(&h, files[i].file);
+        check(r == RECOVERY_ERR_HASH_MISMATCH && strcmp(recovery_result_name(r), "hash differs") == 0, what);
+        files[i].data[files[i].len / 2] ^= 0x01;
+
+        // A compare that stopped early would still see the file change, which
+        // changes every byte of the hash; the manifest's hash changing in one
+        // byte, at its start, middle or end, is what shows it.
+        static const int flips[] = { 0, 16, 31 };
+        for (int f = 0; f < 3; f++) {
+            recovery_file_t wrong = *files[i].file;
+            wrong.sha256[flips[f]] ^= 0x01;
+            snprintf(what, sizeof(what), "the %s is refused when byte %d of its manifest hash differs", files[i].what,
+                     flips[f]);
+            recovery_hash_start(&h);
+            recovery_hash_update(&h, (const uint8_t *)files[i].data, files[i].len);
+            check_result(recovery_hash_finish(&h, &wrong), RECOVERY_ERR_HASH_MISMATCH, what);
+        }
+
+        snprintf(what, sizeof(what), "a %s cut short is refused as a hash mismatch", files[i].what);
+        recovery_hash_start(&h);
+        recovery_hash_update(&h, (const uint8_t *)files[i].data, files[i].len - 1);
+        check_result(recovery_hash_finish(&h, files[i].file), RECOVERY_ERR_HASH_MISMATCH, what);
+    }
+
+    // A hash that fails part-way is a crypto error, never "matches": the
+    // image whose hash was not computed must not be accepted.
+    for (int i = 0; i < 2; i++) {
+        recovery_hash_t fh;
+        char what[96];
+        recovery_hash_start(&fh);
+        if (i == 0) {
+            hash_update_forced = PSA_ERROR_HARDWARE_FAILURE;
+            r = recovery_hash_update(&fh, (const uint8_t *)image, image_len);
+            hash_update_forced = PSA_SUCCESS;
+            snprintf(what, sizeof(what), "a hash update that fails is reported as a crypto library failure");
+            check(r == RECOVERY_ERR_CRYPTO && strcmp(recovery_result_name(r), "crypto library failed") == 0, what);
+            recovery_hash_abort(&fh);
+        } else {
+            recovery_hash_update(&fh, (const uint8_t *)image, image_len);
+            hash_finish_forced = PSA_ERROR_HARDWARE_FAILURE;
+            r = recovery_hash_finish(&fh, &good.image);
+            hash_finish_forced = PSA_SUCCESS;
+            snprintf(what, sizeof(what), "a hash finish that fails is a crypto library failure, not a match");
+            check(r == RECOVERY_ERR_CRYPTO && strcmp(recovery_result_name(r), "crypto library failed") == 0, what);
+        }
+    }
+
+    // A trusted key that is not an EC key is refused, even with a signature
+    // that is valid for it: rsa512.manifest holds the signed text of
+    // valid.manifest with a PKCS#1 v1.5 SHA-256 signature by the RSA-512 key in
+    // rsa512.pub.pem (openssl genrsa 512; openssl dgst -sha256 -sign).
+    size_t rsa_len;
+    char *rsa_text = read_file("rsa512.manifest", &rsa_len);
+    char *rsa_key = read_file("rsa512.pub.pem", NULL);
+    const char *rsa_trusted[] = { rsa_key };
+    r = load(rsa_text, rsa_len, rsa_trusted, 1, &m);
+    check(r == RECOVERY_ERR_BAD_SIGNATURE && strcmp(recovery_result_name(r), "bad signature") == 0,
+          "a manifest correctly signed by an RSA key is refused as a bad signature");
+    free(rsa_text);
+    free(rsa_key);
+
+    // The crypto library failing to start is not a bad signature.
+    crypto_init_forced = PSA_ERROR_INSUFFICIENT_MEMORY;
+    crypto_init_calls = 0;
+    r = load(text, len, trusted, 1, &m);
+    check(crypto_init_calls > 0, "the verifier initialises the crypto library itself");
+    check(r == RECOVERY_ERR_CRYPTO && strcmp(recovery_result_name(r), "crypto library failed") == 0,
+          "a crypto library that will not start is named, with a valid manifest");
+    check(r != RECOVERY_ERR_BAD_SIGNATURE, "and is not called a bad signature");
+    recovery_hash_t h;
+    check_result(recovery_hash_start(&h), RECOVERY_ERR_CRYPTO, "a hash cannot start either");
+    crypto_init_forced = PSA_SUCCESS;
+    check_result(load(text, len, trusted, 1, &m), RECOVERY_OK, "and the manifest verifies once it starts");
+
+    free(text);
+    free(test_key);
+    free(other_key);
+    free(fpga);
+    free(image);
+}
+
 static void test_split(void)
 {
     recovery_signature_t sig;
@@ -278,13 +461,59 @@ static void test_serial_patterns(void)
     free(text);
 }
 
+/* The keys the board ships with, main and spare: each must load as an EC public
+   key, no two may be the same (a spare pasted as a copy of the main key rotates
+   nothing), and a manifest must be verified by a key behind all of them. */
+static void test_shipped_keys(void)
+{
+    int n = 0;
+    while (recovery_trusted_keys[n]) {
+        mbedtls_pk_context pk;
+        mbedtls_pk_init(&pk);
+        check(psa_crypto_init() == PSA_SUCCESS, "the crypto library starts");
+        check(mbedtls_pk_parse_public_key(&pk, (const unsigned char *)recovery_trusted_keys[n],
+                                          strlen(recovery_trusted_keys[n]) + 1) == 0 &&
+              PSA_KEY_TYPE_IS_ECC_PUBLIC_KEY(mbedtls_pk_get_key_type(&pk)),
+              "a shipped key loads as an EC public key");
+        mbedtls_pk_free(&pk);
+        n++;
+    }
+    check(n >= 2, "a spare key ships next to the main key");
+    int distinct = 1;
+    for (int i = 0; i < n; i++) {
+        for (int j = i + 1; j < n; j++) {
+            distinct &= strcmp(recovery_trusted_keys[i], recovery_trusted_keys[j]) != 0;
+        }
+    }
+    check(distinct, "the shipped keys are all different");
+
+    size_t len;
+    char *text = read_file("valid.manifest", &len);
+    char *test_key = read_file("test_key.pub.pem", NULL);
+    const char *list[16];
+    int count = 0;
+    for (int i = 0; i < n && i < 15; i++) {
+        list[count++] = recovery_trusted_keys[i];
+    }
+    recovery_manifest_t m;
+    check_result(load(text, len, list, count, &m), RECOVERY_ERR_BAD_SIGNATURE,
+                 "a manifest signed by a test key is refused by the shipped keys");
+    list[count++] = test_key;
+    check_result(load(text, len, list, count, &m), RECOVERY_OK,
+                 "a manifest is verified by a key behind every shipped key");
+    free(text);
+    free(test_key);
+}
+
 int main(void)
 {
     test_signed_vectors();
+    test_refusals_by_name();
     test_split();
     test_parse();
     test_board();
     test_serial_patterns();
+    test_shipped_keys();  // last: it starts the crypto library, which the tests above leave to the code under test
 
     printf("\n%d checks, %d failed\n", checks, failures);
     return failures ? 1 : 0;
