@@ -34,6 +34,7 @@ WiFi :: WiFi()
     state = eWifi_Off;
     state_before_scan = eWifi_NotConnected;
     event_when_enabled = 0;
+    pick_cancelled = false;
     bzero(my_mac, 6);
     wifi_aps.num_records  = 0;
     my_ip = 0;
@@ -95,6 +96,9 @@ void WiFi :: RadioOn()
 
 void WiFi :: RadioOff()
 {
+    // The module may still report the failure of a pick that was under way (its refusal can
+    // come before it confirms the radio off): the user has left that, so nothing is said
+    pick_cancelled = true;
 #if U64 != 2
     int result = wifi_disable();
     if (!wifi_switch_unsupported(result)) {
@@ -368,6 +372,10 @@ void WiFi :: RunModeThread()
         case eWifi_NotConnected:
         case eWifi_Connected:
         case eWifi_Disabled:
+            if (pick_cancelled) {
+                pick_cancelled = false;
+                feedback.cancel();
+            }
             if (feedback.onTick(xTaskGetTickCount(), feedback_msg, sizeof(feedback_msg))) {
                 UserInterface :: postMessage(feedback_msg);
             }
@@ -399,6 +407,10 @@ void WiFi :: RunModeThread()
                 }
 #endif
                 break; // the wait for the outcome of a connect ran out; the next pass reports it
+            }
+            if (pick_cancelled) { // the Disable came while this event was on its way
+                pick_cancelled = false;
+                feedback.cancel();
             }
             hdr = (rpc_header_t *)(buf->data);
 #if DEBUG_INPUT

@@ -164,6 +164,18 @@ TEST(WifiConnectFeedbackTask, disable_ends_a_pending_pick)
     CHECK(messages[0] == 0, "no message about the pick");
 }
 
+// The module's refusal (reason 15) reaches the task AFTER the user's Disable and BEFORE the
+// module's EVENT_DISABLED (a connect in flight holds its connector until the attempt fails;
+// the Disable is served then): the user has left the pick, so no message, on every product
+TEST(WifiConnectFeedbackTask, refusal_after_the_disable_is_not_reported)
+{
+    reset_world();
+    world.enabled = true;
+    boot({ pick, Step(user_turns_off), disconnected(15), EVENT_DISABLED });
+    CHECK(messages[0] == 0, "no message about the pick");
+    CHECK(wifi.getState() == eWifi_Disabled, "Disabled");
+}
+
 #if U64 != 2
 // A radio-off confirmation due in 10 s, and a connect outcome due in 20 s: the task wakes
 // when the radio-off one is due, then when the other is. The pick comes while the boot's
@@ -179,19 +191,20 @@ TEST(WifiConnectFeedbackTask, wakes_for_the_radio_off_deadline_first)
     CHECK(message_at == 1000 + (20 * configTICK_RATE_HZ), "exactly at its deadline, 20 s");
 }
 
-static void user_disable(void) { NetworkLWIP_WiFi :: disable(NULL); }
+static void radio_off_asked_again(void)
+{
+    wifi_switch_asked_off(&wifi.radio_switch, now, pdMS_TO_TICKS(WIFI_SWITCH_CONFIRM_MS));
+}
 
-// The reverse: the user turns the radio off (no confirmation comes) when the connect outcome
-// is almost due. The task wakes for the outcome, which is due first, not 10 s later.
 TEST(WifiConnectFeedbackTask, wakes_for_the_connect_deadline_first)
 {
     reset_world();
     world.enabled = true;
     const TickType_t picked_at = 1000;
     boot({ pick,
-           late(Step(user_disable), (20 * configTICK_RATE_HZ) - 500) });
-    // the pick at 1000 gives a deadline at 1000 + 4000; the Disable comes at 4500
-    CHECK(strchr(rlog, 'O') != NULL, "the radio off is asked for");
+           late(Step(radio_off_asked_again), (20 * configTICK_RATE_HZ) - 500),
+           EVENT_GOTIP });
+    // the pick at 1000 gives a deadline at 1000 + 4000; the radio off is asked at 4500
     CHECK(strcmp(messages, "Could not connect to HomeNet\n") == 0, "the outcome is reported");
     CHECK(message_at == picked_at + (20 * configTICK_RATE_HZ), "at its deadline, not at the radio off one");
 }
