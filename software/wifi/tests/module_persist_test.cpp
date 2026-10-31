@@ -107,4 +107,43 @@ TEST(Persist, recovery_autoconnect_starts_the_radio_and_leaves_the_copy)
     CHECK(nvs_wifi_last == 0, "and still reads Disabled for the next boot");
 }
 
+
+// A Disabled boot attaches no lwIP netif, so there is nothing to record then. After a runtime
+// Enable the netif exists, and its slots must be recorded: the machine-off hook puts them
+// back, and a NULL there would crash the next frame (and Wake on WiFi needs them to arm)
+TEST(Persist, disabled_boot_then_enable_then_machine_off_keeps_the_netif_working)
+{
+    nvs_wifi_enabled = 0;
+    const uint8_t ena[] = { CONNECTOR_SEND_ENABLE };
+    run(false, ena, 1);
+    CHECK(strchr(trace, 'T') != NULL, "the Enable started the radio");
+    CHECK(default_input == lwip_input && default_output != NULL, "and the netif's own slots are recorded at its start");
+    enable_hook();   // the machine is switched on: the application takes the interface
+    disable_hook();  // and switched off
+    CHECK(sta_netif.input == lwip_input && sta_netif.output != NULL, "machine-off puts the slots back, not NULL");
+}
+
+// A machine-off before any radio start (Disabled boot, no Enable yet) leaves the netif alone
+TEST(Persist, machine_off_with_no_recorded_defaults_writes_no_null)
+{
+    nvs_wifi_enabled = 0;
+    const uint8_t cmds[] = { 0 };
+    run(false, cmds, 0);
+    CHECK(default_input == NULL, "nothing recorded: no netif yet");
+    sta_netif.input = (netif_input_fn)0x1;
+    disable_hook();
+    CHECK(sta_netif.input == (netif_input_fn)0x1, "the hook does not write NULL over the slot");
+}
+
+// A Disable while a recovery runs: the setting is stored, the radio stays on
+TEST(Persist, disable_during_recovery_stores_but_does_not_stop_the_radio)
+{
+    recovery_active = true;
+    const uint8_t dis[] = { CONNECTOR_SEND_DISABLE };
+    run(false, dis, 1);
+    CHECK(strchr(trace, 'P') == NULL, "the radio is not stopped");
+    CHECK(strchr(trace, 'X') == NULL, "and no EVENT_DISABLED");
+    CHECK(nvs_wifi_last == 0, "the copy reads Disabled for the next boot");
+}
+
 #endif

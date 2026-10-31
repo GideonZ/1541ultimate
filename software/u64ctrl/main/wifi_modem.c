@@ -174,6 +174,10 @@ static err_t wake_watch_recv(struct pbuf *p, struct netif *inp)
             }
         }
     }
+    if (!default_input) {
+        pbuf_free(p);
+        return ERR_OK;
+    }
     return default_input(p, inp);
 }
 
@@ -275,6 +279,21 @@ void wifi_send_connected_event(void)
     }
 }
 
+// Records the netif's own input and output slots once lwIP has attached it, which the first
+// radio start does: a module that boots Disabled has no such slots until an Enable, so this is
+// also called at STA_START. Never records one of our own hooks.
+void wifi_record_netif_defaults(void)
+{
+    if (!my_sta_netif) {
+        return;
+    }
+    struct netif *lw = ((struct esp_netif_obj *)my_sta_netif)->lwip_netif;
+    if (lw && lw->input && (lw->input != hacked_recv) && (lw->input != wake_watch_recv)) {
+        default_input = lw->input;
+        default_output = lw->output;
+    }
+}
+
 static void wifi_event_handler(void *esp_netif, esp_event_base_t base, int32_t event_id, void *data)
 {
     ESP_LOGW(TAG, "WiFi Event %ld, data %p", event_id, data);
@@ -284,6 +303,7 @@ static void wifi_event_handler(void *esp_netif, esp_event_base_t base, int32_t e
     uint8_t disc_reason = 0;
     switch(event_id) {
         case WIFI_EVENT_STA_START:
+            wifi_record_netif_defaults();
             // Attaching the lwIP netif resets netif->input, so a machine that
             // is off is watched again from here. One that is on is left alone:
             // that slot then belongs to the application's own hook.
@@ -326,7 +346,9 @@ void enable_hook()
 void disable_hook()
 {
     struct netif *lw = ((struct esp_netif_obj *)my_sta_netif)->lwip_netif;
-    if(lw) {
+    // No defaults yet: the radio has not been started since a Disabled boot, so the netif
+    // still holds its own slots (or none)
+    if (lw && default_input && default_output) {
         lw->input = default_input;
         lw->output = default_output;
     }
@@ -391,11 +413,7 @@ static void wifi_init()
                                                         NULL,
                                                         NULL));
 
-    struct netif *lw = ((struct esp_netif_obj *)my_sta_netif)->lwip_netif;
-    if (lw) {
-        default_input = lw->input;
-        default_output = lw->output;
-    }
+    wifi_record_netif_defaults();
 }
 
 uint8_t wifi_get_connection()
@@ -813,6 +831,12 @@ int handle_connect_command(ConnectCommand_t *cmd, ConnectState_t *state)
         case CMD_WIFI_DISABLE:
             // The setting is kept first: it is what the next boot goes by, whatever the radio does now
             power_set_wifi_enabled(0);
+            if (recovery_running()) {
+                // A recovery downloads through this radio, and the firmware it replaces may
+                // still be running and pushing its setting: only the copy changes
+                ESP_LOGI(TAG, "Recovery is running: WiFi stays on, the setting is stored.");
+                break;
+            }
             if (*state == Disabled) {
                 // The radio is off already (stored as Disabled at boot): confirm it
                 send_event(EVENT_DISABLED, 0);

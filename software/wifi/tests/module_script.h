@@ -33,6 +33,12 @@ extern uint8_t nvs_wifi_enabled; // u64ctrl: the module's copy of "WiFi Enabled"
 extern uint8_t nvs_wifi_last;    // what the copy read when the run ended
 extern int nvs_wifi_writes;      // power_set_wifi_enabled() calls of a run
 extern char boot_trace[16];      // u64ctrl: what wifi_start_at_boot() did before the connector ran
+extern bool recovery_active;     // recovery_running() answers this (u64ctrl)
+extern struct netif sta_netif;   // u64ctrl: the station netif; lwIP attaches its slots at the radio start (netif_attach)
+void netif_attach(void);
+extern netif_input_fn default_input;
+extern netif_output_fn default_output;
+err_t lwip_input(struct pbuf *p, struct netif *inp);
 
 // In a command list: not a command for the connector, but ...
 #define CONNECTOR_ASK          0xFE // the Ultimate asking for the connection state (cmd_get_connection)

@@ -40,7 +40,7 @@ CXXFLAGS := -std=c++14 $(COMMON) -I$(HOSTTEST) -I. -Istub
 INCLUDES  = -I. -Istub -I$(DIR_$(M)) -I$(PATH_SW)/io/uart $(INC_$(M))
 
 # What the extracted code of a module is made of ...
-FUNCS_MODEM := wifi_start_at_boot send_event wifi_event_handler wifi_note_identify wifi_send_connected_event attempt_connect \
+FUNCS_MODEM := wifi_start_at_boot wifi_record_netif_defaults enable_hook disable_hook send_event wifi_event_handler wifi_note_identify wifi_send_connected_event attempt_connect \
                wifi_connect_to_scanned enable_wifi_if_needed wifi_report_disabled handle_connect_command \
                connector_boot_state connect_thread
 FUNCS_RPC   := cmd_identify cmd_wifi_connect cmd_wifi_endisable cmd_get_connection
@@ -54,7 +54,7 @@ NEEDED      := send_event wifi_event_handler attempt_connect wifi_connect_to_sca
 # changed and puts back what was there before. Every one has to make the suite FAIL (a failing
 # check, not a build error); `make red` prints which checks failed. A fix that a module
 # does not have, or whose cases are not in this commit, has no entry.
-RED_FIXES := 1 2 4 5 6 7
+RED_FIXES := 1 2 4 5 6 7 8
 
 # 1  The radio switch (U64, U2+L): no Disable is served, and the radio goes on at boot, as
 #    on a module without the switch
@@ -94,6 +94,11 @@ LEGACY_6_u64ctrl := $(LEGACY_NOREASON)
 #    the Ultimate's Enable and Disable are not recorded
 LEGACY_7_u64ctrl := -e 's/if (!power_get_wifi_enabled()) {/if (0) {/' -e '/^ *power_set_wifi_enabled([01]);$$/d'
 
+# 8  The control module records the netif slots only at the init (none after a Disabled boot),
+#    writes NULL back at machine-off, and a Disable during a recovery stops the radio
+LEGACY_8_u64ctrl := -e '/case WIFI_EVENT_STA_START:/{' -e 'n' -e 'd' -e '}' \
+    -e 's/if (lw \&\& default_input \&\& default_output) {/if (lw) {/' -e 's/if (recovery_running()) {$$/if (0) {/'
+
 LEGACY = $(LEGACY_$(FIX)_$(M))
 
 .PHONY: all test red clean radio
@@ -116,6 +121,9 @@ define EXTRACTED
 	   grep -E '^static const char \*states\[\]' $(DIR_$(M))/wifi_modem.c; \
 	   for f in $(FUNCS_MODEM); do $(EXTRACT) -v f=$$f $(DIR_$(M))/wifi_modem.c; done; \
 	   for f in $(FUNCS_RPC); do $(EXTRACT) -v f=$$f $(DIR_$(M))/rpc_dispatch.c; done; } > $(1)/module_code.in
+	$(if $(filter u64ctrl,$(M)),@$(EXTRACT) -v f=wifi_init $(DIR_$(M))/wifi_modem.c > $(1)/wifi_init.in; \
+	   grep -q 'wifi_start_at_boot()' $(1)/wifi_init.in && ! grep -q 'esp_wifi_start()' $(1)/wifi_init.in && grep -q 'wifi_record_netif_defaults()' $(1)/wifi_init.in \
+	   || { echo "wifi tests: wifi_init of $(M) must start the radio only through wifi_start_at_boot() and record the netif through wifi_record_netif_defaults()"; exit 1; })
 	@for f in ConnectState_t $(NEEDED); do grep -q "$$f" $(1)/module_code.in || { echo "wifi tests: $$f not found in $(M)"; exit 1; }; done
 	$(if $(LEGACY),@sed $(LEGACY) $(1)/module_code.in > $(1)/module_code.red && ! cmp -s $(1)/module_code.red $(1)/module_code.in || { echo "wifi tests: legacy model $(FIX) does not apply to $(M)"; exit 1; })
 	$(if $(LEGACY),@mv $(1)/module_code.red $(1)/module_code.in)

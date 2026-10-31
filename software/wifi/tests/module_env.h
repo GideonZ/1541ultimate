@@ -113,9 +113,28 @@ extern wifi_ap_record_t ap_info[DEFAULT_SCAN_LIST_SIZE];
 extern QueueHandle_t connect_events, connect_commands;
 extern SemaphoreHandle_t connect_semaphore;
 extern int wake_machine_on; // u64ctrl
+// The station netif as far as the module's hooks use it (lwIP, esp_netif_lwip_internal.h)
+typedef int err_t;
+struct pbuf;
+struct netif;
+typedef err_t (*netif_input_fn)(struct pbuf *p, struct netif *inp);
+typedef err_t (*netif_output_fn)(struct netif *netif, struct pbuf *p, const void *addr);
+struct netif { netif_input_fn input; netif_output_fn output; };
+struct esp_netif_obj { struct netif *lwip_netif; };
+typedef struct esp_netif_obj esp_netif_t;
+extern esp_netif_t *my_sta_netif;
+extern netif_input_fn default_input;
+extern netif_output_fn default_output;
+err_t hacked_recv(struct pbuf *p, struct netif *inp);
+err_t hacked_tx(struct netif *netif, struct pbuf *pbuf, const void *addy);
+err_t wake_watch_recv(struct pbuf *p, struct netif *inp);
+bool recovery_running(void);
+void enable_hook(void);
+void disable_hook(void);
 uint8_t power_get_wifi_enabled(void); // u64ctrl
 esp_err_t power_set_wifi_enabled(uint8_t enabled);
 esp_err_t wifi_start_at_boot(void);
+void wifi_record_netif_defaults(void);
 void wake_on_wifi_update(int machine_on);
 void wifi_note_identify(void);
 #ifdef MODULE_HAS_SWITCH

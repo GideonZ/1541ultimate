@@ -31,18 +31,16 @@ TEST(WifiPersistTask, handshake_pushes_the_stored_setting)
 
 TEST(WifiPersistTask, menu_disable_sets_and_saves_the_setting)
 {
-    for (int via_ask = 0; via_ask < 2; via_ask++) {
-        reset_world();
-        world.enabled = true;
-        boot({ EVENT_CONNECTED });
-        rlog[0] = 0;
-        NetworkLWIP_WiFi :: disable(NULL);
-        CHECK(!world.enabled, "the setting reads Disabled");
-        CHECK(saves == 1 && !saved_enabled, "and it is saved");
-        CHECK(strcmp(rlog, "O") == 0, "the radio is asked to go off, once");
-        NetworkLWIP_WiFi :: disable(NULL);
-        CHECK(saves == 1, "nothing is written when it did not change");
-    }
+    reset_world();
+    world.enabled = true;
+    boot({ EVENT_CONNECTED });
+    rlog[0] = 0;
+    NetworkLWIP_WiFi :: disable(NULL);
+    CHECK(!world.enabled, "the setting reads Disabled");
+    CHECK(saves == 1 && !saved_enabled, "and it is saved");
+    CHECK(strcmp(rlog, "O") == 0, "the radio is asked to go off, once");
+    NetworkLWIP_WiFi :: disable(NULL);
+    CHECK(saves == 1, "nothing is written when it did not change");
 }
 
 TEST(WifiPersistTask, menu_enable_sets_and_saves_the_setting)
