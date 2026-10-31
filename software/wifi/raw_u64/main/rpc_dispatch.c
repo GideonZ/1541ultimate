@@ -35,6 +35,7 @@ void cmd_echo(command_buf_t *buf)
 void cmd_identify(command_buf_t *buf)
 {
     rpc_identify_resp *resp = (rpc_identify_resp *)buf->data;
+    wifi_note_identify(); // an Ultimate application starts (wifi_modem.c, off_asked)
     resp->major = IDENT_MAJOR;
     resp->minor = IDENT_MINOR;
     strcpy(&resp->string, IDENT_STRING);
@@ -100,6 +101,8 @@ void cmd_wifi_connect(command_buf_t *buf)
         return;
     }
 
+    // An application that predates the BSSID sends the shorter request
+    int with_bssid = (buf->size >= (int)sizeof(rpc_wifi_connect_req));
     buf->size = sizeof(rpc_espcmd_resp);
     ConnectCommand_t ev;
     ev.buf = buf;
@@ -109,6 +112,12 @@ void cmd_wifi_connect(command_buf_t *buf)
     ev.ssid[32] = 0;
     memcpy(&ev.pw, param->password, 64);
     ev.pw[64] = 0;
+    memset(ev.bssid, 0, 6);
+    ev.channel = 0;
+    if (with_bssid) {
+        memcpy(ev.bssid, param->bssid, 6);
+        ev.channel = param->channel;
+    }
 
     if (xQueueSend(connect_commands, &ev, 1000) == pdFALSE) {
         resp->esp_err = ESP_ERR_NO_MEM;
@@ -188,20 +197,26 @@ void cmd_modem_off(command_buf_t *buf)
     disable_hook();
 }
 
-void cmd_wifi_disable(command_buf_t *buf)
+void cmd_wifi_endisable(command_buf_t *buf)
 {
+    rpc_header_t *hdr = (rpc_header_t *)buf->data;
     rpc_espcmd_resp *resp = (rpc_espcmd_resp *)buf->data;
-    resp->esp_err = ESP_ERR_NOT_SUPPORTED;
-    buf->size = sizeof(rpc_espcmd_resp);
-    my_uart_transmit_packet(UART_CHAN, buf);
-}
 
-void cmd_wifi_enable(command_buf_t *buf)
-{
-    rpc_espcmd_resp *resp = (rpc_espcmd_resp *)buf->data;
-    resp->esp_err = ESP_ERR_NOT_SUPPORTED;
     buf->size = sizeof(rpc_espcmd_resp);
-    my_uart_transmit_packet(UART_CHAN, buf);
+    ConnectCommand_t ev;
+    ev.buf = buf;
+    ev.command = hdr->command;
+
+    if (xQueueSend(connect_commands, &ev, 1000) == pdFALSE) {
+        resp->esp_err = ESP_ERR_NO_MEM;
+        my_uart_transmit_packet(UART_CHAN, buf);
+        return;
+    } else {
+        resp->esp_err = ESP_OK;
+        my_uart_transmit_packet(UART_CHAN, buf);
+    }
+    xSemaphoreGive(connect_semaphore);
+    // command is now in the queue, so the connect handler will process it further
 }
 
 void cmd_get_connection(command_buf_t *buf)
@@ -211,6 +226,9 @@ void cmd_get_connection(command_buf_t *buf)
     resp->status = wifi_get_connection();
     buf->size = sizeof(rpc_get_connection_resp);
     my_uart_transmit_packet(UART_CHAN, buf);
+
+    // if the radio is off, say so, so that a WiFi application that starts now shows it
+    wifi_report_disabled();
 }
 
 void cmd_get_time(command_buf_t *buf)
@@ -312,10 +330,8 @@ void dispatch(void *ct)
             cmd_modem_off(pbuffer);
             break;
         case CMD_WIFI_DISABLE:
-            cmd_wifi_disable(pbuffer);
-            break;
         case CMD_WIFI_ENABLE:
-            cmd_wifi_enable(pbuffer);
+            cmd_wifi_endisable(pbuffer);
             break;
         case CMD_WIFI_IS_CONNECTED:
             cmd_get_connection(pbuffer);

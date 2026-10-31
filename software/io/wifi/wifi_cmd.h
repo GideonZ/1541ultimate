@@ -36,13 +36,15 @@ int wifi_setbaud(int baudrate, uint8_t flowctrl);
 BaseType_t wifi_detect(uint16_t *major, uint16_t *minor, char *str, int maxlen);
 int wifi_getmac(uint8_t *mac);
 int wifi_scan(void *);
-int wifi_wifi_connect(const char *ssid, const char *password, uint8_t auth);
+int wifi_wifi_connect(const char *ssid, const char *password, uint8_t auth, const uint8_t *bssid = NULL, uint8_t channel = 0);
 int wifi_wifi_autoconnect();
 int wifi_wifi_disconnect();
 int wifi_machine_off();
 int wifi_machine_reboot();
 void wifi_rx_packet();
 
+// The radio switch: 0 when the module queued the request, its error otherwise, or -1
+// when nothing reached the module (no buffer or slot, or no reply)
 int wifi_enable();
 int wifi_disable();
 int wifi_modem_enable(bool);

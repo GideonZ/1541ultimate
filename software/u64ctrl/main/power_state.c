@@ -15,6 +15,7 @@ static const char *TAG = "power_state";
 #define NVS_KEY_MODE  "mode"
 #define NVS_KEY_LAST  "last"
 #define NVS_KEY_WAKE  "wowifi"
+#define NVS_KEY_WIFI  "wifion"
 
 static uint8_t read_u8(const char *key, uint8_t dflt)
 {
@@ -87,6 +88,21 @@ esp_err_t power_set_mode(uint8_t mode)
     }
     ESP_LOGI(TAG, "Power on after power loss: %s", power_mode_name(mode));
     return write_u8(NVS_KEY_MODE, mode);
+}
+
+uint8_t power_get_wifi_enabled(void)
+{
+    return read_u8(NVS_KEY_WIFI, 1) ? 1 : 0;
+}
+
+esp_err_t power_set_wifi_enabled(uint8_t enabled)
+{
+    enabled = enabled ? 1 : 0;
+    if (power_get_wifi_enabled() == enabled) {
+        return ESP_OK; // the Ultimate sends its setting at every handshake
+    }
+    ESP_LOGI(TAG, "WiFi: %s", enabled ? "ENABLED" : "DISABLED");
+    return write_u8(NVS_KEY_WIFI, enabled);
 }
 
 uint8_t power_get_wake_on_wifi(void)
