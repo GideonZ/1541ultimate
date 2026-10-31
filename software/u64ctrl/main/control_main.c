@@ -23,7 +23,6 @@
 #include "jtag.h"
 #include "sntp.h"
 #include "power_state.h"
-#include "provider_boot.h"
 #include "recovery.h"
 
 static const char *TAG = "u64ctrl";
@@ -185,7 +184,6 @@ int check_fpga(void)
 
 void app_main(void)
 {
-    provider_boot_init();
     // Check whether the application FPGA was already loaded. If it was, only the
     // ESP32 restarted, and the machine should simply stay on.
     int fpga_running = check_fpga();

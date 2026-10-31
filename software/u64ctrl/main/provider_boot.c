@@ -1,6 +1,5 @@
 #include "provider_boot.h"
 #include "provider_identity.h"
-#include "bootloader_random.h"
 #include "esp_random.h"
 
 static uint8_t boot_identity[PROVIDER_ID_SIZE];
@@ -11,11 +10,10 @@ void provider_boot_init(void)
 {
     if (initialized) return;
     initialized = 1;
-    // The internal entropy source must be disabled before configure_adc() or
-    // setup_modem(). Identity does not depend on Wi-Fi association or storage.
-    bootloader_random_enable();
+    // Called only after esp_wifi_start succeeds, while RF supplies entropy.
+    // Do not borrow the SAR ADC entropy source: its IDF 5.3 cleanup changes
+    // the ADC reset/power state shared with voltage sensing and the PHY.
     esp_fill_random(boot_identity, sizeof(boot_identity));
-    bootloader_random_disable();
     for (unsigned i = 0; i < sizeof(boot_identity); ++i) valid |= boot_identity[i];
 }
 

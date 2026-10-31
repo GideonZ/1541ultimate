@@ -6,6 +6,11 @@ The initial host and cross-build snapshot is
 declarations added after this snapshot do not change the tested firmware inputs.
 The subsequent factory-test and parser-preparation corrections are recorded below.
 
+The later [startup and version review](https-startup-review.md) removes the
+application's SAR entropy manipulation and separates default/provider versions
+as 1.22/1.23. The table below is the earlier historical snapshot; its module
+versions and packages are not the corrected installation candidate.
+
 ## Results
 
 | Validation | Result |

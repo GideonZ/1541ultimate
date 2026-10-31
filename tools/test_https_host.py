@@ -44,6 +44,7 @@ def main():
             raise RuntimeError(name + " failed; evidence retained")
 
     save()
+    run("provider-boot-startup", [sys.executable, root / "tools/tests/test_provider_boot_startup.py"])
     run("parser-prepare", [sys.executable, root / "tools/prepare_http_parser.py"])
     run("wifi-replies", ["make", "-C", root / "target/pc/linux/wifireply", "-j1", "test"])
     run("parser-tests", ["make", "-C", root / "software/httpd/c-version/tests",

@@ -26,6 +26,7 @@
 
 #include "sntp.h"
 #include "provider_sources.h"
+#include "provider_boot.h"
 #include "rpc_calls.h"
 #include "rpc_dispatch.h"
 #include "wifi_modem.h"
@@ -39,6 +40,7 @@ static esp_err_t provider_wifi_start(void)
 {
     provider_sources_wifi_stopping();
     esp_err_t result=esp_wifi_start();
+    if (result == ESP_OK) provider_boot_init();
     provider_sources_wifi_started(result==ESP_OK);
     return result;
 }
