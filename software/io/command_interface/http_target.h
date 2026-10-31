@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include <stdlib.h>
+#include <strings.h>
 #include "mystring.h"
 #include "json.h"
 #include "command_target.h"
@@ -55,23 +56,24 @@ class HttpHeaderSlot
 {
     uint8_t verb;
     bool secure;
+    bool valid;
     mstring host;
     mstring url;
     mstring renderspace;
     uint16_t port;
     JSON_Object lines;
 public:
-    HttpHeaderSlot(uint8_t v, const char *u, int ulen) : verb(v), lines(true)
+    HttpHeaderSlot(uint8_t v, const char *u, int ulen) : verb(v), valid(true), lines(true)
     {
         // Force null-termination
         mstring text(u, 0, ulen-1);
         u = text.c_str();
 
-        if(strncmp(u, "https://", 8) == 0) {
+        if(strncasecmp(u, "https://", 8) == 0) {
             port = 443;
             secure = true;
             host = u+8;
-        } else if(strncmp(u, "http://", 7) == 0) {
+        } else if(strncasecmp(u, "http://", 7) == 0) {
             port = 80;
             secure = false;
             host = u+7;
@@ -79,6 +81,11 @@ public:
             port = 80;
             host = u;
             secure = false;
+            // An unsupported or malformed secure scheme must not become a
+            // schemeless plaintext hostname. Legacy host[:port]/path is kept.
+            const char *scheme = strstr(u, "://");
+            const char *slash = strchr(u, '/');
+            valid = !(scheme && (!slash || scheme < slash)) && strncasecmp(u, "https:", 6) != 0;
         }
         // first select sub-url
         const char *sub = host.split("/");
@@ -88,7 +95,16 @@ public:
         // now try to find port number
         const char *portnr = host.split(":");
         if (portnr) {
-            port = (uint16_t)strtol(portnr, NULL, 10);
+            char *end;
+            long parsed = strtol(portnr, &end, 10);
+            if (secure && (!*portnr || *end || parsed < 1 || parsed > 65535 ||
+                           strspn(portnr, "0123456789") != strlen(portnr))) {
+                valid = false;
+            }
+            port = (uint16_t)parsed;
+        }
+        if (secure && (!host.length() || strpbrk(host.c_str(), "@[] \t\r\n?#\\"))) {
+            valid = false;
         }
         set("Host", host.c_str());
     }
@@ -99,6 +115,7 @@ public:
         url = src->url.c_str();
         port = src->port;
         secure = src->secure;
+        valid = src->valid;
     }
 
     ~HttpHeaderSlot()
@@ -130,6 +147,9 @@ public:
     {
         return host.c_str();
     }
+
+    bool is_secure() const { return secure; }
+    bool is_valid() const { return valid; }
 
     const uint16_t get_port()
     {
@@ -642,6 +662,13 @@ class HttpTarget : public CommandTarget {
     HttpHeaderSlot *headers[MAX_HTTP_HANDLES];
     HttpBodySlot *bodies[MAX_HTTP_HANDLES];
     HttpRequest *exch;
+    HttpSecureProvider *secure_provider;
+    HttpConnection *secure_connection;
+    OperationCancellation cancellation;
+    OperationCancellation exchange_cancellation;
+    OperationCancellation provider_cancellation;
+    bool secure_reply, rejected_reply;
+    int pending_header, pending_body;
     StreamRamFile *response_data;
 
     // Helper methods for command processing
@@ -662,10 +689,16 @@ class HttpTarget : public CommandTarget {
 
     void express(JSON *j);
     void reset_responses();
+    void release_exchange();
     void release_all();
 public:
-    HttpTarget(int id);
+    // Provider is borrowed; it and its callback context outlive this target.
+    HttpTarget(int id, HttpSecureProvider *provider = NULL);
     virtual ~HttpTarget();
+
+    void begin_command(const OperationCancellation& token) override { cancellation = token; }
+    void prepare_reply(Message **reply, Message **status) override;
+    void finish_reply(bool published) override;
 
     void parse_command(Message *command, Message **reply, Message **status) override;
     void get_more_data(Message **reply, Message **status) override;

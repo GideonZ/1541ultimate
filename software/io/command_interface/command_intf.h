@@ -61,6 +61,13 @@
 
 class SubSystem;
 
+// Retain admission identity in the queue; flags alone cannot distinguish an
+// old command left behind by a C64 reset from a new command after that reset.
+struct CommandInterfaceEvent {
+    uint8_t flags;
+    OperationCancellation cancellation;
+};
+
 class CommandInterface : public SubSystem
 {
 	TaskHandle_t taskHandle;

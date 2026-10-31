@@ -34,6 +34,9 @@ endif
 include ../../../common/environment.mk
 
 FPGA_PATH ?= $(PATH_SW)/../external
+# Optional exact management payload for a coordinated validation package.
+# When pinned, verify it rather than recursively rebuilding it with a new date.
+MANAGEMENT_SHA256 ?=
 
 PRJ      =  update
 FINAL    =  $(RESULT)/$(PRJ).cfw $(RESULT)/$(PRJ).app $(RESULT)/$(PRJ).elf $(OUTPUT)/$(PRJ).sim
@@ -59,6 +62,20 @@ SRCS_C   =	itu.c \
 			cmd_buffer.c \
             riscv_main.c \
              
+# The standard updater keeps upstream behavior. Strict paired-image gates are
+# a separate, explicitly selected validation build.
+COORDINATED_HTTPS_UPDATE ?= 0
+UPDATE_SOURCE = update_u64ii.cc
+ifeq ($(COORDINATED_HTTPS_UPDATE),1)
+UPDATE_SOURCE = update_https_u64ii.cc
+ifeq ($(strip $(MANAGEMENT_SHA256)),)
+$(error A coordinated update requires MANAGEMENT_SHA256)
+endif
+ifeq ($(strip $(CONTROLLER_SHA256)),)
+$(error A coordinated update requires CONTROLLER_SHA256)
+endif
+endif
+
 SRCS_CC	 =  u64ii_init.cc \
 			color_timings.cc \
 			hdmi_scan.cc \
@@ -116,7 +133,7 @@ SRCS_CC	 =  u64ii_init.cc \
 			usb_hub.cc \
 			usb_hid.cc \
 			\
-			update_u64ii.cc
+			$(UPDATE_SOURCE)
 
 VPATH +=	.
 VPATH +=	$(PATH_SW)/FreeRTOS/Source/portable/risc-v
@@ -153,6 +170,9 @@ PATH_INC =  $(addprefix -I, $(VPATH))
 OPTIONS  = -march=$(MARCH) -mabi=$(MABI) -gdwarf-2 -ffunction-sections -DRISCV -Os -DOS -DUSB2513 -DRISC=1 -DSAFEMODE=1 -DIOBASE=0x10000000 -DU2P_IO_BASE=0x10100000
 OPTIONS += -DCLOCK_FREQ=100000000 -DU64=2 -Wno-write-strings -fdata-sections -nostartfiles -mno-fdiv -DRECOVERYAPP=1
 OPTIONS += -DUPDATE_FPGA_TYPE=$(UPDATE_FPGA_TYPE) -Wa,--defsym,UPDATE_FPGA_TYPE=$(UPDATE_FPGA_TYPE)
+ifeq ($(COORDINATED_HTTPS_UPDATE),1)
+OPTIONS += -DCONFIG_ULTIMATE_PROVIDER_CONTROL=1
+endif
 COPTIONS = $(OPTIONS) -std=gnu99
 CPPOPT   = $(OPTIONS) -std=gnu++11 -fno-exceptions -fno-rtti -fno-threadsafe-statics -fpermissive
 LINK 	 = linker.x
@@ -187,10 +207,22 @@ ultimate.chk: ../ultimate/result/ultimate.app
 update_binaries_u64ii.o: $(FPGA_IMAGES:%=%.swp) ../ultimate/result/ultimate.app
 
 ../ultimate/result/ultimate.app::
+ifeq ($(strip $(MANAGEMENT_SHA256)),)
 	make -C ../ultimate
+else
+	@printf '%s  %s\n' '$(MANAGEMENT_SHA256)' '$@' | sha256sum --check
+endif
 
-update_u64ii.o: update_u64ii.cc $(INCLUDES) $(CHK_BIN) ultimate.chk $(FPGA_IMAGES:%=%.chk)
+$(UPDATE_SOURCE:.cc=.o): $(UPDATE_SOURCE) $(INCLUDES) $(CHK_BIN) ultimate.chk $(FPGA_IMAGES:%=%.chk)
 	@echo "Compiling $(notdir $<)"
 	@cat $(addprefix $(OUTPUT)/,$(CHK_BIN)) $(OUTPUT)/ultimate.chk $(addprefix $(OUTPUT)/,$(FPGA_IMAGES:%=%.chk)) >$(OUTPUT)/checksums.h
 	@$(CPP) $(CPPOPT) $(PATH_INC) -B. -c -Wa,-ahlms=$(OUTPUT)/$(@:.o=.lst) -o $(OUTPUT)/$(@F) $<
 
+
+ifeq ($(COORDINATED_HTTPS_UPDATE),1)
+.PHONY: verify-controller-payload
+verify-controller-payload:
+	@printf '%s  %s\n' '$(CONTROLLER_SHA256)' '$(PATH_SW)/u64ctrl/build/u64ctrl.bin' | sha256sum --check
+	@python3 $(PATH_SW)/application/esp32_diagnostic/tests/check_controller_payload.py $(PATH_SW)/u64ctrl/build/u64ctrl.bin
+$(UPDATE_SOURCE:.cc=.o): verify-controller-payload
+endif

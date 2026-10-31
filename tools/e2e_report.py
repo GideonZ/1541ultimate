@@ -901,6 +901,11 @@ def overall_verdict(run: Run) -> str:
     """The run's verdict, on the same rule the runner's own summary uses."""
     counts = run.counts()
     exit_code = run.exit_code
+    # Controlled preparation validates a plan but deliberately runs no hardware.
+    # Its successful offline exit must not turn the hardware SKIP into a pass.
+    if (run.identity.get("execution_scope") == "controlled-https"
+            and run.identity.get("status") == "prepared-offline"):
+        return "SKIP"
     # A comparison against the scale, not a list of the statuses that happened
     # to mean "passed" when this was written. The literal that was here read
     # `exit_code not in (None, 0, 3)`, and when the ladder was renumbered 3
@@ -921,7 +926,12 @@ def overall_verdict(run: Run) -> str:
 
 def header(run: Run) -> List[str]:
     identity = run.identity
-    lines = [f"# E2E gate run: {overall_verdict(run)}", "", status_line(run), ""]
+    title = (f"HTTPS campaign ({identity.get('action')})"
+             if identity.get("execution_scope") == "controlled-https" else "E2E gate run")
+    lines = [f"# {title}: {overall_verdict(run)}", "", status_line(run), ""]
+    if identity.get("execution_scope") == "controlled-https":
+        lines += [f"Campaign status: `{identity.get('status')}`. "
+                  "This report does not establish full hardware qualification.", ""]
 
     rows = []
     for name, value in (("commit", identity.get("commit")),
@@ -943,15 +953,26 @@ def header(run: Run) -> List[str]:
         if value:
             rows.append([name, str(value)])
     for target in run.targets:
-        rows.append([f"device {target.token}", target.product])
+        if identity.get("execution_scope") == "controlled-https":
+            rows.append(["evidence scope", target.token])
+        else:
+            rows.append([f"device {target.token}", target.product])
         first, last = target.firmware_changed()
         if first:
             rows.append([f"device {target.token} changed",
                          f"{first} at the start, {last} at the end"])
     exit_code = run.exit_code
     if exit_code is not None:
+        meaning = EXIT_MEANING.get(exit_code, 'unknown')
+        if identity.get("execution_scope") == "controlled-https":
+            meaning = {
+                "prepared-offline": "offline plan validated; hardware not executed",
+                "awaiting-independent-peer-audit": "independent audit pending; not a pass",
+                "saved-evidence-audit-passed": "saved-evidence audit passed; hardware qualification held",
+                "failed": "campaign step failed; no retry or recovery",
+            }.get(identity.get("status"), meaning)
         rows.append(["exit status",
-                     f"{exit_code}: {EXIT_MEANING.get(exit_code, 'unknown')}"])
+                     f"{exit_code}: {meaning}"])
     if identity.get("argv"):
         rows.append(["command",
                      "`" + redact(" ".join(str(a) for a in identity["argv"])) + "`"])

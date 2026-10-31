@@ -17,6 +17,12 @@ jobs:
           submodules: recursive
           fetch-depth: 0
 
+      - name: Test HTTP parser preparation
+        run: python3 tools/tests/test_prepare_http_parser.py
+
+      - name: Prepare reviewed HTTP response parser
+        run: python3 tools/prepare_http_parser.py
+
       - name: Test JSON Replacement
         run: |
           docker run --rm \

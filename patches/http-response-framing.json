@@ -1,0 +1,21 @@
+{
+  "base": "ad73d3217bb0e1b3f37e0dbba595309b942aea17",
+  "result": "d0e6b82ca2744aca7bc4b10c59aa9f509778400e",
+  "before": {
+    "c-version/lib/http_protocol.c": "4677f09516c0c288ff33bccfc2075bde314491f6bd6ac8de14d37a7defdd9edf",
+    "c-version/lib/multipart.c": "d52587d92b41ceadf355be6cda31a82efacb68d95202b0eccec99c403a9ca5f1",
+    "c-version/lib/server.h": "bc77e09e9142abc77101fedaa8d595960d7bb9310ab95bed4bf63adb85db997a",
+    "c-version/tests/Makefile": "8bc65b9a9233bca94be58b9e97250527aa33e94e68d2cb9036a4af65f7c6ebe4",
+    "c-version/tests/multipart_test.cpp": "2a7edcc51e78743e933f04097ebb1dac5fdee82cfa9dee10060a9cae6c6ce683",
+    "c-version/tests/response_test.cpp": null
+  },
+  "after": {
+    "c-version/lib/http_protocol.c": "04e563cf5e484cc1665da94669530280e862475646c175e8caf50ba2508599bf",
+    "c-version/lib/multipart.c": "71cce95a0231862f89b3b5ace4edbca3a46af066ceb97ef30419197f77cda0ab",
+    "c-version/lib/server.h": "ac2b31a4fab4a3c3af51cac7850840f45f014c26ec900ec3cfc30a0cdc6cac7a",
+    "c-version/tests/Makefile": "dc05cf872967b8f6eae7a29fea36bf6a9fa594f083cc02c750942e966ca0cd7a",
+    "c-version/tests/multipart_test.cpp": "20d904d8cf86ab67586f5d1567cfd0952f1e6e9a53019ca85faf3c5b645471d2",
+    "c-version/tests/response_test.cpp": "8341eb3e4fd22c051112d444a2ecfbe4049b33ac4ec9f2d4a1f6cdb0f559c713"
+  },
+  "patch_sha256": "dd4320c01b08fb4204f5b69247a88c8bb65ef46929482d91791f5f24cfbcd5fd"
+}
