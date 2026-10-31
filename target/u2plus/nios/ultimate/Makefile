@@ -237,8 +237,8 @@ mps_png.o: mps_png.cc
 $(PATH_SW)/6502/sidcrt/target/sidcrt.bin::
 	+$(MAKE) -C $(PATH_SW)/6502/sidcrt
 
-$(PATH_SW)/6502/sidcrt/target/muscrt.bin::
+$(PATH_SW)/6502/sidcrt/target/muscrt.bin:: $(PATH_SW)/6502/sidcrt/target/sidcrt.bin
 	+$(MAKE) -C $(PATH_SW)/6502/sidcrt
 
-$(PATH_SW)/6502/sidcrt/target/musplayer.bin::
+$(PATH_SW)/6502/sidcrt/target/musplayer.bin:: $(PATH_SW)/6502/sidcrt/target/muscrt.bin
 	+$(MAKE) -C $(PATH_SW)/6502/sidcrt
