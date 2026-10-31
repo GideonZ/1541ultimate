@@ -1,4 +1,23 @@
-# Wifi SCAN Example
+# ESP32 WiFi bridge (raw_u64)
+
+## Building
+
+The bridge needs ESP-IDF 6 (CI uses v6.0.3); `CMakeLists.txt` stops an older one at configure.
+`docker/Dockerfile` still installs ESP-IDF 5.3.1, so CI builds this project (and raw_c3 and u64ctrl) in
+`espressif/idf:v6.0.3`, pinned by digest in `.github/workflows/build.yml`. Locally, from the top of the
+repository, the same way as CI:
+
+    docker run --rm --user $(id -u):$(id -g) -e HOME=/tmp -v "$PWD":/project -w /project/software/wifi/raw_u64 \
+        espressif/idf:v6.0.3@sha256:54278f2c01e6e759502e2f04c9103589c17528923426f4d63193490c7a08f555 idf.py build
+
+then `make u64_no_esp` packs `build/bridge.bin` into `update.u64`. `make esp32_raw_u64` (and so
+`make u64`) works only where `IDF_PATH` is an ESP-IDF 6. Once `build/` exists here,
+`make clean` also needs ESP-IDF 6; otherwise delete `software/wifi/raw_u64/build` by hand.
+
+`software/io/uart/cmd_buffer.c` is compiled into all three ESP32 projects (raw_u64, raw_c3 and u64ctrl).
+
+`sdkconfig` marks values that follow ESP-IDF's defaults with `# default:`; a reconfigure on a newer
+ESP-IDF takes its new defaults there. After any ESP-IDF update, diff the values, not just the build.
 
 This example shows how to use the scan functionality of the Wi-Fi driver of ESP32.
 

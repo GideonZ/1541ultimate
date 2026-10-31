@@ -26,8 +26,15 @@ void start_dispatch(QueueHandle_t queue);
 void send_button_event(uint8_t button);
 void send_keepalive();
 
-#define IDENT_STRING "ESP32 WiFi Bridge V1.21"
+#define IDENT_STRING "ESP32 WiFi Bridge V1.25"
 #define IDENT_MAJOR   1
+// 1.25: CMD_GET_RANDOM, served with the radio off too, from the SAR ADC source.
+// 1.24: starts and stops the radio through the code it shares with the U64 module.
+// 1.23: a Disable or Autoconnect during the AP list walks is no longer lost, Enable
+// reconnects after a Disconnect, a Scan while Disabled is refused and a Connect leaves
+// Disabled. Joins the strongest access point of an SSID, or the one the Ultimate picked
+// when it sends its BSSID. EVENT_DISCONNECTED carries the reason the station gave.
+// 1.22: built with ESP-IDF 6.0.3; the recovery code uses PSA Crypto (mbedTLS 4).
 // 1.21: a recovery trusts Mozilla's root list of 2026-10-20 (software/u64ctrl/ca), which
 // no longer holds the emSign roots G3, C1 and C3, instead of the one in ESP-IDF 5.3.1.
 // 1.20: terminates 32-character SSIDs and 64-character passwords, and reads
@@ -42,7 +49,7 @@ void send_keepalive();
 // when this is higher than what the module reports, so a module change that
 // does not bump it is silently never installed, and an older release never
 // replaces a newer module.
-#define IDENT_MINOR   21
+#define IDENT_MINOR   25
 #define MULTITHREADED 0
 #define DISPATCHER_STACK 3072
 
