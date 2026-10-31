@@ -61,11 +61,9 @@ void ConfigStore :: set_value(uint8_t id, int value)
 {
     if (id == CFG_WIFI_ENABLE) {
         world.enabled = (value != 0);
-#if U64 != 2
         ConfigItem it;
         it.value = value;
         NetworkLWIP_WiFi :: wifi_enable_change(&it);
-#endif
     }
 }
 int ConfigStore :: get_value(uint8_t id) { return (id == CFG_WIFI_ENABLE) ? (world.enabled ? 1 : 0) : 0; }

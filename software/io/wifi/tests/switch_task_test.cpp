@@ -16,8 +16,8 @@
 // The menu's Enable and Disable: the context menu and the config menu
 static void menu_enable(void) { NetworkLWIP_WiFi :: enable(NULL); }
 static void menu_disable(void) { NetworkLWIP_WiFi :: disable(NULL); }
-static void cfg_menu_enable(void) { NetworkLWIP_WiFi :: cfg_enable(NULL, NULL); }
-static void cfg_menu_disable(void) { NetworkLWIP_WiFi :: cfg_disable(NULL, NULL); }
+static void cfg_menu_enable(void) { NetworkLWIP_WiFi :: enable(NULL); }
+static void cfg_menu_disable(void) { NetworkLWIP_WiFi :: disable(NULL); }
 #endif
 
 // What wifi_disable() answers when nothing reached the module (wifi_cmd.h)
