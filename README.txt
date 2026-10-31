@@ -26,7 +26,7 @@ U64:
 
 U64E-II:
 - RiscV GNU C/C++ Compiler (for RV32I), same as for U2/RiscV.
-- Espressif IDF 5.x
+- Espressif IDF 6.x
 
 
 Environment variables
@@ -40,7 +40,7 @@ In this file, you need to set the location of your Xilinx ISE toolchain.
 
 Building targets
 ================
-ALL targets can be built by just typing 'make' in the root of the repository.
+ALL targets can be built by just typing 'make' in the root of the repository (see the U64E-II note below).
 
 In order to build for U2 only, use the 'u2_rv' target in the top level makefile. This will build the FPGAs as well
 as the RiscV based software, including all updaters. 
@@ -55,6 +55,10 @@ For the U2+L, you can build the 'u2pl' target.
 The U64 firmware can be built by typing 'make u64'.
 
 The U64E-II firmware can be built by typing 'make u64ii'
+Its control module firmware (software/u64ctrl) needs ESP-IDF 6, while software/wifi/raw_u64 and raw_c3
+still need 5.3.1. So 'make u64ii' needs IDF_PATH to be an ESP-IDF 6, 'make u64' and 'make u2pl' need 5.3.1,
+and 'make' (all), 'make esp32' and 'make clean' cannot complete with a single IDF_PATH. Build the control
+module as software/u64ctrl/README.md shows, and then run 'make u64ii_no_esp'.
 
 ==> When using the top level makefile, the results are copied into the root of the project.
 

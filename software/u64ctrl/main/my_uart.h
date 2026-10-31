@@ -17,6 +17,8 @@
 #define UART_DEBUG_RX 0
 #define UART_DEBUG_IRQ 0
 
+// Routes UART1 to the FPGA pins. Call it for every connection, so the RX and CTS idle levels are the same everywhere.
+void       my_uart_connect_pins(void);
 esp_err_t  my_uart_init(command_buf_context_t *buffers, uint8_t uart_num);
 BaseType_t my_uart_get_buffer(uint8_t uart_num, command_buf_t **buf, TickType_t ticks);
 BaseType_t my_uart_transmit_packet(uint8_t uart_num, command_buf_t *buf);

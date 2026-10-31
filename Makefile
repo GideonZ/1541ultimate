@@ -9,7 +9,7 @@ OPENAPI = python3 tools/openapi/generate.py
 #   make openapi_validate PYTHON=/path/to/venv/bin/python
 PYTHON ?= python3
 
-.PHONY: all app_space app_space_test d81_tracks_test observability_test lint_test host_tests openapi openapi_check openapi_test openapi_validate
+.PHONY: all app_space app_space_test d81_tracks_test observability_test lint_test host_tests host_tests_idf6 openapi openapi_check openapi_test openapi_validate
 
 all: esp32 u2_rv u2plus u2pl u64 u64ii
 	@$(APP_SPACE) report
@@ -67,6 +67,11 @@ openapi_validate:
 	  exit 2; }
 	@$(PYTHON) -m openapi_spec_validator --validation-errors all `$(OPENAPI) paths`
 
+# The recovery manifest check is built against the crypto library of ESP-IDF 6,
+# so it runs in that image (IDF_PATH of an ESP-IDF 6), apart from the rest.
+host_tests_idf6:
+	@$(MAKE) -C target/pc/linux/recoverymanifest test
+
 # Unit tests that run on the build host rather than on the device. Kept out of
 # the firmware targets deliberately: those build with a cross compiler, and
 # these need a host g++.
@@ -77,7 +82,6 @@ host_tests:
 	@$(MAKE) -C target/pc/linux/powerstate test
 	@$(MAKE) -C target/pc/linux/wolmagic test
 	@$(MAKE) -C target/pc/linux/wifireply test
-	@$(MAKE) -C target/pc/linux/recoverymanifest test
 	@$(MAKE) -C target/pc/linux/recoveryimage test
 	@$(MAKE) -C target/pc/linux/recoveryurl test
 
