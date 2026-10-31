@@ -125,11 +125,11 @@ class NativeUci:
             len(command) & 0xFF, (len(command) >> 8) & 0xFF,
             min(overrun_reads, MAX_OVERRUN_READS), max_blocks,
             cap & 0xFF, (cap >> 8) & 0xFF]))
-        # Outside the option block above, so it is written every time rather
-        # than left over from the previous transaction. OPT_WAIT follows
-        # OPT_ABRT, so one write carries both.
-        self.machine.writemem(OPT_ABRT, bytes([0x01 if abort_first else 0x00,
-                                               self.wait_wraps & 0xFF]))
+        # Outside the option block above, so they are written every time
+        # rather than left over from the previous transaction. OPT_WAIT is not
+        # next to OPT_ABRT ($C00A is left free), so each gets its own write.
+        self.machine.writemem(OPT_ABRT, bytes([0x01 if abort_first else 0x00]))
+        self.machine.writemem(OPT_WAIT, bytes([self.wait_wraps & 0xFF]))
         self.machine.writemem(GO, bytes([0x01]))
 
         deadline = time.monotonic() + self.busy_timeout
