@@ -191,12 +191,12 @@ $(OUTPUT)/$(PRJ).shex: $(OUTPUT)/$(PRJ).out
 	@echo Assembling $(<F)
 	@$(CC) $(OPTIONS) $(PATH_INC) -B. -c -Wa,-ahlms=$(OUTPUT)/$(@:.o=.lst) -o $(OUTPUT)/$(@F) $<
 
-%.o: %.c
+%.o: %.c | gitinfo
 	@echo Compiling $(<F)
 	@$(CC) $(COPTIONS) $(PATH_INC) -B. -c -Wa,-ahlms=$(OUTPUT)/$(@:.o=.lst) -o $(OUTPUT)/$(@F) $<
 	@$(CC) $(COPTIONS) -MM $(PATH_INC) $< >$(OUTPUT)/$(@F:.o=.d)
 
-%.o: %.cc
+%.o: %.cc | gitinfo
 	@echo Compiling $(<F)
 	@$(CPP) $(CPPOPT) $(PATH_INC) -B. -c -Wa,-ahlms=$(OUTPUT)/$(@:.o=.lst) -o $(OUTPUT)/$(@F) $<
 	@$(CPP) $(CPPOPT) -MM $(PATH_INC) $< >$(OUTPUT)/$(@F:.o=.d)
