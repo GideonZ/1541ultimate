@@ -45,6 +45,7 @@ class WiFi : public Esp32Application
 
     WifiState_t state;
     WifiState_t state_before_scan; // the state a scan of the AP list returns to
+    volatile bool pick_cancelled;  // the user turned the radio off: a pick under way is not reported (RadioOff sets it, the task takes it)
     uint8_t event_when_enabled;    // an event of the user to send once the radio is on again (0: none)
     char    last_ap[32];
     char    moduleName[34];
