@@ -297,8 +297,8 @@ TEST(WifiSwitchTask, radio_off_while_setting_up)
 // changes, and a reboot reads the saved value.
 static void menu_enable(void) { NetworkLWIP_WiFi :: enable(NULL); }
 static void menu_disable(void) { NetworkLWIP_WiFi :: disable(NULL); }
-static void cfg_menu_enable(void) { NetworkLWIP_WiFi :: cfg_enable(NULL, NULL); }
-static void cfg_menu_disable(void) { NetworkLWIP_WiFi :: cfg_disable(NULL, NULL); }
+static void cfg_menu_enable(void) { NetworkLWIP_WiFi :: enable(NULL); }
+static void cfg_menu_disable(void) { NetworkLWIP_WiFi :: disable(NULL); }
 
 TEST(WifiSwitchTask, menu_enable_sets_and_saves_the_setting)
 {

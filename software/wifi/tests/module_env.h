@@ -113,6 +113,9 @@ extern wifi_ap_record_t ap_info[DEFAULT_SCAN_LIST_SIZE];
 extern QueueHandle_t connect_events, connect_commands;
 extern SemaphoreHandle_t connect_semaphore;
 extern int wake_machine_on; // u64ctrl
+uint8_t power_get_wifi_enabled(void); // u64ctrl
+esp_err_t power_set_wifi_enabled(uint8_t enabled);
+esp_err_t wifi_start_at_boot(void);
 void wake_on_wifi_update(int machine_on);
 void wifi_note_identify(void);
 #ifdef MODULE_HAS_SWITCH

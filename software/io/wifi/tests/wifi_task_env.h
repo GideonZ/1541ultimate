@@ -72,8 +72,6 @@ public:
     bool enabled_in_config(void);
     static SubsysResultCode_e enable(SubsysCommand *cmd);
     static void set_enabled(bool on);
-    static void cfg_enable(UserInterface *intf, ConfigItem *it);
-    static void cfg_disable(UserInterface *intf, ConfigItem *it);
     static SubsysResultCode_e disable(SubsysCommand *cmd);
     static SubsysResultCode_e manual_connect(SubsysCommand *cmd);
     static bool ask_enable(UserInterface *intf);

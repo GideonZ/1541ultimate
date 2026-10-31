@@ -29,6 +29,10 @@ extern bool last_ap_reachable; // the next run's connect to the last AP succeeds
 extern int start_fails;        // the next radio_start() calls fail; 0 again after each run
 extern int retry_timeouts;     // the next idle waits with a timeout run out, one each (the retry timer); 0 again after each run
 extern int recorded;           // the last radio_record_set() of a run (1 on, 0 off, -1 none)
+extern uint8_t nvs_wifi_enabled; // u64ctrl: the module's copy of "WiFi Enabled" (power_get_wifi_enabled), 1 again after each run
+extern uint8_t nvs_wifi_last;    // what the copy read when the run ended
+extern int nvs_wifi_writes;      // power_set_wifi_enabled() calls of a run
+extern char boot_trace[16];      // u64ctrl: what wifi_start_at_boot() did before the connector ran
 
 // In a command list: not a command for the connector, but ...
 #define CONNECTOR_ASK          0xFE // the Ultimate asking for the connection state (cmd_get_connection)

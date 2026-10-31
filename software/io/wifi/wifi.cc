@@ -300,6 +300,14 @@ void WiFi :: RunModeThread()
                 U64Config :: pushPowerOnMode();
                 U64Config :: pushWakeOnWifi();
                 U64Config :: pushRecoveryUrl();
+                // The setting wins over the module's copy in its NVS (a module swap, a write
+                // that failed): the radio is put as the setting says. Both are harmless when
+                // the module is in that state already.
+                if (netstack->enabled_in_config()) {
+                    wifi_enable();
+                } else {
+                    wifi_disable();
+                }
 #endif
                 RefreshRoot();
             }

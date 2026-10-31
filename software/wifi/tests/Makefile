@@ -40,7 +40,7 @@ CXXFLAGS := -std=c++14 $(COMMON) -I$(HOSTTEST) -I. -Istub
 INCLUDES  = -I. -Istub -I$(DIR_$(M)) -I$(PATH_SW)/io/uart $(INC_$(M))
 
 # What the extracted code of a module is made of ...
-FUNCS_MODEM := send_event wifi_event_handler wifi_note_identify wifi_send_connected_event attempt_connect \
+FUNCS_MODEM := wifi_start_at_boot send_event wifi_event_handler wifi_note_identify wifi_send_connected_event attempt_connect \
                wifi_connect_to_scanned enable_wifi_if_needed wifi_report_disabled handle_connect_command \
                connector_boot_state connect_thread
 FUNCS_RPC   := cmd_identify cmd_wifi_connect cmd_wifi_endisable cmd_get_connection
@@ -54,7 +54,7 @@ NEEDED      := send_event wifi_event_handler attempt_connect wifi_connect_to_sca
 # changed and puts back what was there before. Every one has to make the suite FAIL (a failing
 # check, not a build error); `make red` prints which checks failed. A fix that a module
 # does not have, or whose cases are not in this commit, has no entry.
-RED_FIXES := 1 2 4 5 6
+RED_FIXES := 1 2 4 5 6 7
 
 # 1  The radio switch (U64, U2+L): no Disable is served, and the radio goes on at boot, as
 #    on a module without the switch
@@ -89,6 +89,10 @@ LEGACY_NOREASON := -e 's/->reason = reason;/->reason = 0;/'
 LEGACY_6_raw_u64 := $(LEGACY_NOREASON)
 LEGACY_6_raw_c3  := $(LEGACY_NOREASON)
 LEGACY_6_u64ctrl := $(LEGACY_NOREASON)
+
+# 7  The control module did not keep "WiFi Enabled": the radio is started at every boot, and
+#    the Ultimate's Enable and Disable are not recorded
+LEGACY_7_u64ctrl := -e 's/if (!power_get_wifi_enabled()) {/if (0) {/' -e '/^ *power_set_wifi_enabled([01]);$$/d'
 
 LEGACY = $(LEGACY_$(FIX)_$(M))
 

@@ -34,9 +34,8 @@ WIFI_FUNCS := WiFi~::~WiFi WiFi~::~Init WiFi~::~Enable WiFi~::~Disable WiFi~::~R
 	WiFi~::~RadioOff WiFi~::~RunModeThread WiFi~::~sendEvent WiFi~::~sendConnectPending WiFi~::getAccessPointItems \
 	BrowsableWifiAP~::~connect_ap
 NET_FUNCS := NetworkLWIP_WiFi~::~disable NetworkLWIP_WiFi~::~enable NetworkLWIP_WiFi~::~ask_enable \
-	NetworkLWIP_WiFi~::~cfg_show_aps NetworkLWIP_WiFi~::~cfg_enter_ap NetworkLWIP_WiFi~::~cfg_conn_last
-NET_FUNCS_SWITCH := NetworkLWIP_WiFi~::~wifi_enable_change NetworkLWIP_WiFi~::~set_enabled \
-	NetworkLWIP_WiFi~::~cfg_enable NetworkLWIP_WiFi~::~cfg_disable
+	NetworkLWIP_WiFi~::~cfg_show_aps NetworkLWIP_WiFi~::~cfg_enter_ap NetworkLWIP_WiFi~::~cfg_conn_last \
+	NetworkLWIP_WiFi~::~wifi_enable_change NetworkLWIP_WiFi~::~set_enabled
 CMD_FUNCS := wifi_wifi_connect
 
 CASES := $(wildcard *_test.cpp)
@@ -79,9 +78,6 @@ $(OUT)/task.cc: Makefile $(WIFI_CC) $(NET_CC) $(CMD_CC) $(EXTRACT) $(LEG) wifi_t
 	@{ echo '#include "wifi_task_env.h"'; \
 	   $(foreach f,$(WIFI_FUNCS),$(call extract,$(f),$(WIFI_CC));) \
 	   $(foreach f,$(NET_FUNCS),$(call extract,$(f),$(NET_CC));) \
-	   echo '#if U64 != 2'; \
-	   $(foreach f,$(NET_FUNCS_SWITCH),$(call extract,$(f),$(NET_CC));) \
-	   echo '#endif'; \
 	   $(foreach f,$(CMD_FUNCS),$(call extract,$(f),$(CMD_CC));) } | tr -d '\r' > $(OUT)/task.orig
 	@if [ -n "$(LEG)" ]; then \
 	   sed -f $(LEG) $(OUT)/task.orig > $@; \

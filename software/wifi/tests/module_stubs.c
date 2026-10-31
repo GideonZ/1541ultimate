@@ -45,6 +45,13 @@ void radio_record_set(radio_record_t *rec, bool on) { recorded = on; }
 int recorded = -1;
 // The control module has no such call
 void wifi_note_identify(void) { }
+// The control module's copy of "WiFi Enabled"
+uint8_t nvs_wifi_enabled = 1;
+int nvs_wifi_writes;
+uint8_t nvs_wifi_last;
+char boot_trace[16];
+uint8_t power_get_wifi_enabled(void) { return nvs_wifi_enabled; }
+esp_err_t power_set_wifi_enabled(uint8_t enabled) { nvs_wifi_writes++; nvs_wifi_enabled = enabled ? 1 : 0; return ESP_OK; }
 #endif
 
 // The script
@@ -389,6 +396,14 @@ void run_with(int aps_found, bool disconnected_before, const uint8_t *commands, 
     disabled_g = 1; // as the module starts: radio off, until the Ultimate asks for it
     recorded = -1;
 #endif
+#ifndef MODULE_HAS_SWITCH
+    // The control module's boot: the radio is started unless its copy of the setting says
+    // Disabled (it is the first the connector sees, as in wifi_init())
+    wifi_start_at_boot();
+    strncpy(boot_trace, trace, sizeof(boot_trace) - 1);
+    trace[0] = 0;
+    nvs_wifi_writes = 0;
+#endif
     stale_disabled = 0;
     sent_n = 0;
     user_disconnected = disconnected_before;
@@ -396,6 +411,10 @@ void run_with(int aps_found, bool disconnected_before, const uint8_t *commands, 
     if (setjmp(done) == 0) {
         connect_thread(NULL);
     }
+#ifndef MODULE_HAS_SWITCH
+    nvs_wifi_last = nvs_wifi_enabled;
+    nvs_wifi_enabled = 1;
+#endif
     last_ap_reachable = false;
     start_fails = 0;
     retry_timeouts = 0;

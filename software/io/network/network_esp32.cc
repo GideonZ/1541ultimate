@@ -32,12 +32,7 @@ const char *authmodes[] = { "Open", "WEP", "WPA PSK", "WPA2 PSK", "WPA/WPA2 PSK"
 
 //-----------------------------------
 struct t_cfg_definition wifi_config[] = {
-#if U64 == 2
-    { CFG_WIFI_ENA,    CFG_TYPE_FUNC,   "Enable",                        "",(const char **)NetworkLWIP_WiFi :: cfg_enable, 0, 0, 0 },
-    { CFG_WIFI_DIS,    CFG_TYPE_FUNC,   "Disable",                       "",(const char **)NetworkLWIP_WiFi :: cfg_disable, 0, 0, 0 },
-#else
     { CFG_WIFI_ENABLE, CFG_TYPE_ENUM,   "WiFi Enabled",                  "%s", en_dis,     0,  1, 1 },
-#endif
     { CFG_WIFI_DISCONN,CFG_TYPE_FUNC,   "Disconnect",                    "",(const char **)NetworkLWIP_WiFi :: cfg_disconn, 0, 0, 0 },
     { CFG_WIFI_CONN,   CFG_TYPE_FUNC,   "Connect to last AP",            "",(const char **)NetworkLWIP_WiFi :: cfg_conn_last, 0, 0, 0 },
     { CFG_WIFI_SEL_AP, CFG_TYPE_FUNC,   "Select AP from list",           "",(const char **)NetworkLWIP_WiFi :: cfg_show_aps, 0, 0, 0 },
@@ -120,12 +115,9 @@ void NetworkLWIP_WiFi :: attach_config()
     cfg->set_sort_order(SORT_ORDER_CFG_WIFI);
     cfg->set_change_hook(CFG_NET_DHCP_EN, dhcp_change);
     dhcp_change(cfg->find_item(CFG_NET_DHCP_EN));
-#if U64 != 2
     cfg->set_change_hook(CFG_WIFI_ENABLE, wifi_enable_change);
-#endif
 }
 
-#if U64 != 2
 bool NetworkLWIP_WiFi :: enabled_in_config(void)
 {
     return cfg->get_value(CFG_WIFI_ENABLE) != 0;
@@ -149,7 +141,6 @@ int NetworkLWIP_WiFi :: wifi_enable_change(ConfigItem *it)
     }
     return 0;
 }
-#endif
 
 // from ConfigurableObject
 void NetworkLWIP_WiFi :: effectuate_settings(void)
@@ -159,17 +150,9 @@ void NetworkLWIP_WiFi :: effectuate_settings(void)
 	my_net_if.name[0] = 'W';
 	my_net_if.name[1] = 'I';
 
-#if U64 == 2
-    // if (cfg->get_value(CFG_WIFI_ENABLE) && wifi.getState() == eWifi_Disabled) {
-    //     wifi.RadioOn();
-    // } else if (!(cfg->get_value(CFG_WIFI_ENABLE)) && wifi.getState() != eWifi_Disabled) {
-    //     wifi.RadioOff();
-    // }
-#else
     // The WiFi application always runs (WiFi::Init). The setting is applied by the
     // application when it finds the module, and by its change hook; not here, because
     // this also runs when the init callback of the network stack occurs.
-#endif
 }
 
 void NetworkLWIP_WiFi :: on_edit()
@@ -378,7 +361,6 @@ void NetworkLWIP_WiFi :: cfg_disconn(UserInterface *intf, ConfigItem *it)
     wifi_wifi_disconnect();    
 }
 
-#if U64 != 2
 // One switch: "WiFi Enabled" is what the Enable and Disable actions set, what its change hook
 // acts on (it turns the radio on or off), and what the next boot reads. It is saved when it
 // changes.
@@ -393,25 +375,6 @@ void NetworkLWIP_WiFi :: set_enabled(bool on)
     if (changed) {
         cfg->write();
     }
-}
-#endif
-
-void NetworkLWIP_WiFi :: cfg_enable(UserInterface *intf, ConfigItem *it)
-{
-#if U64 != 2
-    set_enabled(true);
-#else
-    wifi.RadioOn();
-#endif
-}
-
-void NetworkLWIP_WiFi :: cfg_disable(UserInterface *intf, ConfigItem *it)
-{
-#if U64 != 2
-    set_enabled(false);
-#else
-    wifi.RadioOff();
-#endif
 }
 
 void NetworkLWIP_WiFi :: cfg_forget(UserInterface *intf, ConfigItem *it)
@@ -437,21 +400,13 @@ SubsysResultCode_e NetworkLWIP_WiFi :: rescan(SubsysCommand *cmd)
 
 SubsysResultCode_e NetworkLWIP_WiFi :: disable(SubsysCommand *cmd)
 {
-#if U64 != 2
     set_enabled(false);
-#else
-    wifi.RadioOff();
-#endif
     return SSRET_OK;
 }
 
 SubsysResultCode_e NetworkLWIP_WiFi :: enable(SubsysCommand *cmd)
 {
-#if U64 != 2
     set_enabled(true);
-#else
-    wifi.RadioOn();
-#endif
     return SSRET_OK;
 }
 

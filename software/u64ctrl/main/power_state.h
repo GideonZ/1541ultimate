@@ -37,6 +37,11 @@ uint8_t power_get_mode(void);
 esp_err_t power_set_mode(uint8_t mode);
 
 /* Disabled when nothing was stored, and when what was stored is unknown. */
+// The Ultimate's "WiFi Enabled" setting, kept here so that a Disabled is honoured at boot,
+// before the Ultimate is running. 1 (the default) is Enabled.
+uint8_t power_get_wifi_enabled(void);
+esp_err_t power_set_wifi_enabled(uint8_t enabled);
+
 uint8_t power_get_wake_on_wifi(void);
 
 /* Stores it; ESP_ERR_INVALID_ARG for anything but the two values above. */

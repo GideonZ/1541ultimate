@@ -122,9 +122,8 @@ TEST(WifiDisabledTask, yes_enables_and_the_action_goes_on)
     }
 }
 
-// After a Yes the state is consistent with "radio on => not Disabled": on the U64 and U2+L
-// "WiFi Enabled" reads Enabled, saved, as if it had been set in the menu; on the Elite II /
-// C64 Ultimate the Enable action leaves the setting alone
+// After a Yes the state is consistent with "radio on => not Disabled": "WiFi Enabled" reads
+// Enabled, saved, as if it had been set in the menu, on every product
 TEST(WifiDisabledTask, yes_leaves_wifi_enabled_set_and_saved)
 {
     for (const Action_t &a : actions) {
@@ -132,12 +131,8 @@ TEST(WifiDisabledTask, yes_leaves_wifi_enabled_set_and_saved)
         world.enabled = false; // "WiFi Enabled" stored as Disabled
         boot({ EVENT_DISABLED, a.run, EVENT_DISCONNECTED });
         CHECK(strchr(after('?'), 'N') != NULL, "the radio is asked to come on");
-#if U64 != 2
         CHECK(world.enabled, "the setting reads Enabled");
         CHECK(saves == 1 && saved_enabled, "and it is saved, so it stays so after a reboot");
-#else
-        CHECK(!world.enabled && saves == 0, "the Enable action leaves the setting alone");
-#endif
     }
 }
 

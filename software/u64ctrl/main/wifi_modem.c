@@ -348,6 +348,20 @@ esp_err_t wifi_clear_aps(void)
     return err;
 }
 
+// The radio at boot: started unless the Ultimate's setting, which this module keeps a copy
+// of, is Disabled. Then it is not started at all, so a disabled unit never transmits after
+// mains-in, before the Ultimate is running. The Ultimate tells its setting when it finds the
+// module, and that wins.
+esp_err_t wifi_start_at_boot(void)
+{
+    if (!power_get_wifi_enabled()) {
+        ESP_LOGI(TAG, "WiFi is stored as Disabled: not starting the radio.");
+        disabled_g = 1;
+        return ESP_OK;
+    }
+    return esp_wifi_start();
+}
+
 // Initialize Wi-Fi as sta
 static void wifi_init()
 {
@@ -363,7 +377,7 @@ static void wifi_init()
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_NONE));
-    ESP_ERROR_CHECK(esp_wifi_start());
+    ESP_ERROR_CHECK(wifi_start_at_boot());
 
     ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT,
                                                         ESP_EVENT_ANY_ID,
@@ -797,6 +811,14 @@ int handle_connect_command(ConnectCommand_t *cmd, ConnectState_t *state)
 
     switch(cmd->command) {
         case CMD_WIFI_DISABLE:
+            // The setting is kept first: it is what the next boot goes by, whatever the radio does now
+            power_set_wifi_enabled(0);
+            if (*state == Disabled) {
+                // The radio is off already (stored as Disabled at boot): confirm it
+                send_event(EVENT_DISABLED, 0);
+                disabled_g = 1;
+                return 1;
+            }
             if (*state == Connected) {
                 ESP_LOGI(TAG, "Disconnecting from WiFi.");
                 err = esp_wifi_disconnect();
@@ -819,6 +841,7 @@ int handle_connect_command(ConnectCommand_t *cmd, ConnectState_t *state)
             }
             break;
         case CMD_WIFI_ENABLE:
+            power_set_wifi_enabled(1);
             if (*state == Disabled) {
                 // Like a connect request, an Enable means the user wants to be on the
                 // network again, so a Disconnect from before the Disable is spent
@@ -834,8 +857,8 @@ int handle_connect_command(ConnectCommand_t *cmd, ConnectState_t *state)
                     ESP_LOGW(TAG, "Failed to start WiFi: %d", err);
                 }
             } else {
-                ESP_LOGE(TAG, "Enabling WiFi is not possible in state %s.", states[*state]);
-            } // else, do nothing, not supported
+                ESP_LOGI(TAG, "WiFi is on already (state %s).", states[*state]);
+            }
             break;
         case CMD_WIFI_SCAN:
             {
@@ -900,12 +923,19 @@ int handle_connect_command(ConnectCommand_t *cmd, ConnectState_t *state)
     return 0; // not connected
 }
 
+// The connector's first state: Disabled, with the radio off, when wifi_start_at_boot() did not
+// start it; otherwise the walk to the last AP
+ConnectState_t connector_boot_state(void)
+{
+    return disabled_g ? Disabled : LastAP;
+}
+
 void connect_thread(void *a)
 {
     ConnectEvent_t connect_event;
     ConnectCommand_t connect_command;
-    ConnectState_t state = LastAP;
-    ConnectState_t prev = LastAP;
+    ConnectState_t state = connector_boot_state();
+    ConnectState_t prev = state;
     int retry_delay_ms = WIFI_RETRY_MIN_MS;
     esp_err_t err;
 
