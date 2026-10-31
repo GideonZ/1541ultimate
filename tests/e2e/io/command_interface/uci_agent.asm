@@ -25,7 +25,7 @@
 ;               reply
 ;   OPT_WAIT    how long a wait may last, for a command that legitimately
 ;               runs longer than the default (an OPEN_TLS can take 41 s)
-;   $C00B-$C00F and $C440-$C4FF are reserved for further options and results.
+;   $C00C-$C00F and $C440-$C4FF are reserved for further options and results.
 ; New behaviour, as opposed to a new value, belongs in a reserved option byte,
 ; where zero has to keep meaning what the agent does today: the host writes the
 ; whole option block at once, so an older host leaves zeroes there.
@@ -69,8 +69,8 @@ OPT_CAP  = $C006                ; 16 bit cap on the data drain
 READY    = $C008                ; agent writes $A5 here once it is running
 OPT_ABRT = $C009                ; non-zero: abandon the reply after the first
                                 ; block by writing the abort bit
-OPT_WAIT = $C00A                ; wraps a wait may take; zero means WAIT_WRAPS
-;          $C00B-$C00F          ; reserved for further options
+OPT_WAIT = $C00B                ; wraps a wait may take; zero means WAIT_WRAPS
+;          $C00C-$C00F          ; reserved for further options
 CMDBUF   = $C010                ; command bytes, up to 896
 
 ; ------------------------------------------------------------- result block --
