@@ -187,7 +187,7 @@ ultimate.chk: ../ultimate/result/ultimate.app
 update_binaries_u64ii.o: $(FPGA_IMAGES:%=%.swp) ../ultimate/result/ultimate.app
 
 ../ultimate/result/ultimate.app::
-	make -C ../ultimate
+	+$(MAKE) -C ../ultimate
 
 update_u64ii.o: update_u64ii.cc $(INCLUDES) $(CHK_BIN) ultimate.chk $(FPGA_IMAGES:%=%.chk)
 	@echo "Compiling $(notdir $<)"

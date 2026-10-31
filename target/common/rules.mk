@@ -23,7 +23,7 @@ ALL_DEP_OBJS  = $(addprefix $(OUTPUT)/,$(OBJS_C) $(OBJS_CC))
 all: $(OUTPUT) gitinfo $(RESULT) $(FINAL)
 	@echo Making all requires $(OUTPUT), $(RESULT) and $(FINAL)	
 
-gitinfo::
+gitinfo:: | $(OUTPUT)
 	@echo '/* Generated file, do not edit. */' >$(OUTPUT)/gitinfo.h
 	@echo '#define APP_VERSION_TAG    "'`git describe --tags`'"' >>$(OUTPUT)/gitinfo.h
 	@echo '#define APP_VERSION_BRANCH "'`git describe --all`'"' >>$(OUTPUT)/gitinfo.h
@@ -191,12 +191,12 @@ $(OUTPUT)/$(PRJ).shex: $(OUTPUT)/$(PRJ).out
 	@echo Assembling $(<F)
 	@$(CC) $(OPTIONS) $(PATH_INC) -B. -c -Wa,-ahlms=$(OUTPUT)/$(@:.o=.lst) -o $(OUTPUT)/$(@F) $<
 
-%.o: %.c
+%.o: %.c | gitinfo
 	@echo Compiling $(<F)
 	@$(CC) $(COPTIONS) $(PATH_INC) -B. -c -Wa,-ahlms=$(OUTPUT)/$(@:.o=.lst) -o $(OUTPUT)/$(@F) $<
 	@$(CC) $(COPTIONS) -MM $(PATH_INC) $< >$(OUTPUT)/$(@F:.o=.d)
 
-%.o: %.cc
+%.o: %.cc | gitinfo
 	@echo Compiling $(<F)
 	@$(CPP) $(CPPOPT) $(PATH_INC) -B. -c -Wa,-ahlms=$(OUTPUT)/$(@:.o=.lst) -o $(OUTPUT)/$(@F) $<
 	@$(CPP) $(CPPOPT) -MM $(PATH_INC) $< >$(OUTPUT)/$(@F:.o=.d)
