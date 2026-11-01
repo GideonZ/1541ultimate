@@ -86,3 +86,11 @@ test-response-completion test-response-boundaries test-response-cleanup:
 	    CC="$(CC) -fsanitize=address,undefined -fno-sanitize-recover=all" \
 	    CPP="$(CPP) -fsanitize=address,undefined -fno-sanitize-recover=all" all
 	@timeout 30s env LD_PRELOAD="$$($(CPP) -print-file-name=libasan.so)$${LD_PRELOAD:+:$$LD_PRELOAD}" result/response-completion/$(PRJ) --$(patsubst test-%,%,$@)
+
+# Exercise send_request against a peer that stalls and drains slowly.
+.PHONY: test-send-all
+test-send-all:
+	@$(MAKE) OUTPUT=output/send-all RESULT=result/send-all \
+	    CC="$(CC) -fsanitize=address,undefined -fno-sanitize-recover=all" \
+	    CPP="$(CPP) -fsanitize=address,undefined -fno-sanitize-recover=all" all
+	@timeout 150s env LD_PRELOAD="$$($(CPP) -print-file-name=libasan.so)$${LD_PRELOAD:+:$$LD_PRELOAD}" result/send-all/$(PRJ) --send-all

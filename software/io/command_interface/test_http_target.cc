@@ -8,6 +8,7 @@
 #include <unistd.h>
 #include <sys/wait.h>
 #include <signal.h>
+#include <time.h>
 
 // these globals will be filled in by the clients
 CommandTarget *command_targets[CMD_IF_MAX_TARGET+1];
@@ -667,6 +668,148 @@ public:
     }
 };
 
+static unsigned char send_all_pattern(size_t offset)
+{
+    return (unsigned char)((offset * 131 + (offset >> 8)) & 0xFF);
+}
+
+// Peer that stalls before reading, so the client's send buffer fills up. With reset set it instead
+// closes the connection abruptly after the first bytes arrive, and with
+// stall it never reads at all. The child
+// reports "in-order bytes received" (or -1 on a mismatch) through a pipe.
+class SlowReaderPeer
+{
+    LoopbackEndpoint endpoint;
+    pid_t child;
+    int result_pipe[2];
+
+    SlowReaderPeer(const SlowReaderPeer&);
+    SlowReaderPeer& operator=(const SlowReaderPeer&);
+public:
+    SlowReaderPeer(size_t expected, bool reset, bool stall = false) : child(-1)
+    {
+        result_pipe[0] = result_pipe[1] = -1;
+        if (!endpoint.port() || !endpoint.start_listening() || pipe(result_pipe) != 0) {
+            return;
+        }
+        child = fork();
+        if (child == 0) {
+            alarm(75);
+            close(result_pipe[0]);
+            int client = endpoint.accept_connection();
+            usleep(500000);
+            if (stall) {
+                sleep(60);
+                expected = 0;
+            }
+            long received = 0;
+            static char block[65536];
+            while (client >= 0 && (size_t)received < expected) {
+                int n = recv(client, block, sizeof(block), 0);
+                if (n <= 0) {
+                    break;
+                }
+                for (int i = 0; i < n; i++) {
+                    if ((unsigned char)block[i] != send_all_pattern(received + i)) {
+                        received = -1;
+                        break;
+                    }
+                }
+                if (received < 0) {
+                    break;
+                }
+                received += n;
+                if (reset) {
+                    struct linger abort_close = { 1, 0 };
+                    setsockopt(client, SOL_SOCKET, SO_LINGER, &abort_close, sizeof(abort_close));
+                    break;
+                }
+            }
+            if (client >= 0) {
+                close(client);
+            }
+            if (write(result_pipe[1], &received, sizeof(received)) < 0) {
+                _exit(2);
+            }
+            _exit(0);
+        }
+        close(result_pipe[1]);
+    }
+
+    ~SlowReaderPeer()
+    {
+        if (child > 0) {
+            kill(child, SIGKILL);
+            waitpid(child, NULL, 0);
+        }
+        if (result_pipe[0] >= 0) {
+            close(result_pipe[0]);
+        }
+    }
+
+    uint16_t port() const { return child > 0 ? endpoint.port() : 0; }
+    long received()
+    {
+        long value = -2;
+        if (child > 0 && read(result_pipe[0], &value, sizeof(value)) != sizeof(value)) {
+            value = -2;
+        }
+        return value;
+    }
+};
+
+static void test_send_all(void)
+{
+    // Far more than the socket buffers hold, so send() must return short
+    // counts or would-block while the peer is not reading.
+    const size_t total = 16 * 1024 * 1024;
+    signal(SIGPIPE, SIG_IGN);
+
+    for (int mode = 0; mode < 3; ++mode) {
+        bool reset = mode == 1, stall = mode == 2;
+        SlowReaderPeer peer(total, reset, stall);
+        checks++;
+        if (!peer.port()) {
+            failures++;
+            printf("FAIL send all: cannot start peer\n");
+            continue;
+        }
+        StreamRamFile request(512);
+        for (size_t i = 0; i < total; i++) {
+            request.charout(send_all_pattern(i));
+        }
+        int connected, result, elapsed = 0;
+        {
+            HttpRequest exchange;
+            quiet_begin();
+            connected = exchange.connect_to_server("127.0.0.1", peer.port());
+            struct timespec started, finished;
+            clock_gettime(CLOCK_MONOTONIC, &started);
+            result = connected >= 0 ? exchange.send_request(&request) : -99;
+            clock_gettime(CLOCK_MONOTONIC, &finished);
+            elapsed = (int)(finished.tv_sec - started.tv_sec);
+            quiet_end();
+        }
+        long received = peer.received();
+        checks++;
+        if (connected < 0) {
+            failures++;
+            printf("FAIL send all: cannot connect\n");
+        } else if (stall && (result == 0 || elapsed > 45)) {
+            failures++;
+            printf("FAIL send all: stalled peer must fail the request within the timeout (result %d, %d s)\n",
+                   result, elapsed);
+        } else if (!reset && !stall && (result != 0 || received != (long)total)) {
+            failures++;
+            printf("FAIL send all: result %d, peer got %d of %d bytes in order\n",
+                   result, (int)received, (int)total);
+        } else if (reset && result == 0) {
+            failures++;
+            printf("FAIL send all: connection reset must make send_request fail\n");
+        }
+    }
+}
+
 static int open_descriptor_count(void)
 {
     DIR *directory = opendir("/proc/self/fd");
@@ -1023,6 +1166,11 @@ static void test_response_cleanup(HttpTarget *target)
 
 int main(int argc, char **argv)
 {
+    if ((argc > 1) && (strcmp(argv[1], "--send-all") == 0)) {
+        test_send_all();
+        printf("Send all: %d checks, %d failures\n", checks, failures);
+        return failures ? 1 : 0;
+    }
     if ((argc > 1) && (strcmp(argv[1], "--connect-cleanup") == 0)) {
         test_connect_cleanup();
         printf("Connect cleanup: %d checks, %d failures\n", checks, failures);
