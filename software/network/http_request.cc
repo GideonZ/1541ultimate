@@ -53,12 +53,22 @@ int HttpRequest :: send_request(StreamRamFile *s)
     int n = 0;
     int r;
     char buffer[128];
+
+    // A blocking send waits for buffer space instead of failing with
+    // EWOULDBLOCK. The timeout applies to each send() call: the request fails
+    // after 10 s without progress, while a slow peer that keeps accepting bytes
+    // keeps this task busy, as a slow upload does today.
+    struct timeval send_tv;
+    send_tv.tv_sec = 10;
+    send_tv.tv_usec = 0;
+    setsockopt(socket_fd, SOL_SOCKET, SO_SNDTIMEO, (char *)&send_tv, sizeof(struct timeval));
+
     do {
         n = s->read(buffer, 128);
-        if (n) {
-            r = send(socket_fd, buffer, n, MSG_DONTWAIT);
-            if (r < 0) {
-                return r;
+        for (int sent = 0; sent < n; sent += r) {
+            r = send(socket_fd, buffer + sent, n - sent, 0);
+            if (r <= 0) {
+                return -1;
             }
         }
     } while(n);
