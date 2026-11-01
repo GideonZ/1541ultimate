@@ -1320,10 +1320,16 @@ void C64::set_cartridge(cart_def *cart)
         const char *crt = cfg->get_string(CFG_C64_CART_CRT);
         if (strlen(crt)) {
             C64_CRT :: load_crt(CARTS_DIRECTORY, crt, &current_cart_def, cart_mem);
-        } else if (cfg->get_value(CFG_C64_REU_EN) == 2) { // GeoRAM
-            current_cart_def.type = CART_TYPE_GEORAM;
-            current_cart_def.name = "GeoRAM Cartridge";
-            current_cart_def.prohibit = CART_PROHIBIT_ALL_BUT_REU;
+        } else {
+            // No cartridge any more, so nothing of the last one is left to
+            // save: a Magic Desk Plus store lives in the memory the REU takes
+            // over, and Save Cartridge would write the REU's contents as it.
+            C64_CRT :: clear_crt();
+            if (cfg->get_value(CFG_C64_REU_EN) == 2) { // GeoRAM
+                current_cart_def.type = CART_TYPE_GEORAM;
+                current_cart_def.name = "GeoRAM Cartridge";
+                current_cart_def.prohibit = CART_PROHIBIT_ALL_BUT_REU;
+            }
         }
 #endif
     } else {
