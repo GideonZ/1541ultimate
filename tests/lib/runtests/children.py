@@ -65,9 +65,13 @@ CHILD_FORWARDED_NEGATIVE = (
 # way (see machine.ASSUME_ENV and openapi_contract.ENV_FLAG).
 # --list-profiles, --measured and --format answer a question and exit without
 # starting a suite at all, so there is no child to forward them to.
+# HTTPS options belong to an isolated single-campaign dispatch before target
+# scheduling; mixing them with ordinary suites or multiple targets is rejected.
 CHILD_EXCLUDED_OPTIONS = ("host", "targets", "output_dir", "stop_on_fail", "list",
                           "assume_fix", "validate_openapi",
-                          "list_profiles", "measured", "format")
+                          "list_profiles", "measured", "format",
+                          "https_action", "https_plan", "https_installation",
+                          "https_evidence", "https_peer")
 
 
 def child_command(args: argparse.Namespace, target: targets_lib.Target,

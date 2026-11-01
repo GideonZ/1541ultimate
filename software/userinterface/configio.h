@@ -53,6 +53,9 @@ public:
     static SubsysResultCode_e S_restore(SubsysCommand *cmd);
     static SubsysResultCode_e S_reset(SubsysCommand *cmd);
     static SubsysResultCode_e S_clear(SubsysCommand *cmd);
+#ifdef ULTIMATE_PROVIDER_JOURNAL
+    static SubsysResultCode_e S_install_https(SubsysCommand *cmd);
+#endif
 
     static SubsysResultCode_e S_load_and_effectuate(SubsysCommand *cmd);
     static SubsysResultCode_e S_load_associated_config(SubsysCommand *cmd);

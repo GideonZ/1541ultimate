@@ -2,6 +2,7 @@
 #define HTTP_REQUEST_H
 
 #include <sys/socket.h>
+#include "http_connection.h"
 extern "C" {
     #include "server.h"
     #include "multipart.h"
@@ -11,7 +12,9 @@ extern "C" {
 typedef struct {
     int offset;
     int size;
-    uint8_t buffer[16384];
+    HTTPReqMessage *response;
+    bool failed;
+    uint8_t buffer[16384 + 1]; // Payload capacity plus a separate string terminator.
 } t_BufferedBody;
 
 // Callbacks
@@ -26,21 +29,25 @@ class HttpRequest
 {
     t_BufferedBody *body;
     HTTPReqMessage response;
-    int socket_fd;
+    HttpSocketConnection socket_connection;
+    HttpConnection *connection;
+    enum ConnectionState { Idle, Connected, Failed } connection_state;
+    HttpRequest(const HttpRequest&);
+    HttpRequest& operator=(const HttpRequest&);
+    int fail_connection();
 public:
-    HttpRequest() {
+    // A supplied backend is borrowed and must outlive this request. The request
+    // owns its session: failures and destruction close it, but never delete it.
+    explicit HttpRequest(HttpConnection *transport = NULL) :
+        connection(transport ? transport : &socket_connection), connection_state(Idle) {
         InitReqMessage(&response);
         body = NULL;
-        socket_fd = -1;
     }
     ~HttpRequest() {
-        if(socket_fd >= 0) {
-            close(socket_fd);
+        if (connection_state == Connected) {
+            connection->close_session();
         }
-        socket_fd = -1;
-        if (body) {
-            delete body;
-        }
+        delete body;
     }
     int connect_to_server(const char *hostname, uint16_t hostport);
     int send_request(StreamRamFile *req);
@@ -53,9 +60,6 @@ public:
     char *get_response_string(void) {
         if (!body) {
             return NULL;
-        }
-        if (body->size > 16383) {
-            body->size = 16383;
         }
         body->buffer[body->size] = 0;
         return (char *)body->buffer;

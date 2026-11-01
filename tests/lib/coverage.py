@@ -58,6 +58,8 @@ class Coverage:
         for profile in self.names:
             chosen = []
             for suite in self.suites:
+                if getattr(suite, "explicit_only", False):
+                    continue
                 if suite.manual and not profiles.includes_manual(profile):
                     continue
                 if not profiles.includes(suite.profile, profile):
@@ -145,6 +147,7 @@ def static_payload(cover: Coverage) -> dict:
                 "category": suite.category,
                 "profile": suite.profile,
                 "manual": suite.manual,
+                "explicit_only": getattr(suite, "explicit_only", False),
                 "path": suite.path,
             }
             for suite in cover.suites

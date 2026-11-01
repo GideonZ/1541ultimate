@@ -77,19 +77,22 @@ class NativeUci:
     """The command interface as the C64 sees it, driven by the resident agent."""
 
     def __init__(self, machine, runners,
-                 busy_timeout: float = BUSY_TIMEOUT_SECONDS) -> None:
+                 busy_timeout: float = BUSY_TIMEOUT_SECONDS, *, agent_defines=None,
+                 poll_hook=None) -> None:
         # `machine` and `runners` are tests/lib/api.py MachineApi and RunnersApi
         # for the machine whose bus the registers are on.
         self.machine = machine
         self.runners = runners
         self.busy_timeout = busy_timeout
         self._sequence = 0
+        self.agent_defines = agent_defines
+        self.poll_hook = poll_hook
 
     # -- lifecycle ----------------------------------------------------------
 
     def start(self) -> None:
         """Assemble the agent, run it, and wait for it to say it is alive."""
-        prg = assemble(AGENT_SOURCE)
+        prg = assemble(AGENT_SOURCE, self.agent_defines)
         detail(f"assembled uci_agent.asm: {len(prg)} bytes, load address "
                f"${int.from_bytes(prg[:2], 'little'):04X}")
         status, _, body = self.runners.upload("run_prg", prg)
@@ -127,6 +130,8 @@ class NativeUci:
 
         deadline = time.monotonic() + self.busy_timeout
         while True:
+            if self.poll_hook is not None:
+                self.poll_hook()
             sequence = self.machine.readmem(SEQ, 1)[0]
             if sequence != self._sequence:
                 self._sequence = sequence
@@ -165,6 +170,8 @@ class NativeUci:
         block, payload = self._run(command, overrun_reads, DEFAULT_DRAIN_CAP)
         elapsed = time.monotonic() - started
         flags = self._byte(block, R_FLAGS)
+        if flags & 0x08:
+            raise Failure("command cancelled through the external abort mailbox")
         if flags & FLAG_WAIT_TIMEOUT:
             raise Failure(f"command {command.hex(' ') or '<empty>'} never left Command Busy: "
                           f"the agent gave up waiting, CTRL was "

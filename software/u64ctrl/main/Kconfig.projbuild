@@ -1,3 +1,32 @@
+config ULTIMATE_PROVIDER_CONTROL
+    bool "Experimental provider control delivery"
+    default n
+    help
+        Build the optional bounded UART control worker for local validation.
+        TLS is unavailable without separate backend selection and provisioning.
+        This does not enable HTTPS or change the C64 command interface.
+
+config ULTIMATE_PROVIDER_TLS
+    bool "Experimental owner TLS backend"
+    depends on ULTIMATE_PROVIDER_CONTROL
+    depends on !ESP_TIME_FUNCS_USE_NONE
+    select MBEDTLS_HAVE_TIME
+    select MBEDTLS_HAVE_TIME_DATE
+    default n
+    help
+        Requires an explicit TLS_STREAM_ROOT and boot-time roots, clock and
+        entropy policy. No default provisioning or automatic HTTP activation.
+
+config ULTIMATE_PROVIDER_SOURCES
+    bool "Experimental production TLS sources"
+    depends on ULTIMATE_PROVIDER_TLS
+    select MBEDTLS_CERTIFICATE_BUNDLE
+    default n
+    help
+        Select the pinned repository root bundle, configured ordinary SNTP with
+        expiry/jump checks and Wi-Fi RF entropy lifecycle notifications.
+        SNTP is unauthenticated. This does not register the native HTTPS client.
+
 menu "Example Configuration"
 
     orsource "$IDF_PATH/examples/common_components/env_caps/$IDF_TARGET/Kconfig.env_caps"

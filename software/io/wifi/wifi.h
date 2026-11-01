@@ -17,6 +17,12 @@
 #include "size_str.h"
 //#include "network_esp32.h"
 #include "wifi_cmd.h"
+#include "timers.h"
+#include "provider_lifecycle.h"
+#if U64 == 2
+class ProviderManagerUart;
+namespace provider_session { struct Identity; }
+#endif
 
 // This class provides an interface to the WiFi module, to manage and program it
 typedef enum {
@@ -39,6 +45,14 @@ class WiFi : public Esp32Application
     command_buf_context_t *packets;
     DmaUART *uart;
     NetworkLWIP_WiFi *netstack;
+    ProviderLifecycle provider_lifecycle;
+    TimerHandle_t provider_timer;
+    bool provider_monitor_enabled;
+#if U64 == 2
+    ProviderManagerUart *provider_manager;
+#endif
+    static void PollProvider(TimerHandle_t timer);
+    void InvalidateProvider();
 
     WifiState_t state;
     char    last_ap[32];
@@ -86,6 +100,19 @@ public:
     void Init(DmaUART *uart, command_buf_context_t *packets);
     void Start();
     void Terminate();
+
+    // Liveness only. A TLS provider still needs separate security/capability
+    // and cleanup qualification before it may admit a connection.
+    bool provider_identified() const { return provider_lifecycle.identified(); }
+    OperationCancellation provider_lifetime() const { return provider_lifecycle.token(); }
+    bool ReceiveProviderIdentity(command_buf_t *buf);
+    bool ReceiveProviderControl(command_buf_t *buf);
+#if U64 == 2
+    bool BindProviderManager(ProviderManagerUart&); // Static lifetime; qualified source required.
+    bool ProviderTransportReady(); // Application detection and initial RPCs finished.
+    bool ProviderSnapshot(provider_session::Identity&, OperationCancellation&);
+#endif
+    static void ProviderLinkLoss(); // ISR or interrupts masked; signal only.
 };
 
 err_t wifi_tx_packet(void *driver, void *buffer, int length);

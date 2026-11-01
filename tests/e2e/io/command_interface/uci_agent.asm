@@ -96,7 +96,11 @@ zstat   = $0B                   ; CTRL as the current block arrived
 ; The wait gives up after this many wraps of a 16 bit counter. Each pass is
 ; about a dozen cycles, so $08 is roughly six seconds on a 1 MHz 6510: longer
 ; than any command takes, shorter than the host's own timeout.
+        .weak
 WAIT_WRAPS = $08
+EXTERNAL_ABORT = 0
+        .endweak
+OPT_CANCEL = $C00A              ; optional HTTPS runner mailbox, not a UCI register
 
         * = $0801
 
@@ -115,6 +119,9 @@ start
         sta GO
         sta SEQ
         sta OPT_ABRT            ; so a host that never sets it gets the default
+        .if EXTERNAL_ABORT
+        sta OPT_CANCEL
+        .endif
         lda #$A5
         sta READY
 main_wait
@@ -321,6 +328,23 @@ wait_reply
         sta ztmo+1
         sta ztmo+2
 wait_loop
+        .if EXTERNAL_ABORT
+        lda OPT_CANCEL
+        beq wait_no_cancel
+        lda #$00
+        sta OPT_CANCEL
+        lda #CTRL_ABRT
+        sta CTRL
+        jsr wait_idle
+        lda #CTRL_CLR
+        sta CTRL
+        lda R_FLAGS
+        ora #$08
+        sta R_FLAGS
+        sec
+        rts
+wait_no_cancel
+        .endif
         lda CTRL
         sta zstat
         and #ST_STATE

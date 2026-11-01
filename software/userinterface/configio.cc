@@ -10,6 +10,10 @@
 #include "subsys.h"
 #include "userinterface.h"
 #include "c64.h"
+#ifdef ULTIMATE_PROVIDER_JOURNAL
+#include "provider_native_startup.h"
+#include "https_installation.h"
+#endif
 
 ConfigIO::ConfigIO()
 {
@@ -41,6 +45,9 @@ void ConfigIO :: create_task_items(void)
     TaskCategory *dev = TasksCollection :: getCategory("Developer", SORT_ORDER_DEVELOPER);
     dev->append(myActions.clear_dbg);
     dev->append(myActions.save_dbg);
+#ifdef ULTIMATE_PROVIDER_JOURNAL
+    dev->append(new Action("Install HTTPS Identity", ConfigIO::S_install_https, 0, 0));
+#endif
 }
 
 void ConfigIO :: update_task_items(bool writablePath)
@@ -159,6 +166,16 @@ SubsysResultCode_e ConfigIO :: S_reset(SubsysCommand *cmd)
     return SSRET_OK;
 }
 
+#ifdef ULTIMATE_PROVIDER_JOURNAL
+SubsysResultCode_e ConfigIO::S_install_https(SubsysCommand *cmd)
+{
+    switch (install_https_identity(cmd->user_interface,get_flash())) {
+    case HttpsInstallationResult::Installed: return SSRET_OK;
+    case HttpsInstallationResult::Cancelled: return SSRET_ABORTED_BY_USER;
+    default: return SSRET_INTERNAL_ERROR;
+    }
+}
+#endif
 SubsysResultCode_e ConfigIO :: S_clear(SubsysCommand *cmd)
 {
     Flash *fl = get_flash();
@@ -170,6 +187,9 @@ SubsysResultCode_e ConfigIO :: S_clear(SubsysCommand *cmd)
         return SSRET_ABORTED_BY_USER;
     }
     int num = fl->get_number_of_config_pages();
+#ifdef ULTIMATE_PROVIDER_JOURNAL
+    provider_journal_stop_owner(); // Retire the cached identity before erasing it.
+#endif
     for (int i=0; i < num; i++) {
         fl->clear_config_page(i);
     }

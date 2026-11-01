@@ -26,6 +26,9 @@ extern "C" {
 #include <string.h>
 #include "blockdev_flash.h"
 #include "filemanager.h"
+#ifdef ULTIMATE_PROVIDER_JOURNAL
+#include "provider_native_startup.h"
+#endif
 
 #if U64
 #include "u64.h"
@@ -41,6 +44,9 @@ ConfigManager :: ConfigManager() : stores(16, NULL), pages(16, NULL)
 	} else {
     	num_pages = flash->get_number_of_config_pages();
     	printf("ConfigManager opened flash: %p\n", flash);
+#ifdef ULTIMATE_PROVIDER_JOURNAL
+        provider_journal_prepare(*flash);
+#endif
     }
 	safeMode = false;
 
@@ -155,6 +161,9 @@ ConfigStore *ConfigManager :: register_store(uint32_t page_id, const char *name,
     if (!page) {
         uint32_t id;
         for(int i=0;i<num_pages;i++) {
+#ifdef ULTIMATE_PROVIDER_JOURNAL
+            if (provider_journal_reserved_slot(*flash,i)) continue;
+#endif
             flash->read_config_page(i, 4, &id);
             if (id == 0xFFFFFFFF) {
                 //printf("Found empty spot on config page %d, for ID=%8x. Size=%d. Defs=%p. Name=%s\n", i, store_id, page_size, defs, name);

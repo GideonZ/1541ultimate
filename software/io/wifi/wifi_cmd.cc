@@ -1,4 +1,7 @@
 #include "wifi_cmd.h"
+#if !defined(RECOVERYAPP) && !defined(WIFI_COMMANDS_ONLY)
+#include "provider_wifi_ingress.h"
+#endif
 #include "dump_hex.h"
 
 /// C like functions to 'talk' with the WiFi Module
@@ -14,6 +17,13 @@ void hex(uint8_t h)
 
 BaseType_t wifi_rx_isr(command_buf_context_t *context, command_buf_t *buf, BaseType_t *w)
 {
+    if (buf->size < int(sizeof(rpc_header_t)) || buf->size > int(sizeof(buf->data))
+#if !defined(RECOVERYAPP) && !defined(WIFI_COMMANDS_ONLY)
+        || wifi_provider_receive(buf)
+#endif
+    ) {
+        return cmd_buffer_free_isr(context, buf, w);
+    }
     rpc_header_t *hdr = (rpc_header_t *)buf->data;
     BaseType_t res;
 

@@ -21,6 +21,8 @@ static SemaphoreHandle_t resetSemaphore;
 // Set by the reset ISR for the server task, so a target is told about the
 // reset between commands rather than during one.
 static volatile bool c64_reset_pending;
+static volatile bool command_abort_pending;
+static CancellationSource command_cancellation;
 
 #define CMD_IF_DEBUG 0
 
@@ -28,11 +30,14 @@ static volatile bool c64_reset_pending;
 extern "C" {
 void ResetInterruptHandlerCmdIf()
 {
-    BaseType_t woken;
+    BaseType_t woken = pdFALSE;
     uint8_t new_flags = CMD_ABORT_DATA;
     c64_reset_pending = true;
+    command_abort_pending = true;
+    command_cancellation.signal();
     xSemaphoreGiveFromISR(resetSemaphore, &woken);
-    xQueueSendFromISR(cmd_if.queue, &new_flags, &woken);
+    CommandInterfaceEvent event = { new_flags, command_cancellation.token() };
+    xQueueSendFromISR(cmd_if.queue, &event, &woken);
 }
 }
 
@@ -55,7 +60,7 @@ CommandInterface :: CommandInterface() : SubSystem(SUBSYSID_CMD_IF)
         incoming_command.message = command_buffer;
         incoming_command.length = 0;
         
-        queue = xQueueCreate(16, sizeof(uint8_t));
+        queue = xQueueCreate(16, sizeof(CommandInterfaceEvent));
         xTaskCreate( CommandInterface :: start_task, "UCI Server", configMINIMAL_STACK_SIZE, this, PRIO_HW_SERVICE, &taskHandle );
         xTaskCreate( CommandInterface :: reset_task, "UCI Reset Server", configMINIMAL_STACK_SIZE, this, PRIO_HW_SERVICE, &resetTaskHandle );
 
@@ -88,8 +93,14 @@ extern "C" BaseType_t command_interface_irq(void)
 	uint8_t new_flags = status_byte & ~CMD_IF_IRQMASK;
 	CMD_IF_IRQMASK_SET = new_flags;
 
-	BaseType_t retval;
-    if (xQueueSendFromISR(cmd_if.queue, &new_flags, &retval) != pdTRUE) {
+    if (new_flags & CMD_ABORT_DATA) {
+        command_abort_pending = true;
+        command_cancellation.signal();
+    }
+
+	BaseType_t retval = pdFALSE;
+    CommandInterfaceEvent event = { new_flags, command_cancellation.token() };
+    if (xQueueSendFromISR(cmd_if.queue, &event, &retval) != pdTRUE) {
         outbyte('\\');
     }
 	return retval;
@@ -112,13 +123,15 @@ void CommandInterface :: run_task(void)
 {
 	int length;
     Message *data, *status;
-    uint8_t status_byte;
+    CommandInterfaceEvent event;
 
     CMD_IF_IRQMASK_CLEAR = 7;
     ioWrite8(ITU_IRQ_ENABLE, ITU_INTERRUPT_CMDIF);
 
     while(1) {
-		xQueueReceive(queue, &status_byte, portMAX_DELAY);
+		xQueueReceive(queue, &event, portMAX_DELAY);
+        uint8_t status_byte = event.flags;
+        OperationCancellation cancellation = event.cancellation;
 #if CMD_IF_DEBUG
 		printf("{%b}", status_byte);
 #endif
@@ -128,28 +141,44 @@ void CommandInterface :: run_task(void)
 		portENTER_CRITICAL();
 		bool reset_seen = c64_reset_pending;
 		c64_reset_pending = false;
+        bool abort_seen = command_abort_pending;
+        command_abort_pending = false;
 		portEXIT_CRITICAL();
 		if (reset_seen) {
 			for(int i=0;i<=CMD_IF_MAX_TARGET;i++)
 				command_targets[i]->c64_reset();
 		}
-		if(status_byte & CMD_ABORT_DATA) {
+		if(abort_seen || reset_seen || (status_byte & CMD_ABORT_DATA)) {
 			//printf("Abort received.\n");
 			if (target != CMD_TARGET_NONE) {
 			    int offset = (((int)CMD_IF_RESPONSE_LEN_H) << 8) | CMD_IF_RESPONSE_LEN_L;
 				command_targets[target]->abort(offset - response_offset);
 			}
 			CMD_IF_HANDSHAKE_OUT = HANDSHAKE_RESET;
-			CMD_IF_IRQMASK_CLEAR = CMD_ABORT_DATA;
+			CMD_IF_IRQMASK_CLEAR = CMD_ABORT_DATA | CMD_DATA_ACCEPTED | CMD_NEW_COMMAND;
+            // Other bits in this event belong to the interrupted command.
+            continue;
 		}
+        if (cancellation.cancelled()) continue;
 		if(status_byte & CMD_DATA_ACCEPTED) {
 			if (target != CMD_TARGET_NONE) {
 				command_targets[target]->get_more_data(&data, &status);
-				copy_result(data, status);
+                bool published = false;
+                portENTER_CRITICAL();
+                if (!cancellation.cancelled()) {
+                    command_targets[target]->prepare_reply(&data, &status);
+                    copy_result(data, status);
+                    CMD_IF_HANDSHAKE_OUT = HANDSHAKE_ACCEPT_NEXTDATA;
+                    published = true;
+                }
+                portEXIT_CRITICAL();
+                command_targets[target]->finish_reply(published);
 			} else {
 				printf("CMDIF: Requested for more data, but target is not set!\n");
+                portENTER_CRITICAL();
+                if (!cancellation.cancelled()) CMD_IF_HANDSHAKE_OUT = HANDSHAKE_ACCEPT_NEXTDATA;
+                portEXIT_CRITICAL();
 			}
-            CMD_IF_HANDSHAKE_OUT = HANDSHAKE_ACCEPT_NEXTDATA;
             CMD_IF_IRQMASK_CLEAR = CMD_DATA_ACCEPTED;
 		}
 
@@ -164,21 +193,36 @@ void CommandInterface :: run_task(void)
                 incoming_command.length = length;
                 target = incoming_command.message[0] & CMD_IF_MAX_TARGET;
                 bool no_reply = ((incoming_command.message[0] & CMD_IF_NO_REPLY) != 0);
+                command_targets[target]->begin_command(cancellation);
                 command_targets[target]->parse_command(&incoming_command, &data, &status);
 
-                CMD_IF_HANDSHAKE_OUT = HANDSHAKE_ACCEPT_COMMAND; // clears CMD_NEW_COMMAND
-                if (no_reply) {
-                    CMD_IF_HANDSHAKE_OUT = HANDSHAKE_RESET; // forces state to 00
-                } else {
-                    copy_result(data, status); // sets state to 10 or 11
+                // Serialize publication with the reset/abort ISR. Cleanup is
+                // still performed by this task when it drains the event.
+                bool published = false;
+                portENTER_CRITICAL();
+                if (!cancellation.cancelled()) {
+                    CMD_IF_HANDSHAKE_OUT = HANDSHAKE_ACCEPT_COMMAND; // clears CMD_NEW_COMMAND
+                    if (no_reply) {
+                        CMD_IF_HANDSHAKE_OUT = HANDSHAKE_RESET; // forces state to 00
+                    } else {
+                        command_targets[target]->prepare_reply(&data, &status);
+                        copy_result(data, status); // sets state to 10 or 11
+                        published = true;
+                    }
                 }
+                portEXIT_CRITICAL();
+                command_targets[target]->finish_reply(published);
             } else {
                 printf("Null command.\n");
-                CMD_IF_RESPONSE_LEN_H = 0;
-                CMD_IF_RESPONSE_LEN_L = 0;
-                CMD_IF_STATUS_LENGTH = 0;
-                CMD_IF_HANDSHAKE_OUT = HANDSHAKE_ACCEPT_COMMAND;
-                CMD_IF_HANDSHAKE_OUT = HANDSHAKE_VALIDATE_LAST;
+                portENTER_CRITICAL();
+                if (!cancellation.cancelled()) {
+                    CMD_IF_RESPONSE_LEN_H = 0;
+                    CMD_IF_RESPONSE_LEN_L = 0;
+                    CMD_IF_STATUS_LENGTH = 0;
+                    CMD_IF_HANDSHAKE_OUT = HANDSHAKE_ACCEPT_COMMAND;
+                    CMD_IF_HANDSHAKE_OUT = HANDSHAKE_VALIDATE_LAST;
+                }
+                portEXIT_CRITICAL();
             }
             CMD_IF_IRQMASK_CLEAR = CMD_NEW_COMMAND;
         }

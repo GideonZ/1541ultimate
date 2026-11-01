@@ -1021,8 +1021,15 @@ static void test_response_cleanup(HttpTarget *target)
     }
 }
 
+int test_http_transport(void);
+int test_http_framing(void);
+
 int main(int argc, char **argv)
 {
+    if (argc > 1 && strcmp(argv[1], "--framing") == 0) return test_http_framing();
+    if (argc > 1 && strcmp(argv[1], "--transport") == 0) {
+        return test_http_transport();
+    }
     if ((argc > 1) && (strcmp(argv[1], "--connect-cleanup") == 0)) {
         test_connect_cleanup();
         printf("Connect cleanup: %d checks, %d failures\n", checks, failures);

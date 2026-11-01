@@ -30,7 +30,7 @@ CMD_DEP = $(wildcard $(PATH_SW)/io/wifi/*.h $(STUBS)/*.h)
 
 .PHONY: all test legacy clean
 
-all: $(RESULT)/$(PRJ) $(RESULT)/wifi_cmd
+all: $(RESULT)/$(PRJ) $(RESULT)/wifi_cmd $(RESULT)/wifi_cmd_factory $(RESULT)/wifi_cmd_recovery
 
 $(OUTPUT)/%.o: %.c wifi_reply.h
 	@mkdir -p $(OUTPUT)
@@ -44,11 +44,23 @@ $(RESULT)/wifi_cmd: $(CMD_SRC) $(CMD_DEP)
 	@mkdir -p $(RESULT)
 	$(CXX) $(CXXOPTIONS) -o $@ $(CMD_SRC)
 
+$(RESULT)/wifi_cmd_factory: $(CMD_SRC) $(CMD_DEP)
+	@mkdir -p $(RESULT)
+	$(CXX) $(CXXOPTIONS) -DWIFI_COMMANDS_ONLY -o $@ $(CMD_SRC)
+
+$(RESULT)/wifi_cmd_recovery: $(CMD_SRC) $(CMD_DEP)
+	@mkdir -p $(RESULT)
+	$(CXX) $(CXXOPTIONS) -DRECOVERYAPP -o $@ $(CMD_SRC)
+
 test: all
 	@$(RESULT)/$(PRJ)
 	@mkdir -p $(OUTPUT)
 	@$(RESULT)/wifi_cmd > $(OUTPUT)/wifi_cmd.log || { grep '^FAIL' $(OUTPUT)/wifi_cmd.log; tail -n 1 $(OUTPUT)/wifi_cmd.log; exit 1; }
 	@tail -n 1 $(OUTPUT)/wifi_cmd.log
+	@$(RESULT)/wifi_cmd_factory > $(OUTPUT)/wifi_cmd_factory.log || { cat $(OUTPUT)/wifi_cmd_factory.log; exit 1; }
+	@tail -n 1 $(OUTPUT)/wifi_cmd_factory.log
+	@$(RESULT)/wifi_cmd_recovery > $(OUTPUT)/wifi_cmd_recovery.log || { cat $(OUTPUT)/wifi_cmd_recovery.log; exit 1; }
+	@tail -n 1 $(OUTPUT)/wifi_cmd_recovery.log
 
 legacy:
 	@mkdir -p $(OUTPUT)
