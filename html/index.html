@@ -841,22 +841,6 @@ $(document).ready(async function () {
         return new Uint8Array(result);
     }
 
-
-    $('#basiceditor').on('keypress', function(e) {
-            var lines = $(this).val().split('\n');
-            var cursorPosition = this.selectionStart;
-            var currentLine = 0;
-            var currentLineLength = 0;
-
-            for (var i = 0; i < lines.length; i++) {
-                currentLineLength += lines[i].length + 1; // +1 for the newline character
-                if (cursorPosition <= currentLineLength) {
-                    currentLine = i;
-                    break;
-                }
-            }
-    });
-
     // * Renders the C64 Special Characters Table in an 8x32 grid layout.
     // * Design: [Red Separator][HEX][4px Gap][Symbols][16px Gap][Next Column]
     // * Features: Pepto PAL color accuracy and adaptive text contrast for accessibility.
