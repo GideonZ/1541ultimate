@@ -160,6 +160,24 @@
 #define C64_GLYPH_YSIZE   (*(volatile uint8_t *)(C64_GLYPH + 509))
 #define C64_GLYPH_ENABLE  (*(volatile uint8_t *)(C64_GLYPH + 511))
 
+// SID write trace. Supports at most 4 SIDs (2 sockets x 2-way split); writes to
+// the upper half of a split into 8 SIDs (sid_split modes 5..7) are not recorded.
+#define C64_SIDTRACE_DATA   (*(volatile uint32_t *)(C64_SIDTRACE + 0)) // reading pops the record
+#define C64_SIDTRACE_COUNT  (*(volatile uint8_t *)(C64_SIDTRACE + 4))  // records available (0..255)
+#define C64_SIDTRACE_STATUS (*(volatile uint8_t *)(C64_SIDTRACE + 5))
+#define C64_SIDTRACE_ENABLE (*(volatile uint8_t *)(C64_SIDTRACE + 7))
+
+#define SIDTRACE_STAT_VALID     0x01
+#define SIDTRACE_STAT_FULL      0x02
+#define SIDTRACE_STAT_OVERFLOW  0x04 // write 1 to clear
+
+#define SIDTRACE_REC_DATA(r)    ((r) & 0xFF)
+#define SIDTRACE_REC_REG(r)     (((r) >> 8) & 0x1F)
+#define SIDTRACE_REC_SPLIT(r)   (((r) >> 13) & 0x01)
+#define SIDTRACE_REC_SID2(r)    (((r) >> 14) & 0x01)
+#define SIDTRACE_REC_WRITE(r)   (((r) >> 15) & 0x01) // 0 = timer wrap only
+#define SIDTRACE_REC_DELTA(r)   ((r) >> 16)          // phi2 ticks since previous record
+
 #define VIDEO_FMT_NTSC_ENCODING 0x01
 #define VIDEO_FMT_60_HZ         0x02
 #define VIDEO_FMT_RGB_OUTPUT    0x04
