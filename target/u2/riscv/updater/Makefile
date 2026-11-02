@@ -79,6 +79,7 @@ SRCS_ASMS = crt0.S port_asm.S
 SRCS_6502 = 
 
 SRCS_HTML = index.html api.html
+SRCS_JS = special.js cbm_prg_studio.js
 SRCS_YAML = rest_api_openapi_u2.yaml
 
 SRCS_BIN =  ultimate.bin \

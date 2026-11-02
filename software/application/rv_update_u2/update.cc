@@ -44,6 +44,7 @@ void do_update(void)
         write_flash_file("1541.rom", &_1541_bin_start, 0x4000);
         write_flash_file("snds1541.bin", &_snds1541_bin_start, 0xC000);
         write_html_file("index.html", _index_html_start, (int)_index_html_end - (int)_index_html_start);
+        write_tokenizer_files();
         write_api_files(_rest_api_openapi_u2_yaml_start, _rest_api_openapi_u2_yaml_end);
 
         if (choice == 1) {
