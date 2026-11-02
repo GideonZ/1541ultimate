@@ -136,6 +136,19 @@ static FRESULT write_html_file(const char *name, const char *data, int length)
     return fres;
 }
 
+// Default tokenizer loader and profile, installed next to index.html.
+extern const char _special_js_start[];
+extern const char _special_js_end[1];
+extern const char _cbm_prg_studio_js_start[];
+extern const char _cbm_prg_studio_js_end[1];
+
+static FRESULT write_tokenizer_files()
+{
+    FRESULT loader = write_html_file("special.js", _special_js_start, (int)_special_js_end - (int)_special_js_start);
+    FRESULT profile = write_html_file("cbm_prg_studio.js", _cbm_prg_studio_js_start, (int)_cbm_prg_studio_js_end - (int)_cbm_prg_studio_js_start);
+    return (loader != FR_OK) ? loader : profile;
+}
+
 extern const char _api_html_start[];
 extern const char _api_html_end[1];
 
