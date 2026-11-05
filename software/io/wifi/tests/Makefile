@@ -33,8 +33,8 @@ OUT := $(if $(LEG),output/red_$(basename $(notdir $(LEG)))_u64_$(U64),output/u64
 # Function names are given as written in the source (~ for a blank), so that the C++ method
 # of a class is found.
 WIFI_FUNCS := WiFi~::~WiFi WiFi~::~Init WiFi~::~Enable WiFi~::~Disable WiFi~::~RadioOn \
-	WiFi~::~RadioOff WiFi~::~RunModeThread WiFi~::~sendEvent WiFi~::~sendConnectEvent WiFi~::getAccessPointItems \
-	BrowsableWifiAP~::~connect_ap
+	WiFi~::~RadioOff WiFi~::~RunModeThread WiFi~::~sendEvent WiFi~::~ConnectStart WiFi~::~ConnectAnswered \
+	WiFi~::~sendConnectPending WiFi~::getAccessPointItems BrowsableWifiAP~::~connect_ap
 NET_FUNCS := NetworkLWIP_WiFi~::~disable NetworkLWIP_WiFi~::~enable NetworkLWIP_WiFi~::~ask_enable \
 	NetworkLWIP_WiFi~::~cfg_show_aps NetworkLWIP_WiFi~::~cfg_enter_ap NetworkLWIP_WiFi~::~cfg_conn_last \
 	NetworkLWIP_WiFi~::~effectuate_settings

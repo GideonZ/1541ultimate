@@ -35,6 +35,7 @@ struct World {
     bool joined_before_reply; // the module reports EVENT_CONNECTED before its answer arrives
     bool no_tx_buffer;    // the UART has no buffer for a request
     bool loopback_fails;  // the task's queue refuses an event of its own
+    int loopback_room;    // when > 0: that many more events of its own fit, then the queue is full
     const char *pick_ssid; // the AP the user picks from the list (see pick())
     int pick_auth;         // and whether it wants a password
     uint8_t pick_bssid[6]; // its BSSID and channel in the list

@@ -219,6 +219,9 @@ BaseType_t cmd_buffer_loopback(command_buf_context_t *context, command_buf_t *b)
     if (world.loopback_fails) {
         return pdFALSE;
     }
+    if ((world.loopback_room > 0) && (--world.loopback_room == 0)) {
+        world.loopback_fails = true; // that was the last one that fitted
+    }
     arrive(b);
     return pdTRUE;
 }
@@ -343,6 +346,8 @@ void boot(std::initializer_list<Step> steps)
     }
 #endif
     world.keep_switch = false;
+    wifi.connect_attempt = 0; // the attempts of a fresh start (the script's EVENT_CONNECT_PENDING is 1)
+    wifi.connect_answered = 0;
     rlog[0] = 0;
     messages[0] = 0;
     ended = "";
@@ -369,7 +374,10 @@ void boot(std::initializer_list<Step> steps)
         }
         ((rpc_header_t *)b->data)->command = s->code;
         b->size = sizeof(rpc_header_t);
-        if ((s->code == EVENT_CONNECTED || s->code == EVENT_CONNECT_PENDING || s->code == EVENT_CONNECT_REJECTED) && s->ssid) {
+        if (s->code == EVENT_CONNECT_PENDING) {
+            ((rpc_header_t *)b->data)->sequence = 1; // the first attempt (WiFi :: ConnectStart)
+        }
+        if ((s->code == EVENT_CONNECTED || s->code == EVENT_CONNECT_PENDING) && s->ssid) {
             strncpy((char *)((event_pkt_connected *)b->data)->ssid, s->ssid, 32);
             b->size = sizeof(event_pkt_connected);
         } else if (s->code == EVENT_DISCONNECTED && s->reason >= 0) {

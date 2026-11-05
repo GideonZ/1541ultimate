@@ -83,6 +83,29 @@ TEST(WifiConnectFeedbackTask, radio_start_is_no_outcome)
     CHECK(strcmp(messages, "Incorrect password\n") == 0, "the refusal after it is reported");
 }
 
+// The module joins another AP while a pick is pending (it went back to one it knows): that is
+// not the outcome of the pick, whose refusal comes after it
+TEST(WifiConnectFeedbackTask, another_ap_joins_while_a_pick_is_pending)
+{
+    reset_world();
+    world.enabled = true;
+    boot({ pick, Step(EVENT_CONNECTED, "OtherNet"), disconnected(15) });
+    CHECK(strcmp(messages, "Incorrect password\n") == 0, "the refusal of the pick is reported");
+}
+
+// The module refuses the request while the task's queue is full: the refusal is told at
+// once all the same, not at the attempt's timeout
+TEST(WifiConnectFeedbackTask, a_refusal_with_a_full_queue_is_told_at_once)
+{
+    reset_world();
+    world.enabled = true;
+    world.connect_result = 0x103;
+    world.loopback_room = 1; // the attempt's own event fits, nothing after it
+    boot({ pick });
+    CHECK(strcmp(messages, "Could not connect to HomeNet\n") == 0, "told");
+    CHECK(message_at == 1000, "at once");
+}
+
 // Connected to another AP: its drop is not the outcome of the pick
 TEST(WifiConnectFeedbackTask, switching)
 {
@@ -190,15 +213,30 @@ TEST(WifiConnectFeedbackTask, not_accepted)
     CHECK(waited == 0, "at once");
 }
 
+// The module's answer to the request, as connect_ap leaves it for the task when the request
+// has waited for it this long (the attempt of the script's EVENT_CONNECT_PENDING is 1)
+static void module_refuses(void) { wifi.ConnectAnswered(1, 0x103); }
+static void module_accepts(void) { wifi.ConnectAnswered(1, 0); }
+
 // The module's refusal of the request came after the attempt's timeout (the request can wait
 // longer for its answer): one message, not two
 TEST(WifiConnectFeedbackTask, rejected_after_the_timeout_is_said_once)
 {
     reset_world();
     world.enabled = true;
-    boot({ Step(EVENT_CONNECT_PENDING, "HomeNet"),
-           late(Step(EVENT_CONNECT_REJECTED, "HomeNet"), 25 * configTICK_RATE_HZ) });
+    boot({ Step(EVENT_CONNECT_PENDING, "HomeNet"), late(Step(module_refuses), 25 * configTICK_RATE_HZ) });
     CHECK(strcmp(messages, "Could not connect to HomeNet\n") == 0, "told once");
+}
+
+// The module accepted the request after 15 s (the request waits up to 60 s for its answer):
+// the outcome is waited for 20 s from the acceptance, not from the request
+TEST(WifiConnectFeedbackTask, the_timeout_runs_from_the_acceptance)
+{
+    reset_world();
+    world.enabled = true;
+    boot({ Step(EVENT_CONNECT_PENDING, "HomeNet"), late(Step(module_accepts), 15 * configTICK_RATE_HZ) });
+    CHECK(strcmp(messages, "Could not connect to HomeNet\n") == 0, "told when no outcome comes");
+    CHECK(message_at == 1000 + (15 + 20) * configTICK_RATE_HZ, "20 s after the acceptance");
 }
 
 // Cancelling the password box connects to nothing

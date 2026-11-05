@@ -74,7 +74,7 @@ static void test_connected(void)
     WifiConnectFeedback fb;
     set_ssid("HomeNet");
     fb.begin(ssid32, 1000);
-    fb.onConnected();
+    fb.onConnected(ssid32);
     CHECK(!fb.isPending());
     CHECK(!fb.onDisconnected(0, msg, sizeof(msg))); // a later drop is not a failed connect
 }
@@ -120,7 +120,7 @@ static void test_not_a_manual_connect(void)
 {
     // The module's own reconnects say nothing to the user
     WifiConnectFeedback fb;
-    fb.onConnected();
+    fb.onConnected(ssid32);
     CHECK(!fb.onDisconnected(0, msg, sizeof(msg)));
     CHECK(!fb.onTick(1u << 31, msg, sizeof(msg)));
 }

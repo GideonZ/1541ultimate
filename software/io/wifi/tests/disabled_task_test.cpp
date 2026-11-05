@@ -287,3 +287,14 @@ TEST(WifiDisabledTask, ap_list_with_records_while_the_radio_off_waits)
     CHECK(strcmp(listed, "WiFi is disabled") == 0, "the list says WiFi is disabled");
 }
 #endif
+
+// A module without the reason field sends EVENT_DISCONNECTED as a bare header, also
+// when it turns its radio on: a pick while Disabled, Yes, then that event and the join
+TEST(WifiDisabledTask, pick_after_yes_with_a_bare_radio_start)
+{
+    reset_world();
+    world.enabled = true;
+    boot({ EVENT_DISABLED, pick, Step(EVENT_DISCONNECTED), Step(EVENT_CONNECTED, "HomeNet") });
+    CHECK(messages[0] == 0, "no message: the join is the outcome");
+    CHECK(wifi.getState() == eWifi_Connected, "Connected");
+}

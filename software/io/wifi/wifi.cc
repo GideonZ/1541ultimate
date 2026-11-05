@@ -35,6 +35,10 @@ WiFi :: WiFi()
     state_before_scan = eWifi_NotConnected;
     event_when_enabled = 0;
     pick_cancelled = false;
+    connect_attempt = 0;
+    connect_answered = 0;
+    connect_answer = 0;
+    connect_answer_at = 0;
     bzero(my_mac, 6);
     wifi_aps.num_records  = 0;
     my_ip = 0;
@@ -227,6 +231,11 @@ void WiFi :: RunModeThread()
     uint32_t ip;
     WifiConnectFeedback feedback;
     char feedback_msg[80];
+    uint8_t attempt = 0;      // the connect from the AP list that the feedback follows
+    uint8_t answer_taken = 0; // the last attempt whose answer was taken
+    uint8_t answered;
+    int answer;
+    uint32_t answer_at;
     TickType_t wait_ticks;
 
     RefreshRoot();
@@ -427,6 +436,21 @@ void WiFi :: RunModeThread()
                 pick_cancelled = false;
                 feedback.cancel();
             }
+            // The module's answer to the connect request of the attempt that is followed
+            // (ConnectAnswered); taken before the timeout is looked at
+            ENTER_SAFE_SECTION;
+            answered = connect_answered;
+            answer = connect_answer;
+            answer_at = connect_answer_at;
+            LEAVE_SAFE_SECTION;
+            if ((attempt != 0) && (answered == attempt) && (answer_taken != attempt)) {
+                answer_taken = attempt;
+                if (answer == 0) {
+                    feedback.accepted(answer_at);
+                } else if (feedback.rejected(feedback_msg, sizeof(feedback_msg))) {
+                    UserInterface :: postMessage(feedback_msg);
+                }
+            }
             if (feedback.onTick(xTaskGetTickCount(), feedback_msg, sizeof(feedback_msg))) {
                 UserInterface :: postMessage(feedback_msg);
             }
@@ -520,7 +544,7 @@ void WiFi :: RunModeThread()
             case EVENT_CONNECTED:
                 ev2 = (event_pkt_connected *)buf->data;
                 memcpy(last_ap, ev2->ssid, 32);
-                feedback.onConnected();
+                feedback.onConnected(ev2->ssid);
                 uart->FreeBuffer(buf);
                 if (state == eWifi_Connected) { // already connected!
                     netstack->link_down();
@@ -534,20 +558,15 @@ void WiFi :: RunModeThread()
                 break;
 
             case EVENT_CONNECT_PENDING: // a connect from the AP list is about to go out
+                // With the radio off (Disabled, or a radio off not confirmed yet) the module
+                // reports the start of its radio first
                 ev2 = (event_pkt_connected *)buf->data;
-                feedback.begin(ev2->ssid, xTaskGetTickCount());
+                feedback.begin(ev2->ssid, xTaskGetTickCount(), (state == eWifi_Disabled) || RadioOffAwaited());
+                attempt = (uint8_t)ev2->hdr.sequence;
                 uart->FreeBuffer(buf);
                 break;
 
-            case EVENT_CONNECT_REJECTED: // the module did not accept that connect
-                // Said once: not when the attempt has ended already (its timeout ran out
-                // while the request waited for its answer, or the user turned WiFi off)
-                if (feedback.isPending()) {
-                    feedback.cancel();
-                    ev2 = (event_pkt_connected *)buf->data;
-                    wifi_connect_failed_text(feedback_msg, sizeof(feedback_msg), (const char *)ev2->ssid);
-                    UserInterface :: postMessage(feedback_msg);
-                }
+            case EVENT_CONNECT_ANSWER: // a wake: the answer is taken at the top of the pass
                 uart->FreeBuffer(buf);
                 break;
 
@@ -620,15 +639,36 @@ bool WiFi :: sendEvent(uint8_t code)
     return true;
 }
 
-// A connect from the AP list, for the task to follow (wifi_connect.h): EVENT_CONNECT_PENDING
-// before the request goes out, EVENT_CONNECT_REJECTED when the module did not accept it.
-bool WiFi :: sendConnectEvent(uint8_t code, const char *ssid)
+// A connect from the AP list, for the task to follow (wifi_connect.h). ConnectStart numbers
+// it; EVENT_CONNECT_PENDING goes before the request; ConnectAnswered leaves the module's
+// answer for the task (in the WiFi object, so a full queue does not lose it) and wakes it.
+uint8_t WiFi :: ConnectStart(void)
+{
+    uint8_t a = connect_attempt + 1;
+    if (a == 0) {
+        a = 1; // 0 is no attempt
+    }
+    connect_attempt = a;
+    return a;
+}
+
+void WiFi :: ConnectAnswered(uint8_t attempt, int answer)
+{
+    ENTER_SAFE_SECTION;
+    connect_answer = answer;
+    connect_answer_at = xTaskGetTickCount();
+    connect_answered = attempt;
+    LEAVE_SAFE_SECTION;
+    sendEvent(EVENT_CONNECT_ANSWER);
+}
+
+bool WiFi :: sendConnectPending(const char *ssid, uint8_t attempt)
 {
     command_buf_t *buf;
     cmd_buffer_get(packets, &buf, portMAX_DELAY);
     event_pkt_connected *ev = (event_pkt_connected *)(buf->data);
-    ev->hdr.command = code;
-    ev->hdr.sequence = 0;
+    ev->hdr.command = EVENT_CONNECT_PENDING;
+    ev->hdr.sequence = attempt;
     ev->hdr.thread = 0xFF;
     bzero(ev->ssid, 32);
     strncpy((char *)ev->ssid, ssid, 32);
@@ -692,7 +732,8 @@ SubsysResultCode_e BrowsableWifiAP :: connect_ap(SubsysCommand *cmd)
     // The task notes the attempt before the request goes out: the module can report the
     // outcome before its answer to the request arrives, and the task takes its events in
     // the order they were queued
-    if (!wifi.sendConnectEvent(EVENT_CONNECT_PENDING, bap->ssid)) {
+    uint8_t attempt = wifi.ConnectStart();
+    if (!wifi.sendConnectPending(bap->ssid, attempt)) {
         char msg[64];
         wifi_connect_failed_text(msg, sizeof(msg), bap->ssid);
         UserInterface :: postMessage(msg);
@@ -701,11 +742,8 @@ SubsysResultCode_e BrowsableWifiAP :: connect_ap(SubsysCommand *cmd)
     // The AP picked, not just any AP with its SSID
     int result = wifi_wifi_connect(bap->ssid, password, bap->auth, bap->bssid, bap->channel);
     printf("Connect result: %d\n", result);
-    if (result != 0) {
-        // Not accepted: the task ends the attempt and says so. Should this event not get
-        // into the queue, the attempt's timeout says so instead.
-        wifi.sendConnectEvent(EVENT_CONNECT_REJECTED, bap->ssid);
-    }
+    // Accepted, the outcome is timed from now; refused, the task ends the attempt and says so
+    wifi.ConnectAnswered(attempt, result);
     return SSRET_OK;
 }
 
