@@ -612,7 +612,7 @@ SubsysResultCode_e BrowsableWifiAP :: connect_ap(SubsysCommand *cmd)
     printf("Connect result: %d\n", result);
     if (result != 0 || !wifi.sendConnectPending(bap->ssid)) {
         char msg[64];
-        snprintf(msg, sizeof(msg), "Could not connect to %.32s", bap->ssid);
+        wifi_connect_failed_text(msg, sizeof(msg), bap->ssid);
         UserInterface :: postMessage(msg);
     }
     return SSRET_OK;

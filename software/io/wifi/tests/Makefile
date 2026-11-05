@@ -88,9 +88,26 @@ $(OUT)/task.cc: Makefile $(WIFI_CC) $(NET_CC) $(CMD_CC) $(EXTRACT) $(LEG) wifi_t
 	   if cmp -s $@ $(OUT)/task.orig; then echo "wifi_task_test: $(LEG) changes nothing" >&2; exit 1; fi; \
 	 else cp $(OUT)/task.orig $@; fi
 
-$(OUT)/wifi_task_test: $(OUT)/task.cc $(OUT)/wifi_enable_default.h wifi_task_stubs.cpp $(CASES) \
+# The firmware's own printf (system/small_printf.cc), as the product builds it (FP_SUPPORT on
+# the U64=2 products), with every function it defines renamed to fw_*, so that it replaces
+# nothing of the host's C library. The code under test formats its messages with it: the
+# host's snprintf knows formats the firmware's does not.
+FW_PRINTF := $(SW)/system/small_printf.cc
+FW_RENAME := -Dprintf=fw_printf -Dsprintf=fw_sprintf -Dsnprintf=fw_snprintf -Dvsprintf=fw_vsprintf \
+	-Dvsnprintf=fw_vsnprintf -Dsscanf=fw_sscanf -D_vscanf=fw__vscanf -Dputs=fw_puts -Dputchar=fw_putchar
+FW_FLAGS := -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0 $(if $(filter 2,$(U64)),-DFP_SUPPORT=1)
+
+$(OUT)/small_printf.o: $(FW_PRINTF) Makefile
+	@mkdir -p $(OUT)
+	$(CXX) -std=c++14 -g -O0 -w $(FW_FLAGS) $(FW_RENAME) -c -o $@ $<
+
+# The code under test, with its snprintf and sprintf taken from the firmware's printf
+$(OUT)/task.o: $(OUT)/task.cc $(OUT)/wifi_enable_default.h wifi_task_env.h Makefile
+	$(CXX) $(CXXFLAGS) $(FW_FLAGS) -Dsnprintf=fw_snprintf -Dsprintf=fw_sprintf -c -o $@ $<
+
+$(OUT)/wifi_task_test: $(OUT)/task.o $(OUT)/small_printf.o wifi_task_stubs.cpp $(CASES) \
 		wifi_task_test.h wifi_task_env.h $(HOST_TEST)/host_test_main.cpp
-	$(CXX) $(CXXFLAGS) -o $@ $(OUT)/task.cc wifi_task_stubs.cpp $(CASES) $(HOST_TEST)/host_test_main.cpp -lpthread
+	$(CXX) $(CXXFLAGS) -o $@ $(OUT)/task.o $(OUT)/small_printf.o wifi_task_stubs.cpp $(CASES) $(HOST_TEST)/host_test_main.cpp -lpthread
 
 run: $(OUT)/wifi_task_test
 	@echo "wifi_task_test ($(if $(filter 0,$(U64)),U2+L,U64=$(U64))):"; $(OUT)/wifi_task_test

@@ -227,6 +227,9 @@ BaseType_t cmd_buffer_received(command_buf_context_t *context, command_buf_t **b
     return pdFALSE;
 }
 
+// The firmware's printf and puts (small_printf.cc, linked as fw_printf and fw_puts) write here
+extern "C" void outbyte(int c) { putchar(c); }
+
 void wifi_command_init(void) {}
 Esp32 :: Esp32() : uart(NULL) {}
 Esp32 esp32;

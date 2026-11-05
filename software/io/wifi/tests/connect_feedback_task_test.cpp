@@ -99,6 +99,32 @@ TEST(WifiConnectFeedbackTask, long_ssid)
     CHECK(memcmp(wifi.last_ap, name, 32) == 0, "last_ap, 32 characters");
 }
 
+// The module did not accept the connect to an AP whose SSID has all 32 characters (not
+// terminated in its scan record): the message names it whole, formatted by the firmware's
+// printf (which has no precision, and on the U64=2 products takes ".3" for one)
+TEST(WifiConnectFeedbackTask, not_accepted_long_ssid)
+{
+    reset_world();
+    world.enabled = true;
+    world.pick_ssid = "0123456789abcdef0123456789abcdef";
+    world.connect_result = 0x103; // ESP_ERR_INVALID_STATE
+    boot({ pick });
+    CHECK(strcmp(messages, "Could not connect to 0123456789abcdef0123456789abcdef\n") == 0, "32 characters");
+}
+
+// The messages of the code under test are formatted by the firmware's printf, not the host's
+extern "C" int fw_snprintf(char *str, size_t size, const char *fmt, ...);
+TEST(WifiConnectFeedbackTask, formatted_by_the_firmware_printf)
+{
+    char out[64];
+    fw_snprintf(out, sizeof(out), "%.32s", "HomeNet");
+#if U64 == 2
+    CHECK(strcmp(out, "Ho") == 0, "FP_SUPPORT: \".3\" is a precision, \"2\" a width that cuts the string");
+#else
+    CHECK(strcmp(out, "%.32s") == 0, "no precision: the format is printed as it is");
+#endif
+}
+
 // No outcome: the wait is bounded
 TEST(WifiConnectFeedbackTask, no_outcome)
 {

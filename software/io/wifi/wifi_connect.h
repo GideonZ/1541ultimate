@@ -45,6 +45,18 @@ static inline bool wifi_disconnect_is_password(uint8_t reason)
     return reason == 15 || reason == 202 || reason == 204;
 }
 
+// The message for a connect that failed. ssid32 is an SSID as the scan records and the
+// module's events hold it: 32 bytes, with no terminator when it has 32 characters. It is
+// printed from a terminated copy with a plain %s, because the firmware's printf
+// (small_printf.cc) has no precision.
+static inline void wifi_connect_failed_text(char *msg, int max, const char *ssid32)
+{
+    char name[33];
+    strncpy(name, ssid32, 32);
+    name[32] = 0;
+    snprintf(msg, max, "Could not connect to %s", name);
+}
+
 class WifiConnectFeedback
 {
     bool pending;
@@ -53,7 +65,7 @@ class WifiConnectFeedback
 
     static void fail(char *msg, int max, const char *ssid)
     {
-        snprintf(msg, max, "Could not connect to %s", ssid);
+        wifi_connect_failed_text(msg, max, ssid);
     }
 public:
     WifiConnectFeedback() : pending(false), deadline(0) { ssid[0] = 0; }
