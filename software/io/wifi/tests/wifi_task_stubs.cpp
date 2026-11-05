@@ -229,14 +229,28 @@ BaseType_t cmd_buffer_received(command_buf_context_t *context, command_buf_t **b
     if (++waits == 1) {
         first_wait_state = wifi.getState();
     }
+    if (t != portMAX_DELAY && timed_waits_n < 8) {
+        timed_waits[timed_waits_n++] = t;
+    }
     if (queue_i < queue_n && queue[queue_i].bufnr == ACT) {
+        // An action comes after its delay (late()), as an event does; the rest of the wait
+        // is left for what follows it
+        TickType_t d = queue_delay[queue_i];
+        if (d != 0 && t != portMAX_DELAY && d >= t) {
+            queue_delay[queue_i] -= t; // the wait ran out first
+            now += t;
+            waited += t;
+            return pdFALSE;
+        }
+        now += d;
+        waited += d;
+        if (t != portMAX_DELAY) {
+            t -= d;
+        }
         void (*act)(void) = (void (*)(void))queue[queue_i++].object;
         current_task = &other_task_id;
         act();
         current_task = &wifi_task_id;
-    }
-    if (t != portMAX_DELAY && timed_waits_n < 8) {
-        timed_waits[timed_waits_n++] = t;
     }
     if (queue_i < queue_n) {
         TickType_t d = queue_delay[queue_i];
