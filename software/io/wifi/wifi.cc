@@ -647,10 +647,15 @@ void WiFi :: freeBuffer(command_buf_t *buf)
 int WiFi ::getAccessPointItems(Browsable *parent, IndexedList<Browsable *> &list)
 {
     ultimate_ap_records_t *aps = &wifi_aps;
+    // While Disabled nothing scans, so the list is empty until WiFi is enabled. While a radio
+    // off waits for its confirmation the task drops a rescan, and the APs of an earlier scan
+    // are not shown: WiFi is off as far as the user is concerned.
+    if (RadioOffAwaited()) {
+        list.append(new BrowsableStatic("WiFi is disabled"));
+        return 0;
+    }
     if (aps->num_records == 0) {
-        // While Disabled nothing scans, so the list is empty until WiFi is enabled; also while
-        // a radio off waits for its confirmation, when the task drops a rescan
-        list.append(new BrowsableStatic(((state == eWifi_Disabled) || RadioOffAwaited()) ? "WiFi is disabled" : "Scanning..."));
+        list.append(new BrowsableStatic((state == eWifi_Disabled) ? "WiFi is disabled" : "Scanning..."));
         return 0;
     }
     ENTER_SAFE_SECTION;
@@ -672,7 +677,9 @@ SubsysResultCode_e BrowsableWifiAP :: connect_ap(SubsysCommand *cmd)
 {
     char password[65] = { 0 }; // string_box takes 64 characters plus the terminator
     BrowsableWifiAP *bap = (BrowsableWifiAP *)cmd->functionID;
-    if ((wifi.getState() == eWifi_Disabled) && !NetworkLWIP_WiFi :: ask_enable(cmd->user_interface)) {
+    // Also while a radio off waits for its confirmation: WiFi is off as far as the user is
+    // concerned, and a connect request would turn the radio on again
+    if (((wifi.getState() == eWifi_Disabled) || wifi.RadioOffAwaited()) && !NetworkLWIP_WiFi :: ask_enable(cmd->user_interface)) {
         return SSRET_OK;
     }
     if (bap->auth) {

@@ -106,6 +106,9 @@ TEST(WifiDisabledTask, ap_list_is_shown_while_enabled)
 // Every scan or connect action of the menu while WiFi is disabled asks "Enable it?". Yes does
 // what the Enable action does (the module is asked to turn its radio on), and then the action
 // goes on; No sends nothing and leaves the state as it was.
+#if U64 != 2
+static void menu_disable_act(void) { NetworkLWIP_WiFi :: disable(NULL); }
+#endif
 static void act_show_aps(void) { UserInterface ui; NetworkLWIP_WiFi :: cfg_show_aps(&ui, NULL); }
 static void act_enter_ap(void) { UserInterface ui; NetworkLWIP_WiFi :: cfg_enter_ap(&ui, NULL); }
 static void act_conn_last(void) { UserInterface ui; NetworkLWIP_WiFi :: cfg_conn_last(&ui, NULL); }
@@ -259,3 +262,28 @@ TEST(WifiDisabledTask, pick_while_active_connects)
     CHECK(((rpc_header_t *)request.data)->command == CMD_WIFI_CONNECT, "CMD_WIFI_CONNECT");
     CHECK(strstr(messages, "Can only connect") == NULL, "no refusal");
 }
+
+#if U64 != 2
+// While a radio off waits for its confirmation WiFi is off as far as the user is concerned:
+// a pick from a list that still shows APs asks first, and the list says WiFi is disabled
+TEST(WifiDisabledTask, pick_while_the_radio_off_waits_asks)
+{
+    reset_world();
+    world.enabled = true;
+    world.popup_answer = BUTTON_NO;
+    boot({ EVENT_CONNECTED, Step(menu_disable_act), pick, EVENT_DISABLED });
+    CHECK(popups == 1, "asked");
+    CHECK(requests == 0, "No: no connect request");
+    CHECK(!world.enabled, "the setting stays Disabled");
+}
+
+TEST(WifiDisabledTask, ap_list_with_records_while_the_radio_off_waits)
+{
+    reset_world();
+    world.enabled = true;
+    wifi_aps.num_records = 3;
+    boot({ EVENT_CONNECTED, Step(menu_disable_act), Step(open_ap_list) });
+    CHECK(awaited_when_listed, "the radio off waits for its confirmation");
+    CHECK(strcmp(listed, "WiFi is disabled") == 0, "the list says WiFi is disabled");
+}
+#endif

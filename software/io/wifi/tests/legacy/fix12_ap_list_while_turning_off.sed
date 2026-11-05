@@ -2,4 +2,4 @@
 # radio went off, and while the radio off waited for its confirmation it said "Scanning...".
 # variants: 1 0 2
 s/^ *RefreshAPs(); \/\/ an open AP list shows that$//
-s/((state == eWifi_Disabled) || RadioOffAwaited()) ? "WiFi is disabled"/(state == eWifi_Disabled) ? "WiFi is disabled"/
+s/^    if (RadioOffAwaited()) {$/    if (0) {/
