@@ -1,4 +1,4 @@
-# The AP list's Connect before the task noted the attempt ahead of the request: the attempt
+# Model: the AP list's Connect before the task noted the attempt ahead of the request: the attempt
 # was queued for the task after the module had accepted the request, behind any outcome
 # the module reported in the meantime (which then left it pending, to time out as a
 # failure), and a refused request was told by the user interface itself. The module's

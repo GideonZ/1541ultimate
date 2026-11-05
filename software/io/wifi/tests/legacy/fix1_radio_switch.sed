@@ -1,4 +1,4 @@
-# The WiFi application before "Turn the radio off with Disable on the U64 and U2+L, and make
+# Model: the WiFi application before "Turn the radio off with Disable on the U64 and U2+L, and make
 # WiFi Enabled work": no radio switch. The module is started by the setting only, never told
 # to turn its radio off or on at boot, and the menu's Disable and Enable stop and start the
 # application. Applied by the Makefile to the extracted code (make red).

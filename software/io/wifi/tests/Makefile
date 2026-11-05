@@ -6,8 +6,10 @@
 #
 #   make          test and red
 #   make test     build and run, for U64=1, the U2+L (U64 not defined) and U64=2
-#   make red      build the same cases against a model of the code as it was before each fix
-#                 (legacy/*.sed, applied to the extracted code); each has to fail
+#   make red      build the same cases against a model of the code without each fix
+#                 (legacy/*.sed, applied to the extracted code); each has to fail. A model
+#                 takes out what one fix changed, as far as the cases look at it; it is not
+#                 a reconstruction of the code as it was before the fix.
 #
 CXX ?= g++
 SW := ../../..
@@ -113,13 +115,13 @@ $(OUT)/wifi_task_test: $(OUT)/task.o $(OUT)/small_printf.o wifi_task_stubs.cpp $
 run: $(OUT)/wifi_task_test
 	@echo "wifi_task_test ($(if $(filter 0,$(U64)),U2+L,U64=$(U64))):"; $(OUT)/wifi_task_test
 
-# The same cases against the code as it was before a fix: the build has to work and the
+# The same cases against the model of the code without a fix: the build has to work and the
 # run has to fail, which says which checks
 redrun: $(OUT)/wifi_task_test
 	@if $(OUT)/wifi_task_test > $(OUT)/red.log 2>&1; then \
-	  echo "red $(LEG) ($(if $(filter 0,$(U64)),U2+L,U64=$(U64))): the cases passed against the code before the fix -- they no longer catch it" >&2; exit 1; \
+	  echo "red $(LEG) ($(if $(filter 0,$(U64)),U2+L,U64=$(U64))): the cases passed against the model without the fix -- they no longer catch it" >&2; exit 1; \
 	else \
-	  echo "red $(LEG) ($(if $(filter 0,$(U64)),U2+L,U64=$(U64))): $$(tail -n 1 $(OUT)/red.log) against the code before the fix, as required"; \
+	  echo "red $(LEG) ($(if $(filter 0,$(U64)),U2+L,U64=$(U64))): $$(tail -n 1 $(OUT)/red.log) against the model without the fix, as required"; \
 	  grep '^FAIL' $(OUT)/red.log | head -n 6 | sed 's/^/    /'; \
 	fi
 

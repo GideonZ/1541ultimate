@@ -319,9 +319,8 @@ void WiFi :: RunModeThread()
                 // request that never left, is asked again at the deadline
                 if (wifi_switch_unsupported(result)) {
                     // A module without the switch cannot keep its radio off: hold the
-                    // module off. It had to run to tell (its radio is on from its own
-                    // boot, so it may have associated for a moment), where a stored
-                    // Disabled used to keep it from starting at all. An Enable starts the
+                    // module off. It has run to answer (its radio is on from its own boot,
+                    // so it may have associated for a moment). An Enable starts the
                     // application again (wifi_switch_on), and that start skips the
                     // stored Disabled.
                     printf("WiFi module cannot turn its radio off: %d\n", result);

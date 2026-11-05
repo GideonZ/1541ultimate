@@ -23,10 +23,9 @@
  *
  * A module without the radio switch answers the request with an error; its radio is on
  * from its boot. The application then holds the module off, at its start and on a Disable
- * from the menu, the REST API or the setting. At a boot with Disabled stored the
- * module has had to run to tell, so unlike before it may have associated for a moment. An
- * Enable then starts the WiFi application again, which is what an Enable did before, and
- * that start does not apply the stored Disabled.
+ * from the menu, the REST API or the setting. At a boot with Disabled stored such a module
+ * runs until it has answered, so it may associate for a moment. An Enable then starts the
+ * WiFi application again, and that start does not apply the stored Disabled.
  *
  * Pure logic, so that the host test (software/io/wifi/tests/wifi_switch_test.cpp) runs it.
  */
@@ -45,8 +44,7 @@
 #define EVENT_RADIO_SETTING 0x7E
 
 // The answer of a module without the radio switch to a radio off or on:
-// ESP_ERR_NOT_SUPPORTED, as every module before the switch gives for a command it does not
-// have. Any other error (the module could not queue it, or it never left) is not taken
+// ESP_ERR_NOT_SUPPORTED, which such a module gives for every command it does not have. Any other error (the module could not queue it, or it never left) is not taken
 // for that: the confirmation deadline asks again.
 #define WIFI_SWITCH_NOT_SUPPORTED 0x106
 

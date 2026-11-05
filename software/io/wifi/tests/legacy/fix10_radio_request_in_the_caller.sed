@@ -1,4 +1,4 @@
-# "WiFi Enabled" before the WiFi task sent the radio requests: the hook sent the radio off
+# Model: "WiFi Enabled" before the WiFi task sent the radio requests: the hook sent the radio off
 # or on itself, in the caller's task, and armed the wait for the confirmation from there
 # (which the task, waiting without a bound, did not see until its next event); a reset of
 # the settings did not apply the setting.
