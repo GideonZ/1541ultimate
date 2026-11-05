@@ -72,6 +72,7 @@ public:
     BaseType_t doRequestEcho(void);
 
     WifiState_t getState(void) { return state; }
+    TaskHandle_t getTask(void) { return runModeTask; } // the WiFi task, NULL while it is not running
     // A radio off is asked for and not confirmed yet (wifi_switch.h)
 #if U64 != 2
     bool RadioOffAwaited(void) { return radio_switch.awaiting_off; }

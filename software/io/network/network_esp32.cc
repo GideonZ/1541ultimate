@@ -131,23 +131,30 @@ bool NetworkLWIP_WiFi :: enabled_in_config(void)
     return cfg->get_value(CFG_WIFI_ENABLE) != 0;
 }
 
-// A change of "WiFi Enabled" turns the radio off or on right away. While the WiFi
-// application is still looking for the module it does nothing: the application applies
-// the setting itself when it finds it. Every change is passed on, whatever the row shows:
-// the row follows the module's events, which can lag behind a quick Enable and Disable,
-// and both requests are harmless when the module is in that state already.
+// A change of "WiFi Enabled" turns the radio off or on.
 int NetworkLWIP_WiFi :: wifi_enable_change(ConfigItem *it)
+{
+    apply_enabled(it->getValue() != 0);
+    return 0;
+}
+
+// Applies "WiFi Enabled" (on). While the WiFi application is still looking for the module
+// it does nothing: the application applies the setting itself when it finds it. Otherwise
+// the WiFi task is told to apply it (WiFi :: RadioOn, RadioOff), and this returns without
+// waiting for the module. Every change is passed on, whatever the row shows: the row
+// follows the module's events, which can lag behind a quick Enable and Disable, and both
+// requests are harmless when the module is in that state already.
+void NetworkLWIP_WiFi :: apply_enabled(bool on)
 {
     WifiState_t state = wifi.getState();
     if ((state == eWifi_Download) || (state == eWifi_NotDetected) || (state == eWifi_ModuleDetected)) {
-        return 0;
+        return;
     }
-    if (it->getValue()) {
+    if (on) {
         wifi.RadioOn();
     } else if (state != eWifi_Off) { // the application is stopped (a module without the switch): off already
         wifi.RadioOff();
     }
-    return 0;
 }
 #endif
 
@@ -166,9 +173,12 @@ void NetworkLWIP_WiFi :: effectuate_settings(void)
     //     wifi.RadioOff();
     // }
 #else
-    // The WiFi application always runs (WiFi::Init). The setting is applied by the
-    // application when it finds the module, and by its change hook; not here, because
-    // this also runs when the init callback of the network stack occurs.
+    // A reset or a load of the settings (ConfigStore :: reset, then effectuate) sets "WiFi
+    // Enabled" without its change hook: applied here. Not when the WiFi task runs this
+    // itself (netstack->start(), while it sets up its link): it applies the setting then.
+    if (xTaskGetCurrentTaskHandle() != wifi.getTask()) {
+        apply_enabled(enabled_in_config());
+    }
 #endif
 }
 

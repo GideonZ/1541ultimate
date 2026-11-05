@@ -41,6 +41,7 @@ struct World {
     uint8_t pick_channel;
     const char *password;  // what the user types in the password box
     int popup_answer;      // BUTTON_YES or BUTTON_NO, to "WiFi is disabled. Enable it?"
+    void (*during_disable)(void); // done by another task while the next radio off waits for its answer
 };
 extern World world;
 void reset_world(void); // every case starts with it
@@ -86,6 +87,9 @@ static inline Step late(Step s, TickType_t ticks) { s.delay = ticks; return s; }
 // Starts the WiFi task with the module found, and these steps in order
 void boot(std::initializer_list<Step> steps);
 const char *after(char c);
+// Outside a script: how many events with this code wait in the task's queue (the task's own,
+// queued since); the queue is emptied
+int take_queued(int code);
 
 // The user picks world.pick_ssid in the AP list (BrowsableWifiAP :: connect_ap, which runs
 // in the user interface task); as a step of a script, when the task reaches it

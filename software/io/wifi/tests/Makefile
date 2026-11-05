@@ -34,8 +34,9 @@ WIFI_FUNCS := WiFi~::~WiFi WiFi~::~Init WiFi~::~Enable WiFi~::~Disable WiFi~::~R
 	WiFi~::~RadioOff WiFi~::~RunModeThread WiFi~::~sendEvent WiFi~::~sendConnectEvent WiFi~::getAccessPointItems \
 	BrowsableWifiAP~::~connect_ap
 NET_FUNCS := NetworkLWIP_WiFi~::~disable NetworkLWIP_WiFi~::~enable NetworkLWIP_WiFi~::~ask_enable \
-	NetworkLWIP_WiFi~::~cfg_show_aps NetworkLWIP_WiFi~::~cfg_enter_ap NetworkLWIP_WiFi~::~cfg_conn_last
-NET_FUNCS_SWITCH := NetworkLWIP_WiFi~::~wifi_enable_change NetworkLWIP_WiFi~::~set_enabled \
+	NetworkLWIP_WiFi~::~cfg_show_aps NetworkLWIP_WiFi~::~cfg_enter_ap NetworkLWIP_WiFi~::~cfg_conn_last \
+	NetworkLWIP_WiFi~::~effectuate_settings
+NET_FUNCS_SWITCH := NetworkLWIP_WiFi~::~wifi_enable_change NetworkLWIP_WiFi~::~apply_enabled NetworkLWIP_WiFi~::~set_enabled \
 	NetworkLWIP_WiFi~::~cfg_enable NetworkLWIP_WiFi~::~cfg_disable
 CMD_FUNCS := wifi_wifi_connect
 

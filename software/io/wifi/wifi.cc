@@ -79,19 +79,25 @@ void WiFi :: Disable()
     esp32.StopApp();
 }
 
+// On the U64 and U2+L, RadioOn and RadioOff run in the caller (the "WiFi Enabled" hook,
+// network_esp32.cc) and only tell the WiFi task to apply the setting (EVENT_RADIO_SETTING);
+// the task sends the request and waits for its confirmation (wifi_switch.h)
 void WiFi :: RadioOn()
 {
 #if U64 != 2
     if (state == eWifi_Off) {
+        // The application is held off with a module without the switch (or not running):
+        // it is started again, and that start ignores a stored Disabled
         wifi_switch_on(&radio_switch, false);
         Enable();
         return;
     }
-    // Ends a wait for a radio-off confirmation. A module without the switch is never
-    // talked to here: it is held off (state Off) at boot and by RadioOff.
-    wifi_switch_on(&radio_switch, true);
+    sendEvent(EVENT_RADIO_SETTING);
+#else
+    if (wifi_enable() != 0) {
+        event_when_enabled = 0; // the radio does not come on: nothing is to follow it
+    }
 #endif
-    wifi_enable();
 }
 
 void WiFi :: RadioOff()
@@ -100,18 +106,7 @@ void WiFi :: RadioOff()
     // come before it confirms the radio off): the user has left that, so nothing is said
     pick_cancelled = true;
 #if U64 != 2
-    int result = wifi_disable();
-    if (!wifi_switch_unsupported(result)) {
-        // Disabled is shown when the module confirms, as at boot (wifi_switch.h)
-        wifi_switch_asked_off(&radio_switch, xTaskGetTickCount(), pdMS_TO_TICKS(WIFI_SWITCH_CONFIRM_MS));
-        return;
-    }
-    // A module known to lack the radio switch: stop the WiFi application, as Disable
-    // always did here, and hold the module off, as at boot, so that its radio is off too
-    Disable();
-    if (uart) {
-        uart->ModuleCtrl(ESP_MODE_OFF);
-    }
+    sendEvent(EVENT_RADIO_SETTING);
 #else
     wifi_disable();
 #endif
@@ -439,6 +434,38 @@ void WiFi :: RunModeThread()
                 break;
 
 #if U64 != 2
+            // "WiFi Enabled" changed, or the settings were reset or loaded (RadioOn,
+            // RadioOff, network_esp32.cc). The request is sent from here, so that the
+            // requests go out one at a time and in the order of the changes, and the wait
+            // for a radio off's confirmation is timed by this task's next pass.
+            case EVENT_RADIO_SETTING:
+                uart->FreeBuffer(buf);
+                if (netstack->enabled_in_config()) {
+                    wifi_switch_on(&radio_switch, true); // ends a wait for a radio-off confirmation
+                    if (wifi_enable() != 0) {
+                        event_when_enabled = 0; // the radio does not come on: nothing is to follow it
+                    }
+                    break;
+                }
+                result = wifi_disable();
+                if (wifi_switch_unsupported(result)) {
+                    // A module without the radio switch: hold it off, as at boot. Not with
+                    // Disable(): that stops the application, which would end this task
+                    // while it runs this.
+                    printf("WiFi module cannot turn its radio off: %d\n", result);
+                    feedback.cancel();
+                    event_when_enabled = 0;
+                    netstack->link_down();
+                    uart->ModuleCtrl(ESP_MODE_OFF);
+                    state = eWifi_Off;
+                    RefreshRoot();
+                    vTaskSuspend(NULL); // until an Enable starts the application again, which ends this task
+                    break;
+                }
+                // Disabled is shown when the module confirms (wifi_switch.h)
+                wifi_switch_asked_off(&radio_switch, xTaskGetTickCount(), pdMS_TO_TICKS(WIFI_SWITCH_CONFIRM_MS));
+                break;
+
             // The module restarted on its own (radio_boot.h). It put its radio back as it
             // was, or, with no record of that, turned it on: while Disabled, the radio off
             // is asked for again, and confirmed as at boot.

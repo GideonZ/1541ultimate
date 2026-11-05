@@ -100,10 +100,16 @@ static void ask_case(const Action_t &a, bool yes)
         CHECK(enable != NULL, what);
         snprintf(what, sizeof(what), "%s: and then the action goes on", a.name);
         CHECK(done, what);
+#if U64 == 2
         if (a.run != pick && enable && a.mark != 'C') {
             snprintf(what, sizeof(what), "%s: after the Enable, not before", a.name);
             CHECK(strchr(asked, a.mark) > enable, what);
         }
+#endif
+        // On the U64 and U2+L the WiFi task sends the Enable, which can reach the module after
+        // the action's connect request; a connect request turns the radio on by itself in
+        // every module that has the radio switch (enable_wifi_if_needed), and the Enable is
+        // then a request for the state it is in
         if (a.run == act_show_aps) {
             CHECK(strchr(asked, 'T') != NULL, "the list is opened");
         }
@@ -179,6 +185,19 @@ TEST(WifiDisabledTask, pick_after_yes_is_followed)
     CHECK(strchr(after('?'), 'N') != NULL, "and the radio on");
     CHECK(wifi.getState() == eWifi_Connected, "Connected");
     CHECK(messages[0] == 0, "no message: the join is the outcome");
+}
+
+// The Enable for the scan fails (the request did not reach the module): the scan no longer
+// waits for the radio, so a later unrelated link loss does not start one
+TEST(WifiDisabledTask, a_failed_enable_drops_the_waiting_scan)
+{
+    reset_world();
+    world.enabled = true;
+    world.enable_answer = -1;
+    boot({ EVENT_DISABLED, act_show_aps, late(Step(EVENT_DISCONNECTED), 60 * configTICK_RATE_HZ) });
+    CHECK(strchr(after('?'), 'N') != NULL, "the radio on was asked for");
+    CHECK(strchr(after('?'), 'C') == NULL, "no scan on the later link loss");
+    CHECK(wifi.event_when_enabled == 0, "nothing waits for the radio");
 }
 
 TEST(WifiDisabledTask, no_prompt_while_active)

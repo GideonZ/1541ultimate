@@ -12,8 +12,9 @@
  * event from it (a module that associated at boot after all) would put the WiFi
  * interface on the network while WiFi is off, so those events are dropped.
  *
- * A Disable at runtime (the menu, the REST API, the setting) is confirmed the same way. The
- * wait is timed by the application's next pass, which any event from the module starts.
+ * A change of the setting at runtime (the menu, the REST API, a reset or load of the
+ * settings) is queued for the WiFi task as EVENT_RADIO_SETTING; the task reads the setting
+ * then, sends the request, and times the confirmation of a radio off as at boot.
  *
  * The answer to the request only says that the module queued it. The application shows
  * Disabled when EVENT_DISABLED arrives, not before. If it does not arrive within
@@ -21,8 +22,8 @@
  * the wait ends and the application takes the link state from the module again.
  *
  * A module without the radio switch answers the request with an error; its radio is on
- * from its boot. The application then stops and holds the module off, at its start and on
- * a Disable from the menu, the REST API or the setting. At a boot with Disabled stored the
+ * from its boot. The application then holds the module off, at its start and on a Disable
+ * from the menu, the REST API or the setting. At a boot with Disabled stored the
  * module has had to run to tell, so unlike before it may have associated for a moment. An
  * Enable then starts the WiFi application again, which is what an Enable did before, and
  * that start does not apply the stored Disabled.
@@ -38,6 +39,10 @@
 #include "rpc_calls.h"
 
 #define WIFI_SWITCH_CONFIRM_MS 10000
+
+// Internal event of the WiFi application: apply "WiFi Enabled" as it is stored now. It has
+// no value: the WiFi task reads the setting when it takes the event, so the last change wins.
+#define EVENT_RADIO_SETTING 0x7E
 
 // The answer of a module without the radio switch to a radio off or on:
 // ESP_ERR_NOT_SUPPORTED, as every module before the switch gives for a command it does not

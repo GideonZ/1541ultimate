@@ -114,6 +114,11 @@ int popups;
 static command_buf_t txbuf, replybuf;
 
 TickType_t xTaskGetTickCount(void) { return now; }
+// The task that runs: the WiFi task while boot() runs it, else another one (the user
+// interface, the REST API); an action of the script runs as another task
+static int wifi_task_id, other_task_id;
+static TaskHandle_t current_task = &other_task_id;
+TaskHandle_t xTaskGetCurrentTaskHandle(void) { return current_task; }
 void vTaskDelay(TickType_t t) { stop("delayed"); }
 void vTaskSuspend(TaskHandle_t t) { stop("suspended"); }
 
@@ -226,7 +231,9 @@ BaseType_t cmd_buffer_received(command_buf_context_t *context, command_buf_t **b
     }
     if (queue_i < queue_n && queue[queue_i].bufnr == ACT) {
         void (*act)(void) = (void (*)(void))queue[queue_i++].object;
+        current_task = &other_task_id;
         act();
+        current_task = &wifi_task_id;
     }
     if (t != portMAX_DELAY && timed_waits_n < 8) {
         timed_waits[timed_waits_n++] = t;
@@ -271,7 +278,19 @@ BaseType_t wifi_detect(uint16_t *major, uint16_t *minor, char *str, int maxlen) 
 int wifi_getmac(uint8_t *mac) { note('m'); return 0; }
 int wifi_scan(void *) { count(); note('C'); return 0; }
 int wifi_enable() { note('N'); return world.enable_answer; }
-int wifi_disable() { note('O'); return world.disable_answer; }
+int wifi_disable()
+{
+    note('O');
+    void (*during)(void) = world.during_disable;
+    if (during) {
+        world.during_disable = NULL;
+        TaskHandle_t caller = current_task;
+        current_task = &other_task_id;
+        during();
+        current_task = caller;
+    }
+    return world.disable_answer;
+}
 int wifi_modem_enable(bool) { note('M'); return 0; }
 int wifi_get_voltages(voltages_t *v)
 {
@@ -285,7 +304,8 @@ int wifi_is_connected(uint8_t &status) { count(); note('Q'); status = world.link
 err_t wifi_tx_packet(void *driver, void *buffer, int length) { return 0; }
 void wifi_free(void *driver, void *buffer) {}
 
-void NetworkLWIP_WiFi :: start(void) { note('s'); }
+// As NetworkInterface :: start, it applies the settings (effectuate_settings)
+void NetworkLWIP_WiFi :: start(void) { note('s'); effectuate_settings(); }
 void NetworkLWIP_WiFi :: link_up(void) { note('U'); }
 void NetworkLWIP_WiFi :: link_down(void) { note('u'); }
 bool NetworkLWIP_WiFi :: enabled_in_config(void) { return world.enabled; }
@@ -345,9 +365,24 @@ void boot(std::initializer_list<Step> steps)
     wifi.uart = &uart;
     wifi.packets = &packets;
     esp32.uart = &uart;
+    wifi.runModeTask = &wifi_task_id;
+    current_task = &wifi_task_id;
     if (setjmp(done) == 0) {
         wifi.RunModeThread();
     }
+    current_task = &other_task_id;
+}
+
+int take_queued(int code)
+{
+    int n = 0;
+    for (int i = queue_i; i < queue_n; i++) {
+        if ((queue[i].bufnr != ACT) && (((rpc_header_t *)queue[i].data)->command == code)) {
+            n++;
+        }
+    }
+    queue_i = queue_n = arrived = 0;
+    return n;
 }
 
 const char *after(char c)
