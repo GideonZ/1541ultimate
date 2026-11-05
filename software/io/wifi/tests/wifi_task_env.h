@@ -99,6 +99,7 @@ public:
     static void pushPowerOnMode(void);
     static void pushWakeOnWifi(void);
     static void pushRecoveryUrl(void);
+    static bool getWakeOnWifi(void);
 };
 
 extern ultimate_ap_records_t wifi_aps;

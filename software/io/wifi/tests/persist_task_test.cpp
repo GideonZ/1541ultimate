@@ -116,4 +116,28 @@ TEST(WifiPersistTask, a_change_while_the_module_is_told_wins)
     CHECK(last_request() == 'O', "the last request is the radio off");
     CHECK(wifi.getState() == eWifi_Disabled, "Disabled once the module confirms");
 }
+// Wake on Wi-Fi listens on the station interface, which a radio that is off does not have,
+// also after a power cycle now: a Disable with Wake on Wi-Fi on tells the user (the Disable
+// is not refused). The Wake on Wi-Fi side is in U64Config :: setWakeOnWifi.
+TEST(WifiPersistTask, disable_with_wake_on_wifi_tells_the_user)
+{
+    reset_world();
+    world.enabled = true;
+    world.wake_on_wifi = true;
+    boot({ EVENT_CONNECTED });
+    messages[0] = 0;
+    NetworkLWIP_WiFi :: disable(NULL);
+    CHECK(!world.enabled && saves == 1, "Disabled and saved all the same");
+    CHECK(strcmp(messages, "Wake on Wi-Fi needs WiFi enabled\n") == 0, "the user is told");
+    messages[0] = 0;
+    NetworkLWIP_WiFi :: enable(NULL);
+    CHECK(messages[0] == 0, "nothing is said on an Enable");
+
+    reset_world();
+    world.enabled = true;
+    boot({ EVENT_CONNECTED });
+    messages[0] = 0;
+    NetworkLWIP_WiFi :: disable(NULL);
+    CHECK(messages[0] == 0, "nor on a Disable without Wake on Wi-Fi");
+}
 #endif

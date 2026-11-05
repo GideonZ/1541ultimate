@@ -47,6 +47,7 @@ public:
     static SubsysResultCode_e enable(SubsysCommand *cmd);
     static bool ask_enable(UserInterface *intf);
     static void set_enabled(bool on);
+    static bool get_enabled(void);
     static SubsysResultCode_e disable(SubsysCommand *cmd);
     static SubsysResultCode_e manual_connect(SubsysCommand *cmd);
     static SubsysResultCode_e auto_connect(SubsysCommand *cmd);

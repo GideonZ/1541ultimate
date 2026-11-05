@@ -27,6 +27,9 @@
 
 #include "wifi.h"
 #include "itu.h"
+#if U64 == 2
+#include "u64_config.h"
+#endif
 
 const char *authmodes[] = { "Open", "WEP", "WPA PSK", "WPA2 PSK", "WPA/WPA2 PSK", "WPA2 Enterprise", "WPA3 PSK", "WPA2/WPA3 PSK", "WAPI PSK" };
 
@@ -126,6 +129,12 @@ bool NetworkLWIP_WiFi :: enabled_in_config(void)
 // A change of "WiFi Enabled" turns the radio off or on.
 int NetworkLWIP_WiFi :: wifi_enable_change(ConfigItem *it)
 {
+#if U64 == 2
+    // Wake on Wi-Fi listens on the station interface, which a radio that is off does not have
+    if ((it->getValue() == 0) && U64Config :: getWakeOnWifi()) {
+        UserInterface :: postMessage("Wake on Wi-Fi needs WiFi enabled");
+    }
+#endif
     apply_enabled(it->getValue() != 0);
     return 0;
 }
@@ -379,6 +388,13 @@ void NetworkLWIP_WiFi :: cfg_disconn(UserInterface *intf, ConfigItem *it)
 // One switch: "WiFi Enabled" is what the Enable and Disable actions set, what its change hook
 // acts on (it turns the radio on or off), and what the next boot reads. It is saved when it
 // changes.
+// What "WiFi Enabled" reads: as enabled_in_config, for a caller without the interface
+bool NetworkLWIP_WiFi :: get_enabled(void)
+{
+    ConfigStore *cfg = ConfigManager :: getConfigManager()->find_store((uint32_t)0x57494649);
+    return !cfg || (cfg->get_value(CFG_WIFI_ENABLE) != 0);
+}
+
 void NetworkLWIP_WiFi :: set_enabled(bool on)
 {
     ConfigStore *cfg = ConfigManager :: getConfigManager()->find_store((uint32_t)0x57494649);
