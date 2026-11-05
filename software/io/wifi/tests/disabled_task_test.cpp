@@ -52,6 +52,46 @@ TEST(WifiDisabledTask, ap_list_is_empty_once_disabled)
     CHECK(row && strcmp(row->text, "WiFi is disabled") == 0, "the list says so");
 }
 
+// An AP list that is open when the radio goes off is refreshed, and then shows it empty
+TEST(WifiDisabledTask, an_open_ap_list_is_refreshed_on_disable)
+{
+    reset_world();
+    world.enabled = true;
+    wifi_aps.num_records = 3;
+    boot({ EVENT_DISABLED });
+    CHECK(ap_refreshes == 1, "the list is refreshed");
+    CHECK(aps_at_refresh == 0, "after the APs are cleared");
+}
+
+#if U64 != 2
+// While the radio off waits for its confirmation nothing scans (the task drops a rescan
+// then): the empty list says that WiFi is disabled, not that it scans
+static bool awaited_when_listed;
+static char listed[40];
+static void open_ap_list(void)
+{
+    awaited_when_listed = wifi.RadioOffAwaited() && (wifi.getState() != eWifi_Disabled);
+    IndexedList<Browsable *> list(0, NULL);
+    listed[0] = 0;
+    if ((wifi.getAccessPointItems(NULL, list) == 0) && (list.get_elements() == 1)) {
+        BrowsableStatic *row = dynamic_cast<BrowsableStatic *>(list[0]);
+        if (row) {
+            strncpy(listed, row->text, sizeof(listed) - 1);
+        }
+    }
+}
+
+TEST(WifiDisabledTask, ap_list_while_the_radio_off_waits)
+{
+    reset_world();
+    world.enabled = false; // the boot asks for the radio off
+    wifi_aps.num_records = 0;
+    boot({ Step(open_ap_list) });
+    CHECK(awaited_when_listed, "the radio off waits for its confirmation");
+    CHECK(strcmp(listed, "WiFi is disabled") == 0, "the list says WiFi is disabled");
+}
+#endif
+
 TEST(WifiDisabledTask, ap_list_is_shown_while_enabled)
 {
     reset_world();

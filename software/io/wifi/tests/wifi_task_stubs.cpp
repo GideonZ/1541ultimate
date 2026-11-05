@@ -315,7 +315,9 @@ void U64Config :: pushWakeOnWifi(void) {}
 void U64Config :: pushRecoveryUrl(void) {}
 
 void WiFi :: RefreshRoot() {}
-void WiFi :: RefreshAPs() {}
+int ap_refreshes;
+int aps_at_refresh;
+void WiFi :: RefreshAPs() { ap_refreshes++; aps_at_refresh = wifi_aps.num_records; }
 void WiFi :: Start() {}
 void WiFi :: Terminate() {}
 
@@ -336,6 +338,8 @@ void boot(std::initializer_list<Step> steps)
     waited = 0;
     timed_waits_n = 0;
     message_at = 0;
+    ap_refreshes = 0;
+    aps_at_refresh = -1;
     requests = 0;
     pool_i = 0;
     queue_n = queue_i = 0;

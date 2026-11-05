@@ -64,6 +64,8 @@ extern TickType_t message_at;     // the clock when the last message was posted
 extern int requests;       // requests that went to the module (connect)
 extern command_buf_t request; // the last one, as it went out
 extern int string_box_result; // what the password box returns: <= 0 is a cancel
+extern int ap_refreshes;   // how often an open AP list was told to refresh
+extern int aps_at_refresh; // the APs in the list at the last refresh
 
 // A step of the script: an event of the module, or an action of the user (ACT), run when
 // the task reaches it in its queue, as the user interface task would run it at that time

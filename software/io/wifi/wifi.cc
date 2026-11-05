@@ -486,6 +486,7 @@ void WiFi :: RunModeThread()
                 wifi_aps.num_records = 0; // nothing to pick while the radio is off
                 netstack->link_down();
                 RefreshRoot();
+                RefreshAPs(); // an open AP list shows that
                 break;
 
             case EVENT_CONNECTED:
@@ -615,8 +616,9 @@ int WiFi ::getAccessPointItems(Browsable *parent, IndexedList<Browsable *> &list
 {
     ultimate_ap_records_t *aps = &wifi_aps;
     if (aps->num_records == 0) {
-        // While Disabled nothing scans, so the list is empty until WiFi is enabled
-        list.append(new BrowsableStatic((state == eWifi_Disabled) ? "WiFi is disabled" : "Scanning..."));
+        // While Disabled nothing scans, so the list is empty until WiFi is enabled; also while
+        // a radio off waits for its confirmation, when the task drops a rescan
+        list.append(new BrowsableStatic(((state == eWifi_Disabled) || RadioOffAwaited()) ? "WiFi is disabled" : "Scanning..."));
         return 0;
     }
     ENTER_SAFE_SECTION;
