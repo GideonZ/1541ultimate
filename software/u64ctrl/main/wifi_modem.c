@@ -58,6 +58,14 @@ static const char *TAG = "raw_bridge";
  * then no event comes. */
 #define WIFI_DISCONNECT_WAIT_MS 3000
 
+/* "WiFi Enabled" whose write to the NVS failed (power_set_wifi_enabled): -1 for none, else
+ * the value. The connector writes it again while it idles, every WIFI_STORE_RETRY_MS, up to
+ * WIFI_STORE_TRIES writes in all; a newer Enable or Disable replaces it. */
+#define WIFI_STORE_RETRY_MS 2000
+#define WIFI_STORE_TRIES    5
+static int store_pending = -1;
+static int store_tries;
+
 /* Set when the *user* asked to disconnect, so that request is not undone a few
  * seconds later. esp_wifi_disconnect() produces the same event as a dropped
  * link, so intent is the only thing that tells the two apart.
@@ -814,6 +822,27 @@ void wifi_autoconnect(void)
     }
 }
 
+// Stores "WiFi Enabled" (0 or 1) for the next boot; see store_pending. A value that has
+// just failed is logged once, not at each retry.
+static void store_wifi_enabled(int enabled)
+{
+    if (store_pending != enabled) {
+        store_tries = 0;
+    }
+    store_pending = enabled;
+    if (power_set_wifi_enabled(enabled) == ESP_OK) {
+        store_pending = -1;
+    } else if (++store_tries >= WIFI_STORE_TRIES) {
+        ESP_LOGE(TAG, "Could not store WiFi %s; giving up.", enabled ? "Enabled" : "Disabled");
+        store_pending = -1;
+    } else if (store_tries == 1) {
+        ESP_LOGW(TAG, "Could not store WiFi %s; trying again.", enabled ? "Enabled" : "Disabled");
+    }
+}
+
+// A recovery's Autoconnect (or a Connect) starts the radio from Disabled and leaves the
+// stored setting alone: the radio then stays on until the next boot, which goes by the
+// setting again. A recovery has to reach the network, whatever the setting says.
 esp_err_t enable_wifi_if_needed(ConnectState_t state)
 {
     if (state == Disabled) {
@@ -840,7 +869,7 @@ int handle_connect_command(ConnectCommand_t *cmd, ConnectState_t *state)
     switch(cmd->command) {
         case CMD_WIFI_DISABLE:
             // The setting is kept first: it is what the next boot goes by, whatever the radio does now
-            power_set_wifi_enabled(0);
+            store_wifi_enabled(0);
             if (recovery_running()) {
                 // A recovery downloads through this radio, and the firmware it replaces may
                 // still be running and pushing its setting: only the copy changes
@@ -879,7 +908,7 @@ int handle_connect_command(ConnectCommand_t *cmd, ConnectState_t *state)
             }
             break;
         case CMD_WIFI_ENABLE:
-            power_set_wifi_enabled(1);
+            store_wifi_enabled(1);
             if (*state == Disabled) {
                 // Like a connect request, an Enable means the user wants to be on the
                 // network again, so a Disconnect from before the Disable is spent
@@ -976,6 +1005,8 @@ void connect_thread(void *a)
     ConnectState_t state = connector_boot_state();
     ConnectState_t prev = state;
     int retry_delay_ms = WIFI_RETRY_MIN_MS;
+    TickType_t idle_wait;
+    bool store_wait;
     esp_err_t err;
 
     while(1) {
@@ -1097,12 +1128,20 @@ void connect_thread(void *a)
                 // connector waits only with both queues empty; otherwise a command
                 // (a Disable behind an Enable that changed nothing) stays queued until
                 // something else wakes it.
+                // A write of the setting that failed is retried here, and the wait
+                // without a bound is not taken while it is due.
+                if (store_pending >= 0) {
+                    store_wifi_enabled(store_pending);
+                }
+                idle_wait = (state == Connected) || user_disconnected ? portMAX_DELAY : pdMS_TO_TICKS(retry_delay_ms);
+                store_wait = (store_pending >= 0) && (idle_wait == portMAX_DELAY);
                 if (uxQueueMessagesWaiting(connect_commands) || uxQueueMessagesWaiting(connect_events)) {
                     xSemaphoreTake(connect_semaphore, 0); // the token for them, if it is there
                 } else if (xSemaphoreTake(connect_semaphore,
-                                          (state == Connected) || user_disconnected
-                                              ? portMAX_DELAY
-                                              : pdMS_TO_TICKS(retry_delay_ms)) == pdFALSE) {
+                                          store_wait ? pdMS_TO_TICKS(WIFI_STORE_RETRY_MS) : idle_wait) == pdFALSE) {
+                    if (store_wait) {
+                        break; // the write is retried on the next pass
+                    }
                     ESP_LOGI(TAG, "Still disconnected after %d ms; trying again.", retry_delay_ms);
                     retry_delay_ms *= 2;
                     if (retry_delay_ms > WIFI_RETRY_MAX_MS) {
@@ -1128,9 +1167,15 @@ void connect_thread(void *a)
                 break;
 
             case Disabled:
-                // The only way to wake up the WiFi again is to send a connect command
-                xQueueReceive(connect_commands, &connect_command, portMAX_DELAY);
-                handle_connect_command(&connect_command, &state);
+                // The only way to wake up the WiFi again is to send a connect command. A
+                // write of the setting that failed is retried meanwhile.
+                if (store_pending >= 0) {
+                    store_wifi_enabled(store_pending);
+                }
+                if (xQueueReceive(connect_commands, &connect_command,
+                                  (store_pending >= 0) ? pdMS_TO_TICKS(WIFI_STORE_RETRY_MS) : portMAX_DELAY) == pdTRUE) {
+                    handle_connect_command(&connect_command, &state);
+                }
                 break;
 
             default:

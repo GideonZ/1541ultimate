@@ -49,6 +49,7 @@ extern int strict_semaphore;
 extern uint8_t nvs_wifi_enabled; // u64ctrl: the module's copy of "WiFi Enabled" (power_get_wifi_enabled), 1 again after each run
 extern uint8_t nvs_wifi_last;    // what the copy read when the run ended
 extern int nvs_wifi_writes;      // power_set_wifi_enabled() calls of a run
+extern int nvs_write_fails;      // the next power_set_wifi_enabled() calls fail and store nothing; 0 again after each run
 extern char boot_trace[16];      // u64ctrl: what wifi_start_at_boot() did before the connector ran
 extern bool recovery_active;     // recovery_running() answers this (u64ctrl)
 extern int endisable_answer;     // the dispatcher's answer to the last CONNECTOR_SEND_DISABLE or _ENABLE

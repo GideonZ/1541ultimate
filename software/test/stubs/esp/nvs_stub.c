@@ -24,6 +24,7 @@ static char handle_ns[MAX_HANDLES][MAX_KEY];
 static int  handle_writable[MAX_HANDLES];
 static int  handle_used[MAX_HANDLES];
 static int  commits;
+static int  fail_writes;
 
 const char *esp_err_to_name(esp_err_t code)
 {
@@ -43,10 +44,12 @@ void nvs_stub_erase_all(void)
     memset(entries, 0, sizeof(entries));
     memset(handle_used, 0, sizeof(handle_used));
     commits = 0;
+    fail_writes = 0;
 }
 
 int  nvs_stub_commits(void)       { return commits; }
 void nvs_stub_reset_commits(void) { commits = 0; }
+void nvs_stub_fail_writes(int n)  { fail_writes = n; }
 
 esp_err_t nvs_open(const char *namespace_name, nvs_open_mode_t open_mode, nvs_handle_t *out_handle)
 {
@@ -96,6 +99,10 @@ esp_err_t nvs_set_u8(nvs_handle_t handle, const char *key, uint8_t value)
 {
     if (!handle_writable[handle]) {
         return ESP_FAIL;
+    }
+    if (fail_writes > 0) {
+        fail_writes--;
+        return ESP_FAIL; // the flash write failed
     }
     for (int i = 0; i < MAX_ENTRIES; i++) {
         if (entries[i].used && strcmp(entries[i].ns, handle_ns[handle]) == 0

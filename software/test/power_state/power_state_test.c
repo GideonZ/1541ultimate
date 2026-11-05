@@ -185,6 +185,14 @@ int main(void)
     check(nvs_stub_commits() > 0, "a real change does touch the flash");
     check_eq(power_get_wifi_enabled(), 1, "and reads back as Enabled");
 
+    printf("A failed write of WiFi Enabled\n");
+    nvs_stub_erase_all();
+    nvs_stub_fail_writes(1);
+    check(power_set_wifi_enabled(0) != ESP_OK, "the failure is returned");
+    check_eq(power_get_wifi_enabled(), 1, "the stored value is unchanged");
+    check_eq(power_set_wifi_enabled(0), ESP_OK, "the write after it is taken");
+    check_eq(power_get_wifi_enabled(), 0, "and reads back as Disabled");
+
     printf("Arming the watcher for a magic packet\n");
     nvs_stub_erase_all();
     (void)power_set_wake_on_wifi(WAKE_ON_WIFI_ENABLED);

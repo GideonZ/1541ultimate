@@ -51,7 +51,17 @@ int nvs_wifi_writes;
 uint8_t nvs_wifi_last;
 char boot_trace[16];
 uint8_t power_get_wifi_enabled(void) { return nvs_wifi_enabled; }
-esp_err_t power_set_wifi_enabled(uint8_t enabled) { nvs_wifi_writes++; nvs_wifi_enabled = enabled ? 1 : 0; return ESP_OK; }
+int nvs_write_fails;
+esp_err_t power_set_wifi_enabled(uint8_t enabled)
+{
+    nvs_wifi_writes++;
+    if (nvs_write_fails > 0) {
+        nvs_write_fails--;
+        return ESP_FAIL; // the flash write failed: the copy is unchanged
+    }
+    nvs_wifi_enabled = enabled ? 1 : 0;
+    return ESP_OK;
+}
 #endif
 
 // The station netif: no slots until the radio start attaches the netif (netif_attach)
@@ -554,6 +564,9 @@ void run_with(int aps_found, bool disconnected_before, const uint8_t *commands, 
 #ifndef MODULE_HAS_SWITCH
     nvs_wifi_last = nvs_wifi_enabled;
     nvs_wifi_enabled = 1;
+    nvs_write_fails = 0;
+    store_pending = -1; // the connector's (wifi_modem.c), as at a boot
+    store_tries = 0;
 #endif
     recovery_active = false;
     last_ap_reachable = 0;

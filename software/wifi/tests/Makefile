@@ -41,7 +41,7 @@ INCLUDES  = -I. -Istub -I$(DIR_$(M)) -I$(PATH_SW)/io/uart $(INC_$(M))
 
 # What the extracted code of a module is made of ...
 FUNCS_MODEM := wifi_start_at_boot wifi_record_netif_defaults enable_hook disable_hook send_event wifi_event_handler wifi_note_identify wifi_send_connected_event attempt_connect \
-               wifi_connect_to_scanned enable_wifi_if_needed wifi_report_disabled handle_connect_command \
+               wifi_connect_to_scanned store_wifi_enabled enable_wifi_if_needed wifi_report_disabled handle_connect_command \
                connector_boot_state connect_thread
 FUNCS_RPC   := cmd_identify cmd_wifi_connect cmd_wifi_endisable cmd_get_connection
 # ... and what every module must have
@@ -54,7 +54,7 @@ NEEDED      := send_event wifi_event_handler attempt_connect wifi_connect_to_sca
 # changed and puts back what was there before. Every one has to make the suite FAIL (a failing
 # check, not a build error); `make red` prints which checks failed. A fix that a module
 # does not have, or whose cases are not in this commit, has no entry.
-RED_FIXES := 1 2 4 5 6 7 7b 8 9b 9c 9d 9e 10 11 12 13 14 15
+RED_FIXES := 1 2 4 5 6 7 7b 8 9b 9c 9d 9e 10 11 12 13 14 15 16
 
 # 1  The radio switch (U64, U2+L): no Disable is served, and the radio goes on at boot, as
 #    on a module without the switch
@@ -148,7 +148,7 @@ LEGACY_12_u64ctrl := $(LEGACY_12_raw_u64)
 
 # 13 The control module did not keep "WiFi Enabled": the radio is started at every boot, and
 #    the Ultimate's Enable and Disable are not recorded
-LEGACY_13_u64ctrl := -e 's/if (!power_get_wifi_enabled()) {/if (0) {/' -e '/^ *power_set_wifi_enabled([01]);$$/d'
+LEGACY_13_u64ctrl := -e 's/if (!power_get_wifi_enabled()) {/if (0) {/' -e '/^ *store_wifi_enabled([01]);$$/d'
 
 # 14 The control module records the netif slots only at the init (none after a Disabled boot),
 #    writes NULL back at machine-off, and a Disable during a recovery stops the radio
@@ -158,6 +158,10 @@ LEGACY_14_u64ctrl := -e '/case WIFI_EVENT_STA_START:/{' -e 'n' -e 'd' -e '}' \
 # 15 The control module answers a Disable during a recovery as queued: the Ultimate waits for
 #    an EVENT_DISABLED that does not come
 LEGACY_15_u64ctrl := -e 's/((ev.command == CMD_WIFI_DISABLE) \&\& recovery_running()) ? ESP_ERR_INVALID_STATE : ESP_OK/ESP_OK/'
+
+# 16 The control module takes a failed write of "WiFi Enabled" as done: the next boot goes by
+#    the old value
+LEGACY_16_u64ctrl := -e 's/if (power_set_wifi_enabled(enabled) == ESP_OK) {/power_set_wifi_enabled(enabled); if (1) {/'
 
 LEGACY = $(LEGACY_$(FIX)_$(M))
 
@@ -179,6 +183,7 @@ define EXTRACTED
 	@{ echo '#include "module_env.h"'; \
 	   awk '/^typedef enum \{/ { t = 1; buf = "" } t { buf = buf $$0 "\n" } t && /\} ConnectState_t;/ { if (buf ~ /LastAP/) printf "%s", buf; t = 0 }' $(DIR_$(M))/wifi_modem.c; \
 	   grep -E '^static const char \*states\[\]' $(DIR_$(M))/wifi_modem.c; \
+	   grep -E '^(#define WIFI_STORE_|static int store_)' $(DIR_$(M))/wifi_modem.c; \
 	   for f in $(FUNCS_MODEM); do $(EXTRACT) -v f=$$f $(DIR_$(M))/wifi_modem.c; done; \
 	   for f in $(FUNCS_RPC); do $(EXTRACT) -v f=$$f $(DIR_$(M))/rpc_dispatch.c; done; } > $(1)/module_code.in
 	$(if $(filter u64ctrl,$(M)),@$(EXTRACT) -v f=wifi_init $(DIR_$(M))/wifi_modem.c > $(1)/wifi_init.in; \
