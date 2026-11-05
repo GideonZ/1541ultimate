@@ -6,6 +6,9 @@
 #include "ui_elements.h"
 #include "memory_backend.h"
 #include "monitor_bookmarks.h"
+#include "monitor_breakpoints.h"
+#include "monitor_debug.h"
+#include "monitor_debug_session.h"
 
 enum MonitorError {
     MONITOR_OK = 0,
@@ -22,6 +25,14 @@ enum MachineMonitorView {
     MONITOR_VIEW_SCREEN,
     MONITOR_VIEW_BINARY
 };
+
+enum DebugStepOp { DEBUG_OP_OVER, DEBUG_OP_TRACE, DEBUG_OP_OUT, DEBUG_OP_GO, DEBUG_OP_CURSOR };
+enum DebugStepSource { DEBUG_SRC_RAM, DEBUG_SRC_VISIBLE_ROM, DEBUG_SRC_RAM_UNDER_ROM, DEBUG_SRC_IO };
+enum DebugStepPlan { DEBUG_PLAN_DIRECT, DEBUG_PLAN_STOP };
+struct DebugStepDecision { DebugStepPlan plan; const char *alert; const char *reason; };
+DebugStepDecision debug_classify_step(DebugStepOp op, DebugStepSource src,
+                                      bool ui_freeze, bool have_parked_context,
+                                      bool over_runs_callee = false);
 
 enum MonitorScreenCharset {
     MONITOR_SCREEN_CHARSET_UPPER_GRAPHICS = 0,
@@ -84,10 +95,18 @@ const char *monitor_error_text(MonitorError error);
 const char *monitor_view_name(MachineMonitorView view);
 void monitor_reset_saved_state(void);
 void monitor_invalidate_saved_state(void);
+void monitor_reset_saved_cpu_view(void);
+void monitor_format_breakpoint_mismatch(char *out, int out_len,
+                                        MonitorBackingStore target,
+                                        MonitorBackingStore current);
 void monitor_apply_go(MachineMonitorState *state, uint16_t address);
 void monitor_format_hex_row(uint16_t address, const uint8_t *bytes, char *out);
 void monitor_format_text_row(uint16_t address, const uint8_t *bytes, int count, bool screen_codes, char *out);
 void monitor_format_status_line(char *out, uint8_t port01, uint8_t vic_bank);
+// The same row where the monitor's view bank and the live execution bank can
+// differ: "CPUn" while they agree, "CxOy" while they do not, x live and y view.
+void monitor_format_status_line_banks(char *out, uint8_t view_cpu_port,
+                                      uint8_t live_cpu_port, uint8_t vic_bank);
 
 MonitorError monitor_parse_address(const char *text, uint16_t *address);
 MonitorError monitor_parse_expression(const char *text, uint16_t *value);
@@ -199,6 +218,8 @@ class MachineMonitor : public UIObject
     uint16_t last_go_addr;
     bool go_pending;
     uint16_t go_pending_addr;
+    bool go_pending_has_context;
+    DebugContext go_pending_context;
     // C= plus R asks for a reset and leaves; the caller that owns the
     // machine performs it, as it does for Go.
     bool reset_pending;
@@ -224,11 +245,10 @@ class MachineMonitor : public UIObject
     bool help_visible;
     bool range_mode;
     uint16_t range_anchor;
-    // The instruction boundary the Assembly view disassembles from: the last
-    // address the view was sent to, by a jump, a Go, a bookmark, a hunt result
-    // or a follow/return. Scrolling does not move it, so the same bytes keep
-    // reading as the same instructions while the view is scrolled away from it
-    // and back. See MachineMonitor::decode_row.
+    // Instruction boundary the Assembly view disassembles from: the last
+    // address it was sent to (jump/Go/bookmark/hunt/follow/return).
+    // Scrolling doesn't move it, so bytes decode the same when scrolled
+    // away and back. See MachineMonitor::decode_row.
     uint16_t asm_baseline;
     bool number_picker_active;
     int number_selected;
@@ -287,12 +307,35 @@ class MachineMonitor : public UIObject
     uint8_t last_live_vic_bank;
     bool vic_bank_override;
     MonitorBookmarks *bookmarks;
+    MonitorDebug debug;
+    MonitorBreakpoints breakpoints;
+    DebugSession *debug_session;
+    bool debug_cursor_override;
+    bool debug_entry_context_valid;
+    DebugContext debug_entry_context;
+    uint16_t debug_entry_addr;
+    bool debug_run_window_refreeze_enabled;
+    bool reset_exits_monitor;
+    bool reset_exit_pending;
+    bool release_host_after_exit;
+    bool reopen_after_reset;
+    bool reopen_on_debug_reset;
+    bool restore_debug_after_reset;
+    bool deferred_debug_go_pending;
+    DebugContext deferred_debug_go_context;
+    bool breakpoint_popup_active;
+    uint8_t breakpoint_selected;
+    char debug_status_text[40];
+    bool debug_status_visible;
     bool bookmark_popup_active;
     uint8_t bookmark_selected;
     char bookmark_status_text[40];
     bool bookmark_status_visible;
     bool bookmark_status_emphasis;
     uint16_t bookmark_status_deadline;
+    // Set with the note, cleared when it is first drawn: until then it has not
+    // had its time on screen. See update_bookmark_status().
+    bool bookmark_status_pending;
     struct ReturnStackEntry {
         MonitorBookmarkSlot location;
         uint16_t base_addr;
@@ -332,6 +375,7 @@ class MachineMonitor : public UIObject
     void draw_popup_overlays();
     void refresh_popup_overlay();
     void refresh_opcode_overlay();
+    void refresh_breakpoint_popup_overlay();
     void draw_hex();
     void draw_ascii();
     void draw_screen_codes();
@@ -397,6 +441,30 @@ class MachineMonitor : public UIObject
     // accept.
     bool prompt_command(const MonitorCommandInput &input, char *buffer, int max_len);
     void toggle_help();
+    bool debug_active(void) const { return debug.is_active(); }
+    int debug_handle_key(int key);
+    int reset_machine_and_reopen(void);
+    bool debug_enter(void); void debug_leave(void); void debug_sync_cursor_to_context(void);
+    bool debug_handle_terminal_result(DebugSession::Result result);
+    void debug_request_over(void); void debug_request_trace(void); void debug_request_out(void);
+    void debug_request_go(void); void debug_request_cursor(void);
+    void debug_show_status(const char *message); void debug_clear_status(void);
+    DebugStepSource debug_step_source(uint16_t pc, uint8_t cpu_port) const;
+    uint8_t debug_exec_cpu_port(const DebugContext *from) const;
+    bool debug_resolve_step(DebugStepOp op, uint16_t start_pc, DebugContext *from,
+                            bool over_runs_callee = false);
+    bool debug_has_breakpoint(void) const; bool debug_has_enabled_breakpoint(void) const;
+    MonitorBackingStore breakpoint_target_for_view(uint16_t address) const;
+    MonitorBackingStore breakpoint_target_for_live_cpu(uint16_t address) const;
+    void show_breakpoint_mapping_note(uint16_t address, MonitorBackingStore target);
+    void debug_popup_result(int result); void debug_toggle_breakpoint(void);
+    void debug_open_breakpoint_popup(void); void edit_breakpoint_label(uint8_t slot);
+    int debug_breakpoint_popup_handle_key(int key); void debug_close_breakpoint_popup(void);
+    void debug_render_breakpoint_popup(void); void ensure_debug_pc_visible(void);
+    void debug_cleanup_session(void); void restore_debug_mode_after_reset(void);
+    DebugSession *ensure_debug_session(void); bool debug_capture_context(DebugContext *out);
+    void clear_pending_go(void); void debug_full_restore_screen(void);
+    void restore_underlying_status_row(void); void draw_debug_footer(void);
     void dismiss_bookmark_status(void);
     bool update_bookmark_status(void);
     void show_bookmark_status(uint8_t slot, const MonitorBookmarkSlot *bookmark, int kind);
@@ -471,10 +539,24 @@ class MachineMonitor : public UIObject
 
 public:
     MachineMonitor(UserInterface *ui, MemoryBackend *backend);
+    void set_debug_run_window_refreeze_enabled(bool enabled);
+    void set_reset_exits_monitor(bool enabled);
+    bool consume_release_host_after_exit(void);
+    bool has_deferred_debug_go(void) const { return deferred_debug_go_pending; }
+    void dispatch_deferred_debug_go(void);
+    void request_reopen_after_reset(void);
+    void request_debug_reset_cancel(void);
+    void invalidate_live_cpu_port_view(void);
+    bool is_debug_session_active(void) const;
+    bool debug_observed_cpu_port_held(void) const;
+    void leave_debug_for_exit(void) { debug_leave(); }
+    const char *debug_status_message(void) const { return debug_status_visible ? debug_status_text : ""; }
+    bool consume_reopen_after_reset(void);
     void init(Screen *screen, Keyboard *keyboard);
     void deinit(void);
     int poll(int);
-    bool consume_pending_go(uint16_t *address);
+    bool consume_pending_go(uint16_t *address, DebugContext *context = 0,
+                            bool *has_context = 0);
     // Whether C= plus R asked for a machine reset before leaving.
     bool consume_pending_reset(void);
     // Whether C= plus I swapped the interface before leaving, which means the

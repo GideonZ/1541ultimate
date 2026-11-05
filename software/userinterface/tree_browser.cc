@@ -310,18 +310,10 @@ void TreeBrowser :: checkFileManagerEvent(void)
                 state->refresh = true;
             }
             if (match_dir) {
-                // Reload rather than unlinking the entry. IndexedList::remove()
-                // only drops the pointer, and a BrowsableDirEntry owns a
-                // FileInfo, a FileType, its generated FAT name and a
-                // FileManager path reference, so unlinking stranded all of it --
-                // about 300 bytes and one path handle for every file that
-                // disappeared under an open browser. Deleting it here instead
-                // is not safe either: this state's under_cursor, and on some
-                // paths a deeper state's node, still point at it. reload()
-                // already frees the children through killChildren() and
-                // rebuilds the list from the filesystem, and do_refresh() runs
-                // it before anything reads under_cursor again. It is also what
-                // eNodeAdded above does with the same list.
+                // Reload rather than unlink: IndexedList::remove() only drops
+                // the pointer, stranding the entry's owned FileInfo/FileType
+                // /FAT name/path ref. Deleting isn't safe either: under_cursor
+                // still points at it until reload()+do_refresh() replace it.
                 st->needs_reload = true;
             }
             break;
@@ -467,22 +459,10 @@ int TreeBrowser :: handle_key(int c)
             ret = swap_interface_type(user_interface);
             break;
         case KEY_CTRL_R: {
-            // C=+R resets the C64 from the browser, the same key the machine
-            // code monitor uses for it. This is a keyboard route to an action
-            // the browser already offers: C64_Subsys registers it as the task
-            // menu's "Reset C64", and the REST route issues the same command.
-            //
-            // No ownership handling belongs here. MENU_C64_RESET releases the
-            // user interface's hold on the machine, unfreezes it and resets
-            // it, in that order, inside C64_Subsys::executeCommand. The
-            // machine code monitor open-codes that same order only because it
-            // has to return an exit code and delete itself before the reset
-            // can happen, which the browser has no equivalent of.
-            //
-            // There is no confirmation, for the same reason C=+I has none: the
-            // task menu's own Reset C64 is on this screen and unconfirmed, so
-            // guarding the keyboard route more heavily than the menu route to
-            // the identical action would be inconsistent.
+            // C=+R routes to the same "Reset C64" action the task menu and
+            // REST already offer; MENU_C64_RESET releases/unfreezes/resets
+            // itself in C64_Subsys::executeCommand. No confirmation, matching
+            // that unconfirmed task-menu route (as C=+I also has none).
             reset_quick_seek();
             SubsysCommand *cmd = new SubsysCommand(user_interface, SUBSYSID_C64,
                                                    MENU_C64_RESET, 0);

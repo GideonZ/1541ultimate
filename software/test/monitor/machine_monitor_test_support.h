@@ -23,6 +23,11 @@ struct FakeMemoryBackend : public MemoryBackend
     uint8_t memory[65536];
     int session_begin_count;
     int session_end_count;
+    // How memory was reached, which is what tells a block write from a run of
+    // single writes. A backend that stops the machine pays that cost per call,
+    // so the count is the subject of a test, not a detail.
+    int single_write_count;
+    int block_write_count;
     // How the redraw bracket was used: opens, closes, depth, and reads inside it.
     int redraw_begin_count;
     int redraw_end_count;
@@ -36,6 +41,7 @@ struct FakeMemoryBackend : public MemoryBackend
     FakeMemoryBackend();
     virtual uint8_t read(uint16_t address);
     virtual void write(uint16_t address, uint8_t value);
+    virtual void write_block(uint16_t address, const uint8_t *src, uint16_t len);
     virtual void read_block(uint16_t address, uint8_t *dst, uint16_t len);
     virtual void begin_session(void);
     virtual void end_session(void);
