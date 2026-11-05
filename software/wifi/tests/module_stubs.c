@@ -59,8 +59,17 @@ const char *ended;
 static jmp_buf done;
 static int calls;
 static int scanned = 3; // APs the scan finds
-static uint8_t pending_event;
-bool last_ap_reachable;
+static uint8_t events[8]; // connect_events, in order
+static int events_n;
+static int sem_token;     // the binary semaphore, with strict_semaphore
+int strict_semaphore;
+int silent_disconnects;
+int late_disconnects;
+int late_stop_event;
+int stop_fails;
+static uint8_t late_event; // posted at the connector's next wait (late_disconnects, late_stop_event)
+int last_ap_reachable;
+bool connect_reachable;
 int start_fails;
 int retry_timeouts; // the next idle waits with a timeout that run out, once each; 0 again after each run
 int stale_disabled;
@@ -82,27 +91,70 @@ static void stop(const char *why)
     longjmp(done, 1);
 }
 
+// The event handler: an event queued for the connector, and its wake
+static void event_post(uint8_t code)
+{
+    if (events_n < (int)sizeof(events)) {
+        events[events_n++] = code;
+    }
+    sem_token = 1;
+}
+
+// A late event comes while the connector waits for something
+static void deliver_late(void)
+{
+    if (late_event) {
+        event_post(late_event);
+        late_event = 0;
+    }
+}
+
+// The steps of the script that are the Ultimate talking to the dispatcher (it answers now,
+// while the connector goes on with its commands), or the station's events
+static void run_steps(void)
+{
+    while ((script_i < script_n) && (script[script_i].command >= CONNECTOR_STEP_FIRST)) {
+        uint8_t step = script[script_i++].command;
+        memset(&request_buf, 0, sizeof(request_buf));
+        if (step == CONNECTOR_ASK) {
+            cmd_get_connection(&reply_buf);
+        } else if (step == CONNECTOR_IDENTIFY) {
+            cmd_identify(&request_buf);
+        } else if (step == CONNECTOR_EVENT_CONNECTED) {
+            event_post(EVENT_CONNECTED);
+        } else if (step == CONNECTOR_EVENT_DROP) {
+            connected_g = 0;
+            event_post(EVENT_DISCONNECTED);
+        } else {
+            ((rpc_header_t *)request_buf.data)->command = (step == CONNECTOR_SEND_DISABLE) ? CMD_WIFI_DISABLE : CMD_WIFI_ENABLE;
+            cmd_wifi_endisable(&request_buf);
+        }
+    }
+}
+
+// The commands queued: with strict_semaphore, those before the next step of the script
+static int commands_waiting(void)
+{
+    int n = 0;
+    while ((script_i + n < script_n) && (!strict_semaphore || (script[script_i + n].command < CONNECTOR_STEP_FIRST))) {
+        n++;
+    }
+    return n;
+}
+
 BaseType_t xQueueReceive(QueueHandle_t q, void *item, TickType_t wait)
 {
     if (++calls > 2000) {
         stop("runaway");
     }
     if (q == connect_commands) {
-        // A step of the script that is the Ultimate talking to the dispatcher: it answers
-        // now, while the connector goes on with its commands
-        while ((script_i < script_n) && (script[script_i].command >= CONNECTOR_IDENTIFY)) {
-            uint8_t step = script[script_i++].command;
-            memset(&request_buf, 0, sizeof(request_buf));
-            if (step == CONNECTOR_ASK) {
-                cmd_get_connection(&reply_buf);
-            } else if (step == CONNECTOR_IDENTIFY) {
-                cmd_identify(&request_buf);
-            } else {
-                ((rpc_header_t *)request_buf.data)->command = (step == CONNECTOR_SEND_DISABLE) ? CMD_WIFI_DISABLE : CMD_WIFI_ENABLE;
-                cmd_wifi_endisable(&request_buf);
-            }
+        if (wait == portMAX_DELAY) {
+            deliver_late();
         }
-        if (script_i < script_n) {
+        if (!strict_semaphore || (wait == portMAX_DELAY)) {
+            run_steps();
+        }
+        if (commands_waiting() > 0) {
             *(ConnectCommand_t *)item = script[script_i++];
             return pdTRUE;
         }
@@ -113,17 +165,21 @@ BaseType_t xQueueReceive(QueueHandle_t q, void *item, TickType_t wait)
     }
     // An event the stubs made happen: the association to a reachable AP, and the
     // disconnect that follows esp_wifi_disconnect() or a connect that found no AP
-    if (pending_event) {
-        ((ConnectEvent_t *)item)->event_code = pending_event;
-        connected_g = (pending_event == EVENT_CONNECTED);
+    if (events_n > 0) {
+        uint8_t code = events[0];
+        memmove(events, events + 1, --events_n);
+        ((ConnectEvent_t *)item)->event_code = code;
+        connected_g = (code == EVENT_CONNECTED);
         if (connected_g) {
             note('K');
         }
-        pending_event = 0;
         return pdTRUE;
     }
     if (wait == portMAX_DELAY) {
         stop("waiting for an event"); // no other connect attempt succeeds
+    }
+    if (wait != 0) {
+        deliver_late(); // after the wait has run out
     }
     return pdFALSE;
 }
@@ -142,15 +198,43 @@ BaseType_t xQueueSend(QueueHandle_t q, const void *item, TickType_t wait)
     return pdTRUE;
 }
 
+UBaseType_t uxQueueMessagesWaiting(QueueHandle_t q)
+{
+    return (q == connect_commands) ? commands_waiting() : events_n;
+}
+
+BaseType_t xQueueReset(QueueHandle_t q)
+{
+    if (q == connect_events) {
+        events_n = 0;
+    }
+    return pdTRUE;
+}
+
 BaseType_t xSemaphoreGive(SemaphoreHandle_t s)
 {
+    sem_token = 1;
     return pdTRUE;
 }
 
 BaseType_t xSemaphoreTake(SemaphoreHandle_t s, TickType_t wait)
 {
-    if (script_i < script_n) {
+    if (wait != 0) {
+        deliver_late();
+    }
+    if (strict_semaphore) {
+        if (!sem_token && (wait != 0)) {
+            run_steps(); // the connector waits: the Ultimate's turn
+        }
+        if (sem_token) {
+            sem_token = 0;
+            return pdTRUE;
+        }
+    } else if (script_i < script_n) {
         return pdTRUE;
+    }
+    if (wait == 0) {
+        return pdFALSE;
     }
     if ((wait != portMAX_DELAY) && (retry_timeouts > 0)) {
         retry_timeouts--;
@@ -168,9 +252,21 @@ esp_err_t esp_wifi_start(void) { note('!'); return ESP_FAIL; }
 esp_err_t esp_wifi_stop(void) { note('!'); return ESP_FAIL; }
 #else
 esp_err_t esp_wifi_start(void) { note('T'); return ESP_OK; }
-esp_err_t esp_wifi_stop(void) { note('P'); return ESP_OK; }
+esp_err_t esp_wifi_stop(void) { return radio_stop(); }
 #endif
-esp_err_t esp_wifi_disconnect(void) { note('D'); pending_event = EVENT_DISCONNECTED; return ESP_OK; }
+esp_err_t esp_wifi_disconnect(void)
+{
+    note('D');
+    if (silent_disconnects > 0) {
+        silent_disconnects--;
+    } else if (late_disconnects > 0) {
+        late_disconnects--;
+        late_event = EVENT_DISCONNECTED;
+    } else {
+        event_post(EVENT_DISCONNECTED);
+    }
+    return ESP_OK;
+}
 int radio_start(void)
 {
     if (start_fails > 0) {
@@ -181,7 +277,19 @@ int radio_start(void)
     note('T');
     return ESP_OK;
 }
-int radio_stop(void) { note('P'); return ESP_OK; }
+int radio_stop(void)
+{
+    if (stop_fails > 0) {
+        stop_fails--;
+        note('p');
+        return ESP_FAIL;
+    }
+    note('P');
+    if (late_stop_event) {
+        late_event = EVENT_DISCONNECTED;
+    }
+    return ESP_OK;
+}
 
 int my_uart_get_buffer(int uart, command_buf_t **buf, int ticks)
 {
@@ -221,16 +329,16 @@ BaseType_t my_uart_transmit_packet(uint8_t uart_num, command_buf_t *buf)
 esp_err_t wifi_connect_to_last(void)
 {
     note('L');
-    if (!last_ap_reachable) {
+    if (last_ap_reachable <= 0) {
         return ESP_FAIL;
     }
-    last_ap_reachable = false;
-    pending_event = EVENT_CONNECTED;
+    last_ap_reachable--;
+    event_post(EVENT_CONNECTED);
     return ESP_OK;
 }
 esp_err_t wifi_connect_to_stored(int index) { note('s'); return ESP_FAIL; }
 esp_err_t wifi_connect_to_hotspot(void) { return ESP_FAIL; }
-esp_err_t wifi_store_ap(ConnectCommand_t *cmd) { cmd->list_index = 0; return ESP_OK; }
+esp_err_t wifi_store_ap(ConnectCommand_t *cmd) { note('W'); cmd->list_index = 0; return ESP_OK; }
 esp_err_t wifi_set_last_ap(int index) { return ESP_OK; }
 esp_err_t wifi_scan(ultimate_ap_records_t *rec) { note('S'); return ESP_OK; }
 void wifi_list_aps(void)
@@ -274,7 +382,9 @@ void air_reset(void)
     memset(&last_connect, 0, sizeof(last_connect));
     memset(ap_info, 0, sizeof(ap_info));
     ap_count = 0;
-    pending_event = 0;
+    events_n = 0;
+    sem_token = 0;
+    late_event = 0;
 }
 
 int air_add(const char *ssid, uint8_t last_bssid_byte, uint8_t channel, int8_t rssi, wifi_auth_mode_t auth)
@@ -366,7 +476,7 @@ esp_err_t esp_wifi_connect(void)
 {
     note('c');
     joined = pick(&last_config.sta);
-    pending_event = (joined >= 0) ? EVENT_CONNECTED : EVENT_DISCONNECTED;
+    event_post((joined >= 0) ? EVENT_CONNECTED : EVENT_DISCONNECTED);
     return ESP_OK;
 }
 
@@ -374,6 +484,9 @@ void run_with(int aps_found, bool disconnected_before, const uint8_t *commands, 
 {
     scanned = aps_found;
     air_reset();
+    if (connect_reachable) {
+        air_add("", 0x41, 1, -40, WIFI_AUTH_OPEN); // the scripted CMD_WIFI_CONNECT's AP
+    }
     memset(script, 0, sizeof(script));
     for (int i = 0; i < n; i++) {
         script[i].command = commands[i];
@@ -396,9 +509,15 @@ void run_with(int aps_found, bool disconnected_before, const uint8_t *commands, 
     if (setjmp(done) == 0) {
         connect_thread(NULL);
     }
-    last_ap_reachable = false;
+    last_ap_reachable = 0;
+    connect_reachable = false;
     start_fails = 0;
     retry_timeouts = 0;
+    strict_semaphore = 0;
+    silent_disconnects = 0;
+    late_disconnects = 0;
+    late_stop_event = 0;
+    stop_fails = 0;
 #ifdef MODULE_HAS_SWITCH
     boot_mode = RADIO_BOOT_WAIT;
 #endif

@@ -6,6 +6,7 @@
  */
 
 
+#include <stddef.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "esp_wifi.h"
@@ -95,13 +96,14 @@ void cmd_wifi_connect(command_buf_t *buf)
     rpc_wifi_connect_req *param = (rpc_wifi_connect_req *)buf->data;
     rpc_espcmd_resp *resp = (rpc_espcmd_resp *)buf->data;
 
-    if (buf->size < 98) {
+    // The request holds the password whole; the BSSID and channel after it are optional
+    if (buf->size < (int)(offsetof(rpc_wifi_connect_req, password) + sizeof(param->password))) {
         resp->esp_err = ESP_ERR_INVALID_ARG;
     my_uart_transmit_packet(UART_CHAN, buf);
         return;
 }
 
-    // An application that predates the BSSID sends the shorter request
+    // Without the BSSID and channel, or with them all zero: any AP with the SSID
     int with_bssid = (buf->size >= (int)sizeof(rpc_wifi_connect_req));
     buf->size = sizeof(rpc_espcmd_resp);
     ConnectCommand_t ev;

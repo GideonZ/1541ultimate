@@ -54,6 +54,7 @@ extern "C" {
 
 #define WIFI_RETRY_MIN_MS  5000
 #define WIFI_RETRY_MAX_MS 60000
+#define WIFI_DISCONNECT_WAIT_MS 3000
 
 typedef enum { WIFI_FAST_SCAN = 0, WIFI_ALL_CHANNEL_SCAN } wifi_scan_method_t;
 typedef enum { WIFI_CONNECT_AP_BY_SIGNAL = 0, WIFI_CONNECT_AP_BY_SECURITY } wifi_sort_method_t;

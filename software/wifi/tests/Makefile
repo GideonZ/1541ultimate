@@ -54,7 +54,7 @@ NEEDED      := send_event wifi_event_handler attempt_connect wifi_connect_to_sca
 # changed and puts back what was there before. Every one has to make the suite FAIL (a failing
 # check, not a build error); `make red` prints which checks failed. A fix that a module
 # does not have, or whose cases are not in this commit, has no entry.
-RED_FIXES := 1 2 4 5 6
+RED_FIXES := 1 2 4 5 6 7 7b 8 9b 9c 9d 9e 10 11 12
 
 # 1  The radio switch (U64, U2+L): no Disable is served, and the radio goes on at boot, as
 #    on a module without the switch
@@ -89,6 +89,62 @@ LEGACY_NOREASON := -e 's/->reason = reason;/->reason = 0;/'
 LEGACY_6_raw_u64 := $(LEGACY_NOREASON)
 LEGACY_6_raw_c3  := $(LEGACY_NOREASON)
 LEGACY_6_u64ctrl := $(LEGACY_NOREASON)
+
+# 7  The idle connector waits on the semaphore with commands or events still queued: a
+#    Disable behind an Enable that changed nothing stays queued
+LEGACY_IDLEWAIT := -e 's/if (uxQueueMessagesWaiting(connect_commands) || uxQueueMessagesWaiting(connect_events)) {/if (0) {/'
+LEGACY_7_raw_u64 := $(LEGACY_IDLEWAIT)
+LEGACY_7_raw_c3  := $(LEGACY_IDLEWAIT)
+LEGACY_7_u64ctrl := $(LEGACY_IDLEWAIT)
+# 7b The same for events only: two events behind one token leave the second queued
+LEGACY_IDLEEVENTS := -e 's/if (uxQueueMessagesWaiting(connect_commands) || uxQueueMessagesWaiting(connect_events)) {/if (uxQueueMessagesWaiting(connect_commands)) {/'
+LEGACY_7b_raw_u64 := $(LEGACY_IDLEEVENTS)
+LEGACY_7b_raw_c3  := $(LEGACY_IDLEEVENTS)
+LEGACY_7b_u64ctrl := $(LEGACY_IDLEEVENTS)
+
+# 8  The wait for the event of the connector's own esp_wifi_disconnect() has no bound
+LEGACY_DISCWAIT := -e 's/pdMS_TO_TICKS(WIFI_DISCONNECT_WAIT_MS)/portMAX_DELAY/'
+LEGACY_8_raw_u64 := $(LEGACY_DISCWAIT)
+LEGACY_8_raw_c3  := $(LEGACY_DISCWAIT)
+LEGACY_8_u64ctrl := $(LEGACY_DISCWAIT)
+
+# 9  Events from before a radio start stay queued for it. 9b: none dropped before any start;
+#    9c-9e: none before one start (Enable, enable_wifi_if_needed for Autoconnect and Connect,
+#    the query of an application without the switch). The reset right after a stop has no
+#    model: nothing reads the queue until the next start, which drops the same events again,
+#    so without it the connector does the same.
+DEL_RESET = -e '$(1),/xQueueReset(connect_events);/{' -e '/xQueueReset(connect_events);/d' -e '}'
+LEGACY_PRESTART := -e '/xQueueReset(connect_events); \/\/ nothing from before the start applies/d'
+LEGACY_9b_raw_u64 := $(LEGACY_PRESTART)
+LEGACY_9b_raw_c3  := $(LEGACY_PRESTART)
+LEGACY_9b_u64ctrl := $(LEGACY_PRESTART)
+LEGACY_9c_raw_u64 := $(call DEL_RESET,/case CMD_WIFI_ENABLE:/)
+LEGACY_9c_raw_c3  := $(LEGACY_9c_raw_u64)
+LEGACY_9c_u64ctrl := $(LEGACY_9c_raw_u64)
+LEGACY_9d_raw_u64 := $(call DEL_RESET,/^esp_err_t enable_wifi_if_needed/)
+LEGACY_9d_raw_c3  := $(LEGACY_9d_raw_u64)
+LEGACY_9d_u64ctrl := $(LEGACY_9d_raw_u64)
+LEGACY_9e_raw_u64 := $(call DEL_RESET,/case CMD_WIFI_IS_CONNECTED:/)
+LEGACY_9e_raw_c3  := $(LEGACY_9e_raw_u64)
+
+# 10 A CMD_WIFI_CONNECT of 98 to 100 bytes is taken: the password ends in stale buffer bytes
+LEGACY_SHORTREQ := -e 's/if (buf->size < (int)(offsetof(rpc_wifi_connect_req, password) + sizeof(param->password))) {/if (buf->size < 98) {/'
+LEGACY_10_raw_u64 := $(LEGACY_SHORTREQ)
+LEGACY_10_raw_c3  := $(LEGACY_SHORTREQ)
+LEGACY_10_u64ctrl := $(LEGACY_SHORTREQ)
+
+# 11 A Disable whose disconnect brings no event leaves the state Connected: if the radio
+#    then does not stop, the connector idles in Connected without a link
+LEGACY_DISCSTATE := -e '/Off the AP, whether or not its event comes/,/\*state = Disconnected;/{' \
+    -e 's/^\( *\)xQueueReceive(\(.*\));$$/\1if ((xQueueReceive(\2) == pdTRUE) \&\& (connect_event.event_code == EVENT_DISCONNECTED))/' -e '}'
+LEGACY_11_raw_u64 := $(LEGACY_DISCSTATE)
+LEGACY_11_raw_c3  := $(LEGACY_DISCSTATE)
+LEGACY_11_u64ctrl := $(LEGACY_DISCSTATE)
+
+# 12 Events from before a connect attempt stay queued for it
+LEGACY_12_raw_u64 := $(call DEL_RESET,/^esp_err_t attempt_connect/)
+LEGACY_12_raw_c3  := $(LEGACY_12_raw_u64)
+LEGACY_12_u64ctrl := $(LEGACY_12_raw_u64)
 
 LEGACY = $(LEGACY_$(FIX)_$(M))
 
