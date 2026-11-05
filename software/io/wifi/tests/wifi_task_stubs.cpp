@@ -344,7 +344,18 @@ void wifi_free(void *driver, void *buffer) {}
 void NetworkLWIP_WiFi :: start(void) { note('s'); effectuate_settings(); }
 void NetworkLWIP_WiFi :: link_up(void) { note('U'); }
 void NetworkLWIP_WiFi :: link_down(void) { note('u'); }
-bool NetworkLWIP_WiFi :: enabled_in_config(void) { return world.enabled; }
+bool NetworkLWIP_WiFi :: enabled_in_config(void)
+{
+    bool on = world.enabled;
+    void (*after)(void) = world.after_read;
+    if (after && (current_task == &wifi_task_id)) {
+        world.after_read = NULL;
+        current_task = &other_task_id;
+        after();
+        current_task = &wifi_task_id;
+    }
+    return on;
+}
 
 void U64Config :: pushPowerOnMode(void) {}
 void U64Config :: pushWakeOnWifi(void) {}
@@ -359,11 +370,9 @@ void WiFi :: Terminate() {}
 
 void boot(std::initializer_list<Step> steps)
 {
-#if U64 != 2
     if (!world.keep_switch) {
         memset(&wifi.radio_switch, 0, sizeof(wifi.radio_switch));
     }
-#endif
     world.keep_switch = false;
     wifi.connect_attempt = 0; // the attempts of a fresh start (the script's EVENT_CONNECT_PENDING is 1)
     wifi.connect_answered = 0;

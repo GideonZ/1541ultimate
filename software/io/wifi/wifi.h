@@ -17,9 +17,7 @@
 #include "size_str.h"
 //#include "network_esp32.h"
 #include "wifi_cmd.h"
-#if U64 != 2
 #include "wifi_switch.h"
-#endif
 
 // This class provides an interface to the WiFi module, to manage and program it
 typedef enum {
@@ -65,11 +63,9 @@ class WiFi : public Esp32Application
     uint32_t my_ip;
     uint32_t my_gateway;
     uint32_t my_netmask;
-#if U64 != 2
     wifi_switch_t radio_switch;
     volatile bool radio_setting_due; // "WiFi Enabled" is to be applied by the task (RadioOn, RadioOff)
     int8_t radio_setting_applied;    // the setting the task applied last: 1, 0, or -1 for none yet
-#endif
 
     bool RequestEcho(void);
     void RxPacket(command_buf_t *);
@@ -86,13 +82,9 @@ public:
 
     WifiState_t getState(void) { return state; }
     // A radio off is asked for and not confirmed yet (wifi_switch.h)
-#if U64 != 2
     bool RadioOffAwaited(void) { return radio_switch.awaiting_off; }
     // Whether "WiFi Enabled" as on differs from what the WiFi task applied last
     bool RadioSettingChanged(bool on) { return radio_setting_applied != (on ? 1 : 0); }
-#else
-    bool RadioOffAwaited(void) { return false; }
-#endif
     const char *getLastAP(void) { return (state == eWifi_Connected) ? last_ap : "-"; }
     const char *getModuleName(void) { return moduleName; }
     const char *getModuleType(void) { return moduleType; }

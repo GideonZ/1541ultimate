@@ -54,7 +54,7 @@ NEEDED      := send_event wifi_event_handler attempt_connect wifi_connect_to_sca
 # changed and puts back what was there before. Every one has to make the suite FAIL (a failing
 # check, not a build error); `make red` prints which checks failed. A fix that a module
 # does not have, or whose cases are not in this commit, has no entry.
-RED_FIXES := 1 2 4 5 6 7 7b 8 9b 9c 9d 9e 10 11 12 13 14
+RED_FIXES := 1 2 4 5 6 7 7b 8 9b 9c 9d 9e 10 11 12 13 14 15
 
 # 1  The radio switch (U64, U2+L): no Disable is served, and the radio goes on at boot, as
 #    on a module without the switch
@@ -154,6 +154,10 @@ LEGACY_13_u64ctrl := -e 's/if (!power_get_wifi_enabled()) {/if (0) {/' -e '/^ *p
 #    writes NULL back at machine-off, and a Disable during a recovery stops the radio
 LEGACY_14_u64ctrl := -e '/case WIFI_EVENT_STA_START:/{' -e 'n' -e 'd' -e '}' \
     -e 's/if (lw \&\& default_input \&\& default_output) {/if (lw) {/' -e 's/if (recovery_running()) {$$/if (0) {/'
+
+# 15 The control module answers a Disable during a recovery as queued: the Ultimate waits for
+#    an EVENT_DISABLED that does not come
+LEGACY_15_u64ctrl := -e 's/((ev.command == CMD_WIFI_DISABLE) \&\& recovery_running()) ? ESP_ERR_INVALID_STATE : ESP_OK/ESP_OK/'
 
 LEGACY = $(LEGACY_$(FIX)_$(M))
 

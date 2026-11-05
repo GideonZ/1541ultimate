@@ -135,7 +135,8 @@ TEST(Persist, machine_off_with_no_recorded_defaults_writes_no_null)
     CHECK(sta_netif.input == (netif_input_fn)0x1, "the hook does not write NULL over the slot");
 }
 
-// A Disable while a recovery runs: the setting is stored, the radio stays on
+// A Disable while a recovery runs: the setting is stored, the radio stays on, and the answer
+// says so (ESP_ERR_INVALID_STATE), so that the Ultimate does not wait for EVENT_DISABLED
 TEST(Persist, disable_during_recovery_stores_but_does_not_stop_the_radio)
 {
     recovery_active = true;
@@ -144,6 +145,21 @@ TEST(Persist, disable_during_recovery_stores_but_does_not_stop_the_radio)
     CHECK(strchr(trace, 'P') == NULL, "the radio is not stopped");
     CHECK(strchr(trace, 'X') == NULL, "and no EVENT_DISABLED");
     CHECK(nvs_wifi_last == 0, "the copy reads Disabled for the next boot");
+    CHECK(endisable_answer == ESP_ERR_INVALID_STATE, "the radio off is refused");
+
+    recovery_active = true;
+    const uint8_t ena[] = { CONNECTOR_SEND_ENABLE };
+    run(false, ena, 1);
+    CHECK(endisable_answer == ESP_OK, "an Enable is taken as always");
+    CHECK(endisable_answer == ESP_OK && nvs_wifi_last == 1, "and stored");
+}
+
+// Without a recovery a Disable is queued, and the answer says only that
+TEST(Persist, disable_is_answered_ok)
+{
+    const uint8_t dis[] = { CONNECTOR_SEND_DISABLE };
+    run(false, dis, 1);
+    CHECK(endisable_answer == ESP_OK, "queued");
 }
 
 #endif

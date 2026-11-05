@@ -67,6 +67,7 @@ err_t hacked_recv(struct pbuf *p, struct netif *inp) { return 0; }
 err_t hacked_tx(struct netif *netif, struct pbuf *pbuf, const void *addy) { return 0; }
 err_t wake_watch_recv(struct pbuf *p, struct netif *inp) { return 0; }
 bool recovery_active; // a case sets it before a run (u64ctrl); false again after it
+int endisable_answer; // the dispatcher's answer to the last CONNECTOR_SEND_DISABLE or _ENABLE
 bool recovery_running(void) { return recovery_active; }
 
 // The script
@@ -150,6 +151,7 @@ static void run_steps(void)
         } else {
             ((rpc_header_t *)request_buf.data)->command = (step == CONNECTOR_SEND_DISABLE) ? CMD_WIFI_DISABLE : CMD_WIFI_ENABLE;
             cmd_wifi_endisable(&request_buf);
+            endisable_answer = ((rpc_espcmd_resp *)request_buf.data)->esp_err;
         }
     }
 }

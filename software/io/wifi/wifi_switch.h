@@ -1,9 +1,7 @@
 /*
  * wifi_switch.h
  *
- * The Ultimate 64's and Ultimate II+L's side of turning the WiFi module's radio off and on
- * (U64 != 2). The Elite II and C64 Ultimate send the same requests from their own code
- * paths.
+ * The Ultimate's side of turning the WiFi module's radio off and on, on every product.
  *
  * The WiFi application always runs, because it is what asks the module. The module starts
  * with its radio off. With "WiFi Enabled" stored as Enabled the application asks for it to
@@ -28,14 +26,18 @@
  *
  * A radio on has no confirmation of its own, but its answer counts: one that fails (an
  * error, or no answer) is asked for again at the same pace, and the user is told after
- * WIFI_SWITCH_ASKS such waits. Otherwise a module whose radio on was lost would stay off
- * while the setting reads Enabled.
+ * WIFI_SWITCH_ASKS such waits. Otherwise a module that kept a Disabled of its own (the
+ * control module's copy) would stay off while the setting reads Enabled.
+ *
+ * The control module of the Elite II and C64 Ultimate refuses a radio off while a recovery
+ * downloads through its radio (WIFI_SWITCH_REFUSED); it keeps the setting for its next boot.
+ * Nothing is waited for then, and the link follows the module.
  *
  * A module without the radio switch answers the request with an error; its radio is on
- * from its boot. The application then holds the module off, at its start and on a Disable
- * from the menu, the REST API or the setting. At a boot with Disabled stored such a module
- * runs until it has answered, so it may associate for a moment. An Enable, which stores
- * Enabled, then starts the WiFi application again.
+ * from its boot. The application of the U64 and U2+L then holds the module off, at its
+ * start and on a Disable from the menu, the REST API or the setting. At a boot with
+ * Disabled stored such a module runs until it has answered, so it may associate for a
+ * moment. An Enable, which stores Enabled, then starts the WiFi application again.
  *
  * Pure logic, so that the host test (software/io/wifi/tests/wifi_switch_test.cpp) runs it.
  */
@@ -63,10 +65,24 @@
 // Any other error (the module could not queue it, or it never left) is not taken for
 // that: the confirmation deadline asks again.
 #define WIFI_SWITCH_NOT_SUPPORTED 0x106
+// The answer of the control module (Elite II, C64 Ultimate) to a radio off during a
+// recovery: ESP_ERR_INVALID_STATE. The radio stays on for the download.
+#define WIFI_SWITCH_REFUSED 0x103
 
 static inline bool wifi_switch_unsupported(int result)
 {
+#if U64 == 2
+    // The control module has the switch in every version, and it runs the machine (power,
+    // keyboard): it is never held off
+    return false;
+#else
     return result == WIFI_SWITCH_NOT_SUPPORTED;
+#endif
+}
+
+static inline bool wifi_switch_refused(int result)
+{
+    return result == WIFI_SWITCH_REFUSED;
 }
 
 typedef struct {

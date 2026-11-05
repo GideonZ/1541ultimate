@@ -7,6 +7,6 @@ s/^    wifi\.Enable();$/#if U64 == 2\
     wifi.Enable();\
 #endif/
 s/if (wifi_switch_wants_off(&radio_switch, netstack->enabled_in_config())) {/if (0) {/
-s/^            wifi_enable();$//
+s/^                wifi_enable();$//
 s/^    wifi\.RadioOff();$/    wifi.Disable();/
 s/^    wifi\.RadioOn();$/    wifi.Enable();/

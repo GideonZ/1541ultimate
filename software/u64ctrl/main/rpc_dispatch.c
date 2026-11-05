@@ -237,7 +237,10 @@ void cmd_wifi_endisable(command_buf_t *buf)
         my_uart_transmit_packet(UART_CHAN, buf);
         return;
     } else {
-        resp->esp_err = ESP_OK;
+        // During a recovery a Disable only stores the setting (handle_connect_command): the
+        // radio stays on for the download, and the answer says so, so that the Ultimate does
+        // not wait for EVENT_DISABLED
+        resp->esp_err = ((ev.command == CMD_WIFI_DISABLE) && recovery_running()) ? ESP_ERR_INVALID_STATE : ESP_OK;
         my_uart_transmit_packet(UART_CHAN, buf);
     }
     xSemaphoreGive(connect_semaphore);

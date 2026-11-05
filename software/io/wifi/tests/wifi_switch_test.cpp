@@ -11,7 +11,6 @@
 #include <string.h>
 #include "wifi_switch.h"
 
-#if U64 != 2
 
 // The WiFi application as far as these events go: what the link does on each event the
 // application does not drop (wifi.cc, RunModeThread)
@@ -209,7 +208,6 @@ TEST(WifiSwitch, confirmed_in_time)
     EXPECT_FALSE(wifi_switch_expired(&sw, 200));
 }
 
-#endif
 
 // Each expired wait is followed by another: WIFI_SWITCH_ASKS of them at the first limit, then
 // at the slow one for good, the user told once in between; a new request starts the count again
@@ -271,4 +269,19 @@ TEST(WifiSwitch, a_failed_radio_on_is_due_again)
     wifi_switch_on_failed(&sw, t, 100);
     wifi_switch_asked_off(&sw, t, 100);
     EXPECT_FALSE(wifi_switch_on_due(&sw, t + 100));
+}
+
+// Only ESP_ERR_INVALID_STATE is the control module's refusal during a recovery; the Elite II
+// and C64 Ultimate never take an answer for a module without the switch
+TEST(WifiSwitch, refusal_and_no_switch)
+{
+    EXPECT_TRUE(wifi_switch_refused(0x103));
+    EXPECT_FALSE(wifi_switch_refused(0));
+    EXPECT_FALSE(wifi_switch_refused(-1));
+    EXPECT_FALSE(wifi_switch_refused(0x106));
+#if U64 == 2
+    EXPECT_FALSE(wifi_switch_unsupported(0x106));
+#else
+    EXPECT_TRUE(wifi_switch_unsupported(0x106));
+#endif
 }

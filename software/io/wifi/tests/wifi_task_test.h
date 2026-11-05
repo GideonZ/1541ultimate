@@ -46,6 +46,7 @@ struct World {
     int popup_answer;      // BUTTON_YES or BUTTON_NO, to "WiFi is disabled. Enable it?"
     TickType_t popup_ticks; // how long the user takes to answer it
     void (*during_disable)(void); // done by another task while the next radio off waits for its answer
+    void (*after_read)(void);     // done by another task right after the WiFi task next reads "WiFi Enabled"
 };
 extern World world;
 void reset_world(void); // every case starts with it

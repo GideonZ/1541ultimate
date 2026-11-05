@@ -45,11 +45,9 @@ WiFi :: WiFi()
     my_ip = 0;
     my_gateway = 0;
     my_netmask = 0;
-#if U64 != 2
     memset(&radio_switch, 0, sizeof(radio_switch));
     radio_setting_due = false;
     radio_setting_applied = -1;
-#endif
 }
 
 void WiFi :: Init(void *obj, void *param)
@@ -59,8 +57,8 @@ void WiFi :: Init(void *obj, void *param)
     wifi.netstack->attach_config();
 
     // Unconditionally enable the WiFi module: it always runs, also with "WiFi Enabled"
-    // stored as Disabled, which means its radio is off. On the U64 and U2+L the
-    // application tells the module, which starts with its radio off, to turn it on or not.
+    // stored as Disabled, which means its radio is off. The application tells the module
+    // to turn its radio on or not.
     wifi.Enable();
     wifi.netstack->effectuate_registered_settings();
 }
@@ -86,14 +84,13 @@ void WiFi :: Disable()
     esp32.StopApp();
 }
 
-// On the U64 and U2+L, RadioOn and RadioOff run in the caller (the "WiFi Enabled" hook,
+// RadioOn and RadioOff run in the caller (the "WiFi Enabled" hook,
 // network_esp32.cc) and only mark the setting for the WiFi task to apply, and wake it
 // (EVENT_RADIO_SETTING); the task sends the request and waits for its confirmation
 // (wifi_switch.h). The mark is what counts: if the wake does not fit in the task's queue,
 // the queue is full, and the task's next pass, which comes soon, applies the setting.
 void WiFi :: RadioOn()
 {
-#if U64 != 2
     if (state == eWifi_Off) {
         // The application is held off with a module without the switch (or not running):
         // it is started again, and reads the setting, Enabled, when it finds the module
@@ -102,12 +99,6 @@ void WiFi :: RadioOn()
     }
     radio_setting_due = true;
     sendEvent(EVENT_RADIO_SETTING);
-#else
-    WhenEnabledFromNow();
-    if (wifi_enable() != 0) {
-        event_when_enabled = 0; // the radio does not come on: nothing is to follow it
-    }
-#endif
 }
 
 void WiFi :: RadioOff()
@@ -115,12 +106,8 @@ void WiFi :: RadioOff()
     // The module may still report the failure of a pick that was under way (its refusal can
     // come before it confirms the radio off): the user has left that, so nothing is said
     pick_cancelled = true;
-#if U64 != 2
     radio_setting_due = true;
     sendEvent(EVENT_RADIO_SETTING);
-#else
-    wifi_disable();
-#endif
 }
 
 BaseType_t wifi_rx_isr(command_buf_context_t *context, command_buf_t *buf, BaseType_t *w);
@@ -244,9 +231,7 @@ void WiFi :: RunModeThread()
     static char boot_message[256];
     int len;
     voltages_t voltages;
-#if U64 != 2
     int32_t wait;
-#endif
 
     while(1) {
         switch(state) {
@@ -315,14 +300,6 @@ void WiFi :: RunModeThread()
                 U64Config :: pushPowerOnMode();
                 U64Config :: pushWakeOnWifi();
                 U64Config :: pushRecoveryUrl();
-                // The setting wins over the module's copy in its NVS (a module swap, a write
-                // that failed): the radio is put as the setting says. Both are harmless when
-                // the module is in that state already.
-                if (netstack->enabled_in_config()) {
-                    wifi_enable();
-                } else {
-                    wifi_disable();
-                }
 #endif
                 RefreshRoot();
             }
@@ -333,14 +310,16 @@ void WiFi :: RunModeThread()
 
             wifi_getmac(my_mac);
             netstack->set_mac_address(my_mac);
-#if U64 != 2
-            // The setting is applied here; a change from now on, by the event loop
+            // The setting is applied here; a change from now on, by the event loop. It wins
+            // over a copy the module keeps of its own (the control module of the Elite II
+            // and C64 Ultimate, which a module swap or a failed write can leave stale).
             radio_setting_due = false;
             radio_setting_applied = netstack->enabled_in_config() ? 1 : 0;
             // Stored as Disabled: the radio goes off before the interface is up, and the
             // link stays down. Disabled is shown once the module confirms (wifi_switch.h).
-            if (wifi_switch_wants_off(&radio_switch, radio_setting_applied != 0)) {
-                result = wifi_disable();
+            // A refusal for a recovery leaves the radio on: the link is taken as below.
+            if (wifi_switch_wants_off(&radio_switch, radio_setting_applied != 0) &&
+                !wifi_switch_refused(result = wifi_disable())) {
                 netstack->start(); // link down
                 // Only a module without the switch is held off; any other error, or a
                 // request that never left, is asked again at the deadline
@@ -376,12 +355,13 @@ void WiFi :: RunModeThread()
             // A module without the switch, whose radio is on already, ignores this. Not
             // taken as applied when it fails: the next effectuate asks again, and so does
             // the task at its deadlines (wifi_switch.h).
-            result = wifi_enable();
-            if ((result != 0) && !wifi_switch_unsupported(result)) {
-                radio_setting_applied = -1;
-                wifi_switch_on_failed(&radio_switch, xTaskGetTickCount(), pdMS_TO_TICKS(WIFI_SWITCH_CONFIRM_MS));
+            if (radio_setting_applied) {
+                result = wifi_enable();
+                if ((result != 0) && !wifi_switch_unsupported(result)) {
+                    radio_setting_applied = -1;
+                    wifi_switch_on_failed(&radio_switch, xTaskGetTickCount(), pdMS_TO_TICKS(WIFI_SWITCH_CONFIRM_MS));
+                }
             }
-#endif
             netstack->start(); // always starts in link down state
             state = eWifi_NotConnected;
             if (wifi_is_connected(conn) == 0) {
@@ -409,7 +389,6 @@ void WiFi :: RunModeThread()
         case eWifi_NotConnected:
         case eWifi_Connected:
         case eWifi_Disabled:
-#if U64 != 2
             // "WiFi Enabled" changed, or the settings were reset or loaded (RadioOn,
             // RadioOff, network_esp32.cc). The request is sent from here, so that the
             // requests go out one at a time and in the order of the changes, and the wait
@@ -431,7 +410,10 @@ void WiFi :: RunModeThread()
                             wifi_switch_on_failed(&radio_switch, xTaskGetTickCount(), pdMS_TO_TICKS(WIFI_SWITCH_CONFIRM_MS));
                         }
                     }
-                } else if (!wifi_switch_unsupported(result = wifi_disable())) {
+                } else if (wifi_switch_refused(result = wifi_disable())) {
+                    // A recovery keeps the radio on (wifi_switch.h): nothing is waited for
+                    wifi_switch_on(&radio_switch);
+                } else if (!wifi_switch_unsupported(result)) {
                     // Disabled is shown when the module confirms (wifi_switch.h); an open AP
                     // list says WiFi is disabled from now on
                     wifi_switch_asked_off(&radio_switch, xTaskGetTickCount(), pdMS_TO_TICKS(WIFI_SWITCH_CONFIRM_MS));
@@ -458,7 +440,6 @@ void WiFi :: RunModeThread()
                     }
                 }
             }
-#endif
             if (pick_cancelled) {
                 pick_cancelled = false;
                 feedback.cancel();
@@ -482,23 +463,28 @@ void WiFi :: RunModeThread()
                 UserInterface :: postMessage(feedback_msg);
             }
             wait_ticks = feedback.waitTicks(xTaskGetTickCount());
-#if U64 != 2
             wait = wifi_switch_wait(&radio_switch, xTaskGetTickCount());
             if ((wait >= 0) && ((TickType_t)wait < wait_ticks)) {
                 wait_ticks = wait;
             }
-#endif
             if (cmd_buffer_received(packets, &buf, wait_ticks) != pdTRUE) {
-#if U64 != 2
                 // The radio off was not confirmed in time: it is asked for again, and its
                 // link events are still dropped. After WIFI_SWITCH_ASKS waits the user is
                 // told, the link goes down, and the radio off is asked for at a slower pace
                 // for as long as WiFi stays Disabled: the link is never taken with Disabled
-                // stored.
+                // stored. Only a recovery's refusal lets the link follow the module.
                 if (wifi_switch_expired(&radio_switch, xTaskGetTickCount())) {
                     printf("WiFi module did not confirm the radio off\n");
-                    wifi_disable();
-                    if (wifi_switch_ask_again(&radio_switch, xTaskGetTickCount(), pdMS_TO_TICKS(WIFI_SWITCH_CONFIRM_MS), pdMS_TO_TICKS(WIFI_SWITCH_SLOW_MS))) {
+                    if (wifi_switch_refused(wifi_disable())) {
+                        wifi_switch_on(&radio_switch);
+                        state = eWifi_NotConnected;
+                        if ((wifi_is_connected(conn) == 0) && conn) {
+                            wifi_modem_enable(true); // take control!
+                            netstack->link_up();
+                            state = eWifi_Connected;
+                        }
+                        RefreshRoot();
+                    } else if (wifi_switch_ask_again(&radio_switch, xTaskGetTickCount(), pdMS_TO_TICKS(WIFI_SWITCH_CONFIRM_MS), pdMS_TO_TICKS(WIFI_SWITCH_SLOW_MS))) {
                         UserInterface :: postMessage("WiFi module did not turn its radio off");
                         if (state == eWifi_Connected) {
                             netstack->link_down();
@@ -518,7 +504,6 @@ void WiFi :: RunModeThread()
                         UserInterface :: postMessage("WiFi module did not turn its radio on");
                     }
                 }
-#endif
                 break; // the wait for the outcome of a connect ran out; the next pass reports it
             }
             if (pick_cancelled) { // the Disable came while this event was on its way
@@ -529,12 +514,10 @@ void WiFi :: RunModeThread()
 #if DEBUG_INPUT
             printf("Pkt %d. Ev %b. Sz %d. Seq: %d\n", buf->bufnr, hdr->command, buf->size, hdr->sequence);
 #endif
-#if U64 != 2
             if (wifi_switch_drop_event(&radio_switch, hdr->command)) {
                 uart->FreeBuffer(buf);
                 break;
             }
-#endif
             switch(hdr->command) {
             case EVENT_RESCAN: // requested from user interface
                 uart->FreeBuffer(buf);
@@ -551,11 +534,11 @@ void WiFi :: RunModeThread()
                 RefreshRoot();
                 break;
 
-#if U64 != 2
             case EVENT_RADIO_SETTING: // a wake: the setting is applied at the top of the pass
                 uart->FreeBuffer(buf);
                 break;
 
+#if U64 != 2
             // The module restarted on its own (radio_boot.h). It put its radio back as it
             // was, or, with no record of that, turned it on: while Disabled, the radio off
             // is asked for again, and confirmed as at boot.

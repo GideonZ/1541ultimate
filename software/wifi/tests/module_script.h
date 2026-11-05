@@ -51,6 +51,7 @@ extern uint8_t nvs_wifi_last;    // what the copy read when the run ended
 extern int nvs_wifi_writes;      // power_set_wifi_enabled() calls of a run
 extern char boot_trace[16];      // u64ctrl: what wifi_start_at_boot() did before the connector ran
 extern bool recovery_active;     // recovery_running() answers this (u64ctrl)
+extern int endisable_answer;     // the dispatcher's answer to the last CONNECTOR_SEND_DISABLE or _ENABLE
 extern struct netif sta_netif;   // u64ctrl: the station netif; lwIP attaches its slots at the radio start (netif_attach)
 void netif_attach(void);
 extern netif_input_fn default_input;

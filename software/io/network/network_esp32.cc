@@ -157,10 +157,6 @@ void NetworkLWIP_WiFi :: effectuate_settings(void)
 	my_net_if.name[0] = 'W';
 	my_net_if.name[1] = 'I';
 
-#if U64 == 2
-    // The setting is applied by the application when it finds the module, and by its
-    // change hook.
-#else
     // A reset or a load of the settings (ConfigStore :: reset, then effectuate) sets "WiFi
     // Enabled" without its change hook: applied here when it differs from what the WiFi task
     // applied last. This also runs each time the WiFi settings page closes, and in the WiFi
@@ -170,7 +166,6 @@ void NetworkLWIP_WiFi :: effectuate_settings(void)
     if (wifi.RadioSettingChanged(on)) {
         apply_enabled(on);
     }
-#endif
 }
 
 void NetworkLWIP_WiFi :: on_edit()

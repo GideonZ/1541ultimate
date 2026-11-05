@@ -2,7 +2,7 @@
 # or on itself, in the caller's task, and armed the wait for the confirmation from there
 # (which the task, waiting without a bound, did not see until its next event); a reset of
 # the settings did not apply the setting.
-# variants: 1 0
+# variants: 1 0 2
 /^void WiFi :: RadioOn()/,/^}/s/^    radio_setting_due = true;$//
 /^void WiFi :: RadioOn()/,/^}/s/^    sendEvent(EVENT_RADIO_SETTING);$/    wifi_switch_on(\&radio_switch); wifi_enable();/
 /^void WiFi :: RadioOff()/,/^}/s/^    radio_setting_due = true;$//

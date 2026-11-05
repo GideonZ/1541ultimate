@@ -21,8 +21,6 @@
 #define CFG_WIFI_MAC     0xB6
 #define CFG_WIFI_CONN    0xB7
 #define CFG_WIFI_DISCONN 0xB8
-#define CFG_WIFI_ENA     0xB9
-#define CFG_WIFI_DIS     0xBA
 #define CFG_WIFI_FORGET  0xBB
 #define CFG_WIFI_STATUS  0xBC
 

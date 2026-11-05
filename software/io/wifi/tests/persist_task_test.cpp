@@ -29,32 +29,6 @@ TEST(WifiPersistTask, handshake_pushes_the_stored_setting)
     CHECK(strchr(rlog, 'O') == NULL, "no radio off");
 }
 
-TEST(WifiPersistTask, menu_disable_sets_and_saves_the_setting)
-{
-    reset_world();
-    world.enabled = true;
-    boot({ EVENT_CONNECTED });
-    rlog[0] = 0;
-    NetworkLWIP_WiFi :: disable(NULL);
-    CHECK(!world.enabled, "the setting reads Disabled");
-    CHECK(saves == 1 && !saved_enabled, "and it is saved");
-    CHECK(strcmp(rlog, "O") == 0, "the radio is asked to go off, once");
-    NetworkLWIP_WiFi :: disable(NULL);
-    CHECK(saves == 1, "nothing is written when it did not change");
-}
-
-TEST(WifiPersistTask, menu_enable_sets_and_saves_the_setting)
-{
-    reset_world();
-    world.enabled = false;
-    boot({ EVENT_DISABLED });
-    rlog[0] = 0;
-    NetworkLWIP_WiFi :: enable(NULL);
-    CHECK(world.enabled, "the setting reads Enabled");
-    CHECK(saves == 1 && saved_enabled, "and it is saved");
-    CHECK(strcmp(rlog, "N") == 0, "the radio is asked to come on");
-}
-
 TEST(WifiPersistTask, ask_enable_yes_sets_and_saves_the_setting)
 {
     reset_world();
@@ -63,5 +37,83 @@ TEST(WifiPersistTask, ask_enable_yes_sets_and_saves_the_setting)
     UserInterface ui;
     CHECK(NetworkLWIP_WiFi :: ask_enable(&ui), "Yes goes on");
     CHECK(world.enabled && saves == 1 && saved_enabled, "Enabled and saved");
+}
+static int count_of(char c)
+{
+    int n = 0;
+    for (const char *p = rlog; *p; p++) {
+        n += (*p == c);
+    }
+    return n;
+}
+
+// The stored Disabled reaches no module, or the module never confirms it: the link the module
+// reports is never taken. The radio off is asked for again at each deadline; after
+// WIFI_SWITCH_ASKS of them the user is told, and it is asked for at the slow pace from then on.
+TEST(WifiPersistTask, an_unconfirmed_radio_off_does_not_let_the_link_up)
+{
+    static const int answers[] = { -1 /* nothing sent */, 0x101 /* rejected */, 0 /* queued, never done */ };
+    for (int answer : answers) {
+        reset_world();
+        world.enabled = false;
+        world.disable_answer = answer;
+        world.link = 1;
+        boot({ EVENT_CONNECTED, EVENT_GOTIP });
+        const char *told = strchr(rlog, '!');
+        CHECK(strchr(rlog, 'U') == NULL && strchr(rlog, 'M') == NULL, "no link up, also after the user is told");
+        CHECK(strcmp(messages, "WiFi module did not turn its radio off\n") == 0, "the user is told, once");
+        int fast = 0;
+        for (const char *p = rlog; told && p < told; p++) {
+            fast += (*p == 'O');
+        }
+        CHECK(fast == WIFI_SWITCH_ASKS + 1, "asked at each deadline before that");
+        int slow = count_of('O') - fast;
+        CHECK(slow >= 2 && slow <= (int)(QUIET_TICKS / pdMS_TO_TICKS(WIFI_SWITCH_SLOW_MS)) + 1, "then at the slow pace");
+        CHECK(wifi.getState() == eWifi_NotConnected, "Link Down");
+    }
+}
+
+// A recovery on the control module downloads through the radio: it refuses the radio off
+// (ESP_ERR_INVALID_STATE) and stores the setting for the next boot. Nothing waits for a
+// confirmation that does not come, and the user is not told of a failure.
+TEST(WifiPersistTask, a_radio_off_refused_for_a_recovery_is_not_a_failure)
+{
+    reset_world();
+    world.enabled = false;
+    world.disable_answer = 0x103;
+    world.link = 1;
+    boot({ EVENT_CONNECTED });
+    CHECK(messages[0] == 0, "no message");
+    CHECK(count_of('O') == 1, "asked once");
+    CHECK(wifi.getState() == eWifi_Connected, "the link follows the module");
+}
+
+// "WiFi Enabled" changes right after the WiFi task read it to tell the module, before its
+// request goes out: the module ends as the setting is, not as it was read
+static void flip_to_enabled(void) { NetworkLWIP_WiFi :: enable(NULL); }
+static void flip_to_disabled(void) { NetworkLWIP_WiFi :: disable(NULL); }
+static char last_request(void)
+{
+    const char *o = strrchr(rlog, 'O');
+    const char *n = strrchr(rlog, 'N');
+    return (o == NULL && n == NULL) ? 0 : ((o > n) ? 'O' : 'N');
+}
+
+TEST(WifiPersistTask, a_change_while_the_module_is_told_wins)
+{
+    reset_world();
+    world.enabled = false;
+    world.after_read = flip_to_enabled;
+    boot({ EVENT_DISABLED, EVENT_DISCONNECTED });
+    CHECK(world.enabled, "the setting reads Enabled");
+    CHECK(last_request() == 'N', "the last request is the radio on");
+
+    reset_world();
+    world.enabled = true;
+    world.after_read = flip_to_disabled;
+    boot({ EVENT_CONNECTED, EVENT_DISABLED });
+    CHECK(!world.enabled, "the setting reads Disabled");
+    CHECK(last_request() == 'O', "the last request is the radio off");
+    CHECK(wifi.getState() == eWifi_Disabled, "Disabled once the module confirms");
 }
 #endif

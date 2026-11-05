@@ -1,24 +1,22 @@
 /*
  * switch_task_test.cpp
  *
- * The radio switch in the WiFi application of the U64 and the U2+L, through the real
+ * The radio switch in the WiFi application of every product, through the real
  * WiFi :: RunModeThread, RadioOn, RadioOff and the menu actions, "WiFi Enabled" hook and
  * effectuate_settings of network_esp32.cc: the stored setting at boot (and its default),
- * the confirmation of a radio off and its deadline, a module without the switch, and the
- * menu's Disable and Enable, the "WiFi Enabled" hook and a reset of the settings. A change
+ * the confirmation of a radio off and its deadline, a module without the switch (U64, U2+L),
+ * the menu's Disable and Enable, the "WiFi Enabled" hook and a reset of the settings. A change
  * of the setting is queued for the WiFi task (EVENT_RADIO_SETTING), which sends the request.
  */
 
 #include "wifi_task_test.h"
 #include "wifi_enable_default.h"
 
-#if U64 != 2
 // The menu's Enable and Disable: the context menu and the config menu
 static void menu_enable(void) { NetworkLWIP_WiFi :: enable(NULL); }
 static void menu_disable(void) { NetworkLWIP_WiFi :: disable(NULL); }
 static void cfg_menu_enable(void) { NetworkLWIP_WiFi :: enable(NULL); }
 static void cfg_menu_disable(void) { NetworkLWIP_WiFi :: disable(NULL); }
-#endif
 
 // What wifi_disable() answers when nothing reached the module (wifi_cmd.h)
 static const int kNothingSent = -1;
@@ -35,7 +33,6 @@ TEST(WifiSwitchTask, init_always_starts_the_module)
     CHECK(strcmp(rlog, "B") == 0, "the module is started, with no condition on the setting");
 }
 
-#if U64 != 2
 // "WiFi Enabled" is stored as Enabled until the user changes it: a boot with the default
 // turns the radio on, and the link comes up when the module reports one
 TEST(WifiSwitchTask, default_setting_is_enabled_and_boots_connected)
@@ -107,6 +104,7 @@ TEST(WifiSwitchTask, unconfirmed_radio_off)
     CHECK(strcmp(ended, "asking at intervals") == 0, "for good");
 }
 
+#if U64 != 2 // a module without the switch, or one that restarts on its own: U64 and U2+L
 // A module without the switch, whose radio is on from its boot: it is held off, as a
 // stored Disabled did before, and the link never comes up
 TEST(WifiSwitchTask, module_without_the_switch)
@@ -119,6 +117,7 @@ TEST(WifiSwitchTask, module_without_the_switch)
     CHECK(wifi.getState() == eWifi_Off, "Off");
     CHECK(strcmp(ended, "suspended") == 0, "the application waits for an Enable");
 }
+#endif
 
 // The boot's Disable never left (no transmit buffer): it is not taken for a module
 // without the switch, it is asked for again at the deadlines, and no connection query goes
@@ -134,6 +133,7 @@ TEST(WifiSwitchTask, boot_disable_not_sent)
     CHECK(strchr(rlog, 'Q') == NULL && strchr(rlog, 'U') == NULL, "no connection query, no link");
 }
 
+#if U64 != 2 // a module without the switch, or one that restarts on its own: U64 and U2+L
 // The radio off asked for again after a restart could not be sent: the wait for its
 // confirmation still ends at the deadline, which asks again
 TEST(WifiSwitchTask, restart_disable_not_sent)
@@ -145,6 +145,7 @@ TEST(WifiSwitchTask, restart_disable_not_sent)
     CHECK(count_after(rlog, 'O') > 2, "the deadline comes, and the radio off is asked for again");
     CHECK(strchr(rlog, 'U') == NULL, "no link");
 }
+#endif
 
 // Only ESP_ERR_NOT_SUPPORTED means a module without the switch. A module with it that
 // could not queue the request (ESP_ERR_NO_MEM) is not held off, at boot or from the menu.
@@ -173,6 +174,7 @@ TEST(WifiSwitchTask, link_events_take_it_out_of_disabled)
     CHECK(wifi.getState() == eWifi_Connected, "Connected");
 }
 
+#if U64 != 2 // a module without the switch, or one that restarts on its own: U64 and U2+L
 // The module restarted on its own (radio_boot.h): while Disabled the radio off is asked
 // for again and the link events of a radio it turned on are dropped until it confirms;
 // while enabled, nothing is asked
@@ -188,6 +190,7 @@ TEST(WifiSwitchTask, module_restarted)
     boot({ EVENT_CONNECTED, EVENT_RESTARTED });
     CHECK(strchr(rlog, 'O') == NULL, "enabled: no radio off");
 }
+#endif
 
 // Disabled means no RF: browsing the AP list does not scan
 TEST(WifiSwitchTask, no_scan_while_disabled)
@@ -286,6 +289,7 @@ TEST(WifiSwitchTask, enabled_while_the_boot_radio_off_waits)
     CHECK(wifi.getState() == eWifi_NotConnected, "the module's event is taken: the radio is on");
 }
 
+#if U64 != 2 // a module without the switch, or one that restarts on its own: U64 and U2+L
 // A module without the switch, stored Disabled: it is held off; an Enable (which stores
 // Enabled, as every Enable does) restarts the application instead of asking the module,
 // which cannot
@@ -299,6 +303,7 @@ TEST(WifiSwitchTask, enable_with_a_module_without_the_switch)
     wifi.RadioOn();
     CHECK(strcmp(rlog, "B") == 0, "the application is started again, the module not asked");
 }
+#endif
 
 // One switch: "WiFi Enabled" is what the menu's Enable and Disable (context menu and config
 // menu) set and save; its change hook does the radio. A write happens only when the value
@@ -349,6 +354,7 @@ TEST(WifiSwitchTask, no_write_when_the_setting_does_not_change)
     CHECK(saves == 0, "nor for a Disable of a setting that is Disabled");
 }
 
+#if U64 != 2 // a module without the switch, or one that restarts on its own: U64 and U2+L
 // With a module that cannot switch, menu Disable holds the module off, as at boot: the link
 // goes down and the task waits for an Enable. The task does not stop the application
 // itself (that would end the task while it runs); the Enable starts it again.
@@ -368,7 +374,6 @@ TEST(WifiSwitchTask, menu_disable_old_module)
 }
 #endif
 
-#if U64 != 2
 // Quick changes of "WiFi Enabled", faster than the module's events: the task applies the
 // setting as it reads when the task gets to it, whatever the row shows, so the last setting
 // wins; changes that come before that are applied once. (The row followed the module's
@@ -422,9 +427,7 @@ TEST(WifiSwitchTask, runtime_disable_unconfirmed)
     CHECK(strpbrk(after('O'), "QUM") == NULL, "the link is not taken again");
     CHECK(wifi.getState() == eWifi_NotConnected, "Link Down");
 }
-#endif
 
-#if U64 != 2
 // A Disable while the task waits for an event without a bound (connected, nothing pending,
 // a quiet module): the wait for its confirmation is bounded all the same, and when the
 // module never confirms, the radio off is asked again, and the link goes down
@@ -512,6 +515,7 @@ TEST(WifiSwitchTask, a_reset_of_the_settings_applies_wifi_enabled)
     CHECK(wifi.getState() == eWifi_Disabled, "Disabled once confirmed");
 }
 
+#if U64 != 2 // a module without the switch, or one that restarts on its own: U64 and U2+L
 TEST(WifiSwitchTask, a_reset_of_the_settings_starts_a_held_off_module)
 {
     reset_world();
@@ -523,6 +527,7 @@ TEST(WifiSwitchTask, a_reset_of_the_settings_starts_a_held_off_module)
     net.effectuate_settings();
     CHECK(strcmp(rlog, "B") == 0, "the application is started again");
 }
+#endif
 
 // The task applies the setting itself while it sets up its link; the effectuate_settings
 // that the interface's start runs in the task sends nothing more
@@ -536,9 +541,7 @@ TEST(WifiSwitchTask, the_start_of_the_interface_sends_nothing_more)
     boot({ EVENT_DISABLED });
     CHECK(strchr(after('O'), 'O') == NULL && strchr(rlog, 'N') == NULL, "Disabled: one radio off");
 }
-#endif
 
-#if U64 != 2
 // The task's queue is full when the setting changes (its frames fill it while it waits for
 // a request): the change is not lost, and the buffer of the refused event goes back
 static int frees_in_act;
@@ -561,6 +564,7 @@ TEST(WifiSwitchTask, a_change_with_a_full_queue_is_not_lost)
     CHECK(wifi.getState() == eWifi_Disabled, "Disabled once confirmed");
 }
 
+#if U64 != 2 // a module without the switch, or one that restarts on its own: U64 and U2+L
 // A module without the switch refuses the radio off, and the setting is Enabled again by
 // then (another task's Enable while it answered): the module is not held off
 TEST(WifiSwitchTask, enable_while_a_module_without_the_switch_answers)
@@ -582,7 +586,9 @@ TEST(WifiSwitchTask, enable_while_a_module_without_the_switch_answers)
     CHECK(world.enabled, "boot: the setting reads Enabled");
     CHECK(strchr(rlog, 'F') == NULL && wifi.getState() == eWifi_Connected, "boot: not held off, the link taken from the module");
 }
+#endif
 
+#if U64 != 2 // a module without the switch, or one that restarts on its own: U64 and U2+L
 // A module without the switch: Disable (held off), Enable (the application starts again),
 // and Disable while the new task is still finding the module: the new start applies the
 // stored Disabled
@@ -600,6 +606,7 @@ TEST(WifiSwitchTask, off_on_off_with_a_module_without_the_switch)
     boot({});
     CHECK(strchr(rlog, 'O') != NULL && strchr(rlog, 'N') == NULL, "the stored Disabled is applied");
 }
+#endif
 
 // The settings are effectuated each time the WiFi settings page closes: without a change of
 // "WiFi Enabled" nothing goes to the module
@@ -630,9 +637,6 @@ TEST(WifiSwitchTask, a_reset_while_the_task_sets_up_is_applied)
     CHECK(strchr(after('s'), 'N') != NULL, "the radio on follows the boot's radio off");
     CHECK(wifi.getState() == eWifi_NotConnected, "and the radio is on");
 }
-#endif
-
-#if U64 != 2
 // A Disable refreshes an open AP list at once: while the radio off waits for its confirmation
 // the list says WiFi is disabled, and no entry of the last scan is left to pick
 static int refreshes_while_awaited;
@@ -685,4 +689,3 @@ TEST(WifiSwitchTask, a_failed_boot_enable_is_asked_again_at_the_deadline)
     CHECK(!wifi.RadioSettingChanged(true), "the setting is applied");
     CHECK(waited == pdMS_TO_TICKS(WIFI_SWITCH_CONFIRM_MS), "at the deadline");
 }
-#endif
