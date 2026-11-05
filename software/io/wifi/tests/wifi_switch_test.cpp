@@ -123,9 +123,8 @@ TEST(WifiSwitch, enable_ends_the_wait_for_the_confirmation)
     struct app a;
     fresh(&a);
     app_start(&a, false);
-    wifi_switch_on(&a.sw, true);
+    wifi_switch_on(&a.sw);
     EXPECT_FALSE(a.sw.awaiting_off);
-    EXPECT_FALSE(a.sw.override_off);
     event(&a, EVENT_DISABLED);
     event(&a, EVENT_DISCONNECTED);
     event(&a, EVENT_CONNECTED);
@@ -140,38 +139,21 @@ TEST(WifiSwitch, enable_ends_an_unconfirmed_wait)
     struct app a;
     fresh(&a);
     app_start(&a, false);
-    wifi_switch_on(&a.sw, true);
+    wifi_switch_on(&a.sw);
     event(&a, EVENT_CONNECTED);
     EXPECT_TRUE(a.link_up);
     EXPECT_EQ(a.dropped, 0);
 }
 
-// After the application was stopped (a module without the switch is held off as a whole),
-// Enable starts it again, and that start skips the stored Disabled, once
-TEST(WifiSwitch, enable_with_the_application_stopped)
-{
-    struct app a;
-    fresh(&a);
-    wifi_switch_on(&a.sw, false);
-    EXPECT_TRUE(a.sw.override_off);
-    app_start(&a, false);
-    EXPECT_FALSE(a.disabled);
-    event(&a, EVENT_CONNECTED);
-    EXPECT_TRUE(a.link_up);
-    app_start(&a, false);
-    EXPECT_TRUE(a.disabled);
-}
-
 // An Enable on a running application asks the module; a later start still applies the
-// stored Disabled
+// stored Disabled (an Enable stores Enabled, so a start after it reads that)
 TEST(WifiSwitch, enable_on_a_running_application_asks_the_module)
 {
     struct app a;
     fresh(&a);
     app_start(&a, false);
     event(&a, EVENT_DISABLED);
-    wifi_switch_on(&a.sw, true);
-    EXPECT_FALSE(a.sw.override_off);
+    wifi_switch_on(&a.sw);
     app_start(&a, false);
     EXPECT_TRUE(a.disabled);
 }

@@ -13,8 +13,9 @@
  * interface on the network while WiFi is off, so those events are dropped.
  *
  * A change of the setting at runtime (the menu, the REST API, a reset or load of the
- * settings) is queued for the WiFi task as EVENT_RADIO_SETTING; the task reads the setting
- * then, sends the request, and times the confirmation of a radio off as at boot.
+ * settings) is marked for the WiFi task, which EVENT_RADIO_SETTING wakes; on its next pass
+ * the task reads the setting, sends the request, and times the confirmation of a radio off
+ * as at boot.
  *
  * The answer to the request only says that the module queued it. The application shows
  * Disabled when EVENT_DISABLED arrives, not before. If it does not arrive within
@@ -24,8 +25,8 @@
  * A module without the radio switch answers the request with an error; its radio is on
  * from its boot. The application then holds the module off, at its start and on a Disable
  * from the menu, the REST API or the setting. At a boot with Disabled stored such a module
- * runs until it has answered, so it may associate for a moment. An Enable then starts the
- * WiFi application again, and that start does not apply the stored Disabled.
+ * runs until it has answered, so it may associate for a moment. An Enable, which stores
+ * Enabled, then starts the WiFi application again.
  *
  * Pure logic, so that the host test (software/io/wifi/tests/wifi_switch_test.cpp) runs it.
  */
@@ -39,13 +40,15 @@
 
 #define WIFI_SWITCH_CONFIRM_MS 10000
 
-// Internal event of the WiFi application: apply "WiFi Enabled" as it is stored now. It has
-// no value: the WiFi task reads the setting when it takes the event, so the last change wins.
+// Internal event of the WiFi application: it wakes the WiFi task to apply "WiFi Enabled" as
+// it is stored now (WiFi :: radio_setting_due says that a change waits). It has no value:
+// the task reads the setting when it applies it, so the last change wins.
 #define EVENT_RADIO_SETTING 0x7E
 
 // The answer of a module without the radio switch to a radio off or on:
-// ESP_ERR_NOT_SUPPORTED, which such a module gives for every command it does not have. Any other error (the module could not queue it, or it never left) is not taken
-// for that: the confirmation deadline asks again.
+// ESP_ERR_NOT_SUPPORTED, which such a module gives for every command it does not have.
+// Any other error (the module could not queue it, or it never left) is not taken for
+// that: the confirmation deadline asks again.
 #define WIFI_SWITCH_NOT_SUPPORTED 0x106
 
 static inline bool wifi_switch_unsupported(int result)
@@ -55,7 +58,6 @@ static inline bool wifi_switch_unsupported(int result)
 
 typedef struct {
     bool awaiting_off; // the radio off was asked for, and EVENT_DISABLED is not seen yet
-    bool override_off; // the next start of the application ignores a stored Disabled
     uint32_t deadline; // when the wait for EVENT_DISABLED ends, in the caller's time unit
 } wifi_switch_t;
 
@@ -63,10 +65,8 @@ typedef struct {
 // is to be turned off now. enabled is the stored "WiFi Enabled".
 static inline bool wifi_switch_wants_off(wifi_switch_t *sw, bool enabled)
 {
-    bool off = !enabled && !sw->override_off;
-    sw->override_off = false;
     sw->awaiting_off = false;
-    return off;
+    return !enabled;
 }
 
 // The radio off was asked for and the module queued it (or the answer was an error other
@@ -121,14 +121,10 @@ static inline bool wifi_switch_drop_event(wifi_switch_t *sw, uint8_t command)
     }
 }
 
-// On an Enable. app_running is false when the WiFi application is not running (it is held
-// off with the module): it is started again, and that start ignores a stored Disabled.
-static inline void wifi_switch_on(wifi_switch_t *sw, bool app_running)
+// On an Enable: the wait for a radio-off confirmation ends
+static inline void wifi_switch_on(wifi_switch_t *sw)
 {
     sw->awaiting_off = false;
-    if (!app_running) {
-        sw->override_off = true;
-    }
 }
 
 #endif /* WIFI_SWITCH_H_ */

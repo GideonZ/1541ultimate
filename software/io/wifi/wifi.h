@@ -56,6 +56,8 @@ class WiFi : public Esp32Application
     uint32_t my_netmask;
 #if U64 != 2
     wifi_switch_t radio_switch;
+    volatile bool radio_setting_due; // "WiFi Enabled" is to be applied by the task (RadioOn, RadioOff)
+    int8_t radio_setting_applied;    // the setting the task applied last: 1, 0, or -1 for none yet
 #endif
 
     bool RequestEcho(void);
@@ -72,10 +74,11 @@ public:
     BaseType_t doRequestEcho(void);
 
     WifiState_t getState(void) { return state; }
-    TaskHandle_t getTask(void) { return runModeTask; } // the WiFi task, NULL while it is not running
     // A radio off is asked for and not confirmed yet (wifi_switch.h)
 #if U64 != 2
     bool RadioOffAwaited(void) { return radio_switch.awaiting_off; }
+    // Whether "WiFi Enabled" as on differs from what the WiFi task applied last
+    bool RadioSettingChanged(bool on) { return radio_setting_applied != (on ? 1 : 0); }
 #else
     bool RadioOffAwaited(void) { return false; }
 #endif
@@ -85,7 +88,7 @@ public:
     void  getMacAddr(uint8_t *target) { memcpy(target, my_mac, 6); }
     char *getIpAddrString(char *buf, int max) { sprintf(buf, "%d.%d.%d.%d", (my_ip >> 0) & 0xff, (my_ip >> 8) & 0xff, (my_ip >> 16) & 0xff, (my_ip >> 24) & 0xff); return buf; }
 
-    void sendEvent(uint8_t code);
+    bool sendEvent(uint8_t code);
     void sendEventWhenEnabled(uint8_t code) { event_when_enabled = code; } // after the radio is on again
     bool sendConnectEvent(uint8_t code, const char *ssid); // EVENT_CONNECT_PENDING or _REJECTED
     void freeBuffer(command_buf_t *buf);

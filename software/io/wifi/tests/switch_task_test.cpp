@@ -271,9 +271,9 @@ TEST(WifiSwitchTask, enabled_while_the_boot_radio_off_waits)
     CHECK(wifi.getState() == eWifi_NotConnected, "the module's event is taken: the radio is on");
 }
 
-// A module without the switch, stored Disabled: it is held off; an Enable restarts the
-// application (which then skips the stored Disabled) instead of asking the module, which
-// cannot
+// A module without the switch, stored Disabled: it is held off; an Enable (which stores
+// Enabled, as every Enable does) restarts the application instead of asking the module,
+// which cannot
 TEST(WifiSwitchTask, enable_with_a_module_without_the_switch)
 {
     reset_world();
@@ -283,7 +283,6 @@ TEST(WifiSwitchTask, enable_with_a_module_without_the_switch)
     rlog[0] = 0;
     wifi.RadioOn();
     CHECK(strcmp(rlog, "B") == 0, "the application is started again, the module not asked");
-    CHECK(wifi.radio_switch.override_off, "and that start skips the stored Disabled");
 }
 
 // One switch: "WiFi Enabled" is what the menu's Enable and Disable (context menu and config
@@ -355,9 +354,9 @@ TEST(WifiSwitchTask, menu_disable_old_module)
 #endif
 
 #if U64 != 2
-// Quick changes of "WiFi Enabled", faster than the module's events: each one makes the task
-// apply the setting as it reads when the task takes it, whatever the row shows, so the last
-// setting wins. (The row followed the module's events only: Enable then Disable from
+// Quick changes of "WiFi Enabled", faster than the module's events: the task applies the
+// setting as it reads when the task gets to it, whatever the row shows, so the last setting
+// wins; changes that come before that are applied once. (The row followed the module's events only: Enable then Disable from
 // Disabled left the radio on and the link up with the setting Disabled, and Disable then
 // Enable from Connected left it off with Enabled.)
 static void enable_then_disable(void) { cfg_menu_enable(); cfg_menu_disable(); }
@@ -369,7 +368,7 @@ TEST(WifiSwitchTask, quick_enable_then_disable_ends_off)
     world.enabled = false;
     boot({ EVENT_DISABLED, Step(enable_then_disable),
            EVENT_DISCONNECTED, EVENT_CONNECTED, EVENT_GOTIP, EVENT_DISABLED });
-    CHECK(strstr(after('s'), "OO") != NULL && strchr(after('s'), 'N') == NULL, "both changes ask for the last setting: radio off");
+    CHECK(strcmp(after('s'), "uOu") == 0, "the last setting is asked for: radio off");
     CHECK(wifi.getState() == eWifi_Disabled, "Disabled: link events while the radio off waits are dropped");
     CHECK(!world.enabled, "the setting reads Disabled");
 }
@@ -380,7 +379,8 @@ TEST(WifiSwitchTask, quick_disable_then_enable_ends_on)
     world.enabled = true;
     boot({ EVENT_CONNECTED, Step(disable_then_enable),
            EVENT_DISABLED, EVENT_DISCONNECTED, EVENT_CONNECTED });
-    CHECK(strstr(after('U'), "NN") != NULL && strchr(after('U'), 'O') == NULL, "both changes ask for the last setting: radio on");
+    const char *n = strchr(after('U'), 'N');
+    CHECK(n != NULL && strchr(n + 1, 'N') == NULL && strchr(after('U'), 'O') == NULL, "the last setting is asked for: radio on");
     CHECK(wifi.getState() == eWifi_Connected, "Connected again");
     CHECK(world.enabled, "the setting reads Enabled");
 }
@@ -518,5 +518,99 @@ TEST(WifiSwitchTask, the_start_of_the_interface_sends_nothing_more)
     reset_world();
     boot({ EVENT_DISABLED });
     CHECK(strchr(after('O'), 'O') == NULL && strchr(rlog, 'N') == NULL, "Disabled: one radio off");
+}
+#endif
+
+#if U64 != 2
+// The task's queue is full when the setting changes (its frames fill it while it waits for
+// a request): the change is not lost, and the buffer of the refused event goes back
+static int frees_in_act;
+static void disable_with_a_full_queue(void)
+{
+    world.loopback_fails = true;
+    frees = 0;
+    menu_disable();
+    frees_in_act = frees;
+    world.loopback_fails = false;
+}
+
+TEST(WifiSwitchTask, a_change_with_a_full_queue_is_not_lost)
+{
+    reset_world();
+    world.enabled = true;
+    boot({ EVENT_CONNECTED, Step(disable_with_a_full_queue), EVENT_GOTIP, EVENT_DISABLED });
+    CHECK(frees_in_act == 1, "the refused event's buffer goes back to the UART");
+    CHECK(strchr(after('U'), 'O') != NULL, "the radio off is asked for on the task's next pass");
+    CHECK(wifi.getState() == eWifi_Disabled, "Disabled once confirmed");
+}
+
+// A module without the switch refuses the radio off, and the setting is Enabled again by
+// then (another task's Enable while it answered): the module is not held off
+TEST(WifiSwitchTask, enable_while_a_module_without_the_switch_answers)
+{
+    reset_world();
+    world.enabled = true;
+    world.disable_answer = kNotSupported;
+    world.during_disable = cfg_menu_enable;
+    boot({ EVENT_CONNECTED, Step(menu_disable) });
+    CHECK(world.enabled, "the setting reads Enabled");
+    CHECK(strchr(rlog, 'F') == NULL && wifi.getState() == eWifi_Connected, "not held off: still Connected");
+    // the same at boot, with Disabled stored
+    reset_world();
+    world.enabled = false;
+    world.link = 1;
+    world.disable_answer = kNotSupported;
+    world.during_disable = cfg_menu_enable;
+    boot({});
+    CHECK(world.enabled, "boot: the setting reads Enabled");
+    CHECK(strchr(rlog, 'F') == NULL && wifi.getState() == eWifi_Connected, "boot: not held off, the link taken from the module");
+}
+
+// A module without the switch: Disable (held off), Enable (the application starts again),
+// and Disable while the new task is still finding the module: the new start applies the
+// stored Disabled
+TEST(WifiSwitchTask, off_on_off_with_a_module_without_the_switch)
+{
+    reset_world();
+    world.enabled = false;
+    world.disable_answer = kNotSupported;
+    boot({});
+    hook(1);
+    wifi.state = eWifi_NotDetected; // as WiFi :: Start leaves it
+    hook(0);
+    world.keep_switch = true;
+    world.disable_answer = 0;
+    boot({});
+    CHECK(strchr(rlog, 'O') != NULL && strchr(rlog, 'N') == NULL, "the stored Disabled is applied");
+}
+
+// The settings are effectuated each time the WiFi settings page closes: without a change of
+// "WiFi Enabled" nothing goes to the module
+static void close_wifi_settings(void) { net.effectuate_settings(); }
+
+TEST(WifiSwitchTask, effectuate_without_a_change_sends_nothing)
+{
+    reset_world();
+    world.enabled = true;
+    boot({ EVENT_CONNECTED, Step(close_wifi_settings), Step(close_wifi_settings) });
+    CHECK(strchr(after('N'), 'N') == NULL, "Enabled: no radio on after the boot's");
+    reset_world();
+    world.enabled = false;
+    boot({ EVENT_DISABLED, Step(close_wifi_settings), Step(close_wifi_settings) });
+    CHECK(strchr(after('O'), 'O') == NULL, "Disabled: no radio off after the boot's");
+}
+
+// A reset of the settings while the task sets up its link, whose effectuate the task's own
+// netstack->start() takes (the store is no longer stale when the REST API effectuates it)
+static void reset_without_effectuate(void) { world.enabled = true; }
+
+TEST(WifiSwitchTask, a_reset_while_the_task_sets_up_is_applied)
+{
+    reset_world();
+    world.enabled = false;
+    world.during_disable = reset_without_effectuate;
+    boot({ EVENT_DISABLED, EVENT_DISCONNECTED });
+    CHECK(strchr(after('s'), 'N') != NULL, "the radio on follows the boot's radio off");
+    CHECK(wifi.getState() == eWifi_NotConnected, "and the radio is on");
 }
 #endif

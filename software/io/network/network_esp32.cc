@@ -174,10 +174,13 @@ void NetworkLWIP_WiFi :: effectuate_settings(void)
     // }
 #else
     // A reset or a load of the settings (ConfigStore :: reset, then effectuate) sets "WiFi
-    // Enabled" without its change hook: applied here. Not when the WiFi task runs this
-    // itself (netstack->start(), while it sets up its link): it applies the setting then.
-    if (xTaskGetCurrentTaskHandle() != wifi.getTask()) {
-        apply_enabled(enabled_in_config());
+    // Enabled" without its change hook: applied here when it differs from what the WiFi task
+    // applied last. This also runs each time the WiFi settings page closes, and in the WiFi
+    // task itself (netstack->start(), while it sets up its link), where it catches a reset
+    // whose own effectuate found the settings effectuated already.
+    bool on = enabled_in_config();
+    if (wifi.RadioSettingChanged(on)) {
+        apply_enabled(on);
     }
 #endif
 }
