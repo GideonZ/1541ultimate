@@ -237,7 +237,7 @@ TEST(WifiDisabledTask, a_failed_enable_drops_the_waiting_scan)
     reset_world();
     world.enabled = true;
     world.enable_answer = -1;
-    boot({ EVENT_DISABLED, act_show_aps, late(Step(EVENT_DISCONNECTED), 60 * configTICK_RATE_HZ) });
+    boot({ EVENT_DISABLED, act_show_aps, late(Step(EVENT_DISCONNECTED), 5 * configTICK_RATE_HZ) });
     CHECK(strchr(after('?'), 'N') != NULL, "the radio on was asked for");
     CHECK(strchr(after('?'), 'C') == NULL, "no scan on the later link loss");
     CHECK(wifi.event_when_enabled == 0, "nothing waits for the radio");
@@ -297,4 +297,16 @@ TEST(WifiDisabledTask, pick_after_yes_with_a_bare_radio_start)
     boot({ EVENT_DISABLED, pick, Step(EVENT_DISCONNECTED), Step(EVENT_CONNECTED, "HomeNet") });
     CHECK(messages[0] == 0, "no message: the join is the outcome");
     CHECK(wifi.getState() == eWifi_Connected, "Connected");
+}
+
+// The Enable for the scan is queued by the module, but its radio does not come on and no
+// event follows: the scan does not wait for good, and a much later link loss starts none
+TEST(WifiDisabledTask, an_enable_without_an_event_drops_the_waiting_scan)
+{
+    reset_world();
+    world.enabled = true;
+    boot({ EVENT_DISABLED, act_show_aps, late(Step(EVENT_DISCONNECTED), 60 * configTICK_RATE_HZ) });
+    CHECK(strchr(after('?'), 'N') != NULL, "the radio on was asked for");
+    CHECK(strchr(after('?'), 'C') == NULL, "no scan on the much later link loss");
+    CHECK(wifi.event_when_enabled == 0, "nothing waits for the radio");
 }

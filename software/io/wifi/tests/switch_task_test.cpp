@@ -356,9 +356,9 @@ TEST(WifiSwitchTask, menu_disable_old_module)
 #if U64 != 2
 // Quick changes of "WiFi Enabled", faster than the module's events: the task applies the
 // setting as it reads when the task gets to it, whatever the row shows, so the last setting
-// wins; changes that come before that are applied once. (The row followed the module's events only: Enable then Disable from
-// Disabled left the radio on and the link up with the setting Disabled, and Disable then
-// Enable from Connected left it off with Enabled.)
+// wins; changes that come before that are applied once. (The row followed the module's
+// events only: Enable then Disable from Disabled left the radio on and the link up with the
+// setting Disabled, and Disable then Enable from Connected left it off with Enabled.)
 static void enable_then_disable(void) { cfg_menu_enable(); cfg_menu_disable(); }
 static void disable_then_enable(void) { cfg_menu_disable(); cfg_menu_enable(); }
 

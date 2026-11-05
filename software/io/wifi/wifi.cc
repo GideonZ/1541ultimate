@@ -34,6 +34,7 @@ WiFi :: WiFi()
     state = eWifi_Off;
     state_before_scan = eWifi_NotConnected;
     event_when_enabled = 0;
+    event_when_enabled_by = 0;
     pick_cancelled = false;
     connect_attempt = 0;
     connect_answered = 0;
@@ -581,8 +582,13 @@ void WiFi :: RunModeThread()
                 if(netstack) {
                     netstack->link_down();
                 }
-                if (event_when_enabled) { // the radio is on again: what the user asked for
-                    sendEvent(event_when_enabled);
+                // The radio is on again: what the user asked for, if it is still due. The
+                // module may have queued the Enable and not started its radio; a link loss
+                // much later is no sign that the radio came on for it.
+                if (event_when_enabled) {
+                    if ((int32_t)(event_when_enabled_by - xTaskGetTickCount()) > 0) {
+                        sendEvent(event_when_enabled);
+                    }
                     event_when_enabled = 0;
                 }
                 RefreshRoot();

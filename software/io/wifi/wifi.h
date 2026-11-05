@@ -36,6 +36,10 @@ typedef enum {
 
 class NetworkLWIP_WiFi;
 
+// How long an event of the user waits for the radio to come on (WiFi :: sendEventWhenEnabled):
+// longer than the module takes to start its radio and report it
+#define WIFI_WHEN_ENABLED_MS 10000
+
 class WiFi : public Esp32Application
 {
     TaskHandle_t runModeTask;
@@ -47,6 +51,7 @@ class WiFi : public Esp32Application
     WifiState_t state_before_scan; // the state a scan of the AP list returns to
     volatile bool pick_cancelled;  // the user turned the radio off: a pick under way is not reported (RadioOff sets it, the task takes it)
     uint8_t event_when_enabled;    // an event of the user to send once the radio is on again (0: none)
+    volatile uint32_t event_when_enabled_by; // and until when, in ticks
     // The connects from the AP list (connect_ap) and the module's answers to them, for the
     // task: written by the user interface, read by the task (WiFi :: ConnectAnswered)
     volatile uint8_t connect_attempt;  // the number of the last attempt
@@ -95,7 +100,12 @@ public:
     char *getIpAddrString(char *buf, int max) { sprintf(buf, "%d.%d.%d.%d", (my_ip >> 0) & 0xff, (my_ip >> 8) & 0xff, (my_ip >> 16) & 0xff, (my_ip >> 24) & 0xff); return buf; }
 
     bool sendEvent(uint8_t code);
-    void sendEventWhenEnabled(uint8_t code) { event_when_enabled = code; } // after the radio is on again
+    // After the radio is on again, within WIFI_WHEN_ENABLED_MS
+    void sendEventWhenEnabled(uint8_t code)
+    {
+        event_when_enabled_by = xTaskGetTickCount() + pdMS_TO_TICKS(WIFI_WHEN_ENABLED_MS);
+        event_when_enabled = code;
+    }
     uint8_t ConnectStart(void);
     bool sendConnectPending(const char *ssid, uint8_t attempt);
     void ConnectAnswered(uint8_t attempt, int answer);
