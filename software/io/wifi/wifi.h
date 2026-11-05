@@ -86,7 +86,7 @@ public:
 
     void sendEvent(uint8_t code);
     void sendEventWhenEnabled(uint8_t code) { event_when_enabled = code; } // after the radio is on again
-    bool sendConnectPending(const char *ssid);
+    bool sendConnectEvent(uint8_t code, const char *ssid); // EVENT_CONNECT_PENDING or _REJECTED
     void freeBuffer(command_buf_t *buf);
     int  getAccessPointItems(Browsable *parent, IndexedList<Browsable *> &list);
 

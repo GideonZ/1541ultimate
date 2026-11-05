@@ -5,7 +5,8 @@
  * answers the connect request as soon as ESP-IDF has accepted the attempt, which
  * says nothing about the outcome: that is the module's own EVENT_CONNECTED, or an
  * EVENT_DISCONNECTED when the access point refuses the client. The task notes the
- * accepted attempt here, and the outcome (or the lack of one) becomes a message.
+ * attempt here before the request goes out, and the outcome (or the lack of one, or
+ * the module's refusal of the request) becomes a message.
  */
 #ifndef WIFI_CONNECT_H_
 #define WIFI_CONNECT_H_
@@ -15,9 +16,13 @@
 #include <string.h>
 #include "rpc_calls.h"
 
-// Internal event, queued by the user interface once the module has accepted a
-// connect request. It carries the same payload as the module's EVENT_CONNECTED.
-#define EVENT_CONNECT_PENDING 0x7F
+// Internal events, queued by the user interface for a connect from the AP list:
+// PENDING before the request goes out, REJECTED when the module did not accept it.
+// The task takes them in order with the module's events, so an outcome the module
+// reports before its answer to the request arrives comes after PENDING. They carry
+// the same payload as the module's EVENT_CONNECTED.
+#define EVENT_CONNECT_PENDING  0x7F
+#define EVENT_CONNECT_REJECTED 0x7D
 
 // Longer than a join normally takes (a few seconds), shorter than a user waits.
 // The tick is 5 ms (configTICK_RATE_HZ 200).
@@ -32,6 +37,15 @@ static inline uint8_t wifi_disconnect_reason(const void *pkt, int size)
         return 0;
     }
     return ((const event_pkt_disconnected *)pkt)->reason;
+}
+
+// The module's own EVENT_DISCONNECTED when it turns its radio on (for an Enable, or for a
+// connect while its radio was off): a packet with the reason, which is 0. ESP-IDF gives
+// every disconnect of the station a reason, and 0 is none of them. No outcome of a connect,
+// which it can follow: the attempt is noted before the request goes out.
+static inline bool wifi_disconnect_is_radio_start(const void *pkt, int size)
+{
+    return (size >= (int)sizeof(event_pkt_disconnected)) && (((const event_pkt_disconnected *)pkt)->reason == 0);
 }
 
 // The module's own leave of the access point it was on, which it does as part of a connect
@@ -70,7 +84,7 @@ class WifiConnectFeedback
 public:
     WifiConnectFeedback() : pending(false), deadline(0) { ssid[0] = 0; }
 
-    // The module accepted a connect request; the outcome is still to come
+    // A connect request goes out; the outcome is still to come
     void begin(const uint8_t *ssid32, uint32_t now)
     {
         memcpy(ssid, ssid32, 32);

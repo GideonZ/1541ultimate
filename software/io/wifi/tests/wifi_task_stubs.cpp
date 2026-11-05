@@ -158,6 +158,8 @@ int UserInterface :: string_box(const char *msg, char *buffer, int maxlen)
 }
 void BrowsableWifiAP :: fetch_context_items(IndexedList<Action *> &items) {}
 
+static void arrive(const command_buf_t *b);
+
 // The request channel: wifi_wifi_connect (cut out of wifi_cmd.cc) sends through these. The
 // request is kept as it went out, and answered as the case says.
 const char *no_wifi_buf = "No buffer\n";
@@ -167,6 +169,16 @@ command_buf_t *wifi_transmit(command_buf_t *buf, int timeout_ms)
 {
     requests++;
     request = *buf;
+    if (world.joined_before_reply) {
+        // the module joins the AP and reports it before its reply to the request reaches
+        // the Ultimate
+        command_buf_t ev;
+        memset(&ev, 0, sizeof(ev));
+        ((rpc_header_t *)ev.data)->command = EVENT_CONNECTED;
+        strncpy((char *)((event_pkt_connected *)ev.data)->ssid, ((rpc_wifi_connect_req *)buf->data)->ssid, 32);
+        ev.size = sizeof(event_pkt_connected);
+        arrive(&ev);
+    }
     if (world.connect_noreply) {
         return NULL;
     }
@@ -175,7 +187,6 @@ command_buf_t *wifi_transmit(command_buf_t *buf, int timeout_ms)
     return &replybuf;
 }
 
-// The next to be delivered; the others were queued before it
 BaseType_t cmd_buffer_get(command_buf_context_t *context, command_buf_t **b, TickType_t t)
 {
     *b = &pool[pool_i++ % 8];
@@ -183,16 +194,27 @@ BaseType_t cmd_buffer_get(command_buf_context_t *context, command_buf_t **b, Tic
     return pdTRUE;
 }
 
+// What has arrived in the task's queue (its own events, and the module's during a request)
+// is the first `arrived` entries from queue_i. A new arrival goes behind them, as the RTOS
+// queue appends; the steps of the script after them are still to come.
+static int arrived;
+static void arrive(const command_buf_t *b)
+{
+    int at = queue_i + arrived;
+    memmove(&queue[at + 1], &queue[at], (queue_n - at) * sizeof(queue[0]));
+    memmove(&queue_delay[at + 1], &queue_delay[at], (queue_n - at) * sizeof(queue_delay[0]));
+    queue[at] = *b;
+    queue_delay[at] = 0;
+    queue_n++;
+    arrived++;
+}
+
 BaseType_t cmd_buffer_loopback(command_buf_context_t *context, command_buf_t *b)
 {
     if (world.loopback_fails) {
         return pdFALSE;
     }
-    memmove(&queue[queue_i + 1], &queue[queue_i], (queue_n - queue_i) * sizeof(queue[0]));
-    memmove(&queue_delay[queue_i + 1], &queue_delay[queue_i], (queue_n - queue_i) * sizeof(queue_delay[0]));
-    queue[queue_i] = *b;
-    queue_delay[queue_i] = 0;
-    queue_n++;
+    arrive(b);
     return pdTRUE;
 }
 
@@ -214,6 +236,9 @@ BaseType_t cmd_buffer_received(command_buf_context_t *context, command_buf_t **b
         if (d == 0 || t == portMAX_DELAY || d < t) {
             now += d; // the time it waited for this one
             waited += d;
+            if (arrived) {
+                arrived--;
+            }
             *b = &queue[queue_i++];
             return pdTRUE;
         }
@@ -294,6 +319,7 @@ void boot(std::initializer_list<Step> steps)
     requests = 0;
     pool_i = 0;
     queue_n = queue_i = 0;
+    arrived = 0;
     for (std::initializer_list<Step>::const_iterator s = steps.begin(); s != steps.end(); ++s) {
         command_buf_t *b = &queue[queue_n++];
         memset(b, 0, sizeof(*b));
@@ -305,7 +331,7 @@ void boot(std::initializer_list<Step> steps)
         }
         ((rpc_header_t *)b->data)->command = s->code;
         b->size = sizeof(rpc_header_t);
-        if (s->code == EVENT_CONNECTED && s->ssid) {
+        if ((s->code == EVENT_CONNECTED || s->code == EVENT_CONNECT_PENDING || s->code == EVENT_CONNECT_REJECTED) && s->ssid) {
             strncpy((char *)((event_pkt_connected *)b->data)->ssid, s->ssid, 32);
             b->size = sizeof(event_pkt_connected);
         } else if (s->code == EVENT_DISCONNECTED && s->reason >= 0) {

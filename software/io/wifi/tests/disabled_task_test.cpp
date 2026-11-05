@@ -168,6 +168,19 @@ TEST(WifiDisabledTask, a_scan_waiting_for_the_radio_is_dropped_by_a_disable)
     CHECK(strchr(after('?'), 'C') == NULL, "no scan after the Disable");
 }
 
+// A pick while Disabled, Yes: the radio comes on (the module reports EVENT_DISCONNECTED with
+// reason 0 for that) and the connect goes out; the join is the outcome, nothing else is said
+TEST(WifiDisabledTask, pick_after_yes_is_followed)
+{
+    reset_world();
+    world.enabled = true;
+    boot({ EVENT_DISABLED, pick, disconnected(0), Step(EVENT_CONNECTED, "HomeNet") });
+    CHECK(requests == 1, "the connect request");
+    CHECK(strchr(after('?'), 'N') != NULL, "and the radio on");
+    CHECK(wifi.getState() == eWifi_Connected, "Connected");
+    CHECK(messages[0] == 0, "no message: the join is the outcome");
+}
+
 TEST(WifiDisabledTask, no_prompt_while_active)
 {
     for (const Action_t &a : actions) {

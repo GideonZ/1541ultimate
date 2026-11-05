@@ -32,6 +32,7 @@ struct World {
     bool keep_switch;     // the next boot keeps the radio switch state (once)
     int connect_result;   // what the module answers to a connect request (esp_err)
     bool connect_noreply; // the module does not answer it
+    bool joined_before_reply; // the module reports EVENT_CONNECTED before its answer arrives
     bool no_tx_buffer;    // the UART has no buffer for a request
     bool loopback_fails;  // the task's queue refuses an event of its own
     const char *pick_ssid; // the AP the user picks from the list (see pick())

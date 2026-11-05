@@ -55,6 +55,34 @@ TEST(WifiConnectFeedbackTask, joined)
     CHECK(messages[0] == 0, "no message: the row going up says it");
 }
 
+// The module joins and reports it before its answer to the request reaches the Ultimate:
+// the join is the outcome, and nothing is said 20 s later
+TEST(WifiConnectFeedbackTask, joined_before_the_reply)
+{
+    reset_world();
+    world.enabled = true;
+    world.joined_before_reply = true;
+    boot({ pick });
+    CHECK(linked_up(), "the link comes up");
+    CHECK(wifi.getState() == eWifi_Connected, "Connected");
+    CHECK(messages[0] == 0, "no message: the join was the outcome");
+    CHECK(strcmp(ended, "waiting for an event") == 0, "and nothing is left to time out");
+}
+
+// A module that turns its radio on (for an Enable, or for the connect itself while its radio
+// was off) reports EVENT_DISCONNECTED with reason 0 first. With the attempt noted before the
+// request goes out, that event can come after it: it is no outcome.
+TEST(WifiConnectFeedbackTask, radio_start_is_no_outcome)
+{
+    reset_world();
+    world.enabled = true;
+    boot({ pick, disconnected(0), Step(EVENT_CONNECTED, "HomeNet") });
+    CHECK(messages[0] == 0, "no message: the join is the outcome");
+    CHECK(wifi.getState() == eWifi_Connected, "Connected");
+    boot({ pick, disconnected(0), disconnected(15) });
+    CHECK(strcmp(messages, "Incorrect password\n") == 0, "the refusal after it is reported");
+}
+
 // Connected to another AP: its drop is not the outcome of the pick
 TEST(WifiConnectFeedbackTask, switching)
 {
@@ -156,9 +184,21 @@ TEST(WifiConnectFeedbackTask, not_accepted)
     world.loopback_fails = true;
     frees = 0;
     boot({ pick });
-    CHECK(frees == 2, "the connect reply's buffer and the one the event was built in go back to the UART");
+    CHECK(requests == 0, "the task cannot follow it: no request goes out");
+    CHECK(frees == 1, "the buffer the event was built in goes back to the UART");
     CHECK(strcmp(messages, "Could not connect to HomeNet\n") == 0, "told when the event is refused");
     CHECK(waited == 0, "at once");
+}
+
+// The module's refusal of the request came after the attempt's timeout (the request can wait
+// longer for its answer): one message, not two
+TEST(WifiConnectFeedbackTask, rejected_after_the_timeout_is_said_once)
+{
+    reset_world();
+    world.enabled = true;
+    boot({ Step(EVENT_CONNECT_PENDING, "HomeNet"),
+           late(Step(EVENT_CONNECT_REJECTED, "HomeNet"), 25 * configTICK_RATE_HZ) });
+    CHECK(strcmp(messages, "Could not connect to HomeNet\n") == 0, "told once");
 }
 
 // Cancelling the password box connects to nothing

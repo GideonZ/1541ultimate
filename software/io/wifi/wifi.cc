@@ -477,15 +477,28 @@ void WiFi :: RunModeThread()
                 RefreshRoot();
                 break;
 
-            case EVENT_CONNECT_PENDING: // the module accepted a connect from the AP list
+            case EVENT_CONNECT_PENDING: // a connect from the AP list is about to go out
                 ev2 = (event_pkt_connected *)buf->data;
                 feedback.begin(ev2->ssid, xTaskGetTickCount());
                 uart->FreeBuffer(buf);
                 break;
 
+            case EVENT_CONNECT_REJECTED: // the module did not accept that connect
+                // Said once: not when the attempt has ended already (its timeout ran out
+                // while the request waited for its answer, or the user turned WiFi off)
+                if (feedback.isPending()) {
+                    feedback.cancel();
+                    ev2 = (event_pkt_connected *)buf->data;
+                    wifi_connect_failed_text(feedback_msg, sizeof(feedback_msg), (const char *)ev2->ssid);
+                    UserInterface :: postMessage(feedback_msg);
+                }
+                uart->FreeBuffer(buf);
+                break;
+
             case EVENT_DISCONNECTED:
                 // the reason is read before the buffer goes back to the UART, which may refill it
-                if (feedback.onDisconnected(wifi_disconnect_reason(buf->data, buf->size), feedback_msg, sizeof(feedback_msg))) {
+                if (!wifi_disconnect_is_radio_start(buf->data, buf->size) &&
+                    feedback.onDisconnected(wifi_disconnect_reason(buf->data, buf->size), feedback_msg, sizeof(feedback_msg))) {
                     UserInterface :: postMessage(feedback_msg);
                 }
                 uart->FreeBuffer(buf);
@@ -547,13 +560,14 @@ void WiFi :: sendEvent(uint8_t code)
     cmd_buffer_loopback(packets, buf); // internal event
 }
 
-// The module accepted a connect request; its own event will tell the outcome.
-bool WiFi :: sendConnectPending(const char *ssid)
+// A connect from the AP list, for the task to follow (wifi_connect.h): EVENT_CONNECT_PENDING
+// before the request goes out, EVENT_CONNECT_REJECTED when the module did not accept it.
+bool WiFi :: sendConnectEvent(uint8_t code, const char *ssid)
 {
     command_buf_t *buf;
     cmd_buffer_get(packets, &buf, portMAX_DELAY);
     event_pkt_connected *ev = (event_pkt_connected *)(buf->data);
-    ev->hdr.command = EVENT_CONNECT_PENDING;
+    ev->hdr.command = code;
     ev->hdr.sequence = 0;
     ev->hdr.thread = 0xFF;
     bzero(ev->ssid, 32);
@@ -607,13 +621,22 @@ SubsysResultCode_e BrowsableWifiAP :: connect_ap(SubsysCommand *cmd)
             }
         }
     }
-    // The AP picked, not just any AP with its SSID
-    int result = wifi_wifi_connect(bap->ssid, password, bap->auth, bap->bssid, bap->channel);
-    printf("Connect result: %d\n", result);
-    if (result != 0 || !wifi.sendConnectPending(bap->ssid)) {
+    // The task notes the attempt before the request goes out: the module can report the
+    // outcome before its answer to the request arrives, and the task takes its events in
+    // the order they were queued
+    if (!wifi.sendConnectEvent(EVENT_CONNECT_PENDING, bap->ssid)) {
         char msg[64];
         wifi_connect_failed_text(msg, sizeof(msg), bap->ssid);
         UserInterface :: postMessage(msg);
+        return SSRET_OK;
+    }
+    // The AP picked, not just any AP with its SSID
+    int result = wifi_wifi_connect(bap->ssid, password, bap->auth, bap->bssid, bap->channel);
+    printf("Connect result: %d\n", result);
+    if (result != 0) {
+        // Not accepted: the task ends the attempt and says so. Should this event not get
+        // into the queue, the attempt's timeout says so instead.
+        wifi.sendConnectEvent(EVENT_CONNECT_REJECTED, bap->ssid);
     }
     return SSRET_OK;
 }
