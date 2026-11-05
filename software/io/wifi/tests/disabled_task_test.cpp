@@ -310,3 +310,14 @@ TEST(WifiDisabledTask, an_enable_without_an_event_drops_the_waiting_scan)
     CHECK(strchr(after('?'), 'C') == NULL, "no scan on the much later link loss");
     CHECK(wifi.event_when_enabled == 0, "nothing waits for the radio");
 }
+
+// The user takes 15 s to answer "WiFi is disabled. Enable it?" from Show APs: the scan's wait
+// for the radio starts when the Enable goes out, not when the question is asked
+TEST(WifiDisabledTask, a_slow_yes_still_scans)
+{
+    reset_world();
+    world.enabled = true;
+    world.popup_ticks = 15 * configTICK_RATE_HZ;
+    boot({ EVENT_DISABLED, act_show_aps, EVENT_DISCONNECTED });
+    CHECK(strchr(after('?'), 'C') != NULL, "the scan follows the radio start");
+}

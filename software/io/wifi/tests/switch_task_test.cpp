@@ -614,3 +614,37 @@ TEST(WifiSwitchTask, a_reset_while_the_task_sets_up_is_applied)
     CHECK(wifi.getState() == eWifi_NotConnected, "and the radio is on");
 }
 #endif
+
+#if U64 != 2
+// A Disable refreshes an open AP list at once: while the radio off waits for its confirmation
+// the list says WiFi is disabled, and no entry of the last scan is left to pick
+static int refreshes_while_awaited;
+static void note_refreshes(void) { refreshes_while_awaited = wifi.RadioOffAwaited() ? ap_refreshes : -1; }
+
+TEST(WifiSwitchTask, a_disable_refreshes_an_open_ap_list)
+{
+    reset_world();
+    world.enabled = true;
+    boot({ EVENT_CONNECTED, Step(menu_disable), Step(note_refreshes) });
+    CHECK(refreshes_while_awaited >= 1, "the list is refreshed while the radio off waits");
+}
+
+// An Enable that fails is not taken as applied: the next effectuate tries it again, and the
+// events in between do not
+TEST(WifiSwitchTask, a_failed_enable_is_tried_again)
+{
+    reset_world();
+    world.enabled = false;
+    world.enable_answer = -1;
+    boot({ EVENT_DISABLED, Step(menu_enable), EVENT_GOTIP, EVENT_GOTIP, Step(close_wifi_settings) });
+    const char *n = strchr(after('O'), 'N');
+    CHECK(n != NULL && strchr(n + 1, 'N') != NULL && strchr(strchr(n + 1, 'N') + 1, 'N') == NULL,
+          "one more radio on, from the effectuate");
+    reset_world();
+    world.enabled = true;
+    world.enable_answer = -1;
+    boot({ EVENT_GOTIP, Step(close_wifi_settings) });
+    n = strchr(rlog, 'N');
+    CHECK(n != NULL && strchr(n + 1, 'N') != NULL, "the boot's failed radio on is tried again");
+}
+#endif

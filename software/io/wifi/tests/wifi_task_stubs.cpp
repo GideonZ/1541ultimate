@@ -148,6 +148,7 @@ int UserInterface :: popup(const char *msg, uint8_t flags)
 {
     note('?');
     popups++;
+    now += world.popup_ticks;
     return world.popup_answer;
 }
 

@@ -103,6 +103,7 @@ void WiFi :: RadioOn()
     radio_setting_due = true;
     sendEvent(EVENT_RADIO_SETTING);
 #else
+    WhenEnabledFromNow();
     if (wifi_enable() != 0) {
         event_when_enabled = 0; // the radio does not come on: nothing is to follow it
     }
@@ -364,8 +365,12 @@ void WiFi :: RunModeThread()
                 break;
             }
             // Stored as Enabled: the module starts with its radio off and turns it on now.
-            // A module without the switch, whose radio is on already, ignores this.
-            wifi_enable();
+            // A module without the switch, whose radio is on already, ignores this. Not
+            // taken as applied when it fails: the next effectuate asks again.
+            result = wifi_enable();
+            if ((result != 0) && !wifi_switch_unsupported(result)) {
+                radio_setting_applied = -1;
+            }
 #endif
             netstack->start(); // always starts in link down state
             state = eWifi_NotConnected;
@@ -404,12 +409,21 @@ void WiFi :: RunModeThread()
                 radio_setting_applied = netstack->enabled_in_config() ? 1 : 0;
                 if (radio_setting_applied) {
                     wifi_switch_on(&radio_switch); // ends a wait for a radio-off confirmation
-                    if (wifi_enable() != 0) {
+                    WhenEnabledFromNow();
+                    result = wifi_enable();
+                    if (result != 0) {
                         event_when_enabled = 0; // the radio does not come on: nothing is to follow it
+                        // Not applied (a module without the switch has its radio on anyway):
+                        // the next effectuate or change asks again, not every pass
+                        if (!wifi_switch_unsupported(result)) {
+                            radio_setting_applied = -1;
+                        }
                     }
                 } else if (!wifi_switch_unsupported(result = wifi_disable())) {
-                    // Disabled is shown when the module confirms (wifi_switch.h)
+                    // Disabled is shown when the module confirms (wifi_switch.h); an open AP
+                    // list says WiFi is disabled from now on
                     wifi_switch_asked_off(&radio_switch, xTaskGetTickCount(), pdMS_TO_TICKS(WIFI_SWITCH_CONFIRM_MS));
+                    RefreshAPs();
                 } else {
                     // A module without the radio switch: hold it off, as at boot. Not with
                     // Disable(): that stops the application, which would end this task

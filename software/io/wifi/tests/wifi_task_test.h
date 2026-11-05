@@ -42,6 +42,7 @@ struct World {
     uint8_t pick_channel;
     const char *password;  // what the user types in the password box
     int popup_answer;      // BUTTON_YES or BUTTON_NO, to "WiFi is disabled. Enable it?"
+    TickType_t popup_ticks; // how long the user takes to answer it
     void (*during_disable)(void); // done by another task while the next radio off waits for its answer
 };
 extern World world;

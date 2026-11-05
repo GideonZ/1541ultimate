@@ -100,12 +100,10 @@ public:
     char *getIpAddrString(char *buf, int max) { sprintf(buf, "%d.%d.%d.%d", (my_ip >> 0) & 0xff, (my_ip >> 8) & 0xff, (my_ip >> 16) & 0xff, (my_ip >> 24) & 0xff); return buf; }
 
     bool sendEvent(uint8_t code);
-    // After the radio is on again, within WIFI_WHEN_ENABLED_MS
-    void sendEventWhenEnabled(uint8_t code)
-    {
-        event_when_enabled_by = xTaskGetTickCount() + pdMS_TO_TICKS(WIFI_WHEN_ENABLED_MS);
-        event_when_enabled = code;
-    }
+    // After the radio is on again, within WIFI_WHEN_ENABLED_MS of the Enable that goes out
+    // for it (WhenEnabledFromNow, as the Enable is sent; the user may take long to say Yes)
+    void sendEventWhenEnabled(uint8_t code) { event_when_enabled = code; }
+    void WhenEnabledFromNow(void) { event_when_enabled_by = xTaskGetTickCount() + pdMS_TO_TICKS(WIFI_WHEN_ENABLED_MS); }
     uint8_t ConnectStart(void);
     bool sendConnectPending(const char *ssid, uint8_t attempt);
     void ConnectAnswered(uint8_t attempt, int answer);
