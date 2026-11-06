@@ -360,8 +360,9 @@ bool SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint
 
 // Reads exactly 'length' bytes. Returns 'length', 0 when the peer closed before
 // the first byte, or -1 when the connection failed, ended mid-message, stalled for
-// SOCKET_DMA_STALL_MS, or the service was disabled. While 'idle' (waiting for the
-// next command) there is no limit before the first byte; keepalive reaps dead peers.
+// SOCKET_DMA_STALL_MS, or the service was disabled. While 'idle' (an authenticated
+// client between commands) there is no limit before the first byte; keepalive reaps
+// dead peers.
 int SocketDMA::readSocket(int socket, void *buffer, int length, volatile bool *enabled, bool idle)
 {
     int received = 0;
@@ -506,7 +507,9 @@ void SocketDMA::dmaThread(void *a)
 		if (!*password)
 	            authenticated = true;
 		while(daemon->dmaEnabled) {
-	        n = readSocket(newsockfd, buf, 2, &daemon->dmaEnabled, true);
+	        // Only a client that may send commands may wait for ever between them; one that
+	        // still has to authenticate gets the stall limit, so it cannot hold the only slot.
+	        n = readSocket(newsockfd, buf, 2, &daemon->dmaEnabled, authenticated);
 	        if (n <= 0) {
 	            break;
 	        }

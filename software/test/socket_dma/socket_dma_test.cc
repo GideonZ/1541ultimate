@@ -95,7 +95,8 @@ const char *getProductUniqueId(void) { return "0"; }
 static std::atomic<int> cfg_dma_enabled(1);
 
 int ConfigStore::get_value(uint8_t id) { return (id == CFG_NETWORK_ULTIMATE_DMA_SERVICE) ? cfg_dma_enabled.load() : 0; }
-const char *ConfigStore::get_string(uint8_t id) { return ""; }   // no password
+static char cfg_password[32];   // the network password; empty = none
+const char *ConfigStore::get_string(uint8_t id) { return (id == CFG_NETWORK_PASSWORD) ? cfg_password : ""; }
 static ConfigStore the_cfg;
 NetworkConfig::NetworkConfig() { cfg = &the_cfg; }
 NetworkConfig::~NetworkConfig() { }
@@ -262,7 +263,8 @@ static bool is_dmaload(const Rec &r, const std::vector<uint8_t> &p)
     return r.function_id == C64_DMA_BUFFER && r.mode == RUNCODE_DMALOAD && r.data == p;
 }
 
-static const uint16_t CMD_DMA = 0xFF01, CMD_RUN_CRT = 0xFF0D;
+static const uint16_t CMD_DMA = 0xFF01, CMD_RUN_CRT = 0xFF0D, CMD_AUTH = 0xFF1F;
+static const int STALL = SOCKET_DMA_STALL_MS;
 
 static void t_plain(void)
 {
@@ -350,6 +352,79 @@ static void t_stall_limit(void)
            r.empty() && closed && ms >= 2500, describe(r) + ", closed " + (closed ? "yes" : "no") + " after " + std::to_string(ms) + " ms");
 }
 
+// An authenticated client may wait between commands longer than the stall limit.
+static void t_long_idle(void)
+{
+    std::vector<uint8_t> p1 = payload(200, 11), p2 = payload(200, 12);
+    int fd = client_connect();
+    send_all(fd, cat(header(CMD_DMA, 200, false), p1));
+    sleep_ms(2 * STALL + 500);
+    send_all(fd, cat(header(CMD_DMA, 200, false), p2));
+    finish(fd);
+    std::vector<Rec> r = take_recs();
+    report("authenticated_client_may_idle_past_the_stall_limit",
+           r.size() == 2 && is_dmaload(r[0], p1) && is_dmaload(r[1], p2), describe(r));
+}
+
+// The stall limit applies from the first byte of a header: one byte and silence ends it.
+static void t_one_header_byte_then_silence(void)
+{
+    int fd = client_connect();
+    std::vector<uint8_t> h = header(CMD_DMA, 100, false);
+    send_all(fd, slice(h, 0, 1));
+    bool closed;
+    auto t0 = std::chrono::steady_clock::now();
+    drain(fd, STALL + 3000, &closed);
+    long ms = (long)std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count();
+    close(fd);
+    std::vector<Rec> r = take_recs();
+    report("one_header_byte_then_silence_is_dropped_at_the_stall_limit", closed && r.empty() && ms >= STALL - 500,
+           describe(r) + ", closed " + (closed ? "yes" : "no") + " after " + std::to_string(ms) + " ms");
+}
+
+// The limit is on silence, not on the whole message: a slow upload that keeps coming
+// is loaded whole even when it takes longer than the limit.
+static void t_trickle(void)
+{
+    std::vector<uint8_t> p = payload(1000, 13);
+    std::vector<uint8_t> all = cat(header(CMD_DMA, 1000, false), p);
+    int fd = client_connect();
+    size_t step = all.size() / 5 + 1;
+    for (size_t off = 0; off < all.size(); off += step) {
+        send_all(fd, slice(all, off, std::min(all.size(), off + step)));
+        sleep_ms(STALL * 2 / 3);
+    }
+    finish(fd);
+    std::vector<Rec> r = take_recs();
+    report("slow_upload_longer_than_the_limit_is_loaded_whole", r.size() == 1 && is_dmaload(r[0], p), describe(r));
+}
+
+// With a password set, a client that has not authenticated must not hold the only slot.
+static void t_unauthenticated_idle(void)
+{
+    strcpy(cfg_password, "pw");
+    int fd = client_connect();
+    bool closed;
+    auto t0 = std::chrono::steady_clock::now();
+    drain(fd, STALL + 3000, &closed);
+    long ms = (long)std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count();
+    close(fd);
+
+    // an authenticated one may idle on
+    std::vector<uint8_t> p = payload(100, 14);
+    fd = client_connect();
+    send_all(fd, cat(header(CMD_AUTH, 2, false), { 'p', 'w' }));
+    sleep_ms(STALL + 1000);
+    send_all(fd, cat(header(CMD_DMA, 100, false), p));
+    std::vector<uint8_t> reply = finish(fd);
+    cfg_password[0] = 0;
+    std::vector<Rec> r = take_recs();
+    report("unauthenticated_client_is_dropped_at_the_stall_limit", closed && ms >= STALL - 500 && ms < STALL + 2500,
+           std::string("closed ") + (closed ? "yes" : "no") + " after " + std::to_string(ms) + " ms");
+    report("authenticated_client_with_password_may_idle", reply.size() == 1 && reply[0] == 1 && r.size() == 1 && is_dmaload(r[0], p),
+           describe(r));
+}
+
 static void t_disable_while_idle(SocketDMA *dma)
 {
     std::vector<uint8_t> p = payload(100, 10);
@@ -384,6 +459,10 @@ int main(int argc, char **argv)
     t_split_header();
     t_oversize();
     t_stall_limit();
+    t_long_idle();
+    t_one_header_byte_then_silence();
+    t_trickle();
+    t_unauthenticated_idle();
     t_disable_while_idle(dma);
     printf("socket_dma: %d passed, %d failed\n", passes, failures);
     fflush(stdout);
