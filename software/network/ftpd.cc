@@ -151,6 +151,34 @@ static void ftp_set_socket_timeout(int socket_fd, long seconds, long usec)
     setsockopt(socket_fd, SOL_SOCKET, SO_SNDTIMEO, (char *)&tv, sizeof(tv));
 }
 
+// lwIP's blocking connect() ignores SO_SNDTIMEO and SO_RCVTIMEO and waits for
+// TCP to give up (about 18 s for an address that does not answer). Connect
+// without blocking and wait at most 'seconds' for the outcome instead.
+static int ftp_connect_bounded(int socket_fd, struct sockaddr *addr, int addrlen, long seconds)
+{
+    int on = 1, off = 0;
+    ioctlsocket(socket_fd, FIONBIO, &on);
+    int r = connect(socket_fd, addr, addrlen);
+    if ((r < 0) && (errno == EINPROGRESS)) {
+        fd_set writable;
+        FD_ZERO(&writable);
+        FD_SET(socket_fd, &writable);
+        struct timeval tv;
+        tv.tv_sec = seconds;
+        tv.tv_usec = 0;
+        r = -1;
+        if (select(socket_fd + 1, NULL, &writable, NULL, &tv) > 0) {
+            int err = 0;
+            socklen_t len = sizeof(err);
+            if ((getsockopt(socket_fd, SOL_SOCKET, SO_ERROR, &err, &len) == 0) && (err == 0)) {
+                r = 0;
+            }
+        }
+    }
+    ioctlsocket(socket_fd, FIONBIO, &off);
+    return r;
+}
+
 static void ftp_set_control_socket_timeouts(int socket_fd)
 {
     struct timeval recv_tv;
@@ -1082,10 +1110,8 @@ int FTPDataConnection::connect_to(ip_addr_t ip, uint16_t port) // active mode
     serv_addr.sin_addr.s_addr = ip.addr;
 
     // Bound the connect: a client-supplied PORT address that is unreachable would
-    // otherwise block this task for the full TCP connect timeout. Set the socket
-    // timeout before connecting so a dead data address fails fast.
-    ftp_set_socket_timeout(sockfd, 5, 0);
-    if ( connect(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
+    // otherwise block this task for the full TCP connect timeout.
+    if (ftp_connect_bounded(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr), 5) < 0) {
         dbg_printf("FTPD Error : Connect Failed \n");
         return -ENOTCONN;
     }
@@ -1226,10 +1252,18 @@ FTPTransferResult FTPDataConnection::receivefile(vfs_t *vfs, const char *path)
         return FTP_TRANSFER_SETUP_FAILED;
     }
 
+    // Fill the buffer before writing it: whole multiples of the sector size let
+    // the file system write sectors straight from the buffer.
     int n;
+    int fill = 0;
     do {
-        n = recv(actual_socket, buffer, FTPD_DATA_BUFFER_SIZE, 0);
+        n = recv(actual_socket, buffer + fill, FTPD_DATA_BUFFER_SIZE - fill, 0);
         if (n > 0) {
+            fill += n;
+        } else if (n < 0) {
+            result = FTP_TRANSFER_ABORTED;
+        }
+        if ((fill == FTPD_DATA_BUFFER_SIZE) || ((n <= 0) && (fill > 0))) {
             if (!file) {
                 file = vfs_open(vfs, path, "wb");
                 if (!file) {
@@ -1237,15 +1271,13 @@ FTPTransferResult FTPDataConnection::receivefile(vfs_t *vfs, const char *path)
                     break;
                 }
             }
-            uint32_t written = vfs_write(buffer, n, 1, file);
-            if (written != (uint32_t)n) {
-                printf("Hmm.. written = %d. n = %d\n", written, n);
+            uint32_t written = vfs_write(buffer, fill, 1, file);
+            if (written != (uint32_t)fill) {
+                printf("Hmm.. written = %d. n = %d\n", written, fill);
                 result = FTP_TRANSFER_STORAGE_ERROR;
                 break;
             }
-        } else if (n < 0) {
-            result = FTP_TRANSFER_ABORTED;
-            break;
+            fill = 0;
         }
     } while (n > 0);
 
