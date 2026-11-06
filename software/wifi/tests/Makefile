@@ -54,7 +54,7 @@ NEEDED      := send_event wifi_event_handler attempt_connect wifi_connect_to_sca
 # changed and puts back what was there before. Every one has to make the suite FAIL (a failing
 # check, not a build error); `make red` prints which checks failed. A fix that a module
 # does not have, or whose cases are not in this commit, has no entry.
-RED_FIXES := 1 2 4 5 6 7 7b 8 9b 9c 9d 9e 10 11 12 13 14 15 16
+RED_FIXES := 1 2 4 5 6 7 7b 8 9b 9c 9d 9e 10 11 12 13 14 15 16 17
 
 # 1  The radio switch (U64, U2+L): no Disable is served, and the radio goes on at boot, as
 #    on a module without the switch
@@ -162,6 +162,10 @@ LEGACY_15_u64ctrl := -e 's/((ev.command == CMD_WIFI_DISABLE) \&\& recovery_runni
 # 16 The control module takes a failed write of "WiFi Enabled" as done: the next boot goes by
 #    the old value
 LEGACY_16_u64ctrl := -e 's/if (power_set_wifi_enabled(enabled) == ESP_OK) {/power_set_wifi_enabled(enabled); if (1) {/'
+
+# 17 The control module sends the EVENT_DISCONNECTED of a radio start before it clears
+#    disabled_g: a connection query answered in between sends EVENT_DISABLED after it
+LEGACY_17_u64ctrl := -e '/^ *disabled_g = 0;.*$$/{' -e 'N' -e 's/^\( *\)disabled_g = 0;.*\n\( *send_event(EVENT_DISCONNECTED, 0);\)$$/\2 disabled_g = 0;/' -e '}'
 
 LEGACY = $(LEGACY_$(FIX)_$(M))
 

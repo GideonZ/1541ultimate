@@ -107,6 +107,24 @@ TEST(Persist, recovery_autoconnect_starts_the_radio_and_leaves_the_copy)
     CHECK(nvs_wifi_last == 0, "and still reads Disabled for the next boot");
 }
 
+// A radio start from a stored Disabled clears the flag before EVENT_DISCONNECTED goes out:
+// the dispatcher answers the Ultimate's connection query on its own (wifi_send_connected_event),
+// and one that came in between would send EVENT_DISABLED after the start's event, which
+// leaves the Ultimate showing Disabled with the radio on
+TEST(Persist, a_radio_start_clears_disabled_before_its_event)
+{
+    nvs_wifi_enabled = 0;
+    const uint8_t ena[] = { CONNECTOR_SEND_ENABLE };
+    run(false, ena, 1);
+    CHECK(strstr(trace, "TZ") != NULL, "the Enable starts the radio, EVENT_DISCONNECTED");
+    CHECK(stale_disabled == 0, "disabled_g is cleared before EVENT_DISCONNECTED goes out");
+
+    nvs_wifi_enabled = 0;
+    const uint8_t aut[] = { CMD_WIFI_AUTOCONNECT };
+    run(false, aut, 1);
+    CHECK(strstr(trace, "TZ") != NULL, "the Autoconnect starts the radio, EVENT_DISCONNECTED");
+    CHECK(stale_disabled == 0, "disabled_g is cleared before EVENT_DISCONNECTED goes out");
+}
 
 // A Disabled boot attaches no lwIP netif, so there is nothing to record then. After a runtime
 // Enable the netif exists, and its slots must be recorded: the machine-off hook puts them

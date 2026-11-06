@@ -850,8 +850,10 @@ esp_err_t enable_wifi_if_needed(ConnectState_t state)
         xQueueReset(connect_events); // nothing from before the start applies
         esp_err_t err = esp_wifi_start();
         if (err == ESP_OK) {
-            send_event(EVENT_DISCONNECTED, 0);
+            // Cleared first: a connection query the dispatcher answers in between must not
+            // send EVENT_DISABLED after the EVENT_DISCONNECTED of the start
             disabled_g = 0;
+            send_event(EVENT_DISCONNECTED, 0);
         } else {
             ESP_LOGW(TAG, "Failed to start WiFi: %d", err);
         }
@@ -917,9 +919,9 @@ int handle_connect_command(ConnectCommand_t *cmd, ConnectState_t *state)
                 xQueueReset(connect_events); // nothing from before the start applies
                 err = esp_wifi_start();
                 if (err == ESP_OK) {
+                    disabled_g = 0; // before the event, as in enable_wifi_if_needed
                     send_event(EVENT_DISCONNECTED, 0);
                     *state = LastAP;
-                    disabled_g = 0;
                     return 1;
                 } else {
                     ESP_LOGW(TAG, "Failed to start WiFi: %d", err);
