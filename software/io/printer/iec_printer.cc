@@ -47,6 +47,8 @@
 #define MENU_PRINTER_FLUSH     0x1232
 #define MENU_PRINTER_RESET     0x1233
 
+#define PRINTER_QUEUE_DEPTH    2048   /* events; one per data byte or bus command */
+
 /************************************************************************
 *                                                                       *
 *               G L O B A L   M O D U L E   V A R I A B L E S           *
@@ -377,8 +379,11 @@ IecPrinter::IecPrinter() : SubSystem(SUBSYSID_PRINTER)
     /* Initially, no caller task */
     xCallerSemaphore = xSemaphoreCreateBinary();
 
-    /* Create the queue */
-    queueHandle = xQueueCreate( 1, sizeof(PrinterEvent_t));
+    /* Create the queue. It holds about a page of text (~16 KB of RAM), so
+       the IEC server does not hand over each byte to this low priority task
+       and wait for it, nor stall, holding the drive locks, while a finished
+       page is encoded and written. */
+    queueHandle = xQueueCreate( PRINTER_QUEUE_DEPTH, sizeof(PrinterEvent_t));
 
     /* Create the task, storing the handle. */
     xTaskCreate((TaskFunction_t) IecPrinter::task, "Virtual Printer",
