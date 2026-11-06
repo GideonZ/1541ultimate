@@ -377,18 +377,27 @@ void C64::determine_d012(void)
     vic_d012 = 0;
     vic_d011 = 0;
 
+    // A compare on a line that exists matches within one frame (20 ms PAL, 17 ms NTSC),
+    // so 22 ms (one partial and 21 whole 1 ms ticks) is enough; menu entry waits for it.
     b = 0;
     while (!(VIC_REG(25) & 0x81)) {
         if (!ioRead8(ITU_TIMER)) {
             ioWrite8(ITU_TIMER, 200);
             b++;
-            if (b == 40)
+            if (b == 22)
                 break;
         }
     }
 
-    vic_d012 = VIC_REG(18); // d012
-    vic_d011 = VIC_REG(17); // d011
+    if (b < 22) {
+        vic_d012 = VIC_REG(18); // d012
+        vic_d011 = VIC_REG(17); // d011
+    } else {
+        // No match in a whole frame: the compare is past the last line, so it never fires.
+        // Keep it that way rather than putting back whatever line the raster is on.
+        vic_d012 = 0xFF;
+        vic_d011 = VIC_REG(17) | 0x80;
+    }
 
     VIC_REG(26) = 0x00; // disable interrutps
     VIC_REG(25) = 0x81; // clear raster interrupt
@@ -505,12 +514,11 @@ void C64::stop(bool do_raster)
         switch (stop_mode) {
         case 1:
             printf("Frozen on Bad line. Raster = %02x. VIC Irq Enable: %02x. Vic IRQ: %02x\n", raster, vic_irq_en, vic_irq);
-            if (vic_irq_en & 0x01) { // Raster interrupt enabled
-                determine_d012();
-                printf("Original d012/11 content = %02x %02x.\n", vic_d012, vic_d011);
-            } else {
-                vic_d011 = VIC_REG(17); // for all other bits
-            }
+            // resume() writes the compare back whether or not the raster interrupt is enabled
+            // ($D019 latches the match either way), so find it either way. $D011 reads the
+            // raster, not the compare, in bit 7.
+            determine_d012();
+            printf("Original d012/11 content = %02x %02x.\n", vic_d012, vic_d011);
             break;
         case 2:
             printf("Frozen on R/Wn sequence.\n");
