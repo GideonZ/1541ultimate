@@ -328,7 +328,9 @@ SubsysResultCode_e NetworkLWIP_WiFi :: manual_connect(SubsysCommand *cmd)
 void NetworkLWIP_WiFi :: cfg_show_aps(UserInterface *intf, ConfigItem *it)
 {
     WifiState_t state = wifi.getState();
-    if (state == eWifi_Disabled) {
+    // Also while a radio off waits for its confirmation, for good once its asks ran out:
+    // WiFi is off as far as the user is concerned (BrowsableWifiAP :: connect_ap)
+    if ((state == eWifi_Disabled) || wifi.RadioOffAwaited()) {
         // Set before the Enable goes out: the module's event for it can reach the WiFi
         // application before this function returns
         wifi.sendEventWhenEnabled(EVENT_RESCAN); // the radio is not on yet
@@ -357,7 +359,7 @@ void NetworkLWIP_WiFi :: cfg_show_aps(UserInterface *intf, ConfigItem *it)
 void NetworkLWIP_WiFi :: cfg_enter_ap(UserInterface *intf, ConfigItem *it)
 {
     WifiState_t state = wifi.getState();
-    if ((state == eWifi_Disabled) && !ask_enable(intf)) {
+    if (((state == eWifi_Disabled) || wifi.RadioOffAwaited()) && !ask_enable(intf)) {
         return;
     }
     if ((state != eWifi_NotConnected) && (state != eWifi_Connected) && (state != eWifi_Disabled)) {
@@ -371,7 +373,7 @@ void NetworkLWIP_WiFi :: cfg_enter_ap(UserInterface *intf, ConfigItem *it)
 void NetworkLWIP_WiFi :: cfg_conn_last(UserInterface *intf, ConfigItem *it)
 {
     WifiState_t state = wifi.getState();
-    if ((state == eWifi_Disabled) && !ask_enable(intf)) {
+    if (((state == eWifi_Disabled) || wifi.RadioOffAwaited()) && !ask_enable(intf)) {
         return;
     }
     if ((state != eWifi_NotConnected) && (state != eWifi_Connected) && (state != eWifi_Disabled)) {

@@ -164,6 +164,28 @@ static void ask_case(const Action_t &a, bool yes)
     }
 }
 
+#if U64 != 2
+// The module never confirmed the radio off, and the asks have run out: the row shows Link
+// Down, but WiFi is still off as far as the user is concerned, so every action asks first
+// and No sends nothing
+TEST(WifiDisabledTask, after_the_asks_ran_out_the_actions_ask_first)
+{
+    for (const Action_t &a : actions) {
+        reset_world();
+        world.enabled = false;
+        world.popup_answer = BUTTON_NO;
+        boot({ late(Step(a.run), pdMS_TO_TICKS(WIFI_SWITCH_ASKS * WIFI_SWITCH_CONFIRM_MS + 5000)) });
+        char what[80];
+        snprintf(what, sizeof(what), "%s: asked once", a.name);
+        const char *told = strchr(rlog, '!');
+        CHECK(told != NULL && strchr(told, '?') != NULL && popups == 1, what);
+        snprintf(what, sizeof(what), "%s: No sends nothing", a.name);
+        bool done = (a.run == pick) ? (requests != 0) : (strchr(after('?'), a.mark) != NULL);
+        CHECK(!done && requests == 0 && strchr(after('?'), 'N') == NULL, what);
+    }
+}
+#endif
+
 TEST(WifiDisabledTask, yes_enables_and_the_action_goes_on)
 {
     for (const Action_t &a : actions) {
