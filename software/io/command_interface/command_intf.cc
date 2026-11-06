@@ -22,6 +22,11 @@ static SemaphoreHandle_t resetSemaphore;
 // reset between commands rather than during one.
 static volatile bool c64_reset_pending;
 
+bool c64_reset_is_pending(void)
+{
+    return c64_reset_pending;
+}
+
 #define CMD_IF_DEBUG 0
 
 

@@ -27,6 +27,10 @@ extern "C" uint32_t getFpgaCapabilities() { return uci_fake::fpga_capabilities; 
 const char *getProductString() { return "Host Harness"; }
 Rtc rtc;
 
+// production: io/command_interface/command_intf.cc
+namespace uci_fake { extern bool c64_reset_pending; }
+bool c64_reset_is_pending(void) { return uci_fake::c64_reset_pending; }
+
 void uci_fake_run_init_functions(void);
 
 // ---- state ------------------------------------------------------------------------------------

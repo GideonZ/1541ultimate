@@ -1,5 +1,6 @@
 #include "reu_preloader.h"
 #include "init_function.h"
+#include "sliced_transfer.h"
 
 REUPreloader *reu_preloader = NULL; // globally static
 static void init(void *_a, void *_b)
@@ -78,7 +79,7 @@ void REUPreloader::poll(void)
     }
 }
 
-int REUPreloader::LoadREU(char *status)
+int REUPreloader::LoadREU(char *status, bool (*stop)(void))
 {
     uint32_t transferred = 0;
     if (cfg->get_value(CFG_C64_REU_EN)) {
@@ -105,7 +106,7 @@ int REUPreloader::LoadREU(char *status)
         uint32_t size = reu_sizes[cfg->get_value(CFG_C64_REU_SIZE)];
 
         if (offset < size) {
-            f->read((uint8_t *) address, size - offset, &transferred);
+            sliced_transfer(f, (uint8_t *) address, size - offset, false, &transferred, stop);
             sprintf(status, "REU Load: Loaded %d bytes to $%6x from %s", transferred, offset, fullpath);
         } else {
             sprintf(status, "REU Load: Offset %d >= REU size %d, skipping", offset, size);
@@ -119,7 +120,7 @@ int REUPreloader::LoadREU(char *status)
     return (int)transferred;
 }
 
-int REUPreloader::SaveREU(char *status)
+int REUPreloader::SaveREU(char *status, bool (*stop)(void))
 {
     uint32_t transferred = 0;
 
@@ -165,7 +166,7 @@ int REUPreloader::SaveREU(char *status)
             return -1;
         }
 
-        f->write((uint8_t *) address, size - offset, &transferred);
+        sliced_transfer(f, (uint8_t *) address, size - offset, true, &transferred, stop);
         sprintf(status, "REU Save: Saved %d bytes from $%6x to %s", transferred, offset, fullpath);
 
         fm->fclose(f);
