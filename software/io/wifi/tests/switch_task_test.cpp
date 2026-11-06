@@ -95,7 +95,7 @@ TEST(WifiSwitchTask, unconfirmed_radio_off)
     world.link = 1;
     boot({});
     CHECK(strstr(rlog, "dmOs") != NULL, "radio off asked for");
-    CHECK(strncmp(after('s'), "OOO!O", 5) == 0, "asked again at each deadline, the user told, then asked again");
+    CHECK(strncmp(after('s'), "OOO!VO", 6) == 0, "asked again at each deadline, the user told, the modem given back, then asked again");
     CHECK(strcmp(messages, "WiFi module did not turn its radio off\n") == 0, "what the user is told, once");
     CHECK(message_at - 1000 == WIFI_SWITCH_ASKS * pdMS_TO_TICKS(WIFI_SWITCH_CONFIRM_MS), "after the last deadline, not before");
     int slow = count_after(after('!'), 'O');
@@ -418,8 +418,8 @@ TEST(WifiSwitchTask, runtime_disable_unconfirmed)
     world.enabled = true;
     world.link = 1;
     boot({ EVENT_CONNECTED, Step(menu_disable), EVENT_GOTIP });
-    CHECK(strncmp(after('O'), "OOO!u", 5) == 0, "asked again at the deadlines, then the user is told and the link goes down");
-    CHECK(strpbrk(after('O'), "QU") == NULL, "the link is not taken again");
+    CHECK(strncmp(after('O'), "OOO!uV", 6) == 0, "asked again at the deadlines, then the user is told, the link goes down and the modem is given back");
+    CHECK(strpbrk(after('O'), "QUM") == NULL, "the link is not taken again");
     CHECK(wifi.getState() == eWifi_NotConnected, "Link Down");
 }
 #endif
@@ -439,7 +439,7 @@ TEST(WifiSwitchTask, runtime_disable_deadline_without_further_events)
         bounded |= (timed_waits[i] == pdMS_TO_TICKS(WIFI_SWITCH_CONFIRM_MS));
     }
     CHECK(bounded, "the wait for the confirmation is bounded");
-    CHECK(strncmp(after('O'), "OOO!u", 5) == 0, "asked again at the deadlines, then the user is told and the link goes down");
+    CHECK(strncmp(after('O'), "OOO!uV", 6) == 0, "asked again at the deadlines, then the user is told, the link goes down and the modem is given back");
     CHECK(wifi.radio_switch.awaiting_off, "the radio off is still awaited");
 }
 

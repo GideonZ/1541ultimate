@@ -495,6 +495,8 @@ void WiFi :: RunModeThread()
                         if (state == eWifi_Connected) {
                             netstack->link_down();
                         }
+                        // The module's frames are not taken while the link is held down
+                        wifi_modem_enable(false);
                         state = eWifi_NotConnected;
                         RefreshRoot();
                     }

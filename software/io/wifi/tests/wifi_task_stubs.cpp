@@ -329,7 +329,7 @@ int wifi_disable()
     }
     return world.disable_answer;
 }
-int wifi_modem_enable(bool) { note('M'); return 0; }
+int wifi_modem_enable(bool on) { note(on ? 'M' : 'V'); return 0; }
 int wifi_get_voltages(voltages_t *v)
 {
     if (world.voltages_result == 0) {

@@ -10,7 +10,8 @@
  *
  * Log letters: d detect, m get MAC, O radio off asked (CMD_WIFI_DISABLE), N radio on asked
  * (CMD_WIFI_ENABLE), Q connection state asked, s netstack start, U link up, u link down,
- * C scan, A application stopped, B application started, M modem taken over, F module held
+ * C scan, A application stopped, B application started, M modem taken over, V modem given
+ * back (CMD_MODEM_OFF), F module held
  * off, D/E U2+L module detection and run mode, ! a message to the user.
  */
 
