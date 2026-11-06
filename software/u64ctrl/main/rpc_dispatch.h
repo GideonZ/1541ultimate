@@ -32,7 +32,8 @@ void send_keepalive();
 // boot, and the Ultimate's Enable and Disable update the copy. A Disable during a recovery
 // is answered ESP_ERR_INVALID_STATE: the radio stays on, the setting is stored. A failed
 // write of the copy is retried while the connector idles. A radio start clears the Disabled
-// flag before it sends EVENT_DISCONNECTED.
+// flag before it sends EVENT_DISCONNECTED. An Enable is written also when the copy cannot be
+// read.
 // 1.29: the idle connector handles every queued command and event before it waits, so a
 // Disable behind an Enable is not left queued; the wait for its own disconnect is bounded
 // (3 s); events from before a radio stop are dropped; a CMD_WIFI_CONNECT must hold the

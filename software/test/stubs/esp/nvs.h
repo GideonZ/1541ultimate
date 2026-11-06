@@ -25,5 +25,6 @@ void nvs_stub_erase_all(void);   // a factory fresh module
 int  nvs_stub_commits(void);     // how often the flash was actually written
 void nvs_stub_reset_commits(void);
 void nvs_stub_fail_writes(int n); // the next n nvs_set_u8() calls fail and store nothing
+void nvs_stub_fail_reads(int n);  // the next n nvs_get_u8() calls fail
 
 #endif

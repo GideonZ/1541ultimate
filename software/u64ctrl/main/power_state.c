@@ -95,14 +95,12 @@ uint8_t power_get_wifi_enabled(void)
     return read_u8(NVS_KEY_WIFI, 1) ? 1 : 0;
 }
 
+// The Ultimate sends its setting at every handshake: write_u8 writes only a change. Not
+// decided by power_get_wifi_enabled(), whose read error gives the default (Enabled), so that
+// an Enable then would leave a stored Disabled in place.
 esp_err_t power_set_wifi_enabled(uint8_t enabled)
 {
-    enabled = enabled ? 1 : 0;
-    if (power_get_wifi_enabled() == enabled) {
-        return ESP_OK; // the Ultimate sends its setting at every handshake
-    }
-    ESP_LOGI(TAG, "WiFi: %s", enabled ? "ENABLED" : "DISABLED");
-    return write_u8(NVS_KEY_WIFI, enabled);
+    return write_u8(NVS_KEY_WIFI, enabled ? 1 : 0);
 }
 
 uint8_t power_get_wake_on_wifi(void)

@@ -193,6 +193,11 @@ int main(void)
     check_eq(power_set_wifi_enabled(0), ESP_OK, "the write after it is taken");
     check_eq(power_get_wifi_enabled(), 0, "and reads back as Disabled");
 
+    printf("An Enable while the stored Disabled cannot be read\n");
+    nvs_stub_fail_reads(1);
+    check_eq(power_set_wifi_enabled(1), ESP_OK, "the Enable is accepted");
+    check_eq(power_get_wifi_enabled(), 1, "and written: it reads back as Enabled");
+
     printf("Arming the watcher for a magic packet\n");
     nvs_stub_erase_all();
     (void)power_set_wake_on_wifi(WAKE_ON_WIFI_ENABLED);
