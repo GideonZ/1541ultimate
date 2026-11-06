@@ -4,5 +4,5 @@
 # variants: 2
 s/^    set_enabled(false);$/    wifi.RadioOff();/
 s/^    set_enabled(true);$/    wifi.RadioOn();/
-s/^                    wifi_enable();$//
-s/^                    wifi_disable();$//
+s/if (wifi_switch_wants_off(&radio_switch, radio_setting_applied != 0) \&\&/if (0 \&\&/
+s/^                result = wifi_enable();$/                result = 0;/
