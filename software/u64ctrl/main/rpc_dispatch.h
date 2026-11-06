@@ -26,9 +26,9 @@ void start_dispatch(QueueHandle_t queue);
 void send_button_event(uint8_t button);
 void send_keepalive();
 
-#define IDENT_STRING "ESP32 WiFi Bridge V1.23"
+#define IDENT_STRING "ESP32 WiFi Bridge V1.29"
 #define IDENT_MAJOR   1
-// 1.23: the idle connector handles every queued command and event before it waits, so a
+// 1.29: the idle connector handles every queued command and event before it waits, so a
 // Disable behind an Enable is not left queued; the wait for its own disconnect is bounded
 // (3 s); events from before a radio stop are dropped; a CMD_WIFI_CONNECT must hold the
 // whole password.
@@ -50,7 +50,7 @@ void send_keepalive();
 // when this is higher than what the module reports, so a module change that
 // does not bump it is silently never installed, and an older release never
 // replaces a newer module.
-#define IDENT_MINOR   23
+#define IDENT_MINOR   29
 #define MULTITHREADED 0
 #define DISPATCHER_STACK 3072
 
