@@ -210,3 +210,36 @@ TEST(WifiSwitch, confirmed_in_time)
 }
 
 #endif
+
+// Each expired wait is followed by another: WIFI_SWITCH_ASKS of them at the first limit, then
+// at the slow one for good, the user told once in between; a new request starts the count again
+TEST(WifiSwitch, a_bounded_number_of_waits_then_a_slow_pace)
+{
+    wifi_switch_t sw;
+    memset(&sw, 0, sizeof(sw));
+    wifi_switch_asked_off(&sw, 0, 100);
+    uint32_t t = 0;
+    for (int i = 1; i < WIFI_SWITCH_ASKS; i++) {
+        t += 100;
+        EXPECT_TRUE(wifi_switch_expired(&sw, t));
+        EXPECT_FALSE(wifi_switch_ask_again(&sw, t, 100, 600));
+        EXPECT_EQ(wifi_switch_wait(&sw, t), 100);
+    }
+    t += 100;
+    EXPECT_TRUE(wifi_switch_expired(&sw, t));
+    EXPECT_TRUE(wifi_switch_ask_again(&sw, t, 100, 600)); // the user is told
+    EXPECT_TRUE(sw.awaiting_off);                          // and the wait goes on
+    EXPECT_EQ(wifi_switch_wait(&sw, t), 600);
+    for (int i = 0; i < 300; i++) {                        // for good, told once
+        t += 600;
+        EXPECT_TRUE(wifi_switch_expired(&sw, t));
+        EXPECT_FALSE(wifi_switch_ask_again(&sw, t, 100, 600));
+        EXPECT_EQ(wifi_switch_wait(&sw, t), 600);
+    }
+    wifi_switch_asked_off(&sw, t, 100);
+    EXPECT_TRUE(wifi_switch_expired(&sw, t + 100));
+    EXPECT_FALSE(wifi_switch_ask_again(&sw, t + 100, 100, 600));
+    EXPECT_EQ(wifi_switch_wait(&sw, t + 100), 100);
+    wifi_switch_on(&sw); // an Enable ends it
+    EXPECT_EQ(wifi_switch_wait(&sw, t + 100), -1);
+}

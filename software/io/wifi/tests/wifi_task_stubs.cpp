@@ -103,6 +103,9 @@ static int queue_n, queue_i;
 static command_buf_t pool[8];
 static int pool_i;
 TickType_t waited;
+// The script is done and the task waits only at intervals (it asks for a radio off that the
+// module never confirms): the case ends once it has waited this long with nothing to come
+static TickType_t quiet;
 TickType_t timed_waits[8];
 int timed_waits_n;
 TickType_t message_at;
@@ -265,6 +268,7 @@ BaseType_t cmd_buffer_received(command_buf_context_t *context, command_buf_t **b
                 arrived--;
             }
             *b = &queue[queue_i++];
+            quiet = 0;
             return pdTRUE;
         }
         queue_delay[queue_i] -= t; // the wait ran out first
@@ -274,6 +278,12 @@ BaseType_t cmd_buffer_received(command_buf_context_t *context, command_buf_t **b
     }
     now += t; // the time it waited, with nothing coming
     waited += t;
+    if (queue_i >= queue_n) {
+        quiet += t;
+        if (quiet > QUIET_TICKS) {
+            stop("asking at intervals");
+        }
+    }
     return pdFALSE;
 }
 
@@ -356,6 +366,7 @@ void boot(std::initializer_list<Step> steps)
     waits = 0;
     now = 1000;
     waited = 0;
+    quiet = 0;
     timed_waits_n = 0;
     message_at = 0;
     ap_refreshes = 0;

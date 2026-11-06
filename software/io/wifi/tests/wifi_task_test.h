@@ -54,7 +54,9 @@ extern char rlog[256];     // what the task did, one letter each
 extern int frees;          // buffers given back to the UART
 extern int popups;         // how often the user was asked
 extern char messages[256]; // what the user was told, one message per line
-extern const char *ended;  // why the task stopped running
+extern const char *ended;  // why the task stopped running ("asking at intervals": the script
+                           // is done, and the task waited QUIET_TICKS with only bounded waits)
+#define QUIET_TICKS pdMS_TO_TICKS(5 * 60 * 1000)
 extern TickType_t now;     // the task's clock, in ticks
 extern int first_wait_state; // the task's state when it first waits for an event
 extern TickType_t waited;  // the ticks the task waited for events that did not come

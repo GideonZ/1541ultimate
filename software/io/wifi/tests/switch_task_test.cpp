@@ -77,18 +77,34 @@ TEST(WifiSwitchTask, disabled_only_after_the_confirmation)
     CHECK(wifi.getState() == eWifi_Disabled, "Disabled after it");
 }
 
-// The module never confirms (its stop failed, or the request was lost): after the deadline
-// the application takes the link state from the module again
+static int count_after(const char *p, char c)
+{
+    int n = 0;
+    for (; *p; p++) {
+        n += (*p == c);
+    }
+    return n;
+}
+
+// The module never confirms (its stop failed, or the request was lost): at each deadline the
+// radio off is asked for again; after WIFI_SWITCH_ASKS of them the user is told, and it is
+// asked for at the slow pace from then on. The link is never taken, whatever the module says.
 TEST(WifiSwitchTask, unconfirmed_radio_off)
 {
     reset_world();
     world.link = 1;
     boot({});
     CHECK(strstr(rlog, "dmOs") != NULL, "radio off asked for");
-    CHECK(strchr(after('s'), 'Q') != NULL, "the link state is asked for again");
-    CHECK(strchr(after('Q'), 'U') != NULL, "and the link follows the module");
-    CHECK(wifi.getState() == eWifi_Connected, "Connected, as the module is");
-    CHECK(now - 1000 >= pdMS_TO_TICKS(WIFI_SWITCH_CONFIRM_MS), "not before the deadline");
+    CHECK(strncmp(after('s'), "OOO!O", 5) == 0, "asked again at each deadline, the user told, then asked again");
+    CHECK(strcmp(messages, "WiFi module did not turn its radio off\n") == 0, "what the user is told, once");
+    CHECK(message_at - 1000 == WIFI_SWITCH_ASKS * pdMS_TO_TICKS(WIFI_SWITCH_CONFIRM_MS), "after the last deadline, not before");
+    int slow = count_after(after('!'), 'O');
+    CHECK(slow >= 2 && slow <= (int)(QUIET_TICKS / pdMS_TO_TICKS(WIFI_SWITCH_SLOW_MS)) + 1, "asked for at the slow pace from then on");
+    CHECK(strchr(rlog, 'Q') == NULL, "the link state is not asked for");
+    CHECK(strchr(rlog, 'U') == NULL, "and the link never comes up");
+    CHECK(wifi.getState() == eWifi_NotConnected, "Link Down");
+    CHECK(wifi.RadioOffAwaited(), "still waiting for the radio off");
+    CHECK(strcmp(ended, "asking at intervals") == 0, "for good");
 }
 
 // A module without the switch, whose radio is on from its boot: it is held off, as a
@@ -105,8 +121,8 @@ TEST(WifiSwitchTask, module_without_the_switch)
 }
 
 // The boot's Disable never left (no transmit buffer): it is not taken for a module
-// without the switch, and when the confirmation is overdue it is asked for again before
-// the connection query, which the module would otherwise take as an old application's
+// without the switch, it is asked for again at the deadlines, and no connection query goes
+// out, which the module would take as an old application's (and start its radio)
 TEST(WifiSwitchTask, boot_disable_not_sent)
 {
     reset_world();
@@ -114,21 +130,20 @@ TEST(WifiSwitchTask, boot_disable_not_sent)
     world.disable_answer = kNothingSent;
     boot({});
     CHECK(strchr(rlog, 'F') == NULL, "not held off");
-    const char *q = strchr(rlog, 'Q');
-    const char *again = strchr(after('O'), 'O');
-    CHECK((q != NULL) && (again != NULL) && (q > again), "asked again before the query");
+    CHECK(strchr(after('O'), 'O') != NULL, "asked again");
+    CHECK(strchr(rlog, 'Q') == NULL && strchr(rlog, 'U') == NULL, "no connection query, no link");
 }
 
 // The radio off asked for again after a restart could not be sent: the wait for its
-// confirmation still ends at the deadline, which asks again, so that link events are not
-// dropped for good
+// confirmation still ends at the deadline, which asks again
 TEST(WifiSwitchTask, restart_disable_not_sent)
 {
     reset_world();
     world.disable_answer = kNothingSent;
     boot({ EVENT_DISABLED, EVENT_RESTARTED });
     CHECK(strchr(rlog, 'F') == NULL, "not held off");
-    CHECK(strchr(rlog, 'Q') != NULL, "the deadline comes, and the link state is asked for");
+    CHECK(count_after(rlog, 'O') > 2, "the deadline comes, and the radio off is asked for again");
+    CHECK(strchr(rlog, 'U') == NULL, "no link");
 }
 
 // Only ESP_ERR_NOT_SUPPORTED means a module without the switch. A module with it that
@@ -387,7 +402,7 @@ TEST(WifiSwitchTask, quick_disable_then_enable_ends_on)
 
 // A Disable at runtime is confirmed as the boot's is: Disabled is shown when the module
 // says so, its link events are dropped until then, and when it never says so, the radio
-// off is asked again and the link state is taken from the module again
+// off is asked again, and after the last deadline the link goes down
 TEST(WifiSwitchTask, runtime_disable_is_confirmed)
 {
     reset_world();
@@ -403,14 +418,16 @@ TEST(WifiSwitchTask, runtime_disable_unconfirmed)
     world.enabled = true;
     world.link = 1;
     boot({ EVENT_CONNECTED, Step(menu_disable), EVENT_GOTIP });
-    CHECK(strstr(after('O'), "OQ") != NULL, "asked again at the deadline, then the link state is asked for");
+    CHECK(strncmp(after('O'), "OOO!u", 5) == 0, "asked again at the deadlines, then the user is told and the link goes down");
+    CHECK(strpbrk(after('O'), "QU") == NULL, "the link is not taken again");
+    CHECK(wifi.getState() == eWifi_NotConnected, "Link Down");
 }
 #endif
 
 #if U64 != 2
 // A Disable while the task waits for an event without a bound (connected, nothing pending,
 // a quiet module): the wait for its confirmation is bounded all the same, and when the
-// module never confirms, the radio off is asked again and the link state taken again
+// module never confirms, the radio off is asked again, and the link goes down
 TEST(WifiSwitchTask, runtime_disable_deadline_without_further_events)
 {
     reset_world();
@@ -422,8 +439,8 @@ TEST(WifiSwitchTask, runtime_disable_deadline_without_further_events)
         bounded |= (timed_waits[i] == pdMS_TO_TICKS(WIFI_SWITCH_CONFIRM_MS));
     }
     CHECK(bounded, "the wait for the confirmation is bounded");
-    CHECK(strstr(after('O'), "OQ") != NULL, "asked again at the deadline, then the link state is asked for");
-    CHECK(!wifi.radio_switch.awaiting_off, "nothing is awaited after the deadline");
+    CHECK(strncmp(after('O'), "OOO!u", 5) == 0, "asked again at the deadlines, then the user is told and the link goes down");
+    CHECK(wifi.radio_switch.awaiting_off, "the radio off is still awaited");
 }
 
 // The menu, the REST API and the setting do not wait for the module: the request goes out

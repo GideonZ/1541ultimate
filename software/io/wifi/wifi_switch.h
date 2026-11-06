@@ -20,7 +20,11 @@
  * The answer to the request only says that the module queued it. The application shows
  * Disabled when EVENT_DISABLED arrives, not before. If it does not arrive within
  * WIFI_SWITCH_CONFIRM_MS (the module could not stop its radio, or the request was lost),
- * the wait ends and the application takes the link state from the module again.
+ * the radio off is asked for again; after WIFI_SWITCH_ASKS such waits the user is told, the
+ * link goes down, and the radio off is asked for every WIFI_SWITCH_SLOW_MS from then on,
+ * until the module confirms it or WiFi is enabled. The link is not taken meanwhile: the
+ * module's link events are still dropped. A module that does not answer at all costs the
+ * WiFi task the answer's timeout (WIFI_REPLY_TIMEOUT_MS) at each ask.
  *
  * A module without the radio switch answers the request with an error; its radio is on
  * from its boot. The application then holds the module off, at its start and on a Disable
@@ -39,6 +43,10 @@
 #include "rpc_calls.h"
 
 #define WIFI_SWITCH_CONFIRM_MS 10000
+// How many times a radio off is waited for before the user is told that it did not happen
+#define WIFI_SWITCH_ASKS 3
+// From then on, how often it is asked for again
+#define WIFI_SWITCH_SLOW_MS 60000
 
 // Internal event of the WiFi application: it wakes the WiFi task to apply "WiFi Enabled" as
 // it is stored now (WiFi :: radio_setting_due says that a change waits). It has no value:
@@ -59,6 +67,7 @@ static inline bool wifi_switch_unsupported(int result)
 typedef struct {
     bool awaiting_off; // the radio off was asked for, and EVENT_DISABLED is not seen yet
     uint32_t deadline; // when the wait for EVENT_DISABLED ends, in the caller's time unit
+    uint8_t asks;      // the waits for it so far, this one included
 } wifi_switch_t;
 
 // At the start of the WiFi application, when it has found the module: whether the radio
@@ -77,6 +86,7 @@ static inline void wifi_switch_asked_off(wifi_switch_t *sw, uint32_t now, uint32
 {
     sw->awaiting_off = true;
     sw->deadline = now + limit;
+    sw->asks = 1;
 }
 
 // How long the application may wait for the next event: -1 for as long as it takes, else
@@ -90,14 +100,33 @@ static inline int32_t wifi_switch_wait(const wifi_switch_t *sw, uint32_t now)
     return (left > 0) ? left : 0;
 }
 
-// True once, when the confirmation is overdue: the wait ends, and the application asks the
-// module for its link state again
+// True once, when the confirmation is overdue: the wait ends, and the application asks for
+// the radio off again (wifi_switch_ask_again)
 static inline bool wifi_switch_expired(wifi_switch_t *sw, uint32_t now)
 {
     if (!sw->awaiting_off || (wifi_switch_wait(sw, now) > 0)) {
         return false;
     }
     sw->awaiting_off = false;
+    return true;
+}
+
+// After wifi_switch_expired, with the radio off asked for again: the next wait for its
+// confirmation starts. The first WIFI_SWITCH_ASKS waits last limit, every later one slow.
+// True once, when the waits that last limit have run out: the user is to be told then.
+static inline bool wifi_switch_ask_again(wifi_switch_t *sw, uint32_t now, uint32_t limit, uint32_t slow)
+{
+    sw->awaiting_off = true;
+    if (sw->asks < WIFI_SWITCH_ASKS) {
+        sw->deadline = now + limit;
+        sw->asks++;
+        return false;
+    }
+    sw->deadline = now + slow;
+    if (sw->asks > WIFI_SWITCH_ASKS) {
+        return false;
+    }
+    sw->asks++;
     return true;
 }
 

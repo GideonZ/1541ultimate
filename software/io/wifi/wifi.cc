@@ -478,22 +478,22 @@ void WiFi :: RunModeThread()
 #endif
             if (cmd_buffer_received(packets, &buf, wait_ticks) != pdTRUE) {
 #if U64 != 2
-                // The radio off was not confirmed in time: take the link state from the
-                // module again
+                // The radio off was not confirmed in time: it is asked for again, and its
+                // link events are still dropped. After WIFI_SWITCH_ASKS waits the user is
+                // told, the link goes down, and the radio off is asked for at a slower pace
+                // for as long as WiFi stays Disabled: the link is never taken with Disabled
+                // stored.
                 if (wifi_switch_expired(&radio_switch, xTaskGetTickCount())) {
                     printf("WiFi module did not confirm the radio off\n");
-                    // Ask once more first: a Disable that never left (no transmit buffer)
-                    // or that a module restart lost would otherwise let the connection
-                    // query start the radio of a module that takes it as an application
-                    // without the switch (wifi_modem.c, off_asked)
                     wifi_disable();
-                    state = eWifi_NotConnected;
-                    if ((wifi_is_connected(conn) == 0) && conn) {
-                        wifi_modem_enable(true); // take control!
-                        netstack->link_up();
-                        state = eWifi_Connected;
+                    if (wifi_switch_ask_again(&radio_switch, xTaskGetTickCount(), pdMS_TO_TICKS(WIFI_SWITCH_CONFIRM_MS), pdMS_TO_TICKS(WIFI_SWITCH_SLOW_MS))) {
+                        UserInterface :: postMessage("WiFi module did not turn its radio off");
+                        if (state == eWifi_Connected) {
+                            netstack->link_down();
+                        }
+                        state = eWifi_NotConnected;
+                        RefreshRoot();
                     }
-                    RefreshRoot();
                 }
 #endif
                 break; // the wait for the outcome of a connect ran out; the next pass reports it

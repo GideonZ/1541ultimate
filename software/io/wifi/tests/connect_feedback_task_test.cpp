@@ -309,7 +309,8 @@ TEST(WifiConnectFeedbackTask, wakes_for_the_connect_deadline_first)
     const TickType_t picked_at = 1000;
     boot({ pick,
            late(Step(radio_off_asked_again), (20 * configTICK_RATE_HZ) - 500),
-           EVENT_GOTIP });
+           EVENT_GOTIP,
+           late(Step(EVENT_DISABLED), 1000) }); // confirmed after the outcome
     // the pick at 1000 gives a deadline at 1000 + 4000; the radio off is asked at 4500,
     // with its deadline at 6500
     CHECK(asked_again_at == picked_at + (20 * configTICK_RATE_HZ) - 500, "the radio off is asked at 4500");
