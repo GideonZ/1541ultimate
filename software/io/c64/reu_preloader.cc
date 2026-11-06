@@ -120,7 +120,7 @@ int REUPreloader::LoadREU(char *status, bool (*stop)(void))
     return (int)transferred;
 }
 
-int REUPreloader::SaveREU(char *status, bool (*stop)(void))
+int REUPreloader::SaveREU(char *status)
 {
     uint32_t transferred = 0;
 
@@ -166,7 +166,7 @@ int REUPreloader::SaveREU(char *status, bool (*stop)(void))
             return -1;
         }
 
-        sliced_transfer(f, (uint8_t *) address, size - offset, true, &transferred, stop);
+        sliced_transfer(f, (uint8_t *) address, size - offset, true, &transferred, NULL);
         sprintf(status, "REU Save: Saved %d bytes from $%6x to %s", transferred, offset, fullpath);
 
         fm->fclose(f);

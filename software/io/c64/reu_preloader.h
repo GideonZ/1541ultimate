@@ -24,9 +24,10 @@ class REUPreloader {
     REUPreloader();
     virtual ~REUPreloader();
 
-    // stop (optional) is asked between slices of the transfer; see sliced_transfer.h
+    // stop (optional) is asked between slices of the load; see sliced_transfer.h.
+    // A save is never stopped part-way.
     int LoadREU(char *status, bool (*stop)(void) = NULL);
-    int SaveREU(char *status, bool (*stop)(void) = NULL);
+    int SaveREU(char *status);
 };
 
 #endif // REU_PRELOADER_H

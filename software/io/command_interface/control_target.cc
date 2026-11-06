@@ -355,7 +355,7 @@ void ControlTarget :: parse_command(Message *command, Message **reply, Message *
                 if (command->message[1] == CTRL_CMD_LOAD_REU) {
                     retVal = reu_preloader->LoadREU((char *)data_message.message + 4, uci_should_stop);
                 } else {
-                    retVal = reu_preloader->SaveREU((char *)data_message.message + 4, uci_should_stop);
+                    retVal = reu_preloader->SaveREU((char *)data_message.message + 4);
                 }
                 pul = (uint32_t *)data_message.message;
                 data_message.last_part = true;

@@ -308,10 +308,8 @@ void Dos::parse_command(Message *command, Message **reply, Message **status) {
             len = 0x01000000 - addr;
             *status = &c_status_truncated;
         }
-        res = sliced_transfer(file, (uint8_t *) (addr | 0x01000000), len, true, &transferred, uci_should_stop);
-        if ((transferred < len) && uci_should_stop()) {
-            *status = &c_status_truncated;
-        }
+        // A save always runs to the end: stopping it would leave a cut-off file.
+        res = sliced_transfer(file, (uint8_t *) (addr | 0x01000000), len, true, &transferred, NULL);
         *reply = &data_message;
         sprintf((char *) data_message.message, "$%6x BYTES SAVED FROM REU $%6x",
                 transferred, addr);
@@ -745,11 +743,12 @@ void Dos::parse_command(Message *command, Message **reply, Message **status) {
                if (file) {
                   uint32_t bytes_written;
                   if (ftype == 1571) {
-                     sliced_transfer(file, dstAddr, expSize / 2, true, &bytes_written, uci_should_stop);
+                     // A save always runs to the end: the file was just truncated to be rewritten.
+                     sliced_transfer(file, dstAddr, expSize / 2, true, &bytes_written, NULL);
                      // total_bytes_read += bytes_read;
-                     sliced_transfer(file, dstAddr + 700 * 256, expSize / 2, true, &bytes_written, uci_should_stop);
+                     sliced_transfer(file, dstAddr + 700 * 256, expSize / 2, true, &bytes_written, NULL);
                   } else {
-                     sliced_transfer(file, dstAddr, expSize, true, &bytes_written, uci_should_stop);
+                     sliced_transfer(file, dstAddr, expSize, true, &bytes_written, NULL);
                   }
                   // total_bytes_read += bytes_read;
                   fm->fclose(file);

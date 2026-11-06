@@ -1,8 +1,9 @@
 // Long UCI file transfers (DOS LOAD_REU/SAVE_REU, the RAM disk load/save, and
 // control LOAD_REU/SAVE_REU through the REU preloader) go in slices of at most
-// 64 KB, so other tasks get the FatFs volume in between, and stop at the next
-// slice once the C64 aborts the command or is reset. A transfer that runs to
-// the end gives the same bytes, reply and status as before.
+// 64 KB with a yield between slices, so other tasks get the FatFs volume in
+// between. Loads stop at the next slice once the C64 aborts the command or is
+// reset; saves always run to the end (a cut-off save would leave a broken file).
+// A transfer that runs to the end gives the same bytes, reply and status as before.
 #include <string>
 #include <vector>
 #include <stdio.h>
@@ -48,6 +49,11 @@ static std::string io_summary(void)
 }
 
 // Raise the abort bit (or the reset flag) after the n-th read/write call.
+static std::string saved_size(const std::vector<uint8_t> *f)
+{
+    return f ? std::to_string(f->size()) + " bytes in the file" : "no file";
+}
+
 static void stop_after(int n, bool reset)
 {
     std::shared_ptr<int> count(new int(0));
@@ -74,8 +80,27 @@ static void t_dos_load_reu_full(void)
     close_file();
     std::string reply(r.reply.begin(), r.reply.end());
     bool ok = memcmp(uci_fake::reu() + 0x020000, bytes.data(), len) == 0 && r.status == "00,OK" &&
-              reply == "$1003e8 BYTES LOADED TO REU $ 20000" && uci_fake::max_io_len(false) <= SLICE;
-    check(ok, "dos_load_reu_whole_file_in_64k_slices", "status " + r.status + ", reply '" + reply + "', " + io_summary());
+              reply == "$1003e8 BYTES LOADED TO REU $ 20000" && uci_fake::max_io_len(false) <= SLICE &&
+              uci_fake::yields == io_calls(false) - 1;
+    check(ok, "dos_load_reu_whole_file_in_64k_slices_yielding_between", "status " + r.status + ", reply '" + reply + "', " +
+          io_summary() + ", yields " + std::to_string(uci_fake::yields));
+}
+
+// The usual LOAD_REU: the length is the REU size, the image is smaller. The
+// transfer must end at the end of the file.
+static void t_dos_load_reu_short_file(void)
+{
+    uci_fake::reset();
+    const uint32_t flen = 3 * SLICE + 1234;
+    std::vector<uint8_t> bytes = pattern(flen, 30);
+    uci_fake::fs_add_file("/Usb0/short.reu", bytes);
+    open_file("short.reu", FA_READ);
+    Cmd load(1, DOS_CMD_LOAD_REU); load.le32(0).le32(0x1000000);
+    Result r = run(load);
+    close_file();
+    std::string reply(r.reply.begin(), r.reply.end());
+    bool ok = memcmp(uci_fake::reu(), bytes.data(), flen) == 0 && io_calls(false) <= 5 && r.status == "00,OK";
+    check(ok, "dos_load_reu_ends_at_the_end_of_a_short_file", "status " + r.status + ", reply '" + reply + "', " + io_summary());
 }
 
 static void t_dos_load_reu_stop(bool reset)
@@ -91,6 +116,27 @@ static void t_dos_load_reu_stop(bool reset)
     close_file();
     bool ok = io_calls(false) == 3 && uci_fake::max_io_len(false) <= SLICE && r.status == "02,REQUEST TRUNCATED";
     check(ok, reset ? "dos_load_reu_stops_at_next_slice_after_reset" : "dos_load_reu_stops_at_next_slice_after_abort",
+          "status " + r.status + ", " + io_summary());
+}
+
+static void t_dos_load_reu_stop_before_first_slice(bool reset)
+{
+    // The stop is asked before every slice, the first included: an abort already
+    // raised when the transfer starts must move nothing at all.
+    uci_fake::reset();
+    const uint32_t len = 0x400000;
+    uci_fake::fs_add_file("/Usb0/r.reu", pattern(len, 23));
+    open_file("r.reu", FA_READ);
+    if (reset) {
+        uci_fake::c64_reset_pending = true;
+    } else {
+        CMD_IF_STATUSBYTE |= CMD_ABORT_DATA;
+    }
+    Cmd load(1, DOS_CMD_LOAD_REU); load.le32(0).le32(len);
+    Result r = run(load);
+    close_file();
+    bool ok = io_calls(false) == 0 && r.status == "02,REQUEST TRUNCATED";
+    check(ok, reset ? "dos_load_reu_stops_before_the_first_slice_after_reset" : "dos_load_reu_stops_before_the_first_slice_after_abort",
           "status " + r.status + ", " + io_summary());
 }
 
@@ -111,14 +157,17 @@ static void t_dos_save_reu(void)
     check(ok, "dos_save_reu_whole_range_in_64k_slices", "status " + r.status + ", reply '" + reply + "', " + io_summary());
 
     uci_fake::reset();
+    bytes = pattern(0x400000, 31);
+    memcpy(uci_fake::reu(), bytes.data(), bytes.size());
     open_file("s.reu", FA_WRITE | FA_CREATE_ALWAYS);
     stop_after(2, false);
     Cmd save2(1, DOS_CMD_SAVE_REU); save2.le32(0).le32(0x400000);
     r = run(save2);
     uci_fake::on_io = nullptr;
     close_file();
-    ok = io_calls(true) == 2 && r.status == "02,REQUEST TRUNCATED";
-    check(ok, "dos_save_reu_stops_at_next_slice_after_abort", "status " + r.status + ", " + io_summary());
+    f = uci_fake::fs_file("/Usb0/s.reu");
+    ok = f && *f == bytes && r.status == "00,OK";
+    check(ok, "dos_save_reu_runs_to_the_end_despite_an_abort", "status " + r.status + ", " + saved_size(f) + ", " + io_summary());
 }
 
 static void ramdisk_setup(int drv, int type)
@@ -166,6 +215,35 @@ static void t_ramdisk(void)
     uci_fake::on_io = nullptr;
     ok = io_calls(false) == 2 && uci_fake::open_file_count() == 0;
     check(ok, "ramdisk_load_stops_at_next_slice_after_abort", "status " + r.status + ", " + io_summary());
+
+    // 1571: two halves of 174848 bytes, three slices each; abort during the second half
+    uci_fake::reset();
+    std::vector<uint8_t> img71 = pattern(2 * 174848, 28);
+    uci_fake::fs_add_file("/Usb0/disk.d71", img71);
+    ramdisk_setup(0, 1571);
+    Cmd cd4(1, DOS_CMD_CHANGE_DIR); cd4.str("/Usb0");
+    run(cd4);
+    stop_after(4, false);
+    Cmd load71(1, CTRL_CMD_LOAD_INTO_RAMDISK); load71.u8(0).str("disk.d71");
+    r = run(load71);
+    uci_fake::on_io = nullptr;
+    ok = io_calls(false) == 4 && uci_fake::open_file_count() == 0;
+    check(ok, "ramdisk_1571_load_stops_in_the_second_half_too", "status " + r.status + ", " + io_summary());
+
+    // a save is never cut short: the previous image is gone once the file is reopened
+    uci_fake::reset();
+    ramdisk_setup(0, 1581);
+    memcpy(uci_fake::reu() + 0x100000, mem.data(), size);
+    uci_fake::fs_add_file("/Usb0/OUT.D81", pattern(size, 29));   // the user's previous image
+    Cmd cd5(1, DOS_CMD_CHANGE_DIR); cd5.str("/Usb0");
+    run(cd5);
+    stop_after(3, true);
+    Cmd save2(1, CTRL_CMD_SAVE_RAMDISK); save2.u8(0).str("OUT.D81");
+    r = run(save2);
+    uci_fake::on_io = nullptr;
+    f = uci_fake::fs_file("/Usb0/OUT.D81");
+    ok = r.status == "00,OK" && f && *f == mem;
+    check(ok, "ramdisk_save_runs_to_the_end_despite_a_reset", "status " + r.status + ", " + saved_size(f) + ", " + io_summary());
 }
 
 static void reu_cfg(const char *img)
@@ -211,6 +289,18 @@ static void t_control_reu(void)
     ok = r.status == "00,OK" && f && *f == mem && uci_fake::max_io_len(true) <= SLICE;
     check(ok, "control_save_reu_in_64k_slices", "status " + r.status + ", " + io_summary());
 
+    uci_fake::reset();
+    memcpy(uci_fake::reu(), mem.data(), size);
+    uci_fake::fs_add_dir("/Usb0");
+    reu_cfg("/Usb0/out.reu");
+    stop_after(2, true);
+    Cmd c4(4, CTRL_CMD_SAVE_REU); c4.u8(0).u8(0).u8(0);
+    r = run(c4);
+    uci_fake::on_io = nullptr;
+    f = uci_fake::fs_file("/Usb0/out.reu");
+    ok = r.status == "00,OK" && f && *f == mem;
+    check(ok, "control_save_reu_runs_to_the_end_despite_a_reset", "status " + r.status + ", " + saved_size(f) + ", " + io_summary());
+
     // The menu and the boot-time preload pass no stop function: a stray UCI
     // abort bit must not cut their transfer short.
     uci_fake::reset();
@@ -227,8 +317,11 @@ int main()
 {
     uci_fake::init();
     t_dos_load_reu_full();
+    t_dos_load_reu_short_file();
     t_dos_load_reu_stop(false);
     t_dos_load_reu_stop(true);
+    t_dos_load_reu_stop_before_first_slice(false);
+    t_dos_load_reu_stop_before_first_slice(true);
     t_dos_save_reu();
     t_ramdisk();
     t_control_reu();
