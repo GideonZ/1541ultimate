@@ -217,6 +217,33 @@ TEST(Persist, a_failed_write_while_connected_is_retried)
     CHECK(strcmp(ended, "idle without a timeout") == 0, "then the connector idles Connected as before");
 }
 
+// A write that fails again at the connector's first retry is retried after the bounded wait
+// (WIFI_STORE_RETRY_MS), not left until the next command: in Disabled, whose wait for a
+// command has no bound otherwise, and in Connected, likewise
+TEST(Persist, a_write_that_fails_twice_or_three_times_is_retried_after_a_wait)
+{
+    for (int fails = 2; fails <= 3; fails++) {
+        nvs_write_fails = fails;
+        const uint8_t dis[] = { CONNECTOR_SEND_DISABLE };
+        run(false, dis, 1);
+        CHECK(nvs_wifi_last == 0, "Disabled: the copy reads Disabled");
+        CHECK(nvs_wifi_writes == fails + 1, "Disabled: written until it is stored");
+        CHECK(strcmp(ended, "waiting for a command") == 0, "Disabled: then the connector waits for good");
+
+        nvs_wifi_enabled = 0;
+        nvs_write_fails = fails;
+        last_ap_reachable = 1;
+        retry_timeouts = fails - 1; // the bounded waits of the retries after the first
+        const uint8_t ena[] = { CONNECTOR_SEND_ENABLE };
+        run(false, ena, 1);
+        CHECK(strchr(trace, 'K') != NULL, "Connected: the radio comes on and joins the last AP");
+        CHECK(nvs_wifi_last == 1, "Connected: the copy reads Enabled");
+        CHECK(nvs_wifi_writes == fails + 1, "Connected: written until it is stored");
+        CHECK(retry_timeouts_left == 0, "Connected: after a bounded wait each");
+        CHECK(strcmp(ended, "idle without a timeout") == 0, "Connected: then the connector idles as before");
+    }
+}
+
 // A newer request wins over a write that is still to be retried
 TEST(Persist, a_newer_request_overwrites_a_pending_write)
 {
@@ -224,6 +251,14 @@ TEST(Persist, a_newer_request_overwrites_a_pending_write)
     const uint8_t cmds[] = { CONNECTOR_SEND_DISABLE, CONNECTOR_SEND_ENABLE };
     run(false, cmds, 2);
     CHECK(nvs_wifi_last == 1, "the copy reads Enabled, the last request");
+
+    // and the other way round: an Enable whose write failed, then a Disable
+    nvs_write_fails_after = 1; // the first Disable is stored
+    nvs_write_fails = 1;       // the Enable's write fails
+    const uint8_t back[] = { CONNECTOR_SEND_DISABLE, CONNECTOR_SEND_ENABLE, CONNECTOR_SEND_DISABLE };
+    run(false, back, 3);
+    CHECK(nvs_wifi_last == 0, "the copy reads Disabled, the last request");
+    CHECK(strcmp(ended, "waiting for a command") == 0, "and nothing is left to retry");
 }
 
 // A write that keeps failing is retried a bounded number of times: the connector then idles

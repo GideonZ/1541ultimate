@@ -54,7 +54,7 @@ NEEDED      := send_event wifi_event_handler attempt_connect wifi_connect_to_sca
 # changed and puts back what was there before. Every one has to make the suite FAIL (a failing
 # check, not a build error); `make red` prints which checks failed. A fix that a module
 # does not have, or whose cases are not in this commit, has no entry.
-RED_FIXES := 1 2 4 5 6 7 7b 8 9b 9c 9d 9e 10 11 12 13 14 15 16 17
+RED_FIXES := 1 2 4 5 6 7 7b 8 9b 9c 9d 9e 10 11 12 13 14 15 16 16b 16c 17
 
 # 1  The radio switch (U64, U2+L): no Disable is served, and the radio goes on at boot, as
 #    on a module without the switch
@@ -162,6 +162,12 @@ LEGACY_15_u64ctrl := -e 's/((ev.command == CMD_WIFI_DISABLE) \&\& recovery_runni
 # 16 The control module takes a failed write of "WiFi Enabled" as done: the next boot goes by
 #    the old value
 LEGACY_16_u64ctrl := -e 's/if (power_set_wifi_enabled(enabled) == ESP_OK) {/power_set_wifi_enabled(enabled); if (1) {/'
+
+# 16b The control module retries a failed write only at the top of the next pass while
+#     Connected: the idle wait has no bound, so a write that fails twice waits for a command
+LEGACY_16b_u64ctrl := -e 's/store_wait = (store_pending >= 0) \&\& (idle_wait == portMAX_DELAY);/store_wait = false;/'
+# 16c The same in Disabled
+LEGACY_16c_u64ctrl := -e 's/(store_pending >= 0) ? pdMS_TO_TICKS(WIFI_STORE_RETRY_MS) : portMAX_DELAY/portMAX_DELAY/'
 
 # 17 The control module sends the EVENT_DISCONNECTED of a radio start before it clears
 #    disabled_g: a connection query answered in between sends EVENT_DISABLED after it

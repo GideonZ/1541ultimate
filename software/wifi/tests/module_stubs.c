@@ -52,10 +52,13 @@ uint8_t nvs_wifi_last;
 char boot_trace[16];
 uint8_t power_get_wifi_enabled(void) { return nvs_wifi_enabled; }
 int nvs_write_fails;
+int nvs_write_fails_after;
 esp_err_t power_set_wifi_enabled(uint8_t enabled)
 {
     nvs_wifi_writes++;
-    if (nvs_write_fails > 0) {
+    if (nvs_write_fails_after > 0) {
+        nvs_write_fails_after--;
+    } else if (nvs_write_fails > 0) {
         nvs_write_fails--;
         return ESP_FAIL; // the flash write failed: the copy is unchanged
     }
@@ -105,6 +108,7 @@ int last_ap_reachable;
 bool connect_reachable;
 int start_fails;
 int retry_timeouts; // the next idle waits with a timeout that run out, once each; 0 again after each run
+int retry_timeouts_left; // what was left of them when the run ended
 int stale_disabled;
 ConnectCommand_t queued;
 int queued_count;
@@ -565,6 +569,7 @@ void run_with(int aps_found, bool disconnected_before, const uint8_t *commands, 
     nvs_wifi_last = nvs_wifi_enabled;
     nvs_wifi_enabled = 1;
     nvs_write_fails = 0;
+    nvs_write_fails_after = 0;
     store_pending = -1; // the connector's (wifi_modem.c), as at a boot
     store_tries = 0;
 #endif
@@ -572,6 +577,7 @@ void run_with(int aps_found, bool disconnected_before, const uint8_t *commands, 
     last_ap_reachable = 0;
     connect_reachable = false;
     start_fails = 0;
+    retry_timeouts_left = retry_timeouts;
     retry_timeouts = 0;
     strict_semaphore = 0;
     silent_disconnects = 0;

@@ -29,6 +29,7 @@ extern int last_ap_reachable;  // the next run's connects to the last AP that su
                                // after each run); every other connect attempt fails
 extern int start_fails;        // the next radio_start() calls fail; 0 again after each run
 extern int retry_timeouts;     // the next idle waits with a timeout run out, one each (the retry timer); 0 again after each run
+extern int retry_timeouts_left; // what was left of retry_timeouts when the last run ended
 extern int recorded;           // the last radio_record_set() of a run (1 on, 0 off, -1 none)
 extern int silent_disconnects; // the next esp_wifi_disconnect() calls post no event (the station had
                                // already left the AP); 0 again after each run
@@ -50,6 +51,7 @@ extern uint8_t nvs_wifi_enabled; // u64ctrl: the module's copy of "WiFi Enabled"
 extern uint8_t nvs_wifi_last;    // what the copy read when the run ended
 extern int nvs_wifi_writes;      // power_set_wifi_enabled() calls of a run
 extern int nvs_write_fails;      // the next power_set_wifi_enabled() calls fail and store nothing; 0 again after each run
+extern int nvs_write_fails_after; // that many writes succeed before nvs_write_fails apply; 0 again after each run
 extern char boot_trace[16];      // u64ctrl: what wifi_start_at_boot() did before the connector ran
 extern bool recovery_active;     // recovery_running() answers this (u64ctrl)
 extern int endisable_answer;     // the dispatcher's answer to the last CONNECTOR_SEND_DISABLE or _ENABLE
