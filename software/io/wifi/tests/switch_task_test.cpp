@@ -647,21 +647,42 @@ TEST(WifiSwitchTask, a_disable_refreshes_an_open_ap_list)
 }
 
 // An Enable that fails is not taken as applied: the next effectuate tries it again, and the
-// events in between do not
+// events in between do not; the task asks again at its deadlines, and tells the user after
+// WIFI_SWITCH_ASKS of them
+static int ons_before_the_deadlines;
+static void note_ons(void) { ons_before_the_deadlines = count_after(rlog, 'N'); }
+
 TEST(WifiSwitchTask, a_failed_enable_is_tried_again)
 {
     reset_world();
     world.enabled = false;
     world.enable_answer = -1;
-    boot({ EVENT_DISABLED, Step(menu_enable), EVENT_GOTIP, EVENT_GOTIP, Step(close_wifi_settings) });
-    const char *n = strchr(after('O'), 'N');
-    CHECK(n != NULL && strchr(n + 1, 'N') != NULL && strchr(strchr(n + 1, 'N') + 1, 'N') == NULL,
-          "one more radio on, from the effectuate");
+    boot({ EVENT_DISABLED, Step(menu_enable), EVENT_GOTIP, EVENT_GOTIP, Step(close_wifi_settings), Step(note_ons) });
+    CHECK(ons_before_the_deadlines == 2, "one more radio on, from the effectuate, none for the events");
+    CHECK(strncmp(after('u'), "NNNNN!N", 7) == 0, "then one at each deadline, the user told, then at the slow pace");
+    CHECK(strcmp(messages, "WiFi module did not turn its radio on\n") == 0, "what the user is told, once");
     reset_world();
     world.enabled = true;
     world.enable_answer = -1;
     boot({ EVENT_GOTIP, Step(close_wifi_settings) });
-    n = strchr(rlog, 'N');
+    const char *n = strchr(rlog, 'N');
     CHECK(n != NULL && strchr(n + 1, 'N') != NULL, "the boot's failed radio on is tried again");
+}
+
+// The boot's radio on fails (a module that kept a Disabled of its own, which a lost answer
+// or a full transmit queue leaves off): the task asks again at its deadline, without a
+// change of the setting, and stops once the module takes it
+TEST(WifiSwitchTask, a_failed_boot_enable_is_asked_again_at_the_deadline)
+{
+    reset_world();
+    world.enabled = true;
+    world.enable_answer = -1;
+    world.enable_answer_n = 2; // the boot's and the effectuate's
+    boot({});
+    CHECK(count_after(rlog, 'N') == 3, "asked again at the deadline, until the module takes it");
+    CHECK(messages[0] == 0, "nothing to tell");
+    CHECK(strcmp(ended, "waiting for an event") == 0, "and nothing is waited for after that");
+    CHECK(!wifi.RadioSettingChanged(true), "the setting is applied");
+    CHECK(waited == pdMS_TO_TICKS(WIFI_SWITCH_CONFIRM_MS), "at the deadline");
 }
 #endif

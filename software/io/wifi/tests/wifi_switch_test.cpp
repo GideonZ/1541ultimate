@@ -243,3 +243,32 @@ TEST(WifiSwitch, a_bounded_number_of_waits_then_a_slow_pace)
     wifi_switch_on(&sw); // an Enable ends it
     EXPECT_EQ(wifi_switch_wait(&sw, t + 100), -1);
 }
+
+// A radio on that failed is due again at its deadline, once; asked again and failed again,
+// it goes on at the same pace as a radio off, and drops no event; an Enable or a radio off ends it
+TEST(WifiSwitch, a_failed_radio_on_is_due_again)
+{
+    wifi_switch_t sw;
+    memset(&sw, 0, sizeof(sw));
+    wifi_switch_on_failed(&sw, 0, 100);
+    EXPECT_FALSE(sw.awaiting_off);
+    EXPECT_EQ(wifi_switch_wait(&sw, 40), 60);
+    EXPECT_FALSE(wifi_switch_on_due(&sw, 40));
+    EXPECT_FALSE(wifi_switch_expired(&sw, 100)); // not a radio off
+    EXPECT_FALSE(wifi_switch_drop_event(&sw, EVENT_CONNECTED));
+    uint32_t t = 100;
+    for (int i = 1; i < WIFI_SWITCH_ASKS; i++) {
+        EXPECT_TRUE(wifi_switch_on_due(&sw, t));
+        EXPECT_FALSE(wifi_switch_on_due(&sw, t)); // once
+        EXPECT_FALSE(wifi_switch_on_again(&sw, t, 100, 600));
+        t += 100;
+    }
+    EXPECT_TRUE(wifi_switch_on_due(&sw, t));
+    EXPECT_TRUE(wifi_switch_on_again(&sw, t, 100, 600)); // the user is told
+    EXPECT_EQ(wifi_switch_wait(&sw, t), 600);
+    wifi_switch_on(&sw);
+    EXPECT_EQ(wifi_switch_wait(&sw, t), -1);
+    wifi_switch_on_failed(&sw, t, 100);
+    wifi_switch_asked_off(&sw, t, 100);
+    EXPECT_FALSE(wifi_switch_on_due(&sw, t + 100));
+}

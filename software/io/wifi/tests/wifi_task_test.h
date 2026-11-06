@@ -26,6 +26,7 @@ struct World {
     bool enabled;         // "WiFi Enabled" as stored
     int disable_answer;   // the module's answer to a radio off (0: queued; 0x106: no switch)
     int enable_answer;    // and to a radio on
+    int enable_answer_n;  // when > 0: only that many radio on requests get enable_answer, the later ones 0
     uint8_t link;         // what the module says to the connection query
     int voltages_result;  // wifi_get_voltages()'s answer (U64=2)
     uint16_t voltages_vbus;

@@ -366,10 +366,12 @@ void WiFi :: RunModeThread()
             }
             // Stored as Enabled: the module starts with its radio off and turns it on now.
             // A module without the switch, whose radio is on already, ignores this. Not
-            // taken as applied when it fails: the next effectuate asks again.
+            // taken as applied when it fails: the next effectuate asks again, and so does
+            // the task at its deadlines (wifi_switch.h).
             result = wifi_enable();
             if ((result != 0) && !wifi_switch_unsupported(result)) {
                 radio_setting_applied = -1;
+                wifi_switch_on_failed(&radio_switch, xTaskGetTickCount(), pdMS_TO_TICKS(WIFI_SWITCH_CONFIRM_MS));
             }
 #endif
             netstack->start(); // always starts in link down state
@@ -414,9 +416,11 @@ void WiFi :: RunModeThread()
                     if (result != 0) {
                         event_when_enabled = 0; // the radio does not come on: nothing is to follow it
                         // Not applied (a module without the switch has its radio on anyway):
-                        // the next effectuate or change asks again, not every pass
+                        // the next effectuate or change asks again, not every pass, and so
+                        // does the task at its deadlines (wifi_switch.h)
                         if (!wifi_switch_unsupported(result)) {
                             radio_setting_applied = -1;
+                            wifi_switch_on_failed(&radio_switch, xTaskGetTickCount(), pdMS_TO_TICKS(WIFI_SWITCH_CONFIRM_MS));
                         }
                     }
                 } else if (!wifi_switch_unsupported(result = wifi_disable())) {
@@ -493,6 +497,15 @@ void WiFi :: RunModeThread()
                         }
                         state = eWifi_NotConnected;
                         RefreshRoot();
+                    }
+                } else if (wifi_switch_on_due(&radio_switch, xTaskGetTickCount())) {
+                    // A radio on that failed is asked for again, at the same pace
+                    printf("WiFi module did not take the radio on\n");
+                    result = wifi_enable();
+                    if ((result == 0) || wifi_switch_unsupported(result)) {
+                        radio_setting_applied = 1;
+                    } else if (wifi_switch_on_again(&radio_switch, xTaskGetTickCount(), pdMS_TO_TICKS(WIFI_SWITCH_CONFIRM_MS), pdMS_TO_TICKS(WIFI_SWITCH_SLOW_MS))) {
+                        UserInterface :: postMessage("WiFi module did not turn its radio on");
                     }
                 }
 #endif

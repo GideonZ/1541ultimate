@@ -305,7 +305,17 @@ void Esp32 :: EnableRunMode(void) { note('E'); }
 BaseType_t wifi_detect(uint16_t *major, uint16_t *minor, char *str, int maxlen) { count(); note('d'); strcpy(str, "test"); return pdTRUE; }
 int wifi_getmac(uint8_t *mac) { note('m'); return 0; }
 int wifi_scan(void *) { count(); note('C'); return 0; }
-int wifi_enable() { note('N'); return world.enable_answer; }
+int wifi_enable()
+{
+    note('N');
+    if (world.enable_answer_n < 0) {
+        return 0; // the requests that fail are done
+    }
+    if ((world.enable_answer_n > 0) && (--world.enable_answer_n == 0)) {
+        world.enable_answer_n = -1;
+    }
+    return world.enable_answer;
+}
 int wifi_disable()
 {
     note('O');
