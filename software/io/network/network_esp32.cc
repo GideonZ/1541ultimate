@@ -173,6 +173,13 @@ void NetworkLWIP_WiFi :: effectuate_settings(void)
     // whose own effectuate found the settings effectuated already.
     bool on = enabled_in_config();
     if (wifi.RadioSettingChanged(on)) {
+#if U64 == 2
+        // What wifi_enable_change tells, for a Disabled that came without it. Only when
+        // Enabled is what the task applied: not at boot, nor for a change the hook told.
+        if (!on && wifi.RadioSettingAppliedOn() && U64Config :: getWakeOnWifi()) {
+            UserInterface :: postMessage("Wake on Wi-Fi needs WiFi enabled");
+        }
+#endif
         apply_enabled(on);
     }
 }
