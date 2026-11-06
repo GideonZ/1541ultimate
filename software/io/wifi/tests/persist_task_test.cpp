@@ -88,6 +88,41 @@ TEST(WifiPersistTask, a_radio_off_refused_for_a_recovery_is_not_a_failure)
     CHECK(wifi.getState() == eWifi_Connected, "the link follows the module");
 }
 
+// The same at runtime: a Disable from the menu (or the REST API) while a recovery runs is
+// refused; the task waits for nothing, says nothing, and the link stays as the module has it
+static void flip_to_disabled(void);
+TEST(WifiPersistTask, a_runtime_disable_refused_for_a_recovery_waits_for_nothing)
+{
+    reset_world();
+    world.enabled = true;
+    world.link = 1;
+    world.disable_answer = 0x103;
+    boot({ EVENT_CONNECTED, Step(flip_to_disabled) });
+    CHECK(!world.enabled, "the setting reads Disabled");
+    CHECK(count_of('O') == 1, "asked once");
+    CHECK(messages[0] == 0, "no message");
+    CHECK(!wifi.RadioOffAwaited() && waited == 0, "nothing is waited for");
+    CHECK(strchr(after('O'), 'u') == NULL && wifi.getState() == eWifi_Connected, "the link is kept");
+    CHECK(strcmp(ended, "waiting for an event") == 0, "the task waits without a bound");
+}
+
+// A recovery starts while the radio off waits for its confirmation: the next ask is refused,
+// which ends the wait at once, without a message, and the link follows the module
+TEST(WifiPersistTask, a_refusal_when_asked_again_ends_the_wait)
+{
+    reset_world();
+    world.enabled = false;
+    world.link = 1;
+    world.disable_answer = 0;          // queued, never done
+    world.disable_answer_later = 0x103; // then refused: a recovery runs
+    boot({ EVENT_CONNECTED });
+    CHECK(count_of('O') == 2, "asked again once, and refused");
+    CHECK(messages[0] == 0, "no message");
+    CHECK(waited == pdMS_TO_TICKS(WIFI_SWITCH_CONFIRM_MS), "after one wait");
+    CHECK(!wifi.RadioOffAwaited(), "nothing is waited for after it");
+    CHECK(strchr(after('O'), 'U') != NULL && wifi.getState() == eWifi_Connected, "the link follows the module");
+}
+
 // "WiFi Enabled" changes right after the WiFi task read it to tell the module, before its
 // request goes out: the module ends as the setting is, not as it was read
 static void flip_to_enabled(void) { NetworkLWIP_WiFi :: enable(NULL); }

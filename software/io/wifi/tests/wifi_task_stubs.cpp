@@ -314,9 +314,11 @@ int wifi_enable()
     }
     return world.enable_answer;
 }
+static int disables; // the radio offs of this boot
 int wifi_disable()
 {
     note('O');
+    disables++;
     void (*during)(void) = world.during_disable;
     if (during) {
         world.during_disable = NULL;
@@ -325,7 +327,7 @@ int wifi_disable()
         during();
         current_task = caller;
     }
-    return world.disable_answer;
+    return ((disables > 1) && world.disable_answer_later) ? world.disable_answer_later : world.disable_answer;
 }
 int wifi_modem_enable(bool on) { note(on ? 'M' : 'V'); return 0; }
 int wifi_get_voltages(voltages_t *v)
@@ -385,6 +387,7 @@ void boot(std::initializer_list<Step> steps)
     now = 1000;
     waited = 0;
     quiet = 0;
+    disables = 0;
     timed_waits_n = 0;
     message_at = 0;
     ap_refreshes = 0;
