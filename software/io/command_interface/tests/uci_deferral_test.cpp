@@ -164,6 +164,7 @@ public:
     uint32_t ticket;
     int parses, aborts, resets, replies;
     UBaseType_t parse_priority, abort_priority, reset_priority, reply_priority;
+    int state_at_abort, state_at_reset;
 
     void clear(void)
     {
@@ -171,6 +172,7 @@ public:
         ticket = 0;
         parses = aborts = resets = replies = 0;
         parse_priority = abort_priority = reset_priority = reply_priority = 99;
+        state_at_abort = state_at_reset = -1;
     }
     void parse_command(Message *, Message **reply, Message **status)
     {
@@ -192,8 +194,8 @@ public:
         *reply = &c_reply_late;
         *status = &c_status_ok;
     }
-    void abort(int) { aborts++; abort_priority = uxTaskPriorityGet(NULL); }
-    void c64_reset(void) { resets++; reset_priority = uxTaskPriorityGet(NULL); }
+    void abort(int) { aborts++; abort_priority = uxTaskPriorityGet(NULL); state_at_abort = gw.state; }
+    void c64_reset(void) { resets++; reset_priority = uxTaskPriorityGet(NULL); state_at_reset = gw.state; }
 };
 
 static FakeTarget fake;
@@ -401,9 +403,71 @@ static void test_priorities(void)
     start_deferred(c_cmd_fake, sizeof(c_cmd_fake));
     c64_reset();
     run_server();
-    CHECK(fake.reset_priority == PRIO_C64_SERVICE); // lock-free, so it stays up
-    CHECK(fake.abort_priority == PRIO_C64_SERVICE);
+    // The C64 is released first, at the server's level; the targets clean up at theirs.
+    CHECK(fake.reset_priority == PRIO_HW_SERVICE && fake.state_at_reset == 0);
+    CHECK(fake.abort_priority == PRIO_HW_SERVICE && fake.state_at_abort == 0);
+    CHECK(uxTaskPriorityGet(NULL) == PRIO_C64_SERVICE);
     CHECK(PRIO_HW_SERVICE < PRIO_C64_SERVICE && PRIO_NETSERVICE < PRIO_C64_SERVICE);
+    expect_next_command_works();
+}
+
+// On the device the server, being higher, runs as soon as the worker posts its wake-up,
+// before the worker goes on. It must find the ticket already written.
+static void run_server_on_post(QueueHandle_t)
+{
+    host_rtos_send_hook() = NULL;
+    run_server();
+}
+
+static void test_wake_preempts(void)
+{
+    begin("the server runs at the post of the wake-up");
+    start_deferred(c_cmd_fake, sizeof(c_cmd_fake));
+    host_rtos_send_hook() = run_server_on_post;
+    command_deferred_done(fake.ticket);
+    host_rtos_send_hook() = NULL;
+    CHECK(fake.replies == 1);
+    CHECK(response_is("LATE"));
+}
+
+// A late report of an older ticket must not hide a newer one that is not seen yet: a
+// second deferring target, or a worker preempted between its done and its report.
+static void test_older_report_after_newer(void)
+{
+    begin("an older ticket reported after a newer one");
+    start_deferred(c_cmd_fake, sizeof(c_cmd_fake));
+    uint32_t first = fake.ticket;
+    c64_abort();
+    run_server();
+    start_deferred(c_cmd_fake, sizeof(c_cmd_fake));
+    uint32_t second = fake.ticket;
+    fill_queue(0x08);                  // the server has not run since
+    command_deferred_done(second);
+    command_deferred_done(first);      // the preempted worker of the aborted command
+    run_server();
+    CHECK(fake.replies == 1);
+    CHECK(response_is("LATE"));
+}
+
+// Where the gateware is reset with the C64 (U2: sys_reset), the command it held is gone
+// before the reset interrupt has run. A completion seen in between must not be sent: the
+// interface reads idle, not BUSY.
+static void test_gateware_reset_first(void)
+{
+    begin("gateware reset before its interrupt");
+    start_deferred(c_cmd_fake, sizeof(c_cmd_fake));
+    gw.state = 0;
+    gw.handshake_in = 0;
+    gw.command_length = 0;
+    gw.hold_irq = true;
+    command_deferred_done(fake.ticket);
+    run_server();
+    CHECK(fake.replies == 0);
+    CHECK(gw.state == 0 && gw.idle_validates == 0);
+    gw.hold_irq = false;
+    c64_reset();
+    run_server();
+    CHECK(gw.state == 0 && gw.irq_mask == 0);
     expect_next_command_works();
 }
 
@@ -426,6 +490,9 @@ int main(int argc, char **argv)
         { "full-queue",   test_full_queue },
         { "no-reply",     test_no_reply },
         { "priority",     test_priorities },
+        { "preempt",      test_wake_preempts },
+        { "older",        test_older_report_after_newer },
+        { "gw-reset",     test_gateware_reset_first },
     };
     for (unsigned i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
         if (!only || !strcmp(only, cases[i].name)) {

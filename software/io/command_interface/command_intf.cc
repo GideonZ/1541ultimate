@@ -153,14 +153,12 @@ void CommandInterface :: handle_event(uint8_t status_byte)
 	bool reset_seen = c64_reset_pending;
 	c64_reset_pending = false;
 	portEXIT_CRITICAL();
-	if (reset_seen) {
-		for(int i=0;i<=CMD_IF_MAX_TARGET;i++)
-			command_targets[i]->c64_reset();
-		// Ends a deferred command even when the abort item of the reset was dropped.
-		if (pending_target != CMD_TARGET_NONE) {
-			status_byte |= CMD_ABORT_DATA;
-		}
+	// Ends a deferred command even when the abort item of the reset was dropped.
+	if (reset_seen && (pending_target != CMD_TARGET_NONE)) {
+		status_byte |= CMD_ABORT_DATA;
 	}
+	bool aborted = false;
+	int abort_offset = 0;
 	if(status_byte & CMD_ABORT_DATA) {
 		//printf("Abort received.\n");
 		uint8_t unmask = CMD_ABORT_DATA;
@@ -170,12 +168,24 @@ void CommandInterface :: handle_event(uint8_t status_byte)
 			unmask |= CMD_NEW_COMMAND;
 			pending_target = CMD_TARGET_NONE;
 		}
-		if (target != CMD_TARGET_NONE) {
-		    int offset = (((int)CMD_IF_RESPONSE_LEN_H) << 8) | CMD_IF_RESPONSE_LEN_L;
-			command_targets[target]->abort(offset - response_offset);
-		}
+		// Read before the reset below rewinds the response pointer.
+		int offset = (((int)CMD_IF_RESPONSE_LEN_H) << 8) | CMD_IF_RESPONSE_LEN_L;
+		abort_offset = offset - response_offset;
+		aborted = true;
 		CMD_IF_HANDSHAKE_OUT = HANDSHAKE_RESET;
 		CMD_IF_IRQMASK_CLEAR = unmask;
+	}
+	// The C64 is free now. The targets clean up after it at their own level, before this
+	// task looks at anything else: freeing a large body or popping a file is their work.
+	if (reset_seen || aborted) {
+		TargetWork work;
+		if (reset_seen) {
+			for(int i=0;i<=CMD_IF_MAX_TARGET;i++)
+				command_targets[i]->c64_reset();
+		}
+		if (aborted && (target != CMD_TARGET_NONE)) {
+			command_targets[target]->abort(abort_offset);
+		}
 	}
 	if(status_byte & CMD_DATA_ACCEPTED) {
 		if (target != CMD_TARGET_NONE) {
@@ -269,12 +279,19 @@ uint32_t CommandInterface :: defer(void)
     return ticket;
 }
 
-// Called by the task that did the work. A full queue means that this task is awake
-// already, and it checks done_ticket on every event.
+// Called by the task that did the work. done_ticket is written BEFORE the wake-up: this
+// task, being higher, runs as soon as the wake-up is posted, and must find the ticket. A
+// full queue means that it is awake already, and it checks done_ticket on every event.
+// Tickets only grow, and a late report of an older one must not hide a newer one (a
+// second deferring target, or a worker that was preempted before it reported).
 void CommandInterface :: deferred_done(uint32_t done)
 {
     uint8_t wake = 0;
-    done_ticket = done;
+    portENTER_CRITICAL();
+    if ((int32_t)(done - done_ticket) > 0) {
+        done_ticket = done;
+    }
+    portEXIT_CRITICAL();
     xQueueSend(queue, &wake, 0);
 }
 

@@ -100,6 +100,14 @@ static inline bool host_rtos_wait(QueueHandle_t q, bool sending, TickType_t tick
     return true;
 }
 
+// Called after a task posts to a queue: a test can run, there and then, the higher task
+// that the post would wake on the device.
+inline void (*&host_rtos_send_hook(void))(QueueHandle_t)
+{
+    static void (*hook)(QueueHandle_t) = NULL;
+    return hook;
+}
+
 static inline BaseType_t xQueueSend(QueueHandle_t q, const void *item, TickType_t ticks)
 {
     pthread_mutex_lock(&q->lock);
@@ -110,6 +118,9 @@ static inline BaseType_t xQueueSend(QueueHandle_t q, const void *item, TickType_
         pthread_cond_broadcast(&q->changed);
     }
     pthread_mutex_unlock(&q->lock);
+    if (room && host_rtos_send_hook()) {
+        host_rtos_send_hook()(q);
+    }
     return room ? pdTRUE : errQUEUE_FULL;
 }
 
