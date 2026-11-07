@@ -221,8 +221,9 @@ void CommandInterface :: handle_event(uint8_t status_byte)
             }
 
             if (defer_requested) {
-                // Nothing changes for the C64: the command stays BUSY, and its buffer
-                // stays protected, until the reply is sent below on a later event.
+                // Nothing changes for the C64: the command stays BUSY, not accepted, until
+                // the reply is sent below on a later event. (The gateware does not guard the
+                // command buffer in any state; a target that defers keeps its own copy.)
                 // The interrupt for a new command stays masked until then.
                 pending_target = target;
                 pending_ticket = ticket;
