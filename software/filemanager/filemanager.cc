@@ -402,21 +402,27 @@ void FileManager::invalidate(CachedTreeNode *o)
     printf("Invalidate event on %s.. Checking %d mountpoints.\n", o->get_file_info()->lfname,
             mount_points.get_elements());
 
-    for (int i = 0; i < mount_points.get_elements(); i++) {
+    for (int i = 0; i < mount_points.get_elements();) {
         m = mount_points[i];
         if (!m) { // should never occur
             printf("INTERR: null pointer in mount point list.\n");
+            i++;
             continue;
         }
         f = m->get_file();
         printf("%2d. %s\n", i, f->get_path());
         if (strncmp(f->get_path(), pathStringC, len) == 0) {
             printf("Match!\n");
+            // Unlist the mount before releasing it: closing its backing file can delete that file,
+            // which walks mount_points and would dereference this mount's freed file. The release
+            // may also drop other mounts, so rescan from the start.
+            mount_points.remove(m);
             release_mount_point(m);
-            mount_points.mark_for_removal(i);
+            i = 0;
+        } else {
+            i++;
         }
     }
-    mount_points.purge_list();
 
     printf("Invalidate event on %s.. Checking %d files.\n", o->get_file_info()->lfname, open_file_list.get_elements());
     for (int i = 0; i < open_file_list.get_elements(); i++) {

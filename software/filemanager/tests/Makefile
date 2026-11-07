@@ -1,5 +1,5 @@
 CXX ?= g++
-CXXFLAGS := -std=c++14 -g -I. -I.. -I../../components -I../../filesystem -I../../infra -I../../system -I../../userinterface -I../../io/usb/tests
+CXXFLAGS := -std=c++14 -g -fsanitize=address -fno-omit-frame-pointer -I. -I.. -I../../components -I../../filesystem -I../../infra -I../../system -I../../userinterface -I../../io/usb/tests
 OUTPUT_DIR := output
 TEMP_AUTO_CLEANUP_TEST := $(OUTPUT_DIR)/tempAutoCleanupTest
 
