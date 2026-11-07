@@ -77,6 +77,7 @@ host_tests:
 	@$(MAKE) -C target/pc/linux/powerstate test
 	@$(MAKE) -C target/pc/linux/wolmagic test
 	@$(MAKE) -C target/pc/linux/wifireply test
+	@$(MAKE) -C software/wifi/size_tests test
 	@$(MAKE) -C software/io/wifi/tests
 	@$(MAKE) -C software/wifi/tests
 	@$(MAKE) -C target/pc/linux/recoverymanifest test

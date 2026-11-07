@@ -16,6 +16,8 @@
 #include "cmd_buffer.h"
 #include "rpc_calls.h"
 #include "wifi_event_size.h"
+#include "wifi_connect.h" // EVENT_CONNECT_PENDING, EVENT_CONNECT_ANSWER (#1041)
+#include "wifi_switch.h"  // EVENT_RADIO_SETTING (#1041)
 
 #include "rpc_code.inc" // rpc_request_too_short() of the module under test
 
@@ -51,7 +53,7 @@ TEST(RpcSize, a_request_structure_must_be_whole)
 {
     static const need needs[] = {
         { CMD_SET_BAUD, (int)sizeof(rpc_setbaud_req) },
-        { CMD_WIFI_CONNECT, 98 },
+        { CMD_WIFI_CONNECT, (int)(offsetof(rpc_wifi_connect_req, password) + 64) }, // the password whole; the BSSID and channel after it are optional
         { CMD_GET_TIME, (int)sizeof(rpc_get_time_req) },
 #ifdef CMD_SET_SERIAL
         { CMD_SET_SERIAL, (int)sizeof(rpc_set_serial_req) },
@@ -77,6 +79,15 @@ TEST(RpcSize, a_header_is_all_the_other_commands_need)
         EXPECT_FALSE(short_request(commands[i], (int)sizeof(rpc_header_t)));
         EXPECT_FALSE(short_request(commands[i], 40));
     }
+}
+
+// #1041: the connect request may end at the password or carry the BSSID and channel after it
+TEST(RpcSize, a_connect_request_may_leave_out_the_bssid)
+{
+    int password_end = (int)(offsetof(rpc_wifi_connect_req, password) + 64);
+    EXPECT_FALSE(short_request(CMD_WIFI_CONNECT, password_end));
+    EXPECT_FALSE(short_request(CMD_WIFI_CONNECT, (int)sizeof(rpc_wifi_connect_req)));
+    EXPECT_TRUE(short_request(CMD_WIFI_CONNECT, password_end - 1));
 }
 
 // CMD_SEND_PACKET: length and data, and the frame must hold the length it claims
@@ -146,10 +157,31 @@ TEST(EventSize, a_packet_event_holds_the_length_it_claims)
     EXPECT_FALSE(short_event(EVENT_RECV_PACKET, head + 1500, 1500));
 }
 
+// #1041: EVENT_CONNECT_PENDING (internal) carries the SSID like EVENT_CONNECTED; the task reads it with feedback.begin()
+TEST(EventSize, a_connect_pending_event_holds_its_ssid)
+{
+    int need = (int)(offsetof(event_pkt_connected, ssid) + 32);
+    EXPECT_TRUE(short_event(EVENT_CONNECT_PENDING, 4));
+    EXPECT_TRUE(short_event(EVENT_CONNECT_PENDING, need - 1));
+    EXPECT_FALSE(short_event(EVENT_CONNECT_PENDING, need));
+}
+
+// #1041: the reason of EVENT_DISCONNECTED is read by wifi_disconnect_reason() / wifi_disconnect_is_radio_start(), which ask for
+// the size themselves (a bare header means "not known"): the check lets the bare header through
+TEST(EventSize, a_disconnect_without_a_reason_passes)
+{
+    EXPECT_FALSE(short_event(EVENT_DISCONNECTED, (int)sizeof(rpc_header_t)));
+    EXPECT_FALSE(short_event(EVENT_DISCONNECTED, (int)sizeof(event_pkt_disconnected)));
+}
+
 // Events that carry nothing the task reads are only a header (an older module's disconnect has no reason, the keepalive none)
 TEST(EventSize, a_header_is_all_the_other_events_need)
 {
-    static const uint8_t events[] = { EVENT_DISCONNECTED, EVENT_RESCAN, EVENT_KEEPALIVE, EVENT_DISABLED, 0xF1, 0xF2, 0x55 };
+    static const uint8_t events[] = { EVENT_DISCONNECTED, EVENT_RESCAN, EVENT_KEEPALIVE, EVENT_DISABLED, EVENT_RADIO_SETTING, EVENT_CONNECT_ANSWER,
+#ifdef EVENT_RESTARTED
+        EVENT_RESTARTED,
+#endif
+        0xF1, 0xF2, 0x55 };
     for (unsigned i = 0; i < sizeof(events); i++) {
         EXPECT_FALSE(short_event(events[i], (int)sizeof(rpc_header_t)));
     }

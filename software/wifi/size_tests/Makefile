@@ -19,7 +19,7 @@ DIR_raw_c3  := $(PATH_SW)/wifi/raw_c3/main
 DIR_u64ctrl := $(PATH_SW)/u64ctrl/main
 
 HOSTTEST := $(PATH_SW)/io/usb/tests
-CXXFLAGS := -std=c++14 -g -O0 -Wall -Wno-unused-parameter -D_FORTIFY_SOURCE=0 -I$(HOSTTEST) -Istub -I$(PATH_SW)/io/uart -I$(PATH_SW)/io/wifi
+CXXFLAGS := -std=c++14 -g -O0 -Wall -Wno-unused-parameter -D_FORTIFY_SOURCE=0 -I$(HOSTTEST) -Istub -I$(PATH_SW)/io/uart -I$(PATH_SW)/io/wifi -I$(PATH_SW)/wifi/common
 
 # MUT_<name> := sed expressions on the cut-out function (MUTF_<name> = module code) or on the header (MUTH_<name>)
 MUTANTS := none no-check below-header setbaud-off-by-one setbaud-dropped connect-short send-length-unchecked send-head-unchecked time-dropped
@@ -28,11 +28,12 @@ MUTF_no-check := -e 's/if (size < (int)sizeof(rpc_header_t)) {/if (0) {/'
 MUTF_below-header := -e 's/if (size < (int)sizeof(rpc_header_t)) {/if (size < 2) {/'
 MUTF_setbaud-off-by-one := -e 's/return size < (int)sizeof(rpc_setbaud_req);/return size <= (int)sizeof(rpc_setbaud_req);/'
 MUTF_setbaud-dropped := -e 's/return size < (int)sizeof(rpc_setbaud_req);/return false;/'
-MUTF_connect-short := -e 's/return size < 98;/return size < 90;/'
+MUTF_connect-short := -e 's/sizeof(((rpc_wifi_connect_req \*)0)->password));/sizeof(((rpc_wifi_connect_req *)0)->password) - 8);/'
 MUTF_send-length-unchecked := -e 's/p->length > (uint32_t)(size - head)/0/'
 MUTF_send-head-unchecked := -e 's/(size < head) ||//'
 MUTF_time-dropped := -e 's/return size < (int)sizeof(rpc_get_time_req);/return false;/'
-EVENT_MUTANTS := ev-connected-dropped ev-gotip-off-by-one ev-packet-length ev-packet-head ev-no-header
+EVENT_MUTANTS := ev-pending-dropped ev-connected-dropped ev-gotip-off-by-one ev-packet-length ev-packet-head ev-no-header
+MUTH_ev-pending-dropped := -e 's/^    case EVENT_CONNECT_PENDING:.*$$//'
 MUTH_ev-connected-dropped := -e 's/return size < (int)(offsetof(event_pkt_connected, ssid) + sizeof(((event_pkt_connected \*)0)->ssid));/return false;/'
 MUTH_ev-gotip-off-by-one := -e 's/return size < (int)(offsetof(event_pkt_got_ip, changed) + sizeof(((event_pkt_got_ip \*)0)->changed));/return size < (int)(offsetof(event_pkt_got_ip, changed));/'
 MUTH_ev-packet-length := -e 's/((const rpc_rx_pkt \*)data)->len > (uint32_t)(size - head)/0/'
