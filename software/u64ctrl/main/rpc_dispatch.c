@@ -6,6 +6,7 @@
  */
 
 
+#include <stddef.h>
 #include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
@@ -100,12 +101,15 @@ void cmd_wifi_connect(command_buf_t *buf)
     rpc_wifi_connect_req *param = (rpc_wifi_connect_req *)buf->data;
     rpc_espcmd_resp *resp = (rpc_espcmd_resp *)buf->data;
 
-    if (buf->size < 98) {
+    // The request holds the password whole; the BSSID and channel after it are optional
+    if (buf->size < (int)(offsetof(rpc_wifi_connect_req, password) + sizeof(param->password))) {
         resp->esp_err = ESP_ERR_INVALID_ARG;
         my_uart_transmit_packet(UART_CHAN, buf);
         return;
     }
 
+    // Without the BSSID and channel, or with them all zero: any AP with the SSID
+    int with_bssid = (buf->size >= (int)sizeof(rpc_wifi_connect_req));
     buf->size = sizeof(rpc_espcmd_resp);
     ConnectCommand_t ev;
     ev.buf = buf;
@@ -115,6 +119,12 @@ void cmd_wifi_connect(command_buf_t *buf)
     ev.ssid[32] = 0;
     memcpy(&ev.pw, param->password, 64);
     ev.pw[64] = 0;
+    memset(ev.bssid, 0, 6);
+    ev.channel = 0;
+    if (with_bssid) {
+        memcpy(ev.bssid, param->bssid, 6);
+        ev.channel = param->channel;
+    }
 
     if (xQueueSend(connect_commands, &ev, 1000) == pdFALSE) {
         resp->esp_err = ESP_ERR_NO_MEM;
@@ -227,7 +237,10 @@ void cmd_wifi_endisable(command_buf_t *buf)
         my_uart_transmit_packet(UART_CHAN, buf);
         return;
     } else {
-        resp->esp_err = ESP_OK;
+        // During a recovery a Disable only stores the setting (handle_connect_command): the
+        // radio stays on for the download, and the answer says so, so that the Ultimate does
+        // not wait for EVENT_DISABLED
+        resp->esp_err = ((ev.command == CMD_WIFI_DISABLE) && recovery_running()) ? ESP_ERR_INVALID_STATE : ESP_OK;
         my_uart_transmit_packet(UART_CHAN, buf);
     }
     xSemaphoreGive(connect_semaphore);

@@ -32,6 +32,7 @@ extern "C" {
 #include "esp32.h"
 #if U64 == 2
 #include "wifi_cmd.h"
+#include "network_esp32.h"
 #endif
 #include "sid_editor.h"
 #include "sid_device_fpgasid.h"
@@ -1560,6 +1561,11 @@ static bool writeWakeOnWifi(uint8_t enabled)
 int U64Config :: setWakeOnWifi(ConfigItem *it)
 {
     if (!it || writeWakeOnWifi((uint8_t)it->getValue())) {
+        // It listens on the station interface, which a radio that is off does not have.
+        // The setting is taken all the same, and works once WiFi is enabled.
+        if (it && it->getValue() && !NetworkLWIP_WiFi :: get_enabled()) {
+            UserInterface :: postMessage("Wake on Wi-Fi needs WiFi enabled");
+        }
         return 0;
     }
     // As above: the item follows the module, so "Enabled" means a machine that
@@ -1578,6 +1584,11 @@ int U64Config :: setWakeOnWifi(ConfigItem *it)
         }
     }
     return 0;
+}
+
+bool U64Config :: getWakeOnWifi(void)
+{
+    return u64_configurator && u64_configurator->cfg && (u64_configurator->cfg->get_value(CFG_WAKE_ON_WIFI) != 0);
 }
 
 // The module may have been updated or replaced since the setting was last
@@ -3057,6 +3068,7 @@ void U64Config :: setup_config_menu(void)
     grp->append(ConfigItem :: heading("'Wake On Wi-Fi' switches it on when a"));
     grp->append(ConfigItem :: heading("magic packet arrives. Only Wi-Fi can:"));
     grp->append(ConfigItem :: heading("the wired jack is off with the machine."));
+    grp->append(ConfigItem :: heading("It needs WiFi Enabled (WiFi settings)."));
     grp->append(ConfigItem :: separator());
     grp->append(cfg->find_item(CFG_RECOVERY_URL));
     grp->append(ConfigItem :: heading("Holding the switch down for 3 seconds"));

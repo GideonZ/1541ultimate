@@ -27,17 +27,15 @@
 
 #include "wifi.h"
 #include "itu.h"
+#if U64 == 2
+#include "u64_config.h"
+#endif
 
 const char *authmodes[] = { "Open", "WEP", "WPA PSK", "WPA2 PSK", "WPA/WPA2 PSK", "WPA2 Enterprise", "WPA3 PSK", "WPA2/WPA3 PSK", "WAPI PSK" };
 
 //-----------------------------------
 struct t_cfg_definition wifi_config[] = {
-#if U64 == 2
-    { CFG_WIFI_ENA,    CFG_TYPE_FUNC,   "Enable",                        "",(const char **)NetworkLWIP_WiFi :: cfg_enable, 0, 0, 0 },
-    { CFG_WIFI_DIS,    CFG_TYPE_FUNC,   "Disable",                       "",(const char **)NetworkLWIP_WiFi :: cfg_disable, 0, 0, 0 },
-#else
     { CFG_WIFI_ENABLE, CFG_TYPE_ENUM,   "WiFi Enabled",                  "%s", en_dis,     0,  1, 1 },
-#endif
     { CFG_WIFI_DISCONN,CFG_TYPE_FUNC,   "Disconnect",                    "",(const char **)NetworkLWIP_WiFi :: cfg_disconn, 0, 0, 0 },
     { CFG_WIFI_CONN,   CFG_TYPE_FUNC,   "Connect to last AP",            "",(const char **)NetworkLWIP_WiFi :: cfg_conn_last, 0, 0, 0 },
     { CFG_WIFI_SEL_AP, CFG_TYPE_FUNC,   "Select AP from list",           "",(const char **)NetworkLWIP_WiFi :: cfg_show_aps, 0, 0, 0 },
@@ -120,6 +118,44 @@ void NetworkLWIP_WiFi :: attach_config()
     cfg->set_sort_order(SORT_ORDER_CFG_WIFI);
     cfg->set_change_hook(CFG_NET_DHCP_EN, dhcp_change);
     dhcp_change(cfg->find_item(CFG_NET_DHCP_EN));
+    cfg->set_change_hook(CFG_WIFI_ENABLE, wifi_enable_change);
+}
+
+bool NetworkLWIP_WiFi :: enabled_in_config(void)
+{
+    return cfg->get_value(CFG_WIFI_ENABLE) != 0;
+}
+
+// A change of "WiFi Enabled" turns the radio off or on.
+int NetworkLWIP_WiFi :: wifi_enable_change(ConfigItem *it)
+{
+#if U64 == 2
+    // Wake on Wi-Fi listens on the station interface, which a radio that is off does not have
+    if ((it->getValue() == 0) && U64Config :: getWakeOnWifi()) {
+        UserInterface :: postMessage("Wake on Wi-Fi needs WiFi enabled");
+    }
+#endif
+    apply_enabled(it->getValue() != 0);
+    return 0;
+}
+
+// Applies "WiFi Enabled" (on). While the WiFi application is still looking for the module
+// it does nothing: the application applies the setting itself when it finds it. Otherwise
+// the WiFi task is told to apply it (WiFi :: RadioOn, RadioOff), and this returns without
+// waiting for the module. Every change is passed on, whatever the row shows: the row
+// follows the module's events, which can lag behind a quick Enable and Disable, and both
+// requests are harmless when the module is in that state already.
+void NetworkLWIP_WiFi :: apply_enabled(bool on)
+{
+    WifiState_t state = wifi.getState();
+    if ((state == eWifi_Download) || (state == eWifi_NotDetected) || (state == eWifi_ModuleDetected)) {
+        return;
+    }
+    if (on) {
+        wifi.RadioOn();
+    } else if (state != eWifi_Off) { // the application is stopped (a module without the switch): off already
+        wifi.RadioOff();
+    }
 }
 
 // from ConfigurableObject
@@ -130,21 +166,22 @@ void NetworkLWIP_WiFi :: effectuate_settings(void)
 	my_net_if.name[0] = 'W';
 	my_net_if.name[1] = 'I';
 
+    // A reset or a load of the settings (ConfigStore :: reset, then effectuate) sets "WiFi
+    // Enabled" without its change hook: applied here when it differs from what the WiFi task
+    // applied last. This also runs each time the WiFi settings page closes, and in the WiFi
+    // task itself (netstack->start(), while it sets up its link), where it catches a reset
+    // whose own effectuate found the settings effectuated already.
+    bool on = enabled_in_config();
+    if (wifi.RadioSettingChanged(on)) {
 #if U64 == 2
-    // if (cfg->get_value(CFG_WIFI_ENABLE) && wifi.getState() == eWifi_Disabled) {
-    //     wifi.RadioOn();
-    // } else if (!(cfg->get_value(CFG_WIFI_ENABLE)) && wifi.getState() != eWifi_Disabled) {
-    //     wifi.RadioOff();
-    // }
-#else
-    if (wifi.getState() == eWifi_Off && cfg->get_value(CFG_WIFI_ENABLE)) {
-        wifi.Enable();
-    }
-//  For now, we don't disable the Wifi here, because effectuate_settings is also called when the init callback of the network stack occurs, OWWW
-//    else if (wifi.getState() != eWifi_Off && !cfg->get_value(CFG_WIFI_ENABLE)) {
-//        wifi.Disable();
-//    }
+        // What wifi_enable_change tells, for a Disabled that came without it. Only when
+        // Enabled is what the task applied: not at boot, nor for a change the hook told.
+        if (!on && wifi.RadioSettingAppliedOn() && U64Config :: getWakeOnWifi()) {
+            UserInterface :: postMessage("Wake on Wi-Fi needs WiFi enabled");
+        }
 #endif
+        apply_enabled(on);
+    }
 }
 
 void NetworkLWIP_WiFi :: on_edit()
@@ -290,11 +327,22 @@ SubsysResultCode_e NetworkLWIP_WiFi :: manual_connect(SubsysCommand *cmd)
 void NetworkLWIP_WiFi :: cfg_show_aps(UserInterface *intf, ConfigItem *it)
 {
     WifiState_t state = wifi.getState();
-    if ((state != eWifi_NotConnected) && (state != eWifi_Connected)) {
+    // Also while a radio off waits for its confirmation, for good once its asks ran out:
+    // WiFi is off as far as the user is concerned (BrowsableWifiAP :: connect_ap)
+    if ((state == eWifi_Disabled) || wifi.RadioOffAwaited()) {
+        // Set before the Enable goes out: the module's event for it can reach the WiFi
+        // application before this function returns
+        wifi.sendEventWhenEnabled(EVENT_RESCAN); // the radio is not on yet
+        if (!ask_enable(intf)) {
+            wifi.sendEventWhenEnabled(0);
+            return;
+        }
+    } else if ((state != eWifi_NotConnected) && (state != eWifi_Connected)) {
         intf->popup("Can only show APs when active", BUTTON_OK);
         return;
+    } else {
+        wifi.sendEvent(EVENT_RESCAN);
     }
-    wifi.sendEvent(EVENT_RESCAN);
     BrowsableWifiAPList *broot = new BrowsableWifiAPList(); // new root!
     TreeBrowser *tb = new TreeBrowser(intf, broot);
     tb->has_border = true;
@@ -310,7 +358,10 @@ void NetworkLWIP_WiFi :: cfg_show_aps(UserInterface *intf, ConfigItem *it)
 void NetworkLWIP_WiFi :: cfg_enter_ap(UserInterface *intf, ConfigItem *it)
 {
     WifiState_t state = wifi.getState();
-    if ((state != eWifi_NotConnected) && (state != eWifi_Connected)) {
+    if (((state == eWifi_Disabled) || wifi.RadioOffAwaited()) && !ask_enable(intf)) {
+        return;
+    }
+    if ((state != eWifi_NotConnected) && (state != eWifi_Connected) && (state != eWifi_Disabled)) {
         intf->popup("Can only connect when active", BUTTON_OK);
         return;
     }
@@ -321,7 +372,10 @@ void NetworkLWIP_WiFi :: cfg_enter_ap(UserInterface *intf, ConfigItem *it)
 void NetworkLWIP_WiFi :: cfg_conn_last(UserInterface *intf, ConfigItem *it)
 {
     WifiState_t state = wifi.getState();
-    if ((state != eWifi_NotConnected) && (state != eWifi_Connected)) {
+    if (((state == eWifi_Disabled) || wifi.RadioOffAwaited()) && !ask_enable(intf)) {
+        return;
+    }
+    if ((state != eWifi_NotConnected) && (state != eWifi_Connected) && (state != eWifi_Disabled)) {
         intf->popup("Can only connect when active", BUTTON_OK);
         return;
     }
@@ -338,14 +392,27 @@ void NetworkLWIP_WiFi :: cfg_disconn(UserInterface *intf, ConfigItem *it)
     wifi_wifi_disconnect();    
 }
 
-void NetworkLWIP_WiFi :: cfg_enable(UserInterface *intf, ConfigItem *it)
+// One switch: "WiFi Enabled" is what the Enable and Disable actions set, what its change hook
+// acts on (it turns the radio on or off), and what the next boot reads. It is saved when it
+// changes.
+// What "WiFi Enabled" reads: as enabled_in_config, for a caller without the interface
+bool NetworkLWIP_WiFi :: get_enabled(void)
 {
-    wifi.RadioOn();
+    ConfigStore *cfg = ConfigManager :: getConfigManager()->find_store((uint32_t)0x57494649);
+    return !cfg || (cfg->get_value(CFG_WIFI_ENABLE) != 0);
 }
 
-void NetworkLWIP_WiFi :: cfg_disable(UserInterface *intf, ConfigItem *it)
+void NetworkLWIP_WiFi :: set_enabled(bool on)
 {
-    wifi.RadioOff();
+    ConfigStore *cfg = ConfigManager :: getConfigManager()->find_store((uint32_t)0x57494649);
+    if (!cfg) {
+        return;
+    }
+    bool changed = (cfg->get_value(CFG_WIFI_ENABLE) != 0) != on;
+    cfg->set_value(CFG_WIFI_ENABLE, on ? 1 : 0);
+    if (changed) {
+        cfg->write();
+    }
 }
 
 void NetworkLWIP_WiFi :: cfg_forget(UserInterface *intf, ConfigItem *it)
@@ -371,22 +438,25 @@ SubsysResultCode_e NetworkLWIP_WiFi :: rescan(SubsysCommand *cmd)
 
 SubsysResultCode_e NetworkLWIP_WiFi :: disable(SubsysCommand *cmd)
 {
-#if U64 == 2
-    wifi.RadioOff();
-#else
-    wifi.Disable();
-#endif
+    set_enabled(false);
     return SSRET_OK;
 }
 
 SubsysResultCode_e NetworkLWIP_WiFi :: enable(SubsysCommand *cmd)
 {
-#if U64 == 2
-    wifi.RadioOn();
-#else
-    wifi.Enable();
-#endif
+    set_enabled(true);
     return SSRET_OK;
+}
+
+// A scan or connect while WiFi is disabled: ask, and on Yes enable it. False: nothing is
+// enabled, and the action is dropped.
+bool NetworkLWIP_WiFi :: ask_enable(UserInterface *intf)
+{
+    if (!intf || (intf->popup("WiFi is disabled. Enable it?", BUTTON_YES|BUTTON_NO) != BUTTON_YES)) {
+        return false;
+    }
+    enable(NULL); // the Enable action
+    return true;
 }
 
 // Browsable APs
