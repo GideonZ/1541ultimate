@@ -7,7 +7,7 @@
 #   make MODULE=u64ctrl test  one module
 #   make red                  models of the code without a check or with a wrong one (the MUT_* sed expressions) must fail
 #
-PATH_SW  := ../../..
+PATH_SW  := ../..
 EXTRACT  := awk -f extract.awk
 OUT      := output
 ALL      := raw_u64 raw_c3 u64ctrl
