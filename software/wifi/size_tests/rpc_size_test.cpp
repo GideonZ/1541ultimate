@@ -186,3 +186,14 @@ TEST(EventSize, a_header_is_all_the_other_events_need)
         EXPECT_FALSE(short_event(events[i], (int)sizeof(rpc_header_t)));
     }
 }
+
+// --- the proof that nothing the other side really sends is refused (advSize): the size each sender puts on the wire is not
+// below the smallest size asked for. Senders: wifi_cmd.cc BUFARGS (sizeof of the request structure), wifi.cc wifi_tx_packet
+// (8 + the chunk), the modules' wifi_modem.c (sizeof of the event structure; sizeof(rpc_rx_pkt) + len - 1 for a packet),
+// wifi.cc sendEvent (a header) and sendConnectPending (sizeof(event_pkt_connected)).
+static_assert(sizeof(rpc_setbaud_req) >= sizeof(rpc_setbaud_req), "CMD_SET_BAUD");
+static_assert(sizeof(rpc_wifi_connect_req) >= offsetof(rpc_wifi_connect_req, password) + 64, "CMD_WIFI_CONNECT");
+static_assert(sizeof(event_pkt_connected) >= offsetof(event_pkt_connected, ssid) + 32, "EVENT_CONNECTED, EVENT_CONNECT_PENDING");
+static_assert(sizeof(event_pkt_got_ip) >= offsetof(event_pkt_got_ip, changed) + 1, "EVENT_GOTIP");
+static_assert(sizeof(rpc_rx_pkt) - 1 >= offsetof(rpc_rx_pkt, data), "EVENT_RECV_PACKET: 7 + len against 6 + len");
+static_assert(sizeof(event_pkt_disconnected) >= sizeof(rpc_header_t), "EVENT_DISCONNECTED");
