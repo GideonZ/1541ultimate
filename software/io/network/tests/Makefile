@@ -8,6 +8,8 @@ ETH_TX_FRAME_TEST := $(OUTPUT_DIR)/ethTxFrameTest
 ETH_TX_FRAME_RED := $(OUTPUT_DIR)/ethTxFrameTestLegacy
 ROUTE_SELECT_TEST := $(OUTPUT_DIR)/routeSelectTest
 ROUTE_SELECT_RED := $(OUTPUT_DIR)/routeSelectTestLegacy
+SEND_ALL_TEST := $(OUTPUT_DIR)/sendAllTest
+SEND_ALL_RED := $(OUTPUT_DIR)/sendAllTestLegacy
 LWIP_SRC := ../../../lwip/src
 # The lwIP core the route tests run against: ip4.c (the routing and the hook dispatch),
 # udp.c (the source checks on send), netif.c, ip4_addr.c and what they pull in.
@@ -16,9 +18,9 @@ LWIP_C := core/init.c core/def.c core/inet_chksum.c core/ip.c core/mem.c core/me
 	core/ipv4/ip4.c core/ipv4/ip4_addr.c core/ipv4/ip4_frag.c core/ipv4/icmp.c
 LWIP_CFLAGS := -g -w $(LWIP_INC) $(ROUTE_INC)
 
-.PHONY: all lwip-objs eth-tx-frame eth-tx-frame-red fw-hook-opts route-select route-select-red clean
+.PHONY: all lwip-objs eth-tx-frame eth-tx-frame-red fw-hook-opts route-select route-select-red send-all send-all-red clean
 
-all: eth-tx-frame eth-tx-frame-red route-select route-select-red
+all: eth-tx-frame eth-tx-frame-red route-select route-select-red send-all send-all-red
 
 eth-tx-frame:
 	mkdir -p $(OUTPUT_DIR)
@@ -63,6 +65,21 @@ route-select-red: lwip-objs
 		exit 1; \
 	else \
 		echo "route-select-red: $$(tail -1 $(OUTPUT_DIR)/route-red.log) against the pre-fix behaviour, as required"; \
+	fi
+
+send-all:
+	mkdir -p $(OUTPUT_DIR)
+	$(CXX) $(CXXFLAGS) send_all_test.cpp ../../usb/tests/host_test_main.cpp -lpthread -o $(SEND_ALL_TEST) && $(SEND_ALL_TEST)
+
+# The same suite against the send loop as it was. It has to fail, as for eth-tx-frame-red.
+send-all-red:
+	mkdir -p $(OUTPUT_DIR)
+	$(CXX) $(CXXFLAGS) -DSEND_ALL_LEGACY send_all_test.cpp ../../usb/tests/host_test_main.cpp -lpthread -o $(SEND_ALL_RED)
+	@if $(SEND_ALL_RED) > $(OUTPUT_DIR)/send-all-red.log 2>&1; then \
+		echo "send-all-red: the suite passed against the pre-fix behaviour -- it no longer catches the defect"; \
+		exit 1; \
+	else \
+		echo "send-all-red: $$(tail -1 $(OUTPUT_DIR)/send-all-red.log) against the pre-fix behaviour, as required"; \
 	fi
 
 clean:
