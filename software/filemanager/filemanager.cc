@@ -1113,9 +1113,10 @@ void FileManager::evict_mount_points(void)
         }
         printf("FileManager: releasing least recently used mount '%s'\n",
                mount_points[victim]->get_path());
-        release_mount_point(mount_points[victim]);
-        mount_points.mark_for_removal(victim);
-        mount_points.purge_list();
+        // Unlist before releasing: closing the backing file can delete it, and that walks mount_points.
+        MountPoint *victim_mp = mount_points[victim];
+        mount_points.remove(victim_mp);
+        release_mount_point(victim_mp);
     }
 }
 
