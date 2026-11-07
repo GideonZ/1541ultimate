@@ -127,8 +127,9 @@ TEST(EventSize, a_connected_event_holds_its_ssid)
 
 TEST(EventSize, a_got_ip_event_holds_the_address)
 {
-    int need = (int)(offsetof(event_pkt_got_ip, ip) + 4);
+    int need = (int)(offsetof(event_pkt_got_ip, changed) + 1); // the handler prints the address and the flag
     EXPECT_TRUE(short_event(EVENT_GOTIP, 4));
+    EXPECT_TRUE(short_event(EVENT_GOTIP, 8));               // the address alone: the flag would come from the buffer's earlier life
     EXPECT_TRUE(short_event(EVENT_GOTIP, need - 1));
     EXPECT_FALSE(short_event(EVENT_GOTIP, need));
     EXPECT_FALSE(short_event(EVENT_GOTIP, (int)sizeof(event_pkt_got_ip)));

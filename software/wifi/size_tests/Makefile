@@ -34,7 +34,7 @@ MUTF_send-head-unchecked := -e 's/(size < head) ||//'
 MUTF_time-dropped := -e 's/return size < (int)sizeof(rpc_get_time_req);/return false;/'
 EVENT_MUTANTS := ev-connected-dropped ev-gotip-off-by-one ev-packet-length ev-packet-head ev-no-header
 MUTH_ev-connected-dropped := -e 's/return size < (int)(offsetof(event_pkt_connected, ssid) + sizeof(((event_pkt_connected \*)0)->ssid));/return false;/'
-MUTH_ev-gotip-off-by-one := -e 's/return size < (int)(offsetof(event_pkt_got_ip, ip) + sizeof(((event_pkt_got_ip \*)0)->ip));/return size <= (int)(offsetof(event_pkt_got_ip, ip) + 4);/'
+MUTH_ev-gotip-off-by-one := -e 's/return size < (int)(offsetof(event_pkt_got_ip, changed) + sizeof(((event_pkt_got_ip \*)0)->changed));/return size < (int)(offsetof(event_pkt_got_ip, changed));/'
 MUTH_ev-packet-length := -e 's/((const rpc_rx_pkt \*)data)->len > (uint32_t)(size - head)/0/'
 MUTH_ev-packet-head := -e 's/(size < head) ||//'
 MUTH_ev-no-header := -e 's/if (size < (int)sizeof(rpc_header_t)) {/if (0) {/'
