@@ -28,8 +28,10 @@ typedef void (*TaskFunction_t)(void *);
 #define configMINIMAL_STACK_SIZE 512
 #define PRIO_HW_SERVICE 1
 #define PRIO_NETSERVICE 1
+#define PRIO_C64_SERVICE 2
 
-static inline pthread_mutex_t *host_rtos_critical(void)
+// inline, not static: one lock for the whole program, not one per file.
+inline pthread_mutex_t *host_rtos_critical(void)
 {
     static pthread_mutex_t m;
     static pthread_once_t once = PTHREAD_ONCE_INIT;
@@ -199,6 +201,16 @@ static inline BaseType_t xTaskCreate(TaskFunction_t code, const char *, uint32_t
     }
     return pdPASS;
 }
+
+// The priority of the calling task, as the tests last set it; enough for a test that
+// runs a task's work on its own thread.
+inline UBaseType_t *host_rtos_priority(void)
+{
+    static __thread UBaseType_t priority = 0;
+    return &priority;
+}
+static inline void vTaskPrioritySet(TaskHandle_t, UBaseType_t priority) { *host_rtos_priority() = priority; }
+static inline UBaseType_t uxTaskPriorityGet(TaskHandle_t) { return *host_rtos_priority(); }
 
 static inline void vTaskDelay(TickType_t ticks)
 {

@@ -163,16 +163,19 @@ public:
     bool finish_at_once;
     uint32_t ticket;
     int parses, aborts, resets, replies;
+    UBaseType_t parse_priority, abort_priority, reset_priority, reply_priority;
 
     void clear(void)
     {
         defer_next = finish_at_once = false;
         ticket = 0;
         parses = aborts = resets = replies = 0;
+        parse_priority = abort_priority = reset_priority = reply_priority = 99;
     }
     void parse_command(Message *, Message **reply, Message **status)
     {
         parses++;
+        parse_priority = uxTaskPriorityGet(NULL);
         *reply = &c_reply_now;
         *status = &c_status_ok;
         if (defer_next) {
@@ -185,11 +188,12 @@ public:
     void deferred_reply(Message **reply, Message **status)
     {
         replies++;
+        reply_priority = uxTaskPriorityGet(NULL);
         *reply = &c_reply_late;
         *status = &c_status_ok;
     }
-    void abort(int) { aborts++; }
-    void c64_reset(void) { resets++; }
+    void abort(int) { aborts++; abort_priority = uxTaskPriorityGet(NULL); }
+    void c64_reset(void) { resets++; reset_priority = uxTaskPriorityGet(NULL); }
 };
 
 static FakeTarget fake;
@@ -379,11 +383,36 @@ static void test_no_reply(void)
     expect_next_command_works();
 }
 
+// The server answers the C64 above the network services; a target's own work, which can
+// be long, runs at the level the services share, so it cannot starve them.
+static void test_priorities(void)
+{
+    begin("priority ladder");
+    CHECK(uxTaskPriorityGet(NULL) == PRIO_C64_SERVICE);
+    start_deferred(c_cmd_fake, sizeof(c_cmd_fake));
+    CHECK(fake.parse_priority == PRIO_HW_SERVICE);
+    CHECK(uxTaskPriorityGet(NULL) == PRIO_C64_SERVICE);
+    command_deferred_done(fake.ticket);
+    run_server();
+    CHECK(fake.reply_priority == PRIO_HW_SERVICE);
+    CHECK(uxTaskPriorityGet(NULL) == PRIO_C64_SERVICE);
+    c64_abort(); // the C64 is done with that reply
+    run_server();
+    start_deferred(c_cmd_fake, sizeof(c_cmd_fake));
+    c64_reset();
+    run_server();
+    CHECK(fake.reset_priority == PRIO_C64_SERVICE); // lock-free, so it stays up
+    CHECK(fake.abort_priority == PRIO_C64_SERVICE);
+    CHECK(PRIO_HW_SERVICE < PRIO_C64_SERVICE && PRIO_NETSERVICE < PRIO_C64_SERVICE);
+    expect_next_command_works();
+}
+
 int main(int argc, char **argv)
 {
     const char *only = (argc > 1) ? argv[1] : NULL;
     command_targets[7] = &fake;
     CMD_IF_IRQMASK_CLEAR = 7; // as run_task does
+    vTaskPrioritySet(NULL, PRIO_C64_SERVICE); // as the task is created
 
     struct { const char *name; void (*run)(void); } cases[] = {
         { "reply",        test_reply_when_done },
@@ -396,6 +425,7 @@ int main(int argc, char **argv)
         { "ticket",       test_ticket_mismatch },
         { "full-queue",   test_full_queue },
         { "no-reply",     test_no_reply },
+        { "priority",     test_priorities },
     };
     for (unsigned i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
         if (!only || !strcmp(only, cases[i].name)) {

@@ -24,6 +24,18 @@ static volatile bool c64_reset_pending;
 
 #define CMD_IF_DEBUG 0
 
+// The UCI Server task runs at PRIO_C64_SERVICE, above the network services, so that
+// abort, reset, the handshake and a deferred reply never wait for FTP, REST or telnet.
+// A target's own work can be long (storage, or the network for a target that does not
+// defer); it runs at PRIO_HW_SERVICE, the level all of it ran at before, so it does not
+// starve the services.
+class TargetWork
+{
+public:
+    TargetWork() { vTaskPrioritySet(NULL, PRIO_HW_SERVICE); }
+    ~TargetWork() { vTaskPrioritySet(NULL, PRIO_C64_SERVICE); }
+};
+
 
 extern "C" {
 void ResetInterruptHandlerCmdIf()
@@ -56,7 +68,7 @@ CommandInterface :: CommandInterface() : SubSystem(SUBSYSID_CMD_IF)
         incoming_command.length = 0;
         
         queue = xQueueCreate(16, sizeof(uint8_t));
-        xTaskCreate( CommandInterface :: start_task, "UCI Server", configMINIMAL_STACK_SIZE, this, PRIO_HW_SERVICE, &taskHandle );
+        xTaskCreate( CommandInterface :: start_task, "UCI Server", configMINIMAL_STACK_SIZE, this, PRIO_C64_SERVICE, &taskHandle );
         xTaskCreate( CommandInterface :: reset_task, "UCI Reset Server", configMINIMAL_STACK_SIZE, this, PRIO_HW_SERVICE, &resetTaskHandle );
 
         resetSemaphore = xSemaphoreCreateBinary();
@@ -167,7 +179,10 @@ void CommandInterface :: handle_event(uint8_t status_byte)
 	}
 	if(status_byte & CMD_DATA_ACCEPTED) {
 		if (target != CMD_TARGET_NONE) {
-			command_targets[target]->get_more_data(&data, &status);
+			{
+				TargetWork work;
+				command_targets[target]->get_more_data(&data, &status);
+			}
 			copy_result(data, status);
 		} else {
 			printf("CMDIF: Requested for more data, but target is not set!\n");
@@ -190,7 +205,10 @@ void CommandInterface :: handle_event(uint8_t status_byte)
             target = incoming_command.message[0] & CMD_IF_MAX_TARGET;
             bool no_reply = ((incoming_command.message[0] & CMD_IF_NO_REPLY) != 0);
             ticket++;
-            command_targets[target]->parse_command(&incoming_command, &data, &status);
+            {
+                TargetWork work;
+                command_targets[target]->parse_command(&incoming_command, &data, &status);
+            }
 
             if (defer_requested) {
                 // Nothing changes for the C64: the command stays BUSY, and its buffer
@@ -225,7 +243,10 @@ void CommandInterface :: handle_event(uint8_t status_byte)
         if (((now & CMD_STATE_BITS) == CMD_STATE_PROCESSING) && !(now & CMD_ABORT_DATA)) {
             uint8_t done_target = pending_target;
             pending_target = CMD_TARGET_NONE;
-            command_targets[done_target]->deferred_reply(&data, &status);
+            {
+                TargetWork work;
+                command_targets[done_target]->deferred_reply(&data, &status);
+            }
             reply_to_command(data, status, pending_no_reply);
             CMD_IF_IRQMASK_CLEAR = CMD_NEW_COMMAND;
         }
