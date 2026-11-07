@@ -118,6 +118,63 @@ void hexp(void *p)
 }
 
 
+// Sends what fits of the queued frames into the TX FIFO, as many as there is room for, and says whether any is left.
+// Called with the UART's lock held, from the TX interrupt and from my_uart_transmit_packet, so that no frame has to wait
+// for an interrupt to start it. Seen on a C64U: the module kept 11 replies queued and released one per frame it
+// received. The TXFIFO_EMPTY interrupt did not come when it was enabled with the FIFO already below its threshold (the
+// reset value 96: my_uart_init's 10 is applied only when the interrupt is in the enable mask, which it is not), and
+// the handler's own enable does not raise it either. What is left here fits no more, the FIFO is then above the
+// threshold, and the interrupt comes when it drains below it. Bounded (one FIFO), no printf, no allocation.
+static bool UART_ISR_ATTR my_uart_tx_fill(my_uart_obj_t *p_uart, uint8_t uart_num, portBASE_TYPE *woken)
+{
+    uint32_t fifo_addr = (uart_num == UART_NUM_0) ? UART_FIFO_AHB_REG(0) : (uart_num == UART_NUM_1) ? UART_FIFO_AHB_REG(1) : UART_FIFO_AHB_REG(2);
+    while (1) {
+        if (! p_uart->current_tx_buf) { // no buffer available; let's try to get one, if there is room to start it
+            if (uart_hal_get_txfifo_len(&(uart_context[uart_num].hal)) < 4) {
+                return uxQueueMessagesWaitingFromISR(p_uart->buffer_context->transmitQueue) != 0;
+            }
+            if (cmd_buffer_get_tx_isr(p_uart->buffer_context, &(p_uart->current_tx_buf), woken) != pdTRUE) {
+                return false;
+            }
+            p_uart->current_tx_pnt = -1; // first transmit 0xC0
+        }
+        // We KNOW that there is room for a char (checked above, or the interrupt would not have triggered)
+        if (p_uart->current_tx_pnt < 0) {
+            WRITE_PERI_REG(fifo_addr, 0xC0);
+            p_uart->current_tx_pnt = 0;
+        }
+        // check how much space there is in the TXFIFO, and copy at most this number of bytes into it
+        // from the current buffer, encode it using the SLIP protocol on the fly.
+        uint16_t fill_len = uart_hal_get_txfifo_len(&(uart_context[uart_num].hal));
+        int remain = p_uart->current_tx_buf->size - p_uart->current_tx_pnt;
+        uint8_t *pnt = p_uart->current_tx_buf->data + p_uart->current_tx_pnt;
+
+        while ((remain > 0) && (fill_len > 2)) { // at least 3 chars will fit (one escaped char, data + end char)
+            if (*pnt == 0xC0) {
+                WRITE_PERI_REG(fifo_addr, 0xDB);
+                WRITE_PERI_REG(fifo_addr, 0xDC);
+                fill_len-=2;
+            } else if (*pnt == 0xDB) {
+                WRITE_PERI_REG(fifo_addr, 0xDB);
+                WRITE_PERI_REG(fifo_addr, 0xDD);
+                fill_len-=2;
+            } else {
+                WRITE_PERI_REG(fifo_addr, *pnt);
+                fill_len--;
+            }
+            pnt++;
+            remain--;
+        }
+        p_uart->current_tx_pnt = p_uart->current_tx_buf->size - remain;
+        if (remain != 0) {
+            return true; // the FIFO is full
+        }
+        WRITE_PERI_REG(fifo_addr, 0xC0); // close!
+        cmd_buffer_free_isr(p_uart->buffer_context, p_uart->current_tx_buf, woken); // free buffer!
+        p_uart->current_tx_buf = NULL; // currently not transmitting
+    }
+}
+
 // User ISR handler for UART
 void UART_ISR_ATTR my_uart_intr_handler(void *param)
 {
@@ -143,56 +200,12 @@ void UART_ISR_ATTR my_uart_intr_handler(void *param)
             // turn off tx interrupt temporarily
             UART_ENTER_CRITICAL_ISR(&(uart_context[uart_num].spinlock));
             uart_hal_disable_intr_mask(&(uart_context[uart_num].hal), UART_INTR_TXFIFO_EMPTY);
-            UART_EXIT_CRITICAL_ISR(&(uart_context[uart_num].spinlock));
             uart_hal_clr_intsts_mask(&(uart_context[uart_num].hal), UART_INTR_TXFIFO_EMPTY);
-
-            if (! p_uart->current_tx_buf) { // no buffer available; let's try to get one
-                if (cmd_buffer_get_tx_isr(p_uart->buffer_context, &(p_uart->current_tx_buf), &HPTaskAwoken) == pdTRUE) {
-                    p_uart->current_tx_pnt = -1; // first transmit 0xC0
-                }
-            }
-            if (p_uart->current_tx_buf) { // buffer available!
-                // Get FIFO address to write to
-                fifo_addr = (uart_num == UART_NUM_0) ? UART_FIFO_AHB_REG(0) : (uart_num == UART_NUM_1) ? UART_FIFO_AHB_REG(1) : UART_FIFO_AHB_REG(2);
-
-                // We KNOW that there is more than one char available, otherwise the interrupt would not have triggered,
-                // so we can safely send one char before asking how much space is available in the FIFO.
-                if (p_uart->current_tx_pnt < 0) {
-                    WRITE_PERI_REG(fifo_addr, 0xC0);
-                    p_uart->current_tx_pnt = 0;
-                }
-                // check how much space there is in the TXFIFO, and copy at most this number of bytes into it
-                // from the current buffer, encode it using the SLIP protocol on the fly.
-                uint16_t fill_len = uart_hal_get_txfifo_len(&(uart_context[uart_num].hal));
-                int remain = p_uart->current_tx_buf->size - p_uart->current_tx_pnt;
-                uint8_t *pnt = p_uart->current_tx_buf->data + p_uart->current_tx_pnt;
-
-                while ((remain > 0) && (fill_len > 2)) { // at least 3 chars will fit (one escaped char, data + end char)
-                    if (*pnt == 0xC0) {
-                        WRITE_PERI_REG(fifo_addr, 0xDB);
-                        WRITE_PERI_REG(fifo_addr, 0xDC);
-                        fill_len-=2;
-                    } else if (*pnt == 0xDB) {
-                        WRITE_PERI_REG(fifo_addr, 0xDB);
-                        WRITE_PERI_REG(fifo_addr, 0xDD);
-                        fill_len-=2;
-                    } else {
-                        WRITE_PERI_REG(fifo_addr, *pnt);
-                        fill_len--;
-                    }
-                    pnt++;
-                    remain--;
-                }
-                p_uart->current_tx_pnt = p_uart->current_tx_buf->size - remain;
-                if (remain == 0) {
-                    WRITE_PERI_REG(fifo_addr, 0xC0); // close!
-                    cmd_buffer_free_isr(p_uart->buffer_context, p_uart->current_tx_buf, &HPTaskAwoken); // free buffer!
-                    p_uart->current_tx_buf = NULL; // currently not transmitting
-                }
-                UART_ENTER_CRITICAL_ISR(&(uart_context[uart_num].spinlock));
+            // as many frames as fit; the interrupt is wanted again only for what did not fit
+            if (my_uart_tx_fill(p_uart, uart_num, &HPTaskAwoken)) {
                 uart_hal_ena_intr_mask(&(uart_context[uart_num].hal), UART_INTR_TXFIFO_EMPTY);
-                UART_EXIT_CRITICAL_ISR(&(uart_context[uart_num].spinlock));
             }
+            UART_EXIT_CRITICAL_ISR(&(uart_context[uart_num].spinlock));
         } // end of transmit code
 
 
@@ -326,10 +339,17 @@ BaseType_t my_uart_transmit_packet(uint8_t uart_num, command_buf_t *buf)
 
     my_uart_obj_t *obj = p_uart_obj[uart_num];
     if (cmd_buffer_transmit(obj->buffer_context, buf) == pdTRUE) {
-        // Now enable the interrupt, so that the packet is going to be transmitted
+        // Send it now, as far as the FIFO has room: waiting for the TX interrupt to start the frame is what left 11 replies
+        // queued on a C64U (see my_uart_tx_fill). The interrupt is enabled for what does not fit.
+        portBASE_TYPE woken = pdFALSE;
         UART_ENTER_CRITICAL_ISR(&(uart_context[uart_num].spinlock));
-        uart_hal_ena_intr_mask(&(uart_context[uart_num].hal), UART_INTR_TXFIFO_EMPTY);
+        if (my_uart_tx_fill(obj, uart_num, &woken)) {
+            uart_hal_ena_intr_mask(&(uart_context[uart_num].hal), UART_INTR_TXFIFO_EMPTY);
+        }
         UART_EXIT_CRITICAL_ISR(&(uart_context[uart_num].spinlock));
+        if (woken == pdTRUE) {
+            taskYIELD();
+        }
         return pdTRUE;
     }
     cmd_buffer_free(obj->buffer_context, buf);
