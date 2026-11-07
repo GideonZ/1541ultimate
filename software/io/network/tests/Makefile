@@ -10,6 +10,11 @@ ROUTE_SELECT_TEST := $(OUTPUT_DIR)/routeSelectTest
 ROUTE_SELECT_RED := $(OUTPUT_DIR)/routeSelectTestLegacy
 SEND_ALL_TEST := $(OUTPUT_DIR)/sendAllTest
 SEND_ALL_RED := $(OUTPUT_DIR)/sendAllTestLegacy
+NETWORK_TARGET_TEST := $(OUTPUT_DIR)/networkTargetTest
+# The network target with the host's sockets for lwIP's, and the UCI host stand-ins.
+NETWORK_TARGET_FLAGS := -std=c++11 -g -Wall -DRUNS_ON_PC -include target3_host/network_interface.h -Itarget3_host -I../../command_interface/tests/host_uci \
+	-I../../command_interface/tests/host_rtos -I.. -I../../command_interface -I../../../network \
+	-fsanitize=address,undefined
 LWIP_SRC := ../../../lwip/src
 # The lwIP core the route tests run against: ip4.c (the routing and the hook dispatch),
 # udp.c (the source checks on send), netif.c, ip4_addr.c and what they pull in.
@@ -18,9 +23,9 @@ LWIP_C := core/init.c core/def.c core/inet_chksum.c core/ip.c core/mem.c core/me
 	core/ipv4/ip4.c core/ipv4/ip4_addr.c core/ipv4/ip4_frag.c core/ipv4/icmp.c
 LWIP_CFLAGS := -g -w $(LWIP_INC) $(ROUTE_INC)
 
-.PHONY: all lwip-objs eth-tx-frame eth-tx-frame-red fw-hook-opts route-select route-select-red send-all send-all-red clean
+.PHONY: all lwip-objs eth-tx-frame eth-tx-frame-red fw-hook-opts route-select route-select-red send-all send-all-red network-target clean
 
-all: eth-tx-frame eth-tx-frame-red route-select route-select-red send-all send-all-red
+all: eth-tx-frame eth-tx-frame-red route-select route-select-red send-all send-all-red network-target
 
 eth-tx-frame:
 	mkdir -p $(OUTPUT_DIR)
@@ -81,6 +86,12 @@ send-all-red:
 	else \
 		echo "send-all-red: $$(tail -1 $(OUTPUT_DIR)/send-all-red.log) against the pre-fix behaviour, as required"; \
 	fi
+
+# Target 3 on its worker task, against loopback peers.
+network-target:
+	mkdir -p $(OUTPUT_DIR)
+	$(CXX) $(NETWORK_TARGET_FLAGS) network_target_test.cpp ../network_target.cc -lpthread -o $(NETWORK_TARGET_TEST)
+	timeout 60s $(NETWORK_TARGET_TEST)
 
 clean:
 	rm -rf $(OUTPUT_DIR)
