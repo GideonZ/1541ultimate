@@ -197,13 +197,10 @@ void IecInterface :: task()
         // The slaves are locked for one pass over the bus, so the drive's own entry points,
         // which lock again for every byte, only count up and down (CR-6). The pass unlocks
         // exactly the slaves it locked.
-        IecSlave *locked[MAX_SLOTS];
         for (int i = 0; i < MAX_SLOTS; i++) {
             locked[i] = slaves[i];
-            if (locked[i]) {
-                locked[i]->lock();
-            }
         }
+        lock_slaves();
 
         uint8_t a;
         for (int loopcnt = 0; loopcnt < 500; loopcnt++) {
@@ -232,7 +229,7 @@ void IecInterface :: task()
                     case CTRL_EOI:
                         DBGIEC(".EOI]\n");
                         if (addressed_slave) {
-                            addressed_slave->push_ctrl(SLAVE_CMD_EOI);
+                            push_to_slave(SLAVE_CMD_EOI, true);
                         }
                         addressed_slave = NULL;
                         break;
@@ -259,7 +256,7 @@ void IecInterface :: task()
                         DBGIEC(".Slave0.");
                         addressed_slave = slaves[0];
                         if (addressed_slave) {
-                            addressed_slave->push_ctrl(SLAVE_CMD_ATN);
+                            push_to_slave(SLAVE_CMD_ATN, true);
                         }
                         break;
                     
@@ -267,7 +264,7 @@ void IecInterface :: task()
                         DBGIEC(".Slave1.");
                         addressed_slave = slaves[1];
                         if (addressed_slave) {
-                            addressed_slave->push_ctrl(SLAVE_CMD_ATN);
+                            push_to_slave(SLAVE_CMD_ATN, true);
                         }
                         break;
 
@@ -275,7 +272,7 @@ void IecInterface :: task()
                         DBGIEC(".Slave2.");
                         addressed_slave = slaves[2];
                         if (addressed_slave) {
-                            addressed_slave->push_ctrl(SLAVE_CMD_ATN);
+                            push_to_slave(SLAVE_CMD_ATN, true);
                         }
                         break;
 
@@ -290,13 +287,13 @@ void IecInterface :: task()
                     if(data >= 0x60) {  // workaround for passing of wrong atn codes talk/untalk
                         if (addressed_slave) {
                             DBGIECV(".CMD(%b).", data);
-                            addressed_slave->push_ctrl(data);
+                            push_to_slave(data, true);
                         }
                     }
                 } else {
                     DBGIECV(".%b.", data);
                     if (addressed_slave) {
-                        addressed_slave->push_data(data);
+                        push_to_slave(data, false);
                     }
                 }
             }
@@ -366,11 +363,45 @@ void IecInterface :: task()
             }
         }
 
-        for (int i = MAX_SLOTS - 1; i >= 0; i--) {
-            if (locked[i]) {
-                locked[i]->unlock();
-            }
+        unlock_slaves();
+    }
+}
+
+void IecInterface :: lock_slaves(void)
+{
+    for (int i = 0; i < MAX_SLOTS; i++) {
+        if (locked[i]) {
+            locked[i]->lock();
         }
+    }
+}
+
+void IecInterface :: unlock_slaves(void)
+{
+    for (int i = MAX_SLOTS - 1; i >= 0; i--) {
+        if (locked[i]) {
+            locked[i]->unlock();
+        }
+    }
+}
+
+// The printer takes one event at a time, and its task runs at the lowest priority, so a
+// push can wait until a whole page is rendered. The slaves are not kept locked meanwhile,
+// so that the UCI and the GUI can still reach the drives. The bus state here is
+// this task's own; the drive's lock covers only the drive's channels.
+void IecInterface :: push_to_slave(uint16_t value, bool ctrl)
+{
+    bool release = addressed_slave->push_would_wait();
+    if (release) {
+        unlock_slaves();
+    }
+    if (ctrl) {
+        addressed_slave->push_ctrl(value);
+    } else {
+        addressed_slave->push_data((uint8_t)value);
+    }
+    if (release) {
+        lock_slaves();
     }
 }
 

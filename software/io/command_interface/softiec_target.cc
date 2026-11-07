@@ -289,13 +289,11 @@ void SoftIECTarget :: get_more_data(Message **reply, Message **status)
 void SoftIECTarget :: abort(int a)
 {
     if (input_channel) {
-        IecDriveLock guard(iec_drive);
         int bytes = (a < input_length) ? a : input_length;
 #if SIEC_TARGET_DEBUG
         printf("Pop(%d:%d)\n", bytes, a);
 #endif
-        input_channel->pop_more(bytes);
-        input_channel->reset_prefetch();
+        iec_drive->abort_read(input_channel, bytes); // never waits for the IEC task
         input_channel = NULL;
     } else {
 #if SIEC_TARGET_DEBUG

@@ -148,6 +148,8 @@ IecDrive :: IecDrive() : SubSystem(SUBSYSID_IEC)
     partition_config_task = NULL;
 #endif
     lock_depth = 0;
+    deferred_channel = NULL;
+    deferred_pop = 0;
     intf = IecInterface :: get_iec_interface();
 	fm = FileManager :: getFileManager();
     my_bus_id = 0;
@@ -227,7 +229,62 @@ void IecDrive :: lock(void)
 #ifndef RUNS_ON_PC
     xSemaphoreTakeRecursive(mutex, portMAX_DELAY);
 #endif
-    lock_depth++;
+    if (lock_depth++ == 0) {
+        take_deferred_pop();
+    }
+}
+
+bool IecDrive :: try_lock(void)
+{
+#ifndef RUNS_ON_PC
+    if (xSemaphoreTakeRecursive(mutex, 0) != pdTRUE) {
+        return false;
+    }
+#else
+    if (lock_depth) { // on the host, a held lock stands for one held by another task
+        return false;
+    }
+#endif
+    if (lock_depth++ == 0) {
+        take_deferred_pop();
+    }
+    return true;
+}
+
+void IecDrive :: abort_read(IecChannel *channel, int bytes)
+{
+    if (try_lock()) {
+        channel->pop_more(bytes);
+        channel->reset_prefetch();
+        unlock();
+        return;
+    }
+#ifndef RUNS_ON_PC
+    portENTER_CRITICAL();
+#endif
+    deferred_pop = bytes;
+    deferred_channel = channel;
+#ifndef RUNS_ON_PC
+    portEXIT_CRITICAL();
+#endif
+}
+
+// With the lock held.
+void IecDrive :: take_deferred_pop(void)
+{
+#ifndef RUNS_ON_PC
+    portENTER_CRITICAL();
+#endif
+    IecChannel *channel = deferred_channel;
+    int bytes = deferred_pop;
+    deferred_channel = NULL;
+#ifndef RUNS_ON_PC
+    portEXIT_CRITICAL();
+#endif
+    if (channel) {
+        channel->pop_more(bytes);
+        channel->reset_prefetch();
+    }
 }
 
 void IecDrive :: unlock(void)

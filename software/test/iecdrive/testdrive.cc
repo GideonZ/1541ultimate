@@ -4736,6 +4736,47 @@ static void s11_cr6_lock(FileManager *fm, IecDrive *dr)
     expect_directory_contains(testname, dr, "$", "\"PENDING\"");
 }
 
+// The UCI's abort of a SoftIEC read must not wait for the drive's lock, which the IEC
+// task can hold while the printer renders a page. The bytes the C64 took are popped by the
+// next holder of the lock, before it touches the channels.
+static void s11_abort_without_lock(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite11-AbortWithoutLock";
+    s11_partition(fm, dr, "x21");
+    expect_iec_write_ok(testname, dr, 1, "READ", "abcdefghij");
+    open_file(dr, 2, "READ");
+    get_status(dr);
+    expect_status_ok(testname, "open READ");
+    IecChannel *chan = dr->get_data_channel(2);
+    uint8_t *data;
+    int size;
+    chan->talk(); // as SoftIEC's LOAD and CHKIN do
+    chan->prefetch_more(256, data, size);
+    REQUIRE(size == 10 && !memcmp(data, "abcdefghij", 10));
+
+    dr->lock();               // another task holds the drive
+    dr->abort_read(chan, 3);  // the C64 took 3 bytes and aborted
+    REQUIRE(iec_drive_lock_depth(dr) == 1);
+    chan->reset_prefetch();
+    chan->prefetch_more(256, data, size);
+    if (size != 10 || data[0] != 'a') {
+        printf("%s: the channel moved while another task held the drive\n", testname);
+    }
+    REQUIRE(size == 10 && data[0] == 'a');
+    dr->unlock();
+
+    dr->lock();               // the next holder pops the 3 bytes first
+    REQUIRE(iec_drive_lock_depth(dr) == 1);
+    chan->prefetch_more(256, data, size);
+    dr->unlock();
+    REQUIRE(size == 7 && !memcmp(data, "defghij", 7));
+
+    dr->abort_read(chan, 0);  // with the drive free, at once
+    REQUIRE(iec_drive_lock_depth(dr) == 0);
+    close_file(dr, 2);
+    expect_status_ok(testname, "close READ");
+}
+
 // Changes one byte of the name of the first directory entry of sector 18/1 whose name
 // starts with `prefix`, as a damaged image or another tool can leave it.
 static void s11_patch_entry_name(const char *testname, IecDrive *dr, const char *prefix,
@@ -6885,6 +6926,7 @@ static const Suite11Case suite11_cases[] = {
     { "Suite11-CR4-AbandonedListing",    s11_cr4_abandoned_listing },
     { "Suite11-CR5-FailedDirectoryOpen", s11_cr5_failed_directory_open },
     { "Suite11-CR6-Lock",                s11_cr6_lock },
+    { "Suite11-AbortWithoutLock",    s11_abort_without_lock },
     { "Suite11-CR8-ScratchScan",         s11_cr8_scratch_scan },
     { "Suite11-FailureLog",              s11_failure_log },
     { "Suite11-OperationLog",            s11_operation_log },

@@ -75,6 +75,11 @@ class IecDrive : public IecSlave, SubSystem, ObjectWithMenu, ConfigurableObject
     SemaphoreHandle_t mutex;
 #endif
     int lock_depth;
+    // A read that the UCI aborted while another task held the lock; the next holder
+    // pops it before it touches the channels.
+    IecChannel *deferred_channel;
+    int deferred_pop;
+    void take_deferred_pop(void);
 public:
     IecDrive();
     virtual ~IecDrive();
@@ -133,7 +138,12 @@ public:
     void load_partitions(const char *p, const char *f);
 
     void lock(void);
+    bool try_lock(void);
     void unlock(void);
+    // Ends a read of `channel` after `bytes` were taken, without waiting for the lock: the
+    // UCI's abort must not wait for the IEC task, which can hold it while a printer page
+    // is rendered.
+    void abort_read(IecChannel *channel, int bytes);
 
     friend class IecChannel;
     friend class IecCommandChannel;
