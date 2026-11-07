@@ -215,7 +215,9 @@ void CommandInterface :: handle_event(uint8_t status_byte)
             target = incoming_command.message[0] & CMD_IF_MAX_TARGET;
             bool no_reply = ((incoming_command.message[0] & CMD_IF_NO_REPLY) != 0);
             ticket++;
-            {
+            if (command_targets[target]->is_quick(&incoming_command)) {
+                command_targets[target]->parse_command(&incoming_command, &data, &status);
+            } else {
                 TargetWork work;
                 command_targets[target]->parse_command(&incoming_command, &data, &status);
             }
