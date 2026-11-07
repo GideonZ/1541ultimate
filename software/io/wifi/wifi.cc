@@ -13,6 +13,7 @@
 #include <stdarg.h>
 #include "userinterface.h"
 #include "rpc_calls.h"
+#include "wifi_event_size.h"
 #include "filemanager.h"
 #include "network_esp32.h"
 #if U64 == 2
@@ -21,6 +22,8 @@
 #include "init_function.h"
 
 #define DEBUG_INPUT  0
+static uint32_t wifi_events_short; // events shorter than what the task reads (wifi_event_size.h), dropped
+
 #define EVENT_START  0xF1
 #define EVENT_TERM   0xF2
 
@@ -521,6 +524,12 @@ void WiFi :: RunModeThread()
 #if DEBUG_INPUT
             printf("Pkt %d. Ev %b. Sz %d. Seq: %d\n", buf->bufnr, hdr->command, buf->size, hdr->sequence);
 #endif
+            if (wifi_event_too_short(buf->data, buf->size)) { // a damaged frame, or a command run from nothing answered with its byte
+                wifi_events_short++;
+                printf("Event %b of %d bytes is too short, dropped (%d so far).\n", hdr->command, buf->size, (int)wifi_events_short);
+                uart->FreeBuffer(buf);
+                break;
+            }
 #if U64 != 2
             if (wifi_switch_drop_event(&radio_switch, hdr->command)) {
                 uart->FreeBuffer(buf);
@@ -667,6 +676,7 @@ bool WiFi :: sendEvent(uint8_t code)
     hdr->command = code;
     hdr->sequence = 0;
     hdr->thread = 0xFF;
+    buf->size = sizeof(rpc_header_t);
     if (cmd_buffer_loopback(packets, buf) != pdTRUE) { // internal event; the queue is full
         uart->FreeBuffer(buf);
         return false;
@@ -707,6 +717,7 @@ bool WiFi :: sendConnectPending(const char *ssid, uint8_t attempt)
     ev->hdr.thread = 0xFF;
     bzero(ev->ssid, 32);
     strncpy((char *)ev->ssid, ssid, 32);
+    buf->size = sizeof(event_pkt_connected);
     if (cmd_buffer_loopback(packets, buf) != pdTRUE) { // internal event
         uart->FreeBuffer(buf);
         return false;
