@@ -30,16 +30,9 @@ CMDBUF_SRC := $(PATH_SW)/io/uart/cmd_buffer.c
 
 # The functions of my_uart.c the cases run (a function a tree does not have is left out)
 ISR_FUNCS := my_uart_tx_fill my_uart_intr_handler my_uart_transmit_packet my_uart_get_buffer my_uart_free_buffer
-ISR_RED_FIXES := txdirect txone txnoena txpartial
+ISR_RED_FIXES :=
 # LEGACY_ISR_<fix> := sed expressions that turn a module's handler into a model of it before the fix
-#   txdirect   my_uart_transmit_packet does not push the frame itself (it only enables the interrupt)
-#   txone      the fill stops after one frame
-#   txnoena    the handler does not ask for the interrupt again for what did not fit
-#   txpartial  a full FIFO is reported as nothing left
-LEGACY_ISR_txdirect  := -e 's/if (my_uart_tx_fill(obj, uart_num, \&woken)) {/if (1) {/'
-LEGACY_ISR_txone     := -e 's/p_uart->current_tx_buf = NULL; \/\/ currently not transmitting/p_uart->current_tx_buf = NULL; return true;/'
-LEGACY_ISR_txnoena   := -e 's/if (my_uart_tx_fill(p_uart, uart_num, \&HPTaskAwoken)) {/if (my_uart_tx_fill(p_uart, uart_num, \&HPTaskAwoken) \&\& 0) {/'
-LEGACY_ISR_txpartial := -e 's/return true; \/\/ the FIFO is full/return false;/'
+-include $(wildcard isr_*.mk) # the red models of a fix are in its own file, isr_<fix>.mk
 
 .PHONY: all isr isr-red
 all: isr
