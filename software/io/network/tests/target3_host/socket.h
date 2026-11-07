@@ -14,6 +14,7 @@
 #define lwip_close close
 #define lwip_send send
 #define lwip_recvmsg recvmsg
+#define lwip_recv recv              // the target before #806 receives with it
 #define lwip_getsockopt getsockopt
 #define PP_HTONS htons
 #define sin_len sin_zero[0]           // the host's sockaddr_in has no length field
