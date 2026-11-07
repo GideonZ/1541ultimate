@@ -24,32 +24,14 @@ void collect_in_buffer(HTTPReqMessage *req, HTTPRespMessage *resp);
 #define HTTP_REQUEST_TIMEOUT_MS 30000
 #endif
 
-// An HttpRequest waits on its socket in slices of this length, so that it sees
-// a cancel within one slice.
-#define HTTP_IO_SLICE_MS 100
-
-// Counts the slices that an exchange waited without progress, and stops it when
-// it is cancelled or when they add up to HTTP_REQUEST_TIMEOUT_MS. There is no
-// limit on the exchange as a whole: a slow peer, like the printer in #1039, may
-// take as long as it needs while it moves.
-class HttpWait
-{
-    volatile bool *cancel;
-    int idle_ms;
-public:
-    HttpWait(volatile bool *c) : cancel(c), idle_ms(0) { }
-    void progress(void) { idle_ms = 0; }
-    bool cancelled(void) { return cancel && *cancel; }
-    // After a slice that timed out: whether to wait another one.
-    bool again(void)
-    {
-        idle_ms += HTTP_IO_SLICE_MS;
-        return !cancelled() && (idle_ms < HTTP_REQUEST_TIMEOUT_MS);
-    }
-};
+// An HttpRequest waits on its socket in slices (socket_slices.h), so that it sees a
+// cancel within one slice. It gives up when the slices it waited without progress add
+// up to HTTP_REQUEST_TIMEOUT_MS. There is no limit on the exchange as a whole: a slow
+// peer, like the printer in #1039, may take as long as it needs while it moves.
+#include "socket_slices.h"
 
 int   read_socket(int socket_fd, HTTPReqMessage& response);
-bool  get_response(int socket_fd, HTTPREQ_CALLBACK callback, HTTPReqMessage& response, HttpWait *wait = NULL);
+bool  get_response(int socket_fd, HTTPREQ_CALLBACK callback, HTTPReqMessage& response, SliceWait *wait = NULL);
 JSON *convert_buffer_to_json(t_BufferedBody *body);
 
 class HttpRequest
@@ -57,11 +39,11 @@ class HttpRequest
     t_BufferedBody *body;
     HTTPReqMessage response;
     int socket_fd;
-    HttpWait wait;
+    SliceWait wait;
 public:
-    // A request whose *cancel becomes true stops within HTTP_IO_SLICE_MS, except
+    // A request whose *cancel becomes true stops within SOCKET_SLICE_MS, except
     // while it looks up the host name.
-    HttpRequest(volatile bool *cancel = NULL) : wait(cancel) {
+    HttpRequest(volatile bool *cancel = NULL) : wait(cancel, HTTP_REQUEST_TIMEOUT_MS) {
         InitReqMessage(&response);
         body = NULL;
         socket_fd = -1;
