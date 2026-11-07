@@ -30,6 +30,7 @@
 #include "integer.h"
 #include "dump_hex.h"
 #include "c64.h"
+#include "raster_wait.h"
 #include "u64.h"
 #include "c64_crt.h"
 #include "flash.h"
@@ -548,7 +549,11 @@ void C64::resume(void)
             VIC_REG(26) = 0x81;
             VIC_REG(18) = rast_lo;
             VIC_REG(17) = rast_hi;
-            while ((VIC_REG(18) != rast_lo) && ((VIC_REG(17) & 0x80) != rast_hi)) {
+            for (;;) {
+                uint8_t d011 = VIC_REG(17); // before $D012, see raster_wait.h
+                if (raster_at_line(VIC_REG(18), d011, rast_lo, rast_hi)) {
+                    break;
+                }
                 if (!ioRead8(ITU_TIMER)) {
                     ioWrite8(ITU_TIMER, 200); // 1 ms
                     dummy++;
@@ -559,7 +564,11 @@ void C64::resume(void)
             VIC_REG(18) = vic_d012;
             VIC_REG(17) = vic_d011;
         } else {
-            while ((VIC_REG(18) != rast_lo) && ((VIC_REG(17) & 0x80) != rast_hi)) {
+            for (;;) {
+                uint8_t d011 = VIC_REG(17); // before $D012, see raster_wait.h
+                if (raster_at_line(VIC_REG(18), d011, rast_lo, rast_hi)) {
+                    break;
+                }
                 if (!ioRead8(ITU_TIMER)) {
                     ioWrite8(ITU_TIMER, 200); // 1 ms
                     dummy++;
