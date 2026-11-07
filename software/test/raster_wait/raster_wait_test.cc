@@ -10,7 +10,9 @@
  * model also checks the read order (raster_wait.h).
  *
  * -DRASTER_WAIT_LEGACY builds the condition as it was before the fix; that
- * build must fail (make legacy).
+ * build must fail (make legacy). -DRASTER_WAIT_D011_LEGACY keeps the fixed wait but
+ * writes $D011 as the bare compare bit 8 during it, clearing DEN: a wait that
+ * crosses line $30 then leaves a frame without bad lines (make legacy-d011).
  */
 #include <stdio.h>
 #include <stdint.h>
@@ -27,6 +29,12 @@ static bool wait_done(uint8_t d012, uint8_t d011, uint8_t lo, uint8_t hi)
 {
     return raster_at_line(d012, d011, lo, hi);
 }
+#endif
+#if defined(RASTER_WAIT_LEGACY) || defined(RASTER_WAIT_D011_LEGACY)
+// $D011 written as the bare compare bit 8 while waiting (DEN cleared)
+static uint8_t d011_waiting(uint8_t d011, uint8_t hi) { return hi; }
+#else
+static uint8_t d011_waiting(uint8_t d011, uint8_t hi) { return d011_while_waiting(d011, hi); }
 #endif
 
 struct Vic {
@@ -65,6 +73,45 @@ int main()
             }
         }
     }
+    // Bad lines: the frame has them only if DEN ($D011 bit 4) is set during line $30.
+    // resume() writes $D011 for the wait, waits, then restores the program's $D011;
+    // the gateware releases the CPU on the next bad line, which must be the stop line.
+    const uint8_t prog_d011 = 0x1B;   // DEN on, 25 rows, YSCROLL 3: bad lines where (line & 7) == 3
+    int den_cases = 0, den_failures = 0;
+    for (int s = 0; s < 2; s++) {
+        for (int stop = 0x30; stop <= 0xF7; stop++) {
+            if ((stop & 7) != (prog_d011 & 7)) continue;          // the C64 stops on bad lines only
+            int target = stop - 1;
+            for (int start = 0; start < systems[s]; start++) {
+                uint8_t during = d011_waiting(prog_d011, 0);
+                bool den_at_30 = true;                             // for the frame the release happens in
+                int line = start;
+                if (line == 0x30) den_at_30 = (during & 0x10) != 0;
+                while (line != target) {                           // the wait (the condition is tested above)
+                    line = (line + 1) % systems[s];
+                    if (line == 0) den_at_30 = true;               // a new frame
+                    if (line == 0x30) den_at_30 = (during & 0x10) != 0;
+                }
+                // restore the program's $D011, then release on the next bad line
+                int released = -1;
+                for (int l = line + 1, n = 0; n < 2 * systems[s]; l++, n++) {
+                    int ll = l % systems[s];
+                    if (ll == 0) den_at_30 = true;
+                    if (ll == 0x30) den_at_30 = (prog_d011 & 0x10) != 0;
+                    if (ll >= 0x30 && ll <= 0xF7 && (ll & 7) == (prog_d011 & 7) && den_at_30) { released = ll; n = (l - line); break; }
+                }
+                den_cases++;
+                if (released != stop) {
+                    if (den_failures < 3)
+                        printf("FAIL %s stop line %d, resume starts at %d: released on line %d after a frame without bad lines\n",
+                               s ? "NTSC" : "PAL", stop, start, released);
+                    den_failures++;
+                }
+            }
+        }
+    }
+    printf("raster_wait: DEN kept while waiting: %d cases, %d failures\n", den_cases, den_failures);
+    failures += den_failures;
     printf("raster_wait: %d cases, %d failures\n", cases, failures);
     return failures ? 1 : 0;
 }

@@ -13,4 +13,13 @@ static inline bool raster_at_line(uint8_t d012, uint8_t d011, uint8_t lo, uint8_
     return (d012 == lo) && ((d011 & 0x80) == hi);
 }
 
+// $D011 while resume() waits with the compare moved to that line: only bit 7 (bit 8
+// of the compare) changes. Writing the bare bit 8 also cleared DEN; if the wait then
+// crosses line $30, that frame has no bad lines, and the gateware, which releases the
+// CPU on a bad line, releases it a frame late, after a blank frame.
+static inline uint8_t d011_while_waiting(uint8_t d011, uint8_t compare_hi)
+{
+    return (uint8_t)((d011 & 0x7F) | compare_hi);
+}
+
 #endif

@@ -444,11 +444,12 @@ void C64::stop(bool do_raster)
                 // enter ultimax mode, so we can be sure that we can access IO space!
                 goUltimax();
 
-                printf("Ultimax set.. Now reading registers..\n");
+                // the line first: the raster moves on while printf waits for the UART
                 raster = VIC_REG(18);
                 raster_hi = VIC_REG(17);
                 vic_irq_en = VIC_REG(26);
                 vic_irq = VIC_REG(25);
+                printf("Ultimax set.. Registers read.\n");
                 stop_mode = 1;
                 printf("Mode=1\n");
                 break;
@@ -548,7 +549,7 @@ void C64::resume(void)
         if (vic_irq & 0x01) { // was raster flag set when we stopped? then let's set it again
             VIC_REG(26) = 0x81;
             VIC_REG(18) = rast_lo;
-            VIC_REG(17) = rast_hi;
+            VIC_REG(17) = d011_while_waiting(vic_d011, rast_hi); // see raster_wait.h
             for (;;) {
                 uint8_t d011 = VIC_REG(17); // before $D012, see raster_wait.h
                 if (raster_at_line(VIC_REG(18), d011, rast_lo, rast_hi)) {
