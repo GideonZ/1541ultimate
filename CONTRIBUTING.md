@@ -151,6 +151,11 @@ Beyond that:
 - **Use GitHub's draft status** while the work isn't ready for review.
 - **Commit only source.** Builds leave firmware images and object files in the
   working tree, so add files by name rather than with `git add -A`.
+- **Preserve pull request history.** Avoid force-pushing or rewriting commits
+  once a pull request is under review, as this makes changes harder to follow.
+  Push new commits instead, and merge `master` into your branch when needed.
+  We squash commits when merging pull requests into `master`, so there is no
+  need to tidy the history yourself.
 - **Keep the description short.** It needs four things:
   - the problem, with a link to the issue (`Fixes #123`)
   - what you changed, and why you chose this approach
@@ -189,9 +194,9 @@ time. A few things keep discussions friendly and useful:
 
 ## After you open the pull request
 
-Pull requests are reviewed by hand. The maintainer may squash your commits or
-adjust the change while merging it. If an issue or pull request has gone quiet
-for a couple of weeks, a friendly reminder is welcome.
+Pull requests are reviewed by hand. The maintainer squash-merges your commits
+into `master` and may adjust the change while merging it. If an issue or pull
+request has gone quiet for a couple of weeks, a friendly reminder is welcome.
 
 ## Reporting bugs and asking for features
 
