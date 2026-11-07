@@ -577,8 +577,24 @@ void NetworkTarget :: write_socket(Message *command, Message **reply, Message **
     int ret;
     if (owns_socket(socketnr)) {
         SliceWait wait(cancel, 0); // no limit, as before, unless the command is aborted
-        int sent;
-        ret = send_sliced(socketnr, (const char *)src, length, wait, &sent);
+        int sent = 0, waited_ms = 0;
+        while (1) {
+            int now;
+            ret = send_sliced(socketnr, (const char *)src + sent, length - sent, wait, &now);
+            sent += now;
+            if (now) {
+                waited_ms = 0;
+            }
+            // With no free buffer on the link (ENOMEM: a WiFi send no longer waits for one),
+            // the send is tried again a tick later, as a blocking send used to wait,
+            // for at most NET_SEND_NOMEM_MS without progress, and stops at an abort.
+            if ((ret == 0) || (errno != ENOMEM) || wait.cancelled() || (waited_ms >= NET_SEND_NOMEM_MS)) {
+                break;
+            }
+            vTaskDelay(1);
+            waited_ms += portTICK_PERIOD_MS;
+            errno = ENOMEM;
+        }
         if (sent || (ret == 0)) {
             ret = sent;
         }

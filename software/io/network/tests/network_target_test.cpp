@@ -65,6 +65,26 @@ extern "C" int __wrap_gethostbyname_r(const char *name, struct hostent *ret, cha
     return __real_gethostbyname_r(name, ret, buf, len, result, err);
 }
 
+#ifndef NET_SEND_NOMEM_MS
+#define NET_SEND_NOMEM_MS 1000 // a target from before the ENOMEM retry (for the RED run)
+#endif
+
+// A link with no free buffer, as a WiFi send reports it now that it does not wait: the next nomem_sends
+// send() calls fail with ENOMEM; nomem_forever makes them all fail.
+extern "C" ssize_t __real_send(int, const void *, size_t, int);
+static volatile int nomem_sends = 0;
+static volatile bool nomem_forever = false;
+
+extern "C" ssize_t __wrap_send(int fd, const void *data, size_t len, int flags)
+{
+    if (nomem_forever || nomem_sends > 0) {
+        if (nomem_sends > 0) nomem_sends--;
+        errno = ENOMEM;
+        return -1;
+    }
+    return __real_send(fd, data, len, flags);
+}
+
 static void hold_dns(bool hold)
 {
     pthread_mutex_lock(&dns_lock);
@@ -485,6 +505,59 @@ static void test_read_hop(void)
     peer_stop(&peer);
 }
 
+// A WRITE that meets a link with no free buffer keeps trying, a tick at a time, as
+// the blocking send it was; after NET_SEND_NOMEM_MS without progress it reports the error;
+// an abort stops it within a tick. It runs on the worker, so the UCI side never waits.
+static void test_write_nomem(void)
+{
+    Peer peer;
+    peer_start(&peer, SOCK_DGRAM, false);
+    int s = open_socket_to(0x08, peer.port);
+    CHECK(s >= 0, "nomem: open udp");
+    Message *reply, *status;
+    uint8_t write[3 + 100] = { 3, 0x11, (uint8_t)s };
+    memset(write + 3, 'n', 100);
+
+    nomem_sends = 30;                    // ~30 ticks without a buffer
+    long start = now_ms();
+    bool answered = run(write, sizeof(write), &reply, &status);
+    long took = now_ms() - start;
+    CHECK(answered && status_is(status, "00,OK") && reply->length == 2 && reply->message[0] == 100,
+          "nomem: a short shortage failed the WRITE (%.*s)", status->length, status->message);
+    char got[200];
+    int n = recv(peer.listener, got, sizeof(got), MSG_DONTWAIT);
+    CHECK(n == 100, "nomem: the peer got %d bytes", n);
+    CHECK(recv(peer.listener, got, sizeof(got), MSG_DONTWAIT) < 0, "nomem: the datagram went twice");
+    printf("info nomem: a 30-tick shortage took %ld ms\n", took);
+
+    nomem_forever = true;                // a shortage that does not end
+    start = now_ms();
+    answered = run(write, sizeof(write), &reply, &status, 5000);
+    took = now_ms() - start;
+    nomem_forever = false;
+    CHECK(answered && status_is(status, "12,SEND ERROR: 12"), "nomem: a lasting shortage gave %.*s",
+          status->length, status->message);
+    CHECK(took >= NET_SEND_NOMEM_MS - 50 && took < NET_SEND_NOMEM_MS + 500,
+          "nomem: gave up after %ld ms, the limit is %d", took, NET_SEND_NOMEM_MS);
+
+    nomem_forever = true;                // an abort while it waits
+    deferred = false;
+    Message command = { (int)sizeof(write), true, write };
+    target()->parse_command(&command, &reply, &status);
+    usleep(200000);
+    target()->abort(0);
+    nomem_forever = false;
+    start = now_ms();
+    const uint8_t close_other[] = { 3, 0x09, 200 };
+    answered = run(close_other, 3, &reply, &status, 2000);
+    took = now_ms() - start;
+    CHECK(answered && took < 100, "nomem: the next command after an abort took %ld ms", took);
+
+    const uint8_t close_cmd[] = { 3, 0x09, (uint8_t)s };
+    run(close_cmd, 3, &reply, &status);
+    peer_stop(&peer);
+}
+
 int main(int argc, char **argv)
 {
     signal(SIGPIPE, SIG_IGN);
@@ -497,6 +570,7 @@ int main(int argc, char **argv)
     if (!only || !strcmp(only, "quick")) test_quick_behind_lookup();
     if (!only || !strcmp(only, "open-at-abort")) test_open_at_abort();
     if (!only || !strcmp(only, "read-hop")) test_read_hop();
+    if (!only || !strcmp(only, "nomem")) test_write_nomem();
     printf("Network target: %d checks, %d failures\n", checks, failures);
     return failures ? 1 : 0;
 }

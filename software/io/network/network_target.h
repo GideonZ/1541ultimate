@@ -54,6 +54,9 @@
 // while they still run or wait. With none free, a command fails at once.
 #define NET_JOBS 4
 
+// How long a WRITE goes on trying while the link has no free buffer (ENOMEM).
+#define NET_SEND_NOMEM_MS 1000
+
 // One command as the worker runs it, with a copy of its bytes.
 struct NetJob {
     bool in_use;
