@@ -27,6 +27,7 @@ typedef void (*TaskFunction_t)(void *);
 #define pdMS_TO_TICKS(ms) ((TickType_t)(ms))
 #define configMINIMAL_STACK_SIZE 512
 #define PRIO_HW_SERVICE 1
+#define PRIO_NETSERVICE 1
 
 static inline pthread_mutex_t *host_rtos_critical(void)
 {
@@ -138,6 +139,22 @@ static inline UBaseType_t uxQueueMessagesWaiting(QueueHandle_t q)
     int n = q->count;
     pthread_mutex_unlock(&q->lock);
     return (UBaseType_t)n;
+}
+
+static inline UBaseType_t uxQueueSpacesAvailable(QueueHandle_t q)
+{
+    pthread_mutex_lock(&q->lock);
+    int n = q->length - q->count;
+    pthread_mutex_unlock(&q->lock);
+    return (UBaseType_t)n;
+}
+
+static inline void vQueueDelete(QueueHandle_t q)
+{
+    pthread_mutex_destroy(&q->lock);
+    pthread_cond_destroy(&q->changed);
+    delete[] q->items;
+    delete q;
 }
 
 static inline SemaphoreHandle_t xSemaphoreCreateBinary(void) { return xQueueCreate(1, 0); }

@@ -3,14 +3,66 @@
 #include "netdb.h"
 #include "send_all.h"
 #include <errno.h>
+#ifdef RUNS_ON_PC
+#include <sys/ioctl.h>
+#define ioctlsocket ioctl
+#endif
 
 static void set_socket_timeouts(int socket_fd)
 {
     struct timeval tv;
-    tv.tv_sec = HTTP_REQUEST_TIMEOUT_MS / 1000;
-    tv.tv_usec = (HTTP_REQUEST_TIMEOUT_MS % 1000) * 1000;
+    tv.tv_sec = HTTP_IO_SLICE_MS / 1000;
+    tv.tv_usec = (HTTP_IO_SLICE_MS % 1000) * 1000;
     setsockopt(socket_fd, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv, sizeof(tv));
     setsockopt(socket_fd, SOL_SOCKET, SO_SNDTIMEO, (char *)&tv, sizeof(tv));
+}
+
+static int set_blocking(int socket_fd, bool blocking)
+{
+    int nonblocking = blocking ? 0 : 1;
+    return ioctlsocket(socket_fd, FIONBIO, &nonblocking);
+}
+
+static bool is_timeout(void)
+{
+    return (errno == EAGAIN) || (errno == EWOULDBLOCK);
+}
+
+// A blocking connect cannot be stopped, and lwIP takes ~18.5 s to give up on a
+// host that does not answer. This one waits in slices instead.
+static int connect_sliced(int sock_fd, struct sockaddr_in *addr, HttpWait& wait)
+{
+    if (set_blocking(sock_fd, false) < 0) {
+        return -1;
+    }
+    int result = connect(sock_fd, (struct sockaddr *)addr, sizeof(*addr));
+    if ((result < 0) && (errno == EINPROGRESS)) {
+        do {
+            // lwIP reports a failed connect only as an exception.
+            fd_set writable, failed;
+            FD_ZERO(&writable);
+            FD_SET(sock_fd, &writable);
+            FD_ZERO(&failed);
+            FD_SET(sock_fd, &failed);
+            struct timeval tv = { HTTP_IO_SLICE_MS / 1000, (HTTP_IO_SLICE_MS % 1000) * 1000 };
+            result = select(sock_fd + 1, NULL, &writable, &failed, &tv);
+        } while ((result == 0) && wait.again());
+        if (result > 0) {
+            int error = 0;
+            socklen_t length = sizeof(error);
+            result = getsockopt(sock_fd, SOL_SOCKET, SO_ERROR, &error, &length);
+            if (error) {
+                result = -1;
+            }
+        } else {
+            result = -1;
+        }
+    }
+    if ((result < 0) || (set_blocking(sock_fd, true) < 0)) {
+        return -1;
+    }
+    wait.progress();
+    return 0;
 }
 
 int HttpRequest :: connect_to_server(const char *hostname, uint16_t hostport)
@@ -48,7 +100,7 @@ int HttpRequest :: connect_to_server(const char *hostname, uint16_t hostport)
     memcpy(&serv_addr.sin_addr.s_addr, ret_host->h_addr, ret_host->h_length);
     serv_addr.sin_port = htons(hostport);
 
-    if (connect(sock_fd, (struct sockaddr *)&serv_addr,sizeof(serv_addr)) < 0) {
+    if (connect_sliced(sock_fd, &serv_addr, wait) < 0) {
         printf("Connection failed.\n");
         close(sock_fd);
         return -1;
@@ -66,9 +118,15 @@ int HttpRequest :: send_request(StreamRamFile *s)
     char buffer[128];
     do {
         n = s->read(buffer, 128);
-        if (n) {
-            r = send_all(socket_fd, buffer, n);
-            if (r < 0) {
+        int done = 0;
+        while (done < n) {
+            int sent;
+            r = send_part(socket_fd, buffer + done, n - done, &sent);
+            done += sent;
+            if (sent) {
+                wait.progress();
+            }
+            if ((r < 0) && !(is_timeout() && wait.again())) {
                 return r;
             }
         }
@@ -78,7 +136,7 @@ int HttpRequest :: send_request(StreamRamFile *s)
 
 bool HttpRequest :: recv_response(void)
 {
-    bool complete = get_response(this->socket_fd, collect_in_buffer, response);
+    bool complete = get_response(this->socket_fd, collect_in_buffer, response, &wait);
     this->body = (t_BufferedBody *)response.userContext;
     if (!complete || !this->body) {
         delete this->body;
@@ -153,7 +211,9 @@ int read_socket(int socket_fd, HTTPReqMessage& response)
     return n;
 }
 
-bool get_response(int socket_fd, HTTPREQ_CALLBACK callback, HTTPReqMessage& response)
+// With a wait, the socket's SO_RCVTIMEO is one slice, and a read that times out
+// is tried again for as long as the wait allows.
+bool get_response(int socket_fd, HTTPREQ_CALLBACK callback, HTTPReqMessage& response, HttpWait *wait)
 {
     uint8_t state = READING_SOCKET;
 
@@ -162,8 +222,14 @@ bool get_response(int socket_fd, HTTPREQ_CALLBACK callback, HTTPReqMessage& resp
         if (n < 0 && errno == EINTR) {
             continue;
         }
+        if (n < 0 && wait && is_timeout() && wait->again()) {
+            continue;
+        }
         if (n <= 0) {
             break;
+        }
+        if (wait) {
+            wait->progress();
         }
         state = ProcessClientData(&response, NULL, callback);
     } while(state < WRITING_SOCKET);

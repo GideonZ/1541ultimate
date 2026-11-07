@@ -9,6 +9,8 @@
 #include <sys/wait.h>
 #include <signal.h>
 #include <time.h>
+#include <pthread.h>
+#include <poll.h>
 
 // these globals will be filled in by the clients
 CommandTarget *command_targets[CMD_IF_MAX_TARGET+1];
@@ -17,6 +19,47 @@ Message c_message_no_target      = {  9, true, (uint8_t *)"NO TARGET" };
 Message c_status_ok              = {  5, true, (uint8_t *)"00,OK" };
 Message c_status_unknown_command = { 18, true, (uint8_t *)"21,UNKNOWN COMMAND" };
 Message c_message_empty          = {  0, true, (uint8_t *)"" };
+
+// The UCI Server's side of command_defer: it waits for the worker as the server task
+// does, and records every ticket that the worker reports done.
+static pthread_mutex_t deferral_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t deferral_changed = PTHREAD_COND_INITIALIZER;
+static bool deferral_requested = false;
+static uint32_t deferral_ticket = 0;
+static bool deferral_reported[4096];
+
+uint32_t command_defer(void)
+{
+    deferral_requested = true;
+    return ++deferral_ticket;
+}
+
+void command_deferred_done(uint32_t ticket)
+{
+    pthread_mutex_lock(&deferral_lock);
+    deferral_reported[ticket % 4096] = true;
+    pthread_cond_broadcast(&deferral_changed);
+    pthread_mutex_unlock(&deferral_lock);
+}
+
+static bool deferral_done(uint32_t ticket, int timeout_ms)
+{
+    struct timespec deadline;
+    clock_gettime(CLOCK_REALTIME, &deadline);
+    deadline.tv_sec += timeout_ms / 1000;
+    deadline.tv_nsec += (long)(timeout_ms % 1000) * 1000000L;
+    if (deadline.tv_nsec >= 1000000000L) {
+        deadline.tv_sec++;
+        deadline.tv_nsec -= 1000000000L;
+    }
+    pthread_mutex_lock(&deferral_lock);
+    while (!deferral_reported[ticket % 4096] &&
+           pthread_cond_timedwait(&deferral_changed, &deferral_lock, &deadline) == 0) {
+    }
+    bool done = deferral_reported[ticket % 4096];
+    pthread_mutex_unlock(&deferral_lock);
+    return done;
+}
 
 static Message c_cmd_identify      = {  2, true, (uint8_t *)"\x06\x01" };
 static Message c_cmd_header_create = { 46, true, (uint8_t *)"\x06\x11\x01""hackerswithstyle.se/leet/search/aql/presets" };
@@ -78,6 +121,21 @@ static const char status_no_more[] = "500 NO MORE DATA";
 static int checks = 0;
 static int failures = 0;
 static int saved_stdout = -1;
+
+// Runs a command as the UCI Server does, including the reply to a deferred one.
+static void run_command(HttpTarget *target, Message *command, Message **reply, Message **status)
+{
+    deferral_requested = false;
+    target->parse_command(command, reply, status);
+    if (deferral_requested) {
+        checks++;
+        if (!deferral_done(deferral_ticket, 60000)) {
+            failures++;
+            printf("FAIL the worker did not finish exchange %u\n", deferral_ticket);
+        }
+        target->deferred_reply(reply, status);
+    }
+}
 
 static void quiet_begin(void)
 {
@@ -155,7 +213,7 @@ static void run_expect(HttpTarget *target, const char *label, Message *command,
     Message *status;
 
     quiet_begin();
-    target->parse_command(command, &reply, &status);
+    run_command(target, command, &reply, &status);
     quiet_end();
     expect_bytes(label, "reply", reply, expected_reply, expected_reply_len);
     expect_text(label, "status", status, expected_status);
@@ -558,13 +616,13 @@ static void run_network_smoke(HttpTarget *target)
     Message *status;
 
     printf("Running optional network smoke test.\n");
-    target->parse_command(&c_exchange_raw, &reply, &status);
+    run_command(target, &c_exchange_raw, &reply, &status);
     printf("raw exchange status: %.*s\n", status->length, status->message);
     while(!reply->last_part) {
         target->get_more_data(&reply, &status);
     }
 
-    target->parse_command(&c_exchange, &reply, &status);
+    run_command(target, &c_exchange, &reply, &status);
     printf("object exchange status: %.*s\n", status->length, status->message);
 }
 
@@ -613,14 +671,15 @@ class ResponsePeer
     ResponsePeer(const ResponsePeer&);
     ResponsePeer& operator=(const ResponsePeer&);
 public:
-    ResponsePeer(const char *response, int response_length = -1) : child(-1)
+    // With piece > 0, the response goes out piece bytes at a time, gap_us apart.
+    ResponsePeer(const char *response, int response_length = -1, int piece = 0, int gap_us = 0) : child(-1)
     {
         if (!endpoint.port() || !endpoint.start_listening()) {
             return;
         }
         child = fork();
         if (child == 0) {
-            alarm(5);
+            alarm(10);
             int client = endpoint.accept_connection();
             char request[1024] = {};
             int used = 0;
@@ -637,11 +696,18 @@ public:
             }
             size_t sent = 0, length = response_length < 0 ? strlen(response) : response_length;
             while (sent < length) {
-                int n = send(client, response + sent, length - sent, MSG_NOSIGNAL);
+                size_t now = length - sent;
+                if (piece > 0 && now > (size_t)piece) {
+                    now = piece;
+                }
+                int n = send(client, response + sent, now, MSG_NOSIGNAL);
                 if (n <= 0) {
                     _exit(4);
                 }
                 sent += n;
+                if (piece > 0 && sent < length) {
+                    usleep(gap_us);
+                }
             }
             shutdown(client, SHUT_WR);
             close(client);
@@ -814,7 +880,7 @@ static void test_response_completion(HttpTarget *target, int selected)
                     run_expect(target, "create response header", &command, handle, 1, status_ok);
                     Message *reply, *status;
                     quiet_begin();
-                    target->parse_command(raw ? &c_exchange_raw : &c_exchange, &reply, &status);
+                    run_command(target, raw ? &c_exchange_raw : &c_exchange, &reply, &status);
                     quiet_end();
                     char label[64];
                     snprintf(label, sizeof(label), "response case %u raw=%d recovery=%d", i, raw, recovery);
@@ -857,7 +923,7 @@ static void begin_raw_response(HttpTarget *target, ResponsePeer& peer, Message *
     const uint8_t handle[] = { 0 };
     run_expect(target, "create loopback header", &command, handle, 1, status_ok);
     quiet_begin();
-    target->parse_command(&c_exchange_raw, reply, status);
+    run_command(target, &c_exchange_raw, reply, status);
     quiet_end();
 }
 
@@ -1263,6 +1329,185 @@ static void test_silent_server(void)
     }
 }
 
+
+// --- The exchange runs on the target's worker (command_defer) -------------------------
+
+// A server that reads the request and then says nothing until the client goes away.
+class SilentPeer
+{
+    LoopbackEndpoint endpoint;
+    pid_t child;
+
+    SilentPeer(const SilentPeer&);
+    SilentPeer& operator=(const SilentPeer&);
+public:
+    SilentPeer() : child(-1)
+    {
+        if (!endpoint.port() || !endpoint.start_listening()) {
+            return;
+        }
+        child = fork();
+        if (child == 0) {
+            alarm(20);
+            int client = endpoint.accept_connection();
+            char request[256];
+            while (client >= 0 && recv(client, request, sizeof(request), 0) > 0) {
+            }
+            _exit(0);
+        }
+    }
+    ~SilentPeer()
+    {
+        if (child > 0) {
+            kill(child, SIGKILL);
+            waitpid(child, NULL, 0);
+        }
+    }
+    uint16_t port() const { return child > 0 ? endpoint.port() : 0; }
+};
+
+static uint8_t create_header(HttpTarget *target, uint16_t port)
+{
+    uint8_t create[128] = { 6, HTTP_CMD_HEADER_CREATE, 1 };
+    int length = snprintf((char *)create + 3, sizeof(create) - 3, "http://127.0.0.1:%u/", port);
+    Message command = make_msg(create, length + 3);
+    Message *reply, *status;
+    quiet_begin();
+    run_command(target, &command, &reply, &status);
+    quiet_end();
+    return reply->length == 1 ? reply->message[0] : 0xFF;
+}
+
+static long since_ms(const struct timespec& since)
+{
+    struct timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    return (now.tv_sec - since.tv_sec) * 1000 + (now.tv_nsec - since.tv_nsec) / 1000000;
+}
+
+static void expect_within(const char *label, long ms, long limit)
+{
+    checks++;
+    printf("%s %s: %d ms (limit %d)\n", ms > limit ? "FAIL" : "ok", label, (int)ms, (int)limit);
+    if (ms > limit) {
+        failures++;
+    }
+}
+
+// Starts an exchange to a server that stalls it, aborts it while it waits, and runs a
+// second exchange on the worker. The UCI Server task must be free at once, the abort
+// must not wait, the worker must drop the stalled exchange within a slice, and the
+// stalled exchange must never report a result.
+static void abort_stalled_exchange(HttpTarget *target, const char *label, uint8_t stalled_header,
+                                   uint8_t stalled_body)
+{
+    ResponsePeer good("HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK");
+    uint8_t good_header = create_header(target, good.port());
+    checks++;
+    if (!good.port() || stalled_header == 0xFF || good_header == 0xFF) {
+        failures++;
+        printf("FAIL %s: fixture setup\n", label);
+        return;
+    }
+    uint8_t stalled_exchange[] = { 6, HTTP_CMD_DO_EXCHANGE_RAW, stalled_header, stalled_body };
+    uint8_t good_exchange[] = { 6, HTTP_CMD_DO_EXCHANGE_RAW, good_header, 0xFF };
+    Message stalled_command = make_msg(stalled_exchange, sizeof(stalled_exchange));
+    Message good_command = make_msg(good_exchange, sizeof(good_exchange));
+    Message *reply, *status;
+    char what[96];
+
+    struct timespec start;
+    clock_gettime(CLOCK_MONOTONIC, &start);
+    deferral_requested = false;
+    quiet_begin();
+    target->parse_command(&stalled_command, &reply, &status);
+    quiet_end();
+    snprintf(what, sizeof(what), "%s: the exchange leaves the UCI Server task", label);
+    expect_within(what, since_ms(start), 250);
+    uint32_t stalled_ticket = deferral_requested ? deferral_ticket : 0;
+
+    usleep(300000); // the worker now waits on the server
+    clock_gettime(CLOCK_MONOTONIC, &start);
+    target->abort(0);
+    snprintf(what, sizeof(what), "%s: abort", label);
+    expect_within(what, since_ms(start), 20);
+
+    quiet_begin();
+    run_command(target, &good_command, &reply, &status);
+    quiet_end();
+    snprintf(what, sizeof(what), "%s: the next exchange after the abort", label);
+    expect_within(what, since_ms(start), 600);
+    expect_bytes(what, "reply", reply, (const uint8_t *)"OK", 2);
+    checks++;
+    if (stalled_ticket && deferral_reported[stalled_ticket % 4096]) {
+        failures++;
+        printf("FAIL %s: the aborted exchange reported a result\n", label);
+    }
+    good.completed();
+}
+
+static void test_abort_stalled_response(HttpTarget *target)
+{
+    SilentPeer silent;
+    run_expect_empty(target, "reset stall fixture", &c_cmd_free_all, status_ok);
+    abort_stalled_exchange(target, "stalled response", create_header(target, silent.port()), 0xFF);
+    run_expect_empty(target, "release stall fixture", &c_cmd_free_all, status_ok);
+}
+
+static void test_abort_stalled_request(HttpTarget *target)
+{
+    SlowReader reader(0, -1); // takes the connection and never reads
+    run_expect_empty(target, "reset send fixture", &c_cmd_free_all, status_ok);
+    uint8_t header = create_header(target, reader.port());
+    // A 4 MB body, far more than the two socket buffers hold.
+    uint8_t create[] = { 6, HTTP_CMD_BODY_CREATE, HTTP_TYPE_BINARY };
+    const uint8_t handle[] = { 0 };
+    Message command = make_msg(create, sizeof(create));
+    run_expect(target, "create a large body", &command, handle, 1, status_ok);
+    uint8_t add[3 + 800] = { 6, HTTP_CMD_BODY_ADD_BINARY, 0 };
+    memset(add + 3, 'b', 800);
+    command = make_msg(add, sizeof(add));
+    Message *reply, *status;
+    for (int i = 0; i < 4 * 1024 * 1024 / 800; i++) {
+        target->parse_command(&command, &reply, &status);
+    }
+    abort_stalled_exchange(target, "stalled request", header, 0);
+    run_expect_empty(target, "release send fixture", &c_cmd_free_all, status_ok);
+}
+
+// A server that answers in pieces with pauses, for longer than HTTP_REQUEST_TIMEOUT_MS
+// in all. Only a pause that long fails an exchange, not a slow one that moves.
+static void test_trickle(HttpTarget *target)
+{
+    const char response[] = "HTTP/1.1 200 OK\r\nContent-Length: 10\r\n\r\n0123456789";
+    int pieces = (HTTP_REQUEST_TIMEOUT_MS * 3 / 2) / 250 + 1;
+    int piece = (int)(sizeof(response) - 1) / pieces + 1;
+    ResponsePeer trickle(response, -1, piece, 250000);
+    run_expect_empty(target, "reset trickle fixture", &c_cmd_free_all, status_ok);
+    uint8_t header = create_header(target, trickle.port());
+    uint8_t exchange[] = { 6, HTTP_CMD_DO_EXCHANGE_RAW, header, 0xFF };
+    Message command = make_msg(exchange, sizeof(exchange));
+    Message *reply, *status;
+    struct timespec start;
+    clock_gettime(CLOCK_MONOTONIC, &start);
+    quiet_begin();
+    run_command(target, &command, &reply, &status);
+    quiet_end();
+    long ms = since_ms(start);
+    expect_bytes("trickle", "reply", reply, (const uint8_t *)"0123456789", 10);
+    checks++;
+    if (ms < HTTP_REQUEST_TIMEOUT_MS) {
+        failures++;
+        printf("FAIL trickle: the server took only %d ms, the case needs more than %d\n", (int)ms, HTTP_REQUEST_TIMEOUT_MS);
+    }
+    checks++;
+    if (!trickle.completed()) {
+        failures++;
+        printf("FAIL trickle: the server did not finish\n");
+    }
+    run_expect_empty(target, "release trickle fixture", &c_cmd_free_all, status_ok);
+}
+
 int main(int argc, char **argv)
 {
     if ((argc > 1) && (strcmp(argv[1], "--slow-server") == 0)) {
@@ -1288,6 +1533,15 @@ int main(int argc, char **argv)
     if (!target) {
         printf("FAIL target 6 was not registered\n");
         return 1;
+    }
+
+    if ((argc > 1) && (strcmp(argv[1], "--worker") == 0)) {
+        signal(SIGPIPE, SIG_IGN);
+        test_abort_stalled_response(target);
+        test_abort_stalled_request(target);
+        test_trickle(target);
+        printf("Worker: %d checks, %d failures\n", checks, failures);
+        return failures ? 1 : 0;
     }
 
     if ((argc > 1) && (strcmp(argv[1], "--response-completion") == 0)) {
