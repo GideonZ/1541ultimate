@@ -526,7 +526,7 @@ void WiFi :: RunModeThread()
 #endif
             if (wifi_event_too_short(buf->data, buf->size)) { // a damaged frame, or a command run from nothing answered with its byte
                 wifi_events_short++;
-                printf("Event %b of %d bytes is too short, dropped (%d so far).\n", hdr->command, buf->size, (int)wifi_events_short);
+                printf("Event %d of %d bytes is too short, dropped (%d so far).\n", hdr->command, buf->size, (int)wifi_events_short);
                 uart->FreeBuffer(buf);
                 break;
             }
