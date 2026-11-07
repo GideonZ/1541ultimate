@@ -21,6 +21,7 @@ extern "C" {
 #include "product.h"
 #include "userinterface.h"
 #include "u64_config.h"
+#include "c64_window.h"
 #include "data_streamer.h"
 #include "audio_select.h"
 #include "fpll.h"
@@ -1016,7 +1017,7 @@ void U64Config :: hpd_monitor_task(void *_a)
 
 uint8_t U64Config :: unlock_irq(void *a)
 {
-    C64_POKE(0xD038, 0); // disable the IRQ once again
+    c64_isr_poke_io(0xD038, 0); // disable the IRQ once again (in bus mode, whatever mode the interrupted task had)
 //    C64_POKE(0xD020, 0); // testing only
     C64_BUS_INTERNAL |= 0x02; // Enable DF00-DFFF internal mapping to reach UCI
     CMD_IF_SLOT_ENABLE = 1;
