@@ -118,6 +118,9 @@ int HttpRequest :: send_request(StreamRamFile *s)
     char buffer[128];
     do {
         n = s->read(buffer, 128);
+        if (wait.cancelled()) { // also while the server keeps reading
+            return -1;
+        }
         int done = 0;
         while (done < n) {
             int sent;
@@ -230,6 +233,9 @@ bool get_response(int socket_fd, HTTPREQ_CALLBACK callback, HTTPReqMessage& resp
         }
         if (wait) {
             wait->progress();
+            if (wait->cancelled()) { // also while the server keeps sending
+                break;
+            }
         }
         state = ProcessClientData(&response, NULL, callback);
     } while(state < WRITING_SOCKET);

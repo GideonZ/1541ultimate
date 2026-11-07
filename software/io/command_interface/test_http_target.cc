@@ -11,6 +11,8 @@
 #include <time.h>
 #include <pthread.h>
 #include <poll.h>
+#include <netdb.h>
+#include <sys/stat.h>
 
 // these globals will be filled in by the clients
 CommandTarget *command_targets[CMD_IF_MAX_TARGET+1];
@@ -122,19 +124,101 @@ static int checks = 0;
 static int failures = 0;
 static int saved_stdout = -1;
 
+// Sockets closed by the UCI Server's thread (the test's main thread) while it runs the
+// target. The worker owns its socket and closes it before it hands the job back; a close
+// here would be a socket touched by two tasks. close() is wrapped at link time.
+extern "C" int __real_close(int fd);
+static pthread_t uci_thread = pthread_self();
+static volatile bool in_target = false;
+static int uci_socket_closes = 0;
+
+extern "C" int __wrap_close(int fd)
+{
+    struct stat st;
+    if (in_target && pthread_equal(pthread_self(), uci_thread) && fstat(fd, &st) == 0 && S_ISSOCK(st.st_mode)) {
+        uci_socket_closes++;
+    }
+    return __real_close(fd);
+}
+
+// A name lookup that waits while the test holds it, for "held.dns"; others resolve as usual.
+extern "C" int __real_gethostbyname_r(const char *, struct hostent *, char *, size_t, struct hostent **, int *);
+static pthread_mutex_t dns_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t dns_changed = PTHREAD_COND_INITIALIZER;
+static bool dns_held = false;
+static bool dns_waiting = false;
+
+extern "C" int __wrap_gethostbyname_r(const char *name, struct hostent *ret, char *buf, size_t len,
+                                      struct hostent **result, int *err)
+{
+    if (!strcmp(name, "held.dns")) {
+        pthread_mutex_lock(&dns_lock);
+        dns_waiting = true;
+        pthread_cond_broadcast(&dns_changed);
+        while (dns_held) {
+            pthread_cond_wait(&dns_changed, &dns_lock);
+        }
+        dns_waiting = false;
+        pthread_mutex_unlock(&dns_lock);
+        name = "127.0.0.1";
+    }
+    return __real_gethostbyname_r(name, ret, buf, len, result, err);
+}
+
+// lwIP's TCP send buffer is 16 KB; the host's grows to megabytes and would take a whole
+// request at once. While set, a new TCP socket gets a small one, as on the device.
+extern "C" int __real_socket(int, int, int);
+static volatile bool small_send_buffer = false;
+
+extern "C" int __wrap_socket(int domain, int type, int protocol)
+{
+    int fd = __real_socket(domain, type, protocol);
+    if (fd >= 0 && small_send_buffer && (type & 0xF) == SOCK_STREAM) {
+        int size = 4096;
+        setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &size, sizeof(size));
+    }
+    return fd;
+}
+
+static void hold_dns(bool hold)
+{
+    pthread_mutex_lock(&dns_lock);
+    dns_held = hold;
+    pthread_cond_broadcast(&dns_changed);
+    pthread_mutex_unlock(&dns_lock);
+}
+
 // Runs a command as the UCI Server does, including the reply to a deferred one.
 static void run_command(HttpTarget *target, Message *command, Message **reply, Message **status)
 {
     deferral_requested = false;
+    in_target = true;
     target->parse_command(command, reply, status);
+    in_target = false;
     if (deferral_requested) {
         checks++;
         if (!deferral_done(deferral_ticket, 60000)) {
             failures++;
             printf("FAIL the worker did not finish exchange %u\n", deferral_ticket);
         }
+        in_target = true;
         target->deferred_reply(reply, status);
+        in_target = false;
     }
+}
+
+static void target_abort(HttpTarget *target)
+{
+    in_target = true;
+    target->abort(0);
+    in_target = false;
+}
+
+static void target_reset(HttpTarget *target)
+{
+    in_target = true;
+    target->c64_reset();
+    in_target = false;
 }
 
 static void quiet_begin(void)
@@ -1427,8 +1511,13 @@ static void abort_stalled_exchange(HttpTarget *target, const char *label, uint8_
     uint32_t stalled_ticket = deferral_requested ? deferral_ticket : 0;
 
     usleep(300000); // the worker now waits on the server
+    checks++;
+    if (!stalled_ticket || deferral_reported[stalled_ticket % 4096]) {
+        failures++;
+        printf("FAIL %s: the exchange was not waiting on the server when it was aborted\n", label);
+    }
     clock_gettime(CLOCK_MONOTONIC, &start);
-    target->abort(0);
+    target_abort(target);
     snprintf(what, sizeof(what), "%s: abort", label);
     expect_within(what, since_ms(start), 20);
 
@@ -1508,6 +1597,283 @@ static void test_trickle(HttpTarget *target)
     run_expect_empty(target, "release trickle fixture", &c_cmd_free_all, status_ok);
 }
 
+
+// A server that keeps sending, slowly but never pausing for a slice, after the abort.
+// The worker must see the cancel between reads, not only on a timeout.
+static char stream_response[4096];
+static int stream_length(void)
+{
+    int h = snprintf(stream_response, sizeof(stream_response), "HTTP/1.1 200 OK\r\nContent-Length: 100000\r\n\r\n");
+    memset(stream_response + h, 'x', 3000);
+    return h + 3000;
+}
+
+static void test_abort_streaming_response(HttpTarget *target)
+{
+    ResponsePeer stream(stream_response, stream_length(), 10, 25000); // 10 bytes every 25 ms, ~7.5 s
+    run_expect_empty(target, "reset stream fixture", &c_cmd_free_all, status_ok);
+    abort_stalled_exchange(target, "streaming response", create_header(target, stream.port()), 0xFF);
+    run_expect_empty(target, "release stream fixture", &c_cmd_free_all, status_ok);
+}
+
+// More aborted streams than the queue holds, then a C64 reset: the target must work again
+// at once, not answer 503 until the streams end.
+static void test_aborted_streams_then_reset(HttpTarget *target)
+{
+    run_expect_empty(target, "reset streams fixture", &c_cmd_free_all, status_ok);
+    for (int i = 0; i < HTTP_JOB_QUEUE_DEPTH + 2; i++) {
+        ResponsePeer stream(stream_response, stream_length(), 10, 25000);
+        uint8_t header = create_header(target, stream.port());
+        uint8_t exchange[] = { 6, HTTP_CMD_DO_EXCHANGE_RAW, header, 0xFF };
+        Message command = make_msg(exchange, sizeof(exchange));
+        Message *reply, *status;
+        quiet_begin();
+        in_target = true;
+        target->parse_command(&command, &reply, &status);
+        in_target = false;
+        quiet_end();
+        usleep(100000);
+        target_abort(target);
+    }
+    target_reset(target);
+    ResponsePeer good("HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK");
+    struct timespec start;
+    clock_gettime(CLOCK_MONOTONIC, &start);
+    uint8_t header = create_header(target, good.port());
+    uint8_t exchange[] = { 6, HTTP_CMD_DO_EXCHANGE_RAW, header, 0xFF };
+    Message command = make_msg(exchange, sizeof(exchange));
+    Message *reply, *status;
+    quiet_begin();
+    run_command(target, &command, &reply, &status);
+    quiet_end();
+    expect_within("aborted streams, reset: the next exchange", since_ms(start), 600);
+    expect_bytes("aborted streams, reset", "reply", reply, (const uint8_t *)"OK", 2);
+    good.completed();
+    run_expect_empty(target, "release streams fixture", &c_cmd_free_all, status_ok);
+}
+
+// A connect that cannot complete: the listener's accept queue is full, so the SYN is
+// dropped and the connect waits. The abort must reach it within a slice.
+static void test_abort_stalled_connect(HttpTarget *target)
+{
+    int listener = socket(AF_INET, SOCK_STREAM, 0);
+    struct sockaddr_in a = {};
+    a.sin_family = AF_INET;
+    a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    socklen_t len = sizeof(a);
+    bind(listener, (struct sockaddr *)&a, len);
+    getsockname(listener, (struct sockaddr *)&a, &len);
+    listen(listener, 0);
+    int fill[3];
+    for (int i = 0; i < 3; i++) {
+        fill[i] = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0);
+        connect(fill[i], (struct sockaddr *)&a, len);
+    }
+    usleep(50000);
+    run_expect_empty(target, "reset connect fixture", &c_cmd_free_all, status_ok);
+    abort_stalled_exchange(target, "stalled connect", create_header(target, ntohs(a.sin_port)), 0xFF);
+    run_expect_empty(target, "release connect fixture", &c_cmd_free_all, status_ok);
+    for (int i = 0; i < 3; i++) {
+        close(fill[i]);
+    }
+    close(listener);
+}
+
+// While the worker is stuck in a name lookup: aborted exchanges queue behind it and are
+// never started, and with the queue full the next exchange gets 503 at once.
+static void test_queue_behind_lookup(HttpTarget *target)
+{
+    LoopbackEndpoint counted;  // must see no connection from a cancelled queued exchange
+    counted.start_listening();
+    LoopbackEndpoint refused;  // where the held lookup leads: bound, not listening
+    run_expect_empty(target, "reset queue fixture", &c_cmd_free_all, status_ok);
+    hold_dns(true);
+    uint8_t create[64] = { 6, HTTP_CMD_HEADER_CREATE, 1 };
+    int length = snprintf((char *)create + 3, sizeof(create) - 3, "http://held.dns:%u/", refused.port());
+    Message command = make_msg(create, length + 3);
+    Message *reply, *status;
+    quiet_begin();
+    run_command(target, &command, &reply, &status);
+    quiet_end();
+    uint8_t held = reply->message[0];
+    uint8_t queued = create_header(target, counted.port());
+
+    uint8_t held_exchange[] = { 6, HTTP_CMD_DO_EXCHANGE_RAW, held, 0xFF };
+    uint8_t queued_exchange[] = { 6, HTTP_CMD_DO_EXCHANGE_RAW, queued, 0xFF };
+    Message held_command = make_msg(held_exchange, sizeof(held_exchange));
+    Message queued_command = make_msg(queued_exchange, sizeof(queued_exchange));
+    quiet_begin();
+    in_target = true;
+    target->parse_command(&held_command, &reply, &status);
+    in_target = false;
+    quiet_end();
+    for (int i = 0; i < 200 && !dns_waiting; i++) {
+        usleep(10000);
+    }
+    target_abort(target);
+    int deferred = 0;
+    for (int i = 0; i <= HTTP_JOB_QUEUE_DEPTH; i++) {
+        deferral_requested = false;
+        quiet_begin();
+        in_target = true;
+        target->parse_command(&queued_command, &reply, &status);
+        in_target = false;
+        quiet_end();
+        if (deferral_requested) {
+            deferred++;
+            target_abort(target);
+        }
+    }
+    checks++;
+    if (deferred != HTTP_JOB_QUEUE_DEPTH || !status->length ||
+        memcmp(status->message, "503 SERVICE UNAVAILABLE", status->length)) {
+        failures++;
+        printf("FAIL queue behind a lookup: %d exchanges queued, then status %.*s (expected %d, then 503)\n",
+               deferred, status->length, status->message, HTTP_JOB_QUEUE_DEPTH);
+    }
+    hold_dns(false);
+    usleep(300000);
+    struct pollfd pending = { -1, POLLIN, 0 };
+    int listener = -1;
+    // LoopbackEndpoint keeps its descriptor private; a connection shows as a readable listener.
+    for (int fd = 3; fd < 1024 && listener < 0; fd++) {
+        struct sockaddr_in a;
+        socklen_t len = sizeof(a);
+        int listening = 0;
+        socklen_t ll = sizeof(listening);
+        if (getsockname(fd, (struct sockaddr *)&a, &len) == 0 && ntohs(a.sin_port) == counted.port() &&
+            getsockopt(fd, SOL_SOCKET, SO_ACCEPTCONN, &listening, &ll) == 0 && listening) {
+            listener = fd;
+        }
+    }
+    pending.fd = listener;
+    checks++;
+    if (listener < 0 || poll(&pending, 1, 0) != 0) {
+        failures++;
+        printf("FAIL queue behind a lookup: a cancelled queued exchange connected\n");
+    }
+    ResponsePeer good("HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK");
+    uint8_t header = create_header(target, good.port());
+    uint8_t exchange[] = { 6, HTTP_CMD_DO_EXCHANGE_RAW, header, 0xFF };
+    Message good_command = make_msg(exchange, sizeof(exchange));
+    quiet_begin();
+    run_command(target, &good_command, &reply, &status);
+    quiet_end();
+    expect_bytes("queue behind a lookup: afterwards", "reply", reply, (const uint8_t *)"OK", 2);
+    good.completed();
+    run_expect_empty(target, "release queue fixture", &c_cmd_free_all, status_ok);
+}
+
+// A server that reads the request in bites of at most 4 KB, gap_us apart, and answers OK
+// once it has the whole body.
+static pid_t start_bite_reader(LoopbackEndpoint& endpoint, int gap_us)
+{
+    endpoint.set_receive_buffer(4096);
+    endpoint.start_listening();
+    pid_t child = fork();
+    if (child == 0) {
+        alarm(30);
+        int client = endpoint.accept_connection();
+        char buf[4096];
+        char head[8192];
+        int got = 0, body = -1, have = 0;
+        while (client >= 0) {
+            usleep(gap_us);
+            int n = recv(client, buf, sizeof(buf), 0);
+            if (n <= 0) {
+                _exit(2);
+            }
+            if (body < 0) {
+                int keep = (got + n < (int)sizeof(head) - 1) ? n : (int)sizeof(head) - 1 - got;
+                memcpy(head + got, buf, keep);
+                got += keep;
+                head[got] = 0;
+                char *end = strstr(head, "\r\n\r\n");
+                char *cl = strstr(head, "Content-Length: ");
+                if (end && cl) {
+                    body = atoi(cl + 16);
+                    have = got - (int)(end + 4 - head);
+                }
+            } else {
+                have += n;
+            }
+            if (body >= 0 && have >= body) {
+                const char ok[] = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK";
+                send(client, ok, sizeof(ok) - 1, 0);
+                _exit(0);
+            }
+        }
+        _exit(3);
+    }
+    return child;
+}
+
+// Fills body 0 with a binary body of `bytes`.
+static void make_body(HttpTarget *target, int bytes)
+{
+    uint8_t create[] = { 6, HTTP_CMD_BODY_CREATE, HTTP_TYPE_BINARY };
+    const uint8_t handle[] = { 0 };
+    Message command = make_msg(create, sizeof(create));
+    run_expect(target, "create a binary body", &command, handle, 1, status_ok);
+    uint8_t add[3 + 800] = { 6, HTTP_CMD_BODY_ADD_BINARY, 0 };
+    memset(add + 3, 't', 800);
+    command = make_msg(add, sizeof(add));
+    Message *reply, *status;
+    for (int i = 0; i < bytes / 800; i++) {
+        target->parse_command(&command, &reply, &status);
+    }
+}
+
+// A server that reads the request in small bites with pauses longer than a slice, for
+// longer than HTTP_REQUEST_TIMEOUT_MS in all. Each bite is progress, so it completes.
+static void test_trickle_request(HttpTarget *target)
+{
+    LoopbackEndpoint endpoint;
+    pid_t child = start_bite_reader(endpoint, 150000);
+    run_expect_empty(target, "reset trickle request fixture", &c_cmd_free_all, status_ok);
+    uint8_t header = create_header(target, endpoint.port());
+    make_body(target, 96 * 1024);
+    uint8_t exchange[] = { 6, HTTP_CMD_DO_EXCHANGE_RAW, header, 0 };
+    Message command = make_msg(exchange, sizeof(exchange));
+    Message *reply, *status;
+    struct timespec start;
+    clock_gettime(CLOCK_MONOTONIC, &start);
+    small_send_buffer = true;
+    quiet_begin();
+    run_command(target, &command, &reply, &status);
+    quiet_end();
+    small_send_buffer = false;
+    long ms = since_ms(start);
+    expect_bytes("trickle request", "reply", reply, (const uint8_t *)"OK", 2);
+    printf("trickle request: %d ms\n", (int)ms);
+    checks++;
+    if (ms < HTTP_REQUEST_TIMEOUT_MS) {
+        failures++;
+        printf("FAIL trickle request: the server took only %d ms, the case needs more than %d\n",
+               (int)ms, HTTP_REQUEST_TIMEOUT_MS);
+    }
+    kill(child, SIGKILL);
+    waitpid(child, NULL, 0);
+    run_expect_empty(target, "release trickle request fixture", &c_cmd_free_all, status_ok);
+}
+
+// A server that keeps reading the request, never pausing for a slice, when the C64
+// aborts: the worker must see the cancel between chunks, not only on a timeout.
+static void test_abort_reading_server(HttpTarget *target)
+{
+    LoopbackEndpoint endpoint;
+    pid_t child = start_bite_reader(endpoint, 20000);
+    run_expect_empty(target, "reset reading-server fixture", &c_cmd_free_all, status_ok);
+    uint8_t header = create_header(target, endpoint.port());
+    make_body(target, 1024 * 1024);
+    small_send_buffer = true;
+    abort_stalled_exchange(target, "server still reading the request", header, 0);
+    small_send_buffer = false;
+    kill(child, SIGKILL);
+    waitpid(child, NULL, 0);
+    run_expect_empty(target, "release reading-server fixture", &c_cmd_free_all, status_ok);
+}
+
 int main(int argc, char **argv)
 {
     if ((argc > 1) && (strcmp(argv[1], "--slow-server") == 0)) {
@@ -1540,6 +1906,17 @@ int main(int argc, char **argv)
         test_abort_stalled_response(target);
         test_abort_stalled_request(target);
         test_trickle(target);
+        test_abort_streaming_response(target);
+        test_aborted_streams_then_reset(target);
+        test_abort_stalled_connect(target);
+        test_queue_behind_lookup(target);
+        test_trickle_request(target);
+        test_abort_reading_server(target);
+        checks++;
+        if (uci_socket_closes) {
+            failures++;
+            printf("FAIL %d sockets were closed by the UCI Server task\n", uci_socket_closes);
+        }
         printf("Worker: %d checks, %d failures\n", checks, failures);
         return failures ? 1 : 0;
     }
