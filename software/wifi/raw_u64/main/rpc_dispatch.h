@@ -26,9 +26,9 @@ void start_dispatch(QueueHandle_t queue);
 void send_button_event(uint8_t button);
 void send_keepalive();
 
-#define IDENT_STRING "ESP32 WiFi Bridge V1.8"
+#define IDENT_STRING "ESP32 WiFi Bridge V1.9"
 #define IDENT_MAJOR   1
-// 1.8: the module sends the frames it has queued into the UART's TX FIFO itself, as many as fit, instead
+// 1.9: the module sends the frames it has queued into the UART's TX FIFO itself, as many as fit, instead
 // of one per TX interrupt, so that replies queued together do not wait for the next frame to be sent.
 // 1.7: terminates 32-character SSIDs and 64-character passwords, and reads
 // them back from NVS whole.
@@ -36,7 +36,7 @@ void send_keepalive();
 // Disconnected forever. The Ultimate's updater only reflashes the module
 // when this differs from what the module reports, so a module change that
 // does not bump it is silently never installed.
-#define IDENT_MINOR   8
+#define IDENT_MINOR   9
 #define MULTITHREADED 0
 #define DISPATCHER_STACK 3072
 
