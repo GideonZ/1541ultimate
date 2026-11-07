@@ -154,6 +154,9 @@ class IecInterface
     void lock_slaves(void);
     void unlock_slaves(void);
     void push_to_slave(uint16_t value, bool ctrl);
+    IecSlave *held_slave;        // a byte for it waits for the next pass (push_to_slave)
+    uint16_t held_value;
+    bool held_ctrl;
 
     TaskHandle_t taskHandle;
     QueueHandle_t queueToIec;

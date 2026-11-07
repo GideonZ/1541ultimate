@@ -4737,8 +4737,8 @@ static void s11_cr6_lock(FileManager *fm, IecDrive *dr)
 }
 
 // The UCI's abort of a SoftIEC read must not wait for the drive's lock, which the IEC
-// task can hold while the printer renders a page. The bytes the C64 took are popped by the
-// next holder of the lock, before it touches the channels.
+// task can hold, nor read a file. The bytes the C64 took are popped by the next holder of
+// the lock, before it touches the channels.
 static void s11_abort_without_lock(FileManager *fm, IecDrive *dr)
 {
     const char *testname = "Suite11-AbortWithoutLock";
@@ -4771,8 +4771,17 @@ static void s11_abort_without_lock(FileManager *fm, IecDrive *dr)
     dr->unlock();
     REQUIRE(size == 7 && !memcmp(data, "defghij", 7));
 
-    dr->abort_read(chan, 0);  // with the drive free, at once
+    // With the drive free the pop also waits for the next holder: the abort never reads
+    // a file itself, as pop_more can.
+    dr->abort_read(chan, 2);
     REQUIRE(iec_drive_lock_depth(dr) == 0);
+    chan->reset_prefetch();
+    chan->prefetch_more(256, data, size);
+    REQUIRE(size == 7 && data[0] == 'd');
+    dr->lock();
+    chan->prefetch_more(256, data, size);
+    dr->unlock();
+    REQUIRE(size == 5 && !memcmp(data, "fghij", 5));
     close_file(dr, 2);
     expect_status_ok(testname, "close READ");
 }

@@ -32,6 +32,9 @@ IecInterface :: IecInterface()
     program_processor();
 
     addressed_slave = NULL;
+    held_slave = NULL;
+    held_value = 0;
+    held_ctrl = false;
     atn = false;
     talking = false;
     enable = false;
@@ -194,6 +197,17 @@ void IecInterface :: task()
             }
         }
 
+        // A byte the printer could not take in the last pass goes now, with no slave locked:
+        // the wait for a page to be rendered keeps no other task from a drive.
+        if (held_slave) {
+            if (held_ctrl) {
+                held_slave->push_ctrl(held_value);
+            } else {
+                held_slave->push_data((uint8_t)held_value);
+            }
+            held_slave = NULL;
+        }
+
         // The slaves are locked for one pass over the bus, so the drive's own entry points,
         // which lock again for every byte, only count up and down (CR-6). The pass unlocks
         // exactly the slaves it locked.
@@ -297,6 +311,9 @@ void IecInterface :: task()
                     }
                 }
             }
+            if (held_slave) {
+                break; // the pass ends here; the byte goes before the next one
+            }
         }
 
         t_channel_retval st;
@@ -386,22 +403,21 @@ void IecInterface :: unlock_slaves(void)
 }
 
 // The printer takes one event at a time, and its task runs at the lowest priority, so a
-// push can wait until a whole page is rendered. The slaves are not kept locked meanwhile,
-// so that the UCI and the GUI can still reach the drives. The bus state here is
-// this task's own; the drive's lock covers only the drive's channels.
+// push can wait until a whole page is rendered. Such a byte is held, and the pass ends
+// early, as it does when the FIFO is empty; the byte goes before the next pass, with no
+// slave locked. The pass is never split, so a drive's settings or reset still cannot land
+// in the middle of one (CR-6). The IEC FIFO holds the bus meanwhile, as it does while
+// this task waits on the printer.
 void IecInterface :: push_to_slave(uint16_t value, bool ctrl)
 {
-    bool release = addressed_slave->push_would_wait();
-    if (release) {
-        unlock_slaves();
-    }
-    if (ctrl) {
+    if (addressed_slave->push_would_wait()) {
+        held_slave = addressed_slave;
+        held_value = value;
+        held_ctrl = ctrl;
+    } else if (ctrl) {
         addressed_slave->push_ctrl(value);
     } else {
         addressed_slave->push_data((uint8_t)value);
-    }
-    if (release) {
-        lock_slaves();
     }
 }
 

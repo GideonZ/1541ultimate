@@ -138,11 +138,10 @@ public:
     void load_partitions(const char *p, const char *f);
 
     void lock(void);
-    bool try_lock(void);
     void unlock(void);
     // Ends a read of `channel` after `bytes` were taken, without waiting for the lock: the
-    // UCI's abort must not wait for the IEC task, which can hold it while a printer page
-    // is rendered.
+    // UCI's abort must not wait for the IEC task, nor read a file. The next holder of the
+    // lock pops the bytes, before it touches the channels.
     void abort_read(IecChannel *channel, int bytes);
 
     friend class IecChannel;

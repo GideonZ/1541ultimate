@@ -234,31 +234,10 @@ void IecDrive :: lock(void)
     }
 }
 
-bool IecDrive :: try_lock(void)
-{
-#ifndef RUNS_ON_PC
-    if (xSemaphoreTakeRecursive(mutex, 0) != pdTRUE) {
-        return false;
-    }
-#else
-    if (lock_depth) { // on the host, a held lock stands for one held by another task
-        return false;
-    }
-#endif
-    if (lock_depth++ == 0) {
-        take_deferred_pop();
-    }
-    return true;
-}
-
+// The pop is left to the next holder of the lock, whoever that is, so the abort never
+// waits for the IEC task and never reads a file: pop_more can read the next block.
 void IecDrive :: abort_read(IecChannel *channel, int bytes)
 {
-    if (try_lock()) {
-        channel->pop_more(bytes);
-        channel->reset_prefetch();
-        unlock();
-        return;
-    }
 #ifndef RUNS_ON_PC
     portENTER_CRITICAL();
 #endif
