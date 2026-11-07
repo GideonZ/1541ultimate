@@ -74,10 +74,12 @@ extern "C" int __wrap_gethostbyname_r(const char *name, struct hostent *ret, cha
 extern "C" ssize_t __real_send(int, const void *, size_t, int);
 static volatile int nomem_sends = 0;
 static volatile bool nomem_forever = false;
+static volatile int nomem_refused = 0;   // send() calls refused so far
 
 extern "C" ssize_t __wrap_send(int fd, const void *data, size_t len, int flags)
 {
     if (nomem_forever || nomem_sends > 0) {
+        nomem_refused++;
         if (nomem_sends > 0) nomem_sends--;
         errno = ENOMEM;
         return -1;
@@ -531,13 +533,19 @@ static void test_write_nomem(void)
     printf("info nomem: a 30-tick shortage took %ld ms\n", took);
 
     nomem_forever = true;                // a shortage that does not end
+    nomem_refused = 0;
     start = now_ms();
-    answered = run(write, sizeof(write), &reply, &status, 5000);
+    answered = run(write, sizeof(write), &reply, &status, 10000);
     took = now_ms() - start;
     nomem_forever = false;
     CHECK(answered && status_is(status, "12,SEND ERROR: 12"), "nomem: a lasting shortage gave %.*s",
           status->length, status->message);
-    CHECK(took >= NET_SEND_NOMEM_MS - 50 && took < NET_SEND_NOMEM_MS + 500,
+    // The limit counts ticks, one try per tick, so it is checked by the tries; a loaded
+    // host oversleeps each tick, so the time only has a floor and a loose ceiling.
+    int ticks = NET_SEND_NOMEM_MS / portTICK_PERIOD_MS;
+    CHECK(nomem_refused >= ticks && nomem_refused <= ticks + 2,
+          "nomem: %d tries before giving up, the limit is %d ticks", nomem_refused, ticks);
+    CHECK(took >= NET_SEND_NOMEM_MS - 50 && took < 4 * NET_SEND_NOMEM_MS,
           "nomem: gave up after %ld ms, the limit is %d", took, NET_SEND_NOMEM_MS);
 
     nomem_forever = true;                // an abort while it waits
