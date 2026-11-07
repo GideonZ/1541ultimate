@@ -32,6 +32,7 @@ CMDBUF_SRC := $(PATH_SW)/io/uart/cmd_buffer.c
 ISR_FUNCS := my_uart_tx_fill my_uart_intr_handler my_uart_transmit_packet my_uart_get_buffer my_uart_free_buffer
 ISR_RED_FIXES :=
 # LEGACY_ISR_<fix> := sed expressions that turn a module's handler into a model of it before the fix
+-include $(wildcard isr_*.mk) # the red models of a fix are in its own file, isr_<fix>.mk
 
 .PHONY: all isr isr-red
 all: isr
