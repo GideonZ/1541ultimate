@@ -90,7 +90,8 @@ send-all-red:
 # Target 3 on its worker task, against loopback peers.
 network-target:
 	mkdir -p $(OUTPUT_DIR)
-	$(CXX) $(NETWORK_TARGET_FLAGS) network_target_test.cpp ../network_target.cc -lpthread -o $(NETWORK_TARGET_TEST)
+	$(CXX) $(NETWORK_TARGET_FLAGS) network_target_test.cpp ../network_target.cc -lpthread -o $(NETWORK_TARGET_TEST) \
+	    -Wl,--wrap=gethostbyname_r
 	timeout 60s $(NETWORK_TARGET_TEST)
 
 clean:

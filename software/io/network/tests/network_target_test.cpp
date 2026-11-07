@@ -43,6 +43,36 @@ void command_deferred_done(uint32_t ticket)
     pthread_mutex_unlock(&lock);
 }
 
+// A name lookup that waits while the test holds it, for "held.dns"; others resolve as usual.
+extern "C" int __real_gethostbyname_r(const char *, struct hostent *, char *, size_t, struct hostent **, int *);
+static pthread_mutex_t dns_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t dns_changed = PTHREAD_COND_INITIALIZER;
+static bool dns_held = false, dns_waiting = false;
+
+extern "C" int __wrap_gethostbyname_r(const char *name, struct hostent *ret, char *buf, size_t len,
+                                      struct hostent **result, int *err)
+{
+    if (!strcmp(name, "held.dns")) {
+        pthread_mutex_lock(&dns_lock);
+        dns_waiting = true;
+        while (dns_held) {
+            pthread_cond_wait(&dns_changed, &dns_lock);
+        }
+        dns_waiting = false;
+        pthread_mutex_unlock(&dns_lock);
+        name = "127.0.0.1";
+    }
+    return __real_gethostbyname_r(name, ret, buf, len, result, err);
+}
+
+static void hold_dns(bool hold)
+{
+    pthread_mutex_lock(&dns_lock);
+    dns_held = hold;
+    pthread_cond_broadcast(&dns_changed);
+    pthread_mutex_unlock(&dns_lock);
+}
+
 static long now_ms(void)
 {
     struct timespec t;
@@ -282,8 +312,9 @@ static void stalled_write(const char *label, bool reset)
     CHECK(took < 20, "%s: abort/reset took %ld ms", label, took);
 
     Message *reply, *status;
-    const uint8_t identify[] = { 3, 0x01 };
-    bool answered = run(identify, 2, &reply, &status, 2000);
+    // A socket command, which runs on the worker after the aborted WRITE (IDENTIFY would not).
+    const uint8_t close_other[] = { 3, 0x09, 200 };
+    bool answered = run(close_other, 3, &reply, &status, 2000) && status_is(status, "12,ERROR ON CLOSE: 9");
     took = now_ms() - start;
     CHECK(answered && took < 600, "%s: the next command answered after %ld ms", label, took);
     printf("info %s: next command after %ld ms\n", label, took);
@@ -296,7 +327,7 @@ static void stalled_write(const char *label, bool reset)
     }
     peer_stop(&peer);
     target()->c64_reset();
-    run(identify, 2, &reply, &status);
+    run(close_other, 3, &reply, &status);
 }
 
 // A C64 reset closes the target's sockets, on the worker: the peer sees the end.
@@ -369,6 +400,91 @@ static void test_read_lengths(void)
     peer_stop(&peer);
 }
 
+// Socket-free commands are answered on the UCI side at once, not behind a worker that is
+// held in a name lookup of an aborted OPEN (up to 14 s on the device).
+static void test_quick_behind_lookup(void)
+{
+    hold_dns(true);
+    uint8_t open[32] = { 3, 0x07, 9, 0 };
+    strcpy((char *)open + 4, "held.dns");
+    Message command = { 12, true, open };
+    Message *reply, *status;
+    deferred = false;
+    target()->parse_command(&command, &reply, &status);
+    CHECK(deferred, "quick: the OPEN was not deferred");
+    for (int i = 0; i < 200 && !dns_waiting; i++) usleep(10000);
+    target()->abort(0);
+    long start = now_ms();
+    const uint8_t identify[] = { 3, 0x01 };
+    deferred = false;
+    bool answered = run(identify, 2, &reply, &status, 100);
+    CHECK(answered && !deferred && reply->length == 34, "quick: IDENTIFY waited behind the lookup");
+    const uint8_t ip[] = { 3, 0x05, 0 };
+    answered = run(ip, 3, &reply, &status, 100);
+    CHECK(answered && reply->length == 12 && reply->message[0] == 10, "quick: GET_IPADDR waited behind the lookup");
+    long took = now_ms() - start;
+    CHECK(took < 50, "quick: socket-free commands took %ld ms", took);
+    hold_dns(false);
+    const uint8_t close_cmd[] = { 3, 0x09, 200 };
+    run(close_cmd, 3, &reply, &status);   // a socket command after the lookup: the worker is free again
+}
+
+// An OPEN that finished just before the abort made a socket the C64 never learnt of. It
+// must be closed at once, not at the next C64 reset.
+static void test_open_at_abort(void)
+{
+    Peer peer;
+    peer_start(&peer, SOCK_STREAM, true);
+    uint8_t cmd[32];
+    int length = open_command(cmd, 0x07, peer.port);
+    Message command = { length, true, cmd };
+    Message *reply, *status;
+    deferred = false;
+    target()->parse_command(&command, &reply, &status);
+    CHECK(deferred && wait_done(last_ticket, 2000), "open at abort: the OPEN did not finish");
+    long start = now_ms();
+    target()->abort(0);                   // before its reply went out
+    while (!peer.eof_ms && now_ms() - start < 2000) usleep(1000);
+    long took = peer.eof_ms ? peer.eof_ms - start : -1;
+    CHECK(took >= 0 && took < 500, "open at abort: the socket closed after %ld ms (-1: not in 2 s)", took);
+    peer_stop(&peer);
+}
+
+// How long a READ of a datagram that is already waiting takes through the worker, on this
+// host (the device differs: one queue post and one task switch each way).
+static void test_read_hop(void)
+{
+    Peer peer;
+    peer_start(&peer, SOCK_DGRAM, false);
+    int s = open_socket_to(0x08, peer.port);
+    Message *reply, *status;
+    uint8_t hello[] = { 3, 0x11, (uint8_t)s, 'h' };
+    run(hello, sizeof(hello), &reply, &status);
+    char got[16];
+    struct sockaddr_in from;
+    socklen_t fl = sizeof(from);
+    recvfrom(peer.listener, got, sizeof(got), 0, (struct sockaddr *)&from, &fl);
+    const int n = 200;
+    long total_us = 0, worst_us = 0;
+    for (int i = 0; i < n; i++) {
+        sendto(peer.listener, "0123456789abcdef", 16, 0, (struct sockaddr *)&from, fl);
+        usleep(2000);
+        const uint8_t read[] = { 3, 0x10, (uint8_t)s, 16, 0 };
+        struct timespec a, b;
+        clock_gettime(CLOCK_MONOTONIC, &a);
+        run(read, sizeof(read), &reply, &status);
+        clock_gettime(CLOCK_MONOTONIC, &b);
+        long us = (b.tv_sec - a.tv_sec) * 1000000 + (b.tv_nsec - a.tv_nsec) / 1000;
+        total_us += us;
+        if (us > worst_us) worst_us = us;
+        CHECK(reply->length == 18, "read hop: read %d got %d bytes", i, reply->length);
+    }
+    printf("info read hop on this host: mean %ld us, worst %ld us over %d READs\n", total_us / n, worst_us, n);
+    const uint8_t close_cmd[] = { 3, 0x09, (uint8_t)s };
+    run(close_cmd, 3, &reply, &status);
+    peer_stop(&peer);
+}
+
 int main(int argc, char **argv)
 {
     signal(SIGPIPE, SIG_IGN);
@@ -378,6 +494,9 @@ int main(int argc, char **argv)
     if (!only || !strcmp(only, "reset")) stalled_write("reset during a stalled WRITE", true);
     if (!only || !strcmp(only, "reset-closes")) test_reset_closes();
     if (!only || !strcmp(only, "read-lengths")) test_read_lengths();
+    if (!only || !strcmp(only, "quick")) test_quick_behind_lookup();
+    if (!only || !strcmp(only, "open-at-abort")) test_open_at_abort();
+    if (!only || !strcmp(only, "read-hop")) test_read_hop();
     printf("Network target: %d checks, %d failures\n", checks, failures);
     return failures ? 1 : 0;
 }

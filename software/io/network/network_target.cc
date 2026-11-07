@@ -31,6 +31,7 @@ NetworkTarget::NetworkTarget(int id)
     command_targets[id] = this;
     data_message.message = new uint8_t[CMD_MAX_REPLY_LEN];
     status_message.message = new uint8_t[CMD_MAX_STATUS_LEN];
+    quick_message.message = quick_bytes;
     socket_count = 0;
     discard_read_reply();
     memset(jobs, 0, sizeof(jobs));
@@ -41,6 +42,7 @@ NetworkTarget::NetworkTarget(int id)
     resets_closed = 0;
     cancel = NULL;
     opened_socket = -1;
+    orphan = -1;
 }
 
 NetworkTarget::~NetworkTarget()
@@ -50,6 +52,96 @@ NetworkTarget::~NetworkTarget()
     delete[] status_message.message;
 }
 
+
+// Socket-free commands, answered on the UCI Server task at its own level: they never
+// wait behind the worker (a cancelled name lookup can hold it for 14 s). Their reply is
+// built in quick_message, which only this task writes.
+bool NetworkTarget :: is_quick(Message *command)
+{
+    switch(command->message[1]) {
+        case NET_CMD_IDENTIFY:
+        case NET_CMD_GET_INTERFACE_COUNT:
+        case NET_CMD_GET_IPADDR:
+        case NET_CMD_GET_NETADDR:
+            return true;
+    }
+    return false;
+}
+
+void NetworkTarget :: answer_quick(Message *command, Message **reply, Message **status)
+{
+    NetworkInterface *interface;
+
+    switch(command->message[1]) {
+        case NET_CMD_IDENTIFY:
+            *reply  = &c_net_message_identification;
+            *status = &c_status_ok;
+            break;
+        case NET_CMD_GET_INTERFACE_COUNT:
+        	quick_message.message[0] = (uint8_t)NetworkInterface :: getNumberOfInterfaces();
+        	quick_message.length = 1;
+        	quick_message.last_part = true;
+        	*reply  = &quick_message;
+            *status = &c_status_ok;
+        	break;
+/*
+        case NET_CMD_SET_INTERFACE:
+        	*reply = &c_message_empty;
+        	if (command->length != 3) {
+        		*status = &c_status_invalid_params;
+	        } else if (command->message[2] >= (uint8_t)NetworkInterface :: getNumberOfInterfaces()) {
+        		*status = &c_status_param_out_of_range;
+	        } else {
+                *status = &c_status_ok;
+        		interface_number = command->message[2];
+        	}
+        	break;
+*/
+        case NET_CMD_GET_IPADDR:
+            *reply = &c_message_empty;
+            if (command->length != 3) {
+                *status = &c_status_invalid_params;
+                break;
+            }
+            if (command->message[2] >= (uint8_t)NetworkInterface :: getNumberOfInterfaces()) {
+                *status = &c_status_param_out_of_range;
+                break;
+            }
+            interface = NetworkInterface :: getInterface(command->message[2]);
+            if (interface) {
+        		*reply = &quick_message;
+        		*status = &c_status_ok;
+        		interface->getIpAddr(quick_message.message);
+        		quick_message.length = 12;
+            	quick_message.last_part = true;
+        	} else {
+        		*status = &c_status_interface_not_set;
+        	}
+        	break;
+        case NET_CMD_GET_NETADDR:
+            *reply = &c_message_empty;
+            if (command->length != 3) {
+                *status = &c_status_invalid_params;
+                break;
+            }
+            if (command->message[2] >= (uint8_t)NetworkInterface :: getNumberOfInterfaces()) {
+                *status = &c_status_param_out_of_range;
+                break;
+            }
+            interface = NetworkInterface :: getInterface(command->message[2]);
+        	if (interface) {
+        		*reply = &quick_message;
+        		*status = &c_status_ok;
+        		interface->getMacAddr(quick_message.message);
+        		quick_message.length = 6;
+            	quick_message.last_part = true;
+        	} else {
+        		*reply = &c_message_empty;
+        		*status = &c_status_interface_not_set;
+        	}
+        	break;
+    }
+}
 
 bool NetworkTarget :: start_worker(void)
 {
@@ -75,6 +167,10 @@ void NetworkTarget :: parse_command(Message *command, Message **reply, Message *
 {
     *reply = &c_message_empty;
     *status = &c_status_internal_error;
+    if (is_quick(command)) {
+        answer_quick(command, reply, status);
+        return;
+    }
     NetJob *j = NULL;
     if (start_worker()) {
         portENTER_CRITICAL();
@@ -121,19 +217,37 @@ void NetworkTarget :: deferred_reply(Message **reply, Message **status)
 }
 
 // On the UCI Server task: abort or C64 reset. A job that is done but not delivered is
-// freed here; one that still runs or waits, the worker frees.
+// freed here; one that still runs or waits, the worker frees. An OPEN that finished just
+// before the abort made a socket the C64 never learnt of: the worker closes it next.
 void NetworkTarget :: cancel_job(void)
 {
     if (!job) {
         return;
     }
+    bool wake = false;
     portENTER_CRITICAL();
     job->cancel = true;
     if (job->done) {
         job->in_use = false;
+        if (job->opened >= 0) {
+            orphan = job->opened;
+            wake = true;
+        }
     }
     portEXIT_CRITICAL();
     job = NULL;
+    if (wake) {
+        wake_worker();
+    }
+}
+
+// On the UCI Server task. A busy worker sees what it has to do after its command anyway.
+void NetworkTarget :: wake_worker(void)
+{
+    if (queue && !uxQueueMessagesWaiting(queue)) {
+        NetJob *wake = NULL;
+        xQueueSend(queue, &wake, 0);
+    }
 }
 
 void NetworkTarget :: worker_task(void *a)
@@ -144,6 +258,7 @@ void NetworkTarget :: worker_task(void *a)
     while (1) {
         xQueueReceive(t->queue, &j, portMAX_DELAY);
         t->close_sockets_after_reset();
+        t->close_orphan();
         if (!j) {
             continue; // the wake-up of a reset
         }
@@ -174,6 +289,19 @@ void NetworkTarget :: worker_task(void *a)
     }
 }
 
+// On the worker.
+void NetworkTarget :: close_orphan(void)
+{
+    portENTER_CRITICAL();
+    int socketnr = orphan;
+    orphan = -1;
+    portEXIT_CRITICAL();
+    if ((socketnr >= 0) && owns_socket(socketnr)) {
+        untrack_socket(socketnr);
+        lwip_close(socketnr);
+    }
+}
+
 // On the worker: the sockets of the program that was running when the C64 was reset.
 void NetworkTarget :: close_sockets_after_reset(void)
 {
@@ -196,73 +324,6 @@ void NetworkTarget :: execute(Message *command, Message **reply, Message **statu
     discard_read_reply();
 
     switch(command->message[1]) {
-        case NET_CMD_IDENTIFY:
-            *reply  = &c_net_message_identification;
-            *status = &c_status_ok;
-            break;
-        case NET_CMD_GET_INTERFACE_COUNT:
-        	data_message.message[0] = (uint8_t)NetworkInterface :: getNumberOfInterfaces();
-        	data_message.length = 1;
-        	data_message.last_part = true;
-        	*reply  = &data_message;
-            *status = &c_status_ok;
-        	break;
-/*
-        case NET_CMD_SET_INTERFACE:
-        	*reply = &c_message_empty;
-        	if (command->length != 3) {
-        		*status = &c_status_invalid_params;
-	        } else if (command->message[2] >= (uint8_t)NetworkInterface :: getNumberOfInterfaces()) {
-        		*status = &c_status_param_out_of_range;
-	        } else {
-                *status = &c_status_ok;
-        		interface_number = command->message[2];
-        	}
-        	break;
-*/
-        case NET_CMD_GET_IPADDR:
-            *reply = &c_message_empty;
-            if (command->length != 3) {
-                *status = &c_status_invalid_params;
-                break;
-            }
-            if (command->message[2] >= (uint8_t)NetworkInterface :: getNumberOfInterfaces()) {
-                *status = &c_status_param_out_of_range;
-                break;
-            }
-            interface = NetworkInterface :: getInterface(command->message[2]);
-            if (interface) {
-        		*reply = &data_message;
-        		*status = &c_status_ok;
-        		interface->getIpAddr(data_message.message);
-        		data_message.length = 12;
-            	data_message.last_part = true;
-        	} else {
-        		*status = &c_status_interface_not_set;
-        	}
-        	break;
-        case NET_CMD_GET_NETADDR:
-            *reply = &c_message_empty;
-            if (command->length != 3) {
-                *status = &c_status_invalid_params;
-                break;
-            }
-            if (command->message[2] >= (uint8_t)NetworkInterface :: getNumberOfInterfaces()) {
-                *status = &c_status_param_out_of_range;
-                break;
-            }
-            interface = NetworkInterface :: getInterface(command->message[2]);
-        	if (interface) {
-        		*reply = &data_message;
-        		*status = &c_status_ok;
-        		interface->getMacAddr(data_message.message);
-        		data_message.length = 6;
-            	data_message.last_part = true;
-        	} else {
-        		*reply = &c_message_empty;
-        		*status = &c_status_interface_not_set;
-        	}
-        	break;
         case NET_CMD_SET_IPADDR:
             *reply = &c_message_empty;
             if (command->length != 15) { // 12 + 3
@@ -623,10 +684,7 @@ void NetworkTarget :: c64_reset(void)
 {
     cancel_job();
     resets++;
-    if (queue && !uxQueueMessagesWaiting(queue)) {
-        NetJob *wake = NULL;
-        xQueueSend(queue, &wake, 0); // a busy worker checks after its command anyway
-    }
+    wake_worker();
 }
 
 void NetworkTarget :: get_more_data(Message **reply, Message **status)

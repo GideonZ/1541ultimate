@@ -118,17 +118,25 @@ class NetworkTarget : public CommandTarget {
     uint32_t resets_closed;         // the count the worker last closed the sockets for
     volatile bool *cancel;          // the running command's (worker)
     int opened_socket;              // set by open_socket (worker)
+    volatile int orphan;            // a socket an aborted OPEN made, for the worker to close
+    void wake_worker(void);
     bool start_worker(void);
     void cancel_job(void);
     void close_sockets_after_reset(void);
+    void close_orphan(void);
     static void worker_task(void *a);
     void execute(Message *command, Message **reply, Message **status);
+
+    Message quick_message;          // the reply of a socket-free command (UCI Server task)
+    uint8_t quick_bytes[16];
+    void answer_quick(Message *command, Message **reply, Message **status);
 public:
 	NetworkTarget(int id);
 	virtual ~NetworkTarget();
 
     void parse_command(Message *command, Message **reply, Message **status);
     void deferred_reply(Message **reply, Message **status);
+    bool is_quick(Message *command);
     void get_more_data(Message **reply, Message **status);
     void abort(int a);
     void c64_reset(void);
