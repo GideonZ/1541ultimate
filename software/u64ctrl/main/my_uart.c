@@ -82,6 +82,7 @@ typedef struct {
     int current_tx_pnt;                 /*!< Pointer in buffer being currently transmitted */
 
     command_buf_t *current_rx_buf;      /*!< Buffer currently being received into; null when none */
+    int rx_resync;                      /*!< An overflow damaged the open frame: skip everything up to the next 0xC0 */
 
 } my_uart_obj_t;
 
@@ -138,6 +139,24 @@ void UART_ISR_ATTR my_uart_intr_handler(void *param)
         //Exit form while loop
         if (uart_intr_status == 0) {
             break;
+        }
+        if (uart_intr_status & UART_INTR_RXFIFO_OVF) {
+            // Bytes were lost at an unknown place in the stream. Before the receive code runs, so that one pass never
+            // reads FIFO contents from both sides of the gap: the FIFO is emptied and not read, the frame that is open
+            // is damaged and thrown away, and everything up to the next 0xC0 is skipped (the end of the damaged frame,
+            // or the start of the next one). Without an open frame there is nothing to skip: bytes with no buffer are
+            // dropped up to the next 0xC0 anyway. Before, the cut frame went to the dispatcher (cut short, or glued
+            // to the next one), or the rest of a frame was taken for a frame and ran as a command nobody sent.
+            UART_ENTER_CRITICAL_ISR(&(uart_context[uart_num].spinlock));
+            uart_hal_rxfifo_rst(&(uart_context[uart_num].hal));
+            UART_EXIT_CRITICAL_ISR(&(uart_context[uart_num].spinlock));
+            uart_hal_clr_intsts_mask(&(uart_context[uart_num].hal), UART_INTR_RXFIFO_OVF | UART_INTR_RXFIFO_TOUT | UART_INTR_RXFIFO_FULL);
+            uart_intr_status &= ~(UART_INTR_RXFIFO_OVF | UART_INTR_RXFIFO_TOUT | UART_INTR_RXFIFO_FULL);
+            if (p_uart->current_rx_buf) {
+                p_uart->current_rx_buf->size = 0;
+                p_uart->current_rx_buf->slipEscape = 0;
+                p_uart->rx_resync = 1;
+            }
         }
         if (uart_intr_status & UART_INTR_TXFIFO_EMPTY) {
             // turn off tx interrupt temporarily
@@ -223,7 +242,11 @@ void UART_ISR_ATTR my_uart_intr_handler(void *param)
 
                 if (data == 0xC0) {
                     store = 0;
-                    if (!buf) {
+                    if (p_uart->rx_resync) {
+                        // The end of the damaged frame, or the start of the next: in sync again, and the buffer
+                        // stays open and empty (a second 0xC0 right after it finds it empty)
+                        p_uart->rx_resync = 0;
+                    } else if (!buf) {
                         if (cmd_buffer_get_free_isr(p_uart->buffer_context, &buf, &HPTaskAwoken) == pdTRUE) {
                             buf->size = 0; // reset pointer
                             buf->slipEscape = 0;
@@ -256,6 +279,8 @@ void UART_ISR_ATTR my_uart_intr_handler(void *param)
                             // Do nothing, apparently we were out of sync
                         }
                     }
+                } else if(buf && p_uart->rx_resync) {
+                    // The rest of a damaged frame: skipped
                 } else if(buf) {
                     switch (data) {
                     case 0xDB:
@@ -302,13 +327,6 @@ void UART_ISR_ATTR my_uart_intr_handler(void *param)
             WRITE_PERI_REG(UART_FIFO_AHB_REG(0), '}');
         } // end of receive code
 
-        if (uart_intr_status & UART_INTR_RXFIFO_OVF) {
-            // When fifo overflows, we reset the fifo.
-            UART_ENTER_CRITICAL_ISR(&(uart_context[uart_num].spinlock));
-            uart_hal_rxfifo_rst(&(uart_context[uart_num].hal));
-            UART_EXIT_CRITICAL_ISR(&(uart_context[uart_num].spinlock));
-            uart_hal_clr_intsts_mask(&(uart_context[uart_num].hal), UART_INTR_RXFIFO_OVF);
-        }
     }
     if (HPTaskAwoken == pdTRUE) {
         portYIELD_FROM_ISR();
@@ -393,7 +411,8 @@ esp_err_t my_uart_init(command_buf_context_t *buffers, uint8_t uart_num)
     //periph_module_reset(uart_periph_signal[uart_num].module);
 
     const uart_intr_config_t interrupt_config = {
-            .intr_enable_mask  = UART_INTR_RXFIFO_TOUT | UART_INTR_RXFIFO_FULL,
+            // the overflow is reported and handled (see the handler)
+            .intr_enable_mask  = UART_INTR_RXFIFO_TOUT | UART_INTR_RXFIFO_FULL | UART_INTR_RXFIFO_OVF,
             .rx_timeout_thresh = 2,
             .txfifo_empty_intr_thresh = 10,
             .rxfifo_full_thresh = 120,
