@@ -11,6 +11,7 @@
 #include "semphr.h"
 #include "dump_hex.h"
 #include "itu.h"
+#include "net_counters.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -149,7 +150,7 @@ void hex(uint8_t h);
 uint8_t DmaUART::DmaUartInterrupt(void *context)
 {
     DmaUART *u = (DmaUART *) context;
-    uint8_t uart_intr_status = 0;
+    uint8_t uart_status, uart_intr_status = 0;
 
     BaseType_t HPTaskAwoken = pdFALSE;
     // ioWrite8(UART_DATA, '[');
@@ -157,11 +158,19 @@ uint8_t DmaUART::DmaUartInterrupt(void *context)
     while (1) {
         // The `continue statement` may cause the interrupt to loop infinitely
         // we exit the interrupt here
-        uart_intr_status = u->uart->status & (DMAUART_RxInterrupt | DMAUART_TxInterrupt | DMAUART_BufInterrupt);
+        uart_status = u->uart->status;
+        uart_intr_status = uart_status & (DMAUART_RxInterrupt | DMAUART_TxInterrupt | DMAUART_BufInterrupt);
         
         //Exit form while loop
         if (uart_intr_status == 0) {
             break;
+        }
+
+        // The receiver found its FIFO full. The bit is sticky: count it and clear it (bit 3 of the
+        // interrupt control register clears it and leaves the enables alone, as bit 7 is 0)
+        if (uart_status & DMAUART_Overflow) {
+            net_counters.uart_rx_overflow++;
+            u->uart->ictrl = DMAUART_CLR_OVERFLOW;
         }
 
         // Let's see if we can enable the receiver.
@@ -210,7 +219,11 @@ uint8_t DmaUART::DmaUartInterrupt(void *context)
 
             if (xQueueReceiveFromISR(u->rx_bufs, &rxb, &HPTaskAwoken) == pdTRUE) {
                 // hex(rxb->bufnr);
-                rxb->size = u->uart->length;
+                uint16_t length = u->uart->length;
+                rxb->size = length;
+                if (length > CMD_BUF_SIZE) {
+                    net_counters.uart_rx_long++;
+                }
 
                 if (u->isr_rx_callback(u->packets, rxb, &HPTaskAwoken) != pdTRUE) {
                     // Packet could not be queued, so we need to drop it, But now it's free again

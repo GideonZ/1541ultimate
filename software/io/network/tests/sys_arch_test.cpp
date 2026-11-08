@@ -9,6 +9,8 @@
 // what they were asked for and time out at once. SYS_ARCH_TICKS_LEGACY (Makefile, target
 // sys-arch-red) builds the same cases against sys_arch.c with the truncating division.
 
+#include <string.h>
+#include <string>
 #include "../../usb/tests/host_test/host_test.h"
 extern "C" {
 #include "lwip/sys.h"
@@ -90,3 +92,4 @@ TEST(SysArchTicks, longest_wait_does_not_wrap)
     EXPECT_EQ(mbox_ticks(0xFFFFFFFEu), (TickType_t)858993459);
     EXPECT_EQ(sem_ticks(0xFFFFFFFCu), (TickType_t)858993459);
 }
+

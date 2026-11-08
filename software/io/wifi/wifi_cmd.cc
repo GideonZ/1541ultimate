@@ -19,10 +19,8 @@ BaseType_t wifi_rx_isr(command_buf_context_t *context, command_buf_t *buf, BaseT
 
     TaskHandle_t thread = (TaskHandle_t)wifi_reply_take(replySlots, hdr->thread, hdr->sequence);
     if (thread) {
-        ioWrite8(UART_DATA, 'N');
         res = xTaskNotifyFromISR(thread, (uint32_t)buf, eSetValueWithOverwrite, w);
     } else {
-        ioWrite8(UART_DATA, '~');
         res = cmd_buffer_received_isr(context, buf, w);
     }
     return res;
