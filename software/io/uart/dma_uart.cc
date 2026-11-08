@@ -196,7 +196,10 @@ uint8_t DmaUART::DmaUartInterrupt(void *context)
             if (u->current_tx_buf) { // done, free it
                 cmd_buffer_free_isr(u->packets, u->current_tx_buf, &HPTaskAwoken);
                 u->uart->ictrl = DMAUART_BufReq_EN;
-                u->current_tx_buf = NULL;        
+                u->current_tx_buf = NULL;
+                if (u->isr_tx_free_callback) {
+                    u->isr_tx_free_callback(u->packets, &HPTaskAwoken);
+                }
             } else if (cmd_buffer_get_tx_isr(u->packets, &(u->current_tx_buf), &HPTaskAwoken) == pdTRUE) {
                 u->uart->tx_addr = u->current_tx_buf->data; // how about pbufs?
                 u->uart->length  = (uint16_t)u->current_tx_buf->size;
@@ -248,6 +251,12 @@ void DmaUART :: SetReceiveCallback(isr_receive_callback_t cb)
 void DmaUART :: ResetReceiveCallback(void)
 {
     isr_rx_callback = cmd_buffer_received_isr;
+    isr_tx_free_callback = NULL;
+}
+
+void DmaUART :: SetTxFreeCallback(isr_tx_free_callback_t cb)
+{
+    isr_tx_free_callback = cb;
 }
 
 
@@ -312,6 +321,15 @@ BaseType_t DmaUART :: GetBuffer(command_buf_t **buf, TickType_t ticks)
         (*buf)->dropped = 0;
     }
     return ret;
+}
+
+BaseType_t DmaUART :: GetBufferKeeping(command_buf_t **buf, UBaseType_t reserve)
+{
+    // The interrupt only adds to the free queue; two tasks taking at once may dip into the reserve by one
+    if (uxQueueMessagesWaiting(packets->freeTxQueue) <= reserve) {
+        return pdFALSE;
+    }
+    return GetBuffer(buf, 0);
 }
 
 // void DmaUART :: ReEnableBufferIRQ(void)

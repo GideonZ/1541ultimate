@@ -78,6 +78,10 @@ extern const char *no_wifi_slot;
 #define WIFI_REPLY_TIMEOUT_MS   10000
 #define WIFI_SLOW_TIMEOUT_MS    60000 // scan and connect
 
+// TX buffers that network frames leave to the requests: wifi_tx_packet only takes a buffer
+// when more than this many are free, the macros below wait for one and may use them all.
+#define WIFI_TX_RESERVE         2
+
 // For requests that are not answered, such as network frames. 'failed' is what
 // the caller returns when there is no TX buffer: not 0 where that reads as success.
 #define BUFARGS_NOREPLY(x, cmd, failed) command_buf_t *buf; \

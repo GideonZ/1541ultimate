@@ -50,7 +50,17 @@ QueueHandle_t xQueueCreate(UBaseType_t len, UBaseType_t size) { return &dummy_qu
 void vQueueDelete(QueueHandle_t q) { }
 BaseType_t xQueueSend(QueueHandle_t q, const void *item, TickType_t ticks) { return pdFALSE; }
 BaseType_t xQueueSendToBack(QueueHandle_t q, const void *item, TickType_t ticks) { return pdFALSE; }
-BaseType_t xQueueSendFromISR(QueueHandle_t q, const void *item, BaseType_t *woken) { return pdFALSE; }
+BaseType_t isr_send_result = pdFALSE; // what xQueueSendFromISR() answers, and whether it woke a task
+BaseType_t isr_send_woken = pdFALSE;
+int isr_send_calls;
+void *isr_sent_item;
+BaseType_t xQueueSendFromISR(QueueHandle_t q, const void *item, BaseType_t *woken)
+{
+    isr_send_calls++;
+    isr_sent_item = *(void * const *)item;
+    *woken = isr_send_woken;
+    return isr_send_result;
+}
 BaseType_t xQueueReceive(QueueHandle_t q, void *item, TickType_t ticks) { asked_receive = ticks; return pdFALSE; }
 BaseType_t xQueueReceiveFromISR(QueueHandle_t q, void *item, BaseType_t *woken) { return pdFALSE; }
 UBaseType_t uxQueueMessagesWaiting(QueueHandle_t q) { return 0; }
@@ -93,3 +103,30 @@ TEST(SysArchTicks, longest_wait_does_not_wrap)
     EXPECT_EQ(sem_ticks(0xFFFFFFFCu), (TickType_t)858993459);
 }
 
+// sys_mbox_trypost_fromisr(): what lwIP's tcpip_callbackmsg_trycallback_fromisr() returns to the
+// TX-done interrupt: ERR_OK, ERR_NEED_SCHED when the post woke a task of higher
+// priority, ERR_MEM when the mailbox is full; the message is the one given
+TEST(SysArchMboxIsr, posts_and_tells_the_interrupt_whether_to_switch)
+{
+    sys_mbox_t mbox = &dummy_queue;
+    int msg;
+    isr_send_calls = 0;
+    isr_send_result = pdPASS;
+    isr_send_woken = pdFALSE;
+    EXPECT_EQ(sys_mbox_trypost_fromisr(&mbox, &msg), ERR_OK);
+    EXPECT_EQ(isr_send_calls, 1);
+    EXPECT_TRUE(isr_sent_item == &msg);
+    isr_send_woken = pdTRUE;
+    EXPECT_EQ(sys_mbox_trypost_fromisr(&mbox, &msg), ERR_NEED_SCHED);
+}
+
+TEST(SysArchMboxIsr, a_full_mailbox_is_err_mem)
+{
+    sys_mbox_t mbox = &dummy_queue;
+    int msg;
+    isr_send_result = pdFALSE;
+    isr_send_woken = pdFALSE;
+    EXPECT_EQ(sys_mbox_trypost_fromisr(&mbox, &msg), ERR_MEM);
+    isr_send_woken = pdTRUE; // a failed post woke nobody, whatever the flag says
+    EXPECT_EQ(sys_mbox_trypost_fromisr(&mbox, &msg), ERR_MEM);
+}

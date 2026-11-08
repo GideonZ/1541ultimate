@@ -15,6 +15,8 @@
 #include "filemanager.h"
 #include "network_esp32.h"
 #include "net_counters.h"
+#include "lwip/tcpip.h"
+#include "lwip/priv/tcp_priv.h"
 #if U64 == 2
 #include "u64_config.h"
 #endif
@@ -90,6 +92,7 @@ void WiFi :: Init(DmaUART *uart, command_buf_context_t *packets)
     this->uart = uart;
     this->packets = packets;
     wifi_command_init();
+    wifi_tx_wake_init(uart);
 }
 
 void WiFi :: Start()
@@ -450,19 +453,64 @@ SubsysResultCode_e BrowsableWifiAP :: connect_ap(SubsysCommand *cmd)
     return SSRET_OK;
 }
 
+// wifi_tx_packet never waits: lwIP calls it with the core lock held, and a wait for a TX buffer
+// would stop every network of the Ultimate for as long as the module does not drain the UART.
+// It refuses (ERR_MEM, which lwIP's TCP answers by keeping the segment and remembering
+// TF_NAGLEMEMERR) when the pool is down to the buffers kept for requests (WIFI_TX_RESERVE),
+// and sets wifi_tx_starved. The TX-done interrupt (wifi_tx_free_isr) then sees the flag, and
+// as soon as the pool is above the reserve again has the tcpip thread send what was held
+// back (tcp_txnow), so that TCP does not wait for the next ACK or its retransmit timer.
+static volatile uint8_t wifi_tx_starved;
+static struct tcpip_callback_msg *wifi_txnow_msg;
+
+static void wifi_txnow_cb(void *ctx)
+{
+    tcp_txnow();
+}
+
+// Interrupt, after a transmitted buffer was freed (DmaUART::SetTxFreeCallback)
+static void wifi_tx_free_isr(command_buf_context_t *context, BaseType_t *w)
+{
+    if (wifi_tx_starved && wifi_txnow_msg &&
+        uxQueueMessagesWaitingFromISR(context->freeTxQueue) > WIFI_TX_RESERVE) {
+        err_t posted = tcpip_callbackmsg_trycallback_fromisr(wifi_txnow_msg);
+        if (posted != ERR_MEM) { // the tcpip mailbox was full: the next freed buffer tries again
+            wifi_tx_starved = 0;
+            if (posted == ERR_NEED_SCHED) {
+                *w = pdTRUE;
+            }
+        }
+    }
+}
+
+void wifi_tx_wake_init(DmaUART *uart)
+{
+    if (!wifi_txnow_msg) {
+        wifi_txnow_msg = tcpip_callbackmsg_new(wifi_txnow_cb, NULL);
+    }
+    wifi_tx_starved = 0;
+    uart->SetTxFreeCallback(wifi_tx_free_isr);
+}
+
 err_t wifi_tx_packet(void *driver, void *buffer, int length)
 {
     if (wifi.getState() != eWifi_Connected) {
         return ERR_CONN;
     }
-    
-    // BUFARGS_NOREPLY(send_eth, CMD_SEND_PACKET, ERR_MEM) (the module does not answer frames), with
-    // the wait for the buffer timed and counted: net_counters.wifi_tx_wait
+
     command_buf_t *buf;
-    TickType_t waited = xTaskGetTickCount();
-    BaseType_t gotbuf = esp32.uart->GetBuffer(&buf, 1000);
-    net_counters_wifi_tx_wait(xTaskGetTickCount() - waited, gotbuf != pdFALSE);
-    if (gotbuf == pdFALSE) { printf(no_wifi_buf); return ERR_MEM; }
+    BaseType_t gotbuf = esp32.uart->GetBufferKeeping(&buf, WIFI_TX_RESERVE);
+    if (gotbuf == pdFALSE) {
+        // Raise the flag, then look once more: a buffer freed before the flag was up
+        // did not wake anyone
+        wifi_tx_starved = 1;
+        gotbuf = esp32.uart->GetBufferKeeping(&buf, WIFI_TX_RESERVE);
+    }
+    if (gotbuf == pdFALSE) {
+        net_counters.wifi_tx_refused++;
+        return ERR_MEM;
+    }
+    net_counters_wifi_tx_wait(0, 1); // frames that got a buffer: the histogram has no waits left
     rpc_send_eth_req *args = (rpc_send_eth_req *)buf->data;
     args->hdr.command = CMD_SEND_PACKET;
     args->hdr.sequence = 0;

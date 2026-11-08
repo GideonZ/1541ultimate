@@ -44,6 +44,9 @@ typedef struct _dma_uart_t
 #define DMAUART_CLR_OVERFLOW 0x08 // clear overflow status
 
 typedef BaseType_t (*isr_receive_callback_t)(command_buf_context_t *context, command_buf_t *b, BaseType_t *w);
+// Called from the interrupt each time a transmitted buffer has been freed; sets *w to pdTRUE
+// when it woke a task of higher priority. Must be ISR-safe.
+typedef void (*isr_tx_free_callback_t)(command_buf_context_t *context, BaseType_t *w);
 
 class DmaUART
 {
@@ -52,6 +55,7 @@ class DmaUART
     void *rxSemaphore;
     bool slipMode;
     isr_receive_callback_t isr_rx_callback;
+    isr_tx_free_callback_t isr_tx_free_callback;
     // slip administration
     command_buf_context_t *packets;
     command_buf_t *current_tx_buf;
@@ -71,6 +75,7 @@ public:
         slipMode = false;
         txDebug = false;
         current_tx_buf = NULL;
+        isr_tx_free_callback = NULL;
         uint16_t rate = (((uint16_t)uart->rate_h) << 8) | uart->rate_l;
         uart->flowctrl = DMAUART_RESET;
         // printf("DmaUART initialized. Start rate: %d bps\n", CLOCK_FREQ / (rate + 1));
@@ -92,7 +97,8 @@ public:
     void ClearRxBuffer(void);
     void SetBaudRate(int bps);
     void SetReceiveCallback(isr_receive_callback_t cb);
-    void ResetReceiveCallback(void);
+    void ResetReceiveCallback(void); // also removes the TX free callback
+    void SetTxFreeCallback(isr_tx_free_callback_t cb);
 
     void PrintStatus(void) {
         printf("UART status: %b\n", uart->status);
@@ -114,6 +120,9 @@ public:
     BaseType_t ReceivePacket(command_buf_t **buf, TickType_t ticks);
     BaseType_t FreeBuffer(command_buf_t *buf);
     BaseType_t GetBuffer(command_buf_t **buf, TickType_t ticks);
+    // Never waits, and refuses unless more than 'reserve' TX buffers are free (the reserve is
+    // for requests that must get through)
+    BaseType_t GetBufferKeeping(command_buf_t **buf, UBaseType_t reserve);
 };
 
 #endif /* DMAUART_H_ */

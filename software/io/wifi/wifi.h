@@ -89,6 +89,7 @@ public:
 };
 
 err_t wifi_tx_packet(void *driver, void *buffer, int length);
+void wifi_tx_wake_init(DmaUART *uart); // the TX-done wake of wifi_tx_packet, see wifi.cc
 void wifi_free(void *driver, void *buffer);
 
 extern WiFi wifi;

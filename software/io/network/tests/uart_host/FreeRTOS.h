@@ -23,6 +23,7 @@ BaseType_t xQueueSendFromISR(QueueHandle_t q, const void *item, BaseType_t *woke
 BaseType_t xQueueReceive(QueueHandle_t q, void *item, TickType_t ticks);
 BaseType_t xQueueReceiveFromISR(QueueHandle_t q, void *item, BaseType_t *woken);
 UBaseType_t uxQueueMessagesWaiting(QueueHandle_t q);
+UBaseType_t uxQueueMessagesWaitingFromISR(QueueHandle_t q);
 #ifdef __cplusplus
 }
 #endif
