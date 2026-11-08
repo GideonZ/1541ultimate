@@ -145,6 +145,50 @@ endef
 $(foreach m,$(NET_COUNTERS_MUTANTS),$(eval $(call NET_COUNTERS_MUTANT,$(m))))
 net-counters-red: $(addprefix net-counters-red-,$(NET_COUNTERS_MUTANTS))
 
+# The NETCTR reporter of network_interface.cc (the real text from the "Bench builds only" comment to the InitFunction line,
+# CRs dropped) against FreeRTOS/lwIP stand-ins: net_report_test.cpp as it is is the production
+# configuration (the default of net_counters.h: no reporter task, nothing printed), with
+# -DNET_COUNTERS_REPORT=1 it is the bench configuration (one task, at most one line per 5 s round).
+NET_REPORT_DIR := $(OUTPUT_DIR)/net_report
+NET_REPORT_SRC := ../network_interface.cc
+define net_report_run
+	mkdir -p $(NET_REPORT_DIR)
+	tr -d '\r' < $(1) | awk '/^\/\/ Bench builds only \(NET_COUNTERS_REPORT/ {on=1} /^InitFunction lwIP_initializer/ {on=0} on' > $(NET_REPORT_DIR)/$(2).inc
+	test -s $(NET_REPORT_DIR)/$(2).inc
+	$(CXX) $(CXXFLAGS) $(3) -I../../../network -DNETWORK_INTERFACE_REPORT_INC='"$(2).inc"' -I$(NET_REPORT_DIR) -Wno-unused-function -Wno-unused-parameter net_report_test.cpp ../../usb/tests/host_test_main.cpp -lpthread -o $(NET_REPORT_DIR)/$(2)Test
+	$(NET_REPORT_DIR)/$(2)Test
+endef
+
+net-report:
+	$(call net_report_run,$(NET_REPORT_SRC),prod,-DNET_REPORT_EXPECT_DEFAULT_OFF)
+	$(call net_report_run,$(NET_REPORT_SRC),bench,-DNET_COUNTERS_REPORT=1)
+
+# Red: the same suite against network_interface.cc without the #if NET_COUNTERS_REPORT lines (and their #endif) (that is how the
+# reporter was built before this change), and against a default of 1 in the header. Each has to fail the production run.
+net-report-red-no-if:
+	mkdir -p $(NET_REPORT_DIR)
+	tr -d '\r' < $(NET_REPORT_SRC) | awk '/^#if NET_COUNTERS_REPORT/ {d=1; next} d && /^#if/ {d++} d && /^#endif/ {d--; if (d==0) next} 1' > $(NET_REPORT_DIR)/ni_no-if.cc
+	@if cmp -s $(NET_REPORT_SRC) $(NET_REPORT_DIR)/ni_no-if.cc; then echo "net-report-red-no-if: the model changes nothing"; exit 1; fi
+	@if $(MAKE) --no-print-directory -s net-report-run-prod SRC=$(NET_REPORT_DIR)/ni_no-if.cc > $(NET_REPORT_DIR)/red-no-if.log 2>&1; then \
+		echo "net-report-red-no-if: the suite passed against the model"; exit 1; \
+	else \
+		echo "net-report-red-no-if: killed ($$(grep -c FAIL $(NET_REPORT_DIR)/red-no-if.log) checks failed), as required"; \
+	fi
+net-report-red-default-on:
+	mkdir -p $(NET_REPORT_DIR)/hdr
+	sed 's/define NET_COUNTERS_REPORT 0 /define NET_COUNTERS_REPORT 1 /' $(NET_COUNTERS_H) > $(NET_REPORT_DIR)/hdr/net_counters.h
+	@if cmp -s $(NET_COUNTERS_H) $(NET_REPORT_DIR)/hdr/net_counters.h; then echo "net-report-red-default-on: the model changes nothing"; exit 1; fi
+	@if $(MAKE) --no-print-directory -s net-report-run-prod SRC=$(NET_REPORT_SRC) HDR=$(NET_REPORT_DIR)/hdr > $(NET_REPORT_DIR)/red-default-on.log 2>&1; then \
+		echo "net-report-red-default-on: the suite passed against the model"; exit 1; \
+	else \
+		echo "net-report-red-default-on: killed ($$(grep -c FAIL $(NET_REPORT_DIR)/red-default-on.log) checks failed), as required"; \
+	fi
+net-report-run-prod:
+	$(call net_report_run,$(SRC),prod_red,-DNET_REPORT_EXPECT_DEFAULT_OFF $(if $(HDR),-I$(HDR),))
+net-report-red: net-report-red-no-if net-report-red-default-on
+.PHONY: net-report net-report-red net-report-red-no-if net-report-red-default-on net-report-run-prod
+all: net-report net-report-red
+
 sys-arch:
 	mkdir -p $(OUTPUT_DIR)
 	$(CC) -g -w $(SYS_ARCH_INC) -c $(SYS_ARCH_C) -o $(OUTPUT_DIR)/sys_arch.o
