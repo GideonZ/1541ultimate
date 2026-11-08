@@ -128,7 +128,9 @@ TEST(NetReport, silent_while_nothing_changes_one_line_per_round_after_a_change)
     }
     // 3 delays returned (the 4th threw): round 1 saw the change, rounds 2 and 3 saw none
     EXPECT_EQ(count(console, "NETCTR"), 1);
-    EXPECT_TRUE(console.find("NETCTR wtx=3/0/0/0/0/0 wtxmax=0 ovf=0 rxlong=0 unlocked=0\n") == 0);
+    // Only the stable head of the line: other branches insert keys (refused=, rxzero=, rxres=, linkfail=)
+    EXPECT_TRUE(console.find("NETCTR wtx=3/0/0/0/0/0 wtxmax=0 ") == 0);
+    EXPECT_TRUE(console.find(" rxlong=0\n") != std::string::npos);
     for (size_t i = 0; i < delays.size(); i++) {
         EXPECT_EQ(delays[i], 5 * configTICK_RATE_HZ);
     }
