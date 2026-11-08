@@ -82,6 +82,15 @@ extern const char *no_wifi_slot;
 // when more than this many are free, the macros below wait for one and may use them all.
 #define WIFI_TX_RESERVE         2
 
+// The wake after a refusal waits until the pool is more than this many buffers above the reserve,
+// so that one wake covers a few frames instead of one: with two TCP connections that each fill the
+// UART, the wake after every freed buffer made lwIP try (and be refused) three times per frame,
+// 1277 refusals per second in the simulation (io/network/tests, make wifi-tx-sim), each one after
+// the TCP checksum of the segment; waiting for reserve+2 gives 425 per second for the same bytes.
+// The price is the time to the first frame after a stall: 5.0 ms instead of 0.6 ms, and 6.6 ms
+// instead of 2.2 ms when nothing of TCP's is in flight (frames are 2.3 ms on the UART).
+#define WIFI_TX_WAKE_HYSTERESIS 2
+
 // For requests that are not answered, such as network frames. 'failed' is what
 // the caller returns when there is no TX buffer: not 0 where that reads as success.
 #define BUFARGS_NOREPLY(x, cmd, failed) command_buf_t *buf; \

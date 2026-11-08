@@ -10,9 +10,16 @@
 // clock moves with the UART, and nothing else of lwIP runs: not the peer's answers, nor the timers)
 // is run beside the new one, on the same load.
 //
-//   WtxSimThroughput  bytes delivered in 10 s, old against new, RTT 5, 30 and 60 ms
+//   WtxSimThroughput  bytes delivered in 10 s, old against new, RTT 5, 30 and 60 ms; with two
+//                     connections that both fill the UART, the refusals per second are bounded
 //   WtxSimStall       the module drain stops for 3 s: lwIP responsiveness and the resume
 //   WtxSimWake        nothing in flight, the pool taken by other frames: only the wake restarts TCP
+//
+// The wake hysteresis (WIFI_TX_WAKE_HYSTERESIS, wifi_cmd.h) is pinned from both sides: without it
+// (wake at reserve+1) the two-connection run refuses 1277 frames per second, three per frame, each
+// after the TCP checksum of the segment; with it 425 per second (one per frame). Too large a
+// hysteresis (the model with +8) delays the restart of TCP after a stall and after other traffic
+// took the pool: the bounds below on the refusals and on the two restart times fail one each.
 //
 // -DWTX_NEW_IS_LEGACY puts the old function in the place of the new one (a red model).
 
@@ -55,6 +62,7 @@ enum { eWifi_NotConnected, eWifi_Connected };
 struct { int state; int getState() { return state; } } wifi;
 struct { DmaUART *uart; } esp32;
 #define WIFI_TX_RESERVE 2 // wifi_cmd.h, checked by the Makefile
+#define WIFI_TX_WAKE_HYSTERESIS 2 // wifi_cmd.h, checked by the Makefile
 
 struct tcpip_callback_msg { int unused; };
 typedef void (*tcpip_callback_fn)(void *ctx);
@@ -95,6 +103,17 @@ namespace {
 const int64_t INF = INT64_MAX;
 const int64_t SEC = 1000000;
 const int64_t TICK = 5000; // the host tick, 5 ms
+
+// Bounds, derived from the runs of make wifi-tx-sim with WIFI_TX_WAKE_HYSTERESIS 2:
+// two UART-bound connections at RTT 5 ms: 4257 frames in 10 s, 4257 refusals (425.7 per second, one per
+// frame); the wake at reserve+1 gave 12771 (1277 per second). The bound, 450 per second, is above the
+// first and a third of the second.
+const double MAX_REFUSALS_PER_SEC = 450.0;
+// first TCP frame after the module drains again, 5.0 ms measured (0.6 ms at hysteresis 0, 9 frame times
+// at +8): bound 6 ms
+const int64_t MAX_STALL_RESUME_US = 6000;
+// the segment refused after other traffic took the pool, 6.6 ms measured (2.2 ms at 0): bound 8 ms
+const int64_t MAX_WAKE_RESUME_US = 8000;
 
 typedef err_t (*tx_fn_t)(void *, void *, int);
 #ifdef WTX_NEW_IS_LEGACY
@@ -599,7 +618,7 @@ void print(const char *scenario, const char *model, int rtt_ms, int flows, doubl
 // One connection at three round trip times: its 16 KB of send buffer (11 segments) cannot take the
 // pool of 12 down to the reserve by itself, so nothing is refused. Two connections can: 22 segments
 // for 10 buffers, the case in which the new code refuses frames and the wake has to keep TCP going.
-static void throughput(int flows, int rtt, bool expect_refusals)
+static void throughput(int flows, int rtt, bool expect_refusals, bool bound_refusals = false)
 {
     Result r[2];
     for (int m = 0; m < 2; m++) {
@@ -617,14 +636,16 @@ static void throughput(int flows, int rtt, bool expect_refusals)
     EXPECT_EQ(r[1].blocked_us, (int64_t)0);
     if (expect_refusals) {
         EXPECT_TRUE(r[1].refused > 0);
-        EXPECT_TRUE(r[1].wakes > 0);
+    }
+    if (bound_refusals) { // each refusal costs a TCP checksum on the Nios
+        EXPECT_TRUE(r[1].refused / 10.0 <= MAX_REFUSALS_PER_SEC);
     }
 }
 
 TEST(WtxSimThroughput, one_connection_rtt_5)  { throughput(1, 5, false); }
 TEST(WtxSimThroughput, one_connection_rtt_30) { throughput(1, 30, false); }
 TEST(WtxSimThroughput, one_connection_rtt_60) { throughput(1, 60, false); }
-TEST(WtxSimThroughput, two_connections_rtt_5) { throughput(2, 5, true); }
+TEST(WtxSimThroughput, two_connections_rtt_5) { throughput(2, 5, true, true); }
 TEST(WtxSimThroughput, two_connections_rtt_30) { throughput(2, 30, false); }
 
 // ---- 2. The module stops draining for 3 seconds ---------------------------------------------
@@ -658,7 +679,7 @@ TEST(WtxSimStall, lwip_stays_responsive_and_tcp_resumes_with_the_drain)
     EXPECT_EQ(r[1].blocked_us, (int64_t)0);
     EXPECT_TRUE(r[1].ping_max_us <= 2 * TICK);
     EXPECT_TRUE(r[1].refused > 0);
-    EXPECT_TRUE(resume_us[1] >= 0 && resume_us[1] < 10000);
+    EXPECT_TRUE(resume_us[1] >= 0 && resume_us[1] < MAX_STALL_RESUME_US);
     EXPECT_EQ(r[1].errors, 0);
 }
 
@@ -690,5 +711,5 @@ TEST(WtxSimWake, a_refused_segment_is_sent_when_the_pool_has_room)
         }
     }
     EXPECT_TRUE(first[0] >= 0 && first[0] < 10000); // the old wait: until a buffer is free
-    EXPECT_TRUE(first[1] >= 0 && first[1] < 10000); // the wake: the same
+    EXPECT_TRUE(first[1] >= 0 && first[1] < MAX_WAKE_RESUME_US); // the wake: after the hysteresis
 }

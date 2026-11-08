@@ -233,6 +233,7 @@ wtx-extract:
 	awk -v f=wifi_tx_packet -f $(WTX_EXTRACT) $(WTX_WIFI_CC) > $(WTX)/base/wifi_tx_packet.inc
 	test -s $(WTX)/base/wifi_tx_packet.inc
 	grep -q '^#define WIFI_TX_RESERVE  *2$$' $(WTX_WIFI_CMD_H)
+	grep -q '^#define WIFI_TX_WAKE_HYSTERESIS  *2$$' $(WTX_WIFI_CMD_H)
 	grep -q 'GetBuffer(&buf, 1000)' $(WTX_WIFI_CMD_H)
 	tr -d '\r' < ../../../network/config/arch/sys_arch.h | grep '^#define ERR_NEED_SCHED' > $(WTX)/base/fw_err_need_sched.h
 	test -s $(WTX)/base/fw_err_need_sched.h
@@ -266,13 +267,16 @@ wifi-tx-nowait-red-legacy: wtx-extract
 
 # Models of the new code with one part taken out. 'wifi' ones change the extracted wifi.cc code, 'uart'
 # ones dma_uart.cc.
-WTX_MUTANTS_WIFI := no-reserve no-flag no-recheck wake-without-flag wake-at-reserve no-clear clear-on-failure no-switch no-refused
+WTX_MUTANTS_WIFI := no-reserve no-flag no-recheck wake-without-flag wake-at-reserve no-hysteresis hysteresis-at-edge hysteresis-plus-1 no-clear clear-on-failure no-switch no-refused
 WTX_MUTANTS_UART := no-hook-call count-not-reserve
 mut_w_no-reserve := s/GetBufferKeeping(&buf, WIFI_TX_RESERVE)/GetBuffer(\&buf, 0)/g
 mut_w_no-flag := s/^        wifi_tx_starved = 1;//
 mut_w_no-recheck := s/^        gotbuf = esp32.uart->GetBufferKeeping(&buf, WIFI_TX_RESERVE);//
 mut_w_wake-without-flag := s/if (wifi_tx_starved \&\& wifi_txnow_msg/if (wifi_txnow_msg/
-mut_w_wake-at-reserve := s/> WIFI_TX_RESERVE) {/>= WIFI_TX_RESERVE) {/
+mut_w_wake-at-reserve := s/> WIFI_TX_RESERVE + WIFI_TX_WAKE_HYSTERESIS) {/>= WIFI_TX_RESERVE) {/
+mut_w_no-hysteresis := s/> WIFI_TX_RESERVE + WIFI_TX_WAKE_HYSTERESIS) {/> WIFI_TX_RESERVE) {/
+mut_w_hysteresis-at-edge := s/> WIFI_TX_RESERVE + WIFI_TX_WAKE_HYSTERESIS) {/>= WIFI_TX_RESERVE + WIFI_TX_WAKE_HYSTERESIS) {/
+mut_w_hysteresis-plus-1 := s/> WIFI_TX_RESERVE + WIFI_TX_WAKE_HYSTERESIS) {/> WIFI_TX_RESERVE + WIFI_TX_WAKE_HYSTERESIS + 1) {/
 mut_w_no-clear := s/^            wifi_tx_starved = 0;$$//
 mut_w_clear-on-failure := s/posted != ERR_MEM/1/
 mut_w_no-switch := s/\*w = pdTRUE;//
@@ -296,7 +300,7 @@ wifi-tx-nowait-red-$(2): wtx-extract
 	fi
 endef
 $(foreach m,no-reserve no-flag no-recheck,$(eval $(call WTX_MUTANT,w,$(m),wifi_tx_packet.inc,$$(WTX)/base)))
-$(foreach m,wake-without-flag wake-at-reserve no-clear clear-on-failure no-switch,$(eval $(call WTX_MUTANT,w,$(m),wifi_tx_extract.inc,$$(WTX)/base)))
+$(foreach m,wake-without-flag wake-at-reserve no-hysteresis hysteresis-at-edge hysteresis-plus-1 no-clear clear-on-failure no-switch,$(eval $(call WTX_MUTANT,w,$(m),wifi_tx_extract.inc,$$(WTX)/base)))
 $(eval $(call WTX_MUTANT,w,no-refused,wifi_tx_packet.inc,$$(WTX)/base))
 $(eval $(call WTX_MUTANT,u,no-hook-call,dma_uart.cc,$$(UART_SRC)))
 $(eval $(call WTX_MUTANT,u,count-not-reserve,dma_uart.cc,$$(UART_SRC)))
@@ -337,10 +341,13 @@ wifi-tx-sim: wtx-extract wtx-sim-lwip
 
 # Models: the old function in the place of the new (the stall and the throughput are measured on
 # it), the wake not wired (dma_uart.cc), the flag never raised
-WTXSIM_MUTANTS := new-is-legacy no-hook-call no-flag no-reserve
+WTXSIM_MUTANTS := new-is-legacy no-hook-call no-flag no-reserve no-hysteresis hysteresis-8
 mut_s_no-hook-call := s/u->isr_tx_free_callback(u->packets, \&HPTaskAwoken);//
 mut_s_no-flag := s/^        wifi_tx_starved = 1;//
 mut_s_no-reserve := s/GetBufferKeeping(&buf, WIFI_TX_RESERVE)/GetBuffer(\&buf, 0)/g
+# the wake without the hysteresis (the first design: free > reserve), and with one that is too large
+mut_s_no-hysteresis := s/> WIFI_TX_RESERVE + WIFI_TX_WAKE_HYSTERESIS) {/> WIFI_TX_RESERVE) {/
+mut_s_hysteresis-8 := s/> WIFI_TX_RESERVE + WIFI_TX_WAKE_HYSTERESIS) {/> WIFI_TX_RESERVE + 8) {/
 
 define WTXSIM_MUTANT
 wifi-tx-sim-red-$(1): wtx-extract wtx-sim-lwip
@@ -359,6 +366,8 @@ $(eval $(call WTXSIM_MUTANT,new-is-legacy,@true,-DWTX_NEW_IS_LEGACY))
 $(eval $(call WTXSIM_MUTANT,no-hook-call,sed '$$(mut_s_no-hook-call)' $$(UART_SRC)/dma_uart.cc > $$(WTX)/sm_no-hook-call/dma_uart.cc.new && ! cmp -s $$(UART_SRC)/dma_uart.cc $$(WTX)/sm_no-hook-call/dma_uart.cc.new && mv $$(WTX)/sm_no-hook-call/dma_uart.cc.new $$(WTX)/sm_no-hook-call/dma_uart.cc,))
 $(eval $(call WTXSIM_MUTANT,no-flag,sed '$$(mut_s_no-flag)' $$(WTX)/base/wifi_tx_packet.inc > $$(WTX)/sm_no-flag/wifi_tx_packet.inc.new && ! cmp -s $$(WTX)/base/wifi_tx_packet.inc $$(WTX)/sm_no-flag/wifi_tx_packet.inc.new && mv $$(WTX)/sm_no-flag/wifi_tx_packet.inc.new $$(WTX)/sm_no-flag/wifi_tx_packet.inc,))
 $(eval $(call WTXSIM_MUTANT,no-reserve,sed '$$(mut_s_no-reserve)' $$(WTX)/base/wifi_tx_packet.inc > $$(WTX)/sm_no-reserve/wifi_tx_packet.inc.new && ! cmp -s $$(WTX)/base/wifi_tx_packet.inc $$(WTX)/sm_no-reserve/wifi_tx_packet.inc.new && mv $$(WTX)/sm_no-reserve/wifi_tx_packet.inc.new $$(WTX)/sm_no-reserve/wifi_tx_packet.inc,))
+$(eval $(call WTXSIM_MUTANT,no-hysteresis,sed '$$(mut_s_no-hysteresis)' $$(WTX)/base/wifi_tx_extract.inc > $$(WTX)/sm_no-hysteresis/wifi_tx_extract.inc.new && ! cmp -s $$(WTX)/base/wifi_tx_extract.inc $$(WTX)/sm_no-hysteresis/wifi_tx_extract.inc.new && mv $$(WTX)/sm_no-hysteresis/wifi_tx_extract.inc.new $$(WTX)/sm_no-hysteresis/wifi_tx_extract.inc,))
+$(eval $(call WTXSIM_MUTANT,hysteresis-8,sed '$$(mut_s_hysteresis-8)' $$(WTX)/base/wifi_tx_extract.inc > $$(WTX)/sm_hysteresis-8/wifi_tx_extract.inc.new && ! cmp -s $$(WTX)/base/wifi_tx_extract.inc $$(WTX)/sm_hysteresis-8/wifi_tx_extract.inc.new && mv $$(WTX)/sm_hysteresis-8/wifi_tx_extract.inc.new $$(WTX)/sm_hysteresis-8/wifi_tx_extract.inc,))
 wifi-tx-sim-red: $(addprefix wifi-tx-sim-red-,$(WTXSIM_MUTANTS))
 
 clean:

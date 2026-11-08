@@ -458,8 +458,8 @@ SubsysResultCode_e BrowsableWifiAP :: connect_ap(SubsysCommand *cmd)
 // It refuses (ERR_MEM, which lwIP's TCP answers by keeping the segment and remembering
 // TF_NAGLEMEMERR) when the pool is down to the buffers kept for requests (WIFI_TX_RESERVE),
 // and sets wifi_tx_starved. The TX-done interrupt (wifi_tx_free_isr) then sees the flag, and
-// as soon as the pool is above the reserve again has the tcpip thread send what was held
-// back (tcp_txnow), so that TCP does not wait for the next ACK or its retransmit timer.
+// once the pool is WIFI_TX_WAKE_HYSTERESIS buffers above the reserve has the tcpip thread send
+// what was held back (tcp_txnow), so that TCP does not wait for the next ACK or its retransmit timer.
 static volatile uint8_t wifi_tx_starved;
 static struct tcpip_callback_msg *wifi_txnow_msg;
 
@@ -472,7 +472,7 @@ static void wifi_txnow_cb(void *ctx)
 static void wifi_tx_free_isr(command_buf_context_t *context, BaseType_t *w)
 {
     if (wifi_tx_starved && wifi_txnow_msg &&
-        uxQueueMessagesWaitingFromISR(context->freeTxQueue) > WIFI_TX_RESERVE) {
+        uxQueueMessagesWaitingFromISR(context->freeTxQueue) > WIFI_TX_RESERVE + WIFI_TX_WAKE_HYSTERESIS) {
         err_t posted = tcpip_callbackmsg_trycallback_fromisr(wifi_txnow_msg);
         if (posted != ERR_MEM) { // the tcpip mailbox was full: the next freed buffer tries again
             wifi_tx_starved = 0;
