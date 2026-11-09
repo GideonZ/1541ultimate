@@ -20,7 +20,7 @@ from pathlib import Path
 sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
                             if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
 from report import Failure
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 import json
 import machine as machine_lib
@@ -341,6 +341,12 @@ class Backend:
         paused so the UI object stack survives. Callers that may need to
         re-enter the UI after such an action call this first; it is a no-op
         when nothing needs doing.
+
+        Overlay is not immune: the overlay UI is hosted by the Overlay rather
+        than the C64, so it survives the program that was running, but it was
+        observed to close on an Ultimate 64 Elite when machine:reset or
+        machine:reboot runs (menu_screen answers 404 for good; the cause is not
+        established). A C64 Ultimate kept it open across a reboot.
         """
         pass
 
@@ -390,6 +396,73 @@ class Backend:
         pass
 
 
+# A lookahead, so two boxes side by side that share a corner are both found.
+FRAME_EDGE = re.compile(r"(?=(\+-{2,}\+))")
+
+Frame = tuple[int, int, int, int]
+
+
+def innermost_frames(rows: Sequence[str]) -> list[Frame]:
+    """(top, bottom, left, right) of every box drawn with + and - that holds no other box.
+
+    The alternate character set draws a window's corners and edges, which
+    ALT_CHARSET_MAP turns into + and -. A popup is drawn over the browser's frame,
+    so it is the one box inside it; a C64 Ultimate draws three panels side by side
+    and puts its settings list in the middle one.
+    """
+    boxes: list[Frame] = []
+    for top, row in enumerate(rows):
+        for edge in FRAME_EDGE.finditer(row):
+            left, right = edge.start(), edge.start() + len(edge.group(1)) - 1
+            for bottom in range(top + 1, len(rows)):
+                below = rows[bottom]
+                if len(below) > right and below[left] == "+" and below[right] == "+" \
+                        and set(below[left + 1:right]) == {"-"}:
+                    boxes.append((top, bottom, left, right))
+                    break
+    return [box for box in boxes if not any(
+        other != box and box[0] <= other[0] and other[1] <= box[1]
+        and box[2] <= other[2] and other[3] <= box[3] for other in boxes)]
+
+
+
+def framed_list_selections(rows: Sequence[str], colour_at: Callable[[int, int], object],
+                           remembered: object | None = None,
+                           ) -> tuple[dict[Frame, tuple[int, str, list[str]]], object | None]:
+    """{frame: (index, text, entries)} for the framed lists on a screen, and the colour to remember.
+
+    Only the cells inside a frame are read. The entry whose first cell is drawn in
+    a colour of its own is the highlighted one; `colour_at(row, column)` says what
+    a cell is drawn in, so Telnet (SGR strings) and REST (colour-plane bytes) share
+    the rule. A frame with no such entry, such as a column of status words, is left
+    out. Section headers ("-- Peripherals --") and blank rows are not entries.
+    `remembered` is the colour a highlight was last seen in, which breaks a tie in a
+    two-entry list; the returned colour replaces it.
+    """
+    found: dict[Frame, tuple[int, str, list[str]]] = {}
+    for frame in innermost_frames(rows):
+        top, bottom, left, right = frame
+        entries: list[tuple[str, object]] = []
+        for row in range(top + 1, bottom):
+            inner = rows[row][left + 1:right]
+            text = inner.strip()
+            if not text or text.startswith("--"):
+                continue
+            column = left + 1 + len(inner) - len(inner.lstrip())
+            entries.append((text, colour_at(row, column)))
+        tally: dict[object, int] = {}
+        for _text, colour in entries:
+            tally[colour] = tally.get(colour, 0) + 1
+        odd = [index for index, (_text, colour) in enumerate(entries) if tally[colour] == 1]
+        if len(odd) != 1 and remembered is not None:
+            # A tie, as in a two-entry list: the colour a highlight was seen in before.
+            odd = [index for index, (_text, colour) in enumerate(entries) if colour == remembered]
+        if len(odd) == 1 and len(entries) > 1:
+            remembered = entries[odd[0]][1]
+            found[frame] = (odd[0], entries[odd[0]][0], [text for text, _c in entries])
+    return found, remembered
+
+
 # Symbolic action -> C64 keyboard matrix combo (software/api/input_api.h
 # INPUT_API_KEYBOARD_MAP is the authoritative name list). Two physical keys
 # (cursor_up_down, cursor_left_right) carry both directions, reversed by
@@ -401,10 +474,11 @@ KEY_ALIASES: dict[str, list[str]] = {
     "LEFT": ["left_shift", "cursor_left_right"],
     "RIGHT": ["cursor_left_right"],
     "F1": ["f1"],
-    # The C64 matrix has no F2 key either: F2 is Shift+F1, which the KERNAL
-    # produces as KEY_F2 and UserInterface::keymapper turns into KEY_CONFIG
-    # (software/userinterface/userinterface.cc), the settings menu.
-    # Machine.settings_key asks for it on every machine.
+    # The C64 matrix has no F2 key: F2 is Shift+F1, which Keyboard_C64
+    # reads as KEY_F2 (software/io/c64/keyboard_c64.cc keymap_shifted) and
+    # UserInterface::keymapper turns into KEY_CONFIG, the settings menu
+    # (software/userinterface/userinterface.cc). Machine.settings_key asks
+    # for it on every machine.
     "F2": ["left_shift", "f1"],
     "F5": ["f5"],
     # The C64 keyboard has no F8 key; the KERNAL produces KEY_F8 from Shift+F7
