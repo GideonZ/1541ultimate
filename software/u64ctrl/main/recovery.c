@@ -517,7 +517,10 @@ static outcome_t load_bitstream(const recovery_manifest_t *m)
     }
     jtag_fpga_finish(fpga_tail, (int)(f.size - f.shift_limit));
 
-    vTaskDelay(1000 / portTICK_PERIOD_MS);  // as recover.py waits
+    // Hold the CPU in reset from the moment the FPGA starts, so that the flashed
+    // application never runs before the image is uploaded (as recover.py does).
+    vji_set_outputs(CPU_RESET);
+    vTaskDelay(1000 / portTICK_PERIOD_MS);  // the wait recover.py keeps, now with the CPU held
     uint32_t user = vji_get_user_code();
     ESP_LOGI(TAG, "FPGA started; user code %08lx", (unsigned long)user);
     if (user == 0 || user == 0xFFFFFFFF) {
@@ -592,7 +595,7 @@ static outcome_t load_image(const recovery_manifest_t *m)
     recovery_image_init(&im.reader, LOAD_MIN, LOAD_MAX, IMAGE_FAMILY, write_memory, &im);
 
     ESP_LOGI(TAG, "Loading the update image from %s", url);
-    vji_set_outputs(CPU_RESET);
+    // The CPU has been in reset since the FPGA was loaded.
     bool ok = stream_file(url, &m->image, image_sink, &im);
     uint32_t start = 0;
     if (ok) {

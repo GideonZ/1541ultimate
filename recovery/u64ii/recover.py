@@ -152,6 +152,9 @@ def prog_fpga(logger, j, name = "./u64_mk2_artix.bit"):
     end_time = time.perf_counter()
     execution_time = end_time - start_time
     logger.info(f"Execution time: {execution_time} seconds")
+    # Hold the CPU in reset from the moment the FPGA starts, so that the
+    # flashed application never runs before the new image is uploaded.
+    j.user_set_outputs(0x80) # Reset
     time.sleep(1)
 
 
@@ -159,8 +162,7 @@ if __name__ == '__main__':
     logger.addHandler(ch)
     j = JtagClient()
     j.xilinx_read_id()
-    prog_fpga(logger, j)
-    j.user_set_outputs(0x80) # Reset 
+    prog_fpga(logger, j) # leaves the CPU in reset
     j.user_upload('ultimate.bin', 0x30000)
     magic = struct.pack("<LL", 0x30000, 0x1571babe)
     j.user_write_memory(0xFFF8, magic)
