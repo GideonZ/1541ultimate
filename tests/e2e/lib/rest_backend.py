@@ -25,6 +25,7 @@ import targets
 import time
 import urllib.parse
 import urllib.request
+from telnet_backend import innermost_frames
 from menu import wait_screen_changes
 from menu import wait_screen_settled
 from backend import (Backend, CONFIGS_PATH, KEY_ALIASES, LAUNCHER_DESCENT_STEPS,
@@ -134,6 +135,7 @@ class RestBackend(Backend):
         self.password = password
         self.timeout = timeout
         self.last_command = "<connect>"
+        self._framed_colour: int | None = None
         # What one key of a batch costs on this target. A cartridge target
         # pays the computer's matrix tap rate rather than the device's own key
         # queue; see tests/lib/pacing.py.
@@ -476,6 +478,42 @@ class RestBackend(Backend):
 
     def capture(self) -> Snapshot:
         return self._decode(self._body())
+
+    def framed_selections(self) -> dict[tuple[int, int, int, int], tuple[int, str, list[str]]]:
+        """The highlighted entry of each framed list: {frame: (index, text, entries)}.
+
+        The same rule TelnetBackend.framed_selections applies to the cells inside a
+        frame: the entry whose first cell is drawn in a colour of its own is the
+        highlighted one, read here from the colour plane of one menu_screen capture.
+        A frame with no such entry, section headers ("-- Peripherals --") and blank
+        rows are left out.
+        """
+        body = self._body()
+        rows = self._decode(body).lines
+        colours = body[SCREEN_CELLS:SCREEN_BYTES]
+        found: dict[tuple[int, int, int, int], tuple[int, str, list[str]]] = {}
+        for frame in innermost_frames(rows):
+            top, bottom, left, right = frame
+            entries: list[tuple[str, int]] = []
+            for row in range(top + 1, bottom):
+                inner = rows[row][left + 1:right]
+                text = inner.strip()
+                if not text or text.startswith("--"):
+                    continue
+                column = left + 1 + len(inner) - len(inner.lstrip())
+                entries.append((text, colours[row * SCREEN_WIDTH + column]))
+            tally: dict[int, int] = {}
+            for _text, colour in entries:
+                tally[colour] = tally.get(colour, 0) + 1
+            odd = [index for index, (_text, colour) in enumerate(entries) if tally[colour] == 1]
+            if len(odd) != 1 and self._framed_colour is not None:
+                # A tie, as in a two-entry list: the colour a highlight was seen in before.
+                odd = [index for index, (_text, colour) in enumerate(entries)
+                       if colour == self._framed_colour]
+            if len(odd) == 1 and len(entries) > 1:
+                self._framed_colour = entries[odd[0]][1]
+                found[frame] = (odd[0], entries[odd[0]][0], [text for text, _c in entries])
+        return found
 
     def selected_row(self, entry_rows: Sequence[int] | None = None) -> int:
         return self._settled_selection(entry_rows)[1]
