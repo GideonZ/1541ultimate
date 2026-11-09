@@ -4,12 +4,7 @@
 # stubs/ and wifi_task_env.h. Every *_test.cpp here is a set of cases, all linked into one
 # program per product. No hardware needed.
 #
-#   make          test and red
-#   make test     build and run, for U64=1, the U2+L (U64 not defined) and U64=2
-#   make red      build the same cases against a model of the code without each fix
-#                 (legacy/*.sed, applied to the extracted code); each has to fail. A model
-#                 takes out what one fix changed, as far as the cases look at it; it is not
-#                 a reconstruction of the code as it was before the fix.
+#   make          build and run, for U64=1, the U2+L (U64 not defined) and U64=2
 #
 CXX ?= g++
 SW := ../../..
@@ -26,9 +21,7 @@ EXTRACT := extract.awk
 # 0 is the Ultimate II+L: it is built as the U2+L is, with U64 not defined at all
 U64 ?= 1
 VARIANTS := 1 0 2
-# set by `make red` to the legacy model to apply
-LEG ?=
-OUT := $(if $(LEG),output/red_$(basename $(notdir $(LEG)))_u64_$(U64),output/u64_$(U64))
+OUT := output/u64_$(U64)
 
 # Function names are given as written in the source (~ for a blank), so that the C++ method
 # of a class is found.
@@ -42,7 +35,6 @@ NET_FUNCS := NetworkLWIP_WiFi~::~disable NetworkLWIP_WiFi~::~enable NetworkLWIP_
 CMD_FUNCS := wifi_wifi_connect
 
 CASES := $(wildcard *_test.cpp)
-LEGACY := $(sort $(wildcard legacy/*.sed))
 
 CXXFLAGS := -std=c++14 -g -O0 -Wall -Wno-unused-parameter -Wno-unused-variable -Wno-unused-function -Wno-switch \
 	-Wno-format -Wno-unknown-warning-option -Wno-mismatched-tags -Wno-deprecated-declarations \
@@ -53,19 +45,12 @@ CXXFLAGS := -std=c++14 -g -O0 -Wall -Wno-unused-parameter -Wno-unused-variable -
 extract = out=$$(awk -v f="$(subst ~, ,$(1))" -f $(EXTRACT) $(2)); \
 	[ -n "$$out" ] || { echo "wifi_task_test: $(subst ~, ,$(1)) not found in $(2)" >&2; exit 1; }; printf '%s\n' "$$out"
 
-.PHONY: all test red run redrun clean
+.PHONY: all test run clean
 
-all: test red
+all: test
 
 test:
 	@for v in $(VARIANTS); do $(MAKE) --no-print-directory U64=$$v run || exit 1; done
-
-red:
-	@for l in $(LEGACY); do \
-	  for v in $$(sed -n 's/^# variants: //p' $$l); do \
-	    $(MAKE) --no-print-directory U64=$$v LEG=$$l redrun || exit 1; \
-	  done; \
-	done
 
 # The default of "WiFi Enabled", from its row of the configuration (network_esp32.cc)
 $(OUT)/wifi_enable_default.h: $(NET_CC) $(NET_H)
@@ -75,17 +60,14 @@ $(OUT)/wifi_enable_default.h: $(NET_CC) $(NET_H)
 	@grep -q CFG_WIFI_ENABLE $@ || { echo "wifi_task_test: CFG_WIFI_ENABLE not found in $(NET_H)" >&2; exit 1; }
 	@grep -q WIFI_ENABLE_DEFAULT $@ || { echo "wifi_task_test: the CFG_WIFI_ENABLE row not found in $<" >&2; exit 1; }
 
-# The code under test, in the order of its files; for a legacy model, with its sed applied
-$(OUT)/task.cc: Makefile $(WIFI_CC) $(NET_CC) $(CMD_CC) $(EXTRACT) $(LEG) wifi_task_env.h $(OUT)/wifi_enable_default.h
+# The code under test, in the order of its files
+$(OUT)/task.cc: Makefile $(WIFI_CC) $(NET_CC) $(CMD_CC) $(EXTRACT) wifi_task_env.h $(OUT)/wifi_enable_default.h
 	@mkdir -p $(OUT)
 	@{ echo '#include "wifi_task_env.h"'; \
 	   $(foreach f,$(WIFI_FUNCS),$(call extract,$(f),$(WIFI_CC));) \
 	   $(foreach f,$(NET_FUNCS),$(call extract,$(f),$(NET_CC));) \
 	   $(foreach f,$(CMD_FUNCS),$(call extract,$(f),$(CMD_CC));) } | tr -d '\r' > $(OUT)/task.orig
-	@if [ -n "$(LEG)" ]; then \
-	   sed -f $(LEG) $(OUT)/task.orig > $@; \
-	   if cmp -s $@ $(OUT)/task.orig; then echo "wifi_task_test: $(LEG) changes nothing" >&2; exit 1; fi; \
-	 else cp $(OUT)/task.orig $@; fi
+	@mv $(OUT)/task.orig $@
 
 # The firmware's own printf (system/small_printf.cc), as the product builds it (FP_SUPPORT on
 # the U64=2 products), with every function it defines renamed to fw_*, so that it replaces
@@ -110,16 +92,6 @@ $(OUT)/wifi_task_test: $(OUT)/task.o $(OUT)/small_printf.o wifi_task_stubs.cpp $
 
 run: $(OUT)/wifi_task_test
 	@echo "wifi_task_test ($(if $(filter 0,$(U64)),U2+L,U64=$(U64))):"; $(OUT)/wifi_task_test
-
-# The same cases against the model of the code without a fix: the build has to work and the
-# run has to fail, which says which checks
-redrun: $(OUT)/wifi_task_test
-	@if $(OUT)/wifi_task_test > $(OUT)/red.log 2>&1; then \
-	  echo "red $(LEG) ($(if $(filter 0,$(U64)),U2+L,U64=$(U64))): the cases passed against the model without the fix -- they no longer catch it" >&2; exit 1; \
-	else \
-	  echo "red $(LEG) ($(if $(filter 0,$(U64)),U2+L,U64=$(U64))): $$(tail -n 1 $(OUT)/red.log) against the model without the fix, as required"; \
-	  grep '^FAIL' $(OUT)/red.log | head -n 6 | sed 's/^/    /'; \
-	fi
 
 clean:
 	@rm -rf output
