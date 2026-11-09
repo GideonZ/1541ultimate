@@ -401,6 +401,11 @@ KEY_ALIASES: dict[str, list[str]] = {
     "LEFT": ["left_shift", "cursor_left_right"],
     "RIGHT": ["cursor_left_right"],
     "F1": ["f1"],
+    # The C64 matrix has no F2 key either: F2 is Shift+F1, which the KERNAL
+    # produces as KEY_F2 and UserInterface::keymapper turns into KEY_CONFIG
+    # (software/userinterface/userinterface.cc), the settings menu.
+    # Machine.settings_key asks for it on every machine.
+    "F2": ["left_shift", "f1"],
     "F5": ["f5"],
     # The C64 keyboard has no F8 key; the KERNAL produces KEY_F8 from Shift+F7
     # instead (software/io/c64/keyboard.h). Telnet's VT100 handler accepts the

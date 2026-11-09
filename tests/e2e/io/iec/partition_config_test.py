@@ -96,6 +96,10 @@ def main():
             warn(f"{key} changed nothing on screen; pressing it again")
         raise Failure(f"{key} changed nothing on screen:\n{browser.screen()}")
 
+    def reopen_menu_after_reboot():
+        """Reboot C64 closes the menu; the next browser step needs it open again."""
+        browser.backend.ensure_ready()
+
     def replace_setting_tail_in_menu(item, old, new):
         """Replace the last characters of `item` in the settings menu's string editor.
 
@@ -156,6 +160,7 @@ def main():
                 upload(name, f"[{STORE}]\n{ITEM}=/Temp/{ipr}\n")
                 cfg_fixture.load(browser, name)
                 api.machine.reboot()
+                reopen_menu_after_reboot()
                 expect_layout(api, root)
                 if api.configs.get(STORE, ITEM) != "/Temp/" + ipr:
                     raise Failure("profile path was not applied intact")
@@ -171,6 +176,7 @@ def main():
             api.configs.set(STORE, ITEM, "/Temp/" + short_ipr)
             cfg_fixture.load(browser, saved_cfg)
             api.machine.reboot()
+            reopen_menu_after_reboot()
             expect_layout(api, "/Temp")
 
         with check("the settings menu edits a 255-character path without truncating it"):
