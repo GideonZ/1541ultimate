@@ -59,6 +59,7 @@ static const char *TAG = "recovery";
    zeros; this does the same. */
 #define BLOCK_SIZE      16384
 #define BLOCK_PAD       8
+#define PREFETCH_SIZE   (BLOCK_SIZE + 8192)  // image bytes read before the FPGA starts: the first block, with room for its record headers
 
 #define READ_SIZE       4096
 #define YIELD_EVERY     (256 * 1024)  // bytes of work between yields, for the idle task's watchdog
@@ -91,6 +92,8 @@ static char url[256];
 static uint8_t read_buf[READ_SIZE];
 static uint8_t fpga_tail[FPGA_HOLDBACK];
 static uint8_t block[BLOCK_SIZE + BLOCK_PAD];
+static uint8_t prefetch[PREFETCH_SIZE];
+static size_t prefetch_len;
 
 /* ------------------------------------------------------------------ LEDs */
 
@@ -327,9 +330,10 @@ static esp_http_client_handle_t open_file(const char *get_url)
 }
 
 /* Streams the body of an open `client` into `sink`, and checks its size and
-   hash. Closes the client. */
+   hash. `pre` holds the first `pre_len` bytes, which were already read from the
+   client. Closes the client. */
 static bool stream_client(esp_http_client_handle_t client, const char *get_url, const recovery_file_t *file,
-                          sink_fn sink, void *ctx)
+                          sink_fn sink, void *ctx, const uint8_t *pre, size_t pre_len)
 {
     mbedtls_sha256_context sha;
     mbedtls_sha256_init(&sha);
@@ -340,7 +344,15 @@ static bool stream_client(esp_http_client_handle_t client, const char *get_url, 
     TickType_t started = xTaskGetTickCount();
 
     while (ok && !cancelled) {
-        int n = esp_http_client_read(client, (char *)read_buf, sizeof(read_buf));
+        const uint8_t *chunk = read_buf;
+        int n;
+        if (pre_len) {
+            chunk = pre;
+            n = (int)pre_len;
+            pre_len = 0;
+        } else {
+            n = esp_http_client_read(client, (char *)read_buf, sizeof(read_buf));
+        }
         if (n < 0) {
             ESP_LOGW(TAG, "%s: read failed after %lu bytes", get_url, (unsigned long)total);
             ok = false;
@@ -354,8 +366,8 @@ static bool stream_client(esp_http_client_handle_t client, const char *get_url, 
             ok = false;
             break;
         }
-        mbedtls_sha256_update(&sha, read_buf, n);
-        ok = sink(ctx, total, read_buf, n);
+        mbedtls_sha256_update(&sha, chunk, n);
+        ok = sink(ctx, total, chunk, n);
         total += n;
         since_yield += n;
         if (since_yield >= YIELD_EVERY) {
@@ -390,7 +402,7 @@ static bool stream_client(esp_http_client_handle_t client, const char *get_url, 
 static bool stream_file(const char *get_url, const recovery_file_t *file, sink_fn sink, void *ctx)
 {
     esp_http_client_handle_t client = open_file(get_url);
-    return client && stream_client(client, get_url, file, sink, ctx);
+    return client && stream_client(client, get_url, file, sink, ctx, NULL, 0);
 }
 
 /* -------------------------------------------------------------- Manifest */
@@ -516,9 +528,11 @@ static bool fpga_sink(void *ctx, uint32_t offset, const uint8_t *data, size_t le
     return true;
 }
 
-/* The update image is opened before the last bytes of the bitstream are shifted
-   (they start the design), so the user chain is not left idle for the seconds a
-   TLS connection takes between the FPGA start and the upload. */
+/* The first bytes of the update image are read before the last bytes of the
+   bitstream are shifted (they start the design), so the first block of the
+   image is in hand when the design starts and the user chain is not left idle
+   for the round trips of a TLS connection. (On a C64 Ultimate, an idle chain for
+   a second between the FPGA start and the upload kept images from starting.) */
 static char image_url[256];
 
 static outcome_t load_bitstream(const recovery_manifest_t *m, esp_http_client_handle_t *image_client)
@@ -541,7 +555,23 @@ static outcome_t load_bitstream(const recovery_manifest_t *m, esp_http_client_ha
         return FAIL_IMAGE;
     }
     *image_client = open_file(image_url);
-    if (!*image_client) {
+    prefetch_len = 0;
+    while (*image_client && !cancelled && prefetch_len < PREFETCH_SIZE) {
+        int n = esp_http_client_read(*image_client, (char *)prefetch + prefetch_len, PREFETCH_SIZE - prefetch_len);
+        if (n < 0) {
+            close_client(*image_client);
+            *image_client = NULL;
+        } else if (n == 0) {
+            break;  // a short image: all of it is in hand
+        } else {
+            prefetch_len += n;
+        }
+    }
+    if (!*image_client || cancelled) {
+        if (*image_client) {
+            close_client(*image_client);
+            *image_client = NULL;
+        }
         jtag_fpga_clear();
         return cancelled ? CANCELLED : FAIL_IMAGE;
     }
@@ -643,7 +673,7 @@ static outcome_t load_image(const recovery_manifest_t *m, esp_http_client_handle
 
     ESP_LOGI(TAG, "Loading the update image from %s", image_url);
     // The CPU has been in reset since the FPGA was loaded.
-    bool ok = stream_client(client, image_url, &m->image, image_sink, &im);
+    bool ok = stream_client(client, image_url, &m->image, image_sink, &im, prefetch, prefetch_len);
     uint32_t start = 0;
     if (ok) {
         flush_block(&im);
@@ -690,9 +720,9 @@ static bool wait_for_network(void)
 }
 
 /* The JTAG pins are wired in parallel with the header a cable plugs into, so
-   they are driven only while they are in use: for the IDCODE, and for the
-   load itself. They float while the recovery waits for the network and talks
-   to the servers. */
+   they are driven only while they are in use: for the IDCODE, and from the
+   start of the bitstream download until the image is loaded. They float while
+   the recovery waits for the network and asks the servers for the package. */
 static outcome_t recover(void)
 {
     static recovery_manifest_t m;
