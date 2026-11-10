@@ -44,6 +44,8 @@ static const char *TAG = "recovery";
 #define BOOT_MAGIC_ADDR 0x0000FFF8u
 #define BOOT_MAGIC      0x1571BABEu
 #define CPU_RESET       0x80
+#define FPGA_START_POLLS    40  // user-chain polls after the FPGA load ...
+#define FPGA_START_POLL_MS  50  // ... 50 ms apart: 2 s before the design counts as not started
 
 /* The last bytes of a bitstream carry the START command, about 1640 bytes from
    the end of every shipped bitstream; the recovery server's manifest.py
@@ -518,11 +520,19 @@ static outcome_t load_bitstream(const recovery_manifest_t *m)
     jtag_fpga_finish(fpga_tail, (int)(f.size - f.shift_limit));
 
     // Hold the CPU in reset from the moment the FPGA starts, so that the flashed
-    // application never runs before the image is uploaded (as recover.py does).
-    vji_set_outputs(CPU_RESET);
-    vTaskDelay(1000 / portTICK_PERIOD_MS);  // the wait recover.py keeps, now with the CPU held
-    vji_set_outputs(CPU_RESET);  // once more: the first write is lost if the user chain was not answering yet
-    uint32_t user = vji_get_user_code();
+    // application never runs before the image is uploaded. There is no fixed wait:
+    // an idle second before the upload stopped images from starting on a C64
+    // Ultimate. Instead, assert the reset and ask the user chain for its code until
+    // it answers; a reset write sent before the chain answers is repeated.
+    uint32_t user = 0;
+    for (int i = 0; i < FPGA_START_POLLS; i++) {
+        vji_set_outputs(CPU_RESET);
+        user = vji_get_user_code();
+        if (user != 0 && user != 0xFFFFFFFF) {
+            break;
+        }
+        vTaskDelay(FPGA_START_POLL_MS / portTICK_PERIOD_MS);
+    }
     ESP_LOGI(TAG, "FPGA started; user code %08lx", (unsigned long)user);
     if (user == 0 || user == 0xFFFFFFFF) {
         // Nothing answers on the user chain: the design did not start.

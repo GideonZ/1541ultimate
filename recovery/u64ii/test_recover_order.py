@@ -1,7 +1,7 @@
 """Host test for the order of operations in recover.py::prog_fpga (no hardware, no pyftdi needed).
 
 Run: python3 -m unittest recovery/u64ii/test_recover_order.py   (from the repository root)
-The CPU reset must be asserted right after the FPGA load and once more after the one second wait.
+The CPU reset must be asserted right after the FPGA load, with no wait between the load and the upload.
 """
 import importlib.util
 import logging
@@ -42,12 +42,12 @@ class FakeJtag:
 
 
 class ProgFpgaOrder(unittest.TestCase):
-    def test_reset_after_load_and_again_after_the_wait(self):
+    def test_reset_right_after_load_and_no_wait(self):
         recover = load_recover()
         events = []
         with mock.patch.object(recover.time, "sleep", lambda s: events.append(("sleep", s))):
             recover.prog_fpga(logging.getLogger("t"), FakeJtag(events))
-        self.assertEqual(events, [("load_fpga",), ("outputs", 0x80), ("sleep", 1), ("outputs", 0x80)])
+        self.assertEqual(events, [("load_fpga",), ("outputs", 0x80)])
 
 
 if __name__ == "__main__":

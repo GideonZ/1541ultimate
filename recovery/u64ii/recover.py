@@ -152,11 +152,10 @@ def prog_fpga(logger, j, name = "./u64_mk2_artix.bit"):
     end_time = time.perf_counter()
     execution_time = end_time - start_time
     logger.info(f"Execution time: {execution_time} seconds")
-    # Hold the CPU in reset from the moment the FPGA starts, so that the
-    # flashed application never runs before the new image is uploaded.
-    j.user_set_outputs(0x80) # Reset
-    time.sleep(1)
-    # Once more: the user chain may not have answered yet when the first write went out.
+    # Hold the CPU in reset from the moment the FPGA starts, so that the flashed
+    # application never runs before the new image is uploaded. No wait here: on a
+    # C64 Ultimate an idle second between the FPGA load and the upload stopped
+    # images from starting, with or without the CPU held in reset.
     j.user_set_outputs(0x80) # Reset
 
 
