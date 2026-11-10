@@ -6,6 +6,7 @@
  */
 
 #include "wifi.h"
+#include "wifi_connect.h"
 #include "socket.h"
 #include "u64.h"
 #include "dump_hex.h"
@@ -34,11 +35,24 @@ WiFi :: WiFi()
 {
     runModeTask = NULL;
     state = eWifi_Off;
+    state_before_scan = eWifi_NotConnected;
+    event_when_enabled = 0;
+    event_when_enabled_by = 0;
+    pick_cancelled = false;
+    connect_attempt = 0;
+    connect_answered = 0;
+    connect_answer = 0;
+    connect_answer_at = 0;
     bzero(my_mac, 6);
     wifi_aps.num_records  = 0;
     my_ip = 0;
     my_gateway = 0;
     my_netmask = 0;
+#if U64 != 2
+    memset(&radio_switch, 0, sizeof(radio_switch));
+    radio_setting_due = false;
+    radio_setting_applied = -1;
+#endif
 }
 
 void WiFi :: Init(void *obj, void *param)
@@ -47,10 +61,11 @@ void WiFi :: Init(void *obj, void *param)
     wifi.netstack = new NetworkLWIP_WiFi(&wifi, wifi_tx_packet, wifi_free);
     wifi.netstack->attach_config();
 
-#if U64 == 2
-    wifi.Enable(); // Unconditionally enable the WiFi module
-#endif
-    wifi.netstack->effectuate_registered_settings(); // may start the WiFi application
+    // Unconditionally enable the WiFi module: it always runs, also with "WiFi Enabled"
+    // stored as Disabled, which means its radio is off. On the U64 and U2+L the
+    // application tells the module, which starts with its radio off, to turn it on or not.
+    wifi.Enable();
+    wifi.netstack->effectuate_registered_settings();
 }
 
 void WiFi :: RefreshRoot()
@@ -74,14 +89,41 @@ void WiFi :: Disable()
     esp32.StopApp();
 }
 
+// On the U64 and U2+L, RadioOn and RadioOff run in the caller (the "WiFi Enabled" hook,
+// network_esp32.cc) and only mark the setting for the WiFi task to apply, and wake it
+// (EVENT_RADIO_SETTING); the task sends the request and waits for its confirmation
+// (wifi_switch.h). The mark is what counts: if the wake does not fit in the task's queue,
+// the queue is full, and the task's next pass, which comes soon, applies the setting.
 void WiFi :: RadioOn()
 {
-    wifi_enable();
+#if U64 != 2
+    if (state == eWifi_Off) {
+        // The application is held off with a module without the switch (or not running):
+        // it is started again, and reads the setting, Enabled, when it finds the module
+        Enable();
+        return;
+    }
+    radio_setting_due = true;
+    sendEvent(EVENT_RADIO_SETTING);
+#else
+    WhenEnabledFromNow();
+    if (wifi_enable() != 0) {
+        event_when_enabled = 0; // the radio does not come on: nothing is to follow it
+    }
+#endif
 }
 
 void WiFi :: RadioOff()
 {
+    // The module may still report the failure of a pick that was under way (its refusal can
+    // come before it confirms the radio off): the user has left that, so nothing is said
+    pick_cancelled = true;
+#if U64 != 2
+    radio_setting_due = true;
+    sendEvent(EVENT_RADIO_SETTING);
+#else
     wifi_disable();
+#endif
 }
 
 BaseType_t wifi_rx_isr(command_buf_context_t *context, command_buf_t *buf, BaseType_t *w);
@@ -193,11 +235,22 @@ void WiFi :: RunModeThread()
     state = eWifi_NotDetected;
     uint8_t conn;
     uint32_t ip;
+    WifiConnectFeedback feedback;
+    char feedback_msg[80];
+    uint8_t attempt = 0;      // the connect from the AP list that the feedback follows
+    uint8_t answer_taken = 0; // the last attempt whose answer was taken
+    uint8_t answered;
+    int answer;
+    uint32_t answer_at;
+    TickType_t wait_ticks;
 
     RefreshRoot();
     static char boot_message[256];
     int len;
     voltages_t voltages;
+#if U64 != 2
+    int32_t wait;
+#endif
 
     while(1) {
         switch(state) {
@@ -276,6 +329,55 @@ void WiFi :: RunModeThread()
 
             wifi_getmac(my_mac);
             netstack->set_mac_address(my_mac);
+#if U64 != 2
+            // The setting is applied here; a change from now on, by the event loop
+            radio_setting_due = false;
+            radio_setting_applied = netstack->enabled_in_config() ? 1 : 0;
+            // Stored as Disabled: the radio goes off before the interface is up, and the
+            // link stays down. Disabled is shown once the module confirms (wifi_switch.h).
+            if (wifi_switch_wants_off(&radio_switch, radio_setting_applied != 0)) {
+                result = wifi_disable();
+                netstack->start(); // link down
+                // Only a module without the switch is held off; any other error, or a
+                // request that never left, is asked again at the deadline
+                if (wifi_switch_unsupported(result)) {
+                    // A module without the switch cannot keep its radio off: hold the
+                    // module off. It has run to answer (its radio is on from its own boot,
+                    // so it may have associated for a moment). From state Off on, an
+                    // Enable starts the application again (RadioOn); one that came while
+                    // the module answered is in the setting, and the module stays on.
+                    printf("WiFi module cannot turn its radio off: %d\n", result);
+                    state = eWifi_Off;
+                    if (!netstack->enabled_in_config()) {
+                        uart->ModuleCtrl(ESP_MODE_OFF);
+                        RefreshRoot();
+                        vTaskSuspend(NULL); // until that start ends this task
+                        break;
+                    }
+                    state = eWifi_NotConnected;
+                    if ((wifi_is_connected(conn) == 0) && conn) {
+                        wifi_modem_enable(true); // take control!
+                        netstack->link_up();
+                        state = eWifi_Connected;
+                    }
+                    RefreshRoot();
+                    break;
+                }
+                wifi_switch_asked_off(&radio_switch, xTaskGetTickCount(), pdMS_TO_TICKS(WIFI_SWITCH_CONFIRM_MS));
+                state = eWifi_NotConnected;
+                RefreshRoot();
+                break;
+            }
+            // Stored as Enabled: the module starts with its radio off and turns it on now.
+            // A module without the switch, whose radio is on already, ignores this. Not
+            // taken as applied when it fails: the next effectuate asks again, and so does
+            // the task at its deadlines (wifi_switch.h).
+            result = wifi_enable();
+            if ((result != 0) && !wifi_switch_unsupported(result)) {
+                radio_setting_applied = -1;
+                wifi_switch_on_failed(&radio_switch, xTaskGetTickCount(), pdMS_TO_TICKS(WIFI_SWITCH_CONFIRM_MS));
+            }
+#endif
             netstack->start(); // always starts in link down state
             state = eWifi_NotConnected;
             if (wifi_is_connected(conn) == 0) {
@@ -292,7 +394,10 @@ void WiFi :: RunModeThread()
         case eWifi_Scanning:
             wifi_aps.num_records = 0;
             wifi_scan(&wifi_aps);
-            state = eWifi_NotConnected;
+            // Back to where it was: a scan does not take the link down. Events the module
+            // sent while it scanned are taken next, from the queue (as many as the receive
+            // buffers hold while this task waits for the scan's answer).
+            state = state_before_scan;
             RefreshRoot();
             RefreshAPs();
             break;
@@ -300,29 +405,180 @@ void WiFi :: RunModeThread()
         case eWifi_NotConnected:
         case eWifi_Connected:
         case eWifi_Disabled:
-            cmd_buffer_received(packets, &buf, portMAX_DELAY);
+#if U64 != 2
+            // "WiFi Enabled" changed, or the settings were reset or loaded (RadioOn,
+            // RadioOff, network_esp32.cc). The request is sent from here, so that the
+            // requests go out one at a time and in the order of the changes, and the wait
+            // for a radio off's confirmation is timed by this pass.
+            if (radio_setting_due) {
+                radio_setting_due = false;
+                radio_setting_applied = netstack->enabled_in_config() ? 1 : 0;
+                if (radio_setting_applied) {
+                    wifi_switch_on(&radio_switch); // ends a wait for a radio-off confirmation
+                    WhenEnabledFromNow();
+                    result = wifi_enable();
+                    if (result != 0) {
+                        event_when_enabled = 0; // the radio does not come on: nothing is to follow it
+                        // Not applied (a module without the switch has its radio on anyway):
+                        // the next effectuate or change asks again, not every pass, and so
+                        // does the task at its deadlines (wifi_switch.h)
+                        if (!wifi_switch_unsupported(result)) {
+                            radio_setting_applied = -1;
+                            wifi_switch_on_failed(&radio_switch, xTaskGetTickCount(), pdMS_TO_TICKS(WIFI_SWITCH_CONFIRM_MS));
+                        }
+                    }
+                } else if (!wifi_switch_unsupported(result = wifi_disable())) {
+                    // Disabled is shown when the module confirms (wifi_switch.h); an open AP
+                    // list says WiFi is disabled from now on
+                    wifi_switch_asked_off(&radio_switch, xTaskGetTickCount(), pdMS_TO_TICKS(WIFI_SWITCH_CONFIRM_MS));
+                    RefreshAPs();
+                } else {
+                    // A module without the radio switch: hold it off, as at boot. Not with
+                    // Disable(): that stops the application, which would end this task
+                    // while it runs this. From state Off on, an Enable starts the
+                    // application again (RadioOn); one that came while the module answered
+                    // is in the setting, and its change is due: the module stays on.
+                    printf("WiFi module cannot turn its radio off: %d\n", result);
+                    WifiState_t was = state;
+                    state = eWifi_Off;
+                    if (netstack->enabled_in_config()) {
+                        state = was;
+                    } else {
+                        feedback.cancel();
+                        event_when_enabled = 0;
+                        netstack->link_down();
+                        uart->ModuleCtrl(ESP_MODE_OFF);
+                        RefreshRoot();
+                        vTaskSuspend(NULL); // until an Enable starts the application again, which ends this task
+                        break;
+                    }
+                }
+            }
+#endif
+            if (pick_cancelled) {
+                pick_cancelled = false;
+                feedback.cancel();
+            }
+            // The module's answer to the connect request of the attempt that is followed
+            // (ConnectAnswered); taken before the timeout is looked at
+            ENTER_SAFE_SECTION;
+            answered = connect_answered;
+            answer = connect_answer;
+            answer_at = connect_answer_at;
+            LEAVE_SAFE_SECTION;
+            if ((attempt != 0) && (answered == attempt) && (answer_taken != attempt)) {
+                answer_taken = attempt;
+                if (answer == 0) {
+                    feedback.accepted(answer_at);
+                } else if (feedback.rejected(feedback_msg, sizeof(feedback_msg))) {
+                    UserInterface :: postMessage(feedback_msg);
+                }
+            }
+            if (feedback.onTick(xTaskGetTickCount(), feedback_msg, sizeof(feedback_msg))) {
+                UserInterface :: postMessage(feedback_msg);
+            }
+            wait_ticks = feedback.waitTicks(xTaskGetTickCount());
+#if U64 != 2
+            wait = wifi_switch_wait(&radio_switch, xTaskGetTickCount());
+            if ((wait >= 0) && ((TickType_t)wait < wait_ticks)) {
+                wait_ticks = wait;
+            }
+#endif
+            if (cmd_buffer_received(packets, &buf, wait_ticks) != pdTRUE) {
+#if U64 != 2
+                // The radio off was not confirmed in time: it is asked for again, and its
+                // link events are still dropped. After WIFI_SWITCH_ASKS waits the user is
+                // told, the link goes down, and the radio off is asked for at a slower pace
+                // for as long as WiFi stays Disabled: the link is never taken with Disabled
+                // stored.
+                if (wifi_switch_expired(&radio_switch, xTaskGetTickCount())) {
+                    printf("WiFi module did not confirm the radio off\n");
+                    wifi_disable();
+                    if (wifi_switch_ask_again(&radio_switch, xTaskGetTickCount(), pdMS_TO_TICKS(WIFI_SWITCH_CONFIRM_MS), pdMS_TO_TICKS(WIFI_SWITCH_SLOW_MS))) {
+                        UserInterface :: postMessage("WiFi module did not turn its radio off");
+                        if (state == eWifi_Connected) {
+                            netstack->link_down();
+                        }
+                        // The module's frames are not taken while the link is held down
+                        wifi_modem_enable(false);
+                        state = eWifi_NotConnected;
+                        RefreshRoot();
+                    }
+                } else if (wifi_switch_on_due(&radio_switch, xTaskGetTickCount())) {
+                    // A radio on that failed is asked for again, at the same pace
+                    printf("WiFi module did not take the radio on\n");
+                    result = wifi_enable();
+                    if ((result == 0) || wifi_switch_unsupported(result)) {
+                        radio_setting_applied = 1;
+                    } else if (wifi_switch_on_again(&radio_switch, xTaskGetTickCount(), pdMS_TO_TICKS(WIFI_SWITCH_CONFIRM_MS), pdMS_TO_TICKS(WIFI_SWITCH_SLOW_MS))) {
+                        UserInterface :: postMessage("WiFi module did not turn its radio on");
+                    }
+                }
+#endif
+                break; // the wait for the outcome of a connect ran out; the next pass reports it
+            }
+            if (pick_cancelled) { // the Disable came while this event was on its way
+                pick_cancelled = false;
+                feedback.cancel();
+            }
             hdr = (rpc_header_t *)(buf->data);
 #if DEBUG_INPUT
             printf("Pkt %d. Ev %b. Sz %d. Seq: %d\n", buf->bufnr, hdr->command, buf->size, hdr->sequence);
 #endif
+#if U64 != 2
+            if (wifi_switch_drop_event(&radio_switch, hdr->command)) {
+                uart->FreeBuffer(buf);
+                break;
+            }
+#endif
             switch(hdr->command) {
             case EVENT_RESCAN: // requested from user interface
                 uart->FreeBuffer(buf);
-                netstack->link_down();
+                // Disabled means no RF, also while the radio off waits to be confirmed:
+                // the module does not scan with its radio off
+                if ((state == eWifi_Disabled) || RadioOffAwaited()) {
+                    break;
+                }
+                // The module scans while it stays associated, so the interface stays up;
+                // no packet goes out until the scan is done (wifi_tx_packet sends only
+                // when Connected)
+                state_before_scan = state;
                 state = eWifi_Scanning;
                 RefreshRoot();
                 break;
 
+#if U64 != 2
+            case EVENT_RADIO_SETTING: // a wake: the setting is applied at the top of the pass
+                uart->FreeBuffer(buf);
+                break;
+
+            // The module restarted on its own (radio_boot.h). It put its radio back as it
+            // was, or, with no record of that, turned it on: while Disabled, the radio off
+            // is asked for again, and confirmed as at boot.
+            case EVENT_RESTARTED:
+                uart->FreeBuffer(buf);
+                if (state == eWifi_Disabled) {
+                    wifi_disable();
+                    wifi_switch_asked_off(&radio_switch, xTaskGetTickCount(), pdMS_TO_TICKS(WIFI_SWITCH_CONFIRM_MS));
+                }
+                break;
+
+#endif
             case EVENT_DISABLED:
                 uart->FreeBuffer(buf);
                 state = eWifi_Disabled;
+                feedback.cancel(); // a pick that was under way ends with the radio
+                event_when_enabled = 0;
+                wifi_aps.num_records = 0; // nothing to pick while the radio is off
                 netstack->link_down();
                 RefreshRoot();
+                RefreshAPs(); // an open AP list shows that
                 break;
 
             case EVENT_CONNECTED:
                 ev2 = (event_pkt_connected *)buf->data;
                 memcpy(last_ap, ev2->ssid, 32);
+                feedback.onConnected(ev2->ssid);
                 uart->FreeBuffer(buf);
                 if (state == eWifi_Connected) { // already connected!
                     netstack->link_down();
@@ -335,11 +591,38 @@ void WiFi :: RunModeThread()
                 RefreshRoot();
                 break;
 
+            case EVENT_CONNECT_PENDING: // a connect from the AP list is about to go out
+                // With the radio off (Disabled, or a radio off not confirmed yet) the module
+                // reports the start of its radio first
+                ev2 = (event_pkt_connected *)buf->data;
+                feedback.begin(ev2->ssid, xTaskGetTickCount(), (state == eWifi_Disabled) || RadioOffAwaited());
+                attempt = (uint8_t)ev2->hdr.sequence;
+                uart->FreeBuffer(buf);
+                break;
+
+            case EVENT_CONNECT_ANSWER: // a wake: the answer is taken at the top of the pass
+                uart->FreeBuffer(buf);
+                break;
+
             case EVENT_DISCONNECTED:
+                // the reason is read before the buffer goes back to the UART, which may refill it
+                if (!wifi_disconnect_is_radio_start(buf->data, buf->size) &&
+                    feedback.onDisconnected(wifi_disconnect_reason(buf->data, buf->size), feedback_msg, sizeof(feedback_msg))) {
+                    UserInterface :: postMessage(feedback_msg);
+                }
                 uart->FreeBuffer(buf);
                 state = eWifi_NotConnected;
                 if(netstack) {
                     netstack->link_down();
+                }
+                // The radio is on again: what the user asked for, if it is still due. The
+                // module may have queued the Enable and not started its radio; a link loss
+                // much later is no sign that the radio came on for it.
+                if (event_when_enabled) {
+                    if ((int32_t)(event_when_enabled_by - xTaskGetTickCount()) > 0) {
+                        sendEvent(event_when_enabled);
+                    }
+                    event_when_enabled = 0;
                 }
                 RefreshRoot();
                 break;
@@ -380,7 +663,7 @@ void WiFi :: RunModeThread()
     vTaskDelay(portMAX_DELAY);
 }
 
-void WiFi :: sendEvent(uint8_t code)
+bool WiFi :: sendEvent(uint8_t code)
 {
     command_buf_t *buf;
     cmd_buffer_get(packets, &buf, portMAX_DELAY);
@@ -388,25 +671,51 @@ void WiFi :: sendEvent(uint8_t code)
     hdr->command = code;
     hdr->sequence = 0;
     hdr->thread = 0xFF;
-    cmd_buffer_loopback(packets, buf); // internal event
+    if (cmd_buffer_loopback(packets, buf) != pdTRUE) { // internal event; the queue is full
+        uart->FreeBuffer(buf);
+        return false;
+    }
+    return true;
 }
 
-// This event also updates the configuration.
-void WiFi :: sendConnectEvent(const char *ssid, const char *pass, uint8_t auth)
+// A connect from the AP list, for the task to follow (wifi_connect.h). ConnectStart numbers
+// it; EVENT_CONNECT_PENDING goes before the request; ConnectAnswered leaves the module's
+// answer for the task (in the WiFi object, so a full queue does not lose it) and wakes it.
+uint8_t WiFi :: ConnectStart(void)
+{
+    uint8_t a = connect_attempt + 1;
+    if (a == 0) {
+        a = 1; // 0 is no attempt
+    }
+    connect_attempt = a;
+    return a;
+}
+
+void WiFi :: ConnectAnswered(uint8_t attempt, int answer)
+{
+    ENTER_SAFE_SECTION;
+    connect_answer = answer;
+    connect_answer_at = xTaskGetTickCount();
+    connect_answered = attempt;
+    LEAVE_SAFE_SECTION;
+    sendEvent(EVENT_CONNECT_ANSWER);
+}
+
+bool WiFi :: sendConnectPending(const char *ssid, uint8_t attempt)
 {
     command_buf_t *buf;
     cmd_buffer_get(packets, &buf, portMAX_DELAY);
-    // reuse of the rpc structure; but of course it is not sent to the module
-    rpc_wifi_connect_req *args = (rpc_wifi_connect_req *)(buf->data);
-    args->hdr.command = EVENT_CONNECTED;
-    args->hdr.sequence = 0;
-    args->hdr.thread = 0xFF;
-    bzero(args->ssid, 32);
-    bzero(args->password, 64);
-    strncpy(args->ssid, ssid, 32);
-    strncpy(args->password, pass, 64);
-    args->auth_mode = auth;
-    cmd_buffer_loopback(packets, buf); // internal event
+    event_pkt_connected *ev = (event_pkt_connected *)(buf->data);
+    ev->hdr.command = EVENT_CONNECT_PENDING;
+    ev->hdr.sequence = attempt;
+    ev->hdr.thread = 0xFF;
+    bzero(ev->ssid, 32);
+    strncpy((char *)ev->ssid, ssid, 32);
+    if (cmd_buffer_loopback(packets, buf) != pdTRUE) { // internal event
+        uart->FreeBuffer(buf);
+        return false;
+    }
+    return true;
 }
 
 void WiFi :: freeBuffer(command_buf_t *buf)
@@ -417,13 +726,21 @@ void WiFi :: freeBuffer(command_buf_t *buf)
 int WiFi ::getAccessPointItems(Browsable *parent, IndexedList<Browsable *> &list)
 {
     ultimate_ap_records_t *aps = &wifi_aps;
+    // While Disabled nothing scans, so the list is empty until WiFi is enabled. While a radio
+    // off waits for its confirmation the task drops a rescan, and the APs of an earlier scan
+    // are not shown: WiFi is off as far as the user is concerned.
+    if (RadioOffAwaited()) {
+        list.append(new BrowsableStatic("WiFi is disabled"));
+        return 0;
+    }
     if (aps->num_records == 0) {
-        list.append(new BrowsableStatic("Scanning..."));
+        list.append(new BrowsableStatic((state == eWifi_Disabled) ? "WiFi is disabled" : "Scanning..."));
         return 0;
     }
     ENTER_SAFE_SECTION;
     for (int i = 0; i < aps->num_records; i++) {
-        list.append(new BrowsableWifiAP(parent, (char *)aps->aps[i].ssid, aps->aps[i].rssi, aps->aps[i].authmode));
+        list.append(new BrowsableWifiAP(parent, (char *)aps->aps[i].ssid, aps->aps[i].rssi, aps->aps[i].authmode,
+                                        aps->aps[i].bssid, aps->aps[i].channel));
     }
     LEAVE_SAFE_SECTION;
     return aps->num_records;
@@ -439,17 +756,33 @@ SubsysResultCode_e BrowsableWifiAP :: connect_ap(SubsysCommand *cmd)
 {
     char password[65] = { 0 }; // string_box takes 64 characters plus the terminator
     BrowsableWifiAP *bap = (BrowsableWifiAP *)cmd->functionID;
+    // Also while a radio off waits for its confirmation: WiFi is off as far as the user is
+    // concerned, and a connect request would turn the radio on again
+    if (((wifi.getState() == eWifi_Disabled) || wifi.RadioOffAwaited()) && !NetworkLWIP_WiFi :: ask_enable(cmd->user_interface)) {
+        return SSRET_OK;
+    }
     if (bap->auth) {
         if(cmd->user_interface) {
-            cmd->user_interface->string_box("Enter password", password, 64);
+            if (cmd->user_interface->string_box("Enter password", password, 64) <= 0) {
+                return SSRET_OK; // cancelled: nothing to connect with
+            }
         }
     }
-    int result = wifi_wifi_connect(bap->ssid, password, bap->auth);
-    printf("Connect result: %d\n", result);
-    if (result == 0) {
-        //wifi.sendEvent(EVENT_CONNECTED);
-        wifi.sendConnectEvent(bap->ssid, password, bap->auth);
+    // The task notes the attempt before the request goes out: the module can report the
+    // outcome before its answer to the request arrives, and the task takes its events in
+    // the order they were queued
+    uint8_t attempt = wifi.ConnectStart();
+    if (!wifi.sendConnectPending(bap->ssid, attempt)) {
+        char msg[64];
+        wifi_connect_failed_text(msg, sizeof(msg), bap->ssid);
+        UserInterface :: postMessage(msg);
+        return SSRET_OK;
     }
+    // The AP picked, not just any AP with its SSID
+    int result = wifi_wifi_connect(bap->ssid, password, bap->auth, bap->bssid, bap->channel);
+    printf("Connect result: %d\n", result);
+    // Accepted, the outcome is timed from now; refused, the task ends the attempt and says so
+    wifi.ConnectAnswered(attempt, result);
     return SSRET_OK;
 }
 

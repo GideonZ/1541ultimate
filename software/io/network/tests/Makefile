@@ -8,6 +8,8 @@ ETH_TX_FRAME_TEST := $(OUTPUT_DIR)/ethTxFrameTest
 ETH_TX_FRAME_RED := $(OUTPUT_DIR)/ethTxFrameTestLegacy
 ROUTE_SELECT_TEST := $(OUTPUT_DIR)/routeSelectTest
 ROUTE_SELECT_RED := $(OUTPUT_DIR)/routeSelectTestLegacy
+REF_POOL_TEST := $(OUTPUT_DIR)/refPoolTest
+REF_POOL_RED := $(OUTPUT_DIR)/refPoolTestLegacy
 SYS_ARCH_TEST := $(OUTPUT_DIR)/sysArchTest
 SYS_ARCH_RED := $(OUTPUT_DIR)/sysArchTestLegacy
 # network/sys_arch.c as it is, against the FreeRTOS stand-ins of sys_arch_host/
@@ -20,10 +22,15 @@ LWIP_C := core/init.c core/def.c core/inet_chksum.c core/ip.c core/mem.c core/me
 	core/netif.c core/pbuf.c core/stats.c core/sys.c core/timeouts.c core/udp.c \
 	core/ipv4/ip4.c core/ipv4/ip4_addr.c core/ipv4/ip4_frag.c core/ipv4/icmp.c
 LWIP_CFLAGS := -g -w $(LWIP_INC) $(ROUTE_INC)
+# The pool test: lwIP's pbuf.c and memp.c with static pools, as on the device
+POOL_INC := -Ilwip_refpool -I../../../lwip/src/include -I$(OUTPUT_DIR)
+POOL_C := core/init.c core/def.c core/inet_chksum.c core/ip.c core/mem.c core/memp.c \
+	core/netif.c core/pbuf.c core/stats.c core/sys.c core/timeouts.c core/udp.c \
+	core/ipv4/ip4.c core/ipv4/ip4_addr.c core/ipv4/ip4_frag.c
 
-.PHONY: all lwip-objs eth-tx-frame eth-tx-frame-red fw-hook-opts route-select route-select-red sys-arch sys-arch-red net-counters net-counters-red uart-isr uart-isr-red wifi-tx-nowait wifi-tx-nowait-red wifi-tx-sim wifi-tx-sim-red clean
+.PHONY: all lwip-objs eth-tx-frame eth-tx-frame-red fw-hook-opts route-select route-select-red fw-pool-opts ref-pool ref-pool-red sys-arch sys-arch-red net-counters net-counters-red uart-isr uart-isr-red wifi-tx-nowait wifi-tx-nowait-red wifi-tx-sim wifi-tx-sim-red clean
 
-all: eth-tx-frame eth-tx-frame-red route-select route-select-red sys-arch sys-arch-red net-counters net-counters-red uart-isr uart-isr-red wifi-tx-nowait wifi-tx-nowait-red wifi-tx-sim wifi-tx-sim-red
+all: eth-tx-frame eth-tx-frame-red route-select route-select-red ref-pool ref-pool-red sys-arch sys-arch-red net-counters net-counters-red uart-isr uart-isr-red wifi-tx-nowait wifi-tx-nowait-red wifi-tx-sim wifi-tx-sim-red
 
 eth-tx-frame:
 	mkdir -p $(OUTPUT_DIR)
@@ -188,6 +195,34 @@ net-report-run-prod:
 net-report-red: net-report-red-no-if net-report-red-default-on
 .PHONY: net-report net-report-red net-report-red-no-if net-report-red-default-on net-report-run-prod
 all: net-report net-report-red
+
+# The firmware's MEMP_NUM_PBUF, for the pool test; the build stops if the file no longer
+# sets it
+fw-pool-opts:
+	mkdir -p $(OUTPUT_DIR)
+	tr -d '\r' < $(FW_CONFIG)/lwipopts.h | grep '^#define MEMP_NUM_PBUF ' > $(OUTPUT_DIR)/fw_pool_opts.h
+
+ref-pool: fw-pool-opts
+	mkdir -p $(OUTPUT_DIR)/lwip-pool
+	for f in $(POOL_C); do \
+		$(CC) -g -w $(POOL_INC) -c $(LWIP_SRC)/$$f -o $(OUTPUT_DIR)/lwip-pool/$$(basename $$f .c).o || exit 1; \
+	done
+	$(CXX) $(CXXFLAGS) $(POOL_INC) refpool_test.cpp ../../usb/tests/host_test_main.cpp $(OUTPUT_DIR)/lwip-pool/*.o -lpthread -o $(REF_POOL_TEST) && $(REF_POOL_TEST)
+
+# The same cases with the single entry the firmware had. It has to fail, as for
+# eth-tx-frame-red.
+ref-pool-red:
+	mkdir -p $(OUTPUT_DIR)/lwip-pool-legacy
+	for f in $(POOL_C); do \
+		$(CC) -g -w -DREF_POOL_LEGACY $(POOL_INC) -c $(LWIP_SRC)/$$f -o $(OUTPUT_DIR)/lwip-pool-legacy/$$(basename $$f .c).o || exit 1; \
+	done
+	$(CXX) $(CXXFLAGS) -DREF_POOL_LEGACY $(POOL_INC) refpool_test.cpp ../../usb/tests/host_test_main.cpp $(OUTPUT_DIR)/lwip-pool-legacy/*.o -lpthread -o $(REF_POOL_RED)
+	@if $(REF_POOL_RED) > $(OUTPUT_DIR)/pool-red.log 2>&1; then \
+		echo "ref-pool-red: the suite passed with a single reference pbuf -- it no longer catches the defect"; \
+		exit 1; \
+	else \
+		echo "ref-pool-red: $$(tail -1 $(OUTPUT_DIR)/pool-red.log) with a single reference pbuf, as required"; \
+	fi
 
 sys-arch:
 	mkdir -p $(OUTPUT_DIR)
