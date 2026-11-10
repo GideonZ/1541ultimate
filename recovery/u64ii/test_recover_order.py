@@ -15,13 +15,24 @@ from unittest import mock
 HERE = pathlib.Path(__file__).resolve().parent
 
 
+class FakeBitSequence:
+    """What recover.py needs of pyftdi's BitSequence: built from (value, msb, length), read back with int()."""
+
+    def __init__(self, value=0, msb=False, length=None, bytes_=None):
+        self.value = value
+        self.length = length
+
+    def __int__(self):
+        return self.value
+
+
 def load_recover():
     stubs = {}
     for name in ("pyftdi", "pyftdi.jtag", "pyftdi.ftdi"):
         stubs[name] = types.ModuleType(name)
     stubs["pyftdi.jtag"].JtagEngine = object
     stubs["pyftdi.jtag"].JtagTool = object
-    stubs["pyftdi.jtag"].BitSequence = object  # used in annotations, which older Pythons evaluate at once
+    stubs["pyftdi.jtag"].BitSequence = FakeBitSequence  # also used in annotations, which older Pythons evaluate at once
     stubs["pyftdi.jtag"].__dict__["__all__"] = ["JtagEngine", "JtagTool", "BitSequence"]
     stubs["pyftdi.ftdi"].Ftdi = object
     stubs["pyftdi.ftdi"].__dict__["__all__"] = ["Ftdi"]
@@ -72,15 +83,76 @@ class ProgFpgaOrder(unittest.TestCase):
         jtag = FakeJtag(events, drop_writes=2)
         self.go(jtag)
         self.assertEqual(jtag.register, 0x80)
-        self.assertEqual(events[0], ("load_fpga",))
-        self.assertEqual([e for e in events if e[0] == "sleep"], [])
-        self.assertEqual(events[-1], ("outputs", 0x80))
-        self.assertEqual(len(events), 1 + 4)  # two lost writes, one that lands, one that reads it back
+        # round 1: both writes lost; a short pause; round 2: the write lands and the next one reads it back
+        self.assertEqual(events, [("load_fpga",), ("outputs", 0x80), ("outputs", 0x80), ("sleep", 0.05),
+                                  ("outputs", 0x80), ("outputs", 0x80)])
 
     def test_reset_that_never_lands_is_an_error(self):
         recover = load_recover()
-        with self.assertRaises(recover.JtagClientException):
-            recover.prog_fpga(logging.getLogger("t"), FakeJtag([], drop_writes=1000))
+        events = []
+        with mock.patch.object(recover.time, "sleep", lambda s: events.append(("sleep", s))):
+            with self.assertRaises(recover.JtagClientException):
+                recover.prog_fpga(logging.getLogger("t"), FakeJtag(events, drop_writes=1000))
+        self.assertEqual(len([e for e in events if e[0] == "outputs"]), 80)  # 40 rounds, as recovery.c polls
+
+
+class FakeEngine:
+    """Stands in for pyftdi's JtagEngine on the user chain: remembers which user register was selected
+    (the 5 bits recover.py shifts in set_user_ir) and keeps the output register (user register 2). An update
+    of it returns the value the register held before, as the TDO capture of the real chain does."""
+
+    def __init__(self, drop_updates=0):
+        self.selected = None
+        self.register = 0
+        self.drop = drop_updates
+
+    def write_ir(self, seq):
+        pass
+
+    def write_dr(self, seq):
+        self.selected = int(seq) >> 1
+
+    def change_state(self, state):
+        pass
+
+    def shift_register(self, seq):
+        return FakeBitSequence(0, length=seq.length)
+
+    def shift_and_update_register(self, seq):
+        before = FakeBitSequence(self.register, length=8)
+        if self.selected == 2:
+            if self.drop > 0:
+                self.drop -= 1
+            else:
+                self.register = int(seq)
+        return before
+
+    def go_idle(self):
+        pass
+
+
+class RealUserSetOutputs(unittest.TestCase):
+    """Runs the real JtagClient.user_set_outputs() (and prog_fpga() on top of it) against a model of the chain."""
+
+    def client(self, drop_updates=0):
+        recover = load_recover()
+        c = object.__new__(recover.JtagClient)
+        c.jtag = FakeEngine(drop_updates)
+        c.xilinx_load_fpga = lambda name: None
+        return recover, c
+
+    def test_returns_the_register_value_from_before_the_write(self):
+        _, c = self.client()
+        self.assertEqual(c.user_set_outputs(0x80), 0x00)
+        self.assertEqual(c.user_set_outputs(0x80), 0x80)  # the top bit must survive: a mask on the result fails here
+        self.assertEqual(c.user_set_outputs(0x00), 0x80)
+        self.assertEqual(c.jtag.register, 0x00)
+
+    def test_prog_fpga_with_the_real_method_confirms_the_reset(self):
+        recover, c = self.client(drop_updates=3)
+        with mock.patch.object(recover.time, "sleep", lambda s: None):
+            recover.prog_fpga(logging.getLogger("t"), c)
+        self.assertEqual(c.jtag.register, 0x80)
 
 
 if __name__ == "__main__":

@@ -160,10 +160,13 @@ def prog_fpga(logger, j, name = "./u64_mk2_artix.bit"):
     # images from starting, with or without the CPU held in reset.
     # The write returns what the register held before it, so a second write
     # shows whether the first one landed; a write sent before the user chain
-    # answers is lost, and is sent again.
-    for _ in range(10):
+    # answers is lost, and is sent again. Like recovery.c: 40 rounds, 50 ms apart.
+    for _ in range(40):
         if j.user_set_outputs(0x80) == 0x80: # Reset
             return
+        if j.user_set_outputs(0x80) == 0x80:
+            return
+        time.sleep(0.05)
     raise JtagClientException("The CPU reset did not take: the user chain does not answer")
 
 
