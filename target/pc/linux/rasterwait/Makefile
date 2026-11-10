@@ -52,22 +52,12 @@ $(eval $(call MUTANT,wrong-compare,s/bus.write(RASTER_REG_D012, lo);/bus.write(R
 $(eval $(call MUTANT,no-irq-clear,s/bus.write(RASTER_REG_IRQ, 0x81); \/\/ clear raster irq/(void)0;/))
 $(eval $(call MUTANT,no-restore-d011,s/bus.write(RASTER_REG_D011, s.vic_d011);/(void)0;/))
 $(eval $(call MUTANT,no-irq-en-restore,s/bus.write(RASTER_REG_IRQ_EN, s.vic_irq_en);/(void)0;/))
+$(eval $(call MUTANT,restore-order,s/bus.write(RASTER_REG_D012, s.vic_d012);/(void)0;/;s/bus.write(RASTER_REG_D011, s.vic_d011);/bus.write(RASTER_REG_D011, s.vic_d011); bus.write(RASTER_REG_D012, s.vic_d012);/))
 
 mutants:
-	-@echo "== legacy"; $(MAKE) --no-print-directory legacy 2>&1 | tail -2
-	-@echo "== legacy-d011"; $(MAKE) --no-print-directory legacy-d011 2>&1 | tail -2
-	-@echo "== den-write"; $(MAKE) --no-print-directory den-write 2>&1 | tail -2
-	-@echo "== single-read"; $(MAKE) --no-print-directory single-read 2>&1 | tail -2
-	-@echo "== d012-reads-d011"; $(MAKE) --no-print-directory d012-reads-d011 2>&1 | tail -2
-	-@echo "== ms-inverted"; $(MAKE) --no-print-directory ms-inverted 2>&1 | tail -2
-	-@echo "== hi-zero"; $(MAKE) --no-print-directory hi-zero 2>&1 | tail -2
-	-@echo "== no-minus-one"; $(MAKE) --no-print-directory no-minus-one 2>&1 | tail -2
-	-@echo "== direct-minus-one"; $(MAKE) --no-print-directory direct-minus-one 2>&1 | tail -2
-	-@echo "== target-is-raster-lo"; $(MAKE) --no-print-directory target-is-raster-lo 2>&1 | tail -2
-	-@echo "== wrong-compare"; $(MAKE) --no-print-directory wrong-compare 2>&1 | tail -2
-	-@echo "== no-irq-clear"; $(MAKE) --no-print-directory no-irq-clear 2>&1 | tail -2
-	-@echo "== no-restore-d011"; $(MAKE) --no-print-directory no-restore-d011 2>&1 | tail -2
-	-@echo "== no-irq-en-restore"; $(MAKE) --no-print-directory no-irq-en-restore 2>&1 | tail -2
+	@fail=0; for m in legacy legacy-d011 den-write single-read d012-reads-d011 ms-inverted hi-zero no-minus-one direct-minus-one target-is-raster-lo wrong-compare no-irq-clear no-restore-d011 no-irq-en-restore restore-order; do \
+	  if $(MAKE) --no-print-directory $$m >/dev/null 2>&1; then echo "SURVIVED $$m"; fail=1; else echo "killed $$m"; fi; \
+	done; exit $$fail
 
 clean:
 	@rm -rf $(RESULT)

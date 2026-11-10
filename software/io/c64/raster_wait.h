@@ -40,12 +40,12 @@ static inline uint8_t d011_while_waiting(uint8_t d011, uint8_t compare_hi)
 template <class Bus>
 static inline void raster_read(Bus &bus, uint8_t &lo, uint8_t &hi)
 {
-    for (;;) {
+    for (int tries = 0; tries < 4; tries++) {   // bounded: a bit that changed in 3 reads and again is not a line change
         uint8_t before = bus.read(RASTER_REG_D011);
         lo = bus.read(RASTER_REG_D012);
         uint8_t after = bus.read(RASTER_REG_D011);
+        hi = after & 0x80;
         if (!((before ^ after) & 0x80)) {
-            hi = after & 0x80;
             return;
         }
     }

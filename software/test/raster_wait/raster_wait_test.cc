@@ -31,7 +31,7 @@ struct Vic {
     uint8_t d011w, cmp_lo, irq_en, irq_clears, irq_en_081, cmp_during, d011_during;
     int cmp_writes, d011_writes;
     bool den_at_30, den_lost;
-    std::vector<int> seen;
+    std::vector<int> seen, wlog;
 
     Vic(int n, int start, int phase, uint8_t d011) : lines(n), line(start), reads(phase), since_ms(0),
         d011w(d011), cmp_lo(0), irq_en(0), irq_clears(0), irq_en_081(0), cmp_during(0), d011_during(0), cmp_writes(0), d011_writes(0), den_at_30(true), den_lost(false) {}
@@ -54,6 +54,7 @@ struct Vic {
     }
     void write(int reg, uint8_t v)
     {
+        wlog.push_back(reg);
         if (reg == 17) { d011w = v; if (!d011_writes++) d011_during = v; }
         if (reg == 18) { cmp_lo = v; if (!cmp_writes++) cmp_during = v; }
         if (reg == 26) { irq_en = v; if (v == 0x81) irq_en_081++; }
@@ -81,7 +82,7 @@ int main()
                 if (!imm && !bad_line(stop, prog_d011)) continue; // cartridges stop on bad lines only
                 for (int irq = 0; irq < 2; irq++) {
                     for (int start = 0; start < n; start += (start < 8 || start > n - 8 || (start >= 0xF8 && start <= 0x108)) ? 1 : 7) {
-                        Vic v(n, start, (start * 7) % 50, prog_d011);
+                        Vic v(n, start, 10 + (start * 7) % 30, prog_d011);
                         RasterResume st;
                         st.raster = (uint8_t)stop;
                         st.raster_hi = (stop & 0x100) ? 0x80 : 0;
@@ -109,9 +110,12 @@ int main()
                             cart_cases++;
                         }
                         // direct: the wait can end in the last read of a line, so the release may fall in the next one
-                        bool at_stop = imm ? (release == stop || release == (stop + 1) % n) : release == stop;
+                        bool at_stop = release == stop;
                         bool compare_ok = !irq || (v.cmp_during == (uint8_t)target && ((v.d011_during & 0x80) == ((target & 256) ? 0x80 : 0)) && (v.d011_during & 0x7F) == (prog_d011 & 0x7F));
-                        bool ok = found && (at_stop || spill) && compare_ok && !v.den_lost && v.d011w == prog_d011 &&
+                        size_t w = v.wlog.size();
+                        bool order_ok = irq ? (w >= 3 && v.wlog[w-3] == 18 && v.wlog[w-2] == 17 && v.wlog[w-1] == 26)
+                                            : (w >= 4 && v.wlog[w-4] == 18 && v.wlog[w-3] == 17 && v.wlog[w-2] == 25 && v.wlog[w-1] == 26);
+                        bool ok = order_ok && found && (at_stop || spill) && compare_ok && !v.den_lost && v.d011w == prog_d011 &&
                                   v.cmp_lo == 0xF8 && v.irq_en == 0x01 &&
                                   (irq ? (v.irq_en_081 == 1 && v.irq_clears == 0) : (v.irq_en_081 == 0 && v.irq_clears == 1));
                         cases++;
