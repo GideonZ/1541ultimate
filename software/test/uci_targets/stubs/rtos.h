@@ -21,4 +21,5 @@ static inline void vSemaphoreDelete(SemaphoreHandle_t) { }
 static inline int xTaskCreate(void (*)(void *), const char *, int, void *, int, TaskHandle_t *) { return 1; }
 static inline void vTaskDelay(TickType_t) { }
 static inline void vTaskDelete(TaskHandle_t) { }
+void uci_fake_yield(void);   // what SLICED_TRANSFER_YIELD() calls in this harness
 #endif

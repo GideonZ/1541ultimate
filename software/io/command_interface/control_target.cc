@@ -355,7 +355,7 @@ void ControlTarget :: parse_command(Message *command, Message **reply, Message *
                 // whatever the previous command left in this buffer.
                 data_message.message[4] = 0;
                 if (command->message[1] == CTRL_CMD_LOAD_REU) {
-                    retVal = reu_preloader->LoadREU((char *)data_message.message + 4);
+                    retVal = reu_preloader->LoadREU((char *)data_message.message + 4, uci_should_stop);
                 } else {
                     retVal = reu_preloader->SaveREU((char *)data_message.message + 4);
                 }

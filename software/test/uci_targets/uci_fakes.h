@@ -282,6 +282,7 @@ struct IoEvent {
 extern SubsysResultCode_e next_subsys_result;
 extern std::vector<SubsysCall> subsys_calls;
 extern std::vector<IoEvent> io_log;
+extern int yields;   // SLICED_TRANSFER_YIELD() calls (taskYIELD on the device)
 extern std::function<void(const IoEvent &)> on_io;
 extern bool c64_reset_pending;
 extern int mp3_ramdrive_type[4];

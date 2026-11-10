@@ -24,7 +24,7 @@ TESTDIR = $(PATH_SW)/test/uci_targets
 STUBS   = $(TESTDIR)/stubs
 
 CXX     = g++
-CXXOPTIONS = -std=gnu++11 -g -O0 -w -pthread -include stdint.h \
+CXXOPTIONS = -std=gnu++11 -g -O0 -w -pthread -include stdint.h '-DSLICED_TRANSFER_YIELD()=uci_fake_yield()' \
              -I$(STUBS) -I$(TESTDIR) -I$(SHADOW) \
              -I$(PATH_SW)/system -I$(PATH_SW)/components -I$(PATH_SW)/infra \
              -I$(PATH_SW)/io/command_interface -I$(PATH_SW)/filesystem \
@@ -41,7 +41,8 @@ TESTS   = $(notdir $(basename $(wildcard $(TESTDIR)/*_test.cc)))
 COMMON  = $(SHADOW_SRCS) $(TESTDIR)/uci_fakes.cc \
           $(PATH_SW)/components/mystring.cc $(PATH_SW)/components/pattern.cc
 COMMON_OBJS = $(addprefix $(OUTPUT)/,$(notdir $(COMMON:.cc=.o)))
-DEPS    = $(SHADOW_HDRS) $(TESTDIR)/uci_fakes.h $(TESTDIR)/uci_test_util.h $(wildcard $(STUBS)/*.h)
+DEPS    = $(SHADOW_HDRS) $(TESTDIR)/uci_fakes.h $(TESTDIR)/uci_test_util.h $(wildcard $(STUBS)/*.h) \
+          $(wildcard $(PATH_SW)/components/*.h $(PATH_SW)/io/command_interface/*.h)
 
 # software/test/uci_targets/u64/*_test.cc: control_target.cc built with U64 (stubs_u64 first),
 # for the U64-only commands; linked with the same fakes

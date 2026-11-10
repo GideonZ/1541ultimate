@@ -27,6 +27,12 @@ extern "C" uint32_t getFpgaCapabilities() { return uci_fake::fpga_capabilities; 
 const char *getProductString() { return "Host Harness"; }
 Rtc rtc;
 
+void uci_fake_yield(void) { uci_fake::yields++; }
+
+// production: io/command_interface/command_intf.cc
+namespace uci_fake { extern bool c64_reset_pending; }
+bool c64_reset_is_pending(void) { return uci_fake::c64_reset_pending; }
+
 void uci_fake_run_init_functions(void);
 
 // ---- state ------------------------------------------------------------------------------------
@@ -35,6 +41,7 @@ namespace uci_fake {
 SubsysResultCode_e next_subsys_result = SSRET_OK;
 std::vector<SubsysCall> subsys_calls;
 std::vector<IoEvent> io_log;
+int yields;
 std::function<void(const IoEvent &)> on_io;
 bool c64_reset_pending = false;
 int mp3_ramdrive_type[4];
@@ -151,6 +158,7 @@ void reset(void)
     next_subsys_result = SSRET_OK;
     subsys_calls.clear();
     io_log.clear();
+    yields = 0;
     on_io = NULL;
     c64_reset_pending = false;
     memset(mp3_ramdrive_type, 0, sizeof(mp3_ramdrive_type));
