@@ -47,6 +47,9 @@
 #define IEC_PRINTER_BUFFERSIZE  256
 #define IEC_PRINTER_EVENT_CMD   0
 
+/* How long the Flush/Eject menu item waits for the printer task */
+#define IEC_PRINTER_FLUSH_WAIT_MS 20000
+
 /* Max text lines in a page */
 #define IEC_PRINTER_PAGE_LINES	70
 
@@ -68,12 +71,6 @@ enum t_printer_event_type {
     PRINTER_EVENT_DATA
 };
 
-/* Markers in the spool, applied by the printer task when it reaches them */
-enum t_printer_usercmd_type {
-    PRINTER_USERCMD_RESET=0,
-    PRINTER_USERCMD_FLUSH,
-    PRINTER_USERCMD_SETTINGS
-};
 
 /*======================================================================*/
 /* Class IecPrinter                                                     */
@@ -94,7 +91,8 @@ class IecPrinter : public IecSlave, SubSystem, ObjectWithMenu, ConfigurableObjec
         /* Ultimate filesystem interface */
         FileManager *fm;
 
-        /* Output base filename */
+        /* Output base filename (the printer task's own copy) */
+        char output_filename_buf[64];
         const char *output_filename;
 
         /* Printer IEC address */
@@ -128,7 +126,7 @@ class IecPrinter : public IecSlave, SubSystem, ObjectWithMenu, ConfigurableObjec
         /* Spool that carries the IEC data, and the menu and settings markers, to the printer task */
         PrinterSpool spool;
 
-        /* Binary Semaphore to hold the action menu caller Task */
+        /* Binary semaphore to hold the action menu caller Task, given when a Flush/Eject is done */
         SemaphoreHandle_t xCallerSemaphore;
 
         /*==============================================*/
@@ -140,7 +138,7 @@ class IecPrinter : public IecSlave, SubSystem, ObjectWithMenu, ConfigurableObjec
         t_channel_retval _push_data(uint8_t b);
         t_channel_retval _push_command(uint8_t b);
         int _reset(void);
-        void apply_settings(void);
+        void apply_settings(const PrinterSettings &s);
 
         /* -------  User action menu */
         struct {

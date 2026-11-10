@@ -27,7 +27,32 @@ inline pthread_mutex_t *host_rtos_lock(void)
     return &m;
 }
 #define portENTER_CRITICAL() pthread_mutex_lock(host_rtos_lock())
-#define portEXIT_CRITICAL() pthread_mutex_unlock(host_rtos_lock())
+
+// A test can run something, once, at the next end of a critical section: the task that
+// preempts there on the device, between that section and what follows it.
+inline void (*&host_rtos_exit_hook(void))(void)
+{
+    static void (*hook)(void) = NULL;
+    return hook;
+}
+static inline void host_rtos_exit_critical(void)
+{
+    pthread_mutex_unlock(host_rtos_lock());
+    void (*h)(void) = host_rtos_exit_hook();
+    if (h) {
+        host_rtos_exit_hook() = NULL;
+        h();
+    }
+}
+#define portEXIT_CRITICAL() host_rtos_exit_critical()
+
+// Counts the times a task slept: a test sees that a producer is waiting.
+#include <atomic>
+inline std::atomic<unsigned> &host_rtos_sleeps(void)
+{
+    static std::atomic<unsigned> n(0);
+    return n;
+}
 
 struct HostTask {
     pthread_mutex_t lock;
@@ -81,6 +106,7 @@ static inline uint32_t ulTaskNotifyTake(BaseType_t clear, TickType_t ticks)
 
 static inline void vTaskDelay(TickType_t ticks)
 {
+    host_rtos_sleeps()++;
     usleep(ticks * 1000);
 }
 
