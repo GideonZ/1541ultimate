@@ -1252,18 +1252,10 @@ FTPTransferResult FTPDataConnection::receivefile(vfs_t *vfs, const char *path)
         return FTP_TRANSFER_SETUP_FAILED;
     }
 
-    // Fill the buffer before writing it: whole multiples of the sector size let
-    // the file system write sectors straight from the buffer.
     int n;
-    int fill = 0;
     do {
-        n = recv(actual_socket, buffer + fill, FTPD_DATA_BUFFER_SIZE - fill, 0);
+        n = recv(actual_socket, buffer, FTPD_DATA_BUFFER_SIZE, 0);
         if (n > 0) {
-            fill += n;
-        } else if (n < 0) {
-            result = FTP_TRANSFER_ABORTED;
-        }
-        if ((fill == FTPD_DATA_BUFFER_SIZE) || ((n <= 0) && (fill > 0))) {
             if (!file) {
                 file = vfs_open(vfs, path, "wb");
                 if (!file) {
@@ -1271,13 +1263,15 @@ FTPTransferResult FTPDataConnection::receivefile(vfs_t *vfs, const char *path)
                     break;
                 }
             }
-            uint32_t written = vfs_write(buffer, fill, 1, file);
-            if (written != (uint32_t)fill) {
-                printf("Hmm.. written = %d. n = %d\n", written, fill);
+            uint32_t written = vfs_write(buffer, n, 1, file);
+            if (written != (uint32_t)n) {
+                printf("Hmm.. written = %d. n = %d\n", written, n);
                 result = FTP_TRANSFER_STORAGE_ERROR;
                 break;
             }
-            fill = 0;
+        } else if (n < 0) {
+            result = FTP_TRANSFER_ABORTED;
+            break;
         }
     } while (n > 0);
 

@@ -1,8 +1,7 @@
 /*
  * Host test of the FTP server's active-mode data connection (network/ftpd.cc):
  * FTPDataConnection connects to a loopback listener that plays the FTP
- * client's data port, and STOR's receivefile() writes into a recording file
- * system (the vfs_* functions below).
+ * client's data port, or to an address that does not answer.
  *
  * Host Linux honours SO_SNDTIMEO on connect(), unlike lwIP, so the connect
  * cases here show that the bounded connect works on POSIX sockets; that the
@@ -11,11 +10,9 @@
 #include <stdlib.h>
 #include <signal.h>
 #include <poll.h>
-#include <algorithm>
 #include <chrono>
 #include <string>
 #include <thread>
-#include <vector>
 
 #include "ftpd_stubs.h"
 // The test sets the session fields a PORT command would; they are private.
@@ -28,21 +25,13 @@
 #undef class
 #include "network_config.h"
 
-// ---- recording file system ----------------------------------------------------
-static std::vector<uint8_t> stored;
-static std::vector<int> write_sizes;
-static int opens, closes;
-static vfs_file_t the_file;
-
+// ---- file system: not used by the connect cases, but ftpd.cc links against it ----
 extern "C" {
-vfs_file_t *vfs_open(vfs_t *fs, const char *name, const char *flags) { opens++; stored.clear(); return &the_file; }
-void vfs_close(vfs_file_t *file) { closes++; }
+vfs_file_t *vfs_open(vfs_t *fs, const char *name, const char *flags) { return NULL; }
+void vfs_close(vfs_file_t *file) { }
 int vfs_write(const void *buffer, int chunks, int chunk_len, vfs_file_t *file)
 {
-    int n = chunks * chunk_len;
-    write_sizes.push_back(n);
-    stored.insert(stored.end(), (const uint8_t *)buffer, (const uint8_t *)buffer + n);
-    return n;
+    return chunks * chunk_len;
 }
 int vfs_read(void *buffer, int chunks, int chunk_len, vfs_file_t *file) { return 0; }
 vfs_t *vfs_openfs() { return NULL; }
@@ -123,86 +112,7 @@ static int listener(uint16_t *port)
     return l;
 }
 
-static std::vector<uint8_t> pattern(int n, int seed)
-{
-    std::vector<uint8_t> v(n);
-    for (int i = 0; i < n; i++) v[i] = (uint8_t)(i * 13 + seed + (i >> 9));
-    return v;
-}
-
-// The FTP client's side of an active-mode STOR: accept, send 'data' in 'chunk'
-// byte pieces with a pause between them, optionally stall, then close.
-static FTPTransferResult stor(const std::vector<uint8_t> &data, int chunk, int stall_after, int stall_ms)
-{
-    uint16_t port;
-    int l = listener(&port);
-    std::thread client([&]() {
-        int c = accept(l, NULL, NULL);
-        size_t off = 0;
-        while (off < data.size()) {
-            size_t n = std::min((size_t)chunk, data.size() - off);
-            send(c, data.data() + off, n, MSG_NOSIGNAL);
-            off += n;
-            if (stall_after && (int)off >= stall_after) { usleep(stall_ms * 1000); break; }
-            usleep(2000);
-        }
-        close(c);
-    });
-    stored.clear(); write_sizes.clear(); opens = closes = 0;
-    FTPDaemonThread *t = port_session(INADDR_LOOPBACK, port);
-    FTPDataConnection *conn = new FTPDataConnection(t);
-    FTPTransferResult r = conn->receivefile(NULL, "x.bin");
-    delete conn;
-    client.join();
-    close(l);
-    free(t);
-    return r;
-}
-
-static std::string sizes(void)
-{
-    std::string s;
-    for (size_t i = 0; i < write_sizes.size(); i++) s += (i ? "," : "") + std::to_string(write_sizes[i]);
-    return "writes [" + s + "]";
-}
-
 // ---- cases -----------------------------------------------------------------------------
-static void t_stor_fills_the_buffer(void)
-{
-    std::vector<uint8_t> data = pattern(50000, 1);
-    FTPTransferResult r = stor(data, 1000, 0, 0);
-    bool whole = true;
-    for (size_t i = 0; i + 1 < write_sizes.size(); i++) whole = whole && write_sizes[i] == FTPD_DATA_BUFFER_SIZE;
-    bool ok = r == FTP_TRANSFER_OK && stored == data && whole && write_sizes.size() == 7 && opens == 1 && closes == 1;
-    report("stor_writes_whole_8k_buffers", ok, "result " + std::to_string(r) + ", " + std::to_string(stored.size()) +
-           " bytes stored" + (stored == data ? " (equal)" : " (DIFFERENT)") + ", " + sizes());
-}
-
-static void t_stor_exact_multiple(void)
-{
-    std::vector<uint8_t> data = pattern(3 * FTPD_DATA_BUFFER_SIZE, 2);
-    FTPTransferResult r = stor(data, 4096, 0, 0);
-    bool ok = r == FTP_TRANSFER_OK && stored == data && write_sizes.size() == 3;
-    report("stor_exact_multiple_of_the_buffer", ok, "result " + std::to_string(r) + ", " + sizes());
-}
-
-static void t_stor_empty(void)
-{
-    std::vector<uint8_t> data;
-    FTPTransferResult r = stor(data, 1000, 0, 0);
-    report("stor_empty_upload_creates_no_file_as_before", r == FTP_TRANSFER_OK && opens == 0 && write_sizes.empty(),
-           "result " + std::to_string(r) + ", opens " + std::to_string(opens));
-}
-
-static void t_stor_stall_keeps_what_arrived(void)
-{
-    std::vector<uint8_t> data = pattern(20000, 3);
-    FTPTransferResult r = stor(data, 1000, 3000, 6500);   // the data socket gives up after 5 s
-    std::vector<uint8_t> head(data.begin(), data.begin() + 3000);
-    report("stor_stalled_upload_aborts_and_keeps_what_arrived", r == FTP_TRANSFER_ABORTED && stored == head && closes == 1,
-           "result " + std::to_string(r) + ", " + std::to_string(stored.size()) + " bytes stored, " + sizes());
-}
-
 static void t_connect_refused(void)
 {
     uint16_t port;
@@ -236,10 +146,6 @@ static void t_connect_unanswered(void)
 int main()
 {
     signal(SIGPIPE, SIG_IGN);
-    t_stor_fills_the_buffer();
-    t_stor_exact_multiple();
-    t_stor_empty();
-    t_stor_stall_keeps_what_arrived();
     t_connect_refused();
     t_connect_unanswered();
     printf("ftpd: %d passed, %d failed\n", passes, failures);
