@@ -156,6 +156,9 @@ def main():
                 upload(name, f"[{STORE}]\n{ITEM}=/Temp/{ipr}\n")
                 cfg_fixture.load(browser, name)
                 api.machine.reboot()
+                # An Ultimate 64 Elite was observed to close the overlay menu on
+                # a reboot (the cause is not established); a C64 Ultimate does not.
+                browser.backend.ensure_ready()
                 expect_layout(api, root)
                 if api.configs.get(STORE, ITEM) != "/Temp/" + ipr:
                     raise Failure("profile path was not applied intact")
@@ -171,6 +174,8 @@ def main():
             api.configs.set(STORE, ITEM, "/Temp/" + short_ipr)
             cfg_fixture.load(browser, saved_cfg)
             api.machine.reboot()
+            # As above: the menu may have closed with the reboot.
+            browser.backend.ensure_ready()
             expect_layout(api, "/Temp")
 
         with check("the settings menu edits a 255-character path without truncating it"):

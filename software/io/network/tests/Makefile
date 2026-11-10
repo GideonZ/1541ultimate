@@ -10,6 +10,11 @@ ROUTE_SELECT_TEST := $(OUTPUT_DIR)/routeSelectTest
 ROUTE_SELECT_RED := $(OUTPUT_DIR)/routeSelectTestLegacy
 REF_POOL_TEST := $(OUTPUT_DIR)/refPoolTest
 REF_POOL_RED := $(OUTPUT_DIR)/refPoolTestLegacy
+SYS_ARCH_TEST := $(OUTPUT_DIR)/sysArchTest
+SYS_ARCH_RED := $(OUTPUT_DIR)/sysArchTestLegacy
+# network/sys_arch.c as it is, against the FreeRTOS stand-ins of sys_arch_host/
+SYS_ARCH_C := ../../../network/sys_arch.c
+SYS_ARCH_INC := -Isys_arch_host -I../../../lwip/src/include -I../../../network/config
 LWIP_SRC := ../../../lwip/src
 # The lwIP core the route tests run against: ip4.c (the routing and the hook dispatch),
 # udp.c (the source checks on send), netif.c, ip4_addr.c and what they pull in.
@@ -23,9 +28,9 @@ POOL_C := core/init.c core/def.c core/inet_chksum.c core/ip.c core/mem.c core/me
 	core/netif.c core/pbuf.c core/stats.c core/sys.c core/timeouts.c core/udp.c \
 	core/ipv4/ip4.c core/ipv4/ip4_addr.c core/ipv4/ip4_frag.c
 
-.PHONY: all lwip-objs eth-tx-frame eth-tx-frame-red fw-hook-opts route-select route-select-red fw-pool-opts ref-pool ref-pool-red clean
+.PHONY: all lwip-objs eth-tx-frame eth-tx-frame-red fw-hook-opts route-select route-select-red fw-pool-opts ref-pool ref-pool-red sys-arch sys-arch-red clean
 
-all: eth-tx-frame eth-tx-frame-red route-select route-select-red ref-pool ref-pool-red
+all: eth-tx-frame eth-tx-frame-red route-select route-select-red ref-pool ref-pool-red sys-arch sys-arch-red
 
 eth-tx-frame:
 	mkdir -p $(OUTPUT_DIR)
@@ -98,6 +103,26 @@ ref-pool-red:
 		exit 1; \
 	else \
 		echo "ref-pool-red: $$(tail -1 $(OUTPUT_DIR)/pool-red.log) with a single reference pbuf, as required"; \
+	fi
+
+sys-arch:
+	mkdir -p $(OUTPUT_DIR)
+	$(CC) -g -w $(SYS_ARCH_INC) -c $(SYS_ARCH_C) -o $(OUTPUT_DIR)/sys_arch.o
+	$(CXX) $(CXXFLAGS) $(SYS_ARCH_INC) sys_arch_test.cpp ../../usb/tests/host_test_main.cpp $(OUTPUT_DIR)/sys_arch.o -lpthread -o $(SYS_ARCH_TEST) && $(SYS_ARCH_TEST)
+
+# The same cases against sys_arch.c with the waits truncated to whole ticks, as they were.
+# It has to fail, as for eth-tx-frame-red.
+sys-arch-red:
+	mkdir -p $(OUTPUT_DIR)
+	sed 's/ms_to_ticks( \([A-Za-z]*\) )/\1 \/ portTICK_PERIOD_MS/' $(SYS_ARCH_C) > $(OUTPUT_DIR)/sys_arch_legacy.c
+	@if cmp -s $(SYS_ARCH_C) $(OUTPUT_DIR)/sys_arch_legacy.c; then echo "sys-arch-red: the model changes nothing"; exit 1; fi
+	$(CC) -g -w $(SYS_ARCH_INC) -c $(OUTPUT_DIR)/sys_arch_legacy.c -o $(OUTPUT_DIR)/sys_arch_legacy.o
+	$(CXX) $(CXXFLAGS) $(SYS_ARCH_INC) sys_arch_test.cpp ../../usb/tests/host_test_main.cpp $(OUTPUT_DIR)/sys_arch_legacy.o -lpthread -o $(SYS_ARCH_RED)
+	@if $(SYS_ARCH_RED) > $(OUTPUT_DIR)/sys-arch-red.log 2>&1; then \
+		echo "sys-arch-red: the suite passed against the pre-fix behaviour -- it no longer catches the defect"; \
+		exit 1; \
+	else \
+		echo "sys-arch-red: $$(tail -1 $(OUTPUT_DIR)/sys-arch-red.log) against the pre-fix behaviour, as required"; \
 	fi
 
 clean:

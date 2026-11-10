@@ -243,10 +243,10 @@ mps_png.o: mps_png.cc
 	@$(CPP) -MM $(PATH_INC) $< >$(OUTPUT)/$(@F:.o=.d)
 
 $(PATH_SW)/6502/sidcrt/target/sidcrt.bin::
-	make -C $(PATH_SW)/6502/sidcrt
+	+$(MAKE) -C $(PATH_SW)/6502/sidcrt
 
-$(PATH_SW)/6502/sidcrt/target/muscrt.bin::
-	make -C $(PATH_SW)/6502/sidcrt
+$(PATH_SW)/6502/sidcrt/target/muscrt.bin:: $(PATH_SW)/6502/sidcrt/target/sidcrt.bin
+	+$(MAKE) -C $(PATH_SW)/6502/sidcrt
 
-$(PATH_SW)/6502/sidcrt/target/musplayer.bin::
-	make -C $(PATH_SW)/6502/sidcrt
+$(PATH_SW)/6502/sidcrt/target/musplayer.bin:: $(PATH_SW)/6502/sidcrt/target/muscrt.bin
+	+$(MAKE) -C $(PATH_SW)/6502/sidcrt
