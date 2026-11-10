@@ -69,7 +69,12 @@
  * of about 256 KB, and the encoder fails (the page is lost) when the ring has taken the last big one. */
 #define PRINTER_SPOOL_HEAP_HEADROOM   (1024 * 1024)
 #ifndef PRINTER_SPOOL_FREE_HEAP
+#if defined(__MICROBLAZE__) || defined(__microblaze__)
+/* Legacy U2 (microblaze) links heap_3.c, which has no xPortGetFreeHeapSize: unknown, assume enough. */
+#define PRINTER_SPOOL_FREE_HEAP()     ((size_t) -1)
+#else
 #define PRINTER_SPOOL_FREE_HEAP()     ((size_t) xPortGetFreeHeapSize())
+#endif
 #endif
 
 /* One CPU on the device: the compiler must not reorder (and the critical section of the port

@@ -196,7 +196,7 @@ static void test_toggle_burst_full_list(void)
     start_task(held_task);
     CHECK(wait_until([] { return rec.form_feed >= 5; }, 3000));
     usleep(200000);
-    CHECK(rec.form_feed == 5);                  /* 3 for the PNG -> RAW changes, 2 for the last marker (the passed-on toggle and the change) */
+    CHECK(rec.form_feed == 5);                  /* 3 for the PNG -> RAW changes, 2 for the last marker (the passed-on toggle and the change); the stub counts every FormFeed call, the real MpsPrinter::FormFeed prints nothing on a clean page, so this is not a device page count */
     CHECK(rec.file_closes == 1);
 }
 
