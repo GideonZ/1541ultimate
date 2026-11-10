@@ -28,9 +28,9 @@ POOL_C := core/init.c core/def.c core/inet_chksum.c core/ip.c core/mem.c core/me
 	core/netif.c core/pbuf.c core/stats.c core/sys.c core/timeouts.c core/udp.c \
 	core/ipv4/ip4.c core/ipv4/ip4_addr.c core/ipv4/ip4_frag.c
 
-.PHONY: all lwip-objs eth-tx-frame eth-tx-frame-red fw-hook-opts route-select route-select-red fw-pool-opts ref-pool ref-pool-red sys-arch sys-arch-red net-counters net-counters-red uart-isr uart-isr-red wifi-tx-nowait wifi-tx-nowait-red wifi-tx-sim wifi-tx-sim-red clean
+.PHONY: all lwip-objs eth-tx-frame eth-tx-frame-red fw-hook-opts route-select route-select-red fw-pool-opts ref-pool ref-pool-red sys-arch sys-arch-red uart-isr uart-isr-red wifi-tx-nowait wifi-tx-nowait-red wifi-tx-sim wifi-tx-sim-red clean
 
-all: eth-tx-frame eth-tx-frame-red route-select route-select-red ref-pool ref-pool-red sys-arch sys-arch-red net-counters net-counters-red uart-isr uart-isr-red wifi-tx-nowait wifi-tx-nowait-red wifi-tx-sim wifi-tx-sim-red
+all: eth-tx-frame eth-tx-frame-red route-select route-select-red ref-pool ref-pool-red sys-arch sys-arch-red uart-isr uart-isr-red wifi-tx-nowait wifi-tx-nowait-red wifi-tx-sim wifi-tx-sim-red
 
 eth-tx-frame:
 	mkdir -p $(OUTPUT_DIR)
@@ -122,35 +122,7 @@ endef
 $(foreach m,$(UART_ISR_MUTANTS),$(eval $(call UART_ISR_MUTANT,$(m))))
 uart-isr-red: $(addprefix uart-isr-red-,$(UART_ISR_MUTANTS))
 
-NET_COUNTERS_TEST := $(OUTPUT_DIR)/netCountersTest
 NET_COUNTERS_H := ../../../network/net_counters.h
-
-net-counters:
-	mkdir -p $(OUTPUT_DIR)
-	$(CXX) $(CXXFLAGS) -I../../../network net_counters_test.cpp ../../usb/tests/host_test_main.cpp -lpthread -o $(NET_COUNTERS_TEST) && $(NET_COUNTERS_TEST)
-
-# The histogram helpers with one boundary or update changed; each model has to fail the suite.
-NET_COUNTERS_MUTANTS := bound-10 bound-100 bound-1 timeout-bucket no-max
-mut_h_bound-10 := s/ticks < 10)/ticks <= 10)/
-mut_h_bound-100 := s/ticks < 100)/ticks <= 100)/
-mut_h_bound-1 := s/ticks < 2)/ticks < 1)/
-mut_h_timeout-bucket := s/: NET_WTX_TIMEOUT\]/: 4]/
-mut_h_no-max := s/net_counters.wifi_tx_wait_max = ticks;//
-
-define NET_COUNTERS_MUTANT
-net-counters-red-$(1):
-	mkdir -p $$(OUTPUT_DIR)/nc_$(1)
-	sed '$$(mut_h_$(1))' $$(NET_COUNTERS_H) > $$(OUTPUT_DIR)/nc_$(1)/net_counters.h
-	@if cmp -s $$(NET_COUNTERS_H) $$(OUTPUT_DIR)/nc_$(1)/net_counters.h; then echo "net-counters-red-$(1): the model changes nothing"; exit 1; fi
-	$$(CXX) $$(CXXFLAGS) -I$$(OUTPUT_DIR)/nc_$(1) net_counters_test.cpp ../../usb/tests/host_test_main.cpp -lpthread -o $$(OUTPUT_DIR)/netCountersTest_$(1)
-	@if $$(OUTPUT_DIR)/netCountersTest_$(1) > $$(OUTPUT_DIR)/nc_$(1).log 2>&1; then \
-		echo "net-counters-red-$(1): the suite passed against the model"; exit 1; \
-	else \
-		echo "net-counters-red-$(1): killed ($$$$(grep -c FAIL $$(OUTPUT_DIR)/nc_$(1).log) checks failed), as required"; \
-	fi
-endef
-$(foreach m,$(NET_COUNTERS_MUTANTS),$(eval $(call NET_COUNTERS_MUTANT,$(m))))
-net-counters-red: $(addprefix net-counters-red-,$(NET_COUNTERS_MUTANTS))
 
 # The NETCTR reporter of network_interface.cc (the real text from the "Bench builds only" comment to the InitFunction line,
 # CRs dropped) against FreeRTOS/lwIP stand-ins: net_report_test.cpp as it is is the production
@@ -302,10 +274,11 @@ wifi-tx-nowait-red-legacy: wtx-extract
 
 # Models of the new code with one part taken out. 'wifi' ones change the extracted wifi.cc code, 'uart'
 # ones dma_uart.cc.
-WTX_MUTANTS_WIFI := no-reserve no-flag no-recheck wake-without-flag wake-at-reserve no-hysteresis hysteresis-at-edge hysteresis-plus-1 no-clear clear-on-failure no-switch no-refused
+WTX_MUTANTS_WIFI := no-reserve no-flag no-recheck no-msg-retry wake-without-flag wake-at-reserve no-hysteresis hysteresis-at-edge hysteresis-plus-1 no-clear clear-on-failure no-switch no-refused
 WTX_MUTANTS_UART := no-hook-call count-not-reserve
 mut_w_no-reserve := s/GetBufferKeeping(&buf, WIFI_TX_RESERVE)/GetBuffer(\&buf, 0)/g
 mut_w_no-flag := s/^        wifi_tx_starved = 1;//
+mut_w_no-msg-retry := s/if (!wifi_txnow_msg) {/if (0) {/
 mut_w_no-recheck := s/^        gotbuf = esp32.uart->GetBufferKeeping(&buf, WIFI_TX_RESERVE);//
 mut_w_wake-without-flag := s/if (wifi_tx_starved \&\& wifi_txnow_msg/if (wifi_txnow_msg/
 mut_w_wake-at-reserve := s/> WIFI_TX_RESERVE + WIFI_TX_WAKE_HYSTERESIS) {/>= WIFI_TX_RESERVE) {/
@@ -334,7 +307,7 @@ wifi-tx-nowait-red-$(2): wtx-extract
 		echo "wifi-tx-nowait-red-$(2): killed ($$$$(grep -c FAIL $$(WTX)/red-$(2).log) checks failed), as required"; \
 	fi
 endef
-$(foreach m,no-reserve no-flag no-recheck,$(eval $(call WTX_MUTANT,w,$(m),wifi_tx_packet.inc,$$(WTX)/base)))
+$(foreach m,no-reserve no-flag no-recheck no-msg-retry,$(eval $(call WTX_MUTANT,w,$(m),wifi_tx_packet.inc,$$(WTX)/base)))
 $(foreach m,wake-without-flag wake-at-reserve no-hysteresis hysteresis-at-edge hysteresis-plus-1 no-clear clear-on-failure no-switch,$(eval $(call WTX_MUTANT,w,$(m),wifi_tx_extract.inc,$$(WTX)/base)))
 $(eval $(call WTX_MUTANT,w,no-refused,wifi_tx_packet.inc,$$(WTX)/base))
 $(eval $(call WTX_MUTANT,u,no-hook-call,dma_uart.cc,$$(UART_SRC)))

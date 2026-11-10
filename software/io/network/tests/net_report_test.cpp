@@ -59,7 +59,7 @@ static void vTaskDelay(int ticks)
 {
     delays.push_back(ticks);
     if (bump_each_round) {
-        net_counters.wifi_tx_wait[0]++;
+        net_counters.wifi_tx_refused++;
     }
     if ((int)delays.size() == stop_after) {
         throw Stop();
@@ -122,14 +122,14 @@ TEST(NetReport, silent_while_nothing_changes_one_line_per_round_after_a_change)
     ASSERT_EQ((int)created.size(), 1);
     stop_after = 4;
     try {
-        net_counters.wifi_tx_wait[0] = 3;
+        net_counters.wifi_tx_refused = 3;
         created[0].fn(NULL);
     } catch (const Stop &) {
     }
     // 3 delays returned (the 4th threw): round 1 saw the change, rounds 2 and 3 saw none
     EXPECT_EQ(count(console, "NETCTR"), 1);
-    // Only the stable head of the line: other branches insert keys (refused=, rxzero=, rxres=, linkfail=)
-    EXPECT_TRUE(console.find("NETCTR wtx=3/0/0/0/0/0 wtxmax=0 ") == 0);
+    // Only the stable head of the line: other branches insert keys (rxzero=, rxres=, linkfail=)
+    EXPECT_TRUE(console.find("NETCTR refused=3 ") == 0);
     EXPECT_TRUE(console.find(" rxlong=0\n") != std::string::npos);
     for (size_t i = 0; i < delays.size(); i++) {
         EXPECT_EQ(delays[i], 5 * configTICK_RATE_HZ);
@@ -157,14 +157,14 @@ TEST(NetReport, a_line_per_round_at_most_even_when_every_counter_moves)
 TEST(NetReport, production_build_creates_no_reporter_task)
 {
     reset();
-    net_counters.wifi_tx_wait[0] = 5;   // counters are live and changing
-    net_counters_wifi_tx_wait(0, true);
+    net_counters.wifi_tx_refused = 5;   // counters are live and changing
+    net_counters.wifi_tx_refused++;
     initLwip(NULL, NULL);
     EXPECT_EQ(tcpip_inits, 1);          // the rest of initLwip is untouched
     EXPECT_EQ((int)created.size(), 0);
     EXPECT_EQ((int)delays.size(), 0);
     EXPECT_EQ((int)console.size(), 0);  // and nothing is printed
-    EXPECT_EQ(net_counters.wifi_tx_wait[0], (uint32_t)6);   // the counters themselves still count
+    EXPECT_EQ(net_counters.wifi_tx_refused, (uint32_t)6);   // the counters themselves still count
 }
 
 #endif

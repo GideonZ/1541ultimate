@@ -28,39 +28,14 @@
 extern "C" {
 #endif
 
-#define NET_WTX_BUCKETS   6
-#define NET_WTX_TIMEOUT   5  // index of the "no buffer in time" bucket
-
 typedef struct {
-    // WiFi linkoutput waits for a UART TX buffer, in ticks: 0, 1, 2-9, 10-99, 100-999, timed out.
-    // wifi_tx_packet no longer waits: every frame that got a buffer counts in bucket 0, and a
-    // frame it refused (the pool is down to the buffers kept for requests) counts in wifi_tx_refused
-    uint32_t wifi_tx_wait[NET_WTX_BUCKETS];
-    uint32_t wifi_tx_wait_max;      // ticks, the longest wait (a timeout counts too)
-    uint32_t wifi_tx_refused;       // frames wifi_tx_packet refused with ERR_MEM
+    // frames wifi_tx_packet refused with ERR_MEM: the pool is down to the buffers kept for requests
+    uint32_t wifi_tx_refused;
     uint32_t uart_rx_overflow;      // DMA UART status bit 3 seen
     uint32_t uart_rx_long;          // received frames longer than CMD_BUF_SIZE
 } net_counters_t;
 
 __attribute__((weak)) net_counters_t net_counters;
-
-// The bucket of a WiFi TX buffer wait that did get a buffer
-static inline int net_counters_wtx_bucket(uint32_t ticks)
-{
-    if (ticks < 2) {
-        return (int)ticks;
-    }
-    return (ticks < 10) ? 2 : (ticks < 100) ? 3 : 4;
-}
-
-// Count one wait of 'ticks'; 'got_buffer' is false when it timed out
-static inline void net_counters_wifi_tx_wait(uint32_t ticks, int got_buffer)
-{
-    net_counters.wifi_tx_wait[got_buffer ? net_counters_wtx_bucket(ticks) : NET_WTX_TIMEOUT]++;
-    if (ticks > net_counters.wifi_tx_wait_max) {
-        net_counters.wifi_tx_wait_max = ticks;
-    }
-}
 
 #ifdef __cplusplus
 }

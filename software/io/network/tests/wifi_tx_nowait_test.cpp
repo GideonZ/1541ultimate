@@ -234,14 +234,12 @@ TEST(WifiTxNoWait, not_connected_is_refused_before_the_pool)
     EXPECT_EQ(net_counters.wifi_tx_refused, (uint32_t)0);
 }
 
-// The counters: frames that got a buffer are in the first bucket, the longest wait stays 0
+// The counter: only a refused frame counts
 TEST(WifiTxNoWait, counters)
 {
     Rig r;
     r.fill_to(WIFI_TX_RESERVE);
-    EXPECT_EQ(net_counters.wifi_tx_wait[0], (uint32_t)(NUM_TX_BUFFERS - WIFI_TX_RESERVE));
-    EXPECT_EQ(net_counters.wifi_tx_wait[NET_WTX_TIMEOUT], (uint32_t)0);
-    EXPECT_EQ(net_counters.wifi_tx_wait_max, (uint32_t)0);
+    EXPECT_EQ(net_counters.wifi_tx_refused, (uint32_t)0);
     r.send();
     r.send();
     EXPECT_EQ(net_counters.wifi_tx_refused, (uint32_t)2);
@@ -358,7 +356,29 @@ TEST(WifiTxWake, a_full_mailbox_keeps_the_flag_and_the_next_free_posts_again)
     EXPECT_TRUE(wifi_tx_starved == 0);
 }
 
-// No allocation of the message (lwIP out of memory): nothing is posted and nothing breaks
+// No allocation of the message at init (lwIP out of memory): a refused frame retries it, and once it
+// exists the next free above the hysteresis posts the wake. Without the retry the wake is lost for good
+// and TCP waits for its next send.
+TEST(WifiTxWake, no_message_at_init_is_retried_at_the_next_refusal)
+{
+    Rig r(false);
+    msg_alloc_fails = true;
+    wifi_tx_wake_init(r.uart);
+    ASSERT_TRUE(wifi_txnow_msg == NULL);
+    r.fill_to(WIFI_TX_RESERVE);
+    msg_alloc_fails = true;       // lwIP still has no memory: the refusal cannot fix it, and breaks nothing
+    EXPECT_EQ(r.send(), ERR_MEM);
+    EXPECT_TRUE(wifi_txnow_msg == NULL);
+    EXPECT_TRUE(wifi_tx_starved != 0);
+    msg_alloc_fails = false;      // memory is back: the next refusal allocates the message
+    EXPECT_EQ(r.send(), ERR_MEM);
+    EXPECT_TRUE(wifi_txnow_msg == &the_msg);
+    EXPECT_EQ(r.finish_until_the_wake(), (uint8_t)0);
+    EXPECT_EQ(posts, 1);          // the wake is posted
+    EXPECT_TRUE(wifi_tx_starved == 0);
+}
+
+// With the message missing the interrupt posts nothing (and does not touch the null pointer)
 TEST(WifiTxWake, no_message_no_post)
 {
     Rig r(false);

@@ -70,10 +70,7 @@ static void net_counters_task(void *a)
             continue;
         }
         last = now;
-        printf("NETCTR wtx=%d/%d/%d/%d/%d/%d wtxmax=%d refused=%d ovf=%d rxlong=%d", now.wifi_tx_wait[0],
-               now.wifi_tx_wait[1], now.wifi_tx_wait[2], now.wifi_tx_wait[3], now.wifi_tx_wait[4],
-               now.wifi_tx_wait[5], now.wifi_tx_wait_max, now.wifi_tx_refused, now.uart_rx_overflow,
-               now.uart_rx_long);
+        printf("NETCTR refused=%d ovf=%d rxlong=%d", now.wifi_tx_refused, now.uart_rx_overflow, now.uart_rx_long);
         printf("\n");
     }
 }

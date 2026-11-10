@@ -840,10 +840,15 @@ err_t wifi_tx_packet(void *driver, void *buffer, int length)
         gotbuf = esp32.uart->GetBufferKeeping(&buf, WIFI_TX_RESERVE);
     }
     if (gotbuf == pdFALSE) {
+        // The wake message could not be allocated at init (lwIP out of memory): without it the TX-done
+        // interrupt cannot wake the tcpip thread, and TCP would wait for its next send. Try again at
+        // each refusal until it exists; the flag is up, so the next freed buffer above the hysteresis wakes.
+        if (!wifi_txnow_msg) {
+            wifi_txnow_msg = tcpip_callbackmsg_new(wifi_txnow_cb, NULL);
+        }
         net_counters.wifi_tx_refused++;
         return ERR_MEM;
     }
-    net_counters_wifi_tx_wait(0, 1); // frames that got a buffer: the histogram has no waits left
     rpc_send_eth_req *args = (rpc_send_eth_req *)buf->data;
     args->hdr.command = CMD_SEND_PACKET;
     args->hdr.sequence = 0;
