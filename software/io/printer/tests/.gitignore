@@ -1,2 +1,5 @@
 spoolTest
 spoolTest.dSYM/
+cmdTest
+cmdTest.dSYM/
+build/

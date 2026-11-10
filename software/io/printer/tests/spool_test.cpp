@@ -9,6 +9,7 @@
 #include <pthread.h>
 #include <atomic>
 #include <signal.h>
+#include <stdlib.h>
 #include <unistd.h>
 
 static std::atomic<bool> malloc_fails(false);
@@ -123,6 +124,9 @@ static void test_wrap(uint32_t start)
     CHECK(n == 4 && out[0] == 0x1101 && out[1] == 0x3001 && out[2] == 0x1102 && out[3] == 0x1103);
 }
 
+static void test_wrap_0(void) { test_wrap(0); }
+static void test_wrap_ovf(void) { test_wrap(0xFFFFFFF0u); }
+
 static void test_coalesce_and_exhaustion(void)
 {
     PrinterSpool s;
@@ -135,14 +139,17 @@ static void test_coalesce_and_exhaustion(void)
     int n = drain(s, out, 64);
     CHECK(n == 3 && out[0] == 0x3002 && out[1] == 0x2003 && out[2] == 0x1101);
 
-    /* more changes than markers fit: none of them waits, the last values arrive, no flush is lost */
+    /* more changes than markers fit: none of them waits, the last values arrive, no flush is lost,
+     * and nothing takes effect earlier than it was posted */
+    uint32_t settings_pos[64], flush_pos[64];
     int flushes = 0;
     for (int i = 0; i < 40; i++) {
         s.push(EV(1, i));
         s.post_settings(settings(i + 1));
-        if (i % 3 == 0) { s.post_flush(); flushes++; }
+        settings_pos[i + 1] = i + 1;
+        if (i % 3 == 0) { uint32_t g = s.post_flush(); flush_pos[g] = i + 1; flushes++; }
     }
-    int got_flushes = 0, last_type = -1, events = 0;
+    int got_flushes = 0, last_type = -1, events = 0, early = 0;
     for (;;) {
         uint16_t ev;
         PrinterSpoolCtl c;
@@ -151,12 +158,17 @@ static void test_coalesce_and_exhaustion(void)
         if (r == PRINTER_SPOOL_EVENT) events++;
         if (r == PRINTER_SPOOL_CTRL) {
             got_flushes += c.flushes;
-            if (c.has_settings) last_type = c.settings.type;
+            if (c.flushes && (uint32_t) events < flush_pos[c.flush_gen]) early++;
+            if (c.has_settings) {
+                last_type = c.settings.type;
+                if ((uint32_t) events < settings_pos[c.settings.type]) early++;
+            }
         }
     }
     CHECK(events == 40);
     CHECK(got_flushes == flushes);
     CHECK(last_type == 40);
+    CHECK(early == 0);
 }
 
 /* The values travel with the marker: the settings at the time of posting, not at the time of applying. */
@@ -179,28 +191,43 @@ static void test_settings_snapshot(void)
     CHECK(s.next(ev, c) == PRINTER_SPOOL_NONE);
 }
 
+/* A flush posted before the abort is done first, in stream order; what comes after it is discarded. */
 static void test_abort(void)
 {
     PrinterSpool s;
     uint16_t out[64];
     for (int i = 0; i < 10; i++) s.push(EV(1, i));
-    s.post_settings(settings(5));       /* in the discarded range: still applied */
-    s.post_flush();                     /* and still answered */
+    s.post_settings(settings(5));
+    s.post_flush();
     for (int i = 10; i < 15; i++) s.push(EV(1, i));
     s.abort(PRINTER_SPOOL_ABORT_RESET);
     s.push(EV(1, 15));                  /* accepted after the abort: kept */
     s.push(EV(1, 16));
     int n = drain(s, out, 64);
-    CHECK(n == 5);
-    CHECK(out[0] == 0x4001);            /* the abort comes first */
-    CHECK(out[1] == 0x2005 && out[2] == 0x3001);
-    CHECK(out[3] == 0x110F && out[4] == 0x1110);
+    CHECK(n == 10 + 2 + 1 + 2);
+    for (int i = 0; i < 10 && i < n; i++) CHECK(out[i] == (0x1100 | i));    /* up to the flush, in order */
+    CHECK(out[10] == 0x2005 && out[11] == 0x3001);
+    CHECK(out[12] == 0x4001);           /* then the abort, and what the flush did not cover is gone */
+    CHECK(out[13] == 0x110F && out[14] == 0x1110);
     CHECK(s.pending() == 0);
     /* an abort on an empty spool is harmless, and a second one too */
     s.abort(0);
     s.abort(0);
     n = drain(s, out, 64);
     CHECK(n == 1 && out[0] == 0x4000);
+}
+
+/* No flush pending: the abort comes first and everything accepted before it is gone. */
+static void test_abort_without_flush(void)
+{
+    PrinterSpool s;
+    uint16_t out[64];
+    for (int i = 0; i < 10; i++) s.push(EV(1, i));
+    s.post_settings(settings(5));       /* still applied, after the abort */
+    s.abort(PRINTER_SPOOL_ABORT_RESET | PRINTER_SPOOL_ABORT_RELEASE);
+    s.push(EV(1, 15));
+    int n = drain(s, out, 64);
+    CHECK(n == 3 && out[0] == 0x4003 && out[1] == 0x2005 && out[2] == 0x110F);
 }
 
 static void test_small_ring(void)
@@ -210,7 +237,8 @@ static void test_small_ring(void)
     malloc_fails = true;
     CHECK(!s.allocate());
     CHECK(!s.allocated());
-    for (int i = 0; i < PRINTER_SPOOL_FALLBACK_EVENTS; i++) CHECK(s.push(EV(1, i)));   /* never dropped, never waiting */
+    for (int i = 0; i < PRINTER_SPOOL_FALLBACK_EVENTS; i++) CHECK(s.try_push(EV(1, i)));   /* never dropped, never waiting */
+    CHECK(!s.try_push(EV(1, 0)));       /* and full at exactly that */
     CHECK(s.pending() == PRINTER_SPOOL_FALLBACK_EVENTS);
     malloc_fails = false;
     CHECK(s.allocate());                /* the queued events move to the big ring, in order */
@@ -241,13 +269,50 @@ static void test_small_ring(void)
     CHECK(n == 1 && out[0] == 0x4000);
     CHECK(s.allocated());
     /* more queued than the small ring holds: the big one stays */
-    for (int i = 0; i < PRINTER_SPOOL_FALLBACK_EVENTS + 10; i++) s.push(EV(1, i));
+    for (int i = 0; i < PRINTER_SPOOL_FALLBACK_EVENTS + 10; i++) CHECK(s.try_push(EV(1, i)));
     s.release();
     CHECK(s.allocated());
     s.tail = s.head;
     s.release();
     CHECK(!s.allocated());
     CHECK(live_blocks == 0);
+}
+
+/* An abort with release, while more than the small ring holds was accepted after it: the big ring stays. */
+static void test_abort_release_guard(void)
+{
+    PrinterSpool s;
+    CHECK(s.allocate());
+    s.push(EV(1, 1));
+    s.abort(PRINTER_SPOOL_ABORT_RELEASE);
+    for (int i = 0; i < PRINTER_SPOOL_FALLBACK_EVENTS + 952; i++) CHECK(s.try_push(EV(1, i)));
+    uint16_t ev;
+    PrinterSpoolCtl c;
+    CHECK(s.next(ev, c) == PRINTER_SPOOL_ABORT);
+    CHECK(s.allocated());               /* it would not fit the small ring */
+    CHECK(s.pending() == PRINTER_SPOOL_FALLBACK_EVENTS + 952);
+    int bad = 0;
+    for (int i = 0; i < PRINTER_SPOOL_FALLBACK_EVENTS + 952; i++)
+        if (s.next(ev, c) != PRINTER_SPOOL_EVENT || (ev & 0xFF) != (uint16_t)(i & 0xFF)) bad++;
+    CHECK(bad == 0);
+}
+
+/* While the ring moves, the producer and the consumer keep away from it. */
+static void test_migrating(void)
+{
+    PrinterSpool s;
+    uint16_t ev;
+    PrinterSpoolCtl c;
+    CHECK(s.try_push(EV(1, 1)));
+    s.migrating = true;
+    CHECK(!s.try_push(EV(1, 2)));
+    CHECK(s.next(ev, c) == PRINTER_SPOOL_NONE);     /* an event is there, and the consumer stays away */
+    s.post_flush();                     /* posting does not care */
+    CHECK(s.next(ev, c) == PRINTER_SPOOL_NONE);
+    s.migrating = false;
+    CHECK(s.try_push(EV(1, 2)));
+    CHECK(s.next(ev, c) == PRINTER_SPOOL_EVENT);
+    CHECK(s.next(ev, c) == PRINTER_SPOOL_CTRL);
 }
 
 static void *alloc_main(void *arg)
@@ -347,11 +412,12 @@ static void *consumer_main(void *arg)
         } else if (r == PRINTER_SPOOL_ABORT) {
             c->aborts++;
         } else if (r == PRINTER_SPOOL_CTRL) {
-            /* the marker was posted after exactly flushes * 100 events */
-            if (c->events != (uint32_t) ctl.flushes * 100) c->bad++;
+            /* a marker was posted after every 100 events, one flush each */
+            if (c->events % 100 != 0 || ctl.flushes != 1) c->bad++;
             c->markers++;
+            if (ctl.flushes) c->s->flush_done(ctl.flush_gen);
         } else {
-            if (c->stop) return NULL;
+            if (c->stop) { c->s->set_consumer(NULL); return NULL; }
             c->s->wait();
         }
     }
@@ -399,7 +465,7 @@ static void test_lost_wake(void)
         s.push(EV(1, (int)(i - 1)));
         ok = wait_for(c.events, i, 500);
         if (ok && i % 100 == 0) {       /* a marker (one flush) after every 100 events, wait for it */
-            for (uint32_t k = 0; k < i / 100; k++) s.post_flush();
+            s.post_flush();
             ok = wait_for(c.markers, i / 100, 500);
         }
     }
@@ -485,24 +551,197 @@ static void test_posts_never_wait(void)
     if (ok) pthread_join(pt, NULL); else pthread_cancel(pt);
 }
 
-#define RUN(t) do { alarm(30); t; } while (0)
+/* Nobody serves the flush: the menu comes back after the bound, and says it was not done. */
+static void test_flush_bounded(void)
+{
+    PrinterSpool s;
+    s.push(EV(1, 1));
+    TickType_t t0 = xTaskGetTickCount();
+    bool ok = s.flush_and_wait(150);
+    TickType_t used = xTaskGetTickCount() - t0;
+    CHECK(!ok);
+    CHECK(used >= 140 && used < 2000);
+    /* a wake up that was meant for an earlier flush does not end the wait */
+    s.flush_done(0);
+    t0 = xTaskGetTickCount();
+    ok = s.flush_and_wait(150);
+    used = xTaskGetTickCount() - t0;
+    CHECK(!ok);
+    CHECK(used >= 140 && used < 2000);
+    /* the flush is posted, at the right place */
+    uint16_t ev;
+    PrinterSpoolCtl c;
+    int markers = 0, flushes = 0;
+    for (int i = 0; i < 10; i++) {
+        int r = s.next(ev, c);
+        if (r == PRINTER_SPOOL_CTRL) { markers++; flushes += c.flushes; }
+    }
+    CHECK(markers == 1 && flushes == 2);    /* both, at the same position: merged */
+}
+
+static void *serve_main(void *arg)
+{
+    PrinterSpool *s = (PrinterSpool *) arg;
+    s->set_consumer(xTaskGetCurrentTaskHandle());
+    for (int i = 0; i < 1500; i++) {
+        uint16_t ev;
+        PrinterSpoolCtl c;
+        int r = s->next(ev, c);
+        if (r == PRINTER_SPOOL_CTRL && c.flushes) {
+            s->flush_done(c.flush_gen);
+            s->flush_done(c.flush_gen);         /* and a stray wake up behind it */
+        }
+        if (r == PRINTER_SPOOL_NONE) usleep(1000);
+    }
+    s->set_consumer(NULL);
+    return NULL;
+}
+
+/* The flush is served: the menu gets its own answer, in time, whatever else wakes it. */
+static void test_flush_generation(void)
+{
+    PrinterSpool s;
+    pthread_t t;
+    pthread_create(&t, NULL, serve_main, &s);
+    xSemaphoreGive(s.flush_sem);        /* stale */
+    for (int i = 0; i < 20; i++) {
+        s.push(EV(1, i));
+        CHECK(s.flush_and_wait(2000));
+        CHECK(s.done_gen == s.flush_gen);
+    }
+    pthread_join(t, NULL);
+    /* merged flushes: one eject answers both generations */
+    PrinterSpool m;
+    uint32_t g1 = m.post_flush(), g2 = m.post_flush();
+    uint16_t ev;
+    PrinterSpoolCtl c;
+    CHECK(m.next(ev, c) == PRINTER_SPOOL_CTRL && c.flushes == 2 && c.flush_gen == g2);
+    m.flush_done(c.flush_gen);
+    CHECK((int32_t)(m.done_gen - g1) >= 0 && (int32_t)(m.done_gen - g2) >= 0);
+}
+
+struct Stress {
+    PrinterSpool s;
+    std::atomic<uint32_t> consumed;
+    std::atomic<bool> stop;
+    std::atomic<uint32_t> bad;
+    uint32_t produced;
+};
+
+static void *stress_consumer(void *arg)
+{
+    Stress *x = (Stress *) arg;
+    x->s.set_consumer(xTaskGetCurrentTaskHandle());
+    uint32_t expect = 0;
+    for (;;) {
+        uint16_t ev;
+        PrinterSpoolCtl c;
+        int r = x->s.next(ev, c);
+        if (r == PRINTER_SPOOL_EVENT) {
+            if ((ev & 0xFF) != (expect & 0xFF)) x->bad++;
+            expect++;
+            x->consumed++;
+        } else if (r == PRINTER_SPOOL_NONE) {
+            if (x->stop && x->consumed == x->produced) { x->s.set_consumer(NULL); return NULL; }
+            ulTaskNotifyTake(pdTRUE, 5);
+        }
+    }
+}
+
+static void *stress_producer(void *arg)
+{
+    Stress *x = (Stress *) arg;
+    for (uint32_t i = 0; i < 200000; i++) {
+        x->s.push(EV(1, (int) i));
+        x->produced = i + 1;
+    }
+    x->stop = true;
+    return NULL;
+}
+
+/* The ring moves between the small and the big one, with a producer and a consumer running: nothing lost, in order. */
+static void test_migrate_stress(void)
+{
+    Stress *x = new Stress;
+    x->consumed = 0; x->stop = false; x->bad = 0; x->produced = 0;
+    pthread_t pt, ct;
+    pthread_create(&ct, NULL, stress_consumer, x);
+    pthread_create(&pt, NULL, stress_producer, x);
+    int moves = 0;
+    while (!x->stop) {
+        x->s.allocate(8192, 4096);
+        x->s.release();                 /* back when what is queued fits the small ring */
+        moves++;
+        usleep(50);                     /* (a place where the thread can be cancelled) */
+    }
+    pthread_join(pt, NULL);
+    pthread_join(ct, NULL);
+    CHECK(x->bad == 0);
+    CHECK(x->consumed == 200000);
+    CHECK(moves > 0);
+    delete x;
+}
+
+/* Runs one test in a thread and gives it a bounded time: a test that blocks fails a check, it does not hang. */
+struct Bounded {
+    void (*fn)(void);
+    std::atomic<bool> done;
+};
+
+static void *bounded_main(void *arg)
+{
+    Bounded *b = (Bounded *) arg;
+    b->fn();
+    b->done = true;
+    return NULL;
+}
+
+static void run_bounded(const char *name, void (*fn)(void), int seconds)
+{
+    Bounded *b = new Bounded;       /* leaked if the test hangs: its thread still points at it */
+    b->fn = fn;
+    b->done = false;
+    pthread_t t;
+    pthread_create(&t, NULL, bounded_main, b);
+    for (int i = 0; i < seconds * 100 && !b->done; i++)
+        usleep(10000);
+    checks++;
+    if (b->done) {
+        pthread_join(t, NULL);
+        delete b;
+    } else {
+        failures++;
+        printf("FAIL %s: did not finish in %d s (blocked)\n", name, seconds);
+        pthread_cancel(t);
+        pthread_join(t, NULL);
+    }
+}
+#define RUN(t) do { alarm(120); if (getenv("SPOOL_TRACE")) printf("run %s\n", #t); run_bounded(#t, t, 10); } while (0)
 
 int main(void)
 {
+    setvbuf(stdout, NULL, _IOLBF, 0);
     signal(SIGALRM, on_alarm);
-    RUN(test_ordering());
-    RUN(test_wrap(0));
-    RUN(test_wrap(0xFFFFFFF0u));
-    RUN(test_coalesce_and_exhaustion());
-    RUN(test_settings_snapshot());
-    RUN(test_abort());
-    RUN(test_small_ring());
-    RUN(test_allocate_race());
-    RUN(test_alloc_hook());
-    RUN(test_marker_race());
-    RUN(test_posts_never_wait());
-    RUN(test_full_ring());
-    RUN(test_lost_wake());
+    printf("%s\n", "start");
+    RUN(test_ordering);
+    RUN(test_wrap_0);
+    RUN(test_wrap_ovf);
+    RUN(test_coalesce_and_exhaustion);
+    RUN(test_settings_snapshot);
+    RUN(test_abort);
+    RUN(test_abort_without_flush);
+    RUN(test_small_ring);
+    RUN(test_abort_release_guard);
+    RUN(test_migrating);
+    RUN(test_allocate_race);
+    RUN(test_alloc_hook);
+    RUN(test_marker_race);
+    RUN(test_posts_never_wait);
+    RUN(test_full_ring);
+    RUN(test_flush_bounded);
+    RUN(test_flush_generation);
+    RUN(test_lost_wake);
+    RUN(test_migrate_stress);
     printf("%d checks, %d failures\n", checks, failures);
     return failures ? 1 : 0;
 }

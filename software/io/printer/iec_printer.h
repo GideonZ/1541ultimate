@@ -48,7 +48,9 @@
 #define IEC_PRINTER_EVENT_CMD   0
 
 /* How long the Flush/Eject menu item waits for the printer task */
+#ifndef IEC_PRINTER_FLUSH_WAIT_MS
 #define IEC_PRINTER_FLUSH_WAIT_MS 20000
+#endif
 
 /* Max text lines in a page */
 #define IEC_PRINTER_PAGE_LINES	70
@@ -126,9 +128,6 @@ class IecPrinter : public IecSlave, SubSystem, ObjectWithMenu, ConfigurableObjec
         /* Spool that carries the IEC data, and the menu and settings markers, to the printer task */
         PrinterSpool spool;
 
-        /* Binary semaphore to hold the action menu caller Task, given when a Flush/Eject is done */
-        SemaphoreHandle_t xCallerSemaphore;
-
         /*==============================================*/
         /*                 M E T H O D S                */
         /*==============================================*/
@@ -138,6 +137,7 @@ class IecPrinter : public IecSlave, SubSystem, ObjectWithMenu, ConfigurableObjec
         t_channel_retval _push_data(uint8_t b);
         t_channel_retval _push_command(uint8_t b);
         int _reset(void);
+        int _abort(uint8_t kinds);
         void apply_settings(const PrinterSettings &s);
 
         /* -------  User action menu */

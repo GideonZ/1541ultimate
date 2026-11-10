@@ -19,6 +19,10 @@ typedef uint32_t TickType_t;
 #define pdTRUE 1
 #define pdPASS pdTRUE
 #define portMAX_DELAY 0xFFFFFFFFUL
+#define portTICK_PERIOD_MS 1
+#define configMINIMAL_STACK_SIZE 512
+#define PRIO_BACKGROUND 1
+typedef void (*TaskFunction_t)(void *);
 
 // One process-wide lock, as the critical section excludes the other tasks on the device.
 inline pthread_mutex_t *host_rtos_lock(void)
@@ -108,6 +112,58 @@ static inline void vTaskDelay(TickType_t ticks)
 {
     host_rtos_sleeps()++;
     usleep(ticks * 1000);
+}
+
+
+static inline TickType_t xTaskGetTickCount(void)
+{
+    struct timespec t;
+    clock_gettime(CLOCK_MONOTONIC, &t);
+    return (TickType_t)(t.tv_sec * 1000UL + t.tv_nsec / 1000000UL);
+}
+
+// Binary semaphore: a count of 0 or 1, take waits at most 'ticks'.
+struct HostSem {
+    pthread_mutex_t lock;
+    pthread_cond_t changed;
+    int count;
+    HostSem() : count(0)
+    {
+        pthread_mutex_init(&lock, NULL);
+        pthread_cond_init(&changed, NULL);
+    }
+};
+typedef HostSem *SemaphoreHandle_t;
+static inline SemaphoreHandle_t xSemaphoreCreateBinary(void) { return new HostSem; }
+static inline void vSemaphoreDelete(SemaphoreHandle_t s) { delete s; }
+static inline BaseType_t xSemaphoreGive(SemaphoreHandle_t s)
+{
+    pthread_mutex_lock(&s->lock);
+    s->count = 1;
+    pthread_cond_signal(&s->changed);
+    pthread_mutex_unlock(&s->lock);
+    return pdTRUE;
+}
+static inline BaseType_t xSemaphoreTake(SemaphoreHandle_t s, TickType_t ticks)
+{
+    struct timespec dl;
+    clock_gettime(CLOCK_REALTIME, &dl);
+    dl.tv_sec += ticks / 1000;
+    dl.tv_nsec += (long)(ticks % 1000) * 1000000L;
+    if (dl.tv_nsec >= 1000000000L) { dl.tv_sec++; dl.tv_nsec -= 1000000000L; }
+    pthread_mutex_lock(&s->lock);
+    while (s->count == 0) {
+        if (ticks == 0)
+            break;
+        if (ticks == portMAX_DELAY)
+            pthread_cond_wait(&s->changed, &s->lock);
+        else if (pthread_cond_timedwait(&s->changed, &s->lock, &dl) == ETIMEDOUT)
+            break;
+    }
+    BaseType_t got = s->count ? pdTRUE : pdFALSE;
+    s->count = 0;
+    pthread_mutex_unlock(&s->lock);
+    return got;
 }
 
 #endif

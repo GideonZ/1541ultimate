@@ -175,7 +175,7 @@ void IecPrinter::effectuate_settings(void)
 
     /* Switched off: what was accepted and not printed yet is lost, as in a printer */
     if (enable_changed && !new_enable)
-        spool.abort(PRINTER_SPOOL_ABORT_RELEASE);
+        spool.abort(PRINTER_SPOOL_ABORT_RESET | PRINTER_SPOOL_ABORT_RELEASE);
 
     if (taskHandle)
         spool.post_settings(s);
@@ -314,7 +314,7 @@ SubsysResultCode_e IecPrinter::executeCommand(SubsysCommand *cmd)
             printer_enable = 0;
             cfg->set_value(CFG_PRINTER_ENABLE, printer_enable);
             iec_if->configure();
-            spool.abort(PRINTER_SPOOL_ABORT_RELEASE);   /* what is not printed yet is lost, the ring is given back */
+            spool.abort(PRINTER_SPOOL_ABORT_RESET | PRINTER_SPOOL_ABORT_RELEASE);   /* what is not printed yet is lost, the ring is given back */
             break;
 
         case MENU_PRINTER_FLUSH:
@@ -328,7 +328,13 @@ SubsysResultCode_e IecPrinter::executeCommand(SubsysCommand *cmd)
             -*/
 
             cmd_ui->show_progress("Flushing/Ejecting page...", is_color ? 20 : 8);
-            xSemaphoreTake( xCallerSemaphore, portMAX_DELAY); /* Wait end of printer job */
+
+            /*-
+             *  Post the flush and wait for the printer task to do it, but not for ever: when the
+             *  backlog is longer than IEC_PRINTER_FLUSH_WAIT_MS this dialog closes and the page is
+             *  ejected when the printer task gets there (in stream order) all the same.
+            -*/
+            spool.flush_and_wait(IEC_PRINTER_FLUSH_WAIT_MS);
             cmd_ui->hide_progress();
             break;
 
@@ -419,9 +425,6 @@ IecPrinter::IecPrinter() : SubSystem(SUBSYSID_PRINTER)
     slot_id = interface->register_slave(this);
     interface->configure();
 
-    /* Initially, no caller task */
-    xCallerSemaphore = xSemaphoreCreateBinary();
-
     /* Create the task, storing the handle. */
     xTaskCreate((TaskFunction_t) IecPrinter::task, "Virtual Printer",
                 configMINIMAL_STACK_SIZE, this,
@@ -452,8 +455,6 @@ IecPrinter::~IecPrinter()
     /* Remove the spool */
     spool.release();
 
-    /* Remove semaphore */
-    vSemaphoreDelete( xCallerSemaphore );
     /* Close/flush output file */
     close_file();
 }
@@ -677,6 +678,20 @@ int IecPrinter::_reset(void)
     return IEC_OK;
 }
 
+/* The backlog has been discarded: a RAW or ASCII file does not stay open, and what was in the buffer is lost. */
+int IecPrinter::_abort(uint8_t kinds)
+{
+    buffer_pointer = 0;
+
+    if (output_type != PRINTER_PNG_OUTPUT)
+        close_file();
+
+    if (kinds & PRINTER_SPOOL_ABORT_RESET)
+        _reset();
+
+    return IEC_OK;
+}
+
 /************************************************************************
 *                                   task()                      Static  *
 *                                   ~~~~~~                              *
@@ -719,14 +734,13 @@ void IecPrinter::task(IecPrinter *p)
                 if (ctl.flushes)
                 {
                     p->flush();
-                    xSemaphoreGive(p->xCallerSemaphore);
+                    p->spool.flush_done(ctl.flush_gen);
                 }
                 break;
 
             case PRINTER_SPOOL_ABORT:
-                /* The backlog is gone already */
-                if (ctl.abort_kinds & PRINTER_SPOOL_ABORT_RESET)
-                    p->_reset();
+                /* The backlog is gone already; so is what the printer had half done */
+                p->_abort(ctl.abort_kinds);
                 break;
 
             default:
