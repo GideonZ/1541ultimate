@@ -214,7 +214,10 @@ public:
     static int isMP3RamDrive(int dev);
     static int getSizeOfMP3NativeRamdrive(int dev);
     static uint8_t *get_cartridge_rom_addr(void);
+private:
+    // Private, as in io/c64/c64.h; only the friends below may call it.
     void get_all_memory(uint8_t *pb);   // runs uci_fake_all_memory_hook, if set
+    friend class ControlTarget;         // SAVEMEM saves through get_all_memory
 };
 
 extern void (*uci_fake_all_memory_hook)(uint8_t *);
