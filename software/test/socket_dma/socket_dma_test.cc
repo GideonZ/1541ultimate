@@ -425,6 +425,25 @@ static void t_unauthenticated_idle(void)
            describe(r));
 }
 
+// With a password set, a client that has not authenticated is dropped at once for any command but
+// AUTHENTICATE: its payload is not read, so a header that announces a large payload does not hold
+// the only slot while the server waits for the bytes.
+static void t_unauthenticated_command(void)
+{
+    strcpy(cfg_password, "pw");
+    int fd = client_connect();
+    send_all(fd, header(CMD_RUN_CRT, 0x100000, true));
+    bool closed;
+    auto t0 = std::chrono::steady_clock::now();
+    drain(fd, STALL + 3000, &closed);
+    long ms = (long)std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count();
+    close(fd);
+    cfg_password[0] = 0;
+    std::vector<Rec> r = take_recs();
+    report("unauthenticated_command_is_dropped_without_reading_its_payload", closed && ms < 1000 && r.empty(),
+           std::string("closed ") + (closed ? "yes" : "no") + " after " + std::to_string(ms) + " ms, " + std::to_string(r.size()) + " actions");
+}
+
 static void t_disable_while_idle(SocketDMA *dma)
 {
     std::vector<uint8_t> p = payload(100, 10);
@@ -463,6 +482,7 @@ int main(int argc, char **argv)
     t_one_header_byte_then_silence();
     t_trickle();
     t_unauthenticated_idle();
+    t_unauthenticated_command();
     t_disable_while_idle(dma);
     printf("socket_dma: %d passed, %d failed\n", passes, failures);
     fflush(stdout);

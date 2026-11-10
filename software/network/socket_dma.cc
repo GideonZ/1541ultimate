@@ -519,6 +519,9 @@ void SocketDMA::dmaThread(void *a)
 	            printf("Illegal command: %04x\n", cmd);
 	            continue;
 	        }
+	        if (!authenticated && cmd != SOCKET_CMD_AUTHENTICATE) {
+	            break;  // performCommand refuses it; do not read its payload first
+	        }
 
 	        n = readSocket(newsockfd, buf, 2, &daemon->dmaEnabled, false);
             if (n <= 0) {
