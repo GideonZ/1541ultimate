@@ -425,7 +425,6 @@ def innermost_frames(rows: Sequence[str]) -> list[Frame]:
         and box[2] <= other[2] and other[3] <= box[3] for other in boxes)]
 
 
-
 def framed_list_selections(rows: Sequence[str], colour_at: Callable[[int, int], object],
                            remembered: object | None = None,
                            ) -> tuple[dict[Frame, tuple[int, str, list[str]]], object | None]:
