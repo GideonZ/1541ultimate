@@ -9,9 +9,10 @@ palette:
 	$(CXX) $(CXXFLAGS) palette_command_test.cpp -o paletteCommandTest
 	./paletteCommandTest
 
+# CI preloads a library; the sanitizer runtime has to be the first one loaded
 uci-deferral:
 	$(CXX) $(UCI_FLAGS) uci_deferral_test.cpp ../command_intf.cc -lpthread -o uciDeferralTest
-	./uciDeferralTest
+	env -u LD_PRELOAD ./uciDeferralTest
 
 clean:
 	rm -f paletteCommandTest uciDeferralTest
