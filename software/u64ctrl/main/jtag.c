@@ -291,7 +291,7 @@ static void set_user_ir(uint8_t ir)
 
 uint32_t vji_get_user_code()
 {
-    uint32_t user_id;
+    uint32_t user_id = 0;  // shifted out as the data of the read
     set_user_ir(VJI_USERID);
     // do NOT go to shift_dr again, we are already there
     jtag_send_dr_data((uint8_t *)&user_id, 32, (uint8_t *)&user_id);
@@ -436,9 +436,11 @@ void jtag_fpga_clear(void)
     jtag_reset_to_idle();
 }
 
-void vji_set_outputs(uint8_t value)
+uint8_t vji_set_outputs(uint8_t value)
 {
+    uint8_t before = 0;
     set_user_ir(VJI_GPIOOUT);
     // do NOT go to shift_dr again, we are already there
-    jtag_send_dr_data(&value, 8, NULL);
+    jtag_send_dr_data(&value, 8, &before);
+    return before;  // what the register held before this write
 }
