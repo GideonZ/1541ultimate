@@ -95,4 +95,15 @@ public:
 
 extern CommandInterface cmd_if;
 
+// True once the C64 has been reset, until the UCI task has told the targets.
+bool c64_reset_is_pending(void);
+
+// For a long command to ask between steps: has the C64 aborted it (the abort
+// bit is live in the status byte), or been reset? The UCI task handles both as
+// usual once the command returns.
+static inline bool uci_should_stop(void)
+{
+    return ((CMD_IF_STATUSBYTE & CMD_ABORT_DATA) != 0) || c64_reset_is_pending();
+}
+
 #endif
