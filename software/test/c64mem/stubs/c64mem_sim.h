@@ -1,4 +1,4 @@
-// Host stand-ins for what u64/u64_machine.cc and u64/c64_window.h use: the C64 memory window
+// Host stand-ins for what u64/u64_machine.cc uses: the C64 memory window
 // is a plain array, C64_DMA_MEMONLY records who sets it, and the critical-section and
 // scheduler-suspend calls let the test see how many bytes of C64 memory move inside each.
 #ifndef C64MEM_SIM_H

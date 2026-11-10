@@ -13,8 +13,6 @@
 #if U64
 #include "u64_config.h"
 #include "u64.h"
-#include "task.h"
-#include "c64_window.h"
 #else
 #include "audio_select.h"
 #endif
@@ -531,14 +529,9 @@ void ControlTarget :: save_u64_memory(Message *command)
         printf("Opened file successfully.\n");
 
         uint8_t *dest = new uint8_t[65536];
-        // From the running machine, as the command always did. With the scheduler suspended
-        // rather than in a critical section: no other task touches the window or the mode
-        // meanwhile, and interrupts are served (see U64Machine::get_all_memory).
-        vTaskSuspendAll();
-        c64_ram_copy_begin();
-        memcpy(dest, (const void *)C64_MEMORY_BASE, 65536);
-        c64_ram_copy_end();
-        xTaskResumeAll();
+        // The same copy as "Save C64 Memory": the machine is stopped for it, so the 64K are one
+        // moment of the C64 and the C64 raises no interrupt while the scheduler is suspended.
+        C64 :: getMachine()->get_all_memory(dest);
         uint32_t bytes_written;
 
         res = f->write(dest, 0x10000, &bytes_written);

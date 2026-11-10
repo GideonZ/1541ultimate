@@ -2,10 +2,7 @@
 #include "u64_machine.h"
 #include "FreeRTOS.h"
 #include "task.h"
-#include "c64_window.h"
 #include <string.h>
-
-volatile uint8_t c64_ram_copy_active = 0;   // see c64_window.h
 
 namespace {
 
@@ -188,12 +185,11 @@ void U64Machine :: after_memory_access(uint8_t *pb, bool freezerMenu, bool stopp
     }
 }
 
-// clear_ram and get_all_memory move all 64K through the C64 memory window, about 68 ms.
-// They do it with the scheduler suspended rather than in a critical section: no other task
-// can touch the window or C64_DMA_MEMONLY meanwhile, which is the exclusion the critical
-// section gave, and interrupts are still served. The one interrupt handler that uses the
-// window, U64Config::unlock_irq, puts the mode back itself while c64_ram_copy_active says a copy
-// has MEMONLY set (c64_window.h).
+// clear_ram and get_all_memory move all 64K through the C64 memory window, about 68 ms, with the
+// C64 stopped. They do it with the scheduler suspended rather than in a critical section: no other
+// task can touch the window or C64_DMA_MEMONLY meanwhile, which is the exclusion the critical
+// section gave, and interrupts are still served. With the C64 stopped, nothing it does can raise the
+// one interrupt that uses the window (U64Config::unlock_irq, raised by the C64's unlock write).
 void U64Machine :: get_all_memory(uint8_t *pb)
 {
     // RAM only: through the bus a frozen machine shows the freezer's Ultimax cart, a running one its ROMs and I/O.
@@ -203,9 +199,9 @@ void U64Machine :: get_all_memory(uint8_t *pb)
         stop(false);
     }
     vTaskSuspendAll();
-    c64_ram_copy_begin();
+    C64_DMA_MEMONLY = 1;
     memcpy(pb, (uint8_t *)C64_MEMORY_BASE, 65536);
-    c64_ram_copy_end();
+    C64_DMA_MEMONLY = 0;
     xTaskResumeAll();
     if (stopped_it) {
         resume();
@@ -389,10 +385,9 @@ void U64Machine :: clear_ram()
         stop(false);
     }
     vTaskSuspendAll(); // see get_all_memory
-    c64_ram_copy_begin();
+    C64_DMA_MEMONLY = 1;
     memcpy((uint8_t*)ram, _raminit_bin_start, 65536);
-    (void)ram[0xFFFF]; // a window write does not stall on the bus: let the last one land before the mode changes
-    c64_ram_copy_end();
+    C64_DMA_MEMONLY = 0;
     xTaskResumeAll();
     if (!freezerMenu) {
         resume();
