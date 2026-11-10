@@ -85,8 +85,6 @@ public:
     bool RadioOffAwaited(void) { return radio_switch.awaiting_off; }
     // Whether "WiFi Enabled" as on differs from what the WiFi task applied last
     bool RadioSettingChanged(bool on) { return radio_setting_applied != (on ? 1 : 0); }
-    // The WiFi task applied Enabled last, and no change of the setting waits for it
-    bool RadioSettingAppliedOn(void) { return (radio_setting_applied == 1) && !radio_setting_due; }
     const char *getLastAP(void) { return (state == eWifi_Connected) ? last_ap : "-"; }
     const char *getModuleName(void) { return moduleName; }
     const char *getModuleType(void) { return moduleType; }

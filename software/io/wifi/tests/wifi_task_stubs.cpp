@@ -362,7 +362,6 @@ bool NetworkLWIP_WiFi :: enabled_in_config(void)
 void U64Config :: pushPowerOnMode(void) {}
 void U64Config :: pushWakeOnWifi(void) {}
 void U64Config :: pushRecoveryUrl(void) {}
-bool U64Config :: getWakeOnWifi(void) { return world.wake_on_wifi; }
 
 void WiFi :: RefreshRoot() {}
 int ap_refreshes;
