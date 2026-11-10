@@ -70,11 +70,13 @@ static int drain(PrinterSpool &s, uint16_t *out, int max)
         } else if (r == PRINTER_SPOOL_ABORT) {
             out[n++] = 0x4000 | c.abort_kinds;
         } else {
+            if (c.flush_first && c.flushes)
+                out[n++] = 0x3000 | c.flushes;
             if (c.has_settings) {
                 CHECK(strcmp(c.settings.filename, "file") != 0);
                 out[n++] = 0x2000 | c.settings.type;
             }
-            if (c.flushes)
+            if (!c.flush_first && c.flushes)
                 out[n++] = 0x3000 | c.flushes;
         }
     }
@@ -313,6 +315,76 @@ static void test_migrating(void)
     CHECK(s.try_push(EV(1, 2)));
     CHECK(s.next(ev, c) == PRINTER_SPOOL_EVENT);
     CHECK(s.next(ev, c) == PRINTER_SPOOL_CTRL);
+}
+
+/* Turn On while the printer task is giving the big ring back (Turn Off): the printer ends up on a big ring. */
+static PrinterSpool *turnon_spool;
+static pthread_t turnon_thread;
+static void *turnon_main(void *) { turnon_spool->allocate(); return NULL; }
+static void turn_on_now(void)
+{
+    pthread_create(&turnon_thread, NULL, turnon_main, NULL);    /* the task that preempts the printer task here */
+    usleep(50000);                      /* it gets as far as it can while the move is not done */
+}
+
+static void test_turn_on_during_release(void)
+{
+    PrinterSpool s;
+    turnon_spool = &s;
+    CHECK(s.allocate());
+    s.abort(PRINTER_SPOOL_ABORT_RESET | PRINTER_SPOOL_ABORT_RELEASE);   /* Turn Off */
+    uint16_t ev;
+    PrinterSpoolCtl c;
+    host_rtos_exit_hook() = turn_on_now;    /* ... and Turn On, between the printer task's check and its copy */
+    CHECK(s.next(ev, c) == PRINTER_SPOOL_ABORT);
+    host_rtos_exit_hook() = NULL;
+    pthread_join(turnon_thread, NULL);
+    CHECK(s.allocated());
+    CHECK(s.mask == PRINTER_SPOOL_EVENTS - 1);
+    CHECK(live_blocks == 1);
+    CHECK(s.try_push(EV(1, 1)));
+}
+
+/* A settings change never ends up before a flush that was posted first, also when the marker list is full. */
+static void test_settings_after_flush_when_full(void)
+{
+    PrinterSpool s;
+    uint16_t out[64];
+    for (int i = 0; i < PRINTER_SPOOL_CTRL_DEPTH; i++) { s.push(EV(1, i)); s.post_flush(); }   /* full, a flush in each */
+    s.push(EV(1, 8));
+    s.post_settings(settings(9));       /* the page before this keeps the old settings */
+    int n = drain(s, out, 64);
+    int flush_at = -1, settings_at = -1;
+    for (int i = 0; i < n; i++) {
+        if ((out[i] & 0xF000) == 0x3000) flush_at = i;
+        if ((out[i] & 0xF000) == 0x2000) settings_at = i;
+    }
+    CHECK(settings_at >= 0 && flush_at >= 0);
+    CHECK(flush_at < settings_at);      /* the flush is done, then the settings are applied */
+    /* and the flushes are all there */
+    int flushes = 0;
+    for (int i = 0; i < n; i++) if ((out[i] & 0xF000) == 0x3000) flushes += out[i] & 0xFF;
+    CHECK(flushes == PRINTER_SPOOL_CTRL_DEPTH);
+}
+
+/* A flush that an abort waits for is not pushed past the abort by a merge. */
+static void test_merge_keeps_held_flush(void)
+{
+    PrinterSpool s;
+    uint16_t out[64];
+    for (int i = 0; i < PRINTER_SPOOL_CTRL_DEPTH; i++) { s.push(EV(1, i)); s.post_flush(); }   /* full */
+    s.abort(PRINTER_SPOOL_ABORT_RESET);
+    s.push(EV(1, 20));                  /* accepted after the abort */
+    s.post_flush();                     /* the list is full: merged into the newest, which the abort waits for */
+    int n = drain(s, out, 64);
+    int abort_at = -1, flushes_before_abort = 0;
+    for (int i = 0; i < n; i++) {
+        if ((out[i] & 0xF000) == 0x4000) abort_at = i;
+        if (abort_at < 0 && (out[i] & 0xF000) == 0x3000) flushes_before_abort += out[i] & 0xFF;
+    }
+    CHECK(abort_at >= 0);
+    CHECK(flushes_before_abort == PRINTER_SPOOL_CTRL_DEPTH + 1);    /* every flush is done before the abort */
+    CHECK(out[n - 1] == 0x1114);        /* what was accepted after the abort is kept */
 }
 
 static void *alloc_main(void *arg)
@@ -735,6 +807,9 @@ int main(void)
     RUN(test_migrating);
     RUN(test_allocate_race);
     RUN(test_alloc_hook);
+    RUN(test_turn_on_during_release);
+    RUN(test_settings_after_flush_when_full);
+    RUN(test_merge_keeps_held_flush);
     RUN(test_marker_race);
     RUN(test_posts_never_wait);
     RUN(test_full_ring);

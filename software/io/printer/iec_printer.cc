@@ -728,6 +728,14 @@ void IecPrinter::task(IecPrinter *p)
                 break;
 
             case PRINTER_SPOOL_CTRL:
+                /* A flush that was posted before the settings changed is done with the old settings */
+                if (ctl.flush_first && ctl.flushes)
+                {
+                    p->flush();
+                    p->spool.flush_done(ctl.flush_gen);
+                    ctl.flushes = 0;
+                }
+
                 if (ctl.has_settings)
                     p->apply_settings(ctl.settings);
 

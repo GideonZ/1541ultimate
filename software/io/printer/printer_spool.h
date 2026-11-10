@@ -14,6 +14,8 @@
  * so a marker and the event behind it are never seen out of order, whatever task is
  * posting. Moving the queued events to another ring (up to 4 KB) is done with interrupts
  * on: a 'migrating' flag keeps the producer and the consumer away from the ring meanwhile.
+ * The IEC task, in push(), waits out such a move (a copy of at most 4 KB) with whatever locks
+ * it holds at that moment, like it waits for a full ring.
  *
  * Markers (never blocking, at most PRINTER_SPOOL_CTRL_DEPTH queued):
  *   settings  a snapshot of the values, applied when the consumer reaches the position
@@ -23,7 +25,10 @@
  * full, a new marker is merged into the newest one AND that one moves to the current
  * position: a merge only ever moves an effect later (the older values apply after more
  * bytes than they should, and the values in between are lost), never earlier. That only
- * happens after PRINTER_SPOOL_CTRL_DEPTH changes within one backlog.
+ * happens after PRINTER_SPOOL_CTRL_DEPTH changes within one backlog. Settings merged into a
+ * marker that has a flush are applied after that flush (flush_first), so the page accepted
+ * before the change is ejected with the old settings. The marker of a flush that a pending
+ * abort waits for is not moved: a merge into it keeps its position.
  *
  * abort(): everything accepted so far is discarded (the consumer jumps to the head as it
  * was when abort() was called) and the consumer is told, ahead of anything else. A Flush
@@ -83,6 +88,7 @@ struct PrinterSpoolCtl {
     bool has_settings;
     PrinterSettings settings;
     uint8_t flushes;
+    bool flush_first;       /* with settings and a flush: the flush is done before the settings are applied */
     uint32_t flush_gen;     /* the newest flush this marker stands for */
     uint8_t abort_kinds;    /* for PRINTER_SPOOL_ABORT */
 };
@@ -134,7 +140,7 @@ public:
     {
         PRINTER_SPOOL_ENTER();
         abort_kinds &= ~PRINTER_SPOOL_ABORT_RELEASE;    /* a Turn Off still on its way must not take it back */
-        bool have = (big != NULL);
+        bool have = (big != NULL && !migrating);        /* a ring on its way back to the small one is not 'have' */
         PRINTER_SPOOL_EXIT();
         if (have)
             return true;
@@ -153,17 +159,17 @@ public:
         }
         for (;;) {
             PRINTER_SPOOL_ENTER();
-            if (big) {                                  /* another task was faster */
-                PRINTER_SPOOL_EXIT();
-                PRINTER_SPOOL_FREE(r);
-                return true;
-            }
             if (!migrating) {
+                if (big) {                              /* another task was faster */
+                    PRINTER_SPOOL_EXIT();
+                    PRINTER_SPOOL_FREE(r);
+                    return true;
+                }
                 migrating = true;
                 PRINTER_SPOOL_EXIT();
                 break;
             }
-            PRINTER_SPOOL_EXIT();               /* the ring is moving (a release, or another allocate) */
+            PRINTER_SPOOL_EXIT();               /* the ring is moving (a release, or another allocate): see what it ends up as */
             vTaskDelay(1);
         }
         migrate(r, n - 1, r);
@@ -220,6 +226,8 @@ public:
         PrinterSpoolCtl *c = slot(true);
         c->settings = s;
         c->has_settings = true;
+        if (c->flushes)
+            c->flush_first = true;      /* only when the list was full: the flush was posted first and stays first */
         PRINTER_SPOOL_EXIT();
         wake();
     }
@@ -361,7 +369,9 @@ private:
             if (n->pos == head && !(for_settings && n->flushes))
                 return n;
             if (ctl_count == PRINTER_SPOOL_CTRL_DEPTH) {
-                n->pos = head;              /* the merged marker moves later, never earlier */
+                /* the merged marker moves later, never earlier; but a flush that an abort waits for stays where it is */
+                if (!(abort_kinds && abort_hold_valid && n->pos == abort_hold))
+                    n->pos = head;
                 return n;
             }
         }
@@ -369,6 +379,7 @@ private:
         c->pos = head;
         c->has_settings = false;
         c->flushes = 0;
+        c->flush_first = false;
         c->flush_gen = 0;
         c->abort_kinds = 0;
         ctl_count = ctl_count + 1;
