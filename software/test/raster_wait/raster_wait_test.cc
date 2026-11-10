@@ -1,8 +1,12 @@
 /*
  * Host test of the raster wait in C64::resume() (io/c64/c64.cc). Leaving the menu,
- * resume() waits until the VIC raster reaches the line before the bad line the C64
- * was stopped on; the gateware then releases the CPU on the next bad line, which is
- * that same line. The test runs raster_wait_for_line() from raster_wait.h, the
+ * resume() waits until the VIC raster reaches the line before the line the C64 was
+ * stopped on, then releases the CPU. The cartridge gateware
+ * (fpga/cart_slot/vhdl_source/slot_master_v4.vhd) releases it on the next bad line,
+ * which is the stop line. The Ultimate 64 and C64 Ultimate release it at once, on the
+ * wait line, one line before the stop line (measured on both; their core is not in
+ * this tree). The test checks the wait itself: it must end on that wait line, never
+ * earlier and never a frame late. It runs raster_wait_for_line() from raster_wait.h, the
  * function c64.cc calls, against a VIC whose raster advances one line every 50
  * register reads (a line is 63 us), for every bad line the C64 can stop on and
  * every line resume() can start on. The register reads straddle line changes as
@@ -61,7 +65,7 @@ int main()
     }
     // Bad lines: the frame has them only if DEN ($D011 bit 4) is set during line $30.
     // resume() writes $D011 for the wait, waits, then restores the program's $D011;
-    // the gateware releases the CPU on the next bad line, which must be the stop line.
+    // the cartridge gateware releases the CPU on the next bad line, which must be the stop line.
     const uint8_t prog_d011 = 0x1B;   // DEN on, 25 rows, YSCROLL 3: bad lines where (line & 7) == 3
     int den_cases = 0, den_failures = 0;
     for (int s = 0; s < 2; s++) {
