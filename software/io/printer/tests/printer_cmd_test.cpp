@@ -153,6 +153,24 @@ static void test_reset(void)
     CHECK(rec.configure == configures);         /* and does not touch the bus */
 }
 
+/* RAW -> PNG -> RAW with no byte between (settings changed through the configuration): each change is carried out,
+ * so the file is closed by the first and the page ejected by the second, as the old firmware did at once. */
+static void test_toggle_burst(void)
+{
+    rec.reset();
+    host_cfg = new ConfigStore;
+    configure_printer(0);                       /* RAW */
+    host_start_tasks = true;
+    IecPrinter *p = new IecPrinter;
+    for (int i = 0; i < 300; i++) p->push_data('B');
+    CHECK(wait_until([] { return rec.file_is_open == 1; }, 2000));
+    host_cfg->values[0x32] = 2; p->effectuate_settings();     /* PNG */
+    host_cfg->values[0x32] = 0; p->effectuate_settings();     /* RAW */
+    CHECK(wait_until([] { return rec.file_closes >= 1; }, 2000));   /* RAW -> PNG closed the file */
+    CHECK(wait_until([] { return rec.form_feed >= 1; }, 2000));     /* PNG -> RAW ejected the page */
+    CHECK(rec.form_feed == 1 && rec.file_closes == 1);
+}
+
 /* One test in a thread with a bounded time: a test that blocks fails a check, it does not hang. */
 struct Bounded {
     void (*fn)(void);
@@ -193,6 +211,7 @@ int main(void)
     RUN(test_flush_bounded);
     RUN(test_turn_off);
     RUN(test_reset);
+    RUN(test_toggle_burst);
     printf("%d checks, %d failures\n", checks, failures);
     return failures ? 1 : 0;
 }

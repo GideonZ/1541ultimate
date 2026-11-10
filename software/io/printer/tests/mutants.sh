@@ -67,6 +67,9 @@ spool release-size-guard-removed 's/if \(big && !migrating && \(uint32_t\)\(head
 # --- markers
 # (settings-not-ordered, a new marker for settings behind a flush, is covered by flush_first now: same behaviour, so no mutant)
 spool merge-moves-earlier 's/\n\s+if \(!\(abort_kinds && abort_hold_valid && n->pos == abort_hold\)\)\n\s+n->pos = head;//' || bad=1
+spool settings-coalesced   's/same_settings\(n->settings, s\)/true/; s/if \(!for_settings && n->pos == head\)/if (n->pos == head)/' || bad=1
+spool settings-merge-no-flag 's/\n\s+c->type_changed = true;[^\n]*//' || bad=1
+spool duplicate-settings-not-dropped 's/same_settings\(n->settings, s\)/false/' || bad=1
 spool settings-before-flush-when-full 's/\n\s+if \(c->flushes\)\n\s+c->flush_first = true;[^\n]*//' || bad=1
 spool merge-moves-held-flush 's/if \(!\(abort_kinds && abort_hold_valid && n->pos == abort_hold\)\)\n(\s+)n->pos = head;/n->pos = head;/' || bad=1
 spool post-waits-when-full 's/if \(ctl_count == PRINTER_SPOOL_CTRL_DEPTH\) \{\n\s+\/\*[^\n]*\*\/\n\s+if \(!\(abort[^\n]*\n\s+n->pos = head;\n\s+return n;\n\s+\}/if (ctl_count == PRINTER_SPOOL_CTRL_DEPTH) { PRINTER_SPOOL_EXIT(); for (;;) vTaskDelay(1); }/' || bad=1
@@ -83,5 +86,6 @@ printer turn-off-without-reset  's/spool\.abort\(PRINTER_SPOOL_ABORT_RESET \| PR
 printer turn-off-without-release 's/spool\.abort\(PRINTER_SPOOL_ABORT_RESET \| PRINTER_SPOOL_ABORT_RELEASE\);   \/\* what/spool.abort(PRINTER_SPOOL_ABORT_RESET);   \/* what/' || bad=1
 printer reset-without-reset     's/spool\.abort\(PRINTER_SPOOL_ABORT_RESET\);   \/\* what is not printed yet is lost \*\//spool.abort(0);/' || bad=1
 printer abort-leaves-file-open  's/(buffer_pointer = 0;\n\n    if \(output_type != PRINTER_PNG_OUTPUT\)\n)        close_file\(\);/$1        ;/' || bad=1
+printer type-changed-not-flushed 's/if \(ctl\.type_changed\)\n\s+p->flush\(\);//' || bad=1
 printer task-does-not-publish-flush 's/p->spool\.flush_done\(ctl\.flush_gen\);//g' || bad=1
 exit $bad

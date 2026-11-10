@@ -736,6 +736,10 @@ void IecPrinter::task(IecPrinter *p)
                     ctl.flushes = 0;
                 }
 
+                /* The output type changed more than once in this marker: what a toggle does, done once */
+                if (ctl.type_changed)
+                    p->flush();
+
                 if (ctl.has_settings)
                     p->apply_settings(ctl.settings);
 

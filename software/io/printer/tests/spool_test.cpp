@@ -136,10 +136,11 @@ static void test_coalesce_and_exhaustion(void)
     s.post_flush();
     s.post_flush();                     /* same position: one marker, count 2 */
     s.post_settings(settings(1));
-    s.post_settings(settings(3));       /* same position: the newer values replace the older */
+    s.post_settings(settings(3));       /* same position, other values: a marker of its own, in order */
+    s.post_settings(settings(3));       /* the same values again: not said twice */
     s.push(EV(1, 1));
     int n = drain(s, out, 64);
-    CHECK(n == 3 && out[0] == 0x3002 && out[1] == 0x2003 && out[2] == 0x1101);
+    CHECK(n == 4 && out[0] == 0x3002 && out[1] == 0x2001 && out[2] == 0x2003 && out[3] == 0x1101);
 
     /* more changes than markers fit: none of them waits, the last values arrive, no flush is lost,
      * and nothing takes effect earlier than it was posted */
@@ -171,6 +172,66 @@ static void test_coalesce_and_exhaustion(void)
     CHECK(got_flushes == flushes);
     CHECK(last_type == 40);
     CHECK(early == 0);
+}
+
+/* An output type toggle burst with no byte between: every change is carried out, in order (a toggle serves as a flush). */
+static void test_toggle_burst(void)
+{
+    PrinterSpool s;
+    uint16_t out[64];
+    s.post_settings(settings(0));       /* RAW */
+    s.post_settings(settings(2));       /* PNG */
+    s.post_settings(settings(0));       /* RAW again */
+    s.post_settings(settings(0));       /* a repeat: dropped */
+    int n = drain(s, out, 64);
+    CHECK(n == 3 && out[0] == 0x2000 && out[1] == 0x2002 && out[2] == 0x2000);
+    /* the same at a position behind some bytes */
+    s.push(EV(1, 1));
+    s.post_settings(settings(2));
+    s.post_settings(settings(0));
+    s.post_settings(settings(2));
+    n = drain(s, out, 64);
+    CHECK(n == 4 && out[0] == 0x1101 && out[1] == 0x2002 && out[2] == 0x2000 && out[3] == 0x2002);
+}
+
+/* The list is full and the output type changes more than once into one marker: the consumer is told. */
+static void test_type_change_when_full(void)
+{
+    PrinterSpool s;
+    for (int i = 0; i < PRINTER_SPOOL_CTRL_DEPTH; i++) { s.push(EV(1, i)); s.post_settings(settings(1 + i * 2)); }   /* full */
+    s.push(EV(1, 8));
+    s.post_settings(settings(0));       /* RAW ... */
+    s.post_settings(settings(2));       /* ... PNG ... */
+    s.post_settings(settings(0));       /* ... RAW: the middle one is swallowed */
+    uint16_t ev;
+    PrinterSpoolCtl c;
+    int changed = 0, last_type = -1, markers = 0;
+    for (int i = 0; i < 100; i++) {
+        int r = s.next(ev, c);
+        if (r == PRINTER_SPOOL_NONE) break;
+        if (r == PRINTER_SPOOL_CTRL) {
+            markers++;
+            if (c.type_changed) changed++;
+            if (c.has_settings) last_type = c.settings.type;
+        }
+    }
+    CHECK(markers == PRINTER_SPOOL_CTRL_DEPTH);
+    CHECK(changed == 1);                /* the swallowed toggle is passed on */
+    CHECK(last_type == 0);              /* and the last values win */
+    /* not set when the type did not go anywhere */
+    PrinterSpool t;
+    for (int i = 0; i < PRINTER_SPOOL_CTRL_DEPTH; i++) { t.push(EV(1, i)); PrinterSettings d = settings(0); d.density = (uint8_t)(i + 1); t.post_settings(d); }
+    t.push(EV(1, 8));
+    PrinterSettings e = settings(0);
+    e.density = 99;
+    t.post_settings(e);                 /* other values, the same output type: merged, nothing swallowed */
+    int flagged = 0;
+    for (int i = 0; i < 100; i++) {
+        int r = t.next(ev, c);
+        if (r == PRINTER_SPOOL_NONE) break;
+        if (r == PRINTER_SPOOL_CTRL && c.type_changed) flagged++;
+    }
+    CHECK(flagged == 0);
 }
 
 /* The values travel with the marker: the settings at the time of posting, not at the time of applying. */
@@ -800,6 +861,8 @@ int main(void)
     RUN(test_wrap_ovf);
     RUN(test_coalesce_and_exhaustion);
     RUN(test_settings_snapshot);
+    RUN(test_toggle_burst);
+    RUN(test_type_change_when_full);
     RUN(test_abort);
     RUN(test_abort_without_flush);
     RUN(test_small_ring);
