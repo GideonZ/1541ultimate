@@ -4833,7 +4833,7 @@ static void s11_abort_then_command(FileManager *fm, IecDrive *dr)
 // point locks inside parse_command's lock), so the lock must still be known as its own.
 static void s11_abort_position(FileManager *fm, IecDrive *dr, const char *testname, bool nested)
 {
-    s11_partition(fm, dr, "x25");
+    s11_partition(fm, dr, nested ? "x25n" : "x25p");
     expect_iec_write_ok(testname, dr, 1, "READ", "abcdefghij");
     uint8_t *data;
     int size;
