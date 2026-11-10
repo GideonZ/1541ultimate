@@ -110,9 +110,11 @@ class JtagClient:
         return user_id
 
     def user_set_outputs(self, value):
+        """Writes the output register and returns the value it held before the write (the TDO capture)."""
         self.set_user_ir(2)
-        self.jtag.shift_and_update_register(BitSequence(value, False, 8))
+        before = self.jtag.shift_and_update_register(BitSequence(value, False, 8))
         self.jtag.go_idle()
+        return int(before)
 
     def user_upload(self, name, addr):
         bytes_read = 0
@@ -156,7 +158,13 @@ def prog_fpga(logger, j, name = "./u64_mk2_artix.bit"):
     # application never runs before the new image is uploaded. No wait here: on a
     # C64 Ultimate an idle second between the FPGA load and the upload stopped
     # images from starting, with or without the CPU held in reset.
-    j.user_set_outputs(0x80) # Reset
+    # The write returns what the register held before it, so a second write
+    # shows whether the first one landed; a write sent before the user chain
+    # answers is lost, and is sent again.
+    for _ in range(10):
+        if j.user_set_outputs(0x80) == 0x80: # Reset
+            return
+    raise JtagClientException("The CPU reset did not take: the user chain does not answer")
 
 
 if __name__ == '__main__':
