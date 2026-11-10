@@ -10,7 +10,8 @@
  *
  * Log letters: d detect, m get MAC, O radio off asked (CMD_WIFI_DISABLE), N radio on asked
  * (CMD_WIFI_ENABLE), Q connection state asked, s netstack start, U link up, u link down,
- * C scan, A application stopped, B application started, M modem taken over, F module held
+ * C scan, A application stopped, B application started, M modem taken over, V modem given
+ * back (CMD_MODEM_OFF), F module held
  * off, D/E U2+L module detection and run mode, ! a message to the user.
  */
 
@@ -26,20 +27,25 @@ struct World {
     bool enabled;         // "WiFi Enabled" as stored
     int disable_answer;   // the module's answer to a radio off (0: queued; 0x106: no switch)
     int enable_answer;    // and to a radio on
+    int enable_answer_n;  // when > 0: only that many radio on requests get enable_answer, the later ones 0
     uint8_t link;         // what the module says to the connection query
     int voltages_result;  // wifi_get_voltages()'s answer (U64=2)
     uint16_t voltages_vbus;
     bool keep_switch;     // the next boot keeps the radio switch state (once)
     int connect_result;   // what the module answers to a connect request (esp_err)
     bool connect_noreply; // the module does not answer it
+    bool joined_before_reply; // the module reports EVENT_CONNECTED before its answer arrives
     bool no_tx_buffer;    // the UART has no buffer for a request
     bool loopback_fails;  // the task's queue refuses an event of its own
+    int loopback_room;    // when > 0: that many more events of its own fit, then the queue is full
     const char *pick_ssid; // the AP the user picks from the list (see pick())
     int pick_auth;         // and whether it wants a password
     uint8_t pick_bssid[6]; // its BSSID and channel in the list
     uint8_t pick_channel;
     const char *password;  // what the user types in the password box
     int popup_answer;      // BUTTON_YES or BUTTON_NO, to "WiFi is disabled. Enable it?"
+    TickType_t popup_ticks; // how long the user takes to answer it
+    void (*during_disable)(void); // done by another task while the next radio off waits for its answer
 };
 extern World world;
 void reset_world(void); // every case starts with it
@@ -50,7 +56,9 @@ extern char rlog[256];     // what the task did, one letter each
 extern int frees;          // buffers given back to the UART
 extern int popups;         // how often the user was asked
 extern char messages[256]; // what the user was told, one message per line
-extern const char *ended;  // why the task stopped running
+extern const char *ended;  // why the task stopped running ("asking at intervals": the script
+                           // is done, and the task waited QUIET_TICKS with only bounded waits)
+#define QUIET_TICKS pdMS_TO_TICKS(5 * 60 * 1000)
 extern TickType_t now;     // the task's clock, in ticks
 extern int first_wait_state; // the task's state when it first waits for an event
 extern TickType_t waited;  // the ticks the task waited for events that did not come
@@ -62,6 +70,8 @@ extern TickType_t message_at;     // the clock when the last message was posted
 extern int requests;       // requests that went to the module (connect)
 extern command_buf_t request; // the last one, as it went out
 extern int string_box_result; // what the password box returns: <= 0 is a cancel
+extern int ap_refreshes;   // how often an open AP list was told to refresh
+extern int aps_at_refresh; // the APs in the list at the last refresh
 
 // A step of the script: an event of the module, or an action of the user (ACT), run when
 // the task reaches it in its queue, as the user interface task would run it at that time
@@ -85,6 +95,9 @@ static inline Step late(Step s, TickType_t ticks) { s.delay = ticks; return s; }
 // Starts the WiFi task with the module found, and these steps in order
 void boot(std::initializer_list<Step> steps);
 const char *after(char c);
+// Outside a script: how many events with this code wait in the task's queue (the task's own,
+// queued since); the queue is emptied
+int take_queued(int code);
 
 // The user picks world.pick_ssid in the AP list (BrowsableWifiAP :: connect_ap, which runs
 // in the user interface task); as a step of a script, when the task reaches it

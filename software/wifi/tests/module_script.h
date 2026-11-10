@@ -6,7 +6,8 @@
  * letters: L connect to the last AP, S scan, c connect to a scanned AP, s connect to a
  * stored AP, P radio stopped, T radio started, t a radio start that failed (start_fails),
  * D disconnect, X EVENT_DISABLED sent, Z EVENT_DISCONNECTED sent, Y EVENT_RESTARTED sent,
- * R reply sent, K the AP associated (a connect event).
+ * R reply sent, K the AP associated (a connect event), W the joined AP stored, p a radio
+ * stop that failed (stop_fails).
  */
 
 #ifndef MODULE_SCRIPT_H_
@@ -24,17 +25,36 @@ extern "C" {
 extern char trace[256];
 extern const char *ended;
 extern int stale_disabled;     // EVENT_DISCONNECTED sent while disabled_g still said off
-extern bool last_ap_reachable; // the next run's connect to the last AP succeeds (false again
+extern int last_ap_reachable;  // the next run's connects to the last AP that succeed (0 again
                                // after each run); every other connect attempt fails
 extern int start_fails;        // the next radio_start() calls fail; 0 again after each run
 extern int retry_timeouts;     // the next idle waits with a timeout run out, one each (the retry timer); 0 again after each run
 extern int recorded;           // the last radio_record_set() of a run (1 on, 0 off, -1 none)
+extern int silent_disconnects; // the next esp_wifi_disconnect() calls post no event (the station had
+                               // already left the AP); 0 again after each run
+extern int late_disconnects;   // the next esp_wifi_disconnect() calls post their event late: after
+                               // the connector's next wait for an event has run out
+extern int late_stop_event;    // a radio stop posts EVENT_DISCONNECTED late: at the connector's next
+                               // wait for a command or on the semaphore
+extern int stop_fails;         // the next radio stops fail
+extern bool connect_reachable; // the AP of a scripted CMD_WIFI_CONNECT (empty SSID) is on the air
+                               // (all four: 0 again after each run)
+// The connector's wake as on the module: a binary semaphore that the dispatcher and the event
+// handler give once per command or event, and the connector takes once per wait. The steps
+// of the Ultimate (CONNECTOR_SEND_*, CONNECTOR_EVENT_CONNECTED, ...) then happen only while
+// the connector waits: on the semaphore with no token, or for a command in Disabled. Off
+// (the default), every wait returns at once while the command list has anything left.
+// 0 again after each run.
+extern int strict_semaphore;
 
 // In a command list: not a command for the connector, but ...
 #define CONNECTOR_ASK          0xFE // the Ultimate asking for the connection state (cmd_get_connection)
 #define CONNECTOR_SEND_DISABLE 0xFD // CMD_WIFI_DISABLE through the dispatcher (cmd_wifi_endisable)
 #define CONNECTOR_SEND_ENABLE  0xFC // CMD_WIFI_ENABLE through the dispatcher
 #define CONNECTOR_IDENTIFY     0xFB // CMD_IDENTIFY through the dispatcher (cmd_identify)
+#define CONNECTOR_EVENT_CONNECTED 0xFA // the station associates: EVENT_CONNECTED queued for the connector
+#define CONNECTOR_EVENT_DROP   0xF9 // the link drops: EVENT_DISCONNECTED queued for the connector
+#define CONNECTOR_STEP_FIRST   CONNECTOR_EVENT_DROP
 
 // Runs connect_thread() from its first state until it waits for something the script does
 // not give it. aps_found is what a scan finds; disconnected_before stands for an explicit

@@ -19,4 +19,5 @@ typedef void *SemaphoreHandle_t;
 TickType_t xTaskGetTickCount(void);
 void vTaskDelay(TickType_t t);
 void vTaskSuspend(TaskHandle_t t);
+TaskHandle_t xTaskGetCurrentTaskHandle(void);
 #endif

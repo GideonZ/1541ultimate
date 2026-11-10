@@ -327,7 +327,7 @@ int wifi_wifi_connect(const char *ssid, const char *password, uint8_t auth, cons
     strncpy(args->ssid, ssid, 32);
     strncpy(args->password, password, 64);
     args->auth_mode = auth;
-    // A module that predates these ignores them
+    // A module without these fields reads the request up to the password and ignores them
     bzero(args->bssid, 6);
     args->channel = 0;
     if (bssid) {
