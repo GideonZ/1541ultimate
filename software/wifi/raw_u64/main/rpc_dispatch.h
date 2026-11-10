@@ -26,11 +26,11 @@ void start_dispatch(QueueHandle_t queue);
 void send_button_event(uint8_t button);
 void send_keepalive();
 
-#define IDENT_STRING "ESP32 WiFi Bridge V1.20"
+#define IDENT_STRING "ESP32 WiFi Bridge V1.24"
 #define IDENT_MAJOR   1
-// 1.20: the module sends the frames it has queued into the UART's TX FIFO itself, as many as fit, instead
+// 1.24: the module sends the frames it has queued into the UART's TX FIFO itself, as many as fit, instead
 // of one per TX interrupt, so that replies queued together do not wait for the next frame to be sent.
-// 1.19: a bytes-lost overflow of the UART RX FIFO throws away the frame it hit and skips to the next frame
+// 1.23: a bytes-lost overflow of the UART RX FIFO throws away the frame it hit and skips to the next frame
 // instead of delivering a cut or glued frame to the dispatcher.
 // 1.18: the idle connector handles every queued command and event before it waits, so a
 // Disable behind an Enable is not left queued; the wait for its own disconnect is bounded
@@ -48,7 +48,7 @@ void send_keepalive();
 // Disconnected forever. The Ultimate's updater only reflashes the module
 // when this differs from what the module reports, so a module change that
 // does not bump it is silently never installed.
-#define IDENT_MINOR   20
+#define IDENT_MINOR   24
 #define MULTITHREADED 0
 #define DISPATCHER_STACK 3072
 
