@@ -180,8 +180,12 @@
  * MEMP_NUM_PBUF: the number of memp struct pbufs (used for PBUF_ROM and PBUF_REF).
  * If the application sends a lot of data out of ROM (or other static memory),
  * this should be set high.
+ * Every UDP socket send (lwip_sendto -> netbuf_ref) holds one while it runs, so
+ * one per task that may send at the same time: the network target, syslog, the
+ * ident responder, the streams. With one, a send that meets another fails with
+ * ENOMEM (io/network/tests, refpool).
  */
-#define MEMP_NUM_PBUF                   1
+#define MEMP_NUM_PBUF                   8
 
 /**
  * MEMP_NUM_RAW_PCB: Number of raw connection PCBs
