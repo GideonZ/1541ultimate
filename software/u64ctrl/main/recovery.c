@@ -521,6 +521,7 @@ static outcome_t load_bitstream(const recovery_manifest_t *m)
     // application never runs before the image is uploaded (as recover.py does).
     vji_set_outputs(CPU_RESET);
     vTaskDelay(1000 / portTICK_PERIOD_MS);  // the wait recover.py keeps, now with the CPU held
+    vji_set_outputs(CPU_RESET);  // once more: the first write is lost if the user chain was not answering yet
     uint32_t user = vji_get_user_code();
     ESP_LOGI(TAG, "FPGA started; user code %08lx", (unsigned long)user);
     if (user == 0 || user == 0xFFFFFFFF) {

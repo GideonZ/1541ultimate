@@ -156,6 +156,8 @@ def prog_fpga(logger, j, name = "./u64_mk2_artix.bit"):
     # flashed application never runs before the new image is uploaded.
     j.user_set_outputs(0x80) # Reset
     time.sleep(1)
+    # Once more: the user chain may not have answered yet when the first write went out.
+    j.user_set_outputs(0x80) # Reset
 
 
 if __name__ == '__main__':
