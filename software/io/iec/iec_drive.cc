@@ -244,8 +244,9 @@ void IecDrive :: lock(void)
     }
 }
 
-// The pop is left to the next holder of the lock, whoever that is, so the abort never
-// waits for the IEC task and never reads a file: pop_more can read the next block.
+// Another task's abort leaves the pop to the next holder of the lock, so it never waits
+// for the IEC task and never reads a file (pop_more can read the next block). The task
+// that holds the lock pops at once, and may read the block itself.
 void IecDrive :: abort_read(IecChannel *channel, int bytes)
 {
     if (lock_owner == current_task()) {

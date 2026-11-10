@@ -4792,8 +4792,8 @@ static void s11_abort_without_lock(FileManager *fm, IecDrive *dr)
     expect_status_ok(testname, "close READ");
 }
 
-// SoftIEC's CHKOUT aborts a read and then opens a file, or sends P, with the drive locked
-// by the same task. The pop of the aborted read must land before that command changes the
+// SoftIEC's CHKOUT aborts a read and then opens a file, or sends P (below), with the drive
+// locked by the same task. The pop of the aborted read must land before that command changes the
 // channel, not after it on the new file or position.
 static void s11_abort_then_command(FileManager *fm, IecDrive *dr)
 {
@@ -4826,15 +4826,28 @@ static void s11_abort_then_command(FileManager *fm, IecDrive *dr)
     }
     REQUIRE(size == 10 && !memcmp(data, "0123456789", 10));
     close_file(dr, 2);
+}
 
-    // P: the 3 bytes taken must not be popped from the new position.
+// P: the 3 bytes taken must not be popped from the new position. With nested, the task
+// takes the lock again and releases it once before it aborts (the UCI target's own entry
+// point locks inside parse_command's lock), so the lock must still be known as its own.
+static void s11_abort_position(FileManager *fm, IecDrive *dr, const char *testname, bool nested)
+{
+    s11_partition(fm, dr, "x25");
+    expect_iec_write_ok(testname, dr, 1, "READ", "abcdefghij");
+    uint8_t *data;
+    int size;
     open_file(dr, 2, "READ");
     get_status(dr);
-    chan = dr->get_data_channel(2);
+    IecChannel *chan = dr->get_data_channel(2);
     chan->talk();
     chan->prefetch_more(256, data, size);
     REQUIRE(size == 10 && !memcmp(data, "abcdefghij", 10));
     dr->lock();
+    if (nested) {
+        dr->lock();
+        dr->unlock();
+    }
     dr->abort_read(chan, 3);
     expect_command_ok(testname, dr, "P\x02\x05\r");
     dr->unlock();
@@ -4847,6 +4860,16 @@ static void s11_abort_then_command(FileManager *fm, IecDrive *dr)
     }
     REQUIRE(size == 5 && !memcmp(data, "fghij", 5));
     close_file(dr, 2);
+}
+
+static void s11_abort_then_position(FileManager *fm, IecDrive *dr)
+{
+    s11_abort_position(fm, dr, "Suite11-AbortThenPosition", false);
+}
+
+static void s11_abort_nested_lock(FileManager *fm, IecDrive *dr)
+{
+    s11_abort_position(fm, dr, "Suite11-AbortNestedLock", true);
 }
 
 // Changes one byte of the name of the first directory entry of sector 18/1 whose name
@@ -7000,6 +7023,8 @@ static const Suite11Case suite11_cases[] = {
     { "Suite11-CR6-Lock",                s11_cr6_lock },
     { "Suite11-AbortWithoutLock",    s11_abort_without_lock },
     { "Suite11-AbortThenCommand",    s11_abort_then_command },
+    { "Suite11-AbortThenPosition",   s11_abort_then_position },
+    { "Suite11-AbortNestedLock",     s11_abort_nested_lock },
     { "Suite11-CR8-ScratchScan",         s11_cr8_scratch_scan },
     { "Suite11-FailureLog",              s11_failure_log },
     { "Suite11-OperationLog",            s11_operation_log },
