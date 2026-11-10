@@ -53,6 +53,8 @@ spool migrate-loses-events 's/to\[\(t \+ i\) & new_mask\] = ring\[\(t \+ i\) & m
 spool try-push-ignores-migrating 's/if \(!migrating && \(uint32_t\)\(head - tail\) <= mask\)/if ((uint32_t)(head - tail) <= mask)/' || bad=1
 spool next-ignores-migrating 's/if \(migrating\) \{                    \/\*/if (false) {                    \/*/' || bad=1
 spool turn-on-ignores-release-in-progress 's/bool have = \(big != NULL && !migrating\);/bool have = (big != NULL);/' || bad=1
+spool heap-headroom-ignored 's/if \(PRINTER_SPOOL_FREE_HEAP\(\) < \(size_t\) n \* sizeof\(uint16_t\) \+ PRINTER_SPOOL_HEAP_HEADROOM\)/if (false)/' || bad=1
+spool heap-headroom-off-by-one 's/\+ PRINTER_SPOOL_HEAP_HEADROOM\)/+ PRINTER_SPOOL_HEAP_HEADROOM - 1)/' || bad=1
 spool alloc-race-leak     's/if \(big\) \{\s+\/\* another task was faster \*\//if (0) { \/* another *\//' || bad=1
 # --- the wake up
 spool notify-missed-push  's/(            wake\(\);\n)(            return true;)/$2/' || bad=1

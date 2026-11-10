@@ -24,16 +24,22 @@ static void *task_thread(void *a)
     t->fn(t->arg);
     return NULL;
 }
+static PrinterTaskArgs *held_task;
+static void start_task(PrinterTaskArgs *t)
+{
+    pthread_t th;
+    pthread_create(&th, NULL, task_thread, t);
+    pthread_detach(th);
+}
 BaseType_t xTaskCreate(TaskFunction_t fn, const char *, int, void *arg, int, TaskHandle_t *h)
 {
     *h = host_dummy_handle;
-    if (host_start_tasks) {
-        PrinterTaskArgs *t = new PrinterTaskArgs;
-        t->fn = fn; t->arg = arg;
-        pthread_t th;
-        pthread_create(&th, NULL, task_thread, t);
-        pthread_detach(th);
-    }
+    PrinterTaskArgs *t = new PrinterTaskArgs;
+    t->fn = fn; t->arg = arg;
+    if (host_start_tasks)
+        start_task(t);
+    else
+        held_task = t;                  /* the test starts it when it wants */
     return pdPASS;
 }
 
@@ -171,6 +177,29 @@ static void test_toggle_burst(void)
     CHECK(rec.form_feed == 1 && rec.file_closes == 1);
 }
 
+/* The marker list is full while the printer task has not run: the toggles beyond it are merged, and the
+ * output type that is swallowed is still passed on, so the page is ejected once more than without it. */
+static void test_toggle_burst_full_list(void)
+{
+    rec.reset();
+    host_cfg = new ConfigStore;
+    configure_printer(0);                       /* RAW */
+    host_start_tasks = false;
+    IecPrinter *p = new IecPrinter;
+    for (int i = 0; i < 300; i++) p->push_data('B');
+    for (int i = 0; i < PRINTER_SPOOL_CTRL_DEPTH; i++) {
+        host_cfg->values[0x32] = (i % 2 == 0) ? 2 : 0;
+        p->effectuate_settings();               /* PNG, RAW, PNG, ... : the list is full, the last one is RAW */
+    }
+    host_cfg->values[0x32] = 2; p->effectuate_settings();     /* merged into the last: PNG ... */
+    host_cfg->values[0x32] = 0; p->effectuate_settings();     /* ... and RAW again */
+    start_task(held_task);
+    CHECK(wait_until([] { return rec.form_feed >= 5; }, 3000));
+    usleep(200000);
+    CHECK(rec.form_feed == 5);                  /* 3 for the PNG -> RAW changes, 2 for the last marker (the passed-on toggle and the change) */
+    CHECK(rec.file_closes == 1);
+}
+
 /* One test in a thread with a bounded time: a test that blocks fails a check, it does not hang. */
 struct Bounded {
     void (*fn)(void);
@@ -212,6 +241,7 @@ int main(void)
     RUN(test_turn_off);
     RUN(test_reset);
     RUN(test_toggle_burst);
+    RUN(test_toggle_burst_full_list);
     printf("%d checks, %d failures\n", checks, failures);
     return failures ? 1 : 0;
 }

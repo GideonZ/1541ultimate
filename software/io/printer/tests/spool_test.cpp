@@ -341,6 +341,39 @@ static void test_small_ring(void)
     CHECK(live_blocks == 0);
 }
 
+/* The big ring leaves the heap with at least 1 MB (the PNG encoder needs a big block): it is halved until it does. */
+static void test_heap_headroom(void)
+{
+    size_t plenty = host_rtos_free_heap();
+    host_rtos_free_heap() = (size_t) 1536 * 1024 - 1;   /* 512 KB would leave 1 MB - 1 B: too little */
+    {
+        PrinterSpool s;
+        CHECK(s.allocate());
+        CHECK(s.mask == 131072 - 1);                    /* 256 KB: leaves 1.25 MB */
+    }
+    host_rtos_free_heap() = (size_t) 1536 * 1024;       /* exactly 1 MB left over */
+    {
+        PrinterSpool s;
+        CHECK(s.allocate());
+        CHECK(s.mask == PRINTER_SPOOL_EVENTS - 1);      /* 512 KB fits */
+    }
+    host_rtos_free_heap() = (size_t) 1024 * 1024 + 8192;
+    {
+        PrinterSpool s;
+        CHECK(s.allocate());
+        CHECK(s.mask == 4096 - 1);                      /* the smallest big ring, 8 KB */
+    }
+    host_rtos_free_heap() = (size_t) 1024 * 1024 + 8191;
+    {
+        PrinterSpool s;
+        CHECK(!s.allocate());                           /* nothing fits: the small ring, no block taken */
+        CHECK(!s.allocated());
+        CHECK(live_blocks == 0);
+        CHECK(s.try_push(EV(1, 1)));
+    }
+    host_rtos_free_heap() = plenty;
+}
+
 /* An abort with release, while more than the small ring holds was accepted after it: the big ring stays. */
 static void test_abort_release_guard(void)
 {
@@ -867,6 +900,7 @@ int main(void)
     RUN(test_abort_without_flush);
     RUN(test_small_ring);
     RUN(test_abort_release_guard);
+    RUN(test_heap_headroom);
     RUN(test_migrating);
     RUN(test_allocate_race);
     RUN(test_alloc_hook);

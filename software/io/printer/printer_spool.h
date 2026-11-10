@@ -7,8 +7,9 @@
  *
  * Event: bits 8-9 the type, bits 0-7 the value. Positions are free running 32 bit counters;
  * the ring size is a power of two. The big ring (512 KB) is allocated when the printer is
- * switched on; until then, and when the heap refuses it, a small ring inside the object
- * is used, so a byte is never dropped.
+ * switched on; until then, and when the heap refuses it (or would be left with less than
+ * PRINTER_SPOOL_HEAP_HEADROOM, 1 MB), a small ring inside the object is used, so a byte is
+ * never dropped. A big ring that does not leave the headroom is halved until it does.
  *
  * Every access to the ring, the counters and the markers is inside a critical section,
  * so a marker and the event behind it are never seen out of order, whatever task is
@@ -52,6 +53,7 @@
 #include "FreeRTOS.h"
 #include "task.h"
 #include "semphr.h"
+#include "portable.h"
 
 #ifndef PRINTER_SPOOL_MALLOC
 #define PRINTER_SPOOL_MALLOC malloc
@@ -62,6 +64,13 @@
 #define PRINTER_SPOOL_MIN_EVENTS      4096
 #define PRINTER_SPOOL_FALLBACK_EVENTS 2048           /* 4 KB, always there */
 #define PRINTER_SPOOL_CTRL_DEPTH      8
+
+/* The big ring is only taken if the heap still has this much left afterwards: a PNG encode needs a block
+ * of about 256 KB, and the encoder fails (the page is lost) when the ring has taken the last big one. */
+#define PRINTER_SPOOL_HEAP_HEADROOM   (1024 * 1024)
+#ifndef PRINTER_SPOOL_FREE_HEAP
+#define PRINTER_SPOOL_FREE_HEAP()     ((size_t) xPortGetFreeHeapSize())
+#endif
 
 /* One CPU on the device: the compiler must not reorder (and the critical section of the port
  * has no memory clobber of its own). On the host, two threads. */
@@ -157,6 +166,8 @@ public:
             n <<= 1;
         uint16_t *r = NULL;
         for (; n >= min_events && n >= PRINTER_SPOOL_FALLBACK_EVENTS; n >>= 1) {
+            if (PRINTER_SPOOL_FREE_HEAP() < (size_t) n * sizeof(uint16_t) + PRINTER_SPOOL_HEAP_HEADROOM)
+                continue;                       /* it would leave the PNG encoder too little */
             r = (uint16_t *) PRINTER_SPOOL_MALLOC(n * sizeof(uint16_t));
             if (r)
                 break;
@@ -165,6 +176,7 @@ public:
             printf("Printer spool: no memory for the big ring, using %d events\n", PRINTER_SPOOL_FALLBACK_EVENTS);
             return false;
         }
+        printf("Printer spool: ring of %u events (%u KB)\n", (unsigned) n, (unsigned) (n * sizeof(uint16_t) / 1024));
         for (;;) {
             PRINTER_SPOOL_ENTER();
             if (!migrating) {
