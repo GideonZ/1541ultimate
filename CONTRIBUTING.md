@@ -128,7 +128,10 @@ Beyond that:
 - **Work red/green.** Write the test first and run it against firmware
   without your change, where it should fail. Then run it with your change,
   where it should pass. For a new feature, the test shows the feature
-  working.
+  working. Red/green is a check you run, not something the code base keeps:
+  don't add switches, patches or "old behaviour" models to the tree so the
+  red run can be repeated. Run the new tests once against the unpatched
+  firmware, show that they fail, and say so in the pull request.
 - **Reuse what's there.** Hardware tests live under `tests/` and run through
   `./run-tests`. Build on the shared helpers in `tests/lib` rather than
   writing your own, and make sure your suite runs well alongside the others
