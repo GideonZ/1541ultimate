@@ -65,6 +65,7 @@ public:
     static void cfg_forget(UserInterface *intf, ConfigItem *it);
 #if U64 != 2
     static int wifi_enable_change(ConfigItem *it);
+    static void apply_enabled(bool on);
     bool enabled_in_config(void);
 #endif
 

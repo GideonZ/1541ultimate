@@ -4,6 +4,7 @@
 #define WIFI_TESTS_FREERTOS_H
 #include <stdint.h>
 typedef int BaseType_t;
+typedef unsigned int UBaseType_t;
 typedef uint32_t TickType_t;
 typedef void *QueueHandle_t;
 typedef void *SemaphoreHandle_t;
@@ -18,6 +19,8 @@ BaseType_t xQueueReceive(QueueHandle_t q, void *item, TickType_t wait);
 BaseType_t xQueueSend(QueueHandle_t q, const void *item, TickType_t wait);
 BaseType_t xSemaphoreTake(SemaphoreHandle_t s, TickType_t wait);
 BaseType_t xSemaphoreGive(SemaphoreHandle_t s);
+UBaseType_t uxQueueMessagesWaiting(QueueHandle_t q);
+BaseType_t xQueueReset(QueueHandle_t q);
 #ifdef __cplusplus
 }
 #endif

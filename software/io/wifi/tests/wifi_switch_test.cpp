@@ -123,9 +123,8 @@ TEST(WifiSwitch, enable_ends_the_wait_for_the_confirmation)
     struct app a;
     fresh(&a);
     app_start(&a, false);
-    wifi_switch_on(&a.sw, true);
+    wifi_switch_on(&a.sw);
     EXPECT_FALSE(a.sw.awaiting_off);
-    EXPECT_FALSE(a.sw.override_off);
     event(&a, EVENT_DISABLED);
     event(&a, EVENT_DISCONNECTED);
     event(&a, EVENT_CONNECTED);
@@ -140,38 +139,21 @@ TEST(WifiSwitch, enable_ends_an_unconfirmed_wait)
     struct app a;
     fresh(&a);
     app_start(&a, false);
-    wifi_switch_on(&a.sw, true);
+    wifi_switch_on(&a.sw);
     event(&a, EVENT_CONNECTED);
     EXPECT_TRUE(a.link_up);
     EXPECT_EQ(a.dropped, 0);
 }
 
-// After the application was stopped (a module without the switch is held off as a whole),
-// Enable starts it again, and that start skips the stored Disabled, once
-TEST(WifiSwitch, enable_with_the_application_stopped)
-{
-    struct app a;
-    fresh(&a);
-    wifi_switch_on(&a.sw, false);
-    EXPECT_TRUE(a.sw.override_off);
-    app_start(&a, false);
-    EXPECT_FALSE(a.disabled);
-    event(&a, EVENT_CONNECTED);
-    EXPECT_TRUE(a.link_up);
-    app_start(&a, false);
-    EXPECT_TRUE(a.disabled);
-}
-
 // An Enable on a running application asks the module; a later start still applies the
-// stored Disabled
+// stored Disabled (an Enable stores Enabled, so a start after it reads that)
 TEST(WifiSwitch, enable_on_a_running_application_asks_the_module)
 {
     struct app a;
     fresh(&a);
     app_start(&a, false);
     event(&a, EVENT_DISABLED);
-    wifi_switch_on(&a.sw, true);
-    EXPECT_FALSE(a.sw.override_off);
+    wifi_switch_on(&a.sw);
     app_start(&a, false);
     EXPECT_TRUE(a.disabled);
 }
@@ -228,3 +210,65 @@ TEST(WifiSwitch, confirmed_in_time)
 }
 
 #endif
+
+// Each expired wait is followed by another: WIFI_SWITCH_ASKS of them at the first limit, then
+// at the slow one for good, the user told once in between; a new request starts the count again
+TEST(WifiSwitch, a_bounded_number_of_waits_then_a_slow_pace)
+{
+    wifi_switch_t sw;
+    memset(&sw, 0, sizeof(sw));
+    wifi_switch_asked_off(&sw, 0, 100);
+    uint32_t t = 0;
+    for (int i = 1; i < WIFI_SWITCH_ASKS; i++) {
+        t += 100;
+        EXPECT_TRUE(wifi_switch_expired(&sw, t));
+        EXPECT_FALSE(wifi_switch_ask_again(&sw, t, 100, 600));
+        EXPECT_EQ(wifi_switch_wait(&sw, t), 100);
+    }
+    t += 100;
+    EXPECT_TRUE(wifi_switch_expired(&sw, t));
+    EXPECT_TRUE(wifi_switch_ask_again(&sw, t, 100, 600)); // the user is told
+    EXPECT_TRUE(sw.awaiting_off);                          // and the wait goes on
+    EXPECT_EQ(wifi_switch_wait(&sw, t), 600);
+    for (int i = 0; i < 300; i++) {                        // for good, told once
+        t += 600;
+        EXPECT_TRUE(wifi_switch_expired(&sw, t));
+        EXPECT_FALSE(wifi_switch_ask_again(&sw, t, 100, 600));
+        EXPECT_EQ(wifi_switch_wait(&sw, t), 600);
+    }
+    wifi_switch_asked_off(&sw, t, 100);
+    EXPECT_TRUE(wifi_switch_expired(&sw, t + 100));
+    EXPECT_FALSE(wifi_switch_ask_again(&sw, t + 100, 100, 600));
+    EXPECT_EQ(wifi_switch_wait(&sw, t + 100), 100);
+    wifi_switch_on(&sw); // an Enable ends it
+    EXPECT_EQ(wifi_switch_wait(&sw, t + 100), -1);
+}
+
+// A radio on that failed is due again at its deadline, once; asked again and failed again,
+// it goes on at the same pace as a radio off, and drops no event; an Enable or a radio off ends it
+TEST(WifiSwitch, a_failed_radio_on_is_due_again)
+{
+    wifi_switch_t sw;
+    memset(&sw, 0, sizeof(sw));
+    wifi_switch_on_failed(&sw, 0, 100);
+    EXPECT_FALSE(sw.awaiting_off);
+    EXPECT_EQ(wifi_switch_wait(&sw, 40), 60);
+    EXPECT_FALSE(wifi_switch_on_due(&sw, 40));
+    EXPECT_FALSE(wifi_switch_expired(&sw, 100)); // not a radio off
+    EXPECT_FALSE(wifi_switch_drop_event(&sw, EVENT_CONNECTED));
+    uint32_t t = 100;
+    for (int i = 1; i < WIFI_SWITCH_ASKS; i++) {
+        EXPECT_TRUE(wifi_switch_on_due(&sw, t));
+        EXPECT_FALSE(wifi_switch_on_due(&sw, t)); // once
+        EXPECT_FALSE(wifi_switch_on_again(&sw, t, 100, 600));
+        t += 100;
+    }
+    EXPECT_TRUE(wifi_switch_on_due(&sw, t));
+    EXPECT_TRUE(wifi_switch_on_again(&sw, t, 100, 600)); // the user is told
+    EXPECT_EQ(wifi_switch_wait(&sw, t), 600);
+    wifi_switch_on(&sw);
+    EXPECT_EQ(wifi_switch_wait(&sw, t), -1);
+    wifi_switch_on_failed(&sw, t, 100);
+    wifi_switch_asked_off(&sw, t, 100);
+    EXPECT_FALSE(wifi_switch_on_due(&sw, t + 100));
+}

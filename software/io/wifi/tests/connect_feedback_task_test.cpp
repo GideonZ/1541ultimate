@@ -55,6 +55,57 @@ TEST(WifiConnectFeedbackTask, joined)
     CHECK(messages[0] == 0, "no message: the row going up says it");
 }
 
+// The module joins and reports it before its answer to the request reaches the Ultimate:
+// the join is the outcome, and nothing is said 20 s later
+TEST(WifiConnectFeedbackTask, joined_before_the_reply)
+{
+    reset_world();
+    world.enabled = true;
+    world.joined_before_reply = true;
+    boot({ pick });
+    CHECK(linked_up(), "the link comes up");
+    CHECK(wifi.getState() == eWifi_Connected, "Connected");
+    CHECK(messages[0] == 0, "no message: the join was the outcome");
+    CHECK(strcmp(ended, "waiting for an event") == 0, "and nothing is left to time out");
+}
+
+// A module that turns its radio on (for an Enable, or for the connect itself while its radio
+// was off) reports EVENT_DISCONNECTED with reason 0 first. With the attempt noted before the
+// request goes out, that event can come after it: it is no outcome.
+TEST(WifiConnectFeedbackTask, radio_start_is_no_outcome)
+{
+    reset_world();
+    world.enabled = true;
+    boot({ pick, disconnected(0), Step(EVENT_CONNECTED, "HomeNet") });
+    CHECK(messages[0] == 0, "no message: the join is the outcome");
+    CHECK(wifi.getState() == eWifi_Connected, "Connected");
+    boot({ pick, disconnected(0), disconnected(15) });
+    CHECK(strcmp(messages, "Incorrect password\n") == 0, "the refusal after it is reported");
+}
+
+// The module joins another AP while a pick is pending (it went back to one it knows): that is
+// not the outcome of the pick, whose refusal comes after it
+TEST(WifiConnectFeedbackTask, another_ap_joins_while_a_pick_is_pending)
+{
+    reset_world();
+    world.enabled = true;
+    boot({ pick, Step(EVENT_CONNECTED, "OtherNet"), disconnected(15) });
+    CHECK(strcmp(messages, "Incorrect password\n") == 0, "the refusal of the pick is reported");
+}
+
+// The module refuses the request while the task's queue is full: the refusal is told at
+// once all the same, not at the attempt's timeout
+TEST(WifiConnectFeedbackTask, a_refusal_with_a_full_queue_is_told_at_once)
+{
+    reset_world();
+    world.enabled = true;
+    world.connect_result = 0x103;
+    world.loopback_room = 1; // the attempt's own event fits, nothing after it
+    boot({ pick });
+    CHECK(strcmp(messages, "Could not connect to HomeNet\n") == 0, "told");
+    CHECK(message_at == 1000, "at once");
+}
+
 // Connected to another AP: its drop is not the outcome of the pick
 TEST(WifiConnectFeedbackTask, switching)
 {
@@ -99,6 +150,32 @@ TEST(WifiConnectFeedbackTask, long_ssid)
     CHECK(memcmp(wifi.last_ap, name, 32) == 0, "last_ap, 32 characters");
 }
 
+// The module did not accept the connect to an AP whose SSID has all 32 characters (not
+// terminated in its scan record): the message names it whole, formatted by the firmware's
+// printf (which has no precision, and on the U64=2 products takes ".3" for one)
+TEST(WifiConnectFeedbackTask, not_accepted_long_ssid)
+{
+    reset_world();
+    world.enabled = true;
+    world.pick_ssid = "0123456789abcdef0123456789abcdef";
+    world.connect_result = 0x103; // ESP_ERR_INVALID_STATE
+    boot({ pick });
+    CHECK(strcmp(messages, "Could not connect to 0123456789abcdef0123456789abcdef\n") == 0, "32 characters");
+}
+
+// The messages of the code under test are formatted by the firmware's printf, not the host's
+extern "C" int fw_snprintf(char *str, size_t size, const char *fmt, ...);
+TEST(WifiConnectFeedbackTask, formatted_by_the_firmware_printf)
+{
+    char out[64];
+    fw_snprintf(out, sizeof(out), "%.32s", "HomeNet");
+#if U64 == 2
+    CHECK(strcmp(out, "Ho") == 0, "FP_SUPPORT: \".3\" is a precision, \"2\" a width that cuts the string");
+#else
+    CHECK(strcmp(out, "%.32s") == 0, "no precision: the format is printed as it is");
+#endif
+}
+
 // No outcome: the wait is bounded
 TEST(WifiConnectFeedbackTask, no_outcome)
 {
@@ -130,9 +207,36 @@ TEST(WifiConnectFeedbackTask, not_accepted)
     world.loopback_fails = true;
     frees = 0;
     boot({ pick });
-    CHECK(frees == 2, "the connect reply's buffer and the one the event was built in go back to the UART");
+    CHECK(requests == 0, "the task cannot follow it: no request goes out");
+    CHECK(frees == 1, "the buffer the event was built in goes back to the UART");
     CHECK(strcmp(messages, "Could not connect to HomeNet\n") == 0, "told when the event is refused");
     CHECK(waited == 0, "at once");
+}
+
+// The module's answer to the request, as connect_ap leaves it for the task when the request
+// has waited for it this long (the attempt of the script's EVENT_CONNECT_PENDING is 1)
+static void module_refuses(void) { wifi.ConnectAnswered(1, 0x103); }
+static void module_accepts(void) { wifi.ConnectAnswered(1, 0); }
+
+// The module's refusal of the request came after the attempt's timeout (the request can wait
+// longer for its answer): one message, not two
+TEST(WifiConnectFeedbackTask, rejected_after_the_timeout_is_said_once)
+{
+    reset_world();
+    world.enabled = true;
+    boot({ Step(EVENT_CONNECT_PENDING, "HomeNet"), late(Step(module_refuses), 25 * configTICK_RATE_HZ) });
+    CHECK(strcmp(messages, "Could not connect to HomeNet\n") == 0, "told once");
+}
+
+// The module accepted the request after 15 s (the request waits up to 60 s for its answer):
+// the outcome is waited for 20 s from the acceptance, not from the request
+TEST(WifiConnectFeedbackTask, the_timeout_runs_from_the_acceptance)
+{
+    reset_world();
+    world.enabled = true;
+    boot({ Step(EVENT_CONNECT_PENDING, "HomeNet"), late(Step(module_accepts), 15 * configTICK_RATE_HZ) });
+    CHECK(strcmp(messages, "Could not connect to HomeNet\n") == 0, "told when no outcome comes");
+    CHECK(message_at == 1000 + (15 + 20) * configTICK_RATE_HZ, "20 s after the acceptance");
 }
 
 // Cancelling the password box connects to nothing
@@ -164,6 +268,18 @@ TEST(WifiConnectFeedbackTask, disable_ends_a_pending_pick)
     CHECK(messages[0] == 0, "no message about the pick");
 }
 
+// The module's refusal (reason 15) reaches the task AFTER the user's Disable and BEFORE the
+// module's EVENT_DISABLED (a connect in flight holds its connector until the attempt fails;
+// the Disable is served then): the user has left the pick, so no message, on every product
+TEST(WifiConnectFeedbackTask, refusal_after_the_disable_is_not_reported)
+{
+    reset_world();
+    world.enabled = true;
+    boot({ pick, Step(user_turns_off), disconnected(15), EVENT_DISABLED });
+    CHECK(messages[0] == 0, "no message about the pick");
+    CHECK(wifi.getState() == eWifi_Disabled, "Disabled");
+}
+
 #if U64 != 2
 // A radio-off confirmation due in 10 s, and a connect outcome due in 20 s: the task wakes
 // when the radio-off one is due, then when the other is. The pick comes while the boot's
@@ -179,19 +295,25 @@ TEST(WifiConnectFeedbackTask, wakes_for_the_radio_off_deadline_first)
     CHECK(message_at == 1000 + (20 * configTICK_RATE_HZ), "exactly at its deadline, 20 s");
 }
 
-static void user_disable(void) { NetworkLWIP_WiFi :: disable(NULL); }
+static TickType_t asked_again_at;
+static void radio_off_asked_again(void)
+{
+    asked_again_at = now;
+    wifi_switch_asked_off(&wifi.radio_switch, now, pdMS_TO_TICKS(WIFI_SWITCH_CONFIRM_MS));
+}
 
-// The reverse: the user turns the radio off (no confirmation comes) when the connect outcome
-// is almost due. The task wakes for the outcome, which is due first, not 10 s later.
 TEST(WifiConnectFeedbackTask, wakes_for_the_connect_deadline_first)
 {
     reset_world();
     world.enabled = true;
     const TickType_t picked_at = 1000;
     boot({ pick,
-           late(Step(user_disable), (20 * configTICK_RATE_HZ) - 500) });
-    // the pick at 1000 gives a deadline at 1000 + 4000; the Disable comes at 4500
-    CHECK(strchr(rlog, 'O') != NULL, "the radio off is asked for");
+           late(Step(radio_off_asked_again), (20 * configTICK_RATE_HZ) - 500),
+           EVENT_GOTIP,
+           late(Step(EVENT_DISABLED), 1000) }); // confirmed after the outcome
+    // the pick at 1000 gives a deadline at 1000 + 4000; the radio off is asked at 4500,
+    // with its deadline at 6500
+    CHECK(asked_again_at == picked_at + (20 * configTICK_RATE_HZ) - 500, "the radio off is asked at 4500");
     CHECK(strcmp(messages, "Could not connect to HomeNet\n") == 0, "the outcome is reported");
     CHECK(message_at == picked_at + (20 * configTICK_RATE_HZ), "at its deadline, not at the radio off one");
 }

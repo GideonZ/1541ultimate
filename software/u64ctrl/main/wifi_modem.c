@@ -54,6 +54,11 @@ static const char *TAG = "raw_bridge";
 #define WIFI_RETRY_MIN_MS  5000
 #define WIFI_RETRY_MAX_MS 60000
 
+/* How long the connector waits for the event of its own esp_wifi_disconnect().
+ * The call returns ESP_OK also when the station has already left the AP, and
+ * then no event comes. */
+#define WIFI_DISCONNECT_WAIT_MS 3000
+
 /* Set when the *user* asked to disconnect, so that request is not undone a few
  * seconds later. esp_wifi_disconnect() produces the same event as a dropped
  * link, so intent is the only thing that tells the two apart.
@@ -543,8 +548,9 @@ esp_err_t attempt_connect(const char *ssid, const char *passwd, uint8_t authmode
         ESP_LOGW(TAG, "Connect request, but was connected. Waiting now for disconnect event.");
         ConnectEvent_t ev;
         if (err == ESP_OK) {
-            xQueueReceive(connect_events, &ev, portMAX_DELAY);
-            if (ev.event_code != EVENT_DISCONNECTED) {
+            if (xQueueReceive(connect_events, &ev, pdMS_TO_TICKS(WIFI_DISCONNECT_WAIT_MS)) != pdTRUE) {
+                ESP_LOGW(TAG, "No disconnect event; connecting anyway.");
+            } else if (ev.event_code != EVENT_DISCONNECTED) {
                 ESP_LOGE(TAG, "Would have expected disconnect event, %d", ev.event_code);
             } else if (ev.event_code != EVENT_CONNECTED) {
                 ESP_LOGI(TAG, "Properly disconnected.");
@@ -584,6 +590,9 @@ esp_err_t attempt_connect(const char *ssid, const char *passwd, uint8_t authmode
         }
     }
 
+    // The outcome of this attempt is the next event: drop any that came before it, such
+    // as a link drop not handled yet or a disconnect that came after the wait above
+    xQueueReset(connect_events);
     esp_err_t err = esp_wifi_set_config(WIFI_IF_STA, &wifi_config_auto);
     if (err == ESP_OK) {
         err = esp_wifi_connect();
@@ -779,6 +788,7 @@ esp_err_t enable_wifi_if_needed(ConnectState_t state)
 {
     if (state == Disabled) {
         ESP_LOGI(TAG, "Starting WiFi.");
+        xQueueReset(connect_events); // nothing from before the start applies
         esp_err_t err = radio_start();
         if (err == ESP_OK) {
             send_event(EVENT_DISCONNECTED, 0);
@@ -803,15 +813,19 @@ int handle_connect_command(ConnectCommand_t *cmd, ConnectState_t *state)
                 ESP_LOGI(TAG, "Disconnecting from WiFi.");
                 err = esp_wifi_disconnect();
                 if (err == ESP_OK) {
-                    xQueueReceive(connect_events, &connect_event, portMAX_DELAY);
-                    if (connect_event.event_code == EVENT_DISCONNECTED) {
-                        *state = Disconnected;
-                    }
+                    // Off the AP, whether or not its event comes; should the stop below
+                    // fail, the connector retries from Disconnected
+                    xQueueReceive(connect_events, &connect_event, pdMS_TO_TICKS(WIFI_DISCONNECT_WAIT_MS));
+                    *state = Disconnected;
                 }
             }
             ESP_LOGI(TAG, "Stopping WiFi.");
             err = radio_stop();
             if (err == ESP_OK) {
+                // What the radio reported before it stopped does not apply to the next
+                // start. The event of the stop itself can come after this, so every
+                // radio start clears the queue again.
+                xQueueReset(connect_events);
                 send_event(EVENT_DISABLED, 0);
                 *state = Disabled;
                 disabled_g = 1;
@@ -826,6 +840,7 @@ int handle_connect_command(ConnectCommand_t *cmd, ConnectState_t *state)
                 // network again, so a Disconnect from before the Disable is spent
                 user_disconnected = false;
                 ESP_LOGI(TAG, "Starting WiFi.");
+                xQueueReset(connect_events); // nothing from before the start applies
                 err = radio_start();
                 if (err == ESP_OK) {
                     send_event(EVENT_DISCONNECTED, 0);
@@ -1025,10 +1040,17 @@ void connect_thread(void *a)
                 if (state == Connected) {
                     retry_delay_ms = WIFI_RETRY_MIN_MS;
                 }
-                if (xSemaphoreTake(connect_semaphore,
-                                   (state == Connected) || user_disconnected
-                                       ? portMAX_DELAY
-                                       : pdMS_TO_TICKS(retry_delay_ms)) == pdFALSE) {
+                // A wake leaves one token, however many commands and events were
+                // queued with it, and each pass below takes one of each. So the
+                // connector waits only with both queues empty; otherwise a command
+                // (a Disable behind an Enable that changed nothing) stays queued until
+                // something else wakes it.
+                if (uxQueueMessagesWaiting(connect_commands) || uxQueueMessagesWaiting(connect_events)) {
+                    xSemaphoreTake(connect_semaphore, 0); // the token for them, if it is there
+                } else if (xSemaphoreTake(connect_semaphore,
+                                          (state == Connected) || user_disconnected
+                                              ? portMAX_DELAY
+                                              : pdMS_TO_TICKS(retry_delay_ms)) == pdFALSE) {
                     ESP_LOGI(TAG, "Still disconnected after %d ms; trying again.", retry_delay_ms);
                     retry_delay_ms *= 2;
                     if (retry_delay_ms > WIFI_RETRY_MAX_MS) {

@@ -58,7 +58,12 @@ public:
 };
 
 // The network interface, as far as the application uses it
-class NetworkLWIP_WiFi {
+class NetworkInterface {
+public:
+    struct { char name[2]; } my_net_if;
+    void effectuate_settings(void) {}
+};
+class NetworkLWIP_WiFi : public NetworkInterface {
 public:
     NetworkLWIP_WiFi(void *driver, err_t (*out)(void *, void *, int), void (*free)(void *, void *)) {}
     void attach_config(void) {}
@@ -70,6 +75,7 @@ public:
     void link_down(void);
     void input_copy(uint8_t *data, int len) {}
     bool enabled_in_config(void);
+    void effectuate_settings(void);
     static SubsysResultCode_e enable(SubsysCommand *cmd);
     static void set_enabled(bool on);
     static void cfg_enable(UserInterface *intf, ConfigItem *it);
@@ -81,6 +87,7 @@ public:
     static void cfg_enter_ap(UserInterface *intf, ConfigItem *it);
     static void cfg_conn_last(UserInterface *intf, ConfigItem *it);
     static int wifi_enable_change(class ConfigItem *it);
+    static void apply_enabled(bool on);
 };
 
 class ConfigItem {

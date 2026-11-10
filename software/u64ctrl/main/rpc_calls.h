@@ -74,9 +74,8 @@ typedef struct {
     uint8_t auth_mode; // to be casted to wifi_auth_mode_t
     char ssid[32];
     char password[64];
-    // The AP picked from the scan list. Added later: a module takes these only
-    // from a request this long, and an older module ignores them. All zero (or
-    // a shorter request): any AP with the SSID.
+    // The AP picked from the scan list. Optional: a request that ends at the
+    // password, or has these all zero, means any AP with the SSID.
     uint8_t bssid[6];
     uint8_t channel;
 } rpc_wifi_connect_req;

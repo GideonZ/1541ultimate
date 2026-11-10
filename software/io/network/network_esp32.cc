@@ -131,23 +131,30 @@ bool NetworkLWIP_WiFi :: enabled_in_config(void)
     return cfg->get_value(CFG_WIFI_ENABLE) != 0;
 }
 
-// A change of "WiFi Enabled" turns the radio off or on right away. While the WiFi
-// application is still looking for the module it does nothing: the application applies
-// the setting itself when it finds it. Every change is passed on, whatever the row shows:
-// the row follows the module's events, which can lag behind a quick Enable and Disable,
-// and both requests are harmless when the module is in that state already.
+// A change of "WiFi Enabled" turns the radio off or on.
 int NetworkLWIP_WiFi :: wifi_enable_change(ConfigItem *it)
+{
+    apply_enabled(it->getValue() != 0);
+    return 0;
+}
+
+// Applies "WiFi Enabled" (on). While the WiFi application is still looking for the module
+// it does nothing: the application applies the setting itself when it finds it. Otherwise
+// the WiFi task is told to apply it (WiFi :: RadioOn, RadioOff), and this returns without
+// waiting for the module. Every change is passed on, whatever the row shows: the row
+// follows the module's events, which can lag behind a quick Enable and Disable, and both
+// requests are harmless when the module is in that state already.
+void NetworkLWIP_WiFi :: apply_enabled(bool on)
 {
     WifiState_t state = wifi.getState();
     if ((state == eWifi_Download) || (state == eWifi_NotDetected) || (state == eWifi_ModuleDetected)) {
-        return 0;
+        return;
     }
-    if (it->getValue()) {
+    if (on) {
         wifi.RadioOn();
     } else if (state != eWifi_Off) { // the application is stopped (a module without the switch): off already
         wifi.RadioOff();
     }
-    return 0;
 }
 #endif
 
@@ -166,9 +173,15 @@ void NetworkLWIP_WiFi :: effectuate_settings(void)
     //     wifi.RadioOff();
     // }
 #else
-    // The WiFi application always runs (WiFi::Init). The setting is applied by the
-    // application when it finds the module, and by its change hook; not here, because
-    // this also runs when the init callback of the network stack occurs.
+    // A reset or a load of the settings (ConfigStore :: reset, then effectuate) sets "WiFi
+    // Enabled" without its change hook: applied here when it differs from what the WiFi task
+    // applied last. This also runs each time the WiFi settings page closes, and in the WiFi
+    // task itself (netstack->start(), while it sets up its link), where it catches a reset
+    // whose own effectuate found the settings effectuated already.
+    bool on = enabled_in_config();
+    if (wifi.RadioSettingChanged(on)) {
+        apply_enabled(on);
+    }
 #endif
 }
 
@@ -315,7 +328,9 @@ SubsysResultCode_e NetworkLWIP_WiFi :: manual_connect(SubsysCommand *cmd)
 void NetworkLWIP_WiFi :: cfg_show_aps(UserInterface *intf, ConfigItem *it)
 {
     WifiState_t state = wifi.getState();
-    if (state == eWifi_Disabled) {
+    // Also while a radio off waits for its confirmation, for good once its asks ran out:
+    // WiFi is off as far as the user is concerned (BrowsableWifiAP :: connect_ap)
+    if ((state == eWifi_Disabled) || wifi.RadioOffAwaited()) {
         // Set before the Enable goes out: the module's event for it can reach the WiFi
         // application before this function returns
         wifi.sendEventWhenEnabled(EVENT_RESCAN); // the radio is not on yet
@@ -344,7 +359,7 @@ void NetworkLWIP_WiFi :: cfg_show_aps(UserInterface *intf, ConfigItem *it)
 void NetworkLWIP_WiFi :: cfg_enter_ap(UserInterface *intf, ConfigItem *it)
 {
     WifiState_t state = wifi.getState();
-    if ((state == eWifi_Disabled) && !ask_enable(intf)) {
+    if (((state == eWifi_Disabled) || wifi.RadioOffAwaited()) && !ask_enable(intf)) {
         return;
     }
     if ((state != eWifi_NotConnected) && (state != eWifi_Connected) && (state != eWifi_Disabled)) {
@@ -358,7 +373,7 @@ void NetworkLWIP_WiFi :: cfg_enter_ap(UserInterface *intf, ConfigItem *it)
 void NetworkLWIP_WiFi :: cfg_conn_last(UserInterface *intf, ConfigItem *it)
 {
     WifiState_t state = wifi.getState();
-    if ((state == eWifi_Disabled) && !ask_enable(intf)) {
+    if (((state == eWifi_Disabled) || wifi.RadioOffAwaited()) && !ask_enable(intf)) {
         return;
     }
     if ((state != eWifi_NotConnected) && (state != eWifi_Connected) && (state != eWifi_Disabled)) {
