@@ -33,10 +33,10 @@ extern "C" {
 #define DBG(x) x
 
 // One SPI sequence to the card (command, response, data, busy) must not be interleaved
-// with another task's. That used to be done with interrupts off, which held them off for
-// the whole sequence, including the card's busy time after a write (up to 250 ms). A
-// mutex does the same job: the SPI master needs no timing from the CPU (it clocks each
-// byte on its own and raises SS between bytes), and no interrupt handler uses it.
+// with another task's. The mutex excludes other tasks for the whole sequence, including
+// the card's busy time after a write (up to 250 ms), and leaves interrupts enabled: the
+// SPI master needs no timing from the CPU (it clocks each byte on its own and raises SS
+// between bytes), and no interrupt handler uses it.
 #ifdef OS
 #define SD_LOCK()   xSemaphoreTake(mutex, portMAX_DELAY)
 #define SD_UNLOCK() xSemaphoreGive(mutex)
