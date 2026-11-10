@@ -159,7 +159,6 @@ class IecPrinter : public IecSlave, SubSystem, ObjectWithMenu, ConfigurableObjec
         // void reset(void); // FIXME
         t_channel_retval push_data(uint8_t b);
         t_channel_retval push_ctrl(uint16_t b);
-        bool push_would_wait(void) { return uxQueueSpacesAvailable(queueHandle) == 0; }
         bool is_enabled(void) { return printer_enable; }
         uint8_t get_address(void) { return (uint8_t) printer_iec_addr; }
         uint8_t get_type(void) { return 0x50; }

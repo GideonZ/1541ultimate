@@ -32,9 +32,6 @@ IecInterface :: IecInterface()
     program_processor();
 
     addressed_slave = NULL;
-    held_slave = NULL;
-    held_value = 0;
-    held_ctrl = false;
     atn = false;
     talking = false;
     enable = false;
@@ -197,24 +194,16 @@ void IecInterface :: task()
             }
         }
 
-        // A byte the printer could not take in the last pass goes now, with no slave locked:
-        // the wait for a page to be rendered keeps no other task from a drive.
-        if (held_slave) {
-            if (held_ctrl) {
-                held_slave->push_ctrl(held_value);
-            } else {
-                held_slave->push_data((uint8_t)held_value);
-            }
-            held_slave = NULL;
-        }
-
         // The slaves are locked for one pass over the bus, so the drive's own entry points,
         // which lock again for every byte, only count up and down (CR-6). The pass unlocks
         // exactly the slaves it locked.
+        IecSlave *locked[MAX_SLOTS];
         for (int i = 0; i < MAX_SLOTS; i++) {
             locked[i] = slaves[i];
+            if (locked[i]) {
+                locked[i]->lock();
+            }
         }
-        lock_slaves();
 
         uint8_t a;
         for (int loopcnt = 0; loopcnt < 500; loopcnt++) {
@@ -243,7 +232,7 @@ void IecInterface :: task()
                     case CTRL_EOI:
                         DBGIEC(".EOI]\n");
                         if (addressed_slave) {
-                            push_to_slave(SLAVE_CMD_EOI, true);
+                            addressed_slave->push_ctrl(SLAVE_CMD_EOI);
                         }
                         addressed_slave = NULL;
                         break;
@@ -270,7 +259,7 @@ void IecInterface :: task()
                         DBGIEC(".Slave0.");
                         addressed_slave = slaves[0];
                         if (addressed_slave) {
-                            push_to_slave(SLAVE_CMD_ATN, true);
+                            addressed_slave->push_ctrl(SLAVE_CMD_ATN);
                         }
                         break;
                     
@@ -278,7 +267,7 @@ void IecInterface :: task()
                         DBGIEC(".Slave1.");
                         addressed_slave = slaves[1];
                         if (addressed_slave) {
-                            push_to_slave(SLAVE_CMD_ATN, true);
+                            addressed_slave->push_ctrl(SLAVE_CMD_ATN);
                         }
                         break;
 
@@ -286,7 +275,7 @@ void IecInterface :: task()
                         DBGIEC(".Slave2.");
                         addressed_slave = slaves[2];
                         if (addressed_slave) {
-                            push_to_slave(SLAVE_CMD_ATN, true);
+                            addressed_slave->push_ctrl(SLAVE_CMD_ATN);
                         }
                         break;
 
@@ -301,18 +290,15 @@ void IecInterface :: task()
                     if(data >= 0x60) {  // workaround for passing of wrong atn codes talk/untalk
                         if (addressed_slave) {
                             DBGIECV(".CMD(%b).", data);
-                            push_to_slave(data, true);
+                            addressed_slave->push_ctrl(data);
                         }
                     }
                 } else {
                     DBGIECV(".%b.", data);
                     if (addressed_slave) {
-                        push_to_slave(data, false);
+                        addressed_slave->push_data(data);
                     }
                 }
-            }
-            if (held_slave) {
-                break; // the pass ends here; the byte goes before the next one
             }
         }
 
@@ -380,44 +366,11 @@ void IecInterface :: task()
             }
         }
 
-        unlock_slaves();
-    }
-}
-
-void IecInterface :: lock_slaves(void)
-{
-    for (int i = 0; i < MAX_SLOTS; i++) {
-        if (locked[i]) {
-            locked[i]->lock();
+        for (int i = MAX_SLOTS - 1; i >= 0; i--) {
+            if (locked[i]) {
+                locked[i]->unlock();
+            }
         }
-    }
-}
-
-void IecInterface :: unlock_slaves(void)
-{
-    for (int i = MAX_SLOTS - 1; i >= 0; i--) {
-        if (locked[i]) {
-            locked[i]->unlock();
-        }
-    }
-}
-
-// The printer takes one event at a time, and its task runs at the lowest priority, so a
-// push can wait until a whole page is rendered. Such a byte is held, and the pass ends
-// early, as it does when the FIFO is empty; the byte goes before the next pass, with no
-// slave locked. The pass is never split, so a drive's settings or reset still cannot land
-// in the middle of one (CR-6). The IEC FIFO holds the bus meanwhile, as it does while
-// this task waits on the printer.
-void IecInterface :: push_to_slave(uint16_t value, bool ctrl)
-{
-    if (addressed_slave->push_would_wait()) {
-        held_slave = addressed_slave;
-        held_value = value;
-        held_ctrl = ctrl;
-    } else if (ctrl) {
-        addressed_slave->push_ctrl(value);
-    } else {
-        addressed_slave->push_data((uint8_t)value);
     }
 }
 

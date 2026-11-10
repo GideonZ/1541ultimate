@@ -129,9 +129,6 @@ public:
     // exclude them (CR-6).
     virtual void lock(void) { }
     virtual void unlock(void) { }
-    // Whether the next push_data or push_ctrl would wait, as the printer's does while its
-    // task renders a page.
-    virtual bool push_would_wait(void) { return false; }
 };
 
 typedef void (*iec_callback_t)(IecSlave *obj, void *data);
@@ -150,13 +147,6 @@ class IecInterface
     int available_slots;
     IecSlave *slaves[MAX_SLOTS];
     IecSlave *addressed_slave;
-    IecSlave *locked[MAX_SLOTS]; // the slaves that this pass over the bus locked
-    void lock_slaves(void);
-    void unlock_slaves(void);
-    void push_to_slave(uint16_t value, bool ctrl);
-    IecSlave *held_slave;        // a byte for it waits for the next pass (push_to_slave)
-    uint16_t held_value;
-    bool held_ctrl;
 
     TaskHandle_t taskHandle;
     QueueHandle_t queueToIec;
