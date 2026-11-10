@@ -42,6 +42,7 @@ radio_boot_t boot_mode;  // RADIO_BOOT_WAIT unless a case sets it; again after e
 int recorded = -1;       // the last radio_record_set(): 1 on, 0 off, -1 none in this run
 void radio_record_set(radio_record_t *rec, bool on) { recorded = on; }
 #else
+bool self_restart_g;     // u64ctrl: the module restarted on its own; false again after each run
 int recorded = -1;
 // The control module has no such call
 void wifi_note_identify(void) { }
@@ -572,6 +573,7 @@ void run_with(int aps_found, bool disconnected_before, const uint8_t *commands, 
     nvs_write_fails_after = 0;
     store_pending = -1; // the connector's (wifi_modem.c), as at a boot
     store_tries = 0;
+    self_restart_g = false;
 #endif
     recovery_active = false;
     last_ap_reachable = 0;

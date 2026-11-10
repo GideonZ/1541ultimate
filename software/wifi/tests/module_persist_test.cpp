@@ -272,4 +272,35 @@ TEST(Persist, a_write_that_keeps_failing_is_given_up)
     CHECK(nvs_wifi_writes > 1 && nvs_wifi_writes <= 10, "after a few tries");
 }
 
+
+// A restart of the module's own (a crash, a watchdog, a brownout) with a stale copy of
+// Enabled starts the radio while the Ultimate says Disabled: the Ultimate is told first
+// (EVENT_RESTARTED, before any link event), so that it asks for the radio off again, and
+// that Disable is confirmed. After a power-up nothing is sent.
+TEST(Persist, a_restart_of_its_own_with_the_radio_started_tells_the_ultimate)
+{
+    const uint8_t cmds[] = { CONNECTOR_SEND_DISABLE };
+    self_restart_g = true;
+    run(false, cmds, 1);
+    CHECK(strchr(boot_trace, 'T') != NULL, "the stale Enabled started the radio at boot");
+    CHECK(trace[0] == 'Y', "EVENT_RESTARTED is the first thing the Ultimate hears");
+    CHECK(strchr(after('Y'), 'X') != NULL, "and its Disable is confirmed");
+    CHECK(nvs_wifi_last == 0, "and the copy reads Disabled");
+
+    const uint8_t none[] = { 0 };
+    run(false, none, 0);
+    CHECK(strchr(trace, 'Y') == NULL, "no EVENT_RESTARTED after a power-up");
+}
+
+// With the radio left off by a stored Disabled there is nothing to tell: it is off
+TEST(Persist, a_restart_of_its_own_with_the_radio_off_tells_nothing)
+{
+    const uint8_t none[] = { 0 };
+    nvs_wifi_enabled = 0;
+    self_restart_g = true;
+    run(false, none, 0);
+    CHECK(strchr(trace, 'Y') == NULL, "no EVENT_RESTARTED: the radio stays off");
+    CHECK(strcmp(ended, "waiting for a command") == 0, "Disabled");
+}
+
 #endif

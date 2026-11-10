@@ -133,7 +133,6 @@ TEST(WifiSwitchTask, boot_disable_not_sent)
     CHECK(strchr(rlog, 'Q') == NULL && strchr(rlog, 'U') == NULL, "no connection query, no link");
 }
 
-#if U64 != 2 // a module without the switch, or one that restarts on its own: U64 and U2+L
 // The radio off asked for again after a restart could not be sent: the wait for its
 // confirmation still ends at the deadline, which asks again
 TEST(WifiSwitchTask, restart_disable_not_sent)
@@ -145,7 +144,6 @@ TEST(WifiSwitchTask, restart_disable_not_sent)
     CHECK(count_after(rlog, 'O') > 2, "the deadline comes, and the radio off is asked for again");
     CHECK(strchr(rlog, 'U') == NULL, "no link");
 }
-#endif
 
 // Only ESP_ERR_NOT_SUPPORTED means a module without the switch. A module with it that
 // could not queue the request (ESP_ERR_NO_MEM) is not held off, at boot or from the menu.
@@ -174,7 +172,6 @@ TEST(WifiSwitchTask, link_events_take_it_out_of_disabled)
     CHECK(wifi.getState() == eWifi_Connected, "Connected");
 }
 
-#if U64 != 2 // a module without the switch, or one that restarts on its own: U64 and U2+L
 // The module restarted on its own (radio_boot.h): while Disabled the radio off is asked
 // for again and the link events of a radio it turned on are dropped until it confirms;
 // while enabled, nothing is asked
@@ -190,7 +187,6 @@ TEST(WifiSwitchTask, module_restarted)
     boot({ EVENT_CONNECTED, EVENT_RESTARTED });
     CHECK(strchr(rlog, 'O') == NULL, "enabled: no radio off");
 }
-#endif
 
 // Disabled means no RF: browsing the AP list does not scan
 TEST(WifiSwitchTask, no_scan_while_disabled)

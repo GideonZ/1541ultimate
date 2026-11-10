@@ -94,6 +94,7 @@ wifi_ap_record_t ap_info[DEFAULT_SCAN_LIST_SIZE];
 uint16_t ap_count = 0;
 uint16_t connected_g = 0;
 uint16_t disabled_g = 0;
+bool self_restart_g = false; // the module restarted on its own (a crash, a watchdog, a brownout)
 
 esp_netif_t *my_sta_netif = NULL;
 netif_input_fn default_input;
@@ -994,10 +995,19 @@ int handle_connect_command(ConnectCommand_t *cmd, ConnectState_t *state)
 }
 
 // The connector's first state: Disabled, with the radio off, when wifi_start_at_boot() did not
-// start it; otherwise the walk to the last AP
+// start it; otherwise the walk to the last AP. After a restart of the module's own (a crash, a
+// watchdog, a brownout) nobody tells the Ultimate that its radio went off and on again, and
+// the module's copy may be stale: the Ultimate is told first, so that one with "WiFi Enabled"
+// Disabled asks for the radio off again.
 ConnectState_t connector_boot_state(void)
 {
-    return disabled_g ? Disabled : LastAP;
+    if (disabled_g) {
+        return Disabled;
+    }
+    if (self_restart_g) {
+        send_event(EVENT_RESTARTED, 0);
+    }
+    return LastAP;
 }
 
 void connect_thread(void *a)
@@ -1225,15 +1235,21 @@ void setup_modem()
     // Now install the driver for UART1.  We use our own buffer mechanism and interrupt routine
     ESP_ERROR_CHECK(my_uart_init(&work_buffers, UART_NUM_1));
 
+    // A restart that neither a power-up nor the Ultimate caused
+    esp_reset_reason_t why = esp_reset_reason();
+    self_restart_g = (why == ESP_RST_PANIC) || (why == ESP_RST_INT_WDT) || (why == ESP_RST_TASK_WDT) ||
+                     (why == ESP_RST_WDT) || (why == ESP_RST_BROWNOUT);
+
     ESP_LOGI(TAG, "wifi_init...");
     wifi_init();
-    ESP_LOGI(TAG, "start wifi connector...");
-    start_connector();
-
     ESP_LOGI(TAG, "dispatch... switching UART pins!");
     vTaskDelay(100 / portTICK_PERIOD_MS);
     ESP_ERROR_CHECK( uart_set_pin(UART_NUM_0, 0, -1, -1, -1));
     ESP_ERROR_CHECK( uart_set_pin(UART_NUM_1, IO_UART_TXD, IO_UART_RXD, IO_UART_RTS, IO_UART_CTS));
+    // The connector may send an event from its first state on (EVENT_RESTARTED), so it starts
+    // once the UART is on its pins; the dispatcher, which queues commands for it, after it
+    ESP_LOGI(TAG, "start wifi connector...");
+    start_connector();
     start_dispatch(work_buffers.receivedQueue);
 }
 

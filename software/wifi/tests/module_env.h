@@ -141,6 +141,8 @@ void wifi_note_identify(void);
 #ifdef MODULE_HAS_SWITCH
 extern radio_record_t radio_record;
 extern radio_boot_t boot_mode;
+#else
+extern bool self_restart_g;
 #endif
 
 // ESP-IDF, the radio and the UART

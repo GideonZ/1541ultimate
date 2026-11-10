@@ -538,10 +538,10 @@ void WiFi :: RunModeThread()
                 uart->FreeBuffer(buf);
                 break;
 
-#if U64 != 2
-            // The module restarted on its own (radio_boot.h). It put its radio back as it
-            // was, or, with no record of that, turned it on: while Disabled, the radio off
-            // is asked for again, and confirmed as at boot.
+            // The module restarted on its own (radio_boot.h; the control module of the Elite II
+            // and C64 Ultimate sends it too, when its radio starts after a restart). It put its
+            // radio back as it was, or, with no record of that, turned it on: while Disabled,
+            // the radio off is asked for again, and confirmed as at boot.
             case EVENT_RESTARTED:
                 uart->FreeBuffer(buf);
                 if (state == eWifi_Disabled) {
@@ -550,7 +550,6 @@ void WiFi :: RunModeThread()
                 }
                 break;
 
-#endif
             case EVENT_DISABLED:
                 uart->FreeBuffer(buf);
                 state = eWifi_Disabled;
