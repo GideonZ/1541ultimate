@@ -230,7 +230,7 @@ WTX := $(OUTPUT_DIR)/wtx
 # is not the one the tests assume, or if the request macro lost its wait.
 wtx-extract:
 	mkdir -p $(WTX)/base
-	grep -h -e '^static volatile uint8_t wifi_tx_starved;$$' -e '^static struct tcpip_callback_msg \*wifi_txnow_msg;$$' $(WTX_WIFI_CC) > $(WTX)/base/wifi_tx_extract.inc
+	grep -h -e '^static volatile uint8_t wifi_tx_starved;$$' -e '^static struct tcpip_msg wifi_txnow_msg;$$' $(WTX_WIFI_CC) > $(WTX)/base/wifi_tx_extract.inc
 	test $$(wc -l < $(WTX)/base/wifi_tx_extract.inc) -eq 2
 	for f in wifi_txnow_cb wifi_tx_free_isr wifi_tx_wake_init; do \
 		awk -v f=$$f -f $(WTX_EXTRACT) $(WTX_WIFI_CC) > $(WTX)/base/$$f.tmp; \
@@ -274,13 +274,13 @@ wifi-tx-nowait-red-legacy: wtx-extract
 
 # Models of the new code with one part taken out. 'wifi' ones change the extracted wifi.cc code, 'uart'
 # ones dma_uart.cc.
-WTX_MUTANTS_WIFI := no-reserve no-flag no-recheck no-msg-retry wake-without-flag wake-at-reserve no-hysteresis hysteresis-at-edge hysteresis-plus-1 no-clear clear-on-failure no-switch no-refused
+WTX_MUTANTS_WIFI := no-reserve no-flag no-recheck no-msg-init wake-without-flag wake-at-reserve no-hysteresis hysteresis-at-edge hysteresis-plus-1 no-clear clear-on-failure no-switch no-refused
 WTX_MUTANTS_UART := no-hook-call count-not-reserve
 mut_w_no-reserve := s/GetBufferKeeping(&buf, WIFI_TX_RESERVE)/GetBuffer(\&buf, 0)/g
 mut_w_no-flag := s/^        wifi_tx_starved = 1;//
-mut_w_no-msg-retry := s/if (!wifi_txnow_msg) {/if (0) {/
+mut_w_no-msg-init := s/^    wifi_txnow_msg.type = TCPIP_MSG_CALLBACK_STATIC;//
 mut_w_no-recheck := s/^        gotbuf = esp32.uart->GetBufferKeeping(&buf, WIFI_TX_RESERVE);//
-mut_w_wake-without-flag := s/if (wifi_tx_starved \&\& wifi_txnow_msg/if (wifi_txnow_msg/
+mut_w_wake-without-flag := s/if (wifi_tx_starved \&\&$$/if (1 \&\&/
 mut_w_wake-at-reserve := s/> WIFI_TX_RESERVE + WIFI_TX_WAKE_HYSTERESIS) {/>= WIFI_TX_RESERVE) {/
 mut_w_no-hysteresis := s/> WIFI_TX_RESERVE + WIFI_TX_WAKE_HYSTERESIS) {/> WIFI_TX_RESERVE) {/
 mut_w_hysteresis-at-edge := s/> WIFI_TX_RESERVE + WIFI_TX_WAKE_HYSTERESIS) {/>= WIFI_TX_RESERVE + WIFI_TX_WAKE_HYSTERESIS) {/
@@ -307,8 +307,8 @@ wifi-tx-nowait-red-$(2): wtx-extract
 		echo "wifi-tx-nowait-red-$(2): killed ($$$$(grep -c FAIL $$(WTX)/red-$(2).log) checks failed), as required"; \
 	fi
 endef
-$(foreach m,no-reserve no-flag no-recheck no-msg-retry,$(eval $(call WTX_MUTANT,w,$(m),wifi_tx_packet.inc,$$(WTX)/base)))
-$(foreach m,wake-without-flag wake-at-reserve no-hysteresis hysteresis-at-edge hysteresis-plus-1 no-clear clear-on-failure no-switch,$(eval $(call WTX_MUTANT,w,$(m),wifi_tx_extract.inc,$$(WTX)/base)))
+$(foreach m,no-reserve no-flag no-recheck,$(eval $(call WTX_MUTANT,w,$(m),wifi_tx_packet.inc,$$(WTX)/base)))
+$(foreach m,no-msg-init wake-without-flag wake-at-reserve no-hysteresis hysteresis-at-edge hysteresis-plus-1 no-clear clear-on-failure no-switch,$(eval $(call WTX_MUTANT,w,$(m),wifi_tx_extract.inc,$$(WTX)/base)))
 $(eval $(call WTX_MUTANT,w,no-refused,wifi_tx_packet.inc,$$(WTX)/base))
 $(eval $(call WTX_MUTANT,u,no-hook-call,dma_uart.cc,$$(UART_SRC)))
 $(eval $(call WTX_MUTANT,u,count-not-reserve,dma_uart.cc,$$(UART_SRC)))

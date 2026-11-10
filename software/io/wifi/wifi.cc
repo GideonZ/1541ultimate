@@ -18,6 +18,7 @@
 #include "net_counters.h"
 #include "lwip/tcpip.h"
 #include "lwip/priv/tcp_priv.h"
+#include "lwip/priv/tcpip_priv.h"
 #if U64 == 2
 #include "u64_config.h"
 #endif
@@ -794,7 +795,9 @@ SubsysResultCode_e BrowsableWifiAP :: connect_ap(SubsysCommand *cmd)
 // once the pool is WIFI_TX_WAKE_HYSTERESIS buffers above the reserve has the tcpip thread send
 // what was held back (tcp_txnow), so that TCP does not wait for the next ACK or its retransmit timer.
 static volatile uint8_t wifi_tx_starved;
-static struct tcpip_callback_msg *wifi_txnow_msg;
+// A static message: nothing to allocate, so no failure to handle and nothing to free. Posted again while
+// it is still queued is harmless (the callback only calls tcp_txnow).
+static struct tcpip_msg wifi_txnow_msg;
 
 static void wifi_txnow_cb(void *ctx)
 {
@@ -804,9 +807,9 @@ static void wifi_txnow_cb(void *ctx)
 // Interrupt, after a transmitted buffer was freed (DmaUART::SetTxFreeCallback)
 static void wifi_tx_free_isr(command_buf_context_t *context, BaseType_t *w)
 {
-    if (wifi_tx_starved && wifi_txnow_msg &&
+    if (wifi_tx_starved &&
         uxQueueMessagesWaitingFromISR(context->freeTxQueue) > WIFI_TX_RESERVE + WIFI_TX_WAKE_HYSTERESIS) {
-        err_t posted = tcpip_callbackmsg_trycallback_fromisr(wifi_txnow_msg);
+        err_t posted = tcpip_callbackmsg_trycallback_fromisr((struct tcpip_callback_msg *)&wifi_txnow_msg);
         if (posted != ERR_MEM) { // the tcpip mailbox was full: the next freed buffer tries again
             wifi_tx_starved = 0;
             if (posted == ERR_NEED_SCHED) {
@@ -818,9 +821,9 @@ static void wifi_tx_free_isr(command_buf_context_t *context, BaseType_t *w)
 
 void wifi_tx_wake_init(DmaUART *uart)
 {
-    if (!wifi_txnow_msg) {
-        wifi_txnow_msg = tcpip_callbackmsg_new(wifi_txnow_cb, NULL);
-    }
+    wifi_txnow_msg.type = TCPIP_MSG_CALLBACK_STATIC;
+    wifi_txnow_msg.msg.cb.function = wifi_txnow_cb;
+    wifi_txnow_msg.msg.cb.ctx = NULL;
     wifi_tx_starved = 0;
     uart->SetTxFreeCallback(wifi_tx_free_isr);
 }
@@ -840,12 +843,6 @@ err_t wifi_tx_packet(void *driver, void *buffer, int length)
         gotbuf = esp32.uart->GetBufferKeeping(&buf, WIFI_TX_RESERVE);
     }
     if (gotbuf == pdFALSE) {
-        // The wake message could not be allocated at init (lwIP out of memory): without it the TX-done
-        // interrupt cannot wake the tcpip thread, and TCP would wait for its next send. Try again at
-        // each refusal until it exists; the flag is up, so the next freed buffer above the hysteresis wakes.
-        if (!wifi_txnow_msg) {
-            wifi_txnow_msg = tcpip_callbackmsg_new(wifi_txnow_cb, NULL);
-        }
         net_counters.wifi_tx_refused++;
         return ERR_MEM;
     }

@@ -66,9 +66,12 @@ struct { DmaUART *uart; } esp32;
 
 struct tcpip_callback_msg { int unused; };
 typedef void (*tcpip_callback_fn)(void *ctx);
+enum tcpip_msg_type { TCPIP_MSG_CALLBACK, TCPIP_MSG_CALLBACK_STATIC };
+struct tcpip_msg {         // the part of lwIP's tcpip_priv.h that wifi.cc fills in
+    enum tcpip_msg_type type;
+    union { struct { tcpip_callback_fn function; void *ctx; } cb; } msg;
+};
 namespace {
-struct tcpip_callback_msg the_msg;
-tcpip_callback_fn registered_fn;
 bool txnow_posted;            // the interrupt asked the tcpip thread for the callback
 int txnow_posts;
 int64_t now_us;               // the simulated clock, never reset: the lwIP timers keep their times
@@ -77,7 +80,6 @@ extern "C" {
 TickType_t xTaskGetTickCount(void) { return (TickType_t)(now_us / 5000); }
 u32_t sys_now(void) { return (u32_t)(now_us / 1000); }
 }
-struct tcpip_callback_msg *tcpip_callbackmsg_new(tcpip_callback_fn fn, void *) { registered_fn = fn; return &the_msg; }
 err_t tcpip_callbackmsg_trycallback_fromisr(struct tcpip_callback_msg *)
 {
     txnow_posted = true;
@@ -420,7 +422,7 @@ void handle(const Ev &ev)
         break;
     }
     case EV_TXNOW:
-        registered_fn(NULL);
+        wifi_txnow_msg.msg.cb.function(NULL);
         break;
     case EV_BURST: // 12 datagrams of other traffic at once
         send_datagrams(12);

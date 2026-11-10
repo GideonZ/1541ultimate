@@ -37,12 +37,16 @@ enum { eWifi_NotConnected, eWifi_Connected };
 struct { int state; int getState() { return state; } } wifi;
 struct { DmaUART *uart; } esp32;
 
+// The part of lwIP's tcpip_priv.h that wifi.cc fills in: a static message, no allocation
 struct tcpip_callback_msg { int unused; };
 typedef void (*tcpip_callback_fn)(void *ctx);
+enum tcpip_msg_type { TCPIP_MSG_CALLBACK, TCPIP_MSG_CALLBACK_STATIC };
+struct tcpip_msg {
+    enum tcpip_msg_type type;
+    union { struct { tcpip_callback_fn function; void *ctx; } cb; } msg;
+};
 namespace {
-struct tcpip_callback_msg the_msg;
-tcpip_callback_fn registered_fn;
-bool msg_alloc_fails;
+struct tcpip_callback_msg *last_posted;   // what the interrupt posted last
 int posts;                    // tcpip_callbackmsg_trycallback_fromisr() calls
 err_t post_result;            // what it answers
 int txnow_runs;               // tcp_txnow()
@@ -51,14 +55,9 @@ TickType_t now_ticks;
 extern "C" {
 TickType_t xTaskGetTickCount(void) { return now_ticks; }
 }
-struct tcpip_callback_msg *tcpip_callbackmsg_new(tcpip_callback_fn fn, void *ctx)
-{
-    registered_fn = fn;
-    return msg_alloc_fails ? NULL : &the_msg;
-}
 err_t tcpip_callbackmsg_trycallback_fromisr(struct tcpip_callback_msg *msg)
 {
-    EXPECT_TRUE(msg == &the_msg);
+    last_posted = msg;
     posts++;
     return post_result;
 }
@@ -108,8 +107,8 @@ struct Rig {
         host_count_hook = NULL;
         posts = txnow_runs = 0;
         post_result = ERR_OK;
-        msg_alloc_fails = false;
-        wifi_txnow_msg = NULL;
+        last_posted = NULL;
+        memset(&wifi_txnow_msg, 0, sizeof(wifi_txnow_msg));
         wifi_tx_starved = 0;
         if (wake_init) {
             wifi_tx_wake_init(uart);
@@ -283,8 +282,8 @@ TEST(WifiTxWake, a_refusal_is_followed_by_exactly_one_post_above_the_hysteresis)
     }
     EXPECT_EQ(posts, 1);
     // the callback the post stands for runs tcp_txnow()
-    ASSERT_TRUE(registered_fn != NULL);
-    registered_fn(NULL);
+    ASSERT_TRUE(wifi_txnow_msg.msg.cb.function != NULL);
+    wifi_txnow_msg.msg.cb.function(NULL);
     EXPECT_EQ(txnow_runs, 1);
 }
 
@@ -356,40 +355,21 @@ TEST(WifiTxWake, a_full_mailbox_keeps_the_flag_and_the_next_free_posts_again)
     EXPECT_TRUE(wifi_tx_starved == 0);
 }
 
-// No allocation of the message at init (lwIP out of memory): a refused frame retries it, and once it
-// exists the next free above the hysteresis posts the wake. Without the retry the wake is lost for good
-// and TCP waits for its next send.
-TEST(WifiTxWake, no_message_at_init_is_retried_at_the_next_refusal)
+// The wake message is a static one filled in by wifi_tx_wake_init: nothing is allocated (the test has no
+// tcpip_callbackmsg_new to call), so a wake cannot be lost to an allocation failure. What the interrupt posts
+// is that message, and the tcpip thread's call of it reaches tcp_txnow.
+TEST(WifiTxWake, the_wake_is_the_static_message_and_reaches_tcp_txnow)
 {
-    Rig r(false);
-    msg_alloc_fails = true;
-    wifi_tx_wake_init(r.uart);
-    ASSERT_TRUE(wifi_txnow_msg == NULL);
+    Rig r;
+    EXPECT_TRUE(wifi_txnow_msg.type == TCPIP_MSG_CALLBACK_STATIC);
+    ASSERT_TRUE(wifi_txnow_msg.msg.cb.function != NULL);
     r.fill_to(WIFI_TX_RESERVE);
-    msg_alloc_fails = true;       // lwIP still has no memory: the refusal cannot fix it, and breaks nothing
     EXPECT_EQ(r.send(), ERR_MEM);
-    EXPECT_TRUE(wifi_txnow_msg == NULL);
-    EXPECT_TRUE(wifi_tx_starved != 0);
-    msg_alloc_fails = false;      // memory is back: the next refusal allocates the message
-    EXPECT_EQ(r.send(), ERR_MEM);
-    EXPECT_TRUE(wifi_txnow_msg == &the_msg);
     EXPECT_EQ(r.finish_until_the_wake(), (uint8_t)0);
-    EXPECT_EQ(posts, 1);          // the wake is posted
-    EXPECT_TRUE(wifi_tx_starved == 0);
-}
-
-// With the message missing the interrupt posts nothing (and does not touch the null pointer)
-TEST(WifiTxWake, no_message_no_post)
-{
-    Rig r(false);
-    msg_alloc_fails = true;
-    wifi_tx_wake_init(r.uart);
-    r.fill_to(WIFI_TX_RESERVE);
-    EXPECT_EQ(r.send(), ERR_MEM);
-    for (int i = 0; i < 2 * WIFI_TX_WAKE_HYSTERESIS + 2; i++) {
-        r.finish_frame();
-    }
-    EXPECT_EQ(posts, 0);
+    EXPECT_EQ(posts, 1);
+    EXPECT_TRUE(last_posted == (struct tcpip_callback_msg *)&wifi_txnow_msg);
+    wifi_txnow_msg.msg.cb.function(wifi_txnow_msg.msg.cb.ctx);   // what tcpip_thread does with it
+    EXPECT_EQ(txnow_runs, 1);
 }
 
 // The interrupt calls nothing before the WiFi code registers, and nothing after the module's
