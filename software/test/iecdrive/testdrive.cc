@@ -377,6 +377,7 @@ extern IecDrive *s11_lock_watch;
 extern int s11_lock_watch_locked;
 extern int s11_lock_watch_unlocked;
 extern int iec_drive_lock_depth(IecDrive *drive) __attribute__((weak));
+extern void *iec_drive_pc_task;
 class LockWatchingBlockDevice : public BlockDevice_Emulated
 {
     void note(void)
@@ -4705,6 +4706,7 @@ int s11_lock_watch_unlocked = 0;
 int s11_lock_watch_locked = 0;
 IecDrive *s11_lock_watch = NULL;
 extern int iec_drive_lock_depth(IecDrive *drive) __attribute__((weak));
+extern void *iec_drive_pc_task;
 
 static void s11_cr6_lock(FileManager *fm, IecDrive *dr)
 {
@@ -4755,7 +4757,9 @@ static void s11_abort_without_lock(FileManager *fm, IecDrive *dr)
     REQUIRE(size == 10 && !memcmp(data, "abcdefghij", 10));
 
     dr->lock();               // another task holds the drive
+    iec_drive_pc_task = (void *)2; // this is the UCI task, which does not hold it
     dr->abort_read(chan, 3);  // the C64 took 3 bytes and aborted
+    iec_drive_pc_task = (void *)1;
     REQUIRE(iec_drive_lock_depth(dr) == 1);
     chan->reset_prefetch();
     chan->prefetch_more(256, data, size);
@@ -4773,7 +4777,9 @@ static void s11_abort_without_lock(FileManager *fm, IecDrive *dr)
 
     // With the drive free the pop also waits for the next holder: the abort never reads
     // a file itself, as pop_more can.
+    iec_drive_pc_task = (void *)2;
     dr->abort_read(chan, 2);
+    iec_drive_pc_task = (void *)1;
     REQUIRE(iec_drive_lock_depth(dr) == 0);
     chan->reset_prefetch();
     chan->prefetch_more(256, data, size);
@@ -4784,6 +4790,63 @@ static void s11_abort_without_lock(FileManager *fm, IecDrive *dr)
     REQUIRE(size == 5 && !memcmp(data, "fghij", 5));
     close_file(dr, 2);
     expect_status_ok(testname, "close READ");
+}
+
+// SoftIEC's CHKOUT aborts a read and then opens a file, or sends P, with the drive locked
+// by the same task. The pop of the aborted read must land before that command changes the
+// channel, not after it on the new file or position.
+static void s11_abort_then_command(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite11-AbortThenCommand";
+    s11_partition(fm, dr, "x25");
+    expect_iec_write_ok(testname, dr, 1, "READ", "abcdefghij");
+    expect_iec_write_ok(testname, dr, 1, "OTHER", "0123456789");
+    uint8_t *data;
+    int size;
+
+    // The open: the 3 bytes taken from READ must not be popped from OTHER.
+    open_file(dr, 2, "READ");
+    get_status(dr);
+    IecChannel *chan = dr->get_data_channel(2);
+    chan->talk();
+    chan->prefetch_more(256, data, size);
+    REQUIRE(size == 10 && !memcmp(data, "abcdefghij", 10));
+    dr->lock();
+    dr->abort_read(chan, 3);
+    close_file(dr, 2);
+    open_file(dr, 2, "OTHER");
+    dr->unlock();
+    get_status(dr);
+    dr->lock();               // the next holder
+    chan->talk();
+    chan->prefetch_more(256, data, size);
+    dr->unlock();
+    if (size != 10 || memcmp(data, "0123456789", 10)) {
+        printf("%s: the pop of the aborted read landed on the file opened after it\n", testname);
+    }
+    REQUIRE(size == 10 && !memcmp(data, "0123456789", 10));
+    close_file(dr, 2);
+
+    // P: the 3 bytes taken must not be popped from the new position.
+    open_file(dr, 2, "READ");
+    get_status(dr);
+    chan = dr->get_data_channel(2);
+    chan->talk();
+    chan->prefetch_more(256, data, size);
+    REQUIRE(size == 10 && !memcmp(data, "abcdefghij", 10));
+    dr->lock();
+    dr->abort_read(chan, 3);
+    expect_command_ok(testname, dr, "P\x02\x05\r");
+    dr->unlock();
+    dr->lock();
+    chan->talk();
+    chan->prefetch_more(256, data, size);
+    dr->unlock();
+    if (size != 5 || memcmp(data, "fghij", 5)) {
+        printf("%s: the pop of the aborted read landed on the new position\n", testname);
+    }
+    REQUIRE(size == 5 && !memcmp(data, "fghij", 5));
+    close_file(dr, 2);
 }
 
 // Changes one byte of the name of the first directory entry of sector 18/1 whose name
@@ -6936,6 +6999,7 @@ static const Suite11Case suite11_cases[] = {
     { "Suite11-CR5-FailedDirectoryOpen", s11_cr5_failed_directory_open },
     { "Suite11-CR6-Lock",                s11_cr6_lock },
     { "Suite11-AbortWithoutLock",    s11_abort_without_lock },
+    { "Suite11-AbortThenCommand",    s11_abort_then_command },
     { "Suite11-CR8-ScratchScan",         s11_cr8_scratch_scan },
     { "Suite11-FailureLog",              s11_failure_log },
     { "Suite11-OperationLog",            s11_operation_log },
