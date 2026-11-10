@@ -40,6 +40,7 @@
 #include "filemanager.h"
 #include "mystring.h"
 #include "mps_printer.h"
+#include "printer_spool.h"
 
 /*******************************  Constants  ****************************/
 
@@ -61,21 +62,18 @@ enum t_printer_output_type {
     PRINTER_ASCII_OUTPUT
 };
 
+/* Type of an event in the spool (bits 8-9; the value is in bits 0-7) */
 enum t_printer_event_type {
     PRINTER_EVENT_CMD=0,
-    PRINTER_EVENT_DATA,
-    PRINTER_EVENT_USER
+    PRINTER_EVENT_DATA
 };
 
+/* Markers in the spool, applied by the printer task when it reaches them */
 enum t_printer_usercmd_type {
     PRINTER_USERCMD_RESET=0,
-    PRINTER_USERCMD_FLUSH
+    PRINTER_USERCMD_FLUSH,
+    PRINTER_USERCMD_SETTINGS
 };
-
-typedef struct PrinterEvent {
-    t_printer_event_type type;
-    uint8_t value;
-} PrinterEvent_t;
 
 /*======================================================================*/
 /* Class IecPrinter                                                     */
@@ -127,8 +125,8 @@ class IecPrinter : public IecSlave, SubSystem, ObjectWithMenu, ConfigurableObjec
         /* The printer task itself */
         TaskHandle_t taskHandle;
 
-        /* Queue to send IEC data to printer */
-        QueueHandle_t queueHandle;
+        /* Spool that carries the IEC data, and the menu and settings markers, to the printer task */
+        PrinterSpool spool;
 
         /* Binary Semaphore to hold the action menu caller Task */
         SemaphoreHandle_t xCallerSemaphore;
@@ -142,6 +140,7 @@ class IecPrinter : public IecSlave, SubSystem, ObjectWithMenu, ConfigurableObjec
         t_channel_retval _push_data(uint8_t b);
         t_channel_retval _push_command(uint8_t b);
         int _reset(void);
+        void apply_settings(void);
 
         /* -------  User action menu */
         struct {
