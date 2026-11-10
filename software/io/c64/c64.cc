@@ -412,6 +412,22 @@ void C64 :: hard_stop(void)
     wait_10us(2);
 }
 
+// The VIC registers and the 1 ms timer as raster_wait.h reads and writes them
+namespace {
+struct VicRasterBus {
+    uint8_t read(int reg) { return VIC_REG(reg); }
+    void write(int reg, uint8_t v) { VIC_REG(reg) = v; }
+    bool ms_elapsed()
+    {
+        if (ioRead8(ITU_TIMER)) {
+            return false;
+        }
+        ioWrite8(ITU_TIMER, 200); // 1 ms
+        return true;
+    }
+};
+}
+
 void C64::stop(bool do_raster)
 {
     int b, w;
@@ -445,8 +461,8 @@ void C64::stop(bool do_raster)
                 goUltimax();
 
                 // the line first: the raster moves on while printf waits for the UART
-                raster = VIC_REG(18);
-                raster_hi = VIC_REG(17);
+                VicRasterBus bus;
+                raster_read(bus, raster, raster_hi);
                 vic_irq_en = VIC_REG(26);
                 vic_irq = VIC_REG(25);
                 printf("Ultimax set.. Registers read.\n");
@@ -526,55 +542,27 @@ void C64::stop(bool do_raster)
     }
 }
 
-// The VIC registers and the 1 ms timer as raster_wait_for_line() reads them (see raster_wait.h)
-struct VicRasterBus {
-    uint8_t d011() { return VIC_REG(17); }
-    uint8_t d012() { return VIC_REG(18); }
-    bool ms_elapsed()
-    {
-        if (ioRead8(ITU_TIMER)) {
-            return false;
-        }
-        ioWrite8(ITU_TIMER, 200); // 1 ms
-        return true;
-    }
-};
-
 void C64::resume(void)
 {
-    int dummy = 0;
+    int dummy;
     VicRasterBus bus;
-    uint8_t rast_lo;
-    uint8_t rast_hi;
-
-    if (!raster && !raster_hi) {
-        rast_lo = 0;
-        rast_hi = 0;
-    } else {
-        rast_lo = raster - 1;
-        rast_hi = raster_hi & 0x80;
-        if (!raster)
-            rast_hi = 0;
-    }
 
     // either resume in mode 0 or in mode 3  (never on R/Wn sequence of course!)
     if (stop_mode == 1) {
         // this can only occur when we exit from the menu, so we are still
         // in ultimax mode, so we can see the VIC here.
-        if (vic_irq & 0x01) { // was raster flag set when we stopped? then let's set it again
-            VIC_REG(26) = 0x81;
-            VIC_REG(18) = rast_lo;
-            VIC_REG(17) = d011_while_waiting(vic_d011, rast_hi); // see raster_wait.h
-            raster_wait_for_line(bus, rast_lo, rast_hi);
-            VIC_REG(18) = vic_d012;
-            VIC_REG(17) = vic_d011;
-        } else {
-            raster_wait_for_line(bus, rast_lo, rast_hi);
-            VIC_REG(18) = vic_d012;
-            VIC_REG(17) = vic_d011;
-            VIC_REG(25) = 0x81; // clear raster irq
-        }
-        VIC_REG(26) = vic_irq_en;
+        RasterResume state;
+        state.raster = raster;
+        state.raster_hi = raster_hi;
+        state.vic_irq = vic_irq;
+        state.vic_irq_en = vic_irq_en;
+        state.vic_d011 = vic_d011;
+        state.vic_d012 = vic_d012;
+#if U64
+        raster_resume(bus, state, true);  // stop and release are immediate (g_direct_dma)
+#else
+        raster_resume(bus, state, false); // released on the next bad line
+#endif
 
         raster = VIC_REG(18);
         vic_irq_en = VIC_REG(26);

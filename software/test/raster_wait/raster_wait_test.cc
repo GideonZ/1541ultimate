@@ -1,37 +1,63 @@
 /*
- * Host test of the raster wait in C64::resume() (io/c64/c64.cc). Leaving the menu,
- * resume() waits until the VIC raster reaches the line before the line the C64 was
- * stopped on, then releases the CPU. The cartridge gateware
- * (fpga/cart_slot/vhdl_source/slot_master_v4.vhd) releases it on the next bad line,
- * which is the stop line. The Ultimate 64 and C64 Ultimate release it at once, on the
- * wait line, one line before the stop line (measured on both; their core is not in
- * this tree). The test checks the wait itself: it must end on that wait line, never
- * earlier and never a frame late. It runs raster_wait_for_line() from raster_wait.h, the
- * function c64.cc calls, against a VIC whose raster advances one line every 50
- * register reads (a line is 63 us), for every bad line the C64 can stop on and
- * every line resume() can start on. The register reads straddle line changes as
- * they do on the device, so it also checks the read order.
+ * Host test of the VIC side of C64::resume() (io/c64/c64.cc): raster_resume() from
+ * raster_wait.h, the function c64.cc calls with the real VIC registers, here against a
+ * model VIC. It starts the wait on every line of PAL (312 lines) and NTSC (263), for
+ * every line the C64 can have been stopped on, with the program's raster flag set and
+ * clear, and checks what the C64 sees:
  *
- * The Makefile builds the old code by editing a copy of raster_wait.h
- * (make legacy, legacy-d011, legacy-order); each of those must fail. `make test`
- * also checks that c64.cc calls raster_wait_for_line() and holds no loop of its own.
+ *  - Ultimate 64 / C64 Ultimate (release_immediate, g_direct_dma in slot_server_v4.vhd):
+ *    stop and release happen on any line, and the C64 goes on on the line the wait ends
+ *    on. That has to be the stop line (or the next one: the match can be the last read of a line).
+ *  - Cartridges (slot_master_v4.vhd): the release is on the next bad line. The wait ends
+ *    on the line before the stop line, and the next bad line has to be the stop line,
+ *    which needs a frame with bad lines: DEN ($D011 bit 4) set while the raster passes
+ *    line $30.
+ *  - the program's raster compare, $D011 and interrupt enable are back afterwards, the
+ *    raster flag is cleared when it was not set, and DEN stayed on during the wait.
+ *  - raster_read() (stop() and the wait use it) returns a line that existed, also when
+ *    the raster moves between its reads at the wrap and at lines 0 and 256.
+ *
+ * The register reads straddle line changes as they do on the device (the raster advances
+ * every 50 reads, a line is 63 us). The Makefile builds the old code by editing a copy
+ * of raster_wait.h (make mutants); each of those must fail.
  */
 #include <stdio.h>
 #include <stdint.h>
+#include <vector>
 #include "raster_wait.h"
 
-// The Bus raster_wait_for_line() takes: a VIC whose raster advances between reads.
 struct Vic {
     int lines, line, reads, since_ms;
-    uint8_t d011()
+    uint8_t d011w, cmp_lo, irq_en, irq_clears, irq_en_081, cmp_during, d011_during;
+    int cmp_writes, d011_writes;
+    bool den_at_30, den_lost;
+    std::vector<int> seen;
+
+    Vic(int n, int start, int phase, uint8_t d011) : lines(n), line(start), reads(phase), since_ms(0),
+        d011w(d011), cmp_lo(0), irq_en(0), irq_clears(0), irq_en_081(0), cmp_during(0), d011_during(0), cmp_writes(0), d011_writes(0), den_at_30(true), den_lost(false) {}
+
+    void step()
     {
-        step();
-        return (uint8_t)(0x1B | ((line & 0x100) ? 0x80 : 0)); // bit 7 = raster bit 8
+        if (++reads % 50 == 0) {
+            line = (line + 1) % lines;
+            if (line == 0x30 && !(d011w & 0x10)) den_lost = true;
+            if (line == 0x30) den_at_30 = (d011w & 0x10) != 0;
+        }
+        seen.push_back(line);
     }
-    uint8_t d012()
+    uint8_t read(int reg)
     {
         step();
-        return (uint8_t)line;
+        if (reg == 18) return (uint8_t)line;
+        if (reg == 17) return (uint8_t)((d011w & 0x7F) | ((line & 0x100) ? 0x80 : 0));
+        return 0;
+    }
+    void write(int reg, uint8_t v)
+    {
+        if (reg == 17) { d011w = v; if (!d011_writes++) d011_during = v; }
+        if (reg == 18) { cmp_lo = v; if (!cmp_writes++) cmp_during = v; }
+        if (reg == 26) { irq_en = v; if (v == 0x81) irq_en_081++; }
+        if (reg == 25 && v == 0x81) irq_clears++;
     }
     bool ms_elapsed()   // about 1 us per register read
     {
@@ -39,69 +65,96 @@ struct Vic {
         since_ms = 0;
         return true;
     }
-    void step() { if (++reads % 50 == 0) line = (line + 1) % lines; }
 };
+
+static bool bad_line(int l, uint8_t d011) { return l >= 0x30 && l <= 0xF7 && (l & 7) == (d011 & 7); }
 
 int main()
 {
-    int cases = 0, failures = 0;
+    int cases = 0, failures = 0, spills = 0, cart_cases = 0;
     const int systems[2] = { 312, 263 };  // PAL, NTSC
-    for (int s = 0; s < 2; s++) {
-        for (int stop = 0x30; stop <= 0xF7; stop++) {   // bad lines only occur here
-            int target = stop - 1;                      // resume() waits for raster - 1
-            uint8_t lo = (uint8_t)target, hi = 0;       // as resume() computes them
-            for (int start = 0; start < systems[s]; start++) {
-                Vic v = { systems[s], start, 0, 0 };
-                bool found = raster_wait_for_line(v, lo, hi);   // the production wait
-                cases++;
-                if (!found || (v.line != target)) {
-                    if (failures < 5)
-                        printf("FAIL %s stop line %d, resume starts at %d: wait ended at line %d, want %d\n",
-                               s ? "NTSC" : "PAL", stop, start, v.line, target);
-                    failures++;
+    for (int imm = 0; imm < 2; imm++) {
+        for (int s = 0; s < 2; s++) {
+            const int n = systems[s];
+            for (int stop = 0; stop < n; stop++) {
+                const uint8_t prog_d011 = (uint8_t)(0x1B | (((stop >> 2) & 1) ? 0x80 : 0)); // DEN, YSCROLL 3, a compare bit 8 that varies
+                if (!imm && !bad_line(stop, prog_d011)) continue; // cartridges stop on bad lines only
+                for (int irq = 0; irq < 2; irq++) {
+                    for (int start = 0; start < n; start += (start < 8 || start > n - 8 || (start >= 0xF8 && start <= 0x108)) ? 1 : 7) {
+                        Vic v(n, start, (start * 7) % 50, prog_d011);
+                        RasterResume st;
+                        st.raster = (uint8_t)stop;
+                        st.raster_hi = (stop & 0x100) ? 0x80 : 0;
+                        st.vic_irq = (uint8_t)irq;
+                        st.vic_irq_en = 0x01;
+                        st.vic_d011 = prog_d011;
+                        st.vic_d012 = 0xF8;
+                        bool found = raster_resume(v, st, imm != 0);
+                        int release = v.line;
+                        int target = imm ? stop : (stop ? stop - 1 : 0);
+                        bool spill = false;
+                        if (!imm) {   // released on the next bad line after the wait line, in a frame that has them
+                            if (v.line == stop) {
+                                spill = true;   // the wait ended late, in the stop line itself: not judged, counted
+                                spills++;
+                            } else {
+                                bool den = v.den_at_30;
+                                int l = v.line;
+                                for (int k = 0; k < 2 * n; k++) {
+                                    l = (l + 1) % n;
+                                    if (l == 0x30) den = (prog_d011 & 0x10) != 0;
+                                    if (bad_line(l, prog_d011) && den) { release = l; break; }
+                                }
+                            }
+                            cart_cases++;
+                        }
+                        // direct: the wait can end in the last read of a line, so the release may fall in the next one
+                        bool at_stop = imm ? (release == stop || release == (stop + 1) % n) : release == stop;
+                        bool compare_ok = !irq || (v.cmp_during == (uint8_t)target && ((v.d011_during & 0x80) == ((target & 256) ? 0x80 : 0)) && (v.d011_during & 0x7F) == (prog_d011 & 0x7F));
+                        bool ok = found && (at_stop || spill) && compare_ok && !v.den_lost && v.d011w == prog_d011 &&
+                                  v.cmp_lo == 0xF8 && v.irq_en == 0x01 &&
+                                  (irq ? (v.irq_en_081 == 1 && v.irq_clears == 0) : (v.irq_en_081 == 0 && v.irq_clears == 1));
+                        cases++;
+                        if (failures >= 50) goto report;   // enough: a broken wait can take 40 ms per case
+                        if (!ok) {
+                            if (failures < 6)
+                                printf("FAIL %s %s stop line %d, irq %d, starts at %d: found %d, released on %d, den lost %d, d011 %02x cmp %02x en %02x\n",
+                                       imm ? "direct" : "cartridge", s ? "NTSC" : "PAL", stop, irq, start, found,
+                                       release, v.den_lost, v.d011w, v.cmp_lo, v.irq_en);
+                            failures++;
+                        }
+                    }
                 }
             }
         }
     }
-    // Bad lines: the frame has them only if DEN ($D011 bit 4) is set during line $30.
-    // resume() writes $D011 for the wait, waits, then restores the program's $D011;
-    // the cartridge gateware releases the CPU on the next bad line, which must be the stop line.
-    const uint8_t prog_d011 = 0x1B;   // DEN on, 25 rows, YSCROLL 3: bad lines where (line & 7) == 3
-    int den_cases = 0, den_failures = 0;
+report:
+    // raster_read: every line, every phase of the 50-read step
+    int read_cases = 0, read_failures = 0;
     for (int s = 0; s < 2; s++) {
-        for (int stop = 0x30; stop <= 0xF7; stop++) {
-            if ((stop & 7) != (prog_d011 & 7)) continue;          // the C64 stops on bad lines only
-            int target = stop - 1;
-            for (int start = 0; start < systems[s]; start++) {
-                uint8_t during = d011_while_waiting(prog_d011, 0);
-                bool den_at_30 = true;                             // for the frame the release happens in
-                int line = start;
-                if (line == 0x30) den_at_30 = (during & 0x10) != 0;
-                while (line != target) {                           // the wait (the condition is tested above)
-                    line = (line + 1) % systems[s];
-                    if (line == 0) den_at_30 = true;               // a new frame
-                    if (line == 0x30) den_at_30 = (during & 0x10) != 0;
-                }
-                // restore the program's $D011, then release on the next bad line
-                int released = -1;
-                for (int l = line + 1, n = 0; n < 2 * systems[s]; l++, n++) {
-                    int ll = l % systems[s];
-                    if (ll == 0) den_at_30 = true;
-                    if (ll == 0x30) den_at_30 = (prog_d011 & 0x10) != 0;
-                    if (ll >= 0x30 && ll <= 0xF7 && (ll & 7) == (prog_d011 & 7) && den_at_30) { released = ll; n = (l - line); break; }
-                }
-                den_cases++;
-                if (released != stop) {
-                    if (den_failures < 3)
-                        printf("FAIL %s stop line %d, resume starts at %d: released on line %d after a frame without bad lines\n",
-                               s ? "NTSC" : "PAL", stop, start, released);
-                    den_failures++;
+        const int n = systems[s];
+        for (int line = 0; line < n; line++) {
+            for (int phase = 0; phase < 50; phase++) {
+                Vic v(n, line, phase, 0x1B);
+                uint8_t lo, hi;
+                raster_read(v, lo, hi);
+                int got = lo | (hi ? 256 : 0);
+                bool exists = false;
+                for (size_t i = 0; i < v.seen.size(); i++) if (v.seen[i] == got) exists = true;
+                read_cases++;
+                if (!exists) {
+                    if (read_failures < 3)
+                        printf("FAIL %s raster_read at line %d phase %d: got %d\n", s ? "NTSC" : "PAL", line, phase, got);
+                    read_failures++;
                 }
             }
         }
     }
-    printf("raster_wait: DEN kept while waiting: %d cases, %d failures\n", den_cases, den_failures);
-    failures += den_failures;
+    if (spills * 5 > cart_cases) {   // the wait should end on the line before the stop line, not in the stop line
+        printf("FAIL cartridge: the wait ended in the stop line itself in %d of %d cases\n", spills, cart_cases);
+        failures++;
+    }
+    printf("raster_wait: raster_read: %d cases, %d failures\n", read_cases, read_failures);
     printf("raster_wait: %d cases, %d failures\n", cases, failures);
-    return failures ? 1 : 0;
+    return (failures || read_failures) ? 1 : 0;
 }
