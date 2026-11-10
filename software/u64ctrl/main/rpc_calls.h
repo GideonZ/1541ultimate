@@ -72,6 +72,10 @@ typedef struct {
     uint8_t auth_mode; // to be casted to wifi_auth_mode_t
     char ssid[32];
     char password[64];
+    // The AP picked from the scan list. Optional: a request that ends at the
+    // password, or has these all zero, means any AP with the SSID.
+    uint8_t bssid[6];
+    uint8_t channel;
 } rpc_wifi_connect_req;
 
 typedef struct {
@@ -195,6 +199,13 @@ typedef struct {
     rpc_header_t hdr;
     uint8_t ssid[32];
 } event_pkt_connected;
+
+// EVENT_DISCONNECTED may carry the reason (wifi_event_sta_disconnected_t.reason)
+// after the header. 0 and a bare header both mean that it is not known.
+typedef struct {
+    rpc_header_t hdr;
+    uint8_t reason;
+} event_pkt_disconnected;
 
 #define CMD_ECHO              0x01
 #define CMD_IDENTIFY          0x02

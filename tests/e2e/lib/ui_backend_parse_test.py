@@ -38,7 +38,9 @@ import bootstrap  # noqa: E402,F401
 import cli  # noqa: E402
 import pacing  # noqa: E402
 import ui_backend  # noqa: E402
-from telnet_backend import TelnetBackend, VT100Screen, innermost_frames  # noqa: E402
+from rest_backend import RestBackend  # noqa: E402
+from backend import innermost_frames  # noqa: E402
+from telnet_backend import TelnetBackend, VT100Screen  # noqa: E402
 from report import Failure, check, detail, suite_fail, suite_ok  # noqa: E402
 from selftest import expect  # noqa: E402
 
@@ -265,6 +267,27 @@ def run_checks() -> None:
                [(2, 7, 0, 9), (2, 7, 9, 34)])
         expect("the settings list's highlight", found[(2, 7, 9, 34)][1], "Video Configuration")
 
+    with check("over REST, a framed list's highlight is the entry in a colour of its own"):
+        screen = Screen()
+        frame(screen, rows=range(3, 10), first=4, last=36)
+        screen.text(4, "-- Peripherals --", 5)
+        for row, name in ((5, "Drive A Settings"), (6, "Tape Settings"), (7, "Printer Settings")):
+            screen.text(row, name, 5).foreground(row, 1, 5, 16)
+        screen.foreground(6, 7, 5, 13)
+        backend = rest_screen(screen)
+        expect("the popup's highlight, headers skipped", backend.framed_selections(),
+               {(3, 9, 4, 36): (1, "Tape Settings",
+                                 ["Drive A Settings", "Tape Settings", "Printer Settings"])})
+        # A two-entry list ties on colour; the colour seen before breaks the tie.
+        two = Screen()
+        frame(two, rows=range(3, 7), first=4, last=36)
+        two.text(4, "Yes", 5).foreground(4, 7, 5, 3).text(5, "No", 5).foreground(5, 1, 5, 2)
+        backend._body = two.body
+        expect("a two-entry list with the colour remembered", backend.framed_selections()[(3, 6, 4, 36)][1], "Yes")
+
+    with check("RestBackend has the F2 key the settings menu is opened with"):
+        expect("F2 is Shift+F1 on the matrix", ui_backend.KEY_ALIASES.get("F2"), ["left_shift", "f1"])
+
 
 PLAIN = "0;31;2"
 MARKED = "0;37;1"
@@ -280,6 +303,16 @@ def telnet_screen(cells: list[tuple[int, int, str, str]]) -> TelnetBackend:
     backend._drain_until_idle = lambda timeout: None
     backend.screen.feed(b"".join(f"\x1b[{row + 1};{column + 1}H\x1b[{sgr}m{text}".encode()
                                  for row, column, text, sgr in cells))
+    return backend
+
+
+def rest_screen(screen: Screen) -> RestBackend:
+    """A REST backend that reads `screen` as the menu_screen body."""
+    # Built without __init__, which would resolve a device.
+    backend = RestBackend.__new__(RestBackend)
+    backend.last_command = "<test>"
+    backend._framed_colour = None
+    backend._body = screen.body
     return backend
 
 

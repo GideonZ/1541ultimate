@@ -146,6 +146,10 @@ SUITES: Sequence[Suite] = (
     # forever. raw_u64 was, for a misspelling, and the firmware change that
     # exposed it had already been merged before anyone noticed.
     Suite("e2e", "esp-depends", "tests/lib/esp_depends_test.py", "", profile=profiles.SMOKE),
+    # Needs no device either: u64ctrl's network recovery trusts a committed copy
+    # of Mozilla's root list, because ESP-IDF 5.3.1's own still holds three roots
+    # Mozilla removed. A regenerated sdkconfig would drop back to it without a word.
+    Suite("e2e", "u64ctrl-ca", "tests/lib/u64ctrl_ca_test.py", "", profile=profiles.SMOKE),
     # Needs no device either: machine:input has an event limit and a body-size
     # limit, and a request that breaks either is refused. Splitting on the
     # count alone sent a 64-keypress field clear as one 4110-byte request and
@@ -175,6 +179,13 @@ SUITES: Sequence[Suite] = (
     # than weeks later when somebody opens the artifact to diagnose something
     # else and finds an empty document.
     Suite("e2e", "observability", "tests/lib/observability_test.py", ""),
+    # Also needs no device: uci-net-route ends as skipped, with its setting restored,
+    # when a link is down (an address stays configured without one) or the command
+    # interface is not there (a C64 Ultimate reads the setting as Enabled with
+    # $DF1B-$DF1F at $FF), instead of passing vacuously or failing to reach Idle.
+    Suite("e2e", "uci-net-route-precondition",
+          "tests/e2e/io/command_interface/net_route_precondition_test.py", "",
+          profile=profiles.QUICK),
     # Also needs no device: the SoftIEC soak's log correlation, against lines the device
     # wrote on the bench. A wrong verdict there reads as a firmware defect.
     Suite("e2e", "softiec-log", "tests/soak/io/iec/softiec_log_test.py", "", profile=profiles.QUICK),
@@ -259,6 +270,15 @@ SUITES: Sequence[Suite] = (
     # first exercise of the mixed GCR/MFM path on real hardware.
     Suite("e2e", "g71-mfm-bounds", "tests/e2e/drive/g71_mfm_bounds_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@", profile=profiles.QUICK),
+    # Formats three MFM cylinders of a G71 through the 1571's burst format
+    # command, sent from the C64: one with room for nine 512-byte sectors, the
+    # control; one of 4000 bytes, too short for them; and one of 100 bytes,
+    # with no room at all. The two refused ones have to stay as they were in
+    # the image file, and the drive has to answer (#921). Mounts the image
+    # read/write in /Temp, discards its changes and deletes it, and puts the
+    # drive back to the model and power state it had.
+    Suite("e2e", "g71-mfm-format-refused", "tests/e2e/drive/g71_mfm_format_refused_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
     # Calls every endpoint the firmware registers, and fails when one is
     # neither probed nor excluded with a reason. The lockup that prompted it
     # shipped because no suite called that route at all, so the gate matters
@@ -359,6 +379,10 @@ SUITES: Sequence[Suite] = (
     # already the IEC suite that costs real time.
     Suite("e2e", "iec-dos-commands", "tests/e2e/io/iec/dos_command_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ @KERNAL@", profile=profiles.STANDARD),
+    # Replays C64 OS directory renames through the KERNAL on both host folders
+    # and DNP images (#999/#1000), including the renamed file and disk header.
+    Suite("e2e", "iec-directory-rename", "tests/e2e/io/iec/directory_rename_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ @KERNAL@", profile=profiles.STANDARD),
     # What the Software IEC drive receives from a talker that raises ATN for UNLISTEN as
     # soon as the last byte is acknowledged, as a CMD drive's SWAP does (#933): commands
     # and files over every pause, bit pace and ending, sent by the C64's own code rather
@@ -391,6 +415,11 @@ SUITES: Sequence[Suite] = (
     # able to reach it; the scenarios that need that skip where it cannot.
     Suite("e2e", "uci-net-target", "tests/e2e/io/command_interface/net_target_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --test all", profile=profiles.DEEP),
+    # With Ethernet and WiFi up on one subnet, connections the device opens leave
+    # from the Ethernet address, not WiFi's (#862). This host is the network peer;
+    # it skips when the device has no second address on this host's subnet.
+    Suite("e2e", "uci-net-route", "tests/e2e/io/command_interface/net_route_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@", profile=profiles.DEEP),
     # Two checks that are genuinely about the Telnet transport itself (a
     # concurrent poll-mode connection, per-keystroke output volume) only run
     # under --mode telnet.
@@ -658,6 +687,11 @@ SUITES: Sequence[Suite] = (
     # which of the two a given second was. Give it an address rather than a
     # name to measure a particular interface.
     Suite("perf", "rest-latency", "tests/perf/rest_latency_perf_test.py",
+          "-H @HOST@ -p @PASS@"),
+    # The same routes on each address of a device, with every sample kept so two
+    # firmware builds can be compared (--compare). Run directly to give it a second
+    # --address; under the runner it measures the target's own address.
+    Suite("perf", "rest-path-latency", "tests/perf/rest_path_latency_perf_test.py",
           "-H @HOST@ -p @PASS@"),
     # Reports one figure per kind of key, because a printable character, an
     # arrow key and a lone ESC are delivered at different points in the decoder.

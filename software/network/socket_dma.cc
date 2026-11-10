@@ -568,7 +568,7 @@ void SocketDMA::identThread(void *a)
         }
         while(daemon->identEnabled) {
             // Receive client's message:
-            int n = recvfrom(sockfd, client_message, sizeof(client_message), 0,
+            int n = recvfrom(sockfd, client_message, sizeof(client_message) - 1, 0,
                 (struct sockaddr*)&cli_addr, &client_struct_length);
             if (!daemon->identEnabled) {
                 break;
@@ -582,9 +582,7 @@ void SocketDMA::identThread(void *a)
             }
             printf("Received Ident Request from IP: %s and port: %i\n",
                 inet_ntoa(cli_addr.sin_addr), ntohs(cli_addr.sin_port));
-            if (n > 0) {
-                client_message[n] = 0;
-            }
+            client_message[n] = 0;
 
             const char *hostname = networkConfig.cfg->get_string(CFG_NETWORK_HOSTNAME);
 

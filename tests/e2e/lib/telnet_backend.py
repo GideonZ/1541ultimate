@@ -19,11 +19,11 @@ from collections.abc import Sequence
 import interactions
 import pacing
 import screens as screen_spool
-import re
 import select
 import socket
 import time
-from backend import (Backend, FRAME_CHARS, Snapshot, strip_frame)
+from backend import (Backend, FRAME_CHARS, Frame, Snapshot, framed_list_selections,
+                     strip_frame)
 
 
 # Screen_VT100 serves a 60x24 Telnet session, not the physical 40x25 display.
@@ -120,35 +120,6 @@ TELNET_KEY_BYTES: dict[str, bytes] = {
     "SELECT_ALL": b"\x01",
     "SHIFT_DEL": b"\x1b[2~",
 }
-
-
-# A lookahead, so two boxes side by side that share a corner are both found.
-FRAME_EDGE = re.compile(r"(?=(\+-{2,}\+))")
-
-Frame = tuple[int, int, int, int]
-
-
-def innermost_frames(rows: Sequence[str]) -> list[Frame]:
-    """(top, bottom, left, right) of every box drawn with + and - that holds no other box.
-
-    The alternate character set draws a window's corners and edges, which
-    ALT_CHARSET_MAP turns into + and -. A popup is drawn over the browser's frame,
-    so it is the one box inside it; a C64 Ultimate draws three panels side by side
-    and puts its settings list in the middle one.
-    """
-    boxes: list[Frame] = []
-    for top, row in enumerate(rows):
-        for edge in FRAME_EDGE.finditer(row):
-            left, right = edge.start(), edge.start() + len(edge.group(1)) - 1
-            for bottom in range(top + 1, len(rows)):
-                below = rows[bottom]
-                if len(below) > right and below[left] == "+" and below[right] == "+" \
-                        and set(below[left + 1:right]) == {"-"}:
-                    boxes.append((top, bottom, left, right))
-                    break
-    return [box for box in boxes if not any(
-        other != box and box[0] <= other[0] and other[1] <= box[1]
-        and box[2] <= other[2] and other[3] <= box[3] for other in boxes)]
 
 
 class VT100Screen:
@@ -492,28 +463,9 @@ class TelnetBackend(Backend):
         headers ("-- Peripherals --") and blank rows are not entries.
         """
         self._drain_until_idle(timeout=self.timeout)
-        rows = self.screen.rows()
-        found: dict[Frame, tuple[int, str, list[str]]] = {}
-        for frame in innermost_frames(rows):
-            top, bottom, left, right = frame
-            entries: list[tuple[str, str]] = []
-            for row in range(top + 1, bottom):
-                inner = rows[row][left + 1:right]
-                text = inner.strip()
-                if not text or text.startswith("--"):
-                    continue
-                column = left + 1 + len(inner) - len(inner.lstrip())
-                entries.append((text, self.screen.colours[row][column]))
-            tally: dict[str, int] = {}
-            for _text, sgr in entries:
-                tally[sgr] = tally.get(sgr, 0) + 1
-            odd = [index for index, (_text, sgr) in enumerate(entries) if tally[sgr] == 1]
-            if len(odd) != 1 and self._framed_sgr is not None:
-                # A tie, as in a two-entry list: the colour a highlight was seen in before.
-                odd = [index for index, (_text, sgr) in enumerate(entries) if sgr == self._framed_sgr]
-            if len(odd) == 1 and len(entries) > 1:
-                self._framed_sgr = entries[odd[0]][1]
-                found[frame] = (odd[0], entries[odd[0]][0], [text for text, _sgr in entries])
+        found, self._framed_sgr = framed_list_selections(
+            self.screen.rows(), lambda row, column: self.screen.colours[row][column],
+            self._framed_sgr)
         return found
 
     def selection_and_rows(
