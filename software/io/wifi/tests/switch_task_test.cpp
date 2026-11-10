@@ -188,6 +188,17 @@ TEST(WifiSwitchTask, module_restarted)
     CHECK(strchr(rlog, 'O') == NULL, "enabled: no radio off");
 }
 
+// The restart event acts on the setting, not on the state it finds: after an Enable the state
+// is still Disabled until the module's radio events arrive, and a restart event that comes in
+// that gap is not answered with a radio off
+TEST(WifiSwitchTask, module_restarted_while_an_enable_is_on_its_way)
+{
+    reset_world();
+    boot({ EVENT_DISABLED, Step(menu_enable), EVENT_RESTARTED });
+    CHECK(strchr(rlog, 'N') != NULL, "the Enable went out");
+    CHECK(strchr(after('N'), 'O') == NULL, "and no radio off follows it");
+}
+
 // Disabled means no RF: browsing the AP list does not scan
 TEST(WifiSwitchTask, no_scan_while_disabled)
 {

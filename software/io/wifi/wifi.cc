@@ -544,7 +544,9 @@ void WiFi :: RunModeThread()
             // the radio off is asked for again, and confirmed as at boot.
             case EVENT_RESTARTED:
                 uart->FreeBuffer(buf);
-                if (state == eWifi_Disabled) {
+                // The setting decides, not the state: an Enable that is in the setting and
+                // waits to be applied is not answered with a radio off
+                if (!netstack->enabled_in_config()) {
                     wifi_disable();
                     wifi_switch_asked_off(&radio_switch, xTaskGetTickCount(), pdMS_TO_TICKS(WIFI_SWITCH_CONFIRM_MS));
                 }
