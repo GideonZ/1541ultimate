@@ -14,6 +14,7 @@
 
 Record rec;
 ConfigStore *host_cfg;
+std::atomic<int> host_ring_live(0);
 IecInterface *iec_if;
 bool host_start_tasks = true;
 TaskHandle_t host_dummy_handle = (TaskHandle_t) &host_dummy_handle;
@@ -36,6 +37,8 @@ BaseType_t xTaskCreate(TaskFunction_t fn, const char *, int, void *arg, int, Tas
     *h = host_dummy_handle;
     PrinterTaskArgs *t = new PrinterTaskArgs;
     t->fn = fn; t->arg = arg;
+    if (held_task) delete held_task;    /* one that nobody started */
+    held_task = NULL;
     if (host_start_tasks)
         start_task(t);
     else
@@ -117,6 +120,39 @@ static void test_flush_bounded(void)
     CHECK(used >= IEC_PRINTER_FLUSH_WAIT_MS - 20 && used < IEC_PRINTER_FLUSH_WAIT_MS + 1500);
     CHECK(rec.progress_hidden == 1);            /* the dialog went away */
     CHECK(rec.form_feed == 0);
+    delete p;                                   /* nothing runs it: the object, its ring and its settings go with it */
+    delete host_cfg; host_cfg = NULL;
+    delete held_task; held_task = NULL;
+}
+
+/* Enable/disable and destroy, over and over, with nothing consuming: every ring comes back, no file stays open. */
+static void test_teardown_cycles(void)
+{
+    host_start_tasks = false;
+    const int base = host_ring_live;            /* rings of the printers the other tests keep running */
+    for (int i = 0; i < 20; i++) {
+        rec.reset();
+        host_cfg = new ConfigStore;
+        configure_printer(i % 2 ? 0 : 2);
+        IecPrinter *p = new IecPrinter;
+        UserInterface ui;
+        CHECK(p->spool.allocated());            /* the ring exists while the printer is on */
+        CHECK(host_ring_live == base + 1);
+        for (int k = 0; k < 3000; k++) p->push_data('A');   /* more than the small ring holds: the backlog stays queued */
+        menu(p, &ui, MENU_OFF);
+        uint16_t ev; PrinterSpoolCtl ctl;           /* the printer task's part, done here: it takes the abort, which gives the ring back */
+        while (p->spool.next(ev, ctl) != PRINTER_SPOOL_NONE) { }
+        CHECK(host_ring_live == base);             /* Turn Off gives it back, backlog or not */
+        CHECK(!p->spool.allocated());
+        menu(p, &ui, MENU_ON);
+        CHECK(host_ring_live == base + 1);
+        for (int k = 0; k < 3000; k++) p->push_data('B');
+        delete p;                               /* destroyed while on with a backlog: the ring is freed */
+        CHECK(host_ring_live == base);
+        CHECK(rec.file_is_open == 0);
+        delete host_cfg; host_cfg = NULL;
+        delete held_task; held_task = NULL;
+    }
 }
 
 /* Turn Off: the backlog is gone, the emulation is reset, the RAW file is closed, the ring is given back. */
@@ -238,6 +274,7 @@ int main(void)
 {
     RUN(test_flush_served);
     RUN(test_flush_bounded);
+    RUN(test_teardown_cycles);
     RUN(test_turn_off);
     RUN(test_reset);
     RUN(test_toggle_burst);

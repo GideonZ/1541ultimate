@@ -17,6 +17,13 @@
 #include "task.h"
 #include "semphr.h"
 
+/* The spool's big ring goes through these, so a test can tell what is still allocated (and, under ASan, who owns it). */
+extern std::atomic<int> host_ring_live;
+static inline void *host_ring_malloc(size_t n) { host_ring_live++; return malloc(n); }
+static inline void host_ring_free(void *p) { host_ring_live--; free(p); }
+#define PRINTER_SPOOL_MALLOC host_ring_malloc
+#define PRINTER_SPOOL_FREE   host_ring_free
+
 #define FS_ROOT "/"
 #define SORT_ORDER_PRINTER 1
 #define SORT_ORDER_CFG_PRINTER 2
