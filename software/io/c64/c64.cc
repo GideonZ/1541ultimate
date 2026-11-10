@@ -526,9 +526,24 @@ void C64::stop(bool do_raster)
     }
 }
 
+// The VIC registers and the 1 ms timer as raster_wait_for_line() reads them (see raster_wait.h)
+struct VicRasterBus {
+    uint8_t d011() { return VIC_REG(17); }
+    uint8_t d012() { return VIC_REG(18); }
+    bool ms_elapsed()
+    {
+        if (ioRead8(ITU_TIMER)) {
+            return false;
+        }
+        ioWrite8(ITU_TIMER, 200); // 1 ms
+        return true;
+    }
+};
+
 void C64::resume(void)
 {
     int dummy = 0;
+    VicRasterBus bus;
     uint8_t rast_lo;
     uint8_t rast_hi;
 
@@ -550,33 +565,11 @@ void C64::resume(void)
             VIC_REG(26) = 0x81;
             VIC_REG(18) = rast_lo;
             VIC_REG(17) = d011_while_waiting(vic_d011, rast_hi); // see raster_wait.h
-            for (;;) {
-                uint8_t d011 = VIC_REG(17); // before $D012, see raster_wait.h
-                if (raster_at_line(VIC_REG(18), d011, rast_lo, rast_hi)) {
-                    break;
-                }
-                if (!ioRead8(ITU_TIMER)) {
-                    ioWrite8(ITU_TIMER, 200); // 1 ms
-                    dummy++;
-                    if (dummy == 40)
-                        break;
-                }
-            }
+            raster_wait_for_line(bus, rast_lo, rast_hi);
             VIC_REG(18) = vic_d012;
             VIC_REG(17) = vic_d011;
         } else {
-            for (;;) {
-                uint8_t d011 = VIC_REG(17); // before $D012, see raster_wait.h
-                if (raster_at_line(VIC_REG(18), d011, rast_lo, rast_hi)) {
-                    break;
-                }
-                if (!ioRead8(ITU_TIMER)) {
-                    ioWrite8(ITU_TIMER, 200); // 1 ms
-                    dummy++;
-                    if (dummy == 40)
-                        break;
-                }
-            }
+            raster_wait_for_line(bus, rast_lo, rast_hi);
             VIC_REG(18) = vic_d012;
             VIC_REG(17) = vic_d011;
             VIC_REG(25) = 0x81; // clear raster irq

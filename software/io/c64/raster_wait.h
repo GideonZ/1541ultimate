@@ -22,4 +22,28 @@ static inline uint8_t d011_while_waiting(uint8_t d011, uint8_t compare_hi)
     return (uint8_t)((d011 & 0x7F) | compare_hi);
 }
 
+
+// The wait in C64::resume(): returns true when the raster is at line (lo | hi << 1), false after
+// 40 ms without it. c64.cc and the host test (target/pc/linux/rasterwait) both run this function;
+// they differ only in the Bus they give it:
+//   uint8_t d011();      read $D011
+//   uint8_t d012();      read $D012
+//   bool ms_elapsed();   true once per millisecond (the firmware restarts its 1 ms timer when it is)
+template <class Bus>
+static inline bool raster_wait_for_line(Bus &bus, uint8_t lo, uint8_t hi)
+{
+    int ms = 0;
+    for (;;) {
+        uint8_t d011 = bus.d011(); // before $D012, see raster_at_line
+        if (raster_at_line(bus.d012(), d011, lo, hi)) {
+            return true;
+        }
+        if (bus.ms_elapsed()) {
+            if (++ms == 40) {
+                return false;
+            }
+        }
+    }
+}
+
 #endif
