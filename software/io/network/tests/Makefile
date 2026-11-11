@@ -8,6 +8,8 @@ ETH_TX_FRAME_TEST := $(OUTPUT_DIR)/ethTxFrameTest
 ETH_TX_FRAME_RED := $(OUTPUT_DIR)/ethTxFrameTestLegacy
 ROUTE_SELECT_TEST := $(OUTPUT_DIR)/routeSelectTest
 ROUTE_SELECT_RED := $(OUTPUT_DIR)/routeSelectTestLegacy
+SEND_ALL_TEST := $(OUTPUT_DIR)/sendAllTest
+SEND_ALL_RED := $(OUTPUT_DIR)/sendAllTestLegacy
 REF_POOL_TEST := $(OUTPUT_DIR)/refPoolTest
 REF_POOL_RED := $(OUTPUT_DIR)/refPoolTestLegacy
 SYS_ARCH_TEST := $(OUTPUT_DIR)/sysArchTest
@@ -28,9 +30,9 @@ POOL_C := core/init.c core/def.c core/inet_chksum.c core/ip.c core/mem.c core/me
 	core/netif.c core/pbuf.c core/stats.c core/sys.c core/timeouts.c core/udp.c \
 	core/ipv4/ip4.c core/ipv4/ip4_addr.c core/ipv4/ip4_frag.c
 
-.PHONY: all lwip-objs eth-tx-frame eth-tx-frame-red fw-hook-opts route-select route-select-red fw-pool-opts ref-pool ref-pool-red sys-arch sys-arch-red clean
+.PHONY: all lwip-objs eth-tx-frame eth-tx-frame-red fw-hook-opts route-select route-select-red send-all send-all-red fw-pool-opts ref-pool ref-pool-red sys-arch sys-arch-red clean
 
-all: eth-tx-frame eth-tx-frame-red route-select route-select-red ref-pool ref-pool-red sys-arch sys-arch-red
+all: eth-tx-frame eth-tx-frame-red route-select route-select-red send-all send-all-red ref-pool ref-pool-red sys-arch sys-arch-red
 
 eth-tx-frame:
 	mkdir -p $(OUTPUT_DIR)
@@ -75,6 +77,21 @@ route-select-red: lwip-objs
 		exit 1; \
 	else \
 		echo "route-select-red: $$(tail -1 $(OUTPUT_DIR)/route-red.log) against the pre-fix behaviour, as required"; \
+	fi
+
+send-all:
+	mkdir -p $(OUTPUT_DIR)
+	$(CXX) $(CXXFLAGS) send_all_test.cpp ../../usb/tests/host_test_main.cpp -lpthread -o $(SEND_ALL_TEST) && $(SEND_ALL_TEST)
+
+# The same suite against the send loop as it was. It has to fail, as for eth-tx-frame-red.
+send-all-red:
+	mkdir -p $(OUTPUT_DIR)
+	$(CXX) $(CXXFLAGS) -DSEND_ALL_LEGACY send_all_test.cpp ../../usb/tests/host_test_main.cpp -lpthread -o $(SEND_ALL_RED)
+	@if $(SEND_ALL_RED) > $(OUTPUT_DIR)/send-all-red.log 2>&1; then \
+		echo "send-all-red: the suite passed against the pre-fix behaviour -- it no longer catches the defect"; \
+		exit 1; \
+	else \
+		echo "send-all-red: $$(tail -1 $(OUTPUT_DIR)/send-all-red.log) against the pre-fix behaviour, as required"; \
 	fi
 
 # The firmware's MEMP_NUM_PBUF, for the pool test; the build stops if the file no longer
