@@ -14,7 +14,7 @@
 ;   $CF00  done flag: 1 when the job has finished
 ;   $CF01  number of probes made while printing
 ;   $CF02  KERNAL status after OPEN + CHKOUT of the printer
-;   $CF03  KERNAL status after the last byte was sent
+;   $CF03  KERNAL status, ORed over every byte sent (read right after each CHROUT)
 ;   $CF07  number of time stamps taken
 ;   $CA00/$CB00/$CC00  time stamps, one byte per stamp: minutes, seconds,
 ;                      tenths (BCD, as the CIA keeps them)
@@ -73,6 +73,16 @@ start:
         sta crs
         sta crtot
         sta pcnt
+        sta ST_END
+        ; CIA 1 time of day counts mains cycles: bit 7 of $DC0E must say 50 Hz
+        ; on a PAL machine and 60 Hz on an NTSC one, or the clock runs fast or
+        ; slow. The KERNAL's own PAL flag ($02A6, nonzero = PAL) tells which.
+        lda $dc0e
+        and #$7f
+        ldx $02a6
+        beq ntsc
+        ora #$80
+ntsc:   sta $dc0e
         ; CIA 1 time of day: clock (not alarm) writes, set 01:00:00.0; the
         ; tenths write starts it.
         lda $dc0f
@@ -107,6 +117,9 @@ fetch:  lda TEXT
         beq done
         sta ch
         jsr CHROUT
+        lda STATUS              ; this byte's own status, before a probe resets it
+        ora ST_END
+        sta ST_END
         lda ch
         cmp #$0d
         bne advance
@@ -126,8 +139,6 @@ advance: inc fetch+1
         jmp loop
 
 done:
-        lda STATUS
-        sta ST_END
         jsr CLRCHN
         lda #4
         jsr CLOSE
