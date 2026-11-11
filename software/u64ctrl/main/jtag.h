@@ -32,7 +32,7 @@ void jtag_fpga_finish(const uint8_t *data, int bytes);  // bytes >= 1
 void jtag_fpga_clear(void);
 
 /* The outputs of the virtual JTAG interface; bit 7 holds the CPU in reset. */
-uint8_t vji_set_outputs(uint8_t value);  // returns the value the register held before the write
+void vji_set_outputs(uint8_t value);
 uint32_t jtag_get_id_code();
 uint32_t vji_get_user_code();
 void vji_write_memory(const uint32_t address, const uint8_t *data, const int bytes);
