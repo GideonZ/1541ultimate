@@ -22,6 +22,8 @@
 #if U64 == 2
 class ProviderManagerUart;
 namespace provider_session { struct Identity; }
+#else
+#include "wifi_switch.h"
 #endif
 
 // This class provides an interface to the WiFi module, to manage and program it
@@ -39,6 +41,10 @@ typedef enum {
 
 class NetworkLWIP_WiFi;
 
+// How long an event of the user waits for the radio to come on (WiFi :: sendEventWhenEnabled):
+// longer than the module takes to start its radio and report it
+#define WIFI_WHEN_ENABLED_MS 10000
+
 class WiFi : public Esp32Application
 {
     TaskHandle_t runModeTask;
@@ -55,6 +61,16 @@ class WiFi : public Esp32Application
     void InvalidateProvider();
 
     WifiState_t state;
+    WifiState_t state_before_scan; // the state a scan of the AP list returns to
+    volatile bool pick_cancelled;  // the user turned the radio off: a pick under way is not reported (RadioOff sets it, the task takes it)
+    uint8_t event_when_enabled;    // an event of the user to send once the radio is on again (0: none)
+    volatile uint32_t event_when_enabled_by; // and until when, in ticks
+    // The connects from the AP list (connect_ap) and the module's answers to them, for the
+    // task: written by the user interface, read by the task (WiFi :: ConnectAnswered)
+    volatile uint8_t connect_attempt;  // the number of the last attempt
+    volatile uint8_t connect_answered; // the attempt the module answered last
+    volatile int connect_answer;       // its answer (esp_err: 0 accepted)
+    volatile uint32_t connect_answer_at; // when it came, in ticks
     char    last_ap[32];
     char    moduleName[34];
     char    moduleType[24];
@@ -62,6 +78,11 @@ class WiFi : public Esp32Application
     uint32_t my_ip;
     uint32_t my_gateway;
     uint32_t my_netmask;
+#if U64 != 2
+    wifi_switch_t radio_switch;
+    volatile bool radio_setting_due; // "WiFi Enabled" is to be applied by the task (RadioOn, RadioOff)
+    int8_t radio_setting_applied;    // the setting the task applied last: 1, 0, or -1 for none yet
+#endif
 
     bool RequestEcho(void);
     void RxPacket(command_buf_t *);
@@ -77,14 +98,28 @@ public:
     BaseType_t doRequestEcho(void);
 
     WifiState_t getState(void) { return state; }
+    // A radio off is asked for and not confirmed yet (wifi_switch.h)
+#if U64 != 2
+    bool RadioOffAwaited(void) { return radio_switch.awaiting_off; }
+    // Whether "WiFi Enabled" as on differs from what the WiFi task applied last
+    bool RadioSettingChanged(bool on) { return radio_setting_applied != (on ? 1 : 0); }
+#else
+    bool RadioOffAwaited(void) { return false; }
+#endif
     const char *getLastAP(void) { return (state == eWifi_Connected) ? last_ap : "-"; }
     const char *getModuleName(void) { return moduleName; }
     const char *getModuleType(void) { return moduleType; }
     void  getMacAddr(uint8_t *target) { memcpy(target, my_mac, 6); }
     char *getIpAddrString(char *buf, int max) { sprintf(buf, "%d.%d.%d.%d", (my_ip >> 0) & 0xff, (my_ip >> 8) & 0xff, (my_ip >> 16) & 0xff, (my_ip >> 24) & 0xff); return buf; }
 
-    void sendEvent(uint8_t code);
-    void sendConnectEvent(const char *ssid, const char *pass, uint8_t auth);
+    bool sendEvent(uint8_t code);
+    // After the radio is on again, within WIFI_WHEN_ENABLED_MS of the Enable that goes out
+    // for it (WhenEnabledFromNow, as the Enable is sent; the user may take long to say Yes)
+    void sendEventWhenEnabled(uint8_t code) { event_when_enabled = code; }
+    void WhenEnabledFromNow(void) { event_when_enabled_by = xTaskGetTickCount() + pdMS_TO_TICKS(WIFI_WHEN_ENABLED_MS); }
+    uint8_t ConnectStart(void);
+    bool sendConnectPending(const char *ssid, uint8_t attempt);
+    void ConnectAnswered(uint8_t attempt, int answer);
     void freeBuffer(command_buf_t *buf);
     int  getAccessPointItems(Browsable *parent, IndexedList<Browsable *> &list);
 
@@ -126,12 +161,16 @@ class BrowsableWifiAP : public Browsable
     char ssid[32];
     int8_t dbm;
     uint8_t auth;
+    uint8_t bssid[6];
+    uint8_t channel;
 public:
-    BrowsableWifiAP(Browsable *parent, char *ssid, int8_t dbm, uint8_t auth) {
+    BrowsableWifiAP(Browsable *parent, char *ssid, int8_t dbm, uint8_t auth, const uint8_t *bssid, uint8_t channel) {
         this->parent = parent;
         strncpy(this->ssid, ssid, 32);
         this->dbm = dbm;
         this->auth = auth;
+        memcpy(this->bssid, bssid, 6);
+        this->channel = channel;
     }
 
     void getDisplayString(char *buffer, int width, UserInterface *ui) {

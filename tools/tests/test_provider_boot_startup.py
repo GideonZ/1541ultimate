@@ -103,7 +103,7 @@ int main(int argc, char **argv) {
         self.assertLess(modem.index("wifi_init();"), modem.index("start_dispatch("))
 
     def test_module_versions_and_strings(self):
-        for enabled, minor in [(False, 22), (True, 23)]:
+        for enabled, minor in [(False, 30), (True, 31)]:
             code = '''
 #include <assert.h>
 #include <stdio.h>
@@ -118,7 +118,7 @@ int main(void) {
     assert(!strcmp(expected, IDENT_STRING));
     assert(IDENT_MAJOR == 1 && IDENT_MINOR == EXPECTED_MINOR);
     /* The ordinary updater installs only strictly newer module versions. */
-    assert(IDENT_MINOR > 21);
+    assert(IDENT_MINOR > 29);
     return 0;
 }
 '''

@@ -20,8 +20,9 @@ adding a second ADC initialization sequence.
 
 ## Version selection
 
-The default module reports **1.22** and the provider-enabled module reports
-**1.23**. Both are newer than the previous default 1.21. This matters because
+For the local merge with upstream 1.29, the provisional default and provider
+versions are **1.30** and **1.31**, respectively. The earlier 1.22/1.23 pair
+applies only to the previous revision. This matters because
 the ordinary C64U/U64-II updater installs a controller image only when its numeric version
 is newer; equal versions are skipped. TLS capability still requires explicit
 negotiation and cannot be inferred from a version number.

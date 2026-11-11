@@ -24,6 +24,11 @@ static volatile bool c64_reset_pending;
 static volatile bool command_abort_pending;
 static CancellationSource command_cancellation;
 
+bool c64_reset_is_pending(void)
+{
+    return c64_reset_pending;
+}
+
 #define CMD_IF_DEBUG 0
 
 
