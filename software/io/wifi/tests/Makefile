@@ -27,7 +27,8 @@ OUT := output/u64_$(U64)
 # of a class is found.
 WIFI_FUNCS := WiFi~::~WiFi WiFi~::~Init WiFi~::~Enable WiFi~::~Disable WiFi~::~RadioOn \
 	WiFi~::~RadioOff WiFi~::~RunModeThread WiFi~::~sendEvent WiFi~::~ConnectStart WiFi~::~ConnectAnswered \
-	WiFi~::~sendConnectPending WiFi~::getAccessPointItems BrowsableWifiAP~::~connect_ap
+	WiFi~::~sendConnectPending WiFi~::getAccessPointItems BrowsableWifiAP~::~connect_ap \
+	WiFi::InvalidateProvider WiFi::ProviderLinkLoss WiFi::PollProvider wifi_provider_receive
 NET_FUNCS := NetworkLWIP_WiFi~::~disable NetworkLWIP_WiFi~::~enable NetworkLWIP_WiFi~::~ask_enable \
 	NetworkLWIP_WiFi~::~cfg_show_aps NetworkLWIP_WiFi~::~cfg_enter_ap NetworkLWIP_WiFi~::~cfg_conn_last \
 	NetworkLWIP_WiFi~::~effectuate_settings
@@ -40,7 +41,7 @@ CASES := $(wildcard *_test.cpp)
 CXXFLAGS := -std=c++14 -g -O0 -Wall -Wno-unused-parameter -Wno-unused-variable -Wno-unused-function -Wno-switch \
 	-Wno-format -Wno-unknown-warning-option -Wno-mismatched-tags -Wno-deprecated-declarations \
 	-fno-access-control -DRISCV=1 $(if $(filter 0,$(U64)),,-DU64=$(U64)) \
-	-I$(OUT) -Istubs -I. -I$(WIFI_DIR) -I$(UART) -I$(SW)/wifi/raw_u64/main
+	-I$(OUT) -Istubs -I. -I$(WIFI_DIR) -I$(UART) -I$(SW)/infra -I$(SW)/wifi/raw_u64/main
 
 # Prints the function $(1) of file $(2), and stops when it is not there
 extract = out=$$(awk -v f="$(subst ~, ,$(1))" -f $(EXTRACT) $(2)); \
@@ -87,7 +88,7 @@ $(OUT)/small_printf.o: $(FW_PRINTF) Makefile
 	$(CXX) -std=c++14 -g -O0 -w $(FW_FLAGS) $(FW_RENAME) -c -o $@ $<
 
 # The code under test, with its snprintf and sprintf taken from the firmware's printf
-$(OUT)/task.o: $(OUT)/task.cc $(OUT)/wifi_enable_default.h wifi_task_env.h Makefile
+$(OUT)/task.o: $(OUT)/task.cc $(OUT)/wifi_enable_default.h wifi_task_env.h $(WIFI_DIR)/wifi.h $(wildcard stubs/*.h) Makefile
 	$(CXX) $(CXXFLAGS) $(FW_FLAGS) -Dsnprintf=fw_snprintf -Dsprintf=fw_sprintf -c -o $@ $<
 
 $(OUT)/wifi_task_test: $(OUT)/task.o $(OUT)/small_printf.o wifi_task_stubs.cpp $(CASES) \

@@ -36,7 +36,7 @@ bool wifi_provider_receive(command_buf_t *buffer)
 {
     if (wifi.ReceiveProviderIdentity(buffer) || wifi.ReceiveProviderControl(buffer)) return true;
     const rpc_header_t *header = (const rpc_header_t *)buffer->data;
-    if (header->command == EVENT_DISCONNECTED || header->command == EVENT_DISABLED || header->command == EVENT_RESCAN)
+    if (header->command == EVENT_DISCONNECTED || header->command == EVENT_DISABLED)
         WiFi::ProviderLinkLoss();
     return false;
 }
@@ -663,7 +663,6 @@ void WiFi :: RunModeThread()
 #endif
             switch(hdr->command) {
             case EVENT_RESCAN: // requested from user interface
-                InvalidateProvider();
                 uart->FreeBuffer(buf);
                 // Disabled means no RF, also while the radio off waits to be confirmed:
                 // the module does not scan with its radio off
