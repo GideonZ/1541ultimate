@@ -1,7 +1,17 @@
 //#include "attachment_writer.h"
 #include "http_request.h"
 #include "netdb.h"
+#include "send_all.h"
 #include <errno.h>
+
+static void set_socket_timeouts(int socket_fd)
+{
+    struct timeval tv;
+    tv.tv_sec = HTTP_REQUEST_TIMEOUT_MS / 1000;
+    tv.tv_usec = (HTTP_REQUEST_TIMEOUT_MS % 1000) * 1000;
+    setsockopt(socket_fd, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv, sizeof(tv));
+    setsockopt(socket_fd, SOL_SOCKET, SO_SNDTIMEO, (char *)&tv, sizeof(tv));
+}
 
 int HttpRequest :: connect_to_server(const char *hostname, uint16_t hostport)
 {
@@ -44,6 +54,7 @@ int HttpRequest :: connect_to_server(const char *hostname, uint16_t hostport)
         return -1;
     }
     // printf("Connection succeeded.\n");
+    set_socket_timeouts(sock_fd);
     this->socket_fd = sock_fd;
     return sock_fd;
 }
@@ -56,7 +67,7 @@ int HttpRequest :: send_request(StreamRamFile *s)
     do {
         n = s->read(buffer, 128);
         if (n) {
-            r = send(socket_fd, buffer, n, MSG_DONTWAIT);
+            r = send_all(socket_fd, buffer, n);
             if (r < 0) {
                 return r;
             }
