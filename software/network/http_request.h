@@ -52,6 +52,12 @@ int   read_socket(int socket_fd, HTTPReqMessage& response);
 bool  get_response(int socket_fd, HTTPREQ_CALLBACK callback, HTTPReqMessage& response, HttpWait *wait = NULL);
 JSON *convert_buffer_to_json(t_BufferedBody *body);
 
+// How long an exchange waits for the server to take more of the request, or to
+// send more of its response, before it gives up. The host tests set it lower.
+#ifndef HTTP_REQUEST_TIMEOUT_MS
+#define HTTP_REQUEST_TIMEOUT_MS 30000
+#endif
+
 class HttpRequest
 {
     t_BufferedBody *body;
