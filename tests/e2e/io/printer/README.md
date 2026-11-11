@@ -268,3 +268,25 @@ provided the JTAG cable stays connected.
   `temp_auto_cleanup_perf_test.py` but are no-ops here — this harness is a
   single deterministic print-and-verify per combination, not a
   throughput/soak benchmark.
+
+## Printing must not block the bus or REST (`printer_stall_test.py`)
+
+Regression test for #1052, registered as `printer-stall` (standard profile,
+5 to 10 minutes). A 240-line Commodore MPS job (four pages) is printed once as
+PNG B&W and once as PNG COLOR while a SoftIEC drive on bus 11 and `GET
+/v1/drives` are probed during the job and right after the printer's CLOSE. Any
+probe over 0.5 s, a job that does not finish, or pages that are not the four
+byte-identical reference pages fails the run, and the message names the worst
+probe. The C64 side is `printer_stall_e2e.asm`, committed with its assembled
+`printer_stall_e2e.prg` (`make` here rebuilds both PRGs).
+
+```sh
+./run-tests -H u64 -s printer-stall
+python3 tests/e2e/io/printer/printer_stall_test.py -H u64 --control-drive 8
+python3 tests/e2e/io/printer/printer_stall_test.py -H u64 --bw-only   # quick look, not the gate
+```
+
+`--control-drive BUS` also probes a second drive that does not go through the
+printer, and reports a bench fault instead of judging the firmware if that
+drive is slow. `--print-hashes` prints the page hashes to refresh
+`REFERENCE_SHA256` when the renderer changes on purpose.

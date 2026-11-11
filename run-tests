@@ -329,6 +329,12 @@ SUITES: Sequence[Suite] = (
     Suite("e2e", "cfg-whitespace", "tests/e2e/filemanager/cfg_whitespace_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@"),
     Suite("e2e", "printer", "tests/e2e/io/printer/printer_test.py", "-H @HOST@ -p @PASS@", profile=profiles.QUICK),
+    # Issue #1052: a long print job, B&W and colour, with a SoftIEC drive and REST
+    # probed while it runs and after it closes. Takes 5 to 10 minutes, hence
+    # standard. `--bw-only` is the quick look and `--control-drive BUS` adds the
+    # control drive; neither is in the registered arguments.
+    Suite("e2e", "printer-stall", "tests/e2e/io/printer/printer_stall_test.py",
+          "-H @HOST@ -p @PASS@", profile=profiles.STANDARD),
     # usb-mouse drives the mouse over REST and needs no hardware; it runs the
     # scenarios its profile asks for (mouse_test.py PROFILE_TESTS), from two in
     # smoke to every one in deep, where it also sweeps PAL and NTSC and takes
