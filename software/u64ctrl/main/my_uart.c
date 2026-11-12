@@ -23,7 +23,7 @@
 #include "freertos/ringbuf.h"
 #include "hal/uart_hal.h"
 #include "hal/gpio_hal.h"
-#include "soc/uart_periph.h"
+#include "hal/uart_periph.h"
 #include "soc/rtc_cntl_reg.h"
 #include "driver/uart.h"
 #include "driver/gpio.h"
@@ -35,6 +35,9 @@
 #include "rpc_dispatch.h"
 #include "dump_hex.h"
 #include "my_uart.h"
+#include "pinout.h"
+#include "esp_brownout.h"
+#include "hal/uart_ll.h"
 
 #if CONFIG_IDF_TARGET_ESP32
 #include "esp32/clk.h"
@@ -368,7 +371,7 @@ BaseType_t my_uart_get_buffer(uint8_t uart_num, command_buf_t **buf, TickType_t 
 }
 
 #include "esp_check.h"
-esp_err_t uart_isr_register(uart_port_t uart_num, void (*fn)(void *), void *arg, int intr_alloc_flags,  uart_isr_handle_t *handle)
+esp_err_t uart_isr_register(uart_port_t uart_num, void (*fn)(void *), void *arg, int intr_alloc_flags, intr_handle_t *handle)
 {
     int ret;
     ESP_RETURN_ON_FALSE((uart_num < UART_NUM_MAX), ESP_FAIL, UART_TAG, "uart_num error");
@@ -376,6 +379,27 @@ esp_err_t uart_isr_register(uart_port_t uart_num, void (*fn)(void *), void *arg,
     ret = esp_intr_alloc(uart_periph_signal[uart_num].irq, intr_alloc_flags, fn, arg, handle);
     UART_EXIT_CRITICAL(&(uart_context[uart_num].spinlock));
     return ret;
+}
+
+void my_uart_connect_pins(void)
+{
+    // ESP-IDF 5.3.1's uart_set_pin() put a pull-up on RX and CTS before connecting them, replacing
+    // the pull-downs left by check_fpga() and the power-off path; ESP-IDF 6 never touches pulls, so
+    // do it here, ahead of the routing, as 5.3.1 did. While the machine is off RX and CTS stay routed
+    // to UART1 and pulled down; a boot that stays off has the pull-ups on for about 100 ms, until
+    // regulator_enable(0), the same as on 5.3.1.
+    ESP_ERROR_CHECK( gpio_set_pull_mode(IO_UART_RXD, GPIO_PULLUP_ONLY) );
+    ESP_ERROR_CHECK( gpio_set_pull_mode(IO_UART_CTS, GPIO_PULLUP_ONLY) );
+    ESP_ERROR_CHECK( uart_set_pin(UART_NUM_1, IO_UART_TXD, IO_UART_RXD, IO_UART_RTS, IO_UART_CTS) );
+}
+
+// ESP-IDF 6's brownout interrupt waits for every enabled UART's transmitter to drain before it resets
+// (5.3.1 reset at once). With CTS held high by its pull-up, because the FPGA lost power with the
+// machine, bytes in the UART1 FIFO would never leave and the wait would last until the interrupt
+// watchdog. Runs in the brownout ISR, ahead of that wait: stop honouring CTS so the FIFO drains.
+static IRAM_ATTR void uart1_brownout_callback(void)
+{
+    uart_ll_set_hw_flow_ctrl(UART_LL_GET_HW(UART_NUM_1), UART_HW_FLOWCTRL_DISABLE, 0);
 }
 
 esp_err_t my_uart_init(command_buf_context_t *buffers, uint8_t uart_num)
@@ -395,8 +419,8 @@ esp_err_t my_uart_init(command_buf_context_t *buffers, uint8_t uart_num)
     const uart_intr_config_t interrupt_config = {
             .intr_enable_mask  = UART_INTR_RXFIFO_TOUT | UART_INTR_RXFIFO_FULL,
             .rx_timeout_thresh = 2,
-            .txfifo_empty_intr_thresh = 10,
-            .rxfifo_full_thresh = 120,
+            .txfifo_empty_intr_thresh = 64,
+            .rxfifo_full_thresh = 64,
     };
 
     const uart_config_t uart_config = {
@@ -407,6 +431,12 @@ esp_err_t my_uart_init(command_buf_context_t *buffers, uint8_t uart_num)
         .flow_ctrl = UART_HW_FLOWCTRL_INIT,
         .rx_flow_ctrl_thresh = 122,
     };
+
+    // Not worth stopping the boot over: without it a brownout resets after the interrupt watchdog.
+    esp_err_t bo = esp_brownout_register_callback(uart1_brownout_callback);
+    if (bo != ESP_OK) {
+        ESP_LOGW(UART_TAG, "brownout callback not registered: %s", esp_err_to_name(bo));
+    }
 
     // Configure UART parameters
     esp_err_t ret = uart_param_config(uart_num, &uart_config);
