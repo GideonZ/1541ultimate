@@ -21,6 +21,7 @@ extern "C" {
 }
 
 #include "sntp_time.h"
+#include "net_counters.h"
 
 void start_sntp() __attribute__((weak));
 void start_sntp() { }
@@ -54,10 +55,34 @@ void NetworkInterface :: write_pcap(UserInterface *intf, ConfigItem *it)
 /**
  * Initialization
  */
+// Every 5 s, one line on the console (and so the syslog) when a net_counters value has changed
+// Bench builds only (NET_COUNTERS_REPORT, net_counters.h): a production build keeps the counters but never
+// prints them, so the reporter cannot load the console or, through a syslog over WiFi, feed itself.
+#if NET_COUNTERS_REPORT
+static void net_counters_task(void *a)
+{
+    net_counters_t last;
+    memset(&last, 0, sizeof(last));
+    while (1) {
+        vTaskDelay(5 * configTICK_RATE_HZ);
+        net_counters_t now = net_counters;
+        if (memcmp(&now, &last, sizeof(now)) == 0) {
+            continue;
+        }
+        last = now;
+        printf("NETCTR refused=%d ovf=%d rxlong=%d", now.wifi_tx_refused, now.uart_rx_overflow, now.uart_rx_long);
+        printf("\n");
+    }
+}
+#endif
+
 void initLwip(void *a, void *b)
 {
 //	printf("Initializing lwIP.\n");
 	tcpip_init(NULL, NULL);
+#if NET_COUNTERS_REPORT
+	xTaskCreate(net_counters_task, "Net counters", configMINIMAL_STACK_SIZE, NULL, PRIO_BACKGROUND, NULL);
+#endif
 }
 
 InitFunction lwIP_initializer("LwIP Networking", initLwip, NULL, NULL, 50);
