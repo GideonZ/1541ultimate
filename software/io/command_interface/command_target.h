@@ -48,6 +48,11 @@ public:
     // The C64 was reset, so the program talking to this target is gone.
     virtual void c64_reset(void) { }
 
+    // A command that this target answers at once, with no lock, file, socket or long
+    // loop: the UCI Server task runs it at its own level instead of lowering itself, so it
+    // never waits behind the services. Everything else runs at PRIO_HW_SERVICE.
+    virtual bool is_quick(Message *command) { return false; }
+
     // The reply to a command that this target deferred; see command_defer(). Called on the
     // UCI Server task, with no other command in between. Fills reply and status as
     // parse_command does; get_more_data hands out the rest, as after parse_command.

@@ -194,6 +194,7 @@ public:
         *reply = &c_reply_late;
         *status = &c_status_ok;
     }
+    bool is_quick(Message *command) { return command->message[1] == 0x01; }
     void abort(int) { aborts++; abort_priority = uxTaskPriorityGet(NULL); state_at_abort = gw.state; }
     void c64_reset(void) { resets++; reset_priority = uxTaskPriorityGet(NULL); state_at_reset = gw.state; }
 };
@@ -408,6 +409,17 @@ static void test_priorities(void)
     CHECK(fake.abort_priority == PRIO_HW_SERVICE && fake.state_at_abort == 0);
     CHECK(uxTaskPriorityGet(NULL) == PRIO_C64_SERVICE);
     CHECK(PRIO_HW_SERVICE < PRIO_C64_SERVICE && PRIO_NETSERVICE < PRIO_C64_SERVICE);
+    // A quick command (here IDENTIFY) runs at the server's own level.
+    expect_next_command_works();
+    c64_abort();
+    run_server();
+    const uint8_t identify[] = { 0x07, 0x01 };
+    c64_push(identify, sizeof(identify));
+    run_server();
+    CHECK(fake.parse_priority == PRIO_C64_SERVICE);
+    CHECK(response_is("NOW"));
+    c64_abort();
+    run_server();
     expect_next_command_works();
 }
 

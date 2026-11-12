@@ -31,45 +31,14 @@ void collect_in_buffer(HTTPReqMessage *req, HTTPRespMessage *resp);
 #define HTTP_REQUEST_TIMEOUT_MS 30000
 #endif
 
-// An HttpRequest waits on its socket in slices of this length, so that it sees
-// a cancel within one slice.
-#define HTTP_IO_SLICE_MS 100
-
-// Stops an exchange when it is cancelled or when it has made no progress for
-// HTTP_REQUEST_TIMEOUT_MS. The time is measured, not counted in slices: on lwIP a
-// send slice lasts about a second, not HTTP_IO_SLICE_MS. There is no limit on the
-// exchange as a whole: a slow peer, like the printer in #1039, may take as long as
-// it needs while it moves.
-static inline uint32_t http_now_ms(void)
-{
-#ifdef RUNS_ON_PC
-    struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
-    return (uint32_t)(ts.tv_sec * 1000UL + ts.tv_nsec / 1000000UL);
-#else
-    return (uint32_t)xTaskGetTickCount() * portTICK_PERIOD_MS;
-#endif
-}
-
-class HttpWait
-{
-    volatile bool *cancel;
-    uint32_t last_progress;
-public:
-    HttpWait(volatile bool *c) : cancel(c), last_progress(http_now_ms()) { }
-    void progress(void) { last_progress = http_now_ms(); }
-    bool cancelled(void) { return cancel && *cancel; }
-    // The cancel flag belongs to the job, which can go before the exchange does.
-    void detach(void) { cancel = NULL; }
-    // After a slice that timed out: whether to wait another one.
-    bool again(void)
-    {
-        return !cancelled() && ((uint32_t)(http_now_ms() - last_progress) < HTTP_REQUEST_TIMEOUT_MS);
-    }
-};
+// An HttpRequest waits on its socket in slices (socket_slices.h), so that it sees a
+// cancel within one slice. It gives up when it has made no progress for
+// HTTP_REQUEST_TIMEOUT_MS (measured with a clock). There is no limit on the exchange as a whole: a slow
+// peer, like the printer in #1039, may take as long as it needs while it moves.
+#include "socket_slices.h"
 
 int   read_socket(int socket_fd, HTTPReqMessage& response);
-bool  get_response(int socket_fd, HTTPREQ_CALLBACK callback, HTTPReqMessage& response, HttpWait *wait = NULL);
+bool  get_response(int socket_fd, HTTPREQ_CALLBACK callback, HTTPReqMessage& response, SliceWait *wait = NULL);
 JSON *convert_buffer_to_json(t_BufferedBody *body);
 
 class HttpRequest
@@ -77,11 +46,12 @@ class HttpRequest
     t_BufferedBody *body;
     HTTPReqMessage response;
     int socket_fd;
-    HttpWait wait;
+    SliceWait wait;
 public:
-    // A request whose *cancel becomes true stops within HTTP_IO_SLICE_MS, except
-    // while it looks up the host name.
-    HttpRequest(volatile bool *cancel = NULL) : wait(cancel) {
+    // A request whose *cancel becomes true stops within a slice, except while it looks
+    // up the host name: SOCKET_SLICE_MS for a connect or a receive, but about a second
+    // for a send on lwIP (socket_slices.h).
+    HttpRequest(volatile bool *cancel = NULL) : wait(cancel, HTTP_REQUEST_TIMEOUT_MS) {
         InitReqMessage(&response);
         body = NULL;
         socket_fd = -1;

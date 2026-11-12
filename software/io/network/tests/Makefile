@@ -10,6 +10,11 @@ ROUTE_SELECT_TEST := $(OUTPUT_DIR)/routeSelectTest
 ROUTE_SELECT_RED := $(OUTPUT_DIR)/routeSelectTestLegacy
 SEND_ALL_TEST := $(OUTPUT_DIR)/sendAllTest
 SEND_ALL_RED := $(OUTPUT_DIR)/sendAllTestLegacy
+NETWORK_TARGET_TEST := $(OUTPUT_DIR)/networkTargetTest
+# The network target with the host's sockets for lwIP's, and the UCI host stand-ins.
+NETWORK_TARGET_FLAGS := -std=c++11 -g -Wall -DRUNS_ON_PC -include target3_host/network_interface.h -Itarget3_host -I../../command_interface/tests/host_uci \
+	-I../../command_interface/tests/host_rtos -I.. -I../../command_interface -I../../../network \
+	-fsanitize=address,undefined
 REF_POOL_TEST := $(OUTPUT_DIR)/refPoolTest
 REF_POOL_RED := $(OUTPUT_DIR)/refPoolTestLegacy
 SYS_ARCH_TEST := $(OUTPUT_DIR)/sysArchTest
@@ -30,9 +35,9 @@ POOL_C := core/init.c core/def.c core/inet_chksum.c core/ip.c core/mem.c core/me
 	core/netif.c core/pbuf.c core/stats.c core/sys.c core/timeouts.c core/udp.c \
 	core/ipv4/ip4.c core/ipv4/ip4_addr.c core/ipv4/ip4_frag.c
 
-.PHONY: all lwip-objs eth-tx-frame eth-tx-frame-red fw-hook-opts route-select route-select-red send-all send-all-red fw-pool-opts ref-pool ref-pool-red sys-arch sys-arch-red clean
+.PHONY: all lwip-objs eth-tx-frame eth-tx-frame-red fw-hook-opts route-select route-select-red send-all send-all-red fw-pool-opts ref-pool ref-pool-red sys-arch sys-arch-red network-target clean
 
-all: eth-tx-frame eth-tx-frame-red route-select route-select-red send-all send-all-red ref-pool ref-pool-red sys-arch sys-arch-red
+all: eth-tx-frame eth-tx-frame-red route-select route-select-red send-all send-all-red ref-pool ref-pool-red sys-arch sys-arch-red network-target
 
 eth-tx-frame:
 	mkdir -p $(OUTPUT_DIR)
@@ -141,6 +146,13 @@ sys-arch-red:
 	else \
 		echo "sys-arch-red: $$(tail -1 $(OUTPUT_DIR)/sys-arch-red.log) against the pre-fix behaviour, as required"; \
 	fi
+
+# Target 3 on its worker task, against loopback peers.
+network-target:
+	mkdir -p $(OUTPUT_DIR)
+	$(CXX) $(NETWORK_TARGET_FLAGS) network_target_test.cpp ../network_target.cc -lpthread -o $(NETWORK_TARGET_TEST) \
+	    -Wl,--wrap=gethostbyname_r -Wl,--wrap=send -Wl,--wrap=close
+	env -u LD_PRELOAD timeout 60s $(NETWORK_TARGET_TEST)
 
 clean:
 	rm -rf $(OUTPUT_DIR)
