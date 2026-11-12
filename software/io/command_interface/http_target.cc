@@ -1007,6 +1007,7 @@ void HttpTarget::deferred_reply(Message **reply, Message **status)
     }
     exch = j->exch;
     j->exch = NULL;
+    exch->detach(); // its cancel flag goes with the job
 
     // When we are here, the exch object exists and should contain the reply.
 

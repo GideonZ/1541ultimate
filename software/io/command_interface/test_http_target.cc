@@ -180,6 +180,21 @@ extern "C" int __wrap_socket(int domain, int type, int protocol)
     return fd;
 }
 
+// lwIP checks a send timeout only when the write is entered again, so a send slice of
+// 100 ms really lasts about a second. While set, the socket timeouts of a new
+// connection are made that coarse.
+extern "C" int __real_setsockopt(int, int, int, const void *, socklen_t);
+static volatile int coarse_slice_ms = 0;
+
+extern "C" int __wrap_setsockopt(int fd, int level, int name, const void *value, socklen_t length)
+{
+    if (coarse_slice_ms && level == SOL_SOCKET && (name == SO_SNDTIMEO || name == SO_RCVTIMEO)) {
+        struct timeval tv = { coarse_slice_ms / 1000, (coarse_slice_ms % 1000) * 1000 };
+        return __real_setsockopt(fd, level, name, &tv, sizeof(tv));
+    }
+    return __real_setsockopt(fd, level, name, value, length);
+}
+
 static void hold_dns(bool hold)
 {
     pthread_mutex_lock(&dns_lock);
@@ -1347,6 +1362,15 @@ static void test_stalled_receiver(void)
     }
 }
 
+// The limit is a time, not a number of slices: with slices of a second, a stalled send
+// must still give up after HTTP_REQUEST_TIMEOUT_MS, not after ten times that.
+static void test_stalled_receiver_coarse_slices(void)
+{
+    coarse_slice_ms = 1000;
+    test_stalled_receiver();
+    coarse_slice_ms = 0;
+}
+
 // A server that reads the request and never answers. The response must fail
 // after HTTP_REQUEST_TIMEOUT_MS instead of waiting for it forever.
 static void test_silent_server(void)
@@ -1533,6 +1557,38 @@ static void abort_stalled_exchange(HttpTarget *target, const char *label, uint8_
         printf("FAIL %s: the aborted exchange reported a result\n", label);
     }
     good.completed();
+}
+
+// An abort that lands after the worker has finished, before the UCI Server sends the
+// reply, is the one that must free the job: the worker has already let go of it. LeakSanitizer
+// reports the job, its request and its exchange when the abort does not.
+static void test_abort_after_done(HttpTarget *target)
+{
+    ResponsePeer good("HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK");
+    run_expect_empty(target, "reset late abort fixture", &c_cmd_free_all, status_ok);
+    uint8_t header = create_header(target, good.port());
+    checks++;
+    if (!good.port() || header == 0xFF) {
+        failures++;
+        printf("FAIL late abort: fixture setup\n");
+        return;
+    }
+    uint8_t exchange[] = { 6, HTTP_CMD_DO_EXCHANGE_RAW, header, 0xFF };
+    Message command = make_msg(exchange, sizeof(exchange));
+    Message *reply, *status;
+    deferral_requested = false;
+    quiet_begin();
+    target->parse_command(&command, &reply, &status);
+    quiet_end();
+    checks++;
+    if (!deferral_requested || !deferral_done(deferral_ticket, 10000)) {
+        failures++;
+        printf("FAIL late abort: the worker did not finish the exchange\n");
+        return;
+    }
+    target_abort(target); // the reply has not been sent
+    good.completed();
+    run_expect_empty(target, "release late abort fixture", &c_cmd_free_all, status_ok);
 }
 
 static void test_abort_stalled_response(HttpTarget *target)
@@ -1881,6 +1937,7 @@ int main(int argc, char **argv)
         signal(SIGPIPE, SIG_IGN);
         test_slow_receiver();
         test_stalled_receiver();
+        test_stalled_receiver_coarse_slices();
         test_silent_server();
         printf("Slow server: %d checks, %d failures\n", checks, failures);
         return failures ? 1 : 0;
@@ -1903,6 +1960,7 @@ int main(int argc, char **argv)
 
     if ((argc > 1) && (strcmp(argv[1], "--worker") == 0)) {
         signal(SIGPIPE, SIG_IGN);
+        test_abort_after_done(target);
         test_abort_stalled_response(target);
         test_abort_stalled_request(target);
         test_trickle(target);

@@ -13,31 +13,50 @@
 
 #include <errno.h>
 #include <sys/socket.h>
+#include <stdint.h>
 #include "send_all.h"
 #ifdef RUNS_ON_PC
+#include <time.h>
 #include <netinet/in.h>
 #include <sys/ioctl.h>
 #include <sys/select.h>
 #define ioctlsocket ioctl
+#else
+#include "FreeRTOS.h"
+#include "task.h"
 #endif
 
 #define SOCKET_SLICE_MS 100
 
+// The idle time is measured, not counted in slices: on lwIP a send slice lasts about a
+// second, not SOCKET_SLICE_MS (SO_SNDTIMEO is checked only when the write is re-entered).
+static inline uint32_t slice_now_ms(void)
+{
+#ifdef RUNS_ON_PC
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint32_t)(ts.tv_sec * 1000UL + ts.tv_nsec / 1000000UL);
+#else
+    return (uint32_t)xTaskGetTickCount() * portTICK_PERIOD_MS;
+#endif
+}
+
 class SliceWait
 {
     volatile bool *cancel;
-    int idle_ms;
-    int limit_ms;
+    uint32_t last_progress;
+    uint32_t limit_ms;
 public:
     // limit_ms: time without progress before the owner gives up; 0 waits for ever.
-    SliceWait(volatile bool *c, int limit) : cancel(c), idle_ms(0), limit_ms(limit) { }
-    void progress(void) { idle_ms = 0; }
+    SliceWait(volatile bool *c, int limit) : cancel(c), last_progress(slice_now_ms()), limit_ms(limit) { }
+    void progress(void) { last_progress = slice_now_ms(); }
     bool cancelled(void) { return cancel && *cancel; }
+    // The cancel flag may belong to a job that goes before the exchange does.
+    void detach(void) { cancel = NULL; }
     // After a slice that timed out: whether to wait another one.
     bool again(void)
     {
-        idle_ms += SOCKET_SLICE_MS;
-        return !cancelled() && (!limit_ms || (idle_ms < limit_ms));
+        return !cancelled() && (!limit_ms || ((uint32_t)(slice_now_ms() - last_progress) < limit_ms));
     }
 };
 

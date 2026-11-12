@@ -2,6 +2,13 @@
 #define HTTP_REQUEST_H
 
 #include <sys/socket.h>
+#include <stdint.h>
+#ifdef RUNS_ON_PC
+#include <time.h>
+#else
+#include "FreeRTOS.h"
+#include "task.h"
+#endif
 extern "C" {
     #include "server.h"
     #include "multipart.h"
@@ -25,20 +32,14 @@ void collect_in_buffer(HTTPReqMessage *req, HTTPRespMessage *resp);
 #endif
 
 // An HttpRequest waits on its socket in slices (socket_slices.h), so that it sees a
-// cancel within one slice. It gives up when the slices it waited without progress add
-// up to HTTP_REQUEST_TIMEOUT_MS. There is no limit on the exchange as a whole: a slow
+// cancel within one slice. It gives up when it has made no progress for
+// HTTP_REQUEST_TIMEOUT_MS (measured with a clock). There is no limit on the exchange as a whole: a slow
 // peer, like the printer in #1039, may take as long as it needs while it moves.
 #include "socket_slices.h"
 
 int   read_socket(int socket_fd, HTTPReqMessage& response);
 bool  get_response(int socket_fd, HTTPREQ_CALLBACK callback, HTTPReqMessage& response, SliceWait *wait = NULL);
 JSON *convert_buffer_to_json(t_BufferedBody *body);
-
-// How long an exchange waits for the server to take more of the request, or to
-// send more of its response, before it gives up. The host tests set it lower.
-#ifndef HTTP_REQUEST_TIMEOUT_MS
-#define HTTP_REQUEST_TIMEOUT_MS 30000
-#endif
 
 class HttpRequest
 {
@@ -62,6 +63,8 @@ public:
     }
     int connect_to_server(const char *hostname, uint16_t hostport);
     int send_request(StreamRamFile *req);
+    // After this, the exchange no longer looks at the cancel flag it was given.
+    void detach(void) { wait.detach(); }
     bool recv_response(void);
     // Closes the socket; the response stays.
     void disconnect(void) {

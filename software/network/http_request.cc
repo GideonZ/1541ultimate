@@ -38,6 +38,7 @@ int HttpRequest :: connect_to_server(const char *hostname, uint16_t hostport)
     memcpy(&serv_addr.sin_addr.s_addr, ret_host->h_addr, ret_host->h_length);
     serv_addr.sin_port = htons(hostport);
 
+    wait.progress(); // the name lookup is not part of the wait
     if (connect_sliced(sock_fd, &serv_addr, wait) < 0) {
         printf("Connection failed.\n");
         close(sock_fd);
@@ -67,6 +68,7 @@ int HttpRequest :: send_request(StreamRamFile *s)
 
 bool HttpRequest :: recv_response(void)
 {
+    wait.progress(); // the server waits for the response from here
     bool complete = get_response(this->socket_fd, collect_in_buffer, response, &wait);
     this->body = (t_BufferedBody *)response.userContext;
     if (!complete || !this->body) {
