@@ -100,6 +100,12 @@ void NetworkTarget :: answer_quick(Message *command, Message **reply, Message **
 {
     NetworkInterface *interface;
 
+#if NET_TLS
+    // Every command counts as one for the TLS rules, and the TLS state belongs to the worker:
+    // this one leaves word for it (tls_before_command).
+    tls_quick_seen = true;
+#endif
+
     switch(command->message[1]) {
         case NET_CMD_IDENTIFY:
             *reply  = &c_net_message_identification;
@@ -296,6 +302,10 @@ void NetworkTarget :: worker_task(void *a)
             t->execute(&j->command, &j->reply, &j->status);
             j->opened = t->opened_socket;
             t->cancel = NULL;
+        } else {
+#if NET_TLS
+            t->tls_quick_seen = true; // it was a command all the same
+#endif
         }
         t->close_sockets_after_reset();
         portENTER_CRITICAL();

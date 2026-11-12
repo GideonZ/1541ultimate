@@ -1343,6 +1343,29 @@ static bool loaded(void)
     return (r.data.size() == 16) && (r.data[4] & 0x08);
 }
 
+// --- socket-free commands are commands too ------------------------------------------------
+
+// IDENTIFY and its kin answer on the UCI Server task, apart from the worker that owns the TLS state. They must
+// still count as "the next command" for the two rules that depend on one arriving.
+static void test_quick_commands(void)
+{
+    printf("Socket-free commands (UCI Server task) and the TLS rules about a next command\n");
+    fresh();
+    int a = open_ok();
+    run(B({ 0x03, 0x01 })); // IDENTIFY
+    check(release().data == B({ 0 }) && sock(a).open, "quick: IDENTIFY claims the session, so $25 frees nothing");
+    fresh();
+    a = open_ok();
+    check(release().data == B({ 1 }) && !sock(a).open, "quick: with no command in between, $25 frees the unclaimed session");
+
+    fresh();
+    world_module.set_ca_result = 0;
+    chunk(0, 100, bytes(50, 1));
+    run(B({ 0x03, 0x01 }));
+    check(chunk(50, 100, bytes(50, 1)).status == "81,INVALID PARAMS" && world_count(0x35) == 0,
+          "quick: IDENTIFY between CA chunks ends the upload");
+}
+
 static void test_ca(void)
 {
     printf("TRUST_CA ($22): the Nios's CA state\n");
@@ -1756,6 +1779,7 @@ int main(int argc, char **argv)
     test_latch();
     test_claims();
     test_ca();
+    test_quick_commands();
     test_cleanup();
     test_status_lengths();
     test_empty_read_reply();

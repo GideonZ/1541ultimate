@@ -1549,6 +1549,7 @@ void NetworkTarget :: tls_init(void)
     memset(tls, 0, sizeof(tls));
     tls_last_tag = 0;
     tls_generation_known = false;
+    tls_quick_seen = false;
     tls_generation = 0;
     ca_state = CA_EMPTY;
     ca_tag = 0;
@@ -1570,13 +1571,18 @@ void NetworkTarget :: tls_before_command(Message *command)
     bool keeps_claims = (code == NET_CMD_TLS_RELEASE) ||
                         ((code == NET_CMD_TLS_INFO) && (command->length == 3) && (command->message[2] == 0xFF));
     tls_check_generation();
-    if (!keeps_claims) {
+    // A socket-free command, or a queued one that was aborted before it started, set this on the other task.
+    portENTER_CRITICAL();
+    bool other_task = tls_quick_seen;
+    tls_quick_seen = false;
+    portEXIT_CRITICAL();
+    if (!keeps_claims || other_task) {
         for (int i = 0; i < NET_MAX_TLS; i++) {
             tls[i].claimed = true;
         }
     }
     // A CA upload takes no other network command in between.
-    if ((code != NET_CMD_TLS_TRUST_CA) && (ca_state == CA_UPLOADING)) {
+    if (((code != NET_CMD_TLS_TRUST_CA) || other_task) && (ca_state == CA_UPLOADING)) {
         ca_state = CA_EMPTY;
     }
 }

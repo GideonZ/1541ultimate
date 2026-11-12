@@ -161,6 +161,7 @@ class NetworkTarget : public CommandTarget {
     TlsSocket tls[NET_MAX_TLS];
     uint16_t tls_last_tag;
     bool tls_generation_known;
+    volatile bool tls_quick_seen;       // a command ran or was skipped apart from the worker; see tls_before_command
     uint32_t tls_generation;
     uint8_t ca_state;        // CA_EMPTY, CA_UPLOADING or CA_LOADED
     uint16_t ca_tag;         // never 0; a new one whenever the CA changes
