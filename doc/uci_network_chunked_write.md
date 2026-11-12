@@ -103,7 +103,10 @@ At most one payload is in progress at a time.
 A payload in progress is discarded, without notice, by any other command to this
 target, by an abort that reaches this target, and by a reset of the C64. An
 abort reaches only the target that was addressed last. A client resumes by
-sending a chunk with an offset of zero. A chunk that arrives when no payload is
+sending a chunk with an offset of zero. A send on a TCP socket that fails after
+it took part of the payload reports `-1` and the part that went is not taken back
+(this is how `WRITE_SOCKET` behaves too), so restarting such a payload at offset
+zero sends those bytes again. A chunk that arrives when no payload is
 in progress, and whose offset is not zero, is answered `81,INVALID PARAMS`.
 
 A chunk shall carry at most 888 bytes of data. The interface neither enforces
@@ -188,8 +191,9 @@ carry only the total. That is simpler, and it fails silently.
 A C64 reset does not reset the command interface logic. With an implicit
 accumulator, a payload left in progress by a reset is silently continued by the
 next program's chunks, and the handle does not save you: `c64_reset()`
-(`network_target.cc:542-553`) closes every socket this target holds (`:552`), so
-those descriptor numbers are free to be handed out again to the next program.
+(`network_target.cc:816-824`) notes the reset for the worker task, which closes every
+socket this target holds before it runs its next command (`close_sockets_after_reset()`),
+so those descriptor numbers are free to be handed out again to the next program.
 
 That `lwip` reissues the *low* descriptors is a property of its allocator:
 `alloc_socket` (`software/lwip/src/api/sockets.c:547`) scans
@@ -215,9 +219,9 @@ the implementation.
 A payload in progress is discarded by any other command to this target, and
 `NET_CMD_READ_SOCKET` is such a command. **That rule is an implementation choice,
 not something the transport forces.** It exists because `buffer[NET_CMD_BUFSIZE]`
-(`network_target.h:70`) is shared three ways — the read payload, the
-`gethostbyname_r` scratch (`network_target.cc:219`), and the write accumulation —
-and the firmware says so at `network_target.cc:56-58`: *"That is what keeps the
+(`network_target.h:95`) is shared three ways — the read payload, the
+`gethostbyname_r` scratch (`network_target.cc:449`), and the write accumulation —
+and the firmware says so at `network_target.cc:347-350`: *"That is what keeps the
 accumulation out of the way of `buffer`'s other users…"* A second buffer would
 remove the rule at the cost of `NET_CMD_BUFSIZE` bytes of RAM.
 
@@ -479,7 +483,7 @@ here rather than left for a reader to discover.
   belongs to something else.
 - **The full-size scenario cannot fail on this tree for the reason it exists.**
   It is there to catch a firmware whose buffer is smaller than the total it
-  accepts, and on this tree that is a compile error: `network_target.h:63` guards
+  accepts, and on this tree that is a compile error: `network_target.h:62` guards
   `#if NET_MAX_SOCKET_WRITE > NET_CMD_BUFSIZE`. Its value here is as a standing
   regression guard on both constants and on assembly at the full size.
 
