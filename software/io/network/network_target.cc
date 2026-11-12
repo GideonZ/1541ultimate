@@ -188,6 +188,8 @@ void NetworkTarget :: parse_command(Message *command, Message **reply, Message *
     *reply = &c_message_empty;
     *status = &c_status_internal_error;
     if (is_quick(command)) {
+        // Any other command ends a chunked write; this one never reaches the worker that holds it.
+        write_chunk_stale = true;
         answer_quick(command, reply, status);
         return;
     }
@@ -347,8 +349,10 @@ void NetworkTarget :: execute(Message *command, Message **reply, Message **statu
     // is what keeps the accumulation out of the way of `buffer`'s other users,
     // open_socket's name resolution and a read reply being handed out. So does
     // an abort or a C64 reset, which leave the flag for this task to act on.
-    bool drop_chunk = write_chunk_stale;
+    portENTER_CRITICAL();
+    bool drop_chunk = write_chunk_stale; // set by the UCI Server task, which can run between a read and a clear
     write_chunk_stale = false;
+    portEXIT_CRITICAL();
     if (drop_chunk || (command->message[1] != NET_CMD_WRITE_SOCKET_CHUNK)) {
         discard_write_chunk();
     }
@@ -608,8 +612,8 @@ void NetworkTarget :: discard_read_reply(void)
 
 #include "dump_hex.h"
 // Both write commands report a send from here, so they cannot drift apart in
-// what they tell the client. A datagram leaves whole or not at all, so the retries
-// in send_sliced repeat only a send that sent nothing, never part of a payload.
+// what they tell the client. The retry on ENOMEM below repeats a send that sent
+// nothing: a datagram leaves whole or not at all, so it never sends part of a payload twice.
 void NetworkTarget :: send_to_socket(int socketnr, uint8_t *src, int length, Message **reply, Message **status)
 {
     int ret;

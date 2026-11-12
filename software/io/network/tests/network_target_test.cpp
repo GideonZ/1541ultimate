@@ -640,6 +640,43 @@ static void test_zero_write(void)
     peer_stop(&peer);
 }
 
+// A chunked write (WRITE_SOCKET_CHUNK, $16) in progress ends with any other command, with an abort
+// and with a C64 reset: the payload that was collected must never be completed by what comes next.
+// IDENTIFY is answered on the UCI Server task and never reaches the worker, so it needs its own way in.
+enum { END_BY_IDENTIFY, END_BY_ABORT, END_BY_RESET };
+
+static void chunk_ended(const char *label, int how)
+{
+    Peer peer;
+    peer_start(&peer, SOCK_DGRAM, false);
+    int s = open_socket_to(0x08, peer.port);
+    Message *reply, *status;
+    uint8_t first[] = { 3, 0x16, (uint8_t)s, 0, 0, 10, 0, 'a', 'b', 'c', 'd', 'e' };
+    bool ok = run(first, sizeof(first), &reply, &status);
+    CHECK(ok && status_is(status, "00,OK"), "%s: the opening chunk is taken", label);
+    if (how == END_BY_IDENTIFY) {
+        uint8_t identify[] = { 3, 0x01 };
+        run(identify, sizeof(identify), &reply, &status);
+    } else if (how == END_BY_ABORT) {
+        target()->abort(0);
+    } else {
+        target()->c64_reset();
+        usleep(100000); // the worker closes the sockets before its next command
+        s = open_socket_to(0x08, peer.port); // lwIP hands out the low descriptors again
+    }
+    uint8_t second[] = { 3, 0x16, (uint8_t)s, 5, 0, 10, 0, 'f', 'g', 'h', 'i', 'j' };
+    ok = run(second, sizeof(second), &reply, &status);
+    char got[32];
+    usleep(50000);
+    int n = recv(peer.listener, got, sizeof(got), MSG_DONTWAIT);
+    CHECK(ok && status_is(status, "81,INVALID PARAMS") && n < 0,
+          "%s: the completing chunk is refused and nothing is sent (%.*s, recv %d)", label, status->length,
+          status->message, n);
+    const uint8_t close_cmd[] = { 3, 0x09, (uint8_t)s };
+    run(close_cmd, 3, &reply, &status);
+    peer_stop(&peer);
+}
+
 int main(int argc, char **argv)
 {
     signal(SIGPIPE, SIG_IGN);
@@ -655,6 +692,11 @@ int main(int argc, char **argv)
     if (!only || !strcmp(only, "nomem")) test_write_nomem();
     if (!only || !strcmp(only, "zero")) test_zero_write();
     if (!only || !strcmp(only, "partial")) test_partial_error();
+    if (!only || !strcmp(only, "chunk")) {
+        chunk_ended("chunk, IDENTIFY", END_BY_IDENTIFY);
+        chunk_ended("chunk, abort", END_BY_ABORT);
+        chunk_ended("chunk, C64 reset", END_BY_RESET);
+    }
     printf("Network target: %d checks, %d failures\n", checks, failures);
     return failures ? 1 : 0;
 }
