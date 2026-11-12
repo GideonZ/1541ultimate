@@ -29,6 +29,18 @@ bool c64_reset_is_pending(void)
 
 #define CMD_IF_DEBUG 0
 
+// The UCI Server task runs at PRIO_C64_SERVICE, above the network services, so that
+// abort, reset, the handshake and a deferred reply never wait for FTP, REST or telnet.
+// A target's own work can be long (storage, or the network for a target that does not
+// defer); it runs at PRIO_HW_SERVICE, the level all of it ran at before, so it does not
+// starve the services.
+class TargetWork
+{
+public:
+    TargetWork() { vTaskPrioritySet(NULL, PRIO_HW_SERVICE); }
+    ~TargetWork() { vTaskPrioritySet(NULL, PRIO_C64_SERVICE); }
+};
+
 
 extern "C" {
 void ResetInterruptHandlerCmdIf()
@@ -61,13 +73,19 @@ CommandInterface :: CommandInterface() : SubSystem(SUBSYSID_CMD_IF)
         incoming_command.length = 0;
         
         queue = xQueueCreate(16, sizeof(uint8_t));
-        xTaskCreate( CommandInterface :: start_task, "UCI Server", configMINIMAL_STACK_SIZE, this, PRIO_HW_SERVICE, &taskHandle );
+        xTaskCreate( CommandInterface :: start_task, "UCI Server", configMINIMAL_STACK_SIZE, this, PRIO_C64_SERVICE, &taskHandle );
         xTaskCreate( CommandInterface :: reset_task, "UCI Reset Server", configMINIMAL_STACK_SIZE, this, PRIO_HW_SERVICE, &resetTaskHandle );
 
         resetSemaphore = xSemaphoreCreateBinary();
     }
     target = CMD_TARGET_NONE;
     cart_mode = 0;
+    ticket = 0;
+    defer_requested = false;
+    pending_target = CMD_TARGET_NONE;
+    pending_ticket = 0;
+    pending_no_reply = false;
+    done_ticket = 0;
 }
 
 CommandInterface :: ~CommandInterface()
@@ -115,8 +133,6 @@ void CommandInterface :: run_reset_task(void)
 
 void CommandInterface :: run_task(void)
 {
-	int length;
-    Message *data, *status;
     uint8_t status_byte;
 
     CMD_IF_IRQMASK_CLEAR = 7;
@@ -124,70 +140,175 @@ void CommandInterface :: run_task(void)
 
     while(1) {
 		xQueueReceive(queue, &status_byte, portMAX_DELAY);
+		handle_event(status_byte);
+	}
+}
+
+void CommandInterface :: handle_event(uint8_t status_byte)
+{
+	int length;
+    Message *data, *status;
 #if CMD_IF_DEBUG
-		printf("{%b}", status_byte);
+	printf("{%b}", status_byte);
 #endif
-		// Checked on every event, so a reset whose queue post was dropped is
-		// still acted on. Read and cleared as one step: a reset landing
-		// between the two would be cleared without ever reaching the targets.
-		portENTER_CRITICAL();
-		bool reset_seen = c64_reset_pending;
-		c64_reset_pending = false;
-		portEXIT_CRITICAL();
+	// Checked on every event, so a reset whose queue post was dropped is
+	// still acted on. Read and cleared as one step: a reset landing
+	// between the two would be cleared without ever reaching the targets.
+	portENTER_CRITICAL();
+	bool reset_seen = c64_reset_pending;
+	c64_reset_pending = false;
+	portEXIT_CRITICAL();
+	// Ends a deferred command even when the abort item of the reset was dropped.
+	if (reset_seen && (pending_target != CMD_TARGET_NONE)) {
+		status_byte |= CMD_ABORT_DATA;
+	}
+	bool aborted = false;
+	int abort_offset = 0;
+	if(status_byte & CMD_ABORT_DATA) {
+		//printf("Abort received.\n");
+		uint8_t unmask = CMD_ABORT_DATA;
+		// A deferred command ends here; its late result fails the ticket check. The
+		// reset below clears its new-command flag, so its interrupt can be unmasked.
+		if (pending_target != CMD_TARGET_NONE) {
+			unmask |= CMD_NEW_COMMAND;
+			pending_target = CMD_TARGET_NONE;
+		}
+		// Read before the reset below rewinds the response pointer.
+		int offset = (((int)CMD_IF_RESPONSE_LEN_H) << 8) | CMD_IF_RESPONSE_LEN_L;
+		abort_offset = offset - response_offset;
+		aborted = true;
+		CMD_IF_HANDSHAKE_OUT = HANDSHAKE_RESET;
+		CMD_IF_IRQMASK_CLEAR = unmask;
+	}
+	// The C64 is free now. The targets clean up after it at their own level, before this
+	// task looks at anything else: freeing a large body or popping a file is their work.
+	if (reset_seen || aborted) {
+		TargetWork work;
 		if (reset_seen) {
 			for(int i=0;i<=CMD_IF_MAX_TARGET;i++)
 				command_targets[i]->c64_reset();
 		}
-		if(status_byte & CMD_ABORT_DATA) {
-			//printf("Abort received.\n");
-			if (target != CMD_TARGET_NONE) {
-			    int offset = (((int)CMD_IF_RESPONSE_LEN_H) << 8) | CMD_IF_RESPONSE_LEN_L;
-				command_targets[target]->abort(offset - response_offset);
-			}
-			CMD_IF_HANDSHAKE_OUT = HANDSHAKE_RESET;
-			CMD_IF_IRQMASK_CLEAR = CMD_ABORT_DATA;
+		if (aborted && (target != CMD_TARGET_NONE)) {
+			command_targets[target]->abort(abort_offset);
 		}
-		if(status_byte & CMD_DATA_ACCEPTED) {
-			if (target != CMD_TARGET_NONE) {
+	}
+	if(status_byte & CMD_DATA_ACCEPTED) {
+		if (target != CMD_TARGET_NONE) {
+			{
+				TargetWork work;
 				command_targets[target]->get_more_data(&data, &status);
-				copy_result(data, status);
-			} else {
-				printf("CMDIF: Requested for more data, but target is not set!\n");
 			}
-            CMD_IF_HANDSHAKE_OUT = HANDSHAKE_ACCEPT_NEXTDATA;
-            CMD_IF_IRQMASK_CLEAR = CMD_DATA_ACCEPTED;
+			copy_result(data, status);
+		} else {
+			printf("CMDIF: Requested for more data, but target is not set!\n");
 		}
+        CMD_IF_HANDSHAKE_OUT = HANDSHAKE_ACCEPT_NEXTDATA;
+        CMD_IF_IRQMASK_CLEAR = CMD_DATA_ACCEPTED;
+	}
 
-        if (status_byte & CMD_NEW_COMMAND) {
-            length = int(CMD_IF_COMMAND_LEN_L) + (int(CMD_IF_COMMAND_LEN_H) << 8);
+    if (status_byte & CMD_NEW_COMMAND) {
+        length = int(CMD_IF_COMMAND_LEN_L) + (int(CMD_IF_COMMAND_LEN_H) << 8);
+        pending_target = CMD_TARGET_NONE;
+        defer_requested = false;
 
-            if (length) {
+        if (length) {
 #if CMD_IF_DEBUG
-                printf("Command received (%b):\n", CMD_IF_STATUSBYTE);
-                dump_hex_relative((void *)command_buffer, length);
+            printf("Command received (%b):\n", CMD_IF_STATUSBYTE);
+            dump_hex_relative((void *)command_buffer, length);
 #endif
-                incoming_command.length = length;
-                target = incoming_command.message[0] & CMD_IF_MAX_TARGET;
-                bool no_reply = ((incoming_command.message[0] & CMD_IF_NO_REPLY) != 0);
+            incoming_command.length = length;
+            target = incoming_command.message[0] & CMD_IF_MAX_TARGET;
+            bool no_reply = ((incoming_command.message[0] & CMD_IF_NO_REPLY) != 0);
+            ticket++;
+            {
+                TargetWork work;
                 command_targets[target]->parse_command(&incoming_command, &data, &status);
-
-                CMD_IF_HANDSHAKE_OUT = HANDSHAKE_ACCEPT_COMMAND; // clears CMD_NEW_COMMAND
-                if (no_reply) {
-                    CMD_IF_HANDSHAKE_OUT = HANDSHAKE_RESET; // forces state to 00
-                } else {
-                    copy_result(data, status); // sets state to 10 or 11
-                }
-            } else {
-                printf("Null command.\n");
-                CMD_IF_RESPONSE_LEN_H = 0;
-                CMD_IF_RESPONSE_LEN_L = 0;
-                CMD_IF_STATUS_LENGTH = 0;
-                CMD_IF_HANDSHAKE_OUT = HANDSHAKE_ACCEPT_COMMAND;
-                CMD_IF_HANDSHAKE_OUT = HANDSHAKE_VALIDATE_LAST;
             }
+
+            if (defer_requested) {
+                // Nothing changes for the C64: the command stays BUSY, not accepted, until
+                // the reply is sent below on a later event. (The gateware does not guard the
+                // command buffer in any state; a target that defers keeps its own copy.)
+                // The interrupt for a new command stays masked until then.
+                pending_target = target;
+                pending_ticket = ticket;
+                pending_no_reply = no_reply;
+            } else {
+                reply_to_command(data, status, no_reply);
+            }
+        } else {
+            printf("Null command.\n");
+            CMD_IF_RESPONSE_LEN_H = 0;
+            CMD_IF_RESPONSE_LEN_L = 0;
+            CMD_IF_STATUS_LENGTH = 0;
+            CMD_IF_HANDSHAKE_OUT = HANDSHAKE_ACCEPT_COMMAND;
+            CMD_IF_HANDSHAKE_OUT = HANDSHAKE_VALIDATE_LAST;
+        }
+        if (!defer_requested) {
             CMD_IF_IRQMASK_CLEAR = CMD_NEW_COMMAND;
         }
     }
+
+    // Checked on every event, so a completion whose wake-up was dropped from a full
+    // queue is still sent. The gateware validates in any state, so a result is sent
+    // only while its own command is still BUSY: an abort, or a reset handled above,
+    // has already ended it, and a late result would put a reply in front of the next
+    // command.
+    if ((pending_target != CMD_TARGET_NONE) && (done_ticket == pending_ticket)) {
+        uint8_t now = CMD_IF_STATUSBYTE;
+        if (((now & CMD_STATE_BITS) == CMD_STATE_PROCESSING) && !(now & CMD_ABORT_DATA)) {
+            uint8_t done_target = pending_target;
+            pending_target = CMD_TARGET_NONE;
+            {
+                TargetWork work;
+                command_targets[done_target]->deferred_reply(&data, &status);
+            }
+            reply_to_command(data, status, pending_no_reply);
+            CMD_IF_IRQMASK_CLEAR = CMD_NEW_COMMAND;
+        }
+    }
+}
+
+void CommandInterface :: reply_to_command(Message *data, Message *status, bool no_reply)
+{
+    CMD_IF_HANDSHAKE_OUT = HANDSHAKE_ACCEPT_COMMAND; // clears CMD_NEW_COMMAND
+    if (no_reply) {
+        CMD_IF_HANDSHAKE_OUT = HANDSHAKE_RESET; // forces state to 00
+    } else {
+        copy_result(data, status); // sets state to 10 or 11
+    }
+}
+
+uint32_t CommandInterface :: defer(void)
+{
+    defer_requested = true;
+    return ticket;
+}
+
+// Called by the task that did the work. done_ticket is written BEFORE the wake-up: this
+// task, being higher, runs as soon as the wake-up is posted, and must find the ticket. A
+// full queue means that it is awake already, and it checks done_ticket on every event.
+// Tickets only grow, and a late report of an older one must not hide a newer one (a
+// second deferring target, or a worker that was preempted before it reported).
+void CommandInterface :: deferred_done(uint32_t done)
+{
+    uint8_t wake = 0;
+    portENTER_CRITICAL();
+    if ((int32_t)(done - done_ticket) > 0) {
+        done_ticket = done;
+    }
+    portEXIT_CRITICAL();
+    xQueueSend(queue, &wake, 0);
+}
+
+uint32_t command_defer(void)
+{
+    return cmd_if.defer();
+}
+
+void command_deferred_done(uint32_t ticket)
+{
+    cmd_if.deferred_done(ticket);
 }
 
 void CommandInterface :: copy_result(Message *data, Message *status)
