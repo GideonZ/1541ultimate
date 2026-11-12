@@ -35,6 +35,15 @@ static int close_after_slices(int socketnr)
     return lwip_close(socketnr);
 }
 
+// A close for a program that is gone (its reset, or an abort of its OPEN): there is no
+// data left to protect, so the socket keeps its send slice as the time a close may wait
+// for a buffer. The worker is not held for lwIP's 20 s per socket, which the next program
+// would otherwise wait out.
+static int close_abandoned(int socketnr)
+{
+    return lwip_close(socketnr);
+}
+
 NetworkTarget::NetworkTarget(int id)
 {
     command_targets[id] = this;
@@ -293,7 +302,7 @@ void NetworkTarget :: worker_task(void *a)
         } else if ((opened >= 0) && t->owns_socket(opened)) {
             // The C64 never learnt the number of this socket.
             t->untrack_socket(opened);
-            close_after_slices(opened);
+            close_abandoned(opened);
         }
     }
 }
@@ -307,7 +316,7 @@ void NetworkTarget :: close_orphan(void)
     portEXIT_CRITICAL();
     if ((socketnr >= 0) && owns_socket(socketnr)) {
         untrack_socket(socketnr);
-        close_after_slices(socketnr);
+        close_abandoned(socketnr);
     }
 }
 
@@ -704,7 +713,7 @@ bool NetworkTarget :: owns_socket(int socketnr)
 void NetworkTarget :: close_all_sockets(void)
 {
     for (int i = 0; i < socket_count; i++) {
-        close_after_slices(sockets[i]);
+        close_abandoned(sockets[i]);
     }
     socket_count = 0;
 }

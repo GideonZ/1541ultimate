@@ -48,8 +48,9 @@ class HttpRequest
     int socket_fd;
     SliceWait wait;
 public:
-    // A request whose *cancel becomes true stops within SOCKET_SLICE_MS, except
-    // while it looks up the host name.
+    // A request whose *cancel becomes true stops within a slice, except while it looks
+    // up the host name: SOCKET_SLICE_MS for a connect or a receive, but about a second
+    // for a send on lwIP (socket_slices.h).
     HttpRequest(volatile bool *cancel = NULL) : wait(cancel, HTTP_REQUEST_TIMEOUT_MS) {
         InitReqMessage(&response);
         body = NULL;

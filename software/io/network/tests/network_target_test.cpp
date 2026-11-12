@@ -5,6 +5,7 @@
 // RED before the worker: a WRITE to a peer that stops reading blocks the caller, which
 // on the device is the UCI Server task, so a C64 reset waits with it.
 #include "network_target.h"
+#include "socket_slices.h"
 
 #include <errno.h>
 #include <netinet/in.h>
@@ -353,7 +354,9 @@ static void stalled_write(const char *label, bool reset)
     }
     target()->abort(0);
     long took = now_ms() - start;
-    CHECK(took < 400, "%s: abort/reset took %ld ms", label, took);
+    // The call only raises the cancel flag. A call that waited for the worker would take a
+    // send slice (SOCKET_SLICE_MS), which this limit is below.
+    CHECK(took < SOCKET_SLICE_MS / 2, "%s: abort/reset took %ld ms, a send slice is %d", label, took, SOCKET_SLICE_MS);
 
     Message *reply, *status;
     // A socket command, which runs on the worker after the aborted WRITE (IDENTIFY would not).
@@ -382,6 +385,7 @@ static void test_reset_closes(void)
     int s = open_socket_to(0x07, peer.port);
     CHECK(s >= 0, "reset closes: open tcp");
     usleep(50000);
+    close_sndtimeo_us = -1;
     long start = now_ms();
     target()->c64_reset();
     while (!peer.eof_ms && now_ms() - start < 2000) {
@@ -389,6 +393,10 @@ static void test_reset_closes(void)
     }
     long took = peer.eof_ms ? peer.eof_ms - start : -1;
     CHECK(took >= 0 && took < 500, "reset closes: the peer saw the end after %ld ms (-1: not in 2 s)", took);
+    // The program is gone: its socket keeps the send slice as the close timeout, so that a
+    // close that finds no buffer does not hold the worker for lwIP's 20 s.
+    CHECK(close_sndtimeo_us == SOCKET_SLICE_MS * 1000, "reset closes: SO_SNDTIMEO was %d us when the socket was closed",
+          close_sndtimeo_us);
     peer_stop(&peer);
 }
 
@@ -486,11 +494,14 @@ static void test_open_at_abort(void)
     deferred = false;
     target()->parse_command(&command, &reply, &status);
     CHECK(deferred && wait_done(last_ticket, 2000), "open at abort: the OPEN did not finish");
+    close_sndtimeo_us = -1;
     long start = now_ms();
     target()->abort(0);                   // before its reply went out
     while (!peer.eof_ms && now_ms() - start < 2000) usleep(1000);
     long took = peer.eof_ms ? peer.eof_ms - start : -1;
     CHECK(took >= 0 && took < 500, "open at abort: the socket closed after %ld ms (-1: not in 2 s)", took);
+    CHECK(close_sndtimeo_us == SOCKET_SLICE_MS * 1000, "open at abort: SO_SNDTIMEO was %d us when the socket was closed",
+          close_sndtimeo_us);
     peer_stop(&peer);
 }
 
@@ -575,13 +586,16 @@ static void test_write_nomem(void)
     Message command = { (int)sizeof(write), true, write };
     target()->parse_command(&command, &reply, &status);
     usleep(200000);
-    target()->abort(0);
-    nomem_forever = false;
     start = now_ms();
+    target()->abort(0);
+    // The shortage lasts: only the abort can stop the retry, which would otherwise go on
+    // for the rest of NET_SEND_NOMEM_MS.
     const uint8_t close_other[] = { 3, 0x09, 200 };
     answered = run(close_other, 3, &reply, &status, 2000);
     took = now_ms() - start;
-    CHECK(answered && took < 1000, "nomem: the next command after an abort took %ld ms", took);
+    nomem_forever = false;
+    CHECK(answered && took < NET_SEND_NOMEM_MS / 4, "nomem: the next command after an abort took %ld ms, the retry runs for %d",
+          took, NET_SEND_NOMEM_MS);
 
     const uint8_t close_cmd[] = { 3, 0x09, (uint8_t)s };
     run(close_cmd, 3, &reply, &status);
