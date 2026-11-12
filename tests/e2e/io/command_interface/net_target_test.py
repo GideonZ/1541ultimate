@@ -89,7 +89,6 @@ STATUS_NO_DATA_PREFIX = b"02,NO DATA"
 STATUS_NO_DATA_BAD_HANDLE = b"02,NO DATA: 9"
 # What an empty socket gives: the receive would block.
 STATUS_NO_DATA_EMPTY = b"02,NO DATA: 11"
-STATUS_INVALID_PARAMS = b"81,INVALID PARAMS"
 
 # A handle no OPEN command ever returned, so the socket can never supply data
 # and the length in the command is the only variable.
@@ -171,7 +170,6 @@ TESTS = [
     "multi-block-state-does-not-leak",
     "read-empty-answers-at-once",
     "read-returns-waiting-data",
-    "read-sixth-byte-refused",
     "reset-closes-uci-sockets",
 ]
 
@@ -289,20 +287,19 @@ class Net:
     def write(self, handle: int, payload: bytes):
         return self.uci.transact(bytes([TARGET_NETWORK, NET_CMD_WRITE_SOCKET, handle]) + payload)
 
-    def read_command(self, handle: int, maxlen: int, option: bytes = b"") -> bytes:
+    def read_command(self, handle: int, maxlen: int) -> bytes:
         return bytes([TARGET_NETWORK, NET_CMD_READ_SOCKET, handle,
-                      maxlen & 0xFF, (maxlen >> 8) & 0xFF]) + option
+                      maxlen & 0xFF, (maxlen >> 8) & 0xFF])
 
     def read(self, handle: int, maxlen: int, overrun_reads: int = 0,
-             single_part: bool = True, option: bytes = b"") -> ReadResult:
+             single_part: bool = True) -> ReadResult:
         """One READ_SOCKET, followed through however many blocks it takes.
 
         `single_part` asserts that the reply arrives in one block, announced as
         Data Last, which is what every reply short enough to fit one has to do.
-        Pass False for a read whose payload cannot fit one block. `option` is the
-        optional sixth byte, which this firmware refuses.
+        Pass False for a read whose payload cannot fit one block.
         """
-        return ReadResult(self.uci.transact(self.read_command(handle, maxlen, option),
+        return ReadResult(self.uci.transact(self.read_command(handle, maxlen),
                                             single_part=single_part,
                                             overrun_reads=overrun_reads))
 
@@ -1165,7 +1162,11 @@ T_RUN_SECONDS = 60.0
 T_POLL_SECONDS = 0.25
 PHI2_HZ = {"PAL": 985248.0, "NTSC": 1022727.0}
 SYSTEM_MODE = ("U64 Specific Settings", "System Mode")
-EMPTY_MAX_EXTRA_SECONDS = 0.005  # per READ, over the reference; a wait was 40 ms
+# Per READ, over the reference. Measured on a U64E and a C64U, UDP and TCP: with
+# the wait, +39 ms per READ; without it, under 0.1 ms per READ (+1.4 to +1.8 ms
+# per 20 READs). 1 ms is below one lwIP/FreeRTOS tick (5 ms), so even a
+# one-tick wait fails.
+EMPTY_MAX_EXTRA_SECONDS = 0.001
 
 
 def phi2_hz(computer: UltimateApi) -> float:
@@ -1357,29 +1358,6 @@ def run_read_returns_waiting_data(net: Net, peer: Peer) -> bool:
             with check(f"{kind}: CLOSE succeeds on the handle that was never closed"):
                 if closed.status_text != STATUS_OK:
                     raise Failure(f"expected {STATUS_OK!r}, got {closed.status_text!r}")
-    return True
-
-
-def run_read_sixth_byte_refused(net: Net, peer: Peer) -> bool:
-    """A 6-byte READ answers 81 as it always did and touches nothing."""
-    section("read-sixth-byte-refused")
-    handle = open_empty(net, peer, "udp")
-    try:
-        payload = pattern(SMALL_READ, seed=7)
-        peer.send_udp(payload)
-        time.sleep(DELIVERY_SETTLE_SECONDS)
-        for option in (b"\x00", b"\x01", b"\xff"):
-            with check(f"sixth byte {option.hex()} answers 81"):
-                result = net.read(handle, SMALL_READ, option=option)
-                detail(f"status {result.status_text!r}")
-                if result.status_text != STATUS_INVALID_PARAMS or result.payload:
-                    raise Failure(f"expected {STATUS_INVALID_PARAMS!r}, got {result.describe()}")
-        with check("the refused READs consumed nothing: the datagram is still there"):
-            after = net.read(handle, SMALL_READ)
-            if after.status_text != STATUS_OK or after.payload != payload:
-                raise Failure(f"expected the datagram, got {after.describe()}")
-    finally:
-        net.close(handle)
     return True
 
 
@@ -1636,7 +1614,6 @@ def main() -> int:
             run(route, "multi-block-state-does-not-leak",
                 run_multi_block_state_does_not_leak, net, peer)
             run(route, "read-returns-waiting-data", run_read_returns_waiting_data, net, peer)
-            run(route, "read-sixth-byte-refused", run_read_sixth_byte_refused, net, peer)
 
             def reset_and_reopen(route=route):
                 """Reset the C64 and hand back a driver that reaches the target."""
@@ -1649,7 +1626,17 @@ def main() -> int:
             # This times READs from a 6502 program, which takes the machine: it
             # resets it first, and the native agent is started again afterwards.
             # The program does the timing, so the route changes nothing: once.
-            if "read-empty-answers-at-once" in selected and route == routes[0]:
+            if "read-empty-answers-at-once" in selected and route == routes[0] and target.split:
+                # Same reason as the native route above: the 6510 reaches the
+                # host's command interface, not the cartridge's, so a program
+                # on the C64 cannot time READs against the device under test.
+                label = f"read-empty-answers-at-once [{route}]"
+                check_start("read-empty-answers-at-once can time READs from the C64")
+                check_skip(f"{target.device} is a cartridge in {target.computer}, and 6502 "
+                           f"code on {target.computer} reaches its own command interface "
+                           f"rather than the cartridge's")
+                results[label] = None
+            elif "read-empty-answers-at-once" in selected and route == routes[0]:
                 run(route, "read-empty-answers-at-once", run_read_empty_answers_at_once,
                     peer, computer, rest_uci)
                 net = reset_and_reopen()

@@ -291,7 +291,7 @@ rel_done
 
 ; ---------------------------------------------------------------- the timer ---
 ; CIA2 timer A counts PHI2 and timer B counts A's underflows: one 32 bit down
-; counter, as tls_bench.asm uses.
+; counter.
 timer_init
         lda #$7F
         sta $DD0D               ; no CIA2 interrupts
