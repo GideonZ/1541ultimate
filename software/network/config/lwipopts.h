@@ -180,8 +180,12 @@
  * MEMP_NUM_PBUF: the number of memp struct pbufs (used for PBUF_ROM and PBUF_REF).
  * If the application sends a lot of data out of ROM (or other static memory),
  * this should be set high.
+ * Every UDP socket send (lwip_sendto -> netbuf_ref) holds one while it runs, so
+ * one per task that may send at the same time: the network target, syslog, the
+ * ident responder, the streams. With one, a send that meets another fails with
+ * ENOMEM (io/network/tests, refpool).
  */
-#define MEMP_NUM_PBUF                   1
+#define MEMP_NUM_PBUF                   8
 
 /**
  * MEMP_NUM_RAW_PCB: Number of raw connection PCBs
@@ -327,6 +331,15 @@
  * interface, define this to 0.
  */
 #define IP_FORWARD                      0
+
+/**
+ * With Ethernet and WiFi on the same subnet, lwIP's own route lookup returns the
+ * netif added last, which is the WiFi one. The hook answers a connection on the
+ * interface that owns its source address, and sends a connection with no source
+ * yet out of the wired interface. See io/network/route_select.h.
+ */
+#define LWIP_HOOK_FILENAME              "lwip_hooks.h"
+#define LWIP_HOOK_IP4_ROUTE_SRC(src, dest) ultimate_ip4_route_src(src, dest)
 
 /**
  * IP_OPTIONS_ALLOWED: Defines the behavior for IP options.

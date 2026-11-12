@@ -1,5 +1,19 @@
 # Software IEC hardware suites
 
+Partition file paths in configuration profiles (#982) are checked with:
+
+```sh
+python3 tests/e2e/io/iec/partition_config_test.py -H u64 --mode telnet
+python3 tests/e2e/io/iec/partition_config_test.py -H u2@c64u --mode telnet
+```
+
+The checks load profiles through the file browser, select Reboot C64, take a
+255-character path through Save to File and the settings menu's string editor,
+and verify the active partitions over REST. They also cover manual loads,
+unrelated settings, drive resets, unusable files and their later repair, and the
+empty-path default. The suite restores the running settings, partition list and
+default partition file, and removes its fixtures.
+
 Two suites live here. Both drive the C64 through `iec_agent.asm`, a small KERNAL
 program that performs the OPEN, CHKOUT/CHROUT, CHKIN/CHRIN and CLOSE calls itself,
 so the bytes on the serial bus are the bytes a Commodore puts there. REST only
@@ -138,7 +152,8 @@ rare corrupted read.
 
 ## Directory renaming (#999)
 
-`directory_rename_test.py` runs the C64 OS sequence `MD:NEW DIRECTORY`,
+`directory_rename_test.py` runs as `iec-directory-rename` from the standard
+profile up. It replays the C64 OS sequence `MD:NEW DIRECTORY`,
 `R:.^RNAME^=NEW DIRECTORY`, `R:NEW NAME=.^RNAME^`, `CD:NEW NAME`,
 `R-H:NEW NAME`, `CD_` against a fresh host folder and a fresh DNP image.
 It also checks that a file survives the rename and that the final directory header

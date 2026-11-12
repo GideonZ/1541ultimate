@@ -289,7 +289,7 @@ public:
     }
 
     FRESULT SavePartitions(const char *path, const char *filename);
-    void LoadPartitions(const char *path, const char *name);
+    FRESULT LoadPartitions(const char *path, const char *name);
     void LoadPartitions(File *fi);
 };
 

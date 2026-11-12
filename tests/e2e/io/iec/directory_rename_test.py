@@ -2,6 +2,7 @@
 """#999: C64 OS directory rename commands over IEC, on host folders and DNP."""
 import argparse
 import sys
+import traceback
 import uuid
 from pathlib import Path
 
@@ -15,7 +16,9 @@ from api import UltimateApi, ensure_cartridge_preference
 from config_snapshot import Snapshot
 from dos_command_test import partition_path
 from iec_agent import Agent, OPEN, WRITE, CLOSE, iec_drive, restorable_path
-from report import Failure, detail
+from report import Failure, detail, suite_fail, suite_ok
+
+SUITE = "iec_directory_rename_test"
 
 
 def run(args):
@@ -101,20 +104,27 @@ def main():
     cli.add_device_arguments(parser)
     kernal.add_arguments(parser)
     args = parser.parse_args()
-    api = UltimateApi(args.host, args.password, args.timeout)
-    computer = UltimateApi(api.target.computer, args.password) if api.target.split else None
-    preference = None
     try:
-        if computer:
-            preference = computer.configs.get(kernal.CATEGORY, "Cartridge Preference")
-            detail(ensure_cartridge_preference(api.target, args.password, args.timeout))
-        with kernal.selected(api, args, args.password):
-            run(args)
-    finally:
-        if computer and preference is not None:
-            computer.configs.set(kernal.CATEGORY, "Cartridge Preference", preference)
-            kernal._boot(computer)
+        api = UltimateApi(args.host, args.password, args.timeout)
+        computer = UltimateApi(api.target.computer, args.password) if api.target.split else None
+        preference = None
+        try:
+            if computer:
+                preference = computer.configs.get(kernal.CATEGORY, "Cartridge Preference")
+                detail(ensure_cartridge_preference(api.target, args.password, args.timeout))
+            with kernal.selected(api, args, args.password):
+                run(args)
+        finally:
+            if computer and preference is not None:
+                computer.configs.set(kernal.CATEGORY, "Cartridge Preference", preference)
+                kernal._boot(computer)
+    except Exception as exc:
+        traceback.print_exc()
+        suite_fail(SUITE, str(exc))
+        return 1
+    suite_ok(SUITE)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

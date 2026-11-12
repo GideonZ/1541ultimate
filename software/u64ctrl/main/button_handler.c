@@ -11,11 +11,13 @@
 #include "jtag.h"
 #include "wifi_modem.h"
 #include "power_state.h"
+#include "recovery.h"
 
 #define SHORT_PRESS 100
 #define LONG_PRESS 1000
 #define OFF_PRESS 4000
 #define IGNORE_PRESS 300
+#define RECOVERY_PRESS 3000
 
 static const char *TAG = "btn_handler";
 
@@ -62,7 +64,9 @@ static void regulator_enable(int enable, int delay)
 
 static void handle_button_event(int event)
 {
-    send_button_event(event);
+    if (event != BUTTON_RECOVERY) {
+        send_button_event(event);
+    }
     switch(event) {
         case BUTTON_UP_SHORT:
             ESP_LOGI(TAG, "Up Short");
@@ -88,8 +92,16 @@ static void handle_button_event(int event)
             power_store_last_state(1);
             wake_on_wifi_update(1);
             break;
+        case BUTTON_RECOVERY:
+            ESP_LOGI(TAG, "** ON for recovery **");
+            regulator_enable(1, 20);
+            power_store_last_state(1);
+            wake_on_wifi_update(1);
+            recovery_start();
+            break;
         case BUTTON_OFF:
             ESP_LOGI(TAG, "** OFF **");
+            recovery_cancel();
             regulator_enable(0, 0);
             disable_hook();
             power_store_last_state(0);
@@ -129,7 +141,14 @@ static void button_handler(void *arg)
                 if (up == 0)
                     handle_button_event(BUTTON_ON);
                 else if (down == 0) {
-                    handle_button_event(BUTTON_ON2);
+                    // Decided when it is let go: a press switches on, holding
+                    // it for RECOVERY_PRESS switches on and recovers.
+                    int held = 0;
+                    while (gpio_get_level(IO_BUTTON_DOWN) == 0 && held < RECOVERY_PRESS) {
+                        vTaskDelay(100 / portTICK_PERIOD_MS);
+                        held += 100;
+                    }
+                    handle_button_event((held >= RECOVERY_PRESS) ? BUTTON_RECOVERY : BUTTON_ON2);
                 }
                 machine_on = 1;
                 do {

@@ -12,8 +12,32 @@
 #include "driver/gpio.h"
 #include "esp_log.h"
 #include "esp_err.h"
+#include "soc/gpio_reg.h"
+#include "soc/soc.h"
 #include "pinout.h"
 #include "jtag.h"
+
+/* The long shifts, a bitstream and memory writes, drive the pins through the
+   GPIO set and clear registers: one register write per edge instead of a
+   driver call. Set to 0 to compare against gpio_set_level(). The shifts that
+   read TDO keep the driver calls; they are short, and their timing is the one
+   that has been proven. */
+#ifndef JTAG_DIRECT_IO
+#define JTAG_DIRECT_IO 1
+#endif
+
+#if JTAG_DIRECT_IO
+_Static_assert(IO_FPGA_TCK < 32 && IO_FPGA_TMS < 32 && IO_FPGA_TDI < 32,
+               "the JTAG outputs must be in the first GPIO set/clear register");
+#define FAST_TDI(b) REG_WRITE((b) ? GPIO_OUT_W1TS_REG : GPIO_OUT_W1TC_REG, 1u << IO_FPGA_TDI)
+#define FAST_TMS(b) REG_WRITE((b) ? GPIO_OUT_W1TS_REG : GPIO_OUT_W1TC_REG, 1u << IO_FPGA_TMS)
+#define FAST_CLOCK() do { REG_WRITE(GPIO_OUT_W1TS_REG, 1u << IO_FPGA_TCK); \
+                          REG_WRITE(GPIO_OUT_W1TC_REG, 1u << IO_FPGA_TCK); } while (0)
+#else
+#define FAST_TDI(b) gpio_set_level(IO_FPGA_TDI, (b))
+#define FAST_TMS(b) gpio_set_level(IO_FPGA_TMS, (b))
+#define FAST_CLOCK() do { gpio_set_level(IO_FPGA_TCK, 1); gpio_set_level(IO_FPGA_TCK, 0); } while (0)
+#endif
 
 #define XILINX_USER1    0x02
 #define XILINX_USER2    0x03
@@ -170,21 +194,19 @@ void jtag_send_dr_data(const uint8_t *data, int length, uint8_t *readback)
         while (length > 8) {
             uint8_t byte = *(data++);
             for (int i = 0; i < 8; i++) {
-                gpio_set_level(IO_FPGA_TDI, byte & 1);
+                FAST_TDI(byte & 1);
                 byte >>= 1;
-                gpio_set_level(IO_FPGA_TCK, 1);
-                gpio_set_level(IO_FPGA_TCK, 0);
+                FAST_CLOCK();
             }
             length -= 8;
         }
 
         uint8_t byte = *(data++);
         for (int i = 0; i < length; i++) {
-            gpio_set_level(IO_FPGA_TDI, byte & 1);
-            gpio_set_level(IO_FPGA_TMS, (i == length - 1) ? 1 : 0);
+            FAST_TDI(byte & 1);
+            FAST_TMS((i == length - 1) ? 1 : 0);
             byte >>= 1;
-            gpio_set_level(IO_FPGA_TCK, 1);
-            gpio_set_level(IO_FPGA_TCK, 0);
+            FAST_CLOCK();
         }
     } else { // with readback
         while (length > 8) {
@@ -217,26 +239,31 @@ void jtag_send_dr_data(const uint8_t *data, int length, uint8_t *readback)
     jtag_raw_tms(0x01, 2); // send 2 bits: 1, 0 on TMS to get back to idle state
 }
 
-void jtag_send_dr_data_rev(const uint8_t *data, int length)
+/* Shifts whole bytes, most significant bit first, and stays in Shift-DR. */
+static void jtag_shift_bytes_rev(const uint8_t *data, int bytes)
 {
-    while (length > 8) {
+    while (bytes-- > 0) {
         uint8_t byte = *(data++);
         for (int i = 0; i < 8; i++) {
-            gpio_set_level(IO_FPGA_TDI, byte >> 7);
+            FAST_TDI(byte >> 7);
             byte <<= 1;
-            gpio_set_level(IO_FPGA_TCK, 1);
-            gpio_set_level(IO_FPGA_TCK, 0);
+            FAST_CLOCK();
         }
-        length -= 8;
     }
+}
+
+void jtag_send_dr_data_rev(const uint8_t *data, int length)
+{
+    jtag_shift_bytes_rev(data, (length - 1) / 8);
+    data += (length - 1) / 8;
+    length -= 8 * ((length - 1) / 8);
 
     uint8_t byte = *(data++);
     for (int i = 0; i < length; i++) {
-        gpio_set_level(IO_FPGA_TDI, byte >> 7);
-        gpio_set_level(IO_FPGA_TMS, (i == length - 1) ? 1 : 0);
+        FAST_TDI(byte >> 7);
+        FAST_TMS((i == length - 1) ? 1 : 0);
         byte <<= 1;
-        gpio_set_level(IO_FPGA_TCK, 1);
-        gpio_set_level(IO_FPGA_TCK, 0);
+        FAST_CLOCK();
     }
     jtag_raw_tms(0x01, 2); // send 2 bits: 1, 0 on TMS to get back to idle state
 }
@@ -373,4 +400,45 @@ void jtag_configure_fpga(void)
     ESP_LOGI(TAG, "Done.. Starting..");
     jtag_instruction(XILINX_START, 6);
     jtag_clocks(32);
+}
+
+/* The sequence recover.py has proven: JPROGRAM clears the device, CFG_IN
+   selects the configuration register, and the bitstream is shifted into it in
+   one long Shift-DR. */
+void jtag_fpga_begin(void)
+{
+    jtag_reset_to_idle();
+    jtag_instruction(XILINX_PROGRAM, 6);
+    jtag_reset_to_idle();
+    jtag_clocks(10000);  // stay in idle while the configuration memory clears
+    vTaskDelay(20 / portTICK_PERIOD_MS);
+    jtag_instruction(XILINX_CFG_IN, 6);
+    jtag_go_to_shift_dr();
+}
+
+void jtag_fpga_shift(const uint8_t *data, int bytes)
+{
+    jtag_shift_bytes_rev(data, bytes);
+}
+
+void jtag_fpga_finish(const uint8_t *data, int bytes)
+{
+    jtag_send_dr_data_rev(data, 8 * bytes);
+    jtag_instruction(XILINX_START, 6);
+    jtag_clocks(32);
+}
+
+void jtag_fpga_clear(void)
+{
+    // From wherever an aborted load left the TAP.
+    jtag_reset_to_idle();
+    jtag_instruction(XILINX_PROGRAM, 6);
+    jtag_reset_to_idle();
+}
+
+void vji_set_outputs(uint8_t value)
+{
+    set_user_ir(VJI_GPIOOUT);
+    // do NOT go to shift_dr again, we are already there
+    jtag_send_dr_data(&value, 8, NULL);
 }

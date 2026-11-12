@@ -295,6 +295,25 @@ Mode partition are shared between all directories within that partition". Test:
 `Suite11-SI004-BlocksFree`, where the root and a subdirectory of a native image report
 the same count.
 
+The **Partition config file** item in **SoftIEC Drive Settings** selects an `.ipr`
+file by its absolute Ultimate file-system path (up to 255 characters). An empty
+value selects `/Flash/config/iec_partitions.ipr`. The path is saved with the
+settings in Flash and in `.cfg` profiles. The file is loaded at firmware startup
+and when a different path is applied, including through **Load Settings**; its
+layout is therefore active when the user selects **Reboot C64**. A missing file
+or a file with no usable partition entry leaves the active layout intact.
+A configured file that does not load at startup is retried for up to ten
+seconds while USB volumes mount; the standard file is not used in its place.
+After that the file is read again only when a different path is applied, or
+loaded by hand. The standard file is read at startup and when the path is
+cleared. Manual `.ipr` loads and partition edits remain active until another
+configured path is applied or the firmware starts. A manual load ends the
+startup retry; partition edits made during it are replaced if the configured
+file then loads. **Save Partitions** with the name
+`default` writes `/Flash/config/iec_partitions.ipr`. These are Ultimate UI
+operations; the IEC reset commands retain the behaviour in SI-103 and SI-103a,
+and applying the path alone does not reconfigure the IEC processor (SI-103b).
+
 ### 2.2 What the partition model must not do
 
 **SI-005.** The root of a partition is a real directory. Files can be created in it,

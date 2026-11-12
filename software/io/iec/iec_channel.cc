@@ -3283,7 +3283,7 @@ bool IecPartition::IsValid()
     return fm->is_path_valid(GetFullPath());
 }
 
-void IecFileSystem :: LoadPartitions(const char *path, const char *file)
+FRESULT IecFileSystem :: LoadPartitions(const char *path, const char *file)
 {
     IecDriveLock guard(drive);
     File *fi;
@@ -3292,6 +3292,7 @@ void IecFileSystem :: LoadPartitions(const char *path, const char *file)
         LoadPartitions(fi);
         fm->fclose(fi);
     }
+    return fres;
 }
 
 FRESULT IecFileSystem :: SavePartitions(const char *path, const char *filename)
