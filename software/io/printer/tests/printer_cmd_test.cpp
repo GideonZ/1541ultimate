@@ -103,6 +103,7 @@ static void test_flush_served(void)
     CHECK(rec.interpreted_bytes == 100);        /* with the bytes accepted before it */
     CHECK(used < IEC_PRINTER_FLUSH_WAIT_MS);
     CHECK(rec.progress_shown == 1 && rec.progress_hidden == 1);
+    CHECK(rec.popups == 0);                     /* the page was done in time: nothing to explain */
 }
 
 /* Nobody serves it: the menu comes back after the bound, and the flush is still there for later. */
@@ -119,6 +120,8 @@ static void test_flush_bounded(void)
     TickType_t used = xTaskGetTickCount() - t0;
     CHECK(used >= IEC_PRINTER_FLUSH_WAIT_MS - 20 && used < IEC_PRINTER_FLUSH_WAIT_MS + 1500);
     CHECK(rec.progress_hidden == 1);            /* the dialog went away */
+    CHECK(rec.popups == 1);                     /* and said why: the page is not lost, it is still being printed */
+    CHECK(strstr(rec.popup_text, "still printing") != NULL);
     CHECK(rec.form_feed == 0);
     delete p;                                   /* nothing runs it: the object, its ring and its settings go with it */
     delete host_cfg; host_cfg = NULL;

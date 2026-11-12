@@ -57,13 +57,15 @@ static const char *en_dis[] = { "Disabled", "Enabled" };
 
 /* what the test sees */
 struct Record {
-    std::atomic<int> configure, readdress, form_feed, mps_reset, file_opens, file_closes, progress_shown, progress_hidden;
+    std::atomic<int> configure, readdress, form_feed, mps_reset, file_opens, file_closes, progress_shown, progress_hidden, popups;
     std::atomic<int> file_is_open;
+    char popup_text[128];
     std::atomic<int> interpreted_bytes;
     Record() { reset(); }
     void reset()
     {
         configure = readdress = form_feed = mps_reset = file_opens = file_closes = 0;
+        popups = 0; popup_text[0] = 0;
         progress_shown = progress_hidden = file_is_open = interpreted_bytes = 0;
     }
 };
@@ -111,10 +113,12 @@ struct TasksCollection {
     static TaskCategory *getCategory(const char *, int) { static TaskCategory c; return &c; }
 };
 
+#define BUTTON_OK 0x01   /* ui_elements.h */
 struct UserInterface {
     void show_progress(const char *, int) { rec.progress_shown++; }
     void hide_progress() { rec.progress_hidden++; }
     void update_progress(const char *, int) { }
+    int popup(const char *msg, uint8_t) { rec.popups++; strncpy(rec.popup_text, msg, sizeof(rec.popup_text) - 1); return 0; }
 };
 struct SubsysCommand {
     UserInterface *user_interface;

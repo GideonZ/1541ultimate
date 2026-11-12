@@ -334,8 +334,12 @@ SubsysResultCode_e IecPrinter::executeCommand(SubsysCommand *cmd)
              *  backlog is longer than IEC_PRINTER_FLUSH_WAIT_MS this dialog closes and the page is
              *  ejected when the printer task gets there (in stream order) all the same.
             -*/
-            spool.flush_and_wait(IEC_PRINTER_FLUSH_WAIT_MS);
-            cmd_ui->hide_progress();
+            {
+                bool done = spool.flush_and_wait(IEC_PRINTER_FLUSH_WAIT_MS);
+                cmd_ui->hide_progress();
+                if (!done)      /* still being rendered: say so, the page is saved when it is done */
+                    cmd_ui->popup("The page is still printing.\nIt is saved when it is done.", BUTTON_OK);
+            }
             break;
 
         case MENU_PRINTER_RESET:
