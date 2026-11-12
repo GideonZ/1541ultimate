@@ -1913,6 +1913,92 @@ static void test_trickle_request(HttpTarget *target)
     run_expect_empty(target, "release trickle request fixture", &c_cmd_free_all, status_ok);
 }
 
+struct SlowLookupServer {
+    int listener;
+    pthread_t thread;
+};
+
+// Releases the held lookup after longer than HTTP_REQUEST_TIMEOUT_MS, then lets the
+// stalled connect through and answers the one connection that sends a request.
+static void *slow_lookup_server(void *arg)
+{
+    SlowLookupServer *server = (SlowLookupServer *)arg;
+    usleep((HTTP_REQUEST_TIMEOUT_MS + 500) * 1000);
+    hold_dns(false);
+    usleep(50000);
+    const char response[] = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK";
+    struct pollfd wait_accept = { server->listener, POLLIN, 0 };
+    while (poll(&wait_accept, 1, 4000) > 0) {
+        int client = accept(server->listener, NULL, NULL);
+        if (client < 0) {
+            break;
+        }
+        struct pollfd request = { client, POLLIN, 0 };
+        char buffer[1024];
+        if (poll(&request, 1, 300) > 0 && recv(client, buffer, sizeof(buffer), 0) > 0) {
+            send(client, response, sizeof(response) - 1, MSG_NOSIGNAL);
+            usleep(100000);
+            close(client);
+            break;
+        }
+        close(client);
+    }
+    return NULL;
+}
+
+// A name lookup that takes longer than HTTP_REQUEST_TIMEOUT_MS is not part of the
+// wait: the exchange that follows it, against a server that does answer (its connect
+// needs a retransmitted SYN, so it takes more than one slice), must succeed.
+static void test_slow_lookup(HttpTarget *target)
+{
+    SlowLookupServer server;
+    server.listener = socket(AF_INET, SOCK_STREAM, 0);
+    struct sockaddr_in a = {};
+    a.sin_family = AF_INET;
+    a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    socklen_t len = sizeof(a);
+    bind(server.listener, (struct sockaddr *)&a, len);
+    getsockname(server.listener, (struct sockaddr *)&a, &len);
+    listen(server.listener, 0);
+    int fill[3];
+    for (int i = 0; i < 3; i++) {
+        fill[i] = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0);
+        connect(fill[i], (struct sockaddr *)&a, len);
+    }
+    usleep(50000);
+    run_expect_empty(target, "reset slow lookup fixture", &c_cmd_free_all, status_ok);
+    hold_dns(true);
+    uint8_t create[64] = { 6, HTTP_CMD_HEADER_CREATE, 1 };
+    int length = snprintf((char *)create + 3, sizeof(create) - 3, "http://held.dns:%u/", ntohs(a.sin_port));
+    Message command = make_msg(create, length + 3);
+    Message *reply, *status;
+    quiet_begin();
+    run_command(target, &command, &reply, &status);
+    quiet_end();
+    uint8_t header = reply->message[0];
+    pthread_create(&server.thread, NULL, slow_lookup_server, &server);
+    uint8_t exchange[] = { 6, HTTP_CMD_DO_EXCHANGE_RAW, header, 0xFF };
+    Message exchange_command = make_msg(exchange, sizeof(exchange));
+    struct timespec start;
+    clock_gettime(CLOCK_MONOTONIC, &start);
+    quiet_begin();
+    run_command(target, &exchange_command, &reply, &status);
+    quiet_end();
+    long ms = since_ms(start);
+    pthread_join(server.thread, NULL);
+    expect_bytes("slow lookup", "reply", reply, (const uint8_t *)"OK", 2);
+    checks++;
+    if (ms < HTTP_REQUEST_TIMEOUT_MS) {
+        failures++;
+        printf("FAIL slow lookup: took only %d ms, the case needs more than %d\n", (int)ms, HTTP_REQUEST_TIMEOUT_MS);
+    }
+    run_expect_empty(target, "release slow lookup fixture", &c_cmd_free_all, status_ok);
+    for (int i = 0; i < 3; i++) {
+        close(fill[i]);
+    }
+    close(server.listener);
+}
+
 // A server that keeps reading the request, never pausing for a slice, when the C64
 // aborts: the worker must see the cancel between chunks, not only on a timeout.
 static void test_abort_reading_server(HttpTarget *target)
@@ -1968,6 +2054,7 @@ int main(int argc, char **argv)
         test_aborted_streams_then_reset(target);
         test_abort_stalled_connect(target);
         test_queue_behind_lookup(target);
+        test_slow_lookup(target);
         test_trickle_request(target);
         test_abort_reading_server(target);
         checks++;
