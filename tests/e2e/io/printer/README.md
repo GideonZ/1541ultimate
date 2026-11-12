@@ -187,6 +187,14 @@ covers most of the page — width, height, and ink density within the covered
 area — using the bundled pure-stdlib PNG decoder (`png_lite.py`), not just
 that a plausible-looking file was produced.
 
+## Enabling the printer by itself
+
+Before the combinations run, the suite sets `IEC printer` to Disabled, then to Enabled as the
+only change, and runs a short job on the bus. The job must finish with the printer answering.
+The combinations set `IEC printer` together with ten other items, and each set applies the
+whole page again, so only this step shows a printer that comes up on the second set but not on
+the first. It is skipped with `--no-config-change` and `--issue-717-basic`.
+
 ## OCR text verification (optional enhancement)
 
 ```sh

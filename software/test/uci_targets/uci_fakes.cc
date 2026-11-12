@@ -222,6 +222,8 @@ C64 *C64::getMachine(void)
     machine.cfg = &uci_fake::cfg;
     return &machine;
 }
+void (*uci_fake_all_memory_hook)(uint8_t *) = NULL;
+void C64::get_all_memory(uint8_t *pb) { if (uci_fake_all_memory_hook) uci_fake_all_memory_hook(pb); }
 int C64::isMP3RamDrive(int dev) { return mp3_ramdrive_type[dev & 3]; }
 int C64::getSizeOfMP3NativeRamdrive(int dev) { return mp3_native_size[dev & 3]; }
 uint8_t *C64::get_cartridge_rom_addr(void) { static uint8_t rom[0x100000]; return rom; }
