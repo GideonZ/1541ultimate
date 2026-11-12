@@ -1,0 +1,1 @@
+#define MEMP_NUM_NETCONN 16

@@ -2,6 +2,13 @@
 #define HTTP_REQUEST_H
 
 #include <sys/socket.h>
+#include <stdint.h>
+#ifdef RUNS_ON_PC
+#include <time.h>
+#else
+#include "FreeRTOS.h"
+#include "task.h"
+#endif
 extern "C" {
     #include "server.h"
     #include "multipart.h"
@@ -18,39 +25,55 @@ typedef struct {
 void collect_in_buffer(HTTPReqMessage *req, HTTPRespMessage *resp);
 //void write_to_temp(HTTPReqMessage *req, HTTPRespMessage *resp);
 
-int   read_socket(int socket_fd, HTTPReqMessage& response);
-bool  get_response(int socket_fd, HTTPREQ_CALLBACK callback, HTTPReqMessage& response);
-JSON *convert_buffer_to_json(t_BufferedBody *body);
-
 // How long an exchange waits for the server to take more of the request, or to
 // send more of its response, before it gives up. The host tests set it lower.
 #ifndef HTTP_REQUEST_TIMEOUT_MS
 #define HTTP_REQUEST_TIMEOUT_MS 30000
 #endif
 
+// An HttpRequest waits on its socket in slices (socket_slices.h), so that it sees a
+// cancel within one slice. It gives up when it has made no progress for
+// HTTP_REQUEST_TIMEOUT_MS (measured with a clock). There is no limit on the exchange as a whole: a slow
+// peer, like the printer in #1039, may take as long as it needs while it moves.
+#include "socket_slices.h"
+
+int   read_socket(int socket_fd, HTTPReqMessage& response);
+bool  get_response(int socket_fd, HTTPREQ_CALLBACK callback, HTTPReqMessage& response, SliceWait *wait = NULL);
+JSON *convert_buffer_to_json(t_BufferedBody *body);
+
 class HttpRequest
 {
     t_BufferedBody *body;
     HTTPReqMessage response;
     int socket_fd;
+    SliceWait wait;
 public:
-    HttpRequest() {
+    // A request whose *cancel becomes true stops within a slice, except while it looks
+    // up the host name: SOCKET_SLICE_MS for a connect or a receive, but about a second
+    // for a send on lwIP (socket_slices.h).
+    HttpRequest(volatile bool *cancel = NULL) : wait(cancel, HTTP_REQUEST_TIMEOUT_MS) {
         InitReqMessage(&response);
         body = NULL;
         socket_fd = -1;
     }
     ~HttpRequest() {
-        if(socket_fd >= 0) {
-            close(socket_fd);
-        }
-        socket_fd = -1;
+        disconnect();
         if (body) {
             delete body;
         }
     }
     int connect_to_server(const char *hostname, uint16_t hostport);
     int send_request(StreamRamFile *req);
+    // After this, the exchange no longer looks at the cancel flag it was given.
+    void detach(void) { wait.detach(); }
     bool recv_response(void);
+    // Closes the socket; the response stays.
+    void disconnect(void) {
+        if(socket_fd >= 0) {
+            close(socket_fd);
+        }
+        socket_fd = -1;
+    }
 
     HTTPReqHeader *get_header(void) {
         return &response.Header;
