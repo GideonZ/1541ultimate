@@ -18,7 +18,6 @@
 #include "esp_http_client.h"
 #include "esp_log.h"
 #include "esp_netif.h"
-#include "mbedtls/sha256.h"
 #include "nvs.h"
 #include "button_handler.h"
 #include "jtag.h"
@@ -27,6 +26,7 @@
 #include "recovery_image.h"
 #include "recovery_manifest.h"
 #include "recovery_url.h"
+#include "recovery_verify.h"
 #include "rpc_dispatch.h"
 
 static const char *TAG = "recovery";
@@ -322,9 +322,12 @@ static bool stream_file(const char *get_url, const recovery_file_t *file, sink_f
         return false;
     }
 
-    mbedtls_sha256_context sha;
-    mbedtls_sha256_init(&sha);
-    mbedtls_sha256_starts(&sha, 0);
+    recovery_hash_t sha;
+    if (recovery_hash_start(&sha) != RECOVERY_OK) {
+        ESP_LOGW(TAG, "%s: cannot start a hash", get_url);
+        close_client(client);
+        return false;
+    }
     uint32_t total = 0;
     uint32_t since_yield = 0;
     bool ok = true;
@@ -345,7 +348,11 @@ static bool stream_file(const char *get_url, const recovery_file_t *file, sink_f
             ok = false;
             break;
         }
-        mbedtls_sha256_update(&sha, read_buf, n);
+        if (recovery_hash_update(&sha, read_buf, n) != RECOVERY_OK) {
+            ESP_LOGW(TAG, "%s: cannot hash", get_url);
+            ok = false;
+            break;
+        }
         ok = sink(ctx, total, read_buf, n);
         total += n;
         since_yield += n;
@@ -356,19 +363,22 @@ static bool stream_file(const char *get_url, const recovery_file_t *file, sink_f
     }
     close_client(client);
 
-    uint8_t hash[32];
-    mbedtls_sha256_finish(&sha, hash);
-    mbedtls_sha256_free(&sha);
     if (cancelled) {
+        recovery_hash_abort(&sha);
         return false;
     }
     if (ok && total != file->size) {
         ESP_LOGW(TAG, "%s: %lu bytes, its manifest says %lu", get_url, (unsigned long)total, (unsigned long)file->size);
         ok = false;
     }
-    if (ok && memcmp(hash, file->sha256, sizeof(hash)) != 0) {
-        ESP_LOGW(TAG, "%s: hash differs from its manifest", get_url);
-        ok = false;
+    if (ok) {
+        recovery_result_t r = recovery_hash_finish(&sha, file);
+        if (r != RECOVERY_OK) {
+            ESP_LOGW(TAG, "%s: %s", get_url, r == RECOVERY_ERR_HASH_MISMATCH ? "hash differs from its manifest" : recovery_result_name(r));
+            ok = false;
+        }
+    } else {
+        recovery_hash_abort(&sha);
     }
     if (ok) {
         uint32_t ms = (xTaskGetTickCount() - started) * portTICK_PERIOD_MS;
