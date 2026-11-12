@@ -912,6 +912,28 @@ def combos_for(args):
     return [(e, m) for e in emulations for m in modes]
 
 
+def check_enable_alone(client, prg_bytes, args):
+    """Enabling the printer by itself, from Disabled, makes the device answer on the bus.
+
+    apply_settings() sets IEC printer first and then ten more items, and each set re-applies
+    the whole page, so a printer that only comes up on the second set still passes there.
+    This sets the one item and prints at once, as F2 > Printer Settings does."""
+    check_start("IEC printer Disabled -> Enabled alone: device answers on the IEC bus")
+    client.set_config(CONFIG_CATEGORY, "IEC printer", "Disabled")
+    client.set_config(CONFIG_CATEGORY, "Bus ID", args.bus_id)
+    client.set_config(CONFIG_CATEGORY, "IEC printer", "Enabled")
+    classification, status = classify_and_run(
+        client, prg_bytes, "epson", "text", 2, 1, args.bus_id,
+        args.timeout_seconds, POLL_INTERVAL_SECONDS,
+    )
+    if classification != "PASS_RUN":
+        check_fail(f"{classification}: the printer did not answer after being enabled in the settings "
+                   f"(status {status})")
+        return False
+    check_ok()
+    return True
+
+
 def run_combo(client, inspector, prg_bytes, args, emulation, mode, assertions_enabled, disambiguate):
     label = f"{emulation}/{mode}"
     check_start(f"print {label}: apply settings + run PRG")
@@ -1074,6 +1096,10 @@ def main():
     combos = combos_for(args)
     disambiguate = len(combos) > 1
     try:
+        if not args.no_config_change and not args.issue_717_basic:
+            if not check_enable_alone(client, prg_bytes, args):
+                results.append(("epson", "text", "FAIL_ENABLE_ALONE", "-"))
+                combos = []  # the settings-only path is broken; the matrix would mask it
         for emulation, mode in combos:
             classification, output_base, _status = run_combo(
                 client, inspector, prg_bytes, args, emulation, mode, assertions_enabled, disambiguate,
