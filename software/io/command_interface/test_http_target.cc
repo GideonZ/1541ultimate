@@ -1559,6 +1559,38 @@ static void abort_stalled_exchange(HttpTarget *target, const char *label, uint8_
     good.completed();
 }
 
+// An abort that lands after the worker has finished, before the UCI Server sends the
+// reply, is the one that must free the job: the worker has already let go of it. LeakSanitizer
+// reports the job, its request and its exchange when the abort does not.
+static void test_abort_after_done(HttpTarget *target)
+{
+    ResponsePeer good("HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK");
+    run_expect_empty(target, "reset late abort fixture", &c_cmd_free_all, status_ok);
+    uint8_t header = create_header(target, good.port());
+    checks++;
+    if (!good.port() || header == 0xFF) {
+        failures++;
+        printf("FAIL late abort: fixture setup\n");
+        return;
+    }
+    uint8_t exchange[] = { 6, HTTP_CMD_DO_EXCHANGE_RAW, header, 0xFF };
+    Message command = make_msg(exchange, sizeof(exchange));
+    Message *reply, *status;
+    deferral_requested = false;
+    quiet_begin();
+    target->parse_command(&command, &reply, &status);
+    quiet_end();
+    checks++;
+    if (!deferral_requested || !deferral_done(deferral_ticket, 10000)) {
+        failures++;
+        printf("FAIL late abort: the worker did not finish the exchange\n");
+        return;
+    }
+    target_abort(target); // the reply has not been sent
+    good.completed();
+    run_expect_empty(target, "release late abort fixture", &c_cmd_free_all, status_ok);
+}
+
 static void test_abort_stalled_response(HttpTarget *target)
 {
     SilentPeer silent;
@@ -1928,6 +1960,7 @@ int main(int argc, char **argv)
 
     if ((argc > 1) && (strcmp(argv[1], "--worker") == 0)) {
         signal(SIGPIPE, SIG_IGN);
+        test_abort_after_done(target);
         test_abort_stalled_response(target);
         test_abort_stalled_request(target);
         test_trickle(target);

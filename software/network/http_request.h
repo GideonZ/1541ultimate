@@ -59,6 +59,8 @@ public:
     HttpWait(volatile bool *c) : cancel(c), last_progress(http_now_ms()) { }
     void progress(void) { last_progress = http_now_ms(); }
     bool cancelled(void) { return cancel && *cancel; }
+    // The cancel flag belongs to the job, which can go before the exchange does.
+    void detach(void) { cancel = NULL; }
     // After a slice that timed out: whether to wait another one.
     bool again(void)
     {
@@ -92,6 +94,8 @@ public:
     }
     int connect_to_server(const char *hostname, uint16_t hostport);
     int send_request(StreamRamFile *req);
+    // After this, the exchange no longer looks at the cancel flag it was given.
+    void detach(void) { wait.detach(); }
     bool recv_response(void);
     // Closes the socket; the response stays.
     void disconnect(void) {
