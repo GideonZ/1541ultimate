@@ -198,6 +198,27 @@ static void test_reset(void)
     CHECK(rec.configure == configures);         /* and does not touch the bus */
 }
 
+/* #1083: the bus is configured on every settings change, as master does; an address change is not a readdress. */
+static void test_settings_configure_bus(void)
+{
+    rec.reset();
+    host_cfg = new ConfigStore;
+    configure_printer(2);
+    host_start_tasks = true;
+    IecPrinter *p = new IecPrinter;
+    int configures = rec.configure;
+    p->effectuate_settings();                   /* nothing changed */
+    CHECK(rec.configure == configures + 1);
+    host_cfg->values[0x30] = 5;                 /* another device number */
+    p->effectuate_settings();
+    CHECK(rec.configure == configures + 2);
+    CHECK(rec.readdress == 0);
+    host_cfg->values[0x38] = 0;                 /* switched off by the settings: still configure(), and the backlog goes */
+    p->effectuate_settings();
+    CHECK(rec.configure == configures + 3);
+    CHECK(!p->is_enabled());
+}
+
 /* RAW -> PNG -> RAW with no byte between (settings changed through the configuration): each change is carried out,
  * so the file is closed by the first and the page ejected by the second, as the old firmware did at once. */
 static void test_toggle_burst(void)
@@ -280,6 +301,7 @@ int main(void)
     RUN(test_teardown_cycles);
     RUN(test_turn_off);
     RUN(test_reset);
+    RUN(test_settings_configure_bus);
     RUN(test_toggle_burst);
     RUN(test_toggle_burst_full_list);
     printf("%d checks, %d failures\n", checks, failures);

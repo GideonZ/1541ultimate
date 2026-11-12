@@ -139,7 +139,6 @@ void IecPrinter::effectuate_settings(void)
     int new_addr = cfg->get_value(CFG_PRINTER_ID);
     uint8_t new_enable = uint8_t(cfg->get_value(CFG_PRINTER_ENABLE));
     bool enable_changed = (new_enable != printer_enable);
-    bool addr_changed = (new_addr != printer_iec_addr);
 
     /* The rest, as the settings are now: the printer task applies this copy, in stream order */
     PrinterSettings s;
@@ -165,13 +164,10 @@ void IecPrinter::effectuate_settings(void)
     if (new_enable)
         spool.allocate();
 
+    /* Printer ID and enable are stored before configure(), which reads both from this object */
     printer_iec_addr = new_addr;
     printer_enable = new_enable;
-
-    if (enable_changed)
-        iec_if->configure();
-    else if (addr_changed && printer_enable)
-        iec_if->readdress(slot_id);
+    iec_if->configure();
 
     /* Switched off: what was accepted and not printed yet is lost, as in a printer */
     if (enable_changed && !new_enable)
