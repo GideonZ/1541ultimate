@@ -212,8 +212,7 @@ void UART_ISR_ATTR my_uart_intr_handler(void *param)
             // stream: the FIFO is emptied and not read (it is not known to hold an unbroken run), the frame that is open is
             // damaged and thrown away, and everything up to the next 0xC0 is skipped (the end of the damaged frame, or the
             // start of the next one). Without an open frame there is nothing to skip: bytes with no buffer are dropped up to
-            // the next 0xC0 anyway. Before, the cut frame went to the dispatcher (cut short, or glued to the next one), or
-            // the rest of a frame was taken for a frame and ran as a command nobody sent.
+            // the next 0xC0 anyway.
             if (uart_hal_get_intraw_mask(&(uart_context[uart_num].hal)) & UART_INTR_RXFIFO_OVF) {
                 uart_hal_clr_intsts_mask(&(uart_context[uart_num].hal), UART_INTR_RXFIFO_OVF);
                 UART_ENTER_CRITICAL_ISR(&(uart_context[uart_num].spinlock));
