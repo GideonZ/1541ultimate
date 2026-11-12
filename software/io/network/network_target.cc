@@ -26,6 +26,15 @@ Message c_status_socket_closed       = { 28, true, (uint8_t *)"01,CONNECTION CLO
 Message c_status_net_no_data         = { 26, true, (uint8_t *)"03,MORE DATA NOT SUPPORTED" };
 Message c_status_internal_error      = { 17, true, (uint8_t *)"86,INTERNAL ERROR" };
 
+// lwIP also uses SO_SNDTIMEO as the time a close may wait for a buffer for the FIN (20 s without
+// it); with the send slice it would reset the connection after 100 ms and drop unsent data.
+static int close_after_slices(int socketnr)
+{
+    struct timeval none = { 0, 0 };
+    setsockopt(socketnr, SOL_SOCKET, SO_SNDTIMEO, (char *)&none, sizeof(none));
+    return lwip_close(socketnr);
+}
+
 NetworkTarget::NetworkTarget(int id)
 {
     command_targets[id] = this;
@@ -284,7 +293,7 @@ void NetworkTarget :: worker_task(void *a)
         } else if ((opened >= 0) && t->owns_socket(opened)) {
             // The C64 never learnt the number of this socket.
             t->untrack_socket(opened);
-            lwip_close(opened);
+            close_after_slices(opened);
         }
     }
 }
@@ -298,7 +307,7 @@ void NetworkTarget :: close_orphan(void)
     portEXIT_CRITICAL();
     if ((socketnr >= 0) && owns_socket(socketnr)) {
         untrack_socket(socketnr);
-        lwip_close(socketnr);
+        close_after_slices(socketnr);
     }
 }
 
@@ -513,7 +522,7 @@ void NetworkTarget :: read_socket(Message *command, Message **reply, Message **s
 	// read with status OK, and the socket stays open.
 	if (ret == 0 && !is_datagram_socket(socketnr)) {
 		untrack_socket(socketnr);
-		lwip_close(socketnr);
+		close_after_slices(socketnr);
 		*status = &c_status_socket_closed;
 		return;
 	}
@@ -595,8 +604,14 @@ void NetworkTarget :: write_socket(Message *command, Message **reply, Message **
             waited_ms += portTICK_PERIOD_MS;
             errno = ENOMEM;
         }
-        if (sent || (ret == 0)) {
+        // A partial send that ends in an error is an error, as send_all reported it.
+        if (length == 0) {
+            // send_sliced sends nothing for 0 bytes; an empty UDP datagram is still a datagram.
+            ret = (lwip_send(socketnr, src, 0, 0) < 0) ? -1 : 0;
+        } else if (ret == 0) {
             ret = sent;
+        } else {
+            ret = -1;
         }
     } else {
         errno = EBADF;
@@ -626,7 +641,7 @@ void NetworkTarget :: close_socket(Message *command, Message **reply, Message **
     int result = -1;
     if (owns_socket(socketnr)) {
         untrack_socket(socketnr);
-        result = lwip_close(socketnr);
+        result = close_after_slices(socketnr);
     } else {
         errno = EBADF;
     }
@@ -689,7 +704,7 @@ bool NetworkTarget :: owns_socket(int socketnr)
 void NetworkTarget :: close_all_sockets(void)
 {
     for (int i = 0; i < socket_count; i++) {
-        lwip_close(sockets[i]);
+        close_after_slices(sockets[i]);
     }
     socket_count = 0;
 }

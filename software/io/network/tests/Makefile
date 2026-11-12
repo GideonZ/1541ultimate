@@ -151,7 +151,7 @@ sys-arch-red:
 network-target:
 	mkdir -p $(OUTPUT_DIR)
 	$(CXX) $(NETWORK_TARGET_FLAGS) network_target_test.cpp ../network_target.cc -lpthread -o $(NETWORK_TARGET_TEST) \
-	    -Wl,--wrap=gethostbyname_r -Wl,--wrap=send
+	    -Wl,--wrap=gethostbyname_r -Wl,--wrap=send -Wl,--wrap=close
 	env -u LD_PRELOAD timeout 60s $(NETWORK_TARGET_TEST)
 
 clean:
