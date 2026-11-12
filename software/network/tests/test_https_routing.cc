@@ -5,6 +5,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 #include "http_target.h"
+#include "http_request.h"
 
 static int checks, failures;
 static void expect(bool ok, const char *label)
@@ -15,6 +16,7 @@ static void expect(bool ok, const char *label)
 
 // Link wrappers make any plaintext route observable without opening a socket.
 static int dns_calls, socket_calls, plain_closes;
+static int reject_option, receive_timeouts, send_timeouts;
 static std::string wire, response, host;
 static unsigned offset;
 static uint16_t selected_port;
@@ -33,6 +35,16 @@ extern "C" int __wrap_connect(int fd, const sockaddr *address, socklen_t)
     expect(fd == 901, "plain connection descriptor");
     selected_port = ntohs(reinterpret_cast<const sockaddr_in *>(address)->sin_port);
     return 0;
+}
+extern "C" int __wrap_setsockopt(int fd, int level, int option, const void *value, socklen_t length)
+{
+    if (fd != 901 || level != SOL_SOCKET || length != sizeof(timeval) ||
+        (option != SO_RCVTIMEO && option != SO_SNDTIMEO)) return -1;
+    const timeval *tv = static_cast<const timeval *>(value);
+    if (tv->tv_sec != HTTP_REQUEST_TIMEOUT_MS / 1000 ||
+        tv->tv_usec != (HTTP_REQUEST_TIMEOUT_MS % 1000) * 1000) return -1;
+    if (option == SO_RCVTIMEO) ++receive_timeouts; else ++send_timeouts;
+    return option == reject_option ? -1 : 0;
 }
 static int collect(const void *data, int size)
 {
@@ -105,6 +117,7 @@ struct Provider : HttpSecureProvider {
 static void reset(const std::string& body, const char *status = "200 OK")
 {
     dns_calls = socket_calls = plain_closes = 0;
+    reject_option = receive_timeouts = send_timeouts = 0;
     wire.clear(); host.clear(); offset = selected_port = 0;
     response = std::string("HTTP/1.1 ") + status + "\r\nContent-Type: application/json\r\nContent-Length: " +
                std::to_string(body.size()) + "\r\n\r\n" + body;
@@ -170,6 +183,22 @@ static void failure_cases()
         }
     }
 }
+static void socket_timeout_cases()
+{
+    for (int option : {0, SO_RCVTIMEO, SO_SNDTIMEO}) {
+        reset("ok");
+        reject_option = option;
+        HttpTarget target(7, NULL);
+        Reply r = exchange(target, header(target, "http://tls.lab.test/probe"), true);
+        expect(receive_timeouts == 1 && send_timeouts == (option == SO_RCVTIMEO ? 0 : 1), "socket timeout setup");
+        if (option) {
+            expect(r.status == "503 SERVICE UNAVAILABLE" && r.data.empty() && wire.empty(), "timeout setup failure sends nothing");
+            expect(plain_closes == 1, "unusable socket closed once");
+        } else {
+            expect(r.data == "ok", "both socket timeouts allow HTTP");
+        }
+    }
+}
 static void scheme_cases()
 {
     for (const char *url : {"https://tls.lab.test/p", "HTTPS://tls.lab.test/p", "hTtPs://tls.lab.test:8443/p"}) {
@@ -216,8 +245,10 @@ static void parity_and_cleanup()
                     expect(r.last && data == body && blocks == 2, "exact block-boundary response and terminal empty block");
                 } else {
                     expect(data.size() == 2, "structured response handles");
-                    Reply q = command(target, {6, HTTP_CMD_BODY_QUERY, uint8_t(data[1])});
-                    query = q.data;
+                    if (data.size() == 2) {
+                        Reply q = command(target, {6, HTTP_CMD_BODY_QUERY, uint8_t(data[1])});
+                        query = q.data;
+                    }
                     expect(!query.empty() && query[0] == HTTP_DATA_OBJECT, "structured JSON remains queryable");
                 }
                 expect(first_status.find("503 Service Unavailable") != std::string::npos, "remote HTTP failure response retained");
@@ -345,7 +376,7 @@ static void provider_restart_cases()
 }
 int main()
 {
-    failure_cases(); scheme_cases(); parity_and_cleanup(); interrupt_cases(); provider_restart_cases();
+    failure_cases(); socket_timeout_cases(); scheme_cases(); parity_and_cleanup(); interrupt_cases(); provider_restart_cases();
     printf("HTTPS routing: %d checks, %d failures\n", checks, failures);
     return failures ? 1 : 0;
 }

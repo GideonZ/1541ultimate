@@ -156,4 +156,4 @@ target_compile_options(${test_target} PRIVATE -Wall -Wextra -Wno-format -Wno-for
 endforeach()
 target_link_libraries(test_http_tls PRIVATE mbedtls mbedx509 mbedcrypto pthread)
 target_link_options(test_http_tls PRIVATE "LINKER:--wrap=calloc" "LINKER:--wrap=free")
-target_link_options(test_https_routing PRIVATE "LINKER:--wrap=gethostbyname_r,--wrap=socket,--wrap=connect,--wrap=send,--wrap=recv,--wrap=close")
+target_link_options(test_https_routing PRIVATE "LINKER:--wrap=gethostbyname_r,--wrap=socket,--wrap=connect,--wrap=setsockopt,--wrap=send,--wrap=recv,--wrap=close")
