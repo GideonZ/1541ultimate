@@ -8,7 +8,9 @@
 #include <string.h>
 #include <string>
 #include "net_world.h"
+#define class struct // execute() and close_sockets_after_reset() are private
 #include "network_target.h"
+#undef class
 #include "check.h"
 
 int failures;
@@ -41,13 +43,33 @@ struct Res {
 // The longest status any command of the run answered (the cap is 40 bytes).
 static std::string longest_status;
 
+// A C64 reset: the UCI Server task notes it, and the worker closes the sockets and the TLS sessions.
+static void reset_c64(void)
+{
+    net.c64_reset();
+    net.close_sockets_after_reset();
+}
+
 static Res run(const bytes &command)
 {
     static uint8_t buf[1024];
     memcpy(buf, command.data(), command.size());
     Message m = { (int)command.size(), true, buf };
     Message *reply, *status;
-    net.parse_command(&m, &reply, &status);
+    // The UCI Server task answers a socket-free command itself; any other runs on the worker, which is
+    // not started here: execute() is called as the worker calls it, between its own housekeeping.
+    if (net.is_quick(&m)) {
+        net.parse_command(&m, &reply, &status);
+    } else {
+        static volatile bool not_cancelled;
+        not_cancelled = false;
+        net.close_sockets_after_reset();
+        net.cancel = &not_cancelled;
+        net.opened_socket = -1;
+        net.execute(&m, &reply, &status);
+        net.cancel = NULL;
+        net.close_sockets_after_reset();
+    }
     Res r;
     r.data.assign(reply->message, reply->message + reply->length);
     r.status.assign((const char *)status->message, status->length);
@@ -160,7 +182,7 @@ static Res release(void)
 static void fresh(void)
 {
     world_reset();
-    net.c64_reset();
+    reset_c64();
     world_module.calls.clear();
     world_module.close_alls = 0;
     for (int i = 0; i < 16; i++) {
@@ -713,7 +735,7 @@ static void test_reset_during_open(void)
     uint32_t late = (world_tick - world_reset_at) * 5;
     check(late <= 110, "reset: the OPEN returns within a slice of the reset (%u ms late)", late);
     check(world_open_sockets() == 0 && world_count(0x32) == 0, "reset: socket closed, no CLOSE RPC waited for");
-    net.c64_reset();
+    reset_c64();
     world_reset_at = 0xFFFFFFFF;
     check(world_module.close_alls == 1, "reset: c64_reset sends CLOSE_ALL once");
     r = info(0xFF);
@@ -741,10 +763,14 @@ static bytes start_cmd(int h, uint8_t trust, uint8_t flags, const std::string &t
     return cat(cat(B({ first, 0x24, h, trust, flags }), pin), S(tail));
 }
 
+// An OPEN_TCP socket carries the send slice (SOCKET_SLICE_MS in software/network/socket_slices.h) as its
+// SO_SNDTIMEO; what START_TLS must not change is that, and the TLS value is 500 ms.
+#define PLAIN_SNDTIMEO_MS 100
+
 static void expect_kept(int h, const bytes &cmd, const char *want, const char *what)
 {
     Res r = run(cmd);
-    bool untouched = sock(h).open && !sock(h).nodelay && !sock(h).nonblocking && !sock(h).sndtimeo_ms;
+    bool untouched = sock(h).open && !sock(h).nodelay && !sock(h).nonblocking && (sock(h).sndtimeo_ms == PLAIN_SNDTIMEO_MS);
     check(r.status == want && r.data.empty() && untouched, "start: %s -> %s, TCP handle unchanged (got %s)", what,
           want, r.status.c_str());
 }
@@ -757,7 +783,7 @@ static void test_start_tls(void)
     Res u = run(B({ 0x03, 0x08, 0x35, 0x00, 'n', 's' }));
     int udp = u.data.empty() ? -1 : u.data[0];
     check(t >= 0 && udp >= 0, "start: a TCP and a UDP handle to work with");
-    check(!sock(t).sndtimeo_ms && !sock(t).nodelay, "start: OPEN_TCP's socket gets neither (TLS sockets only)");
+    check((sock(t).sndtimeo_ms == PLAIN_SNDTIMEO_MS) && !sock(t).nodelay, "start: OPEN_TCP's socket gets neither (TLS sockets only)");
     Res r = run(start_cmd(udp, 2, 0, "", PIN()));
     check(r.status == "81,INVALID PARAMS" && sock(udp).open, "start: on a UDP handle -> 81, UDP untouched");
     r = run(start_cmd(12, 2, 0, "", PIN()));
@@ -1414,7 +1440,7 @@ static void test_cleanup(void)
     chunk(0, 10, bytes(10, 1));
     int a = open_ok(1), b = open_ok(0);
     world_module.calls.clear();
-    net.c64_reset();
+    reset_c64();
     check(!sock(a).open && !sock(b).open, "reset: both TLS sockets closed");
     check(world_module.close_alls == 1, "reset: CLOSE_ALL once");
     Res r = info(0xFF);

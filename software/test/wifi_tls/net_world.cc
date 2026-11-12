@@ -174,6 +174,16 @@ TickType_t xTaskGetTickCount(void)
     return world_tick;
 }
 
+// The network target's worker task and its queue are not run (see run() in net_tls_test.cc).
+BaseType_t xTaskCreate(void (*)(void *), const char *, uint16_t, void *, UBaseType_t, TaskHandle_t *) { return 0; }
+QueueHandle_t xQueueCreate(UBaseType_t, UBaseType_t) { return NULL; }
+BaseType_t xQueueSend(QueueHandle_t, const void *, TickType_t) { return 0; }
+UBaseType_t uxQueueMessagesWaiting(QueueHandle_t) { return 0; }
+void vQueueDelete(QueueHandle_t) { }
+BaseType_t xQueueReceive(QueueHandle_t, void *, TickType_t) { return 0; }
+uint32_t command_defer(void) { return 0; }
+void command_deferred_done(uint32_t) { }
+
 void vTaskDelay(TickType_t ticks)
 {
     world_advance(ticks ? ticks : 1);
@@ -340,6 +350,20 @@ int lwip_getsockopt(int s, int level, int optname, void *optval, socklen_t *optl
     if ((level == SOL_SOCKET) && (optname == SO_TYPE)) {
         *(int *)optval = world_socks[s].type;
         *optlen = sizeof(int);
+        return 0;
+    }
+    if ((level == SOL_SOCKET) && (optname == SO_ERROR)) {
+        // The result of a non-blocking connect, which connect_sliced() asks for once select() says it is over.
+        FakeSock &k = world_socks[s];
+        *(int *)optval = 0;
+        *optlen = sizeof(int);
+        if (k.nonblocking && !k.connected && k.connect_at) {
+            if (k.srv.connect_err) {
+                *(int *)optval = k.srv.connect_err;
+            } else {
+                k.connected = true;
+            }
+        }
         return 0;
     }
     errno = ENOPROTOOPT;

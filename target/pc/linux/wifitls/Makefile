@@ -18,7 +18,7 @@ TLS_OBJS   = $(addprefix $(OUTPUT)/tls/, $(TLS_SRCS:%.cc=%.o))
 
 # The network target's sources, which a red run can point at another tree.
 NET_DIR  = $(PATH_SW)/io/network
-NET_PATH = $(TEST)/netstub $(TEST)/stub $(NET_DIR) $(PATH_SW)/io/wifi $(PATH_SW)/io/command_interface
+NET_PATH = $(TEST)/netstub $(TEST)/stub $(NET_DIR) $(PATH_SW)/io/wifi $(PATH_SW)/io/command_interface $(PATH_SW)/network
 NET_OPTIONS = -std=gnu++11 -g -O0 -Wall -Wextra -Wno-unused-parameter -Wno-deprecated-declarations -DNIOS=1 -DU64=1 $(addprefix -I, $(NET_PATH))
 NET_SRCS = net_tls_test.cc net_world.cc ip4addr_aton.cc
 NET_OBJS = $(addprefix $(OUTPUT)/net/, $(NET_SRCS:%.cc=%.o)) $(OUTPUT)/net/network_target.o $(OUTPUT)/net/network_target_tls.o $(OUTPUT)/net/wifi_random.o

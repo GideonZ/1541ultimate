@@ -31,6 +31,11 @@ ssize_t lwip_recvmsg(int s, struct msghdr *message, int flags);
 int lwip_select(int maxfdp1, fd_set *readset, fd_set *writeset, fd_set *exceptset, struct timeval *timeout);
 int lwip_close(int s);
 
+#define ioctlsocket(a, b, c)     lwip_ioctl(a, b, c)
+// socket_slices.h and send_all.h (the sliced connect and send) use the BSD names
+#define select(a, b, c, d, e)   lwip_select(a, b, c, d, e)
+#define getsockopt(a, b, c, d, e) lwip_getsockopt(a, b, c, d, e)
+#define send(a, b, c, d)         lwip_send(a, b, c, d)
 #define socket(a, b, c)          lwip_socket(a, b, c)
 #define connect(a, b, c)         lwip_connect(a, b, c)
 #define setsockopt(a, b, c, d, e) lwip_setsockopt(a, b, c, d, e)
