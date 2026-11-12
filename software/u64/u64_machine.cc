@@ -1,6 +1,7 @@
 #include "u64.h"
 #include "u64_machine.h"
 #include "FreeRTOS.h"
+#include "task.h"
 #include <string.h>
 
 namespace {
@@ -184,13 +185,31 @@ void U64Machine :: after_memory_access(uint8_t *pb, bool freezerMenu, bool stopp
     }
 }
 
+// clear_ram and get_all_memory move all 64K through the C64 memory window, about 68 ms, with the
+// C64 stopped. They do it with the scheduler suspended rather than in a critical section: no other
+// task can touch the window or C64_DMA_MEMONLY meanwhile, which is the exclusion the critical
+// section gave, and interrupts are still served. With the C64 stopped, nothing it does can raise the
+// one interrupt that uses the window (U64Config::unlock_irq, raised by the C64's unlock write).
 void U64Machine :: get_all_memory(uint8_t *pb)
 {
     // RAM only: through the bus a frozen machine shows the freezer's Ultimax cart, a running one its ROMs and I/O.
-    bool stopped_it = false;
-    bool freezerMenu = before_memory_access(true, &stopped_it);
+    bool freezerMenu = isFrozen;
+    bool stopped_it = (!freezerMenu && !is_stopped());
+    if (stopped_it) {
+        stop(false);
+    }
+    vTaskSuspendAll();
+    C64_DMA_MEMONLY = 1;
     memcpy(pb, (uint8_t *)C64_MEMORY_BASE, 65536);
-    after_memory_access(pb, freezerMenu, stopped_it);
+    C64_DMA_MEMONLY = 0;
+    xTaskResumeAll();
+    if (stopped_it) {
+        resume();
+    } else if (freezerMenu) {
+        // if we were in freezer menu, the backup of the 1K-4K RAM should be used to restore memory
+        memcpy(pb + 1024, screen_backup, 1024);
+        memcpy(pb + 2048, ram_backup, 2048);
+    }
 }
 
 void U64Machine :: read_block(uint16_t address, uint8_t *dst, uint32_t len)
@@ -365,11 +384,11 @@ void U64Machine :: clear_ram()
     if (!freezerMenu) {
         stop(false);
     }
-    portENTER_CRITICAL();
+    vTaskSuspendAll(); // see get_all_memory
     C64_DMA_MEMONLY = 1;
     memcpy((uint8_t*)ram, _raminit_bin_start, 65536);
     C64_DMA_MEMONLY = 0;
-    portEXIT_CRITICAL();
+    xTaskResumeAll();
     if (!freezerMenu) {
         resume();
     } else { // if we were in freezer menu, the backup of the 1K-4K RAM should be used

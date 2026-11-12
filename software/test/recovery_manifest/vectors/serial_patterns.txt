@@ -1,0 +1,46 @@
+# expected<TAB>pattern<TAB>serial, expected from fnmatch.fnmatchcase
+1	*	U64E2-0012345
+1	*	
+1	**	x
+1	U64E2-*	U64E2-0012345
+0	U64E2-*	C64U-10001
+0	u64e2-*	U64E2-1
+1	U64E2-00*	U64E2-0012345
+1	NOSERIAL	NOSERIAL
+0	NOSERIAL	NOSERIAL2
+1	C64U-1????	C64U-12345
+0	C64U-1????	C64U-1234
+0	C64U-1????	C64U-123456
+1	C64U-2[0-4]???	C64U-23999
+0	C64U-2[0-4]???	C64U-25000
+0	?	
+1	?	a
+1	a?c	abc
+0	a?c	ac
+1	[!C]*	U64E2-1
+0	[!C]*	C64U-1
+1	[]]x	]x
+1	[!]]x	ax
+0	[!]]x	]x
+1	[	[
+1	[abc	[abc
+1	a[	a[
+1	[!]	[!]
+0	[z-a]	a
+1	[!z-a]	q
+1	[z-ab]	b
+0	[z-ab]	y
+1	[a-c-e]	-
+0	[a-c-e]	d
+1	[a-c-e]	e
+1	[a-]	-
+1	[-a]	-
+1	[^a]	^
+0	[^a]	b
+1	\*	\abc
+1	[\]	\
+1	*a*b	xaYb
+0	*a*b	xaYbc
+1	a*b*c*	abc
+1	*-*-*	C64U-CP-1
+0	*a*a*a*a*b	aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa

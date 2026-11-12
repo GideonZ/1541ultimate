@@ -10,6 +10,7 @@ produce is the result rather than a pass or a fail, so they are registered in
 | `typing_speed_perf_test.py` | The two ways the tree types into a menu field, compared on speed and on whether the characters survive |
 | `telnet_key_latency_perf_test.py` | What one Telnet keystroke costs, reported separately for a printable character, an arrow key and a lone ESC |
 | `rest_latency_perf_test.py` | What a single REST call costs, one route at a time. The runner spends real time on the health sweep and the UI-state gate before every suite, and both are made of REST calls |
+| `rest_path_latency_perf_test.py` | The same REST routes on each address of a device (Ethernet and WiFi), every sample kept. `--compare BASE NEW` reports the change of each median with a 95% bootstrap interval, so two firmware builds can be compared |
 
 `pacing.SPLIT_KEY_DRAIN_SECONDS` is not established here. Two instruments
 outside this directory already cover it, each with a better oracle than a

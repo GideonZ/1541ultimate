@@ -10,6 +10,7 @@
 #include "socket.h"
 #include "lwip/opt.h"
 #include "netdb.h"
+#include "socket_slices.h"
 #include <errno.h>
 #include <stdio.h>
 
@@ -25,14 +26,43 @@ Message c_status_socket_closed       = { 28, true, (uint8_t *)"01,CONNECTION CLO
 Message c_status_net_no_data         = { 26, true, (uint8_t *)"03,MORE DATA NOT SUPPORTED" };
 Message c_status_internal_error      = { 17, true, (uint8_t *)"86,INTERNAL ERROR" };
 
+// lwIP also uses SO_SNDTIMEO as the time a close may wait for a buffer for the FIN (20 s without
+// it); with the send slice it would reset the connection after 100 ms and drop unsent data.
+static int close_after_slices(int socketnr)
+{
+    struct timeval none = { 0, 0 };
+    setsockopt(socketnr, SOL_SOCKET, SO_SNDTIMEO, (char *)&none, sizeof(none));
+    return lwip_close(socketnr);
+}
+
+// A close for a program that is gone (its reset, or an abort of its OPEN): there is no
+// data left to protect, so the socket keeps its send slice as the time a close may wait
+// for a buffer. The worker is not held for lwIP's 20 s per socket, which the next program
+// would otherwise wait out.
+static int close_abandoned(int socketnr)
+{
+    return lwip_close(socketnr);
+}
+
 NetworkTarget::NetworkTarget(int id)
 {
     command_targets[id] = this;
     data_message.message = new uint8_t[CMD_MAX_REPLY_LEN];
     status_message.message = new uint8_t[CMD_MAX_STATUS_LEN];
+    quick_message.message = quick_bytes;
     socket_count = 0;
     discard_read_reply();
     discard_write_chunk();
+    write_chunk_stale = false;
+    memset(jobs, 0, sizeof(jobs));
+    job = NULL;
+    queue = NULL;
+    worker = NULL;
+    resets = 0;
+    resets_closed = 0;
+    cancel = NULL;
+    opened_socket = -1;
+    orphan = -1;
 }
 
 NetworkTarget::~NetworkTarget()
@@ -43,22 +73,24 @@ NetworkTarget::~NetworkTarget()
 }
 
 
-void NetworkTarget :: parse_command(Message *command, Message **reply, Message **status)
+// Socket-free commands, answered on the UCI Server task at its own level: they never
+// wait behind the worker (a cancelled name lookup can hold it for 14 s). Their reply is
+// built in quick_message, which only this task writes.
+bool NetworkTarget :: is_quick(Message *command)
+{
+    switch(command->message[1]) {
+        case NET_CMD_IDENTIFY:
+        case NET_CMD_GET_INTERFACE_COUNT:
+        case NET_CMD_GET_IPADDR:
+        case NET_CMD_GET_NETADDR:
+            return true;
+    }
+    return false;
+}
+
+void NetworkTarget :: answer_quick(Message *command, Message **reply, Message **status)
 {
     NetworkInterface *interface;
-
-    // The command interface only accepts a command while it is idle, so a
-    // reply that is still being handed out cannot normally be interrupted by
-    // one. Dropping it here as well means no path into this target can hand a
-    // client bytes left over from an earlier read.
-    discard_read_reply();
-
-    // Any other command ends a chunked write that is still accumulating. That
-    // is what keeps the accumulation out of the way of `buffer`'s other users,
-    // open_socket's name resolution and a read reply being handed out.
-    if (command->message[1] != NET_CMD_WRITE_SOCKET_CHUNK) {
-        discard_write_chunk();
-    }
 
     switch(command->message[1]) {
         case NET_CMD_IDENTIFY:
@@ -66,10 +98,10 @@ void NetworkTarget :: parse_command(Message *command, Message **reply, Message *
             *status = &c_status_ok;
             break;
         case NET_CMD_GET_INTERFACE_COUNT:
-        	data_message.message[0] = (uint8_t)NetworkInterface :: getNumberOfInterfaces();
-        	data_message.length = 1;
-        	data_message.last_part = true;
-        	*reply  = &data_message;
+        	quick_message.message[0] = (uint8_t)NetworkInterface :: getNumberOfInterfaces();
+        	quick_message.length = 1;
+        	quick_message.last_part = true;
+        	*reply  = &quick_message;
             *status = &c_status_ok;
         	break;
 /*
@@ -97,11 +129,11 @@ void NetworkTarget :: parse_command(Message *command, Message **reply, Message *
             }
             interface = NetworkInterface :: getInterface(command->message[2]);
             if (interface) {
-        		*reply = &data_message;
+        		*reply = &quick_message;
         		*status = &c_status_ok;
-        		interface->getIpAddr(data_message.message);
-        		data_message.length = 12;
-            	data_message.last_part = true;
+        		interface->getIpAddr(quick_message.message);
+        		quick_message.length = 12;
+            	quick_message.last_part = true;
         	} else {
         		*status = &c_status_interface_not_set;
         	}
@@ -118,16 +150,210 @@ void NetworkTarget :: parse_command(Message *command, Message **reply, Message *
             }
             interface = NetworkInterface :: getInterface(command->message[2]);
         	if (interface) {
-        		*reply = &data_message;
+        		*reply = &quick_message;
         		*status = &c_status_ok;
-        		interface->getMacAddr(data_message.message);
-        		data_message.length = 6;
-            	data_message.last_part = true;
+        		interface->getMacAddr(quick_message.message);
+        		quick_message.length = 6;
+            	quick_message.last_part = true;
         	} else {
         		*reply = &c_message_empty;
         		*status = &c_status_interface_not_set;
         	}
         	break;
+    }
+}
+
+bool NetworkTarget :: start_worker(void)
+{
+    if (!queue) {
+        // One more than the jobs: room for the wake-up of a reset.
+        queue = xQueueCreate(NET_JOBS + 1, sizeof(NetJob *));
+        if (!queue) {
+            return false;
+        }
+        if (xTaskCreate(NetworkTarget :: worker_task, "UCI Network", configMINIMAL_STACK_SIZE, this,
+                        PRIO_NETSERVICE, &worker) != pdPASS) {
+            vQueueDelete(queue);
+            queue = NULL;
+            return false;
+        }
+    }
+    return true;
+}
+
+// On the UCI Server task: the command is handed to the worker, and the reply follows
+// through deferred_reply.
+void NetworkTarget :: parse_command(Message *command, Message **reply, Message **status)
+{
+    *reply = &c_message_empty;
+    *status = &c_status_internal_error;
+    if (is_quick(command)) {
+        answer_quick(command, reply, status);
+        return;
+    }
+    NetJob *j = NULL;
+    if (start_worker()) {
+        portENTER_CRITICAL();
+        for (int i = 0; i < NET_JOBS; i++) {
+            if (!jobs[i].in_use) {
+                j = &jobs[i];
+                j->in_use = true;
+                break;
+            }
+        }
+        portEXIT_CRITICAL();
+    }
+    if (!j) {
+        printf("UCI network target busy.\n");
+        return;
+    }
+    j->done = false;
+    j->cancel = false;
+    j->opened = -1;
+    j->command.length = command->length;
+    j->command.last_part = command->last_part;
+    j->command.message = j->bytes;
+    memcpy(j->bytes, command->message, command->length);
+    j->ticket = command_defer();
+    job = j;
+    // A free job means a free place in the queue: each job is queued at most once.
+    xQueueSend(queue, &j, 0);
+}
+
+void NetworkTarget :: deferred_reply(Message **reply, Message **status)
+{
+    NetJob *j = job;
+    job = NULL;
+    if (!j) {
+        *reply = &c_message_empty;
+        *status = &c_status_internal_error;
+        return;
+    }
+    *reply = j->reply;
+    *status = j->status;
+    portENTER_CRITICAL();
+    j->in_use = false;
+    portEXIT_CRITICAL();
+}
+
+// On the UCI Server task: abort or C64 reset. A job that is done but not delivered is
+// freed here; one that still runs or waits, the worker frees. An OPEN that finished just
+// before the abort made a socket the C64 never learnt of: the worker closes it next.
+void NetworkTarget :: cancel_job(void)
+{
+    if (!job) {
+        return;
+    }
+    bool wake = false;
+    portENTER_CRITICAL();
+    job->cancel = true;
+    if (job->done) {
+        job->in_use = false;
+        if (job->opened >= 0) {
+            orphan = job->opened;
+            wake = true;
+        }
+    }
+    portEXIT_CRITICAL();
+    job = NULL;
+    if (wake) {
+        wake_worker();
+    }
+}
+
+// On the UCI Server task. A busy worker sees what it has to do after its command anyway.
+void NetworkTarget :: wake_worker(void)
+{
+    if (queue && !uxQueueMessagesWaiting(queue)) {
+        NetJob *wake = NULL;
+        xQueueSend(queue, &wake, 0);
+    }
+}
+
+void NetworkTarget :: worker_task(void *a)
+{
+    NetworkTarget *t = (NetworkTarget *)a;
+    NetJob *j;
+
+    while (1) {
+        xQueueReceive(t->queue, &j, portMAX_DELAY);
+        t->close_sockets_after_reset();
+        t->close_orphan();
+        if (!j) {
+            continue; // the wake-up of a reset
+        }
+        if (!j->cancel) { // one that was aborted while queued is not started
+            t->cancel = &j->cancel;
+            t->opened_socket = -1;
+            t->execute(&j->command, &j->reply, &j->status);
+            j->opened = t->opened_socket;
+            t->cancel = NULL;
+        }
+        t->close_sockets_after_reset();
+        portENTER_CRITICAL();
+        bool cancelled = j->cancel;
+        uint32_t ticket = j->ticket;
+        int opened = j->opened;
+        j->done = true;
+        if (cancelled) {
+            j->in_use = false;
+        }
+        portEXIT_CRITICAL();
+        if (!cancelled) {
+            command_deferred_done(ticket); // from here on, the job is not ours
+        } else if ((opened >= 0) && t->owns_socket(opened)) {
+            // The C64 never learnt the number of this socket.
+            t->untrack_socket(opened);
+            close_abandoned(opened);
+        }
+    }
+}
+
+// On the worker.
+void NetworkTarget :: close_orphan(void)
+{
+    portENTER_CRITICAL();
+    int socketnr = orphan;
+    orphan = -1;
+    portEXIT_CRITICAL();
+    if ((socketnr >= 0) && owns_socket(socketnr)) {
+        untrack_socket(socketnr);
+        close_abandoned(socketnr);
+    }
+}
+
+// On the worker: the sockets of the program that was running when the C64 was reset.
+void NetworkTarget :: close_sockets_after_reset(void)
+{
+    uint32_t seen = resets;
+    if (seen != resets_closed) {
+        close_all_sockets();
+        resets_closed = seen;
+    }
+}
+
+// On the worker.
+void NetworkTarget :: execute(Message *command, Message **reply, Message **status)
+{
+    NetworkInterface *interface;
+
+    // The command interface only accepts a command while it is idle, so a
+    // reply that is still being handed out cannot normally be interrupted by
+    // one. Dropping it here as well means no path into this target can hand a
+    // client bytes left over from an earlier read.
+    discard_read_reply();
+
+    // Any other command ends a chunked write that is still accumulating. That
+    // is what keeps the accumulation out of the way of `buffer`'s other users,
+    // open_socket's name resolution and a read reply being handed out. So does
+    // an abort or a C64 reset, which leave the flag for this task to act on.
+    bool drop_chunk = write_chunk_stale;
+    write_chunk_stale = false;
+    if (drop_chunk || (command->message[1] != NET_CMD_WRITE_SOCKET_CHUNK)) {
+        discard_write_chunk();
+    }
+
+    switch(command->message[1]) {
         case NET_CMD_SET_IPADDR:
             *reply = &c_message_empty;
             if (command->length != 15) { // 12 + 3
@@ -233,7 +459,8 @@ void NetworkTarget :: open_socket(Message *command, Message **reply, Message **s
 		return;
 	}
 
-	int ret = connect(socket, (struct sockaddr *)&addr, sizeof(addr));
+	SliceWait wait(cancel, 0); // as long as lwIP tries, unless the command is aborted
+	int ret = connect_sliced(socket, &addr, wait);
 	if (ret < 0) {
 		*status = &status_message;
 		sprintf((char *)this->status_message.message, "11,ERROR ON CONNECT: %d", errno);
@@ -256,6 +483,7 @@ void NetworkTarget :: open_socket(Message *command, Message **reply, Message **s
 		lwip_close(socket);
 		return;
 	}
+	opened_socket = socket;
 	*reply = &data_message;
 	this->data_message.message[0] = (uint8_t)socket;
 	this->data_message.length = 1;
@@ -265,6 +493,9 @@ void NetworkTarget :: open_socket(Message *command, Message **reply, Message **s
 	tv.tv_sec = 0;
 	tv.tv_usec = 40000; // 40 ms
 	setsockopt(socket, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv, sizeof(struct timeval));
+	// A send waits in slices, so that an abort or a reset reaches a stalled WRITE.
+	tv.tv_usec = SOCKET_SLICE_MS * 1000;
+	setsockopt(socket, SOL_SOCKET, SO_SNDTIMEO, (char *)&tv, sizeof(struct timeval));
 }
 
 void NetworkTarget :: read_socket(Message *command, Message **reply, Message **status)
@@ -321,7 +552,7 @@ void NetworkTarget :: read_socket(Message *command, Message **reply, Message **s
 	// read with status OK, and the socket stays open.
 	if (ret == 0 && !is_datagram_socket(socketnr)) {
 		untrack_socket(socketnr);
-		lwip_close(socketnr);
+		close_after_slices(socketnr);
 		*status = &c_status_socket_closed;
 		return;
 	}
@@ -377,13 +608,40 @@ void NetworkTarget :: discard_read_reply(void)
 
 #include "dump_hex.h"
 // Both write commands report a send from here, so they cannot drift apart in
-// what they tell the client. The one lwip_send is the contract and not an
-// optimisation: a retry loop around it would send #807's several datagrams.
+// what they tell the client. A datagram leaves whole or not at all, so the retries
+// in send_sliced repeat only a send that sent nothing, never part of a payload.
 void NetworkTarget :: send_to_socket(int socketnr, uint8_t *src, int length, Message **reply, Message **status)
 {
     int ret;
     if (owns_socket(socketnr)) {
-        ret = lwip_send(socketnr, src, length, 0);
+        SliceWait wait(cancel, 0); // no limit, as before, unless the command is aborted
+        int sent = 0, waited_ms = 0;
+        while (1) {
+            int now;
+            ret = send_sliced(socketnr, (const char *)src + sent, length - sent, wait, &now);
+            sent += now;
+            if (now) {
+                waited_ms = 0;
+            }
+            // With no free buffer on the link (ENOMEM: a WiFi send no longer waits for one),
+            // the send is tried again a tick later, as a blocking send used to wait,
+            // for at most NET_SEND_NOMEM_MS without progress, and stops at an abort.
+            if ((ret == 0) || (errno != ENOMEM) || wait.cancelled() || (waited_ms >= NET_SEND_NOMEM_MS)) {
+                break;
+            }
+            vTaskDelay(1);
+            waited_ms += portTICK_PERIOD_MS;
+            errno = ENOMEM;
+        }
+        // A partial send that ends in an error is an error, as send_all reported it.
+        if (length == 0) {
+            // send_sliced sends nothing for 0 bytes; an empty UDP datagram is still a datagram.
+            ret = (lwip_send(socketnr, src, 0, 0) < 0) ? -1 : 0;
+        } else if (ret == 0) {
+            ret = sent;
+        } else {
+            ret = -1;
+        }
     } else {
         errno = EBADF;
         ret = -1;
@@ -481,7 +739,7 @@ void NetworkTarget :: close_socket(Message *command, Message **reply, Message **
     int result = -1;
     if (owns_socket(socketnr)) {
         untrack_socket(socketnr);
-        result = lwip_close(socketnr);
+        result = close_after_slices(socketnr);
     } else {
         errno = EBADF;
     }
@@ -544,22 +802,21 @@ bool NetworkTarget :: owns_socket(int socketnr)
 void NetworkTarget :: close_all_sockets(void)
 {
     for (int i = 0; i < socket_count; i++) {
-        lwip_close(sockets[i]);
+        close_abandoned(sockets[i]);
     }
     socket_count = 0;
 }
 
+// On the UCI Server task. The worker closes the sockets, before it runs anything else,
+// and a reply that is left over is dropped as the next program's first command starts.
 void NetworkTarget :: c64_reset(void)
 {
-    // abort() also drops the reply, but it does not run when the reset's
-    // queue post was dropped. Without this the next program could be handed
-    // what is left of the previous one's read over Data More.
-    discard_read_reply();
-    // A payload half collected when the machine went down must not be there for
-    // the next program's chunks to complete, which they would: lwip hands out
-    // the low descriptors again, so a stale handle can name a live socket.
-    discard_write_chunk();
-    close_all_sockets();
+    cancel_job();
+    resets++;
+    wake_worker();
+    // The worker drops a payload half collected when the machine went down: lwip hands out
+    // the low descriptors again, so a stale handle could name a live socket of the next program.
+    write_chunk_stale = true;
 }
 
 void NetworkTarget :: get_more_data(Message **reply, Message **status)
@@ -594,9 +851,10 @@ void NetworkTarget :: abort(int a)
 {
     // `a` counts the bytes the client took from the block it abandoned. They
     // are its business; what is left of the payload goes away with the
-    // transaction, which is what a datagram read means anyway.
-    discard_read_reply();
-    // A chunked write goes the same way, so an abandoned payload is never
-    // completed by whatever the client sends next.
-    discard_write_chunk();
+    // transaction, which is what a datagram read means anyway. The worker drops it
+    // as the next command starts; an aborted command that still runs is cancelled.
+    cancel_job();
+    // A chunked write goes the same way, so an abandoned payload is never completed by
+    // whatever the client sends next; the worker drops it as the next command starts.
+    write_chunk_stale = true;
 }
