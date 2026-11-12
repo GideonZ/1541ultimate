@@ -198,7 +198,8 @@ static void test_reset(void)
     CHECK(rec.configure == configures);         /* and does not touch the bus */
 }
 
-/* #1083: the bus is configured on every settings change, as master does; an address change is not a readdress. */
+/* A settings write in the middle of a job must not reset the IEC processor (configure() does, and the C64 then sees
+ * 'device not present'): the bus is configured only when the enable value changes, #1083's ordering kept. */
 static void test_settings_configure_bus(void)
 {
     rec.reset();
@@ -208,15 +209,22 @@ static void test_settings_configure_bus(void)
     IecPrinter *p = new IecPrinter;
     int configures = rec.configure;
     p->effectuate_settings();                   /* nothing changed */
+    CHECK(rec.configure == configures);
+    host_cfg->values[0x32] = 0;                 /* another output type, mid-job */
+    p->effectuate_settings();
+    CHECK(rec.configure == configures);
+    host_cfg->values[0x30] = 5;                 /* another device number: written, no reset */
+    p->effectuate_settings();
+    CHECK(rec.configure == configures);
+    CHECK(rec.readdress == 1);
+    host_cfg->values[0x38] = 0;                 /* switched off by the settings */
+    p->effectuate_settings();
     CHECK(rec.configure == configures + 1);
-    host_cfg->values[0x30] = 5;                 /* another device number */
+    CHECK(!p->is_enabled());
+    host_cfg->values[0x38] = 1;                 /* and on again: enable stored before configure() (#1083) */
     p->effectuate_settings();
     CHECK(rec.configure == configures + 2);
-    CHECK(rec.readdress == 0);
-    host_cfg->values[0x38] = 0;                 /* switched off by the settings: still configure(), and the backlog goes */
-    p->effectuate_settings();
-    CHECK(rec.configure == configures + 3);
-    CHECK(!p->is_enabled());
+    CHECK(p->is_enabled());
 }
 
 /* RAW -> PNG -> RAW with no byte between (settings changed through the configuration): each change is carried out,

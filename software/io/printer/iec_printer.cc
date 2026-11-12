@@ -139,6 +139,7 @@ void IecPrinter::effectuate_settings(void)
     int new_addr = cfg->get_value(CFG_PRINTER_ID);
     uint8_t new_enable = uint8_t(cfg->get_value(CFG_PRINTER_ENABLE));
     bool enable_changed = (new_enable != printer_enable);
+    bool addr_changed = (new_addr != printer_iec_addr);
 
     /* The rest, as the settings are now: the printer task applies this copy, in stream order */
     PrinterSettings s;
@@ -164,10 +165,17 @@ void IecPrinter::effectuate_settings(void)
     if (new_enable)
         spool.allocate();
 
-    /* Printer ID and enable are stored before configure(), which reads both from this object */
+    /* Printer ID and enable are stored before configure(), which reads both from this object (#1083).
+     * configure() holds the IEC processor in reset, so a job on the bus loses the rest of it (the C64 sees
+     * 'device not present'): it is only called when the enable value changes. A new device number alone is
+     * written without the reset. */
     printer_iec_addr = new_addr;
     printer_enable = new_enable;
-    iec_if->configure();
+
+    if (enable_changed)
+        iec_if->configure();
+    else if (addr_changed && printer_enable)
+        iec_if->readdress(slot_id);
 
     /* Switched off: what was accepted and not printed yet is lost, as in a printer */
     if (enable_changed && !new_enable)

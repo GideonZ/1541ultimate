@@ -88,7 +88,7 @@ printer menu-flush-unbounded    's/spool\.flush_and_wait\(IEC_PRINTER_FLUSH_WAIT
 printer turn-off-without-reset  's/spool\.abort\(PRINTER_SPOOL_ABORT_RESET \| PRINTER_SPOOL_ABORT_RELEASE\);   \/\* what is not printed yet is lost, the ring is given back \*\//spool.abort(PRINTER_SPOOL_ABORT_RELEASE);/' || bad=1
 printer turn-off-without-release 's/spool\.abort\(PRINTER_SPOOL_ABORT_RESET \| PRINTER_SPOOL_ABORT_RELEASE\);   \/\* what/spool.abort(PRINTER_SPOOL_ABORT_RESET);   \/* what/' || bad=1
 printer reset-without-reset     's/spool\.abort\(PRINTER_SPOOL_ABORT_RESET\);   \/\* what is not printed yet is lost \*\//spool.abort(0);/' || bad=1
-printer settings-skip-configure 's/(printer_enable = new_enable;\n)    iec_if->configure\(\);/$1    if (enable_changed) iec_if->configure();/' || bad=1
+printer settings-always-configure 's/    if \(enable_changed\)\n        iec_if->configure\(\);\n    else if \(addr_changed && printer_enable\)\n        iec_if->readdress\(slot_id\);/    iec_if->configure();/' || bad=1
 printer abort-leaves-file-open  's/(buffer_pointer = 0;\n\n    if \(output_type != PRINTER_PNG_OUTPUT\)\n)        close_file\(\);/$1        ;/' || bad=1
 printer type-changed-not-flushed 's/if \(ctl\.type_changed\)\n\s+p->flush\(\);//' || bad=1
 printer task-does-not-publish-flush 's/p->spool\.flush_done\(ctl\.flush_gen\);//g' || bad=1
