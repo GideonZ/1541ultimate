@@ -35,6 +35,7 @@ static int connect_sliced(int sock_fd, struct sockaddr_in *addr, HttpWait& wait)
     if (set_blocking(sock_fd, false) < 0) {
         return -1;
     }
+    wait.progress(); // the name lookup is not part of the wait
     int result = connect(sock_fd, (struct sockaddr *)addr, sizeof(*addr));
     if ((result < 0) && (errno == EINPROGRESS)) {
         do {
@@ -139,6 +140,7 @@ int HttpRequest :: send_request(StreamRamFile *s)
 
 bool HttpRequest :: recv_response(void)
 {
+    wait.progress(); // the server waits for the response from here
     bool complete = get_response(this->socket_fd, collect_in_buffer, response, &wait);
     this->body = (t_BufferedBody *)response.userContext;
     if (!complete || !this->body) {

@@ -2,6 +2,13 @@
 #define HTTP_REQUEST_H
 
 #include <sys/socket.h>
+#include <stdint.h>
+#ifdef RUNS_ON_PC
+#include <time.h>
+#else
+#include "FreeRTOS.h"
+#include "task.h"
+#endif
 extern "C" {
     #include "server.h"
     #include "multipart.h"
@@ -28,35 +35,40 @@ void collect_in_buffer(HTTPReqMessage *req, HTTPRespMessage *resp);
 // a cancel within one slice.
 #define HTTP_IO_SLICE_MS 100
 
-// Counts the slices that an exchange waited without progress, and stops it when
-// it is cancelled or when they add up to HTTP_REQUEST_TIMEOUT_MS. There is no
-// limit on the exchange as a whole: a slow peer, like the printer in #1039, may
-// take as long as it needs while it moves.
+// Stops an exchange when it is cancelled or when it has made no progress for
+// HTTP_REQUEST_TIMEOUT_MS. The time is measured, not counted in slices: on lwIP a
+// send slice lasts about a second, not HTTP_IO_SLICE_MS. There is no limit on the
+// exchange as a whole: a slow peer, like the printer in #1039, may take as long as
+// it needs while it moves.
+static inline uint32_t http_now_ms(void)
+{
+#ifdef RUNS_ON_PC
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint32_t)(ts.tv_sec * 1000UL + ts.tv_nsec / 1000000UL);
+#else
+    return (uint32_t)xTaskGetTickCount() * portTICK_PERIOD_MS;
+#endif
+}
+
 class HttpWait
 {
     volatile bool *cancel;
-    int idle_ms;
+    uint32_t last_progress;
 public:
-    HttpWait(volatile bool *c) : cancel(c), idle_ms(0) { }
-    void progress(void) { idle_ms = 0; }
+    HttpWait(volatile bool *c) : cancel(c), last_progress(http_now_ms()) { }
+    void progress(void) { last_progress = http_now_ms(); }
     bool cancelled(void) { return cancel && *cancel; }
     // After a slice that timed out: whether to wait another one.
     bool again(void)
     {
-        idle_ms += HTTP_IO_SLICE_MS;
-        return !cancelled() && (idle_ms < HTTP_REQUEST_TIMEOUT_MS);
+        return !cancelled() && ((uint32_t)(http_now_ms() - last_progress) < HTTP_REQUEST_TIMEOUT_MS);
     }
 };
 
 int   read_socket(int socket_fd, HTTPReqMessage& response);
 bool  get_response(int socket_fd, HTTPREQ_CALLBACK callback, HTTPReqMessage& response, HttpWait *wait = NULL);
 JSON *convert_buffer_to_json(t_BufferedBody *body);
-
-// How long an exchange waits for the server to take more of the request, or to
-// send more of its response, before it gives up. The host tests set it lower.
-#ifndef HTTP_REQUEST_TIMEOUT_MS
-#define HTTP_REQUEST_TIMEOUT_MS 30000
-#endif
 
 class HttpRequest
 {

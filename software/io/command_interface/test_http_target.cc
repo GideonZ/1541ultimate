@@ -180,6 +180,21 @@ extern "C" int __wrap_socket(int domain, int type, int protocol)
     return fd;
 }
 
+// lwIP checks a send timeout only when the write is entered again, so a send slice of
+// 100 ms really lasts about a second. While set, the socket timeouts of a new
+// connection are made that coarse.
+extern "C" int __real_setsockopt(int, int, int, const void *, socklen_t);
+static volatile int coarse_slice_ms = 0;
+
+extern "C" int __wrap_setsockopt(int fd, int level, int name, const void *value, socklen_t length)
+{
+    if (coarse_slice_ms && level == SOL_SOCKET && (name == SO_SNDTIMEO || name == SO_RCVTIMEO)) {
+        struct timeval tv = { coarse_slice_ms / 1000, (coarse_slice_ms % 1000) * 1000 };
+        return __real_setsockopt(fd, level, name, &tv, sizeof(tv));
+    }
+    return __real_setsockopt(fd, level, name, value, length);
+}
+
 static void hold_dns(bool hold)
 {
     pthread_mutex_lock(&dns_lock);
@@ -1347,6 +1362,15 @@ static void test_stalled_receiver(void)
     }
 }
 
+// The limit is a time, not a number of slices: with slices of a second, a stalled send
+// must still give up after HTTP_REQUEST_TIMEOUT_MS, not after ten times that.
+static void test_stalled_receiver_coarse_slices(void)
+{
+    coarse_slice_ms = 1000;
+    test_stalled_receiver();
+    coarse_slice_ms = 0;
+}
+
 // A server that reads the request and never answers. The response must fail
 // after HTTP_REQUEST_TIMEOUT_MS instead of waiting for it forever.
 static void test_silent_server(void)
@@ -1881,6 +1905,7 @@ int main(int argc, char **argv)
         signal(SIGPIPE, SIG_IGN);
         test_slow_receiver();
         test_stalled_receiver();
+        test_stalled_receiver_coarse_slices();
         test_silent_server();
         printf("Slow server: %d checks, %d failures\n", checks, failures);
         return failures ? 1 : 0;

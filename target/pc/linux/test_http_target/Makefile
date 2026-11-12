@@ -48,7 +48,7 @@ OPTIONS  = -g -ffunction-sections -O0 -DRUNS_ON_PC -Wno-format -Wno-format-extra
 COPTIONS = $(OPTIONS) -std=c99 -D_DEFAULT_SOURCE
 CPPOPT   = $(OPTIONS) -fno-exceptions -fno-rtti -fno-threadsafe-statics
 LINK 	 = ./mb_app.lds
-LIBS     =  -lgcc -pthread -Wl,--wrap=close -Wl,--wrap=gethostbyname_r -Wl,--wrap=socket
+LIBS     =  -lgcc -pthread -Wl,--wrap=close -Wl,--wrap=gethostbyname_r -Wl,--wrap=socket -Wl,--wrap=setsockopt
 LFLAGS   = --gc-sections 
 
 include ../../../common/rules.mk
