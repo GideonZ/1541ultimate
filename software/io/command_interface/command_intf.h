@@ -15,6 +15,8 @@
 #define CMD_IF_SLOT_BASE       *((volatile uint8_t *)(CMD_IF_BASE + 0x0))
 #define CMD_IF_SLOT_ENABLE     *((volatile uint8_t *)(CMD_IF_BASE + 0x1))
 #endif
+// The host tests define the registers as a model of the gateware.
+#ifndef CMD_IF_HANDSHAKE_OUT
 #define CMD_IF_HANDSHAKE_OUT   *((volatile uint8_t *)(CMD_IF_BASE + 0x2))
 #define CMD_IF_STATUSBYTE      *((volatile uint8_t *)(CMD_IF_BASE + 0x3))
 #define CMD_IF_COMMAND_START   *((volatile uint8_t *)(CMD_IF_BASE + 0x4))
@@ -31,6 +33,7 @@
 #define CMD_IF_COMMAND_LEN_H   *((volatile uint8_t *)(CMD_IF_BASE + 0xF))
 #define CMD_IF_IRQMASK_SET     *((volatile uint8_t *)(CMD_IF_BASE + 0x4))
 #define CMD_IF_IRQMASK_CLEAR   *((volatile uint8_t *)(CMD_IF_BASE + 0x5))
+#endif
 
 #define CMD_NEW_COMMAND           0x01
 #define CMD_DATA_ACCEPTED         0x02
@@ -74,6 +77,17 @@ class CommandInterface : public SubSystem
     Message incoming_command;
     uint8_t target;    
     void copy_result(Message *data, Message *status);
+    void reply_to_command(Message *data, Message *status, bool no_reply);
+
+    // A deferred command (see command_defer); pending_target is CMD_TARGET_NONE when there
+    // is none. Only the UCI Server task touches these; done_ticket is written by the
+    // target's own task.
+    uint32_t ticket;
+    bool defer_requested;
+    uint8_t pending_target;
+    uint32_t pending_ticket;
+    bool pending_no_reply;
+    volatile uint32_t done_ticket;
     int cart_mode;
     
     static void start_task(void *a);
@@ -88,6 +102,10 @@ public:
     ~CommandInterface();
     
     void dump_registers(void);
+    // One pass of the UCI Server task, for one item from the queue.
+    void handle_event(uint8_t status_byte);
+    uint32_t defer(void);
+    void deferred_done(uint32_t done);
     const char *identify(void) { return "Command Interface"; }
     bool is_dma_active(void);
     // Whether a C64 reset has come in that run_task has not yet handed to the

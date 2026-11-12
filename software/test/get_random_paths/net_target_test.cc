@@ -2,7 +2,7 @@
  * net_target_test.cc
  *
  * The UCI network target's GET_RANDOM (NetworkTarget::get_random(), the GET_RANDOM case of
- * parse_command() and the status messages, cut out of network_target.cc as they are) with
+ * execute() and the status messages, cut out of network_target.cc as they are) with
  * the real wifi_random.cc behind it, and the module's answer stubbed: which UCI status and
  * which bytes each answer gives, and which command lengths are taken.
  */
@@ -91,7 +91,7 @@ static void command_length(void)
         asked = 0;
         module_result = 0;
         reply = status = NULL;
-        t.parse_command(&m, &reply, &status);
+        t.execute(&m, &reply, &status);
         if (len == 4) {
             CHECK(status_is(status, "00,OK") && (asked == 1), "four bytes: asked, 00,OK");
         } else {

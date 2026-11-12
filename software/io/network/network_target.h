@@ -9,6 +9,9 @@
 #define IO_NETWORK_NETWORK_TARGET_H_
 
 #include "command_intf.h"
+#include "FreeRTOS.h"
+#include "task.h"
+#include "queue.h"
 
 #define NET_CMD_IDENTIFY            0x01
 #define NET_CMD_GET_INTERFACE_COUNT 0x02
@@ -104,6 +107,32 @@ struct TlsSocket {
     uint8_t held[NET_TLS_CT_MAX];
 };
 
+// Commands the worker may hold: the one the C64 waits for, and ones that were aborted
+// while they still run or wait. With none free, a command fails at once.
+#define NET_JOBS 4
+
+// How long a WRITE goes on trying while the link has no free buffer (ENOMEM).
+#define NET_SEND_NOMEM_MS 1000
+
+// One command as the worker runs it, with a copy of its bytes.
+struct NetJob {
+    bool in_use;
+    bool done;              // set by the worker; with cancel, under a critical section
+    volatile bool cancel;   // set by the UCI Server task
+    uint32_t ticket;
+    int opened;             // the socket an OPEN made, -1 if none
+    Message command;
+    uint8_t bytes[CMD_MAX_COMMAND_LEN + 1];
+    Message *reply;
+    Message *status;
+};
+
+// All commands, and the closing of the sockets at a C64 reset, run in order on one worker
+// task, which owns the sockets: the UCI Server task never waits for the network, and no
+// socket is touched by two tasks. The reply state below (data_message, status_message,
+// buffer, read_*) and the socket table belong to the worker. The UCI Server task reads the
+// reply state only once the worker has finished the command, as the reply and its Data
+// More blocks are handed out; the worker starts no other command meanwhile.
 class NetworkTarget : public CommandTarget {
     Message data_message;
     Message status_message;
@@ -199,11 +228,34 @@ class NetworkTarget : public CommandTarget {
     void get_random(Message *command, Message **reply, Message **status);
     void start_read_reply(int payload_length, Message *result, Message **reply, Message **status);
     void discard_read_reply(void);
+
+    NetJob jobs[NET_JOBS];
+    NetJob *job;                    // the command the C64 waits for (UCI Server task)
+    QueueHandle_t queue;
+    TaskHandle_t worker;
+    volatile uint32_t resets;       // C64 resets seen by the UCI Server task
+    uint32_t resets_closed;         // the count the worker last closed the sockets for
+    volatile bool *cancel;          // the running command's (worker)
+    int opened_socket;              // set by open_socket (worker)
+    volatile int orphan;            // a socket an aborted OPEN made, for the worker to close
+    void wake_worker(void);
+    bool start_worker(void);
+    void cancel_job(void);
+    void close_sockets_after_reset(void);
+    void close_orphan(void);
+    static void worker_task(void *a);
+    void execute(Message *command, Message **reply, Message **status);
+
+    Message quick_message;          // the reply of a socket-free command (UCI Server task)
+    uint8_t quick_bytes[16];
+    void answer_quick(Message *command, Message **reply, Message **status);
 public:
 	NetworkTarget(int id);
 	virtual ~NetworkTarget();
 
     void parse_command(Message *command, Message **reply, Message **status);
+    void deferred_reply(Message **reply, Message **status);
+    bool is_quick(Message *command);
     void get_more_data(Message **reply, Message **status);
     void abort(int a);
     void c64_reset(void);

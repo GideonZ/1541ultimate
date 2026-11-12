@@ -3,6 +3,7 @@
 #define COMMAND_INTF_H_STUB
 #include <stdint.h>
 #define CMD_MAX_REPLY_BLOCK 895
+#define CMD_MAX_COMMAND_LEN 896
 typedef struct _message {
     int   length;
     bool  last_part;
