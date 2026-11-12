@@ -45,6 +45,7 @@ sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
 import bootstrap  # noqa: E402,F401
 
 import cli  # noqa: E402
+import targets  # noqa: E402
 from report import (  # noqa: E402
     Failure, apply_colour, check_ok, check_start, detail, section, suite_fail, suite_ok)
 
@@ -92,7 +93,9 @@ def percentile(sorted_values: list[float], fraction: float) -> float:
 
 
 def measure(args) -> int:
-    addresses = [args.host, *args.address]
+    # Every route here is served by the device under test, so a cartridge
+    # target such as u2@c64u is measured on the cartridge's own address.
+    addresses = [targets.device_of(args.host), *args.address]
     samples: dict[str, list[float]] = {}
     section(f"Warm up, {len(addresses)} address(es), {len(ROUTES)} routes")
     for address in addresses:
