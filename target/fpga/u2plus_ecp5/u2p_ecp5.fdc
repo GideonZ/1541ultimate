@@ -1,0 +1,11 @@
+# Clocks for Synplify. Without them it infers every clock at 1 MHz and does not optimize for timing.
+create_clock -name {sys_clock}   {t:i_startup.i_pll.PLLInst_0.CLKOS2} -period 20.000
+create_clock -name {half_clock}  {t:i_memctrl.i_phy.i_sclk.CDIVX}      -period 10.000
+create_clock -name {audio_clock} {t:i_startup.i_pll.PLLInst_0.CLKOS}  -period 81.667
+create_clock -name {start_clock} {n:i_startup.start_clock}         -period 412.903
+create_clock -name {rmii_clock}  {p:RMII_REFCLK}                   -period 20.000
+create_clock -name {ulpi_clock}  {p:ULPI_CLOCK}                    -period 16.667
+create_clock -name {clock_50}    {p:CLOCK_50}                      -period 20.000
+
+# sys_clock and half_clock come from the same PLL and are timed against each other; the other domains cross only through synchronizers.
+set_clock_groups -asynchronous -group {sys_clock half_clock} -group {audio_clock} -group {start_clock} -group {rmii_clock} -group {ulpi_clock} -group {clock_50}

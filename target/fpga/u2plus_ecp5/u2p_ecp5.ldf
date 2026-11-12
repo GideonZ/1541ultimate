@@ -635,6 +635,9 @@
         <Source name="u2p_ecp5.lpf" type="Logic Preference" type_short="LPF">
             <Options/>
         </Source>
+        <Source name="u2p_ecp5.fdc" type="Synplify Design Constraints File" type_short="SDC">
+            <Options/>
+        </Source>
     </Implementation>
     <Strategy name="Strategy1" file="neorv321.sty"/>
 </BaliProject>
