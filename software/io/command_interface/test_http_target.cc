@@ -8,6 +8,7 @@
 #include <unistd.h>
 #include <sys/wait.h>
 #include <signal.h>
+#include <time.h>
 
 // these globals will be filled in by the clients
 CommandTarget *command_targets[CMD_IF_MAX_TARGET+1];
@@ -595,6 +596,11 @@ public:
     }
 
     uint16_t port() const { return bound_port; }
+    // Set before listening, so that the accepted connection inherits it.
+    bool set_receive_buffer(int size)
+    {
+        return setsockopt(socket_fd, SOL_SOCKET, SO_RCVBUF, &size, sizeof(size)) == 0;
+    }
     bool start_listening() { return listen(socket_fd, 1) == 0; }
     int accept_connection() { return accept(socket_fd, NULL, NULL); }
 };
@@ -1021,6 +1027,242 @@ static void test_response_cleanup(HttpTarget *target)
     }
 }
 
+// A server that reads slowly, as the printer in #1039 did: a small receive
+// window, and a pause before it starts reading. The request is far larger than
+// what the two socket buffers hold, so the sender has to wait for the reader.
+class SlowReader
+{
+    LoopbackEndpoint endpoint;
+    pid_t child;
+
+    SlowReader(const SlowReader&);
+    SlowReader& operator=(const SlowReader&);
+public:
+    // pause_us < 0: accept the connection, then never read from it.
+    SlowReader(int expected_length, int pause_us = 500000) : child(-1)
+    {
+        if (!endpoint.port() || !endpoint.set_receive_buffer(4096) || !endpoint.start_listening()) {
+            return;
+        }
+        child = fork();
+        if (child == 0) {
+            alarm(20);
+            int client = endpoint.accept_connection();
+            if (client < 0) {
+                _exit(2);
+            }
+            if (pause_us < 0) {
+                pause();
+            } else {
+                usleep(pause_us);
+            }
+            uint8_t buffer[4096];
+            int received = 0;
+            int n;
+            while ((n = recv(client, buffer, sizeof(buffer), 0)) > 0) {
+                for (int i = 0; i < n; i++) {
+                    if (buffer[i] != (uint8_t)(received + i)) {
+                        _exit(3);
+                    }
+                }
+                received += n;
+            }
+            close(client);
+            _exit(received == expected_length ? 0 : 4);
+        }
+    }
+
+    ~SlowReader()
+    {
+        if (child > 0) {
+            kill(child, SIGKILL);
+            waitpid(child, NULL, 0);
+        }
+    }
+
+    uint16_t port() const { return child > 0 ? endpoint.port() : 0; }
+    // 0 when the reader got every byte in order; otherwise its exit code.
+    int result()
+    {
+        if (child <= 0) {
+            return -1;
+        }
+        int status;
+        pid_t result = waitpid(child, &status, 0);
+        child = -1;
+        if (result <= 0 || !WIFEXITED(status)) {
+            return -1;
+        }
+        return WEXITSTATUS(status);
+    }
+};
+
+static void test_slow_receiver(void)
+{
+    const int length = 4 * 1024 * 1024;
+    SlowReader reader(length);
+    checks++;
+    if (!reader.port()) {
+        failures++;
+        printf("FAIL slow receiver: cannot start the loopback reader\n");
+        return;
+    }
+
+    StreamRamFile request(4096);
+    uint8_t block[256];
+    for (int i = 0; i < (int)sizeof(block); i++) {
+        block[i] = (uint8_t)i;
+    }
+    for (int i = 0; i < length; i += sizeof(block)) {
+        request.write(block, sizeof(block));
+    }
+
+    int sent;
+    {
+        HttpRequest exchange;
+        quiet_begin();
+        int connected = exchange.connect_to_server("127.0.0.1", reader.port());
+        quiet_end();
+        checks++;
+        if (connected < 0) {
+            failures++;
+            printf("FAIL slow receiver: cannot connect\n");
+            return;
+        }
+        sent = exchange.send_request(&request);
+    } // closes the connection, so the reader sees the end
+
+    checks++;
+    if (sent != 0) {
+        failures++;
+        printf("FAIL slow receiver: send_request returned %d\n", sent);
+    }
+    int result = reader.result();
+    checks++;
+    if (result != 0) {
+        failures++;
+        printf("FAIL slow receiver: the reader did not get all %d bytes in order (exit %d)\n", length, result);
+    }
+}
+
+static long elapsed_ms(const struct timespec& since)
+{
+    struct timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    return (now.tv_sec - since.tv_sec) * 1000 + (now.tv_nsec - since.tv_nsec) / 1000000;
+}
+
+// A server that takes the connection and then stops reading. The request must
+// fail after HTTP_REQUEST_TIMEOUT_MS instead of waiting for it forever.
+static void test_stalled_receiver(void)
+{
+    const int length = 4 * 1024 * 1024;
+    SlowReader reader(length, -1);
+    checks++;
+    if (!reader.port()) {
+        failures++;
+        printf("FAIL stalled receiver: cannot start the loopback reader\n");
+        return;
+    }
+
+    StreamRamFile request(4096);
+    uint8_t block[256] = {};
+    for (int i = 0; i < length; i += sizeof(block)) {
+        request.write(block, sizeof(block));
+    }
+
+    HttpRequest exchange;
+    quiet_begin();
+    int connected = exchange.connect_to_server("127.0.0.1", reader.port());
+    quiet_end();
+    checks++;
+    if (connected < 0) {
+        failures++;
+        printf("FAIL stalled receiver: cannot connect\n");
+        return;
+    }
+    struct timespec start;
+    clock_gettime(CLOCK_MONOTONIC, &start);
+    int sent = exchange.send_request(&request);
+    long ms = elapsed_ms(start);
+    checks++;
+    if (sent >= 0) {
+        failures++;
+        printf("FAIL stalled receiver: send_request returned %d, expected a failure\n", sent);
+    }
+    checks++;
+    if (ms < HTTP_REQUEST_TIMEOUT_MS / 2 || ms > HTTP_REQUEST_TIMEOUT_MS * 3) {
+        failures++;
+        printf("FAIL stalled receiver: gave up after %d ms, timeout is %d ms\n", (int)ms, HTTP_REQUEST_TIMEOUT_MS);
+    }
+}
+
+// A server that reads the request and never answers. The response must fail
+// after HTTP_REQUEST_TIMEOUT_MS instead of waiting for it forever.
+static void test_silent_server(void)
+{
+    LoopbackEndpoint endpoint;
+    checks++;
+    if (!endpoint.port() || !endpoint.start_listening()) {
+        failures++;
+        printf("FAIL silent server: cannot listen on loopback\n");
+        return;
+    }
+    pid_t child = fork();
+    checks++;
+    if (child < 0) {
+        failures++;
+        printf("FAIL silent server: cannot start the loopback server\n");
+        return;
+    }
+    if (child == 0) {
+        alarm(20);
+        int client = endpoint.accept_connection();
+        char request[256];
+        while (client >= 0 && recv(client, request, sizeof(request), 0) > 0) {
+            // read on until the client gives up and closes
+        }
+        _exit(0);
+    }
+
+    StreamRamFile request(512);
+    request.format("GET / HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n");
+
+    {
+        HttpRequest exchange;
+        quiet_begin();
+        int connected = exchange.connect_to_server("127.0.0.1", endpoint.port());
+        int sent = (connected >= 0) ? exchange.send_request(&request) : -1;
+        quiet_end();
+        checks++;
+        if (sent != 0) {
+            failures++;
+            printf("FAIL silent server: cannot send the request\n");
+        } else {
+            struct timespec start;
+            clock_gettime(CLOCK_MONOTONIC, &start);
+            quiet_begin();
+            bool received = exchange.recv_response();
+            quiet_end();
+            long ms = elapsed_ms(start);
+            checks++;
+            if (received) {
+                failures++;
+                printf("FAIL silent server: recv_response reported a response\n");
+            }
+            checks++;
+            if (ms < HTTP_REQUEST_TIMEOUT_MS / 2 || ms > HTTP_REQUEST_TIMEOUT_MS * 3) {
+                failures++;
+                printf("FAIL silent server: gave up after %d ms, timeout is %d ms\n", (int)ms, HTTP_REQUEST_TIMEOUT_MS);
+            }
+        }
+    }
+    if (child > 0) {
+        kill(child, SIGKILL);
+        waitpid(child, NULL, 0);
+    }
+}
+
 int test_http_transport(void);
 int test_http_framing(void);
 
@@ -1029,6 +1271,15 @@ int main(int argc, char **argv)
     if (argc > 1 && strcmp(argv[1], "--framing") == 0) return test_http_framing();
     if (argc > 1 && strcmp(argv[1], "--transport") == 0) {
         return test_http_transport();
+    }
+    if ((argc > 1) && (strcmp(argv[1], "--slow-server") == 0)) {
+        // A server that dies early must fail a check, not end the run unreported.
+        signal(SIGPIPE, SIG_IGN);
+        test_slow_receiver();
+        test_stalled_receiver();
+        test_silent_server();
+        printf("Slow server: %d checks, %d failures\n", checks, failures);
+        return failures ? 1 : 0;
     }
     if ((argc > 1) && (strcmp(argv[1], "--connect-cleanup") == 0)) {
         test_connect_cleanup();

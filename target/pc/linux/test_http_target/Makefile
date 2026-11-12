@@ -89,3 +89,12 @@ test-response-completion test-response-boundaries test-response-cleanup test-tra
 	    CC="$(CC) -fsanitize=address,undefined -fno-sanitize-recover=all" \
 	    CPP="$(CPP) -fsanitize=address,undefined -fno-sanitize-recover=all" all
 	@timeout 30s env LD_PRELOAD="$$($(CPP) -print-file-name=libasan.so)$${LD_PRELOAD:+:$$LD_PRELOAD}" result/response-completion/$(PRJ) --$(patsubst test-%,%,$@)
+
+# Servers that read slowly, stop reading, or never answer. The timeout is cut to
+# two seconds so that the run stays short.
+.PHONY: test-slow-server
+test-slow-server:
+	@$(MAKE) OUTPUT=output/slow-server RESULT=result/slow-server \
+	    CC="$(CC) -fsanitize=address,undefined -fno-sanitize-recover=all" \
+	    CPP="$(CPP) -DHTTP_REQUEST_TIMEOUT_MS=2000 -fsanitize=address,undefined -fno-sanitize-recover=all" all
+	@timeout 60s env LD_PRELOAD="$$($(CPP) -print-file-name=libasan.so)$${LD_PRELOAD:+:$$LD_PRELOAD}" result/slow-server/$(PRJ) --slow-server

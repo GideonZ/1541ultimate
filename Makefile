@@ -79,9 +79,13 @@ host_tests:
 	@$(MAKE) -C target/pc/linux/wifireply test
 	@$(MAKE) -C software/io/wifi/tests
 	@$(MAKE) -C software/wifi/tests
+	@$(MAKE) -C software/wifi/uart_tests
 	@$(MAKE) -C target/pc/linux/recoverymanifest test
 	@$(MAKE) -C target/pc/linux/recoveryimage test
 	@$(MAKE) -C target/pc/linux/recoveryurl test
+	@$(MAKE) -C target/pc/linux/c64mem test
+	@$(MAKE) -C target/pc/linux/sdcard test
+	@$(MAKE) -C target/pc/linux/rasterwait test
 	@$(MAKE) -C target/pc/linux/socketdma test
 	@$(MAKE) -C target/pc/linux/ucitargets test
 

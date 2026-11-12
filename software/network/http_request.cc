@@ -1,7 +1,17 @@
 //#include "attachment_writer.h"
 #include "http_request.h"
 #include "netdb.h"
+#include "send_all.h"
 #include <errno.h>
+
+static bool set_socket_timeouts(int socket_fd)
+{
+    struct timeval tv;
+    tv.tv_sec = HTTP_REQUEST_TIMEOUT_MS / 1000;
+    tv.tv_usec = (HTTP_REQUEST_TIMEOUT_MS % 1000) * 1000;
+    return setsockopt(socket_fd, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv, sizeof(tv)) == 0 &&
+           setsockopt(socket_fd, SOL_SOCKET, SO_SNDTIMEO, (char *)&tv, sizeof(tv)) == 0;
+}
 
 int HttpSocketConnection :: open(const char *hostname, uint16_t hostport)
 {
@@ -44,6 +54,10 @@ int HttpSocketConnection :: open(const char *hostname, uint16_t hostport)
         return -1;
     }
     // printf("Connection succeeded.\n");
+    if (!set_socket_timeouts(sock_fd)) {
+        ::close(sock_fd);
+        return -1;
+    }
     this->socket_fd = sock_fd;
     return sock_fd;
 }
@@ -59,11 +73,7 @@ int HttpSocketConnection :: read(void *buffer, int length)
 
 int HttpSocketConnection :: write(const void *buffer, int length)
 {
-    int result;
-    do {
-        result = send(socket_fd, buffer, length, MSG_DONTWAIT);
-    } while (result < 0 && errno == EINTR);
-    return result;
+    return send_all(socket_fd, static_cast<const char *>(buffer), length) == 0 ? length : -1;
 }
 
 void HttpSocketConnection :: close_session()
