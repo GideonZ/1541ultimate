@@ -32,7 +32,8 @@
  * checks it, and only then does recovery_manifest_parse() read the signed text.
  * Only the split and the verify ever see unauthenticated input.
  *
- * Everything but recovery_manifest_verify() is free of ESP-IDF and mbedtls.
+ * Everything but recovery_manifest_verify() is free of ESP-IDF and the crypto
+ * library; recovery_verify.h has the hashing of the files the manifest names.
  */
 
 #ifndef SOFTWARE_U64CTRL_MAIN_RECOVERY_MANIFEST_H_
@@ -63,6 +64,8 @@ typedef enum {
     RECOVERY_ERR_DUPLICATE_KEY,
     RECOVERY_ERR_MISSING_KEY,
     RECOVERY_ERR_BAD_VALUE,
+    RECOVERY_ERR_CRYPTO,        // the crypto library would not start or hash
+    RECOVERY_ERR_HASH_MISMATCH, // a downloaded file is not the one the manifest names
 } recovery_result_t;
 
 typedef struct {

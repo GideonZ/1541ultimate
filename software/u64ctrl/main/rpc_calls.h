@@ -20,6 +20,8 @@ typedef struct {
     uint16_t sequence;
 } rpc_header_t;
 
+#include "rpc_shared.h"
+
 typedef struct {
     rpc_header_t hdr;
     int esp_err; // to be casted to esp_err_t
@@ -234,6 +236,7 @@ typedef struct {
 #define CMD_GET_WAKE_ON_WIFI  0x19
 #define CMD_SET_RECOVERY_URL  0x1A
 #define CMD_GET_RECOVERY_URL  0x1B
+// 0x20 is CMD_GET_RANDOM, in rpc_shared.h
 
 #define EVENT_CONNECTED     0x40
 #define EVENT_GOTIP         0x41

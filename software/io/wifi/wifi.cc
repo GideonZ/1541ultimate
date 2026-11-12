@@ -19,6 +19,7 @@
 #include "u64_config.h"
 #endif
 #include "init_function.h"
+#include "wifi_dedicated.h"
 
 #define DEBUG_INPUT  0
 #define EVENT_START  0xF1
@@ -308,7 +309,8 @@ void WiFi :: RunModeThread()
                 memset(&voltages, 0, sizeof(voltages));
                 result = wifi_get_voltages(&voltages);
                 printf("Result get voltages: %d %d %d %d %d %d %d %d\n", result, voltages.vbus, voltages.vaux, voltages.v50, voltages.v33, voltages.v18, voltages.v10, voltages.vusb);
-                if (voltages.vbus < 8500) {
+                // A module that has no reading to give says so; that is not a low voltage
+                if ((result == 0) && (voltages.vbus < 8500)) {
                     UserInterface :: postMessage("Low input voltage.");
                 }
                 // These settings live in the module's NVS; keep them in sync.
@@ -811,6 +813,13 @@ void wifi_free(void *driver, void *buffer)
     WiFi *w = (WiFi *)driver;
     w->freeBuffer((command_buf_t *)buffer);
 }
+
+#if U64 >= 1
+bool wifi_module_ready(void)
+{
+    return wifi.getState() >= eWifi_AppDetected;
+}
+#endif
 
 extern "C" {
     void print_uart_status()

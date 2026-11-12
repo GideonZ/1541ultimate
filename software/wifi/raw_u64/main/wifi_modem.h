@@ -2,6 +2,7 @@
 #define WIFI_MODEM_H
 
 #include "rpc_calls.h"
+#include "radio_entropy.h"
 
 extern QueueHandle_t connect_commands;
 extern SemaphoreHandle_t connect_semaphore;
