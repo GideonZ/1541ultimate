@@ -17,6 +17,11 @@
 
 uint32_t world_tick;
 uint32_t world_reset_at;
+uint32_t world_abort_at = 0xFFFFFFFF;
+void (*world_reset_hook)(void);
+void (*world_abort_hook)(void);
+static uint32_t reset_fired_for = 0xFFFFFFFF;
+static uint32_t abort_fired_for = 0xFFFFFFFF;
 FakeSock world_socks[16];
 std::vector<DnsRule> world_dns;
 int world_dns_calls;
@@ -71,6 +76,30 @@ void world_advance(uint32_t ticks)
 {
     world_tick += ticks;
     fire_dns(false);
+    // What the UCI Server task does while the worker waits: it sees the reset or the abort in the next
+    // tick and notes it for the worker (c64_reset(), the job's cancel flag).
+    if ((world_reset_at == 0xFFFFFFFF) || (world_abort_at == 0xFFFFFFFF)) {
+        if (world_reset_at == 0xFFFFFFFF) {
+            reset_fired_for = 0xFFFFFFFF;
+        }
+        if (world_abort_at == 0xFFFFFFFF) {
+            abort_fired_for = 0xFFFFFFFF;
+        }
+    }
+    if ((world_reset_at != 0xFFFFFFFF) && (reset_fired_for != world_reset_at) &&
+        ((int32_t)(world_tick - world_reset_at) >= 0)) {
+        reset_fired_for = world_reset_at;
+        if (world_reset_hook) {
+            world_reset_hook();
+        }
+    }
+    if ((world_abort_at != 0xFFFFFFFF) && (abort_fired_for != world_abort_at) &&
+        ((int32_t)(world_tick - world_abort_at) >= 0)) {
+        abort_fired_for = world_abort_at;
+        if (world_abort_hook) {
+            world_abort_hook();
+        }
+    }
 }
 
 uint32_t world_ms(void)
@@ -112,6 +141,8 @@ void world_reset(void)
 {
     world_tick = 1000;
     world_reset_at = 0xFFFFFFFF;
+    world_abort_at = 0xFFFFFFFF;
+    reset_fired_for = abort_fired_for = 0xFFFFFFFF;
     for (int i = 0; i < 16; i++) {
         world_socks[i] = FakeSock();
         world_socks[i].srv.saw_alert = -1;
@@ -189,9 +220,11 @@ void vTaskDelay(TickType_t ticks)
     world_advance(ticks ? ticks : 1);
 }
 
+// The UCI Server task clears this at once (command_intf.cc), long before the worker looks, so it is
+// never true here: the reset reaches the worker through c64_reset() and its count.
 bool CommandInterface :: reset_pending(void)
 {
-    return (world_reset_at != 0xFFFFFFFF) && ((int32_t)(world_tick - world_reset_at) >= 0);
+    return false;
 }
 
 uint32_t sntp_utc_now(void)

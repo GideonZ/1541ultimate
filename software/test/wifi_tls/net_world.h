@@ -16,7 +16,10 @@ typedef std::vector<uint8_t> bytes;
 extern uint32_t world_tick;
 void world_advance(uint32_t ticks);
 uint32_t world_ms(void);             // world_tick in ms
-extern uint32_t world_reset_at;      // reset_pending() from this tick on; ~0 for never
+extern uint32_t world_reset_at;      // the UCI Server task notes a C64 reset at this tick (world_reset_hook); ~0 for never
+extern uint32_t world_abort_at;      // ... and an abort of the running command (world_abort_hook); ~0 for never
+extern void (*world_reset_hook)(void);
+extern void (*world_abort_hook)(void);
 extern uint32_t world_sntp;          // what sntp_utc_now() answers
 
 // A record of the pretend TLS.

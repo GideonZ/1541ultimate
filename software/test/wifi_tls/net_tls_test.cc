@@ -735,7 +735,6 @@ static void test_reset_during_open(void)
     uint32_t late = (world_tick - world_reset_at) * 5;
     check(late <= 110, "reset: the OPEN returns within a slice of the reset (%u ms late)", late);
     check(world_open_sockets() == 0 && world_count(0x32) == 0, "reset: socket closed, no CLOSE RPC waited for");
-    reset_c64();
     world_reset_at = 0xFFFFFFFF;
     check(world_module.close_alls == 1, "reset: c64_reset sends CLOSE_ALL once");
     r = info(0xFF);
@@ -773,6 +772,71 @@ static void expect_kept(int h, const bytes &cmd, const char *want, const char *w
     bool untouched = sock(h).open && !sock(h).nodelay && !sock(h).nonblocking && (sock(h).sndtimeo_ms == PLAIN_SNDTIMEO_MS);
     check(r.status == want && r.data.empty() && untouched, "start: %s -> %s, TCP handle unchanged (got %s)", what,
           want, r.status.c_str());
+}
+
+// --- an abort during OPEN, START_TLS and the CA upload ---------------------------------------
+
+// The job's cancel flag is set by the UCI Server task on an abort. The worker has to be free within a slice,
+// and what the aborted command opened on the module is still closed.
+static void test_abort_during_open(void)
+{
+    printf("OPEN_TLS, START_TLS: an abort frees the worker at once, and the module is told to CLOSE\n");
+    fresh();
+    sock(0).srv.on_hello = SRV_STALL;
+    world_abort_at = world_tick + 600; // in the handshake
+    Res r = run(open_cmd(0, 0, "example.com"));
+    uint32_t late = (world_tick - world_abort_at) * 5;
+    check(late <= 110, "abort: a stalled handshake returns within a slice of the abort (%u ms late)", late);
+    check(world_open_sockets() == 0 && world_count(0x32) == 1, "abort: socket closed, the module's session CLOSEd");
+    world_abort_at = 0xFFFFFFFF;
+    check(run(B({ 0x03, 0x23, 0xFF })).status == "00,OK", "abort: the next socket command runs");
+
+    fresh();
+    world_dns.push_back({ "never.example", DNS_NEVER, 0, 0 });
+    world_abort_at = world_tick + 200;
+    r = run(open_cmd(0, 0, "never.example"));
+    late = (world_tick - world_abort_at) * 5;
+    check(late <= 110 && world_open_sockets() == 0, "abort: during DNS too (%u ms late)", late);
+    world_abort_at = 0xFFFFFFFF;
+
+    fresh();
+    sock(0).srv.connect_never = true;
+    world_abort_at = world_tick + 200;
+    r = run(open_cmd(0, 0, "example.com"));
+    late = (world_tick - world_abort_at) * 5;
+    check(late <= 110 && world_open_sockets() == 0, "abort: during connect too (%u ms late)", late);
+    world_abort_at = 0xFFFFFFFF;
+
+    fresh();
+    world_module.open_delay_ms = 4000;
+    world_abort_at = world_tick + 200;
+    r = run(open_cmd(0, 0, "example.com"));
+    late = (world_tick - world_abort_at) * 5;
+    check(late <= 110, "abort: during the OPEN RPC too (%u ms late)", late);
+    world_abort_at = 0xFFFFFFFF;
+
+    fresh();
+    int t = open_tcp();
+    sock(t).srv.on_hello = SRV_STALL;
+    world_abort_at = world_tick + 600;
+    r = run(start_cmd(t, 0, 0, "mail.example"));
+    late = (world_tick - world_abort_at) * 5;
+    check(late <= 110, "abort: START_TLS's stalled handshake too (%u ms late)", late);
+    world_abort_at = 0xFFFFFFFF;
+}
+
+// A reset reaches the worker as a count, not as the command interface's flag.
+static void test_reset_during_start(void)
+{
+    printf("START_TLS: a reset ends the handshake at once\n");
+    fresh();
+    int t = open_tcp();
+    sock(t).srv.on_hello = SRV_STALL;
+    world_reset_at = world_tick + 600;
+    Res r = run(start_cmd(t, 0, 0, "mail.example"));
+    uint32_t late = (world_tick - world_reset_at) * 5;
+    check(late <= 110, "reset: a stalled START_TLS returns within a slice of the reset (%u ms late)", late);
+    world_reset_at = 0xFFFFFFFF;
 }
 
 static void test_start_tls(void)
@@ -1765,6 +1829,8 @@ static void test_late_send_failures(void)
 int main(int argc, char **argv)
 {
     setvbuf(stdout, NULL, _IOLBF, 0);
+    world_reset_hook = [] { net.c64_reset(); };
+    world_abort_hook = [] { if (net.cancel) { *net.cancel = true; } };
     test_info();
     test_open();
     test_grammar();
@@ -1773,6 +1839,8 @@ int main(int argc, char **argv)
     test_dns_connect();
     test_reset_during_open();
     test_start_tls();
+    test_abort_during_open();
+    test_reset_during_start();
     test_read();
     test_write();
     test_close();

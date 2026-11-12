@@ -260,6 +260,11 @@ public:
     void get_more_data(Message **reply, Message **status);
     void abort(int a);
     void c64_reset(void);
+
+    // For the TLS waits, which run on the worker: a C64 reset the UCI Server task has noted but the worker has not
+    // yet acted on, and an abort of the command that runs.
+    bool reset_noted(void) { return resets != resets_closed; }
+    bool job_aborted(void) { return cancel && *cancel; }
 };
 
 #endif /* IO_NETWORK_NETWORK_TARGET_H_ */

@@ -245,25 +245,36 @@ static uint32_t earlier(uint32_t a, uint32_t b)
     return ((int32_t)(a - b) <= 0) ? a : b;
 }
 
-// The cancel predicate of the module calls: a C64 reset always, and a
-// deadline for the waits that have one. Cleanup calls pass no deadline.
+// The waits stop for a C64 reset and for an abort of the command that runs. Both are noted by the UCI Server
+// task for the worker: the command interface's own reset flag is cleared there at once, long before the worker
+// looks, so it cannot be used. Cleanup (the CLOSE of a session that the command opened) stops for a reset only,
+// so that an aborted OPEN still tells the module to free its session.
+static NetworkTarget *tls_owner;
+
+// The cancel predicate of the module calls: the above, and a deadline for the waits that have one.
 typedef struct {
     bool use_deadline;
     uint32_t deadline;
+    bool cleanup;
 } tls_cancel_context_t;
 
-static bool tls_cancelled(void *context)
+static bool reset_only(void)
 {
-    tls_cancel_context_t *c = (tls_cancel_context_t *)context;
-    if (cmd_if.reset_pending()) {
-        return true;
-    }
-    return c->use_deadline && reached(c->deadline);
+    return tls_owner->reset_noted();
 }
 
 static bool reset_now(void)
 {
-    return cmd_if.reset_pending();
+    return tls_owner->reset_noted() || tls_owner->job_aborted();
+}
+
+static bool tls_cancelled(void *context)
+{
+    tls_cancel_context_t *c = (tls_cancel_context_t *)context;
+    if (c->cleanup ? reset_only() : reset_now()) {
+        return true;
+    }
+    return c->use_deadline && reached(c->deadline);
 }
 
 TlsSocket *NetworkTarget :: tls_find(int socketnr)
@@ -385,10 +396,10 @@ void NetworkTarget :: tls_fail_step(TlsSocket *e, int esp_err, uint8_t alert_in)
 // freed it all the same.
 void NetworkTarget :: tls_cleanup_close(TlsSocket *e)
 {
-    if (!e->module_live || reset_now()) {
+    if (!e->module_live || reset_only()) {
         return;
     }
-    tls_cancel_context_t context = { false, 0 };
+    tls_cancel_context_t context = { false, 0, true };
     wifi_tls_cancel_t cancel = { tls_cancelled, &context };
     uint16_t notify_len;
     int esp_err;
@@ -403,8 +414,8 @@ void NetworkTarget :: tls_cleanup_close(TlsSocket *e)
 // close_notify best effort, the socket, the entry.
 void NetworkTarget :: tls_close_entry(TlsSocket *e, bool send_notify)
 {
-    if (e->module_live && !reset_now()) {
-        tls_cancel_context_t context = { false, 0 };
+    if (e->module_live && !reset_only()) {
+        tls_cancel_context_t context = { false, 0, true };
         wifi_tls_cancel_t cancel = { tls_cancelled, &context };
         uint16_t notify_len = 0;
         int esp_err;
@@ -1548,6 +1559,7 @@ void NetworkTarget :: tls_init(void)
 {
     memset(tls, 0, sizeof(tls));
     tls_last_tag = 0;
+    tls_owner = this;
     tls_generation_known = false;
     tls_quick_seen = false;
     tls_generation = 0;
