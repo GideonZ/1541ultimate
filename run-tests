@@ -1508,6 +1508,17 @@ def main(argv: list[str]) -> int:
         else:
             report.check_ok(faster or "already set")
 
+        # Part of the well-known configuration: the browsers must list files
+        # under their stored names, or the suites find no row for what they made.
+        report.step_start("machine: the file browsers show stored names")
+        try:
+            viewed = api_lib.ensure_stored_names_view(
+                target, options.password, float(options.timeout))
+        except DEVICE_ERRORS as exc:
+            report.check_warn(str(exc))
+        else:
+            report.check_ok(viewed or "already set")
+
         # A cartridge run leaves this at "External", which routes the machine's
         # own interrupts to its port and survives a power cycle.
         if not target.split:

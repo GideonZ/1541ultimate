@@ -468,6 +468,7 @@ public:
     friend class U64Machine;  // U64Machine is a derived class that may use internals of C64
     friend class U64Config; // U64 config needs to stop / resume for SID detection
     friend class SoftIECTarget; // UCI target that performs DMA load
+    friend class ControlTarget; // SAVEMEM saves through get_all_memory
 };
 
 // extern C64 *c64;

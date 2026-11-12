@@ -32,6 +32,27 @@ extern "C" {
 #define TXT printf
 #define DBG(x) x
 
+// One SPI sequence to the card (command, response, data, busy) must not be interleaved
+// with another task's. The mutex excludes other tasks for the whole sequence, including
+// the card's busy time after a write (up to 250 ms), and leaves interrupts enabled: the
+// SPI master needs no timing from the CPU (it clocks each byte on its own and raises SS
+// between bytes), and no interrupt handler uses it.
+#ifdef OS
+#define SD_LOCK()   xSemaphoreTake(mutex, portMAX_DELAY)
+#define SD_UNLOCK() xSemaphoreGive(mutex)
+// For a function with several returns: holds the mutex until it returns.
+struct SdLockGuard {
+    SemaphoreHandle_t m;
+    SdLockGuard(SemaphoreHandle_t m) : m(m) { xSemaphoreTake(m, portMAX_DELAY); }
+    ~SdLockGuard() { xSemaphoreGive(m); }
+};
+#define SD_LOCK_UNTIL_RETURN() SdLockGuard sd_lock_guard(mutex)
+#else
+#define SD_LOCK()
+#define SD_UNLOCK()
+#define SD_LOCK_UNTIL_RETURN()
+#endif
+
 #if CLOCK_FREQ > 50000000
 #define RW_SPEED  1
 #else
@@ -90,6 +111,8 @@ DSTATUS SdCard :: status(void)
 */
 DSTATUS SdCard :: init(void)
 {
+	// The card manager initialises a new card on its own task: not while a transfer runs.
+	SD_LOCK_UNTIL_RETURN();
 	int i;
 	uint8_t resp;
 	
@@ -254,14 +277,14 @@ DRESULT SdCard :: read(uint8_t* buf, uint32_t address, int sectors)
     for(int j=0;j<sectors;j++) {
     	place=(sdhc)?(address):(address<<9);
 
-    	ENTER_SAFE_SECTION
+    	SD_LOCK();
     	sdio_send_command(CMDREAD, (uint16_t) (place >> 16), (uint16_t) place);
     	
     	cardresp=Resp8b(); /* Card response */ 
     
     	if (cardresp != 0x00) {
     		Resp8bError(cardresp);
-    		LEAVE_SAFE_SECTION
+    		SD_UNLOCK();
     		res = RES_ERROR;
     		break;
     	}
@@ -269,11 +292,11 @@ DRESULT SdCard :: read(uint8_t* buf, uint32_t address, int sectors)
 
 		if (cardresp != 0x00) {
         	Resp8bError(cardresp);
-    		LEAVE_SAFE_SECTION
+    		SD_UNLOCK();
     		res = RES_ERROR;
     		break;
     	}
-		LEAVE_SAFE_SECTION
+		SD_UNLOCK();
     	
     	address ++;
     	buf += SD_SECTOR_SIZE;
@@ -331,7 +354,7 @@ DRESULT SdCard :: write(const uint8_t* buf, uint32_t address, int sectors )
 
     for(int j=0;j<sectors;j++) {
     	place=(sdhc)?(address):(address<<9);
-    	ENTER_SAFE_SECTION
+    	SD_LOCK();
     	sdio_send_command(CMDWRITE, (uint16_t)(place >> 16), (uint16_t) place);
     
 /*      // wait for 0.5 ms
@@ -343,16 +366,14 @@ DRESULT SdCard :: write(const uint8_t* buf, uint32_t address, int sectors )
     	Resp8bError(resp);
     
         bool success = sdio_write_block(buf);
-    	LEAVE_SAFE_SECTION
+    	SD_UNLOCK();
         if (!success) {
             printf("Timeout error writing block %d\n", address);
             res = RES_ERROR;
             break;
         }    
 #ifdef SD_VERIFY
-    	xSemaphoreGive(mutex);
         ver = verify(address, buf);
-        xSemaphoreTake(mutex, 5000);
         if(ver) {
         	res = RES_ERROR;
         	break;
@@ -587,7 +608,7 @@ DRESULT SdCard :: get_drive_size(uint32_t* drive_size)
     	return RES_NOTRDY;
     }
 */
-    ENTER_SAFE_SECTION
+    SD_LOCK();
     sdio_send_command(CMDREADCID, 0, 0);
 	
     q = 200;
@@ -601,7 +622,7 @@ DRESULT SdCard :: get_drive_size(uint32_t* drive_size)
     		iob[i] = SDIO_DATA;
     	}
     }
-    LEAVE_SAFE_SECTION
+    SD_UNLOCK();
 
 	if (q) {
 		printf("CID: ");
@@ -613,7 +634,7 @@ DRESULT SdCard :: get_drive_size(uint32_t* drive_size)
     }
 
 
-    ENTER_SAFE_SECTION
+    SD_LOCK();
 	sdio_send_command(CMDREADCSD, 0, 0);
 	
     q = 200;
@@ -630,7 +651,7 @@ DRESULT SdCard :: get_drive_size(uint32_t* drive_size)
 	SDIO_DATA = 0xff;
 	SDIO_DATA = 0xff;
 
-	LEAVE_SAFE_SECTION
+	SD_UNLOCK();
 
     if(q) {
         printf("CSD:");

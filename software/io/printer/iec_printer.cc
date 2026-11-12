@@ -138,8 +138,9 @@ void IecPrinter::effectuate_settings(void)
     /* Page top margin and printable height are configurable */
     uint8_t page_top, page_height;
 
-    /* Printer ID on IEC from nvram */
+    /* Printer ID and enable from nvram; configure() reads both from this object */
     printer_iec_addr = cfg->get_value(CFG_PRINTER_ID);
+    printer_enable = uint8_t(cfg->get_value(CFG_PRINTER_ENABLE));
     iec_if->configure();
 
     /* Load and apply virtual printer configuration from nvram */
@@ -164,9 +165,6 @@ void IecPrinter::effectuate_settings(void)
 
     set_page_top(page_top);
     set_page_height(page_height);
-
-    /* Enable printer if requested */
-    printer_enable = uint8_t(cfg->get_value(CFG_PRINTER_ENABLE));
 }
 
 /************************************************************************
