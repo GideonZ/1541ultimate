@@ -399,9 +399,14 @@ void boot(std::initializer_list<Step> steps)
         if (s->code == EVENT_CONNECT_PENDING) {
             ((rpc_header_t *)b->data)->sequence = 1; // the first attempt (WiFi :: ConnectStart)
         }
-        if ((s->code == EVENT_CONNECTED || s->code == EVENT_CONNECT_PENDING) && s->ssid) {
-            strncpy((char *)((event_pkt_connected *)b->data)->ssid, s->ssid, 32);
+        if (s->code == EVENT_CONNECTED || s->code == EVENT_CONNECT_PENDING) {
+            // the module and sendConnectPending send the whole structure, with or without a name in it (wifi_event_size.h)
+            if (s->ssid) {
+                strncpy((char *)((event_pkt_connected *)b->data)->ssid, s->ssid, 32);
+            }
             b->size = sizeof(event_pkt_connected);
+        } else if (s->code == EVENT_GOTIP) {
+            b->size = sizeof(event_pkt_got_ip); // the module sends it whole
         } else if (s->code == EVENT_DISCONNECTED && s->reason >= 0) {
             ((event_pkt_disconnected *)b->data)->reason = s->reason;
             b->size = sizeof(event_pkt_disconnected);

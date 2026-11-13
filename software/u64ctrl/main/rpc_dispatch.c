@@ -16,6 +16,7 @@
 #include "power_state.h"
 #include "driver/uart.h"
 #include "rpc_calls.h"
+#include <stddef.h>
 #include "rpc_dispatch.h"
 #include "my_uart.h"
 #include "driver/gpio.h"
@@ -449,6 +450,47 @@ void send_button_event(uint8_t button)
     }
 }
 
+// The frame is too short for what its command reads (no check of this kind existed: a short or damaged frame was run
+// as it was, from the stale rest of its buffer: a baud rate, flow control and line polarity from nothing; a Wi-Fi SSID
+// and password; a packet length for the air). The smallest frame each command can be answered from; the Ultimate
+// sends the whole request structure of each, except CMD_SEND_PACKET, which is 8 bytes and its data.
+static bool rpc_request_too_short(const command_buf_t *buf)
+{
+    const rpc_header_t *hdr = (const rpc_header_t *)buf->data;
+    int size = buf->size;
+    if (size < (int)sizeof(rpc_header_t)) {
+        return true;
+    }
+    switch (hdr->command) {
+    case CMD_SET_BAUD:
+        return size < (int)sizeof(rpc_setbaud_req);
+    case CMD_WIFI_CONNECT:
+        // as cmd_wifi_connect has it: the password whole; the BSSID and the channel after it are optional
+        return size < (int)(offsetof(rpc_wifi_connect_req, password) + sizeof(((rpc_wifi_connect_req *)0)->password));
+    case CMD_SEND_PACKET: {
+        const rpc_send_eth_req *p = (const rpc_send_eth_req *)buf->data;
+        int head = (int)offsetof(rpc_send_eth_req, data);
+        return (size < head) || (p->length > (uint32_t)(size - head));
+    }
+    case CMD_GET_TIME:
+        return size < (int)sizeof(rpc_get_time_req);
+#ifdef CMD_SET_SERIAL
+    case CMD_SET_SERIAL:
+        return size < (int)sizeof(rpc_set_serial_req);
+    case CMD_SET_POWER_MODE:
+        return size < (int)sizeof(rpc_set_power_mode_req);
+    case CMD_SET_WAKE_ON_WIFI:
+        return size < (int)sizeof(rpc_set_wake_on_wifi_req);
+    case CMD_SET_RECOVERY_URL:
+        return size < (int)sizeof(rpc_set_recovery_url_req);
+#endif
+    default:
+        return false; // the header is all the other commands (and the unknown ones) read
+    }
+}
+
+static uint32_t rpc_short_requests; // frames answered ESP_ERR_INVALID_ARG or dropped for their size
+
 void dispatch(void *ct)
 {
     QueueHandle_t queue = (QueueHandle_t)ct;
@@ -469,6 +511,19 @@ void dispatch(void *ct)
         printf("Received buffer %d with %d bytes.\n", pbuffer->bufnr, pbuffer->size);
 #endif
         hdr = (rpc_header_t *)(pbuffer->data);
+        if (rpc_request_too_short(pbuffer)) {
+            rpc_short_requests++;
+            ESP_LOGW(TAG, "Request %02x of %d bytes is too short (%u so far).", hdr->command, pbuffer->size, (unsigned)rpc_short_requests);
+            if (pbuffer->size >= (int)sizeof(rpc_header_t)) { // it has a tag to answer to
+                rpc_espcmd_resp *resp = (rpc_espcmd_resp *)pbuffer->data;
+                resp->esp_err = ESP_ERR_INVALID_ARG;
+                pbuffer->size = sizeof(rpc_espcmd_resp);
+                my_uart_transmit_packet(UART_CHAN, pbuffer);
+            } else {
+                my_uart_free_buffer(UART_CHAN, pbuffer);
+            }
+            continue;
+        }
         switch(hdr->command) {
         case CMD_SEND_PACKET:
             cmd_send_eth_packet(pbuffer);
