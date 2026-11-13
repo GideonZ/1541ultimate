@@ -16,6 +16,8 @@ set(ENABLE_TESTING OFF CACHE BOOL "" FORCE)
 set(ENABLE_PROGRAMS OFF CACHE BOOL "" FORCE)
 add_subdirectory(${TLS_STREAM_ROOT}/.deps/mbedtls mbedtls EXCLUDE_FROM_ALL)
 get_filename_component(SW "${CMAKE_CURRENT_SOURCE_DIR}/../../../../software" ABSOLUTE)
+set_source_files_properties(${SW}/io/command_interface/http_target.cc PROPERTIES
+    INCLUDE_DIRECTORIES "${SW}/io/command_interface/tests/host_rtos")
 set(HTTP_TEST_SOURCES
     ${SW}/network/tests/http_target_test_support.cc
     ${SW}/io/command_interface/http_target.cc
@@ -156,4 +158,4 @@ target_compile_options(${test_target} PRIVATE -Wall -Wextra -Wno-format -Wno-for
 endforeach()
 target_link_libraries(test_http_tls PRIVATE mbedtls mbedx509 mbedcrypto pthread)
 target_link_options(test_http_tls PRIVATE "LINKER:--wrap=calloc" "LINKER:--wrap=free")
-target_link_options(test_https_routing PRIVATE "LINKER:--wrap=gethostbyname_r,--wrap=socket,--wrap=connect,--wrap=setsockopt,--wrap=send,--wrap=recv,--wrap=close")
+target_link_options(test_https_routing PRIVATE "LINKER:--wrap=gethostbyname_r,--wrap=socket,--wrap=connect,--wrap=ioctl,--wrap=setsockopt,--wrap=send,--wrap=recv,--wrap=close")

@@ -223,14 +223,14 @@ static void exchange(const char *mode,const char *ca,int port) {
             char url[128]; snprintf(url,sizeof(url),"https://%s:%d/probe",!strcmp(mode,"hostname") ? "wrong.lab.test" : "tls.lab.test",port);
             std::vector<uint8_t> bytes = {6,HTTP_CMD_HEADER_CREATE,1}; bytes.insert(bytes.end(),url,url+strlen(url));
             Message input = {int(bytes.size()),true,bytes.data()},*data,*status;
-            target.parse_command(&input,&data,&status);
+            run_target_command(target,&input,&data,&status);
             expect(data->length == 1,"connected C64 header created");
             uint8_t handle = data->length ? data->message[0] : 0;
             const char *header = "Connection: close";
             bytes = {6,HTTP_CMD_HEADER_ADD,handle}; bytes.insert(bytes.end(),header,header+strlen(header));
-            input = {int(bytes.size()),true,bytes.data()}; target.parse_command(&input,&data,&status);
+            input = {int(bytes.size()),true,bytes.data()}; run_target_command(target,&input,&data,&status);
             uint8_t request[] = {6,HTTP_CMD_DO_EXCHANGE_RAW,handle,255};
-            input = {sizeof(request),true,request}; target.parse_command(&input,&data,&status); target.prepare_reply(&data,&status);
+            input = {sizeof(request),true,request}; run_target_command(target,&input,&data,&status); target.prepare_reply(&data,&status);
             if (success) {
                 expect(data->last_part && data->length == 8 && !memcmp(data->message,"tls-ok!\n",8),"connected exact HTTPS response body");
                 expect(status->length >= 15 && !memcmp(status->message,"HTTP/1.1 200 OK",15),"connected remote HTTP status");

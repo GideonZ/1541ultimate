@@ -1,18 +1,6 @@
 //#include "attachment_writer.h"
 #include "http_request.h"
 #include "netdb.h"
-#include "send_all.h"
-#include <errno.h>
-
-static bool set_socket_timeouts(int socket_fd)
-{
-    struct timeval tv;
-    tv.tv_sec = HTTP_REQUEST_TIMEOUT_MS / 1000;
-    tv.tv_usec = (HTTP_REQUEST_TIMEOUT_MS % 1000) * 1000;
-    return setsockopt(socket_fd, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv, sizeof(tv)) == 0 &&
-           setsockopt(socket_fd, SOL_SOCKET, SO_SNDTIMEO, (char *)&tv, sizeof(tv)) == 0;
-}
-
 int HttpSocketConnection :: open(const char *hostname, uint16_t hostport)
 {
     int error;
@@ -48,13 +36,14 @@ int HttpSocketConnection :: open(const char *hostname, uint16_t hostport)
     memcpy(&serv_addr.sin_addr.s_addr, ret_host->h_addr, ret_host->h_length);
     serv_addr.sin_port = htons(hostport);
 
-    if (connect(sock_fd, (struct sockaddr *)&serv_addr,sizeof(serv_addr)) < 0) {
+    wait->progress(); // DNS lookup time is outside the socket inactivity budget.
+    if (wait->cancelled() || connect_sliced(sock_fd, &serv_addr, *wait) < 0) {
         printf("Connection failed.\n");
         ::close(sock_fd);
         return -1;
     }
     // printf("Connection succeeded.\n");
-    if (!set_socket_timeouts(sock_fd)) {
+    if (!set_socket_slices(sock_fd)) {
         ::close(sock_fd);
         return -1;
     }
@@ -66,14 +55,18 @@ int HttpSocketConnection :: read(void *buffer, int length)
 {
     int result;
     do {
+        if (wait && wait->cancelled()) return -1;
         result = recv(socket_fd, buffer, length, 0);
-    } while (result < 0 && errno == EINTR);
+    } while (result < 0 && (errno == EINTR || (wait && socket_timed_out() && wait->again())));
+    if (wait && wait->cancelled()) return -1;
+    if (wait && result > 0) wait->progress();
     return result;
 }
 
 int HttpSocketConnection :: write(const void *buffer, int length)
 {
-    return send_all(socket_fd, static_cast<const char *>(buffer), length) == 0 ? length : -1;
+    int sent;
+    return send_sliced(socket_fd, static_cast<const char *>(buffer), length, *wait, &sent) == 0 ? sent : -1;
 }
 
 void HttpSocketConnection :: close_session()
@@ -149,6 +142,7 @@ bool HttpRequest :: recv_response(void)
     if (connection_state != Connected || body) {
         return false;
     }
+    if (connection == &socket_connection) wait.progress();
     bool complete = get_response(*connection, collect_in_buffer, response);
     this->body = (t_BufferedBody *)response.userContext;
     if (!complete || !this->body || this->body->failed) {

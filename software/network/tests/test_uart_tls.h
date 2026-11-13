@@ -146,13 +146,13 @@ static void exchange(const char *mode,const char *ca,int port) {
             HttpTarget target(7,&provider); target.begin_command(commands.token());
             char url[128]; snprintf(url,sizeof(url),"https://%s:%d/probe",!strcmp(mode,"hostname") ? "wrong.lab.test" : "tls.lab.test",port);
             std::vector<uint8_t> b = {6,HTTP_CMD_HEADER_CREATE,1}; b.insert(b.end(),url,url+strlen(url));
-            Message input = {int(b.size()),true,b.data()},*data,*status; target.parse_command(&input,&data,&status);
+            Message input = {int(b.size()),true,b.data()},*data,*status; run_target_command(target,&input,&data,&status);
             expect(data->length == 1,"UART header handle"); uint8_t handle = data->length ? data->message[0] : 0;
             const char *header = "Connection: close";
             b = {6,HTTP_CMD_HEADER_ADD,handle}; b.insert(b.end(),header,header+strlen(header));
-            input = {int(b.size()),true,b.data()}; target.parse_command(&input,&data,&status);
+            input = {int(b.size()),true,b.data()}; run_target_command(target,&input,&data,&status);
             uint8_t command[] = {6,HTTP_CMD_DO_EXCHANGE_RAW,handle,255};
-            input = {sizeof(command),true,command}; target.parse_command(&input,&data,&status); target.prepare_reply(&data,&status);
+            input = {sizeof(command),true,command}; run_target_command(target,&input,&data,&status); target.prepare_reply(&data,&status);
             expect(data->last_part && data->length == (good ? 8 : 0),"UART complete or empty failure body");
             if (good) expect(!memcmp(data->message,"tls-ok!\n",8),"UART exact response");
             else expect(status->length == 23 && !memcmp(status->message,"503 SERVICE UNAVAILABLE",23),"UART safe failure");

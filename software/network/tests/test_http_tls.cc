@@ -1,3 +1,4 @@
+#include "http_target_test_support.h"
 #include <arpa/inet.h>
 #include <atomic>
 #include <chrono>
@@ -372,17 +373,17 @@ static void routed_exchange(const char *mode, const char *ca, int port)
             std::vector<uint8_t> create = {6, HTTP_CMD_HEADER_CREATE, 1};
             create.insert(create.end(), url, url + strlen(url));
             Message command = {int(create.size()), true, create.data()}, *data, *status;
-            target.parse_command(&command, &data, &status);
+            run_target_command(target,&command, &data, &status);
             expect(data->length == 1, "routed header handle");
             uint8_t handle = data->length ? data->message[0] : 0;
             const char *line = "Connection: close";
             std::vector<uint8_t> add = {6, HTTP_CMD_HEADER_ADD, handle};
             add.insert(add.end(), line, line + strlen(line));
             command = {int(add.size()), true, add.data()};
-            target.parse_command(&command, &data, &status);
+            run_target_command(target,&command, &data, &status);
             uint8_t exchange[] = {6, HTTP_CMD_DO_EXCHANGE_RAW, handle, 255};
             command = {sizeof(exchange), true, exchange};
-            target.parse_command(&command, &data, &status);
+            run_target_command(target,&command, &data, &status);
             target.prepare_reply(&data, &status);
             if (success) {
                 expect(data->last_part && data->length == 8 && !memcmp(data->message, "tls-ok!\n", 8), "routed exact response");

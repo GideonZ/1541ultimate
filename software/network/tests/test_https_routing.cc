@@ -1,3 +1,4 @@
+#include "http_target_test_support.h"
 #include <string>
 #include <vector>
 #include <netdb.h>
@@ -36,13 +37,16 @@ extern "C" int __wrap_connect(int fd, const sockaddr *address, socklen_t)
     selected_port = ntohs(reinterpret_cast<const sockaddr_in *>(address)->sin_port);
     return 0;
 }
+extern "C" int __wrap_ioctl(int fd, unsigned long request, ...) {
+    return fd == 901 && request == FIONBIO ? 0 : -1;
+}
 extern "C" int __wrap_setsockopt(int fd, int level, int option, const void *value, socklen_t length)
 {
     if (fd != 901 || level != SOL_SOCKET || length != sizeof(timeval) ||
         (option != SO_RCVTIMEO && option != SO_SNDTIMEO)) return -1;
     const timeval *tv = static_cast<const timeval *>(value);
-    if (tv->tv_sec != HTTP_REQUEST_TIMEOUT_MS / 1000 ||
-        tv->tv_usec != (HTTP_REQUEST_TIMEOUT_MS % 1000) * 1000) return -1;
+    if (tv->tv_sec != SOCKET_SLICE_MS / 1000 ||
+        tv->tv_usec != (SOCKET_SLICE_MS % 1000) * 1000) return -1;
     if (option == SO_RCVTIMEO) ++receive_timeouts; else ++send_timeouts;
     return option == reject_option ? -1 : 0;
 }
@@ -133,7 +137,7 @@ static Reply snapshot(Message *data, Message *status)
 static Reply command(HttpTarget& target, std::vector<uint8_t> bytes)
 {
     Message cmd = {int(bytes.size()), true, bytes.data()}, *data, *status;
-    target.parse_command(&cmd, &data, &status);
+    run_target_command(target,&cmd, &data, &status);
     if (before_publication) { before_publication->signal(); before_publication = NULL; }
     target.prepare_reply(&data, &status);
     auto result = snapshot(data, status);

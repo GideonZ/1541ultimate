@@ -42,19 +42,4 @@ public:
     virtual HttpConnection *create_connection(const OperationCancellation& cancellation) = 0;
 };
 
-// No heap allocation is needed for the default HTTP transport. A descriptor
-// supplied to the constructor is borrowed by the legacy parser helpers.
-class HttpSocketConnection : public HttpConnection
-{
-    int socket_fd;
-    HttpSocketConnection(const HttpSocketConnection&);
-    HttpSocketConnection& operator=(const HttpSocketConnection&);
-public:
-    explicit HttpSocketConnection(int fd = -1) : socket_fd(fd) {}
-    int open(const char *hostname, uint16_t port);
-    int read(void *buffer, int length);
-    int write(const void *buffer, int length);
-    void close_session();
-};
-
 #endif

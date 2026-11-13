@@ -30,6 +30,9 @@ BaseType_t xQueueSendFromISR(QueueHandle_t, const void *value, BaseType_t *woken
     events.push_back(*static_cast<const CommandInterfaceEvent *>(value));
     return pdTRUE;
 }
+int xQueueSend(QueueHandle_t, const void *value, unsigned) {
+    events.push_back(*static_cast<const CommandInterfaceEvent *>(value)); return pdTRUE;
+}
 struct Done {};
 void xQueueReceive(QueueHandle_t, void *value, unsigned)
 {

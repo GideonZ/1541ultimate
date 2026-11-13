@@ -144,3 +144,25 @@ TEST(SendAll, SendsNothingForAnEmptyChunk)
     EXPECT_EQ(send_all(3, "", 0), 0);
     EXPECT_EQ(s.calls, 0);
 }
+
+#ifndef SEND_ALL_LEGACY
+// The HTTP target's worker waits on a send in short slices, so that it can be
+// cancelled. A slice that runs out after part of a chunk must say how much went,
+// so that the next slice sends the rest and not the whole chunk again.
+TEST(SendAll, SendPartTellsHowMuchWentBeforeATimeout)
+{
+    FakeSocket s;
+    s.max_per_call = 50;
+    s.fail_at_call = 1;
+    fake = &s;
+    std::vector<char> data = chunk(128);
+
+    int sent = -1;
+    EXPECT_TRUE(send_part(3, data.data(), (int)data.size(), &sent) < 0);
+    EXPECT_EQ(sent, 50);
+    int rest = -1;
+    EXPECT_EQ(send_part(3, data.data() + sent, (int)data.size() - sent, &rest), 0);
+    EXPECT_EQ(rest, 78);
+    EXPECT_TRUE(s.received == data);
+}
+#endif

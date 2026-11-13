@@ -344,6 +344,7 @@ e2e:
   prg-context-menu                  .      .      x      x      x
   prg-load-path-trim                .      x      x      x      x
   printer                           .      x      x      x      x
+  printer-stall                     .      .      x      x      x
   readmem-writemem                  x      x      x      x      x
   registry                          x      x      x      x      x
   rel-copy                          .      .      x      x      x

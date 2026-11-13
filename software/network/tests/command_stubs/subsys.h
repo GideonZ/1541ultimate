@@ -10,6 +10,9 @@ typedef void *SemaphoreHandle_t;
 #define portMAX_DELAY 0xffffffff
 #define configMINIMAL_STACK_SIZE 256
 #define PRIO_HW_SERVICE 1
+#define PRIO_C64_SERVICE 2
+inline void vTaskPrioritySet(TaskHandle_t, int) {}
+int xQueueSend(QueueHandle_t, const void *, unsigned);
 #define SUBSYSID_CMD_IF 1
 class SubSystem { public: explicit SubSystem(int) {} };
 void enter_critical();

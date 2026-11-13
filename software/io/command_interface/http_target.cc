@@ -1,4 +1,11 @@
 #include "http_target.h"
+#include "FreeRTOS.h"
+#include "task.h"
+#include "queue.h"
+
+// Target 6 has one network worker. Its queue carries self-contained jobs, never
+// a target pointer. The worker and queue live for the firmware lifetime.
+static QueueHandle_t jobs;
 #include <string.h>
 #include <stdio.h>
 
@@ -33,10 +40,11 @@ HttpTarget::HttpTarget(int id, HttpSecureProvider *provider)
     status_message.message = new uint8_t[CMD_MAX_STATUS_LEN];
     exch = NULL;
     secure_provider = provider;
-    secure_connection = NULL;
+    response_transport = NULL;
     response_data = NULL;
     secure_reply = rejected_reply = false;
     pending_header = pending_body = -1;
+    job = NULL;
 }
 
 HttpTarget::~HttpTarget()
@@ -70,12 +78,13 @@ void HttpTarget::release_exchange()
         exch = NULL;
     }
     // HttpRequest borrows this connection; destroy it only after the request.
-    delete secure_connection;
-    secure_connection = NULL;
+    delete response_transport;
+    response_transport = NULL;
 }
 
 void HttpTarget::reset_responses()
 {
+    drop_job();
     secure_reply = rejected_reply = false;
     release_exchange();
     if (response_data) {
@@ -869,6 +878,104 @@ static const char *content_type_for_format(uint8_t fmt)
     }
 }
 
+HttpJob::HttpJob(HttpHeaderSlot *hdr, bool r)
+{
+    ticket = 0;
+    raw = r;
+    host = hdr->get_host();
+    port = hdr->get_port();
+    request = new StreamRamFile(512);
+    header = new HttpHeaderSlot(hdr);
+    transport = NULL;
+    exch = NULL;
+    ok = false;
+    done = false;
+    cancel = false;
+}
+
+HttpJob::~HttpJob()
+{
+    delete request;
+    delete header;
+    delete exch;
+    delete transport;
+}
+
+bool HttpTarget::start_worker(void)
+{
+    if (!jobs) {
+        jobs = xQueueCreate(HTTP_JOB_QUEUE_DEPTH, sizeof(HttpJob *));
+        if (!jobs) {
+            return false;
+        }
+        // Network work, with the other network services; the UCI Server task never waits for it.
+        if (xTaskCreate(HttpTarget::worker_task, "HTTP Target", configMINIMAL_STACK_SIZE, jobs,
+                        PRIO_NETSERVICE, NULL) != pdPASS) {
+            vQueueDelete(jobs);
+            jobs = NULL;
+            return false;
+        }
+    }
+    return true;
+}
+
+void HttpTarget::worker_task(void *a)
+{
+    QueueHandle_t queue = (QueueHandle_t)a;
+    HttpJob *job;
+
+    while (1) {
+        xQueueReceive(queue, &job, portMAX_DELAY);
+        if (!job->cancel) { // one that was aborted while queued is not started
+            run_job(job);
+        }
+        portENTER_CRITICAL();
+        bool cancelled = job->cancel;
+        uint32_t ticket = job->ticket;
+        job->done = true;
+        portEXIT_CRITICAL();
+        if (cancelled) {
+            delete job;
+        } else {
+            command_deferred_done(ticket); // from here on, the job is not ours
+        }
+    }
+}
+
+void HttpTarget::run_job(HttpJob *job)
+{
+    job->exch = new HttpRequest(job->transport, &job->cancel);
+    if (job->exch->connect_to_server(job->host.c_str(), job->port) < 0) {
+        printf("Failed to connect.\n");
+    } else if (job->exch->send_request(job->request)) {
+        printf("Failed to send request\n");
+    } else {
+        if (job->raw) {
+            HTTPReqHeader *hdr = job->exch->get_header();
+            hdr->RawCopy = job->raw_status;
+            hdr->RawCopySize = HTTP_MAX_STATUS_BYTES;
+        }
+        job->ok = job->exch->recv_response();
+    }
+    job->exch->disconnect();
+}
+
+// On the UCI Server task: abort, C64 reset, or a new exchange.
+void HttpTarget::drop_job(void)
+{
+    if (!job) {
+        return;
+    }
+    portENTER_CRITICAL();
+    bool done = job->done;
+    job->cancel = true;
+    portEXIT_CRITICAL();
+    if (done) {
+        delete job;
+    }
+    job = NULL;
+}
+
 void HttpTarget::cmd_exchange(Message *command, Message **reply, Message **status, bool raw)
 {
     uint8_t hdr_handle = command->message[2];
@@ -887,77 +994,79 @@ void HttpTarget::cmd_exchange(Message *command, Message **reply, Message **statu
         bdy = bodies[body_handle];
     }
     
-    StreamRamFile req(512);
-    if(bdy) {
-        StreamRamFile body_stream(512);
-        bdy->render(&body_stream);
-        int body_len = body_stream.getLength();
-        hdr->render_with_body(&req, content_type_for_format(bdy->get_format()), body_len);
-        req.copy_from(&body_stream);
-    } else {
-        hdr->render(&req);
-    }
-
-    hdr->dump();
-
     reset_responses();
-
     if (!hdr->is_valid()) {
         *status = &c_status_bad_format;
         return;
     }
+    if (hdr->is_secure() && (cancellation.cancelled() || !secure_provider || !secure_provider->available())) {
+        *status = &c_status_not_available;
+        return;
+    }
+    HttpJob *j = new HttpJob(hdr, raw);
+    if(bdy) {
+        StreamRamFile body_stream(512);
+        bdy->render(&body_stream);
+        int body_len = body_stream.getLength();
+        hdr->render_with_body(j->request, content_type_for_format(bdy->get_format()), body_len);
+        j->request->copy_from(&body_stream);
+    } else {
+        hdr->render(j->request);
+    }
+
+    hdr->dump();
+
+    // The network is waited on by the worker, so that an abort or a C64 reset is not.
+    // Only this task queues jobs, so the space that is checked is still there.
+    if (!start_worker() || !uxQueueSpacesAvailable(jobs)) {
+        printf("HTTP target busy.\n");
+        delete j;
+        *status = &c_status_not_available;
+        return;
+    }
     if (hdr->is_secure()) {
-        if (cancellation.cancelled() || !secure_provider || !secure_provider->available()) {
-            *status = &c_status_not_available;
-            return;
-        }
         exchange_cancellation = cancellation;
         provider_cancellation = secure_provider->lifetime();
-        secure_connection = secure_provider->create_connection(exchange_cancellation);
-        if (!secure_connection || provider_cancellation.cancelled() || !secure_provider->available()) {
-            release_exchange();
+        j->transport = secure_provider->create_connection(exchange_cancellation);
+        if (!j->transport || provider_cancellation.cancelled() || !secure_provider->available()) {
+            delete j;
             *status = &c_status_not_available;
             return;
         }
     }
-    exch = new HttpRequest(secure_connection);
-    if (exch->connect_to_server(hdr->get_host(), hdr->get_port()) >= 0) {
-        if (!exch->send_request(&req)) {
-            if (raw) {
-                HTTPReqHeader *hdr = exch->get_header();
-                if (hdr) {
-                    hdr->RawCopy = status_message.message;
-                    hdr->RawCopySize = HTTP_MAX_STATUS_BYTES;
-                }
-            }
-            if (!exch->recv_response()) {
-                release_exchange();
-                *status = &c_status_not_available;
-                return;
-            }
-        } else {
-            printf("Failed to send request\n");
-            release_exchange();
-            *status = &c_status_not_available;
-            return;
-        }
-    } else {
-        printf("Failed to connect.\n");
-        release_exchange();
+    j->ticket = command_defer();
+    job = j;
+    xQueueSend(jobs, &j, 0);
+}
+
+void HttpTarget::deferred_reply(Message **reply, Message **status)
+{
+    HttpJob *j = job;
+    job = NULL;
+    *reply = &c_message_empty;
+    if (!j || !j->ok) {
+        delete j;
         *status = &c_status_not_available;
         return;
     }
+    exch = j->exch;
+    j->exch = NULL;
+    response_transport = j->transport;
+    j->transport = NULL;
+    exch->detach(); // its cancel flag goes with the job
 
     // When we are here, the exch object exists and should contain the reply.
-    if (hdr->is_secure() && (exchange_cancellation.cancelled() || provider_cancellation.cancelled() || !secure_provider->available())) {
+    secure_reply = j->header->is_secure();
+    if (secure_reply && (exchange_cancellation.cancelled() || provider_cancellation.cancelled() || !secure_provider->available())) {
         release_exchange();
+        delete j;
         *status = &c_status_not_available;
         return;
     }
 
+    uint8_t hdr_handle, body_handle;
     int slot = -1;
-    secure_reply = hdr->is_secure();
-    if(raw) {
+    if(j->raw) {
         // Return raw data in data channel [cite: 264]
         *reply = &data_message;
         data_message.length = exch->read_response_data(HTTP_MAX_REPLY_BYTES, data_message.message);
@@ -967,6 +1076,8 @@ void HttpTarget::cmd_exchange(Message *command, Message **reply, Message **statu
         HTTPReqHeader *hdr = exch->get_header();
         *status = &status_message;
         status_message.length = hdr->RawCopyLength;
+        memcpy(status_message.message, j->raw_status, hdr->RawCopyLength);
+        hdr->RawCopy = NULL; // the job's buffer goes with the job
         // Clean up if this was the last message
         if (data_message.last_part) {
             release_exchange();
@@ -977,6 +1088,7 @@ void HttpTarget::cmd_exchange(Message *command, Message **reply, Message **statu
             *reply = &c_message_empty;
             *status = &c_status_no_valid_json;
             release_exchange();
+            delete j;
             return;
         }
         for(int i=0; i<MAX_HTTP_HANDLES; i++) {
@@ -990,6 +1102,7 @@ void HttpTarget::cmd_exchange(Message *command, Message **reply, Message **statu
             *reply = &c_message_empty;
             delete json;
             release_exchange();
+            delete j;
             return;
         }
         body_handle = slot;
@@ -1009,11 +1122,13 @@ void HttpTarget::cmd_exchange(Message *command, Message **reply, Message **statu
             delete bodies[body_handle]; // also deletes the json
             bodies[body_handle] = NULL;
             release_exchange();
+            delete j;
             return;
         }
 
         hdr_handle = slot;
-        headers[hdr_handle] = new HttpHeaderSlot(hdr);
+        headers[hdr_handle] = j->header;
+        j->header = NULL;
         headers[hdr_handle]->convert_from_response(exch->get_header());
         if (secure_reply) {
             pending_header = hdr_handle;
@@ -1039,12 +1154,13 @@ void HttpTarget::cmd_exchange(Message *command, Message **reply, Message **statu
         // we should have taken all the data from the exchange
         release_exchange();
     }
+    delete j;
 }
 
 void HttpTarget::get_more_data(Message **reply, Message **status)
 {
-    secure_reply = secure_connection != NULL;
-    if (secure_connection && (exchange_cancellation.cancelled() || provider_cancellation.cancelled() || !secure_provider->available())) {
+    secure_reply = response_transport != NULL;
+    if (response_transport && (exchange_cancellation.cancelled() || provider_cancellation.cancelled() || !secure_provider->available())) {
         reset_responses();
         *reply = &c_message_empty;
         *status = &c_status_not_available;

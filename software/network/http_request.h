@@ -31,10 +31,29 @@ JSON *convert_buffer_to_json(t_BufferedBody *body);
 #define HTTP_REQUEST_TIMEOUT_MS 30000
 #endif
 
+#include "socket_slices.h"
+
+// No heap allocation is needed for the default HTTP transport. A descriptor
+// supplied to the constructor is borrowed by the legacy parser helpers.
+class HttpSocketConnection : public HttpConnection
+{
+    int socket_fd;
+    SliceWait *wait;
+    HttpSocketConnection(const HttpSocketConnection&);
+    HttpSocketConnection& operator=(const HttpSocketConnection&);
+public:
+    explicit HttpSocketConnection(int fd = -1, SliceWait *slices = NULL) : socket_fd(fd), wait(slices) {}
+    int open(const char *hostname, uint16_t port);
+    int read(void *buffer, int length);
+    int write(const void *buffer, int length);
+    void close_session();
+};
+
 class HttpRequest
 {
     t_BufferedBody *body;
     HTTPReqMessage response;
+    SliceWait wait;
     HttpSocketConnection socket_connection;
     HttpConnection *connection;
     enum ConnectionState { Idle, Connected, Failed } connection_state;
@@ -44,7 +63,8 @@ class HttpRequest
 public:
     // A supplied backend is borrowed and must outlive this request. The request
     // owns its session: failures and destruction close it, but never delete it.
-    explicit HttpRequest(HttpConnection *transport = NULL) :
+    explicit HttpRequest(HttpConnection *transport = NULL, volatile bool *cancel = NULL) :
+        wait(cancel, HTTP_REQUEST_TIMEOUT_MS), socket_connection(-1, &wait),
         connection(transport ? transport : &socket_connection), connection_state(Idle) {
         InitReqMessage(&response);
         body = NULL;
@@ -57,6 +77,11 @@ public:
     }
     int connect_to_server(const char *hostname, uint16_t hostport);
     int send_request(StreamRamFile *req);
+    void detach() { wait.detach(); }
+    void disconnect() {
+        if (connection_state == Connected) connection->close_session();
+        connection_state = Failed;
+    }
     bool recv_response(void);
 
     HTTPReqHeader *get_header(void) {
