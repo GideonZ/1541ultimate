@@ -3,7 +3,7 @@
 #include "provider_flash_test_port.h"
 #include "wifi.h"
 #include "task.h"
-#include "http_target.h"
+#include "http_target_test_support.h"
 #include "provider_control_test_port.h"
 #include "https_installation.h"
 #include "userinterface.h"
@@ -38,16 +38,16 @@ static void unavailable_target() {
     std::vector<uint8_t> header={6,HTTP_CMD_HEADER_CREATE,1};
     header.insert(header.end(),url,url+strlen(url));
     Message cmd={int(header.size()),true,header.data()},*data,*status;
-    http_target.parse_command(&cmd,&data,&status);
+    run_target_command(http_target,&cmd,&data,&status);
     check(data->length==1,"production target creates the unchanged header handle");
     uint8_t exchange[]={6,HTTP_CMD_DO_EXCHANGE_RAW,data->length ? data->message[0] : uint8_t(0),255};
     http_target.finish_reply(true);
-    cmd={4,true,exchange}; http_target.parse_command(&cmd,&data,&status);
+    cmd={4,true,exchange}; run_target_command(http_target,&cmd,&data,&status);
     http_target.prepare_reply(&data,&status);
     check(status->length==23 && !memcmp(status->message,"503 SERVICE UNAVAILABLE",23) && !data->length,"production target fails closed while provider unavailable");
     http_target.finish_reply(true);
     uint8_t free_all[]={6,HTTP_CMD_FREE_ALL}; cmd={2,true,free_all};
-    http_target.parse_command(&cmd,&data,&status); http_target.finish_reply(true);
+    run_target_command(http_target,&cmd,&data,&status); http_target.finish_reply(true);
     check(!socket_calls,"unavailable production HTTPS never opens plaintext socket");
 }
 static bool take(JournalStartup& startup,provider_session::Identity& id) {

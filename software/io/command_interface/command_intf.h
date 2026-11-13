@@ -84,7 +84,7 @@ class CommandInterface : public SubSystem
     Message incoming_command;
     uint8_t target;    
     void copy_result(Message *data, Message *status);
-    void reply_to_command(Message *data, Message *status, bool no_reply, const OperationCancellation& cancellation);
+    void reply_to_command(Message *data, Message *status, bool no_reply, const OperationCancellation& cancellation, bool deferred = false);
 
     // A deferred command (see command_defer); pending_target is CMD_TARGET_NONE when there
     // is none. Only the UCI Server task touches these; done_ticket is written by the

@@ -210,16 +210,19 @@ void CommandInterface :: handle_event(const CommandInterfaceEvent& event)
                 command_targets[target]->prepare_reply(&data, &status);
                 copy_result(data, status);
                 CMD_IF_HANDSHAKE_OUT = HANDSHAKE_ACCEPT_NEXTDATA;
+                CMD_IF_IRQMASK_CLEAR = CMD_DATA_ACCEPTED;
                 published = true;
             }
             portEXIT_CRITICAL();
             command_targets[target]->finish_reply(published);
         } else {
             portENTER_CRITICAL();
-            if (!cancellation.cancelled()) CMD_IF_HANDSHAKE_OUT = HANDSHAKE_ACCEPT_NEXTDATA;
+            if (!cancellation.cancelled()) {
+                CMD_IF_HANDSHAKE_OUT = HANDSHAKE_ACCEPT_NEXTDATA;
+                CMD_IF_IRQMASK_CLEAR = CMD_DATA_ACCEPTED;
+            }
             portEXIT_CRITICAL();
         }
-        CMD_IF_IRQMASK_CLEAR = CMD_DATA_ACCEPTED;
 	}
 
     if (status_byte & CMD_NEW_COMMAND) {
@@ -265,11 +268,9 @@ void CommandInterface :: handle_event(const CommandInterfaceEvent& event)
                 CMD_IF_STATUS_LENGTH = 0;
                 CMD_IF_HANDSHAKE_OUT = HANDSHAKE_ACCEPT_COMMAND;
                 CMD_IF_HANDSHAKE_OUT = HANDSHAKE_VALIDATE_LAST;
+                CMD_IF_IRQMASK_CLEAR = CMD_NEW_COMMAND;
             }
             portEXIT_CRITICAL();
-        }
-        if (!defer_requested) {
-            CMD_IF_IRQMASK_CLEAR = CMD_NEW_COMMAND;
         }
     }
 
@@ -287,18 +288,20 @@ void CommandInterface :: handle_event(const CommandInterfaceEvent& event)
                 TargetWork work;
                 command_targets[done_target]->deferred_reply(&data, &status);
             }
-            reply_to_command(data, status, pending_no_reply, pending_cancellation);
-            CMD_IF_IRQMASK_CLEAR = CMD_NEW_COMMAND;
+            reply_to_command(data, status, pending_no_reply, pending_cancellation, true);
         }
     }
 }
 
 void CommandInterface :: reply_to_command(Message *data, Message *status, bool no_reply,
-                                          const OperationCancellation& cancellation)
+                                          const OperationCancellation& cancellation, bool deferred)
 {
     bool published = false;
     portENTER_CRITICAL();
-    if (!cancellation.cancelled()) {
+    // An abort can arrive while the target prepares its reply. Keep NEW masked
+    // until either this reply acknowledges it or the abort path resets it.
+    if (!cancellation.cancelled() && (!deferred ||
+        (CMD_IF_STATUSBYTE & (CMD_STATE_BITS | CMD_ABORT_DATA)) == CMD_STATE_PROCESSING)) {
         CMD_IF_HANDSHAKE_OUT = HANDSHAKE_ACCEPT_COMMAND;
         if (no_reply) {
             CMD_IF_HANDSHAKE_OUT = HANDSHAKE_RESET;
@@ -307,6 +310,7 @@ void CommandInterface :: reply_to_command(Message *data, Message *status, bool n
             copy_result(data, status);
             published = true;
         }
+        CMD_IF_IRQMASK_CLEAR = CMD_NEW_COMMAND;
     }
     portEXIT_CRITICAL();
     command_targets[target]->finish_reply(published);
