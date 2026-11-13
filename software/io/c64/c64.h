@@ -225,6 +225,11 @@
 #define CFG_CMD_ALLOW_WRITE 0x72
 #define CFG_C64_FASTRESET   0x74
 #define CFG_C64_DO_SYNC     0x75
+#define CFG_C64_CRT_AUTOSAVE 0x76
+
+#define CRT_AUTOSAVE_OFF    0
+#define CRT_AUTOSAVE_ASK    1
+#define CRT_AUTOSAVE_AUTO   2
 #define CFG_C64_REU_PRE     0x80
 #define CFG_C64_REU_IMG     0x81
 #define CFG_C64_REU_OFFS    0x82
