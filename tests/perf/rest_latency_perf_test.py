@@ -45,6 +45,9 @@ from report import (  # noqa: E402
 # Enough samples that the median is not one lucky packet, few enough that the
 # whole sweep stays under a minute on a wireless path.
 SAMPLES = 15
+# Between two reads of the menu screen while a toggle is awaited; also the
+# resolution of the toggle delay this reports.
+POLL_INTERVAL = 0.02
 
 
 def timed(call: Callable[[], object], samples: int) -> tuple[list[float], object]:
@@ -130,6 +133,10 @@ def main() -> int:
                     if (status == 200) == wanted_open:
                         delays.append((time.perf_counter() - started) * 1000.0)
                         break
+                    # Requests back to back keep an Ultimate 64 Elite's menu
+                    # from reacting at all: it opened with gaps of 5 ms and
+                    # more, never with 2 ms or none.
+                    time.sleep(POLL_INTERVAL)
                 else:
                     raise Failure("the menu never reached the state the toggle "
                                   "asked for within 5s")

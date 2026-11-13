@@ -8,6 +8,13 @@ ETH_TX_FRAME_TEST := $(OUTPUT_DIR)/ethTxFrameTest
 ETH_TX_FRAME_RED := $(OUTPUT_DIR)/ethTxFrameTestLegacy
 ROUTE_SELECT_TEST := $(OUTPUT_DIR)/routeSelectTest
 ROUTE_SELECT_RED := $(OUTPUT_DIR)/routeSelectTestLegacy
+SEND_ALL_TEST := $(OUTPUT_DIR)/sendAllTest
+SEND_ALL_RED := $(OUTPUT_DIR)/sendAllTestLegacy
+NETWORK_TARGET_TEST := $(OUTPUT_DIR)/networkTargetTest
+# The network target with the host's sockets for lwIP's, and the UCI host stand-ins.
+NETWORK_TARGET_FLAGS := -std=c++11 -g -Wall -DRUNS_ON_PC -include target3_host/network_interface.h -Itarget3_host -I../../command_interface/tests/host_uci \
+	-I../../command_interface/tests/host_rtos -I.. -I../../command_interface -I../../../network \
+	-fsanitize=address,undefined
 REF_POOL_TEST := $(OUTPUT_DIR)/refPoolTest
 REF_POOL_RED := $(OUTPUT_DIR)/refPoolTestLegacy
 SYS_ARCH_TEST := $(OUTPUT_DIR)/sysArchTest
@@ -28,9 +35,9 @@ POOL_C := core/init.c core/def.c core/inet_chksum.c core/ip.c core/mem.c core/me
 	core/netif.c core/pbuf.c core/stats.c core/sys.c core/timeouts.c core/udp.c \
 	core/ipv4/ip4.c core/ipv4/ip4_addr.c core/ipv4/ip4_frag.c
 
-.PHONY: all lwip-objs eth-tx-frame eth-tx-frame-red fw-hook-opts route-select route-select-red fw-pool-opts ref-pool ref-pool-red sys-arch sys-arch-red clean
+.PHONY: all lwip-objs eth-tx-frame eth-tx-frame-red fw-hook-opts route-select route-select-red send-all send-all-red fw-pool-opts ref-pool ref-pool-red sys-arch sys-arch-red timeout-pool timeout-pool-red network-target clean
 
-all: eth-tx-frame eth-tx-frame-red route-select route-select-red ref-pool ref-pool-red sys-arch sys-arch-red
+all: eth-tx-frame eth-tx-frame-red route-select route-select-red send-all send-all-red ref-pool ref-pool-red sys-arch sys-arch-red timeout-pool timeout-pool-red network-target
 
 eth-tx-frame:
 	mkdir -p $(OUTPUT_DIR)
@@ -75,6 +82,21 @@ route-select-red: lwip-objs
 		exit 1; \
 	else \
 		echo "route-select-red: $$(tail -1 $(OUTPUT_DIR)/route-red.log) against the pre-fix behaviour, as required"; \
+	fi
+
+send-all:
+	mkdir -p $(OUTPUT_DIR)
+	$(CXX) $(CXXFLAGS) send_all_test.cpp ../../usb/tests/host_test_main.cpp -lpthread -o $(SEND_ALL_TEST) && $(SEND_ALL_TEST)
+
+# The same suite against the send loop as it was. It has to fail, as for eth-tx-frame-red.
+send-all-red:
+	mkdir -p $(OUTPUT_DIR)
+	$(CXX) $(CXXFLAGS) -DSEND_ALL_LEGACY send_all_test.cpp ../../usb/tests/host_test_main.cpp -lpthread -o $(SEND_ALL_RED)
+	@if $(SEND_ALL_RED) > $(OUTPUT_DIR)/send-all-red.log 2>&1; then \
+		echo "send-all-red: the suite passed against the pre-fix behaviour -- it no longer catches the defect"; \
+		exit 1; \
+	else \
+		echo "send-all-red: $$(tail -1 $(OUTPUT_DIR)/send-all-red.log) against the pre-fix behaviour, as required"; \
 	fi
 
 # The firmware's MEMP_NUM_PBUF, for the pool test; the build stops if the file no longer
@@ -124,6 +146,53 @@ sys-arch-red:
 	else \
 		echo "sys-arch-red: $$(tail -1 $(OUTPUT_DIR)/sys-arch-red.log) against the pre-fix behaviour, as required"; \
 	fi
+
+# MEMP_NUM_SYS_TIMEOUT: an empty pool is a hang (sys_timeout() asserts, and the assert spins for ever in the calling
+# task; mDNS input and the lwIP timers call it from the tcpip thread, which holds the core lock). The simulation
+# (timeout_pool/) runs lwIP's own timeouts, mDNS responder, SNTP, TCP, DHCP, DNS, IGMP and ARP on N netifs, with mDNS
+# traffic from other hosts. It is built with the pool size of the firmware's lwipopts.h, and must never run dry
+# for N = 1..4 (Ethernet, WiFi, one or two USB NICs). timeout-pool-red builds it with 16, the size before the fix:
+# it has to run dry with two netifs.
+TP_SRC := timeout_pool
+TP_C := core/init.c core/def.c core/dns.c core/inet_chksum.c core/ip.c core/mem.c core/memp.c core/netif.c core/pbuf.c \
+	core/raw.c core/stats.c core/sys.c core/tcp.c core/tcp_in.c core/tcp_out.c core/timeouts.c core/udp.c \
+	core/ipv4/dhcp.c core/ipv4/etharp.c core/ipv4/icmp.c core/ipv4/igmp.c core/ipv4/ip4.c core/ipv4/ip4_addr.c \
+	core/ipv4/ip4_frag.c netif/ethernet.c apps/mdns/mdns.c apps/mdns/mdns_out.c apps/mdns/mdns_domain.c apps/sntp/sntp.c
+# usage: $(call tp_build,<pool>,<name>,<extra cc flags>)
+define tp_build
+	mkdir -p $(OUTPUT_DIR)/tp_$(2)
+	for f in $(TP_C); do \
+		$(CC) -g -w -DPOOL=$(1) -I$(TP_SRC) -I$(LWIP_SRC)/include -c $(LWIP_SRC)/$$f -o $(OUTPUT_DIR)/tp_$(2)/$$(basename $$f .c).o || exit 1; \
+	done
+	$(CC) -g -w -DPOOL=$(1) $(3) -I$(TP_SRC) -I$(LWIP_SRC)/include $(TP_SRC)/timeout_pool_sim.c $(OUTPUT_DIR)/tp_$(2)/*.o -o $(OUTPUT_DIR)/tp_$(2)/sim
+endef
+
+TP_POOL := $(shell tr -d '\r' < $(FW_CONFIG)/lwipopts.h | sed -n 's/^\#define MEMP_NUM_SYS_TIMEOUT  *\([0-9][0-9]*\).*/\1/p')
+
+timeout-pool:
+	@test -n "$(TP_POOL)" || { echo "timeout-pool: MEMP_NUM_SYS_TIMEOUT not found in lwipopts.h"; exit 1; }
+	$(call tp_build,$(TP_POOL),fw,-DCHECK_BOUND)
+	@for n in 1 2 3 4; do \
+		if $(OUTPUT_DIR)/tp_fw/sim $$n 1 1 > $(OUTPUT_DIR)/tp_fw/n$$n.log 2>&1; then :; else \
+			grep RESULT $(OUTPUT_DIR)/tp_fw/n$$n.log; echo "timeout-pool: the pool ran empty with $$n netifs"; exit 1; fi; \
+		grep RESULT $(OUTPUT_DIR)/tp_fw/n$$n.log; \
+	done
+
+timeout-pool-red:
+	$(call tp_build,16,old,)
+	@if $(OUTPUT_DIR)/tp_old/sim 2 1 1 > $(OUTPUT_DIR)/tp_old/red.log 2>&1; then \
+		echo "timeout-pool-red: the pool of 16 did not run dry with 2 netifs -- the simulation no longer catches the defect"; \
+		exit 1; \
+	else \
+		echo "timeout-pool-red: $$(grep RESULT $(OUTPUT_DIR)/tp_old/red.log | cut -c1-90) with the pool of 16, as required"; \
+	fi
+
+# Target 3 on its worker task, against loopback peers.
+network-target:
+	mkdir -p $(OUTPUT_DIR)
+	$(CXX) $(NETWORK_TARGET_FLAGS) network_target_test.cpp ../network_target.cc -lpthread -o $(NETWORK_TARGET_TEST) \
+	    -Wl,--wrap=gethostbyname_r -Wl,--wrap=send -Wl,--wrap=close
+	env -u LD_PRELOAD timeout 60s $(NETWORK_TARGET_TEST)
 
 clean:
 	rm -rf $(OUTPUT_DIR)

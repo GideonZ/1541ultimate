@@ -335,6 +335,13 @@ SUITES: Sequence[Suite] = (
     Suite("e2e", "cfg-whitespace", "tests/e2e/filemanager/cfg_whitespace_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@"),
     Suite("e2e", "printer", "tests/e2e/io/printer/printer_test.py", "-H @HOST@ -p @PASS@", profile=profiles.QUICK),
+    # Issue #1052: a long print job, B&W and colour, with a SoftIEC drive and REST
+    # probed while it runs and after it closes. B&W alone takes about 75 s, so the
+    # suite is standard; the test adds the colour legs (about 5 min in all) itself
+    # under the deep profile. `--control-drive BUS` adds a control drive and is
+    # not in the registered arguments.
+    Suite("e2e", "printer-stall", "tests/e2e/io/printer/printer_stall_test.py",
+          "-H @HOST@ -p @PASS@", profile=profiles.STANDARD),
     # usb-mouse drives the mouse over REST and needs no hardware; it runs the
     # scenarios its profile asks for (mouse_test.py PROFILE_TESTS), from two in
     # smoke to every one in deep, where it also sweeps PAL and NTSC and takes
@@ -1513,6 +1520,17 @@ def main(argv: list[str]) -> int:
             report.check_warn(str(exc))
         else:
             report.check_ok(faster or "already set")
+
+        # Part of the well-known configuration: the browsers must list files
+        # under their stored names, or the suites find no row for what they made.
+        report.step_start("machine: the file browsers show stored names")
+        try:
+            viewed = api_lib.ensure_stored_names_view(
+                target, options.password, float(options.timeout))
+        except DEVICE_ERRORS as exc:
+            report.check_warn(str(exc))
+        else:
+            report.check_ok(viewed or "already set")
 
         # A cartridge run leaves this at "External", which routes the machine's
         # own interrupts to its port and survives a power cycle.

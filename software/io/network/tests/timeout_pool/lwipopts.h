@@ -1,0 +1,42 @@
+#define NO_SYS 1
+#define LWIP_SOCKET 0
+#define LWIP_NETCONN 0
+#define LWIP_IPV4 1
+#define LWIP_IPV6 0
+#define LWIP_TCP 1
+#define LWIP_UDP 1
+#define LWIP_RAW 0
+#define LWIP_ICMP 1
+#define LWIP_ARP 1
+#define LWIP_ETHERNET 1
+#define LWIP_DNS 1
+#define LWIP_DHCP 1
+#define LWIP_AUTOIP 0
+#define LWIP_IGMP 1
+#define LWIP_DHCP_DOES_ACD_CHECK 0
+#define LWIP_STATS 1
+#define MEMP_STATS 1
+#define LWIP_STATS_DISPLAY 0
+#define LWIP_DONT_PROVIDE_BYTEORDER_FUNCTIONS
+#define LWIP_MDNS_RESPONDER 1
+#define LWIP_NUM_NETIF_CLIENT_DATA 2
+#define MEMP_NUM_UDP_PCB 8
+#define MEMP_NUM_IGMP_GROUP 12
+#define MEM_LIBC_MALLOC 1
+#define MEMP_MEM_MALLOC 0
+#define MEM_ALIGNMENT 8
+#define SYS_LIGHTWEIGHT_PROT 0
+#define LWIP_NETIF_STATUS_CALLBACK 1
+#define LWIP_NETIF_HOSTNAME 1
+#define SNTP_SERVER_DNS 0
+#define SNTP_STARTUP_DELAY 0
+#define SNTP_SET_SYSTEM_TIME(s)
+#ifndef POOL
+#error "build with -DPOOL=<MEMP_NUM_SYS_TIMEOUT>"
+#endif
+#define MEMP_NUM_SYS_TIMEOUT POOL
+#define IP_REASSEMBLY 0
+#define IP_FRAG 0
+#include <stdlib.h>
+#define LWIP_RAND() ((u32_t)rand())
+#define MDNS_RESP_USENETIF_EXTCALLBACK 0

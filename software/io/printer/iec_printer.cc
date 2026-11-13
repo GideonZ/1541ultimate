@@ -135,38 +135,87 @@ InitFunction iec_printer_init("Printer", init_printer, NULL, NULL, 12);
 
 void IecPrinter::effectuate_settings(void)
 {
-    /* Page top margin and printable height are configurable */
-    uint8_t page_top, page_height;
+    /* Bus part, on the calling task: the device number and whether the printer is on */
+    int new_addr = cfg->get_value(CFG_PRINTER_ID);
+    uint8_t new_enable = uint8_t(cfg->get_value(CFG_PRINTER_ENABLE));
+    bool enable_changed = (new_enable != printer_enable);
+    bool addr_changed = (new_addr != printer_iec_addr);
 
-    /* Printer ID on IEC from nvram */
-    printer_iec_addr = cfg->get_value(CFG_PRINTER_ID);
-    iec_if->configure();
-
-    /* Load and apply virtual printer configuration from nvram */
-    set_filename(cfg->get_string(CFG_PRINTER_FILENAME));
-    set_output_type(cfg->get_value(CFG_PRINTER_TYPE));
-    set_ink_density(cfg->get_value(CFG_PRINTER_DENSITY));
-    set_emulation(cfg->get_value(CFG_PRINTER_EMULATION));
-    set_cbm_charset(cfg->get_value(CFG_PRINTER_CBM_CHAR));
-    set_epson_charset(cfg->get_value(CFG_PRINTER_EPSON_CHAR));
-    set_ibm_charset(cfg->get_value(CFG_PRINTER_IBM_CHAR));
-
-    /* Configure printable area according to user settings */
-    page_top = cfg->get_value(CFG_PRINTER_PAGETOP);
-    page_height = cfg->get_value(CFG_PRINTER_PAGEHEIGHT);
+    /* The rest, as the settings are now: the printer task applies this copy, in stream order */
+    PrinterSettings s;
+    strncpy(s.filename, cfg->get_string(CFG_PRINTER_FILENAME), sizeof(s.filename) - 1);
+    s.filename[sizeof(s.filename) - 1] = 0;
+    s.type = cfg->get_value(CFG_PRINTER_TYPE);
+    s.density = cfg->get_value(CFG_PRINTER_DENSITY);
+    s.emulation = cfg->get_value(CFG_PRINTER_EMULATION);
+    s.cbm_charset = cfg->get_value(CFG_PRINTER_CBM_CHAR);
+    s.epson_charset = cfg->get_value(CFG_PRINTER_EPSON_CHAR);
+    s.ibm_charset = cfg->get_value(CFG_PRINTER_IBM_CHAR);
+    s.page_top = cfg->get_value(CFG_PRINTER_PAGETOP);
+    s.page_height = cfg->get_value(CFG_PRINTER_PAGEHEIGHT);
 
     /* If printable area is bigger than page, reduce it */
-    if ((page_top+page_height) > IEC_PRINTER_PAGE_LINES+1)
+    if ((s.page_top + s.page_height) > IEC_PRINTER_PAGE_LINES+1)
     {
-        page_height = IEC_PRINTER_PAGE_LINES + 1 - page_top;
-        cfg->set_value(CFG_PRINTER_PAGEHEIGHT, page_height);
+        s.page_height = IEC_PRINTER_PAGE_LINES + 1 - s.page_top;
+        cfg->set_value(CFG_PRINTER_PAGEHEIGHT, s.page_height);
     }
 
-    set_page_top(page_top);
-    set_page_height(page_height);
+    /* The big ring exists while the printer is on */
+    if (new_enable)
+        spool.allocate();
 
-    /* Enable printer if requested */
-    printer_enable = uint8_t(cfg->get_value(CFG_PRINTER_ENABLE));
+    /* Printer ID and enable are stored before configure(), which reads both from this object (#1083).
+     * configure() holds the IEC processor in reset, so a job on the bus loses the rest of it (the C64 sees
+     * 'device not present'): it is only called when the enable value changes. A new device number alone is
+     * written without the reset. */
+    printer_iec_addr = new_addr;
+    printer_enable = new_enable;
+
+    if (enable_changed)
+        iec_if->configure();
+    else if (addr_changed && printer_enable)
+        iec_if->readdress(slot_id);
+
+    /* Switched off: what was accepted and not printed yet is lost, as in a printer */
+    if (enable_changed && !new_enable)
+        spool.abort(PRINTER_SPOOL_ABORT_RESET | PRINTER_SPOOL_ABORT_RELEASE);
+
+    if (taskHandle)
+        spool.post_settings(s);
+    else
+        apply_settings(s);
+}
+
+/************************************************************************
+*                    IecPrinter::apply_settings(s)             Private  *
+*                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~                      *
+* Function : Apply virtual printer configuration                        *
+*            (printer task, or the constructor before the task exists)  *
+*-----------------------------------------------------------------------*
+* Inputs:                                                               *
+*                                                                       *
+*    s : (PrinterSettings) the settings at the time they were changed   *
+*                                                                       *
+*-----------------------------------------------------------------------*
+* Outputs:                                                              *
+*                                                                       *
+*    (none)                                                             *
+*                                                                       *
+************************************************************************/
+
+void IecPrinter::apply_settings(const PrinterSettings &s)
+{
+    strcpy(output_filename_buf, s.filename);
+    set_filename(output_filename_buf);
+    set_output_type(s.type);
+    set_ink_density(s.density);
+    set_emulation(s.emulation);
+    set_cbm_charset(s.cbm_charset);
+    set_epson_charset(s.epson_charset);
+    set_ibm_charset(s.ibm_charset);
+    set_page_top(s.page_top);
+    set_page_height(s.page_height);
 }
 
 /************************************************************************
@@ -252,8 +301,6 @@ void IecPrinter::update_task_items(bool writablePath)
 
 SubsysResultCode_e IecPrinter::executeCommand(SubsysCommand *cmd)
 {
-    PrinterEvent_t printerEvent;  // event to send to printer task
-
     /* Record user_interface for modal popup */
     cmd_ui = cmd->user_interface;
 
@@ -261,6 +308,7 @@ SubsysResultCode_e IecPrinter::executeCommand(SubsysCommand *cmd)
     {
         case MENU_PRINTER_ON:
             reset();
+            spool.allocate();
             printer_enable = 1;
             cfg->set_value(CFG_PRINTER_ENABLE, printer_enable);
             iec_if->configure();
@@ -270,6 +318,7 @@ SubsysResultCode_e IecPrinter::executeCommand(SubsysCommand *cmd)
             printer_enable = 0;
             cfg->set_value(CFG_PRINTER_ENABLE, printer_enable);
             iec_if->configure();
+            spool.abort(PRINTER_SPOOL_ABORT_RESET | PRINTER_SPOOL_ABORT_RELEASE);   /* what is not printed yet is lost, the ring is given back */
             break;
 
         case MENU_PRINTER_FLUSH:
@@ -283,17 +332,22 @@ SubsysResultCode_e IecPrinter::executeCommand(SubsysCommand *cmd)
             -*/
 
             cmd_ui->show_progress("Flushing/Ejecting page...", is_color ? 20 : 8);
-            printerEvent.type = PRINTER_EVENT_USER;
-            printerEvent.value = PRINTER_USERCMD_FLUSH;
-            while( xQueueSend( queueHandle, (void *) &printerEvent, portMAX_DELAY) != pdTRUE);
-            xSemaphoreTake( xCallerSemaphore, portMAX_DELAY); /* Wait end of printer job */
-            cmd_ui->hide_progress();
+
+            /*-
+             *  Post the flush and wait for the printer task to do it, but not for ever: when the
+             *  backlog is longer than IEC_PRINTER_FLUSH_WAIT_MS this dialog closes and the page is
+             *  ejected when the printer task gets there (in stream order) all the same.
+            -*/
+            {
+                bool done = spool.flush_and_wait(IEC_PRINTER_FLUSH_WAIT_MS);
+                cmd_ui->hide_progress();
+                if (!done)      /* still being rendered: say so, the page is saved when it is done */
+                    cmd_ui->popup("The page is still printing.\nIt is saved when it is done.", BUTTON_OK);
+            }
             break;
 
         case MENU_PRINTER_RESET:
-            printerEvent.type = PRINTER_EVENT_USER;
-            printerEvent.value = PRINTER_USERCMD_RESET;
-            while( xQueueSend( queueHandle, (void *) &printerEvent, portMAX_DELAY) != pdTRUE);
+            spool.abort(PRINTER_SPOOL_ABORT_RESET);   /* what is not printed yet is lost */
             break;
 
         default:
@@ -325,10 +379,11 @@ SubsysResultCode_e IecPrinter::executeCommand(SubsysCommand *cmd)
 
 void IecPrinter::updateFlushProgressBar(void)
 {
-    if (cmd_ui)
+    UserInterface *ui = cmd_ui;
+    if (ui)
     {
         /* One step ahead for progress bar in interactive mode only */
-        cmd_ui->update_progress(NULL, 1);
+        ui->update_progress(NULL, 1);
     }
 }
 
@@ -365,6 +420,10 @@ IecPrinter::IecPrinter() : SubSystem(SUBSYSID_PRINTER)
     output_type = PRINTER_UNSET_OUTPUT;
     cmd_ui = 0;
     is_color = false;
+    printer_enable = 0;
+    output_filename_buf[0] = 0;
+    taskHandle = NULL;
+    slot_id = -1;
 
     /* Read configuration from nvram if it exists */
     effectuate_registered_settings();
@@ -373,12 +432,6 @@ IecPrinter::IecPrinter() : SubSystem(SUBSYSID_PRINTER)
     IecInterface *interface = IecInterface :: get_iec_interface();
     slot_id = interface->register_slave(this);
     interface->configure();
-
-    /* Initially, no caller task */
-    xCallerSemaphore = xSemaphoreCreateBinary();
-
-    /* Create the queue */
-    queueHandle = xQueueCreate( 1, sizeof(PrinterEvent_t));
 
     /* Create the task, storing the handle. */
     xTaskCreate((TaskFunction_t) IecPrinter::task, "Virtual Printer",
@@ -407,11 +460,9 @@ IecPrinter::~IecPrinter()
     /* Remove task from process list */
     vTaskDelete(taskHandle);
 
-    /* Remove message queue */
-    vQueueDelete(queueHandle);
+    /* Remove the spool */
+    spool.release();
 
-    /* Remove semaphore */
-    vSemaphoreDelete( xCallerSemaphore );
     /* Close/flush output file */
     close_file();
 }
@@ -434,14 +485,7 @@ IecPrinter::~IecPrinter()
 
 t_channel_retval IecPrinter::push_data(uint8_t b)
 {
-    PrinterEvent_t printerEvent;
-
-    printerEvent.type = PRINTER_EVENT_DATA;
-    printerEvent.value = b;
-
-    while( xQueueSend( queueHandle, (void *) &printerEvent, portMAX_DELAY) != pdTRUE);
-
-    return IEC_OK;
+    return spool.push((PRINTER_EVENT_DATA << 8) | b) ? IEC_OK : IEC_BYTE_LOST;
 }
 
 /************************************************************************
@@ -523,23 +567,20 @@ t_channel_retval IecPrinter::_push_data(uint8_t b)
 
 t_channel_retval IecPrinter::push_ctrl(uint16_t b)
 {
-    PrinterEvent_t printerEvent;
+    uint8_t value;
 
-    printerEvent.type = PRINTER_EVENT_CMD;
     switch(b) {
         case SLAVE_CMD_EOI:
-            printerEvent.value = 0xFF;
+            value = 0xFF;
             break;
         case SLAVE_CMD_ATN:
-            printerEvent.value = 0xFE;
+            value = 0xFE;
             break;
         default:
-            printerEvent.value = (uint8_t)(b & 7);
+            value = (uint8_t)(b & 7);
     }
 
-    while( xQueueSend( queueHandle, (void *) &printerEvent, portMAX_DELAY) != pdTRUE);
-
-    return IEC_OK;
+    return spool.push((PRINTER_EVENT_CMD << 8) | value) ? IEC_OK : IEC_BYTE_LOST;
 }
 
 /************************************************************************
@@ -645,6 +686,20 @@ int IecPrinter::_reset(void)
     return IEC_OK;
 }
 
+/* The backlog has been discarded: a RAW or ASCII file does not stay open, and what was in the buffer is lost. */
+int IecPrinter::_abort(uint8_t kinds)
+{
+    buffer_pointer = 0;
+
+    if (output_type != PRINTER_PNG_OUTPUT)
+        close_file();
+
+    if (kinds & PRINTER_SPOOL_ABORT_RESET)
+        _reset();
+
+    return IEC_OK;
+}
+
 /************************************************************************
 *                                   task()                      Static  *
 *                                   ~~~~~~                              *
@@ -664,38 +719,53 @@ int IecPrinter::_reset(void)
 
 void IecPrinter::task(IecPrinter *p)
 {
-    PrinterEvent_t printerEvent;
+    uint16_t ev;
+    PrinterSpoolCtl ctl;
+
+    p->spool.set_consumer(xTaskGetCurrentTaskHandle());
 
     for(;;)
     {
-        if( xQueueReceive( p->queueHandle, &printerEvent,
-                           portMAX_DELAY ) == pdTRUE )
+        switch (p->spool.next(ev, ctl))
         {
-            switch (printerEvent.type)
-            {
-                case PRINTER_EVENT_CMD:
-                    p->_push_command(printerEvent.value);
-                    break;
+            case PRINTER_SPOOL_EVENT:
+                if ((ev >> 8) == PRINTER_EVENT_DATA)
+                    p->_push_data(ev & 0xFF);
+                else
+                    p->_push_command(ev & 0xFF);
+                break;
 
-                case PRINTER_EVENT_DATA:
-                    p->_push_data(printerEvent.value);
-                    break;
+            case PRINTER_SPOOL_CTRL:
+                /* A flush that was posted before the settings changed is done with the old settings */
+                if (ctl.flush_first && ctl.flushes)
+                {
+                    p->flush();
+                    p->spool.flush_done(ctl.flush_gen);
+                    ctl.flushes = 0;
+                }
 
-                case PRINTER_EVENT_USER:
-                    switch (printerEvent.value)
-                    {
-                        case PRINTER_USERCMD_RESET:
-                            p->_reset();
-                            iec_if->configure();
-                            break;
+                /* The output type changed more than once in this marker: what a toggle does, done once */
+                if (ctl.type_changed)
+                    p->flush();
 
-                        case PRINTER_USERCMD_FLUSH:
-                            p->flush();
-                            xSemaphoreGive(p->xCallerSemaphore);
-                            break;
-                    }
-                    break;
-            }
+                if (ctl.has_settings)
+                    p->apply_settings(ctl.settings);
+
+                if (ctl.flushes)
+                {
+                    p->flush();
+                    p->spool.flush_done(ctl.flush_gen);
+                }
+                break;
+
+            case PRINTER_SPOOL_ABORT:
+                /* The backlog is gone already; so is what the printer had half done */
+                p->_abort(ctl.abort_kinds);
+                break;
+
+            default:
+                p->spool.wait();
+                break;
         }
     }
 }
