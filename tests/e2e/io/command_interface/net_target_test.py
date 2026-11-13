@@ -84,8 +84,7 @@ from report import (  # noqa: E402
     FAIL, Failure, OK, SKIP, check, check_fail, check_ok, check_skip, check_start, detail,
     format_exception, section, suite_fail, suite_ok, warn)
 from uci import (  # noqa: E402
-    MAX_BLOCK_BYTES, REPLY_QUEUE_BYTES, TARGET_NETWORK, Uci, Wedged,
-    interface_present)
+    MAX_BLOCK_BYTES, REPLY_QUEUE_BYTES, TARGET_NETWORK, Uci, Wedged, interface_present)
 from uci_native import NativeUci  # noqa: E402
 
 CONFIG_CATEGORY = "C64 and Cartridge Settings"
@@ -277,6 +276,7 @@ TESTS = [
     "get-random-refusals",
     "get-random-leaves-sockets-alone",
     "get-random-radio-off",
+    "stalled-write-reset-and-abort",
     "reset-closes-uci-sockets",
 ]
 # The scenarios that need no network peer, because they open no socket.
@@ -1839,6 +1839,92 @@ def run_reset_closes_uci_sockets(net: Net, peer: Peer, reset, device) -> bool:
     return True
 
 
+# How long a WRITE has to stay unanswered to count as stalled, and how long the target may take to be
+# useful again after the C64 reset that ends it. The send waits in slices (a few hundred milliseconds on
+# lwIP), so a worker that sees the reset is free well inside the bound.
+STALL_SECONDS = 2.0
+FREE_WITHIN_SECONDS = 3.0
+STALL_FILL_LIMIT = 4096  # WRITEs of 888 bytes, far more than the two buffers hold
+
+
+def stall_a_write(net: Net, handle: int) -> int:
+    """WRITE until one is still unanswered after STALL_SECONDS because the peer reads nothing.
+
+    The agent keeps waiting in that WRITE; only a reset ends it. Returns how many WRITEs completed first.
+    """
+    uci = net.uci
+    patient = uci.busy_timeout
+    uci.busy_timeout = STALL_SECONDS
+    try:
+        for done in range(STALL_FILL_LIMIT):
+            try:
+                result = net.write(handle, bytes(888))
+            except Failure as exc:
+                if "did not finish" in str(exc):
+                    return done
+                raise
+            if result.status_text != STATUS_OK:
+                raise Failure(f"WRITE #{done + 1} answered {result.status_text!r}")
+    finally:
+        uci.busy_timeout = patient
+    raise Failure(f"{STALL_FILL_LIMIT} WRITEs of 888 bytes all completed: the peer's buffers never filled")
+
+
+def run_stalled_write_reset(net: Net, peer: Peer, reset) -> bool:
+    """A C64 reset during a WRITE that has stalled on a peer that reads nothing (native route).
+
+    The target must let go of the stalled WRITE: IDENTIFY is answered, the next socket command
+    (OPEN_UDP + CLOSE_SOCKET) runs within FREE_WITHIN_SECONDS, and the stalled socket is closed. The times are
+    printed. `reset` resets the C64 and returns a Net that reaches the target afterwards. The abort of a
+    stalled WRITE is covered by the host test; the REST route cannot fill a socket in reasonable time.
+    """
+    section("stalled-write-reset-and-abort")
+    conn = None
+    handle = None
+    try:
+        with check("a WRITE to a peer that reads nothing stalls"):
+            handle = net.open_tcp(peer.ip, peer.tcp_port)
+            conn = peer.accept_tcp()
+            conn.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 2048)
+            completed = stall_a_write(net, handle)
+            detail(f"{completed} WRITEs completed, the next one has been unanswered for {STALL_SECONDS:.0f} s")
+        with check("reset the C64 with the WRITE stalled"):
+            net = reset()
+        with check("IDENTIFY is answered"):
+            started = time.time()
+            identity = net.identify()
+            if identity.status_text != STATUS_OK:
+                raise Failure(f"IDENTIFY answered {identity.status_text!r}")
+            detail(f"{time.time() - started:.2f} s")
+        with check(f"the next socket command is answered within {FREE_WITHIN_SECONDS:.0f} s"):
+            took = next_socket_command(net, peer)
+            detail(f"OPEN_UDP + CLOSE_SOCKET {took:.2f} s")
+            if took > FREE_WITHIN_SECONDS:
+                raise Failure(f"took {took:.2f} s: the worker was still held by the stalled WRITE")
+        with check("the reset closed the socket of the stalled WRITE"):
+            result = net.close(handle)
+            if result.status_text == STATUS_OK:
+                raise Failure("the socket was still open after the reset")
+            handle = None
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except OSError:
+                pass
+    return True
+
+
+def next_socket_command(net: Net, peer: Peer) -> float:
+    """Seconds for an OPEN_UDP and its CLOSE: socket commands run on the worker, IDENTIFY does not."""
+    started = time.time()
+    handle = net.open_udp(peer.ip, peer.udp_port)
+    result = net.close(handle)
+    if result.status_text != STATUS_OK:
+        raise Failure(f"CLOSE_SOCKET answered {result.status_text!r}")
+    return time.time() - started
+
+
 def free_heap(device) -> int | None:
     """Free FreeRTOS heap, for the record; lwip's pools are static and do not show here."""
     try:
@@ -2068,6 +2154,14 @@ def main() -> int:
                     native_started = True
                     return Net(build_driver(route, computer, args.busy_timeout))
                 return Net(rest_uci)
+            if route == "native":
+                def reset_into_net():
+                    nonlocal net, native_started
+                    computer.machine.reset(force=True)
+                    native_started = True
+                    net = Net(build_driver(route, computer, args.busy_timeout))
+                    return net
+                run(route, "stalled-write-reset-and-abort", run_stalled_write_reset, net, peer, reset_into_net)
             # Last on purpose: on the native route the reset inside it ends
             # the 6502 agent that `net` wraps, so nothing can follow it here.
             run(route, "reset-closes-uci-sockets",
