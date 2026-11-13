@@ -64,6 +64,13 @@
 
 class SubSystem;
 
+// Retain admission identity in the queue; flags alone cannot distinguish an
+// old command left behind by a C64 reset from a new command after that reset.
+struct CommandInterfaceEvent {
+    uint8_t flags;
+    OperationCancellation cancellation;
+};
+
 class CommandInterface : public SubSystem
 {
 	TaskHandle_t taskHandle;
@@ -77,7 +84,7 @@ class CommandInterface : public SubSystem
     Message incoming_command;
     uint8_t target;    
     void copy_result(Message *data, Message *status);
-    void reply_to_command(Message *data, Message *status, bool no_reply);
+    void reply_to_command(Message *data, Message *status, bool no_reply, const OperationCancellation& cancellation, bool deferred = false);
 
     // A deferred command (see command_defer); pending_target is CMD_TARGET_NONE when there
     // is none. Only the UCI Server task touches these; done_ticket is written by the
@@ -87,6 +94,7 @@ class CommandInterface : public SubSystem
     uint8_t pending_target;
     uint32_t pending_ticket;
     bool pending_no_reply;
+    OperationCancellation pending_cancellation;
     volatile uint32_t done_ticket;
     int cart_mode;
     
@@ -103,7 +111,7 @@ public:
     
     void dump_registers(void);
     // One pass of the UCI Server task, for one item from the queue.
-    void handle_event(uint8_t status_byte);
+    void handle_event(const CommandInterfaceEvent& event);
     uint32_t defer(void);
     void deferred_done(uint32_t done);
     const char *identify(void) { return "Command Interface"; }

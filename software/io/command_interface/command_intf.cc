@@ -21,6 +21,8 @@ static SemaphoreHandle_t resetSemaphore;
 // Set by the reset ISR for the server task, so a target is told about the
 // reset between commands rather than during one.
 static volatile bool c64_reset_pending;
+static volatile bool command_abort_pending;
+static CancellationSource command_cancellation;
 
 bool c64_reset_is_pending(void)
 {
@@ -45,11 +47,14 @@ public:
 extern "C" {
 void ResetInterruptHandlerCmdIf()
 {
-    BaseType_t woken;
+    BaseType_t woken = pdFALSE;
     uint8_t new_flags = CMD_ABORT_DATA;
     c64_reset_pending = true;
+    command_abort_pending = true;
+    command_cancellation.signal();
     xSemaphoreGiveFromISR(resetSemaphore, &woken);
-    xQueueSendFromISR(cmd_if.queue, &new_flags, &woken);
+    CommandInterfaceEvent event = { new_flags, command_cancellation.token() };
+    xQueueSendFromISR(cmd_if.queue, &event, &woken);
 }
 }
 
@@ -72,7 +77,7 @@ CommandInterface :: CommandInterface() : SubSystem(SUBSYSID_CMD_IF)
         incoming_command.message = command_buffer;
         incoming_command.length = 0;
         
-        queue = xQueueCreate(16, sizeof(uint8_t));
+        queue = xQueueCreate(16, sizeof(CommandInterfaceEvent));
         xTaskCreate( CommandInterface :: start_task, "UCI Server", configMINIMAL_STACK_SIZE, this, PRIO_C64_SERVICE, &taskHandle );
         xTaskCreate( CommandInterface :: reset_task, "UCI Reset Server", configMINIMAL_STACK_SIZE, this, PRIO_HW_SERVICE, &resetTaskHandle );
 
@@ -111,8 +116,14 @@ extern "C" BaseType_t command_interface_irq(void)
 	uint8_t new_flags = status_byte & ~CMD_IF_IRQMASK;
 	CMD_IF_IRQMASK_SET = new_flags;
 
-	BaseType_t retval;
-    if (xQueueSendFromISR(cmd_if.queue, &new_flags, &retval) != pdTRUE) {
+    if (new_flags & CMD_ABORT_DATA) {
+        command_abort_pending = true;
+        command_cancellation.signal();
+    }
+
+	BaseType_t retval = pdFALSE;
+    CommandInterfaceEvent event = { new_flags, command_cancellation.token() };
+    if (xQueueSendFromISR(cmd_if.queue, &event, &retval) != pdTRUE) {
         outbyte('\\');
     }
 	return retval;
@@ -133,19 +144,21 @@ void CommandInterface :: run_reset_task(void)
 
 void CommandInterface :: run_task(void)
 {
-    uint8_t status_byte;
+    CommandInterfaceEvent event;
 
     CMD_IF_IRQMASK_CLEAR = 7;
     ioWrite8(ITU_IRQ_ENABLE, ITU_INTERRUPT_CMDIF);
 
     while(1) {
-		xQueueReceive(queue, &status_byte, portMAX_DELAY);
-		handle_event(status_byte);
+		xQueueReceive(queue, &event, portMAX_DELAY);
+		handle_event(event);
 	}
 }
 
-void CommandInterface :: handle_event(uint8_t status_byte)
+void CommandInterface :: handle_event(const CommandInterfaceEvent& event)
 {
+    uint8_t status_byte = event.flags;
+    const OperationCancellation& cancellation = event.cancellation;
 	int length;
     Message *data, *status;
 #if CMD_IF_DEBUG
@@ -157,28 +170,20 @@ void CommandInterface :: handle_event(uint8_t status_byte)
 	portENTER_CRITICAL();
 	bool reset_seen = c64_reset_pending;
 	c64_reset_pending = false;
+    bool abort_seen = command_abort_pending;
+    command_abort_pending = false;
 	portEXIT_CRITICAL();
-	// Ends a deferred command even when the abort item of the reset was dropped.
-	if (reset_seen && (pending_target != CMD_TARGET_NONE)) {
-		status_byte |= CMD_ABORT_DATA;
-	}
-	bool aborted = false;
-	int abort_offset = 0;
-	if(status_byte & CMD_ABORT_DATA) {
-		//printf("Abort received.\n");
-		uint8_t unmask = CMD_ABORT_DATA;
-		// A deferred command ends here; its late result fails the ticket check. The
-		// reset below clears its new-command flag, so its interrupt can be unmasked.
-		if (pending_target != CMD_TARGET_NONE) {
-			unmask |= CMD_NEW_COMMAND;
-			pending_target = CMD_TARGET_NONE;
-		}
+    // The sticky flags are authoritative even if the interrupt's queue post
+    // failed. Its queued copy may arrive after cleanup; do not abort twice.
+    bool aborted = reset_seen || abort_seen;
+    int abort_offset = 0;
+    if (aborted) {
+        pending_target = CMD_TARGET_NONE;
 		// Read before the reset below rewinds the response pointer.
 		int offset = (((int)CMD_IF_RESPONSE_LEN_H) << 8) | CMD_IF_RESPONSE_LEN_L;
 		abort_offset = offset - response_offset;
-		aborted = true;
 		CMD_IF_HANDSHAKE_OUT = HANDSHAKE_RESET;
-		CMD_IF_IRQMASK_CLEAR = unmask;
+		CMD_IF_IRQMASK_CLEAR = CMD_ABORT_DATA | CMD_NEW_COMMAND | CMD_DATA_ACCEPTED;
 	}
 	// The C64 is free now. The targets clean up after it at their own level, before this
 	// task looks at anything else: freeing a large body or popping a file is their work.
@@ -192,18 +197,32 @@ void CommandInterface :: handle_event(uint8_t status_byte)
 			command_targets[target]->abort(abort_offset);
 		}
 	}
+    if (aborted || (status_byte & CMD_ABORT_DATA) || cancellation.cancelled()) return;
 	if(status_byte & CMD_DATA_ACCEPTED) {
 		if (target != CMD_TARGET_NONE) {
 			{
 				TargetWork work;
 				command_targets[target]->get_more_data(&data, &status);
 			}
-			copy_result(data, status);
-		} else {
-			printf("CMDIF: Requested for more data, but target is not set!\n");
-		}
-        CMD_IF_HANDSHAKE_OUT = HANDSHAKE_ACCEPT_NEXTDATA;
-        CMD_IF_IRQMASK_CLEAR = CMD_DATA_ACCEPTED;
+            bool published = false;
+            portENTER_CRITICAL();
+            if (!cancellation.cancelled()) {
+                command_targets[target]->prepare_reply(&data, &status);
+                copy_result(data, status);
+                CMD_IF_HANDSHAKE_OUT = HANDSHAKE_ACCEPT_NEXTDATA;
+                CMD_IF_IRQMASK_CLEAR = CMD_DATA_ACCEPTED;
+                published = true;
+            }
+            portEXIT_CRITICAL();
+            command_targets[target]->finish_reply(published);
+        } else {
+            portENTER_CRITICAL();
+            if (!cancellation.cancelled()) {
+                CMD_IF_HANDSHAKE_OUT = HANDSHAKE_ACCEPT_NEXTDATA;
+                CMD_IF_IRQMASK_CLEAR = CMD_DATA_ACCEPTED;
+            }
+            portEXIT_CRITICAL();
+        }
 	}
 
     if (status_byte & CMD_NEW_COMMAND) {
@@ -220,6 +239,7 @@ void CommandInterface :: handle_event(uint8_t status_byte)
             target = incoming_command.message[0] & CMD_IF_MAX_TARGET;
             bool no_reply = ((incoming_command.message[0] & CMD_IF_NO_REPLY) != 0);
             ticket++;
+            command_targets[target]->begin_command(cancellation);
             if (command_targets[target]->is_quick(&incoming_command)) {
                 command_targets[target]->parse_command(&incoming_command, &data, &status);
             } else {
@@ -234,20 +254,23 @@ void CommandInterface :: handle_event(uint8_t status_byte)
                 // The interrupt for a new command stays masked until then.
                 pending_target = target;
                 pending_ticket = ticket;
+                pending_cancellation = cancellation;
                 pending_no_reply = no_reply;
             } else {
-                reply_to_command(data, status, no_reply);
+                reply_to_command(data, status, no_reply, cancellation);
             }
         } else {
             printf("Null command.\n");
-            CMD_IF_RESPONSE_LEN_H = 0;
-            CMD_IF_RESPONSE_LEN_L = 0;
-            CMD_IF_STATUS_LENGTH = 0;
-            CMD_IF_HANDSHAKE_OUT = HANDSHAKE_ACCEPT_COMMAND;
-            CMD_IF_HANDSHAKE_OUT = HANDSHAKE_VALIDATE_LAST;
-        }
-        if (!defer_requested) {
-            CMD_IF_IRQMASK_CLEAR = CMD_NEW_COMMAND;
+            portENTER_CRITICAL();
+            if (!cancellation.cancelled()) {
+                CMD_IF_RESPONSE_LEN_H = 0;
+                CMD_IF_RESPONSE_LEN_L = 0;
+                CMD_IF_STATUS_LENGTH = 0;
+                CMD_IF_HANDSHAKE_OUT = HANDSHAKE_ACCEPT_COMMAND;
+                CMD_IF_HANDSHAKE_OUT = HANDSHAKE_VALIDATE_LAST;
+                CMD_IF_IRQMASK_CLEAR = CMD_NEW_COMMAND;
+            }
+            portEXIT_CRITICAL();
         }
     }
 
@@ -265,20 +288,32 @@ void CommandInterface :: handle_event(uint8_t status_byte)
                 TargetWork work;
                 command_targets[done_target]->deferred_reply(&data, &status);
             }
-            reply_to_command(data, status, pending_no_reply);
-            CMD_IF_IRQMASK_CLEAR = CMD_NEW_COMMAND;
+            reply_to_command(data, status, pending_no_reply, pending_cancellation, true);
         }
     }
 }
 
-void CommandInterface :: reply_to_command(Message *data, Message *status, bool no_reply)
+void CommandInterface :: reply_to_command(Message *data, Message *status, bool no_reply,
+                                          const OperationCancellation& cancellation, bool deferred)
 {
-    CMD_IF_HANDSHAKE_OUT = HANDSHAKE_ACCEPT_COMMAND; // clears CMD_NEW_COMMAND
-    if (no_reply) {
-        CMD_IF_HANDSHAKE_OUT = HANDSHAKE_RESET; // forces state to 00
-    } else {
-        copy_result(data, status); // sets state to 10 or 11
+    bool published = false;
+    portENTER_CRITICAL();
+    // An abort can arrive while the target prepares its reply. Keep NEW masked
+    // until either this reply acknowledges it or the abort path resets it.
+    if (!cancellation.cancelled() && (!deferred ||
+        (CMD_IF_STATUSBYTE & (CMD_STATE_BITS | CMD_ABORT_DATA)) == CMD_STATE_PROCESSING)) {
+        CMD_IF_HANDSHAKE_OUT = HANDSHAKE_ACCEPT_COMMAND;
+        if (no_reply) {
+            CMD_IF_HANDSHAKE_OUT = HANDSHAKE_RESET;
+        } else {
+            command_targets[target]->prepare_reply(&data, &status);
+            copy_result(data, status);
+            published = true;
+        }
+        CMD_IF_IRQMASK_CLEAR = CMD_NEW_COMMAND;
     }
+    portEXIT_CRITICAL();
+    command_targets[target]->finish_reply(published);
 }
 
 uint32_t CommandInterface :: defer(void)
@@ -294,7 +329,7 @@ uint32_t CommandInterface :: defer(void)
 // second deferring target, or a worker that was preempted before it reported).
 void CommandInterface :: deferred_done(uint32_t done)
 {
-    uint8_t wake = 0;
+    CommandInterfaceEvent wake = { 0, command_cancellation.token() };
     portENTER_CRITICAL();
     if ((int32_t)(done - done_ticket) > 0) {
         done_ticket = done;

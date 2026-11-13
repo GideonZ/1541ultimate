@@ -9,6 +9,7 @@
 #define NETWORK_SEND_ALL_H
 
 #include <stddef.h>
+#include <errno.h>
 #include <sys/socket.h>
 
 /* As send_all below, and *sent tells how many bytes were taken, also when it
@@ -19,6 +20,7 @@ static inline int send_part(int socket_fd, const char *data, int len, int *sent)
     *sent = 0;
     while (*sent < len) {
         int r = send(socket_fd, data + *sent, (size_t)(len - *sent), 0);
+        if (r < 0 && errno == EINTR) continue;
         if (r <= 0) {
             return -1;
         }

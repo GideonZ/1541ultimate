@@ -44,6 +44,8 @@ typedef struct _dma_uart_t
 #define DMAUART_CLR_OVERFLOW 0x08 // clear overflow status
 
 typedef BaseType_t (*isr_receive_callback_t)(command_buf_context_t *context, command_buf_t *b, BaseType_t *w);
+// Called in the ISR or with interrupts masked. Must only signal invalidation.
+typedef void (*uart_loss_callback_t)();
 
 class DmaUART
 {
@@ -52,6 +54,8 @@ class DmaUART
     void *rxSemaphore;
     bool slipMode;
     isr_receive_callback_t isr_rx_callback;
+    uart_loss_callback_t loss_callback;
+    void NotifyLoss(); // Caller holds task critical section.
     // slip administration
     command_buf_context_t *packets;
     command_buf_t *current_tx_buf;
@@ -71,6 +75,7 @@ public:
         slipMode = false;
         txDebug = false;
         current_tx_buf = NULL;
+        loss_callback = NULL;
         uint16_t rate = (((uint16_t)uart->rate_h) << 8) | uart->rate_l;
         uart->flowctrl = DMAUART_RESET;
         // printf("DmaUART initialized. Start rate: %d bps\n", CLOCK_FREQ / (rate + 1));
@@ -81,8 +86,11 @@ public:
     }
 
     void SoftReset(void) {
+        portENTER_CRITICAL();
+        NotifyLoss();
         uart->flowctrl = DMAUART_RESET;
         uart->status = DMAUART_CLR_OVERFLOW;
+        portEXIT_CRITICAL();
     }
     void ModuleCtrl(uint8_t mode);
     void EnableSlip(bool enabled);
@@ -92,6 +100,9 @@ public:
     void ClearRxBuffer(void);
     void SetBaudRate(int bps);
     void SetReceiveCallback(isr_receive_callback_t cb);
+    void SetLossCallback(uart_loss_callback_t cb) {
+        portENTER_CRITICAL(); NotifyLoss(); loss_callback = cb; portEXIT_CRITICAL();
+    }
     void ResetReceiveCallback(void);
 
     void PrintStatus(void) {
@@ -111,6 +122,9 @@ public:
     int GetRxCount();
     BaseType_t SendSlipPacket(const uint8_t *buffer, int length);
     BaseType_t TransmitPacket(command_buf_t *buf, uint16_t *ms = NULL);
+    // Bounded timer-service submission. Consumes/frees the buffer on failure,
+    // just like TransmitPacket, but never waits for transmit queue capacity.
+    BaseType_t TryTransmitPacket(command_buf_t *buf);
     BaseType_t ReceivePacket(command_buf_t **buf, TickType_t ticks);
     BaseType_t FreeBuffer(command_buf_t *buf);
     BaseType_t GetBuffer(command_buf_t **buf, TickType_t ticks);

@@ -29,6 +29,7 @@ import re
 import sys
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
 # The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
 sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
@@ -1077,7 +1078,10 @@ def run_bench_topology_checks(runner):
     with check("two spellings of the same machines are one target"):
         with declared_computers("u2@c64u"):
             args = parser.parse_args(["u2@c64u", "c64u", "u2"])
-            resolved = runner.resolve_targets(args)
+            # This checks declared topology, not a live cabling probe. Without
+            # this stub the device-free policy suite tries real bench aliases.
+            with patch("runtests.cli.cabling.establish", return_value=[]):
+                resolved = runner.resolve_targets(args)
             expect("tokens", [t.token for t in resolved], ["u2@c64u", "c64u"])
 
 
@@ -1439,7 +1443,8 @@ def run_profile_checks(runner):
                               "the shallowest one that includes it")
             seen = suites
         expect("every suite is reachable",
-               seen >= {s.name for s in runner.SUITES if s.category == "e2e"},
+               seen >= {s.name for s in runner.SUITES
+                        if s.category == "e2e" and not s.explicit_only},
                True)
 
     with check("a suite named with -s runs whatever the profile says"):

@@ -26,6 +26,7 @@ struct FakeSocket {
     int full_after = -1;          // MSG_DONTWAIT calls before the buffer is full; -1: never
     int fail_at_call = -1;        // call that times out with nothing taken; -1: none
     int calls = 0;
+    int interrupt_at_call = -1;
     std::vector<char> received;
 };
 
@@ -34,6 +35,10 @@ FakeSocket *fake;
 int fake_send(int, const void *data, size_t len, int flags)
 {
     int call = fake->calls++;
+    if (call == fake->interrupt_at_call) {
+        errno = EINTR;
+        return -1;
+    }
     if (call == fake->fail_at_call) {
         errno = EWOULDBLOCK;    // what SO_SNDTIMEO gives when nothing was taken
         return -1;
@@ -106,6 +111,18 @@ TEST(SendAll, ReportsATimeoutAfterPartOfTheChunk)
 
     EXPECT_TRUE(send_all(3, data.data(), (int)data.size()) < 0);
     EXPECT_EQ(s.calls, 2);
+}
+
+TEST(SendAll, InterruptedAfterPartialWriteKeepsTheUnsentSuffix)
+{
+    FakeSocket s;
+    s.max_per_call = 50;
+    s.interrupt_at_call = 1;
+    fake = &s;
+    std::vector<char> data = chunk(128);
+    EXPECT_EQ(send_all(3, data.data(), (int)data.size()), 0);
+    EXPECT_TRUE(s.received == data);
+    EXPECT_EQ(s.calls, 4);
 }
 
 TEST(SendAll, ReportsAFailureWhenSendTakesNothing)

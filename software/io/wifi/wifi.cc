@@ -5,7 +5,14 @@
  *      Author: gideon
  */
 
+#if U64 == 2
+#include "provider_manager_uart.h"
+#ifdef ULTIMATE_PROVIDER_JOURNAL
+#include "provider_native_startup.h"
+#endif
+#endif
 #include "wifi.h"
+#include "provider_wifi_ingress.h"
 #include "wifi_connect.h"
 #include "socket.h"
 #include "u64.h"
@@ -25,12 +32,26 @@
 #define EVENT_TERM   0xF2
 
 WiFi wifi;
+bool wifi_provider_receive(command_buf_t *buffer)
+{
+    if (wifi.ReceiveProviderIdentity(buffer) || wifi.ReceiveProviderControl(buffer)) return true;
+    const rpc_header_t *header = (const rpc_header_t *)buffer->data;
+    if (header->command == EVENT_DISCONNECTED || header->command == EVENT_DISABLED)
+        WiFi::ProviderLinkLoss();
+    return false;
+}
 ultimate_ap_records_t wifi_aps;
 InitFunction wifi_init("WiFi Application", WiFi::Init, NULL, NULL, 52); // after LWIP
 
 WiFi :: WiFi()
 {
     runModeTask = NULL;
+    provider_timer = NULL;
+    provider_monitor_enabled = false;
+#if U64 == 2
+    provider_manager = NULL;
+#endif
+    uart = NULL;
     state = eWifi_Off;
     state_before_scan = eWifi_NotConnected;
     event_when_enabled = 0;
@@ -125,11 +146,106 @@ void WiFi :: RadioOff()
 
 BaseType_t wifi_rx_isr(command_buf_context_t *context, command_buf_t *buf, BaseType_t *w);
 
+void WiFi::InvalidateProvider()
+{
+    portENTER_CRITICAL();
+    ProviderLinkLoss();
+    portEXIT_CRITICAL();
+}
+
+void WiFi::ProviderLinkLoss()
+{
+    wifi.provider_lifecycle.invalidate();
+#if U64 == 2
+    if (wifi.provider_manager) wifi.provider_manager->invalidate_isr();
+#endif
+}
+
+#if U64 == 2
+bool WiFi::BindProviderManager(ProviderManagerUart& link)
+{
+    portENTER_CRITICAL();
+    bool accepted = !provider_manager && uart && link.bind_uart(uart);
+    if (accepted) provider_manager = &link;
+    portEXIT_CRITICAL();
+    return accepted;
+}
+
+bool WiFi::ProviderSnapshot(provider_session::Identity& boot, OperationCancellation& lifetime)
+{
+    portENTER_CRITICAL();
+    bool available = provider_lifecycle.snapshot(boot.bytes, lifetime);
+    portEXIT_CRITICAL();
+    return available;
+}
+bool WiFi::ProviderTransportReady()
+{
+    portENTER_CRITICAL();
+    bool ready = provider_monitor_enabled;
+    portEXIT_CRITICAL();
+    return ready;
+}
+#endif
+
+bool WiFi::ReceiveProviderControl(command_buf_t *buf)
+{
+#if U64 == 2
+    if (buf->size < 2 || buf->data[0] != CMD_IDENTIFY || (buf->data[1] != 0xfe && buf->data[1] != 0xfd)) return false;
+    if (provider_manager && buf->size <= int(sizeof(buf->data)))
+        provider_manager->receive_isr(buf->data, buf->size);
+    return true;
+#else
+    return false;
+#endif
+}
+
+void WiFi::PollProvider(TimerHandle_t timer)
+{
+    WiFi *self = static_cast<WiFi *>(pvTimerGetTimerID(timer));
+    // Serialize against receive IRQ and Terminate. Every queue operation here
+    // has a zero wait; the timer task never runs a synchronous Wi-Fi RPC.
+    portENTER_CRITICAL();
+    if (self->provider_monitor_enabled) {
+        uint32_t now = uint32_t(xTaskGetTickCount() * portTICK_PERIOD_MS);
+        uint8_t request[PROVIDER_PROBE_SIZE];
+        if (self->provider_lifecycle.begin(now, request)) {
+            command_buf_t *buf;
+            if (self->uart->GetBuffer(&buf, 0) == pdTRUE) {
+                memcpy(buf->data, request, sizeof(request));
+                buf->size = sizeof(request);
+                if (self->uart->TryTransmitPacket(buf) != pdTRUE) self->provider_lifecycle.invalidate();
+            } else {
+                self->provider_lifecycle.invalidate();
+            }
+        }
+    }
+    portEXIT_CRITICAL();
+}
+
+bool WiFi::ReceiveProviderIdentity(command_buf_t *buf)
+{
+    // Called only by the receive ISR. Normal per-task identify replies retain
+    // their existing route; this reserved thread has no task notification slot.
+    if (buf->size < 4 || buf->data[0] != CMD_IDENTIFY || buf->data[1] != 0xff) return false;
+    if (provider_monitor_enabled && buf->size <= int(sizeof(buf->data))) {
+        provider_lifecycle.receive(buf->data, buf->size,
+            uint32_t(xTaskGetTickCountFromISR() * portTICK_PERIOD_MS));
+    }
+    return true;
+}
+
 // From Esp32Application
 void WiFi :: Init(DmaUART *uart, command_buf_context_t *packets)
 {
     this->uart = uart;
     this->packets = packets;
+#if U64 == 2
+    uart->SetLossCallback(ProviderLinkLoss);
+    if (!provider_timer) {
+        provider_timer = xTimerCreate("ESP Identity", pdMS_TO_TICKS(100), pdTRUE, this, PollProvider);
+        if (provider_timer) xTimerStart(provider_timer, 0);
+    }
+#endif
     wifi_command_init();
 }
 
@@ -140,11 +256,19 @@ void WiFi :: Start()
         return;
     }
     state = eWifi_NotDetected;
+    portENTER_CRITICAL();
+    ProviderLinkLoss();
+    provider_monitor_enabled = false;
+    portEXIT_CRITICAL();
     xTaskCreate( WiFi :: RunModeTaskStart, "WiFi Command Task", configMINIMAL_STACK_SIZE, this, PRIO_DRIVER, &runModeTask );
 }
 
 void WiFi :: Terminate()
 {
+    portENTER_CRITICAL();
+    provider_monitor_enabled = false;
+    ProviderLinkLoss();
+    portEXIT_CRITICAL();
     if (!runModeTask) {
         printf("** Trying to terminate Wifi Application, but task is not running?\n");
         return;
@@ -385,6 +509,16 @@ void WiFi :: RunModeThread()
                 }
             }
             RefreshRoot();
+#if U64 == 2
+            // Do not spend the provider identity deadline on application
+            // detection or initial synchronous Wi-Fi configuration requests.
+            portENTER_CRITICAL();
+            provider_monitor_enabled = true;
+            portEXIT_CRITICAL();
+#ifdef ULTIMATE_PROVIDER_JOURNAL
+            provider_journal_start_owner(*this);
+#endif
+#endif
             break;
 
         case eWifi_Scanning:
@@ -561,6 +695,7 @@ void WiFi :: RunModeThread()
 
 #endif
             case EVENT_DISABLED:
+                InvalidateProvider();
                 uart->FreeBuffer(buf);
                 state = eWifi_Disabled;
                 feedback.cancel(); // a pick that was under way ends with the radio
@@ -601,6 +736,7 @@ void WiFi :: RunModeThread()
                 break;
 
             case EVENT_DISCONNECTED:
+                InvalidateProvider();
                 // the reason is read before the buffer goes back to the UART, which may refill it
                 if (!wifi_disconnect_is_radio_start(buf->data, buf->size) &&
                     feedback.onDisconnected(wifi_disconnect_reason(buf->data, buf->size), feedback_msg, sizeof(feedback_msg))) {

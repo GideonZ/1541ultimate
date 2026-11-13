@@ -209,6 +209,8 @@ static inline BaseType_t xTaskCreate(TaskFunction_t code, const char *, uint32_t
     pthread_detach(*thread);
     if (handle) {
         *handle = thread;
+    } else {
+        delete thread;
     }
     return pdPASS;
 }

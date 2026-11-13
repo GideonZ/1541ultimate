@@ -2,13 +2,7 @@
 #define HTTP_REQUEST_H
 
 #include <sys/socket.h>
-#include <stdint.h>
-#ifdef RUNS_ON_PC
-#include <time.h>
-#else
-#include "FreeRTOS.h"
-#include "task.h"
-#endif
+#include "http_connection.h"
 extern "C" {
     #include "server.h"
     #include "multipart.h"
@@ -18,12 +12,18 @@ extern "C" {
 typedef struct {
     int offset;
     int size;
-    uint8_t buffer[16384];
+    HTTPReqMessage *response;
+    bool failed;
+    uint8_t buffer[16384 + 1]; // Payload capacity plus a separate string terminator.
 } t_BufferedBody;
 
 // Callbacks
 void collect_in_buffer(HTTPReqMessage *req, HTTPRespMessage *resp);
 //void write_to_temp(HTTPReqMessage *req, HTTPRespMessage *resp);
+
+int   read_socket(int socket_fd, HTTPReqMessage& response);
+bool  get_response(int socket_fd, HTTPREQ_CALLBACK callback, HTTPReqMessage& response);
+JSON *convert_buffer_to_json(t_BufferedBody *body);
 
 // How long an exchange waits for the server to take more of the request, or to
 // send more of its response, before it gives up. The host tests set it lower.
@@ -31,49 +31,58 @@ void collect_in_buffer(HTTPReqMessage *req, HTTPRespMessage *resp);
 #define HTTP_REQUEST_TIMEOUT_MS 30000
 #endif
 
-// An HttpRequest waits on its socket in slices (socket_slices.h), so that it sees a
-// cancel within one slice. It gives up when it has made no progress for
-// HTTP_REQUEST_TIMEOUT_MS (measured with a clock). There is no limit on the exchange as a whole: a slow
-// peer, like the printer in #1039, may take as long as it needs while it moves.
 #include "socket_slices.h"
 
-int   read_socket(int socket_fd, HTTPReqMessage& response);
-bool  get_response(int socket_fd, HTTPREQ_CALLBACK callback, HTTPReqMessage& response, SliceWait *wait = NULL);
-JSON *convert_buffer_to_json(t_BufferedBody *body);
+// No heap allocation is needed for the default HTTP transport. A descriptor
+// supplied to the constructor is borrowed by the legacy parser helpers.
+class HttpSocketConnection : public HttpConnection
+{
+    int socket_fd;
+    SliceWait *wait;
+    HttpSocketConnection(const HttpSocketConnection&);
+    HttpSocketConnection& operator=(const HttpSocketConnection&);
+public:
+    explicit HttpSocketConnection(int fd = -1, SliceWait *slices = NULL) : socket_fd(fd), wait(slices) {}
+    int open(const char *hostname, uint16_t port);
+    int read(void *buffer, int length);
+    int write(const void *buffer, int length);
+    void close_session();
+};
 
 class HttpRequest
 {
     t_BufferedBody *body;
     HTTPReqMessage response;
-    int socket_fd;
     SliceWait wait;
+    HttpSocketConnection socket_connection;
+    HttpConnection *connection;
+    enum ConnectionState { Idle, Connected, Failed } connection_state;
+    HttpRequest(const HttpRequest&);
+    HttpRequest& operator=(const HttpRequest&);
+    int fail_connection();
 public:
-    // A request whose *cancel becomes true stops within a slice, except while it looks
-    // up the host name: SOCKET_SLICE_MS for a connect or a receive, but about a second
-    // for a send on lwIP (socket_slices.h).
-    HttpRequest(volatile bool *cancel = NULL) : wait(cancel, HTTP_REQUEST_TIMEOUT_MS) {
+    // A supplied backend is borrowed and must outlive this request. The request
+    // owns its session: failures and destruction close it, but never delete it.
+    explicit HttpRequest(HttpConnection *transport = NULL, volatile bool *cancel = NULL) :
+        wait(cancel, HTTP_REQUEST_TIMEOUT_MS), socket_connection(-1, &wait),
+        connection(transport ? transport : &socket_connection), connection_state(Idle) {
         InitReqMessage(&response);
         body = NULL;
-        socket_fd = -1;
     }
     ~HttpRequest() {
-        disconnect();
-        if (body) {
-            delete body;
+        if (connection_state == Connected) {
+            connection->close_session();
         }
+        delete body;
     }
     int connect_to_server(const char *hostname, uint16_t hostport);
     int send_request(StreamRamFile *req);
-    // After this, the exchange no longer looks at the cancel flag it was given.
-    void detach(void) { wait.detach(); }
-    bool recv_response(void);
-    // Closes the socket; the response stays.
-    void disconnect(void) {
-        if(socket_fd >= 0) {
-            close(socket_fd);
-        }
-        socket_fd = -1;
+    void detach() { wait.detach(); }
+    void disconnect() {
+        if (connection_state == Connected) connection->close_session();
+        connection_state = Failed;
     }
+    bool recv_response(void);
 
     HTTPReqHeader *get_header(void) {
         return &response.Header;
@@ -82,9 +91,6 @@ public:
     char *get_response_string(void) {
         if (!body) {
             return NULL;
-        }
-        if (body->size > 16383) {
-            body->size = 16383;
         }
         body->buffer[body->size] = 0;
         return (char *)body->buffer;

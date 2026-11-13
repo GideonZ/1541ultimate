@@ -16,5 +16,7 @@ public:
     void TransmitPacket(command_buf_t *b) {}
     void PrintStatus() {}
     void ResetReceiveCallback() {}
+    void SetLossCallback(void (*)()) {}
+    BaseType_t TryTransmitPacket(command_buf_t *) { return pdTRUE; }
 };
 #endif
