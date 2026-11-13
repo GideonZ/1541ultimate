@@ -157,11 +157,14 @@ after an `$21` whose reply the program did not read, so that a session the aband
 
 ## Sessions after an ABORT
 
-An ABORT never closes or frees a session. Every network target command except `$25` and `$23 $FF` (exactly 3 bytes)
+An ABORT cancels an `$21` or `$24` that is still in flight: the wait ends within about 100 ms and the session the
+command had begun on the module is closed, so nothing is left behind and `$25` afterwards is harmless and answers 0.
+An ABORT that arrives after the session was made does not close or free it. Every network target command except `$25` and `$23 $FF` (exactly 3 bytes)
 marks all open entries as claimed, so only the entry the most recent `$21`/`$24` created can be unclaimed, and only
 until the next command.
 
-- After an ABORTed `$21`: treat any handle from it as gone and send `$25` next. `$23 $FF` is allowed in between.
+- After an ABORTed `$21`: treat any handle from it as gone and send `$25` next (it answers 0 if the abort cancelled the
+  open, 1 if the session had been made already). `$23 $FF` is allowed in between.
 - After an ABORTed `$24`: send CLOSE on the handle. It answers `12,ERROR ON CLOSE: 9` if the handle was already gone,
   which is harmless if nothing was opened in between.
 - After an ABORT during a READ, or before all of a READ reply was read, plaintext is lost from the stream without an

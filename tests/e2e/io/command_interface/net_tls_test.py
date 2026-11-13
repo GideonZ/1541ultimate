@@ -17,7 +17,7 @@ Tier 1 is the RED signature and the smoke test to run first:
   S23  hardened TLS 1.2 fallback (EMS bit, one of the six suites)
   S5   a refused certificate: exactly `93,CERTIFICATE NOT TRUSTED: 0x00000008`,
        and `96` for a wrong pin
-  S19e an ABORTed OPEN, then $25 (client deadlines; REST route only)
+  S19e an ABORTed OPEN is cancelled and leaves nothing, then $25 (REST route only)
   S30  BUNDLE to real hosts (internet_hosts.json) with an HTTP GET
 Tier 2 is the other scenarios this machine can drive (see --list).
 Oracles come from the server side (net_tls_fixture.py logs), never from the device's claim.
@@ -101,6 +101,7 @@ READ_CHUNK = 892
 READ_BUDGET_SECONDS = 20.0
 SLOW_HANDSHAKE_SECONDS = 4.0
 ABORT_AFTER_SECONDS = 1.5
+ABORT_ENDS_WITHIN = 1.5   # seconds after the ABORT, for a cancelled OPEN_TLS (a slice is 100 ms; REST polling adds some)
 HANDSHAKE_MS = 15.0
 HTTP_READ_BUDGET_SECONDS = 15.0
 RESAMPLE_AFTER_SECONDS = 30.0
@@ -557,39 +558,32 @@ def s19e_abort_release(ctx: Ctx) -> None:
         ctx.entries(0, "before the OPEN")
     server = ctx.server("ecdsa", fx.Behaviour(delay_handshake=SLOW_HANDSHAKE_SECONDS))
     command = open_tls_command(server.port, ctx.bind_ip, TRUST_PIN, pin=pin_of(ctx))
-    with check(f"ABORT {ABORT_AFTER_SECONDS}s into an OPEN_TLS: bit 2 clears only when the "
-               "command ends (ABORT never shortens it), within the client deadline"):
+    with check(f"ABORT {ABORT_AFTER_SECONDS}s into an OPEN_TLS: the command ends within about a slice, "
+               "long before the server's delay"):
         aborted = ctx.link.abort_in_flight(command, ABORT_AFTER_SECONDS)
         ctx.note("abort", {"busy_at_abort": aborted.busy_at_abort,
                            "bit2_cleared_after": round(aborted.bit2_cleared_after, 2)})
         if not aborted.busy_at_abort:
             raise Failure("the OPEN had already answered when the ABORT was written, so this "
                           "run did not test an ABORT in PROCESSING")
-        if aborted.bit2_cleared_after > BOUND_OPEN + 12:
-            raise Failure(f"bit 2 cleared {aborted.bit2_cleared_after:.1f}s after the PUSH")
-        # The server holds its answer SLOW_HANDSHAKE_SECONDS, so an OPEN that
-        # ran to its end cannot clear bit 2 sooner.
-        if aborted.bit2_cleared_after < SLOW_HANDSHAKE_SECONDS - 0.5:
-            raise Failure(f"bit 2 cleared {aborted.bit2_cleared_after:.1f}s after the PUSH, before "
-                          f"the server's {SLOW_HANDSHAKE_SECONDS:.0f}s delay: the ABORT shortened it")
-    with check("`03 23 FF` (allowed in between): [2] = 1 and [14] = 1, the session is unclaimed"):
+        # The server holds its answer SLOW_HANDSHAKE_SECONDS; an OPEN that was cancelled ends about a
+        # slice (100 ms) after the ABORT, plus what the register polling over REST adds.
+        if aborted.bit2_cleared_after > ABORT_AFTER_SECONDS + ABORT_ENDS_WITHIN:
+            raise Failure(f"bit 2 cleared {aborted.bit2_cleared_after:.1f}s after the PUSH, "
+                          f"{aborted.bit2_cleared_after - ABORT_AFTER_SECONDS:.1f}s after the ABORT")
+    with check("`03 23 FF` (allowed in between): [2] = 0 and [14] = 0, the cancelled open left nothing"):
         cap = ctx.info_ff()
-        if (cap.entries, cap.unclaimed) != (1, 1):
+        if (cap.entries, cap.unclaimed) != (0, 0):
             raise Failure(f"[2] = {cap.entries}, [14] = {cap.unclaimed}")
-    with check("`03 25` as the next command closes it: 1 byte, 01, 00,OK"):
-        if (closed := ctx.release()) != 1:
+    with check("`03 25` as the next command closes nothing: 1 byte, 00, 00,OK (harmless after an abort)"):
+        if (closed := ctx.release()) != 0:
             raise Failure(f"$25 closed {closed}")
-    with check("a second `03 25` answers 0 (idempotent); INFO $FF [2] = 0, [14] = 0"):
+    with check("a second `03 25` answers 0; INFO $FF [2] = 0, [14] = 0"):
         if (closed := ctx.release()) != 0:
             raise Failure(f"$25 closed {closed} the second time")
         cap = ctx.info_ff()
         if cap.entries or cap.unclaimed:
             raise Failure(f"[2] = {cap.entries}, [14] = {cap.unclaimed}")
-    with check("the server saw the handshake complete, then close_notify + FIN from the device"):
-        log = one_connection(server, timeout=20)
-        ctx.note("conn", log.as_dict())
-        if log.version != "TLSv1.3" or log.peer_end != "close_notify":
-            raise Failure(f"server: {log.version}, ended by {log.peer_end}")
 
 
 # -- S30: real hosts -----------------------------------------------------------
@@ -968,13 +962,13 @@ def s19e2b_info_does_not_claim(ctx: Ctx) -> None:
     slow = ctx.server("ecdsa", fx.Behaviour(delay_handshake=SLOW_HANDSHAKE_SECONDS))
     a = ctx.expect_open(fast.port, ctx.bind_ip, pin=pin_of(ctx)).handle
     try:
-        with check("OPEN A, accept it, unused; ABORTed OPEN B; `03 23 FF` [14] = 1; $25 -> 1"):
+        with check("OPEN A, accept it, unused; ABORTed OPEN B leaves nothing: `03 23 FF` [2] = 1, [14] = 0; $25 -> 0"):
             ctx.link.abort_in_flight(open_tls_command(slow.port, ctx.bind_ip, TRUST_PIN,
                                                       pin=pin_of(ctx)), ABORT_AFTER_SECONDS)
             cap = ctx.info_ff()
-            if (cap.entries, cap.unclaimed) != (2, 1):
+            if (cap.entries, cap.unclaimed) != (1, 0):
                 raise Failure(f"[2] = {cap.entries}, [14] = {cap.unclaimed}")
-            if (closed := ctx.release()) != 1:
+            if (closed := ctx.release()) != 0:
                 raise Failure(f"$25 closed {closed}")
         with check("A still echoes"):
             echo_round_trip(ctx, a, 64, seed=193)
@@ -1094,7 +1088,7 @@ SCENARIOS = [
              s23_tls12, ("fixture",)),
     Scenario("S5", "refused-cert", 1, "tls", "exactly 93 0x00000008; 96 for a wrong pin",
              s5_refused_cert, ("fixture",)),
-    Scenario("S19e", "abort-then-release", 1, "tls", "ABORTed OPEN: [14] = 1, $25 -> 1, then 0",
+    Scenario("S19e", "abort-then-release", 1, "tls", "ABORTed OPEN is cancelled within a slice: [2] = 0, [14] = 0, $25 -> 0",
              s19e_abort_release, ("fixture",)),
     Scenario("S30", "bundle-real-hosts", 1, "tls", "BUNDLE to H1-H3, SPKI as seen here, HTTP/1.",
              s30_real_hosts, ("internet", "crypto")),
@@ -1118,7 +1112,7 @@ SCENARIOS = [
              s19_params, ("fixture",)),
     Scenario("S19e2", "release-spares-claimed", 2, "tls", "$25 -> 1; A echoes; B -> 02: 9",
              s19e2_release_spares_claimed, ("fixture",)),
-    Scenario("S19e2b", "info-ff-does-not-claim", 2, "tls", "[14] = 1 after 03 23 FF; $25 -> 1",
+    Scenario("S19e2b", "info-ff-does-not-claim", 2, "tls", "an ABORTed OPEN leaves no entry: [2] = 1 (A), [14] = 0 after 03 23 FF; $25 -> 0",
              s19e2b_info_does_not_claim, ("fixture",)),
     Scenario("S22", "group-negotiation", 2, "tls", "0x001D default; 0x0017 via HRR",
              s22_groups, ("fixture",)),
