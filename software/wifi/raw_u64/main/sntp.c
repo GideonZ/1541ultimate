@@ -21,6 +21,12 @@
 #include "rpc_calls.h"
 
 static const char *TAG = "sntp";
+static volatile int time_synced;
+
+int sntp_has_time(void)
+{
+    return time_synced;
+}
 
 void ____sntp_sync_time(struct timeval *tv)
 {
@@ -33,6 +39,7 @@ void time_sync_notification_cb(struct timeval *tv)
 {
     ESP_LOGI(TAG, "Notification of a time synchronization event, time set to %ld s %ld us", (long int)tv->tv_sec, (long int)tv->tv_usec);
     settimeofday(tv, NULL);
+    time_synced = 1;
 }
 
 #ifndef INET6_ADDRSTRLEN

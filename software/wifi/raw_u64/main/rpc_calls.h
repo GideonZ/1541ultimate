@@ -20,6 +20,8 @@ typedef struct {
     uint16_t sequence;
 } rpc_header_t;
 
+#include "rpc_shared.h"
+
 typedef struct {
     rpc_header_t hdr;
     int esp_err; // to be casted to esp_err_t
@@ -127,6 +129,10 @@ typedef struct {
 } rpc_get_time_resp;
 
 //----------------------------------
+//----------------------------------
+#include "rpc_tls.h" // CMD_TLS_* opcodes and the TLS session layouts, software/wifi/tls
+
+//----------------------------------
 // send raw packet
 typedef struct {
     rpc_header_t hdr;
@@ -177,6 +183,8 @@ typedef struct {
 #define CMD_GET_TIME          0x10
 #define CMD_CLEAR_APS         0x11
 #define CMD_WIFI_AUTOCONNECT  0x12
+// 0x13-0x1F are u64ctrl's; 0x20 is CMD_GET_RANDOM, in rpc_shared.h
+// CMD_TLS_OPEN .. CMD_TLS_SET_CA (0x30-0x35): rpc_tls.h
 
 /*
 #define CMD_SOCKET          0x11

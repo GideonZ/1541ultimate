@@ -33,6 +33,7 @@
 #include "button_handler.h"
 #include "wol_magic.h"
 #include "recovery.h"
+#include "wifi_radio.h"
 
 #define NET_CMD_BUFSIZE 512
 
@@ -125,7 +126,8 @@ static err_t hacked_recv(struct pbuf *p, struct netif *inp)
             return ERR_OK;
         } else {
             ESP_LOGW(TAG, "No buffer to send packet.");
-            return ERR_BUF;
+            pbuf_free(p); // dropped, and reported as handled
+            return ERR_OK;
         }
     } else { // dropped, wrong mac and no broadcast
         pbuf_free(p);
@@ -368,7 +370,7 @@ static void wifi_init()
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_NONE));
-    ESP_ERROR_CHECK(esp_wifi_start());
+    ESP_ERROR_CHECK(radio_start());
 
     ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT,
                                                         ESP_EVENT_ANY_ID,
@@ -787,7 +789,7 @@ esp_err_t enable_wifi_if_needed(ConnectState_t state)
     if (state == Disabled) {
         ESP_LOGI(TAG, "Starting WiFi.");
         xQueueReset(connect_events); // nothing from before the start applies
-        esp_err_t err = esp_wifi_start();
+        esp_err_t err = radio_start();
         if (err == ESP_OK) {
             send_event(EVENT_DISCONNECTED, 0);
             disabled_g = 0;
@@ -818,7 +820,7 @@ int handle_connect_command(ConnectCommand_t *cmd, ConnectState_t *state)
                 }
             }
             ESP_LOGI(TAG, "Stopping WiFi.");
-            err = esp_wifi_stop();
+            err = radio_stop();
             if (err == ESP_OK) {
                 // What the radio reported before it stopped does not apply to the next
                 // start. The event of the stop itself can come after this, so every
@@ -839,7 +841,7 @@ int handle_connect_command(ConnectCommand_t *cmd, ConnectState_t *state)
                 user_disconnected = false;
                 ESP_LOGI(TAG, "Starting WiFi.");
                 xQueueReset(connect_events); // nothing from before the start applies
-                err = esp_wifi_start();
+                err = radio_start();
                 if (err == ESP_OK) {
                     send_event(EVENT_DISCONNECTED, 0);
                     *state = LastAP;
@@ -1098,6 +1100,18 @@ static void start_connector()
     xTaskCreate(connect_thread, "Connector", 4096, NULL, tskIDLE_PRIORITY + 1, NULL);
 }
 
+static SemaphoreHandle_t uart_init_done;
+static esp_err_t uart_init_result;
+
+// esp_intr_alloc() binds the interrupt to the core it is called on. The UART ISR must not share
+// core 0 with the WiFi task, so the init runs on core 1.
+static void uart_init_task(void *a)
+{
+    uart_init_result = my_uart_init(&work_buffers, UART_NUM_1);
+    xSemaphoreGive(uart_init_done);
+    vTaskDelete(NULL);
+}
+
 void setup_modem()
 {
 	// Initialize NVS
@@ -1122,17 +1136,28 @@ void setup_modem()
 #endif
     ESP_LOGI(TAG, "my_uart_init...");
     // Now install the driver for UART1.  We use our own buffer mechanism and interrupt routine
-    ESP_ERROR_CHECK(my_uart_init(&work_buffers, UART_NUM_1));
+    uart_init_done = xSemaphoreCreateBinary();
+    ESP_ERROR_CHECK(uart_init_done ? ESP_OK : ESP_ERR_NO_MEM);
+    ESP_ERROR_CHECK(xTaskCreatePinnedToCore(uart_init_task, "uart_init", 3072, NULL, tskIDLE_PRIORITY + 2, NULL, 1) == pdPASS ? ESP_OK : ESP_ERR_NO_MEM);
+    xSemaphoreTake(uart_init_done, portMAX_DELAY);
+    ESP_ERROR_CHECK(uart_init_result);
 
     ESP_LOGI(TAG, "wifi_init...");
     wifi_init();
+    radio_entropy_init();
+    // The first read of the voltages, so that a later one that cannot get the ADC has
+    // values to give
+    uint16_t seed_voltages[7];
+    if (read_adc_channels(seed_voltages) != ESP_OK) {
+        ESP_LOGW(TAG, "No first read of the voltages");
+    }
     ESP_LOGI(TAG, "start wifi connector...");
     start_connector();
 
     ESP_LOGI(TAG, "dispatch... switching UART pins!");
     vTaskDelay(100 / portTICK_PERIOD_MS);
     ESP_ERROR_CHECK( uart_set_pin(UART_NUM_0, 0, -1, -1, -1));
-    ESP_ERROR_CHECK( uart_set_pin(UART_NUM_1, IO_UART_TXD, IO_UART_RXD, IO_UART_RTS, IO_UART_CTS));
+    my_uart_connect_pins();
     start_dispatch(work_buffers.receivedQueue);
 }
 

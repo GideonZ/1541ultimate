@@ -2,6 +2,7 @@
 #define WIFI_MODEM_H
 
 #include "rpc_calls.h"
+#include "radio_entropy.h"
 
 extern QueueHandle_t connect_commands;
 extern SemaphoreHandle_t connect_semaphore;
@@ -31,6 +32,7 @@ void wake_on_wifi_update(int machine_on);
 uint8_t wifi_get_connection();
 void wifi_send_connected_event();
 
+esp_err_t read_adc_channels(uint16_t *adc_data);
 void show_buffer_status();
 
 #endif
