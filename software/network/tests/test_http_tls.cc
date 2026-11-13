@@ -1,4 +1,3 @@
-#include "http_target_test_support.h"
 #include <arpa/inet.h>
 #include <atomic>
 #include <chrono>
@@ -18,6 +17,7 @@
 #include "tls_http_connection.h"
 #include "http_request.h"
 #include "http_target.h"
+#include "http_target_test_support.h"
 #include "provider_lifecycle.h"
 #include "provider_session_owner.h"
 #include "mbedtls/x509_crt.h"

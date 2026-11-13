@@ -1,4 +1,3 @@
-#include "http_target_test_support.h"
 #include <string>
 #include <vector>
 #include <netdb.h>
@@ -6,6 +5,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 #include "http_target.h"
+#include "http_target_test_support.h"
 #include "http_request.h"
 
 static int checks, failures;

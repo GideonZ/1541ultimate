@@ -6,11 +6,11 @@ Message c_status_ok = { 5, true, (uint8_t *)"00,OK" };
 Message c_status_unknown_command = { 18, true, (uint8_t *)"21,UNKNOWN COMMAND" };
 Message c_message_empty = { 0, true, (uint8_t *)"" };
 
-#include "http_target_test_support.h"
 #include <chrono>
 #include <condition_variable>
 #include <mutex>
 #include <cstdlib>
+#include "http_target_test_support.h"
 static std::mutex lock;
 static std::condition_variable finished;
 static uint32_t issued, completed;

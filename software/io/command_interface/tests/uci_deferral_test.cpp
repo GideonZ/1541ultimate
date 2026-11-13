@@ -161,7 +161,7 @@ class FakeTarget : public CommandTarget
 {
 public:
     bool defer_next;
-    bool finish_at_once;
+    bool finish_at_once, abort_in_reply, last_published;
     uint32_t ticket;
     int parses, aborts, resets, replies;
     UBaseType_t parse_priority, abort_priority, reset_priority, reply_priority;
@@ -169,7 +169,7 @@ public:
 
     void clear(void)
     {
-        defer_next = finish_at_once = false;
+        defer_next = finish_at_once = abort_in_reply = last_published = false;
         ticket = 0;
         parses = aborts = resets = replies = 0;
         parse_priority = abort_priority = reset_priority = reply_priority = 99;
@@ -192,9 +192,11 @@ public:
     {
         replies++;
         reply_priority = uxTaskPriorityGet(NULL);
+        if (abort_in_reply) c64_abort();
         *reply = &c_reply_late;
         *status = &c_status_ok;
     }
+    void finish_reply(bool published) { last_published = published; }
     bool is_quick(Message *command) { return command->message[1] == 0x01; }
     void abort(int) { aborts++; abort_priority = uxTaskPriorityGet(NULL); state_at_abort = gw.state; }
     void c64_reset(void) { resets++; reset_priority = uxTaskPriorityGet(NULL); state_at_reset = gw.state; }
@@ -339,6 +341,18 @@ static void test_late_result_after_abort(void)
     CHECK(!gw.error_busy);
     run_server();
     CHECK(response_is("NOW"));
+}
+
+static void test_abort_during_deferred_publication(void)
+{
+    begin("abort after the worker completes, during reply preparation");
+    start_deferred(c_cmd_fake, sizeof(c_cmd_fake));
+    fake.abort_in_reply = true;
+    command_deferred_done(fake.ticket);
+    run_server();
+    CHECK(fake.replies == 1 && fake.aborts == 1 && !fake.last_published);
+    CHECK(!gw.idle_validates && gw.state == 0 && gw.irq_mask == 0);
+    expect_next_command_works();
 }
 
 static void test_ticket_mismatch(void)
@@ -499,6 +513,7 @@ int main(int argc, char **argv)
         { "reset",        test_reset_while_pending },
         { "reset-drop",   test_reset_item_dropped },
         { "late",         test_late_result_after_abort },
+        { "publish-abort", test_abort_during_deferred_publication },
         { "ticket",       test_ticket_mismatch },
         { "full-queue",   test_full_queue },
         { "no-reply",     test_no_reply },

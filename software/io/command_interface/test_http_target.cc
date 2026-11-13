@@ -1661,7 +1661,7 @@ static void test_trickle(HttpTarget *target)
 static char stream_response[4096];
 static int stream_length(void)
 {
-    int h = snprintf(stream_response, sizeof(stream_response), "HTTP/1.1 200 OK\r\nContent-Length: 100000\r\n\r\n");
+    int h = snprintf(stream_response, sizeof(stream_response), "HTTP/1.1 200 OK\r\nContent-Length: 3000\r\n\r\n");
     memset(stream_response + h, 'x', 3000);
     return h + 3000;
 }

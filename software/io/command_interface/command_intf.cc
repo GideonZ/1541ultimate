@@ -173,27 +173,17 @@ void CommandInterface :: handle_event(const CommandInterfaceEvent& event)
     bool abort_seen = command_abort_pending;
     command_abort_pending = false;
 	portEXIT_CRITICAL();
-	// Ends a deferred command even when the abort item of the reset was dropped.
-	if (reset_seen || abort_seen) {
-		status_byte |= CMD_ABORT_DATA;
-	}
-	bool aborted = false;
-	int abort_offset = 0;
-	if(status_byte & CMD_ABORT_DATA) {
-		//printf("Abort received.\n");
-		uint8_t unmask = CMD_ABORT_DATA;
-		// A deferred command ends here; its late result fails the ticket check. The
-		// reset below clears its new-command flag, so its interrupt can be unmasked.
-		if (pending_target != CMD_TARGET_NONE) {
-			unmask |= CMD_NEW_COMMAND;
-			pending_target = CMD_TARGET_NONE;
-		}
+    // The sticky flags are authoritative even if the interrupt's queue post
+    // failed. Its queued copy may arrive after cleanup; do not abort twice.
+    bool aborted = reset_seen || abort_seen;
+    int abort_offset = 0;
+    if (aborted) {
+        pending_target = CMD_TARGET_NONE;
 		// Read before the reset below rewinds the response pointer.
 		int offset = (((int)CMD_IF_RESPONSE_LEN_H) << 8) | CMD_IF_RESPONSE_LEN_L;
 		abort_offset = offset - response_offset;
-		aborted = true;
 		CMD_IF_HANDSHAKE_OUT = HANDSHAKE_RESET;
-		CMD_IF_IRQMASK_CLEAR = unmask | CMD_NEW_COMMAND | CMD_DATA_ACCEPTED;
+		CMD_IF_IRQMASK_CLEAR = CMD_ABORT_DATA | CMD_NEW_COMMAND | CMD_DATA_ACCEPTED;
 	}
 	// The C64 is free now. The targets clean up after it at their own level, before this
 	// task looks at anything else: freeing a large body or popping a file is their work.
@@ -207,7 +197,7 @@ void CommandInterface :: handle_event(const CommandInterfaceEvent& event)
 			command_targets[target]->abort(abort_offset);
 		}
 	}
-    if (reset_seen || aborted || cancellation.cancelled()) return;
+    if (aborted || (status_byte & CMD_ABORT_DATA) || cancellation.cancelled()) return;
 	if(status_byte & CMD_DATA_ACCEPTED) {
 		if (target != CMD_TARGET_NONE) {
 			{
