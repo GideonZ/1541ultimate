@@ -40,11 +40,17 @@
 #include "filemanager.h"
 #include "mystring.h"
 #include "mps_printer.h"
+#include "printer_spool.h"
 
 /*******************************  Constants  ****************************/
 
 #define IEC_PRINTER_BUFFERSIZE  256
 #define IEC_PRINTER_EVENT_CMD   0
+
+/* How long the Flush/Eject menu item waits for the printer task */
+#ifndef IEC_PRINTER_FLUSH_WAIT_MS
+#define IEC_PRINTER_FLUSH_WAIT_MS 20000
+#endif
 
 /* Max text lines in a page */
 #define IEC_PRINTER_PAGE_LINES	70
@@ -61,21 +67,12 @@ enum t_printer_output_type {
     PRINTER_ASCII_OUTPUT
 };
 
+/* Type of an event in the spool (bits 8-9; the value is in bits 0-7) */
 enum t_printer_event_type {
     PRINTER_EVENT_CMD=0,
-    PRINTER_EVENT_DATA,
-    PRINTER_EVENT_USER
+    PRINTER_EVENT_DATA
 };
 
-enum t_printer_usercmd_type {
-    PRINTER_USERCMD_RESET=0,
-    PRINTER_USERCMD_FLUSH
-};
-
-typedef struct PrinterEvent {
-    t_printer_event_type type;
-    uint8_t value;
-} PrinterEvent_t;
 
 /*======================================================================*/
 /* Class IecPrinter                                                     */
@@ -96,7 +93,8 @@ class IecPrinter : public IecSlave, SubSystem, ObjectWithMenu, ConfigurableObjec
         /* Ultimate filesystem interface */
         FileManager *fm;
 
-        /* Output base filename */
+        /* Output base filename (the printer task's own copy) */
+        char output_filename_buf[64];
         const char *output_filename;
 
         /* Printer IEC address */
@@ -127,11 +125,8 @@ class IecPrinter : public IecSlave, SubSystem, ObjectWithMenu, ConfigurableObjec
         /* The printer task itself */
         TaskHandle_t taskHandle;
 
-        /* Queue to send IEC data to printer */
-        QueueHandle_t queueHandle;
-
-        /* Binary Semaphore to hold the action menu caller Task */
-        SemaphoreHandle_t xCallerSemaphore;
+        /* Spool that carries the IEC data, and the menu and settings markers, to the printer task */
+        PrinterSpool spool;
 
         /*==============================================*/
         /*                 M E T H O D S                */
@@ -142,6 +137,8 @@ class IecPrinter : public IecSlave, SubSystem, ObjectWithMenu, ConfigurableObjec
         t_channel_retval _push_data(uint8_t b);
         t_channel_retval _push_command(uint8_t b);
         int _reset(void);
+        int _abort(uint8_t kinds);
+        void apply_settings(const PrinterSettings &s);
 
         /* -------  User action menu */
         struct {
