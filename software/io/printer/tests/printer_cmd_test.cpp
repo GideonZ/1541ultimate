@@ -13,6 +13,8 @@
 #undef private
 
 Record rec;
+pthread_t gui_thread;
+void (*ui_popup_hook)(void);
 ConfigStore *host_cfg;
 std::atomic<int> host_ring_live(0);
 IecInterface *iec_if;
@@ -76,6 +78,7 @@ static void configure_printer(int type)
 static void menu(IecPrinter *p, UserInterface *ui, int id)
 {
     SubsysCommand c;
+    gui_thread = pthread_self();
     c.user_interface = ui;
     c.functionID = id;
     p->executeCommand(&c);
@@ -104,6 +107,69 @@ static void test_flush_served(void)
     CHECK(used < IEC_PRINTER_FLUSH_WAIT_MS);
     CHECK(rec.progress_shown == 1 && rec.progress_hidden == 1);
     CHECK(rec.popups == 0);                     /* the page was done in time: nothing to explain */
+}
+
+/* The printer task counts a deflate block while the popup of a Flush/Eject is open: the screen is not
+ * touched (the progress box is gone; before, this wrote through the freed box and froze the device). */
+static IecPrinter *hook_printer;
+static void block_during_popup(void) { hook_printer->updateFlushProgressBar(); }
+
+static void test_flush_block_during_popup(void)
+{
+    rec.reset();
+    host_cfg = new ConfigStore;
+    configure_printer(2);
+    host_start_tasks = false;           /* nobody serves the flush: the wait times out and the popup opens */
+    IecPrinter *p = new IecPrinter;
+    UserInterface ui;
+    hook_printer = p;
+    ui_popup_hook = block_during_popup;
+    menu(p, &ui, MENU_FLUSH);
+    ui_popup_hook = NULL;
+    CHECK(rec.popups == 1);
+    CHECK(rec.ui_violations == 0);
+}
+
+/* A block counted after the command has returned: no screen work either. */
+static void test_block_after_command(void)
+{
+    rec.reset();
+    host_cfg = new ConfigStore;
+    configure_printer(2);
+    host_start_tasks = false;
+    IecPrinter *p = new IecPrinter;
+    UserInterface ui;
+    menu(p, &ui, MENU_FLUSH);
+    p->updateFlushProgressBar();
+    CHECK(rec.ui_violations == 0);
+    CHECK(rec.progress_steps == 0);
+}
+
+/* Blocks counted by another task during the wait show up on the progress bar, drawn by the GUI task. */
+static void *block_thread(void *a)
+{
+    IecPrinter *p = (IecPrinter *) a;
+    for (int i = 0; i < 3; i++) {
+        usleep(20000);
+        p->updateFlushProgressBar();
+    }
+    return NULL;
+}
+
+static void test_flush_progress_from_gui_task(void)
+{
+    rec.reset();
+    host_cfg = new ConfigStore;
+    configure_printer(2);
+    host_start_tasks = false;
+    IecPrinter *p = new IecPrinter;
+    UserInterface ui;
+    pthread_t th;
+    pthread_create(&th, NULL, block_thread, p);
+    menu(p, &ui, MENU_FLUSH);
+    pthread_join(th, NULL);
+    CHECK(rec.progress_steps == 3);     /* every block, none twice */
+    CHECK(rec.ui_violations == 0);      /* drawn in the task of the menu, while the box was shown */
 }
 
 /* Nobody serves it: the menu comes back after the bound, and the flush is still there for later. */
@@ -306,6 +372,9 @@ int main(void)
 {
     RUN(test_flush_served);
     RUN(test_flush_bounded);
+    RUN(test_flush_block_during_popup);
+    RUN(test_block_after_command);
+    RUN(test_flush_progress_from_gui_task);
     RUN(test_teardown_cycles);
     RUN(test_turn_off);
     RUN(test_reset);
