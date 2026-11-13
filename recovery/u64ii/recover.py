@@ -110,9 +110,11 @@ class JtagClient:
         return user_id
 
     def user_set_outputs(self, value):
+        """Writes the output register and returns the value it held before the write (the TDO capture)."""
         self.set_user_ir(2)
-        self.jtag.shift_and_update_register(BitSequence(value, False, 8))
+        before = self.jtag.shift_and_update_register(BitSequence(value, False, 8))
         self.jtag.go_idle()
+        return int(before)
 
     def user_upload(self, name, addr):
         bytes_read = 0
@@ -152,15 +154,27 @@ def prog_fpga(logger, j, name = "./u64_mk2_artix.bit"):
     end_time = time.perf_counter()
     execution_time = end_time - start_time
     logger.info(f"Execution time: {execution_time} seconds")
-    time.sleep(1)
+    # Hold the CPU in reset from the moment the FPGA starts, so that the flashed
+    # application never runs before the new image is uploaded. No wait here: on a
+    # C64 Ultimate an idle second between the FPGA load and the upload stopped
+    # images from starting, with or without the CPU held in reset.
+    # The write returns what the register held before it, so a second write
+    # shows whether the first one landed; a write sent before the user chain
+    # answers is lost, and is sent again. Like recovery.c: 40 rounds, 50 ms apart.
+    for _ in range(40):
+        if j.user_set_outputs(0x80) == 0x80: # Reset
+            return
+        if j.user_set_outputs(0x80) == 0x80:
+            return
+        time.sleep(0.05)
+    raise JtagClientException("The CPU reset did not take: the user chain does not answer")
 
 
 if __name__ == '__main__':
     logger.addHandler(ch)
     j = JtagClient()
     j.xilinx_read_id()
-    prog_fpga(logger, j)
-    j.user_set_outputs(0x80) # Reset 
+    prog_fpga(logger, j) # leaves the CPU in reset
     j.user_upload('ultimate.bin', 0x30000)
     magic = struct.pack("<LL", 0x30000, 0x1571babe)
     j.user_write_memory(0xFFF8, magic)
