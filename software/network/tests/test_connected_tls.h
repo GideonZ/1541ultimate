@@ -57,7 +57,7 @@ struct Remote {
         sequence = number;
         int result = -1;
         if (op == 0 && length && data[length-1] == 0) { ++opens; result = resource->tls.open(reinterpret_cast<char*>(data),port); }
-        if (op == 1) { ++reads; result = resource->tls.read(data,length); }
+        if (op == 1) { platform.trigger.armed = true; ++reads; result = resource->tls.read(data,length); }
         if (op == 2) { ++writes; result = resource->tls.write(data,length); }
         last = resource->tls.diagnostic();
         // TLS calls have unwound before owner cleanup may release the resource.
@@ -119,7 +119,7 @@ struct Provider : HttpSecureProvider {
     bool available() const override { return runner.state() == ManagerRunner::Active && !lifetime_events.token().cancelled(); }
     OperationCancellation lifetime() const override { return lifetime_events.token(); }
     void interrupt(int64_t now) {
-        if (interrupted || !interrupt_at || now < interrupt_at) return;
+        if (interrupted || !interrupt_at || !platform.trigger.due(mode, now, interrupt_at)) return;
         interrupted = true;
         if (!strncmp(mode,"provider-",9)) {
             lifetime_events.signal(); remote.worker.disconnect();
@@ -214,7 +214,7 @@ static void exchange(const char *mode,const char *ca,int port) {
         auto token = commands.token();
         std::thread canceller;
         if (!strncmp(mode,"command-",8)) canceller = std::thread([&] {
-            std::this_thread::sleep_for(std::chrono::milliseconds(150)); commands.signal();
+            if (platform.trigger.wait(mode)) commands.signal();
         });
         if (cancel && strncmp(mode,"command-",8)) provider.interrupt_at = now_ms()+150;
         int64_t begin = now_ms();
@@ -249,6 +249,7 @@ static void exchange(const char *mode,const char *ca,int port) {
         expect(provider.data_calls && remote.opens == 1,"connected copied data path used");
         if (success) expect(remote.last.status == TLS_OK && remote.writes && remote.reads,"connected authenticated stream");
         if (timeout) expect(remote.last.status == TLS_TIMEOUT && elapsed >= 630 && elapsed <= 900,"connected single original deadline");
+        check_cancel_stage(mode, remote.last);
         if (cancel) expect(remote.last.status == TLS_CANCELLED && elapsed <= 750,"connected bounded cancellation or lost-owner lease");
         if (!success && !timeout && !cancel) expect(remote.last.verify_flags != 0 && remote.writes == 0,"connected authentication failure sends no HTTP");
         printf("CONNECTED %s status=%d flags=%u elapsed_ms=%d opens=%d closes=%d releases=%u calls=%u\n",mode,

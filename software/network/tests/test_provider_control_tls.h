@@ -65,7 +65,7 @@ static void worker_exchange(const char *mode, const char *ca, int primary, int r
             int64_t begin = now_ms();
             if (!phase && !loss) {
                 context.interrupt.opcode = close ? Close : Offer;
-                platform.restart_at = begin + 150;
+                if (handshake) platform.restart_at = begin + 150;
             }
             int opened = resource->connection.open("tls.lab.test", phase ? recovery : primary);
             expect((opened >= 0) == (phase || !handshake), "worker authenticated open");
@@ -77,6 +77,8 @@ static void worker_exchange(const char *mode, const char *ca, int primary, int r
                     if (n <= 0) break;
                     sent += n;
                 }
+                platform.trigger.armed = !phase && read_cancel_case(mode);
+                platform.restart_on_read = platform.trigger.armed && !loss;
                 expect(sent == sizeof(request) - 1, "worker exact request sent");
                 uint8_t bytes[256] = {}; size_t received = 0;
                 while (received < sizeof(bytes) - 1) {
@@ -88,6 +90,7 @@ static void worker_exchange(const char *mode, const char *ca, int primary, int r
                 expect(phase ? strstr((const char *)bytes, "tls-ok!\n") != NULL : received == 0, "worker recovery or no stale data");
             }
             auto diagnostic = resource->connection.diagnostic();
+            if (!phase) check_cancel_stage(mode, diagnostic);
             int64_t elapsed = now_ms() - begin;
             expect(diagnostic.status == (phase ? TLS_OK : TLS_CANCELLED) && elapsed <= 750, "worker bounded TLS result");
             expect(releases == int(phase), "ingress never frees live TLS object");

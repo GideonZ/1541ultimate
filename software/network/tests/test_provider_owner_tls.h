@@ -33,7 +33,7 @@ static void owner_exchange(const char *mode, const char *ca, int primary, int re
             expect(owner.admit(grant, 1, resource, now_ms(), platform.session_ticket), "real TLS resource admitted");
             Ticket retired = platform.session_ticket;
             int64_t begin = now_ms();
-            if (!phase && !lost) platform.restart_at = begin + 150;
+            if (!phase && handshake) platform.restart_at = begin + 150;
             int opened = resource->connection.open("tls.lab.test", phase ? recovery : primary);
             expect((opened >= 0) == (phase || !handshake), "owner authenticated open result");
             size_t received = 0;
@@ -45,6 +45,8 @@ static void owner_exchange(const char *mode, const char *ca, int primary, int re
                     if (n <= 0) break;
                     sent += n;
                 }
+                platform.trigger.armed = !phase && read_cancel_case(mode);
+                platform.restart_on_read = platform.trigger.armed && !lost;
                 expect(sent == sizeof(request) - 1, "owner exact request sent");
                 uint8_t response[256] = {};
                 while (received < sizeof(response) - 1) {
@@ -57,6 +59,7 @@ static void owner_exchange(const char *mode, const char *ca, int primary, int re
                        "new owner recovers and retired owner exposes no partial response");
             }
             tls_stream_diagnostics diagnostic = resource->connection.diagnostic();
+            if (!phase) check_cancel_stage(mode, diagnostic);
             int64_t elapsed = now_ms() - begin;
             expect(diagnostic.status == (phase ? TLS_OK : TLS_CANCELLED), "owner causal TLS diagnostic");
             expect(elapsed <= 750, "owner cancellation or recovery within fixture bound");

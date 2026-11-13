@@ -75,7 +75,7 @@ struct Provider : HttpSecureProvider {
         inbound.deliver(replies); controls(); client.step(now_ms(),uint32_t(now_ms()));
     }
     bool cancelled_at(int64_t now) {
-        if (!interrupted && interrupt_at && now >= interrupt_at) {
+        if (!interrupted && interrupt_at && platform.trigger.due(mode, now, interrupt_at)) {
             interrupted = true; lifetime_events.signal();
             if (!strncmp(mode,"provider-",9)) { remote.worker.disconnect(); requests.disconnect(); replies.disconnect(); }
             else runner.stop();
@@ -139,7 +139,7 @@ static void exchange(const char *mode,const char *ca,int port) {
         platform.worker_context = &provider; platform.worker_cancelled = cancelled;
         if (!strcmp(mode,"total-timeout")) platform.open_delay = 250;
         CancellationSource commands; std::thread canceller;
-        if (!strncmp(mode,"command-",8)) canceller = std::thread([&] { std::this_thread::sleep_for(std::chrono::milliseconds(150)); commands.signal(); });
+        if (!strncmp(mode,"command-",8)) canceller = std::thread([&] { if (platform.trigger.wait(mode)) commands.signal(); });
         else if (cancel) provider.interrupt_at = now_ms()+150;
         int64_t begin = now_ms();
         {
@@ -164,6 +164,7 @@ static void exchange(const char *mode,const char *ca,int port) {
         expect(remote.releases == 1 && remote.cancels == 1 && !remote.resource,"UART resource released once");
         expect(platform.opens == 1 && platform.closes == 1 && platform.fd == -1,"UART socket balanced");
         if (timeout) expect(d.status == TLS_TIMEOUT && elapsed >= 630 && elapsed <= 900,"UART total timeout");
+        check_cancel_stage(mode, d);
         if (cancel) expect(d.status == TLS_CANCELLED && elapsed <= 750,"UART cancellation bounded");
         if (!good && !timeout && !cancel) expect(d.verify_flags && !remote.writes,"UART auth sends no HTTP");
         printf("UART %s status=%d flags=%u elapsed_ms=%d opens=%d closes=%d releases=%u\n",mode,d.status,d.verify_flags,elapsed,platform.opens,platform.closes,remote.releases);

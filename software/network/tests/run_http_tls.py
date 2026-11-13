@@ -62,6 +62,9 @@ class Peer:
                     while connection.recv(4096):
                         pass
                 else:
+                    if self.kind == 'slow-handshake-read-stall':
+                        # A timer started before authentication would cancel the handshake.
+                        time.sleep(.25)
                     stream = self.context.wrap_socket(connection, server_side=True)
                     self.events.append({'kind': 'authenticated', 'cipher': stream.cipher()[0]})
                     request = b''
@@ -76,7 +79,7 @@ class Peer:
                     self.events.append({'kind': 'request', 'hex': request.hex(), 'exact': request == REQUEST})
                     if request != REQUEST:
                         raise ValueError('Unexpected application request')
-                    if self.kind == 'stall':
+                    if self.kind in ('stall', 'slow-handshake-read-stall'):
                         while stream.recv(4096):
                             pass
                     else:
@@ -138,6 +141,8 @@ def main():
         peer_case = case.removeprefix('command-').removeprefix('provider-').removeprefix('owner-').removeprefix('worker-').removeprefix('loss-').removeprefix('manager-')
         if case.startswith('worker-close-'): peer_case = peer_case.removeprefix('close-')
         kind = peer_case if peer_case in ('expired', 'future', 'truncated', 'clean-eof', 'close-clean', 'close-truncated') else ('handshake' if peer_case.startswith('handshake-') else ('stall' if peer_case in ('read-timeout', 'total-timeout', 'read-cancel') else 'valid'))
+        if case == 'command-read-cancel':
+            kind = 'slow-handshake-read-stall'
         if case in ('write-timeout', 'write-cancel'):
             kind = 'write-stall'
         primary = Peer(args.output, kind, args.ecdsa)

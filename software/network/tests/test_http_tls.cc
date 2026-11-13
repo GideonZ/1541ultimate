@@ -4,6 +4,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <future>
 #include <poll.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -74,7 +75,37 @@ static int descriptors()
     return count;
 }
 
+static bool read_cancel_case(const char *mode) { return strstr(mode, "read-cancel") != NULL; }
+
+// Only the fixture's application-read entry points arm this trigger. A read
+// from the socket during the TLS handshake cannot release it.
+struct CancelTrigger {
+    bool armed = false, reached = false;
+    std::promise<void> started;
+    std::future<void> ready = started.get_future();
+
+    void socket_read() {
+        if (armed && !reached) { reached = true; started.set_value(); }
+    }
+    bool wait(const char *mode) {
+        if (read_cancel_case(mode))
+            return ready.wait_for(std::chrono::seconds(3)) == std::future_status::ready;
+        std::this_thread::sleep_for(std::chrono::milliseconds(150));
+        return true;
+    }
+    bool due(const char *mode, int64_t now, int64_t at) const {
+        return read_cancel_case(mode) ? reached : now >= at;
+    }
+};
+
+static void check_cancel_stage(const char *mode, const tls_stream_diagnostics& diagnostic) {
+    if (read_cancel_case(mode))
+        expect(diagnostic.stage == TLS_STAGE_READ && diagnostic.verify_flags == 0,
+               "cancellation occurred in the authenticated response read");
+}
+
 struct Platform {
+    CancelTrigger trigger;
     int fd, opens, closes, open_delay;
     bool ready, random_ready, block_write;
     std::atomic<bool> cancelled;
@@ -84,6 +115,7 @@ struct Platform {
     provider_session::Ticket session_ticket = {};
     provider_session::Challenge next_challenge = {};
     int64_t restart_at = 0;
+    bool restart_on_read = false;
     void *worker_context = NULL;
     bool (*worker_cancelled)(Platform*, int64_t) = NULL;
     mbedtls_x509_crt roots;
@@ -164,6 +196,11 @@ static int open_socket(void *context, const char *, uint16_t port, uint32_t time
 static int read_socket(void *context, uint8_t *bytes, size_t size, uint32_t timeout)
 {
     Platform *p = static_cast<Platform *>(context);
+    p->trigger.socket_read();
+    if (p->restart_on_read && p->trigger.reached) {
+        p->restart_on_read = false;
+        p->restart_at = now_ms();
+    }
     if (wait_for(p, POLLIN, now_ms() + timeout)) return -1;
     return recv(p->fd, bytes, size > 37 ? 37 : size, 0);
 }
@@ -234,8 +271,10 @@ static void exchange(const char *mode, const char *ca, int port)
                     StreamRamFile message(64);
                     message.format("GET /probe HTTP/1.1\r\nHost: tls.lab.test\r\nConnection: close\r\n\r\n");
                     expect((request.send_request(&message) == 0) == !write_failure, "send HTTP request over TLS");
-                    if (strcmp(mode, "read-cancel") == 0)
-                        canceller = std::thread([&platform] { std::this_thread::sleep_for(std::chrono::milliseconds(150)); platform.cancelled.store(true); });
+                    if (read_cancel_case(mode)) {
+                        platform.trigger.armed = true;
+                        canceller = std::thread([&] { if (platform.trigger.wait(mode)) platform.cancelled.store(true); });
+                    }
                     complete = request.recv_response();
                     if (complete) {
                         uint8_t bytes[16] = {};
@@ -267,6 +306,7 @@ static void exchange(const char *mode, const char *ca, int port)
                        "specific authentication failure retained");
             }
             if (timeout_case) expect(observed.status == TLS_TIMEOUT && elapsed >= 630 && elapsed <= 900, "one total deadline within tolerance");
+            check_cancel_stage(mode, observed);
             if (cancel_case) expect(observed.status == TLS_CANCELLED && elapsed <= 750, "bounded cancellation");
             if (strcmp(mode, "no-time") == 0) expect(observed.status == TLS_TIME_UNAVAILABLE, "time fails closed");
             if (strcmp(mode, "no-entropy") == 0) expect(observed.status == TLS_ERROR && observed.stage == TLS_STAGE_RANDOM, "entropy fails closed");
@@ -323,6 +363,10 @@ struct TargetProvider : HttpSecureProvider {
         TargetProvider& owner;
     public:
         Connection(TargetProvider& p) : TlsHttpConnection(p.callbacks, p.timeout), owner(p) {}
+        int read(void *buf, int size) override {
+            static_cast<Platform *>(owner.callbacks.context)->trigger.armed = true;
+            return TlsHttpConnection::read(buf, size);
+        }
         ~Connection() { owner.last = diagnostic(); ++owner.destroyed; }
     };
     HttpConnection *create_connection(const OperationCancellation& token) {
@@ -358,8 +402,8 @@ static void routed_exchange(const char *mode, const char *ca, int port)
         std::thread canceller;
         bool restart_observed = false;
         if (cancel && strcmp(mode, "pre-cancel") && !command_pre_cancel)
-            canceller = std::thread([&platform, &command_events, command_cancel, provider_cancel, &provider, &restart_observed] {
-                std::this_thread::sleep_for(std::chrono::milliseconds(150));
+            canceller = std::thread([&platform, &command_events, command_cancel, provider_cancel, &provider, &restart_observed, mode] {
+                if (!platform.trigger.wait(mode)) return;
                 if (provider_cancel) restart_observed = identify_provider(provider.lifecycle, 5000, 2);
                 else if (command_cancel) command_events.signal(); else platform.cancelled.store(true);
             });
@@ -405,6 +449,7 @@ static void routed_exchange(const char *mode, const char *ca, int port)
         expect(platform.opens == platform.closes && platform.opens <= 1, "routed transport cleanup");
         if (no_provider || no_create || command_pre_cancel) expect(platform.opens == 0, "unavailable or cancelled command opens no TLS transport");
         if (timeout) expect(provider.last.status == TLS_TIMEOUT && elapsed >= 630 && elapsed <= 900, "routed original deadline");
+        check_cancel_stage(mode, provider.last);
         if (cancel) expect((command_pre_cancel || provider.last.status == TLS_CANCELLED) && elapsed <= 750, "routed cancellation");
         if (success) expect(provider.last.status == TLS_OK, "routed success diagnostics");
         if (strcmp(mode, "close-truncated") == 0)

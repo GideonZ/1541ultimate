@@ -59,7 +59,7 @@ struct Provider : HttpOwnerEndpoint {
         inbound.deliver(replies); controls(); client.step(now_ms(),uint32_t(now_ms()));
     }
     bool cancelled_at(int64_t now) {
-        if (!interrupted && interrupt_at && now >= interrupt_at) {
+        if (!interrupted && interrupt_at && platform.trigger.due(mode, now, interrupt_at)) {
             interrupted = true; lifetime_events.signal();
             if (!strncmp(mode,"provider-",9)) { remote.worker.disconnect(); requests.disconnect(); replies.disconnect(); }
             else runner.stop();
@@ -71,7 +71,10 @@ struct Provider : HttpOwnerEndpoint {
     }
     bool ready() const override { return runner.state() == ManagerRunner::Active; }
     OperationCancellation lifetime() const override { return lifetime_events.token(); }
-    bool submit(const provider_data::Frame& f,OperationCancellation c) override { return client.submit(f,c,uint32_t(::now_ms())); }
+    bool submit(const provider_data::Frame& f,OperationCancellation c) override {
+        if (f.opcode == provider_data::Read) platform.trigger.armed = true;
+        return client.submit(f,c,uint32_t(::now_ms()));
+    }
     bool collect(provider_data::Frame& f) override { return client.collect(f); }
     uint32_t now_ms() const override { return uint32_t(::now_ms()); }
     void wait() override { service(); std::this_thread::sleep_for(std::chrono::milliseconds(1)); }
@@ -93,7 +96,7 @@ static void exchange(const char *mode,const char *ca,int port) {
         if (!strcmp(mode,"total-timeout")) platform.open_delay = 250;
         CancellationSource commands; provider.command = commands.token(); std::thread canceller;
         OwnerHttpProvider http_provider(provider,timeout ? 650 : 3000,1000);
-        if (!strncmp(mode,"command-",8)) canceller = std::thread([&] { std::this_thread::sleep_for(std::chrono::milliseconds(150)); commands.signal(); });
+        if (!strncmp(mode,"command-",8)) canceller = std::thread([&] { if (platform.trigger.wait(mode)) commands.signal(); });
         else if (cancel) provider.interrupt_at = now_ms()+150;
         int64_t begin = now_ms();
         {
@@ -118,6 +121,7 @@ static void exchange(const char *mode,const char *ca,int port) {
         expect(!provider.backend.occupied() && !provider.remote.worker.occupied(),"bound resource released");
         expect(platform.opens == 1 && platform.closes == 1 && platform.fd == -1,"BOUND socket balanced");
         if (timeout) expect(d.status == TLS_TIMEOUT && elapsed >= 630 && elapsed <= 900,"BOUND total timeout");
+        check_cancel_stage(mode, d);
         if (cancel) expect(d.status == TLS_CANCELLED && elapsed <= 750,"BOUND cancellation bounded");
         if (!good && !timeout && !cancel) expect(d.verify_flags,"BOUND auth sends no HTTP");
         printf("BOUND %s status=%d flags=%u elapsed_ms=%d opens=%d closes=%d releases=%u\n",mode,d.status,d.verify_flags,elapsed,platform.opens,platform.closes,unsigned(!provider.backend.occupied()));
