@@ -42,10 +42,47 @@ radio_boot_t boot_mode;  // RADIO_BOOT_WAIT unless a case sets it; again after e
 int recorded = -1;       // the last radio_record_set(): 1 on, 0 off, -1 none in this run
 void radio_record_set(radio_record_t *rec, bool on) { recorded = on; }
 #else
+bool self_restart_g;     // u64ctrl: the module restarted on its own; false again after each run
 int recorded = -1;
 // The control module has no such call
 void wifi_note_identify(void) { }
+// The control module's copy of "WiFi Enabled"
+uint8_t nvs_wifi_enabled = 1;
+int nvs_wifi_writes;
+uint8_t nvs_wifi_last;
+char boot_trace[16];
+uint8_t power_get_wifi_enabled(void) { return nvs_wifi_enabled; }
+int nvs_write_fails;
+int nvs_write_fails_after;
+esp_err_t power_set_wifi_enabled(uint8_t enabled)
+{
+    nvs_wifi_writes++;
+    if (nvs_write_fails_after > 0) {
+        nvs_write_fails_after--;
+    } else if (nvs_write_fails > 0) {
+        nvs_write_fails--;
+        return ESP_FAIL; // the flash write failed: the copy is unchanged
+    }
+    nvs_wifi_enabled = enabled ? 1 : 0;
+    return ESP_OK;
+}
 #endif
+
+// The station netif: no slots until the radio start attaches the netif (netif_attach)
+struct netif sta_netif;
+static struct esp_netif_obj sta_obj = { &sta_netif };
+esp_netif_t *my_sta_netif = &sta_obj;
+netif_input_fn default_input;
+netif_output_fn default_output;
+err_t lwip_input(struct pbuf *p, struct netif *inp) { return 0; }
+static err_t lwip_output(struct netif *netif, struct pbuf *p, const void *addr) { return 0; }
+void netif_attach(void) { sta_netif.input = lwip_input; sta_netif.output = lwip_output; }
+err_t hacked_recv(struct pbuf *p, struct netif *inp) { return 0; }
+err_t hacked_tx(struct netif *netif, struct pbuf *pbuf, const void *addy) { return 0; }
+err_t wake_watch_recv(struct pbuf *p, struct netif *inp) { return 0; }
+bool recovery_active; // a case sets it before a run (u64ctrl); false again after it
+int endisable_answer; // the dispatcher's answer to the last CONNECTOR_SEND_DISABLE or _ENABLE
+bool recovery_running(void) { return recovery_active; }
 
 // The script
 static ConnectCommand_t script[8];
@@ -72,6 +109,7 @@ int last_ap_reachable;
 bool connect_reachable;
 int start_fails;
 int retry_timeouts; // the next idle waits with a timeout that run out, once each; 0 again after each run
+int retry_timeouts_left; // what was left of them when the run ended
 int stale_disabled;
 ConnectCommand_t queued;
 int queued_count;
@@ -128,6 +166,7 @@ static void run_steps(void)
         } else {
             ((rpc_header_t *)request_buf.data)->command = (step == CONNECTOR_SEND_DISABLE) ? CMD_WIFI_DISABLE : CMD_WIFI_ENABLE;
             cmd_wifi_endisable(&request_buf);
+            endisable_answer = ((rpc_espcmd_resp *)request_buf.data)->esp_err;
         }
     }
 }
@@ -251,7 +290,14 @@ BaseType_t xSemaphoreTake(SemaphoreHandle_t s, TickType_t wait)
 esp_err_t esp_wifi_start(void) { note('!'); return ESP_FAIL; }
 esp_err_t esp_wifi_stop(void) { note('!'); return ESP_FAIL; }
 #else
-esp_err_t esp_wifi_start(void) { note('T'); return ESP_OK; }
+esp_err_t esp_wifi_start(void)
+{
+    note('T');
+    // The start attaches the lwIP netif and the event task reports STA_START
+    netif_attach();
+    wifi_event_handler(NULL, 0, WIFI_EVENT_STA_START, NULL);
+    return ESP_OK;
+}
 esp_err_t esp_wifi_stop(void) { return radio_stop(); }
 #endif
 esp_err_t esp_wifi_disconnect(void)
@@ -350,7 +396,6 @@ void wifi_list_aps(void)
         ap_info[i].authmode = WIFI_AUTH_WPA2_PSK;
     }
 }
-bool recovery_running(void) { return false; }
 uint8_t wifi_get_connection(void) { return (uint8_t)connected_g; }
 
 // Every SSID is known, with this password
@@ -502,6 +547,18 @@ void run_with(int aps_found, bool disconnected_before, const uint8_t *commands, 
     disabled_g = 1; // as the module starts: radio off, until the Ultimate asks for it
     recorded = -1;
 #endif
+#ifndef MODULE_HAS_SWITCH
+    // The control module's boot: the radio is started unless its copy of the setting says
+    // Disabled (it is the first the connector sees, as in wifi_init())
+    memset(&sta_netif, 0, sizeof(sta_netif));
+    default_input = NULL;
+    default_output = NULL;
+    wifi_start_at_boot();
+    wifi_record_netif_defaults(); // wifi_init() does, after the start (the Makefile checks that it does)
+    strncpy(boot_trace, trace, sizeof(boot_trace) - 1);
+    trace[0] = 0;
+    nvs_wifi_writes = 0;
+#endif
     stale_disabled = 0;
     sent_n = 0;
     user_disconnected = disconnected_before;
@@ -509,9 +566,20 @@ void run_with(int aps_found, bool disconnected_before, const uint8_t *commands, 
     if (setjmp(done) == 0) {
         connect_thread(NULL);
     }
+#ifndef MODULE_HAS_SWITCH
+    nvs_wifi_last = nvs_wifi_enabled;
+    nvs_wifi_enabled = 1;
+    nvs_write_fails = 0;
+    nvs_write_fails_after = 0;
+    store_pending = -1; // the connector's (wifi_modem.c), as at a boot
+    store_tries = 0;
+    self_restart_g = false;
+#endif
+    recovery_active = false;
     last_ap_reachable = 0;
     connect_reachable = false;
     start_fails = 0;
+    retry_timeouts_left = retry_timeouts;
     retry_timeouts = 0;
     strict_semaphore = 0;
     silent_disconnects = 0;

@@ -63,7 +63,6 @@ TEST(WifiDisabledTask, an_open_ap_list_is_refreshed_on_disable)
     CHECK(aps_at_refresh == 0, "after the APs are cleared");
 }
 
-#if U64 != 2
 // While the radio off waits for its confirmation nothing scans (the task drops a rescan
 // then): the empty list says that WiFi is disabled, not that it scans
 static bool awaited_when_listed;
@@ -90,7 +89,6 @@ TEST(WifiDisabledTask, ap_list_while_the_radio_off_waits)
     CHECK(awaited_when_listed, "the radio off waits for its confirmation");
     CHECK(strcmp(listed, "WiFi is disabled") == 0, "the list says WiFi is disabled");
 }
-#endif
 
 TEST(WifiDisabledTask, ap_list_is_shown_while_enabled)
 {
@@ -106,9 +104,7 @@ TEST(WifiDisabledTask, ap_list_is_shown_while_enabled)
 // Every scan or connect action of the menu while WiFi is disabled asks "Enable it?". Yes does
 // what the Enable action does (the module is asked to turn its radio on), and then the action
 // goes on; No sends nothing and leaves the state as it was.
-#if U64 != 2
 static void menu_disable_act(void) { NetworkLWIP_WiFi :: disable(NULL); }
-#endif
 static void act_show_aps(void) { UserInterface ui; NetworkLWIP_WiFi :: cfg_show_aps(&ui, NULL); }
 static void act_enter_ap(void) { UserInterface ui; NetworkLWIP_WiFi :: cfg_enter_ap(&ui, NULL); }
 static void act_conn_last(void) { UserInterface ui; NetworkLWIP_WiFi :: cfg_conn_last(&ui, NULL); }
@@ -143,13 +139,7 @@ static void ask_case(const Action_t &a, bool yes)
         CHECK(enable != NULL, what);
         snprintf(what, sizeof(what), "%s: and then the action goes on", a.name);
         CHECK(done, what);
-#if U64 == 2
-        if (a.run != pick && enable && a.mark != 'C') {
-            snprintf(what, sizeof(what), "%s: after the Enable, not before", a.name);
-            CHECK(strchr(asked, a.mark) > enable, what);
-        }
-#endif
-        // On the U64 and U2+L the WiFi task sends the Enable, which can reach the module after
+        // The WiFi task sends the Enable, which can reach the module after
         // the action's connect request; a connect request turns the radio on by itself in
         // every module that has the radio switch (enable_wifi_if_needed), and the Enable is
         // then a request for the state it is in
@@ -164,7 +154,6 @@ static void ask_case(const Action_t &a, bool yes)
     }
 }
 
-#if U64 != 2
 // The module never confirmed the radio off, and the asks have run out: the row shows Link
 // Down, but WiFi is still off as far as the user is concerned, so every action asks first
 // and No sends nothing
@@ -184,7 +173,6 @@ TEST(WifiDisabledTask, after_the_asks_ran_out_the_actions_ask_first)
         CHECK(!done && requests == 0 && strchr(after('?'), 'N') == NULL, what);
     }
 }
-#endif
 
 TEST(WifiDisabledTask, yes_enables_and_the_action_goes_on)
 {
@@ -193,9 +181,8 @@ TEST(WifiDisabledTask, yes_enables_and_the_action_goes_on)
     }
 }
 
-// After a Yes the state is consistent with "radio on => not Disabled": on the U64 and U2+L
-// "WiFi Enabled" reads Enabled, saved, as if it had been set in the menu; on the Elite II /
-// C64 Ultimate the Enable action leaves the setting alone
+// After a Yes the state is consistent with "radio on => not Disabled": "WiFi Enabled" reads
+// Enabled, saved, as if it had been set in the menu, on every product
 TEST(WifiDisabledTask, yes_leaves_wifi_enabled_set_and_saved)
 {
     for (const Action_t &a : actions) {
@@ -203,12 +190,8 @@ TEST(WifiDisabledTask, yes_leaves_wifi_enabled_set_and_saved)
         world.enabled = false; // "WiFi Enabled" stored as Disabled
         boot({ EVENT_DISABLED, a.run, EVENT_DISCONNECTED });
         CHECK(strchr(after('?'), 'N') != NULL, "the radio is asked to come on");
-#if U64 != 2
         CHECK(world.enabled, "the setting reads Enabled");
         CHECK(saves == 1 && saved_enabled, "and it is saved, so it stays so after a reboot");
-#else
-        CHECK(!world.enabled && saves == 0, "the Enable action leaves the setting alone");
-#endif
     }
 }
 
@@ -285,7 +268,6 @@ TEST(WifiDisabledTask, pick_while_active_connects)
     CHECK(strstr(messages, "Can only connect") == NULL, "no refusal");
 }
 
-#if U64 != 2
 // While a radio off waits for its confirmation WiFi is off as far as the user is concerned:
 // a pick from a list that still shows APs asks first, and the list says WiFi is disabled
 TEST(WifiDisabledTask, pick_while_the_radio_off_waits_asks)
@@ -308,7 +290,6 @@ TEST(WifiDisabledTask, ap_list_with_records_while_the_radio_off_waits)
     CHECK(awaited_when_listed, "the radio off waits for its confirmation");
     CHECK(strcmp(listed, "WiFi is disabled") == 0, "the list says WiFi is disabled");
 }
-#endif
 
 // A module without the reason field sends EVENT_DISCONNECTED as a bare header, also
 // when it turns its radio on: a pick while Disabled, Yes, then that event and the join

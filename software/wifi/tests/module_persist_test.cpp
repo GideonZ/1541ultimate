@@ -1,0 +1,306 @@
+/*
+ * module_persist_test.cpp
+ *
+ * "WiFi Enabled" kept in the control module (u64ctrl, the Elite II / C64 Ultimate): the module
+ * reads its copy of the setting before it starts the radio, so a Disabled unit never starts
+ * its radio after mains-in; the Ultimate's Enable and Disable update the copy, and win over a
+ * stale one; and the recovery's Autoconnect still brings the radio up and leaves the copy
+ * alone. The cases run against the module's real boot start (wifi_start_at_boot), connector
+ * and command handling. The U64 and U2+L modules keep their record elsewhere (radio_boot.h).
+ */
+
+#include <string.h>
+#include "module_script.h"
+
+#ifdef MODULE_U64CTRL
+
+// A stored Disabled survives a simulated boot: the radio is not started, the connector
+// waits in Disabled and tries nothing
+TEST(Persist, stored_disabled_boot_starts_no_radio)
+{
+    const uint8_t cmds[] = { 0 };
+    nvs_wifi_enabled = 0;
+    run(false, cmds, 0);
+    CHECK(strchr(boot_trace, 'T') == NULL, "the radio is not started at boot");
+    CHECK(strpbrk(trace, "TLScs") == NULL, "and not by the connector: no scan, no connect attempt");
+    CHECK(strcmp(ended, "waiting for a command") == 0, "the connector waits in Disabled");
+    CHECK(nvs_wifi_writes == 0, "the copy is not written by a boot");
+}
+
+TEST(Persist, stored_enabled_boot_starts_the_radio)
+{
+    const uint8_t cmds[] = { 0 };
+    run(false, cmds, 0);
+    CHECK(strchr(boot_trace, 'T') != NULL, "the radio is started at boot, as before");
+    CHECK(strchr(trace, 'L') != NULL, "and the connector walks to the last AP");
+}
+
+// The Ultimate's Disable and Enable update the copy
+TEST(Persist, disable_and_enable_update_the_copy)
+{
+    const uint8_t dis[] = { CONNECTOR_SEND_DISABLE };
+    run(false, dis, 1);
+    CHECK(nvs_wifi_last == 0 && nvs_wifi_writes == 1, "a Disable writes the copy");
+    CHECK(strchr(trace, 'P') != NULL && strchr(trace, 'X') != NULL, "and stops the radio, confirmed");
+
+    nvs_wifi_enabled = 0;
+    const uint8_t ena[] = { CONNECTOR_SEND_ENABLE };
+    run(false, ena, 1);
+    CHECK(nvs_wifi_last == 1 && nvs_wifi_writes == 1, "an Enable writes the copy");
+    CHECK(strchr(trace, 'T') != NULL, "and starts the radio");
+}
+
+// The Ultimate's value overrides a stale copy of the module (a module swap, a failed write)
+TEST(Persist, ultimates_setting_wins_over_a_stale_copy)
+{
+    // stale Disabled, Ultimate says Enabled
+    nvs_wifi_enabled = 0;
+    const uint8_t ena[] = { CONNECTOR_SEND_ENABLE };
+    run(false, ena, 1);
+    CHECK(strchr(boot_trace, 'T') == NULL, "the stale Disabled kept the radio off at boot");
+    CHECK(strchr(trace, 'T') != NULL, "the Ultimate's Enable starts it");
+    CHECK(strchr(trace, 'X') == NULL, "no EVENT_DISABLED");
+    CHECK(nvs_wifi_last == 1, "and the copy now reads Enabled");
+}
+
+TEST(Persist, ultimates_disable_wins_over_a_stale_enabled_copy)
+{
+    // stale Enabled (radio started at boot), Ultimate says Disabled
+    const uint8_t dis[] = { CONNECTOR_SEND_DISABLE };
+    run(false, dis, 1);
+    CHECK(strchr(boot_trace, 'T') != NULL, "the stale Enabled started the radio at boot");
+    CHECK(strchr(trace, 'P') != NULL, "the Ultimate's Disable stops it");
+    CHECK(strchr(trace, 'X') != NULL, "and EVENT_DISABLED confirms it");
+    CHECK(strcmp(ended, "waiting for a command") == 0, "Disabled");
+    CHECK(nvs_wifi_last == 0, "and the copy now reads Disabled");
+}
+
+// A Disable for a radio that is off already (stored Disabled) is confirmed, not stopped again
+TEST(Persist, disable_when_already_off_is_confirmed)
+{
+    nvs_wifi_enabled = 0;
+    const uint8_t dis[] = { CONNECTOR_SEND_DISABLE };
+    run(false, dis, 1);
+    CHECK(strchr(trace, 'P') == NULL, "no second stop");
+    CHECK(strchr(trace, 'X') != NULL, "EVENT_DISABLED confirms it");
+    CHECK(strchr(trace, 'T') == NULL, "the radio stays off");
+}
+
+// An Enable for a radio that is on is a no-op (the Ultimate sends one at every handshake)
+TEST(Persist, enable_when_already_on_does_nothing)
+{
+    const uint8_t cmds[] = { CONNECTOR_SEND_ENABLE };
+    run(false, cmds, 1);
+    CHECK(strchr(trace, 'P') == NULL && strchr(trace, 'X') == NULL, "the radio is left alone");
+}
+
+// Network recovery asks for the radio with an Autoconnect: it comes up from a stored Disabled,
+// and the stored setting is left alone
+TEST(Persist, recovery_autoconnect_starts_the_radio_and_leaves_the_copy)
+{
+    nvs_wifi_enabled = 0;
+    const uint8_t cmds[] = { CMD_WIFI_AUTOCONNECT };
+    run(false, cmds, 1);
+    CHECK(strchr(boot_trace, 'T') == NULL, "off at boot");
+    CHECK(strchr(trace, 'T') != NULL, "the Autoconnect starts the radio");
+    CHECK(nvs_wifi_writes == 0, "the copy is not written");
+    CHECK(nvs_wifi_last == 0, "and still reads Disabled for the next boot");
+}
+
+// A radio start from a stored Disabled clears the flag before EVENT_DISCONNECTED goes out:
+// the dispatcher answers the Ultimate's connection query on its own (wifi_send_connected_event),
+// and one that came in between would send EVENT_DISABLED after the start's event, which
+// leaves the Ultimate showing Disabled with the radio on
+TEST(Persist, a_radio_start_clears_disabled_before_its_event)
+{
+    nvs_wifi_enabled = 0;
+    const uint8_t ena[] = { CONNECTOR_SEND_ENABLE };
+    run(false, ena, 1);
+    CHECK(strstr(trace, "TZ") != NULL, "the Enable starts the radio, EVENT_DISCONNECTED");
+    CHECK(stale_disabled == 0, "disabled_g is cleared before EVENT_DISCONNECTED goes out");
+
+    nvs_wifi_enabled = 0;
+    const uint8_t aut[] = { CMD_WIFI_AUTOCONNECT };
+    run(false, aut, 1);
+    CHECK(strstr(trace, "TZ") != NULL, "the Autoconnect starts the radio, EVENT_DISCONNECTED");
+    CHECK(stale_disabled == 0, "disabled_g is cleared before EVENT_DISCONNECTED goes out");
+}
+
+// A Disabled boot attaches no lwIP netif, so there is nothing to record then. After a runtime
+// Enable the netif exists, and its slots must be recorded: the machine-off hook puts them
+// back, and a NULL there would crash the next frame (and Wake on WiFi needs them to arm)
+TEST(Persist, disabled_boot_then_enable_then_machine_off_keeps_the_netif_working)
+{
+    nvs_wifi_enabled = 0;
+    const uint8_t ena[] = { CONNECTOR_SEND_ENABLE };
+    run(false, ena, 1);
+    CHECK(strchr(trace, 'T') != NULL, "the Enable started the radio");
+    CHECK(default_input == lwip_input && default_output != NULL, "and the netif's own slots are recorded at its start");
+    enable_hook();   // the machine is switched on: the application takes the interface
+    disable_hook();  // and switched off
+    CHECK(sta_netif.input == lwip_input && sta_netif.output != NULL, "machine-off puts the slots back, not NULL");
+}
+
+// A machine-off before any radio start (Disabled boot, no Enable yet) leaves the netif alone
+TEST(Persist, machine_off_with_no_recorded_defaults_writes_no_null)
+{
+    nvs_wifi_enabled = 0;
+    const uint8_t cmds[] = { 0 };
+    run(false, cmds, 0);
+    CHECK(default_input == NULL, "nothing recorded: no netif yet");
+    sta_netif.input = (netif_input_fn)0x1;
+    disable_hook();
+    CHECK(sta_netif.input == (netif_input_fn)0x1, "the hook does not write NULL over the slot");
+}
+
+// A Disable while a recovery runs: the setting is stored, the radio stays on, and the answer
+// says so (ESP_ERR_INVALID_STATE), so that the Ultimate does not wait for EVENT_DISABLED
+TEST(Persist, disable_during_recovery_stores_but_does_not_stop_the_radio)
+{
+    recovery_active = true;
+    const uint8_t dis[] = { CONNECTOR_SEND_DISABLE };
+    run(false, dis, 1);
+    CHECK(strchr(trace, 'P') == NULL, "the radio is not stopped");
+    CHECK(strchr(trace, 'X') == NULL, "and no EVENT_DISABLED");
+    CHECK(nvs_wifi_last == 0, "the copy reads Disabled for the next boot");
+    CHECK(endisable_answer == ESP_ERR_INVALID_STATE, "the radio off is refused");
+
+    recovery_active = true;
+    const uint8_t ena[] = { CONNECTOR_SEND_ENABLE };
+    run(false, ena, 1);
+    CHECK(endisable_answer == ESP_OK, "an Enable is taken as always");
+    CHECK(endisable_answer == ESP_OK && nvs_wifi_last == 1, "and stored");
+}
+
+// Without a recovery a Disable is queued, and the answer says only that
+TEST(Persist, disable_is_answered_ok)
+{
+    const uint8_t dis[] = { CONNECTOR_SEND_DISABLE };
+    run(false, dis, 1);
+    CHECK(endisable_answer == ESP_OK, "queued");
+}
+
+// The write of the copy fails (the flash): the radio does what the Ultimate asked all the
+// same, and the connector writes the copy again while it idles, until it is stored
+TEST(Persist, a_failed_write_of_a_disable_is_retried)
+{
+    nvs_write_fails = 1;
+    const uint8_t dis[] = { CONNECTOR_SEND_DISABLE };
+    run(false, dis, 1);
+    CHECK(strchr(trace, 'P') != NULL && strchr(trace, 'X') != NULL, "the radio goes off, confirmed");
+    CHECK(nvs_wifi_last == 0, "the copy reads Disabled for the next boot");
+    CHECK(nvs_wifi_writes == 2, "written again once");
+    CHECK(strcmp(ended, "waiting for a command") == 0, "then the connector waits in Disabled for good");
+}
+
+TEST(Persist, a_failed_write_of_an_enable_is_retried)
+{
+    nvs_wifi_enabled = 0;
+    nvs_write_fails = 1;
+    const uint8_t ena[] = { CONNECTOR_SEND_ENABLE };
+    run(false, ena, 1);
+    CHECK(strchr(trace, 'T') != NULL, "the radio comes on");
+    CHECK(nvs_wifi_last == 1, "the copy reads Enabled for the next boot");
+}
+
+// Connected, the connector waits without a bound: not while a write is to be retried
+TEST(Persist, a_failed_write_while_connected_is_retried)
+{
+    nvs_wifi_enabled = 0;
+    nvs_write_fails = 1;
+    last_ap_reachable = 1;
+    retry_timeouts = 1; // the one bounded wait of the retry
+    const uint8_t ena[] = { CONNECTOR_SEND_ENABLE };
+    run(false, ena, 1);
+    CHECK(strchr(trace, 'K') != NULL, "the radio comes on and joins the last AP");
+    CHECK(nvs_wifi_last == 1, "the copy reads Enabled");
+    CHECK(strcmp(ended, "idle without a timeout") == 0, "then the connector idles Connected as before");
+}
+
+// A write that fails again at the connector's first retry is retried after the bounded wait
+// (WIFI_STORE_RETRY_MS), not left until the next command: in Disabled, whose wait for a
+// command has no bound otherwise, and in Connected, likewise
+TEST(Persist, a_write_that_fails_twice_or_three_times_is_retried_after_a_wait)
+{
+    for (int fails = 2; fails <= 3; fails++) {
+        nvs_write_fails = fails;
+        const uint8_t dis[] = { CONNECTOR_SEND_DISABLE };
+        run(false, dis, 1);
+        CHECK(nvs_wifi_last == 0, "Disabled: the copy reads Disabled");
+        CHECK(nvs_wifi_writes == fails + 1, "Disabled: written until it is stored");
+        CHECK(strcmp(ended, "waiting for a command") == 0, "Disabled: then the connector waits for good");
+
+        nvs_wifi_enabled = 0;
+        nvs_write_fails = fails;
+        last_ap_reachable = 1;
+        retry_timeouts = fails - 1; // the bounded waits of the retries after the first
+        const uint8_t ena[] = { CONNECTOR_SEND_ENABLE };
+        run(false, ena, 1);
+        CHECK(strchr(trace, 'K') != NULL, "Connected: the radio comes on and joins the last AP");
+        CHECK(nvs_wifi_last == 1, "Connected: the copy reads Enabled");
+        CHECK(nvs_wifi_writes == fails + 1, "Connected: written until it is stored");
+        CHECK(retry_timeouts_left == 0, "Connected: after a bounded wait each");
+        CHECK(strcmp(ended, "idle without a timeout") == 0, "Connected: then the connector idles as before");
+    }
+}
+
+// A newer request wins over a write that is still to be retried
+TEST(Persist, a_newer_request_overwrites_a_pending_write)
+{
+    nvs_write_fails = 1;
+    const uint8_t cmds[] = { CONNECTOR_SEND_DISABLE, CONNECTOR_SEND_ENABLE };
+    run(false, cmds, 2);
+    CHECK(nvs_wifi_last == 1, "the copy reads Enabled, the last request");
+
+    // and the other way round: an Enable whose write failed, then a Disable
+    nvs_write_fails_after = 1; // the first Disable is stored
+    nvs_write_fails = 1;       // the Enable's write fails
+    const uint8_t back[] = { CONNECTOR_SEND_DISABLE, CONNECTOR_SEND_ENABLE, CONNECTOR_SEND_DISABLE };
+    run(false, back, 3);
+    CHECK(nvs_wifi_last == 0, "the copy reads Disabled, the last request");
+    CHECK(strcmp(ended, "waiting for a command") == 0, "and nothing is left to retry");
+}
+
+// A write that keeps failing is retried a bounded number of times: the connector then idles
+// as before
+TEST(Persist, a_write_that_keeps_failing_is_given_up)
+{
+    nvs_write_fails = 100;
+    const uint8_t dis[] = { CONNECTOR_SEND_DISABLE };
+    run(false, dis, 1);
+    CHECK(strcmp(ended, "waiting for a command") == 0, "the connector waits in Disabled without a bound");
+    CHECK(nvs_wifi_writes > 1 && nvs_wifi_writes <= 10, "after a few tries");
+}
+
+
+// A restart of the module's own (a crash, a watchdog, a brownout) with a stale copy of
+// Enabled starts the radio while the Ultimate says Disabled: the Ultimate is told first
+// (EVENT_RESTARTED, before any link event), so that it asks for the radio off again, and
+// that Disable is confirmed. After a power-up nothing is sent.
+TEST(Persist, a_restart_of_its_own_with_the_radio_started_tells_the_ultimate)
+{
+    const uint8_t cmds[] = { CONNECTOR_SEND_DISABLE };
+    self_restart_g = true;
+    run(false, cmds, 1);
+    CHECK(strchr(boot_trace, 'T') != NULL, "the stale Enabled started the radio at boot");
+    CHECK(trace[0] == 'Y', "EVENT_RESTARTED is the first thing the Ultimate hears");
+    CHECK(strchr(after('Y'), 'X') != NULL, "and its Disable is confirmed");
+    CHECK(nvs_wifi_last == 0, "and the copy reads Disabled");
+
+    const uint8_t none[] = { 0 };
+    run(false, none, 0);
+    CHECK(strchr(trace, 'Y') == NULL, "no EVENT_RESTARTED after a power-up");
+}
+
+// With the radio left off by a stored Disabled there is nothing to tell: it is off
+TEST(Persist, a_restart_of_its_own_with_the_radio_off_tells_nothing)
+{
+    const uint8_t none[] = { 0 };
+    nvs_wifi_enabled = 0;
+    self_restart_g = true;
+    run(false, none, 0);
+    CHECK(strchr(trace, 'Y') == NULL, "no EVENT_RESTARTED: the radio stays off");
+    CHECK(strcmp(ended, "waiting for a command") == 0, "Disabled");
+}
+
+#endif
