@@ -26,8 +26,11 @@ void start_dispatch(QueueHandle_t queue);
 void send_button_event(uint8_t button);
 void send_keepalive();
 
-#define IDENT_STRING "ESP32 WiFi Bridge V1.36"
+#define IDENT_STRING "ESP32 WiFi Bridge V1.37"
 #define IDENT_MAJOR   1
+// 1.37: the recovery's root list drops the roots NSS master has deleted, no longer trusts
+// for websites or distrusts for every certificate still valid (Buypass Class 2 and 3,
+// QuoVadis Root CA 1 and 3 G3, Certigna Root CA, Izenpe.com).
 // 1.36: serves the TLS client sessions of software/wifi/tls (CMD_TLS_*, 0x30-0x35), built with
 // the mbedTLS options the engine needs (TLS 1.3, certificate dates, client only, no renegotiation).
 //       Every random draw of the TLS task holds the entropy gate for that draw (tls_rng_gate), so a radio
@@ -59,7 +62,7 @@ void send_keepalive();
 // when this is higher than what the module reports, so a module change that
 // does not bump it is silently never installed, and an older release never
 // replaces a newer module.
-#define IDENT_MINOR   36
+#define IDENT_MINOR   37
 #define MULTITHREADED 0
 #define DISPATCHER_STACK 3072
 
