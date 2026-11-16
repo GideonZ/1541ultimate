@@ -4,13 +4,13 @@ The ESP32-S3 module of the Ultimate 64 Elite II and the C64 Ultimate: WiFi, powe
 
 ## Building
 
-The module needs ESP-IDF 6 (CI uses v6.0.3); `CMakeLists.txt` stops an older one at configure.
+The module needs ESP-IDF 6 (CI uses v6.1.1); `CMakeLists.txt` stops an older one at configure.
 `docker/Dockerfile` still installs ESP-IDF 5.3.1, so CI builds this project (and raw_u64 and raw_c3) in
-`espressif/idf:v6.0.3`, pinned by digest in `.github/workflows/build.yml`. Locally, from the top of
+`espressif/idf:v6.1.1`, pinned by digest in `.github/workflows/build.yml`. Locally, from the top of
 the repository, the same way as CI:
 
     docker run --rm --user $(id -u):$(id -g) -e HOME=/tmp -v "$PWD":/project -w /project/software/u64ctrl \
-        espressif/idf:v6.0.3@sha256:54278f2c01e6e759502e2f04c9103589c17528923426f4d63193490c7a08f555 idf.py build
+        espressif/idf:v6.1.1@sha256:2b4f966c37eaedc19542b0637a5f850b2eff9478d8e858192aa0073d92c2dc91 idf.py build
 
 then `make u64ii_no_esp` packs `build/u64ctrl.bin` into the update files. `make esp32_u64ctrl` and
 `make u64ii` work only where `IDF_PATH` is an ESP-IDF 6. Once `build/` exists here, `make clean` also
