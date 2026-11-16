@@ -419,8 +419,13 @@ static int fill_step(uint8_t *request, void *context)
     args->tag = c->tag;
     args->ct_in_len = step->ct_in_len;
     args->pt_in_len = step->pt_in_len;
-    memcpy(args->data, step->ct_in, step->ct_in_len);
-    memcpy(args->data + step->ct_in_len, step->pt_in, step->pt_in_len);
+    // A step with no input of one kind passes a null pointer for it; memcpy takes none, even for 0 bytes.
+    if (step->ct_in_len) {
+        memcpy(args->data, step->ct_in, step->ct_in_len);
+    }
+    if (step->pt_in_len) {
+        memcpy(args->data + step->ct_in_len, step->pt_in, step->pt_in_len);
+    }
     return offsetof(rpc_tls_step_req, data) + step->ct_in_len + step->pt_in_len;
 }
 
