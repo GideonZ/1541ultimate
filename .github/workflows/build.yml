@@ -12,7 +12,7 @@ jobs:
     runs-on: self-hosted
     env:
       # u64ctrl and raw_u64 need ESP-IDF 6, so they build here; raw_c3 stays on my_docker_image's 5.3.1
-      IDF6_IMAGE: espressif/idf:v6.0.3@sha256:54278f2c01e6e759502e2f04c9103589c17528923426f4d63193490c7a08f555
+      IDF6_IMAGE: espressif/idf:v6.1.1@sha256:2b4f966c37eaedc19542b0637a5f850b2eff9478d8e858192aa0073d92c2dc91
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
