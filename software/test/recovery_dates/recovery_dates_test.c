@@ -32,7 +32,7 @@ static int inner_calls;
 static bool bundle_has_issuer = true;
 static bool signature_good = true;
 
-// esp_crt_verify_callback (ESP-IDF 6.0.3, esp_crt_bundle.c): a weak hash is ignored when comparing, anything other
+// esp_crt_verify_callback (ESP-IDF 6.0.3 and 6.1.1, esp_crt_bundle.c): a weak hash is ignored when comparing, anything other
 // than exactly "not trusted" comes back unchanged with 0; then the issuer is looked up in the bundle: found and
 // signed, the flags go; found but badly signed, or not found, it is an error and the flags stay
 static int fake_bundle(void *ctx, void *crt, int depth, uint32_t *flags)
