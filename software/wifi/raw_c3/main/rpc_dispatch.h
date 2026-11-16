@@ -26,7 +26,7 @@ void send_keepalive();
 
 #define IDENT_STRING "ESP32 WiFi Bridge V1.13"
 #define IDENT_MAJOR   1
-// 1.13: built with ESP-IDF 6.0.3. Labels the image; the U2+L updater does not compare it.
+// 1.13: built with ESP-IDF 6.1.1. Labels the image; the U2+L updater does not compare it.
 // 1.11: the idle connector handles every queued command and event before it waits, so a
 // Disable behind an Enable is not left queued; the wait for its own disconnect is bounded
 // (3 s); events from before a radio stop are dropped; a CMD_WIFI_CONNECT must hold the
