@@ -57,7 +57,7 @@ The U64E-II firmware can be built by typing 'make u64ii'
 The ESP32 module firmware (software/wifi/raw_u64 for the U64, software/wifi/raw_c3 for the U2+L and
 software/u64ctrl for the U64E-II) needs ESP-IDF 6, so IDF_PATH has to be an ESP-IDF 6 for 'make', 'make esp32',
 'make u64', 'make u64ii', 'make u2pl' and 'make clean'. The Dockerfile in docker/ still installs ESP-IDF 5.3.1; CI
-builds the modules in the espressif/idf:v6.0.3 image (see .github/workflows/build.yml) and then packs them with
+builds the modules in the espressif/idf:v6.1.1 image (see .github/workflows/build.yml) and then packs them with
 'make u64_no_esp', 'make u64ii_no_esp' and 'make u2pl_no_esp'. The README.md in each module directory shows the
 command.
 
