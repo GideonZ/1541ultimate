@@ -29,7 +29,7 @@ void send_keepalive();
 #define IDENT_STRING "ESP32 WiFi Bridge V1.21"
 #define IDENT_MAJOR   1
 // 1.21: CMD_GET_RANDOM, served with the radio off too, from the SAR ADC source.
-// 1.20: built with ESP-IDF 6.0.3.
+// 1.20: built with ESP-IDF 6.1.1.
 // 1.18: the idle connector handles every queued command and event before it waits, so a
 // Disable behind an Enable is not left queued; the wait for its own disconnect is bounded
 // (3 s); events from before a radio stop are dropped; a CMD_WIFI_CONNECT must hold the
