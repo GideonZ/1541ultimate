@@ -34,8 +34,8 @@ ESP32 dev board, with a red/green gate: <https://github.com/JC-000/1541u-tls-sta
 ## The certificate bundle
 
 The roots the bridge trusts in BUNDLE mode are the ones `software/u64ctrl/ca/cacert.pem` holds, the
-Mozilla root list the control module's recovery trusts, not ESP-IDF's copy (v6.0.3 ships Mozilla's
-data of 2025-12-02, with roots Mozilla has since dropped). There is one file for both modules:
+Mozilla root list the control module's recovery trusts, not ESP-IDF's copy (v6.1.1 ships Mozilla's
+data of 2026-02-11, with roots Mozilla has since dropped). There is one file for both modules:
 `sdkconfig` selects `CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_DEFAULT_NONE`, so none of ESP-IDF's roots are
 merged in, and points `CONFIG_MBEDTLS_CUSTOM_CERTIFICATE_BUNDLE_PATH` at `../../u64ctrl/ca/cacert.pem`.
 `CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_CROSS_SIGNED_VERIFY=y` is set explicitly, and `../tls/tls_engine.c`

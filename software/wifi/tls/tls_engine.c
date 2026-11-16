@@ -398,7 +398,7 @@ int tls_open(uint8_t slot, uint16_t tag, const tls_open_params_t *p, uint8_t *re
     // before the handshake steps draw. Each draw therefore holds the entropy gate itself (tls_rng_gate.c); a draw with no
     // source ends the handshake as TLS_FAIL_NO_ENTROPY (tls_classify).
     //
-    // That covers every draw of this engine because its cipher list is AEAD only. In mbedTLS 4.1.1 (the IDF 6.0.3 one)
+    // That covers every draw of this engine because its cipher list is AEAD only. In mbedTLS 4.1.1 (IDF 6.1.1's)
     // the draws are the ClientHello random and session id (ssl_client.c), the ECDHE key share (ssl_tls12_client.c,
     // ssl_tls13_generic.c), the blinding of the ECDH scalar multiplications (psa_crypto_ecp.c: the public key and the
     // shared secret) and, for CBC suites only, the per-record IV (ssl_msg.c); AEAD nonces come from the record
