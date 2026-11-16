@@ -28,7 +28,7 @@ void send_keepalive();
 
 #define IDENT_STRING "ESP32 WiFi Bridge V1.31"
 #define IDENT_MAJOR   1
-// 1.31: built with ESP-IDF 6.0.3; the recovery code uses PSA Crypto (mbedTLS 4).
+// 1.31: built with ESP-IDF 6.1.1; the recovery code uses PSA Crypto (mbedTLS 4).
 // 1.29: the idle connector handles every queued command and event before it waits, so a
 // Disable behind an Enable is not left queued; the wait for its own disconnect is bounded
 // (3 s); events from before a radio stop are dropped; a CMD_WIFI_CONNECT must hold the
