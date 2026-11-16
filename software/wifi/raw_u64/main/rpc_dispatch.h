@@ -38,7 +38,7 @@ void send_keepalive();
 // 1.22: TLS client sessions (CMD_TLS_*) on their own task, and the Mozilla root list of
 //       software/u64ctrl/ca as the certificate bundle.
 // 1.21: CMD_GET_RANDOM, served with the radio off too, from the SAR ADC source.
-// 1.20: built with ESP-IDF 6.0.3.
+// 1.20: built with ESP-IDF 6.1.1.
 // 1.18: the idle connector handles every queued command and event before it waits, so a
 // Disable behind an Enable is not left queued; the wait for its own disconnect is bounded
 // (3 s); events from before a radio stop are dropped; a CMD_WIFI_CONNECT must hold the
