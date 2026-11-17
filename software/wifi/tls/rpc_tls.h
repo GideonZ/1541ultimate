@@ -51,7 +51,7 @@ typedef enum {
 // rpc_tls_step_resp.fail_reason, set with FAILED
 typedef enum {
     TLS_FAIL_NONE             = 0, // generic: esp_err has the mbedTLS code (alert_in the alert, if any)
-    TLS_FAIL_VERSION_REFUSED  = 1, // the ServerHello chose a version not offered; it is in verify_flags' low 16 bits
+    TLS_FAIL_VERSION_REFUSED  = 1, // the ServerHello chose a version not offered, or a TLS 1.2 ServerHello carried 0x0304; it is in verify_flags' low 16 bits
     TLS_FAIL_DOWNGRADE        = 2, // TLS 1.2 chosen by a ServerHello carrying the RFC 8446 downgrade sentinel
     TLS_FAIL_NO_EMS           = 3, // a TLS 1.2 server without the extended master secret
     TLS_FAIL_CERT_VERIFY      = 4, // verify_flags = mbedtls_ssl_get_verify_result(), 0xFFFFFFFF if it never completed
