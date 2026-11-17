@@ -479,8 +479,9 @@ static int tls_sh_ext(const uint8_t *m, size_t len, uint16_t type, const uint8_t
 
 // After each successful handshake step: records the negotiated group (no mbedTLS getter) from the TLS 1.3 ServerHello
 // key_share (or the HelloRetryRequest group) or the TLS 1.2 ServerKeyExchange curve, and requires EMS in a TLS 1.2
-// ServerHello, as mbedTLS has just parsed them. Returns MBEDTLS_ERR_SSL_HANDSHAKE_FAILURE when EMS is not echoed.
-static int tls_note_handshake(tls_session_t *s, int state_before, int version_before)
+// ServerHello, as mbedTLS has just parsed them. Also refuses a TLS 1.2 ServerHello that left the version above 1.2.
+// Returns an mbedTLS error, with r->fail_reason set, when it refuses.
+static int tls_note_handshake(tls_session_t *s, int state_before, int version_before, tls_step_result_t *r)
 {
     int state = s->ssl.state;
     const uint8_t *m, *d;
@@ -492,6 +493,13 @@ static int tls_note_handshake(tls_session_t *s, int state_before, int version_be
                 s->stats.group = (d[0] << 8) | d[1];
             }
             // Not found: the group stays 0, and tls_handshake() refuses the session
+        } else if (s->ssl.tls_version != MBEDTLS_SSL_VERSION_TLS1_2) {
+            // mbedTLS's TLS 1.2 ServerHello parser takes legacy_version as the version (ssl_tls12_client.c:1226), so a
+            // ServerHello claiming 0x0304 would carry on in the TLS 1.3 machine without a key exchange: refuse it
+            r->fail_reason = TLS_FAIL_VERSION_REFUSED;
+            r->verify_flags = (uint16_t)s->ssl.tls_version;
+            mbedtls_ssl_send_alert_message(&s->ssl, MBEDTLS_SSL_ALERT_LEVEL_FATAL, MBEDTLS_SSL_ALERT_MSG_PROTOCOL_VERSION);
+            return MBEDTLS_ERR_SSL_BAD_PROTOCOL_VERSION;
         } else if (!s->ems_checked) {
             // mbedtls_ssl_conf_extended_master_secret() only offers it: a server that does not echo it is accepted
             // (ssl_tls12_client.c:742-759), so the engine refuses it here, before any key is derived. A ServerHello
@@ -500,6 +508,7 @@ static int tls_note_handshake(tls_session_t *s, int state_before, int version_be
             s->stats.ems = m && (tls_sh_ext(m, len, 23, &d) == 0);
             if (!s->stats.ems) {
                 ESP_LOGW(TAG, "TLS 1.2 server without the extended master secret: refused");
+                r->fail_reason = TLS_FAIL_NO_EMS;
                 mbedtls_ssl_send_alert_message(&s->ssl, MBEDTLS_SSL_ALERT_LEVEL_FATAL,
                                                MBEDTLS_SSL_ALERT_MSG_HANDSHAKE_FAILURE);
                 return MBEDTLS_ERR_SSL_HANDSHAKE_FAILURE;
@@ -564,9 +573,8 @@ static int tls_handshake(tls_session_t *s, tls_step_result_t *r)
         int64_t start = esp_timer_get_time();
         int ret = mbedtls_ssl_handshake_step(&s->ssl);
         s->stats.handshake_us += (uint32_t)(esp_timer_get_time() - start);
-        int ems = (ret == 0) ? tls_note_handshake(s, state_before, version_before) : 0;
+        int ems = (ret == 0) ? tls_note_handshake(s, state_before, version_before, r) : 0;
         if (ems) {
-            r->fail_reason = TLS_FAIL_NO_EMS;
             return ems;
         }
         if ((ret == MBEDTLS_ERR_SSL_WANT_READ) || (ret == MBEDTLS_ERR_SSL_WANT_WRITE)) {
