@@ -301,6 +301,7 @@ static esp_http_client_handle_t http_open(const char *get_url, int *status, char
         .url = get_url,
         .timeout_ms = 15000,
         .crt_bundle_attach = recovery_crt_attach,
+        .tls_version = ESP_HTTP_CLIENT_TLS_VER_TLS_1_2,
         .buffer_size = READ_SIZE,
         .buffer_size_tx = 1024,
         .event_handler = on_http_event,
