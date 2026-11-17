@@ -74,6 +74,7 @@ struct Record {
 extern Record rec;
 extern pthread_t gui_thread;            /* the task that runs the menu command */
 extern void (*ui_popup_hook)(void);     /* what the printer task does while the popup is open */
+extern void (*render_hook)(void);       /* what the printer task does while it renders a page (a form feed) */
 
 struct ConfigStore {
     std::map<int, int> values;
@@ -202,8 +203,14 @@ struct FileManager {
 struct MpsPrinter {
     static MpsPrinter *getMpsPrinter(void) { static MpsPrinter m; return &m; }
     void Reset() { rec.mps_reset++; }
-    void FormFeed() { rec.form_feed++; }
-    void Interpreter(uint8_t *, int n) { rec.interpreted_bytes += n; }
+    void FormFeed() { if (render_hook) render_hook(); rec.form_feed++; }
+    void Interpreter(uint8_t *b, int n)
+    {
+        rec.interpreted_bytes += n;
+        for (int i = 0; i < n; i++)
+            if (b[i] == 12)             /* a form feed of the program ends the page: it is rendered now */
+                FormFeed();
+    }
     void setCharsetVariant(int) { }
     void setColorMode(bool) { }
     void setFilename(char *) { }

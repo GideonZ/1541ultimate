@@ -15,6 +15,7 @@
 Record rec;
 pthread_t gui_thread;
 void (*ui_popup_hook)(void);
+void (*render_hook)(void);
 ConfigStore *host_cfg;
 std::atomic<int> host_ring_live(0);
 IecInterface *iec_if;
@@ -170,6 +171,49 @@ static void test_flush_progress_from_gui_task(void)
     pthread_join(th, NULL);
     CHECK(rec.progress_steps == 3);     /* every block, none twice */
     CHECK(rec.ui_violations == 0);      /* drawn in the task of the menu, while the box was shown */
+}
+
+/* The report of 11-17 (OPEN 1,4 / PRINT#1,"test page no. 1";CHR$(12); / PRINT#1,"test page no. 2";CHR$(12); / CLOSE 1), with
+ * Flush/Eject chosen while page 1 is being rendered and page 2 is already spooled: every deflate block of both pages is
+ * counted by the printer task, from the menu's first moment (before the box is drawn) to the end; the screen is the GUI's. */
+static IecPrinter *render_printer;
+static void render_blocks(void)
+{
+    for (int i = 0; i < 8; i++) {
+        usleep(4000);
+        render_printer->updateFlushProgressBar();
+    }
+}
+
+static void *two_pages_thread(void *a)
+{
+    IecPrinter *p = (IecPrinter *) a;
+    const char *l1 = "test page no. 1", *l2 = "test page no. 2";
+    for (const char *c = l1; *c; c++) p->push_data(*c);
+    p->push_data(12);
+    for (const char *c = l2; *c; c++) p->push_data(*c);
+    p->push_data(12);
+    return NULL;
+}
+
+static void test_flush_during_page_render(void)
+{
+    rec.reset();
+    host_cfg = new ConfigStore;
+    configure_printer(2);
+    host_start_tasks = true;
+    IecPrinter *p = new IecPrinter;
+    UserInterface ui;
+    render_printer = p;
+    render_hook = render_blocks;
+    two_pages_thread(p);                        /* both pages are spooled; the printer task starts on page 1 */
+    usleep(15000);                              /* page 1 is being rendered */
+    menu(p, &ui, MENU_FLUSH);
+    render_hook = NULL;
+    CHECK(rec.ui_violations == 0);              /* no screen work from the printer task, before, during or after the box */
+    CHECK(rec.form_feed == 3);                  /* page 1, page 2 and the ejection of the flush, in stream order */
+    CHECK(rec.progress_shown == 1 && rec.progress_hidden == 1);
+    CHECK(rec.popups == 0);
 }
 
 /* Nobody serves it: the menu comes back after the bound, and the flush is still there for later. */
@@ -375,6 +419,7 @@ int main(void)
     RUN(test_flush_block_during_popup);
     RUN(test_block_after_command);
     RUN(test_flush_progress_from_gui_task);
+    RUN(test_flush_during_page_render);
     RUN(test_teardown_cycles);
     RUN(test_turn_off);
     RUN(test_reset);
