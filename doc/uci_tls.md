@@ -224,7 +224,7 @@ A pending chunk of `$16` is dropped by any other command, as for plain sockets.
 | 15 | TLS HANDSHAKE TIMEOUT | OPEN | no established session in 15 s, or the 40 s open budget ran out in the handshake |
 | 16 | TLS SESSION FAILED: -0xNNNN | READ, WRITE | bad record MAC, decode error, too many empty records, KeyUpdate |
 | 17 | TLS MODULE NOT RESPONDING | any | module timeout, full queue, malformed reply, restart or WRITE stall |
-| 18 | TLS VERSION REFUSED: 0xNNNN | OPEN | the ServerHello chose a version not offered (TLS 1.2 under REQUIRE_TLS13, or below 1.2) |
+| 18 | TLS VERSION REFUSED: 0xNNNN | OPEN | the ServerHello chose a version not offered (TLS 1.2 under REQUIRE_TLS13, or below 1.2), or a TLS 1.2 ServerHello carried version 0x0304 (TLS 1.3 claimed through the 1.2 path) |
 | 19 | TLS DOWNGRADE DETECTED | OPEN | a TLS 1.2 ServerHello carrying the RFC 8446 4.1.3 downgrade sentinel |
 | 81 | INVALID PARAMS | all | layout, lengths, tail grammar, name rule, not a TLS handle for `$23`, bad handle for `$24`, `$22` sequence error, no-reply bit on `$21`/`$24` |
 | 82 | PARAMETER(S) OUT OF RANGE | all | trust > 2, reserved flag bit, all-zero pin, READ maxlen 0 or > 1472, CA total > 1472 |
