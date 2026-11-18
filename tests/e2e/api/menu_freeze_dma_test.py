@@ -44,6 +44,8 @@ ALL_FF = bytes([0xFF]) * LENGTH
 PRESSES = 8
 PRESS_INTERVAL_SECONDS = 2.5
 READBACK_SETTLE_SECONDS = 0.3
+# Back-to-back REST starves the prio-0 menu task so it never opens (measured on a C64U: 0 ms never, 5 ms always).
+OPERATION_GAP_SECONDS = 0.005
 MENU_CLOSE_SETTLE_SECONDS = 1.5
 
 
@@ -84,6 +86,7 @@ def flood(api: UltimateApi, presser: UltimateApi, sampler: UltimateApi,
     counter = 0
     try:
         while presser_thread.is_alive():
+            time.sleep(OPERATION_GAP_SECONDS)
             at = time.monotonic() - started
             operations += 1
             try:
