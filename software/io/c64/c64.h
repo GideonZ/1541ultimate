@@ -2,6 +2,8 @@
 #define C64_H
 
 #include <stdio.h>
+#include "FreeRTOS.h"
+#include "semphr.h"
 #include "host.h"
 #include "integer.h"
 #include "keyboard.h"
@@ -303,6 +305,7 @@ class C64 : public GenericHost, ConfigurableObject
 
     void setup_config_menu();
     bool isFrozen;
+    SemaphoreHandle_t ownershipLock;
     // Set while freeze() has the CIA set up for the cartridge. The keyboard is scanned from a
     // timer on a cartridge (Keyboard_C64), so the window in which it may touch CIA1 is explicit.
     bool keyboardScanAllowed;
@@ -323,6 +326,8 @@ class C64 : public GenericHost, ConfigurableObject
     static void hard_stop(void);
     void resume(void);
     void freeze(void);
+    void freeze_locked(void);
+    void unfreeze_locked(void);
     void measure_timing(uint8_t *buffer);
     virtual void get_all_memory(uint8_t *);
     virtual void clear_ram(void) { /* NOT YET IMPLEMENTED */ };
@@ -359,12 +364,30 @@ public:
     
     /* Generic Host */
     void take_ownership(HostClient *client) {
+    	lock_ownership();
     	this->client = client;
     	freeze();
+    	unlock_ownership();
     }
     void release_ownership(void) {
+    	lock_ownership();
     	unfreeze();
     	this->client = 0;
+    	unlock_ownership();
+    }
+
+    // Serialises freeze() and unfreeze() against everything that picks its way to the C64's
+    // memory by isFrozen (REST readmem/writemem) or that undoes a freeze (REST machine:reset).
+    // freeze() sets Ultimax in stop() well before it sets isFrozen, and a DMA that looks in
+    // between copies from a bus with nothing mapped. Recursive, as these nest, and separate
+    // from the subsystem's mutex, which the REST path already holds when it gets here. The
+    // holder only ever runs CPU-bound code under it (a bounded stop, a memory copy), never
+    // waits for another task, so every wait on it is short.
+    void lock_ownership(void) {
+    	xSemaphoreTakeRecursive(ownershipLock, portMAX_DELAY);
+    }
+    void unlock_ownership(void) {
+    	xSemaphoreGiveRecursive(ownershipLock);
     }
 
     void checkButton(void);

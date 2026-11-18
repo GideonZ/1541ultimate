@@ -128,6 +128,7 @@ static unsigned char fastresetOrg[] =   { 0xe6, 0xc2, 0xb1, 0xc1, 0xaa, 0xa9, 0x
 
 C64::C64()
 {
+    ownershipLock = xSemaphoreCreateRecursiveMutex();
     flash = get_flash();
 
     register_store(0x43363420, "C64 and Cartridge Settings", c64_config);
@@ -1032,6 +1033,13 @@ void C64::init_io(void)
 
 void C64::freeze(void)
 {
+    lock_ownership();
+    freeze_locked();
+    unlock_ownership();
+}
+
+void C64::freeze_locked(void)
+{
     if (!phi2_present())
         return;
 
@@ -1172,6 +1180,13 @@ void C64::init_system_roms(void)
  * Unfreeze - Resumes the C64 after it was frozen by entering the Ultimate Menu.
  */
 void C64::unfreeze()
+{
+    lock_ownership();
+    unfreeze_locked();
+    unlock_ownership();
+}
+
+void C64::unfreeze_locked()
 {
     if (!isFrozen)
         return;

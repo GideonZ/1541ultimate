@@ -227,8 +227,12 @@ SubsysResultCode_e C64_Subsys::executeCommand(SubsysCommand *cmd)
                 c64->client->release_host(); // disconnect from user interface
                 c64->client = 0;
             }
+            // The menu task may be in unfreeze() itself, closing the menu this very moment.
+            // Both then have to run the restore one after the other, not interleaved.
+            c64->lock_ownership();
             c64->unfreeze();
             c64->reset();
+            c64->unlock_ownership();
             break;
 
         case MENU_C64_PAUSE:
@@ -582,7 +586,12 @@ int C64_Subsys :: dma_load_raw(File *f)
 int C64_Subsys :: dma_load_raw_buffer(uint16_t offset, uint8_t *buffer, int length, int rw)
 {
     bool i_stopped_it = false;
+    // freeze() and unfreeze() are not atomic: the bus is in Ultimax from the stop until isFrozen
+    // is set, and a copy that sees !isFrozen then reads $FF and loses its writes. Hold the
+    // ownership lock, so the machine is either running or completely frozen from here to the end.
+    c64->lock_ownership();
     if (c64->client && !c64->isFrozen) {
+        // A client that holds the host without a freeze behind it (freeze() declined, no PHI2).
         c64->client->release_host(); // disconnect from user interface
         c64->release_ownership();
     }
@@ -609,6 +618,7 @@ int C64_Subsys :: dma_load_raw_buffer(uint16_t offset, uint8_t *buffer, int leng
     if (i_stopped_it) {
         c64->resume();
     }
+    c64->unlock_ownership();
 	return length;
 }
 
