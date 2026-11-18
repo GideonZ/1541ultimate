@@ -18,6 +18,7 @@ while it is open, and the machine must be at the READY prompt.
 from __future__ import annotations
 
 import argparse
+import itertools
 import sys
 import threading
 import time
@@ -29,10 +30,13 @@ sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
 import bootstrap  # noqa: E402,F401
 import cli  # noqa: E402
 from api import UltimateApi  # noqa: E402
-from report import Failure, check, detail, format_exception, suite_fail, suite_ok  # noqa: E402
+from report import (Failure, check, detail, format_exception,  # noqa: E402
+                    suite_fail, suite_ok, warn)
 
 SUITE = "menu_freeze_dma_test"
 ADDRESS = 0xC000
+# The KERNAL's jiffy clock; it stops if the 6510 does.
+JIFFY_CLOCK = 0x00A0
 LENGTH = 128
 PATTERN = bytes(range(LENGTH))
 ALL_FF = bytes([0xFF]) * LENGTH
@@ -43,38 +47,43 @@ READBACK_SETTLE_SECONDS = 0.3
 MENU_CLOSE_SETTLE_SECONDS = 1.5
 
 
-def read_phase(api: UltimateApi, presser: UltimateApi) -> tuple[int, list[str]]:
-    """Read back to back through PRESSES menu presses. Returns (operations, faults)."""
-    return flood(api, presser, write=False)
+def flood(api: UltimateApi, presser: UltimateApi, sampler: UltimateApi,
+          write: bool) -> tuple[int, list[str], int, int]:
+    """Hammer $C000 through PRESSES presses; returns (operations, faults, opens, closes).
 
-
-def write_phase(api: UltimateApi, presser: UltimateApi) -> tuple[int, list[str]]:
-    """Write and read back, then recheck, through PRESSES menu presses."""
-    return flood(api, presser, write=True)
-
-
-def flood(api: UltimateApi, presser: UltimateApi, write: bool) -> tuple[int, list[str]]:
+    opens and closes count the menu_screen transitions a 5 Hz poller saw, so a
+    firmware on which the menu never froze the machine cannot pass.
+    """
     stop = threading.Event()
     press_errors: list[str] = []
+    states: list[bool] = []
 
     def press() -> None:
         for _ in range(PRESSES):
-            if stop.is_set():
-                return
             try:
                 presser.machine.menu_button()
             except Exception as exc:  # noqa: BLE001 - reported by the main thread
                 press_errors.append(format_exception(exc))
             stop.wait(PRESS_INTERVAL_SECONDS)
 
-    thread = threading.Thread(target=press, daemon=True)
+    def sample() -> None:
+        while not stop.is_set():
+            try:
+                states.append(sampler.machine.menu_open())
+            except Exception:  # noqa: BLE001 - a missed sample is not a verdict
+                pass
+            stop.wait(0.2)
+
+    presser_thread = threading.Thread(target=press, daemon=True)
+    sampler_thread = threading.Thread(target=sample, daemon=True)
     started = time.monotonic()
-    thread.start()
+    presser_thread.start()
+    sampler_thread.start()
     operations = 0
     faults: list[str] = []
     counter = 0
     try:
-        while thread.is_alive():
+        while presser_thread.is_alive():
             at = time.monotonic() - started
             operations += 1
             try:
@@ -97,9 +106,28 @@ def flood(api: UltimateApi, presser: UltimateApi, write: bool) -> tuple[int, lis
                 faults.append(f"{at:6.2f}s {format_exception(exc)[:120]}")
     finally:
         stop.set()
-        thread.join(timeout=10)
+        presser_thread.join(timeout=15)
+        sampler_thread.join(timeout=15)
     faults.extend(f"menu_button: {e[:120]}" for e in press_errors)
-    return operations, faults
+    opens = sum(1 for a, b in itertools.pairwise(states) if b and not a)
+    closes = sum(1 for a, b in itertools.pairwise(states) if a and not b)
+    return operations, faults, opens, closes
+
+
+def recover(api: UltimateApi) -> None:
+    """After a failure: close the menu, confirm it is closed, then reset once."""
+    try:
+        api.machine.close_menu_from_anywhere()
+        if api.machine.menu_open():
+            warn("the menu is still open after the recovery")
+            return
+        api.machine.reset(force=True)
+    except Exception as exc:  # noqa: BLE001 - the original failure is the one to report
+        warn(f"recovery failed: {format_exception(exc)}")
+
+
+def jiffy(api: UltimateApi) -> bytes:
+    return api.machine.readmem(JIFFY_CLOCK, 3)
 
 
 def kind(data: bytes) -> str:
@@ -112,6 +140,7 @@ def main() -> int:
     args = parser.parse_args()
     api = UltimateApi(args.host, args.password or None, args.timeout)
     presser = UltimateApi(args.host, args.password or None, args.timeout)
+    sampler = UltimateApi(args.host, args.password or None, args.timeout)
 
     try:
         with check("reset to the READY prompt with the menu closed"):
@@ -122,29 +151,36 @@ def main() -> int:
             if api.machine.readmem(ADDRESS, LENGTH) != PATTERN:
                 raise Failure("the pattern at $C000 did not read back with the menu closed")
 
-        for label, phase in (("reads back to back", read_phase),
-                             ("writes with a read back and a recheck", write_phase)):
+        for label, write in (("reads back to back", False),
+                             ("writes with a read back and a recheck", True)):
             with check(f"{label}, {PRESSES} menu presses: every answer correct"):
-                operations, faults = phase(api, presser)
-                detail(f"{operations} operations, {len(faults)} faults")
+                operations, faults, opens, closes = flood(api, presser, sampler, write)
+                detail(f"{operations} operations, {len(faults)} faults, "
+                       f"menu seen opening {opens} and closing {closes} times")
                 if faults:
                     raise Failure(f"{len(faults)} of {operations} operations went wrong, "
                                   f"first: {'; '.join(faults[:5])}")
+                if not opens or not closes:
+                    raise Failure(f"the menu was seen opening {opens} and closing {closes} "
+                                  "times: the presses did not freeze the machine, so "
+                                  "nothing was tested")
             # Settle, then put the menu back before the next phase, never by reset.
             time.sleep(MENU_CLOSE_SETTLE_SECONDS)
             api.machine.close_menu_from_anywhere()
             api.machine.writemem(ADDRESS, PATTERN)
 
-        with check("the menu is closed and the machine is at READY"):
+        with check("the menu is closed, the machine is at READY and the jiffy clock runs"):
             if api.machine.menu_open():
                 raise Failure("the menu is still open")
             if not api.machine.wait_until_ready():
                 raise Failure("the READY prompt is not on the screen")
+            first = jiffy(api)
+            time.sleep(0.5)
+            if jiffy(api) == first:
+                raise Failure(f"the jiffy clock at $00A0 stands at {first.hex()}: "
+                              "the 6510 is not running")
     except Failure as exc:
-        try:
-            api.machine.close_menu_from_anywhere()
-        except Exception:  # noqa: BLE001 - the original failure is the one to report
-            pass
+        recover(api)
         suite_fail(SUITE, format_exception(exc))
         return 1
     suite_ok(SUITE)
