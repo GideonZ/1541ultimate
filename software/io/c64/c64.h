@@ -383,9 +383,25 @@ public:
     // from the subsystem's mutex, which the REST path already holds when it gets here. The
     // holder only ever runs CPU-bound code under it (a bounded stop, a memory copy), never
     // waits for another task, so every wait on it is short.
-    void lock_ownership(void) {
-    	xSemaphoreTakeRecursive(ownershipLock, portMAX_DELAY);
+    //
+    // The REST and UCI side asks with a bound and reports failure, instead of hanging a request
+    // on a holder that is stuck: lock_ownership(ticks) returns false and logs once. The overload
+    // without a bound is for the freeze and unfreeze themselves, which cannot be declined; it
+    // logs once if the holder takes more than 2 s, and keeps waiting.
+    bool lock_ownership(TickType_t ticks) {
+    	if (xSemaphoreTakeRecursive(ownershipLock, ticks) == pdTRUE)
+    		return true;
+    	printf("C64: ownership lock busy for more than %d ms\n", (int)(ticks * portTICK_PERIOD_MS));
+    	return false;
     }
+    void lock_ownership(void) {
+    	if (xSemaphoreTakeRecursive(ownershipLock, OWNERSHIP_WAIT) == pdTRUE)
+    		return;
+    	printf("C64: ownership lock still held after 2 s, waiting on\n");
+    	while (xSemaphoreTakeRecursive(ownershipLock, OWNERSHIP_WAIT) != pdTRUE)
+    		;
+    }
+    static const TickType_t OWNERSHIP_WAIT = 2000 / portTICK_PERIOD_MS;
     void unlock_ownership(void) {
     	xSemaphoreGiveRecursive(ownershipLock);
     }

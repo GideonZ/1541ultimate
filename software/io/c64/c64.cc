@@ -1866,6 +1866,8 @@ void C64 :: measure_timing(uint8_t *buffer)
 {
     uint8_t *wp = buffer;
 
+    // Not inside a freeze or an unfreeze: the stop and the resume below must not be theirs.
+    lock_ownership();
     bool i_stopped_it = false;
     if(!is_stopped()) {
         stop(false);
@@ -1942,6 +1944,7 @@ void C64 :: measure_timing(uint8_t *buffer)
     if (i_stopped_it) {
         resume();
     }
+    unlock_ownership();
 }
 
 void C64 :: setup_config_menu(void)
