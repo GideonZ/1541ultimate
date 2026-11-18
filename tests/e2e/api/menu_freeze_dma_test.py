@@ -105,8 +105,9 @@ def flood(api: UltimateApi, presser: UltimateApi, sampler: UltimateApi,
             except Failure as exc:
                 faults.append(f"{at:6.2f}s {format_exception(exc)[:120]}")
     finally:
-        stop.set()
         presser_thread.join(timeout=15)
+        time.sleep(1.0)  # keep sampling, so the last close is seen
+        stop.set()
         sampler_thread.join(timeout=15)
     faults.extend(f"menu_button: {e[:120]}" for e in press_errors)
     opens = sum(1 for a, b in itertools.pairwise(states) if b and not a)

@@ -381,8 +381,10 @@ public:
     // freeze() sets Ultimax in stop() well before it sets isFrozen, and a DMA that looks in
     // between copies from a bus with nothing mapped. Recursive, as these nest, and separate
     // from the subsystem's mutex, which the REST path already holds when it gets here. The
-    // holder only ever runs CPU-bound code under it (a bounded stop, a memory copy), never
-    // waits for another task, so every wait on it is short.
+    // holder runs bounded work under it: the stop, memory copies, and in the file loads and
+    // cartridge starts file I/O, wait_ms() and restoreCart(), which can take about 5 s. It
+    // never waits on the menu task or on anything that takes this lock, so it cannot be part
+    // of a cycle. A REST caller is bounded at 2 s (below); the menu task waits on.
     //
     // The REST and UCI side asks with a bound and reports failure, instead of hanging a request
     // on a holder that is stuck: lock_ownership(ticks) returns false and logs once. The overload
