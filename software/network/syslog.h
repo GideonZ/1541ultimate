@@ -6,9 +6,10 @@
 
 #include <sys/socket.h>
 #include "lwip/inet.h"
+#include "config.h"
 
 
-class Syslog
+class Syslog : public ConfigurableObject
 {
   private:
     ip_addr_t ip;
@@ -20,6 +21,8 @@ class Syslog
     TaskHandle_t task;
 
     // Sensitive variables needing exclusive access
+    volatile bool enabled;  // A valid server is configured; ip and port are only valid then
+    volatile unsigned generation;  // Counts changes of enabled/ip/port, so the task can notice them
     int bufpos;         // Where next character will be written by charout()
     int newlinepos;     // Last position where a newline was written (or -1)
     bool overflow;      // True when log data is coming faster than we can handle
@@ -28,10 +31,12 @@ class Syslog
     void forwardLogging();
 
   public:
-    Syslog() : buf(0), bufsize(0), failed_sends(0) { rewind(); }
+    Syslog() : port(0), buf(0), bufsize(0), failed_sends(0), task(0), enabled(false), generation(0) { ip.addr = 0; rewind(); }
     ~Syslog() { if (buf) delete buf; }
     void rewind() { bufpos = 0; newlinepos = -1; overflow = false; }
+    static bool parseServer(const char *server, ip_addr_t *ip, int *port);
     bool init(size_t buffer_size);
+    void effectuate_settings(void);
     void charout(int c);
 };
 
