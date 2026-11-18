@@ -12,7 +12,7 @@ PATH_SW = ../../../../software
 STUBS   = $(PATH_SW)/test/syslog/stubs
 
 CXX     = g++
-CXXOPTIONS = -std=c++11 -g -O0 -w -pthread -I$(STUBS) -I$(PATH_SW)/network
+CXXOPTIONS = -std=c++11 -g -O0 -Wall -pthread -I$(STUBS) -I$(PATH_SW)/network
 
 SRCS    = $(PATH_SW)/network/syslog.cc $(PATH_SW)/test/syslog/syslog_test.cc
 DEPS    = $(PATH_SW)/network/syslog.h $(PATH_SW)/network/network_config.h $(wildcard $(STUBS)/*.h)
@@ -27,6 +27,8 @@ $(RESULT)/$(PRJ): $(SRCS) $(DEPS)
 
 test: all
 	@$(RESULT)/$(PRJ)
+	@$(RESULT)/$(PRJ) boot
+	@$(RESULT)/$(PRJ) boot-invalid
 
 clean:
 	@rm -rf $(RESULT)

@@ -59,6 +59,37 @@ bool Syslog::init(size_t buffer_size)
 // and closes the socket itself, as lwIP sockets must not be closed from another task.
 void Syslog::effectuate_settings(void)
 {
+    // Two tasks may change the setting at once (REST and the menu). One applies at a
+    // time; a second caller asks the first to look at the setting once more.
+    ENTER_SAFE_SECTION;
+    bool busy = applying;
+    if (busy) {
+        reapply = true;
+    }
+    else {
+        applying = true;
+    }
+    LEAVE_SAFE_SECTION;
+    if (busy) {
+        return;
+    }
+    bool again;
+    do {
+        ENTER_SAFE_SECTION;
+        reapply = false;
+        LEAVE_SAFE_SECTION;
+        applySetting();
+        ENTER_SAFE_SECTION;
+        again = reapply;
+        if (!again) {
+            applying = false;
+        }
+        LEAVE_SAFE_SECTION;
+    } while (again);
+}
+
+void Syslog::applySetting(void)
+{
     const char *server = networkConfig.cfg->get_string(CFG_NETWORK_REMOTE_SYSLOG_SERVER);
     ip_addr_t new_ip;
     int new_port;
@@ -97,17 +128,17 @@ void Syslog::effectuate_settings(void)
     }
     LEAVE_SAFE_SECTION;
 
-    if (!changed) {
-        return;
-    }
-    if (valid) {
-        printf("Sending logs to syslog server '%s'\n", server);
-    }
-    else if (invalid) {
+    if (invalid) {
+        // Said every time the setting is applied, also when logging was already off
         printf("Invalid syslog server specified (expected <ip>[:<port>]): '%s'\n", server);
     }
-    else {
-        printf("Syslog server cleared, no longer sending logs\n");
+    else if (changed) {
+        if (valid) {
+            printf("Sending logs to syslog server '%s'\n", server);
+        }
+        else {
+            printf("Syslog server cleared, no longer sending logs\n");
+        }
     }
 }
 
@@ -197,10 +228,16 @@ void Syslog::forwardLogging()
             }
             else {
                 // Switched off: charout() no longer adds anything, drop what is pending
+                // (unless it was switched on again meanwhile; the next pass sees that)
                 ENTER_SAFE_SECTION;
-                rewind();
+                bool still_off = !enabled;
+                if (still_off) {
+                    rewind();
+                }
                 LEAVE_SAFE_SECTION;
-                linestartpos = 0;
+                if (still_off) {
+                    linestartpos = 0;
+                }
             }
         }
         if (sockfd < 0) {

@@ -147,7 +147,7 @@ static bool silent(Collector &c, const char *marker)
 }
 
 // ---- cases -------------------------------------------------------------------
-int main(void)
+static int run_runtime(void)
 {
     Collector a, b;
     printf("collectors on %d and %d\n", a.port, b.port);
@@ -219,4 +219,47 @@ int main(void)
     }
     printf("all syslog tests passed\n");
     return 0;
+}
+
+// A value that is already saved when the firmware starts: init() must start logging.
+static int run_boot(void)
+{
+    Collector a;
+    server_setting = target(a);
+    CHECK(syslog.init(16 * 1024), "init must report syslog on for a saved server");
+    CHECK(delivered(a, "boot-with-saved-server"), "no datagram for a server saved in flash");
+    CHECK(tasks_created == 1, "tasks created: %d", (int)tasks_created);
+    printf(failures ? "%d FAILED\n" : "boot test passed\n", failures);
+    return failures ? 1 : 0;
+}
+
+// A saved value that is not an address is reported at start, and nothing is sent.
+static int run_boot_invalid(void)
+{
+    char name[] = "/tmp/syslogtestXXXXXX";
+    int fd = mkstemp(name);
+    fflush(stdout);
+    int saved = dup(1);
+    dup2(fd, 1);
+    server_setting = "bogus";
+    bool on = syslog.init(16 * 1024);
+    fflush(stdout);
+    dup2(saved, 1);
+    char text[1024] = "";
+    lseek(fd, 0, SEEK_SET);
+    read(fd, text, sizeof(text) - 1);
+    close(fd);
+    unlink(name);
+    CHECK(!on, "init must report syslog off for an invalid server");
+    CHECK(strstr(text, "Invalid syslog server specified"), "no message for an invalid saved server: '%s'", text);
+    CHECK(tasks_created == 0, "a task was made for an invalid server");
+    printf(failures ? "%d FAILED\n" : "boot invalid test passed\n", failures);
+    return failures ? 1 : 0;
+}
+
+int main(int argc, char **argv)
+{
+    if (argc > 1 && !strcmp(argv[1], "boot")) return run_boot();
+    if (argc > 1 && !strcmp(argv[1], "boot-invalid")) return run_boot_invalid();
+    return run_runtime();
 }

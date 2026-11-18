@@ -27,11 +27,15 @@ class Syslog : public ConfigurableObject
     int newlinepos;     // Last position where a newline was written (or -1)
     bool overflow;      // True when log data is coming faster than we can handle
 
+    volatile bool applying;  // effectuate_settings() is running in some task
+    volatile bool reapply;   // ...and another change arrived meanwhile
+    void applySetting(void);
+
     static void syslogTask(void *arg);
     void forwardLogging();
 
   public:
-    Syslog() : port(0), buf(0), bufsize(0), failed_sends(0), task(0), enabled(false), generation(0) { ip.addr = 0; rewind(); }
+    Syslog() : port(0), buf(0), bufsize(0), failed_sends(0), task(0), enabled(false), generation(0), applying(false), reapply(false) { ip.addr = 0; rewind(); }
     ~Syslog() { if (buf) delete buf; }
     void rewind() { bufpos = 0; newlinepos = -1; overflow = false; }
     static bool parseServer(const char *server, ip_addr_t *ip, int *port);
