@@ -539,11 +539,6 @@ void UserInterface :: discardPendingMenuButton(void)
 
 bool UserInterface :: pollMenuButtonPush(void)
 {
-    // A teardown another task asked for ends a nested loop the way a menu button
-    // does; the loops below this one return, and run_once() serves the request.
-    if (releaseRequested) {
-        return true;
-    }
     host->checkButton();
     if (host->buttonPush()) {
         host->setButtonPushed();
