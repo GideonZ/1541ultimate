@@ -535,6 +535,12 @@ void UserInterface :: discardPendingMenuButton(void)
 
 bool UserInterface :: pollMenuButtonPush(void)
 {
+    // A teardown another task asked for ends a nested loop. Each loop returns
+    // what Escape returns in it, never a value that reads as consent; the loops
+    // below this one then return too, and run_once() serves the request.
+    if (releaseState == 1) {
+        return true;
+    }
     host->checkButton();
     if (host->buttonPush()) {
         host->setButtonPushed();
@@ -579,11 +585,12 @@ bool UserInterface :: release_host(void)
     // A task other than the menu's own (REST, UCI) must not delete the windows
     // the menu task is drawing on. Ask it to do that, and wait a bounded time.
     // False if it did not: the menu is then still up, and the caller must not
-    // go on as if the host were free. Known limit: the menu task serves the
-    // request only between polls of its menu, so while a blocking dialog
-    // (popup, choice, string box, help, editor) is open it cannot; those loops
-    // are not ended on a request, because several callers read their 0 result
-    // as consent. The caller then fails after the wait.
+    // go on as if the host were free. The menu task serves the request between
+    // polls of its menu. The blocking dialog loops (popup, choice, string box,
+    // string edit, forms, editor/help, monitor) end on it through
+    // pollMenuButtonPush(), each returning what Escape returns in it. Known
+    // limit: work in the menu task that does not poll (a command's file I/O)
+    // delays the service, and the caller then fails after the wait.
     if (ownerTask && ownerTask != (void *)xTaskGetCurrentTaskHandle()) {
         bool queued = false;
         portENTER_CRITICAL();
@@ -711,6 +718,9 @@ int UserInterface :: uiobject_modal(UIObject *obj)
     while(!ret && host->exists()) {
         ret = obj->poll(0);
         if (!ret && pollMenuButtonPush()) {
+            if (releaseState == 1) {
+                ret = MENU_CLOSE; // what Escape returns in a form
+            }
             break;
         }
     }
@@ -762,6 +772,12 @@ int  UserInterface :: popup(const char *msg, uint8_t flags)
     while(!ret && host->exists()) {
         ret = pop->poll(0);
         if (!ret && pollMenuButtonPush()) {
+            // A popup has no Escape: RUN/STOP is ignored. Cancel it as its own
+            // No/Cancel button would, so no caller sees a Yes.
+            if (releaseState == 1) {
+                ret = (flags & BUTTON_CANCEL) ? BUTTON_CANCEL : (flags & BUTTON_NO) ? BUTTON_NO :
+                      (flags & BUTTON_OK) ? BUTTON_OK : BUTTON_CANCEL;
+            }
             break;
         }
     }
@@ -782,6 +798,11 @@ int  UserInterface :: popup(const char *msg, int count, const char **names, cons
     while(!ret && host->exists()) {
         ret = pop->poll(0);
         if (!ret && pollMenuButtonPush()) {
+            // No Escape here either; the last button is the cancel one in every
+            // caller (the updaters: "adc", "amgc").
+            if (releaseState == 1) {
+                ret = 1 << (count - 1);
+            }
             break;
         }
     }
@@ -821,6 +842,9 @@ int UserInterface :: string_box(const char *msg, char *buffer, int maxlen, bool 
     while(!ret && host->exists()) {
         ret = box->poll(0);
         if (!ret && pollMenuButtonPush()) {
+            if (releaseState == 1) {
+                ret = -1; // what RUN/STOP returns
+            }
             break;
         }
     }
@@ -843,6 +867,9 @@ int UserInterface :: string_edit(char *buffer, int maxlen, Window *w, int x, int
     while(!ret && host->exists()) {
         ret = edit->poll(0);
         if (!ret && pollMenuButtonPush()) {
+            if (releaseState == 1) {
+                ret = -1; // what RUN/STOP returns
+            }
             break;
         }
     }
@@ -861,6 +888,9 @@ int UserInterface :: choice(const char *msg, const char **choices, int count)
     while(!ret && host->exists()) {
         ret = box->poll(0);
         if (!ret && pollMenuButtonPush()) {
+            if (releaseState == 1) {
+                ret = -1; // what Escape returns: cancel
+            }
             break;
         }
     }

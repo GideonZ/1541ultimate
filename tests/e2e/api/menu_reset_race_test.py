@@ -6,7 +6,7 @@
 The reset releases the menu's user interface from the HTTP task. If that
 deletes the menu's windows while the menu task is still drawing them, the
 firmware takes an exception and the device stops answering altogether. A reset
-while a blocking dialog (the help screen) is open is refused and changes nothing. The
+while a blocking dialog (the help screen) is open must reset cleanly too. The
 race needs a fast host link (wired, about 1 ms round trip); a WiFi link rarely
 hits it.
 
@@ -15,7 +15,7 @@ menu has drawn" to "long after", sends machine:reset without waiting for READY,
 and then requires the device to answer REST again and, after a short settle, any
 menu left open to be closable. A reset the firmware refuses because the menu
 task did not let go in time (HTTP 500) is allowed and counted, never a crash.
-The machine is checked at READY at the end. A background reader keeps REST readmem traffic
+The machine is checked at READY at the end and after each dialog reset. A background reader keeps REST readmem traffic
 going so the HTTP task is busy, as in the heavy load that first showed this.
 """
 
@@ -45,7 +45,6 @@ DELAYS = [0.0, 0.01, 0.03, 0.06, 0.1, 0.15, 0.2, 0.3, 0.45, 0.7]
 ANSWER_TIMEOUT_SECONDS = 20.0
 SETTLE_SECONDS = 0.6
 POPUP_ROUNDS = 3
-REFUSE_WITHIN_SECONDS = 4.0
 HELP_MARKER = "Selection context menu"
 
 
@@ -61,16 +60,16 @@ def wait_answers(api: UltimateApi, timeout: float) -> float | None:
     return None
 
 
-def reset_refused_under_dialog(api: UltimateApi) -> None:
-    """machine:reset while the help screen is open must be refused, and change nothing.
+def reset_under_dialog(api: UltimateApi) -> None:
+    """machine:reset while the help screen is open must reset cleanly.
 
-    The help screen is a blocking dialog loop in the menu task. The menu task
-    cannot tear the menu down from inside it, and ending the loop would hand the
-    caller of popup() or choice() a 0 that some read as consent, so the reset
-    waits a bounded time and answers an error. The machine and the menu stay as
-    they were: the help screen is still there, RUN/STOP closes it, and a reset
-    sent afterwards succeeds. F3 is the only key pressed to open it; no menu row
-    is navigated or activated.
+    The help screen is a blocking loop in the menu task, in the same family as
+    popup(), choice() and string_box(): the menu task is inside it, not in the
+    menu's own poll. The reset's release request ends that loop the way Escape
+    would (each loop returns its cancel value, never a "yes"), so the menu task
+    can tear the menu down. This row guards that unwind path; it is not a RED
+    reproducer, because the unfixed firmware also resets here. F3 is the only
+    key pressed to open the screen; no menu row is navigated or activated.
     """
     api.machine.menu_button()
     time.sleep(1.5)
@@ -78,31 +77,15 @@ def reset_refused_under_dialog(api: UltimateApi) -> None:
     time.sleep(1.0)
     if not any(HELP_MARKER in row for row in api.machine.menu_rows()):
         raise Failure("the help screen did not open")
-    started = time.monotonic()
-    try:
-        api.machine.reset(force=True, wait=False)
-    except Failure:
-        refused = True
-    else:
-        refused = False
-    took = time.monotonic() - started
-    if not refused:
-        raise Failure("machine:reset was accepted with the help screen open: the menu was "
-                      "torn down under a dialog")
-    if took > REFUSE_WITHIN_SECONDS:
-        raise Failure(f"machine:reset took {took:.1f}s to refuse, expected under "
-                      f"{REFUSE_WITHIN_SECONDS:.0f}s")
+    api.machine.reset(force=True, wait=False)
     if wait_answers(api, ANSWER_TIMEOUT_SECONDS) is None:
-        raise Failure("the device stopped answering after the refused machine:reset")
-    if not any(HELP_MARKER in row for row in api.machine.menu_rows()):
-        raise Failure("the refused machine:reset closed the help screen")
-    api.machine.press("run_stop")
+        raise Failure("the device stopped answering after machine:reset with the help screen open")
     time.sleep(SETTLE_SECONDS)
-    if any(HELP_MARKER in row for row in api.machine.menu_rows()):
-        raise Failure("RUN/STOP did not close the help screen after the refused reset")
-    api.machine.close_menu_from_anywhere()
-    if not api.machine.reset(force=True):
-        raise Failure("a machine:reset after closing the menu did not reach READY")
+    if api.machine.menu_open():
+        api.machine.close_menu_from_anywhere()
+        raise Failure("the menu was still open after machine:reset with the help screen open")
+    if not api.machine.wait_until_ready():
+        raise Failure("the machine did not reach READY after machine:reset with the help screen open")
 
 
 def main() -> int:
@@ -153,9 +136,9 @@ def main() -> int:
                            f"{refused} resets refused so far")
         stop.set()
         thread.join(timeout=5)
-        with check(f"machine:reset with a blocking dialog open, {POPUP_ROUNDS} times: refused, nothing changed"):
+        with check(f"machine:reset with a blocking dialog open, {POPUP_ROUNDS} times: it resets, the menu closes"):
             for _ in range(POPUP_ROUNDS):
-                reset_refused_under_dialog(api)
+                reset_under_dialog(api)
         with check("the machine reaches READY with the menu closed"):
             api.machine.close_menu_from_anywhere()
             if not api.machine.reset(force=True):
