@@ -66,6 +66,11 @@ private:
 
     bool initialized;
     bool doBreak;
+    // The task that is inside run_once() (NULL otherwise), and a teardown that
+    // another task asked for. The menu is torn down only by that task, never
+    // while it is drawing: see release_host().
+    void *volatile ownerTask;
+    volatile bool releaseRequested;
     bool available;
     // A menu on a network stream (Telnet). It has its own keyboard, so it does
     // not count as a menu the USB keyboard and mouse, or REST, are driving.
@@ -76,6 +81,7 @@ private:
     
     void set_screen_title(void);
     void set_available(bool enable);
+    void service_release_request(void);
     int  pollFocussed(void);
     bool pollMenuButtonPush(void);
     void discardPendingMenuButton(void);

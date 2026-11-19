@@ -160,6 +160,8 @@ UserInterface :: UserInterface(const char *title, bool use_logo) : title(title)
     keyboard = NULL;
     screen = NULL;
     doBreak = false;
+    ownerTask = NULL;
+    releaseRequested = false;
     available = false;
     remote = false;
     color_sel_bg = 0;
@@ -332,6 +334,9 @@ void UserInterface :: run_once(void)
         return;
     }
 
+    // Set before take_ownership(): from then on another task may see the client.
+    releaseRequested = false;
+    ownerTask = (void *)xTaskGetCurrentTaskHandle();
     host->take_ownership(this);
     // Whatever is on the keyboard or joystick port as the menu opens was not
     // meant for the menu; a single stale sample there moved the cursor (#935).
@@ -344,6 +349,10 @@ void UserInterface :: run_once(void)
 
     set_available(true);
     while(!doBreak) {
+        service_release_request();
+        if (doBreak) {
+            break;
+        }
         host->checkButton();
         if (!host->exists()) {
             break;
@@ -358,6 +367,7 @@ void UserInterface :: run_once(void)
             int ret = pollFocussed();
             if (ret != 0)
                 printf("Poll Focussed returned %d. DoBreak = %d.\n", ret, doBreak);
+            service_release_request();
             switch(ret) {
             case MENU_NOP:
                 break;
@@ -378,6 +388,9 @@ void UserInterface :: run_once(void)
     }
     set_available(false);
     doBreak = false;
+    // Nobody will service a request from here on; let a waiting caller go.
+    ownerTask = NULL;
+    releaseRequested = false;
 #endif
 }
 
@@ -535,8 +548,33 @@ void UserInterface :: appear(void)
 	}
 }
 
+// Runs in the task that owns the menu, between its draws.
+void UserInterface :: service_release_request(void)
+{
+    if (!releaseRequested) {
+        return;
+    }
+    for(int i=focus;i>=0;i--) {  // tear down
+        ui_objects[i]->deinit();
+    }
+    doBreak = true;
+    releaseRequested = false;
+}
+
 void UserInterface :: release_host(void)
 {
+    // A task other than the menu's own (REST, UCI) must not delete the windows
+    // the menu task is drawing on. Ask it to do that, and wait a bounded time.
+    if (ownerTask && ownerTask != (void *)xTaskGetCurrentTaskHandle()) {
+        releaseRequested = true;
+        for (int waited = 0; releaseRequested && ownerTask && waited < 2000; waited += 10) {
+            vTaskDelay(10 / portTICK_PERIOD_MS);
+        }
+        if (releaseRequested) {
+            printf("UI: menu task did not release the host in time\n");
+        }
+        return;
+    }
     for(int i=focus;i>=0;i--) {  // tear down
         ui_objects[i]->deinit();
     }
