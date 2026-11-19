@@ -65,13 +65,15 @@ def wait_answers(api: UltimateApi, timeout: float) -> float | None:
 def reset_under_dialog(api: UltimateApi) -> None:
     """machine:reset while the help screen is open must reset cleanly.
 
-    The help screen is a blocking loop in the menu task, in the same family as
-    popup(), choice() and string_box(): the menu task is inside it, not in the
-    menu's own poll. The reset's release request ends that loop the way Escape
-    would (each loop returns its cancel value, never a "yes"), so the menu task
-    can tear the menu down. This row guards that unwind path; it is not a RED
-    reproducer, because the unfixed firmware also resets here. F3 is the only
-    key pressed to open the screen; no menu row is navigated or activated.
+    The help screen is a read-only viewer, a blocking loop in the menu task, not
+    in the menu's own poll. The reset's release request closes it, so the menu
+    task can tear the menu down. Only read-only viewers are closed this way:
+    question and input dialogs (popup, choice, string box, forms) are not,
+    because ending them would hand their callers a result they read as an answer,
+    and a REST reset gets HTTP 500 while one is open. This row guards the viewer
+    unwind path; it is not a RED reproducer, because the unfixed firmware also
+    resets here. F3 is the only key pressed to open the screen; no menu row is
+    navigated or activated.
     """
     api.machine.menu_button()
     time.sleep(1.5)
