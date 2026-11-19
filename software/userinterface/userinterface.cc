@@ -184,8 +184,8 @@ UserInterface :: ~UserInterface()
     releaseRequested = false;
 #if !defined(RUNS_ON_PC) && !defined(RECOVERYAPP)
     C64 *machine = C64::getMachine();
-    if (machine && machine->client == this) {
-        machine->client = 0;
+    if (machine) {
+        machine->drop_client(this);
     }
 #endif
     get_user_interfaces()->remove(this);

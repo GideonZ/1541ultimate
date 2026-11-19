@@ -203,7 +203,7 @@ void C64_Subsys :: restoreCart(void)
 // Takes the host back from the user interface and drops it as the machine's client.
 // False if the menu task did not let go (logged there): the menu is still up and
 // the machine must be left alone.
-static bool release_client(C64 *c64)
+bool C64_Subsys :: release_client(C64 *c64)
 {
     if (!c64->client) {
         return true;
