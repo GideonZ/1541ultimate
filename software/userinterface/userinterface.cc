@@ -579,6 +579,9 @@ void UserInterface :: release_host(void)
         ui_objects[i]->deinit();
     }
     doBreak = true;
+    // The windows are gone, so a caller waiting for that is done. This also lets it
+    // go when this task goes on to wait for a lock that caller holds.
+    releaseRequested = false;
 }
 
 bool UserInterface :: is_available(void)
