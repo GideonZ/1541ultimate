@@ -45,6 +45,8 @@ DELAYS = [0.0, 0.01, 0.03, 0.06, 0.1, 0.15, 0.2, 0.3, 0.45, 0.7]
 ANSWER_TIMEOUT_SECONDS = 20.0
 SETTLE_SECONDS = 0.6
 POPUP_ROUNDS = 3
+# Resets the firmware may refuse (HTTP 500) in the race rounds before the check fails.
+MAX_REFUSED = 3
 HELP_MARKER = "Selection context menu"
 
 
@@ -139,6 +141,10 @@ def main() -> int:
         with check(f"machine:reset with a blocking dialog open, {POPUP_ROUNDS} times: it resets, the menu closes"):
             for _ in range(POPUP_ROUNDS):
                 reset_under_dialog(api)
+        with check("few resets were refused in the race rounds"):
+            if refused > MAX_REFUSED:
+                raise Failure(f"{refused} of {args.rounds} resets were refused, more than {MAX_REFUSED}: "
+                              "the menu task is not letting go in time")
         with check("the machine reaches READY with the menu closed"):
             api.machine.close_menu_from_anywhere()
             if not api.machine.reset(force=True):

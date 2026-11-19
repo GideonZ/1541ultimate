@@ -535,12 +535,6 @@ void UserInterface :: discardPendingMenuButton(void)
 
 bool UserInterface :: pollMenuButtonPush(void)
 {
-    // A teardown another task asked for ends a nested loop. Each loop returns
-    // what Escape returns in it, never a value that reads as consent; the loops
-    // below this one then return too, and run_once() serves the request.
-    if (releaseState == 1) {
-        return true;
-    }
     host->checkButton();
     if (host->buttonPush()) {
         host->setButtonPushed();
@@ -586,11 +580,13 @@ bool UserInterface :: release_host(void)
     // the menu task is drawing on. Ask it to do that, and wait a bounded time.
     // False if it did not: the menu is then still up, and the caller must not
     // go on as if the host were free. The menu task serves the request between
-    // polls of its menu. The blocking dialog loops (popup, choice, string box,
-    // string edit, forms, editor/help, monitor) end on it through
-    // pollMenuButtonPush(), each returning what Escape returns in it. Known
-    // limit: work in the menu task that does not poll (a command's file I/O)
-    // delays the service, and the caller then fails after the wait.
+    // polls of its menu. Of the nested loops only the read-only text viewer
+    // (help, logs) closes on it. Known limit: a REST reset is refused while a
+    // question or input dialog (popup, choice, string box, form, hex editor,
+    // monitor) is open on the menu, because ending those loops would hand their
+    // callers a result they read as an answer. Work in the menu task that does
+    // not poll (a command's file I/O) also delays the service. The caller then
+    // fails after the wait and nothing is changed.
     if (ownerTask && ownerTask != (void *)xTaskGetCurrentTaskHandle()) {
         bool queued = false;
         portENTER_CRITICAL();
@@ -718,9 +714,6 @@ int UserInterface :: uiobject_modal(UIObject *obj)
     while(!ret && host->exists()) {
         ret = obj->poll(0);
         if (!ret && pollMenuButtonPush()) {
-            if (releaseState == 1) {
-                ret = MENU_CLOSE; // what Escape returns in a form
-            }
             break;
         }
     }
@@ -772,12 +765,6 @@ int  UserInterface :: popup(const char *msg, uint8_t flags)
     while(!ret && host->exists()) {
         ret = pop->poll(0);
         if (!ret && pollMenuButtonPush()) {
-            // A popup has no Escape: RUN/STOP is ignored. Cancel it as its own
-            // No/Cancel button would, so no caller sees a Yes.
-            if (releaseState == 1) {
-                ret = (flags & BUTTON_CANCEL) ? BUTTON_CANCEL : (flags & BUTTON_NO) ? BUTTON_NO :
-                      (flags & BUTTON_OK) ? BUTTON_OK : BUTTON_CANCEL;
-            }
             break;
         }
     }
@@ -798,11 +785,6 @@ int  UserInterface :: popup(const char *msg, int count, const char **names, cons
     while(!ret && host->exists()) {
         ret = pop->poll(0);
         if (!ret && pollMenuButtonPush()) {
-            // No Escape here either; the last button is the cancel one in every
-            // caller (the updaters: "adc", "amgc").
-            if (releaseState == 1) {
-                ret = 1 << (count - 1);
-            }
             break;
         }
     }
@@ -842,9 +824,6 @@ int UserInterface :: string_box(const char *msg, char *buffer, int maxlen, bool 
     while(!ret && host->exists()) {
         ret = box->poll(0);
         if (!ret && pollMenuButtonPush()) {
-            if (releaseState == 1) {
-                ret = -1; // what RUN/STOP returns
-            }
             break;
         }
     }
@@ -867,9 +846,6 @@ int UserInterface :: string_edit(char *buffer, int maxlen, Window *w, int x, int
     while(!ret && host->exists()) {
         ret = edit->poll(0);
         if (!ret && pollMenuButtonPush()) {
-            if (releaseState == 1) {
-                ret = -1; // what RUN/STOP returns
-            }
             break;
         }
     }
@@ -888,9 +864,6 @@ int UserInterface :: choice(const char *msg, const char **choices, int count)
     while(!ret && host->exists()) {
         ret = box->poll(0);
         if (!ret && pollMenuButtonPush()) {
-            if (releaseState == 1) {
-                ret = -1; // what Escape returns: cancel
-            }
             break;
         }
     }
@@ -919,15 +892,24 @@ void UserInterface :: hide_progress(void)
     delete status_box;
 }
 
-void UserInterface :: run_editor(Editor *editor)
+void UserInterface :: run_editor(Editor *editor, bool abortable)
 {
     editor->init(screen, keyboard);
     int ret = 0;
     discardPendingMenuButton();
     while(!ret && host->exists()) {
         ret = editor->poll(0);
-        if (!ret && pollMenuButtonPush()) {
-            break;
+        if (!ret) {
+            // A read-only viewer decides nothing and takes no input that anyone
+            // acts on, so it can simply close when another task asks for the
+            // teardown. Dialogs that ask or take input are not ended this way.
+            const int state = releaseState;
+            if (abortable && state == 1) {
+                break;
+            }
+            if (pollMenuButtonPush()) {
+                break;
+            }
         }
     }
     editor->deinit();
@@ -936,7 +918,7 @@ void UserInterface :: run_editor(Editor *editor)
 
 void UserInterface :: run_editor(const char *text_buf, int max_len)
 {
-    run_editor(new Editor(this, text_buf, max_len));
+    run_editor(new Editor(this, text_buf, max_len), true); // read-only text
 }
 
 void UserInterface :: run_hex_editor(const char *text_buf, int max_len)

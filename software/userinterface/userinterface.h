@@ -89,7 +89,7 @@ private:
     void discardPendingMenuButton(void);
     void peel_off(void);
     bool buttonDownFor(uint32_t ms);
-    void run_editor(Editor *);
+    void run_editor(Editor *, bool abortable = false);
 public:
     int color_border, color_bg, color_fg, color_sel, color_sel_bg, reverse_sel;
     int color_status, color_inactive, color_configitem;
