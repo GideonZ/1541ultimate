@@ -70,7 +70,9 @@ private:
     // another task asked for. The menu is torn down only by that task, never
     // while it is drawing: see release_host().
     void *volatile ownerTask;
-    volatile bool releaseRequested;
+    // 0 none, 1 requested by another task, 2 being served; changed only inside a
+    // critical section, so a withdrawn request cannot overlap a serve.
+    volatile int releaseState;
     bool available;
     // A menu on a network stream (Telnet). It has its own keyboard, so it does
     // not count as a menu the USB keyboard and mouse, or REST, are driving.

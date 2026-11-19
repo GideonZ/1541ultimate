@@ -362,11 +362,6 @@ public:
     	this->client = client;
     	freeze();
     }
-    // For a client that is being destroyed: forget it if it is the current one.
-    void drop_client(HostClient *c) {
-    	if (client == c)
-    		client = 0;
-    }
     void release_ownership(void) {
     	unfreeze();
     	this->client = 0;

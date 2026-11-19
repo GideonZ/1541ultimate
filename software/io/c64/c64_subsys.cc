@@ -435,7 +435,9 @@ SubsysResultCode_e C64_Subsys::executeCommand(SubsysCommand *cmd)
             if (res == FR_OK) {
                 char shown[52];
                 const char *name = x00_load_name(f, cmd->filename.c_str(), shown, sizeof(shown));
-                dma_load(f, NULL, 0, name, cmd->mode, c64->cfg->get_value(CFG_C64_DMA_ID));
+                if (dma_load(f, NULL, 0, name, cmd->mode, c64->cfg->get_value(CFG_C64_DMA_ID)) < 0) {
+                    result = SSRET_INTERNAL_ERROR;
+                }
                 fm->fclose(f);
             } else {
                 result = SSRET_CANNOT_OPEN_FILE;
@@ -448,7 +450,9 @@ SubsysResultCode_e C64_Subsys::executeCommand(SubsysCommand *cmd)
             if (res == FR_OK) {
                 char shown[52];
                 const char *name = x00_load_name(f, cmd->filename.c_str(), shown, sizeof(shown));
-                dma_load(f, NULL, 0, name, cmd->mode, c1541_A->get_current_iec_address());
+                if (dma_load(f, NULL, 0, name, cmd->mode, c1541_A->get_current_iec_address()) < 0) {
+                    result = SSRET_INTERNAL_ERROR;
+                }
                 fm->fclose(f);
             } else {
                 result = SSRET_CANNOT_OPEN_FILE;
@@ -461,27 +465,37 @@ SubsysResultCode_e C64_Subsys::executeCommand(SubsysCommand *cmd)
                 // A raw load has no name to print; the header is still skipped, because
                 // the C64 file is what follows it.
                 x00_skip_header(f, cmd->filename.c_str(), NULL);
-                dma_load_raw(f);
+                if (dma_load_raw(f) < 0) {
+                    result = SSRET_INTERNAL_ERROR;
+                }
                 fm->fclose(f);
             } else {
                 result = SSRET_CANNOT_OPEN_FILE;
             }
             break;
         case C64_DRIVE_LOAD:
-            dma_load(0, NULL, 0, cmd->filename.c_str(), cmd->mode, cmd->path.c_str()[0] & 0x1F);
+            if (dma_load(0, NULL, 0, cmd->filename.c_str(), cmd->mode, cmd->path.c_str()[0] & 0x1F) < 0) {
+                result = SSRET_INTERNAL_ERROR;
+            }
             if (cmd->user_interface) {
                 cmd->user_interface->menu_response_to_action = MENU_HIDE;
             }
             break;
         case C64_DMA_BUFFER:
-            dma_load(0, (const uint8_t *)cmd->buffer, cmd->bufferSize, cmd->filename.c_str(), cmd->mode,
-                    c64->cfg->get_value(CFG_C64_DMA_ID));
+            if (dma_load(0, (const uint8_t *)cmd->buffer, cmd->bufferSize, cmd->filename.c_str(), cmd->mode,
+                    c64->cfg->get_value(CFG_C64_DMA_ID)) < 0) {
+                result = SSRET_INTERNAL_ERROR;
+            }
             break;
         case C64_DMA_RAW_WRITE:
-            dma_load_raw_buffer((uint16_t)cmd->mode, (uint8_t *)cmd->buffer, cmd->bufferSize, 0);
+            if (dma_load_raw_buffer((uint16_t)cmd->mode, (uint8_t *)cmd->buffer, cmd->bufferSize, 0) < 0) {
+                result = SSRET_INTERNAL_ERROR;
+            }
             break;
         case C64_DMA_RAW_READ:
-            dma_load_raw_buffer((uint16_t)cmd->mode, (uint8_t *)cmd->buffer, cmd->bufferSize, 1);
+            if (dma_load_raw_buffer((uint16_t)cmd->mode, (uint8_t *)cmd->buffer, cmd->bufferSize, 1) < 0) {
+                result = SSRET_INTERNAL_ERROR;
+            }
             break;
         case C64_STOP_COMMAND:
             c64->stop(false);

@@ -161,7 +161,7 @@ UserInterface :: UserInterface(const char *title, bool use_logo) : title(title)
     screen = NULL;
     doBreak = false;
     ownerTask = NULL;
-    releaseRequested = false;
+    releaseState = 0;
     available = false;
     remote = false;
     color_sel_bg = 0;
@@ -178,16 +178,9 @@ UserInterface :: ~UserInterface()
 {
 	printf("Destructing user interface..\n");
     set_available(false);
-    // Only menus on a stream (Telnet) are deleted, and they never are the C64's
-    // client; this keeps a dangling client out of it should that change.
-    ownerTask = NULL;
-    releaseRequested = false;
-#if !defined(RUNS_ON_PC) && !defined(RECOVERYAPP)
-    C64 *machine = C64::getMachine();
-    if (machine) {
-        machine->drop_client(this);
-    }
-#endif
+    // Not a C64 client, and not inside run_once(), when it is deleted: only menus on
+    // a stream (Telnet, socket_gui.cc) are, and they use run_remote(), which never
+    // takes ownerTask. Nothing to clear.
     get_user_interfaces()->remove(this);
     do {
         if (ui_objects[focus]) {
@@ -345,7 +338,7 @@ void UserInterface :: run_once(void)
     }
 
     // Set before take_ownership(): from then on another task may see the client.
-    releaseRequested = false;
+    releaseState = 0;
     ownerTask = (void *)xTaskGetCurrentTaskHandle();
     host->take_ownership(this);
     // Whatever is on the keyboard or joystick port as the menu opens was not
@@ -378,6 +371,9 @@ void UserInterface :: run_once(void)
             if (ret != 0)
                 printf("Poll Focussed returned %d. DoBreak = %d.\n", ret, doBreak);
             service_release_request();
+            if (doBreak) {
+                break; // served in this pass: do not tear down a second time below
+            }
             switch(ret) {
             case MENU_NOP:
                 break;
@@ -400,7 +396,7 @@ void UserInterface :: run_once(void)
     doBreak = false;
     // Nobody will service a request from here on; let a waiting caller go.
     ownerTask = NULL;
-    releaseRequested = false;
+    releaseState = 0;
 #endif
 }
 
@@ -561,14 +557,21 @@ void UserInterface :: appear(void)
 // Runs in the task that owns the menu, between its draws.
 void UserInterface :: service_release_request(void)
 {
-    if (!releaseRequested) {
+    bool serve = false;
+    portENTER_CRITICAL();
+    if (releaseState == 1) {
+        releaseState = 2;
+        serve = true;
+    }
+    portEXIT_CRITICAL();
+    if (!serve) {
         return;
     }
     for(int i=focus;i>=0;i--) {  // tear down
         ui_objects[i]->deinit();
     }
     doBreak = true;
-    releaseRequested = false;
+    releaseState = 0;
 }
 
 bool UserInterface :: release_host(void)
@@ -577,20 +580,41 @@ bool UserInterface :: release_host(void)
     // the menu task is drawing on. Ask it to do that, and wait a bounded time.
     // False if it did not: the menu is then still up, and the caller must not
     // go on as if the host were free. Known limit: the menu task serves the
-    // request between polls, so while a popup or other nested input loop is
-    // open it cannot, and the caller fails after the wait.
+    // request only between polls of its menu, so while a blocking dialog
+    // (popup, choice, string box, help, editor) is open it cannot; those loops
+    // are not ended on a request, because several callers read their 0 result
+    // as consent. The caller then fails after the wait.
     if (ownerTask && ownerTask != (void *)xTaskGetCurrentTaskHandle()) {
-        releaseRequested = true;
-        for (int waited = 0; releaseRequested && ownerTask && waited < 2000; waited += 10) {
-            vTaskDelay(10 / portTICK_PERIOD_MS);
+        bool queued = false;
+        portENTER_CRITICAL();
+        if (ownerTask && releaseState == 0) {
+            releaseState = 1;
+            queued = true;
         }
-        if (releaseRequested) {
-            // Withdrawn, so a late service does not close a menu nobody asks to close.
-            releaseRequested = false;
-            printf("UI: menu task did not release the host in time\n");
-            return false;
+        portEXIT_CRITICAL();
+        if (!queued) {
+            // Another request is pending, or the menu closed meanwhile.
+            return ownerTask == NULL;
         }
-        return true;
+        const TickType_t start = xTaskGetTickCount();
+        const TickType_t limit = 2000 / portTICK_PERIOD_MS;
+        while (releaseState != 0 && ownerTask) {
+            if (releaseState == 1 && (xTaskGetTickCount() - start) >= limit) {
+                bool withdrawn = false;
+                portENTER_CRITICAL();
+                if (releaseState == 1) { // not taken up in the meantime
+                    releaseState = 0;
+                    withdrawn = true;
+                }
+                portEXIT_CRITICAL();
+                if (withdrawn) {
+                    printf("UI: menu task did not release the host in time\n");
+                    return false;
+                }
+            }
+            vTaskDelay(1);
+        }
+        return true; // served, or the menu was closed in the meantime
     }
     for(int i=focus;i>=0;i--) {  // tear down
         ui_objects[i]->deinit();
@@ -598,7 +622,7 @@ bool UserInterface :: release_host(void)
     doBreak = true;
     // The windows are gone, so a caller waiting for that is done. This also lets it
     // go when this task goes on to wait for a lock that caller holds.
-    releaseRequested = false;
+    releaseState = 0;
     return true;
 }
 
