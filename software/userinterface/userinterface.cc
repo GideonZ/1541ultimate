@@ -178,6 +178,16 @@ UserInterface :: ~UserInterface()
 {
 	printf("Destructing user interface..\n");
     set_available(false);
+    // Only menus on a stream (Telnet) are deleted, and they never are the C64's
+    // client; this keeps a dangling client out of it should that change.
+    ownerTask = NULL;
+    releaseRequested = false;
+#if !defined(RUNS_ON_PC) && !defined(RECOVERYAPP)
+    C64 *machine = C64::getMachine();
+    if (machine && machine->client == this) {
+        machine->client = 0;
+    }
+#endif
     get_user_interfaces()->remove(this);
     do {
         if (ui_objects[focus]) {
@@ -561,19 +571,26 @@ void UserInterface :: service_release_request(void)
     releaseRequested = false;
 }
 
-void UserInterface :: release_host(void)
+bool UserInterface :: release_host(void)
 {
     // A task other than the menu's own (REST, UCI) must not delete the windows
     // the menu task is drawing on. Ask it to do that, and wait a bounded time.
+    // False if it did not: the menu is then still up, and the caller must not
+    // go on as if the host were free. Known limit: the menu task serves the
+    // request between polls, so while a popup or other nested input loop is
+    // open it cannot, and the caller fails after the wait.
     if (ownerTask && ownerTask != (void *)xTaskGetCurrentTaskHandle()) {
         releaseRequested = true;
         for (int waited = 0; releaseRequested && ownerTask && waited < 2000; waited += 10) {
             vTaskDelay(10 / portTICK_PERIOD_MS);
         }
         if (releaseRequested) {
+            // Withdrawn, so a late service does not close a menu nobody asks to close.
+            releaseRequested = false;
             printf("UI: menu task did not release the host in time\n");
+            return false;
         }
-        return;
+        return true;
     }
     for(int i=focus;i>=0;i--) {  // tear down
         ui_objects[i]->deinit();
@@ -582,6 +599,7 @@ void UserInterface :: release_host(void)
     // The windows are gone, so a caller waiting for that is done. This also lets it
     // go when this task goes on to wait for a lock that caller holds.
     releaseRequested = false;
+    return true;
 }
 
 bool UserInterface :: is_available(void)

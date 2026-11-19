@@ -105,7 +105,7 @@ public:
     virtual ~UserInterface();
 
     // from HostClient
-    virtual void release_host();
+    virtual bool release_host();
 
     virtual bool is_available(void);
     virtual void run();
