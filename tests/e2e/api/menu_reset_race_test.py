@@ -42,7 +42,7 @@ DELAYS = [0.0, 0.01, 0.03, 0.06, 0.1, 0.15, 0.2, 0.3, 0.45, 0.7]
 ANSWER_TIMEOUT_SECONDS = 20.0
 SETTLE_SECONDS = 0.6
 POPUP_ROUNDS = 3
-KEY_PACE_SECONDS = 0.5
+HELP_MARKER = "Selection context menu"
 
 
 def wait_answers(api: UltimateApi, timeout: float) -> float | None:
@@ -57,63 +57,28 @@ def wait_answers(api: UltimateApi, timeout: float) -> float | None:
     return None
 
 
-def selected_row(api: UltimateApi) -> str:
-    """Text of the highlighted row of the open menu: the row with the most reversed cells."""
-    body = api.machine.menu_screen()
-    if body is None:
-        raise Failure("the menu is not open")
-    best, best_count = -1, 0
-    for row in range(25):
-        cells = body[row * 40:(row + 1) * 40]
-        marked = sum(1 for c in cells if c & 0x80 and (c & 0x7F) != 0x20)
-        if marked > best_count:
-            best, best_count = row, marked
-    return "" if best < 0 else api.machine.rows_of(body)[best].strip()
-
-
-def step_to(api: UltimateApi, wanted: str, limit: int = 12) -> None:
-    """Move the cursor down until the highlighted row reads `wanted`. Never presses RETURN."""
-    for _ in range(limit):
-        if wanted in selected_row(api):
-            return
-        api.machine.press("cursor_up_down")
-        time.sleep(KEY_PACE_SECONDS)
-    raise Failure(f"the highlight never reached {wanted!r}, it is on {selected_row(api)!r}")
-
-
 def popup_then_reset(api: UltimateApi) -> None:
-    """Open the string box of Save REU Memory in the menu task, then reset over REST.
+    """Open the help screen, a nested blocking loop of the menu task, then reset over REST.
 
-    RETURN is pressed only on a row that reads what is expected, never
-    near Power OFF or a reboot row. The box is never confirmed, so no file is
-    written; the reset has to unwind it.
+    The help screen runs in the same kind of loop as popup() and string_box():
+    the menu task is inside it, not in the menu's own poll. The reset has to
+    make that loop return so the menu task can tear the menu down. F3 is the
+    only key pressed; no menu row is navigated or activated.
     """
     api.machine.menu_button()
     time.sleep(1.5)
-    api.machine.press("f5")
-    time.sleep(KEY_PACE_SECONDS)
-    step_to(api, "C64 Machine")
-    if "C64 Machine" not in selected_row(api):
-        raise Failure("not on C64 Machine")
-    api.machine.press("return")
+    api.machine.press("f3")
     time.sleep(1.0)
-    # The submenu opens on its first row. Walk down with the highlight checked
-    # each step; stop on Save REU Memory, and only then press RETURN.
-    step_to(api, "Save REU Memory")
-    if not selected_row(api).endswith("Save REU Memory"):
-        raise Failure(f"expected Save REU Memory, the highlight is on {selected_row(api)!r}")
-    api.machine.press("return")
-    time.sleep(1.0)
-    if not any("Save REU" in row for row in api.machine.menu_rows()):
-        raise Failure("the string box did not open")
+    if not any(HELP_MARKER in row for row in api.machine.menu_rows()):
+        raise Failure("the help screen did not open")
     api.machine.reset(force=True, wait=False)
     back = wait_answers(api, ANSWER_TIMEOUT_SECONDS)
     if back is None:
-        raise Failure("the device stopped answering after machine:reset with a popup open")
+        raise Failure("the device stopped answering after machine:reset with the help screen open")
     time.sleep(SETTLE_SECONDS)
     if api.machine.menu_open():
         api.machine.close_menu_from_anywhere()
-        raise Failure("the menu was still open after machine:reset with a popup open")
+        raise Failure("the menu was still open after machine:reset with the help screen open")
 
 
 def main() -> int:
@@ -159,7 +124,7 @@ def main() -> int:
                     detail(f"{n + 1} rounds done, last answer back after {back:.2f}s")
         stop.set()
         thread.join(timeout=5)
-        with check(f"machine:reset with a menu popup open, {POPUP_ROUNDS} times: it resets and the device answers"):
+        with check(f"machine:reset with a blocking menu screen open, {POPUP_ROUNDS} times: it resets and the device answers"):
             for _ in range(POPUP_ROUNDS):
                 popup_then_reset(api)
         with check("the machine reaches READY with the menu closed"):
