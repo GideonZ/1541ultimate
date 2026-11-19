@@ -323,6 +323,7 @@ e2e:
   lint                              x      x      x      x      x
   machine-code-monitor              .      .      .      x      x
   memory-views                      .      .      x      x      x
+  menu-reset-race                   .      .      x      x      x
   menu-screen                       x      x      x      x      x
   micromys-wheel                    .      .      .      x      x
   mus-rest-play                     .      .      x      x      x
