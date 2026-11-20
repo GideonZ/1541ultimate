@@ -37,8 +37,8 @@ CXXFLAGS := -std=c++14 $(COMMON) -I$(HOSTTEST) -I. -Istub
 INCLUDES  = -I. -Istub -I$(DIR_$(M)) -I$(PATH_SW)/io/uart $(INC_$(M))
 
 # What the extracted code of a module is made of ...
-FUNCS_MODEM := send_event wifi_event_handler wifi_note_identify wifi_send_connected_event attempt_connect \
-               wifi_connect_to_scanned enable_wifi_if_needed wifi_report_disabled handle_connect_command \
+FUNCS_MODEM := wifi_start_at_boot wifi_record_netif_defaults enable_hook disable_hook send_event wifi_event_handler wifi_note_identify wifi_send_connected_event attempt_connect \
+               wifi_connect_to_scanned store_wifi_enabled enable_wifi_if_needed wifi_report_disabled handle_connect_command \
                connector_boot_state connect_thread
 FUNCS_RPC   := cmd_identify cmd_wifi_connect cmd_wifi_endisable cmd_get_connection
 # ... and what every module must have
@@ -62,8 +62,12 @@ define EXTRACTED
 	@{ echo '#include "module_env.h"'; \
 	   awk '/^typedef enum \{/ { t = 1; buf = "" } t { buf = buf $$0 "\n" } t && /\} ConnectState_t;/ { if (buf ~ /LastAP/) printf "%s", buf; t = 0 }' $(DIR_$(M))/wifi_modem.c; \
 	   grep -E '^static const char \*states\[\]' $(DIR_$(M))/wifi_modem.c; \
+	   grep -E '^(#define WIFI_STORE_|static int store_)' $(DIR_$(M))/wifi_modem.c; \
 	   for f in $(FUNCS_MODEM); do $(EXTRACT) -v f=$$f $(DIR_$(M))/wifi_modem.c; done; \
 	   for f in $(FUNCS_RPC); do $(EXTRACT) -v f=$$f $(DIR_$(M))/rpc_dispatch.c; done; } > $(1)/module_code.in
+	$(if $(filter u64ctrl,$(M)),@$(EXTRACT) -v f=wifi_init $(DIR_$(M))/wifi_modem.c > $(1)/wifi_init.in; \
+	   grep -q 'wifi_start_at_boot()' $(1)/wifi_init.in && ! grep -q 'esp_wifi_start()' $(1)/wifi_init.in && grep -q 'wifi_record_netif_defaults()' $(1)/wifi_init.in \
+	   || { echo "wifi tests: wifi_init of $(M) must start the radio only through wifi_start_at_boot() and record the netif through wifi_record_netif_defaults()"; exit 1; })
 	@for f in ConnectState_t $(NEEDED); do grep -q "$$f" $(1)/module_code.in || { echo "wifi tests: $$f not found in $(M)"; exit 1; }; done
 	@{ cat $(1)/module_code.in; echo '#include "module_stubs.c"'; for f in $(wildcard module_*_stubs.c); do echo "#include \"$$f\""; done; } > $(1)/module_code.c
 endef

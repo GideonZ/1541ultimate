@@ -29,6 +29,7 @@ extern int last_ap_reachable;  // the next run's connects to the last AP that su
                                // after each run); every other connect attempt fails
 extern int start_fails;        // the next radio_start() calls fail; 0 again after each run
 extern int retry_timeouts;     // the next idle waits with a timeout run out, one each (the retry timer); 0 again after each run
+extern int retry_timeouts_left; // what was left of retry_timeouts when the last run ended
 extern int recorded;           // the last radio_record_set() of a run (1 on, 0 off, -1 none)
 extern int silent_disconnects; // the next esp_wifi_disconnect() calls post no event (the station had
                                // already left the AP); 0 again after each run
@@ -46,6 +47,19 @@ extern bool connect_reachable; // the AP of a scripted CMD_WIFI_CONNECT (empty S
 // (the default), every wait returns at once while the command list has anything left.
 // 0 again after each run.
 extern int strict_semaphore;
+extern uint8_t nvs_wifi_enabled; // u64ctrl: the module's copy of "WiFi Enabled" (power_get_wifi_enabled), 1 again after each run
+extern uint8_t nvs_wifi_last;    // what the copy read when the run ended
+extern int nvs_wifi_writes;      // power_set_wifi_enabled() calls of a run
+extern int nvs_write_fails;      // the next power_set_wifi_enabled() calls fail and store nothing; 0 again after each run
+extern int nvs_write_fails_after; // that many writes succeed before nvs_write_fails apply; 0 again after each run
+extern char boot_trace[16];      // u64ctrl: what wifi_start_at_boot() did before the connector ran
+extern bool recovery_active;     // recovery_running() answers this (u64ctrl)
+extern int endisable_answer;     // the dispatcher's answer to the last CONNECTOR_SEND_DISABLE or _ENABLE
+extern struct netif sta_netif;   // u64ctrl: the station netif; lwIP attaches its slots at the radio start (netif_attach)
+void netif_attach(void);
+extern netif_input_fn default_input;
+extern netif_output_fn default_output;
+err_t lwip_input(struct pbuf *p, struct netif *inp);
 
 // In a command list: not a command for the connector, but ...
 #define CONNECTOR_ASK          0xFE // the Ultimate asking for the connection state (cmd_get_connection)

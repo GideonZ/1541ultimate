@@ -61,11 +61,9 @@ void ConfigStore :: set_value(uint8_t id, int value)
 {
     if (id == CFG_WIFI_ENABLE) {
         world.enabled = (value != 0);
-#if U64 != 2
         ConfigItem it;
         it.value = value;
         NetworkLWIP_WiFi :: wifi_enable_change(&it);
-#endif
     }
 }
 int ConfigStore :: get_value(uint8_t id) { return (id == CFG_WIFI_ENABLE) ? (world.enabled ? 1 : 0) : 0; }
@@ -316,9 +314,11 @@ int wifi_enable()
     }
     return world.enable_answer;
 }
+static int disables; // the radio offs of this boot
 int wifi_disable()
 {
     note('O');
+    disables++;
     void (*during)(void) = world.during_disable;
     if (during) {
         world.during_disable = NULL;
@@ -327,7 +327,7 @@ int wifi_disable()
         during();
         current_task = caller;
     }
-    return world.disable_answer;
+    return ((disables > 1) && world.disable_answer_later) ? world.disable_answer_later : world.disable_answer;
 }
 int wifi_modem_enable(bool on) { note(on ? 'M' : 'V'); return 0; }
 int wifi_get_voltages(voltages_t *v)
@@ -346,7 +346,18 @@ void wifi_free(void *driver, void *buffer) {}
 void NetworkLWIP_WiFi :: start(void) { note('s'); effectuate_settings(); }
 void NetworkLWIP_WiFi :: link_up(void) { note('U'); }
 void NetworkLWIP_WiFi :: link_down(void) { note('u'); }
-bool NetworkLWIP_WiFi :: enabled_in_config(void) { return world.enabled; }
+bool NetworkLWIP_WiFi :: enabled_in_config(void)
+{
+    bool on = world.enabled;
+    void (*after)(void) = world.after_read;
+    if (after && (current_task == &wifi_task_id)) {
+        world.after_read = NULL;
+        current_task = &other_task_id;
+        after();
+        current_task = &wifi_task_id;
+    }
+    return on;
+}
 
 void U64Config :: pushPowerOnMode(void) {}
 void U64Config :: pushWakeOnWifi(void) {}
@@ -361,11 +372,9 @@ void WiFi :: Terminate() {}
 
 void boot(std::initializer_list<Step> steps)
 {
-#if U64 != 2
     if (!world.keep_switch) {
         memset(&wifi.radio_switch, 0, sizeof(wifi.radio_switch));
     }
-#endif
     world.keep_switch = false;
     wifi.connect_attempt = 0; // the attempts of a fresh start (the script's EVENT_CONNECT_PENDING is 1)
     wifi.connect_answered = 0;
@@ -377,6 +386,7 @@ void boot(std::initializer_list<Step> steps)
     now = 1000;
     waited = 0;
     quiet = 0;
+    disables = 0;
     timed_waits_n = 0;
     message_at = 0;
     ap_refreshes = 0;
