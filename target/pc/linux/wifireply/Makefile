@@ -22,7 +22,8 @@ COPTIONS = -std=c99 -g -O0 -Wall -Wextra -Wno-unused-parameter \
 
 CXX     = g++
 CXXOPTIONS = -std=c++11 -g -O0 -w -DRISCV=1 -DU64=2 -I$(STUBS) $(addprefix -I, $(VPATH)) \
-             -I$(PATH_SW)/io/uart -I$(PATH_SW)/u64ctrl/main -I$(PATH_SW)/system
+             -I$(PATH_SW)/io/uart -I$(PATH_SW)/u64ctrl/main -I$(PATH_SW)/system \
+             -I$(PATH_SW)/wifi/common
 
 SRCS_C  = wifi_reply_test.c
 OBJS    = $(addprefix $(OUTPUT)/, $(SRCS_C:%.c=%.o))

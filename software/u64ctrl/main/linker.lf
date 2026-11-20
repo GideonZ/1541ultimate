@@ -1,0 +1,42 @@
+[mapping:u64ctrl_hot]
+archive: libmain.a
+entries:
+    my_uart (noflash)
+    cmd_buffer (noflash)
+    wifi_modem:hacked_recv (noflash)
+    rpc_dispatch:dispatch (noflash)
+    rpc_dispatch:cmd_send_eth_packet (noflash)
+
+[mapping:u64ctrl_netif]
+archive: libesp_netif.a
+entries:
+    esp_netif_lwip:esp_netif_transmit (noflash)
+    esp_netif_lwip:esp_netif_receive (noflash)
+    esp_netif_lwip:esp_netif_free_rx_buffer (noflash)
+    wlanif:wlanif_input (noflash)
+    esp_pbuf_ref:esp_pbuf_allocate (noflash)
+    esp_pbuf_ref:esp_pbuf_free (noflash)
+
+[mapping:u64ctrl_wifi_netif]
+archive: libesp_wifi.a
+entries:
+    wifi_netif:wifi_transmit (noflash)
+    wifi_netif:wifi_free (noflash)
+
+[mapping:u64ctrl_pp]
+archive: libpp.a
+entries:
+    if_hwctrl:esp_wifi_internal_free_rx_buffer (noflash)
+
+[mapping:u64ctrl_lwip]
+archive: liblwip.a
+entries:
+    pbuf:pbuf_free (noflash)
+    pbuf:pbuf_alloced_custom (noflash)
+    pbuf:pbuf_init_alloced_pbuf (noflash)
+    mem:mem_malloc (noflash)
+    mem:mem_free (noflash)
+    sys_arch:sys_arch_protect (noflash)
+    sys_arch:sys_arch_unprotect (noflash)
+    sys_arch:sys_mutex_lock (noflash)
+    sys_arch:sys_mutex_unlock (noflash)

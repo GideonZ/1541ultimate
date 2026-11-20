@@ -56,10 +56,9 @@ NAME = "registry_test"
 # it. A token outside this set would reach the suite as a literal.
 TOKENS = {"@HOST@", "@PASS@", "@TIMEOUT@", "@MODE@", "@SOAKPROFILE@", "@KERNAL@"}
 
-# Files ending in _test.py that no profile should select, each with its reason.
-# A file that is not a suite belongs here rather than in the registry, so that
-# "not registered" always means "nobody can run it". Everything else under
-# SEARCHED has to be in the registry.
+# Files ending in _test.py that no profile should select, each with its reason:
+# not a suite, or a suite that is opt-in by name (run directly). Everything
+# else under SEARCHED has to be in the registry.
 NOT_SUITES: dict[str, str] = {
     # The four tiers of the observability suite. Importing one registers its
     # cases in support.CASES; tests/lib/observability_test.py imports all four
@@ -70,6 +69,10 @@ NOT_SUITES: dict[str, str] = {
     "tests/lib/observability/component_test.py": "tier 2 of the observability suite",
     "tests/lib/observability/pipeline_test.py": "tier 3 of the observability suite",
     "tests/lib/observability/golden_test.py": "tier 4 of the observability suite",
+    # Never by a profile: it can switch "WiFi Enabled" on (--set-wifi; one-way
+    # on the U64), needs this host as a TLS peer and the Internet, and is RED on
+    # any image without the TLS commands. net_tls_selftest.py checks it offline.
+    "tests/e2e/io/command_interface/net_tls_test.py": "opt-in TLS suite on a device, run directly",
 }
 
 # tests/lib/bootstrap.py is the one place that may compute a path into the

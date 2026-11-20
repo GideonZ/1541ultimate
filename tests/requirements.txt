@@ -13,6 +13,7 @@ openapi-schema-validator # tests/lib/openapi_contract.py, checks device answers 
 -r requirements-lint.txt              # ruff, pinned there because tests/lib/lint_test.py is a gate
 Pillow                   # e2e/api/input_test.py, e2e/io/printer/printer_test.py
 pyftpdlib                # e2e/filesystem/ftp_client_test.py
+cryptography            # e2e/io/command_interface/net_tls_fixture.py, net_tls_mock.py, net_tls_selftest.py, throwaway PKI for the TLS suite
 selenium                 # e2e/web/theme_test.py, drives an installed Chrome and Firefox
 pytesseract              # e2e/io/printer/printer_test.py, only under --stage verify
 PyYAML                   # tests/lib/openapi_contract.py, reads doc/api/rest_api_openapi_*.yaml
