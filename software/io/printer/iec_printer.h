@@ -119,8 +119,8 @@ class IecPrinter : public IecSlave, SubSystem, ObjectWithMenu, ConfigurableObjec
         /* Printer is color (only used for progress bar) */
         bool is_color;
 
-        /* User interface descriptor */
-        UserInterface *cmd_ui;
+        /* Deflate blocks done by the printer task; the GUI task turns them into progress bar steps */
+        volatile uint32_t flush_blocks;
 
         /* The printer task itself */
         TaskHandle_t taskHandle;
