@@ -13,6 +13,11 @@
 #include "socket_slices.h"
 #include <errno.h>
 #include <stdio.h>
+#if U64 >= 1
+#include "wifi_random.h"
+#endif
+#include <stddef.h>
+#include <string.h>
 
 NetworkTarget net(3);
 
@@ -25,6 +30,8 @@ Message c_status_no_socket           = { 23, true, (uint8_t *)"85,ERROR OPENING 
 Message c_status_socket_closed       = { 28, true, (uint8_t *)"01,CONNECTION CLOSED BY HOST" };
 Message c_status_net_no_data         = { 26, true, (uint8_t *)"03,MORE DATA NOT SUPPORTED" };
 Message c_status_internal_error      = { 17, true, (uint8_t *)"86,INTERNAL ERROR" };
+Message c_status_no_entropy          = { 20, true, (uint8_t *)"87,NO ENTROPY SOURCE" };
+Message c_status_entropy_busy        = { 22, true, (uint8_t *)"88,ENTROPY SOURCE BUSY" };
 
 // lwIP also uses SO_SNDTIMEO as the time a close may wait for a buffer for the FIN (20 s without
 // it); with the send slice it would reset the connection after 100 ms and drop unsent data.
@@ -52,6 +59,9 @@ NetworkTarget::NetworkTarget(int id)
     quick_message.message = quick_bytes;
     socket_count = 0;
     discard_read_reply();
+#if NET_TLS
+    tls_init();
+#endif
     memset(jobs, 0, sizeof(jobs));
     job = NULL;
     queue = NULL;
@@ -89,6 +99,12 @@ bool NetworkTarget :: is_quick(Message *command)
 void NetworkTarget :: answer_quick(Message *command, Message **reply, Message **status)
 {
     NetworkInterface *interface;
+
+#if NET_TLS
+    // Every command counts as one for the TLS rules, and the TLS state belongs to the worker:
+    // this one leaves word for it (tls_before_command).
+    tls_quick_seen = true;
+#endif
 
     switch(command->message[1]) {
         case NET_CMD_IDENTIFY:
@@ -286,6 +302,10 @@ void NetworkTarget :: worker_task(void *a)
             t->execute(&j->command, &j->reply, &j->status);
             j->opened = t->opened_socket;
             t->cancel = NULL;
+        } else {
+#if NET_TLS
+            t->tls_quick_seen = true; // it was a command all the same
+#endif
         }
         t->close_sockets_after_reset();
         portENTER_CRITICAL();
@@ -326,6 +346,9 @@ void NetworkTarget :: close_sockets_after_reset(void)
     uint32_t seen = resets;
     if (seen != resets_closed) {
         close_all_sockets();
+#if NET_TLS
+        tls_reset();
+#endif
         resets_closed = seen;
     }
 }
@@ -340,6 +363,10 @@ void NetworkTarget :: execute(Message *command, Message **reply, Message **statu
     // one. Dropping it here as well means no path into this target can hand a
     // client bytes left over from an earlier read.
     discard_read_reply();
+
+#if NET_TLS
+    tls_before_command(command);
+#endif
 
     switch(command->message[1]) {
         case NET_CMD_SET_IPADDR:
@@ -397,6 +424,29 @@ void NetworkTarget :: execute(Message *command, Message **reply, Message **statu
         case NET_CMD_WRITE_SOCKET:
         	write_socket(command, reply, status);
         	break;
+        case NET_CMD_GET_RANDOM:
+            if (command->length != 4) { // 2 + 2
+                *reply = &c_message_empty;
+                *status = &c_status_invalid_params;
+                break;
+            }
+            get_random(command, reply, status);
+            break;
+        case NET_CMD_OPEN_TLS:
+            open_tls(command, reply, status);
+            break;
+        case NET_CMD_TLS_TRUST_CA:
+            trust_ca(command, reply, status);
+            break;
+        case NET_CMD_TLS_INFO:
+            tls_info(command, reply, status);
+            break;
+        case NET_CMD_START_TLS:
+            start_tls(command, reply, status);
+            break;
+        case NET_CMD_TLS_RELEASE:
+            tls_release(command, reply, status);
+            break;
         default:
             *reply  = &c_message_empty;
             *status = &c_status_unknown_command;
@@ -481,6 +531,14 @@ void NetworkTarget :: read_socket(Message *command, Message **reply, Message **s
 {
 	uint8_t socketnr = command->message[2];
 	uint32_t length = ((uint32_t)command->message[3]) | (((uint32_t)command->message[4]) << 8);
+
+#if NET_TLS
+    TlsSocket *session = tls_find(socketnr);
+    if (session) {
+        tls_read(session, length, reply, status);
+        return;
+    }
+#endif
 
     // A complete unfragmented IPv4 UDP datagram is the most this command can
     // ever return, so that is what it accepts. Anything larger cannot arrive.
@@ -593,6 +651,13 @@ void NetworkTarget :: write_socket(Message *command, Message **reply, Message **
 
     int length = command->length - 3;
     int ret;
+#if NET_TLS
+    TlsSocket *session = (command->length >= 3) ? tls_find(socketnr) : NULL;
+    if (session) {
+        tls_write(session, src, length, reply, status);
+        return;
+    }
+#endif
     if (owns_socket(socketnr)) {
         SliceWait wait(cancel, 0); // no limit, as before, unless the command is aborted
         int sent = 0, waited_ms = 0;
@@ -648,6 +713,16 @@ void NetworkTarget :: close_socket(Message *command, Message **reply, Message **
 {
     uint8_t socketnr = command->message[2];
     int result = -1;
+#if NET_TLS
+    // Always OK: the session goes, whatever state it is in.
+    TlsSocket *session = tls_find(socketnr);
+    if (session) {
+        tls_close_entry(session, true);
+        *reply = &c_message_empty;
+        *status = &c_status_ok;
+        return;
+    }
+#endif
     if (owns_socket(socketnr)) {
         untrack_socket(socketnr);
         result = close_after_slices(socketnr);
@@ -662,6 +737,36 @@ void NetworkTarget :: close_socket(Message *command, Message **reply, Message **
     } else {
         *status = &c_status_ok;
     }
+}
+
+void NetworkTarget :: get_random(Message *command, Message **reply, Message **status)
+{
+    uint16_t length = uint16_t(command->message[2]) | (uint16_t(command->message[3]) << 8);
+
+    *reply = &c_message_empty;
+    if ((length == 0) || (length > NET_MAX_RANDOM)) {
+        *status = &c_status_param_out_of_range;
+        return;
+    }
+    // The bytes come from the WiFi module's hardware generator and from
+    // nowhere else, so without that module there are none.
+    *status = &c_status_no_entropy;
+#if U64 >= 1
+    static_assert(NET_MAX_RANDOM == WIFI_RANDOM_MAX_BYTES, "the module's limit and the UCI's differ");
+    // The reply stays empty unless the result may carry data, and 87 stays
+    // for any status not handled here.
+    int result = wifi_get_random(data_message.message, length);
+    if (wifi_random_status(result) == 0) {
+        data_message.length = length;
+        data_message.last_part = true;
+        *reply = &data_message;
+        *status = &c_status_ok;
+    } else if (wifi_random_status(result) == 88) {
+        *status = &c_status_entropy_busy;
+    } else if (wifi_random_status(result) == 86) {
+        *status = &c_status_internal_error;
+    }
+#endif
 }
 
 // A socket handed to the client without a table entry would survive a C64

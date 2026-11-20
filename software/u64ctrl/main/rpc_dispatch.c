@@ -15,6 +15,7 @@
 #include "nvs_flash.h"
 #include "power_state.h"
 #include "driver/uart.h"
+#include "esp_random.h"
 #include "rpc_calls.h"
 #include "rpc_dispatch.h"
 #include "my_uart.h"
@@ -25,6 +26,8 @@
 #include "sntp.h"
 #include "recovery.h"
 #include "recovery_url.h"
+#include "esp_timer.h"
+#include "tls_rpc.h"
 
 // not officially supported
 #include "../lwip/esp_netif_lwip_internal.h"
@@ -246,11 +249,10 @@ void cmd_wifi_endisable(command_buf_t *buf)
 
 void cmd_get_voltages(command_buf_t *buf)
 {
-    extern esp_err_t read_adc_channels(uint16_t *adc_data);
-
     rpc_get_voltages_resp *resp = (rpc_get_voltages_resp *)buf->data;
-    resp->esp_err = ESP_OK;
-    read_adc_channels(&(resp->vbus));
+    // The answer overlays the request: an error must not carry what was in the buffer
+    memset(&resp->vbus, 0, sizeof(rpc_get_voltages_resp) - offsetof(rpc_get_voltages_resp, vbus));
+    resp->esp_err = read_adc_channels(&(resp->vbus));
     ESP_LOGI(TAG, "Vbus = %d, Vaux = %d, V50 = %d, V33 = %d, V18 = %d, V10 = %d, Vusb = %d", resp->vbus, resp->vaux, resp->v50, resp->v33, resp->v18, resp->v10, resp->vusb);
     buf->size = sizeof(rpc_get_voltages_resp);
     my_uart_transmit_packet(UART_CHAN, buf);
@@ -410,6 +412,15 @@ void cmd_get_recovery_url(command_buf_t *buf)
     my_uart_transmit_packet(UART_CHAN, buf);
 }
 
+_Static_assert(RPC_ERR_ENTROPY_BUSY == ESP_ERR_TIMEOUT, "RPC_ERR_ENTROPY_BUSY is an esp_err_t");
+
+void cmd_get_random(command_buf_t *buf)
+{
+    buf->size = radio_entropy_serve_get_random(buf->data, buf->size, (void (*)(void *, size_t))esp_fill_random);
+    // The gate is released: the answer is sent without it
+    my_uart_transmit_packet(UART_CHAN, buf);
+}
+
 void cmd_not_implemented(command_buf_t *buf)
 {
     rpc_espcmd_resp *resp = (rpc_espcmd_resp *)buf->data;
@@ -469,6 +480,7 @@ void dispatch(void *ct)
         printf("Received buffer %d with %d bytes.\n", pbuffer->bufnr, pbuffer->size);
 #endif
         hdr = (rpc_header_t *)(pbuffer->data);
+        int64_t start = esp_timer_get_time();
         switch(hdr->command) {
         case CMD_SEND_PACKET:
             cmd_send_eth_packet(pbuffer);
@@ -549,16 +561,34 @@ void dispatch(void *ct)
         case CMD_GET_RECOVERY_URL:
             cmd_get_recovery_url(pbuffer);
             break;
+        case CMD_GET_RANDOM:
+            cmd_get_random(pbuffer);
+            break;
+        case CMD_TLS_OPEN:
+        case CMD_TLS_STEP:
+        case CMD_TLS_CLOSE:
+        case CMD_TLS_STATS:
+        case CMD_TLS_CLOSE_ALL:
+        case CMD_TLS_SET_CA:
+            tls_rpc_dispatch(pbuffer);
+            break;
         default:
             cmd_not_implemented(pbuffer);
             break;
+        }
+        // MACHINE_OFF and MACHINE_REBOOT sleep 1 s and 3 s on purpose, to power the machine down and up; that is
+        // not the dispatcher being held against traffic, so it is not counted in TLS_STATS block_max_ms.
+        if (hdr->command != CMD_MACHINE_OFF && hdr->command != CMD_MACHINE_REBOOT) {
+            tls_rpc_note_block((esp_timer_get_time() - start) / 1000);
         }
     }
 }
 
 void start_dispatch(QueueHandle_t queue)
 {
-    xTaskCreate( dispatch, "Dispatch Task", DISPATCHER_STACK, queue, tskIDLE_PRIORITY + 1, NULL );
+    tls_rpc_start();
+    // Core 1, above the system tasks: the UART ISR that feeds this queue runs on core 1 too
+    xTaskCreatePinnedToCore( dispatch, "Dispatch Task", DISPATCHER_STACK, queue, 19, NULL, 1 );
 }
 
 #if MULTITHREADED

@@ -8,6 +8,7 @@ void configure_sntp_servers(void);
 void obtain_time(void);
 void print_time(void);
 void sntp_get_time(const char *zone, esp_datetime_t *datetime);
+int sntp_has_time(void); // nonzero once an SNTP sync has set the clock
 void print_all_zones(void);
 void print_time_for_zone(const char *zone);
 
