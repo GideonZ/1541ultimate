@@ -7,6 +7,7 @@
 #include "esp_err.h"
 #include "pinout.h"
 #include "button_handler.h"
+#include "my_uart.h"
 #include "rpc_dispatch.h"
 #include "jtag.h"
 #include "wifi_modem.h"
@@ -58,7 +59,7 @@ static void regulator_enable(int enable, int delay)
 
     vTaskDelay(100 / portTICK_PERIOD_MS);
     if (enable) {
-        ESP_ERROR_CHECK( uart_set_pin(UART_NUM_1, IO_UART_TXD, IO_UART_RXD, IO_UART_RTS, IO_UART_CTS));
+        my_uart_connect_pins();
     }
 }
 
