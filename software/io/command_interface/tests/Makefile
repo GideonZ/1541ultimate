@@ -1,7 +1,7 @@
 CXX ?= g++
 CXXFLAGS := -std=c++11 -Wall -Wextra -Werror -I..
 # The UCI Server's own source, against host stand-ins for the hardware and FreeRTOS.
-UCI_FLAGS := -std=c++11 -g -Wall -Ihost_uci -Ihost_rtos -I.. -DHOST_RTOS_NO_TASKS -Wno-format -fsanitize=address,undefined
+UCI_FLAGS := -std=c++11 -g -Wall -Ihost_uci -Ihost_rtos -I.. -I../../../infra -DHOST_RTOS_NO_TASKS -Wno-format -fsanitize=address,undefined
 
 all: palette uci-deferral
 

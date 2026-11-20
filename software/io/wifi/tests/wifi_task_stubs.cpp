@@ -10,6 +10,9 @@
 #include "wifi_task_test.h"
 
 World world;
+// The scripted module sends WiFi events, not provider protocol frames.
+bool WiFi::ReceiveProviderIdentity(command_buf_t *) { return false; }
+bool WiFi::ReceiveProviderControl(command_buf_t *) { return false; }
 WiFi wifi;
 NetworkLWIP_WiFi net(NULL, NULL, NULL);
 ultimate_ap_records_t wifi_aps;

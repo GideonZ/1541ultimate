@@ -37,7 +37,8 @@ CXXFLAGS := -std=c++14 $(COMMON) -I$(HOSTTEST) -I. -Istub
 INCLUDES  = -I. -Istub -I$(DIR_$(M)) -I$(PATH_SW)/io/uart $(INC_$(M))
 
 # What the extracted code of a module is made of ...
-FUNCS_MODEM := send_event wifi_event_handler wifi_note_identify wifi_send_connected_event attempt_connect \
+FUNCS_MODEM := $(if $(filter u64ctrl,$(M)),provider_wifi_start provider_wifi_stop) \
+               send_event wifi_event_handler wifi_note_identify wifi_send_connected_event attempt_connect \
                wifi_connect_to_scanned enable_wifi_if_needed wifi_report_disabled handle_connect_command \
                connector_boot_state connect_thread
 FUNCS_RPC   := cmd_identify cmd_wifi_connect cmd_wifi_endisable cmd_get_connection

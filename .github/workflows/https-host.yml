@@ -1,0 +1,50 @@
+name: HTTPS host validation
+
+on: [push, pull_request]
+
+permissions:
+  contents: read
+
+jobs:
+  https-host:
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    steps:
+      - name: Checkout firmware and public submodules
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - name: Checkout the tested TLS core
+        uses: actions/checkout@v7
+        with:
+          repository: araxis/ultimate-tls-validation
+          ref: 529b0450955611bd82db921db3bae10222203eba
+          path: .ci-deps/tls
+          persist-credentials: false
+      - name: Checkout the pinned TLS library
+        uses: actions/checkout@v7
+        with:
+          repository: espressif/mbedtls
+          ref: 2b96dd8eebe880f304c69976b3c2fa0c5100cbb6
+          path: .ci-deps/tls/.deps/mbedtls
+          submodules: recursive
+          persist-credentials: false
+      - name: Install host build tools
+        run: sudo apt-get update && sudo apt-get install -y cmake g++ make git openssl python3-cryptography ninja-build libgtest-dev
+      - name: Run the device-free regression
+        run: |
+          python3 tools/tests/test_prepare_http_parser.py
+          python3 tools/test_https_host.py --tls-root "$GITHUB_WORKSPACE/.ci-deps/tls" --output "$RUNNER_TEMP/https-host"
+      - name: Retain logs and peer records
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: https-host-evidence
+          if-no-files-found: warn
+          path: |
+            ${{ runner.temp }}/https-host/*.log
+            ${{ runner.temp }}/https-host/result.json
+            ${{ runner.temp }}/https-host/*/*.json
+            ${{ runner.temp }}/https-host/*/*.log

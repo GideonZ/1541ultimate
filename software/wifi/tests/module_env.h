@@ -39,6 +39,11 @@ extern "C" {
 #include "cmd_buffer.h"
 #include "rpc_calls.h"
 #include "wifi_modem.h"
+#ifdef MODULE_U64CTRL
+#include "provider_boot.h"
+#include "provider_identity.h"
+#include "provider_sources.h"
+#endif
 #ifdef __cplusplus
 }
 #endif
@@ -93,7 +98,7 @@ typedef struct {
     uint8_t reason;
     int8_t rssi;
 } wifi_event_sta_disconnected_t;
-enum { WIFI_EVENT_STA_START, WIFI_EVENT_STA_CONNECTED, WIFI_EVENT_STA_DISCONNECTED };
+enum { WIFI_EVENT_STA_START, WIFI_EVENT_STA_CONNECTED, WIFI_EVENT_STA_DISCONNECTED, WIFI_EVENT_STA_STOP };
 
 #if __has_include("radio_boot.h")
 #include "radio_boot.h" // the U64 and U2+L modules' restart record

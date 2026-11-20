@@ -19,12 +19,17 @@
 #include "lwip/ip_addr.h"
 #include "esp_sntp.h"
 #include "rpc_calls.h"
+#include "provider_sources.h"
 
 static const char *TAG = "sntp";
 
 void ____sntp_sync_time(struct timeval *tv)
 {
+#ifdef CONFIG_ULTIMATE_PROVIDER_SOURCES
+   if (!provider_sources_sync_time(tv)) return;
+#else
    settimeofday(tv, NULL);
+#endif
    ESP_LOGI(TAG, "Time is synchronized from custom code");
    sntp_set_sync_status(SNTP_SYNC_STATUS_COMPLETED);
 }
@@ -32,8 +37,24 @@ void ____sntp_sync_time(struct timeval *tv)
 void time_sync_notification_cb(struct timeval *tv)
 {
     ESP_LOGI(TAG, "Notification of a time synchronization event, time set to %ld s %ld us", (long int)tv->tv_sec, (long int)tv->tv_usec);
+#ifndef CONFIG_ULTIMATE_PROVIDER_SOURCES
     settimeofday(tv, NULL);
+#endif
 }
+
+#ifdef CONFIG_ULTIMATE_PROVIDER_SOURCES
+// Replace the weak SDK setter so invalidation precedes every SNTP clock write.
+// These sources intentionally use immediate mode; no unobserved smooth slew.
+void sntp_sync_time(struct timeval *tv)
+{
+    if (!provider_sources_sync_time(tv)) {
+        ESP_LOGW(TAG, "TLS clock qualification rejected the SNTP update");
+        return;
+    }
+    sntp_set_sync_status(SNTP_SYNC_STATUS_COMPLETED);
+    time_sync_notification_cb(tv);
+}
+#endif
 
 #ifndef INET6_ADDRSTRLEN
 #define INET6_ADDRSTRLEN 48

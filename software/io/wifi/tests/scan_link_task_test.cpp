@@ -17,10 +17,26 @@ TEST(WifiScanLinkTask, connected_scan_keeps_the_link)
     reset_world();
     world.enabled = true;
     world.link = 1;
+    OperationCancellation session = wifi.provider_lifetime();
     boot({ EVENT_RESCAN });
+    CHECK(!session.cancelled(), "scanning preserves the provider session");
     CHECK(strchr(after('U'), 'C') != NULL, "linked up, then the scan");
     CHECK(strchr(after('U'), 'u') == NULL, "the interface is not taken down");
     CHECK(wifi.getState() == eWifi_Connected, "still Connected");
+}
+
+TEST(WifiScanLinkTask, provider_observes_link_loss_at_receive)
+{
+    command_buf_t packet = {};
+    packet.size = sizeof(rpc_header_t);
+    rpc_header_t *header = (rpc_header_t *)packet.data;
+    for (uint8_t event : { EVENT_DISABLED, EVENT_DISCONNECTED }) {
+        OperationCancellation session = wifi.provider_lifetime();
+        header->command = EVENT_RESCAN;
+        CHECK(!wifi_provider_receive(&packet) && !session.cancelled(), "scan keeps the session and is passed to the task");
+        header->command = event;
+        CHECK(!wifi_provider_receive(&packet) && session.cancelled(), "link loss cancels before task delivery");
+    }
 }
 
 // The module reports a lost link behind the scan, then gets it back: the task follows
@@ -29,7 +45,9 @@ TEST(WifiScanLinkTask, disconnect_behind_the_scan)
     reset_world();
     world.enabled = true;
     world.link = 1;
+    OperationCancellation session = wifi.provider_lifetime();
     boot({ EVENT_RESCAN, EVENT_DISCONNECTED });
+    CHECK(session.cancelled(), "the disconnect cancels the provider session");
     CHECK(strchr(after('C'), 'u') != NULL, "the disconnect takes the interface down");
     CHECK(wifi.getState() == eWifi_NotConnected, "not connected");
     boot({ EVENT_RESCAN, EVENT_DISCONNECTED, EVENT_CONNECTED });

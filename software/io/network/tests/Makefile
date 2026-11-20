@@ -13,7 +13,7 @@ SEND_ALL_RED := $(OUTPUT_DIR)/sendAllTestLegacy
 NETWORK_TARGET_TEST := $(OUTPUT_DIR)/networkTargetTest
 # The network target with the host's sockets for lwIP's, and the UCI host stand-ins.
 NETWORK_TARGET_FLAGS := -std=c++11 -g -Wall -DRUNS_ON_PC -include target3_host/network_interface.h -Itarget3_host -I../../command_interface/tests/host_uci \
-	-I../../command_interface/tests/host_rtos -I.. -I../../command_interface -I../../../network \
+	-I../../command_interface/tests/host_rtos -I.. -I../../command_interface -I../../../network -I../../../infra \
 	-fsanitize=address,undefined
 REF_POOL_TEST := $(OUTPUT_DIR)/refPoolTest
 REF_POOL_RED := $(OUTPUT_DIR)/refPoolTestLegacy
