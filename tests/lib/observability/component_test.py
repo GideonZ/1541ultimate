@@ -966,7 +966,7 @@ def a_still_is_the_frame_the_recording_holds_at_that_position() -> str:
             completed = subprocess.run(
                 ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
                  "-i", path, "-vf", f"select=eq(n\\,{entry['frame']})",
-                 "-vsync", "0", "-frames:v", "1", extracted],
+                 "-fps_mode", "passthrough", "-frames:v", "1", extracted],
                 capture_output=True, text=True, timeout=120, check=False)
             if completed.returncode != 0 or not os.path.exists(extracted):
                 raise Failure(f"frame {entry['frame']} could not be extracted: "
