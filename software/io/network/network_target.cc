@@ -13,6 +13,9 @@
 #include "socket_slices.h"
 #include <errno.h>
 #include <stdio.h>
+#if U64 >= 1
+#include "wifi_random.h"
+#endif
 
 NetworkTarget net(3);
 
@@ -25,6 +28,8 @@ Message c_status_no_socket           = { 23, true, (uint8_t *)"85,ERROR OPENING 
 Message c_status_socket_closed       = { 28, true, (uint8_t *)"01,CONNECTION CLOSED BY HOST" };
 Message c_status_net_no_data         = { 26, true, (uint8_t *)"03,MORE DATA NOT SUPPORTED" };
 Message c_status_internal_error      = { 17, true, (uint8_t *)"86,INTERNAL ERROR" };
+Message c_status_no_entropy          = { 20, true, (uint8_t *)"87,NO ENTROPY SOURCE" };
+Message c_status_entropy_busy        = { 22, true, (uint8_t *)"88,ENTROPY SOURCE BUSY" };
 
 // lwIP also uses SO_SNDTIMEO as the time a close may wait for a buffer for the FIN (20 s without
 // it); with the send slice it would reset the connection after 100 ms and drop unsent data.
@@ -397,6 +402,14 @@ void NetworkTarget :: execute(Message *command, Message **reply, Message **statu
         case NET_CMD_WRITE_SOCKET:
         	write_socket(command, reply, status);
         	break;
+        case NET_CMD_GET_RANDOM:
+            if (command->length != 4) { // 2 + 2
+                *reply = &c_message_empty;
+                *status = &c_status_invalid_params;
+                break;
+            }
+            get_random(command, reply, status);
+            break;
         default:
             *reply  = &c_message_empty;
             *status = &c_status_unknown_command;
@@ -662,6 +675,36 @@ void NetworkTarget :: close_socket(Message *command, Message **reply, Message **
     } else {
         *status = &c_status_ok;
     }
+}
+
+void NetworkTarget :: get_random(Message *command, Message **reply, Message **status)
+{
+    uint16_t length = uint16_t(command->message[2]) | (uint16_t(command->message[3]) << 8);
+
+    *reply = &c_message_empty;
+    if ((length == 0) || (length > NET_MAX_RANDOM)) {
+        *status = &c_status_param_out_of_range;
+        return;
+    }
+    // The bytes come from the WiFi module's hardware generator and from
+    // nowhere else, so without that module there are none.
+    *status = &c_status_no_entropy;
+#if U64 >= 1
+    static_assert(NET_MAX_RANDOM == WIFI_RANDOM_MAX_BYTES, "the module's limit and the UCI's differ");
+    // The reply stays empty unless the result may carry data, and 87 stays
+    // for any status not handled here.
+    int result = wifi_get_random(data_message.message, length);
+    if (wifi_random_status(result) == 0) {
+        data_message.length = length;
+        data_message.last_part = true;
+        *reply = &data_message;
+        *status = &c_status_ok;
+    } else if (wifi_random_status(result) == 88) {
+        *status = &c_status_entropy_busy;
+    } else if (wifi_random_status(result) == 86) {
+        *status = &c_status_internal_error;
+    }
+#endif
 }
 
 // A socket handed to the client without a table entry would survive a C64
