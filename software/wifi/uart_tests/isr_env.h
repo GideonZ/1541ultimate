@@ -47,12 +47,14 @@ void isr_write_reg(uint32_t addr, uint32_t value);
 #define WRITE_PERI_REG(addr, val)  isr_write_reg((addr), (val))
 
 uint32_t uart_hal_get_intsts_mask(uart_hal_context_t *hal);
+uint32_t uart_hal_get_intraw_mask(uart_hal_context_t *hal);
 void uart_hal_disable_intr_mask(uart_hal_context_t *hal, uint32_t mask);
 void uart_hal_ena_intr_mask(uart_hal_context_t *hal, uint32_t mask);
 void uart_hal_clr_intsts_mask(uart_hal_context_t *hal, uint32_t mask);
 uint16_t uart_hal_get_txfifo_len(uart_hal_context_t *hal);
 uint32_t uart_hal_get_rxfifo_len(uart_hal_context_t *hal);
 void uart_hal_rxfifo_rst(uart_hal_context_t *hal);
+UBaseType_t uxQueueMessagesWaitingFromISR(QueueHandle_t q);
 #define UART_DEBUG_TX 0
 
 #endif /* ISR_ENV_H_ */
