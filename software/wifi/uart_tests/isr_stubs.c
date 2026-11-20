@@ -39,6 +39,7 @@ void isr_write_reg(uint32_t addr, uint32_t value)
 }
 
 uint32_t uart_hal_get_intsts_mask(uart_hal_context_t *hal) { return pending | (raw_only & enabled); }
+uint32_t uart_hal_get_intraw_mask(uart_hal_context_t *hal) { return pending | raw_only; }
 void uart_hal_disable_intr_mask(uart_hal_context_t *hal, uint32_t mask) { enabled &= ~mask; }
 void uart_hal_ena_intr_mask(uart_hal_context_t *hal, uint32_t mask) { enabled |= mask; }
 void uart_hal_clr_intsts_mask(uart_hal_context_t *hal, uint32_t mask) { pending &= ~mask; raw_only &= ~mask; }
