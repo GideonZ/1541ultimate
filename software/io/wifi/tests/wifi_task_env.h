@@ -30,6 +30,7 @@ typedef int err_t;
 #include "dump_hex.h"
 #include "wifi.h"
 #include "wifi_connect.h"
+#include "wifi_event_size.h" // wifi_event_too_short(), used by RunModeThread before its event switch
 #include "wifi_enable_default.h" // CFG_WIFI_ENABLE and the default of that setting, from network_esp32.cc / .h
 
 // The AP list's browser, as far as the menu uses it
@@ -104,5 +105,6 @@ public:
 };
 
 extern ultimate_ap_records_t wifi_aps;
+static uint32_t wifi_events_short; // the counter wifi.cc keeps of the events it dropped for their size (a static there, so here)
 
 #endif /* WIFI_TASK_ENV_H_ */
