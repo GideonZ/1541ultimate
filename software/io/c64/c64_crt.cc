@@ -94,7 +94,12 @@ const struct C64_CRT::t_cart C64_CRT::c_recognized_c64_carts[] = {
     { 84, 0xFF, CART_NOT_IMPL,  "Profi-DOS" },
     { 85, 0xFF, CART_NOT_IMPL,  "Magic Desk 16" },
     { 86, 0xFF, CART_MEGABYTER, "Protovision Megabyter" },
-    { 87, 0xFF, CART_TWOMEGABYTER, "Protovision TwoMegabyter" },
+    // VICE assigns 87 to Magic Desk Plus (CARTRIDGE_MAGIC_DESK_PLUS, and its
+    // CARTRIDGE_LAST), and every released Magic Desk Plus image carries it.
+    // TwoMegabyter has no assigned id at all, so it moves off the one it was
+    // borrowing and takes the next free number in anticipation of getting it.
+    { 87, 0xFF, CART_MDPLUS,    "Magic Desk Plus" },
+    { 88, 0xFF, CART_TWOMEGABYTER, "Protovision TwoMegabyter" },
 
     { 0xFFFF, 0xFF, CART_NOT_IMPL, "" } };
 
@@ -210,6 +215,15 @@ SubsysResultCode_e C64_CRT::check_header(File *f, cart_def *def)
                 printf("%s - Not implemented\n", cart_list->cart_name);
                 return SSRET_NOT_IMPLEMENTED;
             }
+            if (local_type == CART_MDPLUS) {
+                // The revision byte is what says which parts this cart has, so
+                // one the format does not define leaves nothing to fit.
+                if (crt_header[CRTHDR_SUBTYPE] > MDPLUS_REV_MAX) {
+                    printf("Magic Desk Plus revision %d; it must be 0 to %d.\n",
+                           crt_header[CRTHDR_SUBTYPE], MDPLUS_REV_MAX);
+                    return SSRET_ERROR_IN_FILE_FORMAT;
+                }
+            }
             if (local_type == CART_GMOD2) {
                 if (!(getFpgaCapabilities() & CAPAB_EEPROM)) {
                     printf("GMOD2 EEPROM Not implemented.\n", cart_list->cart_name);
@@ -251,11 +265,6 @@ SubsysResultCode_e C64_CRT::read_chip_packet(File *f, t_crt_chip_chunk *chunk)
     uint16_t size = get_word(chip_header + CRTCHP_SIZE);
     uint16_t type = get_word(chip_header + CRTCHP_TYPE);
 
-    // Detect C128 mode carts
-    if ((load == 0xC000) || (size == 0x8000)) {
-        bank_multiplier = 32 * 1024;
-    }
-
     // Detect E2PROM
     if (load == 0xDE00) {
         printf("Reading EEPROM data, size $%4x.\n", size);
@@ -286,6 +295,21 @@ SubsysResultCode_e C64_CRT::read_chip_packet(File *f, t_crt_chip_chunk *chunk)
 
     if (load == 0xA000) {
         a000_seen = true; // an Ocean CRT with $A000 chips needs 16K mode
+    }
+
+    // A Magic Desk Plus keeps its SRAM and EEPROM in files beside the image
+    // (load_mdp_store), so a chunk at its DF00 window is not one of its ROM
+    // banks and would land on one. VICE refuses such an image as well.
+    if ((local_type == CART_MDPLUS) && (load == 0xDF00)) {
+        printf("Magic Desk Plus store in the CRT; it belongs in %s and %s files beside it.\n",
+               MDPLUS_SRAM_EXT, MDPLUS_EEPROM_EXT);
+        return SSRET_ERROR_IN_FILE_FORMAT;
+    }
+
+    // Detect C128 mode carts. This asks the ROM chunks only, which is why it
+    // comes after the store above.
+    if ((load == 0xC000) || (size == 0x8000)) {
+        bank_multiplier = 32 * 1024;
     }
 
     // if ((load == 0xA000) && !a000_seen) {
@@ -464,6 +488,15 @@ void C64_CRT::configure_cart(cart_def *def)
 {
     printf("Total ROM size read: %6x bytes.\n", total_read);
 
+    // The store starts erased, because it lives in the memory the REU uses and
+    // would otherwise be whatever the cartridge before it left there. Whatever
+    // files beside the image bring is read over it after this (load_mdp_store).
+    if (local_type == CART_MDPLUS) {
+        uint8_t *store = (uint8_t *)REU_MEMORY_BASE;
+        memset(store, 0xFF, MDPLUS_EEPROM_32K);
+        memset(store + MDPLUS_SRAM_OFFSET, 0xFF, MDPLUS_SRAM_SIZE);
+    }
+
     uint16_t cart_type = CART_TYPE_NONE;
     uint16_t require = 0;
     uint16_t prohibit = 0;
@@ -489,6 +522,32 @@ void C64_CRT::configure_cart(cart_def *def)
         case CART_DOMARK:
             cart_type = CART_TYPE_DOMARK;
             prohibit = CART_PROHIBIT_DEXX;
+            break;
+        case CART_MDPLUS:
+            // 128 banks of 8K instead of 64, a page register at DE01, a control
+            // register at DE03 and a 256 byte window at DF00. The window lives
+            // in the memory the REU uses, so the two cannot both be on.
+            //
+            // The header's revision byte says which parts are fitted, and with
+            // them the page mask: a 32K EEPROM has 128 pages and masks the page
+            // register to 0x7F, an 8K one has 32 and masks it to 0x1F. Reading
+            // it from the EEPROM chunk instead would get a released image wrong,
+            // because a released image carries no store and still has both parts
+            // -- Murder on the Mississippi Remastered is revision 0, 32 ROM
+            // banks and nothing else, with its store in files beside the image.
+            //
+            // A revision that fits no EEPROM leaves the mask with nothing to
+            // choose, so it takes the 0x1F one and never uses it.
+            cart_type = CART_TYPE_MDPLUS;
+            if ((crt_header[CRTHDR_SUBTYPE] == MDPLUS_REV_SRAM_EEPROM_32K) ||
+                (crt_header[CRTHDR_SUBTYPE] == MDPLUS_REV_EEPROM_32K)) {
+                cart_type |= VARIANT_1;
+            }
+            // The window is the whole of DF00..DFFF and the registers sit at
+            // DE00..DE03, so nothing else may have either page: that rules out
+            // the UCI at DF1C, the sampler, an ACIA at either address, and the
+            // REU, whose memory this cart borrows.
+            prohibit = CART_PROHIBIT_IO;
             break;
         case CART_OCEAN_8K:
             prohibit = CART_PROHIBIT_DEXX;
@@ -670,8 +729,241 @@ SubsysResultCode_e C64_CRT::load_crt(const char *path, const char *filename, car
 
     if (retval != SSRET_OK) {
         work->initialize(NULL, 0); // clear remaining stuff if not successful
+    } else if (work->local_type == CART_MDPLUS) {
+        work->load_mdp_store(path, filename);
     }
     return { retval };
+}
+
+// The parts a Magic Desk Plus has, as its header's revision byte declares them.
+bool C64_CRT::mdp_has_sram(void)
+{
+    uint8_t rev = crt_header[CRTHDR_SUBTYPE];
+    return (rev == MDPLUS_REV_SRAM_EEPROM_32K) || (rev == MDPLUS_REV_SRAM_EEPROM_8K) ||
+           (rev == MDPLUS_REV_SRAM);
+}
+
+uint32_t C64_CRT::mdp_eeprom_size(void)
+{
+    switch (crt_header[CRTHDR_SUBTYPE]) {
+        case MDPLUS_REV_SRAM_EEPROM_32K:
+        case MDPLUS_REV_EEPROM_32K:
+            return MDPLUS_EEPROM_32K;
+        case MDPLUS_REV_SRAM_EEPROM_8K:
+        case MDPLUS_REV_EEPROM_8K:
+            return MDPLUS_EEPROM_8K;
+        default:
+            return 0;
+    }
+}
+
+// The name of a store file: the CRT's name with its extension replaced. Only a
+// dot in the last component is an extension: REST passes the whole path as the
+// name, and a dot in a directory above must not cut it short.
+static char *mdp_store_name(const char *filename, const char *ext)
+{
+    int len = strlen(filename);
+    const char *base = strrchr(filename, '/');
+    const char *dot = strrchr(base ? base + 1 : filename, '.');
+    if (dot) {
+        len = dot - filename;
+    }
+    char *name = new char[len + strlen(ext) + 1];
+    memcpy(name, filename, len);
+    strcpy(name + len, ext);
+    return name;
+}
+
+static void mdp_read_part(const char *path, const char *filename, const char *ext,
+                          uint8_t *dest, uint32_t size)
+{
+    FileManager *fm = FileManager::getFileManager();
+    char *name = mdp_store_name(filename, ext);
+    File *f = 0;
+    if (fm->fopen(path, name, FA_READ, &f) != FR_OK) {
+        printf("Magic Desk Plus: no %s, starting erased.\n", name);
+    } else {
+        uint32_t file_size = f->get_size();
+        uint32_t bytes_read = 0;
+        if (file_size != size) {
+            printf("Magic Desk Plus: %s is %d bytes, want %d; starting erased.\n", name, file_size, size);
+        } else if ((f->read(dest, size, &bytes_read) != FR_OK) || (bytes_read != size)) {
+            printf("Magic Desk Plus: reading %s failed; starting erased.\n", name);
+            memset(dest, 0xFF, size);
+        } else {
+            printf("Magic Desk Plus: read %s.\n", name);
+        }
+        fm->fclose(f);
+    }
+    delete[] name;
+}
+
+// Read the SRAM and EEPROM a Magic Desk Plus left beside its image, over the
+// erased store configure_cart prepared. A part the revision does not fit is not
+// read, and a file of the wrong size is left alone rather than half applied.
+void C64_CRT::load_mdp_store(const char *path, const char *filename)
+{
+    uint8_t *store = (uint8_t *)REU_MEMORY_BASE;
+    if (mdp_has_sram()) {
+        mdp_read_part(path, filename, MDPLUS_SRAM_EXT, store + MDPLUS_SRAM_OFFSET, MDPLUS_SRAM_SIZE);
+    }
+    if (mdp_eeprom_size()) {
+        mdp_read_part(path, filename, MDPLUS_EEPROM_EXT, store, mdp_eeprom_size());
+    }
+}
+
+// The path and name as one pathname, for the calls that take only that.
+static void mdp_pathname(const char *path, const char *name, mstring &full)
+{
+    full = path;
+    int len = strlen(path);
+    if (len && (path[len - 1] != '/')) {
+        full += '/';
+    }
+    full += name;
+}
+
+static bool mdp_file_exists(const char *path, const char *name)
+{
+    FileManager *fm = FileManager::getFileManager();
+    File *f = 0;
+    if (fm->fopen(path, name, FA_READ, &f) != FR_OK) {
+        return false;
+    }
+    fm->fclose(f);
+    return true;
+}
+
+// The store files a save would write, as a list of extensions and sizes. A part
+// the revision does not fit has no file.
+struct mdp_part {
+    const char *ext;
+    const char *temp_ext;
+    uint32_t offset;
+    uint32_t size;
+};
+
+static int mdp_parts(bool has_sram, uint32_t eeprom_size, mdp_part *parts)
+{
+    int n = 0;
+    if (has_sram) {
+        parts[n++] = { MDPLUS_SRAM_EXT, MDPLUS_SRAM_EXT ".tmp", MDPLUS_SRAM_OFFSET, MDPLUS_SRAM_SIZE };
+    }
+    if (eeprom_size) {
+        parts[n++] = { MDPLUS_EEPROM_EXT, MDPLUS_EEPROM_EXT ".tmp", 0, eeprom_size };
+    }
+    return n;
+}
+
+static FRESULT mdp_write_file(const char *path, const char *name, const uint8_t *src, uint32_t size)
+{
+    FileManager *fm = FileManager::getFileManager();
+    File *f = 0;
+    FRESULT res = fm->fopen(path, name, FA_WRITE | FA_CREATE_ALWAYS, &f);
+    if (res == FR_OK) {
+        uint32_t written = 0;
+        res = f->write(src, size, &written);
+        if ((res == FR_OK) && (written != size)) {
+            res = FR_DISK_FULL;
+        }
+        fm->fclose(f);
+    }
+    return res;
+}
+
+// Whether a save as `filename` would replace store files that are already
+// there, so that the caller can ask before it does.
+bool C64_CRT::store_exists(const char *path, const char *filename)
+{
+    C64_CRT *crt = get_instance();
+    if (!crt->machine || (crt->local_type != CART_MDPLUS)) {
+        return false;
+    }
+    mdp_part parts[2];
+    int n = mdp_parts(crt->mdp_has_sram(), crt->mdp_eeprom_size(), parts);
+    bool found = false;
+    for (int i = 0; i < n; i++) {
+        char *name = mdp_store_name(filename, parts[i].ext);
+        found |= mdp_file_exists(path, name);
+        delete[] name;
+    }
+    return found;
+}
+
+// Write the store of a loaded Magic Desk Plus beside the CRT that Save
+// Cartridge wrote as `filename`, one raw image per part it has. Any other
+// cartridge has nothing to write here.
+//
+// Every part is written to a temporary file first, and the store files are
+// only replaced once all of them were written in full. A save that fails,
+// for want of space or because the medium went away, leaves the previous
+// save as it was rather than a truncated file the next load would discard.
+SubsysResultCode_e C64_CRT::save_store(const char *path, const char *filename)
+{
+    C64_CRT *crt = get_instance();
+    if (!crt->machine || (crt->local_type != CART_MDPLUS)) {
+        return SSRET_OK;
+    }
+    FileManager *fm = FileManager::getFileManager();
+    const uint8_t *store = (const uint8_t *)REU_MEMORY_BASE;
+    mdp_part parts[2];
+    int n = mdp_parts(crt->mdp_has_sram(), crt->mdp_eeprom_size(), parts);
+
+    FRESULT res = FR_OK;
+    int written = 0;
+    for (; (written < n) && (res == FR_OK); written++) {
+        char *temp = mdp_store_name(filename, parts[written].temp_ext);
+        res = mdp_write_file(path, temp, store + parts[written].offset, parts[written].size);
+        delete[] temp;
+    }
+    for (int i = 0; i < n; i++) {
+        char *temp = mdp_store_name(filename, parts[i].temp_ext);
+        char *name = mdp_store_name(filename, parts[i].ext);
+        mstring temp_path;
+        mdp_pathname(path, temp, temp_path);
+        if (res != FR_OK) {
+            if (i < written) {
+                fm->delete_file(temp_path.c_str());
+            }
+        } else {
+            mstring name_path;
+            mdp_pathname(path, name, name_path);
+            fm->delete_file(name_path.c_str()); // the rename does not replace a file
+            res = fm->rename(temp_path.c_str(), name_path.c_str());
+            printf("Magic Desk Plus: wrote %s: %s\n", name, FileSystem::get_error_string(res));
+        }
+        delete[] temp;
+        delete[] name;
+    }
+    if (res != FR_OK) {
+        printf("Magic Desk Plus: saving the store failed: %s\n", FileSystem::get_error_string(res));
+    }
+    return (res == FR_OK) ? SSRET_OK : SSRET_DISK_ERROR;
+}
+
+// Copy the store files beside a CRT along with it, for a cartridge flashed as
+// the default one under a name of its own. A store file the source does not
+// have is removed at the destination, so that a cartridge flashed under a name
+// used before does not start with someone else's save.
+FRESULT C64_CRT::copy_store(const char *path, const char *filename, const char *dest, const char *dest_filename)
+{
+    FileManager *fm = FileManager::getFileManager();
+    const char *exts[] = { MDPLUS_SRAM_EXT, MDPLUS_EEPROM_EXT };
+    FRESULT res = FR_OK;
+    for (int i = 0; (i < 2) && (res == FR_OK); i++) {
+        char *name = mdp_store_name(filename, exts[i]);
+        char *dest_name = mdp_store_name(dest_filename, exts[i]);
+        if (mdp_file_exists(path, name)) {
+            res = fm->fcopy(path, name, dest, dest_name, true);
+        } else {
+            mstring dest_path;
+            mdp_pathname(dest, dest_name, dest_path);
+            fm->delete_file(dest_path.c_str());
+        }
+        delete[] name;
+        delete[] dest_name;
+    }
+    return res;
 }
 
 SubsysResultCode_e C64_CRT::save_crt(File *fo)

@@ -93,6 +93,13 @@ SubsysResultCode_e FileTypeCRT::executeFlash_st(SubsysCommand *cmd)
         cmd->user_interface->popup(FileSystem::get_error_string(fres), BUTTON_OK);
         return SSRET_DISK_ERROR;
     }
+    // A Magic Desk Plus keeps its store in files beside the CRT, so they go along,
+    // under the name the CRT was flashed as.
+    fres = C64_CRT::copy_store(cmd->path.c_str(), cmd->filename.c_str(), CARTS_DIRECTORY, fnbuf);
+    if (fres != FR_OK) {
+        cmd->user_interface->popup(FileSystem::get_error_string(fres), BUTTON_OK);
+        return SSRET_DISK_ERROR;
+    }
     C64 :: getMachine() -> set_rom_config(3, fnbuf);
 
     return SSRET_OK;

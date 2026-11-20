@@ -7,6 +7,34 @@
 
 #define CARTS_DIRECTORY "/flash/carts"
 
+// Magic Desk Plus keeps its non-volatile memory beside the CRT file, not in it,
+// as VICE does: the CRT format has no way to carry it yet, and VICE refuses an
+// image with anything but ROM chunks. Each part is a raw image named after the
+// CRT, so that Save Cartridge as GAME.CRT goes with GAME.SRAM and GAME.EEPROM,
+// the same bytes VICE reads and writes as its SRAM and EEPROM image files.
+//
+// The cartridge logic reaches the EEPROM in the first half of its area and the
+// SRAM in the second.
+#define MDPLUS_EEPROM_8K     0x2000
+#define MDPLUS_EEPROM_32K    0x8000
+#define MDPLUS_EEPROM_AREA   0x20000
+#define MDPLUS_SRAM_SIZE     0x20000
+#define MDPLUS_SRAM_OFFSET   0x20000
+#define MDPLUS_SRAM_EXT      ".sram"
+#define MDPLUS_EEPROM_EXT    ".eeprom"
+
+// Which parts a Magic Desk Plus has is declared in the CRT header's hardware
+// revision byte, not inferred from what the file happens to carry: a released
+// image brings no store at all and still has both. VICE r46239 settled the
+// numbering -- its cartconv and its manual disagreed with its emulator, and the
+// emulator was right.
+#define MDPLUS_REV_SRAM_EEPROM_32K  0
+#define MDPLUS_REV_SRAM_EEPROM_8K   1
+#define MDPLUS_REV_EEPROM_32K       2
+#define MDPLUS_REV_EEPROM_8K        3
+#define MDPLUS_REV_SRAM             4
+#define MDPLUS_REV_MAX              4
+
 // Local definitions, NOT hardware select!
 typedef enum {
     CART_NOT_IMPL,
@@ -14,6 +42,7 @@ typedef enum {
     CART_ACTION,
     CART_RETRO,
     CART_DOMARK,
+    CART_MDPLUS,
     CART_OCEAN_8K,
     CART_OCEAN_16K,
     CART_EASYFLASH,
@@ -98,9 +127,15 @@ class C64_CRT
     void configure_cart(cart_def *def);
     void find_eeprom(void);
     void auto_mirror(void);
+    bool mdp_has_sram(void);
+    uint32_t mdp_eeprom_size(void);
+    void load_mdp_store(const char *path, const char *filename);
 public:
     static SubsysResultCode_e load_crt(const char *path, const char *filename, cart_def *def, uint8_t *mem);
     static SubsysResultCode_e save_crt(File *f);
+    static SubsysResultCode_e save_store(const char *path, const char *filename);
+    static bool store_exists(const char *path, const char *filename);
+    static FRESULT copy_store(const char *path, const char *filename, const char *dest, const char *dest_filename);
     static int clear_crt(void);
     static bool is_valid(void);
 
