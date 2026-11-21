@@ -38,6 +38,7 @@ class UsbScsiDriver : public UsbDriver
 	uint16_t poll_interval[16];
 	bool media_seen[16];
 	SemaphoreHandle_t mutex;
+	BotWriteLock write_lock; // read-only after a Reset Recovery, until the device is re-enumerated
 	
 	int max_lun;
 	int current_lun;
@@ -62,6 +63,7 @@ public:
 	~UsbScsiDriver();
 
 	UsbDevice  *getDevice(void) { return device; }
+	bool is_read_only(void) { return write_lock.refuses_write(); }
 	void install(UsbInterface *dev);
 	void deinstall(UsbInterface *dev);
 	void poll(void);
@@ -76,7 +78,6 @@ public:
 class UsbScsi : public BlockDevice
 {
     bool       initialized;
-    BotWriteLock write_lock;
     UsbScsiDriver *driver;
     bool       no_more;
     int        lun;
@@ -93,7 +94,6 @@ public:
     ~UsbScsi();
 
     void reset(void);
-    void lock_writes(void) { write_lock.on_recovery(); }
     char *get_name(void) { return name; }
     char *get_disp_name(void) { return disp_name; }
 

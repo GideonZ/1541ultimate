@@ -28,6 +28,7 @@ FactoryRegistrator<UsbInterface *, UsbDriver *> scsi_tester(UsbInterface :: getU
 UsbScsiDriver :: UsbScsiDriver(UsbInterface *intf) : UsbDriver(intf)
 {
 	poll_enable = false;
+	memset(scsi_blk_dev, 0, sizeof(scsi_blk_dev));
 	current_lun = 0;
 	max_lun = 0;
 	file_manager = FileManager :: getFileManager();
@@ -300,11 +301,8 @@ int UsbScsiDriver :: reset_recovery()
 	device->unstall_pipe(ep_out, c_bot_recovery_ticks);
 	bulk_in.Command = 0;
 	bulk_out.Command = 0;
-	// The device has been reset: it is read-only until it is re-enumerated.
-	for (int i = 0; (i <= max_lun) && (i < 16); i++) {
-		if (scsi_blk_dev[i])
-			scsi_blk_dev[i]->lock_writes();
-	}
+	// The device has been reset: it is read-only until it is re-enumerated (a new driver object).
+	write_lock.on_recovery();
 	printf("USB SCSI: Reset Recovery issued, unit is read-only.\n");
 	return r;
 }
@@ -387,6 +385,13 @@ int UsbScsiDriver :: exec_command(int lun, int cmdlen, bool out, uint8_t *cmd, i
     if (!xSemaphoreTake(mutex, 5000)) {
     	printf("UsbScsiDriver unavailable (EX).\n");
     	return -9;
+    }
+
+    // Read-only after a Reset Recovery. Checked here, with the mutex held, so that a write that queued on the mutex
+    // while another command recovered is refused too and never reaches the device.
+    if (bot_refuse_write(write_lock.refuses_write(), out && data && datalen)) {
+        xSemaphoreGive(mutex);
+        return -8;
     }
 
     // The retry after a Reset Recovery must not make a caller wait longer than the original code did
@@ -869,8 +874,10 @@ DSTATUS UsbScsi :: status(void)
 {
     if(!initialized)
         return STA_NODISK;
-    if(write_lock.refuses_write())
+#ifndef BOOTLOADER
+    if(driver->is_read_only())
         return STA_PROTECT; // read-only after a Reset Recovery
+#endif
     return RES_OK;
 }
 
@@ -911,8 +918,10 @@ DRESULT UsbScsi :: write(const uint8_t *buf, uint32_t sector, int num_sectors)
     if(!initialized)
         return RES_NOTRDY;
 
-    if(write_lock.refuses_write()) // after a Reset Recovery: before the device is touched
+#ifndef BOOTLOADER
+    if(driver->is_read_only()) // after a Reset Recovery: before the device is touched
         return RES_WRPRT;
+#endif
 
 	if(get_state() != e_device_ready)
         return RES_NOTRDY;
@@ -929,6 +938,12 @@ DRESULT UsbScsi :: write(const uint8_t *buf, uint32_t sector, int num_sectors)
 	ST_DWORD_BE(&write_10_command[2], sector);
 
 	len = driver->exec_command(lun, 10, true, write_10_command, block_size*num_sectors, (uint8_t *)buf, false);
+#ifndef BOOTLOADER
+	if(len == -8) { // refused: the unit became read-only while this write waited for the driver
+		ioWrite8(ITU_USB_BUSY, 0);
+		return RES_WRPRT;
+	}
+#endif
 	if(len != block_size*num_sectors) {
 		printf("Error %d.\n", len);
 		ioWrite8(ITU_USB_BUSY, 0);

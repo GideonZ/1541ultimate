@@ -40,6 +40,11 @@ int main()
     // read-only after a recovery, until the unit is replaced by a new one (re-enumeration)
     { BotWriteLock w; CHECK(!w.refuses_write()); w.on_recovery(); CHECK(w.refuses_write()); w.on_recovery(); CHECK(w.refuses_write());
       BotWriteLock fresh; CHECK(!fresh.refuses_write()); }
+    // a write that queued on the driver mutex during a recovery is refused when it gets the mutex; reads and TUR are not
+    CHECK(bot_refuse_write(true, true));
+    CHECK(!bot_refuse_write(true, false));
+    CHECK(!bot_refuse_write(false, true));
+    CHECK(!bot_refuse_write(false, false));
     if (failures) { printf("%d failures\n", failures); return 1; }
     printf("usb_bot_policy_test OK\n");
     return 0;
