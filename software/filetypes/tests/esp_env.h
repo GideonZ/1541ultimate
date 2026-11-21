@@ -19,6 +19,7 @@
 #include "../../io/usb/tests/host_test/host_test.h"
 #define CHECK(c, msg) EXPECT_TRUE((c) && (msg))
 
+#include "esp_md5.h"
 #define BUTTON_OK 0x01
 #define FA_READ   0x01
 
@@ -45,8 +46,11 @@ struct EspWorld {
     uint32_t reported_size;         // what the file system says its size is (get_size and fstat)
     int download_status;
     int flash_status;
-    bool verify_ok;                 // the ESP32's MD5 of its flash matches
-    int verify_status;              // when not 0, the verify command itself fails
+    // What the module answers to SPI_FLASH_MD5; the reply is built around the real MD5 of
+    // the segment (VERIFY_GOOD*), or is the raw frame in verify_raw
+    enum { VERIFY_GOOD36, VERIFY_GOOD34, VERIFY_WRONG, VERIFY_ERROR, VERIFY_RAW } verify_mode;
+    std::vector<uint8_t> verify_raw;
+    int verifies;                   // how many SPI_FLASH_MD5 were asked
 
     std::string log;                // popups and ESP32 calls, in order
     int opens, closes;
@@ -103,11 +107,29 @@ struct Esp32 {
         world.written.push_back(w);
         return world.flash_status;
     }
-    // Checks what is in the ESP32's flash against the image (the fixed code calls it)
+    // Checks what is in the ESP32's flash against the image (the fixed code calls it): builds
+    // the loader's reply and runs it through the same parser the firmware uses
     int  VerifyFlash(const uint8_t *binary, uint32_t address, uint32_t length) {
         world.log += "{verify}";
-        if (world.verify_status) return world.verify_status;
-        return world.verify_ok ? 0 : -8;
+        world.verifies++;
+        EspMd5 m; uint8_t d[16];
+        m.update(binary, length); m.final(d);
+        std::vector<uint8_t> rb(8, 0);
+        rb[0] = 1; rb[1] = ESP_SPI_FLASH_MD5;
+        if (world.verify_mode == EspWorld::VERIFY_RAW) {
+            rb = world.verify_raw;
+        } else if (world.verify_mode == EspWorld::VERIFY_ERROR) {
+            rb[2] = 4; rb.push_back(1); rb.push_back(5); rb.push_back(0); rb.push_back(0);
+        } else {
+            char hex[33];
+            for (int i = 0; i < 16; i++) snprintf(hex + 2 * i, 3, "%02x", d[i]);
+            if (world.verify_mode == EspWorld::VERIFY_WRONG) hex[0] = hex[0] == '0' ? '1' : '0';
+            rb.insert(rb.end(), hex, hex + 32);
+            rb.push_back(0); rb.push_back(0);
+            if (world.verify_mode == EspWorld::VERIFY_GOOD36) { rb.push_back(0); rb.push_back(0); }
+            rb[2] = rb.size() - 8;
+        }
+        return esp_md5_parse_reply(rb.data(), rb.size(), d);
     }
 };
 extern Esp32 esp32;

@@ -137,7 +137,7 @@ TEST(EspFlash, flash_that_does_not_verify_is_reported)
     std::vector<uint8_t> img;
     segment(img, 0x1000, 1500, 1);
     set_image(img);
-    world.verify_ok = false;
+    world.verify_mode = EspWorld::VERIFY_WRONG;
     run();
     CHECK(!has("Success"), "not reported as success");
     CHECK(has("[Flashing Error -8]"), "says the flash does not hold the image");
@@ -151,7 +151,7 @@ TEST(EspFlash, verify_command_failure_is_reported)
     std::vector<uint8_t> img;
     segment(img, 0x1000, 1500, 1);
     set_image(img);
-    world.verify_status = -7;
+    world.verify_mode = EspWorld::VERIFY_ERROR;
     run();
     CHECK(!has("Success"), "not reported as success");
     CHECK(has("[Flashing Error -7]"), "reported");
@@ -183,4 +183,94 @@ TEST(EspFlash, no_download_mode_closes_file_and_restarts_the_app)
     CHECK(world.opens == world.closes, "file closed");
     CHECK(has("{run}{start}"), "the application is started again");
     CHECK(world.written.empty(), "nothing written");
+}
+
+TEST(EspFlash, rom_loader_reply_of_36_bytes_verifies_a_good_flash)
+{
+    reset_world();
+    std::vector<uint8_t> img;
+    segment(img, 0x1000, 1500, 1);
+    segment(img, 0x10000, 3000, 2);
+    set_image(img);
+    world.verify_mode = EspWorld::VERIFY_GOOD36;   // 32 hex, status 00 00, reserved 00 00
+    run();
+    CHECK(has("[Flashing ESP32 Success!]"), "success");
+    CHECK(world.verifies == 2, "every segment verified");
+}
+
+TEST(EspFlash, reply_of_34_bytes_verifies_a_good_flash)
+{
+    reset_world();
+    std::vector<uint8_t> img;
+    segment(img, 0x1000, 1500, 1);
+    set_image(img);
+    world.verify_mode = EspWorld::VERIFY_GOOD34;
+    run();
+    CHECK(has("[Flashing ESP32 Success!]"), "success");
+}
+
+TEST(EspFlash, every_segment_is_written_before_any_is_verified)
+{
+    reset_world();
+    std::vector<uint8_t> img;
+    segment(img, 0x1000, 1500, 1);
+    segment(img, 0x10000, 3000, 2);
+    set_image(img);
+    world.verify_mode = EspWorld::VERIFY_WRONG;
+    run();
+    CHECK(world.written.size() == 2, "both segments written, whatever the verify says");
+    CHECK(world.log.find("{verify}") > world.log.rfind("{flash}"), "no verify before the last write");
+    CHECK(has("[Flashing Error -8]"), "reported");
+}
+
+TEST(EspFlash, zero_length_segment_is_written_as_before_and_not_verified)
+{
+    reset_world();
+    std::vector<uint8_t> img;
+    segment(img, 0x1000, 0, 1);
+    segment(img, 0x2000, 100, 1);
+    set_image(img);
+    run();
+    CHECK(has("[Flashing ESP32 Success!]"), "success");
+    CHECK(world.written.size() == 2, "both written, as before");
+    CHECK(world.verifies == 1, "only the segment with data is verified");
+}
+
+// The parser, on raw frames
+static std::vector<uint8_t> frame(int size, const char *hex, std::initializer_list<uint8_t> tail)
+{
+    std::vector<uint8_t> rb(8, 0);
+    rb[0] = 1; rb[1] = ESP_SPI_FLASH_MD5; rb[2] = size & 0xFF; rb[3] = size >> 8;
+    for (const char *p = hex; *p; p++) rb.push_back(*p);
+    rb.insert(rb.end(), tail.begin(), tail.end());
+    return rb;
+}
+
+TEST(EspMd5Reply, raw_frames)
+{
+    EspMd5 m; uint8_t d[16];
+    m.update((const uint8_t *)"abc", 3); m.final(d);
+    const char *hex = "900150983cd24fb0d6963f7d28e17f72";
+    std::vector<uint8_t> f = frame(36, hex, { 0, 0, 0, 0 });
+    CHECK(esp_md5_parse_reply(f.data(), f.size(), d) == 0, "ROM ESP32/C3: 32 hex, 00 00, reserved 00 00");
+    f = frame(34, hex, { 0, 0 });
+    CHECK(esp_md5_parse_reply(f.data(), f.size(), d) == 0, "32 hex, 00 00");
+    f = frame(36, hex, { 1, 5, 0, 0 });
+    CHECK(esp_md5_parse_reply(f.data(), f.size(), d) == ESP_VERIFY_NO_ANSWER, "error status after the data");
+    f = frame(4, "", { 1, 5, 0, 0 });
+    CHECK(esp_md5_parse_reply(f.data(), f.size(), d) == ESP_VERIFY_NO_ANSWER, "an error reply (status 1)");
+    f = frame(2, "", { 1, 5 });
+    CHECK(esp_md5_parse_reply(f.data(), f.size(), d) == ESP_VERIFY_NO_ANSWER, "an error reply of size 2");
+    f = frame(36, hex, { 0, 0, 0, 0 });
+    f.resize(30);
+    CHECK(esp_md5_parse_reply(f.data(), f.size(), d) == ESP_VERIFY_NO_ANSWER, "too short for its size");
+    f = frame(36, "900150983cd24fb0d6963f7d28e17f73", { 0, 0, 0, 0 });
+    CHECK(esp_md5_parse_reply(f.data(), f.size(), d) == ESP_VERIFY_MISMATCH, "one digit off");
+    f = frame(36, hex, { 0, 0, 0, 0 });
+    f[1] = 0x03;
+    CHECK(esp_md5_parse_reply(f.data(), f.size(), d) == ESP_VERIFY_NO_ANSWER, "another opcode");
+    std::vector<uint8_t> raw(8, 0);
+    raw[0] = 1; raw[1] = ESP_SPI_FLASH_MD5; raw[2] = 20;
+    raw.insert(raw.end(), d, d + 16); raw.push_back(0); raw.push_back(0); raw.push_back(0); raw.push_back(0);
+    CHECK(esp_md5_parse_reply(raw.data(), raw.size(), d) == 0, "stub loader: 16 raw, status, reserved");
 }

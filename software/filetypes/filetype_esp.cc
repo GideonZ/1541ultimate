@@ -117,7 +117,11 @@ SubsysResultCode_e FileTypeESP::execute(SubsysCommand *cmd)
             cmd->user_interface->popup(esp_image_message(check), BUTTON_OK);
             return SSRET_INTERNAL_ERROR;
         }
-        file->seek(0);
+        if (file->seek(0) != FR_OK) {
+            fm->fclose(file);
+            cmd->user_interface->popup("Could not read file.", BUTTON_OK);
+            return SSRET_INTERNAL_ERROR;
+        }
 
         esp32.StopApp();
         int status = esp32.Download();
@@ -163,9 +167,6 @@ SubsysResultCode_e FileTypeESP::execute(SubsysCommand *cmd)
                 break;
             }
             status = esp32.Flash(dest, header.address, header.length, status_callback, cmd->user_interface);
-            if (status == 0) {
-                status = esp32.VerifyFlash(dest, header.address, header.length);
-            }
             delete[] dest;
             if (status != 0) {
                 char errmsg[32];
@@ -174,6 +175,39 @@ SubsysResultCode_e FileTypeESP::execute(SubsysCommand *cmd)
                 cmd->user_interface->popup(errmsg, BUTTON_OK);
                 error = true;
                 break;
+            }
+        }
+        // Only when every segment is written: read the file again and check each segment
+        // against the MD5 the module makes of its flash
+        if (!error) {
+            if (file->seek(0) != FR_OK) {
+                cmd->user_interface->hide_progress();
+                cmd->user_interface->popup("Could not read file.", BUTTON_OK);
+                error = true;
+            }
+            remain = filesize;
+            while (!error && remain) {
+                file->read(&header, 12, &bytes_read);
+                remain -= bytes_read;
+                if (bytes_read != 12) {
+                    status = -7;
+                } else if (header.length == 0) {
+                    continue;
+                } else if ((dest = new uint8_t[header.length]) == NULL) {
+                    status = -7;
+                } else {
+                    file->read(dest, header.length, &bytes_read);
+                    remain -= bytes_read;
+                    status = (bytes_read == header.length) ? esp32.VerifyFlash(dest, header.address, header.length) : -7;
+                    delete[] dest;
+                }
+                if (status != 0) {
+                    char errmsg[32];
+                    sprintf(errmsg, "Flashing Error %d", status);
+                    cmd->user_interface->hide_progress();
+                    cmd->user_interface->popup(errmsg, BUTTON_OK);
+                    error = true;
+                }
             }
         }
         fm->fclose(file);

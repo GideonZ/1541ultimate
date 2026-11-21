@@ -95,6 +95,17 @@ static inline int esp_hex_value(uint8_t ch)
     return -1;
 }
 
+// The whole reply to SPI_FLASH_MD5 as the loader sends it (rb: the frame from the direction
+// byte on; rblen bytes): direction 1, opcode 0x13, size (LE), value (4), then <size> bytes of
+// data. Those are the MD5 (32 hex digits from a ROM loader, 16 raw bytes from a stub), two
+// status bytes (status, error) and, on every loader but the ESP8266's, two reserved bytes.
+// An error reply holds just the status bytes (and the reserved pair).
+// Returns 0 when the reply says the flash holds this digest, -7 when the reply is not an
+// answer (error status, malformed, too short), -8 when the digest differs.
+#define ESP_VERIFY_NO_ANSWER -7
+#define ESP_VERIFY_MISMATCH  -8
+static inline int esp_md5_parse_reply(const uint8_t *rb, int rblen, const uint8_t digest[16]);
+
 // Does the data of a SPI_FLASH_MD5 reply (dataLen bytes, without the two status bytes) hold
 // this digest? The ROM loader answers with 32 hex digits, the stub loader with 16 raw bytes.
 static inline bool esp_md5_reply_matches(const uint8_t *data, int dataLen, const uint8_t digest[16])
@@ -110,6 +121,27 @@ static inline bool esp_md5_reply_matches(const uint8_t *data, int dataLen, const
         return true;
     }
     return false;
+}
+
+static inline int esp_md5_parse_reply(const uint8_t *rb, int rblen, const uint8_t digest[16])
+{
+    if (rblen < 10 || rb[0] != 1 || rb[1] != ESP_SPI_FLASH_MD5) {
+        return ESP_VERIFY_NO_ANSWER;
+    }
+    int size = rb[2] | (rb[3] << 8);
+    if (size + 8 > rblen) {
+        return ESP_VERIFY_NO_ANSWER;
+    }
+    int dlen;
+    switch (size) {
+    case 34: case 36: dlen = 32; break;   // hex digest, status, (reserved)
+    case 18: case 20: dlen = 16; break;   // raw digest, status, (reserved)
+    default: return ESP_VERIFY_NO_ANSWER; // 2 or 4: an error reply; anything else is not ours
+    }
+    if (rb[8 + dlen] != 0) {              // status byte after the data
+        return ESP_VERIFY_NO_ANSWER;
+    }
+    return esp_md5_reply_matches(rb + 8, dlen, digest) ? 0 : ESP_VERIFY_MISMATCH;
 }
 
 #endif /* ESP_MD5_H_ */

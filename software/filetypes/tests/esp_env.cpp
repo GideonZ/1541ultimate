@@ -9,8 +9,8 @@ void reset_world()
     world.reported_size = 0;
     world.download_status = 0;
     world.flash_status = 0;
-    world.verify_ok = true;
-    world.verify_status = 0;
+    world.verify_mode = EspWorld::VERIFY_GOOD36;
+    world.verifies = 0;
     world.opens = world.closes = 0;
     world.live_bytes = 0;
 }

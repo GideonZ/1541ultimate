@@ -59,7 +59,7 @@ class Esp32
     void Disable();
     void Boot();
     void PackParams(uint8_t *buffer, int numparams, ...);
-    bool Command(uint8_t opcode, uint16_t length, uint8_t chk, uint8_t *data, uint8_t *receiveBuffer, int timeout, int *dataLen = NULL);
+    bool Command(uint8_t opcode, uint16_t length, uint8_t chk, uint8_t *data, uint8_t *receiveBuffer, int timeout, int *replySize = NULL);
 public:
     Esp32();
     void Quit();
