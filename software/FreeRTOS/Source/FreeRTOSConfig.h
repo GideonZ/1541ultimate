@@ -11,8 +11,9 @@ your application. */
 #define PRIO_DRIVER     1
 #define PRIO_FLOPPY     1
 #define PRIO_POLL       1
-#define PRIO_TCPIP      2
-#define PRIO_REALTIME   3
+#define PRIO_C64_SERVICE 2 // answers the C64 ahead of the network services
+#define PRIO_TCPIP      3
+#define PRIO_REALTIME   4
 
 #define configUSE_PREEMPTION                    1
 #define configUSE_PORT_OPTIMISED_TASK_SELECTION 0
@@ -53,7 +54,7 @@ your application. */
 
 /* Software timer related definitions. */
 #define configUSE_TIMERS                        1
-#define configTIMER_TASK_PRIORITY               3
+#define configTIMER_TASK_PRIORITY               PRIO_REALTIME
 #define configTIMER_QUEUE_LENGTH                10
 #define configTIMER_TASK_STACK_DEPTH            configMINIMAL_STACK_SIZE
 

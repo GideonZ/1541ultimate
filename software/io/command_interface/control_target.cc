@@ -353,7 +353,7 @@ void ControlTarget :: parse_command(Message *command, Message **reply, Message *
                 // whatever the previous command left in this buffer.
                 data_message.message[4] = 0;
                 if (command->message[1] == CTRL_CMD_LOAD_REU) {
-                    retVal = reu_preloader->LoadREU((char *)data_message.message + 4);
+                    retVal = reu_preloader->LoadREU((char *)data_message.message + 4, uci_should_stop);
                 } else {
                     retVal = reu_preloader->SaveREU((char *)data_message.message + 4);
                 }
@@ -529,11 +529,9 @@ void ControlTarget :: save_u64_memory(Message *command)
         printf("Opened file successfully.\n");
 
         uint8_t *dest = new uint8_t[65536];
-        portENTER_CRITICAL();
-        C64_DMA_MEMONLY = 1;
-        memcpy(dest, (const void *)C64_MEMORY_BASE, 65536);
-        C64_DMA_MEMONLY = 0;
-        portEXIT_CRITICAL();
+        // The same copy as "Save C64 Memory": the machine is stopped for it, so the 64K are one
+        // moment of the C64 and the C64 raises no interrupt while the scheduler is suspended.
+        C64 :: getMachine()->get_all_memory(dest);
         uint32_t bytes_written;
 
         res = f->write(dest, 0x10000, &bytes_written);

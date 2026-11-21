@@ -1,7 +1,7 @@
 //#include "attachment_writer.h"
 #include "http_request.h"
 #include "netdb.h"
-#include <errno.h>
+#include "socket_slices.h"
 
 int HttpRequest :: connect_to_server(const char *hostname, uint16_t hostport)
 {
@@ -38,12 +38,14 @@ int HttpRequest :: connect_to_server(const char *hostname, uint16_t hostport)
     memcpy(&serv_addr.sin_addr.s_addr, ret_host->h_addr, ret_host->h_length);
     serv_addr.sin_port = htons(hostport);
 
-    if (connect(sock_fd, (struct sockaddr *)&serv_addr,sizeof(serv_addr)) < 0) {
+    wait.progress(); // the name lookup is not part of the wait
+    if (connect_sliced(sock_fd, &serv_addr, wait) < 0) {
         printf("Connection failed.\n");
         close(sock_fd);
         return -1;
     }
     // printf("Connection succeeded.\n");
+    set_socket_slices(sock_fd);
     this->socket_fd = sock_fd;
     return sock_fd;
 }
@@ -55,11 +57,10 @@ int HttpRequest :: send_request(StreamRamFile *s)
     char buffer[128];
     do {
         n = s->read(buffer, 128);
-        if (n) {
-            r = send(socket_fd, buffer, n, MSG_DONTWAIT);
-            if (r < 0) {
-                return r;
-            }
+        int sent;
+        r = send_sliced(socket_fd, buffer, n, wait, &sent);
+        if (r < 0) {
+            return r;
         }
     } while(n);
     return 0;
@@ -67,7 +68,8 @@ int HttpRequest :: send_request(StreamRamFile *s)
 
 bool HttpRequest :: recv_response(void)
 {
-    bool complete = get_response(this->socket_fd, collect_in_buffer, response);
+    wait.progress(); // the server waits for the response from here
+    bool complete = get_response(this->socket_fd, collect_in_buffer, response, &wait);
     this->body = (t_BufferedBody *)response.userContext;
     if (!complete || !this->body) {
         delete this->body;
@@ -142,7 +144,9 @@ int read_socket(int socket_fd, HTTPReqMessage& response)
     return n;
 }
 
-bool get_response(int socket_fd, HTTPREQ_CALLBACK callback, HTTPReqMessage& response)
+// With a wait, the socket's SO_RCVTIMEO is one slice, and a read that times out
+// is tried again for as long as the wait allows.
+bool get_response(int socket_fd, HTTPREQ_CALLBACK callback, HTTPReqMessage& response, SliceWait *wait)
 {
     uint8_t state = READING_SOCKET;
 
@@ -151,8 +155,17 @@ bool get_response(int socket_fd, HTTPREQ_CALLBACK callback, HTTPReqMessage& resp
         if (n < 0 && errno == EINTR) {
             continue;
         }
+        if (n < 0 && wait && socket_timed_out() && wait->again()) {
+            continue;
+        }
         if (n <= 0) {
             break;
+        }
+        if (wait) {
+            wait->progress();
+            if (wait->cancelled()) { // also while the server keeps sending
+                break;
+            }
         }
         state = ProcessClientData(&response, NULL, callback);
     } while(state < WRITING_SOCKET);

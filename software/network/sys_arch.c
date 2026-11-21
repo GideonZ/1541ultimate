@@ -68,6 +68,15 @@ functions are being called from an interrupt context or not.  This relies on
 the interrupt handler setting this variable manually. */
 portBASE_TYPE xInsideISR = pdFALSE;
 
+/* lwIP waits in milliseconds, FreeRTOS in ticks of portTICK_PERIOD_MS. Round up: a wait
+shorter than a tick must not become a wait of 0 ticks, which returns at once, so that the
+tcpip thread polls its mailbox until the tick count moves. The callers never pass 0, so
+the result is at least 1 tick. */
+static TickType_t ms_to_ticks( u32_t ulMs )
+{
+	return ( ulMs / portTICK_PERIOD_MS ) + ( ( ulMs % portTICK_PERIOD_MS ) ? 1 : 0 );
+}
+
 /*---------------------------------------------------------------------------*
  * Routine:  sys_mbox_new
  *---------------------------------------------------------------------------*
@@ -226,7 +235,7 @@ unsigned long ulReturn;
 	{
 		configASSERT( xInsideISR == ( portBASE_TYPE ) 0 );
 
-		if( pdTRUE == xQueueReceive( *pxMailBox, &( *ppvBuffer ), ulTimeOut/ portTICK_PERIOD_MS ) )
+		if( pdTRUE == xQueueReceive( *pxMailBox, &( *ppvBuffer ), ms_to_ticks( ulTimeOut ) ) )
 		{
 			xEndTime = xTaskGetTickCount();
 			xElapsed = ( xEndTime - xStartTime ) * portTICK_PERIOD_MS;
@@ -373,7 +382,7 @@ unsigned long ulReturn;
 
 	if( ulTimeout != 0UL )
 	{
-		if( xSemaphoreTake( *pxSemaphore, ulTimeout / portTICK_PERIOD_MS ) == pdTRUE )
+		if( xSemaphoreTake( *pxSemaphore, ms_to_ticks( ulTimeout ) ) == pdTRUE )
 		{
 			xEndTime = xTaskGetTickCount();
 			xElapsed = (xEndTime - xStartTime) * portTICK_PERIOD_MS;
