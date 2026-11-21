@@ -131,7 +131,8 @@ static void native_case(const char *mode) {
         !provider_journal_reserved_slot(flash,-1) && !provider_journal_reserved_slot(flash,2),"only final two configuration slots reserved");
     bool missing=!strcmp(mode,"missing"),late=!strcmp(mode,"late"),early=!strcmp(mode,"early"),
         corrupt=!strcmp(mode,"corrupt"),foreign=!strcmp(mode,"foreign"),
-        reconnect=!strcmp(mode,"reconnect"),
+        held=!strcmp(mode,"held"),flap=!strcmp(mode,"flap"),late_reply=!strcmp(mode,"stale"),
+        reconnect=!strcmp(mode,"reconnect")||held||flap||late_reply,
         task_failure=!strcmp(mode,"task"),bind_failure=!strcmp(mode,"bind"),install=!strcmp(mode,"install");
     if (install || foreign) check(provider_journal_install(flash,17) && !provider_journal_install(flash,18),"native installer is explicit and one shot");
     else if (!missing && !late) { FlashIncarnationJournal seed(flash,0,1,17); check(seed.provision(),"prior boot storage seeded"); }
@@ -168,10 +169,23 @@ static void native_case(const char *mode) {
         ControlTestPort port; provider_session::Identity boot={}; boot.bytes[0]=1;
         Worker worker(port,boot,no_tls ? 0 : provider_session::Required,{1500,5000,1500});
         const uint32_t began=ticks;
-        bool active=false,in_request=false,link_down=false,reactivated=false;
+        bool active=false,in_request=false,link_down=false,reactivated=false,flapped=false,stale_taken=false,flap_armed=false;
+        HttpConnection *kept=0;
         OperationCancellation token;
+        wifi.snapshot_hook=[&] { if (flap_armed) { flap_armed=false; wifi.lifetime.signal(); } };
         delay_hook=[&] {
             if (link_down && !wifi.online && !factory->available()) {
+                if (kept) { delete kept; kept=0; } // A connection opened before the drop closes during the outage.
+                if (late_reply && !stale_taken) { // The ESP answers a pre-drop request while the owner is disconnected.
+                    stale_taken=true; provider_data::Frame stale={}; stale.opcode=provider_data::Open; stale.reply=true; stale.status=provider_data::Ok; stale.request=1; stale.ticket.session=1;
+                    stale.ticket.grant.challenge={boot,1}; stale.ticket.grant.owner=boot; stale.ticket.grant.owner.bytes[1]=2;
+                    uint8_t bytes[provider_data::FrameSize]; check(provider_data::encode(stale,bytes),"stale data reply encodes");
+                    portENTER_CRITICAL(); wifi.bound->data.receive_isr(bytes,sizeof(bytes)); portEXIT_CRITICAL();
+                }
+                if (flap && !flapped) { // The link drops again between the snapshot and the offer.
+                    flapped=true; flap_armed=true;
+                    wifi.online=true; link_down=false; return;
+                }
                 if (!reconnect) { provider_journal_stop_owner(); return; }
                 wifi.online=true; link_down=false; // The access point returns.
             }
@@ -186,7 +200,10 @@ static void native_case(const char *mode) {
                 uint8_t bytes[FrameSize]; encode(port.replies.front(),bytes); port.replies.pop_front();
                 portENTER_CRITICAL(); check(wifi.bound->receive_isr(bytes,sizeof(bytes)),"worker reply delivered through native UART"); portEXIT_CRITICAL();
             }
-            if (reconnect && active && !link_down && factory->available() && token.cancelled()) reactivated=true;
+            if (reconnect && active && !link_down && factory->available() && token.cancelled()) {
+                reactivated=true;
+                provider_data::Event stale; check(!wifi.bound->data.take(stale),"no pre-drop data reply survives into the new session");
+            }
             if (factory->available() && !active) {
                 active=true; token=factory->lifetime();
                 CancellationSource cancel; auto cancelled=cancel.token(); cancel.signal();
@@ -203,17 +220,12 @@ static void native_case(const char *mode) {
                     check(elapsed>=30000 && elapsed<=31000,"production target uses native factory and bounds an unserviced request");
                     check(token.cancelled(),"unserviced production request retires its owner");
                 }
+                if (held) { kept=factory->create_connection({}); check(kept && kept->open(0,0)<0,"held connection attempted"); }
                 wifi.lifetime.signal(); wifi.online=false; link_down=true; // Wi-Fi disconnect.
             }
             if ((ticks-began)*5>2000 && !active) { check(false,"native factory negotiation bounded"); provider_journal_stop_owner(); }
         };
         try { task_function(task_context); check(false,"owner task never returns"); } catch (const TaskFinished&) {}
-        if (reconnect && !reactivated && !wifi.online) {
-            wifi.online=true; provider_journal_start_owner(wifi); // Wi-Fi reconnect re-enters the start path.
-            if (creates>1 && task_function) {
-                try { task_function(task_context); } catch (const TaskFinished&) {}
-            }
-        }
         delay_hook=[]{};
         if (reconnect) check(reactivated,"owner serves again after a Wi-Fi disconnect and reconnect");
         if (no_tls || no_identity) {
