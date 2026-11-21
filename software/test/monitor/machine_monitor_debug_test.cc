@@ -84,6 +84,10 @@ struct StubDebugSession : public DebugSession
     // screen was on display while the machine ran, so the firmware's own
     // chrome rows have to be redrawn.
     bool render_target_invalidated;
+    // True from creation until cleanup()/cleanup_to_context() runs: a stand-in
+    // for "the handler and patches are installed and the CPU may be parked".
+    bool installed;
+    static int destroyed_count;
 
     StubDebugSession()
         : over_calls(0), over_at_calls(0),
@@ -102,7 +106,7 @@ struct StubDebugSession : public DebugSession
           go_produces_snapshot(false),
           parked_context_handoff_supported(false),
           parked_context(false),
-          render_target_invalidated(false)
+          render_target_invalidated(false), installed(true)
     {
         debug_context_reset(&cleanup_target_ctx);
         debug_context_reset(&next_ctx);
@@ -208,11 +212,15 @@ struct StubDebugSession : public DebugSession
         }
         return run_to_result;
     }
+    virtual ~StubDebugSession() { destroyed_count++; }
+    virtual bool is_debug_session_active(void) const { return installed; }
     virtual void cleanup(void) {
         cleanup_calls++;
+        installed = false;
     }
     virtual void cleanup_to_context(const DebugContext *ctx) {
         cleanup_calls++;
+        installed = false;
         cleanup_to_context_calls++;
         if (ctx) {
             cleanup_target_ctx = *ctx;
@@ -3849,6 +3857,51 @@ static int test_ctrl_b_keeps_bookmark_popup_in_debug()
     if (expect(monitor.poll(0) == 0, "RUN/STOP leaves Debug")) return 1;
     if (expect(monitor.poll(0) == 1, "RUN/STOP exits the monitor")) return 1;
     monitor.deinit();
+    return 0;
+}
+
+int StubDebugSession::destroyed_count = 0;
+
+static int test_host_disconnect_during_debug_hands_the_machine_back()
+{
+    // A telnet drop while Debug is active ends the run_machine_monitor() poll
+    // loop without any key: the host stream is closed, so the loop condition
+    // fails and the monitor goes straight to deinit(). Nothing on that path
+    // leaves Debug, so the BRK/NMI handler, the armed patches and a parked CPU
+    // stayed in the C64 and the session object leaked.
+    TestUserInterface ui;
+    CaptureScreen screen;
+    TrackingDebugBackend backend;
+    monitor_reset_saved_state();
+
+    backend.write(0xC003, 0xA9);
+    backend.write(0xC004, 0x00);
+    backend.write(0xC005, 0xEA);
+    const int keys[] = { 'A', 'D' };
+    FakeKeyboard keyboard(keys, 2);
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+    if (expect(monitor.poll(0) == 0, "ASM switch should return 0")) return 1;
+    if (expect(monitor.poll(0) == 0, "Enter Debug should return 0")) return 1;
+    StubDebugSession *sess = backend.last_session;
+    if (expect(sess != NULL, "Session must have been created")) return 1;
+    if (expect(monitor.is_debug_session_active(),
+               "Debug must be installed before the disconnect")) return 1;
+
+    int destroyed_before = StubDebugSession::destroyed_count;
+    // The loop has exited on the dead host; only the teardown runs.
+    monitor.deinit();
+
+    if (expect(!monitor.is_debug_session_active() ||
+               StubDebugSession::destroyed_count > destroyed_before,
+               "Disconnect must not leave the debug session installed")) return 1;
+    if (expect(StubDebugSession::destroyed_count == destroyed_before + 1,
+               "deinit() must delete the session it created")) return 1;
+    if (expect(!monitor.has_deferred_debug_go(),
+               "Disconnect must not schedule a deferred go")) return 1;
     return 0;
 }
 
@@ -9444,6 +9497,7 @@ int main()
     RUN(test_b_keeps_binary_view_in_debug);
     RUN(test_ctrl_b_keeps_bookmark_popup_in_debug);
     RUN(test_cleanup_runs_on_deinit);
+    RUN(test_host_disconnect_during_debug_hands_the_machine_back);
     RUN(test_ctrl_o_after_debug_step_closes_without_go_handoff);
     RUN(test_stop_debugging_clears_stale_go_handoff);
     RUN(test_stop_debugging_resumes_current_debug_context);
