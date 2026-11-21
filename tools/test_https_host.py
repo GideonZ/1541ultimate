@@ -63,7 +63,7 @@ def main():
     for mode in ("", "allocation", "setter"):
         run("sources-" + (mode or "normal"), [build / "test_provider_sources"] + ([mode] if mode else []))
     for mode in ("", "install", "existing", "missing", "late", "early", "corrupt", "foreign",
-                 "task", "bind", "target", "delayed", "no-tls", "no-identity", "operator-install",
+                 "task", "bind", "target", "delayed", "no-tls", "no-identity", "reconnect", "operator-install",
                  "operator-occupied", "operator-damaged", "operator-fault", "operator-stop", "operator-changed"):
         run("startup-" + (mode or "normal"), [build / "test_provider_startup"] + ([mode] if mode else []))
     run("startup-disabled", [build / "test_provider_startup_disabled", "disabled"])

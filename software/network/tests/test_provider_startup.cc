@@ -131,6 +131,7 @@ static void native_case(const char *mode) {
         !provider_journal_reserved_slot(flash,-1) && !provider_journal_reserved_slot(flash,2),"only final two configuration slots reserved");
     bool missing=!strcmp(mode,"missing"),late=!strcmp(mode,"late"),early=!strcmp(mode,"early"),
         corrupt=!strcmp(mode,"corrupt"),foreign=!strcmp(mode,"foreign"),
+        reconnect=!strcmp(mode,"reconnect"),
         task_failure=!strcmp(mode,"task"),bind_failure=!strcmp(mode,"bind"),install=!strcmp(mode,"install");
     if (install || foreign) check(provider_journal_install(flash,17) && !provider_journal_install(flash,18),"native installer is explicit and one shot");
     else if (!missing && !late) { FlashIncarnationJournal seed(flash,0,1,17); check(seed.provision(),"prior boot storage seeded"); }
@@ -167,9 +168,14 @@ static void native_case(const char *mode) {
         ControlTestPort port; provider_session::Identity boot={}; boot.bytes[0]=1;
         Worker worker(port,boot,no_tls ? 0 : provider_session::Required,{1500,5000,1500});
         const uint32_t began=ticks;
-        bool active=false,in_request=false;
+        bool active=false,in_request=false,link_down=false,reactivated=false;
         OperationCancellation token;
         delay_hook=[&] {
+            if (link_down && !wifi.online && !factory->available()) {
+                if (!reconnect) { provider_journal_stop_owner(); return; }
+                wifi.online=true; link_down=false; // The access point returns.
+            }
+            if (reactivated) { provider_journal_stop_owner(); return; }
             if (in_request) return; // Deliberately stall owner delivery during the target probe.
             if (!wifi.uart.sent.empty()) {
                 auto bytes=wifi.uart.sent.front(); wifi.uart.sent.erase(wifi.uart.sent.begin());
@@ -180,6 +186,7 @@ static void native_case(const char *mode) {
                 uint8_t bytes[FrameSize]; encode(port.replies.front(),bytes); port.replies.pop_front();
                 portENTER_CRITICAL(); check(wifi.bound->receive_isr(bytes,sizeof(bytes)),"worker reply delivered through native UART"); portEXIT_CRITICAL();
             }
+            if (reconnect && active && !link_down && factory->available() && token.cancelled()) reactivated=true;
             if (factory->available() && !active) {
                 active=true; token=factory->lifetime();
                 CancellationSource cancel; auto cancelled=cancel.token(); cancel.signal();
@@ -196,12 +203,19 @@ static void native_case(const char *mode) {
                     check(elapsed>=30000 && elapsed<=31000,"production target uses native factory and bounds an unserviced request");
                     check(token.cancelled(),"unserviced production request retires its owner");
                 }
-                wifi.lifetime.signal();
+                wifi.lifetime.signal(); wifi.online=false; link_down=true; // Wi-Fi disconnect.
             }
             if ((ticks-began)*5>2000 && !active) { check(false,"native factory negotiation bounded"); provider_journal_stop_owner(); }
         };
         try { task_function(task_context); check(false,"owner task never returns"); } catch (const TaskFinished&) {}
+        if (reconnect && !reactivated && !wifi.online) {
+            wifi.online=true; provider_journal_start_owner(wifi); // Wi-Fi reconnect re-enters the start path.
+            if (creates>1 && task_function) {
+                try { task_function(task_context); } catch (const TaskFinished&) {}
+            }
+        }
         delay_hook=[]{};
+        if (reconnect) check(reactivated,"owner serves again after a Wi-Fi disconnect and reconnect");
         if (no_tls || no_identity) {
             check(!active && !factory->available() && !factory->create_connection({}),"missing identity or security capability cannot publish ready factory");
             if (no_identity) check((ticks-began)*5>=1500 && (ticks-began)*5<=1510,"identity timeout measured after owner start");
