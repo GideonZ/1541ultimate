@@ -6056,15 +6056,19 @@ void MachineMonitor :: init(Screen *scr, Keyboard *keyb)
 void MachineMonitor :: deinit(void)
 {
     // The poll loop also ends without a key when the host goes away (a telnet
-    // drop), so Debug can still be installed here. Hand the machine back and
-    // delete the session, which owns the BRK/NMI handler and the patches. A
+    // drop) or by an Edit-mode Ctrl-O, so Debug can still be installed here. Hand
+    // the machine back and delete the session, which owns the BRK/NMI handler
+    // and the patches. Without a session there is nothing to restore, and the
+    // pristine-ROM pass must not run over another monitor's live patches. A
     // pending deferred Go keeps the session: dispatch_deferred_debug_go()
     // resumes the parked CPU through it after this teardown.
     if (!deferred_debug_go_pending) {
         if (is_debug_session_active()) {
             leave_debug_for_exit();
         }
-        debug_cleanup_session();
+        if (debug_session) {
+            debug_cleanup_session();
+        }
     }
     monitor_saved_state.view = state.view;
     monitor_saved_state.current_addr = state.current_addr;

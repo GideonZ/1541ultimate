@@ -88,6 +88,10 @@ struct StubDebugSession : public DebugSession
     // for "the handler and patches are installed and the CPU may be parked".
     bool installed;
     static int destroyed_count;
+    // Sessions deleted while their handler and patches were still installed.
+    static int destroyed_installed_count;
+    static int cleanup_to_context_total;
+    static DebugContext last_cleanup_target;
 
     StubDebugSession()
         : over_calls(0), over_at_calls(0),
@@ -212,7 +216,10 @@ struct StubDebugSession : public DebugSession
         }
         return run_to_result;
     }
-    virtual ~StubDebugSession() { destroyed_count++; }
+    virtual ~StubDebugSession() {
+        destroyed_count++;
+        if (installed) destroyed_installed_count++;
+    }
     virtual bool is_debug_session_active(void) const { return installed; }
     virtual void cleanup(void) {
         cleanup_calls++;
@@ -222,7 +229,9 @@ struct StubDebugSession : public DebugSession
         cleanup_calls++;
         installed = false;
         cleanup_to_context_calls++;
+        cleanup_to_context_total++;
         if (ctx) {
+            last_cleanup_target = *ctx;
             cleanup_target_ctx = *ctx;
         } else {
             debug_context_reset(&cleanup_target_ctx);
@@ -3861,6 +3870,14 @@ static int test_ctrl_b_keeps_bookmark_popup_in_debug()
 }
 
 int StubDebugSession::destroyed_count = 0;
+int StubDebugSession::destroyed_installed_count = 0;
+int StubDebugSession::cleanup_to_context_total = 0;
+DebugContext StubDebugSession::last_cleanup_target;
+
+// Counts the pristine-ROM safety net, which a monitor close must run only when
+// it had a session to clean up after.
+static int g_rom_restores = 0;
+extern "C" void u64_restore_pristine_rom_image(void) { g_rom_restores++; }
 
 static int test_host_disconnect_during_debug_hands_the_machine_back()
 {
@@ -3892,6 +3909,8 @@ static int test_host_disconnect_during_debug_hands_the_machine_back()
                "Debug must be installed before the disconnect")) return 1;
 
     int destroyed_before = StubDebugSession::destroyed_count;
+    int installed_before = StubDebugSession::destroyed_installed_count;
+    int handed_back_before = StubDebugSession::cleanup_to_context_total;
     // The loop has exited on the dead host; only the teardown runs.
     monitor.deinit();
 
@@ -3900,8 +3919,119 @@ static int test_host_disconnect_during_debug_hands_the_machine_back()
                "Disconnect must not leave the debug session installed")) return 1;
     if (expect(StubDebugSession::destroyed_count == destroyed_before + 1,
                "deinit() must delete the session it created")) return 1;
+    if (expect(StubDebugSession::destroyed_installed_count == installed_before,
+               "The session must be cleaned up before it is deleted")) return 1;
+    if (expect(StubDebugSession::cleanup_to_context_total == handed_back_before + 1,
+               "Debug must be left, which hands the parked CPU back")) return 1;
     if (expect(!monitor.has_deferred_debug_go(),
                "Disconnect must not schedule a deferred go")) return 1;
+    return 0;
+}
+
+static int test_edit_mode_ctrl_o_exit_hands_the_machine_back()
+{
+    // Ctrl-O in Edit returns 1 without debug_leave(), with the host alive.
+    TestUserInterface ui;
+    CaptureScreen screen;
+    TrackingDebugBackend backend;
+    monitor_reset_saved_state();
+
+    backend.write(0xC003, 0xA9);
+    const int keys[] = { 'A', 'D', 'E', KEY_CTRL_O };
+    FakeKeyboard keyboard(keys, 4);
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+    if (expect(monitor.poll(0) == 0, "ASM switch should return 0")) return 1;
+    if (expect(monitor.poll(0) == 0, "Enter Debug should return 0")) return 1;
+    if (expect(monitor.poll(0) == 0, "Enter Edit should return 0")) return 1;
+    if (expect(monitor.poll(0) == 1, "Ctrl-O in Edit closes the monitor")) return 1;
+    int destroyed_before = StubDebugSession::destroyed_count;
+    int installed_before = StubDebugSession::destroyed_installed_count;
+    int handed_back_before = StubDebugSession::cleanup_to_context_total;
+    monitor.deinit();
+    if (expect(!monitor.is_debug_session_active() ||
+               StubDebugSession::destroyed_count > destroyed_before,
+               "Edit-mode Ctrl-O must not leave Debug installed")) return 1;
+    if (expect(StubDebugSession::destroyed_count == destroyed_before + 1 &&
+               StubDebugSession::destroyed_installed_count == installed_before,
+               "The session must be cleaned up, then deleted once")) return 1;
+    if (expect(StubDebugSession::cleanup_to_context_total == handed_back_before + 1,
+               "Debug must be left, which hands the parked CPU back")) return 1;
+    return 0;
+}
+
+static int test_deferred_go_after_deinit_resumes_through_the_session()
+{
+    // The real order in run_machine_monitor(): deinit(), then the deferred Go.
+    TestUserInterface ui;
+    CaptureScreen screen;
+    TrackingDebugBackend backend;
+    monitor_reset_saved_state();
+
+    backend.snapshot_result = DebugSession::DBG_OK;
+    backend.canned_snapshot_set = true;
+    debug_context_reset(&backend.canned_snapshot);
+    backend.canned_snapshot.valid = true;
+    backend.canned_snapshot.pc = 0xC123;
+    backend.canned_snapshot.sp = 0xF1;
+    backend.parked_context_handoff_supported = true;
+    backend.write(0xC123, 0xEA);
+
+    const int keys[] = { 'A', 'D', 'G' };
+    FakeKeyboard keyboard(keys, 3);
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.set_debug_run_window_refreeze_enabled(true);
+    monitor.set_reset_exits_monitor(true);
+    monitor.init(&screen, &keyboard);
+    if (expect(monitor.poll(0) == 0, "ASM view ok")) return 1;
+    if (expect(monitor.poll(0) == 0, "Enter Debug ok")) return 1;
+    if (expect(monitor.poll(0) == 1, "G unwinds out of the monitor")) return 1;
+    if (expect(monitor.has_deferred_debug_go(), "G must defer the handoff")) return 1;
+
+    int destroyed_before = StubDebugSession::destroyed_count;
+    int total_before = StubDebugSession::cleanup_to_context_total;
+    monitor.deinit();
+    if (expect(StubDebugSession::destroyed_count == destroyed_before,
+               "deinit() must keep the session a deferred Go still needs")) return 1;
+    if (expect(monitor.has_deferred_debug_go(),
+               "deinit() must not consume the deferred Go")) return 1;
+    monitor.dispatch_deferred_debug_go();
+    if (expect(StubDebugSession::cleanup_to_context_total == total_before + 1 &&
+               StubDebugSession::last_cleanup_target.valid &&
+               StubDebugSession::last_cleanup_target.pc == 0xC123,
+               "The deferred Go must resume the parked context at $C123")) return 1;
+    if (expect(StubDebugSession::destroyed_count == destroyed_before + 1,
+               "The session must be deleted exactly once")) return 1;
+    return 0;
+}
+
+static int test_close_without_a_session_leaves_the_rom_image_alone()
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    TrackingDebugBackend backend;
+    monitor_reset_saved_state();
+
+    const int keys[] = { 'A' };
+    FakeKeyboard keyboard(keys, 1);
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+    if (expect(monitor.poll(0) == 0, "ASM switch should return 0")) return 1;
+    if (expect(backend.last_session == NULL || backend.session_creations == 0,
+               "Setup must not create a session")) return 1;
+    int restores_before = g_rom_restores;
+    monitor.deinit();
+    if (expect(g_rom_restores == restores_before,
+               "A close with no session must not touch the ROM image")) return 1;
     return 0;
 }
 
@@ -9498,6 +9628,9 @@ int main()
     RUN(test_ctrl_b_keeps_bookmark_popup_in_debug);
     RUN(test_cleanup_runs_on_deinit);
     RUN(test_host_disconnect_during_debug_hands_the_machine_back);
+    RUN(test_edit_mode_ctrl_o_exit_hands_the_machine_back);
+    RUN(test_deferred_go_after_deinit_resumes_through_the_session);
+    RUN(test_close_without_a_session_leaves_the_rom_image_alone);
     RUN(test_ctrl_o_after_debug_step_closes_without_go_handoff);
     RUN(test_stop_debugging_clears_stale_go_handoff);
     RUN(test_stop_debugging_resumes_current_debug_context);
