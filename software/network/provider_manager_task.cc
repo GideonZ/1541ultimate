@@ -51,6 +51,15 @@ void ProviderManagerTask::entry(void *context)
     vTaskDelete(NULL);
     for (;;) {} // FreeRTOS must not return from self deletion.
 }
+// A Wi-Fi disconnect cancels the provider lifetime for good, so the negotiation
+// bound to it is over and the next snapshot starts a new one. Any other failure,
+// including a disabled runner, is final.
+bool ProviderManagerTask::recover(const OperationCancellation& provider)
+{
+    if (runner_.state() == ManagerRunner::Disabled || !provider.cancelled()) return false;
+    requests_.stop(); runner_.stop(); publish(WaitingForBoot);
+    return true;
+}
 void ProviderManagerTask::run()
 {
     static_assert(sizeof(TickType_t) == sizeof(uint32_t), "Provider clock requires 32-bit ticks");
@@ -58,6 +67,8 @@ void ProviderManagerTask::run()
     const TickType_t interval = pdMS_TO_TICKS(PollMs) ? pdMS_TO_TICKS(PollMs) : 1;
     uint32_t previous = xTaskGetTickCount();
     uint64_t now = 0;
+    OperationCancellation provider; // Wi-Fi lifetime the current negotiation is bound to.
+    bool bootstrapping = true;       // Only the first identity wait is bounded.
     publish(WaitingForBoot);
     for (;;) {
         if (__atomic_load_n(&stop_, __ATOMIC_ACQUIRE)) { runner_.stop(); publish(Stopped); return; }
@@ -71,7 +82,7 @@ void ProviderManagerTask::run()
         previous = tick; now += elapsed;
         if (state() == WaitingForBoot) {
             provider_session::Identity boot = {}; OperationCancellation lifetime;
-            if (now >= BootstrapMs) { runner_.stop(); publish(Failed); return; }
+            if (bootstrapping && now >= BootstrapMs) { runner_.stop(); publish(Failed); return; }
             if (wifi_->ProviderSnapshot(boot, lifetime)) {
                 // Stop may race the snapshot. Serialize the final check and
                 // zero-wait offer with task-context cancellation writers.
@@ -81,17 +92,20 @@ void ProviderManagerTask::run()
                 portEXIT_CRITICAL();
                 if (stopped) { runner_.stop(); publish(Stopped); return; }
                 if (!started) { publish(Failed); return; }
+                requests_.resume();
                 requests_.bind_lifetime(lifetime);
+                provider = lifetime; bootstrapping = false;
                 publish(Negotiating);
             }
         } else {
             runner_.step(now);
             if (runner_.state() == ManagerRunner::Failed || runner_.state() == ManagerRunner::Disabled) {
-                publish(Failed); return;
+                if (!recover(provider)) { publish(Failed); return; }
+            } else {
+                if (runner_.state() == ManagerRunner::Active) publish(Active);
+                requests_.step(now,uint32_t(tick)*portTICK_PERIOD_MS);
+                if (state() == Active && runner_.state() != ManagerRunner::Active && !recover(provider)) { publish(Failed); return; }
             }
-            if (runner_.state() == ManagerRunner::Active) publish(Active);
-            requests_.step(now,uint32_t(tick)*portTICK_PERIOD_MS);
-            if (state() == Active && runner_.state() != ManagerRunner::Active) { publish(Failed); return; }
         }
         vTaskDelay(interval);
     }

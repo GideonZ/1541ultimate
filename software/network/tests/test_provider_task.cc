@@ -110,17 +110,21 @@ static void owner_lifecycle()
             uint64_t now = uint64_t(uint32_t(ticks - origin)) * 5;
             remote.exchange(wifi,now);
             if (task.state() == ProviderManagerTask::Active) active = true;
+            if (mode == 1 && delays == 17) {
+                expect(task.state() == ProviderManagerTask::WaitingForBoot && !task.ready(),"disconnected owner waits for a new snapshot");
+                task.request_stop();
+            }
             if (delays == 15) {
                 expect(active,"owner negotiated and renewed before interruption");
                 if (mode == 0 || mode == 5) task.request_stop();
-                if (mode == 1) wifi.lifetime.signal();
+                if (mode == 1) { wifi.lifetime.signal(); wifi.online = false; } // Wi-Fi disconnect: wait, do not exit.
                 if (mode == 2) { portENTER_CRITICAL(); wifi.bound->delivery.invalidate_isr(); portEXIT_CRITICAL(); }
                 if (mode == 3) wifi.uart.transmit_ok = false;
                 if (mode == 4) ticks -= 10;
             }
         };
         run_owner();
-        expect(task.state() == ((mode == 0 || mode == 5) ? ProviderManagerTask::Stopped : ProviderManagerTask::Failed),"stop or failure terminal state");
+        expect(task.state() == ((mode <= 1 || mode == 5) ? ProviderManagerTask::Stopped : ProviderManagerTask::Failed),"stop or failure terminal state");
         expect(deletes == 1 && delays <= 18,"owner exits without retry and frees its task");
         expect(source.calls == 1 && !task.start(wifi),"owner does not resample identity or recreate task");
         expect(remote.sent.size() >= 3 && remote.sent[0].opcode == Offer && remote.sent[1].opcode == Initialize && remote.sent[2].opcode == Renew,"negotiation and renewal use worker protocol");
@@ -229,19 +233,20 @@ static void scheduling_boundaries()
         expect(task.start(wifi),"active scheduling task starts");
         delay_hook=[&] {
             remote.exchange(wifi,uint64_t(ticks)*5);
+            if (mode==3 && injected && task.state()==ProviderManagerTask::WaitingForBoot) task.request_stop();
             if (!injected && task.state()==ProviderManagerTask::Active) {
                 injected=true; before=wifi.uart.gets;
                 if (mode==0) ticks+=40; // Full lease without an owner wake.
                 if (mode==1) ticks+=UINT32_MAX/2+1; // Ambiguous clock gap.
                 if (mode==2) task.request_stop();
-                if (mode==3) wifi.lifetime.signal();
+                if (mode==3) { wifi.lifetime.signal(); wifi.online=false; }
                 provider_data::Frame f={}; f.opcode=provider_data::Open; f.budget_ms=100;
                 f.port=443; f.length=5; memcpy(f.payload,"host",5);
                 if (mode==2) expect(!task.submit_data(f,{}),"stop rejects submissions before owner wakes");
             }
         };
         run_owner();
-        expect(injected && task.state()==(mode==2 ? ProviderManagerTask::Stopped : ProviderManagerTask::Failed),"starvation stop or restart retires owner");
+        expect(injected && task.state()==(mode==2 || mode==3 ? ProviderManagerTask::Stopped : ProviderManagerTask::Failed),"starvation stop or restart retires owner");
         expect(wifi.uart.gets==before,"no catch-up renewal or data after retirement");
         expect(deletes==1 && !task.ready(),"retired task exits once");
         printf("SCHEDULE retirement=%u sends_after=%u state=%u\n",mode,wifi.uart.gets-before,unsigned(task.state()));

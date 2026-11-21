@@ -15,6 +15,7 @@ public:
     void bind_lifetime(OperationCancellation token) { boot_ = token; } // Owner, before admission enabled.
     void step(uint64_t control_now, uint32_t now_ms);
     void stop(); // Owner task, including every terminal task exit.
+    void resume(); // Owner task, after stop() and before a new bind_lifetime(); admits requests again.
 private:
     enum Phase { Idle, Queued, Waiting, Closing, Complete };
     Port& port_;

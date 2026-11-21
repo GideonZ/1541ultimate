@@ -8,9 +8,11 @@ class WiFi;
 
 // Optional management task. No default instance or weak identity fallback.
 // Construct with a qualified fresh incarnation source, then start once from a
-// serialized control task. This object must have firmware lifetime: WiFi keeps
-// its UART binding even after the task exits. The fixed data mailbox copies
-// requests and completions; no caller may access the runner or UART directly.
+// serialized control task. After a Wi-Fi disconnect the task stays alive and
+// negotiates again from the next provider snapshot. This object must have
+// firmware lifetime: WiFi keeps its UART binding even after the task exits. The
+// fixed data mailbox copies requests and completions; no caller may access the
+// runner or UART directly.
 class ProviderManagerTask : public HttpOwnerEndpoint {
 public:
     enum State { Unstarted, Disabled, Starting, WaitingForBoot, Negotiating, Active, Stopped, Failed };
@@ -40,6 +42,7 @@ private:
     void publish(State s) { __atomic_store_n(&state_, uint32_t(s), __ATOMIC_RELEASE); }
     static void entry(void*);
     void run();
+    bool recover(const OperationCancellation&);
     ProviderManagerTask(const ProviderManagerTask&) = delete;
     ProviderManagerTask& operator=(const ProviderManagerTask&) = delete;
 };

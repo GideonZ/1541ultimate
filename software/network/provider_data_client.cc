@@ -37,6 +37,9 @@ void Client::stop() {
     port_.lock(); stopped_ = true; bool pending = phase_ != Idle && phase_ != Complete; port_.unlock();
     if (pending) finish(false);
 }
+void Client::resume() {
+    port_.lock(); stopped_ = false; port_.unlock();
+}
 void Client::begin_close() {
     failed_ = frame_.opcode != Close; closing_sent_ = false;
     port_.lock(); phase_ = Closing; port_.unlock();
