@@ -34,6 +34,7 @@ extern "C" {
 }
 
 #include "esp32.h"
+#include "esp_image.h"
 
 // tester instance
 FactoryRegistrator<BrowsableDirEntry *, FileType *> tester_esp(FileType :: getFileTypeFactory(), FileTypeESP :: test_type);
@@ -77,24 +78,24 @@ static void status_callback(void *user)
     ui->update_progress(NULL, 1);
 }
 
+// Reads len bytes of the file at pos, for esp_image_check
+static bool esp_read_at(void *context, uint32_t pos, void *buffer, uint32_t len)
+{
+    File *file = (File *)context;
+    uint32_t bytes_read = 0;
+    if (file->seek(pos) != FR_OK) {
+        return false;
+    }
+    return (file->read(buffer, len, &bytes_read) == FR_OK) && (bytes_read == len);
+}
+
 SubsysResultCode_e FileTypeESP::execute(SubsysCommand *cmd)
 {
     File *file = 0;
     uint32_t bytes_read;
-    bool progress;
-    int sectors;
-    int secs_per_step;
-    int bytes_per_step;
-    int total_bytes_read;
-    int remain;
-
     uint8_t *dest;
 
     FileManager *fm = FileManager::getFileManager();
-    FileInfo inf(32);
-    fm->fstat(cmd->path.c_str(), cmd->filename.c_str(), inf);
-    remain = inf.size;
-
     printf("Multipart ESP application Load.. %s\n", cmd->filename.c_str());
     FRESULT fres = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ, &file);
 
@@ -104,30 +105,42 @@ SubsysResultCode_e FileTypeESP::execute(SubsysCommand *cmd)
         uint32_t length;
         uint32_t address;
     } header;
-    uint32_t start = 0;
     bool error = false;
     if (file) {
         uint32_t filesize = file->get_size();
+
+        // Walk the whole file by its headers before the ESP32 is touched: a file that is
+        // empty, cut short or wrong is refused with the module still running its application
+        EspImageStatus check = esp_image_check(filesize, esp_read_at, file);
+        if (check != ESP_IMAGE_OK) {
+            fm->fclose(file);
+            cmd->user_interface->popup(esp_image_message(check), BUTTON_OK);
+            return SSRET_INTERNAL_ERROR;
+        }
+        file->seek(0);
+
         esp32.StopApp();
         int status = esp32.Download();
         if (status != 0) {
+            fm->fclose(file);
+            esp32.EnableRunMode();
+            esp32.StartApp();
             cmd->user_interface->popup("Could not switch to download mode.", BUTTON_OK);
             return SSRET_INTERNAL_ERROR;
         }
 
         cmd->user_interface->show_progress("Flashing ESP32 Application", filesize / 1024);
-        total_bytes_read = 0;
+        uint32_t remain = filesize;
         while (remain) {
             file->read(&header, 12, &bytes_read);
             remain -= bytes_read;
-            total_bytes_read += bytes_read;
             if (bytes_read != 12) {
                 cmd->user_interface->hide_progress();
                 cmd->user_interface->popup("Could not read header.", BUTTON_OK);
                 error = true;
                 break;
             }
-            if (header.signature != 0x4d474553) {
+            if (header.signature != ESP_SEGMENT_SIGNATURE) {
                 cmd->user_interface->hide_progress();
                 cmd->user_interface->popup("Incorrect signature in file.", BUTTON_OK);
                 error = true;
@@ -142,8 +155,18 @@ SubsysResultCode_e FileTypeESP::execute(SubsysCommand *cmd)
             }
             file->read(dest, header.length, &bytes_read);
             remain -= bytes_read;
-            total_bytes_read += bytes_read;
+            if (bytes_read != header.length) {
+                delete[] dest;
+                cmd->user_interface->hide_progress();
+                cmd->user_interface->popup("Could not read segment.", BUTTON_OK);
+                error = true;
+                break;
+            }
             status = esp32.Flash(dest, header.address, header.length, status_callback, cmd->user_interface);
+            if (status == 0) {
+                status = esp32.VerifyFlash(dest, header.address, header.length);
+            }
+            delete[] dest;
             if (status != 0) {
                 char errmsg[32];
                 sprintf(errmsg, "Flashing Error %d", status);

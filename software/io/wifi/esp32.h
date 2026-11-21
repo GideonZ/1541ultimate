@@ -59,12 +59,13 @@ class Esp32
     void Disable();
     void Boot();
     void PackParams(uint8_t *buffer, int numparams, ...);
-    bool Command(uint8_t opcode, uint16_t length, uint8_t chk, uint8_t *data, uint8_t *receiveBuffer, int timeout);
+    bool Command(uint8_t opcode, uint16_t length, uint8_t chk, uint8_t *data, uint8_t *receiveBuffer, int timeout, int *dataLen = NULL);
 public:
     Esp32();
     void Quit();
     int  Download(void); // Switch to download mode and setup flash
     int  Flash(const uint8_t *binary, uint32_t address, uint32_t length, EspDownloadCallback_t callback, void *context);
+    int  VerifyFlash(const uint8_t *binary, uint32_t address, uint32_t length); // after Flash: MD5 of the flash against the image
     void AttachApplication(Esp32Application *app);
 
     DmaUART *uart;

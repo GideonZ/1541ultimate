@@ -16,6 +16,7 @@
  */
 
 #include "esp32.h"
+#include "esp_md5.h"
 #include "u64.h"
 #include "dump_hex.h"
 #include <stdarg.h>
@@ -185,7 +186,7 @@ void Esp32::PackParams(uint8_t *buffer, int numparams, ...)
 }
 
 bool Esp32::Command(uint8_t opcode, uint16_t length, uint8_t chk, uint8_t *data,
-        uint8_t *receiveBuffer, int timeout)
+        uint8_t *receiveBuffer, int timeout, int *dataLen)
 {
     command_buf_t *buf;
     if (uart->GetBuffer(&buf, 100) != pdTRUE) {
@@ -210,7 +211,15 @@ bool Esp32::Command(uint8_t opcode, uint16_t length, uint8_t chk, uint8_t *data,
                     uint8_t size = receiveBuffer[2];
                     uint8_t success = receiveBuffer[8];
                     uint8_t error = receiveBuffer[9];
-                    if (((size == 2) || (size == 4)) && (success == 0)) {
+                    if (dataLen && (size >= 2) && ((int)size + 8 <= bsize)) {
+                        // A reply that carries data, followed by the two status bytes
+                        success = receiveBuffer[8 + size - 2];
+                        error = receiveBuffer[8 + size - 1];
+                        if (success == 0) {
+                            *dataLen = size - 2;
+                            return true;
+                        }
+                    } else if (!dataLen && ((size == 2) || (size == 4)) && (success == 0)) {
                         return true;
                     } else {
                         printf("Command: %b. Error = %b.\n", opcode, error);
@@ -408,6 +417,31 @@ int Esp32 :: Flash(const uint8_t *binary, uint32_t address, uint32_t length, Esp
     }
 */
     printf("Programming ESP32 was a success!\n");
+    return 0;
+}
+
+// Asks the loader for the MD5 of the flash at address..address+length and compares it with
+// that of the image. 0 when they are equal, -7 when the loader cannot say, -8 when they differ.
+int Esp32 :: VerifyFlash(const uint8_t *binary, uint32_t address, uint32_t length)
+{
+    uint8_t parambuf[16];
+    int dataLen = 0;
+
+    EspMd5 md5;
+    uint8_t digest[16];
+    md5.update(binary, length);
+    md5.final(digest);
+
+    // The loader reads the whole range back: allow what esptool does, 8 s per MB
+    PackParams(parambuf, 4, address, length, 0, 0);
+    if (!Command(ESP_SPI_FLASH_MD5, 16, 0, parambuf, receiveBuffer, 2000 + (int)(length >> 7), &dataLen)) {
+        printf("Command Error ESP_SPI_FLASH_MD5\n");
+        return -7;
+    }
+    if (!esp_md5_reply_matches(receiveBuffer + 8, dataLen, digest)) {
+        printf("The flash does not hold the image (MD5 differs)\n");
+        return -8;
+    }
     return 0;
 }
 
