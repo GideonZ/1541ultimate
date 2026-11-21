@@ -221,7 +221,11 @@ _jiffy_outer
             IF CTRL THEN _jiffy_load_eoi
             SET DATA=0
             SET CLK=1
-            WAIT FOR 50 us
+            # The host polls CLK and reads DATA at the first poll that sees CLK high, so a host that
+            # is stalled inside that poll (e.g. a badline) can come back after a short window has
+            # closed, see DATA high and end the LOAD with ST=66. 100 us is at least as generous as a
+            # real JiffyDOS 1541 and is harmless: the host waits for DATA high without a timeout.
+            WAIT FOR 100 us
 _jiffy_inner
             POPB # Read byte is now popped from fifo
             SET DATA=1
