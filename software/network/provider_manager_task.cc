@@ -91,18 +91,30 @@ void ProviderManagerTask::run()
                 bool started = !stopped && runner_.start(boot, lifetime, now);
                 portEXIT_CRITICAL();
                 if (stopped) { runner_.stop(); publish(Stopped); return; }
-                if (!started) { publish(Failed); return; }
-                requests_.resume();
-                requests_.bind_lifetime(lifetime);
-                provider = lifetime; bootstrapping = false;
-                publish(Negotiating);
+                if (!started) {
+                    // A drop between the snapshot and the offer cancels the lifetime
+                    // just taken: wait for the next snapshot. Anything else is final.
+                    if (runner_.state() == ManagerRunner::Disabled || !lifetime.cancelled()) { publish(Failed); return; }
+                    runner_.stop();
+                } else {
+                    requests_.resume();
+                    requests_.bind_lifetime(lifetime);
+                    provider = lifetime; bootstrapping = false;
+                    publish(Negotiating);
+                }
             }
         } else {
             runner_.step(now);
             if (runner_.state() == ManagerRunner::Failed || runner_.state() == ManagerRunner::Disabled) {
                 if (!recover(provider)) { publish(Failed); return; }
             } else {
-                if (runner_.state() == ManagerRunner::Active) publish(Active);
+                if (runner_.state() == ManagerRunner::Active) {
+                    // Replies to requests from before a disconnect may have arrived while
+                    // the owner waited. The UART is ordered, so all of them precede the
+                    // Offer reply that made this session Active.
+                    if (state() != Active) link_.data.disconnect();
+                    publish(Active);
+                }
                 requests_.step(now,uint32_t(tick)*portTICK_PERIOD_MS);
                 if (state() == Active && runner_.state() != ManagerRunner::Active && !recover(provider)) { publish(Failed); return; }
             }

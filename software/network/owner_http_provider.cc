@@ -73,7 +73,10 @@ public:
     void close_session() override {
         if (closed_) return;
         closed_ = true;
-        if (attempted_ && transact(provider_data::Client::Close,0,0) < 0) provider_.endpoint_.retire();
+        // A lost link already released the session, and a Close would only be
+        // refused. Failing it must not retire an owner that is recovering.
+        if (attempted_ && !boot_.cancelled() && transact(provider_data::Client::Close,0,0) < 0 && !boot_.cancelled())
+            provider_.endpoint_.retire();
     }
 };
 OwnerHttpProvider::OwnerHttpProvider(HttpOwnerEndpoint& endpoint,uint32_t exchange_ms,uint32_t cleanup_ms) :

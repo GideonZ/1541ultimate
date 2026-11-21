@@ -246,7 +246,7 @@ static void scheduling_boundaries()
             }
         };
         run_owner();
-        expect(injected && task.state()==(mode==2 || mode==3 ? ProviderManagerTask::Stopped : ProviderManagerTask::Failed),"starvation stop or restart retires owner");
+        expect(injected && task.state()==(mode==2 || mode==3 ? ProviderManagerTask::Stopped : ProviderManagerTask::Failed),"starvation stop retires owner; a lost link waits");
         expect(wifi.uart.gets==before,"no catch-up renewal or data after retirement");
         expect(deletes==1 && !task.ready(),"retired task exits once");
         printf("SCHEDULE retirement=%u sends_after=%u state=%u\n",mode,wifi.uart.gets-before,unsigned(task.state()));

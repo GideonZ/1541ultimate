@@ -43,7 +43,7 @@ Lost communication never produces a fabricated cleanup acknowledgement.
 | Data completion arrives | Validate identity, cancellation and deadline before publishing |
 | Cancellation is observed | Fence uncommitted data and let the owner clean up |
 | Either endpoint restarts | Retire old grants; renegotiate without resuming old work |
-| Wi-Fi disconnects and later reconnects | The owner task survives; it serves again only after a new snapshot and a new negotiation |
+| Wi-Fi link is lost and returns | Fail pending work, then serve again only after a new provider snapshot and a new negotiation; a manager queue overflow, a reply timeout or a send failure stays terminal |
 | Reply/queue overflow or send failure | Retire the affected generation |
 | Lease expires | Cancel work and release resources through the owner |
 | Repeated close | No second release or publication |
