@@ -5805,6 +5805,9 @@ static void s11_read_fault_chain_loop(FileManager *fm, IecDrive *dr)
     printf("%s: %d bytes, then %s", testname, got, last_status);
     expect_status_prefix(testname, "after the looping chain", "20,READ ERROR,00,00");
     close_file(dr, 2);
+    // The FAT file has room for the images of the suites, not for one more.
+    expect_command_status_prefix(testname, dr, "CP1\r", "02,PARTITION SELECTED");
+    REQUIRE(fm->delete_file("/Fat/s11_loop.d64") == FR_OK);
 }
 
 // SI-153: a JiffyDOS LOAD streams through the interface's talk loop, which pops what each
