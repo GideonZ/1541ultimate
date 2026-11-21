@@ -88,6 +88,7 @@ host_tests:
 	@$(MAKE) -C target/pc/linux/rasterwait test
 	@$(MAKE) -C target/pc/linux/socketdma test
 	@$(MAKE) -C target/pc/linux/ucitargets test
+	@$(MAKE) -C software/userinterface/tests
 
 esp32: esp32_raw_u64 esp32_raw_c3 esp32_u64ctrl
 
