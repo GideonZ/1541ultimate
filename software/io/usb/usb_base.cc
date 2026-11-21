@@ -827,7 +827,7 @@ int  UsbBase :: bulk_out(struct t_pipe *pipe, void *buf, int len, int timeout)
 	return total_trans;
 }
 
-int  UsbBase :: bulk_in(struct t_pipe *pipe, void *buf, int len, int timeout, int retries) // blocking
+int  UsbBase :: bulk_in(struct t_pipe *pipe, void *buf, int len, int timeout, int retries, bool stop_on_short) // blocking
 {
     if (!xSemaphoreTake(mutex, 5000)) {
     	printf("%s USB unavailable.\n", pipe->name);
@@ -896,6 +896,12 @@ int  UsbBase :: bulk_in(struct t_pipe *pipe, void *buf, int len, int timeout, in
 		addr += transferred;
 		len -= transferred;
 		pipe->Command = descr->command & URES_TOGGLE; // that's what we start with next time.
+
+		// A packet shorter than requested ends a transfer. Callers that know the exact length they need
+		// (the BOT status phase) take the short count and decide, rather than waiting for the rest.
+		// Only a packet that arrived counts: a NAK timeout moves nothing and is handled by the retries above.
+		if (stop_on_short && ((result & URES_RESULT_MSK) == URES_PACKET) && (transferred < current_len))
+			break;
 	} while (len > 0);
 
     // printf("Bulk in done: %d\n", total_trans);

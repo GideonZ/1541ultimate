@@ -261,7 +261,8 @@ int UsbScsiDriver :: status_transport(int timeout, int retries)
 	*signature = 0;
 	int len = 0;
 
-	len = host->bulk_in(&bulk_in, stat_resp, 13, timeout, retries);
+	// stop_on_short: a CSW that arrives as a short packet is invalid; do not wait for the missing bytes
+	len = host->bulk_in(&bulk_in, stat_resp, 13, timeout, retries, true);
 
 	if((len != 13)||(stat_resp[0] != 0x55)||(stat_resp[1] != 0x53)||(stat_resp[2] != 0x42)||(stat_resp[3] != 0x53)) {
 		printf("Invalid status (len = %d, signature = %8x)..\n", len, *signature);
@@ -275,22 +276,33 @@ int UsbScsiDriver :: status_transport(int timeout, int retries)
 	return (int)stat_resp[12]; // OK, or other error
 }
 
-/*
+// Bulk-Only Mass Storage Reset: class request 0xFF to the interface, no data stage.
 int UsbScsiDriver :: mass_storage_reset()
 {
-	uint8_t buf[8];
-
-	printf("Executing reset...\n");
-	c_scsi_reset[4] = interface->getInterfaceDescriptor()->interface_number;
-	int i =  host->control_exchange(&(device->control_pipe),
-								    c_scsi_reset, 8,
-								    buf, 8);
-
-	printf("Device reset. (returned %d bytes)\n", i);
-
-	return i;
+	uint8_t request[8];
+	memcpy(request, c_scsi_reset, 8);
+	request[4] = interface->getInterfaceDescriptor()->interface_number;
+	return host->control_exchange(&(device->control_pipe), request, 8, NULL, 0);
 }
-*/
+
+// Reset Recovery (USB Mass Storage Bulk-Only Transport 1.0, 5.3.4): after an invalid CSW the device and
+// the host are out of step. Reset the device, clear the halt on both bulk endpoints and restart both
+// data toggles. The caller holds the driver mutex.
+int UsbScsiDriver :: reset_recovery()
+{
+	// t_pipe.DevEP keeps only the endpoint number, so the direction bit is added here.
+	uint8_t ep_in  = uint8_t((bulk_in.DevEP & 0x0F) | 0x80);
+	uint8_t ep_out = uint8_t(bulk_out.DevEP & 0x0F);
+
+	printf("USB SCSI: invalid status, BOT Reset Recovery.\n");
+	int r = mass_storage_reset();
+	device->unstall_pipe(ep_in);
+	device->unstall_pipe(ep_out);
+	bulk_in.Command = 0;
+	bulk_out.Command = 0;
+	printf("USB SCSI: Reset Recovery issued.\n");
+	return r;
+}
 
 int UsbScsiDriver :: request_sense(int lun, bool debug, bool handle)
 {
@@ -372,6 +384,8 @@ int UsbScsiDriver :: exec_command(int lun, int cmdlen, bool out, uint8_t *cmd, i
     	return -9;
     }
 
+    bool recovered = false;
+retry:
     cbw.tag = ++id;
     cbw.data_length = cpu_to_32le(datalen);
     cbw.flags = (out)?CBW_OUT:CBW_IN;
@@ -445,6 +459,14 @@ int UsbScsiDriver :: exec_command(int lun, int cmdlen, bool out, uint8_t *cmd, i
     	printf("Stalled Status Phase. Unstalling Endpoint\n");
     	device->unstall_pipe((uint8_t)(bulk_in.DevEP & 0xFF));
 	    bulk_in.Command = 0; // reset toggle
+    }
+
+    if ((st < 0) && !recovered) {
+        // Invalid, short or missing CSW: the BOT spec requires Reset Recovery. Then the command is
+        // issued once more, like other hosts do. If that fails as well, the caller marks the unit failed.
+        recovered = true;
+        reset_recovery();
+        goto retry;
     }
 
 	xSemaphoreGive(mutex);

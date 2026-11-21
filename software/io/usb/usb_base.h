@@ -118,7 +118,7 @@ public:
     void resume_input_pipe(int index);
 
     int  bulk_out(struct t_pipe *pipe, void *buf, int len, int timeout = 20000);
-    int  bulk_in(struct t_pipe *pipe, void *buf, int len, int timeout = 20000, int retries = 5);
+    int  bulk_in(struct t_pipe *pipe, void *buf, int len, int timeout = 20000, int retries = 5, bool stop_on_short = false);
 
     // special bootloader function
     UsbDevice *init_simple(void);
