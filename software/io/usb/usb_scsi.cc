@@ -546,6 +546,12 @@ bool UsbScsi :: test_unit_ready(void)
     uint8_t test_ready_command[12] = { 0x00, uint8_t(lun << 5), 0, 0, 0, 0,
                                           0, 0, 0, 0, 0, 0 };
     int res = driver->exec_command(lun, 6, true, test_ready_command, 0, NULL, false);
+    if (res == -9) {
+        // The driver is busy with another command (a stalled transfer holds its mutex for tens of seconds).
+        // The unit is busy, not failed: skip this poll. Marking it failed would tear the filesystem down
+        // under the transfer that is still running.
+        return false;
+    }
     if (res == -7) {
 		return true; // handled by sense
 	}
