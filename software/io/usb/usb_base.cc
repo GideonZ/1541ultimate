@@ -751,7 +751,7 @@ void UsbBase :: free_input_pipe(int index)
     xSemaphoreGive(mutex);
 }
 
-int  UsbBase :: bulk_out(struct t_pipe *pipe, void *buf, int len, int timeout)
+int  UsbBase :: bulk_out(struct t_pipe *pipe, void *buf, int len, int timeout, int retries)
 {
     if (!xSemaphoreTake(mutex, 5000)) {
     	printf("%s USB unavailable.\n", pipe->name);
@@ -779,7 +779,6 @@ int  UsbBase :: bulk_out(struct t_pipe *pipe, void *buf, int len, int timeout)
 	uint16_t result;
 	int current_len = 0;
 
-	int retries = 5;
 	do {
 		current_len = (len > 49152) ? 49152 : len;
 		descr->devEP    = pipe->DevEP;

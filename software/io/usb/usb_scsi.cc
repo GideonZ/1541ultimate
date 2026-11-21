@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <string.h>
+#include "usb_bot_policy.h"
 #include <stdlib.h>
 extern "C" {
 	#include "itu.h"
@@ -384,8 +385,13 @@ int UsbScsiDriver :: exec_command(int lun, int cmdlen, bool out, uint8_t *cmd, i
     	return -9;
     }
 
+    // The retry after a Reset Recovery must never make a caller wait longer than the original code did
+    // (a stalled command holds this mutex and everything that waits for the drive). It only happens after a
+    // fast protocol fault, and the second attempt gets no NAK-timeout retries (worst case about 8 s).
     bool recovered = false;
+    uint16_t attempt_start;
 retry:
+    attempt_start = getMsTimer();
     cbw.tag = ++id;
     cbw.data_length = cpu_to_32le(datalen);
     cbw.flags = (out)?CBW_OUT:CBW_IN;
@@ -403,7 +409,7 @@ retry:
     }
     int len = 0;
     int retval = 0;
-    int st = host->bulk_out(&bulk_out, &cbw, 31);
+    int st = host->bulk_out(&bulk_out, &cbw, 31, 20000, recovered ? 0 : 5);
     if(st != 31) { // out failed.. terminate.
     	printf("USB SCSI: Out failed... Terminate.\n");
     	if (st == -4) {
@@ -426,11 +432,13 @@ retry:
         timeout = 8000; // 1000 ms
         retries = 3;
     }
+    if (recovered)
+        retries = 0;
 
     /* DATA PHASE */
     if((data)&&(datalen)) {
     	if(out) {
-			len = host->bulk_out(&bulk_out, data, datalen, timeout);
+			len = host->bulk_out(&bulk_out, data, datalen, timeout, recovered ? 0 : 5);
             if (len == -4) { // Stall
                 printf("Stalled Data Phase. Unstalling Endpoint\n");
                 device->unstall_pipe((uint8_t)(bulk_out.DevEP & 0xFF));
@@ -461,9 +469,11 @@ retry:
 	    bulk_in.Command = 0; // reset toggle
     }
 
-    if ((st < 0) && !recovered) {
-        // Invalid, short or missing CSW: the BOT spec requires Reset Recovery. Then the command is
-        // issued once more, like other hosts do. If that fails as well, the caller marks the unit failed.
+    if (bot_retry_after_status_fault(st, recovered, uint16_t(getMsTimer() - attempt_start))) {
+        // A fast invalid or short CSW (the device answered, but wrongly): the BOT spec requires Reset Recovery.
+        // Then the command is issued once more, like other hosts do. If that fails as well, the caller marks
+        // the unit failed. An attempt that already spent a NAK timeout is not retried and not reset: the unit
+        // fails after the same wait as before this change.
         recovered = true;
         reset_recovery();
         goto retry;
