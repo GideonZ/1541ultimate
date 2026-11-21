@@ -469,7 +469,7 @@ retry:
 	    bulk_in.Command = 0; // reset toggle
     }
 
-    if (bot_retry_after_status_fault(st, recovered, uint16_t(getMsTimer() - attempt_start))) {
+    if (bot_retry_after_status_fault(st, recovered, uint16_t(getMsTimer() - attempt_start), cmd[0])) {
         // A fast invalid or short CSW (the device answered, but wrongly): the BOT spec requires Reset Recovery.
         // Then the command is issued once more, like other hosts do. If that fails as well, the caller marks
         // the unit failed. An attempt that already spent a NAK timeout is not retried and not reset: the unit
