@@ -7,6 +7,9 @@
 // Only after a FAST protocol fault (a short or invalid CSW), once per command. An attempt that already
 // spent a NAK timeout (a dead or hung device) is not retried: the caller then waits no longer than it
 // did before Reset Recovery existed. elapsed_ms is the time the attempt took (modulo 2^16).
+// A command that sends data to the device (WRITE) is never reset or retried here: it fails as it always did. On the
+// bench a SanDisk Ultra Fit wedged when a Mass Storage Reset and a retry followed a faulted write (reads and other
+// sticks were fine), and a lost status of a write cannot be told from a completed one anyway.
 // INQUIRY runs with short timeouts (1 s, 3 retries: 4 s) and is never retried: a retry plus recovery could
 // take longer than that. It is only issued while a device is being set up, and a failure there is final.
 static const uint16_t c_bot_fast_fault_ms = 1000;
@@ -30,9 +33,9 @@ static inline uint8_t bot_out_endpoint(uint16_t dev_ep) { return uint8_t(dev_ep 
 static const int c_bot_retry_cbw_timeout = 8000;
 static const int c_bot_retry_phase_timeout = 24000;
 
-static inline bool bot_retry_after_status_fault(int status, bool already_recovered, uint16_t elapsed_ms, uint8_t opcode)
+static inline bool bot_retry_after_status_fault(int status, bool already_recovered, uint16_t elapsed_ms, uint8_t opcode, bool data_out)
 {
-    return (status < 0) && !already_recovered && (elapsed_ms < c_bot_fast_fault_ms) && (opcode != c_scsi_inquiry);
+    return (status < 0) && !already_recovered && (elapsed_ms < c_bot_fast_fault_ms) && (opcode != c_scsi_inquiry) && !data_out;
 }
 
 #endif

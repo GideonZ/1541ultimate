@@ -442,7 +442,7 @@ retry:
     /* DATA PHASE */
     if((data)&&(datalen)) {
     	if(out) {
-			len = host->bulk_out(&bulk_out, data, datalen, timeout, recovered ? 0 : 5);
+			len = host->bulk_out(&bulk_out, data, datalen, timeout);
             if (len == -4) { // Stall
                 printf("Stalled Data Phase. Unstalling Endpoint\n");
                 device->unstall_pipe((uint8_t)(bulk_out.DevEP & 0xFF));
@@ -473,8 +473,9 @@ retry:
 	    bulk_in.Command = 0; // reset toggle
     }
 
-    if (bot_retry_after_status_fault(st, recovered, uint16_t(getMsTimer() - attempt_start), cmd[0])) {
-        // A fast invalid or short CSW (the device answered, but wrongly): the BOT spec requires Reset Recovery.
+    if (bot_retry_after_status_fault(st, recovered, uint16_t(getMsTimer() - attempt_start), cmd[0], out && data && datalen)) {
+        // A fast invalid or short CSW (the device answered, but wrongly) on a command that does not send data to the
+        // device: the BOT spec requires Reset Recovery.
         // Then the command is issued once more, like other hosts do. If that fails as well, the caller marks
         // the unit failed. An attempt that already spent a NAK timeout is not retried and not reset: the unit
         // fails after the same wait as before this change.
