@@ -5686,9 +5686,8 @@ static void s11_image_write_lock(FileManager *fm, IecDrive *dr)
 
 // A file read that fails while the file streams must reach the C64 as an error it can
 // read, not as a short file with a status of 00. The channel ends the talk (the interface
-// answers with a terminate, so the C64 sees no EOI and the load stops), and the error
-// channel must then say why: 74,DRIVE NOT READY, the code a Commodore drive gives for a
-// medium that does not deliver.
+// answers with a terminate), and the error channel must then say why: 74,DRIVE NOT READY,
+// the code a Commodore drive gives for a medium that does not deliver.
 static void s11_read_fault_status(FileManager *fm, IecDrive *dr)
 {
     const char *testname = "Suite11-ReadFaultStatus";
@@ -5751,6 +5750,61 @@ static void s11_read_fault_status(FileManager *fm, IecDrive *dr)
     get_status(dr);
     expect_status_prefix(testname, "after the failed bulk read", "74,DRIVE NOT READY,00,00");
     close_file(dr, 3);
+}
+
+// The same failure inside a disk image: a sector chain that loops back on itself is a
+// read the file system refuses with FR_INT_ERR. SI-036: that must not reach the user as 69.
+static void s11_read_fault_chain_loop(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite11-ReadFaultChainLoop";
+    create_formatted_image(fm, "/Fat/s11_loop.d64", "LOOP", 683, e_image_d64);
+    dr->add_partition(56, "/Fat/s11_loop.d64", "LOOP");
+    expect_command_status_prefix(testname, dr, "CP56\r", "02,PARTITION SELECTED");
+    uint8_t data[1600];
+    memset(data, 'l', sizeof(data));
+    open_file(dr, 2, "LOOPED,S,W");
+    get_status(dr);
+    send_channel_data(dr, 2, data, sizeof(data));
+    close_file(dr, 2);
+    open_buffer_channel(testname, dr, 3);
+    expect_command_ok(testname, dr, "U1:3,0,18,1\r");
+    uint8_t dir[256];
+    read_buffer_channel(testname, dr, 3, dir, sizeof(dir));
+    int track = dir[3], sector = dir[4];
+    char cmd[32];
+    snprintf(cmd, sizeof(cmd), "U1:3,0,%d,%d\r", track, sector);
+    expect_command_ok(testname, dr, cmd);
+    uint8_t block[256];
+    read_buffer_channel(testname, dr, 3, block, sizeof(block));
+    // The sixth sector links back to the first. The open reads the first 1024 bytes (the
+    // sectors hold 254 each); the third read is the one that finds the loop.
+    int t = track, sct = sector;
+    for (int i = 0; i < 5; i++) {
+        snprintf(cmd, sizeof(cmd), "U1:3,0,%d,%d\r", t, sct);
+        expect_command_ok(testname, dr, cmd);
+        read_buffer_channel(testname, dr, 3, block, sizeof(block));
+        t = block[0];
+        sct = block[1];
+    }
+    snprintf(cmd, sizeof(cmd), "U1:3,0,%d,%d\r", t, sct);
+    expect_command_ok(testname, dr, cmd);
+    read_buffer_channel(testname, dr, 3, block, sizeof(block));
+    block[0] = track;
+    block[1] = sector;
+    expect_command_ok(testname, dr, "B-P 3 0\r");
+    send_channel_data(dr, 3, block, sizeof(block));
+    snprintf(cmd, sizeof(cmd), "U2:3,0,%d,%d\r", t, sct);
+    expect_command_ok(testname, dr, cmd);
+    close_file(dr, 3);
+
+    open_file(dr, 2, "LOOPED,S,R");
+    get_status(dr);
+    expect_status_ok(testname, "open of the looping file");
+    int got = read_file(dr, 2, NULL, 4096);
+    get_status(dr);
+    printf("%s: %d bytes, then %s", testname, got, last_status);
+    expect_status_prefix(testname, "after the looping chain", "20,READ ERROR,00,00");
+    close_file(dr, 2);
 }
 
 // SI-153: a JiffyDOS LOAD streams through the interface's talk loop, which pops what each
@@ -7110,6 +7164,7 @@ static const Suite11Case suite11_cases[] = {
     { "Suite11-ResetRestartsProcessor",  s11_reset_restarts_processor },
     { "Suite11-JiffyLoadStream",         s11_jiffy_load_stream },
     { "Suite11-ReadFaultStatus",         s11_read_fault_status },
+    { "Suite11-ReadFaultChainLoop",      s11_read_fault_chain_loop },
     { "Suite11-SI077-ImageWriteLock",    s11_image_write_lock },
     { "Suite11-SI070-ModifyOpen",        s11_modify_open },
     { "Suite11-CommonBugs",             s11_common_bugs },
