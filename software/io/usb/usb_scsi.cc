@@ -283,7 +283,7 @@ int UsbScsiDriver :: mass_storage_reset()
 	uint8_t request[8];
 	memcpy(request, c_scsi_reset, 8);
 	request[4] = interface->getInterfaceDescriptor()->interface_number;
-	return host->control_exchange(&(device->control_pipe), request, 8, NULL, 0);
+	return host->control_exchange(&(device->control_pipe), request, 8, NULL, 0, c_bot_recovery_ticks);
 }
 
 // Reset Recovery (USB Mass Storage Bulk-Only Transport 1.0, 5.3.4): after an invalid CSW the device and
@@ -297,8 +297,8 @@ int UsbScsiDriver :: reset_recovery()
 
 	printf("USB SCSI: invalid status, BOT Reset Recovery.\n");
 	int r = mass_storage_reset();
-	device->unstall_pipe(ep_in);
-	device->unstall_pipe(ep_out);
+	device->unstall_pipe(ep_in, c_bot_recovery_ticks);
+	device->unstall_pipe(ep_out, c_bot_recovery_ticks);
 	bulk_in.Command = 0;
 	bulk_out.Command = 0;
 	printf("USB SCSI: Reset Recovery issued.\n");
@@ -385,9 +385,10 @@ int UsbScsiDriver :: exec_command(int lun, int cmdlen, bool out, uint8_t *cmd, i
     	return -9;
     }
 
-    // The retry after a Reset Recovery must never make a caller wait longer than the original code did
+    // The retry after a Reset Recovery must not make a caller wait longer than the original code did
     // (a stalled command holds this mutex and everything that waits for the drive). It only happens after a
-    // fast protocol fault, and the second attempt gets no NAK-timeout retries (worst case about 8 s).
+    // fast protocol fault, with short timeouts and no NAK-timeout retries, so the recovery and the retry add
+    // at most about 3 s, even if the device is dead (usb_bot_policy.h).
     bool recovered = false;
     uint16_t attempt_start;
 retry:
@@ -409,7 +410,7 @@ retry:
     }
     int len = 0;
     int retval = 0;
-    int st = host->bulk_out(&bulk_out, &cbw, 31, 20000, recovered ? 0 : 5);
+    int st = host->bulk_out(&bulk_out, &cbw, 31, recovered ? c_bot_retry_short_timeout : 20000, recovered ? 0 : 5);
     if(st != 31) { // out failed.. terminate.
     	printf("USB SCSI: Out failed... Terminate.\n");
     	if (st == -4) {
@@ -432,8 +433,13 @@ retry:
         timeout = 8000; // 1000 ms
         retries = 3;
     }
-    if (recovered)
+    int status_timeout = timeout;
+    if (recovered) {
+        // second attempt after a fast fault: short timeouts, no retries (see usb_bot_policy.h)
         retries = 0;
+        timeout = c_bot_retry_data_timeout;
+        status_timeout = c_bot_retry_short_timeout;
+    }
 
     /* DATA PHASE */
     if((data)&&(datalen)) {
@@ -461,7 +467,7 @@ retry:
     retval = len;
 
     /* STATUS PHASE */
-    st = status_transport(timeout, retries);
+    st = status_transport(status_timeout, retries);
 
     if (st == -4) {
     	printf("Stalled Status Phase. Unstalling Endpoint\n");

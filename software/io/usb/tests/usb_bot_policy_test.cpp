@@ -22,6 +22,12 @@ int main()
     CHECK(!bot_retry_after_status_fault(-1, false, 10, 0x12));
     CHECK(bot_retry_after_status_fault(-1, false, 10, 0x00)); // TEST UNIT READY
     CHECK(bot_retry_after_status_fault(-1, false, 10, 0x2A)); // WRITE(10)
+    // the cost the recovery and the retry can add (hardware timeouts; see usb_bot_policy.h)
+    int recovery_ms = 6 * 2 * c_bot_recovery_ticks * 5;               // 6 stages, 2 waits each, 200 Hz ticks
+    int retry_ms = (c_bot_retry_short_timeout * 2 + c_bot_retry_data_timeout) / 8; // 8 kHz ticks
+    CHECK(recovery_ms == 1500);
+    CHECK(retry_ms == 1500);
+    CHECK(recovery_ms + retry_ms <= 3000);
     if (failures) { printf("%d failures\n", failures); return 1; }
     printf("usb_bot_policy_test OK\n");
     return 0;

@@ -365,10 +365,10 @@ void UsbDevice :: set_interface(uint8_t interface, uint8_t alt)
 //    interface_number = alt;
 }
 
-int UsbDevice :: unstall_pipe(uint8_t ep)
+int UsbDevice :: unstall_pipe(uint8_t ep, int timeout)
 {
 	c_unstall_pipe[4] = ep;
-	return host->control_exchange(&control_pipe, c_unstall_pipe, 8, NULL, 0);
+	return host->control_exchange(&control_pipe, c_unstall_pipe, 8, NULL, 0, timeout);
 }
 
 bool UsbDevice :: init(int address)

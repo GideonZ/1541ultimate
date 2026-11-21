@@ -558,7 +558,7 @@ void UsbBase :: doPing(struct t_pipe *pipe)
 }
 
 // Protected by Mutex
-int UsbBase :: control_exchange(struct t_pipe *pipe, void *out, int outlen, void *in, int inlen)
+int UsbBase :: control_exchange(struct t_pipe *pipe, void *out, int outlen, void *in, int inlen, int timeout)
 {
     if (!xSemaphoreTake(mutex, 5000)) {
     	printf("%s USB unavailable.\n", pipe->name);
@@ -567,13 +567,13 @@ int UsbBase :: control_exchange(struct t_pipe *pipe, void *out, int outlen, void
 
     // One exit, so no path out can leave the mutex held. It was forgotten on the
     // setup length check once already; see GideonZ/1541ultimate#822, problem 5.
-    int result_code = control_exchange_locked(pipe, out, outlen, in, inlen);
+    int result_code = control_exchange_locked(pipe, out, outlen, in, inlen, timeout);
     xSemaphoreGive(mutex);
     return result_code;
 }
 
 // Runs with the mutex held; the caller above gives it back on every path.
-int UsbBase :: control_exchange_locked(struct t_pipe *pipe, void *out, int outlen, void *in, int inlen)
+int UsbBase :: control_exchange_locked(struct t_pipe *pipe, void *out, int outlen, void *in, int inlen, int timeout)
 {
     if (outlen != 8) {
         printf("%s Unsupported setup length.\n", pipe->name);
@@ -595,7 +595,7 @@ int UsbBase :: control_exchange_locked(struct t_pipe *pipe, void *out, int outle
 	uint16_t result = 0;
 	descr->command = UCMD_MEMREAD | UCMD_DO_DATA | UCMD_SETUP;
 
-	result = complete_command(100);
+	result = complete_command(timeout);
 	if ((result & URES_RESULT_MSK) != URES_ACK) {
 		printf("%s Setup Result: %04x\n", pipe->name, result);
 		return -1;
@@ -612,7 +612,7 @@ int UsbBase :: control_exchange_locked(struct t_pipe *pipe, void *out, int outle
     descr->started = 0;
 	descr->command = command;
 
-	result = complete_command(100);
+	result = complete_command(timeout);
 
 	uint32_t transferred = inlen - descr->length;
 
@@ -630,7 +630,7 @@ int UsbBase :: control_exchange_locked(struct t_pipe *pipe, void *out, int outle
 	    descr->started = 0;
         descr->result = 0xFFFF;
 		descr->command = UCMD_MEMREAD | UCMD_DO_DATA | UCMD_OUT | UCMD_TOGGLEBIT | UCMD_RETRY_ON_NAK; // send zero bytes as out packet
-		result = complete_command(100);
+		result = complete_command(timeout);
 
 		switch (result & URES_RESULT_MSK) {
 		case URES_ACK:

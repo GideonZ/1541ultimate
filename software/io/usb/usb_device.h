@@ -316,7 +316,7 @@ public:
     void set_configuration(uint8_t config);
     void set_interface(uint8_t intf, uint8_t alt);
 
-    int  unstall_pipe(uint8_t ep);
+    int  unstall_pipe(uint8_t ep, int timeout = 100);
 
     // Called only from the Event context
     bool init(int address);
