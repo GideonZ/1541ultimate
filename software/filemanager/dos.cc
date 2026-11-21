@@ -802,6 +802,7 @@ void Dos::get_more_data(Message **reply, Message **status) {
             strcpy((char *) status_message.message,
                     FileSystem::get_error_string(res));
             status_message.length = strlen((char *) status_message.message);
+            *status = &status_message;
         } else {
             *status = &c_message_empty;
         }
