@@ -291,9 +291,8 @@ int UsbScsiDriver :: mass_storage_reset()
 // data toggles. The caller holds the driver mutex.
 int UsbScsiDriver :: reset_recovery()
 {
-	// t_pipe.DevEP keeps only the endpoint number, so the direction bit is added here.
-	uint8_t ep_in  = uint8_t((bulk_in.DevEP & 0x0F) | 0x80);
-	uint8_t ep_out = uint8_t(bulk_out.DevEP & 0x0F);
+	uint8_t ep_in  = bot_in_endpoint(bulk_in.DevEP);
+	uint8_t ep_out = bot_out_endpoint(bulk_out.DevEP);
 
 	printf("USB SCSI: invalid status, BOT Reset Recovery.\n");
 	int r = mass_storage_reset();
@@ -456,7 +455,7 @@ retry:
 			len = host->bulk_in(&bulk_in, data, datalen, timeout, retries);
 		    if (len == -4) { // Stall
                 printf("Stalled Data Phase. Unstalling Endpoint\n");
-                device->unstall_pipe((uint8_t)(bulk_in.DevEP & 0xFF));
+                device->unstall_pipe(bot_in_endpoint(bulk_in.DevEP));
                 bulk_in.Command = 0; // reset toggle
                 xSemaphoreGive(mutex);
                 return -4;
@@ -471,7 +470,7 @@ retry:
 
     if (st == -4) {
     	printf("Stalled Status Phase. Unstalling Endpoint\n");
-    	device->unstall_pipe((uint8_t)(bulk_in.DevEP & 0xFF));
+    	device->unstall_pipe(bot_in_endpoint(bulk_in.DevEP));
 	    bulk_in.Command = 0; // reset toggle
     }
 

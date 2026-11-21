@@ -28,6 +28,11 @@ int main()
     CHECK(recovery_ms == 1500);
     CHECK(retry_ms == 1500);
     CHECK(recovery_ms + retry_ms <= 3000);
+    // CLEAR_FEATURE needs the direction bit: IN endpoint 1 is 0x81, OUT endpoint 2 is 0x02
+    CHECK(bot_in_endpoint(1) == 0x81);
+    CHECK(bot_in_endpoint(0x81) == 0x81);
+    CHECK(bot_out_endpoint(2) == 0x02);
+    CHECK(bot_out_endpoint(0x82) == 0x02);
     if (failures) { printf("%d failures\n", failures); return 1; }
     printf("usb_bot_policy_test OK\n");
     return 0;

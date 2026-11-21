@@ -19,6 +19,11 @@ static const uint8_t c_scsi_inquiry = 0x12;
 // (2000 = 250 ms, 8000 = 1 s for the data phase, which may legitimately NAK while the device commits a write).
 // Added worst case: recovery 6 stages x 250 ms = 1.5 s, retry CBW 0.25 + data 1 + status 0.25 = 1.5 s: 3 s.
 static const int c_bot_recovery_ticks = 25;
+
+// t_pipe.DevEP keeps only the endpoint number; CLEAR_FEATURE(ENDPOINT_HALT) needs the endpoint address,
+// whose bit 7 is the direction (set for IN).
+static inline uint8_t bot_in_endpoint(uint16_t dev_ep)  { return uint8_t((dev_ep & 0x0F) | 0x80); }
+static inline uint8_t bot_out_endpoint(uint16_t dev_ep) { return uint8_t(dev_ep & 0x0F); }
 static const int c_bot_retry_short_timeout = 2000;
 static const int c_bot_retry_data_timeout = 8000;
 
