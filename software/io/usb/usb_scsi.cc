@@ -387,7 +387,7 @@ int UsbScsiDriver :: exec_command(int lun, int cmdlen, bool out, uint8_t *cmd, i
     // The retry after a Reset Recovery must not make a caller wait longer than the original code did
     // (a stalled command holds this mutex and everything that waits for the drive). It only happens after a
     // fast protocol fault, with short timeouts and no NAK-timeout retries, so the recovery and the retry add
-    // at most about 8.5 s, even if the device is dead (usb_bot_policy.h).
+    // at most about 13 s, even if the device is dead (usb_bot_policy.h).
     bool recovered = false;
     uint16_t attempt_start;
 retry:

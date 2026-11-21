@@ -25,9 +25,10 @@ int main()
     // the cost the recovery and the retry can add (hardware timeouts; see usb_bot_policy.h)
     int recovery_ms = 6 * 2 * c_bot_recovery_ticks * 5;               // 6 stages, 2 waits each, 200 Hz ticks
     int retry_ms = (c_bot_retry_cbw_timeout + 2 * c_bot_retry_phase_timeout) / 8; // CBW, data, status; 8 kHz ticks
-    CHECK(recovery_ms == 1500);
+    CHECK(recovery_ms == 6000);
     CHECK(retry_ms == 7000);
-    CHECK(recovery_ms + retry_ms <= 9000);
+    CHECK(c_bot_recovery_ticks == 100); // the control transfers keep the default; 25 wedged a SanDisk on hardware
+    CHECK(recovery_ms + retry_ms <= 13000);
     // CLEAR_FEATURE needs the direction bit: IN endpoint 1 is 0x81, OUT endpoint 2 is 0x02
     CHECK(bot_in_endpoint(1) == 0x81);
     CHECK(bot_in_endpoint(0x81) == 0x81);

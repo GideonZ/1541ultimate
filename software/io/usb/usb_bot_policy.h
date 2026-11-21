@@ -13,14 +13,15 @@ static const uint16_t c_bot_fast_fault_ms = 1000;
 
 static const uint8_t c_scsi_inquiry = 0x12;
 
-// Timeouts used ONLY on the Reset Recovery and the second attempt. A healthy device answers each of these in
-// milliseconds; a dead one must not cost more than master did. Control transfers: ticks of 200 Hz per wait
-// (25 = 125 ms; a stage waits at most twice, once more after the abort request). Bulk phases: ticks of 8 kHz
+// Timeouts of the Reset Recovery and the second attempt. A healthy device answers each of these in milliseconds; a
+// dead one must not cost more than master did. Control transfers keep the default 100 ticks of 200 Hz (0.5 s per wait,
+// a stage waits at most twice, once more after the abort request). They were shortened to 125 ms once and a SanDisk
+// stick wedged on hardware, twice: aborting a Mass Storage Reset mid-way can leave the device hung. Bulk phases: ticks of 8 kHz
 // (8000 = 1 s for the CBW only). The data and status phases of the second attempt keep the normal 3 s: a
 // device that is executing the command (a write commit) NAKs the status for a while, and a 250 ms timeout there
 // aborted the command mid-flight and hung a SanDisk stick on hardware.
-// Added worst case: recovery 6 stages x 250 ms = 1.5 s, retry CBW 1 + data 3 + status 3 = 7 s: 8.5 s.
-static const int c_bot_recovery_ticks = 25;
+// Added worst case after a fast fault on a dead device: recovery 6 stages x 1 s = 6 s, retry CBW 1 + data 3 + status 3 = 7 s: 13 s.
+static const int c_bot_recovery_ticks = 100;
 
 // t_pipe.DevEP keeps only the endpoint number; CLEAR_FEATURE(ENDPOINT_HALT) needs the endpoint address,
 // whose bit 7 is the direction (set for IN).
