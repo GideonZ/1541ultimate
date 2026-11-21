@@ -38,4 +38,16 @@ static inline bool bot_retry_after_status_fault(int status, bool already_recover
     return (status < 0) && !already_recovered && (elapsed_ms < c_bot_fast_fault_ms) && (opcode != c_scsi_inquiry) && !data_out;
 }
 
+// After a Reset Recovery the unit is read-only until it is re-enumerated (a replug makes a new UsbScsi). On the bench a
+// SanDisk Ultra Fit hung on the first write after a Bulk-Only reset, while reads were fine and another stick wrote fine.
+// A locked unit reports STA_PROTECT (FatFs then refuses a write open with FR_WRITE_PROTECTED) and refuses a write
+// before it touches the device, so a recovery can never tear a write.
+struct BotWriteLock
+{
+    bool locked;
+    BotWriteLock() : locked(false) { }
+    void on_recovery() { locked = true; }
+    bool refuses_write() const { return locked; }
+};
+
 #endif

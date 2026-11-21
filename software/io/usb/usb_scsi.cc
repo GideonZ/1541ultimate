@@ -300,7 +300,12 @@ int UsbScsiDriver :: reset_recovery()
 	device->unstall_pipe(ep_out, c_bot_recovery_ticks);
 	bulk_in.Command = 0;
 	bulk_out.Command = 0;
-	printf("USB SCSI: Reset Recovery issued.\n");
+	// The device has been reset: it is read-only until it is re-enumerated.
+	for (int i = 0; (i <= max_lun) && (i < 16); i++) {
+		if (scsi_blk_dev[i])
+			scsi_blk_dev[i]->lock_writes();
+	}
+	printf("USB SCSI: Reset Recovery issued, unit is read-only.\n");
 	return r;
 }
 
@@ -864,6 +869,8 @@ DSTATUS UsbScsi :: status(void)
 {
     if(!initialized)
         return STA_NODISK;
+    if(write_lock.refuses_write())
+        return STA_PROTECT; // read-only after a Reset Recovery
     return RES_OK;
 }
 
@@ -903,6 +910,9 @@ DRESULT UsbScsi :: write(const uint8_t *buf, uint32_t sector, int num_sectors)
 {
     if(!initialized)
         return RES_NOTRDY;
+
+    if(write_lock.refuses_write()) // after a Reset Recovery: before the device is touched
+        return RES_WRPRT;
 
 	if(get_state() != e_device_ready)
         return RES_NOTRDY;

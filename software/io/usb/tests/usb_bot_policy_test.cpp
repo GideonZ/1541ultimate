@@ -37,6 +37,9 @@ int main()
     CHECK(bot_in_endpoint(0x81) == 0x81);
     CHECK(bot_out_endpoint(2) == 0x02);
     CHECK(bot_out_endpoint(0x82) == 0x02);
+    // read-only after a recovery, until the unit is replaced by a new one (re-enumeration)
+    { BotWriteLock w; CHECK(!w.refuses_write()); w.on_recovery(); CHECK(w.refuses_write()); w.on_recovery(); CHECK(w.refuses_write());
+      BotWriteLock fresh; CHECK(!fresh.refuses_write()); }
     if (failures) { printf("%d failures\n", failures); return 1; }
     printf("usb_bot_policy_test OK\n");
     return 0;

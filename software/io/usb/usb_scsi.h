@@ -5,6 +5,7 @@
 #include "usb_device.h"
 #include "blockdev.h"
 #include "file_device.h"
+#include "usb_bot_policy.h"
 #include "FreeRTOS.h"
 #include "queue.h"
 #include "semphr.h"
@@ -75,6 +76,7 @@ public:
 class UsbScsi : public BlockDevice
 {
     bool       initialized;
+    BotWriteLock write_lock;
     UsbScsiDriver *driver;
     bool       no_more;
     int        lun;
@@ -91,6 +93,7 @@ public:
     ~UsbScsi();
 
     void reset(void);
+    void lock_writes(void) { write_lock.on_recovery(); }
     char *get_name(void) { return name; }
     char *get_disp_name(void) { return disp_name; }
 
