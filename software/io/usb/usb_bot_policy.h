@@ -23,11 +23,8 @@ static const uint8_t c_scsi_inquiry = 0x12;
 // (8000 = 1 s for the CBW only). The data and status phases of the second attempt keep the normal 3 s: a
 // device that is executing the command (a write commit) NAKs the status for a while, and a 250 ms timeout there
 // aborted the command mid-flight and hung a SanDisk stick on hardware.
-// Added worst case after a fast fault on a dead device: recovery 6 stages x 1 s = 6 s, settle 0.5 s, retry CBW 1 + data 3 + status 3 = 7 s: 13.5 s.
+// Added worst case after a fast fault on a dead device: recovery 6 stages x 1 s = 6 s, retry CBW 1 + data 3 + status 3 = 7 s: 13 s.
 static const int c_bot_recovery_ticks = 100;
-
-// Settling time after the Reset Recovery, in 200 Hz ticks (100 = 500 ms), before the command is issued again. Only on the fault path.
-static const int c_bot_settle_ticks = 100;
 
 // t_pipe.DevEP keeps only the endpoint number; CLEAR_FEATURE(ENDPOINT_HALT) needs the endpoint address,
 // whose bit 7 is the direction (set for IN).

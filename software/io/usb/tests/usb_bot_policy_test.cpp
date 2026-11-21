@@ -31,8 +31,7 @@ int main()
     CHECK(recovery_ms == 6000);
     CHECK(retry_ms == 7000);
     CHECK(c_bot_recovery_ticks == 100); // the control transfers keep the default; 25 wedged a SanDisk on hardware
-    CHECK(c_bot_settle_ticks * 5 == 500);
-    CHECK(recovery_ms + c_bot_settle_ticks * 5 + retry_ms <= 13500);
+    CHECK(recovery_ms + retry_ms <= 13000);
     // CLEAR_FEATURE needs the direction bit: IN endpoint 1 is 0x81, OUT endpoint 2 is 0x02
     CHECK(bot_in_endpoint(1) == 0x81);
     CHECK(bot_in_endpoint(0x81) == 0x81);
