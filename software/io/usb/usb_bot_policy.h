@@ -16,16 +16,18 @@ static const uint8_t c_scsi_inquiry = 0x12;
 // Timeouts used ONLY on the Reset Recovery and the second attempt. A healthy device answers each of these in
 // milliseconds; a dead one must not cost more than master did. Control transfers: ticks of 200 Hz per wait
 // (25 = 125 ms; a stage waits at most twice, once more after the abort request). Bulk phases: ticks of 8 kHz
-// (2000 = 250 ms, 8000 = 1 s for the data phase, which may legitimately NAK while the device commits a write).
-// Added worst case: recovery 6 stages x 250 ms = 1.5 s, retry CBW 0.25 + data 1 + status 0.25 = 1.5 s: 3 s.
+// (8000 = 1 s for the CBW only). The data and status phases of the second attempt keep the normal 3 s: a
+// device that is executing the command (a write commit) NAKs the status for a while, and a 250 ms timeout there
+// aborted the command mid-flight and hung a SanDisk stick on hardware.
+// Added worst case: recovery 6 stages x 250 ms = 1.5 s, retry CBW 1 + data 3 + status 3 = 7 s: 8.5 s.
 static const int c_bot_recovery_ticks = 25;
 
 // t_pipe.DevEP keeps only the endpoint number; CLEAR_FEATURE(ENDPOINT_HALT) needs the endpoint address,
 // whose bit 7 is the direction (set for IN).
 static inline uint8_t bot_in_endpoint(uint16_t dev_ep)  { return uint8_t((dev_ep & 0x0F) | 0x80); }
 static inline uint8_t bot_out_endpoint(uint16_t dev_ep) { return uint8_t(dev_ep & 0x0F); }
-static const int c_bot_retry_short_timeout = 2000;
-static const int c_bot_retry_data_timeout = 8000;
+static const int c_bot_retry_cbw_timeout = 8000;
+static const int c_bot_retry_phase_timeout = 24000;
 
 static inline bool bot_retry_after_status_fault(int status, bool already_recovered, uint16_t elapsed_ms, uint8_t opcode)
 {

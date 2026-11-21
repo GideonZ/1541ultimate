@@ -387,7 +387,7 @@ int UsbScsiDriver :: exec_command(int lun, int cmdlen, bool out, uint8_t *cmd, i
     // The retry after a Reset Recovery must not make a caller wait longer than the original code did
     // (a stalled command holds this mutex and everything that waits for the drive). It only happens after a
     // fast protocol fault, with short timeouts and no NAK-timeout retries, so the recovery and the retry add
-    // at most about 3 s, even if the device is dead (usb_bot_policy.h).
+    // at most about 8.5 s, even if the device is dead (usb_bot_policy.h).
     bool recovered = false;
     uint16_t attempt_start;
 retry:
@@ -409,7 +409,7 @@ retry:
     }
     int len = 0;
     int retval = 0;
-    int st = host->bulk_out(&bulk_out, &cbw, 31, recovered ? c_bot_retry_short_timeout : 20000, recovered ? 0 : 5);
+    int st = host->bulk_out(&bulk_out, &cbw, 31, recovered ? c_bot_retry_cbw_timeout : 20000, recovered ? 0 : 5);
     if(st != 31) { // out failed.. terminate.
     	printf("USB SCSI: Out failed... Terminate.\n");
     	if (st == -4) {
@@ -432,12 +432,11 @@ retry:
         timeout = 8000; // 1000 ms
         retries = 3;
     }
-    int status_timeout = timeout;
     if (recovered) {
-        // second attempt after a fast fault: short timeouts, no retries (see usb_bot_policy.h)
+        // second attempt after a fast fault: no NAK-timeout retries and a 1 s CBW timeout (see usb_bot_policy.h).
+        // The data and status phases keep their normal timeout: a device that is executing the command (a flash
+        // write commit) NAKs the status for a while, and aborting it mid-command can hang the device.
         retries = 0;
-        timeout = c_bot_retry_data_timeout;
-        status_timeout = c_bot_retry_short_timeout;
     }
 
     /* DATA PHASE */
@@ -466,7 +465,7 @@ retry:
     retval = len;
 
     /* STATUS PHASE */
-    st = status_transport(status_timeout, retries);
+    st = status_transport(timeout, retries);
 
     if (st == -4) {
     	printf("Stalled Status Phase. Unstalling Endpoint\n");
