@@ -356,6 +356,8 @@ int IecChannel::read_block(void)
     }
     if (res != FR_OK) {
         state = e_error;
+        // The talk ends here and the C64 sees no EOI: the error channel has to say why.
+        drive->set_error_fres(res);
         log_fault("read_block");
         return IEC_READ_ERROR;
     }
