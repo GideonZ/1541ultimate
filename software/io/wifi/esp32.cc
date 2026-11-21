@@ -439,8 +439,7 @@ int Esp32 :: VerifyFlash(const uint8_t *binary, uint32_t address, uint32_t lengt
     }
     int result = esp_md5_parse_reply(receiveBuffer, replySize, digest);
     if (result == ESP_VERIFY_NO_ANSWER) {
-        printf("ESP_SPI_FLASH_MD5: not a valid answer\n");
-        dump_hex_relative(receiveBuffer, replySize);
+        printf("ESP_SPI_FLASH_MD5: not a valid answer (reply of %d bytes)\n", replySize);
     } else if (result == ESP_VERIFY_MISMATCH) {
         printf("The flash does not hold the image (MD5 differs)\n");
     }
