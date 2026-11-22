@@ -163,8 +163,8 @@
 // SID write trace. Supports at most 4 SIDs (2 sockets x 2-way split); writes to
 // the upper half of a split into 8 SIDs (sid_split modes 5..7) are not recorded.
 #define C64_SIDTRACE_DATA   (*(volatile uint32_t *)(C64_SIDTRACE + 0)) // reading pops the record
-#define C64_SIDTRACE_COUNT  (*(volatile uint8_t *)(C64_SIDTRACE + 4))  // records available (0..255)
-#define C64_SIDTRACE_STATUS (*(volatile uint8_t *)(C64_SIDTRACE + 5))
+#define C64_SIDTRACE_COUNT  (*(volatile uint16_t *)(C64_SIDTRACE + 4)) // records available (0..2047)
+#define C64_SIDTRACE_STATUS (*(volatile uint8_t *)(C64_SIDTRACE + 6))
 #define C64_SIDTRACE_ENABLE (*(volatile uint8_t *)(C64_SIDTRACE + 7))
 
 #define SIDTRACE_STAT_VALID     0x01
