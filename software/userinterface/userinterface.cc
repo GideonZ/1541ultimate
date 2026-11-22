@@ -849,7 +849,9 @@ void UserInterface :: postMessage(const char *msg)
     // Message handler becomes owner of object
     mstring *message = new mstring(msg);
 
-    xQueueSend(userMessageQueue, &message, 0);
+    if (xQueueSend(userMessageQueue, &message, 0) != pdTRUE) {
+        delete message; // the queue is full: nobody else owns it
+    }
 }
 
 mstring *UserInterface :: getMessage(void)
