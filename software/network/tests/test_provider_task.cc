@@ -51,7 +51,7 @@ struct Link {
     ControlTestPort port;
     Worker worker;
     std::vector<Frame> sent;
-    Link() : worker(port,id(1),Required,{100,200,50}) {}
+    explicit Link(unsigned boot = 1) : worker(port,id(boot),Required,{100,200,50}) {}
     void receive(WiFi& wifi, const Frame& frame) {
         uint8_t bytes[FrameSize]; encode(frame,bytes);
         portENTER_CRITICAL(); expect(wifi.bound->receive_isr(bytes,sizeof(bytes)), "owner reply ingress"); portEXIT_CRITICAL();
@@ -150,11 +150,15 @@ static void identity_and_deadlines()
             } else if (mode == 3) remote.exchange(wifi,now,false);
             else remote.exchange(wifi,now);
             if (mode == 4 && task.state() == ProviderManagerTask::Active) task.request_stop();
+            if (mode > 0 && mode < 4 && now == 150) {
+                expect(task.state() == ProviderManagerTask::WaitingForRestart && !task.ready(), "timeout fences the old boot");
+                task.request_stop();
+            }
         };
         run_owner();
-        expect(task.state() == (mode == 4 ? ProviderManagerTask::Stopped : ProviderManagerTask::Failed),"fresh handshake alone permits active state");
+        expect(task.state() == (mode ? ProviderManagerTask::Stopped : ProviderManagerTask::Failed),"fresh handshake alone permits active state");
         if (mode == 0) expect(delays == 150 && wifi.uart.gets == 0,"bootstrap exact deadline wins over arriving snapshot");
-        if (mode > 0 && mode < 4) expect(delays == 10 && wifi.uart.gets == 1,"stale or missing offer expires without retry");
+        if (mode > 0 && mode < 4) expect(delays == 15 && wifi.uart.gets == 1,"stale or missing offer expires without retry");
         expect(source.calls == 1,"source not resampled on stale identity or reply timeout");
     }
     reset_scheduler(); Source source; WiFi wifi; ProviderManagerTask task({&source,fresh},{100,200},80);
@@ -166,6 +170,35 @@ static void identity_and_deadlines()
     racing_wifi.snapshot_hook = [&] { racing.request_stop(); };
     expect(racing.start(racing_wifi),"start before snapshot cancellation"); run_owner();
     expect(racing.state() == ProviderManagerTask::Stopped && racing_wifi.uart.gets == 0,"cancellation during snapshot prevents offer transmission");
+}
+static void restart_after_timeout()
+{
+    reset_scheduler(); Source source; WiFi wifi; Link original, replacement(2);
+    ProviderManagerTask task({&source,fresh},{250,600},80);
+    expect(task.start(wifi),"start owner before delayed restart detection");
+    OperationCancellation old_data;
+    bool was_ready = false, fenced = false, recovered = false;
+    unsigned waiting_since = 0, sends = 0;
+    delay_hook = [&] {
+        const unsigned now = ticks * 5;
+        if (wifi.boot == id(1)) original.exchange(wifi,now,original.sent.size() < 2);
+        else replacement.exchange(wifi,now);
+        if (task.ready() && !was_ready) { old_data = task.lifetime(); was_ready = true; }
+        if (task.state() == ProviderManagerTask::WaitingForRestart) {
+            if (!fenced) { waiting_since = now; sends = wifi.uart.gets; fenced = true; }
+            expect(old_data.cancelled() && !task.ready() && wifi.uart.gets == sends,"old grant fenced without retrying its boot");
+            if (now == waiting_since + 10) wifi.lifetime.signal(); // Same boot on a new Wi-Fi generation.
+            if (now == waiting_since + 110) { wifi.lifetime.signal(); wifi.boot = id(2); }
+        }
+        if (task.ready() && wifi.boot == id(2)) {
+            recovered = true;
+            expect(replacement.sent.size() == 2 && replacement.sent[0].opcode == Offer &&
+                   replacement.sent[1].opcode == Initialize && !task.lifetime().cancelled(), "different boot completes a fresh handshake");
+            task.request_stop();
+        }
+    };
+    run_owner();
+    expect(was_ready && fenced && recovered && task.state()==ProviderManagerTask::Stopped,"late reboot observation restores service");
 }
 static void owner_data_queue()
 {
@@ -218,11 +251,12 @@ static void scheduling_boundaries()
                 ticks=origin+age/5; injected=true; // Owner wakes later.
             } else remote.exchange(wifi,uint64_t(uint32_t(ticks-origin))*5);
             if (task.state()==ProviderManagerTask::Active) { active=true; task.request_stop(); }
+            if (task.state()==ProviderManagerTask::WaitingForRestart) task.request_stop();
         };
         run_owner();
         expect(active==(age<100),"deadline tested at processing time across tick wrap");
-        expect(task.state()==(age<100 ? ProviderManagerTask::Stopped : ProviderManagerTask::Failed),"late wake fails closed");
-        expect(age<100 || (wifi.uart.gets==1 && delays==1),"expired offer never retries or initializes");
+        expect(task.state()==ProviderManagerTask::Stopped,"stop works while active or waiting after a timeout");
+        expect(age<100 || (wifi.uart.gets==1 && delays==2),"expired offer never retries or initializes");
         expect(deletes==1 && manager_critical_depth==0,"delayed task exits with balanced locks");
         printf("SCHEDULE reply_age=%u wrap=%u active=%u sends=%u\n",age,wrap,unsigned(active),wifi.uart.gets);
     }
@@ -344,7 +378,7 @@ static void pending_data_scheduling()
 }
 int main()
 {
-    startup_gates(); owner_lifecycle(); identity_and_deadlines(); owner_data_queue(); scheduling_boundaries(); pending_data_scheduling();
+    startup_gates(); owner_lifecycle(); identity_and_deadlines(); restart_after_timeout(); owner_data_queue(); scheduling_boundaries(); pending_data_scheduling();
     expect(manager_critical_depth == 0,"all critical sections released");
     printf("Provider task: %u checks, %u failures\n",checks,failures);
     return failures ? 1 : 0;

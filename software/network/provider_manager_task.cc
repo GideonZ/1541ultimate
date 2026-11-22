@@ -51,13 +51,12 @@ void ProviderManagerTask::entry(void *context)
     vTaskDelete(NULL);
     for (;;) {} // FreeRTOS must not return from self deletion.
 }
-// A Wi-Fi disconnect cancels the provider lifetime for good, so the negotiation
-// bound to it is over and the next snapshot starts a new one. Any other failure,
-// including a disabled runner, is final.
 bool ProviderManagerTask::recover(const OperationCancellation& provider)
 {
-    if (runner_.state() == ManagerRunner::Disabled || !provider.cancelled()) return false;
-    requests_.stop(); runner_.stop(); publish(WaitingForBoot);
+    const bool expired = runner_.state() == ManagerRunner::ReplyExpired;
+    if (runner_.state() == ManagerRunner::Disabled || (!expired && !provider.cancelled())) return false;
+    requests_.stop();
+    publish(expired ? WaitingForRestart : WaitingForBoot);
     return true;
 }
 void ProviderManagerTask::run()
@@ -68,6 +67,7 @@ void ProviderManagerTask::run()
     uint32_t previous = xTaskGetTickCount();
     uint64_t now = 0;
     OperationCancellation provider; // Wi-Fi lifetime the current negotiation is bound to.
+    provider_session::Identity previous_boot = {};
     bool bootstrapping = true;       // Only the first identity wait is bounded.
     publish(WaitingForBoot);
     for (;;) {
@@ -80,10 +80,11 @@ void ProviderManagerTask::run()
             runner_.stop(); publish(Failed); return;
         }
         previous = tick; now += elapsed;
-        if (state() == WaitingForBoot) {
+        if (state() == WaitingForBoot || state() == WaitingForRestart) {
             provider_session::Identity boot = {}; OperationCancellation lifetime;
             if (bootstrapping && now >= BootstrapMs) { runner_.stop(); publish(Failed); return; }
-            if (wifi_->ProviderSnapshot(boot, lifetime)) {
+            if (wifi_->ProviderSnapshot(boot, lifetime) &&
+                (state() != WaitingForRestart || (provider.cancelled() && !(boot == previous_boot)))) {
                 // Stop may race the snapshot. Serialize the final check and
                 // zero-wait offer with task-context cancellation writers.
                 portENTER_CRITICAL();
@@ -99,13 +100,14 @@ void ProviderManagerTask::run()
                 } else {
                     requests_.resume();
                     requests_.bind_lifetime(lifetime);
-                    provider = lifetime; bootstrapping = false;
+                    provider = lifetime; previous_boot = boot; bootstrapping = false;
                     publish(Negotiating);
                 }
             }
         } else {
             runner_.step(now);
-            if (runner_.state() == ManagerRunner::Failed || runner_.state() == ManagerRunner::Disabled) {
+            if (runner_.state() == ManagerRunner::Failed || runner_.state() == ManagerRunner::Disabled ||
+                runner_.state() == ManagerRunner::ReplyExpired) {
                 if (!recover(provider)) { publish(Failed); return; }
             } else {
                 if (runner_.state() == ManagerRunner::Active) {

@@ -43,7 +43,8 @@ Lost communication never produces a fabricated cleanup acknowledgement.
 | Data completion arrives | Validate identity, cancellation and deadline before publishing |
 | Cancellation is observed | Fence uncommitted data and let the owner clean up |
 | Either endpoint restarts | Retire old grants; renegotiate without resuming old work |
-| Wi-Fi link is lost and returns | Fail pending work, then serve again only after a new provider snapshot and a new negotiation; a manager queue overflow, a reply timeout, lease expiry, a send failure or a Busy or Rejected negotiation reply stays terminal |
+| Wi-Fi link is lost and returns | Fail pending work and negotiate from a fresh provider snapshot. A matching Busy initialization reply keeps HTTPS unavailable. Retry initialization on the same offer after 50 ms, within 1500 ms of sending the offer. Only a matching success admits requests. |
+| Control reply expires before the ESP32 restart is observed | Retire the grant at the reply deadline. Wait for the old provider lifetime to be cancelled and a different boot identity to be observed before negotiating again. A late reply or a reconnect with the same boot cannot revive the grant. Queue overflow, lease expiry, send failure and rejection remain terminal on a live link. |
 | Reply/queue overflow or send failure | Retire the affected generation |
 | Lease expires | Cancel work and release resources through the owner |
 | Repeated close | No second release or publication |

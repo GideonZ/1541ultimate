@@ -127,7 +127,7 @@ static void deadlines_and_failed_sends()
         uint64_t sent = stage >= 2 ? 80 : 0;
         f.remote(sent); Frame late = f.reply();
         f.runner.step(sent + 99); f.ingress(late); f.runner.step(sent + 100);
-        expect(f.runner.state() == ManagerRunner::Failed && !f.runner.reserve(sent + 100,ticket), "exact deadline rejects queued late reply");
+        expect(f.runner.state() == ManagerRunner::ReplyExpired && !f.runner.reserve(sent + 100,ticket), "exact deadline rejects queued late reply");
         f.runner.step(sent + 101); expect(f.uart.sent.empty(), "deadline has no automatic retry");
     }
     for (unsigned stage = 0; stage < 4; ++stage) {

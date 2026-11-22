@@ -30,6 +30,11 @@ void ManagerRunner::step(uint64_t now)
     if (generation_.cancelled() || status.state == Manager::Idle || status.state == Manager::Disabled) {
         fail(); return;
     }
+    if (status.state == Manager::ReplyExpired) {
+        fail();
+        if (state_ != Disabled) state_ = ReplyExpired;
+        return;
+    }
     if (status.state == Manager::Offered) {
         if (!delivery_.initialize(now)) fail();
     } else if (status.state == Manager::Ready) {

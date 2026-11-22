@@ -10,14 +10,15 @@ class WiFi;
 // Construct with a qualified fresh incarnation source, then start once from a
 // serialized control task. A lost Wi-Fi link or UART fails pending work and the
 // task negotiates again from the next provider snapshot; a manager queue
-// overflow, a reply timeout, lease expiry, a send failure, a Busy or Rejected
-// negotiation reply and request_stop() end it. This object must have firmware
+// overflow, lease expiry, a send failure or rejection ends it. Busy during
+// initialization is bounded by the offer window. A reply timeout fences the
+// grant and waits for a verified change of boot identity. This object must have firmware
 // lifetime: WiFi keeps its UART binding even after the task exits. The fixed
 // data mailbox copies requests and completions; no caller may access the runner
 // or UART directly.
 class ProviderManagerTask : public HttpOwnerEndpoint {
 public:
-    enum State { Unstarted, Disabled, Starting, WaitingForBoot, Negotiating, Active, Stopped, Failed };
+    enum State { Unstarted, Disabled, Starting, WaitingForBoot, Negotiating, Active, Stopped, Failed, WaitingForRestart };
     enum { PollMs = 10, BootstrapMs = 1500 };
     ProviderManagerTask(provider_control::IncarnationSource, provider_control::ManagerLimits, uint32_t renew_ms);
     bool start(WiFi&); // True means launched, not ready. No retry on failure.

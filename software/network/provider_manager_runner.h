@@ -10,7 +10,7 @@ namespace provider_control {
 // missed deadlines fail closed, without retries. No task or UART binding is created.
 class ManagerRunner {
 public:
-    enum State { Stopped, Negotiating, Active, Failed, Disabled };
+    enum State { Stopped, Negotiating, Active, Failed, Disabled, ReplyExpired };
     ManagerRunner(ManagerDelivery&, uint32_t renew_ms);
     static bool valid_limits(ManagerLimits limits, uint32_t renew_ms) {
         return limits.reply_ms && renew_ms && renew_ms < limits.lease_ms &&

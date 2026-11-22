@@ -3,7 +3,7 @@
 namespace provider_control {
 Manager::Manager(IncarnationSource source, ManagerLimits limits, uint64_t initial_request) :
     incarnation_{}, boot_{}, grant_{}, limits_(limits), pending_frame_{}, request_(initial_request),
-    renewal_(0), session_(0), sent_at_(0), lease_at_(0), last_now_(0), state_(Disabled), pending_(false), active_(false)
+    renewal_(0), session_(0), sent_at_(0), lease_at_(0), last_now_(0), offer_at_(0), state_(Disabled), pending_(false), active_(false)
 {
     if (limits.reply_ms && limits.lease_ms && source.fresh && source.fresh(source.context, incarnation_) && incarnation_.valid())
         state_ = Idle;
@@ -19,9 +19,20 @@ void Manager::poll(uint64_t now)
 {
     if (now < last_now_) { fail(true); return; }
     last_now_ = now;
-    if (state_ == Disabled || state_ == Idle) return;
-    if (provider_lifetime_.cancelled() || (pending_ && now - sent_at_ >= limits_.reply_ms) ||
-        ((state_ == Ready || state_ == Closing) && now - lease_at_ >= limits_.lease_ms)) fail();
+    if (state_ == Disabled || state_ == Idle || state_ == ReplyExpired) return;
+    // Bound retries by the production worker's offer window, including time
+    // already spent negotiating. A Busy reply never extends that window.
+    const uint32_t offer_window_ms = 1500, cleanup_retry_ms = 50;
+    if (provider_lifetime_.cancelled() ||
+        ((state_ == Ready || state_ == Closing) && now - lease_at_ >= limits_.lease_ms) ||
+        ((state_ == Offered || state_ == Initializing || state_ == WaitingForCleanup) && now - offer_at_ >= offer_window_ms)) {
+        fail();
+    } else if (pending_ && now - sent_at_ >= limits_.reply_ms) {
+        fail();
+        state_ = ReplyExpired;
+    } else if (state_ == WaitingForCleanup && now - sent_at_ >= cleanup_retry_ms) {
+        state_ = Offered;
+    }
 }
 bool Manager::begin(unsigned opcode, uint64_t counter, uint32_t required, uint64_t now, uint8_t *output)
 {
@@ -43,7 +54,7 @@ bool Manager::offer(const provider_session::Identity& observed_boot, OperationCa
     if (!observed_boot.valid() || provider_lifetime.cancelled()) return false;
     boot_ = observed_boot; provider_lifetime_ = provider_lifetime;
     if (!begin(Offer, 0, 0, now, output)) return false;
-    state_ = Offering;
+    offer_at_ = now; state_ = Offering;
     return true;
 }
 bool Manager::initialize(uint64_t now, uint8_t *output)
@@ -106,6 +117,11 @@ bool Manager::receive(const uint8_t *bytes, size_t size, uint64_t now)
         } else if (reply.grant.challenge.provider.valid() || reply.grant.challenge.epoch) return false;
     } else if (!grant_matches(reply.grant)) return false;
     pending_ = false;
+    if (reply.opcode == Initialize && reply.status == Busy) {
+        state_ = WaitingForCleanup;
+        sent_at_ = now; // No request pending. Pace the next attempt from receipt.
+        return true;
+    }
     if (reply.status != Ok) { fail(); return true; }
     switch (reply.opcode) {
     case Offer: grant_ = reply.grant; state_ = Offered; break;

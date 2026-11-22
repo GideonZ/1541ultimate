@@ -13,7 +13,7 @@ struct ManagerLimits { uint32_t reply_ms, lease_ms; };
 // lease_ms must not exceed the configured provider lease.
 class Manager {
 public:
-    enum State { Disabled, Idle, Offering, Offered, Initializing, Ready, Closing };
+    enum State { Disabled, Idle, Offering, Offered, Initializing, Ready, Closing, WaitingForCleanup, ReplyExpired };
     Manager(IncarnationSource, ManagerLimits, uint64_t initial_request = 0);
     bool offer(const provider_session::Identity& observed_boot, OperationCancellation provider_lifetime,
                uint64_t now, uint8_t output[FrameSize]);
@@ -37,7 +37,7 @@ private:
     CancellationSource cancellation_;
     OperationCancellation provider_lifetime_;
     Frame pending_frame_;
-    uint64_t request_, renewal_, session_, sent_at_, lease_at_, last_now_;
+    uint64_t request_, renewal_, session_, sent_at_, lease_at_, last_now_, offer_at_;
     State state_;
     bool pending_, active_;
     bool begin(unsigned opcode, uint64_t counter, uint32_t required, uint64_t now, uint8_t*);

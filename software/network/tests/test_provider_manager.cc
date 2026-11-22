@@ -130,7 +130,7 @@ static void timeout_and_replay()
     expect(manager.current(ticket, 249) && !manager.current(ticket, 250), "lease anchored to send not reply arrival");
     manager.poll(250); expect(manager.state() == Manager::Idle, "lease expires");
     manager.offer(id(1), link.boot_events.token(), 251, bytes); Frame offered = link.process(bytes, 251);
-    expect(!receive(manager, offered, 351) && manager.state() == Manager::Idle, "exact reply deadline rejects late packet");
+    expect(!receive(manager, offered, 351) && manager.state() == Manager::ReplyExpired, "exact reply deadline rejects late packet");
     manager.offer(id(1), link.boot_events.token(), 352, bytes);
     manager.disconnect(); expect(!receive(manager, link.process(bytes, 352), 352), "enqueue/link failure retires pending reply");
     manager.offer(id(1), link.boot_events.token(), 400, bytes); manager.poll(399);
@@ -143,6 +143,35 @@ static void timeout_and_replay()
     ControlTestPort p; Worker disabled(p, id(1), 0, {100,200,50});
     absent.offer(id(1), {}, 0, bytes); disabled.submit(bytes, FrameSize); disabled.step(0);
     expect(receive(absent, p.replies.front(), 0) && absent.state() == Manager::Idle, "absent backend handled without admission");
+}
+static void busy_initialization()
+{
+    for (bool released : {false,true}) {
+        Link link; Entropy entropy(2); Manager manager({&entropy,fresh},{250,5000});
+        uint8_t bytes[FrameSize]; Ticket ticket = {};
+        manager.offer(id(1),link.boot_events.token(),0,bytes);
+        Frame offered = link.process(bytes,0);
+        expect(receive(manager,offered,0), "accept offer before cleanup");
+        Frame previous = {};
+        for (unsigned now = 0; now < 1500; now += 50) {
+            expect(manager.initialize(now,bytes), "retry initialization after backoff");
+            Frame reply = {};
+            expect(decode(bytes,sizeof(bytes),reply) && reply.opcode == Initialize &&
+                   reply.grant.challenge.epoch == offered.grant.challenge.epoch &&
+                   reply.request > previous.request, "retry keeps grant and gets a new request number");
+            if (previous.request) expect(!receive(manager,previous,now), "earlier acknowledgement cannot admit a retry");
+            reply.reply = true; reply.status = released && now == 100 ? Ok : Busy;
+            expect(receive(manager,reply,now), "correlated initialization reply accepted");
+            if (reply.status == Ok) {
+                expect(manager.reserve(now,ticket), "new ticket only after cleanup acknowledgement");
+                break;
+            }
+            previous = reply; previous.status = Ok;
+            expect(!manager.reserve(now,ticket) && !manager.initialize(now+49,bytes), "Busy blocks admission and early sends");
+        }
+        if (!released) expect(!manager.initialize(1500,bytes) && manager.state() == Manager::Idle &&
+                              !manager.reserve(1500,ticket), "persistent Busy expires at original offer bound");
+    }
 }
 static void pending_and_failed_operations()
 {
@@ -185,7 +214,7 @@ static void pending_and_failed_operations()
 }
 int main()
 {
-    qualification(); reply_validation(); restart_and_close(); timeout_and_replay(); pending_and_failed_operations();
+    qualification(); reply_validation(); restart_and_close(); timeout_and_replay(); busy_initialization(); pending_and_failed_operations();
     printf("Provider manager: %d checks, %d failures\n", checks, failures);
     return failures ? 1 : 0;
 }
