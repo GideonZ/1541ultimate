@@ -20,9 +20,9 @@ adding a second ADC initialization sequence.
 
 ## Version selection
 
-For the local merge with upstream 1.29, the provisional default and provider
-versions are **1.30** and **1.31**, respectively. The earlier 1.22/1.23 pair
-applies only to the previous revision. This matters because
+With upstream at 1.30, the provisional default and provider versions are
+**1.38** and **1.39**, respectively. Confirm the allocation and merge order
+before installation. Earlier builds used 1.22/1.23 and 1.30/1.31. This matters because
 the ordinary C64U/U64-II updater installs a controller image only when its numeric version
 is newer; equal versions are skipped. TLS capability still requires explicit
 negotiation and cannot be inferred from a version number.

@@ -27,18 +27,21 @@ void send_button_event(uint8_t button);
 void send_keepalive();
 
 #ifdef CONFIG_ULTIMATE_PROVIDER_CONTROL
-#define IDENT_STRING "ESP32 WiFi Bridge V1.31"
-#define IDENT_MINOR   31
+#define IDENT_STRING "ESP32 WiFi Bridge V1.39"
+#define IDENT_MINOR   39
 #else
-#define IDENT_STRING "ESP32 WiFi Bridge V1.30"
-#define IDENT_MINOR   30
+#define IDENT_STRING "ESP32 WiFi Bridge V1.38"
+#define IDENT_MINOR   38
 #endif
 #define IDENT_MAJOR   1
-// 1.31: optional provider ownership protocol. TLS requires explicit negotiation;
+// 1.39: optional provider ownership protocol. TLS requires explicit negotiation;
 // the version number alone does not establish provider capability.
-// 1.30: boot identity extension, sampled after RF startup without changing ADC
+// 1.38: boot identity extension, sampled after RF startup without changing ADC
 // reset/power state. Default and provider images must have distinct versions.
 // Reconcile these numbers with other module changes before merging/installing.
+// 1.30: the recovery's root list drops the roots NSS master has deleted, no longer trusts
+// for websites or distrusts for every certificate still valid (Buypass Class 2 and 3,
+// QuoVadis Root CA 1 and 3 G3, Certigna Root CA, Izenpe.com).
 // 1.29: the idle connector handles every queued command and event before it waits, so a
 // Disable behind an Enable is not left queued; the wait for its own disconnect is bounded
 // (3 s); events from before a radio stop are dropped; a CMD_WIFI_CONNECT must hold the
