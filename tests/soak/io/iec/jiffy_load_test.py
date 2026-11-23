@@ -39,7 +39,7 @@ def record(carry=0, st=0x40, total=0, rotated=0, end=0x6000, code="00", t0=(0, 0
                   ord(code[0]), ord(code[1]), *t0, *t1, 0))
 
 
-def refused(data, cycles=61):
+def refused(data, cycles=63):
     try:
         jl.patched_kernal(data, cycles)
     except jl.RomRefused:
@@ -50,20 +50,54 @@ def refused(data, cycles=61):
 def main() -> int:
     cli.device_free_arguments(__doc__)
 
-    with check("the host delay is counted as the #986 table counts it"):
+    with check("the host delay is the net cycles the patch adds, 13 plus 5 per pass"):
         expect("none", jl.delay_passes(0), 0)
-        for cycles, passes in ((61, 10), (86, 15), (101, 18)):
+        for cycles, passes in ((63, 10), (88, 15), (103, 18)):
             expect(f"{cycles} cycles", jl.delay_passes(cycles), passes)
-        for bad in (1, 62, 15, 11, 11 + 5 * 256):
+        for bad in (1, 61, 62, 15, 13, 11, 13 + 5 * 256):
             try:
                 jl.delay_passes(bad)
             except ValueError:
                 continue
             raise Failure(f"{bad} cycles were accepted")
 
+    with check("the routine in the C64 program adds as many cycles as the option says"):
+        text = Path(__file__).with_name("jiffy_load_soak.asm").read_text()
+        line = next(row for row in text.splitlines() if row.startswith("delayrt"))
+        routine = bytes(int(item.strip().lstrip("$"), 16)
+                        for item in line.split(".byte")[1].split(";")[0].split(","))
+        expect("the routine ends in RTS", routine[-1], 0x60)
+        for passes in (1, 10, 15, 18, 255):
+            expect(f"{passes} passes", jl.routine_cycles(routine, passes),
+                   jl.CYCLES_FIXED + jl.CYCLES_PER_PASS * passes)
+            expect(f"{passes} passes map back", jl.delay_passes(
+                jl.routine_cycles(routine, passes)), passes)
+
+    with check("a batch zeroes everything the host reads back before the parameters go in"):
+        writes = jl.batch_writes(5, 11, 10, 16, "jiffy986", 1, "cd//jiffy1")
+        expect("two writes, the clear first", [address for address, _ in writes],
+               [jl.RESULTS_ADDRESS, jl.PARAMETERS_ADDRESS])
+        address, data = writes[0]
+        if any(data):
+            raise Failure("the results region is not all zeros")
+        for what, start, size in (("done flag and header", 0xC080, 4), ("status lines", 0xC090, 0x60),
+                                  ("failure texts", 0xC100,
+                                   jl.FAILURE_SLOTS * jl.FAILURE_SLOT_SIZE),
+                                  ("last record", 0xC200 + (jl.MAX_BATCH - 1) * jl.RECORD_SIZE,
+                                   jl.RECORD_SIZE)):
+            if not (address <= start and start + size <= address + len(data)):
+                raise Failure(f"{what} at ${start:04X} is outside what is cleared")
+        if jl.PARAMETERS_ADDRESS + len(writes[1][1]) > jl.RESULTS_ADDRESS:
+            raise Failure("the parameters overlap the cleared region")
+
+    with check("the time a load is waited for comes from clean loads and survives a failed batch"):
+        expect("first guess kept after an all-fail batch", jl.next_estimate(7.7, [], 0.5), 7.7)
+        expect("none yet stays none", jl.next_estimate(None, [], 0.5), None)
+        expect("slowest clean load plus overhead", jl.next_estimate(7.7, [1.8, 2.1, 1.9], 0.5), 2.6)
+
     with check("the patch changes the three bytes after the STA and nothing else"):
         original = image()
-        patched = jl.patched_kernal(original, 61)
+        patched = jl.patched_kernal(original, 63)
         differ = [i for i, (a, b) in enumerate(zip(original, patched)) if a != b]
         start = jl.PATCH_OFFSET + 3
         expect("changed offsets", differ, [start, start + 1, start + 2])
@@ -79,7 +113,7 @@ def main() -> int:
 
     with check("the KERNAL is told apart by its patch site"):
         expect("unpatched", jl.kernal_kind(image()), "JiffyDOS")
-        expect("patched", jl.kernal_kind(jl.patched_kernal(image(), 86)),
+        expect("patched", jl.kernal_kind(jl.patched_kernal(image(), 88)),
                "JiffyDOS with the host delay patch")
         expect("no site", jl.kernal_kind(image(signatures=0)),
                "no JiffyDOS marker (stock or other)")

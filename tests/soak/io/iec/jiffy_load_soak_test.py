@@ -24,9 +24,10 @@ name of its own, runs under it and removes it again, and prints and keeps none o
 
 --host-delay CYCLES reproduces the rows of the #986 fix that slow the host on purpose. It
 needs --jiffydos-rom, patches the temporary copy so that the LOAD routine's sample of the
-bus after the drive releases DATA is CYCLES late (11 plus a multiple of 5: 61, 86 and 101
-are the rows of the table), and refuses an image whose LOAD routine is not the one the
-patch is written for. Without --jiffydos-rom the delay rows are skipped.
+bus after the drive releases DATA is CYCLES late, net (13 plus a multiple of 5: 63, 88 and 103
+are the 10, 15 and 18 pass rows that the #986 table calls 61, 86 and 101), and refuses an
+image whose LOAD routine is not the one the patch is written for. Without --jiffydos-rom the
+delay rows are skipped.
 
 --source picks where the file lives: directory, a directory of the Software IEC drive's
 partition 1, or d64, a D64 image in such a directory that the drive enters with CD.
@@ -76,7 +77,6 @@ FILE_NAME = "JIFFY986"
 DISK_NAME = "DISK.D64"
 
 # What the program leaves in C64 memory; see the header of jiffy_load_soak.asm.
-PARAMETERS = 0xC000
 HEADER = 0xC080
 FAILURES = 0xC100
 RECORDS = 0xC200
@@ -98,6 +98,12 @@ MARGIN = 1.3
 POLL_SECONDS = 10.0
 START_SECONDS = 20.0
 SHOWN_FAILURES = 12
+# Loads per --profile, as in softiec_soak_test.py, which run-tests passes the same way. Under
+# JiffyDOS a load of 16 KiB takes about 1.8 s and under the stock KERNAL about 26 s (measured
+# on an Ultimate 64 Elite), so stress is about a minute or eleven minutes and soak about
+# fifteen minutes or four hours. --iterations overrides the profile.
+PROFILE_ITERATIONS = {"stress": 25, "soak": 500}
+DEFAULT_ITERATIONS = 100
 
 
 def uci_session(args):
@@ -109,6 +115,18 @@ def uci_session(args):
                      module.BUSY_TIMEOUT_SECONDS)
     uci.release()
     return uci
+
+
+def current_partition(agent):
+    """The partition the drive is on, from G-P (255 asks for the current one), or 1."""
+    try:
+        info = agent.command_reply(b"G-P" + bytes([255]), 40)
+        if len(info) >= 3 and info[2] >= 1:
+            return info[2]
+    except Failure:
+        pass
+    detail("G-P did not say which partition the drive is on; it is put back on partition 1")
+    return 1
 
 
 def read_state(api):
@@ -145,8 +163,9 @@ class Soak:
         """One batch of loads; returns the loads that finished and whether one hung."""
         api = self.api
         api.machine.reset(force=True)
-        api.machine.writemem(PARAMETERS, jiffy_load.parameters(
-            count, self.args.device, passes, self.args.size, FILE_NAME, self.part, self.cd))
+        for address, data in jiffy_load.batch_writes(
+                count, self.args.device, passes, self.args.size, FILE_NAME, self.part, self.cd):
+            api.machine.writemem(address, data)
         api.runners.upload("run_prg", program)
         time.sleep(count * self.estimate_per_load() * MARGIN)
         deadline = time.monotonic() + self.args.load_timeout
@@ -201,18 +220,22 @@ class Soak:
                 self.tally.hangs += 1
             remaining -= len(results) + hung
             if results and not hung:
-                slowest = max(load.seconds for load in results)
-                self.estimate = (slowest + OVERHEAD_SECONDS
-                                 + OVERHEAD_SECONDS_PER_KIB * self.args.size)
+                self.estimate = jiffy_load.next_estimate(
+                    self.estimate, [load.seconds for load in results
+                                    if load.verdict(self.expected) == "clean"],
+                    OVERHEAD_SECONDS + OVERHEAD_SECONDS_PER_KIB * self.args.size)
             elif not results and not hung:
                 raise Failure("a batch finished no loads")
 
 
-def fixture(api, args, root, folder, prg):
-    """The folder in the partition's root, and the file in it or in a D64 image there."""
+def fixture(api, args, root, folder, prg, made):
+    """The folder in the partition's root, and the file in it or in a D64 image there.
+
+    `made` is called once the folder exists, so the teardown removes it only if it does."""
     directory = f"{root.rstrip('/')}/{folder}"
     with ftp.session(args.host, args.password) as client:
         client.mkd(directory)
+        made()
         if args.source == "d64":
             api.files.create_d64(f"{directory}/{DISK_NAME}", diskname="JIFFY")
             ftp.store(client, f"{directory}/{DISK_NAME}/{FILE_NAME}.PRG", prg)
@@ -225,8 +248,12 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     cli.add_device_arguments(parser)
-    parser.add_argument("--iterations", type=int, default=100,
-                        help="loads to run (default: 100)")
+    parser.add_argument("--profile", choices=("stress", "soak"),
+                        help="Kept for run-tests: stress is "
+                             f"{PROFILE_ITERATIONS['stress']} loads, soak is "
+                             f"{PROFILE_ITERATIONS['soak']} loads. --iterations overrides it.")
+    parser.add_argument("--iterations", type=int,
+                        help=f"loads to run (default: {DEFAULT_ITERATIONS}, or the --profile's)")
     parser.add_argument("--device", type=int, default=11,
                         help="bus id the Software IEC drive is given for the run (default: 11)")
     parser.add_argument("--source", choices=("directory", "d64"), default="directory",
@@ -245,7 +272,7 @@ def main():
                              "(default: 120; a 32 KiB load under the stock KERNAL takes a minute)")
     parser.add_argument("--host-delay", type=int, default=0, metavar="CYCLES",
                         help="slow the host's poll in the JiffyDOS LOAD routine by this many "
-                             "cycles, 11 plus a multiple of 5 (default: 0, none); needs "
+                             "net cycles, 13 plus a multiple of 5 (default: 0, none); needs "
                              "--jiffydos-rom")
     parser.add_argument("--jiffydos-rom", metavar="PATH",
                         help="your own JiffyDOS C64 KERNAL image: a temporary copy, patched "
@@ -256,6 +283,8 @@ def main():
     args = parser.parse_args()
     if not 1 <= args.size <= jiffy_load.MAX_KIB:
         parser.error(f"--size is 1 to {jiffy_load.MAX_KIB}")
+    if args.iterations is None:
+        args.iterations = PROFILE_ITERATIONS.get(args.profile, DEFAULT_ITERATIONS)
     if args.iterations < 1:
         parser.error("--iterations is at least 1")
     try:
@@ -286,9 +315,11 @@ def main():
     folder = "JIFFY" + uuid.uuid4().hex[:6].upper()
     prg = jiffy_load.payload(args.size, args.seed)
     expected = Expected.of(prg)
-    moved = created = False
+    moved = False
+    created = []
     added = None
     part = 1
+    found = 1
     uci = None
     saved = None
     original_path = root = None
@@ -337,6 +368,12 @@ def main():
                                f"{saved.settings[kernal.CATEGORY][kernal.COMMAND_INTERFACE_ITEM]!r}"
                                " -> 'Enabled'")
                     part = next(i for i in range(2, 100) if i not in taken)
+                    agent = Agent(api, args.device)
+                    agent.start()
+                    agent.call(OPEN, channel=15, device=args.device)
+                    found = current_partition(agent)
+                    agent.call(CLOSE, channel=15, device=args.device)
+                    detail(f"the drive is on partition {found}")
                     uci = uci_session(args)
                     command = bytes((TARGET_SOFTIEC, CMD_ADD_PARTITION, part)) + (
                         f"{PARTITION_NAME}:{args.partition_path}".encode("ascii"))
@@ -353,13 +390,14 @@ def main():
                     agent.start()
                     moved = True
                     agent.call(OPEN, channel=15, device=args.device)
+                    found = current_partition(agent)
+                    detail(f"the drive is on partition {found}")
                     agent.command(bytes((0x43, 0xD0, 1)), allowed=(0, 2))  # 02 is PARTITION SELECTED
                     agent.command("CD//")
                     root = next(p for p in iec_drive(api)["partitions"] if p["id"] == 1)["path"]
                     original_path = restorable_path(api, original_path, root)
                     agent.call(CLOSE, channel=15, device=args.device)
-                created = True
-                directory = fixture(api, args, root, folder, prg)
+                directory = fixture(api, args, root, folder, prg, lambda: created.append(True))
                 cd = f"CD//{folder}" + (f"/{DISK_NAME}" if args.source == "d64" else "")
                 detail(f"{len(prg) - 2} bytes, end ${expected.end:04X}, in {directory} "
                        f"({args.source}); {args.iterations} loads, host delay {args.host_delay} cycles")
@@ -388,16 +426,18 @@ def main():
                     agent.start()
                     agent.call(OPEN, channel=15, device=args.device)
                     agent.command("CD//" + restorable_path(api, original_path, root)[len(root):].upper())
+                    if found != 1:
+                        agent.command(bytes((0x43, 0xD0, found)), allowed=(0, 2))
                     agent.call(CLOSE, channel=15, device=args.device)
 
             def remove_partition():
                 if added is not None:
                     uci.transact(bytes((TARGET_SOFTIEC, CMD_DEL_PARTITION, added)))
-                    # Back to the partition the drive started on, as far as it is known.
+                    # Back to the partition the drive started on.
                     agent = Agent(api, args.device)
                     agent.start()
                     agent.call(OPEN, channel=15, device=args.device)
-                    agent.command(bytes((0x43, 0xD0, 1)), allowed=(0, 2))
+                    agent.command(bytes((0x43, 0xD0, found)), allowed=(0, 2))
                     agent.call(CLOSE, channel=15, device=args.device)
 
             def remove_fixture():
@@ -412,8 +452,10 @@ def main():
                 if refused:
                     raise Failure("not restored: " + "; ".join(f"{c}: {why}" for c, why in refused))
 
-            for label, action in (("remove this run's directory and put the drive's directory back",
-                                   lambda: (restore_directory(), remove_fixture(), remove_partition())),
+            for label, action in (("put the drive's directory and partition back", restore_directory),
+                                  ("remove this run's folder", remove_fixture),
+                                  ("remove this run's partition and put the drive back on its own",
+                                   remove_partition),
                                   ("restore the Software IEC settings",
                                    lambda: saved is not None and restore_settings()),
                                   ("restore the KERNAL", kernal_run.close),

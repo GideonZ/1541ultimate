@@ -31,11 +31,56 @@ PATCH_OFFSET = 0x1B06
 PATCH_SIGNATURE = bytes((0x8D, 0x00, 0xDD, 0x09, 0x20, 0xAA))
 PATCH_TAIL = 3
 DELAY_ROUTINE = 0x0340
-# The delay is a DEX/BNE loop of `passes` passes, 5 cycles each; with the fixed part this
-# is the number of cycles the PR table calls the host delay (61, 86 and 101 are 10, 15
-# and 18 passes).
+# The host delay is the NET number of cycles the patch adds to the host's LOAD routine. The
+# JSR replaces ORA #$20 / TAX, 4 cycles, and the routine at $0340 is LDX #passes (2), the
+# DEX/BNE loop (5 per pass less 1, the last BNE falling through in 2), ORA #$20 / TAX (4) and
+# RTS (6): 5 * passes + 11 for the routine, 6 for the JSR, 4 less for what it replaced, so
+# 13 + 5 * passes cycles are added. 10, 15 and 18 passes, the rows of the #986 table that
+# the PR calls 61, 86 and 101, are therefore 63, 88 and 103 cycles.
 CYCLES_PER_PASS = 5
-CYCLES_FIXED = 11
+CYCLES_FIXED = 13
+JSR_CYCLES = 6
+REPLACED_CYCLES = 4
+# The C64 program holds the routine as `delayrt` and copies it to DELAY_ROUTINE with the
+# passes in the operand of its first instruction.
+OPCODE_CYCLES = {0xA2: 2, 0xCA: 2, 0x09: 2, 0xAA: 2, 0x60: 6}
+
+
+def routine_cycles(routine: bytes, passes: int) -> int:
+    """Net cycles the patch adds, counted from the opcodes of the delay routine itself.
+
+    Walks the routine as the 6502 would: LDX #n, the DEX/BNE loop (BNE taken 3, not taken
+    2), ORA #imm, TAX, RTS; any other opcode is refused. The JSR that calls it is added and
+    the ORA/TAX it replaces taken off.
+    """
+    total = JSR_CYCLES - REPLACED_CYCLES
+    x = passes & 0xFF
+    pc = 0
+    while True:
+        opcode = routine[pc]
+        if opcode == 0xA2:                      # LDX #imm
+            x = passes & 0xFF
+            total += 2
+            pc += 2
+        elif opcode == 0xCA:                    # DEX
+            x = (x - 1) & 0xFF
+            total += 2
+            pc += 1
+        elif opcode == 0xD0:                    # BNE rel
+            offset = routine[pc + 1] - 256 if routine[pc + 1] > 127 else routine[pc + 1]
+            if x:
+                total += 3
+                pc += 2 + offset
+            else:
+                total += 2
+                pc += 2
+        elif opcode in (0x09, 0xAA, 0x60):
+            total += OPCODE_CYCLES[opcode]
+            pc += 2 if opcode == 0x09 else 1
+            if opcode == 0x60:
+                return total
+        else:
+            raise ValueError(f"opcode ${opcode:02X} is not one the delay routine uses")
 
 
 class RomRefused(ValueError):
@@ -144,6 +189,34 @@ def parameters(count: int, device: int, passes: int, kib: int, name: str, partit
     block[0x20] = len(command)
     block[0x21:0x21 + len(command)] = command
     return bytes(block)
+
+
+PARAMETERS_ADDRESS = 0xC000
+# Everything the host reads back: the header and status lines from $C080, the failure texts
+# and the records, up to the last record of a full batch.
+RESULTS_ADDRESS = 0xC080
+RESULTS_END = 0xC200 + MAX_BATCH * RECORD_SIZE
+
+
+def batch_writes(count: int, device: int, passes: int, kib: int, name: str, partition: int,
+                 cd: str) -> list[tuple[int, bytes]]:
+    """The memory writes that start a batch, in order: the results region zeroed first, so
+    that a program that never starts leaves nothing a stale DONE flag or record could be
+    counted from, then the parameters."""
+    return [(RESULTS_ADDRESS, bytes(RESULTS_END - RESULTS_ADDRESS)),
+            (PARAMETERS_ADDRESS, parameters(count, device, passes, kib, name, partition, cd))]
+
+
+def next_estimate(previous: float | None, clean_seconds: list[float], overhead: float) -> float | None:
+    """The per-load time to wait for, from the loads of a batch that were clean.
+
+    A load that failed ends at its first chunk, in no time at all, and says nothing about
+    how long a load takes, so only clean loads count. A batch with none leaves the estimate
+    as it was, which is the first guess until a clean load has been timed.
+    """
+    if not clean_seconds:
+        return previous
+    return max(clean_seconds) + overhead
 
 
 def _bcd(value: int) -> int:

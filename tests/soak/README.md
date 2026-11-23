@@ -57,7 +57,8 @@ tests/soak/network/listener_soak_test.py -H u64 -p PASSWORD
 # ~2 min: page-key jumps and field clears, checked against a known listing.
 tests/soak/filemanager/menu_navigation_soak_test.py -H u2@c64u
 
-# ~4 min: 100 LOADs of a 16 KiB file under the KERNAL the device runs, each checked.
+# 100 LOADs of a 16 KiB file under the KERNAL the device runs, each checked: about 3 min
+# under JiffyDOS (1.8 s a load), about 45 min under the stock KERNAL (26 s a load).
 tests/soak/io/iec/jiffy_load_soak_test.py -H u64 --iterations 100
 ```
 
@@ -149,17 +150,21 @@ other)`. `--kernal` and `--command-interface` work as in the other suites.
 # JiffyDOS or stock, whatever the device runs: 100 loads from a directory of partition 1.
 tests/soak/io/iec/jiffy_load_soak_test.py -H u64 --iterations 100
 
+# What run-tests runs: --profile stress is 25 loads (about 45 s under JiffyDOS, 11 min
+# under the stock KERNAL), --profile soak is 500 (15 min, 3.6 h). --iterations overrides it.
+tests/soak/io/iec/jiffy_load_soak_test.py -H u64 --profile stress
+
 # The same from a D64 image, 8 KiB files, on bus id 10.
 tests/soak/io/iec/jiffy_load_soak_test.py -H u64 --source d64 --size 8 --device 10
 
 # Under your own JiffyDOS C64 KERNAL (a temporary copy is uploaded and removed again).
 tests/soak/io/iec/jiffy_load_soak_test.py -H u64 --jiffydos-rom ~/roms/JiffyDOS_C64.bin
 
-# The host delay rows of PR #1130: the host's poll after the drive releases DATA is
-# 61, 86 or 101 cycles late. On firmware with the 50 us window the 61 cycle row is the
-# one that fails.
+# The host delay rows of PR #1130: the host's first sample after the drive releases DATA is
+# 63, 88 or 103 cycles late, net (the PR table calls them 61, 86 and 101). The red/green row
+# is below.
 tests/soak/io/iec/jiffy_load_soak_test.py -H u64 --jiffydos-rom ~/roms/JiffyDOS_C64.bin \
-  --host-delay 61 --iterations 100
+  --host-delay 63 --partition-path /USB1/jd986_scratch --iterations 100
 ```
 
 JiffyDOS is licensed and no image is shipped. `--jiffydos-rom PATH` names your own: the
@@ -168,8 +173,11 @@ uploads that to the device's ROM directory for the run and removes both afterwar
 prints or keeps the bytes. The patch replaces one `ORA #$20 / TAX` pair in the LOAD routine
 with a call to a short delay loop, and it is applied only to an image that is 8192 bytes and
 holds that routine's code at one place, offset `$1B06`; any other image is refused. Without
-`--jiffydos-rom`, `--host-delay` skips with a message. A delay is `11 + 5 * n` cycles, for
-a loop of `n` passes: 61, 86 and 101 are the rows of the PR table.
+`--jiffydos-rom`, `--host-delay` skips with a message. The option is the net number of
+cycles added: the call replaces `ORA #$20 / TAX` (4 cycles) and the routine costs `5 * n + 11`
+plus the 6 of the JSR, so a loop of `n` passes adds `13 + 5 * n`. The PR table's rows of 10, 15
+and 18 passes, which it calls 61, 86 and 101, are 63, 88 and 103 here; `jiffy_load_test.py`
+counts the cycles from the routine's own opcodes.
 
 The suite sets `IEC Drive` to `Enabled` and `Soft Drive Bus ID` to `--device`, selects
 partition 1, and builds a folder with the file in partition 1's root. It records the
@@ -186,6 +194,24 @@ builds its folder there, and removes the partition and the folder when it ends. 
 exist, and the suite writes only the one folder under it. Do not
 open the Ultimate menu while it runs: that freezes the C64 mid-load, which breaks a serial
 LOAD without any firmware defect (`--help` and the Safety section apply).
+
+### The red/green row for #986
+
+The `jiffy-load-soak` entry of `run-tests` is a plain JiffyDOS/SoftIEC LOAD soak, whatever
+KERNAL is installed, with the file in partition 1. It checks that LOAD works over many loads and
+**cannot** tell the fixed firmware from the unfixed: it passes on both, so do not read it as a
+guard for #986. The row that can is run by hand:
+
+```sh
+tests/soak/io/iec/jiffy_load_soak_test.py -H u64 --jiffydos-rom ~/roms/JiffyDOS_C64.bin \
+  --host-delay 63 --partition-path /USB1/jd986_scratch --iterations 100
+```
+
+with the file on a USB (or other non-RAM-disk) partition through `--partition-path`, a
+`--host-delay` and `--jiffydos-rom`. It is expected to fail on firmware with the 50 us window and to
+pass with 100 us. From the `/Temp` RAM disk the delay row passes on both, because the drive
+answers late there: the failures are at the first chunk of a LOAD, where the load ends at
+the load address, and only when the drive answers before the host samples the bus.
 
 ### What a result looks like
 

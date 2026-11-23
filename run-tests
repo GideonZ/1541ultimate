@@ -721,12 +721,13 @@ SUITES: Sequence[Suite] = (
     # tests/soak/README.md for --mode and the per-phase durations.
     Suite("soak", "softiec-soak", "tests/soak/io/iec/softiec_soak_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --profile @SOAKPROFILE@ @KERNAL@"),
-    # LOAD from the Software IEC drive over and over under whatever KERNAL the device runs,
-    # with the status, error channel, end address and a checksum of every load checked (#986).
-    # About two minutes under JiffyDOS and a quarter of an hour under the stock KERNAL; the host
-    # delay rows need the user's own JiffyDOS image and are run by hand. See tests/soak/README.md.
+    # JiffyDOS/SoftIEC LOAD soak: LOAD from the Software IEC drive over and over under whatever
+    # KERNAL the device runs, each load checked for status, error channel, end address and
+    # content. From partition 1 (the Temp RAM disk on some machines) this is a general LOAD
+    # soak and cannot catch #986; the red/green row needs a USB partition and the user's own
+    # JiffyDOS image, and is run by hand. See tests/soak/README.md.
     Suite("soak", "jiffy-load-soak", "tests/soak/io/iec/jiffy_load_soak_test.py",
-          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --iterations 25 @KERNAL@"),
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --profile @SOAKPROFILE@ @KERNAL@"),
 )
 
 
