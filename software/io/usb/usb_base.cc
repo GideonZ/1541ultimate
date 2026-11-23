@@ -5,6 +5,7 @@ extern "C" {
 }
 #include "usb_base.h"
 #include "usb_device.h"
+#include "usb_bot_policy.h"
 #include "task.h"
 #include "profiler.h"
 #include "endianness.h"
@@ -867,6 +868,7 @@ int  UsbBase :: bulk_in(struct t_pipe *pipe, void *buf, int len, int timeout, in
 		uint16_t result = complete_command(timeout);
 
 		int transferred = current_len - descr->length;
+		uint16_t toggle_before = pipe->Command & URES_TOGGLE;
 	    if (pipe->debugMode)
 	    	printf("Command completion: Result: %4x Command: (%4x)\n", result, descr->command);
 
@@ -899,8 +901,13 @@ int  UsbBase :: bulk_in(struct t_pipe *pipe, void *buf, int len, int timeout, in
 		// A packet shorter than requested ends a transfer. Callers that know the exact length they need
 		// (the BOT status phase) take the short count and decide, rather than waiting for the rest.
 		// Only a packet that arrived counts: a NAK timeout moves nothing and is handled by the retries above.
-		if (stop_on_short && ((result & URES_RESULT_MSK) == URES_PACKET) && (transferred < current_len))
+		// A packet the controller discarded as a duplicate (toggle unchanged, nothing stored) is not an answer: poll again.
+		bool is_packet = ((result & URES_RESULT_MSK) == URES_PACKET);
+		uint16_t toggle_after = pipe->Command & URES_TOGGLE;
+		if (stop_on_short && bot_in_stop_on_short(is_packet, toggle_before, toggle_after, transferred, current_len))
 			break;
+		if (stop_on_short && is_packet && (toggle_before == toggle_after) && (transferred < current_len))
+			printf("%s IN toggle discard\n", pipe->name);
 	} while (len > 0);
 
     // printf("Bulk in done: %d\n", total_trans);
