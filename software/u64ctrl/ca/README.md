@@ -1,10 +1,24 @@
 # Root list for u64ctrl's network recovery
 
-`cacert.pem` is curl's copy of Mozilla's root list of 2026-10-20 (118 roots), unmodified; its sha256 is pinned in
-`tests/lib/u64ctrl_ca_test.py` (`CACERT_SHA256`, the value curl publishes next to the file). u64ctrl's recovery trusts it
+`cacert.pem` is curl's copy of Mozilla's root list of 2026-11-05 (112 roots) without the roots in `REMOVED`
+(see below); its sha256 is pinned in `tests/lib/u64ctrl_ca_test.py` (`CACERT_SHA256`). u64ctrl's recovery trusts it
 instead of ESP-IDF 5.3.1's list, which still holds `emSign ECC Root CA - G3` (removed after the eMudhra key
 compromise) and `emSign Root CA - C1` and `emSign ECC Root CA - C3` (removed in the same NSS release).
 `emSign Root CA - G1` stays, because Mozilla still ships it.
+
+## Roots curl still ships
+
+curl builds its file from Mozilla's release branch, which lags NSS master. `REMOVED` in the test also names roots
+that master has deleted (Buypass Class 2 and 3), no longer trusts for websites (QuoVadis Root CA 1 G3 and 3 G3,
+Certigna Root CA) or distrusts after a date that has made all their certificates expire (Izenpe.com, whose
+certificates issued before 2026-04-15 are all expired, because TLS certificates are capped at 200 days since
+2026-03-15). `refresh.py` cuts them out of curl's file, and everything else stays curl's, byte for byte. Delete a
+line of `REMOVED` once curl's file no longer holds the root.
+
+`DISTRUST_AFTER` lists the roots Mozilla trusts only for certificates issued before a date (Firmaprofesional,
+emSign Root CA - G1, DigiCert Trusted Root G4). mbedTLS cannot apply the date, so these also accept later
+certificates. They stay while a certificate issued before the date can still be valid, which is the date plus 200
+days (`MAX_CERT_DAYS`); the test fails after that, and the line moves to `REMOVED`.
 
 ## Chains
 

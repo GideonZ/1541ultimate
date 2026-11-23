@@ -243,8 +243,22 @@
 /**
  * MEMP_NUM_SYS_TIMEOUT: the number of simulateously active timeouts.
  * (requires NO_SYS==0)
+ * An empty pool stops the caller: sys_timeout() asserts, and the assert spins for ever in the
+ * calling task. mDNS input and the lwIP timers call it from the tcpip thread, which holds the
+ * core lock, so then the stack stops. The worst case, counted from the sources:
+ *   6  lwIP's own: TCP (while a pcb is active), ARP, DHCP coarse and fine, IGMP, DNS
+ *      (opt.h LWIP_NUM_SYS_TIMEOUT_INTERNAL; no IPv6, ACD or reassembly)
+ *   2  SNTP: sntp_request (next poll or retry) and sntp_try_next_server (receive timeout)
+ *   4  truncated mDNS questions: mdns.c arms one timer for each stored TC question, capped by
+ *      MDNS_MAX_STORED_PKTS (4); this part depends on mDNS traffic from other hosts
+ *   6  per netif, mDNS: probe_and_announce, the three multicast rate limit timers and the
+ *      delayed unicast and multicast responses (mdns_out.c, mdns.c)
+ * 12 + 6N for N netifs: 18, 24, 30, 36 for N = 1..4 (Ethernet, WiFi, a USB NIC, a second USB NIC;
+ * nothing caps the USB NICs). 36 is the bound for four; a fifth needs 42. The count assumes no
+ * interface restart in the last 30 s: after a WiFi restart or a USB re-plug up to five timers of
+ * the old mDNS netif can still be armed. io/network/tests, timeout-pool.
  */
-#define MEMP_NUM_SYS_TIMEOUT            16
+#define MEMP_NUM_SYS_TIMEOUT            36
 
 /**
  * MEMP_NUM_NETBUF: the number of struct netbufs.
