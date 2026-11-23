@@ -493,7 +493,8 @@ retry:
             csw_in_data = true;
             // Status 0 with no residue and data still missing, after the one retry: the device lies. An invalid
             // status, which takes the usual fault path (Reset Recovery once, then the unit fails).
-            st = (csw[12] == 0 && bot_le32(csw + 8) == 0) ? -1 : csw[12];
+            // Status 2 (phase error) takes the fault path too: BOT 6.7 wants a Reset Recovery.
+            st = ((csw[12] == 0 && bot_le32(csw + 8) == 0) || (csw[12] == 2)) ? -1 : csw[12];
             len -= 13;
             retval = len;
         }
@@ -550,7 +551,8 @@ void UsbScsi :: inquiry(void)
     strncpy(disp_name, driver->getDevice()->product, 31);
 
     uint8_t inquiry_command[6] = { 0x12, 0, 0, 0, 36, 0 };
-    if((len = driver->exec_command(lun, 6, false, inquiry_command, 36, response, false)) < 0) {
+    // a reply shorter than 36 bytes (a CSW alone, say) leaves response unset: a failure
+    if(((len = driver->exec_command(lun, 6, false, inquiry_command, 36, response, false)) < 0) || (len < 36)) {
         printf("Inquiry failed. %d\n", len);
     	//initialized = false; // don't try again
     	return;

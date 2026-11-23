@@ -2,6 +2,7 @@
 #define USB_BOT_POLICY_H
 
 #include <stdint.h>
+#include <string.h>
 
 // Bulk-Only Transport: when does a failed status phase get a Reset Recovery and one more attempt?
 // Only after a FAST protocol fault (a short or invalid CSW), once per command. An attempt that already
@@ -38,17 +39,35 @@ static inline bool bot_retry_after_status_fault(int status, bool already_recover
     return (status < 0) && !already_recovered && (elapsed_ms < c_bot_fast_fault_ms) && (opcode != c_scsi_inquiry) && !data_out;
 }
 
-// Bulk IN: a packet shorter than requested ends a transfer, but only when the packet was accepted (the data toggle
-// flipped). A packet the controller discarded as a duplicate (toggle unchanged, nothing stored) says nothing about the
-// device: the caller must poll again.
-static inline bool bot_in_stop_on_short(bool packet, uint16_t toggle_before, uint16_t toggle_after, int transferred, int requested)
+// Bulk IN: a packet shorter than requested ends a transfer, but only when the packet was accepted. A packet the
+// controller discarded as a duplicate (toggle not flipped, nothing stored) says nothing about the device: the caller
+// must poll again.
+// One nano command moves many packets and flips the data toggle once per accepted packet (nano_minimal.nan, _in_success
+// to _next_in_chunk), so the toggle only tells the parity of the accepted packets. The pass ends on the first packet
+// that is not full: a short packet (accepted), a zero length packet (accepted) or a duplicate (discarded: length 0).
+// transferred is therefore k full packets plus the last one's bytes, k = transferred / mps, and the last packet is
+// number k + 1. Accepted packets: k + 1, or k when the last one was discarded. The toggle changed iff that is odd.
+// A transferred count that is not a multiple of mps was always an accepted short packet (a discard stores nothing).
+static inline bool bot_in_last_accepted(uint16_t toggle_before, uint16_t toggle_after, int transferred, int mps)
 {
-    return packet && (transferred < requested) && (toggle_before != toggle_after);
+    if (mps <= 0)
+        return toggle_before != toggle_after;
+    if (transferred % mps)
+        return true;
+    bool changed = (toggle_before != toggle_after);
+    bool odd_packet = ((transferred / mps + 1) & 1) != 0;
+    return changed == odd_packet;
+}
+
+static inline bool bot_in_stop_on_short(bool packet, uint16_t toggle_before, uint16_t toggle_after, int transferred, int requested, int mps)
+{
+    return packet && (transferred < requested) && bot_in_last_accepted(toggle_before, toggle_after, transferred, mps);
 }
 
 // A device may end the data phase early and send the CSW in place of the missing data. The host then has taken the CSW
 // for data and must not read a status that is already gone. The last 13 bytes of a short data phase are a CSW when they
-// carry the signature "USBS" and the tag of this command (little endian).
+// carry the signature "USBS" and the tag of this command. The tag is compared as raw bytes, as the device echoes the bytes
+// of the CBW, so the byte order of the host does not matter.
 //   e_tail_not_csw:    the short data is data; read the status phase as usual.
 //   e_tail_retry_read: a CSW with status 0 and residue 0, but bytes are missing. The device claims success while it
 //                      delivered less than it was asked for, and it is in step (its status was sent): issue the
@@ -67,7 +86,7 @@ static inline BotShortTail bot_short_data_tail(const uint8_t *data, int received
     if ((received < 13) || (received >= requested))
         return e_tail_not_csw;
     const uint8_t *csw = data + received - 13;
-    if ((bot_le32(csw) != 0x53425355) || (bot_le32(csw + 4) != tag))
+    if ((bot_le32(csw) != 0x53425355) || (memcmp(csw + 4, &tag, 4) != 0))
         return e_tail_not_csw;
     uint32_t residue = bot_le32(csw + 8);
     if ((csw[12] == 0) && (residue == 0) && !already_retried)

@@ -904,9 +904,9 @@ int  UsbBase :: bulk_in(struct t_pipe *pipe, void *buf, int len, int timeout, in
 		// A packet the controller discarded as a duplicate (toggle unchanged, nothing stored) is not an answer: poll again.
 		bool is_packet = ((result & URES_RESULT_MSK) == URES_PACKET);
 		uint16_t toggle_after = pipe->Command & URES_TOGGLE;
-		if (stop_on_short && bot_in_stop_on_short(is_packet, toggle_before, toggle_after, transferred, current_len))
+		if (stop_on_short && bot_in_stop_on_short(is_packet, toggle_before, toggle_after, transferred, current_len, descr->maxTrans))
 			break;
-		if (stop_on_short && is_packet && (toggle_before == toggle_after) && (transferred < current_len))
+		if (stop_on_short && is_packet && (transferred < current_len) && !bot_in_last_accepted(toggle_before, toggle_after, transferred, descr->maxTrans))
 			printf("%s IN toggle discard\n", pipe->name);
 	} while (len > 0);
 
