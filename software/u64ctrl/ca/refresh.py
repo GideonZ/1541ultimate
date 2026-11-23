@@ -5,8 +5,9 @@
 
 Downloads curl's cacert.pem and the sha256 curl publishes next to it (HTTPS only, into memory), and changes
 nothing in the tree unless every check passes: the hash matches, the file is PEM with at least MIN_ROOTS roots,
-it holds the roots the recovery needs and none Mozilla removed, and both built-in recovery servers verify against
-it (`openssl s_client -CAfile`, and the last certificate a server sends must be issued by a root of the list,
+it holds the roots the recovery needs once the roots in REMOVED (which curl may still ship) are cut out, and both
+built-in recovery servers verify against it (`openssl s_client -CAfile`, and the last certificate a server sends
+must be issued by a root of the list,
 because mbedTLS builds no path). Then it replaces cacert.pem and updates the pinned sha256 in
 tests/lib/u64ctrl_ca_test.py and the date in ca/README.md. It prints the roots added and removed; add the removed
 ones to REMOVED in the test, and bump IDENT_MINOR in main/rpc_dispatch.h. Nothing downloaded is executed.
@@ -83,6 +84,28 @@ def header_date(text):
     if not match:
         raise RefreshError("the file has no 'Certificate data from Mozilla as of' header")
     return datetime.datetime.strptime(f"{match.group(1)} {match.group(2)}", "%b %d %Y").date()
+
+
+BLOCK = re.compile(r"^\S[^\n]*\n=+\n(?:#[^\n]*\n)*-----BEGIN CERTIFICATE-----.*?-----END CERTIFICATE-----\n\n?",
+                   re.MULTILINE | re.DOTALL)
+
+
+def drop_removed(text, ca):
+    """(text without the roots in REMOVED, [names of the roots dropped]).
+
+    curl builds its file from Mozilla's release branch, which lags NSS master: a root deleted from master, or one
+    that lost its Websites trust bit there, stays in curl's file for a release or more. REMOVED names them, and they
+    are cut out here, block by block, so the rest of the file stays curl's, byte for byte.
+    """
+    dropped = []
+
+    def keep(match):
+        found = ca.fingerprints(match.group(0)) & set(ca.REMOVED.values())
+        if found:
+            dropped.append(match.group(0).split("\n", 1)[0])
+        return "" if found else match.group(0)
+
+    return BLOCK.sub(keep, text), dropped
 
 
 def servers(root):
@@ -171,14 +194,15 @@ def refresh(root=ROOT, get=fetch, verify_server=check_server, out=sys.stdout):
     published = re.match(r"\s*([0-9a-f]{64})\b", get(URL + ".sha256").decode("ascii", "replace"))
     if not published or hashlib.sha256(data).hexdigest() != published.group(1):
         raise RefreshError("the downloaded cacert.pem does not match the sha256 curl publishes")
-    new_hash = published.group(1)
     try:
         text = data.decode("utf-8")
     except UnicodeDecodeError as error:
         raise RefreshError("the downloaded file is not UTF-8 text") from error
+    text, dropped = drop_removed(text, ca)
     problems = ca.list_problems(text)
     if problems:
         raise RefreshError("the downloaded list is not usable: " + "; ".join(problems))
+    new_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()  # of the file as committed, without REMOVED
     date = header_date(text)
 
     with open(pem_path, "rb") as handle:
@@ -192,7 +216,9 @@ def refresh(root=ROOT, get=fetch, verify_server=check_server, out=sys.stdout):
     if changed and too_old:
         raise RefreshError(f"the download {too_old}")
     print(f"downloaded cacert.pem of {date}, {len(new)} roots, sha256 {new_hash}", file=out)
-    for fp in sorted(set(old) - set(new), key=old.get):
+    for name in dropped:
+        print(f"dropped: {name}  (in REMOVED; curl still ships it)", file=out)
+    for fp in sorted(set(old) - set(new) - set(ca.REMOVED.values()), key=old.get):
         print(f"removed: {old[fp]}  (add {fp} to REMOVED)", file=out)
     for fp in sorted(set(new) - set(old), key=new.get):
         print(f"added:   {new[fp]}", file=out)

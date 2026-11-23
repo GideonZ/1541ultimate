@@ -529,11 +529,9 @@ void ControlTarget :: save_u64_memory(Message *command)
         printf("Opened file successfully.\n");
 
         uint8_t *dest = new uint8_t[65536];
-        portENTER_CRITICAL();
-        C64_DMA_MEMONLY = 1;
-        memcpy(dest, (const void *)C64_MEMORY_BASE, 65536);
-        C64_DMA_MEMONLY = 0;
-        portEXIT_CRITICAL();
+        // The same copy as "Save C64 Memory": the machine is stopped for it, so the 64K are one
+        // moment of the C64 and the C64 raises no interrupt while the scheduler is suspended.
+        C64 :: getMachine()->get_all_memory(dest);
         uint32_t bytes_written;
 
         res = f->write(dest, 0x10000, &bytes_written);

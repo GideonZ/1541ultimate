@@ -2620,6 +2620,9 @@ volatile uint8_t *U64Config :: access_socket_pre(int socket)
 {
     C64 *machine = C64 :: getMachine();
 
+    // Taken before the critical section, which cannot block. It stays held until access_socket_post
+    // so that the stop and the resume below are never inside a freeze or an unfreeze.
+    machine->lock_ownership();
     portENTER_CRITICAL();
     S_SetupDetectionAddresses();
 
@@ -2649,6 +2652,7 @@ void U64Config :: access_socket_post(int socket)
     }
 
     portEXIT_CRITICAL();
+    machine->unlock_ownership();
 }
 
 void U64Config :: clear_ram()
