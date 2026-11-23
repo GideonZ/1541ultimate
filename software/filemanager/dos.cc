@@ -111,6 +111,10 @@ void Dos::parse_command(Message *command, Message **reply, Message **status) {
         break;
     case DOS_CMD_OPEN_FILE:
         command->message[command->length] = 0;
+        if (file) { // a second OPEN replaces the first: close it, or the handle stays open and locked
+            fm->fclose(file);
+            file = NULL;
+        }
         res = fm->fopen(path, (char *) &command->message[3],
                 command->message[2], &file);
         *reply = &c_message_empty;
@@ -594,12 +598,11 @@ void Dos::parse_command(Message *command, Message **reply, Message **status) {
                }
                
                char* filename = (char *) &command->message[3];
-               FileInfo* ffi = new FileInfo(INFO_SIZE);
+               FileInfo fileinfo(INFO_SIZE);
                FileManager *fm = FileManager :: getFileManager();
-               FRESULT res = fm->fstat(path, filename, *ffi);
+               FRESULT res = fm->fstat(path, filename, fileinfo);
                if (res != FR_OK) {
                    *status = &c_status_file_not_found;
-                   delete ffi;
                    break;
                }
                uint8_t* reu = (uint8_t *)(REU_MEMORY_BASE);
@@ -609,18 +612,17 @@ void Dos::parse_command(Message *command, Message **reply, Message **status) {
                // TPDO: Check extension
                
                int actType = 0;
-               printf("DEBUG: Extension: %s\n", ffi->extension);
-               if(strcmp(ffi->extension, "D64")==0) actType = 1541;
-               if(strcmp(ffi->extension, "D71")==0) actType = 1571;
-               if(strcmp(ffi->extension, "D81")==0) actType = 1581;
-               if(strcmp(ffi->extension, "DNP")==0) actType = DRVTYPE_MP3_DNP;
+               printf("DEBUG: Extension: %s\n", fileinfo.extension);
+               if(strcmp(fileinfo.extension, "D64")==0) actType = 1541;
+               if(strcmp(fileinfo.extension, "D71")==0) actType = 1571;
+               if(strcmp(fileinfo.extension, "D81")==0) actType = 1581;
+               if(strcmp(fileinfo.extension, "DNP")==0) actType = DRVTYPE_MP3_DNP;
                
                bool ok = actType == ftype;
                if (!ok)
                 {
                    printf("DEBUG1: Wrong type, actual = %i, ex�ectted = %i\n", actType, ftype);
                    *status = &c_status_incompatible_image;
-                   delete ffi;
                    break;
                }
                
@@ -629,26 +631,23 @@ void Dos::parse_command(Message *command, Message **reply, Message **status) {
                if (ftype == 1571) expSize = 2*174848;
                if (ftype == 1581) expSize = 819200;
                if (ftype == DRVTYPE_MP3_DNP)  expSize = C64 :: getSizeOfMP3NativeRamdrive(drvNo);
-               int actSize = ffi->size;
+               int actSize = fileinfo.size;
                if ((expSize != actSize) && (ftype == DRVTYPE_MP3_DNP)) 
                {
                    printf("DEBUG1: Expected Size: %i, Actual Size: %i\n", expSize, actSize);
                    *status = &c_status_incompatible_image;
-                   delete ffi;
                    break;
                }
                if (expSize > 12*1024*1024)
                 {
                    printf("DEBUG1: Expected Size: %i too large\n", expSize);
                    *status = &c_status_incompatible_image;
-                   delete ffi;
                    break;
                }
 
                if (ramBase > 0x40)
                 {
                    *status = &c_status_incompatible_image;
-                   delete ffi;
                    break;
                }
                
@@ -676,7 +675,6 @@ void Dos::parse_command(Message *command, Message **reply, Message **status) {
                else
                {
                    *status = &c_status_internal_error;
-                   delete ffi;
                    break;
                }
                
@@ -692,7 +690,7 @@ void Dos::parse_command(Message *command, Message **reply, Message **status) {
 
                char* filename = (char *) &command->message[3];
                FileManager *fm = FileManager :: getFileManager();
-               char extension[3];
+               char extension[4];
                get_extension(filename, extension);
                
                int actType = 1;
@@ -712,7 +710,6 @@ void Dos::parse_command(Message *command, Message **reply, Message **status) {
                 {
                    printf("DEBUG1: Wrong type, actual = %i, ex�ectted = %i\n", actType, ftype);
                    *status = &c_status_incompatible_image;
-                   delete ffi;
                    break;
                }
 
@@ -726,14 +723,12 @@ void Dos::parse_command(Message *command, Message **reply, Message **status) {
                 {
                    printf("DEBUG1: Expected Size: %i too large\n", expSize);
                    *status = &c_status_incompatible_image;
-                   // delete ffi;
                    break;
                }
 
                if (ramBase > 0x40)
                 {
                    *status = &c_status_incompatible_image;
-                   // delete ffi;
                    break;
                }
                
@@ -756,7 +751,6 @@ void Dos::parse_command(Message *command, Message **reply, Message **status) {
                else
                {
                    *status = &c_status_internal_error;
-                   // delete ffi;
                    break;
                }
             }
@@ -802,6 +796,7 @@ void Dos::get_more_data(Message **reply, Message **status) {
             strcpy((char *) status_message.message,
                     FileSystem::get_error_string(res));
             status_message.length = strlen((char *) status_message.message);
+            *status = &status_message;
         } else {
             *status = &c_message_empty;
         }
@@ -837,4 +832,14 @@ void Dos::get_more_data(Message **reply, Message **status) {
 
 void Dos::abort(int a) {
     dos_state = e_dos_idle;
+}
+
+void Dos::c64_reset(void) {
+    // the program that opened the file is gone
+    if (file) {
+        fm->fclose(file);
+        file = NULL;
+    }
+    dos_state = e_dos_idle;
+    cleanupDirectory();
 }

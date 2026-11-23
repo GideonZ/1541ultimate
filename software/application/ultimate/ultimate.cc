@@ -92,7 +92,10 @@ extern "C" void ultimate_main(void *a)
 
 	puts("Executing init functions.");
 	InitFunction :: executeAll();
-    custom_outbyte = syslog.init(syslog_bufsize) ? outbyte_log_syslog : outbyte_log;
+    // The syslog follows its setting at runtime, so it is always in the output path;
+    // while it is off, charout() ignores the character.
+    syslog.init(syslog_bufsize);
+    custom_outbyte = outbyte_log_syslog;
    
     printf("%s ", rtc.get_long_date(time_buffer, 32));
     printf("%s\n", rtc.get_time_string(time_buffer, 32));
