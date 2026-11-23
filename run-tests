@@ -182,6 +182,8 @@ SUITES: Sequence[Suite] = (
     # Also needs no device: the SoftIEC soak's log correlation, against lines the device
     # wrote on the bench. A wrong verdict there reads as a firmware defect.
     Suite("e2e", "softiec-log", "tests/soak/io/iec/softiec_log_test.py", "", profile=profiles.QUICK),
+    # Also needs no device: the JiffyDOS LOAD soak's host delay patch, checksums and verdicts.
+    Suite("e2e", "jiffy-load", "tests/soak/io/iec/jiffy_load_test.py", "", profile=profiles.QUICK),
     # Also needs no device: which keys go out for a machine that reads 'w',
     # 'a', 's' and 'd' as cursor keys is decided before anything reaches the
     # device. A C64 Ultimate ships with that reading, and getting it wrong
@@ -719,6 +721,12 @@ SUITES: Sequence[Suite] = (
     # tests/soak/README.md for --mode and the per-phase durations.
     Suite("soak", "softiec-soak", "tests/soak/io/iec/softiec_soak_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --profile @SOAKPROFILE@ @KERNAL@"),
+    # LOAD from the Software IEC drive over and over under whatever KERNAL the device runs,
+    # with the status, error channel, end address and a checksum of every load checked (#986).
+    # About two minutes under JiffyDOS and a quarter of an hour under the stock KERNAL; the host
+    # delay rows need the user's own JiffyDOS image and are run by hand. See tests/soak/README.md.
+    Suite("soak", "jiffy-load-soak", "tests/soak/io/iec/jiffy_load_soak_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --iterations 25 @KERNAL@"),
 )
 
 

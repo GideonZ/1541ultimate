@@ -19,6 +19,7 @@ and run only when `--soak` or `--all` asks for them.
 | `filemanager/browser_refresh_leak_test.py` | The filesystem-refresh matrix, which needs a browser open on a directory while its contents change |
 | `filemanager/mount_cache_leak_test.py` | Entering one disk image after another, which mounts each one and holds the image file open |
 | `io/iec/softiec_soak_test.py` | The Software IEC drive driven from the C64 over the real bus while REST and FTP load the device (#877). `--mode` selects a realistic C64 OS soak, a hostile stress that edge-tests the command channel, OPEN names, x00 files, channels, transfers, direct access, the disk image types, the UCI target and the PC lanes racing the bus, or `both` in turn. `--log` runs each phase with logging off, on, both in turn, or toggled during the phase, and correlates the device's syslog against every command, open and close the suite made; `--syslog-spool` names a file an external collector writes, and without it the suite binds the UDP port the device's syslog setting names when it points at this host. Fails if the firmware stops answering, if fixture data read back differs, if the heap does not come back, or if the log contradicts what the suite did; `--profile stress` runs the stress mode for ten minutes and `--profile soak` runs the soak mode for four hours, both with logging off. The log rendering and correlation live in the sibling module `softiec_log.py` |
+| `io/iec/jiffy_load_soak_test.py` | LOAD from the Software IEC drive by a C64 program, again and again, with the status, error channel, end address and a checksum of every load checked (#986). Optionally slows the JiffyDOS host on purpose to reproduce the failing rows. The report arithmetic is in the sibling `jiffy_load.py`, checked device-free by `jiffy_load_test.py` |
 
 The heap suites all read `GET /v1/machine:heap`. Firmware predating that
 endpoint answers 404 and their checks skip, so they are safe to run against any
@@ -55,6 +56,9 @@ tests/soak/network/listener_soak_test.py -H u64 -p PASSWORD
 
 # ~2 min: page-key jumps and field clears, checked against a known listing.
 tests/soak/filemanager/menu_navigation_soak_test.py -H u2@c64u
+
+# ~4 min: 100 LOADs of a 16 KiB file under the KERNAL the device runs, each checked.
+tests/soak/io/iec/jiffy_load_soak_test.py -H u64 --iterations 100
 ```
 
 ## Choosing the injected-key drain
@@ -124,6 +128,85 @@ set -o pipefail
 tests/soak/network/connection_test.py --profile stress -H u64 2>&1 \
   | tee "logs/soak/u64-network-$(date -u +%Y%m%dT%H%M%SZ).log"
 ```
+
+## JiffyDOS LOAD soak
+
+`io/iec/jiffy_load_soak_test.py` formalises the evidence of PR #1130 for #986: an
+intermittent `?LOAD ERROR` with JiffyDOS on the Software IEC drive, ST=66 while the error
+channel stays at `00, OK`. A small C64 program (`io/iec/jiffy_load_soak.asm`, assembled
+from source when the suite starts, nothing binary is committed) LOADs one file with the
+KERNAL's own LOAD, `--iterations` times. After each load it records ST and carry, the
+error channel, the end address and a checksum of what arrived, over a load area it filled
+with a pattern first, so a load that stops short and reports success cannot pass. The host
+reads C64 memory only between batches of at most 100 loads: a memory read halts the 6510,
+and one that lands in a serial transfer spoils it.
+
+The suite runs under the KERNAL the device has, whatever it is, and reports which it
+found: `JiffyDOS`, `JiffyDOS with the host delay patch`, or `no JiffyDOS marker (stock or
+other)`. `--kernal` and `--command-interface` work as in the other suites.
+
+```sh
+# JiffyDOS or stock, whatever the device runs: 100 loads from a directory of partition 1.
+tests/soak/io/iec/jiffy_load_soak_test.py -H u64 --iterations 100
+
+# The same from a D64 image, 8 KiB files, on bus id 10.
+tests/soak/io/iec/jiffy_load_soak_test.py -H u64 --source d64 --size 8 --device 10
+
+# Under your own JiffyDOS C64 KERNAL (a temporary copy is uploaded and removed again).
+tests/soak/io/iec/jiffy_load_soak_test.py -H u64 --jiffydos-rom ~/roms/JiffyDOS_C64.bin
+
+# The host delay rows of PR #1130: the host's poll after the drive releases DATA is
+# 61, 86 or 101 cycles late. On firmware with the 50 us window the 61 cycle row is the
+# one that fails.
+tests/soak/io/iec/jiffy_load_soak_test.py -H u64 --jiffydos-rom ~/roms/JiffyDOS_C64.bin \
+  --host-delay 61 --iterations 100
+```
+
+JiffyDOS is licensed and no image is shipped. `--jiffydos-rom PATH` names your own: the
+suite patches a copy in memory, writes it to a temporary directory under a name of its own,
+uploads that to the device's ROM directory for the run and removes both afterwards. It never
+prints or keeps the bytes. The patch replaces one `ORA #$20 / TAX` pair in the LOAD routine
+with a call to a short delay loop, and it is applied only to an image that is 8192 bytes and
+holds that routine's code at one place, offset `$1B06`; any other image is refused. Without
+`--jiffydos-rom`, `--host-delay` skips with a message. A delay is `11 + 5 * n` cycles, for
+a loop of `n` passes: 61, 86 and 101 are the rows of the PR table.
+
+The suite sets `IEC Drive` to `Enabled` and `Soft Drive Bus ID` to `--device`, selects
+partition 1, and builds a folder with the file in partition 1's root. It records the
+settings it finds and changes, and when it ends it restores them, puts the drive's
+directory back, removes the folder and the temporary KERNAL, and resets the C64, also
+after a failure. It needs a Software IEC partition 1 and a bus id nothing else uses.
+
+The medium matters. On an Ultimate 64 Elite whose partition 1 is the `/Temp` RAM disk, JiffyDOS
+loads passed on firmware with the 50 us window with a host delay of 61 cycles (100 loads) and
+of 101 and 151 cycles (30 loads each); the same row with the file on a USB stick failed. `--partition-path
+DIR` therefore serves the file from `DIR`: the suite enables the Command Interface (and puts
+the setting back), adds an unused partition number for `DIR` through the UCI SoftIEC target,
+builds its folder there, and removes the partition and the folder when it ends. `DIR` must
+exist, and the suite writes only the one folder under it. Do not
+open the Ultimate menu while it runs: that freezes the C64 mid-load, which breaks a serial
+LOAD without any firmware defect (`--help` and the Safety section apply).
+
+### What a result looks like
+
+```
+[04] the loads ... FAIL (72 of 100 loads were not clean, 290s SLOW)
+     load 1: ST=66, end $2000 (want $6000), checksum WRONG, error channel '00, OK,00,00'
+     load 2: ST=66, end $2000 (want $6000), checksum WRONG, error channel '00, OK,00,00'
+     further loads that were not clean are counted, not listed
+     100 loads: 28 clean, 72 ST failures (ST=66 x72), 0 wrong content, 0 with an error status, 0 hangs; error channel 00 x100
+     seconds per load: min 0.0, median 0.1, max 1.9
+     ST failures with 00, OK on the error channel are the signature of #986
+```
+
+The totals are clean loads; ST failures with each ST value (ST=66 is bit 6, end of file,
+and bit 1, a read timeout); loads that reported success with the wrong end address or
+checksum; loads whose error channel was not `00`; and hangs, a load that made no progress
+for `--load-timeout` seconds, which is ended by resetting the C64 before the run goes on.
+A run passes only when every load is clean. Expected run times on an Ultimate 64 Elite
+with 16 KiB loads: about 1.8 s a load under JiffyDOS, so 100 loads take about 7 minutes,
+and about 26 s a load under the stock KERNAL, so 50 loads take about 30 minutes. A failing load
+ends at once, so a failing run is shorter.
 
 ## Safety
 
