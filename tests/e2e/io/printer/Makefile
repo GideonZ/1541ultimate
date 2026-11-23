@@ -8,8 +8,8 @@
 ASSEMBLER ?= 64tass
 TOKENIZER ?= petcat
 
-ASM_SRC    = printer_e2e.asm
-ASM_PRG    = printer_e2e.prg
+ASM_SRC    = printer_e2e.asm printer_stall_e2e.asm
+ASM_PRG    = $(ASM_SRC:.asm=.prg)
 BASIC_SRC  = issue_717_basic.bas
 BASIC_PRG  = issue_717_basic.prg
 
@@ -17,14 +17,14 @@ BASIC_PRG  = issue_717_basic.prg
 
 all: $(ASM_PRG) $(BASIC_PRG)
 
-$(ASM_PRG): $(ASM_SRC)
+%.prg: %.asm
 	$(ASSEMBLER) -q -o $@ $<
 
 $(BASIC_PRG): $(BASIC_SRC)
 	$(TOKENIZER) -w2 -o $@ $<
 
 check: all
-	python3 -m py_compile printer_test.py verify_printer_output.py png_lite.py
+	python3 -m py_compile printer_test.py printer_stall_test.py verify_printer_output.py png_lite.py
 	@echo "fixtures rebuilt and Python sources compiled cleanly"
 	@git diff --stat -- $(ASM_PRG) $(BASIC_PRG)
 

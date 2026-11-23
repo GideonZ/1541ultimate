@@ -159,6 +159,7 @@ UserInterface :: UserInterface(const char *title, bool use_logo) : title(title)
     host = NULL;
     keyboard = NULL;
     screen = NULL;
+    status_box = NULL;
     doBreak = false;
     available = false;
     remote = false;
@@ -797,13 +798,17 @@ void UserInterface :: show_progress(const char *msg, int steps)
 
 void UserInterface :: update_progress(const char *msg, int steps)
 {
-    status_box->update(msg, steps);
+    if (status_box)
+        status_box->update(msg, steps);
 }
 
 void UserInterface :: hide_progress(void)
 {
+    if (!status_box)
+        return;
     status_box->deinit();
     delete status_box;
+    status_box = NULL;
 }
 
 void UserInterface :: run_editor(Editor *editor)
@@ -844,7 +849,9 @@ void UserInterface :: postMessage(const char *msg)
     // Message handler becomes owner of object
     mstring *message = new mstring(msg);
 
-    xQueueSend(userMessageQueue, &message, 0);
+    if (xQueueSend(userMessageQueue, &message, 0) != pdTRUE) {
+        delete message; // the queue is full: nobody else owns it
+    }
 }
 
 mstring *UserInterface :: getMessage(void)
