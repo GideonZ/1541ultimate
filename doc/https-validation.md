@@ -109,8 +109,8 @@ commit is not required.
 QEMU ran source `645a15cc4d0b6f349920b3def04ead3e296c7ec5`. Archive comparison
 confirms that its embedded runtime inputs are byte-identical to the final host
 snapshot. Subsequent differences are the host runner/fixture and diagnostic or
-installer files, not the embedded runtime. Both use the current repository CA
-list, SHA-256 `796f1389bfea13c0ed78f663b765baaff54a508e5483786bd6ece73c5e3e3cbe`.
+installer files, not the embedded runtime. Both runs used the repository CA
+list pinned at the time, SHA-256 `796f1389bfea13c0ed78f663b765baaff54a508e5483786bd6ece73c5e3e3cbe`.
 
 The embedded runs measured minimum stack margins of 9,188 bytes (RSA) and 8,344
 bytes (ECDSA), maximum scheduling gaps of 11/25 ms and maximum acknowledgement

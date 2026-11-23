@@ -46,7 +46,7 @@ input is bounded to 64 KiB and live replacement is refused.
 
 The opt-in `ULTIMATE_PROVIDER_SOURCES` configuration instead selects the repository
 certificate bundle in `software/u64ctrl/ca/cacert.pem`, shared with recovery. Its
-SHA-256 is `796f1389bfea13c0ed78f663b765baaff54a508e5483786bd6ece73c5e3e3cbe`.
+SHA-256 is `91787cf04ecb352f74cc3bd18730f986d6238f83643db331a6c3f2b3f1d300c2`.
 SDK default roots, deprecated additions and changed bundle bytes fail the build. Roots
 are initialized before owner startup and updated through a reviewed firmware
 build, never downloaded at runtime. This does not establish secure firmware
