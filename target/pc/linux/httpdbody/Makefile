@@ -5,6 +5,9 @@
 #   make test            build and run all cases
 #   make test CASE=body  run one case (body, stale, static) of the socket test
 #   (HTTPD=<dir> names the httpd checkout if software/httpd is not populated)
+#
+# env -u LD_PRELOAD: the CI image runs with a library preloaded, and an ASan binary then
+# refuses to start ("ASan runtime does not come first"); the other ASan tests do the same.
 PATH_SW  = ../../../../software
 HTTPD   ?= $(PATH_SW)/httpd
 LIB      = $(HTTPD)/c-version/lib
@@ -21,8 +24,8 @@ SRCS     = $(PATH_SW)/test/httpd_body/httpd_body_test.c $(addprefix $(LIB)/,serv
 
 .PHONY: test clean
 test: result/httpd_body_test result/routes_body_test
-	ASAN_OPTIONS=detect_leaks=1 ./result/httpd_body_test $(CASE)
-	ASAN_OPTIONS=detect_leaks=1 ./result/routes_body_test
+	env -u LD_PRELOAD ASAN_OPTIONS=detect_leaks=1 ./result/httpd_body_test $(CASE)
+	env -u LD_PRELOAD ASAN_OPTIONS=detect_leaks=1 ./result/routes_body_test
 
 result/routes_body_test: $(CXXSRCS) $(PATH_SW)/api/routes.h
 	@mkdir -p result
