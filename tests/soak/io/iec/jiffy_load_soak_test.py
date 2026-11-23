@@ -24,8 +24,8 @@ name of its own, runs under it and removes it again, and prints and keeps none o
 
 --host-delay CYCLES reproduces the rows of the #986 fix that slow the host on purpose. It
 needs --jiffydos-rom, patches the temporary copy so that the LOAD routine's sample of the
-bus after the drive releases DATA is CYCLES late, net (13 plus a multiple of 5: 63, 88 and 103
-are the 10, 15 and 18 pass rows that the #986 table calls 61, 86 and 101), and refuses an
+bus after the host releases DATA is CYCLES late, net (13 plus a multiple of 5: 63, 88 and 103
+are the rows of the #986 fix), and refuses an
 image whose LOAD routine is not the one the patch is written for. Without --jiffydos-rom the
 delay rows are skipped.
 

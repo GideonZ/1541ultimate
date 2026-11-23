@@ -35,8 +35,7 @@ DELAY_ROUTINE = 0x0340
 # JSR replaces ORA #$20 / TAX, 4 cycles, and the routine at $0340 is LDX #passes (2), the
 # DEX/BNE loop (5 per pass less 1, the last BNE falling through in 2), ORA #$20 / TAX (4) and
 # RTS (6): 5 * passes + 11 for the routine, 6 for the JSR, 4 less for what it replaced, so
-# 13 + 5 * passes cycles are added. 10, 15 and 18 passes, the rows of the #986 table that
-# the PR calls 61, 86 and 101, are therefore 63, 88 and 103 cycles.
+# 13 + 5 * passes cycles are added. 10, 15 and 18 passes are therefore 63, 88 and 103 cycles.
 CYCLES_PER_PASS = 5
 CYCLES_FIXED = 13
 JSR_CYCLES = 6

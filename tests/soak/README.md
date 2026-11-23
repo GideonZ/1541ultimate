@@ -160,11 +160,10 @@ tests/soak/io/iec/jiffy_load_soak_test.py -H u64 --source d64 --size 8 --device 
 # Under your own JiffyDOS C64 KERNAL (a temporary copy is uploaded and removed again).
 tests/soak/io/iec/jiffy_load_soak_test.py -H u64 --jiffydos-rom ~/roms/JiffyDOS_C64.bin
 
-# The host delay rows of PR #1130: the host's first sample after the drive releases DATA is
-# 63, 88 or 103 cycles late, net (the PR table calls them 61, 86 and 101). The red/green row
-# is below.
+# The host delay rows of PR #1130: the host's first sample after it releases DATA is
+# 63, 88 or 103 cycles late, net. The red/green row is below.
 tests/soak/io/iec/jiffy_load_soak_test.py -H u64 --jiffydos-rom ~/roms/JiffyDOS_C64.bin \
-  --host-delay 63 --partition-path /USB1/jd986_scratch --iterations 100
+  --host-delay 63 --partition-path /USB1/soak --iterations 100
 ```
 
 JiffyDOS is licensed and no image is shipped. `--jiffydos-rom PATH` names your own: the
@@ -175,8 +174,8 @@ with a call to a short delay loop, and it is applied only to an image that is 81
 holds that routine's code at one place, offset `$1B06`; any other image is refused. Without
 `--jiffydos-rom`, `--host-delay` skips with a message. The option is the net number of
 cycles added: the call replaces `ORA #$20 / TAX` (4 cycles) and the routine costs `5 * n + 11`
-plus the 6 of the JSR, so a loop of `n` passes adds `13 + 5 * n`. The PR table's rows of 10, 15
-and 18 passes, which it calls 61, 86 and 101, are 63, 88 and 103 here; `jiffy_load_test.py`
+plus the 6 of the JSR, so a loop of `n` passes adds `13 + 5 * n`. Loops of 10, 15
+and 18 passes give 63, 88 and 103; `jiffy_load_test.py`
 counts the cycles from the routine's own opcodes.
 
 The suite sets `IEC Drive` to `Enabled` and `Soft Drive Bus ID` to `--device`, selects
@@ -186,8 +185,8 @@ directory back, removes the folder and the temporary KERNAL, and resets the C64,
 after a failure. It needs a Software IEC partition 1 and a bus id nothing else uses.
 
 The medium matters. On an Ultimate 64 Elite whose partition 1 is the `/Temp` RAM disk, JiffyDOS
-loads passed on firmware with the 50 us window with a host delay of 61 cycles (100 loads) and
-of 101 and 151 cycles (30 loads each); the same row with the file on a USB stick failed. `--partition-path
+loads passed on firmware with the 50 us window with a host delay of 63 cycles (100 loads) and
+of 103 and 153 cycles (30 loads each); the same row with the file on a USB stick failed. `--partition-path
 DIR` therefore serves the file from `DIR`: the suite enables the Command Interface (and puts
 the setting back), adds an unused partition number for `DIR` through the UCI SoftIEC target,
 builds its folder there, and removes the partition and the folder when it ends. `DIR` must
@@ -204,7 +203,7 @@ guard for #986. The row that can is run by hand:
 
 ```sh
 tests/soak/io/iec/jiffy_load_soak_test.py -H u64 --jiffydos-rom ~/roms/JiffyDOS_C64.bin \
-  --host-delay 63 --partition-path /USB1/jd986_scratch --iterations 100
+  --host-delay 63 --partition-path /USB1/soak --iterations 100
 ```
 
 with the file on a USB (or other non-RAM-disk) partition through `--partition-path`, a
