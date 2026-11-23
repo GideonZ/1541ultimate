@@ -291,6 +291,7 @@ extern std::vector<IoEvent> io_log;
 extern int yields;   // SLICED_TRANSFER_YIELD() calls (taskYIELD on the device)
 extern std::function<void(const IoEvent &)> on_io;
 extern bool c64_reset_pending;
+extern FRESULT read_result;   // File::read returns this, with nothing read, until reset() (FR_OK: normal)
 extern int mp3_ramdrive_type[4];
 extern int mp3_native_size[4];
 extern uint32_t fpga_capabilities;
