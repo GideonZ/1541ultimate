@@ -399,6 +399,7 @@ int UsbScsiDriver :: exec_command(int lun, int cmdlen, bool out, uint8_t *cmd, i
     // fast protocol fault, with short timeouts and no NAK-timeout retries, so the recovery and the retry add
     // at most about 13 s, even if the device is dead (usb_bot_policy.h).
     bool recovered = false;
+    bool short_retried = false;
     uint16_t attempt_start;
 retry:
     attempt_start = getMsTimer();
@@ -461,7 +462,8 @@ retry:
                 return -4;
             }
     	} else { // in
-			len = host->bulk_in(&bulk_in, data, datalen, timeout, retries);
+			// stop_on_short: a device may end the data early and send the CSW in its place (see bot_short_data_tail)
+			len = host->bulk_in(&bulk_in, data, datalen, timeout, retries, true);
 		    if (len == -4) { // Stall
                 printf("Stalled Data Phase. Unstalling Endpoint\n");
                 device->unstall_pipe(bot_in_endpoint(bulk_in.DevEP));
@@ -475,7 +477,29 @@ retry:
     retval = len;
 
     /* STATUS PHASE */
-    st = status_transport(timeout, retries);
+    bool csw_in_data = false;
+    if (!out && data && datalen && (len > 0)) {
+        BotShortTail tail = bot_short_data_tail((const uint8_t *)data, len, datalen, cbw.tag, short_retried);
+        if (tail != e_tail_not_csw) {
+            const uint8_t *csw = (const uint8_t *)data + len - 13;
+            printf("USB SCSI: CSW in the data phase (got %d of %d):\n", len, datalen);
+            dump_hex_relative((void *)csw, 13);
+            if (tail == e_tail_retry_read) {
+                // Status 0 and no residue, but the data is incomplete. The device is in step (its status is sent),
+                // so no Reset Recovery: issue the command once more.
+                short_retried = true;
+                goto retry;
+            }
+            csw_in_data = true;
+            // Status 0 with no residue and data still missing, after the one retry: the device lies. An invalid
+            // status, which takes the usual fault path (Reset Recovery once, then the unit fails).
+            st = (csw[12] == 0 && bot_le32(csw + 8) == 0) ? -1 : csw[12];
+            len -= 13;
+            retval = len;
+        }
+    }
+    if (!csw_in_data)
+        st = status_transport(timeout, retries);
 
     if (st == -4) {
     	printf("Stalled Status Phase. Unstalling Endpoint\n");
