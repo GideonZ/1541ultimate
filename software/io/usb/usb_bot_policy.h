@@ -38,6 +38,43 @@ static inline bool bot_retry_after_status_fault(int status, bool already_recover
     return (status < 0) && !already_recovered && (elapsed_ms < c_bot_fast_fault_ms) && (opcode != c_scsi_inquiry) && !data_out;
 }
 
+// Bulk IN: a packet shorter than requested ends a transfer, but only when the packet was accepted (the data toggle
+// flipped). A packet the controller discarded as a duplicate (toggle unchanged, nothing stored) says nothing about the
+// device: the caller must poll again.
+static inline bool bot_in_stop_on_short(bool packet, uint16_t toggle_before, uint16_t toggle_after, int transferred, int requested)
+{
+    return packet && (transferred < requested) && (toggle_before != toggle_after);
+}
+
+// A device may end the data phase early and send the CSW in place of the missing data. The host then has taken the CSW
+// for data and must not read a status that is already gone. The last 13 bytes of a short data phase are a CSW when they
+// carry the signature "USBS" and the tag of this command (little endian).
+//   e_tail_not_csw:    the short data is data; read the status phase as usual.
+//   e_tail_retry_read: a CSW with status 0 and residue 0, but bytes are missing. The device claims success while it
+//                      delivered less than it was asked for, and it is in step (its status was sent): issue the
+//                      command once more, without a Reset Recovery. Only once per command.
+//   e_tail_use_csw:    any other CSW (status 1 or 2, a residue, or a second occurrence): it is the status of this
+//                      command; the status phase must not be read, and the usual error handling applies.
+enum BotShortTail { e_tail_not_csw, e_tail_retry_read, e_tail_use_csw };
+
+static inline uint32_t bot_le32(const uint8_t *p)
+{
+    return uint32_t(p[0]) | (uint32_t(p[1]) << 8) | (uint32_t(p[2]) << 16) | (uint32_t(p[3]) << 24);
+}
+
+static inline BotShortTail bot_short_data_tail(const uint8_t *data, int received, int requested, uint32_t tag, bool already_retried)
+{
+    if ((received < 13) || (received >= requested))
+        return e_tail_not_csw;
+    const uint8_t *csw = data + received - 13;
+    if ((bot_le32(csw) != 0x53425355) || (bot_le32(csw + 4) != tag))
+        return e_tail_not_csw;
+    uint32_t residue = bot_le32(csw + 8);
+    if ((csw[12] == 0) && (residue == 0) && !already_retried)
+        return e_tail_retry_read;
+    return e_tail_use_csw;
+}
+
 // After a Reset Recovery the unit is read-only until it is re-enumerated (a replug makes a new UsbScsi). On the bench a
 // SanDisk Ultra Fit hung on the first write after a Bulk-Only reset, while reads were fine and another stick wrote fine.
 // A locked unit reports STA_PROTECT (FatFs then refuses a write open with FR_WRITE_PROTECTED) and refuses a write
