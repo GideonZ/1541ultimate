@@ -238,6 +238,10 @@ SUITES: Sequence[Suite] = (
     # the frozen transfer and a seeded run of random windows; leaves RAM as found.
     Suite("e2e", "dma-round-trip", "tests/e2e/api/dma_round_trip_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@", profile=profiles.QUICK),
+    # readmem and writemem back to back while machine:menu_button opens and closes the
+    # menu; every answer must be the data, none the $FF a half-frozen bus gives (#1106).
+    Suite("e2e", "menu-freeze-dma", "tests/e2e/api/menu_freeze_dma_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
     Suite("e2e", "menu-screen", "tests/e2e/api/menu_screen_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --test all", profile=profiles.SMOKE),
     # Keyboard, joystick and mouse injection over REST, checked against what the
