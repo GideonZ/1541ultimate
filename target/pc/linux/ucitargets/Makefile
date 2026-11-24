@@ -30,6 +30,12 @@ CXXOPTIONS = -std=gnu++11 -g -O0 -w -pthread -include stdint.h '-DSLICED_TRANSFE
              -I$(PATH_SW)/io/command_interface -I$(PATH_SW)/filesystem \
              -I$(PATH_SW)/portable/riscv
 
+# make test SAN=1: AddressSanitizer with leak detection (what finds the Dos leaks and bad deletes)
+ifdef SAN
+CXXOPTIONS += -fsanitize=address -fno-omit-frame-pointer
+export ASAN_OPTIONS = detect_leaks=1
+endif
+
 # production sources, copied: <source dir>/<name>
 PROD    = filemanager/dos io/command_interface/control_target io/c64/reu_preloader
 SHADOW_SRCS = $(addprefix $(SHADOW)/,$(addsuffix .cc,$(notdir $(PROD))))

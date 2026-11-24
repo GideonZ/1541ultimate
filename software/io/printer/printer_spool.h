@@ -77,6 +77,11 @@
 #endif
 #endif
 
+/* The wait of flush_and_wait is cut in slices of this length when the caller has work between them */
+#ifndef PRINTER_SPOOL_WAIT_SLICE_MS
+#define PRINTER_SPOOL_WAIT_SLICE_MS 100
+#endif
+
 /* One CPU on the device: the compiler must not reorder (and the critical section of the port
  * has no memory clobber of its own). On the host, two threads. */
 #ifdef PRINTER_SPOOL_HOST_TEST
@@ -289,8 +294,10 @@ public:
     }
 
     /* The Flush/Eject of the menu: post one and wait for it, at most 'timeout_ms'. The semaphore only
-     * wakes this task; a wake up that was meant for an earlier flush never ends this wait. */
-    bool flush_and_wait(uint32_t timeout_ms)
+     * wakes this task; a wake up that was meant for an earlier flush never ends this wait. The wait is in
+     * slices of PRINTER_SPOOL_WAIT_SLICE_MS and 'tick' is called, in this task, after each one: the caller
+     * does its screen work there. */
+    bool flush_and_wait(uint32_t timeout_ms, void (*tick)(void *) = NULL, void *arg = NULL)
     {
         while (xSemaphoreTake(flush_sem, 0) == pdTRUE)
             ;
@@ -303,7 +310,12 @@ public:
             TickType_t used = xTaskGetTickCount() - start;
             if (used >= total)
                 return false;
-            xSemaphoreTake(flush_sem, total - used);
+            TickType_t slice = total - used;
+            if (tick && slice > PRINTER_SPOOL_WAIT_SLICE_MS / portTICK_PERIOD_MS)
+                slice = PRINTER_SPOOL_WAIT_SLICE_MS / portTICK_PERIOD_MS;
+            xSemaphoreTake(flush_sem, slice);
+            if (tick)
+                tick(arg);
         }
     }
 

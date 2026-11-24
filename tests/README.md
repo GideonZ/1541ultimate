@@ -307,6 +307,7 @@ e2e:
   ftp-client                        .      x      x      x      x
   ftp-server                        x      x      x      x      x
   g71-mfm-bounds                    .      x      x      x      x
+  g71-mfm-format-refused            .      .      x      x      x
   gmod2-eeprom-dirty                .      .      x      x      x
   ident-service-switch              .      .      x      x      x
   iec-directory-rename              .      .      x      x      x
@@ -323,6 +324,7 @@ e2e:
   lint                              x      x      x      x      x
   machine-code-monitor              .      .      .      x      x
   memory-views                      .      .      x      x      x
+  menu-freeze-dma                   .      .      x      x      x
   menu-reset-race                   .      .      x      x      x
   menu-screen                       x      x      x      x      x
   micromys-wheel                    .      .      .      x      x
@@ -356,6 +358,7 @@ e2e:
   telnet-sustained-input            .      .      .      x      x
   temp-auto-cleanup                 .      .      x      x      x
   transport-usage                   x      x      x      x      x
+  u64ctrl-ca                        x      x      x      x      x
   uci-net-route                     .      .      .      x      x
   uci-net-route-precondition        .      x      x      x      x
   uci-net-target                    .      .      .      x      x
@@ -391,8 +394,8 @@ soak:
   usb-keyboard-repeat               .      .      .      x      x
 
                                ------ ------ ------ ------ ------
-  suites                           15     36     85    101    101
-  suite runs                       15     36     85    202    303
+  suites                           16     37     90    106    106
+  suite runs                       16     37     90    212    318
 
 Scenario and check counts, and durations, are not shown here:
 the registry does not know them. They depend on the machine and are

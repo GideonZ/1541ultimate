@@ -13,6 +13,7 @@
 #include <map>
 #include <string>
 #include <atomic>
+#include <pthread.h>
 #include "FreeRTOS.h"
 #include "task.h"
 #include "semphr.h"
@@ -58,6 +59,7 @@ static const char *en_dis[] = { "Disabled", "Enabled" };
 /* what the test sees */
 struct Record {
     std::atomic<int> configure, readdress, form_feed, mps_reset, file_opens, file_closes, progress_shown, progress_hidden, popups;
+    std::atomic<int> progress_steps, ui_violations;   /* steps drawn; screen use in a state or a task where it is not allowed */
     std::atomic<int> file_is_open;
     char popup_text[128];
     std::atomic<int> interpreted_bytes;
@@ -65,11 +67,14 @@ struct Record {
     void reset()
     {
         configure = readdress = form_feed = mps_reset = file_opens = file_closes = 0;
-        popups = 0; popup_text[0] = 0;
+        popups = 0; popup_text[0] = 0; progress_steps = ui_violations = 0;
         progress_shown = progress_hidden = file_is_open = interpreted_bytes = 0;
     }
 };
 extern Record rec;
+extern pthread_t gui_thread;            /* the task that runs the menu command */
+extern void (*ui_popup_hook)(void);     /* what the printer task does while the popup is open */
+extern void (*render_hook)(void);       /* what the printer task does while it renders a page (a form feed) */
 
 struct ConfigStore {
     std::map<int, int> values;
@@ -114,11 +119,28 @@ struct TasksCollection {
 };
 
 #define BUTTON_OK 0x01   /* ui_elements.h */
+/* The real UserInterface frees its progress box in hide_progress and the screen belongs to the GUI task:
+ * a step drawn while the box is not shown, while a popup is open, or from another task is a violation. */
 struct UserInterface {
-    void show_progress(const char *, int) { rec.progress_shown++; }
-    void hide_progress() { rec.progress_hidden++; }
-    void update_progress(const char *, int) { }
-    int popup(const char *msg, uint8_t) { rec.popups++; strncpy(rec.popup_text, msg, sizeof(rec.popup_text) - 1); return 0; }
+    bool box_shown, popup_open;
+    UserInterface() : box_shown(false), popup_open(false) { }
+    void show_progress(const char *, int) { rec.progress_shown++; box_shown = true; }
+    void hide_progress() { rec.progress_hidden++; box_shown = false; }
+    void update_progress(const char *, int steps)
+    {
+        if (!box_shown || popup_open || !pthread_equal(pthread_self(), gui_thread))
+            rec.ui_violations++;
+        rec.progress_steps += steps;
+    }
+    int popup(const char *msg, uint8_t)
+    {
+        rec.popups++; strncpy(rec.popup_text, msg, sizeof(rec.popup_text) - 1);
+        popup_open = true;
+        if (ui_popup_hook)
+            ui_popup_hook();
+        popup_open = false;
+        return 0;
+    }
 };
 struct SubsysCommand {
     UserInterface *user_interface;
@@ -181,8 +203,14 @@ struct FileManager {
 struct MpsPrinter {
     static MpsPrinter *getMpsPrinter(void) { static MpsPrinter m; return &m; }
     void Reset() { rec.mps_reset++; }
-    void FormFeed() { rec.form_feed++; }
-    void Interpreter(uint8_t *, int n) { rec.interpreted_bytes += n; }
+    void FormFeed() { if (render_hook) render_hook(); rec.form_feed++; }
+    void Interpreter(uint8_t *b, int n)
+    {
+        rec.interpreted_bytes += n;
+        for (int i = 0; i < n; i++)
+            if (b[i] == 12)             /* a form feed of the program ends the page: it is rendered now */
+                FormFeed();
+    }
     void setCharsetVariant(int) { }
     void setColorMode(bool) { }
     void setFilename(char *) { }

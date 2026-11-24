@@ -2,9 +2,21 @@ from __future__ import annotations
 
 import re
 import subprocess
+import sys
 import time
 
 from connection_runtime import ProbeOutcome, RuntimeSettings, first_non_empty_line
+
+
+def ping_command(host: str, platform: str = sys.platform) -> list[str]:
+    """One reply within three seconds, an echo every second until then.
+
+    Linux spells that `-c 1 -w 3`. macOS has no -w; its `-o` stops at the first
+    reply and `-t` is the whole deadline in seconds.
+    """
+    if platform.startswith("linux"):
+        return ["ping", "-n", "-c", "1", "-w", "3", host]
+    return ["ping", "-n", "-o", "-t", "3", host]
 
 
 def run_probe(settings: RuntimeSettings, correctness, *, context=None) -> ProbeOutcome:
@@ -16,7 +28,7 @@ def run_probe(settings: RuntimeSettings, correctness, *, context=None) -> ProbeO
         # an echo now and then, as an Ultimate II+L does about one in fifty over Ethernet;
         # that is a lost datagram, not a device gone from the network.
         result = subprocess.run(
-            ["ping", "-n", "-c", "1", "-w", "3", settings.host],
+            ping_command(settings.host),
             capture_output=True,
             text=True,
             timeout=5,
