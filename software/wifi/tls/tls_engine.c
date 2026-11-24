@@ -478,7 +478,7 @@ static int tls_sh_ext(const uint8_t *m, size_t len, uint16_t type, const uint8_t
 }
 
 // After each successful handshake step: records the negotiated group (no mbedTLS getter) from the TLS 1.3 ServerHello
-// key_share (or the HelloRetryRequest group) or the TLS 1.2 ServerKeyExchange curve, and requires EMS in a TLS 1.2
+// key_share or the TLS 1.2 ServerKeyExchange curve, and requires EMS in a TLS 1.2
 // ServerHello, as mbedTLS has just parsed them. Also refuses a TLS 1.2 ServerHello that left the version above 1.2.
 // Returns an mbedTLS error, with r->fail_reason set, when it refuses.
 static int tls_note_handshake(tls_session_t *s, int state_before, int version_before, tls_step_result_t *r)
@@ -492,7 +492,9 @@ static int tls_note_handshake(tls_session_t *s, int state_before, int version_be
             if (m && (tls_sh_ext(m, len, 51, &d) >= 2)) { // key_share: the group comes first in both forms
                 s->stats.group = (d[0] << 8) | d[1];
             }
-            // Not found: the group stays 0, and tls_handshake() refuses the session
+            // Not found: the group stays 0, and tls_handshake() refuses the session. This includes a HelloRetryRequest:
+            // mbedTLS has already cleared the message when that step returns, so nothing is read from it, and the group
+            // comes from the ServerHello that follows
         } else if (s->ssl.tls_version != MBEDTLS_SSL_VERSION_TLS1_2) {
             // mbedTLS's TLS 1.2 ServerHello parser takes legacy_version as the version (ssl_tls12_client.c:1226), so a
             // ServerHello claiming 0x0304 would carry on in the TLS 1.3 machine without a key exchange: refuse it
@@ -531,9 +533,19 @@ static void tls_classify(tls_session_t *s, int ret, int state_before, int versio
     } else if (ret == MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY) {
         r->fail_reason = TLS_FAIL_PEER_CLOSED;
     } else if ((state_before == MBEDTLS_SSL_SERVER_HELLO) && (ret == MBEDTLS_ERR_SSL_BAD_PROTOCOL_VERSION)) {
-        // A TLS 1.2 ServerHello below the minimum: the 1.2 parser has set tls_version to the server's choice
+        // A ServerHello whose version mbedTLS refused. Report the version the server sent, from the message (legacy_version,
+        // or the selected version of supported_versions when present): ssl->tls_version is not that on every mbedTLS
+        // (a fixed 4.1.x puts it back to 1.2 before returning), and is the fallback only if the message is gone
+        size_t len;
+        const uint8_t *d, *m = tls_hs_msg(s, MBEDTLS_SSL_HS_SERVER_HELLO, &len);
         r->fail_reason = TLS_FAIL_VERSION_REFUSED;
         r->verify_flags = (uint16_t)s->ssl.tls_version;
+        if (m && (len >= 4 + 2 + 32)) {
+            r->verify_flags = (m[4] << 8) | m[5];
+            if (tls_sh_ext(m, len, 43, &d) == 2) {
+                r->verify_flags = (d[0] << 8) | d[1];
+            }
+        }
     } else if ((state_before == MBEDTLS_SSL_SERVER_HELLO) && (version_before == MBEDTLS_SSL_VERSION_TLS1_3) &&
                (ret == MBEDTLS_ERR_SSL_ILLEGAL_PARAMETER)) {
         // This one step is all of mbedTLS's TLS 1.3 ServerHello processing (ssl_tls13_client.c:1995-2060), so
