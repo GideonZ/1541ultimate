@@ -3,11 +3,26 @@
  * client that offers both TLS 1.2 and 1.3, moves mbedTLS 4.1.1 into its TLS 1.3 machine with no key exchange).
  *
  * The unit under test is tls_engine.c itself, included below so the test can look at the session it holds. Build and
- * run with target/pc/linux/tlsguard (make test). The peers are in this file:
+ * run with target/pc/linux/tlsguard (see its Makefile). The peers are in this file:
  *   - a scripted attacker that answers the ClientHello with the ServerHello above;
- *   - an honest mbedTLS server, once limited to TLS 1.2 and once to TLS 1.3 (control: the guard refuses neither).
- * Exit status 0 only when every check passes. With the guard compiled out (make red) the attack check fails and the
- * test prints what the client did instead. */
+ *   - honest mbedTLS servers (TLS 1.2 only, TLS 1.3 only, TLS 1.3 with a HelloRetryRequest, and one offering both):
+ *     controls, the guard refuses none of them.
+ *
+ * What it asserts, on Mbed TLS 4.1.1 and on a 4.1.x that has the upstream fix, alike: the handshake is refused at the
+ * ServerHello, with a fatal protocol_version alert, the session is freed, and the version reported to the Ultimate is
+ * the 0x0304 the server sent. Which layer refuses differs: on 4.1.1 the engine's guard (the library accepts the
+ * ServerHello); on the fixed library the library does, before the guard is reached. The test probes the linked library
+ * with a bare client and prints which case ran.
+ *
+ * The guard is defence in depth and an early, specific refusal, not the only barrier: with the guard compiled out
+ * (make red) the ServerHello is accepted, but the handshake still cannot end ESTABLISHED, because the engine's
+ * end-of-handshake check finds no negotiated group. The "barrier" mode of this test shows that, on the guard-disabled
+ * build, by driving the whole attack (Certificate, CertificateVerify and Finished, computed from the client's own
+ * key schedule, which has no secret in it).
+ *
+ * Usage: tlsguard [-v]        the guard checks and the controls; exit status 0 only when every check passes
+ *        tlsguard barrier     only on the guard-disabled build: the second barrier; "make test" runs it
+ * With the guard compiled out the guard checks fail (make red expects that) and the test prints what the client did. */
 
 #include TLS_ENGINE_SRC // the engine under test (default: the tree's own tls_engine.c)
 
@@ -19,8 +34,12 @@
 #include "psa/crypto.h"
 #include "test_cert.h"
 #include "test_key.h"
+#include "ssl_misc.h"
+#include "ssl_tls13_keys.h"
+#include "mbedtls/md.h"
 
 int tlsguard_verbose;
+char tlsguard_last_error[160];
 static int failures;
 
 #define CHECK(cond, ...) do { if (!(cond)) { failures++; printf("  FAIL: "); printf(__VA_ARGS__); printf("\n"); } \
@@ -99,7 +118,8 @@ static size_t build_attack_server_hello(const uint8_t *client_hello_record, uint
 }
 
 // Without the guard: shows that the TLS 1.3 machine takes a plaintext TLS 1.3 Certificate (the attacker holds the pinned
-// key here, as the intended server would) and moves on to CertificateVerify, with no key schedule behind it.
+// key here, as the intended server would) and moves on to CertificateVerify, with no key exchange behind it. The
+// handshake is not established by this: see test_second_barrier for how it ends.
 static void observe_certificate_path(void)
 {
     uint8_t msg[5 + 4 + 1 + 3 + 3 + sizeof(test_cert_der) + 2], out[TLS_STEP_OUT_MAX];
@@ -116,7 +136,7 @@ static void observe_certificate_path(void)
     uint16_t out_len = 0;
     tls_step_result_t r;
     int ret = client_step(msg, (int)(p - msg), out, &out_len, &r);
-    printf("  OBSERVED (wrong): a plaintext TLS 1.3 Certificate from the attacker: ret=%d state=%d fail_reason=%d, ", ret, r.state, r.fail_reason);
+    printf("  OBSERVED without the guard: a plaintext TLS 1.3 Certificate from the attacker: ret=%d state=%d fail_reason=%d, ", ret, r.state, r.fail_reason);
     if (sessions[0]) {
         printf("ssl.state now %d (%s)\n", sessions[0]->ssl.state,
                (sessions[0]->ssl.state == MBEDTLS_SSL_CERTIFICATE_VERIFY && !sessions[0]->pin_mismatch) ? "CERTIFICATE_VERIFY: the certificate was taken, PIN matched" : "?");
@@ -143,8 +163,9 @@ static void test_attack(int with_ems)
            (unsigned)(ret < 0 ? -ret : ret), r.state, r.fail_reason, (unsigned)r.verify_flags, r.alert_out, r.alert_in);
     hexline("client output", out, out_len);
     if (sessions[0]) {
-        // Only without the guard. mbedTLS now runs its TLS 1.3 machine on a connection that never had a key exchange.
-        printf("  OBSERVED (wrong): the session is still live, ssl.tls_version=0x%04x, ssl.state=%d%s, handshake_over=%d\n",
+        // Only without the guard (and on an unfixed library). mbedTLS now runs its TLS 1.3 machine on a connection that
+        // never had a key exchange; the handshake is not over, and does not end ESTABLISHED (see test_second_barrier).
+        printf("  OBSERVED without the guard: the session is still live, ssl.tls_version=0x%04x, ssl.state=%d%s, handshake_over=%d\n",
                (unsigned)sessions[0]->ssl.tls_version, sessions[0]->ssl.state,
                sessions[0]->ssl.state == MBEDTLS_SSL_SERVER_CERTIFICATE ? " (SERVER_CERTIFICATE: EncryptedExtensions skipped)" : "",
                mbedtls_ssl_is_handshake_over(&sessions[0]->ssl));
@@ -186,7 +207,9 @@ static int srv_recv(void *ctx, unsigned char *buf, size_t len)
     return (int)n;
 }
 
-static void test_honest(int version, const char *name)
+// min/max: the server's TLS versions; groups: its supported groups (NULL: the default, so no HelloRetryRequest);
+// want_version/want_group: what the client must report (group 0: only that one is set)
+static void test_honest(const char *name, int min_v, int max_v, const uint16_t *groups, uint16_t want_version, uint16_t want_group)
 {
     printf("control: honest %s server\n", name);
     mbedtls_ssl_context srv;
@@ -198,8 +221,11 @@ static void test_honest(int version, const char *name)
              (mbedtls_pk_parse_key(&pk, test_key_der, sizeof(test_key_der), NULL, 0) == 0) &&
              (mbedtls_ssl_config_defaults(&conf, MBEDTLS_SSL_IS_SERVER, MBEDTLS_SSL_TRANSPORT_STREAM, MBEDTLS_SSL_PRESET_DEFAULT) == 0);
     if (ok) {
-        mbedtls_ssl_conf_min_tls_version(&conf, version);
-        mbedtls_ssl_conf_max_tls_version(&conf, version);
+        mbedtls_ssl_conf_min_tls_version(&conf, min_v);
+        mbedtls_ssl_conf_max_tls_version(&conf, max_v);
+        if (groups) {
+            mbedtls_ssl_conf_groups(&conf, groups);
+        }
         ok = (mbedtls_ssl_conf_own_cert(&conf, &crt, &pk) == 0) && (mbedtls_ssl_setup(&srv, &conf) == 0);
     }
     CHECK(ok, "server set up");
@@ -227,24 +253,196 @@ static void test_honest(int version, const char *name)
     tls_session_stats_t st;
     memset(&st, 0, sizeof(st));
     if (tls_get_stats(0, 1, &st) == ESP_OK) {
-        CHECK(st.tls_version == (version == MBEDTLS_SSL_VERSION_TLS1_3 ? 0x0304 : 0x0303), "negotiated version 0x%04x", st.tls_version);
+        CHECK(st.tls_version == want_version, "negotiated version 0x%04x (want 0x%04x)", st.tls_version, want_version);
+        CHECK(want_group ? st.group == want_group : st.group != 0, "negotiated group 0x%04x%s", st.group, want_group ? "" : " (not 0)");
         printf("  suite 0x%04x group 0x%04x\n", st.ciphersuite, st.group);
     }
     tls_close_all();
     mbedtls_ssl_free(&srv); mbedtls_ssl_config_free(&conf); mbedtls_x509_crt_free(&crt); mbedtls_pk_free(&pk);
 }
 
+// ---- which library is linked -------------------------------------------------------------------------------------
+
+static uint8_t probe_out[TLS_STEP_OUT_MAX * 2];
+static size_t probe_out_n;
+static const uint8_t *probe_in;
+static size_t probe_in_n;
+
+static int probe_send(void *ctx, const unsigned char *buf, size_t len)
+{
+    (void)ctx;
+    memcpy(probe_out + probe_out_n, buf, len);
+    probe_out_n += len;
+    return (int)len;
+}
+
+static int probe_recv(void *ctx, unsigned char *buf, size_t len)
+{
+    (void)ctx;
+    if (probe_in_n == 0) {
+        return MBEDTLS_ERR_SSL_WANT_READ;
+    }
+    size_t n = len < probe_in_n ? len : probe_in_n;
+    memcpy(buf, probe_in, n);
+    probe_in += n;
+    probe_in_n -= n;
+    return (int)n;
+}
+
+// Sends the attack ServerHello to a bare Mbed TLS client (TLS 1.2 + 1.3, no engine) and returns 1 when the library
+// itself refuses it (BAD_PROTOCOL_VERSION: the upstream fix), 0 when it takes it (4.1.1: only the guard stops it)
+static int library_refuses_first(void)
+{
+    mbedtls_ssl_context ssl;
+    mbedtls_ssl_config conf;
+    mbedtls_ssl_init(&ssl); mbedtls_ssl_config_init(&conf);
+    int ok = (mbedtls_ssl_config_defaults(&conf, MBEDTLS_SSL_IS_CLIENT, MBEDTLS_SSL_TRANSPORT_STREAM, MBEDTLS_SSL_PRESET_DEFAULT) == 0);
+    if (ok) {
+        mbedtls_ssl_conf_authmode(&conf, MBEDTLS_SSL_VERIFY_NONE);
+        ok = (mbedtls_ssl_setup(&ssl, &conf) == 0);
+    }
+    int ret = -1;
+    for (int i = 0; ok && i < 10 && ssl.state != MBEDTLS_SSL_SERVER_HELLO; i++) {
+        mbedtls_ssl_set_bio(&ssl, NULL, probe_send, probe_recv, NULL);
+        ret = mbedtls_ssl_handshake_step(&ssl);
+        ok = (ret == 0);
+    }
+    uint8_t sh[256];
+    if (ok && mbedtls_ssl_flush_output(&ssl) != 0) {  // the ClientHello is sent by the next step: flush it
+        ok = 0;
+    }
+    if (ok && probe_out_n > 9 && probe_out[0] == 22 && probe_out[5] == 1) {
+        probe_in_n = build_attack_server_hello(probe_out, sh, 1);
+        probe_in = sh;
+        // the first step may only switch from the TLS 1.3 to the TLS 1.2 parser (no supported_versions): step on
+        for (int i = 0; i < 4 && ret == 0 && ssl.state == MBEDTLS_SSL_SERVER_HELLO; i++) {
+            ret = mbedtls_ssl_handshake_step(&ssl);
+        }
+    } else {
+        ok = 0;
+    }
+    mbedtls_ssl_free(&ssl); mbedtls_ssl_config_free(&conf);
+    if (!ok || (ret != 0 && ret != MBEDTLS_ERR_SSL_BAD_PROTOCOL_VERSION)) {
+        printf("library probe inconclusive (ret=-0x%04x)\n", (unsigned)(ret < 0 ? -ret : ret));
+        exit(2);
+    }
+    return ret == MBEDTLS_ERR_SSL_BAD_PROTOCOL_VERSION;
+}
+
+// ---- the second barrier (guard-disabled build only) -------------------------------------------------------------
+
+// Drives the attack as far as it goes, as an attacker that holds the pinned key and computes Finished from the client's
+// own key schedule (public: no key exchange went into it). Then the engine's end-of-handshake check must refuse.
+static void test_second_barrier(void)
+{
+    uint8_t ch[TLS_STEP_OUT_MAX], sh[256], out[TLS_STEP_OUT_MAX], msg[2048];
+    uint16_t ch_len = 0, out_len = 0;
+    tls_step_result_t r;
+    printf("second barrier (guard disabled): the full attack, ServerHello B then Certificate, CertificateVerify, Finished\n");
+    CHECK(open_client() == ESP_OK, "client opened");
+    int ret = client_step(NULL, 0, ch, &ch_len, &r);
+    CHECK(ret == 0 && ch_len > 5 && ch[0] == 22 && ch[5] == 1, "ClientHello produced (%u bytes)", ch_len);
+    size_t sh_len = build_attack_server_hello(ch, sh, 1);
+    ret = client_step(sh, (int)sh_len, out, &out_len, &r);
+    CHECK(ret == 0 && sessions[0], "ServerHello accepted (ret=%d): this is the guard-disabled build", ret);
+    if (ret != 0 || !sessions[0]) {
+        return;
+    }
+    CHECK(sessions[0]->ssl.tls_version == MBEDTLS_SSL_VERSION_TLS1_3, "mbedTLS is in its TLS 1.3 machine (0x%04x)", (unsigned)sessions[0]->ssl.tls_version);
+    mbedtls_ssl_context *ssl = &sessions[0]->ssl;
+
+    size_t cl = sizeof(test_cert_der), hl = 1 + 3 + 3 + cl + 2, ll = 3 + cl + 2;
+    uint8_t *p = msg;
+    *p++ = 22; *p++ = 3; *p++ = 3; *p++ = (uint8_t)((hl + 4) >> 8); *p++ = (uint8_t)(hl + 4);
+    *p++ = 11; *p++ = 0; *p++ = (uint8_t)(hl >> 8); *p++ = (uint8_t)hl; *p++ = 0;
+    *p++ = 0; *p++ = (uint8_t)(ll >> 8); *p++ = (uint8_t)ll;
+    *p++ = 0; *p++ = (uint8_t)(cl >> 8); *p++ = (uint8_t)cl;
+    memcpy(p, test_cert_der, cl); p += cl;
+    *p++ = 0; *p++ = 0;
+    ret = client_step(msg, (int)(p - msg), out, &out_len, &r);
+    CHECK(ret == 0 && sessions[0], "Certificate accepted (PIN matched), ret=%d", ret);
+    if (ret != 0 || !sessions[0]) {
+        return;
+    }
+
+    // CertificateVerify over the client's own transcript hash
+    uint8_t th[32], tbs[64 + 33 + 1 + 32], hash[32], sig[128];
+    size_t thl = 0, sl = 0, hn = 0;
+    mbedtls_pk_context pk;
+    mbedtls_pk_init(&pk);
+    memset(tbs, 0x20, 64); memcpy(tbs + 64, "TLS 1.3, server CertificateVerify", 33); tbs[97] = 0;
+    int ok = (mbedtls_ssl_get_handshake_transcript(ssl, MBEDTLS_MD_SHA256, th, sizeof(th), &thl) == 0) && (thl == 32);
+    memcpy(tbs + 98, th, 32);
+    ok = ok && (psa_hash_compute(PSA_ALG_SHA_256, tbs, sizeof(tbs), hash, 32, &hn) == PSA_SUCCESS) &&
+         (mbedtls_pk_parse_key(&pk, test_key_der, sizeof(test_key_der), NULL, 0) == 0) &&
+         (mbedtls_pk_sign(&pk, MBEDTLS_MD_SHA256, hash, 32, sig, sizeof(sig), &sl) == 0);
+    mbedtls_pk_free(&pk);
+    CHECK(ok, "attacker signed the CertificateVerify");
+    if (!ok) {
+        return;
+    }
+    hl = 2 + 2 + sl;
+    p = msg;
+    *p++ = 22; *p++ = 3; *p++ = 3; *p++ = (uint8_t)((hl + 4) >> 8); *p++ = (uint8_t)(hl + 4);
+    *p++ = 15; *p++ = 0; *p++ = (uint8_t)(hl >> 8); *p++ = (uint8_t)hl; *p++ = 4; *p++ = 3; *p++ = (uint8_t)(sl >> 8); *p++ = (uint8_t)sl;
+    memcpy(p, sig, sl); p += sl;
+    ret = client_step(msg, (int)(p - msg), out, &out_len, &r);
+    CHECK(ret == 0 && sessions[0], "CertificateVerify accepted, ret=%d", ret);
+    if (ret != 0 || !sessions[0]) {
+        return;
+    }
+
+    // Finished, from the client's own key schedule
+    uint8_t vd[64];
+    size_t vl = 0;
+    ok = (mbedtls_ssl_tls13_calculate_verify_data(ssl, vd, sizeof(vd), &vl, MBEDTLS_SSL_IS_SERVER) == 0) && (vl <= 48);
+    CHECK(ok, "attacker computed the Finished verify data (%u bytes)", (unsigned)vl);
+    if (!ok) {
+        return;
+    }
+    CHECK(sessions[0]->stats.group == 0, "no negotiated group was ever recorded (group 0x%04x)", sessions[0]->stats.group);
+    p = msg;
+    *p++ = 22; *p++ = 3; *p++ = 3; *p++ = (uint8_t)((vl + 4) >> 8); *p++ = (uint8_t)(vl + 4);
+    *p++ = 20; *p++ = 0; *p++ = 0; *p++ = (uint8_t)vl;
+    memcpy(p, vd, vl); p += vl;
+    ret = client_step(msg, (int)(p - msg), out, &out_len, &r);
+    printf("  client result: ret=%d (-0x%04x) state=%d fail_reason=%d\n", ret, (unsigned)(ret < 0 ? -ret : ret), r.state, r.fail_reason);
+    CHECK(ret == MBEDTLS_ERR_SSL_HANDSHAKE_FAILURE, "end of the handshake refused: 'Negotiated group not found' (got %d)", ret);
+    CHECK(strstr(tlsguard_last_error, "Negotiated group not found") != NULL, "the engine logged: %s", tlsguard_last_error);
+    CHECK(r.state == TLS_STATE_FAILED && r.state != TLS_STATE_ESTABLISHED, "session FAILED, never ESTABLISHED (state %d)", r.state);
+    CHECK(r.fail_reason == 0, "no specific reason: this is the late, generic refusal, not the guard's (got %d)", r.fail_reason);
+    CHECK(sessions[0] == NULL, "session freed");
+}
+
 int main(int argc, char **argv)
 {
+    int barrier = (argc > 1) && !strcmp(argv[1], "barrier");
     tlsguard_verbose = (argc > 1) && !strcmp(argv[1], "-v");
     printf("Mbed TLS %s\n", MBEDTLS_VERSION_STRING);
     if (psa_crypto_init() != PSA_SUCCESS) {
         return 2;
     }
-    test_honest(MBEDTLS_SSL_VERSION_TLS1_2, "TLS 1.2");
-    test_honest(MBEDTLS_SSL_VERSION_TLS1_3, "TLS 1.3");
-    test_attack(1);
-    test_attack(0);
+    int lib_first = library_refuses_first();
+    if (lib_first) {
+        printf("case: library refuses first (the linked Mbed TLS refuses the ServerHello itself; the guard is not reached)\n");
+    } else {
+        printf("case: engine guard refuses (the linked Mbed TLS accepts the ServerHello; only the guard stops it)\n");
+    }
+    if (barrier) {
+        if (lib_first) {
+            printf("second barrier: not applicable: library refuses first\n");
+            return 0;
+        }
+        test_second_barrier();
+    } else {
+        static const uint16_t g384[] = { MBEDTLS_SSL_IANA_TLS_GROUP_SECP384R1, MBEDTLS_SSL_IANA_TLS_GROUP_NONE };
+        test_honest("TLS 1.2", MBEDTLS_SSL_VERSION_TLS1_2, MBEDTLS_SSL_VERSION_TLS1_2, NULL, 0x0303, 0);
+        test_honest("TLS 1.3", MBEDTLS_SSL_VERSION_TLS1_3, MBEDTLS_SSL_VERSION_TLS1_3, NULL, 0x0304, 0);
+        test_honest("TLS 1.3 with HelloRetryRequest (secp384r1 only)", MBEDTLS_SSL_VERSION_TLS1_3, MBEDTLS_SSL_VERSION_TLS1_3, g384, 0x0304, 0x0018);
+        test_honest("dual TLS 1.2 + 1.3", MBEDTLS_SSL_VERSION_TLS1_2, MBEDTLS_SSL_VERSION_TLS1_3, NULL, 0x0304, 0);
+        test_attack(1);
+        test_attack(0);
+    }
     printf("%s (%d failed checks)\n", failures ? "FAIL" : "PASS", failures);
     return failures ? 1 : 0;
 }
