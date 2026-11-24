@@ -19,7 +19,7 @@ and run only when `--soak` or `--all` asks for them.
 | `filemanager/browser_refresh_leak_test.py` | The filesystem-refresh matrix, which needs a browser open on a directory while its contents change |
 | `filemanager/mount_cache_leak_test.py` | Entering one disk image after another, which mounts each one and holds the image file open |
 | `io/iec/softiec_soak_test.py` | The Software IEC drive driven from the C64 over the real bus while REST and FTP load the device (#877). `--mode` selects a realistic C64 OS soak, a hostile stress that edge-tests the command channel, OPEN names, x00 files, channels, transfers, direct access, the disk image types, the UCI target and the PC lanes racing the bus, or `both` in turn. `--log` runs each phase with logging off, on, both in turn, or toggled during the phase, and correlates the device's syslog against every command, open and close the suite made; `--syslog-spool` names a file an external collector writes, and without it the suite binds the UDP port the device's syslog setting names when it points at this host. Fails if the firmware stops answering, if fixture data read back differs, if the heap does not come back, or if the log contradicts what the suite did; `--profile stress` runs the stress mode for ten minutes and `--profile soak` runs the soak mode for four hours, both with logging off. The log rendering and correlation live in the sibling module `softiec_log.py` |
-| `io/iec/jiffy_load_soak_test.py` | LOAD from the Software IEC drive by a C64 program, again and again, with the status, error channel, end address and a checksum of every load checked (#986). Optionally slows the JiffyDOS host on purpose to reproduce the failing rows. The report arithmetic is in the sibling `jiffy_load.py`, checked device-free by `jiffy_load_test.py` |
+| `io/iec/jiffy_load_soak_test.py` | LOAD from the Software IEC drive by a C64 program, again and again, with the status, error channel, end address and a checksum of every load checked (#986). Optionally slows the JiffyDOS host on purpose to reproduce it. The report arithmetic is in the sibling `jiffy_load.py`, checked device-free by `jiffy_load_test.py` |
 
 The heap suites all read `GET /v1/machine:heap`. Firmware predating that
 endpoint answers 404 and their checks skip, so they are safe to run against any
@@ -132,9 +132,9 @@ tests/soak/network/connection_test.py --profile stress -H u64 2>&1 \
 
 ## JiffyDOS LOAD soak
 
-`io/iec/jiffy_load_soak_test.py` formalises the evidence of PR #1130 for #986: an
-intermittent `?LOAD ERROR` with JiffyDOS on the Software IEC drive, ST=66 while the error
-channel stays at `00, OK`. A small C64 program (`io/iec/jiffy_load_soak.asm`, assembled
+`io/iec/jiffy_load_soak_test.py` reproduces #986: an intermittent `?LOAD ERROR` (a silent
+short LOAD) with JiffyDOS on the Software IEC drive, ST=66 while the error channel stays
+at `00, OK`. No fix is known yet; the test is a reproducer. A small C64 program (`io/iec/jiffy_load_soak.asm`, assembled
 from source when the suite starts, nothing binary is committed) LOADs one file with the
 KERNAL's own LOAD, `--iterations` times. After each load it records ST and carry, the
 error channel, the end address and a checksum of what arrived, over a load area it filled
@@ -160,8 +160,8 @@ tests/soak/io/iec/jiffy_load_soak_test.py -H u64 --source d64 --size 8 --device 
 # Under your own JiffyDOS C64 KERNAL (a temporary copy is uploaded and removed again).
 tests/soak/io/iec/jiffy_load_soak_test.py -H u64 --jiffydos-rom ~/roms/JiffyDOS_C64.bin
 
-# The host delay rows of PR #1130: the host's first sample after it releases DATA is
-# 63, 88 or 103 cycles late, net. The red/green row is below.
+# The host delay rows: the host's first sample after it releases DATA is 63, 88 or 103
+# cycles late, net. The row that reproduces #986 is below.
 tests/soak/io/iec/jiffy_load_soak_test.py -H u64 --jiffydos-rom ~/roms/JiffyDOS_C64.bin \
   --host-delay 63 --partition-path /USB1/soak --iterations 100
 ```
@@ -185,8 +185,8 @@ directory back, removes the folder and the temporary KERNAL, and resets the C64,
 after a failure. It needs a Software IEC partition 1 and a bus id nothing else uses.
 
 The medium matters. On an Ultimate 64 Elite whose partition 1 is the `/Temp` RAM disk, JiffyDOS
-loads passed on firmware with the 50 us window with a host delay of 63 cycles (100 loads) and
-of 103 and 153 cycles (30 loads each); the same row with the file on a USB stick failed. `--partition-path
+loads passed with a host delay of 63 cycles (100 loads) and of 103 and 153 cycles (30 loads
+each); the same row with the file on a USB stick failed. `--partition-path
 DIR` therefore serves the file from `DIR`: the suite enables the Command Interface (and puts
 the setting back), adds an unused partition number for `DIR` through the UCI SoftIEC target,
 builds its folder there, and removes the partition and the folder when it ends. `DIR` must
@@ -194,12 +194,12 @@ exist, and the suite writes only the one folder under it. Do not
 open the Ultimate menu while it runs: that freezes the C64 mid-load, which breaks a serial
 LOAD without any firmware defect (`--help` and the Safety section apply).
 
-### The red/green row for #986
+### The row that reproduces #986
 
 The `jiffy-load-soak` entry of `run-tests` is a plain JiffyDOS/SoftIEC LOAD soak, whatever
-KERNAL is installed, with the file in partition 1. It checks that LOAD works over many loads and
-**cannot** tell the fixed firmware from the unfixed: it passes on both, so do not read it as a
-guard for #986. The row that can is run by hand:
+KERNAL is installed, with the file in partition 1. It checks that LOAD works over many loads
+without a host delay; it passes on current master and does not exercise the #986 failure.
+The row that does is run by hand:
 
 ```sh
 tests/soak/io/iec/jiffy_load_soak_test.py -H u64 --jiffydos-rom ~/roms/JiffyDOS_C64.bin \
@@ -207,19 +207,32 @@ tests/soak/io/iec/jiffy_load_soak_test.py -H u64 --jiffydos-rom ~/roms/JiffyDOS_
 ```
 
 with the file on a USB (or other non-RAM-disk) partition through `--partition-path`, a
-`--host-delay` and `--jiffydos-rom`. It is expected to fail on firmware with the 50 us window and to
-pass with 100 us. From the `/Temp` RAM disk the delay row passes on both, because the drive
-answers late there: the failures are at the first chunk of a LOAD, where the load ends at
-the load address, and only when the drive answers before the host samples the bus.
+`--host-delay` and `--jiffydos-rom`. Measured on an Ultimate 64 Elite with a 16 KiB file
+on a USB stick, in alternating blocks of 50 loads, with a JiffyDOS 6.01 KERNAL patched to
+delay the first DATA poll:
+
+| host delay | master (50 us hold) | with a 100 us hold (#1130) |
+|------------|---------------------|----------------------------|
+| 63 cycles  | 7 of 150 loads failed | 9 of 150 loads failed |
+| 88 cycles  | 0 of 50             | 0 of 50                    |
+| none       | 0 of 50             | 0 of 50                    |
+
+So the delay-63 row fails intermittently, in bursts, on master and with the 100 us change
+alike: the change tried in #1130 did not change the rate. The failures are silent short
+loads (ST=66, error channel `00, OK`), nearly all at the first chunk of a LOAD, where the
+load ends at the load address. The cause is not established and no fix is known. From the
+`/Temp` RAM disk the delay row passes.
 
 ### What a result looks like
 
+The layout of a failing run (the numbers here only illustrate the format):
+
 ```
-[04] the loads ... FAIL (72 of 100 loads were not clean, 290s SLOW)
-     load 1: ST=66, end $2000 (want $6000), checksum WRONG, error channel '00, OK,00,00'
-     load 2: ST=66, end $2000 (want $6000), checksum WRONG, error channel '00, OK,00,00'
+[04] the loads ... FAIL (7 of 100 loads were not clean, 190s)
+     load 12: ST=66, end $2000 (want $6000), checksum WRONG, error channel '00, OK,00,00'
+     load 13: ST=66, end $2000 (want $6000), checksum WRONG, error channel '00, OK,00,00'
      further loads that were not clean are counted, not listed
-     100 loads: 28 clean, 72 ST failures (ST=66 x72), 0 wrong content, 0 with an error status, 0 hangs; error channel 00 x100
+     100 loads: 93 clean, 7 ST failures (ST=66 x7), 0 wrong content, 0 with an error status, 0 hangs; error channel 00 x100
      seconds per load: min 0.0, median 0.1, max 1.9
      ST failures with 00, OK on the error channel are the signature of #986
 ```

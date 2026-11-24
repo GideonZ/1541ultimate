@@ -3,8 +3,9 @@
 
 GideonZ/1541ultimate#986 reports an intermittent ?LOAD ERROR with JiffyDOS on the
 Software IEC drive: ST=66 while the error channel still says 00, OK. The JiffyDOS KERNAL
-polls the bus at the start of each chunk of a LOAD with no timeout, and a host that comes
-back from a stall after the drive's window has closed reads it as an end of file.
+polls the bus at the start of each chunk of a LOAD with no timeout. The cause of the
+failure is not established. With the host's first poll delayed on purpose, the failure
+reproduces from a USB stick: silent short loads, nearly all at the first chunk, in bursts.
 
 The suite runs a small C64 program (jiffy_load_soak.asm, assembled from source here) that
 LOADs one file from the Software IEC drive with the KERNAL's own LOAD, --iterations times.
@@ -22,18 +23,18 @@ The KERNAL is the one the device runs, and the suite says which it found. --kern
 JiffyDOS C64 KERNAL image, which is licensed: the suite uploads a temporary copy under a
 name of its own, runs under it and removes it again, and prints and keeps none of it.
 
---host-delay CYCLES reproduces the rows of the #986 fix that slow the host on purpose. It
-needs --jiffydos-rom, patches the temporary copy so that the LOAD routine's sample of the
-bus after the host releases DATA is CYCLES late, net (13 plus a multiple of 5: 63, 88 and 103
-are the rows of the #986 fix), and refuses an
+--host-delay CYCLES slows the host on purpose, to reproduce #986. It needs --jiffydos-rom,
+patches the temporary copy so that the LOAD routine's sample of the bus after the host
+releases DATA is CYCLES late, net (13 plus a multiple of 5: 63, 88 and 103 are the usual
+rows), and refuses an
 image whose LOAD routine is not the one the patch is written for. Without --jiffydos-rom the
 delay rows are skipped.
 
 --source picks where the file lives: directory, a directory of the Software IEC drive's
 partition 1, or d64, a D64 image in such a directory that the drive enters with CD.
 --partition-path serves it from another directory of the device instead, added as a partition
-for the run through the UCI SoftIEC target: on the bench the failing rows of the #986 table
-need the file on a USB stick, where the Temp RAM disk behind partition 1 passed them. The
+for the run through the UCI SoftIEC target: on the bench the delayed rows fail
+from a USB stick, where the Temp RAM disk behind partition 1 passed them. The
 suite sets the Software IEC drive on and its bus id to --device, records what it changed, puts
 it back, and removes its directory, its partition and its KERNAL copy. See tests/soak/README.md.
 """

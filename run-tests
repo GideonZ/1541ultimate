@@ -723,8 +723,8 @@ SUITES: Sequence[Suite] = (
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --profile @SOAKPROFILE@ @KERNAL@"),
     # JiffyDOS/SoftIEC LOAD soak: LOAD from the Software IEC drive over and over under whatever
     # KERNAL the device runs, each load checked for status, error channel, end address and
-    # content. From partition 1 (the Temp RAM disk on some machines) this is a general LOAD
-    # soak and cannot catch #986; the red/green row needs a USB partition and the user's own
+    # content. As run here (no host delay, partition 1) it is a general LOAD soak and does not
+    # reproduce #986; the row that does needs a USB partition, a host delay and the user's own
     # JiffyDOS image, and is run by hand. See tests/soak/README.md.
     Suite("soak", "jiffy-load-soak", "tests/soak/io/iec/jiffy_load_soak_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --profile @SOAKPROFILE@ @KERNAL@"),
