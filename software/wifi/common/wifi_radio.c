@@ -16,6 +16,26 @@ bool radio_is_on(void)
     return radio_on;
 }
 
+// Defaults for a module without an entropy gate (the U2+L module does not serve
+// GET_RANDOM): nothing to hold and nothing to switch. radio_entropy.c, in the modules
+// that do, replaces them.
+__attribute__((weak)) int radio_entropy_change_begin(void)
+{
+    return RE_OK;
+}
+
+__attribute__((weak)) void radio_entropy_changing(bool starting)
+{
+}
+
+__attribute__((weak)) void radio_entropy_changed(bool radio_on)
+{
+}
+
+__attribute__((weak)) void radio_entropy_change_end(void)
+{
+}
+
 // Every change runs under the exclusive hold of the entropy gate, which also switches the
 // RNG's source between the radio and the SAR ADC (radio_entropy.h)
 int radio_start(void)
