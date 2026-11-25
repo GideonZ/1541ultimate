@@ -18,7 +18,7 @@
  *
  * Built into both ESP modules (software/wifi/raw_u64 and software/u64ctrl). The logic is
  * in radio_entropy.c, the chip side in radio_entropy_esp.c, and the host test
- * (target/pc/linux/radioentropy) replaces the latter.
+ * (software/wifi/tests/radio_entropy_test.c) replaces the latter.
  */
 
 #ifndef SOFTWARE_WIFI_COMMON_RADIO_ENTROPY_H_

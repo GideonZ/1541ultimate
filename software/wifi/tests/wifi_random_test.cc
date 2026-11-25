@@ -1,6 +1,6 @@
 // Host test of wifi_random.cc, the check on the module's answer to GET_RANDOM:
 // answers a broken or confused module could send, none of which may hand out a byte.
-//   make -C target/pc/linux/wifirandom test
+//   make -C software/wifi/tests random
 #include <stdio.h>
 #include <stddef.h>
 #include <string.h>

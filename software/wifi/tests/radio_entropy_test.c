@@ -6,7 +6,7 @@
 //   - any chip call made without the gate held exclusively, or a log line written with it held;
 //   - a source other than NONE reported while the radio starts or stops.
 // The radio is started and stopped through wifi_radio.c, which is built in too.
-//   make -C target/pc/linux/radioentropy test
+//   make -C software/wifi/tests entropy
 // Each case runs in a process of its own, because the helper keeps its state in statics.
 #include <pthread.h>
 #include <stdarg.h>

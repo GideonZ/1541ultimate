@@ -34,8 +34,8 @@ INC_u64ctrl := -I$(PATH_SW)/wifi/common
 HOSTTEST := $(PATH_SW)/io/usb/tests
 CASES    := $(wildcard module_*_test.cpp)
 RADIO    := $(wildcard radio_*test.cpp)
-# radio_entropy.h includes rpc_calls.h of raw_u64, which needs lwIP's headers; the wifi_random test stubs them out
-RADIO_INC := -I$(PATH_SW)/wifi/common -I$(PATH_SW)/wifi/raw_u64/main -I$(PATH_SW)/test/wifi_random
+# radio_entropy.h includes rpc_calls.h of raw_u64, which needs lwIP's headers; stub/lwip stubs them out
+RADIO_INC := -I$(PATH_SW)/wifi/common -I$(PATH_SW)/wifi/raw_u64/main -Istub
 COMMON   := -g -O0 -Wall -Wno-unused-parameter -D_FORTIFY_SOURCE=0
 CFLAGS   := -std=gnu11 $(COMMON) -Wno-unused-variable -Wno-unused-function
 CXXFLAGS := -std=c++14 $(COMMON) -I$(HOSTTEST) -I. -Istub
@@ -50,13 +50,13 @@ FUNCS_RPC   := cmd_identify cmd_wifi_connect cmd_wifi_endisable cmd_get_connecti
 NEEDED      := send_event wifi_event_handler attempt_connect wifi_connect_to_scanned enable_wifi_if_needed \
                handle_connect_command connect_thread cmd_identify cmd_wifi_connect cmd_wifi_endisable cmd_get_connection
 
-.PHONY: all test clean radio
+.PHONY: all test clean radio entropy random voltages
 
 all: test
 
 test:
 	@set -e; for m in $(MODULE); do $(MAKE) --no-print-directory M=$$m run; done
-	@$(MAKE) --no-print-directory radio
+	@$(MAKE) --no-print-directory radio entropy random voltages
 
 # --- one module: M=<module> -------------------------------------------------------------
 
@@ -94,6 +94,38 @@ radio:
 	$(CXX) $(CXXFLAGS) $(RADIO_INC) -o $(OUT)/radio/wifi_radio_test $(RADIO) $(HOSTTEST)/host_test_main.cpp \
 	    $(OUT)/radio/wifi_radio.o $(OUT)/radio/radio_boot.o -lpthread
 	@echo "== radio"; $(OUT)/radio/wifi_radio_test
+
+# --- the entropy gate (radio_entropy.c), with wifi_radio.c, against a model of the chip that fails
+# the test on any call the hardware would not allow -------------------------------------------
+
+entropy:
+	@mkdir -p $(OUT)/entropy
+	$(CC) -std=gnu11 -g -O0 -Wall -Wextra -Wno-unused-parameter -pthread $(RADIO_INC) -I. \
+	    -o $(OUT)/entropy/radio_entropy_test radio_entropy_test.c \
+	    $(PATH_SW)/wifi/common/radio_entropy.c $(PATH_SW)/wifi/common/wifi_radio.c
+	@echo "== entropy"; $(OUT)/entropy/radio_entropy_test
+
+# --- the check on the module's answer to GET_RANDOM (io/wifi/wifi_random.cc), against the headers of
+# each module that serves it: raw_u64 (U64 == 1) and u64ctrl (U64 == 2) ----------------------------
+
+random:
+	@mkdir -p $(OUT)/random
+	$(CXX) -std=gnu++11 -g -O0 -Wall -Wextra -Wno-unused-parameter -DU64=1 -Istub -I$(PATH_SW)/io/wifi \
+	    -I$(DIR_raw_u64) -I$(PATH_SW)/wifi/common -o $(OUT)/random/u64 wifi_random_test.cc $(PATH_SW)/io/wifi/wifi_random.cc
+	$(CXX) -std=gnu++11 -g -O0 -Wall -Wextra -Wno-unused-parameter -DU64=2 -Istub -I$(PATH_SW)/io/wifi \
+	    -I$(DIR_u64ctrl) -I$(PATH_SW)/wifi/common -o $(OUT)/random/u64ctrl wifi_random_test.cc $(PATH_SW)/io/wifi/wifi_random.cc
+	@echo "== random, raw_u64"; $(OUT)/random/u64
+	@echo "== random, u64ctrl"; $(OUT)/random/u64ctrl
+
+# --- cmd_get_voltages of u64ctrl: a read that fails says so and carries no stale bytes ---------------
+
+voltages:
+	@mkdir -p $(OUT)/voltages
+	@{ grep -E '^#define UART_CHAN' $(DIR_u64ctrl)/rpc_dispatch.c; $(EXTRACT) -v f=cmd_get_voltages $(DIR_u64ctrl)/rpc_dispatch.c; } > $(OUT)/voltages/voltages_extract.c
+	@grep -q cmd_get_voltages $(OUT)/voltages/voltages_extract.c || { echo "wifi tests: cmd_get_voltages not found"; exit 1; }
+	$(CC) -std=gnu11 -g -O0 -Wall -Wno-unused-parameter -Wno-unused-variable -Wno-unused-function \
+	    -I$(OUT)/voltages -Istub -I$(DIR_u64ctrl) -I$(PATH_SW)/wifi/common -o $(OUT)/voltages/voltages_test voltages_test.c
+	@echo "== voltages"; $(OUT)/voltages/voltages_test
 
 clean:
 	@rm -rf $(OUT)

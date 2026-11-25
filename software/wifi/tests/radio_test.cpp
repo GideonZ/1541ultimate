@@ -4,7 +4,7 @@
  * wifi_radio.c (the one place that starts and stops the radio of the U64 and U2+L modules)
  * against a chip stub that counts the Wi-Fi starts and stops and can be told to fail them,
  * and radio_boot.c (the radio's state across a restart of the module), and a stub of the entropy gate
- * (radio_entropy.c has its own test, target/pc/linux/radioentropy).
+ * (radio_entropy.c has its own test, radio_entropy_test.c).
  */
 
 #include <stdio.h>
