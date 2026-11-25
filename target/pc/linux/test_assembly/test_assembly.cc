@@ -208,6 +208,18 @@ static void test_json()
     }
 }
 
+static void test_json_until_close()
+{
+    // A reply with no length ends when the server closes; the body is complete.
+    for (int mode = 0; mode < 3; mode++) {
+        Assembly client;
+        Peer peer("HTTP/1.1 200 OK\r\n\r\n{}");
+        JSON *json = query(client, mode);
+        check(json != NULL, "JSON reply ended by close accepted");
+        if (mode != 0) delete json;
+    }
+}
+
 static void test_cache(HostStorage &storage)
 {
     FileSystemA64 a64;
@@ -289,6 +301,7 @@ int main()
     fm->set_temp_auto_cleanup_enabled(false);
     fm->add_root_entry(node);
     test_json();
+    test_json_until_close();
     test_cache(storage);
     test_complete_bodies(storage);
     fm->remove_root_entry(node);
