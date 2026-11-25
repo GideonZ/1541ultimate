@@ -29,6 +29,7 @@ static bool random_answer;
 static int random_err;
 static uint8_t random_source = 1;
 static uint16_t random_length;
+static int random_command = -1;    // when not -1, the command the answer carries instead
 
 #define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); failures++; } } while (0)
 
@@ -58,6 +59,9 @@ static void answer(rpc_header_t hdr)
     if (random_answer) {
         rpc_get_random_resp *rnd = (rpc_get_random_resp *)rxbuf.data;
         rnd->hdr = hdr;
+        if (random_command >= 0) {
+            rnd->hdr.command = (uint8_t)random_command;
+        }
         rnd->esp_err = random_err;
         rnd->source = random_source;
         rnd->length = random_length;
@@ -293,6 +297,33 @@ static void test_random(void)
         CHECK(wifi_get_random(out, 8) == want[i]);
         CHECK(out[0] == 0);
         CHECK(uart.buffers_free == 1);
+    }
+
+    // An answer to another command, with this request's sequence: not ours, no byte is handed out
+    random_setup(8);
+    reply_at = ON_TIME;
+    random_command = CMD_WIFI_GETMAC;
+    memset(out, 0, sizeof(out));
+    CHECK(wifi_get_random(out, 8) == WIFI_RANDOM_FOREIGN);
+    CHECK(out[0] == 0 && uart.buffers_free == 1);
+    random_command = -1;
+
+    // Every reply slot taken: busy, nothing is sent, and the TX buffer is given back
+    {
+        rpc_header_t held[WIFI_REPLY_SLOTS];
+        random_setup(8);
+        for (int i = 0; i < WIFI_REPLY_SLOTS; i++) {
+            CHECK(wifi_reply_register(&held[i]));
+        }
+        memset(out, 0, sizeof(out));
+        CHECK(wifi_get_random(out, 8) == WIFI_RANDOM_BUSY);
+        CHECK(uart.transmitted == 0 && uart.buffers_free == 1 && out[0] == 0);
+        random_answer = false;
+        for (int i = 0; i < WIFI_REPLY_SLOTS; i++) {
+            answer(held[i]);
+        }
+        notify_pending = false;
+        CHECK(all_slots_free());
     }
 
     // An answer after the slot was released is not the caller's any more

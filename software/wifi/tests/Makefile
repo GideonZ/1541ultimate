@@ -94,6 +94,9 @@ radio:
 	$(CXX) $(CXXFLAGS) $(RADIO_INC) -o $(OUT)/radio/wifi_radio_test $(RADIO) $(HOSTTEST)/host_test_main.cpp \
 	    $(OUT)/radio/wifi_radio.o $(OUT)/radio/radio_boot.o -lpthread
 	@echo "== radio"; $(OUT)/radio/wifi_radio_test
+	$(CXX) $(CXXFLAGS) $(RADIO_INC) -o $(OUT)/radio/weak_hooks_test weak_hooks_check.cpp $(HOSTTEST)/host_test_main.cpp \
+	    $(OUT)/radio/wifi_radio.o -lpthread
+	@echo "== radio without an entropy gate"; $(OUT)/radio/weak_hooks_test
 
 # --- the entropy gate (radio_entropy.c), with wifi_radio.c, against a model of the chip that fails
 # the test on any call the hardware would not allow -------------------------------------------

@@ -670,10 +670,12 @@ static void test_get_random(void)
         { WIFI_RANDOM_BUSY,    "88,ENTROPY SOURCE BUSY" },
         { WIFI_RANDOM_REFUSED, "87,NO ENTROPY SOURCE" },
         { WIFI_RANDOM_INVALID, "86,INTERNAL ERROR" },
+        { WIFI_RANDOM_NO_MODULE, "87,NO ENTROPY SOURCE" },
+        { WIFI_RANDOM_FOREIGN, "87,NO ENTROPY SOURCE" },
     };
     for (unsigned i = 0; i < sizeof(refused) / sizeof(refused[0]); i++) {
         module_result = refused[i].result;
-        CHECK(run(sixteen, 4, &reply, &status) && status_is(status, refused[i].text) && reply->length == 0,
+        CHECK(run(sixteen, 4, &reply, &status) && status_is(status, refused[i].text) && reply == &c_message_empty,
               "get random: %s, and no bytes", refused[i].text);
     }
 

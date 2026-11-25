@@ -1614,6 +1614,7 @@ def run_get_random_leaves_sockets_alone(net: Net, peer: Peer, duty: RandomDuty,
     section("get-random-leaves-sockets-alone")
     if not random_expected(net, duty):
         return None
+    baseline = net.identify()
     handle = net.open_udp(peer.ip, peer.udp_port)
     try:
         peer.learn_udp_peer(net, handle)
@@ -1656,6 +1657,15 @@ def run_get_random_leaves_sockets_alone(net: Net, peer: Peer, duty: RandomDuty,
             result = net.close(closing)
             if result.status_text != STATUS_OK:
                 raise Failure(f"CLOSE_SOCKET answered {result.status_text!r}")
+
+        with check("IDENTIFY after GET_RANDOM answers exactly as before it"):
+            identity = net.identify()
+            if (identity.data, identity.status_text, len(identity.blocks)) != \
+                    (baseline.data, baseline.status_text, len(baseline.blocks)):
+                raise Failure(f"IDENTIFY answered {identity.data!r}, {identity.status_text!r} "
+                              f"in {len(identity.blocks)} block(s); before GET_RANDOM it was "
+                              f"{baseline.data!r}, {baseline.status_text!r} in "
+                              f"{len(baseline.blocks)}")
     finally:
         if handle is not None:
             net.close(handle)
