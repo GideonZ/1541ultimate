@@ -4,10 +4,9 @@
 # stand-ins (software/test/get_random_paths):
 #   net_target  NetworkTarget::get_random(), the GET_RANDOM case of execute() and the
 #               status messages, with wifi_random.cc
-#   isr         wifi_rx_isr() from wifi_cmd.cc and DmaUART::ClearRxBuffer() from dma_uart.cc
 #   voltages    cmd_get_voltages() from the u64ctrl module's rpc_dispatch.c
 #
-#   make test               build and run all three
+#   make test               build and run both
 #   make SRC=<dir> test     take the files from a copy of software/ (a mutant)
 #
 PATH_SW = ../../../../software
@@ -25,7 +24,7 @@ FN = awk -v f="$(1)" 'index($$0, f "(") == 1 && $$0 !~ /;[[:space:]\r]*$$/ { p =
 
 .PHONY: all test clean
 
-all: $(RESULT)/net_target $(RESULT)/isr $(RESULT)/voltages
+all: $(RESULT)/net_target $(RESULT)/voltages
 
 $(OUTPUT)/net.cc: $(SRC)/io/network/network_target.cc $(SRC)/io/command_interface/command_intf.cc
 	@mkdir -p $(OUTPUT)
@@ -44,20 +43,8 @@ $(OUTPUT)/net.cc: $(SRC)/io/network/network_target.cc $(SRC)/io/command_interfac
 $(RESULT)/net_target: $(OUTPUT)/net.cc $(TESTDIR)/net_target_test.cc
 	@mkdir -p $(RESULT)
 	$(CXX) -std=gnu++11 -g -O0 $(WARN) -DU64=1 -I$(TESTDIR)/stub -I$(TESTDIR) -I$(SRC)/io/network -I$(SRC)/io/wifi \
-	    -I$(PATH_SW)/test/wifi_random -I$(PATH_SW)/test/wifi_dedicated/stub -I$(SRC)/wifi/raw_u64/main -I$(SRC)/wifi/common \
+	    -I$(PATH_SW)/test/wifi_random -I$(SRC)/wifi/raw_u64/main -I$(SRC)/wifi/common \
 	    -o $@ $(OUTPUT)/net.cc $(TESTDIR)/net_target_test.cc $(SRC)/io/wifi/wifi_random.cc
-
-$(OUTPUT)/isr.cc: $(SRC)/io/wifi/wifi_cmd.cc $(SRC)/io/uart/dma_uart.cc
-	@mkdir -p $(OUTPUT)
-	@{ echo '#include "isr_env.h"'; \
-	   $(call FN,BaseType_t wifi_rx_isr,$(SRC)/io/wifi/wifi_cmd.cc); \
-	   $(call FN,void DmaUART::ClearRxBuffer,$(SRC)/io/uart/dma_uart.cc); } > $@
-	@grep -q 'wifi_rx_isr' $@ && grep -q 'ClearRxBuffer' $@ || { echo "getrandompaths: isr functions not found"; exit 1; }
-
-$(RESULT)/isr: $(OUTPUT)/isr.cc $(TESTDIR)/isr_test.cc
-	@mkdir -p $(RESULT)
-	$(CXX) -std=gnu++11 -g -O0 $(WARN) -DU64=1 -I$(TESTDIR)/stub -I$(TESTDIR) -I$(SRC)/io/wifi -I$(SRC)/wifi/raw_u64/main -I$(SRC)/wifi/common \
-	    -o $@ $(OUTPUT)/isr.cc $(TESTDIR)/isr_test.cc
 
 $(OUTPUT)/voltages_extract.c: $(SRC)/u64ctrl/main/rpc_dispatch.c
 	@mkdir -p $(OUTPUT)
@@ -70,7 +57,7 @@ $(RESULT)/voltages: $(OUTPUT)/voltages_extract.c $(TESTDIR)/voltages_test.c
 	    -o $@ $(TESTDIR)/voltages_test.c
 
 test: all
-	@$(RESULT)/net_target && $(RESULT)/isr && $(RESULT)/voltages
+	@$(RESULT)/net_target && $(RESULT)/voltages
 
 clean:
 	@rm -rf $(OUTPUT) $(RESULT)

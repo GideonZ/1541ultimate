@@ -1,13 +1,10 @@
 #include "wifi_cmd.h"
 #include "dump_hex.h"
+#include "wifi_random.h"
 
 /// C like functions to 'talk' with the WiFi Module
-uint16_t sequence_nr = 0;
+static uint16_t sequence_nr = 0;
 static wifi_reply_slot_t replySlots[WIFI_REPLY_SLOTS];
-#if U64 >= 1
-QueueHandle_t dedicated_replies = NULL;
-volatile bool dedicated_waiting = false;
-#endif
 
 void hex(uint8_t h)
 {
@@ -21,16 +18,6 @@ BaseType_t wifi_rx_isr(command_buf_context_t *context, command_buf_t *buf, BaseT
     rpc_header_t *hdr = (rpc_header_t *)buf->data;
     BaseType_t res;
 
-#if U64 >= 1
-    if (hdr->thread == WIFI_DEDICATED_THREAD) {
-        // pdFALSE makes the interrupt handler free the buffer.
-        if (!dedicated_waiting) {
-            return pdFALSE;
-        }
-        dedicated_reply_t reply = { buf, esp32.uart->generation };
-        return xQueueSendFromISR(dedicated_replies, &reply, w);
-    }
-#endif
     TaskHandle_t thread = (TaskHandle_t)wifi_reply_take(replySlots, hdr->thread, hdr->sequence);
     if (thread) {
         ioWrite8(UART_DATA, 'N');
@@ -96,11 +83,6 @@ void wifi_command_init(void)
     esp32.uart->FlowControl(true);
     esp32.uart->ClearRxBuffer();
     esp32.uart->EnableSlip(true);
-#if U64 >= 1
-    if (!dedicated_replies) {
-        dedicated_replies = xQueueCreate(4, sizeof(dedicated_reply_t));
-    }
-#endif
     esp32.uart->SetReceiveCallback(wifi_rx_isr);
     esp32.uart->EnableIRQ(true);
 }
@@ -404,6 +386,45 @@ int wifi_get_voltages(voltages_t *voltages)
     voltages->v10  = result->v10;
     voltages->vusb = result->vusb;
     RETURN_ESP;
+}
+#endif
+
+#if (U64 >= 1) && !defined(RECOVERYAPP)
+// GET_RANDOM for the UCI command of the same name, called on the network worker.
+// BUFARGS would wait up to 1000 ticks (5 s) for a TX buffer; here 4 ticks (20 ms),
+// so that the worst case is that plus the 200 ms for the answer. A refusal to
+// send or an answer that does not come is "busy": nothing was drawn, asking again is safe.
+int wifi_get_random(uint8_t *buf, uint16_t len)
+{
+    if (!wifi_module_ready()) {
+        return WIFI_RANDOM_NO_MODULE;
+    }
+    command_buf_t *tx;
+    if (esp32.uart->GetBuffer(&tx, 4) == pdFALSE) {
+        printf(no_wifi_buf);
+        return WIFI_RANDOM_BUSY;
+    }
+    rpc_get_random_req *args = (rpc_get_random_req *)tx->data;
+    args->hdr.command = CMD_GET_RANDOM;
+    args->length = len;
+    tx->size = sizeof(rpc_get_random_req);
+    if (!wifi_reply_register(&args->hdr)) {
+        esp32.uart->FreeBuffer(tx);
+        printf(no_wifi_slot);
+        return WIFI_RANDOM_BUSY;
+    }
+    uint16_t sequence = args->hdr.sequence;
+    tx = wifi_transmit(tx, 200);
+    if (!tx) {
+        printf("*** NO REPLY FROM WIFI MODULE.\n");
+        return WIFI_RANDOM_BUSY;
+    }
+    int retval = wifi_random_take_reply(tx->data, tx->size, sequence, buf, len);
+    if (retval != 0) {
+        printf("Get Random failed (%d). Size: %d.\n", retval, tx->size);
+    }
+    esp32.uart->FreeBuffer(tx);
+    return retval;
 }
 #endif
 

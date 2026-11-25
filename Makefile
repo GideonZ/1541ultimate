@@ -95,7 +95,6 @@ host_tests:
 	@$(MAKE) -C target/pc/linux/ucitargets test
 	@$(MAKE) -C target/pc/linux/radioentropy test
 	@$(MAKE) -C target/pc/linux/wifirandom test
-	@$(MAKE) -C target/pc/linux/wifidedicated test
 	@$(MAKE) -C target/pc/linux/getrandompaths test
 	@$(MAKE) -C software/userinterface/tests
 

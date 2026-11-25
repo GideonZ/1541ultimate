@@ -201,7 +201,6 @@ SRCS_CC	 =  u64ii_init.cc \
 			network_esp32.cc \
 			wifi_cmd.cc \
 			wifi_random.cc \
-			wifi_dedicated.cc \
 			wifi.cc \
 			sntp_time.cc \
 			$(PRJ).cc
