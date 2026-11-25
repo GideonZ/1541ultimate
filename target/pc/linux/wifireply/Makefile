@@ -27,7 +27,7 @@ CXXOPTIONS = -std=c++11 -g -O0 -w -DRISCV=1 -DU64=2 -include $(STUBS)/FreeRTOS.h
 
 SRCS_C  = wifi_reply_test.c
 OBJS    = $(addprefix $(OUTPUT)/, $(SRCS_C:%.c=%.o))
-CMD_SRC = $(PATH_SW)/io/wifi/wifi_cmd.cc $(PATH_SW)/io/wifi/wifi_random.cc $(PATH_SW)/test/wifi_reply/wifi_cmd_test.cc
+CMD_SRC = $(PATH_SW)/io/wifi/wifi_cmd.cc $(PATH_SW)/io/wifi/wifi_random.cc $(PATH_SW)/io/wifi/wifi_get_random.cc $(PATH_SW)/test/wifi_reply/wifi_cmd_test.cc
 CMD_DEP = $(wildcard $(PATH_SW)/io/wifi/*.h $(STUBS)/*.h)
 CONN_SRC = $(PATH_SW)/test/wifi_reply/wifi_connect_test.cc
 
