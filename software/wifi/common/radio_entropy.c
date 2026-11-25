@@ -335,14 +335,8 @@ int radio_entropy_serve_get_random(void *data, int size, void (*fill)(void *, si
             resp->esp_err = RE_ESP_ERR_INVALID_STATE;
         } else {
             fill(resp->data, length);
-            // The gate keeps the radio from changing while it is held; this is a second guard
-            if (entropy_source() == ENTROPY_NONE) {
-                resp->source = ENTROPY_NONE;
-                resp->esp_err = RE_ESP_ERR_INVALID_STATE;
-            } else {
-                resp->esp_err = 0;
-                resp->length = length;
-            }
+            resp->esp_err = 0;
+            resp->length = length;
         }
         radio_entropy_release_shared();
     }
