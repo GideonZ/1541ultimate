@@ -28,7 +28,4 @@ int radio_stop(void);
 // longer counts as on, and a stop that fails makes it count again
 bool radio_is_on(void);
 
-// The number of stops begun so far, so that a caller can tell the radio went off under it
-uint32_t radio_epoch(void);
-
 #endif /* SOFTWARE_WIFI_COMMON_WIFI_RADIO_H_ */
