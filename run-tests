@@ -238,6 +238,9 @@ SUITES: Sequence[Suite] = (
     # menu; every answer must be the data, none the $FF a half-frozen bus gives (#1106).
     Suite("e2e", "menu-freeze-dma", "tests/e2e/api/menu_freeze_dma_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
+    # machine:reset sent while the menu is opening must not crash the device.
+    Suite("e2e", "menu-reset-race", "tests/e2e/api/menu_reset_race_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
     Suite("e2e", "menu-screen", "tests/e2e/api/menu_screen_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --test all", profile=profiles.SMOKE),
     # Keyboard, joystick and mouse injection over REST, checked against what the
