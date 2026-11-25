@@ -325,6 +325,7 @@ e2e:
   machine-code-monitor              .      .      .      x      x
   memory-views                      .      .      x      x      x
   menu-freeze-dma                   .      .      x      x      x
+  menu-reset-race                   .      .      x      x      x
   menu-screen                       x      x      x      x      x
   micromys-wheel                    .      .      .      x      x
   mus-rest-play                     .      .      x      x      x
@@ -393,8 +394,8 @@ soak:
   usb-keyboard-repeat               .      .      .      x      x
 
                                ------ ------ ------ ------ ------
-  suites                           16     37     89    105    105
-  suite runs                       16     37     89    210    315
+  suites                           16     37     90    106    106
+  suite runs                       16     37     90    212    318
 
 Scenario and check counts, and durations, are not shown here:
 the registry does not know them. They depend on the machine and are

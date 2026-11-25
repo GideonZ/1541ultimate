@@ -200,6 +200,21 @@ void C64_Subsys :: restoreCart(void)
 }
 
 
+// Takes the host back from the user interface and drops it as the machine's client.
+// False if the menu task did not let go (logged there): the menu is still up and
+// the machine must be left alone.
+bool C64_Subsys :: release_client(C64 *c64)
+{
+    if (!c64->client) {
+        return true;
+    }
+    if (!c64->client->release_host()) {
+        return false;
+    }
+    c64->client = 0;
+    return true;
+}
+
 SubsysResultCode_e C64_Subsys::executeCommand(SubsysCommand *cmd)
 {
     File *f = 0;
@@ -250,16 +265,16 @@ SubsysResultCode_e C64_Subsys::executeCommand(SubsysCommand *cmd)
             c64->setButtonPushed();
             break;
         case C64_UNFREEZE:
-            if (c64->client) { // we can't execute this yet
-                c64->client->release_host(); // disconnect from user interface
-                c64->client = 0;
+            if (!release_client(c64)) {
+                result = SSRET_INTERNAL_ERROR;
+                break;
             }
             c64->unfreeze();
             break;
         case MENU_C64_RESET:
-            if (c64->client) { // we can't execute this yet
-                c64->client->release_host(); // disconnect from user interface
-                c64->client = 0;
+            if (!release_client(c64)) {
+                result = SSRET_INTERNAL_ERROR;
+                break;
             }
             // The menu task may be in unfreeze() itself, closing the menu this very moment.
             // Both then run the restore one after the other, not interleaved: the lock is
@@ -284,9 +299,9 @@ SubsysResultCode_e C64_Subsys::executeCommand(SubsysCommand *cmd)
 
         case MENU_C64_CLEARMEM:
 #if U64
-            if (c64->client) { // we can't execute this yet
-                c64->client->release_host(); // disconnect from user interface
-                c64->client = 0;
+            if (!release_client(c64)) {
+                result = SSRET_INTERNAL_ERROR;
+                break;
             }
             c64->clear_ram();
             c64->start_cartridge(NULL);
@@ -314,17 +329,17 @@ SubsysResultCode_e C64_Subsys::executeCommand(SubsysCommand *cmd)
             break;
 
         case MENU_C64_REBOOT:
-            if (c64->client) { // we can't execute this yet
-                c64->client->release_host(); // disconnect from user interface
-                c64->client = 0;
+            if (!release_client(c64)) {
+                result = SSRET_INTERNAL_ERROR;
+                break;
             }
             c64->start_cartridge(NULL);
             break;
 
         case C64_START_CART:
-            if (c64->client) { // we can't execute this yet
-                c64->client->release_host(); // disconnect from user interface
-                c64->client = 0;
+            if (!release_client(c64)) {
+                result = SSRET_INTERNAL_ERROR;
+                break;
             }
             c64->start_cartridge((cart_def *)cmd->mode);
             break;
@@ -459,7 +474,9 @@ SubsysResultCode_e C64_Subsys::executeCommand(SubsysCommand *cmd)
             if (res == FR_OK) {
                 char shown[52];
                 const char *name = x00_load_name(f, cmd->filename.c_str(), shown, sizeof(shown));
-                dma_load(f, NULL, 0, name, cmd->mode, c64->cfg->get_value(CFG_C64_DMA_ID));
+                if (dma_load(f, NULL, 0, name, cmd->mode, c64->cfg->get_value(CFG_C64_DMA_ID)) < 0) {
+                    result = SSRET_INTERNAL_ERROR;
+                }
                 fm->fclose(f);
             } else {
                 result = SSRET_CANNOT_OPEN_FILE;
@@ -472,7 +489,9 @@ SubsysResultCode_e C64_Subsys::executeCommand(SubsysCommand *cmd)
             if (res == FR_OK) {
                 char shown[52];
                 const char *name = x00_load_name(f, cmd->filename.c_str(), shown, sizeof(shown));
-                dma_load(f, NULL, 0, name, cmd->mode, c1541_A->get_current_iec_address());
+                if (dma_load(f, NULL, 0, name, cmd->mode, c1541_A->get_current_iec_address()) < 0) {
+                    result = SSRET_INTERNAL_ERROR;
+                }
                 fm->fclose(f);
             } else {
                 result = SSRET_CANNOT_OPEN_FILE;
@@ -485,21 +504,27 @@ SubsysResultCode_e C64_Subsys::executeCommand(SubsysCommand *cmd)
                 // A raw load has no name to print; the header is still skipped, because
                 // the C64 file is what follows it.
                 x00_skip_header(f, cmd->filename.c_str(), NULL);
-                dma_load_raw(f);
+                if (dma_load_raw(f) < 0) {
+                    result = SSRET_INTERNAL_ERROR;
+                }
                 fm->fclose(f);
             } else {
                 result = SSRET_CANNOT_OPEN_FILE;
             }
             break;
         case C64_DRIVE_LOAD:
-            dma_load(0, NULL, 0, cmd->filename.c_str(), cmd->mode, cmd->path.c_str()[0] & 0x1F);
+            if (dma_load(0, NULL, 0, cmd->filename.c_str(), cmd->mode, cmd->path.c_str()[0] & 0x1F) < 0) {
+                result = SSRET_INTERNAL_ERROR;
+            }
             if (cmd->user_interface) {
                 cmd->user_interface->menu_response_to_action = MENU_HIDE;
             }
             break;
         case C64_DMA_BUFFER:
-            dma_load(0, (const uint8_t *)cmd->buffer, cmd->bufferSize, cmd->filename.c_str(), cmd->mode,
-                    c64->cfg->get_value(CFG_C64_DMA_ID));
+            if (dma_load(0, (const uint8_t *)cmd->buffer, cmd->bufferSize, cmd->filename.c_str(), cmd->mode,
+                    c64->cfg->get_value(CFG_C64_DMA_ID)) < 0) {
+                result = SSRET_INTERNAL_ERROR;
+            }
             break;
         case C64_DMA_RAW_WRITE:
             if (dma_load_raw_buffer((uint16_t)cmd->mode, (uint8_t *)cmd->buffer, cmd->bufferSize, 0) < 0) {
@@ -609,7 +634,9 @@ int C64_Subsys :: dma_load_raw(File *f)
 {
 	bool i_stopped_it = false;
 	if (c64->client) {
-    	c64->client->release_host(); // disconnect from user interface
+    	if (!c64->client->release_host()) { // disconnect from user interface
+    	    return -1;
+    	}
     	c64->release_ownership();
 	}
 	if(!c64->isFrozen) {
@@ -637,7 +664,10 @@ int C64_Subsys :: dma_load_raw_buffer(uint16_t offset, uint8_t *buffer, int leng
     }
     if (c64->client && !c64->isFrozen) {
         // A client that holds the host without a freeze behind it (freeze() declined, no PHI2).
-        c64->client->release_host(); // disconnect from user interface
+        if (!c64->client->release_host()) { // disconnect from user interface
+            c64->unlock_ownership();
+            return -1;
+        }
         c64->release_ownership();
     }
     if(!c64->is_stopped()) {
@@ -672,8 +702,9 @@ int C64_Subsys :: dma_load(File *f, const uint8_t *buffer, const int bufferSize,
 {
 	// prepare DMA load
     if(c64->client) { // we are locked by a client, likely: user interface
-    	c64->client->release_host(); // disconnect from user interface
-    	c64->client = 0;
+    	if (!release_client(c64)) {
+    	    return -1;
+    	}
 	}
     if(!c64->isFrozen) {
     	c64->stop(false);
