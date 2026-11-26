@@ -1772,6 +1772,41 @@ static int test_d_refuses_undocumented_opcode_with_specific_warning()
     return 0;
 }
 
+static int test_go_refuses_to_resume_when_session_reclaim_is_denied()
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    TrackingDebugBackend backend;
+    monitor_reset_saved_state();
+
+    backend.snapshot_result = DebugSession::DBG_NOT_SUPPORTED;
+    backend.write(0x1000, 0xEA);
+    const int keys[] = { 'J', 'A', 'U', 'D', 'D', 'G' };
+    FakeKeyboard keyboard(keys, 6);
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+    ui.set_prompt("1000", 1);
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+    for (int i = 0; i < 4; ++i) {
+        if (expect(monitor.poll(0) == 0, "Unsupported step stays in Debug")) return 1;
+    }
+    backend.last_session->predict_bytes_valid = true;
+    backend.last_session->predict_bytes[0] = 0x1A;
+    if (expect(monitor.poll(0) == 0, "Unsupported step stays in the monitor")) return 1;
+    if (expect(strcmp(ui.last_popup, "UNSUPPORTED OPCODE") == 0,
+               "The unsupported step must release its session")) return 1;
+    backend.session_claim_allowed = false;
+    if (expect(monitor.poll(0) == 0, "Busy Go must stay in the monitor")) return 1;
+    if (expect(backend.session_creations == 2 && strcmp(ui.last_popup, "DEBUG IN USE") == 0,
+               "Go must report that another monitor owns Debug")) return 1;
+    if (expect(!monitor.consume_pending_go(NULL, NULL, NULL) && !monitor.has_deferred_debug_go(),
+               "Busy Go must not schedule a jump or resume")) return 1;
+    monitor.deinit();
+    return 0;
+}
+
 static int test_debug_predictor_uses_session_bytes_over_backend_reads()
 {
     TestUserInterface ui;
@@ -9567,6 +9602,7 @@ int main()
     RUN(test_d_inside_debug_without_context_overs_from_cursor);
     RUN(test_d_inside_debug_without_context_goto_keeps_cursor_authoritative);
     RUN(test_d_refuses_undocumented_opcode_with_specific_warning);
+    RUN(test_go_refuses_to_resume_when_session_reclaim_is_denied);
     RUN(test_debug_predictor_uses_session_bytes_over_backend_reads);
     RUN(test_debug_pc_disassembly_uses_session_live_bytes_over_view);
     RUN(test_t_traces_and_o_outs_inside_debug);

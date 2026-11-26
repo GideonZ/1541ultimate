@@ -414,8 +414,11 @@ void MachineMonitor :: restore_debug_mode_after_reset(void)
     }
 }
 
-DebugSession *MachineMonitor :: ensure_debug_session()
+DebugSession *MachineMonitor :: ensure_debug_session(bool *busy)
 {
+    if (busy) {
+        *busy = false;
+    }
     if (debug_session) {
         return debug_session;
     }
@@ -427,6 +430,9 @@ DebugSession *MachineMonitor :: ensure_debug_session()
             !debug_session->claim_debug_ownership(screen && screen->prefers_full_refresh())) {
         delete debug_session;
         debug_session = NULL;
+        if (busy) {
+            *busy = true;
+        }
     }
     if (debug_session) {
         debug_session->set_cancel_keyboard(keyboard);
@@ -843,14 +849,20 @@ void MachineMonitor :: debug_request_go()
     if (debug_cursor_override) {
         debug_context_reset(&from);
     }
-    if (!from.valid && !debug_cursor_override) {
+    bool busy;
+    DebugSession *session = ensure_debug_session(&busy);
+    if (busy) {
+        get_ui()->popup("DEBUG IN USE", BUTTON_OK);
+        redraw_full();
+        return;
+    }
+    if (session && !from.valid && !debug_cursor_override) {
         DebugContext snap;
         if (debug_capture_context(&snap)) {
             debug.set_context(snap);
             from = snap;
         }
     }
-    DebugSession *session = ensure_debug_session();
     if (!session) {
         // Backend has no native debug session - fall back to the existing
         // non-debug `G` semantics (release/jump) so users with a non-stepping

@@ -462,7 +462,7 @@ class MachineMonitor : public UIObject
     int debug_breakpoint_popup_handle_key(int key); void debug_close_breakpoint_popup(void);
     void debug_render_breakpoint_popup(void); void ensure_debug_pc_visible(void);
     void debug_cleanup_session(void); void restore_debug_mode_after_reset(void);
-    DebugSession *ensure_debug_session(void); bool debug_capture_context(DebugContext *out);
+    DebugSession *ensure_debug_session(bool *busy = NULL); bool debug_capture_context(DebugContext *out);
     void clear_pending_go(void); void debug_full_restore_screen(void);
     void restore_underlying_status_row(void); void draw_debug_footer(void);
     void dismiss_bookmark_status(void);
