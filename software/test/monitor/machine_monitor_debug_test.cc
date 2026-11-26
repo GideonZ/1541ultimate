@@ -5082,6 +5082,54 @@ static int test_freeze_rom_step_out_stops_at_a_traced_frame_below_pushed_data()
     return 0;
 }
 
+// A callee may pull its caller's return address and carry on, which leaves a
+// traced frame that is no longer on the stack. With pushed data hiding the live
+// frame, Step Out must skip that entry and return through the frame that is left.
+static int test_step_out_skips_a_traced_frame_the_callee_discarded()
+{
+    FakeFreezeMachine m(false);
+
+    // $C000 JSR $C010 ; $C010 JSR $C020 ; $C020 PLA PLA PHA NOP
+    const uint8_t outer[] = { 0x20, 0x10, 0xC0, 0xEA };
+    const uint8_t middle[] = { 0x20, 0x20, 0xC0, 0xEA };
+    const uint8_t inner[] = { 0x68, 0x68, 0x48, 0xEA };
+    memcpy(&m.ram[0xC000], outer, sizeof(outer));
+    memcpy(&m.ram[0xC010], middle, sizeof(middle));
+    memcpy(&m.ram[0xC020], inner, sizeof(inner));
+
+    uint8_t first[3] = { 0x20, 0x10, 0xC0 };
+    DebugPredictResult pred;
+    debug_predict(0xC000, first, false, &pred);
+    m.arm_capture_context(0xC010, 0xF6, 0, 0, 0, 0x24);
+    DebugContext ctx;
+    if (expect(m.trace_at(0xC000, pred, &ctx) == DebugSession::DBG_OK,
+               "Step Into must record the outer call")) return 1;
+
+    uint8_t second[3] = { 0x20, 0x20, 0xC0 };
+    debug_predict(0xC010, second, false, &pred);
+    m.arm_capture_context(0xC020, 0xF4, 0, 0, 0, 0x24);
+    if (expect(m.trace_at(0xC010, pred, &ctx) == DebugSession::DBG_OK,
+               "Step Into must record the inner call")) return 1;
+
+    // After PLA PLA PHA: the inner frame is gone and one data byte sits above
+    // the outer frame at $01F7/$01F8.
+    m.ram[0x01F6] = 0x44;
+    m.ram[0x01F7] = 0x02;
+    m.ram[0x01F8] = 0xC0;
+
+    DebugContext after;
+    debug_context_reset(&after);
+    after.valid = true;
+    after.pc = 0xC023;
+    after.sp = 0xF5;
+    after.sr = 0x24;
+
+    m.arm_capture_context(0xC003, 0xF8, 0, 0, 0, 0x24);
+    if (expect(m.step_out(after, &ctx) == DebugSession::DBG_OK && ctx.pc == 0xC003,
+               "Step Out must return through the outer frame")) return 1;
+    return 0;
+}
+
 static int test_step_out_prefers_live_stack_over_stale_traced_frame()
 {
     // A traced frame goes stale as soon as the CPU is released: the program
@@ -9739,6 +9787,7 @@ int main()
     RUN(test_step_out_refuses_stack_frame_without_jsr);
     RUN(test_step_out_keeps_traced_frame_still_on_the_stack);
     RUN(test_freeze_rom_step_out_stops_at_a_traced_frame_below_pushed_data);
+    RUN(test_step_out_skips_a_traced_frame_the_callee_discarded);
     RUN(test_step_out_prefers_live_stack_over_stale_traced_frame);
     RUN(test_step_out_unwinds_past_eight_nested_traces);
     RUN(test_visible_rom_simple_linear_interprets_without_breakpoint);

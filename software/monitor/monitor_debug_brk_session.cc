@@ -2503,8 +2503,8 @@ DebugSession::Result BrkDebugSession :: step_out(const DebugContext &from,
     // The stack pointer once the target's frame has been pulled: two above the
     // current one, or higher when the callee has pushed data above that frame.
     uint8_t traced_return_sp = (uint8_t)(from.sp + 2);
-    if (has_traced) {
-        uint16_t pushed = (uint16_t)(traced - 1);
+    for (int depth = return_target_count - 1; has_traced && depth >= 0; depth--) {
+        uint16_t pushed = (uint16_t)(return_targets[depth] - 1);
         for (int i = 0; i < MAX_RETURN_TARGETS; i++) {
             int slot = from.sp + 1 + i;
             if (slot >= 0xFF) break;
@@ -2515,6 +2515,16 @@ DebugSession::Result BrkDebugSession :: step_out(const DebugContext &from,
                 traced_return_sp = (uint8_t)(slot + 1);
                 break;
             }
+        }
+        if (traced_on_stack) {
+            // Entries above this one name frames a callee pulled off the stack
+            // without returning to them.
+            traced = return_targets[depth];
+            return_target_count = depth + 1;
+        }
+        // A live frame is nearer than any older traced one.
+        if (traced_on_stack || live_is_frame) {
+            break;
         }
     }
 
